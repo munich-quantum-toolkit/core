@@ -16,41 +16,51 @@
 #include "qdmi/constants.h"
 
 #include <iostream>
-#include <sstream>
+#include <new>
+#include <optional>
 #include <stdexcept>
 #include <string>
 
 namespace qdmi {
 
-auto throwIfError(const int result, const std::string& msg) -> void {
-  switch (const auto res = static_cast<QDMI_STATUS>(result)) {
-  case QDMI_SUCCESS:
-    break;
-  case QDMI_WARN_GENERAL:
-    std::cerr << "Warning: " << msg << '\n';
-    break;
+std::optional<Error> checkError(const int result, const std::string& message) {
+  if (result == QDMI_SUCCESS) {
+    return std::nullopt;
+  }
+  if (result == QDMI_WARN_GENERAL) {
+    std::cerr << "Warning: " << message << '\n';
+    return std::nullopt;
+  }
+  if (result >= QDMI_ERROR_TIMEOUT && result <= QDMI_ERROR_FATAL) {
+    return Error{
+        .status = result,
+        .message =
+            message + ": " + toString(static_cast<QDMI_STATUS>(result)) + ".",
+    };
+  }
+  return Error{
+      .status = result,
+      .message =
+          "Unknown QDMI error code " + std::to_string(result) + ". " + message,
+  };
+}
+
+void throwError(const Error& error) {
+  switch (error.status) {
+  case QDMI_ERROR_OUTOFMEM:
+    throw std::bad_alloc();
+  case QDMI_ERROR_OUTOFRANGE:
+    throw std::out_of_range(error.message);
+  case QDMI_ERROR_INVALIDARGUMENT:
+    throw std::invalid_argument(error.message);
   default:
-    std::ostringstream ss;
-    ss << msg << ": " << toString(res) << ".";
-    switch (res) {
-    case QDMI_ERROR_OUTOFMEM:
-      throw std::bad_alloc();
-    case QDMI_ERROR_OUTOFRANGE:
-      throw std::out_of_range(ss.str());
-    case QDMI_ERROR_INVALIDARGUMENT:
-      throw std::invalid_argument(ss.str());
-    case QDMI_ERROR_FATAL:
-    case QDMI_ERROR_NOTIMPLEMENTED:
-    case QDMI_ERROR_LIBNOTFOUND:
-    case QDMI_ERROR_NOTFOUND:
-    case QDMI_ERROR_PERMISSIONDENIED:
-    case QDMI_ERROR_NOTSUPPORTED:
-    case QDMI_ERROR_BADSTATE:
-    case QDMI_ERROR_TIMEOUT:
-      throw std::runtime_error(ss.str());
-    default:
-      throw std::runtime_error("Unknown QDMI error code. " + ss.str());
-    }
+    throw std::runtime_error(error.message);
+  }
+}
+
+auto throwIfError(const int result, const std::string& msg) -> void {
+  if (const auto error = checkError(result, msg)) {
+    throwError(*error);
   }
 }
 

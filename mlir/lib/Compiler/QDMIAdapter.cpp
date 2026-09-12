@@ -13,7 +13,6 @@
 #include "mqt/Compiler/Target.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 #include "qdmi/Client.hpp"
-#include "qdmi/driver/Driver.hpp"
 
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/Builders.h"
@@ -33,7 +32,6 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <exception>
 #include <limits>
 #include <optional>
 #include <set>
@@ -42,9 +40,60 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace mlir {
+
+template <typename T>
+[[nodiscard]] static llvm::Expected<T>
+qdmiResult(std::variant<T, qdmi::Error> result,
+           const llvm::Twine& prefix = "") {
+  if (auto* error = std::get_if<qdmi::Error>(&result)) {
+    return llvm::createStringError(std::make_error_code(std::errc::io_error),
+                                   prefix + error->message);
+  }
+  return std::get<T>(std::move(result));
+}
+
+template <typename T>
+[[nodiscard]] static llvm::Expected<T>
+queryProperty(QDMI_Device device, QDMI_Device_Property property) {
+  const auto message = std::string("Querying ") + qdmi::toString(property);
+  return qdmiResult(qdmi::detail::tryQueryProperty<T>(
+      [&](size_t size, void* value, size_t* sizeRet) {
+        return QDMI_device_query_device_property(device, property, size, value,
+                                                 sizeRet);
+      },
+      message, message));
+}
+
+template <typename T>
+[[nodiscard]] static llvm::Expected<T>
+queryProperty(QDMI_Device device, QDMI_Site site, QDMI_Site_Property property) {
+  const auto message = std::string("Querying ") + qdmi::toString(property);
+  return qdmiResult(qdmi::detail::tryQueryProperty<T>(
+      [&](size_t size, void* value, size_t* sizeRet) {
+        return QDMI_device_query_site_property(device, site, property, size,
+                                               value, sizeRet);
+      },
+      message, message));
+}
+
+template <typename T>
+[[nodiscard]] static llvm::Expected<T>
+queryProperty(QDMI_Device device, QDMI_Operation operation,
+              QDMI_Operation_Property property,
+              std::span<const QDMI_Site> sites = {}) {
+  const auto message = std::string("Querying ") + qdmi::toString(property);
+  return qdmiResult(qdmi::detail::tryQueryProperty<T>(
+      [&](size_t size, void* value, size_t* sizeRet) {
+        return QDMI_device_query_operation_property(
+            device, operation, sites.size(), sites.data(), 0, nullptr, property,
+            size, value, sizeRet);
+      },
+      message, message));
+}
 
 /// Target facts that QDMI v1.3 cannot encode compactly.
 /// TODO(#2093): Remove these compatibility markers when QDMI standardizes
@@ -61,20 +110,6 @@ matchesMetadata(const std::optional<std::vector<std::byte>>& metadata,
   const auto expectedBytes =
       std::as_bytes(std::span{expected.data(), expected.size() + 1});
   return metadata && std::ranges::equal(*metadata, expectedBytes);
-}
-
-[[nodiscard]] static bool
-hasAllToAllHomogeneousMetadata(const qdmi::Device& device) {
-  return matchesMetadata(device.queryCustomProperty<std::vector<std::byte>>(
-                             qdmi::CustomProperty::Custom1),
-                         ALL_TO_ALL_HOMOGENEOUS_METADATA);
-}
-
-[[nodiscard]] static bool
-hasArbitraryPositiveControlsMetadata(const qdmi::Operation& operation) {
-  return matchesMetadata(operation.queryCustomProperty<std::vector<std::byte>>(
-                             qdmi::CustomProperty::Custom1),
-                         ARBITRARY_POSITIVE_CONTROLS_METADATA);
 }
 
 [[nodiscard]] static llvm::Error
@@ -123,12 +158,16 @@ checkedSiteId(size_t index) {
 using SiteIndices = DenseMap<QDMI_Site, CompilerTarget::SiteId>;
 
 [[nodiscard]] static llvm::Expected<CompilerTarget::SiteId>
-snapshotSiteIndex(const qdmi::Site& site, SiteIndices& indices) {
+snapshotSiteIndex(QDMI_Device device, QDMI_Site site, SiteIndices& indices) {
   const auto found = indices.find(site);
   if (found != indices.end()) {
     return found->second;
   }
-  auto index = checkedSiteId(site.getIndex());
+  auto rawIndex = queryProperty<size_t>(device, site, QDMI_SITE_PROPERTY_INDEX);
+  if (!rawIndex) {
+    return rawIndex.takeError();
+  }
+  auto index = checkedSiteId(*rawIndex);
   if (!index) {
     return index.takeError();
   }
@@ -153,8 +192,8 @@ allToAllCouplingCount(size_t numSites) {
 }
 
 [[nodiscard]] static llvm::Error validateHomogeneousSupport(
-    StringRef operationName, size_t arity,
-    const std::vector<qdmi::Site>& flattenedSites,
+    QDMI_Device device, StringRef operationName, size_t arity,
+    const std::vector<QDMI_Site>& flattenedSites,
     const DenseSet<CompilerTarget::SiteId>& knownSites,
     const std::optional<std::set<CompilerTarget::Coupling>>& couplings,
     StringRef deviceName, SiteIndices& indices) {
@@ -170,7 +209,7 @@ allToAllCouplingCount(size_t numSites) {
       tuple.reserve(arity);
       for (size_t index = 0; index < arity; ++index) {
         auto siteId =
-            snapshotSiteIndex(flattenedSites[offset + index], indices);
+            snapshotSiteIndex(device, flattenedSites[offset + index], indices);
         if (!siteId) {
           return siteId.takeError();
         }
@@ -212,7 +251,7 @@ allToAllCouplingCount(size_t numSites) {
     DenseSet<CompilerTarget::SiteId> supportedSites;
     supportedSites.reserve(flattenedSites.size());
     for (const auto& site : flattenedSites) {
-      auto siteId = snapshotSiteIndex(site, indices);
+      auto siteId = snapshotSiteIndex(device, site, indices);
       if (!siteId) {
         return siteId.takeError();
       }
@@ -232,11 +271,12 @@ allToAllCouplingCount(size_t numSites) {
   std::set<CompilerTarget::Coupling> reportedTuples;
   std::set<CompilerTarget::Coupling> supportedCouplings;
   for (size_t offset = 0; offset < flattenedSites.size(); offset += arity) {
-    auto first = snapshotSiteIndex(flattenedSites[offset], indices);
+    auto first = snapshotSiteIndex(device, flattenedSites[offset], indices);
     if (!first) {
       return first.takeError();
     }
-    auto second = snapshotSiteIndex(flattenedSites[offset + 1], indices);
+    auto second =
+        snapshotSiteIndex(device, flattenedSites[offset + 1], indices);
     if (!second) {
       return second.takeError();
     }
@@ -267,8 +307,18 @@ allToAllCouplingCount(size_t numSites) {
 
 [[nodiscard]] static llvm::Expected<std::optional<CompilerTarget::DurationUnit>>
 snapshotDurationUnit(const qdmi::Device& device) {
-  auto unit = device.getDurationUnit();
-  const auto scaleFactor = device.getDurationScaleFactor();
+  auto unitResult = queryProperty<std::optional<std::string>>(
+      device, QDMI_DEVICE_PROPERTY_DURATIONUNIT);
+  if (!unitResult) {
+    return unitResult.takeError();
+  }
+  auto unit = std::move(*unitResult);
+  auto scaleFactorResult = queryProperty<std::optional<double>>(
+      device, QDMI_DEVICE_PROPERTY_DURATIONSCALEFACTOR);
+  if (!scaleFactorResult) {
+    return scaleFactorResult.takeError();
+  }
+  auto scaleFactor = *scaleFactorResult;
   if (auto error = requireAdapterInput(unit || !scaleFactor,
                                        "QDMI device reports a duration scale "
                                        "factor without a duration unit")) {
@@ -286,14 +336,15 @@ snapshotDurationUnit(const qdmi::Device& device) {
 }
 
 [[nodiscard]] static llvm::Expected<std::vector<CompilerTarget::SiteTuple>>
-snapshotOperationSites(const qdmi::Operation& operation, size_t arity,
-                       const std::vector<qdmi::Site>& flattenedSites,
+snapshotOperationSites(QDMI_Device device, QDMI_Operation operation,
+                       size_t arity,
+                       const std::vector<QDMI_Site>& flattenedSites,
                        std::optional<uint64_t> defaultDuration,
                        std::optional<double> defaultFidelity, bool variadic,
                        SiteIndices& indices, bool includeCalibration) {
   std::vector<CompilerTarget::SiteTuple> result;
   result.reserve(flattenedSites.size() / arity);
-  std::vector<qdmi::Site> sites;
+  std::vector<QDMI_Site> sites;
   sites.reserve(arity);
   for (size_t offset = 0; offset < flattenedSites.size(); offset += arity) {
     sites.clear();
@@ -302,17 +353,31 @@ snapshotOperationSites(const qdmi::Operation& operation, size_t arity,
     for (size_t index = 0; index < arity; ++index) {
       const auto& site = flattenedSites[offset + index];
       sites.emplace_back(site);
-      auto siteId = snapshotSiteIndex(site, indices);
+      auto siteId = snapshotSiteIndex(device, site, indices);
       if (!siteId) {
         return siteId.takeError();
       }
       siteIds.emplace_back(*siteId);
     }
 
-    const auto duration =
-        includeCalibration ? operation.getDuration(sites) : std::nullopt;
-    const auto fidelity =
-        includeCalibration ? operation.getFidelity(sites) : std::nullopt;
+    auto durationResult =
+        includeCalibration
+            ? queryProperty<std::optional<uint64_t>>(
+                  device, operation, QDMI_OPERATION_PROPERTY_DURATION, sites)
+            : llvm::Expected<std::optional<uint64_t>>(std::nullopt);
+    if (!durationResult) {
+      return durationResult.takeError();
+    }
+    auto duration = *durationResult;
+    auto fidelityResult =
+        includeCalibration
+            ? queryProperty<std::optional<double>>(
+                  device, operation, QDMI_OPERATION_PROPERTY_FIDELITY, sites)
+            : llvm::Expected<std::optional<double>>(std::nullopt);
+    if (!fidelityResult) {
+      return fidelityResult.takeError();
+    }
+    auto fidelity = *fidelityResult;
     const bool hasSiteCalibration =
         duration != defaultDuration || fidelity != defaultFidelity;
     if (!variadic || hasSiteCalibration) {
@@ -331,7 +396,7 @@ snapshotOperationSites(const qdmi::Operation& operation, size_t arity,
 
 [[nodiscard]] static llvm::Expected<CompilerTarget::NativeOperations>
 snapshotOperations(
-    const std::vector<qdmi::Operation>& operations,
+    QDMI_Device device, const std::vector<QDMI_Operation>& operations,
     const std::vector<CompilerTarget::Site>& deviceSites,
     const std::optional<std::vector<CompilerTarget::Coupling>>& couplings,
     StringRef deviceName, bool homogeneousOperationSupport,
@@ -347,18 +412,40 @@ snapshotOperations(
   std::vector<CompilerTarget::OperationCapability> targetOperations;
   targetOperations.reserve(operations.size());
   for (const auto& operation : operations) {
+    auto isZonedResult = queryProperty<std::optional<bool>>(
+        device, operation, QDMI_OPERATION_PROPERTY_ISZONED);
+    if (!isZonedResult) {
+      return isZonedResult.takeError();
+    }
+    auto isZoned = *isZonedResult;
     if (auto error =
-            requireCircuitDevice(!operation.isZoned(), deviceName,
+            requireCircuitDevice(!isZoned.value_or(false), deviceName,
                                  "the device exposes a zoned operation")) {
       return error;
     }
-    const auto arity = operation.getQubitsNum();
+    auto arityResult = queryProperty<std::optional<size_t>>(
+        device, operation, QDMI_OPERATION_PROPERTY_QUBITSNUM);
+    if (!arityResult) {
+      return arityResult.takeError();
+    }
+    auto arity = *arityResult;
     if (!arity) {
       continue;
     }
-    auto operationName = operation.getName();
+    auto operationNameResult = queryProperty<std::string>(
+        device, operation, QDMI_OPERATION_PROPERTY_NAME);
+    if (!operationNameResult) {
+      return operationNameResult.takeError();
+    }
+    auto operationName = std::move(*operationNameResult);
+    auto metadataResult = queryProperty<std::optional<std::vector<std::byte>>>(
+        device, operation, QDMI_OPERATION_PROPERTY_CUSTOM1);
+    if (!metadataResult) {
+      return metadataResult.takeError();
+    }
+    auto metadata = std::move(*metadataResult);
     const auto hasArbitraryPositiveControls =
-        hasArbitraryPositiveControlsMetadata(operation);
+        matchesMetadata(metadata, ARBITRARY_POSITIVE_CONTROLS_METADATA);
     if (auto error = requireRepresentableOperation(
             !hasArbitraryPositiveControls ||
                 (*arity > 0 && homogeneousOperationSupport),
@@ -367,7 +454,13 @@ snapshotOperations(
             "homogeneous operation support")) {
       return error;
     }
-    const auto flattenedSites = operation.getSites();
+    auto flattenedSitesResult =
+        queryProperty<std::optional<std::vector<QDMI_Site>>>(
+            device, operation, QDMI_OPERATION_PROPERTY_SITES);
+    if (!flattenedSitesResult) {
+      return flattenedSitesResult.takeError();
+    }
+    auto flattenedSites = std::move(*flattenedSitesResult);
     if (*arity > 0 && flattenedSites && flattenedSites->empty()) {
       continue;
     }
@@ -379,10 +472,24 @@ snapshotOperations(
     }
     const bool queryCalibration =
         includeCalibration || hasArbitraryPositiveControls;
-    const auto duration =
-        queryCalibration ? operation.getDuration() : std::nullopt;
-    const auto fidelity =
-        queryCalibration ? operation.getFidelity() : std::nullopt;
+    auto durationResult =
+        queryCalibration
+            ? queryProperty<std::optional<uint64_t>>(
+                  device, operation, QDMI_OPERATION_PROPERTY_DURATION)
+            : llvm::Expected<std::optional<uint64_t>>(std::nullopt);
+    if (!durationResult) {
+      return durationResult.takeError();
+    }
+    auto duration = *durationResult;
+    auto fidelityResult =
+        queryCalibration
+            ? queryProperty<std::optional<double>>(
+                  device, operation, QDMI_OPERATION_PROPERTY_FIDELITY)
+            : llvm::Expected<std::optional<double>>(std::nullopt);
+    if (!fidelityResult) {
+      return fidelityResult.takeError();
+    }
+    auto fidelity = *fidelityResult;
     std::vector<CompilerTarget::SiteTuple> siteTuples;
     if (*arity == 0) {
       if (auto error = requireRepresentableOperation(
@@ -399,12 +506,12 @@ snapshotOperations(
         }
       }
       if (auto error = validateHomogeneousSupport(
-              operationName, *arity, *flattenedSites, knownSites,
+              device, operationName, *arity, *flattenedSites, knownSites,
               expectedCouplings, deviceName, indices)) {
         return error;
       }
       auto tuples = snapshotOperationSites(
-          operation, *arity, *flattenedSites, duration, fidelity,
+          device, operation, *arity, *flattenedSites, duration, fidelity,
           hasArbitraryPositiveControls, indices, queryCalibration);
       if (!tuples) {
         return tuples.takeError();
@@ -421,8 +528,14 @@ snapshotOperations(
         hasArbitraryPositiveControls
             ? CompilerTarget::OperationCapability::Arity::variadic(*arity)
             : CompilerTarget::OperationCapability::Arity::fixed(*arity);
+    auto numParametersResult = queryProperty<size_t>(
+        device, operation, QDMI_OPERATION_PROPERTY_PARAMETERSNUM);
+    if (!numParametersResult) {
+      return numParametersResult.takeError();
+    }
+    auto numParameters = *numParametersResult;
     auto targetOperation = CompilerTarget::OperationCapability::create(
-        std::move(operationName), targetArity, operation.getParametersNum(),
+        std::move(operationName), targetArity, numParameters,
         std::move(siteTuples), includeCalibration ? duration : std::nullopt,
         includeCalibration ? fidelity : std::nullopt);
     if (!targetOperation) {
@@ -436,18 +549,46 @@ snapshotOperations(
 [[nodiscard]] static llvm::Expected<CompilerTarget>
 snapshotCompilerTarget(const qdmi::Device& device,
                        bool includeCalibration = true) {
-  auto deviceName = device.getName();
-  const auto hasHomogeneousAllToAllMetadata =
-      hasAllToAllHomogeneousMetadata(device);
-  const auto deviceSites = device.getSites();
-  if (auto error = requireCircuitDevice(
-          std::ranges::none_of(deviceSites,
-                               [](const auto& site) { return site.isZone(); }),
-          deviceName, "the device exposes zone sites")) {
-    return error;
+  auto deviceNameResult =
+      queryProperty<std::string>(device, QDMI_DEVICE_PROPERTY_NAME);
+  if (!deviceNameResult) {
+    return deviceNameResult.takeError();
   }
+  auto deviceName = std::move(*deviceNameResult);
+  auto metadataResult = queryProperty<std::optional<std::vector<std::byte>>>(
+      device, QDMI_DEVICE_PROPERTY_CUSTOM1);
+  if (!metadataResult) {
+    return metadataResult.takeError();
+  }
+  auto metadata = std::move(*metadataResult);
+  const auto hasHomogeneousAllToAllMetadata =
+      matchesMetadata(metadata, ALL_TO_ALL_HOMOGENEOUS_METADATA);
+  auto deviceSitesResult =
+      queryProperty<std::vector<QDMI_Site>>(device, QDMI_DEVICE_PROPERTY_SITES);
+  if (!deviceSitesResult) {
+    return deviceSitesResult.takeError();
+  }
+  auto deviceSites = std::move(*deviceSitesResult);
+  for (const auto& site : deviceSites) {
+    auto isZoneResult = queryProperty<std::optional<bool>>(
+        device, site, QDMI_SITE_PROPERTY_ISZONE);
+    if (!isZoneResult) {
+      return isZoneResult.takeError();
+    }
+    auto isZone = *isZoneResult;
+    if (auto error = requireCircuitDevice(!isZone.value_or(false), deviceName,
+                                          "the device exposes zone sites")) {
+      return error;
+    }
+  }
+  auto numQubitsResult =
+      queryProperty<size_t>(device, QDMI_DEVICE_PROPERTY_QUBITSNUM);
+  if (!numQubitsResult) {
+    return numQubitsResult.takeError();
+  }
+  auto numQubits = *numQubitsResult;
   if (auto error = requireCircuitDevice(
-          device.getQubitsNum() == deviceSites.size(), deviceName,
+          numQubits == deviceSites.size(), deviceName,
           "the qubit count does not match the regular-site count")) {
     return error;
   }
@@ -457,14 +598,37 @@ snapshotCompilerTarget(const qdmi::Device& device,
   std::vector<CompilerTarget::Site> sites;
   sites.reserve(deviceSites.size());
   for (const auto& site : deviceSites) {
-    auto siteId = snapshotSiteIndex(site, indices);
+    auto siteId = snapshotSiteIndex(device, site, indices);
     if (!siteId) {
       return siteId.takeError();
     }
-    auto targetSite = CompilerTarget::Site::create(
-        *siteId, includeCalibration ? site.getName() : std::nullopt,
-        includeCalibration ? site.getT1() : std::nullopt,
-        includeCalibration ? site.getT2() : std::nullopt);
+    auto nameResult =
+        includeCalibration
+            ? queryProperty<std::optional<std::string>>(device, site,
+                                                        QDMI_SITE_PROPERTY_NAME)
+            : llvm::Expected<std::optional<std::string>>(std::nullopt);
+    if (!nameResult) {
+      return nameResult.takeError();
+    }
+    auto name = std::move(*nameResult);
+    auto t1Result = includeCalibration
+                        ? queryProperty<std::optional<uint64_t>>(
+                              device, site, QDMI_SITE_PROPERTY_T1)
+                        : llvm::Expected<std::optional<uint64_t>>(std::nullopt);
+    if (!t1Result) {
+      return t1Result.takeError();
+    }
+    auto t1 = *t1Result;
+    auto t2Result = includeCalibration
+                        ? queryProperty<std::optional<uint64_t>>(
+                              device, site, QDMI_SITE_PROPERTY_T2)
+                        : llvm::Expected<std::optional<uint64_t>>(std::nullopt);
+    if (!t2Result) {
+      return t2Result.takeError();
+    }
+    auto t2 = *t2Result;
+    auto targetSite =
+        CompilerTarget::Site::create(*siteId, std::move(name), t1, t2);
     if (!targetSite) {
       return targetSite.takeError();
     }
@@ -472,15 +636,22 @@ snapshotCompilerTarget(const qdmi::Device& device,
   }
 
   std::optional<std::vector<CompilerTarget::Coupling>> couplings;
-  if (const auto deviceCouplings = device.getCouplingMap()) {
+  auto deviceCouplingsResult = queryProperty<
+      std::optional<std::vector<std::pair<QDMI_Site, QDMI_Site>>>>(
+      device, QDMI_DEVICE_PROPERTY_COUPLINGMAP);
+  if (!deviceCouplingsResult) {
+    return deviceCouplingsResult.takeError();
+  }
+  auto deviceCouplings = std::move(*deviceCouplingsResult);
+  if (deviceCouplings) {
     couplings.emplace();
     couplings->reserve(deviceCouplings->size());
     for (const auto& [source, target] : *deviceCouplings) {
-      auto sourceId = snapshotSiteIndex(source, indices);
+      auto sourceId = snapshotSiteIndex(device, source, indices);
       if (!sourceId) {
         return sourceId.takeError();
       }
-      auto targetId = snapshotSiteIndex(target, indices);
+      auto targetId = snapshotSiteIndex(device, target, indices);
       if (!targetId) {
         return targetId.takeError();
       }
@@ -495,8 +666,14 @@ snapshotCompilerTarget(const qdmi::Device& device,
     return error;
   }
 
+  auto deviceOperationsResult = queryProperty<std::vector<QDMI_Operation>>(
+      device, QDMI_DEVICE_PROPERTY_OPERATIONS);
+  if (!deviceOperationsResult) {
+    return deviceOperationsResult.takeError();
+  }
+  auto deviceOperations = std::move(*deviceOperationsResult);
   auto operations = snapshotOperations(
-      device.getOperations(), sites, couplings, deviceName,
+      device, deviceOperations, sites, couplings, deviceName,
       hasHomogeneousAllToAllMetadata, indices, includeCalibration);
   if (!operations) {
     return operations.takeError();
@@ -513,50 +690,25 @@ snapshotCompilerTarget(const qdmi::Device& device,
                                 std::move(*durationUnit));
 }
 
-[[nodiscard]] static llvm::Error qdmiError(const llvm::Twine& action,
-                                           const char* const detail) {
-  return llvm::createStringError(std::make_error_code(std::errc::io_error),
-                                 action + ": " + detail);
-}
-
-[[nodiscard]] static llvm::Error
-qdmiError(const llvm::Twine& action, const std::exception_ptr& exception) {
-  try {
-    std::rethrow_exception(exception);
-  } catch (const std::exception& error) {
-    return qdmiError(action, error.what());
-  } catch (...) {
-    return qdmiError(action, "unknown exception");
-  }
-}
-
 llvm::Expected<CompilerTarget>
 compilerTargetFromDevice(const qdmi::Device& device) {
-  try {
-    return snapshotCompilerTarget(device);
-  } catch (...) {
-    return qdmiError("Failed to query QDMI device", std::current_exception());
-  }
+  return snapshotCompilerTarget(device);
 }
 
 llvm::Expected<CompilerTarget>
 compilerTargetFromDeviceId(const std::string_view deviceId) {
-  const auto action = std::string("Failed to open or query QDMI device '") +
-                      std::string(deviceId) + "'";
-  try {
-    return snapshotCompilerTarget(qdmi::Session::openDevice(deviceId));
-  } catch (...) {
-    return qdmiError(action, std::current_exception());
+  auto device = qdmiResult(qdmi::Session::tryOpenDevice(deviceId),
+                           "Failed to open QDMI device '" +
+                               llvm::Twine(deviceId) + "': ");
+  if (!device) {
+    return device.takeError();
   }
+  return snapshotCompilerTarget(*device);
 }
 
 llvm::Expected<std::vector<std::string>> registeredQDMIDeviceIds() {
-  try {
-    return qdmi::Driver::get().registeredDeviceIds();
-  } catch (...) {
-    return qdmiError("Failed to discover registered QDMI devices",
-                     std::current_exception());
-  }
+  return qdmiResult(qdmi::Session::tryRegisteredDeviceIds(),
+                    "Failed to discover registered QDMI devices: ");
 }
 
 constexpr std::array PROGRAM_FORMAT_PREFERENCE{
@@ -739,41 +891,41 @@ static llvm::Expected<TargetEnvironment>
 snapshotTargetEnvironment(const qdmi::Device& device,
                           std::optional<QDMI_Program_Format> format,
                           bool includeCalibration) {
-  try {
-    const auto supported = device.getSupportedProgramFormats();
-    if (format && !llvm::is_contained(supported, *format)) {
-      return llvm::createStringError(
-          std::make_error_code(std::errc::invalid_argument),
-          "Device does not support the requested program_format");
-    }
-    if (!format) {
-      for (const auto candidate : PROGRAM_FORMAT_PREFERENCE) {
-        if (llvm::is_contained(supported, candidate)) {
-          format = candidate;
-          break;
-        }
+  auto supportedResult = queryProperty<std::vector<QDMI_Program_Format>>(
+      device, QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS);
+  if (!supportedResult) {
+    return supportedResult.takeError();
+  }
+  auto supported = std::move(*supportedResult);
+  if (format && !llvm::is_contained(supported, *format)) {
+    return llvm::createStringError(
+        std::make_error_code(std::errc::invalid_argument),
+        "Device does not support the requested program_format");
+  }
+  if (!format) {
+    for (const auto candidate : PROGRAM_FORMAT_PREFERENCE) {
+      if (llvm::is_contained(supported, candidate)) {
+        format = candidate;
+        break;
       }
     }
-    if (!format) {
-      return llvm::createStringError(
-          std::make_error_code(std::errc::invalid_argument),
-          "Device has no executable program format supported by the MQT "
-          "compiler; hardware-only models require an explicit compiler target "
-          "and output");
-    }
-    auto payload = payloadSpecificationForProgramFormat(*format);
-    if (!payload) {
-      return payload.takeError();
-    }
-    auto target = snapshotCompilerTarget(device, includeCalibration);
-    if (!target) {
-      return target.takeError();
-    }
-    return TargetEnvironment(*target, std::move(*payload));
-  } catch (...) {
-    return qdmiError("Failed to query device compilation contract",
-                     std::current_exception());
   }
+  if (!format) {
+    return llvm::createStringError(
+        std::make_error_code(std::errc::invalid_argument),
+        "Device has no executable program format supported by the MQT "
+        "compiler; hardware-only models require an explicit compiler target "
+        "and output");
+  }
+  auto payload = payloadSpecificationForProgramFormat(*format);
+  if (!payload) {
+    return payload.takeError();
+  }
+  auto target = snapshotCompilerTarget(device, includeCalibration);
+  if (!target) {
+    return target.takeError();
+  }
+  return TargetEnvironment(*target, std::move(*payload));
 }
 
 llvm::Expected<TargetEnvironment>
@@ -907,20 +1059,15 @@ submitPayload(const qdmi::Device& device, const CompiledProgram& program,
               const std::optional<qdmi::CustomJobParameter>& custom3,
               const std::optional<qdmi::CustomJobParameter>& custom4,
               const std::optional<qdmi::CustomJobParameter>& custom5) {
-  try {
-    if (qdmi::isBinaryProgramFormat(program.programFormat())) {
-      return device.submitJob(std::as_bytes(std::span(program.payload())),
-                              program.programFormat(),
-                              static_cast<size_t>(numShots), custom1, custom2,
-                              custom3, custom4, custom5);
-    }
-    return device.submitJob(program.payload(), program.programFormat(),
-                            static_cast<size_t>(numShots), custom1, custom2,
-                            custom3, custom4, custom5);
-  } catch (...) {
-    return qdmiError("Failed to submit compiled program",
-                     std::current_exception());
-  }
+  const auto& payload = program.payload();
+  const auto size =
+      payload.size() +
+      (qdmi::isBinaryProgramFormat(program.programFormat()) ? 0 : 1);
+  return qdmiResult(device.trySubmitJob(
+                        std::as_bytes(std::span(payload.c_str(), size)),
+                        program.programFormat(), static_cast<size_t>(numShots),
+                        custom1, custom2, custom3, custom4, custom5),
+                    "Failed to submit compiled program: ");
 }
 
 llvm::Expected<qdmi::Job>
