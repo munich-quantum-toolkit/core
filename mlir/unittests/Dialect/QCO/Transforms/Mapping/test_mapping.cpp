@@ -47,6 +47,7 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/SmallVector.h"
@@ -2428,6 +2429,68 @@ TEST_F(MappingPassFixture, EmbedInteractionHubWithIdleQubitAndSpareSite) {
   moduleOp->walk([&](SWAPOp) { ++swaps; });
   // This interaction star embeds in the target without routing overhead.
   EXPECT_EQ(swaps, 0);
+}
+
+TEST_F(MappingPassFixture, KeepExecutableIdentityAcrossTrialOptions) {
+  std::vector sites{
+      llvm::cantFail(CompilerTarget::Site::create(7)),
+      llvm::cantFail(CompilerTarget::Site::create(19)),
+      llvm::cantFail(CompilerTarget::Site::create(42)),
+      llvm::cantFail(CompilerTarget::Site::create(81)),
+  };
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      std::move(sites),
+      Connectivity::fromCouplings({{7, 19}, {19, 42}, {42, 81}}),
+      NativeOperations::unrestricted()));
+  for (const size_t numQubits : {size_t{0}, size_t{1}, size_t{3}}) {
+    SCOPED_TRACE(numQubits);
+    QCOProgramBuilder builder(context.get());
+    builder.initialize(SmallVector<Type>(numQubits, builder.getI1Type()));
+    SmallVector<Value> qubits;
+    SmallVector<Value> bits(numQubits);
+    for (size_t i = 0; i < numQubits; ++i) {
+      qubits.push_back(builder.h(builder.allocQubit()));
+    }
+    if (numQubits == 3) {
+      std::tie(qubits[0], qubits[1]) = builder.cx(qubits[0], qubits[1]);
+      std::tie(qubits[1], qubits[2]) = builder.cz(qubits[1], qubits[2]);
+      qubits = builder.barrier(qubits);
+    }
+    for (size_t i = 0; i < numQubits; ++i) {
+      std::tie(qubits[i], bits[i]) = builder.measure(qubits[i]);
+      builder.sink(qubits[i]);
+    }
+    auto input = builder.finalize(bits);
+    std::string expected;
+    for (bool multithreading : {false, true}) {
+      context->enableMultithreading(multithreading);
+      for (const size_t trials : {size_t{1}, size_t{4}}) {
+        OwningOpRef<ModuleOp> moduleOp = input->clone();
+        ASSERT_TRUE(succeeded(runPass(*moduleOp, target,
+                                      MappingPassOptions{.niterations = 2,
+                                                         .ntrials = trials,
+                                                         .seed = 7})));
+        ASSERT_TRUE(succeeded(verify(*moduleOp)));
+        EXPECT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+        EXPECT_TRUE(isExecutable(getEntryPoint(*moduleOp), target));
+        size_t swaps = 0;
+        SmallVector<uint64_t> staticSites;
+        moduleOp->walk([&](SWAPOp) { ++swaps; });
+        moduleOp->walk(
+            [&](StaticOp op) { staticSites.push_back(op.getIndex()); });
+        EXPECT_EQ(swaps, 0);
+        const SmallVector<uint64_t> identitySites{7, 19, 42};
+        EXPECT_EQ(ArrayRef(staticSites),
+                  ArrayRef(identitySites).take_front(numQubits));
+        const auto output = printModule(*moduleOp);
+        if (expected.empty()) {
+          expected = output;
+        } else {
+          EXPECT_EQ(output, expected);
+        }
+      }
+    }
+  }
 }
 
 TEST_F(MappingPassFixture, RetainRawGreedyLayoutWhenRefinementWorsensIt) {

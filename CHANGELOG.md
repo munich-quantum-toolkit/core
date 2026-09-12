@@ -10,6 +10,10 @@ releases may include breaking changes.
 
 ## [Unreleased]
 
+- ⚡ Speed up qubit placement and routing. Skip layout search for flat programs
+  whose initial qubit placement already satisfies the target topology. ([#2544])
+  ([**@burgholzer**])
+
 - ✨ Optimize constant two-qubit blocks before placement and during native
   synthesis. Remove cancelled interactions before routing and preserve cheaper
   native operations in both target compilation and synthesis. Avoid redundant
@@ -1119,6 +1123,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2544]: https://github.com/munich-quantum-toolkit/core/pull/2544
 [#2538]: https://github.com/munich-quantum-toolkit/core/pull/2538
 [#2537]: https://github.com/munich-quantum-toolkit/core/pull/2537
 [#2535]: https://github.com/munich-quantum-toolkit/core/pull/2535
