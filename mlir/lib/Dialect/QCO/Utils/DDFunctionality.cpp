@@ -74,7 +74,7 @@
 namespace mlir::qco {
 namespace {
 
-constexpr size_t MAX_CONTROL_FLOW_STEPS = 10'000;
+constexpr size_t MAX_CONTROL_FLOW_STEPS = 100'000'000;
 
 struct QubitMap {
   DenseMap<Value, dd::Qubit> qubits;
@@ -207,8 +207,8 @@ struct SamplingPlan {
 
 static LogicalResult consumeExecutionStep(WalkState& walk, Operation* op) {
   if (walk.remainingExecutionSteps == 0) {
-    return op->emitError(
-        "QCO DD execution exceeds the limit of 10000 control-flow steps");
+    return op->emitError("QCO DD execution exceeds the limit of ")
+           << MAX_CONTROL_FLOW_STEPS << " control-flow steps";
   }
   --walk.remainingExecutionSteps;
   return success();
@@ -1629,6 +1629,11 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
         auto range = resolveLoop(forOp, *walk.classical);
         if (failed(range)) {
           return failure();
+        }
+
+        if (range->trips > walk.remainingExecutionSteps) {
+          return forOp.emitError("QCO DD execution exceeds the limit of ")
+                 << MAX_CONTROL_FLOW_STEPS << " control-flow steps";
         }
 
         Block& body = *forOp.getBody();

@@ -22,6 +22,7 @@ namespace nb = nanobind;
 void registerBV(const nb::module_& m);
 void registerModularMultiplier(const nb::module_& m);
 void registerGHZ(const nb::module_& m);
+void registerWState(const nb::module_& m);
 void registerGrover(const nb::module_& m);
 void registerMultiplexer(const nb::module_& m);
 void registerQFT(const nb::module_& m);
@@ -51,6 +52,9 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
               "The squared Hellinger fidelity with the ideal distribution.")
       .def_ro("success_probability", &bench::Evaluation::successProbability,
               "The observed success probability, when defined.");
+
+  registerWState(
+      m.def_submodule("w_state", "W-state preparation instances and options."));
 
   const nb::module_ bv = m.def_submodule(
       "bv", "Bernstein--Vazirani benchmark instances and options.");

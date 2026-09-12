@@ -21,6 +21,7 @@ namespace mqt::bench {
 class BV;
 class ModularMultiplier;
 class GHZ;
+class WState;
 class Grover;
 class Multiplexer;
 class QFT;
@@ -40,6 +41,10 @@ SmallVector<Value> bv(qc::QCProgramBuilder& builder, const BV& benchmark);
 /// Emit one configured modular multiplier benchmark.
 SmallVector<Value> modularMultiplier(qc::QCProgramBuilder& builder,
                                      const ModularMultiplier& benchmark);
+
+/// Emit W-state preparation.
+SmallVector<Value> wState(qc::QCProgramBuilder& builder,
+                          const WState& benchmark);
 
 /// Emit one configured GHZ benchmark.
 SmallVector<Value> ghz(qc::QCProgramBuilder& builder, const GHZ& benchmark);

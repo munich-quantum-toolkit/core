@@ -10,6 +10,15 @@ releases may include breaking changes.
 
 ## [Unreleased]
 
+- ✨ Add the W-state preparation algorithm to the typed C++, Python, and CLI
+  benchmarks, with structured generation and analytic counts evaluation. Raise
+  the QCO DD simulator's shared control-flow budget to 100 million steps.
+  ([#2542]) ([**@burgholzer**])
+
+- 🩹 Report invalid benchmark specifications as handled CLI errors instead of
+  aborting. Use error returns for command and file failures while preserving
+  cleanup and overwrite protection. ([#2542]) ([**@burgholzer**])
+
 - ✨ Optimize constant two-qubit blocks before placement and during native
   synthesis. Remove cancelled interactions before routing and preserve cheaper
   native operations in both target compilation and synthesis. Avoid redundant
@@ -1119,6 +1128,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2542]: https://github.com/munich-quantum-toolkit/core/pull/2542
 [#2538]: https://github.com/munich-quantum-toolkit/core/pull/2538
 [#2537]: https://github.com/munich-quantum-toolkit/core/pull/2537
 [#2535]: https://github.com/munich-quantum-toolkit/core/pull/2535
