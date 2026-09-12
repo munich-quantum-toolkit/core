@@ -465,6 +465,10 @@ improvement from noisy inputs.
 
 #### Sample the 15-qubit circuit directly
 
+These examples use 16 shots to keep execution short. The circuit runs once per
+shot because later gates depend on intermediate measurements. Increase the shot
+count when collecting statistics; the ideal output here is deterministic.
+
 ```{code-cell} ipython3
 from mqt.core.bench import magic_state_distillation
 from mqt.core.mlir import sample
@@ -472,8 +476,8 @@ from mqt.core.mlir import sample
 factory = magic_state_distillation.MagicStateDistillation(
     magic_state_distillation.Options(levels=1)
 )
-direct_counts = sample(factory.generate(), shots=256, seed=17)
-assert direct_counts == {"00": 256}
+direct_counts = sample(factory.generate(), shots=16, seed=17)
+assert direct_counts == {"00": 16}
 print(direct_counts)
 ```
 
@@ -498,11 +502,11 @@ for requested_format in (None, ProgramFormat.QASM3):
             ProgramFormat.QIR_ADAPTIVE_STRING,
         )
     factory_job = submit_program(
-        compiled_factory, target=factory_device, num_shots=256, custom1=17
+        compiled_factory, target=factory_device, num_shots=16, custom1=17
     )
     factory_job.wait()
     factory_counts = factory_job.get_counts()
-    assert factory_counts == {"00": 256}
+    assert factory_counts == {"00": 16}
     assert factory.evaluate(factory_counts).success_probability == 1.0
     print(compiled_factory.program_format.name, factory_counts)
 ```

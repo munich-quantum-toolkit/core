@@ -45,9 +45,9 @@ TEST(GenerateProgramTest, SamplesMagicStateDistillation) {
   auto program = test::generateQCO(MagicStateDistillation{});
   ASSERT_TRUE(program);
   auto counts =
-      qco::sample(mlir::mqt::getEntryPoint(program->module()), 256, 17);
+      qco::sample(mlir::mqt::getEntryPoint(program->module()), 16, 17);
   ASSERT_TRUE(succeeded(counts));
-  EXPECT_EQ(*counts, (Counts{{"00", 256}}));
+  EXPECT_EQ(*counts, (Counts{{"00", 16}}));
 }
 
 TEST(GenerateProgramTest, ConcatenatesRetainedMagicStatesInCompactLoops) {

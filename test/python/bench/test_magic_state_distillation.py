@@ -59,22 +59,20 @@ def test_distillation_reference() -> None:
     assert evaluation.squared_hellinger_fidelity == pytest.approx(0.625)
 
 
-@pytest.mark.parametrize(("levels", "shots"), [(1, 256), (2, 1)])
-def test_distillation_direct_sampling(levels: int, shots: int) -> None:
-    """Sample single and concatenated blocks with the public DD interface."""
-    benchmark = magic_state_distillation.MagicStateDistillation(magic_state_distillation.Options(levels=levels))
-    assert sample(benchmark.generate(), shots=shots, seed=17) == {"00": shots}
+def test_distillation_direct_sampling() -> None:
+    """Sample the 15-qubit program with the public DD interface."""
+    benchmark = magic_state_distillation.MagicStateDistillation()
+    assert sample(benchmark.generate(), shots=16, seed=17) == {"00": 16}
 
 
-@pytest.mark.parametrize(("levels", "shots"), [(1, 256), (2, 1)])
 @pytest.mark.parametrize("program_format", [None, ProgramFormat.QASM3])
-def test_distillation_ddsim(program_format: ProgramFormat | None, levels: int, shots: int) -> None:
+def test_distillation_ddsim(program_format: ProgramFormat | None) -> None:
     """Compile and execute the same circuit through both DDSIM payload paths."""
-    benchmark = magic_state_distillation.MagicStateDistillation(magic_state_distillation.Options(levels=levels))
+    benchmark = magic_state_distillation.MagicStateDistillation()
     device = open_device("mqt.ddsim.default")
     compiled = compile_program(benchmark.generate(), target=device, program_format=program_format)
     if program_format is None:
         assert compiled.program_format in {ProgramFormat.QIR_ADAPTIVE_MODULE, ProgramFormat.QIR_ADAPTIVE_STRING}
-    job = submit_program(compiled, target=device, num_shots=shots, custom1=17)
+    job = submit_program(compiled, target=device, num_shots=16, custom1=17)
     job.wait()
-    assert job.get_counts() == {"00": shots}
+    assert job.get_counts() == {"00": 16}

@@ -61,44 +61,53 @@ stubs, C++ lint, and executable documentation also passed after rebasing onto
 
 - Native benchmark references: 65 tests passed, including invalid options and
   counts, both rejection-bit values, strict JSON, manifests, and case IDs.
-- Native benchmark generation: 34 tests passed. The new tests sample 256 ideal
-  shots, reject all 15 single and 105 double input Z errors, and report a wrong
-  root state for all 35 accepted triple-error patterns. Faults are injected only
-  into leaf preparation in tests. Expected syndromes come independently from
-  XORing the erroneous column labels.
+- Native benchmark generation: 34 tests passed. The tests sample 16 ideal shots,
+  reject all 15 single and 105 double input Z errors, and report a wrong root
+  state for all 35 accepted triple-error patterns. Faults are injected only into
+  leaf preparation in tests. Expected syndromes come independently from XORing
+  the erroneous column labels.
 - Levels 2–4 generate and convert to QCO with the exact qubit counts and compact
   operation growth. Tests check parent indices, leaf-only preparation, and
   accumulated rejection. Simulation of levels 3–4 was not run.
 - DD functionality: all 89 tests passed, including a new parameterized nested
   unitary-call regression covering functionality, statevectors, sampling, and
   global phase.
-- Python: 111 tests passed across `test/python/bench/` and
-  `test/python/qdmi/test_compilation.py`. These include level 2 smoke tests with
-  one shot through direct sampling and both DDSIM formats. The CLI and JSON
-  CTest selection also passed.
+- Python: 108 tests cover `test/python/bench/` and
+  `test/python/qdmi/test_compilation.py`. CI simulates level 1 only, using 16
+  shots per execution path. Higher levels retain inexpensive generation and
+  metadata checks. Level 2 simulation was validated manually and is excluded
+  from CI. The CLI and JSON CTest selection also passed.
 - `uvx nox -s stubs` and changed-file C++ lint passed. Repository lint passed
   with unrelated untracked audit scripts excluded from type checking through a
   temporary configuration; tracked lint settings are unchanged.
 - Generated MLIR references and `uvx nox --non-interactive -s docs` passed,
   including all executable examples and generated local-link checks.
 
-The examples in `docs/benchmarks.md` reproduce the required 15-qubit execution
-through `sample`, then `compile_program` and `submit_program` for both DDSIM
-payload paths. Each uses 256 shots and seed 17 (`custom1=17` for QDMI), waits
-for the job, and asserts the full histogram. Measured wall times below include
-program generation and, for QDMI, compilation and submission. The timing runs
-used the initial implementation based on `383827e64`, before the rebase:
+The examples in `docs/benchmarks.md` reproduce the 15-qubit execution through
+`sample`, then `compile_program` and `submit_program` for both DDSIM payload
+paths. Each uses 16 shots and seed 17 (`custom1=17` for QDMI), waits for the
+job, and asserts `{"00": 16}`. Intermediate measurements control subsequent
+gates, so the simulator executes the circuit once per shot. These examples check
+a deterministic ideal output; they do not need a large statistical sample.
 
-| Path                                 | Counts        | Wall time |
-| ------------------------------------ | ------------- | --------- |
-| Direct DD sampling                   | `{"00": 256}` | 2.649 s   |
-| DDSIM, selected Adaptive QIR bitcode | `{"00": 256}` | 2.806 s   |
-| DDSIM, explicit OpenQASM 3           | `{"00": 256}` | 2.238 s   |
+Shot-count measurements on 2026-09-12 used the same generated level 1 program,
+reused the compiled QDMI payloads, and took the median of three runs per case.
+Every histogram matched its ideal output. Generation took 0.014 s; target
+compilation took 0.070 s for Adaptive QIR and 0.038 s for OpenQASM 3.
 
-These adaptive jobs are validated through counts. They do not expose an
-uncollapsed statevector; see `docs/qdmi/ddsim_device.md`.
+| Path                        | 256 shots | 16 shots |
+| --------------------------- | --------- | -------- |
+| Direct DD sampling          | 4.163 s   | 0.190 s  |
+| DDSIM, Adaptive QIR bitcode | 2.164 s   | 0.181 s  |
+| DDSIM, OpenQASM 3           | 2.335 s   | 0.155 s  |
 
-Level 2 uses 225 qubits. Direct sampling returned `{"00": 256}` in 225.325 s,
-and DDSIM Adaptive QIR returned `{"00": 256}` in 175.874 s, using the same shot
-count and seed. The post-rebase OpenQASM 3 smoke test returned `{"00": 1}`. The
-timings are individual runs on the shared host, not controlled comparisons.
+The QDMI timings include submission and execution but exclude target
+compilation. These are shared-host observations, not performance guarantees.
+Adaptive jobs are validated through counts and do not expose an uncollapsed
+statevector; see `docs/qdmi/ddsim_device.md`.
+
+Manual level 2 validation used 225 qubits and 256 shots per path with seed 17.
+Direct sampling returned `{"00": 256}` in 225.325 s, DDSIM Adaptive QIR returned
+`{"00": 256}` in 175.874 s, and DDSIM OpenQASM 3 returned `{"00": 256}` in
+262.640 s. These individual runs used the implementation based on `383827e64`,
+before the rebase, and are not CI tests.

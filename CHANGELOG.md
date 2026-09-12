@@ -10,14 +10,20 @@ releases may include breaking changes.
 
 ## [Unreleased]
 
+### Added
+
+- ✨ Add a 15-to-1 magic-state distillation benchmark with one to four
+  concatenated levels, ideal inputs, and C++, Python, and CLI interfaces.
+  ([#2543]) ([**@burgholzer**])
+
+### Changed
+
 - ✨ Optimize constant two-qubit blocks before placement and during native
   synthesis. Remove cancelled interactions before routing and preserve cheaper
   native operations in both target compilation and synthesis. Avoid redundant
   cleanup in both target pipelines. ([#2537]) ([**@burgholzer**])
 
-- ✨ Add a 15-to-1 magic-state distillation benchmark with one to four
-  concatenated levels, ideal inputs, and C++, Python, and CLI interfaces.
-  ([#2543]) ([**@burgholzer**])
+### Fixed
 
 - 🐛 Execute parameterized unitary calls in DD simulation, including gate
   helpers reimported from compiled OpenQASM. ([#2543]) ([**@burgholzer**])
