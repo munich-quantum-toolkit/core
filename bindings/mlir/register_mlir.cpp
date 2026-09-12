@@ -1202,6 +1202,18 @@ Programs own their MLIR module. Conversions can consume a program; use
           "trials", &mlir::MappingOptions::trials,
           "Positive trial count; None uses the available logical CPU count.");
 
+  nb::class_<mlir::MappingResult>(
+      m, "MappingResult",
+      "Detached input-to-site layout snapshot from native compilation.")
+      .def_ro("allocation_sizes", &mlir::MappingResult::allocationSizes,
+              "Input allocation sizes in entry-block order; tensor slots use "
+              "ascending indices.")
+      .def_ro(
+          "initial_layout", &mlir::MappingResult::initialLayout,
+          "Initial target site ID for each input qubit, including idle qubits.")
+      .def_ro("final_layout", &mlir::MappingResult::finalLayout,
+              "Final target site ID for each input qubit after routing.");
+
   auto qcProgram = nb::class_<mlir::QCProgram, mlir::Program>(
       m, "QCProgram", R"pb(A compiler program in the QC dialect.
 
@@ -1412,6 +1424,35 @@ operations.)pb");
           "Compile this QCO program for the target in place. Do not rely on "
           "its contents if compilation fails. Failures raise RuntimeError "
           "with the emitted MLIR diagnostics.")
+      .def(
+          "compile_for_target_with_layout",
+          [](mlir::QCOProgram& program,
+             const mlir::TargetEnvironment& environment,
+             const std::vector<int64_t>& initialLayout,
+             const mlir::MappingOptions& mapping, bool enableTiming,
+             bool enableStatistics) {
+            requireValid(program);
+            std::optional<mlir::MappingResult> result;
+            withDiagnostics<nb::exception_type::runtime_error>(
+                program.module().getContext(), "Layout compilation failed",
+                [&] {
+                  result = program.compileForTargetWithLayout(
+                      environment, initialLayout, mapping, enableTiming,
+                      enableStatistics);
+                  return mlir::success(result.has_value());
+                });
+            return std::move(*result);
+          },
+          "target_environment"_a, nb::kw_only(),
+          "initial_layout"_a = std::vector<int64_t>{},
+          "mapping"_a = mlir::MappingOptions{}, "enable_timing"_a = false,
+          "enable_statistics"_a = false,
+          "Compile in place and return initial and final site assignments. "
+          "Input allocations must have fixed sizes in the entry block. "
+          "An empty initial_layout selects automatic placement; otherwise "
+          "supply one distinct target site ID per input qubit. This preserves "
+          "idle input wires. The returned snapshot is not updated by later "
+          "transformations. Do not rely on program contents after failure.")
       .def(
           "synthesize_for_target",
           [](mlir::QCOProgram& program,

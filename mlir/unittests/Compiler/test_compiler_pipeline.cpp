@@ -2092,6 +2092,84 @@ TEST_F(CompilerPipelineTest, TargetPipelineForwardsMappingControls) {
   EXPECT_NE(pipeline.find("ntrials=3"), std::string::npos);
 }
 
+TEST_F(CompilerPipelineTest, TargetLayoutPreservesScalarAllocationOrder) {
+  auto program = QCOProgram::fromMLIRString(R"mlir(module {
+    func.func @main() attributes {mqt.entry_point} {
+      %first = qco.alloc : !qco.qubit
+      %idle = qco.alloc : !qco.qubit
+      %last = qco.alloc : !qco.qubit
+      %last1 = qco.x %last : !qco.qubit -> !qco.qubit
+      %first1 = qco.h %first : !qco.qubit -> !qco.qubit
+      qco.sink %first1 : !qco.qubit
+      qco.sink %idle : !qco.qubit
+      qco.sink %last1 : !qco.qubit
+      return
+    }
+  })mlir");
+  ASSERT_TRUE(program);
+  auto target = llvm::cantFail(
+      CompilerTarget::create(3, CompilerTarget::Connectivity::allToAll(),
+                             CompilerTarget::NativeOperations::unrestricted()));
+  auto result = program->compileForTargetWithLayout(
+      TargetEnvironment(target, makePayloadSpecification()), {2, 0, 1});
+  ASSERT_TRUE(result);
+  EXPECT_EQ(result->allocationSizes, (std::vector<size_t>{1, 1, 1}));
+  EXPECT_EQ(result->initialLayout, (std::vector<int64_t>{2, 0, 1}));
+  EXPECT_EQ(result->finalLayout, result->initialLayout);
+  EXPECT_EQ(program->str().find("layout_boundary"), std::string::npos);
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
+}
+
+TEST_F(CompilerPipelineTest, FailedTargetLayoutDoesNotPublishResult) {
+  auto qc = QCProgram::fromOpenQASMString("OPENQASM 3.1; qubit[2] q;");
+  ASSERT_TRUE(qc);
+  auto program = std::move(*qc).intoQCO();
+  ASSERT_TRUE(program);
+  auto target = llvm::cantFail(
+      CompilerTarget::create(2, CompilerTarget::Connectivity::allToAll(),
+                             CompilerTarget::NativeOperations::unrestricted()));
+  MappingResult result{
+      .allocationSizes = {7},
+      .initialLayout = {8},
+      .finalLayout = {9},
+  };
+  PassManager pm(program->module().getContext());
+  populateTargetCompilationWithLayoutPipeline(
+      pm, TargetEnvironment(target, makePayloadSpecification()), result,
+      {0, 0});
+  EXPECT_TRUE(failed(pm.run(program->module())));
+  EXPECT_EQ(result.allocationSizes, (std::vector<size_t>{7}));
+  EXPECT_EQ(result.initialLayout, (std::vector<int64_t>{8}));
+  EXPECT_EQ(result.finalLayout, (std::vector<int64_t>{9}));
+}
+
+TEST_F(CompilerPipelineTest, FailedTargetSynthesisDoesNotPublishLayout) {
+  auto qc = QCProgram::fromOpenQASMString(
+      "OPENQASM 3.1; include \"stdgates.inc\"; qubit q; x q;");
+  ASSERT_TRUE(qc);
+  auto program = std::move(*qc).intoQCO();
+  ASSERT_TRUE(program);
+  auto target = llvm::cantFail(CompilerTarget::create(
+      1, CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::fromOperations({llvm::cantFail(
+          CompilerTarget::OperationCapability::create("h", 1, 0))})));
+  MappingResult result{
+      .allocationSizes = {7},
+      .initialLayout = {8},
+      .finalLayout = {9},
+  };
+  PassManager pm(program->module().getContext());
+  populateTargetCompilationWithLayoutPipeline(
+      pm, TargetEnvironment(target, makePayloadSpecification()), result, {0});
+  EXPECT_TRUE(failed(pm.run(program->module())));
+  /// Placement finished, but the target cannot synthesize the X operation.
+  EXPECT_EQ(program->str().find("qco.alloc"), std::string::npos);
+  EXPECT_NE(program->str().find("qco.static"), std::string::npos);
+  EXPECT_EQ(result.allocationSizes, (std::vector<size_t>{7}));
+  EXPECT_EQ(result.initialLayout, (std::vector<int64_t>{8}));
+  EXPECT_EQ(result.finalLayout, (std::vector<int64_t>{9}));
+}
+
 // Test: target compilation decomposes, maps, synthesizes, and verifies.
 TEST_F(CompilerPipelineTest, QCOProgramCompilesForTarget) {
   auto qc = QCProgram::fromOpenQASMString(qasm::multipleControlledX);

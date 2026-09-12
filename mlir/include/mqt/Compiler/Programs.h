@@ -16,6 +16,8 @@
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OwningOpRef.h"
 
+#include "llvm/ADT/ArrayRef.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -275,6 +277,17 @@ public:
                                       bool enableTiming = false,
                                       bool enableStatistics = false,
                                       const MappingOptions& mapping = {});
+
+  /// Compile in place and return a snapshot of the input-to-site layouts.
+  ///
+  /// See populateTargetCompilationWithLayoutPipeline for the input contract.
+  /// Do not rely on the program contents if compilation fails.
+  [[nodiscard]] std::optional<MappingResult>
+  compileForTargetWithLayout(const TargetEnvironment& environment,
+                             llvm::ArrayRef<int64_t> initialLayout = {},
+                             const MappingOptions& mapping = {},
+                             bool enableTiming = false,
+                             bool enableStatistics = false);
 
   /// Synthesize native operations for an all-to-all target in place.
   ///

@@ -424,3 +424,53 @@ and creates a canonical physical Qiskit circuit. The circuit has one register
 named {code}`q` with {py:attr}`~mqt.core.mlir.CompilerTarget.num_sites` qubits.
 This option does not run target compilation or emit Qiskit layout metadata.
 Target-aware export requires static qubits whose site IDs belong to that target.
+
+## Initial and final qubit layouts
+
+Use `QCOProgram.compile_for_target_with_layout` when a caller needs to choose
+placement or interpret logical outputs after native routing:
+
+```python
+from mqt.core.mlir import MappingOptions, QCProgram
+
+program = QCProgram.from_openqasm_str(bell_qasm).to_qco()
+layout = program.compile_for_target_with_layout(
+    environment,
+    initial_layout=[0, 2],
+    mapping=MappingOptions(seed=42, trials=4),
+)
+print(layout.initial_layout)
+print(layout.final_layout)
+```
+
+Here `environment` is a `TargetEnvironment` whose target contains sites `0` and
+`2` and supports the circuit. `initial_layout` is a complete list of distinct
+**target site IDs**, not indices into `target.sites`. Omit it or pass an empty
+list for automatic placement. A supplied layout fixes initial placement; seed
+and trial count then do not affect layout search. Routing can still insert SWAPs
+and change the final placement.
+
+Both result lists index qubits in allocation order in the input entry block,
+with each tensor flattened in ascending slot order. `allocation_sizes` records
+the allocation boundaries. For two tensors of sizes two and one, the result
+order is `[first[0], first[1], second[0]]`, even if the circuit uses `second[0]`
+first. Classical measurement destinations retain their existing semantics.
+
+This API preserves idle input slots during preparation. They count against
+target capacity. It accepts fixed-size local allocations in the entry block;
+dynamic, nested, and already physical allocations are rejected. Tracking starts
+at this call: it cannot recover qubits removed by an earlier cleanup or reuse
+pass. Malformed layouts raise an error. As with ordinary target compilation, do
+not rely on program contents after failure.
+
+The returned `MappingResult` is a detached snapshot of that compilation.
+Subsequent program edits, cleanup, or reuse do not update it. The compiler does
+not attach persistent layout metadata to the IR, and serialization does not
+embed the snapshot. This API does not import or construct SDK layout objects.
+Partial layout constraints and SDK layout interchange remain future work.
+
+The C++ equivalents are `QCOProgram::compileForTargetWithLayout` and
+`populateTargetCompilationWithLayoutPipeline`. The latter writes its result only
+after the pipeline succeeds; the caller must keep that result alive for the pass
+manager's lifetime. The existing target compilation API retains its current
+behavior and does not preserve idle input slots for layout reporting.

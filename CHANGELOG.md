@@ -10,6 +10,11 @@ releases may include breaking changes.
 
 ## [Unreleased]
 
+- ✨ Add native target compilation with an optional complete initial layout and
+  a detached report of initial and final input-to-site assignments. Preserve
+  idle input slots and diagnose unsupported allocation forms.
+  ([**@simon1hofmann**])
+
 - ✨ Expose native mapping seeds and trial counts through `MappingOptions` in
   C++ and Python target compilation, and through `--mapping-seed` and
   `--mapping-trials` in `mqt-cc`. Existing defaults remain unchanged. ([#2551])
