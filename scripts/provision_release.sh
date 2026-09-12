@@ -32,7 +32,12 @@ tar -xf "$root/sdk-tools.tar.gz" -C "$root/sdk-tools" --strip-components=1
 curl --fail --location --retry 3 \
   "https://github.com/llvm/llvm-project/archive/$llvm_revision.tar.gz" -o "$root/llvm-source.tar.gz"
 tar -xf "$root/llvm-source.tar.gz" -C "$root/llvm-source" --strip-components=1
-shasum -a 256 "$root/sdk-tools.tar.gz" "$root/llvm-source.tar.gz" > "$root/sources.sha256"
+python - "$root/sdk-tools.tar.gz" "$root/llvm-source.tar.gz" > "$root/sources.sha256" <<'PYTHON'
+import hashlib, sys
+for name in sys.argv[1:]:
+    with open(name, "rb") as stream:
+        print(hashlib.file_digest(stream, "sha256").hexdigest(), name)
+PYTHON
 printf '%s\n' "$llvm_revision" > "$root/llvm-revision"
 rm "$root/sdk-tools.tar.gz" "$root/llvm-source.tar.gz"
 
