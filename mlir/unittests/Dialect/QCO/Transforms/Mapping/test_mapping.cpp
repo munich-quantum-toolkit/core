@@ -2623,6 +2623,84 @@ TEST_F(MappingPassFixture, PreserveInteractionPathBasisStates) {
   }
 }
 
+TEST_F(MappingPassFixture, PreserveBasisStatesWithTinySearchMemory) {
+  context->disableMultithreading();
+  const auto lineTarget = llvm::cantFail(CompilerTarget::create(
+      6, Connectivity::fromCouplings({{0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 5}}),
+      NativeOperations::unrestricted()));
+  const SmallVector<std::pair<size_t, size_t>> interactions{
+      {5, 0}, {0, 3}, {3, 1}, {1, 4}, {4, 2}, {2, 5}, {2, 0},
+  };
+  for (bool structured : {false, true}) {
+    SCOPED_TRACE(structured);
+    for (bool xBasis : {false, true}) {
+      SCOPED_TRACE(xBasis);
+      for (size_t basis = 0; basis < 64; ++basis) {
+        SCOPED_TRACE(basis);
+        auto input = QCOProgramBuilder::build(
+            context.get(), [&](QCOProgramBuilder& builder) {
+              auto bits = builder.allocClassicalBitRegister(6);
+              SmallVector<Value> qubits;
+              for (size_t i = 0; i < 6; ++i) {
+                Value qubit = builder.allocQubit();
+                if ((basis & (size_t{1} << i)) != 0) {
+                  qubit = builder.x(qubit);
+                }
+                qubits.push_back(xBasis ? builder.h(qubit) : qubit);
+              }
+              const auto body = [&](ValueRange args) {
+                SmallVector<Value> result(args);
+                for (const auto& [a, b] : interactions) {
+                  std::tie(result[a], result[b]) =
+                      builder.cx(result[a], result[b]);
+                }
+                return result;
+              };
+              qubits =
+                  structured
+                      ? llvm::to_vector(builder.scfFor(
+                            0, 3, 1, qubits,
+                            [&](Value, ValueRange args) { return body(args); }))
+                      : body(qubits);
+              for (size_t i = 0; i < qubits.size(); ++i) {
+                if (xBasis) {
+                  qubits[i] = builder.h(qubits[i]);
+                }
+                std::tie(qubits[i], std::ignore) =
+                    builder.measure(qubits[i], bits, static_cast<int64_t>(i));
+                builder.sink(qubits[i]);
+              }
+              return bits;
+            });
+        ASSERT_TRUE(succeeded(verify(*input)));
+        ASSERT_TRUE(succeeded(verifyLinearity(*input)));
+        const auto expected = qco::sample(getEntryPoint(*input), 1, 42);
+        ASSERT_TRUE(succeeded(expected));
+        for (const auto& target : {lineTarget, getSquareGridTarget(3)}) {
+          SCOPED_TRACE(target.numSites());
+          for (const size_t bytes : {size_t{0}, size_t{1024}}) {
+            SCOPED_TRACE(bytes);
+            OwningOpRef<ModuleOp> moduleOp = input->clone();
+            ASSERT_TRUE(succeeded(runPass(
+                *moduleOp, target,
+                MappingPassOptions{.ntrials = 1, .searchMemoryLimit = bytes})));
+            ASSERT_TRUE(succeeded(verify(*moduleOp)));
+            EXPECT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+            EXPECT_TRUE(isExecutable(getEntryPoint(*moduleOp), target));
+            const auto actual = qco::sample(getEntryPoint(*moduleOp), 1, 42);
+            ASSERT_TRUE(succeeded(actual));
+            EXPECT_EQ(*actual, *expected);
+            size_t swaps = 0;
+            moduleOp->walk([&](SWAPOp) { ++swaps; });
+            /// The logical triangle cannot embed in either bipartite target.
+            EXPECT_GT(swaps, 0);
+          }
+        }
+      }
+    }
+  }
+}
+
 TEST_F(MappingPassFixture, RetainRawGreedyLayoutWhenRefinementWorsensIt) {
   const auto target = getSquareGridTarget(2);
   QCOProgramBuilder builder(context.get());

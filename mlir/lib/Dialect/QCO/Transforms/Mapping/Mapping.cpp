@@ -1135,22 +1135,15 @@ private:
     return best->bundle.layout;
   }
 
-  /// Perform A* search to find a sequence of SWAPs that makes all two-qubit ops
-  /// inside the first layer executable.
-  ///
-  /// The iteration budget is b^{3} node expansions, i.e. roughly a depth-3
-  /// search in a tree with branching factor b, where b is the product of the
-  /// architecture's maximum qubit degree and the maximum number of two-qubit
-  /// gates in any layer: `b = maxDegree × ⌈N/2⌉`. A hard cap prevents
-  /// impractical runtimes on larger architectures.
-  ///
-  /// Returns `failure`, if the A* search fails.
-  FailureOr<SmallVector<IndexPairType>> search(const Window& window,
-                                               const Layout& layout) const {
-    constexpr size_t cap = 25'000'000UL;
-
-    const size_t b = target->maxDegree() * ((target->numSites() + 1) / 2);
-    const size_t budget = std::min(b * b * b, cap);
+  /// Route the leading interaction with bounded A* node storage.
+  /// Drain queued states at the limit, then use distance-reducing SWAPs.
+  [[nodiscard]] SmallVector<IndexPairType> search(const Window& window,
+                                                  const Layout& layout) const {
+    /// Estimate retained node and layout storage; keep at least the root.
+    const size_t nodeBytes =
+        sizeof(Node) + 2 * target->numSites() * sizeof(size_t);
+    const size_t nodeBudget =
+        std::max<size_t>(1, searchMemoryLimit.getValue() / nodeBytes);
 
     const Parameters params{.alpha = alpha, .lambda = lambda};
 
@@ -1169,8 +1162,8 @@ private:
     DenseMap<ArrayRef<size_t>, size_t> bestDepth;
     SmallVector<IndexPairType, 6> expansionSet;
 
-    size_t i = 0;
-    while (!frontier.empty() && i < budget) {
+    size_t nodes = 1;
+    while (!frontier.empty()) {
       Node* curr = frontier.top();
       frontier.pop();
 
@@ -1184,7 +1177,6 @@ private:
       if (!inserted) {
         if (const auto otherDepth = it->getSecond();
             curr->depth >= otherDepth) {
-          ++i;
           continue;
         }
 
@@ -1214,20 +1206,45 @@ private:
         target->forEachNeighbour(hw0, [&](const auto hw1) {
           // Ensure consistent hashing/comparison.
           const IndexPairType swap = std::minmax(hw0, hw1);
-          if (is_contained(expansionSet, swap)) {
+          if (nodes >= nodeBudget || is_contained(expansionSet, swap)) {
             return;
           }
           expansionSet.push_back(swap);
 
           frontier.emplace(std::construct_at(arena.Allocate(), curr, swap,
                                              window, *target, params));
+          ++nodes;
         });
       }
-
-      ++i;
     }
 
-    return failure();
+    /// A connected target always permits a SWAP that brings the pair closer.
+    /// ponytail: Greedy completion can cost later gates; increase the search
+    /// budget when routing quality matters more than memory use.
+    SmallVector<IndexPairType> swaps;
+    Node current(layout);
+    const auto [q0, q1] = window.front();
+    while (!current.isGoal(window.front(), *target)) {
+      const auto [a, b] = current.layout.getHardwareIndices(q0, q1);
+      const auto distance = target->distanceBetween(a, b);
+      std::optional<Node> best;
+      for (const auto [from, to] : {IndexPairType{a, b}, IndexPairType{b, a}}) {
+        target->forEachNeighbour(from, [&](size_t next) {
+          if (target->distanceBetween(next, to) >= distance) {
+            return;
+          }
+          Node candidate(&current, std::minmax(from, next), window, *target,
+                         params);
+          if (!best || candidate.f < best->f) {
+            best = std::move(candidate);
+          }
+        });
+      }
+      assert(best && "connected target must have a distance-reducing edge");
+      swaps.push_back(best->swap);
+      current.layout = std::move(best->layout);
+    }
+    return swaps;
   }
 
   /// Return the SWAP sequence to move from one layout to another.
@@ -2004,9 +2021,8 @@ private:
   /// Iterates over a dynamically computed window of layers and uses A* search
   /// to find a SWAP sequence that makes each layer executable. Depending on
   /// the template parameter, this function only updates the layout or also
-  /// inserts the SWAPs into the IR. Returns `FailureOr<Statistics>` containing
-  /// the accumulated statistics on success, or `failure` if A* is unable to
-  /// find a solution.
+  /// inserts the SWAPs into the IR. Returns the accumulated statistics, or
+  /// failure if routing a nested operation fails.
   template <WireDirection Direction, RoutingMode Mode = RoutingMode::Cold>
     requires(Mode != RoutingMode::Hot || Direction == WireDirection::Forward)
   FailureOr<Statistics> route(RoutingBundle& bundle,
@@ -2049,9 +2065,6 @@ private:
       }
 
       const auto swaps = search(window, layout);
-      if (failed(swaps)) {
-        return failure();
-      }
 
       if constexpr (Mode == RoutingMode::Hot) {
 
@@ -2063,7 +2076,7 @@ private:
         for_each(wires, [](auto& it) { std::ranges::advance(it, -1); });
       }
 
-      insertSWAPs<Mode>(*swaps, bundle, stats, rewriter);
+      insertSWAPs<Mode>(swaps, bundle, stats, rewriter);
 
       if constexpr (Mode == RoutingMode::Hot) {
 
