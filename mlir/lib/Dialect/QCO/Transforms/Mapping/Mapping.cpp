@@ -879,11 +879,12 @@ private:
     return iterator.qubit();
   }
 
-  /// Place frequently interacting program qubits near each other.
+  /// Return an initial layout and whether identity needs no routing.
   ///
-  /// Nested control flow has no single interaction frequency, so leave those
-  /// programs to the identity and random starts.
-  [[nodiscard]] std::optional<Layout>
+  /// Otherwise, place frequently interacting qubits near each other. Nested
+  /// control flow has no single interaction frequency, so leave those programs
+  /// to the identity and random starts.
+  [[nodiscard]] std::optional<std::pair<Layout, bool>>
   generateGreedyLayout(Wires wires, const WireInfos& infos) const {
     DenseMap<IndexPairType, size_t> weights;
     bool supported = true;
@@ -904,8 +905,14 @@ private:
           }
           return WalkResult::advance();
         });
-    if (!supported || weights.empty()) {
+    if (!supported) {
       return std::nullopt;
+    }
+    if (llvm::all_of(weights, [&](const auto& interaction) {
+          const auto [a, b] = interaction.first;
+          return target->areAdjacent(a, b);
+        })) {
+      return std::pair{Layout::identity(target->numSites()), true};
     }
 
     const size_t nprogram = infos.size();
@@ -978,7 +985,7 @@ private:
         mapping[prog++] = hw;
       }
     }
-    return Layout::fromMapping(mapping);
+    return std::pair{Layout::fromMapping(mapping), false};
   }
 
   /// Refine identity, random, and greedy starts with forward/backward routing.
@@ -986,6 +993,10 @@ private:
   /// Score each candidate with a forward traversal, preserving its start
   /// layout.
   FailureOr<Layout> generateLayout(const Wires& wires, const WireInfos& infos) {
+    const auto greedy = generateGreedyLayout(wires, infos);
+    if (greedy && greedy->second) {
+      return greedy->first;
+    }
     std::mt19937_64 rng{seed};
 
     struct Trial {
@@ -1008,12 +1019,21 @@ private:
           },
           niterations);
     }
-    if (const auto greedy = generateGreedyLayout(wires, infos)) {
+    if (greedy) {
       trials.emplace_back(
-          RoutingBundle{.wires = wires, .infos = infos, .layout = *greedy},
+          RoutingBundle{
+              .wires = wires,
+              .infos = infos,
+              .layout = greedy->first,
+          },
           niterations);
       trials.emplace_back(
-          RoutingBundle{.wires = wires, .infos = infos, .layout = *greedy}, 0);
+          RoutingBundle{
+              .wires = wires,
+              .infos = infos,
+              .layout = greedy->first,
+          },
+          0);
     }
 
     parallelForEach(&getContext(), trials, [&, this](Trial& t) {

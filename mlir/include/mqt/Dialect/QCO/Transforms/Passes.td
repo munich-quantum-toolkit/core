@@ -211,7 +211,11 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     made during that traversal. By performing multiple traversals, the pass can iteratively refine the mapping and
     potentially find a more optimal solution. This behavior is controlled by the `niterations` parameter.
 
-    The pass option `ntrials` determines the number of initial refinement trials:
+    Programs without nested control flow keep the identity layout immediately
+    when all two-qubit interactions are already adjacent on the target.
+    This avoids constructing and refining alternative layouts.
+
+    Otherwise, the pass option `ntrials` determines the number of initial refinement trials:
     one identity layout and the remaining layouts chosen randomly.
     It defaults to the number of available logical CPUs reported by LLVM, taking
     CPU affinity into account, with a minimum of one. Disabling multithreading
