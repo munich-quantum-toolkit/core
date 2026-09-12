@@ -53,6 +53,8 @@ function(add_mqt_python_binding package_name target_name)
 
   # Keep statically linked dependencies local.
   if(APPLE)
+    # Restore the Python module namespace changed by HandleLLVMOptions, as in AddMLIRPython.
+    target_link_options(${target_name} PRIVATE "LINKER:-twolevel_namespace")
     target_link_options(${target_name} PRIVATE "LINKER:-exported_symbol,_PyInit_${module_name}")
   elseif(UNIX)
     target_link_options(${target_name} PRIVATE "LINKER:--exclude-libs,ALL")
