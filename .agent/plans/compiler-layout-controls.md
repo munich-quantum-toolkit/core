@@ -1,36 +1,51 @@
 # Native compiler layout controls
 
-Status: in progress; implementation and validation remain.
+Status: complete.
 
-## Contract and ownership
+## Outcome and scope
 
-Add a native target compilation API that returns initial and final target site
-IDs in input allocation order and accepts an optional complete initial layout.
-The compiler owns tracking and routing; this change uses no Qiskit code. The
-result is a detached compilation snapshot, so later transformations cannot
-silently leave stale layout metadata attached to an IR module.
+`QCOProgram::compileForTargetWithLayout` and its Python binding compile in place
+and return initial and final target site IDs in input allocation order. The
+caller can supply a complete initial layout or select automatic placement with
+`MappingOptions`. The low-level pipeline publishes its result after target
+conformance succeeds. Failed preparation or synthesis leaves the caller's prior
+result unchanged.
 
-Support fixed-size allocations in the entry block, flattened in block order and
-ascending tensor index. Preserve idle input wires during this opt-in pipeline.
-Reject dynamic, nested, or already physical allocations, and malformed layouts.
-The ordinary compilation API keeps its current optimization behavior.
+The compiler owns tracking and routing. No SDK code is used. Input allocations
+must have fixed sizes in the entry block. Tensor slots follow ascending index
+order, and idle slots remain represented and count against target capacity. The
+ordinary compilation API retains its existing optimization behavior.
 
-## Design
+## Decisions
 
-Insert temporary tagged barriers at allocation boundaries before cleanup. They
-keep tensor slots live and identify source wire order even if extraction order
-changes. The native mapper consumes the tags, records its initial and final
-layouts, and removes the barriers before native synthesis. A final pass
-publishes the result only after target conformance succeeds. No persistent IR
-layout attribute or SDK-specific state is introduced.
+`MappingResult` is a detached compilation snapshot rather than persistent IR
+metadata. Later transformations cannot silently leave stale layout attributes
+attached to the program. Callers retain the snapshot only for the compilation
+that produced it.
 
-The new API does not import or export SDK layout objects, model partial layouts,
-or track resource changes before this compilation call. This is a focused native
-foundation for consumers such as Bench, not the entire layout interchange issue.
+Preparation inserts temporary tagged barriers before cleanup. They keep tensor
+slots live and identify source order even when first-use order differs.
+Canonicalization preserves these boundaries until the native mapper consumes
+them. Mapping records its initial and final layouts and removes the boundaries
+before native synthesis. The implementation lives in the QCO mapping subsystem;
+the compiler pipeline and bindings expose the result without recreating
+tracking.
 
-## Remaining work
+## Validation and limits
 
-- Implement preparation, mapping selection, reporting, and Python access.
-- Test forced routing, idle wires, sparse sites, allocation order, rejection,
-  and semantic equivalence without using another compiler.
-- Build, generate stubs, run repository/native checks, and open the draft PR.
+The compiler bindings, native DD simulation, and translation suites pass all 516
+selected Python cases, with both bundled device providers available. The final
+rebuilt extension passes all 26 layout regressions. All 40 native target and
+mapping tests pass. Builds, generated stubs, repository lint, and changed-file
+C++ lint pass.
+
+Regressions cover complex-amplitude equivalence, forced routing through unused
+sites, measurement feedback, sparse site IDs, idle slots, scalar and tensor
+allocation order, empty inputs, malformed layouts, and failure publication. The
+documented example runs successfully.
+
+Tracking starts at the compilation call; it cannot recover earlier resource
+changes. Dynamic, nested, and already physical allocations are unsupported.
+Partial layout constraints, SDK layout interchange, CLI layout input, and
+snapshot serialization remain outside this change. Existing target and payload
+limitations still apply.
