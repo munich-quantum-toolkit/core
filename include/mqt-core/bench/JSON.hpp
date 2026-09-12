@@ -21,6 +21,7 @@
 #include "bench/QPE.hpp"
 #include "bench/RepeatUntilSuccess.hpp"
 #include "bench/Teleportation.hpp"
+#include "bench/WState.hpp"
 #include "bench/mqt_core_bench_export.h"
 
 #include <cstddef>

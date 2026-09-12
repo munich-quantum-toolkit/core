@@ -12,7 +12,11 @@ add_subdirectory(programs)
 add_library(MQTBenchmarkGenerate STATIC Generate.cpp)
 add_library(MQT::CoreBenchGenerate ALIAS MQTBenchmarkGenerate)
 target_link_libraries(MQTBenchmarkGenerate PUBLIC MQTBenchmarkPrograms MQTCompilerPipeline)
+# The JSON adapter calls CoreBench's throwing validation API. Let those errors reach the caller's
+# handler; the program emitters keep LLVM's default policy.
+set(LLVM_REQUIRES_EH ON)
 mqt_mlir_target_use_project_options(MQTBenchmarkGenerate)
+unset(LLVM_REQUIRES_EH)
 
 # The executable that generates and evaluates configured benchmarks.
 add_executable(mqt-core-bench MQTCoreBench.cpp)

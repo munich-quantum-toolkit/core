@@ -21,6 +21,7 @@
 #include "bench/QPE.hpp"
 #include "bench/RepeatUntilSuccess.hpp"
 #include "bench/Teleportation.hpp"
+#include "bench/WState.hpp"
 
 #include "SHA256.hpp"
 
@@ -190,11 +191,7 @@ void rejectUnknownKeys(const Json& value,
       (!value.is_number_integer() || value.get<int64_t>() < 0)) {
     fail(source, pointer, "must be a non-negative integer");
   }
-  try {
-    return value.get<uint64_t>();
-  } catch (const Json::exception&) {
-    fail(source, pointer, "must fit an unsigned 64-bit integer");
-  }
+  return value.get<uint64_t>();
 }
 
 [[nodiscard]] size_t sizeValue(const Json& value, const std::string_view source,
@@ -345,6 +342,18 @@ parseModularMultiplierParameters(const Json& parameters,
             required(parameters, "multiplicand", source, "$/parameters"),
             source, "$/parameters/multiplicand"),
         .control = control.front(),
+    });
+  });
+}
+
+[[nodiscard]] WState parseWStateParameters(const Json& parameters,
+                                           const std::string_view source) {
+  rejectUnknownKeys(parameters, {"qubits"}, source, "$/parameters");
+  return constructBenchmark(source, [&] {
+    return WState({
+        .qubits =
+            sizeValue(required(parameters, "qubits", source, "$/parameters"),
+                      source, "$/parameters/qubits"),
     });
   });
 }
@@ -571,6 +580,10 @@ parseTeleportationParameters(const Json& parameters,
   };
 }
 
+[[nodiscard]] Json parametersJSON(const WState& benchmark) {
+  return {{"qubits", benchmark.options().qubits}};
+}
+
 [[nodiscard]] Json parametersJSON(const GHZ& benchmark) {
   const auto& options = benchmark.options();
   return {
@@ -664,6 +677,10 @@ parseTeleportationParameters(const Json& parameters,
 [[nodiscard]] Json referenceJSON(const ModularMultiplier& benchmark) {
   return analyticReferenceJSON(benchmark.output(), "modular_multiplier",
                                benchmark.expectedResult());
+}
+
+[[nodiscard]] Json referenceJSON(const WState& benchmark) {
+  return analyticReferenceJSON(benchmark.output(), "w_state");
 }
 
 [[nodiscard]] Json referenceJSON(const GHZ& benchmark) {
@@ -862,6 +879,27 @@ template <class Benchmark>
       },
       {"required", {"multiplier", "modulus", "multiplicand"}},
       {"type", "object"},
+  });
+}
+
+[[nodiscard]] Json wStateInstanceSpecificationSchema() {
+  return baseInstanceSpecificationSchema<WState>({
+      {"additionalProperties", false},
+      {"type", "object"},
+      {"required", {"qubits"}},
+      {
+          "properties",
+          {
+              {
+                  "qubits",
+                  {
+                      {"type", "integer"},
+                      {"minimum", 1},
+                      {"maximum", std::numeric_limits<int64_t>::max()},
+                  },
+              },
+          },
+      },
   });
 }
 

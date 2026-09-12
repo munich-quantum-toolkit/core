@@ -264,6 +264,54 @@ Before evaluation, normalize backend results to the manifest's big-endian
 
 ## Benchmark families
 
+### W-state preparation
+
+The `w-state` family prepares the equal, positive-amplitude superposition of all
+single-excitation states:
+
+```{math}
+|W_n\rangle = \frac{1}{\sqrt n}\sum_{j=0}^{n-1}|2^j\rangle.
+```
+
+The required `qubits` parameter is positive. The circuit initializes qubit zero
+to one. Each preparation step applies controlled RY from qubit $i$ to $i+1$ with
+angle $2\arccos(1/\sqrt{n-i})$, then CX in the reverse direction. Angles are
+precomputed in a tensor, and an `scf.for` loop retains the sweep in structured
+IR. All qubits are measured in Z; result bit $i$ is qubit $i$. Circuit
+dimensions must fit signed 64-bit indices and angle storage.
+
+The ideal probability is $1/n$ for each single-excitation bitstring and zero
+otherwise. The existing counts evaluator compares observations with this
+analytic distribution:
+
+```{code-cell} ipython3
+from mqt.core import mlir
+from mqt.core.bench import w_state
+
+w = w_state.WState(w_state.Options(qubits=3))
+counts = mlir.sample(w.generate(), shots=4096, seed=17)
+assert set(counts) == {"001", "010", "100"}
+assert w.evaluate(counts).total_variation_distance < 0.03
+assert w.probability("010") == 1 / 3
+```
+
+Generation and DD sampling also support this 4,096-qubit example without dense
+statevector extraction. Runtime and memory depend on the intermediate DDs.
+
+```{code-cell} ipython3
+large_w = w_state.WState(w_state.Options(qubits=4096))
+large_program = large_w.generate()
+large_counts = mlir.sample(large_program, shots=64, seed=17)
+assert large_program.is_valid
+assert sum(large_counts.values()) == 64
+assert all(len(outcome) == 4096 and outcome.count("1") == 1 for outcome in large_counts)
+```
+
+The QCO DD interpreter shares a 100-million-step budget across loops, branches,
+and calls. It rejects an `scf.for` whose resolved trip count already exceeds the
+remaining budget, while nested control flow and `while` loops retain per-step
+accounting.
+
 ### QFT addition
 
 The `qft-adder` family adds two equal-width operands. `REGISTER` stores the
