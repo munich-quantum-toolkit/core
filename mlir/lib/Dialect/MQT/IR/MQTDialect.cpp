@@ -789,7 +789,8 @@ MQTDialect::verifyOperationAttribute(Operation* operation,
     }
     return verifyParameterGroup(operation, attribute.getValue());
   }
-  if (attribute.getName() == InputNameAttrHelper::getNameStr()) {
+  if (attribute.getName() == InputNameAttrHelper::getNameStr() ||
+      attribute.getName() == InputIdAttrHelper::getNameStr()) {
     return operation->emitError()
            << "attribute '" << attribute.getName().getValue()
            << "' is only valid on a function argument";
@@ -803,6 +804,7 @@ LogicalResult MQTDialect::verifyRegionArgAttribute(
     const NamedAttribute attribute) {
   const auto attributeName = attribute.getName();
   if (attributeName != InputNameAttrHelper::getNameStr() &&
+      attributeName != InputIdAttrHelper::getNameStr() &&
       attributeName != ParameterGroupAttrHelper::getNameStr()) {
     return operation->emitError()
            << "attribute '" << attribute.getName().getValue()
@@ -816,6 +818,23 @@ LogicalResult MQTDialect::verifyRegionArgAttribute(
            << "' requires a function entry-block argument";
   }
 
+  if (attributeName == InputIdAttrHelper::getNameStr()) {
+    const auto id = dyn_cast<IntegerAttr>(attribute.getValue());
+    if (!id || !id.getType().isSignlessInteger(128)) {
+      return operation->emitError("input identity must be an i128 attribute");
+    }
+    if (!function.getArgAttrOfType<StringAttr>(
+            argIndex, InputNameAttrHelper::getNameStr())) {
+      return operation->emitError("input identity requires an input name");
+    }
+    for (unsigned index = 0; index < function.getNumArguments(); ++index) {
+      if (index != argIndex &&
+          function.getArgAttr(index, attributeName) == id) {
+        return operation->emitError("duplicate input identity");
+      }
+    }
+    return success();
+  }
   if (attributeName == ParameterGroupAttrHelper::getNameStr()) {
     return verifyInputGroup(function, operation, argIndex,
                             attribute.getValue());

@@ -6,6 +6,12 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+Qiskit exports now preserve imported free parameter identities, so callers can
+bind with their original `Parameter` or `ParameterVector` objects. Remove
+name-based rebinding workarounds when requiring a Core version with this fix.
+Newly imported MLIR can contain `mqt.input_id` attributes; older Core versions
+cannot read that new metadata. Existing IR without IDs remains supported.
+
 ## [4.0.0]
 
 ### Migrating from MQT Core 3 to 4

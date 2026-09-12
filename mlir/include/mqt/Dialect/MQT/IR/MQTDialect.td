@@ -24,6 +24,11 @@ def MQTDialect : Dialect {
     across quantum dialect conversions. It defines no operations or types.
 
     `mqt.input_name` records the source-level name of a function input.
+    `mqt.input_id` optionally records an opaque 128-bit source identity on a
+    named function input. It is an `i128` attribute, unique within the function;
+    every bit pattern is valid. Transformations carry it with the input and
+    remove it when removing the input. It does not identify an SSA value or
+    change execution semantics.
     `mqt.source_name` records a source-level function name when the IR symbol
     must be uniquified.
     `mqt.parameter_group` optionally preserves the source-level vector
@@ -55,7 +60,7 @@ def MQTDialect : Dialect {
   }];
 
   let discardableAttrs = (ins "::mlir::StringAttr":$input_name,
-      "::mlir::StringAttr":$source_name,
+      "::mlir::IntegerAttr":$input_id, "::mlir::StringAttr":$source_name,
       "::mlir::DictionaryAttr":$parameter_group,
       "::mlir::StringAttr":$register_name, "::mlir::UnitAttr":$entry_point,
       "::mlir::UnitAttr":$unitary);

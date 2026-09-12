@@ -16,6 +16,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from itertools import permutations
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 import numpy as np
 import pytest
@@ -3595,6 +3596,92 @@ def test_direct_symbolic_parameters_round_trip_with_shared_identity() -> None:
         Operator(restored.assign_parameters({restored_theta: value})).data,
         Operator(circuit.assign_parameters({theta: value})).data,
     )
+
+
+@pytest.mark.parametrize("identity", [0, (1 << 128) - 1])
+@pytest.mark.parametrize("pipeline", ["qc", "qco", "optimized"])
+def test_original_parameter_binds_after_compiler_round_trip(identity: int, pipeline: str) -> None:
+    """Keep the original externally bindable identity through native IR."""
+    theta = Parameter("theta", uuid=UUID(int=identity))
+    circuit = QuantumCircuit(1, global_phase=theta / 4)
+    circuit.ry(2 * theta, 0)
+    qc = QCProgram.from_qiskit(circuit)
+    program = QCProgram.from_mlir_str(qc.ir)
+    if pipeline != "qc":
+        qco = program.to_qco()
+        if pipeline == "optimized":
+            qco.run_pass_pipeline("mqt-qco-default")
+        program = qco.to_qc()
+    restored = program.to_qiskit()
+
+    assert restored.parameters == {theta}
+    assert np.allclose(
+        Operator(restored.assign_parameters({theta: 0.3})).data,
+        Operator(circuit.assign_parameters({theta: 0.3})).data,
+    )
+    assert program.copy().to_qiskit().parameters == {theta}
+
+
+def test_original_parameter_identity_is_shared_in_control_flow() -> None:
+    """Preserve free parameter identity in sibling conditional blocks."""
+    theta = Parameter("theta")
+    circuit = QuantumCircuit(1, 1, global_phase=theta)
+    with circuit.if_test((circuit.clbits[0], True)) as else_:
+        circuit.rx(theta, 0)
+    with else_:
+        circuit.ry(theta / 2, 0)
+    restored = QCProgram.from_qiskit(circuit).to_qco().to_qiskit()
+
+    assert restored.parameters == {theta}
+    for block in restored.data[0].operation.blocks:
+        assert block.parameters == {theta}
+    assert not restored.assign_parameters({theta: 0.2}).parameters
+
+
+def test_original_parameter_vector_binds_after_mlir_round_trip() -> None:
+    """Preserve vector element and root UUIDs, including unused elements."""
+    vector = ParameterVector("theta", 12)
+    circuit = QuantumCircuit(1, global_phase=vector[0])
+    circuit.rx(vector[10] + vector[2], 0)
+    program = QCProgram.from_qiskit(circuit).to_qco()
+    restored = QCProgram.from_mlir_str(program.to_qc().ir).to_qiskit()
+
+    assert restored.parameters == {vector[0], vector[2], vector[10]}
+    restored_vector = next(iter(restored.parameters)).vector
+    assert restored_vector.uuid == vector.uuid
+    assert list(restored_vector) == list(vector)
+    values = [0.01 * index for index in range(12)]
+    assert np.allclose(
+        Operator(restored.assign_parameters({vector: values}, strict=False)).data,
+        Operator(circuit.assign_parameters({vector: values}, strict=False)).data,
+    )
+
+
+@pytest.mark.parametrize("second_identity", [1, 2])
+def test_vector_input_id_consistency(second_identity: int) -> None:
+    """Support opaque group names but require one root UUID per vector."""
+    program = QCProgram.from_mlir_str(
+        """module {
+  func.func @main(
+      %a: f64 {mqt.input_name = "v[0]", mqt.input_id = 0 : i128,
+               mqt.parameter_group = {identity = "opaque", name = "v", index = 0 : i64, size = 2 : i64}},
+      %b: f64 {mqt.input_name = "v[1]", mqt.input_id = SECOND : i128,
+               mqt.parameter_group = {identity = "opaque", name = "v", index = 1 : i64, size = 2 : i64}})
+      attributes {mqt.entry_point} {
+    %q = qc.alloc : !qc.qubit
+    qc.rx(%a) %q : !qc.qubit
+    qc.rz(%b) %q : !qc.qubit
+    qc.dealloc %q : !qc.qubit
+    return
+  }
+}""".replace("SECOND", str(second_identity))
+    )
+    if second_identity == 1:
+        restored = program.to_qiskit()
+        assert [parameter.uuid.int for parameter in restored.parameters] == [0, 1]
+    else:
+        with pytest.raises(RuntimeError, match="inconsistent parameter-vector input identities"):
+            program.to_qiskit()
 
 
 def test_sparse_parameter_vector_round_trip_preserves_order_and_binding() -> None:
