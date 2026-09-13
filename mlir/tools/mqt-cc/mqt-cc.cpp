@@ -140,10 +140,9 @@ static llvm::cl::opt<std::string> payloadSpecification(
     llvm::cl::desc("Selected payload as a typed #mqt.payload_spec attribute"),
     llvm::cl::value_desc("attribute"), llvm::cl::init(""));
 
-static llvm::cl::opt<size_t>
-    mappingSeed("mapping-seed",
-                llvm::cl::desc("Seed for native target mapping"),
-                llvm::cl::init(42));
+static llvm::cl::opt<uint64_t>
+    compilationSeedOption("seed",
+                          llvm::cl::desc("Override all compiler random seeds"));
 static llvm::cl::opt<size_t> mappingTrials(
     "mapping-trials",
     llvm::cl::desc(
@@ -414,9 +413,7 @@ static int runCompiler(int argc, char** argv) {
   llvm::cl::ParseCommandLineOptions(argc, argv,
                                     "MQT Compiler Collection Driver\n");
 
-  if ((mappingSeed.getNumOccurrences() != 0 ||
-       mappingTrials.getNumOccurrences() != 0) &&
-      qdmiDevice.empty()) {
+  if (mappingTrials.getNumOccurrences() != 0 && qdmiDevice.empty()) {
     llvm::errs() << "Mapping controls require --qdmi-device.\n";
     return 1;
   }
@@ -424,11 +421,16 @@ static int runCompiler(int argc, char** argv) {
     llvm::errs() << "--mapping-trials must be greater than zero.\n";
     return 1;
   }
-  const MappingOptions mapping{
-      .seed = mappingSeed,
-      .trials = mappingTrials.getNumOccurrences() == 0
-                    ? std::nullopt
-                    : std::optional<size_t>{mappingTrials.getValue()},
+  const CompilationOptions options{
+      .seed = compilationSeedOption.getNumOccurrences() == 0
+                  ? std::nullopt
+                  : std::optional<uint64_t>{compilationSeedOption.getValue()},
+      .mapping =
+          {
+              .trials = mappingTrials.getNumOccurrences() == 0
+                            ? std::nullopt
+                            : std::optional<size_t>{mappingTrials.getValue()},
+          },
   };
 
   const bool isolated = runIsolatedPipeline || runReproducer;
@@ -622,7 +624,7 @@ static int runCompiler(int argc, char** argv) {
         if (failed(populate(pm))) {
           return failure();
         }
-        return pm.run(*program.mod);
+        return runWithCompilationOptions(pm, *program.mod, options);
       };
 
   if (isolated) {
@@ -640,7 +642,8 @@ static int runCompiler(int argc, char** argv) {
                failed(qco::verifyLinearity(*program.mod))) {
       return 1;
     }
-    if (failed(applyPassManagerCLOptions(pm)) || failed(pm.run(*program.mod))) {
+    if (failed(applyPassManagerCLOptions(pm)) ||
+        failed(runWithCompilationOptions(pm, *program.mod, options))) {
       return 1;
     }
     if (!runReproducer && failed(qco::verifyLinearity(*program.mod))) {
@@ -693,7 +696,7 @@ static int runCompiler(int argc, char** argv) {
           pm.addPass(createInlinerPass());
         }
         if (targetEnvironment) {
-          populateTargetCompilationPipeline(pm, *targetEnvironment, mapping);
+          populateTargetCompilationPipeline(pm, *targetEnvironment, options);
           return success();
         }
         populateQCOCleanupPipeline(pm);

@@ -10,24 +10,12 @@
 
 #pragma once
 
-#include <cstddef>
-#include <optional>
+#include "mqt/Compiler/CompilationOptions.h"
 
 namespace mlir {
 
 class TargetEnvironment;
 class OpPassManager;
-
-/// Controls for native placement and routing trials.
-///
-/// Set both fields for repeatable mapping across machines with different CPU
-/// counts, using the same Core build, input, and target. All-to-all placement
-/// ignores these controls. The selected layout may change between releases.
-struct MappingOptions {
-  size_t seed = 42;
-  /// A positive count, or no value to use the available logical CPU count.
-  std::optional<size_t> trials;
-};
 
 /// Populate the canonical compiler-target pipeline.
 ///
@@ -43,7 +31,7 @@ struct MappingOptions {
 /// The environment must remain unchanged during pipeline execution.
 void populateTargetCompilationPipeline(OpPassManager& pm,
                                        const TargetEnvironment& environment,
-                                       const MappingOptions& mapping = {});
+                                       const CompilationOptions& options = {});
 
 /// Populate target-native block synthesis without routing.
 ///
@@ -53,6 +41,7 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
 /// must use structured QCO/SCF control flow. The supplied environment is
 /// authoritative and must remain unchanged during pipeline execution.
 void populateTargetSynthesisPipeline(OpPassManager& pm,
-                                     const TargetEnvironment& environment);
+                                     const TargetEnvironment& environment,
+                                     const CompilationOptions& options = {});
 
 } // namespace mlir

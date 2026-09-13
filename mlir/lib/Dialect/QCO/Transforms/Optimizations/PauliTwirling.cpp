@@ -12,6 +12,7 @@
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
+#include "mqt/Support/RandomSeed.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h" // IWYU pragma: keep (Passes.h.inc)
 #include "mlir/IR/BuiltinOps.h"
@@ -237,7 +238,7 @@ protected:
     });
 
     IRRewriter rewriter(&getContext());
-    std::mt19937_64 rng(seed);
+    std::mt19937_64 rng(compilationSeed(getOperation(), seed));
     for (auto& [gate, table] : gates) {
       twirlGate(rewriter, gate, (*table)[rng() & 0xFU]);
     }

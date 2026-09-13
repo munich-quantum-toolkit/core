@@ -299,6 +299,8 @@ def TargetNativeSynthesis : Pass<"target-native-synthesis", "mlir::ModuleOp"> {
     Numerical decomposition failure is diagnosed before emitting a replacement.
     The input may be modified on failure.
   }];
+  let options = [Option<"seed", "seed", "uint64_t", "2023",
+                        "Seed for numerical synthesis retries.">];
 }
 
 def VerifyTargetConformance

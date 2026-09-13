@@ -171,6 +171,7 @@ mqt.core.mlir.compile_program:
         qco_pipeline: str = "mqt-qco-default",
         enable_timing: bool = False,
         enable_statistics: bool = False,
+        options: CompilationOptions | None = None,
     ) -> QCProgram: ...
     @overload
     def compile_program(
@@ -187,6 +188,7 @@ mqt.core.mlir.compile_program:
         qco_pipeline: str = "mqt-qco-default",
         enable_timing: bool = False,
         enable_statistics: bool = False,
+        options: CompilationOptions | None = None,
     ) -> QCOProgram: ...
     @overload
     def compile_program(
@@ -203,6 +205,7 @@ mqt.core.mlir.compile_program:
         qco_pipeline: str = "mqt-qco-default",
         enable_timing: bool = False,
         enable_statistics: bool = False,
+        options: CompilationOptions | None = None,
     ) -> OpenQASMProgram: ...
     @overload
     def compile_program(
@@ -219,6 +222,7 @@ mqt.core.mlir.compile_program:
         qco_pipeline: str = "mqt-qco-default",
         enable_timing: bool = False,
         enable_statistics: bool = False,
+        options: CompilationOptions | None = None,
     ) -> JeffProgram: ...
     @overload
     def compile_program(
@@ -235,6 +239,7 @@ mqt.core.mlir.compile_program:
         qco_pipeline: str = "mqt-qco-default",
         enable_timing: bool = False,
         enable_statistics: bool = False,
+        options: CompilationOptions | None = None,
     ) -> QIRProgram: ...
     @overload
     def compile_program(
@@ -251,6 +256,7 @@ mqt.core.mlir.compile_program:
         qco_pipeline: str = "mqt-qco-default",
         enable_timing: bool = False,
         enable_statistics: bool = False,
+        options: CompilationOptions | None = None,
     ) -> QCProgram | QCOProgram | OpenQASMProgram | JeffProgram | QIRProgram:
         \doc
     @overload
@@ -262,7 +268,7 @@ mqt.core.mlir.compile_program:
         inplace: bool = False,
         enable_timing: bool = False,
         enable_statistics: bool = False,
-        mapping: MappingOptions = ...,
+        options: CompilationOptions | None = None,
     ) -> CompiledProgram:
         \doc
     @overload
@@ -274,7 +280,7 @@ mqt.core.mlir.compile_program:
         inplace: bool = False,
         enable_timing: bool = False,
         enable_statistics: bool = False,
-        mapping: MappingOptions = ...,
+        options: CompilationOptions | None = None,
     ) -> CompiledProgram: ...
     @overload
     def compile_program(
@@ -285,7 +291,7 @@ mqt.core.mlir.compile_program:
         inplace: bool = False,
         enable_timing: bool = False,
         enable_statistics: bool = False,
-        mapping: MappingOptions = ...,
+        options: CompilationOptions | None = None,
     ) -> OpenQASMProgram: ...
     @overload
     def compile_program(
@@ -296,7 +302,7 @@ mqt.core.mlir.compile_program:
         inplace: bool = False,
         enable_timing: bool = False,
         enable_statistics: bool = False,
-        mapping: MappingOptions = ...,
+        options: CompilationOptions | None = None,
     ) -> QIRProgram: ...
 
 
@@ -314,5 +320,6 @@ mqt\.core\.mlir\.submit_program$:
         custom3: str | bool | int | float | None = None,
         custom4: str | bool | int | float | None = None,
         custom5: str | bool | int | float | None = None,
+        options: CompilationOptions | None = None,
     ) -> mqt.core.qdmi.Job:
         \doc

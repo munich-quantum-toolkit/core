@@ -20,6 +20,7 @@
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
+#include "mqt/Support/RandomSeed.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h" // IWYU pragma: keep (Passes.h.inc)
 #include "mlir/Dialect/Math/IR/Math.h"
@@ -80,6 +81,7 @@ struct FusableTwoQubitRun {
 ///
 /// The target basis is fixed for the pass; no SSA values or locations are kept.
 struct LastTwoQubitDecomposition {
+  uint64_t seed = 2023;
   Matrix4x4 matrix;
   std::optional<decomposition::TwoQubitNativeDecomposition> native;
 
@@ -87,7 +89,7 @@ struct LastTwoQubitDecomposition {
   get(const Matrix4x4& nextMatrix, CompilerTarget::GateKind entangler) {
     if (!native || matrix.data != nextMatrix.data) {
       matrix = nextMatrix;
-      native = decomposeUnitary2QWeyl(matrix, entangler);
+      native = decomposeUnitary2QWeyl(matrix, entangler, seed);
     }
     return native;
   }
@@ -652,7 +654,7 @@ static bool fuseTwoQubitGateRun(IRRewriter& rewriter, UnitaryOpInterface head,
   }
   const auto native = decomposeUnitary2QWeyl(
       reverseEntangler ? run.composed.reorderForQubits(1, 0) : run.composed,
-      *basis.entangler);
+      *basis.entangler, lastDecomposition.seed);
   if (!native || (shrinkOnly && native->numBasisUses >= run.numTwoQ) ||
       (target != nullptr
            ? !reducesNativeCost(run, native->numBasisUses, *target,
@@ -683,9 +685,11 @@ static bool fuseTwoQubitGates(IRRewriter& rewriter, ModuleOp moduleOp,
                               CompilerTarget::SynthesisBasis basis,
                               const CompilerTarget* target = nullptr,
                               const SiteMap* sites = nullptr,
-                              bool shrinkOnly = false) {
+                              bool shrinkOnly = false, uint64_t seed = 2023) {
   bool changed = false;
-  LastTwoQubitDecomposition lastDecomposition;
+  LastTwoQubitDecomposition lastDecomposition{
+      .seed = compilationSeed(moduleOp, seed),
+  };
   /// A run's successors have already been visited when its head erases them.
   moduleOp->walk<WalkOrder::PostOrder, ReverseIterator>(
       [&](Operation* operation) {
@@ -707,8 +711,8 @@ struct FuseTwoQubitGatesPass final
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(FuseTwoQubitGatesPass)
 
   FuseTwoQubitGatesPass() = default;
-  explicit FuseTwoQubitGatesPass(const CompilerTarget& target)
-      : target_(target) {}
+  explicit FuseTwoQubitGatesPass(const CompilerTarget& target, uint64_t seed)
+      : target_(target), seed_(seed) {}
 
   void getDependentDialects(DialectRegistry& registry) const override {
     registry.insert<QCODialect, arith::ArithDialect>();
@@ -728,7 +732,8 @@ protected:
     }
     IRRewriter rewriter(&getContext());
     if (fuseTwoQubitGates(rewriter, moduleOp, *basis,
-                          target_ ? &*target_ : nullptr, nullptr, true) &&
+                          target_ ? &*target_ : nullptr, nullptr, true,
+                          seed_) &&
         failed(mlir::mqt::normalizeGlobalPhases(moduleOp))) {
       signalPassFailure();
     }
@@ -736,6 +741,7 @@ protected:
 
 private:
   std::optional<CompilerTarget> target_;
+  uint64_t seed_ = 2023;
 };
 
 /// Track generated wire sites and defer folding until builders finish.
@@ -779,6 +785,7 @@ private:
 
 struct TargetNativeSynthesisPass final
     : impl::TargetNativeSynthesisBase<TargetNativeSynthesisPass> {
+  using TargetNativeSynthesisBase::TargetNativeSynthesisBase;
 
 protected:
   void runOnOperation() override {
@@ -808,10 +815,12 @@ protected:
     IRRewriter rewriter(&getContext(), &listener);
     if (targetBasis && targetBasis->entangler) {
       fuseTwoQubitGates(rewriter, moduleOp, *targetBasis, &target,
-                        indexed ? nullptr : &*sites);
+                        indexed ? nullptr : &*sites, false, seed);
     }
     listener.foldPending();
-    LastTwoQubitDecomposition lastDecomposition;
+    LastTwoQubitDecomposition lastDecomposition{
+        .seed = compilationSeed(moduleOp, seed),
+    };
     /// Rewrite users before producers so each unvisited operation retains its
     /// original operands and their collected sites.
     const auto result = moduleOp->walk<WalkOrder::PostOrder, ReverseIterator>(
@@ -911,8 +920,9 @@ std::unique_ptr<Pass> createFuseTwoQubitGates() {
   return std::make_unique<FuseTwoQubitGatesPass>();
 }
 
-std::unique_ptr<Pass> createFuseTwoQubitGates(const CompilerTarget& target) {
-  return std::make_unique<FuseTwoQubitGatesPass>(target);
+std::unique_ptr<Pass> createFuseTwoQubitGates(const CompilerTarget& target,
+                                              uint64_t seed) {
+  return std::make_unique<FuseTwoQubitGatesPass>(target, seed);
 }
 
 } // namespace mlir::qco

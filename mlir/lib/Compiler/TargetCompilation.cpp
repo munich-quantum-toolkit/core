@@ -82,23 +82,28 @@ private:
 
 } /* namespace */
 
-static void populatePostPlacementPipeline(OpPassManager& pm) {
+static void populatePostPlacementPipeline(OpPassManager& pm,
+                                          const CompilationOptions& options) {
   /// Placement consumes allocations; native synthesis normalizes phases.
   pm.addPass(createCanonicalizerPass(
       GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit)));
   /// Reuse unchanged classical reads before native synthesis splits their uses.
   pm.addPass(createCSEPass());
   pm.addPass(createRemoveDeadValuesPass());
-  pm.addPass(qco::createTargetNativeSynthesis());
+  qco::TargetNativeSynthesisOptions synthesisOptions;
+  if (options.seed) {
+    synthesisOptions.seed = *options.seed;
+  }
+  pm.addPass(qco::createTargetNativeSynthesis(synthesisOptions));
   pm.addPass(createCSEPass());
   pm.addPass(qco::createVerifyTargetConformance());
 }
 
 void populateTargetCompilationPipeline(OpPassManager& pm,
                                        const TargetEnvironment& environment,
-                                       const MappingOptions& mapping) {
+                                       const CompilationOptions& options) {
   pm.addPass(std::make_unique<PrepareTargetCompilationPass>(environment, false,
-                                                            mapping));
+                                                            options.mapping));
   const auto& target = environment.target();
   pm.addPass(createInlinerPass());
   pm.addPass(createSymbolDCEPass());
@@ -114,27 +119,30 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   pm.addPass(createSymbolDCEPass());
   pm.addPass(qco::createLegalizeControlFlow());
   pm.addPass(qco::createDecomposeMultiControlled(target));
-  pm.addPass(qco::createFuseTwoQubitGates(target));
+  pm.addPass(qco::createFuseTwoQubitGates(target, options.seed.value_or(2023)));
   populateDefaultQCOOptimizationPipeline(pm);
   switch (target.connectivityKind()) {
   case CompilerTarget::Connectivity::Kind::Explicit: {
-    qco::MappingPassOptions options;
-    options.seed = mapping.seed;
-    if (mapping.trials) {
-      options.ntrials = *mapping.trials;
+    qco::MappingPassOptions mappingOptions;
+    if (options.seed) {
+      mappingOptions.seed = *options.seed;
     }
-    pm.addPass(qco::createMappingPass(options));
+    if (options.mapping.trials) {
+      mappingOptions.ntrials = *options.mapping.trials;
+    }
+    pm.addPass(qco::createMappingPass(mappingOptions));
     break;
   }
   case CompilerTarget::Connectivity::Kind::AllToAll:
     pm.addPass(qco::createPlacementPass(target));
     break;
   }
-  populatePostPlacementPipeline(pm);
+  populatePostPlacementPipeline(pm, options);
 }
 
 void populateTargetSynthesisPipeline(OpPassManager& pm,
-                                     const TargetEnvironment& environment) {
+                                     const TargetEnvironment& environment,
+                                     const CompilationOptions& options) {
   pm.addPass(std::make_unique<PrepareTargetCompilationPass>(environment, true));
   const auto& target = environment.target();
   pm.addPass(createInlinerPass());
@@ -142,9 +150,9 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
   populateQCOCleanupPipeline(pm);
   pm.addPass(qco::createLegalizeControlFlow());
   pm.addPass(qco::createDecomposeMultiControlled(target));
-  pm.addPass(qco::createFuseTwoQubitGates(target));
+  pm.addPass(qco::createFuseTwoQubitGates(target, options.seed.value_or(2023)));
   pm.addPass(qco::createPlacementPass(target));
-  populatePostPlacementPipeline(pm);
+  populatePostPlacementPipeline(pm, options);
 }
 
 } // namespace mlir

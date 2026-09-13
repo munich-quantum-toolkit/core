@@ -97,6 +97,7 @@ public:
   ///
   /// @param unitaryMatrix Input 4x4 unitary (up to global phase).
   /// @param fidelity Optional average gate-fidelity floor in `[0, 1]`.
+  /// @param seed Seed for numerical retries after the fixed first attempt.
   ///
   /// When set, @ref applySpecialization may replace `(a, b, c)` with an
   /// equivalent specialized form whose overlap with the pre-specialization
@@ -106,7 +107,8 @@ public:
   /// floating-point error). Invalid values (non-finite or outside `[0, 1]`)
   /// trigger a fatal error.
   [[nodiscard]] static std::optional<TwoQubitWeylDecomposition>
-  create(const Matrix4x4& unitaryMatrix, std::optional<double> fidelity);
+  create(const Matrix4x4& unitaryMatrix, std::optional<double> fidelity,
+         uint64_t seed = 2023);
 
   [[nodiscard]] Matrix4x4 getCanonicalMatrix() const {
     return getCanonicalMatrix(a_, b_, c_);
@@ -222,9 +224,10 @@ public:
   /// Only the target undergoes Weyl decomposition; basis precomputation from
   /// @ref create is reused. Returns `std::nullopt` if the target's numerical
   /// decomposition fails or the requested basis-gate count is unsupported.
-  [[nodiscard]] std::optional<TwoQubitNativeDecomposition> decomposeTarget(
-      const Matrix4x4& targetUnitary,
-      std::optional<std::uint8_t> numBasisGateUses = std::nullopt) const;
+  [[nodiscard]] std::optional<TwoQubitNativeDecomposition>
+  decomposeTarget(const Matrix4x4& targetUnitary,
+                  std::optional<std::uint8_t> numBasisGateUses = std::nullopt,
+                  uint64_t seed = 2023) const;
 
 private:
   /// Precomputed single-qubit templates for super-controlled basis
@@ -335,7 +338,8 @@ struct SynthesizedUnitary2Q {
 /// up to WEYL_TOLERANCE in the interaction coefficients.
 [[nodiscard]] std::optional<TwoQubitNativeDecomposition>
 decomposeUnitary2QWeyl(const Matrix4x4& target,
-                       CompilerTarget::GateKind entangler);
+                       CompilerTarget::GateKind entangler,
+                       uint64_t seed = 2023);
 
 /// Emits a prepared two-qubit decomposition in the selected target basis.
 /// The basis must contain an entangler.

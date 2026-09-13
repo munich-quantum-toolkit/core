@@ -64,30 +64,24 @@ that the device still has matching sites, topology, operations, timing units,
 and program capabilities. Names and calibration-only changes do not require
 recompilation. Use `device.submit_job` to submit raw payloads.
 
-### Reproduce mapping trials
-
-Use {py:class}`~mqt.core.mlir.MappingOptions` with an explicit seed and positive
-trial count when comparing compiler runs across machines:
+### Compilation options
 
 ```python
-from mqt.core.mlir import MappingOptions
+from mqt.core.mlir import CompilationOptions, MappingOptions
 
-mapping = MappingOptions(seed=7, trials=4)
-compiled = compile_program(bell_qasm, target=device, mapping=mapping)
+options = CompilationOptions(seed=7, mapping=MappingOptions(trials=4))
+compiled = compile_program(bell_qasm, target=device, options=options)
 ```
 
-`QCOProgram.compile_for_target(environment, mapping=mapping)` accepts the same
-options. To submit with these controls, compile first and pass the resulting
-program to `submit_program`. C++ target compilation APIs accept `MappingOptions`
-as their final argument. In `mqt-cc`, use
-`--qdmi-device ID --mapping-seed 7 --mapping-trials 4`.
+The same `options` argument is available on typed compilation methods and source
+submission. It also groups `enable_timing` and `enable_statistics`. An explicit
+seed overrides compiler randomness, including custom pass seeds; `None`
+preserves existing pass settings. Execution sampling has a separate seed. For
+the CLI, use `--seed 7 --mapping-trials 4 --qdmi-device ID`.
 
-The defaults remain seed 42 and a trial count based on available logical CPUs. A
-seed alone does not fix the trial count. Explicit values make the native mapping
-trials repeatable for the same Core build, input, and target; compiler releases
-can change the selected layout. All-to-all placement does not use randomized
-mapping and ignores valid mapping controls. Zero trials are rejected. The mapper
-can add deterministic heuristic candidates beyond this trial count.
+Trials must be positive; omission uses the logical CPU count. All-to-all
+placement ignores trials. Fixed seed and trials give repeatable mapping for the
+same build, input, and target, without a cross-release layout guarantee.
 
 ### Choose a format
 

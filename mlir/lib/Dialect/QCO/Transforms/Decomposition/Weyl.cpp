@@ -14,6 +14,7 @@
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
+#include "mqt/Support/RandomSeed.h"
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Location.h"
@@ -185,7 +186,7 @@ static double normalSample(std::mt19937& rng) {
 }
 
 static std::optional<std::pair<Matrix4x4, std::array<Complex, 4>>>
-diagonalizeComplexSymmetric(const Matrix4x4& m,
+diagonalizeComplexSymmetric(const Matrix4x4& m, uint64_t seed,
                             double precision = WEYL_DIAGONALIZATION_TOLERANCE) {
   std::optional<std::mt19937> state;
 
@@ -205,7 +206,7 @@ diagonalizeComplexSymmetric(const Matrix4x4& m,
       randB = 0.22317849046722027;
     } else {
       if (!state) {
-        state.emplace(2023);
+        state = makeMt19937(seed);
       }
       randA = normalSample(*state);
       randB = normalSample(*state);
@@ -329,10 +330,10 @@ static std::pair<Matrix4x4, double> projectToSU4(const Matrix4x4& unitary) {
 
 static std::optional<std::tuple<Matrix4x4, Matrix4x4, std::array<double, 3>,
                                 std::array<double, 4>>>
-computeOrderedWeylCoordinates(const Matrix4x4& u) {
+computeOrderedWeylCoordinates(const Matrix4x4& u, uint64_t seed) {
   const auto uP = magicBasisTransform(u, /*outOfMagicBasis=*/true);
   const Matrix4x4 m2 = uP.transpose() * uP;
-  auto diagonalized = diagonalizeComplexSymmetric(m2);
+  auto diagonalized = diagonalizeComplexSymmetric(m2, seed);
   if (!diagonalized) {
     return std::nullopt;
   }
@@ -498,7 +499,8 @@ bool TwoQubitWeylDecomposition::finalizeSpecializationPhase(
 
 std::optional<TwoQubitWeylDecomposition>
 TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
-                                  std::optional<double> fidelity) {
+                                  std::optional<double> fidelity,
+                                  uint64_t seed) {
   if (fidelity &&
       (!std::isfinite(*fidelity) || *fidelity < 0.0 || *fidelity > 1.0)) {
     llvm::reportFatalInternalError(llvm::formatv(
@@ -508,7 +510,7 @@ TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
   }
 
   const auto [u, globalPhase0] = projectToSU4(unitaryMatrix);
-  auto coordinates = computeOrderedWeylCoordinates(u);
+  auto coordinates = computeOrderedWeylCoordinates(u, seed);
   if (!coordinates) {
     return std::nullopt;
   }
@@ -777,7 +779,7 @@ oneGate(const TwoQubitWeylDecomposition& target) {
 
 /// See supplemental Eqs. (3), (5)-(7): doi:10.1103/PhysRevLett.130.070601.
 static std::optional<TwoQubitNativeDecomposition>
-twoGates(const TwoQubitWeylDecomposition& target) {
+twoGates(const TwoQubitWeylDecomposition& target, uint64_t seed) {
   const double x = target.a(), y = target.b(), z = target.c();
   const double c = std::sin(x + y - z) * std::sin(x - y + z) *
                    std::sin(-x - y - z) * std::sin(-x + y + z);
@@ -829,7 +831,7 @@ twoGates(const TwoQubitWeylDecomposition& target) {
   const auto gate = XXPlusYYOp::unitaryMatrix(-WEYL_PI / 2., 0.);
   const auto sandwich = gate * Matrix4x4::kron(left, right) * gate;
   const auto circuit =
-      TwoQubitWeylDecomposition::create(sandwich, std::nullopt);
+      TwoQubitWeylDecomposition::create(sandwich, std::nullopt, seed);
   if (!circuit) {
     return std::nullopt;
   }
@@ -837,9 +839,9 @@ twoGates(const TwoQubitWeylDecomposition& target) {
   return result;
 }
 static std::optional<TwoQubitNativeDecomposition>
-decomposeSqrtISwap(const Matrix4x4& target) {
+decomposeSqrtISwap(const Matrix4x4& target, uint64_t seed) {
   const auto targetDecomposition =
-      TwoQubitWeylDecomposition::create(target, std::nullopt);
+      TwoQubitWeylDecomposition::create(target, std::nullopt, seed);
   if (!targetDecomposition) {
     return std::nullopt;
   }
@@ -859,7 +861,7 @@ decomposeSqrtISwap(const Matrix4x4& target) {
     return oneGate(kak);
   }
   if (kak.a() - kak.b() - std::abs(kak.c()) >= -WEYL_TOLERANCE) {
-    return twoGates(kak);
+    return twoGates(kak, seed);
   }
 
   /// Lemma 2 in the supplement puts this residual in the two-gate region.
@@ -868,13 +870,14 @@ decomposeSqrtISwap(const Matrix4x4& target) {
       kak.a() <= EIGHTH_PI ? 0. : EIGHTH_PI,
       kak.c() < 0. ? -EIGHTH_PI : EIGHTH_PI);
   const auto residual = TwoQubitWeylDecomposition::create(
-      kak.getCanonicalMatrix() * gate.adjoint(), std::nullopt);
-  const auto prefix = TwoQubitWeylDecomposition::create(gate, std::nullopt);
+      kak.getCanonicalMatrix() * gate.adjoint(), std::nullopt, seed);
+  const auto prefix =
+      TwoQubitWeylDecomposition::create(gate, std::nullopt, seed);
   if (!residual || !prefix) {
     return std::nullopt;
   }
   auto before = oneGate(*prefix);
-  const auto after = twoGates(*residual);
+  const auto after = twoGates(*residual, seed);
   if (!after) {
     return std::nullopt;
   }
@@ -891,11 +894,12 @@ decomposeSqrtISwap(const Matrix4x4& target) {
 
 std::optional<TwoQubitNativeDecomposition>
 decomposeUnitary2QWeyl(const Matrix4x4& target,
-                       const CompilerTarget::GateKind entangler) {
+                       CompilerTarget::GateKind entangler, uint64_t seed) {
   if (entangler == CompilerTarget::GateKind::SQRTISWAP) {
-    return decomposeSqrtISwap(target);
+    return decomposeSqrtISwap(target, seed);
   }
-  return cachedNativeBasisDecomposer(entangler).decomposeTarget(target);
+  return cachedNativeBasisDecomposer(entangler).decomposeTarget(
+      target, std::nullopt, seed);
 }
 
 SynthesizedUnitary2Q

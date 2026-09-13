@@ -27,6 +27,7 @@
 #include "mqt/Dialect/QCO/Utils/WireIterator.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
+#include "mqt/Support/RandomSeed.h"
 
 #include "mlir/Analysis/SliceAnalysis.h"
 #include "mlir/Analysis/TopologicalSortUtils.h"
@@ -1053,7 +1054,7 @@ private:
     if (greedy && greedy->second) {
       return greedy->first;
     }
-    std::mt19937_64 rng{seed};
+    std::mt19937_64 rng{compilationSeed(getOperation(), seed)};
 
     struct Trial {
       RoutingBundle bundle;
@@ -1294,7 +1295,7 @@ private:
   /// with the key difference that the goal permutation is not static.
   [[nodiscard]] std::tuple<Layout, SmallVector<IndexPairType>,
                            SmallVector<IndexPairType>>
-  converge(const Layout& lhs, const Layout& rhs) const {
+  converge(const Layout& lhs, const Layout& rhs) {
     if (lhs == rhs) {
       return {lhs, {}, {}};
     }
@@ -1302,7 +1303,7 @@ private:
     std::array graphs{FGraph(*target), FGraph(*target)};
     std::array<SmallVector<IndexPairType>, 2> swaps{};
 
-    std::mt19937 gen(seed);
+    auto gen = makeMt19937(compilationSeed(getOperation(), seed));
     std::uniform_int_distribution coin(0, 1);
 
     while (true) {

@@ -26,6 +26,7 @@ from qiskit.circuit import Gate, library
 from qiskit.quantum_info import Operator
 
 from mqt.core.mlir import (
+    CompilationOptions,
     CompilerTarget,
     JeffProgram,
     MappingOptions,
@@ -42,6 +43,7 @@ from mqt.core.mlir import (
     QIRProgram,
     TargetEnvironment,
     compile_program,
+    submit_program,
 )
 from mqt.core.qdmi import ProgramFormat
 from mqt.core.qdmi.driver import open_device
@@ -432,7 +434,9 @@ def test_mapping_options_reject_zero_trials(*, all_to_all: bool) -> None:
     before = program.ir
 
     with pytest.raises(RuntimeError, match="mapping trials must be greater than zero"):
-        program.compile_for_target(_test_target_environment(target), mapping=MappingOptions(trials=0))
+        program.compile_for_target(
+            _test_target_environment(target), options=CompilationOptions(seed=7, mapping=MappingOptions(trials=0))
+        )
 
     assert program.ir == before
 
@@ -453,25 +457,25 @@ out = measure q;
         connectivity=CompilerTarget.Connectivity([(0, 1), (1, 2), (2, 3)]),
         native_operations=CompilerTarget.NativeOperations.unrestricted(),
     )
-    mapping = MappingOptions(seed=seed, trials=3)
+    options = CompilationOptions(seed=seed, mapping=MappingOptions(trials=3))
     outputs = []
     for _ in range(2):
         program = QCProgram.from_openqasm_str(source).to_qco()
-        program.compile_for_target(_test_target_environment(target), mapping=mapping)
+        program.compile_for_target(_test_target_environment(target), options=options)
         outputs.append(program.ir)
     assert outputs[0] == outputs[1]
-    assert mapping.seed == seed
-    assert mapping.trials == 3
+    assert options.seed == seed
+    assert options.mapping.trials == 3
 
     payloads = []
     for _ in range(2):
-        payload = compile_program(source, target=target, output=OutputFormat.QIR_BASE, mapping=mapping)
+        payload = compile_program(source, target=target, output=OutputFormat.QIR_BASE, options=options)
         assert isinstance(payload, QIRProgram)
         payloads.append(payload.ir)
     assert payloads[0] == payloads[1]
 
 
-@pytest.mark.parametrize("output_kind", ["typed", "payload", "device"])
+@pytest.mark.parametrize("output_kind", ["typed", "payload", "device", "submit"])
 def test_compilation_entry_points_forward_mapping_options(output_kind: str) -> None:
     """Keep mapping controls effective through every public target entry point."""
     target = CompilerTarget(
@@ -479,16 +483,18 @@ def test_compilation_entry_points_forward_mapping_options(output_kind: str) -> N
         connectivity=CompilerTarget.Connectivity([(0, 1)]),
         native_operations=CompilerTarget.NativeOperations.unrestricted(),
     )
-    mapping = MappingOptions(trials=0)
-    if output_kind == "device":
-        compile_call = partial(compile_program, QASM_STRING, target="mqt.ddsim.default", mapping=mapping)
+    options = CompilationOptions(mapping=MappingOptions(trials=0))
+    if output_kind == "submit":
+        compile_call = partial(submit_program, QASM_STRING, target="mqt.ddsim.default", options=options)
+    elif output_kind == "device":
+        compile_call = partial(compile_program, QASM_STRING, target="mqt.ddsim.default", options=options)
     elif output_kind == "typed":
         compile_call = partial(
-            compile_program, QASM_STRING, target=target, output=OutputFormat.QIR_BASE, mapping=mapping
+            compile_program, QASM_STRING, target=target, output=OutputFormat.QIR_BASE, options=options
         )
     else:
         compile_call = partial(
-            compile_program, QASM_STRING, target=target, program_format=ProgramFormat.QASM3, mapping=mapping
+            compile_program, QASM_STRING, target=target, program_format=ProgramFormat.QASM3, options=options
         )
     with pytest.raises((RuntimeError, ValueError)):
         compile_call()
@@ -1251,3 +1257,57 @@ def test_native_compilation_releases_gil(tmp_path: Path, mode: str) -> None:
         sys.setswitchinterval(interval)
     assert not thread.is_alive()
     assert program.is_valid
+
+
+@pytest.mark.parametrize("seed", [0, 7, 2**63 + 7, 2**64 - 1])
+def test_compilation_seed_overrides_custom_pass_seed(seed: int) -> None:
+    """Override pass settings without retaining temporary compiler metadata."""
+    source = QCProgram.from_openqasm_str(QASM_STRING).to_qco()
+    expected = source.copy()
+    expected.run_pass_pipeline(f"pauli-twirl-2q-gates{{seed={seed}}}")
+    actual = source.copy()
+    actual.run_pass_pipeline("pauli-twirl-2q-gates{seed=99}", options=CompilationOptions(seed=seed))
+    assert actual.ir == expected.ir
+    assert "mqt.compilation_seed" not in actual.ir
+    compiled = compile_program(
+        source,
+        output=OutputFormat.QCO_OPTIMIZED,
+        qco_pipeline="pauli-twirl-2q-gates{seed=99}",
+        options=CompilationOptions(seed=seed),
+    )
+    expected.cleanup()
+    assert compiled.ir == expected.ir
+
+
+def test_compilation_options_do_not_mix_with_legacy_flags() -> None:
+    """Reject ambiguous controls before consuming the supplied program."""
+    source = QCProgram.from_openqasm_str(QASM_STRING)
+    before = source.ir
+    with pytest.raises(ValueError, match="Use options or the timing/statistics flags"):
+        compile_program(source, inplace=True, enable_timing=True, options=CompilationOptions())
+    assert source.ir == before
+
+
+def test_compilation_seed_reaches_nested_modules() -> None:
+    """The outer compilation seed overrides an inner module's captured seed."""
+    inner = QCProgram.from_openqasm_str(QASM_STRING).to_qco()
+    nested = inner.ir.replace("module {", "module attributes {mqt.compilation_seed = 99 : i64} {", 1)
+    source = QCOProgram.from_mlir_str(f"module {{ {nested} }}")
+    actual = source.copy()
+    actual.run_pass_pipeline("builtin.module(pauli-twirl-2q-gates{seed=99})", options=CompilationOptions(seed=6))
+    expected = QCOProgram.from_mlir_str(f"module {{ {inner.ir} }}")
+    expected.run_pass_pipeline("builtin.module(pauli-twirl-2q-gates{seed=6})")
+    assert actual.ir.replace(" attributes {mqt.compilation_seed = 99 : i64}", "") == expected.ir
+    assert actual.ir != source.ir
+
+
+@pytest.mark.parametrize("use_options", [False, True])
+def test_compilation_timing_and_statistics(capfd: pytest.CaptureFixture[str], *, use_options: bool) -> None:
+    """Both shared options and legacy keywords reach MLIR instrumentation."""
+    if use_options:
+        compile_program(QASM_STRING, options=CompilationOptions(enable_timing=True, enable_statistics=True))
+    else:
+        compile_program(QASM_STRING, enable_timing=True, enable_statistics=True)
+    output = capfd.readouterr().err
+    assert "Execution time report" in output
+    assert "Pass statistics report" in output

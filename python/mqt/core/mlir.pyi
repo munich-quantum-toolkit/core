@@ -516,21 +516,43 @@ class Program:
         """The textual MLIR representation of this program."""
 
 class MappingOptions:
-    """Native mapping controls. Set seed and trials for reproducible mapping with a fixed Core build, input, and target. All-to-all placement ignores valid mapping options."""
+    """Native mapping controls."""
 
-    def __init__(self, *, seed: int = 42, trials: int | None = None) -> None: ...
-    @property
-    def seed(self) -> int:
-        """Native mapper seed."""
-
-    @seed.setter
-    def seed(self, arg: int, /) -> None: ...
+    def __init__(self, *, trials: int | None = None) -> None: ...
     @property
     def trials(self) -> int | None:
         """Positive trial count; None uses the available logical CPU count."""
 
     @trials.setter
     def trials(self, arg: int | None, /) -> None: ...
+
+class CompilationOptions:
+    """Shared compiler controls. An explicit seed overrides all compiler randomness; None preserves pass defaults and custom pipeline seeds."""
+
+    def __init__(
+        self,
+        *,
+        seed: int | None = None,
+        enable_timing: bool = False,
+        enable_statistics: bool = False,
+        mapping: MappingOptions = ...,
+    ) -> None: ...
+    @property
+    def seed(self) -> int | None: ...
+    @seed.setter
+    def seed(self, arg: int | None, /) -> None: ...
+    @property
+    def enable_timing(self) -> bool: ...
+    @enable_timing.setter
+    def enable_timing(self, arg: bool, /) -> None: ...
+    @property
+    def enable_statistics(self) -> bool: ...
+    @enable_statistics.setter
+    def enable_statistics(self, arg: bool, /) -> None: ...
+    @property
+    def mapping(self) -> MappingOptions: ...
+    @mapping.setter
+    def mapping(self, arg: MappingOptions, /) -> None: ...
 
 class QCProgram(Program):
     """A compiler program in the QC dialect.
@@ -643,7 +665,14 @@ class QCOProgram(Program):
     def normalize_global_phases(self) -> None:
         """Normalize scoped global phases in place."""
 
-    def run_pass_pipeline(self, pipeline: str, *, enable_timing: bool = False, enable_statistics: bool = False) -> None:
+    def run_pass_pipeline(
+        self,
+        pipeline: str,
+        *,
+        enable_timing: bool = False,
+        enable_statistics: bool = False,
+        options: CompilationOptions | None = None,
+    ) -> None:
         """Run a textual MLIR pass pipeline in place."""
 
     def merge_single_qubit_rotation_gates(self) -> None:
@@ -673,12 +702,17 @@ class QCOProgram(Program):
         *,
         enable_timing: bool = False,
         enable_statistics: bool = False,
-        mapping: MappingOptions = ...,
+        options: CompilationOptions | None = None,
     ) -> None:
         """Compile this QCO program for the target in place. Do not rely on its contents if compilation fails. Failures raise RuntimeError with the emitted MLIR diagnostics."""
 
     def synthesize_for_target(
-        self, target_environment: TargetEnvironment, *, enable_timing: bool = False, enable_statistics: bool = False
+        self,
+        target_environment: TargetEnvironment,
+        *,
+        enable_timing: bool = False,
+        enable_statistics: bool = False,
+        options: CompilationOptions | None = None,
     ) -> None:
         """Synthesize native operations for an all-to-all target in place. Assigns static sites and resynthesizes constant two-qubit runs in the native basis, without routing. Do not rely on the program contents if synthesis fails. Failures raise RuntimeError with the emitted MLIR diagnostics."""
 
@@ -907,6 +941,7 @@ def compile_program(
     qco_pipeline: str = "mqt-qco-default",
     enable_timing: bool = False,
     enable_statistics: bool = False,
+    options: CompilationOptions | None = None,
 ) -> QCProgram: ...
 @overload
 def compile_program(
@@ -923,6 +958,7 @@ def compile_program(
     qco_pipeline: str = "mqt-qco-default",
     enable_timing: bool = False,
     enable_statistics: bool = False,
+    options: CompilationOptions | None = None,
 ) -> QCOProgram: ...
 @overload
 def compile_program(
@@ -939,6 +975,7 @@ def compile_program(
     qco_pipeline: str = "mqt-qco-default",
     enable_timing: bool = False,
     enable_statistics: bool = False,
+    options: CompilationOptions | None = None,
 ) -> OpenQASMProgram: ...
 @overload
 def compile_program(
@@ -955,6 +992,7 @@ def compile_program(
     qco_pipeline: str = "mqt-qco-default",
     enable_timing: bool = False,
     enable_statistics: bool = False,
+    options: CompilationOptions | None = None,
 ) -> JeffProgram: ...
 @overload
 def compile_program(
@@ -971,6 +1009,7 @@ def compile_program(
     qco_pipeline: str = "mqt-qco-default",
     enable_timing: bool = False,
     enable_statistics: bool = False,
+    options: CompilationOptions | None = None,
 ) -> QIRProgram: ...
 @overload
 def compile_program(
@@ -987,6 +1026,7 @@ def compile_program(
     qco_pipeline: str = "mqt-qco-default",
     enable_timing: bool = False,
     enable_statistics: bool = False,
+    options: CompilationOptions | None = None,
 ) -> QCProgram | QCOProgram | OpenQASMProgram | JeffProgram | QIRProgram:
     """Run the coordinated default MQT compiler pipeline.
 
@@ -1002,8 +1042,9 @@ def compile_program(
         inplace: Whether a typed input program may be consumed.
         qco_pipeline: The QCO optimization pipeline to run. A custom pipeline
             cannot be combined with target compilation.
-        enable_timing: Whether to collect pass timing information.
-        enable_statistics: Whether to collect pass statistics.
+        options: Shared compilation controls.
+        enable_timing: Legacy timing flag; use options for new calls.
+        enable_statistics: Legacy statistics flag; use options for new calls.
 
     Returns:
         A typed compiler program for the requested output format.
@@ -1024,7 +1065,7 @@ def compile_program(
     inplace: bool = False,
     enable_timing: bool = False,
     enable_statistics: bool = False,
-    mapping: MappingOptions = ...,
+    options: CompilationOptions | None = None,
 ) -> CompiledProgram:
     """Compile for a device ID, open device, or explicit compiler target.
 
@@ -1052,7 +1093,7 @@ def compile_program(
     inplace: bool = False,
     enable_timing: bool = False,
     enable_statistics: bool = False,
-    mapping: MappingOptions = ...,
+    options: CompilationOptions | None = None,
 ) -> CompiledProgram: ...
 @overload
 def compile_program(
@@ -1069,7 +1110,7 @@ def compile_program(
     inplace: bool = False,
     enable_timing: bool = False,
     enable_statistics: bool = False,
-    mapping: MappingOptions = ...,
+    options: CompilationOptions | None = None,
 ) -> OpenQASMProgram: ...
 @overload
 def compile_program(
@@ -1086,7 +1127,7 @@ def compile_program(
     inplace: bool = False,
     enable_timing: bool = False,
     enable_statistics: bool = False,
-    mapping: MappingOptions = ...,
+    options: CompilationOptions | None = None,
 ) -> QIRProgram: ...
 
 class CompiledProgram:
@@ -1128,6 +1169,7 @@ def submit_program(
     custom3: str | bool | float | None = None,
     custom4: str | bool | float | None = None,
     custom5: str | bool | float | None = None,
+    options: CompilationOptions | None = None,
 ) -> mqt.core.qdmi.Job:
     """Compile source or submit a compiled program to a device.
 

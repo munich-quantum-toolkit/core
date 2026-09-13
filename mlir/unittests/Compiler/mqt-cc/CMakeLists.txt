@@ -31,6 +31,9 @@ add_test(
     "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/debugging-output-$<CONFIG>" -P
     "${CMAKE_CURRENT_SOURCE_DIR}/verify_debugging.cmake")
 
-add_test(NAME mqt-core-mqt-cc-mapping-options-test
-         COMMAND ${CMAKE_COMMAND} "-DMQT_CC=$<TARGET_FILE:mqt-cc>" -P
-                 "${CMAKE_CURRENT_SOURCE_DIR}/verify_mapping.cmake")
+target_sources(mqt-core-mlir-unittests-compiler PRIVATE test_cli_options.cpp)
+target_compile_definitions(
+  mqt-core-mlir-unittests-compiler
+  PRIVATE MQT_CORE_MQT_CC="$<TARGET_FILE:mqt-cc>"
+          MQT_CORE_MQT_CC_INPUT="${CMAKE_CURRENT_SOURCE_DIR}/bell.qasm")
+add_dependencies(mqt-core-mlir-unittests-compiler mqt-cc)

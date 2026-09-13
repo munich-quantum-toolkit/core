@@ -822,15 +822,15 @@ CompiledProgram::CompiledProgram(TargetEnvironment environment,
     : environment_(std::move(environment)), payload_(std::move(payload)),
       format_(format) {}
 
-llvm::Expected<CompiledProgram> CompiledProgram::compile(
-    CompilerInput&& program, const TargetEnvironment& environment,
-    bool enableTiming, bool enableStatistics, const MappingOptions& mapping) {
+llvm::Expected<CompiledProgram>
+CompiledProgram::compile(CompilerInput&& program,
+                         const TargetEnvironment& environment,
+                         const CompilationOptions& options) {
   auto format = qdmiFormatForPayload(environment.payloadSpecification());
   if (!format) {
     return format.takeError();
   }
-  auto result = runDefaultPipeline(std::move(program), environment,
-                                   enableTiming, enableStatistics, mapping);
+  auto result = runDefaultPipeline(std::move(program), environment, options);
   if (!result) {
     return llvm::createStringError(
         std::make_error_code(std::errc::invalid_argument),
@@ -889,14 +889,13 @@ llvm::Expected<CompiledProgram> CompiledProgram::compile(
 
 llvm::Expected<CompiledProgram>
 compileProgram(CompilerInput&& program, const qdmi::Device& device,
-               std::optional<QDMI_Program_Format> format, bool enableTiming,
-               bool enableStatistics, const MappingOptions& mapping) {
+               std::optional<QDMI_Program_Format> format,
+               const CompilationOptions& options) {
   auto environment = targetEnvironmentFromDevice(device, format);
   if (!environment) {
     return environment.takeError();
   }
-  return CompiledProgram::compile(std::move(program), *environment,
-                                  enableTiming, enableStatistics, mapping);
+  return CompiledProgram::compile(std::move(program), *environment, options);
 }
 
 static llvm::Expected<qdmi::Job>
@@ -952,24 +951,38 @@ submitProgram(const qdmi::Device& device, const CompiledProgram& program,
 llvm::Expected<qdmi::Job>
 submitProgram(const qdmi::Device& device, CompilerInput&& input,
               int64_t numShots, std::optional<QDMI_Program_Format> format,
+              const std::optional<qdmi::CustomJobParameter>& custom1,
+              const std::optional<qdmi::CustomJobParameter>& custom2,
+              const std::optional<qdmi::CustomJobParameter>& custom3,
+              const std::optional<qdmi::CustomJobParameter>& custom4,
+              const std::optional<qdmi::CustomJobParameter>& custom5,
+              const CompilationOptions& options) {
+  if (numShots < 0) {
+    return llvm::createStringError(
+        std::make_error_code(std::errc::invalid_argument),
+        "num_shots must be nonnegative");
+  }
+  auto compiled = compileProgram(std::move(input), device, format, options);
+  if (!compiled) {
+    return compiled.takeError();
+  }
+  return submitPayload(device, *compiled, numShots, custom1, custom2, custom3,
+                       custom4, custom5);
+}
+
+llvm::Expected<qdmi::Job>
+submitProgram(const qdmi::Device& device, CompilerInput&& program,
+              int64_t numShots, std::optional<QDMI_Program_Format> format,
               bool enableTiming, bool enableStatistics,
               const std::optional<qdmi::CustomJobParameter>& custom1,
               const std::optional<qdmi::CustomJobParameter>& custom2,
               const std::optional<qdmi::CustomJobParameter>& custom3,
               const std::optional<qdmi::CustomJobParameter>& custom4,
               const std::optional<qdmi::CustomJobParameter>& custom5) {
-  if (numShots < 0) {
-    return llvm::createStringError(
-        std::make_error_code(std::errc::invalid_argument),
-        "num_shots must be nonnegative");
-  }
-  auto compiled = compileProgram(std::move(input), device, format, enableTiming,
-                                 enableStatistics);
-  if (!compiled) {
-    return compiled.takeError();
-  }
-  return submitPayload(device, *compiled, numShots, custom1, custom2, custom3,
-                       custom4, custom5);
+  return submitProgram(
+      device, std::move(program), numShots, format, custom1, custom2, custom3,
+      custom4, custom5,
+      {.enableTiming = enableTiming, .enableStatistics = enableStatistics});
 }
 
 } // namespace mlir

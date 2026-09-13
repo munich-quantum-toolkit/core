@@ -30,6 +30,7 @@
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 #include "mqt/Support/Passes.h"
+#include "mqt/Support/RandomSeed.h"
 
 #include "ExactUnitaryTest.h"
 #include "Support/IRVerification.h"
@@ -80,6 +81,7 @@
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FileUtilities.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <array>
@@ -2079,12 +2081,37 @@ cx q[0], q[2];
   EXPECT_EQ(loopProgram->str().find("scf.for"), std::string::npos);
 }
 
+TEST_F(CompilerPipelineTest,
+       CompilationSeedSurvivesReproducerAndRestoresInput) {
+  auto source = QCProgram::fromOpenQASMString(qasm::multipleControlledX);
+  ASSERT_TRUE(source);
+  auto moduleOp = source->module();
+  const auto previousSeed =
+      Builder(moduleOp.getContext()).getI64IntegerAttr(12);
+  moduleOp->setAttr(COMPILATION_SEED_ATTR, previousSeed);
+  llvm::SmallString<128> path;
+  ASSERT_FALSE(
+      llvm::sys::fs::createTemporaryFile("mqt-seed-reproducer", "mlir", path));
+  const llvm::FileRemover cleanup(path);
+  PassManager pm(moduleOp.getContext());
+  registerMQTCompilerPasses();
+  pm.enableCrashReproducerGeneration(path);
+  pm.addPass(qco::createVerifyTargetConformance());
+  EXPECT_TRUE(failed(runWithCompilationOptions(pm, moduleOp, {.seed = 9876})));
+  EXPECT_EQ(moduleOp->getAttr(COMPILATION_SEED_ATTR), previousSeed);
+  auto reproducer = llvm::MemoryBuffer::getFile(path);
+  ASSERT_TRUE(reproducer);
+  EXPECT_TRUE(
+      (*reproducer)->getBuffer().contains("mqt.compilation_seed = 9876"));
+}
+
 TEST_F(CompilerPipelineTest, TargetPipelineForwardsMappingControls) {
   const TargetEnvironment environment(makeSparseUCZTarget(true),
                                       makePayloadSpecification());
   OpPassManager pm("builtin.module");
-  populateTargetCompilationPipeline(pm, environment,
-                                    MappingOptions{.seed = 17, .trials = 3});
+  populateTargetCompilationPipeline(
+      pm, environment,
+      CompilationOptions{.seed = 17, .mapping = {.trials = 3}});
   std::string pipeline;
   llvm::raw_string_ostream stream(pipeline);
   pm.printAsTextualPipeline(stream);
