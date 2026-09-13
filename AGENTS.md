@@ -41,9 +41,12 @@ Use relevant sections of the [development policy](docs/development.md) and the
   `docs/glossary.md`. Preserve project names such as `jeff` and `jeff-mlir`.
   Update the glossary when introducing or changing public or ambiguous terms.
 - Document contracts, reasons, ownership, numerical limits, and useful examples.
-  Remove repetition of code, boilerplate parameters, change narration, and
-  unsupported assurances. Use symbol references instead of brittle line
-  pointers. Keep prompts and review history out of code and API docs.
+  Keep small additions brief; extend existing explanations and link to the
+  owning reference for details. Follow the
+  [prose policy](docs/development.md#prose-and-terminology). Remove repetition
+  of code, boilerplate parameters, change narration, and unsupported assurances.
+  Use symbol references instead of brittle line pointers. Keep prompts and
+  review history out of code and API docs.
 - Test changed behavior and concrete regressions, not implementation details.
   Low-impact edits need no new tests. Before weakening a test, check history,
   callers, invariants, and resource limits; equal line coverage or a shared

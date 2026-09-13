@@ -170,6 +170,11 @@ gitmoji convention:
 
 ## Prose and terminology
 
+Keep documentation proportional to the change. For small additions, update the
+existing explanation or example first. Include behavior, usage, and limits that
+help the reader. Keep internal representation and validation details in the
+owning reference and link to it instead of repeating them in user guides.
+
 Apply [Orwell's six rules for writing][orwell] to documentation, comments,
 diagnostics, tests, commit messages, and review communication:
 

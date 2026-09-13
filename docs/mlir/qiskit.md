@@ -58,8 +58,12 @@ arithmetic, casts, and idempotent expressions can therefore disappear;
 expression-tree shape is not preserved. Quantum-resource and classical-snapshot
 canonicalization patterns are not applied, because they can change circuit width
 or introduce scratch bits. Call `cleanup()` explicitly when those broader
-transformations are wanted. Live free parameters retain their identities; unused
-named program inputs remain unsupported.
+transformations are wanted.
+
+Imported free parameters and vectors retain their identities through QC/QCO
+conversion, optimization, and MLIR serialization, so exported circuits can be
+bound with the original Qiskit objects. OpenQASM and QIR do not preserve these
+identities; unused named program inputs remain unsupported.
 
 Free symbols become named {code}`f64` program inputs. Parameter-vector elements
 retain their grouping and index, preserving vector order and positional binding
