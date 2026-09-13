@@ -1,7 +1,7 @@
 # Release wheel optimization
 
-Status: platform selection is complete; integrated hosted qualification remains
-outstanding.
+Status: complete. The selected release recipes pass hosted qualification with
+trial LLVM 23.1.1 SDKs. Production activation requires the companion releases.
 
 ## Goal and scope
 
@@ -35,16 +35,13 @@ unexecuted profiles stop the build before the final configuration is used.
 - Run numerical and CLI workloads after BOLT, stripping, and wheel repair. Check
   the installed CMake package with producer Clang and manylinux GCC; Python
   imports alone do not establish C++ compatibility.
-
-## Work remaining
-
-- [x] Complete macOS final runtime comparisons and record the selected LTO and
-      PGO scope. Both Linux architectures retain native SDK libraries after
-      their completed paired comparisons.
-- [ ] Qualify the actual cibuildwheel hooks with LLVM 23.1.1 trial SDK artifacts
-      on both Linux architectures and Python ABIs, macOS ARM64, and Windows.
-- [ ] Reconcile the companion PRs and study report with final measurements and
-      hosted status. Do not publish an SDK release as part of qualification.
+- Apply final PGO and LTO through directory compile/link options. Global profile
+  flags make unrelated CMake compiler probes collide with trained `main`
+  functions under `-Werror`, producing false PIC failures and invalid TLS
+  relocations during full LTO.
+- Add device build-directory paths only for consumers using build RPATHs.
+  Installed targets retain relative paths, and Linux wheel processing rejects
+  absolute ELF runtime paths before stripping and repair.
 
 ## Validation
 
@@ -57,21 +54,32 @@ current integration. See the
 [SDK study](https://github.com/munich-quantum-software/portable-mlir-toolchain/blob/codex/optimized-release-toolchain/experiments/RESULTS.md)
 for runtime samples, artifact identities, resource measurements, and limits.
 
-The first current Linux profile-use build exposed false compiler-probe failures:
-its unrelated `main` functions collided with trained profile entries under
-`-Werror`. LLVM then omitted PIC flags, causing invalid TLS relocations during
-full LTO. Final PGO flags now use directory compile/link options, which keep
-profiles out of CMake's probes. A retained-profile reproducer fails before the
-change and passes afterward, including a fresh full Core wheel build. Hosted
-qualification must use this corrected configuration.
+[All four Linux ABI jobs](https://github.com/munich-quantum-software/portable-mlir-toolchain/actions/runs/34721263840)
+and
+[both macOS ABI jobs](https://github.com/munich-quantum-software/portable-mlir-toolchain/actions/runs/34721264654)
+pass at Core `1691559de4868923dacc3e565c7c00130d437773`. The actual cibuildwheel
+hooks train fresh profiles, rebuild the recorded SDK dependencies, repair
+wheels, and validate installed numerical, compiler, QIR, CLI, and DD behavior.
+Stable-ABI jobs also pass their configured Python and C++ suites. Supplementary
+C++ tests use the native release library settings; installed shared-wheel
+consumers are checked separately with Clang and GCC on Linux and the recorded
+Xcode on macOS.
 
-The Linux stable qualification found a direct loader dependency missing from the
-driver test target. Linking `${CMAKE_DL_LIBS}` fixes the reproduced manylinux
-link error. Both loader tests pass in the shared build, and all 106 driver tests
-pass with the native release library settings. The supplementary hosted C++
-build now uses those settings; repaired wheel consumers still test the shared
-package with Clang and GCC. The first macOS and Linux free-threaded checks
-passed, as did all Windows jobs. Direct ELF inspection then found a
-build-directory RPATH in three Linux wheel libraries. The driver now adds its
-build-tree search paths only to consumers using build RPATHs. Current Linux and
-macOS qualification must use this packaging correction.
+All 13 binaries in each wheel have the expected architecture and deployment
+requirements, with no build-directory runtime paths. Linux wheels retain
+manylinux 2.28 compatibility, macOS binaries require 13.3, and SDK library
+rebuilds retain the macOS 11.0 target. All six jobs finish within five hours on
+the configured hosted runners. The report distinguishes complete job costs from
+warm rebuilds and records the scope of memory measurements.
+
+[All four Windows ABI jobs](https://github.com/munich-quantum-software/portable-mlir-toolchain/actions/runs/34709109479)
+pass at Core `0fcd55068528aee5421965d66fda9c00f0955fc6`; later changes affect
+Unix release preparation and runtime paths, leaving the Windows build behavior
+unchanged. Native SDK builds and installed consumers pass on all five platforms
+with assertions enabled and disabled.
+
+The report retains runnable compiler-probe diagnostics, before/after
+runtime-path checks, and Clang/GCC consumers tested with the original build tree
+hidden. No production SDK release is part of this qualification. Companion PRs
+and the assertion-free archives must land before the production release workflow
+can use the selected recipes.
