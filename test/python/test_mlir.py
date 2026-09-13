@@ -1475,30 +1475,21 @@ def test_layout_compilation_of_empty_input(*, all_to_all: bool) -> None:
     assert result.allocation_sizes == result.initial_layout == result.final_layout == []
 
 
-@pytest.mark.parametrize(
-    ("source", "message"),
-    [
-        (
-            """module {
-      func.func @main(%n: index {mqt.input_name = "n"}) attributes {mqt.entry_point} {
-        %q = qtensor.alloc(%n) : tensor<?x!qco.qubit>
-        qtensor.dealloc %q : tensor<?x!qco.qubit>
-        return
-      }
-    }""",
-            "fixed allocation sizes",
-        ),
-    ],
-)
-def test_layout_compilation_rejects_untrackable_allocations(source: str, message: str) -> None:
+def test_layout_compilation_rejects_untrackable_allocations() -> None:
     """Fail explicitly when input qubit order depends on runtime execution."""
     target = CompilerTarget(
         2,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations.unrestricted(),
     )
-    program = QCOProgram.from_mlir_str(source)
-    with pytest.raises(RuntimeError, match=message):
+    program = QCOProgram.from_mlir_str("""module {
+  func.func @main(%n: index {mqt.input_name = "n"}) attributes {mqt.entry_point} {
+    %q = qtensor.alloc(%n) : tensor<?x!qco.qubit>
+    qtensor.dealloc %q : tensor<?x!qco.qubit>
+    return
+  }
+}""")
+    with pytest.raises(RuntimeError, match="fixed allocation sizes"):
         program.compile_for_target_with_layout(_test_target_environment(target))
 
 
