@@ -31,7 +31,7 @@ jobs:
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
           permission-contents: write # Needed to push the templating branch
           permission-pull-requests: write # Needed to open the templating pull request
-      - uses: munich-quantum-toolkit/templates@e9759ccc9a0efb6416ebe62ae4da7528d4a75d96 # templates#449
+      - uses: munich-quantum-toolkit/templates@377a3dcd360ed3e4d879901dbda7d21e889f435b # templates#449
         with:
           token: ${{ steps.create-token.outputs.token }}
           name: Core

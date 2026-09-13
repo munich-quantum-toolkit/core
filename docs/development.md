@@ -229,8 +229,8 @@ requested.
 
 ## Release documentation
 
-Prepare `CHANGELOG.md` and `UPGRADING.md` in release-preparation PRs. Feature
-and fix PRs do not need entries in either file. Their descriptions must explain
+Do not change `CHANGELOG.md` or `UPGRADING.md` except in release-preparation PRs
+or when explicitly asked. Feature and fix PR descriptions must explain
 user-facing changes, limitations, and required migrations, with relevant labels
 for Release Drafter.
 
