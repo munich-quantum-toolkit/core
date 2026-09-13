@@ -1327,6 +1327,11 @@ def test_layout_round_trip_preserves_instruction_semantics(pipeline: str) -> Non
     assert restored.layout.final_index_layout() == laid_out.layout.final_index_layout()
     assert [item.operation.name for item in restored.data] == [item.operation.name for item in laid_out.data]
     assert np.allclose(Operator(restored).data, Operator(laid_out).data)
+    without_layout = laid_out.copy()
+    vars(without_layout)["_layout"] = None
+    baseline = QCProgram.from_qiskit(without_layout).to_qiskit()
+    assert baseline.layout is None
+    np.testing.assert_allclose(Operator(restored).data, Operator(baseline).data)
 
 
 def test_nested_numeric_custom_definitions_are_preserved() -> None:
