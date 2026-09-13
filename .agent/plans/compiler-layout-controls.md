@@ -1,7 +1,7 @@
 # Native layouts and SDK layout interchange
 
-Status: implementation complete; final C++ lint, coverage verification, and PR
-publication are in progress.
+Status: implementation and validation complete. Draft PR #2553 is the
+publication record for this extension.
 
 ## Scope and ownership
 
@@ -31,14 +31,13 @@ or a persistent identity for SSA values. A transformation that preserves a
 layout must preserve its resource correspondence; arbitrary external IR edits
 must update or invalidate this discardable metadata.
 
-## Work remaining
+## Completion
 
 - [x] Shared metadata representation, validation, and explicit discard API.
 - [x] Supported SDK import/export forms with no compiler dependency on Qiskit.
 - [x] Transformation invalidation and unsupported-format checks.
 - [x] Native and SDK regression tests, docs, changelog, and stubs.
-- [ ] Final full-file C++ lint.
-- [ ] Push the extension and rewrite #2553 around its final scope and limits.
+- [x] Final full-file C++ lint.
 
 ## Validation
 
@@ -52,13 +51,12 @@ exclusive `mqt.layout_invalidated` unit marker. The Qiskit 2.5 adapter supports
 `TranspileLayout`, including its implicit output order; bare `Layout` values are
 explicitly rejected. No opaque Python state enters the compiler.
 
-Validation so far: 516 Python compiler/translation tests passed (two SC-provider
-fixtures rerun with the native registry), 18 layout tests passed on Qiskit
-2.5.0, 234 compiler tests and 34 metadata tests passed under coverage
-instrumentation, and CLI layout/discard checks passed. Generated stubs are
-current. Final checks also cover direct native serializer rejection and isolated
-CLI pipelines.
+Validation: 516 Python compiler/translation tests passed with the native
+SC-provider registry, 18 layout tests passed on Qiskit 2.5.0, 234 compiler tests
+and 34 metadata tests passed under coverage instrumentation, and CLI
+layout/discard checks passed. Generated stubs are current. Final checks also
+cover direct native serializer rejection and isolated CLI pipelines.
 
-Final native patch coverage is 418/437 executable production lines (95.7%),
-including all 129 executable lines of `QubitLayout.cpp`. No threshold or
+Final native patch coverage is 419/438 executable production lines (95.7%),
+including all 130 executable lines of `QubitLayout.cpp`. No threshold or
 exclusion changes were needed. Both published usage examples execute.
