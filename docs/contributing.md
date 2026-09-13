@@ -72,8 +72,8 @@ Contributions that do not comply with these guidelines or violate our
 - Focus on a single feature or bug at a time and only touch relevant files.
   Split multiple features into separate contributions.
 - Add tests for new features to ensure they work as intended.
-- Document new features. Describe user-facing changes in the PR description; for
-  breaking changes, update the upgrade guide. For details, see
+- Document new features. Describe user-facing changes and required migrations in
+  the PR description. For details, see
   {ref}`maintaining-changelog-upgrade-guide`.
 - Add tests for bug fixes to demonstrate the fix.
 - Document your code thoroughly and ensure it is readable.
@@ -628,9 +628,10 @@ releases may include breaking changes. To inform users about changes to the
 project, we maintain a {doc}`changelog <CHANGELOG>` and an
 {doc}`upgrade guide <UPGRADING>`.
 
-Prepare the changelog in release-preparation PRs. Feature and fix PRs do not
-need changelog entries. Describe their user-facing effects and limitations in
-the PR description, and apply the relevant labels for Release Drafter.
+Prepare the changelog and upgrade guide in release-preparation PRs. Feature and
+fix PRs do not need entries in either file. Describe their user-facing effects,
+limitations, and migration instructions in the PR description, and apply the
+relevant labels for Release Drafter.
 
 The changelog format is based on a mixture of [Keep a Changelog] and
 [Common Changelog]. There are the following categories:
@@ -652,28 +653,25 @@ During release preparation, follow these guidelines:
 - Each entry links to the PR and all contributing authors. The links are defined
   in the PR and contributor link sections at the bottom of the file.
 
-AI tools may help draft entries from the release diff and merged PRs. A
-maintainer must verify the draft against those sources, including its claims, PR
-links, and contributor attribution, before accepting it.
+AI tools may help draft release documentation from the release diff and merged
+PRs. A maintainer must verify the draft against those sources, including its
+claims, PR links, and contributor attribution, before accepting it.
 
-If your PR introduces major or breaking changes, or if you think additional
-context would help users, please also add a section to the upgrade guide. The
-upgrade guide is intended to provide a general overview of significant changes
-in a more descriptive and prose-oriented form than the changelog. Use it to
-explain how users may need to adapt their usage of MQT Core, highlight new
-workflows, or clarify the impact of important updates. Feel free to write in a
-style that is helpful and accessible for users seeking to understand the broader
-implications of recent changes.
+During release preparation, collect migration instructions from PR descriptions
+in the upgrade guide. Explain how users must adapt their usage of MQT Core,
+including replacements for changed or removed APIs and any changes in semantics.
+Add context for significant new workflows where it helps users. Verify migration
+examples against the released and proposed APIs.
 
 ## Releasing a New Version
 
 When it is time to release a new version of MQT Core, create a PR that prepares
 the release. This PR should:
 
-- prepare changelog entries from the Git history, merged PR descriptions, the
-  Release Drafter draft, and any existing Unreleased notes. Use the commits
-  included in the release, accounting for backports and changes already
-  published on maintenance branches,
+- prepare the changelog and upgrade guide from the Git history, merged PR
+  descriptions, the Release Drafter draft, and any existing Unreleased notes.
+  Use the commits included in the release, accounting for backports and changes
+  already published on maintenance branches,
 - add new version titles in both the changelog and the upgrade guide,
 - add the release date to the changelog entry for the new version,
 - update the version links at the bottom of both files,
