@@ -67,9 +67,17 @@ QubitLayout::fromAttr(Attribute attribute,
   }
   for (const auto field : dict) {
     if (!llvm::StringSwitch<bool>(field.getName().getValue())
-             .Cases({"physical_size", "initial", "routing", "output_order",
-                     "input_count", "ancillas", "registers"},
-                    true)
+             .Cases(
+                 {
+                     "physical_size",
+                     "initial",
+                     "routing",
+                     "output_order",
+                     "input_count",
+                     "ancillas",
+                     "registers",
+                 },
+                 true)
              .Default(false)) {
       emitError() << "unknown qubit layout field '" << field.getName() << "'";
       return failure();
