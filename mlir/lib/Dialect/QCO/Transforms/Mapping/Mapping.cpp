@@ -506,9 +506,6 @@ protected:
     size_t offset = 0;
     for (auto [op, size] : allocations) {
       tracking_->result.allocationSizes.push_back(size);
-      if (size == 0) {
-        continue;
-      }
       rewriter.setInsertionPointAfter(op);
       auto root = op->getResult(0);
       auto& use = *root.use_begin();
@@ -591,25 +588,12 @@ static LogicalResult collectSourceOrder(func::FuncOp func,
 /// Complete a requested source layout with deterministic workspace placement.
 static Layout requestedLayout(const CompilerTarget& target,
                               const LayoutTracking& tracking) {
-  SmallVector<size_t> mapping(target.numSites(),
-                              std::numeric_limits<size_t>::max());
-  llvm::SmallDenseSet<size_t> used;
+  auto layout = Layout::identity(target.numSites());
   for (auto [source, site] : llvm::enumerate(tracking.requested)) {
-    const auto vertex = *target.vertexForSite(site);
-    mapping[tracking.sourceToProgram[source]] = vertex;
-    used.insert(vertex);
+    layout.swap(layout.getHardwareIndex(tracking.sourceToProgram[source]),
+                *target.vertexForSite(site));
   }
-  size_t next = 0;
-  for (auto& site : mapping) {
-    if (site != std::numeric_limits<size_t>::max()) {
-      continue;
-    }
-    while (used.contains(next)) {
-      ++next;
-    }
-    site = next++;
-  }
-  return Layout::fromMapping(mapping);
+  return layout;
 }
 
 static std::vector<int64_t> sourceLayout(const CompilerTarget& target,
