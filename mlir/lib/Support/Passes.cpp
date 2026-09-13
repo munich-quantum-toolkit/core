@@ -42,6 +42,13 @@ struct InvalidateLayoutPass final
     : PassWrapper<InvalidateLayoutPass, OperationPass<ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(InvalidateLayoutPass)
 
+  [[nodiscard]] StringRef getArgument() const override {
+    return "mqt-invalidate-layout";
+  }
+  [[nodiscard]] StringRef getDescription() const override {
+    return "Invalidate qubit layout provenance before resource transformations";
+  }
+
 protected:
   void runOnOperation() override { mqt::invalidateQubitLayout(getOperation()); }
 };
@@ -69,6 +76,7 @@ LogicalResult runWithPassManager(
 
 void registerMQTCompilerPasses() {
   static const auto REGISTERED = [] {
+    PassRegistration<InvalidateLayoutPass>();
     registerTransformsPasses();
     registerConvertCBitToMemRef();
     qco::registerDecomposeMultiControlled();
