@@ -23,10 +23,13 @@ class PassManager;
 } // namespace mlir
 
 /// Populate the pass manager and run it on the module.
+/// Invalidate imported layout metadata unless the pipeline preserves resource
+/// identity and order and the caller sets preservesLayout.
 mlir::LogicalResult runWithPassManager(
     mlir::ModuleOp moduleOp,
     mlir::function_ref<void(mlir::OpPassManager&)> populatePasses,
-    mlir::StringRef errorMessage, const mlir::CompilationOptions& options = {});
+    mlir::StringRef errorMessage, const mlir::CompilationOptions& options = {},
+    bool preservesLayout = false);
 
 /// Run passes with scoped compilation options; restore input metadata on
 /// completion.

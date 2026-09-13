@@ -32,6 +32,18 @@ decision diagrams
   for the plural. A graph representation that shares repeated substructures to
   store and manipulate quantum states and operations compactly.
 
+qubit layout provenance
+  **Preferred term:** qubit layout provenance. **Accepted alias:** layout
+  metadata. The correspondence between source logical inputs, initial physical
+  positions, circuit wires, and final positions. Transformations must update or
+  invalidate it when resource identity or order changes. It does not change
+  which wires the circuit operations act on.
+
+routing permutation
+  **Preferred term:** routing permutation. **Accepted aliases:** none. The map
+  from circuit-wire positions to final positions after routing. Composing it
+  with the initial placement gives the final positions of logical inputs.
+
 Pauli string
   **Preferred term:** Pauli string. **Accepted alias:** Pauli product. A tensor
   product of single-qubit identity or Pauli X, Y, and Z operators.

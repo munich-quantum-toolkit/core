@@ -40,7 +40,7 @@ captures. Parameters and parameter vectors are created once per export.
 | Parameter-vector elements                                               | Supported            | Supported                          |
 | Dense numeric unitaries up to eight qubits                              | Supported            | Supported                          |
 | Register aliases or interleaved membership                              | Rejected             | Rejected                           |
-| Transpiler layout metadata                                              | Accepted and ignored | Not emitted                        |
+| Transpiler layout metadata                                              | Preserved            | Reconstructed when still valid     |
 
 Classical-expression variables may refer to Clbits or ClassicalRegisters in the
 containing circuit. This includes values used only by the condition or switch
@@ -183,9 +183,48 @@ Qiskit import preserves inverse, numeric power, and closed-control modifiers on
 dense-unitary operations. Export preserves inverse and closed-control modifiers.
 Other powers require canonicalization or synthesis.
 
-A circuit remains valid when {code}`circ.layout` is present. The importer
-translates the circuit operations and deliberately does not preserve physical or
-virtual layout metadata.
+### Transpiler layouts
+
+The Qiskit 2.5 adapter preserves `TranspileLayout` metadata in the shared
+`mqt.layout` module attribute. Operations keep their circuit-wire semantics;
+import does not apply the layout to the gates again. Export reconstructs source
+qubits and registers, their initial assignments, the routing permutation, and
+the output order. The compiler does not retain Python objects or call Qiskit
+transpiler algorithms.
+
+Supported metadata includes partial initial and final assignments, unused
+physical positions, loose qubits, ancillary qubits and registers, and source
+registers whose order differs from the physical circuit. Input indices must be
+distinct and contiguous. Physical positions must refer to existing circuit
+qubits. Missing assignments remain missing. Bare `Layout` objects and malformed
+metadata are rejected; the supported `QuantumCircuit.layout` surface is
+`TranspileLayout`. Support for other Qiskit minor versions requires their own
+version adapter.
+
+Copies, MLIR serialization, and plain QC/QCO conversions preserve the metadata.
+Cleanup, optimization, routing, allocation changes, reuse, and public custom
+pass pipelines conservatively replace it with `mqt.layout_invalidated`. Qiskit
+export then raises an error instead of attaching stale mappings. `MappingResult`
+from target compilation is a separate snapshot of that call; it does not update
+the imported provenance.
+
+OpenQASM, QIR/LLVM, and jeff cannot encode this layout contract and reject both
+retained and invalidated metadata. Call `program.discard_layout()` to explicitly
+accept losing it before conversion or export:
+
+```python
+program = QCProgram.from_qiskit(transpiled_circuit)
+restored = program.copy().to_qco().to_qc().to_qiskit()
+program.discard_layout()
+source = program.to_openqasm3().source
+```
+
+Discarding layout metadata does not change operations. The CLI equivalent is
+`mqt-cc --discard-layout`. C++ callers use `Program::discardLayout()`. Pass
+authors using raw IR or their own pass manager must preserve correspondence,
+update `mqt.layout`, or call `mqt::invalidateQubitLayout` before changing
+resource identity or order. The metadata verifier checks the schema; it cannot
+prove that arbitrary external IR edits retained wire correspondence.
 
 Names passed between Qiskit and the compiler must not contain NUL characters.
 The importer checks names before native access. Arithmetic-progression loop

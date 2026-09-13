@@ -23,6 +23,7 @@ import pytest
 import qiskit
 from qiskit import ClassicalRegister, QuantumCircuit, QuantumRegister, transpile
 from qiskit.circuit import (
+    AncillaRegister,
     AnnotatedOperation,
     Clbit,
     ControlModifier,
@@ -41,6 +42,7 @@ from qiskit.circuit.classical import expr, types
 from qiskit.circuit.controlflow import CASE_DEFAULT, IfElseOp
 from qiskit.circuit.parametervector import ParameterVectorElement
 from qiskit.quantum_info import Operator, random_unitary
+from qiskit.transpiler import Layout, TranspileLayout
 from qiskit_support import supports_qiskit_translation
 
 from mqt.core.mlir import (
@@ -50,6 +52,7 @@ from mqt.core.mlir import (
     PayloadSpecification,
     ProgramCapability,
     QCProgram,
+    QIRProfile,
     TargetEnvironment,
     compile_program,
     sample,
@@ -1328,8 +1331,9 @@ def test_qiskit_measurement_destination_requires_foldable_index(*, dynamic: bool
     assert program.ir == source_ir
 
 
-def test_layout_is_accepted_and_ignored() -> None:
-    """Import laid-out operations without retaining transpiler metadata."""
+@pytest.mark.parametrize("pipeline", ["qc", "qco", "serialized"])
+def test_layout_round_trip_preserves_instruction_semantics(pipeline: str) -> None:
+    """Keep circuit-wire provenance separate from executable instructions."""
     circuit = QuantumCircuit(2)
     circuit.cx(0, 1)
     laid_out = transpile(
@@ -1343,8 +1347,13 @@ def test_layout_is_accepted_and_ignored() -> None:
     program = QCProgram.from_qiskit(laid_out)
     restored = program.to_qiskit()
 
-    assert "qc.ctrl" in program.ir
-    assert "layout" not in program.ir
+    if pipeline == "qco":
+        restored = program.to_qco().to_qiskit()
+    elif pipeline == "serialized":
+        restored = QCProgram.from_mlir_str(program.ir).to_qiskit()
+    assert restored.layout is not None
+    assert restored.layout.initial_index_layout() == laid_out.layout.initial_index_layout()
+    assert restored.layout.final_index_layout() == laid_out.layout.final_index_layout()
     assert [item.operation.name for item in restored.data] == [item.operation.name for item in laid_out.data]
     assert np.allclose(Operator(restored).data, Operator(laid_out).data)
 
@@ -4621,3 +4630,172 @@ def test_list_range_normalization_preserves_exact_parameter_limits(values: list[
         circuit.rx(index, 0)
     program = QCProgram.from_qiskit(circuit)
     assert QCProgram.from_qiskit(program.to_qiskit()).is_valid
+
+
+def test_partial_layout_ancillas_and_output_order_round_trip() -> None:
+    """Retain gaps, source groups, ancillary inputs, and independent permutations."""
+    virtual = QuantumRegister(3, "source")
+    auxiliary = AncillaRegister(1, "workspace")
+    source = [virtual[2], virtual[0], virtual[1], auxiliary[0]]
+    circuit = QuantumCircuit(5)
+    circuit.h(4)
+    circuit.cx(4, 1)
+    # QuantumCircuit exposes layout as a read-only property.
+    vars(circuit)["_layout"] = TranspileLayout(
+        Layout({virtual[0]: 4, virtual[2]: 1, auxiliary[0]: 0}),
+        dict(zip(source, range(4), strict=True)),
+        Layout(dict(zip(circuit.qubits, [3, 1, 4, 0, 2], strict=True))),
+        _input_qubit_count=3,
+        _output_qubit_list=[circuit.qubits[i] for i in [2, 0, 4, 1, 3]],
+    )
+    program = QCProgram.from_qiskit(circuit).to_qco().to_qc()
+    restored = QCProgram.from_mlir_str(program.ir).to_qiskit()
+    layout = restored.layout
+    assert layout is not None
+    assert layout.final_layout is not None
+    ordered = sorted(layout.input_qubit_mapping, key=layout.input_qubit_mapping.__getitem__)
+    assert [layout.initial_layout.get_virtual_bits().get(bit) for bit in ordered] == [1, 4, None, 0]
+    assert ordered == source
+    assert layout.initial_index_layout(filter_ancillas=True) == [1, 4, None]
+    assert layout.routing_permutation() == [4, 3, 2, 1, 0]
+    assert [layout.final_layout[bit] for bit in restored.qubits] == [3, 1, 4, 0, 2]
+    np.testing.assert_allclose(Operator(restored).data, Operator(circuit).data)
+
+
+@pytest.mark.parametrize("transformation", ["cleanup", "reuse", "custom"])
+def test_layout_is_invalidated_by_resource_transformations(transformation: str) -> None:
+    """Never expose obsolete layout metadata after changing resource correspondence."""
+    circuit = QuantumCircuit(2)
+    circuit.cx(0, 1)
+    circuit = transpile(circuit, coupling_map=[[0, 1]], initial_layout=[1, 0], optimization_level=0)
+    program = QCProgram.from_qiskit(circuit).to_qco()
+    if transformation == "cleanup":
+        program.cleanup()
+    elif transformation == "reuse":
+        program.reuse_qubits()
+    else:
+        program.run_pass_pipeline("builtin.module(canonicalize)")
+    assert "mqt.layout_invalidated" in program.ir
+    with pytest.raises(RuntimeError, match="layout was invalidated"):
+        program.to_qiskit()
+    program.discard_layout()
+    assert program.to_qiskit().layout is None
+
+
+@pytest.mark.parametrize("output", ["openqasm", "qir", "jeff"])
+def test_layout_loss_requires_explicit_discard(output: str) -> None:
+    """Formats without layout provenance require an explicit caller decision."""
+    circuit = QuantumCircuit(2)
+    circuit.h(0)
+    circuit.cx(0, 1)
+    circuit = transpile(circuit, coupling_map=[[0, 1]], initial_layout=[1, 0], optimization_level=0)
+    program = QCProgram.from_qiskit(circuit)
+    exporters = {
+        "openqasm": program.to_openqasm3,
+        "qir": lambda: program.to_qir(QIRProfile.BASE, copy=True),
+        "jeff": lambda: program.copy().to_qco().to_jeff(),
+    }
+    with pytest.raises((RuntimeError, ValueError)):
+        exporters[output]()
+    program.discard_layout()
+    if output == "openqasm":
+        assert program.to_openqasm3().source
+    elif output == "qir":
+        assert program.to_qir(QIRProfile.BASE).to_bitcode()
+    else:
+        assert program.to_qco().to_jeff().to_bytes()
+
+
+@pytest.mark.parametrize("invalid", ["position", "input_count", "input_order", "output_order"])
+def test_invalid_layout_metadata_is_rejected(invalid: str) -> None:
+    """Reject missing resources and malformed maps before importing instructions."""
+    circuit = QuantumCircuit(2)
+    circuit.cx(0, 1)
+    circuit = transpile(circuit, coupling_map=[[0, 1]], optimization_level=0)
+    assert circuit.layout is not None
+    if invalid == "position":
+        bit = next(iter(circuit.layout.initial_layout.get_virtual_bits()))
+        circuit.layout.initial_layout.get_virtual_bits()[bit] = 9
+    elif invalid == "input_count":
+        vars(circuit.layout)["_input_qubit_count"] = -1
+    elif invalid == "input_order":
+        bit = next(iter(circuit.layout.input_qubit_mapping))
+        circuit.layout.input_qubit_mapping[bit] = 9
+    else:
+        vars(circuit.layout)["_output_qubit_list"] = [circuit.qubits[0], circuit.qubits[0]]
+    with pytest.raises(RuntimeError, match="layout"):
+        QCProgram.from_qiskit(circuit)
+
+
+@pytest.mark.parametrize("partial", [False, True])
+def test_routing_layout_with_optional_output_order(*, partial: bool) -> None:
+    """Retain a partial routing map and the SDK's implicit output ordering."""
+    virtual = QuantumRegister(3, "source")
+    circuit = QuantumCircuit(3)
+    circuit.x(0)
+    circuit.cx(0, 2)
+    final = {circuit.qubits[2]: 1, circuit.qubits[0]: 2}
+    if not partial:
+        final[circuit.qubits[1]] = 0
+    # QuantumCircuit exposes layout as a read-only property.
+    vars(circuit)["_layout"] = TranspileLayout(
+        Layout(dict(zip(virtual, [2, 0, 1], strict=True))),
+        dict(zip(virtual, range(3), strict=True)),
+        Layout(final),
+        _input_qubit_count=3,
+        _output_qubit_list=circuit.qubits if partial else None,
+    )
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+    layout = restored.layout
+    assert layout is not None
+    assert layout.final_layout is not None
+    if partial:
+        assert [layout.final_layout.get_virtual_bits().get(bit) for bit in restored.qubits] == [2, None, 1]
+    else:
+        assert layout.routing_permutation() == [1, 2, 0]
+        assert circuit.layout is not None
+        assert layout.final_index_layout() == circuit.layout.final_index_layout()
+    np.testing.assert_allclose(Operator(restored).data, Operator(circuit).data)
+
+
+def test_transpiler_added_ancillas_and_routing_round_trip() -> None:
+    """Keep actual transpiler output, including added workspace and routing."""
+    circuit = QuantumCircuit(3)
+    circuit.h(0)
+    circuit.cx(0, 2)
+    circuit.cx(0, 1)
+    circuit = transpile(
+        circuit,
+        coupling_map=[[0, 1], [1, 0], [1, 2], [2, 1], [2, 3], [3, 2]],
+        initial_layout=[0, 1, 3],
+        optimization_level=0,
+        seed_transpiler=4,
+    )
+    assert circuit.layout is not None
+    assert circuit.layout.final_layout is not None
+    assert circuit.num_qubits > 3
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+    assert restored.layout is not None
+    assert restored.layout.initial_index_layout() == circuit.layout.initial_index_layout()
+    assert restored.layout.final_index_layout() == circuit.layout.final_index_layout()
+    assert restored.layout.routing_permutation() == circuit.layout.routing_permutation()
+    np.testing.assert_allclose(Operator(restored).data, Operator(circuit).data)
+
+
+def test_layout_export_rejects_external_resource_removal() -> None:
+    """Diagnose an external edit that changes width without updating provenance."""
+    circuit = QuantumCircuit(2)
+    circuit.x(0)
+    circuit = transpile(circuit, coupling_map=[[0, 1]], optimization_level=0)
+    program = QCProgram.from_qiskit(circuit)
+    edited = QCProgram.from_mlir_str(program.ir.replace("memref<2x!qc.qubit>", "memref<1x!qc.qubit>"))
+    with pytest.raises(RuntimeError, match="layout no longer matches circuit resources"):
+        edited.to_qiskit()
+
+
+def test_unsupported_layout_object_is_rejected() -> None:
+    """Reject shapes outside the supported TranspileLayout adapter contract."""
+    circuit = QuantumCircuit(1)
+    vars(circuit)["_layout"] = Layout({circuit.qubits[0]: 0})
+    with pytest.raises(RuntimeError, match="unsupported Qiskit layout metadata"):
+        QCProgram.from_qiskit(circuit)

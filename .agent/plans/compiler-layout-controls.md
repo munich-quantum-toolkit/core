@@ -1,55 +1,59 @@
-# Native compiler layout controls
+# Native layouts and SDK layout interchange
 
-Status: complete.
+Status: implementation complete; final C++ lint, coverage verification, and PR
+publication are in progress.
 
-## Outcome and scope
+## Scope and ownership
 
-`QCOProgram::compileForTargetWithLayout` and its Python binding compile in place
-and return initial and final target site IDs in input allocation order. The
-caller can supply a complete initial layout or select automatic placement with
-`MappingOptions`. The low-level pipeline publishes its result after target
-conformance succeeds. Failed preparation or synthesis leaves the caller's prior
-result unchanged.
+Extend #2553 to resolve #2070. Keep the existing native initial-placement API
+and detached `MappingResult`. Add frontend-neutral serialized metadata for
+logical input resources, their initial physical positions, an optional routing
+permutation, source register groups, and the physical output order. The existing
+version-specific SDK adapter alone reads and reconstructs Qiskit objects.
 
-The compiler owns tracking and routing. No SDK code is used. Input allocations
-must have fixed sizes in the entry block. Tensor slots follow ascending index
-order, and idle slots remain represented and count against target capacity. The
-ordinary compilation API retains its existing optimization behavior.
+Support initial and final layouts, partial assignments, physical gaps, ancillary
+inputs, and physical/output orders that differ from logical register order.
+Reject references to missing resources and inconsistent metadata. Keep the
+existing supported circuit-operation and register-membership boundary.
 
-## Decisions
+## Lifetime and output rules
 
-`MappingResult` is a detached compilation snapshot rather than persistent IR
-metadata. Later transformations cannot silently leave stale layout attributes
-attached to the program. Callers retain the snapshot only for the compilation
-that produced it.
+Copies, MLIR serialization, and plain QC/QCO conversions preserve imported
+layout metadata. Resource-changing and arbitrary transformation pipelines
+conservatively invalidate it. Invalidated layouts cannot be exported as valid
+SDK layouts. Provide an explicit discard operation for callers who no longer
+need provenance. OpenQASM, QIR/LLVM, and jeff output reject retained layout
+metadata until the caller discards it. Low-level native pipeline entry points
+must use the same invalidation and output checks as the program APIs.
 
-Preparation inserts temporary tagged barriers before cleanup. They keep tensor
-slots live and identify source order even when first-use order differs.
-Canonicalization preserves these boundaries until the native mapper consumes
-them. Mapping records its initial and final layouts and removes the boundaries
-before native synthesis. The implementation lives in the QCO mapping subsystem;
-the compiler pipeline and bindings expose the result without recreating
-tracking.
+The layout snapshot represents circuit-wire provenance, not an executable gate
+or a persistent identity for SSA values. A transformation that preserves a
+layout must preserve its resource correspondence; arbitrary external IR edits
+must update or invalidate this discardable metadata.
 
-## Validation and limits
+## Work remaining
 
-The compiler bindings, native DD simulation, and translation suites pass all 516
-selected Python cases, with both bundled device providers available. The final
-rebuilt extension passes all 26 layout regressions. All 44 native target and
-mapping tests pass. Builds, generated stubs, repository lint, and changed-file
-C++ lint pass.
+- [x] Shared metadata representation, validation, and explicit discard API.
+- [x] Supported SDK import/export forms with no compiler dependency on Qiskit.
+- [x] Transformation invalidation and unsupported-format checks.
+- [ ] Native and SDK regression tests, docs, changelog, stubs, and lint.
+- [ ] Push the extension and rewrite #2553 around its final scope and limits.
 
-Regressions cover complex-amplitude equivalence, forced routing through unused
-sites, measurement feedback, sparse site IDs, idle slots, scalar and tensor
-allocation order, empty inputs, malformed layouts, and failure publication. The
-documented example runs successfully.
+## Validation
 
-Native tests also cover complete routed unitaries, user barriers, and
-unsupported quantum entry arguments. The instrumented native tests cover 233 of
-252 changed executable production lines (92.5%) in the local coverage build.
+Existing native target/mapping and Python layout regressions cover placement,
+routing, tensor order, idle slots, and failure publication. Add issue #2070's
+round-trip, transformation, partial-layout, ancilla, and output-format cases.
+Run the supported Qiskit adapter at its minimum and installed patch versions.
 
-Tracking starts at the compilation call; it cannot recover earlier resource
-changes. Dynamic, nested, and already physical allocations are unsupported.
-Partial layout constraints, SDK layout interchange, CLI layout input, and
-snapshot serialization remain outside this change. Existing target and payload
-limitations still apply.
+The implemented metadata uses a validated `mqt.layout` dictionary and a mutually
+exclusive `mqt.layout_invalidated` unit marker. The Qiskit 2.5 adapter supports
+`TranspileLayout`, including its implicit output order; bare `Layout` values are
+explicitly rejected. No opaque Python state enters the compiler.
+
+Validation so far: 516 Python compiler/translation tests passed (two SC-provider
+fixtures rerun with the native registry), 18 layout tests passed on Qiskit
+2.5.0, 233 compiler tests and 34 metadata tests passed under coverage
+instrumentation, and CLI layout/discard checks passed. Generated stubs are
+current. Final checks also cover direct native serializer rejection and isolated
+CLI pipelines.

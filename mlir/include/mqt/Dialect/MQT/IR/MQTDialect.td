@@ -23,6 +23,32 @@ def MQTDialect : Dialect {
     The MQT dialect owns frontend-neutral metadata that must remain meaningful
     across quantum dialect conversions. It defines no operations or types.
 
+    `mqt.layout` is a module-level dictionary of qubit layout provenance:
+    - `physical_size`: nonnegative i64 circuit width.
+    - `initial`: dense i64 logical-input-to-initial-position assignments.
+    - `routing` (optional): dense i64 circuit-wire-to-final-position assignments;
+      absence leaves the initial logical position unchanged. When present,
+      the final logical position is `routing[output_order[initial[input]]]`.
+    - `output_order`: dense i64 permutation from physical positions to circuit
+      wires, in allocation declaration order with register slots flattened.
+    - `input_count` (optional): number of original logical inputs, preceding any
+      workspace inputs in `initial`.
+    - `ancillas`: dense i64 indices of explicitly ancillary logical inputs.
+    - `registers`: array of dictionaries with a unique `name`, dense i64 `slots`
+      mapping register slots to logical inputs, and boolean `ancillary` status.
+
+    Missing `initial`, `routing`, and register-slot assignments use -1. Assigned
+    positions are distinct and in range. Logical inputs can be unregistered.
+    This metadata does not alter instruction semantics and stores no SDK objects.
+    Copies, serialization, and plain QC/QCO conversions retain it. Core's public
+    transformation helpers and resource-changing passes conservatively replace
+    it with the mutually exclusive unit attribute `mqt.layout_invalidated`.
+    External pass managers and raw IR editors must preserve correspondence,
+    update the dictionary, or call `invalidateQubitLayout` before changing wire
+    identity or order. Schema verification cannot prove external edits preserve
+    correspondence. Exporters reject stale provenance; formats without layout
+    support require explicit `discardQubitLayout` before export.
+
     `mqt.input_name` records the source-level name of a function input.
     `mqt.input_id` optionally records an opaque 128-bit source identity on a
     named function input. It is an `i128` attribute, unique within the function;
@@ -60,7 +86,9 @@ def MQTDialect : Dialect {
   }];
 
   let discardableAttrs = (ins "::mlir::StringAttr":$input_name,
-      "::mlir::IntegerAttr":$input_id, "::mlir::StringAttr":$source_name,
+      "::mlir::IntegerAttr":$input_id,
+      "::mlir::DictionaryAttr":$layout, "::mlir::UnitAttr":$layout_invalidated,
+      "::mlir::StringAttr":$source_name,
       "::mlir::DictionaryAttr":$parameter_group,
       "::mlir::StringAttr":$register_name, "::mlir::UnitAttr":$entry_point,
       "::mlir::UnitAttr":$unitary);

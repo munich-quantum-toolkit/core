@@ -92,6 +92,9 @@ public:
   /// module. Consuming or destroying the program invalidates the operation.
   [[nodiscard]] ModuleOp module() const;
 
+  /// Explicitly discard retained or invalidated layout provenance.
+  void discardLayout();
+
 protected:
   struct Storage {
     std::shared_ptr<MLIRContext> context;
@@ -329,6 +332,7 @@ public:
   [[nodiscard]] bool cleanup();
 
   /// Serialize this program to a binary `jeff` buffer.
+  /// Return an empty vector and emit a diagnostic if serialization fails.
   [[nodiscard]] std::vector<std::byte> toBytes() const;
 
   /// Serialize this program to a binary `jeff` file.

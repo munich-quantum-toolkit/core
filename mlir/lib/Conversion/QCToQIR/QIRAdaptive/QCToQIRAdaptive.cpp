@@ -15,6 +15,7 @@
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
@@ -797,6 +798,10 @@ protected:
   void runOnOperation() override {
     MLIRContext* ctx = &getContext();
     auto moduleOp = getOperation();
+    if (failed(mqt::requireNoQubitLayout(moduleOp))) {
+      signalPassFailure();
+      return;
+    }
     if (failed(mqt::verifyQuantumAllocations(moduleOp))) {
       signalPassFailure();
       return;

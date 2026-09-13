@@ -15,6 +15,7 @@
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
@@ -2923,6 +2924,19 @@ nb::object exportCircuit(const mlir::QCProgram& program,
                          const mlir::CompilerTarget* const target) {
   mlir::OwningOpRef<mlir::ModuleOp> expanded = program.module().clone();
   auto moduleOp = *expanded;
+  if (moduleOp->hasAttr("mqt.layout_invalidated")) {
+    throw std::runtime_error("qubit layout was invalidated by a "
+                             "transformation; discard_layout() before export");
+  }
+  std::optional<mlir::mqt::QubitLayout> layout;
+  if (const auto attr = moduleOp->getAttr("mqt.layout")) {
+    auto parsed = mlir::mqt::QubitLayout::fromAttr(
+        attr, [&] { return moduleOp.emitError(); });
+    if (failed(parsed)) {
+      throw std::runtime_error("invalid qubit layout metadata");
+    }
+    layout = std::move(*parsed);
+  }
   mlir::RewritePatternSet patterns(moduleOp.getContext());
   mlir::mqt::populateIntegerExpansionPatterns(patterns);
   /// Fold scalar expressions without applying resource or snapshot rewrites.
@@ -3002,6 +3016,9 @@ nb::object exportCircuit(const mlir::QCProgram& program,
                                  static_cast<uint32_t>(reg.bits.size()));
   }
   emitCircuit(circuit, *writer);
+  if (layout) {
+    writer->setLayout(*layout);
+  }
   return writer->finish();
 }
 

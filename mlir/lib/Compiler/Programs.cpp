@@ -13,6 +13,7 @@
 #include "mqt/Conversion/QCToQCO/QCToQCO.h"
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCInterfaces.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
@@ -64,6 +65,8 @@
 #include <utility>
 
 namespace mlir {
+
+void Program::discardLayout() { mqt::discardQubitLayout(mod()); }
 
 static void ensureInlinerExtensions(MLIRContext* context) {
   DialectRegistry registry;
