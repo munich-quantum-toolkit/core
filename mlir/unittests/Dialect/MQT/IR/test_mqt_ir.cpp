@@ -108,7 +108,19 @@ TEST_F(MQTIRTest, RoundTripsQubitLayoutProvenance) {
       .outputOrder = {2, 0, 4, 1, 3},
       .inputCount = 3,
       .ancillas = {3},
-      .registers = {{"source", {1, 2, 0, -1}, false}, {"workspace", {3}, true}},
+      .registers =
+          {
+              {
+                  .name = "source",
+                  .slots = {1, 2, 0, -1},
+                  .ancillary = false,
+              },
+              {
+                  .name = "workspace",
+                  .slots = {3},
+                  .ancillary = true,
+              },
+          },
   };
   auto moduleOp = parse("module {}");
   ASSERT_TRUE(moduleOp);
@@ -135,7 +147,10 @@ TEST_F(MQTIRTest, InvalidatesAndExplicitlyDiscardsQubitLayouts) {
   mqt::invalidateQubitLayout(*moduleOp);
   EXPECT_FALSE((*moduleOp)->hasAttr("mqt.layout_invalidated"));
   const mqt::QubitLayout layout{
-      .physicalSize = 1, .initial = {0}, .outputOrder = {0}};
+      .physicalSize = 1,
+      .initial = {0},
+      .outputOrder = {0},
+  };
   (*moduleOp)->setAttr("mqt.layout", layout.toAttr(context.get()));
   EXPECT_TRUE(failed(mqt::requireNoQubitLayout(*moduleOp)));
   mqt::invalidateQubitLayout(*moduleOp);
@@ -158,7 +173,10 @@ TEST_F(MQTIRTest, RejectsMalformedQubitLayoutSchema) {
   EXPECT_TRUE(failed(mqt::QubitLayout::fromAttr({}, emit)));
   Builder builder(context.get());
   const mqt::QubitLayout layout{
-      .physicalSize = 2, .initial = {1, 0}, .outputOrder = {0, 1}};
+      .physicalSize = 2,
+      .initial = {1, 0},
+      .outputOrder = {0, 1},
+  };
   const auto attribute = layout.toAttr(context.get());
   const auto reject = [&](StringRef name, Attribute replacement) {
     NamedAttrList fields(attribute);
@@ -168,7 +186,7 @@ TEST_F(MQTIRTest, RejectsMalformedQubitLayoutSchema) {
         << name.str();
   };
   reject("unknown", builder.getUnitAttr());
-  for (const auto name :
+  for (const auto* const name :
        {"physical_size", "initial", "output_order", "ancillas", "registers"}) {
     reject(name, builder.getUnitAttr());
     NamedAttrList fields(attribute);
@@ -178,7 +196,7 @@ TEST_F(MQTIRTest, RejectsMalformedQubitLayoutSchema) {
   }
   reject("physical_size", builder.getI64IntegerAttr(-1));
   reject("physical_size", builder.getI32IntegerAttr(2));
-  for (const auto name : {"initial", "output_order", "ancillas"}) {
+  for (const auto* const name : {"initial", "output_order", "ancillas"}) {
     reject(name, builder.getDenseI64ArrayAttr({0, 0}));
     reject(name, builder.getDenseI64ArrayAttr({0, 2}));
     reject(name, builder.getDenseI64ArrayAttr({-2, 1}));
@@ -204,7 +222,7 @@ TEST_F(MQTIRTest, RejectsMalformedQubitLayoutSchema) {
       R"mlir([{name = "q", slots = array<i64: 0>, ancillary = false},
               {name = "r", slots = array<i64: 0>, ancillary = false}])mlir",
   };
-  for (const auto text : invalidGroups) {
+  for (const auto* const text : invalidGroups) {
     reject("registers", parseAttr(text));
   }
   (*moduleOp)->setAttr("mqt.layout_invalidated", builder.getStringAttr("bad"));

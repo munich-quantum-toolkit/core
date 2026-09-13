@@ -41,6 +41,8 @@ namespace {
 struct InvalidateLayoutPass final
     : PassWrapper<InvalidateLayoutPass, OperationPass<ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(InvalidateLayoutPass)
+
+protected:
   void runOnOperation() override { mqt::invalidateQubitLayout(getOperation()); }
 };
 } // namespace
