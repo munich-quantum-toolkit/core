@@ -36,7 +36,8 @@ must update or invalidate this discardable metadata.
 - [x] Shared metadata representation, validation, and explicit discard API.
 - [x] Supported SDK import/export forms with no compiler dependency on Qiskit.
 - [x] Transformation invalidation and unsupported-format checks.
-- [ ] Native and SDK regression tests, docs, changelog, stubs, and lint.
+- [x] Native and SDK regression tests, docs, changelog, and stubs.
+- [ ] Final full-file C++ lint.
 - [ ] Push the extension and rewrite #2553 around its final scope and limits.
 
 ## Validation
@@ -53,7 +54,11 @@ explicitly rejected. No opaque Python state enters the compiler.
 
 Validation so far: 516 Python compiler/translation tests passed (two SC-provider
 fixtures rerun with the native registry), 18 layout tests passed on Qiskit
-2.5.0, 233 compiler tests and 34 metadata tests passed under coverage
+2.5.0, 234 compiler tests and 34 metadata tests passed under coverage
 instrumentation, and CLI layout/discard checks passed. Generated stubs are
 current. Final checks also cover direct native serializer rejection and isolated
 CLI pipelines.
+
+Final native patch coverage is 418/437 executable production lines (95.7%),
+including all 129 executable lines of `QubitLayout.cpp`. No threshold or
+exclusion changes were needed. Both published usage examples execute.

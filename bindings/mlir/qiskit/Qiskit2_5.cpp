@@ -2221,7 +2221,7 @@ public:
   }
 
   void setLayout(const mlir::mqt::QubitLayout& layout) override {
-    const nb::list physical = nb::cast<nb::list>(pythonCircuit_.attr("qubits"));
+    const auto physical = nb::cast<nb::list>(pythonCircuit_.attr("qubits"));
     if (nb::len(physical) != static_cast<size_t>(layout.physicalSize)) {
       throw std::runtime_error("qubit layout no longer matches circuit "
                                "resources; discard_layout() before export");
@@ -2229,6 +2229,7 @@ public:
     const auto circuitModule = nb::module_::import_("qiskit.circuit");
     const auto transpiler = nb::module_::import_("qiskit.transpiler");
     std::vector<nb::object> logical;
+    logical.reserve(layout.initial.size());
     for (size_t index = 0; index < layout.initial.size(); ++index) {
       logical.push_back(circuitModule.attr(
           llvm::is_contained(layout.ancillas, static_cast<int64_t>(index))

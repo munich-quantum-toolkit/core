@@ -565,7 +565,10 @@ TEST(CompilerLayoutTest, PreservesProvenanceAcrossCopiesAndDialectConversions) {
   auto qc = QCProgram::fromOpenQASMString("OPENQASM 3.0; qubit[3] q; h q[2];");
   ASSERT_TRUE(qc);
   const mlir::mqt::QubitLayout layout{
-      .physicalSize = 3, .initial = {2, 0}, .outputOrder = {0, 1, 2}};
+      .physicalSize = 3,
+      .initial = {2, 0},
+      .outputOrder = {0, 1, 2},
+  };
   const auto attr = layout.toAttr(qc->module().getContext());
   qc->module()->setAttr("mqt.layout", attr);
   auto copy = qc->copy();
@@ -607,10 +610,13 @@ TEST(CompilerLayoutTest, PreservesProvenanceAcrossCopiesAndDialectConversions) {
 TEST(CompilerLayoutTest, RejectsLayoutLossInDirectNativeConversions) {
   auto qc = QCProgram::fromOpenQASMString("OPENQASM 3.0; qubit q; h q;");
   ASSERT_TRUE(qc);
-  qc->module()->setAttr("mqt.layout", mlir::mqt::QubitLayout{.physicalSize = 1,
-                                                             .initial = {0},
-                                                             .outputOrder = {0}}
-                                          .toAttr(qc->module().getContext()));
+  qc->module()->setAttr("mqt.layout",
+                        mlir::mqt::QubitLayout{
+                            .physicalSize = 1,
+                            .initial = {0},
+                            .outputOrder = {0},
+                        }
+                            .toAttr(qc->module().getContext()));
   EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(qc->module())));
   for (const auto profile : {QIRProfile::Base, QIRProfile::Adaptive}) {
     auto copy = qc->copy();
@@ -622,7 +628,8 @@ TEST(CompilerLayoutTest, RejectsLayoutLossInDirectNativeConversions) {
 }
 
 TEST(CompilerLayoutTest, InvalidatesProvenanceAtTransformationBoundaries) {
-  for (const auto transformation : {"cleanup", "reuse", "custom", "native"}) {
+  for (const auto* const transformation :
+       {"cleanup", "reuse", "custom", "native"}) {
     SCOPED_TRACE(transformation);
     auto qc =
         QCProgram::fromOpenQASMString("OPENQASM 3.0; qubit[2] q; h q[0];");
@@ -630,9 +637,11 @@ TEST(CompilerLayoutTest, InvalidatesProvenanceAtTransformationBoundaries) {
     auto qco = std::move(*qc).intoQCO();
     ASSERT_TRUE(qco);
     qco->module()->setAttr("mqt.layout",
-                           mlir::mqt::QubitLayout{.physicalSize = 2,
-                                                  .initial = {1, 0},
-                                                  .outputOrder = {0, 1}}
+                           mlir::mqt::QubitLayout{
+                               .physicalSize = 2,
+                               .initial = {1, 0},
+                               .outputOrder = {0, 1},
+                           }
                                .toAttr(qco->module().getContext()));
     const StringRef name(transformation);
     if (name == "cleanup") {
@@ -2313,9 +2322,11 @@ TEST_F(CompilerPipelineTest, TargetLayoutPreservesScalarAllocationOrder) {
   })mlir");
   ASSERT_TRUE(program);
   program->module()->setAttr("mqt.layout",
-                             mlir::mqt::QubitLayout{.physicalSize = 3,
-                                                    .initial = {1, 0, 2},
-                                                    .outputOrder = {0, 1, 2}}
+                             mlir::mqt::QubitLayout{
+                                 .physicalSize = 3,
+                                 .initial = {1, 0, 2},
+                                 .outputOrder = {0, 1, 2},
+                             }
                                  .toAttr(program->module().getContext()));
   auto target = llvm::cantFail(
       CompilerTarget::create(3, CompilerTarget::Connectivity::allToAll(),
