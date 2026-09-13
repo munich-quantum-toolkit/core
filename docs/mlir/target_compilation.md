@@ -498,10 +498,17 @@ pass. Malformed layouts raise an error. As with ordinary target compilation, do
 not rely on program contents after failure.
 
 The returned `MappingResult` is a detached snapshot of that compilation.
-Subsequent program edits, cleanup, or reuse do not update it. The compiler does
-not attach persistent layout metadata to the IR, and serialization does not
-embed the snapshot. This API does not import or construct SDK layout objects.
-Partial layout constraints and SDK layout interchange remain future work.
+Subsequent program edits, cleanup, or reuse do not update it, and serialization
+does not embed the snapshot. Partial placement constraints are not supported.
+
+Imported layout provenance is separate: the Qiskit adapter retains it in
+`mqt.layout` through plain copies and dialect conversions. Target compilation
+invalidates that provenance before changing resource correspondence. It does not
+compose `MappingResult` with an earlier SDK layout. Explicitly call
+`discard_layout()` before SDK export after compilation, or before conversion to
+OpenQASM, QIR/LLVM, or jeff. See
+[transpiler layouts](qiskit.md#transpiler-layouts) for the shared metadata
+lifetime and supported SDK forms.
 
 The C++ equivalents are `QCOProgram::compileForTargetWithLayout` and
 `populateTargetCompilationWithLayoutPipeline`. The latter writes its result only

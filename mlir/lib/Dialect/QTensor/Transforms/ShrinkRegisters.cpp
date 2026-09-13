@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 #include "mqt/Dialect/QTensor/Transforms/Passes.h"
 
@@ -173,6 +174,7 @@ struct ShrinkQTensorToFitPass final
     : impl::ShrinkQTensorToFitPassBase<ShrinkQTensorToFitPass> {
 protected:
   void runOnOperation() override {
+    mqt::invalidateQubitLayout(getOperation());
     RewritePatternSet patterns(&getContext());
     patterns.add<ShrinkStaticQTensor>(&getContext());
 

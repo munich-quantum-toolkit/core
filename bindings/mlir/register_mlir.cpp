@@ -1184,7 +1184,14 @@ Programs own their MLIR module. Conversions can consume a program; use
             requireValid(value);
             return value.str();
           },
-          "Return the textual MLIR representation of this program.");
+          "Return the textual MLIR representation of this program.")
+      .def(
+          "discard_layout",
+          [](mlir::Program& program) {
+            requireValid(program);
+            program.discardLayout();
+          },
+          "Explicitly discard retained or invalidated qubit layout metadata.");
 
   nb::class_<mlir::MappingOptions>(m, "MappingOptions",
                                    "Native mapping controls.")
@@ -1561,6 +1568,9 @@ further compilation.)pb");
           [](const mlir::JeffProgram& value) {
             requireValid(value);
             const auto bytes = value.toBytes();
+            if (bytes.empty()) {
+              throw std::runtime_error("failed to serialize jeff program");
+            }
             return nb::bytes(bytes.data(), bytes.size());
           },
           "Serialize this program to its ``jeff`` byte representation.")

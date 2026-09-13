@@ -515,6 +515,9 @@ class Program:
     def ir(self) -> str:
         """The textual MLIR representation of this program."""
 
+    def discard_layout(self) -> None:
+        """Explicitly discard retained or invalidated qubit layout metadata."""
+
 class MappingOptions:
     """Native mapping controls."""
 
