@@ -207,7 +207,7 @@ jobs:
             python-abi: ""
           - runs-on: windows-11-arm
             python-abi: ""
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-wheel-cibuildwheel.yml@98a22f5cc35bcc4b96cfb1e42278928bdaaad3e5 # zizmor: ignore[stale-action-refs] -- Pin workflows PR #464 until its release.
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-wheel-cibuildwheel.yml@492d270098d8194e0ef22863312e140489c54741 # zizmor: ignore[stale-action-refs] -- Pin workflows PR #464 until its release.
     with:
       runs-on: ${{ matrix.runs-on }}
       python-abi: ${{ matrix.python-abi }}
