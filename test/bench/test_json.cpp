@@ -30,6 +30,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <variant>
 
 namespace {
 
@@ -92,6 +93,42 @@ void expectInvalid(const std::function<void()>& operation,
     EXPECT_NE(std::string(error.what()).find(diagnostic), std::string::npos)
         << error.what();
   }
+}
+
+TEST(BenchmarkJSON, ReturnsNormalizedInstancesAndInputDiagnostics) {
+  const GHZ benchmark({.qubits = 3});
+  auto result = mqt::bench::tryParseInstanceSpecificationJSON(
+      toInstanceSpecificationJSON(benchmark));
+  ASSERT_TRUE(std::holds_alternative<mqt::bench::ParsedBenchmark>(result));
+  const auto& parsed = std::get<mqt::bench::ParsedBenchmark>(result);
+  EXPECT_TRUE(std::holds_alternative<GHZ>(parsed.instance));
+  EXPECT_EQ(parsed.benchmarkId, "ghz");
+  EXPECT_EQ(parsed.caseId, caseId(benchmark));
+  EXPECT_EQ(parsed.manifestJSON, toManifestJSON(benchmark));
+
+  for (
+      const auto* invalid : {
+          "{",
+          R"({"schema_version":1,"benchmark":"ghz","parameters":{"qubits":0}})",
+      }) {
+    result =
+        mqt::bench::tryParseInstanceSpecificationJSON(invalid, "input.json");
+    ASSERT_TRUE(std::holds_alternative<mqt::bench::JSONError>(result));
+    EXPECT_NE(
+        std::get<mqt::bench::JSONError>(result).message.find("input.json"),
+        std::string::npos);
+  }
+  auto description = mqt::bench::tryDescribeBenchmarkJSON("unknown");
+  ASSERT_TRUE(std::holds_alternative<mqt::bench::JSONError>(description));
+  EXPECT_NE(
+      std::get<mqt::bench::JSONError>(description).message.find("unknown"),
+      std::string::npos);
+  auto evaluation = mqt::bench::tryEvaluateJSON(toManifestJSON(benchmark), "{}",
+                                                "manifest.json", "counts.json");
+  ASSERT_TRUE(std::holds_alternative<mqt::bench::JSONError>(evaluation));
+  EXPECT_NE(
+      std::get<mqt::bench::JSONError>(evaluation).message.find("counts.json"),
+      std::string::npos);
 }
 
 TEST(BenchmarkJSON, ResolvesModularMultiplierInputs) {

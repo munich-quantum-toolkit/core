@@ -21,10 +21,13 @@ if(WIN32)
   set_target_properties(mqt-core-bench PROPERTIES ARCHIVE_OUTPUT_NAME mqt-core-bench-executable)
 endif()
 target_link_libraries(mqt-core-bench PRIVATE MQT::CoreBenchGenerate MLIRSupport)
-set(LLVM_REQUIRES_EH ON)
 mqt_mlir_target_use_project_options(mqt-core-bench)
-unset(LLVM_REQUIRES_EH)
 mlir_check_all_link_libraries(mqt-core-bench)
+if(UNIX AND NOT APPLE)
+  target_link_options(
+    mqt-core-bench PRIVATE
+    "$<$<OR:$<CONFIG:Release>,$<CONFIG:MinSizeRel>,$<CONFIG:RelWithDebInfo>>:LINKER:--gc-sections>")
+endif()
 
 if(MQT_CORE_INSTALL)
   include(GNUInstallDirs)

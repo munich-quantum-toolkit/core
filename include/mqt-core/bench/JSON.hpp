@@ -26,8 +26,43 @@
 #include <cstddef>
 #include <string>
 #include <string_view>
+#include <variant>
 
 namespace mqt::bench {
+
+/// One validated benchmark instance from the JSON registry.
+using BenchmarkInstance =
+    std::variant<BV, GHZ, Grover, ModularMultiplier, Multiplexer, QFT, QFTAdder,
+                 QPE, RepeatUntilSuccess, Teleportation>;
+
+/// A diagnostic returned by a fallible JSON operation.
+struct JSONError {
+  std::string message;
+};
+
+/// A validated instance and its normalized metadata, ready for generation.
+struct ParsedBenchmark {
+  BenchmarkInstance instance;
+  std::string benchmarkId;
+  std::string caseId;
+  std::string manifestJSON;
+};
+
+/// Parse and normalize a benchmark, returning a diagnostic on invalid input.
+[[nodiscard]] MQT_CORE_BENCH_EXPORT std::variant<ParsedBenchmark, JSONError>
+tryParseInstanceSpecificationJSON(
+    std::string_view json,
+    std::string_view source = "<instance-specification>");
+
+/// Describe a benchmark, returning a diagnostic for an unknown ID.
+[[nodiscard]] MQT_CORE_BENCH_EXPORT std::variant<std::string, JSONError>
+tryDescribeBenchmarkJSON(std::string_view benchmark);
+
+/// Evaluate counts, returning a diagnostic on invalid input.
+[[nodiscard]] MQT_CORE_BENCH_EXPORT std::variant<std::string, JSONError>
+tryEvaluateJSON(std::string_view manifest, std::string_view counts,
+                std::string_view manifestSource = "<manifest>",
+                std::string_view countsSource = "<counts>");
 
 /// Return the benchmark ID from a strict instance specification.
 [[nodiscard]] MQT_CORE_BENCH_EXPORT std::string

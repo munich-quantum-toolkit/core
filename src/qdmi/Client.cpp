@@ -20,6 +20,7 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <filesystem>
 #include <iterator>
 #include <map>
@@ -37,7 +38,50 @@
 #include <vector>
 
 namespace qdmi {
+namespace detail {
+std::vector<std::string> parseShots(const std::string_view shots,
+                                    const size_t numShots) {
+  if (numShots == 0) {
+    if (!shots.empty()) {
+      throw std::runtime_error("Number of shots mismatch");
+    }
+    return {};
+  }
+
+  std::vector<std::string> parsed;
+  parsed.reserve(numShots);
+  size_t start = 0;
+  while (true) {
+    const auto end = shots.find(',', start);
+    parsed.emplace_back(shots.substr(start, end - start));
+    if (end == std::string_view::npos) {
+      break;
+    }
+    start = end + 1;
+  }
+  if (parsed.size() != numShots) {
+    throw std::runtime_error("Number of shots mismatch");
+  }
+  return parsed;
+}
+
+void invalidCustomProperty() {
+  throw std::invalid_argument("Invalid custom property selector");
+}
+} // namespace detail
+
 namespace {
+template <typename Action>
+auto tryQDMI(Action action)
+    -> std::variant<std::invoke_result_t<Action>, Error> {
+  try {
+    return action();
+  } catch (const std::exception& error) {
+    return Error{.status = QDMI_ERROR_FATAL, .message = error.what()};
+  } catch (...) {
+    return Error{.status = QDMI_ERROR_FATAL, .message = "unknown exception"};
+  }
+}
 /// Rejects the formats that `submitJob` cannot carry.
 /// A batch job's program is a list of job handles rather than a byte blob, so
 /// this API cannot express it at all. A calibration run has its own entry
@@ -780,6 +824,29 @@ Device Session::createSessionlessDevice(QDMI_Device device) {
 Device Session::openDevice(const std::string_view id,
                            const qdmi::DeviceSessionConfig& overrides) {
   return Device(qdmi::Driver::get().openFresh(id, overrides));
+}
+
+std::variant<Device, Error> Session::tryOpenDevice(const std::string_view id) {
+  return tryQDMI([&] { return openDevice(id); });
+}
+
+std::variant<std::vector<std::string>, Error>
+Session::tryRegisteredDeviceIds() {
+  return tryQDMI([] { return Driver::get().registeredDeviceIds(); });
+}
+
+std::variant<Job, Error>
+Device::trySubmitJob(const std::span<const std::byte> program,
+                     const QDMI_Program_Format format, const size_t numShots,
+                     const std::optional<CustomJobParameter>& custom1,
+                     const std::optional<CustomJobParameter>& custom2,
+                     const std::optional<CustomJobParameter>& custom3,
+                     const std::optional<CustomJobParameter>& custom4,
+                     const std::optional<CustomJobParameter>& custom5) const {
+  return tryQDMI([&] {
+    return submitJob(program, format, numShots, custom1, custom2, custom3,
+                     custom4, custom5);
+  });
 }
 
 Session::Session(const SessionConfig& config) {

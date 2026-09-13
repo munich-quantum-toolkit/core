@@ -15,11 +15,26 @@
 
 #include "qdmi/client.h"
 
+#include <optional>
 #include <string>
 #include <variant>
 
 namespace qdmi {
 using CustomJobParameter = std::variant<std::string, bool, int, double>;
+
+/// A QDMI failure returned without throwing an exception.
+struct Error {
+  /// The QDMI status, or QDMI_ERROR_FATAL for a caught C++ exception.
+  int status;
+  std::string message;
+};
+
+/// Return a diagnostic for a failed status; report warnings and continue.
+[[nodiscard]] std::optional<Error> checkError(int result,
+                                              const std::string& message);
+
+/// Raise the corresponding exception for callers of the throwing C++ API.
+[[noreturn]] void throwError(const Error& error);
 
 template <class Concrete> class Singleton {
 protected:
