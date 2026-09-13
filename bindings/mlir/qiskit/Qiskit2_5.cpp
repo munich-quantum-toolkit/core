@@ -750,9 +750,15 @@ public:
                                    const std::string_view name,
                                    nb::handle parameters) {
     const nb::tuple parameterTuple(parameters);
-    const auto parameterHash = PyObject_Hash(parameterTuple.ptr());
+    auto parameterHash = PyObject_Hash(parameterTuple.ptr());
     if (parameterHash == -1) {
-      throwPythonError("Qiskit Gate parameters are not hashable");
+      if (PyErr_ExceptionMatches(PyExc_TypeError) == 0) {
+        throwPythonError("Qiskit Gate parameter hashing failed");
+      }
+      // Array-valued parameters specialize the definition, not its scalar
+      // call signature. Compare those definitions in one fallback bucket.
+      PyErr_Clear();
+      parameterHash = 0;
     }
     // ponytail: use a structural circuit hash if many same-signature Gate
     // definitions become common.
@@ -919,28 +925,41 @@ public:
           .standardGate = {},
       };
     }
-    std::optional<Instruction> normalizedUnknown;
     if (kind == OperationKind::Unknown) {
+      // The C API's scalar parameter accessor aborts on Python objects such as
+      // PermutationGate's array. Read custom operations through Python and let
+      // their definitions supply the scalar call signature.
+      Instruction result;
+      normalizePythonGate(operation, result);
+      result.qubits = pythonInstructionBits(index, "qubits");
+      result.clbits = pythonInstructionBits(index, "clbits");
       if (isPythonUnitaryGate(operation)) {
-        Instruction result{
-            .kind = OperationKind::Unitary,
-            .name = "unitary",
-            .qubits = {},
-            .clbits = {},
-            .parameters = {},
-            .modifiers = {},
-            .standardGate = {},
-        };
-        normalizePythonGate(operation, result);
+        result.kind = OperationKind::Unitary;
         result.name = "unitary";
-        result.qubits = pythonInstructionQubits(index);
-        return result;
+      } else if (isPythonGate(operation)) {
+        result.kind = OperationKind::Gate;
+        const auto terminal = terminalPythonGate(operation);
+        if (nb::isinstance(terminal,
+                           nb::module_::import_("qiskit.circuit.library")
+                               .attr("PermutationGate"))) {
+          result.permutation.emplace();
+          for (const nb::handle entry : nb::iter(terminal.attr("pattern"))) {
+            uint32_t position = 0;
+            if (!nb::try_cast(entry, position)) {
+              throw std::runtime_error(
+                  "Qiskit permutation has an invalid index");
+            }
+            result.permutation->push_back(position);
+          }
+        } else if (isPythonStandardGate(operation)) {
+          result.standardGate = standardGateMapping(result.name);
+          for (const nb::handle parameter :
+               nb::iter(operation.attr("params"))) {
+            result.parameters.push_back(normalizePythonParameter(parameter));
+          }
+        }
       }
-      normalizedUnknown.emplace();
-      normalizePythonGate(operation, *normalizedUnknown);
-      if (isPythonGate(operation)) {
-        normalizedUnknown->kind = OperationKind::Gate;
-      }
+      return result;
     }
     QkCircuitInstruction native{};
     qk_circuit_get_instruction(circuit_, index, &native);
@@ -961,8 +980,7 @@ public:
       std::copy_n(native.clbits, native.num_clbits, result.clbits.begin());
     }
     result.parameters.reserve(native.num_params);
-    if (result.kind == OperationKind::Gate ||
-        result.kind == OperationKind::Unknown) {
+    if (result.kind == OperationKind::Gate) {
       const auto parameters =
           pythonAttribute(operation, "params",
                           "Qiskit operation does not expose its parameters");
@@ -981,14 +999,7 @@ public:
       throw std::runtime_error(
           "Qiskit non-gate instruction has unexpected scalar parameters");
     }
-    if (kind == OperationKind::Unknown) {
-      result.name = std::move(normalizedUnknown->name);
-      result.modifiers = std::move(normalizedUnknown->modifiers);
-      result.kind = normalizedUnknown->kind;
-    }
-    if (kind != OperationKind::Unknown || isPythonStandardGate(operation)) {
-      result.standardGate = standardGateMapping(result.name);
-    }
+    result.standardGate = standardGateMapping(result.name);
     return result;
   }
 
@@ -1104,27 +1115,27 @@ public:
 
 private:
   [[nodiscard]] std::vector<uint32_t>
-  pythonInstructionQubits(const size_t index) const {
+  pythonInstructionBits(size_t index, const char* operandKind) const {
     std::vector<uint32_t> result;
     try {
-      const auto qubits =
-          pythonAttribute(data_[index], "qubits",
-                          "Qiskit circuit instruction has no qubit operands");
-      result.reserve(nb::len(qubits));
+      const auto bits =
+          pythonAttribute(data_[index], operandKind,
+                          "Qiskit circuit instruction has no operands");
+      result.reserve(nb::len(bits));
       const auto findBit =
           pythonAttribute(pythonCircuit_, "find_bit",
-                          "Qiskit circuit cannot resolve instruction qubits");
-      for (const nb::handle qubit : nb::iter(qubits)) {
-        const auto location = findBit(qubit);
+                          "Qiskit circuit cannot resolve instruction bits");
+      for (const nb::handle bit : nb::iter(bits)) {
+        const auto location = findBit(bit);
         const auto position = pythonUnsignedAttribute(
-            location, "index", "Qiskit qubit has an invalid circuit index");
+            location, "index", "Qiskit bit has an invalid circuit index");
         if (position > std::numeric_limits<uint32_t>::max()) {
-          throw std::runtime_error("Qiskit qubit index cannot be represented");
+          throw std::runtime_error("Qiskit bit index cannot be represented");
         }
         result.push_back(static_cast<uint32_t>(position));
       }
     } catch (const nb::python_error& error) {
-      throwPythonError("Qiskit failed to resolve unitary qubits", error);
+      throwPythonError("Qiskit failed to resolve instruction bits", error);
     }
     return result;
   }
