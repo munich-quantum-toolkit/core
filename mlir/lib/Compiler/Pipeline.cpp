@@ -16,6 +16,7 @@
 #include "mqt/Conversion/QCOToQC/QCOToQC.h"
 #include "mqt/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
 #include "mqt/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
@@ -68,12 +69,13 @@ namespace mlir {
 
 [[nodiscard]] static LogicalResult runQCOTransformPasses(
     ModuleOp mod, llvm::function_ref<void(OpPassManager&)> populatePasses,
-    StringRef failureMessage, const CompilationOptions& options = {}) {
+    StringRef failureMessage, const CompilationOptions& options = {},
+          bool preservesLayout = false) {
   if (failed(qco::verifyLinearity(mod))) {
     return failure();
   }
-  if (failed(
-          runWithPassManager(mod, populatePasses, failureMessage, options))) {
+  if (failed(runWithPassManager(mod, populatePasses, failureMessage, options,
+                                preservesLayout))) {
     return failure();
   }
   return qco::verifyLinearity(mod);
@@ -93,6 +95,9 @@ bool QCProgram::normalizeGlobalPhases() {
 }
 
 std::optional<OpenQASMProgram> QCProgram::toOpenQASM3() const {
+  if (failed(mqt::requireNoQubitLayout(mod()))) {
+    return std::nullopt;
+  }
   auto cleaned = copy();
   if (failed(runWithPassManager(cleaned.mod(), populateQCExportPipeline,
                                 "failed to prepare QC for OpenQASM export"))) {
@@ -106,6 +111,9 @@ std::optional<OpenQASMProgram> QCProgram::toOpenQASM3() const {
 }
 
 std::optional<QIRProgram> QCProgram::intoQIR(QIRProfile profile) && {
+  if (failed(mqt::requireNoQubitLayout(mod()))) {
+    return std::nullopt;
+  }
   if (failed(runWithPassManager(
           mod(),
           [profile](OpPassManager& pm) {
@@ -251,13 +259,16 @@ bool QCOProgram::synthesizeForTarget(const TargetEnvironment& environment,
 std::optional<QCProgram> QCOProgram::intoQC() && {
   if (failed(runQCOTransformPasses(
           mod(), [](OpPassManager& pm) { pm.addPass(createQCOToQC()); },
-          "failed to convert QCO to QC"))) {
+          "failed to convert QCO to QC", false, false, true))) {
     return std::nullopt;
   }
   return QCProgram(std::move(*this).releaseStorage());
 }
 
 std::optional<JeffProgram> QCOProgram::intoJeff() && {
+  if (failed(mqt::requireNoQubitLayout(mod()))) {
+    return std::nullopt;
+  }
   if (failed(runQCOTransformPasses(
           mod(),
           [](OpPassManager& pm) {
@@ -317,6 +328,9 @@ bool JeffProgram::cleanup() {
 }
 
 std::vector<std::byte> JeffProgram::toBytes() const {
+  if (failed(mqt::requireNoQubitLayout(mod()))) {
+    return {};
+  }
   const auto serialized = serialize(mod());
   const auto bytes = serialized.asBytes();
   std::vector<std::byte> result(bytes.size());
@@ -325,6 +339,9 @@ std::vector<std::byte> JeffProgram::toBytes() const {
 }
 
 bool JeffProgram::write(const std::filesystem::path& path) const {
+  if (failed(mqt::requireNoQubitLayout(mod()))) {
+    return false;
+  }
   if (failed(serializeToFile(mod(), path.string()))) {
     mod().emitError() << "failed to write jeff file '" << path.string() << "'";
     return false;
@@ -366,6 +383,9 @@ QIRProfile QIRProgram::profile() const noexcept { return profile_; }
 
 [[nodiscard]] static std::unique_ptr<llvm::Module>
 translateToLLVM(ModuleOp mod, llvm::LLVMContext& context) {
+  if (failed(mqt::requireNoQubitLayout(mod))) {
+    return nullptr;
+  }
   auto llvmModule = translateModuleToLLVMIR(mod, context);
   if (!llvmModule) {
     mod.emitError("failed to translate QIR MLIR to LLVM IR");

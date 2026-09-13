@@ -9,6 +9,7 @@
  */
 
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 
@@ -258,6 +259,7 @@ struct ReuseQubits final : impl::ReuseQubitsBase<ReuseQubits> {
 
 protected:
   void runOnOperation() override {
+    mqt::invalidateQubitLayout(getOperation());
     auto op = getOperation();
     auto* ctx = &getContext();
 

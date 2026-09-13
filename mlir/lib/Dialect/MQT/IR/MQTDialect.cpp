@@ -12,6 +12,7 @@
 
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCInterfaces.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
@@ -760,6 +761,27 @@ MQTDialect::verifyOperationAttribute(Operation* operation,
           "mqt.compilation_seed requires a signless i64 on a module");
     }
     return success();
+  }
+  if (attribute.getName() == "mqt.layout" ||
+      attribute.getName() == "mqt.layout_invalidated") {
+    if (!isa<ModuleOp>(operation)) {
+      return operation->emitError(
+          "qubit layout metadata is only valid on a module");
+    }
+    if (operation->hasAttr("mqt.layout") &&
+        operation->hasAttr("mqt.layout_invalidated")) {
+      return operation->emitError(
+          "retained and invalidated qubit layouts are mutually exclusive");
+    }
+    if (attribute.getName() == "mqt.layout_invalidated") {
+      if (!isa<UnitAttr>(attribute.getValue())) {
+        return operation->emitError(
+            "invalidated qubit layout must be a unit attribute");
+      }
+      return success();
+    }
+    return success(succeeded(QubitLayout::fromAttr(
+        attribute.getValue(), [&] { return operation->emitError(); })));
   }
   if (attribute.getName() == TargetEnvAttr::name) {
     if (!isa<ModuleOp>(operation)) {

@@ -14,11 +14,15 @@
 #include "mqt/Compiler/Target.h"
 #include "mqt/Compiler/TargetCompilation.h"
 #include "mqt/Compiler/TargetEnvironment.h"
+#include "mqt/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
+#include "mqt/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
+#include "mqt/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
 #include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
@@ -557,6 +561,101 @@ TEST(CompilerProgramOwnershipTest, EnforcesQCOLinearityAtPublicBoundaries) {
 }
 
 // Raw QCO stops before the registered default optimization pipeline.
+TEST(CompilerLayoutTest, PreservesProvenanceAcrossCopiesAndDialectConversions) {
+  auto qc = QCProgram::fromOpenQASMString("OPENQASM 3.0; qubit[3] q; h q[2];");
+  ASSERT_TRUE(qc);
+  const mlir::mqt::QubitLayout layout{
+      .physicalSize = 3, .initial = {2, 0}, .outputOrder = {0, 1, 2}};
+  const auto attr = layout.toAttr(qc->module().getContext());
+  qc->module()->setAttr("mqt.layout", attr);
+  auto copy = qc->copy();
+  EXPECT_EQ(copy.module()->getAttr("mqt.layout"), attr);
+  auto qco = std::move(copy).intoQCO();
+  ASSERT_TRUE(qco);
+  EXPECT_EQ(qco->module()->getAttr("mqt.layout"), attr);
+  auto restored = std::move(*qco).intoQC();
+  ASSERT_TRUE(restored);
+  EXPECT_EQ(restored->module()->getAttr("mqt.layout"), attr);
+  auto parsed = QCProgram::fromMLIRString(restored->str());
+  ASSERT_TRUE(parsed);
+  EXPECT_TRUE(parsed->module()->hasAttr("mqt.layout"));
+  EXPECT_FALSE(qc->toOpenQASM3());
+  EXPECT_FALSE(std::move(qc->copy()).intoQIR(QIRProfile::Base));
+  auto jeffInput = std::move(qc->copy()).intoQCO();
+  ASSERT_TRUE(jeffInput);
+  EXPECT_FALSE(std::move(*jeffInput).intoJeff());
+  qc->discardLayout();
+  EXPECT_TRUE(qc->toOpenQASM3());
+  auto qir = std::move(qc->copy()).intoQIR(QIRProfile::Base);
+  ASSERT_TRUE(qir);
+  qir->module()->setAttr("mqt.layout_invalidated",
+                         UnitAttr::get(qir->module().getContext()));
+  EXPECT_FALSE(qir->llvmIR());
+  qir->discardLayout();
+  EXPECT_TRUE(qir->llvmIR());
+  auto cleanQCO = std::move(*qc).intoQCO();
+  ASSERT_TRUE(cleanQCO);
+  auto jeff = std::move(*cleanQCO).intoJeff();
+  ASSERT_TRUE(jeff);
+  jeff->module()->setAttr("mqt.layout_invalidated",
+                          UnitAttr::get(jeff->module().getContext()));
+  EXPECT_TRUE(jeff->toBytes().empty());
+  jeff->discardLayout();
+  EXPECT_FALSE(jeff->toBytes().empty());
+}
+
+TEST(CompilerLayoutTest, RejectsLayoutLossInDirectNativeConversions) {
+  auto qc = QCProgram::fromOpenQASMString("OPENQASM 3.0; qubit q; h q;");
+  ASSERT_TRUE(qc);
+  qc->module()->setAttr("mqt.layout", mlir::mqt::QubitLayout{.physicalSize = 1,
+                                                             .initial = {0},
+                                                             .outputOrder = {0}}
+                                          .toAttr(qc->module().getContext()));
+  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(qc->module())));
+  for (const auto profile : {QIRProfile::Base, QIRProfile::Adaptive}) {
+    auto copy = qc->copy();
+    PassManager pm(copy.module().getContext());
+    pm.addPass(profile == QIRProfile::Base ? createQCToQIRBase()
+                                           : createQCToQIRAdaptive());
+    EXPECT_TRUE(failed(pm.run(copy.module())));
+  }
+}
+
+TEST(CompilerLayoutTest, InvalidatesProvenanceAtTransformationBoundaries) {
+  for (const auto transformation : {"cleanup", "reuse", "custom", "native"}) {
+    SCOPED_TRACE(transformation);
+    auto qc =
+        QCProgram::fromOpenQASMString("OPENQASM 3.0; qubit[2] q; h q[0];");
+    ASSERT_TRUE(qc);
+    auto qco = std::move(*qc).intoQCO();
+    ASSERT_TRUE(qco);
+    qco->module()->setAttr("mqt.layout",
+                           mlir::mqt::QubitLayout{.physicalSize = 2,
+                                                  .initial = {1, 0},
+                                                  .outputOrder = {0, 1}}
+                               .toAttr(qco->module().getContext()));
+    const StringRef name(transformation);
+    if (name == "cleanup") {
+      EXPECT_TRUE(qco->cleanup());
+    } else if (name == "reuse") {
+      EXPECT_TRUE(qco->reuseQubits());
+    } else if (name == "custom") {
+      EXPECT_TRUE(qco->runPassPipeline("builtin.module(canonicalize)"));
+    } else {
+      PassManager pm(qco->module().getContext());
+      populateQCOCleanupPipeline(pm);
+      EXPECT_TRUE(succeeded(pm.run(qco->module())));
+    }
+    EXPECT_FALSE(qco->module()->hasAttr("mqt.layout"));
+    EXPECT_TRUE(qco->module()->hasAttr("mqt.layout_invalidated"));
+    auto restored = std::move(*qco).intoQC();
+    ASSERT_TRUE(restored);
+    EXPECT_FALSE(restored->toOpenQASM3());
+    restored->discardLayout();
+    EXPECT_TRUE(restored->toOpenQASM3());
+  }
+}
+
 TEST_F(CompilerPipelineTest, RawAndOptimizedQCOAreDistinctCheckpoints) {
   const std::string qasm = R"(OPENQASM 3.0;
 include "stdgates.inc";
@@ -2213,12 +2312,19 @@ TEST_F(CompilerPipelineTest, TargetLayoutPreservesScalarAllocationOrder) {
     }
   })mlir");
   ASSERT_TRUE(program);
+  program->module()->setAttr("mqt.layout",
+                             mlir::mqt::QubitLayout{.physicalSize = 3,
+                                                    .initial = {1, 0, 2},
+                                                    .outputOrder = {0, 1, 2}}
+                                 .toAttr(program->module().getContext()));
   auto target = llvm::cantFail(
       CompilerTarget::create(3, CompilerTarget::Connectivity::allToAll(),
                              CompilerTarget::NativeOperations::unrestricted()));
   auto result = program->compileForTargetWithLayout(
       TargetEnvironment(target, makePayloadSpecification()), {2, 0, 1});
   ASSERT_TRUE(result);
+  EXPECT_TRUE(program->module()->hasAttr("mqt.layout_invalidated"));
+  EXPECT_FALSE(program->module()->hasAttr("mqt.layout"));
   EXPECT_EQ(result->allocationSizes, (std::vector<size_t>{1, 1, 1}));
   EXPECT_EQ(result->initialLayout, (std::vector<int64_t>{2, 0, 1}));
   EXPECT_EQ(result->finalLayout, result->initialLayout);

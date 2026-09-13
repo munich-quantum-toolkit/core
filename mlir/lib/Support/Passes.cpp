@@ -11,6 +11,7 @@
 #include "mqt/Support/Passes.h"
 
 #include "mqt/Conversion/CBitToMemRef/CBitToMemRef.h"
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QC/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
@@ -20,6 +21,7 @@
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Pass/PassRegistry.h"
 #include "mlir/Support/LLVM.h"
@@ -31,8 +33,17 @@
 
 #include <bit>
 #include <cstdint>
+#include <memory>
 
 using namespace mlir;
+
+namespace {
+struct InvalidateLayoutPass final
+    : PassWrapper<InvalidateLayoutPass, OperationPass<ModuleOp>> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(InvalidateLayoutPass)
+  void runOnOperation() override { mqt::invalidateQubitLayout(getOperation()); }
+};
+} // namespace
 
 static void addSimplificationPasses(OpPassManager& pm) {
   pm.addPass(createCanonicalizerPass());
@@ -41,8 +52,12 @@ static void addSimplificationPasses(OpPassManager& pm) {
 
 LogicalResult runWithPassManager(
     ModuleOp mod, const function_ref<void(OpPassManager&)> populatePasses,
-    const StringRef errorMessage, const CompilationOptions& options) {
+    const StringRef errorMessage, const CompilationOptions& options,
+    bool preservesLayout) {
   PassManager pm(mod.getContext());
+  if (!preservesLayout) {
+    mqt::invalidateQubitLayout(mod);
+  }
   populatePasses(pm);
   if (failed(runWithCompilationOptions(pm, mod, options))) {
     return mod.emitError(errorMessage);
@@ -98,6 +113,7 @@ void populateQIRPreparationPipeline(OpPassManager& pm) {
 }
 
 void populateQubitReusePipeline(OpPassManager& pm) {
+  pm.addPass(std::make_unique<InvalidateLayoutPass>());
   pm.addPass(qco::createMeasurementLifting());
   pm.addPass(qco::createReplaceClassicalControls());
   pm.addPass(qco::createRemoveDeadGates());
@@ -123,6 +139,7 @@ LogicalResult runPassPipeline(ModuleOp mod, const StringRef pipeline,
     return mod.emitError() << "failed to parse pass pipeline '" << pipeline
                            << "'";
   }
+  mqt::invalidateQubitLayout(mod);
   return runWithCompilationOptions(pm, mod, options);
 }
 
@@ -152,6 +169,7 @@ LogicalResult runWithCompilationOptions(PassManager& pm, ModuleOp moduleOp,
 }
 
 void populateQCExportPipeline(OpPassManager& pm) {
+  pm.addPass(std::make_unique<InvalidateLayoutPass>());
   pm.addPass(createCanonicalizerPass());
   pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
   pm.addPass(createCSEPass());
@@ -165,6 +183,7 @@ void populateQCCleanupPipeline(OpPassManager& pm) {
 }
 
 void populateQCOCleanupPipeline(OpPassManager& pm) {
+  pm.addPass(std::make_unique<InvalidateLayoutPass>());
   pm.addPass(createCanonicalizerPass(
       GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit)));
   pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
