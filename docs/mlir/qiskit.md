@@ -196,10 +196,12 @@ Supported metadata includes partial initial and final assignments, unused
 physical positions, loose qubits, ancillary qubits and registers, and source
 registers whose order differs from the physical circuit. Input indices must be
 distinct and contiguous. Physical positions must refer to existing circuit
-qubits. Missing assignments remain missing. Bare `Layout` objects and malformed
-metadata are rejected; the supported `QuantumCircuit.layout` surface is
-`TranspileLayout`. Support for other Qiskit minor versions requires their own
-version adapter.
+qubits. Missing assignments remain missing. Partial final maps require a
+complete output-wire order; the implicit order is usable only for a complete
+final map. Qiskit helpers that require total layouts can still reject partial
+assignments. Bare `Layout` objects and malformed metadata are rejected; the
+supported `QuantumCircuit.layout` surface is `TranspileLayout`. Support for
+other Qiskit minor versions requires their own version adapter.
 
 Copies, MLIR serialization, and plain QC/QCO conversions preserve the metadata.
 Cleanup, optimization, routing, allocation changes, reuse, and public custom
