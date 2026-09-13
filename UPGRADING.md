@@ -23,8 +23,9 @@ or stay on the v3 release series. The low-level DD and QDMI libraries remain
 available; their migration requirements depend on whether they consume classic
 circuits or operate directly on states, matrices, devices, and jobs.
 
-The [v4 release overview](CHANGELOG.md#unreleased) describes the new compiler
-capabilities. This guide explains how to adopt them in existing applications.
+The [v4 release overview](CHANGELOG.md#400---2026-09-11) describes the new
+compiler capabilities. This guide explains how to adopt them in existing
+applications.
 
 This section describes changes since **v3.10.0**. When upgrading from an older
 version, also consult the intervening release sections for changes that affect

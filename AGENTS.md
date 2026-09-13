@@ -59,9 +59,9 @@ Use relevant sections of the [development policy](docs/development.md) and the
   scoped workarounds with a technical reason, reproducer, and removal condition.
 - Follow the
   [release documentation policy](docs/development.md#release-documentation).
-  Record notable changes under Unreleased. Fold refinements to never-released
-  functionality into its feature entry; document migrations from released APIs,
-  not intermediate unreleased designs.
+  Describe user-facing changes in PR descriptions. Prepare changelog entries
+  during release preparation; feature and fix PRs do not need them. Document
+  migrations from released APIs, not intermediate unreleased designs.
 - Changelog entries name the PR and every contributing author, for example
   `([#123]) ([**@username**])`, with link definitions at the bottom.
 - Never commit or print secrets or personal data. Use documented environment
