@@ -196,7 +196,7 @@ version = ">=1.10"
 
 [tool.scikit-build.sdist]
 
-include = [ "mlir/lib/**", "python/mqt/core/_version.py", "test/**" ]
+include = [ "mlir/lib/**", "python/mqt/core/_version.py" ]
 exclude = [
   "**/.github",
   "**/doc",
@@ -204,7 +204,6 @@ exclude = [
   "**/meta",
   "**/paper",
   "**/plots",
-  "**/test",
   "**/tests",
 ]
 
