@@ -1067,9 +1067,13 @@ TEST_F(MergeSingleQubitRotationGatesTest,
     const bool outerX = basis == decomposition::SingleQubitBasis::XZX ||
                         basis == decomposition::SingleQubitBasis::XYX ||
                         basis == decomposition::SingleQubitBasis::R;
-    for (const bool useY : {false, true}) {
-      SCOPED_TRACE(useY);
+    for (const auto middleGate : {GateType::RX, GateType::RY, GateType::RZ}) {
+      SCOPED_TRACE(static_cast<unsigned>(middleGate));
       for (const unsigned outerMask : {0U, 1U, 2U, 3U}) {
+        if (middleGate == (outerX ? GateType::RX : GateType::RZ) &&
+            outerMask != 0) {
+          continue;
+        }
         SCOPED_TRACE(outerMask);
         module = QCOProgramBuilder::build(&context, [&](auto& b) {
           auto [control, target] =
@@ -1077,9 +1081,9 @@ TEST_F(MergeSingleQubitRotationGatesTest,
                 if ((outerMask & 1U) != 0) {
                   qubit = outerX ? b.rx(0.1, qubit) : b.rz(0.1, qubit);
                 }
-                qubit = useY     ? b.ry(0.2, qubit)
-                        : outerX ? b.rz(0.2, qubit)
-                                 : b.rx(0.2, qubit);
+                qubit = middleGate == GateType::RX   ? b.rx(0.2, qubit)
+                        : middleGate == GateType::RY ? b.ry(0.2, qubit)
+                                                     : b.rz(0.2, qubit);
                 if ((outerMask & 2U) != 0) {
                   qubit = outerX ? b.rx(0.4, qubit) : b.rz(0.4, qubit);
                 }

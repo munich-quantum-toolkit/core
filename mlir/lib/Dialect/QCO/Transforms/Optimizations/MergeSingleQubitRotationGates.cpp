@@ -1094,12 +1094,17 @@ struct MergeSingleQubitRotationGatesPattern final
     const auto consts = makeConsts<Value>(rewriter, loc);
     const auto angle = [&](UnitaryOpInterface op) {
       return Val<Value>{
-          .v = op.getParameter(0), .rewriter = &rewriter, .loc = loc};
+          .v = op.getParameter(0),
+          .rewriter = &rewriter,
+          .loc = loc,
+      };
     };
-    RuntimeEulerAngles angles{.theta = angle(chain[middle]),
-                              .phi = consts.zero,
-                              .lambda = consts.zero,
-                              .phase = consts.zero};
+    RuntimeEulerAngles angles{
+        .theta = angle(chain[middle]),
+        .phi = consts.zero,
+        .lambda = consts.zero,
+        .phase = consts.zero,
+    };
     if (!outerX) {
       angles = directZYZAnglesFromGate(chain[middle], rewriter, consts);
     } else if (isOuter(chain[middle])) {
