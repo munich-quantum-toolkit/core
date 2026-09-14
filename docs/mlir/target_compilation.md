@@ -69,7 +69,7 @@ recompilation. Use `device.submit_job` to submit raw payloads.
 ```python
 from mqt.core.mlir import CompilationOptions, MappingOptions
 
-options = CompilationOptions(seed=7, mapping=MappingOptions(trials=4))
+options = CompilationOptions(seed=7, mapping=MappingOptions(trials=4, iterations=2, lookahead=10))
 compiled = compile_program(bell_qasm, target=device, options=options)
 ```
 
@@ -77,11 +77,18 @@ The same `options` argument is available on typed compilation methods and source
 submission. Set `enable_timing` and `enable_statistics` on this object; compiler
 entry points accept these controls only through `options`. An explicit seed
 overrides compiler randomness, including custom pass seeds; `None` preserves
-existing pass settings. Execution sampling has a separate seed. For the CLI, use
-`--seed 7 --mapping-trials 4 --qdmi-device ID`.
+existing pass settings. Execution sampling has a separate seed. For the CLI:
 
-Trials must be positive; omission uses the logical CPU count. All-to-all
-placement ignores trials. Fixed seed and trials give repeatable mapping for the
+```console
+mqt-cc input.qasm --qdmi-device ID --seed 7 \
+  --mapping-trials 4 --mapping-iterations 2 --mapping-lookahead 10
+```
+
+Trials and iterations must be positive. Omitted trials use the logical CPU
+count; iterations default to one forward/backward refinement round. Lookahead
+is the number of additional two-qubit gates considered during routing. It
+defaults to 20; zero considers only the current gate. All-to-all placement
+ignores valid mapping controls. Fixed seed and trials give repeatable mapping for the
 same build, input, and target, without a cross-release layout guarantee.
 
 ### Choose a format

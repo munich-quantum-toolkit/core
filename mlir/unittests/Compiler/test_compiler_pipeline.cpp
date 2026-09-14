@@ -2112,12 +2112,16 @@ TEST_F(CompilerPipelineTest, TargetPipelineForwardsMappingControls) {
   OpPassManager pm("builtin.module");
   populateTargetCompilationPipeline(
       pm, environment,
-      CompilationOptions{.seed = 17, .mapping = {.trials = 3}});
+      CompilationOptions{
+          .seed = 17,
+          .mapping = {.trials = 3, .iterations = 2, .lookahead = 0}});
   std::string pipeline;
   llvm::raw_string_ostream stream(pipeline);
   pm.printAsTextualPipeline(stream);
   EXPECT_NE(pipeline.find("seed=17"), std::string::npos);
   EXPECT_NE(pipeline.find("ntrials=3"), std::string::npos);
+  EXPECT_NE(pipeline.find("niterations=2"), std::string::npos);
+  EXPECT_NE(pipeline.find("nlookahead=0"), std::string::npos);
 }
 
 // Test: target compilation decomposes, maps, synthesizes, and verifies.

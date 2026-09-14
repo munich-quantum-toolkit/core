@@ -49,6 +49,11 @@ protected:
       signalPassFailure();
       return;
     }
+    if (mapping_.iterations == 0) {
+      getOperation().emitError("mapping iterations must be greater than zero");
+      signalPassFailure();
+      return;
+    }
     if (allToAllOnly_ && environment_.target().connectivityKind() !=
                              CompilerTarget::Connectivity::Kind::AllToAll) {
       getOperation().emitError(
@@ -130,6 +135,8 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
     if (options.mapping.trials) {
       mappingOptions.ntrials = *options.mapping.trials;
     }
+    mappingOptions.niterations = options.mapping.iterations;
+    mappingOptions.nlookahead = options.mapping.lookahead;
     pm.addPass(qco::createMappingPass(mappingOptions));
     break;
   }

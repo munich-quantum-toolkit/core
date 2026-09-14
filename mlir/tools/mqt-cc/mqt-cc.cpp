@@ -147,6 +147,16 @@ static llvm::cl::opt<size_t> mappingTrials(
     "mapping-trials",
     llvm::cl::desc(
         "Positive native mapping trial count (default: logical CPUs)"));
+static llvm::cl::opt<size_t> mappingIterations(
+    "mapping-iterations",
+    llvm::cl::desc(
+        "Positive number of forward/backward layout refinement rounds"),
+    llvm::cl::init(MappingOptions{}.iterations));
+static llvm::cl::opt<size_t>
+    mappingLookahead("mapping-lookahead",
+                     llvm::cl::desc("Additional two-qubit gates considered "
+                                    "during routing (zero disables lookahead)"),
+                     llvm::cl::init(MappingOptions{}.lookahead));
 
 static llvm::cl::opt<std::string> qdmiConfig(
     "qdmi-config",
@@ -413,12 +423,19 @@ static int runCompiler(int argc, char** argv) {
   llvm::cl::ParseCommandLineOptions(argc, argv,
                                     "MQT Compiler Collection Driver\n");
 
-  if (mappingTrials.getNumOccurrences() != 0 && qdmiDevice.empty()) {
+  if ((mappingTrials.getNumOccurrences() != 0 ||
+       mappingIterations.getNumOccurrences() != 0 ||
+       mappingLookahead.getNumOccurrences() != 0) &&
+      qdmiDevice.empty()) {
     llvm::errs() << "Mapping controls require --qdmi-device.\n";
     return 1;
   }
   if (mappingTrials.getNumOccurrences() != 0 && mappingTrials == 0) {
     llvm::errs() << "--mapping-trials must be greater than zero.\n";
+    return 1;
+  }
+  if (mappingIterations == 0) {
+    llvm::errs() << "--mapping-iterations must be greater than zero.\n";
     return 1;
   }
   const CompilationOptions options{
@@ -430,6 +447,8 @@ static int runCompiler(int argc, char** argv) {
               .trials = mappingTrials.getNumOccurrences() == 0
                             ? std::nullopt
                             : std::optional<size_t>{mappingTrials.getValue()},
+              .iterations = mappingIterations,
+              .lookahead = mappingLookahead,
           },
   };
 

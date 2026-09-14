@@ -420,11 +420,20 @@ def test_compile_program_exposes_raw_and_optimized_qco() -> None:
     assert raw.ir != optimized.ir
 
 
+def test_mapping_options_defaults() -> None:
+    """Keep the public mapping defaults independent of CPU count except trials."""
+    options = MappingOptions()
+    assert options.trials is None
+    assert options.iterations == 1
+    assert options.lookahead == 20
+
+
 @pytest.mark.parametrize(
     ("method", "all_to_all"),
     [("compile_for_target", False), ("compile_for_target", True), ("synthesize_for_target", True)],
 )
-def test_mapping_options_reject_zero_trials(method: str, *, all_to_all: bool) -> None:
+@pytest.mark.parametrize("field", ["trials", "iterations"])
+def test_mapping_options_reject_zero_counts(method: str, field: str, *, all_to_all: bool) -> None:
     """Reject invalid public mapping controls before rewriting the input."""
     target = CompilerTarget(
         2,
@@ -436,16 +445,17 @@ def test_mapping_options_reject_zero_trials(method: str, *, all_to_all: bool) ->
     program = QCProgram.from_openqasm_str(QASM_STRING).to_qco()
     before = program.ir
 
-    with pytest.raises(RuntimeError, match="mapping trials must be greater than zero"):
-        getattr(program, method)(
-            _test_target_environment(target), options=CompilationOptions(seed=7, mapping=MappingOptions(trials=0))
-        )
+    mapping = MappingOptions()
+    setattr(mapping, field, 0)
+    with pytest.raises(RuntimeError, match=f"mapping {field} must be greater than zero"):
+        getattr(program, method)(_test_target_environment(target), options=CompilationOptions(seed=7, mapping=mapping))
 
     assert program.ir == before
 
 
 @pytest.mark.parametrize("seed", [0, 7])
-def test_explicit_mapping_options_are_repeatable(seed: int) -> None:
+@pytest.mark.parametrize("lookahead", [0, 5])
+def test_explicit_mapping_options_are_repeatable(seed: int, lookahead: int) -> None:
     """Use fixed native trials for repeatable sparse-target compilation."""
     source = """OPENQASM 3.1;
 include "stdgates.inc";
@@ -460,7 +470,7 @@ out = measure q;
         connectivity=CompilerTarget.Connectivity([(0, 1), (1, 2), (2, 3)]),
         native_operations=CompilerTarget.NativeOperations.unrestricted(),
     )
-    options = CompilationOptions(seed=seed, mapping=MappingOptions(trials=3))
+    options = CompilationOptions(seed=seed, mapping=MappingOptions(trials=3, iterations=2, lookahead=lookahead))
     outputs = []
     for _ in range(2):
         program = QCProgram.from_openqasm_str(source).to_qco()
@@ -469,6 +479,8 @@ out = measure q;
     assert outputs[0] == outputs[1]
     assert options.seed == seed
     assert options.mapping.trials == 3
+    assert options.mapping.iterations == 2
+    assert options.mapping.lookahead == lookahead
 
     payloads = []
     for _ in range(2):
@@ -479,14 +491,17 @@ out = measure q;
 
 
 @pytest.mark.parametrize("output_kind", ["typed", "payload", "device", "submit"])
-def test_compilation_entry_points_forward_mapping_options(output_kind: str) -> None:
+@pytest.mark.parametrize("field", ["trials", "iterations"])
+def test_compilation_entry_points_forward_mapping_options(output_kind: str, field: str) -> None:
     """Keep mapping controls effective through every public target entry point."""
     target = CompilerTarget(
         2,
         connectivity=CompilerTarget.Connectivity([(0, 1)]),
         native_operations=CompilerTarget.NativeOperations.unrestricted(),
     )
-    options = CompilationOptions(mapping=MappingOptions(trials=0))
+    mapping = MappingOptions()
+    setattr(mapping, field, 0)
+    options = CompilationOptions(mapping=mapping)
     if output_kind == "submit":
         compile_call = partial(submit_program, QASM_STRING, target="mqt.ddsim.default", options=options)
     elif output_kind == "device":

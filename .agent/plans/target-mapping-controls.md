@@ -21,8 +21,10 @@ Bindings copy options before releasing the GIL. Source submission distinguishes
 omitted options from supplied settings so already compiled payloads reject
 compiler controls.
 
-Mapping trials must be positive; omission retains the CPU-dependent default.
-All-to-all placement ignores valid trials. Repeatability requires the same
+Mapping trials and refinement iterations must be positive. Trials retain the
+CPU-dependent default; iterations default to one forward/backward round. Routing
+lookahead defaults to 20 additional gates and permits zero. All-to-all placement
+ignores valid mapping controls. Repeatability requires the same
 build, input, target, seed, and explicit trial count. Execution sampling has a
 separate seed. Layout selection and reporting are a separate API extension.
 

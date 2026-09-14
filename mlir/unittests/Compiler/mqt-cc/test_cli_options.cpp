@@ -22,16 +22,31 @@
 #include <string>
 
 TEST(CompilerCLI, RejectsInvalidMappingOptions) {
-  for (bool hasDevice : {false, true}) {
+  struct InvalidOptions {
+    llvm::StringRef argument;
+    bool hasDevice;
+    llvm::StringRef diagnostic;
+  };
+  for (const auto& test : {
+           InvalidOptions{"--mapping-trials=0", false,
+                          "Mapping controls require --qdmi-device"},
+           InvalidOptions{"--mapping-iterations=0", false,
+                          "Mapping controls require --qdmi-device"},
+           InvalidOptions{"--mapping-lookahead=0", false,
+                          "Mapping controls require --qdmi-device"},
+           InvalidOptions{"--mapping-trials=0", true,
+                          "--mapping-trials must be greater than zero"},
+           InvalidOptions{"--mapping-iterations=0", true,
+                          "--mapping-iterations must be greater than zero"},
+       }) {
+    SCOPED_TRACE(test.argument.str());
+    SCOPED_TRACE(test.hasDevice);
     llvm::SmallString<128> stderrPath;
     ASSERT_FALSE(llvm::sys::fs::createTemporaryFile("mqt-cc-options", "err",
                                                     stderrPath));
     const llvm::FileRemover cleanup(stderrPath);
-    llvm::SmallVector<llvm::StringRef> args{
-        MQT_CORE_MQT_CC,
-        "--mapping-trials=0",
-    };
-    if (hasDevice) {
+    llvm::SmallVector<llvm::StringRef> args{MQT_CORE_MQT_CC, test.argument};
+    if (test.hasDevice) {
       args.push_back("--qdmi-device=mqt.ddsim.default");
     }
     EXPECT_EQ(llvm::sys::ExecuteAndWait(
@@ -40,11 +55,7 @@ TEST(CompilerCLI, RejectsInvalidMappingOptions) {
               1);
     auto diagnostics = llvm::MemoryBuffer::getFile(stderrPath);
     ASSERT_TRUE(diagnostics);
-    EXPECT_TRUE((*diagnostics)
-                    ->getBuffer()
-                    .contains(hasDevice
-                                  ? "--mapping-trials must be greater than zero"
-                                  : "Mapping controls require --qdmi-device"));
+    EXPECT_TRUE((*diagnostics)->getBuffer().contains(test.diagnostic));
   }
 }
 
