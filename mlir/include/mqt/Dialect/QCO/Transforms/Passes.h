@@ -44,7 +44,7 @@ namespace mlir::qco {
 /// Fuse before placement only when both IR and native two-qubit counts shrink.
 /// Native support is checked without assigning physical sites.
 [[nodiscard]] std::unique_ptr<Pass>
-createFuseTwoQubitGates(const CompilerTarget& target, uint64_t seed = 2023);
+createFuseTwoQubitGates(const CompilerTarget& target);
 
 /// Create multi-controlled decomposition for one compiler target.
 ///

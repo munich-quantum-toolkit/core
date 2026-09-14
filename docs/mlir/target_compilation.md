@@ -80,8 +80,9 @@ overrides compiler randomness, including custom pass seeds; `None` preserves
 existing pass settings. Execution sampling has a separate seed. For the CLI:
 
 ```console
-mqt-cc input.qasm --qdmi-device ID --seed 7 \
-  --mapping-trials 4 --mapping-iterations 2 --mapping-lookahead 10
+mqt-cc input.qasm --qdmi-device mqt.sc.iqm.garnet \
+  '--payload-spec=#mqt.payload_spec<format = <id = "qir", version = "2.1.0", profile = "base", encoding = text>, capabilities = [], optional_capabilities_known = false>' \
+  --seed 7 --mapping-trials 4 --mapping-iterations 2 --mapping-lookahead 10
 ```
 
 Trials and iterations must be positive. Omitted trials use the logical CPU

@@ -65,24 +65,14 @@
 
 namespace mlir {
 
-[[nodiscard]] static LogicalResult
-runPasses(ModuleOp mod, llvm::function_ref<void(OpPassManager&)> populatePasses,
-          StringRef failureMessage, const CompilationOptions& options = {}) {
-  PassManager pm(mod.getContext());
-  populatePasses(pm);
-  if (failed(runWithCompilationOptions(pm, mod, options))) {
-    return mod.emitError(failureMessage);
-  }
-  return success();
-}
-
 [[nodiscard]] static LogicalResult runQCOTransformPasses(
     ModuleOp mod, llvm::function_ref<void(OpPassManager&)> populatePasses,
     StringRef failureMessage, const CompilationOptions& options = {}) {
   if (failed(qco::verifyLinearity(mod))) {
     return failure();
   }
-  if (failed(runPasses(mod, populatePasses, failureMessage, options))) {
+  if (failed(
+          runWithPassManager(mod, populatePasses, failureMessage, options))) {
     return failure();
   }
   return qco::verifyLinearity(mod);
@@ -93,8 +83,8 @@ runPasses(ModuleOp mod, llvm::function_ref<void(OpPassManager&)> populatePasses,
 //===----------------------------------------------------------------------===//
 
 bool QCProgram::cleanup() {
-  return succeeded(runPasses(mod(), populateQCCleanupPipeline,
-                             "failed to run the QC cleanup pipeline"));
+  return succeeded(runWithPassManager(mod(), populateQCCleanupPipeline,
+                                      "failed to run the QC cleanup pipeline"));
 }
 
 bool QCProgram::normalizeGlobalPhases() {
@@ -103,8 +93,8 @@ bool QCProgram::normalizeGlobalPhases() {
 
 std::optional<OpenQASMProgram> QCProgram::toOpenQASM3() const {
   auto cleaned = copy();
-  if (failed(runPasses(cleaned.mod(), populateQCExportPipeline,
-                       "failed to prepare QC for OpenQASM export"))) {
+  if (failed(runWithPassManager(cleaned.mod(), populateQCExportPipeline,
+                                "failed to prepare QC for OpenQASM export"))) {
     return std::nullopt;
   }
   auto source = qc::translateQCToOpenQASM3(cleaned.mod());
@@ -115,7 +105,7 @@ std::optional<OpenQASMProgram> QCProgram::toOpenQASM3() const {
 }
 
 std::optional<QIRProgram> QCProgram::intoQIR(QIRProfile profile) && {
-  if (failed(runPasses(
+  if (failed(runWithPassManager(
           mod(),
           [profile](OpPassManager& pm) {
             populateQIRPreparationPipeline(pm);
@@ -225,7 +215,7 @@ bool QCOProgram::compileForTarget(const TargetEnvironment& environment,
   return succeeded(runQCOTransformPasses(
       mod(),
       [&environment, &options](OpPassManager& pm) {
-        populateTargetCompilationPipeline(pm, environment, options);
+        populateTargetCompilationPipeline(pm, environment, options.mapping);
       },
       "failed to compile the QCO program for the target", options));
 }
@@ -235,7 +225,7 @@ bool QCOProgram::synthesizeForTarget(const TargetEnvironment& environment,
   return succeeded(runQCOTransformPasses(
       mod(),
       [&environment, &options](OpPassManager& pm) {
-        populateTargetSynthesisPipeline(pm, environment, options);
+        populateTargetSynthesisPipeline(pm, environment, options.mapping);
       },
       "failed to synthesize the QCO program for the target", options));
 }
@@ -303,8 +293,9 @@ JeffProgram::fromFile(const std::filesystem::path& path) {
 JeffProgram JeffProgram::copy() const { return JeffProgram(cloneStorage()); }
 
 bool JeffProgram::cleanup() {
-  return succeeded(runPasses(mod(), populateJeffCleanupPipeline,
-                             "failed to run the jeff cleanup pipeline"));
+  return succeeded(
+      runWithPassManager(mod(), populateJeffCleanupPipeline,
+                         "failed to run the jeff cleanup pipeline"));
 }
 
 std::vector<std::byte> JeffProgram::toBytes() const {
@@ -324,7 +315,7 @@ bool JeffProgram::write(const std::filesystem::path& path) const {
 }
 
 std::optional<QCOProgram> JeffProgram::intoQCO() && {
-  if (failed(runPasses(
+  if (failed(runWithPassManager(
           mod(), [](OpPassManager& pm) { pm.addPass(createJeffToQCO()); },
           "failed to convert jeff to QCO"))) {
     return std::nullopt;
@@ -345,7 +336,7 @@ QIRProgram::QIRProgram(Storage storage, QIRProfile profile)
 QIRProgram QIRProgram::copy() const { return {cloneStorage(), profile_}; }
 
 bool QIRProgram::cleanup() {
-  return succeeded(runPasses(
+  return succeeded(runWithPassManager(
       mod(),
       [this](OpPassManager& pm) {
         populateQIRCleanupPipeline(pm, profile_ == QIRProfile::Adaptive);

@@ -28,7 +28,6 @@
 
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/Support/raw_ostream.h"
 
 #include <bit>
 #include <cstdint>
@@ -40,15 +39,13 @@ static void addSimplificationPasses(OpPassManager& pm) {
   pm.addPass(createCSEPass());
 }
 
-LogicalResult
-runWithPassManager(ModuleOp mod,
-                   const function_ref<void(OpPassManager&)> populatePasses,
-                   const StringRef errorMessage) {
+LogicalResult runWithPassManager(
+    ModuleOp mod, const function_ref<void(OpPassManager&)> populatePasses,
+    const StringRef errorMessage, const CompilationOptions& options) {
   PassManager pm(mod.getContext());
   populatePasses(pm);
-  if (pm.run(mod).failed()) {
-    llvm::errs() << errorMessage << "\n";
-    return failure();
+  if (failed(runWithCompilationOptions(pm, mod, options))) {
+    return mod.emitError(errorMessage);
   }
   return success();
 }

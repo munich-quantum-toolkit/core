@@ -2112,17 +2112,83 @@ TEST_F(CompilerPipelineTest, TargetPipelineForwardsMappingControls) {
   OpPassManager pm("builtin.module");
   populateTargetCompilationPipeline(
       pm, environment,
-      CompilationOptions{
-          .seed = 17,
-          .mapping = {.trials = 3, .iterations = 2, .lookahead = 0},
-      });
+      MappingOptions{.trials = 3, .iterations = 2, .lookahead = 0});
   std::string pipeline;
   llvm::raw_string_ostream stream(pipeline);
   pm.printAsTextualPipeline(stream);
-  EXPECT_NE(pipeline.find("seed=17"), std::string::npos);
   EXPECT_NE(pipeline.find("ntrials=3"), std::string::npos);
   EXPECT_NE(pipeline.find("niterations=2"), std::string::npos);
   EXPECT_NE(pipeline.find("nlookahead=0"), std::string::npos);
+}
+
+TEST_F(CompilerPipelineTest, TargetPipelineOverridesStoredSeed) {
+  auto qc = QCProgram::fromOpenQASMString(R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[6] q;
+bit[6] c;
+h q;
+cx q[4], q[0];
+cx q[2], q[0];
+cx q[3], q[4];
+cx q[1], q[3];
+cx q[1], q[3];
+cx q[4], q[3];
+cx q[1], q[3];
+cx q[3], q[1];
+cx q[0], q[1];
+cx q[4], q[3];
+cx q[5], q[2];
+cx q[3], q[5];
+cx q[3], q[2];
+cx q[0], q[2];
+cx q[0], q[1];
+cx q[5], q[3];
+cx q[3], q[5];
+cx q[3], q[5];
+cx q[4], q[5];
+cx q[1], q[0];
+cx q[1], q[5];
+cx q[0], q[4];
+cx q[2], q[1];
+cx q[1], q[5];
+c = measure q;
+)");
+  ASSERT_TRUE(qc);
+  auto input = std::move(*qc).intoQCO();
+  ASSERT_TRUE(input);
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(6,
+                             CompilerTarget::Connectivity::fromCouplings(
+                                 {{0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 5}}),
+                             CompilerTarget::NativeOperations::unrestricted()));
+  const TargetEnvironment environment(target, makePayloadSpecification());
+  auto expected = input->copy();
+  ASSERT_TRUE(expected.compileForTarget(environment,
+                                        {.seed = 7, .mapping = {.trials = 2}}));
+
+  for (const auto seed : {7ULL, 99ULL}) {
+    for (const bool lowLevel : {false, true}) {
+      auto program = input->copy();
+      auto moduleOp = program.module();
+      const auto previousSeed =
+          Builder(moduleOp.getContext()).getI64IntegerAttr(99);
+      moduleOp->setAttr(COMPILATION_SEED_ATTR, previousSeed);
+      const CompilationOptions options{.seed = seed, .mapping = {.trials = 2}};
+      if (lowLevel) {
+        PassManager pm(moduleOp.getContext());
+        populateTargetCompilationPipeline(pm, environment, options.mapping);
+        ASSERT_TRUE(
+            succeeded(runWithCompilationOptions(pm, moduleOp, options)));
+      } else {
+        ASSERT_TRUE(program.compileForTarget(environment, options));
+      }
+      EXPECT_EQ(moduleOp->getAttr(COMPILATION_SEED_ATTR), previousSeed);
+      moduleOp->removeAttr(COMPILATION_SEED_ATTR);
+      /// Compare layouts, excluding metadata, and ensure the input uses the
+      /// seed.
+      EXPECT_EQ(program.str() == expected.str(), seed == 7);
+    }
+  }
 }
 
 // Test: target compilation decomposes, maps, synthesizes, and verifies.

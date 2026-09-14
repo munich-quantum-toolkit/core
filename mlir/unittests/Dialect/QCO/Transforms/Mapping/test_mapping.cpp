@@ -3027,6 +3027,29 @@ TEST_F(MappingPassFixture, RejectInvalidOptionsBeforeMutation) {
   }
 }
 
+TEST_F(MappingPassFixture, LookaheadAllocationFollowsCircuitSize) {
+  const auto target = getSquareGridTarget(2);
+  for (const auto lookahead : {
+           size_t{0},
+           size_t{20},
+           size_t{4294967295ULL},
+           std::numeric_limits<size_t>::max(),
+       }) {
+    QCOProgramBuilder builder(context.get());
+    builder.initialize();
+    auto [control, targetQubit] =
+        builder.cx(builder.allocQubit(), builder.allocQubit());
+    builder.sink(control);
+    builder.sink(targetQubit);
+    auto moduleOp = builder.finalize();
+    ASSERT_TRUE(succeeded(
+        runPass(*moduleOp, target,
+                MappingPassOptions{.nlookahead = lookahead, .ntrials = 1})));
+    EXPECT_TRUE(succeeded(verify(*moduleOp)));
+    EXPECT_TRUE(isExecutable(getEntryPoint(*moduleOp), target));
+  }
+}
+
 TEST_F(MappingPassFixture, DefaultTrialsMatchAvailableCPUs) {
   const auto expectedTrials =
       llvm::hardware_concurrency().compute_thread_count();

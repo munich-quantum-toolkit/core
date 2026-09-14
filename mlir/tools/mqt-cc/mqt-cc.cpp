@@ -715,7 +715,8 @@ static int runCompiler(int argc, char** argv) {
           pm.addPass(createInlinerPass());
         }
         if (targetEnvironment) {
-          populateTargetCompilationPipeline(pm, *targetEnvironment, options);
+          populateTargetCompilationPipeline(pm, *targetEnvironment,
+                                            options.mapping);
           return success();
         }
         populateQCOCleanupPipeline(pm);

@@ -26,10 +26,10 @@ class PassManager;
 mlir::LogicalResult runWithPassManager(
     mlir::ModuleOp moduleOp,
     mlir::function_ref<void(mlir::OpPassManager&)> populatePasses,
-    mlir::StringRef errorMessage);
+    mlir::StringRef errorMessage, const mlir::CompilationOptions& options = {});
 
 /// Run passes with scoped compilation options; restore input metadata on
-/// failure.
+/// completion.
 mlir::LogicalResult
 runWithCompilationOptions(mlir::PassManager& pm, mlir::ModuleOp moduleOp,
                           const mlir::CompilationOptions& options);

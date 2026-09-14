@@ -1385,7 +1385,6 @@ private:
   template <WireDirection Direction>
   Window getWindow(Wires wires, const WireInfos& infos) {
     Window window;
-    window.reserve(1 + nlookahead);
 
     SmallVector<IndexPairType> prev;
     SmallVector<IndexPairType> next;
@@ -1410,7 +1409,7 @@ private:
 
                 if (!is_contained(prev, gate)) {
                   window.emplace_back(gate);
-                  if (window.size() == 1 + nlookahead) {
+                  if (window.size() - 1 == nlookahead) {
                     return WalkResult::interrupt();
                   }
                 }

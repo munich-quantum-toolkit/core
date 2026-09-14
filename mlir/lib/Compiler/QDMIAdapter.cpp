@@ -11,7 +11,6 @@
 #include "mqt/Compiler/QDMIAdapter.h"
 
 #include "mqt/Compiler/Target.h"
-#include "mqt/Compiler/TargetCompilation.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 #include "qdmi/Client.hpp"
 #include "qdmi/driver/Driver.hpp"

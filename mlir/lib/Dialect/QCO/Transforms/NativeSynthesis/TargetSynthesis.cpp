@@ -711,8 +711,8 @@ struct FuseTwoQubitGatesPass final
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(FuseTwoQubitGatesPass)
 
   FuseTwoQubitGatesPass() = default;
-  explicit FuseTwoQubitGatesPass(const CompilerTarget& target, uint64_t seed)
-      : target_(target), seed_(seed) {}
+  explicit FuseTwoQubitGatesPass(const CompilerTarget& target)
+      : target_(target) {}
 
   void getDependentDialects(DialectRegistry& registry) const override {
     registry.insert<QCODialect, arith::ArithDialect>();
@@ -732,8 +732,7 @@ protected:
     }
     IRRewriter rewriter(&getContext());
     if (fuseTwoQubitGates(rewriter, moduleOp, *basis,
-                          target_ ? &*target_ : nullptr, nullptr, true,
-                          seed_) &&
+                          target_ ? &*target_ : nullptr, nullptr, true) &&
         failed(mlir::mqt::normalizeGlobalPhases(moduleOp))) {
       signalPassFailure();
     }
@@ -741,7 +740,6 @@ protected:
 
 private:
   std::optional<CompilerTarget> target_;
-  uint64_t seed_ = 2023;
 };
 
 /// Track generated wire sites and defer folding until builders finish.
@@ -920,9 +918,8 @@ std::unique_ptr<Pass> createFuseTwoQubitGates() {
   return std::make_unique<FuseTwoQubitGatesPass>();
 }
 
-std::unique_ptr<Pass> createFuseTwoQubitGates(const CompilerTarget& target,
-                                              uint64_t seed) {
-  return std::make_unique<FuseTwoQubitGatesPass>(target, seed);
+std::unique_ptr<Pass> createFuseTwoQubitGates(const CompilerTarget& target) {
+  return std::make_unique<FuseTwoQubitGatesPass>(target);
 }
 
 } // namespace mlir::qco

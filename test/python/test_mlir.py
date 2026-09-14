@@ -492,7 +492,9 @@ out = measure q;
 
 @pytest.mark.parametrize("output_kind", ["typed", "payload", "device", "submit"])
 @pytest.mark.parametrize("field", ["trials", "iterations"])
-def test_compilation_entry_points_forward_mapping_options(output_kind: str, field: str) -> None:
+def test_compilation_entry_points_forward_mapping_options(
+    output_kind: str, field: str, capfd: pytest.CaptureFixture[str]
+) -> None:
     """Keep mapping controls effective through every public target entry point."""
     target = CompilerTarget(
         2,
@@ -516,6 +518,7 @@ def test_compilation_entry_points_forward_mapping_options(output_kind: str, fiel
         )
     with pytest.raises((RuntimeError, ValueError)):
         compile_call()
+    assert f"mapping {field} must be greater than zero" in capfd.readouterr().err
 
 
 @requires_qiskit_translation
