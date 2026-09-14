@@ -25,6 +25,7 @@
 #include <initializer_list>
 #include <memory>
 #include <numeric>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -127,6 +128,116 @@ TEST(CompilerQDMIAdapterTest, QueriesNamesAndSiteIndicesOncePerSnapshot) {
     EXPECT_EQ(target.numSites(), 100);
     EXPECT_EQ(target.operations().size(), 3);
   }
+}
+
+TEST(CompilerQDMIAdapterTest, ReturnsProviderQueryFailuresAsErrors) {
+  auto library = std::make_shared<qdmi::DynamicDeviceLibrary>(
+      MQT_CORE_MLIR_SC_DEVICE_LIBRARY, "MQT_SC");
+  static thread_local decltype(QDMI_device_session_query_device_property)*
+      queryDevice = nullptr;
+  static thread_local decltype(QDMI_device_session_query_site_property)*
+      querySite = nullptr;
+  static thread_local decltype(QDMI_device_session_query_operation_property)*
+      queryOperation = nullptr;
+  static thread_local std::optional<QDMI_Device_Property> failingDeviceProperty;
+  static thread_local std::optional<QDMI_Site_Property> failingSiteProperty;
+  static thread_local std::optional<QDMI_Operation_Property>
+      failingOperationProperty;
+  static thread_local bool failSiteCalibration = false;
+  queryDevice = library->device_session_query_device_property;
+  querySite = library->device_session_query_site_property;
+  queryOperation = library->device_session_query_operation_property;
+  library->device_session_query_device_property =
+      [](QDMI_Device_Session session, QDMI_Device_Property property,
+         size_t size, void* value, size_t* sizeRet) {
+        return property == failingDeviceProperty
+                   ? QDMI_ERROR_FATAL
+                   : queryDevice(session, property, size, value, sizeRet);
+      };
+  library->device_session_query_site_property =
+      [](QDMI_Device_Session session, QDMI_Site site,
+         QDMI_Site_Property property, size_t size, void* value,
+         size_t* sizeRet) {
+        return property == failingSiteProperty
+                   ? QDMI_ERROR_FATAL
+                   : querySite(session, site, property, size, value, sizeRet);
+      };
+  library->device_session_query_operation_property =
+      [](QDMI_Device_Session session, QDMI_Operation operation, size_t numSites,
+         const QDMI_Site* sites, size_t numParams, const double* params,
+         QDMI_Operation_Property property, size_t size, void* value,
+         size_t* sizeRet) {
+        return property == failingOperationProperty &&
+                       (!failSiteCalibration || numSites != 0)
+                   ? QDMI_ERROR_FATAL
+                   : queryOperation(session, operation, numSites, sites,
+                                    numParams, params, property, size, value,
+                                    sizeRet);
+      };
+  QDMI_Device_impl_d rawDevice(library);
+  const auto device = qdmi::Session::createSessionlessDevice(&rawDevice);
+  const auto expectFailure = [&](auto property) {
+    SCOPED_TRACE(qdmi::toString(property));
+    auto result = mlir::compilerTargetFromDevice(device);
+    ASSERT_FALSE(result);
+    EXPECT_NE(llvm::toString(result.takeError()).find(qdmi::toString(property)),
+              std::string::npos);
+  };
+  for (const auto property : {
+           QDMI_DEVICE_PROPERTY_NAME,
+           QDMI_DEVICE_PROPERTY_CUSTOM1,
+           QDMI_DEVICE_PROPERTY_SITES,
+           QDMI_DEVICE_PROPERTY_QUBITSNUM,
+           QDMI_DEVICE_PROPERTY_COUPLINGMAP,
+           QDMI_DEVICE_PROPERTY_OPERATIONS,
+           QDMI_DEVICE_PROPERTY_DURATIONUNIT,
+           QDMI_DEVICE_PROPERTY_DURATIONSCALEFACTOR,
+       }) {
+    failingDeviceProperty = property;
+    expectFailure(property);
+  }
+  failingDeviceProperty = QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS;
+  auto environment = mlir::targetEnvironmentFromDevice(device);
+  ASSERT_FALSE(environment);
+  EXPECT_NE(
+      llvm::toString(environment.takeError())
+          .find(qdmi::toString(QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS)),
+      std::string::npos);
+  failingDeviceProperty.reset();
+  for (const auto property : {
+           QDMI_SITE_PROPERTY_ISZONE,
+           QDMI_SITE_PROPERTY_INDEX,
+           QDMI_SITE_PROPERTY_NAME,
+           QDMI_SITE_PROPERTY_T1,
+           QDMI_SITE_PROPERTY_T2,
+       }) {
+    failingSiteProperty = property;
+    expectFailure(property);
+  }
+  failingSiteProperty.reset();
+  for (const auto property : {
+           QDMI_OPERATION_PROPERTY_ISZONED,
+           QDMI_OPERATION_PROPERTY_QUBITSNUM,
+           QDMI_OPERATION_PROPERTY_NAME,
+           QDMI_OPERATION_PROPERTY_CUSTOM1,
+           QDMI_OPERATION_PROPERTY_SITES,
+           QDMI_OPERATION_PROPERTY_DURATION,
+           QDMI_OPERATION_PROPERTY_FIDELITY,
+           QDMI_OPERATION_PROPERTY_PARAMETERSNUM,
+       }) {
+    failingOperationProperty = property;
+    expectFailure(property);
+  }
+  failSiteCalibration = true;
+  for (const auto property :
+       {QDMI_OPERATION_PROPERTY_DURATION, QDMI_OPERATION_PROPERTY_FIDELITY}) {
+    failingOperationProperty = property;
+    expectFailure(property);
+  }
+  failingOperationProperty.reset();
+  failSiteCalibration = false;
+  EXPECT_EQ(llvm::cantFail(mlir::compilerTargetFromDevice(device)).numSites(),
+            100);
 }
 
 TEST(CompilerQDMIAdapterTest, InfersDDSIMTargetFacts) {
