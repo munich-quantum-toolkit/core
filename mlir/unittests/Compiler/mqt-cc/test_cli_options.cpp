@@ -28,16 +28,31 @@ TEST(CompilerCLI, RejectsInvalidMappingOptions) {
     llvm::StringRef diagnostic;
   };
   for (const auto& test : {
-           InvalidOptions{"--mapping-trials=0", false,
-                          "Mapping controls require --qdmi-device"},
-           InvalidOptions{"--mapping-iterations=0", false,
-                          "Mapping controls require --qdmi-device"},
-           InvalidOptions{"--mapping-lookahead=0", false,
-                          "Mapping controls require --qdmi-device"},
-           InvalidOptions{"--mapping-trials=0", true,
-                          "--mapping-trials must be greater than zero"},
-           InvalidOptions{"--mapping-iterations=0", true,
-                          "--mapping-iterations must be greater than zero"},
+           InvalidOptions{
+               .argument = "--mapping-trials=0",
+               .hasDevice = false,
+               .diagnostic = "Mapping controls require --qdmi-device",
+           },
+           InvalidOptions{
+               .argument = "--mapping-iterations=0",
+               .hasDevice = false,
+               .diagnostic = "Mapping controls require --qdmi-device",
+           },
+           InvalidOptions{
+               .argument = "--mapping-lookahead=0",
+               .hasDevice = false,
+               .diagnostic = "Mapping controls require --qdmi-device",
+           },
+           InvalidOptions{
+               .argument = "--mapping-trials=0",
+               .hasDevice = true,
+               .diagnostic = "--mapping-trials must be greater than zero",
+           },
+           InvalidOptions{
+               .argument = "--mapping-iterations=0",
+               .hasDevice = true,
+               .diagnostic = "--mapping-iterations must be greater than zero",
+           },
        }) {
     SCOPED_TRACE(test.argument.str());
     SCOPED_TRACE(test.hasDevice);

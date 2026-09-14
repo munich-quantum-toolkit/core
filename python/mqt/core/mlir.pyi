@@ -518,13 +518,25 @@ class Program:
 class MappingOptions:
     """Native mapping controls."""
 
-    def __init__(self, *, trials: int | None = None) -> None: ...
+    def __init__(self, *, trials: int | None = None, iterations: int = 1, lookahead: int = 20) -> None: ...
     @property
     def trials(self) -> int | None:
         """Positive trial count; None uses the available logical CPU count."""
 
     @trials.setter
     def trials(self, arg: int | None, /) -> None: ...
+    @property
+    def iterations(self) -> int:
+        """Positive number of forward/backward rounds to refine the initial layout."""
+
+    @iterations.setter
+    def iterations(self, arg: int, /) -> None: ...
+    @property
+    def lookahead(self) -> int:
+        """Additional two-qubit gates considered during routing; zero disables lookahead."""
+
+    @lookahead.setter
+    def lookahead(self, arg: int, /) -> None: ...
 
 class CompilationOptions:
     """Shared compiler controls. An explicit seed overrides all compiler randomness; None preserves pass defaults and custom pipeline seeds."""

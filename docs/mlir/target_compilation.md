@@ -85,11 +85,11 @@ mqt-cc input.qasm --qdmi-device ID --seed 7 \
 ```
 
 Trials and iterations must be positive. Omitted trials use the logical CPU
-count; iterations default to one forward/backward refinement round. Lookahead
-is the number of additional two-qubit gates considered during routing. It
-defaults to 20; zero considers only the current gate. All-to-all placement
-ignores valid mapping controls. Fixed seed and trials give repeatable mapping for the
-same build, input, and target, without a cross-release layout guarantee.
+count; iterations default to one forward/backward refinement round. Lookahead is
+the number of additional two-qubit gates considered during routing. It defaults
+to 20; zero considers only the current gate. All-to-all placement ignores valid
+mapping controls. Fixed seed and trials give repeatable mapping for the same
+build, input, and target, without a cross-release layout guarantee.
 
 ### Choose a format
 

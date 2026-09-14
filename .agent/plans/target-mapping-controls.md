@@ -24,13 +24,13 @@ compiler controls.
 Mapping trials and refinement iterations must be positive. Trials retain the
 CPU-dependent default; iterations default to one forward/backward round. Routing
 lookahead defaults to 20 additional gates and permits zero. All-to-all placement
-ignores valid mapping controls. Repeatability requires the same
-build, input, target, seed, and explicit trial count. Execution sampling has a
-separate seed. Layout selection and reporting are a separate API extension.
+ignores valid mapping controls. Repeatability requires the same build, input,
+target, seed, and explicit trial count. Execution sampling has a separate seed.
+Layout selection and reporting are a separate API extension.
 
 ## Validation
 
-The compiler and QDMI Python suites pass 148 tests, including seed precedence,
+The compiler and QDMI Python suites pass 158 tests, including seed precedence,
 nested pipelines, 64-bit values, instrumentation, source submission, and failure
 cleanup. Native validation passes 227 compiler tests, including CLI
 exit/diagnostic checks and device-independent seed forwarding. Stub generation,
