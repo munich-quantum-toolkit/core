@@ -1099,10 +1099,8 @@ TEST_F(MergeSingleQubitRotationGatesTest,
         ASSERT_TRUE(succeeded(verify(*module)));
         ASSERT_TRUE(succeeded(verifyLinearity(*module)));
         OwningOpRef<ModuleOp> original = module->clone();
-        FuseSingleQubitUnitaryRunsOptions options;
-        options.basis = basisName;
         PassManager fusion(&context);
-        fusion.addPass(createFuseSingleQubitUnitaryRuns(options));
+        fusion.addPass(createFuseSingleQubitUnitaryRuns(basis));
         ASSERT_TRUE(succeeded(fusion.run(*module)));
         ASSERT_TRUE(succeeded(verify(*module)));
         ASSERT_TRUE(succeeded(verifyLinearity(*module)));

@@ -1093,7 +1093,8 @@ struct MergeSingleQubitRotationGatesPattern final
     const Location loc = chain.front()->getLoc();
     const auto consts = makeConsts<Value>(rewriter, loc);
     const auto angle = [&](UnitaryOpInterface op) {
-      return Val<Value>{op.getParameter(0), &rewriter, loc};
+      return Val<Value>{
+          .v = op.getParameter(0), .rewriter = &rewriter, .loc = loc};
     };
     RuntimeEulerAngles angles{.theta = angle(chain[middle]),
                               .phi = consts.zero,
