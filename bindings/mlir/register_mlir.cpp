@@ -1188,10 +1188,11 @@ Programs own their MLIR module. Conversions can consume a program; use
 
   nb::class_<mlir::MappingOptions>(m, "MappingOptions",
                                    "Native mapping controls.")
-      .def(nb::init<std::optional<size_t>, size_t, size_t>(), nb::kw_only(),
-           "trials"_a = nb::none(),
+      .def(nb::init<std::optional<size_t>, size_t, size_t, size_t>(),
+           nb::kw_only(), "trials"_a = nb::none(),
            "iterations"_a = mlir::MappingOptions{}.iterations,
-           "lookahead"_a = mlir::MappingOptions{}.lookahead)
+           "lookahead"_a = mlir::MappingOptions{}.lookahead,
+           "search_memory_limit"_a = mlir::MappingOptions{}.searchMemoryLimit)
       .def_rw(
           "trials", &mlir::MappingOptions::trials,
           "Positive trial count; None uses the available logical CPU count.")
@@ -1200,7 +1201,11 @@ Programs own their MLIR module. Conversions can consume a program; use
               "initial layout.")
       .def_rw("lookahead", &mlir::MappingOptions::lookahead,
               "Additional two-qubit gates considered during routing; zero "
-              "disables lookahead.");
+              "disables lookahead.")
+      .def_rw("search_memory_limit", &mlir::MappingOptions::searchMemoryLimit,
+              "Estimated node and layout bytes per routing search, per "
+              "concurrent trial. Zero disables node expansion. Container "
+              "overhead, caches, and IR are extra.");
 
   nb::class_<mlir::CompilationOptions>(
       m, "CompilationOptions",

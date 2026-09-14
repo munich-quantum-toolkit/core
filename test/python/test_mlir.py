@@ -426,6 +426,7 @@ def test_mapping_options_defaults() -> None:
     assert options.trials is None
     assert options.iterations == 1
     assert options.lookahead == 20
+    assert options.search_memory_limit == 64 * 1024 * 1024
 
 
 @pytest.mark.parametrize(
@@ -455,7 +456,8 @@ def test_mapping_options_reject_zero_counts(method: str, field: str, *, all_to_a
 
 @pytest.mark.parametrize("seed", [0, 7])
 @pytest.mark.parametrize("lookahead", [0, 5])
-def test_explicit_mapping_options_are_repeatable(seed: int, lookahead: int) -> None:
+@pytest.mark.parametrize("search_memory_limit", [0, 1024])
+def test_explicit_mapping_options_are_repeatable(seed: int, lookahead: int, search_memory_limit: int) -> None:
     """Use fixed native trials for repeatable sparse-target compilation."""
     source = """OPENQASM 3.1;
 include "stdgates.inc";
@@ -470,7 +472,10 @@ out = measure q;
         connectivity=CompilerTarget.Connectivity([(0, 1), (1, 2), (2, 3)]),
         native_operations=CompilerTarget.NativeOperations.unrestricted(),
     )
-    options = CompilationOptions(seed=seed, mapping=MappingOptions(trials=3, iterations=2, lookahead=lookahead))
+    options = CompilationOptions(
+        seed=seed,
+        mapping=MappingOptions(trials=3, iterations=2, lookahead=lookahead, search_memory_limit=search_memory_limit),
+    )
     outputs = []
     for _ in range(2):
         program = QCProgram.from_openqasm_str(source).to_qco()
@@ -481,6 +486,7 @@ out = measure q;
     assert options.mapping.trials == 3
     assert options.mapping.iterations == 2
     assert options.mapping.lookahead == lookahead
+    assert options.mapping.search_memory_limit == search_memory_limit
 
     payloads = []
     for _ in range(2):

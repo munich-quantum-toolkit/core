@@ -129,6 +129,7 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
     }
     mappingOptions.niterations = mapping.iterations;
     mappingOptions.nlookahead = mapping.lookahead;
+    mappingOptions.searchMemoryLimit = mapping.searchMemoryLimit;
     pm.addPass(qco::createMappingPass(mappingOptions));
     break;
   }

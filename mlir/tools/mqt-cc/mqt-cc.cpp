@@ -157,6 +157,11 @@ static llvm::cl::opt<size_t>
                      llvm::cl::desc("Additional two-qubit gates considered "
                                     "during routing (zero disables lookahead)"),
                      llvm::cl::init(MappingOptions{}.lookahead));
+static llvm::cl::opt<size_t> mappingSearchMemoryLimit(
+    "mapping-search-memory-limit",
+    llvm::cl::desc("Estimated node and layout bytes per routing search, per "
+                   "concurrent trial (zero disables node expansion)"),
+    llvm::cl::init(MappingOptions{}.searchMemoryLimit));
 
 static llvm::cl::opt<std::string> qdmiConfig(
     "qdmi-config",
@@ -425,7 +430,8 @@ static int runCompiler(int argc, char** argv) {
 
   if ((mappingTrials.getNumOccurrences() != 0 ||
        mappingIterations.getNumOccurrences() != 0 ||
-       mappingLookahead.getNumOccurrences() != 0) &&
+       mappingLookahead.getNumOccurrences() != 0 ||
+       mappingSearchMemoryLimit.getNumOccurrences() != 0) &&
       qdmiDevice.empty()) {
     llvm::errs() << "Mapping controls require --qdmi-device.\n";
     return 1;
@@ -449,6 +455,7 @@ static int runCompiler(int argc, char** argv) {
                             : std::optional<size_t>{mappingTrials.getValue()},
               .iterations = mappingIterations,
               .lookahead = mappingLookahead,
+              .searchMemoryLimit = mappingSearchMemoryLimit,
           },
   };
 

@@ -518,7 +518,14 @@ class Program:
 class MappingOptions:
     """Native mapping controls."""
 
-    def __init__(self, *, trials: int | None = None, iterations: int = 1, lookahead: int = 20) -> None: ...
+    def __init__(
+        self,
+        *,
+        trials: int | None = None,
+        iterations: int = 1,
+        lookahead: int = 20,
+        search_memory_limit: int = 67108864,
+    ) -> None: ...
     @property
     def trials(self) -> int | None:
         """Positive trial count; None uses the available logical CPU count."""
@@ -537,6 +544,12 @@ class MappingOptions:
 
     @lookahead.setter
     def lookahead(self, arg: int, /) -> None: ...
+    @property
+    def search_memory_limit(self) -> int:
+        """Estimated node and layout bytes per routing search, per concurrent trial. Zero disables node expansion. Container overhead, caches, and IR are extra."""
+
+    @search_memory_limit.setter
+    def search_memory_limit(self, arg: int, /) -> None: ...
 
 class CompilationOptions:
     """Shared compiler controls. An explicit seed overrides all compiler randomness; None preserves pass defaults and custom pipeline seeds."""

@@ -44,6 +44,11 @@ TEST(CompilerCLI, RejectsInvalidMappingOptions) {
                .diagnostic = "Mapping controls require --qdmi-device",
            },
            InvalidOptions{
+               .argument = "--mapping-search-memory-limit=0",
+               .hasDevice = false,
+               .diagnostic = "Mapping controls require --qdmi-device",
+           },
+           InvalidOptions{
                .argument = "--mapping-trials=0",
                .hasDevice = true,
                .diagnostic = "--mapping-trials must be greater than zero",

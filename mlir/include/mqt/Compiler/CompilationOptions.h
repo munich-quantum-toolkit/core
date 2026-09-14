@@ -25,6 +25,10 @@ struct MappingOptions {
   /// Additional two-qubit gates considered during routing; zero disables
   /// lookahead.
   size_t lookahead = 20;
+  /// Estimated node and layout bytes per routing search, per concurrent trial.
+  /// Zero disables node expansion. Container overhead, caches, and IR are
+  /// extra.
+  size_t searchMemoryLimit = 64UL * 1024 * 1024;
 };
 
 /// Options shared by compilation entry points.

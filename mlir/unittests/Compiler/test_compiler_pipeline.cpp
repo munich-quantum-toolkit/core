@@ -2110,15 +2110,20 @@ TEST_F(CompilerPipelineTest, TargetPipelineForwardsMappingControls) {
   const TargetEnvironment environment(makeSparseUCZTarget(true),
                                       makePayloadSpecification());
   OpPassManager pm("builtin.module");
-  populateTargetCompilationPipeline(
-      pm, environment,
-      MappingOptions{.trials = 3, .iterations = 2, .lookahead = 0});
+  populateTargetCompilationPipeline(pm, environment,
+                                    MappingOptions{
+                                        .trials = 3,
+                                        .iterations = 2,
+                                        .lookahead = 0,
+                                        .searchMemoryLimit = 1024,
+                                    });
   std::string pipeline;
   llvm::raw_string_ostream stream(pipeline);
   pm.printAsTextualPipeline(stream);
   EXPECT_NE(pipeline.find("ntrials=3"), std::string::npos);
   EXPECT_NE(pipeline.find("niterations=2"), std::string::npos);
   EXPECT_NE(pipeline.find("nlookahead=0"), std::string::npos);
+  EXPECT_NE(pipeline.find("search-memory-limit=1024"), std::string::npos);
 }
 
 TEST_F(CompilerPipelineTest, TargetPipelineOverridesStoredSeed) {

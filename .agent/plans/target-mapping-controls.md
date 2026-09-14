@@ -28,17 +28,23 @@ CPU-dependent default; iterations default to one forward/backward round. Routing
 lookahead defaults to 20 additional gates and permits zero. Its storage grows
 with the gates present, even when the configured ceiling is `SIZE_MAX`.
 All-to-all placement ignores valid mapping controls. Repeatability requires the
-same build, input, target, seed, and explicit trial count. Execution sampling
-has a separate seed. Layout selection and reporting are a separate API
-extension.
+same build, input, target, seed, and mapping controls, including an explicit
+trial count. Execution sampling has a separate seed. Layout selection and
+reporting are a separate API extension.
+
+`searchMemoryLimit` (`search_memory_limit` in Python,
+`--mapping-search-memory-limit` in the CLI) forwards the mapper's estimated
+node/layout byte budget. It defaults to 64 MiB per search and concurrent trial;
+zero disables node expansion. Container overhead, caches, and IR are extra.
 
 ## Validation
 
-The compiler and QDMI Python suites pass 158 tests, including seed precedence,
+The compiler and QDMI Python suites pass 162 tests, including seed precedence,
 nested pipelines, 64-bit values, instrumentation, source submission, and failure
-cleanup. Native validation passes 228 compiler, 115 mapping, and 61
-target-synthesis tests, plus three CLI CTests. This covers stored-seed overrides
-and restoration, maximum lookahead, CLI exit/diagnostic checks, and
-device-independent seed forwarding. The documented CLI command succeeds. Stub
-generation, repository lint, and full changed-file C++ lint pass. No changelog
-or upgrade-guide entries are included.
+cleanup. Memory controls retain the 64 MiB default and accept zero and small
+budgets through typed and payload compilation. Native validation passes 228
+compiler, 115 mapping, and 61 target-synthesis tests, plus three CLI CTests.
+This covers stored-seed overrides and restoration, maximum lookahead, CLI
+exit/diagnostic checks, and device-independent seed forwarding. The documented
+CLI command succeeds. Stub generation, repository lint, and full changed-file
+C++ lint pass. No changelog or upgrade-guide entries are included.
