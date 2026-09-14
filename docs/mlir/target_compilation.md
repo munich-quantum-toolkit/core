@@ -480,9 +480,9 @@ print(layout.final_layout)
 Here `environment` is a `TargetEnvironment` whose target contains sites `0` and
 `2` and supports the circuit. `initial_layout` is a complete list of distinct
 **target site IDs**, not indices into `target.sites`. Omit it or pass an empty
-list for automatic placement. A supplied layout fixes initial placement, so trials and
-refinement iterations do not run. Lookahead still controls routing, which can
-insert SWAPs and change the final placement.
+list for automatic placement. A supplied layout fixes initial placement, so
+trials and refinement iterations do not run. Lookahead still controls routing,
+which can insert SWAPs and change the final placement.
 
 Both result lists index qubits in allocation order in the input entry block,
 with each tensor flattened in ascending slot order. `allocation_sizes` records

@@ -582,6 +582,21 @@ class CompilationOptions:
     @mapping.setter
     def mapping(self, arg: MappingOptions, /) -> None: ...
 
+class MappingResult:
+    """Detached input-to-site layout snapshot from native compilation."""
+
+    @property
+    def allocation_sizes(self) -> list[int]:
+        """Input allocation sizes in entry-block order; tensor slots use ascending indices."""
+
+    @property
+    def initial_layout(self) -> list[int]:
+        """Initial target site ID for each input qubit, including idle qubits."""
+
+    @property
+    def final_layout(self) -> list[int]:
+        """Final target site ID for each input qubit after routing."""
+
 class QCProgram(Program):
     """A compiler program in the QC dialect.
 
@@ -719,6 +734,15 @@ class QCOProgram(Program):
 
     def compile_for_target(self, target_environment: TargetEnvironment, *, options: CompilationOptions = ...) -> None:
         """Compile this QCO program for the target in place. Do not rely on its contents if compilation fails. Failures raise RuntimeError with the emitted MLIR diagnostics."""
+
+    def compile_for_target_with_layout(
+        self,
+        target_environment: TargetEnvironment,
+        *,
+        initial_layout: Sequence[int] = [],
+        options: CompilationOptions = ...,
+    ) -> MappingResult:
+        """Compile in place and return initial and final site assignments. Input allocations must have fixed sizes in the entry block. An empty initial_layout selects automatic placement; otherwise supply one distinct target site ID per input qubit. This preserves idle input wires. The returned snapshot is not updated by later transformations. Do not rely on program contents after failure."""
 
     def synthesize_for_target(
         self, target_environment: TargetEnvironment, *, options: CompilationOptions = ...
