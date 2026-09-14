@@ -143,7 +143,8 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
 void populateTargetSynthesisPipeline(OpPassManager& pm,
                                      const TargetEnvironment& environment,
                                      const CompilationOptions& options) {
-  pm.addPass(std::make_unique<PrepareTargetCompilationPass>(environment, true));
+  pm.addPass(std::make_unique<PrepareTargetCompilationPass>(environment, true,
+                                                            options.mapping));
   const auto& target = environment.target();
   pm.addPass(createInlinerPass());
   pm.addPass(createSymbolDCEPass());

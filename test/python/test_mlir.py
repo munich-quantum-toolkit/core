@@ -420,8 +420,11 @@ def test_compile_program_exposes_raw_and_optimized_qco() -> None:
     assert raw.ir != optimized.ir
 
 
-@pytest.mark.parametrize("all_to_all", [False, True])
-def test_mapping_options_reject_zero_trials(*, all_to_all: bool) -> None:
+@pytest.mark.parametrize(
+    ("method", "all_to_all"),
+    [("compile_for_target", False), ("compile_for_target", True), ("synthesize_for_target", True)],
+)
+def test_mapping_options_reject_zero_trials(method: str, *, all_to_all: bool) -> None:
     """Reject invalid public mapping controls before rewriting the input."""
     target = CompilerTarget(
         2,
@@ -434,7 +437,7 @@ def test_mapping_options_reject_zero_trials(*, all_to_all: bool) -> None:
     before = program.ir
 
     with pytest.raises(RuntimeError, match="mapping trials must be greater than zero"):
-        program.compile_for_target(
+        getattr(program, method)(
             _test_target_environment(target), options=CompilationOptions(seed=7, mapping=MappingOptions(trials=0))
         )
 
