@@ -432,7 +432,13 @@ def test_mapping_options_defaults() -> None:
 
 @pytest.mark.parametrize(
     ("method", "all_to_all"),
-    [("compile_for_target", False), ("compile_for_target", True), ("synthesize_for_target", True)],
+    [
+        ("compile_for_target", False),
+        ("compile_for_target", True),
+        ("synthesize_for_target", True),
+        ("compile_for_target_with_layout", False),
+        ("compile_for_target_with_layout", True),
+    ],
 )
 @pytest.mark.parametrize("field", ["trials", "iterations"])
 def test_mapping_options_reject_zero_counts(method: str, field: str, *, all_to_all: bool) -> None:
@@ -1287,47 +1293,6 @@ def test_native_compilation_releases_gil(tmp_path: Path, mode: str) -> None:
     assert program.is_valid
 
 
-@pytest.mark.parametrize("seed", [0, 7, 2**63 + 7, 2**64 - 1])
-def test_compilation_seed_overrides_custom_pass_seed(seed: int) -> None:
-    """Override pass settings without retaining temporary compiler metadata."""
-    source = QCProgram.from_openqasm_str(QASM_STRING).to_qco()
-    expected = source.copy()
-    expected.run_pass_pipeline(f"pauli-twirl-2q-gates{{seed={seed}}}")
-    actual = source.copy()
-    actual.run_pass_pipeline("pauli-twirl-2q-gates{seed=99}", options=CompilationOptions(seed=seed))
-    assert actual.ir == expected.ir
-    assert "mqt.compilation_seed" not in actual.ir
-    compiled = compile_program(
-        source,
-        output=OutputFormat.QCO_OPTIMIZED,
-        qco_pipeline="pauli-twirl-2q-gates{seed=99}",
-        options=CompilationOptions(seed=seed),
-    )
-    expected.cleanup()
-    assert compiled.ir == expected.ir
-
-
-def test_compilation_seed_reaches_nested_modules() -> None:
-    """The outer compilation seed overrides an inner module's captured seed."""
-    inner = QCProgram.from_openqasm_str(QASM_STRING).to_qco()
-    nested = inner.ir.replace("module {", "module attributes {mqt.compilation_seed = 99 : i64} {", 1)
-    source = QCOProgram.from_mlir_str(f"module {{ {nested} }}")
-    actual = source.copy()
-    actual.run_pass_pipeline("builtin.module(pauli-twirl-2q-gates{seed=99})", options=CompilationOptions(seed=6))
-    expected = QCOProgram.from_mlir_str(f"module {{ {inner.ir} }}")
-    expected.run_pass_pipeline("builtin.module(pauli-twirl-2q-gates{seed=6})")
-    assert actual.ir.replace(" attributes {mqt.compilation_seed = 99 : i64}", "") == expected.ir
-    assert actual.ir != source.ir
-
-
-def test_compilation_timing_and_statistics(capfd: pytest.CaptureFixture[str]) -> None:
-    """Shared options reach MLIR timing and statistics instrumentation."""
-    compile_program(QASM_STRING, options=CompilationOptions(enable_timing=True, enable_statistics=True))
-    output = capfd.readouterr().err
-    assert "Execution time report" in output
-    assert "Pass statistics report" in output
-
-
 @pytest.mark.parametrize("all_to_all", [False, True])
 def test_layout_compilation_preserves_idle_slots_and_source_order(*, all_to_all: bool) -> None:
     """Track allocation slots even when first use and allocation order differ."""
@@ -1352,7 +1317,9 @@ out[1] = measure first[1];
     )
     program = QCProgram.from_openqasm_str(source).to_qco()
     result = program.compile_for_target_with_layout(
-        _test_target_environment(target), initial_layout=[20, 10, 30], mapping=MappingOptions(trials=1)
+        _test_target_environment(target),
+        initial_layout=[20, 10, 30],
+        options=CompilationOptions(seed=7, mapping=MappingOptions(trials=1)),
     )
     assert result.allocation_sizes == [2, 1]
     assert result.initial_layout == [20, 10, 30]
@@ -1380,7 +1347,9 @@ swap q[0], q[1];
     )
     program = QCProgram.from_openqasm_str(source).to_qco()
     result = program.compile_for_target_with_layout(
-        _test_target_environment(target), initial_layout=[0, 1, 2], mapping=MappingOptions(trials=1)
+        _test_target_environment(target),
+        initial_layout=[0, 1, 2],
+        options=CompilationOptions(seed=7, mapping=MappingOptions(trials=1)),
     )
     assert result.initial_layout == [0, 1, 2]
     assert sorted(result.final_layout) == [0, 1, 2]
@@ -1413,7 +1382,9 @@ def test_layout_compilation_automatic_placement_and_snapshot() -> None:
         native_operations=CompilerTarget.NativeOperations.unrestricted(),
     )
     program = QCProgram.from_openqasm_str(QASM_STRING).to_qco()
-    result = program.compile_for_target_with_layout(_test_target_environment(target), mapping=MappingOptions(trials=2))
+    result = program.compile_for_target_with_layout(
+        _test_target_environment(target), options=CompilationOptions(seed=7, mapping=MappingOptions(trials=2))
+    )
     initial = result.initial_layout
     final = result.final_layout
     assert result.allocation_sizes == [2]
@@ -1452,7 +1423,11 @@ cx q[0], q[1];
         connectivity=CompilerTarget.Connectivity([(0, 1), (1, 2), (2, 3)]),
         native_operations=CompilerTarget.NativeOperations.unrestricted(),
     )
-    result = program.compile_for_target_with_layout(_test_target_environment(target), initial_layout=[0, 3])
+    result = program.compile_for_target_with_layout(
+        _test_target_environment(target),
+        initial_layout=[0, 3],
+        options=CompilationOptions(seed=7, mapping=MappingOptions(trials=2, iterations=2, lookahead=0)),
+    )
     assert result.initial_layout == [0, 3]
     assert len(set(result.final_layout)) == 2
     physical = next(iter(program.sample(shots=1, seed=3)))
@@ -1539,3 +1514,44 @@ out[1] = measure q[2];
     assert result.initial_layout == [0, 1, 2]
     assert sorted(result.final_layout) == [0, 1, 2]
     assert program.sample(shots=8, seed=2) == {"11": 8}
+
+
+@pytest.mark.parametrize("seed", [0, 7, 2**63 + 7, 2**64 - 1])
+def test_compilation_seed_overrides_custom_pass_seed(seed: int) -> None:
+    """Override pass settings without retaining temporary compiler metadata."""
+    source = QCProgram.from_openqasm_str(QASM_STRING).to_qco()
+    expected = source.copy()
+    expected.run_pass_pipeline(f"pauli-twirl-2q-gates{{seed={seed}}}")
+    actual = source.copy()
+    actual.run_pass_pipeline("pauli-twirl-2q-gates{seed=99}", options=CompilationOptions(seed=seed))
+    assert actual.ir == expected.ir
+    assert "mqt.compilation_seed" not in actual.ir
+    compiled = compile_program(
+        source,
+        output=OutputFormat.QCO_OPTIMIZED,
+        qco_pipeline="pauli-twirl-2q-gates{seed=99}",
+        options=CompilationOptions(seed=seed),
+    )
+    expected.cleanup()
+    assert compiled.ir == expected.ir
+
+
+def test_compilation_seed_reaches_nested_modules() -> None:
+    """The outer compilation seed overrides an inner module's captured seed."""
+    inner = QCProgram.from_openqasm_str(QASM_STRING).to_qco()
+    nested = inner.ir.replace("module {", "module attributes {mqt.compilation_seed = 99 : i64} {", 1)
+    source = QCOProgram.from_mlir_str(f"module {{ {nested} }}")
+    actual = source.copy()
+    actual.run_pass_pipeline("builtin.module(pauli-twirl-2q-gates{seed=99})", options=CompilationOptions(seed=6))
+    expected = QCOProgram.from_mlir_str(f"module {{ {inner.ir} }}")
+    expected.run_pass_pipeline("builtin.module(pauli-twirl-2q-gates{seed=6})")
+    assert actual.ir.replace(" attributes {mqt.compilation_seed = 99 : i64}", "") == expected.ir
+    assert actual.ir != source.ir
+
+
+def test_compilation_timing_and_statistics(capfd: pytest.CaptureFixture[str]) -> None:
+    """Shared options reach MLIR timing and statistics instrumentation."""
+    compile_program(QASM_STRING, options=CompilationOptions(enable_timing=True, enable_statistics=True))
+    output = capfd.readouterr().err
+    assert "Execution time report" in output
+    assert "Pass statistics report" in output

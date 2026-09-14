@@ -2378,7 +2378,7 @@ out[1] = measure first[1];
           automatic ? std::vector<int64_t>{} : std::vector<int64_t>{70, 10, 30};
       const auto result = program->compileForTargetWithLayout(
           TargetEnvironment(target, makePayloadSpecification()), requested,
-          MappingOptions{.seed = 7, .trials = 2});
+          CompilationOptions{.seed = 7, .mapping = {.trials = 2}});
       ASSERT_TRUE(result);
       EXPECT_EQ(result->allocationSizes, (std::vector<size_t>{2, 1}));
       ASSERT_EQ(result->initialLayout.size(), 3);
