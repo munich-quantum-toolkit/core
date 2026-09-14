@@ -33,6 +33,8 @@ struct DDPackageConfig {
   std::size_t ctMatKronNumBucket = 4096U;
   std::size_t ctMatTraceNumBucket = 4096U;
   std::size_t ctVecInnerProdNumBucket = 4096U;
+  /// Per-level unique-table bucket ceiling; zero disables growth.
+  size_t utMaxNumBucket = 0U;
 };
 
 constexpr auto UNITARY_SIMULATOR_DD_PACKAGE_CONFIG = [] {

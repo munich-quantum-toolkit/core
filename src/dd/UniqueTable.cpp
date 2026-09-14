@@ -18,19 +18,24 @@
 #include "nlohmann/json.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <cstddef>
+#include <stdexcept>
 #include <string>
 
 namespace dd {
 
 UniqueTable::UniqueTable(MemoryManager& manager,
                          const UniqueTableConfig& config)
-    : cfg(config), gcLimit(config.initialGCLimit), memoryManager(&manager),
-      tables(config.nVars), stats(config.nVars) {
-  for (auto& stat : stats) {
-    stat.entrySize = sizeof(Bucket);
-    stat.numBuckets = cfg.nBuckets;
+    : cfg(config), gcLimit(config.initialGCLimit), memoryManager(&manager) {
+  if (!std::has_single_bit(cfg.nBuckets) ||
+      (cfg.maxBuckets != 0U && (!std::has_single_bit(cfg.maxBuckets) ||
+                                cfg.maxBuckets < cfg.nBuckets))) {
+    throw std::invalid_argument(
+        "Unique table capacities must be powers of two, with maximum at least "
+        "the initial capacity (or zero for fixed capacity).");
   }
+  resize(config.nVars);
 }
 
 void UniqueTable::resize(const std::size_t nVars) {
