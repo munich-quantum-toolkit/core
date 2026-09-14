@@ -2622,9 +2622,9 @@ TEST_F(QCOTest, PowBarrierFoldPreservesReorderedBodyResults) {
   EXPECT_EQ(measurements[1].getQubitIn(), barriers[0].getOutputQubits()[0]);
 }
 
-// pow(-0.5) { h } cannot fold a negative fractional exponent
-// into H (no angle to scale). Verify that PowOp survives.
-TEST_F(QCOTest, NegPowHNoFold) {
+/// Fractional H powers use the same rotation and phase lowering as runtime
+/// exponents. Full-matrix equivalence is covered by the DD functionality tests.
+TEST_F(QCOTest, NegPowHExpands) {
   auto program =
       ::mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(negPowH));
   ASSERT_TRUE(program);
@@ -2634,7 +2634,7 @@ TEST_F(QCOTest, NegPowHNoFold) {
 
   int powCount = 0;
   program->walk([&](PowOp) { ++powCount; });
-  EXPECT_EQ(powCount, 1) << "PowOp around h must survive the pipeline";
+  EXPECT_EQ(powCount, 0);
 }
 
 // pow(sx) inside a ctrl modifier expands into GPhase + RX. Global-phase

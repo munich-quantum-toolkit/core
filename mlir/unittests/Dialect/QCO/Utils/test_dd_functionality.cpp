@@ -41,8 +41,10 @@
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Parser/Parser.h"
+#include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
+#include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/FormatVariadic.h"
@@ -2094,7 +2096,7 @@ TEST_F(QCODDFunctionalityTest, HandlesScfForBounds) {
   for (const auto [lower, upper, step, succeeds] : {
            std::tuple<int64_t, int64_t, int64_t, bool>{3, 3, 1, true},
            {0, 100000, 1, true},
-           {0, 100001, 1, false},
+           {0, 100001, 1, true},
            {0, 3, 0, false},
            {0, 3, -1, false},
        }) {
@@ -2188,7 +2190,7 @@ TEST_F(QCODDFunctionalityTest, HandlesScfForBounds) {
   expectSimulatesFromZero(mainFunc(*unsignedExtreme), false);
 }
 
-TEST_F(QCODDFunctionalityTest, ScfForSharesExecutionBudget) {
+TEST_F(QCODDFunctionalityTest, ExecutesNestedCountedLoops) {
   auto mod = buildModule([](QCOProgramBuilder& b) {
     auto q = b.staticQubit(0);
     auto outer = b.scfFor(
@@ -2203,13 +2205,10 @@ TEST_F(QCODDFunctionalityTest, ScfForSharesExecutionBudget) {
   });
   ASSERT_TRUE(mod);
 
-  auto dd = std::make_unique<dd::Package>(1);
-  EXPECT_TRUE(
-      failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng)));
-  EXPECT_TRUE(dd->getRootSet<dd::vNode>().empty());
+  expectSimulatesFromZero(mainFunc(*mod), false);
 }
 
-TEST_F(QCODDFunctionalityTest, ExecutionBudgetIncludesBranchesAndCalls) {
+TEST_F(QCODDFunctionalityTest, ExecutesBranchesAndCallsInCountedLoops) {
   for (const StringRef source : {
            R"mlir(module {
              func.func @main() {
@@ -2239,8 +2238,24 @@ TEST_F(QCODDFunctionalityTest, ExecutionBudgetIncludesBranchesAndCalls) {
              }
            })mlir",
        }) {
-    expectMlirSimulationFails(0, source);
+    auto mod = parseSourceString<ModuleOp>(source, context.get());
+    ASSERT_TRUE(mod);
+    expectSimulatesFromZero(mainFunc(*mod), false);
   }
+}
+
+TEST_F(QCODDFunctionalityTest, RejectsUnboundedWhileLoop) {
+  expectMlirSimulationFails(0, R"mlir(module {
+    func.func @main() {
+      %true = arith.constant true
+      scf.while : () -> () {
+        scf.condition(%true)
+      } do {
+        scf.yield
+      }
+      return
+    }
+  })mlir");
 }
 
 TEST_F(QCODDFunctionalityTest, SimulateRicherClassicalArithmetic) {
@@ -2643,6 +2658,68 @@ TEST_F(QCODDFunctionalityTest, SampleDefersNestedTerminalMeasurement) {
   ASSERT_TRUE(succeeded(histogram));
   ASSERT_EQ(histogram->size(), 2U);
   EXPECT_EQ(histogram->at("0") + histogram->at("1"), shots);
+}
+
+TEST_F(QCODDFunctionalityTest, FixedGatePowersPreserveFullMatrix) {
+  for (const auto* gate :
+       {"x", "y", "z", "h", "s", "sdg", "t", "tdg", "sx", "sxdg"}) {
+    const std::string source = std::string(R"mlir(module {
+      func.func @main(%exponent: f64) {
+        %q = qco.static 0 : !qco.qubit
+        %out = qco.pow(%exponent) (%a = %q) {
+          %b = qco.)mlir") + gate +
+                               R"mlir( %a : !qco.qubit -> !qco.qubit
+          qco.yield %b : !qco.qubit
+        } : {!qco.qubit} -> {!qco.qubit}
+        qco.sink %out : !qco.qubit
+        return
+      }
+    })mlir";
+    auto original = parseSourceString<ModuleOp>(source, context.get());
+    auto rewritten = parseSourceString<ModuleOp>(source, context.get());
+    ASSERT_TRUE(original);
+    ASSERT_TRUE(rewritten);
+    PassManager manager(context.get());
+    manager.addPass(createCanonicalizerPass());
+    ASSERT_TRUE(succeeded(manager.run(*rewritten)));
+    auto before = mainFunc(*original);
+    auto after = mainFunc(*rewritten);
+    EXPECT_TRUE(after.getBody().getOps<PowOp>().empty());
+    for (const auto exponent :
+         {-3.5, -0.5, 0., 0.5, 1.25, 3., 9007199254740991.}) {
+      SCOPED_TRACE(std::string(gate) + "^" + std::to_string(exponent));
+      const auto value =
+          FloatAttr::get(Float64Type::get(context.get()), exponent);
+      OwningOpRef<ModuleOp> constant = original->clone();
+      auto constantFunction = mainFunc(*constant);
+      OpBuilder builder(context.get());
+      builder.setInsertionPointToStart(&constantFunction.front());
+      auto constantExponent =
+          arith::ConstantOp::create(builder, constantFunction.getLoc(), value);
+      constantFunction.getArgument(0).replaceAllUsesWith(constantExponent);
+      ASSERT_TRUE(succeeded(manager.run(*constant)));
+      EXPECT_TRUE(constantFunction.getBody().getOps<PowOp>().empty());
+      dd::Package package(1);
+      auto expected =
+          buildFunctionality(before, package, {{before.getArgument(0), value}});
+      ASSERT_TRUE(succeeded(expected));
+      const auto left = expected->getMatrix(1);
+      for (auto function : {after, constantFunction}) {
+        auto actual = buildFunctionality(function, package,
+                                         {{function.getArgument(0), value}});
+        ASSERT_TRUE(succeeded(actual));
+        const auto right = actual->getMatrix(1);
+        for (size_t row = 0; row < 2; ++row) {
+          for (size_t column = 0; column < 2; ++column) {
+            EXPECT_NEAR(std::abs(left[row][column] - right[row][column]), 0.,
+                        5e-13);
+          }
+        }
+        package.decRef(*actual);
+      }
+      package.decRef(*expected);
+    }
+  }
 }
 
 TEST_F(QCODDFunctionalityTest, SymbolicParametersUseBindings) {

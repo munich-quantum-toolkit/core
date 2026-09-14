@@ -534,10 +534,8 @@ struct ConvertFuncCallOp final : StatefulOpConversionPattern<func::CallOp> {
     SmallVector<Value> replacements;
     llvm::append_range(replacements, call.getResults());
     for (const auto argument : qubitArguments) {
-      replacements.emplace_back(adaptor.getOperands()[argument]);
-    }
-    for (const auto argument : qubitArguments) {
       auto value = adaptor.getOperands()[argument];
+      replacements.emplace_back(value);
       if (isa<MemRefType>(value.getType())) {
         for (auto& cache : llvm::make_second_range(getState().qubitValues)) {
           cache.erase(value);

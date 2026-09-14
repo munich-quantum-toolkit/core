@@ -491,7 +491,9 @@ void __quantum__rt__result_record_output(Result* result, const char* label) {
 }
 
 void __quantum__rt__bool_record_output(bool value, const char* label) {
-  qir::Runtime::getInstance().outputBool(value, label);
+  auto& runtime = qir::Runtime::getInstance();
+  runtime.outputBool(value, label);
+  runtime.appendMeasurementBit(value);
 }
 
 void __quantum__rt__int_record_output(int64_t value, const char* label) {

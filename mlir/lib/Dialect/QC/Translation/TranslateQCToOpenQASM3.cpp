@@ -10,9 +10,11 @@
 
 #include "mqt/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
 
+#include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/CBit/IR/CBitAttributes.h"
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
+#include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCInterfaces.h"
@@ -27,12 +29,14 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Dialect/UB/IR/UBOps.h"
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
+#include "mlir/IR/Dominance.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/IR/Value.h"
@@ -46,6 +50,7 @@
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SCCIterator.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/ScopeExit.h"
@@ -160,6 +165,7 @@ private:
   func::FuncOp function;
   raw_indented_ostream* output = nullptr;
   DenseMap<Value, Resource> resources;
+  DenseMap<Value, SmallVector<Value>> referenceRegisters;
   SmallVector<Value> resourceOrder;
   DenseMap<Value, std::string> valueNames;
   DenseSet<Value> returnedRegisters;
@@ -179,10 +185,14 @@ private:
   size_t expressionNesting = 0;
   size_t expressionWork = 0;
   size_t numClassicalBits = 0;
+  size_t dispatchCases = 0;
+  size_t dispatchDepth = 0;
+  bool supportsDispatch = true;
 
   static constexpr size_t MAX_EXPRESSION_NESTING = 256;
   static constexpr size_t MAX_EXPRESSION_WORK = 4096;
   static constexpr size_t MAX_CLASSICAL_BITS = 1U << 20U;
+  static constexpr size_t MAX_DISPATCH_CASES = 65536;
 
   [[nodiscard]] static LogicalResult fail(Operation* operation,
                                           const Twine& message) {
@@ -263,6 +273,15 @@ private:
   }
 
   [[nodiscard]] LogicalResult preflight() {
+    if (moduleOp->hasAttr(mqt::TargetEnvAttr::name)) {
+      const TargetEnvironmentAnalysis environment(moduleOp);
+      if (!environment) {
+        return fail(moduleOp, environment.error());
+      }
+      supportsDispatch = environment.environment()
+                             .payloadSpecification()
+                             .supportsUnrestrictedMultiwayBranching();
+    }
     SmallVector<func::FuncOp> functions(moduleOp.getOps<func::FuncOp>());
     function = mqt::getEntryPoint(moduleOp);
     if (function == nullptr) {
@@ -354,6 +373,59 @@ private:
     return success();
   }
 
+  [[nodiscard]] LogicalResult
+  collectReferenceRegister(memref::AllocaOp allocation) {
+    auto type = allocation.getType();
+    if (type.getRank() != 1 || !type.hasStaticShape() ||
+        type.getDimSize(0) <= 0 || !type.getLayout().isIdentity() ||
+        type.getMemorySpace() || !isa<qc::QubitType>(type.getElementType()) ||
+        std::cmp_greater(type.getDimSize(0), MAX_DISPATCH_CASES)) {
+      return fail(allocation,
+                  "expected a non-empty static rank-one qubit reference array");
+    }
+    SmallVector<Value> elements(static_cast<size_t>(type.getDimSize(0)));
+    Operation* finalInitialization = nullptr;
+    SmallVector<memref::LoadOp> loads;
+    for (Operation* user : allocation->getUsers()) {
+      if (auto load = dyn_cast<memref::LoadOp>(user)) {
+        loads.push_back(load);
+        continue;
+      }
+      auto store = dyn_cast<memref::StoreOp>(user);
+      if (!store || store.getMemRef() != allocation.getResult() ||
+          store->getBlock() != allocation->getBlock() ||
+          !store.getValue().getDefiningOp<qc::StaticOp>()) {
+        return fail(user, "qubit reference arrays require immutable "
+                          "physical-qubit initialization");
+      }
+      const auto index = getConstantInteger(store.getIndices().front());
+      if (!index || *index < 0 || *index >= type.getDimSize(0) ||
+          elements[*index]) {
+        return fail(store,
+                    "qubit reference slots must be initialized exactly once");
+      }
+      elements[*index] = store.getValue();
+      if (finalInitialization == nullptr ||
+          finalInitialization->isBeforeInBlock(store)) {
+        finalInitialization = store;
+      }
+    }
+    if (llvm::is_contained(elements, Value{})) {
+      return fail(allocation,
+                  "qubit reference arrays must be completely initialized");
+    }
+    DominanceInfo dominance(function);
+    for (auto load : loads) {
+      if (!dominance.properlyDominates(finalInitialization, load)) {
+        return fail(
+            load,
+            "physical-qubit initialization must precede all reference loads");
+      }
+    }
+    referenceRegisters.try_emplace(allocation.getResult(), std::move(elements));
+    return success();
+  }
+
   [[nodiscard]] LogicalResult collectProgramShape() {
     auto returnOp =
         dyn_cast<func::ReturnOp>(function.getBody().front().getTerminator());
@@ -404,6 +476,12 @@ private:
         };
         resources.try_emplace(alloc.getResult(), std::move(resource));
         resourceOrder.push_back(alloc.getResult());
+        continue;
+      }
+      if (auto allocation = dyn_cast<memref::AllocaOp>(&operation)) {
+        if (failed(collectReferenceRegister(allocation))) {
+          return failure();
+        }
         continue;
       }
       auto alloc = dyn_cast<memref::AllocOp>(&operation);
@@ -573,13 +651,46 @@ private:
 
   [[nodiscard]] LogicalResult emitOperation(Operation& operation) {
     llvm::SaveAndRestore consumerGuard(expressionConsumer, &operation);
+    if (isa<UnitaryOpInterface, qc::MeasureOp, qc::ResetOp, func::CallOp>(
+            &operation)) {
+      for (Value operand : operation.getOperands()) {
+        auto load = operand.getDefiningOp<memref::LoadOp>();
+        if (!load || valueNames.contains(operand) ||
+            !referenceRegisters.contains(load.getMemRef()) ||
+            getConstantInteger(load.getIndices().front())) {
+          continue;
+        }
+        return emitPhysicalDispatch(operation, load);
+      }
+      if (dispatchDepth != 0 &&
+          isa<UnitaryOpInterface, func::CallOp>(&operation) &&
+          !isa<qc::BarrierOp>(&operation)) {
+        SmallVector<std::string> qubits;
+        for (Value operand : operation.getOperands()) {
+          if (!isa<qc::QubitType>(operand.getType())) {
+            continue;
+          }
+          auto qubit = emitQubit(operand);
+          if (failed(qubit)) {
+            return failure();
+          }
+          /// Valid multi-qubit operations cannot select the same physical wire
+          /// twice.
+          if (llvm::is_contained(qubits, *qubit)) {
+            return success();
+          }
+          qubits.push_back(std::move(*qubit));
+        }
+      }
+    }
+
     if (gateNames_.contains(function) &&
         (operation.getName().getDialectNamespace() ==
              cbit::CBitDialect::getDialectNamespace() ||
-         isa<memref::LoadOp, memref::AllocOp, memref::DeallocOp, qc::AllocOp,
-             qc::DeallocOp, qc::StaticOp, qc::MeasureOp, qc::ResetOp,
-             qc::BarrierOp, scf::IfOp, scf::IndexSwitchOp, ub::PoisonOp>(
-             &operation))) {
+         isa<memref::LoadOp, memref::AllocOp, memref::AllocaOp, memref::StoreOp,
+             tensor::ExtractOp, memref::DeallocOp, qc::AllocOp, qc::DeallocOp,
+             qc::StaticOp, qc::MeasureOp, qc::ResetOp, qc::BarrierOp, scf::IfOp,
+             scf::IndexSwitchOp, ub::PoisonOp>(&operation))) {
       return fail(&operation,
                   "operation is not supported in an OpenQASM gate function");
     }
@@ -605,6 +716,17 @@ private:
         operation.getBlock() != &function.getBody().front()) {
       return fail(&operation, "resource allocation inside control flow is not "
                               "supported; allocate resources before the loop");
+    }
+    if (auto store = dyn_cast<memref::StoreOp>(&operation);
+        store && referenceRegisters.contains(store.getMemRef())) {
+      return success();
+    }
+    if (auto allocation = dyn_cast<memref::AllocaOp>(&operation);
+        allocation && referenceRegisters.contains(allocation.getResult())) {
+      return success();
+    }
+    if (auto extract = dyn_cast<tensor::ExtractOp>(&operation)) {
+      return emitTableLookup(extract);
     }
     if (isa<arith::ConstantOp, cbit::LoadOp, cbit::ReadOp, cbit::AllocOp,
             memref::LoadOp, memref::AllocOp, memref::DeallocOp, qc::AllocOp,
@@ -686,7 +808,9 @@ private:
           if (failed(qubit)) {
             return failure();
           }
-          qubits.push_back(std::move(*qubit));
+          if (!llvm::is_contained(qubits, *qubit)) {
+            qubits.push_back(std::move(*qubit));
+          }
         }
         *output << "barrier " << llvm::join(qubits, ", ") << ";\n";
         return success();
@@ -699,6 +823,133 @@ private:
     }
     return fail(&operation, "unsupported operation '" +
                                 operation.getName().getStringRef() + "'");
+  }
+
+  [[nodiscard]] LogicalResult emitPhysicalDispatch(Operation& operation,
+                                                   memref::LoadOp load) {
+    const auto& references = referenceRegisters.at(load.getMemRef());
+    if (!supportsDispatch) {
+      return fail(&operation,
+                  "indexed export requires unrestricted multiway branching");
+    }
+    if (references.size() > MAX_DISPATCH_CASES - dispatchCases) {
+      return fail(&operation, "indexed export exceeds the limit of " +
+                                  Twine(MAX_DISPATCH_CASES) +
+                                  " dispatch cases");
+    }
+    dispatchCases += references.size();
+    if (dispatchDepth >= MAX_EXPRESSION_NESTING) {
+      return fail(&operation, "physical-qubit dispatch nesting is too deep");
+    }
+    if (auto measurement = dyn_cast<qc::MeasureOp>(&operation);
+        measurement && !measurement.getResult().use_empty() &&
+        !measurementStores.contains(measurement) &&
+        !valueNames.contains(measurement.getResult())) {
+      const auto name = uniqueName("b", nextBit);
+      valueNames[measurement.getResult()] = name;
+      *output << "bit " << name << " = \"0\";\n";
+    }
+    auto index = emitExpression(load.getIndices().front());
+    if (failed(index)) {
+      return failure();
+    }
+    /// ponytail: Cartesian site dispatch is capped; specialize index relations
+    /// if the cap becomes limiting.
+    llvm::SaveAndRestore depthGuard(dispatchDepth, dispatchDepth + 1);
+    const auto bindingGuard =
+        llvm::scope_exit([&] { valueNames.erase(load.getResult()); });
+    *output << "switch (" << *index << ") {\n";
+    output->indent();
+    for (auto [slot, reference] : llvm::enumerate(references)) {
+      auto qubit = emitQubit(reference);
+      if (failed(qubit)) {
+        return failure();
+      }
+      valueNames[load.getResult()] = std::move(*qubit);
+      *output << "case " << slot << " {\n";
+      output->indent();
+      if (failed(emitOperation(operation))) {
+        return failure();
+      }
+      output->unindent();
+      *output << "}\n";
+    }
+    output->unindent();
+    *output << "}\n";
+    return success();
+  }
+
+  [[nodiscard]] LogicalResult emitTableLookup(tensor::ExtractOp extract) {
+    auto constant = extract.getTensor().getDefiningOp<arith::ConstantOp>();
+    auto type = extract.getTensor().getType();
+    auto table = constant ? dyn_cast<DenseElementsAttr>(constant.getValue())
+                          : DenseElementsAttr{};
+    if (!table || type.getRank() != 1 || !type.getElementType().isF64() ||
+        table.empty()) {
+      return fail(
+          extract,
+          "table lookup requires a non-empty constant rank-one f64 tensor");
+    }
+    const auto index = getConstantInteger(extract.getIndices().front());
+    if (index && (*index < 0 || *index >= type.getDimSize(0))) {
+      return fail(extract, "constant table index is out of bounds");
+    }
+    if (failed(declareLocals(extract->getResults()))) {
+      return failure();
+    }
+    const auto& name = valueNames.at(extract.getResult());
+    if (index || table.isSplat()) {
+      auto value = emitConstant(table.getValues<Attribute>()[index.value_or(0)],
+                                extract.getLoc());
+      if (failed(value)) {
+        return failure();
+      }
+      *output << name << " = " << *value << ";\n";
+      return success();
+    }
+
+    llvm::MapVector<Attribute, SmallVector<int64_t>> cases;
+    for (auto [slot, value] : llvm::enumerate(table.getValues<Attribute>())) {
+      cases[value].push_back(static_cast<int64_t>(slot));
+    }
+    const auto* mostCommon =
+        llvm::max_element(cases, [](const auto& left, const auto& right) {
+          return left.second.size() < right.second.size();
+        });
+    if (!supportsDispatch) {
+      return fail(extract,
+                  "indexed export requires unrestricted multiway branching");
+    }
+    /// Table cases scale with explicit input data. Only physical-qubit
+    /// dispatch needs the Cartesian-expansion budget.
+    auto argument = emitExpression(extract.getIndices().front());
+    if (failed(argument)) {
+      return failure();
+    }
+    *output << "switch (" << *argument << ") {\n";
+    output->indent();
+    for (const auto& [attribute, slots] : cases) {
+      auto value = emitConstant(attribute, extract.getLoc());
+      if (failed(value)) {
+        return failure();
+      }
+      if (attribute == mostCommon->first) {
+        continue;
+      }
+      *output << "case ";
+      llvm::interleaveComma(slots, *output);
+      *output << " { " << name << " = " << *value << "; }\n";
+    }
+    auto defaultValue = emitConstant(mostCommon->first, extract.getLoc());
+    if (failed(defaultValue)) {
+      return failure();
+    }
+    /// tensor.extract requires an in-bounds index; remaining valid slots share
+    /// this value.
+    *output << "default { " << name << " = " << *defaultValue << "; }\n";
+    output->unindent();
+    *output << "}\n";
+    return success();
   }
 
   [[nodiscard]] static bool isInlineExpressionOperation(Operation& operation) {
@@ -724,17 +975,29 @@ private:
       return failExpression(value, "expected a logical or physical qubit "
                                    "reference");
     }
+    const auto index = getConstantInteger(load.getIndices().front());
+    if (const auto references = referenceRegisters.find(load.getMemRef());
+        references != referenceRegisters.end()) {
+      if (!index || *index < 0 ||
+          static_cast<uint64_t>(*index) >= references->second.size()) {
+        return failExpression(value,
+                              "physical qubit index requires bounded dispatch");
+      }
+      return emitQubit(references->second[*index]);
+    }
     const auto resource = resources.find(load.getMemRef());
     if (resource == resources.end() ||
         resource->second.kind != ResourceKind::Qubit) {
       return failExpression(value, "qubit load refers to unsupported storage");
     }
-    const auto index = getConstantInteger(load.getIndices().front());
-    if (!index || *index < 0 || *index >= resource->second.width) {
-      return failExpression(value,
-                            "qubit indices must be constant and in bounds");
+    if (index && (*index < 0 || *index >= resource->second.width)) {
+      return failExpression(value, "constant qubit index is out of bounds");
     }
-    return (Twine(resource->second.name) + "[" + Twine(*index) + "]").str();
+    auto emittedIndex = emitExpression(load.getIndices().front());
+    if (failed(emittedIndex)) {
+      return failure();
+    }
+    return (Twine(resource->second.name) + "[" + *emittedIndex + "]").str();
   }
 
   [[nodiscard]] FailureOr<std::string> emitBitReference(Value reg,
@@ -809,7 +1072,8 @@ private:
       return failExpression(value, "unmapped block argument");
     }
     if (auto constant = dyn_cast<arith::ConstantOp>(operation)) {
-      return emitConstant(constant, context != ExpressionContext::Scalar);
+      return emitConstant(constant.getValue(), constant.getLoc(),
+                          context != ExpressionContext::Scalar);
     }
     if (isa<ub::PoisonOp>(operation)) {
       return failExpression(value, "poison values are not supported");
@@ -1075,9 +1339,9 @@ private:
   }
 
   [[nodiscard]] static FailureOr<std::string>
-  emitConstant(arith::ConstantOp constant,
+  emitConstant(Attribute attribute, Location location,
                const bool bitVectorContext = false) {
-    if (auto integer = dyn_cast<IntegerAttr>(constant.getValue())) {
+    if (auto integer = dyn_cast<IntegerAttr>(attribute)) {
       if (integer.getType().isInteger(1) && !bitVectorContext) {
         return integer.getValue().isZero() ? std::string("false")
                                            : std::string("true");
@@ -1086,10 +1350,10 @@ private:
       integer.getValue().toString(text, 10, !bitVectorContext);
       return text.str().str();
     }
-    if (auto floating = dyn_cast<FloatAttr>(constant.getValue())) {
+    if (auto floating = dyn_cast<FloatAttr>(attribute)) {
       const auto& value = floating.getValue();
       if (!value.isFinite()) {
-        emitError(constant.getLoc())
+        emitError(location)
             << "OpenQASM emission error: non-finite floating-point "
                "constants are not supported";
         return failure();
@@ -1103,7 +1367,7 @@ private:
       }
       return text.str().str();
     }
-    emitError(constant.getLoc())
+    emitError(location)
         << "OpenQASM emission error: unsupported constant attribute";
     return failure();
   }
@@ -1261,10 +1525,13 @@ private:
       *output << "measure " << *qubit << ";\n";
       return success();
     }
-    const auto name = uniqueName("b", nextBit);
-    valueNames.try_emplace(measurement.getResult(), name);
-    *output << "bit " << name << ";\n";
-    *output << name << " = measure " << *qubit << ";\n";
+    if (!valueNames.contains(measurement.getResult())) {
+      const auto name = uniqueName("b", nextBit);
+      valueNames.try_emplace(measurement.getResult(), name);
+      *output << "bit " << name << ";\n";
+    }
+    *output << valueNames.at(measurement.getResult()) << " = measure " << *qubit
+            << ";\n";
     return success();
   }
 
@@ -1403,7 +1670,8 @@ private:
     }
     for (auto [argument, result] :
          llvm::zip_equal(forOp.getRegionIterArgs(), forOp.getResults())) {
-      valueNames[argument] = valueNames.at(result);
+      /// Copy before inserting a key can invalidate the stored name.
+      valueNames[argument] = std::string(valueNames.at(result));
     }
     const auto lower = getConstantInteger(forOp.getLowerBound());
     const auto upper = getConstantInteger(forOp.getUpperBound());
@@ -1505,7 +1773,8 @@ private:
     }
     for (auto [argument, result] :
          llvm::zip_equal(after.getArguments(), whileOp.getResults())) {
-      valueNames[argument] = valueNames.at(result);
+      /// Copy before inserting a key can invalidate the stored name.
+      valueNames[argument] = std::string(valueNames.at(result));
     }
     *output << "while (true) {\n";
     output->indent();
@@ -1701,8 +1970,13 @@ private:
     }
     for (const auto [argument, target] :
          llvm::zip_equal(body.getArguments(), targets)) {
-      valueNames.try_emplace(argument, target);
+      valueNames[argument] = target;
     }
+    const auto argumentGuard = llvm::scope_exit([&] {
+      for (Value argument : body.getArguments()) {
+        valueNames.erase(argument);
+      }
+    });
 
     GateCall call;
     if (unitaries.size() == 1) {

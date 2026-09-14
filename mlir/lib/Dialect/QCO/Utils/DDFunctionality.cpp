@@ -74,7 +74,7 @@
 namespace mlir::qco {
 namespace {
 
-constexpr size_t MAX_CONTROL_FLOW_STEPS = 100'000;
+constexpr size_t MAX_WHILE_ITERATIONS = 100'000;
 
 struct QubitMap {
   DenseMap<Value, dd::Qubit> qubits;
@@ -186,7 +186,7 @@ struct WalkState {
   std::mt19937_64* rng = nullptr;
   const DenseSet<Operation*>* deferredMeasurements = nullptr;
   DenseSet<dd::Qubit>* deferredMeasuredWires = nullptr;
-  size_t remainingExecutionSteps = MAX_CONTROL_FLOW_STEPS;
+  size_t remainingWhileIterations = MAX_WHILE_ITERATIONS;
   DenseSet<Operation*> activeCalls;
   SymbolTableCollection symbols;
 };
@@ -195,8 +195,7 @@ using RuntimeValue = std::variant<dd::Qubit, TensorState, Attribute,
                                   std::shared_ptr<ClassicalEnv::RegisterState>,
                                   std::shared_ptr<ClassicalEnv::MemRefState>>;
 struct LoopRange {
-  llvm::APInt induction, step;
-  size_t trips;
+  llvm::APInt induction, step, trips;
 };
 struct SamplingPlan {
   bool dynamic = false;
@@ -204,15 +203,6 @@ struct SamplingPlan {
   DenseSet<Operation*> deferredMeasurements;
 };
 } // namespace
-
-static LogicalResult consumeExecutionStep(WalkState& walk, Operation* op) {
-  if (walk.remainingExecutionSteps == 0) {
-    return op->emitError(
-        "QCO DD execution exceeds the limit of 100000 control-flow steps");
-  }
-  --walk.remainingExecutionSteps;
-  return success();
-}
 
 [[nodiscard]] static bool isQTensorType(Type type) {
   const auto tensorType = dyn_cast<RankedTensorType>(type);
@@ -321,13 +311,20 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
   if (isa<BarrierOp>(op)) {
     return walk.qubits->remapUnitary(unitary);
   }
-  if (!unitary.hasCompileTimeKnownUnitaryMatrix()) {
-    return unitary.emitError()
-           << "unitary must have a compile-time constant matrix";
-  }
-
   DynamicMatrix local;
-  if (!unitary.getUnitaryMatrixDynamic(local)) {
+  if (auto power = dyn_cast<PowOp>(op)) {
+    auto exponent = resolveDouble(power.getExponent(), *walk.classical, op);
+    if (failed(exponent)) {
+      return failure();
+    }
+    auto matrix = power.getUnitaryMatrix(*exponent);
+    if (!matrix) {
+      return power.emitError()
+             << "power requires a constant body and a finite exponent";
+    }
+    local = std::move(*matrix);
+  } else if (!unitary.hasCompileTimeKnownUnitaryMatrix() ||
+             !unitary.getUnitaryMatrixDynamic(local)) {
     return unitary.emitError()
            << "unitary must have a compile-time constant matrix";
   }
@@ -1139,7 +1136,11 @@ static FailureOr<LoopRange> resolveLoop(scf::ForOp forOp,
 
   const bool unsignedCmp = forOp.getUnsignedCmp();
   if (!(unsignedCmp ? lower->ult(*upper) : lower->slt(*upper))) {
-    return LoopRange{.induction = *lower, .step = *step, .trips = 0};
+    return LoopRange{
+        .induction = *lower,
+        .step = *step,
+        .trips = llvm::APInt(1, 0),
+    };
   }
 
   const unsigned wideWidth = lower->getBitWidth() + 1;
@@ -1152,8 +1153,7 @@ static FailureOr<LoopRange> resolveLoop(scf::ForOp forOp,
   const llvm::APInt span = upperWide - lowerWide;
   const llvm::APInt trips =
       (span + stepWide - llvm::APInt(wideWidth, 1)).udiv(stepWide);
-  const size_t limited = trips.getLimitedValue(MAX_CONTROL_FLOW_STEPS + 1);
-  return LoopRange{.induction = lowerWide, .step = stepWide, .trips = limited};
+  return LoopRange{.induction = lowerWide, .step = stepWide, .trips = trips};
 }
 
 static LogicalResult bindValuePairs(ValueRange sources, ValueRange dests,
@@ -1268,9 +1268,6 @@ applyRegionBranch(ValueRange linearOperands, Block& block,
           bindValuePairs(linearOperands, block.getArguments(), walk, parent))) {
     return failure();
   }
-  if (failed(consumeExecutionStep(walk, parent))) {
-    return failure();
-  }
   if (failed(walkBlock(block, walk, state))) {
     return failure();
   }
@@ -1282,9 +1279,6 @@ template <typename StateDD>
 static LogicalResult applyScfRegion(Region& region, ValueRange results,
                                     WalkState& walk, StateDD& state,
                                     Operation* parent) {
-  if (failed(consumeExecutionStep(walk, parent))) {
-    return failure();
-  }
   Block& block = region.front();
   if (failed(walkBlock(block, walk, state))) {
     return failure();
@@ -1635,11 +1629,8 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
         SmallVector<Value> carried(forOp.getInits().begin(),
                                    forOp.getInits().end());
 
-        for (size_t t = 0; t < range->trips;
-             ++t, range->induction += range->step) {
-          if (failed(consumeExecutionStep(walk, forOp))) {
-            return failure();
-          }
+        for (auto remaining = range->trips; !remaining.isZero();
+             --remaining, range->induction += range->step) {
           auto iterArgs = body.getArguments().drop_front();
           if (failed(bindValuePairs(carried, iterArgs, walk, forOp))) {
             return failure();
@@ -1680,9 +1671,11 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
             return bindValuePairs(condition.getArgs(), whileOp.getResults(),
                                   walk, whileOp);
           }
-          if (failed(consumeExecutionStep(walk, whileOp))) {
-            return failure();
+          if (walk.remainingWhileIterations == 0) {
+            return whileOp.emitError("QCO DD execution exceeds the limit of "
+                                     "100000 while iterations");
           }
+          --walk.remainingWhileIterations;
           if (failed(bindValuePairs(condition.getArgs(), after.getArguments(),
                                     walk, whileOp)) ||
               failed(walkBlock(after, walk, state))) {
@@ -1711,10 +1704,6 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
         }
         const auto guard =
             llvm::make_scope_exit([&] { walk.activeCalls.erase(calleeOp); });
-
-        if (failed(consumeExecutionStep(walk, call))) {
-          return failure();
-        }
 
         if (failed(bindValuePairs(call.getArgOperands(), callee.getArguments(),
                                   walk, call))) {

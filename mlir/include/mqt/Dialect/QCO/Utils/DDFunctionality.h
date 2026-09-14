@@ -54,9 +54,9 @@ struct DDSamplingState {
 /// other runtime allocation are not supported.
 ///
 /// Runtime-bound parameters are supported for standard gates, ordinary and
-/// gate-function calls, and a sole standard gate inside `qco.ctrl`.
-/// Custom matrices and composite modifiers
-/// must have a compile-time-known matrix.
+/// gate-function calls, a sole standard gate inside `qco.ctrl`, and `qco.pow`
+/// with a compile-time-known body matrix. Other composite modifiers and custom
+/// matrices must have a compile-time-known matrix.
 ///
 /// The containing module must pass MLIR verification and
 /// `qco::verifyLinearity`.
@@ -74,7 +74,8 @@ FailureOr<dd::MatrixDD> buildFunctionality(
 /// In addition to the operations supported by `buildFunctionality`, simulation
 /// supports measurements, resets, CBit registers, and runtime qubit and QTensor
 /// allocation. QCO and SCF structured control requires concrete values. A
-/// shared 100000-step limit bounds loops and calls. `qco.sink` and
+/// shared limit of 100000 iterations bounds `scf.while` execution. Counted
+/// loops, branches, and nonrecursive calls have no step limit. `qco.sink` and
 /// `qtensor.dealloc` mark lifetimes but do not remove DD wires.
 ///
 /// The containing module must pass MLIR verification and

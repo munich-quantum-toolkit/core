@@ -863,7 +863,7 @@ TEST(QCToQIRAdaptiveNativeTest, RecordsReturnedRegisterMeasurement) {
       module->lookupSymbol<LLVM::GlobalOp>("qir.result_label_named_result"));
 }
 
-TEST(QCToQIRAdaptiveNativeTest, RejectsNonMeasurementClassicalStore) {
+TEST(QCToQIRAdaptiveNativeTest, RecordsComputedClassicalStore) {
   MLIRContext context;
   context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
                       LLVM::LLVMDialect, memref::MemRefDialect>();
@@ -875,17 +875,10 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsNonMeasurementClassicalStore) {
   auto module = builder.finalize(c);
   ASSERT_TRUE(module);
 
-  bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    std::string message;
-    llvm::raw_string_ostream stream(message);
-    diagnostic.print(stream);
-    sawExpectedDiagnostic |= StringRef(message).contains(
-        "does not support non-measurement stores to returned CBit registers");
-    return success();
-  });
-  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*module)));
-  EXPECT_TRUE(sawExpectedDiagnostic);
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+  EXPECT_TRUE(
+      module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_BOOL_RECORD_OUTPUT));
 }
 
 TEST(QCToQIRAdaptiveNativeTest, AcceptsZeroInitializedClassicalRegister) {
@@ -1000,7 +993,7 @@ TEST(QCToQIRAdaptiveNativeTest, SupportsDynamicInternalRegisterIndices) {
   EXPECT_TRUE(succeeded(verify(*module)));
 }
 
-TEST(QCToQIRAdaptiveNativeTest, RejectsNonMeasurementStoreAfterMeasurement) {
+TEST(QCToQIRAdaptiveNativeTest, RecordsComputedStoreAfterMeasurement) {
   MLIRContext context;
   context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
                       LLVM::LLVMDialect, memref::MemRefDialect>();
@@ -1014,17 +1007,10 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsNonMeasurementStoreAfterMeasurement) {
   auto module = builder.finalize(c);
   ASSERT_TRUE(module);
 
-  bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    std::string message;
-    llvm::raw_string_ostream stream(message);
-    diagnostic.print(stream);
-    sawExpectedDiagnostic |= StringRef(message).contains(
-        "does not support non-measurement stores to returned CBit registers");
-    return success();
-  });
-  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*module)));
-  EXPECT_TRUE(sawExpectedDiagnostic);
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+  EXPECT_TRUE(
+      module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_BOOL_RECORD_OUTPUT));
 }
 
 TEST(QCToQIRAdaptiveNativeTest, RejectsUnsupportedIntegerMemref) {

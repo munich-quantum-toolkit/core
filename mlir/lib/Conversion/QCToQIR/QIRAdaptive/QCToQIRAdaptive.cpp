@@ -114,7 +114,8 @@ static LogicalResult prepareCBitRegisterAccesses(Operation* moduleOp,
     if (it == state.cregIndices.end()) {
       return;
     }
-    representations[allocOp.getResult()] = state.cregs[it->second].record
+    const auto& reg = state.cregs[it->second];
+    representations[allocOp.getResult()] = reg.record && !reg.booleanStorage
                                                ? RETURNED_CBIT_REGISTER
                                                : LOCAL_CBIT_REGISTER;
     worklist.push_back(allocOp.getResult());
@@ -254,11 +255,12 @@ struct ConvertCBitAllocOp final : StatefulOpConversionPattern<cbit::AllocOp> {
                                          op.getResult().getType().getWidth())
                     .getResult();
 
-    if (!reg.record) {
+    if (!reg.record || reg.booleanStorage) {
       auto i1Type = rewriter.getI1Type();
       auto storage =
           LLVM::AllocaOp::create(rewriter, loc, ptrType, i1Type, size)
               .getResult();
+      reg.array = storage;
       if (op.getInitialization() == cbit::Initialization::Zero) {
         rewriter.setInsertionPoint(op);
         auto zero = LLVM::ConstantOp::create(rewriter, loc,
@@ -816,7 +818,8 @@ protected:
 
     target.addLegalDialect<LLVM::LLVMDialect>();
 
-    if (failed(prepareClassicalResults(moduleOp, state))) {
+    if (failed(prepareClassicalResults(moduleOp, state,
+                                       /*allowComputedOutputs=*/true))) {
       signalPassFailure();
       return;
     }

@@ -2521,6 +2521,21 @@ TEST_F(CompilerPipelineTest, IndexedPlacementPreservesSparseSitesAndLoopBody) {
       },
       CompilerTarget::Connectivity::allToAll(),
       CompilerTarget::NativeOperations::unrestricted()));
+  auto qasmProgram = program->copy();
+  const auto qasmPayload = llvm::cantFail(
+      payloadSpecificationForProgramFormat(QDMI_PROGRAM_FORMAT_QASM3));
+  ASSERT_TRUE(
+      qasmProgram.compileForTarget(TargetEnvironment(target, qasmPayload)));
+  auto qasmQC = std::move(qasmProgram).intoQC();
+  ASSERT_TRUE(qasmQC);
+  auto qasm = qasmQC->toOpenQASM3();
+  ASSERT_TRUE(qasm);
+  EXPECT_TRUE(StringRef(qasm->source()).contains("for int "));
+  EXPECT_TRUE(StringRef(qasm->source()).contains("x $7;"));
+  EXPECT_TRUE(StringRef(qasm->source()).contains("x $19;"));
+  EXPECT_FALSE(StringRef(qasm->source()).contains("$42"));
+  EXPECT_LT(qasm->source().size(), 4096);
+  EXPECT_TRUE(QCProgram::fromOpenQASMString(qasm->source()));
   const auto payload = llvm::cantFail(payloadSpecificationForProgramFormat(
       QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE));
   ASSERT_TRUE(program->compileForTarget(TargetEnvironment(target, payload)));

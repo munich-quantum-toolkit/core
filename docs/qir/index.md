@@ -208,10 +208,13 @@ print(qiskit_job.get_counts())
 
 ## Retrieve the QIR output stream through QDMI
 
-Counts summarize recorded measurement bits. QIR's textual output stream also
-preserves output labels, array and tuple records, other recorded scalar values,
-and shot framing. Enable capture with DDSIM's boolean `custom2` parameter, then
-request its string result from `CustomProperty.CUSTOM1`:
+Counts summarize recorded measurement results and Boolean values. Adaptive
+compilation records returned CBit registers containing computed values as
+Booleans, preserving bit order and overwritten values. Registers containing only
+measurement results retain result-array recording. QIR's textual output stream
+also preserves output labels, array and tuple records, other recorded scalar
+values, and shot framing. Enable capture with DDSIM's boolean `custom2`
+parameter, then request its string result from `CustomProperty.CUSTOM1`:
 
 ```{code-cell} ipython3
 from mqt.core.qdmi import CustomProperty
@@ -306,11 +309,11 @@ DD once and samples it for all shots. The runtime retains repeated and reordered
 result records in program order, including after SWAPs. The QDMI device reverses
 each shot for most-significant-bit first serialization before constructing its
 histogram. Programs with classical memory accesses, helper calls, conditional
-branches, resets, dynamic resources or generic controlled argument arrays use
-ordinary per-shot execution. These inputs remain supported by the runner; they
-are not eligible for this sampling optimization. A fixed seed reproduces a shot
-sequence for the same execution path; sequences need not match across different
-sampling algorithms or software versions.
+branches, resets, dynamic resources, Boolean output records, or generic
+controlled argument arrays use ordinary per-shot execution. These inputs remain
+supported by the runner; they are not eligible for this sampling optimization. A
+fixed seed reproduces a shot sequence for the same execution path; sequences
+need not match across different sampling algorithms or software versions.
 
 When provided for static resources, `required_num_qubits` and
 `required_num_results` specify capacities, and out-of-range IDs are rejected.
