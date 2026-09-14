@@ -49,7 +49,7 @@ def main() -> None:
     shutil.copytree(base, sdk, symlinks=True)
     raw = root / "profiles"
     raw.mkdir()
-    environment = os.environ | {"LLVM_PROFILE_FILE": str(root / "build-profiles/%m-%p.profraw")}
+    environment = os.environ | {"LLVM_PROFILE_FILE": str(root / "build-profiles/%m.profraw")}
     run = partial(subprocess.run, cwd=project, env=environment, check=True)
     linux = platform.system() == "Linux"
     lto = "full" if linux else "thin"
@@ -146,7 +146,8 @@ def main() -> None:
             shutil.copyfile(archive, sdk / "lib" / archive.name)
         if phase == "generate":
             wheel = build_wheel("mlir/unittests/all", "mqt-cc")
-            training = os.environ | {"LLVM_PROFILE_FILE": str(raw / "%m-%p.profraw")}
+            # LLVM merges repeated test processes into one profile per binary.
+            training = os.environ | {"LLVM_PROFILE_FILE": str(raw / "%m.profraw")}
             subprocess.run(
                 ["ctest", "--test-dir", str(build / "mlir/unittests"), "--output-on-failure"], env=training, check=True
             )
