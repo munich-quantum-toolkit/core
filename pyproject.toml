@@ -251,7 +251,6 @@ build = "cp3*"
 skip = [ "*-musllinux_*", "cp314t-*" ]
 archs = "auto64"
 build-frontend = "uv"
-config-settings = { "cmake.define.ENABLE_IPO" = "ON" }
 test-command = "pytest test/python"
 test-groups = [ "test" ]
 test-sources = [
@@ -283,7 +282,7 @@ before-all = """
 uv run --no-project --python /opt/python/cp311-cp311/bin/python --with cmake==4.4.3 --with ninja==1.13.0 bash "{project}/scripts/provision_release.sh" /opt/mqt-release
 """
 before-build = """
-uv run --no-project --python "$(command -v python)" --with cmake==4.4.3 --with ninja==1.13.0 --with wheel==0.45.1 --with "nanobind-backend>=1" python "{project}/scripts/prepare_release.py" --project "{project}" --sdk-tools /opt/mqt-release/sdk-tools --llvm-source /opt/mqt-release/llvm-source --source-id "$(cat /opt/mqt-release/llvm-revision)" --lto Full --pgo both --jobs 4
+uv run --no-project --python "$(command -v python)" --with cmake==4.4.3 --with ninja==1.13.0 --with wheel==0.45.1 --with "nanobind-backend>=1" python "{project}/scripts/prepare_release.py" --project "{project}" --tools /opt/mqt-release
 """
 repair-wheel-command = """\
   uv run --no-project --with wheel --with cmake==4.4.3 --with ninja==1.13.0 --python \"$(command -v python)\" python \
@@ -295,7 +294,6 @@ before-test = "uvx sccache --show-stats"
 test-groups = [ "test-base" ]
 manylinux-x86_64-image = "quay.io/pypa/manylinux_2_28_x86_64:2026.08.04-1"
 manylinux-aarch64-image = "quay.io/pypa/manylinux_2_28_aarch64:2026.08.04-1"
-container-engine = "docker; create_args: --cpus=4 --memory=16g --memory-swap=16g"
 
 [tool.cibuildwheel.macos]
 config-settings = { "cmake.define.CMAKE_PROJECT_INCLUDE_BEFORE" = "{project}/build/release-pgo.cmake" }
@@ -304,11 +302,10 @@ before-all = """
 uv run --no-project --python 3.11 --with cmake==4.4.3 --with ninja==1.13.0 bash "{project}/scripts/provision_release.sh" "{project}/build/release-tools"
 """
 before-build = """
-uv run --no-project --python "$(command -v python)" --with cmake==4.4.3 --with ninja==1.13.0 --with wheel==0.45.1 --with "nanobind-backend>=1" python "{project}/scripts/prepare_release.py" --project "{project}" --sdk-tools "{project}/build/release-tools/sdk-tools" --llvm-source "{project}/build/release-tools/llvm-source" --source-id "$(cat "{project}/build/release-tools/llvm-revision")" --lto Thin --pgo both --jobs 3
+uv run --no-project --python "$(command -v python)" --with cmake==4.4.3 --with ninja==1.13.0 --with wheel==0.45.1 --with "nanobind-backend>=1" python "{project}/scripts/prepare_release.py" --project "{project}" --tools "{project}/build/release-tools"
 """
 
 [tool.cibuildwheel.windows]
-config-settings = { "cmake.define.ENABLE_IPO" = "OFF" }
 repair-wheel-command = "delvewheel repair -w {dest_dir} {wheel} --namespace-pkg mqt --ignore-existing"
 before-test = "uv pip install --group test"
 # cibuildwheel 4.2 passes expanded dependency groups through cmd.exe, which interprets version

@@ -24,11 +24,11 @@ def test_profile_requires_executed_requested_components(tmp_path: Path) -> None:
         patch("subprocess.check_output", side_effect=["Function count: 1\n", "Block counts: [0, 0]\n"]),
         pytest.raises(RuntimeError, match="sdk profile has no executed counters"),
     ):
-        check("llvm-profdata", tmp_path / "profile", sdk=True)
+        check("llvm-profdata", tmp_path / "profile")
     with patch("subprocess.check_output", side_effect=["Block counts: [0, 7]\n", "Function count: 2\n"]):
-        assert set(check("llvm-profdata", tmp_path / "profile", sdk=True)) == {"core", "sdk"}
+        assert set(check("llvm-profdata", tmp_path / "profile")) == {"core", "sdk"}
     with (
         patch("subprocess.check_output", return_value="Function count: 0\n"),
         pytest.raises(RuntimeError, match="core profile has no executed counters"),
     ):
-        check("llvm-profdata", tmp_path / "profile", sdk=False)
+        check("llvm-profdata", tmp_path / "profile")

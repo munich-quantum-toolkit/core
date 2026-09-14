@@ -25,7 +25,7 @@ def main() -> None:
     """Run the release optimization checks.
 
     Raises:
-        RuntimeError: If an ELF binary retains an absolute runtime search path.
+        RuntimeError: If training produces no profile or an ELF runtime path is absolute.
     """
     wheel, destination, project = map(Path, sys.argv[1:])
     with tempfile.TemporaryDirectory(prefix="mqt-wheel-bolt-") as directory:
@@ -49,7 +49,50 @@ def main() -> None:
             core / "bin" / "mqt-core-bench",
         ]
         for binary in binaries:
-            subprocess.run(["mqt-bolt-optimize", str(binary), "--", *training], env=environment, check=True)
+            profiles = work / binary.name
+            profiles.mkdir()
+            original = profiles / "original"
+            shutil.copy2(binary, original)
+            subprocess.run(
+                [
+                    "llvm-bolt",
+                    str(original),
+                    "-o",
+                    str(binary),
+                    "-instrument",
+                    f"-instrumentation-file={profiles / 'profile.fdata'}",
+                    f"-instrumentation-binpath={binary}",
+                    "-instrumentation-file-append-pid",
+                ],
+                check=True,
+            )
+            subprocess.run(training, env=environment, check=True)
+            collected = sorted(profiles.glob("profile.fdata*"))
+            if not collected or not any(path.stat().st_size for path in collected):
+                msg = f"No BOLT profile was collected for {binary}"
+                raise RuntimeError(msg)
+            merged = profiles / "merged.fdata"
+            with merged.open("w") as stream:
+                subprocess.run(["merge-fdata", *map(str, collected)], stdout=stream, check=True)
+            subprocess.run(
+                [
+                    "llvm-bolt",
+                    str(original),
+                    "-o",
+                    str(binary),
+                    f"-data={merged}",
+                    "-reorder-blocks=ext-tsp",
+                    "-reorder-functions=cdsort",
+                    "-split-functions",
+                    "-split-all-cold",
+                    "-split-eh",
+                    "-dyno-stats",
+                    "-lite",
+                ],
+                check=True,
+            )
+            shutil.copymode(original, binary)
+            subprocess.run(training, env=environment, check=True)
         subprocess.run(training, env=environment, check=True)
         for path in core.rglob("*"):
             if path.is_file():
@@ -84,7 +127,6 @@ def main() -> None:
                     "-G",
                     "Ninja",
                     "-DCMAKE_BUILD_TYPE=Release",
-                    "-DENABLE_IPO=OFF",
                     "-DCMAKE_PREFIX_PATH=" + str(package),
                     "-DCMAKE_CXX_COMPILER=" + compiler,
                 ],

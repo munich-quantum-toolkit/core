@@ -127,40 +127,35 @@ Use `//` for ordinary implementation and namespace closing comments. Inline
 
 ### Release wheel optimization
 
-Linux and macOS release wheels use native assertion-free SDK libraries and
-combined SDK/Core PGO. Linux uses manylinux Clang 22.1.8, full Core LTO, and
-BOLT. macOS uses Apple Clang and ThinLTO for Core. Its compiler and profile
-tools come from the same Xcode installation, with SDK deployment target 11.0 and
-Core target 13.3. SDK tools remain native. The profiling build replaces only the
-LLVM/MLIR archive dependencies linked into the wheel; it does not profile the
-complete SDK.
+Linux and macOS wheels use native assertion-free SDK libraries and combined
+SDK/Core PGO. Linux uses manylinux Clang 22.1.8, full Core LTO, and BOLT. macOS
+uses Apple Clang and Core ThinLTO, retaining the SDK's macOS 11.0 target and
+Core's 13.3 target. Ordinary builds and Windows keep their existing settings.
 
-`cibuildwheel` runs `scripts/provision_release.sh` once per container or macOS
-job to obtain the pinned sources and Linux compiler and profiling tools.
-`scripts/prepare_release.py` then builds an instrumented wheel, trains it with
-`test/release/train_optimization.py`, requires executed Core and SDK counters,
-rebuilds the selected SDK libraries, and writes the final CMake configuration. A
-failed training step stops the release build. Each Python ABI uses fresh build
-directories and profiles.
+Cibuildwheel runs `scripts/provision_release.sh` once to obtain LLVM sources and
+Linux profiling tools. For each Python ABI, `scripts/prepare_release.py` builds
+an instrumented wheel and rebuilds its SDK archive dependencies using the helper
+installed with the SDK. It trains the installed package with
+`test/release/train_pgo.py`, requires executed Core and SDK counters, and
+rebuilds the SDK dependencies with that profile. The final CMake configuration
+applies PGO and LTO to project compilation and linking, leaving compiler probes
+alone.
 
-The preparation directory under `build/release-pgo-*` retains stage commands,
-logs, the archive dependency list, profile data, and compiler/wheel identities.
-These are build artifacts. Profiles must not be copied between Python ABIs,
-compilers, platforms, or source revisions. Final compiler options include the
-profile hash, so the existing sccache integration separates profile inputs.
+Each ABI uses a fresh directory under `build/release-pgo-*`. Profiles must not
+be reused across sources, compilers, or ABIs. Their content hash is part of the
+profile-use path, keeping compiler-cache entries separate. Build logs and the
+archive target list identify the profiled subset; native SDK tools are reused.
 
-`scripts/bolt_wheel.py` optimizes the hot Linux binaries, checks them before and
-after stripping, repairs the wheel, and repeats the installed training checks.
-Release CI splits the stable ABI and free-threaded ABI into separate jobs with a
-five-hour limit. Ordinary developer builds retain assertion-enabled SDKs and
-their existing CMake options. Windows retains its existing compiler and LTO
-settings.
+`scripts/bolt_wheel.py` profiles and optimizes the hot Linux binaries, checks
+them after stripping and wheel repair, and builds installed CMake consumers with
+Clang and GCC. Release jobs split the stable and free-threaded ABIs to fit the
+five-hour limit. Missing SDKs, failed training, and failed checks stop the
+build.
 
 The
-[SDK optimization study](https://github.com/munich-quantum-software/portable-mlir-toolchain/blob/codex/optimized-release-toolchain/experiments/RESULTS.md)
-records the runtime comparisons, resource limits, compatibility checks, and
-selection gates. This release recipe requires the assertion-free companion SDK
-archives; the installer fails if they have not been published.
+[archived study](https://github.com/munich-quantum-software/portable-mlir-toolchain/blob/592d4c6be117ea88dfa2cbfc44f695082fd278a8/experiments/RESULTS.md)
+records the measurements that selected this recipe. Publish the assertion-free
+SDK companions before activating the Core release workflow.
 
 ### Reproduce C++ lint locally
 
