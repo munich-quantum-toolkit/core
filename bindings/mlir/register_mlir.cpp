@@ -1458,24 +1458,21 @@ operations.)pb");
           [](mlir::QCOProgram& program,
              const mlir::TargetEnvironment& environment,
              const std::vector<int64_t>& initialLayout,
-             const mlir::MappingOptions& mapping, bool enableTiming,
-             bool enableStatistics) {
+             mlir::CompilationOptions options) {
             requireValid(program);
             std::optional<mlir::MappingResult> result;
             withDiagnostics<nb::exception_type::runtime_error>(
                 program.module().getContext(), "Layout compilation failed",
                 [&] {
                   result = program.compileForTargetWithLayout(
-                      environment, initialLayout, mapping, enableTiming,
-                      enableStatistics);
+                      environment, initialLayout, options);
                   return mlir::success(result.has_value());
                 });
             return std::move(*result);
           },
           "target_environment"_a, nb::kw_only(),
           "initial_layout"_a = std::vector<int64_t>{},
-          "mapping"_a = mlir::MappingOptions{}, "enable_timing"_a = false,
-          "enable_statistics"_a = false,
+          "options"_a = mlir::CompilationOptions{},
           "Compile in place and return initial and final site assignments. "
           "Input allocations must have fixed sizes in the entry block. "
           "An empty initial_layout selects automatic placement; otherwise "

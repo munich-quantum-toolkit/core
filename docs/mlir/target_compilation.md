@@ -465,13 +465,13 @@ Use `QCOProgram.compile_for_target_with_layout` when a caller needs to choose
 placement or interpret logical outputs after native routing:
 
 ```python
-from mqt.core.mlir import MappingOptions, QCProgram
+from mqt.core.mlir import CompilationOptions, MappingOptions, QCProgram
 
 program = QCProgram.from_openqasm_str(bell_qasm).to_qco()
 layout = program.compile_for_target_with_layout(
     environment,
     initial_layout=[0, 2],
-    mapping=MappingOptions(seed=42, trials=4),
+    options=CompilationOptions(seed=42, mapping=MappingOptions(trials=4, iterations=2, lookahead=10)),
 )
 print(layout.initial_layout)
 print(layout.final_layout)
@@ -480,9 +480,9 @@ print(layout.final_layout)
 Here `environment` is a `TargetEnvironment` whose target contains sites `0` and
 `2` and supports the circuit. `initial_layout` is a complete list of distinct
 **target site IDs**, not indices into `target.sites`. Omit it or pass an empty
-list for automatic placement. A supplied layout fixes initial placement; seed
-and trial count then do not affect layout search. Routing can still insert SWAPs
-and change the final placement.
+list for automatic placement. A supplied layout fixes initial placement, so trials and
+refinement iterations do not run. Lookahead still controls routing, which can
+insert SWAPs and change the final placement.
 
 Both result lists index qubits in allocation order in the input entry block,
 with each tensor flattened in ascending slot order. `allocation_sizes` records
