@@ -33,13 +33,18 @@ if(NOT TARGET ${TARGET_NAME})
 
   # Ensure the driver can find the device libraries at runtime
   if(QDMI_DEVICE_TARGETS)
-    if(WIN32)
+    get_target_property(DRIVER_LIBRARY_TYPE ${TARGET_NAME} TYPE)
+    if(WIN32 OR DRIVER_LIBRARY_TYPE STREQUAL "SHARED_LIBRARY")
       mqt_copy_qdmi_runtime(${TARGET_NAME} ${QDMI_DEVICE_TARGETS})
     else()
       add_dependencies(${TARGET_NAME} ${QDMI_DEVICE_TARGETS})
       foreach(device IN LISTS QDMI_DEVICE_TARGETS)
-        target_link_options(${TARGET_NAME} INTERFACE
-                            $<BUILD_INTERFACE:-Wl,-rpath,$<TARGET_FILE_DIR:${device}>>)
+        # Consumers using install RPATHs must not retain build-tree device paths.
+        target_link_options(
+          ${TARGET_NAME}
+          INTERFACE
+          "$<BUILD_INTERFACE:$<$<NOT:$<BOOL:$<TARGET_PROPERTY:BUILD_WITH_INSTALL_RPATH>>>:-Wl,-rpath,$<TARGET_FILE_DIR:${device}>>>"
+        )
       endforeach()
     endif()
   endif()

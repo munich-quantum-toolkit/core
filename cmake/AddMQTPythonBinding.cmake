@@ -19,6 +19,8 @@ function(add_mqt_python_binding package_name target_name)
   nanobind_add_module(
     # Name of the extension
     ${target_name}
+    # Preserve symbols until installation or BOLT processing.
+    NOSTRIP
     # Enable free-threaded support
     FREE_THREADED
     # Suppress compiler warnings from the nanobind library
@@ -46,6 +48,8 @@ function(add_mqt_python_binding package_name target_name)
 
   # Keep statically linked dependencies local.
   if(APPLE)
+    # Restore the Python module namespace changed by HandleLLVMOptions, as in AddMLIRPython.
+    target_link_options(${target_name} PRIVATE "LINKER:-twolevel_namespace")
     target_link_options(${target_name} PRIVATE "LINKER:-exported_symbol,_PyInit_${module_name}")
   elseif(UNIX)
     target_link_options(${target_name} PRIVATE "LINKER:--exclude-libs,ALL")

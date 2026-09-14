@@ -196,7 +196,7 @@ version = ">=1.10"
 
 [tool.scikit-build.sdist]
 
-include = [ "python/mqt/core/_version.py" ]
+include = [ "mlir/lib/**", "python/mqt/core/_version.py" ]
 exclude = [
   "**/.github",
   "**/doc",
@@ -204,7 +204,6 @@ exclude = [
   "**/meta",
   "**/paper",
   "**/plots",
-  "**/test",
   "**/tests",
 ]
 
@@ -251,6 +250,11 @@ build = "cp3*"
 skip = [ "*-musllinux_*", "cp314t-*" ]
 archs = "auto64"
 build-frontend = "uv"
+config-settings = { "cmake.define.CMAKE_PROJECT_INCLUDE_BEFORE" = "{project}/build/release-pgo.cmake" }
+before-all = 'bash "{project}/scripts/provision_release.sh" "{project}"'
+before-build = """\
+  uv run --no-project --python \"$(command -v python)\" \"{project}/scripts/prepare_release.py\" \"{project}\"\
+  """
 test-command = "pytest test/python"
 test-groups = [ "test" ]
 test-sources = [
@@ -265,20 +269,33 @@ test-sources = [
 ]
 
 [tool.cibuildwheel.linux]
-environment = { DEPLOY = "ON", PATH = "$PATH:/root/.local/bin", MLIR_DIR = "/opt/llvm-23.1.1/lib/cmake/mlir" }
-before-all = """
-uv tool install sccache>=0.10.0
-curl -LsSf https://github.com/munich-quantum-software/setup-mlir/releases/download/v1.4.2/setup-mlir.sh | bash -s -- -v 23.1.1 -p /opt/llvm-23.1.1
-"""
+config-settings = { "cmake.define.CMAKE_PROJECT_INCLUDE_BEFORE" = "{project}/build/release-pgo.cmake", "install.strip" = "false" }
+environment = { DEPLOY = "ON", MLIR_DIR = "/opt/llvm/lib/cmake/mlir", CC = "clang", CXX = "clang++", PATH = "$PATH:/root/.local/bin", CMAKE_BUILD_PARALLEL_LEVEL = "4" }
+environment-pass = [
+  "CMAKE_C_COMPILER_LAUNCHER",
+  "CMAKE_CXX_COMPILER_LAUNCHER",
+  "SCCACHE_GHA_ENABLED",
+  "ACTIONS_CACHE_SERVICE_V2",
+  "ACTIONS_RESULTS_URL",
+  "ACTIONS_RUNTIME_TOKEN",
+]
+repair-wheel-command = """\
+  uv run --no-project --python \"$(command -v python)\" \"{project}/scripts/bolt_wheel.py\" \"{wheel}\" \"{dest_dir}\" \
+  \"{project}\"\
+  """
 before-test = "uvx sccache --show-stats"
-# QIR-Runner's Linux wheels require a newer glibc than the manylinux_2_28
-# containers used to build and test MQT Core's broadly compatible wheels.
+# QIR-Runner's Linux wheels require a newer glibc than manylinux_2_28.
 test-groups = [ "test-base" ]
+manylinux-x86_64-image = "manylinux_2_28"
+manylinux-aarch64-image = "manylinux_2_28"
 
 [tool.cibuildwheel.macos]
-environment = { MACOSX_DEPLOYMENT_TARGET = "13.3" }
+environment = { DEPLOY = "ON", MACOSX_DEPLOYMENT_TARGET = "13.3", CC = "clang", CXX = "clang++", CMAKE_BUILD_PARALLEL_LEVEL = "3" }
 
 [tool.cibuildwheel.windows]
+config-settings = {}
+before-all = ""
+before-build = ""
 repair-wheel-command = "delvewheel repair -w {dest_dir} {wheel} --namespace-pkg mqt --ignore-existing"
 before-test = "uv pip install --group test"
 # cibuildwheel 4.2 passes expanded dependency groups through cmd.exe, which interprets version

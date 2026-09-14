@@ -37,7 +37,12 @@ if(NOT TARGET ${TARGET_NAME})
   if(APPLE)
     target_link_options(${TARGET_NAME} PRIVATE "LINKER:-exported_symbol,_${QDMI_PREFIX}_QDMI_*")
   elseif(UNIX)
-    target_link_options(${TARGET_NAME} PRIVATE "LINKER:--exclude-libs,ALL")
+    target_link_options(
+      ${TARGET_NAME}
+      PRIVATE
+      "LINKER:--exclude-libs,ALL"
+      "$<$<OR:$<CONFIG:Release>,$<CONFIG:MinSizeRel>,$<CONFIG:RelWithDebInfo>>:LINKER:--gc-sections>"
+    )
   endif()
   target_link_libraries(${TARGET_NAME} PRIVATE MLIRQCODDFunctionality MQTCompilerPrograms
                                                MQT::CoreQIRJIT MQT::CoreQIRRuntime)

@@ -125,6 +125,18 @@ Use `//` for ordinary implementation and namespace closing comments. Inline
 `/* ... */` comments remain valid, including unused parameter names such as
 `OpAdaptor /*adaptor*/` and argument labels such as `/*isSigned=*/false`.
 
+### Release wheel optimization
+
+Linux and macOS wheels use assertion-free SDKs and combined SDK/Core PGO. Linux
+adds full LTO and BOLT with the manylinux container's packaged Clang; macOS uses
+Apple Clang and ThinLTO with a 13.3 deployment target.
+
+Cibuildwheel provisions the tools once, then `scripts/prepare_release.py` trains
+each ABI with the C++ MLIR tests and `test/release/train.py`. It rebuilds the
+required SDK libraries and supplies the final CMake settings. Linux's
+`scripts/bolt_wheel.py` optimizes and checks the repaired wheel, including
+installed Clang and GCC consumers. Windows uses its normal build.
+
 ### Reproduce C++ lint locally
 
 Before pushing a C++ change, run:
