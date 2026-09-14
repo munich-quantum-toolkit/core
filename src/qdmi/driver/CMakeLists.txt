@@ -33,7 +33,8 @@ if(NOT TARGET ${TARGET_NAME})
 
   # Ensure the driver can find the device libraries at runtime
   if(QDMI_DEVICE_TARGETS)
-    if(WIN32)
+    get_target_property(DRIVER_LIBRARY_TYPE ${TARGET_NAME} TYPE)
+    if(WIN32 OR DRIVER_LIBRARY_TYPE STREQUAL "SHARED_LIBRARY")
       mqt_copy_qdmi_runtime(${TARGET_NAME} ${QDMI_DEVICE_TARGETS})
     else()
       add_dependencies(${TARGET_NAME} ${QDMI_DEVICE_TARGETS})
