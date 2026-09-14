@@ -74,13 +74,18 @@ private:
 
 } /* namespace */
 
-static void populatePostPlacementPipeline(OpPassManager& pm) {
+static void populatePostPlacementPipeline(OpPassManager& pm,
+                                          const CompilerTarget& target) {
   /// Placement consumes allocations; native synthesis normalizes phases.
   pm.addPass(createCanonicalizerPass(
       GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit)));
   /// Reuse unchanged classical reads before native synthesis splits their uses.
   pm.addPass(createCSEPass());
   pm.addPass(createRemoveDeadValuesPass());
+  if (const auto basis = target.synthesisBasis();
+      basis && basis->singleQubit != CompilerTarget::SingleQubitBasis::U) {
+    pm.addPass(qco::createFuseSingleQubitUnitaryRuns(basis->singleQubit));
+  }
   pm.addPass(qco::createTargetNativeSynthesis());
   pm.addPass(createCSEPass());
   pm.addPass(qco::createVerifyTargetConformance());
@@ -105,7 +110,14 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   pm.addPass(qco::createLegalizeControlFlow());
   pm.addPass(qco::createDecomposeMultiControlled(target));
   pm.addPass(qco::createFuseTwoQubitGates(target));
-  populateDefaultQCOOptimizationPipeline(pm);
+  // Non-U targets fuse directly in their basis after placement, avoiding an
+  // intermediate U representation and its symbolic phase correction.
+  if (const auto basis = target.synthesisBasis();
+      !basis || basis->singleQubit == CompilerTarget::SingleQubitBasis::U) {
+    // Retain the U optimizer's treatment of isolated gates on U-based and
+    // unrestricted targets.
+    populateDefaultQCOOptimizationPipeline(pm);
+  }
   switch (target.connectivityKind()) {
   case CompilerTarget::Connectivity::Kind::Explicit:
     pm.addPass(qco::createMappingPass(qco::MappingPassOptions{}));
@@ -114,7 +126,7 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
     pm.addPass(qco::createPlacementPass(target));
     break;
   }
-  populatePostPlacementPipeline(pm);
+  populatePostPlacementPipeline(pm, target);
 }
 
 void populateTargetSynthesisPipeline(OpPassManager& pm,
@@ -128,7 +140,7 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
   pm.addPass(qco::createDecomposeMultiControlled(target));
   pm.addPass(qco::createFuseTwoQubitGates(target));
   pm.addPass(qco::createPlacementPass(target));
-  populatePostPlacementPipeline(pm);
+  populatePostPlacementPipeline(pm, target);
 }
 
 } // namespace mlir

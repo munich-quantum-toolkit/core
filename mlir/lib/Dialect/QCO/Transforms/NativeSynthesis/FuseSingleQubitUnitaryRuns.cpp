@@ -27,6 +27,7 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 #include <cstddef>
+#include <memory>
 #include <optional>
 #include <utility>
 
@@ -206,6 +207,38 @@ protected:
 };
 
 } // namespace
+
+std::unique_ptr<Pass>
+createFuseSingleQubitUnitaryRuns(CompilerTarget::SingleQubitBasis basis) {
+  // Populate the existing option so textual pipelines and reproducers retain
+  // the basis selected by target compilation.
+  FuseSingleQubitUnitaryRunsOptions options;
+  using Basis = CompilerTarget::SingleQubitBasis;
+  switch (basis) {
+  case Basis::U:
+    options.basis = "u";
+    break;
+  case Basis::ZSXX:
+    options.basis = "zsxx";
+    break;
+  case Basis::R:
+    options.basis = "r";
+    break;
+  case Basis::XZX:
+    options.basis = "xzx";
+    break;
+  case Basis::XYX:
+    options.basis = "xyx";
+    break;
+  case Basis::ZYZ:
+    options.basis = "zyz";
+    break;
+  case Basis::ZXZ:
+    options.basis = "zxz";
+    break;
+  }
+  return createFuseSingleQubitUnitaryRuns(options);
+}
 
 } // namespace mlir::qco
 

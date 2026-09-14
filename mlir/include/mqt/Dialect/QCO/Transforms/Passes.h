@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "mqt/Compiler/Target.h"
+
 #include "mlir/Interfaces/FunctionInterfaces.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassRegistry.h"
@@ -19,14 +21,14 @@
 #include <cstdint>
 #include <memory>
 
-namespace mlir {
-class CompilerTarget;
-} // namespace mlir
-
 namespace mlir::qco {
 
 #define GEN_PASS_DECL
 #include "mqt/Dialect/QCO/Transforms/Passes.h.inc" // IWYU pragma: export
+
+/// Fuse single-qubit runs directly in the selected compiler-target basis.
+[[nodiscard]] std::unique_ptr<Pass>
+createFuseSingleQubitUnitaryRuns(CompilerTarget::SingleQubitBasis basis);
 
 //===----------------------------------------------------------------------===//
 // Registration

@@ -1066,6 +1066,49 @@ struct MergeSingleQubitRotationGatesPattern final
     return success();
   }
 
+  /// Reuse the Euler angles of RZ-RX-RZ and RZ-RY-RZ chains, with either
+  /// outer RZ optional. Do not add independent, unbounded dynamic angles.
+  static LogicalResult
+  tryMergeDirectChain(MutableArrayRef<UnitaryOpInterface> chain,
+                      RewriterBase& rewriter,
+                      decomposition::SingleQubitBasis basis) {
+    if (basis == decomposition::SingleQubitBasis::XZX ||
+        basis == decomposition::SingleQubitBasis::XYX ||
+        basis == decomposition::SingleQubitBasis::R) {
+      return failure();
+    }
+
+    const size_t middle = isa<RZOp>(chain.front().getOperation()) ? 1 : 0;
+    if (chain.size() <= middle || chain.size() > middle + 2 ||
+        !isa<RXOp, RYOp>(chain[middle].getOperation()) ||
+        (chain.size() == middle + 2 &&
+         !isa<RZOp>(chain.back().getOperation()))) {
+      return failure();
+    }
+
+    // Check the complete run before creating or replacing any operations.
+    const Location loc = chain.front()->getLoc();
+    const auto consts = makeConsts<Value>(rewriter, loc);
+    auto angles = directZYZAnglesFromGate(chain[middle], rewriter, consts);
+    const auto angle = [&](UnitaryOpInterface op) {
+      return Val<Value>{op.getParameter(0), &rewriter, loc};
+    };
+    if (middle == 1) {
+      angles.lambda = sumAngles(angles.lambda, angle(chain.front()));
+    }
+    if (chain.size() == middle + 2) {
+      angles.phi = sumAngles(angles.phi, angle(chain.back()));
+    }
+
+    for (auto op : llvm::drop_begin(chain)) {
+      rewriter.replaceOp(op, op.getInputQubit(0));
+    }
+    Value qubit = emitRuntimeEulerAngles(
+        rewriter, loc, chain.front().getInputQubit(0), angles, basis, consts);
+    rewriter.replaceOp(chain.front(), qubit);
+    return success();
+  }
+
   // Merges a dynamic or mixed-angle chain through `Val<Value>` SSA.
   //
   // Fusion mode emits the requested basis directly. Regular merge mode emits
@@ -1079,6 +1122,10 @@ struct MergeSingleQubitRotationGatesPattern final
                     RewriterBase& rewriter,
                     std::optional<decomposition::SingleQubitBasis> fusionBasis =
                         std::nullopt) {
+    const auto basis = fusionBasis.value_or(decomposition::SingleQubitBasis::U);
+    if (succeeded(tryMergeDirectChain(chain, rewriter, basis))) {
+      return success();
+    }
     const Location loc = chain.front()->getLoc();
     const auto consts = makeConsts<Value>(rewriter, loc);
 
@@ -1101,7 +1148,6 @@ struct MergeSingleQubitRotationGatesPattern final
       rewriter.replaceOp(chainOp, chainOp.getInputQubit(0));
     }
 
-    const auto basis = fusionBasis.value_or(decomposition::SingleQubitBasis::U);
     const bool transformed = basis == decomposition::SingleQubitBasis::XZX ||
                              basis == decomposition::SingleQubitBasis::XYX ||
                              basis == decomposition::SingleQubitBasis::R;
