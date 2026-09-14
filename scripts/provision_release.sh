@@ -16,7 +16,7 @@ if [[ $(uname -s) == Linux ]]; then
   sdk=/opt/llvm-23.1.1
   if [[ ! -x "$sdk/bin/llvm-config" ]]; then
     curl --fail --location --retry 3 \
-      https://raw.githubusercontent.com/munich-quantum-software/setup-mlir/9e7b46e4ef38ea8e2d5134457fc1c49ee8833192/installation/setup-mlir.sh \
+      https://raw.githubusercontent.com/munich-quantum-software/setup-mlir/a43338b02c09c79c8da9eb98b4ad45b08429fd0f/installation/setup-mlir.sh \
       -o "$root/setup-mlir.sh"
     bash "$root/setup-mlir.sh" -v 23.1.1 -p "$sdk" -a OFF
   fi
