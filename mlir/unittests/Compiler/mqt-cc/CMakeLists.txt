@@ -35,13 +35,6 @@ target_sources(mqt-core-mlir-unittests-compiler PRIVATE test_cli_options.cpp)
 target_compile_definitions(
   mqt-core-mlir-unittests-compiler
   PRIVATE MQT_CORE_MQT_CC="$<TARGET_FILE:mqt-cc>"
-          MQT_CORE_MQT_CC_INPUT="${CMAKE_CURRENT_SOURCE_DIR}/bell.qasm")
+          MQT_CORE_MQT_CC_INPUT="${CMAKE_CURRENT_SOURCE_DIR}/bell.qasm"
+          MQT_CORE_MQT_CC_LAYOUT_INPUT="${CMAKE_CURRENT_SOURCE_DIR}/layout.qc.mlir")
 add_dependencies(mqt-core-mlir-unittests-compiler mqt-cc)
-
-add_test(
-  NAME mqt-core-mqt-cc-layout-test
-  COMMAND
-    ${CMAKE_COMMAND} "-DMQT_CC=$<TARGET_FILE:mqt-cc>"
-    "-DINPUT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/layout.qc.mlir"
-    "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/layout-output-$<CONFIG>" -P
-    "${CMAKE_CURRENT_SOURCE_DIR}/verify_layout.cmake")
