@@ -17,8 +17,8 @@ existing supported circuit-operation and register-membership boundary.
 
 The layout APIs accept the shared `CompilationOptions` from target compilation,
 including seed, timing, statistics, mapping trials, refinement iterations, and
-routing lookahead. `initialLayout` remains
-an explicit input assignment; `MappingResult` remains a detached output.
+routing lookahead. `initialLayout` remains an explicit input assignment;
+`MappingResult` remains a detached output.
 
 ## Lifetime and output rules
 
@@ -37,14 +37,12 @@ must update or invalidate this discardable metadata.
 
 ## Validation
 
-The compiler and Qiskit translation suites pass 525 tests with Qiskit 2.5.2. All
-18 layout round-trip cases pass with Qiskit 2.5.0, the adapter minimum. Native
-validation passes 237 compiler tests and 35 metadata tests, including shared
-compilation options, routing, failure publication, and schema checks. All four
-CLI CTests pass, including saved-pipeline replay and explicit discard. The
-compiler suite also includes the two shared-options CLI regressions. Both
-published Python examples execute. Stub generation, repository lint, and full
-changed-file C++ lint against `origin/main` pass.
+The compiler, translation, and QDMI Python suites pass 625 tests. Native
+validation passes 239 compiler tests and 37 metadata tests, including shared
+compilation options, routing with zero lookahead, failure publication, and
+schema checks. The compiler suite includes four CLI GoogleTests; all three CLI
+CTests pass. Both published Python examples execute. Stub generation, repository
+lint, and full changed-file C++ lint against `origin/main` pass.
 
 The implemented metadata uses a validated `mqt.layout` dictionary and a mutually
 exclusive `mqt.layout_invalidated` unit marker. The Qiskit 2.5 adapter supports

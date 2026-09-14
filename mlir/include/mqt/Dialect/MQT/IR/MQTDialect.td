@@ -86,9 +86,8 @@ def MQTDialect : Dialect {
   }];
 
   let discardableAttrs = (ins "::mlir::StringAttr":$input_name,
-      "::mlir::IntegerAttr":$input_id,
-      "::mlir::DictionaryAttr":$layout, "::mlir::UnitAttr":$layout_invalidated,
-      "::mlir::StringAttr":$source_name,
+      "::mlir::IntegerAttr":$input_id, "::mlir::DictionaryAttr":$layout,
+      "::mlir::UnitAttr":$layout_invalidated, "::mlir::StringAttr":$source_name,
       "::mlir::DictionaryAttr":$parameter_group,
       "::mlir::StringAttr":$register_name, "::mlir::UnitAttr":$entry_point,
       "::mlir::UnitAttr":$unitary);
