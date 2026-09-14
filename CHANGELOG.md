@@ -10,10 +10,11 @@ releases may include breaking changes.
 
 ## [Unreleased]
 
-- ⚡ Build Linux release wheels with full Core LTO, profile the linked native
-  LLVM/MLIR libraries and Core together, and apply BOLT before wheel repair.
-  Train each Python ABI independently and retain assertion-enabled SDKs for
-  development. ([#2476]) ([**@burgholzer**])
+- ⚡ Build Linux release wheels with full Core LTO and macOS wheels with
+  ThinLTO. Profile the linked native LLVM/MLIR libraries and Core together and
+  apply BOLT on Linux before wheel repair. Train each Python ABI independently
+  and retain assertion-enabled SDKs for development. ([#2476])
+  ([**@burgholzer**])
 
 - 🐛 Return QDMI and benchmark input errors to the compiler without requiring
   exceptions or RTTI. Preserve diagnostics on macOS and report benchmark CLI
