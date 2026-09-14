@@ -75,7 +75,7 @@ def main() -> None:
         },
     }
 
-    def build_wheel() -> Path:
+    def build_wheel(*targets: str) -> Path:
         run([
             "uv",
             "build",
@@ -86,6 +86,7 @@ def main() -> None:
             "--out-dir",
             str(root / "wheel"),
             "-Cbuild-dir=" + str(build),
+            "-Cbuild.targets=" + ";".join(["mqt-core-wheel", *targets]),
             "-Cinstall.strip=false",
             *[f"-Ccmake.define.{key}={value}" for key, value in instrumented.items()],
         ])
@@ -143,8 +144,7 @@ def main() -> None:
         for archive in (root / "llvm/lib").glob("*.a"):
             shutil.copyfile(archive, sdk / "lib" / archive.name)
         if phase == "generate":
-            wheel = build_wheel()
-            run(["cmake", "--build", str(build), "--target", "mlir/unittests/all"])
+            wheel = build_wheel("mlir/unittests/all")
             training = os.environ | {"LLVM_PROFILE_FILE": str(raw / "%m-%p.profraw")}
             subprocess.run(
                 ["ctest", "--test-dir", str(build / "mlir/unittests"), "--output-on-failure"], env=training, check=True
