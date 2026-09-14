@@ -9,30 +9,19 @@
 
 set -euo pipefail
 
-root=${1:?release tool directory}
+root=${1:?project directory}/build/release-tools
 mkdir -p "$root/llvm-source"
 if [[ $(uname -s) == Linux ]]; then
-  uv tool install "sccache>=0.10.0"
-  sdk=/opt/llvm-23.1.1
-  if [[ ! -x "$sdk/bin/llvm-config" ]]; then
+  dnf install -y clang llvm compiler-rt lld
+  uv tool install sccache
+  if [[ ! -x /opt/llvm/bin/llvm-config ]]; then
     curl --fail --location --retry 3 \
-      https://raw.githubusercontent.com/munich-quantum-software/setup-mlir/a43338b02c09c79c8da9eb98b4ad45b08429fd0f/installation/setup-mlir.sh \
+      https://raw.githubusercontent.com/munich-quantum-software/setup-mlir/main/installation/setup-mlir.sh \
       -o "$root/setup-mlir.sh"
-    bash "$root/setup-mlir.sh" -v 23.1.1 -p "$sdk" -a OFF
+    bash "$root/setup-mlir.sh" -v 23.1.1 -p /opt/llvm -a OFF
   fi
-  [[ $("$sdk/bin/llvm-config" --version) == 23.1.1 ]] || { echo 'Expected LLVM 23.1.1' >&2; exit 1; }
-  [[ $("$sdk/bin/llvm-config" --assertion-mode) == OFF ]] || { echo 'Expected assertion-free LLVM' >&2; exit 1; }
 fi
-llvm_revision=6dfe1677ab8dffbc6ec13d53a1e0215d75147689
+version=$("${MLIR_DIR:?}/../../../bin/llvm-config" --version)
 curl --fail --location --retry 3 \
-  "https://github.com/llvm/llvm-project/archive/$llvm_revision.tar.gz" -o "$root/llvm-source.tar.gz"
-tar -xf "$root/llvm-source.tar.gz" -C "$root/llvm-source" --strip-components=1
-rm "$root/llvm-source.tar.gz"
-
-if [[ $(uname -s) == Linux ]]; then
-  manylinux-install-clang -v 22.1.8.1 -c 8b399744aeb49c70048b379b9b3ffc651d86fde808551c8cc4138c4fadc5308e
-  export CC=/opt/clang/bin/clang CXX=/opt/clang/bin/clang++
-  export AR=/opt/clang/bin/llvm-ar RANLIB=/opt/clang/bin/llvm-ranlib
-  export PATH="/opt/clang/bin:$PATH"
-  bash "$sdk/share/mqt-mlir/install-profile-tools.sh" "$root/profiling"
-fi
+  "https://github.com/llvm/llvm-project/archive/refs/tags/llvmorg-$version.tar.gz" \
+  | tar -xz -C "$root/llvm-source" --strip-components=1

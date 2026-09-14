@@ -20,17 +20,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runs-on: [ubuntu-24.04, ubuntu-24.04-arm, macos-26]
-        python-abi: [cp311, cp315t]
-        include:
-          - runs-on: windows-2025
-            python-abi: ""
-          - runs-on: windows-11-arm
-            python-abi: ""
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-wheel-cibuildwheel.yml@d7d6960ff26de5c12df0fd5929bfa919127357f8 # zizmor: ignore[stale-action-refs] -- Pin workflows PR #464 until its release.
+        runs-on:
+          [
+            ubuntu-24.04,
+            ubuntu-24.04-arm,
+            macos-26,
+            windows-2025,
+            windows-11-arm,
+          ]
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-wheel-cibuildwheel.yml@674b7a1e5b452979900157dcc676fb944525b224 # zizmor: ignore[stale-action-refs] -- Pin workflows PR #464 until its release.
     with:
       runs-on: ${{ matrix.runs-on }}
-      python-abi: ${{ matrix.python-abi }}
       setup-mlir: true
       mlir-assertions: false
       llvm-version: 23.1.1

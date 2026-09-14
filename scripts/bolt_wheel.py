@@ -11,6 +11,10 @@
 
 from __future__ import annotations
 
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["cmake>=4.4.1", "ninja", "wheel"]
+# ///
 # Release checks execute trusted build artifacts and tools from the build environment.
 # ruff: file-ignore[subprocess-without-shell-equals-true, start-process-with-partial-path]
 import os
@@ -28,6 +32,7 @@ def main() -> None:
         RuntimeError: If training produces no profile or an ELF runtime path is absolute.
     """
     wheel, destination, project = map(Path, sys.argv[1:])
+    tools = Path(os.environ["MLIR_DIR"]).resolve().parents[2] / "bin"
     with tempfile.TemporaryDirectory(prefix="mqt-wheel-bolt-") as directory:
         work = Path(directory)
         subprocess.run([sys.executable, "-m", "wheel", "unpack", str(wheel), "-d", str(work)], check=True)
@@ -40,7 +45,7 @@ def main() -> None:
         environment = os.environ | {"PYTHONPATH": str(unpacked), "MQT_CORE_QDMI_CONFIG_FILE": str(work / "qdmi.json")}
         environment.pop("MQT_CORE_QDMI_CONFIG_JSON", None)
         (work / "qdmi.json").write_text('{"schema-version": 1, "qdmi": {"devices": []}}\n')
-        training = [str(python), str(project.resolve() / "test" / "release" / "train_bolt.py")]
+        training = [str(python), str(project.resolve() / "test" / "release" / "train.py")]
         binaries = [
             next(core.glob("dd.*.so")),
             next(core.rglob("libmqt-core-dd.so")),
@@ -55,7 +60,7 @@ def main() -> None:
             shutil.copy2(binary, original)
             subprocess.run(
                 [
-                    "llvm-bolt",
+                    str(tools / "llvm-bolt"),
                     str(original),
                     "-o",
                     str(binary),
@@ -73,10 +78,10 @@ def main() -> None:
                 raise RuntimeError(msg)
             merged = profiles / "merged.fdata"
             with merged.open("w") as stream:
-                subprocess.run(["merge-fdata", *map(str, collected)], stdout=stream, check=True)
+                subprocess.run([str(tools / "merge-fdata"), *map(str, collected)], stdout=stream, check=True)
             subprocess.run(
                 [
-                    "llvm-bolt",
+                    str(tools / "llvm-bolt"),
                     str(original),
                     "-o",
                     str(binary),
@@ -103,7 +108,7 @@ def main() -> None:
                     if any(Path(entry).is_absolute() for entry in rpath.split(":")):
                         msg = f"Absolute runtime search path in {path}: {rpath}"
                         raise RuntimeError(msg)
-                    subprocess.run(["llvm-strip", "--strip-unneeded", str(path)], check=True)
+                    subprocess.run([str(tools / "llvm-strip"), "--strip-unneeded", str(path)], check=True)
         subprocess.run(training, env=environment, check=True)
         packed = work / "packed"
         packed.mkdir()

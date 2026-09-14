@@ -1,40 +1,19 @@
 # Release wheel optimization
 
-Status: implementation cleanup complete. Package qualification and publication
-of the dependencies remain.
+Status: simplifying the release path and validating the revised builds.
 
-## Scope and ownership
+- SDK #94 supplies native assertion-enabled and assertion-free libraries, plus
+  standard BOLT tools on Linux. Prepare the 2026.09.15 changelog; publish
+  through the existing workflow dispatch after review.
+- Setup #255 selects assertions and uses the matching release manifest.
+- Workflows #464 runs one cibuildwheel job per platform.
+- Core #2476 owns SDK/Core PGO, MLIR test training, Linux BOLT, and wheel
+  checks. It is stacked on #2545, which owns QDMI and benchmark exception
+  boundaries.
 
-The SDK provides native libraries, assertion selection, BOLT tools, and native
-library PGO rebuilding. Setup installs the requested SDK. Reusable workflows
-provide runner and cache setup and split wheel jobs by ABI. Core owns training,
-PGO preparation, BOLT processing, and installed-wheel checks.
+Linux uses the manylinux container's matched Clang toolchain, full LTO, PGO, and
+BOLT. macOS uses Apple Clang, ThinLTO, and PGO. Both SDK and Core target macOS
+13.3. Keep the manylinux 2.28 baseline and normal Windows compiler.
 
-Linux uses Clang 22.1.8, full Core LTO, combined SDK/Core PGO, and BOLT. macOS
-uses Apple Clang, Core ThinLTO, and combined PGO. Windows keeps its existing
-compiler and optimization settings. Preserve portable CPU targets, manylinux
-2.28 compatibility, SDK macOS target 11.0, and Core macOS target 13.3.
-
-## Work remaining
-
-- [x] Remove candidate selection, benchmark evaluation, and experiment
-      workflows; retain the selected training workloads and correctness checks.
-- [x] Replace generic variant tooling with native library PGO rebuilding and
-      keep BOLT processing in Core.
-- [ ] Validate SDK installation, release preparation, repaired wheels, and CMake
-      consumers; update all four PRs with signed commits.
-
-## Evidence and release dependency
-
-The
-[completed study](https://github.com/munich-quantum-software/portable-mlir-toolchain/blob/592d4c6be117ea88dfa2cbfc44f695082fd278a8/experiments/RESULTS.md)
-and its raw records remain in git history. Earlier qualification passed all ten
-wheel jobs and native SDK installation on five platforms in both assertion
-modes. Those results precede this cleanup and do not validate the revised code.
-
-Core CD currently fails while downloading unpublished assertion-free SDK
-archives. The existing 2026.09.11 SDK release is immutable. Publish the complete
-2026.09.14 release after merging SDK PR #94, then merge setup-mlir PR #255 to
-make its updated manifest available to the standalone Linux installer.
-Publication and merges need human approval. Rerun Core CD after these
-dependencies are available; do not add another optimization configuration.
+Complete local and platform validation, push signed PR updates, and report
+release dependencies separately from code failures.

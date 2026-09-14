@@ -7,7 +7,7 @@
 #
 # Licensed under the MIT License
 
-"""Bounded BOLT training with numerical, compiler, JIT, loading, and CLI checks."""
+"""Exercise numerical, compiler, JIT, loading, and CLI paths in release wheels."""
 
 from __future__ import annotations
 

@@ -127,35 +127,15 @@ Use `//` for ordinary implementation and namespace closing comments. Inline
 
 ### Release wheel optimization
 
-Linux and macOS wheels use native assertion-free SDK libraries and combined
-SDK/Core PGO. Linux uses manylinux Clang 22.1.8, full Core LTO, and BOLT. macOS
-uses Apple Clang and Core ThinLTO, retaining the SDK's macOS 11.0 target and
-Core's 13.3 target. Ordinary builds and Windows keep their existing settings.
+Linux and macOS wheels use assertion-free SDKs and combined SDK/Core PGO. Linux
+adds full LTO and BOLT with the manylinux container's packaged Clang; macOS uses
+Apple Clang and ThinLTO with a 13.3 deployment target.
 
-Cibuildwheel runs `scripts/provision_release.sh` once to obtain LLVM sources and
-Linux profiling tools. For each Python ABI, `scripts/prepare_release.py` builds
-an instrumented wheel and rebuilds its SDK archive dependencies using the helper
-installed with the SDK. It trains the installed package with
-`test/release/train_pgo.py`, requires executed Core and SDK counters, and
-rebuilds the SDK dependencies with that profile. The final CMake configuration
-applies PGO and LTO to project compilation and linking, leaving compiler probes
-alone.
-
-Each ABI uses a fresh directory under `build/release-pgo-*`. Profiles must not
-be reused across sources, compilers, or ABIs. Their content hash is part of the
-profile-use path, keeping compiler-cache entries separate. Build logs and the
-archive target list identify the profiled subset; native SDK tools are reused.
-
-`scripts/bolt_wheel.py` profiles and optimizes the hot Linux binaries, checks
-them after stripping and wheel repair, and builds installed CMake consumers with
-Clang and GCC. Release jobs split the stable and free-threaded ABIs to fit the
-five-hour limit. Missing SDKs, failed training, and failed checks stop the
-build.
-
-The
-[archived study](https://github.com/munich-quantum-software/portable-mlir-toolchain/blob/592d4c6be117ea88dfa2cbfc44f695082fd278a8/experiments/RESULTS.md)
-records the measurements that selected this recipe. Publish the assertion-free
-SDK companions before activating the Core release workflow.
+Cibuildwheel provisions the tools once, then `scripts/prepare_release.py` trains
+each ABI with the C++ MLIR tests and `test/release/train.py`. It rebuilds the
+required SDK libraries and supplies the final CMake settings. Linux's
+`scripts/bolt_wheel.py` optimizes and checks the repaired wheel, including
+installed Clang and GCC consumers. Windows uses its normal build.
 
 ### Reproduce C++ lint locally
 
