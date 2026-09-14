@@ -405,9 +405,7 @@ TEST_F(QCOTest, BuilderIfReturnsClassicalValues) {
   auto [tensor, qubit] = builder.qtensorExtract(builder.qtensorAlloc(1), 0);
   const auto branch = [&](ValueRange args) {
     auto [measured, bit] = builder.measure(builder.h(args[1]));
-    SmallVector<Value> results{bit, builder.intConstant(1)};
-    results.append({args[0], measured});
-    return results;
+    return SmallVector<Value>{bit, builder.intConstant(1), args[0], measured};
   };
   auto results = builder.qcoIf(
       true, {tensor, qubit},
