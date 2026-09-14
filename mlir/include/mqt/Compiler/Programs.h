@@ -244,14 +244,6 @@ public:
   [[nodiscard]] bool runPassPipeline(std::string_view pipeline,
                                      const CompilationOptions& options = {});
 
-  /// Compatibility overload for timing and statistics flags.
-  [[nodiscard]] bool runPassPipeline(std::string_view pipeline,
-                                     bool enableTiming,
-                                     bool enableStatistics = false) {
-    return runPassPipeline(pipeline, {.enableTiming = enableTiming,
-                                      .enableStatistics = enableStatistics});
-  }
-
   /// Merge consecutive single-qubit rotation gates.
   [[nodiscard]] bool mergeSingleQubitRotationGates();
 
@@ -281,15 +273,6 @@ public:
   [[nodiscard]] bool compileForTarget(const TargetEnvironment& environment,
                                       const CompilationOptions& options = {});
 
-  /// Compatibility overload for timing and statistics flags.
-  [[nodiscard]] bool compileForTarget(const TargetEnvironment& environment,
-                                      bool enableTiming,
-                                      bool enableStatistics = false) {
-    return compileForTarget(
-        environment,
-        {.enableTiming = enableTiming, .enableStatistics = enableStatistics});
-  }
-
   /// Synthesize native operations for an all-to-all target in place.
   ///
   /// Assigns static sites and resynthesizes constant two-qubit runs in the
@@ -298,15 +281,6 @@ public:
   [[nodiscard]] bool
   synthesizeForTarget(const TargetEnvironment& environment,
                       const CompilationOptions& options = {});
-
-  /// Compatibility overload for timing and statistics flags.
-  [[nodiscard]] bool synthesizeForTarget(const TargetEnvironment& environment,
-                                         bool enableTiming,
-                                         bool enableStatistics = false) {
-    return synthesizeForTarget(
-        environment,
-        {.enableTiming = enableTiming, .enableStatistics = enableStatistics});
-  }
 
   /// Consume this program and convert it to QC.
   [[nodiscard]] std::optional<QCProgram> intoQC() &&;
@@ -409,24 +383,5 @@ runDefaultPipeline(CompilerInput&& program, ProgramFormat output,
 runDefaultPipeline(CompilerInput&& program,
                    const TargetEnvironment& environment,
                    const CompilationOptions& options = {});
-
-/// Compatibility overloads for timing and statistics flags.
-[[nodiscard]] inline std::optional<CompilerProgram>
-runDefaultPipeline(CompilerInput&& program, ProgramFormat output,
-                   std::string_view qcoPipeline, bool enableTiming,
-                   bool enableStatistics = false) {
-  return runDefaultPipeline(
-      std::move(program), output, qcoPipeline,
-      {.enableTiming = enableTiming, .enableStatistics = enableStatistics});
-}
-
-[[nodiscard]] inline std::optional<CompilerProgram>
-runDefaultPipeline(CompilerInput&& program,
-                   const TargetEnvironment& environment, bool enableTiming,
-                   bool enableStatistics = false) {
-  return runDefaultPipeline(
-      std::move(program), environment,
-      {.enableTiming = enableTiming, .enableStatistics = enableStatistics});
-}
 
 } // namespace mlir

@@ -665,14 +665,7 @@ class QCOProgram(Program):
     def normalize_global_phases(self) -> None:
         """Normalize scoped global phases in place."""
 
-    def run_pass_pipeline(
-        self,
-        pipeline: str,
-        *,
-        enable_timing: bool = False,
-        enable_statistics: bool = False,
-        options: CompilationOptions | None = None,
-    ) -> None:
+    def run_pass_pipeline(self, pipeline: str, *, options: CompilationOptions = ...) -> None:
         """Run a textual MLIR pass pipeline in place."""
 
     def merge_single_qubit_rotation_gates(self) -> None:
@@ -696,23 +689,11 @@ class QCOProgram(Program):
     def decompose_multi_controlled(self, *, min_qubits: int = 3) -> None:
         """Decompose controlled X/Y/Z/SWAP and RX/RY/RZ gates, qco.rccx, and constant-angle phase gates that act on at least min_qubits qubits (min_qubits must be at least 3; default 3 means wider than two-qubit)."""
 
-    def compile_for_target(
-        self,
-        target_environment: TargetEnvironment,
-        *,
-        enable_timing: bool = False,
-        enable_statistics: bool = False,
-        options: CompilationOptions | None = None,
-    ) -> None:
+    def compile_for_target(self, target_environment: TargetEnvironment, *, options: CompilationOptions = ...) -> None:
         """Compile this QCO program for the target in place. Do not rely on its contents if compilation fails. Failures raise RuntimeError with the emitted MLIR diagnostics."""
 
     def synthesize_for_target(
-        self,
-        target_environment: TargetEnvironment,
-        *,
-        enable_timing: bool = False,
-        enable_statistics: bool = False,
-        options: CompilationOptions | None = None,
+        self, target_environment: TargetEnvironment, *, options: CompilationOptions = ...
     ) -> None:
         """Synthesize native operations for an all-to-all target in place. Assigns static sites and resynthesizes constant two-qubit runs in the native basis, without routing. Do not rely on the program contents if synthesis fails. Failures raise RuntimeError with the emitted MLIR diagnostics."""
 
@@ -939,9 +920,7 @@ def compile_program(
     output: Literal[OutputFormat.QC, OutputFormat.QC_IMPORT] = ...,
     inplace: bool = False,
     qco_pipeline: str = "mqt-qco-default",
-    enable_timing: bool = False,
-    enable_statistics: bool = False,
-    options: CompilationOptions | None = None,
+    options: CompilationOptions = ...,
 ) -> QCProgram: ...
 @overload
 def compile_program(
@@ -956,9 +935,7 @@ def compile_program(
     output: Literal[OutputFormat.QCO, OutputFormat.QCO_OPTIMIZED],
     inplace: bool = False,
     qco_pipeline: str = "mqt-qco-default",
-    enable_timing: bool = False,
-    enable_statistics: bool = False,
-    options: CompilationOptions | None = None,
+    options: CompilationOptions = ...,
 ) -> QCOProgram: ...
 @overload
 def compile_program(
@@ -973,9 +950,7 @@ def compile_program(
     output: Literal[OutputFormat.OPENQASM3],
     inplace: bool = False,
     qco_pipeline: str = "mqt-qco-default",
-    enable_timing: bool = False,
-    enable_statistics: bool = False,
-    options: CompilationOptions | None = None,
+    options: CompilationOptions = ...,
 ) -> OpenQASMProgram: ...
 @overload
 def compile_program(
@@ -990,9 +965,7 @@ def compile_program(
     output: Literal[OutputFormat.JEFF],
     inplace: bool = False,
     qco_pipeline: str = "mqt-qco-default",
-    enable_timing: bool = False,
-    enable_statistics: bool = False,
-    options: CompilationOptions | None = None,
+    options: CompilationOptions = ...,
 ) -> JeffProgram: ...
 @overload
 def compile_program(
@@ -1007,9 +980,7 @@ def compile_program(
     output: Literal[OutputFormat.QIR_BASE, OutputFormat.QIR_ADAPTIVE],
     inplace: bool = False,
     qco_pipeline: str = "mqt-qco-default",
-    enable_timing: bool = False,
-    enable_statistics: bool = False,
-    options: CompilationOptions | None = None,
+    options: CompilationOptions = ...,
 ) -> QIRProgram: ...
 @overload
 def compile_program(
@@ -1024,9 +995,7 @@ def compile_program(
     output: OutputFormat,
     inplace: bool = False,
     qco_pipeline: str = "mqt-qco-default",
-    enable_timing: bool = False,
-    enable_statistics: bool = False,
-    options: CompilationOptions | None = None,
+    options: CompilationOptions = ...,
 ) -> QCProgram | QCOProgram | OpenQASMProgram | JeffProgram | QIRProgram:
     """Run the coordinated default MQT compiler pipeline.
 
@@ -1043,8 +1012,6 @@ def compile_program(
         qco_pipeline: The QCO optimization pipeline to run. A custom pipeline
             cannot be combined with target compilation.
         options: Shared compilation controls.
-        enable_timing: Legacy timing flag; use options for new calls.
-        enable_statistics: Legacy statistics flag; use options for new calls.
 
     Returns:
         A typed compiler program for the requested output format.
@@ -1063,9 +1030,7 @@ def compile_program(
     target: str | mqt.core.qdmi.Device,
     program_format: mqt.core.qdmi.ProgramFormat | None = None,
     inplace: bool = False,
-    enable_timing: bool = False,
-    enable_statistics: bool = False,
-    options: CompilationOptions | None = None,
+    options: CompilationOptions = ...,
 ) -> CompiledProgram:
     """Compile for a device ID, open device, or explicit compiler target.
 
@@ -1091,9 +1056,7 @@ def compile_program(
     target: CompilerTarget,
     program_format: mqt.core.qdmi.ProgramFormat,
     inplace: bool = False,
-    enable_timing: bool = False,
-    enable_statistics: bool = False,
-    options: CompilationOptions | None = None,
+    options: CompilationOptions = ...,
 ) -> CompiledProgram: ...
 @overload
 def compile_program(
@@ -1108,9 +1071,7 @@ def compile_program(
     target: CompilerTarget,
     output: Literal[OutputFormat.OPENQASM3],
     inplace: bool = False,
-    enable_timing: bool = False,
-    enable_statistics: bool = False,
-    options: CompilationOptions | None = None,
+    options: CompilationOptions = ...,
 ) -> OpenQASMProgram: ...
 @overload
 def compile_program(
@@ -1125,9 +1086,7 @@ def compile_program(
     target: CompilerTarget,
     output: Literal[OutputFormat.QIR_BASE, OutputFormat.QIR_ADAPTIVE],
     inplace: bool = False,
-    enable_timing: bool = False,
-    enable_statistics: bool = False,
-    options: CompilationOptions | None = None,
+    options: CompilationOptions = ...,
 ) -> QIRProgram: ...
 
 class CompiledProgram:
@@ -1162,8 +1121,6 @@ def submit_program(
     target: str | mqt.core.qdmi.Device,
     num_shots: int = 1024,
     program_format: mqt.core.qdmi.ProgramFormat | None = None,
-    enable_timing: bool = False,
-    enable_statistics: bool = False,
     custom1: str | bool | float | None = None,
     custom2: str | bool | float | None = None,
     custom3: str | bool | float | None = None,

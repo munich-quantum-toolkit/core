@@ -1282,15 +1282,6 @@ def test_compilation_seed_overrides_custom_pass_seed(seed: int) -> None:
     assert compiled.ir == expected.ir
 
 
-def test_compilation_options_do_not_mix_with_legacy_flags() -> None:
-    """Reject ambiguous controls before consuming the supplied program."""
-    source = QCProgram.from_openqasm_str(QASM_STRING)
-    before = source.ir
-    with pytest.raises(ValueError, match="Use options or the timing/statistics flags"):
-        compile_program(source, inplace=True, enable_timing=True, options=CompilationOptions())
-    assert source.ir == before
-
-
 def test_compilation_seed_reaches_nested_modules() -> None:
     """The outer compilation seed overrides an inner module's captured seed."""
     inner = QCProgram.from_openqasm_str(QASM_STRING).to_qco()
@@ -1304,13 +1295,9 @@ def test_compilation_seed_reaches_nested_modules() -> None:
     assert actual.ir != source.ir
 
 
-@pytest.mark.parametrize("use_options", [False, True])
-def test_compilation_timing_and_statistics(capfd: pytest.CaptureFixture[str], *, use_options: bool) -> None:
-    """Both shared options and legacy keywords reach MLIR instrumentation."""
-    if use_options:
-        compile_program(QASM_STRING, options=CompilationOptions(enable_timing=True, enable_statistics=True))
-    else:
-        compile_program(QASM_STRING, enable_timing=True, enable_statistics=True)
+def test_compilation_timing_and_statistics(capfd: pytest.CaptureFixture[str]) -> None:
+    """Shared options reach MLIR timing and statistics instrumentation."""
+    compile_program(QASM_STRING, options=CompilationOptions(enable_timing=True, enable_statistics=True))
     output = capfd.readouterr().err
     assert "Execution time report" in output
     assert "Pass statistics report" in output

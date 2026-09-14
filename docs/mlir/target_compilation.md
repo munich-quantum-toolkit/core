@@ -74,10 +74,11 @@ compiled = compile_program(bell_qasm, target=device, options=options)
 ```
 
 The same `options` argument is available on typed compilation methods and source
-submission. It also groups `enable_timing` and `enable_statistics`. An explicit
-seed overrides compiler randomness, including custom pass seeds; `None`
-preserves existing pass settings. Execution sampling has a separate seed. For
-the CLI, use `--seed 7 --mapping-trials 4 --qdmi-device ID`.
+submission. Set `enable_timing` and `enable_statistics` on this object; compiler
+entry points accept these controls only through `options`. An explicit seed
+overrides compiler randomness, including custom pass seeds; `None` preserves
+existing pass settings. Execution sampling has a separate seed. For the CLI, use
+`--seed 7 --mapping-trials 4 --qdmi-device ID`.
 
 Trials must be positive; omission uses the logical CPU count. All-to-all
 placement ignores trials. Fixed seed and trials give repeatable mapping for the

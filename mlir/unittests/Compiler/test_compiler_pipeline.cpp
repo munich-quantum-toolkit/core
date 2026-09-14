@@ -2066,7 +2066,8 @@ cx q[0], q[2];
 
   EXPECT_TRUE(qco.fuseSingleQubitUnitaryRuns("zyz"));
   EXPECT_NE(qco.str(), beforeFusion);
-  EXPECT_TRUE(qco.runPassPipeline("mqt-qco-default", true, true));
+  EXPECT_TRUE(qco.runPassPipeline(
+      "mqt-qco-default", {.enableTiming = true, .enableStatistics = true}));
 
   auto loopModule = ::mqt::test::buildMLIRProgram(
       context.get(), MQT_NAMED_BUILDER(qco::simpleForLoop));
@@ -4380,9 +4381,9 @@ h q;
 
   auto profiledInput = QCProgram::fromOpenQASMString(qasm);
   ASSERT_TRUE(profiledInput);
-  auto profiled = runDefaultPipeline(CompilerInput{std::move(*profiledInput)},
-                                     ProgramFormat::QCOOptimized,
-                                     "mqt-qco-default", true, true);
+  auto profiled = runDefaultPipeline(
+      CompilerInput{std::move(*profiledInput)}, ProgramFormat::QCOOptimized,
+      "mqt-qco-default", {.enableTiming = true, .enableStatistics = true});
   ASSERT_TRUE(profiled);
   EXPECT_TRUE(std::holds_alternative<QCOProgram>(*profiled));
 

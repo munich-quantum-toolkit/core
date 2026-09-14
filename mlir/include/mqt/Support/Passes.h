@@ -58,11 +58,6 @@ void populateDecomposeMultiControlledPipeline(mlir::OpPassManager& pm,
 runPassPipeline(mlir::ModuleOp moduleOp, mlir::StringRef pipeline,
                 const mlir::CompilationOptions& options = {});
 
-/// Compatibility overload for timing and statistics flags.
-[[nodiscard]] mlir::LogicalResult
-runPassPipeline(mlir::ModuleOp moduleOp, mlir::StringRef pipeline,
-                bool enableTiming, bool enableStatistics = false);
-
 /// Populate a QC-oriented cleanup pipeline on the given pass manager.
 ///
 /// Adds generic cleanup, QC qubit-register shrinking, and dead-value removal.

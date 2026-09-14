@@ -317,32 +317,15 @@ programFromInput(const nb::object& program, const bool inplace) {
                            " is not supported.");
 }
 
-/// Preserve legacy flags; an options object owns all settings when supplied.
-static mlir::CompilationOptions
-compilationOptions(const std::optional<mlir::CompilationOptions>& options,
-                   bool enableTiming, bool enableStatistics) {
-  if (options && (enableTiming || enableStatistics)) {
-    throw nb::value_error(
-        "Use options or the timing/statistics flags, not both");
-  }
-  return options.value_or(mlir::CompilationOptions{
-      .enableTiming = enableTiming,
-      .enableStatistics = enableStatistics,
-  });
-}
-
 /// Run the coordinated default pipeline and return a typed program.
-[[nodiscard]] static mlir::CompilerProgram compileProgram(
-    const nb::object& program, const mlir::ProgramFormat output,
-    const bool inplace, const std::string& qcoPipeline, bool enableTiming,
-    bool enableStatistics,
-    const std::optional<mlir::CompilationOptions>& options = std::nullopt) {
-  const auto resolvedOptions =
-      compilationOptions(options, enableTiming, enableStatistics);
+[[nodiscard]] static mlir::CompilerProgram
+compileProgram(const nb::object& program, const mlir::ProgramFormat output,
+               const bool inplace, const std::string& qcoPipeline,
+               mlir::CompilationOptions options = {}) {
   auto input = programFromInput(program, inplace);
   const nb::gil_scoped_release release;
-  return takeResult(mlir::runDefaultPipeline(std::move(input), output,
-                                             qcoPipeline, resolvedOptions));
+  return takeResult(
+      mlir::runDefaultPipeline(std::move(input), output, qcoPipeline, options));
 }
 
 /// Resolve an open device or registered ID.
@@ -374,14 +357,11 @@ qdmiFormat(mlir::ProgramFormat output) {
 }
 
 /// Select the payload before consuming a typed input or running target passes.
-[[nodiscard]] static nb::object compileProgramForTarget(
-    const nb::object& program, const nb::object& target,
-    std::optional<QDMI_Program_Format> programFormat,
-    std::optional<mlir::ProgramFormat> output, bool inplace, bool enableTiming,
-    bool enableStatistics,
-    const std::optional<mlir::CompilationOptions>& options) {
-  const auto resolvedOptions =
-      compilationOptions(options, enableTiming, enableStatistics);
+[[nodiscard]] static nb::object
+compileProgramForTarget(const nb::object& program, const nb::object& target,
+                        std::optional<QDMI_Program_Format> programFormat,
+                        std::optional<mlir::ProgramFormat> output, bool inplace,
+                        mlir::CompilationOptions options) {
   if (output && programFormat) {
     throw nb::value_error("Specify either output or program_format, not both");
   }
@@ -398,15 +378,15 @@ qdmiFormat(mlir::ProgramFormat output) {
     if (output) {
       auto compiled = [&] {
         const nb::gil_scoped_release release;
-        return takeResult(mlir::runDefaultPipeline(
-            std::move(input), environment, resolvedOptions));
+        return takeResult(
+            mlir::runDefaultPipeline(std::move(input), environment, options));
       }();
       return nb::cast(std::move(compiled));
     }
     auto compiled = [&] {
       const nb::gil_scoped_release release;
-      return takeResult(mlir::CompiledProgram::compile(
-          std::move(input), environment, resolvedOptions));
+      return takeResult(mlir::CompiledProgram::compile(std::move(input),
+                                                       environment, options));
     }();
     return nb::cast(std::move(compiled));
   }
@@ -422,8 +402,8 @@ qdmiFormat(mlir::ProgramFormat output) {
   auto input = programFromInput(program, inplace);
   auto compiled = [&] {
     const nb::gil_scoped_release release;
-    return takeResult(mlir::CompiledProgram::compile(
-        std::move(input), environment, resolvedOptions));
+    return takeResult(
+        mlir::CompiledProgram::compile(std::move(input), environment, options));
   }();
   return nb::cast(std::move(compiled));
 }
@@ -433,19 +413,18 @@ qdmiFormat(mlir::ProgramFormat output) {
 submitProgram(const nb::object& program, const nb::object& target,
               int64_t numShots,
               std::optional<QDMI_Program_Format> programFormat,
-              bool enableTiming, bool enableStatistics,
               const std::optional<qdmi::CustomJobParameter>& custom1,
               const std::optional<qdmi::CustomJobParameter>& custom2,
               const std::optional<qdmi::CustomJobParameter>& custom3,
               const std::optional<qdmi::CustomJobParameter>& custom4,
               const std::optional<qdmi::CustomJobParameter>& custom5,
-              const std::optional<mlir::CompilationOptions>& options) {
+              std::optional<mlir::CompilationOptions> options) {
   if (numShots < 0) {
     throw nb::value_error("num_shots must be nonnegative");
   }
   const auto device = resolveDevice(target);
   if (nb::isinstance<mlir::CompiledProgram>(program)) {
-    if (options || enableTiming || enableStatistics) {
+    if (options) {
       throw nb::value_error(
           "Compilation options do not apply to an already compiled program");
     }
@@ -462,8 +441,7 @@ submitProgram(const nb::object& program, const nb::object& target,
   const nb::gil_scoped_release release;
   return takeResult(mlir::submitProgram(
       device, std::move(input), numShots, programFormat, custom1, custom2,
-      custom3, custom4, custom5,
-      compilationOptions(options, enableTiming, enableStatistics)));
+      custom3, custom4, custom5, options.value_or(mlir::CompilationOptions{})));
 }
 
 template <class Function>
@@ -474,7 +452,7 @@ template <class Function>
         nb::cast<const mlir::QCOProgram&>(program));
   }
   auto compiled = compileProgram(program, mlir::ProgramFormat::QCO, false,
-                                 "mqt-qco-default", false, false);
+                                 "mqt-qco-default");
   return std::forward<Function>(function)(std::get<mlir::QCOProgram>(compiled));
 }
 
@@ -1387,15 +1365,11 @@ operations.)pb");
       .def(
           "run_pass_pipeline",
           [](mlir::QCOProgram& program, const std::string& pipeline,
-             bool enableTiming, bool enableStatistics,
-             const std::optional<mlir::CompilationOptions>& options) {
+             mlir::CompilationOptions options) {
             requireValid(program);
-            requireSuccess(program.runPassPipeline(
-                pipeline,
-                compilationOptions(options, enableTiming, enableStatistics)));
+            requireSuccess(program.runPassPipeline(pipeline, options));
           },
-          "pipeline"_a, nb::kw_only(), "enable_timing"_a = false,
-          "enable_statistics"_a = false, "options"_a = nb::none(),
+          "pipeline"_a, nb::kw_only(), "options"_a = mlir::CompilationOptions{},
           "Run a textual MLIR pass pipeline in place.")
       .def("merge_single_qubit_rotation_gates",
            &BooleanMemberAdapter<
@@ -1432,39 +1406,35 @@ operations.)pb");
       .def(
           "compile_for_target",
           [](mlir::QCOProgram& program,
-             const mlir::TargetEnvironment& environment, bool enableTiming,
-             bool enableStatistics,
-             const std::optional<mlir::CompilationOptions>& options) {
+             const mlir::TargetEnvironment& environment,
+             mlir::CompilationOptions options) {
             requireValid(program);
             withDiagnostics<nb::exception_type::runtime_error>(
                 program.module().getContext(), "Target compilation failed",
                 [&] {
-                  return mlir::success(program.compileForTarget(
-                      environment, compilationOptions(options, enableTiming,
-                                                      enableStatistics)));
+                  return mlir::success(
+                      program.compileForTarget(environment, options));
                 });
           },
-          "target_environment"_a, nb::kw_only(), "enable_timing"_a = false,
-          "enable_statistics"_a = false, "options"_a = nb::none(),
+          "target_environment"_a, nb::kw_only(),
+          "options"_a = mlir::CompilationOptions{},
           "Compile this QCO program for the target in place. Do not rely on "
           "its contents if compilation fails. Failures raise RuntimeError "
           "with the emitted MLIR diagnostics.")
       .def(
           "synthesize_for_target",
           [](mlir::QCOProgram& program,
-             const mlir::TargetEnvironment& environment, bool enableTiming,
-             bool enableStatistics,
-             const std::optional<mlir::CompilationOptions>& options) {
+             const mlir::TargetEnvironment& environment,
+             mlir::CompilationOptions options) {
             requireValid(program);
             withDiagnostics<nb::exception_type::runtime_error>(
                 program.module().getContext(), "Target synthesis failed", [&] {
-                  return mlir::success(program.synthesizeForTarget(
-                      environment, compilationOptions(options, enableTiming,
-                                                      enableStatistics)));
+                  return mlir::success(
+                      program.synthesizeForTarget(environment, options));
                 });
           },
-          "target_environment"_a, nb::kw_only(), "enable_timing"_a = false,
-          "enable_statistics"_a = false, "options"_a = nb::none(),
+          "target_environment"_a, nb::kw_only(),
+          "options"_a = mlir::CompilationOptions{},
           "Synthesize native operations for an all-to-all target in place. "
           "Assigns static sites and resynthesizes constant two-qubit runs in "
           "the native basis, without routing. "
@@ -1705,8 +1675,8 @@ contracts.)pb");
 
   m.def("compile_program", &compileProgram, "program"_a, nb::kw_only(),
         "output"_a = mlir::ProgramFormat::QC, "inplace"_a = false,
-        "qco_pipeline"_a = "mqt-qco-default", "enable_timing"_a = false,
-        "enable_statistics"_a = false, "options"_a = nb::none(),
+        "qco_pipeline"_a = "mqt-qco-default",
+        "options"_a = mlir::CompilationOptions{},
         R"pb(
 Run the coordinated default MQT compiler pipeline.
 
@@ -1723,8 +1693,6 @@ Args:
     qco_pipeline: The QCO optimization pipeline to run. A custom pipeline
         cannot be combined with target compilation.
     options: Shared compilation controls.
-    enable_timing: Legacy timing flag; use options for new calls.
-    enable_statistics: Legacy statistics flag; use options for new calls.
 
 Returns:
     A typed compiler program for the requested output format.
@@ -1760,8 +1728,7 @@ Returns:
 
   m.def("compile_program", &compileProgramForTarget, "program"_a, nb::kw_only(),
         "target"_a, "program_format"_a = nb::none(), "output"_a = nb::none(),
-        "inplace"_a = false, "enable_timing"_a = false,
-        "enable_statistics"_a = false, "options"_a = nb::none(),
+        "inplace"_a = false, "options"_a = mlir::CompilationOptions{},
         R"pb(Compile for a device ID, open device, or explicit compiler target.
 
 Device targets select Adaptive QIR (binary, text), OpenQASM 3, then Base QIR
@@ -1774,7 +1741,6 @@ Typed inputs are copied unless ``inplace=True``.)pb");
 
   m.def("submit_program", &submitProgram, "program"_a, nb::kw_only(),
         "target"_a, "num_shots"_a = 1024, "program_format"_a = nb::none(),
-        "enable_timing"_a = false, "enable_statistics"_a = false,
         "custom1"_a = nb::none(), "custom2"_a = nb::none(),
         "custom3"_a = nb::none(), "custom4"_a = nb::none(),
         "custom5"_a = nb::none(), "options"_a = nb::none(),

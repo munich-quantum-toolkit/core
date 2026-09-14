@@ -22,7 +22,6 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <utility>
 #include <vector>
 
 namespace qdmi {
@@ -82,15 +81,6 @@ public:
   compile(CompilerInput&& program, const TargetEnvironment& environment,
           const CompilationOptions& options = {});
 
-  /// Compatibility overload for timing and statistics flags.
-  [[nodiscard]] static llvm::Expected<CompiledProgram>
-  compile(CompilerInput&& program, const TargetEnvironment& environment,
-          bool enableTiming, bool enableStatistics = false) {
-    return compile(
-        std::move(program), environment,
-        {.enableTiming = enableTiming, .enableStatistics = enableStatistics});
-  }
-
   [[nodiscard]] const TargetEnvironment& environment() const noexcept {
     return environment_;
   }
@@ -135,26 +125,5 @@ compileProgram(CompilerInput&& program, const qdmi::Device& device,
     const std::optional<qdmi::CustomJobParameter>& custom4 = std::nullopt,
     const std::optional<qdmi::CustomJobParameter>& custom5 = std::nullopt,
     const CompilationOptions& options = {});
-
-/// Compatibility overload for timing and statistics flags.
-[[nodiscard]] inline llvm::Expected<CompiledProgram>
-compileProgram(CompilerInput&& program, const qdmi::Device& device,
-               std::optional<QDMI_Program_Format> format, bool enableTiming,
-               bool enableStatistics = false) {
-  return compileProgram(
-      std::move(program), device, format,
-      {.enableTiming = enableTiming, .enableStatistics = enableStatistics});
-}
-
-/// Compatibility overload for timing and statistics flags.
-[[nodiscard]] llvm::Expected<qdmi::Job> submitProgram(
-    const qdmi::Device& device, CompilerInput&& program, int64_t numShots,
-    std::optional<QDMI_Program_Format> format, bool enableTiming,
-    bool enableStatistics = false,
-    const std::optional<qdmi::CustomJobParameter>& custom1 = std::nullopt,
-    const std::optional<qdmi::CustomJobParameter>& custom2 = std::nullopt,
-    const std::optional<qdmi::CustomJobParameter>& custom3 = std::nullopt,
-    const std::optional<qdmi::CustomJobParameter>& custom4 = std::nullopt,
-    const std::optional<qdmi::CustomJobParameter>& custom5 = std::nullopt);
 
 } // namespace mlir

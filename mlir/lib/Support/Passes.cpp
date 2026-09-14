@@ -129,13 +129,6 @@ LogicalResult runPassPipeline(ModuleOp mod, const StringRef pipeline,
   return runWithCompilationOptions(pm, mod, options);
 }
 
-LogicalResult runPassPipeline(ModuleOp moduleOp, StringRef pipeline,
-                              bool enableTiming, bool enableStatistics) {
-  return runPassPipeline(
-      moduleOp, pipeline,
-      {.enableTiming = enableTiming, .enableStatistics = enableStatistics});
-}
-
 LogicalResult runWithCompilationOptions(PassManager& pm, ModuleOp moduleOp,
                                         const CompilationOptions& options) {
   if (options.enableTiming) {

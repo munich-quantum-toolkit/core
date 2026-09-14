@@ -970,19 +970,4 @@ submitProgram(const qdmi::Device& device, CompilerInput&& input,
                        custom4, custom5);
 }
 
-llvm::Expected<qdmi::Job>
-submitProgram(const qdmi::Device& device, CompilerInput&& program,
-              int64_t numShots, std::optional<QDMI_Program_Format> format,
-              bool enableTiming, bool enableStatistics,
-              const std::optional<qdmi::CustomJobParameter>& custom1,
-              const std::optional<qdmi::CustomJobParameter>& custom2,
-              const std::optional<qdmi::CustomJobParameter>& custom3,
-              const std::optional<qdmi::CustomJobParameter>& custom4,
-              const std::optional<qdmi::CustomJobParameter>& custom5) {
-  return submitProgram(
-      device, std::move(program), numShots, format, custom1, custom2, custom3,
-      custom4, custom5,
-      {.enableTiming = enableTiming, .enableStatistics = enableStatistics});
-}
-
 } // namespace mlir
