@@ -69,6 +69,7 @@ def main() -> None:
         definitions["CMAKE_LINKER_TYPE"] = "LLD"
     instrumented = definitions | {
         "BUILD_MQT_CORE_TESTS": "ON",
+        "CMAKE_BUILD_WITH_INSTALL_RPATH": "OFF",
         **{
             f"CMAKE_{language}_FLAGS": f"-flto={lto} -fprofile-generate -fprofile-update=atomic"
             for language in ["C", "CXX"]
@@ -144,7 +145,7 @@ def main() -> None:
         for archive in (root / "llvm/lib").glob("*.a"):
             shutil.copyfile(archive, sdk / "lib" / archive.name)
         if phase == "generate":
-            wheel = build_wheel("mlir/unittests/all")
+            wheel = build_wheel("mlir/unittests/all", "mqt-cc")
             training = os.environ | {"LLVM_PROFILE_FILE": str(raw / "%m-%p.profraw")}
             subprocess.run(
                 ["ctest", "--test-dir", str(build / "mlir/unittests"), "--output-on-failure"], env=training, check=True
