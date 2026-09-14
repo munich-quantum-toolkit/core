@@ -1066,33 +1066,51 @@ struct MergeSingleQubitRotationGatesPattern final
     return success();
   }
 
-  /// Reuse the Euler angles of RZ-RX-RZ and RZ-RY-RZ chains, with either
-  /// outer RZ optional. Do not add independent, unbounded dynamic angles.
+  /// Reuse Euler angles when the chain and output share their outer axis.
+  /// Either outer rotation may be absent. Do not add independent, unbounded
+  /// dynamic angles.
   static LogicalResult
   tryMergeDirectChain(MutableArrayRef<UnitaryOpInterface> chain,
                       RewriterBase& rewriter,
                       decomposition::SingleQubitBasis basis) {
-    if (basis == decomposition::SingleQubitBasis::XZX ||
-        basis == decomposition::SingleQubitBasis::XYX ||
-        basis == decomposition::SingleQubitBasis::R) {
-      return failure();
-    }
+    const bool outerX = basis == decomposition::SingleQubitBasis::XZX ||
+                        basis == decomposition::SingleQubitBasis::XYX ||
+                        basis == decomposition::SingleQubitBasis::R;
+    const auto isOuter = [outerX](UnitaryOpInterface op) {
+      return outerX ? isa<RXOp>(op.getOperation())
+                    : isa<RZOp>(op.getOperation());
+    };
 
-    const size_t middle = isa<RZOp>(chain.front().getOperation()) ? 1 : 0;
+    const size_t middle = chain.size() > 1 && isOuter(chain.front()) ? 1 : 0;
     if (chain.size() <= middle || chain.size() > middle + 2 ||
-        !isa<RXOp, RYOp>(chain[middle].getOperation()) ||
-        (chain.size() == middle + 2 &&
-         !isa<RZOp>(chain.back().getOperation()))) {
+        !isa<RXOp, RYOp, RZOp>(chain[middle].getOperation()) ||
+        (chain.size() > 1 && isOuter(chain[middle])) ||
+        (chain.size() == middle + 2 && !isOuter(chain.back()))) {
       return failure();
     }
 
     // Check the complete run before creating or replacing any operations.
     const Location loc = chain.front()->getLoc();
     const auto consts = makeConsts<Value>(rewriter, loc);
-    auto angles = directZYZAnglesFromGate(chain[middle], rewriter, consts);
     const auto angle = [&](UnitaryOpInterface op) {
       return Val<Value>{op.getParameter(0), &rewriter, loc};
     };
+    RuntimeEulerAngles angles{.theta = angle(chain[middle]),
+                              .phi = consts.zero,
+                              .lambda = consts.zero,
+                              .phase = consts.zero};
+    if (!outerX) {
+      angles = directZYZAnglesFromGate(chain[middle], rewriter, consts);
+    } else if (isOuter(chain[middle])) {
+      angles.lambda = angles.theta;
+      angles.theta = consts.zero;
+    } else if (const bool middleZ = isa<RZOp>(chain[middle].getOperation());
+               middleZ != (basis == decomposition::SingleQubitBasis::XZX)) {
+      // RX conjugation exchanges Y and Z, with opposite quarter-turns.
+      const auto halfPi = consts.pi / consts.two;
+      angles.phi = middleZ ? halfPi : -halfPi;
+      angles.lambda = -angles.phi;
+    }
     if (middle == 1) {
       angles.lambda = sumAngles(angles.lambda, angle(chain.front()));
     }

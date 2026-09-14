@@ -88,6 +88,12 @@ def FuseSingleQubitUnitaryRuns
     The pass also composes supported named gates with dynamic `f64` parameters
     and emits conservative runtime sequences in the requested basis. Dynamic
     `pow` and arbitrary dynamic unitaries remain unchanged.
+
+    Symbolic ZXZ/ZYZ chains reuse their angles directly in the `u`, `zyz`,
+    `zxz`, and `zsxx` bases; XZX/XYX chains do so in `xzx`, `xyx`, and `r`.
+    Either outer rotation may be absent. These conversions need no inverse
+    trigonometry or conditional expressions. Other dynamic chains use runtime
+    Euler-angle extraction.
   }];
   let options = [Option<
       "basis", "basis", "std::string", "\"zyz\"",
