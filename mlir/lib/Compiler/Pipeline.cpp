@@ -70,7 +70,7 @@ namespace mlir {
 [[nodiscard]] static LogicalResult runQCOTransformPasses(
     ModuleOp mod, llvm::function_ref<void(OpPassManager&)> populatePasses,
     StringRef failureMessage, const CompilationOptions& options = {},
-          bool preservesLayout = false) {
+    bool preservesLayout = false) {
   if (failed(qco::verifyLinearity(mod))) {
     return failure();
   }
@@ -229,18 +229,18 @@ bool QCOProgram::compileForTarget(const TargetEnvironment& environment,
       "failed to compile the QCO program for the target", options));
 }
 
-std::optional<MappingResult> QCOProgram::compileForTargetWithLayout(
-    const TargetEnvironment& environment, llvm::ArrayRef<int64_t> initialLayout,
-    const MappingOptions& mapping, bool enableTiming, bool enableStatistics) {
+std::optional<MappingResult>
+QCOProgram::compileForTargetWithLayout(const TargetEnvironment& environment,
+                                       llvm::ArrayRef<int64_t> initialLayout,
+                                       const CompilationOptions& options) {
   MappingResult result;
   if (failed(runQCOTransformPasses(
           mod(),
           [&](OpPassManager& pm) {
             populateTargetCompilationWithLayoutPipeline(pm, environment, result,
-                                                        initialLayout, mapping);
+                                                        initialLayout, options.mapping);
           },
-          "failed to compile the QCO program with layout tracking",
-          enableTiming, enableStatistics))) {
+          "failed to compile the QCO program with layout tracking", options))) {
     return std::nullopt;
   }
   return result;
@@ -259,7 +259,7 @@ bool QCOProgram::synthesizeForTarget(const TargetEnvironment& environment,
 std::optional<QCProgram> QCOProgram::intoQC() && {
   if (failed(runQCOTransformPasses(
           mod(), [](OpPassManager& pm) { pm.addPass(createQCOToQC()); },
-          "failed to convert QCO to QC", false, false, true))) {
+          "failed to convert QCO to QC", {}, true))) {
     return std::nullopt;
   }
   return QCProgram(std::move(*this).releaseStorage());

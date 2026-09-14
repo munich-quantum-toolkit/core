@@ -1,7 +1,6 @@
 # Native layouts and SDK layout interchange
 
-Status: implementation and validation complete. Draft PR #2553 is the
-publication record for this extension.
+Status: complete. Draft PR #2553 is the publication record.
 
 ## Scope and ownership
 
@@ -15,6 +14,11 @@ Support initial and final layouts, partial assignments, physical gaps, ancillary
 inputs, and physical/output orders that differ from logical register order.
 Reject references to missing resources and inconsistent metadata. Keep the
 existing supported circuit-operation and register-membership boundary.
+
+The layout APIs accept the shared `CompilationOptions` from target compilation,
+including seed, timing, statistics, mapping trials, refinement iterations, and
+routing lookahead. `initialLayout` remains
+an explicit input assignment; `MappingResult` remains a detached output.
 
 ## Lifetime and output rules
 
@@ -31,32 +35,22 @@ or a persistent identity for SSA values. A transformation that preserves a
 layout must preserve its resource correspondence; arbitrary external IR edits
 must update or invalidate this discardable metadata.
 
-## Completion
-
-- [x] Shared metadata representation, validation, and explicit discard API.
-- [x] Supported SDK import/export forms with no compiler dependency on Qiskit.
-- [x] Transformation invalidation and unsupported-format checks.
-- [x] Native and SDK regression tests, docs, changelog, and stubs.
-- [x] Final full-file C++ lint.
-
 ## Validation
 
-Existing native target/mapping and Python layout regressions cover placement,
-routing, tensor order, idle slots, and failure publication. Add issue #2070's
-round-trip, transformation, partial-layout, ancilla, and output-format cases.
-Run the supported Qiskit adapter at its minimum and installed patch versions.
+The compiler and Qiskit translation suites pass 525 tests with Qiskit 2.5.2. All
+18 layout round-trip cases pass with Qiskit 2.5.0, the adapter minimum. Native
+validation passes 237 compiler tests and 35 metadata tests, including shared
+compilation options, routing, failure publication, and schema checks. All four
+CLI CTests pass, including saved-pipeline replay and explicit discard. The
+compiler suite also includes the two shared-options CLI regressions. Both
+published Python examples execute. Stub generation, repository lint, and full
+changed-file C++ lint against `origin/main` pass.
 
 The implemented metadata uses a validated `mqt.layout` dictionary and a mutually
 exclusive `mqt.layout_invalidated` unit marker. The Qiskit 2.5 adapter supports
-`TranspileLayout`, including its implicit output order; bare `Layout` values are
-explicitly rejected. No opaque Python state enters the compiler.
+`TranspileLayout`, including implicit output order; bare `Layout` values are
+rejected. No opaque Python state enters the compiler.
 
-Validation: 516 Python compiler/translation tests passed with the native
-SC-provider registry, 18 layout tests passed on Qiskit 2.5.0, 234 compiler tests
-and 34 metadata tests passed under coverage instrumentation, and CLI
-layout/discard checks passed. Generated stubs are current. Final checks also
-cover direct native serializer rejection and isolated CLI pipelines.
-
-Final native patch coverage is 419/438 executable production lines (95.7%),
-including all 130 executable lines of `QubitLayout.cpp`. No threshold or
-exclusion changes were needed. Both published usage examples execute.
+Earlier native patch coverage at `3178e825c` was 419/438 production lines
+(95.7%), including all 130 lines of `QubitLayout.cpp`. The shared-options update
+adds regression coverage without changing coverage thresholds or exclusions.

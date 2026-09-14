@@ -11,6 +11,7 @@
 #pragma once
 
 #include "mqt/Compiler/CompilationOptions.h"
+#include "mqt/Compiler/TargetCompilation.h"
 
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
@@ -285,9 +286,7 @@ public:
   [[nodiscard]] std::optional<MappingResult>
   compileForTargetWithLayout(const TargetEnvironment& environment,
                              llvm::ArrayRef<int64_t> initialLayout = {},
-                             const MappingOptions& mapping = {},
-                             bool enableTiming = false,
-                             bool enableStatistics = false);
+                             const CompilationOptions& options = {});
 
   /// Synthesize native operations for an all-to-all target in place.
   ///
