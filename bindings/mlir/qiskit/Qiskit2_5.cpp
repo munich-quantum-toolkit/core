@@ -156,6 +156,11 @@ pythonUnsignedValue(const nb::handle object, const uint32_t width,
   }
 }
 
+[[nodiscard]] static nb::object pythonUuid(const llvm::APInt& identity) {
+  return nb::module_::import_("uuid").attr("UUID")(
+      nb::arg("int") = pythonInteger(identity, "invalid parameter identity"));
+}
+
 [[noreturn]] static void throwPythonError(const std::string_view message) {
   const nb::python_error error;
   throw std::runtime_error(std::string(message) + ": " + error.what());
@@ -236,10 +241,16 @@ normalizePythonParameterLeaf(const nb::handle parameter) {
     throw std::runtime_error(
         "Qiskit parameter names cannot contain null characters");
   }
+  const auto uuid =
+      pythonAttribute(parameter, "uuid", "Qiskit parameter has no identity");
+  auto identity = pythonUnsignedValue(
+      pythonAttribute(uuid, "int", "Qiskit parameter identity is not a UUID"),
+      128U, "Qiskit parameter identity does not fit in 128 bits");
   const auto vectorElement =
       nb::module_::import_("qiskit.circuit").attr("ParameterVectorElement");
   if (!nb::isinstance(parameter, vectorElement)) {
-    return Parameter::symbol(std::move(name));
+    return Parameter::symbol(std::move(name), std::nullopt,
+                             llvm::toString(identity, 16, false));
   }
 
   const auto vector = pythonAttribute(
@@ -271,7 +282,8 @@ normalizePythonParameterLeaf(const nb::handle parameter) {
                                .name = std::move(groupName),
                                .index = groupIndex,
                                .size = groupSize,
-                           });
+                           },
+                           llvm::toString(identity, 16, false));
 }
 
 namespace {
@@ -750,9 +762,15 @@ public:
                                    const std::string_view name,
                                    nb::handle parameters) {
     const nb::tuple parameterTuple(parameters);
-    const auto parameterHash = PyObject_Hash(parameterTuple.ptr());
+    auto parameterHash = PyObject_Hash(parameterTuple.ptr());
     if (parameterHash == -1) {
-      throwPythonError("Qiskit Gate parameters are not hashable");
+      if (PyErr_ExceptionMatches(PyExc_TypeError) == 0) {
+        throwPythonError("Qiskit Gate parameter hashing failed");
+      }
+      // Array-valued parameters specialize the definition, not its scalar
+      // call signature. Compare those definitions in one fallback bucket.
+      PyErr_Clear();
+      parameterHash = 0;
     }
     // ponytail: use a structural circuit hash if many same-signature Gate
     // definitions become common.
@@ -919,28 +937,41 @@ public:
           .standardGate = {},
       };
     }
-    std::optional<Instruction> normalizedUnknown;
     if (kind == OperationKind::Unknown) {
+      // The C API's scalar parameter accessor aborts on Python objects such as
+      // PermutationGate's array. Read custom operations through Python and let
+      // their definitions supply the scalar call signature.
+      Instruction result;
+      normalizePythonGate(operation, result);
+      result.qubits = pythonInstructionBits(index, "qubits");
+      result.clbits = pythonInstructionBits(index, "clbits");
       if (isPythonUnitaryGate(operation)) {
-        Instruction result{
-            .kind = OperationKind::Unitary,
-            .name = "unitary",
-            .qubits = {},
-            .clbits = {},
-            .parameters = {},
-            .modifiers = {},
-            .standardGate = {},
-        };
-        normalizePythonGate(operation, result);
+        result.kind = OperationKind::Unitary;
         result.name = "unitary";
-        result.qubits = pythonInstructionQubits(index);
-        return result;
+      } else if (isPythonGate(operation)) {
+        result.kind = OperationKind::Gate;
+        const auto terminal = terminalPythonGate(operation);
+        if (nb::isinstance(terminal,
+                           nb::module_::import_("qiskit.circuit.library")
+                               .attr("PermutationGate"))) {
+          result.permutation.emplace();
+          for (const nb::handle entry : nb::iter(terminal.attr("pattern"))) {
+            uint32_t position = 0;
+            if (!nb::try_cast(entry, position)) {
+              throw std::runtime_error(
+                  "Qiskit permutation has an invalid index");
+            }
+            result.permutation->push_back(position);
+          }
+        } else if (isPythonStandardGate(operation)) {
+          result.standardGate = standardGateMapping(result.name);
+          for (const nb::handle parameter :
+               nb::iter(operation.attr("params"))) {
+            result.parameters.push_back(normalizePythonParameter(parameter));
+          }
+        }
       }
-      normalizedUnknown.emplace();
-      normalizePythonGate(operation, *normalizedUnknown);
-      if (isPythonGate(operation)) {
-        normalizedUnknown->kind = OperationKind::Gate;
-      }
+      return result;
     }
     QkCircuitInstruction native{};
     qk_circuit_get_instruction(circuit_, index, &native);
@@ -961,8 +992,7 @@ public:
       std::copy_n(native.clbits, native.num_clbits, result.clbits.begin());
     }
     result.parameters.reserve(native.num_params);
-    if (result.kind == OperationKind::Gate ||
-        result.kind == OperationKind::Unknown) {
+    if (result.kind == OperationKind::Gate) {
       const auto parameters =
           pythonAttribute(operation, "params",
                           "Qiskit operation does not expose its parameters");
@@ -981,14 +1011,7 @@ public:
       throw std::runtime_error(
           "Qiskit non-gate instruction has unexpected scalar parameters");
     }
-    if (kind == OperationKind::Unknown) {
-      result.name = std::move(normalizedUnknown->name);
-      result.modifiers = std::move(normalizedUnknown->modifiers);
-      result.kind = normalizedUnknown->kind;
-    }
-    if (kind != OperationKind::Unknown || isPythonStandardGate(operation)) {
-      result.standardGate = standardGateMapping(result.name);
-    }
+    result.standardGate = standardGateMapping(result.name);
     return result;
   }
 
@@ -1104,27 +1127,27 @@ public:
 
 private:
   [[nodiscard]] std::vector<uint32_t>
-  pythonInstructionQubits(const size_t index) const {
+  pythonInstructionBits(size_t index, const char* operandKind) const {
     std::vector<uint32_t> result;
     try {
-      const auto qubits =
-          pythonAttribute(data_[index], "qubits",
-                          "Qiskit circuit instruction has no qubit operands");
-      result.reserve(nb::len(qubits));
+      const auto bits =
+          pythonAttribute(data_[index], operandKind,
+                          "Qiskit circuit instruction has no operands");
+      result.reserve(nb::len(bits));
       const auto findBit =
           pythonAttribute(pythonCircuit_, "find_bit",
-                          "Qiskit circuit cannot resolve instruction qubits");
-      for (const nb::handle qubit : nb::iter(qubits)) {
-        const auto location = findBit(qubit);
+                          "Qiskit circuit cannot resolve instruction bits");
+      for (const nb::handle bit : nb::iter(bits)) {
+        const auto location = findBit(bit);
         const auto position = pythonUnsignedAttribute(
-            location, "index", "Qiskit qubit has an invalid circuit index");
+            location, "index", "Qiskit bit has an invalid circuit index");
         if (position > std::numeric_limits<uint32_t>::max()) {
-          throw std::runtime_error("Qiskit qubit index cannot be represented");
+          throw std::runtime_error("Qiskit bit index cannot be represented");
         }
         result.push_back(static_cast<uint32_t>(position));
       }
     } catch (const nb::python_error& error) {
-      throwPythonError("Qiskit failed to resolve unitary qubits", error);
+      throwPythonError("Qiskit failed to resolve instruction bits", error);
     }
     return result;
   }
@@ -2358,21 +2381,46 @@ private:
       auto pythonSymbol = symbols.find(symbol->name);
       if (pythonSymbol == symbols.end()) {
         nb::object value;
+        nb::object uuid = nb::none();
+        if (symbol->identity) {
+          uuid = pythonUuid(llvm::APInt(128, *symbol->identity, 16));
+        }
         if (symbol->group) {
           const auto& metadata = *symbol->group;
           const auto [group, inserted] =
               parameters_->groups.try_emplace(metadata.identity);
           if (inserted) {
+            nb::object groupUuid = nb::none();
+            if (symbol->identity) {
+              auto root = llvm::APInt(128, *symbol->identity, 16);
+              root -= metadata.index;
+              groupUuid = pythonUuid(root);
+            } else {
+              try {
+                groupUuid = nb::module_::import_("uuid").attr("UUID")(
+                    metadata.identity);
+              } catch (const nb::python_error& error) {
+                // Other frontends can use non-UUID group identities.
+                if (!error.matches(nb::handle(PyExc_ValueError))) {
+                  throw;
+                }
+              }
+            }
             group->second =
                 nb::module_::import_("qiskit.circuit")
-                    .attr("ParameterVector")(metadata.name, metadata.size);
+                    .attr("ParameterVector")(metadata.name, metadata.size,
+                                             nb::arg("uuid") = groupUuid);
           }
           value = nb::module_::import_("qiskit.circuit")
                       .attr("ParameterVectorElement")(group->second,
                                                       metadata.index);
+          if (!uuid.is_none() && !value.attr("uuid").equal(uuid)) {
+            throw std::runtime_error(
+                "inconsistent parameter-vector input identities");
+          }
         } else {
           value = nb::module_::import_("qiskit.circuit")
-                      .attr("Parameter")(symbol->name);
+                      .attr("Parameter")(symbol->name, nb::arg("uuid") = uuid);
         }
         pythonSymbol =
             symbols.try_emplace(symbol->name, std::move(value)).first;

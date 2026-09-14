@@ -708,6 +708,44 @@ TEST_F(MQTIRTest, RejectsDuplicateInputNames) {
   )mlir"));
 }
 
+TEST_F(MQTIRTest, AcceptsOpaqueInputIdentities) {
+  EXPECT_TRUE(parse(R"mlir(
+    module {
+      func.func @main(%first: f64 {mqt.input_name = "a", mqt.input_id = 0 : i128},
+                      %second: f64 {mqt.input_name = "b", mqt.input_id = -1 : i128}) {
+        return
+      }
+    }
+  )mlir"));
+}
+
+TEST_F(MQTIRTest, RejectsInvalidInputIdentities) {
+  for (const auto* source : {
+           R"mlir(module {
+         func.func @main(%arg: f64 {mqt.input_id = 1 : i128}) { return }
+       })mlir",
+           R"mlir(module {
+         func.func @main(%arg: f64 {mqt.input_name = "a", mqt.input_id = 1 : i64}) { return }
+       })mlir",
+           R"mlir(module {
+         func.func @main(%arg: f64 {mqt.input_name = "a", mqt.input_id = 1 : ui128}) { return }
+       })mlir",
+           R"mlir(module {
+         func.func @main(%arg: f64 {mqt.input_name = "a", mqt.input_id = "id"}) { return }
+       })mlir",
+           R"mlir(module {
+         func.func @main(%a: f64 {mqt.input_name = "a", mqt.input_id = 1 : i128},
+                         %b: f64 {mqt.input_name = "b", mqt.input_id = 1 : i128}) { return }
+       })mlir",
+           R"mlir(module {
+         func.func @main() attributes {mqt.input_id = 1 : i128} { return }
+       })mlir",
+       }) {
+    SCOPED_TRACE(source);
+    EXPECT_FALSE(parse(source));
+  }
+}
+
 TEST_F(MQTIRTest, RejectsInvalidInputGroups) {
   EXPECT_FALSE(parse(R"mlir(
     module {
