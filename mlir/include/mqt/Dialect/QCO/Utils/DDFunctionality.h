@@ -73,7 +73,7 @@ FailureOr<dd::MatrixDD> buildFunctionality(
 /// In addition to the operations supported by `buildFunctionality`, simulation
 /// supports measurements, resets, CBit registers, and runtime qubit and QTensor
 /// allocation. QCO and SCF structured control requires concrete values. A
-/// shared 10000-step limit bounds loops and calls. `qco.sink` and
+/// shared 100-million-step limit bounds loops and calls. `qco.sink` and
 /// `qtensor.dealloc` mark lifetimes but do not remove DD wires.
 ///
 /// The containing module must pass MLIR verification and

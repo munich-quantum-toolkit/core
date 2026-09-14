@@ -2058,7 +2058,8 @@ TEST_F(QCODDFunctionalityTest, HandlesScfForBounds) {
   for (const auto [lower, upper, step, succeeds] : {
            std::tuple<int64_t, int64_t, int64_t, bool>{3, 3, 1, true},
            {0, 10000, 1, true},
-           {0, 10001, 1, false},
+           {0, 10001, 1, true},
+           {0, 100000001, 1, false},
            {0, 3, 0, false},
            {0, 3, -1, false},
        }) {
@@ -2156,9 +2157,9 @@ TEST_F(QCODDFunctionalityTest, ScfForSharesExecutionBudget) {
   auto mod = buildModule([](QCOProgramBuilder& b) {
     auto q = b.staticQubit(0);
     auto outer = b.scfFor(
-        0, 100, 1, ValueRange{q},
+        0, 2, 1, ValueRange{q},
         [&](Value /*iv*/, ValueRange outerArgs) -> SmallVector<Value> {
-          return b.scfFor(0, 100, 1, outerArgs,
+          return b.scfFor(0, 100000000, 1, outerArgs,
                           [&](Value /*innerIv*/, ValueRange innerArgs)
                               -> SmallVector<Value> { return {innerArgs[0]}; });
         });
@@ -2179,26 +2180,26 @@ TEST_F(QCODDFunctionalityTest, ExecutionBudgetIncludesBranchesAndCalls) {
              func.func @main() {
                %true = arith.constant true
                %zero = arith.constant 0 : index
-               %limit = arith.constant 10000 : index
+               %limit = arith.constant 100000000 : index
                %one = arith.constant 1 : index
-               scf.for %i = %zero to %limit step %one {
-                 scf.if %true {
+               scf.if %true {
+                 scf.for %i = %zero to %limit step %one {
                  }
                }
                return
              }
            })mlir",
            R"mlir(module {
-             func.func @noop() {
+             func.func @loop() {
+               %zero = arith.constant 0 : index
+               %limit = arith.constant 100000000 : index
+               %one = arith.constant 1 : index
+               scf.for %i = %zero to %limit step %one {
+               }
                return
              }
              func.func @main() {
-               %zero = arith.constant 0 : index
-               %limit = arith.constant 10000 : index
-               %one = arith.constant 1 : index
-               scf.for %i = %zero to %limit step %one {
-                 func.call @noop() : () -> ()
-               }
+               func.call @loop() : () -> ()
                return
              }
            })mlir",

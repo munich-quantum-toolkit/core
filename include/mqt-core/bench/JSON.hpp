@@ -21,6 +21,7 @@
 #include "bench/QPE.hpp"
 #include "bench/RepeatUntilSuccess.hpp"
 #include "bench/Teleportation.hpp"
+#include "bench/WState.hpp"
 #include "bench/mqt_core_bench_export.h"
 
 #include <cstddef>
@@ -33,7 +34,7 @@ namespace mqt::bench {
 /// One validated benchmark instance from the JSON registry.
 using BenchmarkInstance =
     std::variant<BV, GHZ, Grover, ModularMultiplier, Multiplexer, QFT, QFTAdder,
-                 QPE, RepeatUntilSuccess, Teleportation>;
+                 QPE, RepeatUntilSuccess, Teleportation, WState>;
 
 /// A diagnostic returned by a fallible JSON operation.
 struct JSONError {

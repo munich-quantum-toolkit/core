@@ -37,4 +37,6 @@ MQT_BENCHMARK_FAMILY(RepeatUntilSuccess, repeatUntilSuccess,
                      "repeat-until-success", 1)
 MQT_BENCHMARK_FAMILY(Teleportation, teleportation, "teleportation", 1)
 
+MQT_BENCHMARK_FAMILY(WState, wState, "w-state", 1)
+
 #undef MQT_BENCHMARK_FAMILY

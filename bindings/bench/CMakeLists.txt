@@ -12,6 +12,7 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-bench-bindings)
       register_bv.cpp
       register_modular_multiplier.cpp
       register_ghz.cpp
+      register_w_state.cpp
       register_grover.cpp
       register_multiplexer.cpp
       register_qft.cpp

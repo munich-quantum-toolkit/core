@@ -264,6 +264,45 @@ Before evaluation, normalize backend results to the manifest's big-endian
 
 ## Benchmark families
 
+### W-state preparation
+
+The `w-state` family prepares the equal, positive-amplitude superposition of all
+single-excitation states:
+
+```{math}
+|W_n\rangle = \frac{1}{\sqrt n}\sum_{j=0}^{n-1}|2^j\rangle.
+```
+
+The required `qubits` parameter is positive. All qubits are measured in Z;
+result bit $i$ is qubit $i$.
+
+The ideal probability is $1/n$ for each single-excitation bitstring and zero
+otherwise. The existing counts evaluator compares observations with this
+analytic distribution:
+
+```{code-cell} ipython3
+from mqt.core import mlir
+from mqt.core.bench import w_state
+
+w = w_state.WState(w_state.Options(qubits=3))
+counts = mlir.sample(w.generate(), shots=4096, seed=17)
+assert set(counts) == {"001", "010", "100"}
+assert w.evaluate(counts).total_variation_distance < 0.03
+assert w.probability("010") == 1 / 3
+```
+
+DD sampling also supports larger instances without dense statevector extraction.
+Runtime and memory depend on the intermediate DDs.
+
+```{code-cell} ipython3
+large_w = w_state.WState(w_state.Options(qubits=256))
+large_program = large_w.generate()
+large_counts = mlir.sample(large_program, shots=64, seed=17)
+assert large_program.is_valid
+assert sum(large_counts.values()) == 64
+assert all(len(outcome) == 256 and outcome.count("1") == 1 for outcome in large_counts)
+```
+
 ### QFT addition
 
 The `qft-adder` family adds two equal-width operands. `REGISTER` stores the
