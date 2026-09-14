@@ -16,6 +16,7 @@ add_executable(
   test_qco_modifier_canonicalization.cpp
   test_qco_modifier_verification.cpp
   test_qco_numeric_canonicalization.cpp
+  test_qco_program_builder_control_flow.cpp
   test_qco_wire_canonicalization.cpp)
 target_link_libraries(
   ${qco_ir_target}

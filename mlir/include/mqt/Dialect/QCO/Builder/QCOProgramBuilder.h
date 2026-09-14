@@ -53,13 +53,13 @@ namespace qco {
 ///
 /// @par Structured control flow:
 /// Callbacks for `qcoIf`, `qcoIndexSwitch`, `scfFor`, and `scfWhile` must
-/// preserve input types and tensor register IDs by result position. Scalar
-/// qubit outputs may permute the input qubits but must preserve the set of
-/// extracted tensor slots. Results are assigned to input slots by position.
-/// Equal constant indices are supported; dynamic indices must use the same
-/// SSA value as the input. Unsupported changes terminate with a usage error.
-/// Reinsert qubits inside each callback and carry the full tensor when the set
-/// of extracted slots must change.
+/// preserve linear input types and tensor register IDs by linear result
+/// position. Scalar qubit outputs may permute the input qubits but must
+/// preserve the set of extracted tensor slots. Results are assigned to input
+/// slots by position. Equal constant indices are supported; dynamic indices
+/// must use the same SSA value as the input. Unsupported changes terminate with
+/// a usage error. Reinsert qubits inside each callback and carry the full
+/// tensor when the set of extracted slots must change.
 ///
 /// @par Example Usage:
 /// ```c++
@@ -1490,6 +1490,11 @@ public:
   /// Constructs an if operation that takes a bool Value and a range of qubit
   /// and qtensor values that are used in the then/else region of this
   /// operation. The values are passed down as block arguments to each region.
+  /// Both callbacks may return classical values before the qubit and qtensor
+  /// results. Their result types must match. An explicit else body is required
+  /// for classical results; otherwise, the omitted branch forwards its inputs.
+  /// Classical values used by the callbacks are captured from the enclosing
+  /// scope, not passed in initArgs.
   /// Qubits that were extracted from a tensor that is used as an argument for
   /// this operation are automatically inserted before the operation is
   /// constructed.
@@ -1498,7 +1503,7 @@ public:
   /// @param initArgs Initial arguments for the if branches
   /// @param thenBody Function that builds the then body of the if operation
   /// @param elseBody Function that builds the else body of the if operation
-  /// @return ValueRange of the results
+  /// @return Classical results followed by qubit and qtensor results
   ///
   /// @par Example:
   /// ```c++
@@ -1659,9 +1664,11 @@ public:
   /// Construct an scf.for operation
   ///
   /// Constructs an scf.for operation with the given loop boundaries and
-  /// stepsize and a range of qubit and qtensor values for its iter args. Qubits
-  /// that were extracted from a tensor that is used as an argument for this
-  /// operation are automatically inserted before the operation is constructed.
+  /// stepsize and a range of classical, qubit, and qtensor values for its iter
+  /// args, in any order. The callback must preserve their types and positions.
+  /// Qubits that were extracted from a tensor that is used as an argument for
+  /// this operation are automatically inserted before the operation is
+  /// constructed.
   ///
   /// @param lowerbound Lower bound of the loop
   /// @param upperbound Upper bound of the loop
@@ -1697,8 +1704,10 @@ public:
 
   /// Construct an scf.while operation
   ///
-  /// Constructs an scf.while with a range of qubit and qtensor values for its
-  /// iter args. Qubits that were extracted from a tensor that is used as an
+  /// Constructs an scf.while with classical, qubit, and qtensor iter args in
+  /// any order. Both callbacks must preserve their types and positions. The
+  /// before callback must return the values passed to scfCondition.
+  /// Qubits that were extracted from a tensor that is used as an
   /// argument for this operation are automatically inserted before the
   /// operation is constructed.
   ///
@@ -1736,6 +1745,8 @@ public:
                       function_ref<SmallVector<Value>(ValueRange)> afterBody);
 
   /// Construct an scf.condition operation with yielded values
+  ///
+  /// Classical, qubit, and qtensor values are accepted in the loop's order.
   ///
   /// @param condition Condition for the condition operation
   /// @param yieldedValues ValueRange of the yieldedValues
@@ -1874,8 +1885,8 @@ private:
   ///
   /// For each tensor in @p initArgs, any qubits extracted from it that
   /// are not also present in @p initArgs are inserted back. The latest tensor
-  /// values after inserting the qubits are returned. Qubit values are returned
-  /// without modifications.
+  /// values after inserting the qubits are returned. Qubit and classical values
+  /// are returned without modifications.
   ///
   /// @param initArgs ValueRange of the initial values
   /// @return SmallVector of the updated values of the initial values.
