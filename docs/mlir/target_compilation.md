@@ -97,6 +97,14 @@ gate. All-to-all placement ignores valid mapping controls. Repeatable mapping
 requires the same build, input, target, seed, and mapping controls, including an
 explicit trial count. Layouts may change between releases.
 
+For explicit native gate sets with a usable entangler basis, routing ranks its
+candidates by the two-qubit gate count after native synthesis, using depth to
+break ties. A lower gate count can therefore win even when depth increases. This
+adds synthesis work for each candidate. Counts are static for structured
+programs; the depth tie-breaker is the maximum within a block. The
+`place-and-route` pass in the {doc}`QCO reference <QCO>` describes the search
+and fallback behavior.
+
 ### Choose a format
 
 The compiler selects the first supported format in this order: Adaptive QIR

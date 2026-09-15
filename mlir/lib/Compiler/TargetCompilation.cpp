@@ -82,18 +82,6 @@ private:
 
 } /* namespace */
 
-static void populatePostPlacementPipeline(OpPassManager& pm) {
-  /// Placement consumes allocations; native synthesis normalizes phases.
-  pm.addPass(createCanonicalizerPass(
-      GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit)));
-  /// Reuse unchanged classical reads before native synthesis splits their uses.
-  pm.addPass(createCSEPass());
-  pm.addPass(createRemoveDeadValuesPass());
-  pm.addPass(qco::createTargetNativeSynthesis());
-  pm.addPass(createCSEPass());
-  pm.addPass(qco::createVerifyTargetConformance());
-}
-
 void populateTargetCompilationPipeline(OpPassManager& pm,
                                        const TargetEnvironment& environment,
                                        const MappingOptions& mapping) {
@@ -140,7 +128,7 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
     pm.addPass(qco::createPlacementPass(target));
     break;
   }
-  populatePostPlacementPipeline(pm);
+  qco::populateTargetNativeSynthesisPipeline(pm);
 }
 
 void populateTargetSynthesisPipeline(OpPassManager& pm,
@@ -156,7 +144,7 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
   pm.addPass(qco::createDecomposeMultiControlled(target));
   pm.addPass(qco::createFuseTwoQubitGates(target));
   pm.addPass(qco::createPlacementPass(target));
-  populatePostPlacementPipeline(pm);
+  qco::populateTargetNativeSynthesisPipeline(pm);
 }
 
 } // namespace mlir
