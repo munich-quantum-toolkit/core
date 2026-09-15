@@ -304,12 +304,13 @@ result bits directly and formats textual records only when capture is enabled.
 
 Sampling supports Base and Adaptive formats. With output capture disabled, for
 either profile with an acyclic, unconditional entry path, constant gate
-arguments, terminal Z measurements and scalar result records, DDSIM prepares the
-DD once and samples it for all shots. The runtime retains repeated and reordered
-result records in program order, including after SWAPs. The QDMI device reverses
-each shot for most-significant-bit first serialization before constructing its
-histogram. Programs with classical memory accesses, helper calls, conditional
-branches, resets, dynamic resources, Boolean output records, or generic
+arguments, terminal Z measurements and scalar result or constant Boolean
+records, DDSIM prepares the DD once and samples it for all shots. The runtime
+retains constant bits and repeated or reordered result records in program order,
+including after SWAPs. The QDMI device reverses each shot for
+most-significant-bit first serialization before constructing its histogram.
+Programs with classical memory accesses, helper calls, conditional branches,
+resets, dynamic resources, computed Boolean output records, or generic
 controlled argument arrays use ordinary per-shot execution. These inputs remain
 supported by the runner; they are not eligible for this sampling optimization. A
 fixed seed reproduces a shot sequence for the same execution path; sequences

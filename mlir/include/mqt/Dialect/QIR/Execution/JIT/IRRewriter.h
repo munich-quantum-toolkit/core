@@ -15,6 +15,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <variant>
 #include <vector>
 
 namespace llvm {
@@ -47,12 +48,12 @@ namespace qir {
 /// calls.
 bool prepareForStateExtraction(llvm::Function& entryPoint);
 
-/// Return logical qubit IDs in recorded-result order when measurements can be
-/// deferred for sampling. Only an acyclic unconditional Base or Adaptive path
-/// with constant gate arguments and scalar result records is supported. Unknown
-/// calls, result-dependent computation, resets and memory accesses return
-/// std::nullopt, leaving ordinary per-shot execution available.
-std::optional<std::vector<uintptr_t>>
+/// Return logical qubit IDs or constant bits in output order for deferred
+/// sampling. Only an acyclic unconditional Base or Adaptive path with constant
+/// gate arguments, scalar result records, and constant Boolean records is
+/// supported. Unknown calls, result-dependent computation, resets and memory
+/// accesses return std::nullopt, leaving ordinary per-shot execution available.
+std::optional<std::vector<std::variant<uintptr_t, bool>>>
 getStaticSamplingOutputs(const llvm::Function& entryPoint);
 
 } // namespace qir
