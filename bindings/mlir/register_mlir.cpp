@@ -1184,7 +1184,14 @@ Programs own their MLIR module. Conversions can consume a program; use
             requireValid(value);
             return value.str();
           },
-          "Return the textual MLIR representation of this program.");
+          "Return the textual MLIR representation of this program.")
+      .def(
+          "discard_layout",
+          [](mlir::Program& program) {
+            requireValid(program);
+            program.discardLayout();
+          },
+          "Explicitly discard retained or invalidated qubit layout metadata.");
 
   nb::class_<mlir::MappingOptions>(m, "MappingOptions",
                                    "Native mapping controls.")
@@ -1219,6 +1226,18 @@ Programs own their MLIR module. Conversions can consume a program; use
       .def_rw("enable_timing", &mlir::CompilationOptions::enableTiming)
       .def_rw("enable_statistics", &mlir::CompilationOptions::enableStatistics)
       .def_rw("mapping", &mlir::CompilationOptions::mapping);
+
+  nb::class_<mlir::MappingResult>(
+      m, "MappingResult",
+      "Detached input-to-site layout snapshot from native compilation.")
+      .def_ro("allocation_sizes", &mlir::MappingResult::allocationSizes,
+              "Input allocation sizes in entry-block order; tensor slots use "
+              "ascending indices.")
+      .def_ro(
+          "initial_layout", &mlir::MappingResult::initialLayout,
+          "Initial target site ID for each input qubit, including idle qubits.")
+      .def_ro("final_layout", &mlir::MappingResult::finalLayout,
+              "Final target site ID for each input qubit after routing.");
 
   auto qcProgram = nb::class_<mlir::QCProgram, mlir::Program>(
       m, "QCProgram", R"pb(A compiler program in the QC dialect.
@@ -1435,6 +1454,32 @@ operations.)pb");
           "its contents if compilation fails. Failures raise RuntimeError "
           "with the emitted MLIR diagnostics.")
       .def(
+          "compile_for_target_with_layout",
+          [](mlir::QCOProgram& program,
+             const mlir::TargetEnvironment& environment,
+             const std::vector<int64_t>& initialLayout,
+             mlir::CompilationOptions options) {
+            requireValid(program);
+            std::optional<mlir::MappingResult> result;
+            withDiagnostics<nb::exception_type::runtime_error>(
+                program.module().getContext(), "Layout compilation failed",
+                [&] {
+                  result = program.compileForTargetWithLayout(
+                      environment, initialLayout, options);
+                  return mlir::success(result.has_value());
+                });
+            return std::move(*result);
+          },
+          "target_environment"_a, nb::kw_only(),
+          "initial_layout"_a = std::vector<int64_t>{},
+          "options"_a = mlir::CompilationOptions{},
+          "Compile in place and return initial and final site assignments. "
+          "Input allocations must have fixed sizes in the entry block. "
+          "An empty initial_layout selects automatic placement; otherwise "
+          "supply one distinct target site ID per input qubit. This preserves "
+          "idle input wires. The returned snapshot is not updated by later "
+          "transformations. Do not rely on program contents after failure.")
+      .def(
           "synthesize_for_target",
           [](mlir::QCOProgram& program,
              const mlir::TargetEnvironment& environment,
@@ -1520,6 +1565,9 @@ further compilation.)pb");
           [](const mlir::JeffProgram& value) {
             requireValid(value);
             const auto bytes = value.toBytes();
+            if (bytes.empty()) {
+              throw std::runtime_error("failed to serialize jeff program");
+            }
             return nb::bytes(bytes.data(), bytes.size());
           },
           "Serialize this program to its ``jeff`` byte representation.")

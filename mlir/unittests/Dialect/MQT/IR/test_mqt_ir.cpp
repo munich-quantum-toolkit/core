@@ -14,6 +14,7 @@
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
@@ -26,6 +27,8 @@
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/Attributes.h"
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
@@ -42,6 +45,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 using namespace mlir;
 
@@ -94,6 +98,141 @@ TEST_F(MQTIRTest, CompilationSeedHasModuleScopeAnd64Bits) {
   EXPECT_FALSE(parse(R"(module {
     func.func @main() attributes {mqt.compilation_seed = 7 : i64} { return }
   })"));
+}
+
+TEST_F(MQTIRTest, RoundTripsQubitLayoutProvenance) {
+  const mqt::QubitLayout layout{
+      .physicalSize = 5,
+      .initial = {1, 4, -1, 0},
+      .routing = std::vector<int64_t>{3, 1, 4, -1, 2},
+      .outputOrder = {2, 0, 4, 1, 3},
+      .inputCount = 3,
+      .ancillas = {3},
+      .registers =
+          {
+              {
+                  .name = "source",
+                  .slots = {1, 2, 0, -1},
+                  .ancillary = false,
+              },
+              {
+                  .name = "workspace",
+                  .slots = {3},
+                  .ancillary = true,
+              },
+          },
+  };
+  auto moduleOp = parse("module {}");
+  ASSERT_TRUE(moduleOp);
+  const auto attribute = layout.toAttr(context.get());
+  (*moduleOp)->setAttr("mqt.layout", attribute);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  auto restored = roundTrip(*moduleOp);
+  ASSERT_TRUE(restored);
+  const auto decoded =
+      mqt::QubitLayout::fromAttr((*restored)->getAttr("mqt.layout"),
+                                 [&] { return restored->emitError(); });
+  ASSERT_TRUE(succeeded(decoded));
+  EXPECT_EQ(decoded->toAttr(context.get()), attribute);
+  EXPECT_EQ(decoded->initial, layout.initial);
+  EXPECT_EQ(decoded->routing, layout.routing);
+  EXPECT_EQ(decoded->outputOrder, layout.outputOrder);
+  EXPECT_EQ(decoded->registers.front().slots, layout.registers.front().slots);
+}
+
+TEST_F(MQTIRTest, InvalidatesAndExplicitlyDiscardsQubitLayouts) {
+  auto moduleOp = parse("module {}");
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(mqt::requireNoQubitLayout(*moduleOp)));
+  mqt::invalidateQubitLayout(*moduleOp);
+  EXPECT_FALSE((*moduleOp)->hasAttr("mqt.layout_invalidated"));
+  const mqt::QubitLayout layout{
+      .physicalSize = 1,
+      .initial = {0},
+      .outputOrder = {0},
+  };
+  (*moduleOp)->setAttr("mqt.layout", layout.toAttr(context.get()));
+  EXPECT_TRUE(failed(mqt::requireNoQubitLayout(*moduleOp)));
+  mqt::invalidateQubitLayout(*moduleOp);
+  EXPECT_FALSE((*moduleOp)->hasAttr("mqt.layout"));
+  EXPECT_TRUE((*moduleOp)->hasAttr("mqt.layout_invalidated"));
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(roundTrip(*moduleOp));
+  EXPECT_TRUE(failed(mqt::requireNoQubitLayout(*moduleOp)));
+  mqt::discardQubitLayout(*moduleOp);
+  EXPECT_TRUE(succeeded(mqt::requireNoQubitLayout(*moduleOp)));
+  (*moduleOp)->setAttr("mqt.layout", layout.toAttr(context.get()));
+  mqt::discardQubitLayout(*moduleOp);
+  EXPECT_TRUE(succeeded(mqt::requireNoQubitLayout(*moduleOp)));
+}
+
+TEST_F(MQTIRTest, RejectsMalformedQubitLayoutSchema) {
+  auto moduleOp = parse("module {}");
+  ASSERT_TRUE(moduleOp);
+  const auto emit = [&] { return moduleOp->emitError(); };
+  EXPECT_TRUE(failed(mqt::QubitLayout::fromAttr({}, emit)));
+  Builder builder(context.get());
+  const mqt::QubitLayout layout{
+      .physicalSize = 2,
+      .initial = {1, 0},
+      .outputOrder = {0, 1},
+  };
+  const auto attribute = layout.toAttr(context.get());
+  const auto reject = [&](StringRef name, Attribute replacement) {
+    NamedAttrList fields(attribute);
+    fields.set(name, replacement);
+    EXPECT_TRUE(failed(
+        mqt::QubitLayout::fromAttr(fields.getDictionary(context.get()), emit)))
+        << name.str();
+  };
+  reject("unknown", builder.getUnitAttr());
+  for (const auto* const name :
+       {"physical_size", "initial", "output_order", "ancillas", "registers"}) {
+    reject(name, builder.getUnitAttr());
+    NamedAttrList fields(attribute);
+    fields.erase(name);
+    EXPECT_TRUE(failed(
+        mqt::QubitLayout::fromAttr(fields.getDictionary(context.get()), emit)));
+  }
+  reject("physical_size", builder.getI64IntegerAttr(-1));
+  reject("physical_size", builder.getI32IntegerAttr(2));
+  for (const auto* const name : {"initial", "output_order", "ancillas"}) {
+    reject(name, builder.getDenseI64ArrayAttr({0, 0}));
+    reject(name, builder.getDenseI64ArrayAttr({0, 2}));
+    reject(name, builder.getDenseI64ArrayAttr({-2, 1}));
+  }
+  reject("output_order", builder.getDenseI64ArrayAttr({0}));
+  reject("routing", builder.getUnitAttr());
+  reject("routing", builder.getDenseI64ArrayAttr({0}));
+  reject("routing", builder.getDenseI64ArrayAttr({0, 0}));
+  reject("input_count", builder.getUnitAttr());
+  reject("input_count", builder.getI32IntegerAttr(1));
+  reject("input_count", builder.getI64IntegerAttr(-1));
+  reject("input_count", builder.getI64IntegerAttr(3));
+  reject("registers", builder.getArrayAttr({builder.getUnitAttr()}));
+  const std::array invalidGroups{
+      R"mlir([{name = "", slots = array<i64: 0>, ancillary = false}])mlir",
+      R"mlir([{name = "q\00", slots = array<i64: 0>, ancillary = false}])mlir",
+      R"mlir([{name = "q", slots = array<i64>, ancillary = false}])mlir",
+      R"mlir([{name = "q", slots = array<i64: 2>, ancillary = false}])mlir",
+      R"mlir([{name = "q", slots = array<i64: 0>}])mlir",
+      R"mlir([{name = "q", slots = array<i64: 0>, ancillary = true}])mlir",
+      R"mlir([{name = "q", slots = array<i64: 0>, ancillary = false},
+              {name = "q", slots = array<i64: 1>, ancillary = false}])mlir",
+      R"mlir([{name = "q", slots = array<i64: 0>, ancillary = false},
+              {name = "r", slots = array<i64: 0>, ancillary = false}])mlir",
+  };
+  for (const auto* const text : invalidGroups) {
+    reject("registers", parseAttr(text));
+  }
+  (*moduleOp)->setAttr("mqt.layout_invalidated", builder.getStringAttr("bad"));
+  EXPECT_TRUE(failed(verify(*moduleOp)));
+  (*moduleOp)->setAttr("mqt.layout_invalidated", builder.getUnitAttr());
+  (*moduleOp)->setAttr("mqt.layout", attribute);
+  EXPECT_TRUE(failed(verify(*moduleOp)));
+  EXPECT_FALSE(parse(R"mlir(module {
+    func.func private @bad() attributes {mqt.layout_invalidated}
+  })mlir"));
 }
 
 TEST_F(MQTIRTest, AcceptsProgramInputAndRegisterNames) {

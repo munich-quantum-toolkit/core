@@ -11,10 +11,13 @@
 #pragma once
 
 #include "mqt/Compiler/CompilationOptions.h"
+#include "mqt/Compiler/TargetCompilation.h"
 
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OwningOpRef.h"
+
+#include "llvm/ADT/ArrayRef.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -89,6 +92,9 @@ public:
   /// The returned operation remains valid while this program owns its
   /// module. Consuming or destroying the program invalidates the operation.
   [[nodiscard]] ModuleOp module() const;
+
+  /// Explicitly discard retained or invalidated layout provenance.
+  void discardLayout();
 
 protected:
   struct Storage {
@@ -273,6 +279,15 @@ public:
   [[nodiscard]] bool compileForTarget(const TargetEnvironment& environment,
                                       const CompilationOptions& options = {});
 
+  /// Compile in place and return a snapshot of the input-to-site layouts.
+  ///
+  /// See populateTargetCompilationWithLayoutPipeline for the input contract.
+  /// Do not rely on the program contents if compilation fails.
+  [[nodiscard]] std::optional<MappingResult>
+  compileForTargetWithLayout(const TargetEnvironment& environment,
+                             llvm::ArrayRef<int64_t> initialLayout = {},
+                             const CompilationOptions& options = {});
+
   /// Synthesize native operations for an all-to-all target in place.
   ///
   /// Assigns static sites and resynthesizes constant two-qubit runs in the
@@ -316,6 +331,7 @@ public:
   [[nodiscard]] bool cleanup();
 
   /// Serialize this program to a binary `jeff` buffer.
+  /// Return an empty vector and emit a diagnostic if serialization fails.
   [[nodiscard]] std::vector<std::byte> toBytes() const;
 
   /// Serialize this program to a binary `jeff` file.

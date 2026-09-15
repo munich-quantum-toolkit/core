@@ -14,6 +14,7 @@
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCInterfaces.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
@@ -2029,6 +2030,9 @@ LogicalResult translateQCToOpenQASM3(ModuleOp moduleOp,
 }
 
 FailureOr<std::string> translateQCToOpenQASM3(ModuleOp moduleOp) {
+  if (failed(mqt::requireNoQubitLayout(moduleOp))) {
+    return failure();
+  }
   return OpenQASMEmitter(moduleOp).emit();
 }
 
