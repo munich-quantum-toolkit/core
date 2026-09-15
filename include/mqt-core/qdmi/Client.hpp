@@ -37,6 +37,7 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace qdmi {
@@ -72,31 +73,10 @@ queuePositionFromResult(const int result, const size_t queuePosition) {
   return queuePosition;
 }
 
-[[nodiscard]] inline std::vector<std::string>
-parseShots(const std::string_view shots, const size_t numShots) {
-  if (numShots == 0) {
-    if (!shots.empty()) {
-      throw std::runtime_error("Number of shots mismatch");
-    }
-    return {};
-  }
+[[nodiscard]] std::vector<std::string> parseShots(std::string_view shots,
+                                                  size_t numShots);
 
-  std::vector<std::string> parsed;
-  parsed.reserve(numShots);
-  size_t start = 0;
-  while (true) {
-    const auto end = shots.find(',', start);
-    parsed.emplace_back(shots.substr(start, end - start));
-    if (end == std::string_view::npos) {
-      break;
-    }
-    start = end + 1;
-  }
-  if (parsed.size() != numShots) {
-    throw std::runtime_error("Number of shots mismatch");
-  }
-  return parsed;
-}
+[[noreturn]] void invalidCustomProperty();
 
 template <custom_property_value T, typename Query>
 [[nodiscard]] std::optional<T>
@@ -176,7 +156,7 @@ toDeviceProperty(const CustomProperty property) {
   case CustomProperty::Custom5:
     return QDMI_DEVICE_PROPERTY_CUSTOM5;
   }
-  throw std::invalid_argument("Invalid custom property selector");
+  invalidCustomProperty();
 }
 
 [[nodiscard]] constexpr QDMI_Site_Property
@@ -193,7 +173,7 @@ toSiteProperty(const CustomProperty property) {
   case CustomProperty::Custom5:
     return QDMI_SITE_PROPERTY_CUSTOM5;
   }
-  throw std::invalid_argument("Invalid custom property selector");
+  invalidCustomProperty();
 }
 
 [[nodiscard]] constexpr QDMI_Operation_Property
@@ -210,7 +190,7 @@ toOperationProperty(const CustomProperty property) {
   case CustomProperty::Custom5:
     return QDMI_OPERATION_PROPERTY_CUSTOM5;
   }
-  throw std::invalid_argument("Invalid custom property selector");
+  invalidCustomProperty();
 }
 
 [[nodiscard]] constexpr QDMI_Job_Property
@@ -227,7 +207,7 @@ toJobProperty(const CustomProperty property) {
   case CustomProperty::Custom5:
     return QDMI_JOB_PROPERTY_CUSTOM5;
   }
-  throw std::invalid_argument("Invalid custom property selector");
+  invalidCustomProperty();
 }
 
 [[nodiscard]] constexpr QDMI_Job_Result
@@ -244,7 +224,7 @@ toJobResult(const CustomProperty property) {
   case CustomProperty::Custom5:
     return QDMI_JOB_RESULT_CUSTOM5;
   }
-  throw std::invalid_argument("Invalid custom property selector");
+  invalidCustomProperty();
 }
 } // namespace detail
 
@@ -370,65 +350,95 @@ namespace detail {
 /// Decode a standard property while preserving optional support and
 /// diagnostics.
 template <maybe_optional_value_or_string_or_vector T, typename Query>
-[[nodiscard]] T queryProperty(Query query, const std::string& msg,
-                              const std::string& sizeMsg) {
+[[nodiscard]] std::variant<T, Error>
+tryQueryProperty(Query query, const std::string& msg,
+                 const std::string& sizeMsg) {
   if constexpr (string_or_optional_string<T>) {
     size_t size = 0;
     auto result = query(0, nullptr, &size);
 
     if constexpr (is_optional<T>) {
       if (result == QDMI_ERROR_NOTSUPPORTED) {
-        return std::nullopt;
+        return T{};
       }
     }
 
-    qdmi::throwIfError(result, sizeMsg);
+    if (auto error = checkError(result, sizeMsg)) {
+      return std::move(*error);
+    }
     if (size == 0) {
-      throw std::runtime_error(sizeMsg + ": missing string terminator");
+      return Error{
+          .status = QDMI_ERROR_FATAL,
+          .message = sizeMsg + ": missing string terminator",
+      };
     }
     std::string value(size, '\0');
     result = query(size, value.data(), nullptr);
-    qdmi::throwIfError(result, msg);
+    if (auto error = checkError(result, msg)) {
+      return std::move(*error);
+    }
     if (value.back() != '\0') {
-      throw std::runtime_error(msg + ": missing string terminator");
+      return Error{
+          .status = QDMI_ERROR_FATAL,
+          .message = msg + ": missing string terminator",
+      };
     }
     value.pop_back();
-    return value;
+    return T{std::move(value)};
   } else if constexpr (maybe_optional_size_constructible_contiguous_range<T>) {
     size_t size = 0;
     auto result = query(0, nullptr, &size);
 
     if constexpr (is_optional<T>) {
       if (result == QDMI_ERROR_NOTSUPPORTED) {
-        return std::nullopt;
+        return T{};
       }
     }
 
-    qdmi::throwIfError(result, sizeMsg);
+    if (auto error = checkError(result, sizeMsg)) {
+      return std::move(*error);
+    }
     if (size % sizeof(typename remove_optional_t<T>::value_type) != 0) {
-      throw std::runtime_error(
-          sizeMsg + ": byte count is not a multiple of the element size");
+      return Error{
+          .status = QDMI_ERROR_FATAL,
+          .message =
+              sizeMsg + ": byte count is not a multiple of the element size",
+      };
     }
     remove_optional_t<T> value(
         size / sizeof(typename remove_optional_t<T>::value_type));
     if (size != 0) {
       result = query(size, value.data(), nullptr);
-      qdmi::throwIfError(result, msg);
+      if (auto error = checkError(result, msg)) {
+        return std::move(*error);
+      }
     }
-    return value;
+    return T{std::move(value)};
   } else {
     remove_optional_t<T> value{};
     const auto result = query(sizeof(remove_optional_t<T>), &value, nullptr);
 
     if constexpr (is_optional<T>) {
       if (result == QDMI_ERROR_NOTSUPPORTED) {
-        return std::nullopt;
+        return T{};
       }
     }
 
-    qdmi::throwIfError(result, msg);
-    return value;
+    if (auto error = checkError(result, msg)) {
+      return std::move(*error);
+    }
+    return T{std::move(value)};
   }
+}
+/// The throwing interface uses the same property decoder and diagnostics.
+template <maybe_optional_value_or_string_or_vector T, typename Query>
+[[nodiscard]] T queryProperty(Query query, const std::string& msg,
+                              const std::string& sizeMsg) {
+  auto result = tryQueryProperty<T>(query, msg, sizeMsg);
+  if (const auto* error = std::get_if<Error>(&result)) {
+    throwError(*error);
+  }
+  return std::get<T>(std::move(result));
 }
 } // namespace detail
 
@@ -489,6 +499,14 @@ public:
   openDevice(std::string_view id,
              const qdmi::DeviceSessionConfig& overrides = {});
 
+  /// Open a device, returning a diagnostic instead of throwing.
+  [[nodiscard]] static std::variant<Device, Error>
+  tryOpenDevice(std::string_view id);
+
+  /// Discover registered devices, returning a diagnostic instead of throwing.
+  [[nodiscard]] static std::variant<std::vector<std::string>, Error>
+  tryRegisteredDeviceIds();
+
   /// Constructs a new QDMI Session with optional authentication.
   /// @param config Optional session configuration containing authentication
   /// parameters. If not provided, uses default (no authentication).
@@ -533,6 +551,16 @@ class Device {
 public:
   // NOLINTNEXTLINE(misc-explicit-constructor, *-explicit-conversions)
   operator QDMI_Device() const { return device_.get(); }
+
+  /// Submit exact program bytes, returning a diagnostic instead of throwing.
+  [[nodiscard]] std::variant<Job, Error> trySubmitJob(
+      std::span<const std::byte> program, QDMI_Program_Format format,
+      size_t numShots,
+      const std::optional<CustomJobParameter>& custom1 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom2 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom3 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom4 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
 
   /// @see QDMI_DEVICE_PROPERTY_NAME
   [[nodiscard]] std::string getName() const;

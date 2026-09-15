@@ -355,6 +355,5 @@ def test_qir_output_capture_requires_qir_sampling(program_format: ProgramFormat,
     compiled = compile_program(BELL, target=device, program_format=program_format)
     with pytest.raises(RuntimeError, match="Not supported"):
         device.submit_job(compiled.payload, program_format, num_shots=shots, custom2=True)
-    # The RTTI-free adapter can lose the nested exception text on macOS.
-    with pytest.raises(ValueError, match="Failed to submit compiled program"):
+    with pytest.raises(ValueError, match=r"Failed to submit compiled program: Submitting job: Not supported\."):
         submit_program(compiled, target=device, num_shots=shots, custom2=True)
