@@ -43,11 +43,16 @@ public:
     /// The number of variables
     std::size_t nVars = 0U;
 
-    /// The number of hash buckets to use (has to be a power of two)
+    /// Initial buckets per level (must be a power of two).
     std::size_t nBuckets = 32768;
 
     /// The initial garbage collection limit
     std::size_t initialGCLimit = INITIAL_GC_LIMIT;
+
+    /// Per-level bucket ceiling; zero keeps the initial capacity fixed.
+    /// A nonzero ceiling must be a power of two and at least nBuckets.
+    /// Grown capacities are retained by clear().
+    size_t maxBuckets = 0U;
   };
 
   /// The default constructor
@@ -64,13 +69,15 @@ public:
   ///
   /// The hash function just combines the hashes of the edges of the
   /// node. The hash value is masked to ensure that it is in the range
-  /// [0, nBuckets - 1].
+  /// [0, number of buckets at p.v - 1].
+  /// @pre If growth is enabled, p.v names an allocated level.
   /// @param p The node to hash.
   /// @returns The hash value of the node.
   template <class Node> [[nodiscard]] std::size_t hash(const Node& p) const {
     static_assert(std::is_base_of_v<NodeBase, Node>,
                   "Node must be derived from NodeBase");
-    const std::size_t mask = cfg.nBuckets - 1;
+    const std::size_t mask =
+        (cfg.maxBuckets == 0U ? cfg.nBuckets : tables[p.v].size()) - 1;
     std::size_t key = 0U;
     for (const auto& succ : p.e) {
       hashCombine(key, std::hash<Edge<Node>>{}(succ));
@@ -94,7 +101,7 @@ public:
       return p;
     }
 
-    const auto key = hash(*p);
+    auto key = hash(*p);
     const auto v = p->v;
     ++stats[v].lookups;
 
@@ -103,6 +110,13 @@ public:
     if (auto* hashedNode = searchTable(*p, key);
         !Node::isTerminal(hashedNode)) {
       return hashedNode;
+    }
+
+    /// Grow only this populated level; node addresses and roots stay valid.
+    if (stats[v].numEntries >= tables[v].size() &&
+        tables[v].size() < cfg.maxBuckets) {
+      grow<Node>(v);
+      key = hash(*p);
     }
 
     // if node not found → add it to front of unique table bucket
@@ -114,7 +128,9 @@ public:
     return p;
   }
 
-  /// Get a reference to the table
+  /// Get a reference to the tables.
+  /// Bucket storage may change after insertion or resize; node addresses stay
+  /// valid.
   [[nodiscard]] const auto& getTables() const { return tables; }
 
   /// Get a reference to the statistics
@@ -191,6 +207,22 @@ private:
 
   /// Total entries across all levels, used by per-operation collection checks.
   std::size_t entryCount_ = 0U;
+
+  template <class Node> void grow(const size_t v) {
+    Table old(tables[v].size() * 2U);
+    tables[v].swap(old);
+    for (auto* bucket : old) {
+      auto* node = static_cast<Node*>(bucket);
+      while (node != nullptr) {
+        auto* next = node->next();
+        const auto key = hash(*node);
+        node->setNext(tables[v][key]);
+        tables[v][key] = node;
+        node = next;
+      }
+    }
+    stats[v].numBuckets = tables[v].size();
+  }
 
   /// Search for a node in the hash table with the given key.
   /// @param p The node to search for.
