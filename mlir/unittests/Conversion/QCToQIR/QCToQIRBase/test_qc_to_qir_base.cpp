@@ -125,6 +125,27 @@ static void expectFollowingXIsUncontrolled(
   EXPECT_EQ(controlledXCalls, 0);
 }
 
+TEST(QCToQIRBaseNativeTest, RejectsExplicitRuntimeAssertions) {
+  MLIRContext context;
+  context.loadDialect<arith::ArithDialect, func::FuncDialect,
+                      cf::ControlFlowDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  cf::AssertOp::create(builder, builder.getUnknownLoc(),
+                       builder.boolConstant(false),
+                       "unsupported runtime precondition");
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  bool diagnosed = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    diagnosed |= diagnostic.str().find("cf.assert") != std::string::npos;
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQIRBaseConversion(*moduleOp)));
+  EXPECT_TRUE(diagnosed);
+}
+
 TEST(QCToQIRBaseNativeTest, RejectsMeasurementFeedbackDuringConversion) {
   MLIRContext context;
   context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,

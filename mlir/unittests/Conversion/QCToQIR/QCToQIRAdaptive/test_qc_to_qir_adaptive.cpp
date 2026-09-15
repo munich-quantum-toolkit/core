@@ -182,6 +182,29 @@ TEST(QCToQIRAdaptiveNativeTest, UsesSharedAllocationVerifierForStandalonePass) {
   EXPECT_TRUE(module->lookupSymbol<func::FuncOp>("main"));
 }
 
+TEST(QCToQIRAdaptiveNativeTest, RejectsExplicitRuntimeAssertions) {
+  MLIRContext context;
+  context.loadDialect<arith::ArithDialect, func::FuncDialect,
+                      cf::ControlFlowDialect>();
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main() attributes {mqt.entry_point} {
+      %condition = arith.constant false
+      cf.assert %condition, "unsupported runtime precondition"
+      return
+    }
+  })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  bool diagnosed = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    diagnosed |= diagnostic.str().find("cf.assert") != std::string::npos;
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*moduleOp)));
+  EXPECT_TRUE(diagnosed);
+}
+
 TEST(QCToQIRAdaptiveNativeTest, RejectsMultipleReturnsBeforeOutputPreparation) {
   MLIRContext context;
   context

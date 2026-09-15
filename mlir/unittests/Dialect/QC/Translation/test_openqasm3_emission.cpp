@@ -2131,6 +2131,32 @@ TEST(OpenQASM3EmissionTest, RejectsInvalidModifierBodies) {
   EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*zeroTargetModule)));
 }
 
+TEST(OpenQASM3EmissionTest, RejectsExplicitRuntimeAssertionsWithoutOutput) {
+  MLIRContext context(emissionDialects());
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main() {
+      %condition = arith.constant false
+      cf.assert %condition, "unsupported runtime precondition"
+      return
+    }
+  })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  std::string output;
+  llvm::raw_string_ostream stream(output);
+  bool diagnosed = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    diagnosed |= diagnostic.str().find("unsupported operation 'cf.assert'") !=
+                 std::string::npos;
+    return success();
+  });
+  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*moduleOp, stream)));
+  EXPECT_TRUE(diagnosed);
+  EXPECT_TRUE(output.empty());
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+}
+
 TEST(OpenQASM3EmissionTest, RejectsUnsupportedSubsetConcerns) {
   struct Fixture {
     llvm::StringLiteral name;
