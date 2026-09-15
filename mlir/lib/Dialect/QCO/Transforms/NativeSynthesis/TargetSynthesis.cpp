@@ -39,11 +39,14 @@
 #include "mlir/IR/Visitors.h"
 #include "mlir/Interfaces/FunctionInterfaces.h"
 #include "mlir/Pass/Pass.h"
+#include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Support/TypeID.h"
 #include "mlir/Support/WalkResult.h"
 #include "mlir/Transforms/FoldUtils.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
@@ -920,6 +923,18 @@ std::unique_ptr<Pass> createFuseTwoQubitGates() {
 
 std::unique_ptr<Pass> createFuseTwoQubitGates(const CompilerTarget& target) {
   return std::make_unique<FuseTwoQubitGatesPass>(target);
+}
+
+void populateTargetNativeSynthesisPipeline(OpPassManager& pm) {
+  /// Placement consumes allocations; native synthesis normalizes phases.
+  pm.addPass(createCanonicalizerPass(
+      GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit)));
+  /// Reuse unchanged classical reads before native synthesis splits their uses.
+  pm.addPass(createCSEPass());
+  pm.addPass(createRemoveDeadValuesPass());
+  pm.addPass(createTargetNativeSynthesis());
+  pm.addPass(createCSEPass());
+  pm.addPass(createVerifyTargetConformance());
 }
 
 } // namespace mlir::qco
