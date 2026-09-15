@@ -19,7 +19,7 @@ apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
     build-essential cmake git libcurl4-openssl-dev libssl-dev
 
-uv build /workload --wheel --out-dir /tmp/provider-wheels \
+CMAKE_BUILD_PARALLEL_LEVEL=2 uv build /workload --wheel --out-dir /tmp/provider-wheels \
     --config-setting=build-dir=/tmp/provider-build
 for provider_wheel in /tmp/provider-wheels/*.whl; do
     for core_wheel in /tmp/dist/mqt_core-*.whl; do
