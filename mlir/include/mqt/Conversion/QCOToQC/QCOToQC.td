@@ -24,6 +24,8 @@ def QCOToQC : Pass<"qco-to-qc", "mlir::ModuleOp"> {
     permutations and changes to quantum loop-state counts or types. Classical
     loop state can change type in `scf.while`. QTensor insertions can update
     register slots and become stores when the slot value changes.
+    Helpers that replace borrowed register slots cannot round-trip through
+    QC-to-QCO, which supports only loads and calls on borrowed register storage.
 
     Determine the module's allocation mode before converting any function.
     Dynamic qubit sinks become deallocations; static qubit sinks are removed.

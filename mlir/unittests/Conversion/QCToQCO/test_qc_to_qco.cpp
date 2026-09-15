@@ -2223,6 +2223,40 @@ TEST_F(QCToQCORegressionTest, RoundTripsBorrowedRegistersThroughNestedHelpers) {
   }
 }
 
+TEST_F(QCToQCORegressionTest, RejectsMutableBorrowedRegisterRoundTrip) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func private @exchange(%reg: tensor<2x!qco.qubit>)
+        -> tensor<2x!qco.qubit> {
+      %zero = arith.constant 0 : index
+      %one = arith.constant 1 : index
+      %rest0, %left = qtensor.extract %reg[%zero] : tensor<2x!qco.qubit>
+      %rest1, %right = qtensor.extract %rest0[%one] : tensor<2x!qco.qubit>
+      %rest2 = qtensor.insert %left into %rest1[%one] : tensor<2x!qco.qubit>
+      %out = qtensor.insert %right into %rest2[%zero] : tensor<2x!qco.qubit>
+      return %out : tensor<2x!qco.qubit>
+    }
+  })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  OwningOpRef<ModuleOp> original = moduleOp->clone();
+  bool diagnosed = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    diagnosed |=
+        diagnostic.str().find("borrowed registers may only be loaded") !=
+        std::string::npos;
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQCOConversion(*moduleOp)));
+  EXPECT_TRUE(diagnosed);
+  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+      moduleOp->getOperation(), original->getOperation(),
+      OperationEquivalence::Flags::None));
+}
+
 TEST_F(QCToQCORegressionTest, RejectsBorrowedRegisterAliasingBeforeRewriting) {
   constexpr auto sources = std::to_array<llvm::StringLiteral>({
       R"mlir(module {
