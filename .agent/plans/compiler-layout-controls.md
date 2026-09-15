@@ -16,9 +16,14 @@ Reject references to missing resources and inconsistent metadata. Keep the
 existing supported circuit-operation and register-membership boundary.
 
 The layout APIs accept the shared `CompilationOptions` from target compilation,
-including seed, timing, statistics, mapping trials, refinement iterations, and
-routing lookahead. `initialLayout` remains an explicit input assignment;
-`MappingResult` remains a detached output.
+including seed, timing, statistics, mapping trials, refinement iterations,
+routing lookahead, and search memory limits. `initialLayout` remains an explicit
+input assignment; `MappingResult` remains a detached output.
+
+The branch builds directly on `main` after #2551. Low-level pipeline builders
+accept `MappingOptions`; `runWithCompilationOptions` applies the shared seed and
+instrumentation when the pass manager runs. Layout preservation uses the shared
+`runWithPassManager` helper.
 
 ## Lifetime and output rules
 
@@ -37,12 +42,13 @@ must update or invalidate this discardable metadata.
 
 ## Validation
 
-The compiler, translation, and QDMI Python suites pass 625 tests. Native
-validation passes 239 compiler tests and 37 metadata tests, including shared
-compilation options, routing with zero lookahead, failure publication, and
-schema checks. The compiler suite includes four CLI GoogleTests; all three CLI
-CTests pass. Both published Python examples execute. Stub generation, repository
-lint, and full changed-file C++ lint against `origin/main` pass.
+The compiler, translation, and QDMI Python suites pass 633 tests. Native
+validation passes 240 compiler tests, 115 mapping tests, and 37 metadata tests,
+including shared compilation options, routing with zero lookahead and zero or
+small search memory budgets, failure publication, and schema checks. The
+compiler suite includes four CLI GoogleTests; all three CLI CTests pass. Both
+published Python examples execute. Stub generation, repository lint, and full
+changed-file C++ lint against `origin/main` pass.
 
 The implemented metadata uses a validated `mqt.layout` dictionary and a mutually
 exclusive `mqt.layout_invalidated` unit marker. The Qiskit 2.5 adapter supports
