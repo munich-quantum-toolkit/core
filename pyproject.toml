@@ -113,6 +113,7 @@ PyPI = "https://pypi.org/project/mqt-core/"
 [project.scripts]
 mqt-core-bench = "mqt.core._bench:main"
 mqt-core-cli = "mqt.core.__main__:main"
+mqt-core-qdmi-check = "mqt.core._qdmi_check:main"
 
 [project.entry-points."pennylane.plugins"]
 "mqt.ddsim.default" = "mqt.core.plugins.pennylane:DDSIMDevice"
