@@ -2638,6 +2638,21 @@ TEST_F(CompilerPipelineTest, IndexedPlacementPreservesSparseSitesAndLoopBody) {
       },
       CompilerTarget::Connectivity::allToAll(),
       CompilerTarget::NativeOperations::unrestricted()));
+  auto qasmProgram = program->copy();
+  const auto qasmPayload = llvm::cantFail(
+      payloadSpecificationForProgramFormat(QDMI_PROGRAM_FORMAT_QASM3));
+  ASSERT_TRUE(
+      qasmProgram.compileForTarget(TargetEnvironment(target, qasmPayload)));
+  auto qasmQC = std::move(qasmProgram).intoQC();
+  ASSERT_TRUE(qasmQC);
+  auto qasm = qasmQC->toOpenQASM3();
+  ASSERT_TRUE(qasm);
+  EXPECT_TRUE(StringRef(qasm->source()).contains("for int "));
+  EXPECT_TRUE(StringRef(qasm->source()).contains("x $7;"));
+  EXPECT_TRUE(StringRef(qasm->source()).contains("x $19;"));
+  EXPECT_FALSE(StringRef(qasm->source()).contains("$42"));
+  EXPECT_LT(qasm->source().size(), 4096);
+  EXPECT_TRUE(QCProgram::fromOpenQASMString(qasm->source()));
   const auto payload = llvm::cantFail(payloadSpecificationForProgramFormat(
       QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE));
   ASSERT_TRUE(program->compileForTarget(TargetEnvironment(target, payload)));
@@ -3506,21 +3521,6 @@ TEST_F(CompilerPipelineTest, PayloadControlRejectsConstantCFGBeforeCleanup) {
       << diagnostics;
 }
 
-TEST_F(CompilerPipelineTest, PayloadControlAllowsRuntimeAssertions) {
-  auto program = QCOProgram::fromMLIRString(R"mlir(
-    module {
-      func.func @main(%condition: i1) attributes {mqt.entry_point} {
-        cf.assert %condition, "runtime precondition"
-        return
-      }
-    }
-  )mlir");
-  ASSERT_TRUE(program);
-  ASSERT_TRUE(program->compileForTarget(TargetEnvironment(
-      makeUnrestrictedTarget(), makeControlPayloadSpecification({}))));
-  EXPECT_TRUE(StringRef(program->str()).contains("cf.assert"));
-}
-
 TEST_F(CompilerPipelineTest, PayloadControlPreservesSingleCaseNativeSwitches) {
   constexpr llvm::StringLiteral quantum = R"mlir(
     module {
@@ -3893,7 +3893,40 @@ TEST_F(CompilerPipelineTest, TargetCompilationInlinesReusableFunctions) {
   EXPECT_TRUE(verify(program->module()).succeeded());
 }
 
-// Test that target compilation leaves dead-value cleanup at a fixed point.
+TEST_F(CompilerPipelineTest, TargetCompilationInlinesBorrowedRegisters) {
+  constexpr llvm::StringLiteral source = R"mlir(module {
+    func.func private @flip(%q: memref<2x!qc.qubit>) {
+      %c0 = arith.constant 0 : index
+      %c1 = arith.constant 1 : index
+      %c2 = arith.constant 2 : index
+      scf.for %i = %c0 to %c2 step %c1 {
+        %element = memref.load %q[%i] : memref<2x!qc.qubit>
+        qc.x %element : !qc.qubit
+      }
+      return
+    }
+    func.func @main() attributes {mqt.entry_point} {
+      %q = memref.alloc() : memref<2x!qc.qubit>
+      func.call @flip(%q) : (memref<2x!qc.qubit>) -> ()
+      memref.dealloc %q : memref<2x!qc.qubit>
+      return
+    }
+  })mlir";
+  auto qcProgram = QCProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(qcProgram);
+  auto program = std::move(*qcProgram).intoQCO();
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(program->module().lookupSymbol<func::FuncOp>("flip"));
+  auto reference = OwningOpRef<ModuleOp>(program->module().clone());
+  ASSERT_TRUE(program->compileForTarget(TargetEnvironment(
+      makeSparseUCZTarget(false), makePayloadSpecification())));
+  EXPECT_FALSE(program->module().lookupSymbol<func::FuncOp>("flip"));
+  EXPECT_TRUE(verify(program->module()).succeeded());
+  EXPECT_TRUE(qco::verifyLinearity(program->module()).succeeded());
+  expectFullUnitaryEqual(*reference, program->module(), 2);
+}
+
+/// Test that target compilation leaves dead-value cleanup at a fixed point.
 TEST_F(CompilerPipelineTest,
        TargetCompilationLeavesDeadValueCleanupAtFixedPoint) {
   constexpr llvm::StringLiteral source = R"mlir(

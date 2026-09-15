@@ -17,6 +17,17 @@ def QCToQCO : Pass<"qc-to-qco", "mlir::ModuleOp"> {
     Control flow must use structured SCF operations. Operations with block
     successors, including `cf.br`, `cf.cond_br`, and `cf.switch`, are diagnosed
     before conversion.
+    Private helpers may borrow fixed-size rank-one qubit memrefs with identity
+    layout and default memory space. They become qubit tensors. Updated scalar
+    qubits and complete tensors are appended to ordinary results in argument
+    order. Duplicate register operands, register/element aliases, and consumption
+    or explicit returns of borrowed registers are diagnosed before conversion.
+    Borrowed register storage supports loads, helper calls, and explicit
+    `qc.take`/`qc.put` ownership transfers. Ordinary qubit-reference stores do
+    not encode ownership and remain unsupported.
+    A loaded reference cannot remain live across a take, put, or helper call
+    on its register; use explicit ownership or load it again afterwards.
+    A put must consume a qubit owned in the same block, with no later uses.
     Static qubit references are hoisted and coalesced when needed. General
     classical folding and common subexpression elimination are not guaranteed
     by this conversion; use the corresponding simplification passes when needed.

@@ -21,6 +21,11 @@ def QCDialect : Dialect {
         modify qubits in place. Operation order determines the sequence of
         transformations on each qubit.
 
+        `memref.load` borrows a register's qubit reference. Use `qc.take` and
+        `qc.put` to move register slot ownership without applying quantum gates.
+        Ownership transfers remain explicit until terminal lowering so that
+        conversion back to QCO can recover linear qubit values.
+
         The name "QC" stands for "Quantum Circuit."
 
         In a program, dynamic qubit and qubit-register allocations must be in

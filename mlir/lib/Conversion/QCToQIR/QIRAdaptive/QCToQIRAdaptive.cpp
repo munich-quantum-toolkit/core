@@ -55,6 +55,29 @@ using namespace qir;
 
 namespace {
 
+/// Only terminal lowering may erase the distinction between ownership and
+/// borrowed references. QC cleanup must retain it for conversion back to QCO.
+struct LowerTakeOp final : OpRewritePattern<qc::TakeOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(qc::TakeOp op,
+                                PatternRewriter& rewriter) const override {
+    rewriter.replaceOpWithNewOp<memref::LoadOp>(op, op.getReg(), op.getIndex());
+    return success();
+  }
+};
+
+struct LowerPutOp final : OpRewritePattern<qc::PutOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(qc::PutOp op,
+                                PatternRewriter& rewriter) const override {
+    rewriter.replaceOpWithNewOp<memref::StoreOp>(op, op.getQubit(), op.getReg(),
+                                                 ValueRange{op.getIndex()});
+    return success();
+  }
+};
+
 constexpr unsigned LOCAL_CBIT_REGISTER = 1U;
 constexpr unsigned RETURNED_CBIT_REGISTER = 2U;
 constexpr unsigned MIXED_CBIT_REGISTER =
@@ -114,7 +137,8 @@ static LogicalResult prepareCBitRegisterAccesses(Operation* moduleOp,
     if (it == state.cregIndices.end()) {
       return;
     }
-    representations[allocOp.getResult()] = state.cregs[it->second].record
+    const auto& reg = state.cregs[it->second];
+    representations[allocOp.getResult()] = reg.record && !reg.booleanStorage
                                                ? RETURNED_CBIT_REGISTER
                                                : LOCAL_CBIT_REGISTER;
     worklist.push_back(allocOp.getResult());
@@ -254,11 +278,12 @@ struct ConvertCBitAllocOp final : StatefulOpConversionPattern<cbit::AllocOp> {
                                          op.getResult().getType().getWidth())
                     .getResult();
 
-    if (!reg.record) {
+    if (!reg.record || reg.booleanStorage) {
       auto i1Type = rewriter.getI1Type();
       auto storage =
           LLVM::AllocaOp::create(rewriter, loc, ptrType, i1Type, size)
               .getResult();
+      reg.array = storage;
       if (op.getInitialization() == cbit::Initialization::Zero) {
         rewriter.setInsertionPoint(op);
         auto zero = LLVM::ConstantOp::create(rewriter, loc,
@@ -816,7 +841,15 @@ protected:
 
     target.addLegalDialect<LLVM::LLVMDialect>();
 
-    if (failed(prepareClassicalResults(moduleOp, state))) {
+    {
+      RewritePatternSet patterns(ctx);
+      cbit::populateCBitDecompositionPatterns(patterns);
+      patterns.add<LowerTakeOp, LowerPutOp>(ctx);
+      const FrozenRewritePatternSet frozen(std::move(patterns));
+      walkAndApplyPatterns(moduleOp, frozen);
+    }
+    if (failed(prepareClassicalResults(moduleOp, state,
+                                       /*allowComputedOutputs=*/true))) {
       signalPassFailure();
       return;
     }
@@ -835,12 +868,6 @@ protected:
       }
     }
 
-    {
-      RewritePatternSet patterns(ctx);
-      cbit::populateCBitDecompositionPatterns(patterns);
-      const FrozenRewritePatternSet frozen(std::move(patterns));
-      walkAndApplyPatterns(moduleOp, frozen);
-    }
     if (failed(prepareCBitRegisterAccesses(moduleOp, state))) {
       signalPassFailure();
       return;

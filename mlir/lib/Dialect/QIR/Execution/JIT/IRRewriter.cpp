@@ -34,6 +34,7 @@
 #include <optional>
 #include <stdexcept>
 #include <unordered_map>
+#include <variant>
 #include <vector>
 
 namespace qir {
@@ -245,7 +246,7 @@ static bool isStaticGate(const llvm::CallInst& call, llvm::StringRef name) {
          });
 }
 
-std::optional<std::vector<uintptr_t>>
+std::optional<std::vector<std::variant<uintptr_t, bool>>>
 getStaticSamplingOutputs(const llvm::Function& entryPoint) {
   const auto profile = entryPoint.getFnAttribute(QIR_PROFILES_ATTR);
   if (entryPoint.isDeclaration() || !profile.isStringAttribute() ||
@@ -254,7 +255,7 @@ getStaticSamplingOutputs(const llvm::Function& entryPoint) {
     return std::nullopt;
   }
   std::unordered_map<uintptr_t, uintptr_t> results;
-  std::vector<uintptr_t> outputs;
+  std::vector<std::variant<uintptr_t, bool>> outputs;
   llvm::SmallPtrSet<const llvm::BasicBlock*, 4> visited;
   const auto* block = &entryPoint.getEntryBlock();
   bool terminal = false;
@@ -313,12 +314,22 @@ getStaticSamplingOutputs(const llvm::Function& entryPoint) {
           return std::nullopt;
         }
         terminal = true;
-        outputs.push_back(it->second);
+        outputs.emplace_back(it->second);
+        continue;
+      }
+      if (name == "__quantum__rt__bool_record_output" &&
+          call->arg_size() == 2) {
+        const auto* bit =
+            llvm::dyn_cast<llvm::ConstantInt>(call->getArgOperand(0));
+        if (bit == nullptr || bit->getBitWidth() != 1) {
+          return std::nullopt;
+        }
+        terminal = true;
+        outputs.emplace_back(!bit->isZero());
         continue;
       }
       if ((name == "__quantum__rt__tuple_record_output" ||
            name == "__quantum__rt__array_record_output" ||
-           name == "__quantum__rt__bool_record_output" ||
            name == "__quantum__rt__int_record_output" ||
            name == "__quantum__rt__double_record_output") &&
           call->arg_size() == 2 &&

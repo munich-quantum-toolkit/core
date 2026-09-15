@@ -41,6 +41,7 @@
 #include <string_view>
 #include <unordered_map>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace qir {
@@ -244,17 +245,23 @@ auto Runtime::measure(Qubit* qubit, Result* result) -> void {
   }
 }
 
-auto Runtime::sampleMeasurements(std::span<const uintptr_t> qubits,
-                                 size_t shots,
-                                 std::vector<std::string>& results) -> void {
+auto Runtime::sampleMeasurements(
+    std::span<const std::variant<uintptr_t, bool>> outputs, size_t shots,
+    std::vector<std::string>& results) -> void {
   measurements.clear();
-  if (qubits.empty()) {
-    results.resize(shots);
+  if (std::ranges::none_of(outputs, [](const auto& output) {
+        return std::holds_alternative<uintptr_t>(output);
+      })) {
+    for (const auto& output : outputs) {
+      measurements.push_back(std::get<bool>(output) ? '1' : '0');
+    }
+    results.assign(shots, measurements);
     return;
   }
-  bool ascending = qubits.size() == qState.numQubits;
-  for (size_t i = 0; ascending && i < qubits.size(); ++i) {
-    ascending = qubitPermutation[qubits[i]] == i;
+  bool ascending = outputs.size() == qState.numQubits;
+  for (size_t i = 0; ascending && i < outputs.size(); ++i) {
+    const auto* qubit = std::get_if<uintptr_t>(&outputs[i]);
+    ascending = qubit != nullptr && qubitPermutation[*qubit] == i;
   }
   if (ascending) {
     for (size_t i = 0; i < shots; ++i) {
@@ -267,12 +274,17 @@ auto Runtime::sampleMeasurements(std::span<const uintptr_t> qubits,
     }
     return;
   }
-  measurements.reserve(qubits.size());
+  measurements.reserve(outputs.size());
   for (size_t i = 0; i < shots; ++i) {
     const auto basis = qState.dd->measureAll(qState.edge, false, mt);
     measurements.clear();
-    for (const auto qubit : qubits) {
-      measurements.push_back(basis[basis.size() - 1 - qubitPermutation[qubit]]);
+    for (const auto& output : outputs) {
+      if (const auto* qubit = std::get_if<uintptr_t>(&output)) {
+        measurements.push_back(
+            basis[basis.size() - 1 - qubitPermutation[*qubit]]);
+      } else {
+        measurements.push_back(std::get<bool>(output) ? '1' : '0');
+      }
     }
     results.push_back(measurements);
   }

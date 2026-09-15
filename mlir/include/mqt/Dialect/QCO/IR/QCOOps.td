@@ -1492,6 +1492,8 @@ def PowOp
         [[nodiscard]] static StringRef getBaseSymbol() { return "pow"; }
         [[nodiscard]] bool hasCompileTimeKnownUnitaryMatrix();
         [[nodiscard]] std::optional<DynamicMatrix> getUnitaryMatrix();
+        /// Evaluate the constant body with a concrete runtime exponent.
+        [[nodiscard]] std::optional<DynamicMatrix> getUnitaryMatrix(double exponent);
     }];
 
   let builders = [OpBuilder<(ins "ValueRange":$qubits,

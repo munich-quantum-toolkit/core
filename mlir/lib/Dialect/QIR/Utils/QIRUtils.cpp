@@ -399,7 +399,7 @@ void emitOutputRecording(OpBuilder& builder, Operation* anchor,
     auto label = createLabel(reg.label);
 
     // Adaptive Profile: emit `__quantum__rt__result_array_record_output`
-    if (reg.array) {
+    if (reg.array && !reg.booleanStorage) {
       if (!adaptiveArrayDec) {
         auto arraySig =
             LLVM::LLVMFunctionType::get(voidType, {i64Type, ptrType, ptrType});
@@ -419,6 +419,24 @@ void emitOutputRecording(OpBuilder& builder, Operation* anchor,
           builder, anchor, QIR_ARRAY_RECORD_OUTPUT, arraySig);
     }
     LLVM::CallOp::create(builder, loc, baseArrayDec, ValueRange{size, label});
+    if (reg.booleanStorage) {
+      auto signature =
+          LLVM::LLVMFunctionType::get(voidType, {builder.getI1Type(), ptrType});
+      auto record = getOrCreateFunctionDeclaration(
+          builder, anchor, QIR_BOOL_RECORD_OUTPUT, signature);
+      for (int64_t index = 0; index < std::get<int64_t>(reg.size); ++index) {
+        auto position = LLVM::ConstantOp::create(
+            builder, loc, builder.getI64IntegerAttr(index));
+        auto address =
+            LLVM::GEPOp::create(builder, loc, ptrType, builder.getI1Type(),
+                                reg.array, ValueRange{position});
+        auto bit =
+            LLVM::LoadOp::create(builder, loc, builder.getI1Type(), address);
+        auto bitLabel = createLabel(reg.label + "_" + std::to_string(index));
+        LLVM::CallOp::create(builder, loc, record, ValueRange{bit, bitLabel});
+      }
+      continue;
+    }
     for (auto [index, ptr] : llvm::enumerate(reg.results)) {
       auto bitLabel = createLabel(reg.label + "_" + std::to_string(index));
       LLVM::CallOp::create(builder, loc, resultDec, ValueRange{ptr, bitLabel});

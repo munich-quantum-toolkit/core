@@ -202,6 +202,14 @@ bool PayloadSpecification::optionalCapabilitiesKnown() const noexcept {
   return optionalCapabilitiesKnown_;
 }
 
+bool PayloadSpecification::supportsUnrestrictedMultiwayBranching()
+    const noexcept {
+  return llvm::any_of(capabilities_, [](const auto& capability) {
+    return capability.id == ProgramCapability::MULTIWAY_BRANCHING &&
+           capability.value == 0 && capability.constraints.empty();
+  });
+}
+
 mqt::PayloadSpecAttr
 PayloadSpecification::materialize(MLIRContext& context) const {
   const auto format = mqt::PayloadFormatAttr::get(
@@ -262,7 +270,12 @@ TargetEnvironment::payloadSpecification() const noexcept {
 
 bool TargetEnvironment::supportsIndexedQubits() const noexcept {
   const auto& format = payloadSpecification_.format();
-  return format.id == "qir" && format.profile == "adaptive" &&
+  const bool indexedPayload =
+      (format.id == "qir" && format.profile == "adaptive") ||
+      (format.id == "openqasm" && format.version == "3.1.0" &&
+       format.profile.empty() && format.encoding == PayloadEncoding::Text &&
+       payloadSpecification_.supportsUnrestrictedMultiwayBranching());
+  return indexedPayload &&
          target_.connectivityKind() ==
              CompilerTarget::Connectivity::Kind::AllToAll &&
          llvm::all_of(target_.operations(), [](const auto& operation) {
