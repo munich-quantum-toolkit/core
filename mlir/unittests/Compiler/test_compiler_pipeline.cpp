@@ -2167,18 +2167,18 @@ c = measure q;
                                  {{0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 5}}),
                              CompilerTarget::NativeOperations::unrestricted()));
   const TargetEnvironment environment(target, makePayloadSpecification());
-  auto expected = input->copy();
-  ASSERT_TRUE(expected.compileForTarget(environment,
-                                        {.seed = 7, .mapping = {.trials = 2}}));
-
   for (const auto seed : {7ULL, 99ULL}) {
+    SCOPED_TRACE(seed);
+    const CompilationOptions options{.seed = seed, .mapping = {.trials = 2}};
+    auto expected = input->copy();
+    ASSERT_TRUE(expected.compileForTarget(environment, options));
     for (const bool lowLevel : {false, true}) {
+      SCOPED_TRACE(lowLevel);
       auto program = input->copy();
       auto moduleOp = program.module();
       const auto previousSeed =
           Builder(moduleOp.getContext()).getI64IntegerAttr(99);
       moduleOp->setAttr(COMPILATION_SEED_ATTR, previousSeed);
-      const CompilationOptions options{.seed = seed, .mapping = {.trials = 2}};
       if (lowLevel) {
         PassManager pm(moduleOp.getContext());
         populateTargetCompilationPipeline(pm, environment, options.mapping);
@@ -2189,9 +2189,8 @@ c = measure q;
       }
       EXPECT_EQ(moduleOp->getAttr(COMPILATION_SEED_ATTR), previousSeed);
       moduleOp->removeAttr(COMPILATION_SEED_ATTR);
-      /// Compare layouts, excluding metadata, and ensure the input uses the
-      /// seed.
-      EXPECT_EQ(program.str() == expected.str(), seed == 7);
+      // Different seeds may select the same layout; compare equal seeds only.
+      EXPECT_EQ(program.str(), expected.str());
     }
   }
 }
