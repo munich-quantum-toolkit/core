@@ -166,6 +166,7 @@ private:
   raw_indented_ostream* output = nullptr;
   DenseMap<Value, Resource> resources;
   DenseMap<Value, SmallVector<Value>> referenceRegisters;
+  DenseMap<Value, int64_t> dispatchedIndices;
   SmallVector<Value> resourceOrder;
   DenseMap<Value, std::string> valueNames;
   DenseSet<Value> returnedRegisters;
@@ -660,6 +661,17 @@ private:
             getConstantInteger(load.getIndices().front())) {
           continue;
         }
+        if (const auto selected =
+                dispatchedIndices.find(load.getIndices().front());
+            selected != dispatchedIndices.end()) {
+          if (std::cmp_greater_equal(
+                  selected->second,
+                  referenceRegisters.at(load.getMemRef()).size())) {
+            // Runtime indices must be in bounds in every selected register.
+            return success();
+          }
+          continue;
+        }
         return emitPhysicalDispatch(operation, load);
       }
       if (dispatchDepth != 0 &&
@@ -856,16 +868,12 @@ private:
     /// ponytail: Cartesian site dispatch is capped; specialize index relations
     /// if the cap becomes limiting.
     llvm::SaveAndRestore depthGuard(dispatchDepth, dispatchDepth + 1);
-    const auto bindingGuard =
-        llvm::scope_exit([&] { valueNames.erase(load.getResult()); });
+    const auto bindingGuard = llvm::scope_exit(
+        [&] { dispatchedIndices.erase(load.getIndices().front()); });
     *output << "switch (" << *index << ") {\n";
     output->indent();
-    for (auto [slot, reference] : llvm::enumerate(references)) {
-      auto qubit = emitQubit(reference);
-      if (failed(qubit)) {
-        return failure();
-      }
-      valueNames[load.getResult()] = std::move(*qubit);
+    for (size_t slot = 0; slot < references.size(); ++slot) {
+      dispatchedIndices[load.getIndices().front()] = static_cast<int64_t>(slot);
       *output << "case " << slot << " {\n";
       output->indent();
       if (failed(emitOperation(operation))) {
@@ -975,11 +983,16 @@ private:
       return failExpression(value, "expected a logical or physical qubit "
                                    "reference");
     }
-    const auto index = getConstantInteger(load.getIndices().front());
+    auto index = getConstantInteger(load.getIndices().front());
     if (const auto references = referenceRegisters.find(load.getMemRef());
         references != referenceRegisters.end()) {
+      if (const auto selected =
+              dispatchedIndices.find(load.getIndices().front());
+          !index && selected != dispatchedIndices.end()) {
+        index = selected->second;
+      }
       if (!index || *index < 0 ||
-          static_cast<uint64_t>(*index) >= references->second.size()) {
+          std::cmp_greater_equal(*index, references->second.size())) {
         return failExpression(value,
                               "physical qubit index requires bounded dispatch");
       }

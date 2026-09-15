@@ -78,6 +78,22 @@ static void expectOneSample(ModuleOp moduleOp, StringRef expected = "1") {
   EXPECT_EQ(samples->begin()->first, expected);
 }
 
+static std::string physicalReferenceRegister(StringRef name, size_t width,
+                                             size_t firstSite) {
+  const auto type = "memref<" + std::to_string(width) + "x!qc.qubit>";
+  std::string source;
+  llvm::raw_string_ostream stream(source);
+  stream << '%' << name << " = memref.alloca() : " << type << '\n';
+  for (size_t index = 0; index < width; ++index) {
+    stream << '%' << name << index << " = arith.constant " << index
+           << " : index\n%" << name << "_q" << index << " = qc.static "
+           << firstSite + index << " : !qc.qubit\nmemref.store %" << name
+           << "_q" << index << ", %" << name << "[%" << name << index
+           << "] : " << type << '\n';
+  }
+  return source;
+}
+
 namespace {
 
 constexpr llvm::StringLiteral BELL = R"qasm(OPENQASM 3.1;
@@ -1688,6 +1704,90 @@ TEST(OpenQASM3EmissionTest, PreservesIndexedControlledGatesAndAngleTables) {
       const auto expected = row != column ? 0.0 : row == 3 ? -1.0 : 1.0;
       EXPECT_NEAR(std::abs(matrix[row][column] - expected), 0., 1e-12);
     }
+  }
+}
+
+TEST(OpenQASM3EmissionTest, SharesPhysicalDispatchForIdenticalIndices) {
+  for (const size_t width : {40U, 41U}) {
+    SCOPED_TRACE(width);
+    const auto source =
+        std::string(
+            "module { func.func @main() attributes {mqt.entry_point} {\n") +
+        physicalReferenceRegister("a", 41, 0) +
+        physicalReferenceRegister("b", 41, 41) +
+        physicalReferenceRegister("c", width, 82) + "%end = arith.constant " +
+        std::to_string(width) + R"mlir( : index
+        scf.for %i = %a0 to %end step %a1 {
+          %left = memref.load %a[%i] : memref<41x!qc.qubit>
+          %right = memref.load %b[%i] : memref<41x!qc.qubit>
+          %target = memref.load %c[%i] : memref<)mlir" +
+        std::to_string(width) + R"mlir(x!qc.qubit>
+          qc.ctrl(%left, %right) targets (%q = %target) {
+            qc.x %q : !qc.qubit
+            qc.yield
+          } : {!qc.qubit, !qc.qubit}, {!qc.qubit}
+        }
+        return
+      } })mlir";
+    MLIRContext context(emissionDialects());
+    auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+    ASSERT_TRUE(succeeded(emitted));
+    // One switch must cover all three loads instead of their Cartesian product.
+    EXPECT_EQ(StringRef(*emitted).count("switch ("), 1U);
+    for (size_t index = 0; index < width; ++index) {
+      EXPECT_NE(emitted->find("ctrl(2) @ x $" + std::to_string(index) + ", $" +
+                              std::to_string(41 + index) + ", $" +
+                              std::to_string(82 + index) + ";"),
+                std::string::npos);
+    }
+    EXPECT_TRUE(qc::translateOpenQASMToQC(*emitted, &context));
+  }
+}
+
+TEST(OpenQASM3EmissionTest, EnforcesPhysicalDispatchCaseLimit) {
+  for (const size_t width : {255U, 256U}) {
+    SCOPED_TRACE(width);
+    const auto source =
+        std::string(
+            "module { func.func @main() attributes {mqt.entry_point} {\n") +
+        physicalReferenceRegister("a", 256, 0) +
+        physicalReferenceRegister("b", width, 256) + "%end = arith.constant " +
+        std::to_string(width) + R"mlir( : index
+        scf.for %i = %a0 to %a1 step %a1 {
+          scf.for %j = %b0 to %end step %b1 {
+            %left = memref.load %a[%i] : memref<256x!qc.qubit>
+            %right = memref.load %b[%j] : memref<)mlir" +
+        std::to_string(width) + R"mlir(x!qc.qubit>
+            qc.ctrl(%left) targets (%q = %right) {
+              qc.x %q : !qc.qubit
+              qc.yield
+            } : {!qc.qubit}, {!qc.qubit}
+          }
+        }
+        return
+      } })mlir";
+    MLIRContext context(emissionDialects());
+    auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    std::string output;
+    llvm::raw_string_ostream stream(output);
+    bool diagnosed = false;
+    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+      diagnosed |= diagnostic.str().find("limit of 65536 dispatch cases") !=
+                   std::string::npos;
+      return success();
+    });
+    const auto result = qc::translateQCToOpenQASM3(*moduleOp, stream);
+    // 256 + 256 * 255 reaches the cap exactly; another case per branch exceeds
+    // it.
+    EXPECT_EQ(succeeded(result), width == 255);
+    EXPECT_EQ(diagnosed, width == 256);
+    EXPECT_EQ(output.empty(), width == 256);
+    EXPECT_TRUE(succeeded(verify(*moduleOp)));
   }
 }
 
