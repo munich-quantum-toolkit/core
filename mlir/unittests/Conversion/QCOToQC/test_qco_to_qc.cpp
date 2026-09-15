@@ -601,10 +601,9 @@ TEST(QCOToQCRegressionTest, PreservesDistinctResultsOfIndexProducer) {
   ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   auto function = *moduleOp->getOps<func::FuncOp>().begin();
-  /// Both stores are required to exchange the register slots.
-  EXPECT_EQ(
-      llvm::range_size(function.getBody().front().getOps<memref::StoreOp>()),
-      2U);
+  /// Both ownership transfers are required to exchange the register slots.
+  EXPECT_EQ(llvm::range_size(function.getBody().front().getOps<qc::PutOp>()),
+            2U);
 }
 
 TEST(QCOToQCRegressionTest, PreservesIndexedQTensorSlotSwapAcrossLoop) {
@@ -654,12 +653,11 @@ module {
   EXPECT_EQ(llvm::range_size(function.getOps<memref::StoreOp>()), 2U);
   auto loops = llvm::to_vector(function.getOps<scf::ForOp>());
   ASSERT_EQ(loops.size(), 1U);
-  EXPECT_EQ(llvm::range_size(loops[0].getBody()->getOps<memref::StoreOp>()),
-            2U);
+  EXPECT_EQ(llvm::range_size(loops[0].getBody()->getOps<qc::PutOp>()), 2U);
 
-  SmallVector<memref::LoadOp> loadsBeforeLoop;
-  SmallVector<memref::LoadOp> loadsAfterLoop;
-  for (auto load : function.getBody().front().getOps<memref::LoadOp>()) {
+  SmallVector<qc::TakeOp> loadsBeforeLoop;
+  SmallVector<qc::TakeOp> loadsAfterLoop;
+  for (auto load : function.getBody().front().getOps<qc::TakeOp>()) {
     (load->isBeforeInBlock(loops[0]) ? loadsBeforeLoop : loadsAfterLoop)
         .push_back(load);
   }

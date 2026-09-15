@@ -265,6 +265,13 @@ reference semantics
   A model in which an operation changes an object reached through a stable
   reference. QC qubit operations use this model.
 
+register slot ownership
+  **Preferred term:** register slot ownership. **Accepted aliases:** none. A
+  register slot holds one qubit until an operation takes ownership of it. The
+  empty slot must be filled before the register is released or passed to a
+  helper. Moving ownership changes which qubit occupies a slot; it does not
+  apply a quantum SWAP gate. A borrowed reference does not transfer ownership.
+
 value semantics
   A model in which an operation consumes input values and produces new output
   values. QCO uses this model to make quantum data flow explicit in SSA form.

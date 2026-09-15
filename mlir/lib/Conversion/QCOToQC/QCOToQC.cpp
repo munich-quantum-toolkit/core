@@ -74,6 +74,8 @@ struct LoweringState {
   /// Original qubit argument positions, retained while signatures are
   /// rewritten.
   DenseMap<Operation*, SmallVector<unsigned>> qubitArguments;
+  /// Preserve slot ownership in functions that transfer or replace qubits.
+  DenseSet<Operation*> owningFunctions;
   /// Module-wide mode determined before rewriting any function.
   const AllocationMode allocationMode;
 
@@ -604,7 +606,8 @@ struct ConvertQTensorAllocOp final : OpConversionPattern<qtensor::AllocOp> {
   }
 };
 
-/// Converts qtensor.extract to memref.load
+/// Converts qtensor.extract to qc.take when slot ownership changes in the
+/// function, or to a borrowed memref.load otherwise.
 ///
 /// @par Example:
 /// ```mlir
@@ -621,6 +624,13 @@ struct ConvertQTensorExtractOp final
   LogicalResult
   matchAndRewrite(qtensor::ExtractOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    if (getState().owningFunctions.contains(
+            op->getParentOfType<func::FuncOp>())) {
+      auto take = qc::TakeOp::create(rewriter, op.getLoc(), adaptor.getTensor(),
+                                     adaptor.getIndex());
+      rewriter.replaceOp(op, {adaptor.getTensor(), take.getQubit()});
+      return success();
+    }
     auto& qubitValues =
         getState().qubitValues[op->getParentRegion()][adaptor.getTensor()];
     if (auto qubit = qubitValues.lookup(adaptor.getIndex())) {
@@ -667,7 +677,7 @@ struct ConvertQTensorFromElementsOp final
   }
 };
 
-/// Converts qtensor.insert to an in-place memref.store.
+/// Preserves ownership with qc.put, or elides unchanged borrowed references.
 struct ConvertQTensorInsertOp final
     : StatefulOpConversionPattern<qtensor::InsertOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
@@ -676,6 +686,12 @@ struct ConvertQTensorInsertOp final
   matchAndRewrite(qtensor::InsertOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
+    if (state.owningFunctions.contains(op->getParentOfType<func::FuncOp>())) {
+      qc::PutOp::create(rewriter, op.getLoc(), adaptor.getScalar(),
+                        adaptor.getDest(), adaptor.getIndex());
+      rewriter.replaceOp(op, adaptor.getDest());
+      return success();
+    }
     auto& qubitValues =
         state.qubitValues[op->getParentRegion()][adaptor.getDest()];
     const auto sameIndex = [&](Value index) {
@@ -1424,6 +1440,20 @@ protected:
         signalPassFailure();
         return;
       }
+      const auto origin = [&](Value value) {
+        auto known = origins.lookup(value);
+        return known ? known : value;
+      };
+      moduleOp.walk([&](qtensor::InsertOp insert) {
+        auto extract =
+            origin(insert.getScalar()).getDefiningOp<qtensor::ExtractOp>();
+        if (!extract ||
+            origin(extract.getTensor()) != origin(insert.getDest()) ||
+            getAsOpFoldResult(extract.getIndex()) !=
+                getAsOpFoldResult(insert.getIndex())) {
+          state.owningFunctions.insert(insert->getParentOfType<func::FuncOp>());
+        }
+      });
     }
     const auto tensors = moduleOp.walk([&](Operation* op) {
       if (isa<qtensor::FromElementsOp>(op) &&

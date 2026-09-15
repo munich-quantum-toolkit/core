@@ -16,16 +16,16 @@ def QCOToQC : Pass<"qco-to-qc", "mlir::ModuleOp"> {
     Scalar qubits and fixed-size rank-one qubit-tensor arguments become in-place
     references; each function must return its quantum arguments as a positional
     suffix. Register helpers must be private and restore extracted slots before
-    calls and returns. Explicit register ownership transfers are unsupported.
+    calls and returns. Transferring the register itself is unsupported.
     Other results remain explicit, including qubits created by a function.
 
     Before rewriting, prove that quantum values yielded by modifiers, branches,
     and loops correspond positionally to their region arguments. Reject wire
     permutations and changes to quantum loop-state counts or types. Classical
-    loop state can change type in `scf.while`. QTensor insertions can update
-    register slots and become stores when the slot value changes.
-    Helpers that replace borrowed register slots cannot round-trip through
-    QC-to-QCO, which supports only loads and calls on borrowed register storage.
+    loop state can change type in `scf.while`. Functions that change register
+    slot contents use `qc.take` and `qc.put`, preserving ownership for conversion
+    back to QCO. These operations support slot permutations, cross-register
+    transfers, and replacement with allocated qubits without adding gates.
 
     Determine the module's allocation mode before converting any function.
     Dynamic qubit sinks become deallocations; static qubit sinks are removed.

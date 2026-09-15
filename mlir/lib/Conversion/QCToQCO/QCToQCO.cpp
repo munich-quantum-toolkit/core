@@ -449,6 +449,28 @@ static void commitQubits(LoweringState& state, Operation* anchor,
 /// Rejects input unsupported by the lowering state.
 [[nodiscard]] static LogicalResult validateSupportedInput(Operation* root) {
   const auto result = root->walk([&](Operation* operation) {
+    if (auto put = dyn_cast<qc::PutOp>(operation)) {
+      auto* producer = put.getQubit().getDefiningOp();
+      if (!isa_and_nonnull<qc::AllocOp, qc::StaticOp, qc::TakeOp, func::CallOp>(
+              producer) ||
+          producer->getBlock() != put->getBlock()) {
+        put.emitOpError(
+            "QC-to-QCO requires ownership defined in the same block");
+        return WalkResult::interrupt();
+      }
+      for (auto* user : put.getQubit().getUsers()) {
+        if (user == put.getOperation()) {
+          continue;
+        }
+        auto* ancestor = put->getBlock()->findAncestorOpInBlock(*user);
+        if (isa<qc::DeallocOp>(user) || !ancestor ||
+            !ancestor->isBeforeInBlock(put)) {
+          put.emitOpError(
+              "cannot use a qubit reference after consuming ownership");
+          return WalkResult::interrupt();
+        }
+      }
+    }
     if (operation->getNumSuccessors() != 0) {
       operation->emitOpError(
           "QC-to-QCO does not support unstructured control flow; use SCF "
@@ -503,9 +525,10 @@ static void commitQubits(LoweringState& state, Operation* anchor,
               &block == &region.front();
           if (isFunctionArgument && isQubitMemrefType(argument.getType())) {
             for (auto* user : argument.getUsers()) {
-              if (!isa<memref::LoadOp, func::CallOp>(user)) {
-                user->emitOpError("borrowed registers may only be loaded or "
-                                  "passed to helpers");
+              if (!isa<memref::LoadOp, qc::TakeOp, qc::PutOp, func::CallOp>(
+                      user)) {
+                user->emitOpError("borrowed registers require loads, explicit "
+                                  "take/put operations, or helper calls");
                 return WalkResult::interrupt();
               }
             }
@@ -541,11 +564,12 @@ static void commitQubits(LoweringState& state, Operation* anchor,
       }
 
       if (isa<qc::QubitType>(value.getType()) &&
-          !isa<qc::AllocOp, qc::StaticOp, memref::LoadOp, func::CallOp>(
-              operation)) {
+          !isa<qc::AllocOp, qc::StaticOp, qc::TakeOp, memref::LoadOp,
+               func::CallOp>(operation)) {
         operation->emitOpError(
             "produces an unsupported qubit reference; use qc.alloc, "
-            "qc.static, a qubit-register load, or a QC modifier argument");
+            "qc.static, qc.take, a qubit-register load, or a QC modifier "
+            "argument");
         return WalkResult::interrupt();
       }
     }
@@ -589,6 +613,17 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
     }
   });
 
+  DenseMap<Value, SmallVector<Operation*>> ownershipChanges;
+  root->walk([&](Operation* operation) {
+    if (isa<qc::TakeOp, qc::PutOp, func::CallOp>(operation)) {
+      for (auto operand : operation->getOperands()) {
+        if (isQubitMemrefType(operand.getType())) {
+          ownershipChanges[operand].push_back(operation);
+        }
+      }
+    }
+  });
+
   const auto result = root->walk([&](memref::LoadOp op) {
     if (!isa<qc::QubitType>(op.getMemRefType().getElementType())) {
       return WalkResult::advance();
@@ -610,6 +645,17 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
         RegisterAccess{.reg = regIt->second, .index = op.getIndices().front()});
 
     for (Operation* user : op.getResult().getUsers()) {
+      auto* ancestor = op->getBlock()->findAncestorOpInBlock(*user);
+      for (auto* change : ownershipChanges[op.getMemref()]) {
+        auto* between = op->getBlock()->findAncestorOpInBlock(*change);
+        if (between && ancestor && op->isBeforeInBlock(between) &&
+            (between == ancestor || between->isBeforeInBlock(ancestor))) {
+          user->emitOpError("cannot retain a loaded qubit reference across "
+                            "register ownership operations or helper calls; "
+                            "use qc.take or load again afterwards");
+          return WalkResult::interrupt();
+        }
+      }
       if (isa<qc::UnitaryOpInterface, qc::MeasureOp, qc::ResetOp, func::CallOp>(
               user)) {
         continue;
@@ -1077,6 +1123,44 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
 
     rewriter.eraseOp(op);
 
+    return success();
+  }
+};
+
+/// Keep an explicitly taken qubit outside its tensor until ownership returns.
+struct ConvertQCTakeOp final : StatefulOpConversionPattern<qc::TakeOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qc::TakeOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    const auto reg = lookupRegisterId(state, op.getReg());
+    auto tensor = lookupMappedTensor(state, op, reg);
+    auto extract = qtensor::ExtractOp::create(rewriter, op.getLoc(), tensor,
+                                              adaptor.getIndex());
+    assignMappedTensor(state, op, reg, extract.getOutTensor());
+    assignMappedQubit(state, op, op.getQubit(), extract.getResult());
+    rewriter.replaceOp(op, extract.getResult());
+    return success();
+  }
+};
+
+struct ConvertQCPutOp final : StatefulOpConversionPattern<qc::PutOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qc::PutOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    const auto reg = lookupRegisterId(state, op.getReg());
+    auto tensor = lookupMappedTensor(state, op, reg);
+    auto qubit = lookupMappedQubit(state, op, op.getQubit());
+    auto insert = qtensor::InsertOp::create(rewriter, op.getLoc(), qubit,
+                                            tensor, adaptor.getIndex());
+    assignMappedTensor(state, op, reg, insert.getResult());
+    assignMappedQubit(state, op, op.getQubit(), {});
+    rewriter.eraseOp(op);
     return success();
   }
 };
@@ -2013,10 +2097,11 @@ protected:
     patterns
         .add<ConvertSCFForOp, ConvertSCFWhileOp, ConvertSCFIfOp,
              ConvertSCFIndexSwitchOp, ConvertMemRefAllocOp, ConvertMemRefLoadOp,
-             ConvertMemRefDeallocOp, ConvertQCAllocOp, ConvertQCDeallocOp,
-             ConvertQCStaticOp, ConvertQCMeasureOp, ConvertQCResetOp,
-             ConvertQCUnitaryOp, ConvertQCBarrierOp, ConvertQCCtrlOp,
-             ConvertQCInvOp, ConvertQCPowOp, ConvertQCYieldOp, ConvertQCCallOp>(
+             ConvertQCTakeOp, ConvertQCPutOp, ConvertMemRefDeallocOp,
+             ConvertQCAllocOp, ConvertQCDeallocOp, ConvertQCStaticOp,
+             ConvertQCMeasureOp, ConvertQCResetOp, ConvertQCUnitaryOp,
+             ConvertQCBarrierOp, ConvertQCCtrlOp, ConvertQCInvOp,
+             ConvertQCPowOp, ConvertQCYieldOp, ConvertQCCallOp>(
             typeConverter, context, &state);
 
     // Not part of the central gate table.

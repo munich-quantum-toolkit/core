@@ -71,6 +71,39 @@ def DeallocOp : QCOp<"dealloc", [MemoryEffects<[MemFree]>]> {
   let hasCanonicalizer = 1;
 }
 
+def TakeOp : QCOp<"take"> {
+  let summary = "Take ownership of a qubit from a register slot";
+  let description = [{
+    Returns the qubit in the indexed slot and leaves the slot empty. Unlike
+    `memref.load`, this operation transfers ownership, not just a reference.
+    The index must be in bounds and the slot must be occupied. The qubit may
+    be used by gates, then released or transferred with `qc.put`. A register
+    passed to a helper or returned to its owner must have all slots restored.
+  }];
+  let arguments = (ins Arg<MemRefRankOf<[QubitType], [1]>,
+                           "register", [MemRead, MemWrite]>:$reg,
+      Index:$index);
+  let results = (outs QubitType:$qubit);
+  let assemblyFormat = "$reg `[` $index `]` attr-dict `:` type($reg)";
+}
+
+def PutOp : QCOp<"put"> {
+  let summary = "Transfer ownership of a qubit into an empty register slot";
+  let description = [{
+    Fills the indexed empty slot with the qubit. The index must be in bounds.
+    The qubit must be owned by the caller, either allocated locally or taken
+    from a register. It may originate in a different register. The transferred
+    reference must not be used again; use a new load or take to access the slot.
+    No quantum gate is applied and no qubit is allocated or released.
+  }];
+  let arguments =
+      (ins Arg<QubitType, "owned qubit", [MemRead, MemWrite]>:$qubit,
+          Arg<MemRefRankOf<[QubitType], [1]>, "register", [MemWrite]>:$reg,
+          Index:$index);
+  let assemblyFormat =
+      "$qubit `into` $reg `[` $index `]` attr-dict `:` type($reg)";
+}
+
 def StaticOp : QCOp<"static", [Pure]> {
   let summary = "Retrieve a static qubit by index";
   let description = [{
