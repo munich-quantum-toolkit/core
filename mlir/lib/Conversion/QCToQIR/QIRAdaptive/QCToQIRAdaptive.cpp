@@ -818,6 +818,12 @@ protected:
 
     target.addLegalDialect<LLVM::LLVMDialect>();
 
+    {
+      RewritePatternSet patterns(ctx);
+      cbit::populateCBitDecompositionPatterns(patterns);
+      const FrozenRewritePatternSet frozen(std::move(patterns));
+      walkAndApplyPatterns(moduleOp, frozen);
+    }
     if (failed(prepareClassicalResults(moduleOp, state,
                                        /*allowComputedOutputs=*/true))) {
       signalPassFailure();
@@ -838,12 +844,6 @@ protected:
       }
     }
 
-    {
-      RewritePatternSet patterns(ctx);
-      cbit::populateCBitDecompositionPatterns(patterns);
-      const FrozenRewritePatternSet frozen(std::move(patterns));
-      walkAndApplyPatterns(moduleOp, frozen);
-    }
     if (failed(prepareCBitRegisterAccesses(moduleOp, state))) {
       signalPassFailure();
       return;

@@ -555,6 +555,10 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
   DenseMap<Block*, DenseSet<Operation*>> fusionCandidates;
   funcOp.walk([&](cbit::StoreOp storeOp) {
     auto allocOp = storeOp.getReg().getDefiningOp<cbit::AllocOp>();
+    if (!allocOp && allowComputedOutputs) {
+      // Adaptive conversion checks forwarded registers after lowering SCF.
+      return;
+    }
     if (!allocOp || !state.cregIndices.contains(allocOp.getOperation())) {
       storeOp.emitError(
           "QIR conversion requires direct CBit register allocations");

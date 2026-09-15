@@ -863,22 +863,42 @@ TEST(QCToQIRAdaptiveNativeTest, RecordsReturnedRegisterMeasurement) {
       module->lookupSymbol<LLVM::GlobalOp>("qir.result_label_named_result"));
 }
 
-TEST(QCToQIRAdaptiveNativeTest, RecordsComputedClassicalStore) {
-  MLIRContext context;
-  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
-                      LLVM::LLVMDialect, memref::MemRefDialect>();
-  qc::QCProgramBuilder builder(&context);
-  builder.initialize();
-  auto c = builder.allocClassicalBitRegister(1);
-  builder.storeClassicalBit(builder.boolConstant(true), c, 0);
-  builder.retype(c.getType());
-  auto module = builder.finalize(c);
-  ASSERT_TRUE(module);
+TEST(QCToQIRAdaptiveNativeTest, RecordsComputedClassicalWrites) {
+  for (const auto& [wholeRegister, measured] : {
+           std::pair{false, false},
+           {true, false},
+           {true, true},
+       }) {
+    SCOPED_TRACE(wholeRegister);
+    SCOPED_TRACE(measured);
+    MLIRContext context;
+    context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                        LLVM::LLVMDialect, memref::MemRefDialect>();
+    qc::QCProgramBuilder builder(&context);
+    builder.initialize();
+    auto reg = builder.allocClassicalBitRegister(wholeRegister ? 2 : 1);
+    if (measured) {
+      builder.measure(builder.allocQubit(), reg, 0);
+    }
+    if (wholeRegister) {
+      auto value =
+          arith::ConstantIntOp::create(builder, builder.getUnknownLoc(), 3, 2);
+      cbit::WriteOp::create(builder, builder.getUnknownLoc(), value, reg);
+    } else {
+      builder.storeClassicalBit(builder.boolConstant(true), reg, 0);
+    }
+    builder.retype(reg.getType());
+    auto moduleOp = builder.finalize(reg);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
-  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*module)));
-  EXPECT_TRUE(succeeded(verify(*module)));
-  EXPECT_TRUE(
-      module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_BOOL_RECORD_OUTPUT));
+    ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*moduleOp)));
+    EXPECT_TRUE(succeeded(verify(*moduleOp)));
+    EXPECT_TRUE(
+        moduleOp->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_BOOL_RECORD_OUTPUT));
+    EXPECT_FALSE(moduleOp->lookupSymbol<LLVM::LLVMFuncOp>(
+        qir::QIR_RESULT_ARRAY_RECORD_OUTPUT));
+  }
 }
 
 TEST(QCToQIRAdaptiveNativeTest, AcceptsZeroInitializedClassicalRegister) {
