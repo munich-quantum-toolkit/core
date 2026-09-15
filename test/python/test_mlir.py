@@ -656,6 +656,82 @@ def test_target_compiles_single_qubit_gates_without_entangler(num_sites: int) ->
 
 
 @requires_qiskit_translation
+@pytest.mark.parametrize(("num_qubits", "reps"), [(2, 1), (100, 3)])
+def test_symbolic_su2_compiles_and_binds_after_export(num_qubits: int, reps: int) -> None:
+    """Compile symbolic SU2 circuits with bindable parameters and exact phase."""
+    source = library.efficient_su2(num_qubits, reps=reps, entanglement="circular")
+    source.global_phase = source.parameters[0] / 5 - 0.3
+    program = QCProgram.from_qiskit(source).to_qco()
+    target = CompilerTarget(
+        num_qubits,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("sx", 1, 0),
+            CompilerTarget.OperationCapability("x", 1, 0),
+            CompilerTarget.OperationCapability("rz", 1, 1),
+            CompilerTarget.OperationCapability("cz", 2, 0),
+            CompilerTarget.OperationCapability("gphase", 0, 1),
+        ]),
+    )
+    program.compile_for_target(_test_target_environment(target))
+    result = program.to_qiskit(target=target)
+    assert set(result.count_ops()) <= {"sx", "x", "rz", "cz"}
+    assert result.parameters == source.parameters
+    for angles in (
+        np.zeros(source.num_parameters),
+        np.full(source.num_parameters, np.pi),
+        np.full(source.num_parameters, 2 * np.pi),
+        np.linspace(-3 * np.pi, 3 * np.pi, source.num_parameters),
+    ):
+        values = dict(zip(source.parameters, angles, strict=True))
+        bound = result.assign_parameters(values)
+        assert bound.num_parameters == 0
+        if num_qubits == 2:
+            assert np.allclose(
+                Operator(bound).data,
+                Operator(source.assign_parameters(values)).data,
+                atol=1e-10,
+                rtol=0,
+            )
+
+
+@requires_qiskit_translation
+@pytest.mark.parametrize(
+    ("native_gates", "middle_gate"),
+    [("rx rz", "ry"), ("rx ry", "rz"), ("r", "rz")],
+)
+@pytest.mark.parametrize("method", ["compile_for_target", "synthesize_for_target"])
+def test_symbolic_x_euler_chain_exports_for_target(native_gates: str, middle_gate: str, method: str) -> None:
+    """Keep X-outer Euler chains bindable through both target pipelines."""
+    angles = qiskit.circuit.ParameterVector("theta", 3)
+    source = QuantumCircuit(1)
+    source.rx(angles[0], 0)
+    getattr(source, middle_gate)(angles[1], 0)
+    source.rx(angles[2], 0)
+    source.global_phase = angles[0] / 5 - 0.3
+    target = CompilerTarget(
+        1,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            *(CompilerTarget.OperationCapability(gate, 1, 2 if gate == "r" else 1) for gate in native_gates.split()),
+            CompilerTarget.OperationCapability("gphase", 0, 1),
+        ]),
+    )
+    program = QCProgram.from_qiskit(source).to_qco()
+    getattr(program, method)(_test_target_environment(target))
+    result = program.to_qiskit(target=target)
+    assert result.parameters == source.parameters
+    assert set(result.count_ops()) <= set(native_gates.split())
+    values = dict(zip(angles, [-3 * np.pi, 0.37, 4 * np.pi], strict=True))
+    assert np.allclose(
+        Operator(result.assign_parameters(values)).data,
+        Operator(source.assign_parameters(values)).data,
+        atol=1e-10,
+        rtol=0,
+    )
+
+
+@requires_qiskit_translation
 def test_target_compilation_exports_canonical_physical_qiskit_circuit() -> None:
     """Export a mapped program with the complete compiler target."""
     target = CompilerTarget(

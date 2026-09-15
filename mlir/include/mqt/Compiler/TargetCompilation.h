@@ -20,7 +20,7 @@ class OpPassManager;
 /// Populate the canonical compiler-target pipeline.
 ///
 /// Inlines reusable functions, decomposes supported multi-controlled gates,
-/// performs target-independent optimization, maps to the target topology,
+/// maps to the target topology, fuses blocks in the target basis,
 /// synthesizes native operations, performs a final local cleanup, and verifies
 /// target conformance. The context that runs this low-level pipeline must
 /// register inliner extensions for its callable dialects.
