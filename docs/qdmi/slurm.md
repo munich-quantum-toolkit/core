@@ -252,10 +252,25 @@ Submit the job with this command:
 sbatch bell.sbatch
 ```
 
-The same open handle works with application adapters. Pass it to
+Install Core's `qiskit` and `pennylane` extras in the job's Python environment
+to use application adapters. Pass the same open handle to
 {py:class}`mqt.core.plugins.qiskit.backend.QDMIBackend` or to the PennyLane
-{py:class}`mqt.core.plugins.pennylane.device.QDMIDevice`. See the
-{doc}`pennylane_device` guide for the PennyLane constructor.
+{py:class}`mqt.core.plugins.pennylane.device.QDMIDevice`:
+
+```python
+from mqt.core.plugins.pennylane import QDMIDevice
+from mqt.core.plugins.qiskit import QDMIBackend
+from mqt.core.qdmi import slurm
+
+selected = slurm.open_device_from_license()
+qiskit_backend = QDMIBackend(device=selected)
+pennylane_device = QDMIDevice(device=selected, wires=selected.qubits_num())
+```
+
+The selected device must support the adapter's program formats. Provider
+wrappers may also supply required serialization or native gates; use the
+provider guide for its constructor. See {doc}`pennylane_device` for PennyLane
+execution examples.
 
 Open the selected device once per application process and reuse its handle for
 subsequent quantum jobs. The adapter validates the license locally, opens only
@@ -312,6 +327,15 @@ It is not proof of the Slurm allocation. The license name and stable ID must
 match exactly. Do not add a generic device license. Do not use a Slurm OR
 license expression for device selection because the environment does not
 identify a single selected device in that case.
+
+For failures after selection, inspect the stage that failed:
+
+| Stage          | What to check inside the job                                                                                                                                                                                                 |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Loading        | Confirm the effective catalogue path, including any `MQT_CORE_QDMI_CONFIG_JSON` override. Check that the catalogue and its library exist and are readable by the job user, and that the library matches the node's platform. |
+| Authentication | Check the provider's configured profile or credential-file path and its permissions as the job user. Keep credential contents out of logs.                                                                                   |
+| Status         | The open check accepts `IDLE` and `BUSY`. Other statuses fail; inspect the provider's reported status and operational guidance.                                                                                              |
+| Submission     | Inspect the failed quantum job through the adapter or QDMI job API. A successful device open does not guarantee that the provider accepts a later circuit or executes it immediately.                                        |
 
 [Slurm GRES configuration]: https://slurm.schedmd.com/gres.conf.html
 
