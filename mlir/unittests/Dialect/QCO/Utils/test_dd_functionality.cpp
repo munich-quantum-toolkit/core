@@ -2258,6 +2258,62 @@ TEST_F(QCODDFunctionalityTest, RejectsUnboundedWhileLoop) {
   })mlir");
 }
 
+TEST_F(QCODDFunctionalityTest, SharesExactWhileBudgetAcrossCalls) {
+  for (const auto& [first, second, accepted] : {
+           std::tuple{100000, 0, true},
+           {100001, 0, false},
+           {50000, 50000, true},
+           {50000, 50001, false},
+       }) {
+    SCOPED_TRACE(first);
+    SCOPED_TRACE(second);
+    const auto source = llvm::formatv(R"mlir(
+      module {{
+        func.func private @consume(%limit: index) {{
+          %zero = arith.constant 0 : index
+          %one = arith.constant 1 : index
+          %result = scf.while (%i = %zero) : (index) -> index {{
+            %condition = arith.cmpi slt, %i, %limit : index
+            scf.condition(%condition) %i : index
+          } do {{
+          ^bb0(%i: index):
+            %next = arith.addi %i, %one : index
+            scf.yield %next : index
+          }
+          return
+        }
+        func.func @main() {{
+          %first = arith.constant {0} : index
+          %second = arith.constant {1} : index
+          func.call @consume(%first) : (index) -> ()
+          func.call @consume(%second) : (index) -> ()
+          return
+        }
+      }
+    )mlir",
+                                      first, second)
+                            .str();
+    auto moduleOp = parseSourceString<ModuleOp>(source, context.get());
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    bool diagnosed = false;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      diagnosed |=
+          diagnostic.str().find("100000 while iterations") != std::string::npos;
+      return success();
+    });
+    dd::Package package(0);
+    auto output = simulate(mainFunc(*moduleOp), dd::makeZeroState(0, package),
+                           package, rng);
+    EXPECT_EQ(succeeded(output), accepted);
+    EXPECT_EQ(diagnosed, !accepted);
+    if (succeeded(output)) {
+      EXPECT_TRUE(output->isOneTerminal());
+      package.decRef(*output);
+    }
+  }
+}
+
 TEST_F(QCODDFunctionalityTest, SimulateRicherClassicalArithmetic) {
   auto mod = buildModule([](QCOProgramBuilder& b) {
     auto q = b.staticQubit(0);
