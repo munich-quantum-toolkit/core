@@ -18,6 +18,7 @@
     ".proto": "SLASH_STYLE"
   },
   "exclude": [
+    "^spank/",
     "^\\.[^/]+",
     "/\\.[^/]+",
     ".*\\.qasm",

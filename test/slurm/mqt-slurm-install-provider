@@ -1,0 +1,32 @@
+#!/bin/sh
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
+#
+# Licensed under the MIT License
+
+set -eu
+
+case "$PROVIDER_INSTALL_MODE" in
+    native) : "${PROVIDER_RUNTIME_COMPONENT:?Set the provider Runtime install component}" ;;
+    wheel) ;;
+    *) echo "Unknown provider install mode: $PROVIDER_INSTALL_MODE" >&2; exit 1 ;;
+esac
+
+apt-get update
+DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+    build-essential cmake git libcurl4-openssl-dev libssl-dev
+
+uv build /workload --wheel --out-dir /tmp/provider-wheels \
+    --config-setting=build-dir=/tmp/provider-build
+uv pip install --system --break-system-packages --no-deps /tmp/provider-wheels/*.whl
+for wheel in /tmp/dist/mqt_core-*.whl; do
+    uv pip install --system --break-system-packages "$wheel[qiskit,pennylane]"
+done
+
+if [ "$PROVIDER_INSTALL_MODE" = native ]; then
+    cmake --install /tmp/provider-build --prefix /opt/provider-native \
+        --component "$PROVIDER_RUNTIME_COMPONENT"
+fi
