@@ -216,9 +216,10 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     final gate count or depth; more memory does not guarantee fewer gates.
     Queue, visited-map, allocator, and linear fallback workspace overhead are
     additional. Each concurrent trial reuses this bounded storage across its
-    searches and releases it when the trial finishes. Final SWAP insertion
-    uses separate storage after the trials finish. Target distance caches and
-    IR are separate; this is not a process memory limit.
+    searches and releases it before native candidate synthesis or when the
+    trial finishes. Final SWAP insertion uses separate storage after the
+    trials finish. Target distance caches, temporary candidate IR, and
+    synthesis storage are separate; this is not a process memory limit.
 
     To iteratively refine the mapping, the pass performs multiple forward and backward traversals of the circuit. In
     each traversal, the pass routes the circuit and updates the dynamic-to-static mapping based on the routing decisions
@@ -246,9 +247,24 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     backtrack. Other interaction graphs and failed walks use the weighted
     greedy layout, which places frequently interacting qubits nearby, starting
     at a central target site. Both the raw and refined layouts are additional
-    candidates, independent of `ntrials`. A final forward routing traversal
-    scores each candidate. The pass selects the initial layout with the fewest
-    SWAPs in that traversal, retaining the earlier candidate on a tie.
+    candidates, independent of `ntrials`.
+
+    With an explicit native operation set and a usable entangler basis, each
+    candidate is routed on a temporary module and passed through the same
+    cleanup and target-native synthesis as final compilation. The pass ranks
+    candidates by native two-qubit gate count, then two-qubit dependency depth,
+    retaining the earlier candidate on an exact tie. Counts are static: loop
+    bodies and branch arms contribute their operations without execution
+    frequencies. Depth is the maximum within any block, not a runtime bound
+    for structured control flow. Local A* searches retain the distance cost
+    above; native synthesis determines which completed candidate wins.
+
+    If native scoring is unavailable or fails, the candidate uses its forward
+    traversal's SWAP count as a fallback. Successfully synthesized candidates
+    rank before fallback candidates. Speculative synthesis failures leave
+    topology-only mapping supported; final target compilation diagnoses any
+    unsupported native operation. Native scoring adds compilation work and
+    temporary IR proportional to the number of concurrent trials.
   }];
   let options = [Option<"nlookahead", "nlookahead", "std::size_t", "20",
                         "The number of lookahead steps.">,

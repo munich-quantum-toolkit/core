@@ -49,6 +49,7 @@
 #include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/SmallVector.h"
@@ -60,6 +61,8 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
+#include <array>
+#include <atomic>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -271,6 +274,20 @@ static CompilerTarget getSquareGridTarget(const size_t n) {
   return llvm::cantFail(
       CompilerTarget::create(numTarget, Connectivity::fromCouplings(couplings),
                              NativeOperations::unrestricted()));
+}
+
+/// Add a native synthesis basis to the explicit test topology.
+static CompilerTarget withNativeBasis(const CompilerTarget& topology,
+                                      const char* entangler) {
+  using Capability = CompilerTarget::OperationCapability;
+  return llvm::cantFail(CompilerTarget::create(
+      topology.numSites(), Connectivity::fromCouplings(topology.couplings()),
+      NativeOperations::fromOperations({
+          llvm::cantFail(Capability::create("u", 1, 3)),
+          llvm::cantFail(Capability::create(entangler, 2, 0)),
+          llvm::cantFail(Capability::create("measure", 1, 0)),
+          llvm::cantFail(Capability::create("gphase", 0, 1)),
+      })));
 }
 
 /// Creates an N-qubit GHZ state, where N = `qubits.size()` using
@@ -2623,55 +2640,61 @@ TEST_F(MappingPassFixture, PreserveInteractionPathBasisStates) {
   }
 }
 
+/// Build a non-embeddable CX graph with deterministic X- or Z-basis output.
+static OwningOpRef<ModuleOp> makeRoutingBasisProgram(MLIRContext* context,
+                                                     bool structured,
+                                                     bool xBasis,
+                                                     size_t basis) {
+  const SmallVector<std::pair<size_t, size_t>> interactions{
+      {5, 0}, {0, 3}, {3, 1}, {1, 4}, {4, 2}, {2, 5}, {2, 0},
+  };
+  return QCOProgramBuilder::build(context, [&](QCOProgramBuilder& builder) {
+    auto bits = builder.allocClassicalBitRegister(6);
+    SmallVector<Value> qubits;
+    for (size_t i = 0; i < 6; ++i) {
+      Value qubit = builder.allocQubit();
+      if ((basis & (size_t{1} << i)) != 0) {
+        qubit = builder.x(qubit);
+      }
+      qubits.push_back(xBasis ? builder.h(qubit) : qubit);
+    }
+    const auto body = [&](ValueRange args) {
+      SmallVector<Value> result(args);
+      for (const auto& [a, b] : interactions) {
+        std::tie(result[a], result[b]) = builder.cx(result[a], result[b]);
+      }
+      return result;
+    };
+    qubits = structured
+                 ? llvm::to_vector(builder.scfFor(
+                       0, 3, 1, qubits,
+                       [&](Value, ValueRange args) { return body(args); }))
+                 : body(qubits);
+    for (size_t i = 0; i < qubits.size(); ++i) {
+      if (xBasis) {
+        qubits[i] = builder.h(qubits[i]);
+      }
+      std::tie(qubits[i], std::ignore) =
+          builder.measure(qubits[i], bits, static_cast<int64_t>(i));
+      builder.sink(qubits[i]);
+    }
+    return bits;
+  });
+}
+
 TEST_F(MappingPassFixture, PreserveBasisStatesWithTinySearchMemory) {
   context->disableMultithreading();
   const auto lineTarget = llvm::cantFail(CompilerTarget::create(
       6, Connectivity::fromCouplings({{0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 5}}),
       NativeOperations::unrestricted()));
-  const SmallVector<std::pair<size_t, size_t>> interactions{
-      {5, 0}, {0, 3}, {3, 1}, {1, 4}, {4, 2}, {2, 5}, {2, 0},
-  };
   for (bool structured : {false, true}) {
     SCOPED_TRACE(structured);
     for (bool xBasis : {false, true}) {
       SCOPED_TRACE(xBasis);
       for (size_t basis = 0; basis < 64; ++basis) {
         SCOPED_TRACE(basis);
-        auto input = QCOProgramBuilder::build(
-            context.get(), [&](QCOProgramBuilder& builder) {
-              auto bits = builder.allocClassicalBitRegister(6);
-              SmallVector<Value> qubits;
-              for (size_t i = 0; i < 6; ++i) {
-                Value qubit = builder.allocQubit();
-                if ((basis & (size_t{1} << i)) != 0) {
-                  qubit = builder.x(qubit);
-                }
-                qubits.push_back(xBasis ? builder.h(qubit) : qubit);
-              }
-              const auto body = [&](ValueRange args) {
-                SmallVector<Value> result(args);
-                for (const auto& [a, b] : interactions) {
-                  std::tie(result[a], result[b]) =
-                      builder.cx(result[a], result[b]);
-                }
-                return result;
-              };
-              qubits =
-                  structured
-                      ? llvm::to_vector(builder.scfFor(
-                            0, 3, 1, qubits,
-                            [&](Value, ValueRange args) { return body(args); }))
-                      : body(qubits);
-              for (size_t i = 0; i < qubits.size(); ++i) {
-                if (xBasis) {
-                  qubits[i] = builder.h(qubits[i]);
-                }
-                std::tie(qubits[i], std::ignore) =
-                    builder.measure(qubits[i], bits, static_cast<int64_t>(i));
-                builder.sink(qubits[i]);
-              }
-              return bits;
-            });
+        auto input =
+            makeRoutingBasisProgram(context.get(), structured, xBasis, basis);
         ASSERT_TRUE(succeeded(verify(*input)));
         ASSERT_TRUE(succeeded(verifyLinearity(*input)));
         const auto expected = qco::sample(getEntryPoint(*input), 1, 42);
@@ -3161,4 +3184,196 @@ TEST_F(MappingPassFixture, RejectOpaqueClassicalEffectsBeforeMutation) {
   EXPECT_TRUE(failed(pm.run(*moduleOp)));
   EXPECT_TRUE(diagnosed);
   EXPECT_EQ(printModule(*moduleOp), before);
+}
+
+TEST_F(MappingPassFixture, PreferNativeGateCountThenDepth) {
+  const auto topology = llvm::cantFail(CompilerTarget::create(
+      4, Connectivity::fromCouplings({{0, 1}, {1, 2}, {2, 3}}),
+      NativeOperations::unrestricted()));
+  const auto target = withNativeBasis(topology, "cz");
+  using Gate = std::tuple<size_t, size_t, bool>;
+  /// The first route uses more SWAPs and depth to reduce native gates from
+  /// 14 to 13. The second retains 11 native gates but reduces depth from 10
+  /// to 7. These bounds distinguish both parts of the ranking contract.
+  const std::array cases{
+      std::pair{SmallVector<Gate>{
+                    {3, 0, false},
+                    {3, 1, false},
+                    {1, 0, true},
+                    {1, 0, false},
+                    {3, 2, false},
+                    {1, 3, false},
+                    {1, 3, false},
+                    {2, 3, true},
+                    {3, 2, true},
+                    {2, 0, true},
+                },
+                std::pair<size_t, size_t>{13, 12}},
+      std::pair{SmallVector<Gate>{
+                    {0, 1, true},
+                    {0, 2, true},
+                    {3, 1, true},
+                    {3, 2, false},
+                    {0, 1, false},
+                },
+                std::pair<size_t, size_t>{11, 7}},
+  };
+  for (const auto& [gates, bound] : cases) {
+    auto input = QCOProgramBuilder::build(
+        context.get(), [&](QCOProgramBuilder& builder) {
+          auto bits = builder.allocClassicalBitRegister(4);
+          SmallVector<Value> qubits;
+          for (size_t i = 0; i < 4; ++i) {
+            qubits.push_back(builder.h(builder.allocQubit()));
+          }
+          for (const auto& [a, b, cz] : gates) {
+            std::tie(qubits[a], qubits[b]) =
+                cz ? builder.cz(qubits[a], qubits[b])
+                   : builder.cx(qubits[a], qubits[b]);
+          }
+          for (size_t i = 0; i < qubits.size(); ++i) {
+            std::tie(qubits[i], std::ignore) =
+                builder.measure(qubits[i], bits, static_cast<int64_t>(i));
+            builder.sink(qubits[i]);
+          }
+          return bits;
+        });
+    ASSERT_TRUE(succeeded(verify(*input)));
+    ASSERT_TRUE(succeeded(verifyLinearity(*input)));
+    std::string serialOutput;
+    for (bool multithreading : {false, true}) {
+      context->enableMultithreading(multithreading);
+      OwningOpRef<ModuleOp> moduleOp = input->clone();
+      ASSERT_TRUE(succeeded(
+          runPass(*moduleOp, target,
+                  MappingPassOptions{
+                      .ntrials = 4, .seed = 42, .searchMemoryLimit = 0})));
+      PassManager native(context.get());
+      populateTargetNativeSynthesisPipeline(native);
+      ASSERT_TRUE(succeeded(native.run(*moduleOp)));
+      ASSERT_TRUE(succeeded(verify(*moduleOp)));
+      ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+      DenseMap<Value, size_t> depths;
+      size_t count = 0;
+      size_t depth = 0;
+      for (auto gate : getEntryPoint(*moduleOp)
+                           .getBody()
+                           .front()
+                           .getOps<UnitaryOpInterface>()) {
+        size_t current = 0;
+        for (Value qubit : gate.getInputQubits()) {
+          current = std::max(current, depths.lookup(qubit));
+        }
+        if (gate.isTwoQubit()) {
+          ++current;
+          ++count;
+        }
+        for (Value qubit : gate.getOutputQubits()) {
+          depths[qubit] = current;
+        }
+        depth = std::max(depth, current);
+      }
+      EXPECT_LE(std::make_pair(count, depth), bound);
+      if (multithreading) {
+        EXPECT_EQ(printModule(*moduleOp), serialOutput);
+      } else {
+        serialOutput = printModule(*moduleOp);
+      }
+    }
+  }
+}
+
+TEST_F(MappingPassFixture, PreserveBasisStatesAfterNativeScoredCompilation) {
+  context->disableMultithreading();
+  const auto lineTarget = llvm::cantFail(CompilerTarget::create(
+      6, Connectivity::fromCouplings({{0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 5}}),
+      NativeOperations::unrestricted()));
+  for (bool structured : {false, true}) {
+    SCOPED_TRACE(structured);
+    for (bool xBasis : {false, true}) {
+      SCOPED_TRACE(xBasis);
+      for (size_t basis : {0U, 21U, 42U, 63U}) {
+        SCOPED_TRACE(basis);
+        auto input =
+            makeRoutingBasisProgram(context.get(), structured, xBasis, basis);
+        ASSERT_TRUE(succeeded(verify(*input)));
+        ASSERT_TRUE(succeeded(verifyLinearity(*input)));
+        const auto expected = qco::sample(getEntryPoint(*input), 1, 42);
+        ASSERT_TRUE(succeeded(expected));
+        for (const auto& topology : {lineTarget, getSquareGridTarget(3)}) {
+          for (const char* entangler : {"cx", "cz", "ecr", "sqrt_iswap"}) {
+            SCOPED_TRACE(entangler);
+            const auto target = withNativeBasis(topology, entangler);
+            SCOPED_TRACE(target.numSites());
+            for (const size_t bytes : {size_t{0}, size_t{1024}}) {
+              SCOPED_TRACE(bytes);
+              OwningOpRef<ModuleOp> moduleOp = input->clone();
+              ASSERT_TRUE(succeeded(
+                  runPass(*moduleOp, target,
+                          MappingPassOptions{.ntrials = 1,
+                                             .searchMemoryLimit = bytes})));
+              ASSERT_TRUE(succeeded(verify(*moduleOp)));
+              EXPECT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+              EXPECT_TRUE(isExecutable(getEntryPoint(*moduleOp), target));
+              PassManager synthesis(context.get());
+              populateTargetNativeSynthesisPipeline(synthesis);
+              ASSERT_TRUE(succeeded(synthesis.run(*moduleOp)));
+              ASSERT_TRUE(succeeded(verify(*moduleOp)));
+              ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+              const auto actual = qco::sample(getEntryPoint(*moduleOp), 1, 42);
+              ASSERT_TRUE(succeeded(actual));
+              EXPECT_EQ(*actual, *expected);
+              size_t swaps = 0;
+              moduleOp->walk([&](SWAPOp) { ++swaps; });
+              /// The final program contains only the selected native basis.
+              EXPECT_EQ(swaps, 0);
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+TEST_F(MappingPassFixture, NativeScoringFailureKeepsMappingContract) {
+  const auto topology = llvm::cantFail(
+      CompilerTarget::create(3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
+                             NativeOperations::unrestricted()));
+  const auto target = withNativeBasis(topology, "cz");
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+module {
+  func.func @main(%angle: f64) -> (i1, i1, i1) attributes {mqt.entry_point} {
+    %a = qco.alloc : !qco.qubit
+    %b = qco.alloc : !qco.qubit
+    %c = qco.alloc : !qco.qubit
+    %a1, %b1 = qco.rzz(%angle) %a, %b : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+    %b2, %c1 = qco.rzz(%angle) %b1, %c : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+    %c2, %a2 = qco.rzz(%angle) %c1, %a1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+    %a3, %r0 = qco.measure %a2 : !qco.qubit
+    %b3, %r1 = qco.measure %b2 : !qco.qubit
+    %c3, %r2 = qco.measure %c2 : !qco.qubit
+    qco.sink %a3 : !qco.qubit
+    qco.sink %b3 : !qco.qubit
+    qco.sink %c3 : !qco.qubit
+    return %r0, %r1, %r2 : i1, i1, i1
+  }
+}
+)mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  std::atomic<size_t> count = 0;
+  ScopedDiagnosticHandler diagnostics(context.get(), [&](Diagnostic&) {
+    ++count;
+    return success();
+  });
+  ASSERT_TRUE(
+      succeeded(runPass(*moduleOp, target, MappingPassOptions{.ntrials = 2})));
+  EXPECT_EQ(count, 0);
+  ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(*moduleOp), target));
+  PassManager native(context.get());
+  populateTargetNativeSynthesisPipeline(native);
+  EXPECT_TRUE(failed(native.run(*moduleOp)));
+  EXPECT_GT(count, 0);
 }
