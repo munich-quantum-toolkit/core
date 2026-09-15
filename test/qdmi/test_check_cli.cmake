@@ -80,6 +80,33 @@ foreach(
     if(alive EQUAL 0)
       message(FATAL_ERROR "Checker worker survived its timeout")
     endif()
+    if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux" AND status STREQUAL "hang")
+      file(REMOVE "${marker}")
+      execute_process(
+        COMMAND
+          "${CMAKE_COMMAND}" -E env --unset=MQT_CORE_QDMI_CONFIG_JSON
+          "MQT_CORE_QDMI_CONFIG_FILE=${configuration}" /bin/sh -c [=[
+            "$1" --device test.check & checker=$!
+            attempt=0
+            while [ ! -s "$2" ] && [ "$attempt" -lt 50 ]; do
+              sleep 0.1
+              attempt=$((attempt + 1))
+            done
+            kill -KILL "$checker"
+            wait "$checker" 2>/dev/null
+          ]=] checker-parent-death "${CHECKER}" "${marker}"
+        TIMEOUT 10
+        OUTPUT_QUIET ERROR_QUIET)
+      file(READ "${marker}" worker)
+      string(STRIP "${worker}" worker)
+      execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 0.1)
+      if(EXISTS "/proc/${worker}/stat")
+        file(READ "/proc/${worker}/stat" worker_status)
+        if(NOT worker_status MATCHES "^[0-9]+ \\(.*\\) Z ")
+          message(FATAL_ERROR "Checker worker survived its supervisor")
+        endif()
+      endif()
+    endif()
   else()
     check_exit(1 --device test.check)
   endif()

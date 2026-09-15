@@ -16,8 +16,13 @@
 // POSIX signal handling is not part of the C++ <csignal> interface.
 #include <signal.h> // NOLINT(modernize-deprecated-headers)
 #include <sys/resource.h>
+#include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+
+#ifdef __linux__
+#include <sys/prctl.h>
+#endif
 
 #include <cerrno>
 #include <charconv>
@@ -65,11 +70,21 @@ constexpr std::string_view USAGE =
   }
 
   const auto deadline = std::chrono::steady_clock::now() + timeout;
+#ifdef __linux__
+  const auto supervisor = getpid();
+#endif
   const auto child = fork();
   if (child < 0) {
     return 1;
   }
   if (child == 0) {
+#ifdef __linux__
+    // The launch validator may need to kill an unresponsive checker.
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
+    if (prctl(PR_SET_PDEATHSIG, SIGKILL) != 0 || getppid() != supervisor) {
+      _exit(1);
+    }
+#endif
     action.sa_handler = SIG_DFL;
     const rlimit coreLimit{.rlim_cur = 0, .rlim_max = 0};
     if (setpgid(0, 0) != 0 || sigaction(SIGTERM, &action, nullptr) != 0 ||
@@ -94,14 +109,13 @@ constexpr std::string_view USAGE =
 
   // Either side can establish the group before the child loads a provider.
   static_cast<void>(setpgid(child, child));
-  int status = 0;
   int result = 1;
-  bool reaped = false;
   while (interrupted == 0) {
-    const auto waited = waitpid(child, &status, WNOHANG);
-    if (waited == child) {
-      reaped = true;
-      result = WIFEXITED(status) && WEXITSTATUS(status) == 0 ? 0 : 1;
+    siginfo_t status{};
+    const auto waited = waitid(P_PID, static_cast<id_t>(child), &status,
+                               WEXITED | WNOHANG | WNOWAIT);
+    if (waited == 0 && status.si_pid == child) {
+      result = status.si_code == CLD_EXITED && status.si_status == 0 ? 0 : 1;
       break;
     }
     if (waited < 0 && errno != EINTR) {
@@ -113,12 +127,10 @@ constexpr std::string_view USAGE =
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
-  // Also remove provider descendants after a normal worker exit.
+  // Keep the worker unreaped until group cleanup so its PID cannot be reused.
   static_cast<void>(kill(-child, SIGKILL));
-  if (!reaped) {
-    static_cast<void>(kill(child, SIGKILL));
-    while (waitpid(child, &status, 0) < 0 && errno == EINTR) {
-    }
+  static_cast<void>(kill(child, SIGKILL));
+  while (waitpid(child, nullptr, 0) < 0 && errno == EINTR) {
   }
   return result;
 }
