@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1.19
+
 # Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
 # Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
 # All rights reserved.
@@ -51,12 +53,14 @@ RUN --mount=type=bind,from=dist,target=/tmp/dist \
 ARG SETUP_SCRIPT=""
 ARG PROVIDER_INSTALL_MODE="native"
 ARG PROVIDER_RUNTIME_COMPONENT=""
-RUN --mount=type=bind,from=workload,target=/source \
-    --mount=type=bind,from=core,target=/core \
-    --mount=type=bind,from=dist,target=/tmp/dist \
+COPY --from=workload \
+    --exclude=.git --exclude=build --exclude=build-* --exclude=cmake-build-* \
+    --exclude=.cache --exclude=.ccache --exclude=.venv* --exclude=.nox \
+    --exclude=**/__pycache__ --exclude=test/slurm/runtime --exclude=test/slurm/dist \
+    . /workload
+RUN --mount=type=bind,from=dist,target=/tmp/dist \
     if [ -n "$SETUP_SCRIPT" ]; then \
-        cp -a /source /workload \
-        && /bin/sh /usr/local/sbin/mqt-slurm-install-provider \
+        /bin/sh /usr/local/sbin/mqt-slurm-install-provider \
         && /bin/sh "/workload/$SETUP_SCRIPT"; \
     fi
 
@@ -69,5 +73,7 @@ FROM common AS controller
 RUN systemctl enable slurmctld.service
 
 FROM common AS compute
+
+COPY mqt-slurm-test-environment.conf /etc/systemd/system/slurmd.service.d/mqt-test.conf
 
 RUN systemctl enable slurmd.service

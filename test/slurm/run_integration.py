@@ -131,7 +131,18 @@ def compute(node: str, *command: str, check: bool = True) -> subprocess.Complete
 
 def job(*command: str, check: bool = True, timeout: float = COMMAND_TIMEOUT) -> subprocess.CompletedProcess[str]:
     """Submit workloads as the same unprivileged user on every node."""
-    return compose("exec", "-T", "--user", "10000:10000", "controller", *command, check=check, timeout=timeout)
+    return compose(
+        "exec",
+        "-T",
+        "--user",
+        "10000:10000",
+        "controller",
+        "env",
+        "PYTHONPATH=/workspace/test/slurm",
+        *command,
+        check=check,
+        timeout=timeout,
+    )
 
 
 def wait_for(description: str, predicate: Callable[[], bool], timeout: float = TIMEOUT) -> None:
@@ -624,6 +635,17 @@ def main(arguments: Sequence[str] = ()) -> None:
             if delegate != "yes":
                 msg = f"The packaged slurmd.service on {node} must set Delegate=yes, got {delegate!r}"
                 raise RuntimeError(msg)
+            compute(
+                node,
+                "python3",
+                "-c",
+                "from pathlib import Path; import subprocess; "
+                "pid = subprocess.check_output(['systemctl', 'show', 'slurmd.service', "
+                "'--property=MainPID', '--value'], text=True).strip(); "
+                "environment = Path('/proc/' + pid + '/environ').read_bytes().split(b'\\0'); "
+                "assert b'MQT_SLURM_TEST_REFERENCE=daemon-only' in environment; "
+                "assert b'MQT_CORE_QDMI_CONFIG_FILE=/daemon-only/qdmi.json' in environment",
+            )
             wait_for(f"{node} to become IDLE with two processors", lambda node=node: node_is_idle(node))
 
         if options.command:

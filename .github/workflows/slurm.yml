@@ -85,6 +85,16 @@ jobs:
           uv run --no-project --with 'pytest>=9.0.1' --python 3.14
           pytest -o addopts= -q test/python/test_slurm_integration.py
 
+      - name: Build and lint the standalone SPANK component
+        run: |
+          sudo apt-get update
+          curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm-install.sh"
+          sudo bash "$RUNNER_TEMP/llvm-install.sh" 23
+          sudo apt-get install --no-install-recommends -y clang-tidy-23 libslurm-dev
+          cmake -S spank -B build/spank -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          cmake --build build/spank
+          clang-tidy-23 -p build/spank spank/spank.cpp --warnings-as-errors='*'
+
       - name: Build the MQT Core wheel
         timeout-minutes: 15
         run: uv build --wheel --out-dir test/slurm/dist

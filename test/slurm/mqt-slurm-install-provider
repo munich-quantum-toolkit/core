@@ -21,9 +21,11 @@ DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
 
 uv build /workload --wheel --out-dir /tmp/provider-wheels \
     --config-setting=build-dir=/tmp/provider-build
-uv pip install --system --break-system-packages --no-deps /tmp/provider-wheels/*.whl
-for wheel in /tmp/dist/mqt_core-*.whl; do
-    uv pip install --system --break-system-packages "$wheel[qiskit,pennylane]"
+for provider_wheel in /tmp/provider-wheels/*.whl; do
+    for core_wheel in /tmp/dist/mqt_core-*.whl; do
+        uv pip install --system --break-system-packages \
+            "$provider_wheel[qiskit]" "$core_wheel[qiskit,pennylane]"
+    done
 done
 
 if [ "$PROVIDER_INSTALL_MODE" = native ]; then

@@ -58,9 +58,6 @@ services:
         SETUP_SCRIPT: ${MQT_CORE_SLURM_SETUP_SCRIPT:-}
       target: compute
     hostname: node1
-    environment:
-      MQT_SLURM_TEST_REFERENCE: daemon-only
-      MQT_CORE_QDMI_CONFIG_FILE: /daemon-only/qdmi.json
     privileged: true
     cgroup: host
     depends_on:
@@ -104,9 +101,6 @@ services:
         SETUP_SCRIPT: ${MQT_CORE_SLURM_SETUP_SCRIPT:-}
       target: compute
     hostname: node2
-    environment:
-      MQT_SLURM_TEST_REFERENCE: daemon-only
-      MQT_CORE_QDMI_CONFIG_FILE: /daemon-only/qdmi.json
     privileged: true
     cgroup: host
     depends_on:
