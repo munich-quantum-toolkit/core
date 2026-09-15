@@ -824,13 +824,12 @@ CompiledProgram::CompiledProgram(TargetEnvironment environment,
 llvm::Expected<CompiledProgram>
 CompiledProgram::compile(CompilerInput&& program,
                          const TargetEnvironment& environment,
-                         bool enableTiming, bool enableStatistics) {
+                         const CompilationOptions& options) {
   auto format = qdmiFormatForPayload(environment.payloadSpecification());
   if (!format) {
     return format.takeError();
   }
-  auto result = runDefaultPipeline(std::move(program), environment,
-                                   enableTiming, enableStatistics);
+  auto result = runDefaultPipeline(std::move(program), environment, options);
   if (!result) {
     return llvm::createStringError(
         std::make_error_code(std::errc::invalid_argument),
@@ -889,14 +888,13 @@ CompiledProgram::compile(CompilerInput&& program,
 
 llvm::Expected<CompiledProgram>
 compileProgram(CompilerInput&& program, const qdmi::Device& device,
-               std::optional<QDMI_Program_Format> format, bool enableTiming,
-               bool enableStatistics) {
+               std::optional<QDMI_Program_Format> format,
+               const CompilationOptions& options) {
   auto environment = targetEnvironmentFromDevice(device, format);
   if (!environment) {
     return environment.takeError();
   }
-  return CompiledProgram::compile(std::move(program), *environment,
-                                  enableTiming, enableStatistics);
+  return CompiledProgram::compile(std::move(program), *environment, options);
 }
 
 static llvm::Expected<qdmi::Job>
@@ -952,19 +950,18 @@ submitProgram(const qdmi::Device& device, const CompiledProgram& program,
 llvm::Expected<qdmi::Job>
 submitProgram(const qdmi::Device& device, CompilerInput&& input,
               int64_t numShots, std::optional<QDMI_Program_Format> format,
-              bool enableTiming, bool enableStatistics,
               const std::optional<qdmi::CustomJobParameter>& custom1,
               const std::optional<qdmi::CustomJobParameter>& custom2,
               const std::optional<qdmi::CustomJobParameter>& custom3,
               const std::optional<qdmi::CustomJobParameter>& custom4,
-              const std::optional<qdmi::CustomJobParameter>& custom5) {
+              const std::optional<qdmi::CustomJobParameter>& custom5,
+              const CompilationOptions& options) {
   if (numShots < 0) {
     return llvm::createStringError(
         std::make_error_code(std::errc::invalid_argument),
         "num_shots must be nonnegative");
   }
-  auto compiled = compileProgram(std::move(input), device, format, enableTiming,
-                                 enableStatistics);
+  auto compiled = compileProgram(std::move(input), device, format, options);
   if (!compiled) {
     return compiled.takeError();
   }

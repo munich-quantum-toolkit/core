@@ -83,6 +83,19 @@ protected:
   }
 };
 
+TEST_F(MQTIRTest, CompilationSeedHasModuleScopeAnd64Bits) {
+  auto moduleOp =
+      parse("module attributes {mqt.compilation_seed = -1 : i64} {}");
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(roundTrip(*moduleOp));
+  EXPECT_FALSE(parse("module attributes {mqt.compilation_seed = 7 : i128} {}"));
+  EXPECT_FALSE(parse("module attributes {mqt.compilation_seed = 7 : si64} {}"));
+  EXPECT_FALSE(parse("module attributes {mqt.compilation_seed = \"7\"} {}"));
+  EXPECT_FALSE(parse(R"(module {
+    func.func @main() attributes {mqt.compilation_seed = 7 : i64} { return }
+  })"));
+}
+
 TEST_F(MQTIRTest, AcceptsProgramInputAndRegisterNames) {
   EXPECT_TRUE(parse(R"mlir(
     module {

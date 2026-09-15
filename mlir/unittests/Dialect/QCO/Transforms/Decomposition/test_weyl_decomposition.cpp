@@ -262,6 +262,49 @@ TEST(WeylDecompositionStandalone,
   EXPECT_TRUE(isUnitaryMatrix(decomp->k2r()));
 }
 
+TEST(WeylDecompositionStandalone, SeededNumericalRetriesReconstructUnitary) {
+  // These phases collide for the fixed first diagonalization coefficients.
+  const auto theta = std::atan2(0.22317849046722027, 1.2602066112249388);
+  const auto basis = Matrix4x4::fromElements(
+                         1., std::complex(0., 1.), 0., 0., 0., 0.,
+                         std::complex(0., 1.), 1., 0., 0., std::complex(0., 1.),
+                         -1., 1., std::complex(0., -1.), 0., 0.) *
+                     std::sqrt(0.5);
+  const auto c = std::cos(0.37);
+  const auto s = std::sin(0.37);
+  const auto rotation = Matrix4x4::fromElements(c, s, 0., 0., -s, c, 0., 0., 0.,
+                                                0., 1., 0., 0., 0., 0., 1.);
+  const auto phases = Matrix4x4::fromDiagonal({
+      std::polar(1., (theta + 0.4) / 2.),
+      std::polar(1., (theta - 0.4) / 2.),
+      std::polar(1., 0.8 / 2.),
+      std::polar(1., (-2. * theta - 0.8) / 2.),
+  });
+  const auto unitary =
+      basis * rotation * phases * rotation.transpose() * basis.adjoint();
+  for (uint64_t seed : {uint64_t{0}, uint64_t{7}, (uint64_t{1} << 63U) + 7}) {
+    const auto result =
+        TwoQubitWeylDecomposition::create(unitary, std::nullopt, seed);
+    ASSERT_TRUE(result);
+    EXPECT_TRUE(result->unitaryMatrix().isApprox(unitary, 1e-10));
+    const auto repeated =
+        TwoQubitWeylDecomposition::create(unitary, std::nullopt, seed);
+    ASSERT_TRUE(repeated);
+    EXPECT_EQ(result->k1l().data, repeated->k1l().data);
+    for (auto gate :
+         {CompilerTarget::GateKind::CZ, CompilerTarget::GateKind::SQRTISWAP}) {
+      const auto native = decomposeUnitary2QWeyl(unitary, gate, seed);
+      ASSERT_TRUE(native);
+      const auto entangler =
+          gate == CompilerTarget::GateKind::CZ
+              ? TWO_QUBIT_CONTROLLED_Z
+              : XXPlusYYOp::unitaryMatrix(-std::numbers::pi / 2., 0.);
+      EXPECT_TRUE(decomposition::unitaryMatrix(*native, entangler)
+                      .isApprox(unitary, 1e-10));
+    }
+  }
+}
+
 TEST(WeylDecompositionStandalone, Random) {
   std::mt19937 rng{1234567UL};
   for (int i = 0; i < 5000; ++i) {

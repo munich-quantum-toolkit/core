@@ -166,9 +166,9 @@ TwoQubitBasisDecomposer::create(const Matrix4x4& basisMatrix,
 std::optional<TwoQubitNativeDecomposition>
 TwoQubitBasisDecomposer::decomposeTarget(
     const Matrix4x4& targetUnitary,
-    const std::optional<std::uint8_t> numBasisGateUses) const {
-  const auto targetWeyl =
-      TwoQubitWeylDecomposition::create(targetUnitary, WEYL_DEFAULT_FIDELITY);
+    std::optional<std::uint8_t> numBasisGateUses, uint64_t seed) const {
+  const auto targetWeyl = TwoQubitWeylDecomposition::create(
+      targetUnitary, WEYL_DEFAULT_FIDELITY, seed);
   if (!targetWeyl) {
     return std::nullopt;
   }

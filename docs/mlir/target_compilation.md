@@ -64,6 +64,39 @@ that the device still has matching sites, topology, operations, timing units,
 and program capabilities. Names and calibration-only changes do not require
 recompilation. Use `device.submit_job` to submit raw payloads.
 
+### Compilation options
+
+```python
+from mqt.core.mlir import CompilationOptions, MappingOptions
+
+options = CompilationOptions(
+    seed=7,
+    mapping=MappingOptions(trials=4, iterations=2, lookahead=10, search_memory_limit=8 * 1024 * 1024),
+)
+compiled = compile_program(bell_qasm, target=device, options=options)
+```
+
+The same `options` argument is available on typed compilation methods and source
+submission. Set `enable_timing` and `enable_statistics` on this object; compiler
+entry points accept these controls only through `options`. An explicit seed
+overrides compiler randomness, including custom pass seeds; `None` preserves
+existing pass settings. Execution sampling has a separate seed. For the CLI:
+
+```console
+mqt-cc input.qasm --qdmi-device mqt.sc.iqm.garnet \
+  '--payload-spec=#mqt.payload_spec<format = <id = "qir", version = "2.1.0", profile = "base", encoding = text>, capabilities = [], optional_capabilities_known = false>' \
+  --seed 7 --mapping-trials 4 --mapping-iterations 2 --mapping-lookahead 10 \
+  --mapping-search-memory-limit 8388608
+```
+
+Trials and iterations must be positive. Omitted trials use the logical CPU
+count; iterations default to one forward/backward refinement round. Lookahead is
+the number of additional two-qubit gates considered during routing. It defaults
+to 20; zero considers only the current gate. All-to-all placement ignores valid
+mapping controls. Repeatable mapping requires the same build, input, target,
+seed, and mapping controls, including an explicit trial count. Layouts may
+change between releases.
+
 ### Choose a format
 
 The compiler selects the first supported format in this order: Adaptive QIR
@@ -156,12 +189,15 @@ multithreading runs the same trials sequentially.
 Each routing search limits its estimated node and layout storage to 64 MiB by
 default. When the budget is exhausted, it checks queued states before falling
 back to SWAPs that reduce the leading interaction's distance. Set
-`search-memory-limit` in bytes on `place-and-route` to trade memory for routing
-quality; zero disables node expansion. Each concurrent trial reuses its bounded
-node and layout storage across searches and releases it when the trial finishes.
-For example, 20 active trials with 512 MiB each allow about 10 GiB of estimated
-search storage. Container overhead, target distance caches, and IR storage are
-additional.
+`MappingOptions.search_memory_limit` in bytes, or use the CLI's
+`--mapping-search-memory-limit`, to trade memory for routing quality; zero
+disables node expansion. The equivalent `place-and-route` pass option is
+`search-memory-limit`. Each concurrent trial reuses its bounded node and layout
+storage across searches and releases it when the trial finishes. For example, 20
+active trials with 512 MiB each allow about 10 GiB of estimated search storage.
+Container overhead, target distance caches, and IR storage are additional; this
+setting does not cap total process memory. Changing the budget can change
+layouts and gate counts; more memory does not guarantee fewer gates.
 
 Native synthesis collects constant runs on the same two qubits, including
 interleaved single-qubit gates, and resynthesizes them in the target's selected

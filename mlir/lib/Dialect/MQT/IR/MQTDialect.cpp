@@ -19,6 +19,7 @@
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
+#include "mqt/Support/RandomSeed.h"
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -751,6 +752,15 @@ verifyRegisterName(Operation* operation, const NamedAttribute attribute) {
 LogicalResult
 MQTDialect::verifyOperationAttribute(Operation* operation,
                                      const NamedAttribute attribute) {
+  if (attribute.getName() == COMPILATION_SEED_ATTR) {
+    auto seed = dyn_cast<IntegerAttr>(attribute.getValue());
+    if (!isa<ModuleOp>(operation) || !seed ||
+        !seed.getType().isSignlessInteger(64)) {
+      return operation->emitError(
+          "mqt.compilation_seed requires a signless i64 on a module");
+    }
+    return success();
+  }
   if (attribute.getName() == TargetEnvAttr::name) {
     if (!isa<ModuleOp>(operation)) {
       return operation->emitError()

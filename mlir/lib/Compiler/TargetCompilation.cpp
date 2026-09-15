@@ -37,11 +37,23 @@ public:
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(PrepareTargetCompilationPass)
 
   explicit PrepareTargetCompilationPass(TargetEnvironment environment,
-                                        bool allToAllOnly = false)
-      : environment_(std::move(environment)), allToAllOnly_(allToAllOnly) {}
+                                        bool allToAllOnly = false,
+                                        MappingOptions mapping = {})
+      : environment_(std::move(environment)), allToAllOnly_(allToAllOnly),
+        mapping_(mapping) {}
 
 protected:
   void runOnOperation() override {
+    if (mapping_.trials == 0) {
+      getOperation().emitError("mapping trials must be greater than zero");
+      signalPassFailure();
+      return;
+    }
+    if (mapping_.iterations == 0) {
+      getOperation().emitError("mapping iterations must be greater than zero");
+      signalPassFailure();
+      return;
+    }
     if (allToAllOnly_ && environment_.target().connectivityKind() !=
                              CompilerTarget::Connectivity::Kind::AllToAll) {
       getOperation().emitError(
@@ -70,6 +82,7 @@ protected:
 private:
   TargetEnvironment environment_;
   bool allToAllOnly_;
+  MappingOptions mapping_;
 };
 
 } /* namespace */
@@ -87,8 +100,10 @@ static void populatePostPlacementPipeline(OpPassManager& pm) {
 }
 
 void populateTargetCompilationPipeline(OpPassManager& pm,
-                                       const TargetEnvironment& environment) {
-  pm.addPass(std::make_unique<PrepareTargetCompilationPass>(environment));
+                                       const TargetEnvironment& environment,
+                                       const MappingOptions& mapping) {
+  pm.addPass(std::make_unique<PrepareTargetCompilationPass>(environment, false,
+                                                            mapping));
   const auto& target = environment.target();
   pm.addPass(createInlinerPass());
   pm.addPass(createSymbolDCEPass());
@@ -107,9 +122,17 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   pm.addPass(qco::createFuseTwoQubitGates(target));
   populateDefaultQCOOptimizationPipeline(pm);
   switch (target.connectivityKind()) {
-  case CompilerTarget::Connectivity::Kind::Explicit:
-    pm.addPass(qco::createMappingPass(qco::MappingPassOptions{}));
+  case CompilerTarget::Connectivity::Kind::Explicit: {
+    qco::MappingPassOptions mappingOptions;
+    if (mapping.trials) {
+      mappingOptions.ntrials = *mapping.trials;
+    }
+    mappingOptions.niterations = mapping.iterations;
+    mappingOptions.nlookahead = mapping.lookahead;
+    mappingOptions.searchMemoryLimit = mapping.searchMemoryLimit;
+    pm.addPass(qco::createMappingPass(mappingOptions));
     break;
+  }
   case CompilerTarget::Connectivity::Kind::AllToAll:
     pm.addPass(qco::createPlacementPass(target));
     break;
@@ -118,8 +141,10 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
 }
 
 void populateTargetSynthesisPipeline(OpPassManager& pm,
-                                     const TargetEnvironment& environment) {
-  pm.addPass(std::make_unique<PrepareTargetCompilationPass>(environment, true));
+                                     const TargetEnvironment& environment,
+                                     const MappingOptions& mapping) {
+  pm.addPass(std::make_unique<PrepareTargetCompilationPass>(environment, true,
+                                                            mapping));
   const auto& target = environment.target();
   pm.addPass(createInlinerPass());
   pm.addPass(createSymbolDCEPass());
