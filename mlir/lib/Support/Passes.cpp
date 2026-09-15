@@ -59,10 +59,11 @@ static void addSimplificationPasses(OpPassManager& pm) {
   pm.addPass(createCSEPass());
 }
 
-LogicalResult runWithPassManager(
-    ModuleOp mod, const function_ref<void(OpPassManager&)> populatePasses,
-    const StringRef errorMessage, const CompilationOptions& options,
-    bool preservesLayout) {
+LogicalResult
+runWithPassManager(ModuleOp mod,
+                   const function_ref<void(OpPassManager&)> populatePasses,
+                   const StringRef errorMessage,
+                   const CompilationOptions& options, bool preservesLayout) {
   PassManager pm(mod.getContext());
   if (!preservesLayout) {
     mqt::invalidateQubitLayout(mod);

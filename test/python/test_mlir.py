@@ -1534,7 +1534,8 @@ def test_layout_compilation_counts_idle_qubits_against_capacity() -> None:
 
 
 @pytest.mark.parametrize("basis", range(4))
-def test_layout_routes_through_unused_target_sites(basis: int) -> None:
+@pytest.mark.parametrize("search_memory_limit", [0, 1024])
+def test_layout_routes_through_unused_target_sites(basis: int, search_memory_limit: int) -> None:
     """Route two logical qubits through workspace sites without losing their IDs."""
     preparation = "\n".join(f"x q[{qubit}];" for qubit in range(2) if basis & (1 << qubit))
     program = QCProgram.from_openqasm_str(f"""OPENQASM 3.1;
@@ -1551,7 +1552,9 @@ cx q[0], q[1];
     result = program.compile_for_target_with_layout(
         _test_target_environment(target),
         initial_layout=[0, 3],
-        options=CompilationOptions(seed=7, mapping=MappingOptions(trials=2, iterations=2, lookahead=0)),
+        options=CompilationOptions(
+            seed=7, mapping=MappingOptions(trials=2, iterations=2, lookahead=0, search_memory_limit=search_memory_limit)
+        ),
     )
     assert result.initial_layout == [0, 3]
     assert len(set(result.final_layout)) == 2
