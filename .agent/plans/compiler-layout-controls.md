@@ -10,11 +10,11 @@ schema in `mlir/include/mqt/Dialect/MQT/IR/MQTDialect.td`; only the versioned
 adapter handles SDK objects. Import and export preserve partial assignments,
 physical gaps, ancillary inputs, register groups, and output order.
 
-Copies, serialization, and plain QC/QCO conversions retain provenance.
-Resource-changing and custom pipelines invalidate it. Export rejects stale
-layouts; formats without layout support require explicit discard. Native results
-do not compose with imported layouts or survive as serialized metadata. Explicit
-placement requires complete assignments to fixed-size local entry-block
+Copies, serialization, and plain QC/QCO conversions retain provenance. The
+shared pipeline runner invalidates it before transformations. Export rejects
+stale layouts; formats without layout support require explicit discard. Native
+results do not compose with imported layouts or survive as serialized metadata.
+Explicit placement requires complete assignments to fixed-size local entry-block
 allocations; see `docs/mlir/target_compilation.md` for the API contract.
 
 ## Tracking decisions
@@ -26,12 +26,16 @@ discovery order and the indexed-placement path avoids routing regressions.
 Sharing target preparation avoids another pass and its IR verification. Results
 are published only after successful compilation.
 
+Layout invalidation belongs to `runWithCompilationOptions`, once per pipeline.
+Individual transforms stay independent of imported provenance; raw pass managers
+use the shared runner. Lossy format boundaries reject metadata before export.
+
 ## Validation
 
-At `a4077e2ed`, 642 Python tests, 397 native tests, three CLI CTests, both PR
-examples, repository lint, and full changed-file C++ lint passed. Compiler tests
-compare ordinary and tracked IR and check unitary semantics with an idle input
-used as routing workspace. Metadata tests cover schema and lifetime rules.
+Validation passes 642 Python tests, 397 native tests, three CLI CTests, and both
+PR examples. Repository lint and full changed-file C++ lint pass. Regressions
+cover ordinary/tracked IR equivalence, idle-input unitary semantics, nested and
+failed pipeline invalidation, and CLI preservation during plain conversion.
 
 Reproduce with the compiler, mapping, MQT IR, and tensor-transform unit
 binaries, the adapter translation tests, and

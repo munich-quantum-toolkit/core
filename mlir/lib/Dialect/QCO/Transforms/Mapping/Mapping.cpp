@@ -659,7 +659,6 @@ struct PlacementPass final
 
 protected:
   void runOnOperation() override {
-    mqt::invalidateQubitLayout(getOperation());
     auto moduleOp = getOperation();
     if (failed(mqt::verifyQuantumAllocations(moduleOp))) {
       signalPassFailure();
@@ -970,7 +969,6 @@ public:
 
 protected:
   void runOnOperation() override {
-    mqt::invalidateQubitLayout(getOperation());
     auto moduleOp = getOperation();
     if (!std::isfinite(alpha.getValue()) || alpha <= 0 || ntrials == 0) {
       moduleOp.emitError("mapping requires finite alpha > 0, niterations >= 0, "

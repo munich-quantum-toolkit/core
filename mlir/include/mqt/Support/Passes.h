@@ -31,11 +31,13 @@ mlir::LogicalResult runWithPassManager(
     mlir::StringRef errorMessage, const mlir::CompilationOptions& options = {},
     bool preservesLayout = false);
 
-/// Run passes with scoped compilation options; restore input metadata on
-/// completion.
+/// Run passes with scoped compilation options and invalidate imported layouts.
+/// Set preservesLayout only when the pipeline preserves wire identity and
+/// order.
 mlir::LogicalResult
 runWithCompilationOptions(mlir::PassManager& pm, mlir::ModuleOp moduleOp,
-                          const mlir::CompilationOptions& options);
+                          const mlir::CompilationOptions& options,
+                          bool preservesLayout = false);
 
 /// Register the QCO passes, upstream transforms, and named compiler pipelines.
 void registerMQTCompilerPasses();
