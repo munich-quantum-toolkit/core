@@ -59,8 +59,8 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
 /// An empty initial layout selects automatic placement; otherwise provide one
 /// distinct target site ID per input qubit. The result is assigned only after
 /// successful compilation and must outlive the pass manager. This pipeline
-/// preserves idle input wires, so it can use more sites than ordinary
-/// compilation.
+/// reports idle input slots, including those removed by optimization. These
+/// slots count against target capacity without requiring physical operations.
 /// Use runWithCompilationOptions to apply compilation-wide seed and
 /// instrumentation settings when running this pipeline.
 void populateTargetCompilationWithLayoutPipeline(

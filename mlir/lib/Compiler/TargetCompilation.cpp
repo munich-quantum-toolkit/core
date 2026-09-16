@@ -40,11 +40,12 @@ class PrepareTargetCompilationPass
 public:
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(PrepareTargetCompilationPass)
 
-  explicit PrepareTargetCompilationPass(TargetEnvironment environment,
-                                        bool allToAllOnly = false,
-                                        MappingOptions mapping = {})
+  explicit PrepareTargetCompilationPass(
+      TargetEnvironment environment, bool allToAllOnly = false,
+      MappingOptions mapping = {},
+      std::shared_ptr<qco::LayoutTracking> tracking = {})
       : environment_(std::move(environment)), allToAllOnly_(allToAllOnly),
-        mapping_(mapping) {}
+        mapping_(mapping), tracking_(std::move(tracking)) {}
 
 protected:
   void runOnOperation() override {
@@ -76,6 +77,11 @@ protected:
       signalPassFailure();
       return;
     }
+    if (tracking_ && failed(qco::prepareLayout(
+                         getOperation(), environment_.target(), *tracking_))) {
+      signalPassFailure();
+      return;
+    }
     markAnalysesPreserved<TargetEnvironmentAnalysis>();
   }
 
@@ -83,6 +89,7 @@ private:
   TargetEnvironment environment_;
   bool allToAllOnly_;
   MappingOptions mapping_;
+  std::shared_ptr<qco::LayoutTracking> tracking_;
 };
 
 } /* namespace */
@@ -104,10 +111,7 @@ populateTargetPipeline(OpPassManager& pm, const TargetEnvironment& environment,
                        const MappingOptions& mapping,
                        const std::shared_ptr<qco::LayoutTracking>& tracking) {
   pm.addPass(std::make_unique<PrepareTargetCompilationPass>(environment, false,
-                                                            mapping));
-  if (tracking) {
-    pm.addPass(qco::createLayoutPreparationPass(tracking));
-  }
+                                                            mapping, tracking));
   const auto& target = environment.target();
   pm.addPass(createInlinerPass());
   pm.addPass(createSymbolDCEPass());

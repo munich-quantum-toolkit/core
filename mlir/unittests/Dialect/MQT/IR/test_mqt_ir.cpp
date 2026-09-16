@@ -43,6 +43,7 @@
 
 #include <array>
 #include <cstdint>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <vector>
@@ -98,6 +99,38 @@ TEST_F(MQTIRTest, CompilationSeedHasModuleScopeAnd64Bits) {
   EXPECT_FALSE(parse(R"(module {
     func.func @main() attributes {mqt.compilation_seed = 7 : i64} { return }
   })"));
+}
+
+TEST_F(MQTIRTest, VerifiesTemporarySourceQubitIndices) {
+  constexpr StringLiteral source = R"(module {
+    func.func @main() attributes {mqt.entry_point} {
+      %n = arith.constant 2 : index
+      %q = qtensor.alloc(%n) : tensor<2x!qco.qubit>
+      qtensor.dealloc %q : tensor<2x!qco.qubit>
+      return
+    }
+  })";
+  auto moduleOp = parse(source);
+  ASSERT_TRUE(moduleOp);
+  auto function = *moduleOp->getOps<func::FuncOp>().begin();
+  auto& allocation = *std::next(function.getBody().front().begin());
+  for (const auto* text : {"array<i64: 5, 2>", "array<i64: 2, 5>"}) {
+    allocation.setAttr(mqt::kSourceQubitIndicesAttr, parseAttr(text));
+    EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  }
+  for (const auto* text : {
+           "array<i64: 2>",
+           "array<i64: 2, 2>",
+           "array<i64: -1, 2>",
+           "array<i32: 2, 5>",
+       }) {
+    allocation.setAttr(mqt::kSourceQubitIndicesAttr, parseAttr(text));
+    EXPECT_TRUE(failed(verify(*moduleOp)));
+  }
+  allocation.removeAttr(mqt::kSourceQubitIndicesAttr);
+  (*moduleOp)->setAttr(mqt::kSourceQubitIndicesAttr,
+                       parseAttr("array<i64: 2, 5>"));
+  EXPECT_TRUE(failed(verify(*moduleOp)));
 }
 
 TEST_F(MQTIRTest, RoundTripsQubitLayoutProvenance) {

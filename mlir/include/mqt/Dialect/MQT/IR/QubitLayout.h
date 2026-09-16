@@ -16,6 +16,7 @@
 #include "mlir/Support/LogicalResult.h"
 
 #include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/ADT/StringRef.h"
 
 #include <cstdint>
 #include <optional>
@@ -23,6 +24,12 @@
 #include <vector>
 
 namespace mlir::mqt {
+
+/// Temporary allocation-slot identities for native layout compilation.
+/// Tensor shrinking must select the corresponding entries; placement consumes
+/// the attribute. Slots removed by optimization are tracked as idle inputs.
+inline constexpr llvm::StringLiteral kSourceQubitIndicesAttr =
+    "mqt.source_qubit_indices";
 
 /// Source register slots refer to logical inputs; -1 denotes an absent input.
 struct LayoutRegister {

@@ -292,15 +292,20 @@ static LogicalResult checkCapacity(func::FuncOp func,
 /// checks succeeded.
 static std::pair<Wires, WireInfos>
 applyPlacement(Region& body, const CompilerTarget& target, const Layout& layout,
-               Computation& computation, IRRewriter& rewriter) {
+               Computation& computation, IRRewriter& rewriter,
+               bool addWorkspace = true) {
   SmallVector<Value> staticQubits;
-  staticQubits.reserve(layout.nHardwareQubits());
+  staticQubits.resize(layout.nHardwareQubits());
 
   rewriter.setInsertionPointToStart(&body.front());
   for (size_t hw = 0; hw < layout.nHardwareQubits(); ++hw) {
+    if (!addWorkspace &&
+        layout.getProgramIndex(hw) >= computation.wires.size()) {
+      continue;
+    }
     auto op =
         StaticOp::create(rewriter, body.getLoc(), target.siteForVertex(hw));
-    staticQubits.emplace_back(op.getQubit());
+    staticQubits[hw] = op.getQubit();
     rewriter.setInsertionPointAfter(op);
   }
 
@@ -345,7 +350,8 @@ applyPlacement(Region& body, const CompilerTarget& target, const Layout& layout,
   }
 
   rewriter.setInsertionPoint(body.back().getTerminator());
-  for (size_t prog = wires.size(); prog < layout.nHardwareQubits(); ++prog) {
+  for (size_t prog = wires.size();
+       addWorkspace && prog < layout.nHardwareQubits(); ++prog) {
     const auto hw = layout.getHardwareIndex(prog);
     auto qubit = staticQubits[hw];
 
@@ -359,7 +365,8 @@ applyPlacement(Region& body, const CompilerTarget& target, const Layout& layout,
 
 /// Assign allocation slots to sites without traversing or expanding their uses.
 static LogicalResult placeIndexedAllocations(func::FuncOp function,
-                                             const CompilerTarget& target) {
+                                             const CompilerTarget& target,
+                                             LayoutTracking* tracking) {
   SmallVector<Operation*> allocations;
   llvm::DenseSet<CompilerTarget::SiteId> occupied;
   function.walk([&](StaticOp op) {
@@ -386,19 +393,46 @@ static LogicalResult placeIndexedAllocations(func::FuncOp function,
              << target.numSites();
     }
     required += width;
+    if (tracking != nullptr) {
+      auto sources = operation.getAttrOfType<DenseI64ArrayAttr>(
+          mqt::kSourceQubitIndicesAttr);
+      if (!sources || std::cmp_not_equal(sources.size(), width) ||
+          llvm::any_of(sources.asArrayRef(), [&](int64_t source) {
+            return source < 0 || std::cmp_greater_equal(
+                                     source, tracking->sourceToProgram.size());
+          })) {
+        return operation.emitError(
+            "input qubit identity was lost during layout preparation");
+      }
+    }
     allocations.push_back(&operation);
+  }
+  if (tracking != nullptr) {
+    tracking->result.initialLayout.assign(tracking->sourceToProgram.size(), -1);
   }
   IRRewriter rewriter(function.getContext());
   size_t vertex = 0;
   for (Operation* allocation : allocations) {
     rewriter.setInsertionPoint(allocation);
+    auto sources = allocation->getAttrOfType<DenseI64ArrayAttr>(
+        mqt::kSourceQubitIndicesAttr);
+    size_t slot = 0;
     const auto nextQubit = [&] {
-      while (occupied.contains(target.siteForVertex(vertex))) {
-        ++vertex;
+      CompilerTarget::SiteId site = 0;
+      if (tracking && !tracking->requested.empty()) {
+        site = tracking->requested[sources[slot]];
+      } else {
+        while (occupied.contains(target.siteForVertex(vertex))) {
+          ++vertex;
+        }
+        site = target.siteForVertex(vertex++);
       }
-      return StaticOp::create(rewriter, allocation->getLoc(),
-                              target.siteForVertex(vertex++));
+      if (tracking != nullptr) {
+        tracking->result.initialLayout[sources[slot++]] = site;
+      }
+      return StaticOp::create(rewriter, allocation->getLoc(), site);
     };
+    allocation->removeAttr(mqt::kSourceQubitIndicesAttr);
     if (isa<AllocOp>(allocation)) {
       auto qubit = nextQubit();
       qubit->setDiscardableAttrs(allocation->getDiscardableAttrDictionary());
@@ -416,172 +450,146 @@ static LogicalResult placeIndexedAllocations(func::FuncOp function,
     tensor->setDiscardableAttrs(allocation->getDiscardableAttrDictionary());
     rewriter.replaceOp(allocation, tensor.getResult());
   }
+  if (tracking != nullptr) {
+    /// Removed input slots need a site in the snapshot, but no physical IR.
+    for (auto [source, site] :
+         llvm::enumerate(tracking->result.initialLayout)) {
+      if (site != -1) {
+        continue;
+      }
+      if (!tracking->requested.empty()) {
+        site = tracking->requested[source];
+      } else {
+        while (occupied.contains(target.siteForVertex(vertex))) {
+          ++vertex;
+        }
+        site = target.siteForVertex(vertex++);
+      }
+    }
+    tracking->result.finalLayout = tracking->result.initialLayout;
+    tracking->mapped = true;
+  }
   return success();
 }
 
-namespace {
-
-/// Keep source slots observable until placement has captured their order.
-struct LayoutPreparationPass final
-    : PassWrapper<LayoutPreparationPass, OperationPass<ModuleOp>> {
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(LayoutPreparationPass)
-
-  explicit LayoutPreparationPass(std::shared_ptr<LayoutTracking> tracking)
-      : tracking_(std::move(tracking)) {}
-
-  void getDependentDialects(DialectRegistry& registry) const override {
-    registry.insert<QCODialect, qtensor::QTensorDialect, arith::ArithDialect>();
+LogicalResult prepareLayout(ModuleOp moduleOp, const CompilerTarget& target,
+                            LayoutTracking& tracking) {
+  auto func = mqt::getEntryPoint(moduleOp);
+  if (!func || !llvm::hasSingleElement(func.getBody()) ||
+      llvm::any_of(func.getArgumentTypes(), isLinearQubitType)) {
+    moduleOp.emitError("layout tracking requires an entry block with locally "
+                       "allocated qubits");
+    return failure();
   }
-
-protected:
-  void runOnOperation() override {
-    auto moduleOp = getOperation();
-    auto func = mqt::getEntryPoint(moduleOp);
-    if (!func || !llvm::hasSingleElement(func.getBody()) ||
-        llvm::any_of(func.getArgumentTypes(), isLinearQubitType)) {
-      moduleOp.emitError("layout tracking requires an entry block with locally "
-                         "allocated qubits");
-      signalPassFailure();
-      return;
+  SmallVector<std::pair<Operation*, size_t>> allocations;
+  size_t count = 0;
+  const auto validation = moduleOp.walk([&](Operation* op) {
+    if (isa<StaticOp>(op) || op->hasAttr(mqt::kSourceQubitIndicesAttr)) {
+      op->emitError("layout tracking requires unmapped input without "
+                    "source tags");
+      return WalkResult::interrupt();
     }
-    const auto& environment = getAnalysis<TargetEnvironmentAnalysis>();
-    if (!environment) {
-      moduleOp.emitError("layout tracking requires a target environment");
-      signalPassFailure();
-      return;
-    }
-    const auto& target = environment.environment().target();
-    SmallVector<std::pair<Operation*, size_t>> allocations;
-    size_t count = 0;
-    const auto validation = moduleOp.walk([&](Operation* op) {
-      if (isa<StaticOp>(op) || op->hasAttr(kLayoutBoundaryAttr)) {
-        op->emitError("layout tracking requires unmapped input without layout "
-                      "boundary tags");
-        return WalkResult::interrupt();
-      }
-      if (!isa<AllocOp, qtensor::AllocOp>(op)) {
-        return WalkResult::advance();
-      }
-      if (op->getBlock() != &func.getBody().front()) {
-        op->emitError(
-            "layout tracking requires allocations in the entry block");
-        return WalkResult::interrupt();
-      }
-      size_t size = 1;
-      if (auto tensor = dyn_cast<qtensor::AllocOp>(op)) {
-        auto extent = getConstantIntValue(tensor.getSize());
-        if (!extent || *extent < 0) {
-          op->emitError("layout tracking requires fixed allocation sizes");
-          return WalkResult::interrupt();
-        }
-        size = static_cast<size_t>(*extent);
-      }
-      if (size > target.numSites() - count) {
-        op->emitError("layout tracking requires a target site for every input "
-                      "qubit, including idle qubits");
-        return WalkResult::interrupt();
-      }
-      allocations.emplace_back(op, size);
-      count += size;
+    if (!isa<AllocOp, qtensor::AllocOp>(op)) {
       return WalkResult::advance();
-    });
-    if (validation.wasInterrupted()) {
-      signalPassFailure();
-      return;
     }
-    if (!tracking_->requested.empty()) {
-      llvm::SmallDenseSet<int64_t> sites;
-      if (tracking_->requested.size() != count ||
-          llvm::any_of(tracking_->requested, [&](int64_t site) {
-            return !target.vertexForSite(site) || !sites.insert(site).second;
-          })) {
-        func.emitError("initial layout requires one distinct target site ID "
-                       "per input qubit");
-        signalPassFailure();
-        return;
-      }
+    if (op->getBlock() != &func.getBody().front()) {
+      op->emitError("layout tracking requires allocations in the entry block");
+      return WalkResult::interrupt();
     }
-    tracking_->result = {};
-    tracking_->mapped = false;
-    IRRewriter rewriter(&getContext());
-    size_t offset = 0;
-    for (auto [op, size] : allocations) {
-      tracking_->result.allocationSizes.push_back(size);
-      rewriter.setInsertionPointAfter(op);
-      auto root = op->getResult(0);
-      auto& use = *root.use_begin();
-      SmallVector<Value> qubits;
-      SmallVector<Value> indices;
-      Value tensor = root;
-      if (isa<qtensor::AllocOp>(op)) {
-        for (size_t i = 0; i < size; ++i) {
-          auto index = arith::ConstantIndexOp::create(rewriter, op->getLoc(),
-                                                      static_cast<int64_t>(i));
-          indices.push_back(index);
-          auto extract =
-              ExtractOp::create(rewriter, op->getLoc(), tensor, index);
-          qubits.push_back(extract.getResult());
-          tensor = extract.getOutTensor();
-        }
-      } else {
-        qubits.push_back(root);
+    size_t size = 1;
+    if (auto tensor = dyn_cast<qtensor::AllocOp>(op)) {
+      auto extent = getConstantIntValue(tensor.getSize());
+      if (!extent || *extent < 0) {
+        op->emitError("layout tracking requires fixed allocation sizes");
+        return WalkResult::interrupt();
       }
-      auto boundary = BarrierOp::create(rewriter, op->getLoc(), qubits);
-      boundary->setAttr(kLayoutBoundaryAttr, rewriter.getI64IntegerAttr(
-                                                 static_cast<int64_t>(offset)));
-      if (isa<qtensor::AllocOp>(op)) {
-        for (auto [qubit, index] :
-             llvm::zip_equal(boundary.getQubitsOut(), indices)) {
-          tensor =
-              InsertOp::create(rewriter, op->getLoc(), qubit, tensor, index);
-        }
-        use.set(tensor);
-      } else {
-        use.set(boundary.getQubitsOut().front());
-      }
-      offset += size;
+      size = static_cast<size_t>(*extent);
     }
-    tracking_->sourceToProgram.assign(count,
-                                      std::numeric_limits<size_t>::max());
-    markAnalysesPreserved<TargetEnvironmentAnalysis>();
+    if (size > target.numSites() - count) {
+      op->emitError("layout tracking requires a target site for every input "
+                    "qubit, including idle qubits");
+      return WalkResult::interrupt();
+    }
+    allocations.emplace_back(op, size);
+    count += size;
+    return WalkResult::advance();
+  });
+  if (validation.wasInterrupted()) {
+    return failure();
   }
+  if (!tracking.requested.empty()) {
+    llvm::SmallDenseSet<int64_t> sites;
+    if (tracking.requested.size() != count ||
+        llvm::any_of(tracking.requested, [&](int64_t site) {
+          return !target.vertexForSite(site) || !sites.insert(site).second;
+        })) {
+      func.emitError("initial layout requires one distinct target site ID "
+                     "per input qubit");
+      return failure();
+    }
+  }
+  tracking.result = {};
+  tracking.mapped = false;
+  Builder builder(moduleOp.getContext());
+  int64_t offset = 0;
+  for (auto [op, size] : allocations) {
+    tracking.result.allocationSizes.push_back(size);
+    SmallVector<int64_t> indices;
+    indices.reserve(size);
+    for (size_t i = 0; i < size; ++i) {
+      indices.push_back(offset++);
+    }
+    op->setAttr(mqt::kSourceQubitIndicesAttr,
+                builder.getDenseI64ArrayAttr(indices));
+  }
+  tracking.sourceToProgram.assign(count, std::numeric_limits<size_t>::max());
+  return success();
+}
 
-private:
-  std::shared_ptr<LayoutTracking> tracking_;
-};
-
-} // namespace
-
-/// Resolve source markers before dynamic allocations are replaced.
+/// Associate surviving roots with their original slots in discovery order.
+/// Optimized-away slots occupy unused program indices, so routing can carry
+/// their identity through workspace swaps without retaining dead operations.
 static LogicalResult collectSourceOrder(func::FuncOp func,
                                         const Computation& computation,
                                         LayoutTracking& tracking) {
-  for (auto [program, root] : llvm::enumerate(computation.wires)) {
-    for (auto wire = root; wire != std::default_sentinel; ++wire) {
-      auto* op = wire.operation();
-      auto offset = op->getAttrOfType<IntegerAttr>(kLayoutBoundaryAttr);
-      if (!offset) {
-        continue;
-      }
-      auto result = dyn_cast<OpResult>(wire.qubit());
-      if (!isa<BarrierOp>(op) || !result) {
-        return func.emitError("invalid layout boundary after preparation");
-      }
-      const auto source =
-          static_cast<size_t>(offset.getInt()) + result.getResultNumber();
-      if (source >= tracking.sourceToProgram.size() ||
-          tracking.sourceToProgram[source] !=
-              std::numeric_limits<size_t>::max()) {
-        return func.emitError("ambiguous layout boundary after preparation");
-      }
-      tracking.sourceToProgram[source] = program;
-      break;
+  size_t program = 0;
+  const auto record = [&](Operation* allocation, int64_t index) {
+    auto sources = allocation->getAttrOfType<DenseI64ArrayAttr>(
+        mqt::kSourceQubitIndicesAttr);
+    if (!sources || index < 0 || index >= sources.size()) {
+      return failure();
+    }
+    const auto source = sources[index];
+    if (source < 0 ||
+        std::cmp_greater_equal(source, tracking.sourceToProgram.size()) ||
+        tracking.sourceToProgram[source] !=
+            std::numeric_limits<size_t>::max()) {
+      return failure();
+    }
+    tracking.sourceToProgram[source] = program++;
+    return success();
+  };
+  for (auto alloc : computation.scalarAllocations) {
+    if (failed(record(alloc, 0))) {
+      return func.emitError(
+          "input qubit identity was lost during layout preparation");
     }
   }
-  if (llvm::is_contained(tracking.sourceToProgram,
-                         std::numeric_limits<size_t>::max())) {
-    return func.emitError(
-        "input qubit identity was lost during layout preparation");
+  for (const auto& tensor : computation.tensorAllocations) {
+    for (auto* operation : tensor.operations) {
+      if (auto extract = dyn_cast<ExtractOp>(operation)) {
+        auto index = getConstantIntValue(extract.getIndex());
+        if (!index || failed(record(tensor.allocation, *index))) {
+          return func.emitError(
+              "input qubit identity was lost during layout preparation");
+        }
+      }
+    }
+  }
+  for (auto& index : tracking.sourceToProgram) {
+    if (index == std::numeric_limits<size_t>::max()) {
+      index = program++;
+    }
   }
   return success();
 }
@@ -608,15 +616,9 @@ static std::vector<int64_t> sourceLayout(const CompilerTarget& target,
   return result;
 }
 
-static void finishLayout(func::FuncOp func, const CompilerTarget& target,
-                         const Layout& layout, LayoutTracking& tracking,
-                         IRRewriter& rewriter) {
+static void finishLayout(const CompilerTarget& target, const Layout& layout,
+                         LayoutTracking& tracking) {
   tracking.result.finalLayout = sourceLayout(target, layout, tracking);
-  func.walk([&](BarrierOp boundary) {
-    if (boundary->hasAttr(kLayoutBoundaryAttr)) {
-      rewriter.replaceOp(boundary, boundary.getQubitsIn());
-    }
-  });
   tracking.mapped = true;
 }
 
@@ -636,7 +638,7 @@ protected:
       signalPassFailure();
       return;
     }
-    *tracking_->destination = tracking_->result;
+    *tracking_->destination = std::move(tracking_->result);
     markAllAnalysesPreserved();
   }
 
@@ -672,9 +674,8 @@ protected:
     }
 
     const auto& environment = getAnalysis<TargetEnvironmentAnalysis>();
-    if (!tracking_ && environment &&
-        environment.environment().supportsIndexedQubits()) {
-      if (failed(placeIndexedAllocations(func, target))) {
+    if (environment && environment.environment().supportsIndexedQubits()) {
+      if (failed(placeIndexedAllocations(func, target, tracking_.get()))) {
         signalPassFailure();
       }
       return;
@@ -691,18 +692,20 @@ protected:
       signalPassFailure();
       return;
     }
-    const auto layout = tracking_ && !tracking_->requested.empty()
-                            ? requestedLayout(target, *tracking_)
-                            : Layout::identity(computation->wires.size());
+    const auto layout =
+        tracking_ && !tracking_->requested.empty()
+            ? requestedLayout(target, *tracking_)
+            : Layout::identity(tracking_ ? tracking_->sourceToProgram.size()
+                                         : computation->wires.size());
     if (tracking_) {
       tracking_->result.initialLayout =
           sourceLayout(target, layout, *tracking_);
     }
     IRRewriter rewriter(&getContext());
     applyPlacement(func.getFunctionBody(), target, layout, *computation,
-                   rewriter);
+                   rewriter, false);
     if (tracking_) {
-      finishLayout(func, target, layout, *tracking_, rewriter);
+      finishLayout(target, layout, *tracking_);
     }
   }
 
@@ -1049,7 +1052,7 @@ protected:
         bundle, arena, &rewriter);
 
     if (tracking_) {
-      finishLayout(func, *target, bundle.layout, *tracking_, rewriter);
+      finishLayout(*target, bundle.layout, *tracking_);
     }
 
     // Collect statistics.
@@ -2399,11 +2402,6 @@ createLayoutTracking(MappingResult& result,
       .destination = &result,
       .requested = SmallVector<int64_t>(initialLayout),
   });
-}
-
-std::unique_ptr<Pass>
-createLayoutPreparationPass(std::shared_ptr<LayoutTracking> tracking) {
-  return std::make_unique<LayoutPreparationPass>(std::move(tracking));
 }
 
 std::unique_ptr<Pass>
