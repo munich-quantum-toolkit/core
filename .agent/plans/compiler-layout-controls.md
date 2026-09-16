@@ -1,6 +1,6 @@
 # Native layouts and SDK layout interchange
 
-Status: complete. Draft PR #2553 resolves #2070.
+Status: complete. Implemented in PR #2553.
 
 ## Scope and ownership
 
@@ -29,13 +29,16 @@ are published only after successful compilation.
 Layout invalidation belongs to `runWithCompilationOptions`, once per pipeline.
 Individual transforms stay independent of imported provenance; raw pass managers
 use the shared runner. Lossy format boundaries reject metadata before export.
+Discard and output checks visit the full module tree. Invalidation also marks
+the pipeline root so cleanup cannot remove the last marker with a private child.
 
 ## Validation
 
-Validation passes 642 Python tests, 397 native tests, three CLI CTests, and both
+Validation passes 642 Python tests, 399 native tests, three CLI CTests, and both
 PR examples. Repository lint and full changed-file C++ lint pass. Regressions
-cover ordinary/tracked IR equivalence, idle-input unitary semantics, nested and
-failed pipeline invalidation, and CLI preservation during plain conversion.
+cover ordinary/tracked IR equivalence, idle-input unitary semantics, recursive
+discard, private nested-module removal, failed pipeline invalidation, and CLI
+preservation during plain conversion.
 
 Reproduce with the compiler, mapping, MQT IR, and tensor-transform unit
 binaries, the adapter translation tests, and

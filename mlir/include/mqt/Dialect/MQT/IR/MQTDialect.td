@@ -43,6 +43,9 @@ def MQTDialect : Dialect {
     and plain QC/QCO conversions retain it. Compiler pipeline runners replace it
     with the mutually exclusive unit attribute `mqt.layout_invalidated` unless the
     caller declares preservation. Individual transforms do not manage provenance.
+    Nested provenance also marks the pipeline root, so deleting a nested module
+    cannot erase the discard requirement. Discard and output checks cover the whole
+    module tree.
     Use `runWithCompilationOptions` for native pass managers. Raw IR editors must
     preserve or update layouts, or call `invalidateQubitLayout` before changing
     wire identity or order.

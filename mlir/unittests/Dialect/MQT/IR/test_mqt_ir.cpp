@@ -199,6 +199,27 @@ TEST_F(MQTIRTest, InvalidatesAndExplicitlyDiscardsQubitLayouts) {
   EXPECT_TRUE(succeeded(mqt::requireNoQubitLayout(*moduleOp)));
 }
 
+TEST_F(MQTIRTest, RejectsAndDiscardsNestedQubitLayouts) {
+  for (const bool invalidated : {false, true}) {
+    SCOPED_TRACE(invalidated);
+    auto moduleOp = parse("module { module @nested { module @leaf {} } }");
+    ASSERT_TRUE(moduleOp);
+    auto nested = *moduleOp->getOps<ModuleOp>().begin();
+    auto leaf = *nested.getOps<ModuleOp>().begin();
+    if (invalidated) {
+      leaf->setAttr("mqt.layout_invalidated", UnitAttr::get(context.get()));
+    } else {
+      leaf->setAttr("mqt.layout", mqt::QubitLayout{}.toAttr(context.get()));
+    }
+    EXPECT_TRUE(failed(mqt::requireNoQubitLayout(*moduleOp)));
+    mqt::discardQubitLayout(*moduleOp);
+    EXPECT_FALSE(leaf->hasAttr("mqt.layout"));
+    EXPECT_FALSE(leaf->hasAttr("mqt.layout_invalidated"));
+    EXPECT_TRUE(succeeded(mqt::requireNoQubitLayout(*moduleOp)));
+    EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  }
+}
+
 TEST_F(MQTIRTest, RejectsMalformedQubitLayoutSchema) {
   auto moduleOp = parse("module {}");
   ASSERT_TRUE(moduleOp);
