@@ -40,10 +40,12 @@ def MQTDialect : Dialect {
     Missing `initial`, `routing`, and register-slot assignments use -1. Assigned
     positions are distinct and in range. Logical inputs can be unregistered.
     The metadata does not affect gates or store SDK objects. Copies, serialization,
-    and plain QC/QCO conversions retain it. Public transformation helpers and
-    resource-changing passes replace it with the mutually exclusive unit attribute
-    `mqt.layout_invalidated`. External passes and IR editors must preserve or update
-    layouts, or call `invalidateQubitLayout` before changing wire identity or order.
+    and plain QC/QCO conversions retain it. Compiler pipeline runners replace it
+    with the mutually exclusive unit attribute `mqt.layout_invalidated` unless the
+    caller declares preservation. Individual transforms do not manage provenance.
+    Use `runWithCompilationOptions` for native pass managers. Raw IR editors must
+    preserve or update layouts, or call `invalidateQubitLayout` before changing
+    wire identity or order.
     Schema verification cannot detect every stale mapping. Exporters reject
     invalidated layouts; formats without layout support require
     `discardQubitLayout` first.

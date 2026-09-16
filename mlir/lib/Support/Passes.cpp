@@ -33,26 +33,8 @@
 
 #include <bit>
 #include <cstdint>
-#include <memory>
 
 using namespace mlir;
-
-namespace {
-struct InvalidateLayoutPass final
-    : PassWrapper<InvalidateLayoutPass, OperationPass<ModuleOp>> {
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(InvalidateLayoutPass)
-
-  [[nodiscard]] StringRef getArgument() const override {
-    return "mqt-invalidate-layout";
-  }
-  [[nodiscard]] StringRef getDescription() const override {
-    return "Invalidate qubit layout provenance before resource transformations";
-  }
-
-protected:
-  void runOnOperation() override { mqt::invalidateQubitLayout(getOperation()); }
-};
-} // namespace
 
 static void addSimplificationPasses(OpPassManager& pm) {
   pm.addPass(createCanonicalizerPass());
@@ -65,11 +47,8 @@ runWithPassManager(ModuleOp mod,
                    const StringRef errorMessage,
                    const CompilationOptions& options, bool preservesLayout) {
   PassManager pm(mod.getContext());
-  if (!preservesLayout) {
-    mqt::invalidateQubitLayout(mod);
-  }
   populatePasses(pm);
-  if (failed(runWithCompilationOptions(pm, mod, options))) {
+  if (failed(runWithCompilationOptions(pm, mod, options, preservesLayout))) {
     return mod.emitError(errorMessage);
   }
   return success();
@@ -77,7 +56,6 @@ runWithPassManager(ModuleOp mod,
 
 void registerMQTCompilerPasses() {
   static const auto REGISTERED = [] {
-    PassRegistration<InvalidateLayoutPass>();
     registerTransformsPasses();
     registerConvertCBitToMemRef();
     qco::registerDecomposeMultiControlled();
@@ -124,7 +102,6 @@ void populateQIRPreparationPipeline(OpPassManager& pm) {
 }
 
 void populateQubitReusePipeline(OpPassManager& pm) {
-  pm.addPass(std::make_unique<InvalidateLayoutPass>());
   pm.addPass(qco::createMeasurementLifting());
   pm.addPass(qco::createReplaceClassicalControls());
   pm.addPass(qco::createRemoveDeadGates());
@@ -150,12 +127,15 @@ LogicalResult runPassPipeline(ModuleOp mod, const StringRef pipeline,
     return mod.emitError() << "failed to parse pass pipeline '" << pipeline
                            << "'";
   }
-  mqt::invalidateQubitLayout(mod);
   return runWithCompilationOptions(pm, mod, options);
 }
 
 LogicalResult runWithCompilationOptions(PassManager& pm, ModuleOp moduleOp,
-                                        const CompilationOptions& options) {
+                                        const CompilationOptions& options,
+                                        bool preservesLayout) {
+  if (!preservesLayout) {
+    mqt::invalidateQubitLayout(moduleOp);
+  }
   if (options.enableTiming) {
     pm.enableTiming();
   }
@@ -180,7 +160,6 @@ LogicalResult runWithCompilationOptions(PassManager& pm, ModuleOp moduleOp,
 }
 
 void populateQCExportPipeline(OpPassManager& pm) {
-  pm.addPass(std::make_unique<InvalidateLayoutPass>());
   pm.addPass(createCanonicalizerPass());
   pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
   pm.addPass(createCSEPass());
@@ -194,7 +173,6 @@ void populateQCCleanupPipeline(OpPassManager& pm) {
 }
 
 void populateQCOCleanupPipeline(OpPassManager& pm) {
-  pm.addPass(std::make_unique<InvalidateLayoutPass>());
   pm.addPass(createCanonicalizerPass(
       GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit)));
   pm.addPass(mlir::mqt::createNormalizeGlobalPhases());

@@ -630,7 +630,7 @@ TEST(CompilerLayoutTest, RejectsLayoutLossInDirectNativeConversions) {
 
 TEST(CompilerLayoutTest, InvalidatesProvenanceAtTransformationBoundaries) {
   for (const auto* const transformation :
-       {"cleanup", "reuse", "custom", "native"}) {
+       {"cleanup", "reuse", "custom", "native", "canonicalize", "failed"}) {
     SCOPED_TRACE(transformation);
     auto qc =
         QCProgram::fromOpenQASMString("OPENQASM 3.0; qubit[2] q; h q[0];");
@@ -653,8 +653,15 @@ TEST(CompilerLayoutTest, InvalidatesProvenanceAtTransformationBoundaries) {
       EXPECT_TRUE(qco->runPassPipeline("builtin.module(canonicalize)"));
     } else {
       PassManager pm(qco->module().getContext());
-      populateQCOCleanupPipeline(pm);
-      EXPECT_TRUE(succeeded(pm.run(qco->module())));
+      if (name == "native") {
+        populateQCOCleanupPipeline(pm);
+      } else if (name == "failed") {
+        pm.addPass(qco::createVerifyTargetConformance());
+      } else {
+        pm.addPass(createCanonicalizerPass());
+      }
+      EXPECT_EQ(succeeded(runWithCompilationOptions(pm, qco->module(), {})),
+                name != "failed");
     }
     EXPECT_FALSE(qco->module()->hasAttr("mqt.layout"));
     EXPECT_TRUE(qco->module()->hasAttr("mqt.layout_invalidated"));
@@ -681,14 +688,19 @@ TEST(CompilerLayoutTest, InvalidatesNestedProvenanceBeforeCustomPipelines) {
       }
     }
   })mlir";
-  for (const bool custom : {false, true}) {
-    SCOPED_TRACE(custom);
+  for (const StringRef runner : {"wrapper", "textual", "direct"}) {
+    SCOPED_TRACE(runner.str());
     auto program = QCOProgram::fromMLIRString(source);
     ASSERT_TRUE(program);
     auto nested = *program->module().getOps<ModuleOp>().begin();
     ASSERT_TRUE(nested->hasAttr("mqt.layout"));
-    if (custom) {
+    if (runner == "textual") {
       ASSERT_TRUE(program->runPassPipeline("builtin.module(canonicalize)"));
+    } else if (runner == "direct") {
+      PassManager pm(program->module().getContext());
+      pm.addNestedPass<ModuleOp>(createCanonicalizerPass());
+      ASSERT_TRUE(
+          succeeded(runWithCompilationOptions(pm, program->module(), {})));
     } else {
       ASSERT_TRUE(succeeded(runWithPassManager(
           program->module(),

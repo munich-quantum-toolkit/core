@@ -161,8 +161,12 @@ TEST(CompilerCLI, TracksLayoutAcrossImportAndTransformations) {
       llvm::sys::fs::createTemporaryFile("mqt-cc-layout", "mlir", outputPath));
   const llvm::FileRemover cleanup(outputPath);
 
-  for (llvm::StringRef mode :
-       {"--emit=qc-import", "--emit=qco-optimized", "--run-pipeline"}) {
+  for (llvm::StringRef mode : {
+           "--emit=qc-import",
+           "--emit=qco",
+           "--emit=qco-optimized",
+           "--run-pipeline",
+       }) {
     SCOPED_TRACE(mode.str());
     llvm::SmallVector<llvm::StringRef> args{
         MQT_CORE_MQT_CC,
@@ -179,7 +183,8 @@ TEST(CompilerCLI, TracksLayoutAcrossImportAndTransformations) {
     auto output = llvm::MemoryBuffer::getFile(outputPath);
     ASSERT_TRUE(output);
     EXPECT_TRUE((*output)->getBuffer().contains(
-        mode == "--emit=qc-import" ? "mqt.layout ="
-                                   : "mqt.layout_invalidated"));
+        mode == "--emit=qc-import" || mode == "--emit=qco"
+            ? "mqt.layout ="
+            : "mqt.layout_invalidated"));
   }
 }

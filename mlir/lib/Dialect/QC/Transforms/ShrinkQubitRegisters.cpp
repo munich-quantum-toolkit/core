@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/Transforms/Passes.h"
 
@@ -154,7 +153,6 @@ struct ShrinkQubitRegistersPass final
     : impl::ShrinkQubitRegistersPassBase<ShrinkQubitRegistersPass> {
 protected:
   void runOnOperation() override {
-    mqt::invalidateQubitLayout(getOperation());
     RewritePatternSet patterns(&getContext());
     patterns.add<ShrinkQubitRegister>(&getContext());
 

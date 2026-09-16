@@ -189,7 +189,6 @@ struct ShrinkQTensorToFitPass final
     : impl::ShrinkQTensorToFitPassBase<ShrinkQTensorToFitPass> {
 protected:
   void runOnOperation() override {
-    mqt::invalidateQubitLayout(getOperation());
     RewritePatternSet patterns(&getContext());
     patterns.add<ShrinkStaticQTensor>(&getContext());
 
