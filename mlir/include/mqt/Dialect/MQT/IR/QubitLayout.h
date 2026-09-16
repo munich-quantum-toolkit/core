@@ -59,10 +59,13 @@ struct QubitLayout {
 };
 
 /// Invalidate retained layout provenance in this module and its nested modules.
+/// Mark the root too, so nested module removal cannot erase the discard
+/// requirement.
 void invalidateQubitLayout(ModuleOp moduleOp);
-/// Explicitly discard both retained and invalidated layout provenance.
+/// Discard retained and invalidated layout provenance throughout the module
+/// tree.
 void discardQubitLayout(ModuleOp moduleOp);
-/// Reject layout loss or use of stale metadata at a serialization boundary.
+/// Reject layout provenance anywhere in the module tree at an output boundary.
 [[nodiscard]] LogicalResult requireNoQubitLayout(ModuleOp moduleOp);
 
 } // namespace mlir::mqt
