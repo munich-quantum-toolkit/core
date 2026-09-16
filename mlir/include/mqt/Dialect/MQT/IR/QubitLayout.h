@@ -25,9 +25,7 @@
 
 namespace mlir::mqt {
 
-/// Temporary allocation-slot identities for native layout compilation.
-/// Tensor shrinking must select the corresponding entries; placement consumes
-/// the attribute. Slots removed by optimization are tracked as idle inputs.
+/// Input slot IDs retained through tensor shrinking and consumed by placement.
 inline constexpr llvm::StringLiteral kSourceQubitIndicesAttr =
     "mqt.source_qubit_indices";
 
@@ -38,14 +36,13 @@ struct LayoutRegister {
   bool ancillary = false;
 };
 
-/// Serialized circuit-wire provenance, independent of any frontend SDK.
+/// Circuit-wire provenance; see the MQT dialect reference for the schema.
 ///
-/// Initial positions index the physical output order. Routing maps physical
-/// circuit wires to their final positions; an absent routing map leaves initial
-/// positions unchanged. Otherwise final[i] = routing[outputOrder[initial[i]]].
-/// Missing initial or routing assignments use -1. Register slots and ancillary
-/// inputs refer to the logical input order. inputCount, when present, separates
-/// original inputs from subsequently introduced workspace inputs.
+/// initial maps logical inputs to physical positions; outputOrder maps those
+/// positions to circuit wires. final[i] = routing[outputOrder[initial[i]]], or
+/// initial[i] when routing is absent. Missing assignments use -1.
+/// Register slots and ancillas index logical inputs; inputCount excludes
+/// workspace.
 struct QubitLayout {
   int64_t physicalSize = 0;
   std::vector<int64_t> initial;

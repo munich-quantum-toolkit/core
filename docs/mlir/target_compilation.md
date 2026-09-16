@@ -461,8 +461,8 @@ Target-aware export requires static qubits whose site IDs belong to that target.
 
 ## Initial and final qubit layouts
 
-Use `QCOProgram.compile_for_target_with_layout` when a caller needs to choose
-placement or interpret logical outputs after native routing:
+Use `QCOProgram.compile_for_target_with_layout` to choose placement or recover
+logical output positions after routing:
 
 ```python
 from mqt.core.mlir import CompilationOptions, MappingOptions, QCProgram
@@ -477,43 +477,33 @@ print(layout.initial_layout)
 print(layout.final_layout)
 ```
 
-Here `environment` is a `TargetEnvironment` whose target contains sites `0` and
-`2` and supports the circuit. `initial_layout` is a complete list of distinct
-**target site IDs**, not indices into `target.sites`. Omit it or pass an empty
-list for automatic placement. A supplied layout fixes initial placement, so
-trials and refinement iterations do not run. Lookahead still controls routing,
-which can insert SWAPs and change the final placement.
+The `TargetEnvironment` must contain sites `0` and `2` and support the circuit.
+`initial_layout` supplies one distinct **target site ID** per input qubit, not
+an index into `target.sites`. Omit it or pass `[]` for automatic placement.
+Explicit placement skips trials and refinement; lookahead still controls
+routing.
 
-Both result lists index qubits in allocation order in the input entry block,
-with each tensor flattened in ascending slot order. `allocation_sizes` records
-the allocation boundaries. For two tensors of sizes two and one, the result
-order is `[first[0], first[1], second[0]]`, even if the circuit uses `second[0]`
-first. Classical measurement destinations retain their existing semantics.
+Both result lists follow entry-block allocation order and ascending tensor
+slots. For tensors of sizes two and one, the order is
+`[first[0], first[1], second[0]]`, regardless of first use. `allocation_sizes`
+records those boundaries. Classical measurement destinations are unchanged.
 
-This API reports idle input slots even when optimization removes their
-operations. They count against target capacity, but do not force extra circuit
-operations. Automatic placement and routing see the same circuit as ordinary
-target compilation. It accepts fixed-size local allocations in the entry block;
-dynamic, nested, and already physical allocations are rejected. Tracking starts
-at this call: it cannot recover qubits removed by an earlier cleanup or reuse
-pass. Malformed layouts raise an error. As with ordinary target compilation, do
-not rely on program contents after failure.
+Idle input slots count against target capacity and remain in the result without
+adding circuit operations. Automatic tracking preserves ordinary compilation's
+placement and routing. Inputs must be fixed-size local entry-block allocations;
+dynamic, nested, and physical allocations are rejected. Qubits removed before
+this call cannot be recovered. Invalid inputs raise an error; do not rely on
+program contents after failure.
 
-The returned `MappingResult` is a detached snapshot of that compilation.
-Subsequent program edits, cleanup, or reuse do not update it, and serialization
-does not embed the snapshot. Partial placement constraints are not supported.
+`MappingResult` is a snapshot of this call: later edits do not update it, and
+serialization does not include it. Partial placement constraints are
+unsupported.
 
-Imported layout provenance is separate: the Qiskit adapter retains it in
-`mqt.layout` through plain copies and dialect conversions. Target compilation
-invalidates that provenance before changing resource correspondence. It does not
-compose `MappingResult` with an earlier SDK layout. Explicitly call
-`discard_layout()` before SDK export after compilation, or before conversion to
-OpenQASM, QIR/LLVM, or jeff. See
-[transpiler layouts](qiskit.md#transpiler-layouts) for the shared metadata
-lifetime and supported SDK forms.
+Target compilation invalidates imported layout provenance without composing it
+with `MappingResult`. Call `discard_layout()` before subsequent export; see
+[transpiler layouts](qiskit.md#transpiler-layouts) for preservation and export
+rules.
 
-The C++ equivalents are `QCOProgram::compileForTargetWithLayout` and
-`populateTargetCompilationWithLayoutPipeline`. The latter writes its result only
-after the pipeline succeeds; the caller must keep that result alive for the pass
-manager's lifetime. The existing target compilation API retains its current
-behavior and does not preserve idle input slots for layout reporting.
+C++ callers use `QCOProgram::compileForTargetWithLayout` or
+`populateTargetCompilationWithLayoutPipeline`. The pipeline writes its result
+only on success; the result must outlive the pass manager.

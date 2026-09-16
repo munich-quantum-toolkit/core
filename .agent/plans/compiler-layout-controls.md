@@ -1,76 +1,39 @@
 # Native layouts and SDK layout interchange
 
-Status: complete. Draft PR #2553 is the publication record.
+Status: complete. Draft PR #2553 resolves #2070.
 
 ## Scope and ownership
 
-Extend #2553 to resolve #2070. Keep the existing native initial-placement API
-and detached `MappingResult`. Add frontend-neutral serialized metadata for
-logical input resources, their initial physical positions, an optional routing
-permutation, source register groups, and the physical output order. The existing
-version-specific adapter alone reads and reconstructs SDK objects.
+Native compilation accepts initial placement and returns a detached
+`MappingResult`. Imported provenance uses the frontend-neutral `mqt.layout`
+schema in `mlir/include/mqt/Dialect/MQT/IR/MQTDialect.td`; only the versioned
+adapter handles SDK objects. Import and export preserve partial assignments,
+physical gaps, ancillary inputs, register groups, and output order.
 
-Support initial and final layouts, partial assignments, physical gaps, ancillary
-inputs, and physical/output orders that differ from logical register order.
-Reject references to missing resources and inconsistent metadata. Keep the
-existing supported circuit-operation and register-membership boundary.
+Copies, serialization, and plain QC/QCO conversions retain provenance.
+Resource-changing and custom pipelines invalidate it. Export rejects stale
+layouts; formats without layout support require explicit discard. Native results
+do not compose with imported layouts or survive as serialized metadata. Explicit
+placement requires complete assignments to fixed-size local entry-block
+allocations; see `docs/mlir/target_compilation.md` for the API contract.
 
-The layout APIs accept the shared `CompilationOptions` from target compilation,
-including seed, timing, statistics, mapping trials, refinement iterations,
-routing lookahead, and search memory limits. `initialLayout` remains an explicit
-input assignment; `MappingResult` remains a detached output.
+## Tracking decisions
 
-The branch builds directly on `main` after #2551. Low-level pipeline builders
-accept `MappingOptions`; `runWithCompilationOptions` applies the shared seed and
-instrumentation when the pass manager runs. Layout preservation uses the shared
-`runWithPassManager` helper.
-
-## Lifetime and output rules
-
-Copies, MLIR serialization, and plain QC/QCO conversions preserve imported
-layout metadata. Resource-changing and arbitrary transformation pipelines
-conservatively invalidate it. Invalidated layouts cannot be exported as valid
-SDK layouts. Provide an explicit discard operation for callers who no longer
-need provenance. OpenQASM, QIR/LLVM, and jeff output reject retained layout
-metadata until the caller discards it. Low-level native pipeline entry points
-must use the same invalidation and output checks as the program APIs.
-
-The layout snapshot represents circuit-wire provenance, not an executable gate
-or a persistent identity for SSA values. A transformation that preserves a
-layout must preserve its resource correspondence; arbitrary external IR edits
-must update or invalidate this discardable metadata.
-
-## Tracking without changing compilation
-
-Native tracking records source-index arrays on allocations in the existing
-target-preparation pass, avoiding an extra pass and its IR verification. Tensor
-shrinking selects the entries for retained slots. Discovery keeps its ordinary
-wire order; removed inputs occupy unused permutation entries and can follow
-routing workspace swaps without extra operations. All-to-all placement creates
-only live wires and retains the indexed-placement path. Publication moves the
-completed snapshot to the caller only after compilation succeeds.
-
-Automatic tracking must preserve the ordinary compiled circuit. Regression
-checks compare exact IR for routed and all-to-all workloads, including wide idle
-tensors and both payload profiles. A complete-unitary test includes an
-optimized-away source slot. Explicit placement and empty or entirely idle
-allocations retain their source slots in the returned snapshot.
+`mlir/lib/Dialect/QCO/Transforms/Mapping/Mapping.cpp` records source indices
+during target preparation. Tensor shrinking retains surviving entries; removed
+slots follow workspace permutations without extra operations. Keeping ordinary
+discovery order and the indexed-placement path avoids routing regressions.
+Sharing target preparation avoids another pass and its IR verification. Results
+are published only after successful compilation.
 
 ## Validation
 
-The compiler, translation, and QDMI Python suites pass 642 tests. Native
-validation passes 242 compiler tests, 115 mapping tests, 38 metadata tests, and
-two tensor transform tests, including shared compilation options, routing with
-zero lookahead and zero or small search memory budgets, failure publication, and
-schema checks. The compiler suite includes four CLI GoogleTests; all three CLI
-CTests pass. Both published Python examples execute. Stub generation, repository
-lint, and full changed-file C++ lint against `origin/main` pass.
+At `a4077e2ed`, 642 Python tests, 397 native tests, three CLI CTests, both PR
+examples, repository lint, and full changed-file C++ lint passed. Compiler tests
+compare ordinary and tracked IR and check unitary semantics with an idle input
+used as routing workspace. Metadata tests cover schema and lifetime rules.
 
-The implemented metadata uses a validated `mqt.layout` dictionary and a mutually
-exclusive `mqt.layout_invalidated` unit marker. The version-specific adapter
-supports `TranspileLayout`, including implicit output order; bare `Layout`
-values are rejected. No opaque Python state enters the compiler.
-
-Earlier native patch coverage at `3178e825c` was 419/438 production lines
-(95.7%), including all 130 lines of `QubitLayout.cpp`. The shared-options update
-adds regression coverage without changing coverage thresholds or exclusions.
+Reproduce with the compiler, mapping, MQT IR, and tensor-transform unit
+binaries, the adapter translation tests, and
+`pytest test/python/test_mlir.py test/python/qdmi/test_compilation.py`. Follow
+`AGENTS.md` for build and lint setup.
