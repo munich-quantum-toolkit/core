@@ -40,15 +40,31 @@ or a persistent identity for SSA values. A transformation that preserves a
 layout must preserve its resource correspondence; arbitrary external IR edits
 must update or invalidate this discardable metadata.
 
+## Tracking without changing compilation
+
+Native tracking records source-index arrays on allocations in the existing
+target-preparation pass, avoiding an extra pass and its IR verification. Tensor
+shrinking selects the entries for retained slots. Discovery keeps its ordinary
+wire order; removed inputs occupy unused permutation entries and can follow
+routing workspace swaps without extra operations. All-to-all placement creates
+only live wires and retains the indexed-placement path. Publication moves the
+completed snapshot to the caller only after compilation succeeds.
+
+Automatic tracking must preserve the ordinary compiled circuit. Regression
+checks compare exact IR for routed and all-to-all workloads, including wide idle
+tensors and both payload profiles. A complete-unitary test includes an
+optimized-away source slot. Explicit placement and empty or entirely idle
+allocations retain their source slots in the returned snapshot.
+
 ## Validation
 
-The compiler, translation, and QDMI Python suites pass 634 tests. Native
-validation passes 241 compiler tests, 115 mapping tests, and 37 metadata tests,
-including shared compilation options, routing with zero lookahead and zero or
-small search memory budgets, failure publication, and schema checks. The
-compiler suite includes four CLI GoogleTests; all three CLI CTests pass. Both
-published Python examples execute. Stub generation, repository lint, and full
-changed-file C++ lint against `origin/main` pass.
+The compiler, translation, and QDMI Python suites pass 642 tests. Native
+validation passes 242 compiler tests, 115 mapping tests, 38 metadata tests, and
+two tensor transform tests, including shared compilation options, routing with
+zero lookahead and zero or small search memory budgets, failure publication, and
+schema checks. The compiler suite includes four CLI GoogleTests; all three CLI
+CTests pass. Both published Python examples execute. Stub generation, repository
+lint, and full changed-file C++ lint against `origin/main` pass.
 
 The implemented metadata uses a validated `mqt.layout` dictionary and a mutually
 exclusive `mqt.layout_invalidated` unit marker. The version-specific adapter

@@ -762,6 +762,28 @@ MQTDialect::verifyOperationAttribute(Operation* operation,
     }
     return success();
   }
+  if (attribute.getName() == kSourceQubitIndicesAttr) {
+    int64_t width = 0;
+    if (isa<qco::AllocOp>(operation)) {
+      width = 1;
+    } else if (auto tensor = dyn_cast<qtensor::AllocOp>(operation);
+               tensor && tensor.getResult().getType().hasStaticShape()) {
+      width = tensor.getResult().getType().getNumElements();
+    }
+    auto indices = dyn_cast<DenseI64ArrayAttr>(attribute.getValue());
+    if (width == 0 || !indices || indices.size() != width) {
+      return operation->emitError("source qubit indices require one i64 entry "
+                                  "per fixed allocation slot");
+    }
+    llvm::SmallDenseSet<int64_t> seen;
+    for (auto index : indices.asArrayRef()) {
+      if (index < 0 || !seen.insert(index).second) {
+        return operation->emitError(
+            "source qubit indices must be distinct and nonnegative");
+      }
+    }
+    return success();
+  }
   if (attribute.getName() == "mqt.layout" ||
       attribute.getName() == "mqt.layout_invalidated") {
     if (!isa<ModuleOp>(operation)) {

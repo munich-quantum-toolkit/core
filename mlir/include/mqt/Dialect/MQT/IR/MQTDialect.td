@@ -49,6 +49,12 @@ def MQTDialect : Dialect {
     correspondence. Exporters reject stale provenance; formats without layout
     support require explicit `discardQubitLayout` before export.
 
+    `mqt.source_qubit_indices` temporarily identifies input slots during native
+    layout compilation. It is a dense i64 array of distinct nonnegative indices,
+    with one entry per slot of a `qco.alloc` or statically sized `qtensor.alloc`.
+    Tensor shrinking retains the entries for surviving slots. Placement consumes
+    the attribute; removed slots remain idle inputs in the returned snapshot.
+
     `mqt.input_name` records the source-level name of a function input.
     `mqt.input_id` optionally records an opaque 128-bit source identity on a
     named function input. It is an `i128` attribute, unique within the function;
@@ -88,6 +94,7 @@ def MQTDialect : Dialect {
   let discardableAttrs = (ins "::mlir::StringAttr":$input_name,
       "::mlir::IntegerAttr":$input_id, "::mlir::DictionaryAttr":$layout,
       "::mlir::UnitAttr":$layout_invalidated, "::mlir::StringAttr":$source_name,
+      "::mlir::DenseI64ArrayAttr":$source_qubit_indices,
       "::mlir::DictionaryAttr":$parameter_group,
       "::mlir::StringAttr":$register_name, "::mlir::UnitAttr":$entry_point,
       "::mlir::UnitAttr":$unitary);

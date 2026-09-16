@@ -13,6 +13,7 @@
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 
 #include "mlir/Pass/Pass.h"
+#include "mlir/Support/LogicalResult.h"
 
 #include "llvm/ADT/ArrayRef.h"
 
@@ -22,6 +23,7 @@
 namespace mlir {
 
 class CompilerTarget;
+class ModuleOp;
 struct MappingResult;
 
 namespace qco {
@@ -31,8 +33,10 @@ struct LayoutTracking;
 std::shared_ptr<LayoutTracking>
 createLayoutTracking(MappingResult& result,
                      llvm::ArrayRef<int64_t> initialLayout);
-std::unique_ptr<Pass>
-createLayoutPreparationPass(std::shared_ptr<LayoutTracking> tracking);
+/// Record input slots during target preparation without adding a separate pass.
+[[nodiscard]] LogicalResult prepareLayout(ModuleOp moduleOp,
+                                          const CompilerTarget& target,
+                                          LayoutTracking& tracking);
 std::unique_ptr<Pass>
 createLayoutResultPass(std::shared_ptr<LayoutTracking> tracking);
 std::unique_ptr<Pass>
