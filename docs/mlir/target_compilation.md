@@ -477,8 +477,10 @@ the allocation boundaries. For two tensors of sizes two and one, the result
 order is `[first[0], first[1], second[0]]`, even if the circuit uses `second[0]`
 first. Classical measurement destinations retain their existing semantics.
 
-This API preserves idle input slots during preparation. They count against
-target capacity. It accepts fixed-size local allocations in the entry block;
+This API reports idle input slots even when optimization removes their
+operations. They count against target capacity, but do not force extra circuit
+operations. Automatic placement and routing see the same circuit as ordinary
+target compilation. It accepts fixed-size local allocations in the entry block;
 dynamic, nested, and already physical allocations are rejected. Tracking starts
 at this call: it cannot recover qubits removed by an earlier cleanup or reuse
 pass. Malformed layouts raise an error. As with ordinary target compilation, do

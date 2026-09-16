@@ -1297,7 +1297,8 @@ def test_native_compilation_releases_gil(tmp_path: Path, mode: str) -> None:
 
 
 @pytest.mark.parametrize("all_to_all", [False, True])
-def test_layout_compilation_preserves_idle_slots_and_source_order(*, all_to_all: bool) -> None:
+@pytest.mark.parametrize("profile", ["base", "adaptive"])
+def test_layout_compilation_preserves_idle_slots_and_source_order(*, all_to_all: bool, profile: str) -> None:
     """Track allocation slots even when first use and allocation order differ."""
     source = """OPENQASM 3.1;
 include "stdgates.inc";
@@ -1320,14 +1321,21 @@ out[1] = measure first[1];
     )
     program = QCProgram.from_openqasm_str(source).to_qco()
     result = program.compile_for_target_with_layout(
-        _test_target_environment(target),
+        TargetEnvironment(
+            target,
+            PayloadSpecification(
+                PayloadFormat("qir", "2.1.0", profile, PayloadEncoding.BINARY),
+                [],
+                optional_capabilities_known=True,
+            ),
+        ),
         initial_layout=[20, 10, 30],
         options=CompilationOptions(seed=7, mapping=MappingOptions(trials=1)),
     )
     assert result.allocation_sizes == [2, 1]
     assert result.initial_layout == [20, 10, 30]
     assert result.final_layout == [20, 10, 30]
-    assert "layout_boundary" not in program.ir
+    assert "source_qubit_indices" not in program.ir
     assert program.sample(shots=4, seed=7) == {"11": 4}
 
 
@@ -1356,7 +1364,7 @@ swap q[0], q[1];
     )
     assert result.initial_layout == [0, 1, 2]
     assert sorted(result.final_layout) == [0, 1, 2]
-    assert result.final_layout != result.initial_layout
+    # Multiple routing swaps can return inputs to their initial sites.
     physical = next(iter(program.sample(shots=1, seed=3)))
     logical = [int(physical[-1 - site]) for site in result.final_layout]
     q0, q1, q2 = [(basis >> qubit) & 1 for qubit in range(3)]
@@ -1374,7 +1382,7 @@ def test_layout_compilation_rejects_invalid_site_assignments(initial_layout: lis
     program = QCProgram.from_openqasm_str(QASM_STRING).to_qco()
     with pytest.raises(RuntimeError, match="one distinct target site ID per input qubit"):
         program.compile_for_target_with_layout(_test_target_environment(target), initial_layout=initial_layout)
-    assert "layout_boundary" not in program.ir
+    assert "source_qubit_indices" not in program.ir
 
 
 def test_layout_compilation_automatic_placement_and_snapshot() -> None:
@@ -1442,18 +1450,36 @@ cx q[0], q[1];
 
 
 @pytest.mark.parametrize("all_to_all", [False, True])
-def test_layout_compilation_of_empty_input(*, all_to_all: bool) -> None:
-    """An empty input still produces a complete empty layout snapshot."""
+@pytest.mark.parametrize("profile", ["base", "adaptive"])
+@pytest.mark.parametrize("allocated", [0, 3])
+def test_layout_compilation_of_empty_input(*, all_to_all: bool, profile: str, allocated: int) -> None:
+    """Report idle inputs without keeping otherwise empty allocations in the IR."""
     target = CompilerTarget(
-        2,
+        4,
         connectivity=(
-            CompilerTarget.Connectivity.all_to_all() if all_to_all else CompilerTarget.Connectivity([(0, 1)])
+            CompilerTarget.Connectivity.all_to_all()
+            if all_to_all
+            else CompilerTarget.Connectivity([(0, 1), (1, 2), (2, 3)])
         ),
         native_operations=CompilerTarget.NativeOperations.unrestricted(),
     )
-    program = QCProgram.from_openqasm_str("OPENQASM 3.1;").to_qco()
-    result = program.compile_for_target_with_layout(_test_target_environment(target))
-    assert result.allocation_sizes == result.initial_layout == result.final_layout == []
+    environment = TargetEnvironment(
+        target,
+        PayloadSpecification(
+            PayloadFormat("qir", "2.1.0", profile, PayloadEncoding.BINARY),
+            [],
+            optional_capabilities_known=True,
+        ),
+    )
+    source = "OPENQASM 3.1;" + (f"qubit[{allocated}] q;" if allocated else "")
+    program = QCProgram.from_openqasm_str(source).to_qco()
+    ordinary = program.copy()
+    ordinary.compile_for_target(environment)
+    requested = [3, 1, 0] if allocated else []
+    result = program.compile_for_target_with_layout(environment, initial_layout=requested)
+    assert result.allocation_sizes == ([allocated] if allocated else [])
+    assert result.initial_layout == result.final_layout == requested
+    assert program.ir == ordinary.ir
 
 
 def test_layout_compilation_rejects_untrackable_allocations() -> None:
