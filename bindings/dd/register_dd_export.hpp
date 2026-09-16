@@ -17,7 +17,6 @@
 #include "nanobind/nanobind.h"
 #include "nanobind/stl/string.h" /// NOLINT(misc-include-cleaner)
 
-#include <Python.h>
 #include <ios>
 #include <sstream>
 #include <string>
@@ -107,9 +106,9 @@ Returns:
         try {
           pygraphviz = nb::module_::import_("pygraphviz");
         } catch (const nb::python_error& error) {
-          if (!error.matches(nb::handle(PyExc_ModuleNotFoundError)) ||
-              nb::cast<std::string>(nb::str(error.value().attr("name"))) !=
-                  "pygraphviz") {
+          if (!error.matches(nb::module_::import_("builtins")
+                                 .attr("ModuleNotFoundError")) ||
+              !error.value().attr("name").equal(nb::str("pygraphviz"))) {
             throw;
           }
         }

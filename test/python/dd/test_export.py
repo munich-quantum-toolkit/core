@@ -125,6 +125,7 @@ def test_svg_native_fallback(
     ("error", "statement"),
     [
         (ModuleNotFoundError, 'raise ModuleNotFoundError("broken dependency", name="graphviz_dependency")'),
+        (ModuleNotFoundError, 'raise ModuleNotFoundError("broken dependency")'),
         (ImportError, 'raise ImportError("broken extension")'),
     ],
 )
