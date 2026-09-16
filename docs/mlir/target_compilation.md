@@ -493,4 +493,6 @@ rules.
 
 C++ callers use `QCOProgram::compileForTargetWithLayout` or
 `populateTargetCompilationWithLayoutPipeline`. The pipeline writes its result
-only on success; the result must outlive the pass manager.
+only on success; the result must outlive the pass manager. Run native pipelines
+with `runWithCompilationOptions` to manage imported layout provenance; calling
+`PassManager::run` directly bypasses that policy.

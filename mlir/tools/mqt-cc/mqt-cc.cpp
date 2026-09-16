@@ -659,7 +659,8 @@ static int runCompiler(int argc, char** argv) {
   };
 
   const auto runPasses =
-      [&](const function_ref<LogicalResult(OpPassManager&)> populate) {
+      [&](const function_ref<LogicalResult(OpPassManager&)> populate,
+          bool preservesLayout = false) {
         PassManager pm(&context);
         if (failed(applyPassManagerCLOptions(pm))) {
           return failure();
@@ -667,11 +668,11 @@ static int runCompiler(int argc, char** argv) {
         if (failed(populate(pm))) {
           return failure();
         }
-        return runWithCompilationOptions(pm, *program.mod, options);
+        return runWithCompilationOptions(pm, *program.mod, options,
+                                         preservesLayout);
       };
 
   if (isolated) {
-    mqt::invalidateQubitLayout(*program.mod);
     PassManager pm(&context);
     if (runReproducer) {
       if (failed(reproducerOptions.apply(pm))) {
@@ -719,10 +720,12 @@ static int runCompiler(int argc, char** argv) {
 
   if (*parsedOutputFormat != OutputFormat::QCImport &&
       program.dialect == InputDialect::QC &&
-      failed(runPasses([](OpPassManager& pm) {
-        pm.addPass(createQCToQCO());
-        return success();
-      }))) {
+      failed(runPasses(
+          [](OpPassManager& pm) {
+            pm.addPass(createQCToQCO());
+            return success();
+          },
+          true))) {
     return 1;
   }
   if (*parsedOutputFormat != OutputFormat::QCImport &&

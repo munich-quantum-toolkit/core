@@ -195,7 +195,7 @@ them. Bare `Layout` objects and malformed metadata are rejected. Other Qiskit
 minor versions need their own adapter.
 
 Copies, MLIR serialization, and plain QC/QCO conversions preserve layouts.
-Transformations, including cleanup, routing, reuse, and public custom pass
+Compiler transformations, including cleanup, routing, reuse, and custom pass
 pipelines, invalidate them; Qiskit export then raises an error. Native
 `MappingResult` snapshots do not update imported layouts.
 

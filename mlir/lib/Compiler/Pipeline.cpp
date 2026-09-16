@@ -95,9 +95,6 @@ bool QCProgram::normalizeGlobalPhases() {
 }
 
 std::optional<OpenQASMProgram> QCProgram::toOpenQASM3() const {
-  if (failed(mqt::requireNoQubitLayout(mod()))) {
-    return std::nullopt;
-  }
   auto cleaned = copy();
   if (failed(runWithPassManager(cleaned.mod(), populateQCExportPipeline,
                                 "failed to prepare QC for OpenQASM export"))) {
@@ -111,9 +108,6 @@ std::optional<OpenQASMProgram> QCProgram::toOpenQASM3() const {
 }
 
 std::optional<QIRProgram> QCProgram::intoQIR(QIRProfile profile) && {
-  if (failed(mqt::requireNoQubitLayout(mod()))) {
-    return std::nullopt;
-  }
   if (failed(runWithPassManager(
           mod(),
           [profile](OpPassManager& pm) {
@@ -266,9 +260,6 @@ std::optional<QCProgram> QCOProgram::intoQC() && {
 }
 
 std::optional<JeffProgram> QCOProgram::intoJeff() && {
-  if (failed(mqt::requireNoQubitLayout(mod()))) {
-    return std::nullopt;
-  }
   if (failed(runQCOTransformPasses(
           mod(),
           [](OpPassManager& pm) {

@@ -12,7 +12,6 @@
 
 #include "mqt/Compiler/Target.h"
 #include "mqt/Compiler/TargetEnvironment.h"
-#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QTensor/Transforms/Passes.h"
@@ -49,7 +48,6 @@ public:
 
 protected:
   void runOnOperation() override {
-    mqt::invalidateQubitLayout(getOperation());
     if (mapping_.trials == 0) {
       getOperation().emitError("mapping trials must be greater than zero");
       signalPassFailure();
