@@ -13,7 +13,6 @@ build:
   apt_packages:
     - cmake
     - doxygen
-    - graphviz
     - zstd
   jobs:
     post_checkout:

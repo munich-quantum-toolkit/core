@@ -135,6 +135,7 @@ docs = [
   "ninja>=1.13",
   "openqasm-pygments>=0.2",
   "pennylane>=0.45.1,<0.46",
+  "pygraphviz>=2",
   "qiskit[visualization]>=2.1",
   "sphinx>=9",
   "sphinx-autoapi>=3.6.1",
