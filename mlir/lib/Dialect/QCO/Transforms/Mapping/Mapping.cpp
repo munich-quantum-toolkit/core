@@ -453,7 +453,7 @@ static LogicalResult placeIndexedAllocations(func::FuncOp function,
     rewriter.replaceOp(allocation, tensor.getResult());
   }
   if (tracking != nullptr) {
-    /// Removed input slots need a site in the snapshot, but no physical IR.
+    // Removed inputs still need snapshot sites.
     for (auto [source, site] :
          llvm::enumerate(tracking->result.initialLayout)) {
       if (site != -1) {
@@ -548,9 +548,8 @@ LogicalResult prepareLayout(ModuleOp moduleOp, const CompilerTarget& target,
   return success();
 }
 
-/// Associate surviving roots with their original slots in discovery order.
-/// Optimized-away slots occupy unused program indices, so routing can carry
-/// their identity through workspace swaps without retaining dead operations.
+/// Preserve discovery order; track removed inputs through workspace
+/// permutations.
 static LogicalResult collectSourceOrder(func::FuncOp func,
                                         const Computation& computation,
                                         LayoutTracking& tracking) {

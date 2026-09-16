@@ -181,34 +181,26 @@ Other powers require canonicalization or synthesis.
 
 ### Transpiler layouts
 
-The Qiskit 2.5 adapter preserves `TranspileLayout` metadata in the shared
-`mqt.layout` module attribute. Operations keep their circuit-wire semantics;
-import does not apply the layout to the gates again. Export reconstructs source
-qubits and registers, their initial assignments, the routing permutation, and
-the output order. The compiler does not retain Python objects or call Qiskit
+The Qiskit 2.5 adapter preserves `TranspileLayout` in `mqt.layout` and
+reconstructs it on export. Import leaves gates on their circuit wires without
+reapplying the layout. Core stores no Python objects and calls no Qiskit
 transpiler algorithms.
 
-Supported metadata includes partial initial and final assignments, unused
-physical positions, loose qubits, ancillary qubits and registers, and source
-registers whose order differs from the physical circuit. Input indices must be
-distinct and contiguous. Physical positions must refer to existing circuit
-qubits. Missing assignments remain missing. Partial final maps require a
-complete output-wire order; the implicit order is usable only for a complete
-final map. Qiskit helpers that require total layouts can still reject partial
-assignments. Bare `Layout` objects and malformed metadata are rejected; the
-supported `QuantumCircuit.layout` surface is `TranspileLayout`. Support for
-other Qiskit minor versions requires their own version adapter.
+Supported layouts include partial assignments, unused physical positions, loose
+and ancillary qubits, source registers, and independent output-wire ordering.
+Input indices must be distinct and contiguous; physical positions must exist.
+Partial final maps require explicit, complete output-wire ordering. Missing
+assignments stay missing, so Qiskit helpers requiring total layouts may reject
+them. Bare `Layout` objects and malformed metadata are rejected. Other Qiskit
+minor versions need their own adapter.
 
-Copies, MLIR serialization, and plain QC/QCO conversions preserve the metadata.
-Cleanup, optimization, routing, allocation changes, reuse, and public custom
-pass pipelines conservatively replace it with `mqt.layout_invalidated`. Qiskit
-export then raises an error instead of attaching stale mappings. `MappingResult`
-from target compilation is a separate snapshot of that call; it does not update
-the imported provenance.
+Copies, MLIR serialization, and plain QC/QCO conversions preserve layouts.
+Transformations, including cleanup, routing, reuse, and public custom pass
+pipelines, invalidate them; Qiskit export then raises an error. Native
+`MappingResult` snapshots do not update imported layouts.
 
-OpenQASM, QIR/LLVM, and jeff cannot encode this layout contract and reject both
-retained and invalidated metadata. Call `program.discard_layout()` to explicitly
-accept losing it before conversion or export:
+OpenQASM, QIR/LLVM, and jeff reject retained or invalidated layouts. Call
+`discard_layout()` to accept losing this metadata before conversion or export:
 
 ```python
 program = QCProgram.from_qiskit(transpiled_circuit)
@@ -217,12 +209,10 @@ program.discard_layout()
 source = program.to_openqasm3().source
 ```
 
-Discarding layout metadata does not change operations. The CLI equivalent is
-`mqt-cc --discard-layout`. C++ callers use `Program::discardLayout()`. Pass
-authors using raw IR or their own pass manager must preserve correspondence,
-update `mqt.layout`, or call `mqt::invalidateQubitLayout` before changing
-resource identity or order. The metadata verifier checks the schema; it cannot
-prove that arbitrary external IR edits retained wire correspondence.
+Discard leaves operations unchanged. C++ callers use `Program::discardLayout()`;
+the CLI uses `mqt-cc --discard-layout`. Pass authors must preserve, update, or
+invalidate layouts when changing wire identity or order; see the
+{doc}`MQT dialect <MQT>` for the schema and lifetime rules.
 
 Names passed between Qiskit and the compiler must not contain NUL characters.
 The importer checks names before native access. Arithmetic-progression loop
