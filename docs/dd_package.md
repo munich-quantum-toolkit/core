@@ -93,9 +93,10 @@ with np.printoptions(precision=3, suppress=True):
   print(unitary)
 ```
 
-Use {py:meth}`~mqt.core.dd.VectorDD.to_dot` with
-[PyGraphviz](https://pygraphviz.github.io/documentation/stable/install.html)
-2 or later to render a decision diagram as SVG. IPython can display the
+Use {py:meth}`~mqt.core.dd.VectorDD.to_svg` to render a decision diagram as SVG.
+It uses
+[PyGraphviz](https://pygraphviz.github.io/documentation/stable/install.html) 2
+or later when installed, or the `dot` command otherwise. IPython can display the
 resulting file in a notebook. DOT exports use unique node IDs assigned in
 traversal order, so ordinary exports do not depend on memory addresses. The
 `memory=True` option includes addresses as debugging information.
@@ -109,9 +110,8 @@ mystnb:
     alt: Bell-state DD with shared zero and one branches.
 ---
 from IPython.display import SVG
-from pygraphviz import AGraph
 
-AGraph(out_state_dd.to_dot()).draw("bell_state.svg", prog="dot", format="svg")
+out_state_dd.to_svg("bell_state.svg")
 SVG(filename="bell_state.svg")
 ```
 
