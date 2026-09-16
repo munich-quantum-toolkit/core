@@ -39,21 +39,19 @@ def MQTDialect : Dialect {
 
     Missing `initial`, `routing`, and register-slot assignments use -1. Assigned
     positions are distinct and in range. Logical inputs can be unregistered.
-    This metadata does not alter instruction semantics and stores no SDK objects.
-    Copies, serialization, and plain QC/QCO conversions retain it. Core's public
-    transformation helpers and resource-changing passes conservatively replace
-    it with the mutually exclusive unit attribute `mqt.layout_invalidated`.
-    External pass managers and raw IR editors must preserve correspondence,
-    update the dictionary, or call `invalidateQubitLayout` before changing wire
-    identity or order. Schema verification cannot prove external edits preserve
-    correspondence. Exporters reject stale provenance; formats without layout
-    support require explicit `discardQubitLayout` before export.
+    The metadata does not affect gates or store SDK objects. Copies, serialization,
+    and plain QC/QCO conversions retain it. Public transformation helpers and
+    resource-changing passes replace it with the mutually exclusive unit attribute
+    `mqt.layout_invalidated`. External passes and IR editors must preserve or update
+    layouts, or call `invalidateQubitLayout` before changing wire identity or order.
+    Schema verification cannot detect every stale mapping. Exporters reject
+    invalidated layouts; formats without layout support require
+    `discardQubitLayout` first.
 
-    `mqt.source_qubit_indices` temporarily identifies input slots during native
-    layout compilation. It is a dense i64 array of distinct nonnegative indices,
-    with one entry per slot of a `qco.alloc` or statically sized `qtensor.alloc`.
-    Tensor shrinking retains the entries for surviving slots. Placement consumes
-    the attribute; removed slots remain idle inputs in the returned snapshot.
+    `mqt.source_qubit_indices` tracks native input slots: a dense i64 array of
+    distinct nonnegative indices, one per `qco.alloc` or static `qtensor.alloc`
+    slot. Tensor shrinking retains surviving entries; placement consumes them.
+    Removed slots remain idle inputs in the returned snapshot.
 
     `mqt.input_name` records the source-level name of a function input.
     `mqt.input_id` optionally records an opaque 128-bit source identity on a

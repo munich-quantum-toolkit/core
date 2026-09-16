@@ -2706,7 +2706,7 @@ TEST_F(CompilerPipelineTest, FailedTargetSynthesisDoesNotPublishLayout) {
   populateTargetCompilationWithLayoutPipeline(
       pm, TargetEnvironment(target, makePayloadSpecification()), result, {0});
   EXPECT_TRUE(failed(pm.run(program->module())));
-  /// Placement finished, but the target cannot synthesize the X operation.
+  // Placement succeeds; synthesis fails on X.
   EXPECT_EQ(program->str().find("qco.alloc"), std::string::npos);
   EXPECT_NE(program->str().find("qco.static"), std::string::npos);
   EXPECT_EQ(result.allocationSizes, (std::vector<size_t>{7}));

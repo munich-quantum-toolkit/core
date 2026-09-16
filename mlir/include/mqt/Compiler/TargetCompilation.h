@@ -23,12 +23,10 @@ namespace mlir {
 class TargetEnvironment;
 class OpPassManager;
 
-/// Snapshot of native placement and routing for the input allocation order.
+/// Initial and final target site IDs, including idle inputs.
 ///
-/// Allocations follow entry-block order; tensor slots follow ascending index.
-/// Each layout entry is a target site ID, not a dense hardware vertex. Idle
-/// input qubits are included. The snapshot describes this compilation only;
-/// later program transformations do not update it.
+/// Entries follow entry-block allocation order and ascending tensor slots.
+/// Later transformations do not update this snapshot.
 struct MappingResult {
   std::vector<size_t> allocationSizes;
   std::vector<int64_t> initialLayout;
@@ -53,16 +51,14 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
                                        const TargetEnvironment& environment,
                                        const MappingOptions& mapping = {});
 
-/// Populate target compilation while preserving and reporting input layout.
+/// Populate target compilation with input layout tracking.
 ///
-/// Input allocations must have fixed sizes and belong to the entry block.
-/// An empty initial layout selects automatic placement; otherwise provide one
-/// distinct target site ID per input qubit. The result is assigned only after
-/// successful compilation and must outlive the pass manager. This pipeline
-/// reports idle input slots, including those removed by optimization. These
-/// slots count against target capacity without requiring physical operations.
-/// Use runWithCompilationOptions to apply compilation-wide seed and
-/// instrumentation settings when running this pipeline.
+/// Requires fixed-size local entry-block allocations. An empty initial layout
+/// selects automatic placement; otherwise supply one distinct target site ID
+/// per input. Idle slots count against capacity without adding operations.
+/// The result must outlive the pass manager and is written only on success.
+/// Run with runWithCompilationOptions to apply the shared seed and
+/// instrumentation.
 void populateTargetCompilationWithLayoutPipeline(
     OpPassManager& pm, const TargetEnvironment& environment,
     MappingResult& result, llvm::ArrayRef<int64_t> initialLayout = {},

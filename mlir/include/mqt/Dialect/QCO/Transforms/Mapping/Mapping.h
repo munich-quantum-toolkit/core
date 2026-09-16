@@ -33,7 +33,7 @@ struct LayoutTracking;
 std::shared_ptr<LayoutTracking>
 createLayoutTracking(MappingResult& result,
                      llvm::ArrayRef<int64_t> initialLayout);
-/// Record input slots during target preparation without adding a separate pass.
+/// Record input slots during target preparation.
 [[nodiscard]] LogicalResult prepareLayout(ModuleOp moduleOp,
                                           const CompilerTarget& target,
                                           LayoutTracking& tracking);
