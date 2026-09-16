@@ -714,7 +714,37 @@ TEST(CompilerLayoutTest, InvalidatesNestedProvenanceBeforeCustomPipelines) {
     EXPECT_FALSE(hasAllocation);
     EXPECT_FALSE(nested->hasAttr("mqt.layout"));
     EXPECT_TRUE(nested->hasAttr("mqt.layout_invalidated"));
-    EXPECT_FALSE(program->module()->hasAttr("mqt.layout_invalidated"));
+    EXPECT_TRUE(program->module()->hasAttr("mqt.layout_invalidated"));
+  }
+}
+
+TEST(CompilerLayoutTest, RetainsLayoutLossAfterNestedModuleRemoval) {
+  for (const bool invalidated : {false, true}) {
+    SCOPED_TRACE(invalidated);
+    auto program = QCProgram::fromMLIRString(R"mlir(module {
+      func.func @main() attributes {mqt.entry_point} { return }
+      module @nested attributes {sym_visibility = "private"} {}
+    })mlir");
+    ASSERT_TRUE(program);
+    auto nested = *program->module().getOps<ModuleOp>().begin();
+    if (invalidated) {
+      nested->setAttr("mqt.layout_invalidated",
+                      UnitAttr::get(program->module().getContext()));
+    } else {
+      nested->setAttr("mqt.layout", mlir::mqt::QubitLayout{}.toAttr(
+                                        program->module().getContext()));
+    }
+    EXPECT_FALSE(program->toOpenQASM3());
+    auto discarded = program->copy();
+    discarded.discardLayout();
+    EXPECT_TRUE(discarded.toOpenQASM3());
+
+    ASSERT_TRUE(program->cleanup());
+    ASSERT_TRUE(program->module().getOps<ModuleOp>().empty());
+    EXPECT_TRUE(program->module()->hasAttr("mqt.layout_invalidated"));
+    EXPECT_FALSE(program->toOpenQASM3());
+    program->discardLayout();
+    EXPECT_TRUE(program->toOpenQASM3());
   }
 }
 
