@@ -95,9 +95,8 @@ with np.printoptions(precision=3, suppress=True):
 
 Use {py:meth}`~mqt.core.dd.VectorDD.to_dot` with
 [PyGraphviz](https://pygraphviz.github.io/documentation/stable/install.html)
-2 or later to render a decision diagram as SVG. PyGraphviz wheels bundle
-Graphviz; source installations require Graphviz separately. IPython can display
-the resulting file in a notebook. DOT exports use unique node IDs assigned in
+2 or later to render a decision diagram as SVG. IPython can display the
+resulting file in a notebook. DOT exports use unique node IDs assigned in
 traversal order, so ordinary exports do not depend on memory addresses. The
 `memory=True` option includes addresses as debugging information.
 
