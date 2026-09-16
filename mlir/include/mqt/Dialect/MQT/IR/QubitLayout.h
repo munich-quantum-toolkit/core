@@ -54,7 +54,7 @@ struct QubitLayout {
            llvm::function_ref<InFlightDiagnostic()> emitError);
 };
 
-/// Mark retained layout provenance unusable before a resource-changing pass.
+/// Invalidate retained layout provenance in this module and its nested modules.
 void invalidateQubitLayout(ModuleOp moduleOp);
 /// Explicitly discard both retained and invalidated layout provenance.
 void discardQubitLayout(ModuleOp moduleOp);

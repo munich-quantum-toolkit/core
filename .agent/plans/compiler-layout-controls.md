@@ -8,7 +8,7 @@ Extend #2553 to resolve #2070. Keep the existing native initial-placement API
 and detached `MappingResult`. Add frontend-neutral serialized metadata for
 logical input resources, their initial physical positions, an optional routing
 permutation, source register groups, and the physical output order. The existing
-version-specific SDK adapter alone reads and reconstructs Qiskit objects.
+version-specific adapter alone reads and reconstructs SDK objects.
 
 Support initial and final layouts, partial assignments, physical gaps, ancillary
 inputs, and physical/output orders that differ from logical register order.
@@ -42,8 +42,8 @@ must update or invalidate this discardable metadata.
 
 ## Validation
 
-The compiler, translation, and QDMI Python suites pass 633 tests. Native
-validation passes 240 compiler tests, 115 mapping tests, and 37 metadata tests,
+The compiler, translation, and QDMI Python suites pass 634 tests. Native
+validation passes 241 compiler tests, 115 mapping tests, and 37 metadata tests,
 including shared compilation options, routing with zero lookahead and zero or
 small search memory budgets, failure publication, and schema checks. The
 compiler suite includes four CLI GoogleTests; all three CLI CTests pass. Both
@@ -51,9 +51,9 @@ published Python examples execute. Stub generation, repository lint, and full
 changed-file C++ lint against `origin/main` pass.
 
 The implemented metadata uses a validated `mqt.layout` dictionary and a mutually
-exclusive `mqt.layout_invalidated` unit marker. The Qiskit 2.5 adapter supports
-`TranspileLayout`, including implicit output order; bare `Layout` values are
-rejected. No opaque Python state enters the compiler.
+exclusive `mqt.layout_invalidated` unit marker. The version-specific adapter
+supports `TranspileLayout`, including implicit output order; bare `Layout`
+values are rejected. No opaque Python state enters the compiler.
 
 Earlier native patch coverage at `3178e825c` was 419/438 production lines
 (95.7%), including all 130 lines of `QubitLayout.cpp`. The shared-options update

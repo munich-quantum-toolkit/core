@@ -179,10 +179,12 @@ QubitLayout::fromAttr(Attribute attribute,
 }
 
 void mlir::mqt::invalidateQubitLayout(ModuleOp moduleOp) {
-  if (moduleOp->removeAttr("mqt.layout")) {
-    moduleOp->setAttr("mqt.layout_invalidated",
-                      UnitAttr::get(moduleOp.getContext()));
-  }
+  moduleOp.walk([](ModuleOp nested) {
+    if (nested->removeAttr("mqt.layout")) {
+      nested->setAttr("mqt.layout_invalidated",
+                      UnitAttr::get(nested.getContext()));
+    }
+  });
 }
 
 void mlir::mqt::discardQubitLayout(ModuleOp moduleOp) {
