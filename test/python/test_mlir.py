@@ -1241,7 +1241,7 @@ def test_qc_program_num_gates() -> None:
     assert program.num_two_qubit_gates() == 1
 
 
-@pytest.mark.parametrize("mode", ["targetless", "target_output", "target_payload", "source", "path"])
+@pytest.mark.parametrize("mode", ["targetless", "target_output", "target_payload", "target_layout", "source", "path"])
 def test_native_compilation_releases_gil(tmp_path: Path, mode: str) -> None:
     """Python threads progress during native parsing and each compilation overload."""
     source = 'OPENQASM 3.0; include "stdgates.inc"; qubit[2] q;\n' + (
@@ -1253,6 +1253,7 @@ def test_native_compilation_releases_gil(tmp_path: Path, mode: str) -> None:
         native_operations=CompilerTarget.NativeOperations.unrestricted(),
     )
     program = compile_program(source, output=OutputFormat.QCO)
+    environment = _test_target_environment(target)
     invalid_source = source + "unknown_gate q[0];"
     path = tmp_path / "invalid.qasm"
     path.write_text(invalid_source, encoding="utf-8")
@@ -1278,6 +1279,8 @@ def test_native_compilation_releases_gil(tmp_path: Path, mode: str) -> None:
                 compile_program(program, target=target, output=OutputFormat.OPENQASM3)
             elif mode == "target_payload":
                 compile_program(program, target=target, program_format=ProgramFormat.QASM3)
+            elif mode == "target_layout":
+                program.copy().compile_for_target_with_layout(environment)
             else:
                 # Parsing fails before the compilation release scope can be reached.
                 with pytest.raises(RuntimeError, match="Compiler action failed"):
