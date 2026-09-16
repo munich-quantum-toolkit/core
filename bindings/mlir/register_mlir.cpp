@@ -1464,6 +1464,7 @@ operations.)pb");
             withDiagnostics<nb::exception_type::runtime_error>(
                 program.module().getContext(), "Layout compilation failed",
                 [&] {
+                  const nb::gil_scoped_release release;
                   result = program.compileForTargetWithLayout(
                       environment, initialLayout, options);
                   return mlir::success(result.has_value());

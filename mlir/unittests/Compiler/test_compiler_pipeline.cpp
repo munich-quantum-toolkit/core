@@ -665,6 +665,46 @@ TEST(CompilerLayoutTest, InvalidatesProvenanceAtTransformationBoundaries) {
   }
 }
 
+TEST(CompilerLayoutTest, InvalidatesNestedProvenanceBeforeCustomPipelines) {
+  constexpr llvm::StringLiteral source = R"mlir(module {
+    func.func @main() attributes {mqt.entry_point} { return }
+    module @nested attributes {mqt.layout = {
+      physical_size = 1 : i64, initial = array<i64: 0>,
+      output_order = array<i64: 0>, ancillas = array<i64>, registers = []
+    }} {
+      func.func @child() attributes {mqt.entry_point} {
+        %one = arith.constant 1 : index
+        %q = qtensor.alloc(%one) : tensor<1x!qco.qubit>
+        qtensor.dealloc %q : tensor<1x!qco.qubit>
+        return
+      }
+    }
+  })mlir";
+  for (const bool custom : {false, true}) {
+    SCOPED_TRACE(custom);
+    auto program = QCOProgram::fromMLIRString(source);
+    ASSERT_TRUE(program);
+    auto nested = *program->module().getOps<ModuleOp>().begin();
+    ASSERT_TRUE(nested->hasAttr("mqt.layout"));
+    if (custom) {
+      ASSERT_TRUE(program->runPassPipeline("builtin.module(canonicalize)"));
+    } else {
+      ASSERT_TRUE(succeeded(runWithPassManager(
+          program->module(),
+          [](OpPassManager& pm) {
+            pm.addNestedPass<ModuleOp>(createCanonicalizerPass());
+          },
+          "nested canonicalization failed")));
+    }
+    bool hasAllocation = false;
+    nested.walk([&](qtensor::AllocOp) { hasAllocation = true; });
+    EXPECT_FALSE(hasAllocation);
+    EXPECT_FALSE(nested->hasAttr("mqt.layout"));
+    EXPECT_TRUE(nested->hasAttr("mqt.layout_invalidated"));
+    EXPECT_FALSE(program->module()->hasAttr("mqt.layout_invalidated"));
+  }
+}
+
 TEST_F(CompilerPipelineTest, RawAndOptimizedQCOAreDistinctCheckpoints) {
   const std::string qasm = R"(OPENQASM 3.0;
 include "stdgates.inc";
