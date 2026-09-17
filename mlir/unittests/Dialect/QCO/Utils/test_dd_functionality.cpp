@@ -2322,6 +2322,33 @@ TEST_F(QCODDFunctionalityTest, SampleDefersAllocatedQubitMeasurement) {
   EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{"1", 8}}));
 }
 
+TEST_F(QCODDFunctionalityTest, SampleForwardsAllMaskedBarrierWires) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
+      %a = qco.alloc : !qco.qubit
+      %first = qco.x %a : !qco.qubit -> !qco.qubit
+      %b = qco.alloc : !qco.qubit
+      %superposition = qco.h %b : !qco.qubit -> !qco.qubit
+      %second, %mask = qco.measure %superposition : !qco.qubit
+      %no = arith.constant false
+      %out:2 = qco.masked_barrier %first, %second mask(%no, %mask)
+        : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+      qco.sink %out#1 : !qco.qubit
+      %q, %bit = qco.measure %out#0 : !qco.qubit
+      qco.sink %q : !qco.qubit
+      %index = arith.constant 0 : index
+      %result = cbit.alloc(#cbit.init<undefined>) : !cbit.reg<1>
+      cbit.store %bit, %result[%index] : !cbit.reg<1>
+      return %result : !cbit.reg<1>
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+  const auto histogram = sample(mainFunc(*mod), 8, 1);
+  ASSERT_TRUE(succeeded(histogram));
+  EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{"1", 8}}));
+}
+
 TEST_F(QCODDFunctionalityTest, SampleExecutesControlMeasurementPerShot) {
   auto mod = buildModule([](QCOProgramBuilder& b) {
     auto reg =

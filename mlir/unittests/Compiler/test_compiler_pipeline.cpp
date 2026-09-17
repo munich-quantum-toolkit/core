@@ -18,6 +18,7 @@
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
@@ -946,6 +947,7 @@ reset q;
 x q[0];
 bit selector = measure q[0];
 int last = 1 + int(selector);
+barrier q[0:last];
 reset q;
 x q[0:last];
 cx q[0:last], q[1:last + 1];
@@ -959,10 +961,24 @@ result[0] = measure q[3];
   ASSERT_TRUE(qco);
   ASSERT_TRUE(succeeded(verify(qco->module())));
   ASSERT_TRUE(succeeded(qco::verifyLinearity(qco->module())));
+  size_t maskedBarriers = 0;
+  qco->module().walk([&](qco::MaskedBarrierOp barrier) {
+    ++maskedBarriers;
+    EXPECT_EQ(barrier.getQubitsIn().size(), 3);
+    EXPECT_EQ(barrier.getMasks().size(), 3);
+  });
+  EXPECT_EQ(maskedBarriers, 1);
   ASSERT_TRUE(qco->cleanup());
   auto restored = std::move(*qco).intoQC();
   ASSERT_TRUE(restored);
   ASSERT_TRUE(succeeded(verify(restored->module())));
+  maskedBarriers = 0;
+  restored->module().walk([&](qc::MaskedBarrierOp barrier) {
+    ++maskedBarriers;
+    EXPECT_EQ(barrier.getQubits().size(), 3);
+    EXPECT_EQ(barrier.getMasks().size(), 3);
+  });
+  EXPECT_EQ(maskedBarriers, 1);
   auto qir = std::move(*restored).intoQIR(QIRProfile::Adaptive);
   ASSERT_TRUE(qir);
   const auto ir = qir->llvmIR();

@@ -3887,7 +3887,8 @@ private:
     if (llvm::any_of(qubits, [](const auto& qubit) {
           return qubit.slice.has_value();
         })) {
-      return fail(location, "runtime barrier slices are not supported");
+      return addStatement(location,
+                          BarrierStatement{.qubits = std::move(qubits)});
     }
 
     if (barrier.operands.size() > 1) {

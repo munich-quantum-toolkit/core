@@ -576,8 +576,8 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
         RegisterAccess{.reg = regIt->second, .index = op.getIndices().front()});
 
     for (Operation* user : op.getResult().getUsers()) {
-      if (isa<qc::UnitaryOpInterface, qc::MeasureOp, qc::ResetOp, func::CallOp>(
-              user)) {
+      if (isa<qc::UnitaryOpInterface, qc::MeasureOp, qc::ResetOp,
+              qc::MaskedBarrierOp, func::CallOp>(user)) {
         continue;
       }
       user->emitOpError(
@@ -597,6 +597,8 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
     SmallVector<Value> operationQubits;
     if (auto unitary = dyn_cast<qc::UnitaryOpInterface>(operation)) {
       llvm::append_range(operationQubits, unitary.getQubits());
+    } else if (auto barrier = dyn_cast<qc::MaskedBarrierOp>(operation)) {
+      llvm::append_range(operationQubits, barrier.getQubits());
     } else if (auto call = dyn_cast<func::CallOp>(operation)) {
       for (auto operand : call.getOperands()) {
         if (isa<qc::QubitType>(operand.getType())) {
@@ -1244,6 +1246,27 @@ struct ConvertQCBarrierOp final : StatefulOpConversionPattern<qc::BarrierOp> {
     commitQubits(state, operation, qcQubits, qcoOp.getQubitsOut(), materialized,
                  rewriter);
 
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+struct ConvertQCMaskedBarrierOp final
+    : StatefulOpConversionPattern<qc::MaskedBarrierOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qc::MaskedBarrierOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    auto qubits = op.getQubits();
+    auto materialized = materializeQubits(state, op, qubits, rewriter);
+    SmallVector<Type> types(materialized.values.size(),
+                            qco::QubitType::get(rewriter.getContext()));
+    auto converted = qco::MaskedBarrierOp::create(
+        rewriter, op.getLoc(), types, materialized.values, adaptor.getMasks());
+    commitQubits(state, op, qubits, converted.getQubitsOut(), materialized,
+                 rewriter);
     rewriter.eraseOp(op);
     return success();
   }
@@ -1928,14 +1951,14 @@ protected:
     target.addLegalOp<scf::YieldOp, scf::ConditionOp>();
 
     // Register operation conversion patterns with state tracking.
-    patterns
-        .add<ConvertSCFForOp, ConvertSCFWhileOp, ConvertSCFIfOp,
-             ConvertSCFIndexSwitchOp, ConvertMemRefAllocOp, ConvertMemRefLoadOp,
-             ConvertMemRefDeallocOp, ConvertQCAllocOp, ConvertQCDeallocOp,
-             ConvertQCStaticOp, ConvertQCMeasureOp, ConvertQCResetOp,
-             ConvertQCUnitaryOp, ConvertQCBarrierOp, ConvertQCCtrlOp,
-             ConvertQCInvOp, ConvertQCPowOp, ConvertQCYieldOp, ConvertQCCallOp>(
-            typeConverter, context, &state);
+    patterns.add<ConvertSCFForOp, ConvertSCFWhileOp, ConvertSCFIfOp,
+                 ConvertSCFIndexSwitchOp, ConvertMemRefAllocOp,
+                 ConvertMemRefLoadOp, ConvertMemRefDeallocOp, ConvertQCAllocOp,
+                 ConvertQCDeallocOp, ConvertQCStaticOp, ConvertQCMeasureOp,
+                 ConvertQCResetOp, ConvertQCUnitaryOp, ConvertQCBarrierOp,
+                 ConvertQCMaskedBarrierOp, ConvertQCCtrlOp, ConvertQCInvOp,
+                 ConvertQCPowOp, ConvertQCYieldOp, ConvertQCCallOp>(
+        typeConverter, context, &state);
 
     // Not part of the central gate table.
     patterns.add<ConvertQCGateToQCO<qc::GPhaseOp, qco::GPhaseOp, 0, 1>>(

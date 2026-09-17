@@ -13,11 +13,13 @@
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/Matchers.h"
 #include "mlir/IR/OperationSupport.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Value.h"
 #include "mlir/Support/LLVM.h"
 
+#include "llvm/ADT/APInt.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -69,11 +71,61 @@ struct MergeSubsequentBarrier final : OpRewritePattern<BarrierOp> {
   }
 };
 
+struct FoldMaskedBarrier final : OpRewritePattern<MaskedBarrierOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(MaskedBarrierOp op,
+                                PatternRewriter& rewriter) const override {
+    SmallVector<Value> selected;
+    SmallVector<Value> masks;
+    SmallVector<size_t> positions;
+    bool allConstant = true;
+    for (auto [index, mask] : llvm::enumerate(op.getMasks())) {
+      APInt value;
+      const bool constant = matchPattern(mask, m_ConstantInt(&value));
+      allConstant &= constant;
+      if (!constant || !value.isZero()) {
+        positions.push_back(index);
+        selected.push_back(op.getQubitsIn()[index]);
+        masks.push_back(mask);
+      }
+    }
+    if (!allConstant && selected.size() == op.getQubitsIn().size()) {
+      return failure();
+    }
+    SmallVector<Value> results(op.getQubitsIn());
+    if (!selected.empty()) {
+      auto outputs = allConstant
+                         ? BarrierOp::create(rewriter, op.getLoc(), selected)
+                               .getQubitsOut()
+                         : MaskedBarrierOp::create(
+                               rewriter, op.getLoc(),
+                               SmallVector<Type>(selected.size(),
+                                                 selected.front().getType()),
+                               selected, masks)
+                               .getQubitsOut();
+      for (auto [position, result] : llvm::zip_equal(positions, outputs)) {
+        results[position] = result;
+      }
+    }
+    rewriter.replaceOp(op, results);
+    return success();
+  }
+};
+
 } // namespace
 
 LogicalResult BarrierOp::verify() {
   if (getQubitsIn().size() != getQubitsOut().size()) {
     return emitOpError("requires one output qubit for each input qubit");
+  }
+  return success();
+}
+
+LogicalResult MaskedBarrierOp::verify() {
+  if (getQubitsIn().size() != getMasks().size() ||
+      getQubitsIn().size() != getQubitsOut().size()) {
+    return emitOpError("requires one mask and one output for each input qubit");
   }
   return success();
 }
@@ -108,6 +160,11 @@ void BarrierOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 void BarrierOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                             MLIRContext* context) {
   results.add<MergeSubsequentBarrier>(context);
+}
+
+void MaskedBarrierOp::getCanonicalizationPatterns(RewritePatternSet& patterns,
+                                                  MLIRContext* context) {
+  patterns.add<FoldMaskedBarrier>(context);
 }
 
 DynamicMatrix BarrierOp::getUnitaryMatrix() {

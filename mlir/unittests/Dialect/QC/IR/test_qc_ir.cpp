@@ -42,6 +42,7 @@
 #include "mlir/Parser/Parser.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LLVM.h"
+#include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
@@ -54,6 +55,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iosfwd>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <ostream>
@@ -1531,6 +1533,49 @@ INSTANTIATE_TEST_SUITE_P(
                                MQT_NAMED_BUILDER(repeatedResetAfterSingleOp)}));
 
 // QC/Operations/StandardGates/BarrierOp.cpp
+TEST_F(QCTest, PrunesFalseMasksWithoutWaitingForDynamicMasks) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    func.func @test(%a: !qc.qubit, %b: !qc.qubit, %mask: i1) {
+      %no = arith.constant false
+      qc.masked_barrier %a, %b mask(%no, %mask) : !qc.qubit, !qc.qubit
+      return
+    }
+  )mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  PassManager manager(context.get());
+  manager.addPass(createCanonicalizerPass());
+  ASSERT_TRUE(succeeded(manager.run(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  auto function = *moduleOp->getOps<func::FuncOp>().begin();
+  auto barriers = function.getOps<MaskedBarrierOp>();
+  ASSERT_EQ(std::distance(barriers.begin(), barriers.end()), 1);
+  auto barrier = *barriers.begin();
+  ASSERT_EQ(barrier.getQubits().size(), 1);
+  EXPECT_EQ(barrier.getQubits().front(), function.getArgument(1));
+  EXPECT_EQ(barrier.getMasks().front(), function.getArgument(2));
+}
+
+TEST_F(QCTest, MaskedBarrierRequiresDistinctQubitsAndMatchingMasks) {
+  QCProgramBuilder builder(context.get());
+  builder.initialize();
+  auto qubit = builder.allocQubit();
+  auto mask = builder.boolConstant(true);
+  ScopedDiagnosticHandler handler(context.get(),
+                                  [](Diagnostic&) { return success(); });
+  auto missingMask =
+      MaskedBarrierOp::create(builder, ValueRange{qubit}, ValueRange{});
+  EXPECT_TRUE(failed(missingMask.verify()));
+  missingMask.erase();
+  auto repeated = MaskedBarrierOp::create(builder, ValueRange{qubit, qubit},
+                                          ValueRange{mask, mask});
+  EXPECT_TRUE(failed(repeated.verify()));
+  repeated.erase();
+  auto valid =
+      MaskedBarrierOp::create(builder, ValueRange{qubit}, ValueRange{mask});
+  EXPECT_TRUE(succeeded(valid.verify()));
+}
+
 INSTANTIATE_TEST_SUITE_P(
     QCBarrierOpTest, QCTest,
     testing::Values(QCTestCase{"Barrier", MQT_NAMED_BUILDER(barrier),

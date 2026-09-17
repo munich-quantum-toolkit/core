@@ -1360,6 +1360,10 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
   return TypeSwitch<Operation*, LogicalResult>(&op)
       .template Case<StaticOp, SinkOp, qtensor::DeallocOp>(
           [](auto) { return success(); })
+      .Case([&](MaskedBarrierOp barrier) {
+        return bindValuePairs(barrier.getQubitsIn(), barrier.getQubitsOut(),
+                              walk, barrier);
+      })
       .Case([&](arith::ConstantOp constant) {
         return recordConstant(constant, *walk.classical);
       })

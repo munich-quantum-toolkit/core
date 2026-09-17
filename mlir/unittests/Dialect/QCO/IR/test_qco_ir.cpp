@@ -4023,3 +4023,86 @@ TEST_F(QCOTest, BarrierRejectsMismatchedQubitArity) {
   EXPECT_NE(diagnostics.find("one output qubit for each input qubit"),
             std::string::npos);
 }
+
+TEST_F(QCOTest, MaskedBarrierRequiresMatchingMasksAndResults) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  auto qubit = builder.allocQubit();
+  auto mask = arith::ConstantIntOp::create(builder, 1, 1);
+  ScopedDiagnosticHandler handler(context.get(),
+                                  [](Diagnostic&) { return success(); });
+  auto missingMask = MaskedBarrierOp::create(
+      builder, TypeRange{qubit.getType()}, ValueRange{qubit}, ValueRange{});
+  EXPECT_TRUE(failed(missingMask.verify()));
+  missingMask.erase();
+  auto missingResult = MaskedBarrierOp::create(
+      builder, TypeRange{}, ValueRange{qubit}, ValueRange{mask});
+  EXPECT_TRUE(failed(missingResult.verify()));
+  missingResult.erase();
+  auto valid = MaskedBarrierOp::create(builder, TypeRange{qubit.getType()},
+                                       ValueRange{qubit}, ValueRange{mask});
+  EXPECT_TRUE(succeeded(valid.verify()));
+}
+
+TEST_F(QCOTest, PrunesFalseMasksWithoutWaitingForDynamicMasks) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    func.func @test(%a: !qco.qubit, %b: !qco.qubit, %mask: i1)
+        -> (!qco.qubit, !qco.qubit) {
+      %no = arith.constant false
+      %out:2 = qco.masked_barrier %a, %b mask(%mask, %no)
+        : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+      return %out#0, %out#1 : !qco.qubit, !qco.qubit
+    }
+  )mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  PassManager manager(context.get());
+  manager.addPass(createCanonicalizerPass());
+  ASSERT_TRUE(succeeded(manager.run(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  auto function = *moduleOp->getOps<func::FuncOp>().begin();
+  auto returned =
+      cast<func::ReturnOp>(function.getBody().front().getTerminator());
+  EXPECT_EQ(returned.getOperand(1), function.getArgument(1));
+  auto barrier = returned.getOperand(0).getDefiningOp<MaskedBarrierOp>();
+  ASSERT_TRUE(barrier);
+  ASSERT_EQ(barrier.getQubitsIn().size(), 1);
+  EXPECT_EQ(barrier.getQubitsIn().front(), function.getArgument(0));
+  EXPECT_EQ(barrier.getMasks().front(), function.getArgument(2));
+}
+
+TEST_F(QCOTest, FoldsConstantMaskedBarriersPreservingWires) {
+  for (const auto selected : {false, true}) {
+    auto moduleOp = parseSourceString<ModuleOp>(
+        "func.func @test(%a: !qco.qubit, %b: !qco.qubit) -> "
+        "(!qco.qubit, !qco.qubit) { %mask = arith.constant " +
+            std::string(selected ? "true" : "false") + R"mlir(
+          %no = arith.constant false
+          %out:2 = qco.masked_barrier %a, %b mask(%mask, %no)
+            : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+          return %out#0, %out#1 : !qco.qubit, !qco.qubit
+        }
+        )mlir",
+        context.get());
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+    PassManager manager(context.get());
+    manager.addPass(createCanonicalizerPass());
+    ASSERT_TRUE(succeeded(manager.run(*moduleOp)));
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+    auto function = *moduleOp->getOps<func::FuncOp>().begin();
+    auto returned =
+        cast<func::ReturnOp>(function.getBody().front().getTerminator());
+    EXPECT_EQ(returned.getOperand(1), function.getArgument(1));
+    if (selected) {
+      auto barrier = returned.getOperand(0).getDefiningOp<BarrierOp>();
+      ASSERT_TRUE(barrier);
+      ASSERT_EQ(barrier.getQubitsIn().size(), 1);
+      EXPECT_EQ(barrier.getQubitsIn().front(), function.getArgument(0));
+    } else {
+      EXPECT_EQ(returned.getOperand(0), function.getArgument(0));
+    }
+  }
+}

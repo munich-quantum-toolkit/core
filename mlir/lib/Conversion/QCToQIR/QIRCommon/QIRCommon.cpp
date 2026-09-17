@@ -269,11 +269,13 @@ struct ConvertQCGPhaseOp final : StatefulOpConversionPattern<GPhaseOp> {
 // BarrierOp
 
 /// Erases qc.barrier operation, as it is a no-op in QIR
-struct ConvertQCBarrierOp final : StatefulOpConversionPattern<BarrierOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+template <typename Barrier>
+struct ConvertQCBarrierOp final : StatefulOpConversionPattern<Barrier> {
+  using StatefulOpConversionPattern<Barrier>::StatefulOpConversionPattern;
+  using OpAdaptor = Barrier::Adaptor;
 
   LogicalResult
-  matchAndRewrite(BarrierOp op, OpAdaptor /*adaptor*/,
+  matchAndRewrite(Barrier op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     rewriter.eraseOp(op);
     return success();
@@ -365,9 +367,10 @@ void populateQCToQIRPatterns(RewritePatternSet& patterns,
                                                           &state);
 #include "mqt/Conversion/GateTable.def"
 
-  patterns.add<ConvertQCBarrierOp, ConvertQCCtrlOp, ConvertQCYieldOp,
-               ConvertQCStaticOp, ConvertQCGPhaseOp>(typeConverter, ctx,
-                                                     &state);
+  patterns.add<ConvertQCBarrierOp<BarrierOp>,
+               ConvertQCBarrierOp<MaskedBarrierOp>, ConvertQCCtrlOp,
+               ConvertQCYieldOp, ConvertQCStaticOp, ConvertQCGPhaseOp>(
+      typeConverter, ctx, &state);
 }
 
 Value getResultPtr(LoweringState& state, Operation* op,
