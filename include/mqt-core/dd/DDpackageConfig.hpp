@@ -17,9 +17,9 @@
 
 namespace dd {
 struct DDPackageConfig {
-  std::size_t utVecNumBucket = 32768U;
+  std::size_t utVecNumBucket = 1024U;
   std::size_t utVecInitialAllocationSize = 2048U;
-  std::size_t utMatNumBucket = 32768U;
+  std::size_t utMatNumBucket = 1024U;
   std::size_t utMatInitialAllocationSize = 2048U;
   std::size_t ctVecAddNumBucket = 16384U;
   std::size_t ctMatAddNumBucket = 16384U;
@@ -33,8 +33,8 @@ struct DDPackageConfig {
   std::size_t ctMatKronNumBucket = 4096U;
   std::size_t ctMatTraceNumBucket = 4096U;
   std::size_t ctVecInnerProdNumBucket = 4096U;
-  /// Per-level unique-table bucket ceiling; zero disables growth.
-  size_t utMaxNumBucket = 0U;
+  /// Per-level unique-table bucket ceiling; must cover both initial capacities.
+  size_t utMaxNumBucket = 1048576U;
 };
 
 constexpr auto UNITARY_SIMULATOR_DD_PACKAGE_CONFIG = [] {

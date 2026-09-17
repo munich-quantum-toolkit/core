@@ -14,8 +14,10 @@
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
 #include "dd/StateGeneration.hpp"
+#include "dd/UnaryComputeTable.hpp"
 #include "dd/UniqueTable.hpp"
 
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <gtest/gtest.h>
@@ -94,6 +96,8 @@ TEST(DDTableTest, InitialLevelsAndCapacityValidation) {
   auto manager = MemoryManager::create<vNode>();
   EXPECT_THROW((UniqueTable(manager, {.nBuckets = 0})), std::invalid_argument);
   EXPECT_THROW((UniqueTable(manager, {.nBuckets = 3})), std::invalid_argument);
+  EXPECT_THROW((UniqueTable(manager, {.nBuckets = 4, .maxBuckets = 0})),
+               std::invalid_argument);
   EXPECT_THROW((UniqueTable(manager, {.nBuckets = 4, .maxBuckets = 2})),
                std::invalid_argument);
   EXPECT_THROW((UniqueTable(manager, {.nBuckets = 4, .maxBuckets = 6})),
@@ -108,14 +112,49 @@ TEST(DDTableTest, InitialLevelsAndCapacityValidation) {
   table.clear();
   EXPECT_EQ(table.getNumEntries(), 0);
 }
-TEST(DDTableTest, FixedHashDoesNotRequireAllocatedLevels) {
+TEST(DDTableTest, FixedCapacityUsesMatchingInitialAndMaximum) {
   auto manager = MemoryManager::create<vNode>();
-  UniqueTable table(manager, {.nBuckets = 4});
-  vNode node{};
-  node.v = 0;
-  node.e = {vEdge::one(), vEdge::zero()};
-  const auto key = table.hash(node);
-  EXPECT_LT(key, 4);
-  table.resize(1);
-  EXPECT_EQ(table.hash(node), key);
+  UniqueTable table(manager, {.nVars = 1, .nBuckets = 1, .maxBuckets = 1});
+  for (const auto bit : {false, true}) {
+    auto* node = manager.get<vNode>();
+    node->v = 0;
+    node->e = bit ? std::array{vEdge::zero(), vEdge::one()}
+                  : std::array{vEdge::one(), vEdge::zero()};
+    EXPECT_EQ(table.lookup(node), node);
+    EXPECT_EQ(table.hash(*node), 0);
+    EXPECT_EQ(table.getStats(0).numBuckets, 1);
+  }
+  EXPECT_EQ(table.getNumEntries(), 2);
+}
+
+TEST(DDTableTest, DefaultPackageGrowsPopulatedLevels) {
+  Package package(2);
+  EXPECT_EQ(package.vUniqueTable.getStats(0).numBuckets, 1024);
+  for (size_t i = 1; i <= 1025; ++i) {
+    const auto angle = static_cast<double>(i) / 4096.;
+    const auto state =
+        makeStateFromVector(CVec{std::cos(angle), std::sin(angle)}, package);
+    package.decRef(state);
+  }
+  EXPECT_GT(package.vUniqueTable.getStats(0).numBuckets, 1024);
+  EXPECT_EQ(package.vUniqueTable.getStats(1).numBuckets, 1024);
+  EXPECT_EQ(package.mUniqueTable.getStats(0).numBuckets, 1024);
+  package.garbageCollect(true);
+  EXPECT_EQ(package.vUniqueTable.getNumEntries(), 0);
+}
+
+TEST(DDTableTest, UnaryCacheDistributesAlignedPointers) {
+  struct alignas(64) Key {};
+  std::array<Key, 64> keys{};
+  UnaryComputeTable<const Key*, size_t> table(64);
+  for (size_t i = 0; i < keys.size(); ++i) {
+    table.insert(&keys[i], i);
+    ASSERT_NE(table.lookup(&keys[i]), nullptr);
+    EXPECT_EQ(*table.lookup(&keys[i]), i);
+  }
+  EXPECT_GT(table.getStats().numEntries, 1);
+  table.clear();
+  for (const auto& key : keys) {
+    EXPECT_EQ(table.lookup(&key), nullptr);
+  }
 }

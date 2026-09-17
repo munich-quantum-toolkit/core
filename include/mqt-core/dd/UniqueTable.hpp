@@ -44,15 +44,15 @@ public:
     std::size_t nVars = 0U;
 
     /// Initial buckets per level (must be a power of two).
-    std::size_t nBuckets = 32768;
+    std::size_t nBuckets = 1024U;
 
     /// The initial garbage collection limit
     std::size_t initialGCLimit = INITIAL_GC_LIMIT;
 
-    /// Per-level bucket ceiling; zero keeps the initial capacity fixed.
-    /// A nonzero ceiling must be a power of two and at least nBuckets.
-    /// Grown capacities are retained by clear().
-    size_t maxBuckets = 0U;
+    /// Per-level bucket ceiling; must be a power of two and at least nBuckets.
+    /// Set equal to nBuckets for fixed sizing. clear() retains grown
+    /// capacities.
+    size_t maxBuckets = 1048576U;
   };
 
   /// The default constructor
@@ -70,14 +70,13 @@ public:
   /// The hash function just combines the hashes of the edges of the
   /// node. The hash value is masked to ensure that it is in the range
   /// [0, number of buckets at p.v - 1].
-  /// @pre If growth is enabled, p.v names an allocated level.
+  /// @pre p.v names an allocated level.
   /// @param p The node to hash.
   /// @returns The hash value of the node.
   template <class Node> [[nodiscard]] std::size_t hash(const Node& p) const {
     static_assert(std::is_base_of_v<NodeBase, Node>,
                   "Node must be derived from NodeBase");
-    const std::size_t mask =
-        (cfg.maxBuckets == 0U ? cfg.nBuckets : tables[p.v].size()) - 1;
+    const auto mask = tables[p.v].size() - 1;
     std::size_t key = 0U;
     for (const auto& succ : p.e) {
       hashCombine(key, std::hash<Edge<Node>>{}(succ));
