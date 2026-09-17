@@ -9,6 +9,7 @@
  */
 
 #include "mqt/Compiler/Target.h"
+#include "mqt/Dialect/MQT/Transforms/UnrollModifiers.h"
 #include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mqt/Dialect/MQT/Utils/Modifiers.h"
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
@@ -1212,7 +1213,7 @@ struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
     const auto numControls = op.getNumControls();
     auto inner = mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
     if (!inner) {
-      return failure();
+      return mqt::unrollControl(op, rewriter);
     }
 
     // MCSWAP(C, a, b) = CX(a,b) · MCX(C ∪ {b}, a) · CX(a,b).
@@ -1354,6 +1355,7 @@ protected:
     RewritePatternSet patterns(&getContext());
     patterns.add<DecomposeControlledGatePattern, DecomposeRCCXPattern>(
         &getContext(), minQubits, nativeTarget);
+    CtrlOp::getCanonicalizationPatterns(patterns, &getContext());
 
     if (failed(applyPatternsGreedily(getOperation(), std::move(patterns)))) {
       signalPassFailure();

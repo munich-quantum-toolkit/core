@@ -1086,21 +1086,16 @@ TEST_F(MultiControlledDecompositionTest, LeavesUnsupportedCtrlUntouched) {
       QCOProgramBuilder::build(context(), [](QCOProgramBuilder& builder) {
         builder.mch({builder.staticQubit(0), builder.staticQubit(1)},
                     builder.staticQubit(2));
-        builder.ctrl({builder.staticQubit(3), builder.staticQubit(4)},
-                     builder.staticQubit(5), [&](Value targetArg) -> Value {
-                       return builder.y(builder.x(targetArg));
-                     });
         // Two-target non-SWAP body: passes min-qubits but is not lowered.
         std::ignore =
-            builder.cdcx(builder.staticQubit(6), builder.staticQubit(7),
-                         builder.staticQubit(8));
+            builder.cdcx(builder.staticQubit(3), builder.staticQubit(4),
+                         builder.staticQubit(5));
         return SmallVector<Value>{};
       });
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded());
-  EXPECT_EQ(countMultiControlledOps(moduleOp.get(), 2), 2U);
+  EXPECT_EQ(countMultiControlledOps(moduleOp.get(), 2), 1U);
 
-  size_t multiOpCtrl = 0;
   size_t mchCount = 0;
   size_t controlledDcx = 0;
   moduleOp->walk([&](CtrlOp op) {
@@ -1114,17 +1109,46 @@ TEST_F(MultiControlledDecompositionTest, LeavesUnsupportedCtrlUntouched) {
     if (op.getNumControls() < 2) {
       return;
     }
-    if (op.getNumBodyUnitaries() == 2) {
-      ++multiOpCtrl;
-    }
     if (op.getNumBodyUnitaries() == 1 &&
         isa<HOp>(op.getBodyUnitary(0).getOperation())) {
       ++mchCount;
     }
   });
-  EXPECT_EQ(multiOpCtrl, 1U);
   EXPECT_EQ(mchCount, 1U);
   EXPECT_EQ(controlledDcx, 1U);
+}
+
+TEST_F(MultiControlledDecompositionTest, CompositeControlsRespectMinQubits) {
+  auto moduleOp =
+      QCOProgramBuilder::build(context(), [](QCOProgramBuilder& builder) {
+        builder.ctrl({builder.staticQubit(0), builder.staticQubit(1)},
+                     builder.staticQubit(2), [&](Value targetArg) -> Value {
+                       return builder.y(builder.x(targetArg));
+                     });
+        return SmallVector<Value>{};
+      });
+  ASSERT_TRUE(moduleOp);
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  const auto package = std::make_unique<dd::Package>(3);
+  const auto reference = buildFunctionality(funcOp, *package);
+  ASSERT_TRUE(succeeded(reference));
+  DecomposeMultiControlledOptions options;
+  options.minQubits = 4;
+  ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*moduleOp, options)));
+  EXPECT_EQ(countMultiControlledOps(*moduleOp, 2), 1U);
+  const auto untouched = buildFunctionality(funcOp, *package);
+  ASSERT_TRUE(succeeded(untouched));
+  EXPECT_EQ(*untouched, *reference);
+  package->decRef(*untouched);
+
+  options.minQubits = 3;
+  ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*moduleOp, options)));
+  expectFullyLowered(*moduleOp);
+  const auto decomposed = buildFunctionality(funcOp, *package);
+  ASSERT_TRUE(succeeded(decomposed));
+  EXPECT_EQ(*decomposed, *reference);
+  package->decRef(*decomposed);
+  package->decRef(*reference);
 }
 
 TEST_F(MultiControlledDecompositionTest, PhasePiRoutesThroughMcz) {
