@@ -469,6 +469,22 @@ def test_variable_arity_mcx_is_imported(controls: int) -> None:
     assert "qc.x" in program.ir
 
 
+@pytest.mark.parametrize("controls", [1, 2])
+@pytest.mark.parametrize("targets", [1, 3])
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_multi_target_controlled_gate_round_trip(controls: int, targets: int, *, wrapped: bool) -> None:
+    """Keep every target and any outer modifier when importing a controlled gate."""
+    gate = library.MCMTGate(library.XGate(), controls, targets)
+    if wrapped:
+        gate = AnnotatedOperation(gate, [InverseModifier(), ControlModifier(1)])
+    circuit = QuantumCircuit(gate.num_qubits)
+    circuit.append(gate, list(reversed(range(gate.num_qubits))))
+
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+
+    assert np.allclose(Operator(restored).data, Operator(circuit).data)
+
+
 @pytest.mark.parametrize(
     "modifier",
     [InverseModifier(), PowerModifier(-1.0), ControlModifier(1)],
