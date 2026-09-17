@@ -178,14 +178,35 @@ Returns:
         // replace the filename extension with .dot
         const auto dotFilename =
             filename.substr(0, filename.find_last_of('.')) + ".dot";
-        export2Dot(e, dotFilename, colored, edgeLabels, classic, memory, true,
-                   formatAsPolar);
+        nb::object pygraphviz;
+        try {
+          pygraphviz = nb::module_::import_("pygraphviz");
+        } catch (const nb::python_error& error) {
+          if (!error.matches(nb::module_::import_("builtins")
+                                 .attr("ModuleNotFoundError")) ||
+              !error.value().attr("name").equal(nb::str("pygraphviz"))) {
+            throw;
+          }
+        }
+        const auto usePyGraphviz =
+            pygraphviz &&
+            std::stoi(nb::cast<std::string>(pygraphviz.attr("__version__"))) >=
+                2;
+        export2Dot(e, dotFilename, colored, edgeLabels, classic, memory,
+                   !usePyGraphviz, formatAsPolar);
+        if (usePyGraphviz) {
+          const auto svgFilename =
+              dotFilename.substr(0, dotFilename.find_last_of('.')) + ".svg";
+          pygraphviz.attr("AGraph")("filename"_a = dotFilename)
+              .attr("draw")(svgFilename, "format"_a = "svg", "prog"_a = "dot");
+        }
       },
       "filename"_a, "colored"_a = true, "edge_labels"_a = false,
       "classic"_a = false, "memory"_a = false, "format_as_polar"_a = true,
       R"pb(Convert the DD to an SVG file that can be viewed in a browser.
 
-Requires the `dot` command from Graphviz to be installed and available in the PATH.
+Uses PyGraphviz 2 or later when installed. Otherwise, requires the `dot` command
+from Graphviz to be available in the PATH.
 
 Args:
     filename: The filename of the SVG file. Any file extension will be replaced by `.dot` and then `.svg`.

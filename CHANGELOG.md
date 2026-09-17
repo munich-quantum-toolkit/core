@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Changed
 
+- ✨ Use optional PyGraphviz 2 or later for decision diagram SVG exports,
+  retaining the system `dot` fallback ([#2563]) ([**@denialhaag**])
 - 🔧 Use Ninja and shared CMake presets on all platforms, removing `-windows`
   from preset names ([#2522]) ([**@denialhaag**])
 
@@ -832,6 +834,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2563]: https://github.com/munich-quantum-toolkit/core/pull/2563
 [#2522]: https://github.com/munich-quantum-toolkit/core/pull/2522
 [#2433]: https://github.com/munich-quantum-toolkit/core/pull/2433
 [#2399]: https://github.com/munich-quantum-toolkit/core/pull/2399
