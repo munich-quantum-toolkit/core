@@ -683,7 +683,7 @@ private:
         scf::YieldOp::create(opBuilder, loc, combined.getResult());
         return loop.getResult(0);
       }
-      return {cbit::ReadOp::create(opBuilder, loc, type, reg)};
+      return cbit::ReadOp::create(opBuilder, loc, type, reg).getResult();
     }
     case frontend::BitVectorExpressionKind::Not: {
       auto operand =
@@ -2055,6 +2055,40 @@ private:
     }
   }
 
+  void emitGateStatement(const frontend::GateApplication& application,
+                         Location loc, ValueRange gateParameters,
+                         ValueRange gateQubits) {
+    if (llvm::any_of(application.qubits, [](const auto& qubit) {
+          return qubit.slice.has_value();
+        })) {
+      emitRegisterBroadcast(
+          application.qubits, {}, true, [&](ValueRange indices, ValueRange) {
+            emitGateApplication(builder, application, loc, gateParameters,
+                                gateQubits, indices);
+          });
+    } else {
+      emitGateApplication(builder, application, loc, gateParameters,
+                          gateQubits);
+    }
+  }
+
+  void emitReset(const frontend::ResetStatement& reset, ValueRange gateQubits) {
+    for (const auto& qubit : reset.qubits) {
+      if (qubit.slice) {
+        emitRegisterBroadcast(
+            {qubit}, {}, false, [&](ValueRange indices, ValueRange) {
+              builder.reset(resolveQubit(qubit, gateQubits, indices.front()));
+            });
+        continue;
+      }
+      const auto indices = emitQubitIndices({qubit});
+      if (emissionBudget.isExhausted()) {
+        return;
+      }
+      builder.reset(resolveQubit(qubit, gateQubits, indices.front()));
+    }
+  }
+
   void emitStatement(const frontend::StatementId id, ValueRange gateParameters,
                      ValueRange gateQubits) {
     if (emissionFailed || emissionBudget.isExhausted() || !flowReachable) {
@@ -2082,37 +2116,12 @@ private:
                                    T, frontend::BitVectorAssignmentStatement>) {
             emitBitVectorAssignment(data);
           } else if constexpr (std::is_same_v<T, frontend::GateApplication>) {
-            if (llvm::any_of(data.qubits, [](const auto& qubit) {
-                  return qubit.slice.has_value();
-                })) {
-              emitRegisterBroadcast(
-                  data.qubits, {}, true, [&](ValueRange indices, ValueRange) {
-                    emitGateApplication(builder, data, loc, gateParameters,
-                                        gateQubits, indices);
-                  });
-            } else {
-              emitGateApplication(builder, data, loc, gateParameters,
-                                  gateQubits);
-            }
+            emitGateStatement(data, loc, gateParameters, gateQubits);
           } else if constexpr (std::is_same_v<T,
                                               frontend::MeasurementStatement>) {
             emitMeasurement(data, gateQubits);
           } else if constexpr (std::is_same_v<T, frontend::ResetStatement>) {
-            for (const auto& qubit : data.qubits) {
-              if (qubit.slice) {
-                emitRegisterBroadcast(
-                    {qubit}, {}, false, [&](ValueRange indices, ValueRange) {
-                      builder.reset(
-                          resolveQubit(qubit, gateQubits, indices.front()));
-                    });
-                continue;
-              }
-              const auto indices = emitQubitIndices({qubit});
-              if (emissionBudget.isExhausted()) {
-                return;
-              }
-              builder.reset(resolveQubit(qubit, gateQubits, indices.front()));
-            }
+            emitReset(data, gateQubits);
           } else if constexpr (std::is_same_v<T, frontend::BarrierStatement>) {
             const auto indices = emitQubitIndices(data.qubits);
             if (emissionBudget.isExhausted()) {
