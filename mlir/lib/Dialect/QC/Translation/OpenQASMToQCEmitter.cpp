@@ -39,6 +39,7 @@
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/OperationSupport.h"
 #include "mlir/IR/OwningOpRef.h"
+#include "mlir/IR/Value.h"
 #include "mlir/Interfaces/InferIntRangeInterface.h"
 #include "mlir/Support/LLVM.h"
 
@@ -1369,7 +1370,21 @@ private:
     // Deeper producers keep their conservative range instead of risking an
     // unbounded recursive walk of user expressions.
     if (depth < 64) {
-      if (auto inference = value.getDefiningOp<InferIntRangeInterface>()) {
+      if (auto argument = dyn_cast<BlockArgument>(value)) {
+        auto loop = dyn_cast<scf::ForOp>(argument.getOwner()->getParentOp());
+        if (loop && loop.getInductionVar() == value) {
+          const auto lower =
+              inferSliceBound(loop.getLowerBound(), cache, depth + 1);
+          const auto upper =
+              inferSliceBound(loop.getUpperBound(), cache, depth + 1);
+          // The emitter uses signed loops with an exclusive upper bound.
+          if (lower.smin().slt(upper.smax())) {
+            result =
+                ConstantIntRanges::fromSigned(lower.smin(), upper.smax() - 1);
+          }
+        }
+      } else if (auto inference =
+                     value.getDefiningOp<InferIntRangeInterface>()) {
         SmallVector<ConstantIntRanges> operands;
         for (auto operand : inference->getOperands()) {
           operands.push_back(inferSliceBound(operand, cache, depth + 1));

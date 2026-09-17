@@ -82,6 +82,7 @@ TEST(OpenQASMTargetTest, RuntimeBarrierOnlyEnumeratesPossibleParticipants) {
            {"int first = -1-int(b); barrier q[first:-1:-4];", 4},
            {"int first = 3+int(b); barrier q[first:2:7];", 5},
            {"int first = -int(b); barrier q[first:-1];", 2048},
+           {"int j = 0; for int i in [0:1] { barrier q[j:j]; j += 1; }", 2048},
        })) {
     SCOPED_TRACE(statement.str());
     MLIRContext context;
@@ -89,6 +90,30 @@ TEST(OpenQASMTargetTest, RuntimeBarrierOnlyEnumeratesPossibleParticipants) {
         "OPENQASM 3.1; qubit[2048] q; bit b = measure q[2047]; " +
             statement.str(),
         &context);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    size_t barriers = 0;
+    moduleOp->walk([&](qc::MaskedBarrierOp barrier) {
+      ++barriers;
+      EXPECT_EQ(barrier.getQubits().size(), participants);
+    });
+    EXPECT_EQ(barriers, 1);
+  }
+}
+
+TEST(OpenQASMTargetTest, RuntimeBarrierPreservesLoopBounds) {
+  for (const auto& [statement, participants] :
+       std::to_array<std::pair<StringRef, size_t>>({
+           {"for int i in [0:1] { barrier q[i:i]; }", 2},
+           {"for int i in [3:-1:1] { barrier q[i:i]; }", 3},
+           {"for int i in [-4:-1] { barrier q[i:i]; }", 4},
+           {"for int i in [2:3] { for int j in [0:i] { barrier q[j:j]; } }", 4},
+       })) {
+    SCOPED_TRACE(statement.str());
+    MLIRContext context;
+    auto moduleOp = qc::translateOpenQASMToQC(
+        "OPENQASM 3.1; qubit[2048] q; " + statement.str(), &context,
+        {.maxOperations = 1000});
     ASSERT_TRUE(moduleOp);
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
     size_t barriers = 0;
