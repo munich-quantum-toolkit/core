@@ -1,3 +1,6 @@
+<!--- This file has been generated from an external template. Please do not modify it directly. -->
+<!--- Changes should be contributed to https://github.com/munich-quantum-toolkit/templates. -->
+
 # Installation
 
 MQT Core is primarily developed as a C++20 library with Python bindings. The
