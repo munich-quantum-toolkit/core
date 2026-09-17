@@ -259,11 +259,13 @@ private:
     advance();
     Slice range{.start = first};
     if (current().kind != TokenKind::RBracket) {
-      auto expression = parseExpression();
-      if (failed(expression)) {
-        return failure();
+      if (current().kind != TokenKind::Colon) {
+        auto expression = parseExpression();
+        if (failed(expression)) {
+          return failure();
+        }
+        range.stop = expression;
       }
-      range.stop = expression;
       if (current().kind == TokenKind::Colon) {
         advance();
         range.step = range.stop;
