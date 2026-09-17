@@ -12,7 +12,6 @@
 
 #include "mqt/Compiler/Target.h"
 #include "mqt/Compiler/TargetEnvironment.h"
-#include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QTensor/Transforms/Passes.h"
@@ -104,9 +103,6 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   pm.addPass(createInlinerPass());
   pm.addPass(createSymbolDCEPass());
   pm.addPass(createSCCPPass());
-  // Merge dynamic one-qubit bodies before distributing their controls.
-  pm.addPass(qco::createMergeSingleQubitRotationGates());
-  pm.addPass(mqt::createUnrollModifiers());
   populateQCOCleanupPipeline(pm);
   pm.addPass(qco::createUnrollLoopsForPayload());
   pm.addPass(createSCCPPass());
@@ -155,9 +151,6 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
   const auto& target = environment.target();
   pm.addPass(createInlinerPass());
   pm.addPass(createSymbolDCEPass());
-  // Merge dynamic one-qubit bodies before distributing their controls.
-  pm.addPass(qco::createMergeSingleQubitRotationGates());
-  pm.addPass(mqt::createUnrollModifiers());
   populateQCOCleanupPipeline(pm);
   pm.addPass(qco::createLegalizeControlFlow());
   pm.addPass(qco::createDecomposeMultiControlled(target));

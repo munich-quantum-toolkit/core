@@ -4362,6 +4362,33 @@ TEST_F(CompilerPipelineTest, QCOProgramCompilesDynamicRunForSupportedTargets) {
   }
 }
 
+TEST_F(CompilerPipelineTest,
+       TargetSynthesisDoesNotExpandNativeSymbolicRotations) {
+  constexpr llvm::StringLiteral source = R"mlir(module {
+    func.func @main(%theta: f64 {mqt.input_name = "theta"}) attributes {mqt.entry_point} {
+      %a = arith.constant 0.2 : f64
+      %b = arith.constant 0.3 : f64
+      %q0 = qco.alloc : !qco.qubit
+      %q1 = qco.rx(%theta) %q0 : !qco.qubit -> !qco.qubit
+      %q2 = qco.ry(%a) %q1 : !qco.qubit -> !qco.qubit
+      %q3 = qco.rz(%b) %q2 : !qco.qubit -> !qco.qubit
+      qco.sink %q3 : !qco.qubit
+      return
+    }
+  })mlir";
+  auto program = QCOProgram::fromMLIRString(source);
+  ASSERT_TRUE(program);
+  const auto target = makeCZTarget({{"rx", 1}, {"ry", 1}, {"rz", 1}});
+  ASSERT_TRUE(program->synthesizeForTarget(
+      TargetEnvironment(target, makePayloadSpecification())));
+  EXPECT_TRUE(succeeded(verify(program->module())));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
+  program->module().walk([](Operation* op) {
+    // Native rotations need no runtime quaternion or Euler calculations.
+    EXPECT_NE(op->getDialect()->getNamespace(), "math");
+  });
+}
+
 TEST_F(CompilerPipelineTest, QCOProgramMergesDynamicRunInNativeCtrlBody) {
   constexpr llvm::StringLiteral source = R"mlir(module {
     func.func @main(%theta: f64 {mqt.input_name = "theta"}) attributes {mqt.entry_point} {
