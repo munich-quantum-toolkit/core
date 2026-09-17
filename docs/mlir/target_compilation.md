@@ -305,11 +305,11 @@ dialect in their context.
 Use {py:meth}`~mqt.core.mlir.QCOProgram.synthesize_for_target` to translate an
 existing QCO program to an all-to-all target's native gate set. It uses the same
 native block synthesis as target compilation, without routing. This pipeline
-inlines calls, unrolls composite modifiers, decomposes multi-controlled gates,
-assigns static sites, performs native synthesis, and verifies target
-conformance. It accepts structured QCO/SCF input and uses the same target
-environment and global-phase policy as target compilation. Explicit connectivity
-is rejected; use `compile_for_target` when routing is required.
+inlines calls, decomposes large controls (including composite bodies), assigns
+static sites, performs native synthesis, and verifies target conformance. It
+accepts structured QCO/SCF input and uses the same target environment and
+global-phase policy as target compilation. Explicit connectivity is rejected;
+use `compile_for_target` when routing is required.
 
 Synthesis runs in place and raises `RuntimeError` with MLIR diagnostics on
 failure. Earlier pass changes may remain on the program, so copy it first when

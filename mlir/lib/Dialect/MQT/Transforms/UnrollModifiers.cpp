@@ -8,6 +8,8 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Dialect/MQT/Transforms/UnrollModifiers.h"
+
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/MQT/Utils/GatePowering.h"
@@ -205,10 +207,10 @@ static SmallVector<Value> cloneIntoBody(qco::UnitaryOpInterface unitary,
 
 /// Unroll a `qco.ctrl` modifier with more than one body unitary,
 /// or fail if it cannot be unrolled.
-static LogicalResult unrollModifier(qco::CtrlOp op, RewriterBase& rewriter) {
+LogicalResult unrollControl(qco::CtrlOp op, RewriterBase& rewriter) {
   auto* body = op.getBody();
   if (op.getNumBodyUnitaries() < 2) {
-    return success();
+    return failure();
   }
   if (failed(hoistClassicalOps<qco::UnitaryOpInterface>(*body, op, rewriter))) {
     return failure();
@@ -239,6 +241,10 @@ static LogicalResult unrollModifier(qco::CtrlOp op, RewriterBase& rewriter) {
   }
   rewriter.replaceOp(op, results);
   return success();
+}
+
+static LogicalResult unrollModifier(qco::CtrlOp op, RewriterBase& rewriter) {
+  return op.getNumBodyUnitaries() < 2 ? success() : unrollControl(op, rewriter);
 }
 
 /// Unroll a `qco.inv` modifier with more than one body unitary,
