@@ -41,6 +41,8 @@ TEST(OpenQASMFrontendTest, ResolvesRegisterSlicesInSelectionOrder) {
   const auto cases =
       std::to_array<std::pair<StringRef, std::vector<uint64_t>>>({
           {"0:2", {0, 1, 2}},
+          {"1::5", {1, 2, 3, 4, 5}},
+          {"::2", {0, 1, 2}},
           {"1:2:5", {1, 3, 5}},
           {"5:-2:0", {5, 3, 1}},
           {"-3:-1", {3, 4, 5}},
