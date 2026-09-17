@@ -70,8 +70,6 @@ Use relevant sections of the [development policy](docs/development.md) and the
   `([#123]) ([**@username**])`, with link definitions at the bottom.
 - Never commit or print secrets or personal data. Use documented environment
   variables and repository secrets.
-- Do not edit files marked as generated from an external template. Contribute
-  those changes to the MQT templates repository or its update workflow.
 
 ## C++ and MLIR
 
@@ -153,11 +151,11 @@ default; changed-line clang-tidy alone is insufficient. Inspect which files ran.
 Keep pass and option documentation aligned with actual scope, defaults,
 supported shapes, limitations, and failure modes.
 
-Inspect the final diff and status. Exclude generated, template-managed, secret,
-and unrelated files. Tie validation to the final code: rerun affected checks
-following edits and distinguish passes from skipped, blocked, or pending checks.
-Report checks run and their outcomes; stop after required gates pass unless a
-concrete remaining risk justifies more validation.
+Inspect the final diff and status. Exclude generated, secret, and unrelated
+files. Tie validation to the final code: rerun affected checks following edits
+and distinguish passes from skipped, blocked, or pending checks. Report checks
+run and their outcomes; stop after required gates pass unless a concrete
+remaining risk justifies more validation.
 
 ## Plans and audits
 
