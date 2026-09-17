@@ -137,12 +137,13 @@ do not index qubits keep their runtime behavior.
 
 Register operands support inclusive constant slices `q[first:last]` and
 `q[first:step:last]`, including negative indices and negative steps. Omitted
-endpoints select the register ends in the step's direction. Slices expand in
-selection order in gate, reset, and barrier operands and measurement sources and
-destinations. Gates broadcast over slices; a slice does not supply multiple
-control arguments to `ctrl(n)`. Register operands must have matching widths,
-including one-element slices. Runtime bounds and classical slice expressions and
-assignments are not supported.
+endpoints select the register ends in the step's direction. With the default
+step, `q[:last]` means `q[0:last]` and includes `last`; `q[:2]` selects qubits
+`0`, `1`, and `2`. Slices expand in selection order in gate, reset, and barrier
+operands and measurement sources and destinations. Gates broadcast over slices;
+a slice does not supply multiple control arguments to `ctrl(n)`. Register
+operands must have matching widths, including one-element slices. Runtime bounds
+and classical slice expressions and assignments are not supported.
 
 Bit registers use `!cbit.reg<N>` in QC. OpenQASM 2 initializes each register to
 zero. OpenQASM 3 leaves each register undefined until a statement writes it. A
