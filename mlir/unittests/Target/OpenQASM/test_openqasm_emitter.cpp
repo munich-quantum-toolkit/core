@@ -62,6 +62,120 @@ using namespace mlir::openqasm::test;
 
 namespace {
 
+TEST(OpenQASMTargetTest, StaticBitVectorsDoNotMaterializeRuntimeWidths) {
+  MLIRContext context;
+  auto moduleOp = qc::translateOpenQASMToQC(
+      "OPENQASM 3.1; bit[4] a = 3; bit[4] b = ~a ^ 1; b = rotl(b, 1);",
+      &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  moduleOp->walk([&](arith::ConstantOp constant) {
+    EXPECT_FALSE(constant.getType().isIndex());
+  });
+}
+
+TEST(OpenQASMTargetTest, LowersRuntimeRegisterSlicesToCheckedBroadcasts) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+qubit[6] q;
+qubit target;
+int first = -1;
+int step = -2;
+int last = 0;
+bit[3] c = 0;
+x q[first:step:last];
+cx q[first:step:last], target;
+reset q[first:step:last];
+c = measure q[first:step:last];
+)qasm";
+  MLIRContext context;
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  PassManager manager(&context);
+  manager.addPass(createCanonicalizerPass());
+  ASSERT_TRUE(succeeded(manager.run(*moduleOp)));
+  size_t loops = 0;
+  moduleOp->walk([&](scf::ForOp loop) {
+    ++loops;
+    APInt count;
+    ASSERT_TRUE(matchPattern(loop.getUpperBound(), m_ConstantInt(&count)));
+    EXPECT_EQ(count.getZExtValue(), 3);
+  });
+  EXPECT_EQ(loops, 4);
+  moduleOp->walk([&](cf::AssertOp check) {
+    APInt value;
+    if (matchPattern(check.getArg(), m_ConstantInt(&value))) {
+      EXPECT_FALSE(value.isZero()) << check.getMsg().str();
+    }
+  });
+}
+
+TEST(OpenQASMTargetTest, SnapshotsMeasurementSliceBoundsBeforeWriting) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+qubit[4] q;
+bit[4] c = "0011";
+c[0:int[4](c)] = measure q[0:int[4](c)];
+)qasm";
+  MLIRContext context;
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  size_t snapshots = 0;
+  moduleOp->walk([&](cbit::ReadOp read) {
+    ++snapshots;
+    EXPECT_FALSE(read->getParentOfType<scf::ForOp>());
+  });
+  EXPECT_EQ(snapshots, 2);
+  size_t stores = 0;
+  moduleOp->walk([&](cbit::StoreOp store) {
+    ++stores;
+    EXPECT_TRUE(store->getParentOfType<scf::ForOp>());
+  });
+  EXPECT_EQ(stores, 1);
+}
+
+TEST(OpenQASMTargetTest, ChecksInvalidRuntimeRegisterSlices) {
+  const auto cases = std::to_array<std::pair<StringRef, StringRef>>({
+      {"int step = 0; x q[0:step:2];", "step must not be zero"},
+      {"int first = -4; x q[first:2];", "index out of bounds"},
+      {"int last = 3; x q[0:last];", "index out of bounds"},
+      {"int first = 2; x q[first:0];", "must not be empty"},
+      {"int last = 2; cx q[0:last], r[0:1];", "widths must match"},
+      {"int last = 2; cx q[0:last], r[0:0];", "widths must match"},
+      {"int last = 2; bit[2] c = measure q[0:last];", "widths must match"},
+      {"bit[3] c = 0; int last = 1; c[0:last] = \"111\";", "widths must match"},
+      {"bit[3] c = 0; int last = 1; c[0:last] = 4;", "constants must fit"},
+      {"bit[3] c = 0; int last = 1; c[0:last] = 4 | 0;", "constants must fit"},
+      {
+          "bit[3] c = 0; int last = 1; uint[3] x = uint[3](c[0:last]);",
+          "widths must match",
+      },
+  });
+  for (const auto& [statement, expected] : cases) {
+    SCOPED_TRACE(statement.str());
+    MLIRContext context;
+    auto moduleOp = qc::translateOpenQASMToQC(
+        "OPENQASM 3.1; qubit[3] q; qubit[3] r; " + statement.str(), &context);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    PassManager manager(&context);
+    manager.addPass(createCanonicalizerPass());
+    ASSERT_TRUE(succeeded(manager.run(*moduleOp)));
+    bool checked = false;
+    moduleOp->walk([&](cf::AssertOp check) {
+      APInt value;
+      if (check.getMsg().contains(expected) &&
+          matchPattern(check.getArg(), m_ConstantInt(&value))) {
+        checked |= value.isZero();
+      }
+    });
+    EXPECT_TRUE(checked);
+  }
+}
+
 TEST(OpenQASMTargetTest, PreservesOneBarrierForConstantSelections) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
