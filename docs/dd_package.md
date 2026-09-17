@@ -189,9 +189,11 @@ zero_state_dd = dd.zero_state(qc.num_qubits)
 out_state_dd = simulate(qc, zero_state_dd, dd)
 ```
 
-If [Graphviz](https://www.graphviz.org/) is installed, use
-{py:meth}`~mqt.core.dd.VectorDD.to_svg` to export a decision diagram as SVG.
-IPython can display the resulting file in a notebook.
+Use {py:meth}`~mqt.core.dd.VectorDD.to_svg` to render a decision diagram as SVG.
+It uses
+[PyGraphviz](https://pygraphviz.github.io/documentation/stable/install.html) 2
+or later when installed, or the `dot` command otherwise. IPython can display the
+resulting file in a notebook.
 
 ```{code-cell} ipython3
 ---
