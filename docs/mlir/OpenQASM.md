@@ -135,6 +135,15 @@ Mutations in repeating loops and unequal branch values invalidate scalar facts.
 Branch conditions do not add proof facts. Classical bit indexing and loops that
 do not index qubits keep their runtime behavior.
 
+Register operands support inclusive constant slices `q[first:last]` and
+`q[first:step:last]`, including negative indices and negative steps. Omitted
+endpoints select the register ends in the step's direction. Slices expand in
+selection order in gate, reset, and barrier operands and measurement sources and
+destinations. Gates broadcast over slices; a slice does not supply multiple
+control arguments to `ctrl(n)`. Register operands must have matching widths,
+including one-element slices. Runtime bounds and classical slice expressions and
+assignments are not supported.
+
 Bit registers use `!cbit.reg<N>` in QC. OpenQASM 2 initializes each register to
 zero. OpenQASM 3 leaves each register undefined until a statement writes it. A
 static read requires its bit to be initialized. A dynamic read requires the
