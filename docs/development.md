@@ -276,11 +276,11 @@ not itself publish a release.
 
 ## Documentation validation
 
-Install Python 3.14, LLVM/MLIR 23.1, Doxygen, and Graphviz before building the
-complete documentation. The Doxygen configuration is validated with Ubuntu
-24.04's version 1.9.8 and version 1.17. Use `uvx nox --non-interactive -s docs`
-to build generated references and execute the MyST notebooks. This command fails
-on Sphinx and Doxygen diagnostics and checks local links in the generated HTML,
+Install Python 3.14, LLVM/MLIR 23.1, and Doxygen before building the complete
+documentation. The Doxygen configuration is validated with Ubuntu 24.04's
+version 1.9.8 and version 1.17. Use `uvx nox --non-interactive -s docs` to build
+generated references and execute the MyST notebooks. This command fails on
+Sphinx and Doxygen diagnostics and checks local links in the generated HTML,
 including the native C++ reference. Use
 `uvx nox --non-interactive -s docs -- -b linkcheck` to check external links
 separately.
