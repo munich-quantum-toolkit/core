@@ -98,12 +98,13 @@ TEST(OpenQASMFrontendTest, RejectsInvalidRegisterSlices) {
       {"measure q[0:1] -> c;", "same width"},
       {"qubit scalar; x scalar[:];", "scalar qubit"},
       {"bit scalar = 0; measure q[0:0] -> scalar[:];", "scalar bit"},
-      {"int last = 2; x q[0:last];", "runtime register slices"},
-      {"int last = 2; reset q[0:last];", "runtime register slices"},
-      {"int last = 2; measure q[0:last] -> c;", "runtime register slices"},
-      {"int last = 2; barrier q[0:last];", "runtime register slices"},
-      {"c[0:1] = 0;", "classical slice assignments"},
-      {"bit[2] value = c[0:1];", "classical slice expressions"},
+      {"c[0:1] = c[0:2];", "widths must match"},
+      {"bit[2] value = c[0:2];", "widths must match"},
+      {"c[0:0:2] = 0;", "step must not be zero"},
+      {"bit scalar = 0; scalar[:] = 0;", "scalar bit"},
+      {"int last = 2; x q[0:0:last];", "step must not be zero"},
+      {"float last = 2; x q[0:last];", "integer expressions"},
+      {"int last = 2; barrier q[0:last];", "runtime barrier slices"},
       {"gate local a { x a[:]; }", "cannot be indexed"},
       {"ctrl(2) @ x q[0:1], r[0];", "qubit operands"},
   });
@@ -118,6 +119,20 @@ TEST(OpenQASMFrontendTest, RejectsInvalidRegisterSlices) {
               std::string::npos)
         << analyzed.diagnostics.front().message;
   }
+}
+
+TEST(OpenQASMFrontendTest,
+     RuntimeMeasurementSlicesPreserveDefiniteInitialization) {
+  auto sourceSlice = openqasm::frontend::analyzeOpenQASM(
+      "OPENQASM 3.1; qubit[3] q; int last = 2; bit[3] c = measure q[0:last];");
+  ASSERT_TRUE(sourceSlice) << sourceSlice.diagnostics.front().message;
+  auto targetSlice = openqasm::frontend::analyzeOpenQASM(
+      "OPENQASM 3.1; qubit[3] q; int last = 2; bit[3] c; c[0:last] = measure "
+      "q;");
+  ASSERT_FALSE(targetSlice);
+  EXPECT_NE(
+      targetSlice.diagnostics.front().message.find("not fully initialized"),
+      std::string::npos);
 }
 
 TEST(OpenQASMFrontendTest, ContinuePreservesDefiniteInitialization) {
