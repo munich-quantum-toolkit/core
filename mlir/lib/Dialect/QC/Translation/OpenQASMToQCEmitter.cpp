@@ -1831,8 +1831,9 @@ private:
     }
     if (auto subview = view.getDefiningOp<memref::SubViewOp>()) {
       return memref::SubViewOp::create(
-          builder, subview.getType(), scratch, subview.getMixedOffsets(),
-          subview.getMixedSizes(), subview.getMixedStrides());
+                 builder, subview.getType(), scratch, subview.getMixedOffsets(),
+                 subview.getMixedSizes(), subview.getMixedStrides())
+          .getResult();
     }
     return scratch;
   }
