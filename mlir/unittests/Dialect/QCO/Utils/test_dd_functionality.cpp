@@ -3209,6 +3209,62 @@ TEST_F(QCODDFunctionalityTest, WiderMemRefCallsShareStorage) {
   expectSimulatesFromZero(mainFunc(*mod), true);
 }
 
+TEST_F(QCODDFunctionalityTest, MultidimensionalMemRefsKeepShapeAcrossCalls) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @set(%reg: memref<?x3xi1>) {
+      %one = arith.constant 1 : index
+      %two = arith.constant 2 : index
+      %true = arith.constant true
+      memref.store %true, %reg[%one, %two] : memref<?x3xi1>
+      return
+    }
+    func.func @main() {
+      %one = arith.constant 1 : index
+      %two = arith.constant 2 : index
+      %reg = memref.alloc(%two) : memref<?x3xi1>
+      func.call @set(%reg) : (memref<?x3xi1>) -> ()
+      %condition = memref.load %reg[%one, %two] : memref<?x3xi1>
+      %q = qco.static 0 : !qco.qubit
+      %result = qco.if %condition args(%qin = %q) -> (!qco.qubit) {
+        %out = qco.x %qin : !qco.qubit -> !qco.qubit
+        qco.yield %out : !qco.qubit
+      } else args(%qin = %q) {
+        qco.yield %qin : !qco.qubit
+      }
+      memref.dealloc %reg : memref<?x3xi1>
+      qco.sink %result : !qco.qubit
+      return
+    }
+  })mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+  expectSimulatesFromZero(mainFunc(*mod), true);
+}
+
+TEST_F(QCODDFunctionalityTest,
+       MultidimensionalMemRefsRejectInvalidShapesAndIndices) {
+  for (const auto* body : {
+           "%reg = memref.alloc(%two, %negative) : memref<?x?xi1>",
+           "%reg = memref.alloc(%huge, %huge) : memref<?x?xi1>",
+           "%reg = memref.alloc() : memref<2x3xi1, strided<[4, 1]>>",
+           "%reg = memref.alloc() : memref<2x3xi1> "
+           "memref.store %true, %reg[%zero, %three] : memref<2x3xi1>",
+           "%reg = memref.alloc() : memref<2x3xi1> "
+           "memref.store %true, %reg[%one, %negative] : memref<2x3xi1>",
+       }) {
+    SCOPED_TRACE(body);
+    expectMlirSimulationFails(0, std::string(R"mlir(module { func.func @main() {
+      %zero = arith.constant 0 : index
+      %one = arith.constant 1 : index
+      %two = arith.constant 2 : index
+      %three = arith.constant 3 : index
+      %negative = arith.constant -1 : index
+      %huge = arith.constant 4294967296 : index
+      %true = arith.constant true
+    )mlir") + body + " return } }");
+  }
+}
+
 TEST_F(QCODDFunctionalityTest, BindingsDriveObservableClassicalPath) {
   auto mod = parseSourceString<ModuleOp>(R"mlir(
     module {
