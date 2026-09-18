@@ -916,7 +916,21 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
       .value("XYX", mlir::CompilerTarget::SingleQubitBasis::XYX)
       .value("ZYZ", mlir::CompilerTarget::SingleQubitBasis::ZYZ)
       .value("ZXZ", mlir::CompilerTarget::SingleQubitBasis::ZXZ)
-      .value("ZRX90", mlir::CompilerTarget::SingleQubitBasis::ZRX90);
+      .value("ZFixedRotation",
+             mlir::CompilerTarget::SingleQubitBasis::ZFixedRotation);
+
+  nb::class_<mlir::CompilerTarget::FixedRotationBasis>(
+      compilerTarget, "FixedRotationBasis",
+      "Fixed X/Y pulse selected for synthesis with arbitrary RZ.")
+      .def_ro("gate", &mlir::CompilerTarget::FixedRotationBasis::gate)
+      .def_ro("angle", &mlir::CompilerTarget::FixedRotationBasis::angle,
+              "Native pulse angle in radians.")
+      .def_prop_ro("quarter_turn_pulses",
+                   [](const mlir::CompilerTarget::FixedRotationBasis& basis) {
+                     return basis.quarterTurnZAngles.size() - 1;
+                   })
+      .def_ro("half_turn_angle",
+              &mlir::CompilerTarget::FixedRotationBasis::halfTurnAngle);
 
   auto synthesisBasis = nb::class_<mlir::CompilerTarget::SynthesisBasis>(
       compilerTarget, "SynthesisBasis",
@@ -926,7 +940,10 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
               &mlir::CompilerTarget::SynthesisBasis::singleQubit,
               "The single-qubit synthesis basis.")
       .def_ro("entangler", &mlir::CompilerTarget::SynthesisBasis::entangler,
-              "The two-qubit entangler, or None when none is usable.");
+              "The two-qubit entangler, or None when none is usable.")
+      .def_ro("fixed_rotation",
+              &mlir::CompilerTarget::SynthesisBasis::fixedRotation,
+              "Fixed-pulse decomposition, or None for other bases.");
 
   nb::enum_<mlir::CompilerTarget::Connectivity::Kind>(
       compilerTarget, "ConnectivityKind", "The target connectivity model.")

@@ -960,8 +960,23 @@ TEST(CompilerTargetTest, ResolvesFixedPulseBasisOnlyOnEverySite) {
                            NativeOperations::fromOperations(operations)));
   ASSERT_TRUE(target.synthesisBasis());
   EXPECT_EQ(target.synthesisBasis()->singleQubit,
-            Target::SingleQubitBasis::ZRX90);
+            Target::SingleQubitBasis::ZFixedRotation);
   EXPECT_FALSE(target.synthesisBasis()->entangler);
+}
+
+TEST(CompilerTargetTest, RejectsDegenerateOrExcessiveFixedPulseSynthesis) {
+  for (double angle : {0., std::numbers::pi, 2. * std::numbers::pi, 1e-8}) {
+    const auto target = valid(Target::create(
+        1, Connectivity::allToAll(),
+        NativeOperations::fromOperations({
+            valid(OperationCapability::create("rz", 1, 1)),
+            valid(OperationCapability::create("rx", 1, 1, {}, std::nullopt,
+                                              std::nullopt, {angle})),
+        })));
+    EXPECT_FALSE(target.synthesisBasis());
+    EXPECT_TRUE(target.supportsOperation(
+        "rx", 1, 1, std::nullopt, std::array<std::optional<double>, 1>{angle}));
+  }
 }
 
 TEST(CompilerTargetTest, ResolvesSingleQubitBasisWithoutEntangler) {

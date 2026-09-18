@@ -159,6 +159,59 @@ constexpr std::array GATE_SPECIFICATIONS{
     },
 };
 
+// Construct an effective RX(π/2) from a fixed X/Y pulse and free Z rotations.
+// The two-pulse construction has reachable polar angle 2 asin(|sin(angle)|).
+static std::optional<CompilerTarget::FixedRotationBasis>
+makeFixedRotationBasis(GateKind gate, double angle) {
+  constexpr double pi = std::numbers::pi;
+  constexpr double halfPi = pi / 2.;
+  constexpr size_t maxPulses = 64;
+  const double magnitude = std::abs(angle);
+  if (magnitude <= mqt::PARAMETER_COMPARISON_TOLERANCE) {
+    return std::nullopt;
+  }
+  const double directCount = std::round(halfPi / magnitude);
+  if (directCount >= 1. && directCount <= static_cast<double>(maxPulses) &&
+      std::abs(directCount * magnitude - halfPi) <=
+          mqt::PARAMETER_COMPARISON_TOLERANCE) {
+    std::vector<double> zAngles(static_cast<size_t>(directCount) + 1, 0.);
+    const double axis =
+        (gate == GateKind::RY ? halfPi : 0.) + (angle < 0. ? pi : 0.);
+    zAngles.front() = axis;
+    zAngles.back() = -axis;
+    return CompilerTarget::FixedRotationBasis{gate, angle, std::move(zAngles),
+                                              std::nullopt};
+  }
+  const double sine = std::sin(angle);
+  const double reach = 2. * std::asin(std::min(1., std::abs(sine)));
+  if (reach <= mqt::PARAMETER_COMPARISON_TOLERANCE) {
+    return std::nullopt;
+  }
+  const double count = std::ceil(halfPi / reach);
+  if (count > static_cast<double>(maxPulses / 2)) {
+    return std::nullopt;
+  }
+  const auto blocks = static_cast<size_t>(count);
+  const double theta = halfPi / count;
+  const double cosine =
+      std::clamp(std::sin(theta / 2.) / std::abs(sine), 0., 1.);
+  const double middle = 2. * std::acos(cosine);
+  const double gamma =
+      std::atan2(std::sin(middle / 2.), std::cos(angle) * cosine);
+  const double eta = gate == GateKind::RX ? (sine < 0. ? halfPi : -halfPi)
+                                          : (sine < 0. ? pi : 0.);
+  const double before = halfPi - gamma + eta;
+  const double after = -gamma - eta - halfPi;
+  std::vector<double> zAngles(2 * blocks + 1);
+  zAngles.front() = before;
+  for (size_t block = 0; block < blocks; ++block) {
+    zAngles[2 * block + 1] = middle;
+    zAngles[2 * block + 2] = block + 1 == blocks ? after : after + before;
+  }
+  return CompilerTarget::FixedRotationBasis{gate, angle, std::move(zAngles),
+                                            std::nullopt};
+}
+
 } // namespace
 
 [[nodiscard]] static std::string canonicalOperationName(StringRef name) {
@@ -796,6 +849,7 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
     });
   };
   std::optional<SingleQubitBasis> singleQubit;
+  std::optional<FixedRotationBasis> fixedRotation;
   if (supportsOnEverySite(GateKind::U)) {
     singleQubit = SingleQubitBasis::U;
   } else if (supportsOnEverySite(GateKind::X) &&
@@ -813,13 +867,43 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
   } else if (supportsOnEverySite(GateKind::RY) &&
              supportsOnEverySite(GateKind::RZ)) {
     singleQubit = SingleQubitBasis::ZYZ;
-  } else if (supportsOnEverySite(GateKind::RZ) &&
-             llvm::all_of(siteIds, [&](SiteId site) {
-               return supportsOperation(
-                   "rx", 1, 1, ArrayRef<SiteId>(&site, 1), false,
-                   [](size_t) { return std::optional{std::numbers::pi / 2.}; });
-             })) {
-    singleQubit = SingleQubitBasis::ZRX90;
+  } else if (supportsOnEverySite(GateKind::RZ)) {
+    const auto supportsPulse = [&](StringRef name, double angle) {
+      return llvm::all_of(siteIds, [&](SiteId site) {
+        return supportsOperation(
+            name, 1, 1, ArrayRef<SiteId>(&site, 1), false,
+            [angle](size_t) { return std::optional{angle}; });
+      });
+    };
+    for (const auto& operation : operations) {
+      if ((operation.canonicalName() != "rx" &&
+           operation.canonicalName() != "ry") ||
+          operation.numParameters() != 1 ||
+          operation.fixedParameters().empty() ||
+          !operation.fixedParameters()[0]) {
+        continue;
+      }
+      const auto gate =
+          operation.canonicalName() == "rx" ? GateKind::RX : GateKind::RY;
+      auto candidate =
+          makeFixedRotationBasis(gate, *operation.fixedParameters()[0]);
+      if (!candidate ||
+          (fixedRotation && candidate->quarterTurnZAngles.size() >=
+                                fixedRotation->quarterTurnZAngles.size()) ||
+          !supportsPulse(operation.canonicalName(), candidate->angle)) {
+        continue;
+      }
+      for (double half : {std::numbers::pi, -std::numbers::pi}) {
+        if (supportsPulse(operation.canonicalName(), half)) {
+          candidate->halfTurnAngle = half;
+          break;
+        }
+      }
+      fixedRotation = std::move(candidate);
+    }
+    if (fixedRotation) {
+      singleQubit = SingleQubitBasis::ZFixedRotation;
+    }
   }
 
   const auto supportsOnEveryCoupling = [&](GateKind gate) {
@@ -875,6 +959,7 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
       .entangler = entangler == entanglerPreference.end()
                        ? std::nullopt
                        : std::optional{*entangler},
+      .fixedRotation = fixedRotation,
   };
 }
 

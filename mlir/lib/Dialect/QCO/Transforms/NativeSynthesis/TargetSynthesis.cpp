@@ -544,13 +544,15 @@ static LogicalResult synthesizeTargetOperation(
         return unsupported(
             "its unitary matrix is not available at compile time");
       }
-      decomposition::synthesizeParameterizedUnitary1Q(rewriter, operation,
-                                                      basis->singleQubit);
+      decomposition::synthesizeParameterizedUnitary1Q(
+          rewriter, operation, basis->singleQubit,
+          basis->fixedRotation ? &*basis->fixedRotation : nullptr);
       return success();
     }
     const auto synthesized = decomposition::synthesizeUnitary1QEuler(
         rewriter, operation->getLoc(), op.getInputQubit(0), matrix,
-        /*runSize=*/1, /*hasNonBasisGate=*/true, basis->singleQubit);
+        /*runSize=*/1, /*hasNonBasisGate=*/true, basis->singleQubit,
+        basis->fixedRotation ? &*basis->fixedRotation : nullptr);
     if (!synthesized) {
       llvm::reportFatalInternalError(
           "target single-qubit basis failed to synthesize a unitary matrix");
