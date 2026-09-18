@@ -189,10 +189,10 @@ for int i in [0:2] {
 Arrays lower to typed MLIR `memref.alloca` stack storage. The aggregate element
 limit bounds the array payload to 800,000 bytes per entry-point invocation.
 Overlapping copies reuse at most one equally sized scratch allocation per array,
-so the combined payload is at most 1,600,000 bytes, independent of loop iterations.
-Compiler cleanup uses upstream SROA and mem2reg to remove eligible storage.
-Arrays whose storage and computations disappear can also export to Base QIR,
-jeff, and OpenQASM.
+so the combined payload is at most 1,600,000 bytes, independent of loop
+iterations. Compiler cleanup uses upstream SROA and mem2reg to remove eligible
+storage. Arrays whose storage and computations disappear can also export to Base
+QIR, jeff, and OpenQASM.
 
 Remaining arrays work through QC/QCO and Adaptive QIR conversion. Adaptive QIR
 uses native LLVM stack storage, with no host C allocation or assertion runtime.
@@ -201,10 +201,10 @@ conservatively require loop support for residual dynamic indices. See the
 [QIR 2.1 array contract](https://github.com/qir-alliance/qir-spec/blob/2.1/specification/Memory_Management.md#array-support).
 
 Arrays are internal storage, not implicit outputs; assign selected elements to
-scalar or bit outputs when needed. Runtime-sized ranges, concatenation,
-array outputs, runtime angle conversion, and jeff or
-OpenQASM export of array storage are not yet supported. Gate definitions cannot
-capture mutable arrays; pass selected entries as gate parameters instead.
+scalar or bit outputs when needed. Runtime-sized ranges, concatenation, array
+outputs, runtime angle conversion, and jeff or OpenQASM export of array storage
+are not yet supported. Gate definitions cannot capture mutable arrays; pass
+selected entries as gate parameters instead.
 
 ### Qubit indices and classical registers
 
