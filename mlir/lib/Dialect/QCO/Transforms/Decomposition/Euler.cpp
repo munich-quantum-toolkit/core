@@ -38,12 +38,18 @@ bool isSingleQubitBasisGate(Operation* op, SingleQubitBasis basis) {
         return basis == SingleQubitBasis::ZYZ ||
                basis == SingleQubitBasis::ZXZ ||
                basis == SingleQubitBasis::XZX ||
-               basis == SingleQubitBasis::ZSXX;
+               basis == SingleQubitBasis::ZSXX ||
+               basis == SingleQubitBasis::ZRX90;
       })
       .Case([&](RYOp) {
         return basis == SingleQubitBasis::ZYZ || basis == SingleQubitBasis::XYX;
       })
-      .Case([&](RXOp) {
+      .Case([&](RXOp rotation) {
+        if (basis == SingleQubitBasis::ZRX90) {
+          const auto angle = mqt::valueToDouble(rotation.getTheta());
+          return angle && std::abs(*angle - std::numbers::pi / 2.) <=
+                              mqt::PARAMETER_COMPARISON_TOLERANCE;
+        }
         return basis == SingleQubitBasis::ZXZ ||
                basis == SingleQubitBasis::XZX || basis == SingleQubitBasis::XYX;
       })
@@ -193,6 +199,7 @@ EulerAngles anglesFromUnitary(const Matrix2x2& matrix,
   switch (basis) {
   case SingleQubitBasis::ZYZ:
   case SingleQubitBasis::ZSXX:
+  case SingleQubitBasis::ZRX90:
     return paramsZYZ(matrix);
   case SingleQubitBasis::ZXZ:
     return paramsZXZ(matrix);
@@ -274,6 +281,7 @@ struct Unitary1QEulerPlan {
       case SingleQubitBasis::ZYZ:
       case SingleQubitBasis::ZXZ:
       case SingleQubitBasis::ZSXX:
+      case SingleQubitBasis::ZRX90:
         appendRotation(SynthesisStep::Kind::RZ, angles.phi + angles.lambda);
         break;
 
@@ -330,6 +338,24 @@ struct Unitary1QEulerPlan {
                          angles.lambda);
       phase = angles.phase;
       break;
+    case SingleQubitBasis::ZRX90: {
+      constexpr double pi = std::numbers::pi;
+      constexpr double halfPi = pi / 2.;
+      if (isNearZeroRotationAngle(angles.theta - halfPi)) {
+        appendRotation(SynthesisStep::Kind::RZ, angles.lambda - halfPi);
+        steps.emplace_back(SynthesisStep::Kind::RX, halfPi);
+        appendRotation(SynthesisStep::Kind::RZ, angles.phi + halfPi);
+        phase = angles.phase;
+      } else {
+        appendRotation(SynthesisStep::Kind::RZ, angles.lambda);
+        steps.emplace_back(SynthesisStep::Kind::RX, halfPi);
+        appendRotation(SynthesisStep::Kind::RZ, angles.theta + pi);
+        steps.emplace_back(SynthesisStep::Kind::RX, halfPi);
+        appendRotation(SynthesisStep::Kind::RZ, angles.phi + pi);
+        phase = angles.phase + pi;
+      }
+      break;
+    }
     case SingleQubitBasis::ZSXX: {
       constexpr double pi = std::numbers::pi;
       constexpr double halfPi = std::numbers::pi / 2.0;
@@ -428,6 +454,7 @@ std::optional<SingleQubitBasis> parseSingleQubitBasis(StringRef basis) {
       .Case("xyx", SingleQubitBasis::XYX)
       .Case("u", SingleQubitBasis::U)
       .Case("zsxx", SingleQubitBasis::ZSXX)
+      .Case("zrx90", SingleQubitBasis::ZRX90)
       .Case("r", SingleQubitBasis::R)
       .Default(std::nullopt);
 }
