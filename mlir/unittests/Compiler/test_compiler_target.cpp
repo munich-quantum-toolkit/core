@@ -24,6 +24,7 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/Location.h"
 #include "mlir/IR/MLIRContext.h"
@@ -40,6 +41,7 @@
 #include <cstdint>
 #include <future>
 #include <limits>
+#include <numbers>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -837,6 +839,129 @@ TEST(CompilerTargetTest, EnforcesExactOrderedOperationApplicability) {
   EXPECT_TRUE(target.supportsOperation("device.operation", 3, 0, {10, 20, 30}));
   EXPECT_FALSE(
       target.supportsOperation("device.operation", 3, 0, {30, 20, 10}));
+}
+
+TEST(CompilerTargetTest, MatchesFixedParametersAndPreservesPlacements) {
+  const auto rotation = valid(OperationCapability::create(
+      "r", 1, 2, {valid(SiteTuple::create({0}))}, std::nullopt, std::nullopt,
+      {std::numbers::pi / 2., std::nullopt}));
+  const auto target =
+      valid(Target::create(2, Connectivity::allToAll(),
+                           NativeOperations::fromOperations({rotation})));
+  EXPECT_FALSE(target.supports(GateKind::R));
+  EXPECT_FALSE(target.supportsOperation("r", 1, 2));
+  EXPECT_FALSE(target.synthesisBasis());
+  const std::array<SiteId, 1> site{0};
+  EXPECT_TRUE(target.supportsOperation("r", 1, 2, site,
+                                       {std::numbers::pi / 2., std::nullopt}));
+  EXPECT_FALSE(target.supportsOperation("r", 1, 2, std::array<SiteId, 1>{1},
+                                        {std::numbers::pi / 2., 0.}));
+  EXPECT_FALSE(target.supportsOperation("r", 1, 2, site, {std::nullopt, 0.}));
+  EXPECT_FALSE(target.supportsOperation(
+      "r", 1, 2, site, {std::numbers::pi / 2. + 2. * std::numbers::pi, 0.}));
+  EXPECT_FALSE(target.supportsOperation("r", 1, 1, site, {1., 0.}));
+  EXPECT_TRUE(target.supportsOperation("r", 1, std::nullopt, site,
+                                       {std::numbers::pi / 2., 0.}));
+
+  mlir::MLIRContext context;
+  context.loadDialect<mlir::mqt::MQTDialect>();
+  const auto attribute = target.materialize(context);
+  const auto restored = valid(Target::create(attribute));
+  EXPECT_EQ(restored.materialize(context), attribute);
+  EXPECT_EQ(restored.operations()[0].fixedParameters(),
+            rotation.fixedParameters());
+  EXPECT_TRUE(
+      restored.supportsOperation("r", 1, 2, site, {std::numbers::pi / 2., 1.}));
+}
+
+TEST(CompilerTargetTest, RejectsInvalidFixedParameters) {
+  expectInvalid(
+      OperationCapability::create("rx", 1, 1, {}, std::nullopt, std::nullopt,
+                                  {0., 1.}),
+      "Compiler target fixed parameters must match its parameter count");
+  for (double value : {
+           std::numeric_limits<double>::infinity(),
+           std::numeric_limits<double>::quiet_NaN(),
+       }) {
+    expectInvalid(OperationCapability::create("rx", 1, 1, {}, std::nullopt,
+                                              std::nullopt, {value}),
+                  "Compiler target fixed parameters must be finite");
+  }
+  const auto unrestricted = valid(
+      OperationCapability::create("u", 1, 3, {}, std::nullopt, std::nullopt,
+                                  {std::nullopt, std::nullopt, std::nullopt}));
+  EXPECT_TRUE(unrestricted.fixedParameters().empty());
+}
+
+TEST(CompilerTargetTest, RejectsMalformedFixedParameterAttributes) {
+  mlir::MLIRContext context;
+  context.loadDialect<mlir::mqt::MQTDialect>();
+  mlir::ScopedDiagnosticHandler handler(
+      &context, [](mlir::Diagnostic&) { return mlir::success(); });
+  for (const auto* parameters : {
+           "[unit, unit]",
+           "[1 : i64]",
+           "[1.0 : f32]",
+           "[0x7FF0000000000000 : f64]",
+       }) {
+    SCOPED_TRACE(parameters);
+    const auto source =
+        std::string{"#mqt.native_operation<name = \"rx\", "
+                    "arity = #mqt.operation_arity<kind = fixed, value = 1>, "
+                    "num_parameters = 1, fixed_parameters = "} +
+        parameters + ">";
+    EXPECT_FALSE(mlir::parseAttribute(source, &context));
+  }
+}
+
+TEST(CompilerTargetTest, ChecksFixedValuesInsideNativeControls) {
+  const auto target =
+      valid(Target::create(2, Connectivity::allToAll(),
+                           NativeOperations::fromOperations({
+                               valid(OperationCapability::create(
+                                   "rz", Arity::variadic(1), 1, {},
+                                   std::nullopt, std::nullopt, {0.25})),
+                           })));
+  mlir::MLIRContext context;
+  context.loadDialect<mlir::arith::ArithDialect, mlir::func::FuncDialect>();
+  for (double angle : {0.25, 0.5}) {
+    auto program = mlir::qco::QCOProgramBuilder::build(
+        &context, [&](mlir::qco::QCOProgramBuilder& builder) {
+          auto [control, qubit] = builder.crz(angle, builder.staticQubit(0),
+                                              builder.staticQubit(1));
+          builder.sink(control);
+          builder.sink(qubit);
+          return builder.intConstant(0);
+        });
+    program->walk([&](mlir::qco::CtrlOp controlled) {
+      EXPECT_EQ(target.supports(controlled), angle == 0.25);
+    });
+  }
+}
+
+TEST(CompilerTargetTest, ResolvesFixedPulseBasisOnlyOnEverySite) {
+  auto operations = std::vector{
+      valid(OperationCapability::create("rz", 1, 1)),
+      valid(OperationCapability::create(
+          "rx", 1, 1, {valid(SiteTuple::create({0}))}, std::nullopt,
+          std::nullopt, {std::numbers::pi / 2.})),
+      valid(OperationCapability::create("rxx", 2, 1, {}, std::nullopt,
+                                        std::nullopt, {std::numbers::pi / 4.})),
+  };
+  EXPECT_FALSE(
+      valid(Target::create(2, Connectivity::allToAll(),
+                           NativeOperations::fromOperations(operations)))
+          .synthesisBasis());
+  operations.emplace_back(valid(OperationCapability::create(
+      "rx", 1, 1, {valid(SiteTuple::create({1}))}, std::nullopt, std::nullopt,
+      {std::numbers::pi / 2.})));
+  const auto target =
+      valid(Target::create(2, Connectivity::allToAll(),
+                           NativeOperations::fromOperations(operations)));
+  ASSERT_TRUE(target.synthesisBasis());
+  EXPECT_EQ(target.synthesisBasis()->singleQubit,
+            Target::SingleQubitBasis::ZRX90);
+  EXPECT_FALSE(target.synthesisBasis()->entangler);
 }
 
 TEST(CompilerTargetTest, ResolvesSingleQubitBasisWithoutEntangler) {
