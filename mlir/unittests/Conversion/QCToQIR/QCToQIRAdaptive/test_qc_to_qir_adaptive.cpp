@@ -1056,7 +1056,7 @@ TEST(QCToQIRAdaptiveNativeTest, RecordsComputedStoreAfterMeasurement) {
       module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_BOOL_RECORD_OUTPUT));
 }
 
-TEST(QCToQIRAdaptiveNativeTest, RejectsUnsupportedIntegerMemref) {
+TEST(QCToQIRAdaptiveNativeTest, RejectsClassicalMemrefOutput) {
   MLIRContext context;
   context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
                       LLVM::LLVMDialect, memref::MemRefDialect>();
@@ -1074,7 +1074,7 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsUnsupportedIntegerMemref) {
     llvm::raw_string_ostream stream(message);
     diagnostic.print(stream);
     sawExpectedDiagnostic |=
-        StringRef(message).contains("only supports generic memrefs for");
+        StringRef(message).contains("does not support memref outputs");
     return success();
   });
   EXPECT_TRUE(failed(runQCToQIRAdaptiveConversion(*module)));
