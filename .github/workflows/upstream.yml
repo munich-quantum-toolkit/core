@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runs-on: [ubuntu-24.04, macos-15, windows-2025]
+        runs-on: [ubuntu-26.04, macos-15, windows-2025]
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-qiskit-upstream-tests.yml@3cbd664d352731ddf77bbe65569adb9621bb2fa0 # v2.4.0
     with:
       runs-on: ${{ matrix.runs-on }}
