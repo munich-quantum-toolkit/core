@@ -27,6 +27,7 @@
 #include <filesystem>
 #include <ios>
 #include <limits>
+#include <numbers>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -432,6 +433,56 @@ TEST_F(QIRRuntimeTest, SwapGate) {
   expected << "OUTPUT\tRESULT\t0\tr0\n"
            << "OUTPUT\tRESULT\t1\tr1\n";
   EXPECT_THAT(sink.str(), ::testing::HasSubstr(expected.str()));
+}
+
+TEST_F(QIRRuntimeTest, NativeMSPreservesParametersAndControlledTupleOrder) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  auto* q1 = reinterpret_cast<Qubit*>(1UL);
+  auto* control = reinterpret_cast<Qubit*>(2UL);
+  constexpr double phi0 = .13;
+  constexpr double phi1 = -.21;
+  constexpr double theta = .17;
+  constexpr double twoPi = 2. * std::numbers::pi;
+  for (const bool controlled : {false, true}) {
+    for (const bool enabled : {false, true}) {
+      __quantum__rt__initialize(nullptr);
+      __quantum__qis__x__body(q0);
+      if (enabled) {
+        __quantum__qis__x__body(control);
+      } else {
+        __quantum__qis__i__body(control);
+      }
+      if (controlled) {
+        auto* controls = __quantum__rt__array_create_1d(sizeof(Qubit*), 1);
+        std::memcpy(__quantum__rt__array_get_element_ptr_1d(controls, 0),
+                    static_cast<const void*>(&control), sizeof(Qubit*));
+        struct Args {
+          std::array<double, 3> parameters;
+          std::array<Qubit*, 2> targets;
+        };
+        const Args args{.parameters = {phi0, phi1, theta}, .targets = {q0, q1}};
+        auto* tuple = __quantum__rt__tuple_create(sizeof(Args));
+        std::memcpy(tuple, &args, sizeof(Args));
+        __quantum__qis__ms__ctl(controls, tuple);
+        __quantum__rt__tuple_update_reference_count(tuple, -1);
+        __quantum__rt__array_update_reference_count(controls, -1);
+      } else {
+        __quantum__qis__ms__body(phi0, phi1, theta, q0, q1);
+      }
+      if (!controlled || enabled) {
+        __quantum__qis__rz__body(-twoPi * phi0, q0);
+        __quantum__qis__rz__body(-twoPi * phi1, q1);
+        __quantum__qis__rxx__body(-twoPi * theta, q0, q1);
+        __quantum__qis__rz__body(twoPi * phi0, q0);
+        __quantum__qis__rz__body(twoPi * phi1, q1);
+      }
+      auto state = Runtime::getInstance().takeState();
+      const auto amplitude = state.edge.getValueByIndex(enabled ? 5U : 1U);
+      EXPECT_NEAR(amplitude.real(), 1., 1e-12);
+      EXPECT_NEAR(amplitude.imag(), 0., 1e-12);
+      state.dd->decRef(state.edge);
+    }
+  }
 }
 
 TEST_F(QIRRuntimeTest, EmptyGenericControlsUseSwap) {

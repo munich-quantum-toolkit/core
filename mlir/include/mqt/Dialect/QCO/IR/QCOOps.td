@@ -154,6 +154,7 @@ def OneTargetThreeParameter : TargetAndParameterArityTrait<1, 3>;
 def TwoTargetZeroParameter : TargetAndParameterArityTrait<2, 0>;
 def TwoTargetOneParameter : TargetAndParameterArityTrait<2, 1>;
 def TwoTargetTwoParameter : TargetAndParameterArityTrait<2, 2>;
+def TwoTargetThreeParameter : TargetAndParameterArityTrait<2, 3>;
 def ThreeTargetZeroParameter : TargetAndParameterArityTrait<3, 0>;
 
 //===----------------------------------------------------------------------===//
@@ -620,6 +621,94 @@ def ROp
       "const std::variant<double, Value>&":$phi)>];
 
   let hasCanonicalizer = 1;
+}
+
+def GPIOp
+    : QCOOp<"gpi", traits = [UnitaryOpInterface, OneTargetOneParameter, Pure]> {
+  let summary = "Apply a GPI gate";
+  let description = [{
+    GPI(φ) = i R(π, 2πφ). Parameters are measured in turns (one turn is 2π radians).
+  }];
+  let arguments = (ins Arg<QubitType, "target qubit">:$qubit_in,
+      Arg<F64, "phi in turns">:$phi);
+  let results = (outs QubitType:$qubit_out);
+  let assemblyFormat = "`(` $phi `)` $qubit_in attr-dict `:` type($qubit_in) "
+                       "`->` type($qubit_out)";
+  let extraClassDeclaration = [{
+    [[nodiscard]] static StringRef getBaseSymbol() { return "gpi"; }
+    [[nodiscard]] static Matrix2x2 unitaryMatrix(double phi);
+    [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
+  }];
+  let builders = [OpBuilder<(ins "Value":$qubit_in,
+      "const std::variant<double, Value>&":$phi)>];
+}
+
+def GPI2Op : QCOOp<"gpi2",
+                   traits = [UnitaryOpInterface, OneTargetOneParameter, Pure]> {
+  let summary = "Apply a GPI2 gate";
+  let description = [{
+    GPI2(φ) = R(π/2, 2πφ). Parameters are measured in turns (one turn is 2π radians).
+  }];
+  let arguments = (ins Arg<QubitType, "target qubit">:$qubit_in,
+      Arg<F64, "phi in turns">:$phi);
+  let results = (outs QubitType:$qubit_out);
+  let assemblyFormat = "`(` $phi `)` $qubit_in attr-dict `:` type($qubit_in) "
+                       "`->` type($qubit_out)";
+  let extraClassDeclaration = [{
+    [[nodiscard]] static StringRef getBaseSymbol() { return "gpi2"; }
+    [[nodiscard]] static Matrix2x2 unitaryMatrix(double phi);
+    [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
+  }];
+  let builders = [OpBuilder<(ins "Value":$qubit_in,
+      "const std::variant<double, Value>&":$phi)>];
+}
+
+def MSOp : QCOOp<"ms",
+                 traits = [UnitaryOpInterface, TwoTargetThreeParameter, Pure]> {
+  let summary = "Apply a MS gate";
+  let description = [{
+    MS(φ₀, φ₁, θ) conjugates RXX(2πθ) by RZ(2πφ₀) and RZ(2πφ₁) on its first and second targets. Parameters are measured in turns (one turn is 2π radians).
+  }];
+  let arguments = (ins Arg<QubitType, "target qubit">:$qubit0_in,
+      Arg<QubitType, "target qubit">:$qubit1_in,
+      Arg<F64, "phi0 in turns">:$phi0, Arg<F64, "phi1 in turns">:$phi1,
+      Arg<F64, "theta in turns">:$theta);
+  let results = (outs QubitType:$qubit0_out, QubitType:$qubit1_out);
+  let assemblyFormat =
+      "`(` $phi0 `,` $phi1 `,` $theta `)` $qubit0_in `,` $qubit1_in attr-dict "
+      "`:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` "
+      "type($qubit1_out)";
+  let extraClassDeclaration = [{
+    [[nodiscard]] static StringRef getBaseSymbol() { return "ms"; }
+    [[nodiscard]] static Matrix4x4 unitaryMatrix(double phi0, double phi1, double theta);
+    [[nodiscard]] std::optional<Matrix4x4> getUnitaryMatrix();
+  }];
+  let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
+      "const std::variant<double, Value>&":$phi0,
+      "const std::variant<double, Value>&":$phi1,
+      "const std::variant<double, Value>&":$theta)>];
+}
+
+def ZZOp
+    : QCOOp<"zz", traits = [UnitaryOpInterface, TwoTargetOneParameter, Pure]> {
+  let summary = "Apply a ZZ gate";
+  let description = [{
+    ZZ(θ) = RZZ(2πθ). Parameters are measured in turns (one turn is 2π radians).
+  }];
+  let arguments = (ins Arg<QubitType, "target qubit">:$qubit0_in,
+      Arg<QubitType, "target qubit">:$qubit1_in,
+      Arg<F64, "theta in turns">:$theta);
+  let results = (outs QubitType:$qubit0_out, QubitType:$qubit1_out);
+  let assemblyFormat =
+      "`(` $theta `)` $qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) "
+      "`,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
+  let extraClassDeclaration = [{
+    [[nodiscard]] static StringRef getBaseSymbol() { return "zz"; }
+    [[nodiscard]] static Matrix4x4 unitaryMatrix(double theta);
+    [[nodiscard]] std::optional<Matrix4x4> getUnitaryMatrix();
+  }];
+  let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
+      "const std::variant<double, Value>&":$theta)>];
 }
 
 def U2Op

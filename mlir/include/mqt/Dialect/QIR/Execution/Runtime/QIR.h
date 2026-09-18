@@ -142,6 +142,14 @@ void __quantum__rt__qubit_release(Qubit*);
   void __quantum__qis__cc##NAME##__##SUFFIX(double, double, Qubit*, Qubit*,    \
                                             Qubit*, Qubit*);                   \
   void __quantum__qis__##NAME##__##CTL_SUFFIX(Array*, Tuple*);
+#define MQT_QIR_DECLARE_2_3(NAME, SUFFIX, CTL_SUFFIX)                          \
+  void __quantum__qis__##NAME##__##SUFFIX(double, double, double, Qubit*,      \
+                                          Qubit*);                             \
+  void __quantum__qis__c##NAME##__##SUFFIX(double, double, double, Qubit*,     \
+                                           Qubit*, Qubit*);                    \
+  void __quantum__qis__cc##NAME##__##SUFFIX(double, double, double, Qubit*,    \
+                                            Qubit*, Qubit*, Qubit*);           \
+  void __quantum__qis__##NAME##__##CTL_SUFFIX(Array*, Tuple*);
 #define MQT_QIR_DECLARE_3_0(NAME, SUFFIX, CTL_SUFFIX)                          \
   void __quantum__qis__##NAME##__##SUFFIX(Qubit*, Qubit*, Qubit*);             \
   void __quantum__qis__c##NAME##__##SUFFIX(Qubit*, Qubit*, Qubit*, Qubit*);    \
@@ -160,6 +168,7 @@ void __quantum__rt__qubit_release(Qubit*);
 #undef MQT_QIR_DECLARE_2_0
 #undef MQT_QIR_DECLARE_2_1
 #undef MQT_QIR_DECLARE_2_2
+#undef MQT_QIR_DECLARE_2_3
 #undef MQT_QIR_DECLARE_3_0
 
 /// Apply an arbitrary global phase.

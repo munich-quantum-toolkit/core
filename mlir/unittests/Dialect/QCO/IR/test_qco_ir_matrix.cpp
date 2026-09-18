@@ -56,6 +56,35 @@
 using namespace mlir;
 using namespace qco;
 
+TEST(NativeIonGateMatrix, MatchesTurnConventionsAndTargetOrder) {
+  using namespace std::complex_literals;
+  for (double phi : {-.37, 0., .125, .5, 1.2}) {
+    const auto axis = std::polar(1., 2. * std::numbers::pi * phi);
+    const auto pauli = Matrix2x2::fromElements(0., std::conj(axis), axis, 0.);
+    EXPECT_TRUE(GPIOp::unitaryMatrix(phi).isApprox(pauli));
+    EXPECT_TRUE(GPI2Op::unitaryMatrix(phi).isApprox(
+        (1. / std::numbers::sqrt2) *
+        Matrix2x2::fromElements(1., -1i * std::conj(axis), -1i * axis, 1.)));
+    const auto zzPhase = std::polar(1., -std::numbers::pi * phi);
+    EXPECT_TRUE(ZZOp::unitaryMatrix(phi).isApprox(Matrix4x4::fromDiagonal(
+        zzPhase, std::conj(zzPhase), std::conj(zzPhase), zzPhase)));
+  }
+  constexpr double phi0 = .13;
+  constexpr double phi1 = -.21;
+  constexpr double theta = .17;
+  const auto cos = std::cos(std::numbers::pi * theta);
+  const auto sin = -1i * std::sin(std::numbers::pi * theta);
+  const auto sum = std::polar(1., 2. * std::numbers::pi * (phi0 + phi1));
+  const auto difference = std::polar(1., 2. * std::numbers::pi * (phi0 - phi1));
+  const auto expected = Matrix4x4::fromElements(
+      cos, 0., 0., sin * std::conj(sum), 0., cos, sin * std::conj(difference),
+      0., 0., sin * difference, cos, 0., sin * sum, 0., 0., cos);
+  EXPECT_TRUE(MSOp::unitaryMatrix(phi0, phi1, theta).isApprox(expected));
+  // Swapped phases must change MS.
+  // NOLINTNEXTLINE(readability-suspicious-call-argument)
+  EXPECT_FALSE(MSOp::unitaryMatrix(phi1, phi0, theta).isApprox(expected));
+}
+
 [[nodiscard]] static DynamicMatrix controlledMatrix(const Matrix2x2& body) {
   DynamicMatrix result = DynamicMatrix::identity(4);
   result.setBottomRightCorner(body);
