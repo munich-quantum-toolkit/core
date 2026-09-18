@@ -303,20 +303,33 @@ public:
 
   /// Recognized globally usable single-qubit synthesis basis.
   enum class SingleQubitBasis : uint8_t {
-    U,     ///< `U(θ, φ, λ)`.
-    ZSXX,  ///< `RZ` / `SX` / `X` synthesis via a ZYZ decomposition.
-    R,     ///< XYX synthesis expressed with `R(θ, φ)`.
-    XZX,   ///< `RX(φ) * RZ(θ) * RX(λ)`.
-    XYX,   ///< `RX(φ) * RY(θ) * RX(λ)`.
-    ZYZ,   ///< `RZ(φ) * RY(θ) * RZ(λ)`.
-    ZXZ,   ///< `RZ(φ) * RX(θ) * RZ(λ)`.
-    ZRX90, ///< Arbitrary `RZ` and fixed `RX(π/2)` pulses.
+    U,              ///< `U(θ, φ, λ)`.
+    ZSXX,           ///< `RZ` / `SX` / `X` synthesis via a ZYZ decomposition.
+    R,              ///< XYX synthesis expressed with `R(θ, φ)`.
+    XZX,            ///< `RX(φ) * RZ(θ) * RX(λ)`.
+    XYX,            ///< `RX(φ) * RY(θ) * RX(λ)`.
+    ZYZ,            ///< `RZ(φ) * RY(θ) * RZ(λ)`.
+    ZXZ,            ///< `RZ(φ) * RX(θ) * RZ(λ)`.
+    ZFixedRotation, ///< Arbitrary `RZ` and fixed X/Y rotation pulses.
+  };
+
+  /// Fixed X/Y pulse used to implement an effective positive RX(π/2).
+  struct FixedRotationBasis {
+    GateKind gate;
+    double angle;
+    /// RZ angles before, between, and after copies of the fixed pulse.
+    std::vector<double> quarterTurnZAngles;
+    std::optional<double> halfTurnAngle;
+
+    friend bool operator==(const FixedRotationBasis&,
+                           const FixedRotationBasis&) = default;
   };
 
   /// One single-qubit basis and optional entangler usable across the target.
   struct SynthesisBasis {
     SingleQubitBasis singleQubit;
     std::optional<GateKind> entangler;
+    std::optional<FixedRotationBasis> fixedRotation;
 
     friend bool operator==(const SynthesisBasis&,
                            const SynthesisBasis&) = default;

@@ -172,9 +172,17 @@ accepts only RX(π/2). A nonempty list has one entry per parameter; `None` leave
 that parameter unrestricted. Multiple capabilities can describe different fixed
 values or placements. Constants match with absolute tolerance `1e-15`, without
 angle wrapping; symbolic values do not match fixed values. Omit the list for
-unrestricted parameters. The compiler can synthesize arbitrary one-qubit gates
-with RZ and fixed RX(π/2) on every site. Other fixed-angle sets are accepted for
-matching native operations but do not automatically provide a synthesis basis.
+unrestricted parameters. With unrestricted RZ, the compiler derives a synthesis
+sequence from a fixed RX or RY angle available on every site. This covers
+positive and negative quarter turns, 45° pulses, and non-Clifford angles such as
+0.37 radians. The sequence is computed once per target and reused for numeric
+and symbolic input gates. Available RX/RY half turns shorten suitable
+decompositions.
+
+Zero and integer-π pulses do not supply the required mixing. The constructive
+method also rejects angles that require more than 64 fixed pulses per effective
+quarter turn, to bound circuit expansion. These restrictions affect synthesis;
+matching fixed native operations remains available for every finite angle.
 
 Use plain tuples for placements without calibration. Use
 `CompilerTarget.SiteTuple([1, 0], duration=40, fidelity=0.99)` to attach
