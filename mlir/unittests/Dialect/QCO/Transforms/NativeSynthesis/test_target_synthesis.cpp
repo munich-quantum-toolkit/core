@@ -30,6 +30,7 @@
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/Block.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -45,6 +46,7 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
+#include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
@@ -355,7 +357,7 @@ TEST_F(TargetSynthesisTest, FixedPulseSynthesisPreservesFullUnitary) {
           };
           if (halfTurn) {
             operations.push_back(valid(OperationCapability::create(
-                name, 1, 1, {}, std::nullopt, std::nullopt, {*halfTurn})));
+                name, 1, 1, {}, std::nullopt, std::nullopt, {halfTurn})));
           }
           const auto target = valid(
               Target::create(2, Connectivity::allToAll(),
@@ -371,14 +373,47 @@ TEST_F(TargetSynthesisTest, FixedPulseSynthesisPreservesFullUnitary) {
               builder.sink(builder.ry(theta, targetQubit));
               return builder.intConstant(0);
             };
-            auto expected = build(circuit);
-            auto actual = build(circuit);
-            ASSERT_TRUE(mlir::succeeded(runTargetPass(
-                *actual, target, mlir::qco::createTargetNativeSynthesis())));
-            ASSERT_TRUE(mlir::succeeded(
-                runPass(*actual, mlir::qco::createVerifyTargetConformance())));
-            EXPECT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*actual)));
-            expectEquivalent(expected, actual);
+            for (const std::optional<unsigned> parameterIndex : {
+                     std::optional<unsigned>{},
+                     std::optional{0U},
+                     std::optional{1U},
+                 }) {
+              SCOPED_TRACE(testing::Message()
+                           << "theta=" << theta << " parameter="
+                           << (parameterIndex ? std::to_string(*parameterIndex)
+                                              : "none"));
+              auto expected = build(circuit);
+              auto actual = build(circuit);
+              auto function = mainFunction(*actual);
+              if (parameterIndex) {
+                // Keep theta fixed when phi is symbolic to exercise the
+                // zero, quarter-turn, and half-turn shortcuts at runtime.
+                function.insertArgument(0,
+                                        mlir::Float64Type::get(context.get()),
+                                        {}, function.getLoc());
+                auto gate = *function.getOps<UOp>().begin();
+                auto originalParameter = gate.getParameter(*parameterIndex);
+                originalParameter.replaceAllUsesWith(function.getArgument(0));
+              }
+              ASSERT_TRUE(mlir::succeeded(runTargetPass(
+                  *actual, target, mlir::qco::createTargetNativeSynthesis())));
+              ASSERT_TRUE(mlir::succeeded(runPass(
+                  *actual, mlir::qco::createVerifyTargetConformance())));
+              EXPECT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*actual)));
+              if (parameterIndex) {
+                mlir::OpBuilder builder(context.get());
+                builder.setInsertionPointToStart(&function.getBody().front());
+                auto constant = mlir::arith::ConstantOp::create(
+                    builder, function.getLoc(),
+                    builder.getF64FloatAttr(*parameterIndex == 0 ? theta
+                                                                 : .42));
+                function.getArgument(0).replaceAllUsesWith(
+                    constant.getResult());
+                ASSERT_TRUE(mlir::succeeded(
+                    runPass(*actual, mlir::createCanonicalizerPass())));
+              }
+              expectEquivalent(expected, actual);
+            }
           }
         }
       }
