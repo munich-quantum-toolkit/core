@@ -30,10 +30,10 @@ rotation as an arbitrary rotation.
 ## Validation
 
 The compiler suite passed 235 tests; native synthesis passed 64 tests, including
-648 full-matrix cases across all six axis pairs, both signs, fractional and
-non-Clifford angles, and optional half turns. Python target tests passed 388
-cases, including numerical and symbolic input gates. Generated stubs, repository
-lint, and full changed-file C++ lint passed.
+1,944 full-matrix cases across all six axis pairs, both signs, fractional and
+non-Clifford angles, optional half turns, and numeric or symbolic parameters.
+Python target tests passed 388 cases, including numerical and symbolic input
+gates. Generated stubs, repository lint, and full changed-file C++ lint passed.
 
 ## Follow-up
 
