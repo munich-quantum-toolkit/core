@@ -44,6 +44,7 @@
 #include "mlir/Transforms/DialectConversion.h"
 
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/STLExtras.h"
 
 #include <cassert>
 #include <cstddef>
@@ -517,8 +518,16 @@ protected:
     // Stage 4: Convert QC dialect to LLVM (QIR calls)
     {
       RewritePatternSet patterns(ctx);
-      target.addIllegalDialect<cbit::CBitDialect, QCDialect,
-                               memref::MemRefDialect, scf::SCFDialect>();
+      target.addIllegalDialect<cbit::CBitDialect, QCDialect, scf::SCFDialect>();
+      // Classical storage is lowered by the upstream MemRef-to-LLVM patterns.
+      target.addDynamicallyLegalDialect<memref::MemRefDialect>(
+          [&](Operation* op) {
+            return llvm::all_of(
+                llvm::concat<Type>(op->getOperandTypes(), op->getResultTypes()),
+                [&](Type type) {
+                  return !isa<MemRefType>(type) || typeConverter.isLegal(type);
+                });
+          });
 
       populateQCToQIRBasePatterns(patterns, typeConverter, ctx, state);
 

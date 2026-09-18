@@ -118,6 +118,8 @@ private:
       return parseVersion();
     case TokenKind::Include:
       return parseInclude();
+    case TokenKind::Array:
+      return parseArrayDeclaration();
     case TokenKind::Const:
     case TokenKind::Bool:
     case TokenKind::Int:
@@ -347,6 +349,95 @@ private:
   }
 
   //===--- Declarations -------------------------------------------------===//
+
+  [[nodiscard]] LogicalResult parseArrayDeclaration() {
+    const auto loc = current().loc;
+    advance(); // array
+    if (failed(expect(TokenKind::LBracket))) {
+      return failure();
+    }
+    SyntaxArrayDeclaration declaration;
+    switch (current().kind) {
+    case TokenKind::Bool:
+      declaration.kind = ScalarKind::Bool;
+      break;
+    case TokenKind::Int:
+      declaration.kind = ScalarKind::Int;
+      break;
+    case TokenKind::Uint:
+      declaration.kind = ScalarKind::Uint;
+      break;
+    case TokenKind::Float:
+      declaration.kind = ScalarKind::Float;
+      break;
+    case TokenKind::Angle:
+      declaration.kind = ScalarKind::Angle;
+      break;
+    default:
+      return sink.error(current().loc, "unsupported array element type");
+    }
+    advance();
+    if (current().kind == TokenKind::LBracket) {
+      auto width = parseDesignator();
+      if (failed(width)) {
+        return failure();
+      }
+      declaration.elementWidth.emplace(*width);
+    }
+    if (failed(expect(TokenKind::Comma))) {
+      return failure();
+    }
+    auto length = parseExpression();
+    if (failed(length)) {
+      return failure();
+    }
+    declaration.length = *length;
+    if (current().kind == TokenKind::Comma) {
+      advance();
+      if (current().kind != TokenKind::RBracket) {
+        return sink.error(current().loc,
+                          "multidimensional arrays are not supported yet");
+      }
+    }
+    if (failed(expect(TokenKind::RBracket))) {
+      return failure();
+    }
+    if (current().kind != TokenKind::Identifier) {
+      return expectedIdentifier("expected array identifier");
+    }
+    declaration.identifier = current().identifier;
+    advance();
+    if (current().kind == TokenKind::Equals) {
+      advance();
+      if (failed(expect(TokenKind::LBrace))) {
+        return failure();
+      }
+      declaration.initializer.emplace();
+      if (current().kind != TokenKind::RBrace) {
+        while (true) {
+          auto value = parseExpression();
+          if (failed(value)) {
+            return failure();
+          }
+          declaration.initializer->push_back(*value);
+          if (current().kind != TokenKind::Comma) {
+            break;
+          }
+          advance();
+          if (current().kind == TokenKind::RBrace) {
+            break;
+          }
+        }
+      }
+      if (failed(expect(TokenKind::RBrace))) {
+        return failure();
+      }
+    }
+    if (failed(expect(TokenKind::Semicolon))) {
+      return failure();
+    }
+    return sink.arrayDecl(loc, std::move(declaration));
+  }
 
   /// Parse `[const] (int|uint|float|bool|angle) <id> [= <initializer>];`.
   [[nodiscard]] LogicalResult parseScalarDeclaration(const bool isOutput) {
@@ -615,7 +706,7 @@ private:
     const auto compoundLocation = current().loc;
     const auto compoundSpelling = current().spelling;
     if (compound) {
-      if (target->index || target->slice) {
+      if (target->slice) {
         return sink.error(current().loc,
                           "indexed compound assignments are not supported");
       }
@@ -662,8 +753,10 @@ private:
       }
       SyntaxExpression previous;
       previous.location = loc;
-      previous.kind = Expr::Kind::Identifier;
+      previous.kind =
+          target->index ? Expr::Kind::Index : Expr::Kind::Identifier;
       previous.identifier = target->identifier;
+      previous.lhs = target->index;
       assignedValue = makeBinary(*kind, sink.addExpression(previous),
                                  assignedValue, compoundLocation);
     }

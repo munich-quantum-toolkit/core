@@ -31,6 +31,7 @@ enum class TokenKind : uint8_t {
   OpenQASM,
   Include,
   Const,
+  Array,
   Qubit,
   Qreg,
   Bit,
