@@ -63,6 +63,7 @@ struct Expr {
     Index,
     Range,
     SizeOf,
+    Concat,
     Neg,
     Not,
     BitNot,

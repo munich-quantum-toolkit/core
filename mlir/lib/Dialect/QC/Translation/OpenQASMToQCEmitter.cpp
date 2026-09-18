@@ -1959,8 +1959,98 @@ private:
         .getResult();
   }
 
+  void emitArrayConcatenation(const frontend::ArrayCopyStatement& statement) {
+    SmallVector<Value> sources;
+    for (const auto& source : statement.sources) {
+      auto view = emitArrayView(source.array, source.indices);
+      if (!view || emissionBudget.isExhausted()) {
+        return;
+      }
+      sources.push_back(view);
+    }
+    auto target = emitArrayView(statement.target, statement.targetIndices);
+    if (!target || emissionBudget.isExhausted()) {
+      return;
+    }
+    auto targetType = cast<MemRefType>(target.getType());
+    auto zero = arith::ConstantIndexOp::create(builder, 0);
+    Value extent = zero;
+    bool dynamicExtent = targetType.isDynamicDim(0);
+    const auto checkShape = [&](Value from, Value to) {
+      auto matches =
+          arith::CmpIOp::create(builder, arith::CmpIPredicate::eq, from, to);
+      cf::AssertOp::create(builder, matches,
+                           "array copy requires matching shapes");
+    };
+    for (auto source : sources) {
+      if (emissionBudget.isExhausted()) {
+        return;
+      }
+      auto type = cast<MemRefType>(source.getType());
+      dynamicExtent |= type.isDynamicDim(0);
+      extent = builder.createOrFold<arith::AddIOp>(
+          extent, builder.createOrFold<memref::DimOp>(source, 0));
+      for (int64_t dimension = 1; dimension < type.getRank(); ++dimension) {
+        if (type.isDynamicDim(dimension) ||
+            targetType.isDynamicDim(dimension)) {
+          checkShape(builder.createOrFold<memref::DimOp>(source, dimension),
+                     builder.createOrFold<memref::DimOp>(target, dimension));
+        }
+      }
+    }
+    if (dynamicExtent) {
+      checkShape(extent, builder.createOrFold<memref::DimOp>(target, 0));
+    }
+    const bool overlaps =
+        llvm::any_of(statement.sources, [&](const auto& source) {
+          return source.array == statement.target;
+        });
+    Value result = target;
+    if (overlaps) {
+      SmallVector<Value> sizes;
+      for (int64_t dimension = 0; dimension < targetType.getRank();
+           ++dimension) {
+        if (targetType.isDynamicDim(dimension)) {
+          sizes.push_back(memref::DimOp::create(builder, target, dimension));
+        }
+      }
+      result = memref::AllocOp::create(
+          builder,
+          MemRefType::get(targetType.getShape(), targetType.getElementType()),
+          sizes);
+    }
+    Value offset = zero;
+    for (auto source : sources) {
+      if (emissionBudget.isExhausted()) {
+        return;
+      }
+      SmallVector<OpFoldResult> offsets(targetType.getRank(),
+                                        builder.getIndexAttr(0));
+      offsets.front() = getAsOpFoldResult(offset);
+      auto sizes = memref::getMixedSizes(builder, builder.getLoc(), source);
+      SmallVector<OpFoldResult> strides(targetType.getRank(),
+                                        builder.getIndexAttr(1));
+      auto type = memref::SubViewOp::inferResultType(
+          cast<MemRefType>(result.getType()), offsets, sizes, strides);
+      auto view = memref::SubViewOp::create(builder, type, result, offsets,
+                                            sizes, strides);
+      memref::CopyOp::create(builder, source, view);
+      offset = builder.createOrFold<arith::AddIOp>(
+          offset, builder.createOrFold<memref::DimOp>(source, 0));
+    }
+    if (overlaps) {
+      memref::CopyOp::create(builder, result, target);
+      memref::DeallocOp::create(builder, result);
+    }
+  }
+
   void emitArrayCopy(const frontend::ArrayCopyStatement& statement) {
-    auto source = emitArrayView(statement.source, statement.sourceIndices);
+    if (statement.sources.size() > 1) {
+      emitArrayConcatenation(statement);
+      return;
+    }
+    const auto& input = statement.sources.front();
+    auto source = emitArrayView(input.array, input.indices);
     auto target = emitArrayView(statement.target, statement.targetIndices);
     if (source && target && source != target && !emissionBudget.isExhausted()) {
       auto sourceType = cast<MemRefType>(source.getType());
@@ -1993,8 +2083,8 @@ private:
         }
         return true;
       };
-      if (statement.source == statement.target &&
-          (!isPrefix(statement.source, statement.sourceIndices) ||
+      if (input.array == statement.target &&
+          (!isPrefix(input.array, input.indices) ||
            !isPrefix(statement.target, statement.targetIndices))) {
         // Capture the RHS before an overlapping assignment changes it.
         auto type = cast<MemRefType>(source.getType());

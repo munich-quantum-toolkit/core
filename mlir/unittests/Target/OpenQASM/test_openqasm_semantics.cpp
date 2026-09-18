@@ -165,6 +165,11 @@ TEST(OpenQASMFrontendTest, CopiesArraysWithMatchingTypes) {
            "array[int, 2] b = a[:n]; a = b[0:n:1];",
            "array[int, 2, 3] a = {{1, 2, 3}, {4, 5, 6}}; int n = 1; "
            "array[int, 2] b = a[0:n, n]; a[:n, 0] = b;",
+           "array[int, 2] a = {1, 2}; array[int, 4] b = a ++ a; "
+           "b = a[1:1] ++ (a ++ a[0:0]);",
+           "array[angle[8], 1] a = {pi}; array[angle[8], 2] b = a ++ a;",
+           "array[bool, 1] a = {true}; array[bool, 2] b = a ++ a;",
+           "array[float, 1] a = {1.0}; array[float, 2] b = a ++ a;",
        }) {
     SCOPED_TRACE(source);
     auto analyzed = openqasm::frontend::analyzeOpenQASM(
@@ -177,6 +182,29 @@ TEST(OpenQASMFrontendTest, CopiesArraysWithMatchingTypes) {
 TEST(OpenQASMFrontendTest, RejectsInvalidClassicalArrays) {
   const auto cases =
       std::to_array<std::pair<llvm::StringLiteral, llvm::StringLiteral>>({
+          {"array[int, 2] a = {1, 2}; a = a ++ a;", "matching shapes"},
+          {
+              "array[int, 1] a = {1}; array[uint, 2] b = a ++ a;",
+              "element types",
+          },
+          {
+              "array[int[8], 1] a = {1}; array[int[16], 2] b = a ++ a;",
+              "element types",
+          },
+          {
+              "array[int, 1, 2] a = {{1, 2}}; array[int, 2, 1] b = a ++ a;",
+              "matching shapes",
+          },
+          {
+              "array[int, 1] a = {1}; array[int, 2] b = a ++ 2;",
+              "array or subarray",
+          },
+          {
+              "array[int, 1] a = {1}; array[int, 2] b = a[0] ++ a;",
+              "matching shapes",
+          },
+          {"array[int, 2] a; a[0] = 1; a = a[0:0] ++ a[1:1];", "uninitialized"},
+          {"int a = 1 ++ 2;", "scalar arithmetic expression"},
           {"array[int, 0] a;", "greater than zero"},
           {"array[int, 2] a = {1, 2}; a = a[1:0];", "must not be empty"},
           {"array[int, 2] a = {1, 2}; a = a[0:-1:1];", "must not be empty"},

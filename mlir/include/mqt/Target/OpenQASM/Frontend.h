@@ -339,10 +339,15 @@ struct ArraySelection {
   std::optional<ArrayRange> runtime;
 };
 
+struct ArrayCopySource {
+  ArrayId array = 0;
+  std::vector<ArraySelection> indices;
+};
+
 struct ArrayCopyStatement {
-  ArrayId source = 0;
+  /// Multiple sources concatenate along the first retained dimension.
+  std::vector<ArrayCopySource> sources;
   ArrayId target = 0;
-  std::vector<ArraySelection> sourceIndices;
   std::vector<ArraySelection> targetIndices;
 };
 
