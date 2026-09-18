@@ -30,13 +30,13 @@ calibration-aware pulse optimization are outside this change.
 
 ## Validation
 
-The compiler suite passed 236 tests; native synthesis passed 65 tests; QCO
-matrix tests passed 572 cases; the QIR runtime passed 81 tests. Python target
-and export tests passed 424 cases; circuit translation passed 419 cases. These
-cover numeric and symbolic native round trips and changed custom definitions.
-Downstream checks also cover native gate preservation and one-qubit circuits
-with wider target operations. Generated stubs, repository lint, and full
-changed-file C++ lint passed.
+The compiler suite passed 236 tests; native synthesis passed 66 tests; QCO IR
+passed 573 tests; QC translation passed 213 tests; the QIR runtime passed 81
+tests. Python target and export tests passed 424 cases; circuit translation
+passed 419 cases. These cover numeric and symbolic native round trips and
+changed custom definitions. Downstream checks also cover native gate
+preservation and one-qubit circuits with wider target operations. Generated
+stubs, repository lint, and full changed-file C++ lint passed.
 
 ## Follow-up
 

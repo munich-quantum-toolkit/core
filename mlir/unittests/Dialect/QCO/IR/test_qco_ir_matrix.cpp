@@ -11,6 +11,7 @@
 #include "mqt/Dialect/MQT/Utils/GatePowering.h"
 #include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
+#include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
@@ -25,6 +26,7 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
@@ -204,6 +206,59 @@ protected:
 };
 
 } // namespace
+
+TEST_F(QCOMatrixTest,
+       NativeIonBuildersPreserveParametersAndRejectSymbolicMatrices) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%theta: f64) -> (!qco.qubit, !qco.qubit) {
+        %q0 = qco.static 0 : !qco.qubit
+        %q1 = qco.static 1 : !qco.qubit
+        return %q0, %q1 : !qco.qubit, !qco.qubit
+      }
+    }
+  )mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  auto function = *moduleOp->getOps<func::FuncOp>().begin();
+  auto returned =
+      cast<func::ReturnOp>(function.getBody().front().getTerminator());
+  OpBuilder builder(returned);
+  auto q0 = returned.getOperand(0);
+  auto q1 = returned.getOperand(1);
+  const auto loc = function.getLoc();
+  auto gpi = GPIOp::create(builder, loc, q0, .13);
+  auto gpi2 = GPI2Op::create(builder, loc, gpi.getQubitOut(), -.21);
+  auto ms = MSOp::create(builder, loc, gpi2.getQubitOut(), q1, .13, -.21, .17);
+  auto zz =
+      ZZOp::create(builder, loc, ms.getQubit0Out(), ms.getQubit1Out(), .37);
+  returned->setOperands({zz.getQubit0Out(), zz.getQubit1Out()});
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(gpi.getUnitaryMatrix());
+  ASSERT_TRUE(gpi2.getUnitaryMatrix());
+  ASSERT_TRUE(ms.getUnitaryMatrix());
+  ASSERT_TRUE(zz.getUnitaryMatrix());
+  EXPECT_TRUE(gpi.getUnitaryMatrix()->isApprox(GPIOp::unitaryMatrix(.13)));
+  EXPECT_TRUE(gpi2.getUnitaryMatrix()->isApprox(GPI2Op::unitaryMatrix(-.21)));
+  EXPECT_TRUE(
+      ms.getUnitaryMatrix()->isApprox(MSOp::unitaryMatrix(.13, -.21, .17)));
+  EXPECT_TRUE(zz.getUnitaryMatrix()->isApprox(ZZOp::unitaryMatrix(.37)));
+
+  for (Operation* gate : {
+           gpi.getOperation(),
+           gpi2.getOperation(),
+           ms.getOperation(),
+           zz.getOperation(),
+       }) {
+    auto unitary = cast<UnitaryOpInterface>(gate);
+    for (auto parameter : unitary.getParameters()) {
+      unitary->replaceUsesOfWith(parameter, function.getArgument(0));
+      EXPECT_FALSE(unitary.getUnitaryMatrix<DynamicMatrix>());
+      unitary->replaceUsesOfWith(function.getArgument(0), parameter);
+    }
+  }
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+}
 
 /// \name QCO/Operations/UnitaryOp.cpp
 /// @{

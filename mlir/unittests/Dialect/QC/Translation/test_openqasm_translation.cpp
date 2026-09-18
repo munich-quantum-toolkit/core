@@ -17,6 +17,7 @@
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCInterfaces.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
+#include "mqt/Dialect/QC/Translation/StandardGate.h"
 #include "mqt/Dialect/QC/Translation/TranslateOpenQASMToQC.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
@@ -973,6 +974,43 @@ static LogicalResult convertQCToQCO(ModuleOp moduleOp) {
   PassManager manager(moduleOp.getContext());
   manager.addPass(createQCToQCO());
   return manager.run(moduleOp);
+}
+
+TEST_F(OpenQASMTranslationTest, EmitsNativeIonGatesWithOrderedParameters) {
+  qc::QCProgramBuilder builder(context.get());
+  builder.initialize();
+  auto q0 = builder.staticQubit(0);
+  auto q1 = builder.staticQubit(1);
+  const auto loc = builder.getUnknownLoc();
+  auto phi0 = builder.floatConstant(.13);
+  auto phi1 = builder.floatConstant(-.21);
+  auto theta = builder.floatConstant(.17);
+  ASSERT_TRUE(succeeded(
+      qc::emitStandardGate(builder, loc, qc::StandardGate::GPI, phi0, q0)));
+  ASSERT_TRUE(succeeded(
+      qc::emitStandardGate(builder, loc, qc::StandardGate::GPI2, phi1, q1)));
+  ASSERT_TRUE(succeeded(qc::emitStandardGate(builder, loc, qc::StandardGate::MS,
+                                             {phi0, phi1, theta}, {q1, q0})));
+  ASSERT_TRUE(succeeded(qc::emitStandardGate(builder, loc, qc::StandardGate::ZZ,
+                                             theta, {q0, q1})));
+  auto actual = builder.finalize();
+  ASSERT_TRUE(actual);
+
+  qc::QCProgramBuilder reference(context.get());
+  reference.initialize();
+  q0 = reference.staticQubit(0);
+  q1 = reference.staticQubit(1);
+  qc::GPIOp::create(reference, loc, q0, .13);
+  qc::GPI2Op::create(reference, loc, q1, -.21);
+  qc::MSOp::create(reference, loc, q1, q0, .13, -.21, .17);
+  qc::ZZOp::create(reference, loc, q0, q1, .17);
+  auto expected = reference.finalize();
+  ASSERT_TRUE(expected);
+  ASSERT_TRUE(succeeded(verify(*actual)));
+  ASSERT_TRUE(succeeded(verify(*expected)));
+  ASSERT_TRUE(succeeded(runQCCleanupPipeline(*actual)));
+  ASSERT_TRUE(succeeded(runQCCleanupPipeline(*expected)));
+  EXPECT_TRUE(areModulesEquivalentWithPermutations(*expected, *actual));
 }
 
 TEST_P(OpenQASMTranslationTest, ProgramEquivalence) {
