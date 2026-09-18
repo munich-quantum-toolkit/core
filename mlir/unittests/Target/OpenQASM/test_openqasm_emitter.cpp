@@ -107,9 +107,17 @@ result = measure q;
 TEST(OpenQASMTargetTest, ConstantArrayIndicesNeedNoRuntimeBoundsChecks) {
   MLIRContext context;
   auto moduleOp = qc::translateOpenQASMToQC(
-      "OPENQASM 3.0; array[int, 2] a = {1, 2}; a[-1] = a[0];", &context);
+      "OPENQASM 3.0; array[int, 2, 3] a = {{1, 2, 3}, {4, 5, 6}}; "
+      "a[-1, -1] = a[0, 0];",
+      &context);
   ASSERT_TRUE(moduleOp);
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  size_t arrays = 0;
+  moduleOp->walk([&](memref::AllocOp alloc) {
+    ++arrays;
+    EXPECT_EQ(alloc.getType().getShape(), (ArrayRef<int64_t>{2, 3}));
+  });
+  EXPECT_EQ(arrays, 1);
   moduleOp->walk(
       [&](cf::AssertOp) { ADD_FAILURE() << "index is statically safe"; });
 }

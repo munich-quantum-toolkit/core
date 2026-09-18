@@ -59,6 +59,7 @@ private:
   static constexpr size_t BLOCK_DEPTH_LIMIT = 64;
   static constexpr size_t RECURSIVE_EXPRESSION_DEPTH_LIMIT = 256;
   static constexpr size_t MODIFIER_DEPTH_LIMIT = 64;
+  static constexpr size_t ARRAY_RANK_LIMIT = 7;
 
   //===--- Token scaffolding --------------------------------------------===//
 
@@ -240,6 +241,34 @@ private:
     return *expr;
   }
 
+  [[nodiscard]] LogicalResult
+  parseIndices(std::optional<SyntaxExpressionId>& first,
+               std::vector<SyntaxExpressionId>& additional) {
+    if (failed(expect(TokenKind::LBracket))) {
+      return failure();
+    }
+    auto index = parseExpression();
+    if (failed(index)) {
+      return failure();
+    }
+    first.emplace(*index);
+    while (current().kind == TokenKind::Comma) {
+      advance();
+      if (current().kind == TokenKind::RBracket) {
+        break;
+      }
+      if (additional.size() + 1 >= ARRAY_RANK_LIMIT) {
+        return sink.error(current().loc, "arrays support at most 7 indices");
+      }
+      auto next = parseExpression();
+      if (failed(next)) {
+        return failure();
+      }
+      additional.push_back(*next);
+    }
+    return expect(TokenKind::RBracket);
+  }
+
   //===--- Version ------------------------------------------------------===//
 
   [[nodiscard]] LogicalResult parseVersion() {
@@ -342,16 +371,21 @@ private:
     if (failed(expect(TokenKind::Comma))) {
       return failure();
     }
-    auto length = parseExpression();
-    if (failed(length)) {
-      return failure();
-    }
-    declaration.length = *length;
-    if (current().kind == TokenKind::Comma) {
+    while (true) {
+      if (declaration.dimensions.size() >= ARRAY_RANK_LIMIT) {
+        return sink.error(current().loc, "arrays support at most 7 dimensions");
+      }
+      auto length = parseExpression();
+      if (failed(length)) {
+        return failure();
+      }
+      declaration.dimensions.push_back(*length);
+      if (current().kind != TokenKind::Comma) {
+        break;
+      }
       advance();
-      if (current().kind != TokenKind::RBracket) {
-        return sink.error(current().loc,
-                          "multidimensional arrays are not supported yet");
+      if (current().kind == TokenKind::RBracket) {
+        break;
       }
     }
     if (failed(expect(TokenKind::RBracket))) {
@@ -364,34 +398,55 @@ private:
     advance();
     if (current().kind == TokenKind::Equals) {
       advance();
-      if (failed(expect(TokenKind::LBrace))) {
+      if (current().kind != TokenKind::LBrace) {
+        return sink.error(current().loc, "expected array initializer list");
+      }
+      auto initializer = parseArrayInitializer(0);
+      if (failed(initializer)) {
         return failure();
       }
-      declaration.initializer.emplace();
-      if (current().kind != TokenKind::RBrace) {
-        while (true) {
-          auto value = parseExpression();
-          if (failed(value)) {
-            return failure();
-          }
-          declaration.initializer->push_back(*value);
-          if (current().kind != TokenKind::Comma) {
-            break;
-          }
-          advance();
-          if (current().kind == TokenKind::RBrace) {
-            break;
-          }
-        }
-      }
-      if (failed(expect(TokenKind::RBrace))) {
-        return failure();
-      }
+      declaration.initializer.emplace(std::move(*initializer));
     }
     if (failed(expect(TokenKind::Semicolon))) {
       return failure();
     }
     return sink.arrayDecl(loc, std::move(declaration));
+  }
+
+  [[nodiscard]] FailureOr<SyntaxArrayInitializer>
+  parseArrayInitializer(size_t depth) {
+    const auto location = current().loc;
+    if (current().kind != TokenKind::LBrace) {
+      auto value = parseExpression();
+      if (failed(value)) {
+        return failure();
+      }
+      return SyntaxArrayInitializer{.location = location, .value = *value};
+    }
+    if (depth >= ARRAY_RANK_LIMIT) {
+      return sink.error(location,
+                        "array initializer nesting exceeds 7 dimensions");
+    }
+    advance();
+    std::vector<SyntaxArrayInitializer> elements;
+    while (current().kind != TokenKind::RBrace) {
+      auto element = parseArrayInitializer(depth + 1);
+      if (failed(element)) {
+        return failure();
+      }
+      elements.push_back(std::move(*element));
+      if (current().kind != TokenKind::Comma) {
+        break;
+      }
+      advance();
+    }
+    if (failed(expect(TokenKind::RBrace))) {
+      return failure();
+    }
+    return SyntaxArrayInitializer{
+        .location = location,
+        .value = std::move(elements),
+    };
   }
 
   /// Parse `[const] (int|uint|float|bool|angle) <id> [= <initializer>];`.
@@ -708,6 +763,7 @@ private:
           target->index ? Expr::Kind::Index : Expr::Kind::Identifier;
       previous.identifier = target->identifier;
       previous.lhs = target->index;
+      previous.additionalIndices = target->additionalIndices;
       assignedValue = makeBinary(*kind, sink.addExpression(previous),
                                  assignedValue, compoundLocation);
     }
@@ -998,15 +1054,11 @@ private:
     }
     reference.identifier = current().identifier;
     advance();
-    std::optional<SyntaxExpressionId> index;
     if (current().kind == TokenKind::LBracket) {
-      auto designator = parseDesignator();
-      if (failed(designator)) {
+      if (failed(parseIndices(reference.index, reference.additionalIndices))) {
         return failure();
       }
-      index = *designator;
     }
-    reference.index = index;
     return reference;
   }
 
@@ -1542,12 +1594,10 @@ private:
       expr.identifier = current().identifier;
       advance();
       if (current().kind == TokenKind::LBracket) {
-        auto designator = parseDesignator();
-        if (failed(designator)) {
+        if (failed(parseIndices(expr.lhs, expr.additionalIndices))) {
           return failure();
         }
         expr.kind = Expr::Kind::Index;
-        expr.lhs = *designator;
       }
       return sink.addExpression(expr);
     }

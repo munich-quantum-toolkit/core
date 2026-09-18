@@ -62,6 +62,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
@@ -151,7 +152,10 @@ struct ClassicalEnv {
     std::optional<dd::Qubit> deferredWire;
   };
   using RegisterState = std::vector<RegisterBit>;
-  using MemRefState = SmallVector<Attribute>;
+  struct MemRefState {
+    SmallVector<int64_t> shape;
+    SmallVector<Attribute> values;
+  };
 
   DenseMap<Value, Attribute> values;
   DenseMap<Value, dd::Qubit> deferredMeasurements;
@@ -646,55 +650,72 @@ static FailureOr<Attribute*> lookupMemRefSlot(Value memref, ValueRange indices,
                                               ClassicalEnv& classical,
                                               Operation* op) {
   const auto type = dyn_cast<MemRefType>(memref.getType());
-  if (!type || type.getRank() != 1 || indices.size() != 1 ||
+  if (!type || type.getRank() == 0 ||
+      indices.size() != static_cast<size_t>(type.getRank()) ||
+      !type.getLayout().isIdentity() ||
       !isSupportedClassicalType(type.getElementType())) {
     return op->emitError()
-           << "QCO DD simulation only supports one-dimensional memrefs of "
+           << "QCO DD simulation only supports identity-layout memrefs of "
               "integer, index, or f64 values";
-  }
-  auto index = lookupIndex(indices[0], classical, op);
-  if (failed(index)) {
-    return failure();
   }
   const auto it = classical.memrefs.find(memref);
   if (it == classical.memrefs.end()) {
     return op->emitError()
            << "classical memref is not mapped for QCO DD simulation";
   }
-  if (*index < 0 || static_cast<size_t>(*index) >= it->second->size()) {
-    return op->emitError()
-           << "classical memref index out of range for QCO DD simulation";
+  size_t offset = 0;
+  for (const auto [dimension, value] : llvm::enumerate(indices)) {
+    auto index = lookupIndex(value, classical, op);
+    if (failed(index)) {
+      return failure();
+    }
+    const auto extent = it->second->shape[dimension];
+    if (*index < 0 || *index >= extent) {
+      return op->emitError()
+             << "classical memref index out of range for QCO DD simulation";
+    }
+    offset = offset * static_cast<size_t>(extent) + static_cast<size_t>(*index);
   }
-  return &(*it->second)[static_cast<size_t>(*index)];
+  return &it->second->values[offset];
 }
 
 static LogicalResult applyMemRefAlloc(memref::AllocOp alloc,
                                       ClassicalEnv& classical) {
   const auto type = alloc.getType();
-  if (!type || type.getRank() != 1 ||
+  if (!type || type.getRank() == 0 || !type.getLayout().isIdentity() ||
       !isSupportedClassicalType(type.getElementType())) {
     return alloc.emitError()
-           << "QCO DD simulation only supports one-dimensional memrefs of "
+           << "QCO DD simulation only supports identity-layout memrefs of "
               "integer, index, or f64 values";
   }
   if (!alloc.getSymbolOperands().empty()) {
     return alloc.emitError()
            << "QCO DD simulation does not support symbolic memref operands";
   }
-  int64_t size = type.getDimSize(0);
-  if (type.isDynamicDim(0)) {
-    auto dynamicSize =
-        lookupIndex(alloc.getDynamicSizes()[0], classical, alloc);
-    if (failed(dynamicSize)) {
-      return failure();
+  auto storage = std::make_shared<ClassicalEnv::MemRefState>();
+  int64_t size = 1;
+  size_t dynamicDimension = 0;
+  for (auto extent : type.getShape()) {
+    if (ShapedType::isDynamic(extent)) {
+      auto dynamicSize = lookupIndex(
+          alloc.getDynamicSizes()[dynamicDimension++], classical, alloc);
+      if (failed(dynamicSize)) {
+        return failure();
+      }
+      extent = *dynamicSize;
     }
-    size = *dynamicSize;
+    if (extent < 0) {
+      return alloc.emitError() << "classical memref size must be non-negative";
+    }
+    if (extent != 0 && size > std::numeric_limits<int64_t>::max() / extent) {
+      return alloc.emitError()
+             << "classical memref element count overflows i64";
+    }
+    size *= extent;
+    storage->shape.push_back(extent);
   }
-  if (size < 0) {
-    return alloc.emitError() << "classical memref size must be non-negative";
-  }
-  classical.memrefs[alloc.getResult()] =
-      std::make_shared<ClassicalEnv::MemRefState>(static_cast<size_t>(size));
+  storage->values.resize(static_cast<size_t>(size));
+  classical.memrefs[alloc.getResult()] = std::move(storage);
   return success();
 }
 

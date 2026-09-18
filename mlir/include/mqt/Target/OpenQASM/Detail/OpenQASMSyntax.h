@@ -148,6 +148,7 @@ struct BitReference {
   SMLoc location;
   StringRef identifier;
   std::optional<SyntaxExpressionId> index = std::nullopt;
+  std::vector<SyntaxExpressionId> additionalIndices;
 };
 
 /// @ingroup ParseVocabulary
@@ -176,6 +177,7 @@ struct SyntaxExpression {
   std::optional<uint64_t> hardwareQubit;
   std::optional<SyntaxExpressionId> lhs;
   std::optional<SyntaxExpressionId> rhs;
+  std::vector<SyntaxExpressionId> additionalIndices;
 };
 
 struct SyntaxGateCall {
@@ -200,12 +202,17 @@ struct SyntaxAssignment {
   SyntaxExpressionId value = 0;
 };
 
+struct SyntaxArrayInitializer {
+  SMLoc location;
+  std::variant<SyntaxExpressionId, std::vector<SyntaxArrayInitializer>> value;
+};
+
 struct SyntaxArrayDeclaration {
   ScalarKind kind = ScalarKind::Int;
   StringRef identifier;
   std::optional<SyntaxExpressionId> elementWidth;
-  SyntaxExpressionId length = 0;
-  std::optional<std::vector<SyntaxExpressionId>> initializer;
+  std::vector<SyntaxExpressionId> dimensions;
+  std::optional<SyntaxArrayInitializer> initializer;
 };
 
 struct SyntaxQubitDeclaration {

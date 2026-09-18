@@ -56,6 +56,11 @@ TEST(OpenQASMFrontendTest, AcceptsClassicalArrays) {
            "array[int, 1] a; for int i in [0:1] { a[0] = 1; } "
            "int result = a[0];",
            "array[int, 2,] a = {1, 2,}; int result = a[0];",
+           "array[uint[8], 2, 3] a = {{0, 1, 2}, {3, 4, 5}}; "
+           "uint i = 1; a[i, -1] += 1; uint result = a[-1, 2];",
+           "array[int, 2, 3] a; a[1, 2] = 4; int result = a[-1, -1];",
+           "array[int, 1, 1, 1, 1, 1, 1, 1,] a = {{{{{{{7,},},},},},},}; "
+           "int result = a[0, 0, 0, 0, 0, 0, -1,];",
        }) {
     SCOPED_TRACE(source);
     auto analyzed = openqasm::frontend::analyzeOpenQASM(
@@ -133,7 +138,31 @@ TEST(OpenQASMFrontendTest, RejectsInvalidClassicalArrays) {
               "cannot capture",
           },
           {"array[int, 1] a; array[int, 1] a;", "already declared"},
-          {"array[int, 2, 2] a;", "multidimensional"},
+          {"array[int, 2, 0] a;", "greater than zero"},
+          {"array[int, 2, -1] a;", "greater than zero"},
+          {"array[int, 100000, 100000] a;", "element count exceeds"},
+          {"array[int, 1, 1, 1, 1, 1, 1, 1, 1] a;", "at most 7"},
+          {"array[int, 2, 2] a = {{1, 2}, {3}};", "initializer length"},
+          {"array[int, 2, 2] a = {1, 2};", "initializer length"},
+          {"array[int, 2] a = {{1}, {2}};", "scalar element"},
+          {"array[int, 1] a = {{{{{{{{1}}}}}}}};", "nesting exceeds"},
+          {"array[int, 2, 2] a; a[0] = 1;", "one index per dimension"},
+          {"array[int, 2] a; a[0, 0] = 1;", "one index per dimension"},
+          {"array[int, 2, 2] a; a[0, 2] = 1;", "out of bounds"},
+          {"array[int, 2, 2] a; a[-3, 0] = 1;", "out of bounds"},
+          {"array[int, 2, 2] a; a[0, 0.5] = 1;", "integer expression"},
+          {
+              "array[int, 2, 2] a; a[0, 1] = 1; int b = a[1, 0];",
+              "uninitialized",
+          },
+          {
+              "array[int, 1, 2] a; a[0, 0] = 1; int i = 0; int b = a[0, i];",
+              "uninitialized",
+          },
+          {"array[int, 2, 2] a; a[0, 0, 0, 0, 0, 0, 0, 0] = 1;", "at most 7"},
+          {"bit[2] c = 0; c[0, 1] = true;", "only arrays"},
+          {"bit[2] c = 0; bool b = c[0, 1];", "only arrays"},
+          {"bit[2] c = 0; if (c[0, 1]) {}", "only arrays"},
           {"array[bit, 1] a;", "unsupported array element type"},
       });
   for (const auto& [source, diagnostic] : cases) {

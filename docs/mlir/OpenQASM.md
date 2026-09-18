@@ -61,7 +61,7 @@ QCO, and `jeff` dialects, so each output checkpoint names its dialect.
 | Expressions                | Scalar arithmetic, comparisons, Boolean expressions, and the supported math functions are type checked before translation. Initialized bit registers support `~`, `&`, `\|`, `^`, `<<`, `>>`, `popcount`, `rotl`, and `rotr`.                                    |
 | Structured control         | `if`, `switch`, supported range-based `for`, and `while`. `break` exits the innermost enclosing loop; `continue` advances to its next iteration. Both may appear inside conditional and switch bodies.                                                           |
 | Dynamic indexing           | Classical bit and array indices can be dynamic and receive runtime bounds checks. A nonconstant qubit index must be a proven affine expression as described below.                                                                                               |
-| Classical arrays           | Global, fixed-size, one-dimensional arrays of `bool`, `int`, `uint`, `float`, and `angle`, as described below.                                                                                                                                                   |
+| Classical arrays           | Global, fixed-size arrays of `bool`, `int`, `uint`, `float`, and `angle` with up to seven dimensions, as described below.                                                                                                                                        |
 | Unsupported language areas | Subroutines, `extern`, calibration and timing constructs, and input declarations are diagnosed.                                                                                                                                                                  |
 
 Sized `uint[N](bits)` and `int[N](bits)` casts accept an initialized `bit[N]`
@@ -122,18 +122,21 @@ of compile-time entries as described below.
 ### Classical arrays
 
 OpenQASM 3 declarations such as `array[int[8], 3] values = {1, 2, 3};` allocate
-mutable, one-dimensional storage. Arrays must be global; their length must be a
-positive compile-time integer. Each array and the combined number of array and
-register elements are limited to 100,000. Integer element widths range from 1
-through 64; `float` and `float[64]` use double precision. Initializer lists must
-match the declared length. Without an initializer, elements are undefined.
+mutable storage. Arrays must be global and can have up to seven dimensions; each
+dimension must be a positive compile-time integer. Each array and the combined
+number of array and register elements are limited to 100,000. Integer element
+widths range from 1 through 64; `float` and `float[64]` use double precision.
+Nested initializer lists must match every declared dimension. For example,
+`array[int, 2, 3] a = {{1, 2, 3}, {4, 5, 6}};` creates two rows of three
+elements. Without an initializer, elements are undefined.
 
 Element reads, assignments, and compound assignments accept constant or runtime
-integer indices. Negative indices count from the end (`values[-1]` is the last
-element). Constant out-of-range indices are diagnosed; dynamic accesses emit
-runtime bounds checks. A static read requires that element to be initialized. A
-dynamic read requires every element to be initialized; writing a dynamic index
-does not establish definite initialization.
+integer indices, with one comma-separated index per dimension (`a[1, 2]`).
+Negative indices count from the end of each dimension (`a[-1, -1]` is the last
+element of the last row). Constant out-of-range indices are diagnosed; dynamic
+accesses check each dimension at runtime. A static read requires that element to
+be initialized. A dynamic read requires every element to be initialized; writing
+a dynamic index does not establish definite initialization.
 
 Angle arrays use the same widths and compile-time quantization as scalar angle
 declarations. Initializers and assigned values must be compile-time float or
@@ -153,8 +156,8 @@ for int i in [0:2] {
 
 Arrays lower to typed MLIR `memref` storage and work through QC/QCO and Adaptive
 QIR conversion. They are internal storage, not implicit outputs; assign selected
-elements to scalar or bit outputs when needed. Multidimensional arrays, array
-slices, whole-array copies, array outputs, runtime angle conversion, and jeff or
+elements to scalar or bit outputs when needed. Subarray access, array slices,
+whole-array copies, array outputs, runtime angle conversion, and jeff or
 OpenQASM export of array storage are not yet supported. Gate definitions cannot
 capture mutable arrays; pass selected entries as gate parameters instead.
 
