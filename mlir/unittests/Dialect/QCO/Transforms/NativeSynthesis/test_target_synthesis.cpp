@@ -11,6 +11,7 @@
 #include "mqt/Compiler/Target.h"
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
@@ -318,6 +319,71 @@ TEST_F(TargetSynthesisTest, TargetPassesRequireTypedEnvironment) {
                              "mqt.target_env"),
             std::string::npos)
       << diagnostics;
+}
+
+TEST_F(TargetSynthesisTest, FixedPulseSynthesisPreservesFullUnitary) {
+  const auto target = valid(Target::create(
+      2, Connectivity::allToAll(),
+      NativeOperations::fromOperations({
+          valid(OperationCapability::create("rx", 1, 1, {}, std::nullopt,
+                                            std::nullopt,
+                                            {std::numbers::pi / 2.})),
+          valid(OperationCapability::create("rz", 1, 1)),
+          valid(OperationCapability::create("cz", 2, 0)),
+          valid(OperationCapability::create("gphase", 0, 1)),
+      })));
+  for (double theta : {0., 0.37, std::numbers::pi / 2., std::numbers::pi}) {
+    SCOPED_TRACE(theta);
+    const auto circuit = [&](QCOProgramBuilder& builder) {
+      auto q0 = builder.u(theta, 0.42, -0.31, builder.staticQubit(0));
+      auto q1 = builder.rx(-0.73, builder.staticQubit(1));
+      auto [control, targetQubit] = builder.cx(q0, q1);
+      builder.sink(control);
+      builder.sink(builder.ry(theta, targetQubit));
+      return builder.intConstant(0);
+    };
+    auto expected = build(circuit);
+    auto actual = build(circuit);
+    ASSERT_TRUE(mlir::succeeded(runTargetPass(
+        *actual, target, mlir::qco::createTargetNativeSynthesis())));
+    ASSERT_TRUE(mlir::succeeded(
+        runPass(*actual, mlir::qco::createVerifyTargetConformance())));
+    EXPECT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*actual)));
+    expectEquivalent(expected, actual);
+    actual->walk([&](mlir::qco::RXOp rotation) {
+      EXPECT_EQ(mlir::mqt::valueToDouble(rotation.getTheta()),
+                std::numbers::pi / 2.);
+    });
+  }
+}
+
+TEST_F(TargetSynthesisTest, FixedParametersRejectNonNativeValues) {
+  const auto target = valid(Target::create(
+      1, Connectivity::allToAll(),
+      NativeOperations::fromOperations({
+          valid(OperationCapability::create("rz", 1, 1, {}, std::nullopt,
+                                            std::nullopt, {0.25})),
+      })));
+  for (double angle : {0.25, 0.5}) {
+    auto program = build([&](QCOProgramBuilder& builder) {
+      auto qubit = builder.rz(angle, builder.staticQubit(0));
+      builder.sink(qubit);
+      return builder.intConstant(0);
+    });
+    if (angle == 0.25) {
+      EXPECT_TRUE(mlir::succeeded(runTargetPass(
+          *program, target, mlir::qco::createVerifyTargetConformance())));
+    } else {
+      EXPECT_FALSE(
+          expectTargetFailure(*program, target,
+                              mlir::qco::createVerifyTargetConformance())
+              .empty());
+      EXPECT_NE(expectTargetFailure(*program, target,
+                                    mlir::qco::createTargetNativeSynthesis())
+                    .find("no usable synthesis basis"),
+                std::string::npos);
+    }
+  }
 }
 
 TEST_F(TargetSynthesisTest, TwoQubitGateFusionRequiresStrictImprovement) {

@@ -202,7 +202,7 @@ compiler target
 operation capability
   **Preferred term:** operation capability. **Accepted aliases:** none. A
   compiler target's description of a supported operation, including its name,
-  arity, parameters, placements, and optional calibration data. Represented by
+  arity, parameter count and optional fixed values, placements, and optional calibration data. Represented by
   `CompilerTarget::OperationCapability` in C++ and
   `CompilerTarget.OperationCapability` in Python. An MLIR operation is an IR
   instance, not this capability description.

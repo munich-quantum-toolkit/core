@@ -739,7 +739,8 @@ static Value emitRuntimeEulerAngles(RewriterBase& rewriter, Location loc,
 
   const bool usesZYZAngles = basis == decomposition::SingleQubitBasis::ZYZ ||
                              basis == decomposition::SingleQubitBasis::ZXZ ||
-                             basis == decomposition::SingleQubitBasis::ZSXX;
+                             basis == decomposition::SingleQubitBasis::ZSXX ||
+                             basis == decomposition::SingleQubitBasis::ZRX90;
   if (usesZYZAngles && isConstantAngle(theta)) {
     qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit,
                                        sumAngles(phi, lambda));
@@ -775,6 +776,24 @@ static Value emitRuntimeEulerAngles(RewriterBase& rewriter, Location loc,
     qubit = UOp::create(rewriter, loc, qubit, theta.v, phi.v, lambda.v)
                 .getQubitOut();
     break;
+  case decomposition::SingleQubitBasis::ZRX90: {
+    const auto halfPi =
+        Val<Value>::constant(rewriter, loc, std::numbers::pi / 2.);
+    if (isConstantAngle(theta, std::numbers::pi / 2.)) {
+      qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit, lambda - halfPi);
+      qubit = RXOp::create(rewriter, loc, qubit, halfPi.v).getQubitOut();
+      qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit, phi + halfPi);
+    } else {
+      qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit, lambda);
+      qubit = RXOp::create(rewriter, loc, qubit, halfPi.v).getQubitOut();
+      qubit =
+          emitRotationIfNeeded<RZOp>(rewriter, loc, qubit, theta + consts.pi);
+      qubit = RXOp::create(rewriter, loc, qubit, halfPi.v).getQubitOut();
+      qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit, phi + consts.pi);
+      phase = phase + consts.pi;
+    }
+    break;
+  }
   case decomposition::SingleQubitBasis::ZSXX:
     if (isConstantAngle(theta, std::numbers::pi / 2.0)) {
       const auto halfPi =
@@ -997,6 +1016,7 @@ struct MergeSingleQubitRotationGatesPattern final
     case decomposition::SingleQubitBasis::U:
       return 1;
     case decomposition::SingleQubitBasis::ZSXX:
+    case decomposition::SingleQubitBasis::ZRX90:
       return 5;
     case decomposition::SingleQubitBasis::ZYZ:
     case decomposition::SingleQubitBasis::ZXZ:
@@ -1206,9 +1226,9 @@ void decomposition::synthesizeParameterizedUnitary1Q(RewriterBase& rewriter,
                                      unitary.getParameter(0), axis);
     return;
   }
-  const bool usesDirectZYZAngles = basis == SingleQubitBasis::ZYZ ||
-                                   basis == SingleQubitBasis::ZXZ ||
-                                   basis == SingleQubitBasis::ZSXX;
+  const bool usesDirectZYZAngles =
+      basis == SingleQubitBasis::ZYZ || basis == SingleQubitBasis::ZXZ ||
+      basis == SingleQubitBasis::ZSXX || basis == SingleQubitBasis::ZRX90;
   if (basis == SingleQubitBasis::U || usesDirectZYZAngles) {
     const auto consts = makeConsts<Value>(rewriter, op->getLoc());
     Value qubit;

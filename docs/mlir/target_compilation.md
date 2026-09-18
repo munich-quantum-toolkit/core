@@ -166,6 +166,16 @@ placements without calibration in this list, and omit operations that are not
 available anywhere. Structural and program-format constructs are not
 compiler-target operations.
 
+Restrict individual gate parameters with `fixed_parameters`. For example,
+`CompilerTarget.OperationCapability("rx", 1, 1, fixed_parameters=[math.pi / 2])`
+accepts only RX(π/2). A nonempty list has one entry per parameter; `None` leaves
+that parameter unrestricted. Multiple capabilities can describe different fixed
+values or placements. Constants match with absolute tolerance `1e-15`, without
+angle wrapping; symbolic values do not match fixed values. Omit the list for
+unrestricted parameters. The compiler can synthesize arbitrary one-qubit gates
+with RZ and fixed RX(π/2) on every site. Other fixed-angle sets are accepted for
+matching native operations but do not automatically provide a synthesis basis.
+
 Use plain tuples for placements without calibration. Use
 `CompilerTarget.SiteTuple([1, 0], duration=40, fidelity=0.99)` to attach
 calibration to a placement; both forms can appear in the same list.

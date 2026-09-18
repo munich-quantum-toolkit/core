@@ -293,6 +293,8 @@ class CompilerTarget:
             site_tuples: Sequence[CompilerTarget.SiteTuple | Sequence[int]] | None = None,
             duration: int | None = None,
             fidelity: float | None = None,
+            *,
+            fixed_parameters: Sequence[float | None] = (),
         ) -> None: ...
         @property
         def name(self) -> str:
@@ -313,6 +315,10 @@ class CompilerTarget:
         @property
         def site_tuples(self) -> list[CompilerTarget.SiteTuple]:
             """Supported ordered placements with optional calibration; empty means general applicability."""
+
+        @property
+        def fixed_parameters(self) -> list[float | None]:
+            """Fixed values or None per parameter; empty means unrestricted. Constants use absolute tolerance 1e-15 without angle wrapping."""
 
         @property
         def duration(self) -> int | None:
@@ -373,6 +379,8 @@ class CompilerTarget:
         ZYZ = 5
 
         ZXZ = 6
+
+        ZRX90 = 7
 
     class SynthesisBasis:
         """One synthesis basis usable across the complete target."""
@@ -484,9 +492,15 @@ class CompilerTarget:
         """A target-wide single-qubit basis with an optional entangler, or None when no single-qubit basis is usable."""
 
     def supports_operation(
-        self, name: str, arity: int, num_parameters: int | None = None, sites: Sequence[int] | None = None
+        self,
+        name: str,
+        arity: int,
+        num_parameters: int | None = None,
+        sites: Sequence[int] | None = None,
+        *,
+        parameters: Sequence[float | None] = [],
     ) -> bool:
-        """Whether the target supports an operation."""
+        """Whether the target supports an operation. Omitted or None parameter values require unrestricted support."""
 
 class TargetEnvironment:
     """A compiler target and its selected payload specification."""
