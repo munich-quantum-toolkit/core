@@ -111,3 +111,79 @@ TEST(CompilerCLI, SeedOverridesCustomPassWithoutDevice) {
     }
   }
 }
+
+TEST(CompilerCLI, LayoutExportRequiresExplicitDiscard) {
+  llvm::SmallString<128> outputPath;
+  ASSERT_FALSE(
+      llvm::sys::fs::createTemporaryFile("mqt-cc-layout", "out", outputPath));
+  const llvm::FileRemover cleanupOutput(outputPath);
+  llvm::SmallString<128> stderrPath;
+  ASSERT_FALSE(
+      llvm::sys::fs::createTemporaryFile("mqt-cc-layout", "err", stderrPath));
+  const llvm::FileRemover cleanupStderr(stderrPath);
+
+  for (llvm::StringRef format : {
+           "--emit=openqasm3",
+           "--emit=qir-base",
+           "--emit=qir-adaptive",
+           "--emit=jeff",
+       }) {
+    SCOPED_TRACE(format.str());
+    for (bool discardLayout : {false, true}) {
+      SCOPED_TRACE(discardLayout);
+      llvm::SmallVector<llvm::StringRef> args{
+          MQT_CORE_MQT_CC, MQT_CORE_MQT_CC_LAYOUT_INPUT, format, "-o",
+          outputPath,
+      };
+      if (discardLayout) {
+        args.push_back("--discard-layout");
+      }
+      const auto result = llvm::sys::ExecuteAndWait(
+          MQT_CORE_MQT_CC, args, std::nullopt,
+          {std::nullopt, std::nullopt, stderrPath.str()}, 10);
+      auto diagnostics = llvm::MemoryBuffer::getFile(stderrPath);
+      ASSERT_TRUE(diagnostics);
+      EXPECT_EQ(result, discardLayout ? 0 : 1)
+          << (*diagnostics)->getBuffer().str();
+      if (!discardLayout) {
+        EXPECT_TRUE((*diagnostics)
+                        ->getBuffer()
+                        .contains("cannot preserve qubit layout"));
+      }
+    }
+  }
+}
+
+TEST(CompilerCLI, TracksLayoutAcrossImportAndTransformations) {
+  llvm::SmallString<128> outputPath;
+  ASSERT_FALSE(
+      llvm::sys::fs::createTemporaryFile("mqt-cc-layout", "mlir", outputPath));
+  const llvm::FileRemover cleanup(outputPath);
+
+  for (llvm::StringRef mode : {
+           "--emit=qc-import",
+           "--emit=qco",
+           "--emit=qco-optimized",
+           "--run-pipeline",
+       }) {
+    SCOPED_TRACE(mode.str());
+    llvm::SmallVector<llvm::StringRef> args{
+        MQT_CORE_MQT_CC,
+        MQT_CORE_MQT_CC_LAYOUT_INPUT,
+        mode,
+    };
+    if (mode == "--run-pipeline") {
+      args.push_back("--pass-pipeline=builtin.module(canonicalize)");
+    }
+    ASSERT_EQ(llvm::sys::ExecuteAndWait(
+                  MQT_CORE_MQT_CC, args, std::nullopt,
+                  {std::nullopt, outputPath.str(), std::nullopt}, 10),
+              0);
+    auto output = llvm::MemoryBuffer::getFile(outputPath);
+    ASSERT_TRUE(output);
+    EXPECT_TRUE((*output)->getBuffer().contains(
+        mode == "--emit=qc-import" || mode == "--emit=qco"
+            ? "mqt.layout ="
+            : "mqt.layout_invalidated"));
+  }
+}

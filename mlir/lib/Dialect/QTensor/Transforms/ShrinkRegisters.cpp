@@ -8,11 +8,13 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 #include "mqt/Dialect/QTensor/Transforms/Passes.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Value.h"
@@ -104,6 +106,11 @@ struct ShrinkStaticQTensor final : OpRewritePattern<AllocOp> {
     if (!oldSize || *oldSize <= 0) {
       return failure();
     }
+    auto sourceIndices =
+        allocOp->getAttrOfType<DenseI64ArrayAttr>(mqt::kSourceQubitIndicesAttr);
+    if (sourceIndices && std::cmp_not_equal(sourceIndices.size(), *oldSize)) {
+      return failure();
+    }
 
     llvm::SmallDenseSet<int64_t> live;
     SmallVector<TensorAccess> accesses;
@@ -129,6 +136,15 @@ struct ShrinkStaticQTensor final : OpRewritePattern<AllocOp> {
         AllocOp::create(rewriter, allocOp.getLoc(), size.getResult());
     rewriter.modifyOpInPlace(newAlloc, [&] {
       newAlloc->setDiscardableAttrs(allocOp->getDiscardableAttrDictionary());
+      if (sourceIndices) {
+        SmallVector<int64_t> retained;
+        retained.reserve(liveIndices.size());
+        for (auto index : liveIndices) {
+          retained.push_back(sourceIndices[index]);
+        }
+        newAlloc->setAttr(mqt::kSourceQubitIndicesAttr,
+                          rewriter.getDenseI64ArrayAttr(retained));
+      }
     });
 
     auto currentTensor = newAlloc.getResult();

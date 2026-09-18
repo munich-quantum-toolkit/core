@@ -12,6 +12,7 @@
 
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCInterfaces.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
@@ -760,6 +761,49 @@ MQTDialect::verifyOperationAttribute(Operation* operation,
           "mqt.compilation_seed requires a signless i64 on a module");
     }
     return success();
+  }
+  if (attribute.getName() == kSourceQubitIndicesAttr) {
+    int64_t width = 0;
+    if (isa<qco::AllocOp>(operation)) {
+      width = 1;
+    } else if (auto tensor = dyn_cast<qtensor::AllocOp>(operation);
+               tensor && tensor.getResult().getType().hasStaticShape()) {
+      width = tensor.getResult().getType().getNumElements();
+    }
+    auto indices = dyn_cast<DenseI64ArrayAttr>(attribute.getValue());
+    if (width == 0 || !indices || indices.size() != width) {
+      return operation->emitError("source qubit indices require one i64 entry "
+                                  "per fixed allocation slot");
+    }
+    llvm::SmallDenseSet<int64_t> seen;
+    for (auto index : indices.asArrayRef()) {
+      if (index < 0 || !seen.insert(index).second) {
+        return operation->emitError(
+            "source qubit indices must be distinct and nonnegative");
+      }
+    }
+    return success();
+  }
+  if (attribute.getName() == "mqt.layout" ||
+      attribute.getName() == "mqt.layout_invalidated") {
+    if (!isa<ModuleOp>(operation)) {
+      return operation->emitError(
+          "qubit layout metadata is only valid on a module");
+    }
+    if (operation->hasAttr("mqt.layout") &&
+        operation->hasAttr("mqt.layout_invalidated")) {
+      return operation->emitError(
+          "retained and invalidated qubit layouts are mutually exclusive");
+    }
+    if (attribute.getName() == "mqt.layout_invalidated") {
+      if (!isa<UnitAttr>(attribute.getValue())) {
+        return operation->emitError(
+            "invalidated qubit layout must be a unit attribute");
+      }
+      return success();
+    }
+    return success(succeeded(QubitLayout::fromAttr(
+        attribute.getValue(), [&] { return operation->emitError(); })));
   }
   if (attribute.getName() == TargetEnvAttr::name) {
     if (!isa<ModuleOp>(operation)) {

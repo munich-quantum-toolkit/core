@@ -22,6 +22,7 @@
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/Translation/TranslateOpenQASMToQC.h"
@@ -110,6 +111,11 @@ static llvm::cl::opt<std::string>
                                 "qco, qco-optimized, qir-base, "
                                 "qir-adaptive, openqasm3, or jeff"),
                  llvm::cl::value_desc("format"), llvm::cl::init("qc"));
+
+static llvm::cl::opt<bool> discardLayout(
+    "discard-layout",
+    llvm::cl::desc(
+        "Explicitly discard retained or invalidated qubit layout metadata"));
 
 static llvm::cl::opt<std::string> passPipeline(
     "pass-pipeline",
@@ -629,6 +635,17 @@ static int runCompiler(int argc, char** argv) {
   if (!program.mod) {
     return 1;
   }
+  if (discardLayout) {
+    mqt::discardQubitLayout(*program.mod);
+  }
+  if (!isolated &&
+      (*parsedOutputFormat == OutputFormat::Jeff ||
+       *parsedOutputFormat == OutputFormat::OpenQASM3 ||
+       *parsedOutputFormat == OutputFormat::QIRBase ||
+       *parsedOutputFormat == OutputFormat::QIRAdaptive) &&
+      failed(mqt::requireNoQubitLayout(*program.mod))) {
+    return 1;
+  }
 
   const auto parseCustomPipeline = [&](OpPassManager& pm) {
     auto [anchor, pipeline] = StringRef(passPipeline).trim().split('(');
@@ -642,7 +659,8 @@ static int runCompiler(int argc, char** argv) {
   };
 
   const auto runPasses =
-      [&](const function_ref<LogicalResult(OpPassManager&)> populate) {
+      [&](const function_ref<LogicalResult(OpPassManager&)> populate,
+          bool preservesLayout = false) {
         PassManager pm(&context);
         if (failed(applyPassManagerCLOptions(pm))) {
           return failure();
@@ -650,7 +668,8 @@ static int runCompiler(int argc, char** argv) {
         if (failed(populate(pm))) {
           return failure();
         }
-        return runWithCompilationOptions(pm, *program.mod, options);
+        return runWithCompilationOptions(pm, *program.mod, options,
+                                         preservesLayout);
       };
 
   if (isolated) {
@@ -701,10 +720,12 @@ static int runCompiler(int argc, char** argv) {
 
   if (*parsedOutputFormat != OutputFormat::QCImport &&
       program.dialect == InputDialect::QC &&
-      failed(runPasses([](OpPassManager& pm) {
-        pm.addPass(createQCToQCO());
-        return success();
-      }))) {
+      failed(runPasses(
+          [](OpPassManager& pm) {
+            pm.addPass(createQCToQCO());
+            return success();
+          },
+          true))) {
     return 1;
   }
   if (*parsedOutputFormat != OutputFormat::QCImport &&

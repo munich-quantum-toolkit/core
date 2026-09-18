@@ -24,6 +24,9 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
 
+#include "llvm/ADT/ArrayRef.h"
+
+#include <cstdint>
 #include <memory>
 #include <utility>
 
@@ -36,11 +39,12 @@ class PrepareTargetCompilationPass
 public:
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(PrepareTargetCompilationPass)
 
-  explicit PrepareTargetCompilationPass(TargetEnvironment environment,
-                                        bool allToAllOnly = false,
-                                        MappingOptions mapping = {})
+  explicit PrepareTargetCompilationPass(
+      TargetEnvironment environment, bool allToAllOnly = false,
+      MappingOptions mapping = {},
+      std::shared_ptr<qco::LayoutTracking> tracking = {})
       : environment_(std::move(environment)), allToAllOnly_(allToAllOnly),
-        mapping_(mapping) {}
+        mapping_(mapping), tracking_(std::move(tracking)) {}
 
 protected:
   void runOnOperation() override {
@@ -76,6 +80,11 @@ protected:
       signalPassFailure();
       return;
     }
+    if (tracking_ && failed(qco::prepareLayout(
+                         getOperation(), environment_.target(), *tracking_))) {
+      signalPassFailure();
+      return;
+    }
     markAnalysesPreserved<TargetEnvironmentAnalysis>();
   }
 
@@ -83,6 +92,7 @@ private:
   TargetEnvironment environment_;
   bool allToAllOnly_;
   MappingOptions mapping_;
+  std::shared_ptr<qco::LayoutTracking> tracking_;
 };
 
 } /* namespace */
@@ -99,11 +109,12 @@ static void populatePostPlacementPipeline(OpPassManager& pm) {
   pm.addPass(qco::createVerifyTargetConformance());
 }
 
-void populateTargetCompilationPipeline(OpPassManager& pm,
-                                       const TargetEnvironment& environment,
-                                       const MappingOptions& mapping) {
+static void
+populateTargetPipeline(OpPassManager& pm, const TargetEnvironment& environment,
+                       const MappingOptions& mapping,
+                       const std::shared_ptr<qco::LayoutTracking>& tracking) {
   pm.addPass(std::make_unique<PrepareTargetCompilationPass>(environment, false,
-                                                            mapping));
+                                                            mapping, tracking));
   const auto& target = environment.target();
   pm.addPass(createInlinerPass());
   pm.addPass(createSymbolDCEPass());
@@ -130,14 +141,32 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
     mappingOptions.niterations = mapping.iterations;
     mappingOptions.nlookahead = mapping.lookahead;
     mappingOptions.searchMemoryLimit = mapping.searchMemoryLimit;
-    pm.addPass(qco::createMappingPass(mappingOptions));
+    pm.addPass(tracking ? qco::createMappingPass(mappingOptions, tracking)
+                        : qco::createMappingPass(mappingOptions));
     break;
   }
   case CompilerTarget::Connectivity::Kind::AllToAll:
-    pm.addPass(qco::createPlacementPass(target));
+    pm.addPass(qco::createPlacementPass(target, tracking));
     break;
   }
   populatePostPlacementPipeline(pm);
+  if (tracking) {
+    pm.addPass(qco::createLayoutResultPass(tracking));
+  }
+}
+
+void populateTargetCompilationPipeline(OpPassManager& pm,
+                                       const TargetEnvironment& environment,
+                                       const MappingOptions& mapping) {
+  populateTargetPipeline(pm, environment, mapping, {});
+}
+
+void populateTargetCompilationWithLayoutPipeline(
+    OpPassManager& pm, const TargetEnvironment& environment,
+    MappingResult& result, llvm::ArrayRef<int64_t> initialLayout,
+    const MappingOptions& mapping) {
+  populateTargetPipeline(pm, environment, mapping,
+                         qco::createLayoutTracking(result, initialLayout));
 }
 
 void populateTargetSynthesisPipeline(OpPassManager& pm,

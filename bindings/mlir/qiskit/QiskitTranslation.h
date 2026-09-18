@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/QC/Translation/StandardGate.h"
 
 #include "nanobind/nanobind.h"
@@ -349,6 +350,8 @@ public:
   /// Return the circuit's free scalar parameters in a stable order.
   [[nodiscard]] virtual std::vector<Parameter> parameters() const = 0;
   [[nodiscard]] virtual Parameter globalPhase() const = 0;
+  [[nodiscard]] virtual std::optional<mlir::mqt::QubitLayout>
+  layout() const = 0;
   [[nodiscard]] virtual Instruction instruction(size_t index) const = 0;
   [[nodiscard]] virtual ClassicalAssignment store(size_t index) const = 0;
   [[nodiscard]] virtual std::vector<std::complex<double>>
@@ -394,6 +397,7 @@ public:
   virtual void addClassicalRegister(std::string_view name, uint32_t size) = 0;
   virtual void declareVariable(ClassicalVariable variable) = 0;
   virtual void setGlobalPhase(const Parameter& phase) = 0;
+  virtual void setLayout(const mlir::mqt::QubitLayout& layout) = 0;
   virtual void addGate(StandardGateMapping gate,
                        const std::vector<uint32_t>& qubits,
                        const std::vector<Parameter>& parameters) = 0;

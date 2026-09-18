@@ -445,3 +445,54 @@ and creates a canonical physical Qiskit circuit. The circuit has one register
 named {code}`q` with {py:attr}`~mqt.core.mlir.CompilerTarget.num_sites` qubits.
 This option does not run target compilation or emit Qiskit layout metadata.
 Target-aware export requires static qubits whose site IDs belong to that target.
+
+## Initial and final qubit layouts
+
+Use `QCOProgram.compile_for_target_with_layout` to choose placement or recover
+logical output positions after routing:
+
+```python
+from mqt.core.mlir import CompilationOptions, MappingOptions, QCProgram
+
+program = QCProgram.from_openqasm_str(bell_qasm).to_qco()
+layout = program.compile_for_target_with_layout(
+    environment,
+    initial_layout=[0, 2],
+    options=CompilationOptions(seed=42, mapping=MappingOptions(trials=4, iterations=2, lookahead=10)),
+)
+print(layout.initial_layout)
+print(layout.final_layout)
+```
+
+The `TargetEnvironment` must contain sites `0` and `2` and support the circuit.
+`initial_layout` supplies one distinct **target site ID** per input qubit, not
+an index into `target.sites`. Omit it or pass `[]` for automatic placement.
+Explicit placement skips trials and refinement; lookahead still controls
+routing.
+
+Both result lists follow entry-block allocation order and ascending tensor
+slots. For tensors of sizes two and one, the order is
+`[first[0], first[1], second[0]]`, regardless of first use. `allocation_sizes`
+records those boundaries. Classical measurement destinations are unchanged.
+
+Idle input slots count against target capacity and remain in the result without
+adding circuit operations. Automatic tracking preserves ordinary compilation's
+placement and routing. Inputs must be fixed-size local entry-block allocations;
+dynamic, nested, and physical allocations are rejected. Qubits removed before
+this call cannot be recovered. Invalid inputs raise an error; do not rely on
+program contents after failure.
+
+`MappingResult` is a snapshot of this call: later edits do not update it, and
+serialization does not include it. Partial placement constraints are
+unsupported.
+
+Target compilation invalidates imported layout provenance without composing it
+with `MappingResult`. Call `discard_layout()` before subsequent export; see
+[transpiler layouts](qiskit.md#transpiler-layouts) for preservation and export
+rules.
+
+C++ callers use `QCOProgram::compileForTargetWithLayout` or
+`populateTargetCompilationWithLayoutPipeline`. The pipeline writes its result
+only on success; the result must outlive the pass manager. Run native pipelines
+with `runWithCompilationOptions` to manage imported layout provenance; calling
+`PassManager::run` directly bypasses that policy.

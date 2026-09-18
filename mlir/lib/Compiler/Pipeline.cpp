@@ -16,6 +16,7 @@
 #include "mqt/Conversion/QCOToQC/QCOToQC.h"
 #include "mqt/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
 #include "mqt/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
@@ -37,6 +38,7 @@
 #include "mlir/Target/LLVMIR/ModuleTranslation.h"
 #include "mlir/Transforms/Passes.h"
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -67,12 +69,13 @@ namespace mlir {
 
 [[nodiscard]] static LogicalResult runQCOTransformPasses(
     ModuleOp mod, llvm::function_ref<void(OpPassManager&)> populatePasses,
-    StringRef failureMessage, const CompilationOptions& options = {}) {
+    StringRef failureMessage, const CompilationOptions& options = {},
+    bool preservesLayout = false) {
   if (failed(qco::verifyLinearity(mod))) {
     return failure();
   }
-  if (failed(
-          runWithPassManager(mod, populatePasses, failureMessage, options))) {
+  if (failed(runWithPassManager(mod, populatePasses, failureMessage, options,
+                                preservesLayout))) {
     return failure();
   }
   return qco::verifyLinearity(mod);
@@ -220,6 +223,23 @@ bool QCOProgram::compileForTarget(const TargetEnvironment& environment,
       "failed to compile the QCO program for the target", options));
 }
 
+std::optional<MappingResult>
+QCOProgram::compileForTargetWithLayout(const TargetEnvironment& environment,
+                                       llvm::ArrayRef<int64_t> initialLayout,
+                                       const CompilationOptions& options) {
+  MappingResult result;
+  if (failed(runQCOTransformPasses(
+          mod(),
+          [&](OpPassManager& pm) {
+            populateTargetCompilationWithLayoutPipeline(
+                pm, environment, result, initialLayout, options.mapping);
+          },
+          "failed to compile the QCO program with layout tracking", options))) {
+    return std::nullopt;
+  }
+  return result;
+}
+
 bool QCOProgram::synthesizeForTarget(const TargetEnvironment& environment,
                                      const CompilationOptions& options) {
   return succeeded(runQCOTransformPasses(
@@ -233,7 +253,7 @@ bool QCOProgram::synthesizeForTarget(const TargetEnvironment& environment,
 std::optional<QCProgram> QCOProgram::intoQC() && {
   if (failed(runQCOTransformPasses(
           mod(), [](OpPassManager& pm) { pm.addPass(createQCOToQC()); },
-          "failed to convert QCO to QC"))) {
+          "failed to convert QCO to QC", {}, true))) {
     return std::nullopt;
   }
   return QCProgram(std::move(*this).releaseStorage());
@@ -299,6 +319,9 @@ bool JeffProgram::cleanup() {
 }
 
 std::vector<std::byte> JeffProgram::toBytes() const {
+  if (failed(mqt::requireNoQubitLayout(mod()))) {
+    return {};
+  }
   const auto serialized = serialize(mod());
   const auto bytes = serialized.asBytes();
   std::vector<std::byte> result(bytes.size());
@@ -307,6 +330,9 @@ std::vector<std::byte> JeffProgram::toBytes() const {
 }
 
 bool JeffProgram::write(const std::filesystem::path& path) const {
+  if (failed(mqt::requireNoQubitLayout(mod()))) {
+    return false;
+  }
   if (failed(serializeToFile(mod(), path.string()))) {
     mod().emitError() << "failed to write jeff file '" << path.string() << "'";
     return false;
@@ -348,6 +374,9 @@ QIRProfile QIRProgram::profile() const noexcept { return profile_; }
 
 [[nodiscard]] static std::unique_ptr<llvm::Module>
 translateToLLVM(ModuleOp mod, llvm::LLVMContext& context) {
+  if (failed(mqt::requireNoQubitLayout(mod))) {
+    return nullptr;
+  }
   auto llvmModule = translateModuleToLLVMIR(mod, context);
   if (!llvmModule) {
     mod.emitError("failed to translate QIR MLIR to LLVM IR");

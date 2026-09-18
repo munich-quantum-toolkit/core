@@ -12,10 +12,26 @@
 
 #include "mqt/Compiler/CompilationOptions.h"
 
+#include "llvm/ADT/ArrayRef.h"
+
+#include <cstddef>
+#include <cstdint>
+#include <vector>
+
 namespace mlir {
 
 class TargetEnvironment;
 class OpPassManager;
+
+/// Initial and final target site IDs, including idle inputs.
+///
+/// Entries follow entry-block allocation order and ascending tensor slots.
+/// Later transformations do not update this snapshot.
+struct MappingResult {
+  std::vector<size_t> allocationSizes;
+  std::vector<int64_t> initialLayout;
+  std::vector<int64_t> finalLayout;
+};
 
 /// Populate the canonical compiler-target pipeline.
 ///
@@ -34,6 +50,19 @@ class OpPassManager;
 void populateTargetCompilationPipeline(OpPassManager& pm,
                                        const TargetEnvironment& environment,
                                        const MappingOptions& mapping = {});
+
+/// Populate target compilation with input layout tracking.
+///
+/// Requires fixed-size local entry-block allocations. An empty initial layout
+/// selects automatic placement; otherwise supply one distinct target site ID
+/// per input. Idle slots count against capacity without adding operations.
+/// The result must outlive the pass manager and is written only on success.
+/// Run with runWithCompilationOptions for seed, instrumentation, and imported
+/// layout invalidation; direct PassManager::run does not manage provenance.
+void populateTargetCompilationWithLayoutPipeline(
+    OpPassManager& pm, const TargetEnvironment& environment,
+    MappingResult& result, llvm::ArrayRef<int64_t> initialLayout = {},
+    const MappingOptions& mapping = {});
 
 /// Populate target-native block synthesis without routing.
 ///
