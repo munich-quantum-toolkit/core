@@ -1,6 +1,6 @@
 # Fixed-parameter compiler targets
 
-Status: implementation and local validation complete.
+Status: generic fixed-pulse synthesis implemented; validation in progress.
 
 ## Goal and scope
 
@@ -9,9 +9,10 @@ values. Unspecified parameters remain unrestricted. Target matching, serialized
 attributes, synthesis-basis selection, and final verification must preserve the
 same restrictions. Symbolic values cannot satisfy a fixed parameter.
 
-Add synthesis using arbitrary RZ and RX(π/2), using existing rotation
-operations. This basis covers fixed X-axis pulses without new vendor gate
-operations. Direct native-gate targets are a separate Core change.
+Derive synthesis from arbitrary RZ and a target-declared fixed X/Y pulse.
+Precompute an effective quarter-turn sequence from its actual angle; use native
+half turns when available. Bound construction to 64 pulses per effective quarter
+turn. Direct native-gate targets are a separate Core change.
 
 ## Decisions
 
@@ -28,7 +29,10 @@ rotation as an arbitrary rotation.
 
 Compiler and native-synthesis unit suites passed, including full-unitary phase
 comparisons, parameter restrictions, invalid attributes, and ordered placements.
-Python binding tests cover fixed and symbolic input gates. Stub generation, repository lint, and full changed-file C++ lint passed.
+Python binding tests cover fixed and symbolic input gates. Earlier validation
+passed for the initial fixed-pulse implementation. The generic construction
+passes full-unitary tests across both axes, signs, fractional and non-Clifford
+angles, and optional half turns. Final Python and lint checks remain.
 
 ## Follow-up
 

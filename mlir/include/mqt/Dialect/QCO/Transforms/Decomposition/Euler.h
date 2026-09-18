@@ -60,8 +60,10 @@ struct SynthesizedUnitary1Q {
 };
 
 /// Returns whether @p op belongs to @p basis.
-[[nodiscard]] bool isSingleQubitBasisGate(Operation* op,
-                                          SingleQubitBasis basis);
+/// Fixed-pulse bases require their target's @p fixedRotation descriptor.
+[[nodiscard]] bool isSingleQubitBasisGate(
+    Operation* op, SingleQubitBasis basis,
+    const CompilerTarget::FixedRotationBasis* fixedRotation = nullptr);
 
 /// Extracts `(theta, phi, lambda, phase)` of @p matrix in @p basis.
 ///
@@ -86,10 +88,10 @@ struct SynthesizedUnitary1Q {
 /// @param basis The single-qubit synthesis basis.
 /// @return The synthesized qubit and correction, or `std::nullopt` if synthesis
 /// is skipped.
-[[nodiscard]] std::optional<SynthesizedUnitary1Q>
-synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
-                         const Matrix2x2& composed, std::size_t runSize,
-                         bool hasNonBasisGate, SingleQubitBasis basis);
+[[nodiscard]] std::optional<SynthesizedUnitary1Q> synthesizeUnitary1QEuler(
+    OpBuilder& builder, Location loc, Value qubit, const Matrix2x2& composed,
+    std::size_t runSize, bool hasNonBasisGate, SingleQubitBasis basis,
+    const CompilerTarget::FixedRotationBasis* fixedRotation = nullptr);
 
 /// Materializes one accumulated phase correction when needed.
 ///
@@ -104,10 +106,12 @@ void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase);
 /// Synthesizes one supported runtime-parameterized operation in @p basis.
 ///
 /// Leaves operations that already belong to @p basis unchanged.
+/// Fixed-pulse bases require their target's @p fixedRotation descriptor.
 ///
 /// @pre `canSynthesizeParameterizedUnitary1Q(op)` is true.
-void synthesizeParameterizedUnitary1Q(RewriterBase& rewriter, Operation* op,
-                                      SingleQubitBasis basis);
+void synthesizeParameterizedUnitary1Q(
+    RewriterBase& rewriter, Operation* op, SingleQubitBasis basis,
+    const CompilerTarget::FixedRotationBasis* fixedRotation = nullptr);
 
 /// Populates @p patterns with the single-qubit run fusion rewrite for
 /// @p basis (the reusable core of `fuse-single-qubit-unitary-runs`).
