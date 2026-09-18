@@ -28,6 +28,7 @@
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/Math/IR/Math.h"
@@ -1494,6 +1495,17 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
       })
       .Case([&](memref::LoadOp load) {
         return applyMemRefLoad(load, *walk.classical);
+      })
+      .Case([&](cf::AssertOp assertion) -> LogicalResult {
+        auto condition =
+            lookupBool(assertion.getArg(), *walk.classical, assertion);
+        if (failed(condition)) {
+          return failure();
+        }
+        if (!*condition) {
+          return assertion.emitError() << assertion.getMsg();
+        }
+        return success();
       })
       .Case([&](cbit::AllocOp alloc) {
         return allocateRegister(alloc, *walk.classical);

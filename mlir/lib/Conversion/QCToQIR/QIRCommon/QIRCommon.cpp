@@ -494,11 +494,9 @@ LogicalResult prepareClassicalResults(Operation* moduleOp,
 
   funcOp.walk([&](memref::AllocOp allocOp) {
     const auto type = allocOp.getType();
-    if (type.getRank() != 1 || !isa<QubitType>(type.getElementType())) {
+    if (isa<QubitType>(type.getElementType()) && type.getRank() != 1) {
       allocOp.emitError(
-          "QIR conversion only supports generic memrefs for "
-          "one-dimensional qc.qubit registers; use CBit for classical "
-          "registers");
+          "QIR conversion only supports one-dimensional qc.qubit registers");
       hasInvalidMemory = true;
     }
   });
@@ -532,6 +530,11 @@ LogicalResult prepareClassicalResults(Operation* moduleOp,
   };
 
   for (auto operand : returnOp.getOperands()) {
+    if (auto memref = dyn_cast<MemRefType>(operand.getType());
+        memref && !isa<QubitType>(memref.getElementType())) {
+      return returnOp.emitError("QIR conversion does not support memref "
+                                "outputs; return scalar values instead");
+    }
     if (auto measureOp = operand.getDefiningOp<MeasureOp>()) {
       state.returnedScalarResults.insert(measureOp.getOperation());
     } else if (auto allocOp = operand.getDefiningOp<cbit::AllocOp>();

@@ -611,7 +611,7 @@ TEST(QCToQIRBaseNativeTest, RejectsNonMeasurementStoreAfterMeasurement) {
   EXPECT_TRUE(sawExpectedDiagnostic);
 }
 
-TEST(QCToQIRBaseNativeTest, RejectsUnsupportedIntegerMemref) {
+TEST(QCToQIRBaseNativeTest, RejectsClassicalMemrefOutput) {
   MLIRContext context;
   context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
                       LLVM::LLVMDialect, memref::MemRefDialect>();
@@ -629,7 +629,7 @@ TEST(QCToQIRBaseNativeTest, RejectsUnsupportedIntegerMemref) {
     llvm::raw_string_ostream stream(message);
     diagnostic.print(stream);
     sawExpectedDiagnostic |=
-        StringRef(message).contains("only supports generic memrefs for");
+        StringRef(message).contains("does not support memref outputs");
     return success();
   });
   EXPECT_TRUE(failed(runQCToQIRBaseConversion(*module)));

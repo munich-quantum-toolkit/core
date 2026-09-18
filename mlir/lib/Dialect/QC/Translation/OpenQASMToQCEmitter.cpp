@@ -121,7 +121,8 @@ public:
         emissionBudget(context, operationLimit), builder(&context),
         qubitValues(program.registers.size()),
         classicalRegisters(program.registers.size()),
-        scalarValues(program.scalars.size()) {
+        scalarValues(program.scalars.size()),
+        arrayValues_(program.arrays.size()) {
     context
         .loadDialect<qc::QCDialect, arith::ArithDialect, cf::ControlFlowDialect,
                      func::FuncDialect, LLVM::LLVMDialect, math::MathDialect,
@@ -187,6 +188,9 @@ public:
       }
       results.push_back(reg);
     }
+    for (auto array : arrayValues_) {
+      memref::DeallocOp::create(builder, array);
+    }
     builder.retype(ValueRange(results).getTypes());
     auto moduleOp = builder.finalize(results);
     if (emissionBudget.isExhausted()) {
@@ -204,6 +208,7 @@ private:
   std::vector<Value> qubitValues;
   std::vector<Value> classicalRegisters;
   std::vector<Value> scalarValues;
+  std::vector<Value> arrayValues_;
   llvm::DenseMap<frontend::ScalarId, Value> provenInductionValues;
   DenseMap<const openqasm::frontend::GateDefinition*, bool>
       structuredGateCapabilities;
@@ -683,6 +688,14 @@ private:
       return gateParameters[expression.parameter];
     case frontend::ExpressionKind::Variable:
       return scalarValues.at(expression.variable);
+    case frontend::ExpressionKind::ArrayLoad: {
+      auto index = emitArrayIndex(opBuilder, expression.array, expression.lhs);
+      if (!index) {
+        return {};
+      }
+      return memref::LoadOp::create(opBuilder, loc,
+                                    arrayValues_.at(expression.array), index);
+    }
     case frontend::ExpressionKind::Cast: {
       auto operand = emitExpression(opBuilder, expression.lhs, gateParameters);
       if (!operand) {
@@ -875,34 +888,55 @@ private:
     llvm_unreachable("unknown scalar expression kind");
   }
 
-  [[nodiscard]] Value emitCheckedIndex(const frontend::ExpressionId expression,
+  [[nodiscard]] Value emitCheckedIndex(OpBuilder& opBuilder,
+                                       const frontend::ExpressionId expression,
                                        const int64_t width,
                                        const llvm::StringRef message) {
-    auto index = emitExpression(builder, expression, {});
+    auto index = emitExpression(opBuilder, expression, {});
     if (!index) {
       return {};
     }
     const auto type = program.expressions.at(expression).type;
-    index = emitScalarCast(builder, builder.getLoc(), index, type, type);
-    auto zero = builder.intConstant(0);
-    auto upper = builder.intConstant(width);
+    auto loc = builder.getLoc();
+    index = emitScalarCast(opBuilder, loc, index, type, type);
+    auto zero = arith::ConstantIntOp::create(opBuilder, loc, 0, 64);
+    auto upper = arith::ConstantIntOp::create(opBuilder, loc, width, 64);
     Value inBounds;
     if (program.expressions.at(expression).type == frontend::ScalarType::Uint) {
-      inBounds = arith::CmpIOp::create(builder, arith::CmpIPredicate::ult,
-                                       index, upper);
+      inBounds = arith::CmpIOp::create(opBuilder, loc,
+                                       arith::CmpIPredicate::ult, index, upper);
     } else {
-      auto negative = arith::CmpIOp::create(builder, arith::CmpIPredicate::slt,
-                                            index, zero);
-      auto wrapped = arith::AddIOp::create(builder, index, upper);
-      index = arith::SelectOp::create(builder, negative, wrapped, index);
+      auto negative = arith::CmpIOp::create(
+          opBuilder, loc, arith::CmpIPredicate::slt, index, zero);
+      auto wrapped = arith::AddIOp::create(opBuilder, loc, index, upper);
+      index = arith::SelectOp::create(opBuilder, loc, negative, wrapped, index);
       auto nonnegative = arith::CmpIOp::create(
-          builder, arith::CmpIPredicate::sge, index, zero);
+          opBuilder, loc, arith::CmpIPredicate::sge, index, zero);
       auto belowWidth = arith::CmpIOp::create(
-          builder, arith::CmpIPredicate::slt, index, upper);
-      inBounds = arith::AndIOp::create(builder, nonnegative, belowWidth);
+          opBuilder, loc, arith::CmpIPredicate::slt, index, upper);
+      inBounds = arith::AndIOp::create(opBuilder, loc, nonnegative, belowWidth);
     }
-    cf::AssertOp::create(builder, inBounds, message);
+    cf::AssertOp::create(opBuilder, loc, inBounds, message);
     return index;
+  }
+
+  [[nodiscard]] Value emitArrayIndex(OpBuilder& opBuilder,
+                                     frontend::ArrayId array,
+                                     frontend::ExpressionId expression) {
+    const auto& index = program.expressions.at(expression);
+    if (index.kind == frontend::ExpressionKind::Constant) {
+      return arith::ConstantIndexOp::create(opBuilder, builder.getLoc(),
+                                            std::get<int64_t>(index.constant));
+    }
+    auto checked =
+        emitCheckedIndex(opBuilder, expression,
+                         static_cast<int64_t>(program.arrays.at(array).length),
+                         "array index is out of bounds");
+    if (!checked) {
+      return {};
+    }
+    return arith::IndexCastOp::create(opBuilder, builder.getLoc(),
+                                      opBuilder.getIndexType(), checked);
   }
 
   Value resolveQubit(const frontend::QubitReference& reference,
@@ -1404,7 +1438,7 @@ private:
 
     const auto width =
         static_cast<int64_t>(program.registers.at(reference.reg).width);
-    auto index = emitCheckedIndex(*reference.dynamicIndex, width,
+    auto index = emitCheckedIndex(builder, *reference.dynamicIndex, width,
                                   "dynamic classical index out of bounds");
     if (!index) {
       return {};
@@ -1688,6 +1722,12 @@ private:
                                    T, frontend::ScalarAssignmentStatement>) {
             emitScalarAssignment(data, gateQubits);
           } else if constexpr (std::is_same_v<
+                                   T, frontend::ArrayDeclarationStatement>) {
+            emitArrayDeclaration(data);
+          } else if constexpr (std::is_same_v<
+                                   T, frontend::ArrayAssignmentStatement>) {
+            emitArrayAssignment(data);
+          } else if constexpr (std::is_same_v<
                                    T, frontend::BitAssignmentStatement>) {
             emitBitAssignment(data, gateQubits);
           } else if constexpr (std::is_same_v<
@@ -1773,6 +1813,37 @@ private:
   }
 
   void
+  emitArrayDeclaration(const frontend::ArrayDeclarationStatement& statement) {
+    const auto& declaration = program.arrays.at(statement.array);
+    auto type =
+        MemRefType::get({static_cast<int64_t>(declaration.length)},
+                        scalarType(declaration.type, declaration.elementWidth));
+    auto storage = memref::AllocOp::create(builder, type);
+    arrayValues_.at(statement.array) = storage;
+    for (const auto [index, expression] :
+         llvm::enumerate(statement.initializer)) {
+      auto value = emitExpression(builder, expression, {});
+      if (!value || emissionBudget.isExhausted()) {
+        return;
+      }
+      Value offset =
+          arith::ConstantIndexOp::create(builder, static_cast<int64_t>(index));
+      memref::StoreOp::create(builder, value, storage, offset);
+    }
+  }
+
+  void
+  emitArrayAssignment(const frontend::ArrayAssignmentStatement& statement) {
+    auto index = emitArrayIndex(builder, statement.array, statement.index);
+    auto value = emitExpression(builder, statement.value, {});
+    if (!index || !value || emissionBudget.isExhausted()) {
+      return;
+    }
+    memref::StoreOp::create(builder, value, arrayValues_.at(statement.array),
+                            index);
+  }
+
+  void
   emitScalarAssignment(const frontend::ScalarAssignmentStatement& statement,
                        ValueRange gateQubits) {
     auto value = statement.value
@@ -1822,7 +1893,7 @@ private:
     }
     const auto width =
         static_cast<int64_t>(program.registers.at(target.reg).width);
-    auto index = emitCheckedIndex(*target.dynamicIndex, width,
+    auto index = emitCheckedIndex(builder, *target.dynamicIndex, width,
                                   "dynamic classical index out of bounds");
     if (!index) {
       return;
