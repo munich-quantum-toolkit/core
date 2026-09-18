@@ -3,6 +3,7 @@ file_format: mystnb
 kernelspec:
   name: python3
 mystnb:
+  execution_in_temp: true
   number_source_lines: true
 ---
 
