@@ -150,7 +150,7 @@ angle expressions, but the element index can be dynamic. Use `float(angles[i])`
 for arithmetic on an entry's value in radians; runtime fixed-width angle
 arithmetic and mixed-type comparisons are diagnosed. For example:
 
-```qasm
+```text
 OPENQASM 3.0;
 include "stdgates.inc";
 array[angle[32], 3] angles = {0.0, pi / 2, pi};
