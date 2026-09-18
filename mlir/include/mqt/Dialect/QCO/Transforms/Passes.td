@@ -45,8 +45,10 @@ def MergeSingleQubitRotationGates
 
     When every angle in the chain is a compile-time constant, the same algorithm
     runs on host scalars and emits constant `U` / `gphase` results directly.
-    Otherwise it emits `arith` / `math` operations that compute the merged
-    parameters at run time.
+    Symbolic RZ-RX-RZ and RZ-RY-RZ chains reuse their Euler angles directly;
+    either outer RZ may be absent. Their angles remain unwrapped, without
+    inverse trigonometry or conditional expressions. Other dynamic chains emit
+    `arith` / `math` operations that compute the merged parameters at run time.
 
     The emitted `UOp` is defined by $U = \exp [i (\phi + \lambda) / 2] R_z (\phi) R_y (\theta) R_z (\lambda)$.
     Normalizing either extracted Z angle into $[-\pi, \pi)$ by $\pm 2\pi$ flips
@@ -56,7 +58,7 @@ def MergeSingleQubitRotationGates
     restores exact matrix equality (including global phase). This applies even
     to chains of purely $\mathrm{SU}(2)$ gates (`rx`, `ry`, `rz`, `r`).
     On the host (static) path, a near-zero correction may be omitted; on the
-    SSA (dynamic) path a `GPhaseOp` is always emitted. After greedy merging,
+    SSA (dynamic) path a `GPhaseOp` carries any remaining correction. After greedy merging,
     the implementation directly invokes the shared global-phase normalization
     utility to combine, normalize, and remove trivial corrections in their
     respective scopes.
@@ -86,6 +88,12 @@ def FuseSingleQubitUnitaryRuns
     The pass also composes supported named gates with dynamic `f64` parameters
     and emits conservative runtime sequences in the requested basis. Dynamic
     `pow` and arbitrary dynamic unitaries remain unchanged.
+
+    Symbolic ZXZ/ZYZ chains reuse their angles directly in the `u`, `zyz`,
+    `zxz`, and `zsxx` bases; XZX/XYX chains do so in `xzx`, `xyx`, and `r`.
+    Either outer rotation may be absent. These conversions need no inverse
+    trigonometry or conditional expressions. Other dynamic chains use runtime
+    Euler-angle extraction.
   }];
   let options = [Option<
       "basis", "basis", "std::string", "\"zyz\"",
