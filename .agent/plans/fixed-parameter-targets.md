@@ -7,7 +7,8 @@ Status: complete.
 Allow operation capabilities to restrict individual parameters to finite fixed
 values. Unspecified parameters remain unrestricted. Target matching, serialized
 attributes, synthesis-basis selection, and final verification must preserve the
-same restrictions. Symbolic values cannot satisfy a fixed parameter.
+same restrictions. Target compatibility also compares these constraints.
+Symbolic values cannot satisfy a fixed parameter.
 
 Derive synthesis from one arbitrary rotation axis and a fixed pulse about a
 different axis. Support all distinct RX/RY/RZ pairs through cyclic coordinates.
@@ -28,7 +29,7 @@ rotation as an arbitrary rotation.
 
 ## Validation
 
-The compiler suite passed 234 tests; native synthesis passed 64 tests, including
+The compiler suite passed 235 tests; native synthesis passed 64 tests, including
 648 full-matrix cases across all six axis pairs, both signs, fractional and
 non-Clifford angles, and optional half turns. Python target tests passed 388
 cases, including numerical and symbolic input gates. Generated stubs, repository
