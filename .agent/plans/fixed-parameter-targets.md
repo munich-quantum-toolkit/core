@@ -1,6 +1,6 @@
 # Fixed-parameter compiler targets
 
-Status: generic fixed-pulse synthesis implemented; validation in progress.
+Status: complete.
 
 ## Goal and scope
 
@@ -28,12 +28,11 @@ rotation as an arbitrary rotation.
 
 ## Validation
 
-Compiler and native-synthesis unit suites passed, including full-unitary phase
-comparisons, parameter restrictions, invalid attributes, and ordered placements.
-Python binding tests cover fixed and symbolic input gates. Earlier validation
-passed for the initial fixed-pulse implementation. The generic construction
-passes full-unitary tests across axes, signs, fractional and non-Clifford
-angles, and optional half turns. Final Python and lint checks remain.
+The compiler suite passed 234 tests; native synthesis passed 64 tests, including
+648 full-matrix cases across all six axis pairs, both signs, fractional and
+non-Clifford angles, and optional half turns. Python target tests passed 388
+cases, including numerical and symbolic input gates. Generated stubs, repository
+lint, and full changed-file C++ lint passed.
 
 ## Follow-up
 
