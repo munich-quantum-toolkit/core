@@ -18,6 +18,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -303,23 +304,29 @@ public:
 
   /// Recognized globally usable single-qubit synthesis basis.
   enum class SingleQubitBasis : uint8_t {
-    U,              ///< `U(θ, φ, λ)`.
-    ZSXX,           ///< `RZ` / `SX` / `X` synthesis via a ZYZ decomposition.
-    R,              ///< XYX synthesis expressed with `R(θ, φ)`.
-    XZX,            ///< `RX(φ) * RZ(θ) * RX(λ)`.
-    XYX,            ///< `RX(φ) * RY(θ) * RX(λ)`.
-    ZYZ,            ///< `RZ(φ) * RY(θ) * RZ(λ)`.
-    ZXZ,            ///< `RZ(φ) * RX(θ) * RZ(λ)`.
-    ZFixedRotation, ///< Arbitrary `RZ` and fixed X/Y rotation pulses.
+    U,             ///< `U(θ, φ, λ)`.
+    ZSXX,          ///< `RZ` / `SX` / `X` synthesis via a ZYZ decomposition.
+    R,             ///< XYX synthesis expressed with `R(θ, φ)`.
+    XZX,           ///< `RX(φ) * RZ(θ) * RX(λ)`.
+    XYX,           ///< `RX(φ) * RY(θ) * RX(λ)`.
+    ZYZ,           ///< `RZ(φ) * RY(θ) * RZ(λ)`.
+    ZXZ,           ///< `RZ(φ) * RX(θ) * RZ(λ)`.
+    FixedRotation, ///< An arbitrary rotation and fixed pulses about another
+                   ///< axis.
   };
 
-  /// Fixed X/Y pulse used to implement an effective positive RX(π/2).
+  /// Fixed pulse combined with arbitrary rotations about a distinct axis.
   struct FixedRotationBasis {
     GateKind gate;
+    GateKind freeGate;
     double angle;
-    /// RZ angles before, between, and after copies of the fixed pulse.
-    std::vector<double> quarterTurnZAngles;
+    /// Free rotation angles before, between, and after fixed pulses.
+    /// Together they implement a local RX(π/2).
+    std::vector<double> quarterTurnAngles;
     std::optional<double> halfTurnAngle;
+
+    /// Physical gates for local X/Y/Z; local Z is the free rotation axis.
+    [[nodiscard]] std::array<GateKind, 3> axes() const;
 
     friend bool operator==(const FixedRotationBasis&,
                            const FixedRotationBasis&) = default;

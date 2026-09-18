@@ -172,11 +172,12 @@ accepts only RX(π/2). A nonempty list has one entry per parameter; `None` leave
 that parameter unrestricted. Multiple capabilities can describe different fixed
 values or placements. Constants match with absolute tolerance `1e-15`, without
 angle wrapping; symbolic values do not match fixed values. Omit the list for
-unrestricted parameters. With unrestricted RZ, the compiler derives a synthesis
-sequence from a fixed RX or RY angle available on every site. This covers
+unrestricted parameters. The compiler derives a synthesis sequence from one
+unrestricted rotation axis and a fixed angle about a different axis, available
+on every site. Any distinct pair of RX, RY, and RZ is supported. This covers
 positive and negative quarter turns, 45° pulses, and non-Clifford angles such as
 0.37 radians. The sequence is computed once per target and reused for numeric
-and symbolic input gates. Available RX/RY half turns shorten suitable
+and symbolic input gates. Available native half turns shorten suitable
 decompositions.
 
 Zero and integer-π pulses do not supply the required mixing. The constructive

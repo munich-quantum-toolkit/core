@@ -916,18 +916,19 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
       .value("XYX", mlir::CompilerTarget::SingleQubitBasis::XYX)
       .value("ZYZ", mlir::CompilerTarget::SingleQubitBasis::ZYZ)
       .value("ZXZ", mlir::CompilerTarget::SingleQubitBasis::ZXZ)
-      .value("ZFixedRotation",
-             mlir::CompilerTarget::SingleQubitBasis::ZFixedRotation);
+      .value("FixedRotation",
+             mlir::CompilerTarget::SingleQubitBasis::FixedRotation);
 
   nb::class_<mlir::CompilerTarget::FixedRotationBasis>(
       compilerTarget, "FixedRotationBasis",
-      "Fixed X/Y pulse selected for synthesis with arbitrary RZ.")
+      "Fixed pulse and arbitrary rotation selected for synthesis.")
       .def_ro("gate", &mlir::CompilerTarget::FixedRotationBasis::gate)
+      .def_ro("free_gate", &mlir::CompilerTarget::FixedRotationBasis::freeGate)
       .def_ro("angle", &mlir::CompilerTarget::FixedRotationBasis::angle,
               "Native pulse angle in radians.")
       .def_prop_ro("quarter_turn_pulses",
                    [](const mlir::CompilerTarget::FixedRotationBasis& basis) {
-                     return basis.quarterTurnZAngles.size() - 1;
+                     return basis.quarterTurnAngles.size() - 1;
                    })
       .def_ro("half_turn_angle",
               &mlir::CompilerTarget::FixedRotationBasis::halfTurnAngle);
