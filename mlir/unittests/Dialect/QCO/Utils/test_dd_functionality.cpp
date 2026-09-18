@@ -3090,8 +3090,8 @@ TEST_F(QCODDFunctionalityTest,
            "%view = memref.subview %reg[0, %negative][1, 3][1, 1] "
            ": memref<2x3xi1> to memref<3xi1, strided<[1], offset: ?>>",
            "%reg = memref.alloc() : memref<2x3xi1> "
-           "%view = memref.subview %reg[0, 0][2, 1][1, 1] "
-           ": memref<2x3xi1> to memref<2xi1, strided<[3]>>",
+           "%view = memref.subview %reg[0, 0][2, 1][%huge, 1] "
+           ": memref<2x3xi1> to memref<2xi1, strided<[?]>>",
        }) {
     SCOPED_TRACE(body);
     expectMlirSimulationFails(0, std::string(R"mlir(module { func.func @main() {
@@ -3104,6 +3104,48 @@ TEST_F(QCODDFunctionalityTest,
       %true = arith.constant true
     )mlir") + body + " return } }");
   }
+}
+
+TEST_F(QCODDFunctionalityTest, StridedSubviewsComposeAndShareStorage) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main() {
+      %zero = arith.constant 0 : index
+      %one = arith.constant 1 : index
+      %two = arith.constant 2 : index
+      %true = arith.constant true
+      %false = arith.constant false
+      %reg = memref.alloc() : memref<3x2xi1>
+      %column = memref.subview %reg[0, 1][3, 1][1, 1]
+        : memref<3x2xi1> to memref<3xi1, strided<[2], offset: 1>>
+      %reverse = memref.subview %column[2][3][-1]
+        : memref<3xi1, strided<[2], offset: 1>>
+          to memref<3xi1, strided<[-2], offset: 5>>
+      memref.store %false, %column[%zero] : memref<3xi1, strided<[2], offset: 1>>
+      memref.store %true, %column[%one] : memref<3xi1, strided<[2], offset: 1>>
+      memref.store %true, %reverse[%zero] : memref<3xi1, strided<[-2], offset: 5>>
+      %other = memref.subview %reg[0, 0][3, 1][1, 1]
+        : memref<3x2xi1> to memref<3xi1, strided<[2]>>
+      memref.copy %reverse, %other : memref<3xi1, strided<[-2], offset: 5>>
+                                 to memref<3xi1, strided<[2]>>
+      memref.store %false, %reverse[%zero] : memref<3xi1, strided<[-2], offset: 5>>
+      %first = memref.load %reg[%zero, %zero] : memref<3x2xi1>
+      %middle = memref.load %reg[%one, %zero] : memref<3x2xi1>
+      %last = memref.load %reg[%two, %zero] : memref<3x2xi1>
+      %notLast = arith.xori %last, %true : i1
+      %both = arith.andi %first, %middle : i1
+      %condition = arith.andi %both, %notLast : i1
+      %q = qco.static 0 : !qco.qubit
+      %result = qco.if %condition args(%qin = %q) -> (!qco.qubit) {
+        %out = qco.x %qin : !qco.qubit -> !qco.qubit
+        qco.yield %out : !qco.qubit
+      } else args(%qin = %q) { qco.yield %qin : !qco.qubit }
+      qco.sink %result : !qco.qubit
+      return
+    }
+  })mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+  expectSimulatesFromZero(mainFunc(*mod), true);
 }
 
 TEST_F(QCODDFunctionalityTest, SubarrayCopiesShareStorageWithoutLoopBudget) {

@@ -104,6 +104,29 @@ result = measure q;
   EXPECT_TRUE(checkedIndex);
 }
 
+TEST(OpenQASMTargetTest, RangeCopiesStayCompactAndSnapshotAliases) {
+  MLIRContext context;
+  auto moduleOp =
+      qc::translateOpenQASMToQC("OPENQASM 3.0; array[int, 4] a = {1, 2, 3, 4}; "
+                                "array[int, 2] b = a[0:2:3]; a[1:] = a[:2];",
+                                &context);
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  size_t copies = 0;
+  size_t snapshots = 0;
+  moduleOp->walk([&](memref::CopyOp) { ++copies; });
+  moduleOp->walk([&](memref::AllocOp alloc) {
+    snapshots += alloc.getType().getShape() == ArrayRef<int64_t>{3};
+  });
+  EXPECT_EQ(copies, 3);
+  EXPECT_EQ(snapshots, 1);
+  moduleOp->walk([&](scf::ForOp) {
+    ADD_FAILURE() << "copy must not become a frontend loop";
+  });
+  moduleOp->walk(
+      [&](cf::AssertOp) { ADD_FAILURE() << "range is statically safe"; });
+}
+
 TEST(OpenQASMTargetTest,
      ConstantArrayAccessAndCopiesNeedNoRuntimeBoundsChecks) {
   MLIRContext context;
