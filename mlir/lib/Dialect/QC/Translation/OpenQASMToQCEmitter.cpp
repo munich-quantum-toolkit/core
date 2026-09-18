@@ -21,6 +21,7 @@
 #include "mqt/Target/OpenQASM/GateCatalog.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Arith/Utils/Utils.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -29,11 +30,13 @@
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/UB/IR/UBOps.h"
+#include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/Location.h"
+#include "mlir/IR/Matchers.h"
 #include "mlir/IR/OperationSupport.h"
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/Support/LLVM.h"
@@ -48,6 +51,7 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/SaveAndRestore.h"
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cassert>
@@ -516,9 +520,113 @@ private:
                             .getResult();
   }
 
-  [[nodiscard]] Value
-  emitBitVectorExpression(OpBuilder& opBuilder,
-                          const frontend::BitVectorExpressionId id) {
+  Value resizeBits(OpBuilder& opBuilder, Value value, unsigned width) {
+    const auto oldWidth = cast<IntegerType>(value.getType()).getWidth();
+    auto type = opBuilder.getIntegerType(width);
+    if (oldWidth < width) {
+      return arith::ExtUIOp::create(opBuilder, value.getLoc(), type, value);
+    }
+    if (oldWidth > width) {
+      return arith::TruncIOp::create(opBuilder, value.getLoc(), type, value);
+    }
+    return value;
+  }
+
+  Value bitMask(OpBuilder& opBuilder, unsigned capacity, OpFoldResult width) {
+    auto loc = opBuilder.getUnknownLoc();
+    if (auto constant = getConstantIntValue(width)) {
+      return arith::ConstantOp::create(
+          opBuilder, loc,
+          opBuilder.getIntegerAttr(
+              opBuilder.getIntegerType(capacity),
+              APInt::getLowBitsSet(
+                  capacity, static_cast<unsigned>(
+                                std::min<uint64_t>(capacity, *constant)))));
+    }
+    auto ones = arith::ConstantOp::create(
+        opBuilder, loc,
+        opBuilder.getIntegerAttr(opBuilder.getIntegerType(capacity),
+                                 APInt::getAllOnes(capacity)));
+    auto size = arith::ConstantIndexOp::create(opBuilder, loc, capacity);
+    auto distance = arith::SubIOp::create(
+        opBuilder, loc, size,
+        getValueOrCreateConstantIndexOp(opBuilder, loc, width));
+    auto shift = arith::IndexCastOp::create(opBuilder, loc,
+                                            opBuilder.getI64Type(), distance);
+    return mqt::buildZeroFillingShift(opBuilder, loc, ones, shift, false);
+  }
+
+  void checkBitVectorWidth(OpBuilder& opBuilder, Value value,
+                           OpFoldResult actual, OpFoldResult expected,
+                           bool contextual = false) {
+    if (!contextual && actual == expected) {
+      return;
+    }
+    if (auto expectedConstant = getConstantIntValue(expected)) {
+      if (!contextual && getConstantIntValue(actual) == expectedConstant) {
+        return;
+      }
+      if (contextual && std::cmp_greater_equal(
+                            *expectedConstant,
+                            cast<IntegerType>(value.getType()).getWidth())) {
+        return;
+      }
+    }
+    Value valid;
+    if (contextual) {
+      auto mask = bitMask(
+          opBuilder, cast<IntegerType>(value.getType()).getWidth(), expected);
+      auto fitted =
+          arith::AndIOp::create(opBuilder, value.getLoc(), value, mask);
+      valid = arith::CmpIOp::create(opBuilder, value.getLoc(),
+                                    arith::CmpIPredicate::eq, fitted, value);
+    } else {
+      valid = arith::CmpIOp::create(
+          opBuilder, value.getLoc(), arith::CmpIPredicate::eq,
+          getValueOrCreateConstantIndexOp(opBuilder, value.getLoc(), actual),
+          getValueOrCreateConstantIndexOp(opBuilder, value.getLoc(), expected));
+    }
+    cf::AssertOp::create(
+        opBuilder, value.getLoc(), valid,
+        "bit-vector operand widths must match and constants must fit");
+  }
+
+  std::pair<Value, Value> emitBitVectorOperands(
+      OpBuilder& opBuilder, frontend::BitVectorExpressionId lhsId,
+      frontend::BitVectorExpressionId rhsId,
+      OpFoldResult* actualWidth = nullptr, OpFoldResult contextWidth = {}) {
+    // Bit-vector expressions only read classical state, so evaluate the
+    // width-determining operand before its context-dependent counterpart.
+    const bool swapped = program.bitVectorExpressions[lhsId].contextualWidth &&
+                         !program.bitVectorExpressions[rhsId].contextualWidth;
+    if (swapped) {
+      std::swap(lhsId, rhsId);
+    }
+    OpFoldResult lhsWidth;
+    auto lhs =
+        emitBitVectorExpression(opBuilder, lhsId, &lhsWidth, contextWidth);
+    if (!lhs) {
+      return {};
+    }
+    OpFoldResult rhsWidth;
+    auto rhs = emitBitVectorExpression(opBuilder, rhsId, &rhsWidth, lhsWidth);
+    if (!rhs) {
+      return {};
+    }
+    checkBitVectorWidth(opBuilder, rhs, rhsWidth, lhsWidth);
+    const auto capacity = std::max(cast<IntegerType>(lhs.getType()).getWidth(),
+                                   cast<IntegerType>(rhs.getType()).getWidth());
+    lhs = resizeBits(opBuilder, lhs, capacity);
+    rhs = resizeBits(opBuilder, rhs, capacity);
+    if (actualWidth != nullptr) {
+      *actualWidth = lhsWidth;
+    }
+    return swapped ? std::pair{rhs, lhs} : std::pair{lhs, rhs};
+  }
+
+  [[nodiscard]] Value emitBitVectorExpression(
+      OpBuilder& opBuilder, const frontend::BitVectorExpressionId id,
+      OpFoldResult* actualWidth = nullptr, OpFoldResult contextWidth = {}) {
     if (emissionBudget.isExhausted()) {
       return {};
     }
@@ -526,37 +634,80 @@ private:
     auto loc = UnknownLoc::get(opBuilder.getContext());
     const auto type =
         opBuilder.getIntegerType(static_cast<unsigned>(expression.width));
+    auto width = expression.contextualWidth && contextWidth
+                     ? contextWidth
+                     : OpFoldResult(opBuilder.getIndexAttr(
+                           static_cast<int64_t>(expression.width)));
+    if (actualWidth != nullptr) {
+      *actualWidth = width;
+    }
     switch (expression.kind) {
     case frontend::BitVectorExpressionKind::ScalarCast:
       return emitExpression(opBuilder, expression.scalar, {});
-    case frontend::BitVectorExpressionKind::Constant:
-      return arith::ConstantOp::create(
+    case frontend::BitVectorExpressionKind::Constant: {
+      auto value = arith::ConstantOp::create(
           opBuilder, loc, IntegerAttr::get(type, expression.constant));
+      if (expression.contextualWidth) {
+        checkBitVectorWidth(opBuilder, value, width, width, true);
+      }
+      return value;
+    }
     case frontend::BitVectorExpressionKind::Register: {
       auto reg = classicalRegisters.at(expression.reg);
       assert(reg && "semantic analysis must declare bit registers before use");
-      return {cbit::ReadOp::create(opBuilder, loc, type, reg)};
+      if (expression.slice) {
+        auto range = emitSliceRange(program.slices.at(*expression.slice),
+                                    program.registers.at(expression.reg).width);
+        if (!range.count) {
+          return {};
+        }
+        if (actualWidth != nullptr) {
+          *actualWidth = range.count;
+        }
+        auto zero = arith::ConstantIndexOp::create(opBuilder, loc, 0);
+        auto one = arith::ConstantIndexOp::create(opBuilder, loc, 1);
+        auto empty = arith::ConstantIntOp::create(opBuilder, loc, type, 0);
+        auto loop = scf::ForOp::create(opBuilder, loc, zero, range.count, one,
+                                       ValueRange{empty});
+        OpBuilder::InsertionGuard guard(opBuilder);
+        opBuilder.setInsertionPointToStart(loop.getBody());
+        auto index = sliceIndex(opBuilder, range, loop.getInductionVar());
+        auto bit = cbit::LoadOp::create(opBuilder, loc, opBuilder.getI1Type(),
+                                        reg, index);
+        auto extended = resizeBits(opBuilder, bit, type.getWidth());
+        auto shift = arith::IndexCastOp::create(opBuilder, loc, type,
+                                                loop.getInductionVar());
+        auto packed = arith::ShLIOp::create(opBuilder, loc, extended, shift);
+        auto combined = arith::OrIOp::create(
+            opBuilder, loc, loop.getRegionIterArgs().front(), packed);
+        scf::YieldOp::create(opBuilder, loc, combined.getResult());
+        return loop.getResult(0);
+      }
+      return cbit::ReadOp::create(opBuilder, loc, type, reg).getResult();
     }
     case frontend::BitVectorExpressionKind::Not: {
-      auto operand = emitBitVectorExpression(opBuilder, expression.operand);
+      auto operand =
+          emitBitVectorExpression(opBuilder, expression.operand, &width, width);
       if (!operand) {
         return {};
       }
-      auto ones = arith::ConstantOp::create(
-          opBuilder, loc,
-          IntegerAttr::get(type, APInt::getAllOnes(expression.width)));
+      if (actualWidth != nullptr) {
+        *actualWidth = width;
+      }
+      auto ones = bitMask(opBuilder, type.getWidth(), width);
       return arith::XOrIOp::create(opBuilder, loc, operand, ones);
     }
     case frontend::BitVectorExpressionKind::And:
     case frontend::BitVectorExpressionKind::Or:
     case frontend::BitVectorExpressionKind::Xor: {
-      auto lhs = emitBitVectorExpression(opBuilder, expression.operand);
-      if (!lhs) {
+      auto [lhs, rhs] = emitBitVectorOperands(
+          opBuilder, expression.operand, expression.rhs, &width,
+          expression.contextualWidth ? width : contextWidth);
+      if (!lhs || !rhs) {
         return {};
       }
-      auto rhs = emitBitVectorExpression(opBuilder, expression.rhs);
-      if (!rhs) {
-        return {};
+      if (actualWidth != nullptr) {
+        *actualWidth = width;
       }
       if (expression.kind == frontend::BitVectorExpressionKind::And) {
         return arith::AndIOp::create(opBuilder, loc, lhs, rhs);
@@ -568,7 +719,8 @@ private:
     }
     case frontend::BitVectorExpressionKind::ShiftLeft:
     case frontend::BitVectorExpressionKind::ShiftRight: {
-      auto operand = emitBitVectorExpression(opBuilder, expression.operand);
+      auto operand =
+          emitBitVectorExpression(opBuilder, expression.operand, &width, width);
       if (!operand) {
         return {};
       }
@@ -576,18 +728,61 @@ private:
       if (!distance) {
         return {};
       }
-      return mqt::buildZeroFillingShift(
+      if (actualWidth != nullptr) {
+        *actualWidth = width;
+      }
+      auto shifted = mqt::buildZeroFillingShift(
           opBuilder, loc, operand, distance,
           expression.kind == frontend::BitVectorExpressionKind::ShiftLeft);
+      if (getConstantIntValue(width) == expression.width) {
+        return shifted;
+      }
+      return arith::AndIOp::create(opBuilder, loc, shifted,
+                                   bitMask(opBuilder, type.getWidth(), width));
     }
     case frontend::BitVectorExpressionKind::RotateLeft:
     case frontend::BitVectorExpressionKind::RotateRight:
       break;
     }
 
-    auto operand = emitBitVectorExpression(opBuilder, expression.operand);
+    OpFoldResult operandWidth;
+    auto operand = emitBitVectorExpression(opBuilder, expression.operand,
+                                           &operandWidth, width);
     if (!operand) {
       return {};
+    }
+    if (actualWidth != nullptr) {
+      *actualWidth = operandWidth;
+    }
+    if (getConstantIntValue(operandWidth) != expression.width) {
+      auto distance = emitExpression(opBuilder, expression.distance, {});
+      if (!distance) {
+        return {};
+      }
+      distance =
+          emitScalarCast(opBuilder, loc, distance, frontend::ScalarType::Int,
+                         frontend::ScalarType::Int);
+      auto runtimeWidth = arith::IndexCastOp::create(
+          opBuilder, loc, opBuilder.getI64Type(),
+          getValueOrCreateConstantIndexOp(opBuilder, loc, operandWidth));
+      auto remainder =
+          arith::RemSIOp::create(opBuilder, loc, distance, runtimeWidth);
+      auto positive =
+          arith::AddIOp::create(opBuilder, loc, remainder, runtimeWidth);
+      auto normalized =
+          arith::RemSIOp::create(opBuilder, loc, positive, runtimeWidth);
+      auto complement =
+          arith::SubIOp::create(opBuilder, loc, runtimeWidth, normalized);
+      const bool left =
+          expression.kind == frontend::BitVectorExpressionKind::RotateLeft;
+      auto head =
+          mqt::buildZeroFillingShift(opBuilder, loc, operand, normalized, left);
+      auto tail = mqt::buildZeroFillingShift(opBuilder, loc, operand,
+                                             complement, !left);
+      auto combined = arith::OrIOp::create(opBuilder, loc, head, tail);
+      return arith::AndIOp::create(
+          opBuilder, loc, combined,
+          bitMask(opBuilder, type.getWidth(), operandWidth));
     }
     const auto& distanceExpression =
         program.expressions.at(expression.distance);
@@ -693,7 +888,18 @@ private:
                             expression.type, expression.integerWidth);
     }
     case frontend::ExpressionKind::BitVectorCast: {
-      return emitBitVectorExpression(opBuilder, expression.bitVector);
+      OpFoldResult width;
+      auto value =
+          emitBitVectorExpression(opBuilder, expression.bitVector, &width);
+      if (!value) {
+        return {};
+      }
+      if (expression.integerWidth != 0) {
+        auto expected = opBuilder.getIndexAttr(expression.integerWidth);
+        checkBitVectorWidth(opBuilder, value, width, expected);
+        return resizeBits(opBuilder, value, expression.integerWidth);
+      }
+      return value;
     }
     case frontend::ExpressionKind::Condition:
       return emitCondition(expression.condition, gateParameters, {});
@@ -964,6 +1170,189 @@ private:
     return resolved;
   }
 
+  struct SliceRange {
+    Value start;
+    Value step;
+    Value count;
+  };
+
+  Value sliceIndex(OpBuilder& opBuilder, const SliceRange& range,
+                   Value ordinal) {
+    auto loc = ordinal.getLoc();
+    auto wide = arith::IndexCastOp::create(opBuilder, loc,
+                                           range.start.getType(), ordinal);
+    auto offset = arith::MulIOp::create(opBuilder, loc, wide, range.step);
+    auto index = arith::AddIOp::create(opBuilder, loc, range.start, offset);
+    return arith::IndexCastOp::create(opBuilder, loc, opBuilder.getIndexType(),
+                                      index);
+  }
+
+  SliceRange emitSliceRange(const frontend::RegisterSlice& slice,
+                            uint64_t width) {
+    auto step = emitExpression(builder, slice.step, {});
+    if (!step) {
+      return {};
+    }
+    auto i128 = builder.getIntegerType(128);
+    step = extendRangeValue(step, i128,
+                            program.expressions.at(slice.step).type ==
+                                frontend::ScalarType::Uint);
+    auto zero = arith::ConstantIntOp::create(builder, 0, 128);
+    auto one = arith::ConstantIntOp::create(builder, 1, 128);
+    auto positive =
+        arith::CmpIOp::create(builder, arith::CmpIPredicate::sgt, step, zero);
+    auto nonzero =
+        arith::CmpIOp::create(builder, arith::CmpIPredicate::ne, step, zero);
+    cf::AssertOp::create(builder, nonzero,
+                         "register slice step must not be zero");
+    auto last = arith::ConstantIntOp::create(
+        builder, static_cast<int64_t>(width - 1), 128);
+    const auto endpoint = [&](std::optional<frontend::ExpressionId> expression,
+                              bool first) -> Value {
+      if (!expression) {
+        return arith::SelectOp::create(
+            builder, positive, first ? zero.getResult() : last.getResult(),
+            first ? last.getResult() : zero.getResult());
+      }
+      auto index = emitCheckedIndex(*expression, static_cast<int64_t>(width),
+                                    "register slice index out of bounds");
+      return index ? arith::ExtUIOp::create(builder, i128, index).getResult()
+                   : Value{};
+    };
+    auto start = endpoint(slice.start, true);
+    auto stop = endpoint(slice.stop, false);
+    if (!start || !stop) {
+      return {};
+    }
+    auto ascending = arith::SubIOp::create(builder, stop, start);
+    auto descending = arith::SubIOp::create(builder, start, stop);
+    auto distance =
+        arith::SelectOp::create(builder, positive, ascending, descending);
+    auto nonempty = arith::CmpIOp::create(builder, arith::CmpIPredicate::sge,
+                                          distance, zero);
+    cf::AssertOp::create(builder, nonempty, "register slice must not be empty");
+    auto negatedStep = arith::SubIOp::create(builder, zero, step);
+    auto magnitude =
+        arith::SelectOp::create(builder, positive, step, negatedStep);
+    auto quotient = arith::DivUIOp::create(builder, distance, magnitude);
+    auto count = arith::AddIOp::create(builder, quotient, one);
+    return {
+        .start = start,
+        .step = step,
+        .count =
+            arith::IndexCastOp::create(builder, builder.getIndexType(), count),
+    };
+  }
+
+  /// Snapshot every selection before any gate or measurement can change it.
+  void emitRegisterBroadcast(
+      ArrayRef<frontend::QubitReference> qubits,
+      ArrayRef<frontend::BitReference> bits, bool broadcastScalars,
+      llvm::function_ref<void(ValueRange, ValueRange)> emitBody) {
+    SmallVector<SliceRange> ranges;
+    SmallVector<Value> indices;
+    auto one = arith::ConstantIndexOp::create(builder, 1);
+    Value count = one;
+    const auto append =
+        [&](const std::optional<frontend::RegisterSliceId>& slice,
+            uint64_t width, Value index) -> bool {
+      auto range = slice ? emitSliceRange(program.slices.at(*slice), width)
+                         : SliceRange{};
+      if (slice && !range.count) {
+        return false;
+      }
+      ranges.push_back(range);
+      indices.push_back(index);
+      if (range.count) {
+        count = arith::MaxUIOp::create(builder, count, range.count);
+      }
+      return !emissionBudget.isExhausted();
+    };
+    for (const auto& qubit : qubits) {
+      Value index;
+      if (!qubit.slice) {
+        const auto resolved = emitQubitIndices({qubit});
+        if (resolved.empty()) {
+          return;
+        }
+        index = resolved.front();
+      }
+      if (!append(qubit.slice,
+                  qubit.kind == frontend::QubitReferenceKind::Register
+                      ? program.registers.at(qubit.symbol).width
+                      : 1,
+                  index)) {
+        return;
+      }
+    }
+    for (const auto& bit : bits) {
+      Value index;
+      if (!bit.slice) {
+        index = bit.dynamicIndex
+                    ? emitCheckedIndex(*bit.dynamicIndex,
+                                       static_cast<int64_t>(
+                                           program.registers.at(bit.reg).width),
+                                       "dynamic classical index out of bounds")
+                    : builder.intConstant(static_cast<int64_t>(bit.index));
+        if (!index) {
+          return;
+        }
+        index =
+            arith::IndexCastOp::create(builder, builder.getIndexType(), index);
+      }
+      if (!append(bit.slice, program.registers.at(bit.reg).width, index)) {
+        return;
+      }
+    }
+    for (const auto& range : ranges) {
+      if (broadcastScalars && !range.count) {
+        continue;
+      }
+      Value width = range.count ? range.count : one.getResult();
+      auto matches = arith::CmpIOp::create(builder, arith::CmpIPredicate::eq,
+                                           width, count);
+      cf::AssertOp::create(builder, matches,
+                           "register slice operand widths must match");
+    }
+    auto zero = arith::ConstantIndexOp::create(builder, 0);
+    auto loop = scf::ForOp::create(builder, zero, count, one);
+    OpBuilder::InsertionGuard guard(builder);
+    builder.setInsertionPointToStart(loop.getBody());
+    for (const auto [position, range] : llvm::enumerate(ranges)) {
+      if (!range.count) {
+        continue;
+      }
+      indices[position] = sliceIndex(builder, range, loop.getInductionVar());
+    }
+    if (broadcastScalars) {
+      DenseMap<frontend::RegisterId, SmallVector<size_t>> registerOperands;
+      for (const auto [position, qubit] : llvm::enumerate(qubits)) {
+        if (qubit.kind == frontend::QubitReferenceKind::Register) {
+          registerOperands[qubit.symbol].push_back(position);
+        }
+      }
+      for (size_t lhs = 0; lhs < qubits.size(); ++lhs) {
+        if (!qubits[lhs].slice) {
+          continue;
+        }
+        for (const auto rhs : registerOperands[qubits[lhs].symbol]) {
+          if (rhs == lhs || (qubits[rhs].slice && rhs < lhs)) {
+            continue;
+          }
+          if (emissionBudget.isExhausted()) {
+            return;
+          }
+          auto distinct = arith::CmpIOp::create(
+              builder, arith::CmpIPredicate::ne, indices[lhs], indices[rhs]);
+          cf::AssertOp::create(builder, distinct,
+                               "gate operands must reference distinct qubits");
+        }
+      }
+    }
+    emitBody(ArrayRef(indices).take_front(qubits.size()),
+             ArrayRef(indices).drop_front(qubits.size()));
+  }
+
   [[nodiscard]] Value
   emitQubitOperation(const frontend::QubitReference& reference,
                      ValueRange gateQubits,
@@ -1172,7 +1561,8 @@ private:
   void emitGateApplication(OpBuilder& opBuilder,
                            const frontend::GateApplication& application,
                            const Location loc, ValueRange gateParameters,
-                           ValueRange gateQubits) {
+                           ValueRange gateQubits,
+                           ValueRange sliceIndices = {}) {
     for (const auto& modifier : application.modifiers) {
       if (modifier.kind == frontend::ModifierKind::Pow &&
           !isExactlyRepresentableAsDouble(
@@ -1211,7 +1601,9 @@ private:
       }
       parameters.push_back(parameter);
     }
-    const auto qubitIndices = emitQubitIndices(application.qubits);
+    const auto qubitIndices = sliceIndices.empty()
+                                  ? emitQubitIndices(application.qubits)
+                                  : SmallVector<Value>(sliceIndices);
     if (emissionBudget.isExhausted()) {
       return;
     }
@@ -1496,14 +1888,10 @@ private:
           [&](Value qubit) { return builder.measure(qubit); });
 
     case frontend::ConditionKind::BitVectorComparison: {
-      auto lhs =
-          emitBitVectorExpression(builder, condition.bitVectorComparisonLhs);
-      if (!lhs) {
-        return {};
-      }
-      auto rhs =
-          emitBitVectorExpression(builder, condition.bitVectorComparisonRhs);
-      if (!rhs) {
+      auto [lhs, rhs] =
+          emitBitVectorOperands(builder, condition.bitVectorComparisonLhs,
+                                condition.bitVectorComparisonRhs);
+      if (!lhs || !rhs) {
         return {};
       }
       return arith::CmpIOp::create(
@@ -1667,6 +2055,40 @@ private:
     }
   }
 
+  void emitGateStatement(const frontend::GateApplication& application,
+                         Location loc, ValueRange gateParameters,
+                         ValueRange gateQubits) {
+    if (llvm::any_of(application.qubits, [](const auto& qubit) {
+          return qubit.slice.has_value();
+        })) {
+      emitRegisterBroadcast(
+          application.qubits, {}, true, [&](ValueRange indices, ValueRange) {
+            emitGateApplication(builder, application, loc, gateParameters,
+                                gateQubits, indices);
+          });
+    } else {
+      emitGateApplication(builder, application, loc, gateParameters,
+                          gateQubits);
+    }
+  }
+
+  void emitReset(const frontend::ResetStatement& reset, ValueRange gateQubits) {
+    for (const auto& qubit : reset.qubits) {
+      if (qubit.slice) {
+        emitRegisterBroadcast(
+            {qubit}, {}, false, [&](ValueRange indices, ValueRange) {
+              builder.reset(resolveQubit(qubit, gateQubits, indices.front()));
+            });
+        continue;
+      }
+      const auto indices = emitQubitIndices({qubit});
+      if (emissionBudget.isExhausted()) {
+        return;
+      }
+      builder.reset(resolveQubit(qubit, gateQubits, indices.front()));
+    }
+  }
+
   void emitStatement(const frontend::StatementId id, ValueRange gateParameters,
                      ValueRange gateQubits) {
     if (emissionFailed || emissionBudget.isExhausted() || !flowReachable) {
@@ -1694,18 +2116,12 @@ private:
                                    T, frontend::BitVectorAssignmentStatement>) {
             emitBitVectorAssignment(data);
           } else if constexpr (std::is_same_v<T, frontend::GateApplication>) {
-            emitGateApplication(builder, data, loc, gateParameters, gateQubits);
+            emitGateStatement(data, loc, gateParameters, gateQubits);
           } else if constexpr (std::is_same_v<T,
                                               frontend::MeasurementStatement>) {
             emitMeasurement(data, gateQubits);
           } else if constexpr (std::is_same_v<T, frontend::ResetStatement>) {
-            for (const auto& qubit : data.qubits) {
-              const auto indices = emitQubitIndices({qubit});
-              if (emissionBudget.isExhausted()) {
-                return;
-              }
-              builder.reset(resolveQubit(qubit, gateQubits, indices.front()));
-            }
+            emitReset(data, gateQubits);
           } else if constexpr (std::is_same_v<T, frontend::BarrierStatement>) {
             const auto indices = emitQubitIndices(data.qubits);
             if (emissionBudget.isExhausted()) {
@@ -1843,17 +2259,67 @@ private:
 
   void emitBitVectorAssignment(
       const frontend::BitVectorAssignmentStatement& assignment) {
-    auto value = emitBitVectorExpression(builder, assignment.value);
+    const auto capacity = program.registers.at(assignment.target).width;
+    SliceRange range;
+    OpFoldResult expected;
+    if (assignment.slice) {
+      range = emitSliceRange(program.slices.at(*assignment.slice), capacity);
+      if (!range.count) {
+        return;
+      }
+      expected = range.count;
+    } else {
+      expected = builder.getIndexAttr(static_cast<int64_t>(capacity));
+    }
+    OpFoldResult width;
+    auto value =
+        emitBitVectorExpression(builder, assignment.value, &width, expected);
     if (!value) {
       return;
     }
     auto reg = classicalRegisters[assignment.target];
     assert(reg && "semantic analysis must declare bit registers before use");
-    cbit::WriteOp::create(builder, builder.getUnknownLoc(), value, reg);
+    checkBitVectorWidth(builder, value, width, expected);
+    if (!assignment.slice) {
+      value = resizeBits(builder, value, static_cast<unsigned>(capacity));
+      cbit::WriteOp::create(builder, builder.getUnknownLoc(), value, reg);
+      return;
+    }
+    // The complete RHS is an SSA value before any potentially overlapping
+    // store.
+    auto zero = arith::ConstantIndexOp::create(builder, 0);
+    auto one = arith::ConstantIndexOp::create(builder, 1);
+    auto loop = scf::ForOp::create(builder, zero, range.count, one);
+    OpBuilder::InsertionGuard guard(builder);
+    builder.setInsertionPointToStart(loop.getBody());
+    auto index = sliceIndex(builder, range, loop.getInductionVar());
+    auto shift = arith::IndexCastOp::create(builder, value.getType(),
+                                            loop.getInductionVar());
+    auto shifted = arith::ShRUIOp::create(builder, value, shift);
+    auto bit = resizeBits(builder, shifted, 1);
+    builder.storeClassicalBit(bit, reg, index);
   }
 
   void emitMeasurement(const frontend::MeasurementStatement& measurement,
                        ValueRange gateQubits) {
+    if (llvm::any_of(
+            measurement.qubits,
+            [](const auto& qubit) { return qubit.slice.has_value(); }) ||
+        llvm::any_of(measurement.targets,
+                     [](const auto& bit) { return bit.slice.has_value(); })) {
+      emitRegisterBroadcast(
+          measurement.qubits, measurement.targets, false,
+          [&](ValueRange qubitIndices, ValueRange bitIndices) {
+            auto result = builder.measure(resolveQubit(
+                measurement.qubits.front(), gateQubits, qubitIndices.front()));
+            if (!measurement.targets.empty()) {
+              builder.storeClassicalBit(
+                  result, classicalRegisters[measurement.targets.front().reg],
+                  bitIndices.front());
+            }
+          });
+      return;
+    }
     if (measurement.targets.empty()) {
       for (const auto& qubit : measurement.qubits) {
         const auto indices = emitQubitIndices({qubit});
