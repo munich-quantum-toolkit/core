@@ -328,11 +328,20 @@ struct ArrayAssignmentStatement {
   ExpressionId value = 0;
 };
 
+/// A scalar index (size -2) or a fixed-size range in one array dimension.
+struct ArraySelection {
+  ExpressionId offset = 0;
+  int64_t size = -2;
+  int64_t stride = 1;
+
+  [[nodiscard]] bool isScalar() const { return size == -2; }
+};
+
 struct ArrayCopyStatement {
   ArrayId source = 0;
   ArrayId target = 0;
-  std::vector<ExpressionId> sourceIndices;
-  std::vector<ExpressionId> targetIndices;
+  std::vector<ArraySelection> sourceIndices;
+  std::vector<ArraySelection> targetIndices;
 };
 
 struct BitVectorAssignmentStatement {

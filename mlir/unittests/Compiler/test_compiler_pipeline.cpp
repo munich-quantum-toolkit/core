@@ -1068,11 +1068,49 @@ TEST_F(CompilerPipelineTest, ClassicalArraysSurviveQCQCOAndQIR) {
         array[int, 0, 2] noRows = {};
         array[int, 0] copy = emptyRows[0];
         emptyRows[1] = copy;
+        emptyRows[1, :] = copy[:];
+        empty[:] = copy;
         qubit q;
         output bit result;
         bool zero = bool(angles[0]);
         if (zero) { U(pi, 0, 0) q; }
         if (bool(angles[1])) { U(float(angles[1]), 0, 0) q; }
+        result = measure q;
+      )qasm",
+      R"qasm(OPENQASM 3.0;
+        array[int[8], 5] a = {0, 1, 2, 3, 4};
+        a[1:] = a[:3];
+        bool right = a[0] == 0 && a[1] == 0 && a[2] == 1 &&
+                     a[3] == 2 && a[4] == 3;
+        a[:3] = a[1:];
+        bool left = a[0] == 0 && a[1] == 1 && a[2] == 2 &&
+                    a[3] == 3 && a[4] == 3;
+        a[:-1:] = a;
+        array[int[8], 3] b = a[0:2:4];
+        a[0] = 99;
+        qubit q;
+        output bit result;
+        if (right && left && b[0] == 3 && b[1] == 2 && b[2] == 0 &&
+            a[1] == 3 && a[2] == 2 && a[3] == 1 && a[4] == 0) {
+          U(pi, 0, 0) q;
+        }
+        result = measure q;
+      )qasm",
+      R"qasm(OPENQASM 3.0;
+        array[int, 2, 3] a = {{1, 2, 3}, {4, 5, 6}};
+        qubit q;
+        U(pi, 0, 0) q;
+        bit measured = measure q;
+        int column = int(measured);
+        array[int, 2] b = a[:, column];
+        a[:, 0] = b;
+        a[0:1, 1:2] = a[1:-1:0, 0:1];
+        reset q;
+        output bit result;
+        if (b[0] == 2 && b[1] == 5 && a[0, 0] == 2 && a[1, 0] == 5 &&
+            a[0, 1] == 5 && a[0, 2] == 5 && a[1, 1] == 2 && a[1, 2] == 2) {
+          U(pi, 0, 0) q;
+        }
         result = measure q;
       )qasm",
       R"qasm(OPENQASM 3.0;
@@ -1131,9 +1169,9 @@ TEST_F(CompilerPipelineTest, ClassicalArraysSurviveQCQCOAndQIR) {
         result = measure q;
       )qasm",
       R"qasm(OPENQASM 3.0;
-        array[angle[8], 2] source = {0.0, -pi};
-        array[angle[8], 2] angles = source;
-        source[1] = 0.0;
+        array[angle[8], 2] source = {-pi, 0.0};
+        array[angle[8], 2] angles = source[:-1:];
+        source[0] = 0.0;
         array[float, 1] scale = {2.0};
         array[float[64], 1] copiedScale = scale;
         array[uint[8], 1] index = {255};
@@ -1378,7 +1416,8 @@ TEST_F(CompilerPipelineTest, MultidimensionalArrayChecksEveryDimensionInDD) {
 TEST_F(CompilerPipelineTest, SubarrayCopiesCheckRuntimeBoundsInDD) {
   for (const auto* index :
        {"int i = 2;", "int i = -3;", "uint i = 18446744073709551615;"}) {
-    for (const auto* access : {"row = a[i];", "a[i] = row;", "a[i] = a[0];"}) {
+    for (const auto* access : {"row = a[i];", "a[i] = row;", "a[i] = a[0];",
+                               "row = a[:, i];", "a[:, i] = row;"}) {
       const auto source =
           std::string("OPENQASM 3.0; array[float, 2, 2] a = {{0, 1}, {2, 3}}; "
                       "array[float, 2] row = {0, 0}; ") +
@@ -1405,8 +1444,8 @@ TEST_F(CompilerPipelineTest, SubarrayCopiesCheckRuntimeBoundsInDD) {
 TEST_F(CompilerPipelineTest, ClassicalArraysDoNotChangeQIRAllocationMode) {
   for (const auto profile : {QIRProfile::Base, QIRProfile::Adaptive}) {
     auto qc = QCProgram::fromOpenQASMString(R"qasm(OPENQASM 3.0;
-      array[float, 1, 1] angles = {{pi}};
-      array[float, 1, 1] copied = angles;
+      array[float, 2, 2] angles = {{pi, 0.0}, {0.0, pi}};
+      array[float, 2, 1] copied = angles[:, 0:0];
       array[float, 1] row = copied[0];
       U(row[0], 0, 0) $0;
       output bit result;
