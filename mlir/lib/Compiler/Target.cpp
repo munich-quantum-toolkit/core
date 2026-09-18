@@ -159,6 +159,8 @@ constexpr std::array GATE_SPECIFICATIONS{
     },
 };
 
+} // namespace
+
 // Work in a cyclic coordinate frame with the free rotation axis as Z.
 // The two-pulse construction has reachable polar angle 2 asin(|sin(angle)|).
 static std::optional<CompilerTarget::FixedRotationBasis>
@@ -167,7 +169,12 @@ makeFixedRotationBasis(GateKind gate, GateKind freeGate, double angle) {
   constexpr double halfPi = pi / 2.;
   constexpr size_t maxPulses = 64;
   CompilerTarget::FixedRotationBasis result{
-      gate, freeGate, angle, {}, std::nullopt};
+      .gate = gate,
+      .freeGate = freeGate,
+      .angle = angle,
+      .quarterTurnAngles = {},
+      .halfTurnAngle = std::nullopt,
+  };
   const bool isX = gate == result.axes()[0];
   const double magnitude = std::abs(angle);
   if (magnitude <= mqt::PARAMETER_COMPARISON_TOLERANCE) {
@@ -190,7 +197,7 @@ makeFixedRotationBasis(GateKind gate, GateKind freeGate, double angle) {
     return std::nullopt;
   }
   const double count = std::ceil(halfPi / reach);
-  if (count > static_cast<double>(maxPulses / 2)) {
+  if (count > static_cast<double>(maxPulses) / 2.) {
     return std::nullopt;
   }
   const auto blocks = static_cast<size_t>(count);
@@ -213,8 +220,6 @@ makeFixedRotationBasis(GateKind gate, GateKind freeGate, double angle) {
   result.quarterTurnAngles = std::move(zAngles);
   return result;
 }
-
-} // namespace
 
 std::array<CompilerTarget::GateKind, 3>
 CompilerTarget::FixedRotationBasis::axes() const {
