@@ -1070,11 +1070,24 @@ TEST_F(CompilerPipelineTest, ClassicalArraysSurviveQCQCOAndQIR) {
         emptyRows[1] = copy;
         emptyRows[1, :] = copy[:];
         empty[:] = copy;
+        if (sizeof(empty) != 0 || sizeof(emptyRows, 1) != 0 ||
+            sizeof(emptyRows[0, :]) != 0) { angles[1] = 0.0; }
         qubit q;
         output bit result;
         bool zero = bool(angles[0]);
         if (zero) { U(pi, 0, 0) q; }
         if (bool(angles[1])) { U(float(angles[1]), 0, 0) q; }
+        result = measure q;
+      )qasm",
+      R"qasm(OPENQASM 3.0;
+        array[angle, 3] angles = {0.0, pi, 0.0};
+        array[int, 2, 3] uninitialized;
+        const uint columns = sizeof(uninitialized[0]);
+        qubit q;
+        for int i in [0:sizeof(angles)-1] { U(angles[i], 0, 0) q; }
+        if (columns != 3 || sizeof(uninitialized[:, 0]) != 2 ||
+            sizeof(angles[0:2:2]) != 2) { reset q; }
+        output bit result;
         result = measure q;
       )qasm",
       R"qasm(OPENQASM 3.0;
