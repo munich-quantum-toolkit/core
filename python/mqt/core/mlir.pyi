@@ -380,13 +380,15 @@ class CompilerTarget:
 
         ZXZ = 6
 
-        ZFixedRotation = 7
+        FixedRotation = 7
 
     class FixedRotationBasis:
-        """Fixed X/Y pulse selected for synthesis with arbitrary RZ."""
+        """Fixed pulse and arbitrary rotation selected for synthesis."""
 
         @property
         def gate(self) -> CompilerTarget.GateKind: ...
+        @property
+        def free_gate(self) -> CompilerTarget.GateKind: ...
         @property
         def angle(self) -> float:
             """Native pulse angle in radians."""
