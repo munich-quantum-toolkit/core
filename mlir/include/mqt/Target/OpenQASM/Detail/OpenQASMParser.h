@@ -1628,7 +1628,7 @@ private:
           return sink.error(current().loc, Twine("unknown function '") +
                                                current().identifier + "'");
         }
-        return parseMathCall(*kind, expr);
+        return parseBuiltinCall(*kind, expr);
       }
       expr.kind = Expr::Kind::Identifier;
       expr.identifier = current().identifier;
@@ -1643,7 +1643,9 @@ private:
     }
     // `pow` is also a gate modifier, so it has a dedicated token.
     case TokenKind::Pow:
-      return parseMathCall(Expr::Kind::BuiltinPow, expr);
+      return parseBuiltinCall(Expr::Kind::BuiltinPow, expr);
+    case TokenKind::SizeOf:
+      return parseBuiltinCall(Expr::Kind::SizeOf, expr);
     case TokenKind::LParen: {
       advance();
       auto inner = parseExpression();
@@ -1662,9 +1664,9 @@ private:
     }
   }
 
-  /// Parse the argument list of a call to the built-in math function @p kind.
+  /// Parse the argument list of a call to the built-in function @p kind.
   [[nodiscard]] FailureOr<SyntaxExpressionId>
-  parseMathCall(Expr::Kind kind, SyntaxExpression expr) {
+  parseBuiltinCall(Expr::Kind kind, SyntaxExpression expr) {
     expr.kind = kind;
     advance(); // function name
 
@@ -1679,7 +1681,8 @@ private:
     expr.lhs = *lhs;
 
     if (kind == Expr::Kind::BuiltinMod || kind == Expr::Kind::BuiltinPow ||
-        kind == Expr::Kind::RotateLeft || kind == Expr::Kind::RotateRight) {
+        kind == Expr::Kind::RotateLeft || kind == Expr::Kind::RotateRight ||
+        (kind == Expr::Kind::SizeOf && current().kind == TokenKind::Comma)) {
       if (failed(expect(TokenKind::Comma))) {
         return failure();
       }

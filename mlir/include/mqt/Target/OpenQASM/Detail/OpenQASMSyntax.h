@@ -62,6 +62,7 @@ struct Expr {
     AngleCast,
     Index,
     Range,
+    SizeOf,
     Neg,
     Not,
     BitNot,
