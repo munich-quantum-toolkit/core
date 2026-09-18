@@ -1074,6 +1074,38 @@ TEST_F(CompilerPipelineTest, ClassicalArraysSurviveQCQCOAndQIR) {
         result = measure q;
       )qasm",
       R"qasm(OPENQASM 3.0;
+        array[int[8], 2, 2] source = {{1, 2}, {3, 127}};
+        array[int[8], 2, 2] copy = source;
+        array[bool, 1] flags = {true};
+        array[bool, 1] savedFlags = flags;
+        flags[0] = false;
+        for int i in [0:1] {
+          source[1, 1] += 1;
+          if (i == 0) { copy = source; }
+        }
+        copy = copy;
+        qubit q;
+        output bit result;
+        if (copy[0, 0] == 1 && copy[0, 1] == 2 && copy[1, 0] == 3 &&
+            copy[1, 1] == -128 && source[1, 1] == -127 &&
+            savedFlags[0] && !flags[0]) { U(pi, 0, 0) q; }
+        result = measure q;
+      )qasm",
+      R"qasm(OPENQASM 3.0;
+        array[angle[8], 2] source = {0.0, -pi};
+        array[angle[8], 2] angles = source;
+        source[1] = 0.0;
+        array[float, 1] scale = {2.0};
+        array[float[64], 1] copiedScale = scale;
+        array[uint[8], 1] index = {255};
+        array[uint[8], 1] copiedIndex = index;
+        copiedIndex[0] += 2;
+        qubit q;
+        output bit result;
+        U(float(angles[copiedIndex[0]]) * copiedScale[0] / 2, 0, 0) q;
+        result = measure q;
+      )qasm",
+      R"qasm(OPENQASM 3.0;
         array[angle[8], 2, 3] angles = {{0.0, 0.0, pi}, {0.0, 0.0, 0.0}};
         qubit q;
         output bit result;
@@ -1133,8 +1165,10 @@ TEST_F(CompilerPipelineTest, ClassicalArraysSurviveQCQCOAndQIR) {
         bit measured = measure q;
         int index = int(measured);
         angles[index] = pi;
+        array[float, 2] copied = angles;
+        angles[index] = 0.0;
         reset q;
-        U(angles[index], 0, 0) q;
+        U(copied[index], 0, 0) q;
         output bit result;
         result = measure q;
       )qasm",
@@ -1305,7 +1339,8 @@ TEST_F(CompilerPipelineTest, ClassicalArraysDoNotChangeQIRAllocationMode) {
   for (const auto profile : {QIRProfile::Base, QIRProfile::Adaptive}) {
     auto qc = QCProgram::fromOpenQASMString(R"qasm(OPENQASM 3.0;
       array[float, 1, 1] angles = {{pi}};
-      U(angles[0, 0], 0, 0) $0;
+      array[float, 1, 1] copied = angles;
+      U(copied[0, 0], 0, 0) $0;
       output bit result;
       result = measure $0;
     )qasm");

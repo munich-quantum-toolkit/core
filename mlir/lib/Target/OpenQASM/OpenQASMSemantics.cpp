@@ -3638,6 +3638,37 @@ private:
   }
 
   [[nodiscard]] LogicalResult
+  analyzeArrayCopy(ArrayId target, SyntaxExpressionId value, SMLoc location,
+                   std::vector<StatementId>& destination) {
+    const auto& expression = syntax.expressions[value];
+    const auto* source = expression.kind == Expr::Kind::Identifier
+                             ? lookup(expression.identifier)
+                             : nullptr;
+    if (source == nullptr || source->kind != SymbolKind::Array) {
+      return fail(location, "array copy requires a whole-array source");
+    }
+    const auto& from = program.arrays[source->id];
+    const auto& to = program.arrays[target];
+    if (from.shape != to.shape || from.type != to.type ||
+        (from.elementWidth == 0 ? 64 : from.elementWidth) !=
+            (to.elementWidth == 0 ? 64 : to.elementWidth)) {
+      return fail(location,
+                  "array copy requires matching shapes and element types");
+    }
+    if (!initializedBits[arrayStateSlots_[source->id]]->all()) {
+      return fail(location, "array copy source has uninitialized elements");
+    }
+    mutableBitInitialization(arrayStateSlots_[target]).set();
+    MQT_OQ3_TRY_ASSIGN(statement,
+                       addStatement(location, ArrayCopyStatement{
+                                                  .source = source->id,
+                                                  .target = target,
+                                              }));
+    destination.push_back(statement);
+    return success();
+  }
+
+  [[nodiscard]] LogicalResult
   analyzeArrayDeclaration(SMLoc location,
                           const SyntaxArrayDeclaration& declaration,
                           std::vector<StatementId>& destination, bool global) {
@@ -3703,15 +3734,24 @@ private:
       return failure();
     }
     ArrayDeclarationStatement typed{.array = id, .initializer = {}};
+    std::optional<SyntaxExpressionId> copySource;
     if (declaration.initializer) {
-      if (failed(analyzeArrayInitializer(id, *declaration.initializer, 0,
-                                         typed.initializer))) {
-        return failure();
+      if (const auto* value = std::get_if<SyntaxExpressionId>(
+              &declaration.initializer->value)) {
+        copySource = *value;
+      } else {
+        if (failed(analyzeArrayInitializer(id, *declaration.initializer, 0,
+                                           typed.initializer))) {
+          return failure();
+        }
+        mutableBitInitialization(arrayStateSlots_[id]).set();
       }
-      mutableBitInitialization(arrayStateSlots_[id]).set();
     }
     MQT_OQ3_TRY_ASSIGN(statement, addStatement(location, std::move(typed)));
     destination.push_back(statement);
+    if (copySource) {
+      return analyzeArrayCopy(id, *copySource, location, destination);
+    }
     return success();
   }
 
@@ -3809,6 +3849,9 @@ private:
     const auto* symbol = lookup(assignment.target.identifier);
     if (symbol != nullptr && symbol->kind == SymbolKind::Array) {
       const auto array = symbol->id;
+      if (!assignment.target.index) {
+        return analyzeArrayCopy(array, assignment.value, location, destination);
+      }
       MQT_OQ3_TRY_ASSIGN(
           indices,
           analyzeArrayIndices(array, assignment.target.index,
