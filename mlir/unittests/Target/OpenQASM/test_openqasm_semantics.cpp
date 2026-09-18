@@ -197,6 +197,15 @@ TEST(OpenQASMFrontendTest, CopiesArraysWithMatchingTypes) {
            "array[angle, 1] b = a[i]; a[i] = b; a[i] = a[0];",
            "array[bool, 2, 1, 1] a = {{{true}}, {{false}}}; "
            "array[bool, 1, 1] b = a[1]; a[0] = b;",
+           "array[int, 4] a = {0, 1, 2, 3}; array[int, 2] b = a[0:2:3]; "
+           "a[-2:-1] = b; a[:2] = a[1:]; a[:-1:] = a;",
+           "array[int, 2, 3] a = {{0, 1, 2}, {3, 4, 5}}; int i = -1; "
+           "array[int, 2] b = a[:1, i]; a[:, 0] = b;",
+           "array[int, 2, 3] a; a[0, 1] = 1; a[1, 1] = 2; "
+           "array[int, 2] b = a[:, 1]; a[0, 0:2:2] = b; int x = a[0, 2];",
+           "array[int, 2] a = {1, 2}; "
+           "array[int, 1] b = a[0:9223372036854775807:1]; "
+           "b = a[1:-9223372036854775807-1:0];",
        }) {
     SCOPED_TRACE(source);
     auto analyzed = openqasm::frontend::analyzeOpenQASM(
@@ -214,6 +223,29 @@ TEST(OpenQASMFrontendTest, RejectsInvalidClassicalArrays) {
           {"array[int, 0] a = {1};", "initializer length"},
           {"array[int, 0] a; a[0] = 1;", "out of bounds"},
           {"array[int, 0] a = {}; int b = a[-1];", "out of bounds"},
+          {"array[int, 2] a = {1, 2}; a = a[1:0];", "must not be empty"},
+          {"array[int, 2] a = {1, 2}; a = a[0:-1:1];", "must not be empty"},
+          {"array[int, 2] a = {1, 2}; a = a[0:0:1];", "must not be zero"},
+          {"array[int, 2] a = {1, 2}; a = a[0:2];", "out of bounds"},
+          {"array[int, 2] a = {1, 2}; a = a[-3:1];", "out of bounds"},
+          {"array[int, 2] a = {1, 2}; a = a[0.0:1];", "requires integers"},
+          {"array[int, 2] a = {1, 2}; int n = 1; a = a[:n];", "compile-time"},
+          {
+              "array[int, 2] a = {1, 2}; int n = 1; a = a[0:n:1];",
+              "compile-time",
+          },
+          {"array[int, 2] a = {1, 2}; a = a[::];", "requires a step"},
+          {"array[int, 2] a = {1, 2}; int n = a[0:0];", "not a scalar"},
+          {"array[int, 2] a = {1, 2}; a[:] += a;", "array or subarray source"},
+          {
+              "array[int, 3] a; a[0] = 1; a[2] = 2; a[0:1] = a[1:2];",
+              "uninitialized",
+          },
+          {
+              "array[int, 3] a; a[0] = 1; a[2] = 2; a[0:2:2] = a[0:2:2]; "
+              "int x = a[1];",
+              "uninitialized",
+          },
           {"array[int, 100001] a;", "exceeds the limit"},
           {"array[int, 60000] a; array[int, 60000] b;", "exceed the limit"},
           {"int n = 2; array[int, n] a;", "constant integer"},
