@@ -154,6 +154,30 @@ TEST(OpenQASMTargetTest,
       [&](cf::AssertOp) { ADD_FAILURE() << "index is statically safe"; });
 }
 
+TEST(OpenQASMTargetTest, RuntimeRangesUseDynamicViewsAndSnapshots) {
+  MLIRContext context;
+  auto moduleOp = qc::translateOpenQASMToQC(
+      "OPENQASM 3.0; array[int, 4] a = {1, 2, 3, 4}; "
+      "int start = 1; int stop = 2; a[start:] = a[:stop];",
+      &context);
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  size_t views = 0;
+  moduleOp->walk([&](memref::SubViewOp view) {
+    ++views;
+    EXPECT_TRUE(view.getType().isDynamicDim(0));
+  });
+  EXPECT_EQ(views, 2);
+  size_t snapshots = 0;
+  moduleOp->walk([&](memref::AllocOp alloc) {
+    snapshots += !alloc.getDynamicSizes().empty();
+  });
+  EXPECT_EQ(snapshots, 1);
+  moduleOp->walk([&](scf::ForOp) {
+    ADD_FAILURE() << "runtime copy must not become a frontend loop";
+  });
+}
+
 TEST(OpenQASMTargetTest, ImportsNonNullTerminatedSourceView) {
   std::string storage = "OPENQASM 3.1; qubit q; U(0, 0, 0) q;invalid suffix";
   const auto source = StringRef(storage).take_front(storage.find("invalid"));

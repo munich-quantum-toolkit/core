@@ -36,6 +36,7 @@
 #include "llvm/Support/SourceMgr.h"
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cassert>
 #include <cmath>
@@ -3508,10 +3509,6 @@ private:
         if (!bound) {
           return fallback;
         }
-        if (!isConstantExpression(*bound)) {
-          return fail(location,
-                      "array ranges require compile-time bounds and steps");
-        }
         MQT_OQ3_TRY_ASSIGN(value, evaluateConstant(*bound));
         if (!isInteger(value.type) || !asSigned(value)) {
           return fail(location,
@@ -3519,6 +3516,38 @@ private:
         }
         return *asSigned(value);
       };
+      if (llvm::any_of(
+              std::array{expression.lhs, expression.rhs, expression.step},
+              [&](auto bound) {
+                return bound && !isConstantExpression(*bound);
+              })) {
+        ArrayRange range;
+        if (expression.lhs) {
+          MQT_OQ3_TRY_ASSIGN(
+              start, analyzeArrayIndex(*expression.lhs, extent, location));
+          range.start = start;
+        }
+        if (expression.rhs) {
+          MQT_OQ3_TRY_ASSIGN(
+              stop, analyzeArrayIndex(*expression.rhs, extent, location));
+          range.stop = stop;
+        }
+        if (!expression.step || isConstantExpression(*expression.step)) {
+          MQT_OQ3_TRY_ASSIGN(step, constant(expression.step, 1));
+          if (step == 0) {
+            return fail(location, "array range step must not be zero");
+          }
+          range.step = addConstant({.type = ScalarType::Int, .value = step});
+        } else {
+          MQT_OQ3_TRY_ASSIGN(step, analyzeExpression(*expression.step));
+          if (!isInteger(program.expressions[step].type)) {
+            return fail(location, "array range step must be an integer");
+          }
+          range.step = step;
+        }
+        selection.push_back({.size = -1, .runtime = range});
+        continue;
+      }
       MQT_OQ3_TRY_ASSIGN(stride, constant(expression.step, 1));
       if (stride == 0) {
         return fail(location, "array range step must not be zero");
@@ -3587,6 +3616,9 @@ private:
     if (dimension < 0 || std::cmp_greater_equal(dimension, shape.size())) {
       return fail(expression.location, "sizeof dimension is out of bounds");
     }
+    if (shape[dimension] < 0) {
+      return fail(expression.location, "sizeof requires a compile-time extent");
+    }
     return Constant{
         .type = ScalarType::Uint,
         .value = static_cast<uint64_t>(shape[dimension]),
@@ -3597,6 +3629,9 @@ private:
   arraySelectionMask(ArrayId array, ArrayRef<ArraySelection> selection) const {
     SmallVector<int64_t> offsets;
     for (const auto& index : selection) {
+      if (index.runtime) {
+        return std::nullopt;
+      }
       const auto& offset = program.expressions[index.offset];
       if (offset.kind != ExpressionKind::Constant) {
         return std::nullopt;
@@ -3655,7 +3690,13 @@ private:
       return result;
     };
     const auto shape = selectedShape(sourceIndices);
-    if (shape.empty() || shape != selectedShape(targetIndices) ||
+    const auto targetShape = selectedShape(targetIndices);
+    if (shape.empty() || shape.size() != targetShape.size() ||
+        !llvm::all_of(llvm::zip(shape, targetShape),
+                      [](const auto& extents) {
+                        const auto [source, target] = extents;
+                        return source < 0 || target < 0 || source == target;
+                      }) ||
         from.type != to.type ||
         (from.elementWidth == 0 ? 64 : from.elementWidth) !=
             (to.elementWidth == 0 ? 64 : to.elementWidth)) {
