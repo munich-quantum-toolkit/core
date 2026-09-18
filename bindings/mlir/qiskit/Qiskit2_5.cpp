@@ -537,6 +537,23 @@ static void appendControlModifier(const nb::handle object,
   });
 }
 
+[[nodiscard]] static bool hasControlledBase(const nb::handle operation) {
+  if (!nb::hasattr(operation, "base_gate")) {
+    return false;
+  }
+  const auto qubits = pythonUnsignedAttribute(
+      operation, "num_qubits", "Qiskit controlled gate has an invalid width");
+  const auto controls = pythonUnsignedAttribute(
+      operation, "num_ctrl_qubits",
+      "Qiskit controlled gate has an invalid control count");
+  const auto base = pythonAttribute(operation, "base_gate",
+                                    "Qiskit controlled gate has no base");
+  const auto targets = pythonUnsignedAttribute(
+      base, "num_qubits", "Qiskit base gate has an invalid width");
+  // MCMT's base gate acts on each target, not on the whole target register.
+  return controls <= qubits && targets == qubits - controls;
+}
+
 [[nodiscard]] static nb::object terminalPythonGate(const nb::handle operation,
                                                    const size_t depth = 0U) {
   if (depth >= MAX_ANNOTATED_OPERATION_DEPTH) {
@@ -549,7 +566,7 @@ static void appendControlModifier(const nb::handle object,
                         "Qiskit annotated operation has no base"),
         depth + 1U);
   }
-  if (nb::hasattr(operation, "base_gate")) {
+  if (hasControlledBase(operation)) {
     return terminalPythonGate(
         pythonAttribute(operation, "base_gate",
                         "Qiskit controlled gate has no base"),
@@ -638,7 +655,7 @@ static void normalizePythonGate(const nb::handle operation, Instruction& result,
     return;
   }
 
-  if (nb::hasattr(operation, "base_gate")) {
+  if (hasControlledBase(operation)) {
     const auto name = pythonStringAttribute(
         operation, "name", "Qiskit controlled gate has an invalid name");
     if (name == "cu") {
