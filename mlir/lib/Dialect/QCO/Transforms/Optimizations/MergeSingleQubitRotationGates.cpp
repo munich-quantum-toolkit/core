@@ -1279,7 +1279,8 @@ void decomposition::synthesizeParameterizedUnitary1Q(
     } else {
       const auto angles = directZYZAnglesFromGate(unitary, rewriter, consts);
       qubit = unitary.getInputQubit(0);
-      if (basis == SingleQubitBasis::FixedRotation && fixedRotation &&
+      if (basis == SingleQubitBasis::FixedRotation &&
+          fixedRotation != nullptr &&
           fixedRotation->freeGate != CompilerTarget::GateKind::RZ) {
         // Keep symbolic angles algebraic: emit each physical Z/Y/Z rotation
         // in the cyclic local frame instead of introducing inverse trig.
@@ -1290,10 +1291,12 @@ void decomposition::synthesizeParameterizedUnitary1Q(
           if (isConstantAngle(angle)) {
             return;
           }
-          RuntimeEulerAngles local{.theta = consts.zero,
-                                   .phi = consts.zero,
-                                   .lambda = consts.zero,
-                                   .phase = consts.zero};
+          RuntimeEulerAngles local{
+              .theta = consts.zero,
+              .phi = consts.zero,
+              .lambda = consts.zero,
+              .phase = consts.zero,
+          };
           if (gate == axes[2]) {
             local.lambda = angle;
           } else {
