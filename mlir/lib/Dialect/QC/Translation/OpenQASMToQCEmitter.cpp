@@ -1734,10 +1734,7 @@ private:
             emitArrayAssignment(data);
           } else if constexpr (std::is_same_v<T,
                                               frontend::ArrayCopyStatement>) {
-            if (data.source != data.target) {
-              memref::CopyOp::create(builder, arrayValues_.at(data.source),
-                                     arrayValues_.at(data.target));
-            }
+            emitArrayCopy(data);
           } else if constexpr (std::is_same_v<
                                    T, frontend::BitAssignmentStatement>) {
             emitBitAssignment(data, gateQubits);
@@ -1845,6 +1842,41 @@ private:
         offset /= declaration.shape[dimension];
       }
       memref::StoreOp::create(builder, value, storage, indices);
+    }
+  }
+
+  [[nodiscard]] Value emitArrayView(frontend::ArrayId array,
+                                    ArrayRef<frontend::ExpressionId> prefix) {
+    auto storage = arrayValues_.at(array);
+    if (prefix.empty()) {
+      return storage;
+    }
+    auto indices = emitArrayIndices(builder, array, prefix);
+    if (failed(indices) || emissionBudget.isExhausted()) {
+      return {};
+    }
+    const auto& shape = program.arrays.at(array).shape;
+    SmallVector<OpFoldResult> offsets(shape.size(), builder.getIndexAttr(0));
+    llvm::copy(*indices, offsets.begin());
+    SmallVector<OpFoldResult> sizes;
+    SmallVector<OpFoldResult> strides(shape.size(), builder.getIndexAttr(1));
+    for (const auto [dimension, extent] : llvm::enumerate(shape)) {
+      sizes.push_back(
+          builder.getIndexAttr(dimension < prefix.size() ? 1 : extent));
+    }
+    auto type = memref::SubViewOp::inferRankReducedResultType(
+        ArrayRef(shape).drop_front(prefix.size()),
+        cast<MemRefType>(storage.getType()), offsets, sizes, strides);
+    return memref::SubViewOp::create(builder, type, storage, offsets, sizes,
+                                     strides)
+        .getResult();
+  }
+
+  void emitArrayCopy(const frontend::ArrayCopyStatement& statement) {
+    auto source = emitArrayView(statement.source, statement.sourceIndices);
+    auto target = emitArrayView(statement.target, statement.targetIndices);
+    if (source && target && source != target && !emissionBudget.isExhausted()) {
+      memref::CopyOp::create(builder, source, target);
     }
   }
 

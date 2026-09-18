@@ -17,12 +17,14 @@
 #include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 
+#include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
 #include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
 #include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Conversion/MathToLLVM/MathToLLVM.h"
 #include "mlir/Conversion/MemRefToLLVM/MemRefToLLVM.h"
 #include "mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h"
+#include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Arith/Transforms/BufferizableOpInterfaceImpl.h"
 #include "mlir/Dialect/Bufferization/IR/BufferizableOpInterface.h"
@@ -34,6 +36,7 @@
 #include "mlir/Dialect/LLVMIR/LLVMTypes.h"
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/MemRef/Transforms/Transforms.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Dialect/Tensor/Transforms/BufferizableOpInterfaceImpl.h"
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
@@ -83,8 +86,8 @@ LogicalResult LoweringState::ensureAllocationMode(AllocationMode requested,
 }
 
 void registerQIRClassicalTensorDialects(DialectRegistry& registry) {
-  registry.insert<bufferization::BufferizationDialect, memref::MemRefDialect,
-                  tensor::TensorDialect>();
+  registry.insert<affine::AffineDialect, bufferization::BufferizationDialect,
+                  memref::MemRefDialect, tensor::TensorDialect>();
   arith::registerBufferizableOpInterfaceExternalModels(registry);
   tensor::registerBufferizableOpInterfaceExternalModels(registry);
 }
@@ -103,11 +106,13 @@ LogicalResult finalizeQIRConversion(ModuleOp moduleOp, ConversionTarget& target,
   }
 
   RewritePatternSet patterns(ctx);
-  target.addIllegalDialect<arith::ArithDialect, cf::ControlFlowDialect,
-                           math::MathDialect, memref::MemRefDialect,
-                           tensor::TensorDialect,
+  target.addIllegalDialect<affine::AffineDialect, arith::ArithDialect,
+                           cf::ControlFlowDialect, math::MathDialect,
+                           memref::MemRefDialect, tensor::TensorDialect,
                            bufferization::BufferizationDialect>();
   LLVMTypeConverter memoryTypeConverter(ctx);
+  memref::populateExpandStridedMetadataPatterns(patterns);
+  populateAffineToStdConversionPatterns(patterns);
   populateFinalizeMemRefToLLVMConversionPatterns(memoryTypeConverter, patterns);
   cf::populateControlFlowToLLVMConversionPatterns(typeConverter, patterns);
   cf::populateAssertToLLVMConversionPattern(typeConverter, patterns);

@@ -1031,6 +1031,43 @@ TEST_F(CompilerPipelineTest, BaseProfileLowersCompleteTensorLifetime) {
 TEST_F(CompilerPipelineTest, ClassicalArraysSurviveQCQCOAndQIR) {
   constexpr auto programs = std::to_array<llvm::StringLiteral>({
       R"qasm(OPENQASM 3.0;
+        array[int[8], 2, 2, 3] cube = {{{1, 2, 3}, {4, 5, 6}},
+                                      {{7, 8, 9}, {10, 11, 12}}};
+        array[int[8], 2, 3] plane = cube[-1];
+        array[int[8], 3] row = plane[0];
+        cube[0] = plane;
+        plane[1] = row;
+        cube[-1, 0] = plane[1];
+        cube[-1, 1] = cube[-1, 0];
+        cube[-1, 0, 0] = 99;
+        qubit q;
+        output bit result;
+        if (cube[0, 0, 0] == 7 && cube[0, 1, 2] == 12 &&
+            cube[-1, 1, 0] == 7 && cube[-1, 1, 2] == 9 &&
+            plane[0, 0] == 7 && plane[1, 2] == 9 && row[0] == 7) {
+          U(pi, 0, 0) q;
+        }
+        result = measure q;
+      )qasm",
+      R"qasm(OPENQASM 3.0;
+        array[angle[8], 2, 2] table = {{0.0, pi}, {pi, 0.0}};
+        qubit q;
+        U(pi, 0, 0) q;
+        bit measured = measure q;
+        int i = int(measured);
+        array[angle[8], 2] row = table[-i];
+        table[0] = table[-i];
+        table[i] = table[i];
+        table[i, 0] = 0.0;
+        array[bool, 2, 1] flags = {{true}, {false}};
+        flags[i] = flags[0];
+        reset q;
+        if (flags[i, 0] && float(table[0, 0]) > 3.0 &&
+            float(table[1, 0]) == 0.0) { U(row[0], 0, 0) q; }
+        output bit result;
+        result = measure q;
+      )qasm",
+      R"qasm(OPENQASM 3.0;
         array[int[8], 2, 2] source = {{1, 2}, {3, 127}};
         array[int[8], 2, 2] copy = source;
         array[bool, 1] flags = {true};
@@ -1220,12 +1257,41 @@ TEST_F(CompilerPipelineTest, MultidimensionalArrayChecksEveryDimension) {
   }
 }
 
+TEST_F(CompilerPipelineTest, SubarrayCopiesCheckRuntimeBounds) {
+  for (const auto* index :
+       {"int i = 2;", "int i = -3;", "uint i = 18446744073709551615;"}) {
+    for (const auto* access : {"row = a[i];", "a[i] = row;", "a[i] = a[0];"}) {
+      const auto source =
+          std::string("OPENQASM 3.0; array[float, 2, 2] a = {{0, 1}, {2, 3}}; "
+                      "array[float, 2] row = {0, 0}; ") +
+          index + access;
+      SCOPED_TRACE(source);
+      auto qc = QCProgram::fromOpenQASMString(source);
+      ASSERT_TRUE(qc);
+      auto qco = std::move(*qc).intoQCO();
+      ASSERT_TRUE(qco);
+      std::string diagnostic;
+      ScopedDiagnosticHandler handler(qco->module().getContext(),
+                                      [&](Diagnostic& error) {
+                                        diagnostic += error.str();
+                                        return success();
+                                      });
+      EXPECT_TRUE(
+          failed(qco::sample(mlir::mqt::getEntryPoint(qco->module()), 1, 42)));
+      EXPECT_NE(diagnostic.find("array index is out of bounds"),
+                std::string::npos)
+          << diagnostic;
+    }
+  }
+}
+
 TEST_F(CompilerPipelineTest, ClassicalArraysDoNotChangeQIRAllocationMode) {
   for (const auto profile : {QIRProfile::Base, QIRProfile::Adaptive}) {
     auto qc = QCProgram::fromOpenQASMString(R"qasm(OPENQASM 3.0;
       array[float, 1, 1] angles = {{pi}};
       array[float, 1, 1] copied = angles;
-      U(copied[0, 0], 0, 0) $0;
+      array[float, 1] row = copied[0];
+      U(row[0], 0, 0) $0;
       output bit result;
       result = measure $0;
     )qasm");

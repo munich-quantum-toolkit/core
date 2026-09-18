@@ -138,11 +138,17 @@ accesses check each dimension at runtime. A static read requires that element to
 be initialized. A dynamic read requires every element to be initialized; writing
 a dynamic index does not establish definite initialization.
 
-Whole-array initialization (`array[int, 2, 3] b = a;`) and assignment (`b = a;`)
-copy values into independent storage. Shapes and element types, including their
-widths, must match; the source must be fully initialized. Copies also work for
-angle arrays and preserve their quantized values. Whole-array arithmetic and
-compound assignments are not supported.
+Array initialization (`array[int, 2, 3] b = a;`) and assignment (`b = a;`) copy
+values into independent storage. A prefix of scalar indices selects a subarray:
+for a two-dimensional `a`, `array[int, 3] row = a[i];` copies one row, while
+`a[i] = row;` or `a[i] = a[j];` replaces one row. Indices can be runtime or
+negative values and use the same bounds checks as element access. Shapes and
+element types, including widths, must match. Static copies require only the
+selected source elements initialized and mark the selected destination elements
+initialized. A runtime source index requires its whole array initialized; a
+runtime destination index does not establish new initialization facts. Copies
+also preserve quantized angle values. Array arithmetic and compound assignments
+are not supported.
 
 Angle arrays use the same widths and compile-time quantization as scalar angle
 declarations. Values in initializer lists and assignments to individual entries
@@ -163,7 +169,7 @@ for int i in [0:2] {
 
 Arrays lower to typed MLIR `memref` storage and work through QC/QCO and Adaptive
 QIR conversion. They are internal storage, not implicit outputs; assign selected
-elements to scalar or bit outputs when needed. Subarray access, array slices,
+elements to scalar or bit outputs when needed. Range slices, concatenation,
 array outputs, runtime angle conversion, and jeff or OpenQASM export of array
 storage are not yet supported. Gate definitions cannot capture mutable arrays;
 pass selected entries as gate parameters instead.

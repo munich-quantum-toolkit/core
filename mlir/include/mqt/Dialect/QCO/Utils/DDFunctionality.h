@@ -46,7 +46,8 @@ struct DDSamplingState {
 ///
 /// The function must have one block. The interpreter supports concrete QCO and
 /// SCF structured control, non-recursive calls, common scalar math,
-/// nonzero-rank identity-layout memrefs of integer, index, or f64 values,
+/// nonzero-rank identity-layout memrefs of integer, index, or f64 values and
+/// their prefix-indexed subviews,
 /// dense rank-one f64 tensor constants and element extraction, and QTensor
 /// bookkeeping. `qco.static` values, or
 /// qubit arguments when no static values exist, set the wire map. Entry-block

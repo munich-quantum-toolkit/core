@@ -3463,32 +3463,60 @@ private:
   }
 
   [[nodiscard]] LogicalResult
-  analyzeArrayCopy(ArrayId target, SyntaxExpressionId value, SMLoc location,
+  analyzeArrayCopy(ArrayId target, std::vector<ExpressionId> targetIndices,
+                   SyntaxExpressionId value, SMLoc location,
                    std::vector<StatementId>& destination) {
     const auto& expression = syntax.expressions[value];
-    const auto* source = expression.kind == Expr::Kind::Identifier
+    const auto* source = (expression.kind == Expr::Kind::Identifier ||
+                          expression.kind == Expr::Kind::Index)
                              ? lookup(expression.identifier)
                              : nullptr;
     if (source == nullptr || source->kind != SymbolKind::Array) {
-      return fail(location, "array copy requires a whole-array source");
+      return fail(location, "array copy requires an array or subarray source");
     }
+    MQT_OQ3_TRY_ASSIGN(sourceIndices,
+                       analyzeArrayIndices(source->id, expression.lhs,
+                                           expression.additionalIndices,
+                                           expression.location, true));
     const auto& from = program.arrays[source->id];
     const auto& to = program.arrays[target];
-    if (from.shape != to.shape || from.type != to.type ||
+    const auto shape = ArrayRef(from.shape).drop_front(sourceIndices.size());
+    if (shape.empty() ||
+        shape != ArrayRef(to.shape).drop_front(targetIndices.size()) ||
+        from.type != to.type ||
         (from.elementWidth == 0 ? 64 : from.elementWidth) !=
             (to.elementWidth == 0 ? 64 : to.elementWidth)) {
       return fail(location,
                   "array copy requires matching shapes and element types");
     }
-    if (!initializedBits[arrayStateSlots_[source->id]]->all()) {
+    unsigned elements = 1;
+    for (const auto extent : shape) {
+      elements *= static_cast<unsigned>(extent);
+    }
+    const auto& initialized = *initializedBits[arrayStateSlots_[source->id]];
+    const auto sourceOffset = constantArrayOffset(source->id, sourceIndices);
+    const bool sourceInitialized =
+        sourceOffset
+            ? initialized.find_first_unset_in(
+                  static_cast<unsigned>(*sourceOffset),
+                  static_cast<unsigned>(*sourceOffset) + elements) == -1
+            : initialized.all();
+    if (!sourceInitialized) {
       return fail(location, "array copy source has uninitialized elements");
     }
-    mutableBitInitialization(arrayStateSlots_[target]).set();
-    MQT_OQ3_TRY_ASSIGN(statement,
-                       addStatement(location, ArrayCopyStatement{
-                                                  .source = source->id,
-                                                  .target = target,
-                                              }));
+    if (const auto offset = constantArrayOffset(target, targetIndices)) {
+      const auto start = static_cast<unsigned>(*offset);
+      mutableBitInitialization(arrayStateSlots_[target])
+          .set(start, start + elements);
+    }
+    MQT_OQ3_TRY_ASSIGN(
+        statement,
+        addStatement(location, ArrayCopyStatement{
+                                   .source = source->id,
+                                   .target = target,
+                                   .sourceIndices = std::move(sourceIndices),
+                                   .targetIndices = std::move(targetIndices),
+                               }));
     destination.push_back(statement);
     return success();
   }
@@ -3574,24 +3602,26 @@ private:
     MQT_OQ3_TRY_ASSIGN(statement, addStatement(location, std::move(typed)));
     destination.push_back(statement);
     if (copySource) {
-      return analyzeArrayCopy(id, *copySource, location, destination);
+      return analyzeArrayCopy(id, {}, *copySource, location, destination);
     }
     return success();
   }
 
   [[nodiscard]] FailureOr<std::vector<ExpressionId>>
   analyzeArrayIndices(ArrayId array, std::optional<SyntaxExpressionId> index,
-                      ArrayRef<SyntaxExpressionId> additional, SMLoc location) {
-    if (!index) {
+                      ArrayRef<SyntaxExpressionId> additional, SMLoc location,
+                      bool allowPartial = false) {
+    if (!index && !allowPartial) {
       return fail(location, "array access requires an element index");
     }
     const auto& shape = program.arrays[array].shape;
-    if (additional.size() + 1 != shape.size()) {
+    const auto count = index ? additional.size() + 1 : 0;
+    if (count > shape.size() || (!allowPartial && count != shape.size())) {
       return fail(location,
                   "array element access requires one index per dimension");
     }
     std::vector<ExpressionId> indices;
-    for (size_t dimension = 0; dimension < shape.size(); ++dimension) {
+    for (size_t dimension = 0; dimension < count; ++dimension) {
       const auto source = dimension == 0 ? *index : additional[dimension - 1];
       const auto length = static_cast<uint64_t>(shape[dimension]);
       MQT_OQ3_TRY_ASSIGN(constant, constantIndex(source, length, location));
@@ -3625,6 +3655,10 @@ private:
       offset =
           offset * static_cast<size_t>(program.arrays[array].shape[dimension]) +
           static_cast<size_t>(std::get<int64_t>(expression.constant));
+    }
+    for (const auto extent :
+         ArrayRef(program.arrays[array].shape).drop_front(indices.size())) {
+      offset *= static_cast<size_t>(extent);
     }
     return offset;
   }
@@ -3673,13 +3707,14 @@ private:
     const auto* symbol = lookup(assignment.target.identifier);
     if (symbol != nullptr && symbol->kind == SymbolKind::Array) {
       const auto array = symbol->id;
-      if (!assignment.target.index) {
-        return analyzeArrayCopy(array, assignment.value, location, destination);
-      }
       MQT_OQ3_TRY_ASSIGN(
-          indices,
-          analyzeArrayIndices(array, assignment.target.index,
-                              assignment.target.additionalIndices, location));
+          indices, analyzeArrayIndices(array, assignment.target.index,
+                                       assignment.target.additionalIndices,
+                                       location, true));
+      if (indices.size() < program.arrays[array].shape.size()) {
+        return analyzeArrayCopy(array, std::move(indices), assignment.value,
+                                location, destination);
+      }
       MQT_OQ3_TRY_ASSIGN(value, analyzeArrayValue(array, assignment.value));
       if (const auto offset = constantArrayOffset(array, indices)) {
         mutableBitInitialization(arrayStateSlots_[array])[*offset] = true;
