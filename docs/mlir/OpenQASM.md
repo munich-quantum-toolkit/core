@@ -149,9 +149,13 @@ bit-vector expressions and assignments as whole registers. Their first selected
 bit becomes bit zero of the value. Assignments snapshot the source value and
 destination bounds before writing, so overlapping copies are safe.
 
-Runtime slices in barriers are not supported. Reads through runtime slices
-require the whole source register to be initialized. Writes through runtime
-slices do not prove whole-register initialization, including measurement writes.
+Runtime barriers use one masked barrier over the possible participants; they do
+not become independent per-qubit barriers. Known bounds limit the participating
+wires, and known-false masks release excluded wires for optimization. QC ↔ QCO
+conversion preserves the mask, native QCO simulation forwards its wires, and QIR
+lowering discards compiler barriers. Reads through runtime slices require the
+whole source register to be initialized. Writes through runtime slices do not
+prove whole-register initialization, including measurement writes.
 
 Bit registers use `!cbit.reg<N>` in QC. OpenQASM 2 initializes each register to
 zero. OpenQASM 3 leaves each register undefined until a statement writes it. A

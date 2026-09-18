@@ -1016,6 +1016,20 @@ struct ConvertQCOBarrierOp final : OpConversionPattern<qco::BarrierOp> {
   }
 };
 
+struct ConvertQCOMaskedBarrierOp final
+    : OpConversionPattern<qco::MaskedBarrierOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qco::MaskedBarrierOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    qc::MaskedBarrierOp::create(rewriter, op.getLoc(), adaptor.getQubitsIn(),
+                                adaptor.getMasks());
+    rewriter.replaceOp(op, adaptor.getQubitsIn());
+    return success();
+  }
+};
+
 /// Converts qco.ctrl to qc.ctrl
 ///
 /// @par Example:
@@ -1514,11 +1528,12 @@ protected:
       typeConverter, context);
 #include "mqt/Conversion/GateTable.def"
 
-    patterns.add<ConvertQCOBarrierOp, ConvertQCOCtrlOp, ConvertQCOInvOp,
-                 ConvertQCOPowOp, ConvertQCOYieldOp, ConvertQCOIfOp,
-                 ConvertQCOIndexSwitchOp, ConvertQCOSCFWhileOp,
-                 ConvertQCOSCFConditionOp, ConvertQCOSCFYieldOp,
-                 ConvertQCOSCFForOp>(typeConverter, context);
+    patterns.add<ConvertQCOBarrierOp, ConvertQCOMaskedBarrierOp,
+                 ConvertQCOCtrlOp, ConvertQCOInvOp, ConvertQCOPowOp,
+                 ConvertQCOYieldOp, ConvertQCOIfOp, ConvertQCOIndexSwitchOp,
+                 ConvertQCOSCFWhileOp, ConvertQCOSCFConditionOp,
+                 ConvertQCOSCFYieldOp, ConvertQCOSCFForOp>(typeConverter,
+                                                           context);
 
     // Register operation conversion patterns that need state tracking
     patterns.add<ConvertQTensorExtractOp, ConvertQTensorInsertOp,

@@ -75,6 +75,56 @@ TEST(OpenQASMTargetTest, StaticBitVectorsDoNotMaterializeRuntimeWidths) {
   });
 }
 
+TEST(OpenQASMTargetTest, RuntimeBarrierOnlyEnumeratesPossibleParticipants) {
+  for (const auto& [statement, participants] :
+       std::to_array<std::pair<StringRef, size_t>>({
+           {"int last = int(b); barrier q[0:last];", 2},
+           {"int first = -1-int(b); barrier q[first:-1:-4];", 4},
+           {"int first = 3+int(b); barrier q[first:2:7];", 5},
+           {"int first = -int(b); barrier q[first:-1];", 2048},
+           {"int j = 0; for int i in [0:1] { barrier q[j:j]; j += 1; }", 2048},
+       })) {
+    SCOPED_TRACE(statement.str());
+    MLIRContext context;
+    auto moduleOp = qc::translateOpenQASMToQC(
+        "OPENQASM 3.1; qubit[2048] q; bit b = measure q[2047]; " +
+            statement.str(),
+        &context);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    size_t barriers = 0;
+    moduleOp->walk([&](qc::MaskedBarrierOp barrier) {
+      ++barriers;
+      EXPECT_EQ(barrier.getQubits().size(), participants);
+    });
+    EXPECT_EQ(barriers, 1);
+  }
+}
+
+TEST(OpenQASMTargetTest, RuntimeBarrierPreservesLoopBounds) {
+  for (const auto& [statement, participants] :
+       std::to_array<std::pair<StringRef, size_t>>({
+           {"for int i in [0:1] { barrier q[i:i]; }", 2},
+           {"for int i in [3:-1:1] { barrier q[i:i]; }", 3},
+           {"for int i in [-4:-1] { barrier q[i:i]; }", 4},
+           {"for int i in [2:3] { for int j in [0:i] { barrier q[j:j]; } }", 4},
+       })) {
+    SCOPED_TRACE(statement.str());
+    MLIRContext context;
+    auto moduleOp = qc::translateOpenQASMToQC(
+        "OPENQASM 3.1; qubit[2048] q; " + statement.str(), &context,
+        {.maxOperations = 1000});
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    size_t barriers = 0;
+    moduleOp->walk([&](qc::MaskedBarrierOp barrier) {
+      ++barriers;
+      EXPECT_EQ(barrier.getQubits().size(), participants);
+    });
+    EXPECT_EQ(barriers, 1);
+  }
+}
+
 TEST(OpenQASMTargetTest, LowersRuntimeRegisterSlicesToCheckedBroadcasts) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
@@ -154,6 +204,7 @@ TEST(OpenQASMTargetTest, ChecksInvalidRuntimeRegisterSlices) {
           "bit[3] c = 0; int last = 1; uint[3] x = uint[3](c[0:last]);",
           "widths must match",
       },
+      {"int last = 2; barrier q[0:last], q[1:2];", "distinct qubits"},
   });
   for (const auto& [statement, expected] : cases) {
     SCOPED_TRACE(statement.str());
@@ -177,37 +228,41 @@ TEST(OpenQASMTargetTest, ChecksInvalidRuntimeRegisterSlices) {
   }
 }
 
-TEST(OpenQASMTargetTest, PreservesOneBarrierForConstantSelections) {
-  constexpr llvm::StringLiteral source = R"qasm(
-OPENQASM 3.1;
-qubit[4] q;
-qubit[3] r;
-const int first = 3;
-const int step = -2;
-barrier q[first:step:0], r[1:2];
-)qasm";
-  MLIRContext context;
-  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  PassManager manager(&context);
-  manager.addPass(createCanonicalizerPass());
-  ASSERT_TRUE(succeeded(manager.run(*moduleOp)));
-  size_t barriers = 0;
-  moduleOp->walk([&](qc::BarrierOp barrier) {
-    ++barriers;
-    ASSERT_EQ(barrier.getQubits().size(), 4);
-    const auto expected = std::to_array<uint64_t>({3, 1, 1, 2});
-    for (auto [qubit, index] : llvm::zip_equal(barrier.getQubits(), expected)) {
-      auto load = qubit.getDefiningOp<memref::LoadOp>();
-      ASSERT_TRUE(load);
-      APInt value;
-      ASSERT_TRUE(
-          matchPattern(load.getIndices().front(), m_ConstantInt(&value)));
-      EXPECT_EQ(value.getZExtValue(), index);
-    }
-  });
-  EXPECT_EQ(barriers, 1);
+TEST(OpenQASMTargetTest, PreservesOneBarrierForSelections) {
+  for (const auto constantBounds : {false, true}) {
+    SCOPED_TRACE(constantBounds);
+    const std::string qualifier = constantBounds ? "const " : "";
+    std::string source = "OPENQASM 3.1; qubit[4] q; qubit[3] r; ";
+    source += qualifier;
+    source += "int first = 3; ";
+    source += qualifier;
+    source += "int step = -2; barrier q[first:step:0], r[1:2];";
+    MLIRContext context;
+    auto moduleOp = qc::translateOpenQASMToQC(source, &context);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    PassManager manager(&context);
+    manager.addPass(createCanonicalizerPass());
+    ASSERT_TRUE(succeeded(manager.run(*moduleOp)));
+    size_t barriers = 0;
+    moduleOp->walk([&](qc::BarrierOp barrier) {
+      ++barriers;
+      ASSERT_EQ(barrier.getQubits().size(), 4);
+      const auto expected = constantBounds
+                                ? std::to_array<uint64_t>({3, 1, 1, 2})
+                                : std::to_array<uint64_t>({1, 3, 1, 2});
+      for (auto [qubit, index] :
+           llvm::zip_equal(barrier.getQubits(), expected)) {
+        auto load = qubit.getDefiningOp<memref::LoadOp>();
+        ASSERT_TRUE(load);
+        APInt value;
+        ASSERT_TRUE(
+            matchPattern(load.getIndices().front(), m_ConstantInt(&value)));
+        EXPECT_EQ(value.getZExtValue(), index);
+      }
+    });
+    EXPECT_EQ(barriers, 1);
+  }
 }
 
 TEST(OpenQASMTargetTest, ImportsNonNullTerminatedSourceView) {

@@ -42,6 +42,7 @@ add_mlir_library(
   MLIRCBitDialect
   MLIRFuncDialect
   MLIRLLVMDialect
+  MLIRInferIntRangeInterface
   MLIROpenQASMFrontend
   MLIRControlFlowDialect
   MLIRMathDialect

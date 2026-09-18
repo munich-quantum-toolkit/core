@@ -959,6 +959,24 @@ def BarrierOp : QCOp<"barrier", traits = [UnitaryOpInterface]> {
     }];
 }
 
+def MaskedBarrierOp : QCOp<"masked_barrier", [AttrSizedOperandSegments]> {
+  let summary = "Apply one barrier to a runtime-selected set of qubits";
+  let description = [{
+    The i-th qubit participates exactly when the i-th mask is true. All selected
+    qubits belong to one barrier, not independent conditional barriers. False
+    entries have no quantum effect. Memory effects conservatively include every
+    possible participant. Qubit operands must be distinct.
+  }];
+  let arguments =
+      (ins Arg<Variadic<QubitType>,
+               "possible participants", [MemRead, MemWrite]>:$qubits,
+          Variadic<I1>:$masks);
+  let assemblyFormat =
+      "$qubits `mask` `(` $masks `)` attr-dict `:` type($qubits)";
+  let hasCanonicalizer = 1;
+  let hasVerifier = 1;
+}
+
 def CallOp
     : QCOp<"call", traits = [CallOpInterface, UnitaryOpInterface,
                              DeclareOpInterfaceMethods<SymbolUserOpInterface>,

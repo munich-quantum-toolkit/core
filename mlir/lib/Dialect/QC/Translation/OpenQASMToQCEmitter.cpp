@@ -39,6 +39,8 @@
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/OperationSupport.h"
 #include "mlir/IR/OwningOpRef.h"
+#include "mlir/IR/Value.h"
+#include "mlir/Interfaces/InferIntRangeInterface.h"
 #include "mlir/Support/LLVM.h"
 
 #include "llvm/ADT/APInt.h"
@@ -1172,6 +1174,7 @@ private:
 
   struct SliceRange {
     Value start;
+    Value stop;
     Value step;
     Value count;
   };
@@ -1238,6 +1241,7 @@ private:
     auto count = arith::AddIOp::create(builder, quotient, one);
     return {
         .start = start,
+        .stop = stop,
         .step = step,
         .count =
             arith::IndexCastOp::create(builder, builder.getIndexType(), count),
@@ -1351,6 +1355,146 @@ private:
     }
     emitBody(ArrayRef(indices).take_front(qubits.size()),
              ArrayRef(indices).drop_front(qubits.size()));
+  }
+
+  /// Reuse operation range inference on the bound's SSA expression, without
+  /// running a whole-program analysis while the surrounding IR is incomplete.
+  ConstantIntRanges inferSliceBound(Value value,
+                                    DenseMap<Value, ConstantIntRanges>& cache,
+                                    unsigned depth = 0) {
+    if (auto found = cache.find(value); found != cache.end()) {
+      return found->second;
+    }
+    auto result = ConstantIntRanges::maxRange(
+        ConstantIntRanges::getStorageBitwidth(value.getType()));
+    // Deeper producers keep their conservative range instead of risking an
+    // unbounded recursive walk of user expressions.
+    if (depth < 64) {
+      if (auto argument = dyn_cast<BlockArgument>(value)) {
+        auto loop = dyn_cast<scf::ForOp>(argument.getOwner()->getParentOp());
+        if (loop && loop.getInductionVar() == value) {
+          const auto lower =
+              inferSliceBound(loop.getLowerBound(), cache, depth + 1);
+          const auto upper =
+              inferSliceBound(loop.getUpperBound(), cache, depth + 1);
+          // The emitter uses signed loops with an exclusive upper bound.
+          if (lower.smin().slt(upper.smax())) {
+            result =
+                ConstantIntRanges::fromSigned(lower.smin(), upper.smax() - 1);
+          }
+        }
+      } else if (auto inference =
+                     value.getDefiningOp<InferIntRangeInterface>()) {
+        SmallVector<ConstantIntRanges> operands;
+        for (auto operand : inference->getOperands()) {
+          operands.push_back(inferSliceBound(operand, cache, depth + 1));
+        }
+        inference.inferResultRanges(
+            operands, [&](Value output, const ConstantIntRanges& range) {
+              if (output == value) {
+                result = range;
+              }
+            });
+      }
+    }
+    cache.try_emplace(value, result);
+    return result;
+  }
+
+  void emitMaskedBarrier(ArrayRef<frontend::QubitReference> selections,
+                         ValueRange gateQubits) {
+    SmallVector<Value> qubits;
+    SmallVector<Value> masks;
+    DenseMap<std::pair<uint64_t, uint64_t>, size_t> positions;
+    DenseMap<Value, ConstantIntRanges> bounds;
+    const auto append = [&](frontend::QubitReference reference, Value mask) {
+      const auto key = std::pair{
+          (static_cast<uint64_t>(reference.kind) << 32U) | reference.symbol,
+          reference.index};
+      if (auto found = positions.find(key); found != positions.end()) {
+        auto previous = masks[found->second];
+        auto overlap = arith::AndIOp::create(builder, previous, mask);
+        auto distinct =
+            arith::XOrIOp::create(builder, overlap, builder.boolConstant(true));
+        cf::AssertOp::create(builder, distinct,
+                             "barrier operands must reference distinct qubits");
+        masks[found->second] = arith::OrIOp::create(builder, previous, mask);
+        return;
+      }
+      auto indices = emitQubitIndices({reference});
+      if (indices.empty()) {
+        return;
+      }
+      positions.try_emplace(key, qubits.size());
+      qubits.push_back(resolveQubit(reference, gateQubits, indices.front()));
+      masks.push_back(mask);
+    };
+    for (auto reference : selections) {
+      if (emissionBudget.isExhausted()) {
+        return;
+      }
+      if (!reference.slice && !reference.provenIndex) {
+        append(reference, builder.boolConstant(true));
+        continue;
+      }
+      auto width = program.registers.at(reference.symbol).width;
+      SliceRange range;
+      Value selectedIndex;
+      if (reference.slice) {
+        range = emitSliceRange(program.slices.at(*reference.slice), width);
+        if (!range.count) {
+          return;
+        }
+      } else {
+        auto indices = emitQubitIndices({reference});
+        if (indices.empty()) {
+          return;
+        }
+        selectedIndex = indices.front();
+      }
+      reference.slice.reset();
+      reference.provenIndex.reset();
+      const auto start =
+          inferSliceBound(selectedIndex ? selectedIndex : range.start, bounds);
+      const auto stop =
+          selectedIndex ? start : inferSliceBound(range.stop, bounds);
+      const auto first = std::min(start.umin().getLimitedValue(width - 1),
+                                  stop.umin().getLimitedValue(width - 1));
+      const auto last = std::max(start.umax().getLimitedValue(width - 1),
+                                 stop.umax().getLimitedValue(width - 1));
+      for (uint64_t index = first; index <= last; ++index) {
+        if (emissionBudget.isExhausted()) {
+          return;
+        }
+        reference.index = index;
+        Value mask;
+        if (selectedIndex) {
+          auto position = arith::ConstantIndexOp::create(
+              builder, static_cast<int64_t>(index));
+          mask = arith::CmpIOp::create(builder, arith::CmpIPredicate::eq,
+                                       position, selectedIndex);
+        } else {
+          auto position = arith::ConstantIntOp::create(
+              builder, static_cast<int64_t>(index), 128);
+          auto zero = arith::ConstantIntOp::create(builder, 0, 128);
+          auto delta = arith::SubIOp::create(builder, position, range.start);
+          auto ordinal = arith::DivSIOp::create(builder, delta, range.step);
+          auto remainder = arith::RemSIOp::create(builder, delta, range.step);
+          auto count = arith::IndexCastOp::create(
+              builder, builder.getIntegerType(128), range.count);
+          auto aligned = arith::CmpIOp::create(
+              builder, arith::CmpIPredicate::eq, remainder, zero);
+          auto after = arith::CmpIOp::create(builder, arith::CmpIPredicate::sge,
+                                             ordinal, zero);
+          auto before = arith::CmpIOp::create(
+              builder, arith::CmpIPredicate::slt, ordinal, count);
+          auto bounded = arith::AndIOp::create(builder, after, before);
+          mask = arith::AndIOp::create(builder, aligned, bounded);
+        }
+        append(reference, mask);
+      }
+    }
+    qc::MaskedBarrierOp::create(builder, qubits, masks);
   }
 
   [[nodiscard]] Value
@@ -2123,6 +2267,12 @@ private:
           } else if constexpr (std::is_same_v<T, frontend::ResetStatement>) {
             emitReset(data, gateQubits);
           } else if constexpr (std::is_same_v<T, frontend::BarrierStatement>) {
+            if (llvm::any_of(data.qubits, [](const auto& qubit) {
+                  return qubit.slice.has_value();
+                })) {
+              emitMaskedBarrier(data.qubits, gateQubits);
+              return;
+            }
             const auto indices = emitQubitIndices(data.qubits);
             if (emissionBudget.isExhausted()) {
               return;

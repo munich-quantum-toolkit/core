@@ -104,7 +104,6 @@ TEST(OpenQASMFrontendTest, RejectsInvalidRegisterSlices) {
       {"bit scalar = 0; scalar[:] = 0;", "scalar bit"},
       {"int last = 2; x q[0:0:last];", "step must not be zero"},
       {"float last = 2; x q[0:last];", "integer expressions"},
-      {"int last = 2; barrier q[0:last];", "runtime barrier slices"},
       {"gate local a { x a[:]; }", "cannot be indexed"},
       {"ctrl(2) @ x q[0:1], r[0];", "qubit operands"},
   });

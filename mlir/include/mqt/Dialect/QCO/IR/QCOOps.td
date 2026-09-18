@@ -1137,6 +1137,24 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface, Pure]> {
   let hasVerifier = 1;
 }
 
+def MaskedBarrierOp
+    : QCOOp<"masked_barrier", [AttrSizedOperandSegments, Pure]> {
+  let summary = "Apply one barrier to a runtime-selected set of qubits";
+  let description = [{
+    The i-th input participates exactly when the i-th mask is true. All selected
+    qubits belong to one barrier. Each result continues the corresponding input,
+    including unselected qubits, without changing its quantum state.
+  }];
+  let arguments = (ins Variadic<QubitType>:$qubits_in, Variadic<I1>:$masks);
+  let results = (outs Variadic<QubitType>:$qubits_out);
+  let assemblyFormat = [{
+    $qubits_in `mask` `(` $masks `)` attr-dict `:` type($qubits_in)
+    `->` type($qubits_out)
+  }];
+  let hasCanonicalizer = 1;
+  let hasVerifier = 1;
+}
+
 def CallOp
     : QCOOp<"call", traits = [CallOpInterface, UnitaryOpInterface,
                               DeclareOpInterfaceMethods<SymbolUserOpInterface>,

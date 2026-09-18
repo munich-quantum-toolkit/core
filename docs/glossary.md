@@ -132,6 +132,12 @@ Technical University of Munich
 ```{glossary}
 :sorted:
 
+masked barrier
+  **Preferred term:** masked barrier. **Accepted aliases:** none. One compiler
+  barrier whose participating qubits are selected by Boolean values at runtime.
+  All selected qubits share the same ordering boundary; this is not a sequence
+  of independent per-qubit barriers or a quantum-controlled gate.
+
 operation
 op
   **Preferred term:** operation. **Accepted alias:** op in code and compact
