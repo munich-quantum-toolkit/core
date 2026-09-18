@@ -3260,6 +3260,15 @@ TEST_F(QCODDFunctionalityTest,
            "%reg = memref.alloc(%two, %three) : memref<?x?xi1> "
            "%target = memref.alloc(%three, %two) : memref<?x?xi1> "
            "memref.copy %reg, %target : memref<?x?xi1> to memref<?x?xi1>",
+           "%reg = memref.alloc() : memref<2x3xi1> "
+           "%view = memref.subview %reg[%three, 0][1, 3][1, 1] "
+           ": memref<2x3xi1> to memref<3xi1, strided<[1], offset: ?>>",
+           "%reg = memref.alloc() : memref<2x3xi1> "
+           "%view = memref.subview %reg[0, %negative][1, 3][1, 1] "
+           ": memref<2x3xi1> to memref<3xi1, strided<[1], offset: ?>>",
+           "%reg = memref.alloc() : memref<2x3xi1> "
+           "%view = memref.subview %reg[0, 0][2, 1][1, 1] "
+           ": memref<2x3xi1> to memref<2xi1, strided<[3]>>",
        }) {
     SCOPED_TRACE(body);
     expectMlirSimulationFails(0, std::string(R"mlir(module { func.func @main() {
@@ -3272,6 +3281,52 @@ TEST_F(QCODDFunctionalityTest,
       %true = arith.constant true
     )mlir") + body + " return } }");
   }
+}
+
+TEST_F(QCODDFunctionalityTest, SubarrayCopiesShareStorageWithoutLoopBudget) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @copy(%from: memref<10001xi1, strided<[1], offset: ?>>,
+                    %to: memref<10001xi1, strided<[1], offset: ?>>) {
+      memref.copy %from, %to : memref<10001xi1, strided<[1], offset: ?>>
+                          to memref<10001xi1, strided<[1], offset: ?>>
+      return
+    }
+    func.func @main() {
+      %zero = arith.constant 0 : index
+      %one = arith.constant 1 : index
+      %last = arith.constant 10000 : index
+      %true = arith.constant true
+      %false = arith.constant false
+      %reg = memref.alloc() : memref<2x1x10001xi1>
+      %plane = memref.subview %reg[%one, 0, 0][1, 1, 10001][1, 1, 1]
+        : memref<2x1x10001xi1> to memref<1x10001xi1, strided<[10001, 1], offset: ?>>
+      %source = memref.subview %plane[%zero, 0][1, 10001][1, 1]
+        : memref<1x10001xi1, strided<[10001, 1], offset: ?>>
+          to memref<10001xi1, strided<[1], offset: ?>>
+      %target = memref.subview %reg[%zero, %zero, 0][1, 1, 10001][1, 1, 1]
+        : memref<2x1x10001xi1> to memref<10001xi1, strided<[1], offset: ?>>
+      memref.store %true, %source[%last] : memref<10001xi1, strided<[1], offset: ?>>
+      func.call @copy(%source, %target) : (memref<10001xi1, strided<[1], offset: ?>>,
+                                          memref<10001xi1, strided<[1], offset: ?>>) -> ()
+      func.call @copy(%target, %target) : (memref<10001xi1, strided<[1], offset: ?>>,
+                                          memref<10001xi1, strided<[1], offset: ?>>) -> ()
+      memref.store %false, %source[%last] : memref<10001xi1, strided<[1], offset: ?>>
+      %condition = memref.load %reg[%zero, %zero, %last] : memref<2x1x10001xi1>
+      %q = qco.static 0 : !qco.qubit
+      %result = qco.if %condition args(%qin = %q) -> (!qco.qubit) {
+        %out = qco.x %qin : !qco.qubit -> !qco.qubit
+        qco.yield %out : !qco.qubit
+      } else args(%qin = %q) {
+        qco.yield %qin : !qco.qubit
+      }
+      memref.dealloc %reg : memref<2x1x10001xi1>
+      qco.sink %result : !qco.qubit
+      return
+    }
+  })mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+  expectSimulatesFromZero(mainFunc(*mod), true);
 }
 
 TEST_F(QCODDFunctionalityTest, BindingsDriveObservableClassicalPath) {
