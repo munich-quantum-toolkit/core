@@ -62,6 +62,7 @@ struct Expr {
     AngleCast,
     Index,
     Slice,
+    Range,
     Neg,
     Not,
     BitNot,
@@ -190,6 +191,7 @@ struct SyntaxExpression {
   std::optional<SyntaxExpressionId> lhs;
   std::optional<SyntaxExpressionId> rhs;
   std::optional<Slice> slice;
+  std::optional<SyntaxExpressionId> step;
   std::vector<SyntaxExpressionId> additionalIndices;
 };
 

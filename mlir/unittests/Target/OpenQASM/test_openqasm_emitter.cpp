@@ -144,6 +144,32 @@ result = measure q;
   });
 }
 
+TEST(OpenQASMTargetTest, RangeCopiesStayCompactAndSnapshotAliases) {
+  MLIRContext context;
+  auto moduleOp =
+      qc::translateOpenQASMToQC("OPENQASM 3.0; array[int, 4] a = {1, 2, 3, 4}; "
+                                "array[int, 2] b = a[0:2:3]; a[1:] = a[:2]; "
+                                "for int i in [0:2] { a[:2] = a[1:]; }",
+                                &context);
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  size_t copies = 0;
+  size_t snapshots = 0;
+  moduleOp->walk([&](memref::CopyOp) { ++copies; });
+  moduleOp->walk([&](memref::AllocaOp alloc) {
+    snapshots += alloc.getType().getShape() == ArrayRef<int64_t>{4};
+    EXPECT_FALSE(alloc->getParentOfType<scf::ForOp>());
+    EXPECT_TRUE(alloc.getType().hasStaticShape());
+  });
+  EXPECT_EQ(copies, 5);
+  EXPECT_EQ(snapshots, 2); // Original array plus one reused scratch allocation.
+  moduleOp->walk([&](memref::AllocOp) {
+    ADD_FAILURE() << "copies must not require heap storage";
+  });
+  moduleOp->walk(
+      [&](cf::AssertOp) { ADD_FAILURE() << "range is statically safe"; });
+}
+
 TEST(OpenQASMTargetTest,
      ConstantArrayAccessAndCopiesNeedNoRuntimeBoundsChecks) {
   MLIRContext context;
