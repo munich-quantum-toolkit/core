@@ -904,7 +904,11 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
       .value("CZ", mlir::CompilerTarget::GateKind::CZ)
       .value("CX", mlir::CompilerTarget::GateKind::CX)
       .value("ECR", mlir::CompilerTarget::GateKind::ECR)
-      .value("SQRTISWAP", mlir::CompilerTarget::GateKind::SQRTISWAP);
+      .value("SQRTISWAP", mlir::CompilerTarget::GateKind::SQRTISWAP)
+      .value("GPI", mlir::CompilerTarget::GateKind::GPI)
+      .value("GPI2", mlir::CompilerTarget::GateKind::GPI2)
+      .value("MS", mlir::CompilerTarget::GateKind::MS)
+      .value("ZZ", mlir::CompilerTarget::GateKind::ZZ);
 
   nb::enum_<mlir::CompilerTarget::SingleQubitBasis>(
       compilerTarget, "SingleQubitBasis",
@@ -917,7 +921,9 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
       .value("ZYZ", mlir::CompilerTarget::SingleQubitBasis::ZYZ)
       .value("ZXZ", mlir::CompilerTarget::SingleQubitBasis::ZXZ)
       .value("FixedRotation",
-             mlir::CompilerTarget::SingleQubitBasis::FixedRotation);
+             mlir::CompilerTarget::SingleQubitBasis::FixedRotation)
+      .value("GPI", mlir::CompilerTarget::SingleQubitBasis::GPI)
+      .value("GPI2", mlir::CompilerTarget::SingleQubitBasis::GPI2);
 
   auto synthesisBasis = nb::class_<mlir::CompilerTarget::SynthesisBasis>(
       compilerTarget, "SynthesisBasis",

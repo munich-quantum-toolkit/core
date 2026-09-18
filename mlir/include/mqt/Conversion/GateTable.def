@@ -54,4 +54,9 @@ MQT_GATE(XXPlusYY, xx_plus_yy, XXPLUSYY, 2, 2, body, ctl)
 MQT_GATE(XXMinusYY, xx_minus_yy, XXMINUSYY, 2, 2, body, ctl)
 MQT_GATE(RCCX, rccx, RCCX, 3, 0, body, ctl)
 
+MQT_GATE(GPI, gpi, GPI, 1, 1, body, ctl)
+MQT_GATE(GPI2, gpi2, GPI2, 1, 1, body, ctl)
+MQT_GATE(MS, ms, MS, 2, 3, body, ctl)
+MQT_GATE(ZZ, zz, ZZ, 2, 1, body, ctl)
+
 #undef MQT_GATE

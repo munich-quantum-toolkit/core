@@ -384,6 +384,22 @@ void __quantum__rt__qubit_release(Qubit* qubit) {
     applyGate<mlir::qco::KEY##Op, 2>(p0, p1, control0, control1, target0,      \
                                      target1);                                 \
   }
+#define MQT_QIR_DEFINE_2_3(KEY, NAME, SUFFIX)                                  \
+  void __quantum__qis__##NAME##__##SUFFIX(double p0, double p1, double p2,     \
+                                          Qubit* target0, Qubit* target1) {    \
+    applyGate<mlir::qco::KEY##Op, 2>(p0, p1, p2, target0, target1);            \
+  }                                                                            \
+  void __quantum__qis__c##NAME##__##SUFFIX(double p0, double p1, double p2,    \
+                                           Qubit* control, Qubit* target0,     \
+                                           Qubit* target1) {                   \
+    applyGate<mlir::qco::KEY##Op, 2>(p0, p1, p2, control, target0, target1);   \
+  }                                                                            \
+  void __quantum__qis__cc##NAME##__##SUFFIX(double p0, double p1, double p2,   \
+                                            Qubit* control0, Qubit* control1,  \
+                                            Qubit* target0, Qubit* target1) {  \
+    applyGate<mlir::qco::KEY##Op, 2>(p0, p1, p2, control0, control1, target0,  \
+                                     target1);                                 \
+  }
 #define MQT_QIR_DEFINE_3_0(KEY, NAME, SUFFIX)                                  \
   void __quantum__qis__##NAME##__##SUFFIX(Qubit* target0, Qubit* target1,      \
                                           Qubit* target2) {                    \
@@ -428,6 +444,10 @@ void __quantum__rt__qubit_release(Qubit* qubit) {
   void __quantum__qis__##NAME##__##CTL_SUFFIX(Array* controls, Tuple* args) {  \
     applyControlledTuple<mlir::qco::KEY##Op, 2, 2>(controls, args);            \
   }
+#define MQT_QIR_DEFINE_CTL_2_3(KEY, NAME, CTL_SUFFIX)                          \
+  void __quantum__qis__##NAME##__##CTL_SUFFIX(Array* controls, Tuple* args) {  \
+    applyControlledTuple<mlir::qco::KEY##Op, 3, 2>(controls, args);            \
+  }
 #define MQT_QIR_DEFINE_CTL_3_0(KEY, NAME, CTL_SUFFIX)                          \
   void __quantum__qis__##NAME##__##CTL_SUFFIX(Array* controls, Tuple* args) {  \
     applyControlledTuple<mlir::qco::KEY##Op, 0, 3>(controls, args);            \
@@ -445,6 +465,7 @@ void __quantum__rt__qubit_release(Qubit* qubit) {
 #undef MQT_QIR_DEFINE_2_0
 #undef MQT_QIR_DEFINE_2_1
 #undef MQT_QIR_DEFINE_2_2
+#undef MQT_QIR_DEFINE_2_3
 #undef MQT_QIR_DEFINE_3_0
 #undef MQT_QIR_DEFINE_CTL_1_0
 #undef MQT_QIR_DEFINE_CTL_1_1
@@ -453,6 +474,7 @@ void __quantum__rt__qubit_release(Qubit* qubit) {
 #undef MQT_QIR_DEFINE_CTL_2_0
 #undef MQT_QIR_DEFINE_CTL_2_1
 #undef MQT_QIR_DEFINE_CTL_2_2
+#undef MQT_QIR_DEFINE_CTL_2_3
 #undef MQT_QIR_DEFINE_CTL_3_0
 
 void __quantum__qis__gphase__body(const double phase) {
