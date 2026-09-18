@@ -1070,6 +1070,8 @@ TEST_F(CompilerPipelineTest, ClassicalArraysSurviveQCQCOAndQIR) {
         emptyRows[1] = copy;
         emptyRows[1, :] = copy[:];
         empty[:] = copy;
+        int stride = -1;
+        empty = copy[:stride:];
         if (sizeof(empty) != 0 || sizeof(emptyRows, 1) != 0 ||
             sizeof(emptyRows[0, :]) != 0) { angles[1] = 0.0; }
         qubit q;
@@ -1077,6 +1079,53 @@ TEST_F(CompilerPipelineTest, ClassicalArraysSurviveQCQCOAndQIR) {
         bool zero = bool(angles[0]);
         if (zero) { U(pi, 0, 0) q; }
         if (bool(angles[1])) { U(float(angles[1]), 0, 0) q; }
+        result = measure q;
+      )qasm",
+      R"qasm(OPENQASM 3.0;
+        array[int, 5] a = {0, 1, 2, 3, 4};
+        qubit q;
+        U(pi, 0, 0) q;
+        bit measured = measure q;
+        int start = int(measured);
+        int stop = start + 2;
+        a[start:] = a[:stop];
+        bool right = a[1] == 0 && a[2] == 1 && a[4] == 3;
+        a[:stop] = a[start:];
+        a[:-start:] = a;
+        int first = -5;
+        int last = -1;
+        array[int, 3] b = a[first:start+1:last];
+        reset q;
+        if (right && b[0] == 3 && b[1] == 2 && b[2] == 0) { U(pi, 0, 0) q; }
+        output bit result;
+        result = measure q;
+      )qasm",
+      R"qasm(OPENQASM 3.0;
+        array[int, 2, 3] a = {{1, 2, 3}, {4, 5, 6}};
+        qubit q;
+        U(pi, 0, 0) q;
+        bit measured = measure q;
+        int one = int(measured);
+        array[int, 2] column = a[0:one, one];
+        a[:one, 0] = column;
+        a[0:one, one:2] = a[one:-one:0, 0:one];
+        reset q;
+        if (column[0] == 2 && column[1] == 5 &&
+            a[0, 1] == 5 && a[0, 2] == 5 && a[1, 1] == 2 && a[1, 2] == 2) {
+          U(pi, 0, 0) q;
+        }
+        output bit result;
+        result = measure q;
+      )qasm",
+      R"qasm(OPENQASM 3.0;
+        array[angle, 2] a = {0.0, pi};
+        int low = -9223372036854775807-1;
+        uint high = 9223372036854775807;
+        array[angle, 1] b = a[1:low:0];
+        array[angle, 1] c = a[0:high:1];
+        qubit q;
+        U(b[0], c[0], 0) q;
+        output bit result;
         result = measure q;
       )qasm",
       R"qasm(OPENQASM 3.0;
@@ -1457,6 +1506,34 @@ TEST_F(CompilerPipelineTest, SubarrayCopiesCheckRuntimeBoundsInDD) {
                 std::string::npos)
           << diagnostic;
     }
+  }
+}
+
+TEST_F(CompilerPipelineTest, ArrayRangesCheckMemrefBoundsAndShapesInDD) {
+  const auto cases =
+      std::to_array<std::pair<llvm::StringLiteral, llvm::StringLiteral>>({
+          {"int i = 4; b = a[0:i];", "subview is out of bounds"},
+          {"int i = -5; b = a[i:1];", "subview is out of bounds"},
+          {"int i = 2; b = a[:i];", "matching shapes"},
+          {"int i = 1; a[:i] = a;", "matching shapes"},
+      });
+  for (const auto& [body, message] : cases) {
+    SCOPED_TRACE(body.str());
+    auto qc = QCProgram::fromOpenQASMString(
+        "OPENQASM 3.0; array[int, 4] a = {0, 1, 2, 3}; array[int, 2] b; " +
+        body.str());
+    ASSERT_TRUE(qc);
+    auto qco = std::move(*qc).intoQCO();
+    ASSERT_TRUE(qco);
+    std::string diagnostic;
+    ScopedDiagnosticHandler handler(qco->module().getContext(),
+                                    [&](Diagnostic& error) {
+                                      diagnostic += error.str();
+                                      return success();
+                                    });
+    EXPECT_TRUE(
+        failed(qco::sample(mlir::mqt::getEntryPoint(qco->module()), 1, 42)));
+    EXPECT_TRUE(StringRef(diagnostic).contains(message)) << diagnostic;
   }
 }
 TEST_F(CompilerPipelineTest, ClassicalArraysDoNotChangeQIRAllocationMode) {

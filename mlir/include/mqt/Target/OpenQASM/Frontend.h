@@ -328,11 +328,19 @@ struct ArrayAssignmentStatement {
   ExpressionId value = 0;
 };
 
-/// A scalar index (size -2) or a fixed-size range in one array dimension.
+/// Inclusive bounds of a runtime-sized range in one array dimension.
+struct ArrayRange {
+  std::optional<ExpressionId> start;
+  std::optional<ExpressionId> stop;
+  ExpressionId step = 0;
+};
+
+/// A scalar index (size -2), fixed range, or runtime range (size -1).
 struct ArraySelection {
   ExpressionId offset = 0;
   int64_t size = -2;
   int64_t stride = 1;
+  std::optional<ArrayRange> runtime;
 
   [[nodiscard]] bool isScalar() const { return size == -2; }
 };
