@@ -28,7 +28,8 @@ rotation as an arbitrary rotation.
 
 Compiler and native-synthesis unit suites passed, including full-unitary phase
 comparisons, parameter restrictions, invalid attributes, and ordered placements.
-Python binding tests cover fixed and symbolic input gates. Stub generation, repository lint, and full changed-file C++ lint passed.
+Python binding tests cover fixed and symbolic input gates. Stub generation,
+repository lint, and full changed-file C++ lint passed.
 
 ## Follow-up
 
