@@ -322,17 +322,27 @@ TEST_F(TargetSynthesisTest, TargetPassesRequireTypedEnvironment) {
 }
 
 TEST_F(TargetSynthesisTest, FixedPulseSynthesisPreservesFullUnitary) {
-  for (const auto freeName : {"rx", "ry", "rz"}) {
-    for (const auto name : {"rx", "ry", "rz"}) {
+  for (const auto* const freeName : {"rx", "ry", "rz"}) {
+    for (const auto* const name : {"rx", "ry", "rz"}) {
       if (llvm::StringRef(freeName) == name) {
         continue;
       }
-      for (double pulseAngle : {std::numbers::pi / 2., -std::numbers::pi / 2.,
-                                std::numbers::pi / 4., -std::numbers::pi / 4.,
-                                std::numbers::pi / 3., .37, -.73, 2.7, 4.2}) {
-        for (const std::optional<double> halfTurn :
-             {std::optional<double>{}, std::optional{std::numbers::pi},
-              std::optional{-std::numbers::pi}}) {
+      for (double pulseAngle : {
+               std::numbers::pi / 2.,
+               -std::numbers::pi / 2.,
+               std::numbers::pi / 4.,
+               -std::numbers::pi / 4.,
+               std::numbers::pi / 3.,
+               .37,
+               -.73,
+               2.7,
+               4.2,
+           }) {
+        for (const std::optional<double> halfTurn : {
+                 std::optional<double>{},
+                 std::optional{std::numbers::pi},
+                 std::optional{-std::numbers::pi},
+             }) {
           SCOPED_TRACE(testing::Message()
                        << freeName << " " << name << " " << pulseAngle << " "
                        << halfTurn.value_or(0.));
@@ -377,7 +387,7 @@ TEST_F(TargetSynthesisTest, FixedPulseSynthesisPreservesFullUnitary) {
 }
 
 TEST_F(TargetSynthesisTest, FixedHalfTurnUsesOnePulse) {
-  for (const auto name : {"rx", "ry"}) {
+  for (const auto* const name : {"rx", "ry"}) {
     for (double half : {std::numbers::pi, -std::numbers::pi}) {
       const auto target = valid(Target::create(
           1, Connectivity::allToAll(),
