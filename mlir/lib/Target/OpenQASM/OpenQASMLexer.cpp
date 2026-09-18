@@ -118,6 +118,7 @@ decodeCodePoint(const char* position, const char* end) {
       .Case("gphase", TokenKind::Gphase)
       .Case("inv", TokenKind::Inv)
       .Case("pow", TokenKind::Pow)
+      .Case("sizeof", TokenKind::SizeOf)
       .Case("ctrl", TokenKind::Ctrl)
       .Case("negctrl", TokenKind::NegCtrl)
       .Case("int", TokenKind::Int)
@@ -135,8 +136,7 @@ decodeCodePoint(const char* position, const char* end) {
       .Cases({"pragma", "input", "readonly", "mutable"},
              TokenKind::UnsupportedKeyword)
       .Cases({"complex", "void", "stretch"}, TokenKind::UnsupportedKeyword)
-      .Cases({"durationof", "delay", "im", "sizeof"},
-             TokenKind::UnsupportedKeyword)
+      .Cases({"durationof", "delay", "im"}, TokenKind::UnsupportedKeyword)
       .Default(TokenKind::Identifier);
 }
 

@@ -960,7 +960,7 @@ private:
   }
 
   [[nodiscard]] FailureOr<std::optional<bool>>
-  constantCondition(const SyntaxExpressionId expression) const {
+  constantCondition(const SyntaxExpressionId expression) {
     if (!isConstantExpression(expression)) {
       return std::optional<bool>{};
     }
@@ -1185,7 +1185,7 @@ private:
 
   [[nodiscard]] FailureOr<uint32_t>
   angleWidth(const std::optional<SyntaxExpressionId> size,
-             const SMLoc location) const {
+             const SMLoc location) {
     if (!size) {
       return DEFAULT_ANGLE_WIDTH;
     }
@@ -1242,8 +1242,7 @@ private:
   }
 
   [[nodiscard]] FailureOr<uint64_t>
-  bitVectorCastWidth(std::optional<SyntaxExpressionId> size,
-                     SMLoc location) const {
+  bitVectorCastWidth(std::optional<SyntaxExpressionId> size, SMLoc location) {
     if (!size) {
       return 64;
     }
@@ -1367,7 +1366,7 @@ private:
   }
 
   [[nodiscard]] FailureOr<Constant>
-  evaluateConstant(const SyntaxExpressionId id) const {
+  evaluateConstant(const SyntaxExpressionId id) {
     if (constantValues[id]) {
       return *constantValues[id];
     }
@@ -1394,6 +1393,8 @@ private:
         };
       case Expr::Kind::Bool:
         return Constant{.type = ScalarType::Bool, .value = expression.boolean};
+      case Expr::Kind::SizeOf:
+        return evaluateSizeOf(expression);
       case Expr::Kind::Identifier: {
         if (const auto builtin = builtinConstant(expression.identifier)) {
           return *builtin;
@@ -1747,7 +1748,7 @@ private:
   }
 
   [[nodiscard]] FailureOr<ScalarType>
-  constantExpressionType(const SyntaxExpressionId id) const {
+  constantExpressionType(const SyntaxExpressionId id) {
     if (constantTypes[id]) {
       return *constantTypes[id];
     }
@@ -1783,6 +1784,7 @@ private:
       case Expr::Kind::BoolCast:
       case Expr::Kind::BitString:
       case Expr::Kind::BitCast:
+      case Expr::Kind::SizeOf:
       case Expr::Kind::AngleCast: {
         MQT_OQ3_TRY_ASSIGN(constant, evaluateConstant(id));
         return constant.type;
@@ -1964,7 +1966,7 @@ private:
   }
 
   [[nodiscard]] FailureOr<Constant>
-  evaluateConstantBitwise(const SyntaxExpression& expression) const {
+  evaluateConstantBitwise(const SyntaxExpression& expression) {
     MQT_OQ3_TRY_ASSIGN(lhs, evaluateConstant(*expression.lhs));
     const auto width = lhs.integerWidth != 0 ? lhs.integerWidth : 64;
     if (!coerceUnsignedConstant(lhs, width)) {
@@ -2015,7 +2017,7 @@ private:
   }
 
   [[nodiscard]] FailureOr<Constant>
-  evaluateConstantBinary(const SyntaxExpression& expression) const {
+  evaluateConstantBinary(const SyntaxExpression& expression) {
     MQT_OQ3_TRY_ASSIGN(lhs, evaluateConstant(*expression.lhs));
     MQT_OQ3_TRY_ASSIGN(rhs, evaluateConstant(*expression.rhs));
     promoteIntegerConstant(lhs);
@@ -2287,6 +2289,7 @@ private:
       case Expr::Kind::Int:
       case Expr::Kind::Float:
       case Expr::Kind::Bool:
+      case Expr::Kind::SizeOf:
         return true;
       case Expr::Kind::Index:
       case Expr::Kind::Slice:
@@ -2862,6 +2865,7 @@ private:
     case Expr::Kind::Bool:
     case Expr::Kind::Identifier:
     case Expr::Kind::Range:
+    case Expr::Kind::SizeOf:
       llvm_unreachable("handled expression kind");
     }
     MQT_OQ3_TRY_ASSIGN(lhs, analyzeExpression(*expression.lhs));
@@ -3088,7 +3092,7 @@ private:
   [[nodiscard]] FailureOr<uint64_t>
   constantWidth(const std::optional<SyntaxExpressionId> size, SMLoc location,
                 StringRef description = "register width",
-                bool allowEmpty = false) const {
+                bool allowEmpty = false) {
     if (!size) {
       return 1;
     }
@@ -3120,7 +3124,7 @@ private:
 
   [[nodiscard]] FailureOr<std::optional<uint64_t>>
   constantIndex(const SyntaxExpressionId id, const uint64_t width,
-                SMLoc location) const {
+                SMLoc location) {
     if (!isConstantExpression(id)) {
       return std::optional<uint64_t>{};
     }
@@ -3725,6 +3729,54 @@ private:
       });
     }
     return selection;
+  }
+
+  [[nodiscard]] FailureOr<Constant>
+  evaluateSizeOf(const SyntaxExpression& expression) {
+    const auto& operand = syntax.expressions[*expression.lhs];
+    const auto* symbol =
+        (operand.kind == Expr::Kind::Identifier ||
+         operand.kind == Expr::Kind::Index || operand.kind == Expr::Kind::Slice)
+            ? lookup(operand.identifier)
+            : nullptr;
+    if (symbol == nullptr || symbol->kind != SymbolKind::Array) {
+      return fail(expression.location,
+                  "sizeof requires an array or subarray argument");
+    }
+    MQT_OQ3_TRY_ASSIGN(selection,
+                       analyzeArraySelection(symbol->id, operand.lhs,
+                                             operand.additionalIndices,
+                                             operand.location));
+    SmallVector<int64_t> shape;
+    for (const auto& index : selection) {
+      if (!index.isScalar()) {
+        shape.push_back(index.size);
+      }
+    }
+    if (shape.empty()) {
+      return fail(expression.location,
+                  "sizeof requires an array or subarray argument");
+    }
+    int64_t dimension = 0;
+    if (expression.rhs) {
+      if (!isConstantExpression(*expression.rhs)) {
+        return fail(expression.location,
+                    "sizeof dimension must be a compile-time integer");
+      }
+      MQT_OQ3_TRY_ASSIGN(value, evaluateConstant(*expression.rhs));
+      if (!isInteger(value.type) || !asSigned(value)) {
+        return fail(expression.location,
+                    "sizeof dimension must be an integer that fits in i64");
+      }
+      dimension = *asSigned(value);
+    }
+    if (dimension < 0 || std::cmp_greater_equal(dimension, shape.size())) {
+      return fail(expression.location, "sizeof dimension is out of bounds");
+    }
+    return Constant{
+        .type = ScalarType::Uint,
+        .value = static_cast<uint64_t>(shape[dimension]),
+    };
   }
 
   [[nodiscard]] std::optional<BitInitialization>
@@ -5741,7 +5793,7 @@ private:
       return fail(location,
                   "dynamic classical index may read an uninitialized bit");
     }
-    if (!(*initializedBits[registerStateSlots_[bit.reg]])[bit.index]) {
+    if (!initializedBits[registerStateSlots_[bit.reg]]->test(bit.index)) {
       return fail(location, "classical condition bit has not been initialized");
     }
     return success();
