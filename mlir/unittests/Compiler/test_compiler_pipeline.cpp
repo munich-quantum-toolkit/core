@@ -1296,8 +1296,13 @@ TEST_F(CompilerPipelineTest, MultidimensionalArrayChecksEveryDimension) {
 TEST_F(CompilerPipelineTest, SubarrayCopiesCheckRuntimeBounds) {
   for (const auto* index :
        {"int i = 2;", "int i = -3;", "uint i = 18446744073709551615;"}) {
-    for (const auto* access : {"row = a[i];", "a[i] = row;", "a[i] = a[0];",
-                               "row = a[:, i];", "a[:, i] = row;"}) {
+    for (const auto* access : {
+             "row = a[i];",
+             "a[i] = row;",
+             "a[i] = a[0];",
+             "row = a[:, i];",
+             "a[:, i] = row;",
+         }) {
       const auto source =
           std::string("OPENQASM 3.0; array[float, 2, 2] a = {{0, 1}, {2, 3}}; "
                       "array[float, 2] row = {0, 0}; ") +
