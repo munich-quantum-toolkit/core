@@ -18,6 +18,10 @@ conversion, matrix simulation, and QIR. Preserve these gates through target
 compilation. Exporters that need a gate definition use ordinary rotation gates
 to define the same unitary. Do not add a provider SDK dependency.
 
+Circuit import recognizes the canonical exported definitions structurally,
+including their phase and operand order. Cache successful matches within each
+reader. Other definitions retain their custom semantics.
+
 Single-qubit synthesis uses a ZYZ decomposition followed by GPI2, GPI, GPI2. If
 only GPI2 is available, replace GPI with two GPI2 pulses and the required global
 phase. Two-qubit synthesis reuses the existing RXX/RZZ decomposers with fully
@@ -26,11 +30,12 @@ calibration-aware pulse optimization are outside this change.
 
 ## Validation
 
-The compiler suite passed 235 tests; native synthesis passed 65 tests; QCO
+The compiler suite passed 236 tests; native synthesis passed 65 tests; QCO
 matrix tests passed 572 cases; the QIR runtime passed 81 tests. Python target
-and export tests passed 404 cases, including numerical and symbolic native-ion
-synthesis. Downstream checks passed 25 cases for native gates, fixed rotation
-axes, and unsupported definitions. Generated stubs, repository lint, and full
+and export tests passed 424 cases; circuit translation passed 419 cases. These
+cover numeric and symbolic native round trips and changed custom definitions.
+Downstream checks also cover native gate preservation and one-qubit circuits
+with wider target operations. Generated stubs, repository lint, and full
 changed-file C++ lint passed.
 
 ## Follow-up
