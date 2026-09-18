@@ -30,6 +30,7 @@
 #include <string>
 #include <thread>
 #include <tuple>
+#include <variant>
 #include <vector>
 
 namespace qdmi {
@@ -218,6 +219,42 @@ TEST(StandardPropertyTest, PreservesValuesAndOptionalSupport) {
   EXPECT_THROW(std::ignore =
                    detail::queryProperty<size_t>(unsupported, "value", "size"),
                std::runtime_error);
+}
+
+TEST(StandardPropertyTest, ReturnsValuesUnsupportedPropertiesAndDiagnostics) {
+  const auto bytes = bytesOf(size_t{42});
+  auto value =
+      detail::tryQueryProperty<size_t>(queryBytes(bytes), "value", "size");
+  ASSERT_TRUE(std::holds_alternative<size_t>(value));
+  EXPECT_EQ(std::get<size_t>(value), 42);
+
+  const auto unsupported = [](size_t, void*, size_t*) {
+    return QDMI_ERROR_NOTSUPPORTED;
+  };
+  auto optional = detail::tryQueryProperty<std::optional<size_t>>(
+      unsupported, "value", "size");
+  ASSERT_TRUE(std::holds_alternative<std::optional<size_t>>(optional));
+  EXPECT_FALSE(std::get<std::optional<size_t>>(optional));
+  value = detail::tryQueryProperty<size_t>(unsupported, "value", "size");
+  ASSERT_TRUE(std::holds_alternative<Error>(value));
+  EXPECT_EQ(std::get<Error>(value).status, QDMI_ERROR_NOTSUPPORTED);
+  EXPECT_EQ(std::get<Error>(value).message, "value: Not supported.");
+
+  const auto failsToRead = [](size_t, void* output, size_t* sizeRet) {
+    if (sizeRet != nullptr) {
+      *sizeRet = 4;
+    }
+    return output == nullptr ? QDMI_SUCCESS : QDMI_ERROR_BADSTATE;
+  };
+  auto text =
+      detail::tryQueryProperty<std::string>(failsToRead, "value", "size");
+  ASSERT_TRUE(std::holds_alternative<Error>(text));
+  EXPECT_EQ(std::get<Error>(text).message, "value: Bad state.");
+  const std::vector<std::byte> unterminated{std::byte{'x'}};
+  text = detail::tryQueryProperty<std::string>(queryBytes(unterminated),
+                                               "value", "size");
+  ASSERT_TRUE(std::holds_alternative<Error>(text));
+  EXPECT_EQ(std::get<Error>(text).message, "value: missing string terminator");
 }
 
 TEST(StandardPropertyTest, RejectsMalformedSizesBeforeReading) {

@@ -32,6 +32,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <initializer_list>
 #include <limits>
 #include <numeric>
@@ -39,8 +40,10 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace mqt::bench {
@@ -73,6 +76,7 @@ struct RegistryEntry {
   uint64_t definitionVersion;
   InstanceSpecificationSchemaFunction instanceSpecificationSchema;
   EvaluationFunction evaluate;
+  BenchmarkInstance (*parse)(std::string_view, std::string_view);
 };
 constexpr std::array REGISTRY{
 #define MQT_BENCHMARK_FAMILY(TYPE, STEM, ID, DEFINITION_VERSION)               \
@@ -80,7 +84,11 @@ constexpr std::array REGISTRY{
                 .definitionVersion = (DEFINITION_VERSION),                     \
                 .instanceSpecificationSchema =                                 \
                     STEM##InstanceSpecificationSchema,                         \
-                .evaluate = evaluate##TYPE},
+                .evaluate = evaluate##TYPE,                                    \
+                .parse = +[](std::string_view json,                            \
+                             std::string_view source) -> BenchmarkInstance {   \
+                  return STEM##FromInstanceSpecificationJSON(json, source);    \
+                }},
 #include "bench/BenchmarkFamilies.inc"
 };
 static_assert(
@@ -190,11 +198,7 @@ void rejectUnknownKeys(const Json& value,
       (!value.is_number_integer() || value.get<int64_t>() < 0)) {
     fail(source, pointer, "must be a non-negative integer");
   }
-  try {
-    return value.get<uint64_t>();
-  } catch (const Json::exception&) {
-    fail(source, pointer, "must fit an unsigned 64-bit integer");
-  }
+  return value.get<uint64_t>();
 }
 
 [[nodiscard]] size_t sizeValue(const Json& value, const std::string_view source,
@@ -1368,6 +1372,52 @@ std::string evaluationToJSON(const std::string_view caseIdValue,
       {"shots", shots},
   }
       .dump();
+}
+
+namespace {
+template <typename Action>
+auto tryJSON(Action action)
+    -> std::variant<std::invoke_result_t<Action>, JSONError> {
+  try {
+    return action();
+  } catch (const std::exception& error) {
+    return JSONError{error.what()};
+  }
+}
+} // namespace
+
+std::variant<ParsedBenchmark, JSONError>
+tryParseInstanceSpecificationJSON(const std::string_view json,
+                                  const std::string_view source) {
+  return tryJSON([&] {
+    auto id = benchmarkIdFromInstanceSpecificationJSON(json, source);
+    auto instance = findBenchmark(id)->parse(json, source);
+    auto parsed = std::visit(
+        [&](const auto& benchmark) {
+          return ParsedBenchmark{
+              .instance = benchmark,
+              .benchmarkId = std::move(id),
+              .caseId = caseId(benchmark),
+              .manifestJSON = toManifestJSON(benchmark),
+          };
+        },
+        instance);
+    return parsed;
+  });
+}
+
+std::variant<std::string, JSONError>
+tryDescribeBenchmarkJSON(const std::string_view benchmark) {
+  return tryJSON([&] { return describeBenchmarkJSON(benchmark); });
+}
+
+std::variant<std::string, JSONError>
+tryEvaluateJSON(const std::string_view manifest, const std::string_view counts,
+                const std::string_view manifestSource,
+                const std::string_view countsSource) {
+  return tryJSON([&] {
+    return evaluateJSON(manifest, counts, manifestSource, countsSource);
+  });
 }
 
 } // namespace mqt::bench
