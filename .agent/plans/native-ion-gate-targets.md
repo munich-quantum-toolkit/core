@@ -1,6 +1,6 @@
 # Native trapped-ion gate targets
 
-Status: in progress; implementation and validation remain.
+Status: complete.
 
 ## Goal and scope
 
@@ -24,18 +24,16 @@ phase. Two-qubit synthesis reuses the existing RXX/RZZ decomposers with fully
 entangling MS(0, 0, 1/4) or ZZ(1/4). Broader angle-domain restrictions and
 calibration-aware pulse optimization are outside this change.
 
-## Work remaining
-
-- [ ] Add gate semantics and conversion/export support.
-- [ ] Add target recognition and constant/symbolic single-qubit synthesis.
-- [ ] Test matrices, phase, physical placements, fixed entanglers, and exports.
-- [ ] Expose target gate kinds and regenerate stubs.
-- [ ] Update Bench to use the direct targets and fixed Rigetti rotations.
-- [ ] Run required checks and open the separate draft contribution.
-
 ## Validation
 
-No native-gate checks have run yet. Use independent matrix definitions to test
-the gate conventions, full-unitary comparisons for synthesis, and round-trip
-tests for parameters and exports. Downstream tests must check emitted target
-instructions and qubit placements.
+The compiler suite passed 235 tests; native synthesis passed 65 tests; QCO
+matrix tests passed 572 cases; the QIR runtime passed 81 tests. Python target
+and export tests passed 404 cases, including numerical and symbolic native-ion
+synthesis. Downstream checks passed 25 cases for native gates, fixed rotation
+axes, and unsupported definitions. Generated stubs, repository lint, and full
+changed-file C++ lint passed.
+
+## Follow-up
+
+Bench consumes these capabilities in a separate adapter update. Symbolic
+multi-gate fusion retains the export limitation tracked by #2559.
