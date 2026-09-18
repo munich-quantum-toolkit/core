@@ -157,6 +157,30 @@ constexpr std::array GATE_SPECIFICATIONS{
         .arity = 2,
         .numParameters = 0,
     },
+    GateSpecification{
+        .kind = GateKind::GPI,
+        .name = "gpi",
+        .arity = 1,
+        .numParameters = 1,
+    },
+    GateSpecification{
+        .kind = GateKind::GPI2,
+        .name = "gpi2",
+        .arity = 1,
+        .numParameters = 1,
+    },
+    GateSpecification{
+        .kind = GateKind::MS,
+        .name = "ms",
+        .arity = 2,
+        .numParameters = 3,
+    },
+    GateSpecification{
+        .kind = GateKind::ZZ,
+        .name = "zz",
+        .arity = 2,
+        .numParameters = 1,
+    },
 };
 
 } // namespace
@@ -219,6 +243,17 @@ makeFixedRotationBasis(GateKind gate, GateKind freeGate, double angle) {
   }
   result.quarterTurnAngles = std::move(zAngles);
   return result;
+}
+
+// Native ion entanglers are synthesized at a quarter turn.
+static std::optional<double> synthesisParameter(GateKind gate, size_t index) {
+  if (gate == GateKind::MS) {
+    return index == 2 ? .25 : 0.;
+  }
+  if (gate == GateKind::ZZ) {
+    return .25;
+  }
+  return std::nullopt;
 }
 
 std::array<CompilerTarget::GateKind, 3>
@@ -836,15 +871,19 @@ bool CompilerTarget::Storage::supportsGate(
       std::ranges::find(GATE_SPECIFICATIONS, gate, &GateSpecification::kind);
   assert(specification != GATE_SPECIFICATIONS.end() &&
          "unknown compiler target gate");
-  return supportsOperation(specification->name, specification->arity,
-                           specification->numParameters, orderedSites);
+  return supportsOperation(
+      specification->name, specification->arity, specification->numParameters,
+      orderedSites, false,
+      [gate](size_t index) { return synthesisParameter(gate, index); });
 }
 
 std::optional<CompilerTarget::SynthesisBasis>
 CompilerTarget::Storage::resolveSynthesisBasis() const {
   const auto supportsEveryPlacement = [&](StringRef operationName, size_t arity,
                                           size_t numParameters,
-                                          bool variadicOnly = false) {
+                                          bool variadicOnly = false,
+                                          std::optional<GateKind> gate =
+                                              std::nullopt) {
     if (nativeOperationsKind == NativeOperations::Kind::Unrestricted) {
       return true;
     }
@@ -859,8 +898,18 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
                   OperationCapability::Arity::Kind::Variadic) &&
              operation.arity().accepts(arity) &&
              operation.numParameters() == numParameters &&
-             operation.fixedParameters().empty() &&
-             operation.siteTuples().empty();
+             operation.siteTuples().empty() &&
+             llvm::all_of(llvm::enumerate(operation.fixedParameters()),
+                          [&](const auto entry) {
+                            const auto expected = entry.value();
+                            const auto actual =
+                                gate ? synthesisParameter(*gate, entry.index())
+                                     : std::nullopt;
+                            return !expected ||
+                                   (actual &&
+                                    std::abs(*actual - *expected) <=
+                                        mqt::PARAMETER_COMPARISON_TOLERANCE);
+                          });
     });
   };
   const auto supportsOnEverySite = [&](GateKind gate) {
@@ -935,6 +984,10 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
       singleQubit = SingleQubitBasis::FixedRotation;
     }
   }
+  if (!singleQubit && supportsOnEverySite(GateKind::GPI2)) {
+    singleQubit = supportsOnEverySite(GateKind::GPI) ? SingleQubitBasis::GPI
+                                                     : SingleQubitBasis::GPI2;
+  }
 
   const auto supportsOnEveryCoupling = [&](GateKind gate) {
     if (sites.size() < 2) {
@@ -950,7 +1003,7 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
     assert(specification != GATE_SPECIFICATIONS.end() &&
            "unknown compiler target gate");
     if (supportsEveryPlacement(specification->name, specification->arity,
-                               specification->numParameters)) {
+                               specification->numParameters, false, gate)) {
       return true;
     }
     const auto supportsPair = [&](SiteId source, SiteId target) {
@@ -974,9 +1027,9 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
   };
 
   constexpr std::array entanglerPreference{
-      GateKind::RXX, GateKind::RYY,   GateKind::RZX,
-      GateKind::RZZ, GateKind::ISWAP, GateKind::CZ,
-      GateKind::CX,  GateKind::ECR,   GateKind::SQRTISWAP,
+      GateKind::RXX,       GateKind::RYY, GateKind::RZX, GateKind::RZZ,
+      GateKind::ISWAP,     GateKind::CZ,  GateKind::CX,  GateKind::ECR,
+      GateKind::SQRTISWAP, GateKind::MS,  GateKind::ZZ,
   };
   /// NOLINTNEXTLINE(readability-qualified-auto): portable iterator type.
   const auto entangler =

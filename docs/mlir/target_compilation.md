@@ -185,6 +185,45 @@ method also rejects angles that require more than 64 fixed pulses per effective
 quarter turn, to bound circuit expansion. These restrictions affect synthesis;
 matching fixed native operations remains available for every finite angle.
 
+### Native trapped-ion gates
+
+Core accepts `gpi(phi)`, `gpi2(phi)`, `ms(phi0, phi1, theta)`, and `zz(theta)`
+as target capabilities and QC/QCO operations. Their parameters use **turns**,
+where one turn is 2π radians. GPI equals `i R(pi, 2*pi*phi)`, GPI2 equals
+`R(pi/2, 2*pi*phi)`, and ZZ equals `RZZ(2*pi*theta)`. MS conjugates
+`RXX(2*pi*theta)` by RZ rotations with angles `2*pi*phi0` and `2*pi*phi1` on its
+first and second targets. These conventions follow the
+[IonQ native-gate specification](https://docs.ionq.com/features/getting-started-with-native-gates).
+
+```python
+ion_target = CompilerTarget(
+    2,
+    connectivity=CompilerTarget.Connectivity.all_to_all(),
+    native_operations=CompilerTarget.NativeOperations([
+        CompilerTarget.OperationCapability("gpi", 1, 1),
+        CompilerTarget.OperationCapability("gpi2", 1, 1),
+        CompilerTarget.OperationCapability("ms", 2, 3, fixed_parameters=[None, None, 0.25]),
+        CompilerTarget.OperationCapability("gphase", 0, 1),
+    ]),
+)
+```
+
+Arbitrary GPI2 phases on every site provide a single-qubit synthesis basis; GPI
+reduces a general decomposition from four pulses to three. Two-qubit synthesis
+uses MS(0, 0, 0.25) or ZZ(0.25) on a supported orientation of each coupling.
+Fixed parameter restrictions must admit these values. Single-qubit synthesis
+accepts symbolic input angles; two-qubit synthesis still requires a constant
+matrix unless the input gate is already native.
+
+Exports retain the native names and parameters. OpenQASM and Python circuit
+exports provide equivalent gate definitions. QIR uses MQT runtime extensions
+`__quantum__qis__gpi__body`, `__quantum__qis__gpi2__body`,
+`__quantum__qis__ms__body`, and `__quantum__qis__zz__body`; other QIR runtimes
+must implement them. No provider SDK is required. Core does not enforce a
+provider's parameter ranges or calibration limits.
+
+### Placements and calibration
+
 Use plain tuples for placements without calibration. Use
 `CompilerTarget.SiteTuple([1, 0], duration=40, fidelity=0.99)` to attach
 calibration to a placement; both forms can appear in the same list.

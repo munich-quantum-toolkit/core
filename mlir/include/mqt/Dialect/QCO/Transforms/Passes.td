@@ -89,7 +89,7 @@ def FuseSingleQubitUnitaryRuns
   }];
   let options = [Option<
       "basis", "basis", "std::string", "\"zyz\"",
-      "Target Euler basis (zyz, zxz, xzx, xyx, u, zsxx, r).">];
+      "Target Euler basis (zyz, zxz, xzx, xyx, u, zsxx, r, gpi, gpi2).">];
 }
 
 //===----------------------------------------------------------------------===//

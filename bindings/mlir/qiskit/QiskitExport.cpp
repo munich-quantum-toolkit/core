@@ -38,15 +38,19 @@
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/Attributes.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/Region.h"
+#include "mlir/IR/SymbolTable.h"
 #include "mlir/IR/Value.h"
 #include "mlir/IR/ValueRange.h"
 #include "mlir/Support/WalkResult.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
+#include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
@@ -55,6 +59,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/Support/Casting.h"
 
@@ -67,6 +72,7 @@
 #include <functional>
 #include <limits>
 #include <memory>
+#include <numbers>
 #include <numeric>
 #include <optional>
 #include <stdexcept>
@@ -2919,10 +2925,81 @@ collectGateDefinition(mlir::func::FuncOp function) {
   };
 }
 
+// Reuse custom-gate export so native gates retain their names and definitions.
+static void defineNativeGates(mlir::ModuleOp moduleOp) {
+  using namespace mlir;
+  SmallVector<qc::UnitaryOpInterface> gates;
+  moduleOp.walk([&](Operation* op) {
+    if (isa<qc::GPIOp, qc::GPI2Op, qc::MSOp, qc::ZZOp>(op)) {
+      gates.push_back(cast<qc::UnitaryOpInterface>(op));
+    }
+  });
+  SymbolTable symbols(moduleOp);
+  llvm::StringMap<func::FuncOp> definitions;
+  OpBuilder builder(moduleOp.getContext());
+  for (auto gate : gates) {
+    const auto name = gate.getBaseSymbol();
+    auto function = definitions.lookup(name);
+    if (!function) {
+      const auto count = gate.getNumParams();
+      SmallVector<Type> types(count, builder.getF64Type());
+      types.append(gate.getNumTargets(),
+                   qc::QubitType::get(builder.getContext()));
+      function = func::FuncOp::create(gate.getLoc(), name,
+                                      builder.getFunctionType(types, {}));
+      function.setPrivate();
+      mlir::mqt::setUnitaryFunction(function);
+      function->setAttr(
+          mlir::mqt::MQTDialect::SourceNameAttrHelper::getNameStr(),
+          builder.getStringAttr(name));
+      symbols.insert(function);
+      definitions.try_emplace(name, function);
+      auto* block = function.addEntryBlock();
+      builder.setInsertionPointToStart(block);
+      const auto loc = gate.getLoc();
+      Value twoPi = arith::ConstantFloatOp::create(
+          builder, loc, builder.getF64Type(), APFloat(2. * std::numbers::pi));
+      SmallVector<Value> angles;
+      for (auto arg : block->getArguments().take_front(count)) {
+        angles.push_back(arith::MulFOp::create(builder, loc, twoPi, arg));
+      }
+      auto qubits = block->getArguments().drop_front(count);
+      if (isa<qc::GPIOp, qc::GPI2Op>(gate.getOperation())) {
+        const bool piPulse = isa<qc::GPIOp>(gate.getOperation());
+        qc::ROp::create(builder, loc, qubits[0],
+                        piPulse ? std::numbers::pi : std::numbers::pi / 2.,
+                        angles[0]);
+        if (piPulse) {
+          qc::GPhaseOp::create(builder, loc, std::numbers::pi / 2.);
+        }
+      } else if (isa<qc::ZZOp>(gate.getOperation())) {
+        qc::RZZOp::create(builder, loc, qubits[0], qubits[1], angles[0]);
+      } else {
+        for (size_t index = 0; index < 2; ++index) {
+          Value negative = arith::NegFOp::create(builder, loc, angles[index]);
+          qc::RZOp::create(builder, loc, qubits[index], negative);
+        }
+        qc::RXXOp::create(builder, loc, qubits[0], qubits[1], angles[2]);
+        for (size_t index = 0; index < 2; ++index) {
+          qc::RZOp::create(builder, loc, qubits[index], angles[index]);
+        }
+      }
+      func::ReturnOp::create(builder, loc);
+    }
+    builder.setInsertionPoint(gate);
+    SmallVector<Value> operands(gate.getParameters());
+    llvm::append_range(operands, gate.getTargets());
+    qc::CallOp::create(builder, gate.getLoc(), FlatSymbolRefAttr::get(function),
+                       operands);
+    gate.erase();
+  }
+}
+
 nb::object exportCircuit(const mlir::QCProgram& program,
                          const mlir::CompilerTarget* const target) {
   mlir::OwningOpRef<mlir::ModuleOp> expanded = program.module().clone();
   auto moduleOp = *expanded;
+  defineNativeGates(moduleOp);
   mlir::RewritePatternSet patterns(moduleOp.getContext());
   mlir::mqt::populateIntegerExpansionPatterns(patterns);
   /// Fold scalar expressions without applying resource or snapshot rewrites.

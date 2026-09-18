@@ -84,6 +84,7 @@ static const TwoQubitBasisDecomposer&
 cachedNativeBasisDecomposer(const CompilerTarget::GateKind entangler) {
   using GateKind = CompilerTarget::GateKind;
   switch (entangler) {
+  case GateKind::MS:
   case GateKind::RXX: {
     static const TwoQubitBasisDecomposer DECOMPOSER =
         TwoQubitBasisDecomposer::create(
@@ -102,6 +103,7 @@ cachedNativeBasisDecomposer(const CompilerTarget::GateKind entangler) {
             RZXOp::unitaryMatrix(std::numbers::pi / 2.0), 1.0);
     return DECOMPOSER;
   }
+  case GateKind::ZZ:
   case GateKind::RZZ: {
     static const TwoQubitBasisDecomposer DECOMPOSER =
         TwoQubitBasisDecomposer::create(
@@ -129,8 +131,7 @@ cachedNativeBasisDecomposer(const CompilerTarget::GateKind entangler) {
     return DECOMPOSER;
   }
   default:
-    llvm_unreachable(
-        "only RXX/RYY/RZX/RZZ/ISWAP/CZ/CX/ECR are valid entanglers");
+    llvm_unreachable("unsupported native synthesis entangler");
   }
 }
 
@@ -932,6 +933,18 @@ emitUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0, Value qubit1,
     globalPhase += synthesized->globalPhase;
   };
   const auto emitEntangler = [&] {
+    if (basis.entangler == CompilerTarget::GateKind::MS) {
+      auto ms = MSOp::create(builder, loc, wire0, wire1, 0., 0., .25);
+      wire0 = ms.getQubit0Out();
+      wire1 = ms.getQubit1Out();
+      return;
+    }
+    if (basis.entangler == CompilerTarget::GateKind::ZZ) {
+      auto zz = ZZOp::create(builder, loc, wire0, wire1, .25);
+      wire0 = zz.getQubit0Out();
+      wire1 = zz.getQubit1Out();
+      return;
+    }
     if (basis.entangler == CompilerTarget::GateKind::RXX) {
       auto rxxOp = RXXOp::create(builder, loc, wire0, wire1, WEYL_PI / 2.0);
       wire0 = rxxOp.getOutputQubit(0);

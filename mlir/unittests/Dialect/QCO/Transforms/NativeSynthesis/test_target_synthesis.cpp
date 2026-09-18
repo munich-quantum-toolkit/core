@@ -323,6 +323,61 @@ TEST_F(TargetSynthesisTest, TargetPassesRequireTypedEnvironment) {
       << diagnostics;
 }
 
+TEST_F(TargetSynthesisTest, NativeIonSynthesisPreservesFullUnitary) {
+  for (const bool includeGpi : {false, true}) {
+    for (const bool useMS : {false, true}) {
+      for (const bool reverse : {false, true}) {
+        SCOPED_TRACE(testing::Message() << includeGpi << useMS << reverse);
+        std::vector operations{
+            valid(OperationCapability::create("gpi2", 1, 1)),
+            valid(OperationCapability::create("gphase", 0, 1)),
+        };
+        if (includeGpi) {
+          operations.push_back(valid(OperationCapability::create("gpi", 1, 1)));
+        }
+        operations.push_back(valid(OperationCapability::create(
+            useMS ? "ms" : "zz", 2, useMS ? 3 : 1,
+            {
+                valid(SiteTuple::create(
+                    reverse ? std::vector<Target::SiteId>{1, 0}
+                            : std::vector<Target::SiteId>{0, 1})),
+            },
+            std::nullopt, std::nullopt,
+            useMS ? std::vector<std::optional<double>>{0., 0., .25}
+                  : std::vector<std::optional<double>>{.25})));
+        const auto target =
+            valid(Target::create(2, Connectivity::allToAll(),
+                                 NativeOperations::fromOperations(operations)));
+        ASSERT_TRUE(target.synthesisBasis());
+        EXPECT_EQ(target.synthesisBasis()->singleQubit,
+                  includeGpi ? Target::SingleQubitBasis::GPI
+                             : Target::SingleQubitBasis::GPI2);
+        EXPECT_EQ(target.synthesisBasis()->entangler,
+                  useMS ? Target::GateKind::MS : Target::GateKind::ZZ);
+        for (double theta :
+             {0., .37, std::numbers::pi / 2., std::numbers::pi}) {
+          const auto circuit = [&](QCOProgramBuilder& builder) {
+            auto q0 = builder.u(theta, .42, -.31, builder.staticQubit(0));
+            auto q1 = builder.rx(-.73, builder.staticQubit(1));
+            auto [control, targetQubit] = builder.cx(q0, q1);
+            builder.sink(control);
+            builder.sink(builder.ry(theta, targetQubit));
+            return builder.intConstant(0);
+          };
+          auto expected = build(circuit);
+          auto actual = build(circuit);
+          ASSERT_TRUE(mlir::succeeded(runTargetPass(
+              *actual, target, mlir::qco::createTargetNativeSynthesis())));
+          ASSERT_TRUE(mlir::succeeded(
+              runPass(*actual, mlir::qco::createVerifyTargetConformance())));
+          EXPECT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*actual)));
+          expectEquivalent(expected, actual);
+        }
+      }
+    }
+  }
+}
+
 TEST_F(TargetSynthesisTest, FixedPulseSynthesisPreservesFullUnitary) {
   for (const auto* const freeName : {"rx", "ry", "rz"}) {
     for (const auto* const name : {"rx", "ry", "rz"}) {
