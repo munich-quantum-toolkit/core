@@ -378,6 +378,60 @@ TEST_F(TargetSynthesisTest, NativeIonSynthesisPreservesFullUnitary) {
   }
 }
 
+TEST_F(TargetSynthesisTest, RuntimeNativeIonSynthesisPreservesFullUnitary) {
+  for (const auto* basis : {"u", "gpi2", "gpi"}) {
+    SCOPED_TRACE(basis);
+    std::vector operations{
+        valid(OperationCapability::create("gphase", 0, 1)),
+        valid(OperationCapability::create(
+            basis, 1, llvm::StringRef(basis) == "u" ? 3 : 1)),
+    };
+    if (llvm::StringRef(basis) == "gpi") {
+      operations.push_back(valid(OperationCapability::create("gpi2", 1, 1)));
+    }
+    const auto target =
+        valid(Target::create(1, Connectivity::allToAll(),
+                             NativeOperations::fromOperations(operations)));
+    auto source = mlir::parseSourceString<ModuleOp>(R"mlir(
+      module {
+        func.func @main(%theta: f64) -> !qco.qubit {
+          %phi = arith.constant 0.42 : f64
+          %lambda = arith.constant -0.31 : f64
+          %q0 = qco.static 0 : !qco.qubit
+          %q1 = qco.u(%theta, %phi, %lambda) %q0 : !qco.qubit -> !qco.qubit
+          %q2 = qco.gpi(%theta) %q1 : !qco.qubit -> !qco.qubit
+          %q3 = qco.gpi2(%theta) %q2 : !qco.qubit -> !qco.qubit
+          return %q3 : !qco.qubit
+        }
+      }
+    )mlir",
+                                                    context.get());
+    ASSERT_TRUE(source);
+    OwningOpRef<ModuleOp> synthesized = source->clone();
+    ASSERT_TRUE(mlir::succeeded(runTargetPass(
+        *synthesized, target, mlir::qco::createTargetNativeSynthesis())));
+    ASSERT_TRUE(mlir::succeeded(
+        runPass(*synthesized, mlir::qco::createVerifyTargetConformance())));
+    ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*synthesized)));
+    for (double theta : {-.6, 0., std::numbers::pi / 2., std::numbers::pi}) {
+      SCOPED_TRACE(theta);
+      OwningOpRef<ModuleOp> expected = source->clone();
+      OwningOpRef<ModuleOp> actual = synthesized->clone();
+      for (auto moduleOp : {*expected, *actual}) {
+        auto function = mainFunction(moduleOp);
+        mlir::OpBuilder builder(context.get());
+        builder.setInsertionPointToStart(&function.getBody().front());
+        auto constant = mlir::arith::ConstantOp::create(
+            builder, function.getLoc(), builder.getF64FloatAttr(theta));
+        function.getArgument(0).replaceAllUsesWith(constant.getResult());
+        ASSERT_TRUE(mlir::succeeded(
+            runPass(moduleOp, mlir::createCanonicalizerPass())));
+      }
+      expectEquivalent(expected, actual);
+    }
+  }
+}
+
 TEST_F(TargetSynthesisTest, FixedPulseSynthesisPreservesFullUnitary) {
   for (const auto* const freeName : {"rx", "ry", "rz"}) {
     for (const auto* const name : {"rx", "ry", "rz"}) {
