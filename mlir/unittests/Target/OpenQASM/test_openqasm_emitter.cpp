@@ -133,7 +133,7 @@ TEST(OpenQASMTargetTest,
   auto moduleOp = qc::translateOpenQASMToQC(
       "OPENQASM 3.0; array[int, 2, 3] a = {{1, 2, 3}, {4, 5, 6}}; "
       "array[int, 2, 3] b = a; a[-1, -1] = a[0, 0]; a = b; b = b; "
-      "a[0] = b[-1];",
+      "a[0] = b[-1]; uint n = sizeof(a[:, 0]);",
       &context);
   ASSERT_TRUE(moduleOp);
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
@@ -175,6 +175,23 @@ TEST(OpenQASMTargetTest, RuntimeRangesUseDynamicViewsAndSnapshots) {
   EXPECT_EQ(snapshots, 1);
   moduleOp->walk([&](scf::ForOp) {
     ADD_FAILURE() << "runtime copy must not become a frontend loop";
+  });
+}
+
+TEST(OpenQASMTargetTest, RuntimeArraySizeQueriesDoNotReadOrCopyElements) {
+  MLIRContext context;
+  auto moduleOp = qc::translateOpenQASMToQC(
+      "OPENQASM 3.0; array[int, 2, 4] a; int row = 1; int step = -2; "
+      "output uint n; n = sizeof(a[row, :step:]);",
+      &context);
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  size_t arrays = 0;
+  moduleOp->walk([&](memref::AllocOp) { ++arrays; });
+  EXPECT_EQ(arrays, 1);
+  moduleOp->walk([&](Operation* operation) {
+    EXPECT_FALSE(
+        (isa<memref::LoadOp, memref::CopyOp, memref::SubViewOp>(operation)));
   });
 }
 
@@ -3078,6 +3095,7 @@ TEST(OpenQASMTargetTest, PreservesImportedWhileBehavior) {
 
 TEST(OpenQASMTargetTest, StopsEmissionAtEveryOperationBudgetBoundary) {
   constexpr std::array sources{
+      R"qasm(OPENQASM 3.1; array[int, 4] a; int n = 1; output uint result; result = sizeof(a[:sizeof(a[:n])]);)qasm",
       R"qasm(OPENQASM 3.1; array[int, 4] a = {0, 1, 2, 3}; int n = 1; a = a[n:] ++ a[:n-1];)qasm",
       R"qasm(OPENQASM 3.1; output int result; int x = 2; result = (x + x) ** 3;)qasm",
       R"qasm(OPENQASM 3.1; output bool result; int x = 2; result = !(x == 1) && (x < 3 || x > 4);)qasm",

@@ -100,6 +100,7 @@ TEST(OpenQASMFrontendTest, RejectsInvalidArraySizeQueries) {
   const auto cases =
       std::to_array<std::pair<llvm::StringLiteral, llvm::StringLiteral>>({
           {"sizeof(missing)", "array or subarray"},
+          {"sizeof(missing) + sizeof(missing)", "array or subarray"},
           {"sizeof(1)", "array or subarray"},
           {"sizeof(i)", "array or subarray"},
           {"sizeof(a[0, 0])", "array or subarray"},
@@ -112,7 +113,8 @@ TEST(OpenQASMFrontendTest, RejectsInvalidArraySizeQueries) {
           {"sizeof(a, i)", "compile-time integer"},
           {"sizeof(a[2])", "index is out of bounds"},
           {"sizeof(a[0:0:1])", "step must not be zero"},
-          {"sizeof(a[:i])", "compile-time extent"},
+          {"sizeof(a[:i], sizeof(a[:i]))", "compile-time integer"},
+          {"sizeof(a[:j])", "uninitialized"},
           {"sizeof(a[true])", "integer expression"},
           {"sizeof(a[0, 0, 0])", "one index per dimension"},
           {"sizeof(a, 0, 1)", "expected ')'"},
@@ -121,12 +123,31 @@ TEST(OpenQASMFrontendTest, RejectsInvalidArraySizeQueries) {
   for (const auto& [query, diagnostic] : cases) {
     SCOPED_TRACE(query.str());
     auto analyzed = openqasm::frontend::analyzeOpenQASM(
-        "OPENQASM 3.0; array[int, 2, 3] a; int i = 0; uint n = " + query.str() +
-        ";");
+        "OPENQASM 3.0; array[int, 2, 3] a; int i = 0; int j; uint n = " +
+        query.str() + ";");
     ASSERT_FALSE(analyzed);
     ASSERT_FALSE(analyzed.diagnostics.empty());
     EXPECT_TRUE(
         StringRef(analyzed.diagnostics.front().message).contains(diagnostic))
+        << analyzed.diagnostics.front().message;
+  }
+}
+
+TEST(OpenQASMFrontendTest, RejectsRuntimeArraySizesInConstantContexts) {
+  for (const auto* statement : {
+           "const uint n = sizeof(a[:i]);",
+           "const uint n = sizeof(a[:i]) + 1;",
+           "array[int, sizeof(a[:i])] b;",
+           "int[sizeof(a[:i])] n;",
+           "qubit[sizeof(a[:i])] q;",
+       }) {
+    SCOPED_TRACE(statement);
+    auto analyzed = openqasm::frontend::analyzeOpenQASM(
+        std::string("OPENQASM 3.0; array[int, 2] a; int i = 1; ") + statement);
+    ASSERT_FALSE(analyzed);
+    ASSERT_FALSE(analyzed.diagnostics.empty());
+    EXPECT_TRUE(
+        StringRef(analyzed.diagnostics.front().message).contains("constant"))
         << analyzed.diagnostics.front().message;
   }
 }

@@ -493,6 +493,8 @@ private:
   mutable std::vector<int8_t> constantExpressionStatus;
   mutable std::vector<std::optional<Constant>> constantValues;
   mutable std::vector<std::optional<ScalarType>> constantTypes;
+  // Reuse the nodes created while deciding whether sizeof is constant.
+  llvm::DenseMap<SyntaxExpressionId, ExpressionId> sizeOfExpressions_;
   StringRef activeGate_;
   std::set<uint64_t> hardwareQubits;
   uint64_t totalRegisterElements = 0;
@@ -962,7 +964,8 @@ private:
 
   [[nodiscard]] FailureOr<std::optional<bool>>
   constantCondition(const SyntaxExpressionId expression) {
-    if (!isConstantExpression(expression)) {
+    MQT_OQ3_TRY_ASSIGN(isConstant, isConstantExpression(expression));
+    if (!isConstant) {
       return std::optional<bool>{};
     }
     MQT_OQ3_TRY_ASSIGN(value, evaluateConstant(expression));
@@ -1190,7 +1193,8 @@ private:
     if (!size) {
       return DEFAULT_ANGLE_WIDTH;
     }
-    if (!isConstantExpression(*size)) {
+    MQT_OQ3_TRY_ASSIGN(isConstant, isConstantExpression(*size));
+    if (!isConstant) {
       return fail(location,
                   "angle width must be a constant integer expression");
     }
@@ -1247,7 +1251,8 @@ private:
     if (!size) {
       return 64;
     }
-    if (!isConstantExpression(*size)) {
+    MQT_OQ3_TRY_ASSIGN(isConstant, isConstantExpression(*size));
+    if (!isConstant) {
       return fail(location,
                   "bit-register cast width must be a constant integer "
                   "expression");
@@ -1323,7 +1328,8 @@ private:
     if (expressionProducesBool(syntaxId)) {
       return analyzeCondition(syntaxId);
     }
-    if (isConstantExpression(syntaxId)) {
+    MQT_OQ3_TRY_ASSIGN(isConstant, isConstantExpression(syntaxId));
+    if (isConstant) {
       MQT_OQ3_TRY_ASSIGN(constant, evaluateConstant(syntaxId));
       return addCondition({
           .kind = ConditionKind::Literal,
@@ -1392,8 +1398,18 @@ private:
         };
       case Expr::Kind::Bool:
         return Constant{.type = ScalarType::Bool, .value = expression.boolean};
-      case Expr::Kind::SizeOf:
-        return evaluateSizeOf(expression);
+      case Expr::Kind::SizeOf: {
+        MQT_OQ3_TRY_ASSIGN(size, analyzeSizeOf(id));
+        const auto& value = program.expressions[size];
+        if (value.kind != ExpressionKind::Constant) {
+          return fail(expression.location,
+                      "sizeof requires a compile-time extent in this context");
+        }
+        return Constant{
+            .type = ScalarType::Uint,
+            .value = std::get<uint64_t>(value.constant),
+        };
+      }
       case Expr::Kind::Identifier: {
         if (const auto builtin = builtinConstant(expression.identifier)) {
           return *builtin;
@@ -2271,12 +2287,13 @@ private:
     return Constant{.type = ScalarType::Int, .value = result};
   }
 
-  [[nodiscard]] bool isConstantExpression(const SyntaxExpressionId id) const {
+  [[nodiscard]] FailureOr<bool>
+  isConstantExpression(const SyntaxExpressionId id) {
     if (constantExpressionStatus[id] != 0) {
       return constantExpressionStatus[id] > 0;
     }
     const auto& expression = syntax.expressions[id];
-    const auto result = [&] {
+    const auto result = [&]() -> FailureOr<bool> {
       switch (expression.kind) {
       case Expr::Kind::Identifier: {
         if (builtinConstant(expression.identifier)) {
@@ -2288,8 +2305,11 @@ private:
       case Expr::Kind::Int:
       case Expr::Kind::Float:
       case Expr::Kind::Bool:
-      case Expr::Kind::SizeOf:
         return true;
+      case Expr::Kind::SizeOf: {
+        MQT_OQ3_TRY_ASSIGN(size, analyzeSizeOf(id));
+        return program.expressions[size].kind == ExpressionKind::Constant;
+      }
       case Expr::Kind::Index:
       case Expr::Kind::Range:
       case Expr::Kind::Concat:
@@ -2300,11 +2320,20 @@ private:
       case Expr::Kind::RotateRight:
         return false;
       default:
-        return (!expression.lhs || isConstantExpression(*expression.lhs)) &&
-               (!expression.rhs || isConstantExpression(*expression.rhs));
+        for (const auto operand : {expression.lhs, expression.rhs}) {
+          if (operand) {
+            MQT_OQ3_TRY_ASSIGN(constant, isConstantExpression(*operand));
+            if (!constant) {
+              return false;
+            }
+          }
+        }
+        return true;
       }
     }();
-    constantExpressionStatus[id] = result ? 1 : -1;
+    if (succeeded(result)) {
+      constantExpressionStatus[id] = *result ? 1 : -1;
+    }
     return result;
   }
 
@@ -2444,8 +2473,8 @@ private:
       });
     }
 
-    if (expectedWidth && isConstantExpression(syntaxId) &&
-        expression.kind != Expr::Kind::BitNot &&
+    MQT_OQ3_TRY_ASSIGN(isConstant, isConstantExpression(syntaxId));
+    if (expectedWidth && isConstant && expression.kind != Expr::Kind::BitNot &&
         expression.kind != Expr::Kind::BitAnd &&
         expression.kind != Expr::Kind::BitOr &&
         expression.kind != Expr::Kind::BitXor &&
@@ -2615,9 +2644,13 @@ private:
     if (!activeGate_.empty() && failed(validateGateExpression(syntaxId))) {
       return failure();
     }
-    if (isConstantExpression(syntaxId)) {
+    MQT_OQ3_TRY_ASSIGN(isConstant, isConstantExpression(syntaxId));
+    if (isConstant) {
       MQT_OQ3_TRY_ASSIGN(constant, evaluateConstant(syntaxId));
       return addConstant(constant);
+    }
+    if (expression.kind == Expr::Kind::SizeOf) {
+      return analyzeSizeOf(syntaxId);
     }
     if (expression.kind == Expr::Kind::Index) {
       const auto* symbol = lookup(expression.identifier);
@@ -3073,7 +3106,8 @@ private:
     if (!size) {
       return 1;
     }
-    if (!isConstantExpression(*size)) {
+    MQT_OQ3_TRY_ASSIGN(isConstant, isConstantExpression(*size));
+    if (!isConstant) {
       return fail(location,
                   description + " must be a constant integer expression");
     }
@@ -3099,7 +3133,8 @@ private:
   [[nodiscard]] FailureOr<std::optional<uint64_t>>
   constantIndex(const SyntaxExpressionId id, const uint64_t width,
                 SMLoc location) {
-    if (!isConstantExpression(id)) {
+    MQT_OQ3_TRY_ASSIGN(isConstant, isConstantExpression(id));
+    if (!isConstant) {
       return std::optional<uint64_t>{};
     }
     MQT_OQ3_TRY_ASSIGN(constant, evaluateConstant(id));
@@ -3305,7 +3340,9 @@ private:
         return fail(location,
                     "angle declarations require a compile-time initializer");
       }
-      if (!isConstantExpression(*declaration.initializer)) {
+      MQT_OQ3_TRY_ASSIGN(isConstant,
+                         isConstantExpression(*declaration.initializer));
+      if (!isConstant) {
         return fail(location,
                     "angle declarations require a compile-time initializer");
       }
@@ -3322,8 +3359,11 @@ private:
                      });
     }
     if (declaration.isConst) {
-      if (!declaration.initializer ||
-          !isConstantExpression(*declaration.initializer)) {
+      MQT_OQ3_TRY_ASSIGN(isConstant,
+                         declaration.initializer
+                             ? isConstantExpression(*declaration.initializer)
+                             : FailureOr<bool>(false));
+      if (!isConstant) {
         return fail(location,
                     "const declaration requires a constant initializer");
       }
@@ -3418,7 +3458,8 @@ private:
     const auto& declaration = program.arrays[array];
     const auto location = syntax.expressions[value].location;
     if (declaration.type == ScalarType::Angle) {
-      if (!isConstantExpression(value)) {
+      MQT_OQ3_TRY_ASSIGN(isConstant, isConstantExpression(value));
+      if (!isConstant) {
         return fail(location,
                     "angle array entries require compile-time values");
       }
@@ -3520,11 +3561,15 @@ private:
         }
         return *asSigned(value);
       };
-      if (llvm::any_of(
-              std::array{expression.lhs, expression.rhs, expression.step},
-              [&](auto bound) {
-                return bound && !isConstantExpression(*bound);
-              })) {
+      bool runtime = false;
+      for (const auto bound :
+           {expression.lhs, expression.rhs, expression.step}) {
+        if (bound) {
+          MQT_OQ3_TRY_ASSIGN(isConstant, isConstantExpression(*bound));
+          runtime |= !isConstant;
+        }
+      }
+      if (runtime) {
         ArrayRange range;
         if (expression.lhs) {
           MQT_OQ3_TRY_ASSIGN(
@@ -3536,7 +3581,11 @@ private:
               stop, analyzeArrayIndex(*expression.rhs, extent, location));
           range.stop = stop;
         }
-        if (!expression.step || isConstantExpression(*expression.step)) {
+        MQT_OQ3_TRY_ASSIGN(constantStep,
+                           expression.step
+                               ? isConstantExpression(*expression.step)
+                               : FailureOr<bool>(true));
+        if (constantStep) {
           MQT_OQ3_TRY_ASSIGN(step, constant(expression.step, 1));
           if (step == 0) {
             return fail(location, "array range step must not be zero");
@@ -3579,8 +3628,12 @@ private:
     return selection;
   }
 
-  [[nodiscard]] FailureOr<Constant>
-  evaluateSizeOf(const SyntaxExpression& expression) {
+  [[nodiscard]] FailureOr<ExpressionId> analyzeSizeOf(SyntaxExpressionId id) {
+    if (const auto found = sizeOfExpressions_.find(id);
+        found != sizeOfExpressions_.end()) {
+      return found->second;
+    }
+    const auto& expression = syntax.expressions[id];
     const auto& operand = syntax.expressions[*expression.lhs];
     const auto* symbol = (operand.kind == Expr::Kind::Identifier ||
                           operand.kind == Expr::Kind::Index)
@@ -3594,19 +3647,20 @@ private:
                        analyzeArraySelection(symbol->id, operand.lhs,
                                              operand.additionalIndices,
                                              operand.location));
-    SmallVector<int64_t> shape;
-    for (const auto& index : selection) {
+    SmallVector<size_t> dimensions;
+    for (const auto [dimension, index] : llvm::enumerate(selection)) {
       if (index.size != 0) {
-        shape.push_back(index.size);
+        dimensions.push_back(dimension);
       }
     }
-    if (shape.empty()) {
+    if (dimensions.empty()) {
       return fail(expression.location,
                   "sizeof requires an array or subarray argument");
     }
     int64_t dimension = 0;
     if (expression.rhs) {
-      if (!isConstantExpression(*expression.rhs)) {
+      MQT_OQ3_TRY_ASSIGN(isConstant, isConstantExpression(*expression.rhs));
+      if (!isConstant) {
         return fail(expression.location,
                     "sizeof dimension must be a compile-time integer");
       }
@@ -3617,16 +3671,31 @@ private:
       }
       dimension = *asSigned(value);
     }
-    if (dimension < 0 || std::cmp_greater_equal(dimension, shape.size())) {
+    if (dimension < 0 || std::cmp_greater_equal(dimension, dimensions.size())) {
       return fail(expression.location, "sizeof dimension is out of bounds");
     }
-    if (shape[dimension] < 0) {
-      return fail(expression.location, "sizeof requires a compile-time extent");
+    const auto sourceDimension = dimensions[dimension];
+    const auto& index = selection[sourceDimension];
+    ExpressionId size = 0;
+    if (index.runtime) {
+      const auto query = static_cast<uint32_t>(program.arraySizeQueries.size());
+      program.arraySizeQueries.push_back({
+          .range = *index.runtime,
+          .extent = program.arrays[symbol->id].shape[sourceDimension],
+      });
+      size = addExpression({
+          .kind = ExpressionKind::ArraySize,
+          .type = ScalarType::Uint,
+          .arraySizeQuery = query,
+      });
+    } else {
+      size = addConstant({
+          .type = ScalarType::Uint,
+          .value = static_cast<uint64_t>(index.size),
+      });
     }
-    return Constant{
-        .type = ScalarType::Uint,
-        .value = static_cast<uint64_t>(shape[dimension]),
-    };
+    sizeOfExpressions_.try_emplace(id, size);
+    return size;
   }
 
   [[nodiscard]] std::optional<BitInitialization>
@@ -4589,8 +4658,10 @@ private:
                        beforeGenerations);
     restoreAffineScalarValuesPrefix(beforeAffineScalarValues);
     bool rangeMayExecute = true;
-    if (isConstantExpression(loop.start) && isConstantExpression(loop.step) &&
-        isConstantExpression(loop.stop)) {
+    MQT_OQ3_TRY_ASSIGN(constantStart, isConstantExpression(loop.start));
+    MQT_OQ3_TRY_ASSIGN(constantStep, isConstantExpression(loop.step));
+    MQT_OQ3_TRY_ASSIGN(constantStop, isConstantExpression(loop.stop));
+    if (constantStart && constantStep && constantStop) {
       MQT_OQ3_TRY_ASSIGN(startConstant, evaluateConstant(loop.start));
       MQT_OQ3_TRY_ASSIGN(stepConstant, evaluateConstant(loop.step));
       MQT_OQ3_TRY_ASSIGN(stopConstant, evaluateConstant(loop.stop));
@@ -4766,7 +4837,8 @@ private:
       SwitchCase switchCase;
       switchCase.labels.reserve(syntaxCase.labels.size());
       for (const auto labelExpression : syntaxCase.labels) {
-        if (!isConstantExpression(labelExpression)) {
+        MQT_OQ3_TRY_ASSIGN(isConstant, isConstantExpression(labelExpression));
+        if (!isConstant) {
           return fail(
               syntax.expressions[labelExpression].location,
               "switch case labels must be constant integer expressions");
@@ -4877,7 +4949,8 @@ private:
     const auto& condition = syntax.expressions[syntaxId];
     ConditionExpression typed{};
     typed.location = getSourceLocation(condition.location);
-    if (isConstantExpression(syntaxId)) {
+    MQT_OQ3_TRY_ASSIGN(isConstant, isConstantExpression(syntaxId));
+    if (isConstant) {
       MQT_OQ3_TRY_ASSIGN(constant, evaluateConstant(syntaxId));
       if (constant.type != ScalarType::Bool) {
         return fail(condition.location, "condition must have bool type");
@@ -4993,18 +5066,20 @@ private:
       auto constantSyntaxId = *condition.rhs;
       auto registerComparison = typed.comparison;
       const auto* registerSymbol = lhsSymbol;
+      MQT_OQ3_TRY_ASSIGN(constantRhs, isConstantExpression(constantSyntaxId));
       bool directRegisterComparison =
           registerSymbol != nullptr &&
           registerSymbol->kind == SymbolKind::Register &&
           program.registers[registerSymbol->id].kind == RegisterKind::Bit &&
-          isConstantExpression(constantSyntaxId);
+          constantRhs;
       if (!directRegisterComparison) {
         const auto* rhsSymbol = rhsSyntax.kind == Expr::Kind::Identifier
                                     ? lookup(rhsSyntax.identifier)
                                     : nullptr;
+        MQT_OQ3_TRY_ASSIGN(constantLhs, isConstantExpression(*condition.lhs));
         if (rhsSymbol != nullptr && rhsSymbol->kind == SymbolKind::Register &&
             program.registers[rhsSymbol->id].kind == RegisterKind::Bit &&
-            isConstantExpression(*condition.lhs)) {
+            constantLhs) {
           registerSyntax = &rhsSyntax;
           constantSyntax = &lhsSyntax;
           constantSyntaxId = *condition.lhs;
@@ -5313,7 +5388,9 @@ private:
         uint64_t count = 1;
         std::optional<ExpressionId> operand;
         if (modifier.argument) {
-          if (!isConstantExpression(*modifier.argument)) {
+          MQT_OQ3_TRY_ASSIGN(isConstant,
+                             isConstantExpression(*modifier.argument));
+          if (!isConstant) {
             return fail(call.location,
                         "gate control count must be a constant integer");
           }
