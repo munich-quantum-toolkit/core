@@ -331,6 +331,8 @@ struct ArrayAssignmentStatement {
 struct ArrayCopyStatement {
   ArrayId source = 0;
   ArrayId target = 0;
+  std::vector<ExpressionId> sourceIndices;
+  std::vector<ExpressionId> targetIndices;
 };
 
 struct BitVectorAssignmentStatement {
