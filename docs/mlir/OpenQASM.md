@@ -174,6 +174,12 @@ are emitted. Runtime-selected sources require the whole source array
 initialized; runtime-selected destinations establish no new
 definite-initialization facts.
 
+Use `a ++ b` to concatenate arrays or slices in an initializer or assignment.
+Concatenation joins the first retained dimension; element types and all
+remaining dimensions must match. Chained and parenthesized concatenations,
+runtime ranges, and repeated operands are supported. Assignments such as
+`a = a[2:] ++ a[:1];` preserve the original source values.
+
 `sizeof(a)` returns the first dimension's length as a compile-time `uint`;
 `sizeof(a, d)` selects a zero-based, compile-time integer dimension. Subarrays
 and fixed ranges are supported: `sizeof(a[0])` gives a matrix's row length. The
@@ -214,10 +220,9 @@ conservatively require loop support for residual dynamic indices. See the
 [QIR 2.1 array contract](https://github.com/qir-alliance/qir-spec/blob/2.1/specification/Memory_Management.md#array-support).
 
 Arrays are internal storage, not implicit outputs; assign selected elements to
-scalar or bit outputs when needed. Concatenation, array outputs, runtime angle
-conversion, and jeff or OpenQASM export of array storage are not yet supported.
-Gate definitions cannot capture mutable arrays; pass selected entries as gate
-parameters instead.
+scalar or bit outputs when needed. Array outputs, runtime angle conversion, and
+jeff or OpenQASM export of array storage are not yet supported. Gate definitions
+cannot capture mutable arrays; pass selected entries as gate parameters instead.
 
 ### Qubit indices and classical registers
 

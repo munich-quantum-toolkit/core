@@ -524,6 +524,9 @@ Token Lexer::next() {
     return peek() == '=' ? twoChar(TokenKind::GreaterEquals)
                          : single(TokenKind::Greater);
   case '+':
+    if (peek() == '+') {
+      return twoChar(TokenKind::DoublePlus);
+    }
     return peek() == '=' ? twoChar(TokenKind::CompoundAssign)
                          : single(TokenKind::Plus);
   case '-':

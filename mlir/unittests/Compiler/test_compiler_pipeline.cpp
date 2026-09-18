@@ -1072,6 +1072,11 @@ TEST_F(CompilerPipelineTest, ClassicalArraysSurviveQCQCOAndQIR) {
         empty[:] = copy;
         int stride = -1;
         empty = copy[:stride:];
+        empty = copy ++ empty;
+        array[int, 0, 2] concatenated = noRows ++ noRows;
+        array[int, 1] one = {1};
+        array[int, 1] padded = empty ++ one ++ empty;
+        if (padded[0] != 1) { angles[1] = 0.0; }
         if (sizeof(empty) != 0 || sizeof(emptyRows, 1) != 0 ||
             sizeof(emptyRows[0, :]) != 0) { angles[1] = 0.0; }
         qubit q;
@@ -1079,6 +1084,55 @@ TEST_F(CompilerPipelineTest, ClassicalArraysSurviveQCQCOAndQIR) {
         bool zero = bool(angles[0]);
         if (zero) { U(pi, 0, 0) q; }
         if (bool(angles[1])) { U(float(angles[1]), 0, 0) q; }
+        result = measure q;
+      )qasm",
+      R"qasm(OPENQASM 3.0;
+        array[int, 2] first = {0, 1};
+        array[int, 3] second = {2, 3, 4};
+        array[int, 5] a = first ++ second;
+        array[int, 4] b = first ++ (first[1:1] ++ first[0:0]);
+        bool initial = a[0] == 0 && a[1] == 1 && a[2] == 2 &&
+                       a[3] == 3 && a[4] == 4 &&
+                       b[0] == 0 && b[1] == 1 && b[2] == 1 && b[3] == 0;
+        a = a[3:] ++ a[:2];
+        a[0:2:4] = a[0:0] ++ a[1:1] ++ a[2:2];
+        qubit q;
+        if (initial && a[0] == 3 && a[1] == 4 && a[2] == 4 &&
+            a[3] == 1 && a[4] == 0) { U(pi, 0, 0) q; }
+        output bit result;
+        result = measure q;
+      )qasm",
+      R"qasm(OPENQASM 3.0;
+        array[int[8], 6] a = {1, 2, 3, 4, 5, 6};
+        qubit q;
+        U(pi, 0, 0) q;
+        bit measured = measure q;
+        int k = int(measured) + 1;
+        a = a[k:] ++ a[:k-1];
+        array[int[8], 6] b = a[k:-1:0] ++ a[k+1:];
+        bool reversed = b[0] == 5 && b[1] == 4 && b[2] == 3 &&
+                        b[3] == 6 && b[4] == 1 && b[5] == 2;
+        b[:k] = a[:k-1] ++ a[k:k];
+        reset q;
+        if (reversed && b[0] == 3 && b[1] == 4 && b[2] == 5) { U(pi, 0, 0) q; }
+        output bit result;
+        result = measure q;
+      )qasm",
+      R"qasm(OPENQASM 3.0;
+        array[int, 3, 2] a = {{1, 2}, {3, 4}, {5, 6}};
+        a = a[2:2, :] ++ a[:1, :];
+        array[int, 6] b = a[0] ++ a[1] ++ a[2];
+        bool rows = b[0] == 5 && b[1] == 6 && b[2] == 1 &&
+                    b[3] == 2 && b[4] == 3 && b[5] == 4;
+        qubit q;
+        U(pi, 0, 0) q;
+        bit measured = measure q;
+        int one = int(measured);
+        a[:one, :] = a[one:one, 0:one] ++ a[0:0, :];
+        reset q;
+        if (rows && a[0, 0] == 1 && a[0, 1] == 2 && a[1, 0] == 5 &&
+            a[1, 1] == 6 && a[2, 0] == 3 && a[2, 1] == 4) { U(pi, 0, 0) q; }
+        output bit result;
         result = measure q;
       )qasm",
       R"qasm(OPENQASM 3.0;
@@ -1516,6 +1570,8 @@ TEST_F(CompilerPipelineTest, ArrayRangesCheckMemrefBoundsAndShapesInDD) {
           {"int i = -5; b = a[i:1];", "subview is out of bounds"},
           {"int i = 2; b = a[:i];", "matching shapes"},
           {"int i = 1; a[:i] = a;", "matching shapes"},
+          {"int i = 1; b = a[:i] ++ a[0:0];", "matching shapes"},
+          {"int i = 0; a = a[:i] ++ a[0:0];", "matching shapes"},
       });
   for (const auto& [body, message] : cases) {
     SCOPED_TRACE(body.str());
