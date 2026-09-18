@@ -64,6 +64,7 @@ struct Expr {
     Slice,
     Range,
     SizeOf,
+    Concat,
     Neg,
     Not,
     BitNot,

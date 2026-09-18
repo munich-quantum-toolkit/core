@@ -92,6 +92,7 @@ enum class TokenKind : uint8_t {
   // Operators
   Equals,
   Plus,
+  DoublePlus,
   Minus,
   Asterisk,
   DoubleAsterisk,
