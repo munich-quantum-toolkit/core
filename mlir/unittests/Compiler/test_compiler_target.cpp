@@ -960,7 +960,7 @@ TEST(CompilerTargetTest, ResolvesFixedPulseBasisOnlyOnEverySite) {
                            NativeOperations::fromOperations(operations)));
   ASSERT_TRUE(target.synthesisBasis());
   EXPECT_EQ(target.synthesisBasis()->singleQubit,
-            Target::SingleQubitBasis::ZFixedRotation);
+            Target::SingleQubitBasis::FixedRotation);
   EXPECT_FALSE(target.synthesisBasis()->entangler);
 }
 

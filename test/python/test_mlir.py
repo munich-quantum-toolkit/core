@@ -668,11 +668,11 @@ def test_fixed_parameter_target_capability(arity: int | CompilerTarget.Operation
         ]),
     )
     assert target.synthesis_basis is not None
-    assert target.synthesis_basis.single_qubit == CompilerTarget.SingleQubitBasis.ZFixedRotation
+    assert target.synthesis_basis.single_qubit == CompilerTarget.SingleQubitBasis.FixedRotation
     fixed = target.synthesis_basis.fixed_rotation
     assert fixed is not None
     assert fixed.gate == CompilerTarget.GateKind.RX
-    assert fixed.angle == np.pi / 2
+    assert fixed.angle == pytest.approx(np.pi / 2)
     assert fixed.quarter_turn_pulses == 1
     assert fixed.half_turn_angle is None
     assert not target.supports_operation("rx", 1, 1)
@@ -690,17 +690,25 @@ def test_fixed_parameter_target_capability(arity: int | CompilerTarget.Operation
 @pytest.mark.parametrize("theta", [0.0, np.pi / 2, np.pi, 0.47, "symbolic"])
 @pytest.mark.parametrize("gate", ["u", "rx", "p"])
 @pytest.mark.parametrize(
-    ("pulse", "pulse_angle"),
-    [("rx", np.pi / 2), ("rx", -np.pi / 2), ("ry", np.pi / 2), ("rx", np.pi / 4), ("ry", -0.37)],
+    ("free", "pulse", "pulse_angle"),
+    [
+        (free, pulse, angle)
+        for free in ("rx", "ry", "rz")
+        for pulse in ("rx", "ry", "rz")
+        if pulse != free
+        for angle in (np.pi / 2, -np.pi / 2, np.pi / 4, -0.37)
+    ],
 )
-def test_fixed_pulse_compilation_preserves_phase(theta: float | str, gate: str, pulse: str, pulse_angle: float) -> None:
-    """Compile into RZ and target-defined X/Y pulses without changing global phase."""
+def test_fixed_pulse_compilation_preserves_phase(
+    theta: float | str, gate: str, free: str, pulse: str, pulse_angle: float
+) -> None:
+    """Compile into arbitrary and fixed rotations about distinct axes, preserving phase."""
     target = CompilerTarget(
         1,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations([
             CompilerTarget.OperationCapability(pulse, 1, 1, fixed_parameters=[pulse_angle]),
-            CompilerTarget.OperationCapability("rz", 1, 1),
+            CompilerTarget.OperationCapability(free, 1, 1),
             CompilerTarget.OperationCapability("gphase", 0, 1),
         ]),
     )
@@ -713,7 +721,7 @@ def test_fixed_pulse_compilation_preserves_phase(theta: float | str, gate: str, 
     program = QCProgram.from_qiskit(source).to_qco()
     program.compile_for_target(_test_target_environment(target))
     result = program.to_qiskit(target=target)
-    assert set(result.count_ops()) <= {pulse, "rz"}
+    assert set(result.count_ops()) <= {pulse, free}
     assert all(item.operation.params == [pulse_angle] for item in result.data if item.operation.name == pulse)
     for value in [-0.6, 0.0, np.pi / 2, np.pi]:
         bindings = {parameter: value} if isinstance(parameter, qiskit.circuit.Parameter) else {}

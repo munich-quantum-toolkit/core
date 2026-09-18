@@ -159,13 +159,16 @@ constexpr std::array GATE_SPECIFICATIONS{
     },
 };
 
-// Construct an effective RX(π/2) from a fixed X/Y pulse and free Z rotations.
+// Work in a cyclic coordinate frame with the free rotation axis as Z.
 // The two-pulse construction has reachable polar angle 2 asin(|sin(angle)|).
 static std::optional<CompilerTarget::FixedRotationBasis>
-makeFixedRotationBasis(GateKind gate, double angle) {
+makeFixedRotationBasis(GateKind gate, GateKind freeGate, double angle) {
   constexpr double pi = std::numbers::pi;
   constexpr double halfPi = pi / 2.;
   constexpr size_t maxPulses = 64;
+  CompilerTarget::FixedRotationBasis result{
+      gate, freeGate, angle, {}, std::nullopt};
+  const bool isX = gate == result.axes()[0];
   const double magnitude = std::abs(angle);
   if (magnitude <= mqt::PARAMETER_COMPARISON_TOLERANCE) {
     return std::nullopt;
@@ -175,12 +178,11 @@ makeFixedRotationBasis(GateKind gate, double angle) {
       std::abs(directCount * magnitude - halfPi) <=
           mqt::PARAMETER_COMPARISON_TOLERANCE) {
     std::vector<double> zAngles(static_cast<size_t>(directCount) + 1, 0.);
-    const double axis =
-        (gate == GateKind::RY ? halfPi : 0.) + (angle < 0. ? pi : 0.);
+    const double axis = (!isX ? halfPi : 0.) + (angle < 0. ? pi : 0.);
     zAngles.front() = axis;
     zAngles.back() = -axis;
-    return CompilerTarget::FixedRotationBasis{gate, angle, std::move(zAngles),
-                                              std::nullopt};
+    result.quarterTurnAngles = std::move(zAngles);
+    return result;
   }
   const double sine = std::sin(angle);
   const double reach = 2. * std::asin(std::min(1., std::abs(sine)));
@@ -198,8 +200,8 @@ makeFixedRotationBasis(GateKind gate, double angle) {
   const double middle = 2. * std::acos(cosine);
   const double gamma =
       std::atan2(std::sin(middle / 2.), std::cos(angle) * cosine);
-  const double eta = gate == GateKind::RX ? (sine < 0. ? halfPi : -halfPi)
-                                          : (sine < 0. ? pi : 0.);
+  const double eta =
+      isX ? (sine < 0. ? halfPi : -halfPi) : (sine < 0. ? pi : 0.);
   const double before = halfPi - gamma + eta;
   const double after = -gamma - eta - halfPi;
   std::vector<double> zAngles(2 * blocks + 1);
@@ -208,11 +210,24 @@ makeFixedRotationBasis(GateKind gate, double angle) {
     zAngles[2 * block + 1] = middle;
     zAngles[2 * block + 2] = block + 1 == blocks ? after : after + before;
   }
-  return CompilerTarget::FixedRotationBasis{gate, angle, std::move(zAngles),
-                                            std::nullopt};
+  result.quarterTurnAngles = std::move(zAngles);
+  return result;
 }
 
 } // namespace
+
+std::array<CompilerTarget::GateKind, 3>
+CompilerTarget::FixedRotationBasis::axes() const {
+  switch (freeGate) {
+  case GateKind::RX:
+    return {GateKind::RY, GateKind::RZ, GateKind::RX};
+  case GateKind::RY:
+    return {GateKind::RZ, GateKind::RX, GateKind::RY};
+  default:
+    assert(freeGate == GateKind::RZ && "free gate must be a rotation");
+    return {GateKind::RX, GateKind::RY, GateKind::RZ};
+  }
+}
 
 [[nodiscard]] static std::string canonicalOperationName(StringRef name) {
   auto canonical = name.trim().lower();
@@ -867,7 +882,7 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
   } else if (supportsOnEverySite(GateKind::RY) &&
              supportsOnEverySite(GateKind::RZ)) {
     singleQubit = SingleQubitBasis::ZYZ;
-  } else if (supportsOnEverySite(GateKind::RZ)) {
+  } else {
     const auto supportsPulse = [&](StringRef name, double angle) {
       return llvm::all_of(siteIds, [&](SiteId site) {
         return supportsOperation(
@@ -875,34 +890,44 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
             [angle](size_t) { return std::optional{angle}; });
       });
     };
-    for (const auto& operation : operations) {
-      if ((operation.canonicalName() != "rx" &&
-           operation.canonicalName() != "ry") ||
-          operation.numParameters() != 1 ||
-          operation.fixedParameters().empty() ||
-          !operation.fixedParameters()[0]) {
+    for (GateKind freeGate : {GateKind::RZ, GateKind::RX, GateKind::RY}) {
+      if (!supportsOnEverySite(freeGate)) {
         continue;
       }
-      const auto gate =
-          operation.canonicalName() == "rx" ? GateKind::RX : GateKind::RY;
-      auto candidate =
-          makeFixedRotationBasis(gate, *operation.fixedParameters()[0]);
-      if (!candidate ||
-          (fixedRotation && candidate->quarterTurnZAngles.size() >=
-                                fixedRotation->quarterTurnZAngles.size()) ||
-          !supportsPulse(operation.canonicalName(), candidate->angle)) {
-        continue;
-      }
-      for (double half : {std::numbers::pi, -std::numbers::pi}) {
-        if (supportsPulse(operation.canonicalName(), half)) {
-          candidate->halfTurnAngle = half;
-          break;
+      for (const auto& operation : operations) {
+        if ((operation.canonicalName() != "rx" &&
+             operation.canonicalName() != "ry" &&
+             operation.canonicalName() != "rz") ||
+            operation.numParameters() != 1 ||
+            operation.fixedParameters().empty() ||
+            !operation.fixedParameters()[0]) {
+          continue;
         }
+        const auto gate = operation.canonicalName() == "rx"   ? GateKind::RX
+                          : operation.canonicalName() == "ry" ? GateKind::RY
+                                                              : GateKind::RZ;
+        if (gate == freeGate) {
+          continue;
+        }
+        auto candidate = makeFixedRotationBasis(
+            gate, freeGate, *operation.fixedParameters()[0]);
+        if (!candidate ||
+            (fixedRotation && candidate->quarterTurnAngles.size() >=
+                                  fixedRotation->quarterTurnAngles.size()) ||
+            !supportsPulse(operation.canonicalName(), candidate->angle)) {
+          continue;
+        }
+        for (double half : {std::numbers::pi, -std::numbers::pi}) {
+          if (supportsPulse(operation.canonicalName(), half)) {
+            candidate->halfTurnAngle = half;
+            break;
+          }
+        }
+        fixedRotation = std::move(candidate);
       }
-      fixedRotation = std::move(candidate);
     }
     if (fixedRotation) {
-      singleQubit = SingleQubitBasis::ZFixedRotation;
+      singleQubit = SingleQubitBasis::FixedRotation;
     }
   }
 
