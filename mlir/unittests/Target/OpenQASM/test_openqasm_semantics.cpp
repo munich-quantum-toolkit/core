@@ -176,7 +176,7 @@ TEST(OpenQASMFrontendTest, AcceptsClassicalArrays) {
   }
 }
 
-TEST(OpenQASMFrontendTest, CopiesWholeArraysWithMatchingTypes) {
+TEST(OpenQASMFrontendTest, CopiesArraysWithMatchingTypes) {
   for (const auto* source : {
            "array[int, 2] a = {1, 2}; array[int[64], 2] b = a; b = b; a = b;",
            "array[float[64], 1] a = {1}; array[float, 1] b = a;",
@@ -188,6 +188,15 @@ TEST(OpenQASMFrontendTest, CopiesWholeArraysWithMatchingTypes) {
            "bool c = true; if (c) { b = a; } else { b = a; } int x = b[1, 0];",
            "array[int, 1] a = {1}; array[int, 1] b; "
            "for int i in [0:1] { b = a; } int x = b[0];",
+           "array[int, 2, 2] a; a[1, 0] = 1; a[1, 1] = 2; "
+           "array[int, 2] b = a[-1]; a[0] = b; int x = a[0, 1];",
+           "array[int, 2] a = {1, 2}; array[int, 2, 2] b; "
+           "bool c = true; if (c) { b[1] = a; } else { b[1] = a; } "
+           "int x = b[1, 0];",
+           "array[angle, 2, 1] a = {{pi}, {0.0}}; int i = -1; "
+           "array[angle, 1] b = a[i]; a[i] = b; a[i] = a[0];",
+           "array[bool, 2, 1, 1] a = {{{true}}, {{false}}}; "
+           "array[bool, 1, 1] b = a[1]; a[0] = b;",
        }) {
     SCOPED_TRACE(source);
     auto analyzed = openqasm::frontend::analyzeOpenQASM(
@@ -260,9 +269,9 @@ TEST(OpenQASMFrontendTest, RejectsInvalidClassicalArrays) {
               "integer expression",
           },
           {"array[int, 1] a = {0}; if (a[0]) {}", "bool type"},
-          {"array[int, 1] a = {0}; a = 1;", "whole-array source"},
-          {"array[int, 1] a = 1;", "whole-array source"},
-          {"array[int, 1] a = missing;", "whole-array source"},
+          {"array[int, 1] a = {0}; a = 1;", "array or subarray source"},
+          {"array[int, 1] a = 1;", "array or subarray source"},
+          {"array[int, 1] a = missing;", "array or subarray source"},
           {"array[int, 1] a = a;", "uninitialized"},
           {"array[int, 1] a; array[int, 1] b = a;", "uninitialized"},
           {"array[int, 2] a; a[0] = 1; array[int, 2] b = a;", "uninitialized"},
@@ -283,11 +292,11 @@ TEST(OpenQASMFrontendTest, RejectsInvalidClassicalArrays) {
           },
           {
               "array[int, 1] a = {1}; array[int, 1] b; b += a;",
-              "whole-array source",
+              "array or subarray source",
           },
           {
               "array[int, 1] a = {1}; array[int, 1] b = a[0];",
-              "whole-array source",
+              "matching shapes",
           },
           {
               "array[int, 1] a = {1}; array[int, 1] b; bool c = true; "
@@ -313,7 +322,48 @@ TEST(OpenQASMFrontendTest, RejectsInvalidClassicalArrays) {
           {"array[int, 2, 2] a = {1, 2};", "initializer length"},
           {"array[int, 2] a = {{1}, {2}};", "scalar element"},
           {"array[int, 1] a = {{{{{{{{1}}}}}}}};", "nesting exceeds"},
-          {"array[int, 2, 2] a; a[0] = 1;", "one index per dimension"},
+          {"array[int, 2, 2] a; a[0] = 1;", "array or subarray source"},
+          {
+              "array[int, 2, 2] a; a[1, 0] = 1; array[int, 2] b = a[1];",
+              "uninitialized",
+          },
+          {
+              "array[int, 2] a = {1, 2}; array[int, 2, 2] b; "
+              "b[1] = a; int x = b[0, 0];",
+              "uninitialized",
+          },
+          {
+              "array[int, 2] a = {1, 2}; array[int, 2, 2] b; int i = 1; "
+              "b[i] = a; int x = b[1, 0];",
+              "uninitialized",
+          },
+          {
+              "array[int, 2] a = {1, 2}; array[int, 2, 2] b; b[1] = a; "
+              "int i = 1; a = b[i];",
+              "uninitialized",
+          },
+          {
+              "array[int, 2, 2] a = {{1, 2}, {3, 4}}; array[int, 3] b = a[0];",
+              "matching shapes",
+          },
+          {
+              "array[int, 2, 2] a = {{1, 2}, {3, 4}}; array[uint, 2] b = a[0];",
+              "element types",
+          },
+          {
+              "array[int, 2, 2] a = {{1, 2}, {3, 4}}; array[int, 2] b = a[2];",
+              "out of bounds",
+          },
+          {
+              "array[int, 2, 2] a = {{1, 2}, {3, 4}}; "
+              "array[int, 2] b; b = a[-3];",
+              "out of bounds",
+          },
+          {
+              "array[int, 2, 2] a = {{1, 2}, {3, 4}}; array[int, 2] b; "
+              "float i = 0; b = a[i];",
+              "integer expression",
+          },
           {"array[int, 2] a; a[0, 0] = 1;", "one index per dimension"},
           {"array[int, 2, 2] a; a[0, 2] = 1;", "out of bounds"},
           {"array[int, 2, 2] a; a[-3, 0] = 1;", "out of bounds"},
