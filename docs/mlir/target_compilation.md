@@ -216,8 +216,10 @@ accepts symbolic input angles; two-qubit synthesis still requires a constant
 matrix unless the input gate is already native.
 
 Exports retain the native names and parameters. OpenQASM and Python circuit
-exports provide equivalent gate definitions. QIR uses MQT runtime extensions
-`__quantum__qis__gpi__body`, `__quantum__qis__gpi2__body`,
+exports provide equivalent gate definitions. Python import preserves gates with
+these canonical definitions, including symbolic parameters. Other custom
+definitions use the usual import path even when their names match. QIR uses MQT
+runtime extensions `__quantum__qis__gpi__body`, `__quantum__qis__gpi2__body`,
 `__quantum__qis__ms__body`, and `__quantum__qis__zz__body`; other QIR runtimes
 must implement them. No provider SDK is required. Core does not enforce a
 provider's parameter ranges or calibration limits.
