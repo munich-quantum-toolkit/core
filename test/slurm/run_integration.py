@@ -501,7 +501,7 @@ def test_spank_transport() -> None:
     )
     program = (
         "import json, os; assert os.geteuid() == 10000, os.geteuid(); "
-        f"print(json.dumps([os.environ.get('{reference}'), os.environ.get('MQT_CORE_QDMI_CONFIG_FILE')]))"
+        f"print(json.dumps([os.environ.get('{reference}'), os.environ.get('MQT_CORE_QDMI_CONFIG_FILE')]), flush=True)"
     )
     allocation = ("srun", "--immediate=5", "--time=1", "--ntasks=1")
 
@@ -562,19 +562,53 @@ def test_spank_transport() -> None:
     assert result.returncode == 0
 
     output = RUNTIME / "jobs" / "spank-batch.out"
-    job(
-        "sbatch",
-        "--wait",
-        "--time=1",
-        "--ntasks=1",
-        f"--licenses={selected}",
-        f"--qdmi-ref-{reference}=batch-value",
-        "--output=/jobs/spank-batch.out",
-        "--wrap",
-        shlex.join(("python3", "-c", program)),
-        timeout=120,
+    release = RUNTIME / "jobs" / "spank-batch-release"
+    batch = (
+        job(
+            "sbatch",
+            "--parsable",
+            "--time=1",
+            "--ntasks=1",
+            "--nodelist=node1",
+            f"--licenses={selected}",
+            f"--qdmi-ref-{reference}=batch-value",
+            "--output=/jobs/spank-batch.out",
+            "--wrap",
+            shlex.join((
+                "python3",
+                "-c",
+                program + "; import time; from pathlib import Path\n"
+                "while not Path('/jobs/spank-batch-release').exists(): time.sleep(0.1)",
+            )),
+        )
+        .stdout.strip()
+        .split(";", maxsplit=1)[0]
     )
-    assert json.loads(output.read_text(encoding="utf-8")) == ["batch-value", catalogue]
+    try:
+        wait_for("the SPANK batch task to start", lambda: output.exists() and bool(output.read_text(encoding="utf-8")))
+        assert json.loads(output.read_text(encoding="utf-8")) == ["batch-value", catalogue]
+        compute(
+            "node1",
+            "python3",
+            "-c",
+            "from pathlib import Path\n"
+            "seen = set()\n"
+            "for process in Path('/proc').glob('[0-9]*'):\n"
+            "    try:\n"
+            "        name = (process / 'comm').read_text().strip()\n"
+            "        if name not in {'slurmd', 'slurmstepd'}: continue\n"
+            "        entries = (process / 'environ').read_bytes().split(b'\\0')\n"
+            "        environment = dict(entry.split(b'=', 1) for entry in entries if b'=' in entry)\n"
+            "    except FileNotFoundError:\n"
+            "        continue\n"
+            "    seen.add(name)\n"
+            f"    assert environment.get(b'{reference}') in (None, b'daemon-only'), name\n"
+            "    assert environment.get(b'MQT_CORE_QDMI_CONFIG_FILE') in (None, b'/daemon-only/qdmi.json'), name\n"
+            "assert seen == {'slurmd', 'slurmstepd'}, seen\n",
+        )
+    finally:
+        release.touch()
+    wait_for("the SPANK batch job to complete", lambda: job_finished(batch))
     (RUNTIME / "plugstack.conf").write_text("", encoding="utf-8")
 
 

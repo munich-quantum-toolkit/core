@@ -26,15 +26,19 @@ The optional checker and launch validation have separate PRs.
 
 ## Work remaining
 
-- [ ] Standalone injection build, installed license, wheel/sdist separation.
-- [ ] Shared fixture and transport regression tests.
+- [ ] Standalone Linux injection build and installed license.
+- [ ] Real Slurm transport, daemon isolation, and node-state checks.
 - [ ] Braket and IQM native/wheel catalogue and SDK integration tests.
-- [ ] Canonical guide, focused lint, and final base-to-head diff review.
+- [ ] Required C++ lint and documentation build with LLVM/MLIR 23.1.
 
 ## Validation
 
-Use the existing Core Slurm runner and both provider suites against this
-checkout. Run the isolated SPANK build without Core or LLVM configuration.
-Inspect wheel/sdist inventories and preserve the existing fixture test
-scenarios. Record actual command results when completed; real Slurm validation
-is required.
+The shared runner's 22 tests and full `uvx nox -s lint` passed. The source-built
+wheel and source archive exclude SPANK sources and binaries. The canonical
+guide and full base diff were reviewed.
+
+Run `test/slurm/run_integration.py` and both provider workloads for the remaining
+Linux checks. The standalone SPANK build must not configure Core or LLVM. The
+transport test keeps a batch task alive while inspecting both Slurm daemon
+environments, preserving the former provider test's isolation proof. Real Slurm
+validation remains required.
