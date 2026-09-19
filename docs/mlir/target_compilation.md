@@ -304,25 +304,24 @@ reorder the before-region results. Untouched slots remain outside the control
 flow. Runtime indices and incomplete or nested tensor updates do not match this
 scalarization.
 
-For Adaptive QIR, and for OpenQASM 3.1 with unrestricted multiway branching, on
-an all-to-all target whose operations have empty `site_tuples`, placement
-assigns physical sites to the allocation's slots and retains indexed registers.
-Loop bodies do not grow with their iteration counts. The site list requires
-space proportional to the register width. Capacity, physical site IDs, qubit
-origins, native operations, and payload limits are still checked. This path uses
-target metadata and does not depend on a device name.
+For Adaptive QIR on an all-to-all target whose operations have empty
+`site_tuples`, placement assigns physical sites to the allocation's slots and
+retains indexed registers. Loop bodies do not grow with their iteration counts.
+The site list requires space proportional to the register width. Capacity,
+physical site IDs, qubit origins, native operations, and payload limits are
+still checked. This path uses target metadata and does not depend on a device
+name.
 
 Other payloads, explicit topology, and site-specific operations require exact
 quantum addresses. Bounded specialization exposes those addresses before
 placement or routing. Residual unsupported tensor control flow produces a
-diagnostic before allocation changes. OpenQASM exports indexed physical qubits
-with bounded switches over their assigned sites. It retains loop bodies and does
-not introduce logical qubits or change physical site IDs. Constant rank-one
-`f64` table reads also use switches, grouping equal entries. The exporter
-permits at most 65,536 physical-qubit dispatch case labels and 256 nested
-physical selection levels per function. Constant tables do not consume this
-Cartesian-expansion budget; their switches grow with the table data and number
-of reads. These bounds do not limit loop iteration counts.
+diagnostic before allocation changes. Mapped OpenQASM uses static physical
+qubits; indexed tensor loops must fit the existing 65,536-operation unrolling
+budget. Runtime-dependent indices that cannot be specialized are unsupported.
+Logical qubit indices can remain dynamic in targetless OpenQASM export. Constant
+rank-one `f64` table reads use switches that group equal entries and require
+unrestricted multiway branching from the selected payload. Their size grows with
+the table data and number of reads.
 
 The supported constraints are `max-control-flow-nesting-depth` on all four
 capabilities, `max-iteration-count` on both iteration capabilities, and

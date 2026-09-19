@@ -145,9 +145,8 @@ public:
   payloadSpecification() const noexcept;
 
   /// Whether indexed qubits can retain runtime addresses through placement.
-  /// Requires Adaptive QIR or OpenQASM 3 and an all-to-all target whose
-  /// operations have no site-specific restrictions. OpenQASM uses bounded
-  /// physical-site dispatch and requires unrestricted multiway branching.
+  /// Requires Adaptive QIR and an all-to-all target whose operations have no
+  /// site-specific restrictions.
   /// Other payload control-flow limits still apply.
   [[nodiscard]] bool supportsIndexedQubits() const noexcept;
 

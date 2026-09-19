@@ -270,12 +270,7 @@ TargetEnvironment::payloadSpecification() const noexcept {
 
 bool TargetEnvironment::supportsIndexedQubits() const noexcept {
   const auto& format = payloadSpecification_.format();
-  const bool indexedPayload =
-      (format.id == "qir" && format.profile == "adaptive") ||
-      (format.id == "openqasm" && format.version == "3.1.0" &&
-       format.profile.empty() && format.encoding == PayloadEncoding::Text &&
-       payloadSpecification_.supportsUnrestrictedMultiwayBranching());
-  return indexedPayload &&
+  return format.id == "qir" && format.profile == "adaptive" &&
          target_.connectivityKind() ==
              CompilerTarget::Connectivity::Kind::AllToAll &&
          llvm::all_of(target_.operations(), [](const auto& operation) {

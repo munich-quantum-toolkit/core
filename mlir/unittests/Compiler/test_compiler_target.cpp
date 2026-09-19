@@ -212,7 +212,7 @@ TEST(PayloadSpecificationTest, NormalizesTypedVersionShorthand) {
             "2.1.0");
 }
 
-TEST(TargetEnvironmentTest, IndexedOpenQASMRequiresUnrestrictedSwitches) {
+TEST(TargetEnvironmentTest, OpenQASMSwitchesDoNotEnableIndexedQubits) {
   const auto target = valid(Target::create(2, Connectivity::allToAll(),
                                            NativeOperations::unrestricted()));
   using Capability = mlir::ProgramCapability;
@@ -236,12 +236,15 @@ TEST(TargetEnvironmentTest, IndexedOpenQASMRequiresUnrestrictedSwitches) {
        }) {
     const auto payload = valid(mlir::PayloadSpecification::create(
         {.id = "openqasm", .version = "3.1.0"}, {capability}));
+    EXPECT_FALSE(payload.supportsUnrestrictedMultiwayBranching());
     EXPECT_FALSE(
         mlir::TargetEnvironment(target, payload).supportsIndexedQubits());
   }
   const auto payload = valid(mlir::PayloadSpecification::create(
       {.id = "openqasm", .version = "3.1.0"}, {{.id = "multiway-branching"}}));
-  EXPECT_TRUE(mlir::TargetEnvironment(target, payload).supportsIndexedQubits());
+  EXPECT_TRUE(payload.supportsUnrestrictedMultiwayBranching());
+  EXPECT_FALSE(
+      mlir::TargetEnvironment(target, payload).supportsIndexedQubits());
 }
 
 TEST(TargetEnvironmentTest, ReusesPreparedTargetStorage) {

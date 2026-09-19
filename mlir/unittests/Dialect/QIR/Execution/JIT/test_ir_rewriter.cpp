@@ -31,7 +31,6 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <variant>
 #include <vector>
 
 static std::size_t countCallsTo(const llvm::Module& m, llvm::StringRef name) {
@@ -232,9 +231,7 @@ entry:
   br label %measure
 measure:
   call void @__quantum__qis__mz__body(ptr null, ptr null)
-  call void @__quantum__rt__bool_record_output(i1 true, ptr null)
   call void @__quantum__rt__result_record_output(ptr null, ptr null)
-  call void @__quantum__rt__bool_record_output(i1 false, ptr null)
   call void @__quantum__qis__mz__body(ptr inttoptr (i64 2 to ptr), ptr null)
   call void @__quantum__rt__result_record_output(ptr null, ptr null)
   call void @__quantum__rt__result_record_output(ptr null, ptr null)
@@ -244,13 +241,10 @@ declare void @__quantum__rt__initialize(ptr)
 declare void @__quantum__qis__h__body(ptr)
 declare void @__quantum__qis__mz__body(ptr, ptr)
 declare void @__quantum__rt__result_record_output(ptr, ptr)
-declare void @__quantum__rt__bool_record_output(i1, ptr)
 attributes #0 = { "entry_point" "qir_profiles"="base_profile" }
 )");
   ASSERT_TRUE(outputs.has_value());
-  EXPECT_EQ(*outputs,
-            (std::vector<std::variant<uintptr_t, bool>>{
-                true, uintptr_t{0}, false, uintptr_t{2}, uintptr_t{2}}));
+  EXPECT_EQ(*outputs, (std::vector<uintptr_t>{0, 2, 2}));
 }
 
 TEST_P(QIRSamplingPlan, DoesNotDeferMeasurementsBeforeQuantumWork) {
@@ -307,6 +301,8 @@ TEST_P(QIRSamplingPlan, RejectsControlFlowMemoryAndResets) {
            "ret i64 0",
            "call void @__quantum__qis__x__body(ptr null)\n"
            "call void @__quantum__rt__initialize(ptr null)\nret i64 0",
+           "call void @__quantum__rt__bool_record_output(i1 true, ptr null)\n"
+           "ret i64 0",
            "ret i64 1",
        }) {
     SCOPED_TRACE(body);

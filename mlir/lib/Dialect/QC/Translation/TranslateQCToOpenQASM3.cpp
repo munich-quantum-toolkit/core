@@ -36,7 +36,6 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
-#include "mlir/IR/Dominance.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/IR/Value.h"
@@ -165,8 +164,6 @@ private:
   func::FuncOp function;
   raw_indented_ostream* output = nullptr;
   DenseMap<Value, Resource> resources;
-  DenseMap<Value, SmallVector<Value>> referenceRegisters;
-  DenseMap<Value, int64_t> dispatchedIndices;
   SmallVector<Value> resourceOrder;
   DenseMap<Value, std::string> valueNames;
   DenseSet<Value> returnedRegisters;
@@ -186,14 +183,11 @@ private:
   size_t expressionNesting = 0;
   size_t expressionWork = 0;
   size_t numClassicalBits = 0;
-  size_t dispatchCases = 0;
-  size_t dispatchDepth = 0;
   bool supportsDispatch = true;
 
   static constexpr size_t MAX_EXPRESSION_NESTING = 256;
   static constexpr size_t MAX_EXPRESSION_WORK = 4096;
   static constexpr size_t MAX_CLASSICAL_BITS = 1U << 20U;
-  static constexpr size_t MAX_DISPATCH_CASES = 65536;
 
   [[nodiscard]] static LogicalResult fail(Operation* operation,
                                           const Twine& message) {
@@ -374,59 +368,6 @@ private:
     return success();
   }
 
-  [[nodiscard]] LogicalResult
-  collectReferenceRegister(memref::AllocaOp allocation) {
-    auto type = allocation.getType();
-    if (type.getRank() != 1 || !type.hasStaticShape() ||
-        type.getDimSize(0) <= 0 || !type.getLayout().isIdentity() ||
-        type.getMemorySpace() || !isa<qc::QubitType>(type.getElementType()) ||
-        std::cmp_greater(type.getDimSize(0), MAX_DISPATCH_CASES)) {
-      return fail(allocation,
-                  "expected a non-empty static rank-one qubit reference array");
-    }
-    SmallVector<Value> elements(static_cast<size_t>(type.getDimSize(0)));
-    Operation* finalInitialization = nullptr;
-    SmallVector<memref::LoadOp> loads;
-    for (Operation* user : allocation->getUsers()) {
-      if (auto load = dyn_cast<memref::LoadOp>(user)) {
-        loads.push_back(load);
-        continue;
-      }
-      auto store = dyn_cast<memref::StoreOp>(user);
-      if (!store || store.getMemRef() != allocation.getResult() ||
-          store->getBlock() != allocation->getBlock() ||
-          !store.getValue().getDefiningOp<qc::StaticOp>()) {
-        return fail(user, "qubit reference arrays require immutable "
-                          "physical-qubit initialization");
-      }
-      const auto index = getConstantInteger(store.getIndices().front());
-      if (!index || *index < 0 || *index >= type.getDimSize(0) ||
-          elements[*index]) {
-        return fail(store,
-                    "qubit reference slots must be initialized exactly once");
-      }
-      elements[*index] = store.getValue();
-      if (finalInitialization == nullptr ||
-          finalInitialization->isBeforeInBlock(store)) {
-        finalInitialization = store;
-      }
-    }
-    if (llvm::is_contained(elements, Value{})) {
-      return fail(allocation,
-                  "qubit reference arrays must be completely initialized");
-    }
-    DominanceInfo dominance(function);
-    for (auto load : loads) {
-      if (!dominance.properlyDominates(finalInitialization, load)) {
-        return fail(
-            load,
-            "physical-qubit initialization must precede all reference loads");
-      }
-    }
-    referenceRegisters.try_emplace(allocation.getResult(), std::move(elements));
-    return success();
-  }
-
   [[nodiscard]] LogicalResult collectProgramShape() {
     auto returnOp =
         dyn_cast<func::ReturnOp>(function.getBody().front().getTerminator());
@@ -477,12 +418,6 @@ private:
         };
         resources.try_emplace(alloc.getResult(), std::move(resource));
         resourceOrder.push_back(alloc.getResult());
-        continue;
-      }
-      if (auto allocation = dyn_cast<memref::AllocaOp>(&operation)) {
-        if (failed(collectReferenceRegister(allocation))) {
-          return failure();
-        }
         continue;
       }
       auto alloc = dyn_cast<memref::AllocOp>(&operation);
@@ -652,50 +587,6 @@ private:
 
   [[nodiscard]] LogicalResult emitOperation(Operation& operation) {
     llvm::SaveAndRestore consumerGuard(expressionConsumer, &operation);
-    if (isa<UnitaryOpInterface, qc::MeasureOp, qc::ResetOp, func::CallOp>(
-            &operation)) {
-      for (Value operand : operation.getOperands()) {
-        auto load = operand.getDefiningOp<memref::LoadOp>();
-        if (!load || valueNames.contains(operand) ||
-            !referenceRegisters.contains(load.getMemRef()) ||
-            getConstantInteger(load.getIndices().front())) {
-          continue;
-        }
-        if (const auto selected =
-                dispatchedIndices.find(load.getIndices().front());
-            selected != dispatchedIndices.end()) {
-          if (std::cmp_greater_equal(
-                  selected->second,
-                  referenceRegisters.at(load.getMemRef()).size())) {
-            // Runtime indices must be in bounds in every selected register.
-            return success();
-          }
-          continue;
-        }
-        return emitPhysicalDispatch(operation, load);
-      }
-      if (dispatchDepth != 0 &&
-          isa<UnitaryOpInterface, func::CallOp>(&operation) &&
-          !isa<qc::BarrierOp>(&operation)) {
-        SmallVector<std::string> qubits;
-        for (Value operand : operation.getOperands()) {
-          if (!isa<qc::QubitType>(operand.getType())) {
-            continue;
-          }
-          auto qubit = emitQubit(operand);
-          if (failed(qubit)) {
-            return failure();
-          }
-          /// Valid multi-qubit operations cannot select the same physical wire
-          /// twice.
-          if (llvm::is_contained(qubits, *qubit)) {
-            return success();
-          }
-          qubits.push_back(std::move(*qubit));
-        }
-      }
-    }
-
     if (gateNames_.contains(function) &&
         (operation.getName().getDialectNamespace() ==
              cbit::CBitDialect::getDialectNamespace() ||
@@ -728,14 +619,6 @@ private:
         operation.getBlock() != &function.getBody().front()) {
       return fail(&operation, "resource allocation inside control flow is not "
                               "supported; allocate resources before the loop");
-    }
-    if (auto store = dyn_cast<memref::StoreOp>(&operation);
-        store && referenceRegisters.contains(store.getMemRef())) {
-      return success();
-    }
-    if (auto allocation = dyn_cast<memref::AllocaOp>(&operation);
-        allocation && referenceRegisters.contains(allocation.getResult())) {
-      return success();
     }
     if (auto extract = dyn_cast<tensor::ExtractOp>(&operation)) {
       return emitTableLookup(extract);
@@ -837,56 +720,6 @@ private:
                                 operation.getName().getStringRef() + "'");
   }
 
-  [[nodiscard]] LogicalResult emitPhysicalDispatch(Operation& operation,
-                                                   memref::LoadOp load) {
-    const auto& references = referenceRegisters.at(load.getMemRef());
-    if (!supportsDispatch) {
-      return fail(&operation,
-                  "indexed export requires unrestricted multiway branching");
-    }
-    if (references.size() > MAX_DISPATCH_CASES - dispatchCases) {
-      return fail(&operation, "indexed export exceeds the limit of " +
-                                  Twine(MAX_DISPATCH_CASES) +
-                                  " dispatch cases");
-    }
-    dispatchCases += references.size();
-    if (dispatchDepth >= MAX_EXPRESSION_NESTING) {
-      return fail(&operation, "physical-qubit dispatch nesting is too deep");
-    }
-    if (auto measurement = dyn_cast<qc::MeasureOp>(&operation);
-        measurement && !measurement.getResult().use_empty() &&
-        !measurementStores.contains(measurement) &&
-        !valueNames.contains(measurement.getResult())) {
-      const auto name = uniqueName("b", nextBit);
-      valueNames[measurement.getResult()] = name;
-      *output << "bit " << name << " = \"0\";\n";
-    }
-    auto index = emitExpression(load.getIndices().front());
-    if (failed(index)) {
-      return failure();
-    }
-    /// ponytail: Cartesian site dispatch is capped; specialize index relations
-    /// if the cap becomes limiting.
-    llvm::SaveAndRestore depthGuard(dispatchDepth, dispatchDepth + 1);
-    const auto bindingGuard = llvm::scope_exit(
-        [&] { dispatchedIndices.erase(load.getIndices().front()); });
-    *output << "switch (" << *index << ") {\n";
-    output->indent();
-    for (size_t slot = 0; slot < references.size(); ++slot) {
-      dispatchedIndices[load.getIndices().front()] = static_cast<int64_t>(slot);
-      *output << "case " << slot << " {\n";
-      output->indent();
-      if (failed(emitOperation(operation))) {
-        return failure();
-      }
-      output->unindent();
-      *output << "}\n";
-    }
-    output->unindent();
-    *output << "}\n";
-    return success();
-  }
-
   [[nodiscard]] LogicalResult emitTableLookup(tensor::ExtractOp extract) {
     auto constant = extract.getTensor().getDefiningOp<arith::ConstantOp>();
     auto type = extract.getTensor().getType();
@@ -928,8 +761,6 @@ private:
       return fail(extract,
                   "indexed export requires unrestricted multiway branching");
     }
-    /// Table cases scale with explicit input data. Only physical-qubit
-    /// dispatch needs the Cartesian-expansion budget.
     auto argument = emitExpression(extract.getIndices().front());
     if (failed(argument)) {
       return failure();
@@ -984,20 +815,6 @@ private:
                                    "reference");
     }
     auto index = getConstantInteger(load.getIndices().front());
-    if (const auto references = referenceRegisters.find(load.getMemRef());
-        references != referenceRegisters.end()) {
-      if (const auto selected =
-              dispatchedIndices.find(load.getIndices().front());
-          !index && selected != dispatchedIndices.end()) {
-        index = selected->second;
-      }
-      if (!index || *index < 0 ||
-          std::cmp_greater_equal(*index, references->second.size())) {
-        return failExpression(value,
-                              "physical qubit index requires bounded dispatch");
-      }
-      return emitQubit(references->second[*index]);
-    }
     const auto resource = resources.find(load.getMemRef());
     if (resource == resources.end() ||
         resource->second.kind != ResourceKind::Qubit) {

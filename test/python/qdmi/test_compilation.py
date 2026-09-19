@@ -105,7 +105,7 @@ def test_runtime_indices_and_integer_powers(program_format: ProgramFormat) -> No
 
 
 def test_indexed_openqasm_device_execution() -> None:
-    """Retain loops and execute indexed qubits and constant angle tables."""
+    """Specialize mapped OpenQASM indices and preserve the sampled result."""
     source = QCProgram.from_mlir_str("""module {
       func.func @main() -> !cbit.reg<2> attributes {mqt.entry_point} {
         %zero = arith.constant 0 : index
@@ -133,18 +133,20 @@ def test_indexed_openqasm_device_execution() -> None:
     device = open_device("mqt.ddsim.default")
     compiled = compile_program(source, target=device, program_format=ProgramFormat.QASM3)
     assert isinstance(compiled.payload, str)
-    assert "for int " in compiled.payload
+    assert "for int " not in compiled.payload
+    assert "switch (" not in compiled.payload
     job = submit_program(compiled, target=device, num_shots=32, custom1=17)
     job.wait()
     assert job.get_counts() == {"11": 32}
 
 
+@pytest.mark.parametrize("program_format", [ProgramFormat.QASM3, ProgramFormat.QIR_ADAPTIVE_MODULE])
 @pytest.mark.parametrize("method", [qpe.Method.STANDARD, qpe.Method.ITERATIVE])
-def test_qpe_device_execution(method: qpe.Method) -> None:
-    """Compile structured QPE and recover its exact phase through QIR execution."""
+def test_qpe_device_execution(method: qpe.Method, program_format: ProgramFormat) -> None:
+    """Recover QPE's exact phase through mapped OpenQASM and QIR execution."""
     benchmark = qpe.QPE(qpe.Options(precision=8, phase=Fraction(3, 8), method=method))
     device = open_device("mqt.ddsim.default")
-    compiled = compile_program(benchmark.generate(), target=device)
+    compiled = compile_program(benchmark.generate(), target=device, program_format=program_format)
     job = submit_program(compiled, target=device, num_shots=32, custom1=17)
     job.wait()
     counts = job.get_counts()

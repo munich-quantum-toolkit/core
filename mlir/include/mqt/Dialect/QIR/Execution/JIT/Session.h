@@ -23,7 +23,6 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <variant>
 #include <vector>
 
 namespace qir {
@@ -96,7 +95,7 @@ private:
   std::unique_ptr<Runtime> runtime_;
   std::unique_ptr<llvm::orc::LLJIT> jit_;
   EntryPointFn* entryPointFn_ = nullptr;
-  std::optional<std::vector<std::variant<uintptr_t, bool>>> samplingOutputs_;
+  std::optional<std::vector<uintptr_t>> samplingOutputs_;
   bool initializesRuntime_ = false;
   Execution execution_;
 

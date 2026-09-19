@@ -27,15 +27,14 @@ identity and disjoint quantum operands. The conversion no longer needs
   same slot checks as other registers. The shared contract uses underlying
   register indices so future views can renumber slots without changing qubit
   identity; this change does not add view lowering.
-- `TranslateQCToOpenQASM3.cpp` emits logical indices directly, immutable
-  physical reference arrays as site switches, and constant rank-one f64 tables
-  as grouped switches. This uses the existing frontend without new array or
-  function syntax. Site dispatch retains its 65,536-case and 256-level nesting
-  limits; explicit table data is exempt because its expansion is linear in table
-  size and reads.
-- Indexed loops survive placement only for unrestricted all-to-all targets and
-  payloads with multiway branching. Indexed-loop routing needs scalar-wire
-  selection and layout handling; raising the unrolling budget does not fix it.
+- `TranslateQCToOpenQASM3.cpp` emits logical indices directly and constant
+  rank-one f64 tables as grouped switches. Mapped OpenQASM requires static
+  physical qubits, exposed by the existing bounded unrolling and cleanup
+  pipeline. The exporter does not collect physical reference arrays or generate
+  Cartesian site dispatch.
+- Indexed loops survive placement only for Adaptive QIR on unrestricted
+  all-to-all targets. Other payloads retain the 65,536-operation unrolling
+  budget. Runtime indices that cannot be specialized remain unsupported.
 - DD execution limits conditional loops to 100,000 iterations and rejects
   recursive calls. Counted loops use widened APInt trip counts. Runtime
   assertions are omitted by the frontend; verified IR retains its bounds
@@ -45,7 +44,9 @@ identity and disjoint quantum operands. The conversion no longer needs
   arbitrary runtime body matrices remain unsupported.
 - Adaptive QIR reuses Boolean storage for computed CBit outputs. Boolean records
   join DDSIM shot/count strings; measurement-only registers retain Result arrays
-  and batch sampling. Base-profile restrictions remain unchanged.
+  and batch sampling. All Boolean records, including constants, use existing
+  per-shot execution without retaining an uncollapsed sampling state.
+  Base-profile restrictions remain unchanged.
 
 ## Validation
 
@@ -53,10 +54,10 @@ Use the native build and checks in [AGENTS.md](../../AGENTS.md), plus
 `test/python/qdmi/test_compilation.py` against the rebuilt package and provider.
 Owning tests cover borrowed-wire order, physical site identity, emission limits,
 constant/runtime full matrices at `5e-13`, and mixed computed/measured outputs.
-After merging current `main`, the stable-slot revision passes 3,583 of 3,584
-native CTest entries with one expected Slurm skip, 50 Python compilation tests
-against the rebuilt package, executable documentation, generated-link checks,
-repository lint, and whole-file C++ lint on the changed sources. Repeated round
+The export/sampling simplification passes the optimized Clang/MLIR 23 build,
+3,580 of 3,581 native CTest entries with one expected Slurm skip, 52 Python
+compilation tests against the rebuilt package, executable documentation, and
+generated-link checks, and whole-file C++ lint with no findings. Repeated round
 trips run QC cleanup between conversions and compare samples for logical and
 physical registers. Tests cover references retained across helper calls,
 identity stores, dynamic index expressions, scalar-helper boundaries, terminal

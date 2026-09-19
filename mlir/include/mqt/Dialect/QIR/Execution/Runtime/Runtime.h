@@ -36,7 +36,6 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
-#include <variant>
 #include <vector>
 
 /// @note this struct is purposefully not called ResultImpl to leave the Result
@@ -138,9 +137,8 @@ private:
   auto enlargeState(size_t maxQubit) -> void;
   void configureStaticResources(std::optional<size_t> qubits,
                                 std::optional<size_t> results);
-  auto
-  sampleMeasurements(std::span<const std::variant<uintptr_t, bool>> outputs,
-                     size_t shots, std::vector<std::string>& results) -> void;
+  auto sampleMeasurements(std::span<const uintptr_t> outputs, size_t shots,
+                          std::vector<std::string>& results) -> void;
   static auto staticQubitId(const Qubit* qubit) -> dd::Qubit {
     const auto id = reinterpret_cast<uintptr_t>(qubit);
     if (id >= dd::Package::MAX_POSSIBLE_QUBITS) {
