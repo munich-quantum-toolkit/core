@@ -6,11 +6,11 @@ Status: complete.
 
 Target-native synthesis owns optional one-qubit fusion. Its selected Euler basis
 is a sufficient lowering basis, not the target's complete native gate set.
-Constant native runs require a strict gate-count reduction. Symbolic native
-runs remain intact; other symbolic runs use direct Euler identities when
-available and otherwise retain individual gate lowering. Standalone fusion
-continues to support general runtime quaternion composition.
-Controlled bodies remain with the native-control lowering owner.
+Constant native runs require a strict gate-count reduction. Symbolic native runs
+remain intact; other symbolic runs use direct Euler identities when available
+and otherwise retain individual gate lowering. Standalone fusion continues to
+support general runtime quaternion composition. Controlled bodies remain with
+the native-control lowering owner.
 
 The shared one-qubit synthesis implementation in
 `mlir/lib/Dialect/QCO/Transforms/Optimizations/MergeSingleQubitRotationGates.cpp`
@@ -24,14 +24,14 @@ runtime values. Qiskit and jeff already support those scalar operations. Scaling
 by four is exact in the normal binary64 range and avoids reduction by rounded
 pi. Direct Euler formulas then add only bounded offsets and at most two bounded
 operands. The resulting gate and phase angles remain bounded; they need not all
-use the same principal interval. General quaternion composition also reduces
-its accumulated phase after each gate, so its bound is independent of run size.
+use the same principal interval. General quaternion composition also reduces its
+accumulated phase after each gate, so its bound is independent of run size.
 
 Normalization applies after evaluating each gate expression, not to a shared
 free symbol: `rz(a/2)` and `rz(a)` must reduce independently. General scalar
-values, power exponents, and custom gate arguments have no universal period.
-The public finite-parameter contract remains unchanged. This change establishes
-the bound at the synthesis consumer; it does not add a global bounded-input
+values, power exponents, and custom gate arguments have no universal period. The
+public finite-parameter contract remains unchanged. This change establishes the
+bound at the synthesis consumer; it does not add a global bounded-input
 precondition or a new angle type, verifier, frontend attribute, or exporter.
 
 ## Validation
@@ -49,6 +49,6 @@ DDSIM and SC device manifests configured. Routine lint commands are documented
 in the root agent guide.
 
 Controlled matrix comparisons cover wrap boundaries and multiple turns in all
-seven synthesis bases. Target tests cover preserving native H and symbolic
-runs, retaining profitable constant fusion, and portable individual lowering
-when a direct symbolic identity does not apply.
+seven synthesis bases. Target tests cover preserving native H and symbolic runs,
+retaining profitable constant fusion, and portable individual lowering when a
+direct symbolic identity does not apply.
