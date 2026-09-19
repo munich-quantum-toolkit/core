@@ -1030,6 +1030,29 @@ TEST_F(CompilerPipelineTest, BaseProfileLowersCompleteTensorLifetime) {
 
 TEST_F(CompilerPipelineTest, ClassicalArraysSurviveQCQCOAndQIR) {
   constexpr auto programs = std::to_array<llvm::StringLiteral>({
+      R"qasm(OPENQASM 3.0;
+        array[angle[8], 2, 3] angles = {{0.0, 0.0, pi}, {0.0, 0.0, 0.0}};
+        qubit q;
+        output bit result;
+        for int row in [-2:-1] {
+          for int column in [-3:-1] { U(angles[row, column], 0, 0) q; }
+        }
+        result = measure q;
+      )qasm",
+      R"qasm(OPENQASM 3.0;
+        array[int[8], 2, 1, 2] values = {{{11, 12}}, {{13, 127}}};
+        array[bool, 2, 1] flags = {{true}, {false}};
+        int row = -1;
+        uint middle = 0;
+        int column = -1;
+        values[row, middle, column] += 1;
+        flags[1, 0] = values[-1, 0, 1] == -128 && values[0, 0, 1] == 12 &&
+                      values[0, 0, 0] == 11 && values[1, 0, 0] == 13;
+        qubit q;
+        output bit result;
+        if (flags[row, middle] && flags[0, 0]) { U(pi, 0, 0) q; }
+        result = measure q;
+      )qasm",
       // The angle table is read through runtime (including negative) indices.
       R"qasm(OPENQASM 3.0;
         array[angle[8], 2] angles = {0.0, -pi};
@@ -1134,11 +1157,40 @@ TEST_F(CompilerPipelineTest, ClassicalArrayRuntimeBoundsAreChecked) {
   }
 }
 
+TEST_F(CompilerPipelineTest, MultidimensionalArrayChecksEveryDimension) {
+  for (const auto* indices : {"0, i", "i, 0", "-i, 0", "0, -i", "0, u"}) {
+    for (const bool store : {false, true}) {
+      const auto source =
+          std::string(
+              "OPENQASM 3.0; array[float, 2, 3] a = {{0, 0, 0}, {0, 0, 0}}; "
+              "int i = 4; uint u = 18446744073709551615; ") +
+          (store ? "a[" : "float value = a[") + indices +
+          (store ? "] = 1.0;" : "];");
+      SCOPED_TRACE(source);
+      auto qc = QCProgram::fromOpenQASMString(source);
+      ASSERT_TRUE(qc);
+      auto qco = std::move(*qc).intoQCO();
+      ASSERT_TRUE(qco);
+      std::string diagnostic;
+      ScopedDiagnosticHandler handler(qco->module().getContext(),
+                                      [&](Diagnostic& error) {
+                                        diagnostic += error.str();
+                                        return success();
+                                      });
+      EXPECT_TRUE(
+          failed(qco::sample(mlir::mqt::getEntryPoint(qco->module()), 1, 42)));
+      EXPECT_NE(diagnostic.find("array index is out of bounds"),
+                std::string::npos)
+          << diagnostic;
+    }
+  }
+}
+
 TEST_F(CompilerPipelineTest, ClassicalArraysDoNotChangeQIRAllocationMode) {
   for (const auto profile : {QIRProfile::Base, QIRProfile::Adaptive}) {
     auto qc = QCProgram::fromOpenQASMString(R"qasm(OPENQASM 3.0;
-      array[float, 1] angles = {pi};
-      U(angles[0], 0, 0) $0;
+      array[float, 1, 1] angles = {{pi}};
+      U(angles[0, 0], 0, 0) $0;
       output bit result;
       result = measure $0;
     )qasm");

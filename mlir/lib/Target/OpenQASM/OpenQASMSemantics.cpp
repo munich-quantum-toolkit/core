@@ -918,6 +918,9 @@ private:
       if (expression.rhs) {
         depth = std::max(depth, depths[*expression.rhs] + 1);
       }
+      for (const auto index : expression.additionalIndices) {
+        depth = std::max(depth, depths[index] + 1);
+      }
       if (depth > EXPRESSION_DEPTH_LIMIT) {
         return fail(expression.location,
                     Twine("expression depth exceeds the limit of ") +
@@ -1045,7 +1048,7 @@ private:
 
   [[nodiscard]] ExpressionId addExpression(ScalarExpression expression) {
     const auto id = static_cast<ExpressionId>(program.expressions.size());
-    program.expressions.push_back(expression);
+    program.expressions.push_back(std::move(expression));
     return id;
   }
 
@@ -2607,6 +2610,10 @@ private:
       if (symbol != nullptr && symbol->kind == SymbolKind::Array) {
         return analyzeArrayLoad(symbol->id, expression);
       }
+      if (!expression.additionalIndices.empty()) {
+        return fail(expression.location,
+                    "only arrays support multiple indices");
+      }
     }
     if (expression.kind == Expr::Kind::FloatCast) {
       MQT_OQ3_TRY_ASSIGN(
@@ -3424,6 +3431,38 @@ private:
   }
 
   [[nodiscard]] LogicalResult
+  analyzeArrayInitializer(ArrayId array,
+                          const SyntaxArrayInitializer& initializer,
+                          size_t dimension, std::vector<ExpressionId>& values) {
+    const auto& shape = program.arrays[array].shape;
+    if (dimension == shape.size()) {
+      const auto* value = std::get_if<SyntaxExpressionId>(&initializer.value);
+      if (value == nullptr) {
+        return fail(initializer.location,
+                    "array initializer requires a scalar element");
+      }
+      MQT_OQ3_TRY_ASSIGN(converted, analyzeArrayValue(array, *value));
+      values.push_back(converted);
+      return success();
+    }
+    const auto* elements =
+        std::get_if<std::vector<SyntaxArrayInitializer>>(&initializer.value);
+    if (elements == nullptr ||
+        elements->size() != static_cast<size_t>(shape[dimension])) {
+      return fail(
+          initializer.location,
+          "array initializer length must match each declared dimension");
+    }
+    for (const auto& element : *elements) {
+      if (failed(
+              analyzeArrayInitializer(array, element, dimension + 1, values))) {
+        return failure();
+      }
+    }
+    return success();
+  }
+
+  [[nodiscard]] LogicalResult
   analyzeArrayDeclaration(SMLoc location,
                           const SyntaxArrayDeclaration& declaration,
                           std::vector<StatementId>& destination, bool global) {
@@ -3433,8 +3472,18 @@ private:
     if (!global) {
       return fail(location, "arrays must be declared at global scope");
     }
-    MQT_OQ3_TRY_ASSIGN(
-        length, constantWidth(declaration.length, location, "array length"));
+    uint64_t length = 1;
+    std::vector<int64_t> shape;
+    for (const auto dimension : declaration.dimensions) {
+      MQT_OQ3_TRY_ASSIGN(extent,
+                         constantWidth(dimension, location, "array dimension"));
+      if (length > REGISTER_WIDTH_LIMIT / extent) {
+        return fail(location, "array element count exceeds the limit of " +
+                                  Twine(REGISTER_WIDTH_LIMIT));
+      }
+      length *= extent;
+      shape.push_back(static_cast<int64_t>(extent));
+    }
     if (length > TOTAL_REGISTER_ELEMENT_LIMIT - totalRegisterElements) {
       return fail(location,
                   "total register and array elements exceed the limit of " +
@@ -3457,15 +3506,11 @@ private:
       }
       width = static_cast<unsigned>(bits);
     }
-    if (declaration.initializer && declaration.initializer->size() != length) {
-      return fail(location,
-                  "array initializer length must match the declaration");
-    }
     const auto id = static_cast<ArrayId>(program.arrays.size());
     program.arrays.push_back({
         .type = type,
         .elementWidth = width,
-        .length = length,
+        .shape = std::move(shape),
         .name = declaration.identifier.str(),
         .location = getSourceLocation(location),
     });
@@ -3483,9 +3528,9 @@ private:
     }
     ArrayDeclarationStatement typed{.array = id, .initializer = {}};
     if (declaration.initializer) {
-      for (const auto value : *declaration.initializer) {
-        MQT_OQ3_TRY_ASSIGN(converted, analyzeArrayValue(id, value));
-        typed.initializer.push_back(converted);
+      if (failed(analyzeArrayInitializer(id, *declaration.initializer, 0,
+                                         typed.initializer))) {
+        return failure();
       }
       mutableBitInitialization(arrayStateSlots_[id]).set();
     }
@@ -3494,26 +3539,54 @@ private:
     return success();
   }
 
-  [[nodiscard]] FailureOr<ExpressionId>
-  analyzeArrayIndex(ArrayId array, std::optional<SyntaxExpressionId> index,
-                    SMLoc location) {
+  [[nodiscard]] FailureOr<std::vector<ExpressionId>>
+  analyzeArrayIndices(ArrayId array, std::optional<SyntaxExpressionId> index,
+                      ArrayRef<SyntaxExpressionId> additional, SMLoc location) {
     if (!index) {
       return fail(location, "array access requires an element index");
     }
-    const auto length = program.arrays[array].length;
-    MQT_OQ3_TRY_ASSIGN(constant, constantIndex(*index, length, location));
-    if (constant) {
-      if (*constant >= length) {
-        return fail(location, "array index is out of bounds");
+    const auto& shape = program.arrays[array].shape;
+    if (additional.size() + 1 != shape.size()) {
+      return fail(location,
+                  "array element access requires one index per dimension");
+    }
+    std::vector<ExpressionId> indices;
+    for (size_t dimension = 0; dimension < shape.size(); ++dimension) {
+      const auto source = dimension == 0 ? *index : additional[dimension - 1];
+      const auto length = static_cast<uint64_t>(shape[dimension]);
+      MQT_OQ3_TRY_ASSIGN(constant, constantIndex(source, length, location));
+      if (constant) {
+        if (*constant >= length) {
+          return fail(location, "array index is out of bounds");
+        }
+        indices.push_back(addConstant({
+            .type = ScalarType::Int,
+            .value = static_cast<int64_t>(*constant),
+        }));
+      } else {
+        MQT_OQ3_TRY_ASSIGN(dynamic, analyzeExpression(source));
+        if (!isInteger(program.expressions[dynamic].type)) {
+          return fail(location, "array index must be an integer expression");
+        }
+        indices.push_back(dynamic);
       }
-      return addConstant(
-          {.type = ScalarType::Int, .value = static_cast<int64_t>(*constant)});
     }
-    MQT_OQ3_TRY_ASSIGN(dynamic, analyzeExpression(*index));
-    if (!isInteger(program.expressions[dynamic].type)) {
-      return fail(location, "array index must be an integer expression");
+    return indices;
+  }
+
+  [[nodiscard]] std::optional<size_t>
+  constantArrayOffset(ArrayId array, ArrayRef<ExpressionId> indices) const {
+    size_t offset = 0;
+    for (const auto [dimension, index] : llvm::enumerate(indices)) {
+      const auto& expression = program.expressions[index];
+      if (expression.kind != ExpressionKind::Constant) {
+        return std::nullopt;
+      }
+      offset =
+          offset * static_cast<size_t>(program.arrays[array].shape[dimension]) +
+          static_cast<size_t>(std::get<int64_t>(expression.constant));
     }
-    return dynamic;
+    return offset;
   }
 
   [[nodiscard]] FailureOr<ExpressionId>
@@ -3522,12 +3595,13 @@ private:
       return fail(expression.location,
                   "gate definitions cannot capture array entries");
     }
-    MQT_OQ3_TRY_ASSIGN(
-        index, analyzeArrayIndex(array, expression.lhs, expression.location));
+    MQT_OQ3_TRY_ASSIGN(indices,
+                       analyzeArrayIndices(array, expression.lhs,
+                                           expression.additionalIndices,
+                                           expression.location));
     const auto& initialized = *initializedBits[arrayStateSlots_[array]];
-    const auto& typedIndex = program.expressions[index];
-    if (typedIndex.kind == ExpressionKind::Constant) {
-      if (!initialized[std::get<int64_t>(typedIndex.constant)]) {
+    if (const auto offset = constantArrayOffset(array, indices)) {
+      if (!initialized[*offset]) {
         return fail(expression.location, "array element is uninitialized");
       }
     } else if (!initialized.all()) {
@@ -3539,7 +3613,7 @@ private:
         .kind = ExpressionKind::ArrayLoad,
         .type = declaration.type,
         .array = array,
-        .lhs = index,
+        .indices = std::move(indices),
         .integerWidth =
             isInteger(declaration.type) ? declaration.elementWidth : 0,
     });
@@ -3560,19 +3634,19 @@ private:
     if (symbol != nullptr && symbol->kind == SymbolKind::Array) {
       const auto array = symbol->id;
       MQT_OQ3_TRY_ASSIGN(
-          index, analyzeArrayIndex(array, assignment.target.index, location));
+          indices,
+          analyzeArrayIndices(array, assignment.target.index,
+                              assignment.target.additionalIndices, location));
       MQT_OQ3_TRY_ASSIGN(value, analyzeArrayValue(array, assignment.value));
-      const auto& typedIndex = program.expressions[index];
-      if (typedIndex.kind == ExpressionKind::Constant) {
-        mutableBitInitialization(
-            arrayStateSlots_[array])[std::get<int64_t>(typedIndex.constant)] =
-            true;
+      if (const auto offset = constantArrayOffset(array, indices)) {
+        mutableBitInitialization(arrayStateSlots_[array])[*offset] = true;
       }
       MQT_OQ3_TRY_ASSIGN(
-          statement,
-          addStatement(location, ArrayAssignmentStatement{.array = array,
-                                                          .index = index,
-                                                          .value = value}));
+          statement, addStatement(location, ArrayAssignmentStatement{
+                                                .array = array,
+                                                .indices = std::move(indices),
+                                                .value = value,
+                                            }));
       destination.push_back(statement);
       return success();
     }
@@ -4554,7 +4628,9 @@ private:
       }
       MQT_OQ3_TRY_ASSIGN(bits, resolveBits({.location = condition.location,
                                             .identifier = condition.identifier,
-                                            .index = condition.lhs}));
+                                            .index = condition.lhs,
+                                            .additionalIndices =
+                                                condition.additionalIndices}));
       if (bits.size() != 1) {
         return fail(condition.location,
                     "condition must select exactly one classical bit");
@@ -5179,6 +5255,9 @@ private:
 
   [[nodiscard]] FailureOr<std::vector<frontend::BitReference>>
   resolveBits(const BitReference& reference) {
+    if (!reference.additionalIndices.empty()) {
+      return fail(reference.location, "only arrays support multiple indices");
+    }
     const auto* symbol = lookup(reference.identifier);
     if (symbol == nullptr || symbol->kind != SymbolKind::Register ||
         program.registers[symbol->id].kind == RegisterKind::Qubit) {

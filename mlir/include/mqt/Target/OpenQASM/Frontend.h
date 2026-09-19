@@ -144,6 +144,7 @@ struct ScalarExpression {
   uint32_t parameter = 0;
   ScalarId variable = 0;
   ArrayId array = 0;
+  std::vector<ExpressionId> indices;
   ExpressionId lhs = 0;
   ExpressionId rhs = 0;
   BitVectorExpressionId bitVector = 0;
@@ -187,7 +188,7 @@ struct ScalarDeclaration {
 struct ArrayDeclaration {
   ScalarType type = ScalarType::Int;
   unsigned elementWidth = 0;
-  uint64_t length = 0;
+  std::vector<int64_t> shape;
   std::string name;
   SourceLocation location;
 };
@@ -319,7 +320,7 @@ struct ArrayDeclarationStatement {
 
 struct ArrayAssignmentStatement {
   ArrayId array = 0;
-  ExpressionId index = 0;
+  std::vector<ExpressionId> indices;
   ExpressionId value = 0;
 };
 

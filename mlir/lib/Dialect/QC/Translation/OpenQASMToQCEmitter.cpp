@@ -689,12 +689,13 @@ private:
     case frontend::ExpressionKind::Variable:
       return scalarValues.at(expression.variable);
     case frontend::ExpressionKind::ArrayLoad: {
-      auto index = emitArrayIndex(opBuilder, expression.array, expression.lhs);
-      if (!index) {
+      auto indices =
+          emitArrayIndices(opBuilder, expression.array, expression.indices);
+      if (failed(indices)) {
         return {};
       }
-      return memref::LoadOp::create(opBuilder, loc,
-                                    arrayValues_.at(expression.array), index);
+      return memref::LoadOp::create(
+          opBuilder, loc, arrayValues_.at(expression.array), *indices);
     }
     case frontend::ExpressionKind::Cast: {
       auto operand = emitExpression(opBuilder, expression.lhs, gateParameters);
@@ -920,23 +921,27 @@ private:
     return index;
   }
 
-  [[nodiscard]] Value emitArrayIndex(OpBuilder& opBuilder,
-                                     frontend::ArrayId array,
-                                     frontend::ExpressionId expression) {
-    const auto& index = program.expressions.at(expression);
-    if (index.kind == frontend::ExpressionKind::Constant) {
-      return arith::ConstantIndexOp::create(opBuilder, builder.getLoc(),
-                                            std::get<int64_t>(index.constant));
+  [[nodiscard]] FailureOr<SmallVector<Value>>
+  emitArrayIndices(OpBuilder& opBuilder, frontend::ArrayId array,
+                   ArrayRef<frontend::ExpressionId> expressions) {
+    SmallVector<Value> indices;
+    for (const auto [dimension, expression] : llvm::enumerate(expressions)) {
+      const auto& index = program.expressions.at(expression);
+      if (index.kind == frontend::ExpressionKind::Constant) {
+        indices.push_back(arith::ConstantIndexOp::create(
+            opBuilder, builder.getLoc(), std::get<int64_t>(index.constant)));
+        continue;
+      }
+      auto checked = emitCheckedIndex(opBuilder, expression,
+                                      program.arrays.at(array).shape[dimension],
+                                      "array index is out of bounds");
+      if (!checked) {
+        return failure();
+      }
+      indices.push_back(arith::IndexCastOp::create(
+          opBuilder, builder.getLoc(), opBuilder.getIndexType(), checked));
     }
-    auto checked =
-        emitCheckedIndex(opBuilder, expression,
-                         static_cast<int64_t>(program.arrays.at(array).length),
-                         "array index is out of bounds");
-    if (!checked) {
-      return {};
-    }
-    return arith::IndexCastOp::create(opBuilder, builder.getLoc(),
-                                      opBuilder.getIndexType(), checked);
+    return indices;
   }
 
   Value resolveQubit(const frontend::QubitReference& reference,
@@ -1816,7 +1821,7 @@ private:
   emitArrayDeclaration(const frontend::ArrayDeclarationStatement& statement) {
     const auto& declaration = program.arrays.at(statement.array);
     auto type =
-        MemRefType::get({static_cast<int64_t>(declaration.length)},
+        MemRefType::get(declaration.shape,
                         scalarType(declaration.type, declaration.elementWidth));
     auto storage = memref::AllocOp::create(builder, type);
     arrayValues_.at(statement.array) = storage;
@@ -1826,21 +1831,27 @@ private:
       if (!value || emissionBudget.isExhausted()) {
         return;
       }
-      Value offset =
-          arith::ConstantIndexOp::create(builder, static_cast<int64_t>(index));
-      memref::StoreOp::create(builder, value, storage, offset);
+      auto offset = static_cast<int64_t>(index);
+      SmallVector<Value> indices(declaration.shape.size());
+      for (size_t dimension = declaration.shape.size(); dimension-- > 0;) {
+        indices[dimension] = arith::ConstantIndexOp::create(
+            builder, offset % declaration.shape[dimension]);
+        offset /= declaration.shape[dimension];
+      }
+      memref::StoreOp::create(builder, value, storage, indices);
     }
   }
 
   void
   emitArrayAssignment(const frontend::ArrayAssignmentStatement& statement) {
-    auto index = emitArrayIndex(builder, statement.array, statement.index);
+    auto indices =
+        emitArrayIndices(builder, statement.array, statement.indices);
     auto value = emitExpression(builder, statement.value, {});
-    if (!index || !value || emissionBudget.isExhausted()) {
+    if (failed(indices) || !value || emissionBudget.isExhausted()) {
       return;
     }
     memref::StoreOp::create(builder, value, arrayValues_.at(statement.array),
-                            index);
+                            *indices);
   }
 
   void
