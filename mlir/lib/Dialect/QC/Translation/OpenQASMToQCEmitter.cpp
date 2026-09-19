@@ -29,6 +29,7 @@
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/UB/IR/UBOps.h"
+#include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -1845,28 +1846,39 @@ private:
     }
   }
 
-  [[nodiscard]] Value emitArrayView(frontend::ArrayId array,
-                                    ArrayRef<frontend::ExpressionId> prefix) {
+  [[nodiscard]] Value
+  emitArrayView(frontend::ArrayId array,
+                ArrayRef<frontend::ArraySelection> selection) {
     auto storage = arrayValues_.at(array);
-    if (prefix.empty()) {
+    const auto& shape = program.arrays.at(array).shape;
+    if (llvm::all_of(llvm::zip(selection, shape), [](const auto& pair) {
+          return std::get<0>(pair).size == std::get<1>(pair) &&
+                 std::get<0>(pair).stride == 1;
+        })) {
       return storage;
     }
-    auto indices = emitArrayIndices(builder, array, prefix);
+    SmallVector<frontend::ExpressionId> expressions;
+    for (const auto& index : selection) {
+      expressions.push_back(index.offset);
+    }
+    auto indices = emitArrayIndices(builder, array, expressions);
     if (failed(indices) || emissionBudget.isExhausted()) {
       return {};
     }
-    const auto& shape = program.arrays.at(array).shape;
-    SmallVector<OpFoldResult> offsets(shape.size(), builder.getIndexAttr(0));
-    llvm::copy(*indices, offsets.begin());
+    auto offsets = getAsOpFoldResult(*indices);
     SmallVector<OpFoldResult> sizes;
-    SmallVector<OpFoldResult> strides(shape.size(), builder.getIndexAttr(1));
-    for (const auto [dimension, extent] : llvm::enumerate(shape)) {
-      sizes.push_back(
-          builder.getIndexAttr(dimension < prefix.size() ? 1 : extent));
+    SmallVector<OpFoldResult> strides;
+    SmallVector<int64_t> resultShape;
+    for (const auto& index : selection) {
+      sizes.push_back(builder.getIndexAttr(std::max(int64_t{1}, index.size)));
+      strides.push_back(builder.getIndexAttr(index.stride));
+      if (index.size != 0) {
+        resultShape.push_back(index.size);
+      }
     }
     auto type = memref::SubViewOp::inferRankReducedResultType(
-        ArrayRef(shape).drop_front(prefix.size()),
-        cast<MemRefType>(storage.getType()), offsets, sizes, strides);
+        resultShape, cast<MemRefType>(storage.getType()), offsets, sizes,
+        strides);
     return memref::SubViewOp::create(builder, type, storage, offsets, sizes,
                                      strides)
         .getResult();
@@ -1876,6 +1888,34 @@ private:
     auto source = emitArrayView(statement.source, statement.sourceIndices);
     auto target = emitArrayView(statement.target, statement.targetIndices);
     if (source && target && source != target && !emissionBudget.isExhausted()) {
+      const auto isPrefix = [&](frontend::ArrayId array,
+                                ArrayRef<frontend::ArraySelection> selection) {
+        bool retained = false;
+        for (const auto [index, extent] :
+             llvm::zip(selection, program.arrays.at(array).shape)) {
+          if (index.size != 0) {
+            retained = true;
+            if (index.size != extent || index.stride != 1) {
+              return false;
+            }
+          } else if (retained) {
+            return false;
+          }
+        }
+        return true;
+      };
+      if (statement.source == statement.target &&
+          (!isPrefix(statement.source, statement.sourceIndices) ||
+           !isPrefix(statement.target, statement.targetIndices))) {
+        // Capture the RHS before an overlapping assignment changes it.
+        auto type = cast<MemRefType>(source.getType());
+        auto snapshot = memref::AllocOp::create(
+            builder, MemRefType::get(type.getShape(), type.getElementType()));
+        memref::CopyOp::create(builder, source, snapshot);
+        memref::CopyOp::create(builder, snapshot, target);
+        memref::DeallocOp::create(builder, snapshot);
+        return;
+      }
       memref::CopyOp::create(builder, source, target);
     }
   }

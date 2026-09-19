@@ -247,7 +247,7 @@ private:
     if (failed(expect(TokenKind::LBracket))) {
       return failure();
     }
-    auto index = parseExpression();
+    auto index = parseArrayIndex();
     if (failed(index)) {
       return failure();
     }
@@ -260,13 +260,56 @@ private:
       if (additional.size() + 1 >= ARRAY_RANK_LIMIT) {
         return sink.error(current().loc, "arrays support at most 7 indices");
       }
-      auto next = parseExpression();
+      auto next = parseArrayIndex();
       if (failed(next)) {
         return failure();
       }
       additional.push_back(*next);
     }
     return expect(TokenKind::RBracket);
+  }
+
+  [[nodiscard]] FailureOr<SyntaxExpressionId> parseArrayIndex() {
+    SyntaxExpression range;
+    range.kind = Expr::Kind::Range;
+    range.location = current().loc;
+    if (current().kind != TokenKind::Colon) {
+      auto first = parseExpression();
+      if (failed(first)) {
+        return failure();
+      }
+      if (current().kind != TokenKind::Colon) {
+        return *first;
+      }
+      range.lhs = *first;
+    }
+    advance();
+    if (current().kind != TokenKind::Colon &&
+        current().kind != TokenKind::Comma &&
+        current().kind != TokenKind::RBracket) {
+      auto stop = parseExpression();
+      if (failed(stop)) {
+        return failure();
+      }
+      range.rhs = *stop;
+    }
+    if (current().kind == TokenKind::Colon) {
+      if (!range.rhs) {
+        return sink.error(current().loc, "array range requires a step");
+      }
+      range.step = range.rhs;
+      range.rhs.reset();
+      advance();
+      if (current().kind != TokenKind::Comma &&
+          current().kind != TokenKind::RBracket) {
+        auto stop = parseExpression();
+        if (failed(stop)) {
+          return failure();
+        }
+        range.rhs = *stop;
+      }
+    }
+    return sink.addExpression(range);
   }
 
   //===--- Version ------------------------------------------------------===//

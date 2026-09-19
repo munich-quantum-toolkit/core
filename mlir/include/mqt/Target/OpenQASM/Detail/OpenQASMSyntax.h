@@ -61,6 +61,7 @@ struct Expr {
     UintCast,
     AngleCast,
     Index,
+    Range,
     Neg,
     Not,
     BitNot,
@@ -177,6 +178,7 @@ struct SyntaxExpression {
   std::optional<uint64_t> hardwareQubit;
   std::optional<SyntaxExpressionId> lhs;
   std::optional<SyntaxExpressionId> rhs;
+  std::optional<SyntaxExpressionId> step;
   std::vector<SyntaxExpressionId> additionalIndices;
 };
 

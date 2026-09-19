@@ -56,6 +56,7 @@
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallBitVector.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/MathExtras.h"
 
 #include <algorithm>
 #include <array>
@@ -155,9 +156,31 @@ struct ClassicalEnv {
   using RegisterState = std::vector<RegisterBit>;
   struct MemRefState {
     SmallVector<int64_t> shape;
+    SmallVector<int64_t> strides;
     std::shared_ptr<SmallVector<Attribute>> values;
-    size_t offset = 0;
+    int64_t offset = 0;
     size_t size = 0;
+
+    [[nodiscard]] bool isContiguous() const {
+      int64_t stride = 1;
+      for (size_t dimension = shape.size(); dimension-- > 0;) {
+        if (shape[dimension] > 1 && strides[dimension] != stride) {
+          return false;
+        }
+        stride *= shape[dimension];
+      }
+      return true;
+    }
+
+    [[nodiscard]] size_t elementOffset(size_t index) const {
+      int64_t result = offset;
+      for (size_t dimension = shape.size(); dimension-- > 0;) {
+        const auto extent = static_cast<size_t>(shape[dimension]);
+        result += static_cast<int64_t>(index % extent) * strides[dimension];
+        index /= extent;
+      }
+      return static_cast<size_t>(result);
+    }
   };
 
   DenseMap<Value, Attribute> values;
@@ -665,7 +688,7 @@ static FailureOr<Attribute*> lookupMemRefSlot(Value memref, ValueRange indices,
     return op->emitError()
            << "classical memref is not mapped for QCO DD simulation";
   }
-  size_t offset = 0;
+  int64_t offset = it->second->offset;
   for (const auto [dimension, value] : llvm::enumerate(indices)) {
     auto index = lookupIndex(value, classical, op);
     if (failed(index)) {
@@ -676,9 +699,9 @@ static FailureOr<Attribute*> lookupMemRefSlot(Value memref, ValueRange indices,
       return op->emitError()
              << "classical memref index out of range for QCO DD simulation";
     }
-    offset = offset * static_cast<size_t>(extent) + static_cast<size_t>(*index);
+    offset += *index * it->second->strides[dimension];
   }
-  return it->second->values->data() + it->second->offset + offset;
+  return it->second->values->data() + offset;
 }
 
 static LogicalResult applyMemRefAlloc(memref::AllocOp alloc,
@@ -717,6 +740,13 @@ static LogicalResult applyMemRefAlloc(memref::AllocOp alloc,
     storage->shape.push_back(extent);
   }
   storage->size = static_cast<size_t>(size);
+  storage->strides.resize(storage->shape.size());
+  int64_t stride = 1;
+  for (size_t dimension = storage->shape.size(); dimension-- > 0;) {
+    storage->strides[dimension] = stride;
+    // Zero-element allocations have no addressable strides.
+    stride = size == 0 ? 0 : stride * storage->shape[dimension];
+  }
   storage->values = std::make_shared<SmallVector<Attribute>>(storage->size);
   classical.memrefs[alloc.getResult()] = std::move(storage);
   return success();
@@ -763,8 +793,6 @@ static LogicalResult applyMemRefSubview(memref::SubViewOp subview,
     return subview.emitError()
            << "QCO DD simulation requires nonzero-rank memref subviews";
   }
-  const auto prefix = source->second->shape.size() -
-                      static_cast<size_t>(subview.getType().getRank());
   const auto dropped = subview.getDroppedDims();
   const auto offsets = subview.getMixedOffsets();
   const auto sizes = subview.getMixedSizes();
@@ -778,7 +806,7 @@ static LogicalResult applyMemRefSubview(memref::SubViewOp subview,
   auto view = std::make_shared<ClassicalEnv::MemRefState>();
   view->values = source->second->values;
   view->size = 1;
-  size_t offset = 0;
+  view->offset = source->second->offset;
   for (const auto [dimension, extent] :
        llvm::enumerate(source->second->shape)) {
     auto start = resolve(offsets[dimension]);
@@ -787,22 +815,31 @@ static LogicalResult applyMemRefSubview(memref::SubViewOp subview,
     if (failed(start) || failed(size) || failed(stride)) {
       return failure();
     }
-    if (dropped.test(dimension) != (dimension < prefix) || *stride != 1 ||
-        *size != (dimension < prefix ? 1 : extent) ||
-        (dimension >= prefix && *start != 0)) {
-      return subview.emitError() << "QCO DD simulation only supports "
-                                    "prefix-indexed memref subviews";
-    }
-    if (*start < 0 || *start > extent - *size) {
+    int64_t span = 0;
+    int64_t last = 0;
+    if (*size < 0 || *stride == 0 || *start < 0 ||
+        (*size == 0 ? *start > extent : *start >= extent) ||
+        (*size > 0 && (llvm::MulOverflow(*size - 1, *stride, span) != 0 ||
+                       llvm::AddOverflow(*start, span, last) != 0 || last < 0 ||
+                       last >= extent))) {
       return subview.emitError() << "classical memref subview is out of bounds";
     }
-    offset = offset * static_cast<size_t>(extent) + static_cast<size_t>(*start);
-    if (dimension >= prefix) {
-      view->shape.push_back(extent);
-      view->size *= static_cast<size_t>(extent);
+    const auto sourceStride = source->second->strides[dimension];
+    int64_t offset = 0;
+    int64_t viewStride = 1;
+    if (llvm::MulOverflow(*start, sourceStride, offset) != 0 ||
+        llvm::AddOverflow(view->offset, offset, view->offset) != 0 ||
+        (*size > 1 &&
+         llvm::MulOverflow(*stride, sourceStride, viewStride) != 0)) {
+      return subview.emitError()
+             << "classical memref subview offset overflows i64";
+    }
+    if (!dropped.test(dimension)) {
+      view->shape.push_back(*size);
+      view->strides.push_back(viewStride);
+      view->size *= static_cast<size_t>(*size);
     }
   }
-  view->offset = source->second->offset + offset;
   classical.memrefs[subview.getResult()] = std::move(view);
   return success();
 }
@@ -820,10 +857,32 @@ static LogicalResult applyMemRefCopy(memref::CopyOp copy,
   }
   const auto& from = *source->second;
   const auto& to = *target->second;
-  // Prefix-selected regions of one allocation are disjoint or identical.
-  if (from.values != to.values || from.offset != to.offset) {
+  if (from.size == 0) {
+    return success();
+  }
+  if (from.values == to.values && from.offset == to.offset &&
+      from.strides == to.strides) {
+    return success();
+  }
+  if (from.isContiguous() && to.isContiguous() &&
+      (from.values != to.values ||
+       from.offset + static_cast<int64_t>(from.size) <= to.offset ||
+       to.offset + static_cast<int64_t>(to.size) <= from.offset)) {
     std::copy_n(from.values->begin() + from.offset, from.size,
                 to.values->begin() + to.offset);
+    return success();
+  }
+  SmallVector<Attribute> snapshot;
+  if (from.values == to.values) {
+    snapshot.reserve(from.size);
+    for (size_t index = 0; index < from.size; ++index) {
+      snapshot.push_back(from.values->data()[from.elementOffset(index)]);
+    }
+  }
+  for (size_t index = 0; index < from.size; ++index) {
+    to.values->data()[to.elementOffset(index)] =
+        snapshot.empty() ? from.values->data()[from.elementOffset(index)]
+                         : snapshot[index];
   }
   return success();
 }
