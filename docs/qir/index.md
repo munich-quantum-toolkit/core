@@ -292,6 +292,23 @@ expects a null-terminated UTF-8 text payload and rejects known binary or
 non-text formats. The `num_shots` argument is optional for device-defined
 formats that encode their repetition count in the program payload.
 
+The JIT accepts ordinary calls, including host function pointers. Host functions
+must obey their declared ABI and must not throw. The JIT rejects escaping module
+function addresses, `invoke`, `callbr`, `musttail`, and module constructors or
+destructors before execution. After each runtime or helper call, generated code
+checks the runtime error channel and returns before using a failed result.
+`JitSession::run` and `sample` return `llvm::Expected<int64_t>`: a runtime
+failure is an error; a completed program's nonzero exit code remains a value.
+Failed runs discard quantum state and runtime allocations. Failed batches also
+clear partial samples, and the session can run again.
+
+Allocation functions honor a supplied QIR `outError` flag, which lets the
+program handle a reported allocation failure. Other runtime failures use the
+session error channel. C++ callers of the C ABI must check and consume
+`Runtime::takeError()`. Output streams must have exceptions disabled. The C ABI
+prevents C++ exceptions from unwinding through generated frames; allocation
+exhaustion or unexpected dependency exceptions terminate the process.
+
 Every DDSIM QIR job owns its JIT session, runtime, simulator state,
 random-number generator, and output settings. QIR jobs can therefore execute
 concurrently without sharing measurements or output records. DDSIM records

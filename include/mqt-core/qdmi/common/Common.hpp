@@ -24,17 +24,18 @@ using CustomJobParameter = std::variant<std::string, bool, int, double>;
 
 /// A QDMI failure returned without throwing an exception.
 struct Error {
-  /// The QDMI status, or QDMI_ERROR_FATAL for a caught C++ exception.
+  /// The original QDMI status, including provider-specific status codes.
   int status;
   std::string message;
 };
 
+/// A value or its QDMI failure. Optional values distinguish unsupported
+/// properties.
+template <typename T> using Result = std::variant<T, Error>;
+
 /// Return a diagnostic for a failed status; report warnings and continue.
 [[nodiscard]] std::optional<Error> checkError(int result,
                                               const std::string& message);
-
-/// Raise the corresponding exception for callers of the throwing C++ API.
-[[noreturn]] void throwError(const Error& error);
 
 template <class Concrete> class Singleton {
 protected:
@@ -184,15 +185,6 @@ constexpr auto toString(const QDMI_STATUS result) -> const char* {
   }
   unreachable();
 }
-
-/// Throws an exception if the result indicates an error.
-/// @param result The result of a QDMI operation
-/// @param msg The error message to include in the exception
-/// @throws std::bad_alloc if the result is QDMI_ERROR_OUTOFMEM
-/// @throws std::out_of_range if the result is QDMI_ERROR_OUTOFRANGE
-/// @throws std::invalid_argument if the result is QDMI_ERROR_INVALIDARGUMENT
-/// @throws std::runtime_error for all other error results
-auto throwIfError(int result, const std::string& msg) -> void;
 
 /// Returns the string representation of the given session parameter @p param.
 constexpr auto toString(const QDMI_Session_Parameter param) -> const char* {

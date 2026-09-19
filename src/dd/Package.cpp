@@ -18,6 +18,7 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/DDpackageConfig.hpp"
 #include "dd/Edge.hpp"
+#include "dd/Error.hpp"
 #include "dd/MemoryManager.hpp"
 #include "dd/Node.hpp"
 #include "dd/RealNumber.hpp"
@@ -27,8 +28,10 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <bitset>
 #include <cassert>
+#include <charconv>
 #include <cmath>
 #include <complex>
 #include <cstddef>
@@ -36,16 +39,19 @@
 #include <initializer_list>
 #include <iostream>
 #include <limits>
+#include <memory>
 #include <numeric>
+#include <optional>
 #include <queue>
 #include <random>
 #include <span>
-#include <stdexcept>
 #include <string>
+#include <system_error>
 #include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace dd {
@@ -53,30 +59,71 @@ namespace {
 constexpr GateMatrix MEAS_ZERO_MAT{1, 0, 0, 0};
 constexpr GateMatrix MEAS_ONE_MAT{0, 0, 0, 1};
 
-void checkMeasurementQubit(const vEdge& state, const Qubit index) {
+std::optional<Error> checkMeasurementQubit(const vEdge& state,
+                                           const Qubit index) {
   if (state.isTerminal() || index > state.p->v) {
-    throw std::invalid_argument("Measurement qubit is outside the state.");
+    return Error{.message = "Measurement qubit is outside the state."};
   }
+  return std::nullopt;
 }
 } // namespace
 
-Package::Package(const std::size_t nq, const DDPackageConfig& config)
-    : nqubits(nq), config_(config) {
-  resize(nq);
+namespace {
+std::optional<Error> checkCapacity(const size_t nq) {
+  if (nq > Package::MAX_POSSIBLE_QUBITS) {
+    return Error{
+        .message =
+            "Requested too many qubits from package. Qubit datatype only "
+            "allows up to " +
+            std::to_string(Package::MAX_POSSIBLE_QUBITS) + " qubits, while " +
+            std::to_string(nq) +
+            " were requested. Please recompile the package with a wider "
+            "Qubit type!",
+    };
+  }
+  return std::nullopt;
+}
+} // namespace
+
+Result<std::unique_ptr<Package>>
+Package::create(const size_t nq, const DDPackageConfig& config) {
+  if (auto error = checkCapacity(nq)) {
+    return std::move(*error);
+  }
+  const std::array buckets{
+      config.utVecNumBucket,        config.utMatNumBucket,
+      config.ctVecAddNumBucket,     config.ctMatAddNumBucket,
+      config.ctVecAddMagNumBucket,  config.ctMatAddMagNumBucket,
+      config.ctVecConjNumBucket,    config.ctMatConjTransNumBucket,
+      config.ctMatVecMultNumBucket, config.ctMatMatMultNumBucket,
+      config.ctVecKronNumBucket,    config.ctMatKronNumBucket,
+      config.ctMatTraceNumBucket,   config.ctVecInnerProdNumBucket,
+  };
+  if (std::ranges::any_of(
+          buckets, [](size_t count) { return !std::has_single_bit(count); })) {
+    return Error{.message = "Number of buckets must be a power of two."};
+  }
+  if (config.utVecInitialAllocationSize == 0 ||
+      config.utMatInitialAllocationSize == 0) {
+    return Error{.message = "Initial DD allocation sizes must be positive."};
+  }
+  return std::unique_ptr<Package>(new Package(nq, config));
 }
 
-void Package::resize(const std::size_t nq) {
-  if (nq > MAX_POSSIBLE_QUBITS) {
-    throw std::invalid_argument("Requested too many qubits from package. "
-                                "Qubit datatype only allows up to " +
-                                std::to_string(MAX_POSSIBLE_QUBITS) +
-                                " qubits, while " + std::to_string(nq) +
-                                " were requested. Please recompile the "
-                                "package with a wider Qubit type!");
+Package::Package(const size_t nq, const DDPackageConfig& config)
+    : nqubits(nq), config_(config) {
+  vUniqueTable.resize(nqubits);
+  mUniqueTable.resize(nqubits);
+}
+
+std::optional<Error> Package::resize(const size_t nq) {
+  if (auto error = checkCapacity(nq)) {
+    return error;
   }
   nqubits = nq;
   vUniqueTable.resize(nqubits);
   mUniqueTable.resize(nqubits);
+  return std::nullopt;
 }
 
 void Package::reset() {
@@ -166,27 +213,31 @@ Package::ActiveCounts Package::computeActiveCounts() {
 
 namespace {
 
-[[noreturn]] void throwGateQubitOutOfRange(const std::size_t nqubits) {
+[[nodiscard]] Error gateQubitOutOfRange(const std::size_t nqubits) {
   if (nqubits == 0U) {
-    throw std::runtime_error(
-        "Cannot construct a gate in a package with zero qubits.");
+    return Error{
+        .message = "Cannot construct a gate in a package with zero qubits.",
+    };
   }
-  throw std::runtime_error{
-      "Requested gate acting on qubit(s) with index larger than " +
-      std::to_string(nqubits - 1U) +
-      " while the package configuration only supports up to " +
-      std::to_string(nqubits) +
-      " qubits. Please allocate a larger package instance."};
+  return Error{
+      .message = "Requested gate acting on qubit(s) with index larger than " +
+                 std::to_string(nqubits - 1U) +
+                 " while the package configuration only supports up to " +
+                 std::to_string(nqubits) +
+                 " qubits. Please allocate a larger package instance.",
+  };
 }
 
-[[noreturn]] void throwGateQubitsNotDistinct() {
-  throw std::runtime_error{
-      "Requested gate has duplicate or overlapping control/target qubits."};
+[[nodiscard]] Error gateQubitsNotDistinct() {
+  return Error{
+      .message =
+          "Requested gate has duplicate or overlapping control/target qubits.",
+  };
 }
 
-void ensureGateQubitsInRange(const std::size_t nqubits,
-                             const Controls& controls,
-                             const std::span<const Qubit> targets) {
+std::optional<Error>
+ensureGateQubitsInRange(const std::size_t nqubits, const Controls& controls,
+                        const std::span<const Qubit> targets) {
   if (nqubits == 0U ||
       std::ranges::any_of(controls,
                           [nqubits](const auto& c) {
@@ -195,26 +246,27 @@ void ensureGateQubitsInRange(const std::size_t nqubits,
       std::ranges::any_of(targets, [nqubits](const Qubit target) {
         return static_cast<std::size_t>(target) >= nqubits;
       })) {
-    throwGateQubitOutOfRange(nqubits);
+    return gateQubitOutOfRange(nqubits);
   }
 
   if (std::ranges::adjacent_find(controls, {}, &Control::qubit) !=
       controls.end()) {
-    throwGateQubitsNotDistinct();
+    return gateQubitsNotDistinct();
   }
 
   for (size_t i = 0; i < targets.size(); ++i) {
     if (std::ranges::find(targets.first(i), targets[i]) !=
         targets.first(i).end()) {
-      throwGateQubitsNotDistinct();
+      return gateQubitsNotDistinct();
     }
   }
 
   if (std::ranges::any_of(controls, [&targets](const auto& control) {
         return std::ranges::find(targets, control.qubit) != targets.end();
       })) {
-    throwGateQubitsNotDistinct();
+    return gateQubitsNotDistinct();
   }
+  return std::nullopt;
 }
 
 template <std::size_t Dim>
@@ -317,11 +369,13 @@ void wrapControlsAbove(Package& dd, Controls::const_iterator& it,
 }
 
 template <typename Matrix>
-[[nodiscard]] mEdge buildSingleQubitGateDD(Package& dd, const Matrix& mat,
-                                           const Controls& controls,
-                                           const Qubit target) {
+[[nodiscard]] Result<mEdge>
+buildSingleQubitGateDD(Package& dd, const Matrix& mat, const Controls& controls,
+                       const Qubit target) {
   const std::array targets{target};
-  ensureGateQubitsInRange(dd.qubits(), controls, targets);
+  if (auto error = ensureGateQubitsInRange(dd.qubits(), controls, targets)) {
+    return std::move(*error);
+  }
 
   std::array<mCachedEdge, NEDGE> em{};
   fillTerminalVector(em, mat);
@@ -340,11 +394,13 @@ template <typename Matrix>
 }
 
 template <typename Matrix>
-[[nodiscard]] mEdge
+[[nodiscard]] Result<mEdge>
 buildTwoQubitGateDD(Package& dd, const Matrix& mat, const Controls& controls,
                     const Qubit target0, const Qubit target1) {
   const std::array targets{target0, target1};
-  ensureGateQubitsInRange(dd.qubits(), controls, targets);
+  if (auto error = ensureGateQubitsInRange(dd.qubits(), controls, targets)) {
+    return std::move(*error);
+  }
 
   std::array<std::array<mCachedEdge, NEDGE>, NEDGE> em{};
   fillTerminalMatrix(em, mat);
@@ -386,7 +442,7 @@ buildTwoQubitGateDD(Package& dd, const Matrix& mat, const Controls& controls,
 }
 
 template <typename Matrix>
-[[nodiscard]] mEdge
+[[nodiscard]] Result<mEdge>
 buildThreeQubitGateDD(Package& dd, const Matrix& mat, const Controls& controls,
                       const Qubit target0, const Qubit target1,
                       const Qubit target2) {
@@ -394,7 +450,9 @@ buildThreeQubitGateDD(Package& dd, const Matrix& mat, const Controls& controls,
   /// controls between target levels. Matrix bits are MSB-first; DD levels
   /// follow ascending qubit indices.
   const std::array targets{target0, target1, target2};
-  ensureGateQubitsInRange(dd.qubits(), controls, targets);
+  if (auto error = ensureGateQubitsInRange(dd.qubits(), controls, targets)) {
+    return std::move(*error);
+  }
 
   std::array<std::array<mCachedEdge, THREE_QUBIT_GATE_DIM>,
              THREE_QUBIT_GATE_DIM>
@@ -463,60 +521,69 @@ buildThreeQubitGateDD(Package& dd, const Matrix& mat, const Controls& controls,
 
 } // namespace
 
-mEdge Package::makeGateDD(const GateMatrix& mat, const Qubit target) {
+Result<mEdge> Package::makeGateDD(const GateMatrix& mat, const Qubit target) {
   return makeGateDD(mat, Controls{}, target);
 }
-mEdge Package::makeGateDD(const GateMatrix& mat, const Control& control,
-                          const Qubit target) {
+Result<mEdge> Package::makeGateDD(const GateMatrix& mat, const Control& control,
+                                  const Qubit target) {
   return makeGateDD(mat, Controls{control}, target);
 }
-mEdge Package::makeGateDD(const GateMatrix& mat, const Controls& controls,
-                          const Qubit target) {
+Result<mEdge> Package::makeGateDD(const GateMatrix& mat,
+                                  const Controls& controls,
+                                  const Qubit target) {
   return buildSingleQubitGateDD(*this, mat, controls, target);
 }
-mEdge Package::makeGateDD(const std::span<const std::complex<fp>, NEDGE> mat,
-                          const Controls& controls, const Qubit target) {
+Result<mEdge>
+Package::makeGateDD(const std::span<const std::complex<fp>, NEDGE> mat,
+                    const Controls& controls, const Qubit target) {
   return buildSingleQubitGateDD(*this, mat, controls, target);
 }
-mEdge Package::makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
-                                  const Qubit target0, const Qubit target1) {
+Result<mEdge> Package::makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
+                                          const Qubit target0,
+                                          const Qubit target1) {
   return makeTwoQubitGateDD(mat, Controls{}, target0, target1);
 }
-mEdge Package::makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
-                                  const Control& control, const Qubit target0,
-                                  const Qubit target1) {
+Result<mEdge> Package::makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
+                                          const Control& control,
+                                          const Qubit target0,
+                                          const Qubit target1) {
   return makeTwoQubitGateDD(mat, Controls{control}, target0, target1);
 }
-mEdge Package::makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
-                                  const Controls& controls, const Qubit target0,
-                                  const Qubit target1) {
+Result<mEdge> Package::makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
+                                          const Controls& controls,
+                                          const Qubit target0,
+                                          const Qubit target1) {
   return buildTwoQubitGateDD(*this, mat, controls, target0, target1);
 }
-mEdge Package::makeTwoQubitGateDD(
+Result<mEdge> Package::makeTwoQubitGateDD(
     const std::span<const std::complex<fp>,
                     static_cast<std::size_t>(NEDGE) * NEDGE>
         mat,
     const Controls& controls, const Qubit target0, const Qubit target1) {
   return buildTwoQubitGateDD(*this, mat, controls, target0, target1);
 }
-mEdge Package::makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
-                                    const Qubit target0, const Qubit target1,
-                                    const Qubit target2) {
+Result<mEdge> Package::makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
+                                            const Qubit target0,
+                                            const Qubit target1,
+                                            const Qubit target2) {
   return makeThreeQubitGateDD(mat, Controls{}, target0, target1, target2);
 }
-mEdge Package::makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
-                                    const Control& control, const Qubit target0,
-                                    const Qubit target1, const Qubit target2) {
+Result<mEdge> Package::makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
+                                            const Control& control,
+                                            const Qubit target0,
+                                            const Qubit target1,
+                                            const Qubit target2) {
   return makeThreeQubitGateDD(mat, Controls{control}, target0, target1,
                               target2);
 }
-mEdge Package::makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
-                                    const Controls& controls,
-                                    const Qubit target0, const Qubit target1,
-                                    const Qubit target2) {
+Result<mEdge> Package::makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
+                                            const Controls& controls,
+                                            const Qubit target0,
+                                            const Qubit target1,
+                                            const Qubit target2) {
   return buildThreeQubitGateDD(*this, mat, controls, target0, target1, target2);
 }
-mEdge Package::makeThreeQubitGateDD(
+Result<mEdge> Package::makeThreeQubitGateDD(
     const std::span<const std::complex<fp>,
                     static_cast<std::size_t>(THREE_QUBIT_GATE_DIM) *
                         THREE_QUBIT_GATE_DIM>
@@ -526,12 +593,13 @@ mEdge Package::makeThreeQubitGateDD(
   return buildThreeQubitGateDD(*this, mat, controls, target0, target1, target2);
 }
 
-mEdge Package::makeGateDD(const std::span<const std::complex<fp>> matrix,
-                          const std::span<const Qubit> targets,
-                          const Controls& controls) {
+Result<mEdge>
+Package::makeGateDD(const std::span<const std::complex<fp>> matrix,
+                    const std::span<const Qubit> targets,
+                    const Controls& controls) {
   if (targets.size() >= std::numeric_limits<size_t>::digits / 2 ||
       matrix.size() != (size_t{1} << (2 * targets.size()))) {
-    throw std::invalid_argument("Matrix size does not match its target count.");
+    return Error{.message = "Matrix size does not match its target count."};
   }
   switch (targets.size()) {
   case 1:
@@ -547,8 +615,9 @@ mEdge Package::makeGateDD(const std::span<const std::complex<fp>> matrix,
     break;
   }
   if (!controls.empty()) {
-    throw std::invalid_argument(
-        "Sparse controls require one to three target qubits.");
+    return Error{
+        .message = "Sparse controls require one to three target qubits.",
+    };
   }
   if (targets.empty()) {
     return mEdge::terminal(cn.lookup(matrix[0]));
@@ -559,14 +628,14 @@ mEdge Package::makeGateDD(const std::span<const std::complex<fp>> matrix,
   const auto operands = std::span{storage}.first(targets.size());
   for (size_t i = 0; i < targets.size(); ++i) {
     if (targets[i] >= qubits()) {
-      throwGateQubitOutOfRange(qubits());
+      return gateQubitOutOfRange(qubits());
     }
     operands[i] = {targets[i], size_t{1} << (targets.size() - 1 - i)};
   }
   std::ranges::sort(operands, {}, &std::pair<Qubit, size_t>::first);
   if (std::ranges::adjacent_find(
           operands, {}, &std::pair<Qubit, size_t>::first) != operands.end()) {
-    throwGateQubitsNotDistinct();
+    return gateQubitsNotDistinct();
   }
   const auto dimension = size_t{1} << targets.size();
   const auto root = buildMatrixDD(
@@ -578,11 +647,11 @@ mEdge Package::makeGateDD(const std::span<const std::complex<fp>> matrix,
   return toMatrixDD(*this, root);
 }
 
-mEdge Package::makeDDFromMatrix(const CMat& matrix) {
+Result<mEdge> Package::makeDDFromMatrix(const CMat& matrix) {
   if (std::ranges::any_of(matrix, [&matrix](const auto& row) {
         return row.size() != matrix.size();
       })) {
-    throw std::invalid_argument("Matrix must be square.");
+    return Error{.message = "Matrix must be square."};
   }
   return makeDDFromMatrix(matrix.size(),
                           [&matrix](const size_t row, const size_t col) {
@@ -603,12 +672,15 @@ void Package::clearComputeTables() {
   matrixKronecker.clear();
   matrixTrace.clear();
 }
-std::string Package::measureAll(vEdge& rootEdge, const bool collapse,
-                                std::mt19937_64& mt, const fp epsilon) {
+Result<std::string> Package::measureAll(vEdge& rootEdge, const bool collapse,
+                                        std::mt19937_64& mt, const fp epsilon) {
   if (std::abs(ComplexNumbers::mag2(rootEdge.w) - 1.0) > epsilon) {
     if (rootEdge.w.approximatelyZero()) {
-      throw std::runtime_error(
-          "Numerical instabilities led to a 0-vector! Abort simulation!");
+      return Error{
+          .message =
+              "Numerical instabilities led to a 0-vector! Abort simulation!",
+          .kind = Error::Kind::Numerical,
+      };
     }
     std::cerr << "WARNING in MAll: numerical instability occurred during "
                  "simulation: |alpha|^2 + |beta|^2 = "
@@ -616,7 +688,7 @@ std::string Package::measureAll(vEdge& rootEdge, const bool collapse,
   }
 
   if (rootEdge.isTerminal()) {
-    return "";
+    return std::string{};
   }
 
   vEdge cur = rootEdge;
@@ -632,8 +704,11 @@ std::string Package::measureAll(vEdge& rootEdge, const bool collapse,
     const fp tmp = p0 + p1;
 
     if (std::abs(tmp - 1.0) > epsilon) {
-      throw std::runtime_error("Added probabilities differ from 1 by " +
-                               std::to_string(std::abs(tmp - 1.0)));
+      return Error{
+          .message = "Added probabilities differ from 1 by " +
+                     std::to_string(std::abs(tmp - 1.0)),
+          .kind = Error::Kind::Numerical,
+      };
     }
     p0 /= tmp;
 
@@ -659,8 +734,10 @@ std::string Package::measureAll(vEdge& rootEdge, const bool collapse,
       }
       e = makeDDNode(static_cast<Qubit>(p), edges);
     }
+    if (auto error = decRef(rootEdge)) {
+      return std::move(*error);
+    }
     incRef(e);
-    decRef(rootEdge);
     rootEdge = e;
   }
 
@@ -683,16 +760,18 @@ fp Package::assignProbabilities(const vEdge& edge,
 
   return ComplexNumbers::mag2(edge.w) * sum;
 }
-std::pair<fp, fp>
+Result<std::pair<fp, fp>>
 Package::determineMeasurementProbabilities(const vEdge& rootEdge,
                                            const Qubit index) {
-  checkMeasurementQubit(rootEdge, index);
+  if (auto error = checkMeasurementQubit(rootEdge, index)) {
+    return std::move(*error);
+  }
   if (rootEdge.p->v == index) {
     const auto probability = ComplexNumbers::mag2(rootEdge.w);
     const auto zero = static_cast<ComplexValue>(rootEdge.p->e[0].w);
     const auto one = static_cast<ComplexValue>(rootEdge.p->e[1].w);
-    return {zero.approximatelyZero() ? 0. : probability * zero.mag2(),
-            one.approximatelyZero() ? 0. : probability * one.mag2()};
+    return std::pair{zero.approximatelyZero() ? 0. : probability * zero.mag2(),
+                     one.approximatelyZero() ? 0. : probability * one.mag2()};
   }
 
   std::unordered_map<const vNode*, fp> measurementProbabilities;
@@ -713,7 +792,7 @@ Package::determineMeasurementProbabilities(const vEdge& rootEdge,
         continue;
       }
       if (edge.isTerminal()) {
-        throw std::invalid_argument("Measurement qubit is outside the state.");
+        return Error{.message = "Measurement qubit is outside the state."};
       }
       const fp contribution = prob * weight.mag2();
       auto [it, inserted] =
@@ -744,32 +823,56 @@ Package::determineMeasurementProbabilities(const vEdge& rootEdge,
     }
   }
 
-  return {pzero, pone};
+  return std::pair{pzero, pone};
 }
-char Package::measureOneCollapsing(vEdge& rootEdge, const Qubit index,
-                                   std::mt19937_64& mt, const fp epsilon) {
-  const auto& [pzero, pone] =
-      determineMeasurementProbabilities(rootEdge, index);
+Result<char> Package::measureOneCollapsing(vEdge& rootEdge, const Qubit index,
+                                           std::mt19937_64& mt,
+                                           const fp epsilon) {
+  auto probabilities = determineMeasurementProbabilities(rootEdge, index);
+  if (auto* error = std::get_if<Error>(&probabilities)) {
+    return std::move(*error);
+  }
+  const auto& [pzero, pone] = std::get<0>(probabilities);
   const fp sum = pzero + pone;
   if (std::abs(sum - 1) > epsilon) {
-    throw std::runtime_error(
-        "Numerical instability occurred during measurement: |alpha|^2 + "
-        "|beta|^2 = " +
-        std::to_string(pzero) + " + " + std::to_string(pone) + " = " +
-        std::to_string(pzero + pone) + ", but should be 1!");
+    return Error{
+        .message =
+            "Numerical instability occurred during measurement: |alpha|^2 + "
+            "|beta|^2 = " +
+            std::to_string(pzero) + " + " + std::to_string(pone) + " = " +
+            std::to_string(pzero + pone) + ", but should be 1!",
+        .kind = Error::Kind::Numerical,
+    };
   }
   std::uniform_real_distribution<fp> dist(0., 1.);
   if (const auto threshold = dist(mt); threshold < pzero / sum) {
-    performCollapsingMeasurement(rootEdge, index, pzero, true);
+    if (auto error = collapse(rootEdge, index, pzero, true)) {
+      return std::move(*error);
+    }
     return '0';
   }
-  performCollapsingMeasurement(rootEdge, index, pone, false);
+  if (auto error = collapse(rootEdge, index, pone, false)) {
+    return std::move(*error);
+  }
   return '1';
 }
-void Package::performCollapsingMeasurement(vEdge& rootEdge, const Qubit index,
-                                           const fp probability,
-                                           const bool measureZero) {
-  checkMeasurementQubit(rootEdge, index);
+std::optional<Error>
+Package::performCollapsingMeasurement(vEdge& rootEdge, const Qubit index,
+                                      const fp probability,
+                                      const bool measureZero) {
+  auto probabilities = determineMeasurementProbabilities(rootEdge, index);
+  if (auto* error = std::get_if<Error>(&probabilities)) {
+    return std::move(*error);
+  }
+  return collapse(rootEdge, index, probability, measureZero);
+}
+
+std::optional<Error> Package::collapse(vEdge& rootEdge, const Qubit index,
+                                       const fp probability,
+                                       const bool measureZero) {
+  if (auto error = checkMeasurementQubit(rootEdge, index)) {
+    return std::move(error);
+  }
   vCachedEdge projected{};
   if (rootEdge.p->v == index) {
     std::array<vCachedEdge, RADIX> edges{};
@@ -778,26 +881,30 @@ void Package::performCollapsingMeasurement(vEdge& rootEdge, const Qubit index,
     projected = makeDDNode(index, edges);
     projected.w = projected.w * static_cast<ComplexValue>(rootEdge.w);
   } else {
-    const auto measurementGate =
+    auto measurementGate =
         makeGateDD(measureZero ? MEAS_ZERO_MAT : MEAS_ONE_MAT, index);
-    projected = project(rootEdge, measurementGate.p, measureZero);
+    if (auto* error = std::get_if<Error>(&measurementGate)) {
+      return std::move(*error);
+    }
+    projected = project(rootEdge, std::get<0>(measurementGate).p, measureZero);
   }
   auto e = cn.lookup(projected);
 
   assert(probability > 0.);
   e.w = cn.lookup(e.w / std::sqrt(probability));
+  if (auto error = decRef(rootEdge)) {
+    return error;
+  }
   incRef(e);
-  decRef(rootEdge);
   rootEdge = e;
+  return std::nullopt;
 }
 vCachedEdge Package::project(const vEdge& state, mNode* projector,
                              const bool measureZero) {
   if (state.w.exactlyZero()) {
     return vCachedEdge::zero();
   }
-  if (state.isTerminal()) {
-    throw std::invalid_argument("Measurement qubit is outside the state.");
-  }
+  assert(!state.isTerminal());
   if (const auto* cached =
           matrixVectorMultiplication.lookup(projector, state.p);
       cached != nullptr) {
@@ -872,19 +979,25 @@ mCachedEdge Package::conjugateTransposeRec(const mEdge& a) {
   // adjust top weight including conjugate
   return {res.p, res.w * ComplexNumbers::conj(a.w)};
 }
-VectorDD Package::applyOperation(const MatrixDD& operation, const VectorDD& e) {
+Result<VectorDD> Package::applyOperation(const MatrixDD& operation,
+                                         const VectorDD& e) {
   const auto tmp = multiply(operation, e);
+  if (auto error = decRef(e)) {
+    return std::move(*error);
+  }
   incRef(tmp);
-  decRef(e);
   garbageCollect();
   return tmp;
 }
-MatrixDD Package::applyOperation(const MatrixDD& operation, const MatrixDD& e,
-                                 const bool applyFromLeft) {
+Result<MatrixDD> Package::applyOperation(const MatrixDD& operation,
+                                         const MatrixDD& e,
+                                         const bool applyFromLeft) {
   const MatrixDD tmp =
       applyFromLeft ? multiply(operation, e) : multiply(e, operation);
+  if (auto error = decRef(e)) {
+    return std::move(*error);
+  }
   incRef(tmp);
-  decRef(e);
   garbageCollect();
   return tmp;
 }
@@ -903,15 +1016,33 @@ ComplexValue Package::innerProduct(const vEdge& x, const vEdge& y) {
 fp Package::fidelity(const vEdge& x, const vEdge& y) {
   return innerProduct(x, y).mag2();
 }
-fp Package::fidelityOfMeasurementOutcomes(const vEdge& e,
-                                          const SparsePVec& probs,
-                                          const Permutation& permutation) {
+Result<fp>
+Package::fidelityOfMeasurementOutcomes(const vEdge& e, const SparsePVec& probs,
+                                       const Permutation& permutation) {
+  const auto numQubits =
+      e.isTerminal() ? size_t{0} : static_cast<size_t>(e.p->v) + 1U;
+  if (numQubits > std::numeric_limits<size_t>::digits ||
+      permutation.size() > std::numeric_limits<size_t>::digits) {
+    return Error{
+        .message = "Measurement outcomes must fit size_t.",
+        .kind = Error::Kind::OutOfRange,
+    };
+  }
+  for (const auto& [physical, logical] : permutation) {
+    if (physical >= numQubits || logical >= permutation.size()) {
+      return Error{
+          .message = "Measurement permutation index is out of range.",
+          .kind = Error::Kind::OutOfRange,
+      };
+    }
+  }
   if (e.w.approximatelyZero()) {
     return 0.;
   }
   return fidelityOfMeasurementOutcomesRecursive(e, probs, 0, permutation,
-                                                e.p->v + 1U);
+                                                numQubits);
 }
+
 ComplexValue Package::innerProduct(const vEdge& x, const vEdge& y,
                                    const Qubit var) {
   const auto xWeight = static_cast<ComplexValue>(x.w);
@@ -966,7 +1097,9 @@ fp Package::fidelityOfMeasurementOutcomesRecursive(
       for (const auto& [physical, logical] : permutation) {
         filteredString[logical] = binaryString[physical];
       }
-      idx = std::stoull(filteredString, nullptr, 2);
+      const auto parsed = std::from_chars(
+          filteredString.data(), std::to_address(filteredString.end()), idx, 2);
+      assert(parsed.ec == std::errc{});
     }
     if (auto const it = probs.find(idx); it != probs.end()) {
       return top * std::sqrt(it->second);
@@ -990,12 +1123,14 @@ fp Package::fidelityOfMeasurementOutcomesRecursive(
 
   return top * (leftContribution + rightContribution);
 }
-fp Package::expectationValue(const mEdge& x, const vEdge& y) {
+Result<fp> Package::expectationValue(const mEdge& x, const vEdge& y) {
   assert(!x.isZeroTerminal() && !y.isTerminal());
   if (!x.isTerminal() && x.p->v > y.p->v) {
-    throw std::invalid_argument(
-        "Observable must not act on more qubits than the state to compute the"
-        "expectation value.");
+    return Error{
+        .message = "Observable must not act on more qubits than the state to "
+                   "compute the"
+                   "expectation value.",
+    };
   }
 
   const auto yPrime = multiply(x, y);
@@ -1147,11 +1282,12 @@ bool Package::isCloseToIdentityRecursive(
   return ident3;
 }
 mEdge Package::makeIdent() { return mEdge::one(); }
-mEdge Package::createInitialMatrix(const std::vector<bool>& ancillary) {
+Result<mEdge> Package::createInitialMatrix(const std::vector<bool>& ancillary) {
   return reduceAncillae(makeIdent(), ancillary);
 }
-mEdge Package::reduceAncillae(mEdge e, const std::vector<bool>& ancillary,
-                              const bool regular) {
+Result<mEdge> Package::reduceAncillae(mEdge e,
+                                      const std::vector<bool>& ancillary,
+                                      const bool regular) {
   if (std::ranges::none_of(ancillary, [](const bool v) { return v; }) ||
       e.isZeroTerminal()) {
     return e;
@@ -1194,12 +1330,14 @@ mEdge Package::reduceAncillae(mEdge e, const std::vector<bool>& ancillary,
     }
   }
   const auto res = mEdge{.p = g.p, .w = cn.lookup(g.w * e.w)};
+  if (auto error = decRef(e)) {
+    return std::move(*error);
+  }
   incRef(res);
-  decRef(e);
   return res;
 }
-vEdge Package::reduceGarbage(vEdge& e, const std::vector<bool>& garbage,
-                             const bool normalizeWeights) {
+Result<vEdge> Package::reduceGarbage(vEdge& e, const std::vector<bool>& garbage,
+                                     const bool normalizeWeights) {
   if (!normalizeWeights &&
       (std::ranges::none_of(garbage, [](bool v) { return v; }) ||
        e.isTerminal())) {
@@ -1222,12 +1360,16 @@ vEdge Package::reduceGarbage(vEdge& e, const std::vector<bool>& garbage,
     weight = weight.mag();
   }
   const auto res = vEdge{.p = f.p, .w = cn.lookup(weight)};
+  if (auto error = decRef(e)) {
+    return std::move(*error);
+  }
   incRef(res);
-  decRef(e);
   return res;
 }
-mEdge Package::reduceGarbage(const mEdge& e, const std::vector<bool>& garbage,
-                             const bool regular, const bool normalizeWeights) {
+Result<mEdge> Package::reduceGarbage(const mEdge& e,
+                                     const std::vector<bool>& garbage,
+                                     const bool regular,
+                                     const bool normalizeWeights) {
   if (!normalizeWeights &&
       (std::ranges::none_of(garbage, [](bool v) { return v; }) ||
        e.isZeroTerminal())) {
@@ -1285,8 +1427,10 @@ mEdge Package::reduceGarbage(const mEdge& e, const std::vector<bool>& garbage,
   }
   const auto res = mEdge{.p = g.p, .w = cn.lookup(weight)};
 
+  if (auto error = decRef(e)) {
+    return std::move(*error);
+  }
   incRef(res);
-  decRef(e);
   return res;
 }
 mCachedEdge Package::reduceAncillaeRecursion(mNode* p,

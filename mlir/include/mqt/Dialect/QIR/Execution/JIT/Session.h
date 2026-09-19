@@ -40,7 +40,7 @@ class Runtime;
 /// measurements, preserves released wires, and rejects measurement-dependent
 /// computation, resets and operations on measured wires. Classical control flow
 /// and direct helpers are supported; recorded outputs are suppressed.
-enum class Execution { Sampling, StateExtraction };
+enum class Execution : uint8_t { Sampling, StateExtraction };
 
 /// In-process JIT executor for QIR programs.
 ///
@@ -51,6 +51,11 @@ enum class Execution { Sampling, StateExtraction };
 /// - runs the module function marked as its QIR entry point.
 /// A session owns a single LLJIT instance and is not meant to be reused across
 /// modules; create a new @ref JitSession for each program.
+/// Execution accepts ordinary calls, including host function pointers, and
+/// rejects escaping module function addresses, exception-handling calls,
+/// musttail calls and module initializers. A runtime failure returns an error,
+/// discards that run's state and releases its runtime allocations. The same
+/// session can then be executed again.
 class JitSession {
 public:
   /// QIR 2.1 Base and Adaptive Profile entry-point signature.
@@ -64,18 +69,19 @@ public:
   /// @param bufferName Identifier used in diagnostics.
   /// @param execution Execution mode.
   /// @param randomSeed Optional deterministic runtime seed.
-  /// @throws std::runtime_error if the IR cannot be parsed or the JIT fails
-  /// to initialize.
-  JitSession(llvm::StringRef irBytes, llvm::StringRef bufferName,
-             Execution execution = Execution::Sampling,
-             std::optional<uint64_t> randomSeed = std::nullopt);
+  /// Returns an error if the IR cannot be parsed or the JIT fails to
+  /// initialize.
+  [[nodiscard]] static llvm::Expected<std::unique_ptr<JitSession>>
+  create(llvm::StringRef irBytes, llvm::StringRef bufferName,
+         Execution execution = Execution::Sampling,
+         std::optional<uint64_t> randomSeed = std::nullopt);
 
   /// Tears down the LLJIT and any JIT'd resources owned by the session.
   ~JitSession();
 
   /// Execute the selected QIR entry point.
   /// @return The 64-bit QIR exit code.
-  int64_t run();
+  [[nodiscard]] llvm::Expected<int64_t> run();
 
   /// Execute a batch, preserving recorded-result order and returning the first
   /// nonzero exit code. With textual output disabled, eligible static Base
@@ -86,12 +92,14 @@ public:
   /// If supplied, stateAvailable is set only when successful terminal sampling
   /// leaves an uncollapsed state. The caller may then use runtime().takeState()
   /// before executing the session again.
-  int64_t sample(size_t shots, std::vector<std::string>& results,
-                 bool* stateAvailable = nullptr);
+  [[nodiscard]] llvm::Expected<int64_t>
+  sample(size_t shots, std::vector<std::string>& results,
+         bool* stateAvailable = nullptr);
 
   [[nodiscard]] auto runtime() -> Runtime&;
 
 private:
+  explicit JitSession(Execution execution, std::optional<uint64_t> randomSeed);
   std::unique_ptr<Runtime> runtime_;
   std::unique_ptr<llvm::orc::LLJIT> jit_;
   EntryPointFn* entryPointFn_ = nullptr;
@@ -115,9 +123,8 @@ private:
   /// - Builds the @c LLJIT instance
   /// - Registers QIR runtime symbols
   /// - Resolves the selected QIR entry point.
-  /// @throws std::runtime_error if loading failed or the JIT cannot start.
-  void initialize(llvm::Expected<llvm::orc::ThreadSafeModule> llvmModule,
-                  Execution execution);
+  [[nodiscard]] llvm::Error initialize(llvm::orc::ThreadSafeModule loadedModule,
+                                       Execution execution);
 
   /// Tears down the @c LLJIT.
   void deinitialize() const;

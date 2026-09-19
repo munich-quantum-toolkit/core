@@ -11,18 +11,24 @@
 #include "bench/JSON.hpp"
 #include "bench/ModularMultiplier.hpp"
 
+#include "Result.hpp"
+
 #include "nanobind/nanobind.h"
 #include "nanobind/stl/map.h"         // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/optional.h"    // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/string.h"      // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/string_view.h" // NOLINT(misc-include-cleaner)
 
+#include <new>
 #include <string>
+#include <utility>
 
 namespace mqt {
 
 namespace nb = nanobind;
 using namespace nb::literals;
+using bindings::bindBenchResult;
+using bindings::takeBenchResult;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerModularMultiplier(const nb::module_& m) {
@@ -50,7 +56,14 @@ The initially zero product register stores :math:`c \cdot a \cdot x \bmod N`,
 where :math:`c` is the control, :math:`a` is the classical multiplier,
 :math:`x` is the multiplicand, and :math:`N` is the modulus.)pb");
   modularMultiplier
-      .def(nb::init<bench::ModularMultiplierOptions>(), "options"_a)
+      .def(
+          "__init__",
+          [](bench::ModularMultiplier* self,
+             bench::ModularMultiplierOptions options) {
+            new (self) bench::ModularMultiplier(takeBenchResult(
+                bench::ModularMultiplier::create(std::move(options))));
+          },
+          "options"_a)
       .def_prop_ro("options", &bench::ModularMultiplier::options,
                    nb::rv_policy::reference_internal,
                    "The resolved benchmark parameters.")
@@ -59,10 +72,11 @@ where :math:`c` is the control, :math:`a` is the classical multiplier,
                    "The logical control, multiplicand, and accumulator output.")
       .def_prop_ro("expected_result", &bench::ModularMultiplier::expectedResult,
                    "The unique outcome, or ``None`` for superposed inputs.")
-      .def("probability", &bench::ModularMultiplier::probability, "outcome"_a,
+      .def("probability",
+           bindBenchResult(&bench::ModularMultiplier::probability), "outcome"_a,
            "Return the ideal probability of an outcome.")
-      .def("evaluate", &bench::ModularMultiplier::evaluate, "counts"_a,
-           "Compare sampled counts with the ideal distribution.")
+      .def("evaluate", bindBenchResult(&bench::ModularMultiplier::evaluate),
+           "counts"_a, "Compare sampled counts with the ideal distribution.")
       .def(
           "generate",
           [](const bench::ModularMultiplier& value) {
@@ -81,23 +95,24 @@ where :math:`c` is the control, :math:`a` is the classical multiplier,
       .def_prop_ro(
           "manifest_json",
           [](const bench::ModularMultiplier& value) {
-            return bench::toManifestJSON(value);
+            return takeBenchResult(bench::toManifestJSON(value));
           },
           "The canonical manifest JSON.")
       .def_prop_ro(
           "case_id",
           [](const bench::ModularMultiplier& value) {
-            return bench::caseId(value);
+            return takeBenchResult(bench::caseId(value));
           },
           "The stable semantic case ID.")
       .def_static("from_instance_specification_json",
-                  &bench::modularMultiplierFromInstanceSpecificationJSON,
+                  bindBenchResult(
+                      &bench::modularMultiplierFromInstanceSpecificationJSON),
                   "json"_a, nb::kw_only(),
                   "source"_a = "<instance-specification>",
                   "Parse a strict benchmark instance specification.")
       .def_static("from_manifest_json",
-                  &bench::modularMultiplierFromManifestJSON, "json"_a,
-                  nb::kw_only(), "source"_a = "<manifest>",
+                  bindBenchResult(&bench::modularMultiplierFromManifestJSON),
+                  "json"_a, nb::kw_only(), "source"_a = "<manifest>",
                   "Parse a strict benchmark manifest.");
 }
 

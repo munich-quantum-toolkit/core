@@ -20,6 +20,26 @@ function(kebab_to_camel output input)
       PARENT_SCOPE)
 endfunction()
 
+# Recoverable failures in these targets use explicit result APIs.
+function(mqt_target_disable_exceptions target_name)
+  if(MSVC)
+    target_compile_options(${target_name} PRIVATE /EHs-c-)
+    target_compile_definitions(${target_name} PRIVATE _HAS_EXCEPTIONS=0)
+  else()
+    target_compile_options(${target_name} PRIVATE -fno-exceptions)
+  endif()
+endfunction()
+
+# ABI boundaries retain language-enforced noexcept and exception translation.
+function(mqt_source_enable_exceptions source)
+  if(MSVC)
+    set_source_files_properties(${source} PROPERTIES COMPILE_OPTIONS
+                                                     "/EHsc;/U_HAS_EXCEPTIONS;/D_HAS_EXCEPTIONS=1")
+  else()
+    set_source_files_properties(${source} PROPERTIES COMPILE_OPTIONS "-fexceptions")
+  endif()
+endfunction()
+
 function(add_mqt_core_library name)
   cmake_parse_arguments(ARG "FORCE_SHARED;FORCE_STATIC;HIDDEN_VISIBILITY" "ALIAS_NAME" "" ${ARGN})
 

@@ -13,6 +13,8 @@
 #include "dd/Package.hpp"
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
 
+#include "DDTestUtils.h"
+
 #include "gtest/gtest.h"
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -39,7 +41,7 @@ inline void expectFullUnitaryEqual(mlir::ModuleOp expectedModule,
       *expectedModule.getBody()->getOps<mlir::func::FuncOp>().begin();
   auto actualFunc =
       *actualModule.getBody()->getOps<mlir::func::FuncOp>().begin();
-  auto package = std::make_unique<dd::Package>(numQubits);
+  auto package = ::dd::test::value(dd::Package::create(numQubits));
   const auto expected = mlir::qco::buildFunctionality(expectedFunc, *package);
   const auto actual = mlir::qco::buildFunctionality(actualFunc, *package);
   ASSERT_TRUE(mlir::succeeded(expected));
@@ -59,8 +61,8 @@ inline void expectFullUnitaryEqual(mlir::ModuleOp expectedModule,
           tolerance);
     }
   }
-  package->decRef(*expected);
-  package->decRef(*actual);
+  ::dd::test::value(package->decRef(*expected));
+  ::dd::test::value(package->decRef(*actual));
 }
 
 } // namespace mqt::test

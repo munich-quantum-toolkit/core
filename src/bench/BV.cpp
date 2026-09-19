@@ -10,42 +10,51 @@
 
 #include "bench/BV.hpp"
 
+#include "bench/Error.hpp"
 #include "bench/Evaluation.hpp"
 
 #include "EvaluationUtils.hpp"
 
-#include <stdexcept>
 #include <string_view>
 #include <utility>
 
 namespace mqt::bench {
 
+Result<BV> BV::create(BVOptions options) {
+  const auto width = options.hiddenBitstring.size();
+  if (width == 0 || width > BVOptions::MAX_BITS) {
+    return Error{
+        .message = "Bernstein--Vazirani requires a hidden bitstring of width 1 "
+                   "through "
+                   "1000000",
+    };
+  }
+  if (auto error = detail::validateOutcome(options.hiddenBitstring, width)) {
+    return std::move(*error);
+  }
+  if (options.method != BVMethod::Static &&
+      options.method != BVMethod::Dynamic) {
+    return Error{.message = "unknown Bernstein--Vazirani method"};
+  }
+  return BV(std::move(options));
+}
+
 BV::BV(BVOptions options)
     : options_(std::move(options)),
-      output_{.name = "result", .width = options_.hiddenBitstring.size()} {
-  const auto width = options_.hiddenBitstring.size();
-  if (width == 0 || width > BVOptions::MAX_BITS) {
-    throw std::invalid_argument(
-        "Bernstein--Vazirani requires a hidden bitstring of width 1 through "
-        "1000000");
-  }
-  detail::validateOutcome(options_.hiddenBitstring, width);
-  if (options_.method != BVMethod::Static &&
-      options_.method != BVMethod::Dynamic) {
-    throw std::invalid_argument("unknown Bernstein--Vazirani method");
-  }
-}
+      output_{.name = "result", .width = options_.hiddenBitstring.size()} {}
 
 const BVOptions& BV::options() const noexcept { return options_; }
 
 const Output& BV::output() const noexcept { return output_; }
 
-double BV::probability(const std::string_view outcome) const {
-  detail::validateOutcome(outcome, output_.width);
+Result<double> BV::probability(const std::string_view outcome) const {
+  if (auto error = detail::validateOutcome(outcome, output_.width)) {
+    return std::move(*error);
+  }
   return outcome == options_.hiddenBitstring ? 1. : 0.;
 }
 
-Evaluation BV::evaluate(const Counts& counts) const {
+Result<Evaluation> BV::evaluate(const Counts& counts) const {
   return detail::evaluate(*this, counts, options_.hiddenBitstring);
 }
 

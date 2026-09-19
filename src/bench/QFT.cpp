@@ -10,39 +10,47 @@
 
 #include "bench/QFT.hpp"
 
+#include "bench/Error.hpp"
 #include "bench/Evaluation.hpp"
 
 #include "EvaluationUtils.hpp"
 
 #include <algorithm>
 #include <cmath>
-#include <stdexcept>
 #include <string_view>
+#include <utility>
 
 namespace mqt::bench {
 
-QFT::QFT(QFTOptions options)
-    : options_(options), output_{.name = "result", .width = options_.qubits} {
-  if (options_.qubits == 0 || options_.qubits > QFTOptions::MAX_QUBITS) {
-    throw std::invalid_argument("QFT qubits must be between 1 and 1000000");
+Result<QFT> QFT::create(QFTOptions options) {
+  if (options.qubits == 0 || options.qubits > QFTOptions::MAX_QUBITS) {
+    return Error{.message = "QFT qubits must be between 1 and 1000000"};
   }
-  if (options_.periodExponent > options_.qubits ||
-      options_.periodExponent > QFTOptions::MAX_PERIOD_EXPONENT) {
-    throw std::invalid_argument(
-        "QFT period exponent must be at most the qubit count and 1074");
+  if (options.periodExponent > options.qubits ||
+      options.periodExponent > QFTOptions::MAX_PERIOD_EXPONENT) {
+    return Error{
+        .message =
+            "QFT period exponent must be at most the qubit count and 1074",
+    };
   }
-  if (options_.method != QFTMethod::Standard &&
-      options_.method != QFTMethod::Semiclassical) {
-    throw std::invalid_argument("unknown QFT method");
+  if (options.method != QFTMethod::Standard &&
+      options.method != QFTMethod::Semiclassical) {
+    return Error{.message = "unknown QFT method"};
   }
+  return QFT(options);
 }
+
+QFT::QFT(QFTOptions options)
+    : options_(options), output_{.name = "result", .width = options_.qubits} {}
 
 const QFTOptions& QFT::options() const noexcept { return options_; }
 
 const Output& QFT::output() const noexcept { return output_; }
 
-double QFT::probability(const std::string_view outcome) const {
-  detail::validateOutcome(outcome, output_.width);
+Result<double> QFT::probability(const std::string_view outcome) const {
+  if (auto error = detail::validateOutcome(outcome, output_.width)) {
+    return std::move(*error);
+  }
   if (!std::ranges::all_of(outcome.substr(options_.periodExponent),
                            [](const char bit) { return bit == '0'; })) {
     return 0.;
@@ -50,7 +58,7 @@ double QFT::probability(const std::string_view outcome) const {
   return std::ldexp(1., -static_cast<int>(options_.periodExponent));
 }
 
-Evaluation QFT::evaluate(const Counts& counts) const {
+Result<Evaluation> QFT::evaluate(const Counts& counts) const {
   return detail::evaluate(*this, counts);
 }
 

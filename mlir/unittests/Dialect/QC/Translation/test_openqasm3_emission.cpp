@@ -21,6 +21,8 @@
 #include "mqt/Support/Passes.h"
 #include "mqt/Target/OpenQASM/Frontend.h"
 
+#include "DDTestUtils.h"
+
 #include "gtest/gtest.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -2312,7 +2314,8 @@ TEST(OpenQASM3EmissionTest,
           *emitted, &context,
           {.gatePolicy = openqasm::frontend::GatePolicy::Strict});
       ASSERT_TRUE(restored);
-      dd::Package package(width);
+      auto packageOwner = ::dd::test::value(dd::Package::create(width));
+      auto& package = *packageOwner;
       PassManager manager(&context);
       manager.addPass(createInlinerPass());
       manager.addPass(createCanonicalizerPass());

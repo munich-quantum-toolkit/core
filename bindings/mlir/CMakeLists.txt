@@ -100,4 +100,6 @@ if(NOT TARGET ${TARGET_NAME})
       DESTINATION .
       COMPONENT ${MQT_CORE_TARGET_NAME}_Python)
   endif()
+  target_include_directories(${TARGET_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/bindings)
+
 endif()

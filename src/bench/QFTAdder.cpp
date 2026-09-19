@@ -10,6 +10,7 @@
 
 #include "bench/QFTAdder.hpp"
 
+#include "bench/Error.hpp"
 #include "bench/Evaluation.hpp"
 
 #include "EvaluationUtils.hpp"
@@ -18,7 +19,6 @@
 #include <cmath>
 #include <cstddef>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -45,32 +45,42 @@ namespace {
 
 } // namespace
 
-QFTAdder::QFTAdder(QFTAdderOptions options)
-    : options_(std::move(options)), output_{.name = "result", .width = 0} {
-  if (options_.method != QFTAdderMethod::Register &&
-      options_.method != QFTAdderMethod::Constant) {
-    throw std::invalid_argument(
-        "QFT adder method must be register or constant");
+Result<QFTAdder> QFTAdder::create(QFTAdderOptions options) {
+  if (options.method != QFTAdderMethod::Register &&
+      options.method != QFTAdderMethod::Constant) {
+    return Error{.message = "QFT adder method must be register or constant"};
   }
-  if (options_.overflow != QFTAdderOverflow::Wrap &&
-      options_.overflow != QFTAdderOverflow::Carry) {
-    throw std::invalid_argument("QFT adder overflow must be wrap or carry");
+  if (options.overflow != QFTAdderOverflow::Wrap &&
+      options.overflow != QFTAdderOverflow::Carry) {
+    return Error{.message = "QFT adder overflow must be wrap or carry"};
   }
-  const auto width = options_.addend.size();
-  const auto carry = options_.overflow == QFTAdderOverflow::Carry;
+  const auto width = options.addend.size();
+  const auto carry = options.overflow == QFTAdderOverflow::Carry;
   if (width == 0 ||
       width > QFTAdderOptions::MAX_QUBITS - static_cast<size_t>(carry) ||
-      options_.accumulator.size() != width) {
-    throw std::invalid_argument("QFT adder operands must have equal nonzero "
-                                "width, with at most 1024 sum bits");
+      options.accumulator.size() != width) {
+    return Error{
+        .message = "QFT adder operands must have equal nonzero "
+                   "width, with at most 1024 sum bits",
+    };
   }
-  const auto isRegister = options_.method == QFTAdderMethod::Register;
-  if (options_.addend.find_first_not_of(isRegister ? "01+" : "01") !=
+  const auto isRegister = options.method == QFTAdderMethod::Register;
+  if (options.addend.find_first_not_of(isRegister ? "01+" : "01") !=
           std::string::npos ||
-      options_.accumulator.find_first_not_of("01") != std::string::npos) {
-    throw std::invalid_argument("QFT adder operands must be binary; only "
-                                "register addends may contain '+'");
+      options.accumulator.find_first_not_of("01") != std::string::npos) {
+    return Error{
+        .message = "QFT adder operands must be binary; only "
+                   "register addends may contain '+'",
+    };
   }
+  return QFTAdder(std::move(options));
+}
+
+QFTAdder::QFTAdder(QFTAdderOptions options)
+    : options_(std::move(options)), output_{.name = "result", .width = 0} {
+  const auto width = options_.addend.size();
+  const auto carry = options_.overflow == QFTAdderOverflow::Carry;
+  const auto isRegister = options_.method == QFTAdderMethod::Register;
   output_.width =
       width + static_cast<size_t>(carry) + (isRegister ? width : 0U);
   if (options_.addend.find('+') == std::string::npos) {
@@ -88,8 +98,10 @@ const std::optional<std::string>& QFTAdder::expectedResult() const noexcept {
   return expectedResult_;
 }
 
-double QFTAdder::probability(const std::string_view outcome) const {
-  detail::validateOutcome(outcome, output_.width);
+Result<double> QFTAdder::probability(const std::string_view outcome) const {
+  if (auto error = detail::validateOutcome(outcome, output_.width)) {
+    return std::move(*error);
+  }
   if (expectedResult_) {
     return outcome == *expectedResult_ ? 1. : 0.;
   }
@@ -107,7 +119,7 @@ double QFTAdder::probability(const std::string_view outcome) const {
       1., -static_cast<int>(std::ranges::count(options_.addend, '+')));
 }
 
-Evaluation QFTAdder::evaluate(const Counts& counts) const {
+Result<Evaluation> QFTAdder::evaluate(const Counts& counts) const {
   return detail::evaluate(*this, counts, expectedResult_);
 }
 

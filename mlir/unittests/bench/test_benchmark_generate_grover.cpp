@@ -9,6 +9,7 @@
  */
 
 #include "bench/Grover.hpp"
+#include "bench/TestUtils.hpp"
 
 #include "TestUtils.h"
 
@@ -18,7 +19,7 @@ namespace mqt::bench {
 
 TEST(GenerateProgramTest, SamplesGroverAgainstReference) {
   test::expectSamplingMatchesReference(
-      Grover{{.markedBitstring = "01", .iterations = 1}});
+      test::value(Grover::create({.markedBitstring = "01", .iterations = 1})));
 }
 
 } // namespace mqt::bench

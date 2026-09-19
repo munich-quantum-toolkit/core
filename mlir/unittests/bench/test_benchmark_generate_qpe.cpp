@@ -9,6 +9,7 @@
  */
 
 #include "bench/QPE.hpp"
+#include "bench/TestUtils.hpp"
 #include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/bench/Generate.h"
 
@@ -37,11 +38,13 @@ namespace mqt::bench {
 using namespace mlir;
 
 TEST(GenerateProgramTest, KeepsStandardQPEPowerAndResultOrderAligned) {
-  const QPE benchmark({.precision = 2, .phase = Phase(1, 4)});
-  EXPECT_DOUBLE_EQ(benchmark.probability("01"), 1.);
+  const auto benchmark = test::value(
+      QPE::create({.precision = 2, .phase = test::value(Phase::create(1, 4))}));
+  EXPECT_DOUBLE_EQ(test::value(benchmark.probability("01")), 1.);
 
   auto program = generate(benchmark);
-  ASSERT_TRUE(program);
+  ASSERT_TRUE(static_cast<bool>(program))
+      << llvm::toString(program.takeError());
   auto moduleOp = program->module();
   auto table = test::angleTable(moduleOp);
   ASSERT_TRUE(table);
@@ -75,14 +78,16 @@ TEST(GenerateProgramTest, KeepsLargeQPEFiniteAndStructured) {
   constexpr size_t precision = 1025;
   for (const auto method : {QPEMethod::Standard, QPEMethod::Iterative}) {
     SCOPED_TRACE(static_cast<int>(method));
-    const QPE benchmark({
+    const auto benchmark = test::value(QPE::create({
         .precision = precision,
-        .phase = Phase(std::numeric_limits<uint64_t>::max() - 1,
-                       std::numeric_limits<uint64_t>::max()),
+        .phase =
+            test::value(Phase::create(std::numeric_limits<uint64_t>::max() - 1,
+                                      std::numeric_limits<uint64_t>::max())),
         .method = method,
-    });
+    }));
     auto program = generate(benchmark);
-    ASSERT_TRUE(program);
+    ASSERT_TRUE(static_cast<bool>(program))
+        << llvm::toString(program.takeError());
     auto moduleOp = program->module();
 
     auto table = test::angleTable(moduleOp);
@@ -97,12 +102,14 @@ TEST(GenerateProgramTest, KeepsLargeQPEFiniteAndStructured) {
 }
 
 TEST(GenerateProgramTest, DoublesQPEPhaseModuloOneWithoutOverflow) {
-  const QPE benchmark({
+  const auto benchmark = test::value(QPE::create({
       .precision = 4,
-      .phase = Phase(uint64_t{1} << 63U, std::numeric_limits<uint64_t>::max()),
-  });
+      .phase = test::value(Phase::create(uint64_t{1} << 63U,
+                                         std::numeric_limits<uint64_t>::max())),
+  }));
   auto program = generate(benchmark);
-  ASSERT_TRUE(program);
+  ASSERT_TRUE(static_cast<bool>(program))
+      << llvm::toString(program.takeError());
   const auto table = test::angleTable(program->module());
   ASSERT_TRUE(table);
   const auto angles = llvm::to_vector(table.getValues<double>());
@@ -119,10 +126,11 @@ TEST(GenerateProgramTest, DoublesQPEPhaseModuloOneWithoutOverflow) {
 
 TEST(GenerateProgramTest, SamplesQPEAgainstReference) {
   for (const auto method : {QPEMethod::Standard, QPEMethod::Iterative}) {
-    for (const auto phase : {Phase(3, 8), Phase(1, 3)}) {
+    for (const auto phase :
+         {test::value(Phase::create(3, 8)), test::value(Phase::create(1, 3))}) {
       SCOPED_TRACE(static_cast<int>(method));
-      test::expectSamplingMatchesReference(
-          QPE{{.precision = 3, .phase = phase, .method = method}});
+      test::expectSamplingMatchesReference(test::value(
+          QPE::create({.precision = 3, .phase = phase, .method = method})));
     }
   }
 }

@@ -14,6 +14,8 @@
 #include "mqt/Dialect/QIR/Execution/Runtime/QIR.h"
 #include "mqt/Dialect/QIR/Execution/Runtime/Runtime.h"
 
+#include "DDTestUtils.h"
+
 #include "gmock/gmock-matchers.h"
 #include "gtest/gtest.h"
 
@@ -52,22 +54,42 @@ protected:
 };
 
 TEST(QIRRuntimeArgumentsTest, RejectsInvalidArrayDimensions) {
-  EXPECT_THROW(__quantum__rt__array_create_1d(0, 1), std::invalid_argument);
-  EXPECT_THROW(__quantum__rt__array_create_1d(sizeof(Qubit*), -1),
-               std::invalid_argument);
-  EXPECT_THROW(
-      __quantum__rt__array_create_1d(2, std::numeric_limits<int64_t>::max()),
-      std::length_error);
+  {
+    __quantum__rt__array_create_1d(0, 1);
+    EXPECT_FALSE(
+        llvm::toString(qir::Runtime::getInstance().takeError()).empty());
+  };
+  {
+    __quantum__rt__array_create_1d(sizeof(Qubit*), -1);
+    EXPECT_FALSE(
+        llvm::toString(qir::Runtime::getInstance().takeError()).empty());
+  };
+  {
+    __quantum__rt__array_create_1d(2, std::numeric_limits<int64_t>::max());
+    EXPECT_FALSE(
+        llvm::toString(qir::Runtime::getInstance().takeError()).empty());
+  };
 }
 
 TEST(QIRRuntimeArgumentsTest, RejectsInvalidTupleSizes) {
-  EXPECT_THROW(__quantum__rt__tuple_create(-1), std::invalid_argument);
-  EXPECT_THROW(__quantum__rt__tuple_create(std::numeric_limits<int64_t>::max()),
-               std::length_error);
+  {
+    __quantum__rt__tuple_create(-1);
+    EXPECT_FALSE(
+        llvm::toString(qir::Runtime::getInstance().takeError()).empty());
+  };
+  {
+    __quantum__rt__tuple_create(std::numeric_limits<int64_t>::max());
+    EXPECT_FALSE(
+        llvm::toString(qir::Runtime::getInstance().takeError()).empty());
+  };
 
   auto* controls = __quantum__rt__array_create_1d(sizeof(Qubit*), 0);
   auto* tuple = __quantum__rt__tuple_create(1);
-  EXPECT_THROW(__quantum__qis__rx__ctl(controls, tuple), std::invalid_argument);
+  {
+    __quantum__qis__rx__ctl(controls, tuple);
+    EXPECT_FALSE(
+        llvm::toString(qir::Runtime::getInstance().takeError()).empty());
+  };
   __quantum__rt__tuple_update_reference_count(tuple, -1);
   __quantum__rt__array_update_reference_count(controls, -1);
 }
@@ -79,43 +101,74 @@ TEST_F(QIRRuntimeTest, RejectsInvalidDynamicResourceUse) {
   __quantum__rt__qubit_release(qubit);
   __quantum__rt__result_release(result);
 
-  EXPECT_THROW(__quantum__qis__x__body(qubit), std::out_of_range);
-  EXPECT_THROW(__quantum__rt__read_result(result), std::out_of_range);
-  EXPECT_THROW(__quantum__rt__qubit_release(qubit), std::out_of_range);
-  EXPECT_THROW(__quantum__rt__result_release(result), std::out_of_range);
+  {
+    __quantum__qis__x__body(qubit);
+    EXPECT_FALSE(
+        llvm::toString(qir::Runtime::getInstance().takeError()).empty());
+  };
+  {
+    __quantum__rt__read_result(result);
+    EXPECT_FALSE(
+        llvm::toString(qir::Runtime::getInstance().takeError()).empty());
+  };
+  {
+    __quantum__rt__qubit_release(qubit);
+    EXPECT_FALSE(
+        llvm::toString(qir::Runtime::getInstance().takeError()).empty());
+  };
+  {
+    __quantum__rt__result_release(result);
+    EXPECT_FALSE(
+        llvm::toString(qir::Runtime::getInstance().takeError()).empty());
+  };
 }
 
 TEST_F(QIRRuntimeTest, RejectsMixedStaticAndDynamicResourceManagement) {
   __quantum__rt__initialize(nullptr);
   __quantum__qis__x__body(nullptr);
-  EXPECT_THROW(__quantum__rt__qubit_allocate(nullptr), std::logic_error);
+  {
+    __quantum__rt__qubit_allocate(nullptr);
+    EXPECT_FALSE(
+        llvm::toString(qir::Runtime::getInstance().takeError()).empty());
+  };
 
   __quantum__rt__initialize(nullptr);
   __quantum__qis__mz__body(nullptr, nullptr);
-  EXPECT_THROW(__quantum__rt__result_allocate(nullptr), std::logic_error);
+  {
+    __quantum__rt__result_allocate(nullptr);
+    EXPECT_FALSE(
+        llvm::toString(qir::Runtime::getInstance().takeError()).empty());
+  };
 }
 
 TEST_F(QIRRuntimeTest, RejectsStaticQubitBeyondDDRange) {
   __quantum__rt__initialize(nullptr);
   auto* qubit = reinterpret_cast<Qubit*>(dd::Package::MAX_POSSIBLE_QUBITS);
-  EXPECT_THROW(__quantum__qis__x__body(qubit), std::out_of_range);
+  {
+    __quantum__qis__x__body(qubit);
+    EXPECT_FALSE(
+        llvm::toString(qir::Runtime::getInstance().takeError()).empty());
+  };
 
   __quantum__rt__initialize(nullptr);
   constexpr std::array<dd::fp, 0> params{};
   std::array<Qubit*, 0> controls{};
   std::array<Qubit*, 1> targets{qubit};
-  EXPECT_THROW(Runtime::getInstance().apply(
-                   mlir::qco::getStandardGateMatrix<mlir::qco::XOp>(params),
-                   controls, targets),
-               std::out_of_range);
+  EXPECT_FALSE(
+      llvm::toString(
+          Runtime::getInstance().apply(
+              ::dd::test::value(
+                  mlir::qco::getStandardGateMatrix<mlir::qco::XOp>(params)),
+              controls, targets))
+          .empty());
 }
 
 TEST_F(QIRRuntimeTest, RejectsDynamicQubitBeyondDDRange) {
   Runtime runtime{0};
   for (size_t i = 0; i < dd::Package::MAX_POSSIBLE_QUBITS; ++i) {
-    static_cast<void>(runtime.qAlloc());
+    static_cast<void>(::dd::test::value(runtime.qAlloc()));
   }
-  EXPECT_THROW(runtime.qAlloc(), std::out_of_range);
+  EXPECT_FALSE(llvm::toString(runtime.qAlloc().takeError()).empty());
 }
 
 } // namespace
@@ -124,9 +177,9 @@ TEST_F(QIRRuntimeTest, RejectsDynamicQubitBeyondDDRange) {
 /// The default Labeled schema emits `labeled` in HEADER and METADATA.
 TEST_F(QIRRuntimeTest, OutputFraming) {
   auto& runtime = Runtime::getInstance();
-  runtime.outputProgramHeader();
-  runtime.outputShotStart();
-  runtime.outputShotEnd();
+  ::dd::test::value(runtime.outputProgramHeader());
+  ::dd::test::value(runtime.outputShotStart());
+  ::dd::test::value(runtime.outputShotEnd());
   std::ostringstream expected;
   expected << "HEADER\tschema_id\tlabeled\n"
            << "HEADER\tschema_version\t2.1\n"
@@ -142,14 +195,14 @@ TEST_F(QIRRuntimeTest, OutputFraming) {
 // - OUTPUT records carry the label column.
 TEST_F(QIRRuntimeTest, OutputFramingLabeled) {
   auto& runtime = Runtime::getInstance();
-  runtime.outputProgramHeader();
-  runtime.outputShotStart();
-  runtime.outputBool(true, "bool_label");
-  runtime.outputInt(42, "int_label");
-  runtime.outputFloat(3.14, "double_label");
-  runtime.outputTuple(2, "tuple_label");
-  runtime.outputArray(3, "array_label");
-  runtime.outputShotEnd();
+  ::dd::test::value(runtime.outputProgramHeader());
+  ::dd::test::value(runtime.outputShotStart());
+  ::dd::test::value(runtime.outputBool(true, "bool_label"));
+  ::dd::test::value(runtime.outputInt(42, "int_label"));
+  ::dd::test::value(runtime.outputFloat(3.14, "double_label"));
+  ::dd::test::value(runtime.outputTuple(2, "tuple_label"));
+  ::dd::test::value(runtime.outputArray(3, "array_label"));
+  ::dd::test::value(runtime.outputShotEnd());
   std::ostringstream expected;
   expected << "HEADER\tschema_id\tlabeled\n"
            << "HEADER\tschema_version\t2.1\n"
@@ -171,14 +224,14 @@ TEST_F(QIRRuntimeTest, OutputFramingLabeled) {
 TEST_F(QIRRuntimeTest, OutputFramingOrdered) {
   auto& runtime = Runtime::getInstance();
   runtime.setOutputSchema(Runtime::OutputSchema::Ordered);
-  runtime.outputProgramHeader();
-  runtime.outputShotStart();
-  runtime.outputBool(true, "bool_label");
-  runtime.outputInt(42, "int_label");
-  runtime.outputFloat(3.14, "double_label");
-  runtime.outputTuple(2, "tuple_label");
-  runtime.outputArray(3, "array_label");
-  runtime.outputShotEnd();
+  ::dd::test::value(runtime.outputProgramHeader());
+  ::dd::test::value(runtime.outputShotStart());
+  ::dd::test::value(runtime.outputBool(true, "bool_label"));
+  ::dd::test::value(runtime.outputInt(42, "int_label"));
+  ::dd::test::value(runtime.outputFloat(3.14, "double_label"));
+  ::dd::test::value(runtime.outputTuple(2, "tuple_label"));
+  ::dd::test::value(runtime.outputArray(3, "array_label"));
+  ::dd::test::value(runtime.outputShotEnd());
   std::ostringstream expected;
   expected << "HEADER\tschema_id\tordered\n"
            << "HEADER\tschema_version\t2.1\n"
@@ -265,7 +318,7 @@ TEST_F(QIRRuntimeTest, GlobalPhase) {
   __quantum__qis__i__body(q0);
   __quantum__qis__gphase__body(dd::PI_2);
 
-  const auto state = Runtime::getInstance().takeState();
+  const auto state = ::dd::test::value(Runtime::getInstance().takeState());
   const auto vector = state.edge.getVector();
   ASSERT_EQ(vector.size(), 2);
   EXPECT_NEAR(vector[0].real(), 0., 1e-12);
@@ -419,15 +472,15 @@ TEST_F(QIRRuntimeTest, SwapGate) {
   auto* r0 = reinterpret_cast<Result*>(0UL);
   auto* r1 = reinterpret_cast<Result*>(1UL);
   __quantum__rt__initialize(nullptr);
-  Runtime::getInstance().outputProgramHeader();
-  Runtime::getInstance().outputShotStart();
+  ::dd::test::value(Runtime::getInstance().outputProgramHeader());
+  ::dd::test::value(Runtime::getInstance().outputShotStart());
   __quantum__qis__x__body(q0);
   __quantum__qis__swap__body(q0, q1);
   __quantum__qis__mz__body(q0, r0);
   __quantum__qis__mz__body(q1, r1);
   __quantum__rt__result_record_output(r0, "r0");
   __quantum__rt__result_record_output(r1, "r1");
-  Runtime::getInstance().outputShotEnd();
+  ::dd::test::value(Runtime::getInstance().outputShotEnd());
   std::ostringstream expected;
   expected << "OUTPUT\tRESULT\t0\tr0\n"
            << "OUTPUT\tRESULT\t1\tr1\n";
@@ -633,8 +686,8 @@ TEST_F(QIRRuntimeTest, BellPairStatic) {
   auto* r0 = reinterpret_cast<Result*>(0UL);
   auto* r1 = reinterpret_cast<Result*>(1UL);
   __quantum__rt__initialize(nullptr);
-  Runtime::getInstance().outputProgramHeader();
-  Runtime::getInstance().outputShotStart();
+  ::dd::test::value(Runtime::getInstance().outputProgramHeader());
+  ::dd::test::value(Runtime::getInstance().outputShotStart());
   __quantum__qis__h__body(q0);
   __quantum__qis__cx__body(q0, q1);
   __quantum__qis__mz__body(q0, r0);
@@ -644,7 +697,7 @@ TEST_F(QIRRuntimeTest, BellPairStatic) {
   EXPECT_EQ(m1, m2);
   __quantum__rt__result_record_output(r0, "r0");
   __quantum__rt__result_record_output(r1, "r1");
-  Runtime::getInstance().outputShotEnd();
+  ::dd::test::value(Runtime::getInstance().outputShotEnd());
   std::ostringstream expected;
   expected << "OUTPUT\tRESULT\t" << m1 << "\tr0\n"
            << "OUTPUT\tRESULT\t" << m2 << "\tr1\n";
@@ -653,8 +706,8 @@ TEST_F(QIRRuntimeTest, BellPairStatic) {
 
 TEST_F(QIRRuntimeTest, BellPairDynamic) {
   __quantum__rt__initialize(nullptr);
-  Runtime::getInstance().outputProgramHeader();
-  Runtime::getInstance().outputShotStart();
+  ::dd::test::value(Runtime::getInstance().outputProgramHeader());
+  ::dd::test::value(Runtime::getInstance().outputShotStart());
   auto* q0 = __quantum__rt__qubit_allocate(nullptr);
   auto* q1 = __quantum__rt__qubit_allocate(nullptr);
   auto* r0 = __quantum__rt__result_allocate(nullptr);
@@ -670,7 +723,7 @@ TEST_F(QIRRuntimeTest, BellPairDynamic) {
   EXPECT_EQ(m1, m2);
   __quantum__rt__result_record_output(r0, "r0");
   __quantum__rt__result_record_output(r1, "r1");
-  Runtime::getInstance().outputShotEnd();
+  ::dd::test::value(Runtime::getInstance().outputShotEnd());
   std::ostringstream expected;
   expected << "OUTPUT\tRESULT\t" << m1 << "\tr0\n"
            << "OUTPUT\tRESULT\t" << m2 << "\tr1\n";
@@ -685,8 +738,8 @@ TEST_F(QIRRuntimeTest, BellPairStaticReverse) {
   auto* r0 = reinterpret_cast<Result*>(0UL);
   auto* r1 = reinterpret_cast<Result*>(1UL);
   __quantum__rt__initialize(nullptr);
-  Runtime::getInstance().outputProgramHeader();
-  Runtime::getInstance().outputShotStart();
+  ::dd::test::value(Runtime::getInstance().outputProgramHeader());
+  ::dd::test::value(Runtime::getInstance().outputShotStart());
   __quantum__qis__h__body(q1);
   __quantum__qis__cx__body(q1, q0);
   __quantum__qis__mz__body(q0, r0);
@@ -696,7 +749,7 @@ TEST_F(QIRRuntimeTest, BellPairStaticReverse) {
   EXPECT_EQ(m1, m2);
   __quantum__rt__result_record_output(r0, "r0");
   __quantum__rt__result_record_output(r1, "r1");
-  Runtime::getInstance().outputShotEnd();
+  ::dd::test::value(Runtime::getInstance().outputShotEnd());
   std::ostringstream expected;
   expected << "OUTPUT\tRESULT\t" << m1 << "\tr0\n"
            << "OUTPUT\tRESULT\t" << m2 << "\tr1\n";
@@ -705,8 +758,8 @@ TEST_F(QIRRuntimeTest, BellPairStaticReverse) {
 
 TEST_F(QIRRuntimeTest, BellPairDynamicReverse) {
   __quantum__rt__initialize(nullptr);
-  Runtime::getInstance().outputProgramHeader();
-  Runtime::getInstance().outputShotStart();
+  ::dd::test::value(Runtime::getInstance().outputProgramHeader());
+  ::dd::test::value(Runtime::getInstance().outputShotStart());
   auto* q0 = __quantum__rt__qubit_allocate(nullptr);
   auto* q1 = __quantum__rt__qubit_allocate(nullptr);
   auto* r0 = __quantum__rt__result_allocate(nullptr);
@@ -722,7 +775,7 @@ TEST_F(QIRRuntimeTest, BellPairDynamicReverse) {
   EXPECT_EQ(m1, m2);
   __quantum__rt__result_record_output(r0, "r0");
   __quantum__rt__result_record_output(r1, "r1");
-  Runtime::getInstance().outputShotEnd();
+  ::dd::test::value(Runtime::getInstance().outputShotEnd());
   std::ostringstream expected;
   expected << "OUTPUT\tRESULT\t" << m1 << "\tr0\n"
            << "OUTPUT\tRESULT\t" << m2 << "\tr1\n";
@@ -810,7 +863,7 @@ TEST_F(QIRRuntimeTest, TakeStateReturnsStateAndResetsRuntime) {
   __quantum__rt__initialize(nullptr);
   __quantum__qis__h__body(q0);
 
-  auto state = Runtime::getInstance().takeState();
+  auto state = ::dd::test::value(Runtime::getInstance().takeState());
   EXPECT_NE(state.dd, nullptr);
   EXPECT_FALSE(state.edge.isTerminal());
   EXPECT_EQ(state.numQubits, 1);
@@ -822,8 +875,8 @@ TEST_F(QIRRuntimeTest, TakeStateReturnsStateAndResetsRuntime) {
 
 TEST_F(QIRRuntimeTest, AdaptiveRecordOutputs) {
   __quantum__rt__initialize(nullptr);
-  Runtime::getInstance().outputProgramHeader();
-  Runtime::getInstance().outputShotStart();
+  ::dd::test::value(Runtime::getInstance().outputProgramHeader());
+  ::dd::test::value(Runtime::getInstance().outputShotStart());
   auto* q0 = __quantum__rt__qubit_allocate(nullptr);
   auto* q1 = __quantum__rt__qubit_allocate(nullptr);
   auto* q2 = __quantum__rt__qubit_allocate(nullptr);
@@ -856,7 +909,7 @@ TEST_F(QIRRuntimeTest, AdaptiveRecordOutputs) {
   __quantum__rt__bool_record_output(b2, "m2");
   __quantum__rt__int_record_output(weight, "hamming_weight");
   __quantum__rt__double_record_output(mean, "mean");
-  Runtime::getInstance().outputShotEnd();
+  ::dd::test::value(Runtime::getInstance().outputShotEnd());
 
   std::ostringstream expected;
   expected.setf(std::ios::boolalpha);
@@ -909,13 +962,13 @@ TEST_F(QIRRuntimeTest, PreservesPhaseBeforeFirstQubitAndFollowingGates) {
   __quantum__qis__x__body(nullptr);
   __quantum__qis__gphase__body(0.4);
   __quantum__qis__x__body(nullptr);
-  auto state = Runtime::getInstance().takeState();
+  auto state = ::dd::test::value(Runtime::getInstance().takeState());
   state.dd->garbageCollect(true);
   const auto values = state.edge.getVector();
   ASSERT_EQ(values.size(), 2);
   EXPECT_NEAR(std::abs(values[0] - std::polar(1., 0.7)), 0., 1e-12);
   EXPECT_EQ(values[1], 0.);
-  state.dd->decRef(state.edge);
+  ::dd::test::value(state.dd->decRef(state.edge));
   EXPECT_NO_THROW(__quantum__rt__initialize(nullptr));
 }
 
@@ -927,13 +980,13 @@ TEST_F(QIRRuntimeTest, ExtractsLogicalOrderAfterSwapCycle) {
   __quantum__qis__x__body(q0);
   __quantum__qis__swap__body(q0, q1);
   __quantum__qis__swap__body(q1, q2);
-  auto state = Runtime::getInstance().takeState();
+  auto state = ::dd::test::value(Runtime::getInstance().takeState());
   const auto values = state.edge.getVector();
   ASSERT_EQ(values.size(), 8);
   for (size_t i = 0; i < values.size(); ++i) {
     EXPECT_EQ(values[i], i == 4 ? 1. : 0.);
   }
-  state.dd->decRef(state.edge);
+  ::dd::test::value(state.dd->decRef(state.edge));
 }
 
 TEST_F(QIRRuntimeTest, ReusesReleasedWiresWithoutReusingHandles) {
@@ -949,10 +1002,14 @@ TEST_F(QIRRuntimeTest, ReusesReleasedWiresWithoutReusingHandles) {
     __quantum__qis__x__body(qubit);
     __quantum__rt__qubit_release(qubit);
   }
-  EXPECT_THROW(__quantum__qis__x__body(first), std::out_of_range);
-  auto state = Runtime::getInstance().takeState();
+  {
+    __quantum__qis__x__body(first);
+    EXPECT_FALSE(
+        llvm::toString(qir::Runtime::getInstance().takeError()).empty());
+  };
+  auto state = ::dd::test::value(Runtime::getInstance().takeState());
   EXPECT_EQ(state.numQubits, 1);
-  state.dd->decRef(state.edge);
+  ::dd::test::value(state.dd->decRef(state.edge));
 }
 
 TEST_F(QIRRuntimeTest, ReleasedSwappedWireIsResetBeforeReuse) {
@@ -968,9 +1025,9 @@ TEST_F(QIRRuntimeTest, ReleasedSwappedWireIsResetBeforeReuse) {
   __quantum__qis__x__body(a);
   __quantum__qis__mz__body(c, nullptr);
   EXPECT_FALSE(__quantum__rt__read_result(nullptr));
-  auto state = Runtime::getInstance().takeState();
+  auto state = ::dd::test::value(Runtime::getInstance().takeState());
   EXPECT_EQ(state.numQubits, 2);
-  state.dd->decRef(state.edge);
+  ::dd::test::value(state.dd->decRef(state.edge));
 }
 
 TEST_F(QIRRuntimeTest, ReleasingUnusedQubitsDoesNotEnlargeState) {
@@ -978,7 +1035,7 @@ TEST_F(QIRRuntimeTest, ReleasingUnusedQubitsDoesNotEnlargeState) {
   for (size_t i = 0; i <= dd::Package::MAX_POSSIBLE_QUBITS; ++i) {
     __quantum__rt__qubit_release(__quantum__rt__qubit_allocate(nullptr));
   }
-  auto state = Runtime::getInstance().takeState();
+  auto state = ::dd::test::value(Runtime::getInstance().takeState());
   EXPECT_EQ(state.numQubits, 0);
 }
 
@@ -986,8 +1043,8 @@ TEST_F(QIRRuntimeTest, DisabledTextOutputStillRecordsResults) {
   auto& runtime = Runtime::getInstance();
   __quantum__rt__initialize(nullptr);
   runtime.disableOutput();
-  runtime.outputProgramHeader();
-  runtime.outputShotStart();
+  ::dd::test::value(runtime.outputProgramHeader());
+  ::dd::test::value(runtime.outputShotStart());
   __quantum__qis__x__body(nullptr);
   __quantum__qis__mz__body(nullptr, nullptr);
   __quantum__rt__result_record_output(nullptr, "one");
@@ -998,7 +1055,7 @@ TEST_F(QIRRuntimeTest, DisabledTextOutputStillRecordsResults) {
   __quantum__rt__double_record_output(0.3, nullptr);
   __quantum__rt__tuple_record_output(1, nullptr);
   __quantum__rt__array_record_output(1, nullptr);
-  runtime.outputShotEnd();
+  ::dd::test::value(runtime.outputShotEnd());
   EXPECT_EQ(runtime.getMeasurements(), "111");
   EXPECT_TRUE(sink.str().empty());
   runtime.setOstream(sink);
@@ -1014,21 +1071,57 @@ TEST(QIRRuntimeGrowth, PreservesStateAndPhaseAcrossGrowthAndTransfer) {
   for (const bool dynamic : {false, true}) {
     qir::Runtime runtime(42);
     for (size_t job = 0; job < 2; ++job) {
-      runtime.applyGlobalPhase(dd::PI);
+      ::dd::test::value(runtime.applyGlobalPhase(dd::PI));
       for (size_t q = 0; q < width; ++q) {
-        auto* qubit = dynamic ? runtime.qAlloc() : reinterpret_cast<Qubit*>(q);
+        auto* qubit = dynamic ? ::dd::test::value(runtime.qAlloc())
+                              : reinterpret_cast<Qubit*>(q);
         const std::array targets{qubit};
-        runtime.apply(x, {}, targets);
+        ::dd::test::value(runtime.apply(x, {}, targets));
       }
-      auto state = runtime.takeState();
+      auto state = ::dd::test::value(runtime.takeState());
       EXPECT_EQ(state.numQubits, width);
       EXPECT_GE(state.dd->qubits(), width);
       EXPECT_LT(state.dd->qubits(), 2 * width);
-      const auto amplitude =
-          state.edge.getValueByPath(width, std::string(width, '1'));
+      const auto amplitude = ::dd::test::value(
+          state.edge.getValueByPath(width, std::string(width, '1')));
       EXPECT_NEAR(amplitude.real(), -1., 1e-12);
       EXPECT_NEAR(amplitude.imag(), 0., 1e-12);
-      state.dd->decRef(state.edge);
+      ::dd::test::value(state.dd->decRef(state.edge));
     }
   }
+}
+
+TEST(QIRRuntimeErrors, ReportsStreamFailuresWithoutThrowing) {
+  qir::Runtime runtime{0};
+  std::ostringstream stream;
+  stream.setstate(std::ios::badbit);
+  runtime.setOstream(stream);
+  EXPECT_THAT(llvm::toString(runtime.outputProgramHeader()),
+              ::testing::HasSubstr("Failed to write QIR output"));
+  stream.clear();
+  stream.exceptions(std::ios::badbit);
+  EXPECT_THAT(llvm::toString(runtime.outputShotStart()),
+              ::testing::HasSubstr("exceptions disabled"));
+  stream.exceptions(std::ios::goodbit);
+  ::dd::test::value(runtime.outputShotStart());
+  EXPECT_THAT(stream.str(), ::testing::HasSubstr("START"));
+}
+
+TEST(QIRRuntimeErrors, RejectsWrongGateParameterCounts) {
+  EXPECT_THAT(
+      llvm::toString(
+          mlir::qco::getStandardGateMatrix<mlir::qco::XOp>({0.}).takeError()),
+      ::testing::HasSubstr("no gate parameters"));
+  EXPECT_THAT(
+      llvm::toString(
+          mlir::qco::getStandardGateMatrix<mlir::qco::RXOp>({}).takeError()),
+      ::testing::HasSubstr("one gate parameter"));
+  EXPECT_THAT(
+      llvm::toString(
+          mlir::qco::getStandardGateMatrix<mlir::qco::U2Op>({}).takeError()),
+      ::testing::HasSubstr("two gate parameters"));
+  EXPECT_THAT(
+      llvm::toString(
+          mlir::qco::getStandardGateMatrix<mlir::qco::UOp>({}).takeError()),
+      ::testing::HasSubstr("three gate parameters"));
 }

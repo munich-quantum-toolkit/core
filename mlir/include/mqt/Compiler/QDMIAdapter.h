@@ -21,6 +21,8 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
+#include <utility>
 #include <vector>
 
 namespace qdmi {
@@ -29,6 +31,18 @@ class Job;
 } // namespace qdmi
 
 namespace mlir {
+
+/// A provider failure with its original QDMI status and diagnostic.
+class QDMIError : public llvm::ErrorInfo<QDMIError> {
+  qdmi::Error error_;
+
+public:
+  static char ID;
+  explicit QDMIError(qdmi::Error error) : error_(std::move(error)) {}
+  [[nodiscard]] const qdmi::Error& error() const { return error_; }
+  void log(llvm::raw_ostream& os) const override;
+  [[nodiscard]] std::error_code convertToErrorCode() const override;
+};
 
 /// Snapshot a circuit-model QDMI device as an MQT compiler target.
 ///
@@ -43,15 +57,14 @@ compilerTargetFromDevice(const qdmi::Device& device);
 
 /// Open a registered QDMI device and snapshot it as a compiler target.
 ///
-/// This adapter contains exceptions from the QDMI C++ API and returns
-/// them as LLVM errors. The returned target owns all queried metadata.
+/// QDMI failures retain their status in QDMIError. The returned target owns all
+/// queried metadata.
 [[nodiscard]] llvm::Expected<CompilerTarget>
 compilerTargetFromDeviceId(std::string_view deviceId);
 
 /// List the stable IDs of registered QDMI devices.
 ///
-/// This adapter contains exceptions from QDMI registry discovery and
-/// returns them as LLVM errors.
+/// Discovery failures retain their status in QDMIError.
 [[nodiscard]] llvm::Expected<std::vector<std::string>>
 registeredQDMIDeviceIds();
 
@@ -77,7 +90,7 @@ class CompiledProgram {
 public:
   /// Compile and serialize for one selected hardware/payload contract.
   [[nodiscard]] static llvm::Expected<CompiledProgram>
-  compile(CompilerInput&& program, const TargetEnvironment& environment,
+  compile(CompilerInput&& input, const TargetEnvironment& environment,
           bool enableTiming = false, bool enableStatistics = false);
 
   [[nodiscard]] const TargetEnvironment& environment() const noexcept {
@@ -99,7 +112,7 @@ private:
 
 /// Compile for a QDMI device.
 [[nodiscard]] llvm::Expected<CompiledProgram>
-compileProgram(CompilerInput&& program, const qdmi::Device& device,
+compileProgram(CompilerInput&& input, const qdmi::Device& device,
                std::optional<QDMI_Program_Format> format = std::nullopt,
                bool enableTiming = false, bool enableStatistics = false);
 
@@ -115,8 +128,7 @@ compileProgram(CompilerInput&& program, const qdmi::Device& device,
 
 /// Compile and submit source using one snapshot of the destination.
 [[nodiscard]] llvm::Expected<qdmi::Job> submitProgram(
-    const qdmi::Device& device, CompilerInput&& program,
-    int64_t numShots = 1024,
+    const qdmi::Device& device, CompilerInput&& input, int64_t numShots = 1024,
     std::optional<QDMI_Program_Format> format = std::nullopt,
     bool enableTiming = false, bool enableStatistics = false,
     const std::optional<qdmi::CustomJobParameter>& custom1 = std::nullopt,

@@ -23,8 +23,9 @@ namespace mlir::qco {
 
 auto makeGateDD(dd::Package& package, std::span<const Complex> matrix,
                 size_t /*numQubits*/, llvm::ArrayRef<dd::Qubit> targets,
-                const dd::Controls& controls) -> dd::MatrixDD {
-  return package.makeGateDD(matrix, {targets.data(), targets.size()}, controls);
+                const dd::Controls& controls) -> llvm::Expected<dd::MatrixDD> {
+  return ddResult(
+      package.makeGateDD(matrix, {targets.data(), targets.size()}, controls));
 }
 
 } // namespace mlir::qco

@@ -12,7 +12,8 @@
 
 #include "mqt/Compiler/Programs.h"
 
-#include <optional>
+#include "llvm/Support/Error.h"
+
 #include <string>
 #include <string_view>
 
@@ -37,42 +38,42 @@ struct GeneratedBenchmark {
 };
 
 /// Generate a configured Bernstein--Vazirani benchmark.
-[[nodiscard]] std::optional<mlir::QCProgram> generate(const BV& benchmark);
+[[nodiscard]] llvm::Expected<mlir::QCProgram> generate(const BV& benchmark);
 
 /// Generate a configured modular multiplier benchmark.
-[[nodiscard]] std::optional<mlir::QCProgram>
+[[nodiscard]] llvm::Expected<mlir::QCProgram>
 generate(const ModularMultiplier& benchmark);
 
 /// Generate the QC program for a configured GHZ benchmark.
-[[nodiscard]] std::optional<mlir::QCProgram> generate(const GHZ& benchmark);
+[[nodiscard]] llvm::Expected<mlir::QCProgram> generate(const GHZ& benchmark);
 
 /// Generate the QC program for a configured Grover benchmark.
-[[nodiscard]] std::optional<mlir::QCProgram> generate(const Grover& benchmark);
+[[nodiscard]] llvm::Expected<mlir::QCProgram> generate(const Grover& benchmark);
 
 /// Generate the QC program for a configured quantum multiplexer benchmark.
-[[nodiscard]] std::optional<mlir::QCProgram>
+[[nodiscard]] llvm::Expected<mlir::QCProgram>
 generate(const Multiplexer& benchmark);
 
 /// Generate a configured quantum Fourier-transform benchmark.
-[[nodiscard]] std::optional<mlir::QCProgram> generate(const QFT& benchmark);
+[[nodiscard]] llvm::Expected<mlir::QCProgram> generate(const QFT& benchmark);
 
 /// Generate a configured QFT adder benchmark.
-[[nodiscard]] std::optional<mlir::QCProgram>
+[[nodiscard]] llvm::Expected<mlir::QCProgram>
 generate(const QFTAdder& benchmark);
 
 /// Generate the QC program for a configured QPE benchmark.
-[[nodiscard]] std::optional<mlir::QCProgram> generate(const QPE& benchmark);
+[[nodiscard]] llvm::Expected<mlir::QCProgram> generate(const QPE& benchmark);
 
 /// Generate the repeat-until-success benchmark.
-[[nodiscard]] std::optional<mlir::QCProgram>
+[[nodiscard]] llvm::Expected<mlir::QCProgram>
 generate(const RepeatUntilSuccess& benchmark);
 
 /// Generate the quantum teleportation benchmark.
-[[nodiscard]] std::optional<mlir::QCProgram>
+[[nodiscard]] llvm::Expected<mlir::QCProgram>
 generate(const Teleportation& benchmark);
 
 /// Parse a benchmark instance specification and generate the benchmark.
-[[nodiscard]] std::optional<GeneratedBenchmark>
+[[nodiscard]] llvm::Expected<GeneratedBenchmark>
 generate(std::string_view instanceSpecificationJSON,
          std::string_view source = "<instance-specification>");
 

@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "bench/Error.hpp"
 #include "bench/Evaluation.hpp"
 #include "bench/mqt_core_bench_export.h"
 
@@ -29,16 +30,18 @@ struct MultiplexerOptions {
 /// A validated quantum multiplexer benchmark.
 class MQT_CORE_BENCH_EXPORT Multiplexer final {
 public:
-  explicit Multiplexer(MultiplexerOptions options);
+  [[nodiscard]] static Result<Multiplexer> create(MultiplexerOptions options);
 
   [[nodiscard]] const MultiplexerOptions& options() const noexcept;
   [[nodiscard]] const Output& output() const noexcept;
   /// Return the ideal probability of a big-endian logical outcome.
-  [[nodiscard]] double probability(std::string_view outcome) const;
+  [[nodiscard]] Result<double> probability(std::string_view outcome) const;
   /// Compare sampled logical outcomes with the ideal distribution.
-  [[nodiscard]] Evaluation evaluate(const Counts& counts) const;
+  [[nodiscard]] Result<Evaluation> evaluate(const Counts& counts) const;
 
 private:
+  explicit Multiplexer(MultiplexerOptions options);
+
   MultiplexerOptions options_;
   Output output_;
 };

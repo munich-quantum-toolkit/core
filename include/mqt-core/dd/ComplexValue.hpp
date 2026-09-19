@@ -14,6 +14,7 @@
 #pragma once
 
 #include "dd/DDDefinitions.hpp"
+#include "dd/Error.hpp"
 
 #include <cmath>
 #include <complex>
@@ -22,6 +23,7 @@
 #include <functional>
 #include <iostream>
 #include <string>
+#include <string_view>
 #include <utility>
 
 namespace dd {
@@ -81,10 +83,8 @@ struct ComplexValue {
   /// @param is The input stream to read from.
   void readBinary(std::istream& is);
 
-  /// Construct a complex number from a string.
-  /// @param realStr The string representation of the real part.
-  /// @param imagStr The string representation of the imaginary part.
-  void fromString(const std::string& realStr, std::string imagStr);
+  /// Parse the finite real/imaginary notation used in serialized DDs.
+  [[nodiscard]] static Result<ComplexValue> parse(std::string_view text);
 
   /// Get the closest fraction to the given number.
   /// @param x The number to approximate.

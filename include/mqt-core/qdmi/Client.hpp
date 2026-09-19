@@ -32,7 +32,6 @@
 #include <optional>
 #include <ranges>
 #include <span>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -64,52 +63,58 @@ concept custom_property_value =
     std::same_as<T, std::vector<std::byte>>;
 
 namespace detail {
-[[nodiscard]] inline std::optional<size_t>
+[[nodiscard]] inline Result<std::optional<size_t>>
 queuePositionFromResult(const int result, const size_t queuePosition) {
   if (result == QDMI_ERROR_NOTSUPPORTED || result == QDMI_ERROR_BADSTATE) {
     return std::nullopt;
   }
-  qdmi::throwIfError(result, "Querying job queue position");
+  if (auto error = checkError(result, "Querying job queue position")) {
+    return std::move(*error);
+  }
   return queuePosition;
 }
 
-[[nodiscard]] std::vector<std::string> parseShots(std::string_view shots,
-                                                  size_t numShots);
-
-[[noreturn]] void invalidCustomProperty();
+[[nodiscard]] Result<std::vector<std::string>>
+parseShots(std::string_view shots, size_t numShots);
 
 template <custom_property_value T, typename Query>
-[[nodiscard]] std::optional<T>
+[[nodiscard]] Result<std::optional<T>>
 queryCustomValue(Query query, const std::string_view description) {
   size_t size = 0;
   const auto sizeResult = query(0, nullptr, &size);
   if (sizeResult == QDMI_ERROR_NOTSUPPORTED) {
     return std::nullopt;
   }
-  qdmi::throwIfError(sizeResult,
-                     "Querying " + std::string(description) + " size");
+  if (auto error = checkError(
+          sizeResult, "Querying " + std::string(description) + " size")) {
+    return std::move(*error);
+  }
 
   std::vector<std::byte> bytes(size);
   if (size != 0) {
-    qdmi::throwIfError(query(size, bytes.data(), nullptr),
-                       "Querying " + std::string(description));
+    if (auto error = checkError(query(size, bytes.data(), nullptr),
+                                "Querying " + std::string(description))) {
+      return std::move(*error);
+    }
   }
 
   if constexpr (std::same_as<T, std::vector<std::byte>>) {
     return bytes;
   } else if constexpr (std::same_as<T, std::string>) {
     if (bytes.empty() || bytes.back() != std::byte{0}) {
-      throw std::invalid_argument("Cannot decode " + std::string(description) +
-                                  " as a null-terminated string");
+      return Error{.status = QDMI_ERROR_INVALIDARGUMENT,
+                   .message = "Cannot decode " + std::string(description) +
+                              " as a null-terminated string"};
     }
     return std::string(reinterpret_cast<const char*>(bytes.data()),
                        bytes.size() - 1);
   } else {
     if (bytes.size() != sizeof(T)) {
-      throw std::invalid_argument("Cannot decode " + std::string(description) +
-                                  ": expected " + std::to_string(sizeof(T)) +
-                                  " bytes, but the device reported " +
-                                  std::to_string(bytes.size()));
+      return Error{.status = QDMI_ERROR_INVALIDARGUMENT,
+                   .message = "Cannot decode " + std::string(description) +
+                              ": expected " + std::to_string(sizeof(T)) +
+                              " bytes, but the device reported " +
+                              std::to_string(bytes.size())};
     }
     T value{};
     std::memcpy(&value, bytes.data(), sizeof(T));
@@ -118,31 +123,37 @@ queryCustomValue(Query query, const std::string_view description) {
 }
 
 template <typename Handle, typename Query>
-[[nodiscard]] std::optional<std::vector<Handle>>
+[[nodiscard]] Result<std::optional<std::vector<Handle>>>
 queryHandleArray(Query query, const std::string_view description) {
   size_t size = 0;
   const auto sizeResult = query(0, nullptr, &size);
   if (sizeResult == QDMI_ERROR_NOTSUPPORTED) {
     return std::nullopt;
   }
-  qdmi::throwIfError(sizeResult,
-                     "Querying " + std::string(description) + " size");
+  if (auto error = checkError(
+          sizeResult, "Querying " + std::string(description) + " size")) {
+    return std::move(*error);
+  }
   if (size % sizeof(Handle) != 0) {
-    throw std::invalid_argument(
-        "Cannot decode " + std::string(description) + ": the device reported " +
-        std::to_string(size) + " bytes, which is not a multiple of " +
-        std::to_string(sizeof(Handle)));
+    return Error{.status = QDMI_ERROR_INVALIDARGUMENT,
+                 .message = "Cannot decode " + std::string(description) +
+                            ": the device reported " + std::to_string(size) +
+                            " bytes, which is not a multiple of " +
+                            std::to_string(sizeof(Handle))};
   }
 
   std::vector<Handle> handles(size / sizeof(Handle));
   if (size != 0) {
-    qdmi::throwIfError(query(size, static_cast<void*>(handles.data()), nullptr),
-                       "Querying " + std::string(description));
+    if (auto error =
+            checkError(query(size, static_cast<void*>(handles.data()), nullptr),
+                       "Querying " + std::string(description))) {
+      return std::move(*error);
+    }
   }
   return handles;
 }
 
-[[nodiscard]] constexpr QDMI_Device_Property
+[[nodiscard]] constexpr Result<QDMI_Device_Property>
 toDeviceProperty(const CustomProperty property) {
   switch (property) {
   case CustomProperty::Custom1:
@@ -156,10 +167,11 @@ toDeviceProperty(const CustomProperty property) {
   case CustomProperty::Custom5:
     return QDMI_DEVICE_PROPERTY_CUSTOM5;
   }
-  invalidCustomProperty();
+  return Error{.status = QDMI_ERROR_INVALIDARGUMENT,
+               .message = "Invalid custom property selector"};
 }
 
-[[nodiscard]] constexpr QDMI_Site_Property
+[[nodiscard]] constexpr Result<QDMI_Site_Property>
 toSiteProperty(const CustomProperty property) {
   switch (property) {
   case CustomProperty::Custom1:
@@ -173,10 +185,11 @@ toSiteProperty(const CustomProperty property) {
   case CustomProperty::Custom5:
     return QDMI_SITE_PROPERTY_CUSTOM5;
   }
-  invalidCustomProperty();
+  return Error{.status = QDMI_ERROR_INVALIDARGUMENT,
+               .message = "Invalid custom property selector"};
 }
 
-[[nodiscard]] constexpr QDMI_Operation_Property
+[[nodiscard]] constexpr Result<QDMI_Operation_Property>
 toOperationProperty(const CustomProperty property) {
   switch (property) {
   case CustomProperty::Custom1:
@@ -190,10 +203,11 @@ toOperationProperty(const CustomProperty property) {
   case CustomProperty::Custom5:
     return QDMI_OPERATION_PROPERTY_CUSTOM5;
   }
-  invalidCustomProperty();
+  return Error{.status = QDMI_ERROR_INVALIDARGUMENT,
+               .message = "Invalid custom property selector"};
 }
 
-[[nodiscard]] constexpr QDMI_Job_Property
+[[nodiscard]] constexpr Result<QDMI_Job_Property>
 toJobProperty(const CustomProperty property) {
   switch (property) {
   case CustomProperty::Custom1:
@@ -207,10 +221,11 @@ toJobProperty(const CustomProperty property) {
   case CustomProperty::Custom5:
     return QDMI_JOB_PROPERTY_CUSTOM5;
   }
-  invalidCustomProperty();
+  return Error{.status = QDMI_ERROR_INVALIDARGUMENT,
+               .message = "Invalid custom property selector"};
 }
 
-[[nodiscard]] constexpr QDMI_Job_Result
+[[nodiscard]] constexpr Result<QDMI_Job_Result>
 toJobResult(const CustomProperty property) {
   switch (property) {
   case CustomProperty::Custom1:
@@ -224,7 +239,8 @@ toJobResult(const CustomProperty property) {
   case CustomProperty::Custom5:
     return QDMI_JOB_RESULT_CUSTOM5;
   }
-  invalidCustomProperty();
+  return Error{.status = QDMI_ERROR_INVALIDARGUMENT,
+               .message = "Invalid custom property selector"};
 }
 } // namespace detail
 
@@ -350,9 +366,8 @@ namespace detail {
 /// Decode a standard property while preserving optional support and
 /// diagnostics.
 template <maybe_optional_value_or_string_or_vector T, typename Query>
-[[nodiscard]] std::variant<T, Error>
-tryQueryProperty(Query query, const std::string& msg,
-                 const std::string& sizeMsg) {
+[[nodiscard]] Result<T> queryProperty(Query query, const std::string& msg,
+                                      const std::string& sizeMsg) {
   if constexpr (string_or_optional_string<T>) {
     size_t size = 0;
     auto result = query(0, nullptr, &size);
@@ -430,16 +445,6 @@ tryQueryProperty(Query query, const std::string& msg,
     return T{std::move(value)};
   }
 }
-/// The throwing interface uses the same property decoder and diagnostics.
-template <maybe_optional_value_or_string_or_vector T, typename Query>
-[[nodiscard]] T queryProperty(Query query, const std::string& msg,
-                              const std::string& sizeMsg) {
-  auto result = tryQueryProperty<T>(query, msg, sizeMsg);
-  if (const auto* error = std::get_if<Error>(&result)) {
-    throwError(*error);
-  }
-  return std::get<T>(std::move(result));
-}
 } // namespace detail
 
 /// Configuration structure for session authentication parameters.
@@ -495,32 +500,30 @@ public:
   /// @param id Stable registered device ID.
   /// @param overrides Session values that replace registered defaults.
   /// @return An owning device wrapper for the new session.
-  [[nodiscard]] static Device
+  [[nodiscard]] static Result<Device>
   openDevice(std::string_view id,
              const qdmi::DeviceSessionConfig& overrides = {});
 
-  /// Open a device, returning a diagnostic instead of throwing.
-  [[nodiscard]] static std::variant<Device, Error>
-  tryOpenDevice(std::string_view id);
-
   /// Discover registered devices, returning a diagnostic instead of throwing.
-  [[nodiscard]] static std::variant<std::vector<std::string>, Error>
-  tryRegisteredDeviceIds();
+  [[nodiscard]] static Result<std::vector<std::string>> registeredDeviceIds();
 
   /// Constructs a new QDMI Session with optional authentication.
   /// @param config Optional session configuration containing authentication
   /// parameters. If not provided, uses default (no authentication).
   ///
   /// Creates, allocates, and initializes a new QDMI session.
-  explicit Session(const SessionConfig& config = {});
+  [[nodiscard]] static Result<Session> create(const SessionConfig& config = {});
 
   /// @see QDMI_SESSION_PROPERTY_DEVICES
-  [[nodiscard]] std::vector<Device> getDevices();
+  [[nodiscard]] Result<std::vector<Device>> getDevices();
 
 private:
+  Session() = default;
+
   /// Query a session property.
   template <size_constructible_contiguous_range T>
-  [[nodiscard]] T queryProperty(const QDMI_Session_Property prop) const {
+  [[nodiscard]] Result<T>
+  queryProperty(const QDMI_Session_Property prop) const {
     return detail::queryProperty<T>(
         [&](const size_t size, void* value, size_t* sizeRet) {
           return QDMI_session_query_session_property(session_.get(), prop, size,
@@ -552,33 +555,23 @@ public:
   // NOLINTNEXTLINE(misc-explicit-constructor, *-explicit-conversions)
   operator QDMI_Device() const { return device_.get(); }
 
-  /// Submit exact program bytes, returning a diagnostic instead of throwing.
-  [[nodiscard]] std::variant<Job, Error> trySubmitJob(
-      std::span<const std::byte> program, QDMI_Program_Format format,
-      size_t numShots,
-      const std::optional<CustomJobParameter>& custom1 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom2 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom3 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom4 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
-
   /// @see QDMI_DEVICE_PROPERTY_NAME
-  [[nodiscard]] std::string getName() const;
+  [[nodiscard]] Result<std::string> getName() const;
 
   /// @see QDMI_DEVICE_PROPERTY_VERSION
-  [[nodiscard]] std::string getVersion() const;
+  [[nodiscard]] Result<std::string> getVersion() const;
 
   /// @see QDMI_DEVICE_PROPERTY_STATUS
-  [[nodiscard]] QDMI_Device_Status getStatus() const;
+  [[nodiscard]] Result<QDMI_Device_Status> getStatus() const;
 
   /// @see QDMI_DEVICE_PROPERTY_LIBRARYVERSION
-  [[nodiscard]] std::string getLibraryVersion() const;
+  [[nodiscard]] Result<std::string> getLibraryVersion() const;
 
   /// @see QDMI_DEVICE_PROPERTY_QUBITSNUM
-  [[nodiscard]] size_t getQubitsNum() const;
+  [[nodiscard]] Result<size_t> getQubitsNum() const;
 
   /// @see QDMI_DEVICE_PROPERTY_SITES
-  [[nodiscard]] std::vector<Site> getSites() const;
+  [[nodiscard]] Result<std::vector<Site>> getSites() const;
 
   /// Returns the list of regular sites (without zone sites) available
   /// on the device.
@@ -588,7 +581,7 @@ public:
   /// qubit locations on the device lattice.
   /// @returns vector of regular sites
   /// @see QDMI_DEVICE_PROPERTY_SITES
-  [[nodiscard]] std::vector<Site> getRegularSites() const;
+  [[nodiscard]] Result<std::vector<Site>> getRegularSites() const;
 
   /// Returns the list of zone sites (without regular sites) available
   /// on the device.
@@ -598,62 +591,66 @@ public:
   /// zoned operations can be performed, not individual qubit locations.
   /// @returns a vector of zone sites
   /// @see QDMI_DEVICE_PROPERTY_SITES
-  [[nodiscard]] std::vector<Site> getZones() const;
+  [[nodiscard]] Result<std::vector<Site>> getZones() const;
 
   /// @see QDMI_DEVICE_PROPERTY_OPERATIONS
-  [[nodiscard]] std::vector<Operation> getOperations() const;
+  [[nodiscard]] Result<std::vector<Operation>> getOperations() const;
 
   /// @see QDMI_DEVICE_PROPERTY_COUPLINGMAP
-  [[nodiscard]] std::optional<std::vector<std::pair<Site, Site>>>
+  [[nodiscard]] Result<std::optional<std::vector<std::pair<Site, Site>>>>
   getCouplingMap() const;
 
   /// @see QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION
-  [[nodiscard]] std::optional<size_t> getNeedsCalibration() const;
+  [[nodiscard]] Result<std::optional<size_t>> getNeedsCalibration() const;
 
   /// @see QDMI_DEVICE_PROPERTY_QUEUELENGTH
-  [[nodiscard]] std::optional<size_t> getQueueLength() const;
+  [[nodiscard]] Result<std::optional<size_t>> getQueueLength() const;
 
   /// @see QDMI_DEVICE_PROPERTY_LENGTHUNIT
-  [[nodiscard]] std::optional<std::string> getLengthUnit() const;
+  [[nodiscard]] Result<std::optional<std::string>> getLengthUnit() const;
 
   /// @see QDMI_DEVICE_PROPERTY_LENGTHSCALEFACTOR
-  [[nodiscard]] std::optional<double> getLengthScaleFactor() const;
+  [[nodiscard]] Result<std::optional<double>> getLengthScaleFactor() const;
 
   /// @see QDMI_DEVICE_PROPERTY_DURATIONUNIT
-  [[nodiscard]] std::optional<std::string> getDurationUnit() const;
+  [[nodiscard]] Result<std::optional<std::string>> getDurationUnit() const;
 
   /// @see QDMI_DEVICE_PROPERTY_DURATIONSCALEFACTOR
-  [[nodiscard]] std::optional<double> getDurationScaleFactor() const;
+  [[nodiscard]] Result<std::optional<double>> getDurationScaleFactor() const;
 
   /// @see QDMI_DEVICE_PROPERTY_MINATOMDISTANCE
-  [[nodiscard]] std::optional<uint64_t> getMinAtomDistance() const;
+  [[nodiscard]] Result<std::optional<uint64_t>> getMinAtomDistance() const;
 
   /// @see QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS
-  [[nodiscard]] std::vector<QDMI_Program_Format>
+  [[nodiscard]] Result<std::vector<QDMI_Program_Format>>
   getSupportedProgramFormats() const;
 
   /// Returns the direct child devices managed by this device.
   /// @return The child devices, or an empty vector if child devices are not
   /// supported.
   /// @see QDMI_DEVICE_PROPERTY_CHILDDEVICES
-  [[nodiscard]] std::vector<Device> getChildDevices() const;
+  [[nodiscard]] Result<std::vector<Device>> getChildDevices() const;
 
   /// Queries an implementation-defined custom device property.
   /// @tparam T Expected value type. Use `std::vector<std::byte>` to retrieve
   /// the raw value without interpretation.
   /// @param property Custom property slot to query.
   /// @return The decoded value, or `std::nullopt` if the slot is unsupported.
-  /// @throws std::invalid_argument If the returned bytes do not match `T`.
+  /// Returns QDMI_ERROR_INVALIDARGUMENT If the returned bytes do not match `T`.
   template <custom_property_value T>
-  [[nodiscard]] std::optional<T>
+  [[nodiscard]] Result<std::optional<T>>
   queryCustomProperty(const CustomProperty property) const {
-    const auto qdmiProperty = detail::toDeviceProperty(property);
+    auto qdmiPropertyResult = detail::toDeviceProperty(property);
+    if (auto* error = std::get_if<Error>(&qdmiPropertyResult)) {
+      return std::move(*error);
+    }
+    const auto qdmiProperty = std::get<0>(qdmiPropertyResult);
     return detail::queryCustomValue<T>(
         [this, qdmiProperty](const size_t size, void* value, size_t* sizeRet) {
           return QDMI_device_query_device_property(device_.get(), qdmiProperty,
                                                    size, value, sizeRet);
         },
-        "custom device property " +
+        "custom device property CUSTOM" +
             std::to_string(static_cast<unsigned>(property)));
   }
 
@@ -661,19 +658,19 @@ public:
   /// @param property Custom property slot to query.
   /// @return Normal QDMI operation wrappers, or `std::nullopt` if the slot is
   /// unsupported. A supported empty list is returned as an engaged optional.
-  /// @throws std::invalid_argument If the returned byte count is not a multiple
-  /// of `sizeof(QDMI_Operation)`.
-  [[nodiscard]] std::optional<std::vector<Operation>>
+  /// Returns QDMI_ERROR_INVALIDARGUMENT If the returned byte count is not a
+  /// multiple of `sizeof(QDMI_Operation)`.
+  [[nodiscard]] Result<std::optional<std::vector<Operation>>>
   queryCustomOperations(CustomProperty property) const;
 
   /// Submits a textual program.
   ///
   /// The terminating null byte required by QDMI text formats is
   /// included in the submitted payload.
-  /// @throws std::invalid_argument If the format requires binary submission,
-  /// names a batch job, or names a calibration run.
+  /// Returns QDMI_ERROR_INVALIDARGUMENT If the format requires binary
+  /// submission, names a batch job, or names a calibration run.
   /// @see QDMI_job_submit
-  [[nodiscard]] Job submitJob(
+  [[nodiscard]] Result<Job> submitJob(
       const std::string& program, QDMI_Program_Format format, size_t numShots,
       const std::optional<CustomJobParameter>& custom1 = std::nullopt,
       const std::optional<CustomJobParameter>& custom2 = std::nullopt,
@@ -685,7 +682,7 @@ public:
   ///
   /// Repetition semantics are left to the submitted program and device.
   /// @see QDMI_job_submit
-  [[nodiscard]] Job submitJob(
+  [[nodiscard]] Result<Job> submitJob(
       const std::string& program, QDMI_Program_Format format,
       const std::optional<CustomJobParameter>& custom1 = std::nullopt,
       const std::optional<CustomJobParameter>& custom2 = std::nullopt,
@@ -697,10 +694,10 @@ public:
   ///
   /// The bytes are submitted exactly as provided without appending a
   /// null byte.
-  /// @throws std::invalid_argument If the format names a batch job or a
+  /// Returns QDMI_ERROR_INVALIDARGUMENT If the format names a batch job or a
   /// calibration run.
   /// @see QDMI_job_submit
-  [[nodiscard]] Job submitJob(
+  [[nodiscard]] Result<Job> submitJob(
       std::span<const std::byte> program, QDMI_Program_Format format,
       size_t numShots,
       const std::optional<CustomJobParameter>& custom1 = std::nullopt,
@@ -713,7 +710,7 @@ public:
   ///
   /// Repetition semantics are left to the submitted program and device.
   /// @see QDMI_job_submit
-  [[nodiscard]] Job submitJob(
+  [[nodiscard]] Result<Job> submitJob(
       std::span<const std::byte> program, QDMI_Program_Format format,
       const std::optional<CustomJobParameter>& custom1 = std::nullopt,
       const std::optional<CustomJobParameter>& custom2 = std::nullopt,
@@ -735,7 +732,7 @@ public:
   /// @param custom1,custom2,custom3,custom4,custom5 Optional provider-defined
   /// job parameters.
   /// @see QDMI_job_submit
-  [[nodiscard]] Job submitCalibrationJob(
+  [[nodiscard]] Result<Job> submitCalibrationJob(
       std::optional<std::span<const std::byte>> program = std::nullopt,
       const std::optional<CustomJobParameter>& custom1 = std::nullopt,
       const std::optional<CustomJobParameter>& custom2 = std::nullopt,
@@ -751,7 +748,7 @@ public:
   /// @param custom1,custom2,custom3,custom4,custom5 Optional provider-defined
   /// job parameters.
   /// @see QDMI_job_submit
-  [[nodiscard]] Job submitCalibrationJob(
+  [[nodiscard]] Result<Job> submitCalibrationJob(
       const std::string& program,
       const std::optional<CustomJobParameter>& custom1 = std::nullopt,
       const std::optional<CustomJobParameter>& custom2 = std::nullopt,
@@ -764,10 +761,10 @@ public:
   /// Opening a job does not submit, clone, or modify the remote job.
   /// The returned handle can be used to query its state and retrieve results.
   /// @param jobId The nonempty opaque ID returned by @ref Job::getId.
-  /// @throws std::runtime_error If the driver or device cannot retrieve the
+  /// Returns an error If the driver or device cannot retrieve the
   /// job.
   /// @see QDMI_session_retrieve_job_by_id
-  [[nodiscard]] Job retrieveJobById(std::string_view jobId) const;
+  [[nodiscard]] Result<Job> retrieveJobById(std::string_view jobId) const;
 
   auto operator<=>(const Device&) const noexcept = default;
 
@@ -788,7 +785,7 @@ private:
 
   /// Query a device property.
   template <maybe_optional_value_or_string_or_vector T>
-  [[nodiscard]] T queryProperty(const QDMI_Device_Property prop) const {
+  [[nodiscard]] Result<T> queryProperty(const QDMI_Device_Property prop) const {
     const std::string msg = std::string("Querying ") + qdmi::toString(prop);
     return detail::queryProperty<T>(
         [&](const size_t size, void* value, size_t* sizeRet) {
@@ -798,7 +795,7 @@ private:
         msg, msg);
   }
 
-  [[nodiscard]] Job
+  [[nodiscard]] Result<Job>
   submitJobImpl(QDMI_Program_Format format,
                 std::optional<std::span<const std::byte>> program,
                 std::optional<size_t> numShots,
@@ -808,8 +805,9 @@ private:
                 const std::optional<CustomJobParameter>& custom4,
                 const std::optional<CustomJobParameter>& custom5) const;
 
-  static void setCustomJobParam(QDMI_Job job, QDMI_Job_Parameter param,
-                                const CustomJobParameter& value);
+  static std::optional<Error>
+  setCustomJobParam(QDMI_Job job, QDMI_Job_Parameter param,
+                    const CustomJobParameter& value);
 
   /// The underlying device pointer.
   std::shared_ptr<QDMI_Device_impl_d> device_;
@@ -835,58 +833,62 @@ public:
   operator QDMI_Job() const { return job_.get(); }
 
   /// @see QDMI_job_check
-  [[nodiscard]] QDMI_Job_Status check() const;
+  [[nodiscard]] Result<QDMI_Job_Status> check() const;
 
   /// @see QDMI_job_wait
   /// @param timeout The maximum time to wait in seconds. 0 (default) means
   /// wait indefinitely.
   /// @return true if the job completed successfully, false if it timed out
-  [[nodiscard]] bool wait(size_t timeout = 0) const;
+  [[nodiscard]] Result<bool> wait(size_t timeout = 0) const;
 
   /// @see QDMI_job_cancel
-  void cancel() const;
+  [[nodiscard]] std::optional<Error> cancel() const;
 
   /// Get the job ID
-  [[nodiscard]] std::string getId() const;
+  [[nodiscard]] Result<std::string> getId() const;
 
   /// Get the program format
-  [[nodiscard]] QDMI_Program_Format getProgramFormat() const;
+  [[nodiscard]] Result<QDMI_Program_Format> getProgramFormat() const;
 
   /// Gets a textual program without its terminating null byte.
-  /// @throws std::invalid_argument If the format is not textual or the device
-  /// does not return a null-terminated payload.
-  [[nodiscard]] std::string getProgram() const;
+  /// Returns QDMI_ERROR_INVALIDARGUMENT If the format is not textual or the
+  /// device does not return a null-terminated payload.
+  [[nodiscard]] Result<std::string> getProgram() const;
 
   /// Gets the submitted program bytes exactly as returned by the device.
-  [[nodiscard]] std::vector<std::byte> getProgramBytes() const;
+  [[nodiscard]] Result<std::vector<std::byte>> getProgramBytes() const;
 
   /// Get the number of shots
-  [[nodiscard]] size_t getNumShots() const;
+  [[nodiscard]] Result<size_t> getNumShots() const;
 
   /// Gets the current number of jobs ahead of this job in its queue.
   /// @return The queue position, or `std::nullopt` if it is unavailable or not
   /// applicable in the job's current state.
-  /// @throws std::runtime_error If the provider status refresh or property
+  /// Returns an error If the provider status refresh or property
   /// query fails for another reason.
   /// @see QDMI_JOB_PROPERTY_QUEUEPOSITION
-  [[nodiscard]] std::optional<size_t> getQueuePosition() const;
+  [[nodiscard]] Result<std::optional<size_t>> getQueuePosition() const;
 
   /// Queries an implementation-defined custom job property.
   /// @tparam T Expected value type. Use `std::vector<std::byte>` to retrieve
   /// the raw value without interpretation.
   /// @param property Custom property slot to query.
   /// @return The decoded value, or `std::nullopt` if the slot is unsupported.
-  /// @throws std::invalid_argument If the returned bytes do not match `T`.
+  /// Returns QDMI_ERROR_INVALIDARGUMENT If the returned bytes do not match `T`.
   template <custom_property_value T>
-  [[nodiscard]] std::optional<T>
+  [[nodiscard]] Result<std::optional<T>>
   queryCustomProperty(const CustomProperty property) const {
-    const auto qdmiProperty = detail::toJobProperty(property);
+    auto qdmiPropertyResult = detail::toJobProperty(property);
+    if (auto* error = std::get_if<Error>(&qdmiPropertyResult)) {
+      return std::move(*error);
+    }
+    const auto qdmiProperty = std::get<0>(qdmiPropertyResult);
     return detail::queryCustomValue<T>(
         [this, qdmiProperty](const size_t size, void* value, size_t* sizeRet) {
           return QDMI_job_query_property(job_.get(), qdmiProperty, size, value,
                                          sizeRet);
         },
-        "custom job property " +
+        "custom job property CUSTOM" +
             std::to_string(static_cast<unsigned>(property)));
   }
 
@@ -895,48 +897,55 @@ public:
   /// the raw value without interpretation.
   /// @param property Custom result slot to query.
   /// @return The decoded value, or `std::nullopt` if the slot is unsupported.
-  /// @throws std::invalid_argument If the returned bytes do not match `T`.
+  /// Returns QDMI_ERROR_INVALIDARGUMENT If the returned bytes do not match `T`.
   template <custom_property_value T>
-  [[nodiscard]] std::optional<T>
+  [[nodiscard]] Result<std::optional<T>>
   getCustomResult(const CustomProperty property) const {
-    const auto qdmiResult = detail::toJobResult(property);
+    auto qdmiResultResult = detail::toJobResult(property);
+    if (auto* error = std::get_if<Error>(&qdmiResultResult)) {
+      return std::move(*error);
+    }
+    const auto qdmiResult = std::get<0>(qdmiResultResult);
     return detail::queryCustomValue<T>(
         [this, qdmiResult](const size_t size, void* value, size_t* sizeRet) {
           return QDMI_job_get_results(job_.get(), qdmiResult, size, value,
                                       sizeRet);
         },
-        "custom job result " + std::to_string(static_cast<unsigned>(property)));
+        "custom job result CUSTOM" +
+            std::to_string(static_cast<unsigned>(property)));
   }
 
   /// Returns the measurement shots as a vector of bitstrings.
   /// @see QDMI_JOB_RESULT_SHOTS
-  [[nodiscard]] std::vector<std::string> getShots() const;
+  [[nodiscard]] Result<std::vector<std::string>> getShots() const;
 
   /// Returns a map of measurement outcomes to their respective counts.
   /// @see QDMI_JOB_RESULT_HIST_KEYS
   /// @see QDMI_JOB_RESULT_HIST_VALUES
-  [[nodiscard]] std::map<std::string, size_t> getCounts() const;
+  [[nodiscard]] Result<std::map<std::string, size_t>> getCounts() const;
 
   /// Returns the dense state vector as a vector of complex numbers.
   /// @see QDMI_JOB_RESULT_STATEVECTOR_DENSE
-  [[nodiscard]] std::vector<std::complex<double>> getDenseStateVector() const;
+  [[nodiscard]] Result<std::vector<std::complex<double>>>
+  getDenseStateVector() const;
 
   /// Returns the dense probabilities as a vector of doubles.
   /// @see QDMI_JOB_RESULT_PROBABILITIES_DENSE
-  [[nodiscard]] std::vector<double> getDenseProbabilities() const;
+  [[nodiscard]] Result<std::vector<double>> getDenseProbabilities() const;
 
   /// Returns the sparse state vector as a map of bitstrings to complex
   /// amplitudes.
   /// @see QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS
   /// @see QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES
-  [[nodiscard]] std::map<std::string, std::complex<double>>
+  [[nodiscard]] Result<std::map<std::string, std::complex<double>>>
   getSparseStateVector() const;
 
   /// Returns the sparse probabilities as a map of bitstrings to
   /// probabilities.
   /// @see QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS
   /// @see QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES
-  [[nodiscard]] std::map<std::string, double> getSparseProbabilities() const;
+  [[nodiscard]] Result<std::map<std::string, double>>
+  getSparseProbabilities() const;
 
   auto operator<=>(const Job&) const noexcept = default;
 
@@ -975,60 +984,64 @@ public:
   operator QDMI_Site() const { return site_; }
 
   /// @see QDMI_SITE_PROPERTY_INDEX
-  [[nodiscard]] size_t getIndex() const;
+  [[nodiscard]] Result<size_t> getIndex() const;
 
   /// @see QDMI_SITE_PROPERTY_T1
-  [[nodiscard]] std::optional<uint64_t> getT1() const;
+  [[nodiscard]] Result<std::optional<uint64_t>> getT1() const;
 
   /// @see QDMI_SITE_PROPERTY_T2
-  [[nodiscard]] std::optional<uint64_t> getT2() const;
+  [[nodiscard]] Result<std::optional<uint64_t>> getT2() const;
 
   /// @see QDMI_SITE_PROPERTY_NAME
-  [[nodiscard]] std::optional<std::string> getName() const;
+  [[nodiscard]] Result<std::optional<std::string>> getName() const;
 
   /// @see QDMI_SITE_PROPERTY_XCOORDINATE
-  [[nodiscard]] std::optional<int64_t> getXCoordinate() const;
+  [[nodiscard]] Result<std::optional<int64_t>> getXCoordinate() const;
 
   /// @see QDMI_SITE_PROPERTY_YCOORDINATE
-  [[nodiscard]] std::optional<int64_t> getYCoordinate() const;
+  [[nodiscard]] Result<std::optional<int64_t>> getYCoordinate() const;
 
   /// @see QDMI_SITE_PROPERTY_ZCOORDINATE
-  [[nodiscard]] std::optional<int64_t> getZCoordinate() const;
+  [[nodiscard]] Result<std::optional<int64_t>> getZCoordinate() const;
 
   /// @see QDMI_SITE_PROPERTY_ISZONE
-  [[nodiscard]] bool isZone() const;
+  [[nodiscard]] Result<bool> isZone() const;
 
   /// @see QDMI_SITE_PROPERTY_XEXTENT
-  [[nodiscard]] std::optional<uint64_t> getXExtent() const;
+  [[nodiscard]] Result<std::optional<uint64_t>> getXExtent() const;
 
   /// @see QDMI_SITE_PROPERTY_YEXTENT
-  [[nodiscard]] std::optional<uint64_t> getYExtent() const;
+  [[nodiscard]] Result<std::optional<uint64_t>> getYExtent() const;
 
   /// @see QDMI_SITE_PROPERTY_ZEXTENT
-  [[nodiscard]] std::optional<uint64_t> getZExtent() const;
+  [[nodiscard]] Result<std::optional<uint64_t>> getZExtent() const;
 
   /// @see QDMI_SITE_PROPERTY_MODULEINDEX
-  [[nodiscard]] std::optional<uint64_t> getModuleIndex() const;
+  [[nodiscard]] Result<std::optional<uint64_t>> getModuleIndex() const;
 
   /// @see QDMI_SITE_PROPERTY_SUBMODULEINDEX
-  [[nodiscard]] std::optional<uint64_t> getSubmoduleIndex() const;
+  [[nodiscard]] Result<std::optional<uint64_t>> getSubmoduleIndex() const;
 
   /// Queries an implementation-defined custom site property.
   /// @tparam T Expected value type. Use `std::vector<std::byte>` to retrieve
   /// the raw value without interpretation.
   /// @param property Custom property slot to query.
   /// @return The decoded value, or `std::nullopt` if the slot is unsupported.
-  /// @throws std::invalid_argument If the returned bytes do not match `T`.
+  /// Returns QDMI_ERROR_INVALIDARGUMENT If the returned bytes do not match `T`.
   template <custom_property_value T>
-  [[nodiscard]] std::optional<T>
+  [[nodiscard]] Result<std::optional<T>>
   queryCustomProperty(const CustomProperty property) const {
-    const auto qdmiProperty = detail::toSiteProperty(property);
+    auto qdmiPropertyResult = detail::toSiteProperty(property);
+    if (auto* error = std::get_if<Error>(&qdmiPropertyResult)) {
+      return std::move(*error);
+    }
+    const auto qdmiProperty = std::get<0>(qdmiPropertyResult);
     return detail::queryCustomValue<T>(
         [this, qdmiProperty](const size_t size, void* value, size_t* sizeRet) {
           return QDMI_device_query_site_property(
               device_.get(), site_, qdmiProperty, size, value, sizeRet);
         },
-        "custom site property " +
+        "custom site property CUSTOM" +
             std::to_string(static_cast<unsigned>(property)));
   }
 
@@ -1043,7 +1056,7 @@ private:
 
   /// Query a site property.
   template <maybe_optional_value_or_string T>
-  [[nodiscard]] T queryProperty(const QDMI_Site_Property prop) const {
+  [[nodiscard]] Result<T> queryProperty(const QDMI_Site_Property prop) const {
     const std::string msg = std::string("Querying ") + qdmi::toString(prop);
     const auto query = [&](const size_t size, void* value, size_t* sizeRet) {
       return QDMI_device_query_site_property(device_.get(), site_, prop, size,
@@ -1081,50 +1094,50 @@ public:
   operator QDMI_Operation() const { return operation_; }
 
   /// @see QDMI_OPERATION_PROPERTY_NAME
-  [[nodiscard]] std::string
+  [[nodiscard]] Result<std::string>
   getName(const std::vector<Site>& sites = {},
           const std::vector<double>& params = {}) const;
 
   /// @see QDMI_OPERATION_PROPERTY_QUBITSNUM
-  [[nodiscard]] std::optional<size_t>
+  [[nodiscard]] Result<std::optional<size_t>>
   getQubitsNum(const std::vector<Site>& sites = {},
                const std::vector<double>& params = {}) const;
 
   /// @see QDMI_OPERATION_PROPERTY_PARAMETERSNUM
-  [[nodiscard]] size_t
+  [[nodiscard]] Result<size_t>
   getParametersNum(const std::vector<Site>& sites = {},
                    const std::vector<double>& params = {}) const;
 
   /// @see QDMI_OPERATION_PROPERTY_DURATION
-  [[nodiscard]] std::optional<uint64_t>
+  [[nodiscard]] Result<std::optional<uint64_t>>
   getDuration(const std::vector<Site>& sites = {},
               const std::vector<double>& params = {}) const;
 
   /// @see QDMI_OPERATION_PROPERTY_FIDELITY
-  [[nodiscard]] std::optional<double>
+  [[nodiscard]] Result<std::optional<double>>
   getFidelity(const std::vector<Site>& sites = {},
               const std::vector<double>& params = {}) const;
 
   /// @see QDMI_OPERATION_PROPERTY_INTERACTIONRADIUS
-  [[nodiscard]] std::optional<uint64_t>
+  [[nodiscard]] Result<std::optional<uint64_t>>
   getInteractionRadius(const std::vector<Site>& sites = {},
                        const std::vector<double>& params = {}) const;
 
   /// @see QDMI_OPERATION_PROPERTY_BLOCKINGRADIUS
-  [[nodiscard]] std::optional<uint64_t>
+  [[nodiscard]] Result<std::optional<uint64_t>>
   getBlockingRadius(const std::vector<Site>& sites = {},
                     const std::vector<double>& params = {}) const;
 
   /// @see QDMI_OPERATION_PROPERTY_IDLINGFIDELITY
-  [[nodiscard]] std::optional<double>
+  [[nodiscard]] Result<std::optional<double>>
   getIdlingFidelity(const std::vector<Site>& sites = {},
                     const std::vector<double>& params = {}) const;
 
   /// @see QDMI_OPERATION_PROPERTY_ISZONED
-  [[nodiscard]] bool isZoned() const;
+  [[nodiscard]] Result<bool> isZoned() const;
 
   /// @see QDMI_OPERATION_PROPERTY_SITES
-  [[nodiscard]] std::optional<std::vector<Site>> getSites() const;
+  [[nodiscard]] Result<std::optional<std::vector<Site>>> getSites() const;
 
   /// Returns the list of site pairs the local 2-qubit operation can
   /// be performed on.
@@ -1136,11 +1149,11 @@ public:
   /// @return Optional vector of site pairs if this is a local 2-qubit
   /// operation, std::nullopt otherwise.
   /// @see QDMI_OPERATION_PROPERTY_SITES
-  [[nodiscard]] std::optional<std::vector<std::pair<Site, Site>>>
+  [[nodiscard]] Result<std::optional<std::vector<std::pair<Site, Site>>>>
   getSitePairs() const;
 
   /// @see QDMI_OPERATION_PROPERTY_MEANSHUTTLINGSPEED
-  [[nodiscard]] std::optional<uint64_t>
+  [[nodiscard]] Result<std::optional<uint64_t>>
   getMeanShuttlingSpeed(const std::vector<Site>& sites = {},
                         const std::vector<double>& params = {}) const;
 
@@ -1151,13 +1164,17 @@ public:
   /// @param sites Sites for context-dependent operation properties.
   /// @param params Parameters for context-dependent operation properties.
   /// @return The decoded value, or `std::nullopt` if the slot is unsupported.
-  /// @throws std::invalid_argument If the returned bytes do not match `T`.
+  /// Returns QDMI_ERROR_INVALIDARGUMENT If the returned bytes do not match `T`.
   template <custom_property_value T>
-  [[nodiscard]] std::optional<T>
+  [[nodiscard]] Result<std::optional<T>>
   queryCustomProperty(const CustomProperty property,
                       const std::vector<Site>& sites = {},
                       const std::vector<double>& params = {}) const {
-    const auto qdmiProperty = detail::toOperationProperty(property);
+    auto qdmiPropertyResult = detail::toOperationProperty(property);
+    if (auto* error = std::get_if<Error>(&qdmiPropertyResult)) {
+      return std::move(*error);
+    }
+    const auto qdmiProperty = std::get<0>(qdmiPropertyResult);
     std::vector<QDMI_Site> qdmiSites;
     qdmiSites.reserve(sites.size());
     std::ranges::transform(sites, std::back_inserter(qdmiSites),
@@ -1169,7 +1186,7 @@ public:
               device_.get(), operation_, qdmiSites.size(), qdmiSites.data(),
               params.size(), params.data(), qdmiProperty, size, value, sizeRet);
         },
-        "custom operation property " +
+        "custom operation property CUSTOM" +
             std::to_string(static_cast<unsigned>(property)));
   }
 
@@ -1185,9 +1202,10 @@ private:
 
   /// Query an operation property.
   template <maybe_optional_value_or_string_or_vector T>
-  [[nodiscard]] T queryProperty(const QDMI_Operation_Property prop,
-                                const std::vector<Site>& sites,
-                                const std::vector<double>& params) const {
+  [[nodiscard]] Result<T>
+  queryProperty(const QDMI_Operation_Property prop,
+                const std::vector<Site>& sites,
+                const std::vector<double>& params) const {
     const std::string msg = std::string("Querying ") + qdmi::toString(prop);
     std::vector<QDMI_Site> qdmiSites;
     qdmiSites.reserve(sites.size());

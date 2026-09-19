@@ -10,12 +10,13 @@
 
 #include "SHA256.hpp"
 
+#include "bench/Error.hpp"
+
 #include <array>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -51,9 +52,12 @@ constexpr std::array<uint32_t, 64> ROUND_CONSTANTS{
 
 } // namespace
 
-std::string sha256Hex(const std::string_view input) {
+Result<std::string> sha256Hex(const std::string_view input) {
   if (input.size() > std::numeric_limits<uint64_t>::max() / 8U) {
-    throw std::length_error("SHA-256 input is too long");
+    return Error{
+        .message = "SHA-256 input is too long",
+        .kind = Error::Kind::Overflow,
+    };
   }
 
   std::vector<uint8_t> message;

@@ -10,6 +10,7 @@
 
 #include "bench/Grover.hpp"
 
+#include "bench/Error.hpp"
 #include "bench/Evaluation.hpp"
 
 #include "EvaluationUtils.hpp"
@@ -20,7 +21,6 @@
 #include <cstdint>
 #include <limits>
 #include <numbers>
-#include <stdexcept>
 #include <string_view>
 #include <utility>
 
@@ -47,25 +47,34 @@ namespace {
 
 } // namespace
 
+Result<Grover> Grover::create(GroverOptions options) {
+  const auto width = options.markedBitstring.size();
+  if (width < 2 || width > 62) {
+    return Error{
+        .message = "Grover requires a marked bitstring of width 2 through 62",
+    };
+  }
+  if (auto error = detail::validateOutcome(options.markedBitstring, width)) {
+    return std::move(*error);
+  }
+
+  if (!options.iterations) {
+    options.iterations = resolveIterations(width);
+  }
+  if (*options.iterations >
+      static_cast<size_t>(std::numeric_limits<int32_t>::max())) {
+    return Error{
+        .message = "Grover iterations must fit a signed 32-bit integer",
+    };
+  }
+
+  return Grover(std::move(options));
+}
+
 Grover::Grover(GroverOptions options)
     : options_(std::move(options)),
       output_{.name = "result", .width = options_.markedBitstring.size()} {
   const auto width = options_.markedBitstring.size();
-  if (width < 2 || width > 62) {
-    throw std::invalid_argument(
-        "Grover requires a marked bitstring of width 2 through 62");
-  }
-  detail::validateOutcome(options_.markedBitstring, width);
-
-  if (!options_.iterations) {
-    options_.iterations = resolveIterations(width);
-  }
-  if (*options_.iterations >
-      static_cast<size_t>(std::numeric_limits<int32_t>::max())) {
-    throw std::invalid_argument(
-        "Grover iterations must fit a signed 32-bit integer");
-  }
-
   // NOLINTBEGIN(google-runtime-float)
   const auto states = std::ldexp(1.L, static_cast<int>(width));
   const auto theta = std::asin(1.L / std::sqrt(states));
@@ -82,13 +91,15 @@ size_t Grover::qubits() const noexcept { return output_.width; }
 
 const Output& Grover::output() const noexcept { return output_; }
 
-double Grover::probability(const std::string_view outcome) const {
-  detail::validateOutcome(outcome, output_.width);
+Result<double> Grover::probability(const std::string_view outcome) const {
+  if (auto error = detail::validateOutcome(outcome, output_.width)) {
+    return std::move(*error);
+  }
   return outcome == options_.markedBitstring ? markedProbability_
                                              : otherProbability_;
 }
 
-Evaluation Grover::evaluate(const Counts& counts) const {
+Result<Evaluation> Grover::evaluate(const Counts& counts) const {
   return detail::evaluate(*this, counts, options_.markedBitstring);
 }
 

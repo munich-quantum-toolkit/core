@@ -14,6 +14,7 @@
 #pragma once
 
 #include "dd/DDDefinitions.hpp"
+#include "dd/Error.hpp"
 #include "dd/Package.hpp"
 
 namespace dd {
@@ -24,6 +25,7 @@ namespace dd {
 /// @param phase The phase to apply
 /// @param dd The DD package to use
 /// @return The output DD
-VectorDD applyGlobalPhase(VectorDD& in, const fp& phase, Package& dd);
+[[nodiscard]] Result<VectorDD> applyGlobalPhase(VectorDD& in, const fp& phase,
+                                                Package& dd);
 
 } // namespace dd

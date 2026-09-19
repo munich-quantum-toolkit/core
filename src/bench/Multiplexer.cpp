@@ -10,24 +10,27 @@
 
 #include "bench/Multiplexer.hpp"
 
+#include "bench/Error.hpp"
 #include "bench/Evaluation.hpp"
 
 #include "EvaluationUtils.hpp"
 
 #include <cmath>
 #include <numbers>
-#include <stdexcept>
 #include <string_view>
+#include <utility>
 
 namespace mqt::bench {
 
-Multiplexer::Multiplexer(MultiplexerOptions options)
-    : options_(options), output_{.name = "result", .width = options_.qubits} {
-  if (options_.qubits < 2 || options_.qubits > MultiplexerOptions::MAX_QUBITS) {
-    throw std::invalid_argument(
-        "multiplexer qubits must be between 2 and 1024");
+Result<Multiplexer> Multiplexer::create(MultiplexerOptions options) {
+  if (options.qubits < 2 || options.qubits > MultiplexerOptions::MAX_QUBITS) {
+    return Error{.message = "multiplexer qubits must be between 2 and 1024"};
   }
+  return Multiplexer(options);
 }
+
+Multiplexer::Multiplexer(MultiplexerOptions options)
+    : options_(options), output_{.name = "result", .width = options_.qubits} {}
 
 const MultiplexerOptions& Multiplexer::options() const noexcept {
   return options_;
@@ -35,8 +38,10 @@ const MultiplexerOptions& Multiplexer::options() const noexcept {
 
 const Output& Multiplexer::output() const noexcept { return output_; }
 
-double Multiplexer::probability(const std::string_view outcome) const {
-  detail::validateOutcome(outcome, output_.width);
+Result<double> Multiplexer::probability(const std::string_view outcome) const {
+  if (auto error = detail::validateOutcome(outcome, output_.width)) {
+    return std::move(*error);
+  }
 
   double state = 0.;
   double weight = 0.5;
@@ -51,7 +56,7 @@ double Multiplexer::probability(const std::string_view outcome) const {
                     1 - static_cast<int>(options_.qubits));
 }
 
-Evaluation Multiplexer::evaluate(const Counts& counts) const {
+Result<Evaluation> Multiplexer::evaluate(const Counts& counts) const {
   return detail::evaluate(*this, counts);
 }
 

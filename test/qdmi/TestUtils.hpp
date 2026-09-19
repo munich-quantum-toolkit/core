@@ -13,13 +13,39 @@
 
 #pragma once
 
+#include "qdmi/common/Common.hpp"
+
 #include <cstdlib>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <variant>
 
 namespace mqt::test {
+
+/// Fail a success-path test with the provider diagnostic.
+template <typename T> T value(qdmi::Result<T> result) {
+  if (const auto* error = std::get_if<qdmi::Error>(&result)) {
+    throw std::runtime_error(error->message);
+  }
+  return std::get<0>(std::move(result));
+}
+inline void value(const std::optional<qdmi::Error>& error) {
+  if (error) {
+    throw std::runtime_error(error->message);
+  }
+}
+template <typename T>
+std::optional<int> errorStatus(const qdmi::Result<T>& result) {
+  if (const auto* error = std::get_if<qdmi::Error>(&result)) {
+    return error->status;
+  }
+  return std::nullopt;
+}
+inline std::optional<int> errorStatus(const std::optional<qdmi::Error>& error) {
+  return error ? std::optional(error->status) : std::nullopt;
+}
 
 /// Temporarily sets or unsets an environment variable and restores its value.
 class ScopedEnvironmentVariable {

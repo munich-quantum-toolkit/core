@@ -9,6 +9,7 @@
  */
 
 #include "bench/BV.hpp"
+#include "bench/TestUtils.hpp"
 #include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/bench/Generate.h"
 
@@ -23,13 +24,16 @@ namespace mqt::bench {
 using namespace mlir;
 
 TEST(GenerateProgramTest, EmitsStructuredBVWithMethodSpecificResources) {
-  const BV staticBenchmark{{.hiddenBitstring = "101"}};
-  const BV dynamicBenchmark{
-      {.hiddenBitstring = "101", .method = BVMethod::Dynamic}};
+  const auto staticBenchmark =
+      test::value(BV::create({.hiddenBitstring = "101"}));
+  const auto dynamicBenchmark = test::value(
+      BV::create({.hiddenBitstring = "101", .method = BVMethod::Dynamic}));
   auto staticProgram = generate(staticBenchmark);
   auto dynamicProgram = generate(dynamicBenchmark);
-  ASSERT_TRUE(staticProgram);
-  ASSERT_TRUE(dynamicProgram);
+  ASSERT_TRUE(static_cast<bool>(staticProgram))
+      << llvm::toString(staticProgram.takeError());
+  ASSERT_TRUE(static_cast<bool>(dynamicProgram))
+      << llvm::toString(dynamicProgram.takeError());
 
   EXPECT_EQ(test::countOps<qc::AllocOp>(staticProgram->module()), 1U);
   EXPECT_EQ(test::countOps<memref::AllocOp>(staticProgram->module()), 1U);

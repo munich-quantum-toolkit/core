@@ -17,9 +17,11 @@
 #include "mqt/Compiler/Target.h"
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/QCO/Utils/DDAdapter.h"
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mqt/bench/Generate.h"
 #include "qdmi/Client.hpp"
+#include "qdmi/Result.hpp"
 #include "qdmi/driver/SessionConfig.hpp"
 
 #include "qiskit/Qiskit.h"
@@ -43,6 +45,7 @@
 #include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <Python.h>
 #include <cctype>
 #include <complex>
 #include <cstddef>
@@ -84,8 +87,36 @@ template <class T>
 
 template <class T> [[nodiscard]] static T takeResult(llvm::Expected<T> result) {
   if (!result) {
-    const auto message = llvm::toString(result.takeError());
-    throw nb::value_error(message.c_str());
+    std::optional<qdmi::Error> providerError;
+    auto error = llvm::handleErrors(result.takeError(),
+                                    [&](const mlir::QDMIError& failure) {
+                                      providerError = failure.error();
+                                    });
+    if (error) {
+      auto* type = PyExc_ValueError;
+      std::string message;
+      llvm::handleAllErrors(
+          std::move(error), [&](const llvm::ErrorInfoBase& failure) {
+            if (!message.empty()) {
+              message.push_back('\n');
+            }
+            message += failure.message();
+            const auto code = failure.convertToErrorCode();
+            if (code == std::errc::result_out_of_range) {
+              type = PyExc_IndexError;
+            } else if (code == std::errc::io_error ||
+                       code == std::errc::no_such_file_or_directory ||
+                       code == std::errc::permission_denied) {
+              type = PyExc_OSError;
+            } else if (code == std::errc::state_not_recoverable) {
+              type = PyExc_RuntimeError;
+            }
+          });
+      const nb::gil_scoped_acquire acquire;
+      PyErr_SetString(type, message.c_str());
+      throw nb::python_error();
+    }
+    bindings::raiseQDMIError(*providerError);
   }
   return std::move(*result);
 }
@@ -335,7 +366,7 @@ compileProgram(const nb::object& program, const mlir::ProgramFormat output,
   if (nb::isinstance<nb::str>(target)) {
     const auto id = nb::cast<std::string>(target);
     const nb::gil_scoped_release release;
-    return qdmi::Session::openDevice(id);
+    return bindings::takeQDMIResult(qdmi::Session::openDevice(id));
   }
   throw nb::type_error("target must be a QDMI Device or registered device ID");
 }
@@ -535,7 +566,8 @@ sampleQCO(const mlir::QCOProgram& program, size_t shots, uint64_t seed) {
 [[nodiscard]] static DenseMatrix
 buildDenseFunctionality(const nb::object& program) {
   return withQCOProgram(program, [](const mlir::QCOProgram& qco) {
-    dd::Package ddPackage(0);
+    auto package = takeResult(mlir::qco::ddResult(dd::Package::create(0)));
+    auto& ddPackage = *package;
     const auto matrix = buildQCOFunctionality(qco, ddPackage);
     return toDenseMatrix(matrix, ddPackage.qubits());
   });
@@ -543,7 +575,8 @@ buildDenseFunctionality(const nb::object& program) {
 
 [[nodiscard]] static DenseVector simulateDense(const nb::object& program) {
   return withQCOProgram(program, [](const mlir::QCOProgram& qco) {
-    dd::Package ddPackage(0);
+    auto package = takeResult(mlir::qco::ddResult(dd::Package::create(0)));
+    auto& ddPackage = *package;
     auto func = entryFunc(qco);
     const auto state = withDiagnostics(
         func.getContext(), "cannot simulate this QCO program",
@@ -561,11 +594,8 @@ sample(const nb::object& program, size_t shots, uint64_t seed) {
 
 [[nodiscard]] static mlir::QCProgram
 generateBenchmark(const std::string_view instanceSpecificationJSON) {
-  auto generated = bench::generate(instanceSpecificationJSON);
-  if (!generated) {
-    throw std::runtime_error("failed to generate benchmark");
-  }
-  return std::move(generated->program);
+  auto generated = takeResult(bench::generate(instanceSpecificationJSON));
+  return std::move(generated.program);
 }
 
 NB_MODULE(MQT_CORE_MODULE_NAME, m) {
@@ -1059,23 +1089,18 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
              std::optional<std::string> custom3,
              std::optional<std::string> custom4,
              std::optional<std::string> custom5) {
-            // Keep this preflight at the Python boundary so the public
-            // ValueError does not depend on cross-extension exception
-            // translation.
-            if (deviceConfig && deviceConfigFile) {
-              throw nb::value_error(
-                  "device_config and device_config_file are mutually "
-                  "exclusive");
-            }
-            const auto overrides = qdmi::makeDeviceSessionConfig(
-                std::move(baseUrl), std::move(token), std::move(authFile),
-                std::move(authUrl), std::move(username), std::move(password),
-                std::move(deviceConfig), std::move(deviceConfigFile),
-                std::move(custom1), std::move(custom2), std::move(custom3),
-                std::move(custom4), std::move(custom5));
+            const auto overrides =
+                bindings::takeQDMIResult(qdmi::makeDeviceSessionConfig(
+                    std::move(baseUrl), std::move(token), std::move(authFile),
+                    std::move(authUrl), std::move(username),
+                    std::move(password), std::move(deviceConfig),
+                    std::move(deviceConfigFile), std::move(custom1),
+                    std::move(custom2), std::move(custom3), std::move(custom4),
+                    std::move(custom5)));
             auto target = [&] {
               const nb::gil_scoped_release release;
-              auto device = qdmi::Session::openDevice(deviceId, overrides);
+              auto device = bindings::takeQDMIResult(
+                  qdmi::Session::openDevice(deviceId, overrides));
               return mlir::compilerTargetFromDevice(device);
             }();
             return takeResult(std::move(target));

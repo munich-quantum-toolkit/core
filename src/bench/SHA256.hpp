@@ -10,12 +10,14 @@
 
 #pragma once
 
+#include "bench/Error.hpp"
+
 #include <string>
 #include <string_view>
 
 namespace mqt::bench::detail {
 
 /// Return the lowercase SHA-256 digest used for stable benchmark case IDs.
-[[nodiscard]] std::string sha256Hex(std::string_view input);
+[[nodiscard]] Result<std::string> sha256Hex(std::string_view input);
 
 } // namespace mqt::bench::detail

@@ -10,24 +10,31 @@
 
 #include "bench/RepeatUntilSuccess.hpp"
 
+#include "bench/Error.hpp"
 #include "bench/Evaluation.hpp"
 
 #include "EvaluationUtils.hpp"
 
 #include <numbers>
-#include <stdexcept>
 #include <string_view>
+#include <utility>
 
 namespace mqt::bench {
 
-RepeatUntilSuccess::RepeatUntilSuccess(RepeatUntilSuccessOptions options)
-    : options_(options), output_{.name = "result", .width = 1} {
-  if (options_.dataQubits == 0 ||
-      options_.dataQubits > RepeatUntilSuccessOptions::MAX_DATA_QUBITS) {
-    throw std::invalid_argument(
-        "repeat-until-success data qubits must be between 1 and 1000000");
+Result<RepeatUntilSuccess>
+RepeatUntilSuccess::create(RepeatUntilSuccessOptions options) {
+  if (options.dataQubits == 0 ||
+      options.dataQubits > RepeatUntilSuccessOptions::MAX_DATA_QUBITS) {
+    return Error{
+        .message =
+            "repeat-until-success data qubits must be between 1 and 1000000",
+    };
   }
+  return RepeatUntilSuccess(options);
 }
+
+RepeatUntilSuccess::RepeatUntilSuccess(RepeatUntilSuccessOptions options)
+    : options_(options), output_{.name = "result", .width = 1} {}
 
 const RepeatUntilSuccessOptions& RepeatUntilSuccess::options() const noexcept {
   return options_;
@@ -35,13 +42,16 @@ const RepeatUntilSuccessOptions& RepeatUntilSuccess::options() const noexcept {
 
 const Output& RepeatUntilSuccess::output() const noexcept { return output_; }
 
-double RepeatUntilSuccess::probability(const std::string_view outcome) const {
-  detail::validateOutcome(outcome, output_.width);
+Result<double>
+RepeatUntilSuccess::probability(const std::string_view outcome) const {
+  if (auto error = detail::validateOutcome(outcome, output_.width)) {
+    return std::move(*error);
+  }
   constexpr auto bias = std::numbers::sqrt2 / 3.;
   return outcome == "0" ? 0.5 + bias : 0.5 - bias;
 }
 
-Evaluation RepeatUntilSuccess::evaluate(const Counts& counts) const {
+Result<Evaluation> RepeatUntilSuccess::evaluate(const Counts& counts) const {
   return detail::evaluate(*this, counts);
 }
 

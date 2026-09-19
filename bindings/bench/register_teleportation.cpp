@@ -11,6 +11,8 @@
 #include "bench/JSON.hpp"
 #include "bench/Teleportation.hpp"
 
+#include "Result.hpp"
+
 #include "nanobind/nanobind.h"
 #include "nanobind/stl/map.h"         // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/string.h"      // NOLINT(misc-include-cleaner)
@@ -20,6 +22,8 @@ namespace mqt {
 
 namespace nb = nanobind;
 using namespace nb::literals;
+using bindings::bindBenchResult;
+using bindings::takeBenchResult;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerTeleportation(const nb::module_& m) {
@@ -34,10 +38,10 @@ measurements stay internal.)pb");
       .def_prop_ro("output", &bench::Teleportation::output,
                    nb::rv_policy::reference_internal,
                    "The logical output register.")
-      .def("probability", &bench::Teleportation::probability, "outcome"_a,
-           "Return the ideal probability of an outcome.")
-      .def("evaluate", &bench::Teleportation::evaluate, "counts"_a,
-           "Compare sampled counts with the ideal distribution.")
+      .def("probability", bindBenchResult(&bench::Teleportation::probability),
+           "outcome"_a, "Return the ideal probability of an outcome.")
+      .def("evaluate", bindBenchResult(&bench::Teleportation::evaluate),
+           "counts"_a, "Compare sampled counts with the ideal distribution.")
       .def(
           "generate",
           [](const bench::Teleportation& value) {
@@ -56,20 +60,22 @@ measurements stay internal.)pb");
       .def_prop_ro(
           "manifest_json",
           [](const bench::Teleportation& value) {
-            return bench::toManifestJSON(value);
+            return takeBenchResult(bench::toManifestJSON(value));
           },
           "The canonical manifest JSON.")
       .def_prop_ro(
           "case_id",
           [](const bench::Teleportation& value) {
-            return bench::caseId(value);
+            return takeBenchResult(bench::caseId(value));
           },
           "The stable semantic case ID.")
-      .def_static("from_instance_specification_json",
-                  &bench::teleportationFromInstanceSpecificationJSON, "json"_a,
-                  nb::kw_only(), "source"_a = "<instance-specification>",
-                  "Parse a strict benchmark instance specification.")
-      .def_static("from_manifest_json", &bench::teleportationFromManifestJSON,
+      .def_static(
+          "from_instance_specification_json",
+          bindBenchResult(&bench::teleportationFromInstanceSpecificationJSON),
+          "json"_a, nb::kw_only(), "source"_a = "<instance-specification>",
+          "Parse a strict benchmark instance specification.")
+      .def_static("from_manifest_json",
+                  bindBenchResult(&bench::teleportationFromManifestJSON),
                   "json"_a, nb::kw_only(), "source"_a = "<manifest>",
                   "Parse a strict benchmark manifest.");
 }

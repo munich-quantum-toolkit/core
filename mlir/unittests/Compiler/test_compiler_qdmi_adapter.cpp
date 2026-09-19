@@ -13,6 +13,8 @@
 #include "qdmi/Client.hpp"
 #include "qdmi/driver/Driver.hpp"
 
+#include "TestUtils.hpp"
+
 #include "gtest/gtest.h"
 
 #include "llvm/ADT/ArrayRef.h"
@@ -43,7 +45,8 @@ findOperation(const CompilerTarget& target, const llvm::StringRef name) {
 
 TEST(CompilerQDMIAdapterTest, SnapshotsIQMCalibrationAndLifetime) {
   const auto target = llvm::cantFail([] {
-    const auto device = qdmi::Session::openDevice("mqt.sc.iqm.garnet");
+    const auto device =
+        mqt::test::value(qdmi::Session::openDevice("mqt.sc.iqm.garnet"));
     return mlir::compilerTargetFromDevice(device);
   }());
 
@@ -90,8 +93,8 @@ TEST(CompilerQDMIAdapterTest, SnapshotsIQMCalibrationAndLifetime) {
 }
 
 TEST(CompilerQDMIAdapterTest, QueriesNamesAndSiteIndicesOncePerSnapshot) {
-  auto library = std::make_shared<qdmi::DynamicDeviceLibrary>(
-      MQT_CORE_MLIR_SC_DEVICE_LIBRARY, "MQT_SC");
+  auto library = mqt::test::value(qdmi::DynamicDeviceLibrary::create(
+      MQT_CORE_MLIR_SC_DEVICE_LIBRARY, "MQT_SC"));
   static thread_local decltype(QDMI_device_session_query_site_property)*
       querySite = nullptr;
   static thread_local decltype(QDMI_device_session_query_operation_property)*
@@ -116,7 +119,8 @@ TEST(CompilerQDMIAdapterTest, QueriesNamesAndSiteIndicesOncePerSnapshot) {
         return queryOperation(session, operation, numSites, sites, numParams,
                               params, property, size, value, sizeRet);
       };
-  QDMI_Device_impl_d rawDevice(library);
+  auto rawDeviceOwner = mqt::test::value(QDMI_Device_impl_d::create(library));
+  auto& rawDevice = *rawDeviceOwner;
   const auto device = qdmi::Session::createSessionlessDevice(&rawDevice);
   for (int snapshot = 0; snapshot < 2; ++snapshot) {
     indexQueries = 0;
@@ -131,8 +135,8 @@ TEST(CompilerQDMIAdapterTest, QueriesNamesAndSiteIndicesOncePerSnapshot) {
 }
 
 TEST(CompilerQDMIAdapterTest, ReturnsProviderQueryFailuresAsErrors) {
-  auto library = std::make_shared<qdmi::DynamicDeviceLibrary>(
-      MQT_CORE_MLIR_SC_DEVICE_LIBRARY, "MQT_SC");
+  auto library = mqt::test::value(qdmi::DynamicDeviceLibrary::create(
+      MQT_CORE_MLIR_SC_DEVICE_LIBRARY, "MQT_SC"));
   static thread_local decltype(QDMI_device_session_query_device_property)*
       queryDevice = nullptr;
   static thread_local decltype(QDMI_device_session_query_site_property)*
@@ -151,7 +155,7 @@ TEST(CompilerQDMIAdapterTest, ReturnsProviderQueryFailuresAsErrors) {
       [](QDMI_Device_Session session, QDMI_Device_Property property,
          size_t size, void* value, size_t* sizeRet) {
         return property == failingDeviceProperty
-                   ? QDMI_ERROR_FATAL
+                   ? QDMI_ERROR_PERMISSIONDENIED
                    : queryDevice(session, property, size, value, sizeRet);
       };
   library->device_session_query_site_property =
@@ -159,7 +163,7 @@ TEST(CompilerQDMIAdapterTest, ReturnsProviderQueryFailuresAsErrors) {
          QDMI_Site_Property property, size_t size, void* value,
          size_t* sizeRet) {
         return property == failingSiteProperty
-                   ? QDMI_ERROR_FATAL
+                   ? QDMI_ERROR_PERMISSIONDENIED
                    : querySite(session, site, property, size, value, sizeRet);
       };
   library->device_session_query_operation_property =
@@ -169,19 +173,24 @@ TEST(CompilerQDMIAdapterTest, ReturnsProviderQueryFailuresAsErrors) {
          size_t* sizeRet) {
         return property == failingOperationProperty &&
                        (!failSiteCalibration || numSites != 0)
-                   ? QDMI_ERROR_FATAL
+                   ? QDMI_ERROR_PERMISSIONDENIED
                    : queryOperation(session, operation, numSites, sites,
                                     numParams, params, property, size, value,
                                     sizeRet);
       };
-  QDMI_Device_impl_d rawDevice(library);
+  auto rawDeviceOwner = mqt::test::value(QDMI_Device_impl_d::create(library));
+  auto& rawDevice = *rawDeviceOwner;
   const auto device = qdmi::Session::createSessionlessDevice(&rawDevice);
   const auto expectFailure = [&](auto property) {
     SCOPED_TRACE(qdmi::toString(property));
     auto result = mlir::compilerTargetFromDevice(device);
     ASSERT_FALSE(result);
-    EXPECT_NE(llvm::toString(result.takeError()).find(qdmi::toString(property)),
-              std::string::npos);
+    llvm::handleAllErrors(
+        result.takeError(), [&](const mlir::QDMIError& error) {
+          EXPECT_EQ(error.error().status, QDMI_ERROR_PERMISSIONDENIED);
+          EXPECT_NE(error.error().message.find(qdmi::toString(property)),
+                    std::string::npos);
+        });
   };
   for (const auto property : {
            QDMI_DEVICE_PROPERTY_NAME,
@@ -241,7 +250,8 @@ TEST(CompilerQDMIAdapterTest, ReturnsProviderQueryFailuresAsErrors) {
 }
 
 TEST(CompilerQDMIAdapterTest, InfersDDSIMTargetFacts) {
-  const auto device = qdmi::Session::openDevice("mqt.ddsim.default");
+  const auto device =
+      mqt::test::value(qdmi::Session::openDevice("mqt.ddsim.default"));
   const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
 
   EXPECT_EQ(target.numSites(), 65535);
@@ -306,7 +316,8 @@ TEST(CompilerQDMIAdapterTest, RejectsNonhomogeneousOperationSupport) {
   qdmi::DeviceSessionConfig overrides;
   overrides.deviceConfiguration =
       qdmi::FileDeviceConfiguration{MQT_CORE_MLIR_HETEROGENEOUS_SC_CONFIG};
-  const auto device = qdmi::Session::openDevice("mqt.sc.default", overrides);
+  const auto device =
+      mqt::test::value(qdmi::Session::openDevice("mqt.sc.default", overrides));
   auto target = mlir::compilerTargetFromDevice(device);
   ASSERT_FALSE(target);
   const auto message = llvm::toString(target.takeError());
@@ -318,7 +329,8 @@ TEST(CompilerQDMIAdapterTest, SnapshotsHomogeneousHigherArityOperation) {
   qdmi::DeviceSessionConfig overrides;
   overrides.deviceConfiguration =
       qdmi::FileDeviceConfiguration{MQT_CORE_MLIR_HIGHER_ARITY_SC_CONFIG};
-  const auto device = qdmi::Session::openDevice("mqt.sc.default", overrides);
+  const auto device =
+      mqt::test::value(qdmi::Session::openDevice("mqt.sc.default", overrides));
   const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
 
   EXPECT_TRUE(target.supportsOperation("ccnot", 3, 0));
@@ -332,7 +344,8 @@ TEST(CompilerQDMIAdapterTest, PreservesOneWayDirectionalOperationSupport) {
   overrides.deviceConfiguration = qdmi::FileDeviceConfiguration{
       MQT_CORE_MLIR_DIRECTIONAL_ONE_WAY_SC_CONFIG,
   };
-  const auto device = qdmi::Session::openDevice("mqt.sc.default", overrides);
+  const auto device =
+      mqt::test::value(qdmi::Session::openDevice("mqt.sc.default", overrides));
   const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
 
   ASSERT_EQ(target.couplings().size(), 1U);
@@ -363,7 +376,8 @@ TEST(CompilerQDMIAdapterTest, OmitsOperationsWithNoSupportedPlacements) {
     ]
   })",
   };
-  const auto device = qdmi::Session::openDevice("mqt.sc.default", overrides);
+  const auto device =
+      mqt::test::value(qdmi::Session::openDevice("mqt.sc.default", overrides));
   const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
   EXPECT_EQ(target.nativeOperationsKind(),
             CompilerTarget::NativeOperations::Kind::Explicit);
@@ -377,7 +391,8 @@ TEST(CompilerQDMIAdapterTest,
   overrides.deviceConfiguration = qdmi::FileDeviceConfiguration{
       MQT_CORE_MLIR_DIRECTIONAL_TWO_WAY_SC_CONFIG,
   };
-  const auto device = qdmi::Session::openDevice("mqt.sc.default", overrides);
+  const auto device =
+      mqt::test::value(qdmi::Session::openDevice("mqt.sc.default", overrides));
   const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
 
   ASSERT_EQ(target.couplings().size(), 1);
@@ -395,8 +410,8 @@ TEST(CompilerQDMIAdapterTest,
 
 TEST(CompilerQDMIAdapterTest,
      SelectsPayloadByPreferenceAndIncludesMaximalCapabilities) {
-  auto library = std::make_shared<qdmi::DynamicDeviceLibrary>(
-      MQT_CORE_MLIR_DDSIM_DEVICE_LIBRARY, "MQT_DDSIM");
+  auto library = mqt::test::value(qdmi::DynamicDeviceLibrary::create(
+      MQT_CORE_MLIR_DDSIM_DEVICE_LIBRARY, "MQT_DDSIM"));
   static thread_local decltype(QDMI_device_session_query_device_property)*
       query = nullptr;
   static thread_local std::vector<QDMI_Program_Format> formats;
@@ -419,7 +434,8 @@ TEST(CompilerQDMIAdapterTest,
     }
     return QDMI_SUCCESS;
   };
-  QDMI_Device_impl_d rawDevice(library);
+  auto rawDeviceOwner = mqt::test::value(QDMI_Device_impl_d::create(library));
+  auto& rawDevice = *rawDeviceOwner;
   const auto device = qdmi::Session::createSessionlessDevice(&rawDevice);
   formats = {
       QDMI_PROGRAM_FORMAT_QIRBASESTRING,
@@ -523,8 +539,8 @@ TEST(CompilerQDMIAdapterTest,
 
 TEST(CompilerQDMIAdapterTest,
      CompilationCreatesNoJobAndSubmissionChecksContract) {
-  auto library = std::make_shared<qdmi::DynamicDeviceLibrary>(
-      MQT_CORE_MLIR_DDSIM_DEVICE_LIBRARY, "MQT_DDSIM");
+  auto library = mqt::test::value(qdmi::DynamicDeviceLibrary::create(
+      MQT_CORE_MLIR_DDSIM_DEVICE_LIBRARY, "MQT_DDSIM"));
   static thread_local decltype(QDMI_device_session_create_device_job)*
       createJob = nullptr;
   static thread_local size_t creations = 0;
@@ -535,7 +551,8 @@ TEST(CompilerQDMIAdapterTest,
     ++creations;
     return createJob(session, job);
   };
-  QDMI_Device_impl_d rawDevice(library);
+  auto rawDeviceOwner = mqt::test::value(QDMI_Device_impl_d::create(library));
+  auto& rawDevice = *rawDeviceOwner;
   const auto device = qdmi::Session::createSessionlessDevice(&rawDevice);
   constexpr auto source =
       "OPENQASM 3.0; include \"stdgates.inc\"; "
@@ -551,13 +568,14 @@ TEST(CompilerQDMIAdapterTest,
   EXPECT_EQ(compiled.payload().substr(0, 2), "BC");
   auto job = llvm::cantFail(mlir::submitProgram(device, compiled, 32));
   EXPECT_EQ(creations, 1);
-  EXPECT_TRUE(job.wait());
-  EXPECT_EQ(job.getShots().size(), 32);
-  const auto otherSession = qdmi::Session::openDevice("mqt.ddsim.default");
+  EXPECT_TRUE(mqt::test::value(job.wait()));
+  EXPECT_EQ(mqt::test::value(job.getShots()).size(), 32);
+  const auto otherSession =
+      mqt::test::value(qdmi::Session::openDevice("mqt.ddsim.default"));
   auto otherJob =
       llvm::cantFail(mlir::submitProgram(otherSession, compiled, 16));
-  EXPECT_TRUE(otherJob.wait());
-  EXPECT_EQ(otherJob.getShots().size(), 16);
+  EXPECT_TRUE(mqt::test::value(otherJob.wait()));
+  EXPECT_EQ(mqt::test::value(otherJob.getShots()).size(), 16);
 
   const auto explicitTarget = llvm::cantFail(
       CompilerTarget::create(2, CompilerTarget::Connectivity::allToAll(),
@@ -584,15 +602,16 @@ TEST(CompilerQDMIAdapterTest,
 }
 
 TEST(CompilerQDMIAdapterTest, CompilesAdaptiveMeasurementControlledLoop) {
-  const auto device = qdmi::Session::openDevice("mqt.ddsim.default");
+  const auto device =
+      mqt::test::value(qdmi::Session::openDevice("mqt.ddsim.default"));
   constexpr auto source =
       "OPENQASM 3.0; include \"stdgates.inc\"; qubit q; bit c; x q; "
       "c = measure q; while (c) { x q; c = measure q; }";
   auto compiled = llvm::cantFail(
       mlir::compileProgram(mlir::OpenQASMProgram(source), device));
   auto job = llvm::cantFail(mlir::submitProgram(device, compiled, 8));
-  ASSERT_TRUE(job.wait());
-  EXPECT_EQ(job.getCounts().at("0"), 8);
+  ASSERT_TRUE(mqt::test::value(job.wait()));
+  EXPECT_EQ(mqt::test::value(job.getCounts()).at("0"), 8);
 }
 
 TEST(CompilerQDMIAdapterTest,
@@ -628,8 +647,8 @@ TEST(CompilerQDMIAdapterTest,
 }
 
 TEST(CompilerQDMIAdapterTest, SubmissionQueriesOnlyTheRequiredMetadata) {
-  auto library = std::make_shared<qdmi::DynamicDeviceLibrary>(
-      MQT_CORE_MLIR_DDSIM_DEVICE_LIBRARY, "MQT_DDSIM");
+  auto library = mqt::test::value(qdmi::DynamicDeviceLibrary::create(
+      MQT_CORE_MLIR_DDSIM_DEVICE_LIBRARY, "MQT_DDSIM"));
   static thread_local decltype(QDMI_device_session_query_device_property)*
       queryDevice = nullptr;
   static thread_local decltype(QDMI_device_session_query_site_property)*
@@ -653,7 +672,8 @@ TEST(CompilerQDMIAdapterTest, SubmissionQueriesOnlyTheRequiredMetadata) {
                               property == QDMI_SITE_PROPERTY_T2;
         return querySite(session, site, property, size, value, sizeRet);
       };
-  QDMI_Device_impl_d rawDevice(library);
+  auto rawDeviceOwner = mqt::test::value(QDMI_Device_impl_d::create(library));
+  auto& rawDevice = *rawDeviceOwner;
   const auto device = qdmi::Session::createSessionlessDevice(&rawDevice);
   constexpr auto source = "OPENQASM 3.1; qubit q; bit c = measure q;";
   const auto compiled = llvm::cantFail(
@@ -662,14 +682,14 @@ TEST(CompilerQDMIAdapterTest, SubmissionQueriesOnlyTheRequiredMetadata) {
   auto job = llvm::cantFail(mlir::submitProgram(device, compiled, 4));
   EXPECT_EQ(siteLists, 1);
   EXPECT_EQ(calibrationQueries, 0);
-  ASSERT_TRUE(job.wait());
-  EXPECT_EQ(job.getCounts().at("0"), 4);
+  ASSERT_TRUE(mqt::test::value(job.wait()));
+  EXPECT_EQ(mqt::test::value(job.getCounts()).at("0"), 4);
 
   siteLists = calibrationQueries = 0;
   auto sourceJob = llvm::cantFail(
       mlir::submitProgram(device, mlir::OpenQASMProgram(source), 4));
   EXPECT_EQ(siteLists, 1);
   EXPECT_GT(calibrationQueries, 0);
-  ASSERT_TRUE(sourceJob.wait());
-  EXPECT_EQ(sourceJob.getCounts().at("0"), 4);
+  ASSERT_TRUE(mqt::test::value(sourceJob.wait()));
+  EXPECT_EQ(mqt::test::value(sourceJob.getCounts()).at("0"), 4);
 }

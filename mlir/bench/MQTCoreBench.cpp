@@ -289,14 +289,15 @@ generateFromInstanceSpecification(const std::string& instanceSpecification,
                                   const std::string& source) {
   auto generated = mqt::bench::generate(instanceSpecification, source);
   if (!generated) {
+    llvm::errs() << llvm::toString(generated.takeError()) << '\n';
     return 1;
   }
   return publish(std::move(*generated), outputFormat, outputDirectory);
 }
 
 [[nodiscard]] static int
-printJSON(std::variant<std::string, mqt::bench::JSONError> result) {
-  if (const auto* error = std::get_if<mqt::bench::JSONError>(&result)) {
+printJSON(std::variant<std::string, mqt::bench::Error> result) {
+  if (const auto* error = std::get_if<mqt::bench::Error>(&result)) {
     llvm::errs() << error->message << '\n';
     return 1;
   }
@@ -314,7 +315,7 @@ int main(int argc, char** argv) {
     return 0;
   }
   if (describeCommand) {
-    return printJSON(mqt::bench::tryDescribeBenchmarkJSON(benchmarkId));
+    return printJSON(mqt::bench::describeBenchmarkJSON(benchmarkId));
   }
   if (generateCommand) {
     const auto instanceSpecification = readText(instanceSpecificationPath);
@@ -341,8 +342,8 @@ int main(int argc, char** argv) {
     }
     const auto countsSource =
         countsInputPath == "-" ? "<stdin>" : countsInputPath.getValue();
-    return printJSON(mqt::bench::tryEvaluateJSON(
-        *manifest, *counts, manifestInputPath, countsSource));
+    return printJSON(mqt::bench::evaluateJSON(*manifest, *counts,
+                                              manifestInputPath, countsSource));
   }
   llvm::errs() << "a command is required; use --help for usage\n";
   return 1;

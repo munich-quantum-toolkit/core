@@ -11,7 +11,7 @@ set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-common)
 if(NOT TARGET ${TARGET_NAME})
   add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMICommon)
 
-  target_sources(${TARGET_NAME} PRIVATE Common.cpp DeviceConfiguration.cpp)
+  target_sources(${TARGET_NAME} PRIVATE Common.cpp DeviceConfiguration.cpp Diagnostics.cpp)
 
   target_sources(
     ${TARGET_NAME}

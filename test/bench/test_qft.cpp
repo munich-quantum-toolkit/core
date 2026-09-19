@@ -8,12 +8,14 @@
  * Licensed under the MIT License
  */
 
+#include "bench/Error.hpp"
 #include "bench/Evaluation.hpp"
 #include "bench/QFT.hpp"
+#include "bench/TestUtils.hpp"
 
 #include "gtest/gtest.h"
 
-#include <stdexcept>
+namespace test = mqt::bench::test;
 
 namespace {
 
@@ -23,7 +25,8 @@ using mqt::bench::QFTMethod;
 using mqt::bench::QFTOptions;
 
 TEST(QFT, UsesTheStandardMethodByDefault) {
-  const QFT benchmark{{.qubits = 3, .periodExponent = 1}};
+  const auto benchmark =
+      test::value(QFT::create({.qubits = 3, .periodExponent = 1}));
   EXPECT_EQ(benchmark.options().method, QFTMethod::Standard);
   EXPECT_EQ(benchmark.output(), (Output{"result", 3}));
 }
@@ -31,38 +34,39 @@ TEST(QFT, UsesTheStandardMethodByDefault) {
 TEST(QFT, ValidatesTheConfiguredInstance) {
   // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
   constexpr auto invalidMethod = static_cast<QFTMethod>(2);
-  EXPECT_THROW(static_cast<void>(QFT{{.qubits = 0, .periodExponent = 0}}),
-               std::invalid_argument);
-  EXPECT_THROW(static_cast<void>(QFT{{.qubits = QFTOptions::MAX_QUBITS + 1,
-                                      .periodExponent = 0}}),
-               std::invalid_argument);
-  EXPECT_THROW(static_cast<void>(QFT{{.qubits = 3, .periodExponent = 4}}),
-               std::invalid_argument);
-  EXPECT_THROW(static_cast<void>(QFT{{.qubits = 1075, .periodExponent = 1075}}),
-               std::invalid_argument);
-  EXPECT_THROW(
-      static_cast<void>(
-          QFT{{.qubits = 3, .periodExponent = 1, .method = invalidMethod}}),
-      std::invalid_argument);
+  EXPECT_EQ(test::errorKind(QFT::create({.qubits = 0, .periodExponent = 0})),
+            mqt::bench::Error::Kind::InvalidArgument);
+  EXPECT_EQ(test::errorKind(QFT::create(
+                {.qubits = QFTOptions::MAX_QUBITS + 1, .periodExponent = 0})),
+            mqt::bench::Error::Kind::InvalidArgument);
+  EXPECT_EQ(test::errorKind(QFT::create({.qubits = 3, .periodExponent = 4})),
+            mqt::bench::Error::Kind::InvalidArgument);
+  EXPECT_EQ(
+      test::errorKind(QFT::create({.qubits = 1075, .periodExponent = 1075})),
+      mqt::bench::Error::Kind::InvalidArgument);
+  EXPECT_EQ(test::errorKind(QFT::create(
+                {.qubits = 3, .periodExponent = 1, .method = invalidMethod})),
+            mqt::bench::Error::Kind::InvalidArgument);
 }
 
 TEST(QFT, GivesTwoPeaksForPeriodTwo) {
-  const QFT benchmark{{.qubits = 3, .periodExponent = 1}};
-  EXPECT_DOUBLE_EQ(benchmark.probability("000"), 0.5);
-  EXPECT_DOUBLE_EQ(benchmark.probability("100"), 0.5);
-  EXPECT_DOUBLE_EQ(benchmark.probability("010"), 0.);
+  const auto benchmark =
+      test::value(QFT::create({.qubits = 3, .periodExponent = 1}));
+  EXPECT_DOUBLE_EQ(test::value(benchmark.probability("000")), 0.5);
+  EXPECT_DOUBLE_EQ(test::value(benchmark.probability("100")), 0.5);
+  EXPECT_DOUBLE_EQ(test::value(benchmark.probability("010")), 0.);
 }
 
 TEST(QFT, GivesFourPeaksForPeriodFour) {
-  const QFT benchmark{
-      {.qubits = 4, .periodExponent = 2, .method = QFTMethod::Semiclassical}};
+  const auto benchmark = test::value(QFT::create(
+      {.qubits = 4, .periodExponent = 2, .method = QFTMethod::Semiclassical}));
   for (const auto* outcome : {"0000", "0100", "1000", "1100"}) {
-    EXPECT_DOUBLE_EQ(benchmark.probability(outcome), 0.25);
+    EXPECT_DOUBLE_EQ(test::value(benchmark.probability(outcome)), 0.25);
   }
-  EXPECT_DOUBLE_EQ(benchmark.probability("0001"), 0.);
+  EXPECT_DOUBLE_EQ(test::value(benchmark.probability("0001")), 0.);
 
-  const auto evaluation = benchmark.evaluate(
-      {{"0000", 25}, {"0100", 25}, {"1000", 25}, {"1100", 25}});
+  const auto evaluation = test::value(benchmark.evaluate(
+      {{"0000", 25}, {"0100", 25}, {"1000", 25}, {"1100", 25}}));
   EXPECT_DOUBLE_EQ(evaluation.totalVariationDistance, 0.);
   EXPECT_DOUBLE_EQ(evaluation.squaredHellingerFidelity, 1.);
   EXPECT_FALSE(evaluation.successProbability);

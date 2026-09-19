@@ -9,4 +9,5 @@
 if(TARGET MQT::CoreBench)
   file(GLOB_RECURSE BENCHMARK_TEST_SOURCES *.cpp)
   package_add_test(mqt-core-bench-test MQT::CoreBench ${BENCHMARK_TEST_SOURCES})
+  target_include_directories(mqt-core-bench-test PRIVATE ${PROJECT_SOURCE_DIR}/test)
 endif()

@@ -10,42 +10,47 @@
 
 #include "bench/GHZ.hpp"
 
+#include "bench/Error.hpp"
 #include "bench/Evaluation.hpp"
 
 #include "EvaluationUtils.hpp"
 
 #include <cmath>
 #include <cstddef>
-#include <stdexcept>
 #include <string_view>
+#include <utility>
 
 namespace mqt::bench {
 
-GHZ::GHZ(GHZOptions options)
-    : options_(options), output_{.name = "result", .width = options_.qubits} {
-  if (options_.qubits == 0 || options_.qubits > GHZOptions::MAX_QUBITS) {
-    throw std::invalid_argument("GHZ qubits must be between 1 and 1000000");
+Result<GHZ> GHZ::create(GHZOptions options) {
+  if (options.qubits == 0 || options.qubits > GHZOptions::MAX_QUBITS) {
+    return Error{.message = "GHZ qubits must be between 1 and 1000000"};
   }
-  if (options_.topology != GHZTopology::Linear &&
-      options_.topology != GHZTopology::Star) {
-    throw std::invalid_argument("unknown GHZ topology");
+  if (options.topology != GHZTopology::Linear &&
+      options.topology != GHZTopology::Star) {
+    return Error{.message = "unknown GHZ topology"};
   }
-  if (options_.basis != GHZBasis::Z && options_.basis != GHZBasis::X) {
-    throw std::invalid_argument("unknown GHZ measurement basis");
+  if (options.basis != GHZBasis::Z && options.basis != GHZBasis::X) {
+    return Error{.message = "unknown GHZ measurement basis"};
   }
-  if (options_.basis == GHZBasis::X &&
-      options_.qubits > GHZOptions::MAX_X_BASIS_QUBITS) {
-    throw std::invalid_argument(
-        "GHZ X-basis qubits must be between 1 and 1075");
+  if (options.basis == GHZBasis::X &&
+      options.qubits > GHZOptions::MAX_X_BASIS_QUBITS) {
+    return Error{.message = "GHZ X-basis qubits must be between 1 and 1075"};
   }
+  return GHZ(options);
 }
+
+GHZ::GHZ(GHZOptions options)
+    : options_(options), output_{.name = "result", .width = options_.qubits} {}
 
 const GHZOptions& GHZ::options() const noexcept { return options_; }
 
 const Output& GHZ::output() const noexcept { return output_; }
 
-double GHZ::probability(const std::string_view outcome) const {
-  detail::validateOutcome(outcome, output_.width);
+Result<double> GHZ::probability(const std::string_view outcome) const {
+  if (auto error = detail::validateOutcome(outcome, output_.width)) {
+    return std::move(*error);
+  }
 
   if (options_.basis == GHZBasis::Z) {
     const auto allZero = outcome.find('1') == std::string_view::npos;
@@ -63,7 +68,7 @@ double GHZ::probability(const std::string_view outcome) const {
   return std::ldexp(1., 1 - static_cast<int>(options_.qubits));
 }
 
-Evaluation GHZ::evaluate(const Counts& counts) const {
+Result<Evaluation> GHZ::evaluate(const Counts& counts) const {
   return detail::evaluate(*this, counts);
 }
 

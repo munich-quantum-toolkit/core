@@ -11,18 +11,23 @@
 #include "dd/ComplexValue.hpp"
 
 #include "dd/DDDefinitions.hpp"
+#include "dd/Error.hpp"
 #include "dd/RealNumber.hpp"
 
 #include <cassert>
+#include <charconv>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <iomanip>
 #include <istream>
+#include <memory>
 #include <ostream>
 #include <sstream>
 #include <string>
+#include <string_view>
+#include <system_error>
 #include <utility>
 
 namespace dd {
@@ -54,15 +59,61 @@ void ComplexValue::readBinary(std::istream& is) {
   RealNumber::readBinary(i, is);
 }
 
-void ComplexValue::fromString(const std::string& realStr, std::string imagStr) {
-  r = realStr.empty() ? 0. : std::stod(realStr);
-
-  std::erase(imagStr, ' ');
-  std::erase(imagStr, 'i');
-  if (imagStr == "+" || imagStr == "-") {
-    imagStr = imagStr + "1";
+Result<ComplexValue> ComplexValue::parse(std::string_view text) {
+  ComplexValue value;
+  auto const readPart = [](std::string_view& input, fp& part) {
+    if (input.starts_with('+')) {
+      input.remove_prefix(1);
+    }
+    if (input.empty()) {
+      return false;
+    }
+    const auto result = std::from_chars(std::to_address(input.begin()),
+                                        std::to_address(input.end()), part);
+    if (result.ec != std::errc{} || !std::isfinite(part)) {
+      return false;
+    }
+    input.remove_prefix(static_cast<size_t>(result.ptr - input.data()));
+    return true;
+  };
+  auto const imaginaryUnit = [](std::string_view input) {
+    return input == "i" || input == "I";
+  };
+  if (text.empty()) {
+    return value;
   }
-  i = imagStr.empty() ? 0. : std::stod(imagStr);
+  /// A real prefix can instead be the coefficient of a purely imaginary value.
+  auto remaining = text;
+  fp first = 0.;
+  if (readPart(remaining, first)) {
+    if (remaining.empty()) {
+      return ComplexValue{first};
+    }
+    if (imaginaryUnit(remaining)) {
+      return ComplexValue{0., first};
+    }
+    value.r = first;
+    text = remaining;
+  }
+  /// The serialized format permits spaces around the imaginary sign.
+  std::string imaginary(text);
+  std::erase(imaginary, ' ');
+  text = imaginary;
+  if (text.starts_with('+')) {
+    text.remove_prefix(1);
+  }
+  if (imaginaryUnit(text)) {
+    value.i = 1.;
+    return value;
+  }
+  if (text.starts_with('-') && imaginaryUnit(text.substr(1))) {
+    value.i = -1.;
+    return value;
+  }
+  if (!readPart(text, value.i) || !imaginaryUnit(text)) {
+    return Error{.message = "Invalid serialized complex number."};
+  }
+  return value;
 }
 
 std::pair<std::uint64_t, std::uint64_t>

@@ -54,8 +54,6 @@ target_sources(
          FILES
          ${UTILS_HEADERS_BUILD})
 
-set(LLVM_REQUIRES_EH ON)
-set(LLVM_REQUIRES_RTTI ON)
 add_mlir_library(
   MLIRQCODDAdapter
   PARTIAL_SOURCES_INTENDED
@@ -100,8 +98,6 @@ add_mlir_library(
   MLIRQTensorDialect)
 
 mqt_mlir_target_use_project_options(MLIRQCODDFunctionality)
-unset(LLVM_REQUIRES_EH)
-unset(LLVM_REQUIRES_RTTI)
 
 target_sources(
   MLIRQCODDFunctionality

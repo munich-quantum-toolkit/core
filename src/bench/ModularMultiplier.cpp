@@ -10,6 +10,7 @@
 
 #include "bench/ModularMultiplier.hpp"
 
+#include "bench/Error.hpp"
 #include "bench/Evaluation.hpp"
 
 #include "EvaluationUtils.hpp"
@@ -23,10 +24,10 @@
 #include <limits>
 #include <memory>
 #include <optional>
-#include <stdexcept>
 #include <string_view>
 #include <system_error>
 #include <utility>
+#include <variant>
 
 namespace mqt::bench {
 namespace {
@@ -64,6 +65,47 @@ binaryValue(const std::string_view bitstring) {
 
 } // namespace
 
+Result<ModularMultiplier>
+ModularMultiplier::create(ModularMultiplierOptions options) {
+  const auto width = options.multiplier.size();
+  if (width < 2U || width > ModularMultiplierOptions::MAX_BITS) {
+    return Error{
+        .message = "modular multiplier inputs must contain between 2 and "
+                   "63 bits",
+    };
+  }
+  if (options.modulus.size() != width) {
+    return Error{.message = "modular multiplier inputs must have equal widths"};
+  }
+  const auto multiplier = binaryValue(options.multiplier);
+  const auto modulus = binaryValue(options.modulus);
+  if (!multiplier || !modulus) {
+    return Error{
+        .message = "modular multiplier inputs must contain only '0' and "
+                   "'1'",
+    };
+  }
+  if (options.modulus.front() != '1') {
+    return Error{.message = "modular multiplier modulus must be canonical"};
+  }
+  if (*multiplier == 0 || *multiplier >= *modulus) {
+    return Error{
+        .message = "modular multiplier multiplier must satisfy 0 < a < "
+                   "N",
+    };
+  }
+  if (options.multiplicand.size() != width ||
+      options.multiplicand.find_first_not_of("01+") != std::string::npos ||
+      std::string_view("01+").find(options.control) == std::string_view::npos) {
+    return Error{
+        .message =
+            "modular multiplier multiplicand must match the input width and "
+            "multiplicand and control must contain only '0', '1', or '+'",
+    };
+  }
+  return ModularMultiplier(std::move(options));
+}
+
 ModularMultiplier::ModularMultiplier(ModularMultiplierOptions options)
     : options_(std::move(options)),
       output_{
@@ -71,38 +113,8 @@ ModularMultiplier::ModularMultiplier(ModularMultiplierOptions options)
           .width = (2U * options_.multiplier.size()) + 2U,
       } {
   const auto width = options_.multiplier.size();
-  if (width < 2U || width > ModularMultiplierOptions::MAX_BITS) {
-    throw std::invalid_argument(
-        "modular multiplier inputs must contain between 2 and "
-        "63 bits");
-  }
-  if (options_.modulus.size() != width) {
-    throw std::invalid_argument(
-        "modular multiplier inputs must have equal widths");
-  }
   const auto multiplier = binaryValue(options_.multiplier);
   const auto modulus = binaryValue(options_.modulus);
-  if (!multiplier || !modulus) {
-    throw std::invalid_argument(
-        "modular multiplier inputs must contain only '0' and "
-        "'1'");
-  }
-  if (options_.modulus.front() != '1') {
-    throw std::invalid_argument("modular multiplier modulus must be canonical");
-  }
-  if (*multiplier == 0 || *multiplier >= *modulus) {
-    throw std::invalid_argument(
-        "modular multiplier multiplier must satisfy 0 < a < "
-        "N");
-  }
-  if (options_.multiplicand.size() != width ||
-      options_.multiplicand.find_first_not_of("01+") != std::string::npos ||
-      std::string_view("01+").find(options_.control) ==
-          std::string_view::npos) {
-    throw std::invalid_argument(
-        "modular multiplier multiplicand must match the input width and "
-        "multiplicand and control must contain only '0', '1', or '+'");
-  }
   if (options_.control != '+' &&
       options_.multiplicand.find('+') == std::string::npos) {
     const auto product =
@@ -129,8 +141,11 @@ ModularMultiplier::expectedResult() const noexcept {
   return expectedResult_;
 }
 
-double ModularMultiplier::probability(const std::string_view outcome) const {
-  detail::validateOutcome(outcome, output_.width);
+Result<double>
+ModularMultiplier::probability(const std::string_view outcome) const {
+  if (auto error = detail::validateOutcome(outcome, output_.width)) {
+    return std::move(*error);
+  }
   const auto width = options_.multiplier.size();
   const auto control = outcome.front();
   const auto multiplicand = outcome.substr(1U, width);
@@ -157,17 +172,20 @@ double ModularMultiplier::probability(const std::string_view outcome) const {
                             (options_.control == '+' ? 1 : 0)));
 }
 
-Evaluation ModularMultiplier::evaluate(const Counts& counts) const {
+Result<Evaluation> ModularMultiplier::evaluate(const Counts& counts) const {
   auto result = detail::evaluate(*this, counts);
+  if (auto* error = std::get_if<Error>(&result)) {
+    return std::move(*error);
+  }
   size_t totalShots = 0;
   size_t successShots = 0;
   for (const auto& [outcome, count] : counts) {
     totalShots += count;
-    if (probability(outcome) > 0.) {
+    if (std::get<double>(probability(outcome)) > 0.) {
       successShots += count;
     }
   }
-  result.successProbability =
+  std::get<Evaluation>(result).successProbability =
       static_cast<double>(successShots) / static_cast<double>(totalShots);
   return result;
 }

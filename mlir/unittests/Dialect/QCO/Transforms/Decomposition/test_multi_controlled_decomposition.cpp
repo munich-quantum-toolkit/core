@@ -22,6 +22,8 @@
 #include "mqt/Dialect/QCO/Utils/DDAdapter.h"
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
 
+#include "DDTestUtils.h"
+
 #include "gtest/gtest.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -149,8 +151,8 @@ enum class RotationAxis : uint8_t { X, Y, Z };
 [[nodiscard]] static dd::MatrixDD
 makeControlledGateDD(dd::Package& package, size_t numControls,
                      const dd::GateMatrix& matrix) {
-  return package.makeGateDD(matrix, makeControls(numControls),
-                            static_cast<dd::Qubit>(numControls));
+  return ::dd::test::value(package.makeGateDD(
+      matrix, makeControls(numControls), static_cast<dd::Qubit>(numControls)));
 }
 
 namespace {
@@ -323,7 +325,7 @@ static void expectImplementsControlledRotation(
     func::FuncOp funcOp, size_t numControls, RotationAxis axis, double theta,
     const DDArgumentBindings& bindings = DDArgumentBindings()) {
   ASSERT_EQ(countStaticQubits(funcOp), numControls + 1);
-  const auto package = std::make_unique<dd::Package>(numControls + 1);
+  const auto package = ::dd::test::value(dd::Package::create(numControls + 1));
   const auto actual = buildFunctionality(funcOp, *package, bindings);
   ASSERT_TRUE(succeeded(actual));
   const auto target = static_cast<dd::Qubit>(numControls / 2);
@@ -333,12 +335,12 @@ static void expectImplementsControlledRotation(
       controls.emplace(static_cast<dd::Qubit>(i));
     }
   }
-  const auto expected =
-      package->makeGateDD(rotationMatrix(axis, theta), controls, target);
+  const auto expected = ::dd::test::value(
+      package->makeGateDD(rotationMatrix(axis, theta), controls, target));
   // Full operator equality preserves phase and restores every borrowed control,
   // including when controls are entangled with other qubits.
   EXPECT_EQ(*actual, expected);
-  package->decRef(*actual);
+  ::dd::test::value(package->decRef(*actual));
 }
 
 static void expectFullyDecomposed(func::FuncOp funcOp) {
@@ -356,14 +358,14 @@ static void expectImplementsControlledPauli(func::FuncOp funcOp,
   ASSERT_EQ(numQubits, numControls + 1);
   expectFullyDecomposed(funcOp);
 
-  const auto dd = std::make_unique<dd::Package>(numQubits);
+  const auto dd = ::dd::test::value(dd::Package::create(numQubits));
   const auto decomposedDD = buildFunctionality(funcOp, *dd);
   ASSERT_TRUE(succeeded(decomposedDD));
 
   const auto referenceDD =
       makeControlledGateDD(*dd, numControls, pauliMatrix(pauli));
   EXPECT_EQ(*decomposedDD, referenceDD);
-  dd->decRef(*decomposedDD);
+  ::dd::test::value(dd->decRef(*decomposedDD));
 }
 
 /// Compare the complete states, including phase, without requiring identical
@@ -378,7 +380,7 @@ static void expectStatesNear(dd::Package& package, const dd::VectorDD& actual,
   constexpr double tolerance = 1e-11;
   EXPECT_LE(package.innerProduct(difference, difference).r,
             tolerance * tolerance);
-  package.decRef(difference);
+  ::dd::test::value(package.decRef(difference));
 }
 
 static void expectMatchesReferenceOnBasisStates(func::FuncOp funcOp,
@@ -399,22 +401,25 @@ static void expectMatchesReferenceOnBasisStates(func::FuncOp funcOp,
     basisStates.back()[numControls] = false;
   }
 
-  const auto dd = std::make_unique<dd::Package>(numQubits);
+  const auto dd = ::dd::test::value(dd::Package::create(numQubits));
   const auto referenceGate =
       makeControlledGateDD(*dd, numControls, pauliMatrix(pauli));
   dd->incRef(referenceGate);
   std::mt19937_64 rng(0);
   for (const auto& basisState : basisStates) {
     const auto decomposedOutput = simulate(
-        funcOp, dd::makeBasisState(numQubits, basisState, *dd), *dd, rng);
+        funcOp,
+        ::dd::test::value(dd::makeBasisState(numQubits, basisState, *dd)), *dd,
+        rng);
     ASSERT_TRUE(succeeded(decomposedOutput));
-    const auto referenceOutput = dd->applyOperation(
-        referenceGate, dd::makeBasisState(numQubits, basisState, *dd));
+    const auto referenceOutput = ::dd::test::value(dd->applyOperation(
+        referenceGate,
+        ::dd::test::value(dd::makeBasisState(numQubits, basisState, *dd))));
     expectStatesNear(*dd, *decomposedOutput, referenceOutput);
-    dd->decRef(*decomposedOutput);
-    dd->decRef(referenceOutput);
+    ::dd::test::value(dd->decRef(*decomposedOutput));
+    ::dd::test::value(dd->decRef(referenceOutput));
   }
-  dd->decRef(referenceGate);
+  ::dd::test::value(dd->decRef(referenceGate));
 }
 
 [[nodiscard]] static dd::VectorDD
@@ -425,7 +430,7 @@ makeCoherentControlInput(size_t numControls, bool targetOne, dd::Package& dd) {
   basisState[coherentControl] = dd::BasisStates::plus;
   basisState[numControls] =
       targetOne ? dd::BasisStates::one : dd::BasisStates::zero;
-  return dd::makeBasisState(numQubits, basisState, dd);
+  return ::dd::test::value(dd::makeBasisState(numQubits, basisState, dd));
 }
 
 static void
@@ -442,19 +447,19 @@ expectMatchesReferenceOnCoherentState(func::FuncOp funcOp, size_t numControls,
   ASSERT_EQ(numQubits, numControls + 1);
   expectFullyDecomposed(funcOp);
 
-  const auto dd = std::make_unique<dd::Package>(numQubits);
+  const auto dd = ::dd::test::value(dd::Package::create(numQubits));
   std::mt19937_64 rng(0);
   const auto decomposedOutput = simulate(
       funcOp, makeCoherentControlInput(numControls, targetOne, *dd), *dd, rng);
   ASSERT_TRUE(succeeded(decomposedOutput));
-  const auto referenceOutput = dd->applyOperation(
+  const auto referenceOutput = ::dd::test::value(dd->applyOperation(
       makeControlledGateDD(*dd, numControls, referenceMatrix),
-      makeCoherentControlInput(numControls, targetOne, *dd));
+      makeCoherentControlInput(numControls, targetOne, *dd)));
 
   expectStatesNear(*dd, *decomposedOutput, referenceOutput);
 
-  dd->decRef(*decomposedOutput);
-  dd->decRef(referenceOutput);
+  ::dd::test::value(dd->decRef(*decomposedOutput));
+  ::dd::test::value(dd->decRef(referenceOutput));
 }
 
 static void expectMatchesControlledPauliOnCoherentState(func::FuncOp funcOp,
@@ -476,14 +481,14 @@ static void expectImplementsMcp(func::FuncOp funcOp, size_t numControls,
   ASSERT_EQ(numQubits, numControls + 1);
   expectFullyDecomposed(funcOp);
 
-  const auto dd = std::make_unique<dd::Package>(numQubits);
+  const auto dd = ::dd::test::value(dd::Package::create(numQubits));
   const auto decomposedDD = buildFunctionality(funcOp, *dd);
   ASSERT_TRUE(succeeded(decomposedDD));
 
   const auto referenceDD =
       makeControlledGateDD(*dd, numControls, phaseMatrix(theta));
   EXPECT_EQ(*decomposedDD, referenceDD);
-  dd->decRef(*decomposedDD);
+  ::dd::test::value(dd->decRef(*decomposedDD));
 }
 
 /// Count `CtrlOp`s whose control operand count is at least @p minControlCount.
@@ -996,14 +1001,15 @@ TEST_F(MultiControlledDecompositionTest, DecomposesSingleControlledSwap) {
 
   const auto numQubits = countStaticQubits(funcOp);
   ASSERT_EQ(numQubits, 3U);
-  const auto dd = std::make_unique<dd::Package>(numQubits);
+  const auto dd = ::dd::test::value(dd::Package::create(numQubits));
   const auto decomposedDD = buildFunctionality(funcOp, *dd);
   ASSERT_TRUE(succeeded(decomposedDD));
 
-  const auto referenceDD = makeGateDD(
-      *dd, DynamicMatrix{SWAPOp::getUnitaryMatrix()}, numQubits, {1, 2}, {{0}});
+  const auto referenceDD = ::dd::test::value(
+      makeGateDD(*dd, DynamicMatrix{SWAPOp::getUnitaryMatrix()}, numQubits,
+                 {1, 2}, {{0}}));
   EXPECT_EQ(*decomposedDD, referenceDD);
-  dd->decRef(*decomposedDD);
+  ::dd::test::value(dd->decRef(*decomposedDD));
 }
 
 TEST_F(MultiControlledDecompositionTest, DecomposesMultipleControlledSwap) {
@@ -1023,15 +1029,15 @@ TEST_F(MultiControlledDecompositionTest, DecomposesMultipleControlledSwap) {
 
   const auto numQubits = countStaticQubits(funcOp);
   ASSERT_EQ(numQubits, 4U);
-  const auto dd = std::make_unique<dd::Package>(numQubits);
+  const auto dd = ::dd::test::value(dd::Package::create(numQubits));
   const auto decomposedDD = buildFunctionality(funcOp, *dd);
   ASSERT_TRUE(succeeded(decomposedDD));
 
-  const auto referenceDD =
+  const auto referenceDD = ::dd::test::value(
       makeGateDD(*dd, DynamicMatrix{SWAPOp::getUnitaryMatrix()}, numQubits,
-                 {2, 3}, {{0}, {1}});
+                 {2, 3}, {{0}, {1}}));
   EXPECT_EQ(*decomposedDD, referenceDD);
-  dd->decRef(*decomposedDD);
+  ::dd::test::value(dd->decRef(*decomposedDD));
 }
 
 TEST_F(MultiControlledDecompositionTest,

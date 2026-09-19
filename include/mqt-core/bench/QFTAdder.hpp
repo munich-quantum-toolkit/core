@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "bench/Error.hpp"
 #include "bench/Evaluation.hpp"
 #include "bench/mqt_core_bench_export.h"
 
@@ -60,7 +61,7 @@ struct QFTAdderOptions {
 /// operand width.
 class MQT_CORE_BENCH_EXPORT QFTAdder final {
 public:
-  explicit QFTAdder(QFTAdderOptions options);
+  [[nodiscard]] static Result<QFTAdder> create(QFTAdderOptions options);
 
   [[nodiscard]] const QFTAdderOptions& options() const noexcept;
   [[nodiscard]] const Output& output() const noexcept;
@@ -68,11 +69,13 @@ public:
   [[nodiscard]] const std::optional<std::string>&
   expectedResult() const noexcept;
   /// Return the ideal probability of a logical outcome.
-  [[nodiscard]] double probability(std::string_view outcome) const;
+  [[nodiscard]] Result<double> probability(std::string_view outcome) const;
   /// Compare sampled logical outcomes with the ideal distribution.
-  [[nodiscard]] Evaluation evaluate(const Counts& counts) const;
+  [[nodiscard]] Result<Evaluation> evaluate(const Counts& counts) const;
 
 private:
+  explicit QFTAdder(QFTAdderOptions options);
+
   QFTAdderOptions options_;
   Output output_;
   std::optional<std::string> expectedResult_;

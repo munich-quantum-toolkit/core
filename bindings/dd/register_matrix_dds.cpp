@@ -12,6 +12,7 @@
 #include "dd/Edge.hpp"
 #include "dd/Node.hpp"
 
+#include "Result.hpp"
 #include "register_dd_export.hpp"
 
 #include "nanobind/nanobind.h"
@@ -89,12 +90,13 @@ Returns:
           "Get the size of the DD by traversing it once.");
 
   mat.def("get_entry",
-          nb::overload_cast<size_t, size_t, size_t>(&dd::mEdge::getValueByIndex,
-                                                    nb::const_),
+          bindings::bindDDResult(nb::overload_cast<size_t, size_t, size_t>(
+              &dd::mEdge::getValueByIndex, nb::const_)),
           "num_qubits"_a, "row"_a, "col"_a,
           "Get the entry of the matrix by row and column index.");
 
-  mat.def("get_entry_by_path", &dd::mEdge::getValueByPath, "num_qubits"_a,
+  mat.def("get_entry_by_path",
+          bindings::bindDDResult(&dd::mEdge::getValueByPath), "num_qubits"_a,
           "decisions"_a, R"pb(Get the entry of the matrix by decisions.
 
 Args:

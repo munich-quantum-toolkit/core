@@ -16,9 +16,7 @@
 #include "qdmi/constants.h"
 
 #include <iostream>
-#include <new>
 #include <optional>
-#include <stdexcept>
 #include <string>
 
 namespace qdmi {
@@ -43,25 +41,6 @@ std::optional<Error> checkError(const int result, const std::string& message) {
       .message =
           "Unknown QDMI error code " + std::to_string(result) + ". " + message,
   };
-}
-
-void throwError(const Error& error) {
-  switch (error.status) {
-  case QDMI_ERROR_OUTOFMEM:
-    throw std::bad_alloc();
-  case QDMI_ERROR_OUTOFRANGE:
-    throw std::out_of_range(error.message);
-  case QDMI_ERROR_INVALIDARGUMENT:
-    throw std::invalid_argument(error.message);
-  default:
-    throw std::runtime_error(error.message);
-  }
-}
-
-auto throwIfError(const int result, const std::string& msg) -> void {
-  if (const auto error = checkError(result, msg)) {
-    throwError(*error);
-  }
 }
 
 } // namespace qdmi

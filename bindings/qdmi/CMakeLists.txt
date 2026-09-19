@@ -22,4 +22,6 @@ if(NOT TARGET ${TARGET_NAME})
     LINK_LIBS
     MQT::CoreQDMI)
 
+  target_include_directories(${TARGET_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/bindings)
+
 endif()

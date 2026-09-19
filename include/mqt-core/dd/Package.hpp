@@ -21,6 +21,7 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/DDpackageConfig.hpp"
 #include "dd/Edge.hpp"
+#include "dd/Error.hpp"
 #include "dd/MemoryManager.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package_fwd.hpp" // IWYU pragma: export
@@ -31,6 +32,7 @@
 
 #include <array>
 #include <bit>
+#include <charconv>
 #include <cmath>
 #include <complex>
 #include <cstddef>
@@ -38,17 +40,20 @@
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <memory>
+#include <optional>
 #include <random>
 #include <ranges>
-#include <regex>
 #include <span>
 #include <stack>
-#include <stdexcept>
 #include <string>
+#include <string_view>
+#include <system_error>
 #include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace dd {
@@ -81,8 +86,8 @@ public:
   /// @param nq The maximum number of qubits to allocate memory for. This can
   /// always be extended later using @ref resize.
   /// @param config The configuration of the package
-  explicit Package(std::size_t nq = DEFAULT_QUBITS,
-                   const DDPackageConfig& config = DDPackageConfig{});
+  [[nodiscard]] static Result<std::unique_ptr<Package>>
+  create(size_t nq = DEFAULT_QUBITS, const DDPackageConfig& config = {});
   ~Package() = default;
   Package(const Package& package) = delete;
 
@@ -94,7 +99,7 @@ public:
   /// that they can handle the new number of qubits.
   ///
   /// @param nq The new number of qubits
-  void resize(std::size_t nq);
+  [[nodiscard]] std::optional<Error> resize(size_t nq);
 
   /// Reset package state
   void reset();
@@ -103,6 +108,7 @@ public:
   [[nodiscard]] auto qubits() const { return nqubits; }
 
 private:
+  Package(size_t nq, const DDPackageConfig& config);
   std::size_t nqubits;
   DDPackageConfig config_;
 
@@ -184,12 +190,14 @@ public:
   /// hashset if the count hits zero.
   /// @tparam Node The node type of the edge.
   /// @param e The edge to decrease the reference count of.
-  /// @throws std::invalid_argument If the edge is not part of the tracking
+  /// Returns an error if the edge is not part of the tracking
   /// hashset.
-  template <class Node> void decRef(const Edge<Node>& e) {
+  template <class Node>
+  [[nodiscard]] std::optional<Error> decRef(const Edge<Node>& e) {
     if (Edge<Node>::trackingRequired(e)) {
-      roots.removeFromRoots(e);
+      return roots.removeFromRoots(e);
     }
+    return std::nullopt;
   }
 
   template <class Node> [[nodiscard]] auto& getRootSet() noexcept {
@@ -207,15 +215,17 @@ private:
     }
 
     /// Remove from respective root set.
-    template <class Node> void removeFromRoots(const Edge<Node>& e) {
+    template <class Node>
+    std::optional<Error> removeFromRoots(const Edge<Node>& e) {
       auto& set = getRoots<Node>();
       auto it = set.find(e);
       if (it == set.end()) {
-        throw std::invalid_argument("Edge is not part of the root set.");
+        return Error{"Edge is not part of the root set."};
       }
       if (--it->second == 0U) {
         set.erase(it);
       }
+      return std::nullopt;
     }
 
     /// Execute mark() → op() → unmark().
@@ -316,36 +326,38 @@ public:
   /// @param mat The matrix representation of the gate
   /// @param target The target qubit
   /// @return A decision diagram for the gate
-  mEdge makeGateDD(const GateMatrix& mat, Qubit target);
+  [[nodiscard]] Result<mEdge> makeGateDD(const GateMatrix& mat, Qubit target);
 
   /// Construct the DD for a single-qubit controlled gate
   /// @param mat The matrix representation of the gate
   /// @param control The control qubit
   /// @param target The target qubit
   /// @return A decision diagram for the gate
-  mEdge makeGateDD(const GateMatrix& mat, const Control& control, Qubit target);
+  [[nodiscard]] Result<mEdge> makeGateDD(const GateMatrix& mat,
+                                         const Control& control, Qubit target);
 
   /// Construct the DD for a multi-controlled single-qubit gate
   /// @param mat The matrix representation of the gate
   /// @param controls The control qubits
   /// @param target The target qubit
   /// @return A decision diagram for the gate
-  mEdge makeGateDD(const GateMatrix& mat, const Controls& controls,
-                   Qubit target);
+  [[nodiscard]] Result<mEdge>
+  makeGateDD(const GateMatrix& mat, const Controls& controls, Qubit target);
 
   /// Construct a single-qubit gate DD from a row-major matrix view.
-  mEdge makeGateDD(std::span<const std::complex<fp>, NEDGE> mat,
-                   const Controls& controls, Qubit target);
+  [[nodiscard]] Result<mEdge>
+  makeGateDD(std::span<const std::complex<fp>, NEDGE> mat,
+             const Controls& controls, Qubit target);
 
   /// Creates the DD for a two-qubit gate
   /// @param mat Matrix representation of the gate
   /// @param target0 First target qubit
   /// @param target1 Second target qubit
   /// @return DD representing the gate
-  /// @throws std::runtime_error if the number of qubits is larger than the
+  /// Returns an error if the number of qubits is larger than the
   /// package configuration
-  mEdge makeTwoQubitGateDD(const TwoQubitGateMatrix& mat, Qubit target0,
-                           Qubit target1);
+  [[nodiscard]] Result<mEdge> makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
+                                                 Qubit target0, Qubit target1);
 
   /// Creates the DD for a two-qubit gate
   /// @param mat Matrix representation of the gate
@@ -353,11 +365,11 @@ public:
   /// @param target0 First target qubit
   /// @param target1 Second target qubit
   /// @return DD representing the gate
-  /// @throws std::runtime_error if the number of qubits is larger than the
+  /// Returns an error if the number of qubits is larger than the
   /// package configuration
-  mEdge makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
-                           const Control& control, Qubit target0,
-                           Qubit target1);
+  [[nodiscard]] Result<mEdge> makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
+                                                 const Control& control,
+                                                 Qubit target0, Qubit target1);
 
   /// Creates the DD for a two-qubit gate
   /// @param mat Matrix representation of the gate
@@ -365,17 +377,17 @@ public:
   /// @param target0 First target qubit
   /// @param target1 Second target qubit
   /// @return DD representing the gate
-  /// @throws std::runtime_error if the number of qubits is larger than the
+  /// Returns an error if the number of qubits is larger than the
   /// package configuration
-  mEdge makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
-                           const Controls& controls, Qubit target0,
-                           Qubit target1);
+  [[nodiscard]] Result<mEdge> makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
+                                                 const Controls& controls,
+                                                 Qubit target0, Qubit target1);
 
   /// Construct a two-qubit gate DD from a row-major matrix view.
-  mEdge makeTwoQubitGateDD(
-      std::span<const std::complex<fp>, static_cast<std::size_t>(NEDGE) * NEDGE>
-          mat,
-      const Controls& controls, Qubit target0, Qubit target1);
+  [[nodiscard]] Result<mEdge>
+  makeTwoQubitGateDD(std::span<const std::complex<fp>,
+                               static_cast<std::size_t>(NEDGE) * NEDGE> mat,
+                     const Controls& controls, Qubit target0, Qubit target1);
 
   /// Creates the DD for a three-qubit gate
   /// @param mat Matrix representation of the gate
@@ -383,10 +395,11 @@ public:
   /// @param target1 Second target qubit
   /// @param target2 Third target qubit
   /// @return DD representing the gate
-  /// @throws std::runtime_error if the number of qubits is larger than the
+  /// Returns an error if the number of qubits is larger than the
   /// package configuration
-  mEdge makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat, Qubit target0,
-                             Qubit target1, Qubit target2);
+  [[nodiscard]] Result<mEdge>
+  makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat, Qubit target0,
+                       Qubit target1, Qubit target2);
 
   /// Creates the DD for a three-qubit gate
   /// @param mat Matrix representation of the gate
@@ -395,11 +408,11 @@ public:
   /// @param target1 Second target qubit
   /// @param target2 Third target qubit
   /// @return DD representing the gate
-  /// @throws std::runtime_error if the number of qubits is larger than the
+  /// Returns an error if the number of qubits is larger than the
   /// package configuration
-  mEdge makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
-                             const Control& control, Qubit target0,
-                             Qubit target1, Qubit target2);
+  [[nodiscard]] Result<mEdge>
+  makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat, const Control& control,
+                       Qubit target0, Qubit target1, Qubit target2);
 
   /// Creates the DD for a three-qubit gate
   /// @param mat Matrix representation of the gate
@@ -408,46 +421,46 @@ public:
   /// @param target1 Second target qubit
   /// @param target2 Third target qubit
   /// @return DD representing the gate
-  /// @throws std::runtime_error if the number of qubits is larger than the
+  /// Returns an error if the number of qubits is larger than the
   /// package configuration
-  mEdge makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
-                             const Controls& controls, Qubit target0,
-                             Qubit target1, Qubit target2);
+  [[nodiscard]] Result<mEdge>
+  makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
+                       const Controls& controls, Qubit target0, Qubit target1,
+                       Qubit target2);
 
   /// Construct a three-qubit gate DD from a row-major matrix view.
-  mEdge makeThreeQubitGateDD(
+  [[nodiscard]] Result<mEdge> makeThreeQubitGateDD(
       std::span<const std::complex<fp>,
                 static_cast<std::size_t>(THREE_QUBIT_GATE_DIM) *
-                    THREE_QUBIT_GATE_DIM>
-          mat,
+                    THREE_QUBIT_GATE_DIM> mat,
       const Controls& controls, Qubit target0, Qubit target1, Qubit target2);
 
   /// Converts a given matrix to a decision diagram
   /// @param matrix A complex matrix to convert to a DD.
   /// @return A decision diagram representing the matrix.
-  /// @throws std::invalid_argument If the given matrix is not square or its
+  /// Returns an error if the given matrix is not square or its
   /// length is not a power of two.
-  /// @throws std::runtime_error If the matrix exceeds the package capacity.
-  mEdge makeDDFromMatrix(const CMat& matrix);
+  /// Returns an error if the matrix exceeds the package capacity.
+  [[nodiscard]] Result<mEdge> makeDDFromMatrix(const CMat& matrix);
 
   /// Construct a matrix DD without copying its storage.
   /// @param dimension Number of rows and columns; zero yields the identity.
   /// @param entry Callable returning the complex entry at (row, column).
   /// @pre entry is valid for all indices smaller than dimension.
-  /// @throws std::invalid_argument If dimension is not a power of two.
-  /// @throws std::runtime_error If the matrix exceeds the package capacity.
+  /// Returns an error if dimension is not a power of two.
+  /// Returns an error if the matrix exceeds the package capacity.
   template <class MatrixEntry>
-  mEdge makeDDFromMatrix(const size_t dimension, const MatrixEntry& entry) {
+  [[nodiscard]] Result<mEdge> makeDDFromMatrix(const size_t dimension,
+                                               const MatrixEntry& entry) {
     if (dimension == 0) {
       return mEdge::one();
     }
     if (!std::has_single_bit(dimension)) {
-      throw std::invalid_argument(
-          "Matrix must have a length of a power of two.");
+      return Error{"Matrix must have a length of a power of two."};
     }
     const auto levels = std::bit_width(dimension) - 1;
     if (levels > qubits()) {
-      throw std::runtime_error("Matrix exceeds the package qubit capacity.");
+      return Error{"Matrix exceeds the package qubit capacity."};
     }
     if (levels == 0) {
       return mEdge::terminal(cn.lookup(entry(0, 0)));
@@ -456,20 +469,20 @@ public:
       return std::pair{static_cast<Qubit>(level), size_t{1} << level};
     };
     const auto root = buildMatrixDD(entry, operand, levels - 1, 0, 0);
-    return {.p = root.p, .w = cn.lookup(root.w)};
+    return mEdge{.p = root.p, .w = cn.lookup(root.w)};
   }
 
   /// Embed a row-major local matrix on targets in most-significant-bit order.
   /// Missing DD levels represent identity wires. An empty target list takes a
   /// single scalar entry. Controls are supported for one to three targets.
-  /// @throws std::invalid_argument If the matrix size does not match the target
+  /// Returns an error if the matrix size does not match the target
   /// count or controls accompany zero or more than three targets.
-  /// @throws std::runtime_error If qubits exceed package capacity, targets are
+  /// Returns an error if qubits exceed package capacity, targets are
   /// duplicated, controls have conflicting polarities, or controls overlap
   /// targets.
-  mEdge makeGateDD(std::span<const std::complex<fp>> matrix,
-                   std::span<const Qubit> targets,
-                   const Controls& controls = {});
+  [[nodiscard]] Result<mEdge>
+  makeGateDD(std::span<const std::complex<fp>> matrix,
+             std::span<const Qubit> targets, const Controls& controls = {});
 
 private:
   /// Read matrix bits in DD level order, which may differ from operand order.
@@ -618,10 +631,11 @@ public:
   /// @param mt A random number generator.
   /// @param epsilon The tolerance for numerical instabilities.
   /// @return A string representing the measurement result.
-  /// @throws std::runtime_error If numerical instabilities are detected or if
+  /// Returns an error if numerical instabilities are detected or if
   /// probabilities do not sum to 1.
-  std::string measureAll(vEdge& rootEdge, bool collapse, std::mt19937_64& mt,
-                         fp epsilon = 0.001);
+  [[nodiscard]] Result<std::string> measureAll(vEdge& rootEdge, bool collapse,
+                                               std::mt19937_64& mt,
+                                               fp epsilon = 0.001);
 
 private:
   /// Assigns probabilities to nodes in a decision diagram.
@@ -631,6 +645,10 @@ private:
   /// @return The probability of the given edge.
   static fp assignProbabilities(const vEdge& edge,
                                 std::unordered_map<const vNode*, fp>& probs);
+
+  /// Collapse after determineMeasurementProbabilities checked the state shape.
+  std::optional<Error> collapse(vEdge& rootEdge, Qubit index, fp probability,
+                                bool measureZero);
 
   /// Project a state, caching the result without its incoming weight.
   vCachedEdge project(const vEdge& state, mNode* projector, bool measureZero);
@@ -644,8 +662,8 @@ public:
   /// @return A pair of floating-point values representing the probabilities of
   /// measuring 0 and 1, respectively.
   ///
-  /// @throws std::invalid_argument If the qubit is outside the state.
-  static std::pair<fp, fp>
+  /// Returns an error if the qubit is outside the state.
+  [[nodiscard]] static Result<std::pair<fp, fp>>
   determineMeasurementProbabilities(const vEdge& rootEdge, Qubit index);
 
   /// Measures the qubit with the given index in the given state vector
@@ -656,11 +674,12 @@ public:
   /// @param epsilon the numerical precision used for checking the normalization
   /// of the state vector decision diagram
   /// @return the measurement result ('0' or '1')
-  /// @throws std::runtime_error if a numerical instability is detected during
+  /// Returns an error if a numerical instability is detected during
   /// the measurement.
-  /// @throws std::invalid_argument If the qubit is outside the state.
-  char measureOneCollapsing(vEdge& rootEdge, Qubit index, std::mt19937_64& mt,
-                            fp epsilon = 0.001);
+  /// Returns an error if the qubit is outside the state.
+  [[nodiscard]] Result<char> measureOneCollapsing(vEdge& rootEdge, Qubit index,
+                                                  std::mt19937_64& mt,
+                                                  fp epsilon = 0.001);
 
   /// Performs a specific measurement on the given state vector decision
   /// diagram. Collapses the state according to the measurement result.
@@ -670,9 +689,10 @@ public:
   /// normalization)
   /// @param measureZero whether or not to measure '0' (otherwise '1' is
   /// measured)
-  /// @throws std::invalid_argument If the qubit is outside the state.
-  void performCollapsingMeasurement(vEdge& rootEdge, Qubit index,
-                                    fp probability, bool measureZero);
+  /// Returns an error if the qubit is outside the state.
+  [[nodiscard]] std::optional<Error>
+  performCollapsingMeasurement(vEdge& rootEdge, Qubit index, fp probability,
+                               bool measureZero);
 
   ///
   /// Addition
@@ -905,7 +925,7 @@ public:
   /// @param operation Matrix operation to apply
   /// @param e Vector to apply the operation to
   /// @return The appropriately reference-counted result.
-  VectorDD applyOperation(const MatrixDD& operation, const VectorDD& e);
+  Result<VectorDD> applyOperation(const MatrixDD& operation, const VectorDD& e);
 
   /// Applies a matrix operation to a matrix.
   ///
@@ -918,8 +938,8 @@ public:
   /// @param applyFromLeft Flag to indicate if the operation should be applied
   /// from the left (default) or right.
   /// @return The appropriately reference-counted result.
-  MatrixDD applyOperation(const MatrixDD& operation, const MatrixDD& e,
-                          bool applyFromLeft = true);
+  Result<MatrixDD> applyOperation(const MatrixDD& operation, const MatrixDD& e,
+                                  bool applyFromLeft = true);
 
   /// Multiplies two decision diagrams.
   ///
@@ -1078,9 +1098,9 @@ public:
   /// @param probs A map of probabilities for each measurement outcome.
   /// @param permutation Optional permutation matching the measurement order.
   /// @return The fidelity of the measurement outcomes.
-  static fp fidelityOfMeasurementOutcomes(const vEdge& e,
-                                          const SparsePVec& probs,
-                                          const Permutation& permutation = {});
+  [[nodiscard]] static Result<fp>
+  fidelityOfMeasurementOutcomes(const vEdge& e, const SparsePVec& probs,
+                                const Permutation& permutation = {});
 
 private:
   /// Recursively calculates the inner product of two vector decision
@@ -1110,11 +1130,11 @@ public:
   /// @param x An observable whose expectation value is real.
   /// @param y A non-terminal state vector DD.
   /// @return The real part of the expectation value.
-  /// @throws std::invalid_argument If the observable acts on a qubit outside
+  /// Returns an error if the observable acts on a qubit outside
   /// the state.
   /// @pre The observable is not the zero terminal. Debug assertions also
   /// require a non-terminal state and an approximately zero imaginary part.
-  fp expectationValue(const mEdge& x, const vEdge& y);
+  [[nodiscard]] Result<fp> expectationValue(const mEdge& x, const vEdge& y);
 
   ///
   /// Kronecker/tensor product
@@ -1322,7 +1342,7 @@ public:
   /// Create identity DD represented by the one-terminal.
   static mEdge makeIdent();
 
-  mEdge createInitialMatrix(const std::vector<bool>& ancillary);
+  Result<mEdge> createInitialMatrix(const std::vector<bool>& ancillary);
 
   //
   // Ancillary and garbage reduction
@@ -1340,8 +1360,8 @@ public:
   /// Transfers the input edge's reference to the result when reduction changes
   /// a non-terminal DD. The input reference is unchanged for a no-op.
   /// Identity inputs retain their reference and yield an incremented result.
-  mEdge reduceAncillae(mEdge e, const std::vector<bool>& ancillary,
-                       bool regular = true);
+  Result<mEdge> reduceAncillae(mEdge e, const std::vector<bool>& ancillary,
+                               bool regular = true);
 
   /// Reduces the given decision diagram by summing entries for garbage
   /// qubits.
@@ -1361,8 +1381,8 @@ public:
   /// circuits. For partial equivalence, only the measurement probabilities are
   /// considered, so we need to consider only the magnitudes of each entry.
   /// @return DD representing the reduced matrix/vector.
-  vEdge reduceGarbage(vEdge& e, const std::vector<bool>& garbage,
-                      bool normalizeWeights = false);
+  Result<vEdge> reduceGarbage(vEdge& e, const std::vector<bool>& garbage,
+                              bool normalizeWeights = false);
 
   /// Reduces garbage qubits in a matrix decision diagram.
   ///
@@ -1383,8 +1403,9 @@ public:
   /// q=0 and q=1, setting the entry for q=0 to the sum and the entry for q=1 to
   /// zero. To maintain proper probabilities, the function computes sqrt(|a|^2 +
   /// |b|^2) for two entries a and b.
-  mEdge reduceGarbage(const mEdge& e, const std::vector<bool>& garbage,
-                      bool regular = true, bool normalizeWeights = false);
+  Result<mEdge> reduceGarbage(const mEdge& e, const std::vector<bool>& garbage,
+                              bool regular = true,
+                              bool normalizeWeights = false);
 
 private:
   mCachedEdge reduceAncillaeRecursion(mNode* p,
@@ -1487,135 +1508,174 @@ public:
   /// architectures/platforms
   ///
 
+  /// Streams must report I/O failures through their state flags.
   template <class Node, class Edge = Edge<Node>,
-            std::size_t N = std::tuple_size_v<decltype(Node::e)>>
-  Edge deserialize(std::istream& is, const bool readBinary = false) {
+            size_t N = std::tuple_size_v<decltype(Node::e)>>
+  [[nodiscard]] Result<Edge> deserialize(std::istream& is,
+                                         const bool readBinary = false) {
+    if (is.exceptions() != std::ios::goodbit) {
+      return Error{
+          "DD deserialization requires a stream without exception flags.",
+          Error::Kind::IO};
+    }
     auto result = CachedEdge<Node>::one();
     ComplexValue rootweight{};
-
-    std::unordered_map<std::int64_t, Node*> nodes{};
-    std::int64_t nodeIndex{};
-    Qubit v{};
-    std::array<ComplexValue, N> edgeWeights{};
-    std::array<std::int64_t, N> edgeIndices{};
-    edgeIndices.fill(-2);
-
+    std::unordered_map<int64_t, Node*> nodes;
+    const auto invalid = [] {
+      return Error{"Invalid or truncated serialized DD."};
+    };
+    const auto readInteger = []<typename T>(std::string_view& input, T& value) {
+      if (input.empty()) {
+        return false;
+      }
+      const auto parsed =
+          std::from_chars(input.data(), input.data() + input.size(), value);
+      if (parsed.ec != std::errc{}) {
+        return false;
+      }
+      input.remove_prefix(static_cast<size_t>(parsed.ptr - input.data()));
+      return true;
+    };
     if (readBinary) {
       std::remove_const_t<decltype(SERIALIZATION_VERSION)> version{};
-      is.read(reinterpret_cast<char*>(&version),
-              sizeof(decltype(SERIALIZATION_VERSION)));
-      if (version != SERIALIZATION_VERSION) {
-        throw std::runtime_error(
-            "Wrong Version of serialization file version. version of file: " +
-            std::to_string(version) +
-            "; current version: " + std::to_string(SERIALIZATION_VERSION));
+      is.read(reinterpret_cast<char*>(&version), sizeof(version));
+      if (!is || version != SERIALIZATION_VERSION) {
+        return invalid();
       }
-
-      if (!is.eof()) {
-        rootweight.readBinary(is);
+      rootweight.readBinary(is);
+      if (!is || !std::isfinite(rootweight.r) || !std::isfinite(rootweight.i)) {
+        return invalid();
       }
-
-      while (is.read(reinterpret_cast<char*>(&nodeIndex),
-                     sizeof(decltype(nodeIndex)))) {
-        is.read(reinterpret_cast<char*>(&v), sizeof(decltype(v)));
-        for (std::size_t i = 0U; i < N; i++) {
-          is.read(reinterpret_cast<char*>(&edgeIndices[i]),
-                  sizeof(decltype(edgeIndices[i])));
-          edgeWeights[i].readBinary(is);
+      while (true) {
+        int64_t index{};
+        is.read(reinterpret_cast<char*>(&index), sizeof(index));
+        if (!is) {
+          if (is.eof() && is.gcount() == 0) {
+            break;
+          }
+          return invalid();
         }
-        result = deserializeNode(nodeIndex, v, edgeIndices, edgeWeights, nodes);
+        Qubit wire{};
+        is.read(reinterpret_cast<char*>(&wire), sizeof(wire));
+        std::array<int64_t, N> indices{};
+        std::array<ComplexValue, N> weights{};
+        for (size_t i = 0; i < N; ++i) {
+          is.read(reinterpret_cast<char*>(&indices[i]), sizeof(indices[i]));
+          weights[i].readBinary(is);
+        }
+        if (!is) {
+          return invalid();
+        }
+        auto node = deserializeNode(index, wire, indices, weights, nodes);
+        if (auto* error = std::get_if<Error>(&node)) {
+          return std::move(*error);
+        }
+        result = std::get<0>(node);
       }
     } else {
-      std::string version;
-      std::getline(is, version);
-      if (std::cmp_not_equal(std::stoi(version), SERIALIZATION_VERSION)) {
-        throw std::runtime_error(
-            "Wrong Version of serialization file version. version of file: " +
-            version +
-            "; current version: " + std::to_string(SERIALIZATION_VERSION));
-      }
-
-      const std::string complexRealRegex =
-          R"(([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?(?![ \d\.]*(?:[eE][+-])?\d*[iI]))?)";
-      const std::string complexImagRegex =
-          R"(( ?[+-]? ?(?:(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)?[iI])?)";
-      const std::string edgeRegex =
-          " \\(((-?\\d+) (" + complexRealRegex + complexImagRegex + "))?\\)";
-      const std::regex complexWeightRegex(complexRealRegex + complexImagRegex);
-
-      std::string lineConstruct = "(\\d+) (\\d+)";
-      for (std::size_t i = 0U; i < N; ++i) {
-        lineConstruct += "(?:" + edgeRegex + ")";
-      }
-      lineConstruct += " *(?:#.*)?";
-      const std::regex lineRegex(lineConstruct);
-      std::smatch m;
-
       std::string line;
-      if (std::getline(is, line)) {
-        if (!std::regex_match(line, m, complexWeightRegex)) {
-          throw std::runtime_error("Regex did not match second line: " + line);
-        }
-        rootweight.fromString(m.str(1), m.str(2));
+      if (!std::getline(is, line)) {
+        return invalid();
       }
-
+      std::string_view text = line;
+      uint64_t version{};
+      if (!readInteger(text, version) || !text.empty() ||
+          version != SERIALIZATION_VERSION) {
+        return invalid();
+      }
+      if (!std::getline(is, line)) {
+        return invalid();
+      }
+      auto weight = ComplexValue::parse(line);
+      if (auto* error = std::get_if<Error>(&weight)) {
+        return std::move(*error);
+      }
+      rootweight = std::get<0>(weight);
       while (std::getline(is, line)) {
         if (line.empty() || line.size() == 1) {
           continue;
         }
-
-        if (!std::regex_match(line, m, lineRegex)) {
-          throw std::runtime_error("Regex did not match line: " + line);
+        text = line;
+        int64_t index{};
+        size_t wire{};
+        if (!readInteger(text, index) || index < 0 || !text.starts_with(' ')) {
+          return invalid();
         }
-
-        // match 1: node_idx
-        // match 2: qubit_idx
-
-        // repeats for every edge
-        // match 3: edge content
-        // match 4: edge_target_idx
-        // match 5: real + imag (without i)
-        // match 6: real
-        // match 7: imag (without i)
-        nodeIndex = std::stoi(m.str(1));
-        v = static_cast<Qubit>(std::stoi(m.str(2)));
-
-        for (auto edgeIdx = 3U, i = 0U; i < N; i++, edgeIdx += 5) {
-          if (m.str(edgeIdx).empty()) {
+        text.remove_prefix(1);
+        if (!readInteger(text, wire) || wire >= qubits()) {
+          return invalid();
+        }
+        std::array<int64_t, N> indices{};
+        indices.fill(-2);
+        std::array<ComplexValue, N> weights{};
+        for (size_t i = 0; i < N; ++i) {
+          if (!text.starts_with(" (")) {
+            return invalid();
+          }
+          text.remove_prefix(2);
+          const auto end = text.find(')');
+          if (end == std::string_view::npos) {
+            return invalid();
+          }
+          auto edge = text.substr(0, end);
+          text.remove_prefix(end + 1);
+          if (edge.empty()) {
             continue;
           }
-
-          edgeIndices[i] = std::stoi(m.str(edgeIdx + 1));
-          edgeWeights[i].fromString(m.str(edgeIdx + 3), m.str(edgeIdx + 4));
+          if (!readInteger(edge, indices[i]) || !edge.starts_with(' ')) {
+            return invalid();
+          }
+          edge.remove_prefix(1);
+          auto edgeWeight = ComplexValue::parse(edge);
+          if (auto* error = std::get_if<Error>(&edgeWeight)) {
+            return std::move(*error);
+          }
+          weights[i] = std::get<0>(edgeWeight);
         }
-
-        result = deserializeNode(nodeIndex, v, edgeIndices, edgeWeights, nodes);
+        while (text.starts_with(' ')) {
+          text.remove_prefix(1);
+        }
+        if (!text.empty() && !text.starts_with('#')) {
+          return invalid();
+        }
+        auto node = deserializeNode(index, static_cast<Qubit>(wire), indices,
+                                    weights, nodes);
+        if (auto* error = std::get_if<Error>(&node)) {
+          return std::move(*error);
+        }
+        result = std::get<0>(node);
       }
     }
-    return {result.p, cn.lookup(result.w * rootweight)};
+    if (is.bad()) {
+      return Error{"Cannot read serialized DD.", Error::Kind::IO};
+    }
+    return Edge{result.p, cn.lookup(result.w * rootweight)};
   }
 
   template <class Node, class Edge = Edge<Node>>
-  Edge deserialize(const std::string& inputFilename, const bool readBinary) {
-    auto ifs = std::ifstream(inputFilename, std::ios::binary);
-
-    if (!ifs.good()) {
-      throw std::invalid_argument("Cannot open serialized file: " +
-                                  inputFilename);
+  [[nodiscard]] Result<Edge> deserialize(const std::string& inputFilename,
+                                         const bool readBinary) {
+    auto input = std::ifstream(inputFilename, std::ios::binary);
+    if (!input) {
+      return Error{"Cannot open serialized file: " + inputFilename,
+                   Error::Kind::IO};
     }
-
-    return deserialize<Node>(ifs, readBinary);
+    return deserialize<Node>(input, readBinary);
   }
 
 private:
   template <class Node, std::size_t N = std::tuple_size_v<decltype(Node::e)>>
-  CachedEdge<Node>
+  Result<CachedEdge<Node>>
   deserializeNode(const std::int64_t index, const Qubit v,
-                  std::array<std::int64_t, N>& edgeIdx,
+                  const std::array<std::int64_t, N>& edgeIdx,
                   const std::array<ComplexValue, N>& edgeWeight,
                   std::unordered_map<std::int64_t, Node*>& nodes) {
     if (index == -1) {
       return CachedEdge<Node>::zero();
+    }
+
+    if (index < 0 || v >= qubits() || nodes.contains(index)) {
+      return Error{"Invalid serialized DD node index or qubit."};
     }
 
     std::array<CachedEdge<Node>, N> edges{};
@@ -1626,14 +1686,21 @@ private:
         if (edgeIdx[i] == -1) {
           edges[i] = CachedEdge<Node>::one();
         } else {
-          edges[i].p = nodes[edgeIdx[i]];
+          const auto child = nodes.find(edgeIdx[i]);
+          if (child == nodes.end() ||
+              (!Node::isTerminal(child->second) && child->second->v >= v)) {
+            return Error{"Serialized DD edges must refer to preceding nodes on "
+                         "lower qubits."};
+          }
+          edges[i].p = child->second;
+        }
+        if (!std::isfinite(edgeWeight[i].r) ||
+            !std::isfinite(edgeWeight[i].i)) {
+          return Error{"Serialized DD weights must be finite."};
         }
         edges[i].w = edgeWeight[i];
       }
     }
-    // reset
-    edgeIdx.fill(-2);
-
     auto r = makeDDNode(v, edges);
     nodes[index] = r.p;
     return r;

@@ -25,18 +25,104 @@
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/Module.h"
 #include "llvm/Support/Casting.h"
+#include "llvm/Support/Error.h"
+#include "llvm/Support/ModRef.h"
 #include "llvm/Transforms/Utils/Local.h"
 
 #include <algorithm>
 #include <cstdint>
+#include <iterator>
 #include <limits>
 #include <optional>
-#include <stdexcept>
-#include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace qir {
+
+llvm::Error propagateRuntimeErrors(llvm::Module& moduleOp) {
+  constexpr llvm::StringLiteral checkName = "__mqt__qir__has_error";
+  if (moduleOp.getNamedValue(checkName) != nullptr) {
+    return llvm::createStringError("QIR module uses a reserved runtime symbol");
+  }
+  if (moduleOp.getNamedValue("llvm.global_ctors") != nullptr ||
+      moduleOp.getNamedValue("llvm.global_dtors") != nullptr) {
+    return llvm::createStringError(
+        "QIR execution does not support module initializers or destructors");
+  }
+  llvm::SmallVector<llvm::CallInst*> calls;
+  for (auto& function : moduleOp) {
+    if (function.hasAddressTaken()) {
+      return llvm::createStringError("QIR execution requires direct calls "
+                                     "without escaping function addresses");
+    }
+    for (auto& block : function) {
+      for (auto& instruction : block) {
+        auto* base = llvm::dyn_cast<llvm::CallBase>(&instruction);
+        if (base == nullptr) {
+          continue;
+        }
+        auto* call = llvm::dyn_cast<llvm::CallInst>(base);
+        auto* callee = llvm::dyn_cast<llvm::Function>(
+            base->getCalledOperand()->stripPointerCasts());
+        if (call == nullptr || call->isMustTailCall()) {
+          return llvm::createStringError(
+              "QIR execution requires ordinary calls "
+              "without invoke, callbr or musttail");
+        }
+        if (callee == nullptr || !callee->isIntrinsic()) {
+          calls.push_back(call);
+        }
+      }
+    }
+  }
+  auto& context = moduleOp.getContext();
+  auto check =
+      moduleOp.getOrInsertFunction(checkName, llvm::Type::getInt1Ty(context));
+  /// Error checks add observable reads, and failure returns may be null.
+  const auto allowFailure = [](auto* callable) {
+    callable->setMemoryEffects(llvm::MemoryEffects::unknown());
+    callable->removeFnAttr(llvm::Attribute::Speculatable);
+    callable->removeFnAttr(llvm::Attribute::NoReturn);
+    for (unsigned index = 0; index < callable->arg_size(); ++index) {
+      callable->removeParamAttr(index, llvm::Attribute::Returned);
+    }
+    for (auto kind : {
+             llvm::Attribute::NonNull,
+             llvm::Attribute::Dereferenceable,
+             llvm::Attribute::DereferenceableOrNull,
+             llvm::Attribute::Range,
+         }) {
+      callable->removeRetAttr(kind);
+    }
+  };
+  llvm::BasicBlock* failure = nullptr;
+  for (auto* call : calls) {
+    auto* function = call->getFunction();
+    if (failure == nullptr || failure->getParent() != function) {
+      failure = llvm::BasicBlock::Create(context, "runtime.failure", function);
+      llvm::IRBuilder<> builder(failure);
+      if (function->getReturnType()->isVoidTy()) {
+        builder.CreateRetVoid();
+      } else {
+        builder.CreateRet(
+            llvm::Constant::getNullValue(function->getReturnType()));
+      }
+      allowFailure(function);
+    }
+    call->setTailCallKind(llvm::CallInst::TCK_None);
+    allowFailure(call);
+    auto* prefix = call->getParent();
+    auto* continuation = prefix->splitBasicBlock(std::next(call->getIterator()),
+                                                 "runtime.continue");
+    auto* terminator = prefix->getTerminator();
+    llvm::IRBuilder<> builder(terminator);
+    builder.CreateCondBr(builder.CreateCall(check), failure, continuation);
+    terminator->eraseFromParent();
+  }
+  return llvm::Error::success();
+}
 
 static constexpr llvm::StringLiteral TERMINAL_REGION_ERROR =
     "QIR state extraction requires irreversible operations to form a terminal "
@@ -48,12 +134,12 @@ static bool isIrreversible(const llvm::CallBase& call) {
   return callee != nullptr && callee->hasFnAttribute(IRREVERSIBLE_ATTR);
 }
 
-static void requireTerminalIrreversibleRegion(llvm::CallInst& boundary) {
+static llvm::Error requireTerminalIrreversibleRegion(llvm::CallInst& boundary) {
   llvm::SmallPtrSet<llvm::BasicBlock*, 8> visited;
   llvm::SmallVector<llvm::BasicBlock*, 8> pending;
 
   auto inspect = [&](llvm::BasicBlock& block,
-                     llvm::BasicBlock::iterator begin) {
+                     llvm::BasicBlock::iterator begin) -> llvm::Error {
     for (auto it = begin; it != block.end(); ++it) {
       const auto* call = llvm::dyn_cast<llvm::CallBase>(&*it);
       const auto* callee =
@@ -63,32 +149,38 @@ static void requireTerminalIrreversibleRegion(llvm::CallInst& boundary) {
       if (callee != nullptr &&
           callee->getName().starts_with("__quantum__qis__") &&
           !isIrreversible(*call)) {
-        throw std::invalid_argument(TERMINAL_REGION_ERROR.str());
+        return llvm::createStringError(TERMINAL_REGION_ERROR.str());
       }
     }
 
     auto* terminator = block.getTerminator();
     if (terminator->getNumSuccessors() > 1) {
-      throw std::invalid_argument(TERMINAL_REGION_ERROR.str());
+      return llvm::createStringError(TERMINAL_REGION_ERROR.str());
     }
     for (auto* successor : llvm::successors(&block)) {
       pending.emplace_back(successor);
     }
+    return llvm::Error::success();
   };
 
   auto* boundaryBlock = boundary.getParent();
   visited.insert(boundaryBlock);
-  inspect(*boundaryBlock, boundary.getIterator());
+  if (auto error = inspect(*boundaryBlock, boundary.getIterator())) {
+    return error;
+  }
   while (!pending.empty()) {
     auto* block = pending.pop_back_val();
     if (!visited.insert(block).second) {
-      throw std::invalid_argument(TERMINAL_REGION_ERROR.str());
+      return llvm::createStringError(TERMINAL_REGION_ERROR.str());
     }
-    inspect(*block, block->begin());
+    if (auto error = inspect(*block, block->begin())) {
+      return error;
+    }
   }
+  return llvm::Error::success();
 }
 
-static void validateAdaptiveStateExtraction(llvm::Function& entryPoint) {
+static llvm::Error validateAdaptiveStateExtraction(llvm::Function& entryPoint) {
   llvm::SmallPtrSet<llvm::Function*, 8> visited;
   llvm::SmallVector<llvm::Function*, 8> pending{&entryPoint};
   while (!pending.empty()) {
@@ -106,7 +198,7 @@ static void validateAdaptiveStateExtraction(llvm::Function& entryPoint) {
             call->getCalledOperand()->stripPointerCasts());
         if (!llvm::isa<llvm::CallInst>(call) || callee == nullptr ||
             callee == &entryPoint) {
-          throw std::invalid_argument(
+          return llvm::createStringError(
               "Adaptive QIR state extraction requires direct calls without "
               "entry-point recursion");
         }
@@ -127,39 +219,42 @@ static void validateAdaptiveStateExtraction(llvm::Function& entryPoint) {
         if ((name == "__quantum__rt__read_result" && !outputOnlyRead) ||
             name == "__quantum__qis__reset__body" ||
             (isIrreversible(*call) && name != "__quantum__qis__mz__body")) {
-          throw std::invalid_argument(
+          return llvm::createStringError(
               "Adaptive QIR state extraction does not support "
               "measurement-dependent computation or resets");
         }
         if (!callee->isIntrinsic() && !name.starts_with("__quantum__")) {
-          throw std::invalid_argument("Adaptive QIR state extraction cannot "
-                                      "prove external call effects");
+          return llvm::createStringError("Adaptive QIR state extraction cannot "
+                                         "prove external call effects");
         }
         if (name == "__quantum__rt__initialize" &&
             &instruction != &entryPoint.getEntryBlock().front()) {
-          throw std::invalid_argument(
+          return llvm::createStringError(
               "Adaptive QIR state extraction requires initialization at entry");
         }
       }
     }
   }
+  return llvm::Error::success();
 }
 
-bool prepareForStateExtraction(llvm::Function& entryPoint) {
+llvm::Expected<bool> prepareForStateExtraction(llvm::Function& entryPoint) {
   if (!entryPoint.getReturnType()->isIntegerTy(64) || !entryPoint.arg_empty()) {
-    throw std::invalid_argument(
+    return llvm::createStringError(
         "QIR state extraction requires an i64() entry point");
   }
 
   const auto profile = entryPoint.getFnAttribute(QIR_PROFILES_ATTR);
   if (profile.isStringAttribute() &&
       profile.getValueAsString().compare(ADAPTIVE_PROFILE) == 0) {
-    validateAdaptiveStateExtraction(entryPoint);
+    if (auto error = validateAdaptiveStateExtraction(entryPoint)) {
+      return std::move(error);
+    }
     return false;
   }
   if (!profile.isStringAttribute() ||
       profile.getValueAsString().compare(BASE_PROFILE) != 0) {
-    throw std::invalid_argument(
+    return llvm::createStringError(
         "QIR state extraction requires a Base or Adaptive Profile entry point");
   }
 
@@ -174,7 +269,7 @@ bool prepareForStateExtraction(llvm::Function& entryPoint) {
           call->getCalledOperand()->stripPointerCasts());
       if (!llvm::isa<llvm::CallInst>(call) || callee == nullptr ||
           !callee->isDeclaration()) {
-        throw std::invalid_argument(
+        return llvm::createStringError(
             "QIR state extraction requires direct calls to declared functions");
       }
       if (isIrreversible(*call)) {
@@ -196,11 +291,13 @@ bool prepareForStateExtraction(llvm::Function& entryPoint) {
   }
   for (auto* call : irreversibleCalls) {
     if (boundary != call && !dominators.dominates(boundary, call)) {
-      throw std::invalid_argument(TERMINAL_REGION_ERROR.str());
+      return llvm::createStringError(TERMINAL_REGION_ERROR.str());
     }
   }
 
-  requireTerminalIrreversibleRegion(*boundary);
+  if (auto error = requireTerminalIrreversibleRegion(*boundary)) {
+    return std::move(error);
+  }
   auto* prefix = boundary->getParent();
   prefix->splitBasicBlock(boundary, "state-extraction.discarded");
   auto* oldTerminator = prefix->getTerminator();

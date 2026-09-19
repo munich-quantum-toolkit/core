@@ -39,6 +39,8 @@ if(TARGET MQT::CoreQDMIDriver)
                RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/device")
 
   package_add_test(${TARGET_NAME} MQT::CoreQDMIDriver test_driver.cpp)
+  target_include_directories(${TARGET_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/test/qdmi)
+
   target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMI)
 
   set(DIAGNOSTIC_TARGET_NAME mqt-core-qdmi-driver-diagnostic-test)

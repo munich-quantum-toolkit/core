@@ -21,13 +21,20 @@
 #pragma once
 
 // NOLINTBEGIN(modernize-use-using)
-// NOLINTBEGIN(readability-identifier-naming)
+/// QIR ABI names are prescribed by the specification.
+/// NOLINTBEGIN(readability-identifier-naming,bugprone-reserved-identifier)
 
 #include <stdbool.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
+#define MQT_QIR_NOEXCEPT noexcept
 extern "C" {
+
+/// Internal JIT failure check; not part of the QIR specification.
+bool __mqt__qir__has_error() MQT_QIR_NOEXCEPT;
+#else
+#define MQT_QIR_NOEXCEPT
 #endif
 
 // *** MEASUREMENT RESULTS ***
@@ -50,49 +57,54 @@ typedef struct ArrayImpl Array;
 /// Creates a new 1-dimensional array. The int64_t is the size of each element
 /// in bytes. The int64_t is the length of the array. The bytes of the new array
 /// should be set to zero.
-Array* __quantum__rt__array_create_1d(int32_t, int64_t);
+Array* __quantum__rt__array_create_1d(int32_t, int64_t) MQT_QIR_NOEXCEPT;
 
 /// Returns the length of a dimension of the array. The int64_t is the
 /// zero-based dimension to return the length of; it must be 0 for a
 /// 1-dimensional array.
-int64_t __quantum__rt__array_get_size_1d(const Array*);
+int64_t __quantum__rt__array_get_size_1d(const Array*) MQT_QIR_NOEXCEPT;
 
 /// Returns a pointer to the element of the array at the zero-based index given
 /// by the int64_t. Returns nullptr if the index is out of bounds.
-int8_t* __quantum__rt__array_get_element_ptr_1d(Array*, int64_t);
+int8_t* __quantum__rt__array_get_element_ptr_1d(Array*,
+                                                int64_t) MQT_QIR_NOEXCEPT;
 
 /// Adds the given integer value to the reference count for the array.
 /// Deallocates the array if the reference count becomes 0. The behavior is
 /// undefined if the reference count becomes negative.
-void __quantum__rt__array_update_reference_count(Array*, int32_t);
+void __quantum__rt__array_update_reference_count(Array*,
+                                                 int32_t) MQT_QIR_NOEXCEPT;
 
 // *** TUPLES ***
 typedef struct TupleImpl Tuple;
 
 /// Allocate a zero-initialized, suitably aligned tuple payload.
-Tuple* __quantum__rt__tuple_create(int64_t size);
-void __quantum__rt__tuple_update_reference_count(Tuple*, int32_t);
+Tuple* __quantum__rt__tuple_create(int64_t size) MQT_QIR_NOEXCEPT;
+void __quantum__rt__tuple_update_reference_count(Tuple*,
+                                                 int32_t) MQT_QIR_NOEXCEPT;
 
 // *** QUANTUM INSTRUCTIONSET AND RUNTIME ***
 // See
 // https://github.com/qir-alliance/qir-spec/blob/main/specification/Memory_Management.md
 
 /// Allocate a single qubit using the QIR 2.1 error-pointer convention.
-Qubit* __quantum__rt__qubit_allocate(bool* outError);
+Qubit* __quantum__rt__qubit_allocate(bool* outError) MQT_QIR_NOEXCEPT;
 
 /// Allocate and release QIR 2.1 caller-owned arrays of qubit pointers.
-void __quantum__rt__qubit_array_allocate(int64_t, Qubit**, bool* outError);
-void __quantum__rt__qubit_array_release(int64_t, Qubit**);
+void __quantum__rt__qubit_array_allocate(int64_t, Qubit**,
+                                         bool* outError) MQT_QIR_NOEXCEPT;
+void __quantum__rt__qubit_array_release(int64_t, Qubit**) MQT_QIR_NOEXCEPT;
 
 /// Allocate and release dynamically managed QIR 2.1 results.
-Result* __quantum__rt__result_allocate(bool* outError);
-void __quantum__rt__result_release(Result*);
-void __quantum__rt__result_array_allocate(int64_t, Result**, bool* outError);
-void __quantum__rt__result_array_release(int64_t, Result**);
+Result* __quantum__rt__result_allocate(bool* outError) MQT_QIR_NOEXCEPT;
+void __quantum__rt__result_release(Result*) MQT_QIR_NOEXCEPT;
+void __quantum__rt__result_array_allocate(int64_t, Result**,
+                                          bool* outError) MQT_QIR_NOEXCEPT;
+void __quantum__rt__result_array_release(int64_t, Result**) MQT_QIR_NOEXCEPT;
 
 /// Releases a single qubit. Passing a null pointer as argument should cause a
 /// runtime failure.
-void __quantum__rt__qubit_release(Qubit*);
+void __quantum__rt__qubit_release(Qubit*) MQT_QIR_NOEXCEPT;
 
 // QUANTUM INSTRUCTION SET
 //
@@ -102,52 +114,65 @@ void __quantum__rt__qubit_release(Qubit*);
 // a single target directly, otherwise a Tuple of parameters then targets.
 
 #define MQT_QIR_DECLARE_1_0(NAME, SUFFIX, CTL_SUFFIX)                          \
-  void __quantum__qis__##NAME##__##SUFFIX(Qubit*);                             \
-  void __quantum__qis__c##NAME##__##SUFFIX(Qubit*, Qubit*);                    \
-  void __quantum__qis__cc##NAME##__##SUFFIX(Qubit*, Qubit*, Qubit*);           \
-  void __quantum__qis__##NAME##__##CTL_SUFFIX(Array*, Qubit*);
+  void __quantum__qis__##NAME##__##SUFFIX(Qubit*) MQT_QIR_NOEXCEPT;            \
+  void __quantum__qis__c##NAME##__##SUFFIX(Qubit*, Qubit*) MQT_QIR_NOEXCEPT;   \
+  void __quantum__qis__cc##NAME##__##SUFFIX(Qubit*, Qubit*, Qubit*)            \
+      MQT_QIR_NOEXCEPT;                                                        \
+  void __quantum__qis__##NAME##__##CTL_SUFFIX(Array*, Qubit*) MQT_QIR_NOEXCEPT;
 #define MQT_QIR_DECLARE_1_1(NAME, SUFFIX, CTL_SUFFIX)                          \
-  void __quantum__qis__##NAME##__##SUFFIX(double, Qubit*);                     \
-  void __quantum__qis__c##NAME##__##SUFFIX(double, Qubit*, Qubit*);            \
-  void __quantum__qis__cc##NAME##__##SUFFIX(double, Qubit*, Qubit*, Qubit*);   \
-  void __quantum__qis__##NAME##__##CTL_SUFFIX(Array*, Tuple*);
+  void __quantum__qis__##NAME##__##SUFFIX(double, Qubit*) MQT_QIR_NOEXCEPT;    \
+  void __quantum__qis__c##NAME##__##SUFFIX(double, Qubit*, Qubit*)             \
+      MQT_QIR_NOEXCEPT;                                                        \
+  void __quantum__qis__cc##NAME##__##SUFFIX(double, Qubit*, Qubit*, Qubit*)    \
+      MQT_QIR_NOEXCEPT;                                                        \
+  void __quantum__qis__##NAME##__##CTL_SUFFIX(Array*, Tuple*) MQT_QIR_NOEXCEPT;
 #define MQT_QIR_DECLARE_1_2(NAME, SUFFIX, CTL_SUFFIX)                          \
-  void __quantum__qis__##NAME##__##SUFFIX(double, double, Qubit*);             \
-  void __quantum__qis__c##NAME##__##SUFFIX(double, double, Qubit*, Qubit*);    \
+  void __quantum__qis__##NAME##__##SUFFIX(double, double, Qubit*)              \
+      MQT_QIR_NOEXCEPT;                                                        \
+  void __quantum__qis__c##NAME##__##SUFFIX(double, double, Qubit*, Qubit*)     \
+      MQT_QIR_NOEXCEPT;                                                        \
   void __quantum__qis__cc##NAME##__##SUFFIX(double, double, Qubit*, Qubit*,    \
-                                            Qubit*);                           \
-  void __quantum__qis__##NAME##__##CTL_SUFFIX(Array*, Tuple*);
+                                            Qubit*) MQT_QIR_NOEXCEPT;          \
+  void __quantum__qis__##NAME##__##CTL_SUFFIX(Array*, Tuple*) MQT_QIR_NOEXCEPT;
 #define MQT_QIR_DECLARE_1_3(NAME, SUFFIX, CTL_SUFFIX)                          \
-  void __quantum__qis__##NAME##__##SUFFIX(double, double, double, Qubit*);     \
+  void __quantum__qis__##NAME##__##SUFFIX(double, double, double, Qubit*)      \
+      MQT_QIR_NOEXCEPT;                                                        \
   void __quantum__qis__c##NAME##__##SUFFIX(double, double, double, Qubit*,     \
-                                           Qubit*);                            \
+                                           Qubit*) MQT_QIR_NOEXCEPT;           \
   void __quantum__qis__cc##NAME##__##SUFFIX(double, double, double, Qubit*,    \
-                                            Qubit*, Qubit*);                   \
-  void __quantum__qis__##NAME##__##CTL_SUFFIX(Array*, Tuple*);
+                                            Qubit*, Qubit*) MQT_QIR_NOEXCEPT;  \
+  void __quantum__qis__##NAME##__##CTL_SUFFIX(Array*, Tuple*) MQT_QIR_NOEXCEPT;
 #define MQT_QIR_DECLARE_2_0(NAME, SUFFIX, CTL_SUFFIX)                          \
-  void __quantum__qis__##NAME##__##SUFFIX(Qubit*, Qubit*);                     \
-  void __quantum__qis__c##NAME##__##SUFFIX(Qubit*, Qubit*, Qubit*);            \
-  void __quantum__qis__cc##NAME##__##SUFFIX(Qubit*, Qubit*, Qubit*, Qubit*);   \
-  void __quantum__qis__##NAME##__##CTL_SUFFIX(Array*, Tuple*);
+  void __quantum__qis__##NAME##__##SUFFIX(Qubit*, Qubit*) MQT_QIR_NOEXCEPT;    \
+  void __quantum__qis__c##NAME##__##SUFFIX(Qubit*, Qubit*, Qubit*)             \
+      MQT_QIR_NOEXCEPT;                                                        \
+  void __quantum__qis__cc##NAME##__##SUFFIX(Qubit*, Qubit*, Qubit*, Qubit*)    \
+      MQT_QIR_NOEXCEPT;                                                        \
+  void __quantum__qis__##NAME##__##CTL_SUFFIX(Array*, Tuple*) MQT_QIR_NOEXCEPT;
 #define MQT_QIR_DECLARE_2_1(NAME, SUFFIX, CTL_SUFFIX)                          \
-  void __quantum__qis__##NAME##__##SUFFIX(double, Qubit*, Qubit*);             \
-  void __quantum__qis__c##NAME##__##SUFFIX(double, Qubit*, Qubit*, Qubit*);    \
+  void __quantum__qis__##NAME##__##SUFFIX(double, Qubit*, Qubit*)              \
+      MQT_QIR_NOEXCEPT;                                                        \
+  void __quantum__qis__c##NAME##__##SUFFIX(double, Qubit*, Qubit*, Qubit*)     \
+      MQT_QIR_NOEXCEPT;                                                        \
   void __quantum__qis__cc##NAME##__##SUFFIX(double, Qubit*, Qubit*, Qubit*,    \
-                                            Qubit*);                           \
-  void __quantum__qis__##NAME##__##CTL_SUFFIX(Array*, Tuple*);
+                                            Qubit*) MQT_QIR_NOEXCEPT;          \
+  void __quantum__qis__##NAME##__##CTL_SUFFIX(Array*, Tuple*) MQT_QIR_NOEXCEPT;
 #define MQT_QIR_DECLARE_2_2(NAME, SUFFIX, CTL_SUFFIX)                          \
-  void __quantum__qis__##NAME##__##SUFFIX(double, double, Qubit*, Qubit*);     \
+  void __quantum__qis__##NAME##__##SUFFIX(double, double, Qubit*, Qubit*)      \
+      MQT_QIR_NOEXCEPT;                                                        \
   void __quantum__qis__c##NAME##__##SUFFIX(double, double, Qubit*, Qubit*,     \
-                                           Qubit*);                            \
+                                           Qubit*) MQT_QIR_NOEXCEPT;           \
   void __quantum__qis__cc##NAME##__##SUFFIX(double, double, Qubit*, Qubit*,    \
-                                            Qubit*, Qubit*);                   \
-  void __quantum__qis__##NAME##__##CTL_SUFFIX(Array*, Tuple*);
+                                            Qubit*, Qubit*) MQT_QIR_NOEXCEPT;  \
+  void __quantum__qis__##NAME##__##CTL_SUFFIX(Array*, Tuple*) MQT_QIR_NOEXCEPT;
 #define MQT_QIR_DECLARE_3_0(NAME, SUFFIX, CTL_SUFFIX)                          \
-  void __quantum__qis__##NAME##__##SUFFIX(Qubit*, Qubit*, Qubit*);             \
-  void __quantum__qis__c##NAME##__##SUFFIX(Qubit*, Qubit*, Qubit*, Qubit*);    \
+  void __quantum__qis__##NAME##__##SUFFIX(Qubit*, Qubit*, Qubit*)              \
+      MQT_QIR_NOEXCEPT;                                                        \
+  void __quantum__qis__c##NAME##__##SUFFIX(Qubit*, Qubit*, Qubit*, Qubit*)     \
+      MQT_QIR_NOEXCEPT;                                                        \
   void __quantum__qis__cc##NAME##__##SUFFIX(Qubit*, Qubit*, Qubit*, Qubit*,    \
-                                            Qubit*);                           \
-  void __quantum__qis__##NAME##__##CTL_SUFFIX(Array*, Tuple*);
+                                            Qubit*) MQT_QIR_NOEXCEPT;          \
+  void __quantum__qis__##NAME##__##CTL_SUFFIX(Array*, Tuple*) MQT_QIR_NOEXCEPT;
 
 #define MQT_GATE(KEY, NAME, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)       \
   MQT_QIR_DECLARE_##TARGETS##_##PARAMS(NAME, SUFFIX, CTL_SUFFIX)
@@ -163,61 +188,66 @@ void __quantum__rt__qubit_release(Qubit*);
 #undef MQT_QIR_DECLARE_3_0
 
 /// Apply an arbitrary global phase.
-void __quantum__qis__gphase__body(double);
+void __quantum__qis__gphase__body(double) MQT_QIR_NOEXCEPT;
 
 /// Common QIS spelling for controlled X.
-void __quantum__qis__cnot__body(Qubit*, Qubit*);
+void __quantum__qis__cnot__body(Qubit*, Qubit*) MQT_QIR_NOEXCEPT;
 
-void __quantum__qis__mz__body(Qubit*, Result*);
-void __quantum__qis__reset__body(Qubit*);
+void __quantum__qis__mz__body(Qubit*, Result*) MQT_QIR_NOEXCEPT;
+void __quantum__qis__reset__body(Qubit*) MQT_QIR_NOEXCEPT;
 
 // cf.
 // https://github.com/qir-alliance/qir-spec/blob/main/specification/under_development/profiles/Adaptive_Profile.md#runtime-functions
 
 /// Initializes the execution environment. Sets all qubits to a zero-state if
 /// they are not dynamically managed.
-void __quantum__rt__initialize(char*);
+void __quantum__rt__initialize(char*) MQT_QIR_NOEXCEPT;
 
 /// Reads the value of the given measurement result and converts it to a boolean
 /// value.
-bool __quantum__rt__read_result(Result*);
+bool __quantum__rt__read_result(Result*) MQT_QIR_NOEXCEPT;
 
 /// Adds a measurement result to the generated output. The second parameter
 /// defines a string label for the result value. Depending on the output schema,
 /// the label is included in the output or omitted.
-void __quantum__rt__result_record_output(Result*, const char*);
+void __quantum__rt__result_record_output(Result*, const char*) MQT_QIR_NOEXCEPT;
 
 /// Adds a boolean value to the generated output. The second parameter defines
 /// a string label for the value. Depending on the output schema, the label is
 /// included in the output or omitted.
-void __quantum__rt__bool_record_output(bool, const char*);
+void __quantum__rt__bool_record_output(bool, const char*) MQT_QIR_NOEXCEPT;
 
 /// Adds an integer value to the generated output. The second parameter defines
 /// a string label for the value. Depending on the output schema, the label is
 /// included in the output or omitted.
-void __quantum__rt__int_record_output(int64_t, const char*);
+void __quantum__rt__int_record_output(int64_t, const char*) MQT_QIR_NOEXCEPT;
 
 /// Adds a floating-point value to the generated output. The second parameter
 /// defines a string label for the value. Depending on the output schema, the
 /// label is included in the output or omitted.
-void __quantum__rt__double_record_output(double, const char*);
+void __quantum__rt__double_record_output(double, const char*) MQT_QIR_NOEXCEPT;
 
 /// Inserts a marker in the generated output indicating that the next
 /// \p elementCount recorded values form the contents of a tuple. The second
 /// parameter defines a string label for the tuple.
-void __quantum__rt__tuple_record_output(int64_t elementCount, const char*);
+void __quantum__rt__tuple_record_output(int64_t elementCount,
+                                        const char*) MQT_QIR_NOEXCEPT;
 
 /// Inserts a marker in the generated output indicating that the next \p size
 /// recorded values form the contents of an array. The second parameter defines
 /// a string label for the array.
-void __quantum__rt__array_record_output(int64_t size, const char*);
+void __quantum__rt__array_record_output(int64_t size,
+                                        const char*) MQT_QIR_NOEXCEPT;
 
 /// Record the contents of a caller-owned result pointer array.
-void __quantum__rt__result_array_record_output(int64_t, Result**, const char*);
+void __quantum__rt__result_array_record_output(int64_t, Result**,
+                                               const char*) MQT_QIR_NOEXCEPT;
 
-// NOLINTEND(readability-identifier-naming)
+/// NOLINTEND(readability-identifier-naming,bugprone-reserved-identifier)
 // NOLINTEND(modernize-use-using)
 
 #ifdef __cplusplus
 } // extern "C"
 #endif
+
+#undef MQT_QIR_NOEXCEPT

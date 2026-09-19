@@ -20,14 +20,29 @@ Save this as `main.cpp`:
 #include "dd/StateGeneration.hpp"
 
 #include <iostream>
+#include <memory>
+#include <variant>
 
 int main() {
-  dd::Package package(2);
-  const auto state = dd::makeGHZState(2, package);
+  auto created = dd::Package::create(2);
+  if (const auto* error = std::get_if<dd::Error>(&created)) {
+    std::cerr << error->message << '\n';
+    return 1;
+  }
+  auto& package = *std::get<std::unique_ptr<dd::Package>>(created);
+  auto generated = dd::makeGHZState(2, package);
+  if (const auto* error = std::get_if<dd::Error>(&generated)) {
+    std::cerr << error->message << '\n';
+    return 1;
+  }
+  const auto state = std::get<dd::VectorDD>(generated);
   for (const auto amplitude : state.getVector()) {
     std::cout << amplitude << '\n';
   }
-  package.decRef(state);
+  if (const auto error = package.decRef(state)) {
+    std::cerr << error->message << '\n';
+    return 1;
+  }
 }
 ```
 
@@ -93,6 +108,30 @@ with TemporaryDirectory() as directory:
     assert len(amplitudes) == len(expected)
     assert all(abs(actual - ideal) < 1e-6 for actual, ideal in zip(amplitudes, expected))
 ```
+
+## Handle native errors
+
+The C++20 DD, benchmark and QDMI libraries return `Result<T>`, an alias for
+`std::variant<T, Error>` in each library's namespace. Operations with no value
+return `std::optional<Error>`; an empty optional means success. Check errors
+before taking the value. An optional property can therefore return a value, an
+empty optional for an unsupported property, or an error for a failed query.
+
+Fallible construction uses `create(...)`. For example, `dd::Package::create`
+returns an owned package, `mqt::bench::Grover::create` returns a validated
+benchmark, and `qdmi::Session::create` returns a session. QDMI errors retain the
+provider's status code. DD and benchmark errors carry a category and message.
+Python constructors and methods translate these errors into Python exceptions.
+Invalid DD arguments, including insufficient package capacity and conflicting
+controls, raise `ValueError`. QDMI provider failures retain their category
+through the compiler adapter: an unsupported operation raises `RuntimeError`
+from both `submit_job` and `submit_program`.
+
+LLVM-facing services use `llvm::Expected<T>` and `llvm::Error`; MLIR passes and
+interpreters use `LogicalResult` or `FailureOr<T>` with diagnostics. Callers
+must consume each LLVM error. The native result contracts cover invalid inputs
+and reported operational failures. They do not provide recovery from allocation
+exhaustion or unexpected exceptions in system libraries or dependencies.
 
 ## Extend the compiler or QIR runtime
 

@@ -15,6 +15,7 @@
 
 #include "dd/Complex.hpp"
 #include "dd/DDDefinitions.hpp"
+#include "dd/Error.hpp"
 #include "dd/RealNumber.hpp"
 
 #include <array>
@@ -101,10 +102,10 @@ template <class Node> struct Edge {
   /// @param decisions string {0, 1, 2, 3}^n describing which outgoing edge
   /// should be followed (for vectors entries are limited to 0 and 1) If string
   /// is longer than required, the additional characters are ignored.
-  /// @throws std::out_of_range if the path is too short
-  /// @throws std::invalid_argument if a used path digit is outside the radix
+  /// Returns an error if the path is too short
+  /// Returns an error if a used path digit is outside the radix
   /// @return the complex amplitude of the specified element
-  [[nodiscard]] std::complex<fp>
+  [[nodiscard]] Result<std::complex<fp>>
   getValueByPath(std::size_t numQubits, const std::string& decisions) const;
 
   /// Get the size of the DD
@@ -141,9 +142,9 @@ public:
 
   /// Get a single element of the vector represented by the DD
   /// @param i index of the element
-  /// @throws std::out_of_range if the index is outside the vector
+  /// Returns an error if the index is outside the vector
   /// @return the complex value of the amplitude
-  [[nodiscard]] std::complex<fp> getValueByIndex(std::size_t i) const
+  [[nodiscard]] Result<std::complex<fp>> getValueByIndex(std::size_t i) const
     requires IsVector<Node>;
 
   /// Get the vector represented by the DD
@@ -216,9 +217,9 @@ public:
   /// @param numQubits number of qubits in the considered DD
   /// @param i row index of the element
   /// @param j column index of the element
-  /// @throws std::out_of_range if either index is outside the matrix
+  /// Returns an error if either index is outside the matrix
   /// @return the complex value of the entry
-  [[nodiscard]] std::complex<fp>
+  [[nodiscard]] Result<std::complex<fp>>
   getValueByIndex(std::size_t numQubits, std::size_t i, std::size_t j) const
     requires IsMatrix<Node>;
 

@@ -23,6 +23,8 @@ add_executable(
 target_link_libraries(mqt-core-mlir-unittests-benchmark
                       PRIVATE GTest::gtest_main MQT::CoreBenchGenerate MLIRQCODDFunctionality)
 
+target_include_directories(mqt-core-mlir-unittests-benchmark PRIVATE ${PROJECT_SOURCE_DIR}/test)
+
 mqt_mlir_configure_unittest_target(mqt-core-mlir-unittests-benchmark REQUIRES_EH)
 
 gtest_discover_tests(mqt-core-mlir-unittests-benchmark PROPERTIES LABELS mqt-mlir-unittests

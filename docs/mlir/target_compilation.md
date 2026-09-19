@@ -340,7 +340,12 @@ Compile a file and submit it to DDSIM:
 #include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
 
-auto device = qdmi::Session::openDevice("mqt.ddsim.default");
+auto deviceResult = qdmi::Session::openDevice("mqt.ddsim.default");
+if (auto* error = std::get_if<qdmi::Error>(&deviceResult)) {
+  llvm::errs() << error->message << '\n';
+  return 1;
+}
+auto& device = std::get<qdmi::Device>(deviceResult);
 auto input = mlir::QCProgram::fromOpenQASMFile("input.qasm");
 if (!input) {
   return 1;
@@ -355,7 +360,12 @@ if (!job) {
   llvm::errs() << llvm::toString(job.takeError()) << '\n';
   return 1;
 }
-if (!job->wait()) {
+auto completed = job->wait();
+if (auto* error = std::get_if<qdmi::Error>(&completed)) {
+  llvm::errs() << error->message << '\n';
+  return 1;
+}
+if (!std::get<bool>(completed)) {
   return 1;
 }
 ```

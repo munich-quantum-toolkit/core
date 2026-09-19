@@ -36,8 +36,15 @@ target_sources(MLIRTestCaseUtils INTERFACE FILE_SET HEADERS BASE_DIRS ${CMAKE_CU
 add_library(MLIRExactUnitaryTest INTERFACE)
 target_link_libraries(MLIRExactUnitaryTest INTERFACE GTest::gtest MLIRFuncDialect MLIRIR
                                                      MLIRQCODDFunctionality MQT::CoreDD)
-target_sources(MLIRExactUnitaryTest INTERFACE FILE_SET HEADERS BASE_DIRS
-                                              ${CMAKE_CURRENT_SOURCE_DIR} FILES ExactUnitaryTest.h)
+target_sources(
+  MLIRExactUnitaryTest
+  INTERFACE FILE_SET
+            HEADERS
+            BASE_DIRS
+            ${CMAKE_CURRENT_SOURCE_DIR}
+            FILES
+            ExactUnitaryTest.h
+            DDTestUtils.h)
 
 function(mqt_mlir_configure_unittest_target target_name)
   cmake_parse_arguments(PARSE_ARGV 1 arg "REQUIRES_EH" "" "")

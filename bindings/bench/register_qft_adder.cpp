@@ -11,18 +11,24 @@
 #include "bench/JSON.hpp"
 #include "bench/QFTAdder.hpp"
 
+#include "Result.hpp"
+
 #include "nanobind/nanobind.h"
 #include "nanobind/stl/map.h"         // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/optional.h"    // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/string.h"      // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/string_view.h" // NOLINT(misc-include-cleaner)
 
+#include <new>
 #include <string>
+#include <utility>
 
 namespace mqt {
 
 namespace nb = nanobind;
 using namespace nb::literals;
+using bindings::bindBenchResult;
+using bindings::takeBenchResult;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerQFTAdder(const nb::module_& m) {
@@ -63,7 +69,14 @@ All strings are big-endian, and leading zeros determine the operand width.
 Register addends may contain ``+`` for independent :math:`|+\rangle` qubits.
 The accumulator and constant addends must be binary. The circuit follows
 Draper's register addition and its constant-input Fourier specialization.)pb");
-  qftAdder.def(nb::init<bench::QFTAdderOptions>(), "options"_a)
+  qftAdder
+      .def(
+          "__init__",
+          [](bench::QFTAdder* self, bench::QFTAdderOptions options) {
+            new (self) bench::QFTAdder(
+                takeBenchResult(bench::QFTAdder::create(std::move(options))));
+          },
+          "options"_a)
       .def_prop_ro("options", &bench::QFTAdder::options,
                    nb::rv_policy::reference_internal,
                    "The resolved benchmark parameters.")
@@ -73,9 +86,9 @@ Draper's register addition and its constant-input Fourier specialization.)pb");
       .def_prop_ro(
           "expected_result", &bench::QFTAdder::expectedResult,
           "The unique logical outcome, or ``None`` for a superposed addend.")
-      .def("probability", &bench::QFTAdder::probability, "outcome"_a,
-           "Return the ideal probability of an outcome.")
-      .def("evaluate", &bench::QFTAdder::evaluate, "counts"_a,
+      .def("probability", bindBenchResult(&bench::QFTAdder::probability),
+           "outcome"_a, "Return the ideal probability of an outcome.")
+      .def("evaluate", bindBenchResult(&bench::QFTAdder::evaluate), "counts"_a,
            "Compare sampled counts with the ideal distribution.")
       .def(
           "generate",
@@ -95,19 +108,23 @@ Draper's register addition and its constant-input Fourier specialization.)pb");
       .def_prop_ro(
           "manifest_json",
           [](const bench::QFTAdder& value) {
-            return bench::toManifestJSON(value);
+            return takeBenchResult(bench::toManifestJSON(value));
           },
           "The canonical manifest JSON.")
       .def_prop_ro(
           "case_id",
-          [](const bench::QFTAdder& value) { return bench::caseId(value); },
+          [](const bench::QFTAdder& value) {
+            return takeBenchResult(bench::caseId(value));
+          },
           "The stable semantic case ID.")
-      .def_static("from_instance_specification_json",
-                  &bench::qftAdderFromInstanceSpecificationJSON, "json"_a,
-                  nb::kw_only(), "source"_a = "<instance-specification>",
-                  "Parse a strict benchmark instance specification.")
-      .def_static("from_manifest_json", &bench::qftAdderFromManifestJSON,
-                  "json"_a, nb::kw_only(), "source"_a = "<manifest>",
+      .def_static(
+          "from_instance_specification_json",
+          bindBenchResult(&bench::qftAdderFromInstanceSpecificationJSON),
+          "json"_a, nb::kw_only(), "source"_a = "<instance-specification>",
+          "Parse a strict benchmark instance specification.")
+      .def_static("from_manifest_json",
+                  bindBenchResult(&bench::qftAdderFromManifestJSON), "json"_a,
+                  nb::kw_only(), "source"_a = "<manifest>",
                   "Parse a strict benchmark manifest.");
 }
 

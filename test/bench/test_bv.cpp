@@ -9,12 +9,15 @@
  */
 
 #include "bench/BV.hpp"
+#include "bench/Error.hpp"
 #include "bench/Evaluation.hpp"
+#include "bench/TestUtils.hpp"
 
 #include "gtest/gtest.h"
 
-#include <stdexcept>
 #include <string>
+
+namespace test = mqt::bench::test;
 
 namespace {
 
@@ -24,7 +27,7 @@ using mqt::bench::BVOptions;
 using mqt::bench::Output;
 
 TEST(BV, UsesTheStaticMethodByDefault) {
-  const BV benchmark{{.hiddenBitstring = "101"}};
+  const auto benchmark = test::value(BV::create({.hiddenBitstring = "101"}));
   EXPECT_EQ(benchmark.options().method, BVMethod::Static);
   EXPECT_EQ(benchmark.output(), (Output{"result", 3}));
 }
@@ -32,25 +35,27 @@ TEST(BV, UsesTheStaticMethodByDefault) {
 TEST(BV, ValidatesTheConfiguredInstance) {
   // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
   constexpr auto invalidMethod = static_cast<BVMethod>(2);
-  EXPECT_THROW(static_cast<void>(BV{{.hiddenBitstring = ""}}),
-               std::invalid_argument);
-  EXPECT_THROW(static_cast<void>(BV{{.hiddenBitstring = "10x"}}),
-               std::invalid_argument);
-  EXPECT_THROW(static_cast<void>(BV{{.hiddenBitstring = std::string(
-                                         BVOptions::MAX_BITS + 1, '0')}}),
-               std::invalid_argument);
-  EXPECT_THROW(
-      static_cast<void>(BV{{.hiddenBitstring = "1", .method = invalidMethod}}),
-      std::invalid_argument);
+  EXPECT_EQ(test::errorKind(BV::create({.hiddenBitstring = ""})),
+            mqt::bench::Error::Kind::InvalidArgument);
+  EXPECT_EQ(test::errorKind(BV::create({.hiddenBitstring = "10x"})),
+            mqt::bench::Error::Kind::InvalidArgument);
+  EXPECT_EQ(test::errorKind(BV::create({.hiddenBitstring = std::string(
+                                            BVOptions::MAX_BITS + 1, '0')})),
+            mqt::bench::Error::Kind::InvalidArgument);
+  EXPECT_EQ(test::errorKind(
+                BV::create({.hiddenBitstring = "1", .method = invalidMethod})),
+            mqt::bench::Error::Kind::InvalidArgument);
 }
 
 TEST(BV, GivesTheHiddenBitstringAsASelectedOutcome) {
   for (const auto method : {BVMethod::Static, BVMethod::Dynamic}) {
-    const BV benchmark{{.hiddenBitstring = "101", .method = method}};
-    EXPECT_DOUBLE_EQ(benchmark.probability("101"), 1.);
-    EXPECT_DOUBLE_EQ(benchmark.probability("011"), 0.);
+    const auto benchmark =
+        test::value(BV::create({.hiddenBitstring = "101", .method = method}));
+    EXPECT_DOUBLE_EQ(test::value(benchmark.probability("101")), 1.);
+    EXPECT_DOUBLE_EQ(test::value(benchmark.probability("011")), 0.);
 
-    const auto evaluation = benchmark.evaluate({{"101", 80}, {"011", 20}});
+    const auto evaluation =
+        test::value(benchmark.evaluate({{"101", 80}, {"011", 20}}));
     EXPECT_DOUBLE_EQ(evaluation.totalVariationDistance, 0.2);
     EXPECT_DOUBLE_EQ(evaluation.squaredHellingerFidelity, 0.8);
     ASSERT_TRUE(evaluation.successProbability);

@@ -14,6 +14,7 @@
 #include "qdmi/devices/dd/Device.hpp"
 
 #include "dd/DDDefinitions.hpp"
+#include "dd/Error.hpp"
 #include "dd/Package.hpp"
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
@@ -27,6 +28,7 @@
 #include "mlir/Support/LogicalResult.h"
 
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Error.h"
 
 #include <algorithm>
 #include <array>
@@ -572,7 +574,12 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQASMProgramStateExtraction()
       std::cerr << "Error: QCO program has no entry point\n";
       return false;
     }
-    dd_ = std::make_unique<dd::Package>();
+    auto package = dd::Package::create();
+    if (const auto* error = std::get_if<dd::Error>(&package)) {
+      std::cerr << error->message << '\n';
+      return false;
+    }
+    dd_ = std::get<std::unique_ptr<dd::Package>>(std::move(package));
     auto state = mlir::qco::simulateStatevector(entryPoint, *dd_);
     if (mlir::failed(state)) {
       std::cerr << "Error: failed to simulate the QCO program\n";
@@ -599,17 +606,25 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramSampling()
         seed_ ? std::optional<uint64_t>{static_cast<uint64_t>(*seed_)}
               : std::nullopt;
     std::optional<std::ostringstream> output;
-    auto jitSession =
-        qir::JitSession(irBytes, "QDMI job", qir::Execution::Sampling, seed);
+    auto jitSession = qir::JitSession::create(irBytes, "QDMI job",
+                                              qir::Execution::Sampling, seed);
+    if (!jitSession) {
+      std::cerr << llvm::toString(jitSession.takeError()) << '\n';
+      return false;
+    }
     if (captureQIROutput_) {
-      jitSession.runtime().setOstream(output.emplace());
+      (*jitSession)->runtime().setOstream(output.emplace());
     } else {
-      jitSession.runtime().disableOutput();
+      (*jitSession)->runtime().disableOutput();
     }
     bool stateAvailable = false;
-    if (const auto rc = jitSession.sample(numShots_, shots_, &stateAvailable);
-        rc != 0) {
-      std::cerr << "Error: QIR program failed with error: " << rc << '\n';
+    auto rc = (*jitSession)->sample(numShots_, shots_, &stateAvailable);
+    if (!rc) {
+      std::cerr << llvm::toString(rc.takeError()) << '\n';
+      return false;
+    }
+    if (*rc != 0) {
+      std::cerr << "Error: QIR program failed with error: " << *rc << '\n';
       return false;
     }
     if (output) {
@@ -621,9 +636,13 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramSampling()
       ++counts_[shot];
     }
     if (stateAvailable) {
-      auto state = jitSession.runtime().takeState();
-      dd_ = std::move(state.dd);
-      stateVecDD_ = state.edge;
+      auto state = (*jitSession)->runtime().takeState();
+      if (!state) {
+        std::cerr << llvm::toString(state.takeError()) << '\n';
+        return false;
+      }
+      dd_ = std::move(state->dd);
+      stateVecDD_ = state->edge;
     }
     return true;
   });
@@ -637,17 +656,30 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramStateExtraction()
                                  p.size());
         },
         program_);
-    auto jitSession =
-        qir::JitSession(irBytes, "QDMI job", qir::Execution::StateExtraction);
-    auto& runtime = jitSession.runtime();
+    auto jitSession = qir::JitSession::create(irBytes, "QDMI job",
+                                              qir::Execution::StateExtraction);
+    if (!jitSession) {
+      std::cerr << llvm::toString(jitSession.takeError()) << '\n';
+      return false;
+    }
+    auto& runtime = (*jitSession)->runtime();
     runtime.disableOutput();
-    if (const auto rc = jitSession.run(); rc != 0) {
-      std::cerr << "Error: QIR program failed with error: " << rc << '\n';
+    auto rc = (*jitSession)->run();
+    if (!rc) {
+      std::cerr << llvm::toString(rc.takeError()) << '\n';
+      return false;
+    }
+    if (*rc != 0) {
+      std::cerr << "Error: QIR program failed with error: " << *rc << '\n';
       return false;
     }
     auto state = runtime.takeState();
-    dd_ = std::move(state.dd);
-    stateVecDD_ = state.edge;
+    if (!state) {
+      std::cerr << llvm::toString(state.takeError()) << '\n';
+      return false;
+    }
+    dd_ = std::move(state->dd);
+    stateVecDD_ = state->edge;
     return true;
   });
 }

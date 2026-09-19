@@ -70,6 +70,9 @@ inline void writeDiagnostic(const DiagnosticLevel level,
 #endif
 }
 
+void emitFormatted(DiagnosticLevel level, std::string_view format,
+                   std::format_args args) noexcept;
+
 } // namespace detail
 
 /// Formats and writes one best-effort diagnostic to standard error.
@@ -78,12 +81,7 @@ inline void writeDiagnostic(const DiagnosticLevel level,
 template <class... Args>
 void emit(const DiagnosticLevel level, const std::format_string<Args...> format,
           Args&&... args) noexcept {
-  try {
-    detail::writeDiagnostic(level,
-                            std::format(format, std::forward<Args>(args)...));
-  } catch (...) {
-    detail::writeDiagnostic(level, format.get());
-  }
+  detail::emitFormatted(level, format.get(), std::make_format_args(args...));
 }
 
 /// Formats and writes an informational diagnostic to standard error.

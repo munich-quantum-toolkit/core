@@ -10,11 +10,13 @@
 
 #include "bench/Teleportation.hpp"
 
+#include "bench/Error.hpp"
 #include "bench/Evaluation.hpp"
 
 #include "EvaluationUtils.hpp"
 
 #include <string_view>
+#include <utility>
 
 namespace mqt::bench {
 
@@ -22,12 +24,15 @@ Teleportation::Teleportation() : output_{.name = "result", .width = 1} {}
 
 const Output& Teleportation::output() const noexcept { return output_; }
 
-double Teleportation::probability(const std::string_view outcome) const {
-  detail::validateOutcome(outcome, output_.width);
+Result<double>
+Teleportation::probability(const std::string_view outcome) const {
+  if (auto error = detail::validateOutcome(outcome, output_.width)) {
+    return std::move(*error);
+  }
   return outcome == "0" ? 1. : 0.;
 }
 
-Evaluation Teleportation::evaluate(const Counts& counts) const {
+Result<Evaluation> Teleportation::evaluate(const Counts& counts) const {
   return detail::evaluate(*this, counts, "0");
 }
 

@@ -10,6 +10,7 @@
 
 #include "bench/Evaluation.hpp"
 #include "bench/Teleportation.hpp"
+#include "bench/TestUtils.hpp"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/bench/Generate.h"
@@ -30,7 +31,8 @@ using namespace mlir;
 
 TEST(GenerateProgramTest, KeepsTeleportationFeedForwardAndReturnsOnlyBob) {
   auto program = generate(Teleportation{});
-  ASSERT_TRUE(program);
+  ASSERT_TRUE(static_cast<bool>(program))
+      << llvm::toString(program.takeError());
   auto moduleOp = program->module();
 
   SmallVector<qc::MeasureOp> measurements;

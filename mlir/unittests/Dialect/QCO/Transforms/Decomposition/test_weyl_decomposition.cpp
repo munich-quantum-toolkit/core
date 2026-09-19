@@ -18,6 +18,8 @@
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 
+#include "DDTestUtils.h"
+
 #include "gtest/gtest.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -506,7 +508,7 @@ struct Synthesized2QCircuit {
 
 [[nodiscard]] static FailureOr<Matrix4x4>
 computeTwoQubitUnitaryFromFunc(func::FuncOp funcOp) {
-  auto dd = std::make_unique<dd::Package>(2);
+  auto dd = ::dd::test::value(dd::Package::create(2));
   auto u = buildFunctionality(funcOp, *dd);
   if (failed(u)) {
     return failure();
@@ -517,7 +519,7 @@ computeTwoQubitUnitaryFromFunc(func::FuncOp funcOp) {
   const Matrix4x4 matrix = Matrix4x4::fromElements(
       m[0][0], m[0][2], m[0][1], m[0][3], m[2][0], m[2][2], m[2][1], m[2][3],
       m[1][0], m[1][2], m[1][1], m[1][3], m[3][0], m[3][2], m[3][1], m[3][3]);
-  dd->decRef(*u);
+  ::dd::test::value(dd->decRef(*u));
   return matrix;
 }
 

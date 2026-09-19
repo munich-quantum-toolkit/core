@@ -12,10 +12,13 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-bench-library)
   file(GLOB_RECURSE BENCH_SOURCES *.cpp)
 
   add_mqt_core_library(${MQT_CORE_TARGET_NAME}-bench-library ALIAS_NAME Bench)
+  mqt_target_disable_exceptions(${MQT_CORE_TARGET_NAME}-bench-library)
   set_target_properties(${MQT_CORE_TARGET_NAME}-bench-library
                         PROPERTIES OUTPUT_NAME ${MQT_CORE_TARGET_NAME}-bench)
 
   target_sources(${MQT_CORE_TARGET_NAME}-bench-library PRIVATE ${BENCH_SOURCES})
+  target_include_directories(${MQT_CORE_TARGET_NAME}-bench-library
+                             PRIVATE ${PROJECT_SOURCE_DIR}/src/common)
   target_link_libraries(${MQT_CORE_TARGET_NAME}-bench-library
                         PRIVATE $<BUILD_INTERFACE:nlohmann_json::nlohmann_json>)
   target_sources(

@@ -9,10 +9,13 @@
  */
 
 #include "dd/DDDefinitions.hpp"
+#include "dd/Error.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
 #include "dd/RealNumber.hpp"
 #include "dd/StateGeneration.hpp"
+
+#include "TestUtils.hpp"
 
 #include "gtest/gtest.h"
 
@@ -22,7 +25,6 @@
 #include <limits>
 #include <memory>
 #include <numbers>
-#include <stdexcept>
 #include <vector>
 
 using namespace dd;
@@ -52,12 +54,12 @@ TEST(StateGenerationTest, MakeZero) {
   CVec vec(len);
   vec[0] = {1., 0};
 
-  auto dd = std::make_unique<Package>(nq);
-  auto const zero = makeZeroState(nq, *dd);
+  auto dd = test::value(Package::create(nq));
+  auto const zero = test::value(makeZeroState(nq, *dd));
 
   EXPECT_EQ(zero.getVector(), vec);
 
-  dd->decRef(zero);
+  test::value(dd->decRef(zero));
   dd->garbageCollect(true);
 
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);
@@ -77,12 +79,12 @@ TEST(StateGenerationTest, MakeBasis) {
   CVec vec(len);
   vec[13] = {1., 0};
 
-  auto dd = std::make_unique<Package>(nq);
-  auto const basis = makeBasisState(nq, state, *dd);
+  auto dd = test::value(Package::create(nq));
+  auto const basis = test::value(makeBasisState(nq, state, *dd));
 
   EXPECT_EQ(basis.getVector(), vec);
 
-  dd->decRef(basis);
+  test::value(dd->decRef(basis));
   dd->garbageCollect(true);
 
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);
@@ -109,12 +111,12 @@ TEST(StateGenerationTest, MakeBasisDifficult) {
       {.25, 0},  {.25, 0},  {-.25, 0}, {-.25, 0},
   };
 
-  auto dd = std::make_unique<Package>(nq);
-  auto const basis = makeBasisState(nq, state, *dd);
+  auto dd = test::value(Package::create(nq));
+  auto const basis = test::value(makeBasisState(nq, state, *dd));
 
   expectStateVectorNear(basis.getVector(), vec);
 
-  dd->decRef(basis);
+  test::value(dd->decRef(basis));
   dd->garbageCollect(true);
 
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);
@@ -133,12 +135,12 @@ TEST(StateGenerationTest, MakeGHZ) {
   vec[0] = {SQRT2_2, 0};
   vec[len - 1] = {SQRT2_2, 0};
 
-  auto dd = std::make_unique<Package>(nq);
-  auto const ghz = makeGHZState(nq, *dd);
+  auto dd = test::value(Package::create(nq));
+  auto const ghz = test::value(makeGHZState(nq, *dd));
 
   expectStateVectorNear(ghz.getVector(), vec);
 
-  dd->decRef(ghz);
+  test::value(dd->decRef(ghz));
   dd->garbageCollect(true);
 
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);
@@ -151,8 +153,8 @@ TEST(StateGenerationTest, MakeGHZZeroQubits) {
 
   constexpr std::size_t nq = 1;
 
-  auto dd = std::make_unique<Package>(nq);
-  auto const ghz = makeGHZState(0, *dd);
+  auto dd = test::value(Package::create(nq));
+  auto const ghz = test::value(makeGHZState(0, *dd));
 
   EXPECT_EQ(ghz, vEdge::one());
 }
@@ -176,12 +178,12 @@ TEST(StateGenerationTest, MakeW) {
       0,
   };
 
-  auto dd = std::make_unique<Package>(nq);
-  auto const w = makeWState(nq, *dd);
+  auto dd = test::value(Package::create(nq));
+  auto const w = test::value(makeWState(nq, *dd));
 
   expectStateVectorNear(w.getVector(), vec);
 
-  dd->decRef(w);
+  test::value(dd->decRef(w));
   dd->garbageCollect(true);
 
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);
@@ -194,8 +196,8 @@ TEST(StateGenerationTest, MakeWZeroQubits) {
 
   constexpr std::size_t nq = 1;
 
-  auto dd = std::make_unique<Package>(nq);
-  auto const w = makeWState(0, *dd);
+  auto dd = test::value(Package::create(nq));
+  auto const w = test::value(makeWState(0, *dd));
 
   EXPECT_EQ(w, vEdge::one());
 }
@@ -209,8 +211,8 @@ TEST(StateGenerationTest, FromVectorZero) {
 
   const CVec vec{};
 
-  auto dd = std::make_unique<Package>(nq);
-  auto const psi = makeStateFromVector(vec, *dd);
+  auto dd = test::value(Package::create(nq));
+  auto const psi = test::value(makeStateFromVector(vec, *dd));
 
   EXPECT_EQ(psi, vEdge::one());
 }
@@ -225,14 +227,14 @@ TEST(StateGenerationTest, FromVectorScalar) {
 
   const CVec vec{alpha};
 
-  auto dd = std::make_unique<Package>(nq);
-  auto const psi = makeStateFromVector(vec, *dd);
+  auto dd = test::value(Package::create(nq));
+  auto const psi = test::value(makeStateFromVector(vec, *dd));
 
   EXPECT_TRUE(psi.isTerminal());
   ASSERT_TRUE(dd->getRootSet<vNode>().contains(psi));
   dd->garbageCollect(true);
   EXPECT_TRUE(psi.w.approximatelyEquals(dd->cn.lookup(alpha)));
-  EXPECT_NO_THROW(dd->decRef(psi));
+  EXPECT_NO_THROW(test::value(dd->decRef(psi)));
   EXPECT_TRUE(dd->getRootSet<vNode>().empty());
 }
 
@@ -258,14 +260,14 @@ TEST(StateGenerationTest, FromVector) {
       BasisStates::left,
   };
 
-  auto dd = std::make_unique<Package>(nq);
-  auto const ref = makeBasisState(nq, state, *dd);
-  auto const psi = makeStateFromVector(vec, *dd);
+  auto dd = test::value(Package::create(nq));
+  auto const ref = test::value(makeBasisState(nq, state, *dd));
+  auto const psi = test::value(makeStateFromVector(vec, *dd));
 
   EXPECT_EQ(psi, ref);
 
-  dd->decRef(ref);
-  dd->decRef(psi);
+  test::value(dd->decRef(ref));
+  test::value(dd->decRef(psi));
   dd->garbageCollect(true);
 
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);
@@ -277,8 +279,9 @@ TEST(StateGenerationTest, MakeZeroInvalidArguments) {
 
   constexpr std::size_t nq = 2;
 
-  auto dd = std::make_unique<Package>(nq);
-  EXPECT_THROW({ makeZeroState(nq + 1, *dd); }, std::invalid_argument);
+  auto dd = test::value(Package::create(nq));
+  EXPECT_EQ(test::errorKind(makeZeroState(nq + 1, *dd)),
+            Error::Kind::InvalidArgument);
 }
 
 TEST(StateGenerationTest, MakeBasisInvalidArguments) {
@@ -288,11 +291,13 @@ TEST(StateGenerationTest, MakeBasisInvalidArguments) {
 
   constexpr std::size_t nq = 2;
 
-  auto dd = std::make_unique<Package>(nq);
+  auto dd = test::value(Package::create(nq));
   const std::vector<BasisStates> state{BasisStates::one};
 
-  EXPECT_THROW({ makeBasisState(nq + 1, state, *dd); }, std::invalid_argument);
-  EXPECT_THROW({ makeBasisState(nq, state, *dd); }, std::invalid_argument);
+  EXPECT_EQ(test::errorKind(makeBasisState(nq + 1, state, *dd)),
+            Error::Kind::InvalidArgument);
+  EXPECT_EQ(test::errorKind(makeBasisState(nq, state, *dd)),
+            Error::Kind::InvalidArgument);
 }
 
 TEST(StateGenerationTest, MakeGHZInvalidArguments) {
@@ -301,8 +306,9 @@ TEST(StateGenerationTest, MakeGHZInvalidArguments) {
 
   constexpr std::size_t nq = 2;
 
-  auto dd = std::make_unique<Package>(nq);
-  EXPECT_THROW({ makeGHZState(nq + 1, *dd); }, std::invalid_argument);
+  auto dd = test::value(Package::create(nq));
+  EXPECT_EQ(test::errorKind(makeGHZState(nq + 1, *dd)),
+            Error::Kind::InvalidArgument);
 }
 
 TEST(StateGenerationTest, MakeWInvalidArguments) {
@@ -311,12 +317,13 @@ TEST(StateGenerationTest, MakeWInvalidArguments) {
 
   constexpr std::size_t nq = 2;
 
-  auto dd = std::make_unique<Package>(nq);
-  EXPECT_THROW({ makeWState(nq + 1, *dd); }, std::invalid_argument);
+  auto dd = test::value(Package::create(nq));
+  EXPECT_EQ(test::errorKind(makeWState(nq + 1, *dd)),
+            Error::Kind::InvalidArgument);
 
   const auto tol = dd::RealNumber::eps;
   dd::ComplexNumbers::setTolerance(1);
-  EXPECT_THROW({ makeWState(nq, *dd); }, std::invalid_argument);
+  EXPECT_EQ(test::errorKind(makeWState(nq, *dd)), Error::Kind::InvalidArgument);
   dd::ComplexNumbers::setTolerance(tol); // Reset tolerance.
 }
 
@@ -327,67 +334,85 @@ TEST(StateGenerationTest, FromVectorInvalidArguments) {
 
   constexpr std::size_t nq = 2;
 
-  auto dd = std::make_unique<Package>(nq);
-  EXPECT_THROW({ makeStateFromVector(CVec(5), *dd); }, std::invalid_argument);
-  EXPECT_THROW({ makeStateFromVector(CVec(3), *dd); }, std::invalid_argument);
+  auto dd = test::value(Package::create(nq));
+  EXPECT_EQ(test::errorKind(makeStateFromVector(CVec(5), *dd)),
+            Error::Kind::InvalidArgument);
+  EXPECT_EQ(test::errorKind(makeStateFromVector(CVec(3), *dd)),
+            Error::Kind::InvalidArgument);
 }
 
 TEST(StateGenerationTest, VectorConstructionChecksCapacity) {
-  Package empty(0);
-  EXPECT_THROW(makeStateFromVector(CVec(2), empty), std::invalid_argument);
-  Package oneQubit(1);
-  EXPECT_THROW(makeStateFromVector(CVec(4), oneQubit), std::invalid_argument);
-  EXPECT_THROW(makeStateFromVector(CVec(8), oneQubit), std::invalid_argument);
+  auto emptyOwner = test::value(Package::create(0));
+  auto& empty = *emptyOwner;
+  EXPECT_EQ(test::errorKind(makeStateFromVector(CVec(2), empty)),
+            Error::Kind::InvalidArgument);
+  auto oneQubitOwner = test::value(Package::create(1));
+  auto& oneQubit = *oneQubitOwner;
+  EXPECT_EQ(test::errorKind(makeStateFromVector(CVec(4), oneQubit)),
+            Error::Kind::InvalidArgument);
+  EXPECT_EQ(test::errorKind(makeStateFromVector(CVec(8), oneQubit)),
+            Error::Kind::InvalidArgument);
   bool read = false;
   const auto entry = [&read](size_t) {
     read = true;
     return std::complex<fp>{};
   };
-  EXPECT_THROW(makeStateFromVector(4, entry, oneQubit), std::invalid_argument);
+  EXPECT_EQ(test::errorKind(makeStateFromVector(4, entry, oneQubit)),
+            Error::Kind::InvalidArgument);
   EXPECT_FALSE(read);
-  const auto state =
-      makeStateFromVector(CVec{{0.5, 0.25}, {-0.5, 0.75}}, oneQubit);
+  const auto state = test::value(
+      makeStateFromVector(CVec{{0.5, 0.25}, {-0.5, 0.75}}, oneQubit));
   expectStateVectorNear(state.getVector(), {{0.5, 0.25}, {-0.5, 0.75}});
-  EXPECT_NO_THROW(oneQubit.decRef(state));
+  EXPECT_NO_THROW(test::value(oneQubit.decRef(state)));
 }
 
 TEST(StateGenerationTest, StateIntervalsRejectOverflow) {
-  Package package(2);
+  auto packageOwner = test::value(Package::create(2));
+  auto& package = *packageOwner;
   const auto maximum = std::numeric_limits<size_t>::max();
-  EXPECT_THROW(makeZeroState(maximum, package), std::invalid_argument);
-  EXPECT_THROW(makeZeroState(1, package, maximum), std::invalid_argument);
-  EXPECT_THROW(makeBasisState(1, std::vector<bool>{false}, package, maximum),
-               std::invalid_argument);
-  EXPECT_THROW(makeBasisState(2, std::vector<BasisStates>(2), package, maximum),
-               std::invalid_argument);
-  EXPECT_THROW(makeBasisState(2, std::vector<BasisStates>(2), package, 1),
-               std::invalid_argument);
-  const auto state = makeBasisState(1, std::vector<bool>{true}, package, 1);
+  EXPECT_EQ(test::errorKind(makeZeroState(maximum, package)),
+            Error::Kind::InvalidArgument);
+  EXPECT_EQ(test::errorKind(makeZeroState(1, package, maximum)),
+            Error::Kind::InvalidArgument);
+  EXPECT_EQ(test::errorKind(
+                makeBasisState(1, std::vector<bool>{false}, package, maximum)),
+            Error::Kind::InvalidArgument);
+  EXPECT_EQ(test::errorKind(makeBasisState(2, std::vector<BasisStates>(2),
+                                           package, maximum)),
+            Error::Kind::InvalidArgument);
+  EXPECT_EQ(test::errorKind(
+                makeBasisState(2, std::vector<BasisStates>(2), package, 1)),
+            Error::Kind::InvalidArgument);
+  const auto state =
+      test::value(makeBasisState(1, std::vector<bool>{true}, package, 1));
   ASSERT_FALSE(state.isTerminal());
   EXPECT_EQ(state.p->v, 1);
   EXPECT_TRUE(state.p->e[0].isZeroTerminal());
   EXPECT_TRUE(state.p->e[1].isOneTerminal());
-  EXPECT_NO_THROW(package.decRef(state));
+  EXPECT_NO_THROW(test::value(package.decRef(state)));
 }
 
 TEST(StateGenerationTest, BasisConstructionUsesRequestedPrefix) {
-  Package package(4);
+  auto packageOwner = test::value(Package::create(4));
+  auto& package = *packageOwner;
   const std::vector<bool> bits{true, false, true, true, false};
   const std::vector<BasisStates> basis{
       BasisStates::one, BasisStates::zero, BasisStates::one,
       BasisStates::one, BasisStates::zero,
   };
   for (const size_t width : {0U, 1U, 4U}) {
-    const auto binary = makeBasisState(width, bits, package);
-    const auto product = makeBasisState(width, basis, package);
-    const auto zero = makeZeroState(width, package);
+    const auto binary = test::value(makeBasisState(width, bits, package));
+    const auto product = test::value(makeBasisState(width, basis, package));
+    const auto zero = test::value(makeZeroState(width, package));
     EXPECT_EQ(binary, product);
-    EXPECT_EQ(binary.getValueByIndex(13U & ((1U << width) - 1U)), 1.);
-    EXPECT_EQ(zero.getValueByIndex(0), 1.);
-    package.decRef(binary);
-    package.decRef(product);
-    package.decRef(zero);
+    EXPECT_EQ(test::value(binary.getValueByIndex(13U & ((1U << width) - 1U))),
+              1.);
+    EXPECT_EQ(test::value(zero.getValueByIndex(0)), 1.);
+    test::value(package.decRef(binary));
+    test::value(package.decRef(product));
+    test::value(package.decRef(zero));
   }
-  EXPECT_THROW(makeBasisState(2, std::vector<bool>{true}, package),
-               std::invalid_argument);
+  EXPECT_EQ(
+      test::errorKind(makeBasisState(2, std::vector<bool>{true}, package)),
+      Error::Kind::InvalidArgument);
 }

@@ -11,6 +11,8 @@ set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qir-runtime)
 if(NOT TARGET ${TARGET_NAME})
   # Add internal QIR runtime library
   add_library(${TARGET_NAME} STATIC QIR.cpp Runtime.cpp)
+  mqt_target_disable_exceptions(${TARGET_NAME})
+  mqt_source_enable_exceptions(QIR.cpp)
   add_library(MQT::CoreQIRRuntime ALIAS ${TARGET_NAME})
 
   target_include_directories(${TARGET_NAME}

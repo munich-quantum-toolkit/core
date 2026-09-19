@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "bench/Error.hpp"
 #include "bench/Evaluation.hpp"
 #include "bench/mqt_core_bench_export.h"
 
@@ -41,16 +42,18 @@ struct BVOptions {
 /// A validated Bernstein--Vazirani benchmark.
 class MQT_CORE_BENCH_EXPORT BV final {
 public:
-  explicit BV(BVOptions options);
+  [[nodiscard]] static Result<BV> create(BVOptions options);
 
   [[nodiscard]] const BVOptions& options() const noexcept;
   [[nodiscard]] const Output& output() const noexcept;
   /// Return the ideal probability of a big-endian logical outcome.
-  [[nodiscard]] double probability(std::string_view outcome) const;
+  [[nodiscard]] Result<double> probability(std::string_view outcome) const;
   /// Compare sampled logical outcomes with the ideal distribution.
-  [[nodiscard]] Evaluation evaluate(const Counts& counts) const;
+  [[nodiscard]] Result<Evaluation> evaluate(const Counts& counts) const;
 
 private:
+  explicit BV(BVOptions options);
+
   BVOptions options_;
   Output output_;
 };

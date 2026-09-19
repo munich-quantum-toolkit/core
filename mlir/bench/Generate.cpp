@@ -16,14 +16,15 @@
 
 #include "programs/Programs.h"
 
+#include "mlir/IR/Diagnostics.h"
 #include "mlir/Support/LLVM.h"
 
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/raw_ostream.h"
 
-#include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <variant>
 
@@ -31,47 +32,59 @@ namespace mqt::bench {
 
 using namespace mlir;
 
-[[nodiscard]] static std::optional<QCProgram> buildProgram(
+[[nodiscard]] static llvm::Expected<QCProgram> buildProgram(
     const llvm::StringRef name,
     const llvm::function_ref<SmallVector<Value>(qc::QCProgramBuilder&)>& emit) {
   auto context = createCompilerContext();
+  std::string diagnostics;
+  const ScopedDiagnosticHandler handler(
+      context.get(), [&](Diagnostic& diagnostic) {
+        if (!diagnostics.empty()) {
+          diagnostics.push_back('\n');
+        }
+        llvm::raw_string_ostream stream(diagnostics);
+        diagnostic.print(stream);
+        return success();
+      });
   auto moduleOp = qc::QCProgramBuilder::build(context.get(), emit);
   if (!moduleOp) {
-    llvm::errs() << name << ": failed to build the module\n";
-    return std::nullopt;
+    return llvm::createStringError(
+        std::make_error_code(std::errc::state_not_recoverable),
+        name + ": failed to build the module: " + diagnostics);
   }
 
   auto program = QCProgram::fromModule(context, std::move(moduleOp));
   if (!program || !program->cleanup()) {
-    llvm::errs() << name << ": failed to clean up the module\n";
-    return std::nullopt;
+    return llvm::createStringError(
+        std::make_error_code(std::errc::state_not_recoverable),
+        name + ": failed to clean up the module: " + diagnostics);
   }
-  return program;
+  return std::move(*program);
 }
 
 #define MQT_BENCHMARK_FAMILY(TYPE, STEM, ID, DEFINITION_VERSION)               \
-  std::optional<QCProgram> generate(const TYPE& benchmark) {                   \
+  llvm::Expected<QCProgram> generate(const TYPE& benchmark) {                  \
     return buildProgram(ID, [&](qc::QCProgramBuilder& builder) {               \
       return STEM(builder, benchmark);                                         \
     });                                                                        \
   }
 #include "bench/BenchmarkFamilies.inc"
 
-std::optional<GeneratedBenchmark>
+llvm::Expected<GeneratedBenchmark>
 generate(const std::string_view instanceSpecificationJSON,
          const std::string_view source) {
   auto result =
-      tryParseInstanceSpecificationJSON(instanceSpecificationJSON, source);
-  if (const auto* error = std::get_if<JSONError>(&result)) {
-    llvm::errs() << error->message << '\n';
-    return std::nullopt;
+      parseInstanceSpecificationJSON(instanceSpecificationJSON, source);
+  if (const auto* error = std::get_if<Error>(&result)) {
+    return llvm::createStringError(
+        std::make_error_code(std::errc::invalid_argument), error->message);
   }
   auto& parsed = std::get<ParsedBenchmark>(result);
   auto program =
       std::visit([](const auto& benchmark) { return generate(benchmark); },
                  parsed.instance);
   if (!program) {
-    return std::nullopt;
+    return program.takeError();
   }
   return GeneratedBenchmark{
       .benchmarkId = std::move(parsed.benchmarkId),

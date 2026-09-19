@@ -11,8 +11,11 @@ set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-sc-device-config)
 if(NOT TARGET ${TARGET_NAME})
 
   add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMIScDeviceConfig)
+  mqt_target_disable_exceptions(${TARGET_NAME})
 
   target_sources(${TARGET_NAME} PRIVATE Configuration.cpp)
+  target_include_directories(${TARGET_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/src/common)
+  target_link_libraries(${TARGET_NAME} PUBLIC qdmi::qdmi)
 
   target_sources(
     ${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR} FILES

@@ -8,12 +8,15 @@
  * Licensed under the MIT License
  */
 
+#include "qdmi/TestUtils.hpp"
+#include "qdmi/common/Common.hpp"
 #include "qdmi/devices/sc/Configuration.hpp"
 
 #include "gmock/gmock-matchers.h"
 #include "gtest/gtest.h"
 #include "nlohmann/json.hpp"
 #include "nlohmann/json_fwd.hpp"
+#include "qdmi/constants.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -24,6 +27,7 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace sc {
@@ -42,18 +46,17 @@ void expectInvalid(const std::function<void(Json&)>& mutate,
                    const std::string& diagnostic) {
   auto value = bundledJson();
   mutate(value);
-  try {
-    static_cast<void>(readJSON(value.dump(), "test-source"));
-    FAIL() << "Expected invalid SC configuration";
-  } catch (const std::invalid_argument& error) {
-    EXPECT_THAT(error.what(), testing::HasSubstr("test-source:$"));
-    EXPECT_THAT(error.what(), testing::HasSubstr(diagnostic));
-  }
+  auto result = readJSON(value.dump(), "test-source");
+  const auto* error = std::get_if<qdmi::Error>(&result);
+  ASSERT_NE(error, nullptr);
+  EXPECT_EQ(error->status, QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_THAT(error->message, testing::HasSubstr("test-source:$"));
+  EXPECT_THAT(error->message, testing::HasSubstr(diagnostic));
 }
 } // namespace
 
 TEST(ScConfigurationTest, ParsesBundledDeviceStrictly) {
-  const auto device = readJSON(SC_DEVICE_JSON);
+  const auto device = mqt::test::value(readJSON(SC_DEVICE_JSON));
   EXPECT_EQ(device.schemaVersion, 1);
   EXPECT_EQ(device.name, "MQT SC Default QDMI Device");
   EXPECT_EQ(device.numQubits, 100);
@@ -105,7 +108,7 @@ TEST(ScConfigurationTest, ParsesIqmDeviceModels) {
     }
   };
 
-  const auto garnet = readJSON(IQM_GARNET_JSON);
+  const auto garnet = mqt::test::value(readJSON(IQM_GARNET_JSON));
   assertModel(garnet, "IQM Garnet", 20, 30, 30);
   EXPECT_EQ(std::ranges::count_if(
                 garnet.qubitProperties.overrides,
@@ -116,7 +119,7 @@ TEST(ScConfigurationTest, ParsesIqmDeviceModels) {
                 [](const auto& qubit) { return qubit.t2.has_value(); }),
             20);
 
-  const auto emerald = readJSON(IQM_EMERALD_JSON);
+  const auto emerald = mqt::test::value(readJSON(IQM_EMERALD_JSON));
   assertModel(emerald, "IQM Emerald", 54, 90, 81);
   EXPECT_EQ(std::ranges::count_if(
                 emerald.qubitProperties.overrides,
@@ -178,7 +181,7 @@ TEST(ScConfigurationTest, AcceptsOptionalSiteNames) {
   auto root = bundledJson();
   root["qubitProperties"]["overrides"].push_back(
       {{"qubit", 8}, {"name", "QB9"}});
-  const auto device = readJSON(root.dump(), "site-name");
+  const auto device = mqt::test::value(readJSON(root.dump(), "site-name"));
   const auto& qubitOverride = device.qubitProperties.overrides.back();
   EXPECT_EQ(qubitOverride.qubit, 8);
   ASSERT_TRUE(qubitOverride.name);
@@ -213,7 +216,7 @@ TEST(ScConfigurationTest, RejectsInvalidOrderedTopology) {
   auto root = bundledJson();
   root["couplings"] = {{1, 0}, {0, 1}};
   root["operations"][1]["siteOverrides"] = Json::array();
-  const auto parsed = readJSON(root.dump(), "ordered");
+  const auto parsed = mqt::test::value(readJSON(root.dump(), "ordered"));
   EXPECT_EQ(parsed.couplings[0], (std::pair<uint64_t, uint64_t>{1, 0}));
   EXPECT_EQ(parsed.couplings[1], (std::pair<uint64_t, uint64_t>{0, 1}));
 }
@@ -255,12 +258,12 @@ TEST(ScConfigurationTest, AcceptsZeroDurationAndRejectsOverflowingJsonNumber) {
   auto root = bundledJson();
   root["operations"][0]["duration"] = 0;
   root["operations"][1]["siteOverrides"][0]["duration"] = 0;
-  EXPECT_NO_THROW(static_cast<void>(readJSON(root.dump(), "zero-duration")));
-  EXPECT_THROW(
-      static_cast<void>(readJSON(
+  EXPECT_NO_THROW(mqt::test::value(readJSON(root.dump(), "zero-duration")));
+  EXPECT_EQ(
+      mqt::test::errorStatus(readJSON(
           R"({"schema-version":1e400,"name":"x","numQubits":1,"durationUnit":{"unit":"ns","scaleFactor":1},"qubitProperties":{"defaults":{},"overrides":[]},"couplings":[],"operations":[]})",
           "overflow")),
-      std::invalid_argument);
+      QDMI_ERROR_INVALIDARGUMENT);
 }
 
 TEST(ScConfigurationTest, AcceptsExplicitHigherAritySites) {
@@ -278,7 +281,7 @@ TEST(ScConfigurationTest, AcceptsExplicitHigherAritySites) {
           {"siteOverrides", {{{"sites", {2, 0, 1}}, {"fidelity", 0.75}}}},
       },
   });
-  const auto parsed = readJSON(root.dump(), "higher-arity");
+  const auto parsed = mqt::test::value(readJSON(root.dump(), "higher-arity"));
   ASSERT_EQ(parsed.operations.size(), 1);
   ASSERT_TRUE(parsed.operations[0].sites.has_value());
   EXPECT_EQ(parsed.operations[0].sites->front(),

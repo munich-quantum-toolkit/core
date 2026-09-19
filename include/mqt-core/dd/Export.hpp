@@ -24,9 +24,9 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <queue>
 #include <sstream>
-#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -344,16 +344,21 @@ void serializeMatrix(const mEdge& basic, std::int64_t& idx,
                      bool writeBinary = false);
 void serialize(const mEdge& basic, std::ostream& os, bool writeBinary = false);
 template <class Node>
-static void serialize(const Edge<Node>& basic,
-                      const std::string& outputFilename,
-                      bool writeBinary = false) {
+[[nodiscard]] static std::optional<Error>
+serialize(const Edge<Node>& basic, const std::string& outputFilename,
+          bool writeBinary = false) {
   std::ofstream ofs = std::ofstream(outputFilename, std::ios::binary);
 
   if (!ofs.good()) {
-    throw std::invalid_argument("Cannot open file: " + outputFilename);
+    return Error{"Cannot open file: " + outputFilename, Error::Kind::IO};
   }
 
   serialize(basic, ofs, writeBinary);
+  ofs.close();
+  if (!ofs) {
+    return Error{"Cannot write file: " + outputFilename, Error::Kind::IO};
+  }
+  return std::nullopt;
 }
 
 template <typename Node>

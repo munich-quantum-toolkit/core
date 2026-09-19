@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "bench/TestUtils.hpp"
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
@@ -35,6 +36,7 @@ template <class Benchmark>
 generateQCO(const Benchmark& benchmark) {
   auto program = generate(benchmark);
   if (!program) {
+    ADD_FAILURE() << llvm::toString(program.takeError());
     return std::nullopt;
   }
   auto compiled = mlir::runDefaultPipeline(
@@ -54,7 +56,8 @@ void expectSamplingMatchesReference(const Benchmark& benchmark,
   auto counts =
       mlir::qco::sample(mlir::mqt::getEntryPoint(program->module()), shots, 17);
   ASSERT_TRUE(mlir::succeeded(counts));
-  EXPECT_LT(benchmark.evaluate(*counts).totalVariationDistance, tolerance);
+  EXPECT_LT(test::value(benchmark.evaluate(*counts)).totalVariationDistance,
+            tolerance);
 }
 
 [[nodiscard]] inline mlir::DenseElementsAttr

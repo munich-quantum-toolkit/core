@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "qdmi/common/Common.hpp"
 #include "qdmi/driver/Driver.hpp"
 
 #include <string>
@@ -20,7 +21,7 @@ namespace qdmi::detail {
 /// Discovers configured QDMI devices without loading their libraries.
 class DeviceRegistry {
 public:
-  DeviceRegistry();
+  [[nodiscard]] static Result<DeviceRegistry> discover();
 
   [[nodiscard]] const std::vector<qdmi::DeviceDefinition>& definitions() const {
     return definitions_;
@@ -31,6 +32,7 @@ public:
   }
 
 private:
+  DeviceRegistry() = default;
   std::vector<qdmi::DeviceDefinition> definitions_;
   std::vector<std::string> disabledIds_;
 };

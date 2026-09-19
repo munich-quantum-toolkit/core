@@ -11,6 +11,7 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-dd)
   file(GLOB_RECURSE DD_SOURCES **.cpp)
 
   add_mqt_core_library(${MQT_CORE_TARGET_NAME}-dd ALIAS_NAME DD)
+  mqt_target_disable_exceptions(${MQT_CORE_TARGET_NAME}-dd)
 
   target_sources(${MQT_CORE_TARGET_NAME}-dd PRIVATE ${DD_SOURCES})
 

@@ -8,12 +8,15 @@
  * Licensed under the MIT License
  */
 
+#include "bench/Error.hpp"
 #include "bench/QFTAdder.hpp"
+#include "bench/TestUtils.hpp"
 
 #include "gtest/gtest.h"
 
-#include <stdexcept>
 #include <string>
+
+namespace test = mqt::bench::test;
 
 namespace {
 
@@ -27,12 +30,12 @@ TEST(QFTAdder, PreservesConfiguredOperandsAndOverflow) {
        {QFTAdderMethod::Register, QFTAdderMethod::Constant}) {
     for (const auto overflow :
          {QFTAdderOverflow::Wrap, QFTAdderOverflow::Carry}) {
-      const QFTAdder benchmark{{
+      const auto benchmark = test::value(QFTAdder::create({
           .addend = "011",
           .accumulator = "110",
           .method = method,
           .overflow = overflow,
-      }};
+      }));
       const auto* const sum =
           overflow == QFTAdderOverflow::Carry ? "1001" : "001";
       const auto expected =
@@ -43,19 +46,21 @@ TEST(QFTAdder, PreservesConfiguredOperandsAndOverflow) {
       EXPECT_EQ(benchmark.options().accumulator, "110");
       EXPECT_EQ(benchmark.output().width, expected.size());
       EXPECT_EQ(benchmark.expectedResult(), expected);
-      EXPECT_DOUBLE_EQ(benchmark.probability(expected), 1.);
-      EXPECT_EQ(benchmark.evaluate({{expected, 16}}).successProbability, 1.);
+      EXPECT_DOUBLE_EQ(test::value(benchmark.probability(expected)), 1.);
+      EXPECT_EQ(
+          test::value(benchmark.evaluate({{expected, 16}})).successProbability,
+          1.);
     }
   }
 }
 
 TEST(QFTAdder, KeepsLeadingZerosAndRejectsUnsupportedInputs) {
-  const QFTAdder zero{{
+  const auto zero = test::value(QFTAdder::create({
       .addend = "000",
       .accumulator = "000",
       .method = QFTAdderMethod::Constant,
       .overflow = QFTAdderOverflow::Carry,
-  }};
+  }));
   EXPECT_EQ(zero.expectedResult(), "0000");
   for (const auto& options : {
            QFTAdderOptions{.addend = "", .accumulator = ""},
@@ -68,26 +73,29 @@ TEST(QFTAdder, KeepsLeadingZerosAndRejectsUnsupportedInputs) {
                .method = QFTAdderMethod::Constant,
            },
        }) {
-    EXPECT_THROW(static_cast<void>(QFTAdder(options)), std::invalid_argument);
+    EXPECT_EQ(test::errorKind(QFTAdder::create(options)),
+              mqt::bench::Error::Kind::InvalidArgument);
   }
-  EXPECT_THROW(static_cast<void>(zero.probability("000")),
-               std::invalid_argument);
-  EXPECT_THROW(static_cast<void>(zero.probability("000x")),
-               std::invalid_argument);
+  EXPECT_EQ(test::errorKind(zero.probability("000")),
+            mqt::bench::Error::Kind::InvalidArgument);
+  EXPECT_EQ(test::errorKind(zero.probability("000x")),
+            mqt::bench::Error::Kind::InvalidArgument);
 }
 
 TEST(QFTAdder, ScoresTheCorrelatedSuperposition) {
-  const QFTAdder benchmark{{.addend = "1+0", .accumulator = "001"}};
+  const auto benchmark =
+      test::value(QFTAdder::create({.addend = "1+0", .accumulator = "001"}));
   EXPECT_FALSE(benchmark.expectedResult());
-  EXPECT_DOUBLE_EQ(benchmark.probability("100101"), 0.5);
-  EXPECT_DOUBLE_EQ(benchmark.probability("110111"), 0.5);
-  EXPECT_DOUBLE_EQ(benchmark.probability("000001"), 0.);
-  EXPECT_DOUBLE_EQ(benchmark.probability("100100"), 0.);
-  const auto exact = benchmark.evaluate({{"100101", 8}, {"110111", 8}});
+  EXPECT_DOUBLE_EQ(test::value(benchmark.probability("100101")), 0.5);
+  EXPECT_DOUBLE_EQ(test::value(benchmark.probability("110111")), 0.5);
+  EXPECT_DOUBLE_EQ(test::value(benchmark.probability("000001")), 0.);
+  EXPECT_DOUBLE_EQ(test::value(benchmark.probability("100100")), 0.);
+  const auto exact =
+      test::value(benchmark.evaluate({{"100101", 8}, {"110111", 8}}));
   EXPECT_DOUBLE_EQ(exact.totalVariationDistance, 0.);
   EXPECT_DOUBLE_EQ(exact.squaredHellingerFidelity, 1.);
   EXPECT_FALSE(exact.successProbability);
-  const auto biased = benchmark.evaluate({{"100101", 16}});
+  const auto biased = test::value(benchmark.evaluate({{"100101", 16}}));
   EXPECT_DOUBLE_EQ(biased.totalVariationDistance, 0.5);
   EXPECT_DOUBLE_EQ(biased.squaredHellingerFidelity, 0.5);
 }
@@ -95,24 +103,24 @@ TEST(QFTAdder, ScoresTheCorrelatedSuperposition) {
 TEST(QFTAdder, BoundsTheSumWidthAndKeepsReferenceWeightsRepresentable) {
   const auto width = QFTAdderOptions::MAX_QUBITS;
   const auto accumulator = std::string(width - 1, '0') + "1";
-  const QFTAdder maximum{
-      {.addend = std::string(width, '+'), .accumulator = accumulator}};
-  EXPECT_GT(
-      maximum.probability(std::string(width, '1') + std::string(width, '0')),
-      0.);
-  EXPECT_THROW(
-      static_cast<void>(QFTAdder({.addend = std::string(width, '1'),
-                                  .accumulator = accumulator,
-                                  .overflow = QFTAdderOverflow::Carry})),
-      std::invalid_argument);
-  EXPECT_NO_THROW(
-      static_cast<void>(QFTAdder({.addend = std::string(width - 1, '1'),
-                                  .accumulator = accumulator.substr(1),
-                                  .overflow = QFTAdderOverflow::Carry})));
-  EXPECT_THROW(
-      static_cast<void>(QFTAdder({.addend = std::string(width + 1, '0'),
+  const auto maximum = test::value(QFTAdder::create(
+      {.addend = std::string(width, '+'), .accumulator = accumulator}));
+  EXPECT_GT(test::value(maximum.probability(std::string(width, '1') +
+                                            std::string(width, '0'))),
+            0.);
+  EXPECT_EQ(
+      test::errorKind(QFTAdder::create({.addend = std::string(width, '1'),
+                                        .accumulator = accumulator,
+                                        .overflow = QFTAdderOverflow::Carry})),
+      mqt::bench::Error::Kind::InvalidArgument);
+  EXPECT_NO_THROW(static_cast<void>(
+      test::value(QFTAdder::create({.addend = std::string(width - 1, '1'),
+                                    .accumulator = accumulator.substr(1),
+                                    .overflow = QFTAdderOverflow::Carry}))));
+  EXPECT_EQ(test::errorKind(
+                QFTAdder::create({.addend = std::string(width + 1, '0'),
                                   .accumulator = std::string(width + 1, '0')})),
-      std::invalid_argument);
+            mqt::bench::Error::Kind::InvalidArgument);
 }
 
 } // namespace

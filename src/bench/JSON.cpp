@@ -11,6 +11,7 @@
 #include "bench/JSON.hpp"
 
 #include "bench/BV.hpp"
+#include "bench/Error.hpp"
 #include "bench/Evaluation.hpp"
 #include "bench/GHZ.hpp"
 #include "bench/Grover.hpp"
@@ -22,6 +23,7 @@
 #include "bench/RepeatUntilSuccess.hpp"
 #include "bench/Teleportation.hpp"
 
+#include "JSON.hpp"
 #include "SHA256.hpp"
 
 #include "nlohmann/json.hpp"
@@ -32,15 +34,12 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <exception>
 #include <initializer_list>
 #include <limits>
 #include <numeric>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <string_view>
-#include <type_traits>
 #include <unordered_set>
 #include <utility>
 #include <variant>
@@ -62,33 +61,38 @@ template <class Benchmark> struct BenchmarkMetadata;
     static constexpr uint64_t definitionVersion = DEFINITION_VERSION;          \
   };                                                                           \
   [[nodiscard]] Json STEM##InstanceSpecificationSchema();                      \
-  [[nodiscard]] std::string evaluate##TYPE(std::string_view manifest,          \
-                                           std::string_view source,            \
-                                           const Counts& counts);
+  [[nodiscard]] Result<std::string> evaluate##TYPE(std::string_view manifest,  \
+                                                   std::string_view source,    \
+                                                   const Counts& counts);
 #include "bench/BenchmarkFamilies.inc"
 
 using InstanceSpecificationSchemaFunction = Json (*)();
-using EvaluationFunction = std::string (*)(std::string_view, std::string_view,
-                                           const Counts&);
+using EvaluationFunction = Result<std::string> (*)(std::string_view,
+                                                   std::string_view,
+                                                   const Counts&);
 
 struct RegistryEntry {
   std::string_view id;
   uint64_t definitionVersion;
   InstanceSpecificationSchemaFunction instanceSpecificationSchema;
   EvaluationFunction evaluate;
-  BenchmarkInstance (*parse)(std::string_view, std::string_view);
+  Result<BenchmarkInstance> (*parse)(std::string_view, std::string_view);
 };
 constexpr std::array REGISTRY{
 #define MQT_BENCHMARK_FAMILY(TYPE, STEM, ID, DEFINITION_VERSION)               \
-  RegistryEntry{.id = (ID),                                                    \
-                .definitionVersion = (DEFINITION_VERSION),                     \
-                .instanceSpecificationSchema =                                 \
-                    STEM##InstanceSpecificationSchema,                         \
-                .evaluate = evaluate##TYPE,                                    \
-                .parse = +[](std::string_view json,                            \
-                             std::string_view source) -> BenchmarkInstance {   \
-                  return STEM##FromInstanceSpecificationJSON(json, source);    \
-                }},
+  RegistryEntry{                                                               \
+      .id = (ID),                                                              \
+      .definitionVersion = (DEFINITION_VERSION),                               \
+      .instanceSpecificationSchema = STEM##InstanceSpecificationSchema,        \
+      .evaluate = evaluate##TYPE,                                              \
+      .parse = +[](std::string_view json,                                      \
+                   std::string_view source) -> Result<BenchmarkInstance> {     \
+        auto result = STEM##FromInstanceSpecificationJSON(json, source);       \
+        if (auto* error = std::get_if<Error>(&result)) {                       \
+          return std::move(*error);                                            \
+        }                                                                      \
+        return BenchmarkInstance{std::get<0>(std::move(result))};              \
+      }},
 #include "bench/BenchmarkFamilies.inc"
 };
 static_assert(
@@ -112,26 +116,28 @@ findBenchmark(const std::string_view benchmark) {
   return nullptr;
 }
 
-[[noreturn]] void fail(const std::string_view source,
-                       const std::string_view pointer,
-                       const std::string_view message) {
-  throw std::invalid_argument(std::string(source) + ":" + std::string(pointer) +
-                              " " + std::string(message));
+[[nodiscard]] Error fail(const std::string_view source,
+                         const std::string_view pointer,
+                         const std::string_view message) {
+  return Error{
+      .message = std::string(source) + ":" + std::string(pointer) + " " +
+                 std::string(message),
+  };
 }
 
-template <class Factory>
-[[nodiscard]] auto constructBenchmark(const std::string_view source,
-                                      const Factory& factory) {
-  try {
-    return factory();
-  } catch (const std::invalid_argument& error) {
-    fail(source, "$/parameters", error.what());
+template <class Benchmark>
+[[nodiscard]] Result<Benchmark>
+constructBenchmark(const std::string_view source, Result<Benchmark> result) {
+  if (auto* error = std::get_if<Error>(&result)) {
+    error->message = std::string(source) + ":$/parameters " + error->message;
   }
+  return result;
 }
 
-[[nodiscard]] Json parseJSON(const std::string_view text,
-                             const std::string_view source) {
+[[nodiscard]] Result<Json> parseJSON(const std::string_view text,
+                                     const std::string_view source) {
   std::vector<std::unordered_set<std::string>> keysByDepth;
+  std::optional<Error> duplicate;
   const Json::parser_callback_t rejectDuplicates =
       [&](const int depth, const Json::parse_event_t event, Json& parsed) {
         if (event == Json::parse_event_t::object_start) {
@@ -143,397 +149,652 @@ template <class Factory>
         } else if (event == Json::parse_event_t::key) {
           const auto index = static_cast<size_t>(depth - 1);
           const auto& key = parsed.get_ref<const std::string&>();
-          auto& keys = keysByDepth.at(index);
-          if (!keys.emplace(key).second) {
-            fail(source, "$", "contains duplicate key '" + key + "'");
+          if (!keysByDepth[index].emplace(key).second && !duplicate) {
+            duplicate =
+                fail(source, "$", "contains duplicate key '" + key + "'");
           }
         }
         return true;
       };
-
-  try {
-    return Json::parse(text.begin(), text.end(), rejectDuplicates);
-  } catch (const Json::exception& error) {
-    throw std::invalid_argument(std::string(source) +
-                                ": invalid JSON: " + error.what());
+  auto result = mqt::detail::parseJSON(text, rejectDuplicates);
+  if (duplicate) {
+    return std::move(*duplicate);
   }
+  if (auto const* error = std::get_if<std::string>(&result)) {
+    return Error{.message = std::string(source) + ": invalid JSON: " + *error};
+  }
+  return std::get<0>(std::move(result));
 }
 
-void requireObject(const Json& value, const std::string_view source,
-                   const std::string_view pointer) {
+std::optional<Error> requireObject(const Json& value,
+                                   const std::string_view source,
+                                   const std::string_view pointer) {
   if (!value.is_object()) {
-    fail(source, pointer, "must be an object");
+    return fail(source, pointer, "must be an object");
   }
+  return std::nullopt;
 }
 
-void rejectUnknownKeys(const Json& value,
-                       const std::initializer_list<std::string_view> known,
-                       const std::string_view source,
-                       const std::string_view pointer) {
+std::optional<Error> rejectUnknownKeys(
+    const Json& value, const std::initializer_list<std::string_view> known,
+    const std::string_view source, const std::string_view pointer) {
   for (const auto& [key, unused] : value.items()) {
     static_cast<void>(unused);
     if (std::ranges::find(known, key) == known.end()) {
-      fail(source, pointer, "contains unknown key '" + key + "'");
+      return fail(source, pointer, "contains unknown key '" + key + "'");
     }
   }
+  return std::nullopt;
 }
 
-[[nodiscard]] const Json& required(const Json& value, const char* const key,
-                                   const std::string_view source,
-                                   const std::string_view pointer) {
+[[nodiscard]] Result<const Json*> required(const Json& value,
+                                           const char* const key,
+                                           const std::string_view source,
+                                           const std::string_view pointer) {
   const auto found = value.find(key);
   if (found == value.end()) {
-    fail(source, std::string(pointer) + "/" + key, "is required");
+    return fail(source, std::string(pointer) + "/" + key, "is required");
   }
-  return *found;
+  return &*found;
 }
 
-[[nodiscard]] uint64_t unsignedInteger(const Json& value,
-                                       const std::string_view source,
-                                       const std::string_view pointer) {
+[[nodiscard]] Result<uint64_t> unsignedInteger(const Json& value,
+                                               const std::string_view source,
+                                               const std::string_view pointer) {
   if (value.is_number_float()) {
-    fail(source, pointer, "must be encoded as an integer");
+    return fail(source, pointer, "must be encoded as an integer");
   }
   if (!value.is_number_unsigned() &&
       (!value.is_number_integer() || value.get<int64_t>() < 0)) {
-    fail(source, pointer, "must be a non-negative integer");
+    return fail(source, pointer, "must be a non-negative integer");
   }
   return value.get<uint64_t>();
 }
 
-[[nodiscard]] size_t sizeValue(const Json& value, const std::string_view source,
-                               const std::string_view pointer) {
-  const auto parsed = unsignedInteger(value, source, pointer);
+[[nodiscard]] Result<size_t> sizeValue(const Json& value,
+                                       const std::string_view source,
+                                       const std::string_view pointer) {
+  auto result = unsignedInteger(value, source, pointer);
+  if (auto* error = std::get_if<Error>(&result)) {
+    return std::move(*error);
+  }
+  const auto parsed = std::get<0>(result);
   if (parsed > std::numeric_limits<size_t>::max()) {
-    fail(source, pointer, "must fit size_t");
+    return fail(source, pointer, "must fit size_t");
   }
   return static_cast<size_t>(parsed);
 }
 
-[[nodiscard]] std::string stringValue(const Json& value,
-                                      const std::string_view source,
-                                      const std::string_view pointer) {
+[[nodiscard]] Result<std::string> stringValue(const Json& value,
+                                              const std::string_view source,
+                                              const std::string_view pointer) {
   if (!value.is_string()) {
-    fail(source, pointer, "must be a string");
+    return fail(source, pointer, "must be a string");
   }
   return value.get<std::string>();
 }
 
-void requireSchemaVersion(const Json& root, const std::string_view source) {
-  const auto version =
-      unsignedInteger(required(root, "schema_version", source, "$"), source,
-                      "$/schema_version");
+std::optional<Error> requireSchemaVersion(const Json& root,
+                                          const std::string_view source) {
+  auto schemaVersionField = required(root, "schema_version", source, "$");
+  if (auto* error = std::get_if<Error>(&schemaVersionField)) {
+    return std::move(*error);
+  }
+  auto schemaVersionValue = unsignedInteger(*std::get<0>(schemaVersionField),
+                                            source, "$/schema_version");
+  if (auto* error = std::get_if<Error>(&schemaVersionValue)) {
+    return std::move(*error);
+  }
+  const auto version = std::get<0>(schemaVersionValue);
   if (version != SCHEMA_VERSION) {
-    fail(source, "$/schema_version", "must be 1");
+    return fail(source, "$/schema_version", "must be 1");
   }
+  return std::nullopt;
 }
 
-[[nodiscard]] const RegistryEntry&
+[[nodiscard]] Result<const RegistryEntry*>
 requireBenchmarkEntry(const Json& root, const std::string_view source) {
-  const auto benchmark = stringValue(required(root, "benchmark", source, "$"),
-                                     source, "$/benchmark");
+  auto benchmarkField = required(root, "benchmark", source, "$");
+  if (auto* error = std::get_if<Error>(&benchmarkField)) {
+    return std::move(*error);
+  }
+  auto benchmarkValue =
+      stringValue(*std::get<0>(benchmarkField), source, "$/benchmark");
+  if (auto* error = std::get_if<Error>(&benchmarkValue)) {
+    return std::move(*error);
+  }
+  const auto benchmark = std::get<0>(benchmarkValue);
   if (const auto* entry = findBenchmark(benchmark)) {
-    return *entry;
+    return entry;
   }
-  fail(source, "$/benchmark",
-       "selects unsupported benchmark '" + benchmark + "'");
+  return fail(source, "$/benchmark",
+              "selects unsupported benchmark '" + benchmark + "'");
 }
 
-[[nodiscard]] Json
-instanceSpecificationEnvelope(const std::string_view text,
-                              const std::string_view source) {
-  auto root = parseJSON(text, source);
-  requireObject(root, source, "$");
-  rejectUnknownKeys(root, {"schema_version", "benchmark", "parameters"}, source,
-                    "$");
-  requireSchemaVersion(root, source);
-  static_cast<void>(requireBenchmarkEntry(root, source));
-  requireObject(required(root, "parameters", source, "$"), source,
-                "$/parameters");
-  return root;
+[[nodiscard]] Result<Json> envelope(const std::string_view text,
+                                    const std::string_view source,
+                                    const bool manifest) {
+  auto parsed = parseJSON(text, source);
+  if (auto* error = std::get_if<Error>(&parsed)) {
+    return std::move(*error);
+  }
+  auto& root = std::get<0>(parsed);
+  if (auto error = requireObject(root, source, "$")) {
+    return std::move(*error);
+  }
+  auto keyError = manifest
+                      ? rejectUnknownKeys(root,
+                                          {
+                                              "schema_version",
+                                              "case_id",
+                                              "benchmark",
+                                              "definition_version",
+                                              "parameters",
+                                              "outputs",
+                                              "reference",
+                                          },
+                                          source, "$")
+                      : rejectUnknownKeys(
+                            root, {"schema_version", "benchmark", "parameters"},
+                            source, "$");
+  if (keyError) {
+    return std::move(*keyError);
+  }
+  if (auto error = requireSchemaVersion(root, source)) {
+    return std::move(*error);
+  }
+  auto entry = requireBenchmarkEntry(root, source);
+  if (auto* error = std::get_if<Error>(&entry)) {
+    return std::move(*error);
+  }
+  auto parameters = required(root, "parameters", source, "$");
+  if (auto* error = std::get_if<Error>(&parameters)) {
+    return std::move(*error);
+  }
+  if (auto error =
+          requireObject(*std::get<0>(parameters), source, "$/parameters")) {
+    return std::move(*error);
+  }
+  if (manifest) {
+    auto definitionVersionField =
+        required(root, "definition_version", source, "$");
+    if (auto* error = std::get_if<Error>(&definitionVersionField)) {
+      return std::move(*error);
+    }
+    auto definitionVersionValue = unsignedInteger(
+        *std::get<0>(definitionVersionField), source, "$/definition_version");
+    if (auto* error = std::get_if<Error>(&definitionVersionValue)) {
+      return std::move(*error);
+    }
+    const auto definition = std::get<0>(definitionVersionValue);
+    if (definition != std::get<0>(entry)->definitionVersion) {
+      return fail(source, "$/definition_version",
+                  "must be " +
+                      std::to_string(std::get<0>(entry)->definitionVersion));
+    }
+    auto caseIdField = required(root, "case_id", source, "$");
+    if (auto* error = std::get_if<Error>(&caseIdField)) {
+      return std::move(*error);
+    }
+    auto caseIdValue =
+        stringValue(*std::get<0>(caseIdField), source, "$/case_id");
+    if (auto* error = std::get_if<Error>(&caseIdValue)) {
+      return std::move(*error);
+    }
+    const auto caseId = std::get<0>(caseIdValue);
+    static_cast<void>(caseId);
+    auto outputsField = required(root, "outputs", source, "$");
+    if (auto* error = std::get_if<Error>(&outputsField)) {
+      return std::move(*error);
+    }
+    const auto& outputs = *std::get<0>(outputsField);
+    if (!outputs.is_array()) {
+      return fail(source, "$/outputs", "must be an array");
+    }
+    auto referenceField = required(root, "reference", source, "$");
+    if (auto* error = std::get_if<Error>(&referenceField)) {
+      return std::move(*error);
+    }
+    const auto& reference = *std::get<0>(referenceField);
+    if (auto error = requireObject(reference, source, "$/reference")) {
+      return std::move(*error);
+    }
+  }
+  return std::move(root);
 }
 
-[[nodiscard]] Json manifestEnvelope(const std::string_view text,
-                                    const std::string_view source) {
-  auto root = parseJSON(text, source);
-  requireObject(root, source, "$");
-  rejectUnknownKeys(root,
-                    {
-                        "schema_version",
-                        "case_id",
-                        "benchmark",
-                        "definition_version",
-                        "parameters",
-                        "outputs",
-                        "reference",
-                    },
-                    source, "$");
-  requireSchemaVersion(root, source);
-  const auto& benchmark = requireBenchmarkEntry(root, source);
-  const auto definition =
-      unsignedInteger(required(root, "definition_version", source, "$"), source,
-                      "$/definition_version");
-  const auto expectedDefinition = benchmark.definitionVersion;
-  if (definition != expectedDefinition) {
-    fail(source, "$/definition_version",
-         "must be " + std::to_string(expectedDefinition));
-  }
-  static_cast<void>(
-      stringValue(required(root, "case_id", source, "$"), source, "$/case_id"));
-  requireObject(required(root, "parameters", source, "$"), source,
-                "$/parameters");
-  if (!required(root, "outputs", source, "$").is_array()) {
-    fail(source, "$/outputs", "must be an array");
-  }
-  requireObject(required(root, "reference", source, "$"), source,
-                "$/reference");
-  return root;
-}
-
-void requireBenchmark(const Json& root, const std::string_view expected,
-                      const std::string_view source) {
-  const auto actual = stringValue(required(root, "benchmark", source, "$"),
-                                  source, "$/benchmark");
+std::optional<Error> requireBenchmark(const Json& root,
+                                      const std::string_view expected,
+                                      const std::string_view source) {
+  const auto& actual = root["benchmark"].get_ref<const std::string&>();
   if (actual != expected) {
-    fail(source, "$/benchmark", "must be '" + std::string(expected) + "'");
+    return fail(source, "$/benchmark",
+                "must be '" + std::string(expected) + "'");
   }
+  return std::nullopt;
 }
 
-[[nodiscard]] BV parseBVParameters(const Json& parameters,
-                                   const std::string_view source) {
-  rejectUnknownKeys(parameters, {"hidden_bitstring", "method"}, source,
-                    "$/parameters");
+[[nodiscard]] Result<BV> parseBVParameters(const Json& parameters,
+                                           const std::string_view source) {
+  if (auto error = rejectUnknownKeys(parameters, {"hidden_bitstring", "method"},
+                                     source, "$/parameters")) {
+    return std::move(*error);
+  }
+  auto hiddenBitstringField =
+      required(parameters, "hidden_bitstring", source, "$/parameters");
+  if (auto* error = std::get_if<Error>(&hiddenBitstringField)) {
+    return std::move(*error);
+  }
+  auto hiddenBitstringValue =
+      stringValue(*std::get<0>(hiddenBitstringField), source,
+                  "$/parameters/hidden_bitstring");
+  if (auto* error = std::get_if<Error>(&hiddenBitstringValue)) {
+    return std::move(*error);
+  }
   BVOptions options{
-      .hiddenBitstring = stringValue(
-          required(parameters, "hidden_bitstring", source, "$/parameters"),
-          source, "$/parameters/hidden_bitstring"),
+      .hiddenBitstring = std::get<0>(hiddenBitstringValue),
   };
   if (const auto method = parameters.find("method");
       method != parameters.end()) {
-    const auto value = stringValue(*method, source, "$/parameters/method");
+    auto methodValue = stringValue(*method, source, "$/parameters/method");
+    if (auto* error = std::get_if<Error>(&methodValue)) {
+      return std::move(*error);
+    }
+    const auto value = std::get<0>(methodValue);
     if (value == "static") {
       options.method = BVMethod::Static;
     } else if (value == "dynamic") {
       options.method = BVMethod::Dynamic;
     } else {
-      fail(source, "$/parameters/method", "must be 'static' or 'dynamic'");
+      return fail(source, "$/parameters/method",
+                  "must be 'static' or 'dynamic'");
     }
   }
-  return constructBenchmark(source,
-                            [&options] { return BV(std::move(options)); });
+  return constructBenchmark(source, BV::create(std::move(options)));
 }
 
-[[nodiscard]] ModularMultiplier
+[[nodiscard]] Result<ModularMultiplier>
 parseModularMultiplierParameters(const Json& parameters,
                                  const std::string_view source) {
-  rejectUnknownKeys(parameters,
-                    {"multiplier", "modulus", "multiplicand", "control"},
-                    source, "$/parameters");
+  if (auto error = rejectUnknownKeys(
+          parameters, {"multiplier", "modulus", "multiplicand", "control"},
+          source, "$/parameters")) {
+    return std::move(*error);
+  }
   auto control = std::string("1");
   if (const auto value = parameters.find("control");
       value != parameters.end()) {
-    control = stringValue(*value, source, "$/parameters/control");
+    auto controlValue = stringValue(*value, source, "$/parameters/control");
+    if (auto* error = std::get_if<Error>(&controlValue)) {
+      return std::move(*error);
+    }
+    control = std::get<0>(controlValue);
   }
   if (control.size() != 1U) {
-    fail(source, "$/parameters/control", "must be '0', '1', or '+'");
+    return fail(source, "$/parameters/control", "must be '0', '1', or '+'");
   }
-  return constructBenchmark(source, [&] {
-    return ModularMultiplier({
-        .multiplier = stringValue(
-            required(parameters, "multiplier", source, "$/parameters"), source,
-            "$/parameters/multiplier"),
-        .modulus =
-            stringValue(required(parameters, "modulus", source, "$/parameters"),
-                        source, "$/parameters/modulus"),
-        .multiplicand = stringValue(
-            required(parameters, "multiplicand", source, "$/parameters"),
-            source, "$/parameters/multiplicand"),
-        .control = control.front(),
-    });
-  });
+  auto multiplicandField =
+      required(parameters, "multiplicand", source, "$/parameters");
+  if (auto* error = std::get_if<Error>(&multiplicandField)) {
+    return std::move(*error);
+  }
+  auto multiplicandValue = stringValue(*std::get<0>(multiplicandField), source,
+                                       "$/parameters/multiplicand");
+  if (auto* error = std::get_if<Error>(&multiplicandValue)) {
+    return std::move(*error);
+  }
+  auto modulusField = required(parameters, "modulus", source, "$/parameters");
+  if (auto* error = std::get_if<Error>(&modulusField)) {
+    return std::move(*error);
+  }
+  auto modulusValue =
+      stringValue(*std::get<0>(modulusField), source, "$/parameters/modulus");
+  if (auto* error = std::get_if<Error>(&modulusValue)) {
+    return std::move(*error);
+  }
+  auto multiplierField =
+      required(parameters, "multiplier", source, "$/parameters");
+  if (auto* error = std::get_if<Error>(&multiplierField)) {
+    return std::move(*error);
+  }
+  auto multiplierValue = stringValue(*std::get<0>(multiplierField), source,
+                                     "$/parameters/multiplier");
+  if (auto* error = std::get_if<Error>(&multiplierValue)) {
+    return std::move(*error);
+  }
+  return constructBenchmark(source,
+                            ModularMultiplier::create({
+                                .multiplier = std::get<0>(multiplierValue),
+                                .modulus = std::get<0>(modulusValue),
+                                .multiplicand = std::get<0>(multiplicandValue),
+                                .control = control.front(),
+                            }));
 }
 
-[[nodiscard]] GHZ parseGHZParameters(const Json& parameters,
-                                     const std::string_view source) {
-  rejectUnknownKeys(parameters, {"qubits", "topology", "basis"}, source,
-                    "$/parameters");
+[[nodiscard]] Result<GHZ> parseGHZParameters(const Json& parameters,
+                                             const std::string_view source) {
+  if (auto error =
+          rejectUnknownKeys(parameters, {"qubits", "topology", "basis"}, source,
+                            "$/parameters")) {
+    return std::move(*error);
+  }
+  auto qubitsField = required(parameters, "qubits", source, "$/parameters");
+  if (auto* error = std::get_if<Error>(&qubitsField)) {
+    return std::move(*error);
+  }
+  auto qubitsValue =
+      sizeValue(*std::get<0>(qubitsField), source, "$/parameters/qubits");
+  if (auto* error = std::get_if<Error>(&qubitsValue)) {
+    return std::move(*error);
+  }
   GHZOptions options{
-      .qubits =
-          sizeValue(required(parameters, "qubits", source, "$/parameters"),
-                    source, "$/parameters/qubits"),
+      .qubits = std::get<0>(qubitsValue),
   };
   if (const auto topology = parameters.find("topology");
       topology != parameters.end()) {
-    const auto value = stringValue(*topology, source, "$/parameters/topology");
+    auto topologyValue =
+        stringValue(*topology, source, "$/parameters/topology");
+    if (auto* error = std::get_if<Error>(&topologyValue)) {
+      return std::move(*error);
+    }
+    const auto value = std::get<0>(topologyValue);
     if (value == "linear") {
       options.topology = GHZTopology::Linear;
     } else if (value == "star") {
       options.topology = GHZTopology::Star;
     } else {
-      fail(source, "$/parameters/topology", "must be 'linear' or 'star'");
+      return fail(source, "$/parameters/topology",
+                  "must be 'linear' or 'star'");
     }
   }
   if (const auto basis = parameters.find("basis"); basis != parameters.end()) {
-    const auto value = stringValue(*basis, source, "$/parameters/basis");
+    auto basisValue = stringValue(*basis, source, "$/parameters/basis");
+    if (auto* error = std::get_if<Error>(&basisValue)) {
+      return std::move(*error);
+    }
+    const auto value = std::get<0>(basisValue);
     if (value == "z") {
       options.basis = GHZBasis::Z;
     } else if (value == "x") {
       options.basis = GHZBasis::X;
     } else {
-      fail(source, "$/parameters/basis", "must be 'z' or 'x'");
+      return fail(source, "$/parameters/basis", "must be 'z' or 'x'");
     }
   }
-  return constructBenchmark(source, [&options] { return GHZ(options); });
+  return constructBenchmark(source, GHZ::create(options));
 }
 
-[[nodiscard]] Grover parseGroverParameters(const Json& parameters,
-                                           const std::string_view source) {
-  rejectUnknownKeys(parameters, {"marked_bitstring", "iterations"}, source,
-                    "$/parameters");
+[[nodiscard]] Result<Grover>
+parseGroverParameters(const Json& parameters, const std::string_view source) {
+  if (auto error =
+          rejectUnknownKeys(parameters, {"marked_bitstring", "iterations"},
+                            source, "$/parameters")) {
+    return std::move(*error);
+  }
+  auto markedBitstringField =
+      required(parameters, "marked_bitstring", source, "$/parameters");
+  if (auto* error = std::get_if<Error>(&markedBitstringField)) {
+    return std::move(*error);
+  }
+  auto markedBitstringValue =
+      stringValue(*std::get<0>(markedBitstringField), source,
+                  "$/parameters/marked_bitstring");
+  if (auto* error = std::get_if<Error>(&markedBitstringValue)) {
+    return std::move(*error);
+  }
   GroverOptions options{
-      .markedBitstring = stringValue(
-          required(parameters, "marked_bitstring", source, "$/parameters"),
-          source, "$/parameters/marked_bitstring"),
+      .markedBitstring = std::get<0>(markedBitstringValue),
   };
   if (const auto iterations = parameters.find("iterations");
       iterations != parameters.end()) {
-    options.iterations =
+    auto iterationsValue =
         sizeValue(*iterations, source, "$/parameters/iterations");
+    if (auto* error = std::get_if<Error>(&iterationsValue)) {
+      return std::move(*error);
+    }
+    options.iterations = std::get<0>(iterationsValue);
   }
-  return constructBenchmark(source,
-                            [&options] { return Grover(std::move(options)); });
+  return constructBenchmark(source, Grover::create(std::move(options)));
 }
 
-[[nodiscard]] Multiplexer
+[[nodiscard]] Result<Multiplexer>
 parseMultiplexerParameters(const Json& parameters,
                            const std::string_view source) {
-  rejectUnknownKeys(parameters, {"qubits"}, source, "$/parameters");
-  return constructBenchmark(source, [&] {
-    return Multiplexer({
-        .qubits =
-            sizeValue(required(parameters, "qubits", source, "$/parameters"),
-                      source, "$/parameters/qubits"),
-    });
-  });
+  if (auto error =
+          rejectUnknownKeys(parameters, {"qubits"}, source, "$/parameters")) {
+    return std::move(*error);
+  }
+  auto qubitsField = required(parameters, "qubits", source, "$/parameters");
+  if (auto* error = std::get_if<Error>(&qubitsField)) {
+    return std::move(*error);
+  }
+  auto qubitsValue =
+      sizeValue(*std::get<0>(qubitsField), source, "$/parameters/qubits");
+  if (auto* error = std::get_if<Error>(&qubitsValue)) {
+    return std::move(*error);
+  }
+  return constructBenchmark(source, Multiplexer::create({
+                                        .qubits = std::get<0>(qubitsValue),
+                                    }));
 }
 
-[[nodiscard]] QFT parseQFTParameters(const Json& parameters,
-                                     const std::string_view source) {
-  rejectUnknownKeys(parameters, {"qubits", "period_exponent", "method"}, source,
-                    "$/parameters");
+[[nodiscard]] Result<QFT> parseQFTParameters(const Json& parameters,
+                                             const std::string_view source) {
+  if (auto error =
+          rejectUnknownKeys(parameters, {"qubits", "period_exponent", "method"},
+                            source, "$/parameters")) {
+    return std::move(*error);
+  }
+  auto periodExponentField =
+      required(parameters, "period_exponent", source, "$/parameters");
+  if (auto* error = std::get_if<Error>(&periodExponentField)) {
+    return std::move(*error);
+  }
+  auto periodExponentValue = sizeValue(*std::get<0>(periodExponentField),
+                                       source, "$/parameters/period_exponent");
+  if (auto* error = std::get_if<Error>(&periodExponentValue)) {
+    return std::move(*error);
+  }
+  auto qubitsField = required(parameters, "qubits", source, "$/parameters");
+  if (auto* error = std::get_if<Error>(&qubitsField)) {
+    return std::move(*error);
+  }
+  auto qubitsValue =
+      sizeValue(*std::get<0>(qubitsField), source, "$/parameters/qubits");
+  if (auto* error = std::get_if<Error>(&qubitsValue)) {
+    return std::move(*error);
+  }
   QFTOptions options{
-      .qubits =
-          sizeValue(required(parameters, "qubits", source, "$/parameters"),
-                    source, "$/parameters/qubits"),
-      .periodExponent = sizeValue(
-          required(parameters, "period_exponent", source, "$/parameters"),
-          source, "$/parameters/period_exponent"),
+      .qubits = std::get<0>(qubitsValue),
+      .periodExponent = std::get<0>(periodExponentValue),
   };
   if (const auto method = parameters.find("method");
       method != parameters.end()) {
-    const auto value = stringValue(*method, source, "$/parameters/method");
+    auto methodValue = stringValue(*method, source, "$/parameters/method");
+    if (auto* error = std::get_if<Error>(&methodValue)) {
+      return std::move(*error);
+    }
+    const auto value = std::get<0>(methodValue);
     if (value == "standard") {
       options.method = QFTMethod::Standard;
     } else if (value == "semiclassical") {
       options.method = QFTMethod::Semiclassical;
     } else {
-      fail(source, "$/parameters/method",
-           "must be 'standard' or 'semiclassical'");
+      return fail(source, "$/parameters/method",
+                  "must be 'standard' or 'semiclassical'");
     }
   }
-  return constructBenchmark(source, [&options] { return QFT(options); });
+  return constructBenchmark(source, QFT::create(options));
 }
 
-[[nodiscard]] QFTAdder parseQFTAdderParameters(const Json& parameters,
-                                               const std::string_view source) {
-  rejectUnknownKeys(parameters, {"addend", "accumulator", "method", "overflow"},
-                    source, "$/parameters");
+[[nodiscard]] Result<QFTAdder>
+parseQFTAdderParameters(const Json& parameters, const std::string_view source) {
+  if (auto error = rejectUnknownKeys(
+          parameters, {"addend", "accumulator", "method", "overflow"}, source,
+          "$/parameters")) {
+    return std::move(*error);
+  }
+  auto accumulatorField =
+      required(parameters, "accumulator", source, "$/parameters");
+  if (auto* error = std::get_if<Error>(&accumulatorField)) {
+    return std::move(*error);
+  }
+  auto accumulatorValue = stringValue(*std::get<0>(accumulatorField), source,
+                                      "$/parameters/accumulator");
+  if (auto* error = std::get_if<Error>(&accumulatorValue)) {
+    return std::move(*error);
+  }
+  auto addendField = required(parameters, "addend", source, "$/parameters");
+  if (auto* error = std::get_if<Error>(&addendField)) {
+    return std::move(*error);
+  }
+  auto addendValue =
+      stringValue(*std::get<0>(addendField), source, "$/parameters/addend");
+  if (auto* error = std::get_if<Error>(&addendValue)) {
+    return std::move(*error);
+  }
   QFTAdderOptions options{
-      .addend =
-          stringValue(required(parameters, "addend", source, "$/parameters"),
-                      source, "$/parameters/addend"),
-      .accumulator = stringValue(
-          required(parameters, "accumulator", source, "$/parameters"), source,
-          "$/parameters/accumulator"),
+      .addend = std::get<0>(addendValue),
+      .accumulator = std::get<0>(accumulatorValue),
   };
   if (const auto it = parameters.find("method"); it != parameters.end()) {
-    const auto value = stringValue(*it, source, "$/parameters/method");
+    auto methodValue = stringValue(*it, source, "$/parameters/method");
+    if (auto* error = std::get_if<Error>(&methodValue)) {
+      return std::move(*error);
+    }
+    const auto value = std::get<0>(methodValue);
     if (value == "register") {
       options.method = QFTAdderMethod::Register;
     } else if (value == "constant") {
       options.method = QFTAdderMethod::Constant;
     } else {
-      fail(source, "$/parameters/method", "must be 'register' or 'constant'");
+      return fail(source, "$/parameters/method",
+                  "must be 'register' or 'constant'");
     }
   }
   if (const auto it = parameters.find("overflow"); it != parameters.end()) {
-    const auto value = stringValue(*it, source, "$/parameters/overflow");
+    auto overflowValue = stringValue(*it, source, "$/parameters/overflow");
+    if (auto* error = std::get_if<Error>(&overflowValue)) {
+      return std::move(*error);
+    }
+    const auto value = std::get<0>(overflowValue);
     if (value == "wrap") {
       options.overflow = QFTAdderOverflow::Wrap;
     } else if (value == "carry") {
       options.overflow = QFTAdderOverflow::Carry;
     } else {
-      fail(source, "$/parameters/overflow", "must be 'wrap' or 'carry'");
+      return fail(source, "$/parameters/overflow", "must be 'wrap' or 'carry'");
     }
   }
-  return constructBenchmark(
-      source, [&options] { return QFTAdder(std::move(options)); });
+  return constructBenchmark(source, QFTAdder::create(std::move(options)));
 }
 
-[[nodiscard]] QPE parseQPEParameters(const Json& parameters,
-                                     const std::string_view source) {
-  rejectUnknownKeys(parameters, {"precision", "phase", "method"}, source,
-                    "$/parameters");
-  const auto precision =
-      sizeValue(required(parameters, "precision", source, "$/parameters"),
-                source, "$/parameters/precision");
-  const auto& phase = required(parameters, "phase", source, "$/parameters");
-  requireObject(phase, source, "$/parameters/phase");
-  rejectUnknownKeys(phase, {"numerator", "denominator"}, source,
-                    "$/parameters/phase");
-  const auto numerator = unsignedInteger(
-      required(phase, "numerator", source, "$/parameters/phase"), source,
-      "$/parameters/phase/numerator");
-  const auto denominator = unsignedInteger(
-      required(phase, "denominator", source, "$/parameters/phase"), source,
-      "$/parameters/phase/denominator");
+[[nodiscard]] Result<QPE> parseQPEParameters(const Json& parameters,
+                                             const std::string_view source) {
+  if (auto error =
+          rejectUnknownKeys(parameters, {"precision", "phase", "method"},
+                            source, "$/parameters")) {
+    return std::move(*error);
+  }
+  auto precisionField =
+      required(parameters, "precision", source, "$/parameters");
+  if (auto* error = std::get_if<Error>(&precisionField)) {
+    return std::move(*error);
+  }
+  auto precisionValue =
+      sizeValue(*std::get<0>(precisionField), source, "$/parameters/precision");
+  if (auto* error = std::get_if<Error>(&precisionValue)) {
+    return std::move(*error);
+  }
+  const auto precision = std::get<0>(precisionValue);
+  auto phaseField = required(parameters, "phase", source, "$/parameters");
+  if (auto* error = std::get_if<Error>(&phaseField)) {
+    return std::move(*error);
+  }
+  const auto& phase = *std::get<0>(phaseField);
+  if (auto error = requireObject(phase, source, "$/parameters/phase")) {
+    return std::move(*error);
+  }
+  if (auto error = rejectUnknownKeys(phase, {"numerator", "denominator"},
+                                     source, "$/parameters/phase")) {
+    return std::move(*error);
+  }
+  auto numeratorField =
+      required(phase, "numerator", source, "$/parameters/phase");
+  if (auto* error = std::get_if<Error>(&numeratorField)) {
+    return std::move(*error);
+  }
+  auto numeratorValue = unsignedInteger(*std::get<0>(numeratorField), source,
+                                        "$/parameters/phase/numerator");
+  if (auto* error = std::get_if<Error>(&numeratorValue)) {
+    return std::move(*error);
+  }
+  const auto numerator = std::get<0>(numeratorValue);
+  auto denominatorField =
+      required(phase, "denominator", source, "$/parameters/phase");
+  if (auto* error = std::get_if<Error>(&denominatorField)) {
+    return std::move(*error);
+  }
+  auto denominatorValue = unsignedInteger(
+      *std::get<0>(denominatorField), source, "$/parameters/phase/denominator");
+  if (auto* error = std::get_if<Error>(&denominatorValue)) {
+    return std::move(*error);
+  }
+  const auto denominator = std::get<0>(denominatorValue);
   auto method = QPEMethod::Standard;
   if (const auto value = parameters.find("method"); value != parameters.end()) {
-    const auto name = stringValue(*value, source, "$/parameters/method");
+    auto methodValue = stringValue(*value, source, "$/parameters/method");
+    if (auto* error = std::get_if<Error>(&methodValue)) {
+      return std::move(*error);
+    }
+    const auto name = std::get<0>(methodValue);
     if (name == "standard") {
       method = QPEMethod::Standard;
     } else if (name == "iterative") {
       method = QPEMethod::Iterative;
     } else {
-      fail(source, "$/parameters/method", "must be 'standard' or 'iterative'");
+      return fail(source, "$/parameters/method",
+                  "must be 'standard' or 'iterative'");
     }
   }
-  return constructBenchmark(source, [&] {
-    return QPE({
-        .precision = precision,
-        .phase = Phase(numerator, denominator),
-        .method = method,
-    });
-  });
+  auto phaseValue =
+      constructBenchmark(source, Phase::create(numerator, denominator));
+  if (auto* error = std::get_if<Error>(&phaseValue)) {
+    return std::move(*error);
+  }
+  return constructBenchmark(source, QPE::create({
+                                        .precision = precision,
+                                        .phase = std::get<0>(phaseValue),
+                                        .method = method,
+                                    }));
 }
 
-[[nodiscard]] RepeatUntilSuccess
+[[nodiscard]] Result<RepeatUntilSuccess>
 parseRepeatUntilSuccessParameters(const Json& parameters,
                                   const std::string_view source) {
-  rejectUnknownKeys(parameters, {"data_qubits"}, source, "$/parameters");
+  if (auto error = rejectUnknownKeys(parameters, {"data_qubits"}, source,
+                                     "$/parameters")) {
+    return std::move(*error);
+  }
   RepeatUntilSuccessOptions options;
   if (const auto width = parameters.find("data_qubits");
       width != parameters.end()) {
-    options.dataQubits = sizeValue(*width, source, "$/parameters/data_qubits");
+    auto dataQubitsValue =
+        sizeValue(*width, source, "$/parameters/data_qubits");
+    if (auto* error = std::get_if<Error>(&dataQubitsValue)) {
+      return std::move(*error);
+    }
+    options.dataQubits = std::get<0>(dataQubitsValue);
   }
-  return constructBenchmark(source,
-                            [&options] { return RepeatUntilSuccess(options); });
+  return constructBenchmark(source, RepeatUntilSuccess::create(options));
 }
 
-[[nodiscard]] Teleportation
+[[nodiscard]] Result<Teleportation>
 parseTeleportationParameters(const Json& parameters,
                              const std::string_view source) {
-  rejectUnknownKeys(parameters, {}, source, "$/parameters");
+  if (auto error = rejectUnknownKeys(parameters, {}, source, "$/parameters")) {
+    return std::move(*error);
+  }
   return Teleportation{};
 }
 
@@ -728,17 +989,25 @@ template <class Benchmark>
                       referenceJSON(benchmark));
 }
 
-[[nodiscard]] std::string semanticCaseId(const Json& semantic) {
+[[nodiscard]] Result<std::string> semanticCaseId(const Json& semantic) {
   auto input = std::string(CASE_DOMAIN);
   input.push_back('\0');
   input += semantic.dump();
-  return "sha256-" + detail::sha256Hex(input);
+  auto digest = detail::sha256Hex(input);
+  if (auto* error = std::get_if<Error>(&digest)) {
+    return std::move(*error);
+  }
+  return "sha256-" + std::get<0>(digest);
 }
 
 template <class Benchmark>
-[[nodiscard]] Json manifestJSON(const Benchmark& benchmark) {
+[[nodiscard]] Result<Json> manifestJSON(const Benchmark& benchmark) {
   auto semantic = semanticJSON(benchmark);
-  semantic["case_id"] = semanticCaseId(semantic);
+  auto id = semanticCaseId(semantic);
+  if (auto* error = std::get_if<Error>(&id)) {
+    return std::move(*error);
+  }
+  semantic["case_id"] = std::get<0>(std::move(id));
   semantic["schema_version"] = SCHEMA_VERSION;
   return semantic;
 }
@@ -753,25 +1022,31 @@ template <class Benchmark>
 }
 
 template <class Benchmark, class ParseParameters>
-[[nodiscard]] Benchmark
-parseInstanceSpecification(const std::string_view text,
-                           const std::string_view source,
-                           const ParseParameters& parseParameters) {
-  const auto root = instanceSpecificationEnvelope(text, source);
-  requireBenchmark(root, BenchmarkMetadata<Benchmark>::id, source);
-  return parseParameters(root.at("parameters"), source);
-}
-
-template <class Benchmark, class ParseParameters>
-[[nodiscard]] Benchmark parseManifest(const std::string_view text,
-                                      const std::string_view source,
-                                      const ParseParameters& parseParameters) {
-  const auto root = manifestEnvelope(text, source);
-  requireBenchmark(root, BenchmarkMetadata<Benchmark>::id, source);
-  auto benchmark = parseParameters(root.at("parameters"), source);
-  if (root.dump() != manifestJSON(benchmark).dump()) {
-    fail(source, "$",
-         "does not match its resolved benchmark instance and case ID");
+[[nodiscard]] Result<Benchmark>
+parseBenchmark(const std::string_view text, const std::string_view source,
+               const ParseParameters& parseParameters, const bool manifest) {
+  auto parsed = envelope(text, source, manifest);
+  if (auto* error = std::get_if<Error>(&parsed)) {
+    return std::move(*error);
+  }
+  const auto& root = std::get<0>(parsed);
+  if (auto error =
+          requireBenchmark(root, BenchmarkMetadata<Benchmark>::id, source)) {
+    return std::move(*error);
+  }
+  auto benchmark = parseParameters(root["parameters"], source);
+  if (auto* error = std::get_if<Error>(&benchmark)) {
+    return std::move(*error);
+  }
+  if (manifest) {
+    auto expected = manifestJSON(std::get<0>(benchmark));
+    if (auto* error = std::get_if<Error>(&expected)) {
+      return std::move(*error);
+    }
+    if (root.dump() != std::get<0>(expected).dump()) {
+      return fail(source, "$",
+                  "does not match its resolved benchmark instance and case ID");
+    }
   }
   return benchmark;
 }
@@ -1203,20 +1478,32 @@ template <class Benchmark>
 }
 
 template <class Benchmark>
-[[nodiscard]] std::string evaluateBenchmark(const Benchmark& benchmark,
-                                            const Counts& counts) {
+[[nodiscard]] Result<std::string> evaluateBenchmark(const Benchmark& benchmark,
+                                                    const Counts& counts) {
+  auto evaluation = benchmark.evaluate(counts);
+  if (auto* error = std::get_if<Error>(&evaluation)) {
+    return std::move(*error);
+  }
+  auto id = caseId(benchmark);
+  if (auto* error = std::get_if<Error>(&id)) {
+    return std::move(*error);
+  }
+  /// Evaluation validates the total before this sum.
   const auto shots = std::accumulate(
       counts.begin(), counts.end(), size_t{0},
       [](const size_t sum, const auto& item) { return sum + item.second; });
-  return evaluationToJSON(caseId(benchmark), shots, benchmark.evaluate(counts));
+  return evaluationToJSON(std::get<0>(id), shots, std::get<0>(evaluation));
 }
 
 #define MQT_BENCHMARK_FAMILY(TYPE, STEM, ID, DEFINITION_VERSION)               \
-  std::string evaluate##TYPE(const std::string_view manifest,                  \
-                             const std::string_view source,                    \
-                             const Counts& counts) {                           \
-    return evaluateBenchmark(STEM##FromManifestJSON(manifest, source),         \
-                             counts);                                          \
+  Result<std::string> evaluate##TYPE(const std::string_view manifest,          \
+                                     const std::string_view source,            \
+                                     const Counts& counts) {                   \
+    auto result = STEM##FromManifestJSON(manifest, source);                    \
+    if (auto* error = std::get_if<Error>(&result)) {                           \
+      return std::move(*error);                                                \
+    }                                                                          \
+    return evaluateBenchmark(std::get<0>(result), counts);                     \
   }
 #include "bench/BenchmarkFamilies.inc"
 
@@ -1232,17 +1519,23 @@ template <class Benchmark>
 
 } // namespace
 
-std::string
+Result<std::string>
 benchmarkIdFromInstanceSpecificationJSON(const std::string_view json,
                                          const std::string_view source) {
-  return instanceSpecificationEnvelope(json, source)
-      .at("benchmark")
-      .get<std::string>();
+  auto result = envelope(json, source, false);
+  if (auto* error = std::get_if<Error>(&result)) {
+    return std::move(*error);
+  }
+  return std::get<0>(result)["benchmark"].get<std::string>();
 }
 
-std::string benchmarkIdFromManifestJSON(const std::string_view json,
-                                        const std::string_view source) {
-  return manifestEnvelope(json, source).at("benchmark").get<std::string>();
+Result<std::string> benchmarkIdFromManifestJSON(const std::string_view json,
+                                                const std::string_view source) {
+  auto result = envelope(json, source, true);
+  if (auto* error = std::get_if<Error>(&result)) {
+    return std::move(*error);
+  }
+  return std::get<0>(result)["benchmark"].get<std::string>();
 }
 
 std::string listBenchmarksJSON() {
@@ -1260,45 +1553,66 @@ std::string listBenchmarksJSON() {
       .dump();
 }
 
-std::string describeBenchmarkJSON(const std::string_view benchmark) {
+Result<std::string> describeBenchmarkJSON(const std::string_view benchmark) {
   if (const auto* entry = findBenchmark(benchmark)) {
     return entry->instanceSpecificationSchema().dump();
   }
-  throw std::invalid_argument("unsupported benchmark '" +
-                              std::string(benchmark) + "'");
+  return Error{
+      .message = "unsupported benchmark '" + std::string(benchmark) + "'",
+  };
 }
 
 #define MQT_BENCHMARK_FAMILY(TYPE, STEM, ID, DEFINITION_VERSION)               \
-  TYPE STEM##FromInstanceSpecificationJSON(const std::string_view json,        \
-                                           const std::string_view source) {    \
-    return parseInstanceSpecification<TYPE>(json, source,                      \
-                                            parse##TYPE##Parameters);          \
+  Result<TYPE> STEM##FromInstanceSpecificationJSON(                            \
+      const std::string_view json, const std::string_view source) {            \
+    return parseBenchmark<TYPE>(json, source, parse##TYPE##Parameters, false); \
   }                                                                            \
   std::string toInstanceSpecificationJSON(const TYPE& benchmark) {             \
     return instanceSpecificationJSON(benchmark).dump();                        \
   }                                                                            \
-  TYPE STEM##FromManifestJSON(const std::string_view json,                     \
-                              const std::string_view source) {                 \
-    return parseManifest<TYPE>(json, source, parse##TYPE##Parameters);         \
+  Result<TYPE> STEM##FromManifestJSON(const std::string_view json,             \
+                                      const std::string_view source) {         \
+    return parseBenchmark<TYPE>(json, source, parse##TYPE##Parameters, true);  \
   }                                                                            \
-  std::string toManifestJSON(const TYPE& benchmark) {                          \
-    return manifestJSON(benchmark).dump();                                     \
+  Result<std::string> toManifestJSON(const TYPE& benchmark) {                  \
+    auto result = manifestJSON(benchmark);                                     \
+    if (auto* error = std::get_if<Error>(&result)) {                           \
+      return std::move(*error);                                                \
+    }                                                                          \
+    return std::get<0>(result).dump();                                         \
   }                                                                            \
-  std::string caseId(const TYPE& benchmark) {                                  \
+  Result<std::string> caseId(const TYPE& benchmark) {                          \
     return semanticCaseId(semanticJSON(benchmark));                            \
   }
 #include "bench/BenchmarkFamilies.inc"
 
-Counts countsFromJSON(const std::string_view json,
-                      const std::string_view source) {
-  const auto root = parseJSON(json, source);
-  requireObject(root, source, "$");
-  rejectUnknownKeys(root, {"schema_version", "counts"}, source, "$");
-  requireSchemaVersion(root, source);
-  const auto& values = required(root, "counts", source, "$");
-  requireObject(values, source, "$/counts");
+Result<Counts> countsFromJSON(const std::string_view json,
+                              const std::string_view source) {
+  auto parsed = parseJSON(json, source);
+  if (auto* error = std::get_if<Error>(&parsed)) {
+    return std::move(*error);
+  }
+  const auto& root = std::get<0>(parsed);
+  if (auto error = requireObject(root, source, "$")) {
+    return std::move(*error);
+  }
+  if (auto error =
+          rejectUnknownKeys(root, {"schema_version", "counts"}, source, "$")) {
+    return std::move(*error);
+  }
+  if (auto error = requireSchemaVersion(root, source)) {
+    return std::move(*error);
+  }
+  auto field = required(root, "counts", source, "$");
+  if (auto* error = std::get_if<Error>(&field)) {
+    return std::move(*error);
+  }
+  const auto& values = *std::get<0>(field);
+  if (auto error = requireObject(values, source, "$/counts")) {
+    return std::move(*error);
+  }
   if (values.empty()) {
-    fail(source, "$/counts", "must not be empty");
+    return fail(source, "$/counts", "must not be empty");
   }
 
   Counts result;
@@ -1307,15 +1621,19 @@ Counts countsFromJSON(const std::string_view json,
     if (outcome.empty() || !std::ranges::all_of(outcome, [](const char bit) {
           return bit == '0' || bit == '1';
         })) {
-      fail(source, "$/counts", "outcomes must be non-empty bitstrings");
+      return fail(source, "$/counts", "outcomes must be non-empty bitstrings");
     }
     const auto pointer = "$/counts/" + outcome;
-    const auto count = sizeValue(countJSON, source, pointer);
+    auto countResult = sizeValue(countJSON, source, pointer);
+    if (auto* error = std::get_if<Error>(&countResult)) {
+      return std::move(*error);
+    }
+    const auto count = std::get<0>(countResult);
     if (count == 0) {
-      fail(source, pointer, "must be positive");
+      return fail(source, pointer, "must be positive");
     }
     if (count > std::numeric_limits<size_t>::max() - shots) {
-      fail(source, "$/counts", "total shot count exceeds size_t");
+      return fail(source, "$/counts", "total shot count exceeds size_t");
     }
     shots += count;
     result.emplace(outcome, count);
@@ -1323,22 +1641,30 @@ Counts countsFromJSON(const std::string_view json,
   return result;
 }
 
-std::string evaluateJSON(const std::string_view manifest,
-                         const std::string_view counts,
-                         const std::string_view manifestSource,
-                         const std::string_view countsSource) {
-  const auto id = benchmarkIdFromManifestJSON(manifest, manifestSource);
-  const auto parsedCounts = countsFromJSON(counts, countsSource);
-  return findBenchmark(id)->evaluate(manifest, manifestSource, parsedCounts);
+Result<std::string> evaluateJSON(const std::string_view manifest,
+                                 const std::string_view counts,
+                                 const std::string_view manifestSource,
+                                 const std::string_view countsSource) {
+  auto id = benchmarkIdFromManifestJSON(manifest, manifestSource);
+  if (auto* error = std::get_if<Error>(&id)) {
+    return std::move(*error);
+  }
+  auto parsedCounts = countsFromJSON(counts, countsSource);
+  if (auto* error = std::get_if<Error>(&parsedCounts)) {
+    return std::move(*error);
+  }
+  return findBenchmark(std::get<0>(id))
+      ->evaluate(manifest, manifestSource, std::get<0>(parsedCounts));
 }
 
-std::string evaluationToJSON(const std::string_view caseIdValue,
-                             const size_t shots, const Evaluation& evaluation) {
+Result<std::string> evaluationToJSON(const std::string_view caseIdValue,
+                                     const size_t shots,
+                                     const Evaluation& evaluation) {
   if (!validCaseId(caseIdValue)) {
-    throw std::invalid_argument("case ID must be a full lowercase SHA-256 ID");
+    return Error{.message = "case ID must be a full lowercase SHA-256 ID"};
   }
   if (shots == 0) {
-    throw std::invalid_argument("evaluation requires at least one shot");
+    return Error{.message = "evaluation requires at least one shot"};
   }
   const auto validMetric = [](const double value) {
     return std::isfinite(value) && value >= 0. && value <= 1.;
@@ -1347,8 +1673,7 @@ std::string evaluationToJSON(const std::string_view caseIdValue,
       !validMetric(evaluation.squaredHellingerFidelity) ||
       (evaluation.successProbability &&
        !validMetric(*evaluation.successProbability))) {
-    throw std::invalid_argument(
-        "evaluation metrics must be finite and in [0, 1]");
+    return Error{.message = "evaluation metrics must be finite and in [0, 1]"};
   }
 
   Json success = nullptr;
@@ -1374,50 +1699,35 @@ std::string evaluationToJSON(const std::string_view caseIdValue,
       .dump();
 }
 
-namespace {
-template <typename Action>
-auto tryJSON(Action action)
-    -> std::variant<std::invoke_result_t<Action>, JSONError> {
-  try {
-    return action();
-  } catch (const std::exception& error) {
-    return JSONError{error.what()};
+Result<ParsedBenchmark>
+parseInstanceSpecificationJSON(const std::string_view json,
+                               const std::string_view source) {
+  auto id = benchmarkIdFromInstanceSpecificationJSON(json, source);
+  if (auto* error = std::get_if<Error>(&id)) {
+    return std::move(*error);
   }
-}
-} // namespace
-
-std::variant<ParsedBenchmark, JSONError>
-tryParseInstanceSpecificationJSON(const std::string_view json,
-                                  const std::string_view source) {
-  return tryJSON([&] {
-    auto id = benchmarkIdFromInstanceSpecificationJSON(json, source);
-    auto instance = findBenchmark(id)->parse(json, source);
-    auto parsed = std::visit(
-        [&](const auto& benchmark) {
-          return ParsedBenchmark{
-              .instance = benchmark,
-              .benchmarkId = std::move(id),
-              .caseId = caseId(benchmark),
-              .manifestJSON = toManifestJSON(benchmark),
-          };
-        },
-        instance);
-    return parsed;
-  });
-}
-
-std::variant<std::string, JSONError>
-tryDescribeBenchmarkJSON(const std::string_view benchmark) {
-  return tryJSON([&] { return describeBenchmarkJSON(benchmark); });
-}
-
-std::variant<std::string, JSONError>
-tryEvaluateJSON(const std::string_view manifest, const std::string_view counts,
-                const std::string_view manifestSource,
-                const std::string_view countsSource) {
-  return tryJSON([&] {
-    return evaluateJSON(manifest, counts, manifestSource, countsSource);
-  });
+  auto instance = findBenchmark(std::get<0>(id))->parse(json, source);
+  if (auto* error = std::get_if<Error>(&instance)) {
+    return std::move(*error);
+  }
+  return std::visit(
+      [&](auto&& benchmark) -> Result<ParsedBenchmark> {
+        auto caseIdValue = caseId(benchmark);
+        if (auto* error = std::get_if<Error>(&caseIdValue)) {
+          return std::move(*error);
+        }
+        auto manifest = toManifestJSON(benchmark);
+        if (auto* error = std::get_if<Error>(&manifest)) {
+          return std::move(*error);
+        }
+        return ParsedBenchmark{
+            .instance = std::forward<decltype(benchmark)>(benchmark),
+            .benchmarkId = std::get<0>(std::move(id)),
+            .caseId = std::get<0>(std::move(caseIdValue)),
+            .manifestJSON = std::get<0>(std::move(manifest)),
+        };
+      },
+      std::get<0>(std::move(instance)));
 }
 
 } // namespace mqt::bench

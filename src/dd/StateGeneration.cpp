@@ -14,6 +14,7 @@
 #include "dd/ComplexNumbers.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/Edge.hpp"
+#include "dd/Error.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
 #include "dd/RealNumber.hpp"
@@ -21,36 +22,43 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
-#include <stdexcept>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace dd {
 namespace {
 /// Validate that @p n qubits starting at @p start fit in the package.
-/// @throws std::invalid_argument If the qubit interval exceeds the capacity.
-void suitablePackage(const size_t n, const Package& dd,
-                     const size_t start = 0) {
+/// @returns An error if the qubit interval exceeds the capacity.
+std::optional<Error> suitablePackage(const size_t n, const Package& dd,
+                                     const size_t start = 0) {
   const std::size_t nqubits = dd.qubits();
   if (start > nqubits || n > nqubits - start) {
-    throw std::invalid_argument{
-        "Requested state with " + std::to_string(n) + " qubits starting at " +
-        std::to_string(start) +
-        ", but current package configuration only supports up to " +
-        std::to_string(nqubits) +
-        " qubits. Please allocate a larger package instance."};
+    return Error{
+        .message = "Requested state with " + std::to_string(n) +
+                   " qubits starting at " + std::to_string(start) +
+                   ", but current package configuration only supports up to " +
+                   std::to_string(nqubits) +
+                   " qubits. Please allocate a larger package instance.",
+    };
   }
+  return std::nullopt;
 }
 
 template <class BasisEntry>
-VectorDD buildBasisState(const size_t n, const size_t available,
-                         const BasisEntry& entry, Package& dd,
-                         const size_t start) {
-  suitablePackage(n, dd, start);
+Result<VectorDD> buildBasisState(const size_t n, const size_t available,
+                                 const BasisEntry& entry, Package& dd,
+                                 const size_t start) {
+  if (auto error = suitablePackage(n, dd, start)) {
+    return std::move(*error);
+  }
   if (available < n) {
-    throw std::invalid_argument(
-        "Insufficient qubit states provided. Requested " + std::to_string(n) +
-        ", but received " + std::to_string(available));
+    return Error{
+        .message = "Insufficient qubit states provided. Requested " +
+                   std::to_string(n) + ", but received " +
+                   std::to_string(available),
+    };
   }
 
   vCachedEdge f = vCachedEdge::one();
@@ -87,13 +95,14 @@ VectorDD buildBasisState(const size_t n, const size_t available,
 
 } // namespace
 
-VectorDD makeZeroState(const size_t n, Package& dd, const size_t start) {
+Result<VectorDD> makeZeroState(const size_t n, Package& dd,
+                               const size_t start) {
   return buildBasisState(
       n, n, [](size_t) { return BasisStates::zero; }, dd, start);
 }
 
-VectorDD makeBasisState(const size_t n, const std::vector<bool>& state,
-                        Package& dd, const size_t start) {
+Result<VectorDD> makeBasisState(const size_t n, const std::vector<bool>& state,
+                                Package& dd, const size_t start) {
   return buildBasisState(
       n, state.size(),
       [&state](const size_t i) {
@@ -102,15 +111,18 @@ VectorDD makeBasisState(const size_t n, const std::vector<bool>& state,
       dd, start);
 }
 
-VectorDD makeBasisState(const size_t n, const std::vector<BasisStates>& state,
-                        Package& dd, const size_t start) {
+Result<VectorDD> makeBasisState(const size_t n,
+                                const std::vector<BasisStates>& state,
+                                Package& dd, const size_t start) {
   return buildBasisState(
       n, state.size(), [&state](const size_t i) { return state[i]; }, dd,
       start);
 }
 
-VectorDD makeGHZState(const std::size_t n, Package& dd) {
-  suitablePackage(n, dd);
+Result<VectorDD> makeGHZState(const std::size_t n, Package& dd) {
+  if (auto error = suitablePackage(n, dd)) {
+    return std::move(*error);
+  }
 
   if (n == 0U) {
     return vEdge::one();
@@ -144,21 +156,25 @@ VectorDD makeGHZState(const std::size_t n, Package& dd) {
   return e;
 }
 
-VectorDD makeWState(const std::size_t n, Package& dd) {
-  suitablePackage(n, dd);
+Result<VectorDD> makeWState(const std::size_t n, Package& dd) {
+  if (auto error = suitablePackage(n, dd)) {
+    return std::move(*error);
+  }
 
   if (n == 0U) {
     return vEdge::one();
   }
 
   if ((1. / sqrt(static_cast<double>(n))) < RealNumber::eps) {
-    throw std::invalid_argument(
-        "Requested qubit size for generating W-state would lead to an "
-        "underflow due to 1 / sqrt(n) being smaller than the currently set "
-        "tolerance " +
-        std::to_string(RealNumber::eps) +
-        ". If you still wanna run the computation, please lower "
-        "the tolerance accordingly.");
+    return Error{
+        .message =
+            "Requested qubit size for generating W-state would lead to an "
+            "underflow due to 1 / sqrt(n) being smaller than the currently set "
+            "tolerance " +
+            std::to_string(RealNumber::eps) +
+            ". If you still wanna run the computation, please lower "
+            "the tolerance accordingly.",
+    };
   }
 
   vEdge leftSubtree = vEdge::zero();
@@ -175,7 +191,7 @@ VectorDD makeWState(const std::size_t n, Package& dd) {
   return leftSubtree;
 }
 
-VectorDD makeStateFromVector(const CVec& vec, Package& dd) {
+Result<VectorDD> makeStateFromVector(const CVec& vec, Package& dd) {
   return makeStateFromVector(
       vec.size(), [&vec](const size_t index) { return vec[index]; }, dd);
 }
