@@ -1216,8 +1216,7 @@ private:
     }
     PassManager native(&getContext());
     populateTargetNativeSynthesisPipeline(native);
-    if (failed(native.run(*copy)) || failed(verify(*copy)) ||
-        failed(verifyLinearity(*copy))) {
+    if (failed(native.run(*copy)) || failed(verifyLinearity(*copy))) {
       return failure();
     }
     size_t count = 0;
