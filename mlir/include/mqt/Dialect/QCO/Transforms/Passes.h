@@ -26,10 +26,6 @@ namespace mlir::qco {
 #define GEN_PASS_DECL
 #include "mqt/Dialect/QCO/Transforms/Passes.h.inc" // IWYU pragma: export
 
-/// Fuse single-qubit runs directly in the selected compiler-target basis.
-[[nodiscard]] std::unique_ptr<Pass>
-createFuseSingleQubitUnitaryRuns(CompilerTarget::SingleQubitBasis basis);
-
 //===----------------------------------------------------------------------===//
 // Registration
 //===----------------------------------------------------------------------===//

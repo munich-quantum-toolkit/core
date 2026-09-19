@@ -1004,7 +1004,7 @@ TEST_F(MergeSingleQubitRotationGatesTest,
 }
 
 TEST_F(MergeSingleQubitRotationGatesTest,
-       mergesSymbolicEulerChainsWithoutTrigonometry) {
+       mergesSymbolicEulerChainsWithBoundedAngles) {
   for (const bool useX : {false, true}) {
     SCOPED_TRACE(useX);
     module = QCOProgramBuilder::build(&context, [&](auto& b) {
@@ -1043,6 +1043,8 @@ TEST_F(MergeSingleQubitRotationGatesTest,
              std::array{PI, PI, PI},
              std::array{2 * PI, -2 * PI, 2 * PI},
              std::array{-3 * PI, 0.37, 4 * PI},
+             std::array{37 * PI, 0.37, -29 * PI},
+             std::array{1.0e5, 0.37, 1.0e5},
          }) {
       SCOPED_TRACE(testing::PrintToString(angles));
       OwningOpRef<ModuleOp> before = original->clone();
@@ -1064,6 +1066,8 @@ TEST_F(MergeSingleQubitRotationGatesTest,
   for (const auto* basisName : {"u", "zyz", "zxz", "zsxx", "xzx", "xyx", "r"}) {
     SCOPED_TRACE(basisName);
     const auto basis = *decomposition::parseSingleQubitBasis(basisName);
+    FuseSingleQubitUnitaryRunsOptions options;
+    options.basis = basisName;
     const bool outerX = basis == decomposition::SingleQubitBasis::XZX ||
                         basis == decomposition::SingleQubitBasis::XYX ||
                         basis == decomposition::SingleQubitBasis::R;
@@ -1104,7 +1108,7 @@ TEST_F(MergeSingleQubitRotationGatesTest,
         ASSERT_TRUE(succeeded(verifyLinearity(*module)));
         OwningOpRef<ModuleOp> original = module->clone();
         PassManager fusion(&context);
-        fusion.addPass(createFuseSingleQubitUnitaryRuns(basis));
+        fusion.addPass(createFuseSingleQubitUnitaryRuns(options));
         ASSERT_TRUE(succeeded(fusion.run(*module)));
         ASSERT_TRUE(succeeded(verify(*module)));
         ASSERT_TRUE(succeeded(verifyLinearity(*module)));
@@ -1131,6 +1135,8 @@ TEST_F(MergeSingleQubitRotationGatesTest,
                  std::array{PI, PI, PI},
                  std::array{2 * PI, -2 * PI, 2 * PI},
                  std::array{-3 * PI, 0.37, 4 * PI},
+                 std::array{37 * PI, 0.37, -29 * PI},
+                 std::array{1.0e5, 0.37, 1.0e5},
              }) {
           SCOPED_TRACE(testing::PrintToString(angles));
           OwningOpRef<ModuleOp> before = original->clone();

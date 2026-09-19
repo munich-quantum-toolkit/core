@@ -43,6 +43,7 @@
 #include "mlir/Support/TypeID.h"
 #include "mlir/Support/WalkResult.h"
 #include "mlir/Transforms/FoldUtils.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
@@ -796,6 +797,19 @@ protected:
     if (failed(prepareGlobalPhases(moduleOp, target))) {
       signalPassFailure();
       return;
+    }
+    if (targetBasis &&
+        targetBasis->singleQubit != CompilerTarget::SingleQubitBasis::U) {
+      RewritePatternSet patterns(&getContext());
+      decomposition::populateParameterizedSingleQubitRunCompositionPatterns(
+          patterns, targetBasis->singleQubit, &target);
+      decomposition::populateFuseSingleQubitUnitaryRunsPatterns(
+          patterns, targetBasis->singleQubit, /*skipControlledBodies=*/true,
+          &target);
+      if (failed(applyPatternsGreedily(moduleOp, std::move(patterns)))) {
+        signalPassFailure();
+        return;
+      }
     }
     const bool indexed = environment.environment().supportsIndexedQubits();
     auto sites = collectStaticSites(moduleOp, indexed);

@@ -621,6 +621,77 @@ def test_symbolic_x_euler_chain_exports_for_target(native_gates: str, middle_gat
 
 
 @requires_qiskit_translation
+@pytest.mark.parametrize("method", ["compile_for_target", "synthesize_for_target"])
+@pytest.mark.parametrize("shape", ["native_xyx", "non_native_xyx", "long_zsxx", "h"])
+def test_target_fusion_preserves_native_gates_and_symbolic_exports(method: str, shape: str) -> None:
+    """Optional fusion preserves native gates and bindable Qiskit/jeff output."""
+    angles = qiskit.circuit.ParameterVector("theta", 3)
+    source = QuantumCircuit(1)
+    native = {"x": 0, "sx": 0, "rz": 1, "gphase": 1}
+    if shape == "h":
+        source.h(0)
+        native["h"] = 0
+    elif shape == "long_zsxx":
+        for angle in angles:
+            source.rz(angle, 0)
+            source.sx(0)
+    else:
+        source.rx(angles[0], 0)
+        source.ry(angles[1], 0)
+        source.rx(angles[2], 0)
+        if shape == "native_xyx":
+            native.update(rx=1, ry=1)
+    target = CompilerTarget(
+        1,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability(gate, 0 if gate == "gphase" else 1, parameters)
+            for gate, parameters in native.items()
+        ]),
+    )
+    program = QCProgram.from_qiskit(source).to_qco()
+    getattr(program, method)(_test_target_environment(target))
+    result = program.to_qiskit(target=target)
+    assert result.parameters == source.parameters
+    if shape != "non_native_xyx":
+        assert result.count_ops() == source.count_ops()
+    values = dict(zip(source.parameters, [0.31, -1.2, 2.7], strict=False))
+    assert np.allclose(
+        Operator(result.assign_parameters(values)).data,
+        Operator(source.assign_parameters(values)).data,
+        atol=1e-10,
+        rtol=0,
+    )
+    assert program.to_jeff(copy=True).is_valid
+
+
+@requires_qiskit_translation
+@pytest.mark.parametrize("basis", ["u", "zyz", "zsxx"])
+def test_symbolic_fusion_normalizes_gate_operands_after_scalar_expressions(basis: str) -> None:
+    """Normalize each gate use while preserving a shared symbol's scaled use."""
+    angle = qiskit.circuit.Parameter("theta")
+    source = QuantumCircuit(1)
+    source.rz(angle / 2, 0)
+    source.rx(0.37, 0)
+    source.rz(angle, 0)
+    program = QCProgram.from_qiskit(source).to_qco()
+    program.cleanup()
+    program.fuse_single_qubit_unitary_runs(basis=basis)
+    result = program.to_qiskit()
+    assert result.parameters == source.parameters
+    assert program.to_jeff(copy=True).is_valid
+    for value in [2 * np.pi, -2 * np.pi, 17 * np.pi, 1e5]:
+        bound = result.assign_parameters({angle: value})
+        assert all(abs(float(parameter)) <= 4 * np.pi for gate in bound.data for parameter in gate.operation.params)
+        assert np.allclose(
+            Operator(bound).data,
+            Operator(source.assign_parameters({angle: value})).data,
+            atol=1e-10,
+            rtol=0,
+        )
+
+
+@requires_qiskit_translation
 def test_target_compilation_exports_canonical_physical_qiskit_circuit() -> None:
     """Export a mapped program with the complete compiler target."""
     target = CompilerTarget(

@@ -46,8 +46,12 @@ def MergeSingleQubitRotationGates
     When every angle in the chain is a compile-time constant, the same algorithm
     runs on host scalars and emits constant `U` / `gphase` results directly.
     Symbolic RZ-RX-RZ and RZ-RY-RZ chains reuse their Euler angles directly;
-    either outer RZ may be absent. Their angles remain unwrapped, without
-    inverse trigonometry or conditional expressions. Other dynamic chains emit
+    either outer RZ may be absent. Gate operands are normalized modulo `4*pi`
+    before angle arithmetic, preserving the full unitary under control.
+    Constants fold immediately; symbolic operands use `4*atan(tan(angle/4))`,
+    which remains bindable after Qiskit and jeff export. This bounds each input
+    to `[-2*pi, 2*pi]` without restricting shared scalar inputs or expressions.
+    Other dynamic chains emit
     `arith` / `math` operations that compute the merged parameters at run time.
 
     The emitted `UOp` is defined by $U = \exp [i (\phi + \lambda) / 2] R_z (\phi) R_y (\theta) R_z (\lambda)$.
@@ -91,9 +95,10 @@ def FuseSingleQubitUnitaryRuns
 
     Symbolic ZXZ/ZYZ chains reuse their angles directly in the `u`, `zyz`,
     `zxz`, and `zsxx` bases; XZX/XYX chains do so in `xzx`, `xyx`, and `r`.
-    Either outer rotation may be absent. These conversions need no inverse
-    trigonometry or conditional expressions. Other dynamic chains use runtime
-    Euler-angle extraction.
+    Either outer rotation may be absent. Gate operands are normalized modulo
+    `4*pi` before angle arithmetic, as in `merge-single-qubit-rotation-gates`.
+    These conversions need no quaternion extraction or conditional expressions.
+    Other dynamic chains use runtime Euler-angle extraction.
   }];
   let options = [Option<
       "basis", "basis", "std::string", "\"zyz\"",
@@ -297,6 +302,12 @@ def TargetNativeSynthesis : Pass<"target-native-synthesis", "mlir::ModuleOp"> {
     placements. Equal-cost runs and runs whose numerical decomposition fails
     are left for individual lowering. Barriers, non-unitary operations, and
     unavailable matrices stop a run.
+
+    For non-U bases, constant single-qubit runs are fused when they contain an
+    unsupported gate or resynthesis reduces their gate count. Native gates
+    outside the selected synthesis basis remain supported. Optional symbolic
+    fusion preserves native runs and uses only direct Euler identities;
+    other runs are left for individual lowering to retain exportability.
 
     Unknown native-operation metadata is valid when no
     surviving unitary operation needs it. Otherwise, the pass fails when the

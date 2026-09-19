@@ -27,7 +27,6 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 #include <cstddef>
-#include <memory>
 #include <optional>
 #include <utility>
 
@@ -70,7 +69,8 @@ static std::optional<Matrix2x2> getRunMemberMatrix(UnitaryOpInterface gate) {
 /// @return Composed matrix, gate count, and run tail.
 static FusableRunScan
 scanFusableRun(UnitaryOpInterface head, const Matrix2x2& headMatrix,
-               const decomposition::SingleQubitBasis basis) {
+               const decomposition::SingleQubitBasis basis,
+               const CompilerTarget* target) {
   FusableRunScan scan;
   for (auto* op : WireRange(head.getOutputQubit(0))) {
     auto member = dyn_cast_or_null<UnitaryOpInterface>(op);
@@ -84,7 +84,9 @@ scanFusableRun(UnitaryOpInterface head, const Matrix2x2& headMatrix,
       break;
     }
     scan.composed.premultiplyBy(*matrix);
-    scan.hasNonBasisGate |= !decomposition::isSingleQubitBasisGate(op, basis);
+    scan.hasNonBasisGate |=
+        target != nullptr ? !target->supports(op)
+                          : !decomposition::isSingleQubitBasisGate(op, basis);
     scan.tail = member;
     ++scan.gateCount;
   }
@@ -116,12 +118,14 @@ struct FuseSingleQubitUnitaryRunsPattern final
     : OpInterfaceRewritePattern<UnitaryOpInterface> {
   FuseSingleQubitUnitaryRunsPattern(MLIRContext* context,
                                     const decomposition::SingleQubitBasis basis,
-                                    const bool skipControlledBodies)
+                                    const bool skipControlledBodies,
+                                    const CompilerTarget* target)
       : OpInterfaceRewritePattern(context), basis(basis),
-        skipControlledBodies(skipControlledBodies) {}
+        skipControlledBodies(skipControlledBodies), target(target) {}
 
   decomposition::SingleQubitBasis basis;
   bool skipControlledBodies;
+  const CompilerTarget* target;
 
   /// Fuses the run anchored at `op` when beneficial.
   ///
@@ -150,7 +154,7 @@ struct FuseSingleQubitUnitaryRunsPattern final
       return failure();
     }
 
-    FusableRunScan run = scanFusableRun(op, *headMatrix, basis);
+    FusableRunScan run = scanFusableRun(op, *headMatrix, basis, target);
     const auto synthesized = decomposition::synthesizeUnitary1QEuler(
         rewriter, op.getLoc(), op.getInputQubit(0), run.composed, run.gateCount,
         run.hasNonBasisGate, basis);
@@ -208,47 +212,16 @@ protected:
 
 } // namespace
 
-std::unique_ptr<Pass>
-createFuseSingleQubitUnitaryRuns(CompilerTarget::SingleQubitBasis basis) {
-  // Populate the existing option so textual pipelines and reproducers retain
-  // the basis selected by target compilation.
-  FuseSingleQubitUnitaryRunsOptions options;
-  using Basis = CompilerTarget::SingleQubitBasis;
-  switch (basis) {
-  case Basis::U:
-    options.basis = "u";
-    break;
-  case Basis::ZSXX:
-    options.basis = "zsxx";
-    break;
-  case Basis::R:
-    options.basis = "r";
-    break;
-  case Basis::XZX:
-    options.basis = "xzx";
-    break;
-  case Basis::XYX:
-    options.basis = "xyx";
-    break;
-  case Basis::ZYZ:
-    options.basis = "zyz";
-    break;
-  case Basis::ZXZ:
-    options.basis = "zxz";
-    break;
-  }
-  return createFuseSingleQubitUnitaryRuns(options);
-}
-
 } // namespace mlir::qco
 
 namespace mlir::qco::decomposition {
 
-void populateFuseSingleQubitUnitaryRunsPatterns(
-    RewritePatternSet& patterns, const SingleQubitBasis basis,
-    const bool skipControlledBodies) {
+void populateFuseSingleQubitUnitaryRunsPatterns(RewritePatternSet& patterns,
+                                                const SingleQubitBasis basis,
+                                                const bool skipControlledBodies,
+                                                const CompilerTarget* target) {
   patterns.add<FuseSingleQubitUnitaryRunsPattern>(patterns.getContext(), basis,
-                                                  skipControlledBodies);
+                                                  skipControlledBodies, target);
 }
 
 } // namespace mlir::qco::decomposition

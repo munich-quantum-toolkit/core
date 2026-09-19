@@ -4013,19 +4013,19 @@ TEST_F(CompilerPipelineTest, QCOProgramCompilesDynamicRunForSupportedTargets) {
           .name = "zsxx",
           .target = makeCZTarget({{"x", 0}, {"sx", 0}, {"rz", 1}}),
           .resolvedBasis = CompilerTarget::SingleQubitBasis::ZSXX,
-          .expectedGates = {{"rz", 3}, {"sx", 2}},
+          .expectedGates = {{"rz", 3}, {"sx", 1}},
       },
       Case{
           .name = "rx-rz",
           .target = makeCZTarget({{"rx", 1}, {"rz", 1}}),
           .resolvedBasis = CompilerTarget::SingleQubitBasis::XZX,
-          .expectedGates = {{"rz", 1}, {"rx", 2}},
+          .expectedGates = {{"rz", 2}, {"rx", 2}},
       },
       Case{
           .name = "rx-ry",
           .target = makeCZTarget({{"rx", 1}, {"ry", 1}}),
           .resolvedBasis = CompilerTarget::SingleQubitBasis::XYX,
-          .expectedGates = {{"rx", 2}, {"ry", 1}},
+          .expectedGates = {{"rx", 3}, {"ry", 2}},
       },
       Case{
           .name = "ry-rz",
@@ -4037,7 +4037,7 @@ TEST_F(CompilerPipelineTest, QCOProgramCompilesDynamicRunForSupportedTargets) {
           .name = "r",
           .target = makeCZTarget({{"r", 2}}),
           .resolvedBasis = CompilerTarget::SingleQubitBasis::R,
-          .expectedGates = {{"r", 3}},
+          .expectedGates = {{"r", 5}},
       },
   };
 
