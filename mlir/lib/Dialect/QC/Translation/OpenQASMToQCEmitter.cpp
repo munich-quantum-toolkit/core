@@ -1732,6 +1732,12 @@ private:
           } else if constexpr (std::is_same_v<
                                    T, frontend::ArrayAssignmentStatement>) {
             emitArrayAssignment(data);
+          } else if constexpr (std::is_same_v<T,
+                                              frontend::ArrayCopyStatement>) {
+            if (data.source != data.target) {
+              memref::CopyOp::create(builder, arrayValues_.at(data.source),
+                                     arrayValues_.at(data.target));
+            }
           } else if constexpr (std::is_same_v<
                                    T, frontend::BitAssignmentStatement>) {
             emitBitAssignment(data, gateQubits);

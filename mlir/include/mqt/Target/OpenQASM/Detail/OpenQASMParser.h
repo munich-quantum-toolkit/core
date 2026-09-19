@@ -398,9 +398,6 @@ private:
     advance();
     if (current().kind == TokenKind::Equals) {
       advance();
-      if (current().kind != TokenKind::LBrace) {
-        return sink.error(current().loc, "expected array initializer list");
-      }
       auto initializer = parseArrayInitializer(0);
       if (failed(initializer)) {
         return failure();

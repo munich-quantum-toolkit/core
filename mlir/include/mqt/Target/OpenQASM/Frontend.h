@@ -324,6 +324,11 @@ struct ArrayAssignmentStatement {
   ExpressionId value = 0;
 };
 
+struct ArrayCopyStatement {
+  ArrayId source = 0;
+  ArrayId target = 0;
+};
+
 struct BitVectorAssignmentStatement {
   RegisterId target = 0;
   BitVectorExpressionId value = 0;
@@ -378,12 +383,14 @@ struct SwitchStatement {
   std::vector<StatementId> defaultStatements;
 };
 
-using StatementData = std::variant<
-    DeclarationStatement, ScalarDeclarationStatement, ArrayDeclarationStatement,
-    ArrayAssignmentStatement, ScalarAssignmentStatement, BitAssignmentStatement,
-    BitVectorAssignmentStatement, GateApplication, MeasurementStatement,
-    ResetStatement, BarrierStatement, IfStatement, ForStatement, WhileStatement,
-    SwitchStatement, BreakStatement, ContinueStatement>;
+using StatementData =
+    std::variant<DeclarationStatement, ScalarDeclarationStatement,
+                 ArrayDeclarationStatement, ArrayAssignmentStatement,
+                 ArrayCopyStatement, ScalarAssignmentStatement,
+                 BitAssignmentStatement, BitVectorAssignmentStatement,
+                 GateApplication, MeasurementStatement, ResetStatement,
+                 BarrierStatement, IfStatement, ForStatement, WhileStatement,
+                 SwitchStatement, BreakStatement, ContinueStatement>;
 
 struct Statement {
   StatementData data;
