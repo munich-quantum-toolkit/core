@@ -300,6 +300,10 @@ public:
     CX,
     ECR,
     SQRTISWAP,
+    GPI,
+    GPI2,
+    MS,
+    ZZ,
   };
 
   /// Recognized globally usable single-qubit synthesis basis.
@@ -313,6 +317,8 @@ public:
     ZXZ,           ///< `RZ(φ) * RX(θ) * RZ(λ)`.
     FixedRotation, ///< An arbitrary rotation and fixed pulses about another
                    ///< axis.
+    GPI,           ///< GPI2 / GPI / GPI2, with phases in turns.
+    GPI2,          ///< Four GPI2 pulses, with phases in turns.
   };
 
   /// Fixed pulse combined with arbitrary rotations about a distinct axis.
@@ -448,6 +454,7 @@ public:
                               llvm::ArrayRef<SiteId> sites) const;
 
   /// Return whether a recognized gate is supported by the target.
+  /// MS and ZZ query the synthesis primitives MS(0, 0, 1/4) and ZZ(1/4).
   [[nodiscard]] bool supports(GateKind gate) const;
 
   /// Return whether a recognized gate is supported on ordered target sites.

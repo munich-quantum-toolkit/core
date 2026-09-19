@@ -326,6 +326,12 @@ semiclassical QFT
   alias:** semiclassical QFT. A quantum Fourier-transform method that measures,
   resets, and reuses one qubit for each output bit. Each round applies rotations
   controlled by earlier measurement results.
+Native trapped-ion gates
+  **Preferred terms:** GPI, GPI2, MS, and ZZ. **Accepted aliases:** none. Gates
+  with the IonQ matrix conventions and parameters measured in turns (one turn
+  is 2π radians). Ordinary rotation gates such as RZ and RZZ use radians.
+  See {doc}`mlir/target_compilation` for synthesis and export support.
+
 ```
 
 ## Index

@@ -11,6 +11,7 @@
 #include "mqt/Dialect/MQT/Utils/GatePowering.h"
 #include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
+#include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
@@ -25,6 +26,7 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
@@ -55,6 +57,35 @@
 
 using namespace mlir;
 using namespace qco;
+
+TEST(NativeIonGateMatrix, MatchesTurnConventionsAndTargetOrder) {
+  using namespace std::complex_literals;
+  for (double phi : {-.37, 0., .125, .5, 1.2}) {
+    const auto axis = std::polar(1., 2. * std::numbers::pi * phi);
+    const auto pauli = Matrix2x2::fromElements(0., std::conj(axis), axis, 0.);
+    EXPECT_TRUE(GPIOp::unitaryMatrix(phi).isApprox(pauli));
+    EXPECT_TRUE(GPI2Op::unitaryMatrix(phi).isApprox(
+        (1. / std::numbers::sqrt2) *
+        Matrix2x2::fromElements(1., -1i * std::conj(axis), -1i * axis, 1.)));
+    const auto zzPhase = std::polar(1., -std::numbers::pi * phi);
+    EXPECT_TRUE(ZZOp::unitaryMatrix(phi).isApprox(Matrix4x4::fromDiagonal(
+        zzPhase, std::conj(zzPhase), std::conj(zzPhase), zzPhase)));
+  }
+  constexpr double phi0 = .13;
+  constexpr double phi1 = -.21;
+  constexpr double theta = .17;
+  const auto cos = std::cos(std::numbers::pi * theta);
+  const auto sin = -1i * std::sin(std::numbers::pi * theta);
+  const auto sum = std::polar(1., 2. * std::numbers::pi * (phi0 + phi1));
+  const auto difference = std::polar(1., 2. * std::numbers::pi * (phi0 - phi1));
+  const auto expected = Matrix4x4::fromElements(
+      cos, 0., 0., sin * std::conj(sum), 0., cos, sin * std::conj(difference),
+      0., 0., sin * difference, cos, 0., sin * sum, 0., 0., cos);
+  EXPECT_TRUE(MSOp::unitaryMatrix(phi0, phi1, theta).isApprox(expected));
+  // Swapped phases must change MS.
+  // NOLINTNEXTLINE(readability-suspicious-call-argument)
+  EXPECT_FALSE(MSOp::unitaryMatrix(phi1, phi0, theta).isApprox(expected));
+}
 
 [[nodiscard]] static DynamicMatrix controlledMatrix(const Matrix2x2& body) {
   DynamicMatrix result = DynamicMatrix::identity(4);
@@ -175,6 +206,59 @@ protected:
 };
 
 } // namespace
+
+TEST_F(QCOMatrixTest,
+       NativeIonBuildersPreserveParametersAndRejectSymbolicMatrices) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%theta: f64) -> (!qco.qubit, !qco.qubit) {
+        %q0 = qco.static 0 : !qco.qubit
+        %q1 = qco.static 1 : !qco.qubit
+        return %q0, %q1 : !qco.qubit, !qco.qubit
+      }
+    }
+  )mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  auto function = *moduleOp->getOps<func::FuncOp>().begin();
+  auto returned =
+      cast<func::ReturnOp>(function.getBody().front().getTerminator());
+  OpBuilder builder(returned);
+  auto q0 = returned.getOperand(0);
+  auto q1 = returned.getOperand(1);
+  const auto loc = function.getLoc();
+  auto gpi = GPIOp::create(builder, loc, q0, .13);
+  auto gpi2 = GPI2Op::create(builder, loc, gpi.getQubitOut(), -.21);
+  auto ms = MSOp::create(builder, loc, gpi2.getQubitOut(), q1, .13, -.21, .17);
+  auto zz =
+      ZZOp::create(builder, loc, ms.getQubit0Out(), ms.getQubit1Out(), .37);
+  returned->setOperands({zz.getQubit0Out(), zz.getQubit1Out()});
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(gpi.getUnitaryMatrix());
+  ASSERT_TRUE(gpi2.getUnitaryMatrix());
+  ASSERT_TRUE(ms.getUnitaryMatrix());
+  ASSERT_TRUE(zz.getUnitaryMatrix());
+  EXPECT_TRUE(gpi.getUnitaryMatrix()->isApprox(GPIOp::unitaryMatrix(.13)));
+  EXPECT_TRUE(gpi2.getUnitaryMatrix()->isApprox(GPI2Op::unitaryMatrix(-.21)));
+  EXPECT_TRUE(
+      ms.getUnitaryMatrix()->isApprox(MSOp::unitaryMatrix(.13, -.21, .17)));
+  EXPECT_TRUE(zz.getUnitaryMatrix()->isApprox(ZZOp::unitaryMatrix(.37)));
+
+  for (Operation* gate : {
+           gpi.getOperation(),
+           gpi2.getOperation(),
+           ms.getOperation(),
+           zz.getOperation(),
+       }) {
+    auto unitary = cast<UnitaryOpInterface>(gate);
+    for (auto parameter : unitary.getParameters()) {
+      unitary->replaceUsesOfWith(parameter, function.getArgument(0));
+      EXPECT_FALSE(unitary.getUnitaryMatrix<DynamicMatrix>());
+      unitary->replaceUsesOfWith(function.getArgument(0), parameter);
+    }
+  }
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+}
 
 /// \name QCO/Operations/UnitaryOp.cpp
 /// @{
