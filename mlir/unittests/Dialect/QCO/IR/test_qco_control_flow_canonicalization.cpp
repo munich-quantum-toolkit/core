@@ -17,7 +17,9 @@
 
 #include "gtest/gtest.h"
 
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/Block.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
@@ -33,6 +35,47 @@
 using namespace mlir;
 
 namespace {
+
+TEST(QCOControlFlowCanonicalization, RemovesForwardedIdleLoopQubit) {
+  MLIRContext context;
+  context.loadDialect<qco::QCODialect, arith::ArithDialect, func::FuncDialect,
+                      scf::SCFDialect>();
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @test(%count: index) -> i1 {
+        %zero = arith.constant 0 : index
+        %one = arith.constant 1 : index
+        %active = qco.static 0 : !qco.qubit
+        %idle = qco.static 1 : !qco.qubit
+        %out:2 = scf.for %i = %zero to %count step %one
+            iter_args(%a = %active, %b = %idle)
+            -> (!qco.qubit, !qco.qubit) {
+          %next = qco.x %a : !qco.qubit -> !qco.qubit
+          scf.yield %next, %b : !qco.qubit, !qco.qubit
+        }
+        qco.sink %out#1 : !qco.qubit
+        %done, %result = qco.measure %out#0 : !qco.qubit
+        qco.sink %done : !qco.qubit
+        return %result : i1
+      }
+    }
+  )mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  PassManager manager(&context);
+  manager.addPass(createCanonicalizerPass());
+  ASSERT_TRUE(succeeded(manager.run(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  auto function = moduleOp->lookupSymbol<func::FuncOp>("test");
+  auto loops = function.getOps<scf::ForOp>();
+  ASSERT_FALSE(loops.empty());
+  auto loop = *loops.begin();
+  EXPECT_EQ(loop.getRegionIterArgs().size(), 1U);
+  moduleOp->walk([](qco::StaticOp qubit) { EXPECT_EQ(qubit.getIndex(), 0); });
+}
 
 TEST(QCOControlFlowCanonicalization,
      SharesEarliestClassicalResultAndPreservesLinearSuffix) {

@@ -44,9 +44,11 @@
 #include "mlir/IR/Threading.h"
 #include "mlir/IR/Value.h"
 #include "mlir/IR/ValueRange.h"
+#include "mlir/IR/Verifier.h"
 #include "mlir/Interfaces/CallInterfaces.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Pass/Pass.h"
+#include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/WalkResult.h"
 
@@ -66,10 +68,12 @@
 #include <cstddef>
 #include <deque>
 #include <iterator>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <random>
 #include <ranges>
+#include <thread>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -458,6 +462,13 @@ private:
 };
 
 struct MappingPass : impl::MappingPassBase<MappingPass> {
+  void getDependentDialects(DialectRegistry& registry) const override {
+    impl::MappingPassBase<MappingPass>::getDependentDialects(registry);
+    OpPassManager pipeline("builtin.module");
+    populateTargetNativeSynthesisPipeline(pipeline);
+    pipeline.getDependentDialects(registry);
+  }
+
 private:
   using IndexPairType = std::pair<size_t, size_t>;
   using Window = SmallVector<IndexPairType>;
@@ -1059,7 +1070,9 @@ private:
     struct Trial {
       RoutingBundle bundle;
       size_t iterations;
-      Statistics stats{};
+      /// Native count/depth, or maximum/SWAP count when synthesis is
+      /// unavailable.
+      std::pair<size_t, size_t> score;
       bool success{false};
     };
 
@@ -1093,6 +1106,11 @@ private:
           0);
     }
 
+    const auto basis = target->synthesisBasis();
+    const bool nativeScoring =
+        basis && basis->entangler &&
+        target->nativeOperationsKind() ==
+            CompilerTarget::NativeOperations::Kind::Explicit;
     parallelForEach(&getContext(), trials, [&, this](Trial& t) {
       std::deque<Node> nodes;
       for (size_t i = 0; i < t.iterations; ++i) {
@@ -1106,19 +1124,26 @@ private:
           return;
         }
       }
+      if (nativeScoring) {
+        const auto quality = scoreNative(t.bundle.layout, nodes);
+        if (succeeded(quality)) {
+          t.score = *quality;
+          t.success = true;
+          return;
+        }
+      }
       auto scoringBundle = t.bundle;
       const auto score = route<WireDirection::Forward>(scoringBundle, nodes);
       if (failed(score)) {
         return;
       }
-      t.stats = *score;
+      t.score = {std::numeric_limits<size_t>::max(), score->nswaps};
       t.success = true;
     });
 
     Trial* best = nullptr;
     for (Trial& t : trials) {
-      if (t.success &&
-          (best == nullptr || best->stats.nswaps > t.stats.nswaps)) {
+      if (t.success && (best == nullptr || t.score < best->score)) {
         best = &t;
       }
     }
@@ -1128,6 +1153,70 @@ private:
     }
 
     return best->bundle.layout;
+  }
+
+  FailureOr<std::pair<size_t, size_t>> scoreNative(const Layout& layout,
+                                                   std::deque<Node>& nodes) {
+    /// A speculative lowering failure must preserve topology-only mapping.
+    const auto thread = std::this_thread::get_id();
+    ScopedDiagnosticHandler diagnostics(&getContext(), [thread](Diagnostic&) {
+      return success(std::this_thread::get_id() == thread);
+    });
+    OwningOpRef<ModuleOp> copy = getOperation().clone();
+    auto function = mqt::getEntryPoint(*copy);
+    auto computation = discoverComputation(function);
+    if (failed(computation)) {
+      return failure();
+    }
+    IRRewriter rewriter(&getContext());
+    auto [wires, infos] = applyPlacement(function.getFunctionBody(), *target,
+                                         layout, *computation, rewriter);
+    RoutingBundle bundle{
+        .wires = std::move(wires),
+        .infos = std::move(infos),
+        .layout = layout,
+    };
+    const auto result = route<WireDirection::Forward, RoutingMode::Hot>(
+        bundle, nodes, &rewriter);
+    if (failed(result)) {
+      return failure();
+    }
+    nodes.clear();
+    reorderTopologically(function.getBody().front(), rewriter);
+    if (failed(verify(*copy)) || failed(verifyLinearity(*copy))) {
+      return failure();
+    }
+    PassManager native(&getContext());
+    populateTargetNativeSynthesisPipeline(native);
+    if (failed(native.run(*copy)) || failed(verifyLinearity(*copy))) {
+      return failure();
+    }
+    size_t count = 0;
+    size_t depth = 0;
+    /// ponytail: use block depth; runtime costs need a workload model.
+    mqt::getEntryPoint(*copy).walk([&](Block* block) {
+      /// A native modifier's body belongs to its enclosing gate.
+      if (isa<UnitaryOpInterface>(block->getParentOp())) {
+        return;
+      }
+      DenseMap<Value, size_t> depths;
+      for (Operation& op : *block) {
+        size_t current = 0;
+        for (Value operand : op.getOperands()) {
+          current = std::max(current, depths.lookup(operand));
+        }
+        if (auto gate = dyn_cast<UnitaryOpInterface>(op);
+            gate && gate.getNumQubits() == 2 && !isa<BarrierOp>(op)) {
+          ++current;
+          ++count;
+        }
+        for (Value output : op.getResults()) {
+          depths[output] = current;
+        }
+        depth = std::max(depth, current);
+      }
+    });
+    return std::pair{count, depth};
   }
 
   /// Route the leading interaction with bounded A* node storage.
