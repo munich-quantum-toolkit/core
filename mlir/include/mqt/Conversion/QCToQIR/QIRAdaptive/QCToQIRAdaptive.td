@@ -42,6 +42,13 @@ def QCToQIRAdaptive : Pass<"qc-to-qir-adaptive", "mlir::ModuleOp"> {
     - Non-quantum dialects are lowered via MLIR's built-in conversions.
     - Constant classical tensors and element reads are lowered to constant LLVM arrays and loads, including reads with runtime indices.
       Other classical tensor operations must be lowered before this pass.
+    - Statically shaped classical stack memrefs lower to native LLVM arrays, loads, and stores.
+      Classical heap allocation is rejected. These operations require the
+      Adaptive array capability and the stored element types.
+    - Bounds checks return exit code 1 on failure without recording outputs.
+      They do not call a host C runtime. The metadata pass records the required
+      multiple-return capability and conservatively requires loop support for
+      residual dynamic array indices.
   }];
 
   let dependentDialects = ["mlir::LLVM::LLVMDialect",
