@@ -4637,9 +4637,26 @@ def test_list_range_normalization_preserves_exact_parameter_limits(values: list[
     assert QCProgram.from_qiskit(program.to_qiskit()).is_valid
 
 
+@pytest.mark.parametrize("loose", [False, True])
+def test_layout_source_registers_round_trip(*, loose: bool) -> None:
+    """Keep source register membership, including registers made from loose bits."""
+    register = QuantumRegister(bits=[Qubit(), Qubit()], name="source") if loose else QuantumRegister(2, "source")
+    circuit = QuantumCircuit(register)
+    circuit.h(0)
+    circuit.cx(0, 1)
+    circuit = transpile(circuit, initial_layout=[1, 0], optimization_level=0)
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+    assert restored.layout is not None
+    assert circuit.layout is not None
+    assert restored.layout.initial_index_layout() == circuit.layout.initial_index_layout()
+    registers = restored.layout.initial_layout.get_registers()
+    assert [(reg.name, len(reg)) for reg in registers] == [("source", 2)]
+    assert all(bit in restored.layout.input_qubit_mapping for bit in next(iter(registers)))
+
+
 def test_partial_layout_ancillas_and_output_order_round_trip() -> None:
     """Retain gaps, source groups, ancillary inputs, and independent permutations."""
-    virtual = QuantumRegister(3, "source")
+    virtual = QuantumRegister(4, "source")
     auxiliary = AncillaRegister(1, "workspace")
     source = [virtual[2], virtual[0], virtual[1], auxiliary[0]]
     circuit = QuantumCircuit(5)
@@ -4662,6 +4679,9 @@ def test_partial_layout_ancillas_and_output_order_round_trip() -> None:
     assert [layout.initial_layout.get_virtual_bits().get(bit) for bit in ordered] == [1, 4, None, 0]
     assert ordered == source
     assert layout.initial_index_layout(filter_ancillas=True) == [1, 4, None]
+    assert {(reg.name, len(reg)) for reg in layout.initial_layout.get_registers()} == {("source", 4), ("workspace", 1)}
+    assert len(layout.initial_layout.get_virtual_bits()) == 3
+    assert len(layout.initial_layout.get_physical_bits()) == 3
     assert layout.routing_permutation() == [4, 3, 2, 1, 0]
     assert [layout.final_layout[bit] for bit in restored.qubits] == [3, 1, 4, 0, 2]
     np.testing.assert_allclose(Operator(restored).data, Operator(circuit).data)

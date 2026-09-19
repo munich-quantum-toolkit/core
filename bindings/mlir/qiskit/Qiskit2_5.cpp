@@ -999,7 +999,10 @@ public:
       }
     }
     const auto circuitModule = nb::module_::import_("qiskit.circuit");
-    nb::dict seenRegisters;
+    nb::dict registers;
+    for (nb::handle reg : nb::iter(initial.attr("get_registers")())) {
+      registers[reg] = nb::bool_(true);
+    }
     for (auto [index, bit] : llvm::enumerate(logical)) {
       if (!nb::isinstance(bit, circuitModule.attr("Qubit"))) {
         throw std::runtime_error("Qiskit layout logical inputs must be qubits");
@@ -1008,10 +1011,11 @@ public:
         result.ancillas.push_back(static_cast<int64_t>(index));
       }
       const auto reg = bit.attr("_register");
-      if (reg.is_none() || seenRegisters.contains(reg)) {
-        continue;
+      if (!reg.is_none()) {
+        registers[reg] = nb::bool_(true);
       }
-      seenRegisters[reg] = nb::bool_(true);
+    }
+    for (auto [reg, unused] : registers) {
       mlir::mqt::LayoutRegister group{
           .name = pythonStringAttribute(reg, "name",
                                         "Qiskit layout register has no name"),
@@ -1025,6 +1029,9 @@ public:
       }
       result.registers.push_back(std::move(group));
     }
+    llvm::sort(result.registers, [](const auto& lhs, const auto& rhs) {
+      return lhs.name < rhs.name;
+    });
     return result;
   }
 
@@ -2253,18 +2260,13 @@ public:
     }
     const auto circuitModule = nb::module_::import_("qiskit.circuit");
     const auto transpiler = nb::module_::import_("qiskit.transpiler");
-    std::vector<nb::object> logical;
-    logical.reserve(layout.initial.size());
-    for (size_t index = 0; index < layout.initial.size(); ++index) {
-      logical.push_back(circuitModule.attr(
-          llvm::is_contained(layout.ancillas, static_cast<int64_t>(index))
-              ? "AncillaQubit"
-              : "Qubit")());
-    }
+    std::vector<nb::object> logical(layout.initial.size());
+    nb::list registers;
     for (const auto& group : layout.registers) {
       const auto reg = circuitModule.attr(group.ancillary ? "AncillaRegister"
                                                           : "QuantumRegister")(
           group.slots.size(), group.name);
+      registers.append(reg);
       for (auto [slot, index] : llvm::enumerate(group.slots)) {
         if (index >= 0) {
           logical[static_cast<size_t>(index)] = reg[nb::int_(slot)];
@@ -2274,9 +2276,25 @@ public:
     nb::dict initial;
     nb::dict inputs;
     for (auto [index, bit] : llvm::enumerate(logical)) {
+      if (!bit.is_valid()) {
+        bit = circuitModule.attr(
+            llvm::is_contained(layout.ancillas, static_cast<int64_t>(index))
+                ? "AncillaQubit"
+                : "Qubit")();
+      }
       inputs[bit] = nb::int_(index);
       if (layout.initial[index] >= 0) {
         initial[bit] = nb::int_(layout.initial[index]);
+      }
+    }
+    auto initialLayout = transpiler.attr("Layout")(initial);
+    for (nb::handle reg : registers) {
+      initialLayout.attr("add_register")(reg);
+      /// add_register fills gaps; retain only the original assignments.
+      for (nb::handle bit : nb::iter(reg)) {
+        if (!initial.contains(bit)) {
+          initialLayout.attr("__delitem__")(bit);
+        }
       }
     }
     nb::object final = nb::none();
@@ -2294,7 +2312,7 @@ public:
       output.append(physical[index]);
     }
     pythonCircuit_.attr("_layout") = transpiler.attr("TranspileLayout")(
-        transpiler.attr("Layout")(initial), inputs, final,
+        initialLayout, inputs, final,
         nb::arg("_input_qubit_count") =
             layout.inputCount ? nb::cast(*layout.inputCount) : nb::none(),
         nb::arg("_output_qubit_list") = output);

@@ -10,6 +10,9 @@
 
 #include "mqt/Dialect/MQT/IR/QubitLayout.h"
 
+#include "mqt/Dialect/MQT/IR/MQTDialect.h"
+
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/WalkResult.h"
@@ -179,38 +182,53 @@ QubitLayout::fromAttr(Attribute attribute,
   return result;
 }
 
-void mlir::mqt::invalidateQubitLayout(ModuleOp moduleOp) {
-  bool hasLayout = false;
-  moduleOp.walk([&](ModuleOp nested) {
-    if (nested->removeAttr("mqt.layout")) {
-      nested->setAttr("mqt.layout_invalidated",
-                      UnitAttr::get(nested.getContext()));
+LogicalResult mlir::mqt::verifyLayoutEntryPoint(ModuleOp moduleOp) {
+  auto entryPoint = getEntryPoint(moduleOp);
+  if (!entryPoint) {
+    return moduleOp.emitError("qubit layout requires a direct entry point");
+  }
+  auto result = moduleOp.walk([&](func::FuncOp function) {
+    if (isEntryPoint(function) && function != entryPoint) {
+      function.emitError("qubit layout requires a single program entry point");
+      return WalkResult::interrupt();
     }
-    hasLayout |= nested->hasAttr("mqt.layout_invalidated");
+    return WalkResult::advance();
   });
-  if (hasLayout) {
-    // Keep the discard requirement if a pass removes a nested module.
-    moduleOp->setAttr("mqt.layout_invalidated",
-                      UnitAttr::get(moduleOp.getContext()));
+  return success(!result.wasInterrupted());
+}
+
+/// The supplied program module, unlike a parser's container, owns the layout.
+LogicalResult mlir::mqt::verifyQubitLayoutOwner(ModuleOp moduleOp) {
+  const auto layout = moduleOp.walk([](func::FuncOp function) {
+    return function->hasAttr("mqt.layout") ||
+                   function->hasAttr("mqt.layout_invalidated")
+               ? WalkResult::interrupt()
+               : WalkResult::advance();
+  });
+  return layout.wasInterrupted() ? verifyLayoutEntryPoint(moduleOp) : success();
+}
+
+void mlir::mqt::invalidateQubitLayout(ModuleOp moduleOp) {
+  if (auto entryPoint = getEntryPoint(moduleOp);
+      entryPoint && entryPoint->removeAttr("mqt.layout")) {
+    entryPoint->setAttr("mqt.layout_invalidated",
+                        UnitAttr::get(moduleOp.getContext()));
   }
 }
 
 void mlir::mqt::discardQubitLayout(ModuleOp moduleOp) {
-  moduleOp.walk([](ModuleOp nested) {
-    nested->removeAttr("mqt.layout");
-    nested->removeAttr("mqt.layout_invalidated");
-  });
+  if (auto entryPoint = getEntryPoint(moduleOp)) {
+    entryPoint->removeAttr("mqt.layout");
+    entryPoint->removeAttr("mqt.layout_invalidated");
+  }
 }
 
 LogicalResult mlir::mqt::requireNoQubitLayout(ModuleOp moduleOp) {
-  const auto result = moduleOp.walk([](ModuleOp nested) {
-    if (!nested->hasAttr("mqt.layout") &&
-        !nested->hasAttr("mqt.layout_invalidated")) {
-      return WalkResult::advance();
-    }
-    nested.emitError("output cannot preserve qubit layout metadata; "
-                     "explicitly discard the layout before export");
-    return WalkResult::interrupt();
-  });
-  return success(!result.wasInterrupted());
+  if (auto entryPoint = getEntryPoint(moduleOp);
+      entryPoint && (entryPoint->hasAttr("mqt.layout") ||
+                     entryPoint->hasAttr("mqt.layout_invalidated"))) {
+    return entryPoint.emitError("output cannot preserve qubit layout metadata; "
+                                "explicitly discard the layout before export");
+  }
+  return success();
 }

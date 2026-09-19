@@ -504,8 +504,10 @@ with `MappingResult`. Call `discard_layout()` before subsequent export; see
 [transpiler layouts](qiskit.md#transpiler-layouts) for preservation and export
 rules.
 
-C++ callers use `QCOProgram::compileForTargetWithLayout` or
-`populateTargetCompilationWithLayoutPipeline`. The pipeline writes its result
-only on success; the result must outlive the pass manager. Run native pipelines
-with `runWithCompilationOptions` to manage imported layout provenance; calling
-`PassManager::run` directly bypasses that policy.
+C++ callers use `QCOProgram::compileForTargetWithLayout`. This synchronous call
+requires one entry point directly in the program module and rejects additional
+nested entry points. It returns a result only after native synthesis, target
+conformance, pass-manager verification, and final QCO linearity checks succeed.
+Run ordinary native pipelines with `runWithCompilationOptions` to manage
+imported layout provenance; calling `PassManager::run` directly bypasses that
+policy.

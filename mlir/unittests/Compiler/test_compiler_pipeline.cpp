@@ -571,18 +571,22 @@ TEST(CompilerLayoutTest, PreservesProvenanceAcrossCopiesAndDialectConversions) {
       .outputOrder = {0, 1, 2},
   };
   const auto attr = layout.toAttr(qc->module().getContext());
-  qc->module()->setAttr("mqt.layout", attr);
+  mlir::mqt::getEntryPoint(qc->module())->setAttr("mqt.layout", attr);
   auto copy = qc->copy();
-  EXPECT_EQ(copy.module()->getAttr("mqt.layout"), attr);
+  EXPECT_EQ(mlir::mqt::getEntryPoint(copy.module())->getAttr("mqt.layout"),
+            attr);
   auto qco = std::move(copy).intoQCO();
   ASSERT_TRUE(qco);
-  EXPECT_EQ(qco->module()->getAttr("mqt.layout"), attr);
+  EXPECT_EQ(mlir::mqt::getEntryPoint(qco->module())->getAttr("mqt.layout"),
+            attr);
   auto restored = std::move(*qco).intoQC();
   ASSERT_TRUE(restored);
-  EXPECT_EQ(restored->module()->getAttr("mqt.layout"), attr);
+  EXPECT_EQ(mlir::mqt::getEntryPoint(restored->module())->getAttr("mqt.layout"),
+            attr);
   auto parsed = QCProgram::fromMLIRString(restored->str());
   ASSERT_TRUE(parsed);
-  EXPECT_TRUE(parsed->module()->hasAttr("mqt.layout"));
+  EXPECT_TRUE(
+      mlir::mqt::getEntryPoint(parsed->module())->hasAttr("mqt.layout"));
   EXPECT_FALSE(qc->toOpenQASM3());
   EXPECT_FALSE(std::move(qc->copy()).intoQIR(QIRProfile::Base));
   auto jeffInput = std::move(qc->copy()).intoQCO();
@@ -592,32 +596,25 @@ TEST(CompilerLayoutTest, PreservesProvenanceAcrossCopiesAndDialectConversions) {
   EXPECT_TRUE(qc->toOpenQASM3());
   auto qir = std::move(qc->copy()).intoQIR(QIRProfile::Base);
   ASSERT_TRUE(qir);
-  qir->module()->setAttr("mqt.layout_invalidated",
-                         UnitAttr::get(qir->module().getContext()));
-  EXPECT_FALSE(qir->llvmIR());
-  qir->discardLayout();
   EXPECT_TRUE(qir->llvmIR());
   auto cleanQCO = std::move(*qc).intoQCO();
   ASSERT_TRUE(cleanQCO);
   auto jeff = std::move(*cleanQCO).intoJeff();
   ASSERT_TRUE(jeff);
-  jeff->module()->setAttr("mqt.layout_invalidated",
-                          UnitAttr::get(jeff->module().getContext()));
-  EXPECT_TRUE(jeff->toBytes().empty());
-  jeff->discardLayout();
   EXPECT_FALSE(jeff->toBytes().empty());
 }
 
 TEST(CompilerLayoutTest, RejectsLayoutLossInDirectNativeConversions) {
   auto qc = QCProgram::fromOpenQASMString("OPENQASM 3.0; qubit q; h q;");
   ASSERT_TRUE(qc);
-  qc->module()->setAttr("mqt.layout",
-                        mlir::mqt::QubitLayout{
-                            .physicalSize = 1,
-                            .initial = {0},
-                            .outputOrder = {0},
-                        }
-                            .toAttr(qc->module().getContext()));
+  mlir::mqt::getEntryPoint(qc->module())
+      ->setAttr("mqt.layout",
+                mlir::mqt::QubitLayout{
+                    .physicalSize = 1,
+                    .initial = {0},
+                    .outputOrder = {0},
+                }
+                    .toAttr(qc->module().getContext()));
   EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(qc->module())));
   for (const auto profile : {QIRProfile::Base, QIRProfile::Adaptive}) {
     auto copy = qc->copy();
@@ -637,13 +634,14 @@ TEST(CompilerLayoutTest, InvalidatesProvenanceAtTransformationBoundaries) {
     ASSERT_TRUE(qc);
     auto qco = std::move(*qc).intoQCO();
     ASSERT_TRUE(qco);
-    qco->module()->setAttr("mqt.layout",
-                           mlir::mqt::QubitLayout{
-                               .physicalSize = 2,
-                               .initial = {1, 0},
-                               .outputOrder = {0, 1},
-                           }
-                               .toAttr(qco->module().getContext()));
+    mlir::mqt::getEntryPoint(qco->module())
+        ->setAttr("mqt.layout",
+                  mlir::mqt::QubitLayout{
+                      .physicalSize = 2,
+                      .initial = {1, 0},
+                      .outputOrder = {0, 1},
+                  }
+                      .toAttr(qco->module().getContext()));
     const StringRef name(transformation);
     if (name == "cleanup") {
       EXPECT_TRUE(qco->cleanup());
@@ -663,8 +661,10 @@ TEST(CompilerLayoutTest, InvalidatesProvenanceAtTransformationBoundaries) {
       EXPECT_EQ(succeeded(runWithCompilationOptions(pm, qco->module(), {})),
                 name != "failed");
     }
-    EXPECT_FALSE(qco->module()->hasAttr("mqt.layout"));
-    EXPECT_TRUE(qco->module()->hasAttr("mqt.layout_invalidated"));
+    EXPECT_FALSE(
+        mlir::mqt::getEntryPoint(qco->module())->hasAttr("mqt.layout"));
+    EXPECT_TRUE(mlir::mqt::getEntryPoint(qco->module())
+                    ->hasAttr("mqt.layout_invalidated"));
     auto restored = std::move(*qco).intoQC();
     ASSERT_TRUE(restored);
     EXPECT_FALSE(restored->toOpenQASM3());
@@ -673,79 +673,36 @@ TEST(CompilerLayoutTest, InvalidatesProvenanceAtTransformationBoundaries) {
   }
 }
 
-TEST(CompilerLayoutTest, InvalidatesNestedProvenanceBeforeCustomPipelines) {
+TEST(CompilerLayoutTest, RejectsNestedLayoutWithoutProgramEntryPoint) {
   constexpr llvm::StringLiteral source = R"mlir(module {
-    func.func @main() attributes {mqt.entry_point} { return }
-    module @nested attributes {mqt.layout = {
-      physical_size = 1 : i64, initial = array<i64: 0>,
-      output_order = array<i64: 0>, ancillas = array<i64>, registers = []
-    }} {
-      func.func @child() attributes {mqt.entry_point} {
-        %one = arith.constant 1 : index
-        %q = qtensor.alloc(%one) : tensor<1x!qco.qubit>
-        qtensor.dealloc %q : tensor<1x!qco.qubit>
+    module @nested {
+      func.func @child() attributes {mqt.entry_point, mqt.layout_invalidated} {
         return
       }
     }
   })mlir";
-  for (const StringRef runner : {"wrapper", "textual", "direct"}) {
-    SCOPED_TRACE(runner.str());
-    auto program = QCOProgram::fromMLIRString(source);
-    ASSERT_TRUE(program);
-    auto nested = *program->module().getOps<ModuleOp>().begin();
-    ASSERT_TRUE(nested->hasAttr("mqt.layout"));
-    if (runner == "textual") {
-      ASSERT_TRUE(program->runPassPipeline("builtin.module(canonicalize)"));
-    } else if (runner == "direct") {
-      PassManager pm(program->module().getContext());
-      pm.addNestedPass<ModuleOp>(createCanonicalizerPass());
-      ASSERT_TRUE(
-          succeeded(runWithCompilationOptions(pm, program->module(), {})));
-    } else {
-      ASSERT_TRUE(succeeded(runWithPassManager(
-          program->module(),
-          [](OpPassManager& pm) {
-            pm.addNestedPass<ModuleOp>(createCanonicalizerPass());
-          },
-          "nested canonicalization failed")));
-    }
-    bool hasAllocation = false;
-    nested.walk([&](qtensor::AllocOp) { hasAllocation = true; });
-    EXPECT_FALSE(hasAllocation);
-    EXPECT_FALSE(nested->hasAttr("mqt.layout"));
-    EXPECT_TRUE(nested->hasAttr("mqt.layout_invalidated"));
-    EXPECT_TRUE(program->module()->hasAttr("mqt.layout_invalidated"));
-  }
+  EXPECT_FALSE(QCProgram::fromMLIRString(source));
+  EXPECT_FALSE(QCOProgram::fromMLIRString(source));
 }
 
-TEST(CompilerLayoutTest, RetainsLayoutLossAfterNestedModuleRemoval) {
-  for (const bool invalidated : {false, true}) {
-    SCOPED_TRACE(invalidated);
-    auto program = QCProgram::fromMLIRString(R"mlir(module {
-      func.func @main() attributes {mqt.entry_point} { return }
-      module @nested attributes {sym_visibility = "private"} {}
-    })mlir");
-    ASSERT_TRUE(program);
-    auto nested = *program->module().getOps<ModuleOp>().begin();
-    if (invalidated) {
-      nested->setAttr("mqt.layout_invalidated",
-                      UnitAttr::get(program->module().getContext()));
-    } else {
-      nested->setAttr("mqt.layout", mlir::mqt::QubitLayout{}.toAttr(
-                                        program->module().getContext()));
-    }
-    EXPECT_FALSE(program->toOpenQASM3());
-    auto discarded = program->copy();
-    discarded.discardLayout();
-    EXPECT_TRUE(discarded.toOpenQASM3());
-
-    ASSERT_TRUE(program->cleanup());
-    ASSERT_TRUE(program->module().getOps<ModuleOp>().empty());
-    EXPECT_TRUE(program->module()->hasAttr("mqt.layout_invalidated"));
-    EXPECT_FALSE(program->toOpenQASM3());
-    program->discardLayout();
-    EXPECT_TRUE(program->toOpenQASM3());
-  }
+TEST(CompilerLayoutTest, RetainsEntryPointLayoutThroughSymbolCleanup) {
+  auto program = QCProgram::fromMLIRString(R"mlir(module {
+    func.func @main() attributes {mqt.entry_point, mqt.layout = {
+      physical_size = 0 : i64, initial = array<i64>,
+      output_order = array<i64>, ancillas = array<i64>, registers = []
+    }} { return }
+    module @nested attributes {sym_visibility = "private"} {}
+    func.func private @unused() { return }
+  })mlir");
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(program->cleanup());
+  EXPECT_TRUE(program->module().getOps<ModuleOp>().empty());
+  auto entry = mlir::mqt::getEntryPoint(program->module());
+  ASSERT_TRUE(entry);
+  EXPECT_TRUE(entry->hasAttr("mqt.layout_invalidated"));
+  EXPECT_FALSE(program->toOpenQASM3());
+  program->discardLayout();
+  EXPECT_TRUE(program->toOpenQASM3());
 }
 
 TEST_F(CompilerPipelineTest, RawAndOptimizedQCOAreDistinctCheckpoints) {
@@ -2486,21 +2443,24 @@ TEST_F(CompilerPipelineTest, TargetLayoutPreservesScalarAllocationOrder) {
     }
   })mlir");
   ASSERT_TRUE(program);
-  program->module()->setAttr("mqt.layout",
-                             mlir::mqt::QubitLayout{
-                                 .physicalSize = 3,
-                                 .initial = {1, 0, 2},
-                                 .outputOrder = {0, 1, 2},
-                             }
-                                 .toAttr(program->module().getContext()));
+  mlir::mqt::getEntryPoint(program->module())
+      ->setAttr("mqt.layout",
+                mlir::mqt::QubitLayout{
+                    .physicalSize = 3,
+                    .initial = {1, 0, 2},
+                    .outputOrder = {0, 1, 2},
+                }
+                    .toAttr(program->module().getContext()));
   auto target = llvm::cantFail(
       CompilerTarget::create(3, CompilerTarget::Connectivity::allToAll(),
                              CompilerTarget::NativeOperations::unrestricted()));
   auto result = program->compileForTargetWithLayout(
       TargetEnvironment(target, makePayloadSpecification()), {2, 0, 1});
   ASSERT_TRUE(result);
-  EXPECT_TRUE(program->module()->hasAttr("mqt.layout_invalidated"));
-  EXPECT_FALSE(program->module()->hasAttr("mqt.layout"));
+  EXPECT_TRUE(mlir::mqt::getEntryPoint(program->module())
+                  ->hasAttr("mqt.layout_invalidated"));
+  EXPECT_FALSE(
+      mlir::mqt::getEntryPoint(program->module())->hasAttr("mqt.layout"));
   EXPECT_EQ(result->allocationSizes, (std::vector<size_t>{1, 1, 1}));
   EXPECT_EQ(result->initialLayout, (std::vector<int64_t>{2, 0, 1}));
   EXPECT_EQ(result->finalLayout, result->initialLayout);
@@ -2682,6 +2642,21 @@ TEST_F(CompilerPipelineTest,
   EXPECT_FALSE(argument->compileForTargetWithLayout(environment));
 }
 
+TEST_F(CompilerPipelineTest, TargetLayoutRejectsAdditionalEntryPoints) {
+  auto program = QCOProgram::fromMLIRString(R"mlir(module {
+    func.func @main() attributes {mqt.entry_point} { return }
+    module @nested {
+      func.func @child() attributes {mqt.entry_point} { return }
+    }
+  })mlir");
+  ASSERT_TRUE(program);
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(2, CompilerTarget::Connectivity::allToAll(),
+                             CompilerTarget::NativeOperations::unrestricted()));
+  EXPECT_FALSE(program->compileForTargetWithLayout(
+      TargetEnvironment(target, makePayloadSpecification())));
+}
+
 TEST_F(CompilerPipelineTest, TargetLayoutReportsEmptyPrograms) {
   for (const bool routing : {false, true}) {
     auto program = QCOProgram::fromMLIRString(R"mlir(module {
@@ -2712,19 +2687,8 @@ TEST_F(CompilerPipelineTest, FailedTargetLayoutDoesNotPublishResult) {
   auto target = llvm::cantFail(
       CompilerTarget::create(2, CompilerTarget::Connectivity::allToAll(),
                              CompilerTarget::NativeOperations::unrestricted()));
-  MappingResult result{
-      .allocationSizes = {7},
-      .initialLayout = {8},
-      .finalLayout = {9},
-  };
-  PassManager pm(program->module().getContext());
-  populateTargetCompilationWithLayoutPipeline(
-      pm, TargetEnvironment(target, makePayloadSpecification()), result,
-      {0, 0});
-  EXPECT_TRUE(failed(pm.run(program->module())));
-  EXPECT_EQ(result.allocationSizes, (std::vector<size_t>{7}));
-  EXPECT_EQ(result.initialLayout, (std::vector<int64_t>{8}));
-  EXPECT_EQ(result.finalLayout, (std::vector<int64_t>{9}));
+  EXPECT_FALSE(program->compileForTargetWithLayout(
+      TargetEnvironment(target, makePayloadSpecification()), {0, 0}));
 }
 
 TEST_F(CompilerPipelineTest, FailedTargetSynthesisDoesNotPublishLayout) {
@@ -2739,21 +2703,11 @@ TEST_F(CompilerPipelineTest, FailedTargetSynthesisDoesNotPublishLayout) {
           llvm::cantFail(
               CompilerTarget::OperationCapability::create("h", 1, 0)),
       })));
-  MappingResult result{
-      .allocationSizes = {7},
-      .initialLayout = {8},
-      .finalLayout = {9},
-  };
-  PassManager pm(program->module().getContext());
-  populateTargetCompilationWithLayoutPipeline(
-      pm, TargetEnvironment(target, makePayloadSpecification()), result, {0});
-  EXPECT_TRUE(failed(pm.run(program->module())));
-  // Placement succeeds; synthesis fails on X.
+  EXPECT_FALSE(program->compileForTargetWithLayout(
+      TargetEnvironment(target, makePayloadSpecification()), {0}));
+  /// Placement succeeds; synthesis fails on X.
   EXPECT_EQ(program->str().find("qco.alloc"), std::string::npos);
   EXPECT_NE(program->str().find("qco.static"), std::string::npos);
-  EXPECT_EQ(result.allocationSizes, (std::vector<size_t>{7}));
-  EXPECT_EQ(result.initialLayout, (std::vector<int64_t>{8}));
-  EXPECT_EQ(result.finalLayout, (std::vector<int64_t>{9}));
 }
 
 // Test: target compilation decomposes, maps, synthesizes, and verifies.

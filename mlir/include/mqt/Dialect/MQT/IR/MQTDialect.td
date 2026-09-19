@@ -23,7 +23,10 @@ def MQTDialect : Dialect {
     The MQT dialect owns frontend-neutral metadata that must remain meaningful
     across quantum dialect conversions. It defines no operations or types.
 
-    `mqt.layout` is a module-level dictionary of qubit layout provenance:
+    `mqt.layout` is a dictionary on the `func.func` marked `mqt.entry_point`.
+    A layout-bearing program has one entry point directly in the program module
+    and no nested entry points. Helper functions cannot own layout metadata.
+    The dictionary records qubit layout provenance:
     - `physical_size`: nonnegative i64 circuit width.
     - `initial`: dense i64 logical-input-to-initial-position assignments.
     - `routing` (optional): dense i64 circuit-wire-to-final-position assignments;
@@ -43,9 +46,6 @@ def MQTDialect : Dialect {
     and plain QC/QCO conversions retain it. Compiler pipeline runners replace it
     with the mutually exclusive unit attribute `mqt.layout_invalidated` unless the
     caller declares preservation. Individual transforms do not manage provenance.
-    Nested provenance also marks the pipeline root, so deleting a nested module
-    cannot erase the discard requirement. Discard and output checks cover the whole
-    module tree.
     Use `runWithCompilationOptions` for native pass managers. Raw IR editors must
     preserve or update layouts, or call `invalidateQubitLayout` before changing
     wire identity or order.

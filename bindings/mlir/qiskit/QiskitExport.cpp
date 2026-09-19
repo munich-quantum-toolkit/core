@@ -2924,12 +2924,17 @@ nb::object exportCircuit(const mlir::QCProgram& program,
                          const mlir::CompilerTarget* const target) {
   mlir::OwningOpRef<mlir::ModuleOp> expanded = program.module().clone();
   auto moduleOp = *expanded;
-  if (moduleOp->hasAttr("mqt.layout_invalidated")) {
+  auto function = mlir::mqt::getEntryPoint(moduleOp);
+  if (!function) {
+    throw std::runtime_error(
+        "QC to Qiskit export requires an mqt.entry_point function");
+  }
+  if (function->hasAttr("mqt.layout_invalidated")) {
     throw std::runtime_error("qubit layout was invalidated by a "
                              "transformation; discard_layout() before export");
   }
   std::optional<mlir::mqt::QubitLayout> layout;
-  if (const auto attr = moduleOp->getAttr("mqt.layout")) {
+  if (const auto attr = function->getAttr("mqt.layout")) {
     auto parsed = mlir::mqt::QubitLayout::fromAttr(
         attr, [&] { return moduleOp.emitError(); });
     if (failed(parsed)) {
@@ -2943,11 +2948,6 @@ nb::object exportCircuit(const mlir::QCProgram& program,
   if (mlir::failed(
           mlir::applyPatternsGreedily(moduleOp, std::move(patterns)))) {
     throw std::runtime_error("failed to normalize arithmetic for Qiskit");
-  }
-  auto function = mlir::mqt::getEntryPoint(moduleOp);
-  if (!function) {
-    throw std::runtime_error(
-        "QC to Qiskit export requires an mqt.entry_point function");
   }
   if (function.getBody().empty() ||
       !llvm::hasSingleElement(function.getBody())) {

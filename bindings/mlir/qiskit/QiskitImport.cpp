@@ -3018,7 +3018,7 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
   auto moduleOp = classicalStorage.empty() ? builder.finalize()
                                            : builder.finalize(classicalStorage);
   if (layoutAttr) {
-    (*moduleOp)->setAttr("mqt.layout", layoutAttr);
+    function->setAttr("mqt.layout", layoutAttr);
   }
   validateGeneratedControlFlow(moduleOp->getOperation());
   auto program = mlir::QCProgram::fromModule(context, std::move(moduleOp));

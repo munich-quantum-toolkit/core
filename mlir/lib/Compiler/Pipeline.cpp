@@ -223,23 +223,6 @@ bool QCOProgram::compileForTarget(const TargetEnvironment& environment,
       "failed to compile the QCO program for the target", options));
 }
 
-std::optional<MappingResult>
-QCOProgram::compileForTargetWithLayout(const TargetEnvironment& environment,
-                                       llvm::ArrayRef<int64_t> initialLayout,
-                                       const CompilationOptions& options) {
-  MappingResult result;
-  if (failed(runQCOTransformPasses(
-          mod(),
-          [&](OpPassManager& pm) {
-            populateTargetCompilationWithLayoutPipeline(
-                pm, environment, result, initialLayout, options.mapping);
-          },
-          "failed to compile the QCO program with layout tracking", options))) {
-    return std::nullopt;
-  }
-  return result;
-}
-
 bool QCOProgram::synthesizeForTarget(const TargetEnvironment& environment,
                                      const CompilationOptions& options) {
   return succeeded(runQCOTransformPasses(
