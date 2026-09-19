@@ -70,6 +70,66 @@ TEST(OpenQASMFrontendTest, AcceptsClassicalArrays) {
   }
 }
 
+TEST(OpenQASMFrontendTest, FoldsArraySizeQueriesWithoutReadingElements) {
+  const auto cases = std::to_array<std::pair<llvm::StringLiteral, int64_t>>({
+      {"sizeof(a)", 2},
+      {"sizeof(a, 1)", 3},
+      {"sizeof(a, sizeof(a) - 1)", 3},
+      {"sizeof(a[-1])", 3},
+      {"sizeof(a[i])", 3},
+      {"sizeof(a[:, i])", 2},
+      {"sizeof(a[:, 0:2:2], 1)", 2},
+      {"sizeof(a[:-1:, -1])", 2},
+      {"sizeof(a[1:1, :])", 1},
+  });
+  for (const auto& [query, expected] : cases) {
+    SCOPED_TRACE(query.str());
+    auto analyzed = openqasm::frontend::analyzeOpenQASM(
+        std::string("OPENQASM 3.0; array[int, 2, 3] a; int i = 0; "
+                    "const uint n = ") +
+        query.str() + "; array[bool, n] result;");
+    ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+    ASSERT_EQ(analyzed.program->arrays.size(), 2);
+    EXPECT_EQ(analyzed.program->arrays.back().shape,
+              (std::vector<int64_t>{expected}));
+  }
+}
+
+TEST(OpenQASMFrontendTest, RejectsInvalidArraySizeQueries) {
+  const auto cases =
+      std::to_array<std::pair<llvm::StringLiteral, llvm::StringLiteral>>({
+          {"sizeof(missing)", "array or subarray"},
+          {"sizeof(1)", "array or subarray"},
+          {"sizeof(i)", "array or subarray"},
+          {"sizeof(a[0, 0])", "array or subarray"},
+          {"sizeof(a, -1)", "dimension is out of bounds"},
+          {"sizeof(a, 2)", "dimension is out of bounds"},
+          {"sizeof(a[0], 1)", "dimension is out of bounds"},
+          {"sizeof(a, 18446744073709551615)", "integer that fits in i64"},
+          {"sizeof(a, true)", "must be an integer"},
+          {"sizeof(a, 0.0)", "must be an integer"},
+          {"sizeof(a, i)", "compile-time integer"},
+          {"sizeof(a[2])", "index is out of bounds"},
+          {"sizeof(a[0:0:1])", "step must not be zero"},
+          {"sizeof(a[:i])", "compile-time bounds"},
+          {"sizeof(a[true])", "integer expression"},
+          {"sizeof(a[0, 0, 0])", "one index per dimension"},
+          {"sizeof(a, 0, 1)", "expected ')'"},
+          {"sizeof()", "expected expression"},
+      });
+  for (const auto& [query, diagnostic] : cases) {
+    SCOPED_TRACE(query.str());
+    auto analyzed = openqasm::frontend::analyzeOpenQASM(
+        "OPENQASM 3.0; array[int, 2, 3] a; int i = 0; uint n = " + query.str() +
+        ";");
+    ASSERT_FALSE(analyzed);
+    ASSERT_FALSE(analyzed.diagnostics.empty());
+    EXPECT_TRUE(
+        StringRef(analyzed.diagnostics.front().message).contains(diagnostic))
+        << analyzed.diagnostics.front().message;
+  }
+}
+
 TEST(OpenQASMFrontendTest, CopiesArraysWithMatchingTypes) {
   for (const auto* source : {
            "array[int, 2] a = {1, 2}; array[int[64], 2] b = a; b = b; a = b;",

@@ -158,6 +158,12 @@ retain their dimensions, while scalar indices remove them. Empty ranges, zero
 steps, and out-of-bounds endpoints are rejected. Overlapping assignments such as
 `a[1:] = a[:3];` for a five-element array copy the original source values.
 
+`sizeof(a)` returns the first dimension's length as a compile-time `uint`;
+`sizeof(a, d)` selects a zero-based, compile-time integer dimension. Subarrays
+and fixed ranges are supported: `sizeof(a[0])` gives a matrix's row length. The
+query does not read array elements, so the array need not be initialized. Use it
+in declarations or loop bounds, such as `[0:sizeof(a)-1]`.
+
 Angle arrays use the same widths and compile-time quantization as scalar angle
 declarations. Values in initializer lists and assignments to individual entries
 must be compile-time float or angle expressions, but the index can be dynamic.

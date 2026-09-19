@@ -55,6 +55,7 @@ enum class TokenKind : uint8_t {
   Gphase,
   Inv,
   Pow,
+  SizeOf,
   Ctrl,
   NegCtrl,
 
