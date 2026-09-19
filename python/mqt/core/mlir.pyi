@@ -293,6 +293,8 @@ class CompilerTarget:
             site_tuples: Sequence[CompilerTarget.SiteTuple | Sequence[int]] | None = None,
             duration: int | None = None,
             fidelity: float | None = None,
+            *,
+            fixed_parameters: Sequence[float | None] = (),
         ) -> None: ...
         @property
         def name(self) -> str:
@@ -313,6 +315,10 @@ class CompilerTarget:
         @property
         def site_tuples(self) -> list[CompilerTarget.SiteTuple]:
             """Supported ordered placements with optional calibration; empty means general applicability."""
+
+        @property
+        def fixed_parameters(self) -> list[float | None]:
+            """Fixed values or None per parameter; empty means unrestricted. Constants use absolute tolerance 1e-15 without angle wrapping."""
 
         @property
         def duration(self) -> int | None:
@@ -374,6 +380,24 @@ class CompilerTarget:
 
         ZXZ = 6
 
+        FixedRotation = 7
+
+    class FixedRotationBasis:
+        """Fixed pulse and arbitrary rotation selected for synthesis."""
+
+        @property
+        def gate(self) -> CompilerTarget.GateKind: ...
+        @property
+        def free_gate(self) -> CompilerTarget.GateKind: ...
+        @property
+        def angle(self) -> float:
+            """Native pulse angle in radians."""
+
+        @property
+        def quarter_turn_pulses(self) -> int: ...
+        @property
+        def half_turn_angle(self) -> float | None: ...
+
     class SynthesisBasis:
         """One synthesis basis usable across the complete target."""
 
@@ -384,6 +408,10 @@ class CompilerTarget:
         @property
         def entangler(self) -> CompilerTarget.GateKind | None:
             """The two-qubit entangler, or None when none is usable."""
+
+        @property
+        def fixed_rotation(self) -> CompilerTarget.FixedRotationBasis | None:
+            """Fixed-pulse decomposition, or None for other bases."""
 
     class ConnectivityKind(enum.Enum):
         """The target connectivity model."""
@@ -484,9 +512,15 @@ class CompilerTarget:
         """A target-wide single-qubit basis with an optional entangler, or None when no single-qubit basis is usable."""
 
     def supports_operation(
-        self, name: str, arity: int, num_parameters: int | None = None, sites: Sequence[int] | None = None
+        self,
+        name: str,
+        arity: int,
+        num_parameters: int | None = None,
+        sites: Sequence[int] | None = None,
+        *,
+        parameters: Sequence[float | None] = [],
     ) -> bool:
-        """Whether the target supports an operation."""
+        """Whether the target supports an operation. Omitted or None parameter values require unrestricted support."""
 
 class TargetEnvironment:
     """A compiler target and its selected payload specification."""

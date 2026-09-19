@@ -18,6 +18,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -196,14 +197,16 @@ public:
     create(std::string name, size_t arity, size_t numParameters,
            std::vector<SiteTuple> siteTuples = {},
            std::optional<uint64_t> duration = std::nullopt,
-           std::optional<double> fidelity = std::nullopt);
+           std::optional<double> fidelity = std::nullopt,
+           std::vector<std::optional<double>> fixedParameters = {});
 
     /// Create a validated operation capability.
     [[nodiscard]] static llvm::Expected<OperationCapability>
     create(std::string name, Arity arity, size_t numParameters,
            std::vector<SiteTuple> siteTuples = {},
            std::optional<uint64_t> duration = std::nullopt,
-           std::optional<double> fidelity = std::nullopt);
+           std::optional<double> fidelity = std::nullopt,
+           std::vector<std::optional<double>> fixedParameters = {});
 
     /// Return the exact reported operation name.
     [[nodiscard]] llvm::StringRef name() const noexcept;
@@ -216,6 +219,13 @@ public:
 
     /// Return the number of real-valued operation parameters.
     [[nodiscard]] size_t numParameters() const noexcept;
+
+    /// Fixed parameter values; nullopt accepts any value. Empty is
+    /// unrestricted. Nonempty lists contain numParameters() entries. Constants
+    /// match with absolute tolerance 1e-15, without reducing angles modulo a
+    /// period.
+    [[nodiscard]] llvm::ArrayRef<std::optional<double>>
+    fixedParameters() const noexcept;
 
     /// Return all supported ordered placements, or empty for general support.
     [[nodiscard]] llvm::ArrayRef<SiteTuple> siteTuples() const noexcept;
@@ -231,12 +241,14 @@ public:
                         Arity arity, size_t numParameters,
                         std::vector<SiteTuple> siteTuples,
                         std::optional<uint64_t> duration,
-                        std::optional<double> fidelity);
+                        std::optional<double> fidelity,
+                        std::vector<std::optional<double>> fixedParameters);
 
     std::string name_;
     std::string canonicalName_;
     Arity arity_;
     size_t numParameters_;
+    std::vector<std::optional<double>> fixedParameters_;
     std::vector<SiteTuple> siteTuples_;
     std::optional<uint64_t> duration_;
     std::optional<double> fidelity_;
@@ -292,19 +304,39 @@ public:
 
   /// Recognized globally usable single-qubit synthesis basis.
   enum class SingleQubitBasis : uint8_t {
-    U,    ///< `U(θ, φ, λ)`.
-    ZSXX, ///< `RZ` / `SX` / `X` synthesis via a ZYZ decomposition.
-    R,    ///< XYX synthesis expressed with `R(θ, φ)`.
-    XZX,  ///< `RX(φ) * RZ(θ) * RX(λ)`.
-    XYX,  ///< `RX(φ) * RY(θ) * RX(λ)`.
-    ZYZ,  ///< `RZ(φ) * RY(θ) * RZ(λ)`.
-    ZXZ,  ///< `RZ(φ) * RX(θ) * RZ(λ)`.
+    U,             ///< `U(θ, φ, λ)`.
+    ZSXX,          ///< `RZ` / `SX` / `X` synthesis via a ZYZ decomposition.
+    R,             ///< XYX synthesis expressed with `R(θ, φ)`.
+    XZX,           ///< `RX(φ) * RZ(θ) * RX(λ)`.
+    XYX,           ///< `RX(φ) * RY(θ) * RX(λ)`.
+    ZYZ,           ///< `RZ(φ) * RY(θ) * RZ(λ)`.
+    ZXZ,           ///< `RZ(φ) * RX(θ) * RZ(λ)`.
+    FixedRotation, ///< An arbitrary rotation and fixed pulses about another
+                   ///< axis.
+  };
+
+  /// Fixed pulse combined with arbitrary rotations about a distinct axis.
+  struct FixedRotationBasis {
+    GateKind gate;
+    GateKind freeGate;
+    double angle;
+    /// Free rotation angles before, between, and after fixed pulses.
+    /// Together they implement a local RX(π/2).
+    std::vector<double> quarterTurnAngles;
+    std::optional<double> halfTurnAngle;
+
+    /// Physical gates for local X/Y/Z; local Z is the free rotation axis.
+    [[nodiscard]] std::array<GateKind, 3> axes() const;
+
+    friend bool operator==(const FixedRotationBasis&,
+                           const FixedRotationBasis&) = default;
   };
 
   /// One single-qubit basis and optional entangler usable across the target.
   struct SynthesisBasis {
     SingleQubitBasis singleQubit;
     std::optional<GateKind> entangler;
+    std::optional<FixedRotationBasis> fixedRotation;
 
     friend bool operator==(const SynthesisBasis&,
                            const SynthesisBasis&) = default;
@@ -390,15 +422,23 @@ public:
   /// Return operation capabilities in reported order.
   [[nodiscard]] llvm::ArrayRef<OperationCapability> operations() const noexcept;
 
-  /// Return whether an operation capability is supported by the target.
+  /// Return whether an operation supports unrestricted parameter values.
   [[nodiscard]] bool
   supportsOperation(llvm::StringRef name, size_t arity,
                     std::optional<size_t> numParameters = std::nullopt) const;
 
-  /// Return whether an operation capability is supported on ordered sites.
+  /// Return whether an operation supports unrestricted values on ordered sites.
   [[nodiscard]] bool supportsOperation(llvm::StringRef name, size_t arity,
                                        std::optional<size_t> numParameters,
                                        llvm::ArrayRef<SiteId> sites) const;
+
+  /// Check parameter values, optionally on ordered sites.
+  /// Unknown values require unrestricted support.
+  [[nodiscard]] bool
+  supportsOperation(llvm::StringRef name, size_t arity,
+                    std::optional<size_t> numParameters,
+                    std::optional<llvm::ArrayRef<SiteId>> sites,
+                    llvm::ArrayRef<std::optional<double>> parameters) const;
 
   /// Return whether a QCO operation is supported.
   [[nodiscard]] bool supports(::mlir::Operation* operation) const;

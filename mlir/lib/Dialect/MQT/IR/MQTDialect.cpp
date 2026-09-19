@@ -248,15 +248,33 @@ OperationArityAttr::verify(const function_ref<InFlightDiagnostic()> emitError,
 
 LogicalResult NativeOperationAttr::verify(
     const function_ref<InFlightDiagnostic()> emitError, const StringAttr name,
-    const OperationArityAttr arity, const uint64_t /*numParameters*/,
+    const OperationArityAttr arity, const uint64_t numParameters,
     const ArrayRef<SiteTupleAttr> siteTuples,
-    const std::optional<uint64_t> /*duration*/, const FloatAttr fidelity) {
+    const std::optional<uint64_t> /*duration*/, const FloatAttr fidelity,
+    const ArrayAttr fixedParameters) {
   if (name.getValue().trim().empty()) {
     return emitError() << "compiler target operation name must not be empty";
   }
   if (failed(verifyFidelity(emitError, fidelity,
                             "compiler target operation fidelity"))) {
     return failure();
+  }
+
+  if (fixedParameters) {
+    if (fixedParameters.size() != numParameters) {
+      return emitError() << "compiler target fixed parameters must match its "
+                            "parameter count";
+    }
+    for (Attribute parameter : fixedParameters) {
+      if (isa<UnitAttr>(parameter)) {
+        continue;
+      }
+      auto value = dyn_cast<FloatAttr>(parameter);
+      if (!value || !value.getType().isF64() || !value.getValue().isFinite()) {
+        return emitError() << "compiler target fixed parameters must be finite "
+                              "f64 values or unit";
+      }
+    }
   }
 
   if (!siteTuples.empty() && arity.getKind() == OperationArityKind::Variadic) {

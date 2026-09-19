@@ -20,9 +20,11 @@
 #include "mlir/IR/Value.h"
 #include "mlir/Support/LLVM.h"
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/ErrorHandling.h"
 
+#include <cassert>
 #include <cmath>
 #include <complex>
 #include <cstddef>
@@ -32,7 +34,31 @@
 
 namespace mlir::qco::decomposition {
 
-bool isSingleQubitBasisGate(Operation* op, SingleQubitBasis basis) {
+bool isSingleQubitBasisGate(
+    Operation* op, SingleQubitBasis basis,
+    const CompilerTarget::FixedRotationBasis* fixedRotation) {
+  if (basis == SingleQubitBasis::FixedRotation) {
+    assert(fixedRotation &&
+           "fixed-pulse synthesis requires a pulse descriptor");
+    return TypeSwitch<Operation*, bool>(op)
+        .Case<RXOp, RYOp, RZOp>([&](auto rotation) {
+          const auto gate = isa<RXOp>(rotation) ? CompilerTarget::GateKind::RX
+                            : isa<RYOp>(rotation)
+                                ? CompilerTarget::GateKind::RY
+                                : CompilerTarget::GateKind::RZ;
+          if (gate == fixedRotation->freeGate) {
+            return true;
+          }
+          const auto angle = mqt::valueToDouble(rotation.getTheta());
+          return gate == fixedRotation->gate && angle &&
+                 (std::abs(*angle - fixedRotation->angle) <=
+                      mqt::PARAMETER_COMPARISON_TOLERANCE ||
+                  (fixedRotation->halfTurnAngle &&
+                   std::abs(*angle - *fixedRotation->halfTurnAngle) <=
+                       mqt::PARAMETER_COMPARISON_TOLERANCE));
+        })
+        .Default([](auto) { return false; });
+  }
   return TypeSwitch<Operation*, bool>(op)
       .Case([&](RZOp) {
         return basis == SingleQubitBasis::ZYZ ||
@@ -40,12 +66,12 @@ bool isSingleQubitBasisGate(Operation* op, SingleQubitBasis basis) {
                basis == SingleQubitBasis::XZX ||
                basis == SingleQubitBasis::ZSXX;
       })
-      .Case([&](RYOp) {
-        return basis == SingleQubitBasis::ZYZ || basis == SingleQubitBasis::XYX;
-      })
-      .Case([&](RXOp) {
-        return basis == SingleQubitBasis::ZXZ ||
-               basis == SingleQubitBasis::XZX || basis == SingleQubitBasis::XYX;
+      .Case<RYOp, RXOp>([&](auto rotation) {
+        return isa<RXOp>(rotation) ? (basis == SingleQubitBasis::ZXZ ||
+                                      basis == SingleQubitBasis::XZX ||
+                                      basis == SingleQubitBasis::XYX)
+                                   : (basis == SingleQubitBasis::ZYZ ||
+                                      basis == SingleQubitBasis::XYX);
       })
       .Case([&](UOp) { return basis == SingleQubitBasis::U; })
       .Case<SXOp, XOp>([&](auto) { return basis == SingleQubitBasis::ZSXX; })
@@ -193,6 +219,7 @@ EulerAngles anglesFromUnitary(const Matrix2x2& matrix,
   switch (basis) {
   case SingleQubitBasis::ZYZ:
   case SingleQubitBasis::ZSXX:
+  case SingleQubitBasis::FixedRotation:
     return paramsZYZ(matrix);
   case SingleQubitBasis::ZXZ:
     return paramsZXZ(matrix);
@@ -240,9 +267,18 @@ struct Unitary1QEulerPlan {
   /// @param kind The rotation axis (RZ/RY/RX)
   /// @param angle The rotation angle in radians.
   void appendRotation(const SynthesisStep::Kind kind, const double angle) {
-    if (!isNearZeroRotationAngle(angle)) {
-      steps.emplace_back(kind, angle);
+    if (isNearZeroRotationAngle(angle)) {
+      return;
     }
+    if (kind == SynthesisStep::Kind::RZ && !steps.empty() &&
+        steps.back().kind == kind) {
+      steps.back().theta += angle;
+      if (isNearZeroRotationAngle(steps.back().theta)) {
+        steps.pop_back();
+      }
+      return;
+    }
+    steps.emplace_back(kind, angle);
   }
 
   /// Appends a native `R(angle, axis)` step for non-negligible angles.
@@ -260,8 +296,9 @@ struct Unitary1QEulerPlan {
   ///
   /// @param angles The angles to use for the decomposition.
   /// @param basis The basis to use for the decomposition.
-  void appendDecomposition(const EulerAngles& angles,
-                           const SingleQubitBasis basis) {
+  void
+  appendDecomposition(const EulerAngles& angles, const SingleQubitBasis basis,
+                      const CompilerTarget::FixedRotationBasis* fixedRotation) {
     if (isNearZeroRotationAngle(angles.theta) &&
         isNearZeroRotationAngle(angles.phi) &&
         isNearZeroRotationAngle(angles.lambda)) {
@@ -274,6 +311,7 @@ struct Unitary1QEulerPlan {
       case SingleQubitBasis::ZYZ:
       case SingleQubitBasis::ZXZ:
       case SingleQubitBasis::ZSXX:
+      case SingleQubitBasis::FixedRotation:
         appendRotation(SynthesisStep::Kind::RZ, angles.phi + angles.lambda);
         break;
 
@@ -330,6 +368,45 @@ struct Unitary1QEulerPlan {
                          angles.lambda);
       phase = angles.phase;
       break;
+    case SingleQubitBasis::FixedRotation: {
+      assert(fixedRotation &&
+             "fixed-pulse synthesis requires a pulse descriptor");
+      constexpr double pi = std::numbers::pi;
+      constexpr double halfPi = pi / 2.;
+      const auto kind = fixedRotation->gate == fixedRotation->axes()[0]
+                            ? SynthesisStep::Kind::RX
+                            : SynthesisStep::Kind::RY;
+      const double axis = kind == SynthesisStep::Kind::RY ? halfPi : 0.;
+      const auto quarterTurn = [&] {
+        appendRotation(SynthesisStep::Kind::RZ,
+                       fixedRotation->quarterTurnAngles.front());
+        for (double zAngle :
+             ArrayRef(fixedRotation->quarterTurnAngles).drop_front()) {
+          steps.emplace_back(kind, fixedRotation->angle);
+          appendRotation(SynthesisStep::Kind::RZ, zAngle);
+        }
+      };
+      if (isNearZeroRotationAngle(angles.theta - halfPi)) {
+        appendRotation(SynthesisStep::Kind::RZ, angles.lambda - halfPi);
+        quarterTurn();
+        appendRotation(SynthesisStep::Kind::RZ, angles.phi + halfPi);
+        phase = angles.phase;
+      } else if (isNearZeroRotationAngle(angles.theta - pi) &&
+                 fixedRotation->halfTurnAngle) {
+        appendRotation(SynthesisStep::Kind::RZ, angles.lambda + axis);
+        steps.emplace_back(kind, *fixedRotation->halfTurnAngle);
+        appendRotation(SynthesisStep::Kind::RZ, angles.phi + pi - axis);
+        phase = angles.phase + (*fixedRotation->halfTurnAngle < 0. ? pi : 0.);
+      } else {
+        appendRotation(SynthesisStep::Kind::RZ, angles.lambda);
+        quarterTurn();
+        appendRotation(SynthesisStep::Kind::RZ, angles.theta + pi);
+        quarterTurn();
+        appendRotation(SynthesisStep::Kind::RZ, angles.phi + pi);
+        phase = angles.phase + pi;
+      }
+      break;
+    }
     case SingleQubitBasis::ZSXX: {
       constexpr double pi = std::numbers::pi;
       constexpr double halfPi = std::numbers::pi / 2.0;
@@ -368,15 +445,47 @@ struct Unitary1QEulerPlan {
 /// @param basis Native gate basis.
 /// @return Planned gate sequence and optional global phase.
 [[nodiscard]] static Unitary1QEulerPlan
-planUnitary1QEuler(const Matrix2x2& targetMatrix,
-                   const SingleQubitBasis basis) {
+planUnitary1QEuler(const Matrix2x2& targetMatrix, const SingleQubitBasis basis,
+                   const CompilerTarget::FixedRotationBasis* fixedRotation) {
   Unitary1QEulerPlan plan;
   if (targetMatrix.isApprox(Matrix2x2::identity())) {
     return plan;
   }
 
-  const EulerAngles angles = anglesFromUnitary(targetMatrix, basis);
-  plan.appendDecomposition(angles, basis);
+  auto matrix = targetMatrix;
+  if (basis == SingleQubitBasis::FixedRotation) {
+    assert(fixedRotation &&
+           "fixed-pulse synthesis requires a pulse descriptor");
+    // Cyclically permute Pauli coefficients into the local synthesis frame.
+    if (fixedRotation->freeGate != CompilerTarget::GateKind::RZ) {
+      const auto w = (matrix(0, 0) + matrix(1, 1)) * 0.5;
+      const auto x = (matrix(0, 1) + matrix(1, 0)) * 0.5;
+      const auto y = (matrix(0, 1) - matrix(1, 0)) * std::complex(0., 0.5);
+      const auto z = (matrix(0, 0) - matrix(1, 1)) * 0.5;
+      const bool freeX =
+          fixedRotation->freeGate == CompilerTarget::GateKind::RX;
+      const auto localX = freeX ? y : z;
+      const auto localY = freeX ? z : x;
+      const auto localZ = freeX ? x : y;
+      const auto it = std::complex(0., 1.) * localY;
+      matrix = Matrix2x2::fromElements(w + localZ, localX - it, localX + it,
+                                       w - localZ);
+    }
+  }
+  const EulerAngles angles = anglesFromUnitary(matrix, basis);
+  plan.appendDecomposition(angles, basis, fixedRotation);
+  if (basis == SingleQubitBasis::FixedRotation) {
+    const auto axes = fixedRotation->axes();
+    for (auto& step : plan.steps) {
+      const auto gate = axes[step.kind == SynthesisStep::Kind::RX   ? 0
+                             : step.kind == SynthesisStep::Kind::RY ? 1
+                                                                    : 2];
+      step.kind = gate == CompilerTarget::GateKind::RX ? SynthesisStep::Kind::RX
+                  : gate == CompilerTarget::GateKind::RY
+                      ? SynthesisStep::Kind::RY
+                      : SynthesisStep::Kind::RZ;
+    }
+  }
   return plan;
 }
 
@@ -432,12 +541,13 @@ std::optional<SingleQubitBasis> parseSingleQubitBasis(StringRef basis) {
       .Default(std::nullopt);
 }
 
-std::optional<SynthesizedUnitary1Q>
-synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
-                         const Matrix2x2& composed, const std::size_t runSize,
-                         const bool hasNonBasisGate,
-                         const SingleQubitBasis basis) {
-  const Unitary1QEulerPlan plan = planUnitary1QEuler(composed, basis);
+std::optional<SynthesizedUnitary1Q> synthesizeUnitary1QEuler(
+    OpBuilder& builder, Location loc, Value qubit, const Matrix2x2& composed,
+    const std::size_t runSize, const bool hasNonBasisGate,
+    const SingleQubitBasis basis,
+    const CompilerTarget::FixedRotationBasis* fixedRotation) {
+  const Unitary1QEulerPlan plan =
+      planUnitary1QEuler(composed, basis, fixedRotation);
   if (!hasNonBasisGate && runSize <= plan.gateCount()) {
     return std::nullopt;
   }

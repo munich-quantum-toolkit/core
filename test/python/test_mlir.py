@@ -655,6 +655,83 @@ def test_target_compiles_single_qubit_gates_without_entangler(num_sites: int) ->
     assert np.allclose(Operator(result).data, Operator(source).data)
 
 
+@pytest.mark.parametrize("arity", [1, CompilerTarget.OperationArity.fixed(1)])
+def test_fixed_parameter_target_capability(arity: int | CompilerTarget.OperationArity) -> None:
+    """Fixed target values survive bindings and restrict support queries."""
+    pulse = CompilerTarget.OperationCapability("rx", arity, 1, fixed_parameters=[np.pi / 2])
+    assert pulse.fixed_parameters == [np.pi / 2]
+    target = CompilerTarget(
+        1,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            pulse,
+            CompilerTarget.OperationCapability("rz", 1, 1),
+        ]),
+    )
+    assert target.synthesis_basis is not None
+    assert target.synthesis_basis.single_qubit == CompilerTarget.SingleQubitBasis.FixedRotation
+    fixed = target.synthesis_basis.fixed_rotation
+    assert fixed is not None
+    assert fixed.gate == CompilerTarget.GateKind.RX
+    assert fixed.angle == pytest.approx(np.pi / 2)
+    assert fixed.quarter_turn_pulses == 1
+    assert fixed.half_turn_angle is None
+    assert not target.supports_operation("rx", 1, 1)
+    assert target.supports_operation("rx", 1, parameters=[np.pi / 2], sites=[0])
+    assert not target.supports_operation("rx", 1, parameters=[np.pi])
+    assert not target.supports_operation("rx", 1, parameters=[None])
+    assert target.supports_operation("rz", 1, parameters=[None])
+    with pytest.raises(ValueError, match="parameter count"):
+        CompilerTarget.OperationCapability("rx", arity, 1, fixed_parameters=[0.0, None])
+    with pytest.raises(ValueError, match="finite"):
+        CompilerTarget.OperationCapability("rx", arity, 1, fixed_parameters=[np.inf])
+
+
+@requires_qiskit_translation
+@pytest.mark.parametrize("theta", [0.0, np.pi / 2, np.pi, 0.47, "symbolic"])
+@pytest.mark.parametrize("gate", ["u", "rx", "p"])
+@pytest.mark.parametrize(
+    ("free", "pulse", "pulse_angle"),
+    [
+        (free, pulse, angle)
+        for free in ("rx", "ry", "rz")
+        for pulse in ("rx", "ry", "rz")
+        if pulse != free
+        for angle in (np.pi / 2, -np.pi / 2, np.pi / 4, -0.37)
+    ],
+)
+def test_fixed_pulse_compilation_preserves_phase(
+    theta: float | str, gate: str, free: str, pulse: str, pulse_angle: float
+) -> None:
+    """Compile into arbitrary and fixed rotations about distinct axes, preserving phase."""
+    target = CompilerTarget(
+        1,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability(pulse, 1, 1, fixed_parameters=[pulse_angle]),
+            CompilerTarget.OperationCapability(free, 1, 1),
+            CompilerTarget.OperationCapability("gphase", 0, 1),
+        ]),
+    )
+    parameter = qiskit.circuit.Parameter("theta") if isinstance(theta, str) else theta
+    source = QuantumCircuit(1, global_phase=0.19)
+    if gate == "u":
+        source.u(parameter, 0.32, -0.17, 0)
+    else:
+        getattr(source, gate)(parameter, 0)
+    program = QCProgram.from_qiskit(source).to_qco()
+    program.compile_for_target(_test_target_environment(target))
+    result = program.to_qiskit(target=target)
+    assert set(result.count_ops()) <= {pulse, free}
+    assert all(item.operation.params == [pulse_angle] for item in result.data if item.operation.name == pulse)
+    for value in [-0.6, 0.0, np.pi / 2, np.pi]:
+        bindings = {parameter: value} if isinstance(parameter, qiskit.circuit.Parameter) else {}
+        assert np.allclose(
+            Operator(result.assign_parameters(bindings)).data,
+            Operator(source.assign_parameters(bindings)).data,
+        )
+
+
 @requires_qiskit_translation
 def test_target_compilation_exports_canonical_physical_qiskit_circuit() -> None:
     """Export a mapped program with the complete compiler target."""
