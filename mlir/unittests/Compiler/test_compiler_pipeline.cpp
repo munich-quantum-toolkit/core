@@ -1138,6 +1138,31 @@ TEST_F(CompilerPipelineTest, ClassicalArraysSurviveQCQCOAndQIR) {
         result = measure q;
       )qasm",
       R"qasm(OPENQASM 3.0;
+        array[int, 2, 5] a;
+        qubit q;
+        U(pi, 0, 0) q;
+        bit measured = measure q;
+        int[8] one = int[8](measured);
+        int start = -5;
+        int stop = -1;
+        uint[8] step = 2;
+        uint n = sizeof(a[one, start:step:stop]);
+        int low = -9223372036854775807-1;
+        uint high = 9223372036854775807;
+        uint sum = 0;
+        for int i in [1:3] { sum += sizeof(a[one, :i]); }
+        reset q;
+        if (n == 3 && sum == 9 && sizeof(a[:one]) == 2 &&
+            sizeof(a[:one, :-one:], 1) == 5 &&
+            sizeof(a[one, :sizeof(a[one, :one])-1]) == 2 &&
+            sizeof(a[one, 4:low:0]) == 1 &&
+            sizeof(a[one, 0:high:4]) == 1) {
+          U(pi * float(sizeof(a[one, :one])) / 2, 0, 0) q;
+        }
+        output bit result;
+        result = measure q;
+      )qasm",
+      R"qasm(OPENQASM 3.0;
         array[int[8], 5] a = {0, 1, 2, 3, 4};
         a[1:] = a[:3];
         bool right = a[0] == 0 && a[1] == 0 && a[2] == 1 &&
@@ -1446,6 +1471,16 @@ TEST_F(CompilerPipelineTest, ArrayRangesCheckRuntimeContracts) {
           {"uint step = 18446744073709551615; b = a[0:step:1];", "fit in i64"},
           {"int i = 2; b = a[:i];", "matching shapes"},
           {"int i = 1; a[:i] = a;", "matching shapes"},
+          {"int i = 4; uint n = sizeof(a[:i]);", "range is out of bounds"},
+          {
+              "int step = 0; uint n = sizeof(a[:step:]);",
+              "step must not be zero",
+          },
+          {"int step = -1; uint n = sizeof(a[0:step:3]);", "must not be empty"},
+          {
+              "uint step = 18446744073709551615; uint n = sizeof(a[:step:]);",
+              "fit in i64",
+          },
           {"int i = 1; b = a[:i] ++ a[0:0];", "matching shapes"},
           {
               "array[int, 2, 2] m = {{1, 2}, {3, 4}}; int i = 0; "

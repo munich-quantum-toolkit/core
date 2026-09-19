@@ -698,6 +698,16 @@ private:
       return memref::LoadOp::create(
           opBuilder, loc, arrayValues_.at(expression.array), *indices);
     }
+    case frontend::ExpressionKind::ArraySize: {
+      const auto& query =
+          program.arraySizeQueries.at(expression.arraySizeQuery);
+      auto range = emitArrayRange(opBuilder, query.range, query.extent);
+      if (!range[1] || emissionBudget.isExhausted()) {
+        return {};
+      }
+      return arith::IndexCastOp::create(opBuilder, loc, opBuilder.getI64Type(),
+                                        range[1]);
+    }
     case frontend::ExpressionKind::Cast: {
       auto operand = emitExpression(opBuilder, expression.lhs, gateParameters);
       if (!operand) {
@@ -1857,59 +1867,69 @@ private:
 
   /// Return checked offset, size, and stride as index values.
   [[nodiscard]] std::array<Value, 3>
-  emitArrayRange(const frontend::ArrayRange& range, int64_t extent) {
-    auto step = emitExpression(builder, range.step, {});
+  emitArrayRange(OpBuilder& opBuilder, const frontend::ArrayRange& range,
+                 int64_t extent) {
+    auto step = emitExpression(opBuilder, range.step, {});
     if (!step) {
       return {};
     }
+    auto loc = builder.getLoc();
     const auto type = program.expressions.at(range.step).type;
-    step = emitScalarCast(builder, builder.getLoc(), step, type, type);
-    auto zero = arith::ConstantIntOp::create(builder, 0, 64);
-    auto one = arith::ConstantIntOp::create(builder, 1, 64);
-    auto last = arith::ConstantIntOp::create(builder, extent - 1, 64);
+    step = emitScalarCast(opBuilder, loc, step, type, type);
+    auto zero = arith::ConstantIntOp::create(opBuilder, loc, 0, 64);
+    auto one = arith::ConstantIntOp::create(opBuilder, loc, 1, 64);
+    auto last = arith::ConstantIntOp::create(opBuilder, loc, extent - 1, 64);
     if (type == frontend::ScalarType::Uint) {
       auto fits = arith::CmpIOp::create(
-          builder, arith::CmpIPredicate::ule, step,
+          opBuilder, loc, arith::CmpIPredicate::ule, step,
           arith::ConstantIntOp::create(
-              builder, std::numeric_limits<int64_t>::max(), 64));
-      cf::AssertOp::create(builder, fits, "array range step must fit in i64");
+              opBuilder, loc, std::numeric_limits<int64_t>::max(), 64));
+      cf::AssertOp::create(opBuilder, loc, fits,
+                           "array range step must fit in i64");
     }
-    auto nonzero =
-        arith::CmpIOp::create(builder, arith::CmpIPredicate::ne, step, zero);
-    cf::AssertOp::create(builder, nonzero, "array range step must not be zero");
-    auto positive =
-        arith::CmpIOp::create(builder, arith::CmpIPredicate::sgt, step, zero);
+    auto nonzero = arith::CmpIOp::create(opBuilder, loc,
+                                         arith::CmpIPredicate::ne, step, zero);
+    cf::AssertOp::create(opBuilder, loc, nonzero,
+                         "array range step must not be zero");
+    auto positive = arith::CmpIOp::create(
+        opBuilder, loc, arith::CmpIPredicate::sgt, step, zero);
     const auto bound = [&](std::optional<frontend::ExpressionId> expression,
                            Value fallback) -> Value {
-      return expression ? emitCheckedIndex(builder, *expression, extent,
+      return expression ? emitCheckedIndex(opBuilder, *expression, extent,
                                            "array range is out of bounds")
                         : fallback;
     };
-    auto start = bound(range.start,
-                       arith::SelectOp::create(builder, positive, zero, last));
-    auto stop = bound(range.stop,
-                      arith::SelectOp::create(builder, positive, last, zero));
+    auto start =
+        bound(range.start,
+              arith::SelectOp::create(opBuilder, loc, positive, zero, last));
+    auto stop =
+        bound(range.stop,
+              arith::SelectOp::create(opBuilder, loc, positive, last, zero));
     if (!start || !stop || emissionBudget.isExhausted()) {
       return {};
     }
-    auto forward =
-        arith::CmpIOp::create(builder, arith::CmpIPredicate::sge, stop, start);
-    auto backward =
-        arith::CmpIOp::create(builder, arith::CmpIPredicate::sge, start, stop);
+    auto forward = arith::CmpIOp::create(
+        opBuilder, loc, arith::CmpIPredicate::sge, stop, start);
+    auto backward = arith::CmpIOp::create(
+        opBuilder, loc, arith::CmpIPredicate::sge, start, stop);
     auto nonempty =
-        arith::SelectOp::create(builder, positive, forward, backward);
-    cf::AssertOp::create(builder, nonempty, "array range must not be empty");
+        arith::SelectOp::create(opBuilder, loc, positive, forward, backward);
+    cf::AssertOp::create(opBuilder, loc, nonempty,
+                         "array range must not be empty");
     // Checked endpoints bound the difference, even for an INT64_MIN step.
-    auto distance = arith::SubIOp::create(builder, stop, start);
-    auto quotient = arith::DivSIOp::create(builder, distance, step);
-    auto size = arith::AddIOp::create(builder, quotient, one);
-    auto single =
-        arith::CmpIOp::create(builder, arith::CmpIPredicate::eq, size, one);
-    step = arith::SelectOp::create(builder, single, one, step);
+    auto distance = arith::SubIOp::create(opBuilder, loc, stop, start);
+    auto quotient = arith::DivSIOp::create(opBuilder, loc, distance, step);
+    auto size = arith::AddIOp::create(opBuilder, loc, quotient, one);
+    auto single = arith::CmpIOp::create(opBuilder, loc,
+                                        arith::CmpIPredicate::eq, size, one);
+    step = arith::SelectOp::create(opBuilder, loc, single, one, step);
     return {
-        arith::IndexCastOp::create(builder, builder.getIndexType(), start),
-        arith::IndexCastOp::create(builder, builder.getIndexType(), size),
-        arith::IndexCastOp::create(builder, builder.getIndexType(), step),
+        arith::IndexCastOp::create(opBuilder, loc, opBuilder.getIndexType(),
+                                   start),
+        arith::IndexCastOp::create(opBuilder, loc, opBuilder.getIndexType(),
+                                   size),
+        arith::IndexCastOp::create(opBuilder, loc, opBuilder.getIndexType(),
+                                   step),
     };
   }
 
@@ -1930,7 +1950,7 @@ private:
     SmallVector<int64_t> resultShape;
     for (const auto [dimension, index] : llvm::enumerate(selection)) {
       if (index.runtime) {
-        auto range = emitArrayRange(*index.runtime, shape[dimension]);
+        auto range = emitArrayRange(builder, *index.runtime, shape[dimension]);
         if (!range[0]) {
           return {};
         }

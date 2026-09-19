@@ -168,12 +168,14 @@ remaining dimensions must match. Chained and parenthesized concatenations,
 runtime ranges, and repeated operands are supported. Assignments such as
 `a = a[2:] ++ a[:1];` preserve the original source values.
 
-`sizeof(a)` returns the first dimension's length as a compile-time `uint`;
-`sizeof(a, d)` selects a zero-based, compile-time integer dimension. Subarrays
-and fixed ranges are supported: `sizeof(a[0])` gives a matrix's row length. The
-query does not read array elements, so the array need not be initialized. Use it
-in declarations or loop bounds, such as `[0:sizeof(a)-1]`. The queried extent
-must be known at compile time.
+`sizeof(a)` returns the first dimension's length as a `uint`; `sizeof(a, d)`
+selects a zero-based, compile-time integer dimension. Subarrays and ranges are
+supported: `sizeof(a[0])` gives a matrix's row length. The query does not read
+array elements, so the array need not be initialized. Use it in declarations or
+loop bounds, such as `[0:sizeof(a)-1]`. A statically known extent is a
+compile-time constant. A runtime-sized range, such as `sizeof(a[:i])`, returns a
+runtime value and cannot set a fixed array size or a `const` initializer. Its
+queried range uses the same bounds and step checks as array copies.
 
 Angle arrays use the same widths and compile-time quantization as scalar angle
 declarations. Values in initializer lists and assignments to individual entries

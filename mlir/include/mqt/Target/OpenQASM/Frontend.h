@@ -107,6 +107,7 @@ enum class ExpressionKind : uint8_t {
   GateParameter,
   Variable,
   ArrayLoad,
+  ArraySize,
   Cast,
   BitVectorCast,
   Condition,
@@ -144,6 +145,7 @@ struct ScalarExpression {
   uint32_t parameter = 0;
   ScalarId variable = 0;
   ArrayId array = 0;
+  uint32_t arraySizeQuery = 0;
   std::vector<ExpressionId> indices;
   ExpressionId lhs = 0;
   ExpressionId rhs = 0;
@@ -331,6 +333,11 @@ struct ArrayRange {
   ExpressionId step = 0;
 };
 
+struct ArraySizeQuery {
+  ArrayRange range;
+  int64_t extent = 0;
+};
+
 /// A scalar index (size zero), fixed range, or runtime range (size -1).
 struct ArraySelection {
   ExpressionId offset = 0;
@@ -438,6 +445,7 @@ struct TypedProgram {
   std::vector<ConditionExpression> conditions;
   std::vector<ScalarDeclaration> scalars;
   std::vector<ArrayDeclaration> arrays;
+  std::vector<ArraySizeQuery> arraySizeQueries;
   std::vector<RegisterDeclaration> registers;
   std::vector<GateDefinition> gates;
   std::vector<Statement> statements;
