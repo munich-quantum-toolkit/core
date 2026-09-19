@@ -1,7 +1,7 @@
 # QDMI device checker
 
-Status: implemented; focused validation passed. Linux parent-death coverage and
-full lint remain unverified.
+Status: implemented; focused validation and full lint passed. Linux
+parent-death coverage and required C++ lint remain unverified.
 
 ## Goal and scope
 
@@ -34,8 +34,7 @@ a timeout. The checker does not submit jobs or depend on Slurm.
   provider failures, crashes, initialization/cleanup timeouts, and descendants.
 - All three focused Python launcher tests passed. An installed-wheel SIGTERM
   smoke test verified sanitized failure and worker cleanup.
-- `SKIP=ty uvx nox -s lint` passed. Full type checking remains unverified
-  because its dependency download failed. Required C++ lint requires unavailable
-  clang-tidy 23.
+- Full `uvx nox -s lint`, including type checking, passed. Required C++ lint
+  remains unverified because clang-tidy 23 is unavailable.
 - Linux parent-death coverage requires a Linux host. Real Slurm validation
   belongs to the separate optional validator PR.
