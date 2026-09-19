@@ -253,6 +253,11 @@ accepts structured QCO/SCF input and uses the same target environment and
 global-phase policy as target compilation. Explicit connectivity is rejected;
 use `compile_for_target` when routing is required.
 
+Composite bodies nested inside inverse or power modifiers can still prevent
+control decomposition in both pipelines (tracked in [#2588]).
+
+[#2588]: https://github.com/munich-quantum-toolkit/core/issues/2588
+
 Synthesis runs in place and raises `RuntimeError` with MLIR diagnostics on
 failure. Earlier pass changes may remain on the program, so copy it first when
 the input must be preserved. The C++ counterpart is

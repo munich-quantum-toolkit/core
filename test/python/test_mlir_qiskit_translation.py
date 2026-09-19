@@ -100,14 +100,17 @@ STANDARD_GATES = (
     library.U2Gate(0.2, 0.3),
     library.U3Gate(0.2, 0.3, 0.4),
     library.CXGate(),
+    library.CXGate(ctrl_state=0),
     library.CYGate(),
     library.CZGate(),
     library.CHGate(),
     library.CPhaseGate(0.4),
     library.CRXGate(0.4),
     library.CRYGate(0.4),
+    library.CRYGate(0.4, ctrl_state=0),
     library.CRZGate(0.4),
     library.CUGate(0.1, 0.2, 0.3, 0.4),
+    library.CUGate(0.1, 0.2, 0.3, 0.4, ctrl_state=0),
     library.CU1Gate(0.2),
     library.CU3Gate(0.1, 0.2, 0.3),
     library.SwapGate(),
@@ -469,12 +472,14 @@ def test_variable_arity_mcx_is_imported(controls: int) -> None:
     assert "qc.x" in program.ir
 
 
-@pytest.mark.parametrize("controls", [1, 2])
-@pytest.mark.parametrize("targets", [1, 3])
+@pytest.mark.parametrize(("controls", "ctrl_state"), [(1, None), (1, 0), (2, None), (2, 0), (2, 1), (2, 2)])
+@pytest.mark.parametrize(("base", "targets"), [(library.XGate(), 1), (library.XGate(), 3), (library.RYGate(0.37), 3)])
 @pytest.mark.parametrize("wrapped", [False, True])
-def test_multi_target_controlled_gate_round_trip(controls: int, targets: int, *, wrapped: bool) -> None:
-    """Keep every target and any outer modifier when importing a controlled gate."""
-    gate = library.MCMTGate(library.XGate(), controls, targets)
+def test_multi_target_controlled_gate_round_trip(
+    base: Gate, controls: int, ctrl_state: int | None, targets: int, *, wrapped: bool
+) -> None:
+    """Preserve targets, control polarity, and outer modifiers of MCMT gates."""
+    gate = library.MCMTGate(base, controls, targets, ctrl_state=ctrl_state)
     if wrapped:
         gate = AnnotatedOperation(gate, [InverseModifier(), ControlModifier(1)])
     circuit = QuantumCircuit(gate.num_qubits)

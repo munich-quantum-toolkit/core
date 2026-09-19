@@ -88,7 +88,9 @@ inputs. Operations without a supported definition are rejected with a Python
 exception; arbitrary Python parameter objects are not preserved on export.
 
 Controlled gates whose base operation covers fewer wires than their targets,
-such as MCMT gates, retain their complete circuit definition.
+such as MCMT gates, retain their complete circuit definition. Open-controlled
+gates use Qiskit's definition with X conjugation. Open-control modifiers on
+`AnnotatedOperation` remain unsupported.
 
 Structured-control export supports scalar results from {code}`scf.if` and
 {code}`scf.index_switch`, carried scalar state in constant-range

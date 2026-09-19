@@ -510,22 +510,23 @@ normalizePythonParameter(const nb::handle parameter) {
   return std::move(stack.back().value);
 }
 
+[[nodiscard]] static uint64_t closedControlState(const uint64_t controls) {
+  if (controls == 0U || controls > std::numeric_limits<uint64_t>::digits) {
+    throw std::runtime_error(
+        "Qiskit control modifiers require between 1 and 64 controls");
+  }
+  return std::numeric_limits<uint64_t>::max() >>
+         (std::numeric_limits<uint64_t>::digits - controls);
+}
+
 static void appendControlModifier(const nb::handle object,
                                   std::vector<GateModifier>& modifiers) {
   const auto controls = pythonUnsignedAttribute(
       object, "num_ctrl_qubits",
       "Qiskit control modifier has an invalid control count");
-  if (controls == 0U ||
-      controls > static_cast<uint64_t>(std::numeric_limits<uint32_t>::max()) ||
-      controls > std::numeric_limits<uint64_t>::digits) {
-    throw std::runtime_error(
-        "Qiskit control modifiers require between 1 and 64 controls");
-  }
+  const auto closedState = closedControlState(controls);
   const auto state = pythonUnsignedAttribute(
       object, "ctrl_state", "Qiskit control modifier has an invalid state");
-  const auto closedState = controls == std::numeric_limits<uint64_t>::digits
-                               ? std::numeric_limits<uint64_t>::max()
-                               : (uint64_t{1} << controls) - 1U;
   if (state != closedState) {
     throw std::runtime_error(
         "Qiskit circuit import does not support open-control modifiers");
@@ -537,7 +538,7 @@ static void appendControlModifier(const nb::handle object,
   });
 }
 
-[[nodiscard]] static bool hasControlledBase(const nb::handle operation) {
+[[nodiscard]] static bool canUnwrapControl(const nb::handle operation) {
   if (!nb::hasattr(operation, "base_gate")) {
     return false;
   }
@@ -550,8 +551,15 @@ static void appendControlModifier(const nb::handle object,
                                     "Qiskit controlled gate has no base");
   const auto targets = pythonUnsignedAttribute(
       base, "num_qubits", "Qiskit base gate has an invalid width");
-  // MCMT's base gate acts on each target, not on the whole target register.
-  return controls <= qubits && targets == qubits - controls;
+  /// MCMT's base gate acts on each target, not on the whole target register.
+  if (controls > qubits || targets != qubits - controls) {
+    return false;
+  }
+  /// Open controls use Qiskit's X-conjugated circuit definition.
+  return pythonUnsignedAttribute(
+             operation, "ctrl_state",
+             "Qiskit controlled gate has an invalid state") ==
+         closedControlState(controls);
 }
 
 [[nodiscard]] static nb::object terminalPythonGate(const nb::handle operation,
@@ -566,7 +574,7 @@ static void appendControlModifier(const nb::handle object,
                         "Qiskit annotated operation has no base"),
         depth + 1U);
   }
-  if (hasControlledBase(operation)) {
+  if (canUnwrapControl(operation)) {
     return terminalPythonGate(
         pythonAttribute(operation, "base_gate",
                         "Qiskit controlled gate has no base"),
@@ -655,7 +663,7 @@ static void normalizePythonGate(const nb::handle operation, Instruction& result,
     return;
   }
 
-  if (hasControlledBase(operation)) {
+  if (canUnwrapControl(operation)) {
     const auto name = pythonStringAttribute(
         operation, "name", "Qiskit controlled gate has an invalid name");
     if (name == "cu") {
