@@ -18,8 +18,10 @@
 #include "mqt/Dialect/QTensor/Transforms/Passes.h"
 #include "mqt/Support/RandomSeed.h"
 
+#include "mlir/Dialect/MemRef/IR/MemRefMemorySlot.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/DialectRegistry.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Pass/PassRegistry.h"
@@ -38,6 +40,12 @@ using namespace mlir;
 static void addSimplificationPasses(OpPassManager& pm) {
   pm.addPass(createCanonicalizerPass());
   pm.addPass(createCSEPass());
+}
+
+static void addClassicalPromotionPasses(OpPassManager& pm) {
+  pm.addPass(createCanonicalizerPass());
+  pm.addPass(createSROA());
+  pm.addPass(createMem2Reg());
 }
 
 LogicalResult
@@ -97,6 +105,7 @@ void populateQIRPreparationPipeline(OpPassManager& pm) {
   pm.addPass(createInlinerPass());
   pm.addPass(mqt::createNormalizeGlobalPhases());
   pm.addPass(mqt::createUnrollModifiers());
+  addClassicalPromotionPasses(pm);
   pm.addPass(createCanonicalizerPass());
 }
 
@@ -135,6 +144,9 @@ LogicalResult runWithCompilationOptions(PassManager& pm, ModuleOp moduleOp,
   if (!preservesLayout) {
     moduleOp->removeAttr("mqt.layout");
   }
+  DialectRegistry registry;
+  memref::registerMemorySlotExternalModels(registry);
+  moduleOp.getContext()->appendDialectRegistry(registry);
   if (options.enableTiming) {
     pm.enableTiming();
   }
@@ -159,6 +171,7 @@ LogicalResult runWithCompilationOptions(PassManager& pm, ModuleOp moduleOp,
 }
 
 void populateQCExportPipeline(OpPassManager& pm) {
+  addClassicalPromotionPasses(pm);
   pm.addPass(createCanonicalizerPass());
   pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
   pm.addPass(createCSEPass());
@@ -172,6 +185,7 @@ void populateQCCleanupPipeline(OpPassManager& pm) {
 }
 
 void populateQCOCleanupPipeline(OpPassManager& pm) {
+  addClassicalPromotionPasses(pm);
   pm.addPass(createCanonicalizerPass(
       GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit)));
   pm.addPass(mlir::mqt::createNormalizeGlobalPhases());

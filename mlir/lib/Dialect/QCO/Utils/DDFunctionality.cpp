@@ -641,13 +641,15 @@ static FailureOr<Attribute*> lookupMemRefSlot(Value memref, ValueRange indices,
                                               ClassicalEnv& classical,
                                               Operation* op) {
   const auto type = dyn_cast<MemRefType>(memref.getType());
-  if (!type || type.getRank() != 1 || indices.size() != 1 ||
+  if (!type || type.getRank() > 1 ||
+      indices.size() != static_cast<size_t>(type.getRank()) ||
       !isSupportedClassicalType(type.getElementType())) {
-    return op->emitError()
-           << "QCO DD simulation only supports one-dimensional memrefs of "
-              "integer, index, or f64 values";
+    return op->emitError() << "QCO DD simulation only supports scalar or "
+                              "one-dimensional memrefs of "
+                              "integer, index, or f64 values";
   }
-  auto index = lookupIndex(indices[0], classical, op);
+  auto index = indices.empty() ? FailureOr<int64_t>(0)
+                               : lookupIndex(indices[0], classical, op);
   if (failed(index)) {
     return failure();
   }
@@ -663,21 +665,22 @@ static FailureOr<Attribute*> lookupMemRefSlot(Value memref, ValueRange indices,
   return &(*it->second)[static_cast<size_t>(*index)];
 }
 
-static LogicalResult applyMemRefAlloc(memref::AllocOp alloc,
-                                      ClassicalEnv& classical) {
+template <typename AllocOp>
+static LogicalResult applyMemRefAlloc(AllocOp alloc, ClassicalEnv& classical) {
   const auto type = alloc.getType();
-  if (!type || type.getRank() != 1 ||
+  if (!type || type.getRank() > 1 ||
       !isSupportedClassicalType(type.getElementType())) {
-    return alloc.emitError()
-           << "QCO DD simulation only supports one-dimensional memrefs of "
-              "integer, index, or f64 values";
+    return alloc.emitError() << "QCO DD simulation only supports scalar or "
+                                "one-dimensional memrefs of "
+                                "integer, index, or f64 values";
   }
   if (!alloc.getSymbolOperands().empty()) {
     return alloc.emitError()
            << "QCO DD simulation does not support symbolic memref operands";
   }
-  int64_t size = type.getDimSize(0);
-  if (type.isDynamicDim(0)) {
+  int64_t size =
+      type.hasStaticShape() ? type.getNumElements() : ShapedType::kDynamic;
+  if (!type.hasStaticShape()) {
     auto dynamicSize =
         lookupIndex(alloc.getDynamicSizes()[0], classical, alloc);
     if (failed(dynamicSize)) {
@@ -1481,9 +1484,8 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
         walk.tensors->bind(insert.getResult(), input);
         return success();
       })
-      .Case([&](memref::AllocOp alloc) {
-        return applyMemRefAlloc(alloc, *walk.classical);
-      })
+      .template Case<memref::AllocOp, memref::AllocaOp>(
+          [&](auto alloc) { return applyMemRefAlloc(alloc, *walk.classical); })
       .Case([&](memref::StoreOp store) {
         return applyMemRefStore(store, *walk.classical);
       })
