@@ -2,8 +2,8 @@
 
 Status: historical review of PR #2553 on 2026-09-19 at
 `0ba1b2c71acd987a197b82ed158d890c271dbd6b`, against merge base
-`b897f04be98edc43cd9cdf53c5e53a55b9b8cc81`. Findings and measurements below describe
-that reviewed implementation. The
+`b897f04be98edc43cd9cdf53c5e53a55b9b8cc81`. Findings and measurements below
+describe that reviewed implementation. The
 [implementation record](../plans/compiler-layout-controls.md) contains the
 completed changes and their current validation.
 
@@ -17,19 +17,19 @@ the entire owned pipeline and its postconditions succeed.
 
 The user selected one layout tied to the program entry point. The existing
 `verifyEntryPoint` checks uniqueness among direct siblings only, and
-`verifyQuantumAllocations` skips child modules. Thus the old race and nested-loss
-reproducers remain valid against this head, but the proposed implementation
-should reject multiple program scopes rather than support them with more state.
-Apply that restriction at layout-bearing program and layout-compilation
-boundaries; unrelated library-only IR needs no redesign.
+`verifyQuantumAllocations` skips child modules. Thus the old race and
+nested-loss reproducers remain valid against this head, but the proposed
+implementation should reject multiple program scopes rather than support them
+with more state. Apply that restriction at layout-bearing program and
+layout-compilation boundaries; unrelated library-only IR needs no redesign.
 
 Attach the retained layout or invalidation marker to the selected entry-point
-`func.func`. Existing QC/QCO function conversions update that operation in place,
-so they already provide the ownership boundary required for preservation. Reject
-module-level, helper-function, and competing nested specifications. The public
-entry point survives ordinary symbol DCE; recursive marker propagation and the
-root fallback are no longer needed. Raw IR editors retain responsibility for
-preserving or explicitly discarding metadata.
+`func.func`. Existing QC/QCO function conversions update that operation in
+place, so they already provide the ownership boundary required for preservation.
+Reject module-level, helper-function, and competing nested specifications. The
+public entry point survives ordinary symbol DCE; recursive marker propagation
+and the root fallback are no longer needed. Raw IR editors retain responsibility
+for preserving or explicitly discarding metadata.
 
 The native snapshot does not become another serialized layout specification.
 Keep imported provenance and the detached native result distinct; automatic
@@ -50,7 +50,8 @@ Their preparation, mapping, and result publication then mutate the same vectors
 and flags concurrently. Each child is otherwise a valid program with local,
 fixed-size entry-block allocations.
 
-Reproduced with two sibling modules, each containing one allocation, H, and sink:
+Reproduced with two sibling modules, each containing one allocation, H, and
+sink:
 
 ```cpp
 PassManager pm(program->module().getContext());
@@ -62,8 +63,8 @@ auto status = runWithCompilationOptions(pm, program->module(), {});
 
 Multithreading was enabled. Four of five tracked runs failed, with either
 `input qubit identity was lost during layout preparation` or
-`layout compilation did not produce a mapping result`. The ordinary pipeline
-on the same input succeeded. This is a shared-state race, not an unsupported
+`layout compilation did not produce a mapping result`. The ordinary pipeline on
+the same input succeeded. This is a shared-state race, not an unsupported
 quantum operation. One destination also cannot represent separate results for
 multiple programs.
 
@@ -112,9 +113,10 @@ There are two related assumptions:
   `initial_layout.get_registers()` from `{QuantumRegister(2, "logical")}` to
   `set()`.
 
-Both were reproduced with Qiskit 2.5.2, `transpile(..., initial_layout=[1, 0],
-optimization_level=0)`, and the built PR adapter. The index maps remained correct;
-these are metadata preservation failures, not observed gate-semantics failures.
+Both were reproduced with Qiskit 2.5.2,
+`transpile(..., initial_layout=[1, 0], optimization_level=0)`, and the built PR
+adapter. The index maps remained correct; these are metadata preservation
+failures, not observed gate-semantics failures.
 
 [Qiskit's public Layout API](https://quantum.cloud.ibm.com/docs/en/api/qiskit/qiskit.transpiler.Layout#get_registers)
 provides register enumeration separately from its bit map.
@@ -134,8 +136,9 @@ Locations: `mlir/lib/Dialect/QCO/Transforms/Mapping/Mapping.cpp:642` and
 
 The result pass publishes into the caller's object before `PassManager::run`
 returns. Appending a pass that calls `signalPassFailure()` demonstrates the
-problem: the run fails, but a sentinel result `{allocationSizes=[7],
-initialLayout=[8], finalLayout=[9]}` becomes `{[1], [0], [0]}`.
+problem: the run fails, but a sentinel result
+`{allocationSizes=[7], initialLayout=[8], finalLayout=[9]}` becomes
+`{[1], [0], [0]}`.
 
 The existing failure tests exercise invalid placement and synthesis failure,
 both before publication. They do not establish the broader success-only promise
@@ -153,16 +156,15 @@ cloning the module or transactional rollback.
   owner over `createLayoutTracking`, `createLayoutResultPass`, a borrowed
   destination inside shared state, and an externally populated result pipeline.
   Keep the existing mapping algorithm and source-index tracking. Approximately
-  40–60 net lines appear removable, depending on the chosen private wiring;
-  this is a source estimate, not a measured patch.
-- **Defer a separate ancilla-scan optimization.**
-  `QubitLayout::fromAttr` scans `result.ancillas` for every register slot;
-  `NativeCircuitWriter::setLayout` scans it again for every logical input.
-  Both become quadratic for large ancillary registers, but the measurements at
-  the requested sizes do not establish this as a material compiler bottleneck.
-  Keep the simple representation unless profiling the primary or secondary
-  workloads justifies an existing LLVM membership container. No cache or helper
-  class is needed.
+  40–60 net lines appear removable, depending on the chosen private wiring; this
+  is a source estimate, not a measured patch.
+- **Defer a separate ancilla-scan optimization.** `QubitLayout::fromAttr` scans
+  `result.ancillas` for every register slot; `NativeCircuitWriter::setLayout`
+  scans it again for every logical input. Both become quadratic for large
+  ancillary registers, but the measurements at the requested sizes do not
+  establish this as a material compiler bottleneck. Keep the simple
+  representation unless profiling the primary or secondary workloads justifies
+  an existing LLVM membership container. No cache or helper class is needed.
 - **Avoid building throwaway Qiskit qubits.** `setLayout` creates a loose Python
   object for every logical input, then replaces every registered slot with a
   register member. Populate registered slots first and construct loose bits only
@@ -170,16 +172,17 @@ cloning the module or transactional rollback.
   fewer Python allocations; its runtime improvement was not benchmarked.
 - **Remove the redundant source-tag width guard in tensor shrinking**, once
   retaining the existing verifier contract. `ShrinkRegisters.cpp:111` repeats
-  the invariant owned by `MQTDialect::verifyOperationAttribute`: one source index
-  per static allocation slot. Keep the actual metadata remapping and external
-  input validation. The valid-IR precondition, rather than defensive checks in
-  each rewrite, should be explicit.
+  the invariant owned by `MQTDialect::verifyOperationAttribute`: one source
+  index per static allocation slot. Keep the actual metadata remapping and
+  external input validation. The valid-IR precondition, rather than defensive
+  checks in each rewrite, should be explicit.
 - **Consider removing the import-only encode/decode validation round trip.**
   `QiskitImport.cpp:2920` decodes the just-created attribute and discards the
   decoded object; `QCProgram::fromModule` verifies the attached attribute again.
-  One owning verifier suffices for correctness. Retain the early check if rejecting
-  malformed metadata before translating a large circuit is an intentional
-  performance requirement; it is not another independent semantic check.
+  One owning verifier suffices for correctness. Retain the early check if
+  rejecting malformed metadata before translating a large circuit is an
+  intentional performance requirement; it is not another independent semantic
+  check.
 
 Entry-point ownership and success-only result publication take priority. Fold
 small local deletions into those changes; do not make them separate cleanup
@@ -190,29 +193,30 @@ observer hierarchy, or custom cache.
 
 The target is 50–1,000 qubits, with 100–150 primary, 300 secondary, and 1,000
 exploratory. This is an optimization priority, not a new supported-input cap.
-The earlier 2,000–16,000-input schema probe is outside that profile and no longer
-drives the optimization recommendation.
+The earlier 2,000–16,000-input schema probe is outside that profile and no
+longer drives the optimization recommendation.
 
 The replacement probe imports and exports valid circuits with one source
 register, one H gate, and identity layout. The physical register width equals
 the logical input count. The source register is either an ordinary
-`QuantumRegister` or an `AncillaRegister`; the latter stresses ancillary metadata.
-It also reparses each imported program's MLIR. Circuit construction, initial
-import for export inputs, and text serialization are outside timed regions.
+`QuantumRegister` or an `AncillaRegister`; the latter stresses ancillary
+metadata. It also reparses each imported program's MLIR. Circuit construction,
+initial import for export inputs, and text serialization are outside timed
+regions.
 
-DGX Spark ARM64, Clang 23 Release with ThinLTO/mold, LLVM/MLIR 23.1.0,
-CPython 3.14, Qiskit 2.5.2. Medians of 15 pairs after three warmups, alternating
+DGX Spark ARM64, Clang 23 Release with ThinLTO/mold, LLVM/MLIR 23.1.0, CPython
+3.14, Qiskit 2.5.2. Medians of 15 pairs after three warmups, alternating
 ordinary/ancillary order. Import and parse include context construction and
-verification; export includes construction of SDK objects. No implementation
-was changed.
+verification; export includes construction of SDK objects. No implementation was
+changed.
 
 | Qubits | Import ordinary / ancillary | Export ordinary / ancillary | Parse ordinary / ancillary |
-| ---: | ---: | ---: | ---: |
-| 50 | 0.654 / 0.660 ms | 0.283 / 0.301 ms | 0.663 / 0.655 ms |
-| 100 | 0.720 / 0.735 ms | 0.376 / 0.380 ms | 0.779 / 0.790 ms |
-| 150 | 0.767 / 0.802 ms | 0.433 / 0.450 ms | 0.902 / 0.913 ms |
-| 300 | 1.040 / 1.092 ms | 0.704 / 0.758 ms | 1.326 / 1.350 ms |
-| 1,000 | 2.283 / 2.548 ms | 1.966 / 2.262 ms | 3.377 / 3.521 ms |
+| -----: | --------------------------: | --------------------------: | -------------------------: |
+|     50 |            0.654 / 0.660 ms |            0.283 / 0.301 ms |           0.663 / 0.655 ms |
+|    100 |            0.720 / 0.735 ms |            0.376 / 0.380 ms |           0.779 / 0.790 ms |
+|    150 |            0.767 / 0.802 ms |            0.433 / 0.450 ms |           0.902 / 0.913 ms |
+|    300 |            1.040 / 1.092 ms |            0.704 / 0.758 ms |           1.326 / 1.350 ms |
+|  1,000 |            2.283 / 2.548 ms |            1.966 / 2.262 ms |           3.377 / 3.521 ms |
 
 At 100–150 qubits the total measured import and export calls are each below one
 millisecond. The ancillary differences are tens of microseconds or less. They
@@ -225,9 +229,10 @@ must accompany the implementation's compilation measurements.
 ## Contracts worth retaining
 
 - `MappingResult` uses actual target site IDs; the internal mapper's `Layout`
-  uses dense hardware indices. Imported `QubitLayout` supports partial provenance
-  and source groups. Their different domains justify separate simple value types;
-  merging them into one generalized abstraction would make assumptions less clear.
+  uses dense hardware indices. Imported `QubitLayout` supports partial
+  provenance and source groups. Their different domains justify separate simple
+  value types; merging them into one generalized abstraction would make
+  assumptions less clear.
 - Keep the complete-placement and fixed local allocation restrictions. Dynamic
   inputs, partial placement constraints, and automatic composition with imported
   layouts need distinct requirements before implementation.
@@ -261,7 +266,8 @@ changed in this follow-up; implementation checks must run again after changes.
   `-k layout`, using Qiskit 2.5.2.
 - The first broad Python run lacked packaged device discovery in the temporary
   binding staging directory. Configuring the built DDSIM and SC test devices
-  resolved all seven setup-related failures/errors; no product change was needed.
+  resolved all seven setup-related failures/errors; no product change was
+  needed.
 - Separate native probes confirmed sibling-module interference and premature
   result publication. Separate Python probes confirmed nested metadata loss and
   both register-membership failures.
