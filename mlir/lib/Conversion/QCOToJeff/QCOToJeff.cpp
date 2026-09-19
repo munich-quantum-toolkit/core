@@ -704,7 +704,7 @@ struct ConvertCBitReadOpToJeff final
           "jeff supports general integer expressions only up to 64 bits");
     }
     auto& state = getState().cbitState;
-    auto reg = state.resolveRegisterUse(op, op.getReg());
+    auto reg = state.resolveRegisterUse(op, op->getOperand(0));
     auto array = state.getCurrentValue(reg, op);
     if (!array) {
       return rewriter.notifyMatchFailure(op, "unknown classical register");
@@ -746,7 +746,7 @@ struct ConvertCBitWriteOpToJeff final
           "jeff supports general integer expressions only up to 64 bits");
     }
     auto& state = getState().cbitState;
-    auto reg = state.resolveRegisterUse(op, op.getReg());
+    auto reg = state.resolveRegisterUse(op, op->getOperand(1));
     auto array = state.getCurrentValue(reg, op);
     if (!array) {
       return rewriter.notifyMatchFailure(op, "unknown classical register");

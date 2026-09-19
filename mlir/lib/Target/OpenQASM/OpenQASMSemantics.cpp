@@ -686,7 +686,7 @@ private:
     }
     cache.try_emplace(expression, std::nullopt);
     const auto& value = program.expressions.at(expression);
-    if (value.integerWidth != 0) {
+    if (value.integerWidth != 0 && value.integerWidth != 64) {
       return std::nullopt;
     }
     std::optional<AffineForm> result;
@@ -1300,7 +1300,6 @@ private:
           .kind = BitVectorExpressionKind::Constant,
           .width = width,
           .constant = llvm::APInt(static_cast<unsigned>(width), 0),
-          .contextualWidth = true,
       });
       return addCondition({
           .kind = ConditionKind::BitVectorComparison,
@@ -2342,8 +2341,7 @@ private:
 
   [[nodiscard]] FailureOr<BitVectorExpressionId> analyzeBitVectorExpression(
       const SyntaxExpressionId syntaxId,
-      const std::optional<uint64_t> expectedWidth = std::nullopt,
-      bool dynamicContext = false) {
+      const std::optional<uint64_t> expectedWidth = std::nullopt) {
     const auto& expression = syntax.expressions[syntaxId];
     if (expression.kind == Expr::Kind::BitString) {
       llvm::SmallString<64> digits;
@@ -2353,8 +2351,7 @@ private:
         }
       }
       if (digits.size() > REGISTER_WIDTH_LIMIT ||
-          (expectedWidth && !dynamicContext &&
-           *expectedWidth != digits.size())) {
+          (expectedWidth && *expectedWidth != digits.size())) {
         return fail(expression.location,
                     "bit-string width must match the supported register width");
       }
@@ -2368,27 +2365,12 @@ private:
     if (expression.kind == Expr::Kind::BitCast) {
       MQT_OQ3_TRY_ASSIGN(
           width, bitVectorCastWidth(expression.lhs, expression.location));
-      if (expectedWidth && !dynamicContext && *expectedWidth != width) {
+      if (expectedWidth && *expectedWidth != width) {
         return fail(expression.location,
                     "bit-vector operand widths must match");
       }
       if (isBitVectorExpression(*expression.rhs)) {
-        MQT_OQ3_TRY_ASSIGN(operand,
-                           analyzeBitVectorExpression(*expression.rhs, width));
-        if (!program.bitVectorExpressions[operand].dynamicWidth) {
-          return operand;
-        }
-        const auto scalar = addExpression({
-            .kind = ExpressionKind::BitVectorCast,
-            .type = ScalarType::Uint,
-            .bitVector = operand,
-            .integerWidth = static_cast<unsigned>(width),
-        });
-        return addBitVectorExpression({
-            .kind = BitVectorExpressionKind::ScalarCast,
-            .width = width,
-            .scalar = scalar,
-        });
+        return analyzeBitVectorExpression(*expression.rhs, width);
       }
       MQT_OQ3_TRY_ASSIGN(scalar, analyzeExpression(*expression.rhs));
       if (program.expressions[scalar].type == ScalarType::Bool) {
@@ -2430,43 +2412,36 @@ private:
                         expression.identifier + "'");
       }
       auto width = program.registers[reg].width;
-      const bool dynamic = isDynamicSlice(expression.slice);
-      std::optional<RegisterSliceId> slice;
+      std::vector<frontend::BitReference> selection;
       if (expression.slice) {
-        MQT_OQ3_TRY_ASSIGN(
-            selection, analyzeSlice(*expression.slice, expression.location));
-        slice = selection;
-      }
-      if (expression.slice && !dynamic) {
-        MQT_OQ3_TRY_ASSIGN(indices,
-                           constantSliceIndices(*expression.slice, width,
-                                                expression.location));
-        width = indices.size();
-        for (const auto index : indices) {
-          if (failed(ensureBitInitialized({.reg = reg, .index = index},
-                                          expression.location))) {
+        MQT_OQ3_TRY_ASSIGN(bits, resolveBits({
+                                     .location = expression.location,
+                                     .identifier = expression.identifier,
+                                     .slice = expression.slice,
+                                 }));
+        selection = std::move(bits);
+        width = selection.size();
+        for (const auto& bit : selection) {
+          if (failed(ensureBitInitialized(bit, expression.location))) {
             return failure();
           }
         }
-      } else {
-        for (uint64_t bit = 0; bit < width; ++bit) {
-          if (failed(ensureBitInitialized({.reg = reg, .index = bit},
-                                          expression.location))) {
-            return failure();
-          }
-        }
+      } else if (!initializedBits[registerStateSlots_[reg]]->all()) {
+        return fail(expression.location,
+                    "classical condition bit has not been initialized");
       }
-      if (expectedWidth && !dynamicContext && !dynamic &&
-          *expectedWidth != width) {
+      if (expectedWidth && *expectedWidth != width) {
         return fail(expression.location,
                     "bit-vector operand widths must match");
+      }
+      if (isWholeRegisterSelection(selection, reg)) {
+        selection.clear();
       }
       return addBitVectorExpression({
           .kind = BitVectorExpressionKind::Register,
           .width = width,
           .reg = reg,
-          .slice = slice,
-          .dynamicWidth = dynamic,
+          .selection = std::move(selection),
       });
     }
 
@@ -2517,21 +2492,16 @@ private:
           .kind = BitVectorExpressionKind::Constant,
           .width = *expectedWidth,
           .constant = std::move(value),
-          .contextualWidth = true,
       });
     }
 
     if (expression.kind == Expr::Kind::BitNot) {
-      MQT_OQ3_TRY_ASSIGN(operand, analyzeBitVectorExpression(*expression.lhs,
-                                                             expectedWidth,
-                                                             dynamicContext));
+      MQT_OQ3_TRY_ASSIGN(
+          operand, analyzeBitVectorExpression(*expression.lhs, expectedWidth));
       return addBitVectorExpression({
           .kind = BitVectorExpressionKind::Not,
           .width = program.bitVectorExpressions[operand].width,
           .operand = operand,
-          .dynamicWidth = program.bitVectorExpressions[operand].dynamicWidth,
-          .contextualWidth =
-              program.bitVectorExpressions[operand].contextualWidth,
       });
     }
 
@@ -2555,20 +2525,13 @@ private:
                     "bit-vector operators require a bit-register operand");
       }
       if (!lhs) {
-        MQT_OQ3_TRY_ASSIGN(
-            value,
-            analyzeBitVectorExpression(
-                *expression.lhs, width,
-                dynamicContext ||
-                    (rhs && program.bitVectorExpressions[*rhs].dynamicWidth)));
+        MQT_OQ3_TRY_ASSIGN(value,
+                           analyzeBitVectorExpression(*expression.lhs, width));
         lhs = value;
       }
       if (!rhs) {
-        MQT_OQ3_TRY_ASSIGN(
-            value, analyzeBitVectorExpression(
-                       *expression.rhs, width,
-                       dynamicContext ||
-                           program.bitVectorExpressions[*lhs].dynamicWidth));
+        MQT_OQ3_TRY_ASSIGN(value,
+                           analyzeBitVectorExpression(*expression.rhs, width));
         rhs = value;
       }
       auto kind = BitVectorExpressionKind::And;
@@ -2577,18 +2540,8 @@ private:
       } else if (expression.kind == Expr::Kind::BitXor) {
         kind = BitVectorExpressionKind::Xor;
       }
-      return addBitVectorExpression({
-          .kind = kind,
-          .width = std::max(program.bitVectorExpressions[*lhs].width,
-                            program.bitVectorExpressions[*rhs].width),
-          .operand = *lhs,
-          .rhs = *rhs,
-          .dynamicWidth = program.bitVectorExpressions[*lhs].dynamicWidth ||
-                          program.bitVectorExpressions[*rhs].dynamicWidth,
-          .contextualWidth =
-              program.bitVectorExpressions[*lhs].contextualWidth &&
-              program.bitVectorExpressions[*rhs].contextualWidth,
-      });
+      return addBitVectorExpression(
+          {.kind = kind, .width = *width, .operand = *lhs, .rhs = *rhs});
     }
 
     const bool shift = expression.kind == Expr::Kind::ShiftLeft ||
@@ -2600,9 +2553,8 @@ private:
                   "bit-vector expression requires a bit register or bitwise "
                   "operation");
     }
-    MQT_OQ3_TRY_ASSIGN(operand, analyzeBitVectorExpression(*expression.lhs,
-                                                           expectedWidth,
-                                                           dynamicContext));
+    MQT_OQ3_TRY_ASSIGN(
+        operand, analyzeBitVectorExpression(*expression.lhs, expectedWidth));
     std::optional<ExpressionId> distance;
     if (shift && isBitVectorExpression(*expression.rhs)) {
       MQT_OQ3_TRY_ASSIGN(bitVector,
@@ -2651,9 +2603,6 @@ private:
         .width = program.bitVectorExpressions[operand].width,
         .operand = operand,
         .distance = *distance,
-        .dynamicWidth = program.bitVectorExpressions[operand].dynamicWidth,
-        .contextualWidth =
-            program.bitVectorExpressions[operand].contextualWidth,
     });
   }
 
@@ -2706,8 +2655,7 @@ private:
       if (isBitVectorExpression(*expression.rhs)) {
         MQT_OQ3_TRY_ASSIGN(bitVector,
                            analyzeBitVectorExpression(*expression.rhs));
-        if (!program.bitVectorExpressions[bitVector].dynamicWidth &&
-            program.bitVectorExpressions[bitVector].width != width) {
+        if (program.bitVectorExpressions[bitVector].width != width) {
           return fail(
               expression.location,
               "bit-register cast width must match the bit-register width");
@@ -2869,9 +2817,11 @@ private:
     case Expr::Kind::And:
     case Expr::Kind::Or:
     case Expr::Kind::Index:
-    case Expr::Kind::Slice:
       return fail(expression.location,
                   "expected a scalar arithmetic expression");
+    case Expr::Kind::Slice:
+      return fail(expression.location,
+                  "classical slice expressions are not supported");
     case Expr::Kind::Int:
     case Expr::Kind::Float:
     case Expr::Kind::Bool:
@@ -3161,54 +3111,63 @@ private:
     return success();
   }
 
-  [[nodiscard]] bool isDynamicSlice(const std::optional<Slice>& slice) const {
-    return slice && ((slice->start && !isConstantExpression(*slice->start)) ||
-                     (slice->step && !isConstantExpression(*slice->step)) ||
-                     (slice->stop && !isConstantExpression(*slice->stop)));
+  [[nodiscard]] std::optional<ExpressionId>
+  normalizeProvenIndex(ExpressionId index, uint64_t width) {
+    auto form = buildAffineForm(index);
+    if (!form) {
+      return std::nullopt;
+    }
+    const bool negative = provesUpperBound(*form, llvm::DynamicAPInt(-1));
+    if (negative) {
+      form->constant += unsignedCoefficient(width);
+    }
+    if (!provesLowerBound(*form, llvm::DynamicAPInt(0)) ||
+        !provesUpperBound(*form, unsignedCoefficient(width - 1))) {
+      return std::nullopt;
+    }
+    if (isAffineConstant(*form)) {
+      return addConstant({
+          .type = ScalarType::Int,
+          .value = static_cast<int64_t>(form->constant),
+      });
+    }
+    const auto expanded = expandAffineScalarValues(index);
+    assert(expanded && "affine indices must have expandable expressions");
+    if (!negative) {
+      return expanded;
+    }
+    return addExpression({
+        .kind = ExpressionKind::Add,
+        .type = ScalarType::Int,
+        .lhs = *expanded,
+        .rhs = addConstant(
+            {.type = ScalarType::Int, .value = static_cast<int64_t>(width)}),
+    });
   }
 
-  [[nodiscard]] FailureOr<RegisterSliceId> analyzeSlice(const Slice& slice,
-                                                        SMLoc location) {
-    RegisterSlice result;
-    const auto analyzeBound =
-        [&](SyntaxExpressionId id) -> FailureOr<ExpressionId> {
-      MQT_OQ3_TRY_ASSIGN(expression, analyzeExpression(id));
-      if (!isInteger(program.expressions[expression].type)) {
-        return fail(location, "register slices require integer expressions");
-      }
-      return expression;
-    };
-    if (slice.start) {
-      MQT_OQ3_TRY_ASSIGN(start, analyzeBound(*slice.start));
-      result.start = start;
-    }
-    if (slice.stop) {
-      MQT_OQ3_TRY_ASSIGN(stop, analyzeBound(*slice.stop));
-      result.stop = stop;
-    }
-    if (slice.step) {
-      MQT_OQ3_TRY_ASSIGN(step, analyzeBound(*slice.step));
-      result.step = step;
-      if (isConstantExpression(*slice.step)) {
-        MQT_OQ3_TRY_ASSIGN(constant, evaluateConstant(*slice.step));
-        if (asSigned(constant) == 0) {
-          return fail(location, "register slice step must not be zero");
-        }
-      }
-    } else {
-      result.step = addConstant({.type = ScalarType::Int, .value = int64_t{1}});
-    }
-    const auto id = static_cast<RegisterSliceId>(program.slices.size());
-    program.slices.push_back(result);
-    return id;
-  }
-
-  [[nodiscard]] FailureOr<std::vector<uint64_t>>
-  constantSliceIndices(const Slice& slice, uint64_t width, SMLoc location) {
+  /// Expand a bounded affine selection with a known length. Bounds and
+  /// distinctness remain frontend proof obligations, including nonconstant
+  /// indices.
+  [[nodiscard]] FailureOr<std::vector<ExpressionId>>
+  resolveSliceIndices(const Slice& slice, uint64_t width, SMLoc location) {
     bool positive = true;
     uint64_t stride = 1;
     if (slice.step) {
-      MQT_OQ3_TRY_ASSIGN(constant, evaluateConstant(*slice.step));
+      Constant constant;
+      if (isConstantExpression(*slice.step)) {
+        MQT_OQ3_TRY_ASSIGN(value, evaluateConstant(*slice.step));
+        constant = value;
+      } else {
+        MQT_OQ3_TRY_ASSIGN(step, analyzeExpression(*slice.step));
+        const auto form = buildAffineForm(step);
+        if (!form || !isAffineConstant(*form)) {
+          return fail(location, "register slice step must be statically known");
+        }
+        constant = {
+            .type = ScalarType::Int,
+            .value = static_cast<int64_t>(form->constant),
+        };
+      }
       if (!isInteger(constant.type)) {
         return fail(location,
                     "register slice step must be an integer expression");
@@ -3218,7 +3177,7 @@ private:
       } else {
         const auto step = std::get<int64_t>(constant.value);
         positive = step > 0;
-        // Unsigned magnitude also handles INT64_MIN without signed overflow.
+        /// Unsigned magnitude also handles INT64_MIN without signed overflow.
         stride = positive ? static_cast<uint64_t>(step)
                           : uint64_t{0} - static_cast<uint64_t>(step);
       }
@@ -3227,26 +3186,69 @@ private:
       return fail(location, "register slice step must not be zero");
     }
     const auto endpoint = [&](std::optional<SyntaxExpressionId> id,
-                              uint64_t fallback) -> FailureOr<uint64_t> {
+                              uint64_t fallback) -> FailureOr<ExpressionId> {
       if (!id) {
-        return fallback;
+        return addConstant(
+            {.type = ScalarType::Int, .value = static_cast<int64_t>(fallback)});
       }
       MQT_OQ3_TRY_ASSIGN(value, constantIndex(*id, width, location));
-      if (!value || *value >= width) {
-        return fail(location, "register slice index is out of bounds");
+      if (value) {
+        if (*value >= width) {
+          return fail(location, "register slice index is out of bounds");
+        }
+        return addConstant(
+            {.type = ScalarType::Int, .value = static_cast<int64_t>(*value)});
       }
-      return *value;
+      MQT_OQ3_TRY_ASSIGN(index, analyzeExpression(*id));
+      if (!isInteger(program.expressions[index].type)) {
+        return fail(location,
+                    "register slice index must be an integer expression");
+      }
+      const auto normalized = normalizeProvenIndex(index, width);
+      if (!normalized) {
+        return fail(location,
+                    "cannot prove that register slice index is in bounds");
+      }
+      return *normalized;
     };
     MQT_OQ3_TRY_ASSIGN(start, endpoint(slice.start, positive ? 0 : width - 1));
     MQT_OQ3_TRY_ASSIGN(stop, endpoint(slice.stop, positive ? width - 1 : 0));
-    if ((positive && start > stop) || (!positive && start < stop)) {
+    const auto startForm = buildAffineForm(start);
+    const auto stopForm = buildAffineForm(stop);
+    assert(startForm && stopForm && "slice endpoints must be affine");
+    auto difference = addAffineForms(*stopForm, negateAffineForm(*startForm));
+    if (!positive) {
+      difference = negateAffineForm(difference);
+    }
+    if (!isAffineConstant(difference)) {
+      return fail(location, "register slice length must be statically known");
+    }
+    if (difference.constant < 0) {
       return fail(location, "register slice must not be empty");
     }
-    const auto distance = positive ? stop - start : start - stop;
-    std::vector<uint64_t> indices;
+    const auto distance =
+        static_cast<uint64_t>(static_cast<int64_t>(difference.constant));
+    std::vector<ExpressionId> indices;
     indices.reserve(distance / stride + 1);
     for (uint64_t offset = 0; offset <= distance;) {
-      indices.push_back(positive ? start + offset : start - offset);
+      const auto signedOffset = positive ? static_cast<int64_t>(offset)
+                                         : -static_cast<int64_t>(offset);
+      if (isAffineConstant(*startForm)) {
+        indices.push_back(addConstant({
+            .type = ScalarType::Int,
+            .value = static_cast<int64_t>(startForm->constant) + signedOffset,
+        }));
+      } else if (offset == 0) {
+        indices.push_back(start);
+      } else {
+        indices.push_back(addExpression({
+            .kind = ExpressionKind::Add,
+            .type = ScalarType::Int,
+            .lhs = start,
+            .rhs =
+                addConstant({.type = ScalarType::Int, .value = signedOffset}),
+        }));
+      }
       if (stride > distance - offset) {
         break;
       }
@@ -3532,7 +3534,7 @@ private:
   }
 
   void markBitInitialized(const frontend::BitReference& target) {
-    if (!target.dynamicIndex && !target.slice) {
+    if (!target.dynamicIndex) {
       mutableBitInitialization(registerStateSlots_[target.reg])[target.index] =
           true;
       return;
@@ -3582,39 +3584,32 @@ private:
     }
     const auto targetReg = static_cast<RegisterId>(symbol->id);
     if (!assignment.target.index && !program.registers[targetReg].isScalar) {
-      const bool dynamic = isDynamicSlice(assignment.target.slice);
       auto width = program.registers[targetReg].width;
-      std::optional<RegisterSliceId> slice;
+      std::vector<frontend::BitReference> selection;
       if (assignment.target.slice) {
-        MQT_OQ3_TRY_ASSIGN(selection,
-                           analyzeSlice(*assignment.target.slice, location));
-        slice = selection;
-        if (!dynamic) {
-          MQT_OQ3_TRY_ASSIGN(
-              indices,
-              constantSliceIndices(*assignment.target.slice, width, location));
-          width = indices.size();
+        MQT_OQ3_TRY_ASSIGN(targets, resolveBits(assignment.target));
+        selection = std::move(targets);
+        width = selection.size();
+      }
+      MQT_OQ3_TRY_ASSIGN(bitVector,
+                         analyzeBitVectorExpression(assignment.value, width));
+      if (selection.empty()) {
+        mutableBitInitialization(registerStateSlots_[targetReg]).set();
+      } else {
+        for (const auto& target : selection) {
+          markBitInitialized(target);
+        }
+        if (isWholeRegisterSelection(selection, targetReg)) {
+          selection.clear();
         }
       }
-      MQT_OQ3_TRY_ASSIGN(bitVector, analyzeBitVectorExpression(assignment.value,
-                                                               width, dynamic));
-      if (!dynamic) {
-        if (slice) {
-          MQT_OQ3_TRY_ASSIGN(targets, resolveBits(assignment.target));
-          for (const auto& target : targets) {
-            markBitInitialized(target);
-          }
-        } else {
-          for (uint64_t bit = 0; bit < width; ++bit) {
-            markBitInitialized({.reg = targetReg, .index = bit});
-          }
-        }
-      }
-      MQT_OQ3_TRY_ASSIGN(statement,
-                         addStatement(location, BitVectorAssignmentStatement{
-                                                    .target = targetReg,
-                                                    .value = bitVector,
-                                                    .slice = slice}));
+      MQT_OQ3_TRY_ASSIGN(
+          statement,
+          addStatement(location, BitVectorAssignmentStatement{
+                                     .target = targetReg,
+                                     .value = bitVector,
+                                     .selection = std::move(selection),
+                                 }));
       destination.push_back(statement);
       return success();
     }
@@ -3804,11 +3799,7 @@ private:
 
   [[nodiscard]] FailureOr<StatementId>
   analyzeMeasurement(SMLoc location, const SyntaxMeasurement& measurement) {
-    const bool dynamic =
-        isDynamicSlice(measurement.source.slice) ||
-        (measurement.target && isDynamicSlice(measurement.target->slice));
-    MQT_OQ3_TRY_ASSIGN(qubits,
-                       resolveQubitOperand(measurement.source, dynamic));
+    MQT_OQ3_TRY_ASSIGN(qubits, resolveQubitOperand(measurement.source));
     if (!measurement.target) {
       return addStatement(location, MeasurementStatement{
                                         .targets = {},
@@ -3826,7 +3817,7 @@ private:
       return fail(location,
                   "measurement assignment requires a bit-register destination");
     }
-    MQT_OQ3_TRY_ASSIGN(targets, resolveBits(*measurement.target, dynamic));
+    MQT_OQ3_TRY_ASSIGN(targets, resolveBits(*measurement.target));
     if (targets.size() != qubits.size()) {
       return fail(
           location,
@@ -3834,12 +3825,6 @@ private:
     }
     for (const auto& target : targets) {
       markBitInitialized(target);
-    }
-    if (dynamic && !isDynamicSlice(measurement.target->slice)) {
-      MQT_OQ3_TRY_ASSIGN(staticTargets, resolveBits(*measurement.target));
-      for (const auto& target : staticTargets) {
-        markBitInitialized(target);
-      }
     }
     return addStatement(location, MeasurementStatement{
                                       .targets = std::move(targets),
@@ -3882,12 +3867,6 @@ private:
     for (const auto& operand : barrier.operands) {
       MQT_OQ3_TRY_ASSIGN(selection, resolveQubitOperand(operand));
       qubits.insert(qubits.end(), selection.begin(), selection.end());
-    }
-
-    if (llvm::any_of(qubits, [](const auto& qubit) {
-          return qubit.slice.has_value();
-        })) {
-      return fail(location, "runtime barrier slices are not supported");
     }
 
     if (barrier.operands.size() > 1) {
@@ -4694,19 +4673,15 @@ private:
           MQT_OQ3_TRY_ASSIGN(value, analyzeBitVectorExpression(*condition.lhs));
           lhs = value;
           width = program.bitVectorExpressions[*lhs].width;
-          MQT_OQ3_TRY_ASSIGN(
-              other, analyzeBitVectorExpression(
-                         *condition.rhs, width,
-                         program.bitVectorExpressions[*lhs].dynamicWidth));
+          MQT_OQ3_TRY_ASSIGN(other,
+                             analyzeBitVectorExpression(*condition.rhs, width));
           rhs = other;
         } else {
           MQT_OQ3_TRY_ASSIGN(value, analyzeBitVectorExpression(*condition.rhs));
           rhs = value;
           width = program.bitVectorExpressions[*rhs].width;
-          MQT_OQ3_TRY_ASSIGN(
-              other, analyzeBitVectorExpression(
-                         *condition.lhs, width,
-                         program.bitVectorExpressions[*rhs].dynamicWidth));
+          MQT_OQ3_TRY_ASSIGN(other,
+                             analyzeBitVectorExpression(*condition.lhs, width));
           lhs = other;
         }
         return addCondition({
@@ -4984,18 +4959,15 @@ private:
     }
 
     std::vector<std::vector<QubitReference>> selections;
-    const bool dynamic = llvm::any_of(call.operands, [&](const auto& operand) {
-      return isDynamicSlice(operand.slice);
-    });
     size_t broadcastWidth = 1;
     std::optional<size_t> registerWidth;
     for (const auto& operand : call.operands) {
-      MQT_OQ3_TRY_ASSIGN(selection, resolveQubitOperand(operand, dynamic));
+      MQT_OQ3_TRY_ASSIGN(selection, resolveQubitOperand(operand));
       const auto* symbol = lookup(operand.identifier);
       const bool registerOperand = !operand.index && symbol != nullptr &&
                                    symbol->kind == SymbolKind::Register &&
                                    !program.registers[symbol->id].isScalar;
-      if (!dynamic && registerOperand) {
+      if (registerOperand) {
         if (registerWidth && *registerWidth != selection.size()) {
           return fail(call.location,
                       "all broadcasting operands must have the same width");
@@ -5026,9 +4998,6 @@ private:
       llvm::DenseMap<RegisterId, SmallVector<const QubitReference*>>
           registerQubits;
       for (const auto& qubit : application.qubits) {
-        if (qubit.slice) {
-          continue;
-        }
         if (!qubit.provenIndex &&
             !staticQubits.insert({qubit.kind, qubit.symbol, qubit.index})
                  .second) {
@@ -5061,7 +5030,7 @@ private:
   }
 
   [[nodiscard]] FailureOr<std::vector<QubitReference>>
-  resolveQubitOperand(const Operand& operand, bool preserveRanges = false) {
+  resolveQubitOperand(const Operand& operand) {
     if (operand.hardwareQubit) {
       if (!activeGate_.empty()) {
         return fail(operand.location,
@@ -5103,32 +5072,25 @@ private:
     if (operand.slice && program.registers[reg].isScalar) {
       return fail(operand.location, "cannot slice a scalar qubit");
     }
-    if (operand.slice && !isDynamicSlice(operand.slice)) {
-      MQT_OQ3_TRY_ASSIGN(indices, constantSliceIndices(*operand.slice, width,
-                                                       operand.location));
-      if (!preserveRanges) {
-        std::vector<QubitReference> selection;
-        for (const auto index : indices) {
-          selection.push_back({
-              .kind = QubitReferenceKind::Register,
-              .symbol = reg,
-              .index = index,
-          });
-        }
-        return selection;
+    const auto makeReference = [&](ExpressionId index) {
+      QubitReference result{.symbol = reg};
+      const auto& expression = program.expressions[index];
+      if (expression.kind == ExpressionKind::Constant) {
+        result.index =
+            static_cast<uint64_t>(std::get<int64_t>(expression.constant));
+      } else {
+        result.provenIndex = index;
       }
-    }
-    if (operand.slice || (preserveRanges && !operand.index &&
-                          !program.registers[reg].isScalar)) {
-      MQT_OQ3_TRY_ASSIGN(slice, analyzeSlice(operand.slice.value_or(Slice{}),
-                                             operand.location));
-      return std::vector<QubitReference>{
-          {
-              .kind = QubitReferenceKind::Register,
-              .symbol = reg,
-              .slice = slice,
-          },
-      };
+      return result;
+    };
+    if (operand.slice) {
+      MQT_OQ3_TRY_ASSIGN(indices, resolveSliceIndices(*operand.slice, width,
+                                                      operand.location));
+      std::vector<QubitReference> selection;
+      for (const auto index : indices) {
+        selection.push_back(makeReference(index));
+      }
+      return selection;
     }
     if (!operand.index) {
       std::vector<QubitReference> selection;
@@ -5164,49 +5126,16 @@ private:
       return fail(operand.location,
                   "qubit index must be an integer expression");
     }
-    const auto form = buildAffineForm(index);
-    if (!form) {
+    const auto normalized = normalizeProvenIndex(index, width);
+    if (!normalized) {
       return fail(operand.location,
                   "cannot prove that qubit index is in bounds");
     }
-    if (isAffineConstant(*form)) {
-      auto value = static_cast<int64_t>(form->constant);
-      if (value < 0) {
-        value += static_cast<int64_t>(width);
-      }
-      if (value < 0 || std::cmp_greater_equal(value, width)) {
-        return fail(operand.location,
-                    "cannot prove that qubit index is in bounds");
-      }
-      return std::vector<QubitReference>{
-          {
-              .kind = QubitReferenceKind::Register,
-              .symbol = reg,
-              .index = static_cast<uint64_t>(value),
-              .provenIndex = std::nullopt,
-          },
-      };
-    }
-    if (!provesLowerBound(*form, llvm::DynamicAPInt(0)) ||
-        !provesUpperBound(
-            *form, unsignedCoefficient(static_cast<uint64_t>(width - 1)))) {
-      return fail(operand.location,
-                  "cannot prove that qubit index is in bounds");
-    }
-    const auto expandedIndex = expandAffineScalarValues(index);
-    assert(expandedIndex &&
-           "proven affine indices must have expandable expressions");
-    return std::vector<QubitReference>{
-        {
-            .kind = QubitReferenceKind::Register,
-            .symbol = reg,
-            .provenIndex = expandedIndex,
-        },
-    };
+    return std::vector<QubitReference>{makeReference(*normalized)};
   }
 
   [[nodiscard]] FailureOr<std::vector<frontend::BitReference>>
-  resolveBits(const BitReference& reference, bool preserveRanges = false) {
+  resolveBits(const BitReference& reference) {
     const auto* symbol = lookup(reference.identifier);
     if (symbol == nullptr || symbol->kind != SymbolKind::Register ||
         program.registers[symbol->id].kind == RegisterKind::Qubit) {
@@ -5218,22 +5147,26 @@ private:
     if (reference.slice && program.registers[reg].isScalar) {
       return fail(reference.location, "cannot slice a scalar bit");
     }
-    if (reference.slice && !isDynamicSlice(reference.slice)) {
-      MQT_OQ3_TRY_ASSIGN(indices, constantSliceIndices(*reference.slice, width,
-                                                       reference.location));
-      if (!preserveRanges) {
-        std::vector<frontend::BitReference> result;
-        for (const auto index : indices) {
-          result.push_back({.reg = reg, .index = index});
-        }
-        return result;
+    const auto makeReference = [&](ExpressionId index) {
+      frontend::BitReference result{.reg = reg};
+      const auto& expression = program.expressions[index];
+      if (expression.kind == ExpressionKind::Constant) {
+        result.index =
+            static_cast<uint64_t>(std::get<int64_t>(expression.constant));
+      } else {
+        result.dynamicIndex = index;
+        result.provenInBounds = true;
       }
-    }
-    if (reference.slice || (preserveRanges && !reference.index &&
-                            !program.registers[reg].isScalar)) {
-      MQT_OQ3_TRY_ASSIGN(slice, analyzeSlice(reference.slice.value_or(Slice{}),
-                                             reference.location));
-      return std::vector<frontend::BitReference>{{.reg = reg, .slice = slice}};
+      return result;
+    };
+    if (reference.slice) {
+      MQT_OQ3_TRY_ASSIGN(indices, resolveSliceIndices(*reference.slice, width,
+                                                      reference.location));
+      std::vector<frontend::BitReference> result;
+      for (const auto index : indices) {
+        result.push_back(makeReference(index));
+      }
+      return result;
     }
     if (!reference.index) {
       std::vector<frontend::BitReference> result;
@@ -5262,9 +5195,22 @@ private:
       return fail(reference.location,
                   "classical bit index must be an integer expression");
     }
+    if (const auto normalized = normalizeProvenIndex(dynamic, width)) {
+      return std::vector<frontend::BitReference>{makeReference(*normalized)};
+    }
     return std::vector<frontend::BitReference>{
         {.reg = reg, .dynamicIndex = dynamic},
     };
+  }
+
+  [[nodiscard]] bool
+  isWholeRegisterSelection(ArrayRef<frontend::BitReference> selection,
+                           RegisterId reg) const {
+    return selection.size() == program.registers[reg].width &&
+           llvm::all_of(llvm::enumerate(selection), [](const auto& entry) {
+             const auto& bit = entry.value();
+             return !bit.dynamicIndex && bit.index == entry.index();
+           });
   }
 
   [[nodiscard]] LogicalResult

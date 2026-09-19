@@ -87,6 +87,7 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <algorithm>
 #include <array>
 #include <cctype>
 #include <cstddef>
@@ -875,6 +876,33 @@ roundTripThroughOptimizedJeff(const qasm::OpenQASMProgram& source,
   return matchesEntry(*restored, "restored QC");
 }
 
+static void expectDDAndQIRSampling(StringRef source, StringRef expected) {
+  auto qc = QCProgram::fromOpenQASMString(source);
+  ASSERT_TRUE(qc);
+  EXPECT_EQ(qc->str().find("i128"), std::string::npos);
+  EXPECT_EQ(qc->str().find("cf.assert"), std::string::npos);
+  auto qco = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qco);
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(qco->module())));
+  ASSERT_TRUE(qco->cleanup());
+  auto sampled = qco::sample(mlir::mqt::getEntryPoint(qco->module()), 1, 42);
+  ASSERT_TRUE(succeeded(sampled));
+  ASSERT_EQ(sampled->size(), 1);
+  EXPECT_EQ(sampled->begin()->first, expected.str());
+  auto restored = std::move(*qco).intoQC();
+  ASSERT_TRUE(restored);
+  auto qir = std::move(*restored).intoQIR(QIRProfile::Adaptive);
+  ASSERT_TRUE(qir);
+  const auto ir = qir->llvmIR();
+  ASSERT_TRUE(ir);
+  ::qir::JitSession session(*ir, "openqasm-regression",
+                            ::qir::Execution::Sampling, 42);
+  session.runtime().disableOutput();
+  std::vector<std::string> shots;
+  ASSERT_EQ(session.sample(1, shots), 0);
+  EXPECT_EQ(shots, std::vector<std::string>{expected.str()});
+}
+
 namespace {
 
 class OpenQASMClassicalSliceTest
@@ -893,7 +921,6 @@ const auto CLASSICAL_SLICE_CASES =
         {"", "uint[3](b[0:n]) == 5"},
         {"", "bool(b[0:n])"},
         {"b[1:n+1] = b[0:n];", "b == \"111011\""},
-        {"b[0:uint[3](b[0:2])] = \"010110\";", "b == \"010110\""},
         {"b[n:-1:0] = \"011\";", "b[0:2] == \"110\""},
         {"bit[4] a; a[0:1] = \"10\"; bit[2] c = a[0:1];", "c == \"10\""},
         {"b[0:n] = 1 | 2;", "b[0:2] == \"011\""},
@@ -910,70 +937,143 @@ const auto CLASSICAL_SLICE_CASES =
 TEST_P(OpenQASMClassicalSliceTest, ExecutesThroughQCO) {
   const auto& [statements, result] = GetParam();
   SCOPED_TRACE(statements.str() + result.str());
-  const auto source = "OPENQASM 3.1; qubit q; reset q; x q; "
-                      "bit selector = measure q; int n = 1 + int(selector); "
+  const auto source = "OPENQASM 3.1; qubit q; int n = 2; "
                       "bit[6] b = \"110101\"; " +
                       statements.str() + " reset q; if (" + result.str() +
                       ") { x q; } output bit ok; ok = measure q;";
-  auto qc = QCProgram::fromOpenQASMString(source);
-  ASSERT_TRUE(qc);
-  auto qco = std::move(*qc).intoQCO();
-  ASSERT_TRUE(qco);
-  ASSERT_TRUE(succeeded(qco::verifyLinearity(qco->module())));
-  auto restored = std::move(*qco).intoQC();
-  ASSERT_TRUE(restored);
-  auto qir = std::move(*restored).intoQIR(QIRProfile::Adaptive);
-  ASSERT_TRUE(qir);
-  const auto ir = qir->llvmIR();
-  ASSERT_TRUE(ir);
-  ::qir::JitSession session(*ir, "classical-slices", ::qir::Execution::Sampling,
-                            42);
-  session.runtime().disableOutput();
-  std::vector<std::string> shots;
-  ASSERT_EQ(session.sample(1, shots), 0);
-  EXPECT_EQ(shots, std::vector<std::string>{"1"});
+  expectDDAndQIRSampling(source, "1");
 }
 
 INSTANTIATE_TEST_SUITE_P(Slices, OpenQASMClassicalSliceTest,
                          testing::ValuesIn(CLASSICAL_SLICE_CASES));
 
-TEST(OpenQASMCompilerOutputTest, ExecutesMeasurementSizedSlicesThroughQCO) {
+TEST(OpenQASMCompilerOutputTest, ExecutesAffineSlicesThroughDDAndQIR) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
 include "stdgates.inc";
 qubit[4] q;
+qubit[4] r;
 reset q;
-x q[0];
-bit selector = measure q[0];
-int last = 1 + int(selector);
-reset q;
-x q[0:last];
-cx q[0:last], q[1:last + 1];
+reset r;
+for int i in [0:3] { x q[i:i]; }
+for int i in [0:1] { cx q[2*i:2*i+1], r[2*i:2*i+1]; }
 output bit[4] result;
-result[3:-1:1] = measure q[0:last];
-result[0] = measure q[3];
+result = measure r;
 )qasm";
-  auto qc = QCProgram::fromOpenQASMString(source.str());
+  expectDDAndQIRSampling(source, "1111");
+}
+
+TEST(OpenQASMCompilerOutputTest, ExecutesInclusiveRangesAtIntegerLimits) {
+  const auto cases = std::to_array<std::pair<StringRef, int>>({
+      {"[hi-1:hi]", 2},
+      {"[lo+1:-1:lo]", 2},
+      {"[lo:hi:hi]", 3},
+      {"[hi:lo:lo]", 2},
+      {"[uint(-2):uint(-1)]", 2},
+      {"[hi-1+delta:hi]", 2},
+      {"[lo+1+delta:-1:lo]", 2},
+      {"[lo+delta:hi:hi]", 3},
+      {"[uint(-2)+uint(delta):uint(-1)]", 2},
+      {"[uint(delta):uint(-1):uint(-1)]", 2},
+      {"[int(-1)+delta:-1:uint(-3)]", 3},
+      {"[2+delta:1]", 0},
+      {"[uint(delta):-1:uint(1)]", 0},
+  });
+  for (const auto& [range, count] : cases) {
+    for (const auto tail : {
+             StringRef{},
+             StringRef{"continue;"},
+             StringRef{"if (count == 2) { break; }"},
+         }) {
+      SCOPED_TRACE(range.str() + tail.str());
+      const auto expectedCount =
+          tail.starts_with("if") ? std::min(count, 2) : count;
+      const auto source =
+          "OPENQASM 3.1; qubit q; reset q; bit zero = measure q; "
+          "int delta = int(zero); const int hi = 9223372036854775807; "
+          "const int lo = -9223372036854775807 - 1; int count = 0; "
+          "for int i in " +
+          range.str() + " { count += 1; " + tail.str() +
+          " } if (count == " + std::to_string(expectedCount) +
+          ") { x q; } output bit ok; ok = measure q;";
+      expectDDAndQIRSampling(source, "1");
+    }
+  }
+}
+
+TEST(OpenQASMCompilerOutputTest, ExecutesAffineClassicalSlices) {
+  expectDDAndQIRSampling(R"qasm(
+OPENQASM 3.1;
+qubit q;
+bit[6] b = "000001";
+for int i in [0:4] {
+  int next = uint[64](i) + uint[64](1);
+  b[next:next] = b[uint[64](i):uint[64](i)];
+}
+reset q;
+if (b == "111111") { x q; }
+output bit ok;
+ok = measure q;
+)qasm",
+                         "1");
+}
+
+TEST(OpenQASMCompilerOutputTest, ExecutesSignedIntegerPowersAtMachineLimits) {
+  for (const auto* const expression : {
+           "(-2 + delta) ** 63 == -9223372036854775807 - 1",
+           "(3037000499 + delta) ** 2 == 9223372030926249001",
+           "delta ** 0 == 1",
+       }) {
+    SCOPED_TRACE(expression);
+    auto qc = QCProgram::fromOpenQASMString(
+        "OPENQASM 3.1; qubit q; reset q; bit zero = measure q; "
+        "int delta = int(zero); if (" +
+        std::string(expression) + ") { x q; } output bit ok; ok = measure q;");
+    ASSERT_TRUE(qc);
+    EXPECT_EQ(qc->str().find("i128"), std::string::npos);
+    auto qir = std::move(*qc).intoQIR(QIRProfile::Adaptive);
+    ASSERT_TRUE(qir);
+    const auto ir = qir->llvmIR();
+    ASSERT_TRUE(ir);
+    ::qir::JitSession session(*ir, "openqasm-integer-power",
+                              ::qir::Execution::Sampling, 42);
+    session.runtime().disableOutput();
+    std::vector<std::string> shots;
+    ASSERT_EQ(session.sample(1, shots), 0);
+    EXPECT_EQ(shots, std::vector<std::string>{"1"});
+  }
+}
+
+TEST(OpenQASMCompilerOutputTest, PreservesClassicalSliceInterchange) {
+  constexpr StringLiteral source = R"qasm(
+OPENQASM 3.1;
+bit[6] b = "110101";
+bit[3] a = b[5:-2:0];
+b[1:3] = b[0:2];
+qubit q;
+reset q;
+if (a == "001" && b == "111011") { x q; }
+output bit ok;
+ok = measure q;
+)qasm";
+  auto qc = QCProgram::fromOpenQASMString(source);
   ASSERT_TRUE(qc);
+  ASSERT_TRUE(qc->cleanup());
+  const auto exported = qc->toOpenQASM3();
+  ASSERT_TRUE(exported);
+  expectDDAndQIRSampling(exported->source(), "1");
   auto qco = std::move(*qc).intoQCO();
   ASSERT_TRUE(qco);
-  ASSERT_TRUE(succeeded(verify(qco->module())));
-  ASSERT_TRUE(succeeded(qco::verifyLinearity(qco->module())));
   ASSERT_TRUE(qco->cleanup());
-  auto restored = std::move(*qco).intoQC();
+  auto jeff = std::move(*qco).intoJeff();
+  ASSERT_TRUE(jeff);
+  auto restored = std::move(*jeff).intoQCO();
   ASSERT_TRUE(restored);
-  ASSERT_TRUE(succeeded(verify(restored->module())));
-  auto qir = std::move(*restored).intoQIR(QIRProfile::Adaptive);
-  ASSERT_TRUE(qir);
-  const auto ir = qir->llvmIR();
-  ASSERT_TRUE(ir);
-  ::qir::JitSession session(*ir, "register-slices", ::qir::Execution::Sampling,
-                            42);
-  session.runtime().disableOutput();
-  std::vector<std::string> shots;
-  ASSERT_EQ(session.sample(1, shots), 0);
-  // QIR output records list register bits in increasing index order.
-  EXPECT_EQ(shots, std::vector<std::string>{"1101"});
+  auto counts =
+      qco::sample(mlir::mqt::getEntryPoint(restored->module()), 1, 42);
+  ASSERT_TRUE(succeeded(counts));
+  ASSERT_EQ(counts->size(), 1);
+  EXPECT_EQ(counts->begin()->first, "1");
 }
 
 TEST(OpenQASMCompilerOutputTest, LowersAffineQuantumLoopsToJeff) {
@@ -1255,23 +1355,6 @@ TEST_P(OpenQASMJeffPipelineTest, TraversesTheExplicitJeffRoundTrip) {
                      OutputRecordingShape::AdaptiveArrays);
 }
 
-class OpenQASMJeffBoundaryTest
-    : public testing::TestWithParam<qasm::OpenQASMProgram> {};
-
-TEST_P(OpenQASMJeffBoundaryTest, FailsAtQCOToJeff) {
-  const auto& source = GetParam();
-  auto qc = QCProgram::fromOpenQASMString(source.source.str());
-  ASSERT_TRUE(qc) << source.name.str() << ": OpenQASM to QC";
-  auto qco = std::move(*qc).intoQCO();
-  ASSERT_TRUE(qco) << source.name.str() << ": QC to QCO";
-  ASSERT_TRUE(qco->cleanup()) << source.name.str() << ": QCO cleanup";
-  ASSERT_TRUE(qco->runPassPipeline("mqt-qco-default"))
-      << source.name.str() << ": QCO optimization";
-  ASSERT_TRUE(qco->cleanup()) << source.name.str() << ": optimized QCO cleanup";
-  EXPECT_FALSE(std::move(*qco).intoJeff())
-      << source.name.str() << ": unexpectedly converted to jeff";
-}
-
 TEST_P(OpenQASMBasePipelineTest, ReachesBaseAndAdaptiveQIR) {
   const auto& source = GetParam();
   std::optional<QCProgram> restoredQC;
@@ -1298,10 +1381,6 @@ INSTANTIATE_TEST_SUITE_P(OpenQASMPrograms, OpenQASMBasePipelineTest,
 
 INSTANTIATE_TEST_SUITE_P(OpenQASMPrograms, OpenQASMJeffPipelineTest,
                          testing::ValuesIn(qasm::jeffCompatiblePrograms()),
-                         openQASMProgramName);
-
-INSTANTIATE_TEST_SUITE_P(OpenQASMPrograms, OpenQASMJeffBoundaryTest,
-                         testing::ValuesIn(qasm::jeffIncompatiblePrograms()),
                          openQASMProgramName);
 
 } // namespace
