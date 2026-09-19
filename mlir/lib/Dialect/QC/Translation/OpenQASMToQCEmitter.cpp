@@ -922,25 +922,34 @@ private:
     return index;
   }
 
+  [[nodiscard]] Value emitArrayIndex(OpBuilder& opBuilder,
+                                     frontend::ExpressionId expression,
+                                     int64_t extent) {
+    const auto& index = program.expressions.at(expression);
+    if (index.kind == frontend::ExpressionKind::Constant) {
+      return arith::ConstantIndexOp::create(opBuilder, builder.getLoc(),
+                                            std::get<int64_t>(index.constant));
+    }
+    auto checked = emitCheckedIndex(opBuilder, expression, extent,
+                                    "array index is out of bounds");
+    if (!checked) {
+      return {};
+    }
+    return arith::IndexCastOp::create(opBuilder, builder.getLoc(),
+                                      opBuilder.getIndexType(), checked);
+  }
+
   [[nodiscard]] FailureOr<SmallVector<Value>>
   emitArrayIndices(OpBuilder& opBuilder, frontend::ArrayId array,
                    ArrayRef<frontend::ExpressionId> expressions) {
     SmallVector<Value> indices;
     for (const auto [dimension, expression] : llvm::enumerate(expressions)) {
-      const auto& index = program.expressions.at(expression);
-      if (index.kind == frontend::ExpressionKind::Constant) {
-        indices.push_back(arith::ConstantIndexOp::create(
-            opBuilder, builder.getLoc(), std::get<int64_t>(index.constant)));
-        continue;
-      }
-      auto checked = emitCheckedIndex(opBuilder, expression,
-                                      program.arrays.at(array).shape[dimension],
-                                      "array index is out of bounds");
-      if (!checked) {
+      auto index = emitArrayIndex(opBuilder, expression,
+                                  program.arrays.at(array).shape[dimension]);
+      if (!index) {
         return failure();
       }
-      indices.push_back(arith::IndexCastOp::create(
-          opBuilder, builder.getLoc(), opBuilder.getIndexType(), checked));
+      indices.push_back(index);
     }
     return indices;
   }
@@ -1846,6 +1855,64 @@ private:
     }
   }
 
+  /// Return checked offset, size, and stride as index values.
+  [[nodiscard]] std::array<Value, 3>
+  emitArrayRange(const frontend::ArrayRange& range, int64_t extent) {
+    auto step = emitExpression(builder, range.step, {});
+    if (!step) {
+      return {};
+    }
+    const auto type = program.expressions.at(range.step).type;
+    step = emitScalarCast(builder, builder.getLoc(), step, type, type);
+    auto zero = arith::ConstantIntOp::create(builder, 0, 64);
+    auto one = arith::ConstantIntOp::create(builder, 1, 64);
+    auto last = arith::ConstantIntOp::create(builder, extent - 1, 64);
+    if (type == frontend::ScalarType::Uint) {
+      auto fits = arith::CmpIOp::create(
+          builder, arith::CmpIPredicate::ule, step,
+          arith::ConstantIntOp::create(
+              builder, std::numeric_limits<int64_t>::max(), 64));
+      cf::AssertOp::create(builder, fits, "array range step must fit in i64");
+    }
+    auto nonzero =
+        arith::CmpIOp::create(builder, arith::CmpIPredicate::ne, step, zero);
+    cf::AssertOp::create(builder, nonzero, "array range step must not be zero");
+    auto positive =
+        arith::CmpIOp::create(builder, arith::CmpIPredicate::sgt, step, zero);
+    const auto bound = [&](std::optional<frontend::ExpressionId> expression,
+                           Value fallback) -> Value {
+      return expression ? emitCheckedIndex(builder, *expression, extent,
+                                           "array range is out of bounds")
+                        : fallback;
+    };
+    auto start = bound(range.start,
+                       arith::SelectOp::create(builder, positive, zero, last));
+    auto stop = bound(range.stop,
+                      arith::SelectOp::create(builder, positive, last, zero));
+    if (!start || !stop || emissionBudget.isExhausted()) {
+      return {};
+    }
+    auto forward =
+        arith::CmpIOp::create(builder, arith::CmpIPredicate::sge, stop, start);
+    auto backward =
+        arith::CmpIOp::create(builder, arith::CmpIPredicate::sge, start, stop);
+    auto nonempty =
+        arith::SelectOp::create(builder, positive, forward, backward);
+    cf::AssertOp::create(builder, nonempty, "array range must not be empty");
+    // Checked endpoints bound the difference, even for an INT64_MIN step.
+    auto distance = arith::SubIOp::create(builder, stop, start);
+    auto quotient = arith::DivSIOp::create(builder, distance, step);
+    auto size = arith::AddIOp::create(builder, quotient, one);
+    auto single =
+        arith::CmpIOp::create(builder, arith::CmpIPredicate::eq, size, one);
+    step = arith::SelectOp::create(builder, single, one, step);
+    return {
+        arith::IndexCastOp::create(builder, builder.getIndexType(), start),
+        arith::IndexCastOp::create(builder, builder.getIndexType(), size),
+        arith::IndexCastOp::create(builder, builder.getIndexType(), step),
+    };
+  }
+
   [[nodiscard]] Value
   emitArrayView(frontend::ArrayId array,
                 ArrayRef<frontend::ArraySelection> selection) {
@@ -1857,19 +1924,27 @@ private:
         })) {
       return storage;
     }
-    SmallVector<frontend::ExpressionId> expressions;
-    for (const auto& index : selection) {
-      expressions.push_back(index.offset);
-    }
-    auto indices = emitArrayIndices(builder, array, expressions);
-    if (failed(indices) || emissionBudget.isExhausted()) {
-      return {};
-    }
-    auto offsets = getAsOpFoldResult(*indices);
+    SmallVector<OpFoldResult> offsets;
     SmallVector<OpFoldResult> sizes;
     SmallVector<OpFoldResult> strides;
     SmallVector<int64_t> resultShape;
-    for (const auto& index : selection) {
+    for (const auto [dimension, index] : llvm::enumerate(selection)) {
+      if (index.runtime) {
+        auto range = emitArrayRange(*index.runtime, shape[dimension]);
+        if (!range[0]) {
+          return {};
+        }
+        offsets.push_back(getAsOpFoldResult(range[0]));
+        sizes.push_back(getAsOpFoldResult(range[1]));
+        strides.push_back(getAsOpFoldResult(range[2]));
+        resultShape.push_back(ShapedType::kDynamic);
+        continue;
+      }
+      auto offset = emitArrayIndex(builder, index.offset, shape[dimension]);
+      if (!offset || emissionBudget.isExhausted()) {
+        return {};
+      }
+      offsets.push_back(getAsOpFoldResult(offset));
       sizes.push_back(builder.getIndexAttr(std::max(int64_t{1}, index.size)));
       strides.push_back(builder.getIndexAttr(index.stride));
       if (index.size != 0) {
@@ -1888,6 +1963,20 @@ private:
     auto source = emitArrayView(statement.source, statement.sourceIndices);
     auto target = emitArrayView(statement.target, statement.targetIndices);
     if (source && target && source != target && !emissionBudget.isExhausted()) {
+      auto sourceType = cast<MemRefType>(source.getType());
+      auto targetType = cast<MemRefType>(target.getType());
+      for (int64_t dimension = 0; dimension < sourceType.getRank();
+           ++dimension) {
+        if (sourceType.isDynamicDim(dimension) ||
+            targetType.isDynamicDim(dimension)) {
+          auto from = memref::DimOp::create(builder, source, dimension);
+          auto to = memref::DimOp::create(builder, target, dimension);
+          auto matches = arith::CmpIOp::create(
+              builder, arith::CmpIPredicate::eq, from, to);
+          cf::AssertOp::create(builder, matches,
+                               "array copy requires matching shapes");
+        }
+      }
       const auto isPrefix = [&](frontend::ArrayId array,
                                 ArrayRef<frontend::ArraySelection> selection) {
         bool retained = false;
@@ -1909,8 +1998,15 @@ private:
            !isPrefix(statement.target, statement.targetIndices))) {
         // Capture the RHS before an overlapping assignment changes it.
         auto type = cast<MemRefType>(source.getType());
+        SmallVector<Value> sizes;
+        for (int64_t dimension = 0; dimension < type.getRank(); ++dimension) {
+          if (type.isDynamicDim(dimension)) {
+            sizes.push_back(memref::DimOp::create(builder, source, dimension));
+          }
+        }
         auto snapshot = memref::AllocOp::create(
-            builder, MemRefType::get(type.getShape(), type.getElementType()));
+            builder, MemRefType::get(type.getShape(), type.getElementType()),
+            sizes);
         memref::CopyOp::create(builder, source, snapshot);
         memref::CopyOp::create(builder, snapshot, target);
         memref::DeallocOp::create(builder, snapshot);
