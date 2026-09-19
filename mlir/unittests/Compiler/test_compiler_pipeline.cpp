@@ -3708,17 +3708,12 @@ TEST_F(CompilerPipelineTest, TargetPipelinesUnrollCompositeControls) {
           auto q1 = builder.staticQubit(1);
           auto q2 = builder.staticQubit(2);
           auto q3 = builder.staticQubit(3);
-          auto [controls, targets] =
-              builder.ctrl(ValueRange{q0}, ValueRange{q1, q2, q3},
-                           [&](ValueRange args) -> SmallVector<Value> {
-                             builder.gphase(0.17);
-                             auto [a, b] = builder.cx(args[2], args[0]);
-                             return {b, builder.ry(0.37, args[1]), a};
-                           });
-          q0 = controls[0];
-          q1 = targets[0];
-          q2 = targets[1];
-          q3 = targets[2];
+          builder.ctrl(ValueRange{q0}, ValueRange{q1, q2, q3},
+                       [&](ValueRange args) -> SmallVector<Value> {
+                         builder.gphase(0.17);
+                         auto [a, b] = builder.cx(args[2], args[0]);
+                         return {b, builder.ry(0.37, args[1]), a};
+                       });
           return builder.intConstant(0);
         });
     ASSERT_TRUE(succeeded(verify(*moduleOp)));

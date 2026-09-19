@@ -21,8 +21,8 @@ class CtrlOp;
 
 namespace mlir::mqt {
 
-/// Distribute a composite control over its body; fail without changing IR if
-/// the body has fewer than two unitaries or cannot be unrolled.
+/// Distribute a verified composite control over its body; fail without changing
+/// IR if the body has fewer than two unitaries.
 [[nodiscard]] LogicalResult unrollControl(qco::CtrlOp op,
                                           RewriterBase& rewriter);
 
