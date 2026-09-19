@@ -628,7 +628,8 @@ static int runCompiler(int argc, char** argv) {
     program = loadJeffFile(inputFilename, &context);
     break;
   }
-  if (!program.mod) {
+  if (!program.mod ||
+      (!runReproducer && failed(mqt::verifyQubitLayoutOwner(*program.mod)))) {
     return 1;
   }
   if (discardLayout) {

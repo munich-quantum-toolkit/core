@@ -786,9 +786,25 @@ MQTDialect::verifyOperationAttribute(Operation* operation,
   }
   if (attribute.getName() == "mqt.layout" ||
       attribute.getName() == "mqt.layout_invalidated") {
-    if (!isa<ModuleOp>(operation)) {
+    if (!isa<func::FuncOp>(operation) || !isEntryPoint(operation)) {
       return operation->emitError(
-          "qubit layout metadata is only valid on a module");
+          "qubit layout metadata is only valid on the program entry point");
+    }
+    auto moduleOp = operation->getParentOfType<ModuleOp>();
+    if (!moduleOp) {
+      return operation->emitError("qubit layout requires a program module");
+    }
+    if (failed(verifyLayoutEntryPoint(moduleOp)) ||
+        getEntryPoint(moduleOp) != operation) {
+      return operation->emitError(
+          "qubit layout must belong to the program module's entry point");
+    }
+    for (auto parent = moduleOp->getParentOfType<ModuleOp>(); parent;
+         parent = parent->getParentOfType<ModuleOp>()) {
+      if (getEntryPoint(parent)) {
+        return operation->emitError(
+            "qubit layout cannot belong to a nested program entry point");
+      }
     }
     if (operation->hasAttr("mqt.layout") &&
         operation->hasAttr("mqt.layout_invalidated")) {

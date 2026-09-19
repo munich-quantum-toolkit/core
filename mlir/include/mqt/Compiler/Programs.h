@@ -281,7 +281,10 @@ public:
 
   /// Compile in place and return a snapshot of the input-to-site layouts.
   ///
-  /// See populateTargetCompilationWithLayoutPipeline for the input contract.
+  /// Requires one entry point with fixed-size local entry-block allocations.
+  /// Supply one distinct target site ID per input, including idle inputs, or
+  /// leave initialLayout empty for automatic placement. Returns a result only
+  /// after the complete pipeline and final linearity verification succeed.
   /// Do not rely on the program contents if compilation fails.
   [[nodiscard]] std::optional<MappingResult>
   compileForTargetWithLayout(const TargetEnvironment& environment,

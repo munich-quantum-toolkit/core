@@ -155,16 +155,17 @@ TEST_F(MQTIRTest, RoundTripsQubitLayoutProvenance) {
               },
           },
   };
-  auto moduleOp = parse("module {}");
+  auto moduleOp = parse(
+      "module { func.func @main() attributes {mqt.entry_point} { return } }");
   ASSERT_TRUE(moduleOp);
   const auto attribute = layout.toAttr(context.get());
-  (*moduleOp)->setAttr("mqt.layout", attribute);
+  mqt::getEntryPoint(*moduleOp)->setAttr("mqt.layout", attribute);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   auto restored = roundTrip(*moduleOp);
   ASSERT_TRUE(restored);
-  const auto decoded =
-      mqt::QubitLayout::fromAttr((*restored)->getAttr("mqt.layout"),
-                                 [&] { return restored->emitError(); });
+  const auto decoded = mqt::QubitLayout::fromAttr(
+      mqt::getEntryPoint(*restored)->getAttr("mqt.layout"),
+      [&] { return restored->emitError(); });
   ASSERT_TRUE(succeeded(decoded));
   EXPECT_EQ(decoded->toAttr(context.get()), attribute);
   EXPECT_EQ(decoded->initial, layout.initial);
@@ -174,54 +175,75 @@ TEST_F(MQTIRTest, RoundTripsQubitLayoutProvenance) {
 }
 
 TEST_F(MQTIRTest, InvalidatesAndExplicitlyDiscardsQubitLayouts) {
-  auto moduleOp = parse("module {}");
+  auto moduleOp = parse(
+      "module { func.func @main() attributes {mqt.entry_point} { return } }");
   ASSERT_TRUE(moduleOp);
   EXPECT_TRUE(succeeded(mqt::requireNoQubitLayout(*moduleOp)));
   mqt::invalidateQubitLayout(*moduleOp);
-  EXPECT_FALSE((*moduleOp)->hasAttr("mqt.layout_invalidated"));
+  EXPECT_FALSE(
+      mqt::getEntryPoint(*moduleOp)->hasAttr("mqt.layout_invalidated"));
   const mqt::QubitLayout layout{
       .physicalSize = 1,
       .initial = {0},
       .outputOrder = {0},
   };
-  (*moduleOp)->setAttr("mqt.layout", layout.toAttr(context.get()));
+  mqt::getEntryPoint(*moduleOp)->setAttr("mqt.layout",
+                                         layout.toAttr(context.get()));
   EXPECT_TRUE(failed(mqt::requireNoQubitLayout(*moduleOp)));
   mqt::invalidateQubitLayout(*moduleOp);
-  EXPECT_FALSE((*moduleOp)->hasAttr("mqt.layout"));
-  EXPECT_TRUE((*moduleOp)->hasAttr("mqt.layout_invalidated"));
+  EXPECT_FALSE(mqt::getEntryPoint(*moduleOp)->hasAttr("mqt.layout"));
+  EXPECT_TRUE(mqt::getEntryPoint(*moduleOp)->hasAttr("mqt.layout_invalidated"));
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
   EXPECT_TRUE(roundTrip(*moduleOp));
   EXPECT_TRUE(failed(mqt::requireNoQubitLayout(*moduleOp)));
   mqt::discardQubitLayout(*moduleOp);
   EXPECT_TRUE(succeeded(mqt::requireNoQubitLayout(*moduleOp)));
-  (*moduleOp)->setAttr("mqt.layout", layout.toAttr(context.get()));
+  mqt::getEntryPoint(*moduleOp)->setAttr("mqt.layout",
+                                         layout.toAttr(context.get()));
   mqt::discardQubitLayout(*moduleOp);
   EXPECT_TRUE(succeeded(mqt::requireNoQubitLayout(*moduleOp)));
 }
 
-TEST_F(MQTIRTest, RejectsAndDiscardsNestedQubitLayouts) {
+TEST_F(MQTIRTest, RejectsUnsupportedLayoutOwners) {
   for (const bool invalidated : {false, true}) {
     SCOPED_TRACE(invalidated);
-    auto moduleOp = parse("module { module @nested { module @leaf {} } }");
-    ASSERT_TRUE(moduleOp);
-    auto nested = *moduleOp->getOps<ModuleOp>().begin();
-    auto leaf = *nested.getOps<ModuleOp>().begin();
-    if (invalidated) {
-      leaf->setAttr("mqt.layout_invalidated", UnitAttr::get(context.get()));
-    } else {
-      leaf->setAttr("mqt.layout", mqt::QubitLayout{}.toAttr(context.get()));
+    for (const StringRef owner : {"module", "helper", "nested", "competing"}) {
+      SCOPED_TRACE(owner.str());
+      auto moduleOp = parse(R"mlir(module {
+        func.func @main() attributes {mqt.entry_point} { return }
+        func.func @helper() { return }
+        module @nested {
+          func.func @child() { return }
+        }
+      })mlir");
+      ASSERT_TRUE(moduleOp);
+      auto entry = mqt::getEntryPoint(*moduleOp);
+      auto helper = moduleOp->lookupSymbol<func::FuncOp>("helper");
+      auto nested = *moduleOp->getOps<ModuleOp>().begin();
+      auto child = nested.lookupSymbol<func::FuncOp>("child");
+      Operation* annotated = entry;
+      if (owner == "module") {
+        annotated = moduleOp->getOperation();
+      } else if (owner == "helper") {
+        annotated = helper;
+      } else {
+        mqt::setEntryPoint(child);
+        if (owner == "nested") {
+          annotated = child;
+        }
+      }
+      annotated->setAttr(
+          invalidated ? "mqt.layout_invalidated" : "mqt.layout",
+          invalidated ? Attribute(UnitAttr::get(context.get()))
+                      : Attribute(mqt::QubitLayout{}.toAttr(context.get())));
+      EXPECT_TRUE(failed(verify(*moduleOp)));
     }
-    EXPECT_TRUE(failed(mqt::requireNoQubitLayout(*moduleOp)));
-    mqt::discardQubitLayout(*moduleOp);
-    EXPECT_FALSE(leaf->hasAttr("mqt.layout"));
-    EXPECT_FALSE(leaf->hasAttr("mqt.layout_invalidated"));
-    EXPECT_TRUE(succeeded(mqt::requireNoQubitLayout(*moduleOp)));
-    EXPECT_TRUE(succeeded(verify(*moduleOp)));
   }
 }
 
 TEST_F(MQTIRTest, RejectsMalformedQubitLayoutSchema) {
-  auto moduleOp = parse("module {}");
+  auto moduleOp = parse(
+      "module { func.func @main() attributes {mqt.entry_point} { return } }");
   ASSERT_TRUE(moduleOp);
   const auto emit = [&] { return moduleOp->emitError(); };
   EXPECT_TRUE(failed(mqt::QubitLayout::fromAttr({}, emit)));
@@ -279,10 +301,12 @@ TEST_F(MQTIRTest, RejectsMalformedQubitLayoutSchema) {
   for (const auto* const text : invalidGroups) {
     reject("registers", parseAttr(text));
   }
-  (*moduleOp)->setAttr("mqt.layout_invalidated", builder.getStringAttr("bad"));
+  mqt::getEntryPoint(*moduleOp)->setAttr("mqt.layout_invalidated",
+                                         builder.getStringAttr("bad"));
   EXPECT_TRUE(failed(verify(*moduleOp)));
-  (*moduleOp)->setAttr("mqt.layout_invalidated", builder.getUnitAttr());
-  (*moduleOp)->setAttr("mqt.layout", attribute);
+  mqt::getEntryPoint(*moduleOp)->setAttr("mqt.layout_invalidated",
+                                         builder.getUnitAttr());
+  mqt::getEntryPoint(*moduleOp)->setAttr("mqt.layout", attribute);
   EXPECT_TRUE(failed(verify(*moduleOp)));
   EXPECT_FALSE(parse(R"mlir(module {
     func.func private @bad() attributes {mqt.layout_invalidated}

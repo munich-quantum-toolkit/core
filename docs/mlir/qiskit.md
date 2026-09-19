@@ -185,10 +185,10 @@ Other powers require canonicalization or synthesis.
 
 ### Transpiler layouts
 
-The Qiskit 2.5 adapter preserves `TranspileLayout` in `mqt.layout` and
-reconstructs it on export. Import leaves gates on their circuit wires without
-reapplying the layout. Core stores no Python objects and calls no Qiskit
-transpiler algorithms.
+The Qiskit 2.5 adapter preserves `TranspileLayout` in `mqt.layout` on the
+program's sole `mqt.entry_point` function and reconstructs it on export. Import
+leaves gates on their circuit wires without reapplying the layout. Core stores
+no Python objects and calls no Qiskit transpiler algorithms.
 
 Supported layouts include partial assignments, unused physical positions, loose
 and ancillary qubits, source registers, and independent output-wire ordering.

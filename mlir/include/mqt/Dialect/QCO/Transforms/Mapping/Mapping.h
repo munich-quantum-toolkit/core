@@ -10,13 +10,16 @@
 
 #pragma once
 
+#include "mqt/Compiler/TargetCompilation.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 
 #include "mlir/Pass/Pass.h"
 #include "mlir/Support/LogicalResult.h"
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/SmallVector.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 
@@ -24,30 +27,27 @@ namespace mlir {
 
 class CompilerTarget;
 class ModuleOp;
-struct MappingResult;
 
 namespace qco {
 
-/// Transient state shared only by passes in one layout-tracking pipeline.
-struct LayoutTracking;
-std::shared_ptr<LayoutTracking>
-createLayoutTracking(MappingResult& result,
-                     llvm::ArrayRef<int64_t> initialLayout);
+/// Scratch state owned by one synchronous compileForTargetWithLayout call.
+/// Passes borrow it for that invocation only; do not nest or reuse them.
+struct LayoutTracking {
+  llvm::ArrayRef<int64_t> requested;
+  MappingResult result;
+  llvm::SmallVector<size_t> sourceToProgram;
+};
 /// Record input slots during target preparation.
 [[nodiscard]] LogicalResult prepareLayout(ModuleOp moduleOp,
                                           const CompilerTarget& target,
                                           LayoutTracking& tracking);
-std::unique_ptr<Pass>
-createLayoutResultPass(std::shared_ptr<LayoutTracking> tracking);
-std::unique_ptr<Pass>
-createMappingPass(const MappingPassOptions& options,
-                  std::shared_ptr<LayoutTracking> tracking);
+std::unique_ptr<Pass> createMappingPass(const MappingPassOptions& options,
+                                        LayoutTracking* tracking);
 
 /// Create a deterministic placement pass for a compiler target.
 std::unique_ptr<Pass> createPlacementPass(const CompilerTarget& target);
-std::unique_ptr<Pass>
-createPlacementPass(const CompilerTarget& target,
-                    std::shared_ptr<LayoutTracking> tracking);
+std::unique_ptr<Pass> createPlacementPass(const CompilerTarget& target,
+                                          LayoutTracking* tracking);
 
 } // namespace qco
 } // namespace mlir

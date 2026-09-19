@@ -58,14 +58,17 @@ struct QubitLayout {
            llvm::function_ref<InFlightDiagnostic()> emitError);
 };
 
-/// Invalidate retained layout provenance in this module and its nested modules.
-/// Mark the root too, so nested module removal cannot erase the discard
-/// requirement.
+/// Require one entry point directly in the module and no nested entry points.
+[[nodiscard]] LogicalResult verifyLayoutEntryPoint(ModuleOp moduleOp);
+
+/// Require any layout provenance to belong to this program's sole entry point.
+[[nodiscard]] LogicalResult verifyQubitLayoutOwner(ModuleOp moduleOp);
+
+/// Invalidate retained layout provenance on the program entry point.
 void invalidateQubitLayout(ModuleOp moduleOp);
-/// Discard retained and invalidated layout provenance throughout the module
-/// tree.
+/// Discard retained and invalidated layout provenance on the entry point.
 void discardQubitLayout(ModuleOp moduleOp);
-/// Reject layout provenance anywhere in the module tree at an output boundary.
+/// Reject entry-point layout provenance at an output boundary.
 [[nodiscard]] LogicalResult requireNoQubitLayout(ModuleOp moduleOp);
 
 } // namespace mlir::mqt
