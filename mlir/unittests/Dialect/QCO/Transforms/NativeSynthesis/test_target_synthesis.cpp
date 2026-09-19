@@ -1093,19 +1093,21 @@ TEST_F(TargetSynthesisTest,
   auto module = build([](QCOProgramBuilder& builder) {
     auto q0 = builder.staticQubit(0);
     auto q1 = builder.staticQubit(1);
-    const auto outputs = builder.qcoIf(
-        true, ValueRange{q0, q1},
-        [](ValueRange arguments) {
+    const auto outputs =
+        builder.qcoIf(true, ValueRange{q0, q1}, [](ValueRange arguments) {
           return mlir::SmallVector<Value>{arguments[0], arguments[1]};
-        },
-        [](ValueRange arguments) {
-          return mlir::SmallVector<Value>{arguments[1], arguments[0]};
         });
     auto h = builder.h(outputs[0]);
     builder.sink(h);
     builder.sink(outputs[1]);
     return builder.intConstant(0);
   });
+  /// Exercise synthesis diagnostics for non-positional input outside the
+  /// program builder's contract.
+  auto branch = *mainFunction(*module).getOps<mlir::qco::IfOp>().begin();
+  auto& region = branch.getElseRegion();
+  auto args = region.getArguments();
+  region.front().getTerminator()->setOperands({args[1], args[0]});
   const auto target = makeOneWayUCxTarget();
 
   const auto diagnostics = expectTargetFailure(
@@ -1230,13 +1232,19 @@ TEST_F(TargetSynthesisTest, AcceptsMatchingBranchSitePermutations) {
   auto moduleOp = build([](QCOProgramBuilder& builder) {
     auto q0 = builder.staticQubit(0);
     auto q1 = builder.staticQubit(1);
-    const auto swap = [](ValueRange args) {
-      return mlir::SmallVector<Value>{args[1], args[0]};
+    const auto forward = [](ValueRange args) {
+      return mlir::SmallVector<Value>(args);
     };
-    auto outputs = builder.qcoIf(true, ValueRange{q0, q1}, swap, swap);
+    auto outputs = builder.qcoIf(true, ValueRange{q0, q1}, forward, forward);
     std::tie(q0, q1) = builder.cx(outputs[0], outputs[1]);
     return builder.intConstant(0);
   });
+  /// Site analysis also accepts matching permutations in externally built IR.
+  auto branch = *mainFunction(*moduleOp).getOps<mlir::qco::IfOp>().begin();
+  for (auto& region : branch->getRegions()) {
+    auto args = region.getArguments();
+    region.front().getTerminator()->setOperands({args[1], args[0]});
+  }
   const auto target = makeOneWayUCxTarget();
   ASSERT_TRUE(mlir::succeeded(runTargetPass(
       *moduleOp, target, mlir::qco::createTargetNativeSynthesis())));

@@ -265,11 +265,11 @@ For explicit restrictions, use the constants on
 accepted.
 
 Target compilation requires structured QCO/SCF input. Producers of raw CFG
-branches must normalize them before target compilation; runtime assertions are
-allowed. The pipeline removes unused symbols, propagates constants, and runs QCO
-cleanup before deciding which loops need expansion. It then specializes loops
-required by the selected payload or by placement, cleans up the resulting IR,
-and checks the remaining control flow with `legalize-control-flow`:
+branches must normalize them before target compilation. The pipeline removes
+unused symbols, propagates constants, and runs QCO cleanup before deciding which
+loops need expansion. It then specializes loops required by the selected payload
+or by placement, cleans up the resulting IR, and checks the remaining control
+flow with `legalize-control-flow`:
 
 | Capability           | Residual operations                                 |
 | -------------------- | --------------------------------------------------- |
@@ -304,19 +304,25 @@ reorder the before-region results. Untouched slots remain outside the control
 flow. Runtime indices and incomplete or nested tensor updates do not match this
 scalarization.
 
-For Adaptive QIR on an all-to-all target whose operations have empty
-`site_tuples`, placement assigns physical sites to the allocation's slots and
-retains indexed registers. Loop bodies do not grow with their iteration counts.
-The site list requires space proportional to the register width. Capacity,
-physical site IDs, qubit origins, native operations, and payload limits are
-still checked. This path uses target metadata and does not depend on a device
-name.
+For Adaptive QIR, and for OpenQASM 3.1 with unrestricted multiway branching, on
+an all-to-all target whose operations have empty `site_tuples`, placement
+assigns physical sites to the allocation's slots and retains indexed registers.
+Loop bodies do not grow with their iteration counts. The site list requires
+space proportional to the register width. Capacity, physical site IDs, qubit
+origins, native operations, and payload limits are still checked. This path uses
+target metadata and does not depend on a device name.
 
 Other payloads, explicit topology, and site-specific operations require exact
 quantum addresses. Bounded specialization exposes those addresses before
 placement or routing. Residual unsupported tensor control flow produces a
-diagnostic before allocation changes. OpenQASM export continues to require
-static quantum indices.
+diagnostic before allocation changes. OpenQASM exports indexed physical qubits
+with bounded switches over their assigned sites. It retains loop bodies and does
+not introduce logical qubits or change physical site IDs. Constant rank-one
+`f64` table reads also use switches, grouping equal entries. The exporter
+permits at most 65,536 physical-qubit dispatch case labels and 256 nested
+physical selection levels per function. Constant tables do not consume this
+Cartesian-expansion budget; their switches grow with the table data and number
+of reads. These bounds do not limit loop iteration counts.
 
 The supported constraints are `max-control-flow-nesting-depth` on all four
 capabilities, `max-iteration-count` on both iteration capabilities, and

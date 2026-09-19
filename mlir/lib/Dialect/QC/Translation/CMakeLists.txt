@@ -37,6 +37,7 @@ add_mlir_library(
   TranslateOpenQASMToQC.cpp
   TranslateQCToOpenQASM3.cpp
   LINK_LIBS
+  MQTCompilerTarget
   MLIRAnalysis
   MLIRArithDialect
   MLIRCBitDialect
@@ -48,6 +49,7 @@ add_mlir_library(
   MLIRMemRefDialect
   MLIRMQTDialect
   MLIRSCFDialect
+  MLIRTensorDialect
   MLIRUBDialect
   MLIRQCDialect
   MLIRQCProgramBuilder
