@@ -54,6 +54,7 @@
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/SmallBitVector.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 #include <algorithm>
@@ -154,7 +155,9 @@ struct ClassicalEnv {
   using RegisterState = std::vector<RegisterBit>;
   struct MemRefState {
     SmallVector<int64_t> shape;
-    SmallVector<Attribute> values;
+    std::shared_ptr<SmallVector<Attribute>> values;
+    size_t offset = 0;
+    size_t size = 0;
   };
 
   DenseMap<Value, Attribute> values;
@@ -652,10 +655,9 @@ static FailureOr<Attribute*> lookupMemRefSlot(Value memref, ValueRange indices,
   const auto type = dyn_cast<MemRefType>(memref.getType());
   if (!type || type.getRank() == 0 ||
       indices.size() != static_cast<size_t>(type.getRank()) ||
-      !type.getLayout().isIdentity() ||
       !isSupportedClassicalType(type.getElementType())) {
     return op->emitError()
-           << "QCO DD simulation only supports identity-layout memrefs of "
+           << "QCO DD simulation only supports nonzero-rank memrefs of "
               "integer, index, or f64 values";
   }
   const auto it = classical.memrefs.find(memref);
@@ -676,7 +678,7 @@ static FailureOr<Attribute*> lookupMemRefSlot(Value memref, ValueRange indices,
     }
     offset = offset * static_cast<size_t>(extent) + static_cast<size_t>(*index);
   }
-  return &it->second->values[offset];
+  return it->second->values->data() + it->second->offset + offset;
 }
 
 static LogicalResult applyMemRefAlloc(memref::AllocOp alloc,
@@ -714,7 +716,8 @@ static LogicalResult applyMemRefAlloc(memref::AllocOp alloc,
     size *= extent;
     storage->shape.push_back(extent);
   }
-  storage->values.resize(static_cast<size_t>(size));
+  storage->size = static_cast<size_t>(size);
+  storage->values = std::make_shared<SmallVector<Attribute>>(storage->size);
   classical.memrefs[alloc.getResult()] = std::move(storage);
   return success();
 }
@@ -749,6 +752,61 @@ static LogicalResult applyMemRefLoad(memref::LoadOp load,
   return success();
 }
 
+static LogicalResult applyMemRefSubview(memref::SubViewOp subview,
+                                        ClassicalEnv& classical) {
+  const auto source = classical.memrefs.find(subview.getSource());
+  if (source == classical.memrefs.end()) {
+    return subview.emitError()
+           << "classical memref is not mapped for QCO DD simulation";
+  }
+  if (subview.getType().getRank() == 0) {
+    return subview.emitError()
+           << "QCO DD simulation requires nonzero-rank memref subviews";
+  }
+  const auto prefix = source->second->shape.size() -
+                      static_cast<size_t>(subview.getType().getRank());
+  const auto dropped = subview.getDroppedDims();
+  const auto offsets = subview.getMixedOffsets();
+  const auto sizes = subview.getMixedSizes();
+  const auto strides = subview.getMixedStrides();
+  const auto resolve = [&](OpFoldResult value) -> FailureOr<int64_t> {
+    if (const auto attribute = dyn_cast<Attribute>(value)) {
+      return cast<IntegerAttr>(attribute).getInt();
+    }
+    return lookupIndex(cast<Value>(value), classical, subview);
+  };
+  auto view = std::make_shared<ClassicalEnv::MemRefState>();
+  view->values = source->second->values;
+  view->size = 1;
+  size_t offset = 0;
+  for (const auto [dimension, extent] :
+       llvm::enumerate(source->second->shape)) {
+    auto start = resolve(offsets[dimension]);
+    auto size = resolve(sizes[dimension]);
+    auto stride = resolve(strides[dimension]);
+    if (failed(start) || failed(size) || failed(stride)) {
+      return failure();
+    }
+    if (dropped.test(dimension) != (dimension < prefix) || *stride != 1 ||
+        *size != (dimension < prefix ? 1 : extent) ||
+        (dimension >= prefix && *start != 0)) {
+      return subview.emitError() << "QCO DD simulation only supports "
+                                    "prefix-indexed memref subviews";
+    }
+    if (*start < 0 || *start > extent - *size) {
+      return subview.emitError() << "classical memref subview is out of bounds";
+    }
+    offset = offset * static_cast<size_t>(extent) + static_cast<size_t>(*start);
+    if (dimension >= prefix) {
+      view->shape.push_back(extent);
+      view->size *= static_cast<size_t>(extent);
+    }
+  }
+  view->offset = source->second->offset + offset;
+  classical.memrefs[subview.getResult()] = std::move(view);
+  return success();
+}
+
 static LogicalResult applyMemRefCopy(memref::CopyOp copy,
                                      ClassicalEnv& classical) {
   const auto source = classical.memrefs.find(copy.getSource());
@@ -760,7 +818,13 @@ static LogicalResult applyMemRefCopy(memref::CopyOp copy,
   if (source->second->shape != target->second->shape) {
     return copy.emitError() << "classical memref copy requires matching shapes";
   }
-  target->second->values = source->second->values;
+  const auto& from = *source->second;
+  const auto& to = *target->second;
+  // Prefix-selected regions of one allocation are disjoint or identical.
+  if (from.values != to.values || from.offset != to.offset) {
+    std::copy_n(from.values->begin() + from.offset, from.size,
+                to.values->begin() + to.offset);
+  }
   return success();
 }
 
@@ -1534,6 +1598,9 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
       })
       .Case([&](memref::CopyOp copy) {
         return applyMemRefCopy(copy, *walk.classical);
+      })
+      .Case([&](memref::SubViewOp subview) {
+        return applyMemRefSubview(subview, *walk.classical);
       })
       .Case([&](cf::AssertOp assertion) -> LogicalResult {
         auto condition =
