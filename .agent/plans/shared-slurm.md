@@ -29,16 +29,20 @@ The optional checker and launch validation have separate PRs.
 - [ ] Standalone Linux injection build and installed license.
 - [ ] Real Slurm transport, daemon isolation, and node-state checks.
 - [ ] Braket and IQM native/wheel catalogue and SDK integration tests.
-- [ ] Required C++ lint and documentation build with LLVM/MLIR 23.1.
+- [ ] Required C++ lint with clang-tidy 23.
 
 ## Validation
 
 The shared runner's 22 tests and full `uvx nox -s lint` passed. The source-built
-wheel and source archive exclude SPANK sources and binaries. The canonical
-guide and full base diff were reviewed.
+wheel and source archive exclude SPANK sources and binaries. The canonical guide
+and full base diff were reviewed.
 
-Run `test/slurm/run_integration.py` and both provider workloads for the remaining
-Linux checks. The standalone SPANK build must not configure Core or LLVM. The
-transport test keeps a batch task alive while inspecting both Slurm daemon
-environments, preserving the former provider test's isolation proof. Real Slurm
-validation remains required.
+The full strict documentation build passed with MLIR 23.1.0. Link checking
+failed only on a timeout for the unchanged VS Code Marketplace link in
+`contributing.md`.
+
+Run `test/slurm/run_integration.py` and both provider workloads for the
+remaining Linux checks. The standalone SPANK build must not configure Core or
+LLVM. The transport test keeps a batch task alive while inspecting both Slurm
+daemon environments, preserving the former provider test's isolation proof. Real
+Slurm validation remains required.
