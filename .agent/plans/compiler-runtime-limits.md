@@ -53,15 +53,16 @@ Use the native build and checks in [AGENTS.md](../../AGENTS.md), plus
 `test/python/qdmi/test_compilation.py` against the rebuilt package and provider.
 Owning tests cover borrowed-wire order, physical site identity, emission limits,
 constant/runtime full matrices at `5e-13`, and mixed computed/measured outputs.
-The stable-slot revision passes 3,569 of 3,570 native CTest entries with one
-expected Slurm skip, 50 Python compilation tests against the rebuilt package,
-executable documentation, generated-link checks, repository lint, and whole-file
-C++ lint on the changed sources. Repeated round trips run QC cleanup between
-conversions and compare samples for logical and physical registers. Tests cover
-references retained across helper calls, identity stores, dynamic index
-expressions, scalar-helper boundaries, terminal DDSIM execution, and known
-invalid slot changes rejected before mutation. The documented helper-and-loop
-example also converts from QCO to QC and back through `mqt-cc`.
+After merging current `main`, the stable-slot revision passes 3,583 of 3,584
+native CTest entries with one expected Slurm skip, 50 Python compilation tests
+against the rebuilt package, executable documentation, generated-link checks,
+repository lint, and whole-file C++ lint on the changed sources. Repeated round
+trips run QC cleanup between conversions and compare samples for logical and
+physical registers. Tests cover references retained across helper calls,
+identity stores, dynamic index expressions, scalar-helper boundaries, terminal
+DDSIM execution, and known invalid slot changes rejected before mutation. The
+documented helper-and-loop example also converts from QCO to QC and back through
+`mqt-cc`.
 
 The complexity review removed the builder's duplicate call check, register
 snapshots, and slot reassignment machinery. It also reused the default identity

@@ -389,6 +389,154 @@ buildTensorControlFlow(QCOProgramBuilder& builder, ValueRange args,
   }
 }
 
+TEST_F(QCOTest, BuilderIfReturnsClassicalValues) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize({builder.getI1Type(), builder.getI64Type()});
+  auto tensor = builder.qtensorAlloc(1);
+  auto [remainder, qubit] = builder.qtensorExtract(builder.qtensorAlloc(1), 0);
+  const auto branch = [&](ValueRange args) {
+    auto [measured, bit] = builder.measure(builder.h(args[1]));
+    return SmallVector<Value>{bit, builder.intConstant(1), args[0], measured};
+  };
+  auto results = builder.qcoIf(
+      true, {tensor, qubit},
+      [&](ValueRange args) {
+        return SmallVector<Value>(builder.qcoIf(true, args, branch, branch));
+      },
+      branch);
+  ASSERT_EQ(results.size(), 4);
+  EXPECT_EQ(results[0].getType(), builder.getI1Type());
+  EXPECT_EQ(results[1].getType(), builder.getI64Type());
+  builder.h(results[3]);
+  auto moduleOp = builder.finalize(results.take_front(2));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  moduleOp->walk([&](qtensor::InsertOp insert) {
+    EXPECT_EQ(insert.getDest(), remainder);
+  });
+}
+
+TEST_F(QCOTest, BuilderIfReturnsOnlyClassicalValues) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  auto reg = builder.allocClassicalBitRegister(1);
+  auto results = builder.qcoIf(
+      reg, 0, ValueRange{},
+      [&](ValueRange) { return SmallVector<Value>{builder.intConstant(1)}; },
+      [&](ValueRange) { return SmallVector<Value>{builder.intConstant(0)}; });
+  ASSERT_EQ(results.size(), 1);
+  auto moduleOp = builder.finalize(results);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+}
+
+TEST_F(QCOTest, BuilderIfRejectsInvalidClassicalResults) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  Value qubit = builder.allocQubit();
+  auto bit = builder.boolConstant(true);
+  const auto branch = [&](ValueRange args) {
+    return SmallVector<Value>{bit, args[0]};
+  };
+  EXPECT_DEATH(builder.qcoIf(true, qubit, branch),
+               "An else body is required when returning classical results");
+  EXPECT_DEATH(builder.qcoIf(true, qubit,
+                             [&](ValueRange args) {
+                               return SmallVector<Value>{args[0], bit};
+                             }),
+               "Classical results must precede qubit and tensor results");
+  EXPECT_DEATH(builder.qcoIf(true, qubit, branch,
+                             [&](ValueRange args) {
+                               return SmallVector<Value>{builder.intConstant(1),
+                                                         args[0]};
+                             }),
+               "Then and else bodies must return the same types");
+  EXPECT_DEATH(
+      builder.qcoIf(true, qubit, branch,
+                    [](ValueRange args) { return SmallVector<Value>(args); }),
+      "Then and else bodies must return the same types");
+  EXPECT_DEATH(
+      builder.qcoIf(true, qubit,
+                    [&](ValueRange) { return SmallVector<Value>{bit}; }),
+      "Then body must return exactly one qubit or tensor per input value");
+  EXPECT_DEATH(builder.qcoIf(true, bit, branch),
+               "Elements must be qubit values");
+}
+
+TEST_F(QCOTest, BuilderLoopsCarryClassicalValues) {
+  for (unsigned kind : {1, 2}) {
+    SCOPED_TRACE(kind);
+    QCOProgramBuilder builder(context.get());
+    builder.initialize();
+    const auto body = [&](ValueRange args) {
+      Value next =
+          arith::AddIOp::create(builder, args[0], builder.intConstant(1));
+      return SmallVector<Value>{next};
+    };
+    auto results = buildTensorControlFlow(builder, builder.intConstant(0), kind,
+                                          body, body);
+    EXPECT_DEATH(buildTensorControlFlow(
+                     builder, results, kind,
+                     [&](ValueRange) {
+                       return SmallVector<Value>{builder.floatConstant(1.0)};
+                     },
+                     body),
+                 "Result types must match input types");
+    auto moduleOp = builder.finalize(results);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  }
+}
+
+TEST_F(QCOTest, BuilderWhileCarriesVqeStateThroughNestedFor) {
+  for (bool extractQubit : {false, true}) {
+    SCOPED_TRACE(extractQubit);
+    QCOProgramBuilder builder(context.get());
+    builder.initialize();
+    SmallVector<Value> inputs{
+        builder.boolConstant(true),
+        builder.floatConstant(1.0),
+        builder.intConstant(1),
+        builder.qtensorAlloc(1),
+    };
+    if (extractQubit) {
+      auto [tensor, qubit] = builder.qtensorExtract(builder.qtensorAlloc(1), 0);
+      inputs.push_back(qubit);
+    }
+    auto results = builder.scfWhile(
+        inputs,
+        [&](ValueRange args) {
+          builder.scfCondition(args[0], args);
+          return SmallVector<Value>(args);
+        },
+        [&](ValueRange args) {
+          auto loop =
+              builder.scfFor(0, 2, 1, args, [&](Value, ValueRange iterArgs) {
+                SmallVector<Value> next(iterArgs);
+                next[1] = arith::MulFOp::create(builder, iterArgs[1],
+                                                builder.floatConstant(0.5));
+                if (extractQubit) {
+                  next[4] = builder.ry(next[1], iterArgs[4]);
+                }
+                return next;
+              });
+          SmallVector<Value> next(loop);
+          if (extractQubit) {
+            auto [qubit, bit] = builder.measure(next[4]);
+            next[4] = qubit;
+            next[2] =
+                arith::ExtUIOp::create(builder, builder.getI64Type(), bit);
+          }
+          next[0] = arith::CmpIOp::create(builder, arith::CmpIPredicate::slt,
+                                          next[2], args[2]);
+          return next;
+        });
+    auto moduleOp = builder.finalize(results[2]);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  }
+}
+
 TEST_F(QCOTest, BuilderRejectsPermutedControlFlowResults) {
   for (unsigned kind = 0; kind < 4; ++kind) {
     SCOPED_TRACE(kind);

@@ -141,11 +141,23 @@ public:
   void resetMemoryManagers(bool resizeToTotal = false);
 
   /// The unique table used for vector nodes
-  UniqueTable vUniqueTable{vMemoryManager,
-                           {.nVars = 0U, .nBuckets = config_.utVecNumBucket}};
+  UniqueTable vUniqueTable{
+      vMemoryManager,
+      {
+          .nVars = 0U,
+          .nBuckets = config_.utVecNumBucket,
+          .maxBuckets = config_.utMaxNumBucket,
+      },
+  };
   /// The unique table used for matrix nodes
-  UniqueTable mUniqueTable{mMemoryManager,
-                           {.nVars = 0U, .nBuckets = config_.utMatNumBucket}};
+  UniqueTable mUniqueTable{
+      mMemoryManager,
+      {
+          .nVars = 0U,
+          .nBuckets = config_.utMatNumBucket,
+          .maxBuckets = config_.utMaxNumBucket,
+      },
+  };
   /// The unique table used for complex numbers
   /// @note The table actually only stores real numbers in the interval [0, 1],
   /// but is used to manages all complex numbers throughout the package.

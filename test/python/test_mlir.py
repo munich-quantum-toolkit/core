@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+from functools import partial
 from pathlib import Path
 from threading import Event, Thread
 
@@ -25,8 +26,10 @@ from qiskit.circuit import Gate, library
 from qiskit.quantum_info import Operator
 
 from mqt.core.mlir import (
+    CompilationOptions,
     CompilerTarget,
     JeffProgram,
+    MappingOptions,
     OpenQASMProgram,
     OutputFormat,
     PayloadEncoding,
@@ -40,6 +43,7 @@ from mqt.core.mlir import (
     QIRProgram,
     TargetEnvironment,
     compile_program,
+    submit_program,
 )
 from mqt.core.qdmi import ProgramFormat
 from mqt.core.qdmi.driver import open_device
@@ -414,6 +418,113 @@ def test_compile_program_exposes_raw_and_optimized_qco() -> None:
     assert isinstance(raw, QCOProgram)
     assert isinstance(optimized, QCOProgram)
     assert raw.ir != optimized.ir
+
+
+def test_mapping_options_defaults() -> None:
+    """Keep the public mapping defaults independent of CPU count except trials."""
+    options = MappingOptions()
+    assert options.trials is None
+    assert options.iterations == 1
+    assert options.lookahead == 20
+    assert options.search_memory_limit == 64 * 1024 * 1024
+
+
+@pytest.mark.parametrize(
+    ("method", "all_to_all"),
+    [("compile_for_target", False), ("compile_for_target", True), ("synthesize_for_target", True)],
+)
+@pytest.mark.parametrize("field", ["trials", "iterations"])
+def test_mapping_options_reject_zero_counts(method: str, field: str, *, all_to_all: bool) -> None:
+    """Reject invalid public mapping controls before rewriting the input."""
+    target = CompilerTarget(
+        2,
+        connectivity=(
+            CompilerTarget.Connectivity.all_to_all() if all_to_all else CompilerTarget.Connectivity([(0, 1)])
+        ),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
+    program = QCProgram.from_openqasm_str(QASM_STRING).to_qco()
+    before = program.ir
+
+    mapping = MappingOptions()
+    setattr(mapping, field, 0)
+    with pytest.raises(RuntimeError, match=f"mapping {field} must be greater than zero"):
+        getattr(program, method)(_test_target_environment(target), options=CompilationOptions(seed=7, mapping=mapping))
+
+    assert program.ir == before
+
+
+@pytest.mark.parametrize("seed", [0, 7])
+@pytest.mark.parametrize("lookahead", [0, 5])
+@pytest.mark.parametrize("search_memory_limit", [0, 1024])
+def test_explicit_mapping_options_are_repeatable(seed: int, lookahead: int, search_memory_limit: int) -> None:
+    """Use fixed native trials for repeatable sparse-target compilation."""
+    source = """OPENQASM 3.1;
+include "stdgates.inc";
+qubit[4] q;
+bit[4] out;
+h q[0]; cx q[0], q[3]; cx q[1], q[2];
+cx q[0], q[2]; cx q[1], q[3]; cx q[0], q[1];
+out = measure q;
+"""
+    target = CompilerTarget(
+        4,
+        connectivity=CompilerTarget.Connectivity([(0, 1), (1, 2), (2, 3)]),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
+    options = CompilationOptions(
+        seed=seed,
+        mapping=MappingOptions(trials=3, iterations=2, lookahead=lookahead, search_memory_limit=search_memory_limit),
+    )
+    outputs = []
+    for _ in range(2):
+        program = QCProgram.from_openqasm_str(source).to_qco()
+        program.compile_for_target(_test_target_environment(target), options=options)
+        outputs.append(program.ir)
+    assert outputs[0] == outputs[1]
+    assert options.seed == seed
+    assert options.mapping.trials == 3
+    assert options.mapping.iterations == 2
+    assert options.mapping.lookahead == lookahead
+    assert options.mapping.search_memory_limit == search_memory_limit
+
+    payloads = []
+    for _ in range(2):
+        payload = compile_program(source, target=target, output=OutputFormat.QIR_BASE, options=options)
+        assert isinstance(payload, QIRProgram)
+        payloads.append(payload.ir)
+    assert payloads[0] == payloads[1]
+
+
+@pytest.mark.parametrize("output_kind", ["typed", "payload", "device", "submit"])
+@pytest.mark.parametrize("field", ["trials", "iterations"])
+def test_compilation_entry_points_forward_mapping_options(
+    output_kind: str, field: str, capfd: pytest.CaptureFixture[str]
+) -> None:
+    """Keep mapping controls effective through every public target entry point."""
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity([(0, 1)]),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
+    mapping = MappingOptions()
+    setattr(mapping, field, 0)
+    options = CompilationOptions(mapping=mapping)
+    if output_kind == "submit":
+        compile_call = partial(submit_program, QASM_STRING, target="mqt.ddsim.default", options=options)
+    elif output_kind == "device":
+        compile_call = partial(compile_program, QASM_STRING, target="mqt.ddsim.default", options=options)
+    elif output_kind == "typed":
+        compile_call = partial(
+            compile_program, QASM_STRING, target=target, output=OutputFormat.QIR_BASE, options=options
+        )
+    else:
+        compile_call = partial(
+            compile_program, QASM_STRING, target=target, program_format=ProgramFormat.QASM3, options=options
+        )
+    with pytest.raises((RuntimeError, ValueError)):
+        compile_call()
+    assert f"mapping {field} must be greater than zero" in capfd.readouterr().err
 
 
 @requires_qiskit_translation
@@ -1173,3 +1284,44 @@ def test_native_compilation_releases_gil(tmp_path: Path, mode: str) -> None:
         sys.setswitchinterval(interval)
     assert not thread.is_alive()
     assert program.is_valid
+
+
+@pytest.mark.parametrize("seed", [0, 7, 2**63 + 7, 2**64 - 1])
+def test_compilation_seed_overrides_custom_pass_seed(seed: int) -> None:
+    """Override pass settings without retaining temporary compiler metadata."""
+    source = QCProgram.from_openqasm_str(QASM_STRING).to_qco()
+    expected = source.copy()
+    expected.run_pass_pipeline(f"pauli-twirl-2q-gates{{seed={seed}}}")
+    actual = source.copy()
+    actual.run_pass_pipeline("pauli-twirl-2q-gates{seed=99}", options=CompilationOptions(seed=seed))
+    assert actual.ir == expected.ir
+    assert "mqt.compilation_seed" not in actual.ir
+    compiled = compile_program(
+        source,
+        output=OutputFormat.QCO_OPTIMIZED,
+        qco_pipeline="pauli-twirl-2q-gates{seed=99}",
+        options=CompilationOptions(seed=seed),
+    )
+    expected.cleanup()
+    assert compiled.ir == expected.ir
+
+
+def test_compilation_seed_reaches_nested_modules() -> None:
+    """The outer compilation seed overrides an inner module's captured seed."""
+    inner = QCProgram.from_openqasm_str(QASM_STRING).to_qco()
+    nested = inner.ir.replace("module {", "module attributes {mqt.compilation_seed = 99 : i64} {", 1)
+    source = QCOProgram.from_mlir_str(f"module {{ {nested} }}")
+    actual = source.copy()
+    actual.run_pass_pipeline("builtin.module(pauli-twirl-2q-gates{seed=99})", options=CompilationOptions(seed=6))
+    expected = QCOProgram.from_mlir_str(f"module {{ {inner.ir} }}")
+    expected.run_pass_pipeline("builtin.module(pauli-twirl-2q-gates{seed=6})")
+    assert actual.ir.replace(" attributes {mqt.compilation_seed = 99 : i64}", "") == expected.ir
+    assert actual.ir != source.ir
+
+
+def test_compilation_timing_and_statistics(capfd: pytest.CaptureFixture[str]) -> None:
+    """Shared options reach MLIR timing and statistics instrumentation."""
+    compile_program(QASM_STRING, options=CompilationOptions(enable_timing=True, enable_statistics=True))
+    output = capfd.readouterr().err
+    assert "Execution time report" in output
+    assert "Pass statistics report" in output

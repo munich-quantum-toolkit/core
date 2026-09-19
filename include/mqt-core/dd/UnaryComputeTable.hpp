@@ -13,6 +13,7 @@
 
 #pragma once
 
+#include "dd/DDDefinitions.hpp"
 #include "dd/statistics/TableStatistics.hpp"
 
 #include <algorithm>
@@ -20,6 +21,7 @@
 #include <cstddef>
 #include <functional>
 #include <stdexcept>
+#include <type_traits>
 #include <vector>
 
 namespace dd {
@@ -58,8 +60,10 @@ public:
 
   /// Compute the hash value for a given operand
   [[nodiscard]] std::size_t hash(const OperandType& a) const {
+    const auto key = std::hash<OperandType>{}(a);
     const auto mask = stats.numBuckets - 1;
-    return std::hash<OperandType>{}(a)&mask;
+    /// Mix aligned addresses before reducing to the power-of-two bucket count.
+    return (std::is_pointer_v<OperandType> ? murmur64(key) : key) & mask;
   }
 
   /// Insert a new entry into the compute table

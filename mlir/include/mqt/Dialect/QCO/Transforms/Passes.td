@@ -206,6 +206,20 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
 
     Routing uses undirected target connectivity. Target-native synthesis realizes operations and inserted SWAPs in a supported operand direction.
 
+    Each search limits retained nodes using `search-memory-limit`, an estimated
+    byte budget for the nodes and their qubit layouts (64 MiB by default).
+    At least the root node is retained; zero disables node expansion.
+    The pass stops allocating nodes at the limit, checks the remaining queue,
+    and, if no solution is queued, completes the route with SWAPs that reduce
+    the leading pair's distance. This always makes progress on a connected
+    target. Changing the budget can change the selected initial layout and
+    final gate count or depth; more memory does not guarantee fewer gates.
+    Queue, visited-map, allocator, and linear fallback workspace overhead are
+    additional. Each concurrent trial reuses this bounded storage across its
+    searches and releases it when the trial finishes. Final SWAP insertion
+    uses separate storage after the trials finish. Target distance caches and
+    IR are separate; this is not a process memory limit.
+
     To iteratively refine the mapping, the pass performs multiple forward and backward traversals of the circuit. In
     each traversal, the pass routes the circuit and updates the dynamic-to-static mapping based on the routing decisions
     made during that traversal. By performing multiple traversals, the pass can iteratively refine the mapping and
@@ -251,7 +265,11 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
                         "the forwards and backwards mechanism. Defaults to "
                         "the available logical CPU count. Must be > 0.">,
                  Option<"seed", "seed", "std::size_t", "42",
-                        "A seed used for randomization.">];
+                        "A seed used for randomization.">,
+                 Option<"searchMemoryLimit", "search-memory-limit", "size_t",
+                        "64UL * 1024 * 1024",
+                        "Estimated node and layout bytes per search. "
+                        "Zero disables node expansion.">];
   let statistics = [Statistic<"numSwaps", "num-inserted-swaps",
                               "The number of inserted SWAPs">];
 }
@@ -281,6 +299,8 @@ def TargetNativeSynthesis : Pass<"target-native-synthesis", "mlir::ModuleOp"> {
     Numerical decomposition failure is diagnosed before emitting a replacement.
     The input may be modified on failure.
   }];
+  let options = [Option<"seed", "seed", "uint64_t", "2023",
+                        "Seed for numerical synthesis retries.">];
 }
 
 def VerifyTargetConformance

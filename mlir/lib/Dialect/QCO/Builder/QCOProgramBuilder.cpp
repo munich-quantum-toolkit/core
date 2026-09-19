@@ -451,13 +451,12 @@ Value QCOProgramBuilder::insertExtractedQubits(Value tensor,
 }
 
 SmallVector<Value> QCOProgramBuilder::prepareInitArgs(ValueRange initArgs) {
-  checkQubitType(initArgs);
   DenseSet<Value> initQubits;
   DenseMap<int64_t, SmallVector<Qubit>> qubitsByRegister;
   for (auto initArg : initArgs) {
     if (isa<QubitType>(initArg.getType())) {
       initQubits.insert(initArg);
-    } else {
+    } else if (isQubitTensor(initArg.getType())) {
       validateTensorValue(initArg);
       if (!qubitsByRegister.try_emplace(validTensors.find(initArg)->regId)
                .second) {
@@ -482,7 +481,7 @@ SmallVector<Value> QCOProgramBuilder::prepareInitArgs(ValueRange initArgs) {
   SmallVector<Value> updatedArgs;
   updatedArgs.reserve(initArgs.size());
   for (auto initArg : initArgs) {
-    if (isa<QubitType>(initArg.getType())) {
+    if (!isQubitTensor(initArg.getType())) {
       updatedArgs.push_back(initArg);
       continue;
     }
@@ -497,6 +496,9 @@ static void validateControlFlowResults(ValueRange inputs, ValueRange outputs) {
   for (auto [input, output] : llvm::zip_equal(inputs, outputs)) {
     if (input.getType() != output.getType()) {
       llvm::reportFatalUsageError("Result types must match input types");
+    }
+    if (!isLinearQubitType(input.getType())) {
+      continue;
     }
     auto argument = cast<BlockArgument>(input);
     auto origin = traceQubitArgument(*argument.getOwner(), output);
@@ -514,7 +516,7 @@ void QCOProgramBuilder::updateQubitValueTracking(Value oldValue,
   }
   if (isa<QubitType>(oldValue.getType())) {
     updateQubitTracking(oldValue, newValue);
-  } else {
+  } else if (isQubitTensor(oldValue.getType())) {
     updateTensorTracking(oldValue, newValue);
   }
 }
@@ -1400,6 +1402,7 @@ ValueRange QCOProgramBuilder::qcoIf(
     function_ref<SmallVector<Value>(ValueRange)> thenBody,
     function_ref<SmallVector<Value>(ValueRange)> elseBody) {
   checkFinalized();
+  checkQubitType(initArgs);
 
   auto conditionValue = variantToValue(*this, getLoc(), condition);
   auto updatedArgs = prepareInitArgs(initArgs);
@@ -1415,33 +1418,63 @@ ValueRange QCOProgramBuilder::qcoIf(
   auto thenArgs = thenBlock->getArguments();
   updateQubitValueTracking(updatedArgs, thenArgs);
   const auto thenResult = thenBody(thenArgs);
-  if (thenResult.size() != updatedArgs.size()) {
+  const auto isLinear = [](Value value) {
+    return isLinearQubitType(value.getType());
+  };
+  if (static_cast<size_t>(llvm::count_if(thenResult, isLinear)) !=
+      updatedArgs.size()) {
     llvm::reportFatalUsageError(
-        "Then body must return exactly one value per input value");
+        "Then body must return exactly one qubit or tensor per input value");
   }
-  validateControlFlowResults(thenArgs, thenResult);
+  const auto numClassicalResults = thenResult.size() - updatedArgs.size();
+  auto thenValues = ValueRange(thenResult);
+  if (llvm::any_of(thenValues.take_front(numClassicalResults), isLinear)) {
+    llvm::reportFatalUsageError(
+        "Classical results must precede qubit and tensor results");
+  }
+  if (numClassicalResults != 0 && !elseBody) {
+    llvm::reportFatalUsageError(
+        "An else body is required when returning classical results");
+  }
+  auto thenLinearResults = thenValues.drop_front(numClassicalResults);
+  validateControlFlowResults(thenArgs, thenLinearResults);
   YieldOp::create(*this, thenResult);
+
+  // Result types are known only after building the then branch. Keep the
+  // region attached to the program while its callback runs.
+  if (numClassicalResults != 0) {
+    setInsertionPoint(ifOp);
+    auto replacement = IfOp::create(
+        *this, thenValues.take_front(numClassicalResults).getTypes(),
+        initArgs.getTypes(), conditionValue, updatedArgs);
+    replacement.getThenRegion().takeBody(ifOp.getThenRegion());
+    ifOp.erase();
+    ifOp = replacement;
+  }
 
   // Create the else block
   auto* elseBlock =
       createBlock(&ifOp.getElseRegion(), {}, initArgs.getTypes(), locs);
   auto elseArgs = elseBlock->getArguments();
   if (elseBody) {
-    updateQubitValueTracking(thenResult, elseArgs);
+    updateQubitValueTracking(thenLinearResults, elseArgs);
     auto elseResult = elseBody(elseArgs);
-    if (elseResult.size() != updatedArgs.size()) {
+    if (!llvm::equal(ValueRange(elseResult).getTypes(),
+                     thenValues.getTypes())) {
       llvm::reportFatalUsageError(
-          "Else body must return exactly one value per input value");
+          "Then and else bodies must return the same types");
     }
-    validateControlFlowResults(elseArgs, elseResult);
+    auto elseLinearResults =
+        ValueRange(elseResult).drop_front(numClassicalResults);
+    validateControlFlowResults(elseArgs, elseLinearResults);
     YieldOp::create(*this, elseResult);
-    updateQubitValueTracking(elseResult, ifOp.getLinearResults());
+    updateQubitValueTracking(elseLinearResults, ifOp.getLinearResults());
   } else {
     YieldOp::create(*this, elseArgs);
-    updateQubitValueTracking(thenResult, ifOp.getLinearResults());
+    updateQubitValueTracking(thenLinearResults, ifOp.getLinearResults());
   }
 
-  return ifOp.getLinearResults();
+  return ifOp.getResults();
 }
 
 ValueRange QCOProgramBuilder::qcoIndexSwitch(
@@ -1450,6 +1483,7 @@ ValueRange QCOProgramBuilder::qcoIndexSwitch(
     ArrayRef<function_ref<SmallVector<Value>(ValueRange)>> caseBodies,
     const function_ref<SmallVector<Value>(ValueRange)> defaultBody) {
   checkFinalized();
+  checkQubitType(targets);
 
   if (cases.size() != caseBodies.size()) {
     const char* msg = "Each case must have a corresponding case body function";
@@ -1547,14 +1581,13 @@ ValueRange QCOProgramBuilder::qcoIf(
 QCOProgramBuilder& QCOProgramBuilder::scfCondition(Value condition,
                                                    ValueRange yieldedValues) {
   checkFinalized();
-  checkQubitType(yieldedValues);
 
   // Validate the yieldedValues, the qubit values are updated in the scf.while
   // builder
   for (auto yieldedValue : yieldedValues) {
     if (isa<QubitType>(yieldedValue.getType())) {
       validateQubitValue(yieldedValue);
-    } else {
+    } else if (isQubitTensor(yieldedValue.getType())) {
       validateTensorValue(yieldedValue);
     }
   }

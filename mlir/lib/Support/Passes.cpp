@@ -16,7 +16,9 @@
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QIR/Transforms/Passes.h"
 #include "mqt/Dialect/QTensor/Transforms/Passes.h"
+#include "mqt/Support/RandomSeed.h"
 
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Pass/PassRegistry.h"
@@ -24,9 +26,10 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
 
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/Support/raw_ostream.h"
 
+#include <bit>
 #include <cstdint>
 
 using namespace mlir;
@@ -36,15 +39,13 @@ static void addSimplificationPasses(OpPassManager& pm) {
   pm.addPass(createCSEPass());
 }
 
-LogicalResult
-runWithPassManager(ModuleOp mod,
-                   const function_ref<void(OpPassManager&)> populatePasses,
-                   const StringRef errorMessage) {
+LogicalResult runWithPassManager(
+    ModuleOp mod, const function_ref<void(OpPassManager&)> populatePasses,
+    const StringRef errorMessage, const CompilationOptions& options) {
   PassManager pm(mod.getContext());
   populatePasses(pm);
-  if (pm.run(mod).failed()) {
-    llvm::errs() << errorMessage << "\n";
-    return failure();
+  if (failed(runWithCompilationOptions(pm, mod, options))) {
+    return mod.emitError(errorMessage);
   }
   return success();
 }
@@ -115,21 +116,39 @@ void populateDecomposeMultiControlledPipeline(OpPassManager& pm,
 }
 
 LogicalResult runPassPipeline(ModuleOp mod, const StringRef pipeline,
-                              const bool enableTiming,
-                              const bool enableStatistics) {
+                              const CompilationOptions& options) {
   registerMQTCompilerPasses();
   PassManager pm(mod.getContext());
-  if (enableTiming) {
-    pm.enableTiming();
-  }
-  if (enableStatistics) {
-    pm.enableStatistics();
-  }
   if (failed(parsePassPipeline(pipeline, pm))) {
     return mod.emitError() << "failed to parse pass pipeline '" << pipeline
                            << "'";
   }
-  return pm.run(mod);
+  return runWithCompilationOptions(pm, mod, options);
+}
+
+LogicalResult runWithCompilationOptions(PassManager& pm, ModuleOp moduleOp,
+                                        const CompilationOptions& options) {
+  if (options.enableTiming) {
+    pm.enableTiming();
+  }
+  if (options.enableStatistics) {
+    pm.enableStatistics();
+  }
+  auto previous = moduleOp->getAttr(COMPILATION_SEED_ATTR);
+  const auto restoreSeed = llvm::make_scope_exit([&] {
+    if (previous) {
+      moduleOp->setAttr(COMPILATION_SEED_ATTR, previous);
+    } else {
+      moduleOp->removeAttr(COMPILATION_SEED_ATTR);
+    }
+  });
+  if (options.seed) {
+    moduleOp->setAttr(
+        COMPILATION_SEED_ATTR,
+        Builder(moduleOp.getContext())
+            .getI64IntegerAttr(std::bit_cast<int64_t>(*options.seed)));
+  }
+  return pm.run(moduleOp);
 }
 
 void populateQCExportPipeline(OpPassManager& pm) {

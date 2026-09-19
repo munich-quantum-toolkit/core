@@ -143,6 +143,11 @@ dialect
   dialect lets one IR contain concepts from several abstraction levels without
   forcing them into one universal instruction set.
 
+compilation seed
+  An optional seed that overrides MQT pass-local seeds during one compilation.
+  It controls mapping, Pauli twirling, and numerical synthesis retries.
+  Execution sampling uses a separate seed.
+
 pass
   A procedure that inspects or changes IR while preserving the invariants
   declared by its input and output contracts. A pass normally runs as one step
