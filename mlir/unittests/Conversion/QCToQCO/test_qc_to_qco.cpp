@@ -2223,17 +2223,18 @@ TEST_F(QCToQCORegressionTest, RoundTripsBorrowedRegistersThroughNestedHelpers) {
   }
 }
 
-TEST_F(QCToQCORegressionTest, RoundTripsMutableBorrowedRegister) {
+TEST_F(QCToQCORegressionTest, RoundTripsStableBorrowedRegister) {
   context.getOrLoadDialect<cbit::CBitDialect>();
-  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+  const std::string source = R"mlir(module {
     func.func private @exchange(%reg: tensor<2x!qco.qubit>)
         -> tensor<2x!qco.qubit> {
       %zero = arith.constant 0 : index
       %one = arith.constant 1 : index
       %rest0, %left = qtensor.extract %reg[%zero] : tensor<2x!qco.qubit>
       %rest1, %right = qtensor.extract %rest0[%one] : tensor<2x!qco.qubit>
-      %rest2 = qtensor.insert %left into %rest1[%one] : tensor<2x!qco.qubit>
-      %out = qtensor.insert %right into %rest2[%zero] : tensor<2x!qco.qubit>
+      %swapped:2 = qco.swap %left, %right : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+      %rest2 = qtensor.insert %swapped#0 into %rest1[%zero] : tensor<2x!qco.qubit>
+      %out = qtensor.insert %swapped#1 into %rest2[%one] : tensor<2x!qco.qubit>
       return %out : tensor<2x!qco.qubit>
     }
     func.func @main() -> !cbit.reg<2> attributes {mqt.entry_point} {
@@ -2257,39 +2258,101 @@ TEST_F(QCToQCORegressionTest, RoundTripsMutableBorrowedRegister) {
       cbit.store %v1, %bits[%one] : !cbit.reg<2>
       return %bits : !cbit.reg<2>
     }
+  })mlir";
+  for (bool physical : {false, true}) {
+    SCOPED_TRACE(physical);
+    auto input = source;
+    if (physical) {
+      const std::string allocation =
+          "%reg = qtensor.alloc(%two) : tensor<2x!qco.qubit>";
+      input.replace(
+          input.find(allocation), allocation.size(),
+          "%p0 = qco.static 0 : !qco.qubit\n"
+          "%p1 = qco.static 1 : !qco.qubit\n"
+          "%flipped = qco.x %p0 : !qco.qubit -> !qco.qubit\n"
+          "%reg = qtensor.from_elements %flipped, %p1 : tensor<2x!qco.qubit>");
+    }
+    auto moduleOp = parseSourceString<ModuleOp>(input, &context);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+    for (unsigned round = 0; round < 2; ++round) {
+      ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
+      ASSERT_TRUE(succeeded(verify(*moduleOp)));
+      auto helper = moduleOp->lookupSymbol<func::FuncOp>("exchange");
+      EXPECT_EQ(llvm::range_size(helper.getOps<memref::LoadOp>()), 2U);
+      EXPECT_TRUE(helper.getOps<memref::StoreOp>().empty());
+      ASSERT_TRUE(succeeded(runQCCleanupPipeline(*moduleOp)));
+      ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+      ASSERT_TRUE(succeeded(verify(*moduleOp)));
+      ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+      EXPECT_FALSE(helper.getOps<qco::SWAPOp>().empty());
+      auto counts = qco::sample(mlir::mqt::getEntryPoint(*moduleOp), 8, 17);
+      ASSERT_TRUE(succeeded(counts));
+      ASSERT_EQ(counts->size(), 1U);
+      EXPECT_EQ(counts->at(physical ? "00" : "10"), 8U);
+    }
+  }
+}
+
+TEST_F(QCToQCORegressionTest,
+       RoundTripsPhysicalReferencesAcrossIdentityStores) {
+  context.getOrLoadDialect<cbit::CBitDialect>();
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func private @flip(%reg: memref<1x!qc.qubit>) {
+      %zero = arith.constant 0 : index
+      %one = arith.constant 1 : index
+      scf.for %i = %zero to %one step %one {
+        %q = memref.load %reg[%i] : memref<1x!qc.qubit>
+        qc.x %q : !qc.qubit
+        memref.store %q, %reg[%i] : memref<1x!qc.qubit>
+      }
+      return
+    }
+    func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
+      %reg = memref.alloca() : memref<1x!qc.qubit>
+      %q = qc.static 0 : !qc.qubit
+      %zero = arith.constant 0 : index
+      memref.store %q, %reg[%zero] : memref<1x!qc.qubit>
+      %loaded = memref.load %reg[%zero] : memref<1x!qc.qubit>
+      qc.x %loaded : !qc.qubit
+      memref.store %q, %reg[%zero] : memref<1x!qc.qubit>
+      func.call @flip(%reg) : (memref<1x!qc.qubit>) -> ()
+      qc.x %loaded : !qc.qubit
+      memref.store %loaded, %reg[%zero] : memref<1x!qc.qubit>
+      %value = qc.measure %loaded : !qc.qubit -> i1
+      %bits = cbit.alloc(#cbit.init<undefined>) : !cbit.reg<1>
+      cbit.store %value, %bits[%zero] : !cbit.reg<1>
+      return %bits : !cbit.reg<1>
+    }
   })mlir",
                                               &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
   for (unsigned round = 0; round < 2; ++round) {
-    ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
-    ASSERT_TRUE(succeeded(verify(*moduleOp)));
-    auto helper = moduleOp->lookupSymbol<func::FuncOp>("exchange");
-    EXPECT_EQ(llvm::range_size(helper.getOps<qc::TakeOp>()), 2U);
-    EXPECT_EQ(llvm::range_size(helper.getOps<qc::PutOp>()), 2U);
     ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
     ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
-    EXPECT_TRUE(helper.getOps<qco::SWAPOp>().empty());
     auto counts = qco::sample(mlir::mqt::getEntryPoint(*moduleOp), 8, 17);
     ASSERT_TRUE(succeeded(counts));
     ASSERT_EQ(counts->size(), 1U);
-    EXPECT_EQ(counts->at("10"), 8U);
+    EXPECT_EQ(counts->at("1"), 8U);
+    ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
+    ASSERT_TRUE(succeeded(runQCCleanupPipeline(*moduleOp)));
   }
 }
 
-TEST_F(QCToQCORegressionTest, RoundTripsCrossRegisterOwnershipAndReplacement) {
+TEST_F(QCToQCORegressionTest,
+       RoundTripsReferencesAcrossHelpersAndIdentityStores) {
   context.getOrLoadDialect<cbit::CBitDialect>();
   auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
     func.func private @exchange(%a: memref<2x!qc.qubit>, %b: memref<1x!qc.qubit>, %i: index) {
       %zero = arith.constant 0 : index
-      %left = qc.take %a[%i] : memref<2x!qc.qubit>
-      %right = qc.take %b[%zero] : memref<1x!qc.qubit>
-      qc.put %right into %a[%i] : memref<2x!qc.qubit>
-      // The old reference still denotes the taken qubit, not its former slot.
-      qc.x %left : !qc.qubit
-      qc.put %left into %b[%zero] : memref<1x!qc.qubit>
+      %left = memref.load %a[%i] : memref<2x!qc.qubit>
+      %right = memref.load %b[%zero] : memref<1x!qc.qubit>
+      qc.swap %left, %right : !qc.qubit, !qc.qubit
+      memref.store %left, %a[%i] : memref<2x!qc.qubit>
+      memref.store %right, %b[%zero] : memref<1x!qc.qubit>
       return
     }
     func.func private @helper(%a: memref<2x!qc.qubit>, %b: memref<1x!qc.qubit>) {
@@ -2303,27 +2366,30 @@ TEST_F(QCToQCORegressionTest, RoundTripsCrossRegisterOwnershipAndReplacement) {
     func.func @main() -> !cbit.reg<3> attributes {mqt.entry_point} {
       %a = memref.alloc() : memref<2x!qc.qubit>
       %b = memref.alloc() : memref<1x!qc.qubit>
-      %replacement = qc.alloc : !qc.qubit
       %zero = arith.constant 0 : index
       %one = arith.constant 1 : index
       %two = arith.constant 2 : index
-      %left = qc.take %a[%zero] : memref<2x!qc.qubit>
+      %left = memref.load %a[%zero] : memref<2x!qc.qubit>
       qc.x %left : !qc.qubit
-      qc.put %left into %a[%zero] : memref<2x!qc.qubit>
+      memref.store %left, %a[%zero] : memref<2x!qc.qubit>
       func.call @helper(%a, %b) : (memref<2x!qc.qubit>, memref<1x!qc.qubit>) -> ()
-      %old = qc.take %a[%one] : memref<2x!qc.qubit>
-      qc.dealloc %old : !qc.qubit
-      qc.x %replacement : !qc.qubit
-      qc.put %replacement into %a[%one] : memref<2x!qc.qubit>
-      %q0 = qc.take %a[%zero] : memref<2x!qc.qubit>
+      /// The original reference remains valid across the register helper.
+      qc.x %left : !qc.qubit
+      %other = memref.load %a[%one] : memref<2x!qc.qubit>
+      memref.store %other, %a[%one] : memref<2x!qc.qubit>
+      memref.store %other, %a[%one] : memref<2x!qc.qubit>
+      %true = arith.constant true
+      scf.if %true { memref.store %other, %a[%one] : memref<2x!qc.qubit> }
+      qc.x %other : !qc.qubit
+      %q0 = memref.load %a[%zero] : memref<2x!qc.qubit>
       %v0 = qc.measure %q0 : !qc.qubit -> i1
-      qc.put %q0 into %a[%zero] : memref<2x!qc.qubit>
-      %q1 = qc.take %a[%one] : memref<2x!qc.qubit>
+      memref.store %q0, %a[%zero] : memref<2x!qc.qubit>
+      %q1 = memref.load %a[%one] : memref<2x!qc.qubit>
       %v1 = qc.measure %q1 : !qc.qubit -> i1
-      qc.put %q1 into %a[%one] : memref<2x!qc.qubit>
-      %q2 = qc.take %b[%zero] : memref<1x!qc.qubit>
+      memref.store %q1, %a[%one] : memref<2x!qc.qubit>
+      %q2 = memref.load %b[%zero] : memref<1x!qc.qubit>
       %v2 = qc.measure %q2 : !qc.qubit -> i1
-      qc.put %q2 into %b[%zero] : memref<1x!qc.qubit>
+      memref.store %q2, %b[%zero] : memref<1x!qc.qubit>
       %bits = cbit.alloc(#cbit.init<undefined>) : !cbit.reg<3>
       cbit.store %v0, %bits[%zero] : !cbit.reg<3>
       cbit.store %v1, %bits[%one] : !cbit.reg<3>
@@ -2336,37 +2402,80 @@ TEST_F(QCToQCORegressionTest, RoundTripsCrossRegisterOwnershipAndReplacement) {
                                               &context);
   ASSERT_TRUE(moduleOp);
   for (unsigned round = 0; round < 3; ++round) {
+    ASSERT_TRUE(succeeded(runQCCleanupPipeline(*moduleOp)));
     ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
     ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
     auto counts = qco::sample(mlir::mqt::getEntryPoint(*moduleOp), 8, 17);
     ASSERT_TRUE(succeeded(counts));
     ASSERT_EQ(counts->size(), 1U);
-    EXPECT_EQ(counts->at("010"), 8U);
+    EXPECT_EQ(counts->at("111"), 8U);
     ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
   }
 }
 
-TEST_F(QCToQCORegressionTest, RejectsInvalidOwnershipBeforeRewriting) {
+TEST_F(QCToQCORegressionTest,
+       RejectsUnsupportedReferenceStoresBeforeRewriting) {
   constexpr auto bodies = std::to_array<llvm::StringLiteral>({
-      "qc.put %q into %reg[%zero] : memref<1x!qc.qubit>\n"
-      "qc.x %q : !qc.qubit",
-      "qc.put %q into %reg[%zero] : memref<1x!qc.qubit>\n"
-      "qc.put %q into %reg[%zero] : memref<1x!qc.qubit>",
+      "qc.dealloc %q : !qc.qubit",
       "qc.dealloc %q : !qc.qubit\n"
-      "qc.put %q into %reg[%zero] : memref<1x!qc.qubit>",
-      "%true = arith.constant true\n"
-      "scf.if %true { qc.put %q into %reg[%zero] : memref<1x!qc.qubit> }",
+      "memref.store %q, %reg[%zero] : memref<1x!qc.qubit>",
+      "%other = memref.alloc() : memref<1x!qc.qubit>\n"
+      "memref.store %q, %other[%zero] : memref<1x!qc.qubit>",
+      "%replacement = qc.alloc : !qc.qubit\n"
+      "memref.store %replacement, %reg[%zero] : memref<1x!qc.qubit>",
   });
   for (auto body : bodies) {
+    SCOPED_TRACE(body.str());
     const auto source = std::string(R"mlir(module {
+      func.func private @helper(memref<1x!qc.qubit>)
       func.func @main() attributes {mqt.entry_point} {
         %reg = memref.alloc() : memref<1x!qc.qubit>
         %zero = arith.constant 0 : index
-        %q = qc.take %reg[%zero] : memref<1x!qc.qubit>
+        %q = memref.load %reg[%zero] : memref<1x!qc.qubit>
     )mlir") + body.str() +
                         "\n return } }";
+    auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(moduleOp);
+    OwningOpRef<ModuleOp> original = moduleOp->clone();
+    ScopedDiagnosticHandler handler(&context,
+                                    [](Diagnostic&) { return success(); });
+    EXPECT_TRUE(failed(runQCToQCOConversion(*moduleOp)));
+    EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+        moduleOp->getOperation(), original->getOperation(),
+        OperationEquivalence::Flags::None));
+  }
+}
+
+TEST_F(QCToQCORegressionTest, RejectsInvalidPhysicalReferenceBuffers) {
+  for (const auto* stores : {
+           "memref.store %q0, %reg[%zero] : memref<2x!qc.qubit>",
+           "memref.store %q0, %reg[%zero] : memref<2x!qc.qubit>\n"
+           "memref.store %q1, %reg[%zero] : memref<2x!qc.qubit>",
+           "memref.store %q0, %reg[%zero] : memref<2x!qc.qubit>\n"
+           "memref.store %q0, %reg[%one] : memref<2x!qc.qubit>",
+           "memref.store %q0, %reg[%zero] : memref<2x!qc.qubit>\n"
+           "memref.store %q1, %reg[%one] : memref<2x!qc.qubit>\n"
+           "memref.store %q1, %reg[%zero] : memref<2x!qc.qubit>",
+           "memref.store %q0, %reg[%zero] : memref<2x!qc.qubit>\n"
+           "memref.store %q1, %reg[%one] : memref<2x!qc.qubit>\n"
+           "%other = memref.load %reg[%one] : memref<2x!qc.qubit>\n"
+           "memref.store %other, %reg[%zero] : memref<2x!qc.qubit>",
+           "%early = memref.load %reg[%zero] : memref<2x!qc.qubit>\n"
+           "qc.x %early : !qc.qubit\n"
+           "memref.store %q0, %reg[%zero] : memref<2x!qc.qubit>\n"
+           "memref.store %q1, %reg[%one] : memref<2x!qc.qubit>",
+       }) {
+    SCOPED_TRACE(stores);
+    const auto source = std::string(R"mlir(module {
+      func.func @main() attributes {mqt.entry_point} {
+        %reg = memref.alloca() : memref<2x!qc.qubit>
+        %q0 = qc.static 0 : !qc.qubit
+        %q1 = qc.static 1 : !qc.qubit
+        %zero = arith.constant 0 : index
+        %one = arith.constant 1 : index
+    )mlir") + stores + "\n return } }";
     auto moduleOp = parseSourceString<ModuleOp>(source, &context);
     ASSERT_TRUE(moduleOp);
     OwningOpRef<ModuleOp> original = moduleOp->clone();
@@ -2384,18 +2493,9 @@ TEST_F(QCToQCORegressionTest, RejectsBorrowedRegisterAliasingBeforeRewriting) {
       R"mlir(module {
         func.func private @helper(%reg: memref<2x!qc.qubit>) {
           %zero = arith.constant 0 : index
-          %borrowed = memref.load %reg[%zero] : memref<2x!qc.qubit>
-          %owned = qc.take %reg[%zero] : memref<2x!qc.qubit>
-          qc.put %owned into %reg[%zero] : memref<2x!qc.qubit>
-          qc.x %borrowed : !qc.qubit
-          return
-        }
-      })mlir",
-      R"mlir(module {
-        func.func private @helper(%reg: memref<2x!qc.qubit>) {
-          %zero = arith.constant 0 : index
-          %borrowed = memref.load %reg[%zero] : memref<2x!qc.qubit>
-          qc.put %borrowed into %reg[%zero] : memref<2x!qc.qubit>
+          %one = arith.constant 1 : index
+          %left = memref.load %reg[%zero] : memref<2x!qc.qubit>
+          memref.store %left, %reg[%one] : memref<2x!qc.qubit>
           return
         }
       })mlir",

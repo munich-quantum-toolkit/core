@@ -30,13 +30,11 @@
 #include "mlir/IR/BuiltinTypeInterfaces.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/MLIRContext.h"
-#include "mlir/IR/OperationSupport.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/IR/Types.h"
 #include "mlir/IR/ValueRange.h"
 #include "mlir/IR/Visitors.h"
-#include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Transforms/DialectConversion.h"
 
@@ -63,19 +61,15 @@ enum class AllocationMode : std::uint8_t {
   Dynamic, //!< The module uses dynamic qubit allocation.
 };
 
-/// Track register-backed qubit references, function argument positions, and
+/// Track function argument positions and
 /// the module's allocation mode. Dynamic qubits require deallocation at sinks;
 /// static qubits do not. Mixed allocation modes are rejected before conversion.
 struct LoweringState {
   /// Function symbols remain in place while their signatures are converted.
   SymbolTableCollection symbolTables;
-  /// Per-region map from a register's indices to its loaded qubit values.
-  DenseMap<Region*, DenseMap<Value, DenseMap<Value, Value>>> qubitValues;
   /// Original qubit argument positions, retained while signatures are
   /// rewritten.
   DenseMap<Operation*, SmallVector<unsigned>> qubitArguments;
-  /// Preserve slot ownership in functions that transfer or replace qubits.
-  DenseSet<Operation*> owningFunctions;
   /// Module-wide mode determined before rewriting any function.
   const AllocationMode allocationMode;
 
@@ -333,6 +327,21 @@ collectWireOrigins(ModuleOp moduleOp, DenseMap<Value, Value>& origins) {
     } else if (auto extract = dyn_cast<qtensor::ExtractOp>(op)) {
       origins[extract->getResult(0)] = origin(extract.getTensor());
     } else if (auto insert = dyn_cast<qtensor::InsertOp>(op)) {
+      auto extract =
+          origin(insert.getScalar()).getDefiningOp<qtensor::ExtractOp>();
+      if (!extract || origin(extract.getTensor()) != origin(insert.getDest())) {
+        insert.emitOpError(
+            "must restore the extracted qubit to its original register slot");
+        return WalkResult::interrupt();
+      }
+      const auto source = getConstantIntValue(extract.getIndex());
+      const auto dest = getConstantIntValue(insert.getIndex());
+      if (source && dest && *source != *dest) {
+        insert.emitOpError(
+            "must restore the extracted qubit to its original register slot");
+        return WalkResult::interrupt();
+      }
+      /// Equality of dynamic slot indices is a program precondition.
       origins[insert.getResult()] = origin(insert.getDest());
     } else if (auto call = dyn_cast<func::CallOp>(op)) {
       for (auto [index, result] : llvm::enumerate(call.getResults())) {
@@ -538,11 +547,6 @@ struct ConvertFuncCallOp final : StatefulOpConversionPattern<func::CallOp> {
     for (const auto argument : qubitArguments) {
       auto value = adaptor.getOperands()[argument];
       replacements.emplace_back(value);
-      if (isa<MemRefType>(value.getType())) {
-        for (auto& cache : llvm::make_second_range(getState().qubitValues)) {
-          cache.erase(value);
-        }
-      }
     }
     rewriter.replaceOp(op, replacements);
     return success();
@@ -606,8 +610,7 @@ struct ConvertQTensorAllocOp final : OpConversionPattern<qtensor::AllocOp> {
   }
 };
 
-/// Converts qtensor.extract to qc.take when slot ownership changes in the
-/// function, or to a borrowed memref.load otherwise.
+/// Converts qtensor.extract to memref.load
 ///
 /// @par Example:
 /// ```mlir
@@ -617,32 +620,15 @@ struct ConvertQTensorAllocOp final : OpConversionPattern<qtensor::AllocOp> {
 /// ```mlir
 /// %q = memref.load %memref[%c0] : memref<3x!qc.qubit>
 /// ```
-struct ConvertQTensorExtractOp final
-    : StatefulOpConversionPattern<qtensor::ExtractOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+struct ConvertQTensorExtractOp final : OpConversionPattern<qtensor::ExtractOp> {
+  using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(qtensor::ExtractOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (getState().owningFunctions.contains(
-            op->getParentOfType<func::FuncOp>())) {
-      auto take = qc::TakeOp::create(rewriter, op.getLoc(), adaptor.getTensor(),
-                                     adaptor.getIndex());
-      rewriter.replaceOp(op, {adaptor.getTensor(), take.getQubit()});
-      return success();
-    }
-    auto& qubitValues =
-        getState().qubitValues[op->getParentRegion()][adaptor.getTensor()];
-    if (auto qubit = qubitValues.lookup(adaptor.getIndex())) {
-      rewriter.replaceOp(op, {adaptor.getTensor(), qubit});
-      return success();
-    }
-
     auto load = memref::LoadOp::create(rewriter, op.getLoc(),
-                                       adaptor.getTensor(), adaptor.getIndex())
-                    .getResult();
-    qubitValues[adaptor.getIndex()] = load;
-    rewriter.replaceOp(op, {adaptor.getTensor(), load});
+                                       adaptor.getTensor(), adaptor.getIndex());
+    rewriter.replaceOp(op, {adaptor.getTensor(), load.getResult()});
     return success();
   }
 };
@@ -677,54 +663,14 @@ struct ConvertQTensorFromElementsOp final
   }
 };
 
-/// Preserves ownership with qc.put, or elides unchanged borrowed references.
-struct ConvertQTensorInsertOp final
-    : StatefulOpConversionPattern<qtensor::InsertOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+/// QC gates update the same qubit in place; reinsertion preserves slot
+/// identity.
+struct ConvertQTensorInsertOp final : OpConversionPattern<qtensor::InsertOp> {
+  using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(qtensor::InsertOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-    if (state.owningFunctions.contains(op->getParentOfType<func::FuncOp>())) {
-      qc::PutOp::create(rewriter, op.getLoc(), adaptor.getScalar(),
-                        adaptor.getDest(), adaptor.getIndex());
-      rewriter.replaceOp(op, adaptor.getDest());
-      return success();
-    }
-    auto& qubitValues =
-        state.qubitValues[op->getParentRegion()][adaptor.getDest()];
-    const auto sameIndex = [&](Value index) {
-      if (index == adaptor.getIndex()) {
-        return true;
-      }
-      auto* left = index.getDefiningOp();
-      auto* right = adaptor.getIndex().getDefiningOp();
-      /// Distinct results of one pure operation can identify different slots.
-      return left && right &&
-             cast<OpResult>(index).getResultNumber() ==
-                 cast<OpResult>(adaptor.getIndex()).getResultNumber() &&
-             isPure(left) && isPure(right) &&
-             OperationEquivalence::isEquivalentTo(
-                 left, right, OperationEquivalence::exactValueMatch, nullptr,
-                 OperationEquivalence::Flags::IgnoreLocations);
-    };
-    if (qubitValues.lookup(adaptor.getIndex()) == adaptor.getScalar() ||
-        llvm::any_of(qubitValues, [&](const auto& cached) {
-          return cached.second == adaptor.getScalar() &&
-                 sameIndex(cached.first);
-        })) {
-      rewriter.replaceOp(op, adaptor.getDest());
-      return success();
-    }
-
-    memref::StoreOp::create(rewriter, op.getLoc(), adaptor.getScalar(),
-                            adaptor.getDest(), ValueRange{adaptor.getIndex()});
-    for (auto& caches : llvm::make_second_range(state.qubitValues)) {
-      caches.erase(adaptor.getDest());
-    }
-    state.qubitValues[op->getParentRegion()][adaptor.getDest()]
-                     [adaptor.getIndex()] = adaptor.getScalar();
     rewriter.replaceOp(op, adaptor.getDest());
     return success();
   }
@@ -1440,20 +1386,6 @@ protected:
         signalPassFailure();
         return;
       }
-      const auto origin = [&](Value value) {
-        auto known = origins.lookup(value);
-        return known ? known : value;
-      };
-      moduleOp.walk([&](qtensor::InsertOp insert) {
-        auto extract =
-            origin(insert.getScalar()).getDefiningOp<qtensor::ExtractOp>();
-        if (!extract ||
-            origin(extract.getTensor()) != origin(insert.getDest()) ||
-            getAsOpFoldResult(extract.getIndex()) !=
-                getAsOpFoldResult(insert.getIndex())) {
-          state.owningFunctions.insert(insert->getParentOfType<func::FuncOp>());
-        }
-      });
     }
     const auto tensors = moduleOp.walk([&](Operation* op) {
       if (isa<qtensor::FromElementsOp>(op) &&
@@ -1505,6 +1437,7 @@ protected:
     // Register operation conversion patterns that do not need state tracking
     patterns.add<ConvertQCOMeasureOp, ConvertQCOResetOp, ConvertQCOUnitaryOp,
                  ConvertQTensorAllocOp, ConvertQTensorFromElementsOp,
+                 ConvertQTensorExtractOp, ConvertQTensorInsertOp,
                  ConvertQCOAllocOp, ConvertQCOStaticOp,
                  ConvertQCOGateToQC<qco::GPhaseOp, qc::GPhaseOp, 0, 1>>(
         typeConverter, context);
@@ -1522,8 +1455,7 @@ protected:
                  ConvertQCOSCFForOp>(typeConverter, context);
 
     // Register operation conversion patterns that need state tracking
-    patterns.add<ConvertQTensorExtractOp, ConvertQTensorInsertOp,
-                 ConvertQTensorDeallocOp, ConvertQCOSinkOp>(typeConverter,
+    patterns.add<ConvertQTensorDeallocOp, ConvertQCOSinkOp>(typeConverter,
                                                             context, &state);
 
     // QCO qubit arguments are returned positionally and become in-place QC

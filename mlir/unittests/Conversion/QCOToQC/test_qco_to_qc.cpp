@@ -99,8 +99,9 @@ static LogicalResult runQCOToQCConversion(ModuleOp moduleOp) {
 
 TEST(QCOToQCRegressionTest, RejectsUnsupportedDynamicTensorOwnership) {
   MLIRContext context;
-  context.loadDialect<qco::QCODialect, qtensor::QTensorDialect,
-                      arith::ArithDialect, func::FuncDialect>();
+  context
+      .loadDialect<qco::QCODialect, qtensor::QTensorDialect,
+                   arith::ArithDialect, func::FuncDialect, scf::SCFDialect>();
   for (const auto* body : {
            R"mlir(%q = qco.alloc : !qco.qubit
              %tensor = qtensor.from_elements %q : tensor<1x!qco.qubit>
@@ -117,6 +118,17 @@ TEST(QCOToQCRegressionTest, RejectsUnsupportedDynamicTensorOwnership) {
              %rest, %q = qtensor.extract %tensor[%index] : tensor<?x!qco.qubit>
              qco.sink %q : !qco.qubit
              qtensor.dealloc %rest : tensor<?x!qco.qubit>)mlir",
+           R"mlir(%size = arith.constant 2 : index
+             %zero = arith.constant 0 : index
+             %one = arith.constant 1 : index
+             %tensor = qtensor.alloc(%size) : tensor<2x!qco.qubit>
+             %rest, %q = qtensor.extract %tensor[%zero] : tensor<2x!qco.qubit>
+             %next = scf.for %i = %zero to %one step %one
+                 iter_args(%incomplete = %rest) -> (tensor<2x!qco.qubit>) {
+               scf.yield %incomplete : tensor<2x!qco.qubit>
+             }
+             %full = qtensor.insert %q into %next[%zero] : tensor<2x!qco.qubit>
+             qtensor.dealloc %full : tensor<2x!qco.qubit>)mlir",
        }) {
     auto moduleOp = parseSourceString<ModuleOp>(
         std::string(
@@ -589,8 +601,9 @@ TEST(QCOToQCRegressionTest, PreservesDistinctResultsOfIndexProducer) {
       %t1, %left = qtensor.extract %tensor[%indices#0] : tensor<2x!qco.qubit>
       %t2, %right = qtensor.extract %t1[%indices#1] : tensor<2x!qco.qubit>
       %flipped = qco.x %left : !qco.qubit -> !qco.qubit
-      %t3 = qtensor.insert %flipped into %t2[%indices#1] : tensor<2x!qco.qubit>
-      %t4 = qtensor.insert %right into %t3[%indices#0] : tensor<2x!qco.qubit>
+      %same = arith.addi %indices#0, %c0 : index
+      %t3 = qtensor.insert %flipped into %t2[%same] : tensor<2x!qco.qubit>
+      %t4 = qtensor.insert %right into %t3[%indices#1] : tensor<2x!qco.qubit>
       qtensor.dealloc %t4 : tensor<2x!qco.qubit>
       return
     }
@@ -601,12 +614,15 @@ TEST(QCOToQCRegressionTest, PreservesDistinctResultsOfIndexProducer) {
   ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   auto function = *moduleOp->getOps<func::FuncOp>().begin();
-  /// Both ownership transfers are required to exchange the register slots.
-  EXPECT_EQ(llvm::range_size(function.getBody().front().getOps<qc::PutOp>()),
-            2U);
+  auto loads = llvm::to_vector(function.getOps<memref::LoadOp>());
+  ASSERT_EQ(loads.size(), 2U);
+  auto indices = *function.getOps<scf::IfOp>().begin();
+  EXPECT_EQ(loads[0].getIndices().front(), indices.getResult(0));
+  EXPECT_EQ(loads[1].getIndices().front(), indices.getResult(1));
+  EXPECT_TRUE(function.getOps<memref::StoreOp>().empty());
 }
 
-TEST(QCOToQCRegressionTest, PreservesIndexedQTensorSlotSwapAcrossLoop) {
+TEST(QCOToQCRegressionTest, RejectsQTensorSlotMovesBeforeRewriting) {
   DialectRegistry registry;
   registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
                   arith::ArithDialect, func::FuncDialect, memref::MemRefDialect,
@@ -646,23 +662,13 @@ module {
   auto moduleOp = parseSourceString<ModuleOp>(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-
-  auto function = *moduleOp->getOps<func::FuncOp>().begin();
-  EXPECT_EQ(llvm::range_size(function.getOps<memref::StoreOp>()), 2U);
-  auto loops = llvm::to_vector(function.getOps<scf::ForOp>());
-  ASSERT_EQ(loops.size(), 1U);
-  EXPECT_EQ(llvm::range_size(loops[0].getBody()->getOps<qc::PutOp>()), 2U);
-
-  SmallVector<qc::TakeOp> loadsBeforeLoop;
-  SmallVector<qc::TakeOp> loadsAfterLoop;
-  for (auto load : function.getBody().front().getOps<qc::TakeOp>()) {
-    (load->isBeforeInBlock(loops[0]) ? loadsBeforeLoop : loadsAfterLoop)
-        .push_back(load);
-  }
-  EXPECT_EQ(loadsBeforeLoop.size(), 1U);
-  EXPECT_EQ(loadsAfterLoop.size(), 2U);
+  OwningOpRef<ModuleOp> original = moduleOp->clone();
+  ScopedDiagnosticHandler handler(&context,
+                                  [](Diagnostic&) { return success(); });
+  EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
+  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+      moduleOp->getOperation(), original->getOperation(),
+      OperationEquivalence::Flags::None));
 }
 
 TEST(QCOToQCRegressionTest, RetainsQubitRegisterName) {
@@ -736,10 +742,10 @@ aliasSafeNestedForLoopCtrlOpWithExtractedQubit(qc::QCProgramBuilder& b) {
   b.scfFor(1, 4, 1, [&](Value iv) {
     auto target = b.loadQubit(reg.value, iv);
     b.h(target);
-    b.cx(b.loadQubit(reg.value, c0), target);
+    b.cx(b.loadQubit(reg.value, c0), b.loadQubit(reg.value, iv));
   });
   auto result = b.allocClassicalBitRegister(1);
-  b.measure(control, result, 0);
+  b.measure(b.loadQubit(reg.value, c0), result, 0);
   return result;
 }
 

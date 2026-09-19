@@ -55,29 +55,6 @@ using namespace qir;
 
 namespace {
 
-/// Only terminal lowering may erase the distinction between ownership and
-/// borrowed references. QC cleanup must retain it for conversion back to QCO.
-struct LowerTakeOp final : OpRewritePattern<qc::TakeOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(qc::TakeOp op,
-                                PatternRewriter& rewriter) const override {
-    rewriter.replaceOpWithNewOp<memref::LoadOp>(op, op.getReg(), op.getIndex());
-    return success();
-  }
-};
-
-struct LowerPutOp final : OpRewritePattern<qc::PutOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(qc::PutOp op,
-                                PatternRewriter& rewriter) const override {
-    rewriter.replaceOpWithNewOp<memref::StoreOp>(op, op.getQubit(), op.getReg(),
-                                                 ValueRange{op.getIndex()});
-    return success();
-  }
-};
-
 constexpr unsigned LOCAL_CBIT_REGISTER = 1U;
 constexpr unsigned RETURNED_CBIT_REGISTER = 2U;
 constexpr unsigned MIXED_CBIT_REGISTER =
@@ -844,7 +821,6 @@ protected:
     {
       RewritePatternSet patterns(ctx);
       cbit::populateCBitDecompositionPatterns(patterns);
-      patterns.add<LowerTakeOp, LowerPutOp>(ctx);
       const FrozenRewritePatternSet frozen(std::move(patterns));
       walkAndApplyPatterns(moduleOp, frozen);
     }

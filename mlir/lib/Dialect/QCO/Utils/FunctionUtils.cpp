@@ -18,12 +18,9 @@
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
-#include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/SymbolTable.h"
 
-#include "llvm/ADT/DenseSet.h"
-#include "llvm/ADT/PointerUnion.h"
 #include "llvm/ADT/STLExtras.h"
 
 #include <iterator>
@@ -64,7 +61,7 @@ FailureOr<unsigned> mlir::qco::getCallArgumentForResult(func::CallOp call,
   return argument;
 }
 
-static FailureOr<unsigned> traceBlockArgument(Block& block, Value value) {
+FailureOr<unsigned> mlir::qco::traceQubitArgument(Block& block, Value value) {
   while (true) {
     if (auto argument = dyn_cast<BlockArgument>(value)) {
       if (argument.getOwner() == &block &&
@@ -86,7 +83,7 @@ static FailureOr<unsigned> traceBlockArgument(Block& block, Value value) {
 
     if (auto loop = value.getDefiningOp<scf::WhileOp>()) {
       auto result = cast<OpResult>(value).getResultNumber();
-      auto argument = traceBlockArgument(
+      auto argument = traceQubitArgument(
           *loop.getBeforeBody(), loop.getConditionOp().getArgs()[result]);
       if (failed(argument)) {
         return failure();
@@ -118,11 +115,12 @@ FailureOr<unsigned> mlir::qco::traceQubitArgument(func::FuncOp function,
   if (function.isDeclaration()) {
     return failure();
   }
-  return traceBlockArgument(function.getBody().front(), value);
+  return traceQubitArgument(function.getBody().front(), value);
 }
 
 /// Require dynamic tensor slots to be restored before leaving each region.
-/// Positional region correspondence is checked separately.
+/// Slot identity and disjoint extractions are program preconditions; known
+/// violations and positional region correspondence are checked separately.
 bool mlir::qco::hasCompleteTensorLifetime(Value tensor, unsigned depth) {
   /// ponytail: reject deeper nesting; use a worklist if proving
   /// completeness beyond 64 nested regions becomes necessary.
@@ -133,21 +131,23 @@ bool mlir::qco::hasCompleteTensorLifetime(Value tensor, unsigned depth) {
     auto type = dyn_cast<RankedTensorType>(value.getType());
     return type && isa<qco::QubitType>(type.getElementType());
   };
-  DenseSet<llvm::PointerUnion<Attribute, Value>> extracted;
+  unsigned extracted = 0;
   while (tensor.hasOneUse()) {
     auto* user = *tensor.user_begin();
     if (auto extract = dyn_cast<qtensor::ExtractOp>(user)) {
-      if (!extracted.insert(getAsOpFoldResult(extract.getIndex())).second) {
-        return false;
-      }
+      ++extracted;
       tensor = extract.getOutTensor();
     } else if (auto insert = dyn_cast<qtensor::InsertOp>(user)) {
-      if (!extracted.erase(getAsOpFoldResult(insert.getIndex()))) {
+      if (extracted == 0) {
         return false;
       }
+      --extracted;
       tensor = insert.getResult();
     } else if (isa<scf::ForOp, scf::WhileOp, qco::IfOp, qco::IndexSwitchOp>(
                    user)) {
+      if (extracted != 0) {
+        return false;
+      }
       const auto index =
           llvm::count_if(user->getOperands().take_front(
                              tensor.use_begin()->getOperandNumber()),
@@ -166,7 +166,7 @@ bool mlir::qco::hasCompleteTensorLifetime(Value tensor, unsigned depth) {
       }
       tensor = results[index];
     } else if (auto call = dyn_cast<func::CallOp>(user)) {
-      if (!extracted.empty()) {
+      if (extracted != 0) {
         return false;
       }
       auto arguments = qco::getQuantumArgumentIndices(call.getOperandTypes());
@@ -186,7 +186,7 @@ bool mlir::qco::hasCompleteTensorLifetime(Value tensor, unsigned depth) {
     } else {
       return isa<qtensor::DeallocOp, qco::YieldOp, scf::YieldOp,
                  scf::ConditionOp, func::ReturnOp>(user) &&
-             extracted.empty();
+             extracted == 0;
     }
   }
   return false;

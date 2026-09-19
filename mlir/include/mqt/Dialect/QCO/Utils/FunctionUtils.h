@@ -11,6 +11,7 @@
 #pragma once
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/IR/Block.h"
 #include "mlir/IR/TypeRange.h"
 #include "mlir/IR/Value.h"
 #include "mlir/Support/LogicalResult.h"
@@ -33,7 +34,11 @@ namespace mlir::qco {
 [[nodiscard]] FailureOr<unsigned> traceQubitArgument(func::FuncOp function,
                                                      Value value);
 
+/// Return the quantum block argument continued by @p value.
+[[nodiscard]] FailureOr<unsigned> traceQubitArgument(Block& block, Value value);
+
 /// Check that extracted tensor slots are restored at calls and region exits.
-/// Positional region and function-result correspondence is checked separately.
+/// Matching slot indices are a program precondition; correspondence is checked
+/// separately.
 [[nodiscard]] bool hasCompleteTensorLifetime(Value tensor, unsigned depth = 0);
 } // namespace mlir::qco

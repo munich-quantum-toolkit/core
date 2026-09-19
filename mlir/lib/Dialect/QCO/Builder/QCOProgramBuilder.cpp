@@ -204,29 +204,11 @@ SmallVector<Value> QCOProgramBuilder::call(func::FuncOp callee,
   for (const auto argument : quantumArguments) {
     quantumOperands.emplace_back(operands[argument]);
   }
-  const auto registerInfo = getRegisterInfo(quantumOperands);
-  for (auto [index, operand] : llvm::enumerate(quantumOperands)) {
-    if (isQubitTensor(operand.getType()) &&
-        llvm::any_of(llvm::enumerate(registerInfo), [&](auto entry) {
-          return entry.index() != index &&
-                 entry.value().regId == registerInfo[index].regId;
-        })) {
-      llvm::reportFatalUsageError(
-          "Calls must borrow complete, distinct quantum registers");
-    }
-  }
   quantumOperands = prepareInitArgs(quantumOperands);
   SmallVector<Value> updatedOperands(operands);
   for (auto [argument, operand] :
        llvm::zip_equal(quantumArguments, quantumOperands)) {
     updatedOperands[argument] = operand;
-    if (isa<QubitType>(operand.getType())) {
-      validateQubitValue(operand);
-      validQubits.erase(operand);
-    } else {
-      validateTensorValue(operand);
-      validTensors.erase(operand);
-    }
   }
 
   SmallVector<Value> results;
@@ -247,16 +229,8 @@ SmallVector<Value> QCOProgramBuilder::call(func::FuncOp callee,
   const auto firstQuantumResult = results.size() - quantumArguments.size();
   for (auto [index, result] : llvm::enumerate(results)) {
     if (index >= firstQuantumResult) {
-      const auto& info = registerInfo[index - firstQuantumResult];
-      if (result.getType() != info.type) {
-        llvm::reportFatalUsageError(
-            "Callee does not return its quantum arguments positionally");
-      }
-      if (isa<QubitType>(result.getType())) {
-        validQubits.insert(Qubit{result, info.regId, info.regIndex});
-      } else {
-        validTensors.insert(Tensor{result, info.regId});
-      }
+      updateQubitValueTracking(quantumOperands[index - firstQuantumResult],
+                               result);
     } else if (isa<QubitType>(result.getType())) {
       validQubits.insert(result);
     } else if (isQubitTensor(result.getType())) {
@@ -478,15 +452,6 @@ Value QCOProgramBuilder::insertExtractedQubits(Value tensor,
 
 SmallVector<Value> QCOProgramBuilder::prepareInitArgs(ValueRange initArgs) {
   checkQubitType(initArgs);
-  if (validQubits.empty()) {
-    for (auto initArg : initArgs) {
-      if (!isa<QubitType>(initArg.getType())) {
-        validateTensorValue(initArg);
-      }
-    }
-    return SmallVector<Value>(initArgs);
-  }
-
   DenseSet<Value> initQubits;
   DenseMap<int64_t, SmallVector<Qubit>> qubitsByRegister;
   for (auto initArg : initArgs) {
@@ -494,13 +459,21 @@ SmallVector<Value> QCOProgramBuilder::prepareInitArgs(ValueRange initArgs) {
       initQubits.insert(initArg);
     } else {
       validateTensorValue(initArg);
-      qubitsByRegister.try_emplace(validTensors.find(initArg)->regId);
+      if (!qubitsByRegister.try_emplace(validTensors.find(initArg)->regId)
+               .second) {
+        llvm::reportFatalUsageError(
+            "Quantum operands must denote distinct registers");
+      }
     }
   }
   if (!qubitsByRegister.empty()) {
     for (const auto& qubit : validQubits) {
       auto it = qubitsByRegister.find(qubit.regId);
-      if (it != qubitsByRegister.end() && !initQubits.contains(qubit)) {
+      if (it != qubitsByRegister.end()) {
+        if (initQubits.contains(qubit)) {
+          llvm::reportFatalUsageError(
+              "Quantum operands must borrow complete, distinct registers");
+        }
         it->second.push_back(qubit);
       }
     }
@@ -520,65 +493,16 @@ SmallVector<Value> QCOProgramBuilder::prepareInitArgs(ValueRange initArgs) {
   return updatedArgs;
 }
 
-SmallVector<QCOProgramBuilder::RegisterInfo>
-QCOProgramBuilder::getRegisterInfo(ValueRange values) const {
-  SmallVector<RegisterInfo> info;
-  info.reserve(values.size());
-  for (auto value : values) {
-    if (isa<QubitType>(value.getType())) {
-      validateQubitValue(value);
-      const auto& qubit = *validQubits.find(value);
-      info.push_back({
-          .type = value.getType(),
-          .regId = qubit.regId,
-          .regIndex = qubit.regIndex,
-      });
-    } else {
-      validateTensorValue(value);
-      info.push_back({
-          .type = value.getType(),
-          .regId = validTensors.find(value)->regId,
-          .regIndex = {},
-      });
-    }
-  }
-  return info;
-}
-
-void QCOProgramBuilder::restoreRegisterInfo(ValueRange values,
-                                            ArrayRef<RegisterInfo> inputs) {
-  const auto outputs = getRegisterInfo(values);
-  DenseMap<std::tuple<int64_t, int64_t, Value>, int64_t> slotCounts;
-  const auto slotKey = [](const RegisterInfo& info) {
-    const auto index =
-        info.regIndex ? getConstantIntValue(info.regIndex) : std::nullopt;
-    return std::tuple{info.regId, index.value_or(0),
-                      index ? Value{} : info.regIndex};
-  };
+static void validateControlFlowResults(ValueRange inputs, ValueRange outputs) {
   for (auto [input, output] : llvm::zip_equal(inputs, outputs)) {
-    if (input.type != output.type) {
+    if (input.getType() != output.getType()) {
       llvm::reportFatalUsageError("Result types must match input types");
     }
-    if (isa<QubitType>(input.type)) {
-      ++slotCounts[slotKey(input)];
-      --slotCounts[slotKey(output)];
-    } else if (input.regId != output.regId) {
+    auto argument = cast<BlockArgument>(input);
+    auto origin = traceQubitArgument(*argument.getOwner(), output);
+    if (failed(origin) || *origin != argument.getArgNumber()) {
       llvm::reportFatalUsageError(
-          "Structured body must preserve each input's tensor register");
-    }
-  }
-  if (llvm::any_of(slotCounts,
-                   [](const auto& entry) { return entry.second != 0; })) {
-    llvm::reportFatalUsageError(
-        "Structured body must preserve the set of extracted tensor slots; "
-        "use equal constant indices or the same dynamic index SSA value");
-  }
-  for (auto [value, input, output] : llvm::zip_equal(values, inputs, outputs)) {
-    if (isa<QubitType>(input.type) &&
-        (input.regId != output.regId || input.regIndex != output.regIndex)) {
-      /// Assign results to input slots, using indices that dominate the region.
-      validQubits.erase(value);
-      validQubits.insert(Qubit{value, input.regId, input.regIndex});
+          "Structured body must preserve quantum inputs positionally");
     }
   }
 }
@@ -1382,7 +1306,6 @@ ValueRange QCOProgramBuilder::scfFor(
   auto updatedArgs = prepareInitArgs(initArgs);
 
   // Create the empty for operation
-  const auto registerInfo = getRegisterInfo(updatedArgs);
   auto forOp = scf::ForOp::create(*this, lb, ub, stepSize, updatedArgs);
   auto* forBody = forOp.getBody();
   auto iv = forBody->getArgument(0);
@@ -1401,7 +1324,7 @@ ValueRange QCOProgramBuilder::scfFor(
     llvm::reportFatalUsageError(
         "scf.for body must return exactly one value per iter arg");
   }
-  restoreRegisterInfo(bodyResults, registerInfo);
+  validateControlFlowResults(iterArgs, bodyResults);
   // Create the yield operation
   scf::YieldOp::create(*this, bodyResults);
 
@@ -1420,7 +1343,6 @@ ValueRange QCOProgramBuilder::scfWhile(
   // Get the updated arguments after inserting the extracted qubits
   auto updatedArgs = prepareInitArgs(initArgs);
   // Create the empty while operation
-  const auto registerInfo = getRegisterInfo(updatedArgs);
   auto whileOp = scf::WhileOp::create(*this, initArgs.getTypes(), updatedArgs);
 
   const SmallVector locs(initArgs.size(), getLoc());
@@ -1440,7 +1362,7 @@ ValueRange QCOProgramBuilder::scfWhile(
       llvm::reportFatalUsageError(
           "scf.while body must return exactly one value per iter arg");
     }
-    restoreRegisterInfo(results, registerInfo);
+    validateControlFlowResults(blockArgs, results);
     if (createYield) {
       scf::YieldOp::create(*this, results);
     } else {
@@ -1482,7 +1404,6 @@ ValueRange QCOProgramBuilder::qcoIf(
   auto conditionValue = variantToValue(*this, getLoc(), condition);
   auto updatedArgs = prepareInitArgs(initArgs);
   // Create the empty if operation
-  const auto registerInfo = getRegisterInfo(updatedArgs);
   auto ifOp = IfOp::create(*this, conditionValue, updatedArgs);
 
   const SmallVector locs(initArgs.size(), getLoc());
@@ -1498,7 +1419,7 @@ ValueRange QCOProgramBuilder::qcoIf(
     llvm::reportFatalUsageError(
         "Then body must return exactly one value per input value");
   }
-  restoreRegisterInfo(thenResult, registerInfo);
+  validateControlFlowResults(thenArgs, thenResult);
   YieldOp::create(*this, thenResult);
 
   // Create the else block
@@ -1512,7 +1433,7 @@ ValueRange QCOProgramBuilder::qcoIf(
       llvm::reportFatalUsageError(
           "Else body must return exactly one value per input value");
     }
-    restoreRegisterInfo(elseResult, registerInfo);
+    validateControlFlowResults(elseArgs, elseResult);
     YieldOp::create(*this, elseResult);
     updateQubitValueTracking(elseResult, ifOp.getLinearResults());
   } else {
@@ -1539,7 +1460,6 @@ ValueRange QCOProgramBuilder::qcoIndexSwitch(
   const auto ntargets = targets.size();
   const auto types = targets.getTypes();
   const auto updatedTargets = prepareInitArgs(targets);
-  const auto registerInfo = getRegisterInfo(updatedTargets);
   auto argValue = variantToValue(*this, getLoc(), arg);
 
   auto switchOp = IndexSwitchOp::create(*this, types, argValue, cases,
@@ -1560,7 +1480,7 @@ ValueRange QCOProgramBuilder::qcoIndexSwitch(
       llvm::reportFatalUsageError(msg);
       llvm_unreachable(msg);
     }
-    restoreRegisterInfo(result, registerInfo);
+    validateControlFlowResults(block->getArguments(), result);
 
     YieldOp::create(*this, result);
     prev = result;

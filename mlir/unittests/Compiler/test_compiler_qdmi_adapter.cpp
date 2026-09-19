@@ -485,27 +485,22 @@ TEST(CompilerQDMIAdapterTest, CompilesAdaptiveMeasurementControlledLoop) {
   EXPECT_EQ(job.getCounts().at("0"), 8);
 }
 
-TEST(CompilerQDMIAdapterTest, ExecutesRegisterOwnershipTransfers) {
+TEST(CompilerQDMIAdapterTest, ExecutesStableRegisterHelpers) {
   auto program = mlir::QCProgram::fromMLIRString(R"mlir(module {
     func.func private @move(%a: memref<1x!qc.qubit>, %b: memref<1x!qc.qubit>) {
       %zero = arith.constant 0 : index
-      %left = qc.take %a[%zero] : memref<1x!qc.qubit>
-      %right = qc.take %b[%zero] : memref<1x!qc.qubit>
-      qc.put %right into %a[%zero] : memref<1x!qc.qubit>
+      %left = memref.load %a[%zero] : memref<1x!qc.qubit>
+      %right = memref.load %b[%zero] : memref<1x!qc.qubit>
       qc.x %left : !qc.qubit
-      qc.put %left into %b[%zero] : memref<1x!qc.qubit>
+      qc.swap %left, %right : !qc.qubit, !qc.qubit
       return
     }
     func.func @main() -> !cbit.reg<2> attributes {mqt.entry_point} {
       %a = memref.alloc() : memref<1x!qc.qubit>
       %b = memref.alloc() : memref<1x!qc.qubit>
-      %replacement = qc.alloc : !qc.qubit
       %zero = arith.constant 0 : index
       %one = arith.constant 1 : index
       func.call @move(%a, %b) : (memref<1x!qc.qubit>, memref<1x!qc.qubit>) -> ()
-      %old = qc.take %a[%zero] : memref<1x!qc.qubit>
-      qc.dealloc %old : !qc.qubit
-      qc.put %replacement into %a[%zero] : memref<1x!qc.qubit>
       %bits = cbit.alloc(#cbit.init<undefined>) : !cbit.reg<2>
       %q0 = memref.load %a[%zero] : memref<1x!qc.qubit>
       %q1 = memref.load %b[%zero] : memref<1x!qc.qubit>

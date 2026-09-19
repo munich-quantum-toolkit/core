@@ -22,12 +22,14 @@ def QCToQCO : Pass<"qc-to-qco", "mlir::ModuleOp"> {
     qubits and complete tensors are appended to ordinary results in argument
     order. Duplicate register operands, register/element aliases, and consumption
     or explicit returns of borrowed registers are diagnosed before conversion.
-    Borrowed register storage supports loads, helper calls, and explicit
-    `qc.take`/`qc.put` ownership transfers. Ordinary qubit-reference stores do
-    not encode ownership and remain unsupported.
-    A loaded reference cannot remain live across a take, put, or helper call
-    on its register; use explicit ownership or load it again afterwards.
-    A put must consume a qubit owned in the same block, with no later uses.
+    Register slots retain their qubit identities. Loads refer to stable slots;
+    identity stores are erased. Entry-block physical reference buffers may be
+    initialized once with distinct static qubits and become tensors of those
+    qubits. Other reference stores are unsupported. Loaded references remain
+    valid across helper calls. Bounds, disjoint runtime operands, and matching
+    dynamic store indices are program preconditions; this pass diagnoses known
+    violations without inserting runtime checks. See the shared
+    [quantum resource contract](index.md#quantum-resource-contract).
     Static qubit references are hoisted and coalesced when needed. General
     classical folding and common subexpression elimination are not guaranteed
     by this conversion; use the corresponding simplification passes when needed.

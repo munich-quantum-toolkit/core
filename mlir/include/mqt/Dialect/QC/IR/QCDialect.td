@@ -21,17 +21,17 @@ def QCDialect : Dialect {
         modify qubits in place. Operation order determines the sequence of
         transformations on each qubit.
 
-        `memref.load` borrows a register's qubit reference. Use `qc.take` and
-        `qc.put` to move register slot ownership without applying quantum gates.
-        Ownership transfers remain explicit until terminal lowering so that
-        conversion back to QCO can recover linear qubit values.
-
         The name "QC" stands for "Quantum Circuit."
 
         In a program, dynamic qubit and qubit-register allocations must be in
         the entry block of the `mqt.entry_point` function. Helper functions
         receive quantum resources as arguments. The MQT entry-point verifier
         checks this rule across the program.
+
+    Register slots retain their qubit identities, and quantum operands must
+    denote disjoint resources. See the shared
+    [quantum resource contract](index.md#quantum-resource-contract) for helper
+    boundaries, dynamic-index preconditions, and semantic round trips.
 
         Example:
         ```mlir
