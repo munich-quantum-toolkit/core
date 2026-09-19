@@ -170,7 +170,10 @@ auto Edge<Node>::normalize(Node* p, const std::array<Edge, RADIX>& e,
 
   const auto mag2 = std::array{weights[0].mag2(), weights[1].mag2()};
 
-  const auto argMax = (mag2[0] + RealNumber::eps >= mag2[1]) ? 0U : 1U;
+  /// Keep the dominant phase independent of the incoming scale.
+  const auto argMax =
+      mag2[1] - mag2[0] > RealNumber::eps * std::max(mag2[0], mag2[1]) ? 1U
+                                                                       : 0U;
   const auto& maxMag2 = mag2[argMax];
 
   const auto argMin = 1U - argMax;
@@ -178,11 +181,10 @@ auto Edge<Node>::normalize(Node* p, const std::array<Edge, RADIX>& e,
 
   const auto norm = std::sqrt(maxMag2 + minMag2);
   const auto maxMag = std::sqrt(maxMag2);
-  const auto commonFactor = norm / maxMag;
-
-  const auto topWeight = weights[argMax] * commonFactor;
   const auto maxWeight = maxMag / norm;
   p->e[argMax].w = cn.lookup(maxWeight);
+  /// Preserve the dominant coefficient after interning its normalized weight.
+  const auto topWeight = weights[argMax] / RealNumber::val(p->e[argMax].w.r);
   assert(!p->e[argMax].w.exactlyZero() &&
          "Max edge weight should not be zero.");
 
@@ -365,7 +367,8 @@ auto Edge<Node>::normalize(Node* p, const std::array<Edge, NEDGE>& e,
       maxMag2 = w.mag2();
       maxVal = e[i].w;
     } else {
-      if (const auto mag2 = w.mag2(); mag2 - maxMag2 > RealNumber::eps) {
+      if (const auto mag2 = w.mag2();
+          mag2 - maxMag2 > RealNumber::eps * std::max(mag2, maxMag2)) {
         argMax = i;
         maxMag2 = mag2;
         maxVal = e[i].w;

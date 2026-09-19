@@ -40,6 +40,7 @@
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <numbers>
 #include <numeric>
 #include <random>
 #include <span>
@@ -47,6 +48,7 @@
 #include <stdexcept>
 #include <string>
 #include <type_traits>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -255,7 +257,20 @@ TEST(DDPackageTest, ComputeTableConfigurationAndClear) {
       unary.clear();
       EXPECT_EQ(binary.lookup(1, 2), nullptr);
       EXPECT_EQ(unary.lookup(1), nullptr);
+      EXPECT_EQ(binary.getStats().numEntries, 0);
+      EXPECT_EQ(unary.getStats().numEntries, 0);
     }
+    binary.insert(1, 2, 7);
+    EXPECT_THROW(binary.resize(3), std::invalid_argument);
+    ASSERT_NE(binary.lookup(1, 2), nullptr);
+    EXPECT_EQ(*binary.lookup(1, 2), 7);
+    binary.resize(8);
+    EXPECT_EQ(binary.getStats().numBuckets, 8);
+    EXPECT_EQ(binary.getStats().numEntries, 0);
+    EXPECT_EQ(binary.lookup(1, 2), nullptr);
+    binary.insert(1, 2, 9);
+    ASSERT_NE(binary.lookup(1, 2), nullptr);
+    EXPECT_EQ(*binary.lookup(1, 2), 9);
   }
 }
 
@@ -1483,6 +1498,209 @@ TEST(DDPackageTest, MatrixConstructionRejectsRaggedRows) {
        }) {
     EXPECT_THROW(package.makeDDFromMatrix(matrix), std::invalid_argument);
   }
+}
+
+TEST(DDPackageTest, NormalizationDominantPhaseIsIndependentOfScale) {
+  const auto check = []<class Node, template <class> class EdgeType> {
+    Package package(1);
+    const auto make = [&package](const ComplexValue second,
+                                 const ComplexValue factor) {
+      constexpr size_t count = IsVector<Node> ? RADIX : NEDGE;
+      std::array<EdgeType<Node>, count> edges{};
+      edges.fill(EdgeType<Node>::zero());
+      const auto weights = std::array{factor, second * factor};
+      for (size_t i = 0; i < weights.size(); ++i) {
+        if constexpr (std::is_same_v<EdgeType<Node>, Edge<Node>>) {
+          edges[i] = Edge<Node>::terminal(package.cn.lookup(weights[i]));
+        } else {
+          edges[i] = CachedEdge<Node>::terminal(weights[i]);
+        }
+      }
+      return package.makeDDNode<Node, EdgeType>(0, edges);
+    };
+    for (const auto second : {
+             ComplexValue{-2., 0.},
+             ComplexValue{0., 2.},
+             ComplexValue{-1.5, 1.5},
+         }) {
+      const auto reference = make(second, 1.);
+      for (const auto factor : {
+               ComplexValue{0x1p-24, 0.},
+               ComplexValue{0., 0x1p-24},
+               ComplexValue{0.5, 0.5},
+           }) {
+        SCOPED_TRACE(::testing::Message() << second << " * " << factor);
+        const auto scaled = make(second, factor);
+        EXPECT_EQ(scaled.p, reference.p);
+        const auto expected = static_cast<ComplexValue>(reference.w) * factor;
+        const auto actual = static_cast<ComplexValue>(scaled.w);
+        EXPECT_NEAR(actual.r, expected.r, RealNumber::eps);
+        EXPECT_NEAR(actual.i, expected.i, RealNumber::eps);
+      }
+    }
+    /// Tied magnitudes retain the leftmost phase at every input scale.
+    for (const auto delta : {0., RealNumber::eps / 4.}) {
+      for (const auto scale : {0x1p-24, 1., 64.}) {
+        const auto result = make({0., 1. + delta}, scale);
+        ASSERT_NE(result.p, nullptr);
+        const auto dominant = static_cast<ComplexValue>(result.p->e[0].w);
+        EXPECT_GT(dominant.r, 0.);
+        EXPECT_DOUBLE_EQ(dominant.i, 0.);
+      }
+    }
+  };
+  check.template operator()<vNode, Edge>();
+  check.template operator()<vNode, CachedEdge>();
+  check.template operator()<mNode, Edge>();
+  check.template operator()<mNode, CachedEdge>();
+}
+
+TEST(DDPackageTest, BalancedNormalizationBoundsErrorAndSharesWeights) {
+  for (const fp scale : {1e-8, 1., 1e8}) {
+    for (const fp sign : {1., -1.}) {
+      SCOPED_TRACE(::testing::Message() << scale << " * " << sign);
+      Package package(1);
+      const ComplexValue first{scale, 0.25 * scale};
+      const auto second =
+          ComplexValue{scale + (0.75 * RealNumber::eps),
+                       (0.25 * scale) - (0.75 * RealNumber::eps)} *
+          sign;
+      const auto edge = package.makeDDNode<vNode, CachedEdge>(
+          0, {vCachedEdge::terminal(first), vCachedEdge::terminal(second)});
+      ASSERT_NE(edge.p, nullptr);
+      EXPECT_EQ(edge.p->e[0].w.r, package.cn.lookup(SQRT2_2).r);
+      EXPECT_EQ(edge.p->e[1].w.r, package.cn.lookup(sign * SQRT2_2).r);
+      const auto a = edge.w * static_cast<ComplexValue>(edge.p->e[0].w);
+      const auto b = edge.w * static_cast<ComplexValue>(edge.p->e[1].w);
+      const auto error = std::hypot(std::hypot(a.r - first.r, a.i - first.i),
+                                    std::hypot(b.r - second.r, b.i - second.i));
+      EXPECT_LE(error, RealNumber::eps +
+                           (16. * std::numeric_limits<fp>::epsilon() * scale));
+    }
+  }
+}
+
+TEST(DDPackageTest, VectorNormalizationCompensatesStoredDominantWeight) {
+  const auto check = []<template <class> class EdgeType> {
+    for (const auto second : {ComplexValue{4., 0.}, ComplexValue{0., 4.}}) {
+      Package package(1);
+      const auto stored = package.cn.lookup(0.8 + (0.75 * RealNumber::eps));
+      const auto input = std::array{ComplexValue{3., 0.}, second};
+      std::array<EdgeType<vNode>, RADIX> edges{};
+      for (size_t i = 0; i < edges.size(); ++i) {
+        if constexpr (std::is_same_v<EdgeType<vNode>, vEdge>) {
+          edges[i] = vEdge::terminal(package.cn.lookup(input[i]));
+        } else {
+          edges[i] = vCachedEdge::terminal(input[i]);
+        }
+      }
+      const auto result = package.makeDDNode<vNode, EdgeType>(0, edges);
+      ASSERT_NE(result.p, nullptr);
+      EXPECT_EQ(result.p->e[1].w.r, stored.r);
+      for (size_t i = 0; i < edges.size(); ++i) {
+        const auto actual = static_cast<ComplexValue>(result.w) *
+                            static_cast<ComplexValue>(result.p->e[i].w);
+        EXPECT_NEAR(actual.r, input[i].r,
+                    8. * std::numeric_limits<fp>::epsilon());
+        EXPECT_NEAR(actual.i, input[i].i,
+                    8. * std::numeric_limits<fp>::epsilon());
+      }
+    }
+  };
+  check.template operator()<Edge>();
+  check.template operator()<CachedEdge>();
+}
+
+TEST(DDPackageTest, GroverRetainsCompactAccurateState) {
+  constexpr size_t qubits = 20;
+  const auto owner = std::make_unique<Package>(qubits);
+  auto& package = *owner;
+  auto state = makeZeroState(qubits, package);
+  const GateMatrix h{SQRT2_2, SQRT2_2, SQRT2_2, -SQRT2_2};
+  const GateMatrix x{0., 1., 1., 0.};
+  const GateMatrix z{1., 0., 0., -1.};
+  Controls controls;
+  for (size_t q = 0; q + 1 < qubits; ++q) {
+    controls.emplace(static_cast<Qubit>(q));
+  }
+  const auto apply = [&](const GateMatrix& gate, size_t q,
+                         const Controls& gateControls = Controls{}) {
+    const auto next = package.multiply(
+        package.makeGateDD(gate, gateControls, static_cast<Qubit>(q)), state);
+    package.incRef(next);
+    package.decRef(state);
+    state = next;
+    package.garbageCollect();
+  };
+  for (size_t q = 0; q < qubits; ++q) {
+    apply(h, q);
+  }
+
+  /// Contract the entire DD against Grover's analytic two-amplitude state.
+  /// Memoization keeps this check proportional to the reachable DD size.
+  using Number = std::complex<fp>;
+  using Moments = std::pair<fp, Number>;
+  std::unordered_map<const vNode*, Moments> memo;
+  const auto moments = [&memo](const auto& visit,
+                               const vNode* node) -> Moments {
+    if (node == nullptr) {
+      return {1., 1.};
+    }
+    if (const auto it = memo.find(node); it != memo.end()) {
+      return it->second;
+    }
+    Moments result{};
+    for (const auto& edge : node->e) {
+      if (!edge.w.exactlyZero()) {
+        const Number weight{static_cast<std::complex<fp>>(edge.w)};
+        const auto [norm, sum] = visit(visit, edge.p);
+        result.first += std::norm(weight) * norm;
+        result.second += weight * sum;
+      }
+    }
+    memo.emplace(node, result);
+    return result;
+  };
+  const auto dimension = std::ldexp(1., static_cast<int>(qubits));
+  const auto theta = std::asin(1. / std::sqrt(dimension));
+  const auto iterations =
+      static_cast<size_t>(std::numbers::pi_v<fp> / (4 * theta));
+  fp maxNormError = 0.;
+  fp maxInfidelity = 0.;
+  size_t peakNodes = 0;
+  for (size_t k = 1; k <= iterations; ++k) {
+    apply(z, qubits - 1, controls);
+    for (size_t q = 0; q < qubits; ++q) {
+      apply(h, q);
+    }
+    for (size_t q = 0; q < qubits; ++q) {
+      apply(x, q);
+    }
+    apply(z, qubits - 1, controls);
+    for (size_t q = 0; q < qubits; ++q) {
+      apply(x, q);
+    }
+    for (size_t q = 0; q < qubits; ++q) {
+      apply(h, q);
+    }
+    memo.clear();
+    const auto [nodeNorm, nodeSum] = moments(moments, state.p);
+    const Number root{static_cast<std::complex<fp>>(state.w)};
+    const auto norm = std::norm(root) * nodeNorm;
+    const Number marked{state.getValueByPath(qubits, std::string(qubits, '1'))};
+    const auto angle = static_cast<fp>((2 * k) + 1) * theta;
+    const auto overlap =
+        std::sin(angle) * marked +
+        std::cos(angle) / std::sqrt(dimension - 1) * (root * nodeSum - marked);
+    maxNormError = std::max(maxNormError, std::abs(norm - 1));
+    maxInfidelity =
+        std::max(maxInfidelity, std::abs((std::norm(overlap) / norm) - 1));
+    peakNodes = std::max(peakNodes, memo.size());
+  }
+  EXPECT_LT(maxNormError, 1e-10);
+  EXPECT_LT(maxInfidelity, 1e-12);
+  EXPECT_LE(peakNodes, 4 * qubits * qubits);
+  package.decRef(state);
 }
 
 TEST(DDPackageTest, NearZeroNormalize) {

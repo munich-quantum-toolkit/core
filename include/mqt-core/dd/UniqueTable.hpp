@@ -44,7 +44,7 @@ public:
     std::size_t nVars = 0U;
 
     /// Initial buckets per level (must be a power of two).
-    std::size_t nBuckets = 1024U;
+    std::size_t nBuckets = 64U;
 
     /// The initial garbage collection limit
     std::size_t initialGCLimit = INITIAL_GC_LIMIT;
@@ -159,7 +159,7 @@ public:
     for (const auto& table : std::ranges::reverse_view(tables)) {
       std::cout << "\tq" << q << ":" << "\n";
       for (std::size_t key = 0; key < table.size(); ++key) {
-        auto* p = static_cast<Node*>(table[key]);
+        const auto* p = static_cast<Node*>(table[key]);
         if (p != nullptr) {
           std::cout << "\tkey=" << key << ": ";
         }

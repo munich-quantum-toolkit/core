@@ -117,6 +117,23 @@ SVG(filename="bell_state.svg")
 
 See {py:class}`~mqt.core.dd.DDPackage` for the full API.
 
+## Memory and Cache Growth
+
+Node unique tables start with 64 buckets per qubit level and grow independently
+as levels fill. This avoids reserving large tables for sparsely populated
+levels. The matrix-vector cache starts with 16,384 entries. After garbage
+collection, it can grow to accommodate surviving vector nodes when past cache
+hits indicate reuse. Automatic growth stops at 1,048,576 entries. Other compute
+caches keep their initial capacities.
+
+This policy trades memory for less recomputation; it can slow workloads whose
+useful cache entries already fit. The cache ceiling does not bound total package
+memory. C++ callers can still set initial capacities with `dd::DDPackageConfig`;
+an initial matrix-vector capacity at or above the growth ceiling stays fixed.
+Collection and reset retain grown table capacities. Node pools retain their
+slabs until reset or destruction and zero fresh entries on acquisition, so
+unused reserved slots need not occupy resident memory.
+
 ## How do Quantum Decision Diagrams Work?
 
 Decision diagrams were introduced in the 1980s as a data structure for the
@@ -320,9 +337,29 @@ the squared magnitudes of the outgoing edge weights to $1$ and is consistent
 with quantum semantics, where basis states $\ket{0}$ and $\ket{1}$ are observed
 after measurement with probabilities that are squared magnitudes of the
 respective weights. MQT Core selects a maximum-magnitude edge (preferring the
-left edge within numerical tolerance) and makes its normalized weight real and
-nonnegative. The incoming edge retains its complex phase. Normalization proceeds
-bottom-up; complex-number comparisons use the package tolerance.
+left edge when squared magnitudes agree within relative tolerance) and makes its
+normalized weight real and nonnegative. The incoming edge retains its complex
+phase. Normalization proceeds bottom-up; complex-number comparisons use the
+package tolerance.
+
+Cached vector normalization projects nearly equal or opposite coefficients onto
+the corresponding balanced pair before dividing by their norm. For unit-norm
+child states, this changes the local vector by at most the absolute tolerance in
+Euclidean norm, apart from roundoff. The incoming weight also compensates for
+reuse of a stored dominant weight. These steps limit amplification of small
+coefficient differences; they do not bound accumulated circuit error.
+
+Floating-point arithmetic makes this canonicity approximate. Real components
+reuse the nearest stored value within the absolute tolerance, preferring the
+smaller magnitude on a tie; zero, one, and $1/\sqrt{2}$ have priority. The
+default tolerance is $2^{-42}$ (1024 times double-precision machine epsilon).
+The numeric index hashes binary intervals without rounding stored values. C++
+callers can set a finite, nonnegative global tolerance with
+{cpp-api:func}`dd::ComplexNumbers::setTolerance`. A smaller tolerance can reduce
+error amplification in small subproblems, but may also prevent sharing of nearly
+equal subgraphs. Neither tolerance choice guarantees polynomial DD size for a
+circuit. Set the tolerance before creating packages: changing it does not
+recanonicalize existing decision diagrams.
 
 ````{admonition} Example _(Normalization of Decision Diagrams)_
 :class: tip
