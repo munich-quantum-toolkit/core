@@ -36,6 +36,124 @@ using namespace mlir::openqasm::test;
 
 namespace {
 
+TEST(OpenQASMFrontendTest, AcceptsClassicalArrays) {
+  for (const auto* source : {
+           "const int n = 2; array[int[8], n] a = {127, 128}; "
+           "a[-1] += 1; int result = a[-1];",
+           "array[uint[8], 2] a = {1, 255}; uint i = 1; a[i] = 2; "
+           "uint result = a[i];",
+           "array[float[64], 2] a = {0.5, 1}; int i = -1; a[i] *= 2; "
+           "float result = a[i];",
+           "array[bool, 2] a = {true, false}; a[1] = !a[0]; "
+           "bool result = a[1]; if (a[0]) { result = true; }",
+           "array[angle[8], 2] a = {pi, -pi/2}; int i = -1; "
+           "a[i] = pi/2; qubit q; U(a[i], 0, 0) q;",
+           "array[angle[8], 1] a = {pi}; qubit q; "
+           "U(float(a[0])/2, sin(a[0]), 0) q;",
+           "array[int, 2] a; a[0] = 1; int result = a[0];",
+           "array[int, 1] a; bool c = true; "
+           "if (c) { a[0] = 1; } else { a[0] = 2; } int result = a[0];",
+           "array[int, 1] a; for int i in [0:1] { a[0] = 1; } "
+           "int result = a[0];",
+           "array[int, 2,] a = {1, 2,}; int result = a[0];",
+       }) {
+    SCOPED_TRACE(source);
+    auto analyzed = openqasm::frontend::analyzeOpenQASM(
+        std::string("OPENQASM 3.0; ") + source);
+    ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+    ASSERT_EQ(analyzed.program->arrays.size(), 1);
+  }
+}
+
+TEST(OpenQASMFrontendTest, RejectsInvalidClassicalArrays) {
+  const auto cases =
+      std::to_array<std::pair<llvm::StringLiteral, llvm::StringLiteral>>({
+          {"array[int, 0] a;", "greater than zero"},
+          {"array[int, -1] a;", "greater than zero"},
+          {"array[int, 100001] a;", "exceeds the limit"},
+          {"array[int, 60000] a; array[int, 60000] b;", "exceed the limit"},
+          {"int n = 2; array[int, n] a;", "constant integer"},
+          {"array[int, 1.0] a;", "integer expression"},
+          {"array[int, 2] a = {1};", "initializer length"},
+          {"array[int, 1] a = {1, 2};", "initializer length"},
+          {"array[int, 1] a = {};", "initializer length"},
+          {"array[bool[2], 1] a;", "do not have a width"},
+          {"array[float[32], 1] a;", "only width 64"},
+          {"array[int[65], 1] a;", "1 through 64"},
+          {"array[angle[53], 1] a;", "between 1 and 52"},
+          {"float x = 1; array[angle, 1] a = {x};", "compile-time values"},
+          {"array[angle, 1] a = {1};", "float or angle"},
+          {"array[angle, 1] a = {0.0}; a[0] = a[0];", "compile-time values"},
+          {
+              "array[angle, 1] a = {pi}; qubit q; U(-a[0], 0, 0) q;",
+              "runtime fixed-width angle arithmetic",
+          },
+          {
+              "array[angle, 1] a = {pi}; qubit q; U(a[0] + a[0], 0, 0) q;",
+              "runtime fixed-width angle arithmetic",
+          },
+          {"array[angle, 1] a = {pi}; int b = int(a[0]);", "cast angle"},
+          {"array[angle, 1] a = {pi}; bool b = a[0] == pi;", "cast angle"},
+          {"array[int, 1] a = {a[0]};", "uninitialized"},
+          {"array[int, 1] a; int b = a[0];", "uninitialized"},
+          {
+              "array[int, 2] a; a[0] = 1; int i = 0; int b = a[i];",
+              "uninitialized",
+          },
+          {
+              "array[int, 1] a; int i = 0; a[i] = 1; int b = a[0];",
+              "uninitialized",
+          },
+          {
+              "array[int, 1] a; bool c = true; if (c) { a[0] = 1; } "
+              "int b = a[0];",
+              "uninitialized",
+          },
+          {
+              "array[int, 1] a; while (false) { a[0] = 1; } int b = a[0];",
+              "uninitialized",
+          },
+          {
+              "array[int, 1] a; for int i in [0:1] { continue; a[0] = 1; } "
+              "int b = a[0];",
+              "uninitialized",
+          },
+          {"array[int, 1] a = {0}; int b = a[1];", "out of bounds"},
+          {"array[int, 1] a = {0}; a[-2] = 1;", "out of bounds"},
+          {
+              "array[int, 1] a = {0}; float i = 0; int b = a[i];",
+              "integer expression",
+          },
+          {"array[int, 1] a = {0}; if (a[0]) {}", "bool type"},
+          {"array[int, 1] a = {0}; a = 1;", "element index"},
+          {"array[int, 1] a = {0}; int b = a;", "not a scalar"},
+          {"if (true) { array[int, 1] a; }", "global scope"},
+          {
+              "array[float, 1] a = {0}; gate g q { U(a[0], 0, 0) q; }",
+              "cannot capture",
+          },
+          {"array[int, 1] a; array[int, 1] a;", "already declared"},
+          {"array[int, 2, 2] a;", "multidimensional"},
+          {"array[bit, 1] a;", "unsupported array element type"},
+      });
+  for (const auto& [source, diagnostic] : cases) {
+    SCOPED_TRACE(source.str());
+    auto analyzed =
+        openqasm::frontend::analyzeOpenQASM("OPENQASM 3.0; " + source.str());
+    ASSERT_FALSE(analyzed);
+    ASSERT_FALSE(analyzed.diagnostics.empty());
+    EXPECT_NE(analyzed.diagnostics.front().message.find(diagnostic),
+              std::string::npos)
+        << analyzed.diagnostics.front().message;
+  }
+  EXPECT_FALSE(
+      openqasm::frontend::analyzeOpenQASM("OPENQASM 2.0; array[int, 1] a;"));
+  EXPECT_FALSE(openqasm::frontend::parseOpenQASM(
+      "OPENQASM 3.0; output array[int, 1] a;"));
+  EXPECT_FALSE(
+      openqasm::frontend::parseOpenQASM("OPENQASM 3.0; int array = 0;"));
+}
+
 TEST(OpenQASMFrontendTest, ContinuePreservesDefiniteInitialization) {
   for (const auto* source : {
            "OPENQASM 3.0; continue;",

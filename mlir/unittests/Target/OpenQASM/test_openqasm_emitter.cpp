@@ -29,6 +29,7 @@
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Diagnostics.h"
@@ -42,6 +43,7 @@
 #include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
@@ -62,6 +64,55 @@ using namespace mlir;
 using namespace mlir::openqasm::test;
 
 namespace {
+
+TEST(OpenQASMTargetTest, ArraysUseTypedStorageAndReleaseIt) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.0;
+array[bool, 2] flags = {true, false};
+array[int[8], 2] signedValues = {1, -1};
+array[uint[16], 2] unsignedValues = {1, 2};
+array[float, 2] floats = {0.5, 1};
+array[angle[8], 2] angles = {pi, 0.0};
+int i = -1;
+signedValues[i] = int[8](unsignedValues[i]);
+if (flags[i]) { floats[i] = 2; }
+qubit q;
+U(angles[i], floats[i], 0) q;
+output bit result;
+result = measure q;
+)qasm";
+  MLIRContext context;
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  SmallVector<Type> types;
+  moduleOp->walk([&](memref::AllocOp allocation) {
+    types.push_back(allocation.getType().getElementType());
+    EXPECT_TRUE(llvm::any_of(allocation->getUsers(), [](Operation* user) {
+      return isa<memref::DeallocOp>(user);
+    }));
+  });
+  Builder builder(&context);
+  EXPECT_EQ(types,
+            (SmallVector<Type>{builder.getI1Type(), builder.getI8Type(),
+                               builder.getI16Type(), builder.getF64Type(),
+                               builder.getF64Type()}));
+  bool checkedIndex = false;
+  moduleOp->walk([&](cf::AssertOp assertion) {
+    checkedIndex |= assertion.getMsg() == "array index is out of bounds";
+  });
+  EXPECT_TRUE(checkedIndex);
+}
+
+TEST(OpenQASMTargetTest, ConstantArrayIndicesNeedNoRuntimeBoundsChecks) {
+  MLIRContext context;
+  auto moduleOp = qc::translateOpenQASMToQC(
+      "OPENQASM 3.0; array[int, 2] a = {1, 2}; a[-1] = a[0];", &context);
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  moduleOp->walk(
+      [&](cf::AssertOp) { ADD_FAILURE() << "index is statically safe"; });
+}
 
 TEST(OpenQASMTargetTest, ImportsNonNullTerminatedSourceView) {
   std::string storage = "OPENQASM 3.1; qubit q; U(0, 0, 0) q;invalid suffix";

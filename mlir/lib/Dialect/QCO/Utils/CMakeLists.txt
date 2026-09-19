@@ -94,6 +94,7 @@ add_mlir_library(
   MLIRSCFDialect
   PRIVATE
   MLIRCBitDialect
+  MLIRControlFlowDialect
   MLIRMemRefDialect
   MLIRMQTUtils
   MLIRTensorDialect
