@@ -188,9 +188,6 @@ public:
       }
       results.push_back(reg);
     }
-    for (auto array : arrayValues_) {
-      memref::DeallocOp::create(builder, array);
-    }
     builder.retype(ValueRange(results).getTypes());
     auto moduleOp = builder.finalize(results);
     if (emissionBudget.isExhausted()) {
@@ -1730,7 +1727,7 @@ private:
     auto type =
         MemRefType::get({static_cast<int64_t>(declaration.length)},
                         scalarType(declaration.type, declaration.elementWidth));
-    auto storage = memref::AllocOp::create(builder, type);
+    auto storage = memref::AllocaOp::create(builder, type);
     arrayValues_.at(statement.array) = storage;
     for (const auto [index, expression] :
          llvm::enumerate(statement.initializer)) {

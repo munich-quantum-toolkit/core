@@ -18,6 +18,7 @@
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Dominance.h"
+#include "mlir/IR/Matchers.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/PatternMatch.h"
@@ -471,6 +472,34 @@ private:
       function.walk([&](Operation* operation) {
         returnCount += isa<LLVM::ReturnOp>(operation);
         metadata.usesMultipleTargetBranching |= isa<LLVM::SwitchOp>(operation);
+        metadata.useArrays |=
+            isa<LLVM::AllocaOp, LLVM::LoadOp, LLVM::StoreOp,
+                LLVM::ExtractValueOp, LLVM::InsertValueOp>(operation);
+        if (auto store = dyn_cast<LLVM::StoreOp>(operation)) {
+          recordType(store.getValue().getType());
+        }
+        if (auto gep = dyn_cast<LLVM::GEPOp>(operation)) {
+          const auto dynamic =
+              llvm::any_of(gep.getDynamicIndices(), [](Value index) {
+                return !matchPattern(index, m_Constant());
+              });
+          const auto label =
+              !dynamic &&
+              llvm::all_of(gep.getResult().getUses(), [](OpOperand& use) {
+                auto call = dyn_cast<LLVM::CallOp>(use.getOwner());
+                return call && call.getCallee() &&
+                       call.getCallee()->starts_with("__quantum__rt__") &&
+                       call.getCallee()->ends_with("_record_output") &&
+                       use.getOperandNumber() + 1 == call.getNumOperands();
+              });
+          metadata.useArrays |= !label;
+          /// ponytail: require loop support for dynamic indices; add
+          /// measurement dependency analysis if targets without loops need
+          /// these programs.
+          if (dynamic && metadata.backwardsBranching == 0) {
+            metadata.backwardsBranching = 2;
+          }
+        }
         if (operation->hasTrait<OpTrait::ConstantLike>()) {
           return;
         }

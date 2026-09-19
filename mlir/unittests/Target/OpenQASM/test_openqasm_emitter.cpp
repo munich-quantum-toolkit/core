@@ -106,7 +106,7 @@ barrier q[first:step:0], r[1:2];
   EXPECT_EQ(barriers, 1);
 }
 
-TEST(OpenQASMTargetTest, ArraysUseTypedStorageAndReleaseIt) {
+TEST(OpenQASMTargetTest, ArraysUseTypedStackStorage) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.0;
 array[bool, 2] flags = {true, false};
@@ -127,11 +127,11 @@ result = measure q;
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   SmallVector<Type> types;
-  moduleOp->walk([&](memref::AllocOp allocation) {
+  moduleOp->walk([&](memref::AllocaOp allocation) {
     types.push_back(allocation.getType().getElementType());
-    EXPECT_TRUE(llvm::any_of(allocation->getUsers(), [](Operation* user) {
-      return isa<memref::DeallocOp>(user);
-    }));
+  });
+  moduleOp->walk([](memref::DeallocOp) {
+    ADD_FAILURE() << "stack storage must not be explicitly freed";
   });
   Builder builder(&context);
   EXPECT_EQ(types,

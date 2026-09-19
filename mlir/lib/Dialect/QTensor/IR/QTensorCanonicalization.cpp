@@ -64,6 +64,11 @@ analyzeQTensorBranch(Block* block, size_t qTensorArgumentIndex,
                      std::optional<size_t> qTensorYieldIndex = std::nullopt) {
   BranchQTensorAccesses result;
   Value currentQTensor = block->getArgument(qTensorArgumentIndex);
+  /// A single-iteration scf.for fold replaces iteration arguments before the
+  /// loop is inlined, leaving a temporarily unused tensor argument.
+  if (currentQTensor.use_empty()) {
+    return std::nullopt;
+  }
   bool reachedInsertPhase = false;
 
   while (true) {

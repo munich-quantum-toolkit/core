@@ -433,28 +433,35 @@ TEST(QCToQIRBaseNativeTest, ControlledBarrierDoesNotControlFollowingGate) {
       });
 }
 
-TEST(QCToQIRBaseNativeTest, LowersPopulationCountThroughMathToLLVM) {
+TEST(QCToQIRBaseNativeTest, RejectsRuntimeAssertions) {
   MLIRContext context;
-  context.loadDialect<qc::QCDialect, func::FuncDialect, LLVM::LLVMDialect,
-                      math::MathDialect>();
+  context
+      .loadDialect<qc::QCDialect, arith::ArithDialect, cf::ControlFlowDialect,
+                   func::FuncDialect, LLVM::LLVMDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  auto value = LLVM::UndefOp::create(builder, builder.getIntegerType(5));
-  (void)math::CtPopOp::create(builder, value);
+  auto condition = LLVM::UndefOp::create(builder, builder.getI1Type());
+  cf::AssertOp::create(builder, condition, "runtime precondition");
   auto module = builder.finalize();
   ASSERT_TRUE(module);
   ASSERT_TRUE(succeeded(verify(*module)));
-  ASSERT_TRUE(succeeded(runQCToQIRBaseConversion(*module)));
-  EXPECT_TRUE(succeeded(verify(*module)));
+  EXPECT_TRUE(failed(runQCToQIRBaseConversion(*module)));
+}
 
-  bool retainsMathPopulationCount = false;
-  bool hasLLVMPopulationCount = false;
-  module->walk([&](Operation* operation) {
-    retainsMathPopulationCount |= isa<math::CtPopOp>(operation);
-    hasLLVMPopulationCount |= isa<LLVM::CtPopOp>(operation);
-  });
-  EXPECT_FALSE(retainsMathPopulationCount);
-  EXPECT_TRUE(hasLLVMPopulationCount);
+TEST(QCToQIRBaseNativeTest, RejectsResidualClassicalComputations) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, math::MathDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto value = builder.intConstant(7);
+  auto count = math::CtPopOp::create(builder, value);
+  auto angle = arith::UIToFPOp::create(builder, builder.getF64Type(), count);
+  builder.rx(angle, builder.allocQubit());
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  EXPECT_TRUE(failed(runQCToQIRBaseConversion(*module)));
 }
 
 TEST(QCToQIRBaseNativeTest, SelectsControlledSpecializationsByArity) {
@@ -465,11 +472,9 @@ TEST(QCToQIRBaseNativeTest, SelectsControlledSpecializationsByArity) {
   builder.initialize();
   auto control0 = builder.allocQubit();
   auto control1 = builder.allocQubit();
-  auto control2 = builder.allocQubit();
   auto target = builder.allocQubit();
   builder.crx(0.25, control0, target);
   builder.mcrx(0.5, {control0, control1}, target);
-  builder.mcrx(0.75, {control0, control1, control2}, target);
   auto module = builder.finalize();
 
   ASSERT_TRUE(module);
@@ -477,9 +482,22 @@ TEST(QCToQIRBaseNativeTest, SelectsControlledSpecializationsByArity) {
   ASSERT_TRUE(succeeded(verify(*module)));
   EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_CRX));
   EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_CCRX));
-  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_RX_CTL));
-  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_ARRAY_CREATE));
-  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_TUPLE_CREATE));
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsLegacyRuntimeArrayPacking) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto control0 = builder.allocQubit();
+  auto control1 = builder.allocQubit();
+  auto control2 = builder.allocQubit();
+  auto target = builder.allocQubit();
+  builder.mcrx(0.75, {control0, control1, control2}, target);
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  EXPECT_TRUE(failed(runQCToQIRBaseConversion(*module)));
 }
 
 TEST(QCToQIRBaseNativeTest, RecordsReturnedRegisterMeasurement) {

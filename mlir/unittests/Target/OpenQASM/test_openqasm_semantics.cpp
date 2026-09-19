@@ -142,6 +142,8 @@ TEST(OpenQASMFrontendTest, KnownMeasurementSlicesInitializeSelectedBits) {
 
 TEST(OpenQASMFrontendTest, AcceptsClassicalArrays) {
   for (const auto* source : {
+           "array[int, 0] a;",
+           "array[float, 0] a = {};",
            "const int n = 2; array[int[8], n] a = {127, 128}; "
            "a[-1] += 1; int result = a[-1];",
            "array[uint[8], 2] a = {1, 255}; uint i = 1; a[i] = 2; "
@@ -172,8 +174,10 @@ TEST(OpenQASMFrontendTest, AcceptsClassicalArrays) {
 TEST(OpenQASMFrontendTest, RejectsInvalidClassicalArrays) {
   const auto cases =
       std::to_array<std::pair<llvm::StringLiteral, llvm::StringLiteral>>({
-          {"array[int, 0] a;", "greater than zero"},
-          {"array[int, -1] a;", "greater than zero"},
+          {"array[int, -1] a;", "non-negative"},
+          {"array[int, 0] a = {1};", "initializer length"},
+          {"array[int, 0] a; a[0] = 1;", "out of bounds"},
+          {"array[int, 0] a = {}; int b = a[-1];", "out of bounds"},
           {"array[int, 100001] a;", "exceeds the limit"},
           {"array[int, 60000] a; array[int, 60000] b;", "exceed the limit"},
           {"int n = 2; array[int, n] a;", "constant integer"},

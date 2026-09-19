@@ -37,8 +37,10 @@ def QCToQIRBase : Pass<"qc-to-qir-base", "mlir::ModuleOp"> {
 
     Behavior:
 
-    - Constant classical tensors and element reads are lowered to constant LLVM arrays and loads.
-      Other classical tensor operations must be lowered before this pass.
+    - Classical storage and computations must be eliminated before conversion.
+      The compiler preparation pipeline promotes eligible stack arrays to SSA
+      values and folds constants. Residual memory operations, runtime
+      computations, and nonconstant call arguments are rejected.
     - Each QC quantum operation is replaced in place by its QIR call. After
       validating qubit usage in instruction order, the pass moves terminal
       measurements to the irreversible operations block.
@@ -48,7 +50,8 @@ def QCToQIRBase : Pass<"qc-to-qir-base", "mlir::ModuleOp"> {
       2. Irreversible operations block: Contains terminal measurement calls (`__quantum__qis__mz__body`). Reset operations are not supported.
       3. Epilogue block: Records measurement results and returns from the entry function.
     - Blocks are connected via unconditional branches in the order listed above.
-    - Non-quantum dialects are lowered via MLIR's built-in conversions.
+    - Non-quantum dialects are lowered via MLIR's built-in conversions and
+      checked against the Base Profile instruction subset.
   }];
 
   let dependentDialects = ["mlir::LLVM::LLVMDialect"];

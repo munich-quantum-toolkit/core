@@ -1334,8 +1334,10 @@ private:
     MQT_OQ3_TRY_ASSIGN(value, analyzeExpression(syntaxId));
     const auto type = program.expressions[value].type;
     auto zeroValue = Constant{.type = ScalarType::Int, .value = int64_t{0}};
-    if (type == ScalarType::Float || type == ScalarType::Angle) {
-      zeroValue = Constant{.type = ScalarType::Float, .value = 0.0};
+    if (type == ScalarType::Float) {
+      zeroValue = Constant{.type = type, .value = 0.0};
+    } else if (type == ScalarType::Angle) {
+      zeroValue = Constant{.type = type, .value = FixedAngle{}};
     } else if (type == ScalarType::Uint) {
       zeroValue = Constant{.type = ScalarType::Uint, .value = uint64_t{0}};
     }
@@ -3068,7 +3070,8 @@ private:
 
   [[nodiscard]] FailureOr<uint64_t>
   constantWidth(const std::optional<SyntaxExpressionId> size, SMLoc location,
-                StringRef description = "register width") const {
+                StringRef description = "register width",
+                bool allowEmpty = false) const {
     if (!size) {
       return 1;
     }
@@ -3084,9 +3087,12 @@ private:
         constant.type == ScalarType::Uint
             ? std::get<uint64_t>(constant.value)
             : static_cast<uint64_t>(std::get<int64_t>(constant.value));
-    if (value == 0 || (constant.type == ScalarType::Int &&
-                       std::get<int64_t>(constant.value) < 0)) {
-      return fail(location, description + " must be greater than zero");
+    if ((!allowEmpty && value == 0) ||
+        (constant.type == ScalarType::Int &&
+         std::get<int64_t>(constant.value) < 0)) {
+      return fail(location,
+                  description + (allowEmpty ? " must be non-negative"
+                                            : " must be greater than zero"));
     }
     if (value > REGISTER_WIDTH_LIMIT) {
       return fail(location, description + " exceeds the limit of " +
@@ -3602,8 +3608,9 @@ private:
     if (!global) {
       return fail(location, "arrays must be declared at global scope");
     }
-    MQT_OQ3_TRY_ASSIGN(
-        length, constantWidth(declaration.length, location, "array length"));
+    MQT_OQ3_TRY_ASSIGN(length, constantWidth(declaration.length, location,
+                                             "array length",
+                                             /*allowEmpty=*/true));
     if (length > TOTAL_REGISTER_ELEMENT_LIMIT - totalRegisterElements) {
       return fail(location,
                   "total register and array elements exceed the limit of " +
