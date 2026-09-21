@@ -17,7 +17,7 @@
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Utils/WireIterator.h"
 
-#include "../Decomposition/PulseSynthesis.h"
+#include "Decomposition/PulseSynthesis.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Math/IR/Math.h"
