@@ -14,13 +14,14 @@
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 
+#include "PulseSynthesis.h"
+
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Location.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/Value.h"
 #include "mlir/Support/LLVM.h"
 
-#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/ErrorHandling.h"
 
@@ -371,40 +372,17 @@ struct Unitary1QEulerPlan {
     case SingleQubitBasis::FixedRotation: {
       assert(fixedRotation &&
              "fixed-pulse synthesis requires a pulse descriptor");
-      constexpr double pi = std::numbers::pi;
-      constexpr double halfPi = pi / 2.;
       const auto kind = fixedRotation->gate == fixedRotation->axes()[0]
                             ? SynthesisStep::Kind::RX
                             : SynthesisStep::Kind::RY;
-      const double axis = kind == SynthesisStep::Kind::RY ? halfPi : 0.;
-      const auto quarterTurn = [&] {
-        appendRotation(SynthesisStep::Kind::RZ,
-                       fixedRotation->quarterTurnAngles.front());
-        for (double zAngle :
-             ArrayRef(fixedRotation->quarterTurnAngles).drop_front()) {
-          steps.emplace_back(kind, fixedRotation->angle);
-          appendRotation(SynthesisStep::Kind::RZ, zAngle);
-        }
-      };
-      if (isNearZeroRotationAngle(angles.theta - halfPi)) {
-        appendRotation(SynthesisStep::Kind::RZ, angles.lambda - halfPi);
-        quarterTurn();
-        appendRotation(SynthesisStep::Kind::RZ, angles.phi + halfPi);
-        phase = angles.phase;
-      } else if (isNearZeroRotationAngle(angles.theta - pi) &&
-                 fixedRotation->halfTurnAngle) {
-        appendRotation(SynthesisStep::Kind::RZ, angles.lambda + axis);
-        steps.emplace_back(kind, *fixedRotation->halfTurnAngle);
-        appendRotation(SynthesisStep::Kind::RZ, angles.phi + pi - axis);
-        phase = angles.phase + (*fixedRotation->halfTurnAngle < 0. ? pi : 0.);
-      } else {
-        appendRotation(SynthesisStep::Kind::RZ, angles.lambda);
-        quarterTurn();
-        appendRotation(SynthesisStep::Kind::RZ, angles.theta + pi);
-        quarterTurn();
-        appendRotation(SynthesisStep::Kind::RZ, angles.phi + pi);
-        phase = angles.phase + pi;
-      }
+      phase = angles.phase +
+              emitFixedRotationSequence(
+                  *fixedRotation, angles.theta, angles.phi, angles.lambda,
+                  angles.theta, [](double value) { return value; },
+                  [&](double angle) {
+                    appendRotation(SynthesisStep::Kind::RZ, angle);
+                  },
+                  [&](double angle) { steps.emplace_back(kind, angle); });
       break;
     }
     case SingleQubitBasis::ZSXX: {
