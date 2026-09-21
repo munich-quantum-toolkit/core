@@ -810,6 +810,20 @@ llvm::Error CompilerTarget::Storage::initialize() {
   return llvm::Error::success();
 }
 
+static bool matchesFixedParameters(
+    ArrayRef<std::optional<double>> fixedParameters,
+    function_ref<std::optional<double>(size_t)> parameterAt) {
+  return llvm::all_of(llvm::enumerate(fixedParameters), [&](const auto entry) {
+    const auto expected = entry.value();
+    if (!expected) {
+      return true;
+    }
+    const auto actual = parameterAt ? parameterAt(entry.index()) : std::nullopt;
+    return actual &&
+           std::abs(*actual - *expected) <= mqt::PARAMETER_COMPARISON_TOLERANCE;
+  });
+}
+
 bool CompilerTarget::Storage::supportsOperation(
     StringRef operationName, size_t arity, std::optional<size_t> numParameters,
     std::optional<ArrayRef<SiteId>> orderedSites, bool variadicOnly,
@@ -842,19 +856,7 @@ bool CompilerTarget::Storage::supportsOperation(
            (!numParameters || operation.numParameters() == *numParameters) &&
            (!orderedSites || operation.siteTuples().empty() ||
             operationSites[index].contains(*orderedSites)) &&
-           llvm::all_of(llvm::enumerate(operation.fixedParameters()),
-                        [&](const auto entry) {
-                          const auto expected = entry.value();
-                          if (!expected) {
-                            return true;
-                          }
-                          const auto actual = parameterAt
-                                                  ? parameterAt(entry.index())
-                                                  : std::nullopt;
-                          return actual &&
-                                 std::abs(*actual - *expected) <=
-                                     mqt::PARAMETER_COMPARISON_TOLERANCE;
-                        });
+           matchesFixedParameters(operation.fixedParameters(), parameterAt);
   });
 }
 
@@ -899,17 +901,9 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
              operation.arity().accepts(arity) &&
              operation.numParameters() == numParameters &&
              operation.siteTuples().empty() &&
-             llvm::all_of(llvm::enumerate(operation.fixedParameters()),
-                          [&](const auto entry) {
-                            const auto expected = entry.value();
-                            const auto actual =
-                                gate ? synthesisParameter(*gate, entry.index())
-                                     : std::nullopt;
-                            return !expected ||
-                                   (actual &&
-                                    std::abs(*actual - *expected) <=
-                                        mqt::PARAMETER_COMPARISON_TOLERANCE);
-                          });
+             matchesFixedParameters(operation.fixedParameters(), [&](size_t i) {
+               return gate ? synthesisParameter(*gate, i) : std::nullopt;
+             });
     });
   };
   const auto supportsOnEverySite = [&](GateKind gate) {
