@@ -235,10 +235,17 @@ The emitted capability flags include arrays and element types, and
 conservatively require loop support for residual dynamic indices. See the
 [QIR 2.1 array contract](https://github.com/qir-alliance/qir-spec/blob/2.1/specification/Memory_Management.md#array-support).
 
+OpenQASM export preserves fixed-size stack arrays, element reads and writes, and
+array copies, including strided slices and overlapping assignments. It captures
+loaded values before later writes and emits copies as array assignments. The
+exporter normalizes views on a copy of the IR; it does not change the input
+module. Integer storage preserves its bit patterns, and angle storage exports as
+floating-point radians.
+
 Arrays are internal storage, not implicit outputs; assign selected elements to
 scalar or bit outputs when needed. Array outputs, runtime angle conversion, and
-jeff or OpenQASM export of array storage are not yet supported. Gate definitions
-cannot capture mutable arrays; pass selected entries as gate parameters instead.
+jeff export of array storage are not yet supported. Gate definitions cannot
+capture mutable arrays; pass selected entries as gate parameters instead.
 
 ### Qubit indices and classical registers
 
