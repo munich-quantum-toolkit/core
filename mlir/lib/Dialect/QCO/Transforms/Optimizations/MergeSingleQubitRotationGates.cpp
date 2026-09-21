@@ -17,6 +17,8 @@
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Utils/WireIterator.h"
 
+#include "../Decomposition/PulseSynthesis.h"
+
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/IR/Builders.h"
@@ -795,59 +797,33 @@ static Value emitRuntimeEulerAngles(
   case decomposition::SingleQubitBasis::FixedRotation: {
     assert(fixedRotation &&
            "fixed-pulse synthesis requires a pulse descriptor");
-    const auto halfPi =
-        Val<Value>::constant(rewriter, loc, std::numbers::pi / 2.);
-    const auto axes = fixedRotation->axes();
-    const bool isX = fixedRotation->gate == axes[0];
-    const auto axis =
-        Val<Value>::constant(rewriter, loc, isX ? 0. : std::numbers::pi / 2.);
+    const auto constant = [&](double value) {
+      return Val<Value>::constant(rewriter, loc, value);
+    };
     const auto emit = [&](CompilerTarget::GateKind gate, Val<Value> angle) {
       switch (gate) {
       case CompilerTarget::GateKind::RX:
-        return emitRotationIfNeeded<RXOp>(rewriter, loc, qubit, angle);
+        qubit = emitRotationIfNeeded<RXOp>(rewriter, loc, qubit, angle);
+        break;
       case CompilerTarget::GateKind::RY:
-        return emitRotationIfNeeded<RYOp>(rewriter, loc, qubit, angle);
+        qubit = emitRotationIfNeeded<RYOp>(rewriter, loc, qubit, angle);
+        break;
       default:
-        return emitRotationIfNeeded<RZOp>(rewriter, loc, qubit, angle);
-      }
-    };
-    const auto emitFree = [&](Val<Value> angle) {
-      return emit(fixedRotation->freeGate, angle);
-    };
-    const auto emitPulse = [&](double angle) {
-      qubit =
-          emit(fixedRotation->gate, Val<Value>::constant(rewriter, loc, angle));
-    };
-    const auto quarterTurn = [&] {
-      for (const auto [index, zAngle] :
-           llvm::enumerate(fixedRotation->quarterTurnAngles)) {
-        if (index != 0) {
-          emitPulse(fixedRotation->angle);
-        }
-        qubit = emitFree(Val<Value>::constant(rewriter, loc, zAngle));
+        qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit, angle);
+        break;
       }
     };
     if (isConstantAngle(theta)) {
-      qubit = emitFree(sumAngles(phi, lambda));
-    } else if (isConstantAngle(theta, std::numbers::pi / 2.)) {
-      qubit = emitFree(lambda - halfPi);
-      quarterTurn();
-      qubit = emitFree(phi + halfPi);
-    } else if (isConstantAngle(theta, std::numbers::pi) &&
-               fixedRotation->halfTurnAngle) {
-      qubit = emitFree(lambda + axis);
-      emitPulse(*fixedRotation->halfTurnAngle);
-      qubit = emitFree(phi + consts.pi - axis);
-      if (*fixedRotation->halfTurnAngle < 0.) {
-        phase = phase + consts.pi;
-      }
-    } else {
-      qubit = emitFree(lambda);
-      quarterTurn();
-      qubit = emitFree(theta + consts.pi);
-      quarterTurn();
-      qubit = emitFree(phi + consts.pi);
-      phase = phase + consts.pi;
+      emit(fixedRotation->freeGate, sumAngles(phi, lambda));
+      break;
+    }
+    const double correction = decomposition::emitFixedRotationSequence(
+        *fixedRotation, theta, phi, lambda, mqt::valueToConstantDouble(theta.v),
+        constant,
+        [&](Val<Value> angle) { emit(fixedRotation->freeGate, angle); },
+        [&](double angle) { emit(fixedRotation->gate, constant(angle)); });
+    if (correction != 0.) {
+      phase = phase + constant(correction);
     }
     break;
   }

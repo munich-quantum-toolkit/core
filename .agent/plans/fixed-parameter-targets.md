@@ -27,12 +27,15 @@ Only inspect parameter values for constrained capabilities. Unrestricted targets
 keep their existing pipelines. Basis selection must never treat a fixed-angle
 rotation as an arbitrary rotation.
 
+Numeric and symbolic synthesis share one fixed-pulse recipe. Pulse-plan details
+stay internal; Python exposes target capabilities and the selected basis kind.
+
 ## Validation
 
 The compiler suite passed 235 tests; native synthesis passed 64 tests, including
 1,944 full-matrix cases across all six axis pairs, both signs, fractional and
 non-Clifford angles, optional half turns, and numeric or symbolic parameters.
-Python target tests passed 388 cases, including numerical and symbolic input
+Python target tests passed 386 cases, including numerical and symbolic input
 gates. Generated stubs, repository lint, and full changed-file C++ lint passed.
 
 ## Follow-up

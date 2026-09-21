@@ -669,12 +669,6 @@ def test_fixed_parameter_target_capability(arity: int | CompilerTarget.Operation
     )
     assert target.synthesis_basis is not None
     assert target.synthesis_basis.single_qubit == CompilerTarget.SingleQubitBasis.FixedRotation
-    fixed = target.synthesis_basis.fixed_rotation
-    assert fixed is not None
-    assert fixed.gate == CompilerTarget.GateKind.RX
-    assert fixed.angle == pytest.approx(np.pi / 2)
-    assert fixed.quarter_turn_pulses == 1
-    assert fixed.half_turn_angle is None
     assert not target.supports_operation("rx", 1, 1)
     assert target.supports_operation("rx", 1, parameters=[np.pi / 2], sites=[0])
     assert not target.supports_operation("rx", 1, parameters=[np.pi])

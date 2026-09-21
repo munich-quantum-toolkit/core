@@ -919,20 +919,6 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
       .value("FixedRotation",
              mlir::CompilerTarget::SingleQubitBasis::FixedRotation);
 
-  nb::class_<mlir::CompilerTarget::FixedRotationBasis>(
-      compilerTarget, "FixedRotationBasis",
-      "Fixed pulse and arbitrary rotation selected for synthesis.")
-      .def_ro("gate", &mlir::CompilerTarget::FixedRotationBasis::gate)
-      .def_ro("free_gate", &mlir::CompilerTarget::FixedRotationBasis::freeGate)
-      .def_ro("angle", &mlir::CompilerTarget::FixedRotationBasis::angle,
-              "Native pulse angle in radians.")
-      .def_prop_ro("quarter_turn_pulses",
-                   [](const mlir::CompilerTarget::FixedRotationBasis& basis) {
-                     return basis.quarterTurnAngles.size() - 1;
-                   })
-      .def_ro("half_turn_angle",
-              &mlir::CompilerTarget::FixedRotationBasis::halfTurnAngle);
-
   auto synthesisBasis = nb::class_<mlir::CompilerTarget::SynthesisBasis>(
       compilerTarget, "SynthesisBasis",
       "One synthesis basis usable across the complete target.");
@@ -941,10 +927,7 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
               &mlir::CompilerTarget::SynthesisBasis::singleQubit,
               "The single-qubit synthesis basis.")
       .def_ro("entangler", &mlir::CompilerTarget::SynthesisBasis::entangler,
-              "The two-qubit entangler, or None when none is usable.")
-      .def_ro("fixed_rotation",
-              &mlir::CompilerTarget::SynthesisBasis::fixedRotation,
-              "Fixed-pulse decomposition, or None for other bases.");
+              "The two-qubit entangler, or None when none is usable.");
 
   nb::enum_<mlir::CompilerTarget::Connectivity::Kind>(
       compilerTarget, "ConnectivityKind", "The target connectivity model.")

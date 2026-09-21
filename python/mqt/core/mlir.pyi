@@ -382,22 +382,6 @@ class CompilerTarget:
 
         FixedRotation = 7
 
-    class FixedRotationBasis:
-        """Fixed pulse and arbitrary rotation selected for synthesis."""
-
-        @property
-        def gate(self) -> CompilerTarget.GateKind: ...
-        @property
-        def free_gate(self) -> CompilerTarget.GateKind: ...
-        @property
-        def angle(self) -> float:
-            """Native pulse angle in radians."""
-
-        @property
-        def quarter_turn_pulses(self) -> int: ...
-        @property
-        def half_turn_angle(self) -> float | None: ...
-
     class SynthesisBasis:
         """One synthesis basis usable across the complete target."""
 
@@ -408,10 +392,6 @@ class CompilerTarget:
         @property
         def entangler(self) -> CompilerTarget.GateKind | None:
             """The two-qubit entangler, or None when none is usable."""
-
-        @property
-        def fixed_rotation(self) -> CompilerTarget.FixedRotationBasis | None:
-            """Fixed-pulse decomposition, or None for other bases."""
 
     class ConnectivityKind(enum.Enum):
         """The target connectivity model."""
