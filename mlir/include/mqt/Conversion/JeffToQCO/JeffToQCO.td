@@ -22,11 +22,12 @@ def JeffToQCO : Pass<"jeff-to-qco", "mlir::ModuleOp"> {
     - Only specific `CustomOp`s are currently supported
     - Only specific `PPROp`s are currently supported
     - Mutable classical-register arguments in helper functions are not supported
-    - Memref-backed array results require an ownership contract and are not supported
     - Live old array values across mutating control-flow regions are not supported
 
     Static classical arrays use internal reference storage. Non-Boolean arrays
-    become stack memrefs; positive-width Boolean arrays use CBit registers.
+    become stack memrefs in programs without non-Boolean array arguments or
+    results. Programs with these interfaces retain tensor value semantics;
+    positive-width Boolean arrays use CBit registers.
     Updates reuse storage unless an earlier array value remains live.
 
     Function definitions and calls are preserved. Only the designated entry
