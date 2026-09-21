@@ -17,8 +17,7 @@ QCO optimization unit tests. No default pipeline or frontend basis changes.
 
 - Independently implement GraySynth from Amy, Azimzadeh, and Mosca,
   [arXiv:1712.01859](https://arxiv.org/abs/1712.01859), with Gaussian
-  elimination to restore the required final linear map. tzap provides
-  engineering ideas, not implementation code.
+  elimination to restore the required final linear map.
 - Retain each phase operation and parameter unchanged. This supports arbitrary
   and symbolic angles and preserves global phase without floating-point angle
   algebra or phase corrections. Phase merging and affine X propagation are
@@ -55,10 +54,9 @@ spelling-dictionary entry for the C++20 bit-counting function.
 
 The three-gadget regression reduces eight CNOTs to four while keeping its three
 phase gates. A release build on macOS arm64, using LLVM/MLIR 23.1.0 and
-AppleClang 21, also processed six inputs from tzap revision
-`605552533b9788aef60866266a4230318b6170a2`. The baseline imports QASM to QCO and
-runs `decompose-multi-controlled,canonicalize,cse`; the comparison adds one
-`resynthesize-cnot-phase` invocation with default limits.
+AppleClang 21, also processed six QASM benchmark inputs. The baseline imports
+QASM to QCO and runs `decompose-multi-controlled,canonicalize,cse`; the
+comparison adds one `resynthesize-cnot-phase` invocation with default limits.
 
 | Circuit                      | Baseline CNOTs | After resynthesis |
 | ---------------------------- | -------------: | ----------------: |
@@ -73,7 +71,7 @@ Five-run median CLI times on the same cleaned inputs were 318 ms versus 368 ms
 for Chebyshev and 186 ms versus 213 ms for matrix inversion, comparing an empty
 pipeline with resynthesis. These include process startup, parsing, verification,
 and text output; they are not isolated pass times or execution-speed estimates.
-The baselines differ from tzap's preprocessing, so these are not tool rankings.
+These measurements compare Core pipelines, not different tools.
 
 Phase merging, affine X propagation, topology-aware synthesis, and PMH linear
 resynthesis remain outside this pass. Native CZ and RZZ gates are boundaries;
