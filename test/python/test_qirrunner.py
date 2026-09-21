@@ -12,20 +12,25 @@ from __future__ import annotations
 
 import pytest
 
-from mqt.core.mlir import OutputFormat, QIRProfile, QIRProgram, compile_program
+from mqt.core.mlir import CompilerTarget, OutputFormat, QIRProfile, QIRProgram, compile_program
 from mqt.core.qdmi import CustomProperty, ProgramFormat
 from mqt.core.qdmi.driver import open_device
 
 qirrunner = pytest.importorskip("qirrunner")
 
 
-def _compile_and_run(qasm: str, *, shots: int = 1) -> tuple[QIRProgram, str]:
+def _compile_and_run(qasm: str, *, shots: int = 1, target: CompilerTarget | None = None) -> tuple[QIRProgram, str]:
     """Compile OpenQASM to QIR Base Profile bitcode and execute it.
 
     Returns:
         The generated QIR program and the collected output records.
     """
-    qir = compile_program(qasm, output=OutputFormat.QIR_BASE)
+    qir = (
+        compile_program(qasm, output=OutputFormat.QIR_BASE)
+        if target is None
+        else compile_program(qasm, target=target, output=OutputFormat.QIR_BASE)
+    )
+    assert isinstance(qir, QIRProgram)
     assert qir.profile is QIRProfile.BASE
 
     output = qirrunner.OutputHandler()
@@ -99,8 +104,18 @@ bit[3] c = measure q;
         pytest.param(2, "1100", id="third-control-inactive"),
     ],
 )
-def test_qirrunner_executes_generic_multi_control_qis(inactive_control: int | None, expected: str) -> None:
-    """Execute a three-control X specialization through QIR-Runner."""
+def test_qirrunner_executes_decomposed_multi_control_qis(inactive_control: int | None, expected: str) -> None:
+    """Decompose wider controls to avoid runtime array packing in Base Profile."""
+    target = CompilerTarget(
+        4,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("ry", 1, 1),
+            CompilerTarget.OperationCapability("rz", 1, 1),
+            CompilerTarget.OperationCapability("cx", 2, 0),
+            CompilerTarget.OperationCapability("measure", 1, 0),
+        ]),
+    )
     initialization = "\n".join(f"x q[{control}];" for control in range(3) if control != inactive_control)
     qir, output = _compile_and_run(
         f"""OPENQASM 3.0;
@@ -109,11 +124,12 @@ qubit[4] q;
 {initialization}
 ctrl(3) @ x q[0], q[1], q[2], q[3];
 bit[4] c = measure q;
-"""
+""",
+        target=target,
     )
 
-    assert "@__quantum__qis__x__ctl" in qir.llvm_ir
-    assert "@__quantum__rt__array_create_1d" in qir.llvm_ir
+    assert "@__quantum__qis__x__ctl" not in qir.llvm_ir
+    assert "@__quantum__rt__array_create_1d" not in qir.llvm_ir
     assert "METADATA\tqir_profiles\tbase_profile" in output
     assert _recorded_bitstrings(output, width=4) == [expected]
 
