@@ -28,6 +28,7 @@
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Arith/IR/ValueBoundsOpInterfaceImpl.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/MemRef/Transforms/ComposeSubView.h"
@@ -36,6 +37,8 @@
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Dialect/UB/IR/UBOps.h"
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
+#include "mlir/IR/AffineMap.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -47,6 +50,7 @@
 #include "mlir/IR/Verifier.h"
 #include "mlir/IR/Visitors.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "mlir/Interfaces/ValueBoundsOpInterface.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/IndentedOstream.h"
 #include "mlir/Support/LLVM.h"
@@ -194,10 +198,161 @@ private:
   size_t numClassicalBits = 0;
   bool supportsDispatch = true;
   int64_t numArrayElements_ = 0;
+  DenseMap<Operation*, SmallVector<Value>> snapshotSources_;
+  DenseSet<Operation*> snapshotWrites_;
+  DenseSet<Value> snapshotStorage_;
 
   static constexpr size_t MAX_EXPRESSION_NESTING = 256;
   static constexpr size_t MAX_EXPRESSION_WORK = 4096;
   static constexpr size_t MAX_CLASSICAL_BITS = 1U << 20U;
+
+  /// OpenQASM assignments already snapshot their RHS, including concatenations.
+  /// Fold scratch-only copy sequences in the output, without changing the IR's
+  /// non-overlapping memref.copy contract.
+  void collectSnapshotCopies() {
+    const auto slice = [](Value value) {
+      if (auto view = value.getDefiningOp<memref::SubViewOp>()) {
+        return HyperrectangularSlice(view);
+      }
+      Builder builder(value.getContext());
+      auto type = cast<MemRefType>(value.getType());
+      SmallVector<OpFoldResult> offsets(type.getRank(),
+                                        builder.getIndexAttr(0));
+      SmallVector<OpFoldResult> sizes;
+      for (const auto extent : type.getShape()) {
+        sizes.push_back(builder.getIndexAttr(extent));
+      }
+      return HyperrectangularSlice(offsets, sizes);
+    };
+    const auto root = [](Value value) {
+      while (auto view = value.getDefiningOp<memref::SubViewOp>()) {
+        value = view.getSource();
+      }
+      return value;
+    };
+    DenseSet<Value> neededSources;
+    for (auto alloc : function.getBody().front().getOps<memref::AllocaOp>()) {
+      if (neededSources.contains(alloc)) {
+        continue;
+      }
+      SmallVector<Value> views{alloc};
+      DenseSet<Operation*> copies;
+      SmallVector<memref::CopyOp> reads;
+      bool supported = true;
+      for (size_t index = 0; index < views.size() && supported; ++index) {
+        for (auto* user : views[index].getUsers()) {
+          if (auto view = dyn_cast<memref::SubViewOp>(user)) {
+            views.push_back(view);
+          } else if (auto copy = dyn_cast<memref::CopyOp>(user)) {
+            copies.insert(copy);
+            if (copy.getSource() == views[index]) {
+              reads.push_back(copy);
+            }
+          } else {
+            supported = false;
+            break;
+          }
+        }
+      }
+      if (!supported || reads.empty()) {
+        continue;
+      }
+      DenseMap<Operation*, SmallVector<Value>> sources;
+      DenseSet<Operation*> writes;
+      for (auto read : reads) {
+        auto type = cast<MemRefType>(read.getSource().getType());
+        if (type.getRank() == 0) {
+          supported = false;
+          break;
+        }
+        auto selection = slice(read.getSource());
+        auto readView = read.getSource().getDefiningOp<memref::SubViewOp>();
+        const auto dimension =
+            readView ? readView.getDroppedDims().find_first_unset() : 0;
+        auto begin = selection.getMixedOffsets()[dimension];
+        auto stride =
+            getConstantIntValue(selection.getMixedStrides()[dimension]);
+        using Variable = ValueBoundsConstraintSet::Variable;
+        auto* context = function.getContext();
+        const auto end = [&](const HyperrectangularSlice& part) {
+          auto map = AffineMap::get(2, 0,
+                                    getAffineDimExpr(0, context) +
+                                        getAffineDimExpr(1, context) *
+                                            stride.value_or(1));
+          return Variable(map, {
+                                   Variable(part.getMixedOffsets()[dimension]),
+                                   Variable(part.getMixedSizes()[dimension]),
+                               });
+        };
+        auto remaining = end(selection);
+        bool complete = false;
+        for (auto* previous = read->getPrevNode();
+             previous != nullptr && !complete;
+             previous = previous->getPrevNode()) {
+          if (isMemoryEffectFree(previous)) {
+            continue;
+          }
+          auto write = dyn_cast<memref::CopyOp>(previous);
+          if (!write || root(write.getTarget()) != alloc ||
+              root(write.getSource()) == alloc ||
+              snapshotStorage_.contains(root(write.getSource()))) {
+            break;
+          }
+          if (sources[read].empty() && write.getTarget() == read.getSource()) {
+            complete = true;
+          } else {
+            auto part = slice(write.getTarget());
+            auto writeView =
+                write.getTarget().getDefiningOp<memref::SubViewOp>();
+            if (!stride ||
+                cast<MemRefType>(write.getTarget().getType()).getRank() !=
+                    type.getRank() ||
+                (readView && (!writeView || readView.getDroppedDims() !=
+                                                writeView.getDroppedDims())) ||
+                (!readView && writeView && writeView.getDroppedDims().any()) ||
+                !isEqualConstantIntOrValueArray(part.getMixedStrides(),
+                                                selection.getMixedStrides()) ||
+                llvm::any_of(
+                    llvm::seq<size_t>(0, selection.getMixedSizes().size()),
+                    [&](size_t index) {
+                      return std::cmp_not_equal(index, dimension) &&
+                             (!isEqualConstantIntOrValue(
+                                  part.getMixedSizes()[index],
+                                  selection.getMixedSizes()[index]) ||
+                              !isEqualConstantIntOrValue(
+                                  part.getMixedOffsets()[index],
+                                  selection.getMixedOffsets()[index]));
+                    }) ||
+                !ValueBoundsConstraintSet::compare(
+                    end(part), ValueBoundsConstraintSet::EQ, remaining)) {
+              break;
+            }
+            remaining = Variable(part.getMixedOffsets()[dimension]);
+            complete = ValueBoundsConstraintSet::compare(
+                remaining, ValueBoundsConstraintSet::EQ, Variable(begin));
+          }
+          sources[read].push_back(write.getSource());
+          writes.insert(write);
+        }
+        if (!complete || sources[read].empty()) {
+          supported = false;
+          break;
+        }
+        std::reverse(sources[read].begin(), sources[read].end());
+      }
+      if (!supported || copies.size() != writes.size() + reads.size()) {
+        continue;
+      }
+      snapshotStorage_.insert(alloc);
+      snapshotWrites_.insert(writes.begin(), writes.end());
+      for (auto& [read, inputs] : sources) {
+        for (auto input : inputs) {
+          neededSources.insert(root(input));
+        }
+        snapshotSources_.try_emplace(read, std::move(inputs));
+      }
+    }
+  }
 
   [[nodiscard]] static LogicalResult fail(Operation* operation,
                                           const Twine& message) {
@@ -391,6 +546,7 @@ private:
       }
     }
 
+    collectSnapshotCopies();
     for (Operation& operation : function.getBody().front().getOperations()) {
       if (auto alloc = dyn_cast<qc::AllocOp>(&operation)) {
         const auto name = uniqueName("q", nextQubit);
@@ -431,6 +587,9 @@ private:
         continue;
       }
       if (auto alloc = dyn_cast<memref::AllocaOp>(&operation)) {
+        if (snapshotStorage_.contains(alloc)) {
+          continue;
+        }
         auto type = alloc.getType();
         if (!type.hasStaticShape() || type.getRank() < 1 ||
             type.getRank() > 7 || !type.getLayout().isIdentity() ||
@@ -709,16 +868,31 @@ private:
       return success();
     }
     if (auto copy = dyn_cast<memref::CopyOp>(&operation)) {
+      if (snapshotWrites_.contains(copy)) {
+        return success();
+      }
       auto type = cast<MemRefType>(copy.getSource().getType());
       if (llvm::is_contained(type.getShape(), int64_t{0})) {
         return success();
       }
-      auto source = emitArraySelection(copy.getSource());
       auto target = emitArraySelection(copy.getTarget());
-      if (failed(source) || failed(target)) {
+      if (failed(target)) {
         return failure();
       }
-      *output << *target << " = " << *source << ";\n";
+      SmallVector<std::string> sources;
+      const auto planned = snapshotSources_.find(copy);
+      auto originalSource = copy.getSource();
+      auto inputs = planned == snapshotSources_.end()
+                        ? ValueRange(originalSource)
+                        : ValueRange(planned->second);
+      for (auto input : inputs) {
+        auto source = emitArraySelection(input);
+        if (failed(source)) {
+          return failure();
+        }
+        sources.push_back(std::move(*source));
+      }
+      *output << *target << " = " << llvm::join(sources, " ++ ") << ";\n";
       return success();
     }
     if (auto write = dyn_cast<cbit::WriteOp>(&operation)) {
@@ -2298,6 +2472,9 @@ FailureOr<std::string> translateQCToOpenQASM3(ModuleOp moduleOp) {
     }
     OwningOpRef<ModuleOp> prepared = moduleOp.clone();
     auto* context = moduleOp.getContext();
+    DialectRegistry registry;
+    arith::registerValueBoundsOpInterfaceExternalModels(registry);
+    context->appendDialectRegistry(registry);
     context->getOrLoadDialect<affine::AffineDialect>();
     RewritePatternSet patterns(context);
     memref::populateComposeSubViewPatterns(patterns, context);
