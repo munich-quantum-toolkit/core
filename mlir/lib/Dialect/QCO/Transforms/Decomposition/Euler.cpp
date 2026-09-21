@@ -14,7 +14,7 @@
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 
-#include "PulseSynthesis.h"
+#include "Decomposition/PulseSynthesis.h"
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Location.h"
