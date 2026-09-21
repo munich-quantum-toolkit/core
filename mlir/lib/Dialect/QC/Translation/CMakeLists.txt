@@ -42,6 +42,7 @@ add_mlir_library(
   MLIRFuncInlinerExtension
   MLIRLLVMIRTransforms
   MLIRTransforms
+  MLIRAffineToStandard
   MLIRArithDialect
   MLIRCBitDialect
   MLIRFuncDialect
@@ -50,6 +51,7 @@ add_mlir_library(
   MLIRControlFlowDialect
   MLIRMathDialect
   MLIRMemRefDialect
+  MLIRMemRefTransforms
   MLIRMQTDialect
   MLIRMQTUtils
   MLIRSCFDialect

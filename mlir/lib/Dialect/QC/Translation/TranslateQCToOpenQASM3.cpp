@@ -30,11 +30,15 @@
 #include "mlir/Analysis/DataFlow/DeadCodeAnalysis.h"
 #include "mlir/Analysis/DataFlow/IntegerRangeAnalysis.h"
 #include "mlir/Analysis/DataFlowFramework.h"
+#include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
+#include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/Extensions/InlinerExtension.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/Transforms/InlinerInterfaceImpl.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/MemRef/Transforms/ComposeSubView.h"
+#include "mlir/Dialect/MemRef/Transforms/Transforms.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Dialect/UB/IR/UBOps.h"
@@ -46,6 +50,7 @@
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/Location.h"
 #include "mlir/IR/Operation.h"
+#include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/IR/Value.h"
 #include "mlir/IR/Verifier.h"
@@ -56,6 +61,7 @@
 #include "mlir/Support/IndentedOstream.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/WalkResult.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/APInt.h"
@@ -89,6 +95,7 @@ namespace {
 enum class ResourceKind : uint8_t {
   Qubit,
   Bit,
+  Array,
 };
 
 struct Resource {
@@ -235,6 +242,7 @@ private:
   size_t expressionWork = 0;
   size_t numClassicalBits = 0;
   bool supportsDispatch = true;
+  int64_t numArrayElements_ = 0;
 
   static constexpr size_t MAX_EXPRESSION_NESTING = 256;
   static constexpr size_t MAX_EXPRESSION_WORK = 4096;
@@ -538,6 +546,36 @@ private:
         resourceOrder.push_back(alloc.getResult());
         continue;
       }
+      if (auto alloc = dyn_cast<memref::AllocaOp>(&operation)) {
+        auto type = alloc.getType();
+        if (!type.hasStaticShape() || type.getRank() < 1 ||
+            type.getRank() > 7 || !type.getLayout().isIdentity() ||
+            type.getMemorySpace() ||
+            scalarKind(type.getElementType()).empty()) {
+          return fail(alloc,
+                      "array storage requires a static shape with one to seven "
+                      "dimensions and bool, integer, or f64 elements");
+        }
+        int64_t elements = 1;
+        for (auto extent : type.getShape()) {
+          if (extent > 100000 || (extent != 0 && elements > 100000 / extent)) {
+            return fail(alloc,
+                        "array storage exceeds the 100000-element limit");
+          }
+          elements *= extent;
+        }
+        numArrayElements_ += elements;
+        if (numArrayElements_ > 100000) {
+          return fail(alloc, "array storage exceeds the 100000-element limit");
+        }
+        resources.try_emplace(alloc.getResult(),
+                              Resource{
+                                  .kind = ResourceKind::Array,
+                                  .name = uniqueName("a", nextScalar),
+                              });
+        resourceOrder.push_back(alloc.getResult());
+        continue;
+      }
       auto alloc = dyn_cast<memref::AllocOp>(&operation);
       if (!alloc) {
         continue;
@@ -603,10 +641,9 @@ private:
     return success();
   }
 
-  [[nodiscard]] static std::string inferScalarKind(Value value) {
-    const auto type = value.getType();
+  [[nodiscard]] static std::string scalarKind(Type type) {
     if (type.isInteger(1)) {
-      return value.getDefiningOp<qc::MeasureOp>() ? "bit" : "bool";
+      return "bool";
     }
     if (type.isInteger(64) || type.isIndex()) {
       return "int";
@@ -621,6 +658,11 @@ private:
     return {};
   }
 
+  [[nodiscard]] static std::string inferScalarKind(Value value) {
+    return value.getDefiningOp<qc::MeasureOp>() ? "bit"
+                                                : scalarKind(value.getType());
+  }
+
   void emitDeclarations() {
     for (auto argument : function.getArguments()) {
       *output << "input float[64] " << valueNames.at(argument) << ";\n";
@@ -630,6 +672,15 @@ private:
     }
     for (auto value : resourceOrder) {
       const auto& resource = resources.at(value);
+      if (resource.kind == ResourceKind::Array) {
+        auto type = cast<MemRefType>(value.getType());
+        *output << "array[" << scalarKind(type.getElementType());
+        for (auto extent : type.getShape()) {
+          *output << ", " << extent;
+        }
+        *output << "] " << resource.name << ";\n";
+        continue;
+      }
       if (resource.kind != ResourceKind::Qubit) {
         continue;
       }
@@ -720,7 +771,7 @@ private:
     if (operation.getName().getDialectNamespace() ==
             cbit::CBitDialect::getDialectNamespace() ||
         isa<memref::LoadOp, memref::AllocOp, memref::AllocaOp, memref::StoreOp,
-            tensor::ExtractOp, memref::DeallocOp, qc::AllocOp, qc::DeallocOp,
+            memref::CopyOp, tensor::ExtractOp, memref::DeallocOp, qc::AllocOp, qc::DeallocOp,
             qc::StaticOp, qc::MeasureOp, qc::ResetOp, qc::BarrierOp, scf::IfOp,
             scf::IndexSwitchOp, ub::PoisonOp, arith::SelectOp>(&operation)) {
       return false;
@@ -775,7 +826,7 @@ private:
       *output << ";\n";
       return success();
     }
-    if (isa<qc::AllocOp, memref::AllocOp>(&operation) &&
+    if (isa<qc::AllocOp, memref::AllocOp, memref::AllocaOp>(&operation) &&
         operation.getBlock() != &function.getBody().front()) {
       return fail(&operation, "resource allocation inside control flow is not "
                               "supported; allocate resources before the loop");
@@ -784,8 +835,9 @@ private:
       return emitTableLookup(extract);
     }
     if (isa<arith::ConstantOp, cbit::LoadOp, cbit::ReadOp, cbit::AllocOp,
-            memref::LoadOp, memref::AllocOp, memref::DeallocOp, qc::AllocOp,
-            qc::DeallocOp, qc::StaticOp>(&operation)) {
+            memref::LoadOp, memref::AllocaOp, memref::SubViewOp,
+            memref::ReinterpretCastOp, memref::AllocOp, memref::DeallocOp,
+            qc::AllocOp, qc::DeallocOp, qc::StaticOp>(&operation)) {
       return success();
     }
     if (isInlineExpressionOperation(operation)) {
@@ -801,6 +853,29 @@ private:
     }
     if (auto store = dyn_cast<cbit::StoreOp>(&operation)) {
       return emitStore(store);
+    }
+    if (auto store = dyn_cast<memref::StoreOp>(&operation)) {
+      auto target = emitArrayElement(store.getMemRef(), store.getIndices());
+      auto value = emitExpression(store.getValue());
+      if (failed(target) || failed(value)) {
+        return failure();
+      }
+      *output << *target << " = " << scalarKind(store.getValue().getType())
+              << '(' << *value << ");\n";
+      return success();
+    }
+    if (auto copy = dyn_cast<memref::CopyOp>(&operation)) {
+      auto type = cast<MemRefType>(copy.getSource().getType());
+      if (llvm::is_contained(type.getShape(), int64_t{0})) {
+        return success();
+      }
+      auto source = emitArraySelection(copy.getSource());
+      auto target = emitArraySelection(copy.getTarget());
+      if (failed(source) || failed(target)) {
+        return failure();
+      }
+      *output << *target << " = " << *source << ";\n";
+      return success();
     }
     if (auto write = dyn_cast<cbit::WriteOp>(&operation)) {
       const auto resource = resources.find(write.getReg());
@@ -954,7 +1029,9 @@ private:
 
   [[nodiscard]] static bool isInlineExpressionOperation(Operation& operation) {
     const auto name = operation.getName().getStringRef();
-    return isa<arith::ConstantOp, arith::CmpIOp, arith::CmpFOp, cbit::LoadOp,
+    return (isa<memref::LoadOp>(&operation) &&
+            !isa<qc::QubitType>(operation.getResult(0).getType())) ||
+           isa<arith::ConstantOp, arith::CmpIOp, arith::CmpFOp, cbit::LoadOp,
                cbit::ReadOp, arith::SelectOp, arith::ExtSIOp, arith::ExtUIOp,
                arith::TruncIOp, arith::ShRSIOp>(&operation) ||
            !binaryOperator(name).empty() || name == "arith.negf" ||
@@ -1058,6 +1135,77 @@ private:
 
   enum class ExpressionContext : uint8_t { Scalar, BitVector };
 
+  [[nodiscard]] FailureOr<std::string> emitArrayElement(Value array,
+                                                        ValueRange indices) {
+    const auto resource = resources.find(array);
+    if (resource == resources.end() ||
+        resource->second.kind != ResourceKind::Array) {
+      return failExpression(array,
+                            "array access refers to unsupported storage");
+    }
+    auto type = cast<MemRefType>(array.getType());
+    SmallVector<std::string> subscripts;
+    for (auto [dimension, index] : llvm::enumerate(indices)) {
+      if (auto constant = getConstantInteger(index);
+          constant &&
+          (*constant < 0 || *constant >= type.getDimSize(dimension))) {
+        return failExpression(index, "constant array index is out of bounds");
+      }
+      auto text = emitExpression(index);
+      if (failed(text)) {
+        return failure();
+      }
+      subscripts.push_back(std::move(*text));
+    }
+    return resource->second.name + "[" + llvm::join(subscripts, ", ") + "]";
+  }
+
+  [[nodiscard]] FailureOr<std::string> emitArraySelection(Value array) {
+    if (const auto resource = resources.find(array);
+        resource != resources.end() &&
+        resource->second.kind == ResourceKind::Array) {
+      return resource->second.name;
+    }
+    auto view = array.getDefiningOp<memref::SubViewOp>();
+    if (!view) {
+      return failExpression(array, "unsupported array view");
+    }
+    const auto resource = resources.find(view.getSource());
+    if (resource == resources.end() ||
+        resource->second.kind != ResourceKind::Array) {
+      return failExpression(
+          array, "array view must refer to an entry-block allocation");
+    }
+    const auto text = [&](OpFoldResult value) -> FailureOr<std::string> {
+      if (auto constant = getConstantIntValue(value)) {
+        return std::to_string(*constant);
+      }
+      return emitExpression(cast<Value>(value));
+    };
+    auto dropped = view.getDroppedDims();
+    SmallVector<std::string> subscripts;
+    for (const auto [dimension, offset, size, stride] :
+         llvm::enumerate(view.getMixedOffsets(), view.getMixedSizes(),
+                         view.getMixedStrides())) {
+      auto first = text(offset);
+      if (failed(first)) {
+        return failure();
+      }
+      if (dropped.test(dimension)) {
+        subscripts.push_back(std::move(*first));
+        continue;
+      }
+      auto count = text(size);
+      auto step = text(stride);
+      if (failed(count) || failed(step)) {
+        return failure();
+      }
+      subscripts.push_back(*first + ":" + *step + ":(" + *first + " + " +
+                           *step + " * (" + *count + " - 1))");
+    }
+    return resource->second.name + "[" + llvm::join(subscripts, ", ") + "]";
+  }
+
   [[nodiscard]] FailureOr<std::string>
   emitExpression(Value value,
                  const ExpressionContext context = ExpressionContext::Scalar) {
@@ -1079,6 +1227,13 @@ private:
     const auto type = value.getType();
     if (const auto found = valueNames.find(value); found != valueNames.end()) {
       return found->second;
+    }
+    if (auto load = value.getDefiningOp<memref::LoadOp>()) {
+      if (load.getOperation() != expressionConsumer) {
+        return failExpression(
+            value, "array load requires a snapshot at its definition");
+      }
+      return emitArrayElement(load.getMemRef(), load.getIndices());
     }
     if (auto load = value.getDefiningOp<cbit::LoadOp>()) {
       if (load.getOperation() != expressionConsumer) {
@@ -2380,6 +2535,26 @@ LogicalResult translateQCToOpenQASM3(ModuleOp moduleOp,
 FailureOr<std::string> translateQCToOpenQASM3(ModuleOp moduleOp) {
   if (failed(verify(moduleOp))) {
     return failure();
+  }
+  bool hasArrays = false;
+  moduleOp.walk([&](memref::AllocaOp) { hasArrays = true; });
+  if (hasArrays) {
+    OwningOpRef<ModuleOp> prepared = moduleOp.clone();
+    auto* context = moduleOp.getContext();
+    context->getOrLoadDialect<affine::AffineDialect>();
+    RewritePatternSet patterns(context);
+    memref::populateComposeSubViewPatterns(patterns, context);
+    memref::populateFoldMemRefAliasOpPatterns(patterns);
+    if (failed(applyPatternsGreedily(*prepared, std::move(patterns)))) {
+      return failure();
+    }
+    PassManager manager(context);
+    manager.addPass(createLowerAffinePass());
+    manager.addPass(createCanonicalizerPass());
+    if (failed(manager.run(*prepared))) {
+      return failure();
+    }
+    return OpenQASMEmitter(*prepared).emit();
   }
   return OpenQASMEmitter(moduleOp).emit();
 }
