@@ -224,10 +224,10 @@ static LogicalResult unrollModifier(qco::CtrlOp op, RewriterBase& rewriter) {
 
 /// Unroll a `qco.inv` modifier with more than one body unitary,
 /// or fail if it cannot be unrolled.
-static LogicalResult unrollModifier(qco::InvOp op, RewriterBase& rewriter) {
+LogicalResult unrollModifier(qco::InvOp op, RewriterBase& rewriter) {
   auto* body = op.getBody();
   if (op.getNumBodyUnitaries() < 2) {
-    return success();
+    return failure();
   }
   hoistClassicalOps<qco::UnitaryOpInterface>(*body, op, rewriter);
 
@@ -282,9 +282,9 @@ static bool hasDisjointBodyWires(Block& body) {
 
 /// Unroll a `qco.pow` modifier with more than one body unitary,
 /// or fail if it cannot be unrolled.
-static LogicalResult unrollModifier(qco::PowOp op, RewriterBase& rewriter) {
+LogicalResult unrollModifier(qco::PowOp op, RewriterBase& rewriter) {
   if (op.getNumBodyUnitaries() < 2) {
-    return success();
+    return failure();
   }
   auto* body = op.getBody();
   if (!hasIntegerExponent(op) || !hasDisjointBodyWires(*body)) {

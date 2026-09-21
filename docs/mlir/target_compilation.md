@@ -253,11 +253,10 @@ input and uses the same target environment and global-phase policy as target
 compilation. Explicit connectivity is rejected; use `compile_for_target` when
 routing is required.
 
-Both target pipelines decompose composite controlled gates. Bodies nested inside
-inverse or power modifiers require a suitable native synthesis path
-([#2588]).
-
-[#2588]: https://github.com/munich-quantum-toolkit/core/issues/2588
+Both target pipelines decompose controlled composite gates, including inverse
+bodies and constant integer powers of operations on disjoint wires. Other
+composite powers require native target support or a synthesis rule for that
+operation.
 
 Synthesis runs in place and raises `RuntimeError` with MLIR diagnostics on
 failure. Earlier pass changes may remain on the program, so copy it first when

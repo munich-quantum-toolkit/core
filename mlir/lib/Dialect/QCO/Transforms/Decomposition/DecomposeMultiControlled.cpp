@@ -1194,6 +1194,28 @@ static bool isWithinTargetNativeUnitary(UnitaryOpInterface op,
 
 namespace {
 
+template <typename ModifierOp>
+struct UnrollControlledModifier final : OpRewritePattern<ModifierOp> {
+  UnrollControlledModifier(MLIRContext* context, uint64_t minQubits,
+                           const CompilerTarget* target)
+      : OpRewritePattern<ModifierOp>(context), minQubits_(minQubits),
+        target_(target) {}
+
+  LogicalResult matchAndRewrite(ModifierOp op,
+                                PatternRewriter& rewriter) const override {
+    auto control = op->template getParentOfType<CtrlOp>();
+    if (!control || control.getNumQubits() < minQubits_ ||
+        isWithinTargetNativeUnitary(op, target_)) {
+      return failure();
+    }
+    return mqt::unrollModifier(op, rewriter);
+  }
+
+private:
+  uint64_t minQubits_;
+  const CompilerTarget* target_;
+};
+
 struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
   explicit DecomposeControlledGatePattern(MLIRContext* context,
                                           uint64_t minQubits,
@@ -1353,9 +1375,13 @@ protected:
             : nullptr;
 
     RewritePatternSet patterns(&getContext());
-    patterns.add<DecomposeControlledGatePattern, DecomposeRCCXPattern>(
-        &getContext(), minQubits, nativeTarget);
+    patterns
+        .add<DecomposeControlledGatePattern, DecomposeRCCXPattern,
+             UnrollControlledModifier<InvOp>, UnrollControlledModifier<PowOp>>(
+            &getContext(), minQubits, nativeTarget);
     CtrlOp::getCanonicalizationPatterns(patterns, &getContext());
+    InvOp::getCanonicalizationPatterns(patterns, &getContext());
+    PowOp::getCanonicalizationPatterns(patterns, &getContext());
 
     if (failed(applyPatternsGreedily(getOperation(), std::move(patterns)))) {
       signalPassFailure();

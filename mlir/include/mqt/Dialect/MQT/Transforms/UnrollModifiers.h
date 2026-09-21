@@ -16,6 +16,8 @@ namespace mlir {
 class RewriterBase;
 namespace qco {
 class CtrlOp;
+class InvOp;
+class PowOp;
 } // namespace qco
 } // namespace mlir
 
@@ -25,5 +27,15 @@ namespace mlir::mqt {
 /// IR if the body has fewer than two unitaries.
 [[nodiscard]] LogicalResult unrollControl(qco::CtrlOp op,
                                           RewriterBase& rewriter);
+
+/// Unroll a verified inverse body in reverse order; fail without changing IR
+/// if it has fewer than two unitaries.
+[[nodiscard]] LogicalResult unrollModifier(qco::InvOp op,
+                                           RewriterBase& rewriter);
+
+/// Distribute a verified power over disjoint body operations for a constant
+/// integer exponent. Fail without changing IR for other or noncomposite bodies.
+[[nodiscard]] LogicalResult unrollModifier(qco::PowOp op,
+                                           RewriterBase& rewriter);
 
 } // namespace mlir::mqt

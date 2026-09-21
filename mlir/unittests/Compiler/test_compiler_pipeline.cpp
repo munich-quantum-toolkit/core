@@ -3731,6 +3731,95 @@ ctrl @ composite q[0], q[1], q[2], q[3];
   }
 }
 
+TEST_F(CompilerPipelineTest, TargetPipelinesLowerNestedControlledModifiers) {
+  for (const auto exponent :
+       std::array<std::optional<double>, 3>{std::nullopt, 2.0, -2.0}) {
+    for (const bool synthesisOnly : {false, true}) {
+      SCOPED_TRACE(testing::Message() << "exponent=" << exponent.value_or(-1.0)
+                                      << ", synthesisOnly=" << synthesisOnly);
+      auto ownedContext = createCompilerContext();
+      auto moduleOp = QCOProgramBuilder::build(
+          ownedContext.get(), [&](QCOProgramBuilder& builder) {
+            auto q0 = builder.staticQubit(0);
+            auto q1 = builder.staticQubit(1);
+            auto q2 = builder.staticQubit(2);
+            auto q3 = builder.staticQubit(3);
+            const auto body = [&](ValueRange args) -> SmallVector<Value> {
+              builder.gphase(0.17);
+              auto a = builder.rx(0.37, args[2]);
+              auto b = builder.ry(0.61, args[0]);
+              if (!exponent) {
+                auto [control, target] = builder.cx(a, b);
+                a = control;
+                b = target;
+              }
+              return {b, builder.rz(-0.29, args[1]), a};
+            };
+            builder.ctrl(ValueRange{q0}, ValueRange{q3, q1, q2},
+                         [&](ValueRange args) -> SmallVector<Value> {
+                           auto outputs =
+                               exponent ? builder.pow(*exponent, args, body)
+                                        : builder.inv(args, body);
+                           return {outputs.begin(), outputs.end()};
+                         });
+            return builder.intConstant(0);
+          });
+      ASSERT_TRUE(succeeded(verify(*moduleOp)));
+      ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+      auto reference = OwningOpRef<ModuleOp>(moduleOp->clone());
+      auto program = QCOProgram::fromModule(ownedContext, std::move(moduleOp));
+      ASSERT_TRUE(program);
+      using Capability = CompilerTarget::OperationCapability;
+      const auto target = llvm::cantFail(CompilerTarget::create(
+          4, CompilerTarget::Connectivity::allToAll(),
+          CompilerTarget::NativeOperations::fromOperations({
+              llvm::cantFail(Capability::create("u", 1, 3)),
+              llvm::cantFail(Capability::create("cx", 2, 0)),
+              llvm::cantFail(Capability::create("gphase", 0, 1)),
+          })));
+      const TargetEnvironment environment(target, makePayloadSpecification());
+
+      ASSERT_TRUE(synthesisOnly ? program->synthesizeForTarget(environment)
+                                : program->compileForTarget(environment));
+
+      EXPECT_TRUE(succeeded(verify(program->module())));
+      EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
+      expectFullUnitaryEqual(*reference, program->module(), 4);
+    }
+  }
+}
+
+TEST_F(CompilerPipelineTest, TargetPipelinesLowerOpenQASMControlledInverse) {
+  constexpr llvm::StringLiteral source = R"(OPENQASM 3.0;
+include "stdgates.inc";
+gate composite a, b, c { rx(0.37) a; cx a, c; ry(0.61) b; }
+qubit[4] q;
+ctrl @ inv @ composite q[0], q[1], q[2], q[3];
+)";
+  using Capability = CompilerTarget::OperationCapability;
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      4, CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(Capability::create("u", 1, 3)),
+          llvm::cantFail(Capability::create("cx", 2, 0)),
+          llvm::cantFail(Capability::create("gphase", 0, 1)),
+      })));
+  const TargetEnvironment environment(target, makePayloadSpecification());
+  for (const bool synthesisOnly : {false, true}) {
+    SCOPED_TRACE(synthesisOnly);
+    auto qc = QCProgram::fromOpenQASMString(source);
+    ASSERT_TRUE(qc);
+    auto program = std::move(*qc).intoQCO();
+    ASSERT_TRUE(program);
+
+    ASSERT_TRUE(synthesisOnly ? program->synthesizeForTarget(environment)
+                              : program->compileForTarget(environment));
+
+    EXPECT_TRUE(succeeded(verify(program->module())));
+    EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
+  }
+}
+
 TEST_F(CompilerPipelineTest, TargetSynthesisResynthesizesTwoQubitBlocks) {
   auto ownedContext = createCompilerContext();
   auto moduleOp = QCOProgramBuilder::build(
