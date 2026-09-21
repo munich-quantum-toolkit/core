@@ -1226,21 +1226,55 @@ private:
     if (current().kind == TokenKind::UnsupportedKeyword) {
       return unsupportedKeyword();
     }
-    if (current().kind != TokenKind::Int && current().kind != TokenKind::Uint) {
-      return sink.error(current().loc, "expected 'int' or 'uint' after 'for'");
+    SyntaxFor loop;
+    switch (current().kind) {
+    case TokenKind::Int:
+      loop.type = ScalarKind::Int;
+      break;
+    case TokenKind::Uint:
+      loop.type = ScalarKind::Uint;
+      break;
+    case TokenKind::Float:
+      loop.type = ScalarKind::Float;
+      break;
+    case TokenKind::Bool:
+      loop.type = ScalarKind::Bool;
+      break;
+    case TokenKind::Angle:
+      loop.type = ScalarKind::Angle;
+      break;
+    default:
+      return sink.error(current().loc, "expected a scalar type after 'for'");
     }
-    const bool isUnsigned = current().kind == TokenKind::Uint;
     advance(); // type
+    if (loop.type != ScalarKind::Bool &&
+        current().kind == TokenKind::LBracket) {
+      auto width = parseDesignator();
+      if (failed(width)) {
+        return failure();
+      }
+      loop.width = *width;
+    }
 
     if (current().kind != TokenKind::Identifier) {
       return expectedIdentifier("expected loop variable");
     }
-    const auto iv = current();
+    loop.inductionVariable = current().identifier;
     advance(); // identifier
 
-    if (failed(expect(TokenKind::In)) || failed(expect(TokenKind::LBracket))) {
+    if (failed(expect(TokenKind::In))) {
       return failure();
     }
+    if (current().kind != TokenKind::LBracket) {
+      auto iterable = parseExpression();
+      if (failed(iterable)) {
+        return failure();
+      }
+      loop.iterable = *iterable;
+      return sink.forStmt(loc, std::move(loop),
+                          [this] { return parseBlock(); });
+    }
+    advance(); // [
     auto start = parseExpression();
     if (failed(start)) {
       return failure();
@@ -1275,8 +1309,10 @@ private:
       return failure();
     }
 
-    return sink.forStmt(loc, iv.identifier, isUnsigned, *start, step, stop,
-                        [this] { return parseBlock(); });
+    loop.start = *start;
+    loop.step = step;
+    loop.stop = stop;
+    return sink.forStmt(loc, std::move(loop), [this] { return parseBlock(); });
   }
 
   [[nodiscard]] LogicalResult parseWhile() {
