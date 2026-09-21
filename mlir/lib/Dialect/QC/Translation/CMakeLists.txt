@@ -39,6 +39,7 @@ add_mlir_library(
   LINK_LIBS
   MQTCompilerTarget
   MLIRAnalysis
+  MLIRAffineToStandard
   MLIRArithDialect
   MLIRCBitDialect
   MLIRFuncDialect
@@ -47,12 +48,14 @@ add_mlir_library(
   MLIRControlFlowDialect
   MLIRMathDialect
   MLIRMemRefDialect
+  MLIRMemRefTransforms
   MLIRMQTDialect
   MLIRSCFDialect
   MLIRTensorDialect
   MLIRUBDialect
   MLIRQCDialect
   MLIRQCProgramBuilder
+  MLIRTransforms
   MLIRQCTranslationSupport)
 
 mqt_mlir_target_use_project_options(MLIRQCOpenQASMTranslation)

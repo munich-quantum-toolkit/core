@@ -161,6 +161,75 @@ result = (c == "0111") && (reversed == "10");
   expectOneSample(*restored);
 }
 
+TEST(OpenQASM3EmissionTest, RoundTripsClassicalArrayStorageAndCopies) {
+  for (const auto* body : {
+           R"qasm(array[int, 4] a = {1, 2, 3, 4};
+             x q; bit choice = measure q; reset q;
+             int i = int(choice);
+             a = a[i:] ++ a[:i-1];
+             if (a[i] == 3 && a[-i] == 1 && sizeof(a[:i]) == 2) { x q; })qasm",
+           R"qasm(array[int, 4] a = {1, 2, 3, 4};
+             array[int, 3] saved = a[:-1:1];
+             a[1:] = a[:2];
+             int digits = 0;
+             for int x in saved { digits = 10 * digits + x; }
+             if (digits == 432 && a[3] == 3) { x q; })qasm",
+           R"qasm(array[int[8], 2, 3] a = {{1, -2, 3}, {-4, 5, -6}};
+             array[int[8], 3] b = a[1];
+             b = b[2:2] ++ b[:1];
+             int sum = 0;
+             for int x in b { sum += x; }
+             if (sum == -5) { x q; })qasm",
+           R"qasm(array[float, 2] a = {0.5, 1.5};
+             array[bool, 2] flags = {true, false};
+             float old = a[0];
+             a[0] = 9.0;
+             bool flag = flags[0];
+             flags[0] = false;
+             if (flag && !flags[0] && old == 0.5 && a[0] == 9.0) { x q; })qasm",
+           R"qasm(array[int, 2, 0] empty = {{}, {}};
+             array[int, 0] row = empty[1];
+             for int v in row { x q; }
+             x q;)qasm",
+           R"qasm(array[angle[8], 2] a = {0.0, pi};
+             for angle[8] theta in a { ry(theta) q; })qasm",
+       }) {
+    SCOPED_TRACE(body);
+    MLIRContext context;
+    auto moduleOp = qc::translateOpenQASMToQC(
+        std::string("OPENQASM 3.0; qubit q; output bit result; ") + body +
+            "result = measure q;",
+        &context);
+    ASSERT_TRUE(moduleOp);
+    std::string original;
+    llvm::raw_string_ostream stream(original);
+    moduleOp->print(stream);
+    auto source = qc::translateQCToOpenQASM3(*moduleOp);
+    ASSERT_TRUE(succeeded(source));
+    auto restored = qc::translateOpenQASMToQC(*source, &context);
+    ASSERT_TRUE(restored) << *source;
+    ASSERT_TRUE(succeeded(verify(*restored)));
+    expectOneSample(*restored);
+    std::string unchanged;
+    llvm::raw_string_ostream after(unchanged);
+    moduleOp->print(after);
+    EXPECT_EQ(original, unchanged);
+  }
+}
+
+TEST(OpenQASM3EmissionTest, ArrayExportRetainsStorage) {
+  MLIRContext context;
+  auto moduleOp = qc::translateOpenQASMToQC(
+      "OPENQASM 3.0; array[int, 2] a = {1, 2}; int sum = 0; "
+      "for int x in a { sum += x; }",
+      &context);
+  ASSERT_TRUE(moduleOp);
+  auto source = qc::translateQCToOpenQASM3(*moduleOp);
+  ASSERT_TRUE(succeeded(source));
+  EXPECT_NE(source->find("array[int, 2]"), std::string::npos);
+  EXPECT_TRUE(qc::translateOpenQASMToQC(*source, &context));
+}
+
 TEST(OpenQASM3EmissionTest, RoundTripsSwitchBreakContinueAndFallthrough) {
   constexpr auto fixtures =
       std::to_array<std::tuple<const char*, const char*, const char*>>({
