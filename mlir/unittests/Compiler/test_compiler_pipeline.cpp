@@ -1346,6 +1346,11 @@ TEST_F(CompilerPipelineTest, ClassicalArraysDoNotChangeQIRAllocationMode) {
     )qasm");
     ASSERT_TRUE(qc);
     auto qir = std::move(*qc).intoQIR(profile);
+    if (profile == QIRProfile::Base) {
+      // Copies retain classical storage; only Adaptive supports that storage.
+      EXPECT_FALSE(qir);
+      continue;
+    }
     ASSERT_TRUE(qir);
     EXPECT_TRUE(qir->llvmIR());
   }
