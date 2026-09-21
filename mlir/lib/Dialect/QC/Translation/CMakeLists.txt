@@ -44,6 +44,7 @@ add_mlir_library(
   MLIRTransforms
   MLIRAffineToStandard
   MLIRArithDialect
+  MLIRArithValueBoundsOpInterfaceImpl
   MLIRCBitDialect
   MLIRFuncDialect
   MLIRLLVMDialect
@@ -59,6 +60,7 @@ add_mlir_library(
   MLIRUBDialect
   MLIRQCDialect
   MLIRQCProgramBuilder
+  MLIRValueBoundsOpInterface
   MLIRQCTranslationSupport)
 
 mqt_mlir_target_use_project_options(MLIRQCOpenQASMTranslation)
