@@ -15,6 +15,8 @@ add_mlir_conversion_library(
   QCOToJeffIncGen
   LINK_LIBS
   MLIRDialect
+  MLIRAffineToStandard
+  MLIRMemRefTransforms
   MLIRFuncTransforms
   MLIRLLVMDialect
   MLIRSupportMQT
