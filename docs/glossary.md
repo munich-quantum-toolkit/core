@@ -162,6 +162,12 @@ canonicalization
   Canonicalization is not a general optimization pipeline and must not depend on
   a particular downstream target.
 
+parity network
+  **Preferred term:** parity network. **Accepted aliases:** none. A CNOT circuit
+  that computes specified XOR combinations of input qubits on its wires. Phase
+  gates can act on these combinations before the required output wire values
+  are restored.
+
 conversion
   A change between or within MLIR dialects, from one legal set of operations or
   types to another. Conversion can be partial or complete and is governed by a
