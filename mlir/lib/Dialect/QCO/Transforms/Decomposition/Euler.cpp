@@ -315,19 +315,16 @@ struct Unitary1QEulerPlan {
     }
 
     if (basis == SingleQubitBasis::GPI || basis == SingleQubitBasis::GPI2) {
-      constexpr double twoPi = 2. * std::numbers::pi;
-      const double middle =
-          (angles.phi - angles.lambda - angles.theta) / (2. * twoPi);
-      steps.emplace_back(SynthesisStep::Kind::GPI2, -angles.lambda / twoPi);
-      if (basis == SingleQubitBasis::GPI) {
-        steps.emplace_back(SynthesisStep::Kind::GPI, middle);
-        phase = angles.phase + std::numbers::pi / 2.;
-      } else {
-        steps.emplace_back(SynthesisStep::Kind::GPI2, middle);
-        steps.emplace_back(SynthesisStep::Kind::GPI2, middle);
-        phase = angles.phase + std::numbers::pi;
-      }
-      steps.emplace_back(SynthesisStep::Kind::GPI2, angles.phi / twoPi);
+      phase = angles.phase +
+              emitGPISequence(
+                  angles.theta, angles.phi, angles.lambda,
+                  basis == SingleQubitBasis::GPI,
+                  [](double value) { return value; },
+                  [&](bool piPulse, double angle) {
+                    steps.emplace_back(piPulse ? SynthesisStep::Kind::GPI
+                                               : SynthesisStep::Kind::GPI2,
+                                       angle);
+                  });
       return;
     }
 

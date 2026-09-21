@@ -812,20 +812,18 @@ static Value emitRuntimeEulerAngles(
     break;
   case decomposition::SingleQubitBasis::GPI:
   case decomposition::SingleQubitBasis::GPI2: {
-    const auto twoPi = consts.two * consts.pi;
-    const auto first = -lambda / twoPi;
-    const auto middle = (phi - lambda - theta) / (consts.two * twoPi);
-    const auto last = phi / twoPi;
-    qubit = GPI2Op::create(rewriter, loc, qubit, first.v).getQubitOut();
-    if (basis == decomposition::SingleQubitBasis::GPI) {
-      qubit = GPIOp::create(rewriter, loc, qubit, middle.v).getQubitOut();
-      phase = phase + consts.pi / consts.two;
-    } else {
-      qubit = GPI2Op::create(rewriter, loc, qubit, middle.v).getQubitOut();
-      qubit = GPI2Op::create(rewriter, loc, qubit, middle.v).getQubitOut();
-      phase = phase + consts.pi;
-    }
-    qubit = GPI2Op::create(rewriter, loc, qubit, last.v).getQubitOut();
+    const auto constant = [&](double value) {
+      return Val<Value>::constant(rewriter, loc, value);
+    };
+    const double correction = decomposition::emitGPISequence(
+        theta, phi, lambda, basis == decomposition::SingleQubitBasis::GPI,
+        constant, [&](bool piPulse, Val<Value> angle) {
+          qubit =
+              piPulse
+                  ? GPIOp::create(rewriter, loc, qubit, angle.v).getQubitOut()
+                  : GPI2Op::create(rewriter, loc, qubit, angle.v).getQubitOut();
+        });
+    phase = phase + constant(correction);
     break;
   }
   case decomposition::SingleQubitBasis::FixedRotation: {

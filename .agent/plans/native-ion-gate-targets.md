@@ -24,8 +24,9 @@ reader. Other definitions retain their custom semantics.
 
 Single-qubit synthesis uses a ZYZ decomposition followed by GPI2, GPI, GPI2. If
 only GPI2 is available, replace GPI with two GPI2 pulses and the required global
-phase. Two-qubit synthesis reuses the existing RXX/RZZ decomposers with fully
-entangling MS(0, 0, 1/4) or ZZ(1/4). Broader angle-domain restrictions and
+phase. Numeric and symbolic paths share this pulse recipe. Two-qubit synthesis
+reuses the existing RXX/RZZ decomposers with fully entangling MS(0, 0, 1/4) or
+ZZ(1/4). Broader angle-domain restrictions and
 calibration-aware pulse optimization are outside this change.
 
 ## Validation
