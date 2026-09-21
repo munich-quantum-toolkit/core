@@ -392,6 +392,7 @@ struct IfStatement {
 
 struct ForStatement {
   ScalarId inductionVariable = 0;
+  std::optional<ArrayCopySource> iterable;
   ExpressionId start = 0;
   ExpressionId step = 0;
   ExpressionId stop = 0;

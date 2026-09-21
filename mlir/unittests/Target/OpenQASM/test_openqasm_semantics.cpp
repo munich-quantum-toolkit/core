@@ -309,6 +309,77 @@ TEST(OpenQASMFrontendTest, CopiesArraysWithMatchingTypes) {
   }
 }
 
+TEST(OpenQASMFrontendTest, ArrayIterationTracksInitializationAndScope) {
+  for (const auto* source : {
+           "array[int, 2] a; a[1] = 7; int result; "
+           "for int x in a[1:1] { result = x; } int copy = result;",
+           "array[int, 2, 3] a; a[1, 2] = 1; "
+           "for int x in a[1, 2:2] { int y = x; }",
+           "array[int, 0] a; for int x in a { x = 2; } int x = 1;",
+           "array[int, 1] a = {1}; for int x in a { "
+           "for int x in a { continue; } break; }",
+       }) {
+    SCOPED_TRACE(source);
+    auto analyzed = openqasm::frontend::analyzeOpenQASM(
+        std::string("OPENQASM 3.0; ") + source);
+    ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  }
+}
+
+TEST(OpenQASMFrontendTest, RejectsInvalidArrayIteration) {
+  const auto cases = std::to_array<
+      std::pair<llvm::StringLiteral, llvm::StringLiteral>>({
+      {"array[int, 1, 1] a = {{1}}; for int x in a {}", "one-dimensional"},
+      {"array[int, 1] a = {1}; for int x in a[0] {}", "one-dimensional"},
+      {"int a = 1; for int x in a {}", "one-dimensional"},
+      {"array[int, 1] a; for int x in a {}", "uninitialized"},
+      {
+          "array[int, 2] a; a[0] = 1; int i = 0; for int x in a[:i] {}",
+          "uninitialized",
+      },
+      {
+          "array[int, 0] a; int result; for int x in a { result = 1; } int y "
+          "= result;",
+          "uninitialized",
+      },
+      {
+          "array[int, 1] a = {1}; int result; for int x in a { break; result "
+          "= 1; } int y = result;",
+          "uninitialized",
+      },
+      {"array[int, 1] a = {1}; for int x in a {} int y = x;", "unknown"},
+      {"array[int, 1] a = {1}; for bool x in a {}", "cannot be converted"},
+      {"array[int, 1] a = {1}; for float[32] x in a {}", "float[64]"},
+      {"array[int, 1] a = {1}; for int[0] x in a {}", "width"},
+      {
+          "array[angle[8], 1] a = {pi}; for angle[4] x in a {}",
+          "cannot be converted",
+      },
+      {
+          "array[float, 1] a = {1.0}; for angle x in a {}",
+          "cannot be converted",
+      },
+      {
+          "array[angle[8], 1] a = {pi}; for angle[8] x in a { x += pi; }",
+          "compile-time",
+      },
+      {
+          "array[int, 1] a = {1}; gate g q { for int x in a {} }",
+          "cannot capture",
+      },
+  });
+  for (const auto& [source, message] : cases) {
+    SCOPED_TRACE(source.str());
+    auto analyzed =
+        openqasm::frontend::analyzeOpenQASM(("OPENQASM 3.0; " + source).str());
+    ASSERT_FALSE(analyzed);
+    ASSERT_FALSE(analyzed.diagnostics.empty());
+    EXPECT_TRUE(
+        StringRef(analyzed.diagnostics.front().message).contains(message))
+        << analyzed.diagnostics.front().message;
+  }
+}
+
 TEST(OpenQASMFrontendTest, RejectsInvalidClassicalArrays) {
   const auto cases =
       std::to_array<std::pair<llvm::StringLiteral, llvm::StringLiteral>>({

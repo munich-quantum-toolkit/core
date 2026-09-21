@@ -189,6 +189,20 @@ compile-time constant. A runtime-sized range, such as `sizeof(a[:i])`, returns a
 runtime value and cannot set a fixed array size or a `const` initializer. Its
 queried range has the same bounds and step preconditions as array copies.
 
+Iterate a one-dimensional array or slice with `for int x in values { ... }`. The
+loop variable is local and holds a copy of each element; assigning to it does
+not change the array. Elements are read in selection order, so writes to later
+elements are visible in later iterations. Slice bounds are evaluated once before
+the loop. Empty arrays execute no iterations; `break` and `continue` work as in
+range loops. Multidimensional arrays require a rank-one selection, such as
+`for float x in matrix[row, :-1:] { ... }`.
+
+Loop variables support the array element types and scalar numeric conversions,
+including sized integers and `float[64]`. An `angle` loop variable requires an
+angle array with no wider precision; assignments to it retain the compile-time
+angle restriction below. Iteration requires the selected elements initialized,
+or the whole array for runtime selections.
+
 Angle arrays use the same widths and compile-time quantization as scalar angle
 declarations. Values in initializer lists and assignments to individual entries
 must be compile-time float or angle expressions, but the element index can be
