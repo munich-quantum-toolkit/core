@@ -412,6 +412,10 @@ TEST(JeffRoundTripRegressionTest, PreservesOpenQASMArrayStorage) {
              x q;)qasm",
            R"qasm(array[angle[8], 2] a = {0.0, pi};
              for angle[8] theta in a { ry(theta) q; })qasm",
+           R"qasm(array[float, 10001] a;
+             a[0] = 0.0; a[1] = pi;
+             a[0:1] = a[1:-1:0];
+             ry(a[0]) q;)qasm",
        }) {
     SCOPED_TRACE(body);
     MLIRContext context;
@@ -447,7 +451,7 @@ TEST(JeffRoundTripRegressionTest, PreservesLiteralArraySnapshots) {
   context.loadDialect<func::FuncDialect, jeff::JeffDialect>();
   auto program = parseSourceString<ModuleOp>(R"mlir(
     module attributes {jeff.entrypoint = 0 : ui16, jeff.strings = ["main"]} {
-      func.func @main() -> tensor<3xi1> {
+      func.func @main() -> tensor<4xi1> {
         %index = jeff.int_const32(0) : i32
         %length = jeff.int_const32(2) : i32
         %half = jeff.float_const64(0.5) : f64
@@ -462,8 +466,14 @@ TEST(JeffRoundTripRegressionTest, PreservesLiteralArraySnapshots) {
         %a = jeff.float_comp_op [_eq] (%original, %half) : f64, f64 -> i1
         %b = jeff.float_comp_op [_eq] (%changed, %nine) : f64, f64 -> i1
         %c = jeff.int_comp_op [_eq] (%size, %length) : i32, i32 -> i1
-        %bits = jeff.int_array_create %a, %b, %c : i1, i1, i1 -> tensor<3xi1>
-        return %bits : tensor<3xi1>
+        %largeLength = jeff.int_const32(10001) : i32
+        %lastIndex = jeff.int_const32(10000) : i32
+        %zero = jeff.float_const64(0.0) : f64
+        %large = jeff.float_array_zero(%largeLength) : tensor<10001xf64>
+        %last = jeff.float_array_get_index(%lastIndex) %large : i32, tensor<10001xf64> -> f64
+        %d = jeff.float_comp_op [_eq] (%last, %zero) : f64, f64 -> i1
+        %bits = jeff.int_array_create %a, %b, %c, %d : i1, i1, i1, i1 -> tensor<4xi1>
+        return %bits : tensor<4xi1>
       }
     })mlir",
                                              &context);
@@ -473,7 +483,7 @@ TEST(JeffRoundTripRegressionTest, PreservesLiteralArraySnapshots) {
   auto samples = qco::sample(program->lookupSymbol<func::FuncOp>("main"), 1, 1);
   ASSERT_TRUE(succeeded(samples));
   ASSERT_EQ(samples->size(), 1U);
-  EXPECT_EQ(samples->begin()->first, "111");
+  EXPECT_EQ(samples->begin()->first, "1111");
 }
 
 TEST(JeffRoundTripRegressionTest, RejectsExplicitRuntimeAssertions) {
@@ -494,19 +504,37 @@ TEST(JeffRoundTripRegressionTest, RejectsExplicitRuntimeAssertions) {
   });
   EXPECT_TRUE(failed(convertQCOToJeff(*checked)));
   EXPECT_NE(diagnostic.find("runtime safety assertions"), std::string::npos);
+}
 
-  auto escaping = parseSourceString<ModuleOp>(R"mlir(
+TEST(JeffRoundTripRegressionTest, PreservesArrayFunctionInterfaces) {
+  MLIRContext context;
+  context.loadDialect<func::FuncDialect, jeff::JeffDialect>();
+  auto program = parseSourceString<ModuleOp>(R"mlir(
     module attributes {jeff.entrypoint = 0 : ui16, jeff.strings = ["main"]} {
-      func.func @main() -> tensor<2xi32> {
+      func.func @main(%input: tensor<2xf64>) -> (tensor<2xf64>, tensor<2xi32>, f64) {
         %length = jeff.int_const32(2) : i32
         %array = jeff.int_array_zero(%length) : tensor<2xi32>
-        return %array : tensor<2xi32>
+        %literal = jeff.float_array_const64([0.5, 1.5]) : tensor<2xf64>
+        %value = func.call @read(%input) : (tensor<2xf64>) -> f64
+        return %literal, %array, %value : tensor<2xf64>, tensor<2xi32>, f64
+      }
+      func.func @read(%input: tensor<2xf64>) -> f64 {
+        %index = jeff.int_const32(0) : i32
+        %value = jeff.float_array_get_index(%index) %input : i32, tensor<2xf64> -> f64
+        return %value : f64
       }
     })mlir",
-                                              &context);
-  ASSERT_TRUE(escaping);
-  EXPECT_TRUE(failed(convertJeffToQCO(*escaping)));
-  EXPECT_NE(diagnostic.find("ownership contract"), std::string::npos);
+                                             &context);
+  ASSERT_TRUE(program);
+  auto type = program->lookupSymbol<func::FuncOp>("main").getFunctionType();
+  ASSERT_TRUE(succeeded(convertJeffToQCO(*program)));
+  ASSERT_TRUE(succeeded(verify(*program)));
+  EXPECT_EQ(program->lookupSymbol<func::FuncOp>("main").getFunctionType(),
+            type);
+  ASSERT_TRUE(succeeded(convertQCOToJeff(*program)));
+  EXPECT_TRUE(succeeded(verify(*program)));
+  EXPECT_EQ(program->lookupSymbol<func::FuncOp>("main").getFunctionType(),
+            type);
 }
 
 TEST_F(JeffRoundTripTest, RejectsNonNormalizedModifiersBeforeMutation) {

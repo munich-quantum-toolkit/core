@@ -3333,6 +3333,35 @@ TEST_F(QCODDFunctionalityTest, StridedSubviewsComposeAndShareStorage) {
   expectSimulatesFromZero(mainFunc(*mod), true);
 }
 
+TEST_F(QCODDFunctionalityTest, ArrayFillsKeepBoundsChecksAndWhileBudget) {
+  for (const auto* setup : {
+           "%size = arith.constant 3 : index "
+           "%stop = arith.constant 4 : index",
+           "%size = arith.constant 10001 : index "
+           "%stop = arith.constant 10001 : index",
+       }) {
+    SCOPED_TRACE(setup);
+    // The first case must still reject the out-of-bounds fill. The second fill
+    // fits, but must not exempt the subsequent while loop from its budget.
+    expectMlirSimulationFails(0, std::string(R"mlir(module { func.func @main() {
+      %zero = arith.constant 0 : index
+      %one = arith.constant 1 : index
+      %true = arith.constant true
+    )mlir") + setup + R"mlir(
+      %a = memref.alloca(%size) : memref<?xi1>
+      scf.for %i = %zero to %stop step %one {
+        memref.store %true, %a[%i] : memref<?xi1>
+      }
+      scf.while : () -> () {
+        scf.condition(%true)
+      } do {
+        scf.yield
+      }
+      return
+    } })mlir");
+  }
+}
+
 TEST_F(QCODDFunctionalityTest, SubarrayCopiesShareStorageWithoutLoopBudget) {
   auto mod = parseSourceString<ModuleOp>(R"mlir(module {
     func.func @copy(%from: memref<10001xi1, strided<[1], offset: ?>>,

@@ -234,6 +234,13 @@ static Type getClassicalStorageType(Type type) {
   return {};
 }
 
+/// Value-based function interfaces retain tensors throughout the conversion.
+static Type getClassicalStorageType(Type type, const TypeConverter* converter) {
+  auto converted = converter->convertType(type);
+  return isa_and_nonnull<cbit::RegisterType, MemRefType>(converted) ? converted
+                                                                    : Type{};
+}
+
 /// Earlier bit reads finish using an array before a later storage update.
 /// Other users can pass an alias to values that remain live after the update.
 static bool needsArrayCopy(Value value, Operation* update) {
@@ -263,7 +270,7 @@ static void moveRegion(Region& source, Region& dest,
        llvm::zip_equal(oldBlock->getArguments(), inValues)) {
     if (isLinearType(oldArg.getType()) ||
         (!capturedArguments.empty() &&
-         !getClassicalStorageType(oldArg.getType()) &&
+         !getClassicalStorageType(oldArg.getType(), typeConverter) &&
          !capturedArguments[oldArg.getArgNumber()])) {
       auto newArg = newBlock->addArgument(
           typeConverter->convertType(oldArg.getType()), oldArg.getLoc());
@@ -323,7 +330,7 @@ struct ConvertJeffArrayConst final : OpConversionPattern<ConstOp> {
   LogicalResult
   matchAndRewrite(ConstOp op, OpAdaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (!getClassicalStorageType(op.getType()) ||
+    if (!getClassicalStorageType(op.getType(), this->getTypeConverter()) ||
         op.getType().getDimSize(0) !=
             static_cast<int64_t>(op.getInArray().size())) {
       return failure();
@@ -354,7 +361,7 @@ struct ConvertJeffArrayCreate final : OpConversionPattern<CreateOp> {
   LogicalResult
   matchAndRewrite(CreateOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto type = getClassicalStorageType(op.getType());
+    auto type = getClassicalStorageType(op.getType(), this->getTypeConverter());
     if (!type || op.getType().getDimSize(0) !=
                      static_cast<int64_t>(adaptor.getInArray().size())) {
       return failure();
@@ -409,14 +416,22 @@ struct ConvertJeffArrayZero final : OpConversionPattern<ZeroOp> {
   LogicalResult
   matchAndRewrite(ZeroOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto storageType = getClassicalStorageType(op.getType());
-    if (!storageType) {
+    auto storageType =
+        getClassicalStorageType(op.getType(), this->getTypeConverter());
+    if (!storageType && !op.getType().hasStaticShape()) {
       return failure();
     }
     const auto length = getConstantIntValue(adaptor.getLength());
     if (!length || *length != op.getType().getDimSize(0)) {
       return rewriter.notifyMatchFailure(
           op, "array length must match its static result width");
+    }
+    if (!storageType) {
+      rewriter.replaceOpWithNewOp<arith::ConstantOp>(
+          op, DenseElementsAttr::get(
+                  op.getType(),
+                  rewriter.getZeroAttr(op.getType().getElementType())));
+      return success();
     }
     if (auto reg = dyn_cast<cbit::RegisterType>(storageType)) {
       rewriter.replaceOpWithNewOp<cbit::AllocOp>(op, reg,
@@ -960,7 +975,7 @@ struct ConvertJeffSwitchOpToQCO final : OpConversionPattern<jeff::SwitchOp> {
       if (isLinearType(type)) {
         linearTypes.push_back(typeConverter->convertType(type));
         linearIndices.push_back(index);
-      } else if (getClassicalStorageType(type)) {
+      } else if (getClassicalStorageType(type, typeConverter)) {
         for (auto& region : op.getBranches()) {
           auto reference = forwardedRegister(
               region.front().getTerminator()->getOperand(index), region.front(),
@@ -1107,7 +1122,7 @@ struct ConvertJeffWhileOpToQCO final : OpConversionPattern<jeff::WhileOp> {
     SmallVector<Value> results(op.getNumResults());
     for (auto [index, input] : llvm::enumerate(before.getArguments())) {
       if (isLinearType(input.getType()) ||
-          getClassicalStorageType(input.getType())) {
+          getClassicalStorageType(input.getType(), typeConverter)) {
         continue;
       }
       auto afterArgument =
@@ -1125,7 +1140,7 @@ struct ConvertJeffWhileOpToQCO final : OpConversionPattern<jeff::WhileOp> {
     for (auto [index, pair] :
          llvm::enumerate(llvm::zip_equal(before.getArguments(), inValues))) {
       auto [argument, adapted] = pair;
-      if (!getClassicalStorageType(argument.getType()) &&
+      if (!getClassicalStorageType(argument.getType(), typeConverter) &&
           !capturedInputs[index]) {
         inits.push_back(adapted);
         yieldIndices.push_back(index);
@@ -1133,7 +1148,7 @@ struct ConvertJeffWhileOpToQCO final : OpConversionPattern<jeff::WhileOp> {
     }
     SmallVector<Type> outTypes;
     for (auto [index, type] : llvm::enumerate(op.getResultTypes())) {
-      if (getClassicalStorageType(type)) {
+      if (getClassicalStorageType(type, typeConverter)) {
         results[index] =
             forwardedRegister(before.getTerminator()->getOperand(index + 1),
                               before, inValues, rewriter);
@@ -1147,7 +1162,7 @@ struct ConvertJeffWhileOpToQCO final : OpConversionPattern<jeff::WhileOp> {
       }
     }
     for (auto [index, input] : llvm::enumerate(before.getArguments())) {
-      if (getClassicalStorageType(input.getType()) &&
+      if (getClassicalStorageType(input.getType(), typeConverter) &&
           forwardedRegister(after.getTerminator()->getOperand(index), after,
                             results, rewriter) != inValues[index]) {
         return rewriter.notifyMatchFailure(
@@ -1266,7 +1281,7 @@ private:
 /// `!tensor<?x!qco.qubit>`.
 class JeffToQCOTypeConverter final : public TypeConverter {
 public:
-  explicit JeffToQCOTypeConverter(MLIRContext* ctx) {
+  explicit JeffToQCOTypeConverter(MLIRContext* ctx, bool preserveArrayValues) {
     // Identity conversion for all types by default
     addConversion([](Type type) { return type; });
 
@@ -1278,7 +1293,10 @@ public:
       return RankedTensorType::get({type.getLength()}, QubitType::get(ctx));
     });
 
-    addConversion([](RankedTensorType type) -> Type {
+    addConversion([preserveArrayValues](RankedTensorType type) -> Type {
+      if (preserveArrayValues && !getCBitType(type)) {
+        return type;
+      }
       if (const auto registerType = getClassicalStorageType(type)) {
         return registerType;
       }
@@ -1301,11 +1319,24 @@ protected:
       return;
     }
 
+    // Keep the existing tensor ABI if arrays cross a function boundary.
+    // Internal arrays in closed programs can use stack storage without escaping
+    // it.
+    const bool preserveArrayValues = llvm::any_of(
+        moduleOp.getOps<func::FuncOp>(), [](func::FuncOp function) {
+          const auto isArrayValue = [](Type type) {
+            return isa<RankedTensorType>(type) && !getCBitType(type);
+          };
+          return llvm::any_of(function.getArgumentTypes(), isArrayValue) ||
+                 llvm::any_of(function.getResultTypes(), isArrayValue);
+        });
+    JeffToQCOTypeConverter typeConverter(context, preserveArrayValues);
     DenseSet<Operation*> sharedArrayUpdates;
     const auto unsupportedSnapshots = moduleOp.walk([&](Operation* operation) {
       if (isa<jeff::IntArraySetIndexOp, jeff::FloatArraySetIndexOp>(
               operation) &&
-          getClassicalStorageType(operation->getOperand(0).getType()) &&
+          getClassicalStorageType(operation->getOperand(0).getType(),
+                                  &typeConverter) &&
           needsArrayCopy(operation->getOperand(0), operation)) {
         if (operation->getParentOfType<jeff::SwitchOp>() ||
             operation->getParentOfType<jeff::WhileOp>()) {
@@ -1320,7 +1351,7 @@ protected:
       /// argument aliases if independent live arrays need support.
       if (isa<jeff::SwitchOp, jeff::ForOp, jeff::WhileOp>(operation) &&
           llvm::any_of(operation->getOperands(), [&](Value value) {
-            return getClassicalStorageType(value.getType()) &&
+            return getClassicalStorageType(value.getType(), &typeConverter) &&
                    needsArrayCopy(value, operation);
           })) {
         bool updatesArray = false;
@@ -1328,8 +1359,8 @@ protected:
           updatesArray |=
               isa<jeff::IntArraySetIndexOp, jeff::FloatArraySetIndexOp>(
                   update) &&
-              static_cast<bool>(
-                  getClassicalStorageType(update->getOperand(0).getType()));
+              static_cast<bool>(getClassicalStorageType(
+                  update->getOperand(0).getType(), &typeConverter));
         });
         if (updatesArray) {
           operation->emitError("live old array values across jeff control "
@@ -1345,17 +1376,8 @@ protected:
     }
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
-    JeffToQCOTypeConverter typeConverter(context);
 
     for (auto function : moduleOp.getOps<func::FuncOp>()) {
-      if (llvm::any_of(function.getResultTypes(), [&](Type type) {
-            return isa_and_nonnull<MemRefType>(getClassicalStorageType(type));
-          })) {
-        function.emitError(
-            "classical array results require an ownership contract");
-        signalPassFailure();
-        return;
-      }
       if (function == *entryPoint) {
         function.setPublic();
         continue;
