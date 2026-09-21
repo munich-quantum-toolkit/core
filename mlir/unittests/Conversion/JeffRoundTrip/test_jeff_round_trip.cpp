@@ -10,10 +10,12 @@
 
 #include "mqt/Conversion/JeffToQCO/JeffToQCO.h"
 #include "mqt/Conversion/QCOToJeff/QCOToJeff.h"
+#include "mqt/Conversion/QCToQCO/QCToQCO.h"
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
+#include "mqt/Dialect/QC/Translation/TranslateOpenQASMToQC.h"
 #include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
@@ -32,6 +34,7 @@
 #include "jeff/Translation/Serialize.hpp"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -371,6 +374,139 @@ static LogicalResult convertJeffToQCO(ModuleOp moduleOp) {
   PassManager pm(moduleOp.getContext());
   pm.addPass(createJeffToQCO());
   return pm.run(moduleOp);
+}
+
+TEST(JeffRoundTripRegressionTest, PreservesOpenQASMArrayStorage) {
+  for (const auto* body : {
+           R"qasm(array[int, 4] a = {1, 2, 3, 4};
+             x q; bit choice = measure q; reset q;
+             int i = int(choice);
+             a = a[i:] ++ a[:i-1];
+             if (a[i] == 3 && a[-i] == 1 && sizeof(a[:i]) == 2) { x q; })qasm",
+           R"qasm(array[int, 4] a = {1, 2, 3, 4};
+             x q; bit choice = measure q; reset q;
+             int i = int(choice);
+             a = a[3:-i:0];
+             if (a[0] == 4 && a[3] == 1) { x q; })qasm",
+           R"qasm(array[int, 4] a = {1, 2, 3, 4};
+             array[int, 3] saved = a[:-1:1];
+             a[1:] = a[:2];
+             int digits = 0;
+             for int v in saved { digits = 10 * digits + v; }
+             if (digits == 432 && a[3] == 3) { x q; })qasm",
+           R"qasm(array[int[3], 2, 3] a = {{1, -2, 3}, {-4, 3, -2}};
+             array[int[3], 3] b = a[1];
+             b = b[2:2] ++ b[:1];
+             int sum = 0;
+             for int v in b { sum += v; }
+             if (sum == -3) { x q; })qasm",
+           R"qasm(array[float, 2] a = {0.5, 1.5};
+             array[bool, 2] flags = {true, false};
+             float old = a[0];
+             if (flags[0]) { a[0] = 9.0; flags[0] = false; }
+             while (a[0] > 3.0) { a[0] -= 1.0; }
+             if (!flags[0] && old == 0.5 && a[0] == 3.0) { x q; })qasm",
+           R"qasm(array[int, 2, 0] empty = {{}, {}};
+             array[int, 0] row = empty[1];
+             for int v in row { x q; }
+             x q;)qasm",
+           R"qasm(array[angle[8], 2] a = {0.0, pi};
+             for angle[8] theta in a { ry(theta) q; })qasm",
+       }) {
+    SCOPED_TRACE(body);
+    MLIRContext context;
+    auto program = qc::translateOpenQASMToQC(
+        std::string("OPENQASM 3.0; qubit q; output bit result; ") + body +
+            "result = measure q;",
+        &context);
+    ASSERT_TRUE(program);
+    PassManager manager(&context);
+    manager.addPass(createQCToQCO());
+    ASSERT_TRUE(succeeded(manager.run(*program)));
+    auto expected =
+        qco::sample(program->lookupSymbol<func::FuncOp>("main"), 1, 1);
+    ASSERT_TRUE(succeeded(expected));
+    ASSERT_EQ(expected->at("1"), 1);
+    ASSERT_TRUE(succeeded(convertQCOToJeff(*program)));
+    ASSERT_TRUE(succeeded(verify(*program)));
+    auto data = serialize(*program);
+    program = deserialize(&context, data);
+    ASSERT_TRUE(program);
+    ASSERT_TRUE(succeeded(convertJeffToQCO(*program)));
+    ASSERT_TRUE(succeeded(verify(*program)));
+    ASSERT_TRUE(succeeded(qco::verifyLinearity(*program)));
+    auto actual =
+        qco::sample(program->lookupSymbol<func::FuncOp>("main"), 1, 1);
+    ASSERT_TRUE(succeeded(actual));
+    EXPECT_EQ(*actual, *expected);
+  }
+}
+
+TEST(JeffRoundTripRegressionTest, PreservesLiteralArraySnapshots) {
+  MLIRContext context;
+  context.loadDialect<func::FuncDialect, jeff::JeffDialect>();
+  auto program = parseSourceString<ModuleOp>(R"mlir(
+    module attributes {jeff.entrypoint = 0 : ui16, jeff.strings = ["main"]} {
+      func.func @main() -> tensor<3xi1> {
+        %index = jeff.int_const32(0) : i32
+        %length = jeff.int_const32(2) : i32
+        %half = jeff.float_const64(0.5) : f64
+        %nine = jeff.float_const64(9.0) : f64
+        %old = jeff.float_array_const64([0.5, 1.5]) : tensor<2xf64>
+        %new = jeff.float_array_set_index(%index) %old %nine
+            : i32, tensor<2xf64>, f64 -> tensor<2xf64>
+        %original = jeff.float_array_get_index(%index) %old : i32, tensor<2xf64> -> f64
+        %changed = jeff.float_array_get_index(%index) %new : i32, tensor<2xf64> -> f64
+        %sizes = jeff.int_array_create %length, %length : i32, i32 -> tensor<2xi32>
+        %size = jeff.int_array_length %sizes : tensor<2xi32> -> i32
+        %a = jeff.float_comp_op [_eq] (%original, %half) : f64, f64 -> i1
+        %b = jeff.float_comp_op [_eq] (%changed, %nine) : f64, f64 -> i1
+        %c = jeff.int_comp_op [_eq] (%size, %length) : i32, i32 -> i1
+        %bits = jeff.int_array_create %a, %b, %c : i1, i1, i1 -> tensor<3xi1>
+        return %bits : tensor<3xi1>
+      }
+    })mlir",
+                                             &context);
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(succeeded(convertJeffToQCO(*program)));
+  ASSERT_TRUE(succeeded(verify(*program)));
+  auto samples = qco::sample(program->lookupSymbol<func::FuncOp>("main"), 1, 1);
+  ASSERT_TRUE(succeeded(samples));
+  ASSERT_EQ(samples->size(), 1U);
+  EXPECT_EQ(samples->begin()->first, "111");
+}
+
+TEST(JeffRoundTripRegressionTest, RejectsExplicitRuntimeAssertions) {
+  MLIRContext context;
+  context.loadDialect<cf::ControlFlowDialect, func::FuncDialect>();
+  auto checked = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main(%condition: i1) {
+      cf.assert %condition, "unsupported runtime precondition"
+      return
+    }
+  })mlir",
+                                             &context);
+  ASSERT_TRUE(checked);
+  std::string diagnostic;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& error) {
+    diagnostic += error.str();
+    return success();
+  });
+  EXPECT_TRUE(failed(convertQCOToJeff(*checked)));
+  EXPECT_NE(diagnostic.find("runtime safety assertions"), std::string::npos);
+
+  auto escaping = parseSourceString<ModuleOp>(R"mlir(
+    module attributes {jeff.entrypoint = 0 : ui16, jeff.strings = ["main"]} {
+      func.func @main() -> tensor<2xi32> {
+        %length = jeff.int_const32(2) : i32
+        %array = jeff.int_array_zero(%length) : tensor<2xi32>
+        return %array : tensor<2xi32>
+      }
+    })mlir",
+                                              &context);
+  ASSERT_TRUE(escaping);
+  EXPECT_TRUE(failed(convertJeffToQCO(*escaping)));
+  EXPECT_NE(diagnostic.find("ownership contract"), std::string::npos);
 }
 
 TEST_F(JeffRoundTripTest, RejectsNonNormalizedModifiersBeforeMutation) {
