@@ -242,10 +242,18 @@ exporter normalizes views on a copy of the IR; it does not change the input
 module. Integer storage preserves its bit patterns, and angle storage exports as
 floating-point radians.
 
+jeff export flattens fixed-size stack arrays in row-major order and preserves
+element access, copies, and updates through structured control flow. It reuses
+the classical-register SSA conversion and lowers copies to loops. Integer
+elements use jeff's supported widths; non-native widths retain their bit
+semantics. Import restores internal reference storage, copying only when an old
+array value remains live. Unresolved runtime assertions cannot be exported.
+
 Arrays are internal storage, not implicit outputs; assign selected elements to
-scalar or bit outputs when needed. Array outputs, runtime angle conversion, and
-jeff export of array storage are not yet supported. Gate definitions cannot
-capture mutable arrays; pass selected entries as gate parameters instead.
+scalar or bit outputs when needed. Array outputs and runtime angle conversion
+are not yet supported. Classical subroutines and array-reference parameters
+remain separate work. Gate definitions cannot capture mutable arrays; pass
+selected entries as gate parameters instead.
 
 ### Qubit indices and classical registers
 
