@@ -155,11 +155,12 @@ angle arrays and preserve their quantized values. Whole-array arithmetic and
 compound assignments are not supported.
 
 Angle arrays use the same widths and compile-time quantization as scalar angle
-declarations. Values in initializer lists and assignments to individual entries must be compile-time float or
-angle expressions, but the element index can be dynamic. Use `float(angles[i])`
-for arithmetic on an entry's value in radians. This angle-to-float cast is an
-intentional extension to OpenQASM. Runtime fixed-width angle arithmetic and
-mixed-type comparisons are diagnosed. For example:
+declarations. Values in initializer lists and assignments to individual entries
+must be compile-time float or angle expressions, but the element index can be
+dynamic. Use `float(angles[i])` for arithmetic on an entry's value in radians.
+This angle-to-float cast is an intentional extension to OpenQASM. Runtime
+fixed-width angle arithmetic and mixed-type comparisons are diagnosed. For
+example:
 
 ```openqasm3
 OPENQASM 3.0;
@@ -184,10 +185,10 @@ conservatively require loop support for residual dynamic indices. See the
 [QIR 2.1 array contract](https://github.com/qir-alliance/qir-spec/blob/2.1/specification/Memory_Management.md#array-support).
 
 Arrays are internal storage, not implicit outputs; assign selected elements to
-scalar or bit outputs when needed. Subarray access, array slices,
-array outputs, runtime angle conversion, and jeff or
-OpenQASM export of array storage are not yet supported. Gate definitions cannot
-capture mutable arrays; pass selected entries as gate parameters instead.
+scalar or bit outputs when needed. Subarray access, array slices, array outputs,
+runtime angle conversion, and jeff or OpenQASM export of array storage are not
+yet supported. Gate definitions cannot capture mutable arrays; pass selected
+entries as gate parameters instead.
 
 ### Qubit indices and classical registers
 
