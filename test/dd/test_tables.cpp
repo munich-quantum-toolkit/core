@@ -243,6 +243,8 @@ TEST(DDTableTest, MemoryManagerGrowthReuseAndResetStatistics) {
     EXPECT_EQ(stats.numUsed, 0);
     EXPECT_EQ(stats.peakNumUsed, 3);
     EXPECT_EQ(stats.peakNumAvailableForReuse, 2);
+    manager.reset(true);
+    EXPECT_EQ(stats.numAllocations, 3);
     for (size_t i = 0; i < 6; ++i) {
       EXPECT_NE(manager.template get<T>(), nullptr);
     }

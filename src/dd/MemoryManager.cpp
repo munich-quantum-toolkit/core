@@ -57,7 +57,7 @@ void MemoryManager::reset(const bool resizeToTotal) noexcept {
 
   auto numAllocations = stats.numAllocations;
   chunks.resize(1U);
-  if (resizeToTotal) {
+  if (resizeToTotal && chunks[0].second != stats.numAllocated * entrySize_) {
     chunks[0] = {std::make_unique_for_overwrite<Storage>(stats.numAllocated *
                                                          entrySize_),
                  stats.numAllocated * entrySize_};
@@ -90,8 +90,7 @@ void MemoryManager::allocateNewChunk() {
   assert(!entryAvailableInChunk());
 
   const auto numPrevEntries = chunks.back().second / entrySize_;
-  const auto numNewEntries = static_cast<std::size_t>(
-      static_cast<double>(numPrevEntries) * GROWTH_FACTOR);
+  const auto numNewEntries = numPrevEntries * GROWTH_FACTOR;
 
   chunks.emplace_back(
       std::make_unique_for_overwrite<Storage>(numNewEntries * entrySize_),

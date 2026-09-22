@@ -17,7 +17,6 @@
 #include "dd/MemoryManager.hpp"
 #include "dd/statistics/UniqueTableStatistics.hpp"
 
-#include <array>
 #include <cstddef>
 #include <iostream>
 #include <vector>
@@ -25,12 +24,6 @@
 namespace dd {
 
 struct RealNumber;
-
-/// Immortal numbers that will never be garbage collected.
-namespace immortals {
-constexpr std::array<fp, 1> get() { return {.5}; }
-constexpr std::size_t size() { return get().size(); }
-} // namespace immortals
 
 /// Canonical real numbers with stable addresses and absolute-tolerance lookup.
 ///

@@ -44,7 +44,7 @@ public:
   static constexpr std::size_t INITIAL_ALLOCATION_SIZE = 2048U;
 
   /// Capacity multiplier when allocating the next chunk.
-  static constexpr double GROWTH_FACTOR = 2U;
+  static constexpr size_t GROWTH_FACTOR = 2U;
 
   /// Construct a new MemoryManager object for objects of type T.
   /// @param initialAllocationSize The initial number of entries to allocate

@@ -31,9 +31,7 @@ RealNumberUniqueTable::RealNumberUniqueTable(MemoryManager& manager,
     : memoryManager(&manager), initialGCLimit(initialGCLim) {
   stats.entrySize = sizeof(Bucket);
   stats.numBuckets = NBUCKET;
-  for (const auto& ival : immortals::get()) {
-    RealNumber::immortalize(lookupNonNegative(ival));
-  }
+  RealNumber::immortalize(lookupNonNegative(0.5));
 }
 
 size_t RealNumberUniqueTable::hash(const fp val) const noexcept {
@@ -202,9 +200,7 @@ std::size_t RealNumberUniqueTable::garbageCollect(const bool force) noexcept {
 }
 
 void RealNumberUniqueTable::clear() noexcept {
-  for (auto& bucket : table) {
-    bucket = nullptr;
-  }
+  std::ranges::fill(table, nullptr);
   gcLimit = initialGCLimit;
   stats.reset();
 }

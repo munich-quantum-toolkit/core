@@ -1613,8 +1613,7 @@ TEST(DDPackageTest, VectorNormalizationCompensatesStoredDominantWeight) {
 
 TEST(DDPackageTest, GroverRetainsCompactAccurateState) {
   constexpr size_t qubits = 20;
-  const auto owner = std::make_unique<Package>(qubits);
-  auto& package = *owner;
+  Package package(qubits);
   auto state = makeZeroState(qubits, package);
   const GateMatrix h{SQRT2_2, SQRT2_2, SQRT2_2, -SQRT2_2};
   const GateMatrix x{0., 1., 1., 0.};
