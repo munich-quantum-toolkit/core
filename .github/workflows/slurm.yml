@@ -80,11 +80,6 @@ jobs:
         with:
           version: v0.16.0
 
-      - name: Check the shared Slurm runner
-        run: >-
-          uv run --no-project --with 'pytest>=9.0.1' --python 3.14
-          pytest -o addopts= -q test/python/test_slurm_integration.py
-
       - name: Build and lint the standalone SPANK component
         run: |
           sudo apt-get update

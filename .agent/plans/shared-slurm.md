@@ -11,7 +11,7 @@ The optional checker and launch validation have separate PRs.
 
 ## Decisions
 
-- Target `v4.1`, ordinary QDMI 1.3, and Slurm 25.11 or newer.
+- Target `main`, ordinary QDMI 1.3, and Slurm 25.11 or newer.
 - Build `spank/` independently using Slurm headers and a C++20 compiler.
   Preserve its GPL notices and exclude it from MIT Python distributions.
 - Configure concrete license IDs and administrator-declared reference mappings.
@@ -27,7 +27,7 @@ The optional checker and launch validation have separate PRs.
 - Discard temporary provider build output and package caches before saving the
   image. Providers supply required CMake options through the shared build.
 
-## Validation
+## Validation before the main update
 
 The shared runner's 22 tests, full `uvx nox -s lint`, standalone Linux build,
 installed license check, and full-file clang-tidy 23 checks passed. The

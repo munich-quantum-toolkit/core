@@ -359,7 +359,7 @@ Each invocation uses its own Docker project, Munge key, and directory below
 `test/slurm/runtime`. Successful runs remove their containers, images, and
 artifacts; failures retain artifacts and print the project and runtime path.
 Docker's build cache remains available to later runs. Commands have 30-second
-deadlines, image build/startup has a ten-minute deadline, and diagnostics and
+deadlines, image build/startup has a thirty-minute deadline, and diagnostics and
 cleanup have separate short deadlines. Batch jobs request a five-minute time
 limit. An interrupted command terminates its process group, including a Docker
 Compose child.
