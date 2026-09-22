@@ -22,6 +22,7 @@ add_library(
   RepeatUntilSuccess.cpp
   Shor.cpp
   Teleportation.cpp
+  WeakMeasurementGrover.cpp
   WState.cpp)
 target_link_libraries(
   MQTBenchmarkPrograms PUBLIC MQT::CoreBench MLIRQCProgramBuilder MLIRArithDialect MLIRMathDialect
