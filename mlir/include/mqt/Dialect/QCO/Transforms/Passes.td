@@ -220,6 +220,15 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     - `dist(i, j)` returns the distance between the qubits `i` and `j` on the target's coupling graph.
     - `h(gate, p)` is `dist(p[gate.first], p[gate.second]) - 1`.
 
+    When a native-cost estimate is available and standalone SWAP cost is uniform
+    across target edges, the scoring traversal and final routing use that cost
+    as the unit of both terms. The first SWAP in each search receives a discount
+    when fusing it with the already-routed two-qubit run reduces native count.
+    This discount is applied once; later edges use the standalone SWAP cost.
+    Layout dominance compares accumulated cost, including the signed discount.
+    Forward/backward layout refinement keeps the distance cost above. This is
+    heuristic search, not a guarantee of optimal native cost.
+
     Routing uses undirected target connectivity. Target-native synthesis realizes operations and inserted SWAPs in a supported operand direction.
 
     Each search limits retained nodes using `search-memory-limit`, an estimated
@@ -232,10 +241,15 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     final gate count or depth; more memory does not guarantee fewer gates.
     Queue, visited-map, allocator, and linear fallback workspace overhead are
     additional. Each concurrent trial reuses this bounded storage across its
-    searches and releases it before native candidate synthesis or when the
-    trial finishes. Final SWAP insertion uses separate storage after the
-    trials finish. Target distance caches, temporary candidate IR, and
-    synthesis storage are separate; this is not a process memory limit.
+    searches and releases it when the trial finishes. Final SWAP insertion uses
+    separate storage after the trials finish. Target distance caches and
+    O(number of sites) state for each live region's native-cost
+    tracker are separate; this is not a process memory limit. Candidate scoring
+    does not clone IR or execute native-synthesis passes. A shared immutable
+    table holds at most 1024 precomputed numerical native counts (about 264 KiB
+    of payload plus indexing). Each live region's tracker caches up to 64
+    additional counts (about 17 KiB). Exact matrix, entangler, and compilation
+    seed matches preserve numerical results; misses use normal analysis.
 
     To iteratively refine the mapping, the pass performs multiple forward and backward traversals of the circuit. In
     each traversal, the pass routes the circuit and updates the dynamic-to-static mapping based on the routing decisions
@@ -267,21 +281,28 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     at a central target site. This layout occupies the first trial slot.
 
     With an explicit native operation set and a usable entangler basis, each
-    candidate is routed on a temporary module and passed through the same
-    cleanup and target-native synthesis as final compilation. The pass ranks
-    candidates by native two-qubit gate count, then two-qubit dependency depth,
-    retaining the earlier candidate on an exact tie. Counts are static: loop
-    bodies and branch arms contribute their operations without execution
-    frequencies. Depth is the maximum within any block, not a runtime bound
-    for structured control flow. Local A* searches retain the distance cost
-    above; native synthesis determines which completed candidate wins.
+    candidate is scored by a read-only forward traversal of original gates and
+    virtual SWAPs. The estimate shares native support, operand direction, and
+    numerical decomposition with native synthesis. It composes constant runs on
+    each physical pair, including intervening constant single-qubit gates, and
+    preserves supported operations unless fusion reduces two-qubit count.
+    Immediate inverse pairs do not break an earlier pending run. Other pair
+    changes, symbolic gates, barriers, measurements, resets, and region boundaries
+    end runs. Branch reconciliation and loop-restoration SWAPs are included.
 
-    If native scoring is unavailable or fails, the candidate uses its forward
-    traversal's SWAP count as a fallback. Successfully synthesized candidates
-    rank before fallback candidates. Speculative synthesis failures leave
-    topology-only mapping supported; final target compilation diagnoses any
-    unsupported native operation. Native scoring adds compilation work and
-    temporary IR proportional to the number of concurrent trials.
+    The pass ranks candidates by estimated native two-qubit count, then estimated
+    qubit-dependency depth, retaining the earlier candidate on an exact tie.
+    Counts are static: loop bodies and branch arms contribute their operations
+    without execution frequencies. Depth is the maximum within any block; it
+    excludes classical scheduling and is not a runtime control-flow bound.
+    General canonicalization and cleanup are not simulated, so the estimate can
+    differ from final synthesis. Only the winning route is materialized.
+
+    If native scoring is unavailable, the candidate uses its forward traversal's
+    SWAP count as a fallback. Candidates with an available native estimate rank
+    before fallback candidates. Topology-only mapping remains supported; final
+    target compilation diagnoses unsupported native operations. Scoring and final
+    routing use the same traversal hooks and first-SWAP cost guidance.
   }];
   let options = [Option<"nlookahead", "nlookahead", "std::size_t", "20",
                         "The number of lookahead steps.">,
