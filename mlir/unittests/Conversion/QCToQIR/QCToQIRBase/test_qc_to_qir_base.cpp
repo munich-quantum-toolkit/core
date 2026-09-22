@@ -433,21 +433,6 @@ TEST(QCToQIRBaseNativeTest, ControlledBarrierDoesNotControlFollowingGate) {
       });
 }
 
-TEST(QCToQIRBaseNativeTest, RejectsRuntimeAssertions) {
-  MLIRContext context;
-  context
-      .loadDialect<qc::QCDialect, arith::ArithDialect, cf::ControlFlowDialect,
-                   func::FuncDialect, LLVM::LLVMDialect>();
-  qc::QCProgramBuilder builder(&context);
-  builder.initialize();
-  auto condition = LLVM::UndefOp::create(builder, builder.getI1Type());
-  cf::AssertOp::create(builder, condition, "runtime precondition");
-  auto module = builder.finalize();
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  EXPECT_TRUE(failed(runQCToQIRBaseConversion(*module)));
-}
-
 TEST(QCToQIRBaseNativeTest, RejectsResidualClassicalComputations) {
   MLIRContext context;
   context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,

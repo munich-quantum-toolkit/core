@@ -60,7 +60,7 @@ QCO, and `jeff` dialects, so each output checkpoint names its dialect.
 | Quantum statements         | Measurement, reset, barrier, logical qubits, and physical qubits are supported. The QC translation rejects programs that mix logical allocation with physical qubits.                                                                                            |
 | Expressions                | Scalar arithmetic, comparisons, Boolean expressions, and the supported math functions are type checked before translation. Initialized bit registers support `~`, `&`, `\|`, `^`, `<<`, `>>`, `popcount`, `rotl`, and `rotr`.                                    |
 | Structured control         | `if`, `switch`, supported range-based `for`, and `while`. `break` exits the innermost enclosing loop; `continue` advances to its next iteration. Both may appear inside conditional and switch bodies.                                                           |
-| Dynamic indexing           | Classical bit and array indices can be dynamic and must remain in bounds. A nonconstant qubit index must be a proven affine expression as described below.                                                                                               |
+| Dynamic indexing           | Classical bit and array indices can be dynamic and must remain in bounds. A nonconstant qubit index must be a proven affine expression as described below.                                                                                                       |
 | Classical arrays           | Global, fixed-size, one-dimensional arrays of `bool`, `int`, `uint`, `float`, and `angle`, as described below.                                                                                                                                                   |
 | Unsupported language areas | Subroutines, `extern`, calibration and timing constructs, and input declarations are diagnosed.                                                                                                                                                                  |
 
@@ -140,8 +140,8 @@ initializer, elements are undefined.
 
 Element reads, assignments, and compound assignments accept constant or runtime
 integer indices. Negative indices count from the end (`values[-1]` is the last
-element). Constant out-of-range indices are diagnosed; dynamic accesses emit
-runtime bounds checks. A static read requires that element to be initialized. A
+element). Constant out-of-range indices are diagnosed; dynamic indices must
+remain in bounds. A static read requires that element to be initialized. A
 dynamic read requires every element to be initialized; writing a dynamic index
 does not establish definite initialization.
 
@@ -170,8 +170,7 @@ jeff, and OpenQASM.
 
 Remaining arrays work through QC/QCO and Adaptive QIR conversion. Adaptive QIR
 uses native LLVM stack storage, with no host C allocation or assertion runtime.
-Bounds failures return exit code 1 and record no output. The emitted capability
-flags include arrays and element types, multiple returns when needed, and
+The emitted capability flags include arrays and element types, and
 conservatively require loop support for residual dynamic indices. See the
 [QIR 2.1 array contract](https://github.com/qir-alliance/qir-spec/blob/2.1/specification/Memory_Management.md#array-support).
 

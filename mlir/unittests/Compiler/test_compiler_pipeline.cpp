@@ -1153,7 +1153,7 @@ TEST_F(CompilerPipelineTest, ClassicalArraysSurviveQCQCOAndQIR) {
   }
 }
 
-TEST_F(CompilerPipelineTest, ClassicalArrayRuntimeBoundsAreChecked) {
+TEST_F(CompilerPipelineTest, ClassicalArrayRuntimeBoundsAreCheckedByDD) {
   for (const auto* index : {
            "int i = 2;",
            "int i = -3;",
@@ -1183,26 +1183,15 @@ TEST_F(CompilerPipelineTest, ClassicalArrayRuntimeBoundsAreChecked) {
                                         });
         EXPECT_TRUE(failed(
             qco::sample(mlir::mqt::getEntryPoint(qco->module()), 1, 42)));
-        EXPECT_NE(diagnostic.find("array index is out of bounds"),
+        EXPECT_NE(diagnostic.find("classical memref index out of range"),
                   std::string::npos)
             << diagnostic;
       }
-      auto restored = std::move(*qco).intoQC();
-      ASSERT_TRUE(restored);
-      auto qir = std::move(*restored).intoQIR(QIRProfile::Adaptive);
-      ASSERT_TRUE(qir);
-      const auto llvmIR = qir->llvmIR();
-      ASSERT_TRUE(llvmIR);
-      ::qir::JitSession session(*llvmIR, "array-bounds",
-                                ::qir::Execution::Sampling, 42);
-      std::vector<std::string> samples;
-      EXPECT_EQ(session.sample(1, samples), 1);
-      EXPECT_TRUE(samples.empty());
     }
   }
 }
 
-TEST_F(CompilerPipelineTest, EmptyArrayAccessFailsWithoutAbortingQIR) {
+TEST_F(CompilerPipelineTest, EmptyArrayAccessIsRejectedByDD) {
   auto qc = QCProgram::fromOpenQASMString(R"qasm(OPENQASM 3.0;
     array[float, 0] empty = {};
     int i = 0;
@@ -1214,15 +1203,6 @@ TEST_F(CompilerPipelineTest, EmptyArrayAccessFailsWithoutAbortingQIR) {
   ASSERT_TRUE(native);
   EXPECT_TRUE(
       failed(qco::sample(mlir::mqt::getEntryPoint(native->module()), 1, 42)));
-  auto qir = std::move(*qc).intoQIR(QIRProfile::Adaptive);
-  ASSERT_TRUE(qir);
-  const auto llvmIR = qir->llvmIR();
-  ASSERT_TRUE(llvmIR);
-  ::qir::JitSession session(*llvmIR, "empty-array-bounds",
-                            ::qir::Execution::Sampling, 42);
-  std::vector<std::string> samples;
-  EXPECT_EQ(session.sample(1, samples), 1);
-  EXPECT_TRUE(samples.empty());
 }
 
 TEST_F(CompilerPipelineTest, PromotedClassicalArraysExportAcrossBackends) {
