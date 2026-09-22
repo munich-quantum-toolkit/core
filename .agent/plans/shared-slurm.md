@@ -1,7 +1,6 @@
 # Shared static Slurm deployment
 
-Status: in progress; implementation and both provider integrations need
-validation.
+Status: implemented; final provider image checks remain in progress.
 
 ## Goal and boundaries
 
@@ -23,26 +22,28 @@ The optional checker and launch validation have separate PRs.
   consume the shared cluster rather than copying scheduler setup or tests.
 - Preserve the Slurm adapter's existing selection and IDLE/BUSY semantics.
   Selection does not attest an allocation or authorize provider access.
+- Keep the QDMI reference size limit separate from Slurm's allocation metadata.
+  A long license list must not reject an unrelated job or hide a matching ID.
+- Discard temporary provider build output and package caches before saving the
+  image. Providers supply required CMake options through the shared build.
 
 ## Work remaining
 
-- [ ] Standalone Linux injection build and installed license.
-- [ ] Real Slurm transport, daemon isolation, and node-state checks.
-- [ ] Braket and IQM native/wheel catalogue and SDK integration tests.
-- [ ] Required C++ lint with clang-tidy 23.
+- [ ] Complete Braket and IQM native/wheel checks with the smaller images.
 
 ## Validation
 
-The shared runner's 22 tests and full `uvx nox -s lint` passed. The source-built
-wheel and source archive exclude SPANK sources and binaries. The canonical guide
-and full base diff were reviewed.
+The shared runner's 22 tests, full `uvx nox -s lint`, standalone Linux build,
+installed license check, and full-file clang-tidy 23 checks passed. The
+source-built wheel and source archive exclude SPANK sources and binaries. The
+canonical guide and full base diff were reviewed.
 
 The full strict documentation build passed with MLIR 23.1.0. Link checking
 failed only on a timeout for the unchanged VS Code Marketplace link in
 `contributing.md`.
 
-Run `test/slurm/run_integration.py` and both provider workloads for the
-remaining Linux checks. The standalone SPANK build must not configure Core or
-LLVM. The transport test keeps a batch task alive while inspecting both Slurm
-daemon environments, preserving the former provider test's isolation proof. Real
-Slurm validation remains required.
+The full real Slurm suite passed on Linux aarch64 with cgroup v2 and Slurm
+25.11.2. It covers admission, license release, environment precedence, daemon
+isolation, node state, and license lists larger than 4 KiB. The standalone SPANK
+build does not configure Core or LLVM. The transport test keeps a batch task
+alive while inspecting both Slurm daemon environments.

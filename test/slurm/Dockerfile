@@ -14,7 +14,7 @@ FROM ubuntu:26.04 AS spank
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
-        cmake g++ libslurm-dev
+        cmake g++ make libslurm-dev
 COPY --from=core spank /src/spank
 RUN cmake -S /src/spank -B /build -DCMAKE_BUILD_TYPE=Release \
     && cmake --build /build --parallel 2 \
@@ -53,6 +53,7 @@ RUN --mount=type=bind,from=dist,target=/tmp/dist \
 ARG SETUP_SCRIPT=""
 ARG PROVIDER_INSTALL_MODE="native"
 ARG PROVIDER_RUNTIME_COMPONENT=""
+ARG CMAKE_ARGS=""
 COPY --from=workload \
     --exclude=.git --exclude=build --exclude=build-* --exclude=cmake-build-* \
     --exclude=.cache --exclude=.ccache --exclude=.venv* --exclude=.nox \

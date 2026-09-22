@@ -526,6 +526,19 @@ def test_spank_transport() -> None:
     assert values(*allocation, f"--licenses={other}") == [None, catalogue]
     assert values(*allocation) == [None, None]
 
+    # Slurm allocation metadata is not subject to the QDMI reference size limit.
+    unrelated = ",".join(f"unrelated-{index:03d}-{'x' * 49}:1" for index in range(65))
+    slurm_config = RUNTIME / "slurm.conf"
+    original_config = slurm_config.read_text(encoding="utf-8")
+    slurm_config.write_text(original_config.replace("Licenses=", f"Licenses={unrelated},", 1), encoding="utf-8")
+    controller("scontrol", "reconfigure")
+    try:
+        assert values(*allocation, f"--licenses={unrelated}") == [None, None]
+        assert values(*allocation, f"--licenses={unrelated},{selected}") == ["site-default", catalogue]
+    finally:
+        slurm_config.write_text(original_config, encoding="utf-8")
+        controller("scontrol", "reconfigure")
+
     for options in (
         (f"--qdmi-ref-{reference}=not-allocated",),
         (f"--licenses={selected}", "--qdmi-ref-UNLISTED=value"),
@@ -646,7 +659,7 @@ def main(arguments: Sequence[str] = ()) -> None:
             (RUNTIME / "slurm.conf").write_text(configuration, encoding="utf-8")
         LOGGER.info("Slurm runtime directory: %s", RUNTIME)
         started = True
-        compose("up", "--build", "--detach", "--wait", "--wait-timeout", "120", timeout=600, capture_output=False)
+        compose("up", "--build", "--detach", "--wait", "--wait-timeout", "120", timeout=1800, capture_output=False)
         LOGGER.info("Slurm image build and startup: %.2fs", time.monotonic() - started_at)
         testing_at = time.monotonic()
 

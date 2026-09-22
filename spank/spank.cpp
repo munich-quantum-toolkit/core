@@ -23,16 +23,17 @@
 /// jobs.
 
 #include <algorithm>
-#include <array>
 #include <cstddef>
+#include <exception>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <utility>
 #include <vector>
 
 extern "C" {
+#include <slurm/slurm_errno.h>
 #include <slurm/slurm_version.h>
 #include <slurm/spank.h>
 }
@@ -71,16 +72,25 @@ bool validValue(const std::string_view value) {
 
 auto jobEnvironment(spank_t spank, const char* name)
     -> std::optional<std::string> {
-  std::array<char, MAX_VALUE_SIZE + 1> buffer{};
-  const auto result =
-      spank_getenv(spank, name, buffer.data(), static_cast<int>(buffer.size()));
-  if (result == ESPANK_ENV_NOEXIST) {
-    return std::nullopt;
+  // S_JOB_ENV requires a mutable char*** output parameter.
+  char** values = nullptr; // NOLINT(misc-const-correctness)
+  // Slurm exposes item lookup through a variadic C ABI.
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
+  if (spank_get_item(spank, S_JOB_ENV, &values) != ESPANK_SUCCESS ||
+      values == nullptr) {
+    throw std::runtime_error("could not read the job environment");
   }
-  if (result != ESPANK_SUCCESS || !validValue(buffer.data())) {
-    throw std::runtime_error("job environment value is malformed or too long");
+  const auto prefix = std::string{name} + '=';
+  // S_JOB_ENV is a borrowed, null-terminated array owned by Slurm.
+  // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+  for (size_t index = 0; values[index] != nullptr; ++index) {
+    const std::string_view entry{values[index]};
+    if (entry.starts_with(prefix)) {
+      return std::string{entry.substr(prefix.size())};
+    }
   }
-  return std::string{buffer.data()};
+  // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+  return std::nullopt;
 }
 
 auto licenseIds(std::string_view value) -> std::vector<std::string> {
@@ -130,11 +140,12 @@ char* optionText(const char* value) {
 class Configuration final {
 public:
   void parse(const int count, char** arguments) {
-    for (int index = 0; index < count; ++index) {
-      if (arguments[index] == nullptr || !validValue(arguments[index])) {
+    for (const auto* rawArgument :
+         std::span{arguments, static_cast<size_t>(count)}) {
+      if (rawArgument == nullptr || !validValue(rawArgument)) {
         throw std::runtime_error("malformed plugstack argument");
       }
-      const std::string_view argument{arguments[index]};
+      const std::string_view argument{rawArgument};
       const auto separator = argument.find('=');
       if (separator == std::string_view::npos) {
         throw std::runtime_error("plugstack arguments must use key=value");
@@ -171,16 +182,16 @@ public:
         if (!defaultValue.empty() && !validValue(defaultValue)) {
           throw std::runtime_error("invalid default reference value");
         }
-        references_.push_back(
-            {.environment = std::string{name},
-             .optionName = "qdmi-ref-" + std::string{name},
-             .licenses =
-                 licenseIds(value.substr(nameEnd + 1, idsEnd - nameEnd - 1)),
-             .defaultValue =
-                 defaultValue.empty()
-                     ? std::nullopt
-                     : std::make_optional(std::string{defaultValue}),
-             .option = std::nullopt});
+        references_.push_back({
+            .environment = std::string{name},
+            .optionName = "qdmi-ref-" + std::string{name},
+            .licenses =
+                licenseIds(value.substr(nameEnd + 1, idsEnd - nameEnd - 1)),
+            .defaultValue = defaultValue.empty()
+                                ? std::nullopt
+                                : std::make_optional(std::string{defaultValue}),
+            .option = std::nullopt,
+        });
       } else {
         throw std::runtime_error("unknown or repeated plugstack argument");
       }
@@ -296,7 +307,12 @@ private:
       }
       return;
     }
-    if (jobEnvironment(spank, environment) || !defaultValue) {
+    const auto value = jobEnvironment(spank, environment);
+    if (value && !validValue(*value)) {
+      throw std::runtime_error(
+          "job environment value is malformed or too long");
+    }
+    if (value || !defaultValue) {
       return;
     }
     const auto result =
@@ -314,8 +330,8 @@ private:
 
 Configuration
     configuration; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-bool licenseEnvironmentReady =
-    true; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+bool licenseEnvironmentReady = true;
 
 int optionCallback(const int value, const char* argument, int /*remote*/) {
   try {
