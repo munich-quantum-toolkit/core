@@ -31,11 +31,13 @@ namespace dd {
 /// be taken when accessing the value. The static functions in this struct
 /// provide safe access to the value of a RealNumber* pointer.
 struct RealNumber final : LLBase {
-  /// Getter for the next object.
+  /// Read the aligned next pointer instead of the tagged base-class link.
+  /// NOLINTNEXTLINE(bugprone-derived-method-shadowing-base-method)
   [[nodiscard]] RealNumber* next() const noexcept;
 
   /// Relink an entry without discarding its collection flags.
   /// Use LLBase::setNext to initialize a fresh or reused entry.
+  /// NOLINTNEXTLINE(bugprone-derived-method-shadowing-base-method)
   void setNext(LLBase* next) noexcept;
 
   /// Check whether the number points to the zero number.
@@ -184,7 +186,7 @@ struct RealNumber final : LLBase {
   /// accessed using the static functions of this struct.
   fp value{};
 
-  /// numerical tolerance to be used for floating point values
+  /// Absolute tolerance for canonical weights and intermediate comparisons.
   // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
   static inline fp eps = std::numeric_limits<fp>::epsilon() * 1024;
 };

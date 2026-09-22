@@ -17,9 +17,9 @@
 
 namespace dd {
 struct DDPackageConfig {
-  std::size_t utVecNumBucket = 1024U;
+  std::size_t utVecNumBucket = 64U;
   std::size_t utVecInitialAllocationSize = 2048U;
-  std::size_t utMatNumBucket = 1024U;
+  std::size_t utMatNumBucket = 64U;
   std::size_t utMatInitialAllocationSize = 2048U;
   std::size_t ctVecAddNumBucket = 16384U;
   std::size_t ctMatAddNumBucket = 16384U;
@@ -27,6 +27,7 @@ struct DDPackageConfig {
   std::size_t ctMatAddMagNumBucket = 16384U;
   std::size_t ctVecConjNumBucket = 4096U;
   std::size_t ctMatConjTransNumBucket = 4096U;
+  /// Initial matrix-vector cache capacity; grows with reusable vector work.
   std::size_t ctMatVecMultNumBucket = 16384U;
   std::size_t ctMatMatMultNumBucket = 16384U;
   std::size_t ctVecKronNumBucket = 4096U;
