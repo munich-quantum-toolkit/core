@@ -1,7 +1,6 @@
 # QDMI device checker
 
-Status: implemented; focused validation and full lint passed. Linux parent-death
-coverage and required C++ lint remain unverified.
+Status: implemented and validated locally. Nothing has been pushed.
 
 ## Goal and scope
 
@@ -28,14 +27,15 @@ a timeout. The checker does not submit jobs or depend on Slurm.
 ## Validation
 
 - The supported `release-no-mlir` preset configured and built successfully.
-- All six focused adapter/CLI CTests and all 69 QDMI driver tests passed.
+- All six focused adapter/CLI CTests passed on macOS and Linux. The existing
+  driver suite passed 69 tests without MLIR and 98 in the full Linux lint build.
 - Full native installation and an installed wheel passed checks for both bundled
   catalogue choices and the external session-device fixture. The CLI tests cover
   provider failures, crashes, initialization/cleanup timeouts, and descendants.
 - All three focused Python launcher tests passed. An installed-wheel SIGTERM
   smoke test verified sanitized failure and worker cleanup.
-- Full `uvx nox -s lint`, including type checking, passed. Required C++ lint
-  remains unverified because clang-tidy 23 is unavailable.
+- Full `uvx nox -s lint`, including type checking, and the complete Linux
+  `uvx nox -s cpp-lint` session with clang-tidy 23 passed.
 - The full strict documentation build passed with MLIR 23.1.0.
-- Linux parent-death coverage requires a Linux host. Real Slurm validation
-  belongs to the separate optional validator PR.
+- The installed Linux checker passed forced-parent-death and worker-cleanup
+  tests. Real Slurm validation belongs to the separate optional validator PR.
