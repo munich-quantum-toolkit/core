@@ -1,7 +1,8 @@
 # Native cost in routing selection
 
-Status: implementation and reviews complete; final resource measurements
-pending.
+Status: implementation, rebase, independent reviews, validation, and repeated
+comparisons are complete. Changes are committed locally; no remote push was
+performed.
 
 ## Scope and ownership
 
@@ -53,34 +54,61 @@ comparison on the measured platform. Explicit byte spans with memcmp preserve
 the evaluated comparison and pass lint without a suppression. All final
 benchmark cohorts are rerun after this change.
 
-The 121 mapping, 68 native-synthesis, 228 compiler, and 572 QCO IR tests pass.
-Required C++ lint and supplemental synthesis-test/header checks pass. Cache
-regressions cover eviction, numerical failure, seed binding, operand direction,
-native bypass, and shared-table lifetime. Repository lint and diff whitespace
-checks pass.
+The implementation is rebased onto upstream main `151a69f9f`, including Arena
+search storage and the revised structured-control-flow contracts. Arena node
+construction and reset carry the native cost and first-SWAP discount; root reuse
+clears that cost. Layout dominance retains the signed accumulated cost.
 
-Against upstream main ee7edb68a, the 360 width pairs retain all 350 baseline
-successes and the same ten unroll-limit failures. All 45 largest-input pairs
-succeed. Total native gates fall 7.60% and 5.90%, respectively; total depth
-falls 6.61% and 7.39%. All 27 semantic probes pass in both revisions at 4096
-shots. The cache preserves the earlier redesign's measured routing and gate
-metrics.
+The wider RUS cohort exposed a region-boundary routing defect. Physical output
+realignment must also rebind while-body and region-result consumers to their
+logical states. Cold scoring mirrors those permutations and stops at placement
+boundaries. A coherent-state regression covers if/while/switch results, an
+independent neighboring region, idle wires, native and topology-only targets,
+zero and finite budgets, two seeds, and serial/parallel determinism. The full
+complexity review removed the ready-region vector, duplicate suppression, and
+sort; the router retains the earliest ready region and refreshes the frontier
+after routing it. Traversal and lookahead share one block-order boundary cursor
+to cover regions hidden behind earlier gates and keep later adjacent gates from
+stalling the search. Both regressions fail against the prior fence.
 
-Five-process medians on seven timing cases show an 8.95% increase in summed wall
-time and a 25.62% geometric mean increase. Final synthesis wall time falls 6.71%
-by summed medians, but mapping remains more expensive. This is a quality versus
-compilation-cost tradeoff, not a uniform speedup or a guarantee of only a few
-percent overhead. Individual losses, repeated measurements, source/binary
-hashes, and PNG/SVG plots remain outside the repository.
+All 123 mapping, 68 native-synthesis, 230 compiler, and 574 QCO IR tests pass.
+Whole-file C++ lint, repository lint, and whitespace checks pass. The 52 small
+semantic cases pass with 4096 shots. Full-width RUS sampling remains
+inconclusive: the DD sampler fails even before routing at 120 qubits, and other
+wide probes time out. Wide structured cases establish compilation and static
+costs only.
 
-At 256 decomposed Grover iterations and twenty parallel trials, median wall is
-3.86 versus 4.23 s, CPU is 8.85 versus 10.55 s, and peak RSS is 683.02 versus
-693.32 MiB. This input increases native gates by 1.56% and depth by 11.86%. The
-final assessment retains these losses; neither estimation nor bounded first-SWAP
-guidance guarantees improvement on every circuit.
+The expanded sweep covers 499 inputs, ten families, five target architectures,
+and widths through 150 qubits, with routing seeds 7 and 99. All 868 paired flat
+successes are retained; the same 24 paired attempts exceed the unroll limit.
+Total native two-qubit count falls 6.92%, two-qubit dependency depth falls
+6.77%, and inserted SWAPs fall 1.87%. Native count improves on 528 pairs, ties
+on 285, and regresses on 55. Original width and largest-input metrics match the
+prior evaluation. All 45 largest-input pairs succeed, with native count down
+5.90%.
 
-Repeated resource outputs match byte-for-byte across serial and parallel runs.
-Samples that overlapped compiler activity or local lint were excluded with their
-paired revision and repeated after a quiet window. The final timing and resource
-samples have no detected build overlap. Measurements use a shared ARM64 host;
-they are descriptive evidence, not a statistical guarantee.
+All 106 structured attempts compile in the solution; upstream main compiles 20.
+The paired static counts fall 15.96%, while static depth increases 7.64%. These
+are body counts and maximum block depths, not execution-weighted costs.
+
+Five process repeats on the original seven timing cases give a 3.04% increase in
+summed median wall time, 36.72% in CPU time, and 3.18% in peak RSS. The added 82
+paired timing configurations, with three repeats each, give increases of 5.16%,
+24.19%, and 1.78%, respectively. Geometric mean wall-time increases are 12.95%
+and 8.34%; the aggregate does not promise a small per-case overhead. Final
+synthesis wall time falls 9.42% and 5.55%, while mapping grows 32.84% and
+33.36%. These full-revision measurements do not isolate cache effects.
+
+The largest decomposed Grover stress case, 256 iterations and twenty parallel
+trials, increases median wall time from 3.71 to 4.01 seconds, CPU time from 8.50
+to 10.19 seconds, and peak RSS from 682.55 to 694.17 MiB. Native count increases
+1.56% and depth 11.86%. This individual loss remains visible beside the broad
+quality gains. All resource-case output hashes agree across serial/parallel
+execution and three repeats. The host is shared; repeated medians and ranges are
+descriptive, not statistical guarantees.
+
+Data, exclusions, source/binary hashes, per-case losses, and PNG/SVG plots are
+in `/home/nvidia/.codex/experiments/pr2562-arena-comparison-20260922/`. The
+report records all statuses and the limits of the semantic checks. Benchmark
+artifacts remain outside the repository, and pre-existing untracked files are
+preserved.
