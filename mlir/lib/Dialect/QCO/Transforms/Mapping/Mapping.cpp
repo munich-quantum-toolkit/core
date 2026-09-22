@@ -1687,15 +1687,14 @@ private:
     return needsRouting;
   }
 
-  /// Advance past executable gates and return ready composite operations.
+  /// Advance past executable gates and return the first ready composite.
   /// Leave wires at non-executable gates, composites, terminal measurements,
   /// or sink-like operations. Backward traversal can exhaust block arguments.
   template <WireDirection Direction>
-  SmallVector<CompositeUnitary> advance(Wires& wires, const WireInfos& infos,
-                                        const Layout& layout,
-                                        NativeCostTracker* costs) {
-    DenseSet<Operation*> visited;
-    SmallVector<CompositeUnitary> composites;
+  std::optional<CompositeUnitary> advance(Wires& wires, const WireInfos& infos,
+                                          const Layout& layout,
+                                          NativeCostTracker* costs) {
+    std::optional<CompositeUnitary> composite;
     /// Advancement only moves iterators. Discard classifications before routing
     /// inserts SWAPs or replaces composites.
     DenseMap<Operation*, bool> measurementRouting;
@@ -1735,12 +1734,31 @@ private:
       });
     };
 
-    // Advance wires past all executable gates and push composite unitaries
-    // and the respective wire indices of their inputs onto the vector.
+    /// Keep the earliest ready region in block order. Hot placement threads
+    /// every wire through it, so later regions must wait for its exit layout.
 
     walkProgramGraph<Direction>(wires, [&](const Frontier& frontier,
                                            ReleasedOps& released) {
+      /// Hot placement threads every wire through a region. Do not score
+      /// successors that placement would rewind to that region's boundary.
+      Operation* boundary = nullptr;
+      if (costs != nullptr) {
+        for (auto& wire : wires) {
+          if (wire == std::default_sentinel) {
+            continue;
+          }
+          Operation* pending = wire.operation();
+          if (isa_and_nonnull<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp>(
+                  pending) &&
+              (boundary == nullptr || pending->isBeforeInBlock(boundary))) {
+            boundary = pending;
+          }
+        }
+      }
       for (const auto& [op, indices] : frontier) {
+        if (boundary != nullptr && boundary->isBeforeInBlock(op)) {
+          continue;
+        }
         const auto release =
             TypeSwitch<Operation*, bool>(op)
                 .Case([](BarrierOp&) { return true; })
@@ -1771,8 +1789,9 @@ private:
                     [](auto&) { return Direction == WireDirection::Backward; })
                 .template Case<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp>(
                     [&](auto& cf) {
-                      if (!defer(cf) && visited.insert(op).second) {
-                        composites.emplace_back(op, indices);
+                      if (!defer(cf) &&
+                          (!composite || op->isBeforeInBlock(composite->op))) {
+                        composite.emplace(op, indices);
                       }
                       return false;
                     })
@@ -1804,18 +1823,7 @@ private:
       return WalkResult::advance();
     });
 
-    // Preserve the block order when multiple independent composite operations
-    // become ready at once. Hot routing threads every qubit through each
-    // composite, so processing a later operation first could introduce a
-    // use-before-definition for an earlier operation.
-
-    llvm::sort(composites,
-               [](const CompositeUnitary& lhs, const CompositeUnitary& rhs) {
-                 assert(lhs.op->getBlock() == rhs.op->getBlock());
-                 return lhs.op->isBeforeInBlock(rhs.op);
-               });
-
-    return composites;
+    return composite;
   }
 
   /// Extends the composite unitary's operation to cover all target qubits by
@@ -1898,6 +1906,27 @@ private:
     }
     assert(qubitIndex == perm.size());
     return realigned;
+  }
+
+  /// Keep logical consumers attached to their states when a region's physical
+  /// result order changes. Capture uses first so permutation cycles are safe.
+  static void realignQubitUses(ValueRange values, ArrayRef<size_t> sites,
+                               const Layout& from, const Layout& to,
+                               IRRewriter& rewriter) {
+    auto qubits = getQubitValues(values);
+    DenseMap<size_t, Value> atSite;
+    for (auto [site, qubit] : llvm::zip_equal(sites, qubits)) {
+      atSite.try_emplace(site, qubit);
+    }
+    SmallVector<std::pair<OpOperand*, Value>> replacements;
+    for (auto [site, qubit] : llvm::zip_equal(sites, qubits)) {
+      const auto destination = to.getHardwareIndex(from.getProgramIndex(site));
+      replacements.emplace_back(&*qubit.getUses().begin(),
+                                atSite.at(destination));
+    }
+    for (auto [use, value] : replacements) {
+      rewriter.modifyOpInPlace(use->getOwner(), [&] { use->set(value); });
+    }
   }
 
   /// Processes the composite unitary by routing the nested operation and
@@ -2046,6 +2075,11 @@ private:
       children.emplace_back(RoutingBundle{.layout = children[0].layout});
       assert(children.size() == 2);
 
+      if constexpr (Mode == RoutingMode::Hot) {
+        realignQubitUses(whileOp.getAfterArguments(), permutation,
+                         parent.layout, children[0].layout, *rewriter);
+      }
+
       auto values = [&] -> ValueRange {
         if constexpr (Direction == WireDirection::Forward) {
           return whileOp.getAfterArguments();
@@ -2054,16 +2088,41 @@ private:
         return cast<scf::YieldOp>(terminator).getResults();
       }();
 
-      for (auto [i, arg] : llvm::enumerate(getQubitValues(values))) {
-        const auto hw = permutation[i];
-        const auto prog = children[0].layout.getProgramIndex(hw);
-        children[1].wires.emplace_back(arg);
-        children[1].infos.insertOrUpdate(i, prog);
-      }
-
       if constexpr (Mode == RoutingMode::Cold) {
         if (costs != nullptr) {
-          addIdleWires(children[1], parent.infos);
+          /// Preview the physical argument order, including idle arguments
+          /// that hot placement adds after the original region arguments.
+          DenseMap<size_t, Value> logicalArguments;
+          auto sites = permutation;
+          DenseSet<size_t> included(sites.begin(), sites.end());
+          for (auto [site, arg] :
+               llvm::zip_equal(permutation, getQubitValues(values))) {
+            logicalArguments.try_emplace(parent.layout.getProgramIndex(site),
+                                         arg);
+          }
+          for (size_t i = 0; i < parent.infos.size(); ++i) {
+            const auto site =
+                parent.layout.getHardwareIndex(parent.infos.lookupProgram(i));
+            if (included.insert(site).second) {
+              sites.push_back(site);
+            }
+          }
+          for (auto [i, site] : llvm::enumerate(sites)) {
+            const auto prog = children[0].layout.getProgramIndex(site);
+            children[1].wires.emplace_back();
+            if (auto argument = logicalArguments.lookup(prog)) {
+              children[1].wires.back() = WireIterator(argument);
+            }
+            children[1].infos.insertOrUpdate(i, prog);
+          }
+        }
+      }
+
+      if (children[1].wires.empty()) {
+        for (auto [i, arg] : llvm::enumerate(getQubitValues(values))) {
+          const auto prog = children[0].layout.getProgramIndex(permutation[i]);
+          children[1].wires.emplace_back(arg);
+          children[1].infos.insertOrUpdate(i, prog);
         }
       }
 
@@ -2174,6 +2233,21 @@ private:
       return totalStats;
     }
 
+    if constexpr (Mode == RoutingMode::Hot) {
+      realignQubitUses(op->getResults(), permutation, parent.layout, exit,
+                       *rewriter);
+    } else if (costs != nullptr) {
+      Wires reordered(parent.wires.size());
+      for (size_t i = 0; i < parent.wires.size(); ++i) {
+        const auto prog = parent.infos.lookupProgram(i);
+        const auto oldProgAtDestination =
+            parent.layout.getProgramIndex(exit.getHardwareIndex(prog));
+        reordered[parent.infos.lookupIndex(oldProgAtDestination)] =
+            parent.wires[i];
+      }
+      parent.wires = std::move(reordered);
+    }
+
     WireInfos updatedInfos;
     for (size_t i = 0; i < parent.wires.size(); ++i) {
       const auto oldProg = parent.infos.lookupProgram(i);
@@ -2200,28 +2274,27 @@ private:
     Statistics stats;
     while (true) {
       while (true) {
-        auto composites = advance<Direction>(wires, infos, layout, costs);
-        if (composites.empty()) {
+        auto composite = advance<Direction>(wires, infos, layout, costs);
+        if (!composite) {
           break;
         }
 
-        for (auto& composite : composites) {
-          if constexpr (Mode == RoutingMode::Hot) {
-            place(composite, bundle, *rewriter);
-          }
+        /// Routing a region can permute every frontier wire. Rediscover the
+        /// next region after those positions and consumers have changed.
+        if constexpr (Mode == RoutingMode::Hot) {
+          place(*composite, bundle, *rewriter);
+        }
 
-          auto res = dispatch<Direction, Mode>(composite, bundle, arena,
-                                               rewriter, costs);
+        auto res = dispatch<Direction, Mode>(*composite, bundle, arena,
+                                             rewriter, costs);
 
-          stats.merge(res);
-
-          // Once the composite is mapped, move past this op by incrementing
-          // the respective wires.
-
-          for_each(composite.indices, [&](size_t i) {
-            std::ranges::advance(wires[i],
+        stats.merge(res);
+        for (auto& wire : wires) {
+          if (wire != std::default_sentinel &&
+              wire.operation() == composite->op) {
+            std::ranges::advance(wire,
                                  WireTraversalTraits<Direction>::stride());
-          });
+          }
         }
       }
 

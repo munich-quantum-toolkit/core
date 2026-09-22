@@ -3363,7 +3363,9 @@ TEST_F(MappingPassFixture, NativeScoringPreservesRegionsWithIdleWires) {
         };
         if (shape == 0) {
           qubits = builder.qcoIf(condition, qubits, body, [&](ValueRange args) {
-            return SmallVector<Value>(llvm::reverse(args));
+            SmallVector<Value> values(args);
+            std::tie(values[0], values[2]) = builder.swap(values[0], values[2]);
+            return values;
           });
         } else if (shape == 1) {
           qubits = builder.scfFor(0, 2, 1, qubits, [&](Value, ValueRange args) {
@@ -3411,6 +3413,114 @@ TEST_F(MappingPassFixture, NativeScoringPreservesRegionsWithIdleWires) {
           EXPECT_EQ(printModule(*moduleOp), serial);
         } else {
           serial = printModule(*moduleOp);
+        }
+      }
+    }
+  }
+}
+
+TEST_F(MappingPassFixture, PreserveCoherenceAcrossRoutedRegionResults) {
+  const auto topology = llvm::cantFail(CompilerTarget::create(
+      6, Connectivity::fromCouplings({{0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 5}}),
+      NativeOperations::unrestricted()));
+  for (size_t shape = 0; shape < 3; ++shape) {
+    QCOProgramBuilder builder(context.get());
+    builder.initialize({cbit::RegisterType::get(context.get(), 5)});
+    auto bits = builder.allocClassicalBitRegister(5);
+    SmallVector<Value> qubits;
+    for (size_t i = 0; i < 4; ++i) {
+      qubits.push_back(builder.allocQubit());
+    }
+    auto spectator = builder.allocQubit();
+    /// Prepare a phased GHZ state, or undo it. A line must route this star.
+    const auto transform = [&](MutableArrayRef<Value> values, bool inverse) {
+      if (!inverse) {
+        values[0] = builder.t(builder.h(values[0]));
+      }
+      for (size_t i = 1; i < values.size(); ++i) {
+        const auto target = inverse ? values.size() - i : i;
+        std::tie(values[0], values[target]) =
+            builder.cx(values[0], values[target]);
+      }
+      if (inverse) {
+        values[0] = builder.h(builder.tdg(values[0]));
+      }
+    };
+    const auto body = [&](ValueRange args) {
+      SmallVector<Value> values(args);
+      transform(values, false);
+      return values;
+    };
+    if (shape == 0) {
+      qubits = builder.qcoIf(builder.boolConstant(true), qubits, body, body);
+    } else if (shape == 1) {
+      SmallVector<Value> inits{arith::ConstantIndexOp::create(builder, 0)};
+      llvm::append_range(inits, qubits);
+      auto results = builder.scfWhile(
+          inits,
+          [&](ValueRange args) {
+            SmallVector<Value> values(args);
+            transform(MutableArrayRef(values).drop_front(), false);
+            auto again = arith::CmpIOp::create(
+                builder, arith::CmpIPredicate::ult, values[0],
+                arith::ConstantIndexOp::create(builder, 1));
+            builder.scfCondition(again, values);
+            return values;
+          },
+          [&](ValueRange args) {
+            SmallVector<Value> values(args);
+            transform(MutableArrayRef(values).drop_front(), true);
+            values[0] = arith::AddIOp::create(
+                builder, values[0], arith::ConstantIndexOp::create(builder, 1));
+            return values;
+          });
+      qubits.assign(results.begin() + 1, results.end());
+    } else {
+      const std::array<int64_t, 1> cases{0};
+      const std::array<function_ref<SmallVector<Value>(ValueRange)>, 1> bodies{
+          body,
+      };
+      qubits = builder.qcoIndexSwitch(0, qubits, cases, bodies, body);
+    }
+    spectator =
+        builder.qcoIf(true, spectator, [&](Value q) { return builder.h(q); });
+    spectator = builder.h(spectator);
+    transform(qubits, true);
+    qubits.push_back(spectator);
+    for (auto [index, qubit] : llvm::enumerate(qubits)) {
+      auto measured = builder.measure(qubit, bits, static_cast<int64_t>(index));
+      builder.sink(measured.first);
+    }
+    auto input = builder.finalize(bits);
+    ASSERT_TRUE(succeeded(verify(*input)));
+    ASSERT_TRUE(succeeded(verifyLinearity(*input)));
+    for (const auto& target : {topology, withNativeBasis(topology, "cz")}) {
+      for (size_t seed : {7U, 99U}) {
+        for (size_t budget : {size_t{0}, size_t{1024} * 1024}) {
+          std::string serial;
+          for (bool parallel : {false, true}) {
+            SCOPED_TRACE(testing::Message()
+                         << "shape=" << shape << ", seed=" << seed
+                         << ", budget=" << budget << ", parallel=" << parallel);
+            context->enableMultithreading(parallel);
+            OwningOpRef<ModuleOp> moduleOp = input->clone();
+            ASSERT_TRUE(succeeded(runPass(
+                *moduleOp, target,
+                MappingPassOptions{
+                    .ntrials = 2, .searchMemoryLimit = budget, .seed = seed})));
+            ASSERT_TRUE(succeeded(verify(*moduleOp)));
+            ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+            const auto samples = qco::sample(getEntryPoint(*moduleOp), 64, 17);
+            ASSERT_TRUE(succeeded(samples));
+            ASSERT_EQ(samples->size(), 1U);
+            EXPECT_EQ(samples->begin()->first, "00000");
+            EXPECT_EQ(samples->begin()->second, 64U);
+            if (parallel) {
+              EXPECT_EQ(printModule(*moduleOp), serial);
+            } else {
+              serial = printModule(*moduleOp);
+            }
+          }
         }
       }
     }
