@@ -1,6 +1,6 @@
 # Shared static Slurm deployment
 
-Status: implemented; final provider image checks remain in progress.
+Status: complete.
 
 ## Goal and boundaries
 
@@ -27,10 +27,6 @@ The optional checker and launch validation have separate PRs.
 - Discard temporary provider build output and package caches before saving the
   image. Providers supply required CMake options through the shared build.
 
-## Work remaining
-
-- [ ] Complete Braket and IQM native/wheel checks with the smaller images.
-
 ## Validation
 
 The shared runner's 22 tests, full `uvx nox -s lint`, standalone Linux build,
@@ -47,3 +43,9 @@ The full real Slurm suite passed on Linux aarch64 with cgroup v2 and Slurm
 isolation, node state, and license lists larger than 4 KiB. The standalone SPANK
 build does not configure Core or LLVM. The transport test keeps a batch task
 alive while inspecting both Slurm daemon environments.
+
+Braket and IQM passed direct configuration and shared injection with both native
+and wheel installations, using released Core 4.0.0 and local mock services. The
+smaller images passed with Docker capped at 4 GiB RAM. Braket covers Qiskit and
+PennyLane results; IQM covers Qiskit results and its existing PennyLane
+unsupported-format error.
