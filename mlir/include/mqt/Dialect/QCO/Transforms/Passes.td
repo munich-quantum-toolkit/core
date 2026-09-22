@@ -267,7 +267,7 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
                  Option<"seed", "seed", "std::size_t", "42",
                         "A seed used for randomization.">,
                  Option<"searchMemoryLimit", "search-memory-limit", "size_t",
-                        "64UL * 1024 * 1024",
+                        "256UL * 1024 * 1024",
                         "Estimated node and layout bytes per search. "
                         "Zero disables node expansion.">];
   let statistics = [Statistic<"numSwaps", "num-inserted-swaps",
