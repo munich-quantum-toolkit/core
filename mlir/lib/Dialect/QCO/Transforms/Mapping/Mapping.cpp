@@ -531,6 +531,16 @@ private:
       return target.areAdjacent(hw0, hw1);
     }
 
+    /// Return the sequence of SWAPs from the root to this node.
+    [[nodiscard]] SmallVector<IndexPairType> swaps() const {
+      SmallVector<IndexPairType> seq(depth);
+      auto it = seq.rbegin();
+      for (const Node* n = this; n->parent != nullptr; n = n->parent, ++it) {
+        *it = n->swap;
+      }
+      return seq;
+    }
+
   private:
     /// Calculate the heuristic cost for the A* search algorithm.
     ///
@@ -1227,13 +1237,7 @@ private:
       // sequence of SWAPs from this node to the root.
 
       if (curr->isGoal(window.front(), *target)) {
-        SmallVector<IndexPairType> seq(curr->depth);
-        size_t j = seq.size() - 1;
-        for (const Node* n = curr; n->parent != nullptr; n = n->parent) {
-          seq[j] = n->swap;
-          --j;
-        }
-        return seq;
+        return curr->swaps();
       }
 
       // Given a layout, create child-nodes for each possible SWAP
@@ -1243,13 +1247,13 @@ private:
       for (const auto& [q0, q1] = window.front(); const auto prog : {q0, q1}) {
         const auto hw0 = curr->layout.getHardwareIndex(prog);
         target->forEachNeighbour(hw0, [&](const auto hw1) {
-          const IndexPairType swap = std::minmax(hw0, hw1); // Canonical SWAP.
-          if (is_contained(expansionSet, swap)) {
+          if (arena.full()) {
             return;
           }
 
-          if (arena.full()) {
-            return; // TODO: WalkResult::interrupt;
+          const IndexPairType swap = std::minmax(hw0, hw1); // Canonical SWAP.
+          if (is_contained(expansionSet, swap)) {
+            return;
           }
 
           expansionSet.push_back(swap);
