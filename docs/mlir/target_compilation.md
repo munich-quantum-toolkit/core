@@ -186,7 +186,7 @@ using LLVM's affinity-aware CPU count with a minimum of one. An explicit
 `place-and-route` pass for reproducible results across machines. Disabling
 multithreading runs the same trials sequentially.
 
-Each routing search limits its estimated node and layout storage to 64 MiB by
+Each routing search limits its estimated node and layout storage to 256 MiB by
 default. When the budget is exhausted, it checks queued states before falling
 back to SWAPs that reduce the leading interaction's distance. Set
 `MappingOptions.search_memory_limit` in bytes, or use the CLI's

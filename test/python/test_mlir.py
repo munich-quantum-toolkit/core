@@ -426,7 +426,7 @@ def test_mapping_options_defaults() -> None:
     assert options.trials is None
     assert options.iterations == 1
     assert options.lookahead == 20
-    assert options.search_memory_limit == 64 * 1024 * 1024
+    assert options.search_memory_limit == 256 * 1024 * 1024
 
 
 @pytest.mark.parametrize(

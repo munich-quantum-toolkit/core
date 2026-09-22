@@ -207,7 +207,7 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     Routing uses undirected target connectivity. Target-native synthesis realizes operations and inserted SWAPs in a supported operand direction.
 
     Each search limits retained nodes using `search-memory-limit`, an estimated
-    byte budget for the nodes and their qubit layouts (64 MiB by default).
+    byte budget for the nodes and their qubit layouts (256 MiB by default).
     At least the root node is retained; zero disables node expansion.
     The pass stops allocating nodes at the limit, checks the remaining queue,
     and, if no solution is queued, completes the route with SWAPs that reduce
@@ -267,7 +267,7 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
                  Option<"seed", "seed", "std::size_t", "42",
                         "A seed used for randomization.">,
                  Option<"searchMemoryLimit", "search-memory-limit", "size_t",
-                        "64UL * 1024 * 1024",
+                        "256UL * 1024 * 1024",
                         "Estimated node and layout bytes per search. "
                         "Zero disables node expansion.">];
   let statistics = [Statistic<"numSwaps", "num-inserted-swaps",
