@@ -999,7 +999,7 @@ TEST_F(QIRRuntimeTest, DisabledTextOutputStillRecordsResults) {
   __quantum__rt__tuple_record_output(1, nullptr);
   __quantum__rt__array_record_output(1, nullptr);
   runtime.outputShotEnd();
-  EXPECT_EQ(runtime.getMeasurements(), "111");
+  EXPECT_EQ(runtime.getMeasurements(), "1111");
   EXPECT_TRUE(sink.str().empty());
   runtime.setOstream(sink);
   __quantum__rt__result_record_output(nullptr, "one");

@@ -110,7 +110,6 @@ LogicalResult finalizeQIRConversion(ModuleOp moduleOp, ConversionTarget& target,
   LLVMTypeConverter memoryTypeConverter(ctx);
   populateFinalizeMemRefToLLVMConversionPatterns(memoryTypeConverter, patterns);
   cf::populateControlFlowToLLVMConversionPatterns(typeConverter, patterns);
-  cf::populateAssertToLLVMConversionPattern(typeConverter, patterns);
   arith::populateArithToLLVMConversionPatterns(typeConverter, patterns);
   populateMathToLLVMConversionPatterns(typeConverter, patterns);
   if (failed(applyPartialConversion(moduleOp, target, std::move(patterns)))) {
@@ -458,8 +457,8 @@ static DenseSet<Operation*> findStoreFusionCandidates(Block* block) {
   return candidates;
 }
 
-LogicalResult prepareClassicalResults(Operation* moduleOp,
-                                      LoweringState& state) {
+LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
+                                      bool allowComputedOutputs) {
   bool hasInvalidMemory = false;
   moduleOp->walk([&](Operation* operation) {
     if (!isa<func::CallOp, func::CallIndirectOp>(operation)) {
@@ -543,9 +542,23 @@ LogicalResult prepareClassicalResults(Operation* moduleOp,
     }
   }
 
+  if (allowComputedOutputs) {
+    funcOp.walk([&](cbit::StoreOp storeOp) {
+      auto allocOp = storeOp.getReg().getDefiningOp<cbit::AllocOp>();
+      if (allocOp && !storeOp.getValue().getDefiningOp<MeasureOp>()) {
+        auto& reg = state.cregs[state.cregIndices.at(allocOp.getOperation())];
+        reg.booleanStorage = reg.record;
+      }
+    });
+  }
+
   DenseMap<Block*, DenseSet<Operation*>> fusionCandidates;
   funcOp.walk([&](cbit::StoreOp storeOp) {
     auto allocOp = storeOp.getReg().getDefiningOp<cbit::AllocOp>();
+    if (!allocOp && allowComputedOutputs) {
+      // Adaptive conversion checks forwarded registers after lowering SCF.
+      return;
+    }
     if (!allocOp || !state.cregIndices.contains(allocOp.getOperation())) {
       storeOp.emitError(
           "QIR conversion requires direct CBit register allocations");
@@ -553,7 +566,8 @@ LogicalResult prepareClassicalResults(Operation* moduleOp,
       return;
     }
     const auto registerIndex = state.cregIndices.at(allocOp.getOperation());
-    if (!state.cregs[registerIndex].record) {
+    if (!state.cregs[registerIndex].record ||
+        state.cregs[registerIndex].booleanStorage) {
       return;
     }
     auto measureOp = storeOp.getValue().getDefiningOp<MeasureOp>();

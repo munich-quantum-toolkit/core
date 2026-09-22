@@ -23,6 +23,11 @@ def QTensorDialect : Dialect {
     Extraction consumes a tensor and returns both the extracted qubits and
     the remaining tensor. Allocation and deallocation create and consume
     whole qubit tensors.
+    Register slots retain their qubit identities, and quantum operands must
+    denote disjoint resources. See the shared
+    [quantum resource contract](index.md#quantum-resource-contract) for helper
+    boundaries, dynamic-index preconditions, and semantic round trips.
+
   }];
 
   let dependentDialects = ["::mlir::qco::QCODialect",

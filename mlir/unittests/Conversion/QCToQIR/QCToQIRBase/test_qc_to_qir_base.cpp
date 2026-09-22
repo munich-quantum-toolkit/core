@@ -125,6 +125,27 @@ static void expectFollowingXIsUncontrolled(
   EXPECT_EQ(controlledXCalls, 0);
 }
 
+TEST(QCToQIRBaseNativeTest, RejectsExplicitRuntimeAssertions) {
+  MLIRContext context;
+  context.loadDialect<arith::ArithDialect, func::FuncDialect,
+                      cf::ControlFlowDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  cf::AssertOp::create(builder, builder.getUnknownLoc(),
+                       builder.boolConstant(false),
+                       "unsupported runtime precondition");
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  bool diagnosed = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    diagnosed |= diagnostic.str().find("cf.assert") != std::string::npos;
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQIRBaseConversion(*moduleOp)));
+  EXPECT_TRUE(diagnosed);
+}
+
 TEST(QCToQIRBaseNativeTest, RejectsMeasurementFeedbackDuringConversion) {
   MLIRContext context;
   context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
@@ -410,37 +431,6 @@ TEST(QCToQIRBaseNativeTest, ControlledBarrierDoesNotControlFollowingGate) {
         builder.ctrl(control, target,
                      [&](Value bodyTarget) { builder.barrier(bodyTarget); });
       });
-}
-
-TEST(QCToQIRBaseNativeTest, LowersControlFlowAssertions) {
-  MLIRContext context;
-  context
-      .loadDialect<qc::QCDialect, arith::ArithDialect, cf::ControlFlowDialect,
-                   func::FuncDialect, LLVM::LLVMDialect>();
-  qc::QCProgramBuilder builder(&context);
-  builder.initialize();
-  auto condition = LLVM::UndefOp::create(builder, builder.getI1Type());
-  cf::AssertOp::create(builder, condition, "runtime precondition");
-  auto module = builder.finalize();
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  ASSERT_TRUE(succeeded(runQCToQIRBaseConversion(*module)));
-  EXPECT_TRUE(succeeded(verify(*module)));
-
-  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>("abort"));
-  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>("puts"));
-  EXPECT_TRUE(module->lookupSymbol<LLVM::GlobalOp>("assert_msg"));
-  bool retainsAssertion = false;
-  bool hasConditionalBranch = false;
-  bool hasUnreachableFailure = false;
-  module->walk([&](Operation* operation) {
-    retainsAssertion |= isa<cf::AssertOp>(operation);
-    hasConditionalBranch |= isa<LLVM::CondBrOp>(operation);
-    hasUnreachableFailure |= isa<LLVM::UnreachableOp>(operation);
-  });
-  EXPECT_FALSE(retainsAssertion);
-  EXPECT_TRUE(hasConditionalBranch);
-  EXPECT_TRUE(hasUnreachableFailure);
 }
 
 TEST(QCToQIRBaseNativeTest, LowersPopulationCountThroughMathToLLVM) {

@@ -265,11 +265,11 @@ For explicit restrictions, use the constants on
 accepted.
 
 Target compilation requires structured QCO/SCF input. Producers of raw CFG
-branches must normalize them before target compilation; runtime assertions are
-allowed. The pipeline removes unused symbols, propagates constants, and runs QCO
-cleanup before deciding which loops need expansion. It then specializes loops
-required by the selected payload or by placement, cleans up the resulting IR,
-and checks the remaining control flow with `legalize-control-flow`:
+branches must normalize them before target compilation. The pipeline removes
+unused symbols, propagates constants, and runs QCO cleanup before deciding which
+loops need expansion. It then specializes loops required by the selected payload
+or by placement, cleans up the resulting IR, and checks the remaining control
+flow with `legalize-control-flow`:
 
 | Capability           | Residual operations                                 |
 | -------------------- | --------------------------------------------------- |
@@ -315,8 +315,13 @@ name.
 Other payloads, explicit topology, and site-specific operations require exact
 quantum addresses. Bounded specialization exposes those addresses before
 placement or routing. Residual unsupported tensor control flow produces a
-diagnostic before allocation changes. OpenQASM export continues to require
-static quantum indices.
+diagnostic before allocation changes. Mapped OpenQASM uses static physical
+qubits; indexed tensor loops must fit the existing 65,536-operation unrolling
+budget. Runtime-dependent indices that cannot be specialized are unsupported.
+Logical qubit indices can remain dynamic in targetless OpenQASM export. Constant
+rank-one `f64` table reads use switches that group equal entries and require
+unrestricted multiway branching from the selected payload. Their size grows with
+the table data and number of reads.
 
 The supported constraints are `max-control-flow-nesting-depth` on all four
 capabilities, `max-iteration-count` on both iteration capabilities, and

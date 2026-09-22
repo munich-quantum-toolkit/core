@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/QDMIAdapter.h"
 #include "mqt/Compiler/Target.h"
 #include "qdmi/Client.hpp"
@@ -482,6 +483,50 @@ TEST(CompilerQDMIAdapterTest, CompilesAdaptiveMeasurementControlledLoop) {
   auto job = llvm::cantFail(mlir::submitProgram(device, compiled, 8));
   ASSERT_TRUE(job.wait());
   EXPECT_EQ(job.getCounts().at("0"), 8);
+}
+
+TEST(CompilerQDMIAdapterTest, ExecutesStableRegisterHelpers) {
+  auto program = mlir::QCProgram::fromMLIRString(R"mlir(module {
+    func.func private @move(%a: memref<1x!qc.qubit>, %b: memref<1x!qc.qubit>) {
+      %zero = arith.constant 0 : index
+      %left = memref.load %a[%zero] : memref<1x!qc.qubit>
+      %right = memref.load %b[%zero] : memref<1x!qc.qubit>
+      qc.x %left : !qc.qubit
+      qc.swap %left, %right : !qc.qubit, !qc.qubit
+      return
+    }
+    func.func @main() -> !cbit.reg<2> attributes {mqt.entry_point} {
+      %a = memref.alloc() : memref<1x!qc.qubit>
+      %b = memref.alloc() : memref<1x!qc.qubit>
+      %zero = arith.constant 0 : index
+      %one = arith.constant 1 : index
+      func.call @move(%a, %b) : (memref<1x!qc.qubit>, memref<1x!qc.qubit>) -> ()
+      %bits = cbit.alloc(#cbit.init<undefined>) : !cbit.reg<2>
+      %q0 = memref.load %a[%zero] : memref<1x!qc.qubit>
+      %q1 = memref.load %b[%zero] : memref<1x!qc.qubit>
+      %m0 = qc.measure %q0 : !qc.qubit -> i1
+      %m1 = qc.measure %q1 : !qc.qubit -> i1
+      cbit.store %m0, %bits[%zero] : !cbit.reg<2>
+      cbit.store %m1, %bits[%one] : !cbit.reg<2>
+      memref.dealloc %a : memref<1x!qc.qubit>
+      memref.dealloc %b : memref<1x!qc.qubit>
+      return %bits : !cbit.reg<2>
+    }
+  })mlir");
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(program->cleanup());
+  auto qco = std::move(*program).intoQCO();
+  ASSERT_TRUE(qco);
+  program = std::move(*qco).intoQC();
+  ASSERT_TRUE(program);
+  auto qir = std::move(*program).intoQIR(mlir::QIRProfile::Adaptive);
+  ASSERT_TRUE(qir);
+  auto ir = qir->llvmIR();
+  ASSERT_TRUE(ir);
+  const auto device = qdmi::Session::openDevice("mqt.ddsim.default");
+  auto job = device.submitJob(*ir, QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING, 8);
+  ASSERT_TRUE(job.wait());
+  EXPECT_EQ(job.getCounts().at("10"), 8);
 }
 
 TEST(CompilerQDMIAdapterTest,
