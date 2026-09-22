@@ -170,8 +170,8 @@ initializer, elements are undefined.
 
 Element reads, assignments, and compound assignments accept constant or runtime
 integer indices. Negative indices count from the end (`values[-1]` is the last
-element). Constant out-of-range indices are diagnosed; dynamic accesses emit
-runtime bounds checks. A static read requires that element to be initialized. A
+element). Constant out-of-range indices are diagnosed; dynamic indices must
+remain in bounds. A static read requires that element to be initialized. A
 dynamic read requires every element to be initialized; writing a dynamic index
 does not establish definite initialization.
 
@@ -200,8 +200,7 @@ jeff, and OpenQASM.
 
 Remaining arrays work through QC/QCO and Adaptive QIR conversion. Adaptive QIR
 uses native LLVM stack storage, with no host C allocation or assertion runtime.
-Bounds failures return exit code 1 and record no output. The emitted capability
-flags include arrays and element types, multiple returns when needed, and
+The emitted capability flags include arrays and element types, and
 conservatively require loop support for residual dynamic indices. See the
 [QIR 2.1 array contract](https://github.com/qir-alliance/qir-spec/blob/2.1/specification/Memory_Management.md#array-support).
 

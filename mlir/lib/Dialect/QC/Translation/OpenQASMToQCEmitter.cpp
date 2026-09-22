@@ -842,9 +842,10 @@ private:
     llvm_unreachable("unknown scalar expression kind");
   }
 
-  [[nodiscard]] Value emitClassicalIndex(OpBuilder& opBuilder,
-                                       const frontend::ExpressionId expression,
-                                       const int64_t width) {
+  [[nodiscard]] Value
+  emitClassicalIndex(OpBuilder& opBuilder,
+                     const frontend::ExpressionId expression,
+                     const int64_t width) {
     auto index = emitExpression(opBuilder, expression, {});
     if (!index) {
       return {};
@@ -871,9 +872,9 @@ private:
       return arith::ConstantIndexOp::create(opBuilder, builder.getLoc(),
                                             std::get<int64_t>(index.constant));
     }
-    auto checked =
-        emitClassicalIndex(opBuilder, expression,
-                         static_cast<int64_t>(program.arrays.at(array).length));
+    auto checked = emitClassicalIndex(
+        opBuilder, expression,
+        static_cast<int64_t>(program.arrays.at(array).length));
     if (!checked) {
       return {};
     }
