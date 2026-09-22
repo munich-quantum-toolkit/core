@@ -1,6 +1,6 @@
 # QDMI device checker
 
-Status: implemented and validated locally. Nothing has been pushed.
+Status: implemented and validated locally.
 
 ## Goal and scope
 
@@ -24,7 +24,7 @@ a timeout. The checker does not submit jobs or depend on Slurm.
 - Retain the worker PID until process-group cleanup finishes. On Linux, kill the
   worker if its supervising checker dies, including before supervision setup.
 
-## Validation
+## Validation before the main update
 
 - The supported `release-no-mlir` preset configured and built successfully.
 - All six focused adapter/CLI CTests passed on macOS and Linux. The existing
@@ -39,3 +39,8 @@ a timeout. The checker does not submit jobs or depend on Slurm.
 - The full strict documentation build passed with MLIR 23.1.0.
 - The installed Linux checker passed forced-parent-death and worker-cleanup
   tests. Real Slurm validation belongs to the separate optional validator PR.
+
+## Validation after the main update
+
+The existing macOS `release-no-mlir` build passed all seven focused adapter/CLI
+CTests and all 77 driver tests. Full `uvx nox -s lint` also passed.
