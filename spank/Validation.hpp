@@ -20,14 +20,6 @@
 
 #pragma once
 
-#include <fcntl.h>
-#include <signal.h> // NOLINT(modernize-deprecated-headers)
-#include <sys/mman.h>
-#include <sys/prctl.h>
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <unistd.h>
-
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -36,11 +28,18 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <fcntl.h>
 #include <memory>
+#include <signal.h> // NOLINT(modernize-deprecated-headers)
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <sys/mman.h>
+#include <sys/prctl.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <thread>
+#include <unistd.h>
 #include <vector>
 
 namespace mqt::spank {

@@ -25,7 +25,7 @@ Slurm daemons and preserve static injection when validation is disabled.
   caught signal handlers remain installed in a fork child until exec resets
   them.
 
-## Validation
+## Validation before the main update
 
 The existing runner unit tests pass (22 tests), as do full repository lint,
 standalone Linux compilation, and full-file clang-tidy 23 checks. The installed
@@ -44,3 +44,9 @@ Braket and IQM passed direct configuration, shared injection, and enabled
 validation with both native and wheel installations. These runs used released
 Core 4.0.0, the installed native checker, local mock services, and a 4 GiB
 Docker RAM cap. No live provider jobs were submitted.
+
+## Validation after the main update
+
+The shared runner's 22 tests and full repository lint pass. The new formatting
+rules reorder the validation header's includes without changing its behavior.
+Refreshed Linux and provider integration results are recorded in the PR.
