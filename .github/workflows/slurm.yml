@@ -88,7 +88,8 @@ jobs:
           sudo apt-get install --no-install-recommends -y clang-tidy-23 libslurm-dev
           cmake -S spank -B build/spank -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
           cmake --build build/spank
-          clang-tidy-23 -p build/spank spank/spank.cpp --warnings-as-errors='*'
+          clang-tidy-23 -p build/spank spank/spank.cpp --header-filter='(^|/)spank/' --warnings-as-errors='*'
+          clang-tidy-23 test/slurm/validation_environment.cpp --warnings-as-errors='*' -- -std=c++20
 
       - name: Build the MQT Core wheel
         timeout-minutes: 15

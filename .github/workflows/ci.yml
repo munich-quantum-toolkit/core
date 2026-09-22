@@ -139,7 +139,7 @@ jobs:
       cpp-linter-extra-args: "-std=c++20 -Wunused-template"
       # Vendored headers are checked upstream; standalone SPANK is checked in
       # the Slurm workflow against its own compilation database and headers.
-      cpp-linter-ignore-extra: "vendor/**|spank/**"
+      cpp-linter-ignore-extra: "vendor/**|spank/**|test/slurm/validation_environment.cpp"
       setup-mlir: true
       llvm-version: 23.1.1
     permissions:
