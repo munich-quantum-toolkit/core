@@ -506,16 +506,33 @@ private:
     size_t depth = 0;
     float f = 0;
 
-    /// Construct a root node with the given layout. Initialize the
-    /// sequence with an empty vector and set the cost to zero.
-    explicit Node(Layout layout) : layout(std::move(layout)) {}
+    /// Construct a root node with the given layout.
+    explicit Node(const Layout& initialLayout) { reset(initialLayout); }
 
     /// Construct a non-root node from its parent node. Apply the given swap to
     /// the layout of the parent node.
     Node(Node* parent, const IndexPairType& swap, const Window& window,
-         const CompilerTarget& target, const Parameters& params)
-        : layout(parent->layout), swap(swap), parent(parent),
-          depth(parent->depth + 1) {
+         const CompilerTarget& target, const Parameters& params) {
+      reset(parent, swap, window, target, params);
+    }
+
+    /// Reuse layout capacity when starting a new search.
+    void reset(const Layout& initialLayout) {
+      layout = initialLayout;
+      swap = {};
+      parent = nullptr;
+      depth = 0;
+      f = 0;
+    }
+
+    /// Reuse layout capacity when replacing a previously searched node.
+    void reset(Node* nextParent, const IndexPairType& nextSwap,
+               const Window& window, const CompilerTarget& target,
+               const Parameters& params) {
+      layout = nextParent->layout;
+      swap = nextSwap;
+      parent = nextParent;
+      depth = parent->depth + 1;
       layout.swap(swap.first, swap.second);
       f = params.alpha * static_cast<float>(depth) + h(window, target, params);
     }
@@ -585,16 +602,12 @@ private:
         return nullptr;
       }
 
-      Node* node = nullptr;
       if (index == nodes.size()) {
-        node = &nodes.emplace_back(std::forward<Args>(args)...);
+        nodes.emplace_back(std::forward<Args>(args)...);
       } else {
-        nodes[index] = Node(std::forward<Args>(args)...);
-        node = &nodes[index];
+        nodes[index].reset(std::forward<Args>(args)...);
       }
-      ++index;
-
-      return node;
+      return &nodes[index++];
     }
 
     /// Returns true if the number of allocated nodes has reached the budget.
@@ -1245,18 +1258,16 @@ private:
       for (const auto& [q0, q1] = window.front(); const auto prog : {q0, q1}) {
         const auto hw0 = curr->layout.getHardwareIndex(prog);
         target->forEachNeighbour(hw0, [&](const auto hw1) {
-          if (arena.full()) {
-            return;
-          }
-
           const IndexPairType swap = std::minmax(hw0, hw1); // Canonical SWAP.
           if (is_contained(expansionSet, swap)) {
             return;
           }
 
-          expansionSet.push_back(swap);
-          frontier.emplace(
-              arena.construct(curr, swap, window, *target, params));
+          if (Node* child =
+                  arena.construct(curr, swap, window, *target, params)) {
+            expansionSet.push_back(swap);
+            frontier.emplace(child);
+          }
         });
       }
     }
@@ -1289,8 +1300,8 @@ private:
         });
       }
 
-      swaps.push_back(best->swap);
       assert(best && "connected target must have a distance-reducing edge");
+      swaps.push_back(best->swap);
       current.layout = std::move(best->layout);
     }
 
