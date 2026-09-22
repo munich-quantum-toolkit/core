@@ -18,6 +18,7 @@
 #include "bench/QPE.hpp"
 #include "bench/RepeatUntilSuccess.hpp"
 #include "bench/Teleportation.hpp"
+#include "bench/WeakMeasurementGrover.hpp"
 #include "mqt/bench/Generate.h"
 
 #include "TestUtils.h"
@@ -64,6 +65,7 @@ TEST(GenerateProgramTest, GeneratesEveryBenchmarkMethodAsQCAndJeff) {
       {.precision = 3, .phase = Phase(3, 8), .method = QPEMethod::Iterative}});
   expectQCAndJeff(RepeatUntilSuccess{});
   expectQCAndJeff(Teleportation{});
+  expectQCAndJeff(WeakMeasurementGrover{{.markedBitstring = "101"}});
 }
 
 } // namespace mqt::bench
