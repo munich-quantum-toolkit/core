@@ -555,15 +555,23 @@ private:
     }
   };
 
+  /// Memory arena for A* search nodes, enabling reuse across searches to reduce
+  /// allocation overhead. Nodes are allocated once and reused via reset.
   class Arena {
   public:
+    /// Constructs an arena with a limited memory budget.
+    /// The budget of nodes is derived as
+    ///
+    ///    `searchMemoryLimit / (sizeof(Node) + 2 * nsites * sizeof(size_t))`
+    ///
+    /// where the final summand accounts for the Node's layout member.
     explicit Arena(size_t nsites, size_t searchMemoryLimit)
         : budget(std::max<size_t>(
               1, searchMemoryLimit /
-                     (sizeof(Node) + 2 * nsites * sizeof(size_t)))) {
-    }
+                     (sizeof(Node) + 2 * nsites * sizeof(size_t)))) {}
 
-    /// Return a pointer to the newly constructed node, or nullptr if full.
+    /// Constructs and returns a pointer to a new node, or nullptr if the arena
+    /// is full. Reuses storage from previous searches when available.
     template <typename... Args> Node* construct(Args&&... args) {
       if (full()) {
         return nullptr;
@@ -581,18 +589,19 @@ private:
       return node;
     }
 
-    /// Return true, if the number of nodes exceeds the maximum capacity.
+    /// Returns true if the number of allocated nodes has reached the budget.
     [[nodiscard]] bool full() const { return index >= budget; }
 
-    /// Reset the arena. Doesn't deallocate memory.
+    /// Resets the arena for a new search. Retains allocated storage. Only the
+    /// logical size (index) is reset to zero.
     void reset() { index = 0; }
 
   private:
-    /// Stable node storage.
+    /// Storage for nodes. Uses deque for stable pointers across insertions.
     std::deque<Node> nodes;
-    /// The maximum number of nodes.
+    /// Maximum number of nodes permitted by the memory budget.
     size_t budget;
-    /// Indices the stable memory ~ number of nodes in memory.
+    /// Next available slot in nodes. Acts as the logical size counter.
     size_t index{0};
   };
 
