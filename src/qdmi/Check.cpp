@@ -161,14 +161,16 @@ int main(const int argc, char** argv) try {
       id = value;
     } else if (option == "--timeout" && !hasTimeout) {
       // from_chars requires a pointer range within the string view.
-      // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-      const auto* end = value.data() + value.size();
-      const auto parsed = std::from_chars(value.data(), end, seconds);
-      if (parsed.ec != std::errc{} || parsed.ptr != end || seconds < 1 ||
+      // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+      const auto parsed =
+          std::from_chars(value.data(), value.data() + value.size(), seconds);
+      if (parsed.ec != std::errc{} ||
+          parsed.ptr != value.data() + value.size() || seconds < 1 ||
           seconds > 3600) {
         std::cerr << USAGE;
         return 2;
       }
+      // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
       hasTimeout = true;
     } else {
       std::cerr << USAGE;
