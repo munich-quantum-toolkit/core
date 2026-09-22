@@ -23,6 +23,7 @@
 #include "gtest/gtest.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/Math/IR/Math.h"
@@ -138,11 +139,9 @@ result = measure q;
             (SmallVector<Type>{builder.getI1Type(), builder.getI8Type(),
                                builder.getI16Type(), builder.getF64Type(),
                                builder.getF64Type()}));
-  bool checkedIndex = false;
-  moduleOp->walk([&](cf::AssertOp assertion) {
-    checkedIndex |= assertion.getMsg() == "array index is out of bounds";
+  moduleOp->walk([](cf::AssertOp) {
+    ADD_FAILURE() << "runtime bounds are a precondition, as for bit registers";
   });
-  EXPECT_TRUE(checkedIndex);
 }
 
 TEST(OpenQASMTargetTest, ConstantArrayIndicesNeedNoRuntimeBoundsChecks) {
