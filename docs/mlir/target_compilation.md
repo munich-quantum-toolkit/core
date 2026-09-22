@@ -98,10 +98,12 @@ requires the same build, input, target, seed, and mapping controls, including an
 explicit trial count. Layouts may change between releases.
 
 For explicit native gate sets with a usable entangler basis, routing ranks its
-candidates by the two-qubit gate count after native synthesis, using depth to
-break ties. A lower gate count can therefore win even when depth increases. This
-adds synthesis work for each candidate. Counts are static for structured
-programs; the depth tie-breaker is the maximum within a block. The
+candidates by estimated native two-qubit gate count, using qubit-dependency
+depth to break ties. A lower gate count can therefore win even when depth
+increases. Read-only analysis shares synthesis decisions without cloning IR or
+running passes for each candidate. Final synthesis determines the emitted count.
+Counts are static for structured programs; depth is the maximum within a block
+and does not model classical scheduling or runtime control flow. The
 `place-and-route` pass in the {doc}`QCO reference <QCO>` describes the search
 and fallback behavior.
 
@@ -208,6 +210,20 @@ active trials with 512 MiB each allow about 10 GiB of estimated search storage.
 Container overhead, target distance caches, and IR storage are additional; this
 setting does not cap total process memory. Changing the budget can change
 layouts and gate counts; more memory does not guarantee fewer gates.
+
+Before routing trials, mapping prepares a read-only table of at most 1024
+numerical native counts from original gates and constant two-qubit runs, in both
+operand orders and with adjacent SWAPs. Trials share this table. Each live
+region's cost tracker retains up to 64 additional counts for routing-dependent
+matrices. The numerical payload is about 264 KiB for the shared table and 17 KiB
+per local cache, plus indexing, allocator, and per-site tracking overhead. These
+allocations are separate from the search budget. Native synthesis caches up to
+64 full decompositions per analysis (about 55 KiB including single-qubit
+factors). Caches are local to one pass invocation or traversal and retain no IR
+handles. Exact matrix and entangler matches preserve numerical decisions for the
+same compilation seed; failed decompositions remain unavailable. Target support
+and operand direction are checked before lookup. Cache misses use normal
+synthesis analysis, so precomputation need not predict every routed run.
 
 Native synthesis collects constant runs on the same two qubits, including
 interleaved single-qubit gates, and resynthesizes them in the target's selected

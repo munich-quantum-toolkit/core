@@ -18,6 +18,7 @@
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QCO/Transforms/NativeSynthesis/NativeCost.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Utils/Drivers.h"
 #include "mqt/Dialect/QCO/Utils/Graph.h"
@@ -42,11 +43,9 @@
 #include "mlir/IR/Threading.h"
 #include "mlir/IR/Value.h"
 #include "mlir/IR/ValueRange.h"
-#include "mlir/IR/Verifier.h"
 #include "mlir/Interfaces/CallInterfaces.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Pass/Pass.h"
-#include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/WalkResult.h"
 
@@ -64,6 +63,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <iterator>
 #include <limits>
@@ -71,7 +71,6 @@
 #include <optional>
 #include <random>
 #include <ranges>
-#include <thread>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -460,13 +459,6 @@ private:
 };
 
 struct MappingPass : impl::MappingPassBase<MappingPass> {
-  void getDependentDialects(DialectRegistry& registry) const override {
-    impl::MappingPassBase<MappingPass>::getDependentDialects(registry);
-    OpPassManager pipeline("builtin.module");
-    populateTargetNativeSynthesisPipeline(pipeline);
-    pipeline.getDependentDialects(registry);
-  }
-
 private:
   using IndexPairType = std::pair<size_t, size_t>;
   using Window = SmallVector<IndexPairType>;
@@ -503,6 +495,17 @@ private:
     Layout layout;
   };
 
+  /// Match the extra region arguments materialized by hot placement.
+  static void addIdleWires(RoutingBundle& bundle, const WireInfos& order) {
+    for (size_t index = 0; index < order.size(); ++index) {
+      const size_t program = order.lookupProgram(index);
+      if (!bundle.infos.containsProgram(program)) {
+        bundle.infos.insertOrUpdate(bundle.wires.size(), program);
+        bundle.wires.emplace_back();
+      }
+    }
+  }
+
   /// Describes a node in the A* search graph.
   struct Node {
     struct ComparePointer {
@@ -515,6 +518,7 @@ private:
     IndexPairType swap;
     Node* parent = nullptr;
     size_t depth = 0;
+    int64_t cost = 0;
     float f = 0;
 
     /// Construct a root node with the given layout.
@@ -523,8 +527,9 @@ private:
     /// Construct a non-root node from its parent node. Apply the given swap to
     /// the layout of the parent node.
     Node(Node* parent, const IndexPairType& swap, const Window& window,
-         const CompilerTarget& target, const Parameters& params) {
-      reset(parent, swap, window, target, params);
+         const CompilerTarget& target, const Parameters& params,
+         int64_t swapCost = 1, int64_t credit = 0) {
+      reset(parent, swap, window, target, params, swapCost, credit);
     }
 
     /// Reuse layout capacity when starting a new search.
@@ -533,19 +538,23 @@ private:
       swap = {};
       parent = nullptr;
       depth = 0;
+      cost = 0;
       f = 0;
     }
 
     /// Reuse layout capacity when replacing a previously searched node.
     void reset(Node* nextParent, const IndexPairType& nextSwap,
                const Window& window, const CompilerTarget& target,
-               const Parameters& params) {
+               const Parameters& params, int64_t swapCost = 1,
+               int64_t credit = 0) {
       layout = nextParent->layout;
       swap = nextSwap;
       parent = nextParent;
       depth = parent->depth + 1;
+      cost = parent->cost + swapCost + credit;
       layout.swap(swap.first, swap.second);
-      f = params.alpha * static_cast<float>(depth) + h(window, target, params);
+      f = params.alpha * static_cast<float>(cost) +
+          static_cast<float>(swapCost) * h(window, target, params);
     }
 
     /// Return true, if the current SWAP sequence makes all gates in the front
@@ -726,6 +735,8 @@ protected:
       signalPassFailure();
       return;
     }
+    expectedNativeScore.reset();
+    nativeCosts.reset();
     if (failed(mqt::verifyQuantumAllocations(moduleOp))) {
       signalPassFailure();
       return;
@@ -739,6 +750,7 @@ protected:
       return;
     }
     target = &environment.environment().target();
+    nativeSwapCost = uniformSwapCost();
 
     if (target->connectivityKind() !=
         CompilerTarget::Connectivity::Kind::Explicit) {
@@ -767,6 +779,14 @@ protected:
       return;
     }
 
+    if (const auto basis = target->synthesisBasis();
+        basis && basis->entangler &&
+        target->nativeOperationsKind() ==
+            CompilerTarget::NativeOperations::Kind::Explicit) {
+      nativeCosts = NativeCostTable::precompute(
+          func, *basis->entangler, compilationSeed(getOperation(), seed));
+    }
+
     auto& body = func.getFunctionBody();
     auto& wires = computation->wires;
     auto& infos = computation->infos;
@@ -784,8 +804,16 @@ protected:
 
     /// Each concurrent trial and the final route own separate search storage.
     Arena arena(target->numSites(), searchMemoryLimit);
+    std::optional<NativeCostTracker> costs;
+    if (nativeCosts) {
+      costs.emplace(*target, compilationSeed(getOperation(), seed),
+                    nativeCosts.get());
+    }
     const auto stats = route<WireDirection::Forward, RoutingMode::Hot>(
-        bundle, arena, &rewriter);
+        bundle, arena, &rewriter, costs ? &*costs : nullptr);
+    assert((!expectedNativeScore ||
+            (costs && costs->score() == expectedNativeScore)) &&
+           "cold scoring and hot routing must visit the same native stream");
 
     // Collect statistics.
     numSwaps += stats.nswaps;
@@ -1156,101 +1184,69 @@ private:
 
     assert(ntrials == trials.size());
 
-    const auto basis = target->synthesisBasis();
-    const bool nativeScoring =
-        basis && basis->entangler &&
-        target->nativeOperationsKind() ==
-            CompilerTarget::NativeOperations::Kind::Explicit;
     parallelForEach(&getContext(), trials, [&, this](Trial& t) {
       Arena arena(target->numSites(), searchMemoryLimit);
       for (size_t i = 0; i < niterations; ++i) {
         route<WireDirection::Forward>(t.bundle, arena);
         route<WireDirection::Backward>(t.bundle, arena);
       }
-      Layout initial(t.bundle.layout);
-      if (nativeScoring) {
-        const auto quality = scoreNative(t.bundle.layout, arena);
-        if (succeeded(quality)) {
-          t.score = *quality;
-          return;
+      /// Refined region traversals may relabel wire slots. Preview the selected
+      /// layout on the original input, as placement will do for the winner.
+      auto scoringBundle = nativeCosts
+                               ? RoutingBundle{.wires = wires,
+                                               .infos = infos,
+                                               .layout = t.bundle.layout,}
+                               : t.bundle;
+      std::optional<NativeCostTracker> costs;
+      if (nativeCosts) {
+        /// Match placement's wire slots without materializing idle qubits.
+        for (size_t program = wires.size(); program < target->numSites();
+             ++program) {
+          scoringBundle.infos.insertOrUpdate(scoringBundle.wires.size(),
+                                             program);
+          scoringBundle.wires.emplace_back();
         }
+        costs.emplace(*target, compilationSeed(getOperation(), seed),
+                      nativeCosts.get());
       }
-      const auto score = route<WireDirection::Forward>(t.bundle, arena);
-      t.score = {std::numeric_limits<size_t>::max(), score.nswaps};
-      t.bundle.layout = std::move(initial);
+      const auto score = route<WireDirection::Forward>(
+          scoringBundle, arena, nullptr, costs ? &*costs : nullptr);
+      const auto quality = costs ? costs->score() : std::nullopt;
+      t.score = quality.value_or(
+          std::pair{std::numeric_limits<size_t>::max(), score.nswaps});
     });
 
     auto* const best =
         llvm::min_element(trials, [](const Trial& a, const Trial& b) {
           return a.score < b.score;
         });
+
+    if (best->score.first != std::numeric_limits<size_t>::max()) {
+      expectedNativeScore = best->score;
+    }
     return best->bundle.layout;
   }
 
-  FailureOr<std::pair<size_t, size_t>> scoreNative(const Layout& layout,
-                                                   Arena& arena) {
-    /// A speculative lowering failure must preserve topology-only mapping.
-    const auto thread = std::this_thread::get_id();
-    ScopedDiagnosticHandler diagnostics(&getContext(), [thread](Diagnostic&) {
-      return success(std::this_thread::get_id() == thread);
-    });
-    OwningOpRef<ModuleOp> copy = getOperation().clone();
-    auto function = mqt::getEntryPoint(*copy);
-    auto computation = discoverComputation(function);
-    if (failed(computation)) {
-      return failure();
-    }
-    IRRewriter rewriter(&getContext());
-    auto [wires, infos] = applyPlacement(function.getFunctionBody(), *target,
-                                         layout, *computation, rewriter);
-    RoutingBundle bundle{
-        .wires = std::move(wires),
-        .infos = std::move(infos),
-        .layout = layout,
-    };
-    route<WireDirection::Forward, RoutingMode::Hot>(bundle, arena, &rewriter);
-    arena.reset();
-    reorderTopologically(function.getBody().front(), rewriter);
-    if (failed(verify(*copy)) || failed(verifyLinearity(*copy))) {
-      return failure();
-    }
-    PassManager native(&getContext());
-    populateTargetNativeSynthesisPipeline(native);
-    if (failed(native.run(*copy)) || failed(verifyLinearity(*copy))) {
-      return failure();
-    }
-    size_t count = 0;
-    size_t depth = 0;
-    /// ponytail: use block depth; runtime costs need a workload model.
-    mqt::getEntryPoint(*copy).walk([&](Block* block) {
-      /// A native modifier's body belongs to its enclosing gate.
-      if (isa<UnitaryOpInterface>(block->getParentOp())) {
-        return;
+  /// A uniform edge cost permits the existing distance heuristic to retain its
+  /// units. Site-dependent SWAP costs need a weighted-distance heuristic.
+  std::optional<size_t> uniformSwapCost() {
+    NativeCostAnalysis analysis(compilationSeed(getOperation(), seed));
+    std::optional<size_t> cost;
+    for (const auto& [a, b] : target->couplings()) {
+      const auto next = analysis.swapCost(*target, std::array{a, b});
+      if (!next || (cost && cost != next)) {
+        return std::nullopt;
       }
-      DenseMap<Value, size_t> depths;
-      for (Operation& op : *block) {
-        size_t current = 0;
-        for (Value operand : op.getOperands()) {
-          current = std::max(current, depths.lookup(operand));
-        }
-        if (auto gate = dyn_cast<UnitaryOpInterface>(op);
-            gate && gate.getNumQubits() == 2 && !isa<BarrierOp>(op)) {
-          ++current;
-          ++count;
-        }
-        for (Value output : op.getResults()) {
-          depths[output] = current;
-        }
-        depth = std::max(depth, current);
-      }
-    });
-    return std::pair{count, depth};
+      cost = next;
+    }
+    return cost;
   }
 
   /// Route the leading interaction with bounded A* node storage.
   /// Drain queued states at the limit, then use distance-reducing SWAPs.
   [[nodiscard]] SmallVector<IndexPairType>
-  search(const Window& window, const Layout& layout, Arena& arena) const {
+  search(const Window& window, const Layout& layout, Arena& arena,
+         NativeCostTracker* costs = nullptr) const {
     const Parameters params{.alpha = alpha, .lambda = lambda};
 
     arena.reset();
@@ -1262,30 +1258,30 @@ private:
     }
 
     SmallVector<IndexPairType, 6> expansionSet;
-    DenseMap<ArrayRef<size_t>, size_t> bestDepth;
+    DenseMap<ArrayRef<size_t>, int64_t> bestCost;
 
     llvm::PriorityQueue<Node*, std::vector<Node*>, Node::ComparePointer>
         frontier;
     frontier.emplace(root);
 
+    const int64_t swapCost = costs != nullptr && nativeSwapCost
+                                 ? static_cast<int64_t>(*nativeSwapCost)
+                                 : 1;
     while (!frontier.empty()) {
       Node* curr = frontier.top();
       frontier.pop();
 
-      // Multiple sequences of SWAPs can lead to the same layout and the same
-      // layout creates the same child-nodes. Thus, if we've seen a layout
-      // already at a lower depth don't reexpand the current node (and hence
-      // recreate the same child nodes).
+      /// After the first edge, future costs depend only on the layout. Keep
+      /// the least accumulated cost, including the one-time prefix discount.
 
-      const auto [it, inserted] = bestDepth.try_emplace(
-          curr->layout.getProgramToHardware(), curr->depth);
+      const auto [it, inserted] =
+          bestCost.try_emplace(curr->layout.getProgramToHardware(), curr->cost);
       if (!inserted) {
-        if (const auto otherDepth = it->getSecond();
-            curr->depth >= otherDepth) {
+        if (curr->cost >= it->getSecond()) {
           continue;
         }
 
-        it->second = curr->depth;
+        it->second = curr->cost;
       }
 
       // If the currently visited node is a goal node, reconstruct the
@@ -1303,12 +1299,16 @@ private:
         const auto hw0 = curr->layout.getHardwareIndex(prog);
         target->forEachNeighbour(hw0, [&](const auto hw1) {
           const IndexPairType swap = std::minmax(hw0, hw1); // Canonical SWAP.
-          if (is_contained(expansionSet, swap)) {
+          if (arena.full() || is_contained(expansionSet, swap)) {
             return;
           }
 
-          if (Node* child =
-                  arena.construct(curr, swap, window, *target, params)) {
+          int64_t credit = 0;
+          if (curr->depth == 0 && costs != nullptr && nativeSwapCost) {
+            credit = costs->swapDiscount(hw0, hw1, *nativeSwapCost);
+          }
+          if (Node* child = arena.construct(curr, swap, window, *target, params,
+                                            swapCost, credit)) {
             expansionSet.push_back(swap);
             frontier.emplace(child);
           }
@@ -1536,9 +1536,13 @@ private:
   /// expects that each wire points at the correct insertion point.
   template <RoutingMode Mode>
   static void insertSWAPs(ArrayRef<IndexPairType> swaps, RoutingBundle& bundle,
-                          Statistics& stats, IRRewriter* rewriter) {
+                          Statistics& stats, IRRewriter* rewriter,
+                          NativeCostTracker* costs = nullptr) {
     auto& [wires, infos, layout] = bundle;
     for (const auto& [hw0, hw1] : swaps) {
+      if (costs != nullptr) {
+        costs->appendSwap(hw0, hw1);
+      }
       const auto [prog0, prog1] = layout.getProgramIndices(hw0, hw1);
 
       if constexpr (Mode == RoutingMode::Hot) {
@@ -1566,6 +1570,12 @@ private:
 
         std::ranges::advance(w0, 1); // Move to SWAP.
         std::ranges::advance(w1, 1);
+      } else if (costs != nullptr) {
+        /// Hot insertion exchanges the successors followed by these slots.
+        /// Cold scoring must keep the same frontier order after each SWAP.
+        std::swap(wires[infos.lookupIndex(prog0)],
+                  wires[infos.lookupIndex(prog1)]);
+        infos.swap(prog0, prog1);
       }
 
       layout.swap(hw0, hw1);
@@ -1577,7 +1587,8 @@ private:
   /// Classify a consecutive measurement run from its end, so each suffix is
   /// visited once. The cache is valid only while the IR remains unchanged.
   static bool measurementNeedsRouting(MeasureOp measurement,
-                                      DenseMap<Operation*, bool>& cache) {
+                                      DenseMap<Operation*, bool>& cache,
+                                      bool afterPlacement) {
     SmallVector<MeasureOp> measurements;
     bool needsRouting = false;
     WireIterator it(measurement.getQubitOut());
@@ -1591,7 +1602,9 @@ private:
         measurements.push_back(next);
         continue;
       }
-      needsRouting = !isa<SinkOp>(op);
+      /// Validated tensor insertion tails become sinks during placement.
+      needsRouting =
+          !isa<SinkOp>(op) && !(afterPlacement && isa<qtensor::InsertOp>(op));
       break;
     }
 
@@ -1679,7 +1692,8 @@ private:
   /// or sink-like operations. Backward traversal can exhaust block arguments.
   template <WireDirection Direction>
   SmallVector<CompositeUnitary> advance(Wires& wires, const WireInfos& infos,
-                                        const Layout& layout) {
+                                        const Layout& layout,
+                                        NativeCostTracker* costs) {
     DenseSet<Operation*> visited;
     SmallVector<CompositeUnitary> composites;
     /// Advancement only moves iterators. Discard classifications before routing
@@ -1690,7 +1704,8 @@ private:
     // composite until earlier routing work is complete, but let independent
     // composites pass terminal wires. Reverse block order for backward routing.
 
-    const auto defer = [&wires, &measurementRouting](Operation* candidate) {
+    const auto defer = [&wires, &measurementRouting,
+                        costs](Operation* candidate) {
       return any_of(wires, [&](WireIterator& it) {
         if (it == std::default_sentinel) {
           return false;
@@ -1709,7 +1724,8 @@ private:
         if constexpr (Direction == WireDirection::Forward) {
           if (auto measurement = dyn_cast<MeasureOp>(op);
               measurement &&
-              !measurementNeedsRouting(measurement, measurementRouting)) {
+              !measurementNeedsRouting(measurement, measurementRouting,
+                                       costs != nullptr)) {
             return false;
           }
           return op->isBeforeInBlock(candidate);
@@ -1745,7 +1761,8 @@ private:
                     return true;
                   }
 
-                  return measurementNeedsRouting(m, measurementRouting);
+                  return measurementNeedsRouting(m, measurementRouting,
+                                                 costs != nullptr);
                 })
                 .template Case<AllocOp, StaticOp, qtensor::ExtractOp>(
                     [](auto&) { return Direction == WireDirection::Forward; })
@@ -1762,6 +1779,20 @@ private:
                 .Default([&](auto) { return false; });
 
         if (release) {
+          if (costs != nullptr) {
+            SmallVector<size_t, 2> vertices;
+            for (const size_t i : indices) {
+              vertices.push_back(
+                  layout.getHardwareIndex(infos.lookupProgram(i)));
+            }
+            /// Frontier indices are in traversal order, not operand order.
+            if (auto gate = dyn_cast<UnitaryOpInterface>(op);
+                gate && gate.isTwoQubit() &&
+                wires[indices[0]].qubit() != gate.getOutputQubit(0)) {
+              std::swap(vertices[0], vertices[1]);
+            }
+            costs->append(op, vertices);
+          }
           released.emplace_back(op);
         }
       }
@@ -1874,9 +1905,14 @@ private:
   /// accumulated statistics.
   template <WireDirection Direction, RoutingMode Mode = RoutingMode::Cold>
     requires(Mode != RoutingMode::Hot || Direction == WireDirection::Forward)
-  Statistics dispatch(const CompositeUnitary& composite, RoutingBundle& parent,
-                      Arena& arena, IRRewriter* rewriter = nullptr) {
+  Statistics dispatch(const CompositeUnitary& composite,
+                                 RoutingBundle& parent, Arena& arena,
+                                 IRRewriter* rewriter = nullptr,
+                                 NativeCostTracker* costs = nullptr) {
     const auto& [op, indices] = composite;
+    if (costs != nullptr) {
+      costs->flush();
+    }
 
     SmallVector<size_t> permutation(indices.size());
     SmallVector<RoutingBundle, 0> children =
@@ -1977,8 +2013,25 @@ private:
 
     Statistics totalStats;
 
-    for (auto& child : children) {
-      totalStats.merge(route<Direction, Mode>(child, arena, rewriter));
+    SmallVector<NativeCostTracker, 2> childCosts;
+    if (costs != nullptr) {
+      childCosts.reserve(op->getNumRegions());
+      for (size_t i = 0; i < op->getNumRegions(); ++i) {
+        childCosts.emplace_back(*target, compilationSeed(getOperation(), seed),
+                                nativeCosts.get());
+      }
+    }
+    for (auto [index, child] : llvm::enumerate(children)) {
+      if constexpr (Mode == RoutingMode::Cold) {
+        if (costs != nullptr) {
+          addIdleWires(child, parent.infos);
+        }
+      }
+      const auto stats = route<Direction, Mode>(
+          child, arena, rewriter,
+          costs != nullptr ? &childCosts[index] : nullptr);
+
+      totalStats.merge(stats);
 
       if constexpr (Mode == RoutingMode::Hot) {
         for_each(child.wires, [](auto& it) { std::ranges::advance(it, -1); });
@@ -2008,7 +2061,17 @@ private:
         children[1].infos.insertOrUpdate(i, prog);
       }
 
-      totalStats.merge(route<Direction, Mode>(children[1], arena, rewriter));
+      if constexpr (Mode == RoutingMode::Cold) {
+        if (costs != nullptr) {
+          addIdleWires(children[1], parent.infos);
+        }
+      }
+
+      const auto stats =
+          route<Direction, Mode>(children[1], arena, rewriter,
+                                 costs != nullptr ? &childCosts[1] : nullptr);
+
+      totalStats.merge(stats);
 
       if constexpr (Mode == RoutingMode::Hot) {
         for_each(children[1].wires,
@@ -2024,12 +2087,14 @@ private:
         TypeSwitch<Operation*, Layout>(op)
             .Case([&](scf::ForOp) {
               const auto swaps = restore(children[0].layout, parent.layout);
-              insertSWAPs<Mode>(swaps, children[0], totalStats, rewriter);
+              insertSWAPs<Mode>(swaps, children[0], totalStats, rewriter,
+                                costs != nullptr ? &childCosts[0] : nullptr);
               return parent.layout;
             })
             .Case([&](scf::WhileOp) {
               const auto swaps = restore(children[1].layout, parent.layout);
-              insertSWAPs<Mode>(swaps, children[1], totalStats, rewriter);
+              insertSWAPs<Mode>(swaps, children[1], totalStats, rewriter,
+                                costs != nullptr ? &childCosts[1] : nullptr);
               // The scf::YieldOp is the terminator in the before region and
               // thus determines the final output layout.
               return children[0].layout;
@@ -2037,8 +2102,10 @@ private:
             .Case([&](IfOp) {
               const auto [convergedLayout, fst, snd] =
                   converge(children[0].layout, children[1].layout);
-              insertSWAPs<Mode>(fst, children[0], totalStats, rewriter);
-              insertSWAPs<Mode>(snd, children[1], totalStats, rewriter);
+              insertSWAPs<Mode>(fst, children[0], totalStats, rewriter,
+                                costs != nullptr ? &childCosts[0] : nullptr);
+              insertSWAPs<Mode>(snd, children[1], totalStats, rewriter,
+                                costs != nullptr ? &childCosts[1] : nullptr);
               return convergedLayout;
             })
             .Case([&](IndexSwitchOp) {
@@ -2046,12 +2113,20 @@ private:
                   children, [](const RoutingBundle& b) -> const Layout& {
                     return b.layout;
                   }));
-              for (RoutingBundle& child : children) {
+              for (auto [index, child] : llvm::enumerate(children)) {
                 const auto swaps = restore(child.layout, compromise);
-                insertSWAPs<Mode>(swaps, child, totalStats, rewriter);
+                insertSWAPs<Mode>(swaps, child, totalStats, rewriter,
+                                  costs != nullptr ? &childCosts[index]
+                                                   : nullptr);
               }
               return compromise;
             });
+
+    if (costs != nullptr) {
+      for (auto& child : childCosts) {
+        costs->merge(child);
+      }
+    }
 
     if constexpr (Mode == RoutingMode::Hot) {
       // Realign terminator values to ensure that i-th input qubit and the
@@ -2118,13 +2193,14 @@ private:
   template <WireDirection Direction, RoutingMode Mode = RoutingMode::Cold>
     requires(Mode != RoutingMode::Hot || Direction == WireDirection::Forward)
   Statistics route(RoutingBundle& bundle, Arena& arena,
-                   IRRewriter* rewriter = nullptr) {
+                              IRRewriter* rewriter = nullptr,
+                              NativeCostTracker* costs = nullptr) {
     auto& [wires, infos, layout] = bundle;
 
     Statistics stats;
     while (true) {
       while (true) {
-        auto composites = advance<Direction>(wires, infos, layout);
+        auto composites = advance<Direction>(wires, infos, layout, costs);
         if (composites.empty()) {
           break;
         }
@@ -2134,8 +2210,10 @@ private:
             place(composite, bundle, *rewriter);
           }
 
-          stats.merge(
-              dispatch<Direction, Mode>(composite, bundle, arena, rewriter));
+          auto res = dispatch<Direction, Mode>(composite, bundle, arena,
+                                               rewriter, costs);
+
+          stats.merge(res);
 
           // Once the composite is mapped, move past this op by incrementing
           // the respective wires.
@@ -2152,7 +2230,7 @@ private:
         break;
       }
 
-      const auto swaps = search(window, layout, arena);
+      const auto swaps = search(window, layout, arena, costs);
 
       if constexpr (Mode == RoutingMode::Hot) {
 
@@ -2164,7 +2242,7 @@ private:
         for_each(wires, [](auto& it) { std::ranges::advance(it, -1); });
       }
 
-      insertSWAPs<Mode>(swaps, bundle, stats, rewriter);
+      insertSWAPs<Mode>(swaps, bundle, stats, rewriter, costs);
 
       if constexpr (Mode == RoutingMode::Hot) {
 
@@ -2179,10 +2257,27 @@ private:
       }
     }
 
+    if (costs != nullptr) {
+      /// Terminal measurements were deferred until all routing SWAPs. Check
+      /// their final sites too, including consecutive measurement runs.
+      for (auto [index, wire] : llvm::enumerate(wires)) {
+        const std::array vertex{
+            layout.getHardwareIndex(infos.lookupProgram(index)),
+        };
+        while (wire != std::default_sentinel &&
+               isa<MeasureOp>(wire.operation())) {
+          costs->append(wire.operation(), vertex);
+          ++wire;
+        }
+      }
+    }
     return stats;
   }
 
   const CompilerTarget* target = nullptr;
+  std::shared_ptr<const NativeCostTable> nativeCosts;
+  std::optional<size_t> nativeSwapCost;
+  std::optional<std::pair<size_t, size_t>> expectedNativeScore;
 };
 
 } // namespace
