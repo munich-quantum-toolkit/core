@@ -1485,7 +1485,7 @@ private:
   /// Collect a routing lookahead window of up to `1 + nlookahead` ready
   /// two-qubit gates, while skipping qubit-pair blocks.
   template <WireDirection Direction>
-  Window getWindow(Wires wires, const WireInfos& infos) {
+  Window getWindow(Wires wires, const WireInfos& infos, Operation* boundary) {
     Window window;
 
     SmallVector<IndexPairType> prev;
@@ -1495,13 +1495,17 @@ private:
         MutableArrayRef(wires.data(), wires.size()),
         [&](const Frontier& frontier, ReleasedOps& released) {
           for (const auto& [op, indices] : frontier) {
-            if (indices.size() == 1) {
+            if (indices.size() == 1 &&
+                (boundary == nullptr || op->isBeforeInBlock(boundary))) {
               released.emplace_back(op);
             }
           }
 
           if (released.empty()) {
             for (const auto& [op, indices] : frontier) {
+              if (boundary != nullptr && !op->isBeforeInBlock(boundary)) {
+                continue;
+              }
               if (!isa<BarrierOp>(op) && isa<UnitaryOpInterface>(op)) {
                 const auto i0 = indices[0];
                 const auto i1 = indices[1];
@@ -1691,9 +1695,9 @@ private:
   /// Leave wires at non-executable gates, composites, terminal measurements,
   /// or sink-like operations. Backward traversal can exhaust block arguments.
   template <WireDirection Direction>
-  std::optional<CompositeUnitary> advance(Wires& wires, const WireInfos& infos,
-                                          const Layout& layout,
-                                          NativeCostTracker* costs) {
+  std::optional<CompositeUnitary>
+  advance(Wires& wires, const WireInfos& infos, const Layout& layout,
+          NativeCostTracker* costs, Operation* boundary) {
     std::optional<CompositeUnitary> composite;
     /// Advancement only moves iterators. Discard classifications before routing
     /// inserts SWAPs or replaces composites.
@@ -1739,22 +1743,6 @@ private:
 
     walkProgramGraph<Direction>(wires, [&](const Frontier& frontier,
                                            ReleasedOps& released) {
-      /// Hot placement threads every wire through a region. Do not score
-      /// successors that placement would rewind to that region's boundary.
-      Operation* boundary = nullptr;
-      if (costs != nullptr) {
-        for (auto& wire : wires) {
-          if (wire == std::default_sentinel) {
-            continue;
-          }
-          Operation* pending = wire.operation();
-          if (isa_and_nonnull<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp>(
-                  pending) &&
-              (boundary == nullptr || pending->isBeforeInBlock(boundary))) {
-            boundary = pending;
-          }
-        }
-      }
       for (const auto& [op, indices] : frontier) {
         if (boundary != nullptr && boundary->isBeforeInBlock(op)) {
           continue;
@@ -2154,8 +2142,8 @@ private:
               const auto swaps = restore(children[1].layout, parent.layout);
               insertSWAPs<Mode>(swaps, children[1], totalStats, rewriter,
                                 costs != nullptr ? &childCosts[1] : nullptr);
-              // The scf::YieldOp is the terminator in the before region and
-              // thus determines the final output layout.
+              /// The before region's scf::ConditionOp determines the exit
+              /// layout for the loop results and the after region.
               return children[0].layout;
             })
             .Case([&](IfOp) {
@@ -2260,6 +2248,18 @@ private:
     return totalStats;
   }
 
+  /// Find the next region that placement will extend to all physical wires.
+  static Operation* nextRoutingBoundary(Operation* op) {
+    for (; op != nullptr; op = op->getNextNode()) {
+      if (isa<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp>(op) &&
+          llvm::any_of(op->getResultTypes(),
+                       [](Type type) { return isa<QubitType>(type); })) {
+        return op;
+      }
+    }
+    return nullptr;
+  }
+
   /// Iterates over a dynamically computed window of layers and uses A* search
   /// to find a SWAP sequence that makes each layer executable. Depending on
   /// the template parameter, this function only updates the layout or also
@@ -2271,12 +2271,32 @@ private:
                               NativeCostTracker* costs = nullptr) {
     auto& [wires, infos, layout] = bundle;
 
+    /// Costed traversal must not cross a region that hot placement will thread
+    /// through every wire, even before that region reaches the frontier.
+    Operation* boundary = nullptr;
+    if (costs != nullptr) {
+      assert(Direction == WireDirection::Forward);
+      for (auto& wire : wires) {
+        if (wire != std::default_sentinel) {
+          boundary =
+              nextRoutingBoundary(&wire.qubit().getParentBlock()->front());
+          break;
+        }
+      }
+    }
+
     Statistics stats;
     while (true) {
       while (true) {
-        auto composite = advance<Direction>(wires, infos, layout, costs);
+        auto composite =
+            advance<Direction>(wires, infos, layout, costs, boundary);
         if (!composite) {
           break;
+        }
+
+        if (costs != nullptr) {
+          assert(composite->op == boundary);
+          boundary = nextRoutingBoundary(boundary->getNextNode());
         }
 
         /// Routing a region can permute every frontier wire. Rediscover the
@@ -2298,7 +2318,7 @@ private:
         }
       }
 
-      const auto window = getWindow<Direction>(wires, infos);
+      const auto window = getWindow<Direction>(wires, infos, boundary);
       if (window.empty()) {
         break;
       }

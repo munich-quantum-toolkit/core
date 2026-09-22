@@ -3527,6 +3527,84 @@ TEST_F(MappingPassFixture, PreserveCoherenceAcrossRoutedRegionResults) {
   }
 }
 
+TEST_F(MappingPassFixture, RespectRegionBoundariesBeforeFrontierDiscovery) {
+  const auto target = withNativeBasis(
+      llvm::cantFail(CompilerTarget::create(
+          5, Connectivity::fromCouplings({{0, 1}, {1, 2}, {2, 3}, {3, 4}}),
+          NativeOperations::unrestricted())),
+      "cz");
+  for (bool hiddenRegion : {true, false}) {
+    QCOProgramBuilder builder(context.get());
+    builder.initialize({cbit::RegisterType::get(context.get(), 5)});
+    auto bits = builder.allocClassicalBitRegister(5);
+    SmallVector<Value> qubits;
+    for (size_t i = 0; i < 5; ++i) {
+      qubits.push_back(builder.allocQubit());
+    }
+    if (hiddenRegion) {
+      /// The frontier reaches H and the later CZ before it sees the region.
+      qubits[0] = builder.h(qubits[0]);
+      qubits[0] =
+          builder.qcoIf(true, qubits[0], [&](Value q) { return builder.x(q); });
+      std::tie(qubits[1], qubits[2]) = builder.cz(qubits[1], qubits[2]);
+      qubits[0] = builder.h(qubits[0]);
+    } else {
+      /// A nonadjacent gate can defer the region. The
+      /// adjacent later gate must not lead the search and return zero SWAPs.
+      qubits[0] = builder.x(qubits[0]);
+      qubits[2] = builder.x(qubits[2]);
+      std::tie(qubits[0], qubits[2]) = builder.cx(qubits[0], qubits[2]);
+      std::tie(qubits[2], qubits[4]) = builder.cx(qubits[2], qubits[4]);
+      qubits[3] =
+          builder.qcoIf(true, qubits[3], [&](Value q) { return builder.x(q); });
+    }
+    /// A degree-three interaction graph cannot embed in a line, so candidate
+    /// scoring runs instead of taking the routing-free greedy shortcut.
+    for (size_t i = 1; i < 4; ++i) {
+      std::tie(qubits[0], qubits[i]) = builder.cx(qubits[0], qubits[i]);
+    }
+    for (auto [i, q] : llvm::enumerate(qubits)) {
+      auto measured = builder.measure(q, bits, static_cast<int64_t>(i));
+      builder.sink(measured.first);
+    }
+    auto input = builder.finalize(bits);
+    ASSERT_TRUE(succeeded(verify(*input)));
+    ASSERT_TRUE(succeeded(verifyLinearity(*input)));
+    const auto expected = qco::sample(getEntryPoint(*input), 64, 17);
+    ASSERT_TRUE(succeeded(expected));
+    ASSERT_EQ(expected->size(), 1U);
+    for (size_t seed : {7U, 99U}) {
+      for (size_t budget : {size_t{0}, size_t{1024} * 1024}) {
+        std::string serial;
+        for (bool parallel : {false, true}) {
+          SCOPED_TRACE(testing::Message()
+                       << "hidden=" << hiddenRegion << ", seed=" << seed
+                       << ", budget=" << budget << ", parallel=" << parallel);
+          context->enableMultithreading(parallel);
+          OwningOpRef<ModuleOp> moduleOp = input->clone();
+          ASSERT_TRUE(
+              succeeded(runPass(*moduleOp, target,
+                                MappingPassOptions{.ntrials = 4,
+                                                   .niterations = 1,
+                                                   .searchMemoryLimit = budget,
+                                                   .seed = seed})));
+          ASSERT_TRUE(succeeded(verify(*moduleOp)));
+          ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+          EXPECT_TRUE(isExecutable(getEntryPoint(*moduleOp), target));
+          const auto actual = qco::sample(getEntryPoint(*moduleOp), 64, 17);
+          ASSERT_TRUE(succeeded(actual));
+          EXPECT_EQ(*actual, *expected);
+          if (parallel) {
+            EXPECT_EQ(printModule(*moduleOp), serial);
+          } else {
+            serial = printModule(*moduleOp);
+          }
+        }
+      }
+    }
+  }
+}
+
 TEST_F(MappingPassFixture, NativeGuidancePreservesAlternatingPairs) {
   using Capability = CompilerTarget::OperationCapability;
   using SiteTuple = CompilerTarget::SiteTuple;
