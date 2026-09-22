@@ -118,9 +118,7 @@ private:
   std::vector<DecompositionEntry> decompositions_;
   std::vector<uint64_t> decompositionHashes_;
   size_t nextDecomposition_ = 0;
-  Matrix4x4 matrix_;
-  std::optional<CompilerTarget::GateKind> entangler_;
-  std::optional<decomposition::TwoQubitNativeDecomposition> native_;
+  size_t lastDecomposition_ = 0;
 };
 
 /// Estimate a routed block without building IR. Vertices use the target's dense

@@ -211,19 +211,20 @@ Container overhead, target distance caches, and IR storage are additional; this
 setting does not cap total process memory. Changing the budget can change
 layouts and gate counts; more memory does not guarantee fewer gates.
 
-Before routing trials, mapping prepares a read-only table of at most 1024
+When routing is needed, mapping prepares a read-only table of at most 1024
 numerical native counts from original gates and constant two-qubit runs, in both
-operand orders and with adjacent SWAPs. Trials share this table. Each live
-region's cost tracker retains up to 64 additional counts for routing-dependent
-matrices. The numerical payload is about 264 KiB for the shared table and 17 KiB
-per local cache, plus indexing, allocator, and per-site tracking overhead. These
-allocations are separate from the search budget. Native synthesis caches up to
-64 full decompositions per analysis (about 55 KiB including single-qubit
-factors). Caches are local to one pass invocation or traversal and retain no IR
-handles. Exact matrix and entangler matches preserve numerical decisions for the
-same compilation seed; failed decompositions remain unavailable. Target support
-and operand direction are checked before lookup. Cache misses use normal
-synthesis analysis, so precomputation need not predict every routed run.
+operand orders and with adjacent SWAPs. Preparation stops when the table is
+full. Trials share this table. Each live region's cost tracker retains up to 64
+additional counts for routing-dependent matrices. The numerical payload is about
+264 KiB for the shared table and 17 KiB per local cache, plus indexing,
+allocator, and per-site tracking overhead. These allocations are separate from
+the search budget. Native synthesis caches up to 64 full decompositions per
+analysis (about 55 KiB including single-qubit factors). Caches are local to one
+pass invocation or traversal and retain no IR handles. Exact matrix and
+entangler matches preserve numerical decisions for the same compilation seed;
+failed decompositions remain unavailable. Target support and operand direction
+are checked before lookup. Cache misses use normal synthesis analysis, so
+precomputation need not predict every routed run.
 
 Native synthesis collects constant runs on the same two qubits, including
 interleaved single-qubit gates, and resynthesizes them in the target's selected

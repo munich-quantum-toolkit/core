@@ -587,6 +587,43 @@ TEST_F(TargetSynthesisTest, NativeCachesPreserveDecompositionsAfterEviction) {
   }
 }
 
+TEST_F(TargetSynthesisTest, NativeCacheCopiesAndMovesOwnTheirEntries) {
+  using mlir::qco::Matrix4x4;
+  using mlir::qco::NativeCostAnalysis;
+  using mlir::qco::decomposition::decomposeUnitary2QWeyl;
+  auto matrix = Matrix4x4::identity();
+  matrix(3, 3) = std::polar(1.0, 0.371);
+  const auto basis = Target::GateKind::CX;
+  const auto expected = decomposeUnitary2QWeyl(matrix, basis, 7);
+  ASSERT_TRUE(expected);
+  const auto check = [&](NativeCostAnalysis& analysis) {
+    const auto& actual = analysis.decompose(matrix, basis);
+    ASSERT_TRUE(actual);
+    EXPECT_EQ(actual->numBasisUses, expected->numBasisUses);
+    EXPECT_EQ(actual->globalPhase, expected->globalPhase);
+    ASSERT_EQ(actual->singleQubitFactors.size(),
+              expected->singleQubitFactors.size());
+    for (size_t i = 0; i < actual->singleQubitFactors.size(); ++i) {
+      EXPECT_EQ(actual->singleQubitFactors[i].data,
+                expected->singleQubitFactors[i].data);
+    }
+  };
+  NativeCostAnalysis original(7);
+  check(original);
+  NativeCostAnalysis copied(original);
+  original = NativeCostAnalysis(7);
+  check(copied);
+  NativeCostAnalysis assigned(99);
+  assigned = copied;
+  copied = NativeCostAnalysis(7);
+  check(assigned);
+  NativeCostAnalysis moved(std::move(assigned));
+  check(moved);
+  NativeCostAnalysis moveAssigned(99);
+  moveAssigned = std::move(moved);
+  check(moveAssigned);
+}
+
 TEST_F(TargetSynthesisTest, NativeCostPreservesSupportedSymbolicOperations) {
   auto moduleOp = mlir::parseSourceString<ModuleOp>(R"mlir(
 module {

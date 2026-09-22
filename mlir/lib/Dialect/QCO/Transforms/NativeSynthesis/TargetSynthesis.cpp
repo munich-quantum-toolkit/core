@@ -573,17 +573,18 @@ NativeCostTable::precompute(Operation* root, CompilerTarget::GateKind entangler,
   add(swap);
   root->walk([&](Operation* op) {
     if (result->entries_.size() == capacity) {
-      return;
+      return WalkResult::interrupt();
     }
     auto unitary = dyn_cast<UnitaryOpInterface>(op);
     const auto matrix = twoQubitRunMemberMatrix(unitary);
     if (!matrix) {
-      return;
+      return WalkResult::advance();
     }
     addOrientations(*matrix);
     if (!feedsFromSameTwoQubitRun(unitary)) {
       addOrientations(scanFusableTwoQubitRun(unitary, *matrix).composed);
     }
+    return WalkResult::advance();
   });
   return result;
 }
@@ -591,39 +592,41 @@ NativeCostTable::precompute(Operation* root, CompilerTarget::GateKind entangler,
 const std::optional<decomposition::TwoQubitNativeDecomposition>&
 NativeCostAnalysis::decompose(const Matrix4x4& matrix,
                               CompilerTarget::GateKind entangler) {
-  if (entangler_ == entangler && matrix_.data == matrix.data) {
-    return native_;
+  if (!decompositions_.empty()) {
+    const auto& entry = decompositions_[lastDecomposition_];
+    if (entry.entangler == entangler && entry.matrix.data == matrix.data) {
+      return entry.native;
+    }
   }
-  matrix_ = matrix;
-  entangler_ = entangler;
   const auto hash = matrixHash(matrix, entangler);
   for (size_t i = 0; i < decompositionHashes_.size(); ++i) {
     const auto& entry = decompositions_[i];
     if (decompositionHashes_[i] == hash && entry.entangler == entangler &&
         sameMatrix(entry.matrix, matrix)) {
-      native_ = entry.native;
-      return native_;
+      lastDecomposition_ = i;
+      return entry.native;
     }
   }
-  native_ = decomposeUnitary2QWeyl(matrix, entangler, seed_);
   if (decompositions_.empty()) {
     decompositions_.reserve(CACHE_SIZE);
     decompositionHashes_.reserve(CACHE_SIZE);
   }
+  DecompositionEntry entry{
+      .matrix = matrix,
+      .entangler = entangler,
+      .native = decomposeUnitary2QWeyl(matrix, entangler, seed_),
+  };
   if (decompositions_.size() < CACHE_SIZE) {
-    decompositions_.push_back(
-        {.matrix = matrix, .entangler = entangler, .native = native_});
+    lastDecomposition_ = decompositions_.size();
+    decompositions_.push_back(std::move(entry));
     decompositionHashes_.push_back(hash);
   } else {
-    decompositions_[nextDecomposition_] = {
-        .matrix = matrix,
-        .entangler = entangler,
-        .native = native_,
-    };
+    lastDecomposition_ = nextDecomposition_;
+    decompositions_[nextDecomposition_] = std::move(entry);
     decompositionHashes_[nextDecomposition_] = hash;
     nextDecomposition_ = (nextDecomposition_ + 1) % CACHE_SIZE;
   }
-  return native_;
+  return decompositions_[lastDecomposition_].native;
 }
 
 std::optional<uint8_t>
