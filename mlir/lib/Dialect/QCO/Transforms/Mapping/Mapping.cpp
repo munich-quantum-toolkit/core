@@ -737,6 +737,7 @@ protected:
     }
     expectedNativeScore.reset();
     nativeCosts.reset();
+    nativeSwapCost.reset();
     if (failed(mqt::verifyQuantumAllocations(moduleOp))) {
       signalPassFailure();
       return;
@@ -750,7 +751,6 @@ protected:
       return;
     }
     target = &environment.environment().target();
-    nativeSwapCost = uniformSwapCost();
 
     if (target->connectivityKind() !=
         CompilerTarget::Connectivity::Kind::Explicit) {
@@ -777,14 +777,6 @@ protected:
         failed(checkCapacity(func, *target, *computation))) {
       signalPassFailure();
       return;
-    }
-
-    if (const auto basis = target->synthesisBasis();
-        basis && basis->entangler &&
-        target->nativeOperationsKind() ==
-            CompilerTarget::NativeOperations::Kind::Explicit) {
-      nativeCosts = NativeCostTable::precompute(
-          func, *basis->entangler, compilationSeed(getOperation(), seed));
     }
 
     auto& body = func.getFunctionBody();
@@ -1153,6 +1145,15 @@ private:
     if (greedy && greedy->second) {
       return greedy->first;
     }
+    if (const auto basis = target->synthesisBasis();
+        basis && basis->entangler &&
+        target->nativeOperationsKind() ==
+            CompilerTarget::NativeOperations::Kind::Explicit) {
+      nativeCosts = NativeCostTable::precompute(
+          mqt::getEntryPoint(getOperation()), *basis->entangler,
+          compilationSeed(getOperation(), seed));
+      nativeSwapCost = uniformSwapCost();
+    }
 
     struct Trial {
       RoutingBundle bundle;
@@ -1230,7 +1231,8 @@ private:
   /// A uniform edge cost permits the existing distance heuristic to retain its
   /// units. Site-dependent SWAP costs need a weighted-distance heuristic.
   std::optional<size_t> uniformSwapCost() {
-    NativeCostAnalysis analysis(compilationSeed(getOperation(), seed));
+    NativeCostAnalysis analysis(compilationSeed(getOperation(), seed),
+                                nativeCosts.get());
     std::optional<size_t> cost;
     for (const auto& [a, b] : target->couplings()) {
       const auto next = analysis.swapCost(*target, std::array{a, b});
