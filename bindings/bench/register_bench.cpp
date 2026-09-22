@@ -28,6 +28,7 @@ void registerQFT(const nb::module_& m);
 void registerQFTAdder(const nb::module_& m);
 void registerQPE(const nb::module_& m);
 void registerRepeatUntilSuccess(const nb::module_& m);
+void registerShor(nb::module_& m);
 void registerTeleportation(const nb::module_& m);
 void registerWState(const nb::module_& m);
 
@@ -89,6 +90,10 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   const nb::module_ repeatUntilSuccess = m.def_submodule(
       "repeat_until_success", "Repeat-until-success benchmark instance.");
   registerRepeatUntilSuccess(repeatUntilSuccess);
+
+  nb::module_ shor = m.def_submodule(
+      "shor", "Shor order finding and classical factor recovery.");
+  registerShor(shor);
 
   const nb::module_ teleportation = m.def_submodule(
       "teleportation", "Quantum teleportation benchmark instance.");

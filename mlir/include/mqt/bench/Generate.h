@@ -26,6 +26,7 @@ class QFT;
 class QFTAdder;
 class QPE;
 class RepeatUntilSuccess;
+class Shor;
 class Teleportation;
 class WState;
 
@@ -67,6 +68,9 @@ generate(const QFTAdder& benchmark);
 /// Generate the repeat-until-success benchmark.
 [[nodiscard]] std::optional<mlir::QCProgram>
 generate(const RepeatUntilSuccess& benchmark);
+
+/// Generate structured semiclassical Shor order finding.
+[[nodiscard]] std::optional<mlir::QCProgram> generate(const Shor& benchmark);
 
 /// Generate the quantum teleportation benchmark.
 [[nodiscard]] std::optional<mlir::QCProgram>

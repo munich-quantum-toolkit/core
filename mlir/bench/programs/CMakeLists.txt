@@ -11,6 +11,7 @@ add_library(
   BV.cpp
   GHZ.cpp
   Grover.cpp
+  ModularArithmetic.cpp
   ModularMultiplier.cpp
   Multiplexer.cpp
   QFT.cpp
@@ -18,6 +19,7 @@ add_library(
   QFTUtils.cpp
   QPE.cpp
   RepeatUntilSuccess.cpp
+  Shor.cpp
   Teleportation.cpp
   WState.cpp)
 target_link_libraries(

@@ -18,6 +18,7 @@
 #include <limits>
 #include <optional>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 
 namespace mqt::bench::detail {
@@ -34,29 +35,39 @@ inline void validateOutcome(const std::string_view outcome,
   }
 }
 
-template <class Probability>
-[[nodiscard]] Evaluation
-evaluate(const Output& output, const Counts& counts,
-         const Probability& probability,
-         const std::optional<std::string_view> successOutcome = std::nullopt) {
+[[nodiscard]] inline size_t validateCounts(const Output& output,
+                                           const Counts& counts) {
   if (counts.empty()) {
     throw std::invalid_argument("counts must not be empty");
   }
 
   size_t totalShots = 0;
-  size_t successShots = 0;
   for (const auto& [outcome, count] : counts) {
     validateOutcome(outcome, output.width);
     if (count > std::numeric_limits<size_t>::max() - totalShots) {
       throw std::overflow_error("total shot count exceeds size_t");
     }
     totalShots += count;
-    if (successOutcome && outcome == *successOutcome) {
-      successShots = count;
-    }
   }
   if (totalShots == 0) {
     throw std::invalid_argument("total shot count must be positive");
+  }
+
+  return totalShots;
+}
+
+template <class Probability>
+[[nodiscard]] Evaluation
+evaluate(const Output& output, const Counts& counts,
+         const Probability& probability,
+         const std::optional<std::string_view> successOutcome = std::nullopt) {
+  const auto totalShots = validateCounts(output, counts);
+  size_t successShots = 0;
+  if (successOutcome) {
+    const auto it = counts.find(std::string(*successOutcome));
+    if (it != counts.end()) {
+      successShots = it->second;
+    }
   }
 
   // Extended precision prevents avoidable loss while summing distributions.

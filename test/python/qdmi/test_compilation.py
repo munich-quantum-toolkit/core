@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from mqt.core.bench import qpe, repeat_until_success
+from mqt.core.bench import qpe, repeat_until_success, shor
 from mqt.core.mlir import CompiledProgram, CompilerTarget, OutputFormat, QCProgram, compile_program, submit_program
 from mqt.core.qdmi import CustomProperty, Job, ProgramFormat
 from mqt.core.qdmi.driver import open_device
@@ -138,6 +138,30 @@ def test_indexed_openqasm_device_execution() -> None:
     job = submit_program(compiled, target=device, num_shots=32, custom1=17)
     job.wait()
     assert job.get_counts() == {"11": 32}
+
+
+@pytest.mark.parametrize(
+    ("number", "factors", "program_format"),
+    [(21, (3, 7), ProgramFormat.QIR_ADAPTIVE_MODULE), (15, (3, 5), ProgramFormat.QASM3)],
+)
+def test_shor_device_execution(number: int, factors: tuple[int, int], program_format: ProgramFormat) -> None:
+    """Factor small numbers through modular arithmetic and the bundled DDSIM device."""
+    device = open_device("mqt.ddsim.default")
+
+    def run(benchmark: shor.Shor) -> dict[str, int]:
+        compiled = compile_program(benchmark.generate(), target=device, program_format=program_format)
+        job = submit_program(compiled, target=device, num_shots=64, custom1=17)
+        job.wait()
+        counts = job.get_counts()
+        assert sum(counts.values()) == 64
+        assert all(len(bits) == benchmark.output.width for bits in counts)
+        assert benchmark.evaluate(counts).factors == factors
+        return counts
+
+    result = shor.factor(number, run)
+    assert result.status == shor.FactorStatus.SUCCESS
+    assert result.factors == factors
+    assert result.attempts == 1
 
 
 @pytest.mark.parametrize("program_format", [ProgramFormat.QASM3, ProgramFormat.QIR_ADAPTIVE_MODULE])

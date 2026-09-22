@@ -12,7 +12,9 @@
 
 #include "mlir/Support/LLVM.h"
 
+#include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string_view>
 
 namespace mlir {
@@ -35,12 +37,12 @@ void phaseRotationLoop(
     mlir::Value step, mlir::Value initialAngle, mlir::Value scale,
     const mlir::function_ref<void(mlir::Value angle, mlir::Value index)>& body);
 
-/// Apply the exact no-swap QFT.
+/// Apply the no-swap QFT, optionally omitting rotations beyond cutoff.
 void forwardQFT(mlir::qc::QCProgramBuilder& builder, mlir::Value qubitRegister,
-                int64_t qubits);
+                int64_t qubits, std::optional<size_t> cutoff = std::nullopt);
 
-/// Apply the exact inverse of `forwardQFT`.
+/// Apply the adjoint of `forwardQFT` with the same cutoff.
 void inverseQFT(mlir::qc::QCProgramBuilder& builder, mlir::Value qubitRegister,
-                int64_t qubits);
+                int64_t qubits, std::optional<size_t> cutoff = std::nullopt);
 
 } // namespace mqt::bench::detail

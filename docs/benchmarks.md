@@ -9,13 +9,14 @@ mystnb:
 # Structured quantum benchmarks
 
 MQT Core defines each structured quantum benchmark by benchmark-specific
-parameters and an analytic reference. A benchmark instance can produce a
-structured QC program, a resolved manifest, and a stable case ID. The generated
-program returns one classical register named `result`. Outcome strings are
-big-endian: the highest-index result bit is the leftmost character.
+parameters and an analytic or verification reference. A benchmark instance can
+produce a structured QC program, a resolved manifest, and a stable case ID. The
+generated program returns one classical register, named `phase` for Shor and
+`result` for the other families. Outcome strings are big-endian: the
+highest-index result bit is the leftmost character.
 
-For an end-to-end device example, start with {doc}`getting_started`. It compares
-standard and iterative QPE and evaluates exact and non-exact phases. The
+For an end-to-end device example, start with {doc}`getting_started`, which
+factors 21 with Shor's algorithm. The
 [repeat-until-success example](#repeat-until-success) below demonstrates an
 adaptive retry loop and a phase-sensitive readout.
 
@@ -263,6 +264,91 @@ Before evaluation, normalize backend results to the manifest's big-endian
 `result` order.
 
 ## Benchmark families
+
+### Shor order finding
+
+The `shor` family implements the semiclassical circuit in Sections 2.3–2.4 of
+[Beauregard's algorithm](https://arxiv.org/abs/quant-ph/0205095). It accepts an
+odd `number` from 3 through `2**31 - 1` and a coprime `base` satisfying
+`1 < base < number` (default 2). Prime moduli are valid order-finding instances.
+For an $n$-bit modulus, it allocates $2n+3$ qubits and returns exactly $2n$
+phase bits, at most 62. These bounds let classical recovery use 64-bit integers.
+
+```{code-cell} ipython3
+from mqt.core.bench import shor
+
+order_finding = shor.Shor(shor.Options(number=21))
+assert order_finding.output.width == 10
+assert order_finding.evaluate({"0010101011": 64}).factors == (3, 7)
+print(order_finding.instance_specification_json)
+```
+
+The generated QC program keeps loops and private register-based arithmetic
+helpers. The in-place multiplier shares Fourier addition with the modular
+multiplier below and clears its workspace using inverse arithmetic. Generation
+precomputes modular powers and rotation tables of polynomial size; it does not
+compute the order or enumerate a modular orbit. Device compilation applies the
+normal inliner and target lowering. See {doc}`getting_started` for execution,
+phase interpretation, and the callback-based `shor.factor` workflow. Adaptive
+QIR retains the arithmetic loops. Mapped OpenQASM 3 specializes physical-qubit
+indices and is subject to the compiler's operation expansion limit; the DDSIM
+examples cover 21 through Adaptive QIR and 15 through OpenQASM 3.
+
+`qft_cutoff=None` selects exact Fourier arithmetic. A positive cutoff keeps
+controlled rotations only up to that distance in the arithmetic and phase
+feedback. A cutoff covering all register distances is equivalent to exact
+arithmetic. Smaller cutoffs reduce the gate count from $O(n^4)$ to
+$O(n^3\min(\mathtt{qft\_cutoff},n))$ and can change the sampled success rate;
+success need not improve monotonically for each finite sample. Verification
+always checks exact integer factors. The 31-bit input limit bounds
+representation size, not practical simulation cost or device capacity.
+
+The manifest uses reference kind `verification`, model `shor_factors`, and
+version 1. Evaluation reports optional sorted `factors` and the shot-weighted
+`success_probability`: the fraction of outcomes that independently reveal a
+verified pair. Its JSON has `factors` as a pair or `null` and only
+`success_probability` in `metrics`. There is no efficiently supplied ideal
+phase-distribution reference, TVD, or Hellinger metric. Invalid outcome strings,
+empty counts, and zero total shots are rejected; unsuccessful phases are valid
+data.
+
+### Quantum phase estimation
+
+The `qpe` family estimates a supplied phase using a phase gate and a known
+eigenstate. Standard QPE uses a query register and inverse QFT; iterative QPE
+measures, resets, and reuses one query qubit with measurement feedback. At
+eight-bit precision they use nine and two qubits, respectively.
+
+```{code-cell} ipython3
+from fractions import Fraction
+
+from mqt.core.bench import qpe
+from mqt.core.mlir import compile_program, submit_program
+from mqt.core.qdmi.driver import open_device
+
+device = open_device("mqt.ddsim.default")
+for method in (qpe.Method.STANDARD, qpe.Method.ITERATIVE):
+    phase_estimation = qpe.QPE(qpe.Options(precision=8, phase=Fraction(3, 8), method=method))
+    compiled = compile_program(phase_estimation.generate(), target=device)
+    job = submit_program(compiled, target=device, num_shots=64, custom1=17)
+    job.wait()
+    assert job.get_counts() == {"01100000": 64}
+    assert phase_estimation.evaluate(job.get_counts()).total_variation_distance < 1e-12
+```
+
+A phase such as $1/3$ lies between eight-bit estimates, giving a distribution
+over nearby values. TVD compares the sampled distribution with this benchmark's
+analytic reference; finite samples generally have nonzero distance.
+
+```{code-cell} ipython3
+approximate = qpe.QPE(qpe.Options(precision=8, phase=Fraction(1, 3), method=qpe.Method.ITERATIVE))
+compiled = compile_program(approximate.generate(), target=device)
+job = submit_program(compiled, target=device, num_shots=4096, custom1=17)
+job.wait()
+evaluation = approximate.evaluate(job.get_counts())
+assert evaluation.total_variation_distance < 0.08
+print(f"Total variation distance: {evaluation.total_variation_distance:.3f}")
+```
 
 ### QFT addition
 

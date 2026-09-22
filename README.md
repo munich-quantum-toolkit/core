@@ -60,44 +60,39 @@ Then choose a starting point:
 
 ## Getting Started
 
-Estimate the phase `3/8` with eight bits of precision using
-**iterative quantum phase estimation (QPE)**. This uses two qubits and
-measurement feedback. Compile for the bundled DDSIM device, then submit the
-compiled program:
+Factor 21 with **Shor's algorithm**, using modular arithmetic, a reused query
+qubit, and measurement feedback. The callback compiles each circuit for the
+bundled DDSIM device and submits 64 shots:
 
 ```python
-from fractions import Fraction
-
-from mqt.core.bench import qpe
+from mqt.core.bench import shor
 from mqt.core.mlir import compile_program, submit_program
 from mqt.core.qdmi.driver import open_device
 
-benchmark = qpe.QPE(qpe.Options(precision=8, phase=Fraction(3, 8), method=qpe.Method.ITERATIVE))
-program = benchmark.generate()
 device = open_device("mqt.ddsim.default")
-compiled = compile_program(program, target=device)
-job = submit_program(compiled, target=device, num_shots=1024)
-job.wait()
 
-counts = job.get_counts()
-outcome = max(counts, key=lambda bits: counts[bits])
-phase = Fraction(int(outcome, 2), 2**benchmark.output.width)
-assert phase == benchmark.options.phase
-assert benchmark.evaluate(counts).total_variation_distance < 1e-12
-print(f"Counts: {counts}")
-print(f"Estimated phase: {phase}")
+
+def run(benchmark: shor.Shor) -> dict[str, int]:
+    compiled = compile_program(benchmark.generate(), target=device)
+    job = submit_program(compiled, target=device, num_shots=64, custom1=17)
+    job.wait()
+    return job.get_counts()
+
+
+result = shor.factor(21, run)
+assert result.status == shor.FactorStatus.SUCCESS
+assert result.factors == (3, 7)
+print(f"Factors: {result.factors}")
 ```
 
 ```text
-Counts: {'01100000': 1024}
-Estimated phase: 3/8
+Factors: (3, 7)
 ```
 
 The
-[QPE walkthrough](https://mqt.readthedocs.io/projects/core/en/stable/getting_started.html)
-compares standard and iterative QPE and evaluates a phase that cannot be
-represented exactly with eight bits. This phase-gate benchmark illustrates the
-phase-estimation step used in algorithms such as Shor's.
+[factoring walkthrough](https://mqt.readthedocs.io/projects/core/en/stable/getting_started.html)
+explains the measured phase, continued fractions, and verified factor recovery.
+The driver handles classical prechecks and retries; the callback owns execution.
 
 ## Development
 

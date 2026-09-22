@@ -23,6 +23,7 @@
 #include <cstdint>
 #include <numbers>
 #include <string_view>
+#include <utility>
 
 namespace mqt::bench::detail {
 
@@ -66,7 +67,7 @@ void phaseRotationLoop(
 }
 
 void forwardQFT(qc::QCProgramBuilder& builder, Value qubitRegister,
-                int64_t qubits) {
+                int64_t qubits, std::optional<size_t> cutoff) {
   auto zero = builder.indexConstant(0);
   auto one = builder.indexConstant(1);
   auto last = builder.indexConstant(qubits - 1);
@@ -77,8 +78,14 @@ void forwardQFT(qc::QCProgramBuilder& builder, Value qubitRegister,
     builder.h(builder.loadQubit(qubitRegister, target));
 
     auto previous = arith::SubIOp::create(builder, target, one).getResult();
+    auto upperDistance = target;
+    if (cutoff && std::cmp_less(*cutoff, qubits)) {
+      upperDistance = arith::MinSIOp::create(
+          builder, target,
+          builder.indexConstant(static_cast<int64_t>(*cutoff)));
+    }
     phaseRotationLoop(
-        builder, zero, target, one, firstAngle, half,
+        builder, zero, upperDistance, one, firstAngle, half,
         [&](Value angle, Value distance) {
           auto control =
               arith::SubIOp::create(builder, previous, distance).getResult();
@@ -89,7 +96,7 @@ void forwardQFT(qc::QCProgramBuilder& builder, Value qubitRegister,
 }
 
 void inverseQFT(qc::QCProgramBuilder& builder, Value qubitRegister,
-                int64_t qubits) {
+                int64_t qubits, std::optional<size_t> cutoff) {
   auto zero = builder.indexConstant(0);
   auto one = builder.indexConstant(1);
   auto upper = builder.indexConstant(qubits);
@@ -97,8 +104,14 @@ void inverseQFT(qc::QCProgramBuilder& builder, Value qubitRegister,
   auto half = builder.floatConstant(0.5);
   builder.scfFor(zero, upper, 1, [&](Value target) {
     auto previous = arith::SubIOp::create(builder, target, one).getResult();
+    auto upperDistance = target;
+    if (cutoff && std::cmp_less(*cutoff, qubits)) {
+      upperDistance = arith::MinSIOp::create(
+          builder, target,
+          builder.indexConstant(static_cast<int64_t>(*cutoff)));
+    }
     phaseRotationLoop(
-        builder, zero, target, one, firstAngle, half,
+        builder, zero, upperDistance, one, firstAngle, half,
         [&](Value angle, Value distance) {
           auto control =
               arith::SubIOp::create(builder, previous, distance).getResult();

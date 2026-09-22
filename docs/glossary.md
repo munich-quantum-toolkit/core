@@ -294,7 +294,8 @@ linear ownership
 benchmark instance
   **Preferred term:** benchmark instance. **Accepted alias:** instance when the
   benchmark context is clear. One validated member of a benchmark family with
-  every default resolved. It owns a logical output and analytic reference and
+  every default resolved. It owns a logical output and an analytic or
+  verification reference and
   can be used to generate a program or manifest.
 
 benchmark instance specification
@@ -321,6 +322,22 @@ iQPE
   iterative QPE and iQPE. A phase-estimation method that measures, resets, and
   reuses one query qubit for each output bit. Each round applies corrections
   controlled by earlier measurement results.
+
+Shor's algorithm
+  **Preferred term:** Shor's algorithm. **Accepted alias:** Shor when naming the
+  benchmark family. A factoring algorithm that combines quantum order finding
+  with classical arithmetic to recover and verify nontrivial factors.
+
+order finding
+  **Preferred term:** order finding. **Accepted aliases:** none. Finding the
+  smallest positive exponent r for which a given base a satisfies a^r = 1
+  modulo N, with a coprime to N.
+
+continued fraction
+  **Preferred term:** continued fraction. **Accepted aliases:** none. A nested
+  representation of a number by integer parts and reciprocals. Truncations,
+  called convergents, give rational approximations used to recover candidate
+  exponents from measured phases in Shor's algorithm.
 
 semiclassical quantum Fourier transform
 semiclassical QFT
