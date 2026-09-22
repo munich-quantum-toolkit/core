@@ -1,7 +1,6 @@
 # Optional Slurm launch validation
 
-Status: implemented and validated on real Slurm; final provider image checks
-remain in progress.
+Status: complete.
 
 ## Goal and scope
 
@@ -26,11 +25,6 @@ Slurm daemons and preserve static injection when validation is disabled.
   caught signal handlers remain installed in a fork child until exec resets
   them.
 
-## Work remaining
-
-- Complete both provider workloads with direct configuration, shared injection,
-  and optional validation against the smaller native and wheel images.
-
 ## Validation
 
 The existing runner unit tests pass (22 tests), as do full repository lint,
@@ -45,3 +39,8 @@ task environment, and process cleanup. Cases cover disabled validation, multiple
 nodes/tasks, batch and nested steps, failures, timeouts, cancellation, differing
 task inputs, and bounded storage. Static injection and provider migrations do
 not depend on this optional PR.
+
+Braket and IQM passed direct configuration, shared injection, and enabled
+validation with both native and wheel installations. These runs used released
+Core 4.0.0, the installed native checker, local mock services, and a 4 GiB
+Docker RAM cap. No live provider jobs were submitted.
