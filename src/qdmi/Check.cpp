@@ -21,6 +21,7 @@
 #include <unistd.h>
 
 #ifdef __linux__
+#include <linux/prctl.h>
 #include <sys/prctl.h>
 #endif
 
@@ -111,11 +112,14 @@ constexpr std::string_view USAGE =
   static_cast<void>(setpgid(child, child));
   int result = 1;
   while (interrupted == 0) {
+    // clang-tidy 23 does not map glibc's wait definitions to <sys/wait.h>.
+    // NOLINTBEGIN(misc-include-cleaner)
     siginfo_t status{};
     const auto waited = waitid(P_PID, static_cast<id_t>(child), &status,
                                WEXITED | WNOHANG | WNOWAIT);
     if (waited == 0 && status.si_pid == child) {
       result = status.si_code == CLD_EXITED && status.si_status == 0 ? 0 : 1;
+      // NOLINTEND(misc-include-cleaner)
       break;
     }
     if (waited < 0 && errno != EINTR) {
@@ -156,10 +160,11 @@ int main(const int argc, char** argv) try {
     if (option == "--device" && id.empty() && !value.empty()) {
       id = value;
     } else if (option == "--timeout" && !hasTimeout) {
-      const auto parsed =
-          std::from_chars(value.data(), value.data() + value.size(), seconds);
-      if (parsed.ec != std::errc{} ||
-          parsed.ptr != value.data() + value.size() || seconds < 1 ||
+      // from_chars requires a pointer range within the string view.
+      // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+      const auto* end = value.data() + value.size();
+      const auto parsed = std::from_chars(value.data(), end, seconds);
+      if (parsed.ec != std::errc{} || parsed.ptr != end || seconds < 1 ||
           seconds > 3600) {
         std::cerr << USAGE;
         return 2;
