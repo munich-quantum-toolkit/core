@@ -20,6 +20,7 @@ from unittest.mock import Mock
 import pytest
 from qiskit import qasm2, qasm3
 from qiskit.circuit import Gate, IfElseOp, Parameter, QuantumCircuit
+from qiskit.quantum_info import SparsePauliOp
 from qiskit.transpiler import Target
 
 from mqt.core.plugins.qiskit import (
@@ -37,9 +38,12 @@ from mqt.core.qdmi import Job as QDMIJobHandle
 from mqt.core.qdmi import ProgramFormat
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator, Sequence
+    from collections.abc import Callable, Iterator, Mapping, Sequence
 
     from qiskit.circuit import Instruction
+    from qiskit.providers import Options
+
+    from mqt.core.typing import QDMIJobParameters
 
 
 class MockQDMIDevice:
@@ -994,3 +998,75 @@ def test_target_snapshots_duration_conversion_once(monkeypatch: pytest.MonkeyPat
                     assert properties is None
                 else:
                     assert properties.duration == pytest.approx(duration * factor * 1e-6)
+
+
+class ExecutionOptionsBackend(QDMIBackend):
+    """Test device-specific option encoding without vendor dependencies."""
+
+    @classmethod
+    def _default_options(cls) -> Options:
+        options = super()._default_options()
+        options.update_options(execution_mode="default")
+        return options
+
+    @staticmethod
+    def _job_parameters(options: Mapping[str, object]) -> QDMIJobParameters:
+        mode = options["execution_mode"]
+        if mode not in {"default", "selected"}:
+            msg = "Invalid execution_mode"
+            raise CircuitValidationError(msg)
+        return {"custom1": str(mode)}
+
+
+def test_execution_options_defaults_overrides_and_validation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Encode resolved options for each circuit without mutating defaults."""
+    device = MockQDMIDevice(num_qubits=1)
+    backend = ExecutionOptionsBackend(device)  # ty: ignore[invalid-argument-type]
+    submit = Mock(return_value=device.MockJob(num_clbits=1, shots=3))
+    monkeypatch.setattr(device, "submit_job", submit)
+    circuit = QuantumCircuit(1, 1)
+    circuit.measure(0, 0)
+    backend.set_options(execution_mode="selected")
+    backend.run([circuit, circuit], shots=3)
+    assert submit.call_count == 2
+    assert all(call.kwargs["custom1"] == "selected" for call in submit.call_args_list)
+    backend.run(circuit, execution_mode="default")
+    assert submit.call_args.kwargs["custom1"] == "default"
+    assert backend.options.execution_mode == "selected"
+    submit.reset_mock()
+    with pytest.raises(CircuitValidationError, match="Invalid execution_mode"):
+        backend.run([circuit, circuit], execution_mode="invalid")
+    with pytest.raises(CircuitValidationError, match="Unsupported execution options: typo"):
+        backend.run(circuit, typo=True)
+    submit.assert_not_called()
+
+
+@pytest.mark.parametrize("primitive", ["sampler", "estimator"])
+def test_primitives_forward_backend_execution_options(monkeypatch: pytest.MonkeyPatch, primitive: str) -> None:
+    """Native primitives preserve backend defaults; sampler accepts run overrides."""
+    device = MockQDMIDevice(num_qubits=1)
+    backend = ExecutionOptionsBackend(device)  # ty: ignore[invalid-argument-type]
+    backend.set_options(execution_mode="selected")
+    job = device.MockJob(num_clbits=1, shots=4)
+    monkeypatch.setattr(job, "get_shots", lambda: ["0"] * 4)
+    submit = Mock(return_value=job)
+    monkeypatch.setattr(device, "submit_job", submit)
+    circuit = QuantumCircuit(1)
+    if primitive == "sampler":
+        circuit.measure_all()
+        sampler = backend.sampler(run_options={"execution_mode": "default"})
+        sampler.run([circuit], shots=4).result()
+        expected = "default"
+    else:
+        backend.estimator().run([(circuit, SparsePauliOp("Z"))], precision=0.5).result()
+        expected = "selected"
+    assert submit.call_args.kwargs["custom1"] == expected
+
+
+def test_declared_options_without_encoding_are_rejected() -> None:
+    """A subclass must implement encoding for every additional declared option."""
+    device = MockQDMIDevice(num_qubits=1)
+    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
+    backend.options.update_options(unmapped=True)
+    with pytest.raises(CircuitValidationError, match="Unsupported execution options: unmapped"):
+        backend.run(QuantumCircuit(1))

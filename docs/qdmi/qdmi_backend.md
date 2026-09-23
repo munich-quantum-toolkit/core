@@ -482,6 +482,21 @@ classical control precede restricted profiles; binary encoding wins ties within
 a QIR profile. `BATCH_JOB` does not carry serialized circuits and cannot have a
 program serializer.
 
+### Device-specific execution options
+
+Backend subclasses can add named execution options in `_default_options` and
+implement `_job_parameters(options)` to validate and encode them as QDMI
+`custom1` through `custom5` submission parameters. The hook receives backend
+defaults merged with per-run overrides and runs before any circuit is submitted.
+Unknown option names are rejected; declared options must have an encoding hook.
+The generic backend defines no vendor-specific option names or values.
+
+Use `backend.set_options(...)` to configure defaults for direct runs, native
+samplers, and native estimators. A direct `backend.run(..., **options)` call can
+override those defaults without changing them. Native samplers also accept
+`backend.sampler(run_options={...})`. Native estimators use the backend defaults
+because Qiskit's estimator does not expose a `run_options` field.
+
 ### Device Introspection
 
 The backend builds its {py:class}`~qiskit.transpiler.Target` by:
