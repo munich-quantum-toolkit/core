@@ -30,7 +30,7 @@ RealNumberUniqueTable::RealNumberUniqueTable(MemoryManager& manager,
                                              const std::size_t initialGCLim)
     : memoryManager(&manager), initialGCLimit(initialGCLim) {
   stats.entrySize = sizeof(Bucket);
-  stats.numBuckets = NBUCKET;
+  stats.numBuckets = NBUCKET + exactRoots.bucket_count();
   RealNumber::immortalize(lookupNonNegative(0.5));
 }
 
@@ -62,6 +62,40 @@ RealNumber* RealNumberUniqueTable::lookup(const fp val) {
     return RealNumber::getNegativePointer(lookupNonNegative(std::abs(val)));
   }
   return lookupNonNegative(val);
+}
+
+RealNumber* RealNumberUniqueTable::lookupRoot(const fp val) {
+  assert(!std::isnan(val));
+  if (val == 0.) {
+    return &constants::zero;
+  }
+  if (std::signbit(val)) {
+    return RealNumber::getNegativePointer(lookupRoot(-val));
+  }
+  if (RealNumber::approximatelyEquals(val, 1.)) {
+    return &constants::one;
+  }
+  if (RealNumber::approximatelyEquals(val, SQRT2_2)) {
+    return &constants::sqrt2over2;
+  }
+  ++stats.lookups;
+  auto [it, inserted] = exactRoots.try_emplace(val, nullptr);
+  if (!inserted) {
+    ++stats.hits;
+    return it->second;
+  }
+  try {
+    auto* entry = memoryManager->get<RealNumber>();
+    entry->value = val;
+    entry->LLBase::setNext(nullptr);
+    it->second = entry;
+    stats.trackInsert();
+    stats.numBuckets = table.size() + exactRoots.bucket_count();
+    return entry;
+  } catch (...) {
+    exactRoots.erase(it);
+    throw;
+  }
 }
 
 RealNumber* RealNumberUniqueTable::lookupNonNegative(const fp val) {
@@ -111,7 +145,8 @@ RealNumber* RealNumberUniqueTable::lookupNonNegative(const fp val) {
     ++stats.hits;
     return best;
   }
-  if (stats.numEntries >= table.size() && table.size() < MAX_BUCKETS) {
+  if (stats.numEntries - exactRoots.size() >= table.size() &&
+      table.size() < MAX_BUCKETS) {
     rehash(2 * table.size(), cellExponent);
     key = hash(val);
   }
@@ -136,7 +171,7 @@ void RealNumberUniqueTable::rehash(const std::size_t size, const int exponent) {
       p = saved;
     }
   }
-  stats.numBuckets = table.size();
+  stats.numBuckets = table.size() + exactRoots.bucket_count();
 }
 
 void RealNumberUniqueTable::updateTolerance() {
@@ -168,6 +203,15 @@ std::size_t RealNumberUniqueTable::garbageCollect(const bool force) noexcept {
 
   ++stats.gcRuns;
   const auto before = stats.numEntries;
+  std::erase_if(exactRoots, [&](const auto& item) {
+    auto* entry = item.second;
+    if (RealNumber::isImmortal(entry) || RealNumber::isMarked(entry)) {
+      return false;
+    }
+    memoryManager->returnEntry(*entry);
+    --stats.numEntries;
+    return true;
+  });
   for (auto& bucket : table) {
     RealNumber* curr = bucket;
     RealNumber* prev = nullptr;
@@ -200,6 +244,7 @@ std::size_t RealNumberUniqueTable::garbageCollect(const bool force) noexcept {
 }
 
 void RealNumberUniqueTable::clear() noexcept {
+  exactRoots.clear();
   std::ranges::fill(table, nullptr);
   gcLimit = initialGCLimit;
   stats.reset();
@@ -224,6 +269,10 @@ void RealNumberUniqueTable::print() const {
       std::cout << "\n";
     }
   }
+  for (const auto& [value, entry] : exactRoots) {
+    std::cout << "root\t" << entry->value << " "
+              << reinterpret_cast<uintptr_t>(entry) << "\n";
+  }
   std::cout.precision(precision);
 }
 
@@ -240,12 +289,20 @@ std::ostream& RealNumberUniqueTable::printBucketDistribution(std::ostream& os) {
     }
     os << bucketCount << "\n";
   }
+  for (size_t i = 0; i < exactRoots.bucket_count(); ++i) {
+    os << exactRoots.bucket_size(i) << "\n";
+  }
   os << "\n";
   return os;
 }
 
 std::size_t RealNumberUniqueTable::countMarkedEntries() const noexcept {
   std::size_t count = 0U;
+  for (const auto& [value, entry] : exactRoots) {
+    if (RealNumber::isMarked(entry)) {
+      ++count;
+    }
+  }
   for (const auto* bucket : table) {
     const auto* curr = bucket;
     while (curr != nullptr) {

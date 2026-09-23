@@ -11,21 +11,27 @@
 #include "dd/ComplexNumbers.hpp"
 #include "dd/ComplexValue.hpp"
 #include "dd/DDDefinitions.hpp"
+#include "dd/Edge.hpp"
 #include "dd/Export.hpp"
 #include "dd/MemoryManager.hpp"
+#include "dd/Node.hpp"
+#include "dd/Package.hpp"
 #include "dd/RealNumber.hpp"
 #include "dd/RealNumberUniqueTable.hpp"
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
+#include <array>
 #include <cmath>
+#include <complex>
 #include <cstddef>
 #include <functional>
 #include <iomanip>
 #include <iostream>
 #include <limits>
 #include <sstream>
+#include <stdexcept>
 #include <unordered_set>
 #include <vector>
 
@@ -586,4 +592,44 @@ TEST_F(CNTest, ClearsFlagsWhenReusingNumbers) {
   reused = ut.lookup(0.321);
   EXPECT_FALSE(RealNumber::isMarked(reused));
   EXPECT_FALSE(RealNumber::isImmortal(reused));
+}
+
+TEST(DDComplexTest, ScalarComplexDivisorsPreserveRange) {
+  for (const fp scale : {1e-200, 1e200}) {
+    for (const ComplexValue divisor : {ComplexValue{scale, 0.}, {0., scale}}) {
+      const auto quotient = (divisor * 2.) / divisor;
+      EXPECT_EQ(quotient.r, 2.);
+      EXPECT_EQ(quotient.i, 0.);
+    }
+  }
+  const ComplexValue mixed{1e300, 1e-300};
+  EXPECT_EQ(mixed / ComplexValue{1.}, mixed);
+}
+
+TEST_F(CNTest, MatrixNormalizationPreservesSubnormalComponents) {
+  ComplexNumbers::setTolerance(0.);
+  Package package(1);
+  const auto tiny = std::numeric_limits<fp>::denorm_min();
+  const GateMatrix matrix{
+      std::complex<fp>{.5, .5},
+      {tiny, tiny},
+      {},
+      {},
+  };
+  std::array<mEdge, NEDGE> edges{};
+  for (size_t i = 0; i < NEDGE; ++i) {
+    edges[i] = mEdge::terminal(package.cn.lookup(ComplexValue{matrix[i]}));
+  }
+  for (const auto& result :
+       {package.makeGateDD(matrix, 0), package.makeDDNode(0, edges)}) {
+    EXPECT_EQ(result.getValueByIndex(1, 0, 0), matrix[0]);
+    EXPECT_EQ(result.getValueByIndex(1, 0, 1), matrix[1]);
+  }
+}
+
+TEST(DDComplexTest, ComplexTextRejectsUnrepresentableValues) {
+  ComplexValue value;
+  EXPECT_THROW(value.fromString("1e-400", ""), std::out_of_range);
+  EXPECT_THROW(value.fromString("", "1e400i"), std::out_of_range);
+  EXPECT_THROW(value.fromString("invalid", ""), std::invalid_argument);
 }

@@ -36,6 +36,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <limits>
 #include <random>
@@ -210,8 +211,14 @@ public:
 
 private:
   struct RootSetManager {
+    template <class Node> struct RootEqual {
+      bool operator()(const Edge<Node>& a, const Edge<Node>& b) const noexcept {
+        return a.p == b.p && a.w.r == b.w.r && a.w.i == b.w.i;
+      }
+    };
     template <class Node>
-    using RootSet = std::unordered_map<Edge<Node>, std::size_t>;
+    using RootSet = std::unordered_map<Edge<Node>, std::size_t,
+                                       std::hash<Edge<Node>>, RootEqual<Node>>;
 
     /// Add to respective root set.
     template <class Node> void addToRoots(const Edge<Node>& e) noexcept {
@@ -462,13 +469,13 @@ public:
       throw std::runtime_error("Matrix exceeds the package qubit capacity.");
     }
     if (levels == 0) {
-      return mEdge::terminal(cn.lookup(entry(0, 0)));
+      return cn.lookup(mCachedEdge::terminal(entry(0, 0)));
     }
     const auto operand = [](const size_t level) {
       return std::pair{static_cast<Qubit>(level), size_t{1} << level};
     };
     const auto root = buildMatrixDD(entry, operand, levels - 1, 0, 0);
-    return {.p = root.p, .w = cn.lookup(root.w)};
+    return cn.lookup(root);
   }
 
   /// Embed a row-major local matrix on targets in most-significant-bit order.
@@ -492,17 +499,21 @@ private:
     const auto [wire, mask] = operand(level);
     if (level == 0) {
       return makeDDNode<mNode, CachedEdge>(
-          wire, {mCachedEdge::terminal(entry(row, col)),
-                 mCachedEdge::terminal(entry(row, col | mask)),
-                 mCachedEdge::terminal(entry(row | mask, col)),
-                 mCachedEdge::terminal(entry(row | mask, col | mask))});
+          wire, {
+                    mCachedEdge::terminal(entry(row, col)),
+                    mCachedEdge::terminal(entry(row, col | mask)),
+                    mCachedEdge::terminal(entry(row | mask, col)),
+                    mCachedEdge::terminal(entry(row | mask, col | mask)),
+                });
     }
     return makeDDNode<mNode, CachedEdge>(
         wire,
-        {buildMatrixDD(entry, operand, level - 1, row, col),
-         buildMatrixDD(entry, operand, level - 1, row, col | mask),
-         buildMatrixDD(entry, operand, level - 1, row | mask, col),
-         buildMatrixDD(entry, operand, level - 1, row | mask, col | mask)});
+        {
+            buildMatrixDD(entry, operand, level - 1, row, col),
+            buildMatrixDD(entry, operand, level - 1, row, col | mask),
+            buildMatrixDD(entry, operand, level - 1, row | mask, col),
+            buildMatrixDD(entry, operand, level - 1, row | mask, col | mask),
+        });
   }
 
 public:
@@ -604,8 +615,7 @@ public:
       r = makeDDNode(e.p->v, edges);
       nodes[e.p] = r;
     }
-    r.w = cn.lookup(r.w * e.w);
-    return r;
+    return cn.lookup(CachedEdge<Node>{r.p, r.w * e.w});
   }
 
   //
@@ -1216,17 +1226,8 @@ private:
       return CachedEdge<Node>::zero();
     }
     const auto xWeight = static_cast<ComplexValue>(x.w);
-    if (xWeight.approximatelyZero()) {
-      return CachedEdge<Node>::zero();
-    }
     const auto yWeight = static_cast<ComplexValue>(y.w);
-    if (yWeight.approximatelyZero()) {
-      return CachedEdge<Node>::zero();
-    }
     const auto rWeight = xWeight * yWeight;
-    if (rWeight.approximatelyZero()) {
-      return CachedEdge<Node>::zero();
-    }
 
     if (x.isTerminal() && y.isTerminal()) {
       return {x.p, rWeight};
@@ -1248,18 +1249,18 @@ private:
     // check if we already computed the product before and return the result
     auto& computeTable = getKroneckerComputeTable<Node>();
     if (const auto* r = computeTable.lookup(x.p, y.p); r != nullptr) {
-      return {r->p, rWeight};
+      return {r->p, r->w * rWeight};
     }
 
     constexpr std::size_t n = std::tuple_size_v<decltype(x.p->e)>;
     std::array<CachedEdge<Node>, n> edge{};
     for (auto i = 0U; i < n; ++i) {
-      edge[i] = kronecker2(x.p->e[i], y, shift);
+      edge[i] = kronecker2(x.p->e[i], Edge<Node>{y.p, Complex::one()}, shift);
     }
 
     auto e = makeDDNode(static_cast<Qubit>(x.p->v + shift), edge);
     computeTable.insert(x.p, y.p, {e.p, e.w});
-    return {e.p, rWeight};
+    return {e.p, e.w * rWeight};
   }
 
   ///
@@ -1431,7 +1432,7 @@ public:
   /// transfers a decision diagram from another package to this package
   template <class Node> Edge<Node> transfer(Edge<Node>& original) {
     if (original.isTerminal()) {
-      return {original.p, cn.lookup(original.w)};
+      return cn.lookup(CachedEdge<Node>{original.p, original.w});
     }
 
     // POST ORDER TRAVERSAL USING ONE STACK
@@ -1503,8 +1504,7 @@ public:
         currentEdge = nullptr;
       }
     } while (!stack.empty());
-    root.w = cn.lookup(original.w * root.w);
-    return root;
+    return cn.lookup(CachedEdge<Node>{root.p, original.w * root.w});
   }
 
   ///
@@ -1618,7 +1618,7 @@ public:
         result = deserializeNode(nodeIndex, v, edgeIndices, edgeWeights, nodes);
       }
     }
-    return {result.p, cn.lookup(result.w * rootweight)};
+    return cn.lookup(CachedEdge<Node>{result.p, result.w * rootweight});
   }
 
   template <class Node, class Edge = Edge<Node>>
