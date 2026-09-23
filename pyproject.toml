@@ -158,8 +158,9 @@ cpp-lint = [
 test-base = [
   "numpy>=2.1; python_version>='3.13'",
   "numpy>=2.3.2; python_version>='3.14'",
+  "numpy>=2.5.2; python_version>='3.15'",
   "pennylane>=0.45.1,<0.46",
-  "pygraphviz>=2",
+  "pygraphviz>=2.0.2",
   "pytest>=9.0.1",
   "pytest-console-scripts>=1.4.1",
   "pytest-cov>=7.1",
@@ -288,7 +289,7 @@ before-test = "uv pip install --group test"
 test-groups = []
 
 [[tool.cibuildwheel.overrides]]
-select = [ "cp*-win_arm64", "cp315*" ]
+select = [ "cp*-win_arm64", "cp3??t-*" ]
 before-test = ""
 test-command = 'python -c "import mqt.core.dd, mqt.core.mlir, mqt.core.qdmi"'
 test-groups = []
