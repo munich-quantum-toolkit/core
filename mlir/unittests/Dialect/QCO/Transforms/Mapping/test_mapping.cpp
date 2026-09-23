@@ -3507,7 +3507,7 @@ TEST_F(MappingPassFixture, PreserveCoherenceAcrossRoutedRegionResults) {
             ASSERT_TRUE(succeeded(runPass(
                 *moduleOp, target,
                 MappingPassOptions{
-                    .ntrials = 2, .searchMemoryLimit = budget, .seed = seed})));
+                    .ntrials = 2, .seed = seed, .searchMemoryLimit = budget})));
             ASSERT_TRUE(succeeded(verify(*moduleOp)));
             ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
             const auto samples = qco::sample(getEntryPoint(*moduleOp), 64, 17);
@@ -3582,12 +3582,12 @@ TEST_F(MappingPassFixture, RespectRegionBoundariesBeforeFrontierDiscovery) {
                        << ", budget=" << budget << ", parallel=" << parallel);
           context->enableMultithreading(parallel);
           OwningOpRef<ModuleOp> moduleOp = input->clone();
-          ASSERT_TRUE(
-              succeeded(runPass(*moduleOp, target,
-                                MappingPassOptions{.ntrials = 4,
-                                                   .niterations = 1,
-                                                   .searchMemoryLimit = budget,
-                                                   .seed = seed})));
+          ASSERT_TRUE(succeeded(
+              runPass(*moduleOp, target,
+                      MappingPassOptions{.niterations = 1,
+                                         .ntrials = 4,
+                                         .seed = seed,
+                                         .searchMemoryLimit = budget})));
           ASSERT_TRUE(succeeded(verify(*moduleOp)));
           ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
           EXPECT_TRUE(isExecutable(getEntryPoint(*moduleOp), target));
