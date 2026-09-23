@@ -14,7 +14,6 @@ set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi)
 
 if(NOT TARGET ${TARGET_NAME})
   add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMI)
-  set_property(TARGET ${TARGET_NAME} PROPERTY BUILD_WITH_INSTALL_RPATH FALSE)
 
   target_sources(${TARGET_NAME} PRIVATE Client.cpp Slurm.cpp)
 
@@ -35,7 +34,6 @@ endif()
 
 if(UNIX)
   add_executable(mqt-core-qdmi-check Check.cpp)
-  set_property(TARGET mqt-core-qdmi-check PROPERTY BUILD_WITH_INSTALL_RPATH FALSE)
   target_link_libraries(mqt-core-qdmi-check PRIVATE MQT::CoreQDMI MQT::ProjectWarnings
                                                     MQT::ProjectOptions)
   mqt_get_qdmi_device_targets(checker_devices)

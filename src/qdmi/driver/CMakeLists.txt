@@ -10,7 +10,6 @@ set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-driver)
 
 if(NOT TARGET ${TARGET_NAME})
   add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMIDriver)
-  set_property(TARGET ${TARGET_NAME} PROPERTY BUILD_WITH_INSTALL_RPATH FALSE)
   set_property(TARGET ${TARGET_NAME} PROPERTY LIBRARY_OUTPUT_DIRECTORY
                                               "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}")
 
