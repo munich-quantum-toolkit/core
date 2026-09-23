@@ -10,6 +10,10 @@ releases may include breaking changes.
 
 ## [Unreleased]
 
+### Added
+
+- 👷 Enable testing on Python 3.15 ([#2611]) ([**@denialhaag**])
+
 ### Changed
 
 - ✨ Use optional PyGraphviz 2 or later for decision diagram SVG exports,
@@ -834,6 +838,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2611]: https://github.com/munich-quantum-toolkit/core/pull/2611
 [#2563]: https://github.com/munich-quantum-toolkit/core/pull/2563
 [#2522]: https://github.com/munich-quantum-toolkit/core/pull/2522
 [#2433]: https://github.com/munich-quantum-toolkit/core/pull/2433
