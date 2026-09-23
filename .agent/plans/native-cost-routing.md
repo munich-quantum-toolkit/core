@@ -1,8 +1,8 @@
 # Native cost in routing selection
 
-Status: in progress. Shared analysis and routing are implemented and rebased on
-upstream main `e82bb0f0e`, including Arena storage from #2598. Final cache
-tuning, validation, and the refreshed comparison remain.
+Status: complete. Shared analysis and routing are implemented and rebased on
+upstream main `e82bb0f0e`, including Arena storage from #2598. Cache tuning,
+independent review, validation, and the refreshed comparison are complete.
 
 ## Scope and ownership
 
@@ -32,7 +32,7 @@ Native count remains primary. Calibration-aware fidelity and timed success
 probability need their own validated inputs; no speculative scoring framework is
 added here.
 
-## Experiments and remaining work
+## Experiments and validation
 
 - [x] Publish the independent wide-RUS DD addition fix as #2606. Native DD and
       QCO utility tests, 54/120/150-qubit sampling, and lint pass.
@@ -44,14 +44,40 @@ added here.
       estimates match emitted count and depth. More trials improve minima, but
       do not uniformly narrow seed spread. Preserve guidance and the existing
       trial default.
-- [ ] Compare shared/local/full cache sizes and record representation. Require
-      identical output. Exclude timing records that overlap other host work.
-- [ ] Run final mapping, synthesis, compiler, QCO IR, C++ lint, and repository
-      lint.
-- [ ] Regenerate all width, largest-input, structured, semantic, timing, and
-      Grover scaling comparisons against the same upstream base. Retain
-      individual losses and use the separate fixed DD sampler for wide RUS
-      validation.
+- [x] Compare shared/local/full cache sizes and record representation across 732
+      process measurements. All cache pairs preserve exact output hashes and
+      stage metrics. Keep capacities 1024/64/64; alternatives do not win
+      consistently. The full-decomposition index removes duplicate state, but
+      the measurements do not establish a uniform speedup.
+- [x] Run final mapping, synthesis, compiler, and QCO IR tests: 996 pass.
+      Whole-file C++ lint and repository lint pass. Independent cache review and
+      the full complexity review leave no further scoped findings.
+- [x] Regenerate width, largest-input, structured, semantic, timing, and Grover
+      scaling comparisons. The combined flat cohort has 868 paired successes, no
+      lost baseline compilation successes, 6.92% fewer native two-qubit gates,
+      6.77% lower depth, and 1.87% fewer SWAPs. Native wins/ties/losses are
+      528/285/55; QPE accounts for 32 losses.
+- [x] Validate all 52 small semantic cases and ten full-capacity RUS solution
+      outputs. The independent DD sampler finds six incorrect baseline RUS
+      outputs. Excluding these leaves fourteen paired structured cases with a
+      0.40% native-count reduction. Compilation-only counts are not quality
+      evidence for an incorrect baseline output.
+- [x] Repeat dedicated timing with five process repeats for seven original cases
+      and three for the expanded sweep. Across 82 successful expanded
+      configurations, native count falls 7.20%, while summed median wall time,
+      CPU, and peak RSS rise 4.05%, 23.66%, and 2.09%. The original seven cases
+      have 6.12% fewer native gates and 8.53% more wall time. These are
+      descriptive shared-host measurements, not uniform improvements.
+- [x] Repeat the 16/64/256-iteration Grover resource grid with four/twenty
+      trials and serial/parallel execution. All repeat and serial/parallel
+      output hashes agree. The largest parallel case has unchanged median wall
+      time, but 15.02% more CPU, 1.49% more RSS, and 1.56% more native gates.
+      This individual regression remains in the report.
+
+The timing guard checks build/test tools and native executables in other
+experiment directories. Provisional batches with incomplete interference
+detection remain archived and are excluded from the final timing summaries. No
+routing commit is pushed as part of this follow-up.
 
 Artifacts remain outside the repository at
 `/home/nvidia/.codex/experiments/pr2562-uniform-routing-20260922/`. The prior
