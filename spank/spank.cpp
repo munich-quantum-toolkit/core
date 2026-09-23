@@ -22,7 +22,10 @@
 /// @brief Transport administrator-declared configuration references to QDMI
 /// jobs.
 
+#include "Validation.hpp"
+
 #include <algorithm>
+#include <charconv>
 #include <cstddef>
 #include <exception>
 #include <optional>
@@ -30,6 +33,8 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
+#include <utility>
 #include <vector>
 
 extern "C" {
@@ -159,6 +164,25 @@ public:
           throw std::runtime_error("invalid catalogue reference");
         }
         catalogueDefault_ = value;
+      } else if (key == "validate" && checker_.empty()) {
+        if (!validValue(value) || !value.starts_with('/')) {
+          throw std::runtime_error(
+              "validate requires an absolute checker path");
+        }
+        checker_ = value;
+      } else if (key == "validation_timeout" && !hasTimeout_) {
+        // from_chars accepts the bounds of this string view as pointers.
+        // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+        const auto parsed = std::from_chars(
+            value.data(), value.data() + value.size(), timeout_);
+        if (parsed.ec != std::errc{} ||
+            parsed.ptr != value.data() + value.size() || timeout_ < 1 ||
+            timeout_ > 3600) {
+          throw std::runtime_error(
+              "validation_timeout must be 1 to 3600 seconds");
+        }
+        // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+        hasTimeout_ = true;
       } else if (key == "reference") {
         const auto nameEnd = value.find(':');
         const auto idsEnd =
@@ -198,6 +222,9 @@ public:
     }
     if (licenses_.empty()) {
       throw std::runtime_error("configure concrete license IDs with licenses=");
+    }
+    if (hasTimeout_ && checker_.empty()) {
+      throw std::runtime_error("validation_timeout requires validate");
     }
     for (const auto& reference : references_) {
       for (const auto& id : reference.licenses) {
@@ -246,7 +273,35 @@ public:
     references_[static_cast<size_t>(option) - 1].option = argument;
   }
 
-  void inject(spank_t spank) const {
+  [[nodiscard]] bool validationEnabled() const { return !checker_.empty(); }
+
+  void validate(spank_t spank, mqt::spank::Validation& validation,
+                const std::string& device) const {
+    // S_JOB_ENV requires a mutable char*** output parameter.
+    char** values = nullptr; // NOLINT(misc-const-correctness)
+    // Slurm exposes item lookup through a variadic C ABI.
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
+    if (spank_get_item(spank, S_JOB_ENV, &values) != ESPANK_SUCCESS ||
+        values == nullptr) {
+      throw std::runtime_error("could not read the job environment");
+    }
+    std::vector<std::string> environment;
+    size_t bytes = 0;
+    // S_JOB_ENV is a borrowed, null-terminated array owned by Slurm.
+    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    for (size_t index = 0; values[index] != nullptr; ++index) {
+      std::string entry{values[index]};
+      bytes += entry.size() + 1;
+      if (bytes > 128UL * 1024) {
+        throw std::runtime_error("validation environment exceeds 128 KiB");
+      }
+      environment.push_back(std::move(entry));
+    }
+    // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    validation.check(checker_, timeout_, device, std::move(environment));
+  }
+
+  auto inject(spank_t spank) const -> std::optional<std::string> {
     const auto expression = jobEnvironment(spank, LICENSE_ENVIRONMENT);
     std::vector<std::string_view> selected;
     if (expression) {
@@ -275,7 +330,7 @@ public:
         throw std::runtime_error(
             "QDMI options require a configured device license");
       }
-      return;
+      return std::nullopt;
     }
 
     apply(spank, CATALOGUE_ENVIRONMENT, catalogueDefault_, catalogueOption_);
@@ -294,6 +349,15 @@ public:
       apply(spank, reference.environment.c_str(), reference.defaultValue,
             reference.option);
     }
+    if (!validationEnabled()) {
+      return std::nullopt;
+    }
+    if (selected.size() != 1 ||
+        (*expression != selected.front() &&
+         *expression != std::string{selected.front()} + ":1")) {
+      throw std::runtime_error("validation requires one unit device license");
+    }
+    return std::string{selected.front()};
   }
 
 private:
@@ -326,12 +390,19 @@ private:
   std::vector<Reference> references_;
   std::optional<std::string> catalogueDefault_;
   std::optional<std::string> catalogueOption_;
+  std::string checker_;
+  int timeout_ = 30;
+  bool hasTimeout_ = false;
 };
 
 Configuration
     configuration; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 bool licenseEnvironmentReady = true;
+mqt::spank::Validation
+    validation; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+bool validationReady = true;
 
 int optionCallback(const int value, const char* argument, int /*remote*/) {
   try {
@@ -355,6 +426,7 @@ int slurm_spank_init(spank_t spank, const int count, char* arguments[]) {
   try {
     configuration = Configuration{};
     licenseEnvironmentReady = true;
+    validationReady = true;
     configuration.parse(count, arguments);
     configuration.registerOptions(spank);
     return ESPANK_SUCCESS;
@@ -376,6 +448,14 @@ int slurm_spank_user_init(spank_t spank, int /*count*/, char* /*arguments*/[]) {
       licenseEnvironmentReady = false;
       fail("could not clear inherited license selection");
     }
+    if (configuration.validationEnabled()) {
+      try {
+        validation.prepare();
+      } catch (...) {
+        validationReady = false;
+        fail("could not prepare launch validation");
+      }
+    }
   }
   return ESPANK_SUCCESS;
 }
@@ -388,7 +468,13 @@ int slurm_spank_task_init(spank_t spank, int /*count*/, char* /*arguments*/[]) {
     if (!licenseEnvironmentReady) {
       throw std::runtime_error("could not clear inherited license selection");
     }
-    configuration.inject(spank);
+    const auto device = configuration.inject(spank);
+    if (device) {
+      if (!validationReady) {
+        throw std::runtime_error("could not prepare launch validation");
+      }
+      configuration.validate(spank, validation, *device);
+    }
     return ESPANK_SUCCESS;
   } catch (const std::exception& error) {
     fail(error.what());

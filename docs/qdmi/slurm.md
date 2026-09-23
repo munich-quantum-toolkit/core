@@ -199,6 +199,37 @@ and [IQM guide](https://github.com/iqm-finland/QDMI-on-IQM). Provider migrations
 replace the legacy SPANK module and options, including IQM's embedded early
 validation and alias-derived license names. Use one shared module per cluster.
 
+## Optionally validate before task launch
+
+Administrators can enable a bounded readiness check by adding the absolute
+checker path to the shared module's plugstack line:
+
+```ini
+required /usr/local/lib/slurm/mqt-core-qdmi-spank.so licenses=mqt.sc.default validate=/usr/local/bin/mqt-core-qdmi-check validation_timeout=30
+```
+
+Validation is disabled when `validate` is absent. `validation_timeout` defaults
+to 30 seconds and accepts whole seconds from 1 to 3600. The selected license
+must name one configured device with an implicit count or `:1`.
+
+The module runs the checker as the job user with a copy of the job environment
+after configuration injection. It does not load a provider in a Slurm daemon. An
+unavailable device, checker failure, or timeout prevents tasks using that check
+from starting and does not drain the node. The checker still accepts both `IDLE`
+and `BUSY`; it does not reserve the device or authorize a later submission.
+
+Each node caches the first check per job step. Tasks with matching configuration
+reuse its result; tasks with different configuration run their own bounded
+check. Other tasks may already have started when a check fails. The comparison
+includes the device ID and all environment entries except `SLURM_` and `SLURMD_`
+metadata. Provider configuration must not depend on those metadata variables.
+Environments larger than 128 KiB are rejected when validation is enabled.
+
+Place the module after other plugins that set provider configuration. Slurm runs
+task prologs after the validation hook, so task prologs must not change provider
+configuration. This is a readiness snapshot of the inputs at the hook; the
+application must still handle changes in device availability and credentials.
+
 ## Submit a DDSIM job
 
 Save this program as `bell.py` in a location that all compute nodes can read:

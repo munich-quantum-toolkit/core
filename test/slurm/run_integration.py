@@ -464,7 +464,7 @@ def parse_arguments(arguments: Sequence[str]) -> argparse.Namespace:
 
 
 def test_provider(options: argparse.Namespace) -> None:
-    """Run the same provider workload with direct configuration and SPANK."""
+    """Run provider workloads with direct configuration, injection, and validation."""
     environment = list(options.reference)
     if options.qdmi_config_file:
         environment.append(f"MQT_CORE_QDMI_CONFIG_FILE={options.qdmi_config_file}")
@@ -480,8 +480,9 @@ def test_provider(options: argparse.Namespace) -> None:
     for reference in options.reference:
         name, _, value = reference.partition("=")
         configuration.append(f"reference={name}:{options.device_license}:{value}")
-    (RUNTIME / "plugstack.conf").write_text(" ".join(configuration) + "\n", encoding="utf-8")
-    job(*allocation, *options.command, timeout=300)
+    for validation in ("", " validate=/usr/local/bin/mqt-core-qdmi-check"):
+        (RUNTIME / "plugstack.conf").write_text(" ".join(configuration) + validation + "\n", encoding="utf-8")
+        job(*allocation, *options.command, timeout=300)
     (RUNTIME / "plugstack.conf").write_text("", encoding="utf-8")
 
 
@@ -625,6 +626,194 @@ def test_spank_transport() -> None:
     (RUNTIME / "plugstack.conf").write_text("", encoding="utf-8")
 
 
+def test_spank_validation() -> None:
+    """Prove bounded readiness checks at the real, unprivileged task hook."""
+    selected = "mqt.sc.default"
+    log = RUNTIME / "jobs" / "checker.jsonl"
+    body = RUNTIME / "jobs" / "validated-body"
+    catalogue = "/jobs/validation.qdmi.json"
+    (RUNTIME / "jobs" / "validation.qdmi.json").write_text(
+        '{"schema-version":1,"qdmi":{"devices":[]}}', encoding="utf-8"
+    )
+    configuration = (
+        "required /usr/local/lib/slurm/mqt-core-qdmi-spank.so "
+        f"licenses={selected},mqt.ddsim.default qdmi_config_file={catalogue} "
+        f"reference=MQT_SLURM_TEST_REFERENCE:{selected}:site-value"
+    )
+    probe = "/workspace/test/slurm/checker_probe.py"
+    environment = (
+        "env",
+        "MQT_SLURM_CHECKER_LOG=/jobs/checker.jsonl",
+        "MQT_SLURM_TEST_REFERENCE=job-value",
+    )
+    allocation = ("srun", "--immediate=5", "--time=1", "--nodes=2", "--ntasks=4", f"--licenses={selected}")
+    program = "from pathlib import Path; Path('/jobs/validated-body').touch()"
+
+    def calls() -> list[dict[str, Any]]:
+        return [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()] if log.exists() else []
+
+    def configure(checker: str | None = probe) -> None:
+        validation = f" validate={checker} validation_timeout=3" if checker else ""
+        (RUNTIME / "plugstack.conf").write_text(configuration + validation + "\n", encoding="utf-8")
+        log.unlink(missing_ok=True)
+        body.unlink(missing_ok=True)
+
+    def assert_released() -> None:
+        for node in ("node1", "node2"):
+            wait_for(f"{node} to return to IDLE after validation", lambda node=node: node_is_idle(node))
+            assert "DRAIN" not in node_record(node)
+        assert_license(selected, total=1, used=0, free=1)
+
+    def assert_no_processes(records: list[dict[str, Any]]) -> None:
+        for record in records:
+            for pid in (record["pid"], record["child"]):
+                if pid is not None:
+                    compute(
+                        record["node"],
+                        "python3",
+                        "-c",
+                        "from pathlib import Path; "
+                        f"p=Path('/proc/{pid}/stat'); "
+                        "assert not p.exists() or p.read_text().split(') ', 1)[1].startswith('Z ')",
+                    )
+
+    configure(None)
+    job(*environment, *allocation, "python3", "-c", program, timeout=60)
+    assert body.exists()
+    assert not calls()
+    assert_released()
+
+    configure()
+    job(*environment, *allocation, "python3", "-c", program, timeout=60)
+    records = calls()
+    assert body.exists()
+    assert len(records) == 2, records
+    assert {record["node"] for record in records} == {"node1", "node2"}
+    for record in records:
+        assert record["uid"] == record["euid"] == record["gid"] == 10000, record
+        assert record["reference"] == "job-value", record
+        assert record["catalogue"] == catalogue, record
+        assert record["arguments"] == ["--device", selected, "--timeout", "3"], record
+    assert_released()
+
+    configure()
+    job(*environment, *allocation, "--mpi=pmi2", "python3", "-c", program, timeout=60)
+    assert body.exists()
+    assert len(calls()) == 4, calls()
+    assert_released()
+
+    configure()
+    plugstack = RUNTIME / "plugstack.conf"
+    plugstack.write_text(
+        "required /usr/local/lib/slurm/mqt-test-validation-environment.so\n" + plugstack.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    job(*environment, *allocation, "python3", "-c", program, timeout=60)
+    assert body.exists()
+    records = calls()
+    assert len(records) == 4, records
+    assert {record["reference"] for record in records} == {"job-value", "task-specific"}
+    assert_released()
+
+    configure()
+    job(
+        *environment,
+        "sbatch",
+        "--wait",
+        "--time=1",
+        "--nodes=2",
+        "--ntasks=4",
+        f"--licenses={selected}",
+        "--output=/jobs/validator-batch.out",
+        "--wrap",
+        shlex.join(("srun", "--ntasks=4", "python3", "-c", program)),
+        timeout=120,
+    )
+    records = calls()
+    assert body.exists()
+    assert len(records) == 3, records
+    assert len({(record["node"], record["step"]) for record in records}) == 3, records
+    assert_released()
+
+    for mode in ("fail", "hang"):
+        configure()
+        started = time.monotonic()
+        result = job(
+            *environment,
+            f"MQT_SLURM_CHECKER_MODE={mode}",
+            *allocation,
+            "--mpi=pmi2",
+            "python3",
+            "-c",
+            program,
+            check=False,
+            timeout=60,
+        )
+        assert result.returncode != 0
+        assert not body.exists()
+        assert "test provider credential" not in result.stdout + result.stderr
+        assert time.monotonic() - started < 15
+        records = calls()
+        assert len(records) == 4, records
+        assert_released()
+        assert_no_processes(records)
+
+    for checker, extra in (("/missing/mqt-core-qdmi-check", ()), (probe, ("MQT_CORE_QDMI_CONFIG_JSON=invalid",))):
+        configure(checker)
+        result = job(*environment, *extra, *allocation, "python3", "-c", program, check=False, timeout=60)
+        assert result.returncode != 0
+        assert not body.exists()
+        assert_released()
+
+    configure()
+    job(*environment, "SLURM_JOB_LICENSES=mqt.sc.default", "srun", "--time=1", "--ntasks=1", "/bin/true")
+    assert not calls()
+
+    configure()
+    result = job(
+        *environment,
+        "python3",
+        "-c",
+        "import os, sys; os.environ['LARGE_ONE']='x'*65500; os.environ['LARGE_TWO']='x'*65500; "
+        "os.execvp(sys.argv[1], sys.argv[1:])",
+        *allocation,
+        "python3",
+        "-c",
+        program,
+        check=False,
+        timeout=60,
+    )
+    assert result.returncode != 0
+    assert "validation environment exceeds 128 KiB" in result.stdout + result.stderr
+    assert not calls()
+    assert not body.exists()
+    assert_released()
+
+    configure()
+    submitted = (
+        job(
+            *environment,
+            "MQT_SLURM_CHECKER_MODE=hang",
+            "sbatch",
+            "--parsable",
+            "--time=1",
+            f"--licenses={selected}",
+            "--output=/jobs/validator-cancel.out",
+            "--wrap",
+            shlex.join(("python3", "-c", program)),
+        )
+        .stdout.strip()
+        .split(";", maxsplit=1)[0]
+    )
+    wait_for("the cancellable checker to start", lambda: bool(calls()))
+    job("scancel", submitted)
+    wait_for("the validation job to be cancelled", lambda: job_finished(submitted, expected_state="CANCELLED"))
+    assert not body.exists()
+    assert_released()
+    assert_no_processes(calls())
+    (RUNTIME / "plugstack.conf").write_text("", encoding="utf-8")
+
+
 def main(arguments: Sequence[str] = ()) -> None:
     """Build the shared cluster and run its Core or provider workload."""
     options = parse_arguments(arguments)
@@ -700,6 +889,8 @@ def main(arguments: Sequence[str] = ()) -> None:
         else:
             test_core()
         test_spank_transport()
+        if not options.command:
+            test_spank_validation()
 
         success = True
         LOGGER.info("Slurm admission and execution checks: %.2fs", time.monotonic() - testing_at)

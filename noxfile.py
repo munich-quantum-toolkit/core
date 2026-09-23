@@ -111,7 +111,7 @@ def cpp_lint(session: nox.Session) -> None:
             "--style=",
             "--tidy-checks=",
             f"--version={llvm_bin}",
-            "--ignore=build|!build/mlir/**|**/include|include|vendor/**|spank/**",
+            "--ignore=build|!build/mlir/**|**/include|include|vendor/**|spank/**|test/slurm/validation_environment.cpp",
             "--thread-comments=false",
             "--step-summary=false",
             "--database=build/cpp-lint",

@@ -16,9 +16,12 @@ RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
         cmake g++ make libslurm-dev
 COPY --from=core spank /src/spank
+COPY --from=core test/slurm/validation_environment.cpp /src/validation_environment.cpp
 RUN cmake -S /src/spank -B /build -DCMAKE_BUILD_TYPE=Release \
     && cmake --build /build --parallel 2 \
-    && cmake --install /build --prefix /usr/local
+    && cmake --install /build --prefix /usr/local \
+    && g++ -std=c++20 -fPIC -shared /src/validation_environment.cpp \
+        -o /usr/local/lib/slurm/mqt-test-validation-environment.so
 
 FROM ubuntu:26.04 AS base
 
@@ -37,6 +40,7 @@ RUN apt-get update \
 
 COPY --from=uv /uv /uvx /bin/
 COPY --from=spank /usr/local/lib/slurm/mqt-core-qdmi-spank.so /usr/local/lib/slurm/
+COPY --from=spank /usr/local/lib/slurm/mqt-test-validation-environment.so /usr/local/lib/slurm/
 COPY --from=spank /usr/local/share/licenses/mqt-core-qdmi-spank /usr/local/share/licenses/mqt-core-qdmi-spank
 COPY mqt-slurm-prepare /usr/local/sbin/mqt-slurm-prepare
 COPY mqt-slurm-install-provider /usr/local/sbin/mqt-slurm-install-provider

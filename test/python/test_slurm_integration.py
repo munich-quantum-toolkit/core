@@ -230,8 +230,10 @@ def test_provider_modes_keep_references_in_job_configuration(tmp_path: Path, mon
     runner.test_provider(options)
     assert commands[0][:3] == ("env", "PROVIDER_PROFILE=profile", "MQT_CORE_QDMI_CONFIG_FILE=/opt/provider.qdmi.json")
     assert commands[1][0] == "srun"
-    assert commands[0][-2:] == commands[1][-2:] == ("python3", "/workload/probe.py")
+    assert commands[0][-2:] == commands[1][-2:] == commands[2][-2:] == ("python3", "/workload/probe.py")
     assert not configurations[0]
     assert "licenses=provider.device" in configurations[1]
     assert "reference=PROVIDER_PROFILE:provider.device:profile" in configurations[1]
+    assert "validate=" not in configurations[1]
+    assert configurations[2] == configurations[1].rstrip() + " validate=/usr/local/bin/mqt-core-qdmi-check\n"
     assert not (tmp_path / "plugstack.conf").read_text()
