@@ -3416,84 +3416,88 @@ TEST_F(MappingPassFixture, PreserveBasisStatesAfterNativeScoredCompilation) {
 TEST_F(MappingPassFixture, PreserveRegionsWithIdleWiresAcrossCostAvailability) {
   const auto topology = getSquareGridTarget(3);
   for (const auto& target : {topology, withNativeBasis(topology, "cz")}) {
-    for (size_t shape = 0; shape < 4; ++shape) {
-      for (size_t budget : {size_t{0}, size_t{1024} * 1024}) {
-        std::string serial;
-        for (bool parallel : {false, true}) {
-          SCOPED_TRACE(testing::Message() << shape << ", budget=" << budget
-                                          << ", parallel=" << parallel);
-          context->enableMultithreading(parallel);
-          QCOProgramBuilder builder(context.get());
-          builder.initialize({cbit::RegisterType::get(context.get(), 3)});
-          auto bits = builder.allocClassicalBitRegister(3);
-          SmallVector<Value> qubits;
-          for (size_t i = 0; i < 3; ++i) {
-            qubits.push_back(builder.allocQubit());
-          }
-          qubits[0] = builder.x(qubits[0]);
-          Value condition;
-          std::tie(qubits[0], condition) = builder.measure(qubits[0]);
-          const auto body = [&](ValueRange args) {
-            SmallVector<Value> values(args);
-            std::tie(values[0], values[2]) = builder.cx(values[0], values[2]);
-            std::tie(values[2], values[1]) = builder.cx(values[2], values[1]);
-            return values;
-          };
-          if (shape == 0) {
-            qubits =
-                builder.qcoIf(condition, qubits, body, [&](ValueRange args) {
-                  SmallVector<Value> values(args);
-                  std::tie(values[0], values[2]) =
-                      builder.swap(values[0], values[2]);
-                  return values;
-                });
-          } else if (shape == 1) {
-            qubits =
-                builder.scfFor(0, 2, 1, qubits, [&](Value, ValueRange args) {
-                  return body(args);
-                });
-          } else if (shape == 2) {
-            qubits = builder.scfWhile(
-                qubits,
-                [&](ValueRange args) {
-                  auto values = body(args);
-                  builder.scfCondition(builder.boolConstant(false), values);
-                  return values;
-                },
-                body);
-          } else {
-            const std::array<int64_t, 1> cases{0};
-            const std::array<function_ref<SmallVector<Value>(ValueRange)>, 1>
-                bodies{body};
-            qubits = builder.qcoIndexSwitch(0, qubits, cases, bodies, body);
-          }
-          std::tie(qubits[0], qubits[2]) = builder.cx(qubits[0], qubits[2]);
-          for (auto [index, qubit] : llvm::enumerate(qubits)) {
-            auto measured =
-                builder.measure(qubit, bits, static_cast<int64_t>(index));
-            builder.sink(measured.first);
-          }
-          auto moduleOp = builder.finalize(bits);
-          ASSERT_TRUE(succeeded(verify(*moduleOp)));
-          ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
-          const auto expected = qco::sample(getEntryPoint(*moduleOp), 1, 42);
-          ASSERT_TRUE(succeeded(expected));
-          ASSERT_TRUE(succeeded(runPass(
-              *moduleOp, target,
-              MappingPassOptions{.ntrials = 2, .searchMemoryLimit = budget})));
-          ASSERT_TRUE(succeeded(verify(*moduleOp)));
-          ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
-          PassManager native(context.get());
-          populateTargetNativeSynthesisPipeline(native);
-          ASSERT_TRUE(succeeded(native.run(*moduleOp)));
-          ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
-          const auto actual = qco::sample(getEntryPoint(*moduleOp), 1, 42);
-          ASSERT_TRUE(succeeded(actual));
-          EXPECT_EQ(*actual, *expected);
-          if (parallel) {
-            EXPECT_EQ(printModule(*moduleOp), serial);
-          } else {
-            serial = printModule(*moduleOp);
+    for (size_t iterations : {size_t{0}, size_t{1}}) {
+      for (size_t shape = 0; shape < 4; ++shape) {
+        for (size_t budget : {size_t{0}, size_t{1024} * 1024}) {
+          std::string serial;
+          for (bool parallel : {false, true}) {
+            SCOPED_TRACE(testing::Message() << shape << ", budget=" << budget
+                                            << ", parallel=" << parallel);
+            context->enableMultithreading(parallel);
+            QCOProgramBuilder builder(context.get());
+            builder.initialize({cbit::RegisterType::get(context.get(), 3)});
+            auto bits = builder.allocClassicalBitRegister(3);
+            SmallVector<Value> qubits;
+            for (size_t i = 0; i < 3; ++i) {
+              qubits.push_back(builder.allocQubit());
+            }
+            qubits[0] = builder.x(qubits[0]);
+            Value condition;
+            std::tie(qubits[0], condition) = builder.measure(qubits[0]);
+            const auto body = [&](ValueRange args) {
+              SmallVector<Value> values(args);
+              std::tie(values[0], values[2]) = builder.cx(values[0], values[2]);
+              std::tie(values[2], values[1]) = builder.cx(values[2], values[1]);
+              return values;
+            };
+            if (shape == 0) {
+              qubits =
+                  builder.qcoIf(condition, qubits, body, [&](ValueRange args) {
+                    SmallVector<Value> values(args);
+                    std::tie(values[0], values[2]) =
+                        builder.swap(values[0], values[2]);
+                    return values;
+                  });
+            } else if (shape == 1) {
+              qubits =
+                  builder.scfFor(0, 2, 1, qubits, [&](Value, ValueRange args) {
+                    return body(args);
+                  });
+            } else if (shape == 2) {
+              qubits = builder.scfWhile(
+                  qubits,
+                  [&](ValueRange args) {
+                    auto values = body(args);
+                    builder.scfCondition(builder.boolConstant(false), values);
+                    return values;
+                  },
+                  body);
+            } else {
+              const std::array<int64_t, 1> cases{0};
+              const std::array<function_ref<SmallVector<Value>(ValueRange)>, 1>
+                  bodies{body};
+              qubits = builder.qcoIndexSwitch(0, qubits, cases, bodies, body);
+            }
+            std::tie(qubits[0], qubits[2]) = builder.cx(qubits[0], qubits[2]);
+            for (auto [index, qubit] : llvm::enumerate(qubits)) {
+              auto measured =
+                  builder.measure(qubit, bits, static_cast<int64_t>(index));
+              builder.sink(measured.first);
+            }
+            auto moduleOp = builder.finalize(bits);
+            ASSERT_TRUE(succeeded(verify(*moduleOp)));
+            ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+            const auto expected = qco::sample(getEntryPoint(*moduleOp), 1, 42);
+            ASSERT_TRUE(succeeded(expected));
+            ASSERT_TRUE(succeeded(
+                runPass(*moduleOp, target,
+                        MappingPassOptions{.niterations = iterations,
+                                           .ntrials = 2,
+                                           .searchMemoryLimit = budget})));
+            ASSERT_TRUE(succeeded(verify(*moduleOp)));
+            ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+            PassManager native(context.get());
+            populateTargetNativeSynthesisPipeline(native);
+            ASSERT_TRUE(succeeded(native.run(*moduleOp)));
+            ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+            const auto actual = qco::sample(getEntryPoint(*moduleOp), 1, 42);
+            ASSERT_TRUE(succeeded(actual));
+            EXPECT_EQ(*actual, *expected);
+            if (parallel) {
+              EXPECT_EQ(printModule(*moduleOp), serial);
+            } else {
+              serial = printModule(*moduleOp);
+            }
           }
         }
       }

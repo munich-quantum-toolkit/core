@@ -75,3 +75,34 @@ are recorded; original untracked files are unchanged.
 External artifacts, including 14 plots, all individual losses, family,
 architecture, width, timing, CPU, RSS, and resource-grid breakdowns, live in
 `/home/nvidia/.codex/experiments/pr2607-routing-simplification-20260923/`.
+
+### Integration with #2612
+
+Rebased on `d119ffbb8`, including #2612. The total trial budget now includes
+greedy, identity, and random starts in that order. Every start receives the same
+refinement count; zero scores the initial layout directly. Compiler and CLI
+validation now accept zero iterations, matching the mapping pass. Each trial
+retains only its initial layout and score; its temporary routing state and cost
+tracker remain local to the active traversal.
+
+One independent specialist completed a full ponytail review. Both findings were
+incorporated: routing returns statistics directly instead of propagating
+failures with no source, and trial construction calls `emplace_back` directly.
+Input validation, unavailable-cost fallback, deterministic first-minimum
+selection, and final synthesis diagnostics remain intact.
+
+The rebuilt implementation passes all 997 affected C++ tests, 24 Python mapping
+tests, and three CLI CTest checks. Binding stubs were regenerated. The mapper
+and its tests compile with GCC and Clang. Whole-file C++ lint and repository
+lint pass.
+
+The results above describe the pre-#2612 implementation at `7516fc490`; no
+performance campaign was repeated for this rebase. They do not establish
+performance of the new trial generation. Integration and review logs live in
+`/home/nvidia/.codex/experiments/pr2607-rebase-2612-20260923/`.
+
+Zero-refinement support and trial documentation merged in #2615; the removal of
+dead routing failure paths merged in #2616. This PR is rebased on main at
+`9cd5bfc87`, with those changes excluded from its review diff. The
+native-routing implementation, tests, and pass documentation are unchanged from
+`30bb32f18`.
