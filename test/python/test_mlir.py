@@ -433,8 +433,7 @@ def test_mapping_options_defaults() -> None:
     ("method", "all_to_all"),
     [("compile_for_target", False), ("compile_for_target", True), ("synthesize_for_target", True)],
 )
-@pytest.mark.parametrize("field", ["trials", "iterations"])
-def test_mapping_options_reject_zero_counts(method: str, field: str, *, all_to_all: bool) -> None:
+def test_mapping_options_reject_zero_trials(method: str, *, all_to_all: bool) -> None:
     """Reject invalid public mapping controls before rewriting the input."""
     target = CompilerTarget(
         2,
@@ -446,18 +445,20 @@ def test_mapping_options_reject_zero_counts(method: str, field: str, *, all_to_a
     program = QCProgram.from_openqasm_str(QASM_STRING).to_qco()
     before = program.ir
 
-    mapping = MappingOptions()
-    setattr(mapping, field, 0)
-    with pytest.raises(RuntimeError, match=f"mapping {field} must be greater than zero"):
+    mapping = MappingOptions(trials=0)
+    with pytest.raises(RuntimeError, match="mapping trials must be greater than zero"):
         getattr(program, method)(_test_target_environment(target), options=CompilationOptions(seed=7, mapping=mapping))
 
     assert program.ir == before
 
 
 @pytest.mark.parametrize("seed", [0, 7])
+@pytest.mark.parametrize("iterations", [0, 2])
 @pytest.mark.parametrize("lookahead", [0, 5])
 @pytest.mark.parametrize("search_memory_limit", [0, 1024])
-def test_explicit_mapping_options_are_repeatable(seed: int, lookahead: int, search_memory_limit: int) -> None:
+def test_explicit_mapping_options_are_repeatable(
+    seed: int, iterations: int, lookahead: int, search_memory_limit: int
+) -> None:
     """Use fixed native trials for repeatable sparse-target compilation."""
     source = """OPENQASM 3.1;
 include "stdgates.inc";
@@ -474,7 +475,9 @@ out = measure q;
     )
     options = CompilationOptions(
         seed=seed,
-        mapping=MappingOptions(trials=3, iterations=2, lookahead=lookahead, search_memory_limit=search_memory_limit),
+        mapping=MappingOptions(
+            trials=3, iterations=iterations, lookahead=lookahead, search_memory_limit=search_memory_limit
+        ),
     )
     outputs = []
     for _ in range(2):
@@ -484,7 +487,7 @@ out = measure q;
     assert outputs[0] == outputs[1]
     assert options.seed == seed
     assert options.mapping.trials == 3
-    assert options.mapping.iterations == 2
+    assert options.mapping.iterations == iterations
     assert options.mapping.lookahead == lookahead
     assert options.mapping.search_memory_limit == search_memory_limit
 
@@ -497,18 +500,14 @@ out = measure q;
 
 
 @pytest.mark.parametrize("output_kind", ["typed", "payload", "device", "submit"])
-@pytest.mark.parametrize("field", ["trials", "iterations"])
-def test_compilation_entry_points_forward_mapping_options(
-    output_kind: str, field: str, capfd: pytest.CaptureFixture[str]
-) -> None:
+def test_compilation_entry_points_forward_mapping_options(output_kind: str, capfd: pytest.CaptureFixture[str]) -> None:
     """Keep mapping controls effective through every public target entry point."""
     target = CompilerTarget(
         2,
         connectivity=CompilerTarget.Connectivity([(0, 1)]),
         native_operations=CompilerTarget.NativeOperations.unrestricted(),
     )
-    mapping = MappingOptions()
-    setattr(mapping, field, 0)
+    mapping = MappingOptions(trials=0)
     options = CompilationOptions(mapping=mapping)
     if output_kind == "submit":
         compile_call = partial(submit_program, QASM_STRING, target="mqt.ddsim.default", options=options)
@@ -524,7 +523,7 @@ def test_compilation_entry_points_forward_mapping_options(
         )
     with pytest.raises((RuntimeError, ValueError)):
         compile_call()
-    assert f"mapping {field} must be greater than zero" in capfd.readouterr().err
+    assert "mapping trials must be greater than zero" in capfd.readouterr().err
 
 
 @requires_qiskit_translation

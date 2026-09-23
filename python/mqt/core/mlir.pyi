@@ -534,7 +534,7 @@ class MappingOptions:
     def trials(self, arg: int | None, /) -> None: ...
     @property
     def iterations(self) -> int:
-        """Positive number of forward/backward rounds to refine the initial layout."""
+        """Forward/backward refinement rounds; zero scores each start directly."""
 
     @iterations.setter
     def iterations(self, arg: int, /) -> None: ...

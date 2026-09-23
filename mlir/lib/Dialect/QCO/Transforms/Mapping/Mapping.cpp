@@ -709,8 +709,7 @@ public:
 protected:
   void runOnOperation() override {
     auto moduleOp = getOperation();
-    if (!std::isfinite(alpha.getValue()) || alpha <= 0 || niterations < 0 ||
-        ntrials == 0) {
+    if (!std::isfinite(alpha.getValue()) || alpha <= 0 || ntrials == 0) {
       moduleOp.emitError("mapping requires finite alpha > 0, niterations >= 0, "
                          "and ntrials > 0");
       signalPassFailure();
@@ -1118,8 +1117,7 @@ private:
     return std::pair{Layout::fromMapping(mapping), false};
   }
 
-  /// Refine identity, random, and greedy starts with forward/backward routing.
-  /// Keep the raw greedy start too: refinement can worsen forward routing.
+  /// Refine greedy, identity, and random starts with forward/backward routing.
   /// Score each candidate with a forward traversal, preserving its start
   /// layout.
   FailureOr<Layout> generateLayout(const Wires& wires, const WireInfos& infos) {
