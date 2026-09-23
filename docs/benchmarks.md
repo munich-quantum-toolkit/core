@@ -11,9 +11,8 @@ mystnb:
 MQT Core defines each structured quantum benchmark by benchmark-specific
 parameters and an analytic or verification reference. A benchmark instance can
 produce a structured QC program, a resolved manifest, and a stable case ID. The
-generated program returns one classical register, named `phase` for Shor and
-`result` for the other families. Outcome strings are big-endian: the
-highest-index result bit is the leftmost character.
+generated program returns one classical register named `result`. Outcome strings
+are big-endian: the highest-index result bit is the leftmost character.
 
 For an end-to-end device example, start with {doc}`getting_started`, which
 factors 21 with Shor's algorithm. The
@@ -289,18 +288,10 @@ multiplier below and clears its workspace using inverse arithmetic. Generation
 precomputes modular powers and rotation tables of polynomial size; it does not
 compute the order or enumerate a modular orbit. Device compilation applies the
 normal inliner and target lowering. See {doc}`getting_started` for execution,
-phase interpretation, and the callback-based `shor.factor` workflow. Adaptive
-QIR retains the arithmetic loops. Mapped OpenQASM 3 specializes physical-qubit
-indices and is subject to the compiler's operation expansion limit; the DDSIM
-examples cover 21 through Adaptive QIR and 15 through OpenQASM 3.
+phase interpretation, and the callback-based `shor.factor` workflow through
+Adaptive QIR and OpenQASM 3.
 
-`qft_cutoff=None` selects exact Fourier arithmetic. A positive cutoff keeps
-controlled rotations only up to that distance in the arithmetic and phase
-feedback. A cutoff covering all register distances is equivalent to exact
-arithmetic. Smaller cutoffs reduce the gate count from $O(n^4)$ to
-$O(n^3\min(\mathtt{qft\_cutoff},n))$ and can change the sampled success rate;
-success need not improve monotonically for each finite sample. Verification
-always checks exact integer factors. The 31-bit input limit bounds
+The circuit uses exact Fourier arithmetic. The 31-bit input limit bounds
 representation size, not practical simulation cost or device capacity.
 
 The manifest uses reference kind `verification`, model `shor_factors`, and

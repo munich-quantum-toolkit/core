@@ -22,7 +22,6 @@
 
 #include "llvm/ADT/SmallVector.h"
 
-#include <cmath>
 #include <numbers>
 
 namespace mqt::bench::detail {
@@ -34,23 +33,17 @@ struct PhaseData {
   int64_t width;
   Value angles;
   Value modulusOffset;
-  Value negativeOne;
 };
 
 } // namespace
 
 static void appendPhaseAngles(SmallVectorImpl<double>& angles,
-                              const llvm::APInt& value,
-                              std::optional<size_t> cutoff) {
+                              const llvm::APInt& value) {
   long double angle = 0.L;
   for (unsigned bit = 0; bit < value.getBitWidth(); ++bit) {
     angle /= 2.L;
     if (value[bit]) {
       angle += std::numbers::pi_v<long double>;
-    }
-    if (cutoff && bit > *cutoff && value[bit - *cutoff - 1]) {
-      angle -= std::ldexp(std::numbers::pi_v<long double>,
-                          -static_cast<int>(*cutoff + 1));
     }
     angles.push_back(static_cast<double>(angle));
   }
@@ -58,14 +51,13 @@ static void appendPhaseAngles(SmallVectorImpl<double>& angles,
 
 void appendModularPhaseAngles(SmallVectorImpl<double>& angles,
                               llvm::APInt multiplier,
-                              const llvm::APInt& modulus,
-                              std::optional<size_t> cutoff) {
+                              const llvm::APInt& modulus) {
   const auto bits = modulus.getBitWidth() - 1;
   for (unsigned bit = 0; bit < bits; ++bit) {
-    appendPhaseAngles(angles, multiplier, cutoff);
+    appendPhaseAngles(angles, multiplier);
     multiplier = multiplier.shl(1).urem(modulus);
   }
-  appendPhaseAngles(angles, modulus, cutoff);
+  appendPhaseAngles(angles, modulus);
 }
 
 static void phaseAdd(qc::QCProgramBuilder& builder, Value accumulator,
@@ -78,14 +70,12 @@ static void phaseAdd(qc::QCProgramBuilder& builder, Value accumulator,
         tensor::ExtractOp::create(builder, data.angles, ValueRange{angleIndex})
             .getResult();
     if (inverse) {
-      angle =
-          arith::MulFOp::create(builder, angle, data.negativeOne).getResult();
+      angle = arith::MulFOp::create(builder, angle, builder.floatConstant(-1.))
+                  .getResult();
     }
     auto qubit = builder.loadQubit(accumulator, target);
     if (controls.empty()) {
       builder.p(angle, qubit);
-    } else if (controls.size() == 1U) {
-      builder.cp(angle, controls.front(), qubit);
     } else {
       builder.mcp(angle, controls, qubit);
     }
@@ -94,23 +84,22 @@ static void phaseAdd(qc::QCProgramBuilder& builder, Value accumulator,
 
 static void modularAdd(qc::QCProgramBuilder& builder, Value accumulator,
                        const PhaseData& data, Value addendOffset,
-                       ValueRange controls, Value work, bool inverse,
-                       std::optional<size_t> cutoff) {
+                       ValueRange controls, Value work, bool inverse) {
   auto overflowIndex = builder.indexConstant(data.width - 1);
 
   if (inverse) {
     /// Reverse the modular-adder operations and every phase rotation.
     phaseAdd(builder, accumulator, data, addendOffset, controls, true);
-    inverseQFT(builder, accumulator, data.width, cutoff);
+    inverseQFT(builder, accumulator, data.width);
     builder.x(builder.loadQubit(accumulator, overflowIndex));
     builder.cx(builder.loadQubit(accumulator, overflowIndex), work);
     builder.x(builder.loadQubit(accumulator, overflowIndex));
-    forwardQFT(builder, accumulator, data.width, cutoff);
+    forwardQFT(builder, accumulator, data.width);
     phaseAdd(builder, accumulator, data, addendOffset, controls, false);
     phaseAdd(builder, accumulator, data, data.modulusOffset, work, true);
-    inverseQFT(builder, accumulator, data.width, cutoff);
+    inverseQFT(builder, accumulator, data.width);
     builder.cx(builder.loadQubit(accumulator, overflowIndex), work);
-    forwardQFT(builder, accumulator, data.width, cutoff);
+    forwardQFT(builder, accumulator, data.width);
     phaseAdd(builder, accumulator, data, data.modulusOffset, {}, false);
     phaseAdd(builder, accumulator, data, addendOffset, controls, true);
     return;
@@ -118,26 +107,26 @@ static void modularAdd(qc::QCProgramBuilder& builder, Value accumulator,
   phaseAdd(builder, accumulator, data, addendOffset, controls, false);
   phaseAdd(builder, accumulator, data, data.modulusOffset, {}, true);
 
-  inverseQFT(builder, accumulator, data.width, cutoff);
+  inverseQFT(builder, accumulator, data.width);
   builder.cx(builder.loadQubit(accumulator, overflowIndex), work);
-  forwardQFT(builder, accumulator, data.width, cutoff);
+  forwardQFT(builder, accumulator, data.width);
 
   phaseAdd(builder, accumulator, data, data.modulusOffset, work, false);
   phaseAdd(builder, accumulator, data, addendOffset, controls, true);
 
-  inverseQFT(builder, accumulator, data.width, cutoff);
+  inverseQFT(builder, accumulator, data.width);
   builder.x(builder.loadQubit(accumulator, overflowIndex));
   builder.cx(builder.loadQubit(accumulator, overflowIndex), work);
   builder.x(builder.loadQubit(accumulator, overflowIndex));
-  forwardQFT(builder, accumulator, data.width, cutoff);
+  forwardQFT(builder, accumulator, data.width);
 
   phaseAdd(builder, accumulator, data, addendOffset, controls, false);
 }
 
 void multiplyAccumulate(qc::QCProgramBuilder& builder, Value control,
                         Value multiplicand, Value accumulator, Value work,
-                        Value angles, Value offset, int64_t bits, bool inverse,
-                        std::optional<size_t> cutoff) {
+                        Value angles, Value offset, int64_t bits,
+                        bool inverse) {
   const auto width = bits + 1;
   auto stride = builder.indexConstant(width);
   auto modulusRow = builder.indexConstant(bits * width);
@@ -145,9 +134,8 @@ void multiplyAccumulate(qc::QCProgramBuilder& builder, Value control,
       .width = width,
       .angles = angles,
       .modulusOffset = arith::AddIOp::create(builder, offset, modulusRow),
-      .negativeOne = builder.floatConstant(-1.),
   };
-  forwardQFT(builder, accumulator, width, cutoff);
+  forwardQFT(builder, accumulator, width);
   builder.scfFor(0, bits, 1, [&](Value index) {
     auto bit = index;
     if (inverse) {
@@ -161,14 +149,14 @@ void multiplyAccumulate(qc::QCProgramBuilder& builder, Value control,
         builder.loadQubit(multiplicand, bit),
     };
     modularAdd(builder, accumulator, phases, addendOffset, controls, work,
-               inverse, cutoff);
+               inverse);
   });
-  inverseQFT(builder, accumulator, width, cutoff);
+  inverseQFT(builder, accumulator, width);
 }
 
 func::FuncOp createInPlaceMultiplier(qc::QCProgramBuilder& builder,
-                                     int64_t bits, RankedTensorType anglesType,
-                                     std::optional<size_t> cutoff) {
+                                     int64_t bits,
+                                     RankedTensorType anglesType) {
   auto qubitType = qc::QubitType::get(builder.getContext());
   SmallVector<Type> types{
       qubitType,
@@ -182,7 +170,7 @@ func::FuncOp createInPlaceMultiplier(qc::QCProgramBuilder& builder,
     return builder.createFunction(name, types, [&](ValueRange arguments) {
       multiplyAccumulate(builder, arguments[0], arguments[1], arguments[2],
                          arguments[3], arguments[4], arguments[5], bits,
-                         inverse, cutoff);
+                         inverse);
       return SmallVector<Value>{};
     });
   };

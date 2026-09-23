@@ -33,9 +33,9 @@ Compilation and submission are separate operations:
 {py:func}`~mqt.core.mlir.compile_program` produces a reusable
 {py:class}`~mqt.core.mlir.CompiledProgram`, and
 {py:func}`~mqt.core.mlir.submit_program` creates a device job. `job.wait()`
-waits for completion and reports execution failure. DDSIM selects Adaptive QIR
-for this program; `custom1=17` selects its random seed. Custom job properties
-are device-specific.
+waits for completion and reports execution failure. Both Adaptive QIR and
+OpenQASM 3 execute the same circuit; `custom1=17` selects DDSIM's random seed.
+Custom job properties are device-specific.
 
 The driver first checks for even numbers, primes, and perfect powers. These need
 no quantum execution and use zero attempts. Otherwise it tries base 2, then
@@ -64,10 +64,9 @@ print(f"Verified factors: {evaluation.factors}")
 print(f"Successful shot fraction: {evaluation.success_probability:.3f}")
 ```
 
-The logical output is named `phase`. Counts put the highest-index phase bit on
-the left, so each bitstring encodes an integer $y$ and an estimate $y/2^{10}$.
-Equivalent OpenQASM and QIR payloads use the same bit order. The benchmark
-accepts `job.get_counts()` directly.
+Counts put the highest-index phase bit on the left, so each bitstring encodes an
+integer $y$ and an estimate $y/2^{10}$. Equivalent OpenQASM and QIR payloads use
+the same bit order. The benchmark accepts `job.get_counts()` directly.
 
 Select an observed outcome that yields factors and inspect its rational
 approximation:
@@ -113,7 +112,7 @@ Hellinger fidelity.
 ## Continue
 
 - Read the [Shor benchmark reference](benchmarks.md#shor-order-finding) for
-  input limits, optional approximate Fourier arithmetic, and JSON interfaces.
+  input limits and JSON interfaces.
 - Try the [QPE examples](benchmarks.md#quantum-phase-estimation) to isolate
   phase estimation with a known eigenstate.
 - Work through the {doc}`compiler tutorial <tutorials/index>` to explain

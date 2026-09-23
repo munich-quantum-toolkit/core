@@ -14,9 +14,9 @@ export requirements.
 `TargetEnvironment::supportsIndexedQubits` permits indexed placement for
 Adaptive QIR on all-to-all targets without site-specific operation restrictions.
 The payload legalization pass specializes statically bounded quantum loops when
-indexed placement is unavailable. Its 65,536 cloned-operation budget bounds
-compilation size; it is separate from the DD interpreter's conditional-loop
-execution budget.
+indexed placement is unavailable. Its default one-billion cloned-operation
+budget bounds compilation size; it is separate from the DD interpreter's
+conditional-loop execution budget.
 
 The OpenQASM exporter preserves logical register indexing and lowers constant
 floating-point tables through selection. Mapped programs instead refer to
@@ -30,13 +30,13 @@ aliases would be incorrect.
 ## Shor acceptance
 
 Adaptive QIR can retain Shor's arithmetic loops, references, and tables. The
-benchmark acceptance factors 21 through Adaptive QIR and 15 through mapped
-OpenQASM 3. Exact Shor 21 exceeds the OpenQASM expansion budget. These checks
-passed after #2546; results are recorded in the [Shor plan](../plans/shor.md).
+benchmark acceptance uses the same 15 and 21 inputs through Adaptive QIR and
+mapped OpenQASM 3. The larger expansion budget admits exact Shor 21; validation
+is recorded in the [Shor plan](../plans/shor.md).
 
 DDSIM also accepts raw OpenQASM logical-register loops through direct
 submission; that importer path does not imply that a mapped physical-register
 program can be exported with the same loops. No benchmark-specific pass pipeline
-or larger unrolling budget is introduced.
+is required. The operation budget is a general compiler setting.
 
 [control]: https://openqasm.com/versions/3.1/language/classical.html#looping-and-branching

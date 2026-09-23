@@ -17,7 +17,7 @@ import mqt.core.mlir
 class Options:
     """Parameters for semiclassical Shor order finding."""
 
-    def __init__(self, *, number: int, base: int = 2, qft_cutoff: int | None = None) -> None: ...
+    def __init__(self, *, number: int, base: int = 2) -> None: ...
     @property
     def number(self) -> int:
         """The odd modulus, at most 2**31 - 1."""
@@ -25,10 +25,6 @@ class Options:
     @property
     def base(self) -> int:
         """The base, coprime to the modulus."""
-
-    @property
-    def qft_cutoff(self) -> int | None:
-        """The largest controlled-rotation distance, or ``None`` for exact arithmetic."""
 
 class Evaluation:
     """Verified factors recovered from measured phases."""
@@ -102,12 +98,7 @@ class FactorResult:
         """The number of attempted bases."""
 
 def factor(
-    number: int,
-    run: Callable[[Shor], Mapping[str, int]],
-    *,
-    max_attempts: int = 16,
-    seed: int = 0,
-    qft_cutoff: int | None = None,
+    number: int, run: Callable[[Shor], Mapping[str, int]], *, max_attempts: int = 16, seed: int = 0
 ) -> FactorResult:
     """Find one nontrivial factor pair with a bounded number of attempted bases.
 

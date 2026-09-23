@@ -23,7 +23,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
-#include <optional>
 
 namespace mqt {
 namespace nb = nanobind;
@@ -33,15 +32,12 @@ using namespace nb::literals;
 void registerShor(nb::module_& m) {
   nb::class_<bench::ShorOptions>(
       m, "Options", "Parameters for semiclassical Shor order finding.")
-      .def(nb::init<uint64_t, uint64_t, std::optional<size_t>>(), nb::kw_only(),
-           "number"_a, "base"_a = 2, "qft_cutoff"_a = nb::none())
+      .def(nb::init<uint64_t, uint64_t>(), nb::kw_only(), "number"_a,
+           "base"_a = 2)
       .def_ro("number", &bench::ShorOptions::number,
               "The odd modulus, at most 2**31 - 1.")
       .def_ro("base", &bench::ShorOptions::base,
-              "The base, coprime to the modulus.")
-      .def_ro("qft_cutoff", &bench::ShorOptions::qftCutoff,
-              "The largest controlled-rotation distance, or ``None`` for exact "
-              "arithmetic.");
+              "The base, coprime to the modulus.");
   nb::class_<bench::ShorEvaluation>(
       m, "Evaluation", "Verified factors recovered from measured phases.")
       .def_ro("success_probability", &bench::ShorEvaluation::successProbability,
@@ -107,13 +103,11 @@ void registerShor(nb::module_& m) {
       "factor",
       [](uint64_t number,
          const std::function<bench::Counts(const bench::Shor&)>& run,
-         size_t maxAttempts, uint64_t seed, std::optional<size_t> qftCutoff) {
-        return bench::factor(
-            number, run,
-            {.maxAttempts = maxAttempts, .seed = seed, .qftCutoff = qftCutoff});
+         size_t maxAttempts, uint64_t seed) {
+        return bench::factor(number, run,
+                             {.maxAttempts = maxAttempts, .seed = seed});
       },
       "number"_a, "run"_a, nb::kw_only(), "max_attempts"_a = 16, "seed"_a = 0,
-      "qft_cutoff"_a = nb::none(),
       R"pb(Find one nontrivial factor pair with a bounded number of attempted bases.
 
 The callback accepts a :class:`Shor` instance and returns counts. It owns device

@@ -569,8 +569,7 @@ parseTeleportationParameters(const Json& parameters,
 
 [[nodiscard]] Shor parseShorParameters(const Json& parameters,
                                        std::string_view source) {
-  rejectUnknownKeys(parameters, {"number", "base", "qft_cutoff"}, source,
-                    "$/parameters");
+  rejectUnknownKeys(parameters, {"number", "base"}, source, "$/parameters");
   ShorOptions options{
       .number = unsignedInteger(
           required(parameters, "number", source, "$/parameters"), source,
@@ -579,20 +578,12 @@ parseTeleportationParameters(const Json& parameters,
   if (const auto base = parameters.find("base"); base != parameters.end()) {
     options.base = unsignedInteger(*base, source, "$/parameters/base");
   }
-  if (const auto cutoff = parameters.find("qft_cutoff");
-      cutoff != parameters.end()) {
-    options.qftCutoff = sizeValue(*cutoff, source, "$/parameters/qft_cutoff");
-  }
   return constructBenchmark(source, [&] { return Shor(options); });
 }
 
 [[nodiscard]] Json parametersJSON(const Shor& benchmark) {
   const auto& options = benchmark.options();
-  Json parameters{{"number", options.number}, {"base", options.base}};
-  if (options.qftCutoff) {
-    parameters["qft_cutoff"] = *options.qftCutoff;
-  }
-  return parameters;
+  return {{"number", options.number}, {"base", options.base}};
 }
 
 [[nodiscard]] Json parametersJSON(const BV& benchmark) {
@@ -1272,14 +1263,6 @@ template <class Benchmark>
                       {"minimum", 2},
                       {"maximum", ShorOptions::MAX_NUMBER - 1},
                       {"default", 2},
-                  },
-              },
-              {
-                  "qft_cutoff",
-                  {
-                      {"type", "integer"},
-                      {"minimum", 1},
-                      {"maximum", std::numeric_limits<size_t>::max()},
                   },
               },
           },

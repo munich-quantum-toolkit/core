@@ -28,18 +28,15 @@ using namespace mqt::bench;
 
 TEST(Shor, ValidatesParametersAndPhaseWidth) {
   const Shor benchmark({.number = 21});
-  EXPECT_EQ(benchmark.output(), (Output{"phase", 10}));
+  EXPECT_EQ(benchmark.output(), (Output{"result", 10}));
   EXPECT_EQ(benchmark.options().base, 2);
-  EXPECT_FALSE(benchmark.options().qftCutoff);
   for (const uint64_t number : {0ULL, 1ULL, 2ULL, 4ULL, 2147483648ULL}) {
     EXPECT_THROW(Shor({.number = number}), std::invalid_argument);
   }
   for (const uint64_t base : {0ULL, 1ULL, 3ULL, 7ULL, 21ULL, 22ULL}) {
     EXPECT_THROW(Shor({.number = 21, .base = base}), std::invalid_argument);
   }
-  EXPECT_THROW(Shor({.number = 21, .qftCutoff = 0}), std::invalid_argument);
   EXPECT_EQ(Shor({.number = ShorOptions::MAX_NUMBER}).output().width, 62U);
-  EXPECT_NO_THROW(Shor({.number = 7, .qftCutoff = 100}));
 }
 
 TEST(Shor, RecoversOnlyVerifiedFactorsAndWeightsShots) {
@@ -109,15 +106,12 @@ TEST(Shor, PerformsClassicalPrechecksWithoutQuantumRuns) {
 
 TEST(Shor, ExecutesTheConfiguredCallbackAndBoundsAttempts) {
   size_t calls = 0;
-  const auto result = factor(21,
-                             [&](const Shor& benchmark) {
-                               ++calls;
-                               EXPECT_EQ(benchmark.options().number, 21U);
-                               EXPECT_EQ(benchmark.options().base, 2U);
-                               EXPECT_EQ(benchmark.options().qftCutoff, 3U);
-                               return Counts{{"0010101011", 1}};
-                             },
-                             {.qftCutoff = 3});
+  const auto result = factor(21, [&](const Shor& benchmark) {
+    ++calls;
+    EXPECT_EQ(benchmark.options().number, 21U);
+    EXPECT_EQ(benchmark.options().base, 2U);
+    return Counts{{"0010101011", 1}};
+  });
   EXPECT_EQ(calls, 1U);
   EXPECT_EQ(result.status, FactorStatus::Success);
   EXPECT_EQ(result.factors, (FactorPair{3, 7}));
@@ -167,7 +161,6 @@ TEST(Shor, PropagatesCallbackFailuresAndRejectsInvalidDriverInputs) {
   EXPECT_THROW(factor(1, run), std::invalid_argument);
   EXPECT_THROW(factor(ShorOptions::MAX_NUMBER + 1, run), std::invalid_argument);
   EXPECT_THROW(factor(21, run, {.maxAttempts = 0}), std::invalid_argument);
-  EXPECT_THROW(factor(21, run, {.qftCutoff = 0}), std::invalid_argument);
   EXPECT_THROW(factor(21, {}), std::invalid_argument);
 }
 
@@ -176,7 +169,6 @@ TEST(Shor, RoundTripsJsonAndUsesAVerificationReference) {
       R"({"schema_version":1,"benchmark":"shor","parameters":{"number":21}})");
   EXPECT_EQ(caseId(benchmark), caseId(Shor({.number = 21, .base = 2})));
   EXPECT_NE(caseId(benchmark), caseId(Shor({.number = 21, .base = 4})));
-  EXPECT_NE(caseId(benchmark), caseId(Shor({.number = 21, .qftCutoff = 2})));
   EXPECT_EQ(caseId(benchmark),
             caseId(shorFromManifestJSON(toManifestJSON(benchmark))));
   EXPECT_NE(toManifestJSON(benchmark).find("\"kind\":\"verification\""),
@@ -196,9 +188,6 @@ TEST(Shor, RejectsInvalidJsonTypesAndParameters) {
            R"({"number":21.0})",
            R"({"number":"21"})",
            R"({"number":21,"base":false})",
-           R"({"number":21,"qft_cutoff":null})",
-           R"({"number":21,"qft_cutoff":0})",
-           R"({"number":21,"qft_cutoff":1.5})",
            R"({"number":21,"extra":0})",
            R"({"number":21,"base":7})",
            R"({})",

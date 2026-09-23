@@ -31,7 +31,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <numbers>
-#include <utility>
 
 namespace mqt::bench {
 using namespace mlir;
@@ -69,17 +68,16 @@ SmallVector<Value> shor(qc::QCProgramBuilder& builder, const Shor& benchmark) {
   auto power = options.base;
   const llvm::APInt modulus(width, options.number);
   for (int64_t round = 0; round < precision; ++round) {
-    detail::appendModularPhaseAngles(angles, llvm::APInt(width, power), modulus,
-                                     options.qftCutoff);
+    detail::appendModularPhaseAngles(angles, llvm::APInt(width, power),
+                                     modulus);
     detail::appendModularPhaseAngles(
         angles, llvm::APInt(width, inverseModulo(power, options.number)),
-        modulus, options.qftCutoff);
+        modulus);
     power = (power * power) % options.number;
   }
   auto anglesType = RankedTensorType::get({static_cast<int64_t>(angles.size())},
                                           builder.getF64Type());
-  auto multiply = detail::createInPlaceMultiplier(builder, bits, anglesType,
-                                                  options.qftCutoff);
+  auto multiply = detail::createInPlaceMultiplier(builder, bits, anglesType);
   auto phases = arith::ConstantOp::create(
       builder, DenseElementsAttr::get(anglesType, ArrayRef<double>(angles)));
 
@@ -103,14 +101,8 @@ SmallVector<Value> shor(qc::QCProgramBuilder& builder, const Shor& benchmark) {
     builder.h(query);
     builder.call(multiply, {query, value, accumulator, work, phases, offset});
     auto previous = arith::SubIOp::create(builder, round, one);
-    auto corrections = round;
-    if (options.qftCutoff && std::cmp_less(*options.qftCutoff, precision)) {
-      corrections = arith::MinSIOp::create(
-          builder, round,
-          builder.indexConstant(static_cast<int64_t>(*options.qftCutoff)));
-    }
     detail::phaseRotationLoop(
-        builder, zero, corrections, one, firstCorrection, half,
+        builder, zero, round, one, firstCorrection, half,
         [&](Value angle, Value distance) {
           auto bit = arith::SubIOp::create(builder, previous, distance);
           builder.scfIf(result, bit, [&] { builder.p(angle, query); });

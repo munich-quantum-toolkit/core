@@ -33,10 +33,11 @@ identity and disjoint quantum operands. The conversion no longer needs
   pipeline. The exporter does not collect physical reference arrays or generate
   Cartesian site dispatch.
 - Indexed loops survive placement only for Adaptive QIR on unrestricted
-  all-to-all targets. Other payloads retain the 65,536-operation unrolling
-  budget. Runtime indices that cannot be specialized remain unsupported.
-- DD execution limits conditional loops to 100,000 iterations and rejects
-  recursive calls. Counted loops use widened APInt trip counts. Runtime
+  all-to-all targets. Other payloads use bounded unrolling. The subsequent
+  [Shor work](shor.md) raises its default budget to one billion operations.
+  Runtime indices that cannot be specialized remain unsupported.
+- DD execution limits conditional loops to one billion iterations by default and
+  rejects recursive calls. Counted loops use widened APInt trip counts. Runtime
   assertions are omitted by the frontend; verified IR retains its bounds
   preconditions.
 - Fixed-gate powers share constant/runtime lowering with rotations and global

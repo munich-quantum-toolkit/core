@@ -392,7 +392,6 @@ ket = "ket"
 optin = "optin"
 nd = "nd"
 olt = "olt"
-countr = "countr"
 
 
 [tool.ty.src]

@@ -252,21 +252,4 @@ TEST(GenerateProgramTest, KeepsLargestShorStructuredAndCompilable) {
   ASSERT_TRUE(qir);
 }
 
-TEST(GenerateProgramTest, ShorCutoffCoversTheExactCircuit) {
-  auto exact = generate(Shor({.number = 15}));
-  auto full = generate(Shor({.number = 15, .qftCutoff = 64}));
-  ASSERT_TRUE(exact);
-  ASSERT_TRUE(full);
-  EXPECT_EQ(exact->str(), full->str());
-  const Shor approximate({.number = 15, .qftCutoff = 3});
-  auto program = test::generateQCO(approximate);
-  ASSERT_TRUE(program);
-  auto counts =
-      qco::sample(mlir::mqt::getEntryPoint(program->module()), 64, 17);
-  ASSERT_TRUE(succeeded(counts));
-  const auto evaluation = approximate.evaluate(*counts);
-  ASSERT_TRUE(evaluation.factors);
-  EXPECT_EQ(evaluation.factors->first * evaluation.factors->second, 15U);
-}
-
 } // namespace mqt::bench

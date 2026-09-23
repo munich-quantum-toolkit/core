@@ -2641,8 +2641,21 @@ TEST_F(CompilerPipelineTest, IndexedPlacementPreservesSparseSitesAndLoopBody) {
   auto qasmProgram = program->copy();
   const auto qasmPayload = llvm::cantFail(
       payloadSpecificationForProgramFormat(QDMI_PROGRAM_FORMAT_QASM3));
-  EXPECT_FALSE(
+  ASSERT_TRUE(
       qasmProgram.compileForTarget(TargetEnvironment(target, qasmPayload)));
+  const auto outcomes =
+      qco::sample(mlir::mqt::getEntryPoint(qasmProgram.module()), 1, 42);
+  ASSERT_TRUE(succeeded(outcomes));
+  ASSERT_EQ(outcomes->size(), 1);
+  /// Without a CBit output register, sampling reports the physical wire state.
+  EXPECT_EQ(outcomes->begin()->first, "10000000");
+  auto qasmQC = std::move(qasmProgram).intoQC();
+  ASSERT_TRUE(qasmQC);
+  auto qasm = qasmQC->toOpenQASM3();
+  ASSERT_TRUE(qasm);
+  EXPECT_TRUE(StringRef(qasm->source()).contains("$7"));
+  EXPECT_FALSE(StringRef(qasm->source()).contains("$42"));
+  EXPECT_FALSE(StringRef(qasm->source()).contains("for int"));
   const auto payload = llvm::cantFail(payloadSpecificationForProgramFormat(
       QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE));
   ASSERT_TRUE(program->compileForTarget(TargetEnvironment(target, payload)));
@@ -2730,7 +2743,7 @@ TEST_F(CompilerPipelineTest, PayloadControlBoundsFullUnrolling) {
       func.func @main() attributes {mqt.entry_point} {
         %c0 = arith.constant 0 : index
         %c1 = arith.constant 1 : index
-        %limit = arith.constant 65538 : index
+        %limit = arith.constant 1000000002 : index
         %q0 = qco.alloc : !qco.qubit
         %q1 = scf.for %index = %c0 to %limit step %c1
             iter_args(%arg0 = %q0) -> (!qco.qubit) {
@@ -2747,7 +2760,8 @@ TEST_F(CompilerPipelineTest, PayloadControlBoundsFullUnrolling) {
   std::string diagnostics;
   EXPECT_FALSE(compileForTargetWithDiagnostics(
       *program, makeControlPayloadSpecification({}, true), diagnostics));
-  EXPECT_TRUE(StringRef(diagnostics).contains("65536 loop-body operations"))
+  EXPECT_TRUE(
+      StringRef(diagnostics).contains("1000000000 loop-body operations"))
       << diagnostics;
 
   constexpr llvm::StringLiteral nonconstantBounds = R"mlir(
@@ -2917,8 +2931,41 @@ TEST_F(CompilerPipelineTest, PayloadControlChecksUnrolledStepWidth) {
   }
 }
 
+TEST_F(CompilerPipelineTest, PayloadControlUnrollsBeyondTheOldBudget) {
+  auto program = QCOProgram::fromMLIRString(R"mlir(module {
+    func.func @main(%q: !qco.qubit) -> !qco.qubit attributes {mqt.entry_point} {
+      %zero = arith.constant 0 : index
+      %one = arith.constant 1 : index
+      %limit = arith.constant 70000 : index
+      %out = scf.for %i = %zero to %limit step %one
+          iter_args(%state = %q) -> !qco.qubit {
+        %next = qco.x %state : !qco.qubit -> !qco.qubit
+        scf.yield %next : !qco.qubit
+      }
+      return %out : !qco.qubit
+    }
+  })mlir");
+  ASSERT_TRUE(program);
+  attachTargetEnvironment(
+      program->module(),
+      TargetEnvironment(makeUnrestrictedTarget(),
+                        makeControlPayloadSpecification({})));
+  ASSERT_TRUE(program->runPassPipeline("unroll-loops-for-payload"));
+  size_t gates = 0;
+  program->module().walk([&](qco::XOp) { ++gates; });
+  EXPECT_EQ(gates, 70000U);
+  EXPECT_TRUE(succeeded(verify(program->module())));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
+}
+
 TEST_F(CompilerPipelineTest, PayloadControlBoundsTotalLoopCloning) {
-  for (const auto trips : {32769, 32770}) {
+  for (const auto [trips, budget] : {
+           std::pair{33, uint64_t{64}},
+           {34, 64},
+           {2, 0},
+           {2, std::numeric_limits<uint64_t>::max()},
+       }) {
+    const bool accepted = 2U * static_cast<uint64_t>(trips - 1) <= budget;
     SCOPED_TRACE(trips);
     std::string source;
     llvm::raw_string_ostream stream(source);
@@ -2949,18 +2996,51 @@ TEST_F(CompilerPipelineTest, PayloadControlBoundsTotalLoopCloning) {
                                       diagnostics += diagnostic.str();
                                       return success();
                                     });
-    EXPECT_EQ(program->runPassPipeline("unroll-loops-for-payload"),
-              trips == 32769)
+    EXPECT_EQ(
+        program->runPassPipeline("unroll-loops-for-payload{max-operations=" +
+                                 std::to_string(budget) + "}"),
+        accepted)
         << diagnostics;
     EXPECT_TRUE(succeeded(verify(program->module())));
     EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
-    if (trips == 32770) {
+    if (!accepted) {
       EXPECT_TRUE(
-          StringRef(diagnostics).contains("65536 loop-body operations"));
+          StringRef(diagnostics)
+              .contains(std::to_string(budget) + " loop-body operations"));
     } else {
       EXPECT_FALSE(StringRef(program->str()).contains("scf.for"));
     }
   }
+}
+
+TEST_F(CompilerPipelineTest, PayloadControlRejectsUnrepresentableTripCount) {
+  auto program = QCOProgram::fromMLIRString(R"mlir(module {
+    func.func @main(%q: !qco.qubit) -> !qco.qubit attributes {mqt.entry_point} {
+      %zero = arith.constant 0 : i128
+      %one = arith.constant 1 : i128
+      %limit = arith.constant 18446744073709551616 : i128
+      %out = scf.for %i = %zero to %limit step %one
+          iter_args(%state = %q) -> !qco.qubit : i128 {
+        %next = qco.x %state : !qco.qubit -> !qco.qubit
+        scf.yield %next : !qco.qubit
+      }
+      return %out : !qco.qubit
+    }
+  })mlir");
+  ASSERT_TRUE(program);
+  attachTargetEnvironment(
+      program->module(),
+      TargetEnvironment(makeUnrestrictedTarget(),
+                        makeControlPayloadSpecification({})));
+  std::string diagnostics;
+  ScopedDiagnosticHandler handler(program->module()->getContext(),
+                                  [&](Diagnostic& diagnostic) {
+                                    diagnostics += diagnostic.str();
+                                    return success();
+                                  });
+  EXPECT_FALSE(program->runPassPipeline(
+      "unroll-loops-for-payload{max-operations=18446744073709551615}"));
+  EXPECT_TRUE(StringRef(diagnostics).contains("cannot safely apply MLIR"));
 }
 
 TEST_F(CompilerPipelineTest,

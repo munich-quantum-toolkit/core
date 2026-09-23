@@ -18,7 +18,6 @@
 #include <limits>
 #include <optional>
 #include <stdexcept>
-#include <string>
 #include <string_view>
 
 namespace mqt::bench::detail {
@@ -63,12 +62,6 @@ evaluate(const Output& output, const Counts& counts,
          const std::optional<std::string_view> successOutcome = std::nullopt) {
   const auto totalShots = validateCounts(output, counts);
   size_t successShots = 0;
-  if (successOutcome) {
-    const auto it = counts.find(std::string(*successOutcome));
-    if (it != counts.end()) {
-      successShots = it->second;
-    }
-  }
 
   // Extended precision prevents avoidable loss while summing distributions.
   // NOLINTBEGIN(google-runtime-float)
@@ -76,6 +69,9 @@ evaluate(const Output& output, const Counts& counts,
   long double observedIdealMass = 0.L;
   long double coefficient = 0.L;
   for (const auto& [outcome, count] : counts) {
+    if (successOutcome && outcome == *successOutcome) {
+      successShots = count;
+    }
     const auto ideal = static_cast<long double>(probability(outcome));
     const auto observed =
         static_cast<long double>(count) / static_cast<long double>(totalShots);

@@ -27,8 +27,6 @@ struct ShorOptions {
   static constexpr uint64_t MAX_NUMBER = (uint64_t{1} << 31U) - 1U;
   uint64_t number;
   uint64_t base = 2;
-  /// Largest retained controlled-rotation distance; omitted means exact.
-  std::optional<size_t> qftCutoff;
 };
 
 /// A nontrivial factor pair, sorted in ascending order.
@@ -65,7 +63,6 @@ enum class FactorStatus : uint8_t { Success, Prime, AttemptsExhausted };
 struct FactorOptions {
   size_t maxAttempts = 16;
   uint64_t seed = 0;
-  std::optional<size_t> qftCutoff;
 };
 
 struct FactorResult {

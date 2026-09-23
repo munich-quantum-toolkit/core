@@ -15,7 +15,6 @@
 #include "EvaluationUtils.hpp"
 
 #include <algorithm>
-#include <array>
 #include <bit>
 #include <charconv>
 #include <cstddef>
@@ -42,12 +41,6 @@ namespace {
     exponent >>= 1U;
   }
   return result;
-}
-
-void validateCutoff(const std::optional<size_t>& cutoff) {
-  if (cutoff && *cutoff == 0) {
-    throw std::invalid_argument("Shor QFT cutoff must be positive");
-  }
 }
 
 [[nodiscard]] std::optional<FactorPair> factorPair(uint64_t number,
@@ -91,26 +84,10 @@ recoverFactors(const ShorOptions& options, uint64_t numerator,
   return std::nullopt;
 }
 
+/// Odd inputs are at most 31 bits, so at most 23,170 trial divisions suffice.
 [[nodiscard]] bool isPrime(uint64_t number) {
-  constexpr std::array<uint64_t, 12> bases{
-      2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37,
-  };
-  for (const auto base : bases) {
-    if (number % base == 0) {
-      return number == base;
-    }
-  }
-  const auto shifts = static_cast<unsigned>(std::countr_zero(number - 1));
-  const auto oddPart = (number - 1) >> shifts;
-  for (const auto base : bases) {
-    auto value = powerModulo(base, oddPart, number);
-    if (value == 1 || value == number - 1) {
-      continue;
-    }
-    for (unsigned shift = 1; shift < shifts && value != number - 1; ++shift) {
-      value = (value * value) % number;
-    }
-    if (value != number - 1) {
+  for (uint64_t divisor = 3; divisor * divisor <= number; divisor += 2) {
+    if (number % divisor == 0) {
       return false;
     }
   }
@@ -155,7 +132,7 @@ recoverFactors(const ShorOptions& options, uint64_t numerator,
 Shor::Shor(ShorOptions options)
     : options_(options),
       output_{
-          .name = "phase",
+          .name = "result",
           .width = size_t{2} * std::bit_width(options_.number),
       } {
   if (options_.number < 3 || options_.number > ShorOptions::MAX_NUMBER ||
@@ -168,7 +145,6 @@ Shor::Shor(ShorOptions options)
     throw std::invalid_argument(
         "Shor base must satisfy 1 < base < number and be coprime to number");
   }
-  validateCutoff(options_.qftCutoff);
 }
 
 const ShorOptions& Shor::options() const noexcept { return options_; }
@@ -209,7 +185,6 @@ FactorResult factor(uint64_t number,
     throw std::invalid_argument(
         "factoring requires a callback and a positive attempt limit");
   }
-  validateCutoff(options.qftCutoff);
   if (number == 2) {
     return {.status = FactorStatus::Prime, .factors = std::nullopt};
   }
@@ -234,8 +209,7 @@ FactorResult factor(uint64_t number,
           .attempts = attempt + 1,
       };
     }
-    const Shor benchmark(
-        {.number = number, .base = base, .qftCutoff = options.qftCutoff});
+    const Shor benchmark({.number = number, .base = base});
     if (const auto evaluation = benchmark.evaluate(run(benchmark));
         evaluation.factors) {
       return {

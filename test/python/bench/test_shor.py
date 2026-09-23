@@ -23,8 +23,7 @@ def test_shor_instance() -> None:
     """Preserve the configured circuit and its verification reference."""
     benchmark = shor.Shor(shor.Options(number=21))
     assert benchmark.options.base == 2
-    assert benchmark.options.qft_cutoff is None
-    assert benchmark.output.name == "phase"
+    assert benchmark.output.name == "result"
     assert benchmark.output.width == 10
     assert json.loads(benchmark.instance_specification_json)["parameters"] == {"number": 21, "base": 2}
     assert json.loads(benchmark.manifest_json)["reference"]["kind"] == "verification"
@@ -45,11 +44,10 @@ def test_factor_callback() -> None:
 
     def run(benchmark: shor.Shor) -> dict[str, int]:
         assert benchmark.options.number == 21
-        assert benchmark.options.qft_cutoff == 3
         bases.append(benchmark.options.base)
         return {"0010101011": 64}
 
-    result = shor.factor(21, run, qft_cutoff=3)
+    result = shor.factor(21, run)
     assert result.status == shor.FactorStatus.SUCCESS
     assert result.factors == (3, 7)
     assert result.attempts == 1
@@ -77,8 +75,6 @@ def test_shor_errors() -> None:
     """Propagate validation and executor failures across the binding."""
     with pytest.raises(ValueError, match="coprime"):
         shor.Shor(shor.Options(number=21, base=3))
-    with pytest.raises(ValueError, match="positive"):
-        shor.Shor(shor.Options(number=21, qft_cutoff=0))
     with pytest.raises(ValueError, match="width"):
         shor.Shor(shor.Options(number=21)).evaluate({"0": 1})
 

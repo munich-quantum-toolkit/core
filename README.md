@@ -62,31 +62,34 @@ Then choose a starting point:
 
 Factor 21 with **Shor's algorithm**, using modular arithmetic, a reused query
 qubit, and measurement feedback. The callback compiles each circuit for the
-bundled DDSIM device and submits 64 shots:
+bundled DDSIM device and submits 64 shots through each payload format:
 
 ```python
 from mqt.core.bench import shor
 from mqt.core.mlir import compile_program, submit_program
+from mqt.core.qdmi import ProgramFormat
 from mqt.core.qdmi.driver import open_device
 
 device = open_device("mqt.ddsim.default")
 
 
 def run(benchmark: shor.Shor) -> dict[str, int]:
-    compiled = compile_program(benchmark.generate(), target=device)
+    compiled = compile_program(benchmark.generate(), target=device, program_format=program_format)
     job = submit_program(compiled, target=device, num_shots=64, custom1=17)
     job.wait()
     return job.get_counts()
 
 
-result = shor.factor(21, run)
-assert result.status == shor.FactorStatus.SUCCESS
-assert result.factors == (3, 7)
-print(f"Factors: {result.factors}")
+for program_format in (ProgramFormat.QIR_ADAPTIVE_MODULE, ProgramFormat.QASM3):
+    result = shor.factor(21, run)
+    assert result.status == shor.FactorStatus.SUCCESS
+    assert result.factors == (3, 7)
+    print(f"{program_format.name}: {result.factors}")
 ```
 
 ```text
-Factors: (3, 7)
+QIR_ADAPTIVE_MODULE: (3, 7)
+QASM3: (3, 7)
 ```
 
 The

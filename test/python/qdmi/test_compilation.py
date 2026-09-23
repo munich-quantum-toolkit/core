@@ -140,10 +140,8 @@ def test_indexed_openqasm_device_execution() -> None:
     assert job.get_counts() == {"11": 32}
 
 
-@pytest.mark.parametrize(
-    ("number", "factors", "program_format"),
-    [(21, (3, 7), ProgramFormat.QIR_ADAPTIVE_MODULE), (15, (3, 5), ProgramFormat.QASM3)],
-)
+@pytest.mark.parametrize("program_format", [ProgramFormat.QASM3, ProgramFormat.QIR_ADAPTIVE_MODULE])
+@pytest.mark.parametrize(("number", "factors"), [(15, (3, 5)), (21, (3, 7))])
 def test_shor_device_execution(number: int, factors: tuple[int, int], program_format: ProgramFormat) -> None:
     """Factor small numbers through modular arithmetic and the bundled DDSIM device."""
     device = open_device("mqt.ddsim.default")
