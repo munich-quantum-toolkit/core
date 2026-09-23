@@ -352,12 +352,12 @@ Euclidean norm, apart from roundoff. The incoming weight also compensates for
 reuse of a stored dominant weight. These steps limit amplification of small
 coefficient differences; they do not bound accumulated circuit error.
 
-Floating-point arithmetic makes this canonicity approximate. Real components
-reuse the nearest stored value within the absolute tolerance, preferring the
-smaller magnitude on a tie; zero, one, and $1/\sqrt{2}$ have priority. The
-default tolerance is $2^{-42}$ (1024 times double-precision machine epsilon).
-The numeric index hashes binary intervals without rounding stored values. C++
-callers can set a finite, nonnegative global tolerance with
+Floating-point arithmetic makes this canonicity approximate. Ordinary real
+components reuse the nearest stored value within the absolute tolerance,
+preferring the smaller magnitude on a tie; zero, one, and $1/\sqrt{2}$ have
+priority. The default tolerance is $2^{-42}$ (1024 times double-precision
+machine epsilon). The numeric index hashes binary intervals without rounding
+stored values. C++ callers can set a finite, nonnegative global tolerance with
 {cpp-api:func}`dd::ComplexNumbers::setTolerance`. A smaller tolerance can reduce
 error amplification in small subproblems, but may also prevent sharing of nearly
 equal subgraphs. Neither tolerance choice guarantees polynomial DD size for a
@@ -462,6 +462,15 @@ can be shared. Each node's outgoing edge weights are divided by the weight with
 the highest magnitude, selecting the leftmost one in a tie. The normalized
 outgoing weights have magnitude at most $1$; the extracted factor moves to the
 incoming edge.
+
+The matrix root carries the global scale. Its real components use a separate
+exact index, retaining tolerance-based priority for nonzero special constants.
+This preserves roots below the ordinary absolute tolerance, such as the
+$2^{-64}$ root of $H^{\otimes 128}$. Internal normalized coefficients still use
+the ordinary tolerance. Matrix normalization removes a common power-of-two scale
+before squared magnitudes and division, then retains the original root weight.
+Small local matrix entries remain subject to zero tolerance, and intermediate
+and final values must still fit the floating-point representation.
 
 ````{admonition} Example _(Matrix Decision Diagrams)_
 :class: tip

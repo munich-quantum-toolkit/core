@@ -19,6 +19,7 @@
 
 #include <cstddef>
 #include <iostream>
+#include <unordered_map>
 #include <vector>
 
 namespace dd {
@@ -56,11 +57,13 @@ public:
   /// The bucket depends on the table capacity and indexed tolerance.
   [[nodiscard]] size_t hash(fp val) const noexcept;
 
-  /// Bucket heads; growth and tolerance changes invalidate bucket iterators
-  /// and reorder chains. Entry addresses survive until collection or reset.
+  /// Ordinary absolute-tolerance bucket heads; growth and tolerance changes
+  /// invalidate bucket iterators and reorder chains. Entry addresses survive
+  /// until collection or reset.
   [[nodiscard]] const auto& getTable() const noexcept { return table; }
 
-  /// Get a reference to the statistics
+  /// Get combined entry, lookup, and bucket statistics for both indexes.
+  /// Collision counts describe the ordinary absolute-tolerance index.
   [[nodiscard]] const auto& getStats() const noexcept { return stats; }
 
   /// Lookup a number in the table
@@ -74,6 +77,11 @@ public:
   /// @param val The floating point number to look up.
   /// @return A pointer to an entry corresponding to that number.
   [[nodiscard]] RealNumber* lookup(fp val);
+
+  /// Preserve a matrix root's range while retaining nonzero constant priority.
+  /// Other values are interned exactly in a separate index so they cannot
+  /// become representatives in the ordinary absolute-tolerance table.
+  [[nodiscard]] RealNumber* lookupRoot(fp val);
 
   /// Check whether the table possibly needs garbage collection.
   /// @returns Whether the number of entries in the table has reached the
@@ -118,6 +126,10 @@ private:
 
   /// Intrusive bucket chains; rehashing preserves entry addresses and flags.
   Table table = Table(NBUCKET);
+  /// Matrix root weights share the memory manager and mark/sweep ownership.
+  /// Exact keys keep lookup independent of tolerance and avoid tiny-value
+  /// chains.
+  std::unordered_map<fp, RealNumber*> exactRoots;
 
   /// A power-of-two cell width between eight and sixteen times the tolerance
   /// keeps each tolerance interval within the central and adjacent cells.

@@ -3032,4 +3032,135 @@ TEST(DDPackageTest, MagnitudeAdditionAvoidsSquaredWeightOverflow) {
     EXPECT_EQ(sum.w.i, 0.);
   }
 }
+TEST(DDPackageTest, WideHadamardMatricesPreserveRootScale) {
+  constexpr size_t width = 128;
+  Package package(width + 1);
+  auto matrix = mEdge::one();
+  package.incRef(matrix);
+  for (size_t q = 0; q < width; ++q) {
+    matrix = package.applyOperation(
+        package.makeGateDD(H_MAT, static_cast<Qubit>(q)), matrix);
+  }
+  const auto expected = std::ldexp(1., -static_cast<int>(width / 2));
+  const auto check = [&](const mEdge& value, size_t n, fp amplitude) {
+    ASSERT_FALSE(value.isZeroTerminal());
+    const auto actual = value.getValueByPath(n, std::string(n, '0'));
+    EXPECT_NEAR(actual.real() / amplitude, 1., 1e-12);
+    EXPECT_EQ(actual.imag(), 0.);
+  };
+  check(matrix, width, expected);
+  check(package.conjugateTranspose(matrix), width, expected);
+  check(package.partialTrace(matrix, std::vector<bool>(width, false)), width,
+        expected);
+  Package other(width);
+  check(other.transfer(matrix), width, expected);
+  for (const bool binary : {false, true}) {
+    std::stringstream stream;
+    serialize(matrix, stream, binary);
+    check(other.deserialize<mNode>(stream, binary), width, expected);
+  }
+  const auto h = package.makeGateDD(H_MAT, 0);
+  for (size_t repetition = 0; repetition < 2; ++repetition) {
+    check(package.kronecker(matrix, h, 1), width + 1, expected * SQRT2_2);
+    check(package.kronecker(h, matrix, width), width + 1, expected * SQRT2_2);
+    EXPECT_TRUE(package.multiply(matrix, matrix).isIdentity(false));
+  }
+  package.garbageCollect(true);
+  check(matrix, width, expected);
+  for (size_t q = width; q-- > 0;) {
+    matrix = package.applyOperation(
+        package.makeGateDD(H_MAT, static_cast<Qubit>(q)), matrix);
+  }
+  EXPECT_TRUE(matrix.isIdentity(false));
+  package.decRef(matrix);
+}
+
+TEST(DDPackageTest, MatrixRootsRemainDistinctAndSurviveCollection) {
+  Package package(1);
+  const auto first = mEdge::terminal(package.cn.lookupRoot(1e-100));
+  const auto secondValue = std::nextafter(1e-100, 1.);
+  const auto second = mEdge::terminal(package.cn.lookupRoot(secondValue));
+  package.incRef(first);
+  package.incRef(second);
+  EXPECT_EQ(package.getRootSet<mNode>().size(), 2U);
+  EXPECT_EQ(package.computeActiveCounts().reals, 2U);
+  package.garbageCollect(true);
+  EXPECT_EQ(RealNumber::val(first.w.r), 1e-100);
+  EXPECT_EQ(RealNumber::val(second.w.r), secondValue);
+  package.decRef(first);
+  package.garbageCollect(true);
+  EXPECT_EQ(RealNumber::val(second.w.r), secondValue);
+  package.decRef(second);
+  package.garbageCollect(true);
+  EXPECT_EQ(package.cUniqueTable.getStats().numEntries, 1U);
+  package.reset();
+  EXPECT_EQ(RealNumber::val(package.cn.lookupRoot(1e-100).r), 1e-100);
+
+  const auto root = package.cn.lookupRoot(RealNumber::eps / 2.);
+  EXPECT_EQ(RealNumber::val(root.r), RealNumber::eps / 2.);
+  const auto ordinary = package.cn.lookup(1.25 * RealNumber::eps);
+  EXPECT_EQ(RealNumber::val(ordinary.r), 1.25 * RealNumber::eps);
+  EXPECT_EQ(package.cn.lookup(ordinary).r, ordinary.r);
+}
+
+TEST(DDPackageTest, MatrixRootSerializationPreservesSubnormals) {
+  Package package(1);
+  for (const fp value :
+       {1e-100, 1e-310, std::numeric_limits<fp>::denorm_min()}) {
+    SCOPED_TRACE(value);
+    const auto root = mEdge::terminal(package.cn.lookupRoot({value, -value}));
+    for (const bool binary : {false, true}) {
+      std::stringstream stream;
+      serialize(root, stream, binary);
+      const auto restored = package.deserialize<mNode>(stream, binary);
+      EXPECT_EQ(RealNumber::val(restored.w.r), value);
+      EXPECT_EQ(RealNumber::val(restored.w.i), -value);
+    }
+  }
+}
+
+TEST(DDPackageTest, LargeMatrixNormalizationPreservesEntries) {
+  Package package(1);
+  const auto scale = std::scalbn(1., 600);
+  const GateMatrix matrix{
+      std::complex<fp>{scale, scale},
+      {scale, -scale},
+      {-scale, scale},
+      {-scale, -scale},
+  };
+  std::array<mEdge, NEDGE> edges{};
+  for (size_t i = 0; i < NEDGE; ++i) {
+    edges[i] = mEdge::terminal(package.cn.lookupRoot(ComplexValue{matrix[i]}));
+  }
+  for (const auto& result :
+       {package.makeGateDD(matrix, 0), package.makeDDNode(0, edges)}) {
+    for (size_t i = 0; i < NEDGE; ++i) {
+      EXPECT_EQ(result.getValueByPath(1, std::to_string(i)), matrix[i]);
+    }
+  }
+}
+
+TEST(DDPackageTest, KroneckerRestoresNormalizationAfterInterningChanges) {
+  Package package(2);
+  const auto dominant = 1. / std::sqrt(1.25);
+  const auto initial = package.cn.lookup(dominant + (.8 * RealNumber::eps));
+  ASSERT_GT(RealNumber::val(initial.r), dominant);
+  const auto raw =
+      package.makeDDNode(0, std::array{
+                                vCachedEdge::one(),
+                                vCachedEdge::terminal(ComplexValue{.3, .4}),
+                            });
+  const auto zero = package.makeDDNode(
+      0, std::array{vCachedEdge::one(), vCachedEdge::zero()});
+  const vEdge x{.p = raw.p, .w = package.cn.lookup(10.)};
+  const vEdge y{.p = zero.p, .w = package.cn.lookup(10.)};
+  const auto expected = x.getValueByIndex(0) * y.getValueByIndex(0);
+  const auto nearer = package.cn.lookup(dominant - (.5 * RealNumber::eps));
+  ASSERT_NE(nearer.r, initial.r);
+  for (size_t repetition = 0; repetition < 2; ++repetition) {
+    const auto result = package.kronecker(x, y, 1);
+    EXPECT_NEAR(std::abs(result.getValueByIndex(0) - expected), 0., 1e-13);
+  }
+}
+
 } // namespace dd
