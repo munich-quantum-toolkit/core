@@ -386,19 +386,20 @@ class QDMIBackend(BackendV2):
         """Return default backend options.
 
         Returns:
-            Default Options with shots=1024 and memory=False.
+            Default options with shots=1024, memory=False, and max_retries=0.
         """
         return Options(shots=1024, memory=False, max_retries=0)
 
-    @staticmethod
-    def _job_parameters(options: Mapping[str, object]) -> QDMIJobParameters:
+    def _job_parameters(self, options: Mapping[str, object]) -> QDMIJobParameters:  # ruff:ignore[no-self-use]
         """Validate and encode backend-specific execution options before submission.
 
         Subclasses declare supported options in :meth:`_default_options` and
         override this hook to map their values to QDMI custom job parameters.
-        The mapping contains resolved backend defaults and per-run overrides,
-        including ``shots``, ``memory``, and ``max_retries``. This hook runs once, before any job
-        is submitted, and must not submit jobs or mutate backend options.
+        An override replaces this implementation and must handle every option
+        it declares. The mapping contains resolved backend defaults and per-run
+        overrides, including ``shots``, ``memory``, and ``max_retries``. This hook
+        runs once, before any job is submitted, and must not submit jobs or
+        mutate backend options.
 
         Args:
             options: Effective execution options for every circuit in this run.

@@ -1009,8 +1009,7 @@ class ExecutionOptionsBackend(QDMIBackend):
         options.update_options(execution_mode="default")
         return options
 
-    @staticmethod
-    def _job_parameters(options: Mapping[str, object]) -> QDMIJobParameters:
+    def _job_parameters(self, options: Mapping[str, object]) -> QDMIJobParameters:  # ruff:ignore[no-self-use]
         mode = options["execution_mode"]
         if mode not in {"default", "selected"}:
             msg = "Invalid execution_mode"
@@ -1041,6 +1040,23 @@ def test_execution_options_defaults_overrides_and_validation(monkeypatch: pytest
     submit.assert_not_called()
 
 
+def test_execution_options_survive_retry(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A replacement job keeps the options resolved for the original run."""
+    device = MockQDMIDevice(num_qubits=1)
+    backend = ExecutionOptionsBackend(device)  # ty: ignore[invalid-argument-type]
+    failed = device.MockJob(num_clbits=1, shots=3)
+    failed._status = QDMIJobHandle.Status.FAILED  # ruff:ignore[private-member-access] Simulate a failed job.
+    submit = Mock(side_effect=[failed, device.MockJob(num_clbits=1, shots=3)])
+    monkeypatch.setattr(device, "submit_job", submit)
+    circuit = QuantumCircuit(1, 1)
+    circuit.measure(0, 0)
+    backend.set_options(execution_mode="selected")
+    job = backend.run(circuit, shots=3, max_retries=1)
+    backend.set_options(execution_mode="default")
+    job.result()
+    assert [call.kwargs["custom1"] for call in submit.call_args_list] == ["selected", "selected"]
+
+
 @pytest.mark.parametrize("primitive", ["sampler", "estimator"])
 def test_primitives_forward_backend_execution_options(monkeypatch: pytest.MonkeyPatch, primitive: str) -> None:
     """Native primitives preserve backend defaults; sampler accepts run overrides."""
@@ -1054,6 +1070,8 @@ def test_primitives_forward_backend_execution_options(monkeypatch: pytest.Monkey
     circuit = QuantumCircuit(1)
     if primitive == "sampler":
         circuit.measure_all()
+        backend.sampler().run([circuit], shots=4).result()
+        assert submit.call_args.kwargs["custom1"] == "selected"
         sampler = backend.sampler(run_options={"execution_mode": "default"})
         sampler.run([circuit], shots=4).result()
         expected = "default"

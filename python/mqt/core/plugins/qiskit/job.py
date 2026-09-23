@@ -77,6 +77,7 @@ class QDMIJob(JobV1):
         memory: Whether to collect genuine ordered shots.
         max_retries: Lifetime replacement limit per confirmed failed entry;
             disabled by default. Cancelled or uncertain jobs are never retried.
+        job_parameters: Custom submission parameters retained for replacements.
     """
 
     def __init__(
@@ -152,7 +153,9 @@ class QDMIJob(JobV1):
         Returns:
             A batch ready for :meth:`submit`, with programs retained for recovery.
         """
-        return cls(backend, None, circuits, shots=shots, memory=memory, max_retries=max_retries, job_parameters=job_parameters)
+        return cls(
+            backend, None, circuits, shots=shots, memory=memory, max_retries=max_retries, job_parameters=job_parameters
+        )
 
     @property
     def entries(self) -> tuple[BatchEntry[ExperimentResult], ...]:
