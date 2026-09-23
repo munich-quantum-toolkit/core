@@ -16,7 +16,7 @@
 #include <iostream>
 
 #ifndef MQT_CORE_QDMI_TEST_DRIVER_FILENAME
-#error MQT_CORE_QDMI_TEST_DRIVER_FILENAME must name the packaged Client driver
+#error MQT_CORE_QDMI_TEST_DRIVER_FILENAME must name the packaged QDMI driver
 #endif
 
 int main(const int argc, const char* const argv[]) {
@@ -28,7 +28,7 @@ int main(const int argc, const char* const argv[]) {
     const auto driver =
         executable.parent_path() / MQT_CORE_QDMI_TEST_DRIVER_FILENAME;
     if (!std::filesystem::is_regular_file(driver)) {
-      std::cerr << "Packaged QDMI Client driver is missing: " << driver << '\n';
+      std::cerr << "Packaged QDMI driver is missing: " << driver << '\n';
       return EXIT_FAILURE;
     }
     std::filesystem::current_path(std::filesystem::temp_directory_path());

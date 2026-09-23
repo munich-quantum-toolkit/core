@@ -9,6 +9,7 @@
  */
 
 #include "qdmi/Client.hpp"
+#include "qdmi/common/Common.hpp"
 
 #include "nanobind/nanobind.h"
 #include "nanobind/operators.h"
@@ -138,7 +139,8 @@ NB_MODULE(MQT_CORE_MODULE_NAME, qdmiModule) {
           "custom1"_a = std::nullopt, "custom2"_a = std::nullopt,
           "custom3"_a = std::nullopt, "custom4"_a = std::nullopt,
           "custom5"_a = std::nullopt)
-      .def_prop_ro("devices", &qdmi::Session::getDevices, nb::call_guard<nb::gil_scoped_release>(),
+      .def_prop_ro("devices", &qdmi::Session::getDevices,
+                   nb::call_guard<nb::gil_scoped_release>(),
                    "The devices visible to this authenticated session.");
 
   qdmiModule.def(

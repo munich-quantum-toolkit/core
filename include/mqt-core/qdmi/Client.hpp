@@ -14,7 +14,6 @@
 #pragma once
 
 #include "qdmi/common/Common.hpp"
-#include "qdmi/types.h"
 
 #include "qdmi/client.h"
 #include "qdmi/types.h"
@@ -512,7 +511,7 @@ template <maybe_optional_value_or_string_or_vector T, typename Query>
 /// your authentication method. Parameters are validated when the session is
 /// constructed.
 struct SessionConfig {
-  /// QDMI Client driver library. Uses the environment or packaged driver when
+  /// QDMI driver library. Uses the environment or packaged driver when
   /// omitted.
   std::optional<std::filesystem::path> driverPath;
   /// Authentication token
@@ -551,12 +550,10 @@ class Operation;
 /// @see QDMI_Session
 class Session {
 public:
-  /**
-   * @brief Opens a Client-visible QDMI device in a fresh session.
-   * @param id Stable device ID.
-   * @param config Client driver and authentication configuration.
-   * @return A device wrapper that retains the fresh session.
-   */
+  /// Opens a Client-visible QDMI device in a fresh session.
+  /// @param id Stable device ID.
+  /// @param config QDMI driver and authentication configuration.
+  /// @return A device wrapper that retains the fresh session.
   [[nodiscard]] static Device openDevice(std::string_view id,
                                          const SessionConfig& config = {});
 
@@ -583,8 +580,8 @@ private:
   [[nodiscard]] T queryProperty(const QDMI_Session_Property prop) const {
     return detail::queryProperty<T>(
         [&](const size_t size, void* value, size_t* sizeRet) {
-          return session_->api->sessionQueryProperty(session_->handle, prop, size,
-                                                     value, sizeRet);
+          return session_->api->sessionQueryProperty(session_->handle, prop,
+                                                     size, value, sizeRet);
         },
         std::string("Querying ") + qdmi::toString(prop),
         std::string("Querying size ") + qdmi::toString(prop));
@@ -784,11 +781,11 @@ public:
 private:
   [[nodiscard]] const detail::ClientApi& api() const { return *session_->api; }
 
-  /**
-   * @brief Constructs a Device object from a QDMI_Device handle.
-   * @param device The QDMI_Device handle to wrap.
-   * @param session The Client session that owns the handle.
-   */
+  /// Constructs a Device object from a QDMI_Device handle.
+
+  /// @param device The QDMI_Device handle to wrap.
+
+  /// @param session The Client session that owns the handle.
   Device(QDMI_Device device, std::shared_ptr<detail::ClientSession> session)
       : device_(device), session_(std::move(session)) {}
 
@@ -802,8 +799,7 @@ private:
     const std::string msg = std::string("Querying ") + qdmi::toString(prop);
     return detail::queryProperty<T>(
         [&](const size_t size, void* value, size_t* sizeRet) {
-          return api().deviceQueryProperty(device_, prop, size,
-                                                   value, sizeRet);
+          return api().deviceQueryProperty(device_, prop, size, value, sizeRet);
         },
         msg, msg);
   }
@@ -820,7 +816,7 @@ private:
   void setCustomJobParam(QDMI_Job job, QDMI_Job_Parameter param,
                          const CustomJobParameter& value) const;
 
-  /// @brief The underlying device pointer.
+  /// The underlying device pointer.
   QDMI_Device device_{};
   std::shared_ptr<detail::ClientSession> session_;
 
@@ -954,11 +950,11 @@ private:
     return *job_.get_deleter().session->api;
   }
 
-  /**
-   * @brief Constructs a Job object from a QDMI_Job handle.
-   * @param job The QDMI_Job handle to wrap.
-   * @param session The Client session that owns the handle.
-   */
+  /// Constructs a Job object from a QDMI_Job handle.
+
+  /// @param job The QDMI_Job handle to wrap.
+
+  /// @param session The Client session that owns the handle.
   Job(QDMI_Job job, std::shared_ptr<detail::ClientSession> session)
       : job_(job, detail::JobDeleter{std::move(session)}) {}
 
@@ -1047,12 +1043,13 @@ public:
 private:
   [[nodiscard]] const detail::ClientApi& api() const { return *session_->api; }
 
-  /**
-   * @brief Constructs a Site object from a QDMI_Site handle.
-   * @param device The QDMI device handle that owns the site.
-   * @param session The Client session that owns the handle.
-   * @param site The QDMI_Site handle to wrap.
-   */
+  /// Constructs a Site object from a QDMI_Site handle.
+
+  /// @param device The QDMI device handle that owns the site.
+
+  /// @param session The Client session that owns the handle.
+
+  /// @param site The QDMI_Site handle to wrap.
   Site(QDMI_Device device, std::shared_ptr<detail::ClientSession> session,
        QDMI_Site site)
       : device_(device), session_(std::move(session)), site_(site) {}
@@ -1062,8 +1059,8 @@ private:
   [[nodiscard]] T queryProperty(const QDMI_Site_Property prop) const {
     const std::string msg = std::string("Querying ") + qdmi::toString(prop);
     const auto query = [&](const size_t size, void* value, size_t* sizeRet) {
-      return api().deviceQuerySiteProperty(device_, site_, prop, size,
-                                             value, sizeRet);
+      return api().deviceQuerySiteProperty(device_, site_, prop, size, value,
+                                           sizeRet);
     };
     if constexpr (string_or_optional_string<T>) {
       return detail::queryProperty<T>(
@@ -1195,12 +1192,13 @@ public:
 private:
   [[nodiscard]] const detail::ClientApi& api() const { return *session_->api; }
 
-  /**
-   * @brief Constructs an Operation object from a QDMI_Operation handle.
-   * @param device The QDMI device handle that owns the operation.
-   * @param session The Client session that owns the handle.
-   * @param operation The QDMI_Operation handle to wrap.
-   */
+  /// Constructs an Operation object from a QDMI_Operation handle.
+
+  /// @param device The QDMI device handle that owns the operation.
+
+  /// @param session The Client session that owns the handle.
+
+  /// @param operation The QDMI_Operation handle to wrap.
   Operation(QDMI_Device device, std::shared_ptr<detail::ClientSession> session,
             QDMI_Operation operation)
       : device_(device), session_(std::move(session)), operation_(operation) {}

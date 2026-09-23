@@ -11,7 +11,7 @@ mystnb:
 ## Objective
 
 MQT Core consumes the standard QDMI 1.4 Client interface. `MQT::CoreQDMI` owns
-the C++ wrappers and loads one Client driver at runtime. It does not link to a
+the C++ wrappers and loads one QDMI driver at runtime. It does not link to a
 specific Driver implementation. `MQT::CoreQDMIDriver` is the packaged shared
 Driver. It loads devices such as [the SC QDMI Device](sc_device.md) and
 [the DDSIM QDMI Device](ddsim_device.md).
@@ -23,8 +23,8 @@ allocates a session.
 
 ## Driver Selection
 
-MQT Core selects the Client driver for the process after the Driver passes ABI
-and function-table validation and allocates the first raw session. The selection
+MQT Core selects the QDMI driver for the process after the Driver passes ABI and
+function-table validation and allocates the first raw session. The selection
 order is:
 
 1. `qdmi::SessionConfig::driverPath` or Python `driver_path`;

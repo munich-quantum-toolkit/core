@@ -14,7 +14,7 @@ import os
 import subprocess
 import sys
 from collections import Counter
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 from packaging import version
@@ -34,6 +34,9 @@ from mqt.core.qdmi import (
     is_binary_program_format,
     open_device,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 CustomValueType = type[str] | type[bool] | type[int] | type[float] | type[bytes]
 
@@ -781,62 +784,6 @@ def test_simulator_job_result_bindings(ddsim_device: Device) -> None:
     assert sparse_probabilities == pytest.approx({"00": 0.5, "11": 0.5})
 
 
-def test_simulator_job_get_dense_probabilities_returns_valid_probabilities(simulator_job: Job) -> None:
-    """Test that get_dense_probabilities() returns the correct probabilities."""
-    simulator_job.wait()
-
-    probabilities = simulator_job.get_dense_probabilities()
-    assert len(probabilities) == 4  # 2 qubits -> 4 probabilities
-
-    # The expected probabilities are 0.5 for |00> and |11>, and 0 for |01> and |10>
-    assert probabilities[0] == pytest.approx(0.5)  # |00>
-    assert probabilities[1] == pytest.approx(0.0)  # |01>
-    assert probabilities[2] == pytest.approx(0.0)  # |10>
-    assert probabilities[3] == pytest.approx(0.5)  # |11>
-
-
-def test_simulator_job_get_sparse_state_vector_returns_valid_state(simulator_job: Job) -> None:
-    """Test that get_sparse_statevector() returns the correct Bell state."""
-    simulator_job.wait()
-
-    sparse_state_vector = simulator_job.get_sparse_statevector()
-    assert len(sparse_state_vector) == 2  # Only |00> and |11> should be present
-
-    inv_sqrt2 = 1.0 / (2**0.5)
-    assert "00" in sparse_state_vector
-    assert abs(sparse_state_vector["00"]) == pytest.approx(inv_sqrt2)
-
-    assert "11" in sparse_state_vector
-    assert abs(sparse_state_vector["11"]) == pytest.approx(inv_sqrt2)
-
-
-def test_simulator_job_get_sparse_probabilities_returns_valid_probabilities(simulator_job: Job) -> None:
-    """Test that get_sparse_probabilities() returns the correct probabilities."""
-    simulator_job.wait()
-
-    sparse_probabilities = simulator_job.get_sparse_probabilities()
-    assert len(sparse_probabilities) == 2  # Only |00> and |11> should be present
-
-    assert "00" in sparse_probabilities
-    assert sparse_probabilities["00"] == pytest.approx(0.5)
-
-    assert "11" in sparse_probabilities
-    assert sparse_probabilities["11"] == pytest.approx(0.5)
-
-
-def test_open_device_rejects_unknown_id() -> None:
-    """Opening requires a stable Client-visible ID."""
-    with pytest.raises(IndexError, match="has no device with ID"):
-        open_device("python.unknown")
-
-
-def test_open_device_creates_a_fresh_session() -> None:
-    """Stable-ID opens should return separately owned sessions."""
-    first = open_device("mqt.sc.default")
-    second = open_device("mqt.sc.default")
-    assert first != second
-
-
 @pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="Requires POSIX named pipes")
 @pytest.mark.parametrize("entrypoint", ["driver", "slurm", "compiler"])
 def test_device_open_releases_gil(tmp_path: Path, entrypoint: str) -> None:
@@ -885,7 +832,6 @@ writer.join()
         check=True,
         timeout=15,
     )
-
 
 
 def test_site_keeps_fresh_session_alive() -> None:

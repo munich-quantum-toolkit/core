@@ -20,8 +20,7 @@ import pytest
 
 from mqt.core.bench import qpe, repeat_until_success
 from mqt.core.mlir import CompiledProgram, CompilerTarget, OutputFormat, QCProgram, compile_program, submit_program
-from mqt.core.qdmi import CustomProperty, Job, ProgramFormat
-from mqt.core.qdmi.driver import open_device
+from mqt.core.qdmi import CustomProperty, Job, ProgramFormat, open_device
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -285,7 +284,7 @@ def test_qdmi_does_not_import_compiler() -> None:
     script = """
 import sys
 from mqt.core.qdmi import ProgramFormat
-from mqt.core.qdmi.driver import open_device
+from mqt.core.qdmi import open_device
 
 assert "mqt.core.mlir" not in sys.modules
 device = open_device("mqt.ddsim.default")

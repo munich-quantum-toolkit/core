@@ -24,9 +24,8 @@
 #include <string_view>
 
 #ifdef _WIN32
-#include <windows.h>
-
 #include <filesystem>
+#include <windows.h>
 #endif
 
 namespace qdmi {

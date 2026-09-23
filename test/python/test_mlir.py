@@ -45,8 +45,7 @@ from mqt.core.mlir import (
     compile_program,
     submit_program,
 )
-from mqt.core.qdmi import ProgramFormat
-from mqt.core.qdmi import open_device
+from mqt.core.qdmi import ProgramFormat, open_device
 
 requires_qiskit_translation = pytest.mark.skipif(
     not (

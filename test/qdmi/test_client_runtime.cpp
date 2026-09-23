@@ -8,19 +8,19 @@
  * Licensed under the MIT License
  */
 
-#include "TestUtils.hpp"
 #include "qdmi/Client.hpp"
 
-#include <gmock/gmock-matchers.h>
-#include <gtest/gtest.h>
-/// POSIX declares setenv and unsetenv in this compatibility header.
-/// NOLINTNEXTLINE(modernize-deprecated-headers)
-#include <stdlib.h>
+#include "TestUtils.hpp"
 
 #include <filesystem>
+#include <gmock/gmock-matchers.h>
+#include <gtest/gtest.h>
 #include <new>
 #include <optional>
 #include <stdexcept>
+/// POSIX declares setenv and unsetenv in <stdlib.h>.
+/// NOLINTNEXTLINE(modernize-deprecated-headers)
+#include <stdlib.h>
 #include <string>
 
 namespace qdmi {
@@ -45,7 +45,7 @@ TEST(ClientRuntimeTest, ValidatesThenFreezesOneDriverAndRetainsSessions) {
   setDriverEnvironment(missing.string());
   EXPECT_THAT([] { return Session{}; },
               testing::ThrowsMessage<std::runtime_error>(
-                  testing::HasSubstr("Cannot load QDMI Client driver")));
+                  testing::HasSubstr("Cannot load QDMI driver")));
 
   EXPECT_THAT(
       [] {
@@ -115,13 +115,13 @@ TEST(ClientRuntimeTest, ValidatesThenFreezesOneDriverAndRetainsSessions) {
       .driverPath = MQT_CORE_QDMI_TEST_DRIVER,
       .token = "odd-size",
   });
-  EXPECT_THROW(static_cast<void>(oddSize.getDevices()), std::invalid_argument);
+  EXPECT_THROW(static_cast<void>(oddSize.getDevices()), std::runtime_error);
   Session oddDeviceSize(SessionConfig{
       .driverPath = MQT_CORE_QDMI_TEST_DRIVER,
       .token = "odd-device-size",
   });
   EXPECT_THROW(static_cast<void>(oddDeviceSize.getDevices().front().getSites()),
-               std::invalid_argument);
+               std::runtime_error);
   Session oddOperationSize(SessionConfig{
       .driverPath = MQT_CORE_QDMI_TEST_DRIVER,
       .token = "odd-operation-size",
@@ -131,7 +131,7 @@ TEST(ClientRuntimeTest, ValidatesThenFreezesOneDriverAndRetainsSessions) {
                                      .getOperations()
                                      .front()
                                      .getSites()),
-               std::invalid_argument);
+               std::runtime_error);
 
   EXPECT_THAT(
       [] {

@@ -321,8 +321,8 @@ QDMI_Device_impl_d::QDMI_Device_impl_d(
       if (child == nullptr) {
         throw std::runtime_error("Device returned a null child device handle");
       }
-      childDevices_.emplace_back(
-          std::make_unique<QDMI_Device_impl_d>(library_, config, child));
+      childDevices_.emplace_back(std::make_unique<QDMI_Device_impl_d>(
+          library_, config, std::string{}, child));
     }
   } catch (...) {
     childDevices_.clear();
@@ -767,8 +767,10 @@ auto Driver::openFresh(const std::string_view id,
     definition = *registered;
   }
   return std::make_shared<QDMI_Device_impl_d>(
-      getDynamicDeviceLibrary(detail::pathToUtf8(definition.library), definition.prefix),
-      detail::mergeSessionConfig(std::move(definition.session), overrides), definition.id);
+      getDynamicDeviceLibrary(detail::pathToUtf8(definition.library),
+                              definition.prefix),
+      detail::mergeSessionConfig(std::move(definition.session), overrides),
+      definition.id);
 }
 
 void Driver::materializeClientCatalog() {
@@ -846,8 +848,6 @@ int QDMI_session_alloc(QDMI_Session* session) {
     return qdmi::Driver::get().sessionAlloc(session);
   } catch (const std::bad_alloc&) {
     return QDMI_ERROR_OUTOFMEM;
-  } catch (const std::invalid_argument&) {
-    return QDMI_ERROR_INVALIDARGUMENT;
   } catch (...) {
     return QDMI_ERROR_FATAL;
   }

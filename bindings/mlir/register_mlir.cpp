@@ -21,6 +21,7 @@
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mqt/bench/Generate.h"
 #include "qdmi/Client.hpp"
+
 #include "qiskit/Qiskit.h"
 
 #include "nanobind/nanobind.h"
@@ -1085,14 +1086,17 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
              std::optional<std::string> custom3,
              std::optional<std::string> custom4,
              std::optional<std::string> custom5) {
-            const nb::gil_scoped_release release;
-            auto device = openQDMIDevice(
-                deviceId, std::move(driverPath), std::move(token),
-                std::move(authFile), std::move(authUrl), std::move(username),
-                std::move(password), std::move(projectId), std::move(custom1),
-                std::move(custom2), std::move(custom3), std::move(custom4),
-                std::move(custom5));
-            return takeResult(mlir::compilerTargetFromDevice(device));
+            auto target = [&] {
+              const nb::gil_scoped_release release;
+              auto device = openQDMIDevice(
+                  deviceId, std::move(driverPath), std::move(token),
+                  std::move(authFile), std::move(authUrl), std::move(username),
+                  std::move(password), std::move(projectId), std::move(custom1),
+                  std::move(custom2), std::move(custom3), std::move(custom4),
+                  std::move(custom5));
+              return mlir::compilerTargetFromDevice(device);
+            }();
+            return takeResult(std::move(target));
           },
           "device_id"_a, nb::kw_only(), "driver_path"_a = std::nullopt,
           "token"_a = std::nullopt, "auth_file"_a = std::nullopt,

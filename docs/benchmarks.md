@@ -380,7 +380,7 @@ for the basic compile-and-submit workflow and {doc}`installation` for setup.
 ```{code-cell} ipython3
 from mqt.core.bench import repeat_until_success
 from mqt.core.mlir import compile_program, submit_program
-from mqt.core.qdmi.driver import open_device
+from mqt.core.qdmi import open_device
 
 rus = repeat_until_success.RepeatUntilSuccess(
     repeat_until_success.Options(data_qubits=4)

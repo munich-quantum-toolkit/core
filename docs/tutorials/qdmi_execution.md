@@ -30,7 +30,7 @@ from qiskit.visualization import plot_distribution
 
 from mqt.core.mlir import compile_program, submit_program
 from mqt.core.qdmi import ProgramFormat
-from mqt.core.qdmi.driver import open_device, registered_device_ids
+from mqt.core.qdmi import ClientSession, open_device
 ```
 
 ## Discover a device and inspect its capabilities
@@ -39,7 +39,7 @@ Device IDs identify configured device definitions. Listing them does not submit
 a program. The bundled simulator has the stable ID `mqt.ddsim.default`:
 
 ```{code-cell} ipython3
-print("Registered devices:", registered_device_ids())
+print("Registered devices:", [device.id for device in ClientSession().devices])
 device = open_device("mqt.ddsim.default")
 print("Device:", device.name())
 print("Status:", device.status().name)

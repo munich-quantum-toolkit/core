@@ -21,8 +21,10 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <variant>
 
 namespace qdmi {
+using CustomJobParameter = std::variant<std::string, bool, int, double>;
 namespace detail {
 /// Encode a native filesystem path as UTF-8.
 [[nodiscard]] inline auto pathToUtf8(const std::filesystem::path& path)

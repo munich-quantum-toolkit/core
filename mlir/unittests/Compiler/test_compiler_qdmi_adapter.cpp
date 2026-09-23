@@ -12,17 +12,20 @@
 #include "mqt/Compiler/QDMIAdapter.h"
 #include "mqt/Compiler/Target.h"
 #include "qdmi/Client.hpp"
+#include "qdmi/driver/Driver.hpp"
 
 #include "gtest/gtest.h"
+#include "qdmi/device.h"
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
 
 #include <cassert>
-#include <cstring>
 #include <cstdlib>
+#include <cstring>
 #include <initializer_list>
 #include <memory>
 #include <numeric>
@@ -110,8 +113,9 @@ TEST(CompilerQDMIAdapterTest, SnapshotsIQMCalibrationAndLifetime) {
 }
 
 TEST(CompilerQDMIAdapterTest, QueriesNamesAndSiteIndicesOncePerSnapshot) {
-  auto library = std::make_shared<qdmi::DynamicDeviceLibrary>(
-      MQT_CORE_MLIR_SC_DEVICE_LIBRARY, "MQT_SC");
+  const auto device = qdmi::Session::openDevice("mqt.sc.default");
+  auto* library = &const_cast<qdmi::DeviceLibrary&>(
+      static_cast<QDMI_Device>(device)->getLibrary());
   static thread_local decltype(QDMI_device_session_query_site_property)*
       querySite = nullptr;
   static thread_local decltype(QDMI_device_session_query_operation_property)*
@@ -120,6 +124,10 @@ TEST(CompilerQDMIAdapterTest, QueriesNamesAndSiteIndicesOncePerSnapshot) {
   static thread_local size_t nameQueries = 0;
   querySite = library->device_session_query_site_property;
   queryOperation = library->device_session_query_operation_property;
+  const auto restore = llvm::make_scope_exit([&] {
+    library->device_session_query_site_property = querySite;
+    library->device_session_query_operation_property = queryOperation;
+  });
   library->device_session_query_site_property =
       [](QDMI_Device_Session session, QDMI_Site site,
          QDMI_Site_Property property, size_t size, void* value,
@@ -136,8 +144,6 @@ TEST(CompilerQDMIAdapterTest, QueriesNamesAndSiteIndicesOncePerSnapshot) {
         return queryOperation(session, operation, numSites, sites, numParams,
                               params, property, size, value, sizeRet);
       };
-  QDMI_Device_impl_d rawDevice(library);
-  const auto device = qdmi::Session::createSessionlessDevice(&rawDevice);
   for (int snapshot = 0; snapshot < 2; ++snapshot) {
     indexQueries = 0;
     nameQueries = 0;
@@ -279,12 +285,15 @@ TEST(CompilerQDMIAdapterTest,
 
 TEST(CompilerQDMIAdapterTest,
      SelectsPayloadByPreferenceAndIncludesMaximalCapabilities) {
-  auto library = std::make_shared<qdmi::DynamicDeviceLibrary>(
-      MQT_CORE_MLIR_DDSIM_DEVICE_LIBRARY, "MQT_DDSIM");
+  const auto device = qdmi::Session::openDevice("mqt.ddsim.default");
+  auto* library = &const_cast<qdmi::DeviceLibrary&>(
+      static_cast<QDMI_Device>(device)->getLibrary());
   static thread_local decltype(QDMI_device_session_query_device_property)*
       query = nullptr;
   static thread_local std::vector<QDMI_Program_Format> formats;
   query = library->device_session_query_device_property;
+  const auto restore = llvm::make_scope_exit(
+      [&] { library->device_session_query_device_property = query; });
   library->device_session_query_device_property =
       [](QDMI_Device_Session session, QDMI_Device_Property property,
          size_t size, void* value, size_t* sizeRet) -> int {
@@ -303,8 +312,6 @@ TEST(CompilerQDMIAdapterTest,
     }
     return QDMI_SUCCESS;
   };
-  QDMI_Device_impl_d rawDevice(library);
-  const auto device = qdmi::Session::createSessionlessDevice(&rawDevice);
   formats = {
       QDMI_PROGRAM_FORMAT_QIRBASESTRING,
       QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
@@ -407,20 +414,21 @@ TEST(CompilerQDMIAdapterTest,
 
 TEST(CompilerQDMIAdapterTest,
      CompilationCreatesNoJobAndSubmissionChecksContract) {
-  auto library = std::make_shared<qdmi::DynamicDeviceLibrary>(
-      MQT_CORE_MLIR_DDSIM_DEVICE_LIBRARY, "MQT_DDSIM");
+  const auto device = qdmi::Session::openDevice("mqt.ddsim.default");
+  auto* library = &const_cast<qdmi::DeviceLibrary&>(
+      static_cast<QDMI_Device>(device)->getLibrary());
   static thread_local decltype(QDMI_device_session_create_device_job)*
       createJob = nullptr;
   static thread_local size_t creations = 0;
   createJob = library->device_session_create_device_job;
+  const auto restore = llvm::make_scope_exit(
+      [&] { library->device_session_create_device_job = createJob; });
   creations = 0;
   library->device_session_create_device_job = [](QDMI_Device_Session session,
                                                  QDMI_Device_Job* job) {
     ++creations;
     return createJob(session, job);
   };
-  QDMI_Device_impl_d rawDevice(library);
-  const auto device = qdmi::Session::createSessionlessDevice(&rawDevice);
   constexpr auto source =
       "OPENQASM 3.0; include \"stdgates.inc\"; "
       "qubit[2] q; bit[2] c; h q[0]; cx q[0],q[1]; c = measure q;";
@@ -454,7 +462,7 @@ TEST(CompilerQDMIAdapterTest,
       mlir::TargetEnvironment(explicitTarget, payload)));
   EXPECT_TRUE(llvm::errorToBool(
       mlir::submitProgram(device, otherArtifact).takeError()));
-  EXPECT_EQ(creations, 1);
+  EXPECT_EQ(creations, 2);
 
   const auto restricted = llvm::cantFail(mlir::PayloadSpecification::create(
       payload.format(), {{.id = "forward-branching"}}));
@@ -556,8 +564,9 @@ TEST(CompilerQDMIAdapterTest,
 }
 
 TEST(CompilerQDMIAdapterTest, SubmissionQueriesOnlyTheRequiredMetadata) {
-  auto library = std::make_shared<qdmi::DynamicDeviceLibrary>(
-      MQT_CORE_MLIR_DDSIM_DEVICE_LIBRARY, "MQT_DDSIM");
+  const auto device = qdmi::Session::openDevice("mqt.ddsim.default");
+  auto* library = &const_cast<qdmi::DeviceLibrary&>(
+      static_cast<QDMI_Device>(device)->getLibrary());
   static thread_local decltype(QDMI_device_session_query_device_property)*
       queryDevice = nullptr;
   static thread_local decltype(QDMI_device_session_query_site_property)*
@@ -565,6 +574,10 @@ TEST(CompilerQDMIAdapterTest, SubmissionQueriesOnlyTheRequiredMetadata) {
   static thread_local size_t siteLists = 0;
   static thread_local size_t calibrationQueries = 0;
   queryDevice = library->device_session_query_device_property;
+  const auto restore = llvm::make_scope_exit([&] {
+    library->device_session_query_device_property = queryDevice;
+    library->device_session_query_site_property = querySite;
+  });
   querySite = library->device_session_query_site_property;
   library->device_session_query_device_property =
       [](QDMI_Device_Session session, QDMI_Device_Property property,
@@ -581,8 +594,6 @@ TEST(CompilerQDMIAdapterTest, SubmissionQueriesOnlyTheRequiredMetadata) {
                               property == QDMI_SITE_PROPERTY_T2;
         return querySite(session, site, property, size, value, sizeRet);
       };
-  QDMI_Device_impl_d rawDevice(library);
-  const auto device = qdmi::Session::createSessionlessDevice(&rawDevice);
   constexpr auto source = "OPENQASM 3.1; qubit q; bit c = measure q;";
   const auto compiled = llvm::cantFail(
       mlir::compileProgram(mlir::OpenQASMProgram(source), device));

@@ -259,6 +259,9 @@ extern "C" int TEST_SESSION_QDMI_device_session_query_device_property(
   if (session == nullptr || !session->initialized) {
     return QDMI_ERROR_BADSTATE;
   }
+  if (prop == QDMI_DEVICE_PROPERTY_ID) {
+    return queryString("test.device-default", size, value, sizeRet);
+  }
   if (prop == QDMI_DEVICE_PROPERTY_CHILDDEVICES) {
     if (session->child != nullptr ||
         parameter(session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM5) !=

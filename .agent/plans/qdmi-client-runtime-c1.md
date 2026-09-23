@@ -1,6 +1,6 @@
-# Replaceable QDMI Client driver
+# Replaceable QDMI driver
 
-Status: independent rebase validated locally.
+Status: rebased onto main; validation in progress.
 
 ## Scope and decisions
 
@@ -9,15 +9,14 @@ Client ABI rather than link to Core's packaged driver. Driver selection is
 process-wide; failed validation or allocation must leave retry possible. Owning
 wrappers retain their originating session and the loaded function table.
 
-This change depends only on QDMI #511. Keep the existing program-format enum,
-single-program APIs, calibration submission, and current compiler and SDK
-behavior. Multi-program adoption and payload capabilities are independent work.
-The optional private discovery/configuration extension is in Core PR #2230.
-Installed deployment is in Core PR #2231. Standardizing that extension belongs
-to QDMI v2, not this Client ABI change.
+This change depends on QDMI #511 and preserves current compiler and SDK
+behavior, including the merged calibration and pulse removals. The optional
+private discovery/configuration extension is in Core PR #2230. Installed
+deployment is in Core PR #2231. Standardizing that extension belongs to QDMI v2,
+not this Client ABI change.
 
-Target Core 4.1 / QDMI 1.4, never Core 4.0. Development uses the isolated QDMI
-driver branch; published artifacts require a released dependency version.
+Development pins QDMI #511 by immutable commit. Published artifacts require a
+released dependency version.
 
 ## Implementation boundary
 
@@ -33,6 +32,5 @@ Validate ABI/symbol rejection, retry after failed allocation, process-wide
 selection, session lifetime, malformed results, and packaged-driver loading.
 Retain current optional-device builds and Slurm status semantics. Run
 independent release build/CTest, QDMI and SDK Python suites, generated stubs,
-repository lint, and C++ lint before publication. The release suite passed 3,869
-tests with one existing skip; all 455 selected Python tests passed. Stub
-generation, repository lint, and C++ lint passed.
+repository lint, and C++ lint before publication. Validation is being repeated
+after rebasing onto current main.

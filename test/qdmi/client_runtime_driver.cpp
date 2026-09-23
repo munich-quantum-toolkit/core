@@ -8,9 +8,8 @@
  * Licensed under the MIT License
  */
 
-#include <qdmi/client.h>
-
 #include <cstdint>
+#include <qdmi/client.h>
 
 #ifdef TEST_FULL_CLIENT
 #include <cstddef>

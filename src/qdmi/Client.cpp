@@ -47,7 +47,7 @@
 
 #ifndef MQT_CORE_QDMI_DEFAULT_DRIVER_FILENAME
 #error                                                                         \
-    "MQT_CORE_QDMI_DEFAULT_DRIVER_FILENAME must name the packaged Client driver"
+    "MQT_CORE_QDMI_DEFAULT_DRIVER_FILENAME must name the packaged QDMI driver"
 #endif
 
 namespace qdmi {
@@ -64,14 +64,14 @@ void rejectUnsupportedProgramFormat(const QDMI_Program_Format format) {
 }
 template <typename T>
 std::map<std::string, T>
-getSparseResult(const detail::ClientApi& api, QDMI_Job job, const QDMI_Job_Result keysResult,
+getSparseResult(const detail::ClientApi& api, QDMI_Job job,
+                const QDMI_Job_Result keysResult,
                 const QDMI_Job_Result valuesResult,
                 const std::string& description, const std::string& valueType,
                 const std::string& mismatch) {
   size_t keysSize = 0;
-  qdmi::throwIfError(
-      api.jobGetResults(job, keysResult, 0, nullptr, &keysSize),
-      "Querying " + description + " keys size");
+  qdmi::throwIfError(api.jobGetResults(job, keysResult, 0, nullptr, &keysSize),
+                     "Querying " + description + " keys size");
 
   if (keysSize == 0) {
     return {};
@@ -94,9 +94,9 @@ getSparseResult(const detail::ClientApi& api, QDMI_Job job, const QDMI_Job_Resul
   }
 
   std::vector<T> values(valuesSize / sizeof(T));
-  qdmi::throwIfError(api.jobGetResults(job, valuesResult, valuesSize,
-                                          values.data(), nullptr),
-                     "Querying " + description + " values");
+  qdmi::throwIfError(
+      api.jobGetResults(job, valuesResult, valuesSize, values.data(), nullptr),
+      "Querying " + description + " values");
 
   /// Parse the comma-separated keys.
   std::map<std::string, T> result;
@@ -208,7 +208,7 @@ void closeLibrary(LibraryHandle library) { dlclose(library); }
 [[nodiscard]] auto normalizePath(const std::filesystem::path& path)
     -> std::filesystem::path {
   if (path.empty()) {
-    throw std::invalid_argument("QDMI Client driver path must not be empty");
+    throw std::invalid_argument("QDMI driver path must not be empty");
   }
   std::error_code error;
   auto normalized = std::filesystem::weakly_canonical(
@@ -280,7 +280,7 @@ template <class Function>
   /// NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
   const auto function = reinterpret_cast<Function>(findSymbol(library, name));
   if (function == nullptr) {
-    throw std::runtime_error("QDMI Client driver is missing symbol " +
+    throw std::runtime_error("QDMI driver is missing symbol " +
                              std::string(name));
   }
   return function;
@@ -290,7 +290,7 @@ template <class Function>
     -> LoadedClient {
   auto* const library = openLibrary(path);
   if (library == nullptr) {
-    throw std::runtime_error("Cannot load QDMI Client driver '" +
+    throw std::runtime_error("Cannot load QDMI driver '" +
                              detail::pathToUtf8(path) + "'");
   }
 
@@ -304,7 +304,7 @@ template <class Function>
             QDMI_VERSION_MAJOR(QDMI_CLIENT_ABI_VERSION) ||
         QDMI_VERSION_MINOR(actualAbi) !=
             QDMI_VERSION_MINOR(QDMI_CLIENT_ABI_VERSION)) {
-      throw std::runtime_error("QDMI Client driver has incompatible ABI " +
+      throw std::runtime_error("QDMI driver has incompatible ABI " +
                                std::to_string(QDMI_VERSION_MAJOR(actualAbi)) +
                                "." +
                                std::to_string(QDMI_VERSION_MINOR(actualAbi)));
@@ -369,7 +369,7 @@ using SessionGuard =
 void validateSessionAllocation(const int status, QDMI_Session session) {
   if (session == nullptr &&
       (status == QDMI_SUCCESS || status == QDMI_WARN_GENERAL)) {
-    throw std::runtime_error("The QDMI Client driver returned a null session");
+    throw std::runtime_error("The QDMI driver returned a null session");
   }
   qdmi::throwIfError(status, "Allocating QDMI session");
 }
@@ -382,7 +382,7 @@ void validateSessionAllocation(const int status, QDMI_Session session) {
     if (config.driverPath &&
         normalizePath(*config.driverPath) != selection.path) {
       throw std::runtime_error(
-          "The QDMI Client driver is already selected for this process");
+          "The QDMI driver is already selected for this process");
     }
     const auto api = selection.api;
     QDMI_Session session = nullptr;
@@ -812,8 +812,8 @@ Job Device::submitJobImpl(
                                            sizeof(format), &format),
                      "Setting program format");
   qdmi::throwIfError(api().jobSetParameter(jobWrapper,
-                                            QDMI_JOB_PARAMETER_PROGRAM,
-                                            program.size(), program.data()),
+                                           QDMI_JOB_PARAMETER_PROGRAM,
+                                           program.size(), program.data()),
                      "Setting program");
   if (numShots.has_value()) {
     qdmi::throwIfError(api().jobSetParameter(jobWrapper,
@@ -898,7 +898,7 @@ std::string Job::getId() const {
   return detail::queryProperty<std::string>(
       [this](const size_t size, void* value, size_t* sizeRet) {
         return api().jobQueryProperty(job_.get(), QDMI_JOB_PROPERTY_ID, size,
-                                       value, sizeRet);
+                                      value, sizeRet);
       },
       "Querying job ID", "Querying job ID size");
 }
