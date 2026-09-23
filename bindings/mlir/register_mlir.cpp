@@ -1197,8 +1197,8 @@ Programs own their MLIR module. Conversions can consume a program; use
           "trials", &mlir::MappingOptions::trials,
           "Positive trial count; None uses the available logical CPU count.")
       .def_rw("iterations", &mlir::MappingOptions::iterations,
-              "Positive number of forward/backward rounds to refine the "
-              "initial layout.")
+              "Forward/backward refinement rounds; zero scores each start "
+              "directly.")
       .def_rw("lookahead", &mlir::MappingOptions::lookahead,
               "Additional two-qubit gates considered during routing; zero "
               "disables lookahead.")

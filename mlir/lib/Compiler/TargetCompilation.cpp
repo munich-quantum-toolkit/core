@@ -49,11 +49,6 @@ protected:
       signalPassFailure();
       return;
     }
-    if (mapping_.iterations == 0) {
-      getOperation().emitError("mapping iterations must be greater than zero");
-      signalPassFailure();
-      return;
-    }
     if (allToAllOnly_ && environment_.target().connectivityKind() !=
                              CompilerTarget::Connectivity::Kind::AllToAll) {
       getOperation().emitError(

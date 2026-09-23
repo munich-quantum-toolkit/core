@@ -150,7 +150,7 @@ static llvm::cl::opt<size_t> mappingTrials(
 static llvm::cl::opt<size_t> mappingIterations(
     "mapping-iterations",
     llvm::cl::desc(
-        "Positive number of forward/backward layout refinement rounds"),
+        "Forward/backward layout refinement rounds; zero skips refinement"),
     llvm::cl::init(MappingOptions{}.iterations));
 static llvm::cl::opt<size_t>
     mappingLookahead("mapping-lookahead",
@@ -438,10 +438,6 @@ static int runCompiler(int argc, char** argv) {
   }
   if (mappingTrials.getNumOccurrences() != 0 && mappingTrials == 0) {
     llvm::errs() << "--mapping-trials must be greater than zero.\n";
-    return 1;
-  }
-  if (mappingIterations == 0) {
-    llvm::errs() << "--mapping-iterations must be greater than zero.\n";
     return 1;
   }
   const CompilationOptions options{

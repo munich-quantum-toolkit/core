@@ -479,8 +479,8 @@ QASM2
 
 Device-native formats take precedence. Among standard formats, those with
 classical control precede restricted profiles; binary encoding wins ties within
-a QIR profile. `CALIBRATION` and `BATCH_JOB` do not carry serialized circuits
-and cannot have a program serializer.
+a QIR profile. `BATCH_JOB` does not carry serialized circuits and cannot have a
+program serializer.
 
 ### Device Introspection
 

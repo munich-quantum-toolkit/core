@@ -349,9 +349,6 @@ Both profiles preserve global phase and logical wire order, including SWAPs.
 LLVM target triples must match the host architecture and operating system
 because the JIT executes in process.
 
-The generic submission APIs reject QDMI calibration and batch-job formats. Use
-{py:meth}`~mqt.core.qdmi.Device.submit_calibration_job` or
-{cpp-api:func}`qdmi::Device::submitCalibrationJob` for calibration. These APIs
-accept an optional provider-defined configuration payload and no shot count; the
-payload is not an executable circuit. Batch jobs contain job handles rather than
-serialized program bytes and require a separate typed API.
+The generic submission APIs reject the QDMI batch-job format. Batch jobs contain
+job handles rather than serialized program bytes and require a separate typed
+API.
