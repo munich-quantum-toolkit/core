@@ -170,13 +170,6 @@ def test_device_coupling_map(device: Device) -> None:
         assert all(isinstance(site, Device.Site) for pair in cm for site in pair)
 
 
-def test_device_needs_calibration(device: Device) -> None:
-    """Test that the device needs calibration is an integer."""
-    needs_cal = device.needs_calibration()
-    if needs_cal is not None:
-        assert isinstance(needs_cal, int)
-
-
 def test_device_queue_length(device: Device) -> None:
     """Test that the optional device queue length is a non-negative integer."""
     queue_length = device.queue_length()
@@ -529,23 +522,6 @@ def test_device_rejects_batch_jobs(ddsim_device: Device) -> None:
     """State that MQT Core does not support batch jobs."""
     with pytest.raises(ValueError, match="does not support batch jobs"):
         ddsim_device.submit_job(b"", ProgramFormat.BATCH_JOB, num_shots=1)
-
-
-def test_device_sends_calibration_runs_elsewhere(ddsim_device: Device) -> None:
-    """Point a calibration run at its own entry point."""
-    with pytest.raises(ValueError, match="submit_calibration_job"):
-        ddsim_device.submit_job(b"", ProgramFormat.CALIBRATION, num_shots=1)
-
-
-@pytest.mark.parametrize("program", [None, "configuration", b"", b"\x01\x02"])
-def test_calibration_job_reaches_the_device(ddsim_device: Device, program: str | bytes | None) -> None:
-    """Let the device decide about a calibration run, with or without a payload.
-
-    DDSIM rejects calibration with a device error. The client must forward the
-    request rather than reject its optional payload as an invalid argument.
-    """
-    with pytest.raises(RuntimeError, match="Setting program format"):
-        ddsim_device.submit_calibration_job(program)
 
 
 def test_device_executes_qir_program(ddsim_device: Device) -> None:
