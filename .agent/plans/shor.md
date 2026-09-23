@@ -44,14 +44,15 @@ retain their separate purpose.
 
 Acceptance covers exact factor recovery and JSON validation, small arithmetic
 basis states and coherent superpositions, inverse composition with clean
-workspace, sampled Shor distributions for 15, 21, and 35, and structured 31-bit
+workspace, the sampled Shor distribution for 15, and structured 31-bit
 generation/Adaptive QIR compilation. The largest input's 65-qubit state is not
-simulated. Both device formats use the same 15/21 cases. The optimized native
-build passes 3,602 tests with one expected Slurm skip; 118 Python benchmark and
-compilation tests pass. Stub generation, whole-file C++ lint, executable docs,
-and rendered-link checks pass. Repository lint reports only 28 pre-existing
-diagnostics in unrelated untracked audit scripts; the pinned type checker passes
-with those scripts excluded.
+simulated. Native sampling uses only 15 to keep coverage runs small; both device
+formats use the same 15/21 cases. The timings below include a separate 35 run.
+The optimized native build passes 3,602 tests with one expected Slurm skip; 118
+Python benchmark and compilation tests pass. Stub generation, whole-file C++
+lint, executable docs, and rendered-link checks pass. Repository lint reports
+only 28 pre-existing diagnostics in unrelated untracked audit scripts; the
+pinned type checker passes with those scripts excluded.
 
 A flat 20,000,001-gate single-qubit X program was imported and verified from
 OpenQASM. A counted loop executing 20,000,001 X gates was simulated with the

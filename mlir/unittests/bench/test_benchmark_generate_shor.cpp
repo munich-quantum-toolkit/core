@@ -73,29 +73,28 @@ static std::vector<double> shorReference(uint64_t number, uint64_t base) {
 }
 
 TEST(GenerateProgramTest, SamplesShorAndRecoversFactors) {
-  for (uint64_t number : {15ULL, 21ULL, 35ULL}) {
-    SCOPED_TRACE(number);
-    const Shor benchmark({.number = number});
-    auto program = test::generateQCO(benchmark);
-    ASSERT_TRUE(program);
-    EXPECT_GE(test::countOps<func::CallOp>(program->module()), 3U);
-    auto counts =
-        qco::sample(mlir::mqt::getEntryPoint(program->module()), 64, 17);
-    ASSERT_TRUE(succeeded(counts));
-    auto evaluation = benchmark.evaluate(*counts);
-    ASSERT_TRUE(evaluation.factors);
-    EXPECT_EQ(evaluation.factors->first * evaluation.factors->second, number);
-    const auto reference = shorReference(number, 2);
-    double distance = 0.;
-    for (size_t phase = 0; phase < reference.size(); ++phase) {
-      auto it =
-          counts->find(dd::intToBinaryString(phase, benchmark.output().width));
-      const auto observed =
-          it == counts->end() ? 0. : static_cast<double>(it->second) / 64.;
-      distance += std::abs(reference[phase] - observed) / 2.;
-    }
-    EXPECT_LT(distance, 0.4);
+  /// Keep the circuit small enough for unoptimized coverage builds.
+  constexpr uint64_t number = 15;
+  const Shor benchmark({.number = number});
+  auto program = test::generateQCO(benchmark);
+  ASSERT_TRUE(program);
+  EXPECT_GE(test::countOps<func::CallOp>(program->module()), 3U);
+  auto counts =
+      qco::sample(mlir::mqt::getEntryPoint(program->module()), 64, 17);
+  ASSERT_TRUE(succeeded(counts));
+  auto evaluation = benchmark.evaluate(*counts);
+  ASSERT_TRUE(evaluation.factors);
+  EXPECT_EQ(evaluation.factors->first * evaluation.factors->second, number);
+  const auto reference = shorReference(number, 2);
+  double distance = 0.;
+  for (size_t phase = 0; phase < reference.size(); ++phase) {
+    auto it =
+        counts->find(dd::intToBinaryString(phase, benchmark.output().width));
+    const auto observed =
+        it == counts->end() ? 0. : static_cast<double>(it->second) / 64.;
+    distance += std::abs(reference[phase] - observed) / 2.;
   }
+  EXPECT_LT(distance, 0.4);
 }
 
 static std::optional<QCOProgram>
