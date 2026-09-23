@@ -20,35 +20,30 @@
 
 namespace qdmi::detail {
 
-[[nodiscard]] inline auto statusName(const QDMI_Device_Status status)
-    -> std::string_view {
-  switch (status) {
-  case QDMI_DEVICE_STATUS_OFFLINE:
-    return "OFFLINE";
-  case QDMI_DEVICE_STATUS_IDLE:
-    return "IDLE";
-  case QDMI_DEVICE_STATUS_BUSY:
-    return "BUSY";
-  case QDMI_DEVICE_STATUS_ERROR:
-    return "ERROR";
-  case QDMI_DEVICE_STATUS_MAINTENANCE:
-    return "MAINTENANCE";
-  case QDMI_DEVICE_STATUS_CALIBRATION:
-    return "CALIBRATION";
-  case QDMI_DEVICE_STATUS_MAX:
-    return "UNKNOWN";
-  }
-  return "UNKNOWN";
-}
-
 inline void checkDeviceAvailability(const Device& device, const std::string& id,
                                     const std::string_view context) {
-  const auto status = device.getStatus();
-  if (status != QDMI_DEVICE_STATUS_IDLE && status != QDMI_DEVICE_STATUS_BUSY) {
-    throw std::runtime_error(std::string(context) + "'" + id +
-                             "' with status " +
-                             std::string(statusName(status)));
+  std::string_view status = "UNKNOWN";
+  switch (device.getStatus()) {
+  case QDMI_DEVICE_STATUS_IDLE:
+  case QDMI_DEVICE_STATUS_BUSY:
+    return;
+  case QDMI_DEVICE_STATUS_OFFLINE:
+    status = "OFFLINE";
+    break;
+  case QDMI_DEVICE_STATUS_ERROR:
+    status = "ERROR";
+    break;
+  case QDMI_DEVICE_STATUS_MAINTENANCE:
+    status = "MAINTENANCE";
+    break;
+  case QDMI_DEVICE_STATUS_CALIBRATION:
+    status = "CALIBRATION";
+    break;
+  case QDMI_DEVICE_STATUS_MAX:
+    break;
   }
+  throw std::runtime_error(std::string(context) + "'" + id + "' with status " +
+                           std::string(status));
 }
 
 } // namespace qdmi::detail
