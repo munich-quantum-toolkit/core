@@ -1221,7 +1221,7 @@ private:
       const auto [prog0, prog1] = window.front();
       const auto [hw0, hw1] = curr->layout.getHardwareIndices(prog0, prog1);
       const auto dist = target->distanceBetween(hw0, hw1);
-      
+
       const auto enqueueSWAPs = [&](size_t anchor, size_t goal) {
         target->forEachNeighbour(anchor, [&](const auto nbr) {
           const IndexPairType swap = std::minmax(anchor, nbr);
@@ -1238,6 +1238,7 @@ private:
         });
       };
 
+      expansionSet.clear();
       enqueueSWAPs(hw0, hw1);
       enqueueSWAPs(hw1, hw0);
     }
