@@ -201,6 +201,12 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     and inserts `qco.swap` operations to ensure that all two-qubit operations
     are executable on the target architecture, a process known as routing.
 
+    Each routing block has one wire slot per physical site. Its layout is the
+    sole mapping from logical qubits to those sites. Candidate evaluation keeps
+    empty cursors for idle sites; final placement materializes their qubits.
+    Virtual SWAPs exchange the cursors at their two sites, matching the SSA
+    successors of emitted SWAPs.
+
     For routing, the pass first divides the circuit into layers. A layer is a set of independently executable (sequences
     or blocks of) two-qubit operations. Subsequently, the pass performs an A* search for each layer to find and insert a
     sequence of `SWAP` operations that makes these two-qubit operations executable. The A* search also considers
@@ -243,8 +249,8 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     additional. Each concurrent trial reuses this bounded storage across its
     searches and releases it when the trial finishes. Final SWAP insertion uses
     separate storage after the trials finish. Target distance caches and
-    O(number of sites) state for each live region's native-cost
-    tracker are separate; this is not a process memory limit. Candidate scoring
+    O(number of sites) wire, layout, and optional native-cost state for each
+    live region are separate; this is not a process memory limit. Candidate scoring
     does not clone IR or execute native-synthesis passes. A shared immutable
     table holds at most 1024 precomputed numerical native counts (about 264 KiB
     of payload plus indexing). Each live region's tracker caches up to 64

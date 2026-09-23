@@ -88,55 +88,6 @@ namespace {
 
 using Wires = SmallVector<WireIterator>;
 
-struct WireInfos {
-  /// Return the mapped wire index of a program index.
-  [[nodiscard]] size_t lookupIndex(const size_t prog) const {
-    assert(containsProgram(prog) && "program index is not mapped");
-    return programToIndex_[prog];
-  }
-
-  /// Return the mapped program index of a wire index.
-  [[nodiscard]] size_t lookupProgram(const size_t index) const {
-    return indexToProgram_[index];
-  }
-
-  /// Bidirectionally map a wire index to a program index.
-  /// Callers preserve a one-to-one mapping and append wire indices densely.
-  void insertOrUpdate(const size_t index, const size_t prog) {
-    if (index >= indexToProgram_.size()) {
-      indexToProgram_.resize(index + 1);
-    }
-    if (prog >= programToIndex_.size()) {
-      programToIndex_.resize(prog + 1);
-    }
-    indexToProgram_[index] = prog;
-    programToIndex_[prog] = index;
-  }
-
-  /// Return whether a program index has a corresponding wire.
-  [[nodiscard]] bool containsProgram(const size_t prog) const {
-    return prog < programToIndex_.size() &&
-           indexToProgram_[programToIndex_[prog]] == prog;
-  }
-
-  /// Swap two program indices.
-  void swap(const size_t prog0, const size_t prog1) {
-    const auto i0 = lookupIndex(prog0);
-    const auto i1 = lookupIndex(prog1);
-    std::swap(programToIndex_[prog0], programToIndex_[prog1]);
-    std::swap(indexToProgram_[i0], indexToProgram_[i1]);
-  }
-
-  /// Return the number of index-wire mappings.
-  [[nodiscard]] size_t size() const { return indexToProgram_.size(); }
-
-private:
-  /// Maps the i-th wire index to a program index.
-  SmallVector<size_t> indexToProgram_;
-  /// Maps a program index to the i-th wire index.
-  SmallVector<size_t> programToIndex_;
-};
-
 struct TensorAllocation {
   qtensor::AllocOp allocation;
   SmallVector<Operation*> operations;
@@ -144,7 +95,6 @@ struct TensorAllocation {
 
 struct Computation {
   Wires wires;
-  WireInfos infos;
   SmallVector<AllocOp> scalarAllocations;
   SmallVector<TensorAllocation> tensorAllocations;
 };
@@ -217,9 +167,7 @@ static FailureOr<Computation> discoverComputation(func::FuncOp func) {
   }
 
   for (auto alloc : computation.scalarAllocations) {
-    const auto index = computation.wires.size();
     computation.wires.emplace_back(alloc.getResult());
-    computation.infos.insertOrUpdate(index, index);
   }
 
   for (auto& tensor : computation.tensorAllocations) {
@@ -236,10 +184,8 @@ static FailureOr<Computation> discoverComputation(func::FuncOp func) {
         }
 
         auto qubit = extract.getResult();
-        const auto index = computation.wires.size();
 
         computation.wires.emplace_back(qubit);
-        computation.infos.insertOrUpdate(index, index);
         current = extract.getOutTensor();
         continue;
       }
@@ -278,9 +224,9 @@ static LogicalResult checkCapacity(func::FuncOp func,
 /// Analogously to `discoverComputation`, the i-th extract operation defines
 /// the i-th program qubit. The function assumes that discovery and capacity
 /// checks succeeded.
-static std::pair<Wires, WireInfos>
-applyPlacement(Region& body, const CompilerTarget& target, const Layout& layout,
-               Computation& computation, IRRewriter& rewriter) {
+static Wires applyPlacement(Region& body, const CompilerTarget& target,
+                            const Layout& layout, Computation& computation,
+                            IRRewriter& rewriter) {
   SmallVector<Value> staticQubits;
   staticQubits.reserve(layout.nHardwareQubits());
 
@@ -292,33 +238,24 @@ applyPlacement(Region& body, const CompilerTarget& target, const Layout& layout,
     rewriter.setInsertionPointAfter(op);
   }
 
-  Wires wires;
-  WireInfos infos;
+  size_t prog = 0;
 
   for (auto alloc : computation.scalarAllocations) {
-    const auto prog = wires.size();
-    auto qubit = staticQubits[layout.getHardwareIndex(prog)];
+    auto qubit = staticQubits[layout.getHardwareIndex(prog++)];
 
     rewriter.replaceAllUsesWith(alloc.getResult(), qubit);
     rewriter.eraseOp(alloc);
-
-    wires.emplace_back(qubit);
-    infos.insertOrUpdate(prog, prog);
   }
 
   for (auto& tensor : computation.tensorAllocations) {
     for (Operation* operation : tensor.operations) {
       TypeSwitch<Operation*>(operation)
           .Case([&](ExtractOp op) {
-            const auto prog = wires.size();
-            auto qubit = staticQubits[layout.getHardwareIndex(prog)];
+            auto qubit = staticQubits[layout.getHardwareIndex(prog++)];
 
             rewriter.replaceAllUsesWith(op.getResult(), qubit);
             rewriter.replaceAllUsesWith(op.getOutTensor(), op.getTensor());
             rewriter.eraseOp(op);
-
-            wires.emplace_back(qubit);
-            infos.insertOrUpdate(prog, prog);
           })
           .Case([&](InsertOp op) {
             rewriter.setInsertionPointAfter(op);
@@ -333,16 +270,15 @@ applyPlacement(Region& body, const CompilerTarget& target, const Layout& layout,
   }
 
   rewriter.setInsertionPoint(body.back().getTerminator());
-  for (size_t prog = wires.size(); prog < layout.nHardwareQubits(); ++prog) {
+  for (; prog < layout.nHardwareQubits(); ++prog) {
     const auto hw = layout.getHardwareIndex(prog);
     auto qubit = staticQubits[hw];
 
-    wires.emplace_back(qubit);
-    infos.insertOrUpdate(prog, prog);
     SinkOp::create(rewriter, body.getLoc(), qubit);
   }
 
-  return {wires, infos};
+  return llvm::map_to_vector(staticQubits,
+                             [](Value qubit) { return WireIterator(qubit); });
 }
 
 /// Assign allocation slots to sites without traversing or expanding their uses.
@@ -491,19 +427,17 @@ private:
   /// State shared by traversal and routing.
   struct RoutingBundle {
     Wires wires;
-    WireInfos infos;
     Layout layout;
   };
 
-  /// Match the extra region arguments materialized by hot placement.
-  static void addIdleWires(RoutingBundle& bundle, const WireInfos& order) {
-    for (size_t index = 0; index < order.size(); ++index) {
-      const size_t program = order.lookupProgram(index);
-      if (!bundle.infos.containsProgram(program)) {
-        bundle.infos.insertOrUpdate(bundle.wires.size(), program);
-        bundle.wires.emplace_back();
-      }
+  /// Input roots are discovered in logical order; all routing slots are sites.
+  static RoutingBundle routingState(const Wires& roots, const Layout& layout) {
+    RoutingBundle state{.wires = Wires(layout.nHardwareQubits()),
+                        .layout = layout};
+    for (auto [program, wire] : llvm::enumerate(roots)) {
+      state.wires[layout.getHardwareIndex(program)] = wire;
     }
+    return state;
   }
 
   /// Describes a node in the A* search graph.
@@ -781,16 +715,13 @@ protected:
 
     auto& body = func.getFunctionBody();
     auto& wires = computation->wires;
-    auto& infos = computation->infos;
-    auto layout = generateLayout(wires, infos);
+    auto layout = generateLayout(wires);
 
     IRRewriter rewriter(&getContext());
-    std::tie(wires, infos) = std::move(
-        applyPlacement(body, *target, layout, *computation, rewriter));
+    wires = applyPlacement(body, *target, layout, *computation, rewriter);
 
     RoutingBundle bundle{
         .wires = std::move(wires),
-        .infos = std::move(infos),
         .layout = std::move(layout),
     };
 
@@ -971,7 +902,7 @@ private:
   /// control flow has no single interaction frequency, so leave those programs
   /// to the identity and random starts.
   [[nodiscard]] std::optional<std::pair<Layout, bool>>
-  generateGreedyLayout(Wires wires, const WireInfos& infos) const {
+  generateGreedyLayout(Wires wires) const {
     DenseMap<IndexPairType, size_t> weights;
     bool supported = true;
     walkProgramGraph<WireDirection::Forward>(
@@ -984,8 +915,7 @@ private:
             }
             if (indices.size() == 2 && !isa<BarrierOp>(op) &&
                 isa<UnitaryOpInterface>(op)) {
-              ++weights[std::minmax(infos.lookupProgram(indices[0]),
-                                    infos.lookupProgram(indices[1]))];
+              ++weights[std::minmax(indices[0], indices[1])];
             }
             released.emplace_back(op);
           }
@@ -1001,7 +931,7 @@ private:
       return std::pair{Layout::identity(target->numSites()), true};
     }
 
-    const size_t nprogram = infos.size();
+    const size_t nprogram = wires.size();
     const size_t nhardware = target->numSites();
     SmallVector<SmallVector<IndexPairType>> neighbours(nprogram);
     SmallVector<size_t> degree(nprogram, 0);
@@ -1140,8 +1070,8 @@ private:
   /// Refine greedy, identity, and random starts with forward/backward routing.
   /// Score each candidate with a forward traversal, preserving its start
   /// layout.
-  Layout generateLayout(const Wires& wires, const WireInfos& infos) {
-    const auto greedy = generateGreedyLayout(wires, infos);
+  Layout generateLayout(const Wires& wires) {
+    const auto greedy = generateGreedyLayout(wires);
     if (greedy && greedy->second) {
       return greedy->first;
     }
@@ -1166,8 +1096,7 @@ private:
     trials.reserve(ntrials);
 
     const auto addTrial = [&](const Layout& layout) {
-      trials.emplace_back(
-          RoutingBundle{.wires = wires, .infos = infos, .layout = layout});
+      trials.emplace_back(routingState(wires, layout));
     };
 
     if (greedy) {
@@ -1191,22 +1120,9 @@ private:
         route<WireDirection::Forward>(t.bundle, arena);
         route<WireDirection::Backward>(t.bundle, arena);
       }
-      /// Refined region traversals may relabel wire slots. Preview the selected
-      /// layout on the original input, as placement will do for the winner.
-      auto scoringBundle = nativeCosts
-                               ? RoutingBundle{.wires = wires,
-                                               .infos = infos,
-                                               .layout = t.bundle.layout,}
-                               : t.bundle;
+      auto scoringBundle = routingState(wires, t.bundle.layout);
       std::optional<NativeCostTracker> costs;
       if (nativeCosts) {
-        /// Match placement's wire slots without materializing idle qubits.
-        for (size_t program = wires.size(); program < target->numSites();
-             ++program) {
-          scoringBundle.infos.insertOrUpdate(scoringBundle.wires.size(),
-                                             program);
-          scoringBundle.wires.emplace_back();
-        }
         costs.emplace(*target, compilationSeed(getOperation(), seed),
                       nativeCosts.get());
       }
@@ -1487,7 +1403,7 @@ private:
   /// Collect a routing lookahead window of up to `1 + nlookahead` ready
   /// two-qubit gates, while skipping qubit-pair blocks.
   template <WireDirection Direction>
-  Window getWindow(Wires wires, const WireInfos& infos, Operation* boundary) {
+  Window getWindow(Wires wires, const Layout& layout, Operation* boundary) {
     Window window;
 
     SmallVector<IndexPairType> prev;
@@ -1511,8 +1427,8 @@ private:
               if (!isa<BarrierOp>(op) && isa<UnitaryOpInterface>(op)) {
                 const auto i0 = indices[0];
                 const auto i1 = indices[1];
-                const auto prog0 = infos.lookupProgram(i0);
-                const auto prog1 = infos.lookupProgram(i1);
+                const auto prog0 = layout.getProgramIndex(i0);
+                const auto prog1 = layout.getProgramIndex(i1);
                 const IndexPairType gate = std::minmax(prog0, prog1);
 
                 if (!is_contained(prev, gate)) {
@@ -1544,21 +1460,15 @@ private:
   static void insertSWAPs(ArrayRef<IndexPairType> swaps, RoutingBundle& bundle,
                           Statistics& stats, IRRewriter* rewriter,
                           NativeCostTracker* costs = nullptr) {
-    auto& [wires, infos, layout] = bundle;
+    auto& [wires, layout] = bundle;
     for (const auto& [hw0, hw1] : swaps) {
       if (costs != nullptr) {
         costs->appendSwap(hw0, hw1);
       }
-      const auto [prog0, prog1] = layout.getProgramIndices(hw0, hw1);
 
       if constexpr (Mode == RoutingMode::Hot) {
-        assert(infos.containsProgram(prog0) && infos.containsProgram(prog1) &&
-               "expected the routing preview to materialize SWAP operands");
-        const auto i0 = infos.lookupIndex(prog0);
-        const auto i1 = infos.lookupIndex(prog1);
-
-        auto& w0 = wires[i0];
-        auto& w1 = wires[i1];
+        auto& w0 = wires[hw0];
+        auto& w1 = wires[hw1];
 
         auto in0 = w0.qubit();
         auto in1 = w1.qubit();
@@ -1572,16 +1482,10 @@ private:
         rewriter->replaceAllUsesExcept(in0, out1, swapOp);
         rewriter->replaceAllUsesExcept(in1, out0, swapOp);
 
-        infos.swap(prog0, prog1);
-
         std::ranges::advance(w0, 1); // Move to SWAP.
         std::ranges::advance(w1, 1);
-      } else if (costs != nullptr) {
-        /// Hot insertion exchanges the successors followed by these slots.
-        /// Cold scoring must keep the same frontier order after each SWAP.
-        std::swap(wires[infos.lookupIndex(prog0)],
-                  wires[infos.lookupIndex(prog1)]);
-        infos.swap(prog0, prog1);
+      } else {
+        std::swap(wires[hw0], wires[hw1]);
       }
 
       layout.swap(hw0, hw1);
@@ -1698,8 +1602,7 @@ private:
   /// or sink-like operations. Backward traversal can exhaust block arguments.
   template <WireDirection Direction>
   std::optional<CompositeUnitary>
-  advance(Wires& wires, const WireInfos& infos, const Layout& layout,
-          NativeCostTracker* costs, Operation* boundary) {
+  advance(Wires& wires, NativeCostTracker* costs, Operation* boundary) {
     std::optional<CompositeUnitary> composite;
     /// Advancement only moves iterators. Discard classifications before routing
     /// inserts SWAPs or replaces composites.
@@ -1757,11 +1660,7 @@ private:
                     return true;
                   }
 
-                  const auto prog0 = infos.lookupProgram(indices[0]);
-                  const auto prog1 = infos.lookupProgram(indices[1]);
-                  const auto [hw0, hw1] =
-                      layout.getHardwareIndices(prog0, prog1);
-                  return target->areAdjacent(hw0, hw1);
+                  return target->areAdjacent(indices[0], indices[1]);
                 })
                 .Case([](ResetOp&) { return true; })
                 .Case([&](MeasureOp& m) {
@@ -1789,11 +1688,7 @@ private:
 
         if (release) {
           if (costs != nullptr) {
-            SmallVector<size_t, 2> vertices;
-            for (const size_t i : indices) {
-              vertices.push_back(
-                  layout.getHardwareIndex(infos.lookupProgram(i)));
-            }
+            SmallVector<size_t, 2> vertices(indices.begin(), indices.end());
             /// Frontier indices are in traversal order, not operand order.
             if (auto gate = dyn_cast<UnitaryOpInterface>(op);
                 gate && gate.isTwoQubit() &&
@@ -1879,19 +1774,11 @@ private:
   static SmallVector<Value> realignQubitValues(ValueRange values,
                                                ArrayRef<size_t> perm,
                                                const RoutingBundle& bundle) {
-    // Map hardware indices to qubit values for the given bundle.
-    DenseMap<size_t, Value> m(bundle.wires.size());
-    for (size_t i = 0; i < bundle.wires.size(); ++i) {
-      const auto prog = bundle.infos.lookupProgram(i);
-      const auto hw = bundle.layout.getHardwareIndex(prog);
-      m.try_emplace(hw, bundle.wires[i].qubit());
-    }
-
     SmallVector<Value> realigned(values);
     size_t qubitIndex = 0;
     for (Value& value : realigned) {
       if (isa<QubitType>(value.getType())) {
-        value = m.at(perm[qubitIndex++]);
+        value = bundle.wires[perm[qubitIndex++]].qubit();
       }
     }
     assert(qubitIndex == perm.size());
@@ -1938,17 +1825,20 @@ private:
         TypeSwitch<Operation*, SmallVector<RoutingBundle, 0>>(op)
             .template Case<scf::ForOp, scf::WhileOp>([&](auto) {
               return SmallVector<RoutingBundle, 0>{
-                  RoutingBundle{.layout = parent.layout},
+                  RoutingBundle{.wires = Wires(target->numSites()),
+                                .layout = parent.layout},
               };
             })
             .Case([&](IfOp) {
               return SmallVector<RoutingBundle, 0>(
-                  2, RoutingBundle{.layout = parent.layout});
+                  2, RoutingBundle{.wires = Wires(target->numSites()),
+                                   .layout = parent.layout});
             })
             .Case([&](IndexSwitchOp switchOp) {
               return SmallVector<RoutingBundle, 0>(
                   switchOp.getNumRegions(),
-                  RoutingBundle{.layout = parent.layout});
+                  RoutingBundle{.wires = Wires(target->numSites()),
+                                .layout = parent.layout});
             });
 
     SmallVector<std::optional<size_t>> resultToQubitIndex(op->getNumResults());
@@ -1970,15 +1860,12 @@ private:
     }
 
     for (size_t i : indices) {
-      const auto prog = parent.infos.lookupProgram(i);
-      const auto hw = parent.layout.getHardwareIndex(prog);
       auto res = cast<OpResult>(parent.wires[i].qubit());
       const auto resNum = res.getResultNumber();
       const auto qubitResNum = *resultToQubitIndex[resNum];
 
       const auto append = [&](RoutingBundle& child, Value arg, Value yielded) {
-        child.infos.insertOrUpdate(child.infos.size(), prog);
-        child.wires.emplace_back([&] -> Value {
+        child.wires[i] = WireIterator([&] -> Value {
           if constexpr (Direction == WireDirection::Forward) {
             return arg;
           } else {
@@ -2023,7 +1910,7 @@ private:
             }
           });
 
-      permutation[qubitResNum] = hw;
+      permutation[qubitResNum] = i;
     }
 
     // Route each child branch and prepare the wire iterators for
@@ -2041,11 +1928,6 @@ private:
       }
     }
     for (auto [index, child] : llvm::enumerate(children)) {
-      if constexpr (Mode == RoutingMode::Cold) {
-        if (costs != nullptr) {
-          addIdleWires(child, parent.infos);
-        }
-      }
       const auto stats = route<Direction, Mode>(
           child, arena, rewriter,
           costs != nullptr ? &childCosts[index] : nullptr);
@@ -2062,7 +1944,8 @@ private:
     // bundle here.
 
     if (auto whileOp = dyn_cast<scf::WhileOp>(op)) {
-      children.emplace_back(RoutingBundle{.layout = children[0].layout});
+      children.emplace_back(RoutingBundle{.wires = Wires(target->numSites()),
+                                          .layout = children[0].layout});
       assert(children.size() == 2);
 
       if constexpr (Mode == RoutingMode::Hot) {
@@ -2078,42 +1961,13 @@ private:
         return cast<scf::YieldOp>(terminator).getResults();
       }();
 
-      if constexpr (Mode == RoutingMode::Cold) {
-        if (costs != nullptr) {
-          /// Preview the physical argument order, including idle arguments
-          /// that hot placement adds after the original region arguments.
-          DenseMap<size_t, Value> logicalArguments;
-          auto sites = permutation;
-          DenseSet<size_t> included(sites.begin(), sites.end());
-          for (auto [site, arg] :
-               llvm::zip_equal(permutation, getQubitValues(values))) {
-            logicalArguments.try_emplace(parent.layout.getProgramIndex(site),
-                                         arg);
-          }
-          for (size_t i = 0; i < parent.infos.size(); ++i) {
-            const auto site =
-                parent.layout.getHardwareIndex(parent.infos.lookupProgram(i));
-            if (included.insert(site).second) {
-              sites.push_back(site);
-            }
-          }
-          for (auto [i, site] : llvm::enumerate(sites)) {
-            const auto prog = children[0].layout.getProgramIndex(site);
-            children[1].wires.emplace_back();
-            if (auto argument = logicalArguments.lookup(prog)) {
-              children[1].wires.back() = WireIterator(argument);
-            }
-            children[1].infos.insertOrUpdate(i, prog);
-          }
+      for (auto [site, arg] :
+           llvm::zip_equal(permutation, getQubitValues(values))) {
+        if constexpr (Mode == RoutingMode::Cold) {
+          site = children[0].layout.getHardwareIndex(
+              parent.layout.getProgramIndex(site));
         }
-      }
-
-      if (children[1].wires.empty()) {
-        for (auto [i, arg] : llvm::enumerate(getQubitValues(values))) {
-          const auto prog = children[0].layout.getProgramIndex(permutation[i]);
-          children[1].wires.emplace_back(arg);
-          children[1].infos.insertOrUpdate(i, prog);
-        }
+        children[1].wires[site] = WireIterator(arg);
       }
 
       const auto stats =
@@ -2226,26 +2080,16 @@ private:
     if constexpr (Mode == RoutingMode::Hot) {
       realignQubitUses(op->getResults(), permutation, parent.layout, exit,
                        *rewriter);
-    } else if (costs != nullptr) {
+    } else {
       Wires reordered(parent.wires.size());
-      for (size_t i = 0; i < parent.wires.size(); ++i) {
-        const auto prog = parent.infos.lookupProgram(i);
-        const auto oldProgAtDestination =
-            parent.layout.getProgramIndex(exit.getHardwareIndex(prog));
-        reordered[parent.infos.lookupIndex(oldProgAtDestination)] =
-            parent.wires[i];
+      for (size_t site = 0; site < parent.wires.size(); ++site) {
+        const auto destination =
+            exit.getHardwareIndex(parent.layout.getProgramIndex(site));
+        reordered[destination] = parent.wires[site];
       }
       parent.wires = std::move(reordered);
     }
 
-    WireInfos updatedInfos;
-    for (size_t i = 0; i < parent.wires.size(); ++i) {
-      const auto oldProg = parent.infos.lookupProgram(i);
-      const auto oldHw = parent.layout.getHardwareIndex(oldProg);
-      const auto newProg = exit.getProgramIndex(oldHw);
-      updatedInfos.insertOrUpdate(i, newProg);
-    }
-    parent.infos = std::move(updatedInfos);
     parent.layout = std::move(exit);
     return totalStats;
   }
@@ -2271,7 +2115,7 @@ private:
   Statistics route(RoutingBundle& bundle, Arena& arena,
                               IRRewriter* rewriter = nullptr,
                               NativeCostTracker* costs = nullptr) {
-    auto& [wires, infos, layout] = bundle;
+    auto& [wires, layout] = bundle;
 
     /// Costed traversal must not cross a region that hot placement will thread
     /// through every wire, even before that region reaches the frontier.
@@ -2290,8 +2134,7 @@ private:
     Statistics stats;
     while (true) {
       while (true) {
-        auto composite =
-            advance<Direction>(wires, infos, layout, costs, boundary);
+        auto composite = advance<Direction>(wires, costs, boundary);
         if (!composite) {
           break;
         }
@@ -2320,7 +2163,7 @@ private:
         }
       }
 
-      const auto window = getWindow<Direction>(wires, infos, boundary);
+      const auto window = getWindow<Direction>(wires, layout, boundary);
       if (window.empty()) {
         break;
       }
@@ -2356,9 +2199,7 @@ private:
       /// Terminal measurements were deferred until all routing SWAPs. Check
       /// their final sites too, including consecutive measurement runs.
       for (auto [index, wire] : llvm::enumerate(wires)) {
-        const std::array vertex{
-            layout.getHardwareIndex(infos.lookupProgram(index)),
-        };
+        const std::array vertex{index};
         while (wire != std::default_sentinel &&
                isa<MeasureOp>(wire.operation())) {
           costs->append(wire.operation(), vertex);
