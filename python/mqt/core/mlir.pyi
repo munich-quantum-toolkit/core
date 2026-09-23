@@ -170,7 +170,8 @@ class CompilerTarget:
         connectivity: CompilerTarget.Connectivity,
         native_operations: CompilerTarget.NativeOperations,
         duration_unit: CompilerTarget.DurationUnit | None = None,
-    ) -> None: ...
+    ) -> None:
+        """Create a target with numbered sites."""
     @overload
     def __init__(
         self,
