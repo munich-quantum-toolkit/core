@@ -424,16 +424,19 @@ private:
     float lambda;
   };
 
-  /// State shared by traversal and routing.
-  struct RoutingBundle {
+  /// Wire slots are physical sites; layout alone tracks logical qubits.
+  struct RoutingState {
     Wires wires;
     Layout layout;
+    std::optional<NativeCostTracker> costs;
   };
 
   /// Input roots are discovered in logical order; all routing slots are sites.
-  static RoutingBundle routingState(const Wires& roots, const Layout& layout) {
-    RoutingBundle state{.wires = Wires(layout.nHardwareQubits()),
-                        .layout = layout};
+  static RoutingState routingState(const Wires& roots, const Layout& layout) {
+    RoutingState state{
+        .wires = Wires(layout.nHardwareQubits()),
+        .layout = layout,
+    };
     for (auto [program, wire] : llvm::enumerate(roots)) {
       state.wires[layout.getHardwareIndex(program)] = wire;
     }
@@ -669,7 +672,7 @@ protected:
       signalPassFailure();
       return;
     }
-    expectedNativeScore.reset();
+    expectedScore.reset();
     nativeCosts.reset();
     nativeSwapCost.reset();
     if (failed(mqt::verifyQuantumAllocations(moduleOp))) {
@@ -720,23 +723,24 @@ protected:
     IRRewriter rewriter(&getContext());
     wires = applyPlacement(body, *target, layout, *computation, rewriter);
 
-    RoutingBundle bundle{
+    RoutingState bundle{
         .wires = std::move(wires),
         .layout = std::move(layout),
     };
 
     /// Each concurrent trial and the final route own separate search storage.
     Arena arena(target->numSites(), searchMemoryLimit);
-    std::optional<NativeCostTracker> costs;
     if (nativeCosts) {
-      costs.emplace(*target, compilationSeed(getOperation(), seed),
-                    nativeCosts.get());
+      bundle.costs.emplace(*target, compilationSeed(getOperation(), seed),
+                           nativeCosts.get());
     }
     const auto stats = route<WireDirection::Forward, RoutingMode::Hot>(
-        bundle, arena, &rewriter, costs ? &*costs : nullptr);
-    assert((!expectedNativeScore ||
-            (costs && costs->score() == expectedNativeScore)) &&
-           "cold scoring and hot routing must visit the same native stream");
+        bundle, arena, &rewriter);
+    assert((!expectedScore ||
+            (bundle.costs ? bundle.costs->score() : std::nullopt)
+                    .value_or(std::pair{std::numeric_limits<size_t>::max(),
+                                        stats.nswaps}) == *expectedScore) &&
+           "cold scoring and hot routing must agree");
 
     // Collect statistics.
     numSwaps += stats.nswaps;
@@ -884,11 +888,10 @@ private:
     return newWhileOp;
   }
 
-  /// Return the wire value before a composite, even if advancement passed it.
+  /// Thread the value before the next pending operation through the region.
+  /// In particular, terminal measurements must remain after the region.
   static Value valueBeforeBoundary(WireIterator iterator, Operation* boundary) {
-    if (iterator == std::default_sentinel) {
-      --iterator;
-    }
+    --iterator;
     while (iterator.operation() != nullptr &&
            !iterator.operation()->isBeforeInBlock(boundary)) {
       --iterator;
@@ -1086,7 +1089,7 @@ private:
     }
 
     struct Trial {
-      RoutingBundle bundle;
+      RoutingState bundle;
       /// Native count/depth, or maximum/SWAP count when synthesis is
       /// unavailable.
       std::pair<size_t, size_t> score;
@@ -1121,14 +1124,13 @@ private:
         route<WireDirection::Backward>(t.bundle, arena);
       }
       auto scoringBundle = routingState(wires, t.bundle.layout);
-      std::optional<NativeCostTracker> costs;
       if (nativeCosts) {
-        costs.emplace(*target, compilationSeed(getOperation(), seed),
-                      nativeCosts.get());
+        scoringBundle.costs.emplace(
+            *target, compilationSeed(getOperation(), seed), nativeCosts.get());
       }
-      const auto score = route<WireDirection::Forward>(
-          scoringBundle, arena, nullptr, costs ? &*costs : nullptr);
-      const auto quality = costs ? costs->score() : std::nullopt;
+      const auto score = route<WireDirection::Forward>(scoringBundle, arena);
+      const auto quality =
+          scoringBundle.costs ? scoringBundle.costs->score() : std::nullopt;
       t.score = quality.value_or(
           std::pair{std::numeric_limits<size_t>::max(), score.nswaps});
     });
@@ -1138,9 +1140,7 @@ private:
           return a.score < b.score;
         });
 
-    if (best->score.first != std::numeric_limits<size_t>::max()) {
-      expectedNativeScore = best->score;
-    }
+    expectedScore = best->score;
     return best->bundle.layout;
   }
 
@@ -1400,6 +1400,14 @@ private:
     return curr;
   }
 
+  template <WireDirection Direction>
+  static bool precedes(Operation* a, Operation* b) {
+    if constexpr (Direction == WireDirection::Forward) {
+      return a->isBeforeInBlock(b);
+    }
+    return b->isBeforeInBlock(a);
+  }
+
   /// Collect a routing lookahead window of up to `1 + nlookahead` ready
   /// two-qubit gates, while skipping qubit-pair blocks.
   template <WireDirection Direction>
@@ -1414,14 +1422,14 @@ private:
         [&](const Frontier& frontier, ReleasedOps& released) {
           for (const auto& [op, indices] : frontier) {
             if (indices.size() == 1 &&
-                (boundary == nullptr || op->isBeforeInBlock(boundary))) {
+                (boundary == nullptr || precedes<Direction>(op, boundary))) {
               released.emplace_back(op);
             }
           }
 
           if (released.empty()) {
             for (const auto& [op, indices] : frontier) {
-              if (boundary != nullptr && !op->isBeforeInBlock(boundary)) {
+              if (boundary != nullptr && !precedes<Direction>(op, boundary)) {
                 continue;
               }
               if (!isa<BarrierOp>(op) && isa<UnitaryOpInterface>(op)) {
@@ -1453,52 +1461,35 @@ private:
     return window;
   }
 
-  /// Insert SWAP operations, exchanging two qubits, virtually
-  /// (`RoutingMode::Cold`) or into the IR (`RoutingMode::Hot`). The function
-  /// expects that each wire points at the correct insertion point.
+  /// Both modes leave cursors at the next operation on each physical wire.
   template <RoutingMode Mode>
-  static void insertSWAPs(ArrayRef<IndexPairType> swaps, RoutingBundle& bundle,
-                          Statistics& stats, IRRewriter* rewriter,
-                          NativeCostTracker* costs = nullptr) {
-    auto& [wires, layout] = bundle;
-    for (const auto& [hw0, hw1] : swaps) {
-      if (costs != nullptr) {
-        costs->appendSwap(hw0, hw1);
+  static void insertSWAPs(ArrayRef<IndexPairType> swaps, RoutingState& state,
+                          Statistics& stats, IRRewriter* rewriter) {
+    for (const auto& [a, b] : swaps) {
+      if (state.costs) {
+        state.costs->appendSwap(a, b);
       }
-
       if constexpr (Mode == RoutingMode::Hot) {
-        auto& w0 = wires[hw0];
-        auto& w1 = wires[hw1];
-
-        auto in0 = w0.qubit();
-        auto in1 = w1.qubit();
-
-        rewriter->setInsertionPointAfterValue(in0); // Valid bc. Hot → Forward.
-        auto swapOp = SWAPOp::create(*rewriter, in0.getLoc(), in0, in1);
-
-        auto out0 = swapOp.getQubit0Out();
-        auto out1 = swapOp.getQubit1Out();
-
-        rewriter->replaceAllUsesExcept(in0, out1, swapOp);
-        rewriter->replaceAllUsesExcept(in1, out0, swapOp);
-
-        std::ranges::advance(w0, 1); // Move to SWAP.
-        std::ranges::advance(w1, 1);
+        auto in0 = std::prev(state.wires[a]).qubit();
+        auto in1 = std::prev(state.wires[b]).qubit();
+        rewriter->setInsertionPointAfterValue(in0);
+        auto swap = SWAPOp::create(*rewriter, in0.getLoc(), in0, in1);
+        rewriter->replaceAllUsesExcept(in0, swap.getQubit1Out(), swap);
+        rewriter->replaceAllUsesExcept(in1, swap.getQubit0Out(), swap);
+        state.wires[a] = std::next(WireIterator(swap.getQubit0Out()));
+        state.wires[b] = std::next(WireIterator(swap.getQubit1Out()));
       } else {
-        std::swap(wires[hw0], wires[hw1]);
+        std::swap(state.wires[a], state.wires[b]);
       }
-
-      layout.swap(hw0, hw1);
+      state.layout.swap(a, b);
     }
-
     stats.nswaps += swaps.size();
   }
 
   /// Classify a consecutive measurement run from its end, so each suffix is
   /// visited once. The cache is valid only while the IR remains unchanged.
   static bool measurementNeedsRouting(MeasureOp measurement,
-                                      DenseMap<Operation*, bool>& cache,
-                                      bool afterPlacement) {
+                                      DenseMap<Operation*, bool>& cache) {
     SmallVector<MeasureOp> measurements;
     bool needsRouting = false;
     WireIterator it(measurement.getQubitOut());
@@ -1513,8 +1504,7 @@ private:
         continue;
       }
       /// Validated tensor insertion tails become sinks during placement.
-      needsRouting =
-          !isa<SinkOp>(op) && !(afterPlacement && isa<qtensor::InsertOp>(op));
+      needsRouting = !isa<SinkOp, qtensor::InsertOp>(op);
       break;
     }
 
@@ -1601,8 +1591,9 @@ private:
   /// Leave wires at non-executable gates, composites, terminal measurements,
   /// or sink-like operations. Backward traversal can exhaust block arguments.
   template <WireDirection Direction>
-  std::optional<CompositeUnitary>
-  advance(Wires& wires, NativeCostTracker* costs, Operation* boundary) {
+  std::optional<CompositeUnitary> advance(RoutingState& state,
+                                          Operation* boundary) {
+    auto& wires = state.wires;
     std::optional<CompositeUnitary> composite;
     /// Advancement only moves iterators. Discard classifications before routing
     /// inserts SWAPs or replaces composites.
@@ -1612,8 +1603,7 @@ private:
     // composite until earlier routing work is complete, but let independent
     // composites pass terminal wires. Reverse block order for backward routing.
 
-    const auto defer = [&wires, &measurementRouting,
-                        costs](Operation* candidate) {
+    const auto defer = [&wires, &measurementRouting](Operation* candidate) {
       return any_of(wires, [&](WireIterator& it) {
         if (it == std::default_sentinel) {
           return false;
@@ -1632,8 +1622,7 @@ private:
         if constexpr (Direction == WireDirection::Forward) {
           if (auto measurement = dyn_cast<MeasureOp>(op);
               measurement &&
-              !measurementNeedsRouting(measurement, measurementRouting,
-                                       costs != nullptr)) {
+              !measurementNeedsRouting(measurement, measurementRouting)) {
             return false;
           }
           return op->isBeforeInBlock(candidate);
@@ -1649,7 +1638,7 @@ private:
     walkProgramGraph<Direction>(wires, [&](const Frontier& frontier,
                                            ReleasedOps& released) {
       for (const auto& [op, indices] : frontier) {
-        if (boundary != nullptr && boundary->isBeforeInBlock(op)) {
+        if (boundary != nullptr && precedes<Direction>(boundary, op)) {
           continue;
         }
         const auto release =
@@ -1668,18 +1657,18 @@ private:
                     return true;
                   }
 
-                  return measurementNeedsRouting(m, measurementRouting,
-                                                 costs != nullptr);
+                  return measurementNeedsRouting(m, measurementRouting);
                 })
                 .template Case<AllocOp, StaticOp, qtensor::ExtractOp>(
                     [](auto&) { return Direction == WireDirection::Forward; })
-                .template Case<SinkOp, MeasureOp, qtensor::InsertOp, YieldOp,
-                               scf::YieldOp, scf::ConditionOp>(
+                .template Case<SinkOp, qtensor::InsertOp, YieldOp, scf::YieldOp,
+                               scf::ConditionOp>(
                     [](auto&) { return Direction == WireDirection::Backward; })
                 .template Case<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp>(
                     [&](auto& cf) {
                       if (!defer(cf) &&
-                          (!composite || op->isBeforeInBlock(composite->op))) {
+                          (!composite ||
+                           precedes<Direction>(op, composite->op))) {
                         composite.emplace(op, indices);
                       }
                       return false;
@@ -1687,7 +1676,7 @@ private:
                 .Default([&](auto) { return false; });
 
         if (release) {
-          if (costs != nullptr) {
+          if (state.costs) {
             SmallVector<size_t, 2> vertices(indices.begin(), indices.end());
             /// Frontier indices are in traversal order, not operand order.
             if (auto gate = dyn_cast<UnitaryOpInterface>(op);
@@ -1695,7 +1684,7 @@ private:
                 wires[indices[0]].qubit() != gate.getOutputQubit(0)) {
               std::swap(vertices[0], vertices[1]);
             }
-            costs->append(op, vertices);
+            state.costs->append(op, vertices);
           }
           released.emplace_back(op);
         }
@@ -1712,391 +1701,214 @@ private:
   }
 
   /// Extends the composite unitary's operation to cover all target qubits by
-  /// adding operands for indices not in the composite's index set. Updates
-  /// the parent's wires while preserving its wire information and layout.
-  void place(CompositeUnitary& composite, RoutingBundle& parent,
+  /// adding operands for sites outside the composite. Keeps the parent cursors
+  /// at the corresponding physical results.
+  void place(CompositeUnitary& composite, RoutingState& parent,
              IRRewriter& rewriter) {
-    DenseSet<size_t> included; // Already included indices.
-    included.reserve(composite.indices.size());
-
-    // Maps the i-th included index to its result number.
-    DenseMap<size_t, size_t> indexToResultNum;
-    indexToResultNum.reserve(composite.indices.size());
-
-    for (const auto index : composite.indices) {
-      const WireIterator& it = parent.wires[index];
-      indexToResultNum.try_emplace(
-          index, cast<OpResult>(it.qubit()).getResultNumber());
-      included.insert(index);
+    SmallVector<unsigned> resultNumbers(parent.wires.size());
+    SmallVector<Value> addons;
+    for (auto [site, wire] : llvm::enumerate(parent.wires)) {
+      if (wire.operation() == composite.op) {
+        resultNumbers[site] = cast<OpResult>(wire.qubit()).getResultNumber();
+      } else {
+        resultNumbers[site] = composite.op->getNumResults() + addons.size();
+        addons.push_back(valueBeforeBoundary(wire, composite.op));
+      }
     }
-
-    const auto allIndices = to_vector(llvm::seq(target->numSites()));
-
-    const SmallVector<size_t> excluded(llvm::make_filter_range(
-        allIndices, [&](const size_t i) { return !included.contains(i); }));
-
-    const SmallVector<Value> addons(map_range(excluded, [&](const size_t i) {
-      return valueBeforeBoundary(parent.wires[i], composite.op);
-    }));
-
-    composite = CompositeUnitary{
-        .op = TypeSwitch<Operation*, Operation*>(composite.op)
-                  .Case<scf::ForOp, scf::WhileOp, IfOp, IndexSwitchOp>(
-                      [&](auto cfOp) { return extend(cfOp, addons, rewriter); })
-                  .Default([](Operation* op) {
-                    report_fatal_error("place: unhandled op: " +
-                                       op->getName().getStringRef());
-                    return nullptr;
-                  }),
-        .indices = allIndices,
-    };
-
-    auto results = composite.op->getResults();
-
-    Wires wires(allIndices.size());
-    for (size_t index : included) {
-      wires[index] = WireIterator(results[indexToResultNum.at(index)]);
+    composite.op =
+        TypeSwitch<Operation*, Operation*>(composite.op)
+            .Case<scf::ForOp, scf::WhileOp, IfOp, IndexSwitchOp>(
+                [&](auto op) { return extend(op, addons, rewriter); });
+    composite.indices = to_vector(llvm::seq(parent.wires.size()));
+    for (auto [site, result] : llvm::enumerate(resultNumbers)) {
+      parent.wires[site] = WireIterator(composite.op->getResult(result));
     }
-    for (auto [index, res] :
-         llvm::zip_equal(excluded, results.take_back(excluded.size()))) {
-      wires[index] = WireIterator(res);
-    }
-
-    assert(llvm::all_of(wires, [&](WireIterator& it) {
-      return it.operation() == composite.op;
-    }));
-
-    parent.wires = std::move(wires);
   }
 
   /// Return `values` with only the qubit entries realigned according to the
   /// given permutation of hardware indices.
   static SmallVector<Value> realignQubitValues(ValueRange values,
                                                ArrayRef<size_t> perm,
-                                               const RoutingBundle& bundle) {
+                                               const RoutingState& bundle) {
     SmallVector<Value> realigned(values);
     size_t qubitIndex = 0;
     for (Value& value : realigned) {
       if (isa<QubitType>(value.getType())) {
-        value = bundle.wires[perm[qubitIndex++]].qubit();
+        value = std::prev(bundle.wires[perm[qubitIndex++]]).qubit();
       }
     }
     assert(qubitIndex == perm.size());
     return realigned;
   }
 
-  /// Keep logical consumers attached to their states when a region's physical
-  /// result order changes. Capture uses first so permutation cycles are safe.
+  /// Destination of each physical slot after a layout change.
+  static SmallVector<size_t> sitePermutation(const Layout& from,
+                                             const Layout& to) {
+    SmallVector<size_t> permutation(from.nHardwareQubits());
+    for (size_t site = 0; site < permutation.size(); ++site) {
+      permutation[site] = to.getHardwareIndex(from.getProgramIndex(site));
+    }
+    return permutation;
+  }
+
+  static void permuteWires(Wires& wires, ArrayRef<size_t> permutation) {
+    Wires reordered(wires.size());
+    for (size_t site = 0; site < wires.size(); ++site) {
+      reordered[permutation[site]] = wires[site];
+    }
+    wires = std::move(reordered);
+  }
+
+  /// Capture uses before rebinding so permutation cycles are safe.
   static void realignQubitUses(ValueRange values, ArrayRef<size_t> sites,
-                               const Layout& from, const Layout& to,
+                               ArrayRef<size_t> permutation,
                                IRRewriter& rewriter) {
     auto qubits = getQubitValues(values);
-    DenseMap<size_t, Value> atSite;
+    SmallVector<Value> atSite(permutation.size());
     for (auto [site, qubit] : llvm::zip_equal(sites, qubits)) {
-      atSite.try_emplace(site, qubit);
+      atSite[site] = qubit;
     }
     SmallVector<std::pair<OpOperand*, Value>> replacements;
     for (auto [site, qubit] : llvm::zip_equal(sites, qubits)) {
-      const auto destination = to.getHardwareIndex(from.getProgramIndex(site));
       replacements.emplace_back(&*qubit.getUses().begin(),
-                                atSite.at(destination));
+                                atSite[permutation[site]]);
     }
     for (auto [use, value] : replacements) {
       rewriter.modifyOpInPlace(use->getOwner(), [&] { use->set(value); });
     }
   }
 
-  /// Processes the composite unitary by routing the nested operation and
-  /// inserting epilogue SWAPs. Updates the parent bundle and returns the
-  /// accumulated statistics.
-  template <WireDirection Direction, RoutingMode Mode = RoutingMode::Cold>
-    requires(Mode != RoutingMode::Hot || Direction == WireDirection::Forward)
-  Statistics dispatch(const CompositeUnitary& composite,
-                                 RoutingBundle& parent, Arena& arena,
-                                 IRRewriter* rewriter = nullptr,
-                                 NativeCostTracker* costs = nullptr) {
+  /// Values carried by a supported region terminator.
+  static ValueRange yieldedValues(Block& block) {
+    return TypeSwitch<Operation*, ValueRange>(block.getTerminator())
+        .Case([](scf::YieldOp op) { return op.getResults(); })
+        .Case([](scf::ConditionOp op) { return op.getArgs(); })
+        .Case([](YieldOp op) { return op.getTargets(); });
+  }
+
+  /// Construct child states, route their bodies, reconcile layouts, then
+  /// publish the physical result order to the parent.
+  template <WireDirection Direction, RoutingMode Mode>
+  Statistics routeRegion(const CompositeUnitary& composite,
+                                    RoutingState& parent, Arena& arena,
+                                    IRRewriter* rewriter) {
     const auto& [op, indices] = composite;
-    if (costs != nullptr) {
-      costs->flush();
+    if (parent.costs) {
+      parent.costs->flush();
     }
 
-    SmallVector<size_t> permutation(indices.size());
-    SmallVector<RoutingBundle, 0> children =
-        TypeSwitch<Operation*, SmallVector<RoutingBundle, 0>>(op)
-            .template Case<scf::ForOp, scf::WhileOp>([&](auto) {
-              return SmallVector<RoutingBundle, 0>{
-                  RoutingBundle{.wires = Wires(target->numSites()),
-                                .layout = parent.layout},
-              };
-            })
-            .Case([&](IfOp) {
-              return SmallVector<RoutingBundle, 0>(
-                  2, RoutingBundle{.wires = Wires(target->numSites()),
-                                   .layout = parent.layout});
-            })
-            .Case([&](IndexSwitchOp switchOp) {
-              return SmallVector<RoutingBundle, 0>(
-                  switchOp.getNumRegions(),
-                  RoutingBundle{.wires = Wires(target->numSites()),
-                                .layout = parent.layout});
-            });
-
-    SmallVector<std::optional<size_t>> resultToQubitIndex(op->getNumResults());
-    size_t numQubitResults = 0;
-    for (auto res : op->getResults()) {
-      if (isa<QubitType>(res.getType())) {
-        resultToQubitIndex[res.getResultNumber()] = numQubitResults++;
+    SmallVector<size_t> resultSites(op->getNumResults());
+    for (size_t site : indices) {
+      resultSites[cast<OpResult>(parent.wires[site].qubit())
+                      .getResultNumber()] = site;
+    }
+    SmallVector<size_t> sites;
+    for (auto result : op->getResults()) {
+      if (isa<QubitType>(result.getType())) {
+        sites.push_back(resultSites[result.getResultNumber()]);
       }
     }
-    assert(numQubitResults == indices.size());
-
-    SmallVector<Value> whileBeforeQubits;
-    SmallVector<Value> whileConditionQubits;
-    if (auto whileOp = dyn_cast<scf::WhileOp>(op)) {
-      whileBeforeQubits = getQubitValues(whileOp.getBeforeArguments());
-      whileConditionQubits = getQubitValues(
-          cast<scf::ConditionOp>(whileOp.getBeforeBody()->getTerminator())
-              .getArgs());
-    }
-
-    for (size_t i : indices) {
-      auto res = cast<OpResult>(parent.wires[i].qubit());
-      const auto resNum = res.getResultNumber();
-      const auto qubitResNum = *resultToQubitIndex[resNum];
-
-      const auto append = [&](RoutingBundle& child, Value arg, Value yielded) {
-        child.wires[i] = WireIterator([&] -> Value {
-          if constexpr (Direction == WireDirection::Forward) {
-            return arg;
-          } else {
-            return yielded;
-          }
-        }());
-      };
-
-      TypeSwitch<Operation*>(op)
-          .Case([&](scf::ForOp forOp) {
-            auto arg = forOp.getTiedLoopRegionIterArg(res);
-            auto yielded = forOp.getTiedLoopYieldedValue(arg)->get();
-            append(children[0], arg, yielded);
-          })
-          .Case([&](scf::WhileOp) {
-            auto arg = whileBeforeQubits[qubitResNum];
-            auto yielded = whileConditionQubits[qubitResNum];
-            append(children[0], arg, yielded);
-          })
-          .Case([&](IfOp ifOp) {
-            OpOperand* const qubit = ifOp.getTiedQubit(res);
-            auto thenArg = ifOp.getTiedThenBlockArgument(qubit);
-            auto thenYielded = ifOp.getTiedThenYieldedValue(thenArg)->get();
-            auto elseArg = ifOp.getTiedElseBlockArgument(qubit);
-            auto elseYielded = ifOp.getTiedElseYieldedValue(elseArg)->get();
-
-            append(children[0], thenArg, thenYielded);
-            append(children[1], elseArg, elseYielded);
-          })
-          .Case([&](IndexSwitchOp switchOp) {
-            OpOperand* const qubit = switchOp.getTiedTarget(res);
-            auto defaultArg = switchOp.getTiedDefaultBlockArgument(qubit);
-            auto defaultYielded =
-                switchOp.getTiedDefaultYieldedValue(defaultArg)->get();
-            append(children[0], defaultArg, defaultYielded);
-
-            for (size_t r = 1; r < switchOp.getNumRegions(); ++r) {
-              auto arg = switchOp.getTiedCaseBlockArgument(qubit, r - 1);
-              auto yielded =
-                  switchOp.getTiedCaseYieldedValue(arg, r - 1)->get();
-              append(children[r], arg, yielded);
-            }
-          });
-
-      permutation[qubitResNum] = i;
-    }
-
-    // Route each child branch and prepare the wire iterators for
-    // epilogue SWAP insertion, i.e., point each iterator at the final
-    // qubit op (note: might be a measurement) before the yield.
+    assert(sites.size() == indices.size());
 
     Statistics totalStats;
-
-    SmallVector<NativeCostTracker, 2> childCosts;
-    if (costs != nullptr) {
-      childCosts.reserve(op->getNumRegions());
-      for (size_t i = 0; i < op->getNumRegions(); ++i) {
-        childCosts.emplace_back(*target, compilationSeed(getOperation(), seed),
-                                nativeCosts.get());
+    SmallVector<RoutingState, 0> children;
+    children.reserve(op->getNumRegions());
+    for (auto [index, region] : llvm::enumerate(op->getRegions())) {
+      auto& child = children.emplace_back(RoutingState{
+          .wires = Wires(target->numSites()),
+          .layout = parent.layout,
+      });
+      if (parent.costs) {
+        child.costs.emplace(*target, compilationSeed(getOperation(), seed),
+                            nativeCosts.get());
       }
-    }
-    for (auto [index, child] : llvm::enumerate(children)) {
-      const auto stats = route<Direction, Mode>(
-          child, arena, rewriter,
-          costs != nullptr ? &childCosts[index] : nullptr);
-
-      totalStats.merge(stats);
-
-      if constexpr (Mode == RoutingMode::Hot) {
-        for_each(child.wires, [](auto& it) { std::ranges::advance(it, -1); });
+      auto roots = getQubitValues(Direction == WireDirection::Forward
+                                      ? region.front().getArguments()
+                                      : yieldedValues(region.front()));
+      for (auto [site, root] : llvm::zip_equal(sites, roots)) {
+        child.wires[site] = WireIterator(root);
       }
-    }
-
-    // Exception: The layout of the "after" region depends on the final layout
-    // of the before region. Thus, create / route the second child region /
-    // bundle here.
-
-    if (auto whileOp = dyn_cast<scf::WhileOp>(op)) {
-      children.emplace_back(RoutingBundle{.wires = Wires(target->numSites()),
-                                          .layout = children[0].layout});
-      assert(children.size() == 2);
-
-      if constexpr (Mode == RoutingMode::Hot) {
-        realignQubitUses(whileOp.getAfterArguments(), permutation,
-                         parent.layout, children[0].layout, *rewriter);
-      }
-
-      auto values = [&] -> ValueRange {
-        if constexpr (Direction == WireDirection::Forward) {
-          return whileOp.getAfterArguments();
+      if (isa<scf::WhileOp>(op) && index == 1) {
+        /// The before-region exit places the after region and loop results.
+        child.layout = children[0].layout;
+        const auto permutation = sitePermutation(parent.layout, child.layout);
+        if constexpr (Mode == RoutingMode::Hot) {
+          realignQubitUses(region.front().getArguments(), sites, permutation,
+                           *rewriter);
+        } else {
+          permuteWires(child.wires, permutation);
         }
-        Operation* const terminator = whileOp.getAfterBody()->getTerminator();
-        return cast<scf::YieldOp>(terminator).getResults();
-      }();
-
-      for (auto [site, arg] :
-           llvm::zip_equal(permutation, getQubitValues(values))) {
-        if constexpr (Mode == RoutingMode::Cold) {
-          site = children[0].layout.getHardwareIndex(
-              parent.layout.getProgramIndex(site));
-        }
-        children[1].wires[site] = WireIterator(arg);
       }
-
-      const auto stats =
-          route<Direction, Mode>(children[1], arena, rewriter,
-                                 costs != nullptr ? &childCosts[1] : nullptr);
-
+      const auto stats = route<Direction, Mode>(child, arena, rewriter);
       totalStats.merge(stats);
-
-      if constexpr (Mode == RoutingMode::Hot) {
-        for_each(children[1].wires,
-                 [](auto& it) { std::ranges::advance(it, -1); });
-      }
     }
-
-    // Find (insert) the epilogue SWAP sequence for (into) the child region
-    // using the restore (scf::ForOp, scf::While), converge (IfOp), and vote
-    // and restore (IndexSwitchOp) strategies.
 
     Layout exit =
         TypeSwitch<Operation*, Layout>(op)
             .Case([&](scf::ForOp) {
-              const auto swaps = restore(children[0].layout, parent.layout);
-              insertSWAPs<Mode>(swaps, children[0], totalStats, rewriter,
-                                costs != nullptr ? &childCosts[0] : nullptr);
+              insertSWAPs<Mode>(restore(children[0].layout, parent.layout),
+                                children[0], totalStats, rewriter);
               return parent.layout;
             })
             .Case([&](scf::WhileOp) {
-              const auto swaps = restore(children[1].layout, parent.layout);
-              insertSWAPs<Mode>(swaps, children[1], totalStats, rewriter,
-                                costs != nullptr ? &childCosts[1] : nullptr);
-              /// The before region's scf::ConditionOp determines the exit
-              /// layout for the loop results and the after region.
+              insertSWAPs<Mode>(restore(children[1].layout, parent.layout),
+                                children[1], totalStats, rewriter);
               return children[0].layout;
             })
             .Case([&](IfOp) {
-              const auto [convergedLayout, fst, snd] =
+              const auto [layout, first, second] =
                   converge(children[0].layout, children[1].layout);
-              insertSWAPs<Mode>(fst, children[0], totalStats, rewriter,
-                                costs != nullptr ? &childCosts[0] : nullptr);
-              insertSWAPs<Mode>(snd, children[1], totalStats, rewriter,
-                                costs != nullptr ? &childCosts[1] : nullptr);
-              return convergedLayout;
+              insertSWAPs<Mode>(first, children[0], totalStats, rewriter);
+              insertSWAPs<Mode>(second, children[1], totalStats, rewriter);
+              return layout;
             })
             .Case([&](IndexSwitchOp) {
-              auto compromise = driveby(map_range(
-                  children, [](const RoutingBundle& b) -> const Layout& {
-                    return b.layout;
+              auto layout = driveby(map_range(
+                  children, [](const RoutingState& child) -> const Layout& {
+                    return child.layout;
                   }));
-              for (auto [index, child] : llvm::enumerate(children)) {
-                const auto swaps = restore(child.layout, compromise);
-                insertSWAPs<Mode>(swaps, child, totalStats, rewriter,
-                                  costs != nullptr ? &childCosts[index]
-                                                   : nullptr);
+              for (auto& child : children) {
+                insertSWAPs<Mode>(restore(child.layout, layout), child,
+                                  totalStats, rewriter);
               }
-              return compromise;
+              return layout;
             });
 
-    if (costs != nullptr) {
-      for (auto& child : childCosts) {
-        costs->merge(child);
+    for (auto [region, child] : llvm::zip_equal(op->getRegions(), children)) {
+      if (parent.costs) {
+        parent.costs->merge(*child.costs);
+      }
+      if constexpr (Mode == RoutingMode::Hot) {
+        auto* terminator = region.front().getTerminator();
+        auto values =
+            realignQubitValues(yieldedValues(region.front()), sites, child);
+        rewriter->modifyOpInPlace(terminator, [&] {
+          if (auto condition = dyn_cast<scf::ConditionOp>(terminator)) {
+            condition.getArgsMutable().assign(values);
+          } else {
+            terminator->setOperands(values);
+          }
+        });
+        reorderTopologically(region.front(), *rewriter);
       }
     }
 
+    const auto permutation = sitePermutation(parent.layout, exit);
     if constexpr (Mode == RoutingMode::Hot) {
-      // Realign terminator values to ensure that i-th input qubit and the
-      // i-th output qubit represent the equivalent hardware qubit. This is
-      // redundant for scf::ForOp because its layout is restored, but handling
-      // every supported region operation uniformly keeps this path simple.
-
-      for (const auto& [region, child] :
-           llvm::zip_equal(op->getRegions(), children)) {
-        assert(region.hasOneBlock());
-
-        Block* const block = &region.front();
-        Operation* const terminator = block->getTerminator();
-
-        rewriter->setInsertionPoint(terminator);
-        TypeSwitch<Operation*>(terminator)
-            .Case([&](scf::YieldOp yieldOp) {
-              rewriter->replaceOpWithNewOp<scf::YieldOp>(
-                  yieldOp,
-                  realignQubitValues(yieldOp.getResults(), permutation, child));
-            })
-            .Case([&](scf::ConditionOp condOp) {
-              rewriter->replaceOpWithNewOp<scf::ConditionOp>(
-                  condOp, condOp.getCondition(),
-                  realignQubitValues(condOp.getArgs(), permutation, child));
-            })
-            .Case([&](YieldOp yieldOp) {
-              rewriter->replaceOpWithNewOp<YieldOp>(
-                  yieldOp,
-                  realignQubitValues(yieldOp.getTargets(), permutation, child));
-            });
-
-        // Sort topologically to fix any occurring SSA dominance errors.
-
-        // Fix SSA dominance errors.
-        reorderTopologically(*block, *rewriter);
-      }
-    }
-
-    // If the operation is a scf::ForOp, where the parent.layout =
-    // child.layout, we are done. Otherwise, propagate a patch with the final
-    // layout and index-to-program mapping.
-
-    if (isa<scf::ForOp>(op)) {
-      return totalStats;
-    }
-
-    if constexpr (Mode == RoutingMode::Hot) {
-      realignQubitUses(op->getResults(), permutation, parent.layout, exit,
-                       *rewriter);
+      realignQubitUses(op->getResults(), sites, permutation, *rewriter);
     } else {
-      Wires reordered(parent.wires.size());
-      for (size_t site = 0; site < parent.wires.size(); ++site) {
-        const auto destination =
-            exit.getHardwareIndex(parent.layout.getProgramIndex(site));
-        reordered[destination] = parent.wires[site];
-      }
-      parent.wires = std::move(reordered);
+      permuteWires(parent.wires, permutation);
     }
-
     parent.layout = std::move(exit);
     return totalStats;
   }
 
-  /// Find the next region that placement will extend to all physical wires.
+  /// Regions fence every traversal, independent of native-cost availability.
+  template <WireDirection Direction>
   static Operation* nextRoutingBoundary(Operation* op) {
-    for (; op != nullptr; op = op->getNextNode()) {
+    for (; op != nullptr; op = Direction == WireDirection::Forward
+                                   ? op->getNextNode()
+                                   : op->getPrevNode()) {
       if (isa<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp>(op) &&
           llvm::any_of(op->getResultTypes(),
                        [](Type type) { return isa<QubitType>(type); })) {
@@ -2106,103 +1918,65 @@ private:
     return nullptr;
   }
 
-  /// Iterates over a dynamically computed window of layers and uses A* search
-  /// to find a SWAP sequence that makes each layer executable. Depending on
-  /// the template parameter, this function only updates the layout or also
-  /// inserts the SWAPs into the IR. Returns the accumulated statistics.
+  /// Advance executable operations, route ready regions, or search for SWAPs
+  /// that release the next interaction. Finish terminal measurements last.
   template <WireDirection Direction, RoutingMode Mode = RoutingMode::Cold>
     requires(Mode != RoutingMode::Hot || Direction == WireDirection::Forward)
-  Statistics route(RoutingBundle& bundle, Arena& arena,
-                              IRRewriter* rewriter = nullptr,
-                              NativeCostTracker* costs = nullptr) {
-    auto& [wires, layout] = bundle;
-
-    /// Costed traversal must not cross a region that hot placement will thread
-    /// through every wire, even before that region reaches the frontier.
+  Statistics route(RoutingState& state, Arena& arena,
+                              IRRewriter* rewriter = nullptr) {
     Operation* boundary = nullptr;
-    if (costs != nullptr) {
-      assert(Direction == WireDirection::Forward);
-      for (auto& wire : wires) {
-        if (wire != std::default_sentinel) {
-          boundary =
-              nextRoutingBoundary(&wire.qubit().getParentBlock()->front());
-          break;
-        }
+    for (auto& wire : state.wires) {
+      if (wire != std::default_sentinel) {
+        auto* block = wire.qubit().getParentBlock();
+        boundary = nextRoutingBoundary<Direction>(
+            Direction == WireDirection::Forward ? &block->front()
+                                                : &block->back());
+        break;
       }
     }
 
     Statistics stats;
     while (true) {
-      while (true) {
-        auto composite = advance<Direction>(wires, costs, boundary);
-        if (!composite) {
-          break;
-        }
-
-        if (costs != nullptr) {
-          assert(composite->op == boundary);
-          boundary = nextRoutingBoundary(boundary->getNextNode());
-        }
-
-        /// Routing a region can permute every frontier wire. Rediscover the
-        /// next region after those positions and consumers have changed.
+      auto composite = advance<Direction>(state, boundary);
+      if (composite) {
+        assert(composite->op == boundary);
+        boundary = nextRoutingBoundary<Direction>(
+            Direction == WireDirection::Forward ? boundary->getNextNode()
+                                                : boundary->getPrevNode());
         if constexpr (Mode == RoutingMode::Hot) {
-          place(*composite, bundle, *rewriter);
+          place(*composite, state, *rewriter);
         }
-
-        auto res = dispatch<Direction, Mode>(*composite, bundle, arena,
-                                             rewriter, costs);
-
-        stats.merge(res);
-        for (auto& wire : wires) {
+        const auto result =
+            routeRegion<Direction, Mode>(*composite, state, arena, rewriter);
+        stats.merge(result);
+        for (auto& wire : state.wires) {
           if (wire != std::default_sentinel &&
               wire.operation() == composite->op) {
             std::ranges::advance(wire,
                                  WireTraversalTraits<Direction>::stride());
           }
         }
+        continue;
       }
 
-      const auto window = getWindow<Direction>(wires, layout, boundary);
+      const auto window =
+          getWindow<Direction>(state.wires, state.layout, boundary);
       if (window.empty()) {
         break;
       }
-
-      const auto swaps = search(window, layout, arena, costs);
-
-      if constexpr (Mode == RoutingMode::Hot) {
-
-        // At this point the wire iterators point to sink-like operations
-        // (e.g. SinkOp, YieldOp), measurements, or two-qubit gate of the
-        // subsequent layer. Decrementing once ensures that the wire iterators
-        // point at the input qubits of those operations.
-
-        for_each(wires, [](auto& it) { std::ranges::advance(it, -1); });
-      }
-
-      insertSWAPs<Mode>(swaps, bundle, stats, rewriter, costs);
-
-      if constexpr (Mode == RoutingMode::Hot) {
-
-        // After SWAP insertion, a wire is either untouched by the SWAP
-        // insertion or pointing at a SWAP operation. If the former is the
-        // case, incrementing the wire iterator will undo the previous
-        // decrement, leaving it at the same position as before the SWAP
-        // insertion. Otherwise, an increment will move the iterator past the
-        // inserted SWAP operation.
-
-        for_each(wires, [](auto& it) { std::ranges::advance(it, 1); });
-      }
+      const auto swaps = search(window, state.layout, arena,
+                                state.costs ? &*state.costs : nullptr);
+      insertSWAPs<Mode>(swaps, state, stats, rewriter);
     }
 
-    if (costs != nullptr) {
-      /// Terminal measurements were deferred until all routing SWAPs. Check
-      /// their final sites too, including consecutive measurement runs.
-      for (auto [index, wire] : llvm::enumerate(wires)) {
-        const std::array vertex{index};
+    if constexpr (Direction == WireDirection::Forward) {
+      for (auto [site, wire] : llvm::enumerate(state.wires)) {
         while (wire != std::default_sentinel &&
-               isa<MeasureOp>(wire.operation())) {
-          costs->append(wire.operation(), vertex);
+               isa_and_nonnull<MeasureOp>(wire.operation())) {
+          if (state.costs) {
+            const std::array vertex{site};
+            state.costs->append(wire.operation(), vertex);
+          }
           ++wire;
         }
       }
@@ -2213,7 +1987,7 @@ private:
   const CompilerTarget* target = nullptr;
   std::shared_ptr<const NativeCostTable> nativeCosts;
   std::optional<size_t> nativeSwapCost;
-  std::optional<std::pair<size_t, size_t>> expectedNativeScore;
+  std::optional<std::pair<size_t, size_t>> expectedScore;
 };
 
 } // namespace
