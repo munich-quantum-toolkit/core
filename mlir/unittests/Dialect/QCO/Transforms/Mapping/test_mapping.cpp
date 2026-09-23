@@ -2702,7 +2702,7 @@ TEST_F(MappingPassFixture, PreserveBasisStatesWithTinySearchMemory) {
   }
 }
 
-TEST_F(MappingPassFixture, RetainRawGreedyLayoutWhenRefinementWorsensIt) {
+TEST_F(MappingPassFixture, ScoreGreedyLayoutWithoutRefinement) {
   const auto target = getSquareGridTarget(2);
   QCOProgramBuilder builder(context.get());
   builder.initialize();
@@ -2726,14 +2726,15 @@ TEST_F(MappingPassFixture, RetainRawGreedyLayoutWhenRefinementWorsensIt) {
     context->enableMultithreading(multithreading);
     OwningOpRef<ModuleOp> moduleOp = input->clone();
     ASSERT_TRUE(succeeded(runPass(
-        *moduleOp, target, MappingPassOptions{.ntrials = 1, .seed = 42})));
+        *moduleOp, target,
+        MappingPassOptions{.niterations = 0, .ntrials = 1, .seed = 42})));
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
     EXPECT_TRUE(succeeded(verifyLinearity(*moduleOp)));
     EXPECT_TRUE(isExecutable(getEntryPoint(*moduleOp), target));
     size_t swaps = 0;
     moduleOp->walk([&](SWAPOp) { ++swaps; });
-    // Identity and refined greedy starts need four SWAPs; raw greedy needs
-    // three. Preserve this routing-quality bound across future heuristics.
+    /// Zero refinement scores the greedy start directly; identity and refined
+    /// greedy starts need four SWAPs for this input.
     EXPECT_LE(swaps, 3);
     if (!multithreading) {
       expected = printModule(*moduleOp);

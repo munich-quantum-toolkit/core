@@ -89,13 +89,13 @@ mqt-cc input.qasm --qdmi-device mqt.sc.iqm.garnet \
   --mapping-search-memory-limit 8388608
 ```
 
-Trials and iterations must be positive. Omitted trials use the logical CPU
-count; iterations default to one forward/backward refinement round. Lookahead is
-the number of additional two-qubit gates considered during routing. It defaults
-to 20; zero considers only the current gate. All-to-all placement ignores valid
-mapping controls. Repeatable mapping requires the same build, input, target,
-seed, and mapping controls, including an explicit trial count. Layouts may
-change between releases.
+Trials must be positive. Omitted trials use the logical CPU count; iterations
+default to one forward/backward refinement round. Zero iterations score each
+initial layout directly. Lookahead is the number of additional two-qubit gates
+considered during routing. It defaults to 20; zero considers only the current
+gate. All-to-all placement ignores valid mapping controls. Repeatable mapping
+requires the same build, input, target, seed, and mapping controls, including an
+explicit trial count. Layouts may change between releases.
 
 ### Choose a format
 
@@ -184,7 +184,9 @@ Mapping explores one initial-layout trial per available logical CPU by default,
 using LLVM's affinity-aware CPU count with a minimum of one. An explicit
 `ntrials` value overrides this default. Set both `ntrials` and `seed` on the
 `place-and-route` pass for reproducible results across machines. Disabling
-multithreading runs the same trials sequentially.
+multithreading runs the same trials sequentially. The trial budget includes a
+greedy layout when available, followed by identity if a slot remains and random
+layouts for the remaining slots. Every trial uses the same refinement count.
 
 Each routing search limits its estimated node and layout storage to 256 MiB by
 default. When the budget is exhausted, it checks queued states before falling

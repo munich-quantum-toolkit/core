@@ -21,7 +21,7 @@
 #include <optional>
 #include <string>
 
-TEST(CompilerCLI, RejectsInvalidMappingOptions) {
+TEST(CompilerCLI, ValidatesMappingOptionArguments) {
   struct InvalidOptions {
     llvm::StringRef argument;
     bool hasDevice;
@@ -56,7 +56,8 @@ TEST(CompilerCLI, RejectsInvalidMappingOptions) {
            InvalidOptions{
                .argument = "--mapping-iterations=0",
                .hasDevice = true,
-               .diagnostic = "--mapping-iterations must be greater than zero",
+               .diagnostic =
+                   "--qdmi-device and --payload-spec must be provided together",
            },
        }) {
     SCOPED_TRACE(test.argument.str());
