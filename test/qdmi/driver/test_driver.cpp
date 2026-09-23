@@ -19,16 +19,13 @@
 
 #include <algorithm>
 #include <array>
-#include <atomic>
 #include <barrier>
-#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
-#include <future>
 #include <iterator>
 #include <memory>
 #include <optional>
@@ -41,12 +38,6 @@
 #include <unordered_set>
 #include <utility>
 #include <vector>
-
-#ifdef _WIN32
-#include <windows.h>
-#else
-#include <dlfcn.h>
-#endif
 
 namespace testing {
 namespace {
