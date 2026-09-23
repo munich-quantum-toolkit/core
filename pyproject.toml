@@ -289,7 +289,7 @@ before-test = "uv pip install --group test"
 test-groups = []
 
 [[tool.cibuildwheel.overrides]]
-select = [ "cp*-win_arm64", "cp315t-*" ]
+select = [ "cp*-win_arm64", "cp3??t-*" ]
 before-test = ""
 test-command = 'python -c "import mqt.core.dd, mqt.core.mlir, mqt.core.qdmi"'
 test-groups = []
