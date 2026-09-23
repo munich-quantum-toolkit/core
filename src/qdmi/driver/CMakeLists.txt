@@ -10,6 +10,7 @@ set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-driver)
 
 if(NOT TARGET ${TARGET_NAME})
   add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMIDriver)
+  set_property(TARGET ${TARGET_NAME} PROPERTY BUILD_WITH_INSTALL_RPATH FALSE)
 
   target_sources(${TARGET_NAME} PRIVATE DeviceRegistry.cpp Driver.cpp)
 
