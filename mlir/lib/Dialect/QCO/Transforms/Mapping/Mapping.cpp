@@ -1172,7 +1172,7 @@ private:
 
       // Because the final forward pass will update the bundle's layout, save
       // and restore the final initial layout later.
-      Layout final(t.bundle.layout);
+      Layout initial(t.bundle.layout);
 
       const auto stats = route<WireDirection::Forward>(t.bundle, arena);
       if (failed(stats)) {
@@ -1181,7 +1181,7 @@ private:
 
       t.stats = *stats;
       t.success = true;
-      t.bundle.layout = std::move(final);
+      t.bundle.layout = std::move(initial);
     });
 
     Trial* best = nullptr;
