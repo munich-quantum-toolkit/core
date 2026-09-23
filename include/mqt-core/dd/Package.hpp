@@ -840,7 +840,7 @@ public:
       return {x.p, rWeight};
     }
     if (x.p == y.p) {
-      const auto rWeight = std::sqrt(x.w.mag2() + y.w.mag2());
+      const auto rWeight = std::hypot(x.w.mag(), y.w.mag());
       return {x.p, rWeight};
     }
 

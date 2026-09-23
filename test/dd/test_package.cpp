@@ -3022,4 +3022,14 @@ TEST(DDPackageTest, ReduceGarbageIdentityBetweenTwoNodes) {
   };
   EXPECT_EQ(outputMatrix, expected);
 }
+TEST(DDPackageTest, MagnitudeAdditionAvoidsSquaredWeightOverflow) {
+  Package package(1);
+  for (const fp weight : {1e-200, 1e200}) {
+    const auto edge = vCachedEdge::terminal(ComplexValue{weight});
+    const auto sum = package.addMagnitudes(edge, edge, 0);
+    ASSERT_TRUE(std::isfinite(sum.w.r));
+    EXPECT_NEAR(sum.w.r / weight, std::sqrt(2.), 1e-15);
+    EXPECT_EQ(sum.w.i, 0.);
+  }
+}
 } // namespace dd
