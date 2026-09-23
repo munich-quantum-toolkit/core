@@ -258,7 +258,7 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
                         "The lambda factor in the cost function.">,
                  Option<"niterations", "niterations", "std::size_t", "1",
                         "The number of forwards and backwards traversal to "
-                        "improve the initial layout. Must be > 0.">,
+                        "improve the initial layout. Must be >= 0.">,
                  Option<"ntrials", "ntrials", "std::size_t",
                         "llvm::hardware_concurrency().compute_thread_count()",
                         "The number of identity/random trials of "

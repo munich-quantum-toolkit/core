@@ -709,9 +709,9 @@ public:
 protected:
   void runOnOperation() override {
     auto moduleOp = getOperation();
-    if (!std::isfinite(alpha.getValue()) || alpha <= 0 || niterations == 0 ||
+    if (!std::isfinite(alpha.getValue()) || alpha <= 0 || niterations < 0 ||
         ntrials == 0) {
-      moduleOp.emitError("mapping requires finite alpha > 0, niterations > 0, "
+      moduleOp.emitError("mapping requires finite alpha > 0, niterations >= 0, "
                          "and ntrials > 0");
       signalPassFailure();
       return;
@@ -762,7 +762,7 @@ protected:
     auto& infos = computation->infos;
     auto layout = generateLayout(wires, infos);
     if (failed(layout)) {
-      func.emitError() << "failed to refine random initial layouts";
+      func.emitError() << "failed to generate initial layout";
       signalPassFailure();
       return;
     }
@@ -1127,65 +1127,61 @@ private:
     if (greedy && greedy->second) {
       return greedy->first;
     }
-    std::mt19937_64 rng{compilationSeed(getOperation(), seed)};
 
     struct Trial {
       RoutingBundle bundle;
-      size_t iterations;
       Statistics stats{};
       bool success{false};
     };
 
     SmallVector<Trial, 0> trials;
-    trials.reserve(ntrials + 2);
-    for (size_t i = 0; i < ntrials; ++i) {
-      trials.emplace_back(
-          RoutingBundle{
-              .wires = wires,
-              .infos = infos,
-              .layout = i == 0 ? Layout::identity(target->numSites())
-                               : Layout::random(target->numSites(),
-                                                target->numSites(), rng()),
-          },
-          niterations);
-    }
+    trials.reserve(ntrials);
+
     if (greedy) {
-      trials.emplace_back(
-          RoutingBundle{
-              .wires = wires,
-              .infos = infos,
-              .layout = greedy->first,
-          },
-          niterations);
-      trials.emplace_back(
-          RoutingBundle{
-              .wires = wires,
-              .infos = infos,
-              .layout = greedy->first,
-          },
-          0);
+      trials.emplace_back(RoutingBundle{
+          .wires = wires,
+          .infos = infos,
+          .layout = greedy->first,
+      });
+    }
+
+    auto rng = makeMt19937(compilationSeed(getOperation(), seed));
+    for (size_t i = trials.size(); i < ntrials; ++i) {
+      trials.emplace_back(RoutingBundle{
+          .wires = wires,
+          .infos = infos,
+          .layout = i == 0 ? Layout::identity(target->numSites())
+                           : Layout::random(target->numSites(),
+                                            target->numSites(), rng()),
+      });
     }
 
     parallelForEach(&getContext(), trials, [&, this](Trial& t) {
       Arena arena(target->numSites(), searchMemoryLimit);
-      for (size_t i = 0; i < t.iterations; ++i) {
-        const auto fwRouteRes = route<WireDirection::Forward>(t.bundle, arena);
-        if (failed(fwRouteRes)) {
-          return;
-        }
+      if (niterations > 0) {
+        for (size_t i = 0; i < niterations; ++i) {
+          if (failed(route<WireDirection::Forward>(t.bundle, arena))) {
+            return;
+          }
 
-        const auto bwRouteRes = route<WireDirection::Backward>(t.bundle, arena);
-        if (failed(bwRouteRes)) {
-          return;
+          if (failed(route<WireDirection::Backward>(t.bundle, arena))) {
+            return;
+          }
         }
       }
-      auto scoringBundle = t.bundle;
-      const auto score = route<WireDirection::Forward>(scoringBundle, arena);
-      if (failed(score)) {
+
+      // Because the final forward pass will update the bundle's layout, save
+      // and restore the final initial layout later.
+      Layout final(t.bundle.layout);
+
+      const auto stats = route<WireDirection::Forward>(t.bundle, arena);
+      if (failed(stats)) {
         return;
       }
-      t.stats = *score;
+
+      t.stats = *stats;
       t.success = true;
+      t.bundle.layout = std::move(final);
     });
 
     Trial* best = nullptr;
