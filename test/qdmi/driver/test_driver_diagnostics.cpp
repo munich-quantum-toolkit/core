@@ -15,6 +15,7 @@
 #include "qdmi/client.h"
 
 #include <cstdlib>
+#include <vector>
 
 namespace {
 
@@ -32,7 +33,7 @@ TEST(DriverDiagnosticDeathTest,
     if (QDMI_session_alloc(nullptr) != QDMI_ERROR_INVALIDARGUMENT) {
       std::_Exit(2);
     }
-    QDMI_Session_impl_d sentinel({});
+    QDMI_Session_impl_d sentinel(std::vector<QDMI_Device>{});
     auto* session = &sentinel;
     const auto status = QDMI_session_alloc(&session);
     std::_Exit(status == QDMI_ERROR_FATAL && session == nullptr ? 0 : 3);

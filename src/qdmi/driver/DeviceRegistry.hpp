@@ -23,10 +23,10 @@ namespace qdmi::detail {
 /// Rejects IDs that the QDMI string-property ABI cannot represent.
 void validateDeviceId(std::string_view id);
 
-/// Stages one low-precedence package manifest before the driver is frozen.
+/// Stages one low-precedence device manifest before the driver is frozen.
 auto stagePackageManifest(const std::filesystem::path& path) -> int;
 
-/// Freezes and returns the staged package manifests.
+/// Freezes and returns the staged device manifests.
 [[nodiscard]] auto freezePackageManifests()
     -> std::vector<std::filesystem::path>;
 

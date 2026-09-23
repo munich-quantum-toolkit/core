@@ -10,10 +10,9 @@
 
 #include "qdmi/Client.hpp"
 
+#include <filesystem>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
-
-#include <filesystem>
 #include <optional>
 #include <stdexcept>
 

@@ -375,13 +375,11 @@ public:
   /// Constructor from an explicit device-handle snapshot.
   explicit QDMI_Session_impl_d(const std::vector<QDMI_Device>& devices);
 
-  /// @brief Constructor for one privately targeted device session.
+  /// Constructor for one privately targeted device session.
   explicit QDMI_Session_impl_d(std::shared_ptr<QDMI_Device_impl_d> device);
 
-  /**
-   * @brief Initializes the session.
-   * @see QDMI_session_init
-   */
+  /// Initializes the session.
+  /// @see QDMI_session_init
   auto init() -> int;
 
   /// Sets a parameter for the session.
@@ -498,10 +496,8 @@ public:
                              const DeviceSessionConfig& config,
                              QDMI_Session* session) -> int;
 
-  /**
-   * @brief Frees a session.
-   * @see QDMI_session_free
-   */
+  /// Frees a session.
+  /// @see QDMI_session_free
   auto sessionFree(QDMI_Session session) -> void;
 };
 

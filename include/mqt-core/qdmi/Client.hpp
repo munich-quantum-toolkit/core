@@ -545,7 +545,7 @@ class Device;
 class Operation;
 
 namespace default_driver {
-/// Stage one package manifest in MQT Core's optional driver extension.
+/// Stage one device manifest in MQT Core's optional driver extension.
 void addManifest(const std::filesystem::path& path);
 
 /// Open one default-driver device with strict merged session configuration.

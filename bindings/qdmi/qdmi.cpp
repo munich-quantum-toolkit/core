@@ -162,7 +162,7 @@ template <typename Query>
 NB_MODULE(MQT_CORE_MODULE_NAME, qdmiModule) {
   qdmiModule.doc() = "QDMI Client entities and MQT Core's default driver.";
   auto defaultDriver = qdmiModule.def_submodule(
-      "default_driver", "Configure MQT Core's packaged QDMI Client driver.");
+      "default_driver", "Configure MQT Core's packaged QDMI driver.");
   bindings::registerSlurm(qdmiModule);
 
   nb::class_<qdmi::Session>(qdmiModule, "ClientSession",
@@ -802,7 +802,7 @@ when the custom slot is unsupported.)pb");
 
   defaultDriver.def("add_manifest", &qdmi::default_driver::addManifest,
                     "manifest_path"_a,
-                    "Stage one installed package manifest before the default "
+                    "Stage one installed device manifest before the default "
                     "driver freezes.");
 
   defaultDriver.def(
@@ -822,12 +822,11 @@ when the custom slot is unsupported.)pb");
          const std::optional<std::string>& custom3,
          const std::optional<std::string>& custom4,
          const std::optional<std::string>& custom5) {
-        return qdmi::default_driver::openDevice(
-            deviceId,
-            makeDeviceSessionJson(baseUrl, token, authFile, authUrl, username,
-                                  password, deviceConfig, deviceConfigFile,
-                                  custom1, custom2, custom3, custom4, custom5),
-            driverPath);
+        const auto config = makeDeviceSessionJson(
+            baseUrl, token, authFile, authUrl, username, password, deviceConfig,
+            deviceConfigFile, custom1, custom2, custom3, custom4, custom5);
+        const nb::gil_scoped_release release;
+        return qdmi::default_driver::openDevice(deviceId, config, driverPath);
       },
       "device_id"_a, nb::kw_only(), "driver_path"_a = std::nullopt,
       "base_url"_a = std::nullopt, "token"_a = std::nullopt,

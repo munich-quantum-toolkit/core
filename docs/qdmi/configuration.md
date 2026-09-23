@@ -107,7 +107,7 @@ a device that an administrator disabled.
 `MQT_CORE_QDMI_CONFIG_FILE` replaces the system, user, and project levels while
 retaining packaged built-ins.
 
-## Installed Python package manifests
+## Installed Python device manifests
 
 A Python distribution can advertise one trusted device manifest without
 importing its provider package. Add an entry point to the distribution's
@@ -146,7 +146,7 @@ idempotent, including after the packaged Driver freezes its registry. A new path
 cannot be staged after the packaged Driver successfully constructs and freezes
 its registry during a session-allocation request. A failed Driver construction
 rolls the freeze back so startup can be retried. Staging loads the packaged
-Driver library but does not select it as the process's generic Client driver.
+Driver library but does not select it as the process's generic QDMI driver.
 Package staging and default targeted opens ignore `MQT_CORE_QDMI_DRIVER` and use
 the packaged Driver. An explicit targeted `driver_path` overrides that default.
 Standard Client sessions continue to honor the environment override.

@@ -221,7 +221,8 @@ struct DynamicLibraryCache {
   std::unique_ptr<void, decltype(closeLibrary)> handle(DL_OPEN(libName.c_str()),
                                                        closeLibrary);
   if (!handle) {
-    throw DeviceStatusError(QDMI_ERROR_LIBNOTFOUND, "Couldn't open the device library: " + libName);
+    throw DeviceStatusError(QDMI_ERROR_LIBNOTFOUND,
+                            "Couldn't open the device library: " + libName);
   }
   auto& module = [&]() -> auto& {
     const std::scoped_lock lock(cache.mutex);
@@ -254,7 +255,8 @@ QDMI_Device_impl_d::QDMI_Device_impl_d(
     : id_(std::move(id)), library_(std::move(lib)) {
   const auto checkStatus = [](const int status, const std::string& action) {
     if (status != QDMI_SUCCESS && status != QDMI_WARN_GENERAL) {
-      throw qdmi::DeviceStatusError(status,
+      throw qdmi::DeviceStatusError(
+          status,
           action + ": " + qdmi::toString(static_cast<QDMI_STATUS>(status)));
     }
     qdmi::throwIfError(status, action);
@@ -263,12 +265,21 @@ QDMI_Device_impl_d::QDMI_Device_impl_d(
   try {
     checkStatus(allocationStatus, "Failed to allocate device session");
     if (deviceSession_ == nullptr) {
-      throw qdmi::DeviceStatusError(QDMI_ERROR_FATAL, "Device returned a null session handle");
+      throw qdmi::DeviceStatusError(QDMI_ERROR_FATAL,
+                                    "Device returned a null session handle");
     }
     /// All views borrow NUL-terminated strings for this synchronous call.
     const auto setParameter = [&](const std::optional<std::string_view> value,
                                   const QDMI_Device_Session_Parameter param) {
-      if (!value || library_->device_session_set_parameter == nullptr) {
+      if (!value) {
+        return;
+      }
+      if (library_->device_session_set_parameter == nullptr) {
+        if (strict) {
+          throw qdmi::DeviceStatusError(
+              QDMI_ERROR_NOTSUPPORTED,
+              "Device has no session parameter setter");
+        }
         return;
       }
       const auto status = library_->device_session_set_parameter(
@@ -836,7 +847,8 @@ auto Driver::openFresh(const std::string_view id,
     }
     definition = *registered;
   }
-  const auto config = detail::mergeSessionConfig(std::move(definition.session), overrides);
+  const auto config =
+      detail::mergeSessionConfig(std::move(definition.session), overrides);
   validateSessionConfig(config);
   auto library = getDynamicDeviceLibrary(detail::pathToUtf8(definition.library),
                                          definition.prefix);

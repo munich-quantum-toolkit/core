@@ -16,11 +16,10 @@
 #include <qdmi/constants.h>
 /// POSIX declares setenv and unsetenv in this compatibility header.
 /// NOLINTNEXTLINE(modernize-deprecated-headers)
-#include <stdlib.h>
-
 #include <filesystem>
 #include <optional>
 #include <stdexcept>
+#include <stdlib.h>
 #include <string>
 #include <string_view>
 
@@ -132,7 +131,7 @@ TEST(DefaultDriverExtensionTest, StagesThenOpensStrictFreshSessions) {
 
   setEnvironment("MQT_CORE_QDMI_TEST_DEVICE_WARNING", "children-null");
   EXPECT_THROW(static_cast<void>(default_driver::openDevice("package.session")),
-               std::invalid_argument);
+               std::runtime_error);
   setEnvironment("MQT_CORE_QDMI_TEST_DEVICE_WARNING", {});
 
   const auto second =

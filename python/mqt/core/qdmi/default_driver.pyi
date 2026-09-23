@@ -6,14 +6,14 @@
 #
 # Licensed under the MIT License
 
-"""Configure MQT Core's packaged QDMI Client driver."""
+"""Configure MQT Core's packaged QDMI driver."""
 
 import os
 
 import mqt.core.qdmi
 
 def add_manifest(manifest_path: str | os.PathLike) -> None:
-    """Stage one installed package manifest before the default driver freezes."""
+    """Stage one installed device manifest before the default driver freezes."""
 
 def open_device(
     device_id: str,

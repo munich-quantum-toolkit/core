@@ -1,6 +1,6 @@
 # Optional packaged QDMI driver extension
 
-Status: independently rebased and validated locally.
+Status: rebased on refreshed #2229; validation in progress.
 
 ## Motivation and settled boundary
 
@@ -10,8 +10,7 @@ Core's packaged driver provides an optional private extension for this purpose.
 The standard Client ABI remains usable with drivers that lack that extension.
 Standardizing discovery/configuration is QDMI v2 work.
 
-This is Core #2230 on #2229, targeting Core 4.1 / QDMI 1.4. It does not depend
-on metadata removal, batching, payload capabilities, or compiler changes.
+This is Core #2230 on #2229, using QDMI #511 and retaining current main APIs.
 
 ## Implementation
 
@@ -42,8 +41,7 @@ tests must reject missing RECORD, ambiguous/off-anchor paths and traversal while
 proving that provider code is not imported. Retain current optional-device
 configurations, concurrency, and compiler rules.
 
-The release suite passed 3,873 tests with one existing skip. All 467 selected
-Python tests passed. Stub generation, repository lint and C++ lint passed.
+Validation is being repeated against current main.
 
 ## Recovery and non-goals
 

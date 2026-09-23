@@ -55,7 +55,7 @@ def _manifest_path(entry: EntryPoint) -> Path:
 
 
 def discover_qdmi_manifests(add_manifest: Callable[[Path], None]) -> None:
-    """Stage each valid, explicitly advertised package manifest."""
+    """Stage each valid, explicitly advertised device manifest."""
     try:
         entries = tuple(entry_points(group=_ENTRY_POINT_GROUP))
     except Exception as error:  # ruff: ignore[blind-except]
