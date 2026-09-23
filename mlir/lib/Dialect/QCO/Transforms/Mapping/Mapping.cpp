@@ -1089,7 +1089,7 @@ private:
     }
 
     struct Trial {
-      RoutingState bundle;
+      Layout layout;
       /// Native count/depth, or maximum/SWAP count when synthesis is
       /// unavailable.
       std::pair<size_t, size_t> score;
@@ -1098,20 +1098,17 @@ private:
     SmallVector<Trial, 0> trials;
     trials.reserve(ntrials);
 
-    const auto addTrial = [&](const Layout& layout) {
-      trials.emplace_back(routingState(wires, layout));
-    };
-
     if (greedy) {
-      addTrial(greedy->first);
+      trials.emplace_back(greedy->first);
     }
 
     if (trials.size() < ntrials) {
-      addTrial(Layout::identity(target->numSites()));
+      trials.emplace_back(Layout::identity(target->numSites()));
 
       auto rng = makeMt19937(compilationSeed(getOperation(), seed));
       for (size_t i = trials.size(); i < ntrials; ++i) {
-        addTrial(Layout::random(target->numSites(), target->numSites(), rng()));
+        trials.emplace_back(
+            Layout::random(target->numSites(), target->numSites(), rng()));
       }
     }
 
@@ -1119,18 +1116,23 @@ private:
 
     parallelForEach(&getContext(), trials, [&, this](Trial& t) {
       Arena arena(target->numSites(), searchMemoryLimit);
-      for (size_t i = 0; i < niterations; ++i) {
-        route<WireDirection::Forward>(t.bundle, arena);
-        route<WireDirection::Backward>(t.bundle, arena);
+      {
+        auto state = routingState(wires, t.layout);
+        for (size_t i = 0; i < niterations; ++i) {
+          route<WireDirection::Forward>(state, arena);
+          route<WireDirection::Backward>(state, arena);
+        }
+        t.layout = std::move(state.layout);
       }
-      auto scoringBundle = routingState(wires, t.bundle.layout);
+      /// Refinement may permute wire cursors. Score from the original roots,
+      /// preserving only the initial layout selected for final placement.
+      auto state = routingState(wires, t.layout);
       if (nativeCosts) {
-        scoringBundle.costs.emplace(
-            *target, compilationSeed(getOperation(), seed), nativeCosts.get());
+        state.costs.emplace(*target, compilationSeed(getOperation(), seed),
+                            nativeCosts.get());
       }
-      const auto score = route<WireDirection::Forward>(scoringBundle, arena);
-      const auto quality =
-          scoringBundle.costs ? scoringBundle.costs->score() : std::nullopt;
+      const auto score = route<WireDirection::Forward>(state, arena);
+      const auto quality = state.costs ? state.costs->score() : std::nullopt;
       t.score = quality.value_or(
           std::pair{std::numeric_limits<size_t>::max(), score.nswaps});
     });
@@ -1139,9 +1141,8 @@ private:
         llvm::min_element(trials, [](const Trial& a, const Trial& b) {
           return a.score < b.score;
         });
-
     expectedScore = best->score;
-    return best->bundle.layout;
+    return best->layout;
   }
 
   /// A uniform edge cost permits the existing distance heuristic to retain its
@@ -1790,8 +1791,8 @@ private:
   /// publish the physical result order to the parent.
   template <WireDirection Direction, RoutingMode Mode>
   Statistics routeRegion(const CompositeUnitary& composite,
-                                    RoutingState& parent, Arena& arena,
-                                    IRRewriter* rewriter) {
+                         RoutingState& parent, Arena& arena,
+                         IRRewriter* rewriter) {
     const auto& [op, indices] = composite;
     if (parent.costs) {
       parent.costs->flush();
@@ -1839,8 +1840,7 @@ private:
           permuteWires(child.wires, permutation);
         }
       }
-      const auto stats = route<Direction, Mode>(child, arena, rewriter);
-      totalStats.merge(stats);
+      totalStats.merge(route<Direction, Mode>(child, arena, rewriter));
     }
 
     Layout exit =
@@ -1923,7 +1923,7 @@ private:
   template <WireDirection Direction, RoutingMode Mode = RoutingMode::Cold>
     requires(Mode != RoutingMode::Hot || Direction == WireDirection::Forward)
   Statistics route(RoutingState& state, Arena& arena,
-                              IRRewriter* rewriter = nullptr) {
+                   IRRewriter* rewriter = nullptr) {
     Operation* boundary = nullptr;
     for (auto& wire : state.wires) {
       if (wire != std::default_sentinel) {
@@ -1946,9 +1946,8 @@ private:
         if constexpr (Mode == RoutingMode::Hot) {
           place(*composite, state, *rewriter);
         }
-        const auto result =
-            routeRegion<Direction, Mode>(*composite, state, arena, rewriter);
-        stats.merge(result);
+        stats.merge(
+            routeRegion<Direction, Mode>(*composite, state, arena, rewriter));
         for (auto& wire : state.wires) {
           if (wire != std::default_sentinel &&
               wire.operation() == composite->op) {
