@@ -10,6 +10,17 @@ file(MAKE_DIRECTORY "${WORK_DIR}")
 set(configuration "${WORK_DIR}/devices.json")
 set(marker "${WORK_DIR}/worker.pid")
 
+execute_process(
+  COMMAND "${CHECKER}" --help
+  RESULT_VARIABLE result
+  OUTPUT_VARIABLE help
+  ERROR_VARIABLE error)
+if(NOT result EQUAL 0
+   OR NOT help MATCHES "^Usage: mqt-core-qdmi-check "
+   OR NOT error STREQUAL "")
+  message(FATAL_ERROR "Unexpected help response: ${result}: ${help}${error}")
+endif()
+
 function(check_exit expected)
   execute_process(
     COMMAND "${CMAKE_COMMAND}" -E env --unset=MQT_CORE_QDMI_CONFIG_JSON
@@ -81,31 +92,37 @@ foreach(
       message(FATAL_ERROR "Checker worker survived its timeout")
     endif()
     if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux" AND status STREQUAL "hang")
-      file(REMOVE "${marker}")
-      execute_process(
-        COMMAND
-          "${CMAKE_COMMAND}" -E env --unset=MQT_CORE_QDMI_CONFIG_JSON
-          "MQT_CORE_QDMI_CONFIG_FILE=${configuration}" /bin/sh -c [=[
+      foreach(signal TERM KILL)
+        file(REMOVE "${marker}")
+        execute_process(
+          COMMAND
+            "${CMAKE_COMMAND}" -E env --unset=MQT_CORE_QDMI_CONFIG_JSON
+            "MQT_CORE_QDMI_CONFIG_FILE=${configuration}" /bin/sh -c [=[
             "$1" --device test.check & checker=$!
             attempt=0
             while [ ! -s "$2" ] && [ "$attempt" -lt 50 ]; do
               sleep 0.1
               attempt=$((attempt + 1))
             done
-            kill -KILL "$checker"
+            kill "-$3" "$checker"
             wait "$checker" 2>/dev/null
-          ]=] checker-parent-death "${CHECKER}" "${marker}"
-        TIMEOUT 10
-        OUTPUT_QUIET ERROR_QUIET)
-      file(READ "${marker}" worker)
-      string(STRIP "${worker}" worker)
-      execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 0.1)
-      if(EXISTS "/proc/${worker}/stat")
-        file(READ "/proc/${worker}/stat" worker_status)
-        if(NOT worker_status MATCHES "^[0-9]+ \\(.*\\) Z ")
-          message(FATAL_ERROR "Checker worker survived its supervisor")
+          ]=] checker-parent-death "${CHECKER}" "${marker}" "${signal}"
+          TIMEOUT 10
+          RESULT_VARIABLE result
+          OUTPUT_QUIET ERROR_QUIET)
+        if(signal STREQUAL "TERM" AND NOT result EQUAL 1)
+          message(FATAL_ERROR "Expected checker failure on SIGTERM, got ${result}")
         endif()
-      endif()
+        file(READ "${marker}" worker)
+        string(STRIP "${worker}" worker)
+        execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 0.1)
+        if(EXISTS "/proc/${worker}/stat")
+          file(READ "/proc/${worker}/stat" worker_status)
+          if(NOT worker_status MATCHES "^[0-9]+ \\(.*\\) Z ")
+            message(FATAL_ERROR "Checker worker survived its supervisor")
+          endif()
+        endif()
+      endforeach()
     endif()
   else()
     check_exit(1 --device test.check)
