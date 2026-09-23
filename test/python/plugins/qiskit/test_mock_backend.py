@@ -773,7 +773,7 @@ def test_qasm_preflight_maps_control_flow_operands(monkeypatch: pytest.MonkeyPat
 
 
 def test_backend_rejects_device_without_program_payload() -> None:
-    """A device that only accepts CALIBRATION has no format a circuit can go into."""
+    """A device that only accepts BATCH_JOB has no format a circuit can go into."""
     qc = QuantumCircuit(2)
     qc.h(0)
     qc.measure_all()
@@ -782,7 +782,7 @@ def test_backend_rejects_device_without_program_payload() -> None:
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(UnsupportedFormatError, match="No program serializer for any format the device supports"):
-        backend._serialize_circuit(qc, [ProgramFormat.CALIBRATION])  # ruff:ignore[private-member-access]
+        backend._serialize_circuit(qc, [ProgramFormat.BATCH_JOB])  # ruff:ignore[private-member-access]
 
 
 @pytest.mark.parametrize(

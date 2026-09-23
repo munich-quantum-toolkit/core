@@ -709,9 +709,8 @@ public:
 protected:
   void runOnOperation() override {
     auto moduleOp = getOperation();
-    if (!std::isfinite(alpha.getValue()) || alpha <= 0 || niterations == 0 ||
-        ntrials == 0) {
-      moduleOp.emitError("mapping requires finite alpha > 0, niterations > 0, "
+    if (!std::isfinite(alpha.getValue()) || alpha <= 0 || ntrials == 0) {
+      moduleOp.emitError("mapping requires finite alpha > 0, niterations >= 0, "
                          "and ntrials > 0");
       signalPassFailure();
       return;
@@ -761,34 +760,23 @@ protected:
     auto& wires = computation->wires;
     auto& infos = computation->infos;
     auto layout = generateLayout(wires, infos);
-    if (failed(layout)) {
-      func.emitError() << "failed to refine random initial layouts";
-      signalPassFailure();
-      return;
-    }
 
     IRRewriter rewriter(&getContext());
     std::tie(wires, infos) = std::move(
-        applyPlacement(body, *target, *layout, *computation, rewriter));
+        applyPlacement(body, *target, layout, *computation, rewriter));
 
     RoutingBundle bundle{
         .wires = std::move(wires),
         .infos = std::move(infos),
-        .layout = std::move(*layout),
+        .layout = std::move(layout),
     };
 
     /// Each concurrent trial and the final route own separate search storage.
     Arena arena(target->numSites(), searchMemoryLimit);
-    const auto routeRes = route<WireDirection::Forward, RoutingMode::Hot>(
+    const auto stats = route<WireDirection::Forward, RoutingMode::Hot>(
         bundle, arena, &rewriter);
-    if (failed(routeRes)) {
-      func.emitError() << "failed to map the function";
-      signalPassFailure();
-      return;
-    }
 
     // Collect statistics.
-    const auto stats = *routeRes;
     numSwaps += stats.nswaps;
 
     // Fix SSA dominance errors.
@@ -1118,88 +1106,62 @@ private:
     return std::pair{Layout::fromMapping(mapping), false};
   }
 
-  /// Refine identity, random, and greedy starts with forward/backward routing.
-  /// Keep the raw greedy start too: refinement can worsen forward routing.
+  /// Refine greedy, identity, and random starts with forward/backward routing.
   /// Score each candidate with a forward traversal, preserving its start
   /// layout.
-  FailureOr<Layout> generateLayout(const Wires& wires, const WireInfos& infos) {
+  Layout generateLayout(const Wires& wires, const WireInfos& infos) {
     const auto greedy = generateGreedyLayout(wires, infos);
     if (greedy && greedy->second) {
       return greedy->first;
     }
-    std::mt19937_64 rng{compilationSeed(getOperation(), seed)};
 
     struct Trial {
       RoutingBundle bundle;
-      size_t iterations;
       Statistics stats{};
-      bool success{false};
     };
 
     SmallVector<Trial, 0> trials;
-    trials.reserve(ntrials + 2);
-    for (size_t i = 0; i < ntrials; ++i) {
+    trials.reserve(ntrials);
+
+    const auto addTrial = [&](const Layout& layout) {
       trials.emplace_back(
-          RoutingBundle{
-              .wires = wires,
-              .infos = infos,
-              .layout = i == 0 ? Layout::identity(target->numSites())
-                               : Layout::random(target->numSites(),
-                                                target->numSites(), rng()),
-          },
-          niterations);
-    }
+          RoutingBundle{.wires = wires, .infos = infos, .layout = layout});
+    };
+
     if (greedy) {
-      trials.emplace_back(
-          RoutingBundle{
-              .wires = wires,
-              .infos = infos,
-              .layout = greedy->first,
-          },
-          niterations);
-      trials.emplace_back(
-          RoutingBundle{
-              .wires = wires,
-              .infos = infos,
-              .layout = greedy->first,
-          },
-          0);
+      addTrial(greedy->first);
     }
+
+    if (trials.size() < ntrials) {
+      addTrial(Layout::identity(target->numSites()));
+
+      auto rng = makeMt19937(compilationSeed(getOperation(), seed));
+      for (size_t i = trials.size(); i < ntrials; ++i) {
+        addTrial(Layout::random(target->numSites(), target->numSites(), rng()));
+      }
+    }
+
+    assert(ntrials == trials.size());
 
     parallelForEach(&getContext(), trials, [&, this](Trial& t) {
       Arena arena(target->numSites(), searchMemoryLimit);
-      for (size_t i = 0; i < t.iterations; ++i) {
-        const auto fwRouteRes = route<WireDirection::Forward>(t.bundle, arena);
-        if (failed(fwRouteRes)) {
-          return;
-        }
+      for (size_t i = 0; i < niterations; ++i) {
+        route<WireDirection::Forward>(t.bundle, arena);
+        route<WireDirection::Backward>(t.bundle, arena);
+      }
 
-        const auto bwRouteRes = route<WireDirection::Backward>(t.bundle, arena);
-        if (failed(bwRouteRes)) {
-          return;
-        }
-      }
-      auto scoringBundle = t.bundle;
-      const auto score = route<WireDirection::Forward>(scoringBundle, arena);
-      if (failed(score)) {
-        return;
-      }
-      t.stats = *score;
-      t.success = true;
+      // Because the final forward pass will update the bundle's layout, save
+      // and restore the final initial layout later.
+      Layout initial(t.bundle.layout);
+
+      t.stats = route<WireDirection::Forward>(t.bundle, arena);
+      t.bundle.layout = std::move(initial);
     });
 
-    Trial* best = nullptr;
-    for (Trial& t : trials) {
-      if (t.success &&
-          (best == nullptr || best->stats.nswaps > t.stats.nswaps)) {
-        best = &t;
-      }
-    }
-
-    if (best == nullptr) {
-      return failure();
-    }
-
+    auto* const best =
+        llvm::min_element(trials, [](const Trial& a, const Trial& b) {
+          return a.stats.nswaps < b.stats.nswaps;
+        });
     return best->bundle.layout;
   }
 
@@ -1827,12 +1789,11 @@ private:
 
   /// Processes the composite unitary by routing the nested operation and
   /// inserting epilogue SWAPs. Updates the parent bundle and returns the
-  /// accumulated statistics, or `failure` if routing fails.
+  /// accumulated statistics.
   template <WireDirection Direction, RoutingMode Mode = RoutingMode::Cold>
     requires(Mode != RoutingMode::Hot || Direction == WireDirection::Forward)
-  FailureOr<Statistics> dispatch(const CompositeUnitary& composite,
-                                 RoutingBundle& parent, Arena& arena,
-                                 IRRewriter* rewriter = nullptr) {
+  Statistics dispatch(const CompositeUnitary& composite, RoutingBundle& parent,
+                      Arena& arena, IRRewriter* rewriter = nullptr) {
     const auto& [op, indices] = composite;
 
     SmallVector<size_t> permutation(indices.size());
@@ -1935,12 +1896,7 @@ private:
     Statistics totalStats;
 
     for (auto& child : children) {
-      const auto stats = route<Direction, Mode>(child, arena, rewriter);
-      if (failed(stats)) {
-        return failure();
-      }
-
-      totalStats.merge(*stats);
+      totalStats.merge(route<Direction, Mode>(child, arena, rewriter));
 
       if constexpr (Mode == RoutingMode::Hot) {
         for_each(child.wires, [](auto& it) { std::ranges::advance(it, -1); });
@@ -1970,12 +1926,7 @@ private:
         children[1].infos.insertOrUpdate(i, prog);
       }
 
-      const auto stats = route<Direction, Mode>(children[1], arena, rewriter);
-      if (failed(stats)) {
-        return failure();
-      }
-
-      totalStats.merge(*stats);
+      totalStats.merge(route<Direction, Mode>(children[1], arena, rewriter));
 
       if constexpr (Mode == RoutingMode::Hot) {
         for_each(children[1].wires,
@@ -2081,12 +2032,11 @@ private:
   /// Iterates over a dynamically computed window of layers and uses A* search
   /// to find a SWAP sequence that makes each layer executable. Depending on
   /// the template parameter, this function only updates the layout or also
-  /// inserts the SWAPs into the IR. Returns the accumulated statistics, or
-  /// failure if routing a nested operation fails.
+  /// inserts the SWAPs into the IR. Returns the accumulated statistics.
   template <WireDirection Direction, RoutingMode Mode = RoutingMode::Cold>
     requires(Mode != RoutingMode::Hot || Direction == WireDirection::Forward)
-  FailureOr<Statistics> route(RoutingBundle& bundle, Arena& arena,
-                              IRRewriter* rewriter = nullptr) {
+  Statistics route(RoutingBundle& bundle, Arena& arena,
+                   IRRewriter* rewriter = nullptr) {
     auto& [wires, infos, layout] = bundle;
 
     Statistics stats;
@@ -2102,13 +2052,8 @@ private:
             place(composite, bundle, *rewriter);
           }
 
-          auto res =
-              dispatch<Direction, Mode>(composite, bundle, arena, rewriter);
-          if (failed(res)) {
-            return failure();
-          }
-
-          stats.merge(*res);
+          stats.merge(
+              dispatch<Direction, Mode>(composite, bundle, arena, rewriter));
 
           // Once the composite is mapped, move past this op by incrementing
           // the respective wires.
