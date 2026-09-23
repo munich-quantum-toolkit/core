@@ -128,10 +128,9 @@ class BinaryProgramSerializer(Protocol):
 #: A serializer for one program format, text or binary.
 ProgramSerializer = TextProgramSerializer | BinaryProgramSerializer
 
-#: Formats without a circuit payload: calibration requests and lists of jobs.
+#: Formats without a circuit payload: lists of jobs.
 #: These cannot have a Qiskit program serializer.
 NON_CIRCUIT_FORMATS: frozenset[ProgramFormat] = frozenset({
-    ProgramFormat.CALIBRATION,
     ProgramFormat.BATCH_JOB,
 })
 

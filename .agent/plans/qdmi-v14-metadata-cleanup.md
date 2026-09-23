@@ -1,36 +1,24 @@
-# Adopt QDMI metadata removal
+# Adopt QDMI metadata and calibration removal
 
-Status: rebased onto main and locally validated; hosted CI remains the merge
-gate.
+## Scope
 
-## Goal and scope
+Adopt QDMI #512, #513, and #551 on main. Remove the calibration advisory, pulse
+metadata, calibration program format, and the C++ and Python calibration
+submission helpers. Keep the calibration device status. IQM exposes calibration
+submission through its own C extension in QDMI-on-IQM #266.
 
-Remove Core's calibration-advisory accessor and the bundled devices' obsolete
-pulse metadata after QDMI PRs #512 and #513 remove these properties. This
-targets main for the next release, independent of driver replacement, program
-capabilities, and multi-program jobs.
+Keep surviving property and program-format IDs unchanged. Both providers retain
+released MQT Core; no Core source build or LLVM additions are needed in their CI
+matrices. Release notes and upgrade instructions belong in release prep.
 
-## Decisions
-
-Keep calibration-job submission and the calibration status: these are not the
-removed advisory. Keep the existing program-format enum and job interfaces. Pin
-the independent QDMI cleanup while developing; replace that pin with a released
-QDMI 1.4 before publishing artifacts. The removed property values remain
-reserved, so surviving query IDs stay binary-compatible with released clients.
-
-The affected interfaces are in `include/mqt-core/qdmi/Client.hpp`,
-`src/qdmi/Client.cpp`, and `bindings/qdmi/qdmi.cpp`. Bundled-device changes live
-under `src/qdmi/devices/`. Remove only tests for the deleted API; preserve the
-current optional-DDSIM build coverage and unrelated concurrency behavior.
+QDMI #551 is pinned at `46422d82d793f6ef30b319a10ea6ed3cac27ae40`. Replace the
+development pin with a released QDMI version before publishing.
 
 ## Validation
 
-QDMI #513 is pinned at `10b3b66936bf6de39f01530c7fbbc05a8a026c9c`. The release
-build with Clang 23 and LLVM/MLIR 23 passed; CTest passed 3,580 tests with one
-existing SC skip. The QDMI Python suite passed 298 tests with both bundled
-devices enabled. Stub generation, lint, and C++ lint passed.
-
-The default GCC release build hit duplicate symbols while linking the local LLVM
-distribution. Using its matching Clang toolchain resolved the build. Python
-tests require rebuilding with the SC device enabled after stub generation; the
-cached stub-generation wheel omits that device.
+The Clang 23 release build passed with 3,578 native tests and one existing SC
+skip. The QDMI Python suite passed 293 tests with both bundled devices enabled.
+The 103 affected Qiskit serializer/backend tests passed. Stubs were regenerated.
+Full repository lint and C++ lint cover the final diff. The provider drafts
+retain released Core 4.0.0 and validate their own native and Python suites; IQM
+also checks the installed C11 extension interface.
