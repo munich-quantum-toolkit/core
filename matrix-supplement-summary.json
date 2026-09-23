@@ -1,0 +1,290 @@
+[
+  {
+    "args": [
+      "dense",
+      4,
+      16,
+      16,
+      7301
+    ],
+    "label": "Dense (4q)",
+    "upstream": {
+      "passed": 3,
+      "attempted": 3,
+      "cpu": {
+        "median": 0.067906,
+        "min": 0.066602,
+        "max": 0.074823
+      },
+      "rss_mib": {
+        "median": 12.00390625,
+        "min": 12.00390625,
+        "max": 12.13671875
+      }
+    },
+    "candidate": {
+      "passed": 3,
+      "attempted": 3,
+      "cpu": {
+        "median": 0.04878,
+        "min": 0.047753,
+        "max": 0.050064
+      },
+      "rss_mib": {
+        "median": 11.9921875,
+        "min": 11.9921875,
+        "max": 12.0234375
+      }
+    },
+    "cpu_paired_ratio": {
+      "median": 0.7169904807663434,
+      "min": 0.6690990738142015,
+      "max": 0.7183459488115925
+    },
+    "rss_paired_ratio": {
+      "median": 0.9990237552879921,
+      "min": 0.9906662375281622,
+      "max": 0.9990237552879921
+    }
+  },
+  {
+    "args": [
+      "dense",
+      6,
+      8,
+      4,
+      7301
+    ],
+    "label": "Dense (6q)",
+    "upstream": {
+      "passed": 3,
+      "attempted": 3,
+      "cpu": {
+        "median": 0.114154,
+        "min": 0.109559,
+        "max": 0.118669
+      },
+      "rss_mib": {
+        "median": 14.34765625,
+        "min": 14.3359375,
+        "max": 14.3515625
+      }
+    },
+    "candidate": {
+      "passed": 3,
+      "attempted": 3,
+      "cpu": {
+        "median": 0.115328,
+        "min": 0.114915,
+        "max": 0.151843
+      },
+      "rss_mib": {
+        "median": 14.35546875,
+        "min": 14.3515625,
+        "max": 14.36328125
+      }
+    },
+    "cpu_paired_ratio": {
+      "median": 1.0526565594793673,
+      "min": 1.0066664330641064,
+      "max": 1.2795506829921885
+    },
+    "rss_paired_ratio": {
+      "median": 1.001089028042472,
+      "min": 1.0002721829069134,
+      "max": 1.0010899182561308
+    }
+  },
+  {
+    "args": [
+      "dense",
+      8,
+      4,
+      1,
+      7301
+    ],
+    "label": "Dense (8q)",
+    "upstream": {
+      "passed": 3,
+      "attempted": 3,
+      "cpu": {
+        "median": 0.564367,
+        "min": 0.476861,
+        "max": 0.661171
+      },
+      "rss_mib": {
+        "median": 28.41015625,
+        "min": 28.40625,
+        "max": 28.4140625
+      }
+    },
+    "candidate": {
+      "passed": 3,
+      "attempted": 3,
+      "cpu": {
+        "median": 0.472757,
+        "min": 0.466634,
+        "max": 0.618354
+      },
+      "rss_mib": {
+        "median": 28.54296875,
+        "min": 28.421875,
+        "max": 28.54296875
+      }
+    },
+    "cpu_paired_ratio": {
+      "median": 0.9352406563506264,
+      "min": 0.8268272241289799,
+      "max": 0.9913937185049732
+    },
+    "rss_paired_ratio": {
+      "median": 1.0045367060764365,
+      "min": 1.0005500550055006,
+      "max": 1.004674824694074
+    }
+  },
+  {
+    "args": [
+      "blocks",
+      16,
+      12,
+      8,
+      7301
+    ],
+    "label": "2-qubit blocks (16q)",
+    "upstream": {
+      "passed": 3,
+      "attempted": 3,
+      "cpu": {
+        "median": 0.028326,
+        "min": 0.026921,
+        "max": 0.039267
+      },
+      "rss_mib": {
+        "median": 11.609375,
+        "min": 11.59765625,
+        "max": 11.69921875
+      }
+    },
+    "candidate": {
+      "passed": 3,
+      "attempted": 3,
+      "cpu": {
+        "median": 0.025019,
+        "min": 0.023943,
+        "max": 0.026752
+      },
+      "rss_mib": {
+        "median": 11.65625,
+        "min": 11.6484375,
+        "max": 11.671875
+      }
+    },
+    "cpu_paired_ratio": {
+      "median": 0.8832521358469251,
+      "min": 0.6812845391804824,
+      "max": 0.8893800378886371
+    },
+    "rss_paired_ratio": {
+      "median": 1.0043785786460087,
+      "min": 0.9963272120200334,
+      "max": 1.0053835800807538
+    }
+  },
+  {
+    "args": [
+      "blocks",
+      32,
+      12,
+      4,
+      7301
+    ],
+    "label": "2-qubit blocks (32q)",
+    "upstream": {
+      "passed": 3,
+      "attempted": 3,
+      "cpu": {
+        "median": 0.03684,
+        "min": 0.036475,
+        "max": 0.052104
+      },
+      "rss_mib": {
+        "median": 15.21484375,
+        "min": 15.19921875,
+        "max": 15.21484375
+      }
+    },
+    "candidate": {
+      "passed": 3,
+      "attempted": 3,
+      "cpu": {
+        "median": 0.043109,
+        "min": 0.041706,
+        "max": 0.057848
+      },
+      "rss_mib": {
+        "median": 15.33203125,
+        "min": 15.328125,
+        "max": 15.3359375
+      }
+    },
+    "cpu_paired_ratio": {
+      "median": 1.1434132967786155,
+      "min": 1.1102410563488407,
+      "max": 1.1701682953311618
+    },
+    "rss_paired_ratio": {
+      "median": 1.0077021822849808,
+      "min": 1.0074454428754813,
+      "max": 1.00899511693652
+    }
+  },
+  {
+    "args": [
+      "diagonal",
+      32,
+      12,
+      4,
+      7301
+    ],
+    "label": "Diagonal (32q)",
+    "upstream": {
+      "passed": 3,
+      "attempted": 3,
+      "cpu": {
+        "median": 0.015315,
+        "min": 0.014784,
+        "max": 0.016451
+      },
+      "rss_mib": {
+        "median": 13.359375,
+        "min": 13.23046875,
+        "max": 13.3828125
+      }
+    },
+    "candidate": {
+      "passed": 3,
+      "attempted": 3,
+      "cpu": {
+        "median": 0.020066,
+        "min": 0.020053,
+        "max": 0.024879
+      },
+      "rss_mib": {
+        "median": 13.33203125,
+        "min": 13.33203125,
+        "max": 13.3984375
+      }
+    },
+    "cpu_paired_ratio": {
+      "median": 1.3572781385281385,
+      "min": 1.309369898792034,
+      "max": 1.51230928211051
+    },
+    "rss_paired_ratio": {
+      "median": 0.997953216374269,
+      "min": 0.99620548744892,
+      "max": 1.0126956008266903
+    }
+  }
+]

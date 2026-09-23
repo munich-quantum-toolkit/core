@@ -1,0 +1,146 @@
+[
+  {
+    "id": "wide-h-32-upstream",
+    "variant": "upstream",
+    "exe": "wide-matrix-accuracy",
+    "args": [
+      32
+    ],
+    "env": {},
+    "cap": 60,
+    "accuracy_control": true,
+    "expected_numerical_pass": true
+  },
+  {
+    "id": "wide-h-32-candidate",
+    "variant": "candidate",
+    "exe": "wide-matrix-accuracy",
+    "args": [
+      32
+    ],
+    "env": {},
+    "cap": 60,
+    "accuracy_control": true,
+    "expected_numerical_pass": true
+  },
+  {
+    "id": "wide-h-64-candidate",
+    "variant": "candidate",
+    "exe": "wide-matrix-accuracy",
+    "args": [
+      64
+    ],
+    "env": {},
+    "cap": 60,
+    "accuracy_control": true,
+    "expected_numerical_pass": true
+  },
+  {
+    "id": "wide-h-64-upstream",
+    "variant": "upstream",
+    "exe": "wide-matrix-accuracy",
+    "args": [
+      64
+    ],
+    "env": {},
+    "cap": 60,
+    "accuracy_control": true,
+    "expected_numerical_pass": true
+  },
+  {
+    "id": "wide-h-96-upstream",
+    "variant": "upstream",
+    "exe": "wide-matrix-accuracy",
+    "args": [
+      96
+    ],
+    "env": {},
+    "cap": 60,
+    "accuracy_control": true,
+    "expected_numerical_pass": false
+  },
+  {
+    "id": "wide-h-96-candidate",
+    "variant": "candidate",
+    "exe": "wide-matrix-accuracy",
+    "args": [
+      96
+    ],
+    "env": {},
+    "cap": 60,
+    "accuracy_control": true,
+    "expected_numerical_pass": true
+  },
+  {
+    "id": "wide-h-128-candidate",
+    "variant": "candidate",
+    "exe": "wide-matrix-accuracy",
+    "args": [
+      128
+    ],
+    "env": {},
+    "cap": 60,
+    "accuracy_control": true,
+    "expected_numerical_pass": true
+  },
+  {
+    "id": "wide-h-128-upstream",
+    "variant": "upstream",
+    "exe": "wide-matrix-accuracy",
+    "args": [
+      128
+    ],
+    "env": {},
+    "cap": 60,
+    "accuracy_control": true,
+    "expected_numerical_pass": false
+  },
+  {
+    "id": "wide-h-256-upstream",
+    "variant": "upstream",
+    "exe": "wide-matrix-accuracy",
+    "args": [
+      256
+    ],
+    "env": {},
+    "cap": 60,
+    "accuracy_control": true,
+    "expected_numerical_pass": false
+  },
+  {
+    "id": "wide-h-256-candidate",
+    "variant": "candidate",
+    "exe": "wide-matrix-accuracy",
+    "args": [
+      256
+    ],
+    "env": {},
+    "cap": 60,
+    "accuracy_control": true,
+    "expected_numerical_pass": true
+  },
+  {
+    "id": "wide-h-512-candidate",
+    "variant": "candidate",
+    "exe": "wide-matrix-accuracy",
+    "args": [
+      512
+    ],
+    "env": {},
+    "cap": 60,
+    "accuracy_control": true,
+    "expected_numerical_pass": true
+  },
+  {
+    "id": "wide-h-512-upstream",
+    "variant": "upstream",
+    "exe": "wide-matrix-accuracy",
+    "args": [
+      512
+    ],
+    "env": {},
+    "cap": 60,
+    "accuracy_control": true,
+    "expected_numerical_pass": false
+  }
+]

@@ -1,0 +1,20 @@
+{
+  "baseline": "e7b37b7a42291a9816b735ef8ae2e53b0f37b990",
+  "prepared_only": false,
+  "datasets": {
+    "matrix-composition": {
+      "planned": 36,
+      "recorded": 36,
+      "result_sha256": "83c9c075701a2e68909da82c0d2d29e3d26fc970ae49a4127fe170d632b1ec9e"
+    },
+    "wide-matrix-accuracy": {
+      "planned": 12,
+      "recorded": 12,
+      "result_sha256": "9877c33bc1f3f20c5db52eb60ba83890a3ff29261c8d6c9556b31f06f57b84aa"
+    }
+  },
+  "performance_passes": 36,
+  "accuracy_numerical_passes": 8,
+  "expected_baseline_numerical_failures": 4,
+  "unexpected_outcomes": []
+}

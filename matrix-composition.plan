@@ -1,0 +1,578 @@
+[
+  {
+    "id": "matrix-0-repeat0-upstream",
+    "variant": "upstream",
+    "exe": "matrix-composition",
+    "args": [
+      "dense",
+      4,
+      16,
+      16,
+      7301
+    ],
+    "env": {},
+    "cap": 60,
+    "pair": "matrix-0-repeat0",
+    "repetition": 0
+  },
+  {
+    "id": "matrix-0-repeat0-candidate",
+    "variant": "candidate",
+    "exe": "matrix-composition",
+    "args": [
+      "dense",
+      4,
+      16,
+      16,
+      7301
+    ],
+    "env": {},
+    "cap": 60,
+    "pair": "matrix-0-repeat0",
+    "repetition": 0
+  },
+  {
+    "id": "matrix-1-repeat0-candidate",
+    "variant": "candidate",
+    "exe": "matrix-composition",
+    "args": [
+      "dense",
+      6,
+      8,
+      4,
+      7301
+    ],
+    "env": {},
+    "cap": 60,
+    "pair": "matrix-1-repeat0",
+    "repetition": 0
+  },
+  {
+    "id": "matrix-1-repeat0-upstream",
+    "variant": "upstream",
+    "exe": "matrix-composition",
+    "args": [
+      "dense",
+      6,
+      8,
+      4,
+      7301
+    ],
+    "env": {},
+    "cap": 60,
+    "pair": "matrix-1-repeat0",
+    "repetition": 0
+  },
+  {
+    "id": "matrix-2-repeat0-upstream",
+    "variant": "upstream",
+    "exe": "matrix-composition",
+    "args": [
+      "dense",
+      8,
+      4,
+      1,
+      7301
+    ],
+    "env": {},
+    "cap": 60,
+    "pair": "matrix-2-repeat0",
+    "repetition": 0
+  },
+  {
+    "id": "matrix-2-repeat0-candidate",
+    "variant": "candidate",
+    "exe": "matrix-composition",
+    "args": [
+      "dense",
+      8,
+      4,
+      1,
+      7301
+    ],
+    "env": {},
+    "cap": 60,
+    "pair": "matrix-2-repeat0",
+    "repetition": 0
+  },
+  {
+    "id": "matrix-3-repeat0-candidate",
+    "variant": "candidate",
+    "exe": "matrix-composition",
+    "args": [
+      "blocks",
+      16,
+      12,
+      8,
+      7301
+    ],
+    "env": {},
+    "cap": 60,
+    "pair": "matrix-3-repeat0",
+    "repetition": 0
+  },
+  {
+    "id": "matrix-3-repeat0-upstream",
+    "variant": "upstream",
+    "exe": "matrix-composition",
+    "args": [
+      "blocks",
+      16,
+      12,
+      8,
+      7301
+    ],
+    "env": {},
+    "cap": 60,
+    "pair": "matrix-3-repeat0",
+    "repetition": 0
+  },
+  {
+    "id": "matrix-4-repeat0-upstream",
+    "variant": "upstream",
+    "exe": "matrix-composition",
+    "args": [
+      "blocks",
+      32,
+      12,
+      4,
+      7301
+    ],
+    "env": {},
+    "cap": 60,
+    "pair": "matrix-4-repeat0",
+    "repetition": 0
+  },
+  {
+    "id": "matrix-4-repeat0-candidate",
+    "variant": "candidate",
+    "exe": "matrix-composition",
+    "args": [
+      "blocks",
+      32,
+      12,
+      4,
+      7301
+    ],
+    "env": {},
+    "cap": 60,
+    "pair": "matrix-4-repeat0",
+    "repetition": 0
+  },
+  {
+    "id": "matrix-5-repeat0-candidate",
+    "variant": "candidate",
+    "exe": "matrix-composition",
+    "args": [
+      "diagonal",
+      32,
+      12,
+      4,
+      7301
+    ],
+    "env": {},
+    "cap": 60,
+    "pair": "matrix-5-repeat0",
+    "repetition": 0
+  },
+  {
+    "id": "matrix-5-repeat0-upstream",
+    "variant": "upstream",
+    "exe": "matrix-composition",
+    "args": [
+      "diagonal",
+      32,
+      12,
+      4,
+      7301
+    ],
+    "env": {},
+    "cap": 60,
+    "pair": "matrix-5-repeat0",
+    "repetition": 0
+  },
+  {
+    "id": "matrix-0-repeat1-candidate",
+    "variant": "candidate",
+    "exe": "matrix-composition",
+    "args": [
+      "dense",
+      4,
+      16,
+      16,
+      7301
+    ],
+    "env": {},
+    "cap": 60,
+    "pair": "matrix-0-repeat1",
+    "repetition": 1
+  },
+  {
+    "id": "matrix-0-repeat1-upstream",
+    "variant": "upstream",
+    "exe": "matrix-composition",
+    "args": [
+      "dense",
+      4,
+      16,
+      16,
+      7301
+    ],
+    "env": {},
+    "cap": 60,
+    "pair": "matrix-0-repeat1",
+    "repetition": 1
+  },
+  {
+    "id": "matrix-1-repeat1-upstream",
+    "variant": "upstream",
+    "exe": "matrix-composition",
+    "args": [
+      "dense",
+      6,
+      8,
+      4,
+      7301
+    ],
+    "env": {},
+    "cap": 60,
+    "pair": "matrix-1-repeat1",
+    "repetition": 1
+  },
+  {
+    "id": "matrix-1-repeat1-candidate",
+    "variant": "candidate",
+    "exe": "matrix-composition",
+    "args": [
+      "dense",
+      6,
+      8,
+      4,
+      7301
+    ],
+    "env": {},
+    "cap": 60,
+    "pair": "matrix-1-repeat1",
+    "repetition": 1
+  },
+  {
+    "id": "matrix-2-repeat1-candidate",
+    "variant": "candidate",
+    "exe": "matrix-composition",
+    "args": [
+      "dense",
+      8,
+      4,
+      1,
+      7301
+    ],
+    "env": {},
+    "cap": 60,
+    "pair": "matrix-2-repeat1",
+    "repetition": 1
+  },
+  {
+    "id": "matrix-2-repeat1-upstream",
+    "variant": "upstream",
+    "exe": "matrix-composition",
+    "args": [
+      "dense",
+      8,
+      4,
+      1,
+      7301
+    ],
+    "env": {},
+    "cap": 60,
+    "pair": "matrix-2-repeat1",
+    "repetition": 1
+  },
+  {
+    "id": "matrix-3-repeat1-upstream",
+    "variant": "upstream",
+    "exe": "matrix-composition",
+    "args": [
+      "blocks",
+      16,
+      12,
+      8,
+      7301
+    ],
+    "env": {},
+    "cap": 60,
+    "pair": "matrix-3-repeat1",
+    "repetition": 1
+  },
+  {
+    "id": "matrix-3-repeat1-candidate",
+    "variant": "candidate",
+    "exe": "matrix-composition",
+    "args": [
+      "blocks",
+      16,
+      12,
+      8,
+      7301
+    ],
+    "env": {},
+    "cap": 60,
+    "pair": "matrix-3-repeat1",
+    "repetition": 1
+  },
+  {
+    "id": "matrix-4-repeat1-candidate",
+    "variant": "candidate",
+    "exe": "matrix-composition",
+    "args": [
+      "blocks",
+      32,
+      12,
+      4,
+      7301
+    ],
+    "env": {},
+    "cap": 60,
+    "pair": "matrix-4-repeat1",
+    "repetition": 1
+  },
+  {
+    "id": "matrix-4-repeat1-upstream",
+    "variant": "upstream",
+    "exe": "matrix-composition",
+    "args": [
+      "blocks",
+      32,
+      12,
+      4,
+      7301
+    ],
+    "env": {},
+    "cap": 60,
+    "pair": "matrix-4-repeat1",
+    "repetition": 1
+  },
+  {
+    "id": "matrix-5-repeat1-upstream",
+    "variant": "upstream",
+    "exe": "matrix-composition",
+    "args": [
+      "diagonal",
+      32,
+      12,
+      4,
+      7301
+    ],
+    "env": {},
+    "cap": 60,
+    "pair": "matrix-5-repeat1",
+    "repetition": 1
+  },
+  {
+    "id": "matrix-5-repeat1-candidate",
+    "variant": "candidate",
+    "exe": "matrix-composition",
+    "args": [
+      "diagonal",
+      32,
+      12,
+      4,
+      7301
+    ],
+    "env": {},
+    "cap": 60,
+    "pair": "matrix-5-repeat1",
+    "repetition": 1
+  },
+  {
+    "id": "matrix-0-repeat2-upstream",
+    "variant": "upstream",
+    "exe": "matrix-composition",
+    "args": [
+      "dense",
+      4,
+      16,
+      16,
+      7301
+    ],
+    "env": {},
+    "cap": 60,
+    "pair": "matrix-0-repeat2",
+    "repetition": 2
+  },
+  {
+    "id": "matrix-0-repeat2-candidate",
+    "variant": "candidate",
+    "exe": "matrix-composition",
+    "args": [
+      "dense",
+      4,
+      16,
+      16,
+      7301
+    ],
+    "env": {},
+    "cap": 60,
+    "pair": "matrix-0-repeat2",
+    "repetition": 2
+  },
+  {
+    "id": "matrix-1-repeat2-candidate",
+    "variant": "candidate",
+    "exe": "matrix-composition",
+    "args": [
+      "dense",
+      6,
+      8,
+      4,
+      7301
+    ],
+    "env": {},
+    "cap": 60,
+    "pair": "matrix-1-repeat2",
+    "repetition": 2
+  },
+  {
+    "id": "matrix-1-repeat2-upstream",
+    "variant": "upstream",
+    "exe": "matrix-composition",
+    "args": [
+      "dense",
+      6,
+      8,
+      4,
+      7301
+    ],
+    "env": {},
+    "cap": 60,
+    "pair": "matrix-1-repeat2",
+    "repetition": 2
+  },
+  {
+    "id": "matrix-2-repeat2-upstream",
+    "variant": "upstream",
+    "exe": "matrix-composition",
+    "args": [
+      "dense",
+      8,
+      4,
+      1,
+      7301
+    ],
+    "env": {},
+    "cap": 60,
+    "pair": "matrix-2-repeat2",
+    "repetition": 2
+  },
+  {
+    "id": "matrix-2-repeat2-candidate",
+    "variant": "candidate",
+    "exe": "matrix-composition",
+    "args": [
+      "dense",
+      8,
+      4,
+      1,
+      7301
+    ],
+    "env": {},
+    "cap": 60,
+    "pair": "matrix-2-repeat2",
+    "repetition": 2
+  },
+  {
+    "id": "matrix-3-repeat2-candidate",
+    "variant": "candidate",
+    "exe": "matrix-composition",
+    "args": [
+      "blocks",
+      16,
+      12,
+      8,
+      7301
+    ],
+    "env": {},
+    "cap": 60,
+    "pair": "matrix-3-repeat2",
+    "repetition": 2
+  },
+  {
+    "id": "matrix-3-repeat2-upstream",
+    "variant": "upstream",
+    "exe": "matrix-composition",
+    "args": [
+      "blocks",
+      16,
+      12,
+      8,
+      7301
+    ],
+    "env": {},
+    "cap": 60,
+    "pair": "matrix-3-repeat2",
+    "repetition": 2
+  },
+  {
+    "id": "matrix-4-repeat2-upstream",
+    "variant": "upstream",
+    "exe": "matrix-composition",
+    "args": [
+      "blocks",
+      32,
+      12,
+      4,
+      7301
+    ],
+    "env": {},
+    "cap": 60,
+    "pair": "matrix-4-repeat2",
+    "repetition": 2
+  },
+  {
+    "id": "matrix-4-repeat2-candidate",
+    "variant": "candidate",
+    "exe": "matrix-composition",
+    "args": [
+      "blocks",
+      32,
+      12,
+      4,
+      7301
+    ],
+    "env": {},
+    "cap": 60,
+    "pair": "matrix-4-repeat2",
+    "repetition": 2
+  },
+  {
+    "id": "matrix-5-repeat2-candidate",
+    "variant": "candidate",
+    "exe": "matrix-composition",
+    "args": [
+      "diagonal",
+      32,
+      12,
+      4,
+      7301
+    ],
+    "env": {},
+    "cap": 60,
+    "pair": "matrix-5-repeat2",
+    "repetition": 2
+  },
+  {
+    "id": "matrix-5-repeat2-upstream",
+    "variant": "upstream",
+    "exe": "matrix-composition",
+    "args": [
+      "diagonal",
+      32,
+      12,
+      4,
+      7301
+    ],
+    "env": {},
+    "cap": 60,
+    "pair": "matrix-5-repeat2",
+    "repetition": 2
+  }
+]

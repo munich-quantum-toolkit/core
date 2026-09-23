@@ -1,0 +1,52 @@
+{
+  "baseline": "e7b37b7a42291a9816b735ef8ae2e53b0f37b990",
+  "candidate": "15c106305557faeefa9c9f6d7f56e7ebf0c77269",
+  "candidate_diff_sha256": "d923c7331c1f9c860bf1874543a434e2e6db0d3f7f09fa96e9efdc644605bd45",
+  "libraries_sha256": {
+    "upstream": "1fb004dcc8d05783075150aaba4b8be4c5dce094882750b6ebe38c6cee675e04",
+    "candidate": "aa99a7cd98a77ca16b5d521b13c1c96e9b3d167fb87aa74cbddacca952d7c5c3"
+  },
+  "binaries_sha256": {
+    "upstream": {
+      "matrix-composition": "cd9dbc2aae1fb363971d71d78c55e26f74e3af3e6de12384a6fcae6676ff241e",
+      "wide-matrix-accuracy": "d4d064c4b593265efb6a76b4677db02613ed8205b68c06389e3477d7fe3c9bd4"
+    },
+    "candidate": {
+      "matrix-composition": "7a319ba5324591284b58e20ef6990186feea90b33bb81ec3044bd95dfe7678e2",
+      "wide-matrix-accuracy": "0ae1316d2cc1560136eacb1e1bd9be7d6340a088528da1dec59ede57ac1e2314"
+    }
+  },
+  "compiler": "Ubuntu clang version 23.1.2 (++20260919103626+4b1925210476-1~exp1~20260919223755.77)",
+  "matching_optimization_flags": [
+    "-O3",
+    "-DNDEBUG",
+    "-std=gnu++20",
+    "-flto=thin",
+    "-mtune=native",
+    "-march=native",
+    "-fno-math-errno",
+    "-fno-trapping-math",
+    "-fno-stack-protector"
+  ],
+  "platform": {
+    "system": "Linux",
+    "release": "7.0.0-1019-nvidia",
+    "machine": "aarch64"
+  },
+  "cpu_affinity": 16,
+  "process_memory_limit_GiB": 48,
+  "process_timeout_seconds": 60,
+  "aslr": "host default",
+  "performance_processes": 36,
+  "accuracy_processes": 12,
+  "fresh_harnesses_and_libraries": true,
+  "harness_and_oracle_sha256": {
+    "matrix-composition.cpp": "8b9fb50b06d0547141c20546993bfc86455d125eda8890b539a3876ac2d52160",
+    "wide-matrix-accuracy.cpp": "db4d722f1b12c551f270278cb68d99a0f88d2ab644be5f8a7a8f0d12f33f3b66",
+    "numerics/config.hpp": "cd08251b96c767a95f43bef54fdd1949f6fce3bef3f8e1672878c995ba0a1c82"
+  },
+  "raw_results_sha256": {
+    "matrix-composition.jsonl": "83c9c075701a2e68909da82c0d2d29e3d26fc970ae49a4127fe170d632b1ec9e",
+    "wide-matrix-accuracy.jsonl": "9877c33bc1f3f20c5db52eb60ba83890a3ff29261c8d6c9556b31f06f57b84aa"
+  }
+}
