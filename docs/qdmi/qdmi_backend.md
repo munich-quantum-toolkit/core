@@ -488,8 +488,9 @@ Backend subclasses can add named execution options in `_default_options` and
 implement `_job_parameters(options)` to validate and encode them as QDMI
 `custom1` through `custom5` submission parameters. The hook receives backend
 defaults merged with per-run overrides and runs before any circuit is submitted.
-Unknown option names are rejected; declared options must have an encoding hook.
-The generic backend defines no vendor-specific option names or values.
+Unknown option names are rejected. The base hook rejects declared options it
+cannot encode, so a subclass that adds options must override it and handle each
+one. The generic backend defines no vendor-specific option names or values.
 
 Use `backend.set_options(...)` to configure defaults for direct runs, native
 samplers, and native estimators. A direct `backend.run(..., **options)` call can

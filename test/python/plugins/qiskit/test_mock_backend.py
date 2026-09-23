@@ -1009,8 +1009,7 @@ class ExecutionOptionsBackend(QDMIBackend):
         options.update_options(execution_mode="default")
         return options
 
-    @staticmethod
-    def _job_parameters(options: Mapping[str, object]) -> QDMIJobParameters:
+    def _job_parameters(self, options: Mapping[str, object]) -> QDMIJobParameters:  # ruff:ignore[no-self-use]
         mode = options["execution_mode"]
         if mode not in {"default", "selected"}:
             msg = "Invalid execution_mode"
@@ -1054,6 +1053,8 @@ def test_primitives_forward_backend_execution_options(monkeypatch: pytest.Monkey
     circuit = QuantumCircuit(1)
     if primitive == "sampler":
         circuit.measure_all()
+        backend.sampler().run([circuit], shots=4).result()
+        assert submit.call_args.kwargs["custom1"] == "selected"
         sampler = backend.sampler(run_options={"execution_mode": "default"})
         sampler.run([circuit], shots=4).result()
         expected = "default"
