@@ -69,8 +69,8 @@ def test_computed_classical_outputs(program_format: ProgramFormat) -> None:
     capture = program_format == ProgramFormat.QIR_ADAPTIVE_MODULE
     job = submit_program(compiled, target="mqt.ddsim.default", num_shots=4, custom1=17, custom2=capture)
     assert job.wait()
-    assert job.get_counts() == {"01001": 4}
-    assert job.get_shots() == ["01001"] * 4
+    assert job.get_counts() == {"10010": 4}
+    assert job.get_shots() == ["10010"] * 4
     if capture:
         output = job.get_custom_result(CustomProperty.CUSTOM1, str)
         assert isinstance(output, str)
@@ -150,8 +150,9 @@ def test_qpe_device_execution(method: qpe.Method, program_format: ProgramFormat)
     job = submit_program(compiled, target=device, num_shots=32, custom1=17)
     job.wait()
     counts = job.get_counts()
-    assert counts == {"01100000": 32}
-    assert benchmark.evaluate(counts).total_variation_distance == pytest.approx(0)
+    assert counts == {"00000110": 32}
+    evaluation = benchmark.evaluate({bits[::-1]: count for bits, count in counts.items()})
+    assert evaluation.total_variation_distance == pytest.approx(0)
 
 
 @pytest.mark.parametrize(
@@ -174,7 +175,7 @@ def test_result_bit_order(program_format: ProgramFormat, *, swapped: bool) -> No
     )
     job = submit_program(source, target="mqt.ddsim.default", num_shots=4, program_format=program_format)
     job.wait()
-    expected = "010" if swapped else "001"
+    expected = "010" if swapped else "100"
     assert job.get_shots() == [expected] * 4
     assert job.get_counts() == {expected: 4}
 
@@ -334,7 +335,7 @@ def test_payload_forward_branching(program_format: ProgramFormat) -> None:
     compiled = compile_program(source, target=device, program_format=program_format)
     job = submit_program(compiled, target=device, num_shots=32)
     job.wait()
-    assert set(job.get_counts()) <= {"00", "01"}
+    assert set(job.get_counts()) <= {"00", "10"}
     with pytest.raises(RuntimeError, match="Not supported"):
         job.get_dense_statevector()
     assert len(job.get_shots()) == 32
@@ -451,7 +452,7 @@ def test_qir_output_stream_matches_shots(program_format: ProgramFormat) -> None:
             for line in record.splitlines()
             if line.startswith(("OUTPUT\tRESULT\t", "OUTPUT\tRESULT_ARRAY\t"))
         ]
-        assert "".join(bits)[::-1] == shot
+        assert "".join(bits) == shot
     assert sum(job.get_counts().values()) == 8
     assert job.get_custom_result(CustomProperty.CUSTOM1, str) == output
     assert job.get_custom_result(CustomProperty.CUSTOM1, bytes) == output.encode() + b"\0"

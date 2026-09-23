@@ -546,7 +546,14 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQASMProgramSampling()
       std::cerr << "Error: failed to sample the QCO program\n";
       return false;
     }
-    counts_ = std::move(*counts);
+    // Expose classical bit zero first; the QCO sampler returns the reverse
+    // order.
+    for (auto& shot : shots_) {
+      std::ranges::reverse(shot);
+    }
+    for (const auto& [bits, count] : *counts) {
+      counts_.emplace(std::string(bits.rbegin(), bits.rend()), count);
+    }
     dd_ = std::move(retainedState.dd);
     stateVecDD_ = retainedState.state;
     return true;
@@ -608,9 +615,8 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramSampling()
     if (output) {
       qirOutput_ = std::move(*output).str();
     }
-    for (auto& shot : shots_) {
-      /// QDMI spells the highest-index output bit first.
-      std::ranges::reverse(shot);
+    for (const auto& shot : shots_) {
+      // Preserve the QIR output-record order.
       ++counts_[shot];
     }
     if (stateAvailable) {

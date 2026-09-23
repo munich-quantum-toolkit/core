@@ -138,7 +138,7 @@ def test_batches_execute_in_input_order(monkeypatch: pytest.MonkeyPatch) -> None
     """Preserve batch ordering with one QDMI submission per tape."""
 
     def basis_state_results(program: str, shots: int) -> list[str]:
-        return ["01" if "x q[0];" in program else "10"] * shots
+        return ["10" if "x q[0];" in program else "01"] * shots
 
     qdmi = stub_device(result_factory=basis_state_results)
     patch_open_device(monkeypatch, qdmi)
@@ -391,7 +391,7 @@ def test_sample_decoding_preserves_wire_order_and_dtype(monkeypatch: pytest.Monk
     device = QDMIDevice("fake.qdmi", wires=2)
     tape = qp.tape.QuantumScript([], [qp.sample(wires=order)], shots=2)
     samples = device.execute(tape)
-    np.testing.assert_array_equal(samples, np.array([[1, 0], [0, 1]], dtype=np.int8)[:, order])
+    np.testing.assert_array_equal(samples, np.array([[0, 1], [1, 0]], dtype=np.int8)[:, order])
     assert isinstance(samples, np.ndarray)
     assert samples.dtype == np.int8
 

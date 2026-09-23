@@ -336,8 +336,8 @@ class QDMIDevice(Device):
         if not bitstrings:
             return np.asarray([], dtype=np.int8)
         packed = np.frombuffer("".join(cleaned).encode("ascii"), dtype=np.int8).reshape(shots, width)
-        # QDMI spells the highest-index site first; PennyLane starts with wire zero.
-        return packed[:, ::-1][:, converted.measurement_order] - ord("0")
+        # QDMI starts with wire zero; apply PennyLane's requested measurement order.
+        return packed[:, converted.measurement_order] - ord("0")
 
     @staticmethod
     def _require_done(job: QDMIJobHandle) -> None:

@@ -243,7 +243,7 @@ c = measure q;
   ASSERT_EQ(state.size(), 4);
   EXPECT_NEAR(std::abs(state[2] - std::polar(1., 0.3)), 0., 1e-12);
   const auto histogram = qdmi_test::getHistogram(job.job);
-  EXPECT_EQ(histogram.first, (std::vector<std::string>{"10"}));
+  EXPECT_EQ(histogram.first, (std::vector<std::string>{"01"}));
   EXPECT_EQ(histogram.second, (std::vector<size_t>{16}));
 }
 

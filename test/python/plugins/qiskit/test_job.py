@@ -79,9 +79,9 @@ def test_batch_order_and_repeated_reads(recording_backend: RecordingBackend, *, 
     assert events == ["formats", "submit", "submit", "submit"]
     for index, handle in enumerate(jobs):
         handle.get_shots.side_effect = None
-        handle.get_shots.return_value = [f"{index:02b}"] * 4
+        handle.get_shots.return_value = [f"{index:02b}"[::-1]] * 4
         handle.get_counts.side_effect = None
-        handle.get_counts.return_value = {f"{index:02b}": 4}
+        handle.get_counts.return_value = {f"{index:02b}"[::-1]: 4}
         handle.check.side_effect = [Job.Status.RUNNING, Job.Status.DONE]
         handle.wait.side_effect = lambda: events.append("wait")
     result = job.result()
@@ -105,7 +105,7 @@ def test_memory_order_registers_and_correlations(
     qc = QuantumCircuit(3)
     qc.add_register(ClassicalRegister(1, "a"), ClassicalRegister(2, "b"))
     qc.metadata = {"experiment": "joint"}
-    samples = ["101", "000", "011", "100"]
+    samples = ["101", "000", "110", "001"]
     job = backend.run(qc, shots=4, memory=True)
     jobs[0].get_shots.side_effect = lambda: samples
     result = job.result()
@@ -128,7 +128,7 @@ def test_memory_order_registers_and_correlations(
     assert pub.data["b"].get_bitstrings() == ["10", "00", "01", "10"]
     joint = pub.join_data()
     assert isinstance(joint, BitArray)
-    assert joint.get_bitstrings() == samples
+    assert joint.get_bitstrings() == ["101", "000", "011", "100"]
     assert joint.postselect([0], [1]).get_bitstrings() == ["101", "011"]
 
 

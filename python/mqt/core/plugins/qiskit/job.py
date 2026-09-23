@@ -54,7 +54,7 @@ def _cancel_jobs(jobs: Sequence[QDMIJobHandle]) -> bool:
 
 
 def _encode_bits(bits: str, width: int) -> str:
-    """Validate a QDMI bitstring and encode it as Qiskit result data.
+    """Convert lowest-index-first QDMI bits to Qiskit's integer representation.
 
     Returns:
         The hexadecimal Qiskit memory value.
@@ -65,7 +65,7 @@ def _encode_bits(bits: str, width: int) -> str:
     if len(bits) != width or any(bit not in "01" for bit in bits):
         msg = f"Invalid QDMI bitstring {bits!r}: expected {width} binary digits in classical-bit order."
         raise JobError(msg)
-    return hex(int(bits, 2)) if bits else "0x0"
+    return hex(int(bits[::-1], 2)) if bits else "0x0"
 
 
 class QDMIJob(JobV1):

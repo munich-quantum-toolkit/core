@@ -63,12 +63,15 @@ Both results come from the same samples, including mid-circuit measurements. QIR
 Base or Adaptive programs with a static terminal measurement region can sample
 one prepared DD; other QIR programs run once per shot. See the
 [QIR execution contract](../qir/index.md) for eligibility and resource limits.
-OpenQASM classical registers use reverse declaration order, with each register
-most-significant-bit first. QIR records define increasing output-bit indices;
-the device reverses each recorded bitstring before returning shots and counts.
-Equivalent OpenQASM and QIR programs therefore use the same bitstring order.
-Adaptive QIR shots can record different numbers of bits; their histogram retains
-these variable-length outcomes.
+OpenQASM classical registers follow declaration order, with each register's
+lowest-index bit first. QIR results follow output-recording order. Equivalent
+OpenQASM and QIR programs therefore use the same bitstring order. This matches
+CUDA-Q and IQM. For example, measuring `q[0] = 1` and `q[1] = 0` into `c[0]` and
+`c[1]` returns `"10"`. Clients that require the previous, highest-index-first
+order must reverse each shot or histogram key. The Qiskit and PennyLane adapters
+perform their required conversion internally. Adaptive QIR shots can record
+different numbers of bits; their histogram retains these variable-length
+outcomes.
 
 Sparse statevector and probability results use ascending numerical basis-index
 order. Their keys and values share that order. Sparse exports require at most 64

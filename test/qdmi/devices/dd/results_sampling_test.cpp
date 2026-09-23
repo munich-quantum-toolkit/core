@@ -172,20 +172,33 @@ TEST_F(HistogramTest, QASM2Program) {
   checkHistogram(runProgram(format, program));
 }
 
-TEST_F(HistogramTest, QASM3MultipleRegistersFollowQiskitOrder) {
+TEST_F(HistogramTest, QASM2ClassicalBitOrder) {
+  constexpr std::string_view program = R"qasm(OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[3];
+creg c[3];
+x q[0];
+measure q -> c;
+)qasm";
+  const auto [keys, values] = runProgram(QDMI_PROGRAM_FORMAT_QASM2, program);
+  EXPECT_EQ(keys, std::vector<std::string>{"100"});
+  EXPECT_EQ(values, std::vector<size_t>{NUM_SHOTS});
+}
+
+TEST_F(HistogramTest, QASM3MultipleRegistersFollowDeclarationOrder) {
   constexpr std::string_view program = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 bit[2] c0;
 bit c1;
 qubit[3] q;
-x q[0];
+x q[1];
 x q[2];
 c0[0] = measure q[0];
 c0[1] = measure q[1];
 c1 = measure q[2];
 )qasm";
   const auto [keys, values] = runProgram(QDMI_PROGRAM_FORMAT_QASM3, program);
-  EXPECT_EQ(keys, std::vector<std::string>{"101"});
+  EXPECT_EQ(keys, std::vector<std::string>{"011"});
   EXPECT_EQ(values, std::vector<size_t>{NUM_SHOTS});
 }
 
@@ -269,10 +282,10 @@ b[1] = false;
 h q[0];
 a[1] = measure q[0];
 if (a[1]) { x q[1]; }
-b[0] = measure q[1];
+b[1] = measure q[1];
 )qasm";
   const auto [keys, values] = runProgram(QDMI_PROGRAM_FORMAT_QASM3, program, 7);
-  EXPECT_EQ(keys, (std::vector<std::string>{"0000", "0110"}));
+  EXPECT_EQ(keys, (std::vector<std::string>{"0000", "0101"}));
   EXPECT_EQ(std::accumulate(values.begin(), values.end(), size_t{0}),
             NUM_SHOTS);
 }
@@ -351,7 +364,7 @@ attributes #1 = { "irreversible" }
                                                   QDMI_JOB_RESULT_HIST_KEYS,
                                                   size, buffer.data(), nullptr),
             QDMI_SUCCESS);
-  EXPECT_STREQ(buffer.data(), "00,110");
+  EXPECT_STREQ(buffer.data(), "00,011");
   EXPECT_EQ(buffer.back(), '?');
 
   std::map<std::string, size_t> counts;
@@ -359,8 +372,8 @@ attributes #1 = { "irreversible" }
     ++counts[shot];
   }
   const auto [keys, values] = qdmi_test::getHistogram(job.job);
-  EXPECT_EQ(keys, (std::vector<std::string>{"00", "110"}));
-  EXPECT_EQ(values, (std::vector<size_t>{counts["00"], counts["110"]}));
+  EXPECT_EQ(keys, (std::vector<std::string>{"00", "011"}));
+  EXPECT_EQ(values, (std::vector<size_t>{counts["00"], counts["011"]}));
 }
 
 TEST(ResultsSampling, BufferTooSmallErrors) {
@@ -456,7 +469,7 @@ attributes #0 = { "entry_point" "qir_profiles"="base_profile" "required_num_qubi
 )";
   const auto [keys, values] =
       runProgram(QDMI_PROGRAM_FORMAT_QIRBASESTRING, program);
-  EXPECT_EQ(keys, std::vector<std::string>{"0101"});
+  EXPECT_EQ(keys, std::vector<std::string>{"1010"});
   EXPECT_EQ(values, std::vector<size_t>{NUM_SHOTS});
 }
 

@@ -75,9 +75,9 @@ def test_qasm3_prefers_and_resolves_braket_spellings(monkeypatch: pytest.MonkeyP
     assert "gate " not in payload
     assert "pragma" not in payload
     assert "inv @" not in payload
-    # The QDMI bit string "10" sets the highest-index site, which is wire
-    # "right". The requested measurement order puts that wire first.
-    np.testing.assert_array_equal(samples[0], [1, 0])
+    # The QDMI bit string "10" sets the lowest-index site, which is wire
+    # "left". The requested measurement order puts that wire last.
+    np.testing.assert_array_equal(samples[0], [0, 1])
 
 
 def test_qasm3_resolves_ddsim_aliases_and_inverse_gates(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -417,7 +417,7 @@ def test_measurement_without_wires_samples_every_device_wire(monkeypatch: pytest
     qdmi = StubDevice(
         [operation("x", 1)],
         [ProgramFormat.QASM3],
-        result_factory=lambda _program, shots: ["10"] * shots,
+        result_factory=lambda _program, shots: ["01"] * shots,
     )
     patch_open_device(monkeypatch, qdmi)
     device = QDMIDevice("fake.qdmi", wires=2)

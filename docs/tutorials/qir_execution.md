@@ -145,11 +145,11 @@ predict whether the classical outputs remain correlated.
 variant = compile_program(feedback_source.replace("x q[1]", "z q[1]"), output=OutputFormat.QIR_ADAPTIVE)
 variant_job = device.submit_job(variant.to_bitcode(), ProgramFormat.QIR_ADAPTIVE_MODULE, shots, custom1=seed)
 assert variant_job.wait()
-assert set(variant_job.get_counts()) == {"00", "01"}
+assert set(variant_job.get_counts()) == {"00", "10"}
 plot_distribution(variant_job.get_counts(), title="Z leaves the answer qubit in zero")
 ```
 
-QDMI places the last output bit on the left: these strings read `answer, flag`.
+DDSIM preserves QIR output-recording order: these strings read `flag, answer`.
 The `answer` bit is always zero, while `flag` can be zero or one.
 
 ## Keep a feedback loop in the program

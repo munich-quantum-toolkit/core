@@ -131,8 +131,8 @@ assert job.get_counts() == counts
 print("First 16 shots:", samples[:16])
 ```
 
-Reading results again does not rerun the program. QDMI bitstrings put the
-highest-index output bit first. The {doc}`QIR tutorial <qir_execution>` uses
+Reading results again does not rerun the program. DDSIM bitstrings put the
+lowest-index output bit first. The {doc}`QIR tutorial <qir_execution>` uses
 asymmetric outputs to make that ordering visible.
 
 ## Inspect the state behind terminal measurements
