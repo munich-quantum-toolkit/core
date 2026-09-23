@@ -766,7 +766,7 @@ class QDMIBackend(BackendV2):
                 or a sequence of values in the order of circuit.parameters.
             **options: Execution options: nonnegative integer ``shots`` and boolean ``memory``.
                 Memory requires genuine QDMI SHOTS results. Simulator seeds are unsupported.
-                Subclasses may declare additional options and encode them in :meth:`_job_parameters`.
+                Subclasses may declare additional options and encode them in ``_job_parameters``.
 
         Returns:
             Job handle for the execution. For multiple circuits, the job aggregates results from all circuits.
