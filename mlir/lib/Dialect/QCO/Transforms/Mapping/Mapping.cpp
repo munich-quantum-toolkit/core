@@ -34,6 +34,7 @@
 #include "mlir/IR/Block.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/Dominance.h"
 #include "mlir/IR/Location.h"
@@ -1214,14 +1215,18 @@ private:
       }
 
       // Given a layout, create child-nodes for each possible SWAP
-      // between two neighboring hardware qubits.
+      // between two neighboring hardware qubits. If the SWAP doesn't decrease
+      // the distance between the hardware qubits of the front gate, skip it.
 
-      expansionSet.clear();
-      for (const auto& [q0, q1] = window.front(); const auto prog : {q0, q1}) {
-        const auto hw0 = curr->layout.getHardwareIndex(prog);
-        target->forEachNeighbour(hw0, [&](const auto hw1) {
-          const IndexPairType swap = std::minmax(hw0, hw1); // Canonical SWAP.
-          if (is_contained(expansionSet, swap)) {
+      const auto [prog0, prog1] = window.front();
+      const auto [hw0, hw1] = curr->layout.getHardwareIndices(prog0, prog1);
+      const auto dist = target->distanceBetween(hw0, hw1);
+      
+      const auto enqueueSWAPs = [&](size_t anchor, size_t goal) {
+        target->forEachNeighbour(anchor, [&](const auto nbr) {
+          const IndexPairType swap = std::minmax(anchor, nbr);
+          if (is_contained(expansionSet, swap) ||
+              target->distanceBetween(nbr, goal) >= dist) {
             return;
           }
 
@@ -1231,7 +1236,10 @@ private:
             frontier.emplace(child);
           }
         });
-      }
+      };
+
+      enqueueSWAPs(hw0, hw1);
+      enqueueSWAPs(hw1, hw0);
     }
 
     /// A connected target always permits a SWAP that brings the pair closer.
