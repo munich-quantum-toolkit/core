@@ -675,6 +675,83 @@ TEST_F(MappingPassFixture, RouteControlAcrossTensorWireBoundaries) {
   }
 }
 
+TEST_F(MappingPassFixture,
+       PreserveTensorMeasurementTailsAcrossAdjacentRegions) {
+  const auto topology = llvm::cantFail(CompilerTarget::create(
+      5, Connectivity::fromCouplings({{0, 1}, {1, 2}, {2, 3}, {3, 4}}),
+      NativeOperations::unrestricted()));
+  using Capability = CompilerTarget::OperationCapability;
+  const auto unavailable = llvm::cantFail(CompilerTarget::create(
+      topology.numSites(), Connectivity::fromCouplings(topology.couplings()),
+      NativeOperations::fromOperations({
+          llvm::cantFail(Capability::create("u", 1, 3)),
+          llvm::cantFail(Capability::create("cz", 2, 0)),
+          llvm::cantFail(Capability::create("gphase", 0, 1)),
+      })));
+  for (const auto& target :
+       {topology, withNativeBasis(topology, "cz"), unavailable}) {
+    for (size_t budget : {size_t{0}, size_t{1024} * 1024}) {
+      for (bool measureAll : {false, true}) {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize({cbit::RegisterType::get(context.get(), 3)});
+        auto bits = builder.allocClassicalBitRegister(3);
+        Value tensor = builder.qtensorAlloc(3);
+        SmallVector<Value> qubits(3);
+        for (size_t i = 0; i < qubits.size(); ++i) {
+          std::tie(tensor, qubits[i]) =
+              builder.qtensorExtract(tensor, static_cast<int64_t>(i));
+        }
+        qubits[0] = builder.x(qubits[0]);
+        std::tie(qubits[0], qubits[2]) = builder.cx(qubits[0], qubits[2]);
+        qubits[1] = builder.x(qubits[1]);
+        qubits[1] = builder.measure(qubits[1], bits, 1).first;
+        tensor = builder.qtensorInsert(qubits[1], tensor, 1);
+        /// Placement threads the terminal tensor wire and idle sites through
+        /// both regions, even though neither region uses them in the input.
+        for (size_t i = 0; i < 2; ++i) {
+          qubits[0] = builder.qcoIf(
+              true, qubits[0], [&](Value qubit) { return builder.x(qubit); });
+        }
+        std::tie(qubits[2], qubits[0]) = builder.cx(qubits[2], qubits[0]);
+        for (size_t i : {0U, 2U}) {
+          if (measureAll) {
+            qubits[i] =
+                builder.measure(qubits[i], bits, static_cast<int64_t>(i)).first;
+          }
+          tensor =
+              builder.qtensorInsert(qubits[i], tensor, static_cast<int64_t>(i));
+        }
+        builder.qtensorDealloc(tensor);
+        auto input = builder.finalize(bits);
+        ASSERT_TRUE(succeeded(verify(*input)));
+        ASSERT_TRUE(succeeded(verifyLinearity(*input)));
+        const auto expected = qco::sample(getEntryPoint(*input), 1, 42);
+        ASSERT_TRUE(succeeded(expected));
+        std::string serial;
+        for (bool parallel : {false, true}) {
+          context->enableMultithreading(parallel);
+          OwningOpRef<ModuleOp> moduleOp = input->clone();
+          ASSERT_TRUE(succeeded(runPass(
+              *moduleOp, target,
+              MappingPassOptions{
+                  .ntrials = 4, .seed = 7, .searchMemoryLimit = budget})));
+          ASSERT_TRUE(succeeded(verify(*moduleOp)));
+          ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+          EXPECT_TRUE(isExecutable(getEntryPoint(*moduleOp), target));
+          const auto actual = qco::sample(getEntryPoint(*moduleOp), 1, 42);
+          ASSERT_TRUE(succeeded(actual));
+          EXPECT_EQ(*actual, *expected);
+          if (parallel) {
+            EXPECT_EQ(printModule(*moduleOp), serial);
+          } else {
+            serial = printModule(*moduleOp);
+          }
+        }
+      }
+    }
+  }
+}
+
 TEST_F(MappingPassFixture, RouteControlAfterConsecutiveMeasurements) {
   const auto target = llvm::cantFail(CompilerTarget::create(
       3, Connectivity::fromCouplings({{0, 1}, {1, 2}, {0, 2}}),
@@ -3336,83 +3413,88 @@ TEST_F(MappingPassFixture, PreserveBasisStatesAfterNativeScoredCompilation) {
   }
 }
 
-TEST_F(MappingPassFixture, NativeScoringPreservesRegionsWithIdleWires) {
-  const auto target = withNativeBasis(getSquareGridTarget(3), "cz");
-  for (size_t shape = 0; shape < 4; ++shape) {
-    for (size_t budget : {size_t{0}, size_t{1024} * 1024}) {
-      std::string serial;
-      for (bool parallel : {false, true}) {
-        SCOPED_TRACE(testing::Message() << shape << ", budget=" << budget
-                                        << ", parallel=" << parallel);
-        context->enableMultithreading(parallel);
-        QCOProgramBuilder builder(context.get());
-        builder.initialize({cbit::RegisterType::get(context.get(), 3)});
-        auto bits = builder.allocClassicalBitRegister(3);
-        SmallVector<Value> qubits;
-        for (size_t i = 0; i < 3; ++i) {
-          qubits.push_back(builder.allocQubit());
-        }
-        qubits[0] = builder.x(qubits[0]);
-        Value condition;
-        std::tie(qubits[0], condition) = builder.measure(qubits[0]);
-        const auto body = [&](ValueRange args) {
-          SmallVector<Value> values(args);
-          std::tie(values[0], values[2]) = builder.cx(values[0], values[2]);
-          std::tie(values[2], values[1]) = builder.cx(values[2], values[1]);
-          return values;
-        };
-        if (shape == 0) {
-          qubits = builder.qcoIf(condition, qubits, body, [&](ValueRange args) {
+TEST_F(MappingPassFixture, PreserveRegionsWithIdleWiresAcrossCostAvailability) {
+  const auto topology = getSquareGridTarget(3);
+  for (const auto& target : {topology, withNativeBasis(topology, "cz")}) {
+    for (size_t shape = 0; shape < 4; ++shape) {
+      for (size_t budget : {size_t{0}, size_t{1024} * 1024}) {
+        std::string serial;
+        for (bool parallel : {false, true}) {
+          SCOPED_TRACE(testing::Message() << shape << ", budget=" << budget
+                                          << ", parallel=" << parallel);
+          context->enableMultithreading(parallel);
+          QCOProgramBuilder builder(context.get());
+          builder.initialize({cbit::RegisterType::get(context.get(), 3)});
+          auto bits = builder.allocClassicalBitRegister(3);
+          SmallVector<Value> qubits;
+          for (size_t i = 0; i < 3; ++i) {
+            qubits.push_back(builder.allocQubit());
+          }
+          qubits[0] = builder.x(qubits[0]);
+          Value condition;
+          std::tie(qubits[0], condition) = builder.measure(qubits[0]);
+          const auto body = [&](ValueRange args) {
             SmallVector<Value> values(args);
-            std::tie(values[0], values[2]) = builder.swap(values[0], values[2]);
+            std::tie(values[0], values[2]) = builder.cx(values[0], values[2]);
+            std::tie(values[2], values[1]) = builder.cx(values[2], values[1]);
             return values;
-          });
-        } else if (shape == 1) {
-          qubits = builder.scfFor(0, 2, 1, qubits, [&](Value, ValueRange args) {
-            return body(args);
-          });
-        } else if (shape == 2) {
-          qubits = builder.scfWhile(
-              qubits,
-              [&](ValueRange args) {
-                auto values = body(args);
-                builder.scfCondition(builder.boolConstant(false), values);
-                return values;
-              },
-              body);
-        } else {
-          const std::array<int64_t, 1> cases{0};
-          const std::array<function_ref<SmallVector<Value>(ValueRange)>, 1>
-              bodies{body};
-          qubits = builder.qcoIndexSwitch(0, qubits, cases, bodies, body);
-        }
-        std::tie(qubits[0], qubits[2]) = builder.cx(qubits[0], qubits[2]);
-        for (auto [index, qubit] : llvm::enumerate(qubits)) {
-          auto measured =
-              builder.measure(qubit, bits, static_cast<int64_t>(index));
-          builder.sink(measured.first);
-        }
-        auto moduleOp = builder.finalize(bits);
-        ASSERT_TRUE(succeeded(verify(*moduleOp)));
-        ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
-        const auto expected = qco::sample(getEntryPoint(*moduleOp), 1, 42);
-        ASSERT_TRUE(succeeded(expected));
-        ASSERT_TRUE(succeeded(runPass(
-            *moduleOp, target,
-            MappingPassOptions{.ntrials = 2, .searchMemoryLimit = budget})));
-        ASSERT_TRUE(succeeded(verify(*moduleOp)));
-        ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
-        PassManager native(context.get());
-        populateTargetNativeSynthesisPipeline(native);
-        ASSERT_TRUE(succeeded(native.run(*moduleOp)));
-        ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
-        const auto actual = qco::sample(getEntryPoint(*moduleOp), 1, 42);
-        ASSERT_TRUE(succeeded(actual));
-        EXPECT_EQ(*actual, *expected);
-        if (parallel) {
-          EXPECT_EQ(printModule(*moduleOp), serial);
-        } else {
-          serial = printModule(*moduleOp);
+          };
+          if (shape == 0) {
+            qubits =
+                builder.qcoIf(condition, qubits, body, [&](ValueRange args) {
+                  SmallVector<Value> values(args);
+                  std::tie(values[0], values[2]) =
+                      builder.swap(values[0], values[2]);
+                  return values;
+                });
+          } else if (shape == 1) {
+            qubits =
+                builder.scfFor(0, 2, 1, qubits, [&](Value, ValueRange args) {
+                  return body(args);
+                });
+          } else if (shape == 2) {
+            qubits = builder.scfWhile(
+                qubits,
+                [&](ValueRange args) {
+                  auto values = body(args);
+                  builder.scfCondition(builder.boolConstant(false), values);
+                  return values;
+                },
+                body);
+          } else {
+            const std::array<int64_t, 1> cases{0};
+            const std::array<function_ref<SmallVector<Value>(ValueRange)>, 1>
+                bodies{body};
+            qubits = builder.qcoIndexSwitch(0, qubits, cases, bodies, body);
+          }
+          std::tie(qubits[0], qubits[2]) = builder.cx(qubits[0], qubits[2]);
+          for (auto [index, qubit] : llvm::enumerate(qubits)) {
+            auto measured =
+                builder.measure(qubit, bits, static_cast<int64_t>(index));
+            builder.sink(measured.first);
+          }
+          auto moduleOp = builder.finalize(bits);
+          ASSERT_TRUE(succeeded(verify(*moduleOp)));
+          ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+          const auto expected = qco::sample(getEntryPoint(*moduleOp), 1, 42);
+          ASSERT_TRUE(succeeded(expected));
+          ASSERT_TRUE(succeeded(runPass(
+              *moduleOp, target,
+              MappingPassOptions{.ntrials = 2, .searchMemoryLimit = budget})));
+          ASSERT_TRUE(succeeded(verify(*moduleOp)));
+          ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+          PassManager native(context.get());
+          populateTargetNativeSynthesisPipeline(native);
+          ASSERT_TRUE(succeeded(native.run(*moduleOp)));
+          ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+          const auto actual = qco::sample(getEntryPoint(*moduleOp), 1, 42);
+          ASSERT_TRUE(succeeded(actual));
+          EXPECT_EQ(*actual, *expected);
+          if (parallel) {
+            EXPECT_EQ(printModule(*moduleOp), serial);
+          } else {
+            serial = printModule(*moduleOp);
+          }
         }
       }
     }

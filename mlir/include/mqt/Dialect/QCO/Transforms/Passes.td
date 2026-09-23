@@ -205,7 +205,11 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     sole mapping from logical qubits to those sites. Candidate evaluation keeps
     empty cursors for idle sites; final placement materializes their qubits.
     Virtual SWAPs exchange the cursors at their two sites, matching the SSA
-    successors of emitted SWAPs.
+    successors of emitted SWAPs. Both traversal directions stop at region
+    boundaries, including on topology-only targets. Child blocks start from
+    the entry layout, branches converge, and loop bodies restore their entry
+    layout. For `scf.while`, the before-region exit places the after region
+    and loop results; the after region restores the loop-entry layout.
 
     For routing, the pass first divides the circuit into layers. A layer is a set of independently executable (sequences
     or blocks of) two-qubit operations. Subsequently, the pass performs an A* search for each layer to find and insert a
