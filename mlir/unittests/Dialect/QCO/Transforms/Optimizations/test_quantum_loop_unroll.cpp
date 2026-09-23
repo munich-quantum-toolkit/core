@@ -172,16 +172,21 @@ TEST_F(QuantumLoopUnrollTest, PreservesYieldOnlyPermutation) {
 
     Value q0 = builder.allocQubit();
     Value q1 = builder.allocQubit();
-    const auto results = builder.scfFor(
-        0, iterations, 1, {q0, q1}, [](Value, ValueRange iterArgs) {
-          return SmallVector{iterArgs[1], iterArgs[0]};
-        });
+    const auto results = builder.scfFor(0, iterations, 1, {q0, q1},
+                                        [](Value, ValueRange iterArgs) {
+                                          return SmallVector<Value>(iterArgs);
+                                        });
     builder.sink(results[0]);
     builder.sink(results[1]);
     auto m = builder.finalize();
+    auto entry = *m->getOps<func::FuncOp>().begin();
+    /// The unroller handles general SCF permutations even though the program
+    /// builder requires positional quantum results.
+    auto loop = *entry.getOps<scf::ForOp>().begin();
+    auto args = loop.getRegionIterArgs();
+    loop.getBody()->getTerminator()->setOperands({args[1], args[0]});
 
     ASSERT_TRUE(succeeded(runPass(m, QuantumLoopUnrollOptions{})));
-    auto entry = *m->getOps<func::FuncOp>().begin();
     EXPECT_TRUE(entry.getOps<scf::ForOp>().empty());
 
     auto sinks = llvm::to_vector(entry.getOps<SinkOp>());

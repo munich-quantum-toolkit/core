@@ -18,6 +18,8 @@
 #include <cassert>
 #include <concepts>
 #include <cstddef>
+#include <memory>
+#include <utility>
 #include <vector>
 
 namespace dd {
@@ -42,7 +44,7 @@ public:
   static constexpr std::size_t INITIAL_ALLOCATION_SIZE = 2048U;
 
   /// Capacity multiplier when allocating the next chunk.
-  static constexpr double GROWTH_FACTOR = 2U;
+  static constexpr size_t GROWTH_FACTOR = 2U;
 
   /// Construct a new MemoryManager object for objects of type T.
   /// @param initialAllocationSize The initial number of entries to allocate
@@ -118,8 +120,11 @@ private:
   /// The size of an entry in bytes (as reported by `sizeof`)
   size_t entrySize_;
 
-  /// A chunk of memory as a vector of bytes
-  using Chunk = std::vector<std::byte>;
+  /// Raw byte storage and its size. Entries are zeroed when first acquired.
+  /// Slab capacity is chosen at runtime.
+  /// NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+  using Storage = std::byte[];
+  using Chunk = std::pair<std::unique_ptr<Storage>, size_t>;
 
   /// A linked list of entries that are available for (re-)use
   ///
@@ -128,25 +133,25 @@ private:
   /// using the `next()` method of the entries. The `available` member points to
   /// the first entry in the list. If the list is empty, `available` is
   /// `nullptr`.
-  LLBase* available;
+  LLBase* available{};
 
   /// The storage for the entries
   ///
   /// The MemoryManager maintains a vector of chunks. Each chunk is a
-  /// vector of entries. Entries in a chunk are allocated contiguously.
+  /// byte buffer. Entries in a chunk are allocated contiguously.
   std::vector<Chunk> chunks;
 
   /// Iterator to the next available entry in the current chunk
   ///
   /// This iterator points to the next available entry in the current
   /// chunk. If the current chunk is full, it points to the end of the chunk.
-  Chunk::iterator chunkIt;
+  std::byte* chunkIt{};
 
   /// Iterator to the end of the current chunk
   ///
   /// This iterator points to the end of the current chunk. It is used
   /// to determine whether the current chunk is full.
-  Chunk::iterator chunkEndIt;
+  std::byte* chunkEndIt{};
 
   /// Memory manager statistics
   MemoryManagerStatistics stats;

@@ -271,6 +271,8 @@ QCO
 QTensor
   MQT's dialect for one-dimensional collections of qubits used with QCO. Its
   operations preserve the linear ownership of the contained quantum values.
+  Each slot retains its qubit identity: extraction borrows a qubit and insertion
+  restores it to the same underlying slot. Gates can change its state.
 
 reference semantics
   A model in which an operation changes an object reached through a stable

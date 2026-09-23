@@ -27,6 +27,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <bitset>
 #include <cassert>
 #include <cmath>
@@ -149,6 +150,19 @@ bool Package::garbageCollect(bool force) {
     vectorKronecker.clear();
     matrixKronecker.clear();
     matrixTrace.clear();
+  }
+
+  /// Invalidate every affected cache before growth can allocate and fail.
+  const auto& stats = matrixVectorMultiplication.getStats();
+  constexpr size_t limit = 1U << 20U;
+  if (invV && stats.numBuckets < limit && stats.hits >= stats.numBuckets) {
+    /// ponytail: live nodes estimate working-set size; measure cache reuse
+    /// between collections before replacing this bounded growth heuristic.
+    const auto live = vUniqueTable.getNumEntries();
+    const auto buckets = live > limit / 4U ? limit : std::bit_ceil(4U * live);
+    if (buckets > stats.numBuckets) {
+      matrixVectorMultiplication.resize(buckets);
+    }
   }
   return invC || invV || invM;
 }

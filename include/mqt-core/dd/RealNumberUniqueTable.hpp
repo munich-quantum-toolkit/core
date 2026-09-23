@@ -17,39 +17,25 @@
 #include "dd/MemoryManager.hpp"
 #include "dd/statistics/UniqueTableStatistics.hpp"
 
-#include <array>
 #include <cstddef>
-#include <cstdint>
 #include <iostream>
+#include <vector>
 
 namespace dd {
 
 struct RealNumber;
 
-/// Immortal numbers that will never be garbage collected.
-namespace immortals {
-constexpr std::array<fp, 1> get() { return {.5}; }
-constexpr std::size_t size() { return get().size(); }
-} // namespace immortals
-
-/// A unique table for real numbers.
+/// Canonical real numbers with stable addresses and absolute-tolerance lookup.
 ///
-/// A hash table that stores real numbers. The hash table is implemented
-/// as an array of buckets, each of which is a linked list of entries. The hash
-/// table has a fixed number of buckets.
-/// @note: The implementation assumes that all values are non-negative and in
-/// the range [0, 1]. While numbers outside of this range can be stored, they
-/// will always be placed in the same bucket and will therefore cause
-/// collisions.
+/// Binary cells partition the search space without rounding stored values.
+/// Hashed buckets avoid concentrating small values and values above one in a
+/// single sorted list. Lookup returns the nearest entry within tolerance,
+/// preferring the smaller magnitude on a tie. Zero, one, and sqrt(1/2) have
+/// priority. The global tolerance must be finite and non-negative.
 class RealNumberUniqueTable {
-  /// The number of buckets in the table.
-  ///
-  /// The number of buckets is fixed and cannot be changed after the
-  /// table has been created. Increasing the number of buckets reduces the
-  /// number of collisions, but increases the memory usage.
-  /// @attention The number of buckets has to be one larger than a power of two.
-  /// Otherwise, the hash function will not work correctly.
-  static constexpr std::size_t NBUCKET = 65537U;
+  /// Initial power-of-two bucket count.
+  static constexpr size_t NBUCKET = 65536U;
+  static constexpr size_t MAX_BUCKETS = 1048576U;
 
   /// The initial garbage collection limit.
   ///
@@ -66,20 +52,12 @@ public:
   explicit RealNumberUniqueTable(MemoryManager& manager,
                                  std::size_t initialGCLim = INITIAL_GC_LIMIT);
 
-  /// The hash function for the hash table.
-  ///
-  /// The hash function for the table is a simple linear (clipped) hash
-  /// function. The hash function is used to map floating point numbers to the
-  /// buckets of the table.
-  /// @param val The floating point number to hash. Must be non-negative.
-  /// @returns The hash value of the floating point number.
-  /// @note Typically, you would expect the hash to be an unsigned integer.
-  /// Here, we use a signed integer because it turns out to result in fewer
-  /// assembly instructions. See https://godbolt.org/z/9v4TEMfdz for a
-  /// comparison.
-  static std::int64_t hash(fp val) noexcept;
+  /// Maps a non-negative value to its bucket in the current index.
+  /// The bucket depends on the table capacity and indexed tolerance.
+  [[nodiscard]] size_t hash(fp val) const noexcept;
 
-  /// Get a reference to the table.
+  /// Bucket heads; growth and tolerance changes invalidate bucket iterators
+  /// and reorder chains. Entry addresses survive until collection or reset.
   [[nodiscard]] const auto& getTable() const noexcept { return table; }
 
   /// Get a reference to the statistics
@@ -117,10 +95,8 @@ public:
 
   /// Clear the table.
   ///
-  /// This function clears the table. It iterates over all entries in
-  /// the table and sets them to nullptr. It also discards the available list
-  /// and all but the first chunk of the allocated chunks. Also resets all
-  /// counters.
+  /// Discards bucket heads and resets counters and the collection limit.
+  /// Entry storage remains owned by the memory manager.
   void clear() noexcept;
 
   /// Print the table.
@@ -138,19 +114,18 @@ private:
   /// Typedef for a bucket in the table.
   using Bucket = RealNumber*;
   /// Typedef for the table.
-  using Table = std::array<Bucket, NBUCKET>;
+  using Table = std::vector<Bucket>;
 
-  /// The actual hash table
-  ///
-  /// The hash table is an array of buckets. Each bucket is a linked
-  /// list of entries. The linked list is implemented by using the next pointer
-  /// of the entries.
-  Table table{};
-  /// The tail table
-  ///
-  /// The tail table is an array of pointers to the last entry in each
-  /// bucket. This is used to speed up the insertion of new entries.
-  std::array<RealNumber*, NBUCKET> tailTable{};
+  /// Intrusive bucket chains; rehashing preserves entry addresses and flags.
+  Table table = Table(NBUCKET);
+
+  /// A power-of-two cell width between eight and sixteen times the tolerance
+  /// keeps each tolerance interval within the central and adjacent cells.
+  int cellExponent = -1074;
+  fp indexedTolerance = -1.;
+
+  void rehash(size_t size, int exponent);
+  void updateTolerance();
 
   /// A pointer to the memory manager for the numbers stored in the table.
   MemoryManager* memoryManager{};
@@ -162,28 +137,6 @@ private:
   std::size_t initialGCLimit;
   /// The current garbage collection limit
   std::size_t gcLimit = initialGCLimit;
-
-  /// Finds or inserts a value into the bucket indexed by key.
-  ///
-  /// This function either finds an entry with a value within TOLERANCE
-  /// of val in the bucket indexed by key or inserts a new entry with value val
-  /// into the bucket.
-  /// @param key The index of the bucket to find or insert the value into.
-  /// @param val The value to find or insert.
-  /// @returns A pointer to the found or inserted entry.
-  RealNumber* findOrInsert(std::int64_t key, fp val);
-
-  /// Inserts a value in the front of the bucket indexed by key.
-  /// @param key The index of the bucket to insert the value into.
-  /// @param val The value to insert.
-  /// @return A pointer to the inserted entry.
-  RealNumber* insertFront(std::int64_t key, fp val);
-
-  /// Inserts a value in the back of the bucket indexed by key.
-  /// @param key The index of the bucket to insert the value into.
-  /// @param val The value to insert.
-  /// @return A pointer to the inserted entry.
-  RealNumber* insertBack(std::int64_t key, fp val);
 
   /// Lookup a non-negative number in the table.
   ///

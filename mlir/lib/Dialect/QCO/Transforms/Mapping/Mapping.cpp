@@ -13,7 +13,6 @@
 #include "mqt/Compiler/Target.h"
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
-#include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
@@ -30,7 +29,6 @@
 #include "mqt/Support/RandomSeed.h"
 
 #include "mlir/Analysis/SliceAnalysis.h"
-#include "mlir/Analysis/TopologicalSortUtils.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/Block.h"
@@ -508,6 +506,25 @@ private:
     size_t depth = 0;
     float f = 0;
 
+    /// Construct a root node with the given layout.
+    explicit Node(const Layout& initialLayout) { reset(initialLayout); }
+
+    /// Construct a non-root node from its parent node. Apply the given swap to
+    /// the layout of the parent node.
+    Node(Node* parent, const IndexPairType& swap, const Window& window,
+         const CompilerTarget& target, const Parameters& params) {
+      reset(parent, swap, window, target, params);
+    }
+
+    /// Reuse layout capacity when starting a new search.
+    void reset(const Layout& initialLayout) {
+      layout = initialLayout;
+      swap = {};
+      parent = nullptr;
+      depth = 0;
+      f = 0;
+    }
+
     /// Reuse layout capacity when replacing a previously searched node.
     void reset(Node* nextParent, const IndexPairType& nextSwap,
                const Window& window, const CompilerTarget& target,
@@ -527,6 +544,16 @@ private:
       const auto [hw0, hw1] =
           layout.getHardwareIndices(front.first, front.second);
       return target.areAdjacent(hw0, hw1);
+    }
+
+    /// Return the sequence of SWAPs from the root to this node.
+    [[nodiscard]] SmallVector<IndexPairType> swaps() const {
+      SmallVector<IndexPairType> seq(depth);
+      auto it = seq.rbegin();
+      for (const Node* n = this; n->parent != nullptr; n = n->parent, ++it) {
+        *it = n->swap;
+      }
+      return seq;
     }
 
   private:
@@ -553,9 +580,55 @@ private:
     }
   };
 
+  /// Memory arena for A* search nodes, enabling reuse across searches to reduce
+  /// allocation overhead. Nodes are allocated once and reused via reset.
+  class Arena {
+  public:
+    /// Constructs an arena with a limited memory budget.
+    /// The budget of nodes is derived as
+    ///
+    ///    `searchMemoryLimit / (sizeof(Node) + 2 * nsites * sizeof(size_t))`
+    ///
+    /// where the final summand accounts for the Node's layout member.
+    explicit Arena(size_t nsites, size_t searchMemoryLimit)
+        : budget(std::max<size_t>(
+              1, searchMemoryLimit /
+                     (sizeof(Node) + 2 * nsites * sizeof(size_t)))) {}
+
+    /// Constructs and returns a pointer to a new node, or nullptr if the arena
+    /// is full. Reuses storage from previous searches when available.
+    template <typename... Args> Node* construct(Args&&... args) {
+      if (full()) {
+        return nullptr;
+      }
+
+      if (index == nodes.size()) {
+        nodes.emplace_back(std::forward<Args>(args)...);
+      } else {
+        nodes[index].reset(std::forward<Args>(args)...);
+      }
+      return &nodes[index++];
+    }
+
+    /// Returns true if the number of allocated nodes has reached the budget.
+    [[nodiscard]] bool full() const { return index >= budget; }
+
+    /// Resets the arena for a new search. Retains allocated storage. Only the
+    /// logical size (index) is reset to zero.
+    void reset() { index = 0; }
+
+  private:
+    /// Storage for nodes. Uses deque for stable pointers across insertions.
+    std::deque<Node> nodes;
+    /// Maximum number of nodes permitted by the memory budget.
+    size_t budget;
+    /// Next available slot in nodes. Acts as the logical size counter.
+    size_t index{0};
+  };
+
   /// Describes the graph F of arXiv:1602.05150v3.
-  struct FGraph {
-    explicit FGraph(const CompilerTarget& target)
+  struct TokenSwapGraph {
+    explicit TokenSwapGraph(const CompilerTarget& target)
         : f_(llvm::to_vector(llvm::seq(target.numSites()))),
           target_(&target) {};
 
@@ -705,9 +778,9 @@ protected:
     };
 
     /// Each concurrent trial and the final route own separate search storage.
-    std::deque<Node> nodes;
+    Arena arena(target->numSites(), searchMemoryLimit);
     const auto routeRes = route<WireDirection::Forward, RoutingMode::Hot>(
-        bundle, nodes, &rewriter);
+        bundle, arena, &rewriter);
     if (failed(routeRes)) {
       func.emitError() << "failed to map the function";
       signalPassFailure();
@@ -1094,20 +1167,20 @@ private:
     }
 
     parallelForEach(&getContext(), trials, [&, this](Trial& t) {
-      std::deque<Node> nodes;
+      Arena arena(target->numSites(), searchMemoryLimit);
       for (size_t i = 0; i < t.iterations; ++i) {
-        const auto fwRouteRes = route<WireDirection::Forward>(t.bundle, nodes);
+        const auto fwRouteRes = route<WireDirection::Forward>(t.bundle, arena);
         if (failed(fwRouteRes)) {
           return;
         }
 
-        const auto bwRouteRes = route<WireDirection::Backward>(t.bundle, nodes);
+        const auto bwRouteRes = route<WireDirection::Backward>(t.bundle, arena);
         if (failed(bwRouteRes)) {
           return;
         }
       }
       auto scoringBundle = t.bundle;
-      const auto score = route<WireDirection::Forward>(scoringBundle, nodes);
+      const auto score = route<WireDirection::Forward>(scoringBundle, arena);
       if (failed(score)) {
         return;
       }
@@ -1133,35 +1206,24 @@ private:
   /// Route the leading interaction with bounded A* node storage.
   /// Drain queued states at the limit, then use distance-reducing SWAPs.
   [[nodiscard]] SmallVector<IndexPairType>
-  search(const Window& window, const Layout& layout,
-         std::deque<Node>& storage) const {
-    /// Estimate retained node and layout storage; keep at least the root.
-    const size_t nodeBytes =
-        sizeof(Node) + 2 * target->numSites() * sizeof(size_t);
-    const size_t nodeBudget =
-        std::max<size_t>(1, searchMemoryLimit.getValue() / nodeBytes);
-
+  search(const Window& window, const Layout& layout, Arena& arena) const {
     const Parameters params{.alpha = alpha, .lambda = lambda};
-    llvm::PriorityQueue<Node*, std::vector<Node*>, Node::ComparePointer>
-        frontier;
 
-    /// Append keeps node addresses stable; reuse starts after the previous
-    /// search's queue and borrowed layout keys have been destroyed.
-    if (storage.empty()) {
-      storage.emplace_back();
-    }
-    Node* root = &storage.front();
-    root->layout = layout;
+    arena.reset();
+    Node* root = arena.construct(layout);
+    assert(root != nullptr);
+
     if (root->isGoal(window.front(), *target)) {
       return SmallVector<IndexPairType>{};
     }
 
+    SmallVector<IndexPairType, 6> expansionSet;
+    DenseMap<ArrayRef<size_t>, size_t> bestDepth;
+
+    llvm::PriorityQueue<Node*, std::vector<Node*>, Node::ComparePointer>
+        frontier;
     frontier.emplace(root);
 
-    DenseMap<ArrayRef<size_t>, size_t> bestDepth;
-    SmallVector<IndexPairType, 6> expansionSet;
-
-    size_t nodes = 1;
     while (!frontier.empty()) {
       Node* curr = frontier.top();
       frontier.pop();
@@ -1186,14 +1248,7 @@ private:
       // sequence of SWAPs from this node to the root.
 
       if (curr->isGoal(window.front(), *target)) {
-        SmallVector<IndexPairType> seq(curr->depth);
-        size_t j = seq.size() - 1;
-        for (const Node* n = curr; n->parent != nullptr; n = n->parent) {
-          seq[j] = n->swap;
-          --j;
-        }
-
-        return seq;
+        return curr->swaps();
       }
 
       // Given a layout, create child-nodes for each possible SWAP
@@ -1203,19 +1258,16 @@ private:
       for (const auto& [q0, q1] = window.front(); const auto prog : {q0, q1}) {
         const auto hw0 = curr->layout.getHardwareIndex(prog);
         target->forEachNeighbour(hw0, [&](const auto hw1) {
-          // Ensure consistent hashing/comparison.
-          const IndexPairType swap = std::minmax(hw0, hw1);
-          if (nodes >= nodeBudget || is_contained(expansionSet, swap)) {
+          const IndexPairType swap = std::minmax(hw0, hw1); // Canonical SWAP.
+          if (is_contained(expansionSet, swap)) {
             return;
           }
-          expansionSet.push_back(swap);
 
-          if (nodes == storage.size()) {
-            storage.emplace_back();
+          if (Node* child =
+                  arena.construct(curr, swap, window, *target, params)) {
+            expansionSet.push_back(swap);
+            frontier.emplace(child);
           }
-          storage[nodes].reset(curr, swap, window, *target, params);
-          frontier.emplace(&storage[nodes]);
-          ++nodes;
         });
       }
     }
@@ -1223,30 +1275,36 @@ private:
     /// A connected target always permits a SWAP that brings the pair closer.
     /// ponytail: Greedy completion can cost later gates; increase the search
     /// budget when routing quality matters more than memory use.
+
+    Node current(layout);
     SmallVector<IndexPairType> swaps;
-    Node current{.layout = layout};
+
     const auto [q0, q1] = window.front();
     while (!current.isGoal(window.front(), *target)) {
       const auto [a, b] = current.layout.getHardwareIndices(q0, q1);
       const auto distance = target->distanceBetween(a, b);
+
       std::optional<Node> best;
       for (const auto [from, to] : {IndexPairType{a, b}, IndexPairType{b, a}}) {
         target->forEachNeighbour(from, [&](size_t next) {
           if (target->distanceBetween(next, to) >= distance) {
             return;
           }
-          Node candidate;
-          candidate.reset(&current, std::minmax(from, next), window, *target,
-                          params);
+
+          const IndexPairType swap = std::minmax(from, next); // Canonical SWAP.
+
+          Node candidate(&current, swap, window, *target, params);
           if (!best || candidate.f < best->f) {
             best = std::move(candidate);
           }
         });
       }
+
       assert(best && "connected target must have a distance-reducing edge");
       swaps.push_back(best->swap);
       current.layout = std::move(best->layout);
     }
+
     return swaps;
   }
 
@@ -1258,7 +1316,7 @@ private:
       return {};
     }
     Layout curr(from);
-    FGraph f(*target);
+    TokenSwapGraph f(*target);
     SmallVector<IndexPairType> swaps;
 
     while (true) {
@@ -1300,7 +1358,7 @@ private:
       return {lhs, {}, {}};
     }
     std::array layouts{Layout(lhs), Layout(rhs)};
-    std::array graphs{FGraph(*target), FGraph(*target)};
+    std::array graphs{TokenSwapGraph(*target), TokenSwapGraph(*target)};
     std::array<SmallVector<IndexPairType>, 2> swaps{};
 
     auto gen = makeMt19937(compilationSeed(getOperation(), seed));
@@ -1309,7 +1367,7 @@ private:
     while (true) {
       size_t i = 0;
       for (; i < 2; ++i) {
-        FGraph& f = graphs[i];
+        TokenSwapGraph& f = graphs[i];
 
         f.reset();
         f.construct(layouts[i], layouts[(i + 1) % 2]);
@@ -1357,7 +1415,7 @@ private:
   Layout driveby(Range layouts, const size_t niterations = 1) {
     assert(!layouts.empty() && "expected at least one layout");
 
-    FGraph f(*target);
+    TokenSwapGraph f(*target);
     Layout curr(*layouts.begin());
 
     // Nudge curr towards target by applying a happy SWAP chain.
@@ -1773,7 +1831,7 @@ private:
   template <WireDirection Direction, RoutingMode Mode = RoutingMode::Cold>
     requires(Mode != RoutingMode::Hot || Direction == WireDirection::Forward)
   FailureOr<Statistics> dispatch(const CompositeUnitary& composite,
-                                 RoutingBundle& parent, std::deque<Node>& nodes,
+                                 RoutingBundle& parent, Arena& arena,
                                  IRRewriter* rewriter = nullptr) {
     const auto& [op, indices] = composite;
 
@@ -1877,7 +1935,7 @@ private:
     Statistics totalStats;
 
     for (auto& child : children) {
-      const auto stats = route<Direction, Mode>(child, nodes, rewriter);
+      const auto stats = route<Direction, Mode>(child, arena, rewriter);
       if (failed(stats)) {
         return failure();
       }
@@ -1912,7 +1970,7 @@ private:
         children[1].infos.insertOrUpdate(i, prog);
       }
 
-      const auto stats = route<Direction, Mode>(children[1], nodes, rewriter);
+      const auto stats = route<Direction, Mode>(children[1], arena, rewriter);
       if (failed(stats)) {
         return failure();
       }
@@ -2027,7 +2085,7 @@ private:
   /// failure if routing a nested operation fails.
   template <WireDirection Direction, RoutingMode Mode = RoutingMode::Cold>
     requires(Mode != RoutingMode::Hot || Direction == WireDirection::Forward)
-  FailureOr<Statistics> route(RoutingBundle& bundle, std::deque<Node>& nodes,
+  FailureOr<Statistics> route(RoutingBundle& bundle, Arena& arena,
                               IRRewriter* rewriter = nullptr) {
     auto& [wires, infos, layout] = bundle;
 
@@ -2045,7 +2103,7 @@ private:
           }
 
           auto res =
-              dispatch<Direction, Mode>(composite, bundle, nodes, rewriter);
+              dispatch<Direction, Mode>(composite, bundle, arena, rewriter);
           if (failed(res)) {
             return failure();
           }
@@ -2067,7 +2125,7 @@ private:
         break;
       }
 
-      const auto swaps = search(window, layout, nodes);
+      const auto swaps = search(window, layout, arena);
 
       if constexpr (Mode == RoutingMode::Hot) {
 

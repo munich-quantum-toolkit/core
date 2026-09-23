@@ -694,6 +694,59 @@ attributes #0 = { "entry_point" "qir_profiles"="adaptive_profile" "required_num_
   }
 }
 
+TEST(QIRBatchSampling, FallsBackForConstantBooleanOutputs) {
+  constexpr llvm::StringRef ir = R"(
+define i64 @main() #0 {
+  call void @__quantum__qis__x__body(ptr null)
+  call void @__quantum__qis__mz__body(ptr null, ptr null)
+  call void @__quantum__rt__bool_record_output(i1 false, ptr null)
+  call void @__quantum__rt__result_record_output(ptr null, ptr null)
+  call void @__quantum__rt__bool_record_output(i1 true, ptr null)
+  ret i64 0
+}
+declare void @__quantum__qis__x__body(ptr)
+declare void @__quantum__qis__mz__body(ptr, ptr)
+declare void @__quantum__rt__result_record_output(ptr, ptr)
+declare void @__quantum__rt__bool_record_output(i1, ptr)
+attributes #0 = { "entry_point" "qir_profiles"="base_profile" "required_num_qubits"="1" "required_num_results"="1" }
+)";
+  qir::JitSession session(ir, "boolean-output", qir::Execution::Sampling);
+  session.runtime().disableOutput();
+  std::vector<std::string> shots;
+  bool available = false;
+  ASSERT_EQ(session.sample(4, shots, &available), 0);
+  EXPECT_FALSE(available);
+  EXPECT_EQ(shots, (std::vector<std::string>{"011", "011", "011", "011"}));
+  EXPECT_EQ(session.runtime().getMeasurements(), shots.back());
+
+  std::ostringstream output;
+  session.runtime().setOstream(output);
+  ASSERT_EQ(session.sample(4, shots, &available), 0);
+  EXPECT_FALSE(available);
+  EXPECT_EQ(shots, (std::vector<std::string>{"011", "011", "011", "011"}));
+  EXPECT_FALSE(output.str().empty());
+}
+
+TEST(QIRBatchSampling, FallsBackForConstantBooleansWithoutQubits) {
+  constexpr llvm::StringRef ir = R"(
+define i64 @main() #0 {
+  call void @__quantum__rt__bool_record_output(i1 true, ptr null)
+  call void @__quantum__rt__bool_record_output(i1 false, ptr null)
+  ret i64 0
+}
+declare void @__quantum__rt__bool_record_output(i1, ptr)
+attributes #0 = { "entry_point" "qir_profiles"="base_profile" "required_num_qubits"="0" "required_num_results"="0" }
+)";
+  qir::JitSession session(ir, "constant-output", qir::Execution::Sampling);
+  session.runtime().disableOutput();
+  std::vector<std::string> shots;
+  bool available = false;
+  ASSERT_EQ(session.sample(3, shots, &available), 0);
+  EXPECT_FALSE(available);
+  EXPECT_EQ(shots, (std::vector<std::string>{"10", "10", "10"}));
+  EXPECT_EQ(session.runtime().getMeasurements(), shots.back());
+}
+
 TEST(QIRStaticResources, EmptyStatesKeepZeroCapacityAfterTransfer) {
   constexpr llvm::StringRef ir = R"(
 define i64 @main() #0 { ret i64 0 }

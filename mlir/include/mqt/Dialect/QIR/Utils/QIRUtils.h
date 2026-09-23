@@ -77,6 +77,8 @@ inline constexpr auto QIR_INITIALIZE = "__quantum__rt__initialize";
 inline constexpr auto QIR_MEASURE = "__quantum__qis__mz__body";
 inline constexpr auto QIR_READ_RESULT = "__quantum__rt__read_result";
 inline constexpr auto QIR_RECORD_OUTPUT = "__quantum__rt__result_record_output";
+inline constexpr auto QIR_BOOL_RECORD_OUTPUT =
+    "__quantum__rt__bool_record_output";
 inline constexpr auto QIR_ARRAY_RECORD_OUTPUT =
     "__quantum__rt__array_record_output";
 inline constexpr auto QIR_RESET = "__quantum__qis__reset__body";
@@ -196,11 +198,13 @@ struct ClassicalRegister {
   std::string label;
   /// Whether the register should be recorded in the output.
   bool record = true;
+  /// Adaptive Profile: a fixed-size computed register uses i1 storage.
+  bool booleanStorage = false;
   /// Number of bits in the register.
   std::variant<int64_t, Value> size = int64_t{0};
   /// Base Profile: Pre-allocated result pointer for each bit.
   SmallVector<Value> results;
-  /// Adaptive Profile: The backing result array.
+  /// Adaptive Profile: The backing array of Result pointers or i1 values.
   Value array;
 };
 

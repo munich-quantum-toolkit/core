@@ -37,7 +37,8 @@ public:
   ~ComplexNumbers() = default;
 
   /// Set the numerical tolerance for comparisons of floats.
-  /// @param tol The new tolerance.
+  /// This is global to all packages. Existing DDs are not recanonicalized.
+  /// @param tol The new finite, non-negative tolerance.
   static void setTolerance(fp tol) noexcept;
 
   /// Compute the squared magnitude of a complex number.

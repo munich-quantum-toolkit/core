@@ -790,19 +790,27 @@ public:
       return {x.p, rWeight};
     }
 
+    /// Keep a common incoming scale outside recursion so small amplitudes do
+    /// not disappear before their normalized parent is reconstructed.
+    const auto scale = std::max(
+        {std::abs(x.w.r), std::abs(x.w.i), std::abs(y.w.r), std::abs(y.w.i)});
+    const CachedEdge<Node> left{x.p, x.w / scale};
+    const CachedEdge<Node> right{y.p, y.w / scale};
+
     auto& computeTable = getAddComputeTable<Node>();
-    if (const auto* r = computeTable.lookup(x, y); r != nullptr) {
-      return *r;
+    if (const auto* r = computeTable.lookup(left, right); r != nullptr) {
+      return {r->p, r->w * scale};
     }
 
     constexpr std::size_t n = std::tuple_size_v<decltype(x.p->e)>;
     std::array<CachedEdge<Node>, n> edge{};
     for (std::size_t i = 0U; i < n; i++) {
-      edge[i] = add2(weightedSuccessor(x, var, i), weightedSuccessor(y, var, i),
-                     var - 1);
+      edge[i] = add2(weightedSuccessor(left, var, i),
+                     weightedSuccessor(right, var, i), var - 1);
     }
     auto r = makeDDNode(var, edge);
-    computeTable.insert(x, y, r);
+    computeTable.insert(left, right, r);
+    r.w = r.w * scale;
     return r;
   }
 
@@ -836,19 +844,25 @@ public:
       return {x.p, rWeight};
     }
 
+    const auto scale = std::max(
+        {std::abs(x.w.r), std::abs(x.w.i), std::abs(y.w.r), std::abs(y.w.i)});
+    const CachedEdge<Node> left{x.p, x.w / scale};
+    const CachedEdge<Node> right{y.p, y.w / scale};
+
     auto& computeTable = getAddMagnitudesComputeTable<Node>();
-    if (const auto* r = computeTable.lookup(x, y); r != nullptr) {
-      return *r;
+    if (const auto* r = computeTable.lookup(left, right); r != nullptr) {
+      return {r->p, r->w * scale};
     }
 
     constexpr std::size_t n = std::tuple_size_v<decltype(x.p->e)>;
     std::array<CachedEdge<Node>, n> edge{};
     for (std::size_t i = 0U; i < n; i++) {
-      edge[i] = addMagnitudes(weightedSuccessor(x, var, i),
-                              weightedSuccessor(y, var, i), var - 1);
+      edge[i] = addMagnitudes(weightedSuccessor(left, var, i),
+                              weightedSuccessor(right, var, i), var - 1);
     }
     auto r = makeDDNode(var, edge);
-    computeTable.insert(x, y, r);
+    computeTable.insert(left, right, r);
+    r.w = r.w * scale;
     return r;
   }
 

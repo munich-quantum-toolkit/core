@@ -2200,7 +2200,7 @@ TEST_P(MappingPassTest, MapBranchingGHZ) {
       [&](ValueRange args) {
         SmallVector<Value> argQs(llvm::reverse(args));
         flatGHZ(builder, argQs);
-        return argQs;
+        return llvm::to_vector(llvm::reverse(argQs));
       });
 
   flatGHZ(builder, qubits);

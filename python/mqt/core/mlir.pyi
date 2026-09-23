@@ -524,7 +524,7 @@ class MappingOptions:
         trials: int | None = None,
         iterations: int = 1,
         lookahead: int = 20,
-        search_memory_limit: int = 67108864,
+        search_memory_limit: int = 268435456,
     ) -> None: ...
     @property
     def trials(self) -> int | None:

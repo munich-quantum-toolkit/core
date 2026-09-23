@@ -120,9 +120,10 @@ def ExtractOp
                                 "tensor", "out_tensor", "$_self">]> {
   let summary = "Extract element from tensor";
   let description = [{
-        The `qtensor.extract` operation is the modified version of the standard `tensor.extract`
-        operation of the tensor dialect. It reads a ranked tensor and returns one qubit from the input tensor
-        at the given index. In addition, it also returns the updated input tensor as a result.
+        Consume a tensor and return its qubit at the given index together with
+        the remaining tensor. The index must be in bounds and its slot must not
+        already be extracted. Restore the updated qubit to the same slot before
+        passing the complete tensor through a helper or region boundary.
 
         Example:
         ```mlir
@@ -148,9 +149,11 @@ def InsertOp
                                "cast<TensorType>($_self).getElementType()">]> {
   let summary = "Insert element into tensor";
   let description = [{
-        The `qtensor.insert` operation is a wrapper operation for the `tensor.insert` operation of the tensor dialect.
-        This operation inserts a qubit scalar into a ranked tensor as specified by the operation's index. The insertion
-        consumes the input qubit.
+        Consume an extracted qubit and the remaining tensor, restoring the
+        qubit to its original slot. The index must be in bounds and identify
+        that slot. Insertion preserves qubit identity; it cannot move a qubit
+        between slots or replace another qubit. Dynamic index equality is a
+        program precondition.
 
         Example:
         ```mlir

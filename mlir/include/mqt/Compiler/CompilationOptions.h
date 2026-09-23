@@ -28,7 +28,7 @@ struct MappingOptions {
   /// Estimated node and layout bytes per routing search, per concurrent trial.
   /// Zero disables node expansion. Container overhead, caches, and IR are
   /// extra.
-  size_t searchMemoryLimit = 64UL * 1024 * 1024;
+  size_t searchMemoryLimit = 256UL * 1024 * 1024;
 };
 
 /// Options shared by compilation entry points.

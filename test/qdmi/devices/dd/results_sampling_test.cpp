@@ -107,8 +107,7 @@ protected:
         keys, [](const auto& k) { return k == "00" || k == "11"; }));
   }
 
-  /// Smoke check used for circuits whose distribution we do not know precisely.
-  /// For example, multi-output adaptive programs.
+  /// AdaptiveRecordOutputs records each bit as both a Result and a Boolean.
   static void checkSmokeHistogram(const Histogram& hist) {
     const auto& [keys, vals] = hist;
     // Both vectors have the same size.
@@ -116,11 +115,12 @@ protected:
     // Values sum up to NUM_SHOTS.
     const auto sum = std::accumulate(vals.cbegin(), vals.cend(), size_t{0});
     EXPECT_EQ(sum, NUM_SHOTS);
-    // Every key is a NUM_QUBITS long bit string.
+    /// Each output group contains the same measurement bits.
     EXPECT_TRUE(std::ranges::all_of(keys, [](const auto& k) {
-      return k.size() == NUM_QUBITS && std::ranges::all_of(k, [](char c) {
-               return c == '0' || c == '1';
-             });
+      return k.size() == 2 * NUM_QUBITS &&
+             k.substr(0, NUM_QUBITS) == k.substr(NUM_QUBITS) &&
+             std::ranges::all_of(k,
+                                 [](char c) { return c == '0' || c == '1'; });
     }));
   }
 };

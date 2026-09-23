@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from mqt.core.bench import qpe, repeat_until_success
-from mqt.core.mlir import CompiledProgram, CompilerTarget, OutputFormat, compile_program, submit_program
+from mqt.core.mlir import CompiledProgram, CompilerTarget, OutputFormat, QCProgram, compile_program, submit_program
 from mqt.core.qdmi import CustomProperty, Job, ProgramFormat
 from mqt.core.qdmi.driver import open_device
 
@@ -29,12 +29,124 @@ if TYPE_CHECKING:
 BELL = 'OPENQASM 3.0; include "stdgates.inc"; qubit[2] q; bit[2] c; h q[0]; cx q[0],q[1]; c = measure q;'
 
 
+@pytest.mark.parametrize("program_format", [ProgramFormat.QASM3, ProgramFormat.QIR_ADAPTIVE_MODULE])
+def test_runtime_controlled_fractional_power(program_format: ProgramFormat) -> None:
+    """Runtime fixed-gate powers preserve relative phase under control."""
+    source = """OPENQASM 3.1;
+      include "stdgates.inc";
+      qubit[2] q;
+      x q[1];
+      bit choose = measure q[1];
+      float turns = 0.25 + float(choose) / 4.0;
+      h q[0];
+      ctrl @ pow(turns) @ z q[0], q[1];
+      ctrl @ pow(turns) @ z q[0], q[1];
+      h q[0];
+      output bit[2] result;
+      result = measure q;
+    """
+    compiled = compile_program(source, target="mqt.ddsim.default", program_format=program_format)
+    job = submit_program(compiled, target="mqt.ddsim.default", num_shots=16, custom1=17)
+    assert job.wait()
+    assert job.get_counts() == {"11": 16}
+
+
+@pytest.mark.parametrize("program_format", [ProgramFormat.QASM3, ProgramFormat.QIR_ADAPTIVE_MODULE])
+def test_computed_classical_outputs(program_format: ProgramFormat) -> None:
+    """Record mixed measured and computed bits in declared order."""
+    source = """OPENQASM 3.1;
+      include "stdgates.inc";
+      qubit q;
+      x q;
+      output bit measured;
+      measured = measure q;
+      output bit[4] computed;
+      computed = "0000";
+      for int i in [0:2] { computed[i] = bool(measured) != bool(i % 2); }
+      computed[0] = false;
+    """
+    compiled = compile_program(source, target="mqt.ddsim.default", program_format=program_format)
+    capture = program_format == ProgramFormat.QIR_ADAPTIVE_MODULE
+    job = submit_program(compiled, target="mqt.ddsim.default", num_shots=4, custom1=17, custom2=capture)
+    assert job.wait()
+    assert job.get_counts() == {"01001": 4}
+    assert job.get_shots() == ["01001"] * 4
+    if capture:
+        output = job.get_custom_result(CustomProperty.CUSTOM1, str)
+        assert isinstance(output, str)
+        for index, value in enumerate(("false", "false", "true", "false")):
+            assert output.count(f"OUTPUT\tBOOL\t{value}\tcomputed_{index}\n") == 4
+
+
+@pytest.mark.parametrize("program_format", [ProgramFormat.QASM3, ProgramFormat.QIR_ADAPTIVE_MODULE])
+def test_runtime_indices_and_integer_powers(program_format: ProgramFormat) -> None:
+    """Execute valid runtime arithmetic and indexing without assertion lowering."""
+    source = """OPENQASM 3.1;
+      include "stdgates.inc";
+      qubit q;
+      x q;
+      bit choose = measure q;
+      reset q;
+      int exponent = 2;
+      if (choose) { exponent = 3; }
+      int value = 3 ** exponent;
+      bit[3] bits = "000";
+      int index = -1;
+      bits[index] = true;
+      int turns = 3;
+      if (bits[index] && value == 27) { pow(turns) @ x q; }
+      output bit result;
+      result = measure q;
+    """
+    compiled = compile_program(source, target="mqt.ddsim.default", program_format=program_format)
+    job = submit_program(compiled, target="mqt.ddsim.default", num_shots=16, custom1=17)
+    job.wait()
+    assert job.get_counts() == {"1": 16}
+
+
+def test_indexed_openqasm_device_execution() -> None:
+    """Specialize mapped OpenQASM indices and preserve the sampled result."""
+    source = QCProgram.from_mlir_str("""module {
+      func.func @main() -> !cbit.reg<2> attributes {mqt.entry_point} {
+        %zero = arith.constant 0 : index
+        %one = arith.constant 1 : index
+        %two = arith.constant 2 : index
+        %four = arith.constant 4 : index
+        %angles = arith.constant dense<[3.141592653589793, 0.0, 0.0, 3.141592653589793]> : tensor<4xf64>
+        %qubits = memref.alloc() : memref<2x!qc.qubit>
+        %bits = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+        scf.for %i = %zero to %four step %one {
+          %slot = arith.remui %i, %two : index
+          %q = memref.load %qubits[%slot] : memref<2x!qc.qubit>
+          %angle = tensor.extract %angles[%i] : tensor<4xf64>
+          qc.rx(%angle) %q : !qc.qubit
+        }
+        scf.for %i = %zero to %two step %one {
+          %q = memref.load %qubits[%i] : memref<2x!qc.qubit>
+          %bit = qc.measure %q : !qc.qubit -> i1
+          cbit.store %bit, %bits[%i] : !cbit.reg<2>
+        }
+        memref.dealloc %qubits : memref<2x!qc.qubit>
+        return %bits : !cbit.reg<2>
+      }
+    }""")
+    device = open_device("mqt.ddsim.default")
+    compiled = compile_program(source, target=device, program_format=ProgramFormat.QASM3)
+    assert isinstance(compiled.payload, str)
+    assert "for int " not in compiled.payload
+    assert "switch (" not in compiled.payload
+    job = submit_program(compiled, target=device, num_shots=32, custom1=17)
+    job.wait()
+    assert job.get_counts() == {"11": 32}
+
+
+@pytest.mark.parametrize("program_format", [ProgramFormat.QASM3, ProgramFormat.QIR_ADAPTIVE_MODULE])
 @pytest.mark.parametrize("method", [qpe.Method.STANDARD, qpe.Method.ITERATIVE])
-def test_qpe_device_execution(method: qpe.Method) -> None:
-    """Compile structured QPE and recover its exact phase through QIR execution."""
+def test_qpe_device_execution(method: qpe.Method, program_format: ProgramFormat) -> None:
+    """Recover QPE's exact phase through mapped OpenQASM and QIR execution."""
     benchmark = qpe.QPE(qpe.Options(precision=8, phase=Fraction(3, 8), method=method))
     device = open_device("mqt.ddsim.default")
-    compiled = compile_program(benchmark.generate(), target=device)
+    compiled = compile_program(benchmark.generate(), target=device, program_format=program_format)
     job = submit_program(compiled, target=device, num_shots=32, custom1=17)
     job.wait()
     counts = job.get_counts()
