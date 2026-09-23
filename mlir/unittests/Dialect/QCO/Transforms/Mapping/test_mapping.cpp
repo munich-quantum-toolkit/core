@@ -534,7 +534,7 @@ TEST_F(MappingPassFixture, MapTopologyOnlyWithEmptyOperationSet) {
       EXPECT_TRUE(isa<SinkOp>(*op.getQubitOut().getUsers().begin()));
     }
   });
-  
+
   EXPECT_EQ(numMeasurements, size);
   EXPECT_GE(numMeasurementsAfterSwap, 0);
 }
