@@ -1137,24 +1137,25 @@ private:
     SmallVector<Trial, 0> trials;
     trials.reserve(ntrials);
 
+    const auto addTrial = [&](const Layout& layout) {
+      trials.emplace_back(
+          RoutingBundle{.wires = wires, .infos = infos, .layout = layout});
+    };
+
     if (greedy) {
-      trials.emplace_back(RoutingBundle{
-          .wires = wires,
-          .infos = infos,
-          .layout = greedy->first,
-      });
+      addTrial(greedy->first);
     }
 
-    auto rng = makeMt19937(compilationSeed(getOperation(), seed));
-    for (size_t i = trials.size(); i < ntrials; ++i) {
-      trials.emplace_back(RoutingBundle{
-          .wires = wires,
-          .infos = infos,
-          .layout = i == 0 ? Layout::identity(target->numSites())
-                           : Layout::random(target->numSites(),
-                                            target->numSites(), rng()),
-      });
+    if (trials.size() < ntrials) {
+      addTrial(Layout::identity(target->numSites()));
+
+      auto rng = makeMt19937(compilationSeed(getOperation(), seed));
+      for (size_t i = trials.size(); i < ntrials; ++i) {
+        addTrial(Layout::random(target->numSites(), target->numSites(), rng()));
+      }
     }
+
+    assert(ntrials == trials.size());
 
     parallelForEach(&getContext(), trials, [&, this](Trial& t) {
       Arena arena(target->numSites(), searchMemoryLimit);
