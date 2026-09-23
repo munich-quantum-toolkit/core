@@ -12,7 +12,7 @@
 
 #include "qdmi/Client.hpp"
 
-#include "qdmi/constants.h"
+#include "DeviceAvailability.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -27,27 +27,6 @@
 
 namespace qdmi::slurm {
 namespace {
-
-[[nodiscard]] auto statusName(const QDMI_Device_Status status)
-    -> std::string_view {
-  switch (status) {
-  case QDMI_DEVICE_STATUS_OFFLINE:
-    return "OFFLINE";
-  case QDMI_DEVICE_STATUS_IDLE:
-    return "IDLE";
-  case QDMI_DEVICE_STATUS_BUSY:
-    return "BUSY";
-  case QDMI_DEVICE_STATUS_ERROR:
-    return "ERROR";
-  case QDMI_DEVICE_STATUS_MAINTENANCE:
-    return "MAINTENANCE";
-  case QDMI_DEVICE_STATUS_CALIBRATION:
-    return "CALIBRATION";
-  case QDMI_DEVICE_STATUS_MAX:
-    return "UNKNOWN";
-  }
-  return "UNKNOWN";
-}
 
 [[nodiscard]] auto parseLicense(const std::string_view licenseSpec)
     -> std::string {
@@ -128,12 +107,8 @@ Device openDeviceFromLicense() {
                                "' is not a registered QDMI device ID");
     }
   }();
-  const auto status = device.getStatus();
-  if (status != QDMI_DEVICE_STATUS_IDLE && status != QDMI_DEVICE_STATUS_BUSY) {
-    throw std::runtime_error("SLURM_JOB_LICENSES names QDMI device '" +
-                             deviceId + "' with status " +
-                             std::string(statusName(status)));
-  }
+  detail::checkDeviceAvailability(device, deviceId,
+                                  "SLURM_JOB_LICENSES names QDMI device ");
   return device;
 }
 

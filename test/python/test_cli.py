@@ -21,6 +21,7 @@ import pytest
 
 # Import the private module to test its process replacement directly.
 import mqt.core._bench as benchmark_cli  # ruff: ignore[import-private-name]
+import mqt.core._qdmi_check as checker_cli  # ruff: ignore[import-private-name]
 from mqt.core import __version__ as mqt_core_version
 
 if TYPE_CHECKING:
@@ -146,3 +147,35 @@ def test_benchmark_cli_launcher(platform: str, suffix: str) -> None:
     distribution_mock.assert_called_once_with("mqt-core")
     distribution_mock.return_value.locate_file.assert_called_once_with(f"mqt/core/bin/mqt-core-bench{suffix}")
     execv_mock.assert_called_once_with(executable, [str(executable), "list"])
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="The checker requires POSIX process supervision")
+@pytest.mark.script_launch_mode("subprocess")
+def test_qdmi_checker_cli(script_runner: ScriptRunner) -> None:
+    """Run the native checker through the installed console script."""
+    ret = script_runner.run(["mqt-core-qdmi-check", "--device", "mqt.sc.default"])
+    assert ret.success
+    assert not ret.stdout
+    assert not ret.stderr
+
+
+def test_qdmi_checker_cli_launcher() -> None:
+    """Pass device selection unchanged to the bundled native checker."""
+    executable = Path("installation/mqt/core/bin/mqt-core-qdmi-check")
+    with (
+        patch.object(checker_cli.sys, "platform", "linux"),
+        patch.object(checker_cli.sys, "argv", ["mqt-core-qdmi-check", "--device", "test.device"]),
+        patch.object(checker_cli, "distribution") as distribution_mock,
+        patch.object(checker_cli.os, "execv") as execv_mock,
+    ):
+        distribution_mock.return_value.locate_file.return_value = executable
+        checker_cli.main()
+
+    distribution_mock.return_value.locate_file.assert_called_once_with("mqt/core/bin/mqt-core-qdmi-check")
+    execv_mock.assert_called_once_with(executable, [str(executable), "--device", "test.device"])
+
+
+def test_qdmi_checker_windows() -> None:
+    """Explain the checker's platform requirement without loading devices."""
+    with patch.object(checker_cli.sys, "platform", "win32"), pytest.raises(SystemExit, match="Linux or macOS"):
+        checker_cli.main()
