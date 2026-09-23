@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "mqt/Compiler/Target.h"
+
 #include "mlir/Interfaces/FunctionInterfaces.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassRegistry.h"
@@ -18,10 +20,6 @@
 
 #include <cstdint>
 #include <memory>
-
-namespace mlir {
-class CompilerTarget;
-} // namespace mlir
 
 namespace mlir::qco {
 

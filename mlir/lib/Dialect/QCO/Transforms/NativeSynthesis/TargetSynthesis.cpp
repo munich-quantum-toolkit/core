@@ -44,6 +44,7 @@
 #include "mlir/Support/TypeID.h"
 #include "mlir/Support/WalkResult.h"
 #include "mlir/Transforms/FoldUtils.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
@@ -520,6 +521,21 @@ static LogicalResult synthesizeTargetOperation(
   if (!basis) {
     return unsupported("the target has no usable synthesis basis");
   }
+  if (auto controlled = dyn_cast<CtrlOp>(operation);
+      controlled && basis->singleQubit == CompilerTarget::SingleQubitBasis::U &&
+      controlled.getNumTargets() == 1 &&
+      controlled.getNumBodyUnitaries() == 1 &&
+      isa<U2Op>(controlled.getBodyUnitary(0).getOperation())) {
+    /// Canonicalization may shorten a native controlled U(pi/2, phi, lambda)
+    /// to U2. Restore its native form before attempting matrix synthesis.
+    decomposition::synthesizeParameterizedUnitary1Q(
+        rewriter, controlled.getBodyUnitary(0).getOperation(),
+        basis->singleQubit);
+    if (sites ? target.supports(operation, *sites)
+              : target.supports(operation)) {
+      return success();
+    }
+  }
   rewriter.setInsertionPoint(operation);
   if (op.isSingleQubit()) {
     Matrix2x2 matrix;
@@ -801,6 +817,19 @@ protected:
     if (failed(prepareGlobalPhases(moduleOp, target))) {
       signalPassFailure();
       return;
+    }
+    if (targetBasis &&
+        targetBasis->singleQubit != CompilerTarget::SingleQubitBasis::U) {
+      RewritePatternSet patterns(&getContext());
+      decomposition::populateParameterizedSingleQubitRunCompositionPatterns(
+          patterns, targetBasis->singleQubit, &target);
+      decomposition::populateFuseSingleQubitUnitaryRunsPatterns(
+          patterns, targetBasis->singleQubit, /*skipControlledBodies=*/true,
+          &target);
+      if (failed(applyPatternsGreedily(moduleOp, std::move(patterns)))) {
+        signalPassFailure();
+        return;
+      }
     }
     const bool indexed = environment.environment().supportsIndexedQubits();
     auto sites = collectStaticSites(moduleOp, indexed);

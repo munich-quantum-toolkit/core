@@ -69,7 +69,8 @@ static std::optional<Matrix2x2> getRunMemberMatrix(UnitaryOpInterface gate) {
 /// @return Composed matrix, gate count, and run tail.
 static FusableRunScan
 scanFusableRun(UnitaryOpInterface head, const Matrix2x2& headMatrix,
-               const decomposition::SingleQubitBasis basis) {
+               const decomposition::SingleQubitBasis basis,
+               const CompilerTarget* target) {
   FusableRunScan scan;
   for (auto* op : WireRange(head.getOutputQubit(0))) {
     auto member = dyn_cast_or_null<UnitaryOpInterface>(op);
@@ -83,7 +84,9 @@ scanFusableRun(UnitaryOpInterface head, const Matrix2x2& headMatrix,
       break;
     }
     scan.composed.premultiplyBy(*matrix);
-    scan.hasNonBasisGate |= !decomposition::isSingleQubitBasisGate(op, basis);
+    scan.hasNonBasisGate |=
+        target != nullptr ? !target->supports(op)
+                          : !decomposition::isSingleQubitBasisGate(op, basis);
     scan.tail = member;
     ++scan.gateCount;
   }
@@ -115,12 +118,14 @@ struct FuseSingleQubitUnitaryRunsPattern final
     : OpInterfaceRewritePattern<UnitaryOpInterface> {
   FuseSingleQubitUnitaryRunsPattern(MLIRContext* context,
                                     const decomposition::SingleQubitBasis basis,
-                                    const bool skipControlledBodies)
+                                    const bool skipControlledBodies,
+                                    const CompilerTarget* target)
       : OpInterfaceRewritePattern(context), basis(basis),
-        skipControlledBodies(skipControlledBodies) {}
+        skipControlledBodies(skipControlledBodies), target(target) {}
 
   decomposition::SingleQubitBasis basis;
   bool skipControlledBodies;
+  const CompilerTarget* target;
 
   /// Fuses the run anchored at `op` when beneficial.
   ///
@@ -149,7 +154,7 @@ struct FuseSingleQubitUnitaryRunsPattern final
       return failure();
     }
 
-    FusableRunScan run = scanFusableRun(op, *headMatrix, basis);
+    FusableRunScan run = scanFusableRun(op, *headMatrix, basis, target);
     const auto synthesized = decomposition::synthesizeUnitary1QEuler(
         rewriter, op.getLoc(), op.getInputQubit(0), run.composed, run.gateCount,
         run.hasNonBasisGate, basis);
@@ -211,11 +216,12 @@ protected:
 
 namespace mlir::qco::decomposition {
 
-void populateFuseSingleQubitUnitaryRunsPatterns(
-    RewritePatternSet& patterns, const SingleQubitBasis basis,
-    const bool skipControlledBodies) {
+void populateFuseSingleQubitUnitaryRunsPatterns(RewritePatternSet& patterns,
+                                                const SingleQubitBasis basis,
+                                                const bool skipControlledBodies,
+                                                const CompilerTarget* target) {
   patterns.add<FuseSingleQubitUnitaryRunsPattern>(patterns.getContext(), basis,
-                                                  skipControlledBodies);
+                                                  skipControlledBodies, target);
 }
 
 } // namespace mlir::qco::decomposition
