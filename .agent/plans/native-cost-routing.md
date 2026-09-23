@@ -1,91 +1,77 @@
-# Native cost in routing selection
+# Native-cost routing with physical wire slots
 
-Status: complete. Shared analysis and routing are implemented and rebased on
-upstream main `949bf5cf6`, including Arena storage from #2598 and the DD fix
-from #2606. Cache tuning, independent review, and the comparison were completed
-before this final rebase; their measured baseline remains `e82bb0f0e` and their
-measured implementation is `0e78f1b59`. The final publication review found no
-further safe simplifications. After rebasing, all 996 affected tests, whole-file
-C++ lint, and repository lint pass again.
+Status: complete.
 
-## Scope and ownership
+## Contracts and decisions
 
-Native synthesis owns native support, operand direction, numerical
-decomposition, and fusion decisions. Routing uses those read-only decisions for
-candidate selection and bounded first-SWAP guidance. It ranks native two-qubit
-count, then maximum block qubit-dependency depth, then existing candidate order.
-Unknown costs fall back to SWAP count after successful native scores. Final
-synthesis remains authoritative. Only the winning route is materialized.
+Native synthesis owns cost decisions. Routing ranks estimated native two-qubit
+count, then maximum block dependency depth, then candidate order. Unknown costs
+fall back to SWAP count after available estimates. Final synthesis owns emitted
+gates and unsupported-operation diagnostics.
 
-Counts include branch reconciliation and loop restoration, with each body
-counted statically. Depth does not model classical scheduling or runtime control
-flow. Forward/backward layout refinement, trial generation, seeds, options,
-bounded Arena storage, and distance-reducing fallback retain their contracts.
+Index routing wires by physical site and retain Layout as the sole mapping to
+logical qubits. Apply the same traversal rules with and without native costs.
+Keep optional cost tracking beside each block state. Virtual routing and IR
+emission differ only at SWAP and region boundaries. Preserve frontier traversal,
+A*, bounded Arena storage, branch convergence, loop restoration, seeds, trial
+generation, options, and cache capacities. Add no public API or strategy
+framework.
 
-## Current simplifications
+The independent SinkOp fix preserves producers still used while SCF forwards
+idle loop results. It was published as PR #2610 and merged. PR #2607 now targets
+main and excludes that fix from its diff.
 
-- Skip native-cost preparation when greedy placement needs no routing.
-- Stop shared precomputation once its bounded table is full.
-- Keep one full decomposition record per cache entry; the most recent query uses
-  an index instead of copying its matrix, entangler, and decomposition.
-- Keep exact matrix keys, seed binding, unavailable results, and per-traversal
-  caches. No experimental controls, counters, locks, or approximate keys enter
-  production.
+### Completed work
 
-Native count remains primary. Calibration-aware fidelity and timed success
-probability need their own validated inputs; no speculative scoring framework is
-added here.
+- [x] Publish the independently validated idle-loop fix (#2610).
+- [x] Replace WireInfos with physical-site slots in one reviewable commit.
+- [x] Simplify routing and region flow in a separate commit.
+- [x] Validate cold/hot agreement, semantics, fallback, boundaries, and
+      determinism.
+- [x] Compare quality and resources with frozen revision 3bd27caba.
+- [x] Update pass documentation and #2607 with fresh plots and measured
+      limitations.
 
-## Experiments and validation
+### Validation and acceptance
 
-- [x] Publish the independent wide-RUS DD addition fix as #2606. Native DD and
-      QCO utility tests, 54/120/150-qubit sampling, and lint pass.
-- [x] Consult an independent synthesis/routing specialist with Matthias's
-      original comments and TZAP. Review cache lifetime and numerical contracts.
-- [x] Compare native guidance on/off across fourteen inputs, ten families, five
-      seeds, and 4/20/40/80 trials: all 560 compilations succeed. At twenty
-      trials, guidance reduces aggregate native count by 1.13%. Selected
-      estimates match emitted count and depth. More trials improve minima, but
-      do not uniformly narrow seed spread. Preserve guidance and the existing
-      trial default.
-- [x] Compare shared/local/full cache sizes and record representation across 732
-      process measurements. All cache pairs preserve exact output hashes and
-      stage metrics. Keep capacities 1024/64/64; alternatives do not win
-      consistently. The full-decomposition index removes duplicate state, but
-      the measurements do not establish a uniform speedup.
-- [x] Run final mapping, synthesis, compiler, and QCO IR tests: 996 pass.
-      Whole-file C++ lint and repository lint pass. Independent cache review and
-      the full complexity review leave no further scoped findings.
-- [x] Regenerate width, largest-input, structured, semantic, timing, and Grover
-      scaling comparisons. The combined flat cohort has 868 paired successes, no
-      lost baseline compilation successes, 6.92% fewer native two-qubit gates,
-      6.77% lower depth, and 1.87% fewer SWAPs. Native wins/ties/losses are
-      528/285/55; QPE accounts for 32 losses.
-- [x] Validate all 52 small semantic cases and ten full-capacity RUS solution
-      outputs. The independent DD sampler finds six incorrect baseline RUS
-      outputs. Excluding these leaves fourteen paired structured cases with a
-      0.40% native-count reduction. Compilation-only counts are not quality
-      evidence for an incorrect baseline output.
-- [x] Repeat dedicated timing with five process repeats for seven original cases
-      and three for the expanded sweep. Across 82 successful expanded
-      configurations, native count falls 7.20%, while summed median wall time,
-      CPU, and peak RSS rise 4.05%, 23.66%, and 2.09%. The original seven cases
-      have 6.12% fewer native gates and 8.53% more wall time. These are
-      descriptive shared-host measurements, not uniform improvements.
-- [x] Repeat the 16/64/256-iteration Grover resource grid with four/twenty
-      trials and serial/parallel execution. All repeat and serial/parallel
-      output hashes agree. The largest parallel case has unchanged median wall
-      time, but 15.02% more CPU, 1.49% more RSS, and 1.56% more native gates.
-      This individual regression remains in the report.
+Run mapping, synthesis, compiler, and QCO IR suites; compile changed tests with
+GCC and Clang; run whole-file C++ lint and repository lint. Preserve coherent
+state, linearity, target conformance, symbolic boundaries, topology-only
+targets, idle sites, tensor tails, all region forms, negative credits, and
+bounded fallback.
 
-The timing guard checks build/test tools and native executables in other
-experiment directories. Provisional batches with incomplete interference
-detection remain archived and are excluded from the final timing summaries. The
-final publication rebase adds only the upstream DD fix, outside routing and
-synthesis. Benchmark plots retain their measured revisions; they are not
-presented as new measurements of the rebased commit.
+Reuse the archived broad cohorts with seeds 7/99 and separate largest-input
+results. No lost successful compilations or semantic regressions are allowed.
+Aggregate native two-qubit count may increase at most 1% against 3bd27caba,
+separately for flat and structured inputs. Original seven-case and expanded
+timing cohorts may each increase at most 3% in summed median wall time. Report
+SWAPs, depth, CPU, RSS, family/architecture/width breakdowns, individual losses,
+and Grover scaling. Keep benchmark artifacts outside the repository. The prior
+comparison with main remains historical evidence until replaced by fresh
+results.
 
-Artifacts remain outside the repository at
-`/home/nvidia/.codex/experiments/pr2562-uniform-routing-20260922/`. The prior
-completed comparison is preserved under `pr2562-arena-comparison-20260922`.
-Existing untracked work is checked against the starting hash manifest.
+### Results
+
+The independent fix merged as #2610. The signed routing commits separate
+physical-site state (`ef3a2e1b3`) from traversal and region cleanup
+(`7516fc490`). The full mapping implementation loses 405 lines and 21
+conditional statements. Native-cost availability no longer selects wire or
+region semantics.
+
+Against `3bd27caba`, flat native count increases 0.19% and structured native
+count falls 17.96%. No successful compilation is lost. The separate largest
+cohort increases 1.23% in native count and 7.62% in dependency depth. Original
+seven-case wall time increases 2.92%; expanded 92-case wall time increases
+0.15%. All four acceptance gates pass, with little margin on the first timing
+gate. CPU increases 22.08% and 9.70% in those timing cohorts; RSS changes +6.62%
+and -0.60%. These results do not imply uniform performance improvement.
+
+All 997 affected tests, GCC and Clang compilation, whole-file C++ lint, and
+repository lint pass. The 52 ordinary semantic cases per revision and ten wide
+RUS circuit/seed checks per revision pass. Grover repeats and serial/parallel
+outputs match within each revision. Source, binary, input, and harness hashes
+are recorded; original untracked files are unchanged.
+
+External artifacts, including 14 plots, all individual losses, family,
+architecture, width, timing, CPU, RSS, and resource-grid breakdowns, live in
+`/home/nvidia/.codex/experiments/pr2607-routing-simplification-20260923/`.
