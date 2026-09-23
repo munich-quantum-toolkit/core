@@ -1,8 +1,12 @@
 # Native cost in routing selection
 
 Status: complete. Shared analysis and routing are implemented and rebased on
-upstream main `e82bb0f0e`, including Arena storage from #2598. Cache tuning,
-independent review, validation, and the refreshed comparison are complete.
+upstream main `949bf5cf6`, including Arena storage from #2598 and the DD fix
+from #2606. Cache tuning, independent review, and the comparison were completed
+before this final rebase; their measured baseline remains `e82bb0f0e` and their
+measured implementation is `0e78f1b59`. The final publication review found no
+further safe simplifications. After rebasing, all 996 affected tests, whole-file
+C++ lint, and repository lint pass again.
 
 ## Scope and ownership
 
@@ -76,8 +80,10 @@ added here.
 
 The timing guard checks build/test tools and native executables in other
 experiment directories. Provisional batches with incomplete interference
-detection remain archived and are excluded from the final timing summaries. No
-routing commit is pushed as part of this follow-up.
+detection remain archived and are excluded from the final timing summaries. The
+final publication rebase adds only the upstream DD fix, outside routing and
+synthesis. Benchmark plots retain their measured revisions; they are not
+presented as new measurements of the rebased commit.
 
 Artifacts remain outside the repository at
 `/home/nvidia/.codex/experiments/pr2562-uniform-routing-20260922/`. The prior
