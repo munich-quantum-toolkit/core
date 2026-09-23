@@ -11,13 +11,13 @@
 #include "qdmi/Client.hpp"
 #include "qdmi/common/Common.hpp"
 
-#include <cstdlib>
 #include <filesystem>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 #include <optional>
 #include <qdmi/constants.h>
 #include <stdexcept>
+#include <stdlib.h> /// NOLINT(modernize-deprecated-headers): POSIX environment functions
 #include <string>
 #include <string_view>
 
