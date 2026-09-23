@@ -106,3 +106,50 @@ dead routing failure paths merged in #2616. This PR is rebased on main at
 `9cd5bfc87`, with those changes excluded from its review diff. The
 native-routing implementation, tests, and pass documentation are unchanged from
 `30bb32f18`.
+
+### Current upstream comparison
+
+Rebased onto `e7b37b7a4`, preserving #2559's symbolic Euler-chain synthesis and
+target-specific single-qubit optimization. The conflict resolution retains the
+direct target header and both required pass includes.
+
+Repeated the complete archived evaluation against this main revision: width and
+expanded flat cohorts, structured inputs, separate largest inputs, semantic
+sampling, wide RUS sampling, both repeated timing cohorts, and the Grover
+resource grid. Inputs, seeds, trial counts, and cache capacities are unchanged.
+The earlier 1%/3% gates describe the refactor comparison against `3bd27caba`;
+the current comparison measures the complete PR against upstream main.
+
+Both revisions use identical Clang 23 release settings and ThinLTO. Build and
+lint work finished before timing collection. Source, binary, input, and harness
+hashes accompany the fresh plots, individual losses, resource measurements, and
+limitations in #2607.
+
+Artifacts:
+`/home/nvidia/.codex/experiments/pr2607-upstream-evaluation-20260923/`.
+
+The fresh comparison measures PR implementation `86431dc5c` against upstream
+main `e7b37b7a4`. Across 868 successful flat pairs, native two-qubit count falls
+6.58%, inserted SWAPs fall 1.73%, and dependency depth falls 2.36%. The separate
+45-pair largest cohort reduces native count 3.23% but increases depth 4.26%. No
+successful compilation is lost; 24 flat pairs hit the same unrolling limit on
+both revisions.
+
+The PR passes all 52 ordinary semantic cases, ten wide RUS checks, and ten
+additional RUS timing-case checks. Main fails ten ordinary RUS cases, six wide
+checks, and nine timing checks. Keep these failures visible: exclude the exact
+15 affected quality pairs and nine timing cases from paired claims, retaining
+all raw results. Unchecked structured outputs are not proved equivalent.
+
+Wall time increases 6.93% in the original seven-case cohort and 5.87% over the
+83 eligible expanded timing cases. CPU increases 56.89% and 32.63%; aggregate
+peak RSS increases 7.15% and 1.80%. The largest parallel Grover case changes
+from 3.89 to 3.86 seconds, 8.48 to 9.81 CPU seconds, and 682.95 to 691.24 MiB.
+These measurements show a native-count benefit, not a uniform resource gain.
+
+All 999 affected C++ tests, three CLI checks, GCC compilation checks, whole-file
+C++ lint, and repository lint pass. All Grover repetitions and serial/parallel
+output hashes match within each revision. The artifact record contains 14 fresh
+plots, individual losses, the full resource grid, exact inputs and revisions,
+and the observed baseline semantic failures. Original untracked work remains
+unchanged. Only this plan changes after measurement.
