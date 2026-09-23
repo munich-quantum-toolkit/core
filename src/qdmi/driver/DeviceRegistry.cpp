@@ -17,6 +17,7 @@
 
 #include "nlohmann/json.hpp"
 #include "nlohmann/json_fwd.hpp"
+#include "qdmi/constants.h"
 
 #include <algorithm>
 #include <cstddef>

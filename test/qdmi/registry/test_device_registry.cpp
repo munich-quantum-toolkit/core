@@ -14,6 +14,7 @@
 #include "DeviceRegistry.hpp"
 
 #include "gtest/gtest.h"
+#include "qdmi/constants.h"
 
 #include <algorithm>
 #include <filesystem>

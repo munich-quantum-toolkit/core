@@ -11,15 +11,13 @@
 #include "qdmi/Client.hpp"
 #include "qdmi/common/Common.hpp"
 
+#include <cstdlib>
+#include <filesystem>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
-#include <qdmi/constants.h>
-/// POSIX declares setenv and unsetenv in this compatibility header.
-/// NOLINTNEXTLINE(modernize-deprecated-headers)
-#include <filesystem>
 #include <optional>
+#include <qdmi/constants.h>
 #include <stdexcept>
-#include <stdlib.h>
 #include <string>
 #include <string_view>
 

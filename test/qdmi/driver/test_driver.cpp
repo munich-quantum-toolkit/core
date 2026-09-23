@@ -19,13 +19,16 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <barrier>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <iterator>
 #include <memory>
 #include <optional>
@@ -1497,7 +1500,7 @@ TEST(DeviceRegistrationTest, ValidatesHistogramKeyValueCounts) {
   for (const auto* keys : {"", "00", "00,11"}) {
     const auto device = qdmi::default_driver::openDevice(
         "test.session-overrides",
-        std::string{"{\"custom3\":\""} + keys + "\"}");
+        std::string{R"({"custom3":")"} + keys + R"("})");
     const auto job =
         device.submitJob("OPENQASM 2.0;", QDMI_PROGRAM_FORMAT_QASM2);
     if (std::string_view(keys) == "00,11") {
