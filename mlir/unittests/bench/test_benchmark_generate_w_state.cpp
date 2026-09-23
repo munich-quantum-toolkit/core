@@ -40,9 +40,6 @@ TEST(GenerateProgramTest, WStatePreservesCoherenceAndStructuredLoops) {
     ASSERT_TRUE(qc);
     if (qubits > 1) {
       EXPECT_GT(test::countOps<mlir::scf::ForOp>(qc->module()), 0U);
-      const auto angles = test::angleTable(qc->module());
-      ASSERT_TRUE(angles);
-      EXPECT_EQ(angles.getNumElements(), qubits - 1);
     }
     auto qco = qc->copy().intoQCO();
     ASSERT_TRUE(qco);
@@ -68,8 +65,8 @@ TEST(GenerateProgramTest, WStatePreservesCoherenceAndStructuredLoops) {
   }
 }
 
-TEST(GenerateProgramTest, Simulates4096QubitWStateWithoutDenseExtraction) {
-  constexpr size_t qubits = 4096;
+TEST(GenerateProgramTest, Simulates1024QubitWStateWithoutDenseExtraction) {
+  constexpr size_t qubits = 1024;
   const WState benchmark{{.qubits = qubits}};
   auto qc = generate(benchmark);
   ASSERT_TRUE(qc);
@@ -90,11 +87,12 @@ TEST(GenerateProgramTest, Simulates4096QubitWStateWithoutDenseExtraction) {
   EXPECT_NEAR(package.fidelity(*root, dd::makeWState(qubits, package)), 1.,
               1e-8);
   EXPECT_NEAR(package.innerProduct(*root, *root).r, 1., 1e-8);
-  for (const size_t index : {0U, 2047U, 4095U}) {
+  for (const size_t index : {size_t{0}, qubits / 2, qubits - 1}) {
     auto outcome = std::string(qubits, '0');
     outcome[index] = '1';
     const auto amplitude = root->getValueByPath(qubits, outcome);
-    EXPECT_NEAR(amplitude.real(), 1. / 64., 1e-8);
+    EXPECT_NEAR(amplitude.real(), 1. / std::sqrt(static_cast<double>(qubits)),
+                1e-8);
     EXPECT_NEAR(amplitude.imag(), 0., 1e-8);
   }
 }

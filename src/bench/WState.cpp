@@ -20,7 +20,6 @@
 #include <limits>
 #include <stdexcept>
 #include <string_view>
-#include <vector>
 
 namespace mqt::bench {
 
@@ -28,10 +27,9 @@ WState::WState(const WStateOptions options)
     : options_(options), output_{.name = "result", .width = options.qubits} {
   if (options.qubits == 0 ||
       options.qubits >
-          static_cast<size_t>(std::numeric_limits<int64_t>::max()) ||
-      options.qubits - 1 > std::vector<double>{}.max_size()) {
+          static_cast<size_t>(std::numeric_limits<int64_t>::max())) {
     throw std::invalid_argument("W-state qubits must be positive and fit "
-                                "circuit dimensions and angle storage");
+                                "circuit dimensions");
   }
 }
 const WStateOptions& WState::options() const noexcept { return options_; }

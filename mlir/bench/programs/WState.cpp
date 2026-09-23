@@ -15,19 +15,11 @@
 #include "Programs.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/Tensor/IR/Tensor.h"
-#include "mlir/IR/BuiltinAttributes.h"
-#include "mlir/IR/BuiltinTypes.h"
+#include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/IR/Value.h"
-#include "mlir/IR/ValueRange.h"
 #include "mlir/Support/LLVM.h"
 
-#include "llvm/ADT/ArrayRef.h"
-
-#include <cmath>
-#include <cstddef>
 #include <cstdint>
-#include <vector>
 
 namespace mqt::bench {
 using namespace mlir;
@@ -37,25 +29,23 @@ SmallVector<Value> wState(qc::QCProgramBuilder& b, const WState& benchmark) {
   auto q = b.allocQubitRegisterStorage(size, "q");
   auto result = b.allocClassicalBitRegister(size, benchmark.output().name);
   b.x(b.loadQubit(q, b.indexConstant(0)));
-  if (size > 1) {
-    std::vector<double> angles(static_cast<size_t>(size - 1));
-    for (size_t i = 0; i < angles.size(); ++i) {
-      angles[i] = 2. * std::acos(1. / std::sqrt(static_cast<double>(size) -
-                                                static_cast<double>(i)));
-    }
-    const auto type = RankedTensorType::get({size - 1}, b.getF64Type());
-    auto table = arith::ConstantOp::create(
-        b, DenseElementsAttr::get(type, ArrayRef<double>(angles)));
-    auto one = b.indexConstant(1);
-    b.scfFor(0, size - 1, 1, [&](Value index) {
-      auto next = arith::AddIOp::create(b, index, one);
-      auto left = b.loadQubit(q, index);
-      auto right = b.loadQubit(q, next);
-      auto angle = tensor::ExtractOp::create(b, table, ValueRange{index});
-      b.cry(angle, left, right);
-      b.cx(right, left);
-    });
-  }
+  auto count = b.indexConstant(size);
+  auto step = b.indexConstant(1);
+  auto one = b.floatConstant(1.);
+  auto two = b.floatConstant(2.);
+  b.scfFor(0, size - 1, 1, [&](Value index) {
+    auto remaining = arith::SubIOp::create(b, count, index);
+    auto integer = arith::IndexCastOp::create(b, b.getI64Type(), remaining);
+    auto floating = arith::SIToFPOp::create(b, b.getF64Type(), integer);
+    auto root = math::SqrtOp::create(b, floating);
+    auto cosine = arith::DivFOp::create(b, one, root);
+    auto angle = arith::MulFOp::create(b, two, math::AcosOp::create(b, cosine));
+    auto next = arith::AddIOp::create(b, index, step);
+    auto left = b.loadQubit(q, index);
+    auto right = b.loadQubit(q, next);
+    b.cry(angle, left, right);
+    b.cx(right, left);
+  });
   b.measureQubitRegister(q, result, size);
   return {result};
 }
