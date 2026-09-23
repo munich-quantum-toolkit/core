@@ -697,15 +697,22 @@ def test_spank_validation() -> None:
     assert_released()
 
     configure()
+    job(*environment, *allocation, "--mpi=pmi2", "python3", "-c", program, timeout=60)
+    assert body.exists()
+    assert len(calls()) == 4, calls()
+    assert_released()
+
+    configure()
     plugstack = RUNTIME / "plugstack.conf"
     plugstack.write_text(
         "required /usr/local/lib/slurm/mqt-test-validation-environment.so\n" + plugstack.read_text(encoding="utf-8"),
         encoding="utf-8",
     )
-    result = job(*environment, *allocation, "/bin/true", check=False, timeout=60)
-    assert result.returncode != 0
-    assert "provider configuration differs between tasks" in result.stdout + result.stderr
-    assert len(calls()) <= 2
+    job(*environment, *allocation, "python3", "-c", program, timeout=60)
+    assert body.exists()
+    records = calls()
+    assert len(records) == 4, records
+    assert {record["reference"] for record in records} == {"job-value", "task-specific"}
     assert_released()
 
     configure()
@@ -735,6 +742,7 @@ def test_spank_validation() -> None:
             *environment,
             f"MQT_SLURM_CHECKER_MODE={mode}",
             *allocation,
+            "--mpi=pmi2",
             "python3",
             "-c",
             program,
@@ -746,7 +754,7 @@ def test_spank_validation() -> None:
         assert "test provider credential" not in result.stdout + result.stderr
         assert time.monotonic() - started < 15
         records = calls()
-        assert len(records) == 2, records
+        assert len(records) == 4, records
         assert_released()
         assert_no_processes(records)
 

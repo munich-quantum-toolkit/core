@@ -214,20 +214,16 @@ must name one configured device with an implicit count or `:1`.
 
 The module runs the checker as the job user with a copy of the job environment
 after configuration injection. It does not load a provider in a Slurm daemon. An
-unavailable device, checker failure, or timeout prevents matching tasks on that
-node from starting and does not drain the node. The checker still accepts both
-`IDLE` and `BUSY`; it does not reserve the device or authorize a later
-submission.
+unavailable device, checker failure, or timeout prevents tasks using that check
+from starting and does not drain the node. The checker still accepts both `IDLE`
+and `BUSY`; it does not reserve the device or authorize a later submission.
 
-Each node runs at most one check per job step. Tasks on another node may already
-have started when a check fails. Later tasks on the same node compare their
-configuration with the first task's snapshot before they reuse its result.
-Different configuration rejects that task; earlier tasks may already have
-started. The snapshot includes the device ID and all environment entries except
-`SLURM_` and `SLURMD_` metadata. Provider configuration must be the same across
-tasks and must not depend on those metadata variables. Environments larger than
-128 KiB are rejected when validation is enabled. MPI and task plugins that add
-different non-Slurm environment values can also cause a mismatch.
+Each node caches the first check per job step. Tasks with matching configuration
+reuse its result; tasks with different configuration run their own bounded
+check. Other tasks may already have started when a check fails. The comparison
+includes the device ID and all environment entries except `SLURM_` and `SLURMD_`
+metadata. Provider configuration must not depend on those metadata variables.
+Environments larger than 128 KiB are rejected when validation is enabled.
 
 Place the module after other plugins that set provider configuration. Slurm runs
 task prologs after the validation hook, so task prologs must not change provider

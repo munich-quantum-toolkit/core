@@ -108,13 +108,14 @@ public:
     }
 
     while (true) {
-      const auto state = shared_->state.load(std::memory_order_acquire);
+      auto state = shared_->state.load(std::memory_order_acquire);
       if (state >= State::Checking &&
           (shared_->size != snapshot.size() ||
            std::memcmp(shared_->snapshot.data(), snapshot.data(),
                        snapshot.size()) != 0)) {
-        throw std::runtime_error(
-            "provider configuration differs between tasks");
+        state = execute(executable, timeout, device, environment)
+                    ? State::Available
+                    : State::Failed;
       }
       if (state == State::Available) {
         return;
