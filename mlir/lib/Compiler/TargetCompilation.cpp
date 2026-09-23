@@ -109,8 +109,9 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   /// representation and its symbolic phase correction.
   if (const auto basis = target.synthesisBasis();
       !basis || basis->singleQubit == CompilerTarget::SingleQubitBasis::U) {
-    // Retain the U optimizer's treatment of isolated gates on U-based and
-    // unrestricted targets.
+    /// The U optimizer also merges dynamic controlled bodies into native U
+    /// gates and preserves isolated gates. Native synthesis does not yet cover
+    /// both behaviors; keep this path until their synthesis contracts agree.
     populateDefaultQCOOptimizationPipeline(pm);
   }
   switch (target.connectivityKind()) {

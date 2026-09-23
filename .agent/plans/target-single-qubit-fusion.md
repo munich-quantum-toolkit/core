@@ -1,6 +1,8 @@
 # Target fusion and bounded one-qubit angles
 
-Status: complete.
+Status: implemented. Compact H/RZ synthesis and the PR-local Python reductions
+are complete. Broader consolidation belongs in the follow-up to PR #2559, “Unify
+one-qubit synthesis and clarify test ownership.”
 
 ## Scope and ownership
 
@@ -36,14 +38,24 @@ precondition or a new angle type, verifier, frontend attribute, or exporter.
 
 ## Validation
 
-- The optimized native build passed. All 260 focused compiler, target-synthesis,
-  and rotation-merge CTests passed.
-- All 109 Python MLIR tests passed, including Qiskit late binding and jeff
-  export. Six independent numerical and export reproducers also passed.
-- Repository lint and whole-file C++ lint passed for the final changes.
+H/RZ pairs in either order use Hadamard conjugation and the existing Euler
+emitters: one U gate or at most three gates in the other bases. Tests check
+exact phase under control and late binding after Qiskit and jeff export. Native
+synthesis restores controlled U2 to supported U after canonicalization. The U
+pipeline guard remains until native synthesis handles dynamic controlled bodies
+and isolated gates with the same contracts.
+
+Validation for this update:
+
+- The optimized native build passed. All 329 focused Euler/fusion,
+  rotation-merge, native-synthesis, and compiler-pipeline CTests passed.
+- All 97 Python MLIR tests passed with Qiskit and jeff available. This PR's
+  additions now contain seven consumer cases; numerical sweeps live in C++.
+- Whole-file C++ lint passed with no findings. Repository lint checks the
+  complete update before publication.
 
 The focused CTest filter is
-`MergeSingleQubitRotationGatesTest|TargetSynthesisTest|CompilerPipelineTest`.
+`Euler|ZSXXShortcut|FuseSingleQubitUnitaryRuns|MergeSingleQubitRotationGatesTest|TargetSynthesisTest|CompilerPipelineTest`.
 The Python entry point is `pytest test/python/test_mlir.py`, with the bundled
 DDSIM and SC device manifests configured. Routine lint commands are documented
 in the root agent guide.

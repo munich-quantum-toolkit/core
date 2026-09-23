@@ -1078,7 +1078,8 @@ struct MergeSingleQubitRotationGatesPattern final
   }
 
   /// Reuse Euler angles when the chain and output share their outer axis.
-  /// Either outer rotation may be absent. Normalize gate operands before
+  /// Either outer rotation may be absent. H/RZ pairs use H RZ = RX H to
+  /// align the rotation with the output basis. Normalize gate operands before
   /// adding Euler offsets or computing the U phase correction.
   static LogicalResult
   tryMergeDirectChain(MutableArrayRef<UnitaryOpInterface> chain,
@@ -1092,43 +1093,65 @@ struct MergeSingleQubitRotationGatesPattern final
                     : isa<RZOp>(op.getOperation());
     };
 
+    const bool hadamardPair =
+        chain.size() == 2 &&
+        ((isa<HOp>(chain.front()) && isa<RZOp>(chain.back())) ||
+         (isa<RZOp>(chain.front()) && isa<HOp>(chain.back())));
     const size_t middle = chain.size() > 1 && isOuter(chain.front()) ? 1 : 0;
-    if (chain.size() <= middle || chain.size() > middle + 2 ||
-        !isa<RXOp, RYOp, RZOp>(chain[middle].getOperation()) ||
-        (chain.size() > 1 && isOuter(chain[middle])) ||
-        (chain.size() == middle + 2 && !isOuter(chain.back()))) {
+    if (!hadamardPair &&
+        (chain.size() <= middle || chain.size() > middle + 2 ||
+         !isa<RXOp, RYOp, RZOp>(chain[middle].getOperation()) ||
+         (chain.size() > 1 && isOuter(chain[middle])) ||
+         (chain.size() == middle + 2 && !isOuter(chain.back())))) {
       return failure();
     }
 
-    // Check the complete run before creating or replacing any operations.
+    /// Check the complete run before creating or replacing any operations.
     const Location loc = chain.front()->getLoc();
     const auto consts = makeConsts<Value>(rewriter, loc);
     const auto angle = [&](UnitaryOpInterface op) {
       return *gateParam<Value>(op, 0, rewriter, loc);
     };
     RuntimeEulerAngles angles{
-        .theta = angle(chain[middle]),
+        .theta = consts.zero,
         .phi = consts.zero,
         .lambda = consts.zero,
         .phase = consts.zero,
     };
-    if (!outerX) {
-      angles = directZYZAnglesFromGate(chain[middle], rewriter, consts);
-    } else if (isOuter(chain[middle])) {
-      angles.lambda = angles.theta;
-      angles.theta = consts.zero;
-    } else if (const bool middleZ = isa<RZOp>(chain[middle].getOperation());
-               middleZ != (basis == decomposition::SingleQubitBasis::XZX)) {
-      // RX conjugation exchanges Y and Z, with opposite quarter-turns.
-      const auto halfPi = consts.pi / consts.two;
-      angles.phi = middleZ ? halfPi : -halfPi;
-      angles.lambda = -angles.phi;
-    }
-    if (middle == 1) {
-      angles.lambda = sumAngles(angles.lambda, angle(chain.front()));
-    }
-    if (chain.size() == middle + 2) {
-      angles.phi = sumAngles(angles.phi, angle(chain.back()));
+    if (hadamardPair) {
+      const auto fixed = decomposition::anglesFromUnitary(
+          HOp::getUnitaryMatrix(),
+          outerX ? basis : decomposition::SingleQubitBasis::ZYZ);
+      angles = {
+          .theta = Val<Value>::constant(rewriter, loc, fixed.theta),
+          .phi = Val<Value>::constant(rewriter, loc, fixed.phi),
+          .lambda = Val<Value>::constant(rewriter, loc, fixed.lambda),
+          .phase = Val<Value>::constant(rewriter, loc, fixed.phase),
+      };
+      const bool rotationFirst = isa<RZOp>(chain.front());
+      auto& outer = rotationFirst != outerX ? angles.lambda : angles.phi;
+      outer =
+          sumAngles(outer, angle(rotationFirst ? chain.front() : chain.back()));
+    } else {
+      angles.theta = angle(chain[middle]);
+      if (!outerX) {
+        angles = directZYZAnglesFromGate(chain[middle], rewriter, consts);
+      } else if (isOuter(chain[middle])) {
+        angles.lambda = angles.theta;
+        angles.theta = consts.zero;
+      } else if (const bool middleZ = isa<RZOp>(chain[middle].getOperation());
+                 middleZ != (basis == decomposition::SingleQubitBasis::XZX)) {
+        /// RX conjugation exchanges Y and Z, with opposite quarter-turns.
+        const auto halfPi = consts.pi / consts.two;
+        angles.phi = middleZ ? halfPi : -halfPi;
+        angles.lambda = -angles.phi;
+      }
+      if (middle == 1) {
+        angles.lambda = sumAngles(angles.lambda, angle(chain.front()));
+      }
+      if (chain.size() == middle + 2) {
+        angles.phi = sumAngles(angles.phi, angle(chain.back()));
+      }
     }
 
     for (auto op : llvm::drop_begin(chain)) {

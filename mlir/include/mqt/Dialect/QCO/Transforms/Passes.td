@@ -46,7 +46,8 @@ def MergeSingleQubitRotationGates
     When every angle in the chain is a compile-time constant, the same algorithm
     runs on host scalars and emits constant `U` / `gphase` results directly.
     Symbolic RZ-RX-RZ and RZ-RY-RZ chains reuse their Euler angles directly;
-    either outer RZ may be absent. Gate operands are normalized modulo `4*pi`
+    either outer RZ may be absent. H/RZ pairs in either order also use direct
+    angles via Hadamard conjugation. Gate operands are normalized modulo `4*pi`
     before angle arithmetic, preserving the full unitary under control.
     Constants fold immediately; symbolic operands use `4*atan(tan(angle/4))`,
     which remains bindable after Qiskit and jeff export. This bounds each input
@@ -97,6 +98,8 @@ def FuseSingleQubitUnitaryRuns
     `zxz`, and `zsxx` bases; XZX/XYX chains do so in `xzx`, `xyx`, and `r`.
     Either outer rotation may be absent. Gate operands are normalized modulo
     `4*pi` before angle arithmetic, as in `merge-single-qubit-rotation-gates`.
+    H/RZ pairs in either order use direct angles in every basis, requiring at
+    most three gates (one in the `u` basis).
     These conversions need no quaternion extraction or conditional expressions.
     Other dynamic chains use runtime Euler-angle extraction.
   }];
