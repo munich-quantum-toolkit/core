@@ -34,7 +34,7 @@ include("${MQT_CORE_QDMI_DEVICE_TARGETS}")
 get_target_property(client_imported MQT::CoreQDMI IMPORTED)
 get_target_property(driver_imported MQT::CoreQDMIDriver IMPORTED)
 if(NOT client_imported OR NOT driver_imported)
-  message(FATAL_ERROR "The installed QDMI Client and Driver targets must be imported")
+  message(FATAL_ERROR "The installed QDMI client and driver targets must be imported")
 endif()
 
 set(device mqt-core-qdmi-metadata-device)
@@ -108,7 +108,7 @@ int main(int argc, char** argv) {
   return client != nullptr && driver != nullptr ? 0 : 1;
 }
 #else
-#include "qdmi/Client.hpp"
+#include "mqt-core/qdmi/Client.hpp"
 
 int main() {
   const qdmi::Session session;
