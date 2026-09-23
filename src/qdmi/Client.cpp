@@ -40,18 +40,12 @@ namespace qdmi {
 namespace {
 /// Rejects the formats that `submitJob` cannot carry.
 /// A batch job's program is a list of job handles rather than a byte blob, so
-/// this API cannot express it at all. A calibration run has its own entry
-/// point, because its payload is optional and it takes no shot count.
+/// this API cannot express it at all.
 void rejectUnsupportedProgramFormat(const QDMI_Program_Format format) {
   if (format == QDMI_PROGRAM_FORMAT_BATCHJOB) {
     throw std::invalid_argument(
         "MQT Core does not support batch jobs. A batch job's program is a list "
         "of job handles, which this API cannot express");
-  }
-  if (format == QDMI_PROGRAM_FORMAT_CALIBRATION) {
-    throw std::invalid_argument(
-        "Use submitCalibrationJob (submit_calibration_job in Python) to "
-        "trigger a calibration run");
   }
 }
 template <typename T>
@@ -353,11 +347,6 @@ Device::getCouplingMap() const {
   return couplingMap;
 }
 
-std::optional<size_t> Device::getNeedsCalibration() const {
-  return queryProperty<std::optional<size_t>>(
-      QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION);
-}
-
 std::optional<size_t> Device::getQueueLength() const {
   return queryProperty<std::optional<size_t>>(QDMI_DEVICE_PROPERTY_QUEUELENGTH);
 }
@@ -486,8 +475,7 @@ Job Device::submitJob(const std::span<const std::byte> program,
 }
 
 Job Device::submitJobImpl(
-    const QDMI_Program_Format format,
-    const std::optional<std::span<const std::byte>> program,
+    const QDMI_Program_Format format, const std::span<const std::byte> program,
     const std::optional<size_t> numShots,
     const std::optional<CustomJobParameter>& custom1,
     const std::optional<CustomJobParameter>& custom2,
@@ -503,12 +491,10 @@ Job Device::submitJobImpl(
                                             QDMI_JOB_PARAMETER_PROGRAMFORMAT,
                                             sizeof(format), &format),
                      "Setting program format");
-  if (program.has_value()) {
-    qdmi::throwIfError(QDMI_job_set_parameter(jobWrapper,
-                                              QDMI_JOB_PARAMETER_PROGRAM,
-                                              program->size(), program->data()),
-                       "Setting program");
-  }
+  qdmi::throwIfError(QDMI_job_set_parameter(jobWrapper,
+                                            QDMI_JOB_PARAMETER_PROGRAM,
+                                            program.size(), program.data()),
+                     "Setting program");
   if (numShots.has_value()) {
     qdmi::throwIfError(QDMI_job_set_parameter(jobWrapper,
                                               QDMI_JOB_PARAMETER_SHOTSNUM,
@@ -534,32 +520,6 @@ Job Device::submitJobImpl(
 
   qdmi::throwIfError(QDMI_job_submit(jobWrapper), "Submitting job");
   return jobWrapper;
-}
-
-Job Device::submitCalibrationJob(
-    const std::optional<std::span<const std::byte>> program,
-    const std::optional<CustomJobParameter>& custom1,
-    const std::optional<CustomJobParameter>& custom2,
-    const std::optional<CustomJobParameter>& custom3,
-    const std::optional<CustomJobParameter>& custom4,
-    const std::optional<CustomJobParameter>& custom5) const {
-  const auto payload =
-      program.has_value() && !program->empty() ? program : std::nullopt;
-  return submitJobImpl(QDMI_PROGRAM_FORMAT_CALIBRATION, payload, std::nullopt,
-                       custom1, custom2, custom3, custom4, custom5);
-}
-
-Job Device::submitCalibrationJob(
-    const std::string& program,
-    const std::optional<CustomJobParameter>& custom1,
-    const std::optional<CustomJobParameter>& custom2,
-    const std::optional<CustomJobParameter>& custom3,
-    const std::optional<CustomJobParameter>& custom4,
-    const std::optional<CustomJobParameter>& custom5) const {
-  const auto bytes = std::as_bytes(
-      std::span(program.c_str(), static_cast<size_t>(program.size() + 1)));
-  return submitCalibrationJob(bytes, custom1, custom2, custom3, custom4,
-                              custom5);
 }
 
 Job Device::retrieveJobById(const std::string_view jobId) const {

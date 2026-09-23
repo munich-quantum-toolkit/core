@@ -147,7 +147,6 @@ TEST(JobParameters, ProgramFormatSupport) {
 
   // Unsupported → NOTSUPPORTED
   for (QDMI_Program_Format fmt : {
-           QDMI_PROGRAM_FORMAT_CALIBRATION,
            QDMI_PROGRAM_FORMAT_QPY,
            QDMI_PROGRAM_FORMAT_IQMJSON,
            QDMI_PROGRAM_FORMAT_CUSTOM1,
