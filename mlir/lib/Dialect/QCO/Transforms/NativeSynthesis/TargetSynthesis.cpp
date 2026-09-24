@@ -538,11 +538,11 @@ NativeCostTable::lookup(const Matrix4x4& matrix,
   return nullptr;
 }
 
-std::shared_ptr<const NativeCostTable>
+std::unique_ptr<const NativeCostTable>
 NativeCostTable::precompute(Operation* root, CompilerTarget::GateKind entangler,
                             uint64_t seed) {
   constexpr size_t capacity = 1024;
-  auto result = std::make_shared<NativeCostTable>();
+  auto result = std::make_unique<NativeCostTable>();
   result->seed_ = seed;
   const auto add = [&](const Matrix4x4& matrix) {
     if (result->entries_.size() == capacity) {

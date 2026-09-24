@@ -37,7 +37,7 @@ class UnitaryOpInterface;
 /// and operand direction remain the caller's responsibility.
 class NativeCostTable {
 public:
-  static std::shared_ptr<const NativeCostTable>
+  static std::unique_ptr<const NativeCostTable>
   precompute(Operation* root, CompilerTarget::GateKind entangler,
              uint64_t seed);
 
