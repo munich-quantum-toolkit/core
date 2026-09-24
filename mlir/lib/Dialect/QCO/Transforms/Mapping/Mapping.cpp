@@ -2005,7 +2005,7 @@ private:
         }
       }
     }
-    
+
     return stats;
   }
 
