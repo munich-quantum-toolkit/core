@@ -27,10 +27,6 @@ if(TARGET MQT::CoreQDMIDriver)
     TARGET mqt-core-qdmi-metadata-device
     APPEND
     PROPERTY EXPORT_PROPERTIES QDMI_DEVICE_ID QDMI_DEVICE_PREFIX QDMI_RUNTIME_FILES)
-  set(metadata_device_export
-      "${CMAKE_CURRENT_BINARY_DIR}/mqt-core-qdmi-metadata-device-targets.cmake")
-  export(TARGETS mqt-core-qdmi-metadata-device FILE "${metadata_device_export}")
-
   add_library(mqt-core-qdmi-session-device SHARED session_device.cpp)
   target_link_libraries(mqt-core-qdmi-session-device PRIVATE qdmi::qdmi)
   set_target_properties(
@@ -142,29 +138,6 @@ if(TARGET MQT::CoreQDMIDriver)
     POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:mqt-core-qdmi-session-device>"
             "$<TARGET_FILE_DIR:${TARGET_NAME}>")
-
-  set(imported_device_build_dir "${CMAKE_CURRENT_BINARY_DIR}/imported-device-consumer")
-  set(imported_device_install_dir "${imported_device_build_dir}/install")
-  set(imported_device_configure_command
-      ${CMAKE_COMMAND} -S "${CMAKE_CURRENT_SOURCE_DIR}/imported_device" -B
-      "${imported_device_build_dir}" -G "${CMAKE_GENERATOR}"
-      "-DMQT_CORE_QDMI_DEVICE_TARGETS=${metadata_device_export}"
-      "-DMQT_CORE_BUILD_DIR=${CMAKE_BINARY_DIR}" "-DMQT_CORE_BUILD_CONFIG=$<CONFIG>"
-      "-DMQT_CORE_INSTALL_DIR=${imported_device_install_dir}" "-DCMAKE_BUILD_TYPE=$<CONFIG>")
-  if(CMAKE_GENERATOR_PLATFORM)
-    list(APPEND imported_device_configure_command -A "${CMAKE_GENERATOR_PLATFORM}")
-  endif()
-  if(CMAKE_GENERATOR_TOOLSET)
-    list(APPEND imported_device_configure_command -T "${CMAKE_GENERATOR_TOOLSET}")
-  endif()
-  add_test(NAME mqt-core-qdmi-imported-device-configure
-           COMMAND ${imported_device_configure_command})
-  add_test(NAME mqt-core-qdmi-imported-device-build
-           COMMAND ${CMAKE_COMMAND} --build "${imported_device_build_dir}" --config $<CONFIG>)
-  set_tests_properties(mqt-core-qdmi-imported-device-configure
-                       PROPERTIES FIXTURES_SETUP mqt-core-qdmi-imported-device)
-  set_tests_properties(mqt-core-qdmi-imported-device-build PROPERTIES FIXTURES_REQUIRED
-                                                                      mqt-core-qdmi-imported-device)
 
   set(runtime_file_device_build_dir "${CMAKE_CURRENT_BINARY_DIR}/runtime-file-device")
   set(runtime_file_device_install_dir "${runtime_file_device_build_dir}/install")

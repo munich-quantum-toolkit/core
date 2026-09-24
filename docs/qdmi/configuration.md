@@ -214,24 +214,11 @@ A cluster can configure more than one license for a device. For example,
 The count is a Slurm admission limit. It is not an access permission, a provider
 availability check, or a provider queue length.
 
-## Relocatable packages and static consumers
+## Installed C++ applications
 
-Built-in targets generate manifests beside their runtime libraries in both build
-and install trees. Library paths in those fragments contain only the target
-filename, so moving an installed tree or Python wheel preserves discovery.
-Automatic discovery searches relative to the MQT Core Driver, not every library
-loaded by the process. A separately installed Python distribution can use the
-`mqt.core.qdmi.manifests` entry point described above. Other applications copy
-the manifest beside the Driver or register the definition by stable ID.
-
-A fully static executable has no portable shared-module location. Place the
-fragments beside the executable, point `MQT_CORE_QDMI_CONFIG_FILE` at a complete
-configuration, or use {cpp-api:func}`qdmi::Driver::registerDevice` and
-{cpp-api:func}`qdmi::Driver::open`. No install prefix is compiled into the
-manifests.
-
-An installed MQT Core CMake package provides a helper that colocates selected
-device libraries and manifests with an executable:
+The MQT Core Python distribution also supplies a CMake package. Use
+`find_package(mqt-core)` to link its C++ QDMI library and copy the driver and
+selected devices beside your application:
 
 ```cmake
 find_package(mqt-core CONFIG REQUIRED)
@@ -240,17 +227,22 @@ target_link_libraries(my-application PRIVATE MQT::CoreQDMI)
 mqt_copy_qdmi_runtime(my-application MQT::CoreQDMIScDevice MQT::CoreQDMI_DDSIM_Device)
 ```
 
-Inside an MQT Core build, omitting the device list copies every device
-registered through `mqt_configure_qdmi_device`. Installed consumers select the
-exported device targets they need, as shown above. The helper stages
-`MQT::CoreQDMI` and `MQT::CoreQDMIDriver` when those targets are available,
-whether they come from the current build or an installed CMake package. On
-Windows, it also stages the transitive runtime DLLs of both Core libraries and
-each selected device. During a build, the consumer uses its build RPATH rather
-than an unrelated final install RPATH.
+The helper copies shared libraries, device manifests, and configuration files.
+On Windows it also copies the DLLs those libraries depend on. Static libraries
+are linked into the application and need no copy. The application uses its build
+RPATH during the build. This also works with a source installation of MQT Core.
 
-An external device implementation does not need MQT Core as a build dependency.
-It can export its stable ID and prefix as target metadata:
+Manifests contain library filenames relative to their own directory. Keep each
+manifest beside its device library when moving an installation. The MQT Core
+QDMI driver discovers manifests beside itself; an explicit
+`MQT_CORE_QDMI_CONFIG_FILE` can instead select devices installed elsewhere.
+
+Inside a Core build, omitting the device list copies all devices registered
+through `mqt_configure_qdmi_device`. An installed consumer selects the exported
+targets it needs, as above.
+
+An external device implementation needs no Core build dependency. It can export
+its stable ID and prefix as target metadata:
 
 ```cmake
 set_target_properties(
@@ -263,9 +255,6 @@ set_property(
   PROPERTY EXPORT_PROPERTIES QDMI_DEVICE_ID QDMI_DEVICE_PREFIX)
 ```
 
-When `mqt_copy_qdmi_runtime` receives that built or imported target, it
-generates the relocatable manifest while copying the device. Device targets may
-also declare `RUNTIME_FILES` through `mqt_configure_qdmi_device`; their exported
-`QDMI_RUNTIME_FILES` basenames are copied beside the provider as part of the
-same operation. The result is one colocated directory with the Client, Driver,
-provider, manifest, provider assets, and required Windows DLLs.
+For such a target, `mqt_copy_qdmi_runtime` generates the manifest. Targets with
+an existing manifest can export `QDMI_MANIFEST_NAME` instead. Additional files
+listed in `QDMI_RUNTIME_FILES` are copied from the device library's directory.
