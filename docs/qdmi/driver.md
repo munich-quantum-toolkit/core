@@ -27,7 +27,9 @@ Each session selects a driver in this order:
 MQT Core validates the required functions and ABI major/minor versions before
 allocating a session. Patch differences are compatible. Sessions may use
 different drivers in the same process. Devices and jobs keep their originating
-session and library alive, so opening another driver does not invalidate them.
+session alive, so opening another driver does not invalidate them. Validated
+driver libraries remain loaded for the process lifetime, including calls from
+global destructors.
 
 The MQT Core QDMI driver shares device libraries across path aliases with the
 same symbol prefix. Independent sessions keep their own parameters. A slow

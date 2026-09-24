@@ -24,6 +24,7 @@
 #include <iterator>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <sstream>
@@ -218,6 +219,19 @@ template <class Function>
 
 [[nodiscard]] auto loadClient(const std::filesystem::path& path)
     -> std::shared_ptr<const detail::ClientAPI> {
+  struct DriverCache {
+    std::mutex mutex;
+    std::map<std::filesystem::path, std::shared_ptr<const detail::ClientAPI>>
+        drivers;
+  };
+  /// Keep validated drivers available to sessions in global destructors.
+  /// NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  static auto& cache = *new DriverCache;
+  const std::scoped_lock lock(cache.mutex);
+  if (const auto found = cache.drivers.find(path);
+      found != cache.drivers.end()) {
+    return found->second;
+  }
   auto* const library = openLibrary(path);
   if (library == nullptr) {
     throw std::runtime_error("Cannot load QDMI driver '" +
@@ -264,7 +278,7 @@ template <class Function>
   LOAD_CLIENT_SYMBOL(device_query_site_property);
   LOAD_CLIENT_SYMBOL(device_query_operation_property);
 #undef LOAD_CLIENT_SYMBOL
-  return api;
+  return cache.drivers.emplace(path, std::move(api)).first->second;
 }
 
 using SessionGuard =

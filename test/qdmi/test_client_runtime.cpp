@@ -22,6 +22,7 @@
 /// NOLINTNEXTLINE(modernize-deprecated-headers)
 #include <stdlib.h>
 #include <string>
+#include <system_error>
 #include <vector>
 
 namespace qdmi {
@@ -108,7 +109,9 @@ TEST(ClientRuntimeTest, ValidatesDriversAndRetainsSessions) {
               std::vector<std::string>{"test.fake.client"});
     EXPECT_EQ(first.getDevice("test.fake.client").getName(), "first-token");
   }
-  std::filesystem::remove(alternate);
+  /// Windows keeps a loaded driver DLL open until the process exits.
+  std::error_code cleanupError;
+  std::filesystem::remove(alternate, cleanupError);
   const auto firstDevices = first.getDevices();
   const auto secondDevices = second.getDevices();
   ASSERT_EQ(firstDevices.size(), 1U);

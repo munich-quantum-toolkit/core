@@ -173,8 +173,10 @@ struct DynamicLibraryCache {
 };
 
 [[nodiscard]] auto dynamicLibraryCache() -> DynamicLibraryCache& {
-  static DynamicLibraryCache cache;
-  return cache;
+  /// Match Driver::get(): providers must outlive sessions in global
+  /// destructors. NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  static auto* cache = new DynamicLibraryCache();
+  return *cache;
 }
 } // namespace
 
@@ -610,8 +612,9 @@ void validateDefinition(const DeviceDefinition& definition) {
 } // namespace
 
 auto Driver::get() -> Driver& {
-  static Driver instance;
-  return instance;
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  static auto* instance = new Driver();
+  return *instance;
 }
 
 Driver::Driver() {
