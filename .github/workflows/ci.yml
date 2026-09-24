@@ -182,6 +182,9 @@ jobs:
       enable-mypy: false
       setup-mlir: true
       llvm-version: 23.1.1
+    secrets:
+      APP_ID: ${{ secrets.APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
     permissions:
       contents: read
 
