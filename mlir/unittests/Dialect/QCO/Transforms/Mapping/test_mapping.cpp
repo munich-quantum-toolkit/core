@@ -25,6 +25,7 @@
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 #include "mqt/Support/Passes.h"
+#include "mqt/Support/RandomSeed.h"
 
 #include "gtest/gtest.h"
 
@@ -32,6 +33,7 @@
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/DialectRegistry.h"
@@ -3262,6 +3264,50 @@ TEST_F(MappingPassFixture, RejectOpaqueClassicalEffectsBeforeMutation) {
   EXPECT_TRUE(failed(pm.run(*moduleOp)));
   EXPECT_TRUE(diagnosed);
   EXPECT_EQ(printModule(*moduleOp), before);
+}
+
+TEST_F(MappingPassFixture, ReusePassAcrossTargetsAndSeeds) {
+  const auto topology = llvm::cantFail(CompilerTarget::create(
+      4, Connectivity::fromCouplings({{0, 1}, {1, 2}, {2, 3}}),
+      NativeOperations::unrestricted()));
+  const MappingPassOptions options{.ntrials = 4, .seed = 2023};
+  for (const bool parallel : {false, true}) {
+    context->enableMultithreading(parallel);
+    PassManager reused(context.get());
+    reused.addPass(createMappingPass(options));
+    for (const uint64_t seed : {7U, 99U}) {
+      for (const auto& target : {withNativeBasis(topology, "cz"), topology,
+                                 withNativeBasis(topology, "cx")}) {
+        for (const bool greedy : {false, true}) {
+          auto input = QCOProgramBuilder::build(
+              context.get(), [&](QCOProgramBuilder& builder) {
+                SmallVector<Value> qubits;
+                for (size_t i = 0; i < 4; ++i) {
+                  qubits.push_back(builder.allocQubit());
+                }
+                for (size_t i = 1; i < 4; ++i) {
+                  const size_t control = greedy ? i - 1 : 0;
+                  std::tie(qubits[control], qubits[i]) =
+                      builder.cx(qubits[control], qubits[i]);
+                }
+                return builder.intConstant(0);
+              });
+          (*input)->setAttr(COMPILATION_SEED_ATTR,
+                            Builder(context.get()).getI64IntegerAttr(seed));
+          attachTestEnvironment(*input, target);
+          OwningOpRef<ModuleOp> freshInput = input->clone();
+          PassManager fresh(context.get());
+          fresh.addPass(createMappingPass(options));
+          ASSERT_TRUE(succeeded(fresh.run(*freshInput)));
+          ASSERT_TRUE(succeeded(reused.run(*input)));
+          EXPECT_TRUE(succeeded(verify(*input)));
+          EXPECT_TRUE(succeeded(verifyLinearity(*input)));
+          EXPECT_TRUE(isExecutable(getEntryPoint(*input), target));
+          EXPECT_EQ(printModule(*input), printModule(*freshInput));
+        }
+      }
+    }
+  }
 }
 
 TEST_F(MappingPassFixture, PreferNativeGateCountThenDepth) {

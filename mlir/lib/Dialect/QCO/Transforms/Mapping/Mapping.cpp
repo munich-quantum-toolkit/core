@@ -399,6 +399,15 @@ struct MappingPass : impl::MappingPassBase<MappingPass> {
 private:
   using IndexPairType = std::pair<size_t, size_t>;
   using Window = SmallVector<IndexPairType>;
+  using Score = std::pair<size_t, size_t>;
+
+  /// Invocation data is prepared before trials, then borrowed read-only.
+  struct RoutingContext {
+    const CompilerTarget& target;
+    uint64_t seed;
+    std::unique_ptr<const NativeCostTable> nativeCosts;
+    std::optional<size_t> nativeSwapCost;
+  };
 
   enum class RoutingMode : bool { Cold, Hot };
 
@@ -428,8 +437,9 @@ private:
   /// Wire slots are physical sites; layout alone tracks logical qubits.
   struct RoutingState {
     /// Create state from layout, enforcing wire[i] = i-th site.
-    static RoutingState fromLayout(const Wires& roots, const Layout& layout) {
-      RoutingState state(Wires(layout.nHardwareQubits()), layout);
+    static RoutingState fromLayout(const Wires& roots, const Layout& layout,
+                                   const RoutingContext* scoring = nullptr) {
+      RoutingState state(Wires(layout.nHardwareQubits()), layout, scoring);
       for (auto [program, wire] : enumerate(roots)) {
         state.wires[layout.getHardwareIndex(program)] = wire;
       }
@@ -437,8 +447,14 @@ private:
     }
 
     /// Construct a routing state from a vector of wires and a layout.
-    RoutingState(Wires wires, Layout layout)
-        : wires(std::move(wires)), layout(std::move(layout)) {}
+    RoutingState(Wires wires, Layout layout,
+                 const RoutingContext* scoring = nullptr)
+        : wires(std::move(wires)), layout(std::move(layout)) {
+      if (scoring != nullptr && scoring->nativeCosts) {
+        costs.emplace(scoring->target, scoring->seed,
+                      scoring->nativeCosts.get());
+      }
+    }
 
     Wires wires;
     Layout layout;
@@ -675,10 +691,6 @@ protected:
       return;
     }
 
-    expectedScore.reset();
-    nativeCosts.reset();
-    nativeSwapCost.reset();
-
     if (failed(mqt::verifyQuantumAllocations(moduleOp))) {
       signalPassFailure();
       return;
@@ -693,8 +705,11 @@ protected:
       return;
     }
 
-    target = &environment.environment().target();
-    if (target->connectivityKind() !=
+    RoutingContext routing{
+        .target = environment.environment().target(),
+        .seed = compilationSeed(moduleOp, seed),
+    };
+    if (routing.target.connectivityKind() !=
         CompilerTarget::Connectivity::Kind::Explicit) {
       moduleOp.emitError()
           << "place-and-route requires an explicit target topology";
@@ -716,27 +731,24 @@ protected:
 
     auto computation = discoverComputation(func);
     if (failed(computation) ||
-        failed(checkCapacity(func, *target, *computation))) {
+        failed(checkCapacity(func, routing.target, *computation))) {
       signalPassFailure();
       return;
     }
 
     auto& body = func.getFunctionBody();
     auto& wires = computation->wires;
-    auto layout = generateLayout(wires);
+    auto [layout, expectedScore] = generateLayout(wires, routing);
 
     IRRewriter rewriter(&getContext());
-    wires = applyPlacement(body, *target, layout, *computation, rewriter);
+    wires =
+        applyPlacement(body, routing.target, layout, *computation, rewriter);
 
-    RoutingState state(std::move(wires), std::move(layout));
-    if (nativeCosts) {
-      state.costs.emplace(*target, compilationSeed(getOperation(), seed),
-                          nativeCosts.get());
-    }
+    RoutingState state(std::move(wires), std::move(layout), &routing);
 
-    Arena arena(target->numSites(), searchMemoryLimit);
+    Arena arena(routing.target.numSites(), searchMemoryLimit);
     const auto stats = route<WireDirection::Forward, RoutingMode::Hot>(
-        state, arena, &rewriter);
+        state, arena, routing, &rewriter);
 
     assert((!expectedScore ||
             (state.costs ? state.costs->score() : std::nullopt)
@@ -907,7 +919,7 @@ private:
   /// control flow has no single interaction frequency, so leave those programs
   /// to the identity and random starts.
   [[nodiscard]] std::optional<std::pair<Layout, bool>>
-  generateGreedyLayout(Wires wires) const {
+  generateGreedyLayout(Wires wires, const RoutingContext& routing) const {
     DenseMap<IndexPairType, size_t> weights;
     bool supported = true;
     walkProgramGraph<WireDirection::Forward>(
@@ -931,13 +943,13 @@ private:
     }
     if (llvm::all_of(weights, [&](const auto& interaction) {
           const auto [a, b] = interaction.first;
-          return target->areAdjacent(a, b);
+          return routing.target.areAdjacent(a, b);
         })) {
-      return std::pair{Layout::identity(target->numSites()), true};
+      return std::pair{Layout::identity(routing.target.numSites()), true};
     }
 
     const size_t nprogram = wires.size();
-    const size_t nhardware = target->numSites();
+    const size_t nhardware = routing.target.numSites();
     SmallVector<SmallVector<IndexPairType>> neighbours(nprogram);
     SmallVector<size_t> degree(nprogram, 0);
     SmallVector<size_t> attached(nprogram, 0);
@@ -978,7 +990,7 @@ private:
         SmallVector<size_t> remaining(nhardware, 0);
         SmallVector<bool> usedHardware(nhardware, false);
         for (size_t hw = 0; hw < nhardware; ++hw) {
-          target->forEachNeighbour(hw, [&](size_t) { ++remaining[hw]; });
+          routing.target.forEachNeighbour(hw, [&](size_t) { ++remaining[hw]; });
         }
         auto current = static_cast<size_t>(
             std::distance(remaining.begin(), llvm::min_element(remaining)));
@@ -987,10 +999,10 @@ private:
         while (current != nhardware && placed < nprogram) {
           mapping[order[placed++]] = current;
           usedHardware[current] = true;
-          target->forEachNeighbour(
+          routing.target.forEachNeighbour(
               current, [&](size_t neighbour) { --remaining[neighbour]; });
           size_t next = nhardware;
-          target->forEachNeighbour(current, [&](size_t neighbour) {
+          routing.target.forEachNeighbour(current, [&](size_t neighbour) {
             if (!usedHardware[neighbour] &&
                 (remaining[neighbour] != 0 || placed + 1 == nprogram) &&
                 (next == nhardware ||
@@ -1016,9 +1028,10 @@ private:
     SmallVector<size_t> hardwareDegree(nhardware, 0);
     for (size_t hw = 0; hw < nhardware; ++hw) {
       for (size_t other = 0; other < nhardware; ++other) {
-        centrality[hw] += target->distanceBetween(hw, other);
+        centrality[hw] += routing.target.distanceBetween(hw, other);
       }
-      target->forEachNeighbour(hw, [&](size_t) { ++hardwareDegree[hw]; });
+      routing.target.forEachNeighbour(hw,
+                                      [&](size_t) { ++hardwareDegree[hw]; });
     }
 
     // The out-of-range hardware index marks an unplaced program qubit.
@@ -1044,7 +1057,8 @@ private:
         size_t cost = 0;
         for (const auto& [partner, weight] : neighbours[prog]) {
           if (mapping[partner] != nhardware) {
-            cost += weight * target->distanceBetween(hw, mapping[partner]);
+            cost +=
+                weight * routing.target.distanceBetween(hw, mapping[partner]);
           }
         }
         if (best == nhardware ||
@@ -1075,26 +1089,26 @@ private:
   /// Refine greedy, identity, and random starts with forward/backward routing.
   /// Score each candidate with a forward traversal, preserving its start
   /// layout.
-  Layout generateLayout(const Wires& wires) {
-    const auto greedy = generateGreedyLayout(wires);
+  std::pair<Layout, std::optional<Score>>
+  generateLayout(const Wires& wires, RoutingContext& routing) {
+    const auto greedy = generateGreedyLayout(wires, routing);
     if (greedy && greedy->second) {
-      return greedy->first;
+      return {greedy->first, std::nullopt};
     }
 
-    if (const auto basis = target->synthesisBasis();
+    if (const auto basis = routing.target.synthesisBasis();
         basis && basis->entangler &&
-        target->nativeOperationsKind() ==
+        routing.target.nativeOperationsKind() ==
             CompilerTarget::NativeOperations::Kind::Explicit) {
-      nativeCosts = NativeCostTable::precompute(
-          mqt::getEntryPoint(getOperation()), *basis->entangler,
-          compilationSeed(getOperation(), seed));
-      nativeSwapCost = uniformSwapCost();
+      routing.nativeCosts = NativeCostTable::precompute(
+          mqt::getEntryPoint(getOperation()), *basis->entangler, routing.seed);
+      routing.nativeSwapCost = uniformSwapCost(routing);
     }
 
     struct Trial {
       Layout layout;
       /// Synthesis available: (native-count, depth). Otherwise, (max(), swaps).
-      std::pair<size_t, size_t> score;
+      Score score;
     };
 
     SmallVector<Trial, 0> trials;
@@ -1105,38 +1119,34 @@ private:
     }
 
     if (trials.size() < ntrials) {
-      trials.emplace_back(Layout::identity(target->numSites()));
+      trials.emplace_back(Layout::identity(routing.target.numSites()));
 
-      auto rng = makeMt19937(compilationSeed(getOperation(), seed));
+      auto rng = makeMt19937(routing.seed);
       for (size_t i = trials.size(); i < ntrials; ++i) {
-        trials.emplace_back(
-            Layout::random(target->numSites(), target->numSites(), rng()));
+        trials.emplace_back(Layout::random(routing.target.numSites(),
+                                           routing.target.numSites(), rng()));
       }
     }
 
     assert(ntrials == trials.size());
 
     parallelForEach(&getContext(), trials, [&, this](Trial& t) {
-      Arena arena(target->numSites(), searchMemoryLimit);
+      Arena arena(routing.target.numSites(), searchMemoryLimit);
 
       {
         auto state = RoutingState::fromLayout(wires, t.layout);
         for (size_t i = 0; i < niterations; ++i) {
-          route<WireDirection::Forward>(state, arena);
-          route<WireDirection::Backward>(state, arena);
+          route<WireDirection::Forward>(state, arena, routing);
+          route<WireDirection::Backward>(state, arena, routing);
         }
         t.layout = std::move(state.layout);
       }
 
       /// Refinement may permute wire cursors. Score from the original roots,
       /// preserving only the initial layout selected for final placement.
-      auto state = RoutingState::fromLayout(wires, t.layout);
-      if (nativeCosts) {
-        state.costs.emplace(*target, compilationSeed(getOperation(), seed),
-                            nativeCosts.get());
-      }
+      auto state = RoutingState::fromLayout(wires, t.layout, &routing);
 
-      const auto score = route<WireDirection::Forward>(state, arena);
+      const auto score = route<WireDirection::Forward>(state, arena, routing);
       const auto quality = state.costs ? state.costs->score() : std::nullopt;
       t.score = quality.value_or(
           std::pair{std::numeric_limits<size_t>::max(), score.nswaps});
@@ -1146,18 +1156,16 @@ private:
       return a.score < b.score;
     });
 
-    expectedScore = best->score;
-    return best->layout;
+    return {best->layout, best->score};
   }
 
   /// A uniform edge cost permits the existing distance heuristic to retain its
   /// units. Site-dependent SWAP costs need a weighted-distance heuristic.
-  std::optional<size_t> uniformSwapCost() {
-    NativeCostAnalysis analysis(compilationSeed(getOperation(), seed),
-                                nativeCosts.get());
+  static std::optional<size_t> uniformSwapCost(const RoutingContext& routing) {
+    NativeCostAnalysis analysis(routing.seed, routing.nativeCosts.get());
     std::optional<size_t> cost;
-    for (const auto& [a, b] : target->couplings()) {
-      const auto next = analysis.swapCost(*target, std::array{a, b});
+    for (const auto& [a, b] : routing.target.couplings()) {
+      const auto next = analysis.swapCost(routing.target, std::array{a, b});
       if (!next || (cost && cost != next)) {
         return std::nullopt;
       }
@@ -1170,6 +1178,7 @@ private:
   /// Drain queued states at the limit, then use distance-reducing SWAPs.
   [[nodiscard]] SmallVector<IndexPairType>
   search(const Window& window, const Layout& layout, Arena& arena,
+         const RoutingContext& routing,
          NativeCostTracker* costs = nullptr) const {
     const Parameters params{.alpha = alpha, .lambda = lambda};
 
@@ -1177,7 +1186,7 @@ private:
     Node* root = arena.construct(layout);
     assert(root != nullptr);
 
-    if (root->isGoal(window.front(), *target)) {
+    if (root->isGoal(window.front(), routing.target)) {
       return SmallVector<IndexPairType>{};
     }
 
@@ -1188,8 +1197,8 @@ private:
         frontier;
     frontier.emplace(root);
 
-    const int64_t swapCost = costs != nullptr && nativeSwapCost
-                                 ? static_cast<int64_t>(*nativeSwapCost)
+    const int64_t swapCost = costs != nullptr && routing.nativeSwapCost
+                                 ? static_cast<int64_t>(*routing.nativeSwapCost)
                                  : 1;
     while (!frontier.empty()) {
       Node* curr = frontier.top();
@@ -1211,7 +1220,7 @@ private:
       // If the currently visited node is a goal node, reconstruct the
       // sequence of SWAPs from this node to the root.
 
-      if (curr->isGoal(window.front(), *target)) {
+      if (curr->isGoal(window.front(), routing.target)) {
         return curr->swaps();
       }
 
@@ -1221,19 +1230,19 @@ private:
       expansionSet.clear();
       for (const auto& [q0, q1] = window.front(); const auto prog : {q0, q1}) {
         const auto hw0 = curr->layout.getHardwareIndex(prog);
-        target->forEachNeighbour(hw0, [&](const auto hw1) {
+        routing.target.forEachNeighbour(hw0, [&](const auto hw1) {
           const IndexPairType swap = std::minmax(hw0, hw1); // Canonical SWAP.
           if (arena.full() || is_contained(expansionSet, swap)) {
             return;
           }
 
           int64_t credit = 0;
-          if (curr->depth == 0 && costs != nullptr && nativeSwapCost) {
-            credit = costs->swapDiscount(hw0, hw1, *nativeSwapCost);
+          if (curr->depth == 0 && costs != nullptr && routing.nativeSwapCost) {
+            credit = costs->swapDiscount(hw0, hw1, *routing.nativeSwapCost);
           }
 
-          if (Node* child = arena.construct(curr, swap, window, *target, params,
-                                            swapCost, credit)) {
+          if (Node* child = arena.construct(curr, swap, window, routing.target,
+                                            params, swapCost, credit)) {
             expansionSet.push_back(swap);
             frontier.emplace(child);
           }
@@ -1249,20 +1258,20 @@ private:
     SmallVector<IndexPairType> swaps;
 
     const auto [q0, q1] = window.front();
-    while (!current.isGoal(window.front(), *target)) {
+    while (!current.isGoal(window.front(), routing.target)) {
       const auto [a, b] = current.layout.getHardwareIndices(q0, q1);
-      const auto distance = target->distanceBetween(a, b);
+      const auto distance = routing.target.distanceBetween(a, b);
 
       std::optional<Node> best;
       for (const auto [from, to] : {IndexPairType{a, b}, IndexPairType{b, a}}) {
-        target->forEachNeighbour(from, [&](size_t next) {
-          if (target->distanceBetween(next, to) >= distance) {
+        routing.target.forEachNeighbour(from, [&](size_t next) {
+          if (routing.target.distanceBetween(next, to) >= distance) {
             return;
           }
 
           const IndexPairType swap = std::minmax(from, next); // Canonical SWAP.
 
-          Node candidate(&current, swap, window, *target, params);
+          Node candidate(&current, swap, window, routing.target, params);
           if (!best || candidate.f < best->f) {
             best = std::move(candidate);
           }
@@ -1279,13 +1288,14 @@ private:
 
   /// Return the SWAP sequence to move from one layout to another.
   /// Implements the 4-Approximation algorithm described in arXiv:1602.05150v3.
-  [[nodiscard]] SmallVector<IndexPairType> restore(const Layout& from,
-                                                   const Layout& to) const {
+  [[nodiscard]] SmallVector<IndexPairType>
+  restore(const Layout& from, const Layout& to,
+          const RoutingContext& routing) const {
     if (from == to) {
       return {};
     }
     Layout curr(from);
-    TokenSwapGraph f(*target);
+    TokenSwapGraph f(routing.target);
     SmallVector<IndexPairType> swaps;
 
     while (true) {
@@ -1322,16 +1332,18 @@ private:
   /// with the key difference that the goal permutation is not static.
   [[nodiscard]] std::tuple<Layout, SmallVector<IndexPairType>,
                            SmallVector<IndexPairType>>
-  converge(const Layout& lhs, const Layout& rhs) {
+  converge(const Layout& lhs, const Layout& rhs,
+           const RoutingContext& routing) {
     if (lhs == rhs) {
       return {lhs, {}, {}};
     }
 
     std::array layouts{Layout(lhs), Layout(rhs)};
-    std::array graphs{TokenSwapGraph(*target), TokenSwapGraph(*target)};
+    std::array graphs{TokenSwapGraph(routing.target),
+                      TokenSwapGraph(routing.target)};
     std::array<SmallVector<IndexPairType>, 2> swaps{};
 
-    auto gen = makeMt19937(compilationSeed(getOperation(), seed));
+    auto gen = makeMt19937(routing.seed);
     std::uniform_int_distribution coin(0, 1);
 
     while (true) {
@@ -1382,10 +1394,11 @@ private:
   /// Inspired by SABRE and to reduce ordering bias, the function performs an
   /// additional backward pass.
   template <typename Range>
-  Layout driveby(Range layouts, const size_t niterations = 1) {
+  Layout driveby(Range layouts, const RoutingContext& routing,
+                 const size_t niterations = 1) {
     assert(!layouts.empty() && "expected at least one layout");
 
-    TokenSwapGraph f(*target);
+    TokenSwapGraph f(routing.target);
     Layout curr(*layouts.begin());
 
     // Nudge curr towards target by applying a happy SWAP chain.
@@ -1603,7 +1616,8 @@ private:
   /// or sink-like operations. Backward traversal can exhaust block arguments.
   template <WireDirection Direction>
   std::optional<CompositeUnitary> advance(RoutingState& state,
-                                          Operation* boundary) {
+                                          Operation* boundary,
+                                          const RoutingContext& routing) {
     auto& wires = state.wires;
     std::optional<CompositeUnitary> composite;
     /// Advancement only moves iterators. Discard classifications before routing
@@ -1661,7 +1675,7 @@ private:
                     return true;
                   }
 
-                  return target->areAdjacent(indices[0], indices[1]);
+                  return routing.target.areAdjacent(indices[0], indices[1]);
                 })
                 .Case([](ResetOp&) { return true; })
                 .Case([&](MeasureOp& m) {
@@ -1804,6 +1818,7 @@ private:
   template <WireDirection Direction, RoutingMode Mode>
   Statistics routeComposite(const CompositeUnitary& composite,
                             RoutingState& parent, Arena& arena,
+                            const RoutingContext& routing,
                             IRRewriter* rewriter) {
     const auto& [op, indices] = composite;
     if (parent.costs) {
@@ -1831,12 +1846,8 @@ private:
 
     for (auto [index, region] : enumerate(op->getRegions())) {
       auto& child =
-          children.emplace_back(Wires(target->numSites()), parent.layout);
-
-      if (parent.costs) {
-        child.costs.emplace(*target, compilationSeed(getOperation(), seed),
-                            nativeCosts.get());
-      }
+          children.emplace_back(Wires(routing.target.numSites()), parent.layout,
+                                parent.costs ? &routing : nullptr);
 
       auto roots = getQubitValues(Direction == WireDirection::Forward
                                       ? region.front().getArguments()
@@ -1857,35 +1868,39 @@ private:
         }
       }
 
-      totalStats.merge(route<Direction, Mode>(child, arena, rewriter));
+      totalStats.merge(route<Direction, Mode>(child, arena, routing, rewriter));
     }
 
     Layout exit =
         TypeSwitch<Operation*, Layout>(op)
             .Case([&](scf::ForOp) {
-              insertSWAPs<Mode>(restore(children[0].layout, parent.layout),
-                                children[0], totalStats, rewriter);
+              insertSWAPs<Mode>(
+                  restore(children[0].layout, parent.layout, routing),
+                  children[0], totalStats, rewriter);
               return parent.layout;
             })
             .Case([&](scf::WhileOp) {
-              insertSWAPs<Mode>(restore(children[1].layout, parent.layout),
-                                children[1], totalStats, rewriter);
+              insertSWAPs<Mode>(
+                  restore(children[1].layout, parent.layout, routing),
+                  children[1], totalStats, rewriter);
               return children[0].layout;
             })
             .Case([&](IfOp) {
               const auto [layout, first, second] =
-                  converge(children[0].layout, children[1].layout);
+                  converge(children[0].layout, children[1].layout, routing);
               insertSWAPs<Mode>(first, children[0], totalStats, rewriter);
               insertSWAPs<Mode>(second, children[1], totalStats, rewriter);
               return layout;
             })
             .Case([&](IndexSwitchOp) {
-              auto layout = driveby(map_range(
-                  children, [](const RoutingState& child) -> const Layout& {
-                    return child.layout;
-                  }));
+              auto layout = driveby(
+                  map_range(children,
+                            [](const RoutingState& child) -> const Layout& {
+                              return child.layout;
+                            }),
+                  routing);
               for (auto& child : children) {
-                insertSWAPs<Mode>(restore(child.layout, layout), child,
+                insertSWAPs<Mode>(restore(child.layout, layout, routing), child,
                                   totalStats, rewriter);
               }
               return layout;
@@ -1943,6 +1958,7 @@ private:
   template <WireDirection Direction, RoutingMode Mode = RoutingMode::Cold>
     requires(Mode != RoutingMode::Hot || Direction == WireDirection::Forward)
   Statistics route(RoutingState& state, Arena& arena,
+                   const RoutingContext& routing,
                    IRRewriter* rewriter = nullptr) {
     Operation* boundary = nullptr;
     for (auto& wire : state.wires) {
@@ -1957,7 +1973,7 @@ private:
 
     Statistics stats;
     while (true) {
-      auto composite = advance<Direction>(state, boundary);
+      auto composite = advance<Direction>(state, boundary, routing);
       if (composite) {
         assert(composite->op == boundary);
         boundary = nextRoutingBoundary<Direction>(
@@ -1969,7 +1985,7 @@ private:
         }
 
         stats.merge(routeComposite<Direction, Mode>(*composite, state, arena,
-                                                    rewriter));
+                                                    routing, rewriter));
         for (auto& wire : state.wires) {
           if (wire != std::default_sentinel &&
               wire.operation() == composite->op) {
@@ -1986,7 +2002,7 @@ private:
         break;
       }
 
-      const auto swaps = search(window, state.layout, arena,
+      const auto swaps = search(window, state.layout, arena, routing,
                                 state.costs ? &*state.costs : nullptr);
       insertSWAPs<Mode>(swaps, state, stats, rewriter);
     }
@@ -2006,11 +2022,6 @@ private:
 
     return stats;
   }
-
-  const CompilerTarget* target = nullptr;
-  std::shared_ptr<const NativeCostTable> nativeCosts;
-  std::optional<size_t> nativeSwapCost;
-  std::optional<std::pair<size_t, size_t>> expectedScore;
 };
 
 } // namespace
