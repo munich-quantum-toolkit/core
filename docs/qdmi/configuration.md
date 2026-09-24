@@ -43,6 +43,11 @@ The following `qdmi.json` registers one device:
 }
 ```
 
+The driver returns the configured `id` through `QDMI_DEVICE_PROPERTY_ID`,
+overriding any device-reported default. Child-device IDs remain optional; the
+driver forwards a reported ID or `QDMI_ERROR_NOTSUPPORTED` without generating
+child IDs.
+
 Every enabled definition requires a stable, unique `id`, a `library`, and a QDMI
 symbol `prefix`. The `session` object supports `base-url`, `token`, `auth-file`,
 `auth-url`, `username`, `password`, `device-config`, and `custom1` through

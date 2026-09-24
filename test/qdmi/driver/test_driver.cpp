@@ -393,6 +393,9 @@ TEST(ChildDeviceTest, WrapsOpaqueHandlesInStableClientDevices) {
               QDMI_SUCCESS);
     EXPECT_EQ(queryName(children[0]), "child-0");
     EXPECT_EQ(queryName(children[1]), "child-1");
+    EXPECT_EQ(QDMI_device_query_device_property(
+                  children[0], QDMI_DEVICE_PROPERTY_ID, 0, nullptr, nullptr),
+              QDMI_ERROR_NOTSUPPORTED);
 
     std::array<QDMI_Device, 2> repeatedQuery{};
     ASSERT_EQ(QDMI_device_query_device_property(
