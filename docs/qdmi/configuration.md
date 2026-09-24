@@ -228,9 +228,10 @@ mqt_copy_qdmi_runtime(my-application MQT::CoreQDMIScDevice MQT::CoreQDMI_DDSIM_D
 ```
 
 The helper copies shared libraries, device manifests, and configuration files.
-On Windows it also copies the DLLs those libraries depend on. Static libraries
-are linked into the application and need no copy. The application uses its build
-RPATH during the build. This also works with a source installation of MQT Core.
+It also copies DLL dependencies on Windows and dependencies shipped beside
+installed libraries on Linux and macOS. Static libraries are linked into the
+application and need no copy. The application uses its build RPATH during the
+build. This also works with a source installation of MQT Core.
 
 Manifests contain library filenames relative to their own directory. Keep each
 manifest beside its device library when moving an installation. The MQT Core

@@ -250,5 +250,14 @@ function(mqt_copy_qdmi_runtime target)
       POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy_if_different ${files} "$<TARGET_FILE_DIR:${target}>"
       COMMAND_EXPAND_LISTS)
+    if(NOT WIN32 AND imported)
+      add_custom_command(
+        TARGET ${target}
+        POST_BUILD
+        COMMAND
+          ${CMAKE_COMMAND} "-DLIBRARY=$<TARGET_FILE:${library}>"
+          "-DDESTINATION=$<TARGET_FILE_DIR:${target}>" -P
+          "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/CopyQDMISharedDependencies.cmake")
+    endif()
   endforeach()
 endfunction()
