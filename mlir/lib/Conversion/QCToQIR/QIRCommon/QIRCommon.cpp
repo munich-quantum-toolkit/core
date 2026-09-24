@@ -17,6 +17,7 @@
 #include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 
+#include "mlir/Analysis/SliceAnalysis.h"
 #include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
 #include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
@@ -56,6 +57,7 @@
 
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallVector.h"
 
 #include <algorithm>
@@ -457,6 +459,34 @@ static DenseSet<Operation*> findStoreFusionCandidates(Block* block) {
   return candidates;
 }
 
+/// Collect index computations that can precede a measurement without moving
+/// classical reads, quantum effects, or computations that may trap.
+static LogicalResult
+collectMeasurementIndexDefinitions(Value index, Operation* measurement,
+                                   DominanceInfo& dominance,
+                                   SetVector<Operation*>& definitions) {
+  if (dominance.dominates(index, measurement)) {
+    return success();
+  }
+  bool canMove = true;
+  BackwardSliceOptions options;
+  options.inclusive = true;
+  options.omitBlockArguments = true;
+  options.filter = [&](Operation* operation) {
+    if (dominance.properlyDominates(operation, measurement)) {
+      return false;
+    }
+    if (operation->getBlock() != measurement->getBlock() ||
+        operation->getNumRegions() != 0 || !isPure(operation)) {
+      canMove = false;
+      return false;
+    }
+    return true;
+  };
+  return success(succeeded(getBackwardSlice(index, &definitions, options)) &&
+                 canMove);
+}
+
 LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
                                       bool allowComputedOutputs) {
   bool hasInvalidMemory = false;
@@ -489,6 +519,7 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
   SmallVector<Value> keptOperands;
   SmallVector<Type> keptReturnTypes;
   SmallVector<cbit::StoreOp> consumedStores;
+  SmallVector<std::pair<Operation*, Operation*>> indexDefinitionsToMove;
   DominanceInfo dominance(funcOp);
 
   funcOp.walk([&](memref::AllocOp allocOp) {
@@ -578,11 +609,11 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
       hasInvalidMemory = true;
       return;
     }
-    auto* indexProducer = storeOp.getIndex().getDefiningOp();
+    SetVector<Operation*> indexDefinitions;
     bool canFuse =
         measureOp->getBlock() == storeOp->getBlock() &&
-        (dominance.dominates(storeOp.getIndex(), measureOp) ||
-         (indexProducer && indexProducer->hasTrait<OpTrait::ConstantLike>()));
+        succeeded(collectMeasurementIndexDefinitions(
+            storeOp.getIndex(), measureOp, dominance, indexDefinitions));
     if (canFuse && measureOp->getNextNode() != storeOp.getOperation()) {
       const auto [candidates, newBlock] =
           fusionCandidates.try_emplace(storeOp->getBlock());
@@ -593,9 +624,9 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
     }
     if (!canFuse) {
       storeOp.emitError("QIR output cannot fuse this measurement/store pair: "
-                        "require the same "
-                        "block, an index available at measurement, and no "
-                        "intervening classical memory effects");
+                        "require the same block, an index available or safely "
+                        "computable before measurement, and no intervening "
+                        "classical memory effects");
       hasInvalidMemory = true;
       return;
     }
@@ -608,10 +639,19 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
                         "classical register locations during QIR conversion");
       hasInvalidMemory = true;
     }
+    for (auto* definition : indexDefinitions) {
+      indexDefinitionsToMove.emplace_back(definition, measureOp);
+    }
     consumedStores.push_back(storeOp);
   });
   if (hasInvalidMemory) {
     return failure();
+  }
+
+  for (auto [definition, measurement] : indexDefinitionsToMove) {
+    if (!dominance.properlyDominates(definition, measurement)) {
+      definition->moveBefore(measurement);
+    }
   }
 
   if (keptOperands.empty() && !returnOp.getOperands().empty()) {
