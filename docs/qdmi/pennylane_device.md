@@ -373,3 +373,26 @@ hardware gates or provide routing.
 
 The interface does not implement pulse programming, device-specific non-gate
 properties, routing, analytic execution, or QDMI batch jobs.
+
+## Recovery
+
+Set `max_retries` when constructing a device, for example
+`qp.device("mqt.ddsim.default", wires=2, max_retries=0)` to disable automatic
+replacement executions. The default is three replacements per confirmed failed
+entry. See [batch retries and recovery](batch_recovery.md) for eligibility and
+manual replacement.
+
+```python
+from mqt.core.plugins.pennylane import PennyLaneExecutionError
+
+try:
+    counts = bell_state()
+except PennyLaneExecutionError as error:
+    batch = error.job
+    entries = batch.collect()  # Read accepted jobs without submitting replacements.
+    available = [entry.result for entry in entries if entry.result is not None]
+```
+
+After interruption, recover the handle from `bell_device.last_job`. Its
+`result()` returns samples for preprocessed tapes, not the original QNode's
+postprocessed return value.

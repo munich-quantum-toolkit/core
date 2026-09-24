@@ -238,6 +238,30 @@ print(f"Shots: {exp_result.shots}")
 print(f"Success: {exp_result.success}")
 ```
 
+### Recovery
+
+Set `backend.set_options(max_retries=3)` to configure automatic replacement of
+confirmed failed jobs. Override it per batch with
+`backend.run(circuits, max_retries=0)` to disable replacements.
+
+```python
+from mqt.core.plugins.qiskit import JobExecutionError, JobSubmissionError
+
+try:
+    job = backend.run(circuits, shots=1000)
+    result = job.result()
+except (JobSubmissionError, JobExecutionError) as error:
+    job = error.job
+    entries = job.collect()  # Read accepted jobs without submitting replacements.
+    available = [entry.result for entry in entries if entry.result is not None]
+```
+
+After interruption, the handle is available as `backend.last_job`. See
+[batch retries and recovery](batch_recovery.md) for retained attempts, retry
+limits, and explicit replacement. Batches created by `backend.run()` retain the
+programs required for replacements; directly wrapping existing handles with
+`QDMIJob(...)` supports collection and cancellation only.
+
 ## Multi-Circuit Execution
 
 The backend supports both single-circuit and multi-circuit execution. You can

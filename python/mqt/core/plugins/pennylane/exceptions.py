@@ -8,6 +8,13 @@
 
 """Exception types for the QDMI PennyLane integration."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .job import PennyLaneJob
+
 __all__ = [
     "PennyLaneConfigurationError",
     "PennyLaneExecutionError",
@@ -49,3 +56,8 @@ class PennyLaneUnsupportedOperationError(PennyLaneTranslationError):
 
 class PennyLaneExecutionError(QDMIPluginError):
     """Raised when submission or execution of a QDMI job fails."""
+
+    def __init__(self, message: str, *, job: PennyLaneJob | None = None) -> None:
+        """Retain the batch handle for inspection and recovery."""
+        super().__init__(message)
+        self.job = job

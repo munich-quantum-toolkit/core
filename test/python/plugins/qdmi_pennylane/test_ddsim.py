@@ -12,6 +12,8 @@
 
 from __future__ import annotations
 
+import gc
+
 import numpy as np
 import pytest
 
@@ -175,3 +177,17 @@ def test_device_requires_qnode_shots() -> None:
         circuit()
     assert device.submitted_jobs == 0
     assert qp.set_shots(circuit, shots=5)() == pytest.approx(1.0)
+
+
+def test_retained_native_job_outlives_adapter() -> None:
+    """An exposed native attempt keeps its device session after the adapter is released."""
+    device = DDSIMDevice(wires=1)
+    tape = qp.tape.QuantumScript([qp.PauliX(0)], [qp.sample(wires=[0])], shots=4)
+    device.execute(tape)
+    batch = device.last_job
+    assert batch is not None
+    handle = batch.entries[0].attempts[0].handle
+    assert handle is not None
+    del batch, device
+    gc.collect()
+    assert handle.get_shots() == ["1"] * 4

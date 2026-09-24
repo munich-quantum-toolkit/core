@@ -91,4 +91,5 @@ SC QDMI Device <sc_device>
 Slurm integration <slurm>
 QDMI-Qiskit Backend <qdmi_backend>
 PennyLane interface for QDMI devices <pennylane_device>
+Batch retries and recovery <batch_recovery>
 ```
