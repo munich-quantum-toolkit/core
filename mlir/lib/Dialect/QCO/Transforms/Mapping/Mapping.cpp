@@ -276,7 +276,7 @@ static Wires applyPlacement(Region& body, const CompilerTarget& target,
     SinkOp::create(rewriter, body.getLoc(), qubit);
   }
 
-  return llvm::map_to_vector(staticQubits,
+  return map_to_vector(staticQubits,
                              [](Value qubit) { return WireIterator(qubit); });
 }
 
