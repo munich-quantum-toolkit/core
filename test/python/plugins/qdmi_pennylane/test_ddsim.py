@@ -175,3 +175,19 @@ def test_device_requires_qnode_shots() -> None:
         circuit()
     assert device.submitted_jobs == 0
     assert qp.set_shots(circuit, shots=5)() == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize("measurement_wires", [["last", "first"], ["spare", "last", "first"]])
+def test_output_order_matches_native_pennylane(measurement_wires: list[str]) -> None:
+    """Match native counts, samples, and probabilities with custom, reordered wires."""
+    wires = ["first", "spare", "last"]
+    tape = qp.tape.QuantumScript(
+        [qp.X("first")],
+        [qp.counts(wires=measurement_wires), qp.sample(wires=measurement_wires), qp.probs(wires=measurement_wires)],
+        shots=8,
+    )
+    (actual,) = qp.execute((tape,), qp.device("mqt.ddsim.default", wires=wires), diff_method=None)
+    (expected,) = qp.execute((tape,), qp.device("default.qubit", wires=wires), diff_method=None)
+    assert actual[0] == expected[0]
+    np.testing.assert_array_equal(actual[1], expected[1])
+    np.testing.assert_array_equal(actual[2], expected[2])

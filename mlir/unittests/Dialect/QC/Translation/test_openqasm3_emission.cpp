@@ -345,6 +345,7 @@ real = 3.0;
   ASSERT_TRUE(moduleOp);
   auto function = *moduleOp->getOps<func::FuncOp>().begin();
   ASSERT_EQ(function.getNumResults(), 6U);
+  function->removeAttr("res_attrs");
   EXPECT_FALSE(function.getAllResultAttrs());
 
   auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
@@ -356,6 +357,30 @@ real = 3.0;
   EXPECT_NE(emitted->find("output int _mqt_out"), std::string::npos);
   EXPECT_NE(emitted->find("output float _mqt_out"), std::string::npos);
   EXPECT_EQ(emitted->find("output uint "), std::string::npos);
+  EXPECT_TRUE(qc::translateOpenQASMToQC(*emitted, &context)) << *emitted;
+}
+
+TEST(OpenQASM3EmissionTest, PreservesSourceOutputNamesAndTypes) {
+  constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.1;
+output bit measured;
+output bit[1] vector;
+output uint[1] numeric;
+output bool accepted;
+qubit q;
+measured = measure q;
+vector[0] = measured;
+numeric = 1;
+accepted = true;
+)qasm";
+  MLIRContext context;
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_NE(emitted->find("output bit measured;"), std::string::npos);
+  EXPECT_NE(emitted->find("output bit[1] vector;"), std::string::npos);
+  EXPECT_NE(emitted->find("output uint[1] numeric;"), std::string::npos);
+  EXPECT_NE(emitted->find("output bool accepted;"), std::string::npos);
   EXPECT_TRUE(qc::translateOpenQASMToQC(*emitted, &context)) << *emitted;
 }
 
@@ -375,7 +400,7 @@ r = measure q;
 
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("gate r("), std::string::npos);
-  EXPECT_NE(emitted->find("output bit[1] _mqt_out0;"), std::string::npos);
+  EXPECT_NE(emitted->find("output bit _mqt_out0;"), std::string::npos);
   EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM(
       *emitted, openqasm::frontend::GatePolicy::Strict))
       << *emitted;

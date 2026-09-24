@@ -27,6 +27,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -79,6 +80,7 @@ auto Runtime::reset() -> void {
   rRegister.clear();
   std::ranges::fill(resultValues_, ResultStruct{});
   measurements.clear();
+  binaryOutput_ = true;
   measuredQubits_.clear();
   invalidStateExtraction_ = false;
   currentMaxQubitAddress = MIN_DYN_QUBIT_ADDRESS;
@@ -458,24 +460,22 @@ auto Runtime::outputBool(bool value, const char* label) const -> void {
   outputType("BOOL", value ? "true" : "false", label);
 }
 
-auto Runtime::outputInt(int64_t value, const char* label) const -> void {
+auto Runtime::outputInt(int64_t value, const char* label) -> void {
+  binaryOutput_ = false;
   if (!hasOutput()) {
     return;
   }
   outputType("INT", std::to_string(value), label);
 }
 
-auto Runtime::outputFloat(double value, const char* label) const -> void {
+auto Runtime::outputFloat(double value, const char* label) -> void {
+  binaryOutput_ = false;
   if (!hasOutput()) {
     return;
   }
-  // Use std::ostringstream rather than std::to_string.
-  // std::to_string formats with six digits after the decimal point and
-  // can print 0.000000 for very small numbers.
-  // std::ostringstream uses six significant digits by default and
-  // outputs very small numbers with scientific notation.
+  /// Preserve enough digits to reconstruct the recorded double.
   std::ostringstream oss;
-  oss << value;
+  oss << std::setprecision(std::numeric_limits<double>::max_digits10) << value;
   outputType("DOUBLE", oss.str(), label);
 }
 

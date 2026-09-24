@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -204,6 +205,10 @@ class _ProgramConverter:
             if program_format == ProgramFormat.QASM3
             else {name for name, spelling in _QASM2_OPERATIONS.items() if spelling in self._advertised}
         )
+        if program_format == ProgramFormat.IQM_JSON:
+            self.target_gates = ({"RX", "RY", "RZ"} if "prx" in self._advertised else set()) | (
+                {"CZ"} if "cz" in self._advertised else set()
+            )
         self._wire_map: Mapping[Hashable, int] = MappingProxyType({
             wire: index for index, wire in enumerate(device_wires)
         })
@@ -230,6 +235,8 @@ class _ProgramConverter:
         Returns:
             The converted program and its deterministic measurement metadata.
         """
+        if self._program_format == ProgramFormat.IQM_JSON:
+            return self._convert_iqm(tape)
         if self._program_format == ProgramFormat.QASM3:
             return self._convert_qasm3(tape)
         return self._convert_qasm2(tape)
@@ -334,7 +341,18 @@ class _ProgramConverter:
             PennyLaneUnsupportedOperationError: If no supported spelling exists.
             PennyLaneValidationError: If shape, parameters, wires, or placement are invalid.
         """
-        if self._program_format == ProgramFormat.QASM3:
+        if self._program_format == ProgramFormat.IQM_JSON:
+            spelling = "cz" if operation.name == "CZ" else "prx"
+            resolved = (
+                (
+                    spelling,
+                    _OperationSpec((spelling,), 2, 0) if spelling == "cz" else _OperationSpec((spelling,), 1, 1),
+                    self._advertised[spelling],
+                )
+                if operation.name in self.target_gates
+                else None
+            )
+        elif self._program_format == ProgramFormat.QASM3:
             resolved = _resolve_qasm3_operation(operation, self._advertised)
         else:
             spelling = _QASM2_OPERATIONS.get(operation.name)
@@ -362,8 +380,38 @@ class _ProgramConverter:
             msg = f"Operation '{operation.name}' uses wire {exc.args[0]!r}, which is not a device wire."
             raise ValidationError(msg) from exc
         parameters = tuple(_finite_parameter(parameter, operation.name) for parameter in operation.parameters)
-        self._validate_qdmi_contract(operation, spec, qdmi_operation, indices)
+        contract = _OperationSpec(("prx",), 1, 2) if spelling == "prx" else spec
+        self._validate_qdmi_contract(operation, contract, qdmi_operation, indices)
         return spelling, indices, parameters
+
+    def _convert_iqm(self, tape: QuantumScript) -> _ConvertedProgram:
+        """Emit one IQM circuit with one final measurement column per device wire.
+
+        Returns:
+            The circuit and its source-wire result order.
+        """
+        sites = {site.index(): site.name() for site in self._device.sites()}
+        instructions = []
+        for operation in tape.operations:
+            spelling, indices, values = self._prepare_operation(operation)
+            locus = [sites[index] for index in indices]
+            if spelling == "cz":
+                instructions.append({"name": "cz", "locus": locus, "args": {}})
+                continue
+            angle = values[0]
+            rotations = (
+                [(math.pi / 2, math.pi / 2), (angle, 0.0), (-math.pi / 2, math.pi / 2)]
+                if operation.name == "RZ"
+                else [(angle, math.pi / 2 if operation.name == "RY" else 0.0)]
+            )
+            for theta, phase in rotations:
+                instructions.append({"name": "prx", "locus": locus, "args": {"angle": theta, "phase": phase}})
+        instructions.append({
+            "name": "measure",
+            "locus": [sites[index] for index in self._wire_map.values()],
+            "args": {"key": "m"},
+        })
+        return self._program(tape, json.dumps({"name": "pennylane", "instructions": instructions}))
 
     def _convert_qasm3(self, tape: QuantumScript) -> _ConvertedProgram:
         """Emit a minimal capability-driven OpenQASM 3 program.

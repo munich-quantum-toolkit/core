@@ -157,7 +157,7 @@ TEST_F(QIRRuntimeTest, OutputFramingLabeled) {
            << "METADATA\toutput_labeling_schema\tlabeled\n"
            << "OUTPUT\tBOOL\ttrue\tbool_label\n"
            << "OUTPUT\tINT\t42\tint_label\n"
-           << "OUTPUT\tDOUBLE\t3.14\tdouble_label\n"
+           << "OUTPUT\tDOUBLE\t3.1400000000000001\tdouble_label\n"
            << "OUTPUT\tTUPLE\t2\ttuple_label\n"
            << "OUTPUT\tARRAY\t3\tarray_label\n"
            << "END\t0\n";
@@ -186,7 +186,7 @@ TEST_F(QIRRuntimeTest, OutputFramingOrdered) {
            << "METADATA\toutput_labeling_schema\tordered\n"
            << "OUTPUT\tBOOL\ttrue\n"
            << "OUTPUT\tINT\t42\n"
-           << "OUTPUT\tDOUBLE\t3.14\n"
+           << "OUTPUT\tDOUBLE\t3.1400000000000001\n"
            << "OUTPUT\tTUPLE\t2\n"
            << "OUTPUT\tARRAY\t3\n"
            << "END\t0\n";
@@ -860,6 +860,7 @@ TEST_F(QIRRuntimeTest, AdaptiveRecordOutputs) {
 
   std::ostringstream expected;
   expected.setf(std::ios::boolalpha);
+  expected.precision(std::numeric_limits<double>::max_digits10);
   expected << "OUTPUT\tTUPLE\t3\toutputs\n"
            << "OUTPUT\tARRAY\t3\tmeasurements\n"
            << "OUTPUT\tBOOL\t" << b0 << "\tm0\n"

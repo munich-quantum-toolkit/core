@@ -14,7 +14,8 @@ A QDMI device accepts a program in one or more *program formats*, listed by
 
 A format fixes the kind of payload it carries, so there are two signatures. A
 text format takes a :class:`TextProgramSerializer`, which returns :class:`str`.
-A binary format takes a :class:`BinaryProgramSerializer`, which returns
+Either may return :class:`SerializedProgram` when source classical destinations
+need reconstruction from raw output positions. A binary format takes a :class:`BinaryProgramSerializer`, which returns
 :class:`bytes`. :func:`~mqt.core.qdmi.is_binary_program_format` states which
 kind a format carries. ``BATCH_JOB`` takes no serializer because it carries a
 list of jobs rather than a serialized circuit.
@@ -43,6 +44,7 @@ reports.
 from __future__ import annotations
 
 import warnings
+from dataclasses import dataclass
 from enum import Enum, auto
 from importlib.metadata import entry_points
 from typing import TYPE_CHECKING, Protocol
@@ -62,6 +64,7 @@ __all__ = [
     "PROGRAM_FORMAT_PREFERENCE",
     "BinaryProgramSerializer",
     "ProgramSerializer",
+    "SerializedProgram",
     "TextProgramSerializer",
     "preferred_program_formats",
     "program_serializer",
@@ -78,10 +81,43 @@ def __dir__() -> list[str]:
 ENTRY_POINT_GROUP = "mqt.core.qiskit.program_serializers"
 
 
+@dataclass(frozen=True)
+class SerializedProgram:
+    """A program and the mapping from QDMI output positions to Qiskit clbits.
+
+    Serializers for formats without classical destinations return this object.
+    ``clbit_indices[i]`` selects the QDMI output bit for source clbit ``i``;
+    ``None`` preserves an unwritten Qiskit bit's initial zero. Overwritten
+    destinations select their last measurement. Positions are numbered from
+    zero at the right of a QDMI bitstring, independently of physical placement.
+
+    Args:
+        payload: The program string or bytes.
+        output_width: Number of bits in each raw QDMI outcome.
+        clbit_indices: One source-output selection per Qiskit classical bit.
+    """
+
+    payload: str | bytes
+    output_width: int
+    clbit_indices: tuple[int | None, ...]
+
+    def __post_init__(self) -> None:
+        """Reject invalid raw output positions before submission.
+
+        Raises:
+            ValueError: If the output width or a selected position is invalid.
+        """
+        if self.output_width < 0 or any(
+            index is not None and not 0 <= index < self.output_width for index in self.clbit_indices
+        ):
+            msg = "Classical result mapping contains an invalid QDMI output position."
+            raise ValueError(msg)
+
+
 class TextProgramSerializer(Protocol):
     """Serializes a circuit into a program format whose payload is text."""
 
-    def __call__(self, circuit: QuantumCircuit, backend: QDMIBackend, /) -> str:
+    def __call__(self, circuit: QuantumCircuit, backend: QDMIBackend, /) -> str | SerializedProgram:
         """Serialize a circuit into a program string.
 
         Args:
@@ -91,7 +127,7 @@ class TextProgramSerializer(Protocol):
                 ``target`` property provides the supported operations.
 
         Returns:
-            The program in the serializer's format.
+            The program in the serializer's format, optionally with its classical result mapping.
 
         Raises:
             UnsupportedOperationError: If the circuit contains an operation the
@@ -104,7 +140,7 @@ class TextProgramSerializer(Protocol):
 class BinaryProgramSerializer(Protocol):
     """Serializes a circuit into a program format whose payload is binary."""
 
-    def __call__(self, circuit: QuantumCircuit, backend: QDMIBackend, /) -> bytes:
+    def __call__(self, circuit: QuantumCircuit, backend: QDMIBackend, /) -> bytes | SerializedProgram:
         """Serialize a circuit into program bytes.
 
         Args:
@@ -114,7 +150,7 @@ class BinaryProgramSerializer(Protocol):
                 ``target`` property provides the supported operations.
 
         Returns:
-            The program in the serializer's format.
+            The program in the serializer's format, optionally with its classical result mapping.
 
         Raises:
             UnsupportedOperationError: If the circuit contains an operation the

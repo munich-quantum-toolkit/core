@@ -399,7 +399,10 @@ int64_t JitSession::run() {
 }
 
 int64_t JitSession::sample(size_t shots, std::vector<std::string>& results,
-                           bool* stateAvailable) {
+                           bool* stateAvailable, bool* binaryOutput) {
+  if (binaryOutput != nullptr) {
+    *binaryOutput = true;
+  }
   if (stateAvailable != nullptr) {
     *stateAvailable = false;
   }
@@ -416,6 +419,9 @@ int64_t JitSession::sample(size_t shots, std::vector<std::string>& results,
     runtime_->outputShotStart();
     const auto code = run();
     runtime_->outputShotEnd(code);
+    if (binaryOutput != nullptr && !runtime_->binaryOutput_) {
+      *binaryOutput = false;
+    }
     return code;
   };
   if (samplingOutputs_ && !runtime_->hasOutput() && shots != 0) {
@@ -493,6 +499,15 @@ void JitSession::initialize(
   std::string entryPointName;
   std::vector<std::pair<std::string, void*>> runtimeSymbols;
   loadedModule.withModuleDo([&](llvm::Module& module) {
+    for (const auto* name : {
+             "__quantum__rt__int_record_output",
+             "__quantum__rt__double_record_output",
+         }) {
+      if (const auto* function = module.getFunction(name);
+          function != nullptr && !function->use_empty()) {
+        mayRecordNonBinaryOutput_ = true;
+      }
+    }
     auto& entryPoint = selectEntryPoint(module);
     entryPointName = entryPoint.getName().str();
     runtime_->setOutputSchema(readOutputSchema(entryPoint));

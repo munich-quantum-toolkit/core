@@ -374,7 +374,12 @@ private:
     if (!returnOp) {
       return fail(function, "entry block must end in func.return");
     }
-    for (auto value : returnOp.getOperands()) {
+    for (auto [index, value] : llvm::enumerate(returnOp.getOperands())) {
+      const auto type = function.getResultAttrOfType<StringAttr>(
+          index, "mqt.qasm_output_type");
+      if (type && type.getValue() == "bit") {
+        continue;
+      }
       if (isa<cbit::RegisterType>(value.getType()) &&
           !returnedRegisters.insert(value).second) {
         return fail(returnOp, "repeated register results are not supported");
@@ -448,6 +453,11 @@ private:
     }
 
     for (const auto [index, value] : llvm::enumerate(returnOp.getOperands())) {
+      const auto sourceName = function.getResultAttrOfType<StringAttr>(
+          index, "mqt.qasm_output_name");
+      const auto sourceType = function.getResultAttrOfType<StringAttr>(
+          index, "mqt.qasm_output_type");
+      const auto requested = sourceName ? sourceName.getValue() : StringRef{};
       if (isa<cbit::RegisterType>(value.getType())) {
         const auto found = resources.find(value);
         if (found == resources.end()) {
@@ -457,18 +467,37 @@ private:
         }
         outputs.push_back({
             .value = value,
-            .name = found->second.name,
-            .kind = (Twine("bit[") + Twine(found->second.width) + "]").str(),
+            .name = sourceType && sourceType.getValue() == "bit"
+                        ? outputName(requested)
+                        : found->second.name,
+            .kind =
+                sourceType && sourceType.getValue() == "bit"
+                    ? "bit"
+                    : (Twine("bit[") + Twine(found->second.width) + "]").str(),
         });
       } else {
         auto kind = inferScalarKind(value);
+        if (sourceType) {
+          kind = sourceType.getValue().str();
+          if (kind == "int" || kind == "uint") {
+            const auto integer = dyn_cast<IntegerType>(value.getType());
+            if (!integer) {
+              return fail(returnOp,
+                          "integer output metadata requires an integer result");
+            }
+            kind += (Twine("[") + Twine(integer.getWidth()) + "]").str();
+          }
+        }
         if (kind.empty()) {
           return fail(returnOp,
                       "unsupported scalar output type for function result " +
                           Twine(index));
         }
-        outputs.push_back(
-            {.value = value, .name = outputName({}), .kind = std::move(kind)});
+        outputs.push_back({
+            .value = value,
+            .name = outputName(requested),
+            .kind = std::move(kind),
+        });
       }
     }
     return success();
@@ -1680,6 +1709,10 @@ private:
   [[nodiscard]] LogicalResult emitReturn(func::ReturnOp returnOp) {
     for (const auto [index, value] : llvm::enumerate(returnOp.getOperands())) {
       if (isa<cbit::RegisterType>(value.getType())) {
+        if (outputs[index].kind == "bit") {
+          *output << outputs[index].name << " = " << resources.at(value).name
+                  << "[0];\n";
+        }
         continue;
       }
       auto expression = emitExpression(value);
@@ -1687,7 +1720,8 @@ private:
         return failure();
       }
       if (auto integer = dyn_cast<IntegerType>(value.getType());
-          integer && integer.getWidth() > 1) {
+          integer && (integer.getWidth() > 1 ||
+                      outputs[index].kind.starts_with("uint["))) {
         *expression = outputs[index].kind + "(" + *expression + ")";
       }
       *output << outputs[index].name << " = " << *expression << ";\n";

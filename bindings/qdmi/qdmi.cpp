@@ -116,6 +116,14 @@ Returns:
           nb::call_guard<nb::gil_scoped_release>(),
           "Returns the measurement counts from the job.");
 
+  job.def("get_qir_output", &qdmi::Job::getQIROutput,
+          nb::call_guard<nb::gil_scoped_release>(),
+          "Returns the complete QIR output stream, or None when unsupported.");
+  job.def(
+      "get_qasm3_output", &qdmi::Job::getQASM3Output,
+      nb::call_guard<nb::gil_scoped_release>(),
+      "Returns complete per-shot OpenQASM 3 JSON, or None when unsupported.");
+
   job.def("get_dense_statevector", &qdmi::Job::getDenseStateVector,
           nb::call_guard<nb::gil_scoped_release>(),
           "Returns the dense statevector from the job (typically only "

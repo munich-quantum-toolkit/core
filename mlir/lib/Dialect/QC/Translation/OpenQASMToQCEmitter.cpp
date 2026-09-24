@@ -12,6 +12,7 @@
 
 #include "mqt/Dialect/CBit/IR/CBitAttributes.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
+#include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
@@ -189,6 +190,43 @@ public:
     }
     builder.retype(ValueRange(results).getTypes());
     auto moduleOp = builder.finalize(results);
+    if (!moduleOp) {
+      return nullptr;
+    }
+    auto entry = mqt::getEntryPoint(*moduleOp);
+    for (auto [index, output] : llvm::enumerate(program.outputs)) {
+      std::string name;
+      llvm::StringRef type;
+      if (output.kind == frontend::OutputKind::Scalar) {
+        const auto& scalar = program.scalars[output.symbol];
+        name = scalar.name;
+        switch (scalar.type) {
+        case frontend::ScalarType::Bool:
+          type = "bool";
+          break;
+        case frontend::ScalarType::Int:
+          type = "int";
+          break;
+        case frontend::ScalarType::Uint:
+          type = "uint";
+          break;
+        case frontend::ScalarType::Float:
+          type = "float";
+          break;
+        case frontend::ScalarType::Angle:
+          type = "angle";
+          break;
+        }
+      } else {
+        const auto& reg = program.registers[output.symbol];
+        name = reg.name;
+        type = reg.isScalar ? "bit" : "bit_register";
+      }
+      entry.setResultAttr(index, "mqt.qasm_output_name",
+                          builder.getStringAttr(name));
+      entry.setResultAttr(index, "mqt.qasm_output_type",
+                          builder.getStringAttr(type));
+    }
     if (emissionBudget.isExhausted()) {
       return nullptr;
     }
@@ -1647,12 +1685,11 @@ private:
     } else if (statement.conditionInitializer) {
       value = emitCondition(*statement.conditionInitializer, {}, gateQubits);
     } else {
-      /// Definite initialization rejects reads until an assignment; a loop may
-      /// carry this unobservable placeholder before its first assignment.
+      /// Reads require definite initialization; an unwritten output remains
+      /// undefined rather than acquiring a value through lowering.
       const auto& scalar = program.scalars.at(statement.scalar);
       auto type = scalarType(scalar.type, scalar.integerWidth);
-      value =
-          arith::ConstantOp::create(builder, type, builder.getZeroAttr(type));
+      value = ub::PoisonOp::create(builder, type);
     }
     if (value) {
       setScalarValue(statement.scalar, value);

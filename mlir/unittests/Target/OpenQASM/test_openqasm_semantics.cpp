@@ -518,7 +518,8 @@ TEST(OpenQASMFrontendTest, AcceptsLogAndRejectsLnBuiltInSpelling) {
       std::string::npos);
 }
 
-TEST(OpenQASMFrontendTest, RejectsUninitializedOutputsAndInvalidConditions) {
+TEST(OpenQASMFrontendTest,
+     AcceptsUndefinedOutputsAndRejectsUndefinedConditions) {
   constexpr llvm::StringLiteral unmeasuredOutput = R"qasm(
 OPENQASM 3.1;
 qubit q;
@@ -539,11 +540,7 @@ if (c >= 1) { x q; }
 
   auto uninitializedOutput =
       openqasm::frontend::analyzeOpenQASM(unmeasuredOutput);
-  ASSERT_FALSE(uninitializedOutput);
-  ASSERT_FALSE(uninitializedOutput.diagnostics.empty());
-  EXPECT_NE(uninitializedOutput.diagnostics.front().message.find(
-                "not fully initialized"),
-            std::string::npos);
+  ASSERT_TRUE(uninitializedOutput);
 
   auto uninitializedCondition =
       openqasm::frontend::analyzeOpenQASM(unmeasuredCondition);
@@ -562,13 +559,12 @@ if (c >= 1) { x q; }
             std::string::npos);
 }
 
-TEST(OpenQASMFrontendTest, RejectsUninitializedScalarOutputs) {
+TEST(OpenQASMFrontendTest, SelectsUninitializedScalarOutputs) {
   auto analyzed =
       openqasm::frontend::analyzeOpenQASM("OPENQASM 3.1; output int result;");
-  ASSERT_FALSE(analyzed);
-  ASSERT_FALSE(analyzed.diagnostics.empty());
-  EXPECT_NE(analyzed.diagnostics.front().message.find("Output scalar 'result'"),
-            std::string::npos);
+  ASSERT_TRUE(analyzed);
+  ASSERT_EQ(analyzed.program->outputs.size(), 1);
+  EXPECT_EQ(analyzed.program->scalars.front().name, "result");
 }
 
 TEST(OpenQASMFrontendTest, RejectsRecursiveCustomGates) {
@@ -1082,12 +1078,14 @@ const int integer_arithmetic =
 
   auto analyzed = openqasm::frontend::analyzeOpenQASM(source);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
-  EXPECT_TRUE(analyzed.program->body.empty());
+  EXPECT_EQ(analyzed.program->outputs.size(), analyzed.program->scalars.size());
 }
 
 TEST(OpenQASMFrontendTest, FoldsFixedAngleConversionsAndArithmetic) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
+output bool accepted;
+accepted = true;
 include "stdgates.inc";
 const float two_pi = 6.283185307179586;
 angle[8] halfway = angle[8](two_pi * (127.0 / 512.0));
@@ -1185,8 +1183,8 @@ if (a > b && b < a && a == 7.0 * pi / 8.0) { x q; }
   }
   EXPECT_EQ(parameterIndex, expectedParameters.size());
   EXPECT_TRUE(sawTrueCondition);
-  EXPECT_TRUE(analyzed.program->scalars.empty());
-  EXPECT_TRUE(analyzed.program->outputs.empty());
+  EXPECT_EQ(analyzed.program->scalars.size(), 2);
+  EXPECT_EQ(analyzed.program->outputs.size(), 1);
 }
 
 TEST(OpenQASMFrontendTest, RejectsUnsupportedFixedAnglePrograms) {
@@ -1224,7 +1222,7 @@ const float inverse = arccos(0.5) + arcsin(0.5) + arctan(0.5);
 )qasm";
   auto analyzed = openqasm::frontend::analyzeOpenQASM(source);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
-  EXPECT_TRUE(analyzed.program->body.empty());
+  EXPECT_EQ(analyzed.program->outputs.size(), analyzed.program->scalars.size());
 }
 
 TEST(OpenQASMFrontendTest, AppliesC99SignedUnsignedConstantPromotion) {
@@ -1363,7 +1361,7 @@ const float float_copy = float_value;
 
   auto analyzed = openqasm::frontend::analyzeOpenQASM(source);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
-  EXPECT_TRUE(analyzed.program->body.empty());
+  EXPECT_EQ(analyzed.program->outputs.size(), analyzed.program->scalars.size());
 }
 
 TEST(OpenQASMFrontendTest, RejectsInvalidConstInitializerPromotions) {

@@ -44,7 +44,7 @@ from .exceptions import (
     UnsupportedOperationError,
 )
 from .job import QDMIJob, _cancel_jobs
-from .serializers import preferred_program_formats, program_serializer, register_program_serializer
+from .serializers import SerializedProgram, preferred_program_formats, program_serializer, register_program_serializer
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, MutableSet, Sequence
@@ -678,7 +678,7 @@ class QDMIBackend(BackendV2):
 
     def _serialize_circuit(
         self, circuit: QuantumCircuit, supported_program_formats: Iterable[ProgramFormat]
-    ) -> tuple[str | bytes, ProgramFormat]:
+    ) -> tuple[str | bytes | SerializedProgram, ProgramFormat]:
         """Serialize a :class:`~qiskit.circuit.QuantumCircuit` into a program the device accepts.
 
         The method walks the formats the device supports in the order of
@@ -721,7 +721,10 @@ class QDMIBackend(BackendV2):
             except Exception as exc:
                 msg = f"Failed to serialize the circuit to {fmt.name}: {exc}"
                 raise TranslationError(msg) from exc
-            _check_payload_type(program, fmt)
+            _check_payload_type(program.payload if isinstance(program, SerializedProgram) else program, fmt)
+            if isinstance(program, SerializedProgram) and len(program.clbit_indices) != circuit.num_clbits:
+                msg = "The serializer must map every source classical bit."
+                raise TranslationError(msg)
             return program, fmt
 
         msg = f"No program serializer for any format the device supports: {[fmt.name for fmt in formats]}"
@@ -810,7 +813,7 @@ class QDMIBackend(BackendV2):
         qdmi_jobs: list[QDMIJobHandle] = []
         prepared_circuits: list[QuantumCircuit] = []
         # Prepare every circuit before submitting any job, so validation cannot leave a partial batch.
-        serialized_circuits: list[tuple[str | bytes, ProgramFormat]] = []
+        serialized_circuits: list[tuple[str | bytes | SerializedProgram, ProgramFormat]] = []
 
         for idx, circuit in enumerate(circuits):
             bound_circuit = circuit
@@ -845,12 +848,25 @@ class QDMIBackend(BackendV2):
             for program, program_format in serialized_circuits:
                 try:
                     qdmi_jobs.append(
-                        self._device.submit_job(program=program, program_format=program_format, num_shots=shots)
+                        self._device.submit_job(
+                            program=program.payload if isinstance(program, SerializedProgram) else program,
+                            program_format=program_format,
+                            num_shots=shots,
+                        )
                     )
                 except Exception as exc:
                     msg = f"Failed to submit job to device: {exc}"
                     raise JobSubmissionError(msg) from exc
-            return QDMIJob(self, qdmi_jobs, prepared_circuits, shots=shots, memory=memory)
+            return QDMIJob(
+                self,
+                qdmi_jobs,
+                prepared_circuits,
+                shots=shots,
+                memory=memory,
+                output_mappings=[
+                    program if isinstance(program, SerializedProgram) else None for program, _ in serialized_circuits
+                ],
+            )
         except BaseException:
             _cancel_jobs(qdmi_jobs)
             raise

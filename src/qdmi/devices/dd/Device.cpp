@@ -23,6 +23,10 @@
 #include "mqt_ddsim_qdmi/device.h"
 #include "qdmi/common/Common.hpp"
 
+#include "nlohmann/json.hpp" /// IWYU pragma: keep
+#include "nlohmann/json_fwd.hpp"
+
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 
@@ -33,6 +37,7 @@
 #include <atomic>
 #include <cassert>
 #include <chrono>
+#include <cmath>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
@@ -533,20 +538,81 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQASMProgramSampling()
     if (!qcoProgram) {
       return false;
     }
-    const auto entryPoint = mlir::mqt::getEntryPoint(qcoProgram->module());
+    auto entryPoint = mlir::mqt::getEntryPoint(qcoProgram->module());
     if (!entryPoint) {
       std::cerr << "Error: QCO program has no entry point\n";
       return false;
     }
     mlir::qco::DDSamplingState retainedState;
+    mlir::qco::DDProgramOutput output;
     auto counts = mlir::qco::sample(
         entryPoint, numShots_, static_cast<uint64_t>(seed_.value_or(0)),
-        mlir::qco::DDArgumentBindings{}, &shots_, &retainedState);
+        mlir::qco::DDArgumentBindings{}, &shots_, &retainedState, &output);
     if (mlir::failed(counts)) {
       std::cerr << "Error: failed to sample the QCO program\n";
       return false;
     }
     counts_ = std::move(*counts);
+    binaryOutput_ = output.binary;
+    if (format_ == QDMI_PROGRAM_FORMAT_QASM3) {
+      auto json = nlohmann::json::array();
+      for (const auto& shot : output.shots) {
+        auto object = nlohmann::json::object();
+        for (size_t index = 0; index < shot.size(); ++index) {
+          const auto name = entryPoint.getResultAttrOfType<mlir::StringAttr>(
+              index, "mqt.qasm_output_name");
+          const auto type = entryPoint.getResultAttrOfType<mlir::StringAttr>(
+              index, "mqt.qasm_output_type");
+          if (!name || !type) {
+            std::cerr << "Error: missing OpenQASM output metadata\n";
+            return false;
+          }
+          const auto kind = type.getValue();
+          const auto value = shot[index];
+          auto& encoded = object[name.str()];
+          if (const auto bits = mlir::dyn_cast<mlir::ArrayAttr>(value)) {
+            encoded = nlohmann::json::array();
+            for (const auto bit : bits) {
+              if (const auto integer = mlir::dyn_cast<mlir::IntegerAttr>(bit)) {
+                encoded.push_back(integer.getInt() != 0 ? 1 : 0);
+              } else {
+                encoded.push_back(nullptr);
+              }
+            }
+            if (kind == "bit") {
+              encoded = encoded.at(0);
+            }
+          } else if (const auto integer =
+                         mlir::dyn_cast<mlir::IntegerAttr>(value)) {
+            if (kind == "bool") {
+              encoded = integer.getInt() != 0;
+            } else if (kind == "uint") {
+              encoded = integer.getValue().getZExtValue();
+              binaryOutput_ = false;
+            } else {
+              encoded = integer.getValue().getSExtValue();
+              binaryOutput_ = false;
+            }
+          } else if (const auto floating =
+                         mlir::dyn_cast<mlir::FloatAttr>(value)) {
+            const auto number = floating.getValueAsDouble();
+            if (std::isfinite(number)) {
+              encoded = number;
+            } else if (std::isnan(number)) {
+              encoded = "NaN";
+            } else {
+              encoded = number > 0 ? "Infinity" : "-Infinity";
+            }
+            binaryOutput_ = false;
+          } else {
+            encoded = nullptr;
+            binaryOutput_ = false;
+          }
+        }
+        json.push_back(std::move(object));
+      }
+      qasmOutput_ = json.dump();
+    }
     dd_ = std::move(retainedState.dd);
     stateVecDD_ = retainedState.state;
     return true;
@@ -594,13 +660,14 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramSampling()
     std::optional<std::ostringstream> output;
     auto jitSession =
         qir::JitSession(irBytes, "QDMI job", qir::Execution::Sampling, seed);
-    if (captureQIROutput_) {
+    if (captureQIROutput_ || jitSession.mayRecordNonBinaryOutput()) {
       jitSession.runtime().setOstream(output.emplace());
     } else {
       jitSession.runtime().disableOutput();
     }
     bool stateAvailable = false;
-    if (const auto rc = jitSession.sample(numShots_, shots_, &stateAvailable);
+    if (const auto rc = jitSession.sample(numShots_, shots_, &stateAvailable,
+                                          &binaryOutput_);
         rc != 0) {
       std::cerr << "Error: QIR program failed with error: " << rc << '\n';
       return false;
@@ -946,8 +1013,19 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getResults(const QDMI_Job_Result result,
     return QDMI_ERROR_BADSTATE;
   }
   if (qirOutput_) {
+    ADD_STRING_PROPERTY(QDMI_JOB_RESULT_QIR_OUTPUT, qirOutput_->c_str(), result,
+                        size, data, sizeRet)
     ADD_STRING_PROPERTY(QDMI_JOB_RESULT_CUSTOM1, qirOutput_->c_str(), result,
                         size, data, sizeRet)
+  }
+  if (qasmOutput_) {
+    ADD_STRING_PROPERTY(QDMI_JOB_RESULT_QASM3_OUTPUT, qasmOutput_->c_str(),
+                        result, size, data, sizeRet)
+  }
+  if (!binaryOutput_ &&
+      (result == QDMI_JOB_RESULT_SHOTS || result == QDMI_JOB_RESULT_HIST_KEYS ||
+       result == QDMI_JOB_RESULT_HIST_VALUES)) {
+    return QDMI_ERROR_NOTSUPPORTED;
   }
   switch (result) {
   case QDMI_JOB_RESULT_SHOTS:

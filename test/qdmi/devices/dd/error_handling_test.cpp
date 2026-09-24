@@ -312,7 +312,7 @@ TEST_F(ErrorHandling, MalformedProgramFailsForBothModes) {
   }
 }
 
-TEST_F(ErrorHandling, QASM3PartiallyInitializedOutputFails) {
+TEST_F(ErrorHandling, QASM3PartiallyInitializedOutputIsNotBinary) {
   constexpr std::string_view program = R"qasm(OPENQASM 3.0;
 bit[2] c;
 qubit[2] q;
@@ -326,5 +326,8 @@ c[0] = measure q[0];
   ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
   QDMI_Job_Status status{};
   ASSERT_EQ(MQT_DDSIM_QDMI_device_job_check(j.job, &status), QDMI_SUCCESS);
-  EXPECT_EQ(status, QDMI_JOB_STATUS_FAILED);
+  EXPECT_EQ(status, QDMI_JOB_STATUS_DONE);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(j.job, QDMI_JOB_RESULT_SHOTS,
+                                                  0, nullptr, nullptr),
+            QDMI_ERROR_NOTSUPPORTED);
 }

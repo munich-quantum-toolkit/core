@@ -841,6 +841,12 @@ public:
   /// @see QDMI_JOB_RESULT_SHOTS
   [[nodiscard]] std::vector<std::string> getShots() const;
 
+  /// Returns the complete QIR output stream, or nullopt when unsupported.
+  [[nodiscard]] std::optional<std::string> getQIROutput() const;
+
+  /// Returns complete per-shot OpenQASM 3 JSON, or nullopt when unsupported.
+  [[nodiscard]] std::optional<std::string> getQASM3Output() const;
+
   /// Returns a map of measurement outcomes to their respective counts.
   /// @see QDMI_JOB_RESULT_HIST_KEYS
   /// @see QDMI_JOB_RESULT_HIST_VALUES

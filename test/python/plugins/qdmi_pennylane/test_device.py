@@ -305,12 +305,12 @@ def test_validates_configuration_and_width(monkeypatch: pytest.MonkeyPatch) -> N
         )
 
 
-def test_rejects_device_without_openqasm(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_rejects_device_without_supported_format(monkeypatch: pytest.MonkeyPatch) -> None:
     """Reject unsupported program formats during construction."""
     qdmi = StubDevice([], [ProgramFormat.QIR_BASE_STRING])
     patch_open_device(monkeypatch, qdmi)
 
-    with pytest.raises(PennyLaneUnsupportedFormatError, match="neither OpenQASM 3 nor OpenQASM 2"):
+    with pytest.raises(PennyLaneUnsupportedFormatError, match="neither IQM JSON, OpenQASM 3, nor OpenQASM 2"):
         QDMIDevice("fake.qdmi", wires=2)
 
 

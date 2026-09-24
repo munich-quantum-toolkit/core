@@ -30,7 +30,8 @@ if(NOT TARGET ${TARGET_NAME})
            ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/devices/dd/Device.hpp
            ${QDMI_HDRS})
 
-  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreDD MQT::CoreQDMICommon)
+  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreDD MQT::CoreQDMICommon
+                                               nlohmann_json::nlohmann_json)
   mqt_llvm_target_disable_rtti(${TARGET_NAME})
   # Keep symbols from static dependencies local. A plugin-enabled host can otherwise interpose
   # LLVM's process-wide registries when it loads this device.

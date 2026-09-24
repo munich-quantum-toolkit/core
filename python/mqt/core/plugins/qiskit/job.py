@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from qiskit.circuit import QuantumCircuit
 
     from .backend import QDMIBackend
+    from .serializers import SerializedProgram
 
 __all__ = ["QDMIJob"]
 
@@ -53,7 +54,7 @@ def _cancel_jobs(jobs: Sequence[QDMIJobHandle]) -> bool:
     return success
 
 
-def _encode_bits(bits: str, width: int) -> str:
+def _encode_bits(bits: str, width: int, mapping: SerializedProgram | None = None) -> str:
     """Validate a QDMI bitstring and encode it as Qiskit result data.
 
     Returns:
@@ -62,9 +63,12 @@ def _encode_bits(bits: str, width: int) -> str:
     Raises:
         JobError: If the bitstring has the wrong width or contains nonbinary digits.
     """
-    if len(bits) != width or any(bit not in "01" for bit in bits):
-        msg = f"Invalid QDMI bitstring {bits!r}: expected {width} binary digits in classical-bit order."
+    raw_width = mapping.output_width if mapping is not None else width
+    if len(bits) != raw_width or any(bit not in "01" for bit in bits):
+        msg = f"Invalid QDMI bitstring {bits!r}: expected {raw_width} binary digits in classical-bit order."
         raise JobError(msg)
+    if mapping is not None:
+        bits = "".join("0" if index is None else bits[-1 - index] for index in reversed(mapping.clbit_indices))
     return hex(int(bits, 2)) if bits else "0x0"
 
 
@@ -80,6 +84,7 @@ class QDMIJob(JobV1):
         circuits: The executed circuits, used to snapshot result headers.
         shots: Requested shots per circuit.
         memory: Whether to collect genuine ordered shots.
+        output_mappings: Optional serializer mappings, in circuit order.
     """
 
     def __init__(
@@ -90,6 +95,7 @@ class QDMIJob(JobV1):
         *,
         shots: int,
         memory: bool,
+        output_mappings: Sequence[SerializedProgram | None] | None = None,
     ) -> None:
         """Initialize without querying remote job IDs.
 
@@ -102,6 +108,13 @@ class QDMIJob(JobV1):
         super().__init__(backend=backend, job_id="")
         self._backend: QDMIBackend = backend
         self._jobs = list(jobs)
+        self._output_mappings = list(output_mappings) if output_mappings is not None else [None] * len(jobs)
+        if len(self._output_mappings) != len(jobs) or any(
+            mapping is not None and len(mapping.clbit_indices) != circuit.num_clbits
+            for mapping, circuit in zip(self._output_mappings, circuits, strict=False)
+        ):
+            msg = "QDMIJob requires one complete output mapping per circuit."
+            raise ValueError(msg)
         self._headers: list[dict[str, Any]] = [
             {
                 "name": circuit.name,
@@ -140,7 +153,7 @@ class QDMIJob(JobV1):
         if self._result is not None:
             return self._result
         try:
-            experiment_results = list(map(self._collect_result, self._jobs, self._headers))
+            experiment_results = list(map(self._collect_result, self._jobs, self._headers, self._output_mappings))
             self._result = Result(
                 backend_name=self._backend.name,
                 backend_version=self._backend.backend_version,
@@ -154,7 +167,9 @@ class QDMIJob(JobV1):
             raise
         return self._result
 
-    def _collect_result(self, job: QDMIJobHandle, header: dict[str, Any]) -> ExperimentResult:
+    def _collect_result(
+        self, job: QDMIJobHandle, header: dict[str, Any], mapping: SerializedProgram | None
+    ) -> ExperimentResult:
         """Collect and validate one circuit's result.
 
         Returns:
@@ -185,7 +200,7 @@ class QDMIJob(JobV1):
             if len(shots) != self._shots:
                 msg = f"Invalid QDMI SHOTS result: expected {self._shots} shots, got {len(shots)}."
                 raise JobError(msg)
-            memory = [_encode_bits(bits, width) for bits in shots]
+            memory = [_encode_bits(bits, width, mapping) for bits in shots]
             data = {"memory": memory, "counts": dict(Counter(memory))}
         elif not width:
             data = {"counts": {}}
@@ -197,7 +212,10 @@ class QDMIJob(JobV1):
             if sum(counts.values()) != self._shots:
                 msg = f"Invalid QDMI histogram: expected {self._shots} total shots."
                 raise JobError(msg)
-            data = {"counts": {_encode_bits(bits, width): count for bits, count in counts.items()}}
+            reconstructed: Counter[str] = Counter()
+            for bits, count in counts.items():
+                reconstructed[_encode_bits(bits, width, mapping)] += count
+            data = {"counts": dict(reconstructed)}
         return ExperimentResult.from_dict({
             "success": True,
             "shots": self._shots,

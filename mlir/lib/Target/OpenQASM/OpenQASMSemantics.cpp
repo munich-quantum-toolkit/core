@@ -486,6 +486,7 @@ private:
       presburger::PresburgerSpace::getSetSpace()};
   std::vector<ProgramOutput> implicitOutputs;
   std::vector<ProgramOutput> explicitOutputs;
+  std::optional<SourceLocation> implicitAngleOutput;
   mutable std::vector<int8_t> constantExpressionStatus;
   mutable std::vector<std::optional<Constant>> constantValues;
   mutable std::vector<std::optional<ScalarType>> constantTypes;
@@ -1035,8 +1036,10 @@ private:
                       Twine(static_cast<unsigned>(TYPED_STATEMENT_LIMIT)));
     }
     const auto id = static_cast<StatementId>(program.statements.size());
-    program.statements.push_back(
-        {.data = std::move(data), .location = getSourceLocation(location)});
+    program.statements.push_back({
+        .data = std::move(data),
+        .location = getSourceLocation(location),
+    });
     return id;
   }
 
@@ -3249,6 +3252,9 @@ private:
       integerWidth = static_cast<unsigned>(width);
     }
     if (type == ScalarType::Angle) {
+      if (global) {
+        implicitAngleOutput = getSourceLocation(location);
+      }
       if (declaration.output) {
         return fail(location, "angle outputs are not supported");
       }
@@ -3294,6 +3300,28 @@ private:
           constant.value = narrowed.getZExtValue();
         }
         constant.integerWidth = integerWidth;
+      }
+      if (global) {
+        const auto id = static_cast<ScalarId>(program.scalars.size());
+        program.scalars.push_back({
+            .type = type,
+            .integerWidth = integerWidth,
+            .name = declaration.identifier.str(),
+            .location = getSourceLocation(location),
+        });
+        scalarStateSlots_.push_back(initializedScalars.size());
+        initializedScalars.push_back(true);
+        scalarGenerations.push_back(0);
+        affineScalarValues.emplace_back();
+        implicitOutputs.push_back({.kind = OutputKind::Scalar, .symbol = id});
+        MQT_OQ3_TRY_ASSIGN(
+            statement,
+            addStatement(location, ScalarDeclarationStatement{
+                                       .scalar = id,
+                                       .initializer = addConstant(constant),
+                                       .conditionInitializer = std::nullopt,
+                                   }));
+        destination.push_back(statement);
       }
       return declare(location, declaration.identifier,
                      {
@@ -5016,24 +5044,11 @@ private:
   }
 
   [[nodiscard]] LogicalResult finalizeOutputs() {
+    if (explicitOutputs.empty() && implicitAngleOutput) {
+      return fail(*implicitAngleOutput, "angle outputs are not supported");
+    }
     program.outputs =
         explicitOutputs.empty() ? implicitOutputs : explicitOutputs;
-    for (const auto output : program.outputs) {
-      if (output.kind == OutputKind::Scalar) {
-        if (!initializedScalars[scalarStateSlots_[output.symbol]]) {
-          return fail(program.scalars[output.symbol].location,
-                      "Output scalar '" + program.scalars[output.symbol].name +
-                          "' is not initialized.");
-        }
-        continue;
-      }
-      const auto reg = static_cast<RegisterId>(output.symbol);
-      if (!initializedBits[registerStateSlots_[reg]]->all()) {
-        return fail(program.registers[reg].location,
-                    "Output register '" + program.registers[reg].name +
-                        "' is not fully initialized.");
-      }
-    }
     return success();
   }
 };
