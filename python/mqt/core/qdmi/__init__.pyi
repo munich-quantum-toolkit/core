@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""QDMI Client entities."""
+"""QDMI devices, sessions, and jobs."""
 
 import enum
 import os
@@ -15,8 +15,8 @@ from typing import overload
 
 from mqt.core.qdmi import slurm as slurm
 
-class ClientSession:
-    """One initialized QDMI Client session."""
+class Session:
+    """One initialized QDMI driver session."""
 
     def __init__(
         self,
@@ -38,6 +38,13 @@ class ClientSession:
     def devices(self) -> list[Device]:
         """The devices visible to this authenticated session."""
 
+    @property
+    def device_ids(self) -> list[str]:
+        """The stable IDs of devices visible to this session."""
+
+    def get_device(self, device_id: str) -> Device:
+        """Find a device by stable ID within this session."""
+
 def open_device(
     device_id: str,
     *,
@@ -54,7 +61,7 @@ def open_device(
     custom4: str | None = None,
     custom5: str | None = None,
 ) -> Device:
-    """Open a Client-visible device by stable ID in a fresh session."""
+    """Open a client-visible device by stable ID in a fresh session."""
 
 class Job:
     """A job represents a submitted quantum program execution."""
@@ -261,7 +268,7 @@ class Device:
 
     @property
     def id(self) -> str:
-        """The stable Client-visible device ID."""
+        """The stable client-visible device ID."""
 
     def version(self) -> str:
         """Returns the version of the device."""

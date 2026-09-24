@@ -310,7 +310,7 @@ import pennylane as qp
 
 from mqt.core.plugins.pennylane import QDMIDevice
 
-device_id = "stable ID reported by the QDMI Driver"
+device_id = "stable ID reported by the QDMI driver"
 device = QDMIDevice(
     device_id=device_id,
     wires=["a", "b", "c", "d"],

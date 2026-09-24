@@ -13,7 +13,7 @@ add_subdirectory(driver)
 set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi)
 
 if(NOT TARGET ${TARGET_NAME})
-  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMI FORCE_SHARED)
+  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMI)
 
   target_sources(${TARGET_NAME} PRIVATE Client.cpp Slurm.cpp)
 

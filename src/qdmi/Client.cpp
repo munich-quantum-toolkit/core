@@ -11,6 +11,7 @@
 #include "qdmi/Client.hpp"
 
 #include "qdmi/common/Common.hpp"
+#include "qdmi/common/DeviceConfiguration.hpp"
 #include "qdmi/common/Diagnostics.hpp"
 
 #include "qdmi/client.h"
@@ -23,7 +24,6 @@
 #include <iterator>
 #include <map>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <span>
 #include <sstream>
@@ -40,9 +40,6 @@
 #include <windows.h>
 #else
 #include <dlfcn.h>
-#ifdef __APPLE__
-#include <mach-o/dyld.h>
-#endif
 #endif
 
 #ifndef MQT_CORE_QDMI_DEFAULT_DRIVER_FILENAME
@@ -64,14 +61,15 @@ void rejectUnsupportedProgramFormat(const QDMI_Program_Format format) {
 }
 template <typename T>
 std::map<std::string, T>
-getSparseResult(const detail::ClientApi& api, QDMI_Job job,
+getSparseResult(const detail::ClientAPI& api, QDMI_Job job,
                 const QDMI_Job_Result keysResult,
                 const QDMI_Job_Result valuesResult,
                 const std::string& description, const std::string& valueType,
                 const std::string& mismatch) {
   size_t keysSize = 0;
-  qdmi::throwIfError(api.jobGetResults(job, keysResult, 0, nullptr, &keysSize),
-                     "Querying " + description + " keys size");
+  qdmi::throwIfError(
+      api.job_get_results(job, keysResult, 0, nullptr, &keysSize),
+      "Querying " + description + " keys size");
 
   if (keysSize == 0) {
     return {};
@@ -79,13 +77,13 @@ getSparseResult(const detail::ClientApi& api, QDMI_Job job,
 
   std::string keys(keysSize, '\0');
   qdmi::throwIfError(
-      api.jobGetResults(job, keysResult, keysSize, keys.data(), nullptr),
+      api.job_get_results(job, keysResult, keysSize, keys.data(), nullptr),
       "Querying " + description + " keys");
   keys.pop_back();
 
   size_t valuesSize = 0;
   qdmi::throwIfError(
-      api.jobGetResults(job, valuesResult, 0, nullptr, &valuesSize),
+      api.job_get_results(job, valuesResult, 0, nullptr, &valuesSize),
       "Querying " + description + " values size");
 
   if (valuesSize % sizeof(T) != 0) {
@@ -94,9 +92,9 @@ getSparseResult(const detail::ClientApi& api, QDMI_Job job,
   }
 
   std::vector<T> values(valuesSize / sizeof(T));
-  qdmi::throwIfError(
-      api.jobGetResults(job, valuesResult, valuesSize, values.data(), nullptr),
-      "Querying " + description + " values");
+  qdmi::throwIfError(api.job_get_results(job, valuesResult, valuesSize,
+                                         values.data(), nullptr),
+                     "Querying " + description + " values");
 
   /// Parse the comma-separated keys.
   std::map<std::string, T> result;
@@ -124,29 +122,6 @@ getSparseResult(const detail::ClientApi& api, QDMI_Job job,
 #ifdef _WIN32
 using LibraryHandle = HMODULE;
 
-[[nodiscard]] auto thisModuleDirectory() -> std::filesystem::path {
-  HMODULE module = nullptr;
-  if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                             GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                         reinterpret_cast<LPCWSTR>(&thisModuleDirectory),
-                         &module) == 0) {
-    throw std::runtime_error("Cannot locate the MQT Core QDMI module");
-  }
-  std::wstring buffer(MAX_PATH, L'\0');
-  while (true) {
-    const auto size = GetModuleFileNameW(module, buffer.data(),
-                                         static_cast<DWORD>(buffer.size()));
-    if (size == 0) {
-      throw std::runtime_error("Cannot locate the MQT Core QDMI module");
-    }
-    if (size < buffer.size()) {
-      buffer.resize(size);
-      return std::filesystem::path(buffer).parent_path();
-    }
-    buffer.resize(buffer.size() * 2U);
-  }
-}
-
 [[nodiscard]] auto openLibrary(const std::filesystem::path& path)
     -> LibraryHandle {
   return LoadLibraryExW(path.wstring().c_str(), nullptr,
@@ -162,35 +137,6 @@ using LibraryHandle = HMODULE;
 void closeLibrary(LibraryHandle library) { FreeLibrary(library); }
 #else
 using LibraryHandle = void*;
-
-[[nodiscard]] auto thisModuleDirectory() -> std::filesystem::path {
-  Dl_info info{};
-  if (dladdr(reinterpret_cast<const void*>(&thisModuleDirectory), &info) == 0 ||
-      info.dli_fname == nullptr) {
-    throw std::runtime_error("Cannot locate the MQT Core QDMI module");
-  }
-  auto path = std::filesystem::path(info.dli_fname);
-  if (!path.is_absolute()) {
-#ifdef __linux__
-    std::error_code error;
-    path = std::filesystem::read_symlink("/proc/self/exe", error);
-    if (error) {
-      throw std::runtime_error("Cannot locate the MQT Core QDMI executable");
-    }
-#elif defined(__APPLE__)
-    uint32_t size = 0;
-    static_cast<void>(_NSGetExecutablePath(nullptr, &size));
-    std::vector<char> buffer(size);
-    if (_NSGetExecutablePath(buffer.data(), &size) != 0) {
-      throw std::runtime_error("Cannot locate the MQT Core QDMI executable");
-    }
-    path = buffer.data();
-#else
-    throw std::runtime_error("Cannot resolve the MQT Core QDMI module path");
-#endif
-  }
-  return std::filesystem::weakly_canonical(path).parent_path();
-}
 
 [[nodiscard]] auto openLibrary(const std::filesystem::path& path)
     -> LibraryHandle {
@@ -220,13 +166,19 @@ void closeLibrary(LibraryHandle library) { dlclose(library); }
 }
 
 [[nodiscard]] auto packagedDriverPath() -> std::filesystem::path {
-  const auto directory = thisModuleDirectory();
+  const auto directory = detail::moduleDirectory(
+      reinterpret_cast<const void*>(&packagedDriverPath));
+  if (directory.empty()) {
+    throw std::runtime_error("Cannot locate the MQT Core QDMI library");
+  }
   auto filename = std::filesystem::path{MQT_CORE_QDMI_DEFAULT_DRIVER_FILENAME};
   for (const auto& candidate : {
            directory / filename,
            directory / "lib" / filename,
+           directory / "lib64" / filename,
            directory / "bin" / filename,
            directory.parent_path() / "lib" / filename,
+           directory.parent_path() / "lib64" / filename,
            directory.parent_path() / "bin" / filename,
        }) {
     if (std::filesystem::exists(candidate)) {
@@ -245,34 +197,12 @@ void closeLibrary(LibraryHandle library) { dlclose(library); }
   if (config.driverPath) {
     return normalizePath(*config.driverPath);
   }
-  if (const auto environment =
-          detail::environmentUtf8("MQT_CORE_QDMI_DRIVER")) {
-    return normalizePath(detail::pathFromUtf8(*environment));
+  if (const auto environment = detail::environment("MQT_CORE_QDMI_DRIVER")) {
+    return normalizePath(detail::pathFromString(*environment));
   }
   const auto packaged = packagedDriverPath();
   return packaged.has_parent_path() ? normalizePath(packaged) : packaged;
 }
-
-struct LoadedClient {
-  LibraryHandle library{};
-  std::shared_ptr<detail::ClientApi> api;
-
-  LoadedClient(LibraryHandle selectedLibrary,
-               std::shared_ptr<detail::ClientApi> selectedApi)
-      : library(selectedLibrary), api(std::move(selectedApi)) {}
-
-  ~LoadedClient() {
-    if (library != nullptr) {
-      closeLibrary(library);
-    }
-  }
-
-  LoadedClient(const LoadedClient&) = delete;
-  LoadedClient& operator=(const LoadedClient&) = delete;
-  LoadedClient(LoadedClient&& other) noexcept
-      : library(std::exchange(other.library, nullptr)),
-        api(std::move(other.api)) {}
-};
 
 template <class Function>
 [[nodiscard]] auto loadSymbol(LibraryHandle library, const char* name)
@@ -287,80 +217,54 @@ template <class Function>
 }
 
 [[nodiscard]] auto loadClient(const std::filesystem::path& path)
-    -> LoadedClient {
+    -> std::shared_ptr<const detail::ClientAPI> {
   auto* const library = openLibrary(path);
   if (library == nullptr) {
     throw std::runtime_error("Cannot load QDMI driver '" +
-                             detail::pathToUtf8(path) + "'");
+                             detail::pathToString(path) + "'");
   }
 
-  try {
-    auto api = std::make_shared<detail::ClientApi>();
-    api->driverGetClientAbiVersion =
-        loadSymbol<decltype(api->driverGetClientAbiVersion)>(
-            library, "QDMI_driver_get_client_abi_version");
-    const auto actualAbi = api->driverGetClientAbiVersion();
-    if (QDMI_VERSION_MAJOR(actualAbi) !=
-            QDMI_VERSION_MAJOR(QDMI_CLIENT_ABI_VERSION) ||
-        QDMI_VERSION_MINOR(actualAbi) !=
-            QDMI_VERSION_MINOR(QDMI_CLIENT_ABI_VERSION)) {
-      throw std::runtime_error("QDMI driver has incompatible ABI " +
-                               std::to_string(QDMI_VERSION_MAJOR(actualAbi)) +
-                               "." +
-                               std::to_string(QDMI_VERSION_MINOR(actualAbi)));
-    }
+  const std::shared_ptr<void> owner{
+      library,
+      [](void* handle) { closeLibrary(static_cast<LibraryHandle>(handle)); }};
+  auto api = std::make_shared<detail::ClientAPI>();
+  api->library = owner;
+  api->driver_get_client_abi_version =
+      loadSymbol<decltype(api->driver_get_client_abi_version)>(
+          library, "QDMI_driver_get_client_abi_version");
+  const auto actualAbi = api->driver_get_client_abi_version();
+  if (QDMI_VERSION_MAJOR(actualAbi) !=
+          QDMI_VERSION_MAJOR(QDMI_CLIENT_ABI_VERSION) ||
+      QDMI_VERSION_MINOR(actualAbi) !=
+          QDMI_VERSION_MINOR(QDMI_CLIENT_ABI_VERSION)) {
+    throw std::runtime_error("QDMI driver has incompatible ABI " +
+                             std::to_string(QDMI_VERSION_MAJOR(actualAbi)) +
+                             "." +
+                             std::to_string(QDMI_VERSION_MINOR(actualAbi)));
+  }
 
-#define LOAD_CLIENT_SYMBOL(field, symbol)                                      \
-  api->field = loadSymbol<decltype(api->field)>(library, #symbol)
-    LOAD_CLIENT_SYMBOL(sessionAlloc, QDMI_session_alloc);
-    LOAD_CLIENT_SYMBOL(sessionInit, QDMI_session_init);
-    LOAD_CLIENT_SYMBOL(sessionFree, QDMI_session_free);
-    LOAD_CLIENT_SYMBOL(sessionSetParameter, QDMI_session_set_parameter);
-    LOAD_CLIENT_SYMBOL(sessionQueryProperty,
-                       QDMI_session_query_session_property);
-    LOAD_CLIENT_SYMBOL(deviceCreateJob, QDMI_device_create_job);
-    LOAD_CLIENT_SYMBOL(sessionRetrieveJobById, QDMI_session_retrieve_job_by_id);
-    LOAD_CLIENT_SYMBOL(jobFree, QDMI_job_free);
-    LOAD_CLIENT_SYMBOL(jobSetParameter, QDMI_job_set_parameter);
-    LOAD_CLIENT_SYMBOL(jobQueryProperty, QDMI_job_query_property);
-    LOAD_CLIENT_SYMBOL(jobSubmit, QDMI_job_submit);
-    LOAD_CLIENT_SYMBOL(jobCancel, QDMI_job_cancel);
-    LOAD_CLIENT_SYMBOL(jobCheck, QDMI_job_check);
-    LOAD_CLIENT_SYMBOL(jobWait, QDMI_job_wait);
-    LOAD_CLIENT_SYMBOL(jobGetResults, QDMI_job_get_results);
-    LOAD_CLIENT_SYMBOL(deviceQueryProperty, QDMI_device_query_device_property);
-    LOAD_CLIENT_SYMBOL(deviceQuerySiteProperty,
-                       QDMI_device_query_site_property);
-    LOAD_CLIENT_SYMBOL(deviceQueryOperationProperty,
-                       QDMI_device_query_operation_property);
+#define LOAD_CLIENT_SYMBOL(symbol)                                             \
+  api->symbol = loadSymbol<decltype(api->symbol)>(library, "QDMI_" #symbol)
+  LOAD_CLIENT_SYMBOL(session_alloc);
+  LOAD_CLIENT_SYMBOL(session_init);
+  LOAD_CLIENT_SYMBOL(session_free);
+  LOAD_CLIENT_SYMBOL(session_set_parameter);
+  LOAD_CLIENT_SYMBOL(session_query_session_property);
+  LOAD_CLIENT_SYMBOL(device_create_job);
+  LOAD_CLIENT_SYMBOL(session_retrieve_job_by_id);
+  LOAD_CLIENT_SYMBOL(job_free);
+  LOAD_CLIENT_SYMBOL(job_set_parameter);
+  LOAD_CLIENT_SYMBOL(job_query_property);
+  LOAD_CLIENT_SYMBOL(job_submit);
+  LOAD_CLIENT_SYMBOL(job_cancel);
+  LOAD_CLIENT_SYMBOL(job_check);
+  LOAD_CLIENT_SYMBOL(job_wait);
+  LOAD_CLIENT_SYMBOL(job_get_results);
+  LOAD_CLIENT_SYMBOL(device_query_device_property);
+  LOAD_CLIENT_SYMBOL(device_query_site_property);
+  LOAD_CLIENT_SYMBOL(device_query_operation_property);
 #undef LOAD_CLIENT_SYMBOL
-    return {library, std::move(api)};
-  } catch (...) {
-    closeLibrary(library);
-    throw;
-  }
-}
-
-struct ClientSelection {
-  std::mutex mutex;
-  /// Keeps the selected driver loaded for the process.
-  LibraryHandle library{};
-  std::shared_ptr<const detail::ClientApi> api;
-  std::filesystem::path path;
-};
-
-[[nodiscard]] auto clientSelection() -> ClientSelection& {
-  /// The selected driver must remain loaded until process teardown.
-  /// NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-  static auto* selection = new ClientSelection{};
-  return *selection;
-}
-
-void selectClient(ClientSelection& selection, LoadedClient& loaded,
-                  std::filesystem::path& path) noexcept {
-  selection.library = std::exchange(loaded.library, nullptr);
-  selection.api = loaded.api;
-  selection.path.swap(path);
+  return api;
 }
 
 using SessionGuard =
@@ -375,52 +279,23 @@ void validateSessionAllocation(const int status, QDMI_Session session) {
 }
 
 [[nodiscard]] auto allocateSession(const SessionConfig& config)
-    -> std::shared_ptr<detail::ClientSession> {
-  auto& selection = clientSelection();
-  const std::scoped_lock lock(selection.mutex);
-  if (selection.api != nullptr) {
-    if (config.driverPath &&
-        normalizePath(*config.driverPath) != selection.path) {
-      throw std::runtime_error(
-          "The QDMI driver is already selected for this process");
-    }
-    const auto api = selection.api;
-    QDMI_Session session = nullptr;
-    const auto result = api->sessionAlloc(&session);
-    SessionGuard guard{session, api->sessionFree};
-    validateSessionAllocation(result, session);
-    auto owner = std::make_shared<detail::ClientSession>(api, session);
-    /// The ClientSession now owns the raw QDMI session.
-    /// NOLINTNEXTLINE(bugprone-unused-return-value)
-    guard.release();
-    return owner;
-  }
-
-  auto path = requestedDriverPath(config);
-  auto loaded = loadClient(path);
-  const std::shared_ptr<const detail::ClientApi> api = loaded.api;
+    -> std::shared_ptr<detail::DriverSession> {
+  const auto api = loadClient(requestedDriverPath(config));
   QDMI_Session session = nullptr;
-  const auto result = api->sessionAlloc(&session);
-  SessionGuard guard{session, api->sessionFree};
-  validateSessionAllocation(result, session);
-  auto owner = std::make_shared<detail::ClientSession>(api, session);
-  selectClient(selection, loaded, path);
-  /// The ClientSession now owns the raw QDMI session.
+  const auto status = api->session_alloc(&session);
+  SessionGuard guard{session, api->session_free};
+  validateSessionAllocation(status, session);
+  auto owner = std::make_shared<detail::DriverSession>(api, session);
+  /// Ownership transfers only after the shared allocation succeeds.
   /// NOLINTNEXTLINE(bugprone-unused-return-value)
   guard.release();
   return owner;
 }
 } // namespace
 
-detail::ClientSession::~ClientSession() {
-  if (handle != nullptr) {
-    api->sessionFree(handle);
-  }
-}
-
 void detail::JobDeleter::operator()(QDMI_Job_impl_d* const job) const {
   if (job != nullptr) {
-    session->api->jobFree(job);
+    session->api->job_free(job);
   }
 }
 
@@ -625,8 +500,8 @@ Device::queryCustomOperations(const CustomProperty property) const {
   const auto qdmiProperty = detail::toDeviceProperty(property);
   const auto handles = detail::queryHandleArray<QDMI_Operation>(
       [this, qdmiProperty](const size_t size, void* value, size_t* sizeRet) {
-        return api().deviceQueryProperty(device_, qdmiProperty, size, value,
-                                         sizeRet);
+        return api().device_query_device_property(device_, qdmiProperty, size,
+                                                  value, sizeRet);
       },
       "custom operation list " +
           std::to_string(static_cast<unsigned>(property)));
@@ -705,7 +580,7 @@ std::vector<QDMI_Program_Format> Device::getSupportedProgramFormats() const {
 
 std::vector<Device> Device::getChildDevices() const {
   size_t size = 0;
-  auto result = api().deviceQueryProperty(
+  auto result = api().device_query_device_property(
       device_, QDMI_DEVICE_PROPERTY_CHILDDEVICES, 0, nullptr, &size);
   if (result == QDMI_ERROR_NOTSUPPORTED) {
     return {};
@@ -717,7 +592,7 @@ std::vector<Device> Device::getChildDevices() const {
 
   std::vector<QDMI_Device> handles(size / sizeof(QDMI_Device));
   if (size != 0) {
-    result = api().deviceQueryProperty(
+    result = api().device_query_device_property(
         device_, QDMI_DEVICE_PROPERTY_CHILDDEVICES, size,
         static_cast<void*>(handles.data()), nullptr);
     qdmi::throwIfError(result, "Querying child devices");
@@ -804,21 +679,21 @@ Job Device::submitJobImpl(
     const std::optional<CustomJobParameter>& custom4,
     const std::optional<CustomJobParameter>& custom5) const {
   QDMI_Job job = nullptr;
-  qdmi::throwIfError(api().deviceCreateJob(device_, &job), "Creating job");
+  qdmi::throwIfError(api().device_create_job(device_, &job), "Creating job");
   Job jobWrapper{job, session_};
 
-  qdmi::throwIfError(api().jobSetParameter(jobWrapper,
-                                           QDMI_JOB_PARAMETER_PROGRAMFORMAT,
-                                           sizeof(format), &format),
+  qdmi::throwIfError(api().job_set_parameter(jobWrapper,
+                                             QDMI_JOB_PARAMETER_PROGRAMFORMAT,
+                                             sizeof(format), &format),
                      "Setting program format");
-  qdmi::throwIfError(api().jobSetParameter(jobWrapper,
-                                           QDMI_JOB_PARAMETER_PROGRAM,
-                                           program.size(), program.data()),
+  qdmi::throwIfError(api().job_set_parameter(jobWrapper,
+                                             QDMI_JOB_PARAMETER_PROGRAM,
+                                             program.size(), program.data()),
                      "Setting program");
   if (numShots.has_value()) {
-    qdmi::throwIfError(api().jobSetParameter(jobWrapper,
-                                             QDMI_JOB_PARAMETER_SHOTSNUM,
-                                             sizeof(*numShots), &*numShots),
+    qdmi::throwIfError(api().job_set_parameter(jobWrapper,
+                                               QDMI_JOB_PARAMETER_SHOTSNUM,
+                                               sizeof(*numShots), &*numShots),
                        "Setting number of shots");
   }
 
@@ -838,15 +713,16 @@ Job Device::submitJobImpl(
     setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM5, *custom5);
   }
 
-  qdmi::throwIfError(api().jobSubmit(jobWrapper), "Submitting job");
+  qdmi::throwIfError(api().job_submit(jobWrapper), "Submitting job");
   return jobWrapper;
 }
 
 Job Device::retrieveJobById(const std::string_view jobId) const {
   const std::string id{jobId};
   QDMI_Job job = nullptr;
-  qdmi::throwIfError(api().sessionRetrieveJobById(device_, id.c_str(), &job),
-                     "Retrieving job");
+  qdmi::throwIfError(
+      api().session_retrieve_job_by_id(device_, id.c_str(), &job),
+      "Retrieving job");
   return Job{job, session_};
 }
 
@@ -856,15 +732,15 @@ void Device::setCustomJobParam(QDMI_Job job, const QDMI_Job_Parameter param,
       [&]<typename CustomValue>(const CustomValue& customValue) {
         using T = std::decay_t<CustomValue>;
         if constexpr (std::is_same_v<T, std::string>) {
-          qdmi::throwIfError(api().jobSetParameter(job, param,
-                                                   customValue.size() + 1,
-                                                   customValue.c_str()),
+          qdmi::throwIfError(api().job_set_parameter(job, param,
+                                                     customValue.size() + 1,
+                                                     customValue.c_str()),
                              "Setting custom parameter");
         } else {
           static_assert(std::is_trivially_copyable_v<T>,
                         "Custom job parameters must be trivially copyable");
           qdmi::throwIfError(
-              api().jobSetParameter(job, param, sizeof(T), &customValue),
+              api().job_set_parameter(job, param, sizeof(T), &customValue),
               "Setting custom parameter");
         }
       },
@@ -873,13 +749,13 @@ void Device::setCustomJobParam(QDMI_Job job, const QDMI_Job_Parameter param,
 
 QDMI_Job_Status Job::check() const {
   QDMI_Job_Status status{};
-  qdmi::throwIfError(api().jobCheck(job_.get(), &status),
+  qdmi::throwIfError(api().job_check(job_.get(), &status),
                      "Checking job status");
   return status;
 }
 
 bool Job::wait(const size_t timeout) const {
-  const auto ret = api().jobWait(job_.get(), timeout);
+  const auto ret = api().job_wait(job_.get(), timeout);
   if (ret == QDMI_SUCCESS) {
     return true;
   }
@@ -891,39 +767,39 @@ bool Job::wait(const size_t timeout) const {
 }
 
 void Job::cancel() const {
-  qdmi::throwIfError(api().jobCancel(job_.get()), "Cancelling job");
+  qdmi::throwIfError(api().job_cancel(job_.get()), "Cancelling job");
 }
 
 std::string Job::getId() const {
   return detail::queryProperty<std::string>(
       [this](const size_t size, void* value, size_t* sizeRet) {
-        return api().jobQueryProperty(job_.get(), QDMI_JOB_PROPERTY_ID, size,
-                                      value, sizeRet);
+        return api().job_query_property(job_.get(), QDMI_JOB_PROPERTY_ID, size,
+                                        value, sizeRet);
       },
       "Querying job ID", "Querying job ID size");
 }
 
 QDMI_Program_Format Job::getProgramFormat() const {
   QDMI_Program_Format format{};
-  qdmi::throwIfError(api().jobQueryProperty(job_.get(),
-                                            QDMI_JOB_PROPERTY_PROGRAMFORMAT,
-                                            sizeof(format), &format, nullptr),
+  qdmi::throwIfError(api().job_query_property(job_.get(),
+                                              QDMI_JOB_PROPERTY_PROGRAMFORMAT,
+                                              sizeof(format), &format, nullptr),
                      "Querying program format");
   return format;
 }
 
 std::vector<std::byte> Job::getProgramBytes() const {
   size_t size = 0;
-  qdmi::throwIfError(api().jobQueryProperty(job_.get(),
-                                            QDMI_JOB_PROPERTY_PROGRAM, 0,
-                                            nullptr, &size),
+  qdmi::throwIfError(api().job_query_property(job_.get(),
+                                              QDMI_JOB_PROPERTY_PROGRAM, 0,
+                                              nullptr, &size),
                      "Querying program size");
 
   std::vector<std::byte> program(size);
   if (size != 0) {
-    qdmi::throwIfError(api().jobQueryProperty(job_.get(),
-                                              QDMI_JOB_PROPERTY_PROGRAM, size,
-                                              program.data(), nullptr),
+    qdmi::throwIfError(api().job_query_property(job_.get(),
+                                                QDMI_JOB_PROPERTY_PROGRAM, size,
+                                                program.data(), nullptr),
                        "Querying program");
   }
   return program;
@@ -948,8 +824,8 @@ std::string Job::getProgram() const {
 size_t Job::getNumShots() const {
   size_t numShots = 0;
   qdmi::throwIfError(
-      api().jobQueryProperty(job_.get(), QDMI_JOB_PROPERTY_SHOTSNUM,
-                             sizeof(numShots), &numShots, nullptr),
+      api().job_query_property(job_.get(), QDMI_JOB_PROPERTY_SHOTSNUM,
+                               sizeof(numShots), &numShots, nullptr),
       "Querying number of shots");
   return numShots;
 }
@@ -957,15 +833,15 @@ size_t Job::getNumShots() const {
 std::optional<size_t> Job::getQueuePosition() const {
   size_t queuePosition = 0;
   const auto result =
-      api().jobQueryProperty(job_.get(), QDMI_JOB_PROPERTY_QUEUEPOSITION,
-                             sizeof(queuePosition), &queuePosition, nullptr);
+      api().job_query_property(job_.get(), QDMI_JOB_PROPERTY_QUEUEPOSITION,
+                               sizeof(queuePosition), &queuePosition, nullptr);
   return detail::queuePositionFromResult(result, queuePosition);
 }
 
 std::vector<std::string> Job::getShots() const {
   size_t shotsSize = 0;
-  qdmi::throwIfError(api().jobGetResults(job_.get(), QDMI_JOB_RESULT_SHOTS, 0,
-                                         nullptr, &shotsSize),
+  qdmi::throwIfError(api().job_get_results(job_.get(), QDMI_JOB_RESULT_SHOTS, 0,
+                                           nullptr, &shotsSize),
                      "Querying shots size");
 
   if (shotsSize == 0) {
@@ -973,8 +849,8 @@ std::vector<std::string> Job::getShots() const {
   }
 
   std::string shots(shotsSize, '\0');
-  qdmi::throwIfError(api().jobGetResults(job_.get(), QDMI_JOB_RESULT_SHOTS,
-                                         shotsSize, shots.data(), nullptr),
+  qdmi::throwIfError(api().job_get_results(job_.get(), QDMI_JOB_RESULT_SHOTS,
+                                           shotsSize, shots.data(), nullptr),
                      "Querying shots");
   shots.pop_back();
 
@@ -989,9 +865,9 @@ std::map<std::string, size_t> Job::getCounts() const {
 
 std::vector<std::complex<double>> Job::getDenseStateVector() const {
   size_t size = 0;
-  qdmi::throwIfError(api().jobGetResults(job_.get(),
-                                         QDMI_JOB_RESULT_STATEVECTOR_DENSE, 0,
-                                         nullptr, &size),
+  qdmi::throwIfError(api().job_get_results(job_.get(),
+                                           QDMI_JOB_RESULT_STATEVECTOR_DENSE, 0,
+                                           nullptr, &size),
                      "Querying dense state vector size");
 
   if (size % sizeof(std::complex<double>) != 0) {
@@ -1001,18 +877,18 @@ std::vector<std::complex<double>> Job::getDenseStateVector() const {
 
   std::vector<std::complex<double>> stateVector(size /
                                                 sizeof(std::complex<double>));
-  qdmi::throwIfError(api().jobGetResults(job_.get(),
-                                         QDMI_JOB_RESULT_STATEVECTOR_DENSE,
-                                         size, stateVector.data(), nullptr),
+  qdmi::throwIfError(api().job_get_results(job_.get(),
+                                           QDMI_JOB_RESULT_STATEVECTOR_DENSE,
+                                           size, stateVector.data(), nullptr),
                      "Querying dense state vector");
   return stateVector;
 }
 
 std::vector<double> Job::getDenseProbabilities() const {
   size_t size = 0;
-  qdmi::throwIfError(api().jobGetResults(job_.get(),
-                                         QDMI_JOB_RESULT_PROBABILITIES_DENSE, 0,
-                                         nullptr, &size),
+  qdmi::throwIfError(api().job_get_results(job_.get(),
+                                           QDMI_JOB_RESULT_PROBABILITIES_DENSE,
+                                           0, nullptr, &size),
                      "Querying dense probabilities size");
 
   if (size % sizeof(double) != 0) {
@@ -1021,9 +897,9 @@ std::vector<double> Job::getDenseProbabilities() const {
   }
 
   std::vector<double> probabilities(size / sizeof(double));
-  qdmi::throwIfError(api().jobGetResults(job_.get(),
-                                         QDMI_JOB_RESULT_PROBABILITIES_DENSE,
-                                         size, probabilities.data(), nullptr),
+  qdmi::throwIfError(api().job_get_results(job_.get(),
+                                           QDMI_JOB_RESULT_PROBABILITIES_DENSE,
+                                           size, probabilities.data(), nullptr),
                      "Querying dense probabilities");
   return probabilities;
 }
@@ -1044,12 +920,23 @@ std::map<std::string, double> Job::getSparseProbabilities() const {
 
 Device Session::openDevice(const std::string_view id,
                            const SessionConfig& config) {
+  return Session(config).getDevice(id);
+}
+
+std::vector<std::string> Session::getDeviceIds() {
+  std::vector<std::string> ids;
+  for (const auto& device : getDevices()) {
+    ids.emplace_back(device.getId());
+  }
+  return ids;
+}
+
+Device Session::getDevice(const std::string_view id) {
   if (id.empty() || id.find('\0') != std::string_view::npos) {
     throw std::invalid_argument(
         "QDMI device ID must not be empty or contain null bytes");
   }
-  Session session(config);
-  const auto devices = session.getDevices();
+  const auto devices = getDevices();
   std::string available;
   for (const auto& device : devices) {
     const auto candidateId = device.getId();
@@ -1061,7 +948,7 @@ Device Session::openDevice(const std::string_view id,
     }
     available += candidateId;
   }
-  throw std::out_of_range("QDMI Client session has no device with ID '" +
+  throw std::out_of_range("QDMI driver session has no device with ID '" +
                           std::string(id) + "'; available IDs: " + available);
 }
 
@@ -1073,8 +960,8 @@ Session::Session(const SessionConfig& config) {
     if (!value) {
       return;
     }
-    const auto status = static_cast<QDMI_STATUS>(api().sessionSetParameter(
-        session_->handle, param, value->size() + 1U, value->c_str()));
+    const auto status = static_cast<QDMI_STATUS>(api().session_set_parameter(
+        session_->handle.get(), param, value->size() + 1U, value->c_str()));
     if (status == QDMI_ERROR_NOTSUPPORTED) {
       qdmi::diagnostics::info("Session parameter {} not supported (skipped)",
                               qdmi::toString(param));
@@ -1090,7 +977,7 @@ Session::Session(const SessionConfig& config) {
 
   setParameter(config.token, QDMI_SESSION_PARAMETER_TOKEN);
   if (config.authFile) {
-    const std::optional authFile = detail::pathToUtf8(*config.authFile);
+    const std::optional authFile = detail::pathToString(*config.authFile);
     setParameter(authFile, QDMI_SESSION_PARAMETER_AUTHFILE);
   }
   setParameter(config.authUrl, QDMI_SESSION_PARAMETER_AUTHURL);
@@ -1103,7 +990,7 @@ Session::Session(const SessionConfig& config) {
   setParameter(config.custom4, QDMI_SESSION_PARAMETER_CUSTOM4);
   setParameter(config.custom5, QDMI_SESSION_PARAMETER_CUSTOM5);
 
-  qdmi::throwIfError(api().sessionInit(session_->handle),
+  qdmi::throwIfError(api().session_init(session_->handle.get()),
                      "Initializing session");
 }
 

@@ -1105,7 +1105,7 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
           "custom1"_a = std::nullopt, "custom2"_a = std::nullopt,
           "custom3"_a = std::nullopt, "custom4"_a = std::nullopt,
           "custom5"_a = std::nullopt,
-          "Open a Client-visible device and snapshot its compiler target.")
+          "Open a client-visible device and snapshot its compiler target.")
       .def_prop_ro(
           "name",
           [](const mlir::CompilerTarget& target) {

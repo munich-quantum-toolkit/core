@@ -17,7 +17,7 @@ from __future__ import annotations
 import warnings
 from typing import TYPE_CHECKING
 
-from ...qdmi import ClientSession
+from ...qdmi import Session
 from .backend import QDMIBackend
 from .exceptions import UnsupportedDeviceError
 
@@ -35,7 +35,7 @@ def __dir__() -> list[str]:
 
 
 class QDMIProvider:
-    """Provider for Client-visible QDMI devices.
+    """Provider for client-visible QDMI devices.
 
     This provider discovers QDMI devices lazily and adapts
     Qiskit-compatible devices as backends.
@@ -58,8 +58,8 @@ class QDMIProvider:
 
     @staticmethod
     def device_ids() -> list[str]:
-        """Return the devices visible to a fresh QDMI Client session."""
-        return [device.id for device in ClientSession().devices]
+        """Return the devices visible to a fresh QDMI driver session."""
+        return Session().device_ids
 
     def backends(self, name: str | None = None) -> list[QDMIBackend]:
         """Return all available backends, optionally filtered by name substring.

@@ -70,7 +70,7 @@ print(f"Results: {counts}")
 ### Using the Provider
 
 The {py:class}`~mqt.core.plugins.qiskit.provider.QDMIProvider` discovers
-Client-visible QDMI devices. Use it when an application must enumerate backends.
+client-visible QDMI devices. Use it when an application must enumerate backends.
 
 ```{code-cell} ipython3
 from mqt.core.plugins.qiskit import QDMIProvider
@@ -95,7 +95,7 @@ print(f"Backend: {backend.name}")
 print(f"Qubits: {backend.target.num_qubits}")
 ```
 
-Optional session keywords configure this fresh Client session. Their names and
+Optional session keywords configure this fresh driver session. Their names and
 value types are described by {py:class}`mqt.core.typing.QDMISessionParameters`.
 The selected Driver defines their meaning and precedence:
 

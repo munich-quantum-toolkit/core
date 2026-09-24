@@ -108,24 +108,24 @@ retaining packaged built-ins.
 
 ## Using configured devices
 
-When the packaged QDMI Driver initializes a Client session, it opens the
+When the MQT Core QDMI driver initializes a driver session, it opens the
 configured definitions. A failure to load one definition does not hide the
 remaining devices.
 
 ```python
-from mqt.core.qdmi import ClientSession, open_device
+from mqt.core.qdmi import Session, open_device
 
-for discovered in ClientSession().devices:
+for discovered in Session().devices:
     print(discovered.id, open_device(discovered.id).name())
 ```
 
 Set `MQT_CORE_QDMI_CONFIG_FILE` or `MQT_CORE_QDMI_CONFIG_JSON` before the first
 Driver call. Every {py:func}`~mqt.core.qdmi.open_device` call creates a fresh
-Client session and finds the stable ID in the standard Client device list. The
+driver session and finds the stable ID in the session’s device list. The
 returned {py:class}`~mqt.core.qdmi.Device` and any
 {py:class}`~mqt.core.qdmi.Device.Site`,
 {py:class}`~mqt.core.qdmi.Device.Operation`, or {py:class}`~mqt.core.qdmi.Job`
-wrapper derived from it keeps that Client session alive. The session is released
+wrapper derived from it keeps that driver session alive. The session is released
 after the last such wrapper is destroyed.
 
 The equivalent C++ API is {cpp-api:class}`qdmi::Session`. `getDevices()`
@@ -140,7 +140,7 @@ session parameters, for every definition.
 
 MQT Core provides a mechanism-specific adapter for jobs that use local Slurm
 licenses for cluster-wide admission. The license name must equal one stable ID
-reported by the selected QDMI Driver. Each job must request one license. For
+reported by the selected QDMI driver. Each job must request one license. For
 example:
 
 ```bash

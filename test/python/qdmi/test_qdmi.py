@@ -26,11 +26,11 @@ from mqt.core.mlir import (
     submit_program,
 )
 from mqt.core.qdmi import (
-    ClientSession,
     CustomProperty,
     Device,
     Job,
     ProgramFormat,
+    Session,
     is_binary_program_format,
     open_device,
 )
@@ -47,7 +47,7 @@ def _get_devices() -> list[Device]:
     Returns:
         List of all available QDMI devices.
     """
-    return ClientSession().devices
+    return Session().devices
 
 
 @pytest.fixture(params=_get_devices())
@@ -111,7 +111,7 @@ def test_device_name(device: Device) -> None:
 
 
 def test_device_id(device: Device) -> None:
-    """Test that each Client-visible device has a stable ID."""
+    """Test that each client-visible device has a stable ID."""
     assert device.id
 
 

@@ -70,7 +70,7 @@ from fractions import Fraction
 
 from mqt.core.bench import qpe
 from mqt.core.mlir import compile_program, submit_program
-from mqt.core.qdmi.driver import open_device
+from mqt.core.qdmi import open_device
 
 benchmark = qpe.QPE(qpe.Options(precision=8, phase=Fraction(3, 8), method=qpe.Method.ITERATIVE))
 program = benchmark.generate()

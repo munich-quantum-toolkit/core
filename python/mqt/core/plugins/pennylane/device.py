@@ -133,13 +133,13 @@ class QDMIDevice(Device):
     """Execute PennyLane programs on a gate-based QDMI device.
 
     Args:
-        device_id: Stable ID reported by the QDMI Driver. Use either this
+        device_id: Stable ID reported by the QDMI driver. Use either this
             argument or ``device``.
         wires: PennyLane wire labels or number of wires. By default all QDMI
             qubits are exposed as consecutive integer wires.
         device: An already-open QDMI device. Use this for a session selected by
             an integration such as Slurm.
-        session_parameters: QDMI Client-session keyword arguments.
+        session_parameters: QDMI driver-session keyword arguments.
         job_parameters: QDMI custom job keyword arguments.
     """
 

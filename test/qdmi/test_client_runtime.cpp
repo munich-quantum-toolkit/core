@@ -22,6 +22,7 @@
 /// NOLINTNEXTLINE(modernize-deprecated-headers)
 #include <stdlib.h>
 #include <string>
+#include <vector>
 
 namespace qdmi {
 namespace {
@@ -38,10 +39,10 @@ void setDriverEnvironment(const std::optional<std::string>& value) {
 #endif
 }
 
-TEST(ClientRuntimeTest, ValidatesThenFreezesOneDriverAndRetainsSessions) {
+TEST(ClientRuntimeTest, ValidatesDriversAndRetainsSessions) {
   const auto missing =
       std::filesystem::path(MQT_CORE_QDMI_TEST_DRIVER).parent_path() /
-      "missing-client-driver";
+      "missing-driver";
   setDriverEnvironment(missing.string());
   EXPECT_THAT([] { return Session{}; },
               testing::ThrowsMessage<std::runtime_error>(
@@ -68,16 +69,6 @@ TEST(ClientRuntimeTest, ValidatesThenFreezesOneDriverAndRetainsSessions) {
   };
   setDriverEnvironment(MQT_CORE_QDMI_TEST_DRIVER);
   {
-    const mqt::test::ScopedEnvironmentVariable nullAllocation{
-        "MQT_CORE_QDMI_FAKE_FAIL_ALLOCATION", "warning-null"};
-    testing::internal::CaptureStderr();
-    EXPECT_THAT([&] { return Session{firstConfig}; },
-                testing::ThrowsMessage<std::runtime_error>(
-                    testing::HasSubstr("returned a null session")));
-    const auto errorOutput = testing::internal::GetCapturedStderr();
-    EXPECT_THAT(errorOutput, testing::Not(testing::HasSubstr("Warning")));
-  }
-  {
     const mqt::test::ScopedEnvironmentVariable failAllocation{
         "MQT_CORE_QDMI_FAKE_FAIL_ALLOCATION", "1"};
     EXPECT_THROW(static_cast<void>(Session{firstConfig}), std::bad_alloc);
@@ -102,6 +93,22 @@ TEST(ClientRuntimeTest, ValidatesThenFreezesOneDriverAndRetainsSessions) {
       .driverPath = MQT_CORE_QDMI_TEST_DRIVER,
       .token = "second-token",
   });
+  const auto alternate =
+      std::filesystem::temp_directory_path() / "mqt-alternate-qdmi-driver" /
+      std::filesystem::path(MQT_CORE_QDMI_TEST_DRIVER).filename();
+  std::filesystem::create_directories(alternate.parent_path());
+  std::filesystem::copy_file(MQT_CORE_QDMI_TEST_DRIVER, alternate,
+                             std::filesystem::copy_options::overwrite_existing);
+  {
+    Session replacement(
+        SessionConfig{.driverPath = alternate, .token = "replacement"});
+    EXPECT_EQ(replacement.getDevice("test.fake.client").getName(),
+              "replacement");
+    EXPECT_EQ(first.getDeviceIds(),
+              std::vector<std::string>{"test.fake.client"});
+    EXPECT_EQ(first.getDevice("test.fake.client").getName(), "first-token");
+  }
+  std::filesystem::remove(alternate);
   const auto firstDevices = first.getDevices();
   const auto secondDevices = second.getDevices();
   ASSERT_EQ(firstDevices.size(), 1U);
@@ -139,7 +146,7 @@ TEST(ClientRuntimeTest, ValidatesThenFreezesOneDriverAndRetainsSessions) {
             SessionConfig{.driverPath = MQT_CORE_QDMI_INCOMPLETE_DRIVER}};
       },
       testing::ThrowsMessage<std::runtime_error>(
-          testing::HasSubstr("already selected")));
+          testing::HasSubstr("missing symbol QDMI_session_alloc")));
 
   const auto site = [] {
     const auto device = Session::openDevice(

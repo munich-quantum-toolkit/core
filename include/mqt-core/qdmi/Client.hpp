@@ -62,45 +62,46 @@ concept custom_property_value =
     std::same_as<T, std::vector<std::byte>>;
 
 namespace detail {
-struct ClientApi {
-  decltype(&::QDMI_driver_get_client_abi_version) driverGetClientAbiVersion{};
-  decltype(&::QDMI_session_alloc) sessionAlloc{};
-  decltype(&::QDMI_session_init) sessionInit{};
-  decltype(&::QDMI_session_free) sessionFree{};
-  decltype(&::QDMI_session_set_parameter) sessionSetParameter{};
-  decltype(&::QDMI_session_query_session_property) sessionQueryProperty{};
-  decltype(&::QDMI_device_create_job) deviceCreateJob{};
-  decltype(&::QDMI_session_retrieve_job_by_id) sessionRetrieveJobById{};
-  decltype(&::QDMI_job_free) jobFree{};
-  decltype(&::QDMI_job_set_parameter) jobSetParameter{};
-  decltype(&::QDMI_job_query_property) jobQueryProperty{};
-  decltype(&::QDMI_job_submit) jobSubmit{};
-  decltype(&::QDMI_job_cancel) jobCancel{};
-  decltype(&::QDMI_job_check) jobCheck{};
-  decltype(&::QDMI_job_wait) jobWait{};
-  decltype(&::QDMI_job_get_results) jobGetResults{};
-  decltype(&::QDMI_device_query_device_property) deviceQueryProperty{};
-  decltype(&::QDMI_device_query_site_property) deviceQuerySiteProperty{};
+struct ClientAPI {
+  std::shared_ptr<void> library;
+  decltype(&::QDMI_driver_get_client_abi_version)
+      driver_get_client_abi_version{};
+  decltype(&::QDMI_session_alloc) session_alloc{};
+  decltype(&::QDMI_session_init) session_init{};
+  decltype(&::QDMI_session_free) session_free{};
+  decltype(&::QDMI_session_set_parameter) session_set_parameter{};
+  decltype(&::QDMI_session_query_session_property)
+      session_query_session_property{};
+  decltype(&::QDMI_device_create_job) device_create_job{};
+  decltype(&::QDMI_session_retrieve_job_by_id) session_retrieve_job_by_id{};
+  decltype(&::QDMI_job_free) job_free{};
+  decltype(&::QDMI_job_set_parameter) job_set_parameter{};
+  decltype(&::QDMI_job_query_property) job_query_property{};
+  decltype(&::QDMI_job_submit) job_submit{};
+  decltype(&::QDMI_job_cancel) job_cancel{};
+  decltype(&::QDMI_job_check) job_check{};
+  decltype(&::QDMI_job_wait) job_wait{};
+  decltype(&::QDMI_job_get_results) job_get_results{};
+  decltype(&::QDMI_device_query_device_property) device_query_device_property{};
+  decltype(&::QDMI_device_query_site_property) device_query_site_property{};
   decltype(&::QDMI_device_query_operation_property)
-      deviceQueryOperationProperty{};
+      device_query_operation_property{};
 };
 
-struct ClientSession {
-  ClientSession(std::shared_ptr<const ClientApi> selectedApi,
+/// Owns a driver session and keeps its library loaded.
+struct DriverSession {
+  DriverSession(std::shared_ptr<const ClientAPI> selectedApi,
                 QDMI_Session selectedSession)
-      : api(std::move(selectedApi)), handle(selectedSession) {}
-  ~ClientSession();
+      : api(std::move(selectedApi)),
+        handle(selectedSession, api->session_free) {}
 
-  ClientSession(const ClientSession&) = delete;
-  ClientSession& operator=(const ClientSession&) = delete;
-
-  std::shared_ptr<const ClientApi> api;
-  QDMI_Session handle;
+  std::shared_ptr<const ClientAPI> api;
+  std::unique_ptr<QDMI_Session_impl_d, decltype(&QDMI_session_free)> handle;
 };
 
 struct JobDeleter {
   void operator()(QDMI_Job_impl_d* job) const;
-  std::shared_ptr<ClientSession> session;
+  std::shared_ptr<DriverSession> session;
 };
 
 [[nodiscard]] inline std::string
@@ -550,7 +551,7 @@ class Operation;
 /// @see QDMI_Session
 class Session {
 public:
-  /// Opens a Client-visible QDMI device in a fresh session.
+  /// Opens a client-visible QDMI device in a fresh session.
   /// @param id Stable device ID.
   /// @param config QDMI driver and authentication configuration.
   /// @return A device wrapper that retains the fresh session.
@@ -572,22 +573,28 @@ public:
   /// @see QDMI_SESSION_PROPERTY_DEVICES
   [[nodiscard]] std::vector<Device> getDevices();
 
+  /// Returns the stable IDs of devices visible to this session.
+  [[nodiscard]] std::vector<std::string> getDeviceIds();
+
+  /// Returns the device with the given stable ID, or throws if it is absent.
+  [[nodiscard]] Device getDevice(std::string_view id);
+
 private:
-  [[nodiscard]] const detail::ClientApi& api() const { return *session_->api; }
+  [[nodiscard]] const detail::ClientAPI& api() const { return *session_->api; }
 
   /// Query a session property.
   template <size_constructible_contiguous_range T>
   [[nodiscard]] T queryProperty(const QDMI_Session_Property prop) const {
     return detail::queryProperty<T>(
         [&](const size_t size, void* value, size_t* sizeRet) {
-          return session_->api->sessionQueryProperty(session_->handle, prop,
-                                                     size, value, sizeRet);
+          return session_->api->session_query_session_property(
+              session_->handle.get(), prop, size, value, sizeRet);
         },
         std::string("Querying ") + qdmi::toString(prop),
         std::string("Querying size ") + qdmi::toString(prop));
   }
 
-  std::shared_ptr<detail::ClientSession> session_;
+  std::shared_ptr<detail::DriverSession> session_;
 };
 
 static_assert(!std::is_copy_constructible<Session>());
@@ -696,8 +703,8 @@ public:
     const auto qdmiProperty = detail::toDeviceProperty(property);
     return detail::queryCustomValue<T>(
         [this, qdmiProperty](const size_t size, void* value, size_t* sizeRet) {
-          return session_->api->deviceQueryProperty(device_, qdmiProperty, size,
-                                                    value, sizeRet);
+          return session_->api->device_query_device_property(
+              device_, qdmiProperty, size, value, sizeRet);
         },
         "custom device property " +
             std::to_string(static_cast<unsigned>(property)));
@@ -779,14 +786,14 @@ public:
   auto operator<=>(const Device&) const noexcept = default;
 
 private:
-  [[nodiscard]] const detail::ClientApi& api() const { return *session_->api; }
+  [[nodiscard]] const detail::ClientAPI& api() const { return *session_->api; }
 
   /// Constructs a Device object from a QDMI_Device handle.
 
   /// @param device The QDMI_Device handle to wrap.
 
-  /// @param session The Client session that owns the handle.
-  Device(QDMI_Device device, std::shared_ptr<detail::ClientSession> session)
+  /// @param session The driver session that owns the handle.
+  Device(QDMI_Device device, std::shared_ptr<detail::DriverSession> session)
       : device_(device), session_(std::move(session)) {}
 
   /// Wrap operation handles while retaining their owning device session.
@@ -799,7 +806,8 @@ private:
     const std::string msg = std::string("Querying ") + qdmi::toString(prop);
     return detail::queryProperty<T>(
         [&](const size_t size, void* value, size_t* sizeRet) {
-          return api().deviceQueryProperty(device_, prop, size, value, sizeRet);
+          return api().device_query_device_property(device_, prop, size, value,
+                                                    sizeRet);
         },
         msg, msg);
   }
@@ -818,7 +826,7 @@ private:
 
   /// The underlying device pointer.
   QDMI_Device device_{};
-  std::shared_ptr<detail::ClientSession> session_;
+  std::shared_ptr<detail::DriverSession> session_;
 
   friend class Session;
 };
@@ -888,7 +896,7 @@ public:
     const auto qdmiProperty = detail::toJobProperty(property);
     return detail::queryCustomValue<T>(
         [this, qdmiProperty](const size_t size, void* value, size_t* sizeRet) {
-          return job_.get_deleter().session->api->jobQueryProperty(
+          return job_.get_deleter().session->api->job_query_property(
               job_.get(), qdmiProperty, size, value, sizeRet);
         },
         "custom job property " +
@@ -907,7 +915,7 @@ public:
     const auto qdmiResult = detail::toJobResult(property);
     return detail::queryCustomValue<T>(
         [this, qdmiResult](const size_t size, void* value, size_t* sizeRet) {
-          return job_.get_deleter().session->api->jobGetResults(
+          return job_.get_deleter().session->api->job_get_results(
               job_.get(), qdmiResult, size, value, sizeRet);
         },
         "custom job result " + std::to_string(static_cast<unsigned>(property)));
@@ -946,7 +954,7 @@ public:
   auto operator<=>(const Job&) const noexcept = default;
 
 private:
-  [[nodiscard]] const detail::ClientApi& api() const {
+  [[nodiscard]] const detail::ClientAPI& api() const {
     return *job_.get_deleter().session->api;
   }
 
@@ -954,8 +962,8 @@ private:
 
   /// @param job The QDMI_Job handle to wrap.
 
-  /// @param session The Client session that owns the handle.
-  Job(QDMI_Job job, std::shared_ptr<detail::ClientSession> session)
+  /// @param session The driver session that owns the handle.
+  Job(QDMI_Job job, std::shared_ptr<detail::DriverSession> session)
       : job_(job, detail::JobDeleter{std::move(session)}) {}
 
   std::unique_ptr<QDMI_Job_impl_d, detail::JobDeleter> job_;
@@ -1031,7 +1039,7 @@ public:
     const auto qdmiProperty = detail::toSiteProperty(property);
     return detail::queryCustomValue<T>(
         [this, qdmiProperty](const size_t size, void* value, size_t* sizeRet) {
-          return session_->api->deviceQuerySiteProperty(
+          return session_->api->device_query_site_property(
               device_, site_, qdmiProperty, size, value, sizeRet);
         },
         "custom site property " +
@@ -1041,16 +1049,16 @@ public:
   auto operator<=>(const Site&) const noexcept = default;
 
 private:
-  [[nodiscard]] const detail::ClientApi& api() const { return *session_->api; }
+  [[nodiscard]] const detail::ClientAPI& api() const { return *session_->api; }
 
   /// Constructs a Site object from a QDMI_Site handle.
 
   /// @param device The QDMI device handle that owns the site.
 
-  /// @param session The Client session that owns the handle.
+  /// @param session The driver session that owns the handle.
 
   /// @param site The QDMI_Site handle to wrap.
-  Site(QDMI_Device device, std::shared_ptr<detail::ClientSession> session,
+  Site(QDMI_Device device, std::shared_ptr<detail::DriverSession> session,
        QDMI_Site site)
       : device_(device), session_(std::move(session)), site_(site) {}
 
@@ -1059,8 +1067,8 @@ private:
   [[nodiscard]] T queryProperty(const QDMI_Site_Property prop) const {
     const std::string msg = std::string("Querying ") + qdmi::toString(prop);
     const auto query = [&](const size_t size, void* value, size_t* sizeRet) {
-      return api().deviceQuerySiteProperty(device_, site_, prop, size, value,
-                                           sizeRet);
+      return api().device_query_site_property(device_, site_, prop, size, value,
+                                              sizeRet);
     };
     if constexpr (string_or_optional_string<T>) {
       return detail::queryProperty<T>(
@@ -1072,7 +1080,7 @@ private:
 
   /// The QDMI device handle that owns the site.
   QDMI_Device device_{};
-  std::shared_ptr<detail::ClientSession> session_;
+  std::shared_ptr<detail::DriverSession> session_;
 
   /// The underlying QDMI_Site object.
   QDMI_Site site_;
@@ -1179,7 +1187,7 @@ public:
     return detail::queryCustomValue<T>(
         [this, qdmiProperty, &qdmiSites,
          &params](const size_t size, void* value, size_t* sizeRet) {
-          return session_->api->deviceQueryOperationProperty(
+          return session_->api->device_query_operation_property(
               device_, operation_, qdmiSites.size(), qdmiSites.data(),
               params.size(), params.data(), qdmiProperty, size, value, sizeRet);
         },
@@ -1190,16 +1198,16 @@ public:
   auto operator<=>(const Operation&) const noexcept = default;
 
 private:
-  [[nodiscard]] const detail::ClientApi& api() const { return *session_->api; }
+  [[nodiscard]] const detail::ClientAPI& api() const { return *session_->api; }
 
   /// Constructs an Operation object from a QDMI_Operation handle.
 
   /// @param device The QDMI device handle that owns the operation.
 
-  /// @param session The Client session that owns the handle.
+  /// @param session The driver session that owns the handle.
 
   /// @param operation The QDMI_Operation handle to wrap.
-  Operation(QDMI_Device device, std::shared_ptr<detail::ClientSession> session,
+  Operation(QDMI_Device device, std::shared_ptr<detail::DriverSession> session,
             QDMI_Operation operation)
       : device_(device), session_(std::move(session)), operation_(operation) {}
 
@@ -1215,7 +1223,7 @@ private:
                            [](const Site& site) -> QDMI_Site { return site; });
     return detail::queryProperty<T>(
         [&](const size_t size, void* value, size_t* sizeRet) {
-          return api().deviceQueryOperationProperty(
+          return api().device_query_operation_property(
               device_, operation_, sites.size(), qdmiSites.data(),
               params.size(), params.data(), prop, size, value, sizeRet);
         },
@@ -1224,7 +1232,7 @@ private:
 
   /// The QDMI device handle that owns the operation.
   QDMI_Device device_{};
-  std::shared_ptr<detail::ClientSession> session_;
+  std::shared_ptr<detail::DriverSession> session_;
 
   /// The underlying QDMI_Operation object.
   QDMI_Operation operation_;

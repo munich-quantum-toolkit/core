@@ -227,6 +227,7 @@ public:
   /// library.
   /// @param lib is the device library to take ownership of.
   /// @param config is the configuration for device session parameters.
+  /// @param id is the configured stable ID; empty for an unnamed child.
   explicit QDMI_Device_impl_d(std::unique_ptr<qdmi::DeviceLibrary>&& lib,
                               const qdmi::DeviceSessionConfig& config = {},
                               std::string id = {})
@@ -240,6 +241,7 @@ public:
   /// @param lib is a shared pointer to the device library that provides the
   /// device interface functions.
   /// @param config is the configuration for device session parameters.
+  /// @param id is the configured stable ID; empty for an unnamed child.
   /// @param childDevice optionally selects a child device for this wrapper.
   explicit QDMI_Device_impl_d(std::shared_ptr<qdmi::DeviceLibrary> lib,
                               const qdmi::DeviceSessionConfig& config = {},

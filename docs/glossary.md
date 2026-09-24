@@ -121,9 +121,19 @@ QDMI Client interface
 
 QDMI driver
   **Preferred term:** QDMI driver. An implementation of the QDMI Client interface.
-  Core's packaged driver loads QDMI device libraries. A replacement driver owns
+  The MQT Core QDMI driver loads QDMI device libraries. A replacement driver owns
   its own discovery, configuration, and device access; applications must not
   assume it provides Core's private driver extension.
+
+QDMI session
+  **Preferred term:** QDMI session. A connection to a QDMI driver, represented
+  by `qdmi::Session` in C++ and `mqt.core.qdmi.Session` in Python. A device
+  session is the driver's connection to one device implementation.
+
+C++ QDMI library
+  **Preferred term:** C++ QDMI library. MQT Core's owning C++ wrappers around
+  the QDMI Client Interface. The driver manages device libraries and their
+  configuration; the C++ library is independent of that implementation.
 
 QIR
 Quantum Intermediate Representation

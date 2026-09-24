@@ -27,7 +27,7 @@ namespace qdmi {
 using CustomJobParameter = std::variant<std::string, bool, int, double>;
 namespace detail {
 /// Encode a native filesystem path as UTF-8.
-[[nodiscard]] inline auto pathToUtf8(const std::filesystem::path& path)
+[[nodiscard]] inline auto pathToString(const std::filesystem::path& path)
     -> std::string {
   const auto utf8 = path.u8string();
   std::string value(utf8.size(), '\0');
@@ -38,7 +38,7 @@ namespace detail {
 }
 
 /// Decode a UTF-8 filesystem path into the native representation.
-[[nodiscard]] inline auto pathFromUtf8(const std::string_view value)
+[[nodiscard]] inline auto pathFromString(const std::string_view value)
     -> std::filesystem::path {
   std::u8string utf8(value.size(), u8'\0');
   if (!value.empty()) {
@@ -48,7 +48,7 @@ namespace detail {
 }
 
 /// Read an environment value as UTF-8.
-[[nodiscard]] auto environmentUtf8(std::string_view name)
+[[nodiscard]] auto environment(std::string_view name)
     -> std::optional<std::string>;
 } // namespace detail
 

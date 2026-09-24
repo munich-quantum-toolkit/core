@@ -334,7 +334,7 @@ def test_backend_warns_on_unmappable_operation(
         operations=["cz", "custom_unmappable_gate", "measure"],
     )
 
-    # Use helper to patch Client-visible devices
+    # Use helper to patch client-visible devices
     _patch_client_devices(monkeypatch, [mock_device])
 
     # Creating backend should trigger warning about unmappable operation
@@ -363,7 +363,7 @@ def test_backend_warns_on_missing_measurement_operation(
         operations=["cz"],  # No measure operation
     )
 
-    # Use helper to patch Client-visible devices
+    # Use helper to patch client-visible devices
     _patch_client_devices(monkeypatch, [mock_device])
 
     # Creating backend should trigger warning about missing measurement operation
@@ -891,7 +891,7 @@ def test_backend_validation_uses_inverse_mapping(
         operations=["prx", "cz", "measure"],  # Uses 'prx' instead of 'r'
     )
 
-    # Use helper to patch Client-visible devices
+    # Use helper to patch client-visible devices
     _patch_client_devices(monkeypatch, [mock_device])
 
     provider = QDMIProvider()

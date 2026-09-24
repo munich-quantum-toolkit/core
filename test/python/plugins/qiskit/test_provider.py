@@ -132,7 +132,7 @@ def test_backend_has_provider_reference() -> None:
 
 
 def test_provider_default_constructor() -> None:
-    """Provider discovers Client-visible devices without session parameters."""
+    """Provider discovers client-visible devices without session parameters."""
     provider = QDMIProvider()
     backends = provider.backends()
     assert len(backends) > 0
@@ -149,12 +149,12 @@ def test_provider_construction_opens_no_devices(monkeypatch: pytest.MonkeyPatch)
     QDMIProvider()
 
 
-def test_provider_reads_client_session_on_each_discovery_call(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A provider starts a fresh Client session for each discovery call."""
+def test_provider_reads_session_on_each_discovery_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A provider starts a fresh driver session for each discovery call."""
     device_ids = ["first.device"]
     monkeypatch.setattr(
-        "mqt.core.plugins.qiskit.provider.ClientSession",
-        lambda: SimpleNamespace(devices=[SimpleNamespace(id=device_id) for device_id in device_ids]),
+        "mqt.core.plugins.qiskit.provider.Session",
+        lambda: SimpleNamespace(device_ids=list(device_ids)),
     )
     provider = QDMIProvider()
 

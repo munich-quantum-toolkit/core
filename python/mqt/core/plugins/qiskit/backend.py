@@ -218,9 +218,9 @@ class QDMIBackend(BackendV2):
     It automatically introspects device capabilities and constructs a
     :class:`~qiskit.transpiler.Target` object with supported operations.
 
-    Use :meth:`from_device_id` to open one Client-visible device. Use
+    Use :meth:`from_device_id` to open one client-visible device. Use
     :class:`~mqt.core.plugins.qiskit.provider.QDMIProvider` to enumerate
-    Client-visible devices.
+    client-visible devices.
 
     Args:
         device: QDMI device wrapper.
@@ -319,12 +319,12 @@ class QDMIBackend(BackendV2):
         provider: QDMIProvider | None = None,
         **session_parameters: Unpack[QDMISessionParameters],
     ) -> QDMIBackend:
-        """Open a Client-visible QDMI device and adapt it for Qiskit.
+        """Open a client-visible QDMI device and adapt it for Qiskit.
 
         Args:
-            device_id: Stable ID reported by the QDMI Driver.
+            device_id: Stable ID reported by the QDMI driver.
             provider: Provider to associate with the backend.
-            session_parameters: Optional parameters for this Client session.
+            session_parameters: Optional parameters for this driver session.
 
         Returns:
             A Qiskit backend for a fresh QDMI device session.

@@ -55,7 +55,7 @@ namespace {
 /// Loads the device library with the given name, searching in the driver
 /// directory if no path is specified.
 [[nodiscard]] auto loadDeviceLibrary(const std::string& libName) -> HMODULE {
-  const auto requested = detail::pathFromUtf8(libName);
+  const auto requested = detail::pathFromString(libName);
   // Bare filenames are resolved relative to the Driver. Configured paths are
   // already absolute or relative to their declaring file.
   const auto path = requested.has_parent_path()
@@ -253,7 +253,7 @@ QDMI_Device_impl_d::QDMI_Device_impl_d(
     setParameter(config.baseUrl, QDMI_DEVICE_SESSION_PARAMETER_BASEURL);
     setParameter(config.token, QDMI_DEVICE_SESSION_PARAMETER_TOKEN);
     if (config.authFile) {
-      setParameter(qdmi::detail::pathToUtf8(*config.authFile),
+      setParameter(qdmi::detail::pathToString(*config.authFile),
                    QDMI_DEVICE_SESSION_PARAMETER_AUTHFILE);
     }
     setParameter(config.authUrl, QDMI_DEVICE_SESSION_PARAMETER_AUTHURL);
@@ -708,7 +708,7 @@ auto Driver::open(const std::string_view id) -> QDMI_Device {
   std::unique_ptr<QDMI_Device_impl_d> candidate;
   try {
     candidate = std::make_unique<QDMI_Device_impl_d>(
-        getDynamicDeviceLibrary(detail::pathToUtf8(definition.library),
+        getDynamicDeviceLibrary(detail::pathToString(definition.library),
                                 definition.prefix),
         definition.session, definition.id);
   } catch (...) {
@@ -767,7 +767,7 @@ auto Driver::openFresh(const std::string_view id,
     definition = *registered;
   }
   return std::make_shared<QDMI_Device_impl_d>(
-      getDynamicDeviceLibrary(detail::pathToUtf8(definition.library),
+      getDynamicDeviceLibrary(detail::pathToString(definition.library),
                               definition.prefix),
       detail::mergeSessionConfig(std::move(definition.session), overrides),
       definition.id);
@@ -792,7 +792,7 @@ void Driver::materializeClientCatalog() {
           if (const auto definition =
                   std::ranges::find(definitions_, id, &DeviceDefinition::id);
               definition != definitions_.end()) {
-            library = detail::pathToUtf8(definition->library);
+            library = detail::pathToString(definition->library);
           }
         } catch (...) {
           library.clear();

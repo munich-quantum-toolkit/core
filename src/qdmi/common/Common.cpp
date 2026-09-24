@@ -30,8 +30,7 @@
 
 namespace qdmi {
 namespace detail {
-auto environmentUtf8(const std::string_view name)
-    -> std::optional<std::string> {
+auto environment(const std::string_view name) -> std::optional<std::string> {
 #ifdef _WIN32
   std::wstring wideName;
   for (const char character : name) {
@@ -49,7 +48,7 @@ auto environmentUtf8(const std::string_view name)
     return std::nullopt;
   }
   value.resize(written);
-  return pathToUtf8(std::filesystem::path(value));
+  return pathToString(std::filesystem::path(value));
 #else
   const std::string ownedName{name};
   if (const auto* value = std::getenv(ownedName.c_str());

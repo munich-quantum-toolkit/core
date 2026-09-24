@@ -15,7 +15,7 @@ cluster. It does not make a Slurm license an access-control credential. The
 controls are independent:
 
 - Slurm admits jobs and accounts for the configured license count.
-- The MQT Core adapter uses the license environment to select a Client-visible
+- The MQT Core adapter uses the license environment to select a client-visible
   QDMI device.
 - The QDMI provider reports device availability and queue data.
 - The provider or the operating system authorizes access to the device.
@@ -74,7 +74,7 @@ devices need no further registry file. Verify their stable IDs before you
 configure Slurm:
 
 ```console
-python -c "from mqt.core.qdmi import ClientSession; print(*(device.id for device in ClientSession().devices), sep='\n')"
+python -c "from mqt.core.qdmi import Session; print(*(device.id for device in Session().devices), sep='\n')"
 ```
 
 For an external provider, install its shared library and QDMI manifest. You can
@@ -222,7 +222,7 @@ on that node. Check that `/sys/fs/cgroup/cgroup.controllers` exists. Check that
 all nodes use the same Munge key and the same `slurm.conf`.
 
 If MQT Core cannot select a device, print `SLURM_JOB_LICENSES` inside the batch
-job and list the IDs visible to `ClientSession`. Use this value only to diagnose
+job and list the IDs visible to `Session`. Use this value only to diagnose
 selection. It is not proof of the Slurm allocation. The license name and stable
 ID must match exactly. Do not add a generic device license. Do not use a Slurm
 OR license expression for device selection because the environment does not

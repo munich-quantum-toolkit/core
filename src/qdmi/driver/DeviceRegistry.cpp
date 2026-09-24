@@ -10,6 +10,7 @@
 
 #include "DeviceRegistry.hpp"
 
+#include "qdmi/common/Common.hpp"
 #include "qdmi/common/DeviceConfiguration.hpp"
 #include "qdmi/driver/Driver.hpp"
 #include "qdmi/driver/SessionConfig.hpp"

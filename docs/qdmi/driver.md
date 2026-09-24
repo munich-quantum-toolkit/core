@@ -6,41 +6,32 @@ mystnb:
   number_source_lines: true
 ---
 
-# QDMI Client and Driver Runtime
+# Using QDMI drivers
 
-## Objective
+The C++ QDMI library (`MQT::CoreQDMI`) provides owning wrappers for the standard
+QDMI Client Interface. Applications can replace the driver without rebuilding.
+The driver handles device libraries, configuration, and authorization; the C++
+library uses the same interface regardless of the device implementation.
 
-MQT Core consumes the standard QDMI 1.4 Client interface. `MQT::CoreQDMI` owns
-the C++ wrappers and loads one QDMI driver at runtime. It does not link to a
-specific Driver implementation. `MQT::CoreQDMIDriver` is the packaged shared
-Driver. It loads devices such as [the SC QDMI Device](sc_device.md) and
-[the DDSIM QDMI Device](ddsim_device.md).
+MQT Core supplies the QDMI driver `MQT::CoreQDMIDriver`. It loads devices such
+as [the SC device](sc_device.md) and [the DDSIM device](ddsim_device.md).
 
-This boundary lets another QDMI 1.4 Driver implement the Client interface
-without linking to MQT Core's Driver. MQT Core checks the complete Client
-function table and the QDMI Client ABI major and minor versions before it
-allocates a session.
+## Driver selection
 
-## Driver Selection
-
-MQT Core selects the QDMI driver for the process after the Driver passes ABI and
-function-table validation and allocates the first raw session. The selection
-order is:
+Each session selects a driver in this order:
 
 1. `qdmi::SessionConfig::driverPath` or Python `driver_path`;
-2. the UTF-8 `MQT_CORE_QDMI_DRIVER` environment value;
-3. the packaged `MQT::CoreQDMIDriver` library.
+2. the `MQT_CORE_QDMI_DRIVER` environment variable;
+3. the MQT Core QDMI driver.
 
-The selection remains active until process exit. A later explicit request for a
-different Driver fails. A failed load, ABI check, symbol check, or raw-session
-allocation does not select a Driver, so a later call can retry. MQT Core keeps
-the selected shared library loaded while its function pointers can be used.
+MQT Core validates the required functions and ABI major/minor versions before
+allocating a session. Patch differences are compatible. Sessions may use
+different drivers in the same process. Devices and jobs keep their originating
+session and library alive, so opening another driver does not invalidate them.
 
-The driver shares a loaded provider across path aliases with the same symbol
-prefix and retains it for the process lifetime. Closing a device session frees
-that session without finalizing the provider while another session may use it.
-Initialization is serialized within each loaded module. A slow provider
-initializer does not hold the driver cache lock while other modules are opened.
+The MQT Core QDMI driver shares device libraries across path aliases with the
+same symbol prefix. Independent sessions keep their own parameters. A slow
+provider initializer does not block initialization of unrelated providers.
 
 ## Building the Bundled Devices
 
@@ -61,16 +52,17 @@ For example, an embedded simulator consumer can enable only the DDSIM device,
 while CUDA-Q can enable the DDSIM and superconducting devices used by its
 integration tests.
 
-The Client and Driver libraries are separate shared libraries. Device-free
-builds can use another QDMI 1.4 Driver through `driver_path` or
-`MQT_CORE_QDMI_DRIVER`. The packaged Driver can load external device libraries
-through [QDMI device configuration](configuration.md). C++ test builds require
-the bundled devices available in the selected build configuration.
+The driver is a shared library. The C++ QDMI library follows the project’s
+static/shared build setting and is shared in Python wheels. Device-free builds
+can use another QDMI driver through `driver_path` or `MQT_CORE_QDMI_DRIVER`. The
+MQT Core QDMI driver can load external device libraries through
+[QDMI device configuration](configuration.md). C++ test builds require the
+bundled devices available in the selected build configuration.
 
 ## Python Bindings
 
-The C++ QDMI library adds owning wrappers for Client sessions, devices, sites,
-operations, and jobs. Each wrapper retains the Client session that owns its raw
+The C++ QDMI library adds owning wrappers for driver sessions, devices, sites,
+operations, and jobs. Each wrapper retains the driver session that owns its raw
 handle. The Python module exposes the same entities through
 {py:mod}`mqt.core.qdmi`.
 
@@ -83,19 +75,19 @@ access.
 
 ## Usage
 
-The following example enumerates the devices visible to one authenticated Client
-session. Each Driver supplies a stable `id` property. `open_device` starts a
-fresh session and finds that ID in the standard Client device list.
+The following example enumerates the devices visible to one authenticated driver
+session. Each driver supplies a stable `id` property. `open_device` starts a
+fresh session and finds that ID in the session’s device list.
 
 ```{code-cell} ipython3
-from mqt.core.qdmi import ClientSession, open_device
+from mqt.core.qdmi import Session, open_device
 
-for discovered in ClientSession().devices:
+for discovered in Session().devices:
     device = open_device(discovered.id)
     print(device.name())
 ```
 
 All session keywords map to standard QDMI parameters. They are `token`,
 `auth_file`, `auth_url`, `username`, `password`, `project_id`, and `custom1`
-through `custom5`. The selected Driver defines validation, precedence, and the
+through `custom5`. The selected driver defines validation, precedence, and the
 meaning of these values.
