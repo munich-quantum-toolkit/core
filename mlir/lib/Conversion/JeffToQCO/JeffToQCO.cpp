@@ -293,6 +293,59 @@ static Value forwardedRegister(Value value, Block& block, ValueRange inputs,
 
 namespace {
 
+/// Converts a constant jeff i1 array to a CBit register.
+struct ConvertJeffIntArrayConst1OpToCBit final
+    : OpConversionPattern<jeff::IntArrayConst1Op> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(jeff::IntArrayConst1Op op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    const auto registerType = getCBitType(op.getType());
+    if (!registerType) {
+      return failure();
+    }
+    auto reg = cbit::AllocOp::create(rewriter, op.getLoc(), registerType,
+                                     cbit::Initialization::Zero);
+    Value trueValue;
+    for (const auto [i, bit] : llvm::enumerate(op.getInArray())) {
+      if (!bit) {
+        continue;
+      }
+      if (!trueValue) {
+        trueValue = arith::ConstantIntOp::create(rewriter, op.getLoc(), 1, 1);
+      }
+      auto index = arith::ConstantIndexOp::create(rewriter, op.getLoc(), i);
+      cbit::StoreOp::create(rewriter, op.getLoc(), trueValue, reg, index);
+    }
+    rewriter.replaceOp(op, reg);
+    return success();
+  }
+};
+
+/// Converts a jeff array of i1 values to a CBit register.
+struct ConvertJeffIntArrayCreateOpToCBit final
+    : OpConversionPattern<jeff::IntArrayCreateOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(jeff::IntArrayCreateOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    const auto registerType = getCBitType(op.getType());
+    if (!registerType) {
+      return failure();
+    }
+    auto reg = cbit::AllocOp::create(rewriter, op.getLoc(), registerType,
+                                     cbit::Initialization::Undefined);
+    for (auto [i, bit] : llvm::enumerate(adaptor.getInArray())) {
+      auto index = arith::ConstantIndexOp::create(rewriter, op.getLoc(), i);
+      cbit::StoreOp::create(rewriter, op.getLoc(), bit, reg, index);
+    }
+    rewriter.replaceOp(op, reg);
+    return success();
+  }
+};
+
 /// Converts a jeff zero-initialized i1 array to a CBit register.
 struct ConvertJeffIntArrayZeroOpToCBit final
     : OpConversionPattern<jeff::IntArrayZeroOp> {
@@ -379,6 +432,25 @@ struct ConvertJeffIntArrayGetIndexOpToCBit final
     }
     auto index = toIndex(op.getLoc(), adaptor.getIndex(), rewriter);
     rewriter.replaceOpWithNewOp<cbit::LoadOp>(op, op.getType(), reg, index);
+    return success();
+  }
+};
+
+/// A CBit register's width is the length of the source jeff array.
+struct ConvertJeffIntArrayLengthOpToCBit final
+    : OpConversionPattern<jeff::IntArrayLengthOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(jeff::IntArrayLengthOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    const auto registerType =
+        dyn_cast<cbit::RegisterType>(adaptor.getInArray().getType());
+    if (!registerType) {
+      return failure();
+    }
+    rewriter.replaceOpWithNewOp<arith::ConstantIntOp>(op, op.getType(),
+                                                      registerType.getWidth());
     return success();
   }
 };
@@ -1159,7 +1231,29 @@ protected:
     }
 
     DenseSet<Operation*> sharedArrayUpdates;
-    const auto unsupportedSnapshots = moduleOp.walk([&](Operation* operation) {
+    const auto unsupportedInputs = moduleOp.walk([&](Operation* operation) {
+      if (auto constant = dyn_cast<jeff::IntArrayConst1Op>(operation);
+          constant && getCBitType(constant.getType()) &&
+          std::cmp_not_equal(constant.getInArray().size(),
+                             constant.getType().getDimSize(0))) {
+        constant.emitError("CBit array element count must match its static "
+                           "result width");
+        return WalkResult::interrupt();
+      }
+      if (auto create = dyn_cast<jeff::IntArrayCreateOp>(operation);
+          create && getCBitType(create.getType())) {
+        if (llvm::any_of(create.getInArray().getTypes(),
+                         [](Type type) { return !type.isInteger(1); })) {
+          create.emitError("CBit arrays require i1 elements");
+          return WalkResult::interrupt();
+        }
+        if (std::cmp_not_equal(create.getInArray().size(),
+                               create.getType().getDimSize(0))) {
+          create.emitError("CBit array element count must match its static "
+                           "result width");
+          return WalkResult::interrupt();
+        }
+      }
       if (auto update = dyn_cast<jeff::IntArraySetIndexOp>(operation);
           update && getCBitType(update.getInArray().getType()) &&
           needsArrayCopy(update.getInArray(), update)) {
@@ -1191,7 +1285,7 @@ protected:
       }
       return WalkResult::advance();
     });
-    if (unsupportedSnapshots.wasInterrupted()) {
+    if (unsupportedInputs.wasInterrupted()) {
       signalPassFailure();
       return;
     }
@@ -1240,9 +1334,11 @@ protected:
     patterns.add<ConvertJeffMainToQCO>(typeConverter, context, *entryPoint);
     patterns.add<ConvertJeffIntArraySetIndexOpToCBit>(typeConverter, context,
                                                       sharedArrayUpdates);
-    patterns.add<ConvertJeffIntArrayZeroOpToCBit, ConvertJeffLogicalShift,
-                 ConvertJeffIntArrayGetIndexOpToCBit>(typeConverter, context,
-                                                      PatternBenefit(2));
+    patterns.add<
+        ConvertJeffIntArrayConst1OpToCBit, ConvertJeffIntArrayCreateOpToCBit,
+        ConvertJeffIntArrayZeroOpToCBit, ConvertJeffLogicalShift,
+        ConvertJeffIntArrayGetIndexOpToCBit, ConvertJeffIntArrayLengthOpToCBit>(
+        typeConverter, context, PatternBenefit(2));
     patterns.add<
         ConvertJeffQuregAllocOpToQCO, ConvertJeffQuregExtractIndexOpToQCO,
         ConvertJeffQuregInsertIndexOpToQCO, ConvertJeffQuregFreeZeroOpToQCO,
