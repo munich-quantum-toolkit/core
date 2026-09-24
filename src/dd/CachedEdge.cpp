@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
+#include <cmath>
 #include <cstddef>
 #include <functional>
 #include <optional>
@@ -125,6 +126,26 @@ auto CachedEdge<Node>::normalize(Node* p,
     return CachedEdge::zero();
   }
 
+  /// The incoming scale does not affect normalized coefficients. Remove it
+  /// before squared magnitudes and complex division can overflow or underflow.
+  const auto maxComponent = std::max({
+      std::abs(e[0].w.r),
+      std::abs(e[0].w.i),
+      std::abs(e[1].w.r),
+      std::abs(e[1].w.i),
+      std::abs(e[2].w.r),
+      std::abs(e[2].w.i),
+      std::abs(e[3].w.r),
+      std::abs(e[3].w.i),
+  });
+  auto weights = std::array{e[0].w, e[1].w, e[2].w, e[3].w};
+  if (maxComponent < 1. || maxComponent >= 2.) {
+    const auto scale = std::scalbn(1., std::ilogb(maxComponent));
+    for (auto& w : weights) {
+      w = w / scale;
+    }
+  }
+
   std::optional<std::size_t> argMax = std::nullopt;
   fp maxMag2 = 0.;
   ComplexValue maxVal = 1.;
@@ -133,17 +154,17 @@ auto CachedEdge<Node>::normalize(Node* p,
     if (zero[i]) {
       continue;
     }
-    const auto& w = e[i].w;
+    const auto& w = weights[i];
     if (!argMax.has_value()) {
       argMax = i;
       maxMag2 = w.mag2();
-      maxVal = w;
+      maxVal = e[i].w;
     } else {
       if (const auto mag2 = w.mag2();
           mag2 - maxMag2 > RealNumber::eps * std::max(mag2, maxMag2)) {
         argMax = i;
         maxMag2 = mag2;
-        maxVal = w;
+        maxVal = e[i].w;
       }
     }
   }
@@ -161,7 +182,7 @@ auto CachedEdge<Node>::normalize(Node* p,
       p->e[i] = {e[i].p, Complex::one()};
       continue;
     }
-    p->e[i] = {e[i].p, cn.lookup(e[i].w / maxVal)};
+    p->e[i] = {e[i].p, cn.lookup(weights[i] / weights[argMaxValue])};
     if (p->e[i].w.exactlyZero()) {
       p->e[i].p = Node::getTerminal();
     }

@@ -345,12 +345,25 @@ auto Edge<Node>::normalize(Node* p, const std::array<Edge, NEDGE>& e,
     return Edge::zero();
   }
 
-  const auto weights = std::array{
+  auto weights = std::array{
       static_cast<ComplexValue>(e[0].w),
       static_cast<ComplexValue>(e[1].w),
       static_cast<ComplexValue>(e[2].w),
       static_cast<ComplexValue>(e[3].w),
   };
+
+  /// The incoming scale does not affect normalized coefficients. Remove it
+  /// before squared magnitudes and complex division can overflow or underflow.
+  fp maxComponent = 0.;
+  for (const auto& w : weights) {
+    maxComponent = std::max({maxComponent, std::abs(w.r), std::abs(w.i)});
+  }
+  if (maxComponent < 1. || maxComponent >= 2.) {
+    const auto scale = std::scalbn(1., std::ilogb(maxComponent));
+    for (auto& w : weights) {
+      w = w / scale;
+    }
+  }
 
   std::optional<std::size_t> argMax = std::nullopt;
   fp maxMag2 = 0.;
