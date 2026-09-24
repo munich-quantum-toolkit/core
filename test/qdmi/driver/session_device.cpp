@@ -58,19 +58,11 @@ auto initializeCallback() -> std::atomic<InitializeCallback>& {
   return count;
 }
 
-constexpr auto WARNING_MODE = "MQT_CORE_QDMI_TEST_DEVICE_WARNING";
+constexpr auto FAILURE_MODE = "MQT_CORE_QDMI_TEST_DEVICE_FAILURE";
 
-[[nodiscard]] auto warningMode() -> std::string_view {
-  const auto* const value = std::getenv(WARNING_MODE);
+[[nodiscard]] auto failureMode() -> std::string_view {
+  const auto* const value = std::getenv(FAILURE_MODE);
   return value == nullptr ? std::string_view{} : std::string_view{value};
-}
-
-[[nodiscard]] auto successfulStatus(const std::string_view operation) -> int {
-  const auto mode = warningMode();
-  return mode == "all" || mode == operation ||
-                 (mode == "children-null" && operation == "children")
-             ? QDMI_WARN_GENERAL
-             : QDMI_SUCCESS;
 }
 
 [[nodiscard]] auto activeSessions() -> std::atomic_size_t& {
@@ -194,7 +186,7 @@ extern "C" int TEST_SESSION_QDMI_device_initialize() {
       status != nullptr && status == std::string_view{"permission-denied"}) {
     return QDMI_ERROR_PERMISSIONDENIED;
   }
-  return successfulStatus("initialize");
+  return QDMI_SUCCESS;
 }
 
 /// Tests install a callback before opening sessions to coordinate
@@ -214,10 +206,10 @@ TEST_SESSION_QDMI_device_session_alloc(QDMI_Device_Session* session) {
   if (session == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  const auto mode = warningMode();
+  const auto mode = failureMode();
   if (mode == "alloc-null") {
     *session = nullptr;
-    return QDMI_WARN_GENERAL;
+    return QDMI_SUCCESS;
   }
   // The QDMI C API transfers this allocation through an opaque raw handle.
   // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
@@ -229,7 +221,7 @@ TEST_SESSION_QDMI_device_session_alloc(QDMI_Device_Session* session) {
   if (mode == "alloc-error-handle") {
     return QDMI_ERROR_PERMISSIONDENIED;
   }
-  return successfulStatus("alloc");
+  return QDMI_SUCCESS;
 }
 
 extern "C" int TEST_SESSION_QDMI_device_session_set_parameter(
@@ -251,12 +243,12 @@ extern "C" int TEST_SESSION_QDMI_device_session_set_parameter(
       return QDMI_ERROR_INVALIDARGUMENT;
     }
     session->child = child;
-    return successfulStatus("set");
+    return QDMI_SUCCESS;
   }
   if (value != nullptr) {
     session->parameters[param] = static_cast<const char*>(value);
   }
-  return successfulStatus("set");
+  return QDMI_SUCCESS;
 }
 
 extern "C" int
@@ -268,7 +260,7 @@ TEST_SESSION_QDMI_device_session_init(QDMI_Device_Session session) {
     return QDMI_ERROR_BADSTATE;
   }
   session->initialized = true;
-  return successfulStatus("init");
+  return QDMI_SUCCESS;
 }
 
 extern "C" void
@@ -306,18 +298,18 @@ extern "C" int TEST_SESSION_QDMI_device_session_query_device_property(
       *sizeRet = required;
     }
     if (value == nullptr) {
-      return successfulStatus("children");
+      return QDMI_SUCCESS;
     }
     if (size < required) {
       return QDMI_ERROR_INVALIDARGUMENT;
     }
-    if (warningMode() == "children-null") {
-      return QDMI_WARN_GENERAL;
+    if (failureMode() == "children-null") {
+      return QDMI_SUCCESS;
     }
     const auto* const child = childDeviceHandle();
     std::memcpy(value, static_cast<const void*>(&child),
                 sizeof(QDMI_Child_Device));
-    return successfulStatus("children");
+    return QDMI_SUCCESS;
   }
   if (prop == QDMI_DEVICE_PROPERTY_CUSTOM4 &&
       parameter(session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1) ==

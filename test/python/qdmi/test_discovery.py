@@ -24,28 +24,22 @@ if TYPE_CHECKING:
 
 
 class _Distribution:
-    def __init__(self, root: Path, files: list[str] | None, *, record: str | None = "") -> None:
+    def __init__(self, root: Path, files: list[str] | None) -> None:
         self.root = root
         self.files = None if files is None else [PurePosixPath(file) for file in files]
-        self.record = record
 
     def locate_file(self, file: PurePosixPath) -> Path:
         return self.root / file
-
-    def read_text(self, filename: str) -> str | None:
-        assert filename == "RECORD"
-        return self.record
 
 
 def _entry(
     root: Path,
     files: list[str] | None,
     *,
-    name: str = "device.qdmi.json",
+    name: str = "vendor",
     value: str = "vendor.device",
-    record: str | None = "",
 ) -> object:
-    return SimpleNamespace(name=name, value=value, dist=_Distribution(root, files, record=record))
+    return SimpleNamespace(name=name, value=value, dist=_Distribution(root, files))
 
 
 def test_discovers_record_manifest_without_importing_owner(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -63,6 +57,12 @@ def test_discovers_record_manifest_without_importing_owner(monkeypatch: pytest.M
 
     assert discovered == [path]
     assert "vendor" not in sys.modules
+    second = "vendor/device/data/lib/second.qdmi.json"
+    (tmp_path / second).write_text("{}")
+    monkeypatch.setattr(_qdmi_discovery, "entry_points", lambda **_: [_entry(tmp_path, [manifest, second])])
+    discovered.clear()
+    _qdmi_discovery.discover_qdmi_manifests(discovered.append)
+    assert discovered == [path, tmp_path / second]
 
 
 def test_skips_failed_entry_point_enumeration(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -79,32 +79,12 @@ def test_skips_failed_entry_point_enumeration(monkeypatch: pytest.MonkeyPatch) -
     assert len(warnings) == 1
 
 
-def test_skips_file_list_without_record(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """Reject file lists that do not come from wheel RECORD metadata."""
-    manifest = "vendor/device/data/device.qdmi.json"
-    monkeypatch.setattr(
-        _qdmi_discovery,
-        "entry_points",
-        lambda **_: [_entry(tmp_path, [manifest], record=None)],
-    )
-
-    with pytest.warns(RuntimeWarning, match="no RECORD") as warnings:
-        _qdmi_discovery.discover_qdmi_manifests(lambda _: pytest.fail("must skip"))
-    assert len(warnings) == 1
-
-
 @pytest.mark.parametrize(
     ("files", "name", "value"),
     [
         (None, "device.qdmi.json", "vendor.device"),
-        (
-            ["vendor/device/a/device.qdmi.json", "vendor/device/b/device.qdmi.json"],
-            "device.qdmi.json",
-            "vendor.device",
-        ),
         (["../device.qdmi.json"], "device.qdmi.json", "vendor.device"),
         (["other/device.qdmi.json"], "device.qdmi.json", "vendor.device"),
-        (["vendor/device/data/device.qdmi.json"], "../device.qdmi.json", "vendor.device"),
         (["vendor/device/data/device.qdmi.json"], "device.qdmi.json", "vendor/device"),
     ],
 )
@@ -115,7 +95,7 @@ def test_skips_invalid_manifest_metadata(
     name: str,
     value: str,
 ) -> None:
-    """Warn once and skip malformed or ambiguous manifest metadata."""
+    """Warn once and skip malformed manifest metadata."""
     monkeypatch.setattr(
         _qdmi_discovery,
         "entry_points",

@@ -544,19 +544,19 @@ class Site;
 class Device;
 class Operation;
 
-namespace default_driver {
+namespace builtin_driver {
 /// Stage one device manifest in MQT Core's optional driver extension.
 void addManifest(const std::filesystem::path& path);
 
-/// Open one default-driver device with strict merged session configuration.
+/// Open one device through the MQT Core QDMI driver with session overrides.
 /// @param id Stable device ID.
 /// @param deviceSessionJson JSON session overrides.
 /// @param driverPath Optional compatible extension path. By default, this call
-/// uses MQT Core's packaged Driver and ignores `MQT_CORE_QDMI_DRIVER`.
+/// uses the MQT Core QDMI driver and ignores `MQT_CORE_QDMI_DRIVER`.
 [[nodiscard]] Device openDevice(
     std::string_view id, std::string_view deviceSessionJson = {},
     const std::optional<std::filesystem::path>& driverPath = std::nullopt);
-} // namespace default_driver
+} // namespace builtin_driver
 
 /// One initialized session with a QDMI driver.
 /// Devices and jobs retain the session and its driver library.
@@ -809,7 +809,7 @@ private:
       : device_(device), session_(std::move(session)) {}
 
   friend Device
-  default_driver::openDevice(std::string_view, std::string_view,
+  builtin_driver::openDevice(std::string_view, std::string_view,
                              const std::optional<std::filesystem::path>&);
 
   /// Wrap operation handles while retaining their owning device session.

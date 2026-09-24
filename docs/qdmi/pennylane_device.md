@@ -316,7 +316,7 @@ device = QDMIDevice(
     wires=["a", "b", "c", "d"],
     session_parameters={
         "token": "...",
-        "project_id": "project",
+        "base_url": "https://device.example",
     },
     job_parameters={
         "custom1": "device-specific job value",

@@ -36,7 +36,7 @@ int main(const int argc, const char* const argv[]) {
     const auto devices = session.getDevices();
     if (!devices.empty()) {
       const auto id = devices.front().getId();
-      const auto targeted = qdmi::default_driver::openDevice(id);
+      const auto targeted = qdmi::builtin_driver::openDevice(id);
       if (targeted.getId() != id) {
         return EXIT_FAILURE;
       }

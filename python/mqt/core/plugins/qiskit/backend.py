@@ -33,7 +33,8 @@ from qiskit.transpiler import InstructionProperties, Target
 
 from ...qdmi import Device as QDMIDevice
 from ...qdmi import Job as QDMIJobHandle
-from ...qdmi import ProgramFormat, is_binary_program_format, open_device
+from ...qdmi import ProgramFormat, is_binary_program_format
+from ...qdmi.builtin_driver import open_device
 from .exceptions import (
     CircuitValidationError,
     JobSubmissionError,
@@ -324,7 +325,7 @@ class QDMIBackend(BackendV2):
         Args:
             device_id: Stable ID reported by the QDMI driver.
             provider: Provider to associate with the backend.
-            session_parameters: Optional parameters for this driver session.
+            session_parameters: Optional device-session parameters for the MQT Core QDMI driver.
 
         Returns:
             A Qiskit backend for a fresh QDMI device session.

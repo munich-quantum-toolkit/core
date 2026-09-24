@@ -24,14 +24,14 @@ namespace qdmi::detail {
 void validateDeviceId(std::string_view id);
 
 /// Stages one low-precedence device manifest before the driver is frozen.
-auto stagePackageManifest(const std::filesystem::path& path) -> int;
+auto stageDeviceManifest(const std::filesystem::path& path) -> int;
 
 /// Freezes and returns the staged device manifests.
-[[nodiscard]] auto freezePackageManifests()
+[[nodiscard]] auto freezeDeviceManifests()
     -> std::vector<std::filesystem::path>;
 
-/// Reopens package-manifest staging after driver construction fails.
-void rollbackPackageManifestFreeze();
+/// Reopens device-manifest staging after driver construction fails.
+void rollbackDeviceManifestFreeze();
 
 /// Parses one strict JSON object with the manifest session grammar.
 auto parseDeviceSessionJson(const char* data, size_t size,

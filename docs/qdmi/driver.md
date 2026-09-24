@@ -35,6 +35,30 @@ The MQT Core QDMI driver shares device libraries across path aliases with the
 same symbol prefix. Independent sessions keep their own parameters. A slow
 provider initializer does not block initialization of unrelated providers.
 
+## Opening configured devices
+
+Use `mqt.core.qdmi.builtin_driver.open_device` or
+`qdmi::builtin_driver::openDevice` to open one configured device with the MQT
+Core QDMI driver. These calls create independent device sessions and accept
+per-call overrides of the manifest's session parameters. They do not initialize
+unrelated devices.
+
+```python
+from mqt.core.qdmi import builtin_driver
+
+device = builtin_driver.open_device("mqt.ddsim.default")
+```
+
+The Qiskit `QDMIBackend.from_device_id` factory and PennyLane's
+`qml.device("mqt.ddsim.default", wires=4)` use this opening API. Python
+`QDMISessionParameters` describes the supported overrides. To use another driver
+with these SDKs, pass an already-open `Device` to the backend constructor.
+
+The MQT Core QDMI driver provides two optional private functions for manifest
+registration and targeted session allocation. Standard-interface drivers need
+neither function. The generic `Session` and `open_device` APIs use only the
+standard Client Interface.
+
 ## Building the Bundled Devices
 
 Standalone MQT Core builds include the DDSIM and superconducting QDMI device

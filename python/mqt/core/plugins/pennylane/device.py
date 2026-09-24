@@ -30,7 +30,8 @@ from pennylane.transforms.core import CompilePipeline
 
 from mqt.core.qdmi import Device as QDMIDeviceHandle
 from mqt.core.qdmi import Job as QDMIJobHandle
-from mqt.core.qdmi import ProgramFormat, open_device
+from mqt.core.qdmi import ProgramFormat
+from mqt.core.qdmi.builtin_driver import open_device
 
 from .converter import _ConvertedProgram, _ProgramConverter
 from .exceptions import (
@@ -67,7 +68,9 @@ _SESSION_PARAMETERS = frozenset({
     "auth_url",
     "username",
     "password",
-    "project_id",
+    "base_url",
+    "device_config",
+    "device_config_file",
     "custom1",
     "custom2",
     "custom3",
@@ -139,7 +142,7 @@ class QDMIDevice(Device):
             qubits are exposed as consecutive integer wires.
         device: An already-open QDMI device. Use this for a session selected by
             an integration such as Slurm.
-        session_parameters: QDMI driver-session keyword arguments.
+        session_parameters: Device-session parameters for the MQT Core QDMI driver.
         job_parameters: QDMI custom job keyword arguments.
     """
 

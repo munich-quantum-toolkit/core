@@ -68,9 +68,6 @@ constexpr auto FAIL_ALLOCATION = "MQT_CORE_QDMI_FAKE_FAIL_ALLOCATION";
   if (requested == "success-null") {
     return QDMI_SUCCESS;
   }
-  if (requested == "warning-null") {
-    return QDMI_WARN_GENERAL;
-  }
   return std::nullopt;
 }
 
@@ -136,9 +133,6 @@ MQT_CORE_QDMI_driver_session_alloc_for_device_v1(const char* deviceId, size_t,
 #ifdef TEST_TARGETED_INIT_FAILURE_EXTENSION
   return QDMI_session_alloc(session);
 #else
-  if (deviceId != nullptr && std::string_view{deviceId} == "warning-null") {
-    return QDMI_WARN_GENERAL;
-  }
   return QDMI_ERROR_OUTOFMEM;
 #endif
 }

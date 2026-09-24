@@ -228,6 +228,7 @@ public:
   /// @param lib is the device library to take ownership of.
   /// @param config is the configuration for device session parameters.
   /// @param id is the configured stable ID; empty for an unnamed child.
+  /// @param strict rejects session parameters the device does not support.
   explicit QDMI_Device_impl_d(std::unique_ptr<qdmi::DeviceLibrary>&& lib,
                               const qdmi::DeviceSessionConfig& config = {},
                               std::string id = {}, const bool strict = false)
@@ -242,6 +243,7 @@ public:
   /// device interface functions.
   /// @param config is the configuration for device session parameters.
   /// @param id is the configured stable ID; empty for an unnamed child.
+  /// @param strict rejects session parameters the device does not support.
   /// @param childDevice optionally selects a child device for this wrapper.
   explicit QDMI_Device_impl_d(std::shared_ptr<qdmi::DeviceLibrary> lib,
                               const qdmi::DeviceSessionConfig& config = {},
@@ -451,7 +453,7 @@ class Driver final : public Singleton<Driver> {
                  bool strict = false) -> std::shared_ptr<QDMI_Device_impl_d>;
 
 public:
-  /// @returns the process-wide Driver instance.
+  /// @returns the instance owned by this driver library.
   ///
   /// This out-of-line accessor keeps static-library consumers from
   /// instantiating separate singleton storage in different translation units.

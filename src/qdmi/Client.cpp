@@ -14,6 +14,8 @@
 #include "qdmi/common/DeviceConfiguration.hpp"
 #include "qdmi/common/Diagnostics.hpp"
 
+#include "DriverExtension.hpp"
+
 #include "qdmi/client.h"
 
 #include <algorithm>
@@ -205,6 +207,15 @@ void closeLibrary(LibraryHandle library) { dlclose(library); }
   return packaged.has_parent_path() ? normalizePath(packaged) : packaged;
 }
 
+struct DriverExtension {
+  decltype(&MQT_CORE_QDMI_driver_add_manifest_v1) addManifest{};
+  decltype(&MQT_CORE_QDMI_driver_session_alloc_for_device_v1) allocateSession{};
+};
+
+struct LoadedDriver : detail::ClientAPI {
+  DriverExtension extension;
+};
+
 template <class Function>
 [[nodiscard]] auto loadSymbol(LibraryHandle library, const char* name)
     -> Function {
@@ -218,10 +229,10 @@ template <class Function>
 }
 
 [[nodiscard]] auto loadClient(const std::filesystem::path& path)
-    -> std::shared_ptr<const detail::ClientAPI> {
+    -> std::shared_ptr<const LoadedDriver> {
   struct DriverCache {
     std::mutex mutex;
-    std::map<std::filesystem::path, std::shared_ptr<const detail::ClientAPI>>
+    std::map<std::filesystem::path, std::shared_ptr<const LoadedDriver>>
         drivers;
   };
   /// Keep validated drivers available to sessions in global destructors.
@@ -241,7 +252,7 @@ template <class Function>
   const std::shared_ptr<void> owner{
       library,
       [](void* handle) { closeLibrary(static_cast<LibraryHandle>(handle)); }};
-  auto api = std::make_shared<detail::ClientAPI>();
+  auto api = std::make_shared<LoadedDriver>();
   api->library = owner;
   api->driver_get_client_abi_version =
       loadSymbol<decltype(api->driver_get_client_abi_version)>(
@@ -278,6 +289,13 @@ template <class Function>
   LOAD_CLIENT_SYMBOL(device_query_site_property);
   LOAD_CLIENT_SYMBOL(device_query_operation_property);
 #undef LOAD_CLIENT_SYMBOL
+#define LOAD_EXTENSION(field, symbol)                                          \
+  api->extension.field = reinterpret_cast<decltype(api->extension.field)>(     \
+      findSymbol(library, #symbol))
+  LOAD_EXTENSION(addManifest, MQT_CORE_QDMI_driver_add_manifest_v1);
+  LOAD_EXTENSION(allocateSession,
+                 MQT_CORE_QDMI_driver_session_alloc_for_device_v1);
+#undef LOAD_EXTENSION
   return cache.drivers.emplace(path, std::move(api)).first->second;
 }
 
@@ -306,6 +324,61 @@ void validateSessionAllocation(const int status, QDMI_Session session) {
   return owner;
 }
 } // namespace
+
+void builtin_driver::addManifest(const std::filesystem::path& path) {
+  const auto driver = loadClient(packagedDriverPath());
+  if (driver->extension.addManifest == nullptr) {
+    throw std::runtime_error(
+        "The MQT Core QDMI driver does not support device manifests");
+  }
+  const auto filename = detail::pathToString(normalizePath(path));
+  throwIfError(driver->extension.addManifest(filename.c_str()),
+               "Registering QDMI device manifest");
+}
+
+Device builtin_driver::openDevice(
+    const std::string_view id, const std::string_view deviceSessionJson,
+    const std::optional<std::filesystem::path>& driverPath) {
+  if (id.empty() || id.find('\0') != std::string_view::npos) {
+    throw std::invalid_argument(
+        "QDMI device ID must not be empty or contain null bytes");
+  }
+  const auto driver =
+      driverPath ? loadClient(normalizePath(*driverPath)) : loadClient(packagedDriverPath());
+  if (driver->extension.allocateSession == nullptr) {
+    throw std::runtime_error(
+        "The QDMI driver does not support targeted sessions");
+  }
+  QDMI_Session session = nullptr;
+  const std::string deviceId{id};
+  const auto status = driver->extension.allocateSession(
+      deviceId.c_str(), deviceSessionJson.size(),
+      deviceSessionJson.empty() ? nullptr : deviceSessionJson.data(), &session);
+  SessionGuard guard{session, driver->session_free};
+  validateSessionAllocation(status, session);
+  auto owner = std::make_shared<detail::DriverSession>(driver, session);
+  /// NOLINTNEXTLINE(bugprone-unused-return-value)
+  guard.release();
+  throwIfError(driver->session_init(session),
+               "Initializing QDMI device session");
+  size_t size = 0;
+  throwIfError(driver->session_query_session_property(
+                   session, QDMI_SESSION_PROPERTY_DEVICES, 0, nullptr, &size),
+               "Querying QDMI device");
+  if (size != sizeof(QDMI_Device)) {
+    throw std::runtime_error(
+        "A targeted QDMI session must expose exactly one device");
+  }
+  QDMI_Device device = nullptr;
+  throwIfError(driver->session_query_session_property(
+                   session, QDMI_SESSION_PROPERTY_DEVICES, size,
+                   static_cast<void*>(&device), nullptr),
+               "Querying QDMI device");
+  if (device == nullptr) {
+    throw std::runtime_error("A targeted QDMI session returned a null device");
+  }
+  return {device, std::move(owner)};
+}
 
 void detail::JobDeleter::operator()(QDMI_Job_impl_d* const job) const {
   if (job != nullptr) {

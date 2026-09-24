@@ -58,21 +58,21 @@ struct DefinitionPatch {
   std::filesystem::path source;
 };
 
-struct PackageManifestState {
+struct DeviceManifestState {
   std::mutex mutex;
   std::vector<std::filesystem::path> paths;
   std::map<std::string, std::filesystem::path> ids;
   bool frozen = false;
 };
 
-[[nodiscard]] auto packageManifestState() -> PackageManifestState& {
-  static PackageManifestState state;
+[[nodiscard]] auto packageManifestState() -> DeviceManifestState& {
+  static DeviceManifestState state;
   return state;
 }
 
 [[nodiscard]] auto sourceLabel(const std::filesystem::path& source,
                                const std::string_view path) -> std::string {
-  return pathToUtf8(source) + ":" + std::string(path);
+  return pathToString(source) + ":" + std::string(path);
 }
 
 void requireObject(const Json& value, const std::filesystem::path& source,
@@ -186,7 +186,7 @@ parseSessionPatch(const Json& value, const std::filesystem::path& source,
                                     "bytes");
       }
       patch.deviceConfiguration = FileDeviceConfiguration{
-          .path = resolvePath(pathFromUtf8(*file), base),
+          .path = resolvePath(pathFromString(*file), base),
       };
     }
   }
@@ -196,7 +196,7 @@ parseSessionPatch(const Json& value, const std::filesystem::path& source,
                                   " must be a non-empty path without null "
                                   "bytes");
     }
-    patch.authFile = resolvePath(pathFromUtf8(*authFile), base);
+    patch.authFile = resolvePath(pathFromString(*authFile), base);
   }
   if (patch.deviceConfiguration && (patch.custom1 || patch.custom2)) {
     throw std::invalid_argument(
@@ -228,7 +228,7 @@ parseDevicePatch(const Json& value, const std::filesystem::path& source,
                                   " must be a non-empty path without null "
                                   "bytes");
     }
-    patch.library = resolvePath(pathFromUtf8(*library), base);
+    patch.library = resolvePath(pathFromString(*library), base);
   }
   patch.prefix = optionalString(value, "prefix", source, path);
   if (patch.prefix && patch.prefix->find('\0') != std::string::npos) {
@@ -294,12 +294,12 @@ parseDevicePatch(const Json& value, const std::filesystem::path& source,
   std::ifstream stream(path);
   if (!stream) {
     throw std::runtime_error("Cannot open QDMI configuration file: " +
-                             pathToUtf8(path));
+                             pathToString(path));
   }
   try {
     return Json::parse(stream);
   } catch (const Json::parse_error& error) {
-    throw std::invalid_argument(pathToUtf8(path) +
+    throw std::invalid_argument(pathToString(path) +
                                 ": invalid JSON: " + error.what());
   }
 }
@@ -373,8 +373,8 @@ void appendFragments(std::vector<std::filesystem::path>& files,
   appendFragments(files, root / "qdmi");
 
   std::optional<std::filesystem::path> explicitFile;
-  if (auto value = environmentUtf8("MQT_CORE_QDMI_CONFIG_FILE")) {
-    explicitFile = pathFromUtf8(*value);
+  if (auto value = environment("MQT_CORE_QDMI_CONFIG_FILE")) {
+    explicitFile = pathFromString(*value);
   }
   if (explicitFile) {
     const auto resolved =
@@ -382,26 +382,27 @@ void appendFragments(std::vector<std::filesystem::path>& files,
     if (!std::filesystem::is_regular_file(resolved)) {
       throw std::runtime_error("Explicit QDMI configuration file does not "
                                "exist: " +
-                               pathToUtf8(resolved));
+                               pathToString(resolved));
     }
     files.emplace_back(resolved);
     return files;
   }
 
 #ifdef _WIN32
-  if (auto programData = environmentUtf8("PROGRAMDATA")) {
-    appendIfFile(files, pathFromUtf8(*programData) / "mqt-core" / "qdmi.json");
+  if (auto programData = environment("PROGRAMDATA")) {
+    appendIfFile(files,
+                 pathFromString(*programData) / "mqt-core" / "qdmi.json");
   }
-  if (auto appData = environmentUtf8("APPDATA")) {
-    appendIfFile(files, pathFromUtf8(*appData) / "mqt-core" / "qdmi.json");
+  if (auto appData = environment("APPDATA")) {
+    appendIfFile(files, pathFromString(*appData) / "mqt-core" / "qdmi.json");
   }
 #else
   appendIfFile(files, "/etc/mqt-core/qdmi.json");
-  if (auto xdg = environmentUtf8("XDG_CONFIG_HOME")) {
-    appendIfFile(files, pathFromUtf8(*xdg) / "mqt-core" / "qdmi.json");
-  } else if (auto home = environmentUtf8("HOME")) {
+  if (auto xdg = environment("XDG_CONFIG_HOME")) {
+    appendIfFile(files, pathFromString(*xdg) / "mqt-core" / "qdmi.json");
+  } else if (auto home = environment("HOME")) {
     appendIfFile(files,
-                 pathFromUtf8(*home) / ".config" / "mqt-core" / "qdmi.json");
+                 pathFromString(*home) / ".config" / "mqt-core" / "qdmi.json");
   }
 #endif
   if (auto project =
@@ -417,12 +418,12 @@ void appendFragments(std::vector<std::filesystem::path>& files,
     return std::nullopt;
   }
   if (!patch.library || patch.library->empty()) {
-    throw std::invalid_argument(pathToUtf8(patch.source) +
+    throw std::invalid_argument(pathToString(patch.source) +
                                 ": enabled device '" + patch.id +
                                 "' is missing library");
   }
   if (!patch.prefix || patch.prefix->empty()) {
-    throw std::invalid_argument(pathToUtf8(patch.source) +
+    throw std::invalid_argument(pathToString(patch.source) +
                                 ": enabled device '" + patch.id +
                                 "' is missing prefix");
   }
@@ -436,7 +437,7 @@ void appendFragments(std::vector<std::filesystem::path>& files,
 
 } // namespace
 
-auto stagePackageManifest(const std::filesystem::path& path) -> int {
+auto stageDeviceManifest(const std::filesystem::path& path) -> int {
   if (path.empty()) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
@@ -538,14 +539,14 @@ auto parseDeviceSessionJson(const char* const data, const size_t size,
   }
 }
 
-auto freezePackageManifests() -> std::vector<std::filesystem::path> {
+auto freezeDeviceManifests() -> std::vector<std::filesystem::path> {
   auto& state = packageManifestState();
   const std::scoped_lock lock(state.mutex);
   state.frozen = true;
   return state.paths;
 }
 
-void rollbackPackageManifestFreeze() {
+void rollbackDeviceManifestFreeze() {
   auto& state = packageManifestState();
   const std::scoped_lock lock(state.mutex);
   state.frozen = false;
@@ -563,14 +564,14 @@ DeviceRegistry::DeviceRegistry() {
     }
   };
 
-  auto files = freezePackageManifests();
+  auto files = freezeDeviceManifests();
   const auto discovered = discoverFiles();
   files.insert(files.end(), discovered.begin(), discovered.end());
   for (const auto& file : files) {
     mergePatches(parseConfiguration(readJson(file), file, file.parent_path()));
   }
   const auto inlineBase = std::filesystem::current_path();
-  if (auto inlineJson = environmentUtf8("MQT_CORE_QDMI_CONFIG_JSON")) {
+  if (auto inlineJson = environment("MQT_CORE_QDMI_CONFIG_JSON")) {
     try {
       mergePatches(parseConfiguration(
           Json::parse(*inlineJson), "<MQT_CORE_QDMI_CONFIG_JSON>", inlineBase));

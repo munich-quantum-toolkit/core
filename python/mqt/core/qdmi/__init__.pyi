@@ -6,13 +6,14 @@
 #
 # Licensed under the MIT License
 
-"""QDMI devices, sessions, and jobs."""
+"""QDMI sessions, devices, and jobs."""
 
 import enum
 import os
 from collections.abc import Sequence
 from typing import overload
 
+from mqt.core.qdmi import builtin_driver as builtin_driver
 from mqt.core.qdmi import slurm as slurm
 
 class Session:

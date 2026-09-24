@@ -12,6 +12,8 @@
 #include "qdmi/driver/Driver.hpp"
 #include "qdmi/driver/SessionConfig.hpp"
 
+#include "../../../src/qdmi/DriverExtension.hpp"
+
 #include "gmock/gmock-matchers.h"
 #include "gtest/gtest.h"
 #include "qdmi/client.h"
@@ -47,13 +49,6 @@
 #else
 #include <dlfcn.h>
 #endif
-/// The private Driver ABI fixes these exported symbol names.
-/// NOLINTBEGIN(readability-identifier-naming)
-extern "C" int MQT_CORE_QDMI_driver_add_manifest_v1(const char* manifestPath);
-extern "C" int MQT_CORE_QDMI_driver_session_alloc_for_device_v1(
-    const char* deviceId, size_t deviceSessionJsonSize,
-    const char* deviceSessionJson, QDMI_Session* session);
-/// NOLINTEND(readability-identifier-naming)
 
 namespace testing {
 namespace {
@@ -1498,7 +1493,7 @@ TEST(DeviceRegistrationTest, FreshJobRetainsItsDeviceSession) {
 TEST(DeviceRegistrationTest, ValidatesHistogramKeyValueCounts) {
   registerSessionTestDevice();
   for (const auto* keys : {"", "00", "00,11"}) {
-    const auto device = qdmi::default_driver::openDevice(
+    const auto device = qdmi::builtin_driver::openDevice(
         "test.session-overrides",
         std::string{R"({"custom3":")"} + keys + R"("})");
     const auto job =
@@ -1853,10 +1848,10 @@ TEST(DynamicDeviceLibraryDeathTest,
             std::filesystem::path(MQT_CORE_QDMI_SESSION_DEVICE).filename(),
         .prefix = "TEST_SESSION",
     });
-    const auto warm = qdmi::default_driver::openDevice("mqt.sc.default");
+    const auto warm = qdmi::builtin_driver::openDevice("mqt.sc.default");
     auto first = std::async(std::launch::async, [] {
       try {
-        static_cast<void>(qdmi::default_driver::openDevice("cache.slow"));
+        static_cast<void>(qdmi::builtin_driver::openDevice("cache.slow"));
         return false;
       } catch (const std::runtime_error&) {
         return true;
@@ -1867,10 +1862,10 @@ TEST(DynamicDeviceLibraryDeathTest,
       std::_Exit(2);
     }
     auto alias = std::async(std::launch::async, [] {
-      return qdmi::default_driver::openDevice("cache.alias");
+      return qdmi::builtin_driver::openDevice("cache.alias");
     });
     auto unrelated = std::async(std::launch::async, [] {
-      return qdmi::default_driver::openDevice("mqt.sc.default");
+      return qdmi::builtin_driver::openDevice("mqt.sc.default");
     });
     const auto aliasWaited = alias.wait_for(std::chrono::milliseconds(50)) ==
                              std::future_status::timeout;
@@ -1880,7 +1875,7 @@ TEST(DynamicDeviceLibraryDeathTest,
     const auto failed = first.get();
     const auto retried = alias.get();
     static_cast<void>(unrelated.get());
-    const auto later = qdmi::default_driver::openDevice("cache.slow");
+    const auto later = qdmi::builtin_driver::openDevice("cache.slow");
     const auto shared = &static_cast<QDMI_Device>(retried)->getLibrary() ==
                         &static_cast<QDMI_Device>(later)->getLibrary();
     std::_Exit(
@@ -1918,14 +1913,14 @@ TEST(DynamicDeviceLibraryDeathTest,
         .prefix = "TEST_SESSION",
     });
     {
-      const auto first = qdmi::default_driver::openDevice("cache.absolute");
-      const auto second = qdmi::default_driver::openDevice("cache.basename");
+      const auto first = qdmi::builtin_driver::openDevice("cache.absolute");
+      const auto second = qdmi::builtin_driver::openDevice("cache.basename");
       if (&static_cast<QDMI_Device>(first)->getLibrary() !=
           &static_cast<QDMI_Device>(second)->getLibrary()) {
         std::_Exit(2);
       }
     }
-    const auto later = qdmi::default_driver::openDevice("cache.absolute");
+    const auto later = qdmi::builtin_driver::openDevice("cache.absolute");
     std::array<size_t, 2> counts{};
     const auto status = QDMI_device_query_device_property(
         later, QDMI_DEVICE_PROPERTY_CUSTOM4, sizeof(counts),

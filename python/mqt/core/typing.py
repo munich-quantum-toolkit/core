@@ -22,12 +22,14 @@ class QDMISessionParameters(TypedDict, total=False):
     """Keyword arguments accepted when opening a QDMI device session."""
 
     driver_path: str | os.PathLike[str] | None
+    base_url: str | None
     token: str | None
     auth_file: str | os.PathLike[str] | None
     auth_url: str | None
     username: str | None
     password: str | None
-    project_id: str | None
+    device_config: str | None
+    device_config_file: str | os.PathLike[str] | None
     custom1: str | None
     custom2: str | None
     custom3: str | None

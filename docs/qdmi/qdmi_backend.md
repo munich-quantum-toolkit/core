@@ -95,9 +95,10 @@ print(f"Backend: {backend.name}")
 print(f"Qubits: {backend.target.num_qubits}")
 ```
 
-Optional session keywords configure this fresh driver session. Their names and
-value types are described by {py:class}`mqt.core.typing.QDMISessionParameters`.
-The selected Driver defines their meaning and precedence:
+Optional session keywords configure this fresh device session through the MQT
+Core QDMI driver. Their names and value types are described by
+{py:class}`mqt.core.typing.QDMISessionParameters`. The selected Driver defines
+their meaning and precedence:
 
 ```python
 backend = QDMIBackend.from_device_id(
@@ -121,11 +122,12 @@ exact = provider.backends(name="MQT Core DDSIM QDMI Device")
 ## Authentication
 
 `QDMIBackend.from_device_id` and `QDMIProvider.get_backend_by_device_id` accept
-the standard QDMI Client authentication parameters: `token`, `auth_file`,
-`auth_url`, `username`, `password`, and `project_id`. The selected Driver owns
-validation and can also use environment variables or a platform credential
-provider. `QDMIProvider.backends()` uses a fresh session without explicit
-authentication parameters.
+the device-session parameters in
+{py:class}`mqt.core.typing.QDMISessionParameters`, including `base_url`,
+`token`, and `auth_file`. The device validates these values and can also use
+environment variables or a platform credential provider.
+`QDMIProvider.backends()` uses a fresh session without explicit authentication
+parameters.
 
 ## Device Capabilities and Target
 

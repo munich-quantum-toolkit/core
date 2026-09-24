@@ -21,37 +21,32 @@ if TYPE_CHECKING:
 _ENTRY_POINT_GROUP = "mqt.core.qdmi.manifests"
 
 
-def _manifest_path(entry: EntryPoint) -> Path:
-    name = entry.name
-    if not name.endswith(".qdmi.json") or PurePosixPath(name).name != name or "\\" in name:
-        msg = f"invalid manifest basename {name!r}"
-        raise ValueError(msg)
-
+def _manifest_paths(entry: EntryPoint) -> list[Path]:
     module_parts = entry.value.split(".")
     if not module_parts or not all(part.isidentifier() for part in module_parts):
         msg = f"invalid module anchor {entry.value!r}"
         raise ValueError(msg)
 
     distribution = entry.dist
-    if distribution is None or distribution.read_text("RECORD") is None or distribution.files is None:
-        msg = "distribution has no RECORD file list"
+    if distribution is None or distribution.files is None:
+        msg = "distribution has no file list"
         raise ValueError(msg)
 
     prefix = PurePosixPath(*module_parts)
     matches = []
     for file in distribution.files:
         candidate = PurePosixPath(str(file))
-        if ".." in candidate.parts or candidate.name != name:
+        if ".." in candidate.parts or not candidate.name.endswith(".qdmi.json"):
             continue
         try:
             candidate.relative_to(prefix)
         except ValueError:
             continue
         matches.append(file)
-    if len(matches) != 1:
-        msg = f"expected one {name!r} below {prefix}, found {len(matches)}"
+    if not matches:
+        msg = f"no device manifests below {prefix}"
         raise ValueError(msg)
-    return Path(str(distribution.locate_file(matches[0])))
+    return [Path(str(distribution.locate_file(match))) for match in matches]
 
 
 def discover_qdmi_manifests(add_manifest: Callable[[Path], None]) -> None:
@@ -68,7 +63,8 @@ def discover_qdmi_manifests(add_manifest: Callable[[Path], None]) -> None:
 
     for entry in entries:
         try:
-            add_manifest(_manifest_path(entry))
+            for path in _manifest_paths(entry):
+                add_manifest(path)
         except Exception as error:  # ruff: ignore[blind-except]
             warnings.warn(
                 f"Skipping QDMI manifest entry point {entry.name!r}: {error}",

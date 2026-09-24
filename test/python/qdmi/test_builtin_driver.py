@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from mqt.core.qdmi import default_driver
+from mqt.core.qdmi import builtin_driver
 
 
 def test_add_manifest_reports_invalid_files(tmp_path: Path) -> None:
@@ -27,17 +27,17 @@ def test_add_manifest_reports_invalid_files(tmp_path: Path) -> None:
     script = """
 import sys
 from pathlib import Path
-from mqt.core.qdmi import default_driver
+from mqt.core.qdmi import builtin_driver
 
 try:
-    default_driver.add_manifest(Path(sys.argv[1]))
+    builtin_driver.add_manifest(Path(sys.argv[1]))
 except RuntimeError as error:
     assert "Library not found" in str(error)
 else:
     raise AssertionError("missing manifest must fail")
 
 try:
-    default_driver.add_manifest(Path(sys.argv[2]))
+    builtin_driver.add_manifest(Path(sys.argv[2]))
 except ValueError as error:
     assert "Invalid argument" in str(error)
 else:
@@ -54,21 +54,21 @@ else:
 
 def test_open_device_uses_strict_fresh_sessions() -> None:
     """Targeted opens apply strict overrides and own independent sessions."""
-    first = default_driver.open_device("mqt.ddsim.default")
-    second = default_driver.open_device("mqt.ddsim.default")
+    first = builtin_driver.open_device("mqt.ddsim.default")
+    second = builtin_driver.open_device("mqt.ddsim.default")
 
     assert first.id == "mqt.ddsim.default"
     assert second.id == "mqt.ddsim.default"
     assert first != second
 
     with pytest.raises(RuntimeError, match="Not supported"):
-        default_driver.open_device("mqt.ddsim.default", custom4="strict")
+        builtin_driver.open_device("mqt.ddsim.default", custom4="strict")
 
 
 def test_open_device_rejects_conflicting_device_configuration() -> None:
     """The Python wrapper rejects two sources for one typed configuration."""
     with pytest.raises(ValueError, match="mutually exclusive"):
-        default_driver.open_device(
+        builtin_driver.open_device(
             "mqt.sc.default",
             device_config="{}",
             device_config_file="device.json",
@@ -88,7 +88,7 @@ def test_sc_open_device_accepts_runtime_configuration(tmp_path: Path) -> None:
     configuration_file = tmp_path / "sc-device.json"
     configuration_file.write_text(json.dumps(configuration), encoding="utf-8")
 
-    device = default_driver.open_device(
+    device = builtin_driver.open_device(
         "mqt.sc.default",
         device_config_file=configuration_file,
     )

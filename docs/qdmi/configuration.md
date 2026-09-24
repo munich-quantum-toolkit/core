@@ -107,49 +107,39 @@ a device that an administrator disabled.
 `MQT_CORE_QDMI_CONFIG_FILE` replaces the system, user, and project levels while
 retaining packaged built-ins.
 
-## Installed Python device manifests
+## Installed device manifests
 
-A Python distribution can advertise one trusted device manifest without
-importing its provider package. Add an entry point to the distribution's
-`pyproject.toml`:
+Python distributions advertise the module containing their device manifests:
 
 ```toml
 [project.entry-points."mqt.core.qdmi.manifests"]
-"example.qdmi.json" = "vendor.device"
+vendor = "vendor.qdmi"
 ```
 
-The entry-point name must be the exact, path-free basename of one `*.qdmi.json`
-file. The value must be a dotted Python module name that anchors the owning
-package. The distribution's wheel `RECORD` must contain exactly one file with
-that basename below the corresponding module path. In this example, the path
-starts with `vendor/device/`. MQT Core resolves the file through the
-distribution metadata. It does not load the entry point or import the provider
-module.
+The entry-point name identifies the provider. Its value is a module path, not a
+function to import. MQT Core reads the distribution's installed file list and
+registers the `*.qdmi.json` files below that module. Discovery imports no
+provider modules and loads no device libraries. Invalid entries emit a warning
+and are skipped. Installed manifests form the lowest-precedence configuration
+layer.
 
-Importing {py:mod}`mqt.core.qdmi` stages every valid advertised manifest in the
-packaged Driver's lowest-precedence layer. Invalid or ambiguous automatic
-entries cause one `RuntimeWarning` each and are skipped. A metadata enumeration
-failure causes one warning and skips automatic discovery. Applications can stage
-a known manifest explicitly when an error must stop startup:
+Applications can register a manifest explicitly when a missing or invalid file
+must stop startup:
 
 ```python
-from pathlib import Path
+from mqt.core.qdmi import builtin_driver
 
-from mqt.core.qdmi import default_driver
-
-default_driver.add_manifest(Path("vendor/device/example.qdmi.json"))
+builtin_driver.add_manifest("vendor/device/example.qdmi.json")
 ```
 
-Explicit staging reports malformed manifests, missing libraries, and conflicting
-device IDs as errors. Staging the same canonical path more than once is
-idempotent, including after the packaged Driver freezes its registry. A new path
-cannot be staged after the packaged Driver successfully constructs and freezes
-its registry during a session-allocation request. A failed Driver construction
-rolls the freeze back so startup can be retried. Staging loads the packaged
-Driver library but does not select it as the process's generic QDMI driver.
-Package staging and default targeted opens ignore `MQT_CORE_QDMI_DRIVER` and use
-the packaged Driver. An explicit targeted `driver_path` overrides that default.
-Standard Client sessions continue to honor the environment override.
+Register manifests before opening devices with the MQT Core QDMI driver.
+Registering the same file again is harmless; conflicting IDs in distinct
+manifests are errors. Configuration becomes fixed after the first successful
+session allocation. Failed initialization can be retried with corrected input.
+
+`builtin_driver` always uses the MQT Core QDMI driver, independently of
+`MQT_CORE_QDMI_DRIVER`. Standard `Session` and `open_device` calls honor that
+environment variable.
 
 ## Using configured devices
 
@@ -165,7 +155,7 @@ for discovered in Session().devices:
 ```
 
 Set `MQT_CORE_QDMI_CONFIG_FILE` or `MQT_CORE_QDMI_CONFIG_JSON` before the first
-Driver call. Every {py:func}`~mqt.core.qdmi.open_device` call creates a fresh
+driver call. Every {py:func}`~mqt.core.qdmi.open_device` call creates a fresh
 driver session and finds the stable ID in the session’s device list. The
 returned {py:class}`~mqt.core.qdmi.Device` and any
 {py:class}`~mqt.core.qdmi.Device.Site`,

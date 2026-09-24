@@ -28,7 +28,7 @@ from mqt.core.plugins.qiskit import (
     UnsupportedOperationError,
 )
 from mqt.core.qdmi import open_device
-from mqt.core.qdmi.default_driver import open_device as open_default_device
+from mqt.core.qdmi.builtin_driver import open_device as open_default_device
 from mqt.core.typing import QDMISessionParameters
 
 if TYPE_CHECKING:
@@ -73,13 +73,14 @@ def test_backend_from_device_id_forwards_session_parameters(monkeypatch: pytest.
 
     auth_file = Path("auth.json")
     session_parameters: QDMISessionParameters = {
-        "driver_path": Path("client-driver.so"),
+        "driver_path": Path("driver.so"),
         "token": "token",
         "auth_file": auth_file,
         "auth_url": "https://auth.example",
         "username": "user",
         "password": "password",
-        "project_id": "project",
+        "base_url": "https://device.example",
+        "device_config": "{}",
         "custom1": "one",
         "custom2": "two",
         "custom3": "three",

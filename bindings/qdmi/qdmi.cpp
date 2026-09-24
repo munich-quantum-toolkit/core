@@ -13,14 +13,15 @@
 
 #include "nanobind/nanobind.h"
 #include "nanobind/operators.h"
-#include "nanobind/stl/complex.h"    // NOLINT(misc-include-cleaner)
-#include "nanobind/stl/filesystem.h" // NOLINT(misc-include-cleaner)
-#include "nanobind/stl/map.h"        // NOLINT(misc-include-cleaner)
-#include "nanobind/stl/optional.h"   // NOLINT(misc-include-cleaner)
-#include "nanobind/stl/pair.h"       // NOLINT(misc-include-cleaner)
-#include "nanobind/stl/string.h"     // NOLINT(misc-include-cleaner)
-#include "nanobind/stl/variant.h"    // NOLINT(misc-include-cleaner)
-#include "nanobind/stl/vector.h"     // NOLINT(misc-include-cleaner)
+#include "nanobind/stl/complex.h"     // NOLINT(misc-include-cleaner)
+#include "nanobind/stl/filesystem.h"  // NOLINT(misc-include-cleaner)
+#include "nanobind/stl/map.h"         // NOLINT(misc-include-cleaner)
+#include "nanobind/stl/optional.h"    // NOLINT(misc-include-cleaner)
+#include "nanobind/stl/pair.h"        // NOLINT(misc-include-cleaner)
+#include "nanobind/stl/string.h"      // NOLINT(misc-include-cleaner)
+#include "nanobind/stl/string_view.h" // NOLINT(misc-include-cleaner)
+#include "nanobind/stl/variant.h"     // NOLINT(misc-include-cleaner)
+#include "nanobind/stl/vector.h"      // NOLINT(misc-include-cleaner)
 #include "qdmi/client.h"
 
 #include <cstddef>
@@ -41,7 +42,7 @@ void registerSlurm(nb::module_& qdmiModule);
 } // namespace bindings
 
 namespace {
-qdmi::SessionConfig makeClientSessionConfig(
+qdmi::SessionConfig makeDriverSessionConfig(
     std::optional<std::filesystem::path> driverPath,
     std::optional<std::string> token,
     std::optional<std::filesystem::path> authFile,
@@ -94,7 +95,7 @@ qdmi::SessionConfig makeClientSessionConfig(
   setString("base-url", baseUrl);
   setString("token", token);
   if (authFile) {
-    session["auth-file"] = qdmi::detail::pathToUtf8(*authFile);
+    session["auth-file"] = qdmi::detail::pathToString(*authFile);
   }
   setString("auth-url", authUrl);
   setString("username", username);
@@ -111,7 +112,7 @@ qdmi::SessionConfig makeClientSessionConfig(
     session["device-config"] = std::move(source);
   } else if (deviceConfigFile) {
     nb::dict source;
-    source["file"] = qdmi::detail::pathToUtf8(*deviceConfigFile);
+    source["file"] = qdmi::detail::pathToString(*deviceConfigFile);
     session["device-config"] = std::move(source);
   }
   if (session.empty()) {
@@ -160,13 +161,13 @@ template <typename Query>
 } // namespace
 
 NB_MODULE(MQT_CORE_MODULE_NAME, qdmiModule) {
-  qdmiModule.doc() = "QDMI Client entities and MQT Core's default driver.";
-  auto defaultDriver = qdmiModule.def_submodule(
-      "default_driver", "Configure MQT Core's packaged QDMI driver.");
+  qdmiModule.doc() = "QDMI sessions, devices, and jobs.";
+  auto builtinDriver = qdmiModule.def_submodule(
+      "builtin_driver", "Configure the MQT Core QDMI driver.");
   bindings::registerSlurm(qdmiModule);
 
-  nb::class_<qdmi::Session>(qdmiModule, "ClientSession",
-                            "One initialized QDMI Client session.")
+  nb::class_<qdmi::Session>(qdmiModule, "Session",
+                            "One initialized QDMI driver session.")
       .def(
           "__init__",
           [](qdmi::Session* self,
@@ -183,7 +184,7 @@ NB_MODULE(MQT_CORE_MODULE_NAME, qdmiModule) {
              std::optional<std::string> custom4,
              std::optional<std::string> custom5) {
             const nb::gil_scoped_release release;
-            new (self) qdmi::Session(makeClientSessionConfig(
+            new (self) qdmi::Session(makeDriverSessionConfig(
                 std::move(driverPath), std::move(token), std::move(authFile),
                 std::move(authUrl), std::move(username), std::move(password),
                 std::move(projectId), std::move(custom1), std::move(custom2),
@@ -198,7 +199,13 @@ NB_MODULE(MQT_CORE_MODULE_NAME, qdmiModule) {
           "custom5"_a = std::nullopt)
       .def_prop_ro("devices", &qdmi::Session::getDevices,
                    nb::call_guard<nb::gil_scoped_release>(),
-                   "The devices visible to this authenticated session.");
+                   "The devices visible to this authenticated session.")
+      .def_prop_ro("device_ids", &qdmi::Session::getDeviceIds,
+                   nb::call_guard<nb::gil_scoped_release>(),
+                   "The stable IDs of devices visible to this session.")
+      .def("get_device", &qdmi::Session::getDevice, "device_id"_a,
+           nb::call_guard<nb::gil_scoped_release>(),
+           "Find a device by stable ID within this session.");
 
   qdmiModule.def(
       "open_device",
@@ -216,7 +223,7 @@ NB_MODULE(MQT_CORE_MODULE_NAME, qdmiModule) {
         const nb::gil_scoped_release release;
         return qdmi::Session::openDevice(
             deviceId,
-            makeClientSessionConfig(
+            makeDriverSessionConfig(
                 std::move(driverPath), std::move(token), std::move(authFile),
                 std::move(authUrl), std::move(username), std::move(password),
                 std::move(projectId), std::move(custom1), std::move(custom2),
@@ -229,7 +236,7 @@ NB_MODULE(MQT_CORE_MODULE_NAME, qdmiModule) {
       "custom1"_a = std::nullopt, "custom2"_a = std::nullopt,
       "custom3"_a = std::nullopt, "custom4"_a = std::nullopt,
       "custom5"_a = std::nullopt,
-      "Open a Client-visible device by stable ID in a fresh session.");
+      "Open a client-visible device by stable ID in a fresh session.");
 
   // Job class
   auto job = nb::class_<qdmi::Job>(
@@ -432,7 +439,7 @@ Returns:
              "Returns the name of the device.");
 
   device.def_prop_ro("id", &qdmi::Device::getId,
-                     "The stable Client-visible device ID.");
+                     "The stable client-visible device ID.");
 
   device.def("version", &qdmi::Device::getVersion,
              nb::call_guard<nb::gil_scoped_release>(),
@@ -800,12 +807,11 @@ when the custom slot is unsupported.)pb");
   operation.def(nb::self != nb::self,
                 nb::sig("def __ne__(self, arg: object, /) -> bool"));
 
-  defaultDriver.def("add_manifest", &qdmi::default_driver::addManifest,
-                    "manifest_path"_a,
-                    "Stage one installed device manifest before the default "
-                    "driver freezes.");
+  builtinDriver.def(
+      "add_manifest", &qdmi::builtin_driver::addManifest, "manifest_path"_a,
+      "Register an installed device manifest before opening devices.");
 
-  defaultDriver.def(
+  builtinDriver.def(
       "open_device",
       [](const std::string& deviceId,
          const std::optional<std::filesystem::path>& driverPath,
@@ -826,7 +832,7 @@ when the custom slot is unsupported.)pb");
             baseUrl, token, authFile, authUrl, username, password, deviceConfig,
             deviceConfigFile, custom1, custom2, custom3, custom4, custom5);
         const nb::gil_scoped_release release;
-        return qdmi::default_driver::openDevice(deviceId, config, driverPath);
+        return qdmi::builtin_driver::openDevice(deviceId, config, driverPath);
       },
       "device_id"_a, nb::kw_only(), "driver_path"_a = std::nullopt,
       "base_url"_a = std::nullopt, "token"_a = std::nullopt,
@@ -836,10 +842,10 @@ when the custom slot is unsupported.)pb");
       "custom1"_a = std::nullopt, "custom2"_a = std::nullopt,
       "custom3"_a = std::nullopt, "custom4"_a = std::nullopt,
       "custom5"_a = std::nullopt,
-      "Open one device through MQT Core's strict private driver extension.");
+      "Open an independent device session with the MQT Core QDMI driver.");
 
   nb::module_::import_("mqt.core._qdmi_discovery")
-      .attr("discover_qdmi_manifests")(defaultDriver.attr("add_manifest"));
+      .attr("discover_qdmi_manifests")(builtinDriver.attr("add_manifest"));
 }
 
 } // namespace mqt
