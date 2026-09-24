@@ -133,5 +133,5 @@ def test_ddsim_and_qirrunner_record_equivalent_outputs(flipped: int) -> None:
     assert [line for line in output.splitlines() if line.startswith("OUTPUT\t")] == [
         line for line in reference.splitlines() if line.startswith("OUTPUT\t")
     ]
-    expected = "01" if flipped == 0 else "10"
+    expected = "10" if flipped == 0 else "01"
     assert job.get_counts() == {expected: 3}

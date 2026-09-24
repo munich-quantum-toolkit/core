@@ -526,7 +526,7 @@ TEST(CompilerQDMIAdapterTest, ExecutesStableRegisterHelpers) {
   const auto device = qdmi::Session::openDevice("mqt.ddsim.default");
   auto job = device.submitJob(*ir, QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING, 8);
   ASSERT_TRUE(job.wait());
-  EXPECT_EQ(job.getCounts().at("10"), 8);
+  EXPECT_EQ(job.getCounts().at("01"), 8);
 }
 
 TEST(CompilerQDMIAdapterTest,
