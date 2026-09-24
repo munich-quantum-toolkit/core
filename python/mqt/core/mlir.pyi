@@ -8,6 +8,8 @@
 
 """MQT Core MLIR compiler bindings."""
 
+# Temporary marker for the stub autofixer integration test.
+
 import enum
 import os
 from collections.abc import Sequence
