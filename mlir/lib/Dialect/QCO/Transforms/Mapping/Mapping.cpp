@@ -461,6 +461,12 @@ private:
     std::optional<NativeCostTracker> costs;
   };
 
+  /// Standalone search units and the signed first-step prefix adjustment.
+  struct SwapCost {
+    int64_t standalone = 1;
+    int64_t prefixAdjustment = 0;
+  };
+
   /// Describes a node in the A* search graph.
   struct Node {
     struct ComparePointer {
@@ -476,19 +482,8 @@ private:
     int64_t cost = 0;
     float f = 0;
 
-    /// Construct a root node with the given layout.
-    explicit Node(const Layout& initialLayout) { reset(initialLayout); }
-
-    /// Construct a non-root node from its parent node. Apply the given swap to
-    /// the layout of the parent node.
-    Node(Node* parent, const IndexPairType& swap, const Window& window,
-         const CompilerTarget& target, const Parameters& params,
-         int64_t swapCost = 1, int64_t credit = 0) {
-      reset(parent, swap, window, target, params, swapCost, credit);
-    }
-
     /// Reuse layout capacity when starting a new search.
-    void reset(const Layout& initialLayout) {
+    void initializeRoot(const Layout& initialLayout) {
       layout = initialLayout;
       swap = {};
       parent = nullptr;
@@ -497,19 +492,18 @@ private:
       f = 0;
     }
 
-    /// Reuse layout capacity when replacing a previously searched node.
-    void reset(Node* nextParent, const IndexPairType& nextSwap,
-               const Window& window, const CompilerTarget& target,
-               const Parameters& params, int64_t swapCost = 1,
-               int64_t credit = 0) {
+    /// Initialize a child from its parent while reusing layout capacity.
+    void initializeChild(Node* nextParent, const IndexPairType& nextSwap,
+                         const Window& window, const CompilerTarget& target,
+                         const Parameters& params, SwapCost swapCost) {
       layout = nextParent->layout;
       swap = nextSwap;
       parent = nextParent;
       depth = parent->depth + 1;
-      cost = parent->cost + swapCost + credit;
+      cost = parent->cost + swapCost.standalone + swapCost.prefixAdjustment;
       layout.swap(swap.first, swap.second);
       f = params.alpha * static_cast<float>(cost) +
-          static_cast<float>(swapCost) * h(window, target, params);
+          static_cast<float>(swapCost.standalone) * h(window, target, params);
     }
 
     /// Return true, if the current SWAP sequence makes all gates in the front
@@ -556,7 +550,7 @@ private:
   };
 
   /// Memory arena for A* search nodes, enabling reuse across searches to reduce
-  /// allocation overhead. Nodes are allocated once and reused via reset.
+  /// allocation overhead. Initializing a retained node reuses its layout.
   class Arena {
   public:
     /// Constructs an arena with a limited memory budget.
@@ -570,23 +564,17 @@ private:
               1, searchMemoryLimit /
                      (sizeof(Node) + 2 * nsites * sizeof(size_t)))) {}
 
-    /// Constructs and returns a pointer to a new node, or nullptr if the arena
-    /// is full. Reuses storage from previous searches when available.
-    template <typename... Args> Node* construct(Args&&... args) {
-      if (full()) {
+    /// Return a node slot to initialize, or nullptr when the arena is full.
+    Node* allocate() {
+      if (index >= budget) {
         return nullptr;
       }
 
       if (index == nodes.size()) {
-        nodes.emplace_back(std::forward<Args>(args)...);
-      } else {
-        nodes[index].reset(std::forward<Args>(args)...);
+        nodes.emplace_back();
       }
       return &nodes[index++];
     }
-
-    /// Returns true if the number of allocated nodes has reached the budget.
-    [[nodiscard]] bool full() const { return index >= budget; }
 
     /// Resets the arena for a new search. Retains allocated storage. Only the
     /// logical size (index) is reset to zero.
@@ -1183,8 +1171,9 @@ private:
     const Parameters params{.alpha = alpha, .lambda = lambda};
 
     arena.reset();
-    Node* root = arena.construct(layout);
+    Node* root = arena.allocate();
     assert(root != nullptr);
+    root->initializeRoot(layout);
 
     if (root->isGoal(window.front(), routing.target)) {
       return SmallVector<IndexPairType>{};
@@ -1197,15 +1186,16 @@ private:
         frontier;
     frontier.emplace(root);
 
-    const int64_t swapCost = costs != nullptr && routing.nativeSwapCost
-                                 ? static_cast<int64_t>(*routing.nativeSwapCost)
-                                 : 1;
+    const int64_t standaloneCost =
+        costs != nullptr && routing.nativeSwapCost
+            ? static_cast<int64_t>(*routing.nativeSwapCost)
+            : 1;
     while (!frontier.empty()) {
       Node* curr = frontier.top();
       frontier.pop();
 
       /// After the first edge, future costs depend only on the layout. Keep
-      /// the least accumulated cost, including the one-time prefix discount.
+      /// the least accumulated cost, including the one-time prefix adjustment.
 
       const auto [it, inserted] =
           bestCost.try_emplace(curr->layout.getProgramToHardware(), curr->cost);
@@ -1232,17 +1222,19 @@ private:
         const auto hw0 = curr->layout.getHardwareIndex(prog);
         routing.target.forEachNeighbour(hw0, [&](const auto hw1) {
           const IndexPairType swap = std::minmax(hw0, hw1); // Canonical SWAP.
-          if (arena.full() || is_contained(expansionSet, swap)) {
+          if (is_contained(expansionSet, swap)) {
             return;
           }
 
-          int64_t credit = 0;
-          if (curr->depth == 0 && costs != nullptr && routing.nativeSwapCost) {
-            credit = costs->swapDiscount(hw0, hw1, *routing.nativeSwapCost);
-          }
-
-          if (Node* child = arena.construct(curr, swap, window, routing.target,
-                                            params, swapCost, credit)) {
+          if (Node* child = arena.allocate()) {
+            SwapCost swapCost{.standalone = standaloneCost};
+            if (curr->depth == 0 && costs != nullptr &&
+                routing.nativeSwapCost) {
+              swapCost.prefixAdjustment =
+                  costs->swapCostAdjustment(hw0, hw1, *routing.nativeSwapCost);
+            }
+            child->initializeChild(curr, swap, window, routing.target, params,
+                                   swapCost);
             expansionSet.push_back(swap);
             frontier.emplace(child);
           }
@@ -1254,7 +1246,8 @@ private:
     /// ponytail: Greedy completion can cost later gates; increase the search
     /// budget when routing quality matters more than memory use.
 
-    Node current(layout);
+    Node current;
+    current.initializeRoot(layout);
     SmallVector<IndexPairType> swaps;
 
     const auto [q0, q1] = window.front();
@@ -1271,7 +1264,9 @@ private:
 
           const IndexPairType swap = std::minmax(from, next); // Canonical SWAP.
 
-          Node candidate(&current, swap, window, routing.target, params);
+          Node candidate;
+          candidate.initializeChild(&current, swap, window, routing.target,
+                                    params, SwapCost{});
           if (!best || candidate.f < best->f) {
             best = std::move(candidate);
           }
@@ -1339,8 +1334,10 @@ private:
     }
 
     std::array layouts{Layout(lhs), Layout(rhs)};
-    std::array graphs{TokenSwapGraph(routing.target),
-                      TokenSwapGraph(routing.target)};
+    std::array graphs{
+        TokenSwapGraph(routing.target),
+        TokenSwapGraph(routing.target),
+    };
     std::array<SmallVector<IndexPairType>, 2> swaps{};
 
     auto gen = makeMt19937(routing.seed);
