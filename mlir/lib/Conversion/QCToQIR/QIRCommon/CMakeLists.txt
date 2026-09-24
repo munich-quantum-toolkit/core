@@ -15,6 +15,7 @@ add_mlir_library(
   ${QIR_COMMON_SOURCES}
   LINK_LIBS
   PUBLIC
+  MLIRAnalysis
   MLIRIR
   MLIRPass
   MLIRTransforms

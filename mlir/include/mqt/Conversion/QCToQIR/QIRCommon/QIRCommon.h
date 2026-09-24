@@ -167,12 +167,14 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
 /// Requires a single entry-function return. Inventories classical result
 /// registers and validates output stores before rewriting returns or stores.
 /// A returned-register store must share a block with its measurement and use
-/// an index available there (or a constant). Intervening operations must be
-/// effect-free, affect only quantum resources, or store to a provably distinct
-/// constant index of the same register. The QIR measurement can then write
-/// directly to the destination without changing observable order or control
-/// flow. Adaptive conversion can keep computed registers in Boolean storage;
-/// Base conversion rejects them. Local CBit stores retain ordinary semantics.
+/// an index available there or computed by pure, speculatable operations
+/// without regions in that block. These computations move before the
+/// measurement. Intervening operations must be effect-free, affect only quantum
+/// resources, or store to a provably distinct constant index of the same
+/// register. The QIR measurement can then write directly to the destination
+/// without changing observable order or control flow. Adaptive conversion can
+/// keep computed registers in Boolean storage; Base conversion rejects them.
+/// Local CBit stores retain ordinary semantics.
 ///
 /// This must be called **before** func-to-LLVM conversion, while
 /// `func::ReturnOp`, `qc::MeasureOp`, and `cbit::StoreOp` are still in the IR.
