@@ -56,7 +56,6 @@
 #include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/Support/ErrorHandling.h"
 
 #include <algorithm>
 #include <array>
@@ -363,6 +362,7 @@ protected:
       signalPassFailure();
       return;
     }
+
     auto func = mqt::getEntryPoint(moduleOp);
     if (!func) {
       moduleOp.emitError() << "does not contain an entry point function";
@@ -377,6 +377,7 @@ protected:
       }
       return;
     }
+
     auto computation = discoverComputation(func);
     if (failed(computation) ||
         failed(checkCapacity(func, target, *computation))) {
@@ -426,22 +427,23 @@ private:
 
   /// Wire slots are physical sites; layout alone tracks logical qubits.
   struct RoutingState {
+    /// Create state from layout, enforcing wire[i] = i-th site.
+    static RoutingState fromLayout(const Wires& roots, const Layout& layout) {
+      RoutingState state(Wires(layout.nHardwareQubits()), layout);
+      for (auto [program, wire] : enumerate(roots)) {
+        state.wires[layout.getHardwareIndex(program)] = wire;
+      }
+      return state;
+    }
+
+    /// Construct a routing state from a vector of wires and a layout.
+    RoutingState(Wires wires, Layout layout)
+        : wires(std::move(wires)), layout(std::move(layout)) {}
+
     Wires wires;
     Layout layout;
     std::optional<NativeCostTracker> costs;
   };
-
-  /// Input roots are discovered in logical order; all routing slots are sites.
-  static RoutingState routingState(const Wires& roots, const Layout& layout) {
-    RoutingState state{
-        .wires = Wires(layout.nHardwareQubits()),
-        .layout = layout,
-    };
-    for (auto [program, wire] : llvm::enumerate(roots)) {
-      state.wires[layout.getHardwareIndex(program)] = wire;
-    }
-    return state;
-  }
 
   /// Describes a node in the A* search graph.
   struct Node {
@@ -672,13 +674,16 @@ protected:
       signalPassFailure();
       return;
     }
+
     expectedScore.reset();
     nativeCosts.reset();
     nativeSwapCost.reset();
+
     if (failed(mqt::verifyQuantumAllocations(moduleOp))) {
       signalPassFailure();
       return;
     }
+
     const auto& environment = getAnalysis<TargetEnvironmentAnalysis>();
     if (!environment) {
       moduleOp.emitError()
@@ -687,8 +692,8 @@ protected:
       signalPassFailure();
       return;
     }
-    target = &environment.environment().target();
 
+    target = &environment.environment().target();
     if (target->connectivityKind() !=
         CompilerTarget::Connectivity::Kind::Explicit) {
       moduleOp.emitError()
@@ -723,21 +728,18 @@ protected:
     IRRewriter rewriter(&getContext());
     wires = applyPlacement(body, *target, layout, *computation, rewriter);
 
-    RoutingState bundle{
-        .wires = std::move(wires),
-        .layout = std::move(layout),
-    };
-
-    /// Each concurrent trial and the final route own separate search storage.
-    Arena arena(target->numSites(), searchMemoryLimit);
+    RoutingState state(std::move(wires), std::move(layout));
     if (nativeCosts) {
-      bundle.costs.emplace(*target, compilationSeed(getOperation(), seed),
-                           nativeCosts.get());
+      state.costs.emplace(*target, compilationSeed(getOperation(), seed),
+                          nativeCosts.get());
     }
+
+    Arena arena(target->numSites(), searchMemoryLimit);
     const auto stats = route<WireDirection::Forward, RoutingMode::Hot>(
-        bundle, arena, &rewriter);
+        state, arena, &rewriter);
+
     assert((!expectedScore ||
-            (bundle.costs ? bundle.costs->score() : std::nullopt)
+            (state.costs ? state.costs->score() : std::nullopt)
                     .value_or(std::pair{std::numeric_limits<size_t>::max(),
                                         stats.nswaps}) == *expectedScore) &&
            "cold scoring and hot routing must agree");
@@ -1078,6 +1080,7 @@ private:
     if (greedy && greedy->second) {
       return greedy->first;
     }
+
     if (const auto basis = target->synthesisBasis();
         basis && basis->entangler &&
         target->nativeOperationsKind() ==
@@ -1090,8 +1093,7 @@ private:
 
     struct Trial {
       Layout layout;
-      /// Native count/depth, or maximum/SWAP count when synthesis is
-      /// unavailable.
+      /// Synthesis available: (native-count, depth). Otherwise, (max(), swaps).
       std::pair<size_t, size_t> score;
     };
 
@@ -1116,31 +1118,34 @@ private:
 
     parallelForEach(&getContext(), trials, [&, this](Trial& t) {
       Arena arena(target->numSites(), searchMemoryLimit);
+
       {
-        auto state = routingState(wires, t.layout);
+        auto state = RoutingState::fromLayout(wires, t.layout);
         for (size_t i = 0; i < niterations; ++i) {
           route<WireDirection::Forward>(state, arena);
           route<WireDirection::Backward>(state, arena);
         }
         t.layout = std::move(state.layout);
       }
+
       /// Refinement may permute wire cursors. Score from the original roots,
       /// preserving only the initial layout selected for final placement.
-      auto state = routingState(wires, t.layout);
+      auto state = RoutingState::fromLayout(wires, t.layout);
       if (nativeCosts) {
         state.costs.emplace(*target, compilationSeed(getOperation(), seed),
                             nativeCosts.get());
       }
+
       const auto score = route<WireDirection::Forward>(state, arena);
       const auto quality = state.costs ? state.costs->score() : std::nullopt;
       t.score = quality.value_or(
           std::pair{std::numeric_limits<size_t>::max(), score.nswaps});
     });
 
-    auto* const best =
-        llvm::min_element(trials, [](const Trial& a, const Trial& b) {
-          return a.score < b.score;
-        });
+    Trial* const best = min_element(trials, [](const Trial& a, const Trial& b) {
+      return a.score < b.score;
+    });
+
     expectedScore = best->score;
     return best->layout;
   }
@@ -1226,6 +1231,7 @@ private:
           if (curr->depth == 0 && costs != nullptr && nativeSwapCost) {
             credit = costs->swapDiscount(hw0, hw1, *nativeSwapCost);
           }
+
           if (Node* child = arena.construct(curr, swap, window, *target, params,
                                             swapCost, credit)) {
             expansionSet.push_back(swap);
@@ -1320,6 +1326,7 @@ private:
     if (lhs == rhs) {
       return {lhs, {}, {}};
     }
+
     std::array layouts{Layout(lhs), Layout(rhs)};
     std::array graphs{TokenSwapGraph(*target), TokenSwapGraph(*target)};
     std::array<SmallVector<IndexPairType>, 2> swaps{};
@@ -1470,6 +1477,7 @@ private:
       if (state.costs) {
         state.costs->appendSwap(a, b);
       }
+
       if constexpr (Mode == RoutingMode::Hot) {
         auto in0 = std::prev(state.wires[a]).qubit();
         auto in1 = std::prev(state.wires[b]).qubit();
@@ -1482,8 +1490,10 @@ private:
       } else {
         std::swap(state.wires[a], state.wires[b]);
       }
+
       state.layout.swap(a, b);
     }
+
     stats.nswaps += swaps.size();
   }
 
@@ -1642,6 +1652,7 @@ private:
         if (boundary != nullptr && precedes<Direction>(boundary, op)) {
           continue;
         }
+
         const auto release =
             TypeSwitch<Operation*, bool>(op)
                 .Case([](BarrierOp&) { return true; })
@@ -1677,6 +1688,8 @@ private:
                 .Default([&](auto) { return false; });
 
         if (release) {
+          released.emplace_back(op);
+
           if (state.costs) {
             SmallVector<size_t, 2> vertices(indices.begin(), indices.end());
             /// Frontier indices are in traversal order, not operand order.
@@ -1687,7 +1700,6 @@ private:
             }
             state.costs->append(op, vertices);
           }
-          released.emplace_back(op);
         }
       }
 
@@ -1708,7 +1720,7 @@ private:
              IRRewriter& rewriter) {
     SmallVector<unsigned> resultNumbers(parent.wires.size());
     SmallVector<Value> addons;
-    for (auto [site, wire] : llvm::enumerate(parent.wires)) {
+    for (auto [site, wire] : enumerate(parent.wires)) {
       if (wire.operation() == composite.op) {
         resultNumbers[site] = cast<OpResult>(wire.qubit()).getResultNumber();
       } else {
@@ -1721,7 +1733,7 @@ private:
             .Case<scf::ForOp, scf::WhileOp, IfOp, IndexSwitchOp>(
                 [&](auto op) { return extend(op, addons, rewriter); });
     composite.indices = to_vector(llvm::seq(parent.wires.size()));
-    for (auto [site, result] : llvm::enumerate(resultNumbers)) {
+    for (auto [site, result] : enumerate(resultNumbers)) {
       parent.wires[site] = WireIterator(composite.op->getResult(result));
     }
   }
@@ -1790,9 +1802,9 @@ private:
   /// Construct child states, route their bodies, reconcile layouts, then
   /// publish the physical result order to the parent.
   template <WireDirection Direction, RoutingMode Mode>
-  Statistics routeRegion(const CompositeUnitary& composite,
-                         RoutingState& parent, Arena& arena,
-                         IRRewriter* rewriter) {
+  Statistics routeComposite(const CompositeUnitary& composite,
+                            RoutingState& parent, Arena& arena,
+                            IRRewriter* rewriter) {
     const auto& [op, indices] = composite;
     if (parent.costs) {
       parent.costs->flush();
@@ -1803,6 +1815,7 @@ private:
       resultSites[cast<OpResult>(parent.wires[site].qubit())
                       .getResultNumber()] = site;
     }
+
     SmallVector<size_t> sites;
     for (auto result : op->getResults()) {
       if (isa<QubitType>(result.getType())) {
@@ -1812,23 +1825,26 @@ private:
     assert(sites.size() == indices.size());
 
     Statistics totalStats;
+
     SmallVector<RoutingState, 0> children;
     children.reserve(op->getNumRegions());
-    for (auto [index, region] : llvm::enumerate(op->getRegions())) {
-      auto& child = children.emplace_back(RoutingState{
-          .wires = Wires(target->numSites()),
-          .layout = parent.layout,
-      });
+
+    for (auto [index, region] : enumerate(op->getRegions())) {
+      auto& child =
+          children.emplace_back(Wires(target->numSites()), parent.layout);
+
       if (parent.costs) {
         child.costs.emplace(*target, compilationSeed(getOperation(), seed),
                             nativeCosts.get());
       }
+
       auto roots = getQubitValues(Direction == WireDirection::Forward
                                       ? region.front().getArguments()
                                       : yieldedValues(region.front()));
-      for (auto [site, root] : llvm::zip_equal(sites, roots)) {
+      for (auto [site, root] : zip_equal(sites, roots)) {
         child.wires[site] = WireIterator(root);
       }
+
       if (isa<scf::WhileOp>(op) && index == 1) {
         /// The before-region exit places the after region and loop results.
         child.layout = children[0].layout;
@@ -1840,6 +1856,7 @@ private:
           permuteWires(child.wires, permutation);
         }
       }
+
       totalStats.merge(route<Direction, Mode>(child, arena, rewriter));
     }
 
@@ -1874,14 +1891,16 @@ private:
               return layout;
             });
 
-    for (auto [region, child] : llvm::zip_equal(op->getRegions(), children)) {
+    for (auto [region, child] : zip_equal(op->getRegions(), children)) {
       if (parent.costs) {
         parent.costs->merge(*child.costs);
       }
+
       if constexpr (Mode == RoutingMode::Hot) {
         auto* terminator = region.front().getTerminator();
         auto values =
             realignQubitValues(yieldedValues(region.front()), sites, child);
+
         rewriter->modifyOpInPlace(terminator, [&] {
           if (auto condition = dyn_cast<scf::ConditionOp>(terminator)) {
             condition.getArgsMutable().assign(values);
@@ -1889,6 +1908,7 @@ private:
             terminator->setOperands(values);
           }
         });
+
         reorderTopologically(region.front(), *rewriter);
       }
     }
@@ -1910,8 +1930,8 @@ private:
                                    ? op->getNextNode()
                                    : op->getPrevNode()) {
       if (isa<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp>(op) &&
-          llvm::any_of(op->getResultTypes(),
-                       [](Type type) { return isa<QubitType>(type); })) {
+          any_of(op->getResultTypes(),
+                 [](Type type) { return isa<QubitType>(type); })) {
         return op;
       }
     }
@@ -1943,12 +1963,16 @@ private:
         boundary = nextRoutingBoundary<Direction>(
             Direction == WireDirection::Forward ? boundary->getNextNode()
                                                 : boundary->getPrevNode());
+
         if constexpr (Mode == RoutingMode::Hot) {
           place(*composite, state, *rewriter);
         }
-        stats.merge(
-            routeRegion<Direction, Mode>(*composite, state, arena, rewriter));
+
+        stats.merge(routeComposite<Direction, Mode>(*composite, state, arena,
+                                                    rewriter));
         for (auto& wire : state.wires) {
+          assert(wire.operation() == composite->op);
+
           if (wire != std::default_sentinel &&
               wire.operation() == composite->op) {
             std::ranges::advance(wire,
@@ -1963,13 +1987,14 @@ private:
       if (window.empty()) {
         break;
       }
+
       const auto swaps = search(window, state.layout, arena,
                                 state.costs ? &*state.costs : nullptr);
       insertSWAPs<Mode>(swaps, state, stats, rewriter);
     }
 
     if constexpr (Direction == WireDirection::Forward) {
-      for (auto [site, wire] : llvm::enumerate(state.wires)) {
+      for (auto [site, wire] : enumerate(state.wires)) {
         while (wire != std::default_sentinel &&
                isa_and_nonnull<MeasureOp>(wire.operation())) {
           if (state.costs) {
@@ -1980,6 +2005,7 @@ private:
         }
       }
     }
+    
     return stats;
   }
 
