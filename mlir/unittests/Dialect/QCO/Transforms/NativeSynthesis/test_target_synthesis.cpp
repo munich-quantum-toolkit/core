@@ -1451,9 +1451,12 @@ TEST_F(TargetSynthesisTest,
                                                     context.get());
   ASSERT_TRUE(original);
   ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*original)));
-  for (const auto& [single, entangler, parameters] :
-       {std::tuple{"u", "cx", 0U}, std::tuple{"r", "cz", 0U},
-        std::tuple{"u", "rxx", 1U}, std::tuple{"u", "sqrt_iswap", 0U}}) {
+  for (const auto& [single, entangler, parameters] : {
+           std::tuple{"u", "cx", 0U},
+           std::tuple{"r", "cz", 0U},
+           std::tuple{"u", "rxx", 1U},
+           std::tuple{"u", "sqrt_iswap", 0U},
+       }) {
     SCOPED_TRACE(entangler);
     const auto target = valid(Target::create(
         2, Connectivity::allToAll(),
@@ -1509,10 +1512,12 @@ TEST_F(TargetSynthesisTest, NativeRuntimeControlledPhaseStaysUntouched) {
   )mlir",
                                                     context.get());
   ASSERT_TRUE(moduleOp);
-  const auto target = valid(Target::create(
-      2, Connectivity::allToAll(),
-      NativeOperations::fromOperations({valid(OperationCapability::create(
-          "p", OperationCapability::Arity::variadic(2), 1))})));
+  const auto target = valid(
+      Target::create(2, Connectivity::allToAll(),
+                     NativeOperations::fromOperations({
+                         valid(OperationCapability::create(
+                             "p", OperationCapability::Arity::variadic(2), 1)),
+                     })));
   attachTestEnvironment(*moduleOp, target);
   const auto before = printModule(*moduleOp);
   ASSERT_TRUE(mlir::succeeded(runTargetPass(

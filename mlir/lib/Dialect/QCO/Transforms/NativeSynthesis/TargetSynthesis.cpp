@@ -618,8 +618,9 @@ static LogicalResult synthesizeTargetOperation(
 
     // CP(theta) = P_c(theta/2) P_t(theta/2) CX P_t(-theta/2) CX.
     // Lower users first, preserving wire order and full relative phase.
-    const std::array<Operation*, 5> gates{controlPhase, targetPhase, first,
-                                          correction, second};
+    const std::array<Operation*, 5> gates{
+        controlPhase, targetPhase, first, correction, second,
+    };
     for (auto* gateOperation : llvm::reverse(gates)) {
       auto gate = cast<UnitaryOpInterface>(gateOperation);
       auto gateSites = sites;

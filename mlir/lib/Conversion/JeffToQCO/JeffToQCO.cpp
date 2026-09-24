@@ -48,6 +48,7 @@
 #include "llvm/ADT/SmallVector.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <utility>
 
 namespace mlir {
@@ -315,7 +316,8 @@ struct ConvertJeffIntArrayConst1OpToCBit final
       if (!trueValue) {
         trueValue = arith::ConstantIntOp::create(rewriter, op.getLoc(), 1, 1);
       }
-      auto index = arith::ConstantIndexOp::create(rewriter, op.getLoc(), i);
+      auto index = arith::ConstantIndexOp::create(rewriter, op.getLoc(),
+                                                  static_cast<int64_t>(i));
       cbit::StoreOp::create(rewriter, op.getLoc(), trueValue, reg, index);
     }
     rewriter.replaceOp(op, reg);
@@ -338,7 +340,8 @@ struct ConvertJeffIntArrayCreateOpToCBit final
     auto reg = cbit::AllocOp::create(rewriter, op.getLoc(), registerType,
                                      cbit::Initialization::Undefined);
     for (auto [i, bit] : llvm::enumerate(adaptor.getInArray())) {
-      auto index = arith::ConstantIndexOp::create(rewriter, op.getLoc(), i);
+      auto index = arith::ConstantIndexOp::create(rewriter, op.getLoc(),
+                                                  static_cast<int64_t>(i));
       cbit::StoreOp::create(rewriter, op.getLoc(), bit, reg, index);
     }
     rewriter.replaceOp(op, reg);
