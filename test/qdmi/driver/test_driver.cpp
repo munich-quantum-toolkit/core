@@ -1872,9 +1872,9 @@ TEST(DynamicDeviceLibraryDeathTest,
                                 std::future_status::ready;
     release.set_value();
     const auto failed = first.get();
-    auto* const retried = alias.get();
+    const auto* const retried = alias.get();
     static_cast<void>(unrelated.get());
-    auto* const later = driver.open("cache.slow");
+    const auto* const later = driver.open("cache.slow");
     const auto shared = &retried->getLibrary() == &later->getLibrary();
     std::_Exit(
         failed && aliasWaited && unrelatedReady && shared && attempts == 2 ? 0
