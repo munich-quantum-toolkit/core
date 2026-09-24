@@ -22,6 +22,7 @@ target_link_libraries(
           MLIRFuncDialect
           MLIRArithDialect
           MLIRSCFDialect
+          MLIRTransforms
           MLIRIR
           MLIRSupport
           LLVMSupport)
