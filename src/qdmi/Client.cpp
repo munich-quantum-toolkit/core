@@ -343,8 +343,8 @@ Device builtin_driver::openDevice(
     throw std::invalid_argument(
         "QDMI device ID must not be empty or contain null bytes");
   }
-  const auto driver =
-      driverPath ? loadClient(normalizePath(*driverPath)) : loadClient(packagedDriverPath());
+  const auto driver = driverPath ? loadClient(normalizePath(*driverPath))
+                                 : loadClient(packagedDriverPath());
   if (driver->extension.allocateSession == nullptr) {
     throw std::runtime_error(
         "The QDMI driver does not support targeted sessions");

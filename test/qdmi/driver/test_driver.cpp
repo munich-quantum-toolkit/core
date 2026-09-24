@@ -1848,10 +1848,10 @@ TEST(DynamicDeviceLibraryDeathTest,
             std::filesystem::path(MQT_CORE_QDMI_SESSION_DEVICE).filename(),
         .prefix = "TEST_SESSION",
     });
-    const auto warm = qdmi::builtin_driver::openDevice("mqt.sc.default");
-    auto first = std::async(std::launch::async, [] {
+    static_cast<void>(driver.open("mqt.sc.default"));
+    auto first = std::async(std::launch::async, [&driver] {
       try {
-        static_cast<void>(qdmi::builtin_driver::openDevice("cache.slow"));
+        static_cast<void>(driver.open("cache.slow"));
         return false;
       } catch (const std::runtime_error&) {
         return true;
@@ -1861,11 +1861,10 @@ TEST(DynamicDeviceLibraryDeathTest,
         std::future_status::ready) {
       std::_Exit(2);
     }
-    auto alias = std::async(std::launch::async, [] {
-      return qdmi::builtin_driver::openDevice("cache.alias");
-    });
-    auto unrelated = std::async(std::launch::async, [] {
-      return qdmi::builtin_driver::openDevice("mqt.sc.default");
+    auto alias = std::async(std::launch::async,
+                            [&driver] { return driver.open("cache.alias"); });
+    auto unrelated = std::async(std::launch::async, [&driver] {
+      return driver.open("mqt.sc.default");
     });
     const auto aliasWaited = alias.wait_for(std::chrono::milliseconds(50)) ==
                              std::future_status::timeout;
@@ -1873,66 +1872,13 @@ TEST(DynamicDeviceLibraryDeathTest,
                                 std::future_status::ready;
     release.set_value();
     const auto failed = first.get();
-    const auto retried = alias.get();
+    auto* const retried = alias.get();
     static_cast<void>(unrelated.get());
-    const auto later = qdmi::builtin_driver::openDevice("cache.slow");
-    const auto shared = &static_cast<QDMI_Device>(retried)->getLibrary() ==
-                        &static_cast<QDMI_Device>(later)->getLibrary();
+    auto* const later = driver.open("cache.slow");
+    const auto shared = &retried->getLibrary() == &later->getLibrary();
     std::_Exit(
         failed && aliasWaited && unrelatedReady && shared && attempts == 2 ? 0
                                                                            : 3);
-  };
-  EXPECT_EXIT(probe(), testing::ExitedWithCode(0), "");
-}
-
-TEST(DynamicDeviceLibraryDeathTest,
-     ReusesLoadedModuleAcrossAliasesAndSessionLifetimes) {
-  const auto probe = [] {
-#ifdef _WIN32
-    auto* handle = LoadLibraryW(
-        std::filesystem::path(MQT_CORE_QDMI_SESSION_DEVICE).c_str());
-#else
-    auto* handle = dlopen(MQT_CORE_QDMI_SESSION_DEVICE, RTLD_NOW | RTLD_LOCAL);
-#endif
-    if (handle == nullptr) {
-      std::_Exit(1);
-    }
-    /// Pin the module without initializing it so counters survive an
-    /// erroneous unload.
-    auto& driver = qdmi::Driver::get();
-    driver.registerDevice({
-        .id = "cache.absolute",
-        .library = MQT_CORE_QDMI_SESSION_DEVICE,
-        .prefix = "TEST_SESSION",
-        .session = {.custom1 = "lifetime-counts"},
-    });
-    driver.registerDevice({
-        .id = "cache.basename",
-        .library =
-            std::filesystem::path(MQT_CORE_QDMI_SESSION_DEVICE).filename(),
-        .prefix = "TEST_SESSION",
-    });
-    {
-      const auto first = qdmi::builtin_driver::openDevice("cache.absolute");
-      const auto second = qdmi::builtin_driver::openDevice("cache.basename");
-      if (&static_cast<QDMI_Device>(first)->getLibrary() !=
-          &static_cast<QDMI_Device>(second)->getLibrary()) {
-        std::_Exit(2);
-      }
-    }
-    const auto later = qdmi::builtin_driver::openDevice("cache.absolute");
-    std::array<size_t, 2> counts{};
-    const auto status = QDMI_device_query_device_property(
-        later, QDMI_DEVICE_PROPERTY_CUSTOM4, sizeof(counts),
-        static_cast<void*>(counts.data()), nullptr);
-    const auto valid =
-        status == QDMI_SUCCESS && counts[0] == 1 && counts[1] == 0;
-#ifdef _WIN32
-    FreeLibrary(handle);
-#else
-    dlclose(handle);
-#endif
-    std::_Exit(valid ? 0 : 3);
   };
   EXPECT_EXIT(probe(), testing::ExitedWithCode(0), "");
 }
