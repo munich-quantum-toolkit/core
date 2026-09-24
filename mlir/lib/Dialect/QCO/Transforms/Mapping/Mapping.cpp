@@ -277,7 +277,7 @@ static Wires applyPlacement(Region& body, const CompilerTarget& target,
   }
 
   return map_to_vector(staticQubits,
-                             [](Value qubit) { return WireIterator(qubit); });
+                       [](Value qubit) { return WireIterator(qubit); });
 }
 
 /// Assign allocation slots to sites without traversing or expanding their uses.
