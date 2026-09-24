@@ -3275,9 +3275,12 @@ TEST_F(MappingPassFixture, ReusePassAcrossTargetsAndSeeds) {
     context->enableMultithreading(parallel);
     PassManager reused(context.get());
     reused.addPass(createMappingPass(options));
-    for (const uint64_t seed : {7U, 99U}) {
-      for (const auto& target : {withNativeBasis(topology, "cz"), topology,
-                                 withNativeBasis(topology, "cx")}) {
+    for (const int64_t seed : {7, 99}) {
+      for (const auto& target : {
+               withNativeBasis(topology, "cz"),
+               topology,
+               withNativeBasis(topology, "cx"),
+           }) {
         for (const bool greedy : {false, true}) {
           auto input = QCOProgramBuilder::build(
               context.get(), [&](QCOProgramBuilder& builder) {

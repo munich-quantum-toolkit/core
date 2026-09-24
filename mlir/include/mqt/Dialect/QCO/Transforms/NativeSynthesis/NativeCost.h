@@ -140,8 +140,9 @@ public:
   void merge(NativeCostTracker& child);
   /// Finish pending runs and return count/depth, or unavailable lowering.
   std::optional<std::pair<size_t, size_t>> score();
-  /// First-SWAP discount against the current prefix; does not consume the run.
-  int64_t swapDiscount(size_t a, size_t b, size_t standaloneCost);
+  /// Signed first-SWAP adjustment: appended cost minus prefix and standalone
+  /// cost. May be positive. Does not consume the pending run.
+  int64_t swapCostAdjustment(size_t a, size_t b, size_t standaloneCost);
 
 private:
   struct Run {
@@ -150,6 +151,7 @@ private:
     bool canFuse = false;
   };
 
+  size_t pendingCost(size_t a, size_t b);
   void flush(size_t vertex);
   void appendPair(const Matrix4x4& matrix, size_t cost, size_t a, size_t b);
   void charge(size_t cost, size_t a, size_t b);

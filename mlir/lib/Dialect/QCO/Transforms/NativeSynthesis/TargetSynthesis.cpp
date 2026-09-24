@@ -749,22 +749,24 @@ void NativeCostTracker::charge(size_t cost, size_t a, size_t b) {
   }
 }
 
+size_t NativeCostTracker::pendingCost(size_t a, size_t b) {
+  const auto& run = runs_[a];
+  /// Emission preserves a lone native gate, even if its matrix is local.
+  return run.canFuse ? analysis_.runCost(run.matrix, run.separateCost, target_,
+                                         std::array{
+                                             target_.siteForVertex(a),
+                                             target_.siteForVertex(b),
+                                         })
+                     : run.separateCost;
+}
+
 void NativeCostTracker::flush(size_t vertex) {
   if (partners_[vertex] == partners_.size()) {
     return;
   }
   const size_t partner = partners_[vertex];
   const auto [a, b] = std::minmax(vertex, partner);
-  const auto& run = runs_[a];
-  /// Emission preserves a lone native gate, even if its matrix is local.
-  const size_t cost =
-      run.canFuse ? analysis_.runCost(run.matrix, run.separateCost, target_,
-                                      std::array{
-                                          target_.siteForVertex(a),
-                                          target_.siteForVertex(b),
-                                      })
-                  : run.separateCost;
-  charge(cost, a, b);
+  charge(pendingCost(a, b), a, b);
   partners_[a] = partners_[b] = partners_.size();
 }
 
@@ -867,8 +869,10 @@ void NativeCostTracker::appendSwap(size_t a, size_t b) {
   if (!available_) {
     return;
   }
-  const auto cost = analysis_.swapCost(
-      target_, std::array{target_.siteForVertex(a), target_.siteForVertex(b)});
+  const auto cost = analysis_.swapCost(target_, std::array{
+                                                    target_.siteForVertex(a),
+                                                    target_.siteForVertex(b),
+                                                });
   if (!cost) {
     available_ = false;
     return;
@@ -888,8 +892,8 @@ std::optional<std::pair<size_t, size_t>> NativeCostTracker::score() {
   return available_ ? std::optional(std::pair{count_, depth_}) : std::nullopt;
 }
 
-int64_t NativeCostTracker::swapDiscount(size_t a, size_t b,
-                                        size_t standaloneCost) {
+int64_t NativeCostTracker::swapCostAdjustment(size_t a, size_t b,
+                                              size_t standaloneCost) {
   if (!available_ || partners_[a] != b) {
     return 0;
   }
@@ -899,13 +903,10 @@ int64_t NativeCostTracker::swapDiscount(size_t a, size_t b,
       target_.siteForVertex(second),
   };
   const auto& run = runs_[first];
-  const size_t before =
-      run.canFuse
-          ? analysis_.runCost(run.matrix, run.separateCost, target_, sites)
-          : run.separateCost;
+  const size_t before = pendingCost(first, second);
   const size_t after =
       analysis_.runCost(SWAPOp::getUnitaryMatrix() * run.matrix,
-                        before + standaloneCost, target_, sites);
+                        run.separateCost + standaloneCost, target_, sites);
   return static_cast<int64_t>(after) - static_cast<int64_t>(before) -
          static_cast<int64_t>(standaloneCost);
 }

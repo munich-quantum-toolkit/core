@@ -508,7 +508,7 @@ TEST_F(TargetSynthesisTest, NativeCostPreservesSingletonNativeGates) {
         const auto swapCost =
             analysis.swapCost(target, std::array<Target::SiteId, 2>{0, 1});
         ASSERT_TRUE(swapCost);
-        EXPECT_EQ(tracker.swapDiscount(0, 1, *swapCost), -1);
+        EXPECT_EQ(tracker.swapCostAdjustment(0, 1, *swapCost), -1);
       }
     }
     const auto score = tracker.score();
@@ -693,8 +693,8 @@ TEST_F(TargetSynthesisTest, ColdCostHandlesNegativeSwapMarginalsAndRegions) {
   const auto target = makeUCxTarget();
   mlir::qco::NativeCostTracker costs(target, 2023);
   costs.appendSwap(0, 1);
-  EXPECT_EQ(costs.swapDiscount(0, 1, 3), -6);
-  EXPECT_EQ(costs.swapDiscount(1, 0, 3), -6);
+  EXPECT_EQ(costs.swapCostAdjustment(0, 1, 3), -6);
+  EXPECT_EQ(costs.swapCostAdjustment(1, 0, 3), -6);
   costs.appendSwap(1, 0);
   EXPECT_EQ(costs.score(), (std::pair<size_t, size_t>{0, 0}));
   mlir::qco::NativeCostTracker child(target, 2023);
@@ -702,6 +702,53 @@ TEST_F(TargetSynthesisTest, ColdCostHandlesNegativeSwapMarginalsAndRegions) {
   costs.merge(child);
   costs.appendSwap(0, 1);
   EXPECT_EQ(costs.score(), (std::pair<size_t, size_t>{6, 3}));
+}
+
+TEST_F(TargetSynthesisTest, ColdCostIncludesPositiveSwapAdjustment) {
+  const auto target = valid(
+      Target::create(2, Connectivity::allToAll(),
+                     NativeOperations::fromOperations({
+                         valid(OperationCapability::create("u", 1, 3)),
+                         valid(OperationCapability::create("gphase", 0, 1)),
+                         valid(OperationCapability::create("rxx", 2, 1)),
+                         valid(OperationCapability::create("swap", 2, 0)),
+                     })));
+  auto moduleOp = build([](QCOProgramBuilder& builder) {
+    auto a = builder.staticQubit(0);
+    auto b = builder.staticQubit(1);
+    for (size_t i = 0; i < 2; ++i) {
+      std::tie(a, b) = builder.rxx(std::numbers::pi / 2, a, b);
+    }
+    std::tie(a, b) = builder.swap(a, b);
+    return builder.intConstant(0);
+  });
+  const auto before = printModule(*moduleOp);
+  mlir::qco::NativeCostTracker costs(target, 2023);
+  for (auto gate : mainFunction(*moduleOp).getOps<RXXOp>()) {
+    costs.append(gate, std::array<size_t, 2>{0, 1});
+  }
+  auto prefix = costs;
+  ASSERT_TRUE(prefix.score());
+  EXPECT_EQ(prefix.score()->first, 0U);
+  mlir::qco::NativeCostAnalysis analysis(2023);
+  const auto standalone =
+      analysis.swapCost(target, std::array<Target::SiteId, 2>{0, 1});
+  ASSERT_EQ(standalone, 1U);
+  /// The local prefix costs zero, but the complete run retains three gates.
+  EXPECT_EQ(costs.swapCostAdjustment(0, 1, *standalone), 2);
+  EXPECT_EQ(costs.swapCostAdjustment(1, 0, *standalone), 2);
+  costs.appendSwap(0, 1);
+  const auto score = costs.score();
+  ASSERT_TRUE(score);
+  EXPECT_EQ(score->first, 3U);
+  EXPECT_EQ(printModule(*moduleOp), before);
+  ASSERT_TRUE(succeeded(runTargetPass(
+      *moduleOp, target, mlir::qco::createTargetNativeSynthesis())));
+  size_t emitted = 0;
+  moduleOp->walk([&](mlir::qco::UnitaryOpInterface gate) {
+    emitted += static_cast<size_t>(gate.isTwoQubit());
+  });
+  EXPECT_EQ(score->first, emitted);
 }
 
 TEST_F(TargetSynthesisTest, ColdCostBarrierJoinsQubitDependencies) {
