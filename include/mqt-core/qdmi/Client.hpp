@@ -544,10 +544,8 @@ class Site;
 class Device;
 class Operation;
 
-/// Class representing the Session library.
-///
-/// This class provides methods to query available devices and
-/// manage the QDMI session.
+/// One initialized session with a QDMI driver.
+/// Devices and jobs retain the session and its driver library.
 /// @see QDMI_Session
 class Session {
 public:
