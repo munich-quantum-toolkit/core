@@ -1971,8 +1971,6 @@ private:
         stats.merge(routeComposite<Direction, Mode>(*composite, state, arena,
                                                     rewriter));
         for (auto& wire : state.wires) {
-          assert(wire.operation() == composite->op);
-
           if (wire != std::default_sentinel &&
               wire.operation() == composite->op) {
             std::ranges::advance(wire,
@@ -2005,7 +2003,7 @@ private:
         }
       }
     }
-    
+
     return stats;
   }
 
