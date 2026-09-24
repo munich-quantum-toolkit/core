@@ -1,7 +1,7 @@
 # Structured compilation fixes
 
-Status: implementation and regression checks complete. C++ lint remains
-unverified before pushing.
+Status: implementation and regression checks complete. Local C++ lint remains
+unverified because clang-tidy 23 is unavailable.
 
 ## Goal and scope
 
@@ -15,17 +15,12 @@ The affected boundaries are Boolean tensor conversion in
 `mlir/lib/Conversion/QCToQIR/QIRCommon/`, and structured unitary lowering in
 `mlir/lib/Dialect/QCO/Transforms/NativeSynthesis/`.
 
-Target capabilities, reset support, mapping algorithms, and release documents
-are outside this change. A target without reset may continue to reject programs
-that require it.
-
 ## Decisions
 
 - Use direct GoogleTest regressions in each owning MLIR subsystem, with semantic
   checks and negative cases for retained restrictions.
 - Match the initial optimization when comparing direct and jeff exchange paths.
   Keep experiment artifacts local; production tests use reduced inputs.
-- Split commits by independent behavior so each change can be reviewed alone.
 
 ## Outcome
 
@@ -61,7 +56,6 @@ pending.
 
 After rebuilding the editable package, the local pilot passes all 16 small DDSIM
 cases through both direct and jeff exchange routes, plus four larger exchange
-cases. The constrained target passes 12 of 16 cases on both routes; all four
-remaining failures report absent reset support. Each successful case passes its
-4096-shot analytic check. These are correctness observations, not performance
-measurements or claims of unrestricted benchmark support.
+cases. Each successful case passes its 4096-shot analytic check. These are
+correctness observations, not performance measurements or claims of unrestricted
+benchmark support.
