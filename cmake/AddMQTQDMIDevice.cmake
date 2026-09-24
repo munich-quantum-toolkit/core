@@ -164,7 +164,10 @@ function(mqt_copy_qdmi_runtime target)
         set(runtime_concrete_target ${runtime_target})
       endif()
       get_target_property(runtime_imported ${runtime_concrete_target} IMPORTED)
-      if(NOT runtime_imported AND NOT consumer_target STREQUAL runtime_concrete_target)
+      get_target_property(library_type ${runtime_concrete_target} TYPE)
+      if(NOT runtime_imported
+         AND library_type STREQUAL "SHARED_LIBRARY"
+         AND NOT consumer_target STREQUAL runtime_concrete_target)
         add_dependencies(${consumer_target} ${runtime_concrete_target})
         set(runtime_files "$<TARGET_FILE:${runtime_target}>")
         if(WIN32)
