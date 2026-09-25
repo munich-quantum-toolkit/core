@@ -3707,18 +3707,6 @@ x q;
 }
 
 TEST_F(CompilerPipelineTest, TargetPipelinesCompileControlledComposites) {
-  constexpr llvm::StringLiteral source = R"(OPENQASM 3.0;
-include "stdgates.inc";
-gate composite a, b, c { gphase(0.17); rx(0.37) c; cx c, a; ry(0.61) b; }
-qubit[4] q;
-ctrl @ composite q[0], q[1], q[2], q[3];
-)";
-  auto qc = QCProgram::fromOpenQASMString(source);
-  ASSERT_TRUE(qc);
-  auto input = std::move(*qc).intoQCO();
-  ASSERT_TRUE(input);
-  auto reference = input->copy();
-  ASSERT_TRUE(reference.runPassPipeline("inline,symbol-dce"));
   using Capability = CompilerTarget::OperationCapability;
   const auto target = llvm::cantFail(CompilerTarget::create(
       4, CompilerTarget::Connectivity::allToAll(),
@@ -3728,14 +3716,35 @@ ctrl @ composite q[0], q[1], q[2], q[3];
           llvm::cantFail(Capability::create("gphase", 0, 1)),
       })));
   const TargetEnvironment environment(target, makePayloadSpecification());
-  for (const bool synthesisOnly : {false, true}) {
-    SCOPED_TRACE(synthesisOnly);
-    auto program = input->copy();
-    ASSERT_TRUE(synthesisOnly ? program.synthesizeForTarget(environment)
-                              : program.compileForTarget(environment));
-    EXPECT_TRUE(succeeded(verify(program.module())));
-    EXPECT_TRUE(succeeded(qco::verifyLinearity(program.module())));
-    expectFullUnitaryEqual(reference.module(), program.module(), 4);
+  for (const auto [modifier, entangler] : {
+           std::pair{"", "cx c, a;"},
+           {"inv @ ", "cx c, a;"},
+           {"pow(2) @ ", ""},
+           {"pow(-2) @ ", ""},
+       }) {
+    SCOPED_TRACE(modifier);
+    const auto source = std::string(R"(OPENQASM 3.0;
+include "stdgates.inc";
+gate composite a, b, c { gphase(0.17); rx(0.37) c;
+)") + entangler + R"(
+ry(0.61) b; rz(-0.29) a; }
+qubit[4] q;
+ctrl @ )" + modifier + "composite q[0], q[1], q[2], q[3];";
+    auto qc = QCProgram::fromOpenQASMString(source);
+    ASSERT_TRUE(qc);
+    auto input = std::move(*qc).intoQCO();
+    ASSERT_TRUE(input);
+    auto reference = input->copy();
+    ASSERT_TRUE(reference.runPassPipeline("inline,symbol-dce"));
+    for (const bool synthesisOnly : {false, true}) {
+      SCOPED_TRACE(synthesisOnly);
+      auto program = input->copy();
+      ASSERT_TRUE(synthesisOnly ? program.synthesizeForTarget(environment)
+                                : program.compileForTarget(environment));
+      EXPECT_TRUE(succeeded(verify(program.module())));
+      EXPECT_TRUE(succeeded(qco::verifyLinearity(program.module())));
+      expectFullUnitaryEqual(reference.module(), program.module(), 4);
+    }
   }
 }
 

@@ -3944,7 +3944,7 @@ TEST_F(QCOTest, NonCompositeControlsLeaveIRUnchanged) {
     auto control = *function.getOps<CtrlOp>().begin();
     IRRewriter rewriter(context.get());
 
-    EXPECT_TRUE(failed(mlir::mqt::unrollControl(control, rewriter)));
+    EXPECT_TRUE(failed(mlir::mqt::unrollModifier(control, rewriter)));
     EXPECT_TRUE(areModulesStructurallyEquivalent(*moduleOp, *original));
     EXPECT_TRUE(succeeded(verifyLinearity(*moduleOp)));
   }
