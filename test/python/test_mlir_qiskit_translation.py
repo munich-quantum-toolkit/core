@@ -100,14 +100,17 @@ STANDARD_GATES = (
     library.U2Gate(0.2, 0.3),
     library.U3Gate(0.2, 0.3, 0.4),
     library.CXGate(),
+    library.CXGate(ctrl_state=0),
     library.CYGate(),
     library.CZGate(),
     library.CHGate(),
     library.CPhaseGate(0.4),
     library.CRXGate(0.4),
     library.CRYGate(0.4),
+    library.CRYGate(0.4, ctrl_state=0),
     library.CRZGate(0.4),
     library.CUGate(0.1, 0.2, 0.3, 0.4),
+    library.CUGate(0.1, 0.2, 0.3, 0.4, ctrl_state=0),
     library.CU1Gate(0.2),
     library.CU3Gate(0.1, 0.2, 0.3),
     library.SwapGate(),
@@ -467,6 +470,32 @@ def test_variable_arity_mcx_is_imported(controls: int) -> None:
 
     assert control.split(") targets", maxsplit=1)[0].count("%") == controls
     assert "qc.x" in program.ir
+
+
+@pytest.mark.parametrize(
+    ("base", "controls", "targets", "ctrl_state", "wrapped"),
+    [
+        (library.XGate(), 1, 1, None, False),
+        (library.XGate(), 1, 1, 0, False),
+        (library.XGate(), 2, 3, None, False),
+        (library.RYGate(0.37), 2, 3, 0, True),
+        (library.RYGate(0.37), 2, 3, 1, True),
+        (library.RYGate(0.37), 2, 3, 2, False),
+    ],
+)
+def test_multi_target_controlled_gate_round_trip(
+    base: Gate, controls: int, targets: int, ctrl_state: int | None, *, wrapped: bool
+) -> None:
+    """MCMT matrices include every target, control polarity, and outer modifier."""
+    gate = library.MCMTGate(base, controls, targets, ctrl_state=ctrl_state)
+    if wrapped:
+        gate = AnnotatedOperation(gate, [InverseModifier(), ControlModifier(1)])
+    circuit = QuantumCircuit(gate.num_qubits)
+    circuit.append(gate, list(reversed(range(gate.num_qubits))))
+
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+
+    assert np.allclose(Operator(restored).data, Operator(circuit).data)
 
 
 @pytest.mark.parametrize(

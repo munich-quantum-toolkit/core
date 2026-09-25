@@ -8,6 +8,8 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Dialect/MQT/Transforms/UnrollModifiers.h"
+
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/MQT/Utils/GatePowering.h"
@@ -28,7 +30,6 @@
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/IR/Value.h"
 #include "mlir/IR/ValueRange.h"
-#include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Transforms/Inliner.h"
@@ -50,32 +51,16 @@ namespace mlir::mqt {
 #define GEN_PASS_DEF_UNROLLMODIFIERS
 #include "mqt/Dialect/MQT/Transforms/Passes.h.inc"
 
-/// Move eager, memory-effect-free parameter computation before the modifier.
-/// Keep dependency order and reject dependencies on the body's qubits.
+/// Hoist eager parameter computation from a verified modifier in dependency
+/// order.
 template <typename UnitaryOpInterface>
-static LogicalResult hoistClassicalOps(Block& body, Operation* modifier,
-                                       RewriterBase& rewriter) {
-  const auto isClassical = [](Operation& op) {
-    return !isa<UnitaryOpInterface>(op) &&
-           !op.hasTrait<OpTrait::IsTerminator>();
-  };
-  for (auto& op : body) {
-    if (isClassical(op) &&
-        (op.getNumRegions() != 0 || !isMemoryEffectFree(&op) ||
-         llvm::any_of(op.getOperands(), [&](Value operand) {
-           return operand.getParentBlock() == &body &&
-                  (!operand.getDefiningOp() ||
-                   !isClassical(*operand.getDefiningOp()));
-         }))) {
-      return failure();
-    }
-  }
+static void hoistClassicalOps(Block& body, Operation* modifier,
+                              RewriterBase& rewriter) {
   for (auto& op : llvm::make_early_inc_range(body)) {
-    if (isClassical(op)) {
+    if (!isa<UnitaryOpInterface>(op) && !op.hasTrait<OpTrait::IsTerminator>()) {
       rewriter.moveOpBefore(&op, modifier);
     }
   }
-  return success();
 }
 
 /// Check whether the exponent of @p op is a compile-time known integer.
@@ -104,9 +89,7 @@ static LogicalResult unrollModifier(qc::CtrlOp op, RewriterBase& rewriter) {
     return success();
   }
   auto* body = op.getBody();
-  if (failed(hoistClassicalOps<qc::UnitaryOpInterface>(*body, op, rewriter))) {
-    return failure();
-  }
+  hoistClassicalOps<qc::UnitaryOpInterface>(*body, op, rewriter);
 
   rewriter.setInsertionPoint(op);
   for (auto unitary : body->getOps<qc::UnitaryOpInterface>()) {
@@ -128,9 +111,7 @@ static LogicalResult unrollModifier(qc::InvOp op, RewriterBase& rewriter) {
     return success();
   }
   auto* body = op.getBody();
-  if (failed(hoistClassicalOps<qc::UnitaryOpInterface>(*body, op, rewriter))) {
-    return failure();
-  }
+  hoistClassicalOps<qc::UnitaryOpInterface>(*body, op, rewriter);
 
   rewriter.setInsertionPoint(op);
   // (a b)^-1 = b^-1 a^-1, so the operations are inverted in reverse order.
@@ -169,9 +150,7 @@ static LogicalResult unrollModifier(qc::PowOp op, RewriterBase& rewriter) {
   if (!hasIntegerExponent(op) || !hasDisjointBodyQubits(*body)) {
     return failure();
   }
-  if (failed(hoistClassicalOps<qc::UnitaryOpInterface>(*body, op, rewriter))) {
-    return failure();
-  }
+  hoistClassicalOps<qc::UnitaryOpInterface>(*body, op, rewriter);
 
   rewriter.setInsertionPoint(op);
   for (auto unitary : body->getOps<qc::UnitaryOpInterface>()) {
@@ -205,14 +184,12 @@ static SmallVector<Value> cloneIntoBody(qco::UnitaryOpInterface unitary,
 
 /// Unroll a `qco.ctrl` modifier with more than one body unitary,
 /// or fail if it cannot be unrolled.
-static LogicalResult unrollModifier(qco::CtrlOp op, RewriterBase& rewriter) {
+LogicalResult unrollControl(qco::CtrlOp op, RewriterBase& rewriter) {
   auto* body = op.getBody();
   if (op.getNumBodyUnitaries() < 2) {
-    return success();
-  }
-  if (failed(hoistClassicalOps<qco::UnitaryOpInterface>(*body, op, rewriter))) {
     return failure();
   }
+  hoistClassicalOps<qco::UnitaryOpInterface>(*body, op, rewriter);
 
   // Thread the body's linear qubit values through the new modifiers.
   IRMapping qubits;
@@ -241,6 +218,10 @@ static LogicalResult unrollModifier(qco::CtrlOp op, RewriterBase& rewriter) {
   return success();
 }
 
+static LogicalResult unrollModifier(qco::CtrlOp op, RewriterBase& rewriter) {
+  return op.getNumBodyUnitaries() < 2 ? success() : unrollControl(op, rewriter);
+}
+
 /// Unroll a `qco.inv` modifier with more than one body unitary,
 /// or fail if it cannot be unrolled.
 static LogicalResult unrollModifier(qco::InvOp op, RewriterBase& rewriter) {
@@ -248,9 +229,7 @@ static LogicalResult unrollModifier(qco::InvOp op, RewriterBase& rewriter) {
   if (op.getNumBodyUnitaries() < 2) {
     return success();
   }
-  if (failed(hoistClassicalOps<qco::UnitaryOpInterface>(*body, op, rewriter))) {
-    return failure();
-  }
+  hoistClassicalOps<qco::UnitaryOpInterface>(*body, op, rewriter);
 
   // Inverting the body reverses its data flow: the modifier inputs enter at the
   // yielded values and leave at the block arguments.
@@ -311,9 +290,7 @@ static LogicalResult unrollModifier(qco::PowOp op, RewriterBase& rewriter) {
   if (!hasIntegerExponent(op) || !hasDisjointBodyWires(*body)) {
     return failure();
   }
-  if (failed(hoistClassicalOps<qco::UnitaryOpInterface>(*body, op, rewriter))) {
-    return failure();
-  }
+  hoistClassicalOps<qco::UnitaryOpInterface>(*body, op, rewriter);
 
   IRMapping qubits;
   qubits.map(body->getArguments(), op.getQubitsIn());
