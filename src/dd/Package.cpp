@@ -327,7 +327,7 @@ void wrapControlsAbove(Package& dd, Controls::const_iterator& it,
 }
 
 [[nodiscard]] mEdge toMatrixDD(Package& dd, const mCachedEdge& e) {
-  return {.p = e.p, .w = dd.cn.lookup(e.w)};
+  return dd.cn.lookup(e);
 }
 
 template <typename Matrix>
@@ -565,7 +565,7 @@ mEdge Package::makeGateDD(const std::span<const std::complex<fp>> matrix,
         "Sparse controls require one to three target qubits.");
   }
   if (targets.empty()) {
-    return mEdge::terminal(cn.lookup(matrix[0]));
+    return cn.lookup(mCachedEdge::terminal(matrix[0]));
   }
   /// The matrix-size check bounds the number of operands by the size_t width.
   std::array<std::pair<Qubit, size_t>, std::numeric_limits<size_t>::digits / 2>
@@ -861,7 +861,7 @@ vCachedEdge Package::conjugateRec(const vEdge& a) {
 }
 mEdge Package::conjugateTranspose(const mEdge& a) {
   const auto r = conjugateTransposeRec(a);
-  return {.p = r.p, .w = cn.lookup(r.w)};
+  return cn.lookup(r);
 }
 mCachedEdge Package::conjugateTransposeRec(const mEdge& a) {
   if (a.isTerminal()) { // terminal case
@@ -1026,7 +1026,7 @@ mEdge Package::partialTrace(const mEdge& a,
         eliminatedBelow[q] + static_cast<size_t>(eliminate[q]);
   }
   auto const r = trace(a, eliminatedBelow);
-  return {.p = r.p, .w = cn.lookup(r.w)};
+  return cn.lookup(r);
 }
 ComplexValue Package::trace(const mEdge& a, const std::size_t numQubits) {
   if (a.isIdentity()) {
@@ -1046,7 +1046,7 @@ bool Package::isCloseToIdentity(const mEdge& m, const fp tol,
 mCachedEdge Package::trace(const mEdge& a,
                            const std::span<const size_t> eliminatedBelow) {
   const auto aWeight = static_cast<ComplexValue>(a.w);
-  if (aWeight.approximatelyZero()) {
+  if (aWeight.exactlyZero()) {
     return mCachedEdge::zero();
   }
   if (a.isIdentity()) {
@@ -1207,7 +1207,7 @@ mEdge Package::reduceAncillae(mEdge e, const std::vector<bool>& ancillary,
                                             });
     }
   }
-  const auto res = mEdge{.p = g.p, .w = cn.lookup(g.w * e.w)};
+  const auto res = cn.lookup(mCachedEdge{g.p, g.w * e.w});
   incRef(res);
   decRef(e);
   return res;
@@ -1297,7 +1297,7 @@ mEdge Package::reduceGarbage(const mEdge& e, const std::vector<bool>& garbage,
   if (normalizeWeights) {
     weight = weight.mag();
   }
-  const auto res = mEdge{.p = g.p, .w = cn.lookup(weight)};
+  const auto res = cn.lookup(mCachedEdge{g.p, weight});
 
   incRef(res);
   decRef(e);

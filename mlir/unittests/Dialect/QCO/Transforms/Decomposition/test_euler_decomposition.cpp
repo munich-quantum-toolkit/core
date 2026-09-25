@@ -80,7 +80,7 @@ struct TestFixture {
   void setUp() {
     DialectRegistry registry;
     registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,
-                    scf::SCFDialect>();
+                    math::MathDialect, scf::SCFDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();

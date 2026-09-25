@@ -4138,79 +4138,100 @@ TEST_F(CompilerPipelineTest, QCOProgramCompilesDynamicRunForSupportedTargets) {
   })mlir";
   struct Case {
     const char* name;
-    CompilerTarget target;
+    std::vector<NameAndCount> nativeGates;
     CompilerTarget::SingleQubitBasis resolvedBasis;
-    std::vector<NameAndCount> expectedGates;
   };
   const std::vector cases{
       Case{
           .name = "u",
-          .target = makeSparseUCZTarget(false),
+          .nativeGates = {{"u", 3}},
           .resolvedBasis = CompilerTarget::SingleQubitBasis::U,
-          .expectedGates = {{"u", 1}},
       },
       Case{
           .name = "zsxx",
-          .target = makeCZTarget({{"x", 0}, {"sx", 0}, {"rz", 1}}),
+          .nativeGates = {{"x", 0}, {"sx", 0}, {"rz", 1}},
           .resolvedBasis = CompilerTarget::SingleQubitBasis::ZSXX,
-          .expectedGates = {{"rz", 3}, {"sx", 2}},
       },
       Case{
           .name = "rx-rz",
-          .target = makeCZTarget({{"rx", 1}, {"rz", 1}}),
+          .nativeGates = {{"rx", 1}, {"rz", 1}},
           .resolvedBasis = CompilerTarget::SingleQubitBasis::XZX,
-          .expectedGates = {{"rz", 1}, {"rx", 2}},
       },
       Case{
           .name = "rx-ry",
-          .target = makeCZTarget({{"rx", 1}, {"ry", 1}}),
+          .nativeGates = {{"rx", 1}, {"ry", 1}},
           .resolvedBasis = CompilerTarget::SingleQubitBasis::XYX,
-          .expectedGates = {{"rx", 2}, {"ry", 1}},
       },
       Case{
           .name = "ry-rz",
-          .target = makeCZTarget({{"ry", 1}, {"rz", 1}}),
+          .nativeGates = {{"ry", 1}, {"rz", 1}},
           .resolvedBasis = CompilerTarget::SingleQubitBasis::ZYZ,
-          .expectedGates = {{"rz", 2}, {"ry", 1}},
       },
       Case{
           .name = "r",
-          .target = makeCZTarget({{"r", 2}}),
+          .nativeGates = {{"r", 2}},
           .resolvedBasis = CompilerTarget::SingleQubitBasis::R,
-          .expectedGates = {{"r", 3}},
       },
   };
 
   for (const auto& testCase : cases) {
     SCOPED_TRACE(testCase.name);
+    using OperationCapability = CompilerTarget::OperationCapability;
+    std::vector operations{
+        llvm::cantFail(OperationCapability::create("gphase", 0, 1)),
+    };
+    for (const auto& [name, parameters] : testCase.nativeGates) {
+      operations.emplace_back(llvm::cantFail(
+          OperationCapability::create(name.str(), 1, parameters)));
+    }
+    const auto target = llvm::cantFail(CompilerTarget::create(
+        1, CompilerTarget::Connectivity::allToAll(),
+        CompilerTarget::NativeOperations::fromOperations(operations)));
     auto program = QCOProgram::fromMLIRString(source);
     ASSERT_TRUE(program);
-    ASSERT_TRUE(testCase.target.synthesisBasis());
-    ASSERT_EQ(testCase.target.synthesisBasis()->singleQubit,
-              testCase.resolvedBasis);
+    ASSERT_TRUE(target.synthesisBasis());
+    ASSERT_EQ(target.synthesisBasis()->singleQubit, testCase.resolvedBasis);
     ASSERT_TRUE(program->compileForTarget(
-        TargetEnvironment(testCase.target, makePayloadSpecification())));
+        TargetEnvironment(target, makePayloadSpecification())));
 
     auto compiled = parseRecordedModule(program->str());
     ASSERT_TRUE(compiled);
     EXPECT_TRUE(verify(*compiled).succeeded());
 
-    llvm::StringMap<size_t> gateCounts;
+    size_t gateCount = 0;
     compiled->walk([&](UnitaryOpInterface unitary) {
-      if (unitary.getNumQubits() == 1) {
-        ++gateCounts[unitary.getBaseSymbol()];
-      }
+      EXPECT_TRUE(target.supports(unitary.getOperation()));
+      gateCount += unitary.isSingleQubit();
     });
-    for (const auto& [name, expectedCount] : testCase.expectedGates) {
-      EXPECT_EQ(gateCounts.lookup(name), expectedCount) << name.str();
-    }
-    EXPECT_EQ(gateCounts.lookup("h"), 0U);
-    EXPECT_EQ(gateCounts.size(), testCase.expectedGates.size());
+    EXPECT_GT(gateCount, 0U);
+    EXPECT_LE(gateCount,
+              testCase.resolvedBasis == CompilerTarget::SingleQubitBasis::U
+                  ? 1U
+                  : 3U);
 
     auto main = compiled->lookupSymbol<func::FuncOp>("main");
     ASSERT_TRUE(main);
     ASSERT_EQ(main.getNumArguments(), 1U);
     EXPECT_FALSE(main.getArgument(0).use_empty());
+    for (const double angle : {0.0, 0.37, -2.0 * std::numbers::pi, 1.0e5}) {
+      SCOPED_TRACE(angle);
+      auto bound = OwningOpRef<ModuleOp>(compiled->clone());
+      auto function = bound->lookupSymbol<func::FuncOp>("main");
+      OpBuilder builder(function);
+      builder.setInsertionPointToStart(&function.getBody().front());
+      function.getArgument(0).replaceAllUsesWith(arith::ConstantOp::create(
+          builder, function.getLoc(), builder.getF64FloatAttr(angle)));
+      PassManager folding(context.get());
+      folding.addPass(createCanonicalizerPass());
+      ASSERT_TRUE(succeeded(folding.run(*bound)));
+      auto reference = QCOProgramBuilder::build(
+          context.get(), [angle](QCOProgramBuilder& b) {
+            auto qubit = b.rz(angle, b.h(b.staticQubit(0)));
+            b.sink(qubit);
+            return b.intConstant(0);
+          });
+      expectFullUnitaryEqual(*reference, *bound, 1);
+    }
   }
 }
 
