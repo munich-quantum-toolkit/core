@@ -30,16 +30,9 @@ target_link_libraries(
 
 mqt_copy_qdmi_runtime(mqt-core-mlir-unittests-compiler MQT::CoreQDMIScDevice
                       MQT::CoreQDMI_DDSIM_Device)
-target_compile_definitions(
-  mqt-core-mlir-unittests-compiler
-  PRIVATE
-    MQT_CORE_MLIR_SC_DEVICE_LIBRARY="$<TARGET_FILE:MQT::CoreQDMIScDevice>"
-    MQT_CORE_MLIR_DDSIM_DEVICE_LIBRARY="$<TARGET_FILE:MQT::CoreQDMI_DDSIM_Device>"
-    MQT_CORE_MLIR_HETEROGENEOUS_SC_CONFIG="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/heterogeneous-sc.json"
-    MQT_CORE_MLIR_HIGHER_ARITY_SC_CONFIG="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/higher-arity-sc.json"
-    MQT_CORE_MLIR_DIRECTIONAL_ONE_WAY_SC_CONFIG="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/directional-one-way-sc.json"
-    MQT_CORE_MLIR_DIRECTIONAL_TWO_WAY_SC_CONFIG="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/directional-two-way-sc.json"
-)
+target_compile_definitions(mqt-core-mlir-unittests-compiler
+                           PRIVATE MQT_CORE_MLIR_SC_CONFIG_DIR="${CMAKE_CURRENT_SOURCE_DIR}/Inputs")
+target_link_libraries(mqt-core-mlir-unittests-compiler PRIVATE nlohmann_json::nlohmann_json)
 
 mqt_mlir_configure_unittest_target(mqt-core-mlir-unittests-compiler REQUIRES_EH)
 

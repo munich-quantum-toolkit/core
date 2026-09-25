@@ -27,10 +27,6 @@ if(TARGET MQT::CoreQDMIDriver)
     TARGET mqt-core-qdmi-metadata-device
     APPEND
     PROPERTY EXPORT_PROPERTIES QDMI_DEVICE_ID QDMI_DEVICE_PREFIX QDMI_RUNTIME_FILES)
-  set(metadata_device_export
-      "${CMAKE_CURRENT_BINARY_DIR}/mqt-core-qdmi-metadata-device-targets.cmake")
-  export(TARGETS mqt-core-qdmi-metadata-device FILE "${metadata_device_export}")
-
   add_library(mqt-core-qdmi-session-device SHARED session_device.cpp)
   target_link_libraries(mqt-core-qdmi-session-device PRIVATE qdmi::qdmi)
   set_target_properties(
@@ -40,6 +36,7 @@ if(TARGET MQT::CoreQDMIDriver)
 
   package_add_test(${TARGET_NAME} MQT::CoreQDMIDriver test_driver.cpp)
   target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMI)
+  target_include_directories(${TARGET_NAME} PRIVATE "${PROJECT_SOURCE_DIR}/src/qdmi")
 
   set(DIAGNOSTIC_TARGET_NAME mqt-core-qdmi-driver-diagnostic-test)
   set(diagnostic_config_file
@@ -70,19 +67,49 @@ if(TARGET MQT::CoreQDMIDriver)
     target_compile_definitions(${TARGET_NAME} PRIVATE MQT_CORE_QDMI_HAS_DDSIM_DEVICE)
   endif()
 
-  set(config_file "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/configured-devices.json")
-  file(
-    GENERATE
-    OUTPUT "${config_file}"
-    CONTENT
-      "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n${configured_devices},\n      {\"id\": \"test.disabled\", \"enabled\": false},\n      {\"id\": \"broken.example\", \"library\": \"missing-device-library\", \"prefix\": \"BROKEN\"}\n    ]\n  }\n}\n"
-  )
   file(READ "${PROJECT_SOURCE_DIR}/json/sc/mqt-core-qdmi-sc-device.json" custom_sc_json)
   string(REPLACE "MQT SC Default QDMI Device" "Custom SC Driver Device" custom_sc_json
                  "${custom_sc_json}")
   string(REPLACE "\"duration\": 20" "\"duration\": 77" custom_sc_json "${custom_sc_json}")
   set(custom_sc_file "${CMAKE_CURRENT_BINARY_DIR}/custom-sc-device.json")
   file(WRITE "${custom_sc_file}" "${custom_sc_json}")
+  set(runtime_one_file "${CMAKE_CURRENT_BINARY_DIR}/runtime-one.json")
+  file(
+    GENERATE
+    OUTPUT "${runtime_one_file}"
+    CONTENT
+      [=[{
+  "schema-version": 1,
+  "name": "SC runtime one",
+  "numQubits": 1,
+  "durationUnit": {"unit": "ns", "scaleFactor": 1},
+  "qubitProperties": {"defaults": {"t1": 10, "t2": 20}, "overrides": []},
+  "couplings": [],
+  "operations": [{"name": "r", "numParameters": 2, "numQubits": 1, "duration": 7, "fidelity": 0.8}]
+}
+]=])
+  set(runtime_two_file "${CMAKE_CURRENT_BINARY_DIR}/runtime-two.json")
+  file(
+    GENERATE
+    OUTPUT "${runtime_two_file}"
+    CONTENT
+      [=[{
+  "schema-version": 1,
+  "name": "SC runtime two",
+  "numQubits": 2,
+  "durationUnit": {"unit": "us", "scaleFactor": 0.5},
+  "qubitProperties": {"defaults": {}, "overrides": []},
+  "couplings": [[1, 0]],
+  "operations": []
+}
+]=])
+  set(config_file "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/configured-devices.json")
+  file(
+    GENERATE
+    OUTPUT "${config_file}"
+    CONTENT
+      "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n${configured_devices},\n      {\"id\": \"test.session-overrides\", \"library\": \"$<TARGET_FILE:mqt-core-qdmi-session-device>\", \"prefix\": \"TEST_SESSION\", \"session\": {\"base-url\": \"registered-base\", \"token\": \"registered-token\", \"custom1\": \"registered-custom\"}},\n      {\"id\": \"test.session-with-child\", \"library\": \"$<TARGET_FILE:mqt-core-qdmi-session-device>\", \"prefix\": \"TEST_SESSION\", \"session\": {\"custom5\": \"with-child\"}},\n      {\"id\": \"test.typed-configuration\", \"library\": \"$<TARGET_FILE:mqt-core-qdmi-session-device>\", \"prefix\": \"TEST_SESSION\", \"session\": {\"device-config\": {\"inline\": {\"name\": \"inline\"}}}},\n      {\"id\": \"test.sc.runtime-default\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"prefix\": \"MQT_SC\"},\n      {\"id\": \"test.sc.runtime-custom\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"prefix\": \"MQT_SC\", \"session\": {\"device-config\": {\"file\": \"${custom_sc_file}\"}}},\n      {\"id\": \"test.sc.runtime-invalid\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"prefix\": \"MQT_SC\", \"session\": {\"device-config\": {\"inline\": {}}}},\n      {\"id\": \"test.sc.runtime-one\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"prefix\": \"MQT_SC\", \"session\": {\"device-config\": {\"file\": \"${runtime_one_file}\"}}},\n      {\"id\": \"test.sc.runtime-two\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"prefix\": \"MQT_SC\", \"session\": {\"device-config\": {\"file\": \"${runtime_two_file}\"}}},\n      {\"id\": \"test.disabled\", \"enabled\": false},\n      {\"id\": \"broken.example\", \"library\": \"missing-device-library\", \"prefix\": \"BROKEN\"}\n    ]\n  }\n}\n"
+  )
   string(MAKE_C_IDENTIFIER "${TARGET_NAME}-mqt-core-qdmi-metadata-device" metadata_manifest_stem)
   set(metadata_manifest_file
       "$<TARGET_FILE_DIR:${TARGET_NAME}>/${metadata_manifest_stem}.qdmi.json")
@@ -105,27 +132,6 @@ if(TARGET MQT::CoreQDMIDriver)
     POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:mqt-core-qdmi-session-device>"
             "$<TARGET_FILE_DIR:${TARGET_NAME}>")
-
-  set(imported_device_build_dir "${CMAKE_CURRENT_BINARY_DIR}/imported-device-consumer")
-  set(imported_device_configure_command
-      ${CMAKE_COMMAND} -S "${CMAKE_CURRENT_SOURCE_DIR}/imported_device" -B
-      "${imported_device_build_dir}" -G "${CMAKE_GENERATOR}"
-      "-DMQT_CORE_QDMI_DEVICE_TARGETS=${metadata_device_export}"
-      "-DMQT_CORE_QDMI_HELPER=${PROJECT_SOURCE_DIR}/cmake/AddMQTQDMIDevice.cmake")
-  if(CMAKE_GENERATOR_PLATFORM)
-    list(APPEND imported_device_configure_command -A "${CMAKE_GENERATOR_PLATFORM}")
-  endif()
-  if(CMAKE_GENERATOR_TOOLSET)
-    list(APPEND imported_device_configure_command -T "${CMAKE_GENERATOR_TOOLSET}")
-  endif()
-  add_test(NAME mqt-core-qdmi-imported-device-configure
-           COMMAND ${imported_device_configure_command})
-  add_test(NAME mqt-core-qdmi-imported-device-build
-           COMMAND ${CMAKE_COMMAND} --build "${imported_device_build_dir}" --config $<CONFIG>)
-  set_tests_properties(mqt-core-qdmi-imported-device-configure
-                       PROPERTIES FIXTURES_SETUP mqt-core-qdmi-imported-device)
-  set_tests_properties(mqt-core-qdmi-imported-device-build PROPERTIES FIXTURES_REQUIRED
-                                                                      mqt-core-qdmi-imported-device)
 
   set(runtime_file_device_build_dir "${CMAKE_CURRENT_BINARY_DIR}/runtime-file-device")
   set(runtime_file_device_install_dir "${runtime_file_device_build_dir}/install")

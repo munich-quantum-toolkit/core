@@ -84,7 +84,7 @@ program formats, authentication, and scheduling constraints. See
 :maxdepth: 1
 :caption: Table of Contents
 
-QDMI Driver <driver>
+QDMI driver <driver>
 QDMI device configuration <configuration>
 DDSIM QDMI Device <ddsim_device>
 SC QDMI Device <sc_device>
