@@ -655,6 +655,55 @@ TEST(JeffRoundTripRegressionTest, PreservesConstantBitArrayInLoop) {
   EXPECT_EQ(histogram->at("1011"), 1);
 }
 
+TEST(JeffRoundTripRegressionTest, CapturesHelperArgumentsInLoop) {
+  MLIRContext context;
+  context.loadDialect<arith::ArithDialect, cbit::CBitDialect, func::FuncDialect,
+                      jeff::JeffDialect, qco::QCODialect, scf::SCFDialect,
+                      tensor::TensorDialect>();
+  auto program = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func private @rotate(%angles: tensor<2xf64>, %q: !qco.qubit) -> !qco.qubit {
+      %c0 = arith.constant 0 : index
+      %c1 = arith.constant 1 : index
+      %c2 = arith.constant 2 : index
+      %out = scf.for %i = %c0 to %c2 step %c1 iter_args(%current = %q) -> !qco.qubit {
+        %angle = tensor.extract %angles[%i] : tensor<2xf64>
+        %next = qco.p(%angle) %current : !qco.qubit -> !qco.qubit
+        scf.yield %next : !qco.qubit
+      }
+      return %out : !qco.qubit
+    }
+    func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
+      %angles = arith.constant dense<[0.0, 3.141592653589793]> : tensor<2xf64>
+      %q = qco.alloc : !qco.qubit
+      %h = qco.h %q : !qco.qubit -> !qco.qubit
+      %rotated = func.call @rotate(%angles, %h) : (tensor<2xf64>, !qco.qubit) -> !qco.qubit
+      %final = qco.h %rotated : !qco.qubit -> !qco.qubit
+      %out, %bit = qco.measure %final : !qco.qubit
+      %result = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+      %c0 = arith.constant 0 : index
+      cbit.store %bit, %result[%c0] : !cbit.reg<1>
+      qco.sink %out : !qco.qubit
+      return %result : !cbit.reg<1>
+    }
+  })mlir",
+                                             &context);
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(succeeded(verify(*program)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*program)));
+  ASSERT_TRUE(succeeded(convertQCOToJeff(*program)));
+  ASSERT_TRUE(succeeded(verify(*program)));
+  auto bytes = serialize(*program);
+  program = deserialize(&context, bytes);
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(succeeded(convertJeffToQCO(*program)));
+  ASSERT_TRUE(succeeded(verify(*program)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*program)));
+  auto main = program->lookupSymbol<func::FuncOp>("main");
+  auto histogram = qco::sample(main, 16, 17);
+  ASSERT_TRUE(succeeded(histogram));
+  EXPECT_EQ(histogram->at("1"), 16);
+}
+
 TEST(JeffRoundTripRegressionTest, ConvertsBitArrayCreationAndLength) {
   MLIRContext context;
   context.loadDialect<cbit::CBitDialect, qco::QCODialect, arith::ArithDialect,
