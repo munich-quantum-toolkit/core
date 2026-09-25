@@ -74,7 +74,7 @@ devices need no further registry file. Verify their stable IDs before you
 configure Slurm:
 
 ```console
-python -c "from mqt.core.qdmi import device_ids; print(*device_ids(), sep='\n')"
+python -c "from mqt.core.qdmi import builtin_driver; print(*builtin_driver.registered_device_ids(), sep='\n')"
 ```
 
 For an external provider, install its shared library and QDMI manifest. You can

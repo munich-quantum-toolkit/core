@@ -148,11 +148,11 @@ def test_provider_construction_opens_no_devices(monkeypatch: pytest.MonkeyPatch)
     QDMIProvider()
 
 
-def test_provider_reads_session_on_each_discovery_call(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A provider starts a fresh driver session for each discovery call."""
+def test_provider_reads_catalogue_on_each_discovery_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Discovery uses the driver's metadata without caching another copy."""
     device_ids = ["first.device"]
     monkeypatch.setattr(
-        "mqt.core.plugins.qiskit.provider.device_ids",
+        "mqt.core.plugins.qiskit.provider.registered_device_ids",
         lambda: list(device_ids),
     )
     provider = QDMIProvider()

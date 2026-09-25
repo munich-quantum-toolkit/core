@@ -132,10 +132,10 @@ from mqt.core.qdmi import builtin_driver
 builtin_driver.add_manifest("vendor/device/example.qdmi.json")
 ```
 
-Register manifests before opening devices with the MQT Core QDMI driver.
-Registering the same file again is harmless; conflicting IDs in distinct
-manifests are errors. Configuration becomes fixed after the first successful
-session allocation. Failed initialization can be retried with corrected input.
+Register manifests before listing or opening devices with the MQT Core QDMI
+driver. Registering the same file again is harmless; conflicting IDs in distinct
+manifests are errors. Configuration becomes fixed when the driver first reads
+the catalogue, either for enumeration or for opening a device.
 
 `builtin_driver` always uses the MQT Core QDMI driver, independently of
 `MQT_CORE_QDMI_DRIVER`. Standard `Session` and `open_device` calls honor that
@@ -143,16 +143,23 @@ environment variable.
 
 ## Using configured devices
 
-When the MQT Core QDMI driver initializes a driver session, it opens the
-configured definitions. A failure to load one definition does not hide the
-remaining devices.
+List enabled stable IDs without loading device libraries or contacting
+providers:
 
 ```python
-from mqt.core.qdmi import device_ids, open_device
+from mqt.core.qdmi import builtin_driver
 
-for device_id in device_ids():
-    print(device_id, open_device(device_id).name())
+print(builtin_driver.registered_device_ids())
 ```
+
+The list includes configured devices that are unavailable or need credentials.
+Use `builtin_driver.open_device(device_id, ...)` to open only the selected
+device. Core supplies `mqt.ddsim.default` for local execution and
+`mqt.sc.default`, `mqt.sc.iqm.garnet`, and `mqt.sc.iqm.emerald` as
+compilation-only models. The latter do not connect to IQM services.
+
+Standard `Session` enumeration initializes configured devices and skips those
+that fail to open.
 
 Set `MQT_CORE_QDMI_CONFIG_FILE` or `MQT_CORE_QDMI_CONFIG_JSON` before the first
 driver call. Every {py:func}`~mqt.core.qdmi.open_device` call creates a fresh

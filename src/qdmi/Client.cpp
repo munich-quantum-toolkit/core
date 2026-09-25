@@ -208,6 +208,8 @@ void closeLibrary(LibraryHandle library) { dlclose(library); }
 
 struct DriverExtension {
   decltype(&MQT_CORE_QDMI_driver_add_manifest_v1) addManifest{};
+  decltype(&MQT_CORE_QDMI_driver_registered_device_ids_v1)
+      registeredDeviceIds{};
   decltype(&MQT_CORE_QDMI_driver_session_alloc_for_device_v1) allocateSession{};
 };
 
@@ -291,6 +293,8 @@ template <class Function>
   api->extension.field = reinterpret_cast<decltype(api->extension.field)>(     \
       findSymbol(library, #symbol))
   LOAD_EXTENSION(addManifest, MQT_CORE_QDMI_driver_add_manifest_v1);
+  LOAD_EXTENSION(registeredDeviceIds,
+                 MQT_CORE_QDMI_driver_registered_device_ids_v1);
   LOAD_EXTENSION(allocateSession,
                  MQT_CORE_QDMI_driver_session_alloc_for_device_v1);
 #undef LOAD_EXTENSION
@@ -332,6 +336,32 @@ void builtin_driver::addManifest(const std::filesystem::path& path) {
   const auto filename = detail::pathToString(normalizePath(path));
   throwIfError(driver->extension.addManifest(filename.c_str()),
                "Registering QDMI device manifest");
+}
+
+std::vector<std::string> builtin_driver::registeredDeviceIds() {
+  const auto driver = loadClient(packagedDriverPath());
+  const auto query = driver->extension.registeredDeviceIds;
+  if (query == nullptr) {
+    throw std::runtime_error(
+        "The MQT Core QDMI driver does not support offline enumeration");
+  }
+  size_t size = 0;
+  throwIfError(query(0, nullptr, &size), "Querying registered QDMI device IDs");
+  std::string buffer(size, '\0');
+  if (size != 0) {
+    throwIfError(query(size, buffer.data(), nullptr),
+                 "Querying registered QDMI device IDs");
+  }
+  std::vector<std::string> ids;
+  for (size_t start = 0; start < buffer.size();) {
+    const auto end = buffer.find('\0', start);
+    if (end == std::string::npos) {
+      throw std::runtime_error("The QDMI driver returned an unterminated ID");
+    }
+    ids.emplace_back(buffer.substr(start, end - start));
+    start = end + 1;
+  }
+  return ids;
 }
 
 Device builtin_driver::openDevice(

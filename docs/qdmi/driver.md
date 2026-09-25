@@ -49,6 +49,10 @@ from mqt.core.qdmi import builtin_driver
 device = builtin_driver.open_device("mqt.ddsim.default")
 ```
 
+Use `builtin_driver.registered_device_ids()` to list enabled configured IDs
+without loading device libraries or contacting providers. Register manifests
+before the first enumeration or device opening.
+
 The Qiskit `QDMIBackend.from_device_id` factory and PennyLane's
 `qml.device("mqt.ddsim.default", wires=4)` use this opening API. Python
 `QDMISessionParameters` describes the supported overrides. To use another driver

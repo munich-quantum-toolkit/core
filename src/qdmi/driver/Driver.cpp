@@ -952,6 +952,33 @@ MQT_CORE_QDMI_driver_add_manifest_v1(const char* const manifestPath) {
   }
 }
 
+extern "C" QDMI_DRIVER_EXPORT int MQT_CORE_QDMI_driver_registered_device_ids_v1(
+    const size_t size, char* const ids, size_t* const sizeRet) {
+  if ((ids == nullptr && sizeRet == nullptr) || (ids != nullptr && size == 0)) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  try {
+    std::string buffer;
+    for (const auto& id : qdmi::Driver::get().registeredDeviceIds()) {
+      buffer.append(id).push_back('\0');
+    }
+    if (sizeRet != nullptr) {
+      *sizeRet = buffer.size();
+    }
+    if (ids != nullptr) {
+      if (size < buffer.size()) {
+        return QDMI_ERROR_INVALIDARGUMENT;
+      }
+      std::ranges::copy(buffer, ids);
+    }
+    return QDMI_SUCCESS;
+  } catch (const std::bad_alloc&) {
+    return QDMI_ERROR_OUTOFMEM;
+  } catch (...) {
+    return QDMI_ERROR_FATAL;
+  }
+}
+
 extern "C" QDMI_DRIVER_EXPORT int
 MQT_CORE_QDMI_driver_session_alloc_for_device_v1(
     const char* const deviceId, const size_t deviceSessionJsonSize,
