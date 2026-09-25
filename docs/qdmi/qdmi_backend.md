@@ -170,6 +170,20 @@ Circuits must meet the following requirements before execution:
    {py:class}`~mqt.core.plugins.qiskit.exceptions.UnsupportedOperationError`
 3. **Valid shots value**: Must be a non-negative integer
 
+### Optional retries
+
+Automatic retries are disabled (`max_retries=0`). To retry confirmed failed jobs
+up to three times, opt in for a run:
+
+```python
+job = backend.run(qc, shots=1024, max_retries=3)
+```
+
+Use `backend.set_options(max_retries=3)` to apply this setting to later runs.
+Retries create additional executions and can incur charges. Successful jobs are
+reused; errors that do not confirm job failure require
+[explicit recovery](#recovering-a-failed-batch).
+
 ### Parameter Binding
 
 The backend supports automatic parameter binding through the `parameter_values`
@@ -204,8 +218,8 @@ print([bound_results.get_counts(i) for i in range(3)])
 
 ### Job Status
 
-The {py:class}`~mqt.core.plugins.qiskit.job.QDMIJob` wraps a QDMI job and
-provides status tracking:
+The {py:class}`~mqt.core.plugins.qiskit.job.QDMIJob` returned by `backend.run()`
+tracks the submitted circuits:
 
 ```python
 from qiskit.providers import JobStatus
@@ -238,41 +252,38 @@ print(f"Shots: {exp_result.shots}")
 print(f"Success: {exp_result.success}")
 ```
 
-### Recovery
+### Recovering a failed batch
 
-Automatic replacements are **off by default** (`max_retries=0`). Opt in with
-`backend.set_options(max_retries=3)` or `backend.run(circuits, max_retries=3)`
-to allow up to three replacement executions per confirmed failed entry. These
-additional executions can incur charges. Cancelled jobs, timeouts, uncertain
-submissions, and result-read errors are never automatically replaced; the
-allowance does not reset on repeated calls.
+A submission or result error preserves accepted jobs and successful results.
+Keep the handle from the exception to inspect and recover the batch:
 
-Accepted jobs and successful results survive failures. Inspect them without
-submitting replacements:
-
-```python
+```{code-cell} ipython3
 from mqt.core.plugins.qiskit import JobExecutionError, JobSubmissionError
 
 try:
-    job = backend.run(circuits, shots=1000)
+    job = backend.run([qc, qc_bound], shots=1000)
     result = job.result()
 except (JobSubmissionError, JobExecutionError) as error:
     job = error.job
-    entries = job.collect()  # Read accepted jobs without submitting replacements.
-    available = [entry.result for entry in entries if entry.result is not None]
+    print(error)
 ```
 
-After interruption, use `backend.last_job`. `job.submit()` starts untouched
-entries; `job.resubmit([i])` replaces a failed or cancelled attempt. Unknown
-outcomes require `allow_unknown=True` and may duplicate work; known running or
-completed jobs cannot be replaced. Then call `job.result()` for the complete
-Qiskit result. `job.cancel()` explicitly cancels outstanding work and disables
-automatic replacements. Earlier attempts and errors remain in `job.entries`.
+After an interruption, use `backend.last_job`. Read accepted work without
+starting new executions using `collect()`:
 
-Recovery stays within the same process; do not call recovery methods
-concurrently on the same handle. Direct wrappers of existing handles support
-collection and cancellation; replacements require the prepared programs retained
-by `backend.run()`.
+```{code-cell} ipython3
+entries = job.collect()
+available = [i for i, entry in enumerate(entries) if entry.result is not None]
+print("Circuits with results:", available)
+```
+
+The entries retain each circuit's attempts, results, and errors. After resolving
+a connection or result-read problem, call `job.result()` again; it reuses
+successful results. If needed, use `job.submit()` for untouched inputs or
+`job.resubmit([i])` to replace a failed or cancelled attempt, then retrieve the
+result again. See {py:class}`~mqt.core.plugins.qiskit.job.QDMIJob` for uncertain
+submissions and explicit cancellation. Recovery requires the same Python
+process.
 
 ## Multi-Circuit Execution
 
@@ -377,17 +388,17 @@ partition `circuit.clbits` in register order; loose, aliased, and reordered bits
 are rejected. Serializers and providers must preserve this mapping. Shot order
 is unchanged across registers, so joint samples and postselection remain valid.
 
-The backend accepts nonnegative integer `shots` and boolean `memory` options.
-QDMI has no standard seed parameter, so the generic backend rejects non-`None`
-`seed_simulator`. DDSIM's [custom seed parameter](ddsim_device.md) is available
-through direct QDMI job submission; other providers can define different custom
-parameters. Other execution options are unsupported. The backend validates the
-whole batch before submission, submits jobs in circuit order, and collects
-results in that order. Remote IDs are queried only when needed. Submission or
-collection failure triggers best-effort cancellation of submitted jobs;
-cancellation errors do not replace the original error. Missing memory, invalid
-bitstrings or shot totals, and failed or canceled jobs raise instead of yielding
-partial or zero-filled samples. Successful repeated reads reuse the result.
+The backend accepts nonnegative integer `shots` and `max_retries` options and a
+boolean `memory` option. QDMI has no standard seed parameter, so the generic
+backend rejects non-`None` `seed_simulator`. DDSIM's
+[custom seed parameter](ddsim_device.md) is available through direct QDMI job
+submission; other providers can define different custom parameters. Other
+execution options are unsupported. The backend validates the whole batch before
+submission, submits jobs in circuit order, and collects results in that order.
+Missing memory, invalid bitstrings or shot totals, and failed or canceled jobs
+raise instead of yielding partial or zero-filled samples.
+[Recovery](#recovering-a-failed-batch) lets you continue from accepted work
+after a failure.
 
 ## Error Handling
 

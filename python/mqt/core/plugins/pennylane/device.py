@@ -31,7 +31,7 @@ from mqt.core.qdmi import Job as QDMIJobHandle
 from mqt.core.qdmi import ProgramFormat
 from mqt.core.qdmi.driver import open_device
 
-from ...qdmi.batch import _validate_max_retries
+from ..qdmi_batch import validate_max_retries
 from .converter import _ConvertedProgram, _ProgramConverter
 from .exceptions import (
     PennyLaneConfigurationError as ConfigurationError,
@@ -165,7 +165,7 @@ class QDMIDevice(Device):
             PennyLaneConfigurationError: If configuration or requested wires are invalid.
         """
         try:
-            self._max_retries = _validate_max_retries(max_retries)
+            self._max_retries = validate_max_retries(max_retries)
         except ValueError as exc:
             raise ConfigurationError(str(exc)) from exc
         self.last_job: PennyLaneJob | None = None

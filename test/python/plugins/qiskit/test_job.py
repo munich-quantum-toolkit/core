@@ -221,7 +221,7 @@ def test_submission_failure_recovery(
     submit = backend.device.submit_job
 
     def failing_submit(*, program: str, program_format: ProgramFormat, num_shots: int) -> Job:
-        if len(jobs) == 2:
+        if len(jobs) == 1:
             raise error
         return submit(program=program, program_format=program_format, num_shots=num_shots)
 
@@ -229,12 +229,16 @@ def test_submission_failure_recovery(
     with pytest.raises((JobSubmissionError, KeyboardInterrupt)) as caught:
         backend.run([QuantumCircuit(1, 1)] * 3)
     assert caught.value is error or caught.value.__cause__ is error
-    assert len(jobs) == 2
-    assert backend.last_job is not None
+    job = backend.last_job
+    assert job is not None
     if isinstance(caught.value, JobSubmissionError):
-        assert caught.value.job is backend.last_job
-    assert len(backend.last_job.entries) == 3
-    assert backend.last_job.entries[2].attempts[0].handle is None
+        assert caught.value.job is job
+    job.collect()
+    monkeypatch.setattr(backend.device, "submit_job", submit)
+    job.submit()
+    job.resubmit([1], allow_unknown=True)
+    assert job.result().get_counts() == [{"0": 1024}] * 3
+    jobs[0].get_counts.assert_called_once()
     for handle in jobs:
         handle.cancel.assert_not_called()
 
@@ -250,7 +254,8 @@ def test_validation_before_submission(recording_backend: RecordingBackend) -> No
 
 
 @pytest.mark.parametrize(
-    "options", [{"shots": 1.5}, {"shots": True}, {"memory": 1}, {"seed_simulator": 1}, {"unknown": None}]
+    "options",
+    [{"shots": 1.5}, {"shots": True}, {"memory": 1}, {"max_retries": True}, {"seed_simulator": 1}, {"unknown": None}],
 )
 def test_invalid_options(recording_backend: RecordingBackend, options: dict[str, object]) -> None:
     """Reject ineffective or lossy options before submission."""
@@ -386,15 +391,9 @@ def test_automatic_replacement_keeps_successful_results(recording_backend: Recor
     jobs[0].check.side_effect = lambda: Job.Status.FAILED
     assert job.job_id() == "remote-id"
     job.collect()
-    snapshot = job.entries
-    assert [entry.result is not None for entry in snapshot] == [False, True, True]
-    assert len(jobs) == 3
     result = job.result()
     assert len(jobs) == 4
     assert events.count("id") == 2
-    assert len(job.entries[0].attempts) == 2
-    assert len(snapshot[0].attempts) == 1
-    assert [entry.automatic_retries for entry in job.entries] == [1, 0, 0]
     assert result.results is not None
     assert [experiment.header["metadata"] for experiment in result.results] == [{"input": i} for i in range(3)]
     assert job.result() is result
@@ -425,102 +424,34 @@ def test_configured_retry_limit(
         backend.set_options(max_retries=configured)
     options = {} if override is None else {"max_retries": override}
     job = backend.run(QuantumCircuit(1, 1), parameter_values=None, **options)
-    for _ in range(2):
-        with pytest.raises(JobExecutionError, match="batch entries") as caught:
-            job.result()
-        assert caught.value.job is job
+    with pytest.raises(JobExecutionError):
+        job.result()
     assert len(jobs) == 1 + expected
-    assert job.entries[0].automatic_retries == expected
-
-
-@pytest.mark.parametrize("value", [-1, True, 1.5, "3", None])
-def test_invalid_retry_option(recording_backend: RecordingBackend, value: object) -> None:
-    """Reject invalid retry settings before admitting any job."""
-    backend, jobs, _ = recording_backend
-    with pytest.raises(CircuitValidationError, match="max_retries"):
-        backend.run(QuantumCircuit(1, 1), max_retries=value)
-    assert not jobs
-
-
-def test_recover_partial_submission(
-    recording_backend: RecordingBackend,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Retain accepted results, distinguish untouched inputs, and explicitly replace uncertainty."""
-    backend, jobs, _ = recording_backend
-    original = backend.device.submit_job
-
-    def submit(*, program: str, program_format: ProgramFormat, num_shots: int) -> Job:
-        if len(jobs) == 1:
-            msg = "submission outcome unknown"
-            raise RuntimeError(msg)
-        return original(program=program, program_format=program_format, num_shots=num_shots)
-
-    monkeypatch.setattr(backend.device, "submit_job", submit)
-    with pytest.raises(JobSubmissionError) as caught:
-        backend.run([QuantumCircuit(1, 1)] * 4, shots=4)
-    job = caught.value.job
-    assert job is backend.last_job
-    assert job is not None
-    assert len(job.entries) == 4
-    assert job.entries[1].attempts[0].handle is None
-    assert not job.entries[2].attempts
-    assert not job.entries[3].attempts
-    job.collect()
-    monkeypatch.setattr(backend.device, "submit_job", original)
-    job.submit([2, 3])
-    with pytest.raises(ValueError, match="allow_unknown"):
-        job.resubmit([1])
-    job.resubmit([1], allow_unknown=True)
-    results = job.result().results
-    assert results is not None
-    assert len(results) == 4
-    jobs[0].get_counts.assert_called_once()
-    jobs[0].cancel.assert_not_called()
 
 
 def test_prepared_and_existing_job_constructors(recording_backend: RecordingBackend) -> None:
-    """Prepared programs submit explicitly; existing handles remain collectable without new work."""
+    """Circuit-based jobs submit explicitly; wrapping existing handles does not create work."""
     backend, jobs, events = recording_backend
     circuits = [QuantumCircuit(1, 1)] * 2
-    programs = [("OPENQASM 3.0; qubit q; bit c; c = measure q;", ProgramFormat.QASM3)] * 2
-    job = QDMIJob(backend, circuits=circuits, programs=programs, shots=4, memory=False)
+    job = QDMIJob.from_circuits(backend, circuits, shots=4, memory=False)
     assert not jobs
-    job.submit([1])
     job.submit()
-    job.submit()
-    assert len(jobs) == 2
-    assert [len(entry.attempts) for entry in job.entries] == [1, 1]
     assert job.result().get_counts() == [{"0": 4}, {"0": 4}]
     existing = QDMIJob(backend, jobs, circuits, shots=4, memory=False)
     existing.submit()
     assert existing.result().get_counts() == [{"0": 4}, {"0": 4}]
     assert events.count("submit") == 2
-    jobs[0].check.side_effect = lambda: Job.Status.FAILED
-    with pytest.raises(RuntimeError, match="prepared programs"):
-        QDMIJob(backend, jobs, circuits, shots=4, memory=False).resubmit([0])
 
 
-@pytest.mark.parametrize(
-    ("job_count", "program_count", "circuit_count"),
-    [
-        (0, None, 0),
-        (0, None, 1),
-        (0, 0, 1),
-        (1, 1, 1),
-        (2, None, 1),
-        (0, 2, 1),
-    ],
-)
-def test_job_constructor_rejects_conflicting_inputs(
-    recording_backend: RecordingBackend, job_count: int, program_count: int | None, circuit_count: int
+@pytest.mark.parametrize(("job_count", "circuit_count"), [(0, 0), (0, 1), (2, 1)])
+def test_existing_job_constructor_rejects_mismatched_inputs(
+    recording_backend: RecordingBackend, job_count: int, circuit_count: int
 ) -> None:
-    """Invalid constructor inputs cannot trigger native submissions or status queries."""
+    """Each wrapped job needs its circuit metadata before any remote operation."""
     backend, jobs, _ = recording_backend
     handles = [MagicMock() for _ in range(job_count)]
-    programs = None if program_count is None else [("program", ProgramFormat.QASM3)] * program_count
-    with pytest.raises(ValueError, match="either one job or one program"):
-        QDMIJob(backend, handles, [QuantumCircuit(1, 1)] * circuit_count, programs=programs, shots=4, memory=False)
+    with pytest.raises(ValueError, match="at least one circuit and one submitted job"):
+        QDMIJob(backend, handles, [QuantumCircuit(1, 1)] * circuit_count, shots=4, memory=False)
     assert not jobs
     for handle in handles:
         handle.check.assert_not_called()

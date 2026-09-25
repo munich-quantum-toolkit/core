@@ -25,11 +25,12 @@ from qiskit.result.models import ExperimentResult
 
 from mqt.core.qdmi import Job as QDMIJobHandle
 
-from ...qdmi.batch import BatchEntry, JobAttempt, _Batch
+from ..qdmi_batch import Batch, BatchEntry, JobAttempt
 from .exceptions import JobExecutionError, JobSubmissionError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from typing import Self
 
     from qiskit.circuit import QuantumCircuit
 
@@ -63,41 +64,37 @@ class QDMIJob(JobV1):
     """Qiskit job wrapping one or more QDMI jobs.
 
     This class handles both single-circuit and multi-circuit execution,
-    aggregating results from multiple QDMI jobs when needed.
+    aggregating results from multiple QDMI jobs when needed. Use
+    :meth:`from_circuits` to prepare an unsubmitted batch. Wrapping already
+    submitted jobs supports collection and cancellation, without replacements.
 
     Args:
         backend: The backend this job runs on.
-        jobs: Submitted QDMI jobs, in circuit order; omit when supplying programs.
+        jobs: Submitted QDMI jobs in circuit order, or None to prepare a new batch.
         circuits: The executed circuits, used to snapshot result headers.
         shots: Requested shots per circuit.
         memory: Whether to collect genuine ordered shots.
-        max_retries: Automatic replacement limit; disabled by default.
-        programs: Serialized (payload, format) pairs in circuit order, for a new batch.
-            Provide either programs or submitted jobs. Programs are retained for replacement.
+        max_retries: Lifetime replacement limit per confirmed failed entry;
+            disabled by default. Cancelled or uncertain jobs are never retried.
     """
 
     def __init__(
         self,
         backend: QDMIBackend,
-        jobs: Sequence[QDMIJobHandle] = (),
-        circuits: Sequence[QuantumCircuit] = (),
+        jobs: Sequence[QDMIJobHandle] | None,
+        circuits: Sequence[QuantumCircuit],
         *,
         shots: int,
         memory: bool,
         max_retries: int = 0,
-        programs: Sequence[tuple[str | bytes, ProgramFormat]] | None = None,
     ) -> None:
         """Initialize without querying remote job IDs.
 
         Raises:
-            ValueError: If circuits are empty or the submission inputs conflict or differ in length.
+            ValueError: If circuits are empty or the supplied jobs differ in length.
         """
-        if (
-            not circuits
-            or (programs is not None and (jobs or len(programs) != len(circuits)))
-            or (programs is None and len(jobs) != len(circuits))
-        ):
-            msg = "QDMIJob requires nonempty circuits and either one job or one program per circuit."
+        if not circuits or (jobs is not None and len(jobs) != len(circuits)):
+            msg = "QDMIJob requires at least one circuit and one submitted job per circuit when jobs are supplied."
             raise ValueError(msg)
         super().__init__(backend=backend, job_id="")
         self._backend: QDMIBackend = backend
@@ -113,15 +110,45 @@ class QDMIJob(JobV1):
         self._shots = shots
         self._memory = memory
         self._result: Result | None = None
-        self._programs = tuple(programs) if programs is not None else None
-        self._batch: _Batch[ExperimentResult] = _Batch(
-            [BatchEntry(i, attempts=(JobAttempt(handle=jobs[i]),) if jobs else ()) for i in range(len(circuits))],
+        self._programs: tuple[tuple[str | bytes, ProgramFormat], ...] | None = None
+        if jobs is None:
+            formats = backend.device.supported_program_formats()
+            self._programs = tuple(
+                backend._serialize_circuit(circuit, formats)  # ruff:ignore[private-member-access] Use the backend's serializer selection.
+                for circuit in circuits
+            )
+        self._batch: Batch[ExperimentResult] = Batch(
+            [
+                BatchEntry(i, attempts=(JobAttempt(handle=jobs[i]),) if jobs is not None else ())
+                for i in range(len(circuits))
+            ],
             submit=self._submit_entry if self._programs is not None else None,
             decode=lambda index, handle: self._collect_result(handle, self._headers[index]),
             submission_error=lambda msg: JobSubmissionError(msg, job=self),
             execution_error=lambda msg: JobExecutionError(msg, job=self),
             max_retries=max_retries,
         )
+
+    @classmethod
+    def from_circuits(
+        cls,
+        backend: QDMIBackend,
+        circuits: Sequence[QuantumCircuit],
+        *,
+        shots: int,
+        memory: bool,
+        max_retries: int = 0,
+    ) -> Self:
+        """Prepare an unsubmitted batch from bound, backend-ready circuits.
+
+        All circuits are serialized before this method returns. Use
+        :meth:`~mqt.core.plugins.qiskit.backend.QDMIBackend.run` for normal execution, including circuit validation
+        and parameter binding.
+
+        Returns:
+            A batch ready for :meth:`submit`, with programs retained for recovery.
+        """
+        return cls(backend, None, circuits, shots=shots, memory=memory, max_retries=max_retries)
 
     @property
     def entries(self) -> tuple[BatchEntry[ExperimentResult], ...]:
@@ -147,6 +174,8 @@ class QDMIJob(JobV1):
         """Explicitly replace selected entries of a batch created by ``backend.run``.
 
         Unknown outcomes require ``allow_unknown=True`` and may duplicate work.
+        Running or completed jobs cannot be replaced. Use :meth:`submit` for
+        entries that have never been submitted.
 
         Returns:
             This batch handle, with earlier attempts retained.
@@ -169,7 +198,7 @@ class QDMIJob(JobV1):
         return self._job_id
 
     def cancel(self) -> bool:
-        """Attempt to cancel every job.
+        """Disable automatic retries and attempt to cancel every job.
 
         Returns:
             Whether all cancellation requests succeeded.
@@ -180,6 +209,8 @@ class QDMIJob(JobV1):
         """Get the result of the job.
 
         For multi-circuit jobs, this aggregates results from all submitted circuits.
+        An automatic replacement can propagate :class:`~mqt.core.plugins.qiskit.exceptions.JobSubmissionError` with
+        this batch handle if submission fails.
 
         Returns:
             The result of the job with one ExperimentResult per circuit.

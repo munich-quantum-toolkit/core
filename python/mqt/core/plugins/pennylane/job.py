@@ -11,14 +11,15 @@
 from __future__ import annotations
 
 # ruff: file-ignore[private-member-access] Companion handle owns the device execution bookkeeping.
+from contextlib import contextmanager
 from time import monotonic
 from typing import TYPE_CHECKING, cast
 
-from ...qdmi.batch import BatchEntry, _Batch
+from ..qdmi_batch import Batch, BatchEntry
 from .exceptions import PennyLaneExecutionError
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterator, Sequence
 
     import numpy as np
     from pennylane.typing import Result, ResultBatch
@@ -36,7 +37,9 @@ class PennyLaneJob:
 
     Obtain this handle through ``device.last_job`` or an execution error's
     ``job`` attribute. Results have the device's preprocessed tape shape; they
-    do not reconstruct an interrupted QNode or gradient calculation.
+    do not reconstruct an interrupted QNode or gradient calculation. Automatic
+    retries use the device's setting captured at creation and its lifetime limit
+    per failed entry. Cancelled or uncertain jobs are never retried.
     """
 
     def __init__(
@@ -53,7 +56,7 @@ class PennyLaneJob:
         self._single = single
         self._prepared = tuple((program, shots) for program, copies in prepared for shots in copies)
         self._parameters = device._job_parameters.copy()
-        self._batch: _Batch[np.ndarray] = _Batch(
+        self._batch: Batch[np.ndarray] = Batch(
             [BatchEntry(index, copy) for index, (_, copies) in enumerate(prepared) for copy in range(len(copies))],
             submit=self._submit,
             decode=lambda index, job: device._samples(job, *self._prepared[index]),
@@ -81,16 +84,21 @@ class PennyLaneJob:
             self._device.tracker.update(executions=1, shots=shots)
             self._device.tracker.record()
 
+    @contextmanager
+    def _record_time(self) -> Iterator[None]:
+        started = monotonic()
+        try:
+            yield
+        finally:
+            self._device._execution_time += monotonic() - started
+
     def submit(self, indices: Sequence[int] | None = None) -> None:
         """Submit selected untouched entries, or all remaining untouched entries.
 
         Previously attempted entries require :meth:`resubmit`.
         """
-        started = monotonic()
-        try:
+        with self._record_time():
             self._batch.submit(indices)
-        finally:
-            self._device._execution_time += monotonic() - started
 
     def collect(self) -> tuple[BatchEntry[np.ndarray], ...]:
         """Read existing jobs without replacement executions or aggregate errors.
@@ -98,11 +106,8 @@ class PennyLaneJob:
         Returns:
             Entry snapshots; successful results are cached.
         """
-        started = monotonic()
-        try:
+        with self._record_time():
             return self._batch.collect()
-        finally:
-            self._device._execution_time += monotonic() - started
 
     def result(self) -> Result | ResultBatch:
         """Collect, retry confirmed failures, and assemble the device's usual output.
@@ -113,8 +118,7 @@ class PennyLaneJob:
         Raises:
             PennyLaneExecutionError: If submission fails or entries remain unsuccessful.
         """  # ruff:ignore[docstring-extraneous-exception] The shared collector raises the adapter error.
-        started = monotonic()
-        try:
+        with self._record_time():
             self._batch.complete()
             tape_results: list[list[np.ndarray]] = [[] for _ in self._partitioned]
             for entry in self.entries:
@@ -124,21 +128,22 @@ class PennyLaneJob:
                 tuple(samples) if partitioned else samples[0]
                 for partitioned, samples in zip(self._partitioned, tape_results, strict=True)
             )
-            return cast("Result | ResultBatch", results[0] if self._single else results)
-        finally:
-            self._device._execution_time += monotonic() - started
+            if self._single:
+                return cast("Result", results[0])
+            return cast("ResultBatch", results)
 
     def resubmit(self, indices: Sequence[int], *, allow_unknown: bool = False) -> PennyLaneJob:
-        """Explicitly submit selected entries; unknown outcomes may duplicate work.
+        """Replace selected failed or cancelled entries, retaining earlier attempts.
+
+        Unknown outcomes require ``allow_unknown=True`` and may duplicate work.
+        Running or completed jobs cannot be replaced. Use :meth:`submit` for
+        entries that have never been submitted.
 
         Returns:
             This batch handle, with previous attempts retained.
         """
-        started = monotonic()
-        try:
+        with self._record_time():
             self._batch.resubmit(indices, allow_unknown=allow_unknown)
-        finally:
-            self._device._execution_time += monotonic() - started
         return self
 
     def cancel(self) -> bool:

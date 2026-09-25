@@ -18,11 +18,8 @@ if(NOT TARGET ${TARGET_NAME})
     MODULE_NAME
     qdmi
     INSTALL_DIR
-    qdmi
+    .
     LINK_LIBS
     MQT::CoreQDMI)
-
-  # A native package keeps the public module name while allowing Python submodules.
-  set_target_properties(${TARGET_NAME} PROPERTIES OUTPUT_NAME __init__)
 
 endif()

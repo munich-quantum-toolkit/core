@@ -21,7 +21,6 @@ from typing import cast
 import pytest
 from packaging import version
 
-from mqt.core import qdmi
 from mqt.core.mlir import (
     CompiledProgram,
     OutputFormat,
@@ -33,10 +32,7 @@ from mqt.core.qdmi import (
     Device,
     Job,
     ProgramFormat,
-    batch,
-    driver,
     is_binary_program_format,
-    slurm,
 )
 from mqt.core.qdmi.driver import (
     DeviceDefinition,
@@ -45,17 +41,6 @@ from mqt.core.qdmi.driver import (
 )
 
 CustomValueType = type[str] | type[bool] | type[int] | type[float] | type[bytes]
-
-
-def test_native_package_public_imports() -> None:
-    """Native and Python QDMI submodules share the original public package identity."""
-    assert qdmi.__path__
-    assert qdmi.__spec__ is not None
-    assert qdmi.__spec__.submodule_search_locations
-    assert Job.__module__ == Device.__module__ == "mqt.core.qdmi"
-    assert batch.BatchEntry.__module__ == "mqt.core.qdmi.batch"
-    assert driver.open_device is open_device
-    assert slurm.open_device_from_license is not None
 
 
 def _get_devices() -> list[Device]:

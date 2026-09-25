@@ -19,13 +19,13 @@ from mqt.core.qdmi import Job
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
-__all__ = ["BatchEntry", "JobAttempt", "JobFailure"]
+__all__ = ["Batch", "BatchEntry", "JobAttempt", "JobFailure", "validate_max_retries"]
 
 _Result = TypeVar("_Result")
 _TERMINAL = {Job.Status.DONE, Job.Status.FAILED, Job.Status.CANCELED}
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class JobFailure:
     """An original exception and the operation that raised it."""
 
@@ -33,7 +33,7 @@ class JobFailure:
     cause: BaseException
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class JobAttempt(Generic[_Result]):
     """A submission attempt, including an uncertain submission without a handle."""
 
@@ -43,7 +43,7 @@ class JobAttempt(Generic[_Result]):
     failures: tuple[JobFailure, ...] = ()
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class BatchEntry(Generic[_Result]):
     """An input's ordered attempts; indices refer to the adapter's input batch."""
 
@@ -58,7 +58,7 @@ class BatchEntry(Generic[_Result]):
         return self.attempts[-1].result if self.attempts else None
 
 
-def _validate_max_retries(value: object) -> int:
+def validate_max_retries(value: object) -> int:
     """Validate the number of automatic replacement executions.
 
     Returns:
@@ -73,8 +73,14 @@ def _validate_max_retries(value: object) -> int:
     return int(value)
 
 
-class _Batch(Generic[_Result]):
-    """Own attempts and reuse the same submission and collection paths for both adapters."""
+class Batch(Generic[_Result]):
+    """Shared recovery engine for the QDMI adapters.
+
+    Adapters prepare every input before constructing a batch and own result
+    conversion; decoded results must not be None. Use adapter job handles to
+    submit or recover work. Operations on one batch are synchronous; concurrent
+    calls on the same batch are unsupported.
+    """
 
     def __init__(
         self,
@@ -87,12 +93,13 @@ class _Batch(Generic[_Result]):
         max_retries: int,
         on_submit: Callable[[int], None] | None = None,
     ) -> None:
+        """Capture prepared entries, adapter callbacks, and a lifetime retry limit."""
         self._entries = list(entries)
         self._submit = submit
         self._decode = decode
         self._submission_error = submission_error
         self._execution_error = execution_error
-        self._max_retries = _validate_max_retries(max_retries)
+        self._max_retries = validate_max_retries(max_retries)
         self._cancelled = False
         self._on_submit = on_submit
 
@@ -226,13 +233,11 @@ class _Batch(Generic[_Result]):
         The adapter's error factory supplies aggregate and submission errors.
         """
         self.collect()
-        while True:
+        while not self._cancelled and self._submit is not None:
             retry = [
                 index
                 for index, entry in enumerate(self._entries)
-                if not self._cancelled
-                and self._submit is not None
-                and entry.automatic_retries < self._max_retries
+                if entry.automatic_retries < self._max_retries
                 and entry.attempts
                 and self._terminal_failure(entry.attempts[-1])
                 and entry.attempts[-1].status == Job.Status.FAILED
@@ -246,12 +251,14 @@ class _Batch(Generic[_Result]):
             details = ", ".join(f"{i} ({len(self._entries[i].attempts)} attempts)" for i in missing[:10])
             if len(missing) > 10:
                 details += ", ..."
-            causes = [
-                entry.attempts[-1].failures[-1].cause
-                for i in missing
-                if (entry := self._entries[i]).attempts and entry.attempts[-1].failures
-            ]
-            first = causes[0] if causes else None
+            first = next(
+                (
+                    entry.attempts[-1].failures[-1].cause
+                    for i in missing
+                    if (entry := self._entries[i]).attempts and entry.attempts[-1].failures
+                ),
+                None,
+            )
             msg = f"{len(missing)} batch entries have no result: {details}."
             if first is not None:
                 msg += f" First failure: {first}"

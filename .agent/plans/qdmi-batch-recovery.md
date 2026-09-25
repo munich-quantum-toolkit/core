@@ -17,14 +17,17 @@ replaced. Submission failures stop further admission. Cancellation is explicit
 and disables automatic replacement.
 
 Exceptions expose `job`; adapters retain `last_job` before first submission.
-Qiskit's documented `programs` input holds prepared payload/format pairs, while
-its existing positional constructor continues to accept submitted handles.
+Qiskit's `from_circuits()` constructor snapshots headers and serializes the
+backend's prepared circuits before admission. Its existing positional
+constructor continues to accept submitted handles, which support collection and
+cancellation.
 
-The shared Python implementation and inspection records live in
-`python/mqt/core/qdmi/batch.py`. Native QDMI is installed as the package
-initializer, retaining public type names and native submodules. A narrow binding
-fallback restores package paths omitted by scikit-build-core 1.0.3's editable
-loader. It can be removed when native initializers are recognized.
+The shared `Batch` engine and inspection records live in
+`python/mqt/core/plugins/qdmi_batch.py`; native QDMI packaging is unchanged.
+Adapters own preparation, result conversion, and tracking. Decoded results
+cannot be None, and operations on one batch are synchronous. No locking or
+concurrent access support is required. Immutable snapshots retain submission
+uncertainty and cached results without copying native handles or result data.
 
 ## Recovery and native multi-program boundary
 
@@ -46,16 +49,11 @@ or transport retries are introduced here.
 
 ## Validation
 
-```bash
-uv run --no-sync pytest -q test/python/qdmi \
-  test/python/plugins/qdmi_pennylane test/python/plugins/qiskit
-```
+Shared lifecycle tests cover retry limits, replacement eligibility, submission
+uncertainty, interruption, and cancellation. Adapter tests cover configuration,
+result conversion, tracking, recovery handles, and PennyLane postprocessing.
+Repeated tests of shared mechanics are removed from the adapter suites.
 
-- Editable install: 621 tests passed on Python 3.14.
-- Fresh wheel in an isolated environment: the same 621 tests passed, plus an
-  explicit package/submodule/type-name and native DDSIM execution probe.
-- Stub regeneration completed without generated API changes.
-- Repository lint and type checks passed.
-- Full executable documentation and local HTML link checks passed.
-- The changed binding passed full-file C++ analysis and formatting checks.
-- Synthetic failures and local DDSIM only; no paid cloud jobs were submitted.
+Final editable, wheel, lint, type, stub, and documentation checks are in
+progress. Synthetic failures and local DDSIM only; no paid cloud jobs are
+needed.

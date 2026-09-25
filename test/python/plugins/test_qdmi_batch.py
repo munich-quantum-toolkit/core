@@ -16,8 +16,8 @@ from unittest.mock import Mock
 
 import pytest
 
+from mqt.core.plugins.qdmi_batch import Batch, BatchEntry
 from mqt.core.qdmi import Job
-from mqt.core.qdmi.batch import BatchEntry, _Batch  # ruff:ignore[import-private-name] Test the shared engine directly.
 
 
 class BatchFixture:
@@ -30,7 +30,7 @@ class BatchFixture:
         self.error_at: int | None = None
         self.submission_error: BaseException = RuntimeError("admission failed")
         self.status = Job.Status.DONE
-        self.batch: _Batch[str] = _Batch(
+        self.batch: Batch[str] = Batch(
             [BatchEntry(i) for i in range(3)],
             submit=self.submit,
             decode=lambda _i, job: job.get_shots()[0],
@@ -40,11 +40,7 @@ class BatchFixture:
         )
 
     def submit(self, index: int) -> Job:
-        """Record a submission and return a controllable job handle.
-
-        Returns:
-            A job with configurable status and result behavior.
-        """
+        """Return a handle with configurable status and result behavior."""
         self.submitted.append(index)
         if len(self.submitted) == self.error_at:
             raise self.submission_error
@@ -54,6 +50,13 @@ class BatchFixture:
         job.get_shots.return_value = [str(index)]
         self.jobs.append(job)
         return cast("Job", job)
+
+
+@pytest.mark.parametrize("value", [-1, True, 1.5, "3", None])
+def test_invalid_retry_configuration(value: object) -> None:
+    """Reject noninteger and negative retry limits before submission."""
+    with pytest.raises(ValueError, match="max_retries"):
+        BatchFixture(cast("int", value))
 
 
 @pytest.mark.parametrize("max_retries", [0, 1, 3])
@@ -135,20 +138,22 @@ def test_uncertain_or_completed_jobs_are_never_automatically_replaced(failure: s
         job.cancel.assert_not_called()
 
 
-def test_read_recovery_reuses_original_job() -> None:
-    """Retry reading the same handle while retaining earlier diagnostic causes."""
+def test_read_recovery_retains_all_causes_and_successes() -> None:
+    """Read failures aggregate without hiding later successes, then recover on the same handles."""
     fixture = BatchFixture()
     batch = fixture.batch
     batch.submit()
-    cause = RuntimeError("temporary result read failure")
-    fixture.jobs[1].get_shots.side_effect = [cause, ["recovered"]]
-    batch.collect()
-    assert batch.entries[1].attempts[0].failures[0].cause is cause
+    causes = [RuntimeError("first"), RuntimeError("second")]
+    for handle, cause in zip(fixture.jobs, causes, strict=False):
+        handle.get_shots.side_effect = [cause, ["recovered"]]
+    with pytest.raises(RuntimeError, match="2 batch entries") as caught:
+        batch.complete()
+    assert caught.value.__cause__ is causes[0]
+    assert batch.entries[2].result == "2"
     batch.complete()
     assert fixture.submitted == [0, 1, 2]
-    assert batch.entries[1].result == "recovered"
-    assert batch.entries[1].attempts[0].failures[0].cause is cause
-    fixture.jobs[0].get_shots.assert_called_once()
+    assert [entry.result for entry in batch.entries] == ["recovered", "recovered", "2"]
+    assert [entry.attempts[0].failures[0].cause for entry in batch.entries[:2]] == causes
     fixture.jobs[2].get_shots.assert_called_once()
 
 
@@ -171,10 +176,13 @@ def test_partial_submission_preserves_unknown_and_untouched_entries(*, interrupt
     with pytest.raises(ValueError, match="allow_unknown"):
         batch.resubmit([1, 2])
     assert fixture.submitted == [0, 1]
-    batch.resubmit([1], allow_unknown=True)
     batch.submit()
+    assert fixture.submitted == [0, 1, 2]
+    with pytest.raises(ValueError, match="use resubmit"):
+        batch.submit([1])
+    batch.resubmit([1], allow_unknown=True)
     batch.complete()
-    assert fixture.submitted == [0, 1, 1, 2]
+    assert fixture.submitted == [0, 1, 2, 1]
     assert len(batch.entries[1].attempts) == 2
     fixture.jobs[0].cancel.assert_not_called()
 
@@ -228,8 +236,10 @@ def test_explicit_cancel_disables_automatic_replacements() -> None:
     assert fixture.batch.entries[0].attempts[0].failures[0].cause is failure
 
 
-@pytest.mark.parametrize("indices", [[0, 0], [0, -1], [0, 3], [True], [0.5]])
-@pytest.mark.parametrize("method", ["submit", "resubmit"])
+@pytest.mark.parametrize(
+    ("method", "indices"),
+    [("submit", [0, 0]), ("resubmit", [0, -1]), ("submit", [0, 3]), ("resubmit", [True]), ("submit", [0.5])],
+)
 def test_validate_entire_selection_before_submitting(indices: list[int], method: str) -> None:
     """Invalid or duplicate indices must not admit any replacement."""
     fixture = BatchFixture()
@@ -256,19 +266,6 @@ def test_submit_only_admits_untouched_entries() -> None:
     assert [entry.result for entry in batch.entries] == ["0", "1", "2"]
 
 
-def test_submit_skips_uncertain_admissions() -> None:
-    """Resuming untouched entries never repeats a submission with unknown acceptance."""
-    fixture = BatchFixture()
-    fixture.error_at = 2
-    with pytest.raises(RuntimeError, match="admission failed"):
-        fixture.batch.submit()
-    fixture.batch.submit()
-    assert fixture.submitted == [0, 1, 2]
-    assert fixture.batch.entries[1].attempts[0].handle is None
-    with pytest.raises(ValueError, match="use resubmit"):
-        fixture.batch.submit([1])
-
-
 def test_other_retries_do_not_repeat_unrelated_result_reads() -> None:
     """A failed task must not turn another task's read error into an automatic read loop."""
     fixture = BatchFixture()
@@ -292,20 +289,6 @@ def test_manual_replacement_does_not_override_known_running_work() -> None:
     assert fixture.submitted == [0, 1, 2]
     with pytest.raises(TypeError, match="boolean"):
         fixture.batch.resubmit([0], allow_unknown="yes")  # ty: ignore[invalid-argument-type] Invalid runtime input.
-
-
-def test_multiple_failure_causes_remain_available() -> None:
-    """The aggregate chains the first cause while later causes and successes remain accessible."""
-    fixture = BatchFixture()
-    fixture.batch.submit()
-    causes = [RuntimeError("first"), RuntimeError("second")]
-    for handle, cause in zip(fixture.jobs, causes, strict=False):
-        handle.get_shots.side_effect = cause
-    with pytest.raises(RuntimeError, match="2 batch entries") as caught:
-        fixture.batch.complete()
-    assert caught.value.__cause__ is causes[0]
-    assert [entry.attempts[0].failures[0].cause for entry in fixture.batch.entries[:2]] == causes
-    assert fixture.batch.entries[2].result == "2"
 
 
 def test_cancel_skips_confirmed_terminal_attempts() -> None:

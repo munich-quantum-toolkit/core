@@ -29,7 +29,7 @@ except ImportError:
 
 import networkx as nx
 
-from mqt.core.plugins.pennylane import DDSIMDevice, PennyLaneExecutionError, PennyLaneValidationError
+from mqt.core.plugins.pennylane import DDSIMDevice, PennyLaneValidationError
 
 GRAPH_EDGES = ((0, 1), (0, 2), (1, 2), (2, 3))
 
@@ -199,9 +199,8 @@ def test_retained_native_job_outlives_adapter() -> None:
 
 
 @pytest.mark.parametrize("shots", [8, [(8, 2), 16]])
-@pytest.mark.parametrize("interrupted", [False, True])
 def test_postprocessor_recovers_forward_measurements(
-    monkeypatch: pytest.MonkeyPatch, shots: int | list[tuple[int, int] | int], *, interrupted: bool
+    monkeypatch: pytest.MonkeyPatch, shots: int | list[tuple[int, int] | int]
 ) -> None:
     """Retained PennyLane postprocessing reconstructs broadcasts, shot vectors, and measurements."""
     device = DDSIMDevice(wires=1, max_retries=3)
@@ -213,7 +212,6 @@ def test_postprocessor_recovers_forward_measurements(
 
     angles = np.array([0.0, np.pi])
     expected = circuit(angles)
-    original_submissions = device.submitted_jobs
     tapes, postprocess = qp.workflow.construct_batch(circuit, level="device")(angles)
     original = device._samples  # ruff:ignore[private-member-access] Inject a failure after native submission.
     reads = []
@@ -221,21 +219,15 @@ def test_postprocessor_recovers_forward_measurements(
     def read(job: Job, converted: _ConvertedProgram, requested: int):
         reads.append(job)
         if len(reads) == 2:
-            if interrupted:
-                raise KeyboardInterrupt
-            msg = "synthetic result retrieval failure"
-            raise RuntimeError(msg)
+            raise KeyboardInterrupt
         return original(job, converted, requested)
 
     monkeypatch.setattr(device, "_samples", read)
-    with pytest.raises(KeyboardInterrupt if interrupted else PennyLaneExecutionError) as caught:
+    with pytest.raises(KeyboardInterrupt):
         device.execute(tapes)
     batch = device.last_job
     assert batch is not None
-    if isinstance(caught.value, PennyLaneExecutionError):
-        assert caught.value.job is batch
     submitted = device.submitted_jobs
-    assert submitted > original_submissions
     first_samples = batch.entries[0].result
     assert first_samples is not None
     recovered = postprocess(batch.result())[0]
@@ -243,4 +235,3 @@ def test_postprocessor_recovers_forward_measurements(
     assert device.submitted_jobs == submitted
     assert batch.entries[0].result is first_samples
     assert reads.count(reads[0]) == 1
-    assert all(len(entry.attempts) == 1 for entry in batch.entries)

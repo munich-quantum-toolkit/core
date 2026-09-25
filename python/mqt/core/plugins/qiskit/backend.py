@@ -33,8 +33,8 @@ from qiskit.transpiler import InstructionProperties, Target
 
 from ...qdmi import Device as QDMIDevice
 from ...qdmi import ProgramFormat, is_binary_program_format
-from ...qdmi.batch import _validate_max_retries
 from ...qdmi.driver import open_device
+from ..qdmi_batch import validate_max_retries
 from .exceptions import (
     CircuitValidationError,
     TranslationError,
@@ -806,14 +806,11 @@ class QDMIBackend(BackendV2):
             raise CircuitValidationError(msg)
 
         try:
-            max_retries = _validate_max_retries(options.get("max_retries", self._options.max_retries))
+            max_retries = validate_max_retries(options.get("max_retries", self._options.max_retries))
         except ValueError as exc:
             raise CircuitValidationError(str(exc)) from exc
-        supported_formats = self._device.supported_program_formats()
-
         prepared_circuits: list[QuantumCircuit] = []
         # Prepare every circuit before submitting any job, so validation cannot leave a partial batch.
-        serialized_circuits: list[tuple[str | bytes, ProgramFormat]] = []
 
         for idx, circuit in enumerate(circuits):
             bound_circuit = circuit
@@ -839,17 +836,14 @@ class QDMIBackend(BackendV2):
 
             self._validate_circuit(bound_circuit)
 
-            # Serialize the circuit into a program format the device accepts
-            serialized_circuits.append(self._serialize_circuit(bound_circuit, supported_formats))
             prepared_circuits.append(bound_circuit)
 
-        job = QDMIJob(
+        job = QDMIJob.from_circuits(
             self,
-            circuits=prepared_circuits,
+            prepared_circuits,
             shots=shots,
             memory=memory,
             max_retries=max_retries,
-            programs=serialized_circuits,
         )
         self.last_job = job
         job.submit()

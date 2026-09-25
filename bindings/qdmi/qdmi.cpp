@@ -82,15 +82,6 @@ template <typename Query>
 } // namespace
 
 NB_MODULE(MQT_CORE_MODULE_NAME, qdmiModule) {
-  /// scikit-build-core 1.0.3's editable loader omits native package paths.
-  /// Remove this fallback once it recognizes extension-module initializers.
-  if (!nb::hasattr(qdmiModule, "__path__")) {
-    qdmiModule.attr("__path__") =
-        nb::make_tuple(nb::module_::import_("os.path").attr("dirname")(
-            qdmiModule.attr("__file__")));
-    qdmiModule.attr("__spec__").attr("submodule_search_locations") =
-        qdmiModule.attr("__path__");
-  }
   qdmiModule.doc() = "QDMI entities and access to MQT Core's QDMI driver.";
   auto driver = qdmiModule.def_submodule(
       "driver", "Register, discover, and open QDMI devices through MQT Core.");
