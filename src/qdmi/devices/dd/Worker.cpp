@@ -114,9 +114,10 @@ bool Worker::start() {
     std::cerr << llvm::toString(listener.takeError()) << '\n';
     return false;
   }
-  const auto executable =
+  const auto executablePath =
       (qdmi::detail::moduleDirectory(&MODULE_ANCHOR) / MQT_DDSIM_WORKER_NAME)
-          .string();
+          .u8string();
+  const std::string executable(executablePath.begin(), executablePath.end());
   {
     const std::scoped_lock lock(mutex_);
     if (terminated_) {

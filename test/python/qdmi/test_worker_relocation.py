@@ -24,7 +24,7 @@ def test_worker_relocation_and_startup_failure(tmp_path: Path) -> None:
     worker_name = "mqt-core-ddsim-worker" + (".exe" if sys.platform == "win32" else "")
     worker = runtime / worker_name
     assert worker.is_file()
-    relocated = tmp_path / "relocated"
+    relocated = tmp_path / "relocated-ünicode"
     shutil.copytree(runtime, relocated, ignore=shutil.ignore_patterns(worker_name))
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()

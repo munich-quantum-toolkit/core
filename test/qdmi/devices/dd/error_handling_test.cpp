@@ -20,6 +20,8 @@
 
 #include "gtest/gtest.h"
 
+#include "llvm/Support/Threading.h"
+
 namespace {
 
 class ErrorHandling : public ::testing::Test {
@@ -330,6 +332,9 @@ c[0] = measure q[0];
 }
 
 TEST_F(ErrorHandling, WorkerCrashesDoNotAffectConcurrentOrLaterJobs) {
+  if (llvm::heavyweight_hardware_concurrency().compute_thread_count() < 2) {
+    GTEST_SKIP() << "Concurrent crash isolation requires two worker slots";
+  }
   const qdmi_test::SessionGuard session{};
   for (const std::string operation : {"abort", "llvm.trap"}) {
     const qdmi_test::JobGuard valid{session.session};

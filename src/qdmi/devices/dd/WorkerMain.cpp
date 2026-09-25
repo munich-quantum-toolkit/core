@@ -26,6 +26,7 @@
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/raw_socket_stream.h"
 
@@ -170,7 +171,8 @@ qdmi::dd::WorkerResponse execute(const qdmi::dd::WorkerRequest& request) {
 }
 } // namespace
 
-int main(int argc, char* const* argv) {
+int main(int argc, char** argv) {
+  const llvm::InitLLVM init(argc, argv);
   llvm::sys::DisableSystemDialogsOnCrash();
   if (argc != 2) {
     return 1;
@@ -193,8 +195,7 @@ int main(int argc, char* const* argv) {
     if (!qdmi::dd::decode(bytes, request)) {
       return 1;
     }
-    /// execute destroys the JIT, runtime, DDs, and diagnostic scope before
-    /// reuse.
+    /// execute destroys the program's JIT, runtime, and DDs before reuse.
     auto const response = execute(request);
     if (!qdmi::dd::writeFrame(stream, qdmi::dd::encode(response))) {
       return 1;

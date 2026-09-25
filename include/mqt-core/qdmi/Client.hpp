@@ -978,6 +978,7 @@ public:
   /// @tparam T Expected value type. Use `std::vector<std::byte>` to retrieve
   /// the raw value without interpretation.
   /// @param property Custom result slot to query.
+  /// @param programIndex Zero-based index in the submitted program list.
   /// @return The decoded value, or `std::nullopt` if the slot is unsupported.
   /// @throws std::invalid_argument If the returned bytes do not match `T`.
   template <custom_property_value T>
