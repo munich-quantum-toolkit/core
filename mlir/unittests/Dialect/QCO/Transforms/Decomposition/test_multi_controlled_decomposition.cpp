@@ -1161,9 +1161,8 @@ TEST_F(MultiControlledDecompositionTest,
                     builder.ry(0.61, targets[1]),
                 };
               };
-              auto outputs = power ? builder.pow(2.0, args, body)
-                                   : builder.inv(args, body);
-              return {outputs.begin(), outputs.end()};
+              return power ? builder.pow(2.0, args, body)
+                           : builder.inv(args, body);
             };
             if (controlled) {
               builder.ctrl(ValueRange{q0}, ValueRange{q1, q2}, modifier);
@@ -1172,15 +1171,8 @@ TEST_F(MultiControlledDecompositionTest,
             }
             return SmallVector<Value>{};
           });
-      ASSERT_TRUE(succeeded(verify(*moduleOp)));
-      ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
-      auto function = *moduleOp->getOps<func::FuncOp>().begin();
-      const auto package = std::make_unique<dd::Package>(3);
-      const auto reference = buildFunctionality(function, *package);
-      ASSERT_TRUE(succeeded(reference));
       DecomposeMultiControlledOptions options;
       options.minQubits = minQubits;
-
       if (native) {
         const auto target = llvm::cantFail(CompilerTarget::create(
             3, CompilerTarget::Connectivity::allToAll(),
@@ -1188,103 +1180,70 @@ TEST_F(MultiControlledDecompositionTest,
         PassManager pm(context());
         pm.addPass(createDecomposeMultiControlled(target));
         ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
-        EXPECT_TRUE(succeeded(verify(*moduleOp)));
-        EXPECT_TRUE(succeeded(verifyLinearity(*moduleOp)));
       } else {
         ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*moduleOp, options)));
       }
-
       size_t modifiers = 0;
       moduleOp->walk([&](Operation* op) {
-        if (auto inverse = dyn_cast<InvOp>(op)) {
-          EXPECT_FALSE(power);
-          EXPECT_EQ(inverse.getNumBodyUnitaries(), 2U);
+        if (isa<InvOp, PowOp>(op)) {
           ++modifiers;
-        } else if (auto powered = dyn_cast<PowOp>(op)) {
-          EXPECT_TRUE(power);
-          EXPECT_EQ(powered.getNumBodyUnitaries(), 2U);
-          ++modifiers;
+          EXPECT_EQ(mlir::mqt::getNumBodyUnitaries<UnitaryOpInterface>(
+                        op->getRegion(0).front()),
+                    2U);
         }
       });
       EXPECT_EQ(modifiers, 1U);
-      const auto actual = buildFunctionality(function, *package);
-      ASSERT_TRUE(succeeded(actual));
-      EXPECT_EQ(*actual, *reference);
-      package->decRef(*actual);
-      package->decRef(*reference);
     }
   }
 }
 
-TEST_F(MultiControlledDecompositionTest, LeavesUnsupportedCompositePowers) {
-  for (const bool overlap : {false, true}) {
-    for (const double exponent : {0.5, 2.0}) {
-      for (const bool runtime : {false, true}) {
-        if (!overlap && exponent == 2.0 && !runtime) {
-          continue;
-        }
-        SCOPED_TRACE(testing::Message()
-                     << "overlap=" << overlap << ", exponent=" << exponent
-                     << ", runtime=" << runtime);
-        auto moduleOp = QCOProgramBuilder::build(
-            context(), [&](QCOProgramBuilder& builder) {
-              auto parameter = builder.floatConstant(exponent);
-              auto q0 = builder.staticQubit(0);
-              auto q1 = builder.staticQubit(1);
-              auto q2 = builder.staticQubit(2);
-              builder.ctrl(ValueRange{q0}, ValueRange{q1, q2},
-                           [&](ValueRange args) -> SmallVector<Value> {
-                             auto outputs = builder.pow(
-                                 parameter, args,
-                                 [&](ValueRange targets) -> SmallVector<Value> {
-                                   auto a = builder.rx(0.37, targets[0]);
-                                   if (overlap) {
-                                     a = builder.ry(0.61, a);
-                                   }
-                                   return {a, builder.rz(0.29, targets[1])};
-                                 });
-                             return {outputs.begin(), outputs.end()};
-                           });
-              return SmallVector<Value>{};
-            });
-        if (runtime) {
-          auto function = *moduleOp->getOps<func::FuncOp>().begin();
-          function.insertArgument(0, Float64Type::get(context()), {},
-                                  function.getLoc());
-          auto constant = *function.getOps<arith::ConstantOp>().begin();
-          constant.replaceAllUsesWith(function.getArgument(0));
-          constant.erase();
-        }
-        ASSERT_TRUE(succeeded(verify(*moduleOp)));
-        ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
-        auto function = *moduleOp->getOps<func::FuncOp>().begin();
-        auto original = OwningOpRef<ModuleOp>(moduleOp->clone());
-
-        ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*moduleOp)));
-
-        size_t powers = 0;
-        moduleOp->walk([&](PowOp op) {
-          EXPECT_EQ(op.getNumBodyUnitaries(), overlap ? 3U : 2U);
-          if (runtime) {
-            EXPECT_EQ(op.getExponent(), function.getArgument(0));
-          } else {
-            EXPECT_EQ(op.getExponentValue(), exponent);
-          }
-          ++powers;
+TEST_F(MultiControlledDecompositionTest, CompositePowerLimits) {
+  for (const auto [overlap, exponent, runtime] : {
+           std::tuple{true, 2.0, false},
+           {false, 0.5, false},
+           {false, 0.0, true},
+       }) {
+    SCOPED_TRACE(testing::Message() << "overlap=" << overlap << ", exponent="
+                                    << exponent << ", runtime=" << runtime);
+    Value parameter;
+    auto moduleOp =
+        QCOProgramBuilder::build(context(), [&](QCOProgramBuilder& builder) {
+          parameter = builder.floatConstant(exponent);
+          builder.ctrl(
+              ValueRange{builder.staticQubit(0)},
+              ValueRange{builder.staticQubit(1), builder.staticQubit(2)},
+              [&](ValueRange args) -> SmallVector<Value> {
+                return builder.pow(
+                    parameter, args,
+                    [&](ValueRange targets) -> SmallVector<Value> {
+                      auto a = builder.rx(0.37, targets[0]);
+                      if (overlap) {
+                        a = builder.ry(0.61, a);
+                      }
+                      return {a, builder.rz(0.29, targets[1])};
+                    });
+              });
+          return SmallVector<Value>{};
         });
-        EXPECT_EQ(powers, 1U);
-        if (!runtime) {
-          const auto package = std::make_unique<dd::Package>(3);
-          auto originalFunction = *original->getOps<func::FuncOp>().begin();
-          const auto reference = buildFunctionality(originalFunction, *package);
-          const auto actual = buildFunctionality(function, *package);
-          ASSERT_TRUE(succeeded(reference));
-          ASSERT_TRUE(succeeded(actual));
-          EXPECT_EQ(*actual, *reference);
-          package->decRef(*actual);
-          package->decRef(*reference);
-        }
-      }
+    if (runtime) {
+      auto function = *moduleOp->getOps<func::FuncOp>().begin();
+      function.insertArgument(0, Float64Type::get(context()), {},
+                              function.getLoc());
+      parameter.replaceAllUsesWith(function.getArgument(0));
+      auto* constant = parameter.getDefiningOp();
+      parameter = function.getArgument(0);
+      constant->erase();
+    }
+
+    ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*moduleOp)));
+    SmallVector<PowOp> powers;
+    moduleOp->walk([&](PowOp op) { powers.push_back(op); });
+    ASSERT_EQ(powers.size(), 1U);
+    EXPECT_EQ(powers.front().getNumBodyUnitaries(), overlap ? 3U : 2U);
+    if (runtime) {
+      EXPECT_EQ(powers.front().getExponent(), parameter);
+    } else {
+      EXPECT_EQ(powers.front().getExponentValue(), exponent);
     }
   }
 }

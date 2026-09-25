@@ -20,14 +20,22 @@ Iterate inverse bodies directly and use one `unrollModifier` overload family.
 
 ## Validation
 
-The original matrix regression failed on #2565 with the reported
-unsupported-control error. After rebasing and simplifying the shared helpers,
-1,525 native tests and 458 Qiskit translation tests pass: compiler 236,
-decomposition 315, MQT transforms 32, QC IR 368, and QCO IR 574. Twelve
-additional Qiskit-to-target matrix checks cover nested inverse/power bodies and
-open MCMT inverses in both target pipelines. Existing tests retain the OpenQASM
-reproducer, controlled phase, reordered operands, native support, width limits,
-and unsupported powers. Native validation uses Clang 23 with ThinLTO and Qiskit
-2.5.2.
+The reduced suite passes 1,524 native tests and 428 Qiskit translation tests:
+compiler 233, decomposition 315, MQT transforms 31, QC IR 368, QCO IR 575, and
+two native-synthesis checks. Native validation uses Clang 23 with ThinLTO and
+Qiskit 2.5.2.
+
+One OpenQASM-to-target matrix test covers plain, inverse, and positive/negative
+integer-power bodies through both pipelines, including controlled phase and wire
+order. Six MCMT cases cover full-width and repeated-target definitions, open and
+mixed control states, and outer modifiers. Three unsupported-power cases isolate
+overlap, fractional exponents, and runtime exponents. Width, native-target,
+control-scope, and failed-unrolling contracts remain covered. Boundary
+assertions permit MLIR's constant hoisting; they do not freeze whole IR. The
+native-synthesis tests own symbolic-rotation cost checks.
+
+Before test consolidation, twelve additional Qiskit-to-target matrix checks
+passed for nested modifiers and open MCMT inverses. Production code is unchanged
+by the test and documentation cleanup.
 
 Repository lint and full changed-file C++ lint pass.
