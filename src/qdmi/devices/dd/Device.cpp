@@ -22,6 +22,7 @@
 #include "Worker.hpp"
 #include "WorkerProtocol.hpp"
 
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/ThreadPool.h"
 #include "llvm/Support/Threading.h"
 
@@ -36,8 +37,6 @@
 #include <cstdint>
 #include <cstring>
 #include <exception>
-#include <functional>
-#include <future>
 #include <iostream>
 #include <limits>
 #include <map>
@@ -52,7 +51,6 @@
 #include <string>
 #include <string_view>
 #include <utility>
-#include <variant>
 #include <vector>
 
 namespace {
@@ -213,6 +211,7 @@ constexpr std::array SUPPORTED_PROGRAM_FORMATS = {
 } // namespace
 
 namespace qdmi::dd {
+namespace {
 struct ProgramResult {
   size_t numShots_ = 0;
   std::optional<std::string> qirOutput_;
@@ -263,6 +262,8 @@ struct ProgramResult {
                   size_t* sizeRet) -> QDMI_STATUS;
 };
 
+} // namespace
+
 struct Execution {
   struct Program {
     QDMI_Job_Status status = QDMI_JOB_STATUS_CREATED;
@@ -300,6 +301,8 @@ namespace {
 struct Executor {
   WorkerPool workers;
   llvm::DefaultThreadPool threads{llvm::heavyweight_hardware_concurrency()};
+
+  ~Executor() { workers.shutdown(); }
 };
 Executor& executor() {
   static Executor instance;
@@ -590,15 +593,18 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::setPrograms(
   if (sizes == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  const bool text = !(*format == QDMI_PROGRAM_FORMAT_QIRBASEMODULE ||
-                      *format == QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE);
+  const bool text = *format != QDMI_PROGRAM_FORMAT_QIRBASEMODULE &&
+                    *format != QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE;
+  const std::span programSizes{sizes, count};
+  const std::span programPointers{programs, count};
   std::vector<std::string> copied;
   copied.reserve(count);
   for (size_t i = 0; i < count; ++i) {
-    if (programs[i] == nullptr || sizes[i] == 0) {
+    if (programPointers[i] == nullptr || programSizes[i] == 0) {
       return QDMI_ERROR_INVALIDARGUMENT;
     }
-    std::string_view bytes(static_cast<const char*>(programs[i]), sizes[i]);
+    std::string_view bytes(static_cast<const char*>(programPointers[i]),
+                           programSizes[i]);
     if (text) {
       if (bytes.back() != '\0') {
         return QDMI_ERROR_INVALIDARGUMENT;
@@ -654,8 +660,8 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::queryProperty(
   }
   if (programs_.size() == 1) {
     const auto& program = programs_.front();
-    if (!(format_ == QDMI_PROGRAM_FORMAT_QIRBASEMODULE ||
-          format_ == QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE)) {
+    if (format_ != QDMI_PROGRAM_FORMAT_QIRBASEMODULE &&
+        format_ != QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE) {
       ADD_STRING_PROPERTY(QDMI_DEVICE_JOB_PROPERTY_PROGRAM, program.c_str(),
                           prop, size, value, sizeRet)
     } else {
@@ -684,11 +690,13 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
   }
   for (size_t index = 0; index < programs_.size(); ++index) {
     try {
-      qdmi::dd::WorkerRequest request{.format = static_cast<int32_t>(format_),
-                                      .program = programs_[index],
-                                      .shots = numShots_,
-                                      .seed = seed_,
-                                      .captureOutput = captureQIROutput_};
+      qdmi::dd::WorkerRequest request{
+          .format = static_cast<int32_t>(format_),
+          .program = programs_[index],
+          .shots = numShots_,
+          .seed = seed_,
+          .captureOutput = captureQIROutput_,
+      };
       executor.threads.async([execution, index, request = std::move(request),
                               &executor] {
         std::shared_ptr<qdmi::dd::Worker> worker;
@@ -698,8 +706,6 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
           if (program.status != QDMI_JOB_STATUS_QUEUED) {
             return;
           }
-          worker = executor.workers.acquire();
-          program.worker = worker;
           program.status = QDMI_JOB_STATUS_RUNNING;
           execution->status = QDMI_JOB_STATUS_RUNNING;
         }
@@ -707,7 +713,45 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
         device.increaseRunningJobs();
         bool reusable = false;
         std::unique_ptr<qdmi::dd::ProgramResult> result;
+        const llvm::scope_exit completed([&] {
+          {
+            const std::scoped_lock guard(execution->mutex);
+            auto& program = execution->programs[index];
+            program.worker.reset();
+            reusable = reusable && !program.cancelRequested;
+          }
+          if (worker) {
+            try {
+              executor.workers.release(worker, reusable);
+            } catch (const std::exception& error) {
+              result.reset();
+              worker->terminate();
+              std::cerr << "Could not release DDSIM worker: " << error.what()
+                        << '\n';
+            }
+          }
+          device.decreaseRunningJobs();
+          const std::scoped_lock guard(execution->mutex);
+          auto& program = execution->programs[index];
+          if (program.cancelRequested) {
+            program.status = QDMI_JOB_STATUS_CANCELED;
+          } else {
+            program.status =
+                result ? QDMI_JOB_STATUS_DONE : QDMI_JOB_STATUS_FAILED;
+            program.result = std::move(result);
+          }
+          execution->finish();
+        });
         try {
+          {
+            const std::scoped_lock guard(execution->mutex);
+            auto& program = execution->programs[index];
+            if (program.cancelRequested) {
+              return;
+            }
+            worker = executor.workers.acquire();
+            program.worker = worker;
+          }
           qdmi::dd::WorkerResponse response;
           reusable = worker && worker->execute(request, response);
           if (reusable && response.succeeded &&
@@ -741,27 +785,6 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
           result.reset();
           reusable = false;
           std::cerr << "DDSIM worker failed: " << error.what() << '\n';
-        }
-        {
-          const std::scoped_lock guard(execution->mutex);
-          auto& program = execution->programs[index];
-          program.worker.reset();
-          if (!program.cancelRequested) {
-            program.status =
-                result ? QDMI_JOB_STATUS_DONE : QDMI_JOB_STATUS_FAILED;
-            program.result = std::move(result);
-          } else {
-            program.status = QDMI_JOB_STATUS_CANCELED;
-            reusable = false;
-          }
-        }
-        if (worker) {
-          executor.workers.release(worker, reusable);
-        }
-        device.decreaseRunningJobs();
-        {
-          const std::scoped_lock guard(execution->mutex);
-          execution->finish();
         }
       });
     } catch (const std::exception& error) {
