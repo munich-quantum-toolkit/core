@@ -80,6 +80,19 @@ TEST(ClientRuntimeTest, ValidatesDriversAndRetainsSessions) {
   const auto job = Session::openDevice("test.example", firstConfig)
                        .submitJob("payload", QDMI_PROGRAM_FORMAT_CUSTOM1);
   EXPECT_EQ(job.getId(), "session-job");
+  {
+    const ScopedEnvironmentVariable optionalToken{
+        "MQT_CORE_QDMI_TEST_DEVICE_FAILURE", "token-unsupported"};
+    EXPECT_EQ(Session::openDevice("test.example", firstConfig).getId(),
+              "test.example");
+  }
+  {
+    const ScopedEnvironmentVariable deniedToken{
+        "MQT_CORE_QDMI_TEST_DEVICE_FAILURE", "token-denied"};
+    EXPECT_THAT([&] { return Session{firstConfig}; },
+                testing::ThrowsMessage<std::runtime_error>(
+                    testing::HasSubstr("Permission denied")));
+  }
 }
 
 TEST(BuiltinDriverExtensionTest, DiscoversThenOpensIndependentSessions) {

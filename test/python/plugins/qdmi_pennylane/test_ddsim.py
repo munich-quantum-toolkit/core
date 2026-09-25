@@ -215,11 +215,11 @@ def test_postprocessor_recovers_forward_measurements(
     original = PennyLaneJob._samples  # ruff:ignore[private-member-access] Inject a failure after native submission.
     reads = []
 
-    def read(batch: PennyLaneJob, index: int, job: Job):
-        reads.append(job)
+    def read(batch: PennyLaneJob, index: int, job: Job, program_index: int):
+        reads.append((job, program_index))
         if len(reads) == 2:
             raise KeyboardInterrupt
-        return original(batch, index, job)
+        return original(batch, index, job, program_index)
 
     monkeypatch.setattr(PennyLaneJob, "_samples", read)
     with pytest.raises(KeyboardInterrupt):
