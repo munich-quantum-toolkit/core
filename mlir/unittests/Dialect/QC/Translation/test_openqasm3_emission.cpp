@@ -138,6 +138,29 @@ c[2:] = measure q[2:];
   expectOneSample(*restored, "101010");
 }
 
+TEST(OpenQASM3EmissionTest, RoundTripsAffineAndOverlappingClassicalSlices) {
+  constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.1;
+qubit[4] q;
+for int i in [0:2] { x q[i:i+1]; }
+bit[4] c = measure q;
+for int i in [0:1] { c[i+1:i+2] = c[i:i+1]; }
+bit[2] reversed = c[3:-1:2];
+output bit result;
+result = (c == "0111") && (reversed == "10");
+)qasm";
+  MLIRContext context;
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  ASSERT_TRUE(succeeded(emitted));
+  ASSERT_TRUE(openqasm::frontend::analyzeOpenQASM(
+      *emitted, openqasm::frontend::GatePolicy::Strict));
+  auto restored = qc::translateOpenQASMToQC(*emitted, &context);
+  ASSERT_TRUE(restored);
+  expectOneSample(*moduleOp);
+  expectOneSample(*restored);
+}
+
 TEST(OpenQASM3EmissionTest, RoundTripsSwitchBreakContinueAndFallthrough) {
   constexpr auto fixtures =
       std::to_array<std::tuple<const char*, const char*, const char*>>({
