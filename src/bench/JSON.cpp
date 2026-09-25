@@ -320,48 +320,6 @@ void requireBenchmark(const Json& root, const std::string_view expected,
                             [&options] { return BV(std::move(options)); });
 }
 
-[[nodiscard]] ModularMultiplier
-parseModularMultiplierParameters(const Json& parameters,
-                                 const std::string_view source) {
-  rejectUnknownKeys(parameters,
-                    {"multiplier", "modulus", "multiplicand", "control"},
-                    source, "$/parameters");
-  auto control = std::string("1");
-  if (const auto value = parameters.find("control");
-      value != parameters.end()) {
-    control = stringValue(*value, source, "$/parameters/control");
-  }
-  if (control.size() != 1U) {
-    fail(source, "$/parameters/control", "must be '0', '1', or '+'");
-  }
-  return constructBenchmark(source, [&] {
-    return ModularMultiplier({
-        .multiplier = stringValue(
-            required(parameters, "multiplier", source, "$/parameters"), source,
-            "$/parameters/multiplier"),
-        .modulus =
-            stringValue(required(parameters, "modulus", source, "$/parameters"),
-                        source, "$/parameters/modulus"),
-        .multiplicand = stringValue(
-            required(parameters, "multiplicand", source, "$/parameters"),
-            source, "$/parameters/multiplicand"),
-        .control = control.front(),
-    });
-  });
-}
-
-[[nodiscard]] WState parseWStateParameters(const Json& parameters,
-                                           const std::string_view source) {
-  rejectUnknownKeys(parameters, {"qubits"}, source, "$/parameters");
-  return constructBenchmark(source, [&] {
-    return WState({
-        .qubits =
-            sizeValue(required(parameters, "qubits", source, "$/parameters"),
-                      source, "$/parameters/qubits"),
-    });
-  });
-}
-
 [[nodiscard]] GHZ parseGHZParameters(const Json& parameters,
                                      const std::string_view source) {
   rejectUnknownKeys(parameters, {"qubits", "topology", "basis"}, source,
@@ -411,6 +369,36 @@ parseModularMultiplierParameters(const Json& parameters,
   }
   return constructBenchmark(source,
                             [&options] { return Grover(std::move(options)); });
+}
+
+[[nodiscard]] ModularMultiplier
+parseModularMultiplierParameters(const Json& parameters,
+                                 const std::string_view source) {
+  rejectUnknownKeys(parameters,
+                    {"multiplier", "modulus", "multiplicand", "control"},
+                    source, "$/parameters");
+  auto control = std::string("1");
+  if (const auto value = parameters.find("control");
+      value != parameters.end()) {
+    control = stringValue(*value, source, "$/parameters/control");
+  }
+  if (control.size() != 1U) {
+    fail(source, "$/parameters/control", "must be '0', '1', or '+'");
+  }
+  return constructBenchmark(source, [&] {
+    return ModularMultiplier({
+        .multiplier = stringValue(
+            required(parameters, "multiplier", source, "$/parameters"), source,
+            "$/parameters/multiplier"),
+        .modulus =
+            stringValue(required(parameters, "modulus", source, "$/parameters"),
+                        source, "$/parameters/modulus"),
+        .multiplicand = stringValue(
+            required(parameters, "multiplicand", source, "$/parameters"),
+            source, "$/parameters/multiplicand"),
+        .control = control.front(),
+    });
+  });
 }
 
 [[nodiscard]] Multiplexer
@@ -546,6 +534,18 @@ parseTeleportationParameters(const Json& parameters,
   return Teleportation{};
 }
 
+[[nodiscard]] WState parseWStateParameters(const Json& parameters,
+                                           const std::string_view source) {
+  rejectUnknownKeys(parameters, {"qubits"}, source, "$/parameters");
+  return constructBenchmark(source, [&] {
+    return WState({
+        .qubits =
+            sizeValue(required(parameters, "qubits", source, "$/parameters"),
+                      source, "$/parameters/qubits"),
+    });
+  });
+}
+
 [[nodiscard]] std::string_view topologyName(const GHZTopology topology) {
   return topology == GHZTopology::Linear ? "linear" : "star";
 }
@@ -574,20 +574,6 @@ parseTeleportationParameters(const Json& parameters,
   };
 }
 
-[[nodiscard]] Json parametersJSON(const ModularMultiplier& benchmark) {
-  const auto& options = benchmark.options();
-  return {
-      {"control", std::string(1, options.control)},
-      {"multiplicand", options.multiplicand},
-      {"modulus", options.modulus},
-      {"multiplier", options.multiplier},
-  };
-}
-
-[[nodiscard]] Json parametersJSON(const WState& benchmark) {
-  return {{"qubits", benchmark.options().qubits}};
-}
-
 [[nodiscard]] Json parametersJSON(const GHZ& benchmark) {
   const auto& options = benchmark.options();
   return {
@@ -602,6 +588,16 @@ parseTeleportationParameters(const Json& parameters,
   return {
       {"iterations", *options.iterations},
       {"marked_bitstring", options.markedBitstring},
+  };
+}
+
+[[nodiscard]] Json parametersJSON(const ModularMultiplier& benchmark) {
+  const auto& options = benchmark.options();
+  return {
+      {"control", std::string(1, options.control)},
+      {"multiplicand", options.multiplicand},
+      {"modulus", options.modulus},
+      {"multiplier", options.multiplier},
   };
 }
 
@@ -657,6 +653,10 @@ parseTeleportationParameters(const Json& parameters,
   return Json::object();
 }
 
+[[nodiscard]] Json parametersJSON(const WState& benchmark) {
+  return {{"qubits", benchmark.options().qubits}};
+}
+
 [[nodiscard]] Json analyticReferenceJSON(
     const Output& output, const std::string_view model,
     const std::optional<std::string_view> successOutcome = std::nullopt) {
@@ -678,15 +678,6 @@ parseTeleportationParameters(const Json& parameters,
                                benchmark.options().hiddenBitstring);
 }
 
-[[nodiscard]] Json referenceJSON(const ModularMultiplier& benchmark) {
-  return analyticReferenceJSON(benchmark.output(), "modular_multiplier",
-                               benchmark.expectedResult());
-}
-
-[[nodiscard]] Json referenceJSON(const WState& benchmark) {
-  return analyticReferenceJSON(benchmark.output(), "w_state");
-}
-
 [[nodiscard]] Json referenceJSON(const GHZ& benchmark) {
   return analyticReferenceJSON(benchmark.output(), "ghz");
 }
@@ -694,6 +685,11 @@ parseTeleportationParameters(const Json& parameters,
 [[nodiscard]] Json referenceJSON(const Grover& benchmark) {
   return analyticReferenceJSON(benchmark.output(), "grover_single_marked",
                                benchmark.options().markedBitstring);
+}
+
+[[nodiscard]] Json referenceJSON(const ModularMultiplier& benchmark) {
+  return analyticReferenceJSON(benchmark.output(), "modular_multiplier",
+                               benchmark.expectedResult());
 }
 
 [[nodiscard]] Json referenceJSON(const Multiplexer& benchmark) {
@@ -719,6 +715,10 @@ parseTeleportationParameters(const Json& parameters,
 
 [[nodiscard]] Json referenceJSON(const Teleportation& benchmark) {
   return analyticReferenceJSON(benchmark.output(), "teleportation", "0");
+}
+
+[[nodiscard]] Json referenceJSON(const WState& benchmark) {
+  return analyticReferenceJSON(benchmark.output(), "w_state");
 }
 
 [[nodiscard]] Json semanticJSON(const std::string_view id,
@@ -839,74 +839,6 @@ template <class Benchmark>
   });
 }
 
-[[nodiscard]] Json modularMultiplierInstanceSpecificationSchema() {
-  return baseInstanceSpecificationSchema<ModularMultiplier>({
-      {"additionalProperties", false},
-      {
-          "properties",
-          {
-              {"control", {{"default", "1"}, {"enum", {"0", "1", "+"}}}},
-              {
-                  "multiplicand",
-                  {
-                      {"type", "string"},
-                      {"minLength", 2},
-                      {"maxLength", ModularMultiplierOptions::MAX_BITS},
-                      {"pattern", "^[01+]+$"},
-                  },
-              },
-              {
-                  "modulus",
-                  {
-                      {
-                          "maxLength",
-                          ModularMultiplierOptions::MAX_BITS,
-                      },
-                      {"minLength", 2},
-                      {"pattern", "^1[01]+$"},
-                      {"type", "string"},
-                  },
-              },
-              {
-                  "multiplier",
-                  {
-                      {
-                          "maxLength",
-                          ModularMultiplierOptions::MAX_BITS,
-                      },
-                      {"minLength", 2},
-                      {"pattern", "^[01]+$"},
-                      {"type", "string"},
-                  },
-              },
-          },
-      },
-      {"required", {"multiplier", "modulus", "multiplicand"}},
-      {"type", "object"},
-  });
-}
-
-[[nodiscard]] Json wStateInstanceSpecificationSchema() {
-  return baseInstanceSpecificationSchema<WState>({
-      {"additionalProperties", false},
-      {"type", "object"},
-      {"required", {"qubits"}},
-      {
-          "properties",
-          {
-              {
-                  "qubits",
-                  {
-                      {"type", "integer"},
-                      {"minimum", 1},
-                      {"maximum", std::numeric_limits<int64_t>::max()},
-                  },
-              },
-          },
-      },
-  });
-}
-
 [[nodiscard]] Json ghzInstanceSpecificationSchema() {
   Json parameters{
       {"additionalProperties", false},
@@ -985,6 +917,53 @@ template <class Benchmark>
           },
       },
       {"required", {"marked_bitstring"}},
+      {"type", "object"},
+  });
+}
+
+[[nodiscard]] Json modularMultiplierInstanceSpecificationSchema() {
+  return baseInstanceSpecificationSchema<ModularMultiplier>({
+      {"additionalProperties", false},
+      {
+          "properties",
+          {
+              {"control", {{"default", "1"}, {"enum", {"0", "1", "+"}}}},
+              {
+                  "multiplicand",
+                  {
+                      {"type", "string"},
+                      {"minLength", 2},
+                      {"maxLength", ModularMultiplierOptions::MAX_BITS},
+                      {"pattern", "^[01+]+$"},
+                  },
+              },
+              {
+                  "modulus",
+                  {
+                      {
+                          "maxLength",
+                          ModularMultiplierOptions::MAX_BITS,
+                      },
+                      {"minLength", 2},
+                      {"pattern", "^1[01]+$"},
+                      {"type", "string"},
+                  },
+              },
+              {
+                  "multiplier",
+                  {
+                      {
+                          "maxLength",
+                          ModularMultiplierOptions::MAX_BITS,
+                      },
+                      {"minLength", 2},
+                      {"pattern", "^[01]+$"},
+                      {"type", "string"},
+                  },
+              },
+          },
+      },
+      {"required", {"multiplier", "modulus", "multiplicand"}},
       {"type", "object"},
   });
 }
@@ -1236,6 +1215,27 @@ template <class Benchmark>
   return baseInstanceSpecificationSchema<Teleportation>({
       {"additionalProperties", false},
       {"properties", Json::object()},
+      {"type", "object"},
+  });
+}
+
+[[nodiscard]] Json wStateInstanceSpecificationSchema() {
+  return baseInstanceSpecificationSchema<WState>({
+      {"additionalProperties", false},
+      {
+          "properties",
+          {
+              {
+                  "qubits",
+                  {
+                      {"maximum", std::numeric_limits<int64_t>::max()},
+                      {"minimum", 1},
+                      {"type", "integer"},
+                  },
+              },
+          },
+      },
+      {"required", {"qubits"}},
       {"type", "object"},
   });
 }

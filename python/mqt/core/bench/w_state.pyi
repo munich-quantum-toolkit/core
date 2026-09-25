@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""W-state preparation instances and options."""
+"""W-state benchmark instances and options."""
 
 from collections.abc import Mapping
 

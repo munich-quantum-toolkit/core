@@ -12,9 +12,9 @@
 #include "bench/WState.hpp"
 
 #include "nanobind/nanobind.h"
-#include "nanobind/stl/map.h"         /// NOLINT(misc-include-cleaner)
-#include "nanobind/stl/string.h"      /// NOLINT(misc-include-cleaner)
-#include "nanobind/stl/string_view.h" /// NOLINT(misc-include-cleaner)
+#include "nanobind/stl/map.h"         // NOLINT(misc-include-cleaner)
+#include "nanobind/stl/string.h"      // NOLINT(misc-include-cleaner)
+#include "nanobind/stl/string_view.h" // NOLINT(misc-include-cleaner)
 
 #include <cstddef>
 
@@ -23,7 +23,7 @@ namespace mqt {
 namespace nb = nanobind;
 using namespace nb::literals;
 
-/// NOLINTNEXTLINE(misc-use-internal-linkage)
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerWState(const nb::module_& m) {
   nb::class_<bench::WStateOptions>(m, "Options",
                                    "Parameters for W-state preparation.")
