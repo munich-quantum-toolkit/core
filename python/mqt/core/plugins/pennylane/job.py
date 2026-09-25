@@ -63,6 +63,8 @@ class PennyLaneJob:
             [BatchEntry(index, copy) for index, (_, copies) in enumerate(prepared) for copy in range(len(copies))],
             submit=self._submit,
             decode=self._samples,
+            submit_programs=self._submit_programs,
+            group_by=[(program.program_format, shots) for program, shots in self._prepared],
             submission_error=lambda msg: PennyLaneExecutionError(msg, job=self),
             execution_error=lambda msg: PennyLaneExecutionError(msg, job=self),
             max_retries=max_retries,
@@ -80,8 +82,17 @@ class PennyLaneJob:
             converted.payload, converted.program_format, shots, **self._parameters
         )
 
+    def _submit_programs(self, indices: Sequence[int]) -> Job | None:
+        converted, shots = self._prepared[indices[0]]
+        return self._device.qdmi_device.try_submit_programs(
+            [self._prepared[index][0].payload for index in indices],
+            converted.program_format,
+            shots,
+            **self._parameters,
+        )
+
     @staticmethod
-    def _shots_or_counts(job: Job) -> list[str]:
+    def _shots_or_counts(job: Job, program_index: int = 0) -> list[str]:
         """Read ordered shots, falling back to an equivalent expansion of counts.
 
         Returns:
@@ -92,20 +103,20 @@ class PennyLaneJob:
         """
         shots_error = None
         try:
-            if shots := job.get_shots():
+            if shots := job.get_shots(program_index):
                 return shots
         except RuntimeError as exc:
             shots_error = exc
 
         try:
-            counts = job.get_counts()
+            counts = job.get_counts(program_index)
         except RuntimeError as exc:
             msg = f"Could not read QDMI samples: shots: {shots_error}; counts: {exc}"
             causes = [cause for cause in (shots_error, exc) if cause is not None]
             raise PennyLaneExecutionError(msg) from ExceptionGroup("QDMI result retrieval failed", causes)
         return [bitstring for bitstring, count in sorted(counts.items()) for _ in range(count)]
 
-    def _samples(self, index: int, job: Job) -> np.ndarray:
+    def _samples(self, index: int, job: Job, program_index: int) -> np.ndarray:
         """Convert QDMI bit strings to PennyLane sample rows.
 
         Returns:
@@ -115,7 +126,7 @@ class PennyLaneJob:
             PennyLaneExecutionError: If QDMI returns malformed or incomplete results.
         """
         converted, shots = self._prepared[index]
-        bitstrings = self._shots_or_counts(job)
+        bitstrings = self._shots_or_counts(job, program_index)
         if len(bitstrings) != shots:
             msg = f"QDMI returned {len(bitstrings)} samples for a {shots}-shot job."
             raise PennyLaneExecutionError(msg)
@@ -134,11 +145,12 @@ class PennyLaneJob:
         # QDMI spells the highest-index site first; PennyLane starts with wire zero.
         return packed[:, ::-1][:, converted.measurement_order] - ord("0")
 
-    def _record_submission(self, index: int) -> None:
-        _, shots = self._prepared[index]
+    def _record_submission(self, indices: Sequence[int]) -> None:
         self._device._submitted_jobs += 1  # ruff:ignore[private-member-access] Update the device's read-only total.
         if self._device.tracker.active:
-            self._device.tracker.update(executions=1, shots=shots)
+            self._device.tracker.update(
+                executions=len(indices), shots=sum(self._prepared[index][1] for index in indices)
+            )
             self._device.tracker.record()
 
     @contextmanager
