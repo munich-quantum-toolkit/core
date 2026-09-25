@@ -10,8 +10,7 @@
 
 import pytest
 
-from mqt.core.qdmi import Job, ProgramFormat
-from mqt.core.qdmi import open_device
+from mqt.core.qdmi import Job, ProgramFormat, open_device
 
 PROGRAM = 'OPENQASM 3.0; include "stdgates.inc"; qubit q; bit c; x q; c = measure q;'
 

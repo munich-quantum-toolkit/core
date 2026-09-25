@@ -170,12 +170,12 @@ bool Worker::execute(const WorkerRequest& request, WorkerResponse& response) {
 }
 WorkerPool::~WorkerPool() { shutdown(); }
 std::shared_ptr<Worker> WorkerPool::acquire() {
+  std::shared_ptr<Worker> worker;
   const std::scoped_lock lock(mutex_);
   if (!accepting_) {
     return {};
   }
-  auto worker =
-      idle_.empty() ? std::make_shared<Worker>() : std::move(idle_.back());
+  worker = idle_.empty() ? std::make_shared<Worker>() : std::move(idle_.back());
   if (!idle_.empty()) {
     idle_.pop_back();
   }
