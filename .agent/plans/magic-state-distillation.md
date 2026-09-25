@@ -83,12 +83,11 @@ stubs, C++ lint, and executable documentation also passed after rebasing onto
 - Generated MLIR references and `uvx nox --non-interactive -s docs` passed,
   including all executable examples and generated local-link checks.
 
-The examples in `docs/benchmarks.md` reproduce the 15-qubit execution through
-`sample`, then `compile_program` and `submit_program` for both DDSIM payload
-paths. Each uses 16 shots and seed 17 (`custom1=17` for QDMI), waits for the
-job, and asserts `{"00": 16}`. Intermediate measurements control subsequent
-gates, so the simulator executes the circuit once per shot. These examples check
-a deterministic ideal output; they do not need a large statistical sample.
+The example in `docs/benchmarks.md` reproduces the 15-qubit execution through
+`sample` with 16 shots and seed 17. Python tests also cover DDSIM Adaptive QIR
+and OpenQASM 3 submission. Intermediate measurements control subsequent gates,
+so the simulator executes the circuit once per shot. The ideal output is
+deterministic and does not need a large statistical sample.
 
 Shot-count measurements on 2026-09-12 used the same generated level 1 program,
 reused the compiled QDMI payloads, and took the median of three runs per case.

@@ -24,7 +24,9 @@ struct MagicStateDistillationOptions {
   size_t levels = 1;
 };
 
-/// Distill ideal |T> = T|+> inputs, consuming retained outputs at each level.
+/// A validated concatenated magic-state distillation benchmark.
+///
+/// Each level consumes the preceding level's retained quantum states.
 /// Bit 1 flags any rejected block; bit 0 checks the root output in the T basis.
 class MQT_CORE_BENCH_EXPORT MagicStateDistillation final {
 public:
@@ -41,4 +43,4 @@ private:
   Output output_;
 };
 
-} /* namespace mqt::bench */
+} // namespace mqt::bench

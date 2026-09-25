@@ -67,9 +67,9 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
       m.def_submodule("grover", "Grover benchmark instances and options.");
   registerGrover(grover);
 
-  const nb::module_ magicStateDistillation =
-      m.def_submodule("magic_state_distillation",
-                      "Concatenated 15-to-1 magic-state distillation.");
+  const nb::module_ magicStateDistillation = m.def_submodule(
+      "magic_state_distillation",
+      "Magic-state distillation benchmark instances and options.");
   registerMagicStateDistillation(magicStateDistillation);
   const nb::module_ modularMultiplier = m.def_submodule(
       "modular_multiplier",

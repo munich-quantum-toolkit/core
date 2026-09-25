@@ -478,32 +478,21 @@ direct input-state protocol in
 [Bravyi and Haah, Appendix A](https://arxiv.org/pdf/1209.2426), using the
 15-qubit code of [Bravyi and Kitaev](https://arxiv.org/abs/quant-ph/0403025).
 Each block measures Z checks, applies conditional Clifford corrections, measures
-X checks, and decodes one retained state. The fixed code convention labels
-columns by the nonzero four-bit vectors; its four even generator rows are their
-coordinate bits and its odd logical row is all ones.
+X checks, and decodes one retained state.
 
 Set `levels` to 1–4 (default 1). A level consumes the actual retained quantum
 outputs of the preceding level. The circuit allocates exactly
-$15^{\mathrm{levels}}$ qubits: 15, 225, 3,375, or 50,625. A private function
-implements each block, and structured loops traverse the blocks. Syndrome
-measurements use those same qubits, without extra ancillas.
-
-```json
-{"schema_version":1,"benchmark":"magic-state-distillation","parameters":{"levels":1}}
-```
+$15^{\mathrm{levels}}$ qubits: 15, 225, 3,375, or 50,625.
 
 The two-bit `result` combines a sticky rejection flag in bit 1 with a root-state
-check in bit 0. Only the root is measured after T-dagger and H; this checks its
-relative phase as well as its amplitudes. The measured root is then reset and
-reused to return the rejection flag as a measurement. Every block runs once,
-including blocks whose inputs come from a rejected subtree. Ideal input states
-give `00` with probability one. The benchmark does not model input noise,
-physical error correction, or retries, so this example does not measure fidelity
-improvement from noisy inputs.
+check in bit 0. Ideal input states give `00` with probability one. Every block
+runs once, including blocks whose inputs come from a rejected subtree. The
+benchmark does not model input noise, physical error correction, or retries, so
+this example does not measure fidelity improvement from noisy inputs.
 
 #### Sample the 15-qubit circuit directly
 
-These examples use 16 shots to keep execution short. The circuit runs once per
+This example uses 16 shots to keep execution short. The circuit runs once per
 shot because later gates depend on intermediate measurements. Increase the shot
 count when collecting statistics; the ideal output here is deterministic.
 
@@ -511,47 +500,16 @@ count when collecting statistics; the ideal output here is deterministic.
 from mqt.core.bench import magic_state_distillation
 from mqt.core.mlir import sample
 
-factory = magic_state_distillation.MagicStateDistillation(
-    magic_state_distillation.Options(levels=1)
-)
-direct_counts = sample(factory.generate(), shots=16, seed=17)
+distillation = magic_state_distillation.MagicStateDistillation()
+direct_counts = sample(distillation.generate(), shots=16, seed=17)
 assert direct_counts == {"00": 16}
 print(direct_counts)
 ```
 
-#### Run through DDSIM with two program formats
-
-The default DDSIM target selects Adaptive QIR. The second submission selects
-OpenQASM 3 explicitly; both execute the measurement-dependent corrections.
-
-```{code-cell} ipython3
-from mqt.core.mlir import compile_program, submit_program
-from mqt.core.qdmi import ProgramFormat
-from mqt.core.qdmi.driver import open_device
-
-factory_device = open_device("mqt.ddsim.default")
-for requested_format in (None, ProgramFormat.QASM3):
-    compiled_factory = compile_program(
-        factory.generate(), target=factory_device, program_format=requested_format
-    )
-    if requested_format is None:
-        assert compiled_factory.program_format in (
-            ProgramFormat.QIR_ADAPTIVE_MODULE,
-            ProgramFormat.QIR_ADAPTIVE_STRING,
-        )
-    factory_job = submit_program(
-        compiled_factory, target=factory_device, num_shots=16, custom1=17
-    )
-    factory_job.wait()
-    factory_counts = factory_job.get_counts()
-    assert factory_counts == {"00": 16}
-    assert factory.evaluate(factory_counts).success_probability == 1.0
-    print(compiled_factory.program_format.name, factory_counts)
-```
-
 Higher levels provide larger structured programs; support for their generation
-does not guarantee a given device's capacity. These adaptive jobs expose counts,
-without an uncollapsed statevector; see {doc}`qdmi/ddsim_device`.
+does not guarantee a given device's capacity. For device execution, see
+{doc}`qdmi/ddsim_device`; adaptive jobs expose counts, not an uncollapsed
+statevector.
 
 ### Shor order finding
 

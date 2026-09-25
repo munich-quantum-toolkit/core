@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""Concatenated 15-to-1 magic-state distillation."""
+"""Magic-state distillation benchmark instances and options."""
 
 from collections.abc import Mapping
 
@@ -22,7 +22,7 @@ class Options:
         """Concatenated levels in [1, 4], using 15**levels qubits."""
 
 class MagicStateDistillation:
-    """Concatenated 15-to-1 Reed--Muller distillation.
+    """A validated concatenated magic-state distillation benchmark.
 
     Inputs are ideal :math:`|T\\rangle = T|+\\rangle` states.
     Bit 1 flags any rejected block; bit 0 checks the retained root state in the T

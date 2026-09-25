@@ -12,9 +12,9 @@
 #include "bench/MagicStateDistillation.hpp"
 
 #include "nanobind/nanobind.h"
-#include "nanobind/stl/map.h"         /// NOLINT(misc-include-cleaner)
-#include "nanobind/stl/string.h"      /// NOLINT(misc-include-cleaner)
-#include "nanobind/stl/string_view.h" /// NOLINT(misc-include-cleaner)
+#include "nanobind/stl/map.h"         // NOLINT(misc-include-cleaner)
+#include "nanobind/stl/string.h"      // NOLINT(misc-include-cleaner)
+#include "nanobind/stl/string_view.h" // NOLINT(misc-include-cleaner)
 
 #include <cstddef>
 
@@ -23,7 +23,7 @@ namespace mqt {
 namespace nb = nanobind;
 using namespace nb::literals;
 
-/// NOLINTNEXTLINE(misc-use-internal-linkage)
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerMagicStateDistillation(const nb::module_& m) {
   nb::class_<bench::MagicStateDistillationOptions>(
       m, "Options",
@@ -33,7 +33,7 @@ void registerMagicStateDistillation(const nb::module_& m) {
               "Concatenated levels in [1, 4], using 15**levels qubits.");
   auto magicStateDistillation = nb::class_<bench::MagicStateDistillation>(
       m, "MagicStateDistillation",
-      R"pb(Concatenated 15-to-1 Reed--Muller distillation.
+      R"pb(A validated concatenated magic-state distillation benchmark.
 
 Inputs are ideal :math:`|T\rangle = T|+\rangle` states.
 Bit 1 flags any rejected block; bit 0 checks the retained root state in the T
@@ -90,4 +90,4 @@ retained quantum outputs, using exactly ``15**levels`` qubits.)pb");
                   "Parse a strict benchmark manifest.");
 }
 
-} /* namespace mqt */
+} // namespace mqt
