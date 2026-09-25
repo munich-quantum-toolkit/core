@@ -158,8 +158,6 @@ class QDMIJob(JobV1):
     def _submit_entry(self, index: int) -> QDMIJobHandle:
         assert self._programs is not None
         program, program_format = self._programs[index]
-        if index == 0:
-            self._job_id = ""
         return self._backend.device.submit_job(program=program, program_format=program_format, num_shots=self._shots)
 
     def collect(self) -> tuple[BatchEntry[ExperimentResult], ...]:
@@ -184,17 +182,19 @@ class QDMIJob(JobV1):
         return self
 
     def job_id(self) -> str:
-        """Return the first remote job ID, querying it only when requested.
+        """Return the first entry's earliest accepted remote job ID.
+
+        The ID is queried on demand and stays unchanged across replacements.
 
         Raises:
             JobExecutionError: If the first entry has no job handle.
         """
         if not self._job_id:
-            attempts = self.entries[0].attempts
-            if not attempts or attempts[-1].handle is None:
+            handle = next((attempt.handle for attempt in self.entries[0].attempts if attempt.handle is not None), None)
+            if handle is None:
                 msg = "The first batch entry has no job handle."
                 raise JobExecutionError(msg, job=self)
-            self._job_id = attempts[-1].handle.id
+            self._job_id = handle.id
         return self._job_id
 
     def cancel(self) -> bool:

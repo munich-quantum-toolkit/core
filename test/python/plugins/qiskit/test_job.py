@@ -213,15 +213,16 @@ def test_malformed_histogram_raises(recording_backend: RecordingBackend, counts:
 
 
 @pytest.mark.parametrize("error", [RuntimeError("submission failed"), KeyboardInterrupt()])
+@pytest.mark.parametrize("failed_index", [0, 1])
 def test_submission_failure_recovery(
-    recording_backend: RecordingBackend, monkeypatch: pytest.MonkeyPatch, error: BaseException
+    recording_backend: RecordingBackend, monkeypatch: pytest.MonkeyPatch, error: BaseException, failed_index: int
 ) -> None:
     """Keep accepted jobs and expose the uncertain submission after admission fails."""
     backend, jobs, _ = recording_backend
     submit = backend.device.submit_job
 
     def failing_submit(*, program: str, program_format: ProgramFormat, num_shots: int) -> Job:
-        if len(jobs) == 1:
+        if len(jobs) == failed_index:
             raise error
         return submit(program=program, program_format=program_format, num_shots=num_shots)
 
@@ -236,7 +237,7 @@ def test_submission_failure_recovery(
     job.collect()
     monkeypatch.setattr(backend.device, "submit_job", submit)
     job.submit()
-    job.resubmit([1], allow_unknown=True)
+    job.resubmit([failed_index], allow_unknown=True)
     assert job.result().get_counts() == [{"0": 1024}] * 3
     jobs[0].get_counts.assert_called_once()
     for handle in jobs:
@@ -251,6 +252,20 @@ def test_validation_before_submission(recording_backend: RecordingBackend) -> No
     with pytest.raises(CircuitValidationError, match="unbound parameters"):
         backend.run([QuantumCircuit(1, 1), invalid])
     assert not jobs
+
+
+def test_preparation_interruption_clears_last_job(
+    recording_backend: RecordingBackend, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An interrupted new run cannot expose a preceding batch as its recovery handle."""
+    backend, jobs, _ = recording_backend
+    previous = backend.run(QuantumCircuit(1, 1), shots=1)
+    monkeypatch.setattr(backend, "_serialize_circuit", MagicMock(side_effect=KeyboardInterrupt))
+    with pytest.raises(KeyboardInterrupt):
+        backend.run(QuantumCircuit(1, 1), shots=2)
+    assert backend.last_job is None
+    assert previous.result().get_counts() == {"0": 1}
+    assert len(jobs) == 1
 
 
 @pytest.mark.parametrize(
@@ -383,17 +398,23 @@ def test_estimator_nonzero_uncertainty(recording_backend: RecordingBackend, monk
     np.testing.assert_equal(result.data["stds"], [2.5, 0.5, 0.5])
 
 
-def test_automatic_replacement_keeps_successful_results(recording_backend: RecordingBackend) -> None:
-    """A failed first task is replaced while later successful experiments stay cached."""
+@pytest.mark.parametrize("read_id_before_retry", [False, True])
+def test_automatic_replacement_keeps_successful_results(
+    recording_backend: RecordingBackend, *, read_id_before_retry: bool
+) -> None:
+    """Replacing a failed task preserves the batch ID and cached successful experiments."""
     backend, jobs, events = recording_backend
     circuits = [QuantumCircuit(1, 1, metadata={"input": i}) for i in range(3)]
     job = backend.run(circuits, shots=4, memory=True, max_retries=3)
     jobs[0].check.side_effect = lambda: Job.Status.FAILED
-    assert job.job_id() == "remote-id"
+    type(jobs[0]).id = PropertyMock(side_effect=lambda: (events.append("id"), "original-id")[1])
+    if read_id_before_retry:
+        assert job.job_id() == "original-id"
     job.collect()
     result = job.result()
     assert len(jobs) == 4
-    assert events.count("id") == 2
+    assert result.job_id == job.job_id() == "original-id"
+    assert events.count("id") == 1
     assert result.results is not None
     assert [experiment.header["metadata"] for experiment in result.results] == [{"input": i} for i in range(3)]
     assert job.result() is result

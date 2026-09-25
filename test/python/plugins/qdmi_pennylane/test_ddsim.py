@@ -19,7 +19,6 @@ import numpy as np
 import pytest
 
 if TYPE_CHECKING:
-    from mqt.core.plugins.pennylane.converter import _ConvertedProgram
     from mqt.core.qdmi import Job
 
 try:
@@ -29,7 +28,7 @@ except ImportError:
 
 import networkx as nx
 
-from mqt.core.plugins.pennylane import DDSIMDevice, PennyLaneValidationError
+from mqt.core.plugins.pennylane import DDSIMDevice, PennyLaneJob, PennyLaneValidationError
 
 GRAPH_EDGES = ((0, 1), (0, 2), (1, 2), (2, 3))
 
@@ -213,16 +212,16 @@ def test_postprocessor_recovers_forward_measurements(
     angles = np.array([0.0, np.pi])
     expected = circuit(angles)
     tapes, postprocess = qp.workflow.construct_batch(circuit, level="device")(angles)
-    original = device._samples  # ruff:ignore[private-member-access] Inject a failure after native submission.
+    original = PennyLaneJob._samples  # ruff:ignore[private-member-access] Inject a failure after native submission.
     reads = []
 
-    def read(job: Job, converted: _ConvertedProgram, requested: int):
+    def read(batch: PennyLaneJob, index: int, job: Job):
         reads.append(job)
         if len(reads) == 2:
             raise KeyboardInterrupt
-        return original(job, converted, requested)
+        return original(batch, index, job)
 
-    monkeypatch.setattr(device, "_samples", read)
+    monkeypatch.setattr(PennyLaneJob, "_samples", read)
     with pytest.raises(KeyboardInterrupt):
         device.execute(tapes)
     batch = device.last_job

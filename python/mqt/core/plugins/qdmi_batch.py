@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from numbers import Integral
 from typing import TYPE_CHECKING, Generic, TypeVar
 
 from mqt.core.qdmi import Job
@@ -19,7 +18,7 @@ from mqt.core.qdmi import Job
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
-__all__ = ["Batch", "BatchEntry", "JobAttempt", "JobFailure", "validate_max_retries"]
+__all__ = ["Batch", "BatchEntry", "JobAttempt", "JobFailure"]
 
 _Result = TypeVar("_Result")
 _TERMINAL = {Job.Status.DONE, Job.Status.FAILED, Job.Status.CANCELED}
@@ -58,21 +57,6 @@ class BatchEntry(Generic[_Result]):
         return self.attempts[-1].result if self.attempts else None
 
 
-def validate_max_retries(value: object) -> int:
-    """Validate the number of automatic replacement executions.
-
-    Returns:
-        The validated retry count.
-
-    Raises:
-        ValueError: If the value is not a nonnegative integer.
-    """
-    if isinstance(value, bool) or not isinstance(value, Integral) or value < 0:
-        msg = f"max_retries must be a nonnegative integer, got {value!r}."
-        raise ValueError(msg)
-    return int(value)
-
-
 class Batch(Generic[_Result]):
     """Shared recovery engine for the QDMI adapters.
 
@@ -99,7 +83,7 @@ class Batch(Generic[_Result]):
         self._decode = decode
         self._submission_error = submission_error
         self._execution_error = execution_error
-        self._max_retries = validate_max_retries(max_retries)
+        self._max_retries = max_retries
         self._cancelled = False
         self._on_submit = on_submit
 
@@ -121,10 +105,7 @@ class Batch(Generic[_Result]):
 
     def _validate_indices(self, indices: Sequence[int]) -> tuple[int, ...]:
         selected = tuple(indices)
-        if any(
-            isinstance(index, bool) or not isinstance(index, Integral) or not 0 <= index < len(self._entries)
-            for index in selected
-        ) or len(set(selected)) != len(selected):
+        if any(not 0 <= index < len(self._entries) for index in selected) or len(set(selected)) != len(selected):
             msg = "Indices must be distinct valid batch entry indices."
             raise ValueError(msg)
         return selected
@@ -184,7 +165,7 @@ class Batch(Generic[_Result]):
 
         Returns:
             Ordered entry snapshots, including every recorded failure.
-        """  # ruff:ignore[docstring-missing-exception] Per-entry errors are recorded, not propagated.
+        """
         for index in range(len(self._entries)) if indices is None else indices:
             entry = self._entries[index]
             if not entry.attempts or entry.result is not None:
@@ -201,14 +182,16 @@ class Batch(Generic[_Result]):
                     stage = "wait"
                     if not handle.wait():
                         msg = "Timed out waiting for the QDMI job."
-                        raise TimeoutError(msg)  # ruff:ignore[raise-within-try] Record this entry and continue collecting.
+                        self.record_failure(index, stage, TimeoutError(msg))
+                        continue
                     stage = "status"
                     status = handle.check()
                     self._set_attempt(index, replace(attempt, status=status))
                 stage = "execution"
                 if status != Job.Status.DONE:
                     msg = f"QDMI job did not complete successfully: {status.name}."
-                    raise RuntimeError(msg)  # ruff:ignore[raise-within-try] Record this entry and continue collecting.
+                    self.record_failure(index, stage, RuntimeError(msg))
+                    continue
                 stage = "result"
                 result = self._decode(index, handle)
                 current = self._entries[index].attempts[-1]
@@ -269,11 +252,7 @@ class Batch(Generic[_Result]):
 
         Raises:
             ValueError: If indices are invalid or replacement could duplicate active work.
-            TypeError: If allow_unknown is not a boolean.
         """
-        if not isinstance(allow_unknown, bool):
-            msg = "allow_unknown must be a boolean."
-            raise TypeError(msg)
         selected = self._validate_indices(indices)
         for index in selected:
             entry = self._entries[index]

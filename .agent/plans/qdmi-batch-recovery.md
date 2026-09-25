@@ -17,6 +17,9 @@ replaced. Submission failures stop further admission. Cancellation is explicit
 and disables automatic replacement.
 
 Exceptions expose `job`; adapters retain `last_job` before first submission.
+Each execution call clears `last_job` before preparing its batch, so preparation
+failure cannot expose a previous batch as the current recovery handle. Qiskit
+keeps the first entry's earliest accepted native ID across replacements.
 Qiskit's `from_circuits()` constructor snapshots headers and serializes the
 backend's prepared circuits before admission. Its existing positional
 constructor continues to accept submitted handles, which support collection and
@@ -52,8 +55,10 @@ or transport retries are introduced here.
 Shared lifecycle tests cover retry limits, replacement eligibility, submission
 uncertainty, interruption, and cancellation. Adapter tests cover configuration,
 result conversion, tracking, recovery handles, and PennyLane postprocessing.
-Repeated tests of shared mechanics are removed from the adapter suites.
+Typed recovery arguments rely on static checking; adapters validate dynamic
+configuration, and recovery still validates index bounds and lifecycle state.
 
-Final editable, wheel, lint, type, stub, and documentation checks are in
-progress. Synthetic failures and local DDSIM only; no paid cloud jobs are
-needed.
+The latest cleanup passes 604 QDMI and adapter tests, repository lint/type
+checks, and executable documentation with local link checks. Earlier packaging
+validation also covered isolated wheel imports and execution. Tests use
+synthetic failures and local DDSIM; no paid cloud jobs were submitted.

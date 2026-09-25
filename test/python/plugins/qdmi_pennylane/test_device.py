@@ -448,14 +448,15 @@ def test_retry_shot_copies_preserves_order_and_tracking(
         handle.cancel.assert_not_called()
 
 
-def test_invalid_retry_configuration(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("value", [-1, True, 1.5, "3", None])
+def test_invalid_retry_configuration(monkeypatch: pytest.MonkeyPatch, value: object) -> None:
     """Reject invalid retry counts through both PennyLane constructors before execution."""
     qdmi = stub_device()
     patch_open_device(monkeypatch, qdmi)
     with pytest.raises(PennyLaneConfigurationError, match="max_retries"):
-        QDMIDevice("fake.qdmi", max_retries=True)
+        QDMIDevice("fake.qdmi", max_retries=cast("int", value))
     with pytest.raises(PennyLaneConfigurationError, match="max_retries"):
-        qp.device("mqt.ddsim.default", max_retries=True)
+        qp.device("mqt.ddsim.default", max_retries=value)
     assert not qdmi.submissions
 
 
@@ -488,6 +489,27 @@ def test_partial_submission_retains_pennylane_batch(monkeypatch: pytest.MonkeyPa
     assert [samples.shape for samples in batch.result()] == [(2, 2), (3, 2), (4, 2)]
     assert device.submitted_jobs == 3
     assert not any(event.startswith("cancel") for event in qdmi.events)
+
+
+def test_preparation_interruption_clears_last_job(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An interrupted new execution cannot expose a preceding batch as its recovery handle."""
+    qdmi = stub_device()
+    patch_open_device(monkeypatch, qdmi)
+    device = QDMIDevice("fake.qdmi", wires=2)
+    tape = qp.tape.QuantumScript([], [qp.sample(wires=[0, 1])], shots=1)
+    samples = device.execute(tape)
+    previous = device.last_job
+    assert previous is not None
+
+    def interrupt(*_args: object) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("mqt.core.plugins.pennylane.device._ProgramConverter.convert", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        device.execute(qp.tape.QuantumScript([], [qp.sample(wires=[0, 1])], shots=2))
+    assert device.last_job is None
+    np.testing.assert_array_equal(previous.result(), samples)
+    assert len(qdmi.submissions) == 1
 
 
 def test_result_read_failures_retain_both_causes(monkeypatch: pytest.MonkeyPatch) -> None:

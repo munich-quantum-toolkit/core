@@ -10,10 +10,11 @@
 
 from __future__ import annotations
 
-# ruff: file-ignore[private-member-access] Companion handle owns the device execution bookkeeping.
 from contextlib import contextmanager
 from time import monotonic
 from typing import TYPE_CHECKING, cast
+
+import numpy as np
 
 from ..qdmi_batch import Batch, BatchEntry
 from .exceptions import PennyLaneExecutionError
@@ -21,10 +22,10 @@ from .exceptions import PennyLaneExecutionError
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
 
-    import numpy as np
     from pennylane.typing import Result, ResultBatch
 
     from mqt.core.qdmi import Job
+    from mqt.core.typing import QDMIJobParameters
 
     from .converter import _ConvertedProgram
     from .device import QDMIDevice
@@ -49,20 +50,22 @@ class PennyLaneJob:
         partitioned: tuple[bool, ...],
         *,
         single: bool,
+        parameters: QDMIJobParameters,
+        max_retries: int,
     ) -> None:
         """Snapshot prepared programs and shot partitions before the first submission."""
         self._device = device
         self._partitioned = partitioned
         self._single = single
         self._prepared = tuple((program, shots) for program, copies in prepared for shots in copies)
-        self._parameters = device._job_parameters.copy()
+        self._parameters = parameters.copy()
         self._batch: Batch[np.ndarray] = Batch(
             [BatchEntry(index, copy) for index, (_, copies) in enumerate(prepared) for copy in range(len(copies))],
             submit=self._submit,
-            decode=lambda index, job: device._samples(job, *self._prepared[index]),
+            decode=self._samples,
             submission_error=lambda msg: PennyLaneExecutionError(msg, job=self),
             execution_error=lambda msg: PennyLaneExecutionError(msg, job=self),
-            max_retries=device._max_retries,
+            max_retries=max_retries,
             on_submit=self._record_submission,
         )
 
@@ -77,9 +80,63 @@ class PennyLaneJob:
             converted.payload, converted.program_format, shots, **self._parameters
         )
 
+    @staticmethod
+    def _shots_or_counts(job: Job) -> list[str]:
+        """Read ordered shots, falling back to an equivalent expansion of counts.
+
+        Returns:
+            One QDMI bit string per shot.
+
+        Raises:
+            PennyLaneExecutionError: If the job exposes neither result representation.
+        """
+        shots_error = None
+        try:
+            if shots := job.get_shots():
+                return shots
+        except RuntimeError as exc:
+            shots_error = exc
+
+        try:
+            counts = job.get_counts()
+        except RuntimeError as exc:
+            msg = f"Could not read QDMI samples: shots: {shots_error}; counts: {exc}"
+            causes = [cause for cause in (shots_error, exc) if cause is not None]
+            raise PennyLaneExecutionError(msg) from ExceptionGroup("QDMI result retrieval failed", causes)
+        return [bitstring for bitstring, count in sorted(counts.items()) for _ in range(count)]
+
+    def _samples(self, index: int, job: Job) -> np.ndarray:
+        """Convert QDMI bit strings to PennyLane sample rows.
+
+        Returns:
+            A shot-by-wire array in PennyLane measurement order.
+
+        Raises:
+            PennyLaneExecutionError: If QDMI returns malformed or incomplete results.
+        """
+        converted, shots = self._prepared[index]
+        bitstrings = self._shots_or_counts(job)
+        if len(bitstrings) != shots:
+            msg = f"QDMI returned {len(bitstrings)} samples for a {shots}-shot job."
+            raise PennyLaneExecutionError(msg)
+
+        width = len(converted.wire_map)
+        cleaned: list[str] = []
+        for bitstring in bitstrings:
+            clean = bitstring.replace(" ", "")
+            if len(clean) != width or clean.strip("01"):
+                msg = f"QDMI returned an invalid {width}-wire shot: {bitstring!r}."
+                raise PennyLaneExecutionError(msg)
+            cleaned.append(clean)
+        if not bitstrings:
+            return np.asarray([], dtype=np.int8)
+        packed = np.frombuffer("".join(cleaned).encode("ascii"), dtype=np.int8).reshape(shots, width)
+        # QDMI spells the highest-index site first; PennyLane starts with wire zero.
+        return packed[:, ::-1][:, converted.measurement_order] - ord("0")
+
     def _record_submission(self, index: int) -> None:
         _, shots = self._prepared[index]
-        self._device._submitted_jobs += 1
+        self._device._submitted_jobs += 1  # ruff:ignore[private-member-access] Update the device's read-only total.
         if self._device.tracker.active:
             self._device.tracker.update(executions=1, shots=shots)
             self._device.tracker.record()
@@ -90,7 +147,7 @@ class PennyLaneJob:
         try:
             yield
         finally:
-            self._device._execution_time += monotonic() - started
+            self._device._execution_time += monotonic() - started  # ruff:ignore[private-member-access] Include recovery in the device's read-only total.
 
     def submit(self, indices: Sequence[int] | None = None) -> None:
         """Submit selected untouched entries, or all remaining untouched entries.
@@ -112,12 +169,13 @@ class PennyLaneJob:
     def result(self) -> Result | ResultBatch:
         """Collect, retry confirmed failures, and assemble the device's usual output.
 
+        Submission or collection failures propagate
+        :class:`~mqt.core.plugins.pennylane.exceptions.PennyLaneExecutionError`
+        with this batch handle.
+
         Returns:
             Raw samples for the preprocessed input tapes.
-
-        Raises:
-            PennyLaneExecutionError: If submission fails or entries remain unsuccessful.
-        """  # ruff:ignore[docstring-extraneous-exception] The shared collector raises the adapter error.
+        """
         with self._record_time():
             self._batch.complete()
             tape_results: list[list[np.ndarray]] = [[] for _ in self._partitioned]

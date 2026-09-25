@@ -11,9 +11,9 @@
 from __future__ import annotations
 
 import operator
+from numbers import Integral
 from typing import TYPE_CHECKING, Any, cast
 
-import numpy as np
 import pennylane as qp
 from pennylane.devices import Device, DeviceCapabilities, ExecutionConfig
 from pennylane.devices.preprocess import (
@@ -27,17 +27,12 @@ from pennylane.transforms import broadcast_expand, defer_measurements, split_non
 from pennylane.transforms.core import CompilePipeline
 
 from mqt.core.qdmi import Device as QDMIDeviceHandle
-from mqt.core.qdmi import Job as QDMIJobHandle
 from mqt.core.qdmi import ProgramFormat
 from mqt.core.qdmi.driver import open_device
 
-from ..qdmi_batch import validate_max_retries
-from .converter import _ConvertedProgram, _ProgramConverter
+from .converter import _ProgramConverter
 from .exceptions import (
     PennyLaneConfigurationError as ConfigurationError,
-)
-from .exceptions import (
-    PennyLaneExecutionError as ExecutionError,
 )
 from .exceptions import (
     PennyLaneUnsupportedFormatError as UnsupportedFormatError,
@@ -164,10 +159,10 @@ class QDMIDevice(Device):
         Raises:
             PennyLaneConfigurationError: If configuration or requested wires are invalid.
         """
-        try:
-            self._max_retries = validate_max_retries(max_retries)
-        except ValueError as exc:
-            raise ConfigurationError(str(exc)) from exc
+        if isinstance(max_retries, bool) or not isinstance(max_retries, Integral) or max_retries < 0:
+            msg = f"max_retries must be a nonnegative integer, got {max_retries!r}."
+            raise ConfigurationError(msg)
+        self._max_retries = int(max_retries)
         self.last_job: PennyLaneJob | None = None
         self._session_parameters: QDMISessionParameters = session_parameters.copy() if session_parameters else {}
         self._job_parameters: QDMIJobParameters = job_parameters.copy() if job_parameters else {}
@@ -294,59 +289,6 @@ class QDMIDevice(Device):
             raise ValidationError(msg)
         return tuple(shot_copy.shots for shot_copy in shots.shot_vector for _ in range(shot_copy.copies))
 
-    @staticmethod
-    def _shots_or_counts(job: QDMIJobHandle) -> list[str]:
-        """Read ordered shots, falling back to an equivalent expansion of counts.
-
-        Returns:
-            One QDMI bit string per shot.
-
-        Raises:
-            PennyLaneExecutionError: If the job exposes neither result representation.
-        """
-        shots_error = None
-        try:
-            if shots := job.get_shots():
-                return shots
-        except RuntimeError as exc:
-            shots_error = exc
-
-        try:
-            counts = job.get_counts()
-        except RuntimeError as exc:
-            msg = f"Could not read QDMI samples: shots: {shots_error}; counts: {exc}"
-            causes = [cause for cause in (shots_error, exc) if cause is not None]
-            raise ExecutionError(msg) from ExceptionGroup("QDMI result retrieval failed", causes)
-        return [bitstring for bitstring, count in sorted(counts.items()) for _ in range(count)]
-
-    def _samples(self, job: QDMIJobHandle, converted: _ConvertedProgram, shots: int) -> np.ndarray:
-        """Convert QDMI bit strings to PennyLane sample rows.
-
-        Returns:
-            A shot-by-wire array in PennyLane measurement order.
-
-        Raises:
-            PennyLaneExecutionError: If QDMI returns malformed or incomplete results.
-        """
-        bitstrings = self._shots_or_counts(job)
-        if len(bitstrings) != shots:
-            msg = f"QDMI returned {len(bitstrings)} samples for a {shots}-shot job."
-            raise ExecutionError(msg)
-
-        width = len(converted.wire_map)
-        cleaned: list[str] = []
-        for bitstring in bitstrings:
-            clean = bitstring.replace(" ", "")
-            if len(clean) != width or clean.strip("01"):
-                msg = f"QDMI returned an invalid {width}-wire shot: {bitstring!r}."
-                raise ExecutionError(msg)
-            cleaned.append(clean)
-        if not bitstrings:
-            return np.asarray([], dtype=np.int8)
-        packed = np.frombuffer("".join(cleaned).encode("ascii"), dtype=np.int8).reshape(shots, width)
-        # QDMI spells the highest-index site first; PennyLane starts with wire zero.
-        return packed[:, ::-1][:, converted.measurement_order] - ord("0")
-
     def execute(
         self,
         circuits: QuantumScriptOrBatch,
@@ -357,6 +299,7 @@ class QDMIDevice(Device):
         Returns:
             One result for every preprocessed input tape.
         """
+        self.last_job = None
         del execution_config
         single = isinstance(circuits, qp.tape.QuantumScript)
         tapes = (circuits,) if single else tuple(circuits)
@@ -368,7 +311,14 @@ class QDMIDevice(Device):
             self.tracker.update(batches=1, batch_len=len(tapes))
             self.tracker.record()
 
-        job = PennyLaneJob(self, prepared, tuple(tape.shots.has_partitioned_shots for tape in tapes), single=single)
+        job = PennyLaneJob(
+            self,
+            prepared,
+            tuple(tape.shots.has_partitioned_shots for tape in tapes),
+            single=single,
+            parameters=self._job_parameters,
+            max_retries=self._max_retries,
+        )
         self.last_job = job
         job.submit()
         return job.result()

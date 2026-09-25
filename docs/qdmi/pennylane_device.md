@@ -390,7 +390,9 @@ properties, routing, analytic execution, or QDMI batch jobs.
 If execution fails, the device keeps accepted jobs and successful results.
 Retrieve the batch handle from `error.job` on a
 {py:class}`~mqt.core.plugins.pennylane.exceptions.PennyLaneExecutionError`, or
-from `device.last_job` after an interruption.
+from `device.last_job` after an interruption inside `device.execute()`. Each
+`execute()` call clears this attribute until its batch is prepared. QNode
+preprocessing happens before `execute()` and does not update it.
 
 To recover a QNode's measurement values, save its executable tapes and
 postprocessor **before execution**. For the Bell-state QNode above, use
@@ -409,6 +411,7 @@ retained jobs:
 
 ```{code-cell} ipython3
 job = bell_device.last_job
+assert job is not None  # A batch was prepared by execute().
 entries = job.collect()
 counts = postprocess(job.result())[0]
 ```

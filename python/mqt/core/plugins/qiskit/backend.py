@@ -34,7 +34,6 @@ from qiskit.transpiler import InstructionProperties, Target
 from ...qdmi import Device as QDMIDevice
 from ...qdmi import ProgramFormat, is_binary_program_format
 from ...qdmi.driver import open_device
-from ..qdmi_batch import validate_max_retries
 from .exceptions import (
     CircuitValidationError,
     TranslationError,
@@ -772,6 +771,7 @@ class QDMIBackend(BackendV2):
             >>> qc2.measure_all()
             >>> job = backend.run([qc1, qc2], parameter_values=[{theta: 0.5}, {theta: 1.5}])
         """  # ruff:ignore[docstring-extraneous-exception] The validation helper raises operation errors.
+        self.last_job = None
         circuits = [run_input] if isinstance(run_input, QuantumCircuit) else run_input
 
         if not circuits:
@@ -805,10 +805,11 @@ class QDMIBackend(BackendV2):
             msg = f"Invalid 'memory' value: {memory!r}"
             raise CircuitValidationError(msg)
 
-        try:
-            max_retries = validate_max_retries(options.get("max_retries", self._options.max_retries))
-        except ValueError as exc:
-            raise CircuitValidationError(str(exc)) from exc
+        max_retries = options.get("max_retries", self._options.max_retries)
+        if isinstance(max_retries, bool) or not isinstance(max_retries, Integral) or max_retries < 0:
+            msg = f"max_retries must be a nonnegative integer, got {max_retries!r}."
+            raise CircuitValidationError(msg)
+        max_retries = int(max_retries)
         prepared_circuits: list[QuantumCircuit] = []
         # Prepare every circuit before submitting any job, so validation cannot leave a partial batch.
 

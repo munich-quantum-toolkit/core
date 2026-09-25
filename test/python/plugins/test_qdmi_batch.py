@@ -52,13 +52,6 @@ class BatchFixture:
         return cast("Job", job)
 
 
-@pytest.mark.parametrize("value", [-1, True, 1.5, "3", None])
-def test_invalid_retry_configuration(value: object) -> None:
-    """Reject noninteger and negative retry limits before submission."""
-    with pytest.raises(ValueError, match="max_retries"):
-        BatchFixture(cast("int", value))
-
-
 @pytest.mark.parametrize("max_retries", [0, 1, 3])
 def test_retry_allowance_survives_collection_and_manual_replacements(max_retries: int) -> None:
     """A batch lifetime bounds automatic replacements even after manual recovery."""
@@ -238,7 +231,7 @@ def test_explicit_cancel_disables_automatic_replacements() -> None:
 
 @pytest.mark.parametrize(
     ("method", "indices"),
-    [("submit", [0, 0]), ("resubmit", [0, -1]), ("submit", [0, 3]), ("resubmit", [True]), ("submit", [0.5])],
+    [("submit", [0, 0]), ("resubmit", [0, -1]), ("submit", [0, 3])],
 )
 def test_validate_entire_selection_before_submitting(indices: list[int], method: str) -> None:
     """Invalid or duplicate indices must not admit any replacement."""
@@ -287,8 +280,6 @@ def test_manual_replacement_does_not_override_known_running_work() -> None:
     with pytest.raises(ValueError, match="Cannot replace"):
         fixture.batch.resubmit([0], allow_unknown=True)
     assert fixture.submitted == [0, 1, 2]
-    with pytest.raises(TypeError, match="boolean"):
-        fixture.batch.resubmit([0], allow_unknown="yes")  # ty: ignore[invalid-argument-type] Invalid runtime input.
 
 
 def test_cancel_skips_confirmed_terminal_attempts() -> None:

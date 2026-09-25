@@ -268,8 +268,9 @@ except (JobSubmissionError, JobExecutionError) as error:
     print(error)
 ```
 
-After an interruption, use `backend.last_job`. Read accepted work without
-starting new executions using `collect()`:
+After an interruption, use `backend.last_job`. It is `None` if the latest
+`run()` stopped before preparing a batch. Read accepted work without starting
+new executions using `collect()`:
 
 ```{code-cell} ipython3
 entries = job.collect()
