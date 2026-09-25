@@ -77,11 +77,11 @@ because their basis indices do not fit the sparse representation.
 
 ## Multi-program execution
 
-DDSIM executes programs concurrently in reusable worker processes. A shared
-LLVM thread pool bounds active workers using physical cores and process
-affinity. Each program creates its own compiler, JIT, runtime, and DD state;
-results retain independent DD packages after workers become available again.
-DDSIM requires an LLVM build with threading enabled.
+DDSIM executes programs concurrently in reusable worker processes. A shared LLVM
+thread pool bounds active workers using physical cores and process affinity.
+Each program creates its own compiler, JIT, runtime, and DD state; results
+retain independent DD packages after workers become available again. DDSIM
+requires an LLVM build with threading enabled.
 
 One failing or cancelled program does not discard completed siblings. Cancelling
 a job stops its active workers and removes its queued work. A crashed worker is

@@ -512,7 +512,7 @@ def test_is_binary_program_format() -> None:
 @pytest.mark.parametrize("program", [b"OPENQASM 3.0;", b"OPENQASM 3.0;\0garbage\0", "OPENQASM 3.0;\0garbage"])
 def test_device_rejects_invalid_text_payloads(ddsim_device: Device, program: str | bytes) -> None:
     """Reject payloads that do not satisfy QDMI's text contract."""
-    with pytest.raises(ValueError, match="(?:Setting programs: Invalid argument|embedded null bytes)"):
+    with pytest.raises(ValueError, match=r"(?:Setting programs: Invalid argument|embedded null bytes)"):
         ddsim_device.submit_job(program, ProgramFormat.QASM3, num_shots=1)
 
 
