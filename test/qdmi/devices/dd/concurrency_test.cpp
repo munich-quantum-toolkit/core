@@ -15,9 +15,12 @@
 #include "mqt_ddsim_qdmi/device.h"
 
 #include "helpers/circuits.hpp"
+#include "helpers/controlled_job.hpp"
 #include "helpers/test_utils.hpp"
 
 #include "gtest/gtest.h"
+
+#include "llvm/Support/Threading.h"
 
 #include <algorithm>
 #include <atomic>
@@ -49,8 +52,8 @@ TEST_P(ColdDenseReads, ConcurrentProbabilityAndStatevectorReads) {
     std::vector<double> buffer(probabilities ? 4 : 8);
     start.arrive_and_wait();
     ASSERT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                  j.job, result, buffer.size() * sizeof(double), buffer.data(),
-                  nullptr),
+                  j.job, 0, result, buffer.size() * sizeof(double),
+                  buffer.data(), nullptr),
               QDMI_SUCCESS);
     const auto nonzero = probabilities ? 0.5 : 1.0 / std::numbers::sqrt2;
     for (size_t i = 0; i < buffer.size(); ++i) {
@@ -87,15 +90,15 @@ TEST(Concurrency, ConcurrentHistogramReads) {
   auto const keysWorker = [&] {
     std::string buf(keysSize > 0 ? keysSize - 1 : 0, '\0');
     EXPECT_EQ(
-        MQT_DDSIM_QDMI_device_job_get_results(j.job, QDMI_JOB_RESULT_HIST_KEYS,
-                                              keysSize, buf.data(), nullptr),
+        MQT_DDSIM_QDMI_device_job_get_results(
+            j.job, 0, QDMI_JOB_RESULT_HIST_KEYS, keysSize, buf.data(), nullptr),
         QDMI_SUCCESS);
   };
   auto const valsWorker = [&] {
     std::vector<size_t> v(valsSize / sizeof(size_t));
     EXPECT_EQ(
         MQT_DDSIM_QDMI_device_job_get_results(
-            j.job, QDMI_JOB_RESULT_HIST_VALUES, valsSize, v.data(), nullptr),
+            j.job, 0, QDMI_JOB_RESULT_HIST_VALUES, valsSize, v.data(), nullptr),
         QDMI_SUCCESS);
   };
 
@@ -162,4 +165,33 @@ TEST(Concurrency, ConcurrentQIRJobsOwnTheirRuntimeState) {
     EXPECT_TRUE(std::ranges::all_of(
         keys, [](const auto& key) { return key == "00" || key == "11"; }));
   }
+}
+
+TEST(Concurrency, NativeProgramsRunConcurrentlyAndCancelQueuedWork) {
+  const auto limit =
+      llvm::heavyweight_hardware_concurrency().compute_thread_count();
+  const qdmi_test::SessionGuard session{};
+  const qdmi_test::JobGuard job{session.session};
+  const size_t count = static_cast<size_t>(limit) + 1;
+  qdmi_test::ControlledJob running{job.job, count, limit};
+  std::vector<QDMI_Job_Status> statuses(count);
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_query_property(
+                job.job, QDMI_DEVICE_JOB_PROPERTY_PROGRAMSTATUSES,
+                statuses.size() * sizeof(QDMI_Job_Status), statuses.data(),
+                nullptr),
+            QDMI_SUCCESS);
+  EXPECT_EQ(
+      std::count(statuses.begin(), statuses.end(), QDMI_JOB_STATUS_RUNNING),
+      limit);
+  EXPECT_EQ(statuses.back(), QDMI_JOB_STATUS_QUEUED);
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_cancel(job.job), QDMI_SUCCESS);
+  running.canceled();
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_query_property(
+                job.job, QDMI_DEVICE_JOB_PROPERTY_PROGRAMSTATUSES,
+                statuses.size() * sizeof(QDMI_Job_Status), statuses.data(),
+                nullptr),
+            QDMI_SUCCESS);
+  EXPECT_TRUE(std::ranges::all_of(statuses, [](auto status) {
+    return status == QDMI_JOB_STATUS_CANCELED;
+  }));
 }

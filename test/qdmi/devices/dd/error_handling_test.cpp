@@ -20,6 +20,8 @@
 
 #include "gtest/gtest.h"
 
+#include "llvm/Support/Threading.h"
+
 namespace {
 
 class ErrorHandling : public ::testing::Test {
@@ -27,8 +29,6 @@ protected:
   static auto SetUpTestSuite() -> void { MQT_DDSIM_QDMI_device_initialize(); }
   static auto TearDownTestSuite() -> void { MQT_DDSIM_QDMI_device_finalize(); }
 };
-
-} // namespace
 
 TEST_F(ErrorHandling, NullptrArguments) {
   EXPECT_EQ(MQT_DDSIM_QDMI_device_session_alloc(nullptr),
@@ -60,8 +60,8 @@ TEST_F(ErrorHandling, NullptrArguments) {
             QDMI_ERROR_INVALIDARGUMENT);
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_wait(nullptr, 0),
             QDMI_ERROR_INVALIDARGUMENT);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(nullptr, QDMI_JOB_RESULT_MAX,
-                                                  0, nullptr, nullptr),
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                nullptr, 0U, QDMI_JOB_RESULT_MAX, 0, nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
 
   const qdmi_test::SessionGuard s{};
@@ -73,15 +73,17 @@ TEST_F(ErrorHandling, NullptrArguments) {
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
+} // namespace
+
 TEST_F(ErrorHandling, GetResultsBeforeDone) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                j.job, QDMI_JOB_RESULT_HIST_KEYS, 0, nullptr, nullptr),
+                j.job, 0U, QDMI_JOB_RESULT_HIST_KEYS, 0, nullptr, nullptr),
             QDMI_ERROR_BADSTATE);
   qdmi_test::ControlledJob running{j.job};
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                j.job, QDMI_JOB_RESULT_HIST_KEYS, 0, nullptr, nullptr),
+                j.job, 0U, QDMI_JOB_RESULT_HIST_KEYS, 0, nullptr, nullptr),
             QDMI_ERROR_BADSTATE);
   running.release();
   ASSERT_EQ(MQT_DDSIM_QDMI_device_job_wait(j.job, 0), QDMI_SUCCESS);
@@ -127,8 +129,8 @@ TEST_F(ErrorHandling, MaxEnums) {
             QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(j.job, 16), QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(j.job, QDMI_JOB_RESULT_MAX, 0,
-                                                  nullptr, nullptr),
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                j.job, 0U, QDMI_JOB_RESULT_MAX, 0, nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
@@ -240,19 +242,19 @@ TEST_F(ErrorHandling, CustomEnums) {
   ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
 
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                j.job, QDMI_JOB_RESULT_CUSTOM1, 0, nullptr, nullptr),
+                j.job, 0U, QDMI_JOB_RESULT_CUSTOM1, 0, nullptr, nullptr),
             QDMI_ERROR_NOTSUPPORTED);
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                j.job, QDMI_JOB_RESULT_CUSTOM2, 0, nullptr, nullptr),
+                j.job, 0U, QDMI_JOB_RESULT_CUSTOM2, 0, nullptr, nullptr),
             QDMI_ERROR_NOTSUPPORTED);
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                j.job, QDMI_JOB_RESULT_CUSTOM3, 0, nullptr, nullptr),
+                j.job, 0U, QDMI_JOB_RESULT_CUSTOM3, 0, nullptr, nullptr),
             QDMI_ERROR_NOTSUPPORTED);
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                j.job, QDMI_JOB_RESULT_CUSTOM4, 0, nullptr, nullptr),
+                j.job, 0U, QDMI_JOB_RESULT_CUSTOM4, 0, nullptr, nullptr),
             QDMI_ERROR_NOTSUPPORTED);
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                j.job, QDMI_JOB_RESULT_CUSTOM5, 0, nullptr, nullptr),
+                j.job, 0U, QDMI_JOB_RESULT_CUSTOM5, 0, nullptr, nullptr),
             QDMI_ERROR_NOTSUPPORTED);
 }
 
@@ -327,4 +329,67 @@ c[0] = measure q[0];
   QDMI_Job_Status status{};
   ASSERT_EQ(MQT_DDSIM_QDMI_device_job_check(j.job, &status), QDMI_SUCCESS);
   EXPECT_EQ(status, QDMI_JOB_STATUS_FAILED);
+}
+
+TEST_F(ErrorHandling, WorkerCrashesDoNotAffectConcurrentOrLaterJobs) {
+  if (llvm::heavyweight_hardware_concurrency().compute_thread_count() < 2) {
+    GTEST_SKIP() << "Concurrent crash isolation requires two worker slots";
+  }
+  const qdmi_test::SessionGuard session{};
+  for (const std::string operation : {"abort", "llvm.trap"}) {
+    const qdmi_test::JobGuard valid{session.session};
+    qdmi_test::ControlledJob running{valid.job};
+    const qdmi_test::JobGuard crash{session.session};
+    std::string program = "declare void @";
+    program += operation;
+    program += "()\n"
+               "define i64 @main() #0 { call void @";
+    program += operation;
+    program += "() unreachable }\n"
+               "attributes #0 = { \"entry_point\" "
+               "\"qir_profiles\"=\"adaptive_profile\" }\n";
+    ASSERT_EQ(qdmi_test::setProgram(
+                  crash.job, QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING, program),
+              QDMI_SUCCESS);
+    ASSERT_EQ(qdmi_test::submitAndWait(crash.job, 0), QDMI_SUCCESS);
+    QDMI_Job_Status status{};
+    ASSERT_EQ(MQT_DDSIM_QDMI_device_job_check(crash.job, &status),
+              QDMI_SUCCESS);
+    EXPECT_EQ(status, QDMI_JOB_STATUS_FAILED);
+    for (const auto result : {
+             QDMI_JOB_RESULT_SHOTS,
+             QDMI_JOB_RESULT_STATEVECTOR_DENSE,
+             QDMI_JOB_RESULT_CUSTOM1,
+         }) {
+      EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(crash.job, 0, result, 0,
+                                                      nullptr, nullptr),
+                QDMI_ERROR_BADSTATE);
+    }
+    running.release();
+    ASSERT_EQ(MQT_DDSIM_QDMI_device_job_wait(valid.job, 0), QDMI_SUCCESS);
+    ASSERT_EQ(MQT_DDSIM_QDMI_device_job_check(valid.job, &status),
+              QDMI_SUCCESS);
+    EXPECT_EQ(status, QDMI_JOB_STATUS_DONE);
+    const qdmi_test::JobGuard later{session.session};
+    ASSERT_EQ(qdmi_test::setProgram(later.job, QDMI_PROGRAM_FORMAT_QASM3,
+                                    qdmi_test::QASM3_BELL_SAMPLING),
+              QDMI_SUCCESS);
+    ASSERT_EQ(qdmi_test::submitAndWait(later.job, 0), QDMI_SUCCESS);
+    ASSERT_EQ(MQT_DDSIM_QDMI_device_job_check(later.job, &status),
+              QDMI_SUCCESS);
+    EXPECT_EQ(status, QDMI_JOB_STATUS_DONE);
+  }
+}
+
+TEST_F(ErrorHandling, ShutdownTerminatesActiveWorkers) {
+  const qdmi_test::SessionGuard session{};
+  const qdmi_test::JobGuard job{session.session};
+  qdmi_test::ControlledJob running{job.job};
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_finalize(), QDMI_SUCCESS);
+  running.canceled();
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_wait(job.job, 10), QDMI_SUCCESS);
+  QDMI_Job_Status status{};
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_check(job.job, &status), QDMI_SUCCESS);
+  EXPECT_EQ(status, QDMI_JOB_STATUS_FAILED);
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_initialize(), QDMI_SUCCESS);
 }

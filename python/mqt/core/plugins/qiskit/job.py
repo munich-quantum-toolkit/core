@@ -17,7 +17,7 @@ import datetime
 from collections import Counter
 from copy import deepcopy
 from numbers import Integral
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from qiskit.providers import JobError, JobStatus, JobV1
 from qiskit.result import Result
@@ -64,7 +64,7 @@ class QDMIJob(JobV1):
     """Qiskit job wrapping one or more QDMI jobs.
 
     This class handles both single-circuit and multi-circuit execution,
-    aggregating results from multiple QDMI jobs when needed. Use
+    using native program lists where supported and independent jobs otherwise. Use
     :meth:`from_circuits` to prepare an unsubmitted batch. Wrapping already
     submitted jobs supports collection and cancellation, without replacements.
 
@@ -123,7 +123,11 @@ class QDMIJob(JobV1):
                 for i in range(len(circuits))
             ],
             submit=self._submit_entry if self._programs is not None else None,
-            decode=lambda index, handle: self._collect_result(handle, self._headers[index]),
+            decode=lambda index, handle, program_index: self._collect_result(
+                handle, self._headers[index], program_index
+            ),
+            submit_programs=self._submit_programs,
+            group_by=[program_format for _, program_format in self._programs] if self._programs is not None else None,
             submission_error=lambda msg: JobSubmissionError(msg, job=self),
             execution_error=lambda msg: JobExecutionError(msg, job=self),
             max_retries=max_retries,
@@ -159,6 +163,15 @@ class QDMIJob(JobV1):
         assert self._programs is not None
         program, program_format = self._programs[index]
         return self._backend.device.submit_job(program=program, program_format=program_format, num_shots=self._shots)
+
+    def _submit_programs(self, indices: Sequence[int]) -> QDMIJobHandle | None:
+        assert self._programs is not None
+        return self._backend.device.try_submit_programs(
+            # A format fixes the payload type for the whole group.
+            cast("Sequence[str] | Sequence[bytes]", [self._programs[index][0] for index in indices]),
+            self._programs[indices[0]][1],
+            self._shots,
+        )
 
     def collect(self) -> tuple[BatchEntry[ExperimentResult], ...]:
         """Read existing jobs without replacement executions or aggregate errors.
@@ -238,7 +251,7 @@ class QDMIJob(JobV1):
             raise JobExecutionError(msg, job=self) from exc
         return self._result
 
-    def _collect_result(self, job: QDMIJobHandle, header: dict[str, Any]) -> ExperimentResult:
+    def _collect_result(self, job: QDMIJobHandle, header: dict[str, Any], program_index: int = 0) -> ExperimentResult:
         """Collect and validate one circuit's result.
 
         Returns:
@@ -250,7 +263,7 @@ class QDMIJob(JobV1):
         width = header["memory_slots"]
         if self._memory:
             try:
-                shots = job.get_shots()
+                shots = job.get_shots(program_index)
             except Exception as exc:
                 exc.add_note("memory=True and BackendSamplerV2 require valid QDMI SHOTS results.")
                 raise
@@ -262,7 +275,7 @@ class QDMIJob(JobV1):
         elif not width:
             data = {"counts": {}}
         else:
-            counts = job.get_counts()
+            counts = job.get_counts(program_index)
             if any(not isinstance(count, Integral) or count < 0 for count in counts.values()):
                 msg = "Invalid QDMI histogram: counts must be nonnegative integers."
                 raise JobError(msg)
@@ -304,15 +317,13 @@ class QDMIJob(JobV1):
         }
 
         statuses = []
-        for entry in self.entries:
+        for entry, qdmi_status in zip(self.entries, self._batch.statuses(), strict=True):
             if not entry.attempts:
                 statuses.append(JobStatus.INITIALIZING)
                 continue
-            handle = entry.attempts[-1].handle
-            if handle is None:
+            if qdmi_status is None:
                 statuses.append(JobStatus.ERROR)
                 continue
-            qdmi_status = handle.check()
             if qdmi_status not in status_map:
                 msg = f"Unknown job status: {qdmi_status}"
                 raise ValueError(msg)

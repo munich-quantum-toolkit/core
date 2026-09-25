@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Generic, TypeVar
 from mqt.core.qdmi import Job
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Hashable, Iterator, Sequence
 
 __all__ = ["Batch", "BatchEntry", "JobAttempt", "JobFailure"]
 
@@ -34,9 +34,10 @@ class JobFailure:
 
 @dataclass(frozen=True, slots=True)
 class JobAttempt(Generic[_Result]):
-    """A submission attempt, including an uncertain submission without a handle."""
+    """An attempt and its result index, or an uncertain submission without a handle."""
 
     handle: Job | None = None
+    program_index: int = 0
     status: Job.Status | None = None
     result: _Result | None = None
     failures: tuple[JobFailure, ...] = ()
@@ -71,11 +72,13 @@ class Batch(Generic[_Result]):
         entries: Sequence[BatchEntry[_Result]],
         *,
         submit: Callable[[int], Job] | None,
-        decode: Callable[[int, Job], _Result],
+        decode: Callable[[int, Job, int], _Result],
         submission_error: Callable[[str], Exception],
         execution_error: Callable[[str], Exception],
         max_retries: int,
-        on_submit: Callable[[int], None] | None = None,
+        on_submit: Callable[[Sequence[int]], None] | None = None,
+        submit_programs: Callable[[Sequence[int]], Job | None] | None = None,
+        group_by: Sequence[Hashable] | None = None,
     ) -> None:
         """Capture prepared entries, adapter callbacks, and a lifetime retry limit."""
         self._entries = list(entries)
@@ -86,6 +89,8 @@ class Batch(Generic[_Result]):
         self._max_retries = max_retries
         self._cancelled = False
         self._on_submit = on_submit
+        self._submit_programs = submit_programs
+        self._group_by = tuple(group_by) if group_by is not None else None
 
     @property
     def entries(self) -> tuple[BatchEntry[_Result], ...]:
@@ -139,26 +144,101 @@ class Batch(Generic[_Result]):
         if self._submit is None:
             msg = "Submission requires prepared programs."
             raise RuntimeError(msg)
+        groups: dict[Hashable, list[int]] = {}
         for index in indices:
-            entry = self._entries[index]
+            key = self._group_by[index] if self._group_by is not None else index
+            groups.setdefault(key, []).append(index)
+        for group in groups.values():
+            if len(group) > 1 and self._submit_programs is not None and self._admit(group, automatic=automatic):
+                continue
+            for index in group:
+                self._admit([index], automatic=automatic)
+
+    def _admit(self, indices: Sequence[int], *, automatic: bool) -> bool:
+        previous = [self._entries[index] for index in indices]
+        for index, entry in zip(indices, previous, strict=True):
             self._entries[index] = replace(
                 entry,
                 attempts=(*entry.attempts, JobAttempt()),
                 automatic_retries=entry.automatic_retries + int(automatic),
             )
-            stage = "submission"
-            try:
-                handle = self._submit(index)
-                self._set_attempt(index, JobAttempt(handle=handle))
-                stage = "tracking"
-                if self._on_submit is not None:
-                    self._on_submit(index)
-            except BaseException as exc:
+        stage = "submission"
+        try:  # ruff:ignore[too-many-statements-in-try-clause] Retain every accepted handle before tracking.
+            if len(indices) > 1:
+                assert self._submit_programs is not None
+                handle = self._submit_programs(indices)
+            else:
+                assert self._submit is not None
+                handle = self._submit(indices[0])
+            if handle is None:
+                # NOTSUPPORTED before submission consumes neither an attempt nor a retry.
+                for index, entry in zip(indices, previous, strict=True):
+                    self._entries[index] = entry
+                return False
+            for program_index, index in enumerate(indices):
+                self._set_attempt(index, JobAttempt(handle=handle, program_index=program_index))
+            stage = "tracking"
+            if self._on_submit is not None:
+                self._on_submit(indices)
+        except BaseException as exc:
+            for index in indices:
                 self.record_failure(index, stage, exc)
-                if not isinstance(exc, Exception):
-                    raise
-                msg = f"Failed to submit batch entry {index}: {exc}"
-                raise self._submission_error(msg) from exc
+            if not isinstance(exc, Exception):
+                raise
+            msg = f"Failed to submit batch entries {list(indices)}: {exc}"
+            raise self._submission_error(msg) from exc
+        return True
+
+    def _refresh(self, indices: Sequence[int], *, wait: bool = False) -> Iterator[list[int]]:
+        groups: dict[int, list[int]] = {}
+        for index in indices:
+            entry = self._entries[index]
+            if entry.attempts and (handle := entry.attempts[-1].handle) is not None:
+                groups.setdefault(id(handle), []).append(index)
+        for group in groups.values():
+            pending = [i for i in group if self._entries[i].attempts[-1].status not in _TERMINAL]
+            if pending:
+                handle = self._entries[pending[0]].attempts[-1].handle
+                assert handle is not None
+                stage = "wait" if wait else "status"
+                try:  # ruff:ignore[too-many-statements-in-try-clause] Keep shared query failures on every affected entry.
+                    if wait and not handle.wait():
+                        msg = "Timed out waiting for the QDMI job."
+                        raise TimeoutError(msg)  # ruff:ignore[raise-within-try] Record timeouts with other wait failures.
+                    stage = "status"
+                    aggregate = handle.check()
+                    outcomes = (
+                        handle.program_statuses if aggregate in {Job.Status.FAILED, Job.Status.CANCELED} else None
+                    )
+                    # Resolve individual outcomes before attributing an aggregate failure.
+                    for index in pending:
+                        attempt = self._entries[index].attempts[-1]
+                        status = aggregate if outcomes is None else outcomes[attempt.program_index]
+                        self._set_attempt(index, replace(attempt, status=status))
+                except BaseException as exc:
+                    for index in pending:
+                        attempt = self._entries[index].attempts[-1]
+                        self._set_attempt(index, replace(attempt, status=None))
+                        self.record_failure(index, stage, exc)
+                    if not isinstance(exc, Exception):
+                        raise
+            yield group
+
+    def statuses(self) -> tuple[Job.Status | None, ...]:
+        """Query each shared job once and return ordered per-entry outcomes.
+
+        Provider query failures propagate after being retained on the attempts.
+
+        Returns:
+            None for untouched entries or uncertain submissions.
+
+        """
+        for group in self._refresh(range(len(self._entries))):
+            for index in group:
+                attempt = self._entries[index].attempts[-1]
+                if attempt.status is None and attempt.failures:
+                    raise attempt.failures[-1].cause
+        return tuple(entry.attempts[-1].status if entry.attempts else None for entry in self._entries)
 
     def collect(self, indices: Sequence[int] | None = None) -> tuple[BatchEntry[_Result], ...]:
         """Collect existing attempts without replacements or aggregate failure.
@@ -166,40 +246,25 @@ class Batch(Generic[_Result]):
         Returns:
             Ordered entry snapshots, including every recorded failure.
         """
-        for index in range(len(self._entries)) if indices is None else indices:
-            entry = self._entries[index]
-            if not entry.attempts or entry.result is not None:
-                continue
-            attempt = entry.attempts[-1]
-            if attempt.handle is None or self._terminal_failure(attempt):
-                continue
-            handle = attempt.handle
-            stage = "status"
-            try:  # ruff:ignore[too-many-statements-in-try-clause] Each stage records its own failure context.
-                status = handle.check()
-                self._set_attempt(index, replace(attempt, status=status))
-                if status not in _TERMINAL:
-                    stage = "wait"
-                    if not handle.wait():
-                        msg = "Timed out waiting for the QDMI job."
-                        self.record_failure(index, stage, TimeoutError(msg))
-                        continue
-                    stage = "status"
-                    status = handle.check()
-                    self._set_attempt(index, replace(attempt, status=status))
-                stage = "execution"
-                if status != Job.Status.DONE:
-                    msg = f"QDMI job did not complete successfully: {status.name}."
-                    self.record_failure(index, stage, RuntimeError(msg))
+        selected = range(len(self._entries)) if indices is None else indices
+        for group in self._refresh(selected, wait=True):
+            for index in group:
+                entry = self._entries[index]
+                attempt = entry.attempts[-1]
+                if entry.result is not None or self._terminal_failure(attempt) or attempt.status is None:
                     continue
-                stage = "result"
-                result = self._decode(index, handle)
-                current = self._entries[index].attempts[-1]
-                self._set_attempt(index, replace(current, result=result))
-            except BaseException as exc:
-                self.record_failure(index, stage, exc)
-                if not isinstance(exc, Exception):
-                    raise
+                if attempt.status != Job.Status.DONE:
+                    msg = f"QDMI program did not complete successfully: {attempt.status.name}."
+                    self.record_failure(index, "execution", RuntimeError(msg))
+                    continue
+                assert attempt.handle is not None
+                try:
+                    result = self._decode(index, attempt.handle, attempt.program_index)
+                    self._set_attempt(index, replace(attempt, result=result))
+                except BaseException as exc:
+                    self.record_failure(index, "result", exc)
+                    if not isinstance(exc, Exception):
+                        raise
         return self.entries
 
     @staticmethod
@@ -254,22 +319,14 @@ class Batch(Generic[_Result]):
             ValueError: If indices are invalid or replacement could duplicate active work.
         """
         selected = self._validate_indices(indices)
+        if any(not self._entries[index].attempts for index in selected):
+            msg = "Selected entries have not been attempted; use submit() for their first submission."
+            raise ValueError(msg)
+        for _ in self._refresh(selected):
+            pass
         for index in selected:
-            entry = self._entries[index]
-            if not entry.attempts:
-                msg = f"Entry {index} has not been attempted; use submit() for its first submission."
-                raise ValueError(msg)
-            attempt = entry.attempts[-1]
+            attempt = self._entries[index].attempts[-1]
             status = attempt.status
-            if attempt.result is not None or attempt.status == Job.Status.DONE:
-                status = Job.Status.DONE
-            elif attempt.handle is not None:
-                try:
-                    status = attempt.handle.check()
-                    self._set_attempt(index, replace(attempt, status=status))
-                except Exception as exc:  # ruff:ignore[blind-except] An unavailable status makes replacement uncertain.
-                    self.record_failure(index, "status", exc)
-                    status = None
             if status in {Job.Status.FAILED, Job.Status.CANCELED}:
                 continue
             if status is not None or not allow_unknown:
@@ -285,6 +342,7 @@ class Batch(Generic[_Result]):
         """
         self._cancelled = True
         success = True
+        groups: dict[int, list[tuple[int, int]]] = {}
         for index, entry in enumerate(self._entries):
             for position, attempt in enumerate(entry.attempts):
                 if attempt.status in _TERMINAL:
@@ -292,9 +350,15 @@ class Batch(Generic[_Result]):
                 if attempt.handle is None:
                     success = False
                     continue
-                try:
-                    attempt.handle.cancel()
-                except Exception as exc:  # ruff:ignore[blind-except] Attempt the remaining explicit cancellations.
+                groups.setdefault(id(attempt.handle), []).append((index, position))
+        for group in groups.values():
+            index, position = group[0]
+            handle = self._entries[index].attempts[position].handle
+            assert handle is not None
+            try:
+                handle.cancel()
+            except Exception as exc:  # ruff:ignore[blind-except] Attempt the remaining explicit cancellations.
+                for index, position in group:
                     self.record_failure(index, "cancellation", exc, position)
-                    success = False
+                success = False
         return success

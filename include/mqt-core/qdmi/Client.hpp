@@ -74,6 +74,7 @@ struct ClientAPI {
   decltype(&::QDMI_session_retrieve_job_by_id) session_retrieve_job_by_id{};
   decltype(&::QDMI_job_free) job_free{};
   decltype(&::QDMI_job_set_parameter) job_set_parameter{};
+  decltype(&::QDMI_job_set_programs) job_set_programs{};
   decltype(&::QDMI_job_query_property) job_query_property{};
   decltype(&::QDMI_job_submit) job_submit{};
   decltype(&::QDMI_job_cancel) job_cancel{};
@@ -787,6 +788,46 @@ public:
       const std::optional<CustomJobParameter>& custom4 = std::nullopt,
       const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
 
+  /// Submits an ordered list of programs with common job parameters.
+  [[nodiscard]] Job submitPrograms(
+      std::span<const std::string> programs, QDMI_Program_Format format,
+      std::optional<size_t> numShots = std::nullopt,
+      const std::optional<CustomJobParameter>& custom1 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom2 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom3 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom4 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
+
+  /// Returns no job only when the device rejects this list before submission.
+  [[nodiscard]] std::optional<Job> trySubmitPrograms(
+      std::span<const std::string> programs, QDMI_Program_Format format,
+      std::optional<size_t> numShots = std::nullopt,
+      const std::optional<CustomJobParameter>& custom1 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom2 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom3 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom4 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
+
+  /// Submits an ordered list of programs with common job parameters.
+  [[nodiscard]] Job submitPrograms(
+      std::span<const std::span<const std::byte>> programs,
+      QDMI_Program_Format format, std::optional<size_t> numShots = std::nullopt,
+      const std::optional<CustomJobParameter>& custom1 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom2 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom3 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom4 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
+
+  /// Returns no job only when the device rejects this list before submission.
+  [[nodiscard]] std::optional<Job> trySubmitPrograms(
+      std::span<const std::span<const std::byte>> programs,
+      QDMI_Program_Format format, std::optional<size_t> numShots = std::nullopt,
+      const std::optional<CustomJobParameter>& custom1 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom2 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom3 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom4 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
+
   /// Retrieves an existing job by its device-provided ID.
   ///
   /// Opening a job does not submit, clone, or modify the remote job.
@@ -830,14 +871,15 @@ private:
         msg, msg);
   }
 
-  [[nodiscard]] Job
-  submitJobImpl(QDMI_Program_Format format, std::span<const std::byte> program,
-                std::optional<size_t> numShots,
-                const std::optional<CustomJobParameter>& custom1,
-                const std::optional<CustomJobParameter>& custom2,
-                const std::optional<CustomJobParameter>& custom3,
-                const std::optional<CustomJobParameter>& custom4,
-                const std::optional<CustomJobParameter>& custom5) const;
+  [[nodiscard]] std::optional<Job>
+  submitProgramsImpl(QDMI_Program_Format format, std::span<const size_t> sizes,
+                     std::span<const void* const> programs,
+                     std::optional<size_t> numShots,
+                     const std::optional<CustomJobParameter>& custom1,
+                     const std::optional<CustomJobParameter>& custom2,
+                     const std::optional<CustomJobParameter>& custom3,
+                     const std::optional<CustomJobParameter>& custom4,
+                     const std::optional<CustomJobParameter>& custom5) const;
 
   void setCustomJobParam(QDMI_Job job, QDMI_Job_Parameter param,
                          const CustomJobParameter& value) const;
@@ -894,6 +936,17 @@ public:
   /// Get the number of shots
   [[nodiscard]] size_t getNumShots() const;
 
+  /// Returns the number of programs in input order.
+  [[nodiscard]] size_t getNumPrograms() const;
+
+  /// Returns individual outcomes, or no value when unsupported.
+  [[nodiscard]] std::optional<std::vector<QDMI_Job_Status>>
+  getProgramStatuses() const;
+
+  /// Returns a result without interpreting its bytes.
+  [[nodiscard]] std::vector<std::byte>
+  getResults(QDMI_Job_Result result, size_t programIndex = 0) const;
+
   /// Gets the current number of jobs ahead of this job in its queue.
   /// @return The queue position, or `std::nullopt` if it is unavailable or not
   /// applicable in the job's current state.
@@ -925,49 +978,57 @@ public:
   /// @tparam T Expected value type. Use `std::vector<std::byte>` to retrieve
   /// the raw value without interpretation.
   /// @param property Custom result slot to query.
+  /// @param programIndex Zero-based index in the submitted program list.
   /// @return The decoded value, or `std::nullopt` if the slot is unsupported.
   /// @throws std::invalid_argument If the returned bytes do not match `T`.
   template <custom_property_value T>
   [[nodiscard]] std::optional<T>
-  getCustomResult(const CustomProperty property) const {
+  getCustomResult(const CustomProperty property,
+                  const size_t programIndex = 0) const {
     const auto qdmiResult = detail::toJobResult(property);
     return detail::queryCustomValue<T>(
-        [this, qdmiResult](const size_t size, void* value, size_t* sizeRet) {
+        [this, qdmiResult, programIndex](const size_t size, void* value,
+                                         size_t* sizeRet) {
           return job_.get_deleter().session->api->job_get_results(
-              job_.get(), qdmiResult, size, value, sizeRet);
+              job_.get(), programIndex, qdmiResult, size, value, sizeRet);
         },
         "custom job result " + std::to_string(static_cast<unsigned>(property)));
   }
 
   /// Returns the measurement shots as a vector of bitstrings.
   /// @see QDMI_JOB_RESULT_SHOTS
-  [[nodiscard]] std::vector<std::string> getShots() const;
+  [[nodiscard]] std::vector<std::string>
+  getShots(size_t programIndex = 0) const;
 
   /// Returns a map of measurement outcomes to their respective counts.
   /// @see QDMI_JOB_RESULT_HIST_KEYS
   /// @see QDMI_JOB_RESULT_HIST_VALUES
-  [[nodiscard]] std::map<std::string, size_t> getCounts() const;
+  [[nodiscard]] std::map<std::string, size_t>
+  getCounts(size_t programIndex = 0) const;
 
   /// Returns the dense state vector as a vector of complex numbers.
   /// @see QDMI_JOB_RESULT_STATEVECTOR_DENSE
-  [[nodiscard]] std::vector<std::complex<double>> getDenseStateVector() const;
+  [[nodiscard]] std::vector<std::complex<double>>
+  getDenseStateVector(size_t programIndex = 0) const;
 
   /// Returns the dense probabilities as a vector of doubles.
   /// @see QDMI_JOB_RESULT_PROBABILITIES_DENSE
-  [[nodiscard]] std::vector<double> getDenseProbabilities() const;
+  [[nodiscard]] std::vector<double>
+  getDenseProbabilities(size_t programIndex = 0) const;
 
   /// Returns the sparse state vector as a map of bitstrings to complex
   /// amplitudes.
   /// @see QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS
   /// @see QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES
   [[nodiscard]] std::map<std::string, std::complex<double>>
-  getSparseStateVector() const;
+  getSparseStateVector(size_t programIndex = 0) const;
 
   /// Returns the sparse probabilities as a map of bitstrings to
   /// probabilities.
   /// @see QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS
   /// @see QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES
-  [[nodiscard]] std::map<std::string, double> getSparseProbabilities() const;
+  [[nodiscard]] std::map<std::string, double>
+  getSparseProbabilities(size_t programIndex = 0) const;
 
   auto operator<=>(const Job&) const noexcept = default;
 

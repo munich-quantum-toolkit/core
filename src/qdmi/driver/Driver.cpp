@@ -145,6 +145,7 @@ DynamicDeviceLibrary::DynamicDeviceLibrary(void* handle,
     LOAD_OPTIONAL_DYNAMIC_SYMBOL(device_session_retrieve_device_job_by_id)
     LOAD_DYNAMIC_SYMBOL(device_job_free)
     LOAD_DYNAMIC_SYMBOL(device_job_set_parameter)
+    LOAD_DYNAMIC_SYMBOL(device_job_set_programs)
     LOAD_DYNAMIC_SYMBOL(device_job_query_property)
     LOAD_DYNAMIC_SYMBOL(device_job_submit)
     LOAD_DYNAMIC_SYMBOL(device_job_cancel)
@@ -479,8 +480,6 @@ namespace {
 [[nodiscard]] auto toDeviceJobParameter(const QDMI_Job_Parameter& param)
     -> QDMI_Device_Job_Parameter {
   switch (param) {
-  case QDMI_JOB_PARAMETER_PROGRAM:
-    return QDMI_DEVICE_JOB_PARAMETER_PROGRAM;
   case QDMI_JOB_PARAMETER_PROGRAMFORMAT:
     return QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT;
   case QDMI_JOB_PARAMETER_SHOTSNUM:
@@ -518,8 +517,19 @@ auto QDMI_Job_impl_d::setParameter(QDMI_Job_Parameter param, const size_t size,
       IS_INVALID_ARGUMENT(param, QDMI_JOB_PARAMETER)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
+  if (param == 1) {
+    return QDMI_ERROR_NOTSUPPORTED;
+  }
   return device_->getLibrary().device_job_set_parameter(
       deviceJob_, toDeviceJobParameter(param), size, value);
+}
+
+auto QDMI_Job_impl_d::setPrograms(const QDMI_Program_Format* const format,
+                                  const size_t count, const size_t* const sizes,
+                                  const void* const* const programs) const
+    -> int {
+  return device_->getLibrary().device_job_set_programs(deviceJob_, format,
+                                                       count, sizes, programs);
 }
 
 namespace {
@@ -536,6 +546,10 @@ namespace {
     return QDMI_DEVICE_JOB_PROPERTY_SHOTSNUM;
   case QDMI_JOB_PROPERTY_QUEUEPOSITION:
     return QDMI_DEVICE_JOB_PROPERTY_QUEUEPOSITION;
+  case QDMI_JOB_PROPERTY_PROGRAMSNUM:
+    return QDMI_DEVICE_JOB_PROPERTY_PROGRAMSNUM;
+  case QDMI_JOB_PROPERTY_PROGRAMSTATUSES:
+    return QDMI_DEVICE_JOB_PROPERTY_PROGRAMSTATUSES;
   case QDMI_JOB_PROPERTY_CUSTOM1:
     return QDMI_DEVICE_JOB_PROPERTY_CUSTOM1;
   case QDMI_JOB_PROPERTY_CUSTOM2:
@@ -574,10 +588,11 @@ auto QDMI_Job_impl_d::wait(size_t timeout) const -> int {
   return device_->getLibrary().device_job_wait(deviceJob_, timeout);
 }
 
-auto QDMI_Job_impl_d::getResults(QDMI_Job_Result result, const size_t size,
+auto QDMI_Job_impl_d::getResults(const size_t programIndex,
+                                 QDMI_Job_Result result, const size_t size,
                                  void* data, size_t* sizeRet) const -> int {
-  return device_->getLibrary().device_job_get_results(deviceJob_, result, size,
-                                                      data, sizeRet);
+  return device_->getLibrary().device_job_get_results(
+      deviceJob_, programIndex, result, size, data, sizeRet);
 }
 
 auto QDMI_Job_impl_d::free() -> void { device_->freeJob(this); }
@@ -1081,6 +1096,15 @@ int QDMI_job_set_parameter(QDMI_Job job, QDMI_Job_Parameter param,
   return job->setParameter(param, size, value);
 }
 
+int QDMI_job_set_programs(QDMI_Job job, const QDMI_Program_Format* format,
+                          const size_t count, const size_t* sizes,
+                          const void* const* programs) {
+  if (job == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  return job->setPrograms(format, count, sizes, programs);
+}
+
 int QDMI_job_query_property(QDMI_Job job, QDMI_Job_Property prop,
                             const size_t size, void* value, size_t* sizeRet) {
   if (job == nullptr) {
@@ -1117,12 +1141,13 @@ int QDMI_job_wait(QDMI_Job job, size_t timeout) {
   return job->wait(timeout);
 }
 
-int QDMI_job_get_results(QDMI_Job job, QDMI_Job_Result result,
-                         const size_t size, void* data, size_t* sizeRet) {
+int QDMI_job_get_results(QDMI_Job job, const size_t programIndex,
+                         QDMI_Job_Result result, const size_t size, void* data,
+                         size_t* sizeRet) {
   if (job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  return job->getResults(result, size, data, sizeRet);
+  return job->getResults(programIndex, result, size, data, sizeRet);
 }
 
 int QDMI_device_query_device_property(QDMI_Device device,

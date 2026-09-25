@@ -215,6 +215,10 @@ legalization
   The act of replacing or rejecting IR until every remaining operation and type
   satisfies a declared conversion target or target capability.
 
+native multi-program job
+  One submitted job containing an ordered list of programs with common
+  parameters. Results and optional individual outcomes use the input indices.
+
 compiler target
   An immutable MQT description of the operations, topology, and properties that
   a compiler pipeline may use for one destination. It is a snapshot used for

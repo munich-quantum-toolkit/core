@@ -151,6 +151,7 @@ class MockQDMIDevice:
             self._shots = shots
             alphabet = string.ascii_lowercase + string.digits
             self._id = "mock-job-" + "".join(secrets.choice(alphabet) for _ in range(8))
+            self.program_statuses = None
             self._status = QDMIJobHandle.Status.DONE
             self._counts: dict[str, int] | None = None
 
@@ -168,10 +169,12 @@ class MockQDMIDevice:
             """Return job status."""
             return self._status
 
-        def wait(self) -> None:
-            """Wait for job completion (no-op for mock)."""
+        @staticmethod
+        def wait() -> bool:
+            """Return immediately for this completed job."""
+            return True
 
-        def get_counts(self) -> dict[str, int]:
+        def get_counts(self, program_index: int = 0) -> dict[str, int]:  # ruff:ignore[unused-method-argument] Match the indexed result interface.
             """Get measurement counts with uniform random distribution.
 
             Returns:
@@ -200,7 +203,7 @@ class MockQDMIDevice:
         def cancel(self) -> None:
             """Cancel job (no-op for mock)."""
 
-        def get_shots(self) -> list[str]:
+        def get_shots(self, program_index: int = 0) -> list[str]:
             """Raise unless the test device implements ordered shots.
 
             Raises:
@@ -278,6 +281,9 @@ class MockQDMIDevice:
     def supported_program_formats() -> list[ProgramFormat]:
         """Return list of supported program formats."""
         return [ProgramFormat.QASM2, ProgramFormat.QASM3]
+
+    def try_submit_programs(self, *_args: object, **_kwargs: object) -> None:
+        """Reject native groups before submission to exercise independent jobs."""
 
     def submit_job(self, program: str, program_format: ProgramFormat, num_shots: int) -> MockJob:  # ruff:ignore[unused-method-argument]
         """Submit a mock job to the device.
@@ -776,7 +782,7 @@ def test_qasm_preflight_maps_control_flow_operands(monkeypatch: pytest.MonkeyPat
 
 
 def test_backend_rejects_device_without_program_payload() -> None:
-    """A device that only accepts BATCH_JOB has no format a circuit can go into."""
+    """A device without an available serializer cannot accept a circuit."""
     qc = QuantumCircuit(2)
     qc.h(0)
     qc.measure_all()
@@ -785,7 +791,7 @@ def test_backend_rejects_device_without_program_payload() -> None:
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(UnsupportedFormatError, match="No program serializer for any format the device supports"):
-        backend._serialize_circuit(qc, [ProgramFormat.BATCH_JOB])  # ruff:ignore[private-member-access]
+        backend._serialize_circuit(qc, [ProgramFormat.CUSTOM1])  # ruff:ignore[private-member-access]
 
 
 @pytest.mark.parametrize(

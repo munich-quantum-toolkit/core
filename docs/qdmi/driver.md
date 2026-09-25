@@ -63,6 +63,21 @@ registration and targeted session allocation. Standard-interface drivers need
 neither function. The generic `Session` and `open_device` APIs use only the
 standard Client Interface.
 
+## Multi-program jobs
+
+`Device.submit_programs` submits an ordered program list with one format and
+common job parameters. `num_shots` applies to each program. Text programs carry
+one terminating null byte; binary programs retain their exact bytes.
+`try_submit_programs` returns `None` only when the device rejects the list
+before submission. Submission errors propagate, since retrying an uncertain
+submission could duplicate execution.
+
+Use `job.num_programs` and the optional `program_index` argument on result
+methods to retrieve results in input order. `job.program_statuses` reports
+individual outcomes when supported, or `None` otherwise. A successful program's
+results remain available if another program fails or is cancelled. Cancelling
+uses the shared native job handle.
+
 ## Building the Bundled Devices
 
 Standalone MQT Core builds include the DDSIM and superconducting QDMI device
