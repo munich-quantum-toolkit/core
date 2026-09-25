@@ -1,6 +1,6 @@
 # QDMI program output conformance
 
-Status: in progress.
+Status: implemented and submitted as draft; human review pending.
 
 ## Goal and scope
 
@@ -26,16 +26,16 @@ and PennyLane executions, including asymmetric layouts and initialized holes.
   physical placement. Unsupported program features fail explicitly.
 - IQM keeps its existing direct QIR submission path, without an LLVM dependency.
   Its terminal-measurement limitation is documented; full conformance work uses
-  IQM JSON for the frontend integrations (user decision, 2026-09-24).
+  IQM JSON for the frontend integrations.
 
-## Work remaining
+## Completion
 
 - [x] Implement full QIR/OpenQASM results and strict binary eligibility in
       DDSIM.
 - [x] Preserve source layouts in serializers and plugin result reconstruction.
 - [x] Compare DDSIM/plugin results with native SDK executions.
-- [ ] Implement and validate coordinated IQM and Braket provider adoption.
-- [ ] Publish three draft implementation PRs and reconcile superseded proposals.
+- [x] Implement and validate coordinated IQM and Braket provider adoption.
+- [x] Publish three draft implementation PRs and reconcile superseded proposals.
 
 ## Validation
 
@@ -46,5 +46,18 @@ keys/columns and placement permutations; SDK comparisons verify public outputs.
 
 Core validation: release build succeeded; the 3599-test native suite passes with
 one existing skip after updating output-contract fixtures. The focused Python
-suite passes 562 tests. Documentation and generated stubs build. Final
-whole-file static analysis and publication remain in progress.
+suite passes 562 tests. Documentation, generated stubs, repository lint, and
+whole-file static analysis pass. The release build disables IPO locally to avoid
+a prebuilt LLVM/LTO linker conflict.
+
+Draft implementations:
+[Core #2626](https://github.com/munich-quantum-toolkit/core/pull/2626),
+[QDMI-on-IQM #276](https://github.com/iqm-finland/QDMI-on-IQM/pull/276), and
+[Braket #242](https://github.com/munich-quantum-software/amazon-braket-qdmi-device/pull/242).
+IQM passes 165 native tests, 70 Python tests with released Core, and all 21
+serializer tests with this Core branch. Braket passes 144 native tests, 70
+Python tests on both Python 3.14 and minimum direct dependencies on Python 3.11,
+and all five SDK comparisons with this Core branch. Live test skips are
+intentional. Provider lint, documentation, and whole-file static analysis were
+also run; Braket retains existing dependency-header warnings. No hosted-CI
+status or hardware execution is claimed.
