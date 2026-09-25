@@ -582,6 +582,11 @@ TEST_P(DriverJobTest, JobSetParameter) {
     EXPECT_THAT(QDMI_job_set_parameter(job, param, 0, nullptr),
                 testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
   }
+  /// Exercise the reserved former PROGRAM slot.
+  /// NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
+  EXPECT_EQ(QDMI_job_set_parameter(job, static_cast<QDMI_Job_Parameter>(1), 0,
+                                   nullptr),
+            QDMI_ERROR_NOTSUPPORTED);
   EXPECT_EQ(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_MAX, 0, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
 }
