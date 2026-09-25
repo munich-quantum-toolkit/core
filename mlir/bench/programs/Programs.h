@@ -27,6 +27,7 @@ class QFT;
 class QFTAdder;
 class QPE;
 class RepeatUntilSuccess;
+class Shor;
 class Teleportation;
 class WState;
 } // namespace mqt::bench
@@ -66,6 +67,9 @@ SmallVector<Value> qpe(qc::QCProgramBuilder& builder, const QPE& benchmark);
 /// Emit the repeat-until-success benchmark.
 SmallVector<Value> repeatUntilSuccess(qc::QCProgramBuilder& builder,
                                       const RepeatUntilSuccess& benchmark);
+
+/// Emit structured semiclassical Shor order finding.
+SmallVector<Value> shor(qc::QCProgramBuilder& builder, const Shor& benchmark);
 
 /// Emit the quantum teleportation benchmark.
 SmallVector<Value> teleportation(qc::QCProgramBuilder& builder,

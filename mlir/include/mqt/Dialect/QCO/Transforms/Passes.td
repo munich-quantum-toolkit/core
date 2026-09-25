@@ -143,12 +143,15 @@ def UnrollLoopsForPayload : Pass<"unroll-loops-for-payload", "mlir::ModuleOp"> {
     require fixed quantum indices and specialize these loops. Scalar loops
     remain when supported by the payload. Run QCO cleanup first to move
     complete constant-slot tensor accesses outside structured control flow.
-    The pass limits the total number of cloned body operations to 65,536.
+    The `max-operations` option limits cloned body operations to one billion by default.
     Run constant propagation and QCO cleanup again after this pass, then
     `legalize-control-flow` to check the remaining branches and loops.
     After folding static branches, the pass checks that all SCF loops carry
     linear QCO state through iteration arguments instead of capturing it.
   }];
+  let options = [Option<"maxOperations", "max-operations", "uint64_t",
+                        "1'000'000'000",
+                        "Maximum number of cloned loop-body operations.">];
 }
 
 def LegalizeControlFlow : Pass<"legalize-control-flow", "mlir::ModuleOp"> {

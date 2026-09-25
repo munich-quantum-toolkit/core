@@ -18,7 +18,7 @@ auto fromFile = mlir::QCProgram::fromOpenQASMFile("program.qasm");
 
 The lower-level `mlir::qc::translateOpenQASMToQC` importer accepts
 `OpenQASMImportOptions`. Its `gatePolicy` field selects the gate policy, and
-`maxOperations` limits the number of inserted QC operations (10,000,000 by
+`maxOperations` limits the number of inserted QC operations (1,000,000,000 by
 default). Exceeding the limit emits a diagnostic and returns no program.
 
 Python provides the corresponding constructors:
@@ -362,10 +362,11 @@ Inline expressions, including those in gate functions, have a nesting limit of
 256 and an expansion budget of 4,096 values per expression. The total width of
 classical registers, including wide snapshots, is limited to 1,048,576 bits.
 Import limits affine proofs to 256 levels and 4,096 distinct expressions per
-proof and QC emission to 10,000,000 inserted operations. Textual expansion is
-limited to 1,000,000 statements and 1,000,000 file-include expansions, including
-empty files. Standard-library includes count as statements. Include nesting is
-limited to 64 levels. Exceeding any bound produces a diagnostic and no program.
+proof and QC emission to 1,000,000,000 inserted operations. Textual expansion is
+limited to 100,000,000 statements and 1,000,000 file-include expansions,
+including empty files. Standard-library includes count as statements. Include
+nesting is limited to 64 levels. Exceeding any bound produces a diagnostic and
+no program.
 
 The exporter rejects unsupported operations, including explicit `cf.assert`
 operations and live poison values. It does not silently discard them. Programs

@@ -74,8 +74,6 @@
 namespace mlir::qco {
 namespace {
 
-constexpr size_t MAX_WHILE_ITERATIONS = 100'000;
-
 struct QubitMap {
   DenseMap<Value, dd::Qubit> qubits;
   size_t numQubits = 0;
@@ -186,7 +184,7 @@ struct WalkState {
   std::mt19937_64* rng = nullptr;
   const DenseSet<Operation*>* deferredMeasurements = nullptr;
   DenseSet<dd::Qubit>* deferredMeasuredWires = nullptr;
-  size_t remainingWhileIterations = MAX_WHILE_ITERATIONS;
+  size_t remainingWhileIterations;
   DenseSet<Operation*> activeCalls;
   SymbolTableCollection symbols;
 };
@@ -1674,8 +1672,8 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
                                   walk, whileOp);
           }
           if (walk.remainingWhileIterations == 0) {
-            return whileOp.emitError("QCO DD execution exceeds the limit of "
-                                     "100000 while iterations");
+            return whileOp.emitError("QCO DD execution exceeds the configured "
+                                     "while-iteration limit");
           }
           --walk.remainingWhileIterations;
           if (failed(bindValuePairs(condition.getArgs(), after.getArguments(),
@@ -1906,7 +1904,8 @@ prepare(func::FuncOp func, dd::Package& dd,
 
 FailureOr<dd::MatrixDD>
 buildFunctionality(func::FuncOp func, dd::Package& dd,
-                   const DDArgumentBindings& argumentBindings) {
+                   const DDArgumentBindings& argumentBindings,
+                   const DDExecutionOptions& options) {
   auto prepared =
       prepare(func, dd, argumentBindings, /*bindEntryAllocations=*/true);
   if (failed(prepared)) {
@@ -1921,6 +1920,7 @@ buildFunctionality(func::FuncOp func, dd::Package& dd,
       .classical = &classical,
       .dd = &dd,
       .rng = nullptr,
+      .remainingWhileIterations = options.maxWhileIterations,
   };
   walkState.activeCalls.insert(func.getOperation());
 
@@ -1937,6 +1937,7 @@ buildFunctionality(func::FuncOp func, dd::Package& dd,
 static FailureOr<dd::VectorDD>
 simulateImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
              const PreparedState& prepared, std::mt19937_64* rng,
+             const DDExecutionOptions& options,
              const DenseSet<Operation*>* deferredMeasurements = nullptr,
              ClassicalEnv* finalClassical = nullptr,
              DenseSet<dd::Qubit>* deferredMeasuredWires = nullptr,
@@ -1963,6 +1964,7 @@ simulateImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
       .rng = rng,
       .deferredMeasurements = deferredMeasurements,
       .deferredMeasuredWires = deferredMeasuredWires,
+      .remainingWhileIterations = options.maxWhileIterations,
   };
   walkState.activeCalls.insert(func.getOperation());
 
@@ -1982,13 +1984,14 @@ simulateImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
 
 FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
                                  dd::Package& dd, std::mt19937_64& rng,
-                                 const DDArgumentBindings& argumentBindings) {
+                                 const DDArgumentBindings& argumentBindings,
+                                 const DDExecutionOptions& options) {
   auto prepared = prepare(func, dd, argumentBindings);
   if (failed(prepared)) {
     dd.decRef(in);
     return failure();
   }
-  return simulateImpl(func, in, dd, *prepared, &rng);
+  return simulateImpl(func, in, dd, *prepared, &rng, options);
 }
 
 static bool mayMeasureOrReset(func::FuncOp func, DenseSet<Operation*>& active,
@@ -2076,7 +2079,8 @@ getSamplingPlan(func::FuncOp func, bool statevectorAnalysis = false) {
 
 FailureOr<dd::VectorDD>
 simulateStatevector(func::FuncOp func, dd::Package& dd,
-                    const DDArgumentBindings& argumentBindings) {
+                    const DDArgumentBindings& argumentBindings,
+                    const DDExecutionOptions& options) {
   auto prepared = prepare(func, dd, argumentBindings);
   if (failed(prepared)) {
     return failure();
@@ -2094,7 +2098,7 @@ simulateStatevector(func::FuncOp func, dd::Package& dd,
   Operation* deferredMeasurementUse = nullptr;
   auto state = simulateImpl(
       func, dd::makeZeroState(prepared->qubits.numQubits, dd), dd, *prepared,
-      nullptr, &plan->deferredMeasurements, nullptr, &measuredWires,
+      nullptr, options, &plan->deferredMeasurements, nullptr, &measuredWires,
       &deferredMeasurementUse, /*validateQuantumReturn=*/false);
   if (failed(state) && deferredMeasurementUse != nullptr) {
     return deferredMeasurementUse->emitError()
@@ -2137,7 +2141,8 @@ static FailureOr<std::map<std::string, size_t>>
 sampleImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
            size_t shots, std::mt19937_64& rng, const PreparedState& prepared,
            std::vector<std::string>* shotResults,
-           std::optional<dd::VectorDD>* retainedState) {
+           std::optional<dd::VectorDD>* retainedState,
+           const DDExecutionOptions& options) {
   const auto inputGuard = llvm::make_scope_exit([&] { dd.decRef(in); });
   auto plan = getSamplingPlan(func);
   if (failed(plan)) {
@@ -2175,7 +2180,7 @@ sampleImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
     DenseSet<dd::Qubit> measuredWires;
     Operation* deferredMeasurementUse = nullptr;
     dd.incRef(in);
-    auto state = simulateImpl(func, in, dd, prepared, nullptr,
+    auto state = simulateImpl(func, in, dd, prepared, nullptr, options,
                               &plan->deferredMeasurements, &classical,
                               &measuredWires, &deferredMeasurementUse);
     if (succeeded(state)) {
@@ -2199,8 +2204,8 @@ sampleImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
   for (size_t i = 0; i < shots; ++i) {
     ClassicalEnv classical;
     dd.incRef(in);
-    auto state =
-        simulateImpl(func, in, dd, prepared, &rng, nullptr, &classical);
+    auto state = simulateImpl(func, in, dd, prepared, &rng, options, nullptr,
+                              &classical);
     if (failed(state)) {
       return failure();
     }
@@ -2218,7 +2223,8 @@ sampleImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
 FailureOr<std::map<std::string, size_t>>
 sample(func::FuncOp func, size_t shots, uint64_t seed,
        const DDArgumentBindings& argumentBindings,
-       std::vector<std::string>* shotResults, DDSamplingState* retainedState) {
+       std::vector<std::string>* shotResults, DDSamplingState* retainedState,
+       const DDExecutionOptions& options) {
   if (retainedState != nullptr) {
     *retainedState = {};
   }
@@ -2233,9 +2239,10 @@ sample(func::FuncOp func, size_t shots, uint64_t seed,
     return failure();
   }
   std::optional<dd::VectorDD> state;
-  auto counts = sampleImpl(
-      func, dd::makeZeroState(prepared->qubits.numQubits, *dd), *dd, shots, rng,
-      *prepared, shotResults, retainedState != nullptr ? &state : nullptr);
+  auto counts =
+      sampleImpl(func, dd::makeZeroState(prepared->qubits.numQubits, *dd), *dd,
+                 shots, rng, *prepared, shotResults,
+                 retainedState != nullptr ? &state : nullptr, options);
   if (succeeded(counts) && state && retainedState != nullptr) {
     retainedState->state = *state;
     retainedState->dd = std::move(dd);

@@ -20,6 +20,7 @@
 #include "bench/QFTAdder.hpp"
 #include "bench/QPE.hpp"
 #include "bench/RepeatUntilSuccess.hpp"
+#include "bench/Shor.hpp"
 #include "bench/Teleportation.hpp"
 #include "bench/WState.hpp"
 
@@ -566,6 +567,25 @@ parseTeleportationParameters(const Json& parameters,
   return method == QPEMethod::Standard ? "standard" : "iterative";
 }
 
+[[nodiscard]] Shor parseShorParameters(const Json& parameters,
+                                       std::string_view source) {
+  rejectUnknownKeys(parameters, {"number", "base"}, source, "$/parameters");
+  ShorOptions options{
+      .number = unsignedInteger(
+          required(parameters, "number", source, "$/parameters"), source,
+          "$/parameters/number"),
+  };
+  if (const auto base = parameters.find("base"); base != parameters.end()) {
+    options.base = unsignedInteger(*base, source, "$/parameters/base");
+  }
+  return constructBenchmark(source, [&] { return Shor(options); });
+}
+
+[[nodiscard]] Json parametersJSON(const Shor& benchmark) {
+  const auto& options = benchmark.options();
+  return {{"number", options.number}, {"base", options.base}};
+}
+
 [[nodiscard]] Json parametersJSON(const BV& benchmark) {
   const auto& options = benchmark.options();
   return {
@@ -671,6 +691,16 @@ parseTeleportationParameters(const Json& parameters,
     reference["success_outcome"] = std::string(*successOutcome);
   }
   return reference;
+}
+
+[[nodiscard]] Json referenceJSON(const Shor& benchmark) {
+  return {
+      {"kind", "verification"},
+      {"model", "shor_factors"},
+      {"outcome_order", "big_endian"},
+      {"output", benchmark.output().name},
+      {"version", 1},
+  };
 }
 
 [[nodiscard]] Json referenceJSON(const BV& benchmark) {
@@ -1211,6 +1241,37 @@ template <class Benchmark>
   });
 }
 
+[[nodiscard]] Json shorInstanceSpecificationSchema() {
+  return baseInstanceSpecificationSchema<Shor>({
+      {"additionalProperties", false},
+      {
+          "properties",
+          {
+              {
+                  "number",
+                  {
+                      {"type", "integer"},
+                      {"minimum", 3},
+                      {"maximum", ShorOptions::MAX_NUMBER},
+                      {"not", {{"multipleOf", 2}}},
+                  },
+              },
+              {
+                  "base",
+                  {
+                      {"type", "integer"},
+                      {"minimum", 2},
+                      {"maximum", ShorOptions::MAX_NUMBER - 1},
+                      {"default", 2},
+                  },
+              },
+          },
+      },
+      {"required", {"number"}},
+      {"type", "object"},
+  });
+}
+
 [[nodiscard]] Json teleportationInstanceSpecificationSchema() {
   return baseInstanceSpecificationSchema<Teleportation>({
       {"additionalProperties", false},
@@ -1406,6 +1467,39 @@ std::string evaluationToJSON(const std::string_view caseIdValue,
               {"total_variation_distance", evaluation.totalVariationDistance},
           },
       },
+      {"schema_version", SCHEMA_VERSION},
+      {"shots", shots},
+  }
+      .dump();
+}
+
+std::string evaluationToJSON(std::string_view caseIdValue, size_t shots,
+                             const ShorEvaluation& evaluation) {
+  if (!validCaseId(caseIdValue) || shots == 0) {
+    throw std::invalid_argument(
+        "evaluation requires a SHA-256 case ID and at least one shot");
+  }
+  if (!std::isfinite(evaluation.successProbability) ||
+      evaluation.successProbability < 0. ||
+      evaluation.successProbability > 1. ||
+      evaluation.factors.has_value() != (evaluation.successProbability > 0.)) {
+    throw std::invalid_argument("factor verification requires a success "
+                                "fraction in [0, 1] and factors on success");
+  }
+  Json factors = nullptr;
+  if (evaluation.factors) {
+    const auto [first, second] = *evaluation.factors;
+    if (first < 2 || first > second ||
+        second > ShorOptions::MAX_NUMBER / first) {
+      throw std::invalid_argument("factors must form a sorted nontrivial pair "
+                                  "within the supported range");
+    }
+    factors = Json::array({first, second});
+  }
+  return Json{
+      {"case_id", std::string(caseIdValue)},
+      {"factors", factors},
+      {"metrics", {{"success_probability", evaluation.successProbability}}},
       {"schema_version", SCHEMA_VERSION},
       {"shots", shots},
   }
