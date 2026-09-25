@@ -36,7 +36,6 @@ if(TARGET MQT::CoreQDMIDriver)
 
   package_add_test(${TARGET_NAME} MQT::CoreQDMIDriver test_driver.cpp)
   target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMI)
-  target_include_directories(${TARGET_NAME} PRIVATE "${PROJECT_SOURCE_DIR}/src/qdmi")
 
   set(DIAGNOSTIC_TARGET_NAME mqt-core-qdmi-driver-diagnostic-test)
   set(diagnostic_config_file

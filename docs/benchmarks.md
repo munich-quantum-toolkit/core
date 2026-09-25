@@ -276,7 +276,7 @@ from fractions import Fraction
 
 from mqt.core.bench import qpe
 from mqt.core.mlir import compile_program, submit_program
-from mqt.core.qdmi.driver import open_device
+from mqt.core.qdmi import open_device
 
 device = open_device("mqt.ddsim.default")
 for method in (qpe.Method.STANDARD, qpe.Method.ITERATIVE):

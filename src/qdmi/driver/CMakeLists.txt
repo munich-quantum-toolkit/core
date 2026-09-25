@@ -17,7 +17,6 @@ if(NOT TARGET ${TARGET_NAME})
   target_compile_definitions(${TARGET_NAME} PRIVATE QDMI_driver_EXPORTS)
 
   target_sources(${TARGET_NAME} PRIVATE DeviceRegistry.cpp Driver.cpp)
-  target_include_directories(${TARGET_NAME} PRIVATE "${PROJECT_SOURCE_DIR}/src/qdmi")
 
   target_sources(
     ${TARGET_NAME}
@@ -27,6 +26,7 @@ if(NOT TARGET ${TARGET_NAME})
            ${MQT_CORE_INCLUDE_BUILD_DIR}
            FILES
            ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/driver/Driver.hpp
+           ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/driver/DriverExtension.hpp
            ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/driver/SessionConfig.hpp)
 
   target_link_libraries(
