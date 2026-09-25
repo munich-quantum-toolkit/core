@@ -1092,11 +1092,11 @@ static bool fuseTwoQubitGateRun(IRRewriter& rewriter, UnitaryOpInterface head,
 
 static bool fuseTwoQubitGates(IRRewriter& rewriter, ModuleOp moduleOp,
                               CompilerTarget::SynthesisBasis basis,
+                              NativeCostAnalysis& analysis,
                               const CompilerTarget* target = nullptr,
                               const SiteMap* sites = nullptr,
-                              bool shrinkOnly = false, uint64_t seed = 2023) {
+                              bool shrinkOnly = false) {
   bool changed = false;
-  NativeCostAnalysis analysis(compilationSeed(moduleOp, seed));
   /// A run's successors have already been visited when its head erases them.
   moduleOp->walk<WalkOrder::PostOrder, ReverseIterator>(
       [&](Operation* operation) {
@@ -1137,7 +1137,8 @@ protected:
       return;
     }
     IRRewriter rewriter(&getContext());
-    if (fuseTwoQubitGates(rewriter, moduleOp, *basis,
+    NativeCostAnalysis analysis(compilationSeed(moduleOp, 2023));
+    if (fuseTwoQubitGates(rewriter, moduleOp, *basis, analysis,
                           target_ ? &*target_ : nullptr, nullptr, true) &&
         failed(mlir::mqt::normalizeGlobalPhases(moduleOp))) {
       signalPassFailure();
@@ -1230,12 +1231,12 @@ protected:
 
     SynthesisListener listener(&getContext(), *sites);
     IRRewriter rewriter(&getContext(), &listener);
+    NativeCostAnalysis analysis(compilationSeed(moduleOp, seed));
     if (targetBasis && targetBasis->entangler) {
-      fuseTwoQubitGates(rewriter, moduleOp, *targetBasis, &target,
-                        indexed ? nullptr : &*sites, false, seed);
+      fuseTwoQubitGates(rewriter, moduleOp, *targetBasis, analysis, &target,
+                        indexed ? nullptr : &*sites);
     }
     listener.foldPending();
-    NativeCostAnalysis analysis(compilationSeed(moduleOp, seed));
     /// Rewrite users before producers so each unvisited operation retains its
     /// original operands and their collected sites.
     const auto result = moduleOp->walk<WalkOrder::PostOrder, ReverseIterator>(
