@@ -3115,7 +3115,7 @@ private:
       } else {
         const auto step = std::get<int64_t>(constant.value);
         positive = step > 0;
-        // Unsigned magnitude also handles INT64_MIN without signed overflow.
+        /// Unsigned magnitude also handles INT64_MIN without signed overflow.
         stride = positive ? static_cast<uint64_t>(step)
                           : uint64_t{0} - static_cast<uint64_t>(step);
       }
@@ -4845,7 +4845,6 @@ private:
     }
 
     std::vector<std::vector<QubitReference>> selections;
-    size_t broadcastWidth = 1;
     std::optional<size_t> registerWidth;
     for (const auto& operand : call.operands) {
       MQT_OQ3_TRY_ASSIGN(selection, resolveQubitOperand(operand));
@@ -4859,11 +4858,11 @@ private:
                       "all broadcasting operands must have the same width");
         }
         registerWidth = selection.size();
-        broadcastWidth = selection.size();
       }
       selections.push_back(std::move(selection));
     }
 
+    const auto broadcastWidth = registerWidth.value_or(1);
     std::vector<GateApplication> applications;
     applications.reserve(broadcastWidth);
     size_t affineComparisons = 0;
