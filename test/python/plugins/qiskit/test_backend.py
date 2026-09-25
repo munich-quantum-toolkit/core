@@ -602,15 +602,17 @@ def test_job_get_counts_default(ddsim_backend: QDMIBackend) -> None:
     assert sum(counts.values()) == 100
 
 
-def test_job_submit_raises_error(ddsim_backend: QDMIBackend) -> None:
-    """Calling submit() on a job should raise NotImplementedError."""
+def test_job_submit_preserves_existing_job(ddsim_backend: QDMIBackend) -> None:
+    """Calling submit() with no untouched entries must preserve the native execution."""
     qc = QuantumCircuit(2)
     qc.cz(0, 1)
     qc.measure_all()
 
     job = ddsim_backend.run(qc, shots=100)
-    with pytest.raises(NotImplementedError, match="You should never have to submit jobs"):
-        job.submit()
+    entries = job.entries
+    job.submit()
+    assert job.entries == entries
+    assert job.result().success
 
 
 def test_backend_supports_rccx_gate(ddsim_backend: QDMIBackend) -> None:

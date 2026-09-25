@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import math
 from collections import Counter
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import pytest
@@ -36,6 +36,9 @@ from mqt.core.qdmi import Job as QDMIJobHandle
 from mqt.core.qdmi import ProgramFormat
 
 from .helpers import StubDevice, patch_open_device, rotation_results, stub_device
+
+if TYPE_CHECKING:
+    from unittest.mock import Mock
 
 
 def test_uses_already_open_qdmi_device(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -99,8 +102,8 @@ def test_execution_time_accumulates_batch_wall_time(monkeypatch: pytest.MonkeyPa
     """Count overlapping job execution once for each PennyLane batch."""
     qdmi = stub_device()
     patch_open_device(monkeypatch, qdmi)
-    readings = iter([0.0, 1.5, 10.0, 12.25])
-    monkeypatch.setattr("mqt.core.plugins.pennylane.device.monotonic", lambda: next(readings))
+    readings = iter([0.0, 0.5, 0.5, 1.5, 10.0, 11.0, 11.0, 12.25])
+    monkeypatch.setattr("mqt.core.plugins.pennylane.job.monotonic", lambda: next(readings))
     device = QDMIDevice("fake.qdmi", wires=2)
 
     @qp.qnode(device, shots=[(5, 2), 7])
@@ -158,22 +161,14 @@ def test_batches_execute_in_input_order(monkeypatch: pytest.MonkeyPatch) -> None
     np.testing.assert_equal(results, ([0.0, 0.0, 1.0, 0.0], [0.0, 1.0, 0.0, 0.0]))
 
 
-@pytest.mark.parametrize("cancel_error", [RuntimeError, ValueError, KeyboardInterrupt])
-def test_execution_failure_cancels_submitted_jobs(
-    monkeypatch: pytest.MonkeyPatch, cancel_error: type[BaseException]
-) -> None:
-    """Cancel every submitted job without masking the execution failure."""
+def test_execution_failure_preserves_submitted_jobs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Collect later jobs and retain successful samples without any cancellation."""
     qdmi = stub_device()
     submit_job = qdmi.submit_job
 
     def fail_wait() -> bool:
         msg = "wait failed"
         raise RuntimeError(msg)
-
-    def fail_cancel() -> None:
-        qdmi.events.append("cancel:1")
-        msg = "cancel failed"
-        raise cancel_error(msg)
 
     def submit(
         program: str,
@@ -182,9 +177,7 @@ def test_execution_failure_cancels_submitted_jobs(
         **parameters: object,
     ) -> QDMIJobHandle:
         job = submit_job(program, program_format, num_shots, **parameters)
-        if job.id == "1":
-            monkeypatch.setattr(job, "cancel", fail_cancel)
-        elif job.id == "2":
+        if job.id == "2":
             monkeypatch.setattr(job, "wait", fail_wait)
         return job
 
@@ -197,15 +190,15 @@ def test_execution_failure_cancels_submitted_jobs(
         device.execute(tape)
 
     assert tracker.totals == {"batches": 1, "batch_len": 1, "executions": 3, "shots": 9}
+    assert device.last_job is not None
+    assert [entry.result is not None for entry in device.last_job.entries] == [True, False, True]
 
     assert qdmi.events == [
         "submit:1",
         "submit:2",
         "submit:3",
         "wait:1",
-        "cancel:1",
-        "cancel:2",
-        "cancel:3",
+        "wait:3",
     ]
 
 
@@ -405,3 +398,167 @@ def test_sample_decoding_rejects_malformed_shots(monkeypatch: pytest.MonkeyPatch
     tape = qp.tape.QuantumScript([], [qp.sample(wires=[0, 1])], shots=2)
     with pytest.raises(PennyLaneExecutionError, match=r"invalid 2-wire shot|samples for a 2-shot job"):
         device.execute(tape)
+
+
+@pytest.mark.parametrize("max_retries", [None, 3])
+def test_retry_shot_copies_preserves_order_and_tracking(
+    monkeypatch: pytest.MonkeyPatch, max_retries: int | None
+) -> None:
+    """Replace one failed shot copy without repeating successful copies or losing their mapping."""
+    qdmi = stub_device()
+    original = qdmi.submit_job
+    handles = []
+
+    def submit(program: str, program_format: ProgramFormat, num_shots: int, **parameters: object) -> QDMIJobHandle:
+        handle = original(program, program_format, num_shots, **parameters)
+        handle = cast("Mock", handle)
+        handle.check.side_effect = None
+        handle.check.return_value = QDMIJobHandle.Status.FAILED if not handles else QDMIJobHandle.Status.DONE
+        handles.append(handle)
+        return handle
+
+    monkeypatch.setattr(qdmi, "submit_job", submit)
+    patch_open_device(monkeypatch, qdmi)
+    if max_retries is None:
+        device = QDMIDevice("fake.qdmi", wires=2, job_parameters={"custom1": 9})
+    else:
+        device = QDMIDevice("fake.qdmi", wires=2, job_parameters={"custom1": 9}, max_retries=max_retries)
+    tape = qp.tape.QuantumScript([], [qp.sample(wires=[0, 1])], shots=[2, 3, 4])
+    with qp.Tracker(device) as tracker:
+        if max_retries:
+            result = device.execute(tape)
+        else:
+            with pytest.raises(PennyLaneExecutionError) as caught:
+                device.execute(tape)
+            assert caught.value.job is device.last_job
+            assert device.last_job is not None
+            assert device.submitted_jobs == 3
+            device.last_job.resubmit([0])
+            result = device.last_job.result()
+    assert [samples.shape for samples in result] == [(2, 2), (3, 2), (4, 2)]
+    assert [submission[2] for submission in qdmi.submissions] == [2, 3, 4, 2]
+    assert qdmi.submissions[0] == qdmi.submissions[3]
+    assert device.submitted_jobs == 4
+    assert tracker.totals == {"batches": 1, "batch_len": 1, "executions": 4, "shots": 11}
+    assert device.last_job is not None
+    assert [(entry.input_index, entry.shot_index) for entry in device.last_job.entries] == [(0, 0), (0, 1), (0, 2)]
+    assert device.last_job.entries[0].automatic_retries == int(bool(max_retries))
+    for handle in handles[1:]:
+        handle.get_shots.assert_called_once()
+        handle.cancel.assert_not_called()
+
+
+@pytest.mark.parametrize("value", [-1, True, 1.5, "3", None])
+def test_invalid_retry_configuration(monkeypatch: pytest.MonkeyPatch, value: object) -> None:
+    """Reject invalid retry counts through both PennyLane constructors before execution."""
+    qdmi = stub_device()
+    patch_open_device(monkeypatch, qdmi)
+    with pytest.raises(PennyLaneConfigurationError, match="max_retries"):
+        QDMIDevice("fake.qdmi", max_retries=cast("int", value))
+    with pytest.raises(PennyLaneConfigurationError, match="max_retries"):
+        qp.device("mqt.ddsim.default", max_retries=value)
+    assert not qdmi.submissions
+
+
+@pytest.mark.parametrize("interrupted", [False, True])
+def test_partial_submission_retains_pennylane_batch(monkeypatch: pytest.MonkeyPatch, *, interrupted: bool) -> None:
+    """Submission exceptions and interruptions retain handles for accepted shot copies."""
+    qdmi = stub_device()
+    original = qdmi.submit_job
+    cause = KeyboardInterrupt() if interrupted else RuntimeError("submission failed")
+
+    def submit(program: str, program_format: ProgramFormat, num_shots: int, **parameters: object) -> QDMIJobHandle:
+        if len(qdmi.submissions) == 1:
+            raise cause
+        return original(program, program_format, num_shots, **parameters)
+
+    monkeypatch.setattr(qdmi, "submit_job", submit)
+    patch_open_device(monkeypatch, qdmi)
+    device = QDMIDevice("fake.qdmi", wires=2)
+    tape = qp.tape.QuantumScript([], [qp.sample(wires=[0, 1])], shots=[2, 3, 4])
+    with pytest.raises(KeyboardInterrupt if interrupted else PennyLaneExecutionError) as caught:
+        device.execute(tape)
+    batch = device.last_job
+    assert batch is not None
+    if isinstance(caught.value, PennyLaneExecutionError):
+        assert caught.value.job is batch
+    batch.collect()
+    monkeypatch.setattr(qdmi, "submit_job", original)
+    batch.resubmit([1], allow_unknown=True)
+    batch.submit()
+    assert [samples.shape for samples in batch.result()] == [(2, 2), (3, 2), (4, 2)]
+    assert device.submitted_jobs == 3
+    assert not any(event.startswith("cancel") for event in qdmi.events)
+
+
+def test_preparation_interruption_clears_last_job(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An interrupted new execution cannot expose a preceding batch as its recovery handle."""
+    qdmi = stub_device()
+    patch_open_device(monkeypatch, qdmi)
+    device = QDMIDevice("fake.qdmi", wires=2)
+    tape = qp.tape.QuantumScript([], [qp.sample(wires=[0, 1])], shots=1)
+    samples = device.execute(tape)
+    previous = device.last_job
+    assert previous is not None
+
+    def interrupt(*_args: object) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("mqt.core.plugins.pennylane.device._ProgramConverter.convert", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        device.execute(qp.tape.QuantumScript([], [qp.sample(wires=[0, 1])], shots=2))
+    assert device.last_job is None
+    np.testing.assert_array_equal(previous.result(), samples)
+    assert len(qdmi.submissions) == 1
+
+
+def test_result_read_failures_retain_both_causes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An unavailable shots result and failing counts fallback keep both diagnostics."""
+    qdmi = stub_device()
+    original = qdmi.submit_job
+    errors = (RuntimeError("shots unavailable"), RuntimeError("counts unavailable"))
+
+    def submit(program: str, program_format: ProgramFormat, num_shots: int, **parameters: object) -> QDMIJobHandle:
+        handle = original(program, program_format, num_shots, **parameters)
+        handle = cast("Mock", handle)
+        handle.check.side_effect = None
+        handle.check.return_value = QDMIJobHandle.Status.DONE
+        handle.get_shots.side_effect = errors[0]
+        handle.get_counts.side_effect = errors[1]
+        return handle
+
+    monkeypatch.setattr(qdmi, "submit_job", submit)
+    patch_open_device(monkeypatch, qdmi)
+    device = QDMIDevice("fake.qdmi", wires=2)
+    tape = qp.tape.QuantumScript([], [qp.sample(wires=[0, 1])], shots=2)
+    with pytest.raises(PennyLaneExecutionError) as caught:
+        device.execute(tape)
+    assert caught.value.job is not None
+    failure = caught.value.job.entries[0].attempts[0].failures[0]
+    assert failure.stage == "result"
+    assert isinstance(failure.cause, PennyLaneExecutionError)
+    assert isinstance(failure.cause.__cause__, ExceptionGroup)
+    assert failure.cause.__cause__.exceptions == errors
+    assert len(qdmi.submissions) == 1
+
+
+def test_tracking_interruption_keeps_accepted_handle(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A tracker callback cannot lose a job that the device already accepted."""
+    qdmi = stub_device()
+    patch_open_device(monkeypatch, qdmi)
+    device = QDMIDevice("fake.qdmi", wires=2)
+    tape = qp.tape.QuantumScript([], [qp.sample(wires=[0, 1])], shots=[2, 3])
+
+    def callback(**_kwargs: object) -> None:
+        if device.submitted_jobs:
+            raise KeyboardInterrupt
+
+    with qp.Tracker(device, callback=callback), pytest.raises(KeyboardInterrupt):
+        device.execute(tape)
+    batch = device.last_job
+    assert batch is not None
+    assert batch.entries[0].attempts[0].handle is not None
+    assert not batch.entries[1].attempts
+    batch.submit([1])
+    assert [samples.shape for samples in batch.result()] == [(2, 2), (3, 2)]
+    assert device.submitted_jobs == 2

@@ -32,6 +32,7 @@ if TYPE_CHECKING or HAS_QISKIT:
     from .backend import QDMIBackend
     from .exceptions import (
         CircuitValidationError,
+        JobExecutionError,
         JobSubmissionError,
         QDMIQiskitError,
         TranslationError,
@@ -49,6 +50,7 @@ if TYPE_CHECKING or HAS_QISKIT:
 
     __all__ += [
         "CircuitValidationError",
+        "JobExecutionError",
         "JobSubmissionError",
         "ProgramSerializer",
         "QDMIBackend",

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import datetime
 from collections import Counter
+from copy import deepcopy
 from numbers import Integral
 from typing import TYPE_CHECKING, Any
 
@@ -24,10 +25,16 @@ from qiskit.result.models import ExperimentResult
 
 from mqt.core.qdmi import Job as QDMIJobHandle
 
+from ..qdmi_batch import Batch, BatchEntry, JobAttempt
+from .exceptions import JobExecutionError, JobSubmissionError
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from typing import Self
 
     from qiskit.circuit import QuantumCircuit
+
+    from mqt.core.qdmi import ProgramFormat
 
     from .backend import QDMIBackend
 
@@ -36,21 +43,6 @@ __all__ = ["QDMIJob"]
 
 def __dir__() -> list[str]:
     return __all__
-
-
-def _cancel_jobs(jobs: Sequence[QDMIJobHandle]) -> bool:
-    """Attempt every cancellation without masking an execution failure.
-
-    Returns:
-        Whether every cancellation succeeded.
-    """
-    success = True
-    for job in jobs:
-        try:
-            job.cancel()
-        except BaseException:  # ruff:ignore[blind-except] Cleanup must preserve the original failure, even on interruption.
-            success = False
-    return success
 
 
 def _encode_bits(bits: str, width: int) -> str:
@@ -72,86 +64,178 @@ class QDMIJob(JobV1):
     """Qiskit job wrapping one or more QDMI jobs.
 
     This class handles both single-circuit and multi-circuit execution,
-    aggregating results from multiple QDMI jobs when needed.
+    aggregating results from multiple QDMI jobs when needed. Use
+    :meth:`from_circuits` to prepare an unsubmitted batch. Wrapping already
+    submitted jobs supports collection and cancellation, without replacements.
 
     Args:
         backend: The backend this job runs on.
-        jobs: Submitted QDMI jobs, in circuit order.
+        jobs: Submitted QDMI jobs in circuit order, or None to prepare a new batch.
         circuits: The executed circuits, used to snapshot result headers.
         shots: Requested shots per circuit.
         memory: Whether to collect genuine ordered shots.
+        max_retries: Lifetime replacement limit per confirmed failed entry;
+            disabled by default. Cancelled or uncertain jobs are never retried.
     """
 
     def __init__(
         self,
         backend: QDMIBackend,
-        jobs: Sequence[QDMIJobHandle],
+        jobs: Sequence[QDMIJobHandle] | None,
         circuits: Sequence[QuantumCircuit],
         *,
         shots: int,
         memory: bool,
+        max_retries: int = 0,
     ) -> None:
         """Initialize without querying remote job IDs.
 
         Raises:
-            ValueError: If the jobs and circuits are empty or differ in length.
+            ValueError: If circuits are empty or the supplied jobs differ in length.
         """
-        if not jobs or len(jobs) != len(circuits):
-            msg = "QDMIJob requires one submitted job per circuit and at least one circuit."
+        if not circuits or (jobs is not None and len(jobs) != len(circuits)):
+            msg = "QDMIJob requires at least one circuit and one submitted job per circuit when jobs are supplied."
             raise ValueError(msg)
         super().__init__(backend=backend, job_id="")
         self._backend: QDMIBackend = backend
-        self._jobs = list(jobs)
         self._headers: list[dict[str, Any]] = [
             {
                 "name": circuit.name,
                 "memory_slots": circuit.num_clbits,
                 "creg_sizes": [[register.name, register.size] for register in circuit.cregs],
-                "metadata": circuit.metadata.copy(),
+                "metadata": deepcopy(circuit.metadata),
             }
             for circuit in circuits
         ]
         self._shots = shots
         self._memory = memory
         self._result: Result | None = None
+        self._programs: tuple[tuple[str | bytes, ProgramFormat], ...] | None = None
+        if jobs is None:
+            formats = backend.device.supported_program_formats()
+            self._programs = tuple(
+                backend._serialize_circuit(circuit, formats)  # ruff:ignore[private-member-access] Use the backend's serializer selection.
+                for circuit in circuits
+            )
+        self._batch: Batch[ExperimentResult] = Batch(
+            [
+                BatchEntry(i, attempts=(JobAttempt(handle=jobs[i]),) if jobs is not None else ())
+                for i in range(len(circuits))
+            ],
+            submit=self._submit_entry if self._programs is not None else None,
+            decode=lambda index, handle: self._collect_result(handle, self._headers[index]),
+            submission_error=lambda msg: JobSubmissionError(msg, job=self),
+            execution_error=lambda msg: JobExecutionError(msg, job=self),
+            max_retries=max_retries,
+        )
+
+    @classmethod
+    def from_circuits(
+        cls,
+        backend: QDMIBackend,
+        circuits: Sequence[QuantumCircuit],
+        *,
+        shots: int,
+        memory: bool,
+        max_retries: int = 0,
+    ) -> Self:
+        """Prepare an unsubmitted batch from bound, backend-ready circuits.
+
+        All circuits are serialized before this method returns. Use
+        :meth:`~mqt.core.plugins.qiskit.backend.QDMIBackend.run` for normal execution, including circuit validation
+        and parameter binding.
+
+        Returns:
+            A batch ready for :meth:`submit`, with programs retained for recovery.
+        """
+        return cls(backend, None, circuits, shots=shots, memory=memory, max_retries=max_retries)
+
+    @property
+    def entries(self) -> tuple[BatchEntry[ExperimentResult], ...]:
+        """Ordered snapshots of inputs, submission attempts, results, and failures."""
+        return self._batch.entries
+
+    def _submit_entry(self, index: int) -> QDMIJobHandle:
+        assert self._programs is not None
+        program, program_format = self._programs[index]
+        return self._backend.device.submit_job(program=program, program_format=program_format, num_shots=self._shots)
+
+    def collect(self) -> tuple[BatchEntry[ExperimentResult], ...]:
+        """Read existing jobs without replacement executions or aggregate errors.
+
+        Returns:
+            Entry snapshots; successful results are cached.
+        """
+        return self._batch.collect()
+
+    def resubmit(self, indices: Sequence[int], *, allow_unknown: bool = False) -> QDMIJob:
+        """Explicitly replace selected entries of a batch created by ``backend.run``.
+
+        Unknown outcomes require ``allow_unknown=True`` and may duplicate work.
+        Running or completed jobs cannot be replaced. Use :meth:`submit` for
+        entries that have never been submitted.
+
+        Returns:
+            This batch handle, with earlier attempts retained.
+        """
+        self._batch.resubmit(indices, allow_unknown=allow_unknown)
+        return self
 
     def job_id(self) -> str:
-        """Return the first remote job ID, querying it only when requested."""
+        """Return the first entry's earliest accepted remote job ID.
+
+        The ID is queried on demand and stays unchanged across replacements.
+
+        Raises:
+            JobExecutionError: If the first entry has no job handle.
+        """
         if not self._job_id:
-            self._job_id = self._jobs[0].id
+            handle = next((attempt.handle for attempt in self.entries[0].attempts if attempt.handle is not None), None)
+            if handle is None:
+                msg = "The first batch entry has no job handle."
+                raise JobExecutionError(msg, job=self)
+            self._job_id = handle.id
         return self._job_id
 
     def cancel(self) -> bool:
-        """Attempt to cancel every job.
+        """Disable automatic retries and attempt to cancel every job.
 
         Returns:
             Whether all cancellation requests succeeded.
         """
-        return _cancel_jobs(self._jobs)
+        return self._batch.cancel()
 
     def result(self) -> Result:
         """Get the result of the job.
 
         For multi-circuit jobs, this aggregates results from all submitted circuits.
+        An automatic replacement can propagate :class:`~mqt.core.plugins.qiskit.exceptions.JobSubmissionError` with
+        this batch handle if submission fails.
 
         Returns:
             The result of the job with one ExperimentResult per circuit.
+
+        Raises:
+            JobExecutionError: If collection or result assembly fails.
         """
         if self._result is not None:
             return self._result
+        self._batch.complete()
         try:
-            experiment_results = list(map(self._collect_result, self._jobs, self._headers))
             self._result = Result(
                 backend_name=self._backend.name,
                 backend_version=self._backend.backend_version,
                 job_id=self.job_id(),
                 success=True,
                 date=datetime.datetime.now(datetime.UTC).isoformat(),
-                results=experiment_results,
+                results=[entry.result for entry in self.entries],
             )
-        except BaseException:
-            _cancel_jobs(self._jobs)
-            raise
+        except BaseException as exc:
+            self._batch.record_failure(0, "assembly", exc)
+            if not isinstance(exc, Exception):
+                raise
+            msg = f"Failed to assemble Qiskit results: {exc}"
+            raise JobExecutionError(msg, job=self) from exc
         return self._result
 
     def _collect_result(self, job: QDMIJobHandle, header: dict[str, Any]) -> ExperimentResult:
@@ -163,18 +247,6 @@ class QDMIJob(JobV1):
         Raises:
             JobError: If execution failed or the result violates the circuit's output contract.
         """
-        status = job.check()
-        if status not in {
-            QDMIJobHandle.Status.DONE,
-            QDMIJobHandle.Status.FAILED,
-            QDMIJobHandle.Status.CANCELED,
-        }:
-            job.wait()
-            status = job.check()
-        if status != QDMIJobHandle.Status.DONE:
-            msg = f"QDMI job did not complete successfully: {status.name}."
-            raise JobError(msg)
-
         width = header["memory_slots"]
         if self._memory:
             try:
@@ -232,8 +304,15 @@ class QDMIJob(JobV1):
         }
 
         statuses = []
-        for job in self._jobs:
-            qdmi_status = job.check()
+        for entry in self.entries:
+            if not entry.attempts:
+                statuses.append(JobStatus.INITIALIZING)
+                continue
+            handle = entry.attempts[-1].handle
+            if handle is None:
+                statuses.append(JobStatus.ERROR)
+                continue
+            qdmi_status = handle.check()
             if qdmi_status not in status_map:
                 msg = f"Unknown job status: {qdmi_status}"
                 raise ValueError(msg)
@@ -251,14 +330,9 @@ class QDMIJob(JobV1):
             return JobStatus.INITIALIZING
         return JobStatus.DONE
 
-    def submit(self) -> None:
-        """This method should not be called.
+    def submit(self, indices: Sequence[int] | None = None) -> None:
+        """Submit selected untouched entries, or all remaining untouched entries.
 
-        QDMI jobs are submitted via
-        :meth:`~mqt.core.plugins.qiskit.backend.QDMIBackend.run`.
+        Previously attempted entries require :meth:`resubmit`.
         """
-        msg = (
-            "You should never have to submit jobs by calling this method. "
-            "The job instance is only for checking the progress and retrieving the results of the submitted job."
-        )
-        raise NotImplementedError(msg)
+        self._batch.submit(indices)
