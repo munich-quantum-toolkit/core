@@ -528,7 +528,6 @@ TEST(QDMITest, BinaryProgramFormatClassification) {
     case QDMI_PROGRAM_FORMAT_QIRBASESTRING:
     case QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING:
     case QDMI_PROGRAM_FORMAT_IQMJSON:
-    case QDMI_PROGRAM_FORMAT_BATCHJOB:
     case QDMI_PROGRAM_FORMAT_CUSTOM1:
     case QDMI_PROGRAM_FORMAT_CUSTOM2:
     case QDMI_PROGRAM_FORMAT_CUSTOM3:
@@ -550,7 +549,6 @@ TEST(QDMITest, BinaryProgramFormatClassification) {
       QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE,
       QDMI_PROGRAM_FORMAT_QPY,
       QDMI_PROGRAM_FORMAT_IQMJSON,
-      QDMI_PROGRAM_FORMAT_BATCHJOB,
       QDMI_PROGRAM_FORMAT_CUSTOM1,
       QDMI_PROGRAM_FORMAT_CUSTOM2,
       QDMI_PROGRAM_FORMAT_CUSTOM3,
@@ -927,19 +925,6 @@ TEST_F(DDSimulatorDeviceTest, SubmitJobRejectsIncompatiblePayloadKinds) {
 
   EXPECT_THROW(std::ignore = device.submitJob(
                    textProgram, QDMI_PROGRAM_FORMAT_QIRBASEMODULE, 0),
-               std::invalid_argument);
-}
-
-TEST_F(DDSimulatorDeviceTest, SubmitJobRejectsBatchJobs) {
-  // A batch job's program is a list of job handles, which the byte-span API
-  // cannot express, so MQT Core states that it does not support them.
-  constexpr std::array bytes{std::byte{0}};
-
-  EXPECT_THROW(std::ignore =
-                   device.submitJob(bytes, QDMI_PROGRAM_FORMAT_BATCHJOB, 0),
-               std::invalid_argument);
-  EXPECT_THROW(std::ignore = device.submitJob(std::string{},
-                                              QDMI_PROGRAM_FORMAT_BATCHJOB, 0),
                std::invalid_argument);
 }
 

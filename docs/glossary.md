@@ -216,9 +216,8 @@ legalization
   satisfies a declared conversion target or target capability.
 
 native multi-program job
-  One submitted job containing an ordered list of programs with a shared
-  lifecycle. Results use the input program indices. This differs from concurrent
-  submission of independent single-program jobs.
+  One submitted job containing an ordered list of programs with common
+  parameters. Results and optional individual outcomes use the input indices.
 
 compiler target
   An immutable MQT description of the operations, topology, and properties that
