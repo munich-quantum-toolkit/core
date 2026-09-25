@@ -69,6 +69,35 @@ the GIL. Concurrent calls into a shared device or job must satisfy the
 provider's thread safety contract; releasing the GIL does not serialize provider
 access.
 
+### Custom job parameter types
+
+The `custom1` through `custom5` arguments of
+{py:meth}`mqt.core.qdmi.Device.submit_job` and
+{py:func}`mqt.core.mlir.submit_program` use the device's documented types.
+Strings include a terminating null byte. Booleans, integers, and floats use
+native C++ `bool`, `int`, and `double`, respectively.
+
+Use nonempty `bytes` for other representations. For example, if a device defines
+`custom1` as a `uint64_t` execution-time limit:
+
+```python
+import struct
+
+job = device.submit_job(
+    program,
+    program_format,
+    custom1=struct.pack("=Q", 60),
+)
+```
+
+`struct.pack` checks the integer range before submission. `=Q` uses native byte
+order and an eight-byte unsigned integer; `=q` selects a signed integer of the
+same width. The client copies the payload without numeric conversion or an added
+terminator. Empty byte payloads raise `ValueError`; the device validates the
+meaning and size of other payloads. In C++, supply a `std::vector<std::byte>` as
+the custom parameter. These bytes describe a local QDMI ABI value, not a network
+encoding.
+
 ## Usage
 
 The following example opens each registered device by its stable ID.

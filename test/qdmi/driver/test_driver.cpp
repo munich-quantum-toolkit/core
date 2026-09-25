@@ -30,6 +30,7 @@
 #include <fstream>
 #include <future>
 #include <iterator>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <random>
@@ -1339,6 +1340,46 @@ TEST(DeviceRegistrationTest, FreshOpenCreatesDistinctSessions) {
   const auto first = qdmi::Session::openDevice("test.session-overrides");
   const auto second = qdmi::Session::openDevice("test.session-overrides");
   EXPECT_NE(first, second);
+}
+
+TEST(DeviceRegistrationTest, CustomJobParametersPreserveNativeRepresentations) {
+  registerSessionTestDevice();
+  const auto device = qdmi::Session::openDevice("test.session-overrides");
+  const auto bytesOf = [](const auto& value) {
+    std::vector<std::byte> bytes(sizeof(value));
+    std::memcpy(bytes.data(), &value, sizeof(value));
+    return bytes;
+  };
+  const std::array payloads{
+      bytesOf((std::numeric_limits<uint64_t>::max)()),
+      bytesOf((std::numeric_limits<int64_t>::min)()), bytesOf(float{1.25}),
+      bytesOf(double{-2.5}),
+      std::vector{std::byte{0}, std::byte{255}, std::byte{0}}};
+  constexpr std::array slots{
+      qdmi::CustomProperty::Custom1, qdmi::CustomProperty::Custom2,
+      qdmi::CustomProperty::Custom3, qdmi::CustomProperty::Custom4,
+      qdmi::CustomProperty::Custom5};
+  const auto job =
+      device.submitJob("program", QDMI_PROGRAM_FORMAT_QASM3, 1, payloads[0],
+                       payloads[1], payloads[2], payloads[3], payloads[4]);
+  for (size_t i = 0; i < slots.size(); ++i) {
+    EXPECT_EQ(job.getCustomResult<std::vector<std::byte>>(slots[i]),
+              payloads[i]);
+  }
+  const auto scalarJob =
+      device.submitJob("program", QDMI_PROGRAM_FORMAT_QASM3, 1,
+                       std::string{"text"}, true, -7, 2.5);
+  EXPECT_EQ(scalarJob.getCustomResult<std::string>(slots[0]), "text");
+  EXPECT_EQ(scalarJob.getCustomResult<std::vector<std::byte>>(slots[1]),
+            bytesOf(true));
+  EXPECT_EQ(scalarJob.getCustomResult<std::vector<std::byte>>(slots[2]),
+            bytesOf(-7));
+  EXPECT_EQ(scalarJob.getCustomResult<std::vector<std::byte>>(slots[3]),
+            bytesOf(2.5));
+  EXPECT_THROW(
+      static_cast<void>(device.submitJob("program", QDMI_PROGRAM_FORMAT_QASM3,
+                                         1, std::vector<std::byte>{})),
+      std::invalid_argument);
 }
 
 TEST(DeviceRegistrationTest, CustomOperationListSupportsRawAndQDMIQueries) {

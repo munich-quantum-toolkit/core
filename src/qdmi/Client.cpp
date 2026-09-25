@@ -541,6 +541,15 @@ void Device::setCustomJobParam(QDMI_Job job, const QDMI_Job_Parameter param,
                                                     customValue.size() + 1,
                                                     customValue.c_str()),
                              "Setting custom parameter");
+        } else if constexpr (std::is_same_v<T, std::vector<std::byte>>) {
+          if (customValue.empty()) {
+            throw std::invalid_argument(
+                "Custom parameter bytes must not be empty");
+          }
+          qdmi::throwIfError(QDMI_job_set_parameter(job, param,
+                                                    customValue.size(),
+                                                    customValue.data()),
+                             "Setting custom parameter");
         } else {
           static_assert(std::is_trivially_copyable_v<T>,
                         "Custom job parameters must be trivially copyable");
