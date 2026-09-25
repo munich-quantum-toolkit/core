@@ -1150,7 +1150,9 @@ TEST_F(TargetSynthesisTest,
         *synthesized, target, mlir::qco::createVerifyTargetConformance())));
     ASSERT_TRUE(mlir::succeeded(mlir::verify(*synthesized)));
     ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*synthesized)));
-    expectEquivalent(expected, synthesized);
+    /// Compare the full circuit at DD precision; synthesis and DD rounding
+    /// accumulate across the repeated decompositions. Keep global phase.
+    ::mqt::test::expectFullUnitaryEqual(*expected, *synthesized, 3);
   }
 }
 

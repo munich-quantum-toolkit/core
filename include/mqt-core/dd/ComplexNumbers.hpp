@@ -15,6 +15,7 @@
 
 #include "dd/CachedEdge.hpp"
 #include "dd/Complex.hpp"
+#include "dd/ComplexValue.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/Edge.hpp"
 #include "dd/RealNumberUniqueTable.hpp"
@@ -94,14 +95,31 @@ public:
   /// @see ComplexTable::lookup
   [[nodiscard]] Complex lookup(fp r, fp i);
 
-  /// Turn CachedEdge into Edge via lookup.
+  /// Preserve matrix root components, including nonzero values below tolerance.
+  /// Nonzero special constants keep their existing tolerance priority.
+  [[nodiscard]] Complex lookupRoot(const ComplexValue& c) {
+    return {
+        .r = uniqueTable->lookupRoot(c.r),
+        .i = uniqueTable->lookupRoot(c.i),
+    };
+  }
+
+  /// Turn a root CachedEdge into Edge via lookup.
+  /// Matrix roots preserve range; vector roots retain ordinary lookup.
   /// @tparam Node The type of the node.
   /// @param ce The cached edge.
   /// @return The edge with looked-up weight. The zero terminal if the new
   /// weight is exactly zero.
   template <class Node>
   [[nodiscard]] Edge<Node> lookup(const CachedEdge<Node>& ce) {
-    auto e = Edge<Node>{ce.p, lookup(ce.w)};
+    const auto weight = [&] {
+      if constexpr (IsMatrix<Node>) {
+        return lookupRoot(ce.w);
+      } else {
+        return lookup(ce.w);
+      }
+    }();
+    auto e = Edge<Node>{ce.p, weight};
     if (e.w.exactlyZero()) {
       e.p = Node::getTerminal();
     }
