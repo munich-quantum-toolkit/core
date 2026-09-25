@@ -1235,7 +1235,7 @@ struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
     const auto numControls = op.getNumControls();
     auto inner = mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
     if (!inner) {
-      return mqt::unrollControl(op, rewriter);
+      return mqt::unrollModifier(op, rewriter);
     }
 
     // MCSWAP(C, a, b) = CX(a,b) · MCX(C ∪ {b}, a) · CX(a,b).

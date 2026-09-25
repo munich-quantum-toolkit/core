@@ -34,7 +34,7 @@
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Transforms/Inliner.h"
 
-#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/SmallVectorExtras.h"
@@ -184,7 +184,7 @@ static SmallVector<Value> cloneIntoBody(qco::UnitaryOpInterface unitary,
 
 /// Unroll a `qco.ctrl` modifier with more than one body unitary,
 /// or fail if it cannot be unrolled.
-LogicalResult unrollControl(qco::CtrlOp op, RewriterBase& rewriter) {
+LogicalResult unrollModifier(qco::CtrlOp op, RewriterBase& rewriter) {
   auto* body = op.getBody();
   if (op.getNumBodyUnitaries() < 2) {
     return failure();
@@ -218,10 +218,6 @@ LogicalResult unrollControl(qco::CtrlOp op, RewriterBase& rewriter) {
   return success();
 }
 
-static LogicalResult unrollModifier(qco::CtrlOp op, RewriterBase& rewriter) {
-  return op.getNumBodyUnitaries() < 2 ? success() : unrollControl(op, rewriter);
-}
-
 /// Unroll a `qco.inv` modifier with more than one body unitary,
 /// or fail if it cannot be unrolled.
 LogicalResult unrollModifier(qco::InvOp op, RewriterBase& rewriter) {
@@ -237,8 +233,7 @@ LogicalResult unrollModifier(qco::InvOp op, RewriterBase& rewriter) {
   qubits.map(body->getTerminator()->getOperands(), op.getQubitsIn());
 
   rewriter.setInsertionPoint(op);
-  auto unitaries = llvm::to_vector(body->getOps<qco::UnitaryOpInterface>());
-  for (auto unitary : llvm::reverse(unitaries)) {
+  for (auto unitary : llvm::reverse(body->getOps<qco::UnitaryOpInterface>())) {
     const auto inputs = llvm::map_to_vector(
         unitary.getOutputQubits(), [&](Value q) { return qubits.lookup(q); });
     auto invOp =
@@ -257,27 +252,14 @@ LogicalResult unrollModifier(qco::InvOp op, RewriterBase& rewriter) {
 
 /// Check that the unitary operations in @p body act on disjoint wires.
 static bool hasDisjointBodyWires(Block& body) {
-  DenseMap<Value, size_t> wires;
-  for (auto [index, arg] : llvm::enumerate(body.getArguments())) {
-    wires.try_emplace(arg, index);
-  }
-
-  DenseSet<size_t> used;
-  for (auto unitary : body.getOps<qco::UnitaryOpInterface>()) {
-    for (auto [qubit, result] :
-         llvm::zip_equal(unitary.getInputQubits(), unitary.getOutputQubits())) {
-      const auto it = wires.find(qubit);
-      if (it == wires.end()) {
-        return false;
-      }
-      const auto wire = it->second;
-      if (!used.insert(wire).second) {
-        return false;
-      }
-      wires.try_emplace(result, wire);
-    }
-  }
-  return true;
+  /// In linear QCO, a unitary result used by another unitary reuses its wire.
+  return llvm::all_of(
+      body.getOps<qco::UnitaryOpInterface>(), [&](auto unitary) {
+        return llvm::all_of(unitary.getInputQubits(), [&](Value qubit) {
+          auto argument = dyn_cast<BlockArgument>(qubit);
+          return argument && argument.getOwner() == &body;
+        });
+      });
 }
 
 /// Unroll a `qco.pow` modifier with more than one body unitary,

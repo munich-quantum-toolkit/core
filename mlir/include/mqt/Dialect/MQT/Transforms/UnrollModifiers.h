@@ -23,18 +23,19 @@ class PowOp;
 
 namespace mlir::mqt {
 
-/// Distribute a verified composite control over its body; fail without changing
-/// IR if the body has fewer than two unitaries.
-[[nodiscard]] LogicalResult unrollControl(qco::CtrlOp op,
-                                          RewriterBase& rewriter);
+/// Distribute a composite control in verified linear QCO IR; fail without
+/// changing IR if the body has fewer than two unitaries.
+[[nodiscard]] LogicalResult unrollModifier(qco::CtrlOp op,
+                                           RewriterBase& rewriter);
 
-/// Unroll a verified inverse body in reverse order; fail without changing IR
-/// if it has fewer than two unitaries.
+/// Unroll an inverse body in reverse order. Requires verified linear QCO IR.
+/// Fail without changing IR if it has fewer than two unitaries.
 [[nodiscard]] LogicalResult unrollModifier(qco::InvOp op,
                                            RewriterBase& rewriter);
 
-/// Distribute a verified power over disjoint body operations for a constant
-/// integer exponent. Fail without changing IR for other or noncomposite bodies.
+/// Distribute a power in verified linear QCO IR over disjoint body operations
+/// for a constant integer exponent. Fail without changing IR for other or
+/// noncomposite bodies.
 [[nodiscard]] LogicalResult unrollModifier(qco::PowOp op,
                                            RewriterBase& rewriter);
 
