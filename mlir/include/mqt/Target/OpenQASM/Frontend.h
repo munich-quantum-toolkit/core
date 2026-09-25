@@ -163,6 +163,14 @@ enum class BitVectorExpressionKind : uint8_t {
   RotateRight,
 };
 
+struct BitReference {
+  RegisterId reg = 0;
+  uint64_t index = 0;
+  std::optional<ExpressionId> dynamicIndex;
+  /// Semantic analysis proved bounds for this nonconstant index.
+  bool provenInBounds = false;
+};
+
 struct BitVectorExpression {
   BitVectorExpressionKind kind = BitVectorExpressionKind::Register;
   uint64_t width = 0;
@@ -172,6 +180,8 @@ struct BitVectorExpression {
   BitVectorExpressionId rhs = 0;
   ExpressionId distance = 0;
   ExpressionId scalar = 0;
+  /// Empty for a whole-register read; otherwise in selection order.
+  std::vector<BitReference> selection;
 };
 
 struct ScalarDeclaration {
@@ -208,12 +218,6 @@ struct QubitReference {
   std::optional<ExpressionId> provenIndex;
 
   bool operator==(const QubitReference&) const = default;
-};
-
-struct BitReference {
-  RegisterId reg = 0;
-  uint64_t index = 0;
-  std::optional<ExpressionId> dynamicIndex;
 };
 
 enum class ComparisonKind : uint8_t {
@@ -304,6 +308,8 @@ struct BitAssignmentStatement {
 struct BitVectorAssignmentStatement {
   RegisterId target = 0;
   BitVectorExpressionId value = 0;
+  /// Empty for a whole-register write; otherwise in selection order.
+  std::vector<BitReference> selection;
 };
 
 struct MeasurementStatement {

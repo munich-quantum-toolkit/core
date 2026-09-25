@@ -67,7 +67,10 @@ analyzeQTensorBranch(Block* block, size_t qTensorArgumentIndex,
   bool reachedInsertPhase = false;
 
   while (true) {
-    assert(currentQTensor.hasOneUse() && "expected linear semantics");
+    /// SCF folding may temporarily leave a loop-carried argument unused.
+    if (!currentQTensor.hasOneUse()) {
+      return std::nullopt;
+    }
     Operation* user = *currentQTensor.getUsers().begin();
     if (user->getBlock() != block) {
       return std::nullopt;

@@ -62,6 +62,15 @@ using namespace mlir::openqasm::test;
 
 namespace {
 
+TEST(OpenQASMTargetTest, KeepsWholeRegisterSlicesWithinTheEmissionBudget) {
+  MLIRContext context;
+  auto moduleOp = qc::translateOpenQASMToQC(
+      "OPENQASM 3.1; bit[50000] a = 0; bit[50000] b = a[:]; b[:] = a;",
+      &context, {.maxOperations = 16});
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+}
+
 TEST(OpenQASMTargetTest, PreservesOneBarrierForConstantSelections) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
@@ -2920,6 +2929,8 @@ TEST(OpenQASMTargetTest, StopsEmissionAtEveryOperationBudgetBoundary) {
       R"qasm(OPENQASM 3.1; qubit[4] q; for int i in [0:3] { x q[-i * 1 + 3]; })qasm",
       R"qasm(OPENQASM 3.1; bit[8] c = "00000001"; int n = 1; c = (~c & c) | (c ^ c); c = (c << uint(n + 1)) >> uint(n); c = rotl(~c, n + 1); c = rotr(c, 2);)qasm",
       R"qasm(OPENQASM 3.1; output uint[8] result; uint[8] n = 1; result = (~n & n) | (n ^ n); result = (result << uint(n + 1)) >> n; result = uint[8](-int(sin(float(n + 1))));)qasm",
+      R"qasm(OPENQASM 3.1; bit[6] b = "110101"; bit[3] a = b[5:-2:0]; b[1:3] = a;)qasm",
+      R"qasm(OPENQASM 3.1; qubit[4] q; bit[4] b = 0; for int i in [0:3] { x q[i:i]; b[i:i] = measure q[i:i]; })qasm",
   };
   for (const auto* source : sources) {
     SCOPED_TRACE(source);

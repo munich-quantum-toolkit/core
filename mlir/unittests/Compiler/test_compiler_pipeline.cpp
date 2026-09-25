@@ -873,6 +873,35 @@ roundTripThroughOptimizedJeff(const qasm::OpenQASMProgram& source,
 
 namespace {
 
+TEST(OpenQASMCompilerOutputTest, PreservesClassicalSliceInterchange) {
+  constexpr StringLiteral source = R"qasm(
+OPENQASM 3.1;
+bit[6] b = "110101";
+bit[3] a = b[5:-2:0];
+b[1:3] = b[0:2];
+qubit q;
+reset q;
+if (a == "001" && b == "111011") { x q; }
+output bit ok;
+ok = measure q;
+)qasm";
+  auto qc = QCProgram::fromOpenQASMString(source);
+  ASSERT_TRUE(qc);
+  ASSERT_TRUE(qc->cleanup());
+  auto qco = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qco);
+  ASSERT_TRUE(qco->cleanup());
+  auto jeff = std::move(*qco).intoJeff();
+  ASSERT_TRUE(jeff);
+  auto restored = std::move(*jeff).intoQCO();
+  ASSERT_TRUE(restored);
+  auto counts =
+      qco::sample(mlir::mqt::getEntryPoint(restored->module()), 1, 42);
+  ASSERT_TRUE(succeeded(counts));
+  ASSERT_EQ(counts->size(), 1);
+  EXPECT_EQ(counts->begin()->first, "1");
+}
+
 TEST(OpenQASMCompilerOutputTest, LowersAffineQuantumLoopsToJeff) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.0;
@@ -1152,23 +1181,6 @@ TEST_P(OpenQASMJeffPipelineTest, TraversesTheExplicitJeffRoundTrip) {
                      OutputRecordingShape::AdaptiveArrays);
 }
 
-class OpenQASMJeffBoundaryTest
-    : public testing::TestWithParam<qasm::OpenQASMProgram> {};
-
-TEST_P(OpenQASMJeffBoundaryTest, FailsAtQCOToJeff) {
-  const auto& source = GetParam();
-  auto qc = QCProgram::fromOpenQASMString(source.source.str());
-  ASSERT_TRUE(qc) << source.name.str() << ": OpenQASM to QC";
-  auto qco = std::move(*qc).intoQCO();
-  ASSERT_TRUE(qco) << source.name.str() << ": QC to QCO";
-  ASSERT_TRUE(qco->cleanup()) << source.name.str() << ": QCO cleanup";
-  ASSERT_TRUE(qco->runPassPipeline("mqt-qco-default"))
-      << source.name.str() << ": QCO optimization";
-  ASSERT_TRUE(qco->cleanup()) << source.name.str() << ": optimized QCO cleanup";
-  EXPECT_FALSE(std::move(*qco).intoJeff())
-      << source.name.str() << ": unexpectedly converted to jeff";
-}
-
 TEST_P(OpenQASMBasePipelineTest, ReachesBaseAndAdaptiveQIR) {
   const auto& source = GetParam();
   std::optional<QCProgram> restoredQC;
@@ -1195,10 +1207,6 @@ INSTANTIATE_TEST_SUITE_P(OpenQASMPrograms, OpenQASMBasePipelineTest,
 
 INSTANTIATE_TEST_SUITE_P(OpenQASMPrograms, OpenQASMJeffPipelineTest,
                          testing::ValuesIn(qasm::jeffCompatiblePrograms()),
-                         openQASMProgramName);
-
-INSTANTIATE_TEST_SUITE_P(OpenQASMPrograms, OpenQASMJeffBoundaryTest,
-                         testing::ValuesIn(qasm::jeffIncompatiblePrograms()),
                          openQASMProgramName);
 
 } // namespace

@@ -111,6 +111,39 @@ TEST_F(QTensorCanonicalizationTest, ScalarizesWhileOnlyWithConstantIndices) {
   }
 }
 
+TEST_F(QTensorCanonicalizationTest, CleansUpNestedSingletonLoops) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main(%limit: index) {
+      %c0 = arith.constant 0 : index
+      %c1 = arith.constant 1 : index
+      %c2 = arith.constant 2 : index
+      %tensor = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+      %result = scf.for %i = %c0 to %limit step %c1
+          iter_args(%t = %tensor) -> tensor<2x!qco.qubit> {
+        %inner = scf.for %j = %c0 to %c1 step %c1
+            iter_args(%u = %t) -> tensor<2x!qco.qubit> {
+          %rest, %q = qtensor.extract %u[%j] : tensor<2x!qco.qubit>
+          %out = qco.x %q : !qco.qubit -> !qco.qubit
+          %updated = qtensor.insert %out into %rest[%j] : tensor<2x!qco.qubit>
+          scf.yield %updated : tensor<2x!qco.qubit>
+        }
+        scf.yield %inner : tensor<2x!qco.qubit>
+      }
+      qtensor.dealloc %result : tensor<2x!qco.qubit>
+      return
+    }
+  })mlir",
+                                              &context_);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+  PassManager pm(&context_);
+  pm.addPass(createCanonicalizerPass());
+  ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+}
+
 TEST_F(QTensorCanonicalizationTest, ScalarizesForWithoutExpandingItsBody) {
   for (const bool dynamicIndex : {false, true}) {
     SCOPED_TRACE(dynamicIndex);
