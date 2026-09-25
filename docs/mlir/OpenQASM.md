@@ -150,6 +150,12 @@ a slice does not supply multiple control arguments to `ctrl(n)`. Register
 operands must have matching widths, including one-element slices. Runtime bounds
 and classical slice expressions and assignments are not supported.
 
+For convenience, import also accepts three-part slices with an omitted final
+bound and measurement between a scalar and a one-element register. Export
+expands slices and emits scalar measurements that follow the OpenQASM
+[range grammar](https://openqasm.com/grammar/index.html) and
+[measurement types](https://openqasm.com/language/insts.html#measurement).
+
 Bit registers use `!cbit.reg<N>` in QC. OpenQASM 2 initializes each register to
 zero. OpenQASM 3 leaves each register undefined until a statement writes it. A
 static read requires its bit to be initialized. A dynamic read requires the

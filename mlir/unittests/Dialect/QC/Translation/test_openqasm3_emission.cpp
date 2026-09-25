@@ -113,6 +113,31 @@ TEST(OpenQASM3EmissionTest, EmitsStrictPortableBellProgram) {
   EXPECT_TRUE(qc::translateOpenQASMToQC(*source, &context));
 }
 
+TEST(OpenQASM3EmissionTest, NormalizesSliceImportExtensions) {
+  constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.1;
+qubit[6] q;
+x q[:-2:];
+output bit[6] c;
+c[0] = measure q[0:0];
+c[1:1] = measure q[1];
+c[2:] = measure q[2:];
+)qasm";
+  MLIRContext context;
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_EQ(emitted->find(':'), std::string::npos);
+  EXPECT_NE(emitted->find("c[0] = measure q[0];"), std::string::npos);
+  EXPECT_NE(emitted->find("c[1] = measure q[1];"), std::string::npos);
+  ASSERT_TRUE(openqasm::frontend::analyzeOpenQASM(
+      *emitted, openqasm::frontend::GatePolicy::Strict));
+  auto restored = qc::translateOpenQASMToQC(*emitted, &context);
+  ASSERT_TRUE(restored);
+  expectOneSample(*moduleOp, "101010");
+  expectOneSample(*restored, "101010");
+}
+
 TEST(OpenQASM3EmissionTest, RoundTripsSwitchBreakContinueAndFallthrough) {
   constexpr auto fixtures =
       std::to_array<std::tuple<const char*, const char*, const char*>>({
