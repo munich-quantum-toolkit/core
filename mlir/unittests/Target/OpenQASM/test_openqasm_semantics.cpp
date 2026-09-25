@@ -103,9 +103,26 @@ TEST(OpenQASMFrontendTest, RejectsInvalidRegisterSlices) {
       {"c[0:0:2] = 0;", "step must not be zero"},
       {"bit scalar = 0; scalar[:] = 0;", "scalar bit"},
       {"int last = 2; x q[0:0:last];", "step must not be zero"},
-      {"float last = 2; x q[0:last];", "integer expressions"},
-      {"int last = 2; barrier q[0:last];", "runtime barrier slices"},
+      {"float last = 2; x q[0:last];", "integer expression"},
+      {"for int i in [0:2] { x q[0:i]; }", "length must be statically known"},
+      {
+          "bit selector = measure q[0]; int i = int(selector); x q[i:i];",
+          "index is in bounds",
+      },
+      {"int step = int(c[0]); x q[0:step:2];", "step must be statically known"},
+      {"for int i in [0:2] { x q[i:i+1]; }", "index is in bounds"},
+      {"for int i in [0:1] { cx q[i:i+1], q[i:i+1]; }", "distinct qubits"},
       {"c[2:-1:0] ^= \"001\";", "indexed compound assignments"},
+      {"int step = 0; x q[0:step:2];", "step must not be zero"},
+      {"int first = -4; x q[first:2];", "index is in bounds"},
+      {"int last = 3; x q[0:last];", "index is in bounds"},
+      {"int first = 2; x q[first:0];", "must not be empty"},
+      {"int last = 2; cx q[0:last], r[0:0];", "same width"},
+      {"int last = 2; bit[2] out = measure q[0:last];", "same width"},
+      {"int last = 1; c[0:last] = \"111\";", "width must match"},
+      {"int last = 1; c[0:last] = 4;", "must be nonnegative and fit"},
+      {"int last = 1; c[0:last] = 4 | 0;", "must be nonnegative and fit"},
+      {"int last = 1; uint[3] v = uint[3](c[0:last]);", "width must match"},
       {"gate local a { x a[:]; }", "cannot be indexed"},
       {"ctrl(2) @ x q[0:1], r[0];", "qubit operands"},
   });
@@ -123,16 +140,20 @@ TEST(OpenQASMFrontendTest, RejectsInvalidRegisterSlices) {
 }
 
 TEST(OpenQASMFrontendTest,
-     RuntimeMeasurementSlicesPreserveDefiniteInitialization) {
+     KnownMeasurementSlicesPreserveDefiniteInitialization) {
   auto sourceSlice = openqasm::frontend::analyzeOpenQASM(
       "OPENQASM 3.1; qubit[3] q; int last = 2; bit[3] c = measure q[0:last];");
   ASSERT_TRUE(sourceSlice) << sourceSlice.diagnostics.front().message;
   auto targetSlice = openqasm::frontend::analyzeOpenQASM(
       "OPENQASM 3.1; qubit[3] q; int last = 2; bit[3] c; c[0:last] = measure "
       "q;");
-  ASSERT_FALSE(targetSlice);
+  ASSERT_TRUE(targetSlice) << targetSlice.diagnostics.front().message;
+  auto dynamicTarget = openqasm::frontend::analyzeOpenQASM(
+      "OPENQASM 3.1; qubit[3] q; bit[3] c; "
+      "for int i in [0:2] { c[i:i] = measure q[i:i]; }");
+  ASSERT_FALSE(dynamicTarget);
   EXPECT_NE(
-      targetSlice.diagnostics.front().message.find("not fully initialized"),
+      dynamicTarget.diagnostics.front().message.find("not fully initialized"),
       std::string::npos);
 }
 
@@ -949,10 +970,10 @@ TEST(OpenQASMFrontendTest, RejectsDynamicReadsOfPartiallyInitializedRegisters) {
 OPENQASM 3.1;
 qubit[2] q;
 bit[2] c;
-int i = 0;
-c[i] = measure q[i];
-i = 1;
-if (c[i]) { x q[i]; }
+c[0] = measure q[0];
+bit selected = measure q[1];
+int i = selected;
+if (c[i]) { x q[0]; }
 )qasm";
   auto analyzed = openqasm::frontend::analyzeOpenQASM(source);
   ASSERT_FALSE(analyzed);
@@ -1061,8 +1082,9 @@ TEST(OpenQASMFrontendTest, DynamicWritesDoNotProveWholeRegisterInitialization) {
 OPENQASM 3.1;
 qubit[2] q;
 bit[2] c;
-int i = 1;
-if (true) { c[i] = measure q[i]; }
+bit selected = measure q[1];
+int i = selected;
+if (true) { c[i] = measure q[0]; }
 if (c[i]) { x q[0]; }
 output bit result;
 result = measure q[0];

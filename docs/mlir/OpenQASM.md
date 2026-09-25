@@ -132,13 +132,13 @@ form remains known. A nested loop bound can use proven induction variables from
 enclosing loops. The proof treats an inclusive range as its full interval and
 does not use the step's congruence.
 
-The frontend normalizes constant negative indices relative to the register
-width. It rejects measurement-derived values, nonconstant negative indices,
-nonlinear expressions, unsupported integer operators, and ranges whose step is
-not known to be positive when their induction variable reaches a qubit index.
-Mutations in repeating loops and unequal branch values invalidate scalar facts.
-Branch conditions do not add proof facts. Classical bit indexing and loops that
-do not index qubits keep their runtime behavior.
+The frontend normalizes negative indices relative to the register width when it
+can prove their sign. It rejects measurement-derived values, indices whose sign
+is unknown, nonlinear expressions, unsupported integer operators, and ranges
+whose step is not known to be positive when their induction variable reaches a
+qubit index. Mutations in repeating loops and unequal branch values invalidate
+scalar facts. Branch conditions do not add proof facts. Classical bit indexing
+and loops that do not index qubits keep their runtime behavior.
 
 Register operands support inclusive slices `q[first:last]` and
 `q[first:step:last]`, including negative indices and negative steps. Omitted
@@ -147,16 +147,23 @@ step, `q[:last]` means `q[0:last]` and includes `last`; `q[:2]` selects qubits
 `0`, `1`, and `2`. Constant slices expand in selection order. Gates broadcast
 over slices; a slice does not supply multiple control arguments to `ctrl(n)`.
 
-Slices can have runtime bounds and steps. Gate, reset, and measurement slices
-lower to SCF loops with checks for nonzero steps, nonempty ranges, bounds,
-matching widths, and distinct gate operands. Classical slices support the same
-bit-vector expressions and assignments as whole registers. Their first selected
-bit becomes bit zero of the value. Assignments snapshot the source value and
-destination bounds before writing, so overlapping copies are safe.
+Slice lengths and steps must be statically known. Bounds may use the same proven
+affine expressions as scalar qubit indices. For example, `q[i:i]` selects
+`q[i]`, and `q[i:i+1]` selects two qubits when both are in bounds. A slice
+remains a register operand, so all register operands of a broadcast must have
+the same length, including one-element slices. Measurement-selected ranges and
+unproved lengths, bounds, or operand distinctness are rejected during analysis.
+Slice lowering adds no runtime assertions or wider integer arithmetic.
 
-Runtime slices in barriers are not supported. Reads through runtime slices
-require the whole source register to be initialized. Writes through runtime
-slices do not prove whole-register initialization, including measurement writes.
+Classical slices support fixed-width bit-vector expressions and assignments.
+Their first selected bit becomes bit zero of the value. Assignments snapshot the
+source before writing, so overlapping copies are safe. Constant selections use
+scalar bit operations; selecting a whole register in order uses a register read
+or write. Compound assignments to indexed bits or slices are not supported.
+
+Reads through nonconstant classical indices require the whole source register to
+be initialized. Such writes do not prove whole-register initialization,
+including measurement writes. Constant selections track initialization per bit.
 
 For convenience, import also accepts three-part slices with an omitted final
 bound and measurement between a scalar and a one-element register. Export
@@ -260,12 +267,11 @@ evaluated before the loop. An empty-range guard prevents underflow when
 converting the upper bound. Loop-carried values retain their initial values when
 the range is empty.
 
-On import, dynamic ranges with signed bounds and a positive signed constant step
-use 64-bit arithmetic when their bodies contain no `break` or `continue`. The
-loop tests the unsigned distance to the inclusive endpoint before continuing, so
-a final increment that wraps cannot cause another iteration. This supports round
-trips without restricting the signed range of the endpoints. Other range forms
-can still require wider arithmetic that the exporter rejects.
+On import, inclusive integer ranges use 64-bit arithmetic, including unsigned
+bounds, negative steps, `break`, and `continue`. The loop tests the unsigned
+distance to the endpoint before continuing, so a final increment that wraps
+cannot cause another iteration. Range lowering does not require wider integer
+types that the exporter rejects.
 
 Entry-function while loops use `while (true)` and a conditional `break`, so
 condition-region expressions are evaluated once per iteration. Gate functions

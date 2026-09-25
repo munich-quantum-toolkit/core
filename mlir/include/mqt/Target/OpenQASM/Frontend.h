@@ -35,7 +35,6 @@ namespace mlir::openqasm::frontend {
 using ExpressionId = uint32_t;
 using BitVectorExpressionId = uint32_t;
 using RegisterId = uint32_t;
-using RegisterSliceId = uint32_t;
 using ScalarId = uint32_t;
 using ConditionId = uint32_t;
 using StatementId = uint32_t;
@@ -164,6 +163,14 @@ enum class BitVectorExpressionKind : uint8_t {
   RotateRight,
 };
 
+struct BitReference {
+  RegisterId reg = 0;
+  uint64_t index = 0;
+  std::optional<ExpressionId> dynamicIndex;
+  /// Semantic analysis proved bounds for this nonconstant index.
+  bool provenInBounds = false;
+};
+
 struct BitVectorExpression {
   BitVectorExpressionKind kind = BitVectorExpressionKind::Register;
   uint64_t width = 0;
@@ -173,11 +180,8 @@ struct BitVectorExpression {
   BitVectorExpressionId rhs = 0;
   ExpressionId distance = 0;
   ExpressionId scalar = 0;
-  std::optional<RegisterSliceId> slice;
-  /// When true, width is an upper bound; the selection determines its size.
-  bool dynamicWidth = false;
-  /// Unsized constants and their bitwise expressions take the context's width.
-  bool contextualWidth = false;
+  /// Empty for a whole-register read; otherwise in selection order.
+  std::vector<BitReference> selection;
 };
 
 struct ScalarDeclaration {
@@ -206,29 +210,14 @@ enum class QubitReferenceKind : uint8_t {
   Hardware,
 };
 
-/// A register range evaluated once before a runtime broadcast.
-struct RegisterSlice {
-  std::optional<ExpressionId> start;
-  ExpressionId step = 0;
-  std::optional<ExpressionId> stop;
-};
-
 struct QubitReference {
   QubitReferenceKind kind = QubitReferenceKind::Register;
   uint32_t symbol = 0;
   uint64_t index = 0;
   /// A nonconstant register index proven safe by semantic analysis.
   std::optional<ExpressionId> provenIndex;
-  std::optional<RegisterSliceId> slice;
 
   bool operator==(const QubitReference&) const = default;
-};
-
-struct BitReference {
-  RegisterId reg = 0;
-  uint64_t index = 0;
-  std::optional<ExpressionId> dynamicIndex;
-  std::optional<RegisterSliceId> slice;
 };
 
 enum class ComparisonKind : uint8_t {
@@ -319,7 +308,8 @@ struct BitAssignmentStatement {
 struct BitVectorAssignmentStatement {
   RegisterId target = 0;
   BitVectorExpressionId value = 0;
-  std::optional<RegisterSliceId> slice;
+  /// Empty for a whole-register write; otherwise in selection order.
+  std::vector<BitReference> selection;
 };
 
 struct MeasurementStatement {
@@ -403,7 +393,6 @@ struct TypedProgram {
   std::vector<ConditionExpression> conditions;
   std::vector<ScalarDeclaration> scalars;
   std::vector<RegisterDeclaration> registers;
-  std::vector<RegisterSlice> slices;
   std::vector<GateDefinition> gates;
   std::vector<Statement> statements;
   std::vector<StatementId> body;
