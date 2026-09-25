@@ -7,9 +7,10 @@ share its MLIR compiler infrastructure; see {cite:p}`MQTCompilerCollection2026`.
 
 ## Start with a result
 
-The {doc}`QPE walkthrough <../getting_started>` compiles and executes phase
-estimation with local DDSIM. It connects a structured benchmark, the compiler,
-and QDMI in one example. No hardware account or MLIR knowledge is required.
+The {doc}`Shor factoring walkthrough <../getting_started>` compiles and executes
+an order-finding circuit with local DDSIM. It connects a structured benchmark,
+the compiler, and QDMI in one example. No hardware account or MLIR knowledge is
+required.
 
 Then work through the {doc}`compiler tutorials <../tutorials/index>` to inspect
 representations, optimize gates, follow measurement feedback, and compile under

@@ -32,7 +32,7 @@ struct OpenQASMImportOptions {
   openqasm::frontend::GatePolicy gatePolicy =
       openqasm::frontend::GatePolicy::MQTCompatibility;
   /// Maximum number of inserted operations, excluding the module itself.
-  size_t maxOperations = 10'000'000;
+  size_t maxOperations = 1'000'000'000;
 };
 
 /// Translate supported OpenQASM to QC.

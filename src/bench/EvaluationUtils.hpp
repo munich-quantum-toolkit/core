@@ -34,30 +34,34 @@ inline void validateOutcome(const std::string_view outcome,
   }
 }
 
-template <class Probability>
-[[nodiscard]] Evaluation
-evaluate(const Output& output, const Counts& counts,
-         const Probability& probability,
-         const std::optional<std::string_view> successOutcome = std::nullopt) {
+[[nodiscard]] inline size_t validateCounts(const Output& output,
+                                           const Counts& counts) {
   if (counts.empty()) {
     throw std::invalid_argument("counts must not be empty");
   }
 
   size_t totalShots = 0;
-  size_t successShots = 0;
   for (const auto& [outcome, count] : counts) {
     validateOutcome(outcome, output.width);
     if (count > std::numeric_limits<size_t>::max() - totalShots) {
       throw std::overflow_error("total shot count exceeds size_t");
     }
     totalShots += count;
-    if (successOutcome && outcome == *successOutcome) {
-      successShots = count;
-    }
   }
   if (totalShots == 0) {
     throw std::invalid_argument("total shot count must be positive");
   }
+
+  return totalShots;
+}
+
+template <class Probability>
+[[nodiscard]] Evaluation
+evaluate(const Output& output, const Counts& counts,
+         const Probability& probability,
+         const std::optional<std::string_view> successOutcome = std::nullopt) {
+  const auto totalShots = validateCounts(output, counts);
+  size_t successShots = 0;
 
   // Extended precision prevents avoidable loss while summing distributions.
   // NOLINTBEGIN(google-runtime-float)
@@ -65,6 +69,9 @@ evaluate(const Output& output, const Counts& counts,
   long double observedIdealMass = 0.L;
   long double coefficient = 0.L;
   for (const auto& [outcome, count] : counts) {
+    if (successOutcome && outcome == *successOutcome) {
+      successShots = count;
+    }
     const auto ideal = static_cast<long double>(probability(outcome));
     const auto observed =
         static_cast<long double>(count) / static_cast<long double>(totalShots);

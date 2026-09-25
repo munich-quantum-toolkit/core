@@ -16,7 +16,6 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/statistics/TableStatistics.hpp"
 
-#include <algorithm>
 #include <bit>
 #include <cstddef>
 #include <functional>
@@ -48,8 +47,8 @@ public:
 
   /// An entry in the compute table
   struct Entry {
-    OperandType operand;
-    ResultType result;
+    OperandType operand{};
+    ResultType result{};
   };
 
   /// Get a reference to the underlying table
@@ -106,7 +105,10 @@ public:
   /// Clear the compute table
   ///
   /// Sets all entries to invalid.
-  void clear() { std::fill(valid.begin(), valid.end(), false); }
+  void clear() {
+    valid.assign(valid.size(), false);
+    stats.reset();
+  }
 
 private:
   /// The actual table storing the entries

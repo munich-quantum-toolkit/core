@@ -153,8 +153,11 @@ napoleon_google_docstring = True
 napoleon_numpy_docstring = False
 
 # AutoAPI renders these annotations as Python cross-references although they
-# are typing expressions or private Qiskit aliases, not documented objects.
+# are typing expressions, private types, or dependency types absent from their inventories.
 nitpick_ignore_regex = [
+    ("py:(class|obj)", r"_Result"),
+    ("py:class", r"mqt\.core\.plugins\.pennylane\.converter\._ConvertedProgram"),
+    ("py:class", r"qiskit\.result\.models\.ExperimentResult"),
     (
         "py:class",
         r"Annotated\[numpy\.typing\.NDArray\[numpy\.complex128\], \{'shape': \(.*\)(?:, 'writable': False)?\}\]",
@@ -179,10 +182,12 @@ linkcheck_anchors_ignore_for_url = [
 
 
 cpp_api_tagfile = ("_build/doxygen/mqt-core.tag", "cpp/", "_build/doxygen/xml")
+_qdmi_api_base = "https://munich-quantum-software-stack.github.io/QDMI/latest/"
 qdmi_api_tagfile = (
     "_build/qdmi.tag",
-    "https://munich-quantum-software-stack.github.io/QDMI/v1.3.3/",
+    _qdmi_api_base,
 )
+qdmi_api_tagfile_url = f"{_qdmi_api_base}qdmi.tag"
 
 # -- Options for HTML output -------------------------------------------------
 

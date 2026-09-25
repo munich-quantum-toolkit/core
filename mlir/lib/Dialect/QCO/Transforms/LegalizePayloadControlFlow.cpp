@@ -52,7 +52,6 @@ namespace mlir::qco {
 
 namespace {
 
-constexpr uint64_t MAX_UNROLLED_OPERATIONS = 65536U;
 // Bound generated nesting to keep recursive IR processing manageable.
 constexpr uint64_t MAX_SWITCH_EXPANSION_DEPTH = 256U;
 
@@ -592,23 +591,23 @@ protected:
         /// its unroller can remap iteration arguments and induction values.
         const bool emptyBody = bodyOperations == 0U;
         bodyOperations = std::max(bodyOperations, uint64_t{1});
-        const uint64_t remaining = MAX_UNROLLED_OPERATIONS - clonedOperations;
-        const uint64_t maximumTripCount = (remaining / bodyOperations) + 1U;
-        if (!tripCount.ule(maximumTripCount)) {
+        const uint64_t remaining = maxOperations - clonedOperations;
+        if ((tripCount - 1).ugt(remaining / bodyOperations)) {
           loop.emitError() << "full legalization would clone more than "
-                           << MAX_UNROLLED_OPERATIONS
+                           << maxOperations.getValue()
                            << " loop-body operations";
           signalPassFailure();
           return;
         }
-        const uint64_t iterations = tripCount.getZExtValue();
-        clonedOperations += bodyOperations * (iterations - 1U);
-        if (!canUseFullUnroll(loop, iterations)) {
+        if (tripCount.getActiveBits() > 64 ||
+            !canUseFullUnroll(loop, tripCount.getZExtValue())) {
           loop.emitError(
               "cannot safely apply MLIR full unrolling to these loop bounds");
           signalPassFailure();
           return;
         }
+        const uint64_t iterations = tripCount.getZExtValue();
+        clonedOperations += bodyOperations * (iterations - 1U);
         if (emptyBody) {
           OpBuilder::InsertionGuard guard(rewriter);
           rewriter.setInsertionPointToStart(loop.getBody());

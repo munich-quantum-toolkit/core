@@ -16,7 +16,6 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/statistics/TableStatistics.hpp"
 
-#include <algorithm>
 #include <bit>
 #include <cstddef>
 #include <functional>
@@ -55,9 +54,9 @@ public:
   /// A triple consisting of the left operand, the right operand, and
   /// the result of a binary operation.
   struct Entry {
-    LeftOperandType leftOperand;
-    RightOperandType rightOperand;
-    ResultType result;
+    LeftOperandType leftOperand{};
+    RightOperandType rightOperand{};
+    ResultType result{};
   };
 
   /// Compute the hash value for a given pair of operands
@@ -128,7 +127,21 @@ public:
   /// Clear the compute table
   ///
   /// Sets all entries to invalid.
-  void clear() { std::fill(valid.begin(), valid.end(), false); }
+  void clear() {
+    valid.assign(valid.size(), false);
+    stats.reset();
+  }
+
+  /// Replace the bucket storage and discard cached results.
+  /// The capacity must be a power of two. Invalidates lookup result pointers.
+  /// Allocation failure leaves the table unchanged.
+  void resize(const size_t numBuckets) {
+    ComputeTable replacement(numBuckets);
+    table.swap(replacement.table);
+    valid.swap(replacement.valid);
+    stats.numBuckets = numBuckets;
+    stats.reset();
+  }
 
   /// Print the statistics of the compute table
   /// @param os The output stream to print to

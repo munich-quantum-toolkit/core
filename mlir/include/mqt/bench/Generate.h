@@ -18,15 +18,17 @@
 
 namespace mqt::bench {
 class BV;
-class ModularMultiplier;
 class GHZ;
 class Grover;
+class ModularMultiplier;
 class Multiplexer;
 class QFT;
 class QFTAdder;
 class QPE;
 class RepeatUntilSuccess;
+class Shor;
 class Teleportation;
+class WState;
 
 /// A generated program and the normalized semantic instance that produced it.
 struct GeneratedBenchmark {
@@ -39,15 +41,15 @@ struct GeneratedBenchmark {
 /// Generate a configured Bernstein--Vazirani benchmark.
 [[nodiscard]] std::optional<mlir::QCProgram> generate(const BV& benchmark);
 
-/// Generate a configured modular multiplier benchmark.
-[[nodiscard]] std::optional<mlir::QCProgram>
-generate(const ModularMultiplier& benchmark);
-
 /// Generate the QC program for a configured GHZ benchmark.
 [[nodiscard]] std::optional<mlir::QCProgram> generate(const GHZ& benchmark);
 
 /// Generate the QC program for a configured Grover benchmark.
 [[nodiscard]] std::optional<mlir::QCProgram> generate(const Grover& benchmark);
+
+/// Generate a configured modular multiplier benchmark.
+[[nodiscard]] std::optional<mlir::QCProgram>
+generate(const ModularMultiplier& benchmark);
 
 /// Generate the QC program for a configured quantum multiplexer benchmark.
 [[nodiscard]] std::optional<mlir::QCProgram>
@@ -67,9 +69,15 @@ generate(const QFTAdder& benchmark);
 [[nodiscard]] std::optional<mlir::QCProgram>
 generate(const RepeatUntilSuccess& benchmark);
 
+/// Generate structured semiclassical Shor order finding.
+[[nodiscard]] std::optional<mlir::QCProgram> generate(const Shor& benchmark);
+
 /// Generate the quantum teleportation benchmark.
 [[nodiscard]] std::optional<mlir::QCProgram>
 generate(const Teleportation& benchmark);
+
+/// Generate the QC program for a configured W-state benchmark.
+[[nodiscard]] std::optional<mlir::QCProgram> generate(const WState& benchmark);
 
 /// Parse a benchmark instance specification and generate the benchmark.
 [[nodiscard]] std::optional<GeneratedBenchmark>

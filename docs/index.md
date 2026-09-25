@@ -24,9 +24,9 @@ Install the [Python package](https://pypi.org/project/mqt.core/) or follow the
 :img-top: _static/tasks/compile.webp
 :img-alt:
 
-Estimate a phase with two qubits and measurement feedback.
+Factor 21 with Shor's algorithm and measurement feedback.
 
-- **First example:** {doc}`QPE walkthrough <getting_started>`
+- **First example:** {doc}`Shor factoring walkthrough <getting_started>`
 - **Tutorials:** {doc}`Understand quantum compilation <tutorials/index>`
 - **Guide:** {doc}`Compilation and execution <compilation/index>`
 - **API:** {py:mod}`mqt.core.mlir`
@@ -58,7 +58,7 @@ Represent and manipulate quantum states and operations in C++ or Python.
 :img-top: _static/tasks/benchmarks.webp
 :img-alt:
 
-Configure structured programs and compare results with analytic references.
+Configure structured programs and evaluate results against their references.
 
 - **First example:**
   [Configure a benchmark](benchmarks.md#configure-a-typed-instance)

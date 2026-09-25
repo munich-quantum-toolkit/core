@@ -89,13 +89,13 @@ mqt-cc input.qasm --qdmi-device mqt.sc.iqm.garnet \
   --mapping-search-memory-limit 8388608
 ```
 
-Trials and iterations must be positive. Omitted trials use the logical CPU
-count; iterations default to one forward/backward refinement round. Lookahead is
-the number of additional two-qubit gates considered during routing. It defaults
-to 20; zero considers only the current gate. All-to-all placement ignores valid
-mapping controls. Repeatable mapping requires the same build, input, target,
-seed, and mapping controls, including an explicit trial count. Layouts may
-change between releases.
+Trials must be positive. Omitted trials use the logical CPU count; iterations
+default to one forward/backward refinement round. Zero iterations score each
+initial layout directly. Lookahead is the number of additional two-qubit gates
+considered during routing. It defaults to 20; zero considers only the current
+gate. All-to-all placement ignores valid mapping controls. Repeatable mapping
+requires the same build, input, target, seed, and mapping controls, including an
+explicit trial count. Layouts may change between releases.
 
 ### Choose a format
 
@@ -184,7 +184,9 @@ Mapping explores one initial-layout trial per available logical CPU by default,
 using LLVM's affinity-aware CPU count with a minimum of one. An explicit
 `ntrials` value overrides this default. Set both `ntrials` and `seed` on the
 `place-and-route` pass for reproducible results across machines. Disabling
-multithreading runs the same trials sequentially.
+multithreading runs the same trials sequentially. The trial budget includes a
+greedy layout when available, followed by identity if a slot remains and random
+layouts for the remaining slots. Every trial uses the same refinement count.
 
 Each routing search limits its estimated node and layout storage to 256 MiB by
 default. When the budget is exhausted, it checks queued states before falling
@@ -279,11 +281,12 @@ flow with `legalize-control-flow`:
 | `multiway-branching` | `qco.index_switch` and classical `scf.index_switch` |
 
 A finite `scf.for` that exceeds the selected counted-iteration contract is fully
-unrolled when this clones at most 65,536 body operations. The same bound applies
-to loops unrolled for qubit placement. Cleanup runs again because unrolling can
-make nested bounds and conditions constant. An unsupported index switch is
-lowered to a linear chain of nested forward branches when that form fits the
-selected contract. Before expansion, the compiler checks the selected
+unrolled when this clones at most one billion body operations by default. The
+`unroll-loops-for-payload` pass exposes this limit as `max-operations`. The same
+bound applies to loops unrolled for qubit placement. Cleanup runs again because
+unrolling can make nested bounds and conditions constant. An unsupported index
+switch is lowered to a linear chain of nested forward branches when that form
+fits the selected contract. Before expansion, the compiler checks the selected
 forward-branching nesting limit and a compiler safety limit of 256 total
 control-flow levels, including enclosing control flow. This compiler limit is
 not a QDMI requirement and does not apply to switches retained under multiway
@@ -316,12 +319,12 @@ Other payloads, explicit topology, and site-specific operations require exact
 quantum addresses. Bounded specialization exposes those addresses before
 placement or routing. Residual unsupported tensor control flow produces a
 diagnostic before allocation changes. Mapped OpenQASM uses static physical
-qubits; indexed tensor loops must fit the existing 65,536-operation unrolling
-budget. Runtime-dependent indices that cannot be specialized are unsupported.
-Logical qubit indices can remain dynamic in targetless OpenQASM export. Constant
-rank-one `f64` table reads use switches that group equal entries and require
-unrestricted multiway branching from the selected payload. Their size grows with
-the table data and number of reads.
+qubits; indexed tensor loops must fit the default one-billion-operation
+unrolling budget. Runtime-dependent indices that cannot be specialized are
+unsupported. Logical qubit indices can remain dynamic in targetless OpenQASM
+export. Constant rank-one `f64` table reads use switches that group equal
+entries and require unrestricted multiway branching from the selected payload.
+Their size grows with the table data and number of reads.
 
 The supported constraints are `max-control-flow-nesting-depth` on all four
 capabilities, `max-iteration-count` on both iteration capabilities, and

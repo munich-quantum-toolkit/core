@@ -271,7 +271,7 @@ plot_distribution(
 
 Continue with {doc}`hardware_compilation` to compile against explicit hardware
 constraints. For larger structured examples, explore
-[iterative QPE](../getting_started.md#standard-versus-iterative-qpe) and
+[iterative QPE](../benchmarks.md#quantum-phase-estimation) and
 [repeat until success](../benchmarks.md#repeat-until-success). The
 {doc}`../mlir/QTensor`, {doc}`../mlir/CBit`, and {doc}`../mlir/OpenQASM`
 references describe the operations and supported input forms in detail.

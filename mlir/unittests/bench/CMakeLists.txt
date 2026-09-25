@@ -18,10 +18,15 @@ add_executable(
   test_benchmark_generate_qft_adder.cpp
   test_benchmark_generate_qpe.cpp
   test_benchmark_generate_repeat_until_success.cpp
-  test_benchmark_generate_teleportation.cpp)
+  test_benchmark_generate_shor.cpp
+  test_benchmark_generate_teleportation.cpp
+  test_benchmark_generate_w_state.cpp)
 
 target_link_libraries(mqt-core-mlir-unittests-benchmark
                       PRIVATE GTest::gtest_main MQT::CoreBenchGenerate MLIRQCODDFunctionality)
+
+target_include_directories(mqt-core-mlir-unittests-benchmark
+                           PRIVATE ${PROJECT_SOURCE_DIR}/mlir/bench/programs)
 
 mqt_mlir_configure_unittest_target(mqt-core-mlir-unittests-benchmark REQUIRES_EH)
 
