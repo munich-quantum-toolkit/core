@@ -20,10 +20,23 @@ import pytest
 from mqt.core.qdmi import builtin_driver
 
 
-def test_add_manifest_reports_invalid_files(tmp_path: Path) -> None:
-    """Explicit manifest staging reports errors instead of warning and skipping."""
+def test_manifest_registration_and_offline_enumeration(tmp_path: Path) -> None:
+    """List configured IDs even when their libraries cannot be loaded."""
     malformed = tmp_path / "malformed.qdmi.json"
     malformed.write_text("{")
+    (tmp_path / "not-a-library").touch()
+    manifest = tmp_path / "offline.qdmi.json"
+    manifest.write_text(
+        json.dumps({
+            "schema-version": 1,
+            "qdmi": {
+                "devices": [
+                    {"id": "test.offline", "library": "not-a-library", "prefix": "MISSING"},
+                    {"id": "test.disabled", "enabled": False},
+                ]
+            },
+        })
+    )
     script = """
 import sys
 from pathlib import Path
@@ -42,14 +55,21 @@ except ValueError as error:
     assert "Invalid argument" in str(error)
 else:
     raise AssertionError("malformed manifest must fail")
+
+builtin_driver.add_manifest(Path(sys.argv[3]))
+ids = builtin_driver.registered_device_ids()
+assert "test.offline" in ids
+assert "test.disabled" not in ids
+assert ids == builtin_driver.registered_device_ids()
 """
     result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]
-        [sys.executable, "-c", script, tmp_path / "missing.qdmi.json", malformed],
+        [sys.executable, "-c", script, tmp_path / "missing.qdmi.json", malformed, manifest],
         check=False,
         capture_output=True,
         text=True,
     )
     assert result.returncode == 0, result.stderr
+    assert "Skipping configured QDMI device" not in result.stderr
 
 
 def test_open_device_uses_strict_fresh_sessions() -> None:

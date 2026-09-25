@@ -546,6 +546,10 @@ namespace builtin_driver {
 /// Stage one device manifest in MQT Core's optional driver extension.
 void addManifest(const std::filesystem::path& path);
 
+/// List enabled stable IDs without loading devices or contacting providers.
+/// Uses the MQT Core QDMI driver and fixes its configuration on the first call.
+[[nodiscard]] std::vector<std::string> registeredDeviceIds();
+
 /// Open one device through the MQT Core QDMI driver with session overrides.
 /// @param id Stable device ID.
 /// @param deviceSessionJson JSON session overrides.

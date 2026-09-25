@@ -1044,6 +1044,17 @@ TEST(ConfiguredDriverTest,
   EXPECT_EQ(MQT_CORE_QDMI_driver_add_manifest_v1(""),
             QDMI_ERROR_INVALIDARGUMENT);
 
+  EXPECT_EQ(MQT_CORE_QDMI_driver_registered_device_ids_v1(0, nullptr, nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
+  size_t size = 0;
+  EXPECT_EQ(MQT_CORE_QDMI_driver_registered_device_ids_v1(0, nullptr, &size),
+            QDMI_SUCCESS);
+  ASSERT_GT(size, 1);
+  char undersized = '\0';
+  EXPECT_EQ(
+      MQT_CORE_QDMI_driver_registered_device_ids_v1(1, &undersized, nullptr),
+      QDMI_ERROR_INVALIDARGUMENT);
+
   QDMI_Session session = nullptr;
   EXPECT_EQ(MQT_CORE_QDMI_driver_session_alloc_for_device_v1(
                 "test.session-overrides", 0, nullptr, nullptr),
@@ -1206,6 +1217,8 @@ TEST(DeviceRegistrationTest,
      EnumeratesEnabledIdsInOrderWithoutLoadingLibraries) {
   auto& driver = qdmi::Driver::get();
   const auto idsBefore = driver.registeredDeviceIds();
+  EXPECT_THAT(qdmi::builtin_driver::registeredDeviceIds(),
+              testing::Contains("broken.example"));
   driver.registerDevice({
       .id = "test.enumeration.first",
       .library = "/nonexistent/first-device-library",
