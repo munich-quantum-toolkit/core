@@ -58,7 +58,8 @@ private:
 };
 
 /// Read-only native synthesis decisions with bounded numerical caches.
-/// Own one instance per traversal; it retains no IR handles or target state.
+/// Keep instances local to a routing traversal or synthesis invocation.
+/// They retain no IR handles or target state.
 /// Supplied sites follow operand order and match the operation's arity.
 /// Unavailable results cover unsupported lowering and numerical failure.
 class NativeCostAnalysis {
