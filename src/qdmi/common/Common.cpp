@@ -13,13 +13,12 @@
 
 #include "qdmi/common/Common.hpp"
 
+#include "support/Diagnostics.hpp"
+
 #include "qdmi/constants.h"
 
 #include <cstdlib>
-#include <iostream>
 #include <optional>
-#include <sstream>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 
@@ -27,6 +26,9 @@
 #include <filesystem>
 #include <windows.h>
 #endif
+#include "mlir/Support/LogicalResult.h"
+
+#include <utility>
 
 namespace qdmi {
 namespace detail {
@@ -60,36 +62,47 @@ auto environment(const std::string_view name) -> std::optional<std::string> {
 }
 } // namespace detail
 
-auto throwIfError(const int result, const std::string& msg) -> void {
-  switch (const auto res = static_cast<QDMI_STATUS>(result)) {
-  case QDMI_SUCCESS:
+mlir::LogicalResult emitError(const int status, std::string message) {
+  auto category = ::mqt::ErrorCategory::Runtime;
+  switch (status) {
+  case QDMI_ERROR_INVALIDARGUMENT:
+    category = ::mqt::ErrorCategory::InvalidArgument;
     break;
-  case QDMI_WARN_GENERAL:
-    std::cerr << "Warning: " << msg << '\n';
+  case QDMI_ERROR_OUTOFRANGE:
+    category = ::mqt::ErrorCategory::OutOfRange;
+    break;
+  case QDMI_ERROR_OUTOFMEM:
+    category = ::mqt::ErrorCategory::OutOfMemory;
+    break;
+  case QDMI_ERROR_NOTSUPPORTED:
+    category = ::mqt::ErrorCategory::NotSupported;
     break;
   default:
-    std::ostringstream ss;
-    ss << msg << ": " << toString(res) << ".";
-    switch (res) {
-    case QDMI_ERROR_OUTOFMEM:
-      throw std::bad_alloc();
-    case QDMI_ERROR_OUTOFRANGE:
-      throw std::out_of_range(ss.str());
-    case QDMI_ERROR_INVALIDARGUMENT:
-      throw std::invalid_argument(ss.str());
-    case QDMI_ERROR_FATAL:
-    case QDMI_ERROR_NOTIMPLEMENTED:
-    case QDMI_ERROR_LIBNOTFOUND:
-    case QDMI_ERROR_NOTFOUND:
-    case QDMI_ERROR_PERMISSIONDENIED:
-    case QDMI_ERROR_NOTSUPPORTED:
-    case QDMI_ERROR_BADSTATE:
-    case QDMI_ERROR_TIMEOUT:
-      throw std::runtime_error(ss.str());
-    default:
-      throw std::runtime_error("Unknown QDMI error code. " + ss.str());
-    }
+    break;
   }
+  return ::mqt::emitError(std::move(message), category, status);
 }
 
+mlir::LogicalResult checkError(const int result,
+                               const std::string_view message) {
+  if (result == QDMI_SUCCESS) {
+    return mlir::success();
+  }
+  if (result == QDMI_WARN_GENERAL) {
+    ::mqt::emitDiagnostic({
+        .message = std::string(message),
+        .category = ::mqt::ErrorCategory::Runtime,
+        .severity = ::mqt::DiagnosticSeverity::Warning,
+        .status = result,
+    });
+    return mlir::success();
+  }
+  if (result >= QDMI_ERROR_TIMEOUT && result <= QDMI_ERROR_FATAL) {
+    return emitError(result, std::string(message) + ": " +
+                                 toString(static_cast<QDMI_STATUS>(result)) +
+                                 ".");
+  }
+  return emitError(result, "Unknown QDMI error code " + std::to_string(result) +
+                               ". " + std::string(message));
+}
 } // namespace qdmi

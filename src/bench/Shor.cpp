@@ -13,6 +13,9 @@
 #include "bench/Evaluation.hpp"
 
 #include "EvaluationUtils.hpp"
+#include "support/Diagnostics.hpp"
+
+#include "mlir/Support/LogicalResult.h"
 
 #include <algorithm>
 #include <bit>
@@ -24,7 +27,6 @@
 #include <numeric>
 #include <optional>
 #include <random>
-#include <stdexcept>
 
 namespace mqt::bench {
 namespace {
@@ -129,29 +131,37 @@ recoverFactors(const ShorOptions& options, uint64_t numerator,
 
 } // namespace
 
+mlir::FailureOr<Shor> Shor::create(ShorOptions options) {
+  if (options.number < 3 || options.number > ShorOptions::MAX_NUMBER ||
+      options.number % 2 == 0) {
+    return ::mqt::emitError(
+        "Shor number must be odd and between 3 and 2^31 - 1",
+        ::mqt::ErrorCategory::InvalidArgument);
+  }
+  if (options.base <= 1 || options.base >= options.number ||
+      std::gcd(options.base, options.number) != 1) {
+    return ::mqt::emitError(
+        "Shor base must satisfy 1 < base < number and be coprime to number",
+        ::mqt::ErrorCategory::InvalidArgument);
+  }
+  return Shor(options);
+}
+
 Shor::Shor(ShorOptions options)
     : options_(options),
       output_{
           .name = "result",
           .width = size_t{2} * std::bit_width(options_.number),
-      } {
-  if (options_.number < 3 || options_.number > ShorOptions::MAX_NUMBER ||
-      options_.number % 2 == 0) {
-    throw std::invalid_argument(
-        "Shor number must be odd and between 3 and 2^31 - 1");
-  }
-  if (options_.base <= 1 || options_.base >= options_.number ||
-      std::gcd(options_.base, options_.number) != 1) {
-    throw std::invalid_argument(
-        "Shor base must satisfy 1 < base < number and be coprime to number");
-  }
-}
+      } {}
 
 const ShorOptions& Shor::options() const noexcept { return options_; }
 const Output& Shor::output() const noexcept { return output_; }
 
-ShorEvaluation Shor::evaluate(const Counts& counts) const {
+mlir::FailureOr<ShorEvaluation> Shor::evaluate(const Counts& counts) const {
   const auto total = detail::validateCounts(output_, counts);
+  if (mlir::failed(total)) {
+    return mlir::failure();
+  }
   size_t successes = 0;
   ShorEvaluation result;
   for (const auto& [outcome, count] : counts) {
@@ -170,32 +180,37 @@ ShorEvaluation Shor::evaluate(const Counts& counts) const {
     }
   }
   result.successProbability =
-      static_cast<double>(successes) / static_cast<double>(total);
+      static_cast<double>(successes) / static_cast<double>(*total);
   return result;
 }
 
-FactorResult factor(uint64_t number,
-                    const std::function<Counts(const Shor&)>& run,
-                    const FactorOptions& options) {
+mlir::FailureOr<FactorResult>
+factor(uint64_t number,
+       const std::function<mlir::FailureOr<Counts>(const Shor&)>& run,
+       const FactorOptions& options) {
   if (number < 2 || number > ShorOptions::MAX_NUMBER) {
-    throw std::invalid_argument(
-        "factoring number must be between 2 and 2^31 - 1");
+    return ::mqt::emitError("factoring number must be between 2 and 2^31 - 1",
+                            ::mqt::ErrorCategory::InvalidArgument);
   }
   if (options.maxAttempts == 0 || !run) {
-    throw std::invalid_argument(
-        "factoring requires a callback and a positive attempt limit");
+    return ::mqt::emitError(
+        "factoring requires a callback and a positive attempt limit",
+        ::mqt::ErrorCategory::InvalidArgument);
   }
   if (number == 2) {
-    return {.status = FactorStatus::Prime, .factors = std::nullopt};
+    return FactorResult{.status = FactorStatus::Prime, .factors = std::nullopt};
   }
   if (number % 2 == 0) {
-    return {.status = FactorStatus::Success, .factors = factorPair(number, 2)};
+    return FactorResult{
+        .status = FactorStatus::Success,
+        .factors = factorPair(number, 2),
+    };
   }
   if (isPrime(number)) {
-    return {.status = FactorStatus::Prime, .factors = std::nullopt};
+    return FactorResult{.status = FactorStatus::Prime, .factors = std::nullopt};
   }
   if (const auto factors = perfectPowerFactors(number)) {
-    return {.status = FactorStatus::Success, .factors = factors};
+    return FactorResult{.status = FactorStatus::Success, .factors = factors};
   }
 
   std::mt19937_64 random(options.seed);
@@ -203,23 +218,33 @@ FactorResult factor(uint64_t number,
   for (size_t attempt = 0; attempt < options.maxAttempts; ++attempt) {
     const auto base = attempt == 0 ? uint64_t{2} : bases(random);
     if (const auto factors = factorPair(number, std::gcd(base, number))) {
-      return {
+      return FactorResult{
           .status = FactorStatus::Success,
           .factors = factors,
           .attempts = attempt + 1,
       };
     }
-    const Shor benchmark({.number = number, .base = base});
-    if (const auto evaluation = benchmark.evaluate(run(benchmark));
-        evaluation.factors) {
-      return {
+    const auto benchmark = Shor::create({.number = number, .base = base});
+    if (mlir::failed(benchmark)) {
+      return mlir::failure();
+    }
+    const auto counts = run(*benchmark);
+    if (mlir::failed(counts)) {
+      return mlir::failure();
+    }
+    const auto evaluation = benchmark->evaluate(*counts);
+    if (mlir::failed(evaluation)) {
+      return mlir::failure();
+    }
+    if (evaluation->factors) {
+      return FactorResult{
           .status = FactorStatus::Success,
-          .factors = evaluation.factors,
+          .factors = evaluation->factors,
           .attempts = attempt + 1,
       };
     }
   }
-  return {
+  return FactorResult{
       .status = FactorStatus::AttemptsExhausted,
       .factors = std::nullopt,
       .attempts = options.maxAttempts,

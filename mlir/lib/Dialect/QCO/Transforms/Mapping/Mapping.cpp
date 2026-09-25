@@ -1841,7 +1841,7 @@ private:
 
       const auto append = [&](RoutingBundle& child, Value arg, Value yielded) {
         child.infos.insertOrUpdate(child.infos.size(), prog);
-        child.wires.emplace_back([&] -> Value {
+        child.wires.emplace_back([&]() -> Value {
           if constexpr (Direction == WireDirection::Forward) {
             return arg;
           } else {
@@ -1911,7 +1911,7 @@ private:
       children.emplace_back(RoutingBundle{.layout = children[0].layout});
       assert(children.size() == 2);
 
-      auto values = [&] -> ValueRange {
+      auto values = [&]() -> ValueRange {
         if constexpr (Direction == WireDirection::Forward) {
           return whileOp.getAfterArguments();
         }

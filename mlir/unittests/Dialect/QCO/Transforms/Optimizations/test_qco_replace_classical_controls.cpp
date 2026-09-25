@@ -64,7 +64,7 @@ protected:
 
   /// Adds the replaceClassicalControls pass to the current context and
   /// runs it.
-  static LogicalResult
+  static mlir::LogicalResult
   runReplaceClassicalControlsPass(ModuleOp program,
                                   bool liftMeasurements = false) {
     PassManager pm(program.getContext());
@@ -77,7 +77,7 @@ protected:
   }
 
   /// Adds the canonicalizerPass to the current context and runs it.
-  static LogicalResult runCanonicalizerPass(ModuleOp program) {
+  static mlir::LogicalResult runCanonicalizerPass(ModuleOp program) {
     PassManager pm(program.getContext());
     pm.addPass(createCanonicalizerPass());
     return pm.run(program);

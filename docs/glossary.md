@@ -375,6 +375,32 @@ W state
   all computational-basis states with exactly one qubit in state one.
 ```
 
+## Error handling
+
+```{glossary}
+:sorted:
+
+diagnostic
+  **Preferred term:** diagnostic. **Accepted aliases:** none. A message about an
+  operation, with a severity and error category. Native diagnostics may also
+  retain a provider's QDMI status. They are separate from the operation's return
+  value.
+
+FailureOr
+  **Preferred term:** `FailureOr<T>`. **Accepted aliases:** none. A return type
+  containing either a successful value or failure. It carries no diagnostic.
+
+LogicalResult
+  **Preferred term:** `LogicalResult`. **Accepted aliases:** none. A return type
+  indicating success or failure when an operation produces no value.
+
+scoped diagnostic handler
+  **Preferred term:** scoped diagnostic handler. **Accepted aliases:** none. A
+  callback installed for a scope on one thread. Returning success consumes a
+  diagnostic; returning failure forwards it to the preceding handler. See the
+  [native API guide](cpp_api.md#handle-native-errors).
+```
+
 ## Index
 
 Every glossary entry appears in the

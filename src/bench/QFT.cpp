@@ -13,36 +13,46 @@
 #include "bench/Evaluation.hpp"
 
 #include "EvaluationUtils.hpp"
+#include "support/Diagnostics.hpp"
+
+#include "mlir/Support/LogicalResult.h"
 
 #include <algorithm>
 #include <cmath>
-#include <stdexcept>
 #include <string_view>
 
 namespace mqt::bench {
 
-QFT::QFT(QFTOptions options)
-    : options_(options), output_{.name = "result", .width = options_.qubits} {
-  if (options_.qubits == 0 || options_.qubits > QFTOptions::MAX_QUBITS) {
-    throw std::invalid_argument("QFT qubits must be between 1 and 1000000");
+mlir::FailureOr<QFT> QFT::create(QFTOptions options) {
+  if (options.qubits == 0 || options.qubits > QFTOptions::MAX_QUBITS) {
+    return ::mqt::emitError("QFT qubits must be between 1 and 1000000",
+                            ::mqt::ErrorCategory::InvalidArgument);
   }
-  if (options_.periodExponent > options_.qubits ||
-      options_.periodExponent > QFTOptions::MAX_PERIOD_EXPONENT) {
-    throw std::invalid_argument(
-        "QFT period exponent must be at most the qubit count and 1074");
+  if (options.periodExponent > options.qubits ||
+      options.periodExponent > QFTOptions::MAX_PERIOD_EXPONENT) {
+    return ::mqt::emitError(
+        "QFT period exponent must be at most the qubit count and 1074",
+        ::mqt::ErrorCategory::InvalidArgument);
   }
-  if (options_.method != QFTMethod::Standard &&
-      options_.method != QFTMethod::Semiclassical) {
-    throw std::invalid_argument("unknown QFT method");
+  if (options.method != QFTMethod::Standard &&
+      options.method != QFTMethod::Semiclassical) {
+    return ::mqt::emitError("unknown QFT method",
+                            ::mqt::ErrorCategory::InvalidArgument);
   }
+  return QFT(options);
 }
+
+QFT::QFT(QFTOptions options)
+    : options_(options), output_{.name = "result", .width = options_.qubits} {}
 
 const QFTOptions& QFT::options() const noexcept { return options_; }
 
 const Output& QFT::output() const noexcept { return output_; }
 
-double QFT::probability(const std::string_view outcome) const {
-  detail::validateOutcome(outcome, output_.width);
+mlir::FailureOr<double> QFT::probability(const std::string_view outcome) const {
+  if (mlir::failed(detail::validateOutcome(outcome, output_.width))) {
+    return mlir::failure();
+  }
   if (!std::ranges::all_of(outcome.substr(options_.periodExponent),
                            [](const char bit) { return bit == '0'; })) {
     return 0.;
@@ -50,7 +60,7 @@ double QFT::probability(const std::string_view outcome) const {
   return std::ldexp(1., -static_cast<int>(options_.periodExponent));
 }
 
-Evaluation QFT::evaluate(const Counts& counts) const {
+mlir::FailureOr<Evaluation> QFT::evaluate(const Counts& counts) const {
   return detail::evaluate(*this, counts);
 }
 

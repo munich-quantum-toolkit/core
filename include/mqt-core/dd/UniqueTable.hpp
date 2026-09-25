@@ -18,10 +18,13 @@
 #include "dd/Node.hpp"
 #include "dd/statistics/UniqueTableStatistics.hpp"
 
+#include "mlir/Support/LogicalResult.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <iostream>
+#include <optional>
 #include <ranges>
 #include <type_traits>
 #include <vector>
@@ -55,13 +58,10 @@ public:
     size_t maxBuckets = 1048576U;
   };
 
-  /// The default constructor
-  /// @param manager The memory manager to use
-  /// @param config The configuration for the unique table
-  ///
-  /// The MemoryManager shall be constructed from the same type that the
-  /// unique table is then used for in the lookup method.
-  UniqueTable(MemoryManager& manager, const UniqueTableConfig& config);
+  /// Validate capacities and create a table. The manager must allocate the
+  /// node type used in lookup and outlive the table.
+  [[nodiscard]] static mlir::FailureOr<UniqueTable>
+  create(MemoryManager& manager, const UniqueTableConfig& config);
 
   void resize(std::size_t nVars);
 
@@ -181,6 +181,11 @@ public:
   }
 
 private:
+  friend class Package;
+  UniqueTable(MemoryManager& manager, const UniqueTableConfig& config);
+  [[nodiscard]] static mlir::LogicalResult checkCapacity(size_t initial,
+                                                         size_t maximum);
+
   /// Typedef for a bucket in the table
   using Bucket = NodeBase*;
   /// Typedef for the table

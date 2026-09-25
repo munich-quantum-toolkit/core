@@ -36,7 +36,8 @@ TEST(DriverDiagnosticDeathTest,
     QDMI_Session_impl_d sentinel(std::vector<QDMI_Device>{});
     auto* session = &sentinel;
     const auto status = QDMI_session_alloc(&session);
-    std::_Exit(status == QDMI_ERROR_FATAL && session == nullptr ? 0 : 3);
+    std::_Exit(status == QDMI_ERROR_INVALIDARGUMENT && session == nullptr ? 0
+                                                                          : 3);
   };
   EXPECT_EXIT(probe(), testing::ExitedWithCode(0), "");
 }

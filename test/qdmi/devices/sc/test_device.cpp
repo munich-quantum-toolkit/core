@@ -9,7 +9,8 @@
  */
 
 #include "mqt_sc_qdmi/device.h"
-#include "qdmi/TestUtils.hpp"
+
+#include "support/TestSupport.hpp"
 
 #include "gmock/gmock-matchers.h"
 #include "gtest/gtest.h"
@@ -232,12 +233,10 @@ TEST(ScRuntimeConfiguration, ValidatesRawParameterStringsAndRetry) {
   const auto malformedStatus = MQT_SC_QDMI_device_session_init(session);
   const auto malformedDiagnostic = testing::internal::GetCapturedStderr();
   EXPECT_EQ(malformedStatus, QDMI_ERROR_INVALIDARGUMENT);
-  EXPECT_THAT(
-      malformedDiagnostic,
-      testing::AllOf(testing::HasSubstr("[mqt-core] [error]"),
-                     testing::HasSubstr("Invalid SC device configuration from "
-                                        "inline session configuration"),
-                     testing::HasSubstr("invalid JSON")));
+  EXPECT_THAT(malformedDiagnostic,
+              testing::AllOf(testing::HasSubstr("[mqt-core] [error]"),
+                             testing::HasSubstr("inline session configuration"),
+                             testing::HasSubstr("invalid JSON")));
   ASSERT_EQ(MQT_SC_QDMI_device_session_set_parameter(
                 session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1,
                 std::strlen(CUSTOM_SC) + 1, CUSTOM_SC),

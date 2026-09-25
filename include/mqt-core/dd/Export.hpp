@@ -19,14 +19,18 @@
 #include "dd/Node.hpp"
 #include "dd/RealNumber.hpp"
 
+#include "support/Diagnostics.hpp"
+
+#include "mlir/Support/LogicalResult.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <queue>
 #include <sstream>
-#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -344,16 +348,23 @@ void serializeMatrix(const mEdge& basic, std::int64_t& idx,
                      bool writeBinary = false);
 void serialize(const mEdge& basic, std::ostream& os, bool writeBinary = false);
 template <class Node>
-static void serialize(const Edge<Node>& basic,
-                      const std::string& outputFilename,
-                      bool writeBinary = false) {
+[[nodiscard]] static mlir::LogicalResult
+serialize(const Edge<Node>& basic, const std::string& outputFilename,
+          bool writeBinary = false) {
   std::ofstream ofs = std::ofstream(outputFilename, std::ios::binary);
 
   if (!ofs.good()) {
-    throw std::invalid_argument("Cannot open file: " + outputFilename);
+    return ::mqt::emitError("Cannot open file: " + outputFilename,
+                            ::mqt::ErrorCategory::IO);
   }
 
   serialize(basic, ofs, writeBinary);
+  ofs.close();
+  if (!ofs) {
+    return ::mqt::emitError("Cannot write file: " + outputFilename,
+                            ::mqt::ErrorCategory::IO);
+  }
+  return mlir::success();
 }
 
 template <typename Node>

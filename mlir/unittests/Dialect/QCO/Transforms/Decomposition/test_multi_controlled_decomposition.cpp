@@ -22,6 +22,8 @@
 #include "mqt/Dialect/QCO/Utils/DDAdapter.h"
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
 
+#include "support/TestSupport.hpp"
+
 #include "gtest/gtest.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -149,8 +151,8 @@ enum class RotationAxis : uint8_t { X, Y, Z };
 [[nodiscard]] static dd::MatrixDD
 makeControlledGateDD(dd::Package& package, size_t numControls,
                      const dd::GateMatrix& matrix) {
-  return package.makeGateDD(matrix, makeControls(numControls),
-                            static_cast<dd::Qubit>(numControls));
+  return ::mqt::test::value(package.makeGateDD(
+      matrix, makeControls(numControls), static_cast<dd::Qubit>(numControls)));
 }
 
 namespace {
@@ -272,7 +274,10 @@ buildMcrModule(MLIRContext* context, size_t numControls, RotationAxis axis,
       });
   if (moduleOp && runtimeAngle) {
     auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
-    funcOp.insertArgument(0, Float64Type::get(context), {}, funcOp.getLoc());
+    if (failed(funcOp.insertArgument(0, Float64Type::get(context), {},
+                                     funcOp.getLoc()))) {
+      return {};
+    }
     parameter.replaceAllUsesWith(funcOp.getArgument(0));
   }
   return moduleOp;
@@ -323,7 +328,7 @@ static void expectImplementsControlledRotation(
     func::FuncOp funcOp, size_t numControls, RotationAxis axis, double theta,
     const DDArgumentBindings& bindings = DDArgumentBindings()) {
   ASSERT_EQ(countStaticQubits(funcOp), numControls + 1);
-  const auto package = std::make_unique<dd::Package>(numControls + 1);
+  const auto package = ::mqt::test::value(dd::Package::create(numControls + 1));
   const auto actual = buildFunctionality(funcOp, *package, bindings);
   ASSERT_TRUE(succeeded(actual));
   const auto target = static_cast<dd::Qubit>(numControls / 2);
@@ -333,8 +338,8 @@ static void expectImplementsControlledRotation(
       controls.emplace(static_cast<dd::Qubit>(i));
     }
   }
-  const auto expected =
-      package->makeGateDD(rotationMatrix(axis, theta), controls, target);
+  const auto expected = ::mqt::test::value(
+      package->makeGateDD(rotationMatrix(axis, theta), controls, target));
   // Full operator equality preserves phase and restores every borrowed control,
   // including when controls are entangled with other qubits.
   EXPECT_EQ(*actual, expected);
@@ -356,7 +361,7 @@ static void expectImplementsControlledPauli(func::FuncOp funcOp,
   ASSERT_EQ(numQubits, numControls + 1);
   expectFullyDecomposed(funcOp);
 
-  const auto dd = std::make_unique<dd::Package>(numQubits);
+  const auto dd = ::mqt::test::value(dd::Package::create(numQubits));
   const auto decomposedDD = buildFunctionality(funcOp, *dd);
   ASSERT_TRUE(succeeded(decomposedDD));
 
@@ -399,17 +404,20 @@ static void expectMatchesReferenceOnBasisStates(func::FuncOp funcOp,
     basisStates.back()[numControls] = false;
   }
 
-  const auto dd = std::make_unique<dd::Package>(numQubits);
+  const auto dd = ::mqt::test::value(dd::Package::create(numQubits));
   const auto referenceGate =
       makeControlledGateDD(*dd, numControls, pauliMatrix(pauli));
   dd->incRef(referenceGate);
   std::mt19937_64 rng(0);
   for (const auto& basisState : basisStates) {
     const auto decomposedOutput = simulate(
-        funcOp, dd::makeBasisState(numQubits, basisState, *dd), *dd, rng);
+        funcOp,
+        ::mqt::test::value(dd::makeBasisState(numQubits, basisState, *dd)), *dd,
+        rng);
     ASSERT_TRUE(succeeded(decomposedOutput));
     const auto referenceOutput = dd->applyOperation(
-        referenceGate, dd::makeBasisState(numQubits, basisState, *dd));
+        referenceGate,
+        ::mqt::test::value(dd::makeBasisState(numQubits, basisState, *dd)));
     expectStatesNear(*dd, *decomposedOutput, referenceOutput);
     dd->decRef(*decomposedOutput);
     dd->decRef(referenceOutput);
@@ -425,7 +433,7 @@ makeCoherentControlInput(size_t numControls, bool targetOne, dd::Package& dd) {
   basisState[coherentControl] = dd::BasisStates::plus;
   basisState[numControls] =
       targetOne ? dd::BasisStates::one : dd::BasisStates::zero;
-  return dd::makeBasisState(numQubits, basisState, dd);
+  return ::mqt::test::value(dd::makeBasisState(numQubits, basisState, dd));
 }
 
 static void
@@ -442,7 +450,7 @@ expectMatchesReferenceOnCoherentState(func::FuncOp funcOp, size_t numControls,
   ASSERT_EQ(numQubits, numControls + 1);
   expectFullyDecomposed(funcOp);
 
-  const auto dd = std::make_unique<dd::Package>(numQubits);
+  const auto dd = ::mqt::test::value(dd::Package::create(numQubits));
   std::mt19937_64 rng(0);
   const auto decomposedOutput = simulate(
       funcOp, makeCoherentControlInput(numControls, targetOne, *dd), *dd, rng);
@@ -476,7 +484,7 @@ static void expectImplementsMcp(func::FuncOp funcOp, size_t numControls,
   ASSERT_EQ(numQubits, numControls + 1);
   expectFullyDecomposed(funcOp);
 
-  const auto dd = std::make_unique<dd::Package>(numQubits);
+  const auto dd = ::mqt::test::value(dd::Package::create(numQubits));
   const auto decomposedDD = buildFunctionality(funcOp, *dd);
   ASSERT_TRUE(succeeded(decomposedDD));
 
@@ -611,8 +619,8 @@ TEST_F(MultiControlledDecompositionTest, RotationsPreserveRuntimeAngles) {
           });
       ASSERT_TRUE(moduleOp);
       auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
-      funcOp.insertArgument(0, Float64Type::get(context()), {},
-                            funcOp.getLoc());
+      ASSERT_TRUE(succeeded(funcOp.insertArgument(
+          0, Float64Type::get(context()), {}, funcOp.getLoc())));
       parameter.replaceAllUsesWith(funcOp.getArgument(0));
       ASSERT_TRUE(succeeded(runDecomposeMultiControlled(moduleOp.get())));
       expectFullyLowered(moduleOp.get());
@@ -704,14 +712,14 @@ TEST_F(MultiControlledDecompositionTest, RotationsRespectMinQubits) {
 TEST_F(MultiControlledDecompositionTest, PreservesTargetNativeRotations) {
   using OperationCapability = CompilerTarget::OperationCapability;
   const std::vector operations{
-      llvm::cantFail(OperationCapability::create(
+      ::mqt::test::value(OperationCapability::create(
           "rx", OperationCapability::Arity::variadic(4), 1)),
-      llvm::cantFail(OperationCapability::create(
+      ::mqt::test::value(OperationCapability::create(
           "ry", OperationCapability::Arity::variadic(4), 1)),
-      llvm::cantFail(OperationCapability::create(
+      ::mqt::test::value(OperationCapability::create(
           "rz", OperationCapability::Arity::variadic(4), 1)),
   };
-  const auto target = llvm::cantFail(CompilerTarget::create(
+  const auto target = ::mqt::test::value(CompilerTarget::create(
       4, CompilerTarget::Connectivity::allToAll(),
       CompilerTarget::NativeOperations::fromOperations(operations)));
   for (const auto axis : {RotationAxis::X, RotationAxis::Y, RotationAxis::Z}) {
@@ -908,10 +916,10 @@ TEST_F(MultiControlledDecompositionTest,
 
   using OperationCapability = CompilerTarget::OperationCapability;
   std::vector operations{
-      llvm::cantFail(OperationCapability::create(
+      ::mqt::test::value(OperationCapability::create(
           "rccx", OperationCapability::Arity::variadic(4), 0)),
   };
-  const auto target = llvm::cantFail(CompilerTarget::create(
+  const auto target = ::mqt::test::value(CompilerTarget::create(
       4, CompilerTarget::Connectivity::allToAll(),
       CompilerTarget::NativeOperations::fromOperations(operations)));
 
@@ -961,10 +969,10 @@ TEST_F(MultiControlledDecompositionTest, PreservesTargetNativeMcy) {
   ASSERT_TRUE(succeeded(verifyLinearity(moduleOp.get())));
   using OperationCapability = CompilerTarget::OperationCapability;
   const std::vector operations{
-      llvm::cantFail(OperationCapability::create(
+      ::mqt::test::value(OperationCapability::create(
           "y", OperationCapability::Arity::variadic(4), 0)),
   };
-  const auto target = llvm::cantFail(CompilerTarget::create(
+  const auto target = ::mqt::test::value(CompilerTarget::create(
       4, CompilerTarget::Connectivity::allToAll(),
       CompilerTarget::NativeOperations::fromOperations(operations)));
   PassManager pm(context());
@@ -996,12 +1004,13 @@ TEST_F(MultiControlledDecompositionTest, DecomposesSingleControlledSwap) {
 
   const auto numQubits = countStaticQubits(funcOp);
   ASSERT_EQ(numQubits, 3U);
-  const auto dd = std::make_unique<dd::Package>(numQubits);
+  const auto dd = ::mqt::test::value(dd::Package::create(numQubits));
   const auto decomposedDD = buildFunctionality(funcOp, *dd);
   ASSERT_TRUE(succeeded(decomposedDD));
 
-  const auto referenceDD = makeGateDD(
-      *dd, DynamicMatrix{SWAPOp::getUnitaryMatrix()}, numQubits, {1, 2}, {{0}});
+  const auto referenceDD = ::mqt::test::value(
+      makeGateDD(*dd, DynamicMatrix{SWAPOp::getUnitaryMatrix()}, numQubits,
+                 {1, 2}, {{0}}));
   EXPECT_EQ(*decomposedDD, referenceDD);
   dd->decRef(*decomposedDD);
 }
@@ -1023,13 +1032,13 @@ TEST_F(MultiControlledDecompositionTest, DecomposesMultipleControlledSwap) {
 
   const auto numQubits = countStaticQubits(funcOp);
   ASSERT_EQ(numQubits, 4U);
-  const auto dd = std::make_unique<dd::Package>(numQubits);
+  const auto dd = ::mqt::test::value(dd::Package::create(numQubits));
   const auto decomposedDD = buildFunctionality(funcOp, *dd);
   ASSERT_TRUE(succeeded(decomposedDD));
 
-  const auto referenceDD =
+  const auto referenceDD = ::mqt::test::value(
       makeGateDD(*dd, DynamicMatrix{SWAPOp::getUnitaryMatrix()}, numQubits,
-                 {2, 3}, {{0}, {1}});
+                 {2, 3}, {{0}, {1}}));
   EXPECT_EQ(*decomposedDD, referenceDD);
   dd->decRef(*decomposedDD);
 }

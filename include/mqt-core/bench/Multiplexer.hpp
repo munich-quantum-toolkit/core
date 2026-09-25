@@ -13,6 +13,8 @@
 #include "bench/Evaluation.hpp"
 #include "bench/mqt_core_bench_export.h"
 
+#include "mlir/Support/LogicalResult.h"
+
 #include <cstddef>
 #include <string_view>
 
@@ -29,16 +31,21 @@ struct MultiplexerOptions {
 /// A validated quantum multiplexer benchmark.
 class MQT_CORE_BENCH_EXPORT Multiplexer final {
 public:
-  explicit Multiplexer(MultiplexerOptions options);
+  [[nodiscard]] static mlir::FailureOr<Multiplexer>
+  create(MultiplexerOptions options);
 
   [[nodiscard]] const MultiplexerOptions& options() const noexcept;
   [[nodiscard]] const Output& output() const noexcept;
   /// Return the ideal probability of a big-endian logical outcome.
-  [[nodiscard]] double probability(std::string_view outcome) const;
+  [[nodiscard]] mlir::FailureOr<double>
+  probability(std::string_view outcome) const;
   /// Compare sampled logical outcomes with the ideal distribution.
-  [[nodiscard]] Evaluation evaluate(const Counts& counts) const;
+  [[nodiscard]] mlir::FailureOr<Evaluation>
+  evaluate(const Counts& counts) const;
 
 private:
+  explicit Multiplexer(MultiplexerOptions options);
+
   MultiplexerOptions options_;
   Output output_;
 };

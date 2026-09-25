@@ -302,7 +302,7 @@ static void updateTargetsIn(ValueRange qubitsIn, LoweringState& state) {
 /// @tparam ParamIndices QCO parameter indices to forward
 template <typename QCOOpType, typename JeffOpType, bool ExtraAdjoint = false,
           std::size_t... TargetIndices, std::size_t... ParamIndices>
-static LogicalResult
+static void
 convertJeffGate(QCOOpType op, typename QCOOpType::Adaptor adaptor,
                 ConversionPatternRewriter& rewriter, LoweringState& state,
                 std::index_sequence<TargetIndices...> /*targetIndices*/,
@@ -326,7 +326,6 @@ convertJeffGate(QCOOpType op, typename QCOOpType::Adaptor adaptor,
   auto results = jeffOp->getResults();
   handleResult(op, rewriter, state, results.take_front(numTargets),
                results.drop_front(numTargets));
-  return success();
 }
 
 /// Converts an arbitrary QCO operation to a jeff.custom operation
@@ -462,11 +461,11 @@ static LogicalResult cleanUp(ModuleOp moduleOp, LoweringState& state) {
 }
 
 /// Moves a region from a QCO/SCF operation to a jeff operation
-static LogicalResult moveRegion(Region& source, Region& dest,
-                                ConversionPatternRewriter& rewriter,
-                                const TypeConverter* typeConverter,
-                                const SetVector<Value>& aboveValues,
-                                LoweringState& state) {
+static void moveRegion(Region& source, Region& dest,
+                       ConversionPatternRewriter& rewriter,
+                       const TypeConverter* typeConverter,
+                       const SetVector<Value>& aboveValues,
+                       LoweringState& state) {
   if (source.empty()) {
     auto* block = &dest.emplaceBlock();
     for (auto value : aboveValues) {
@@ -475,7 +474,7 @@ static LogicalResult moveRegion(Region& source, Region& dest,
     }
     rewriter.setInsertionPointToEnd(block);
     jeff::YieldOp::create(rewriter, dest.getLoc(), block->getArguments());
-    return success();
+    return;
   }
   auto* oldBlock = &source.back();
   auto* newBlock = &dest.emplaceBlock();
@@ -509,8 +508,6 @@ static LogicalResult moveRegion(Region& source, Region& dest,
   llvm::append_range(yields,
                      newBlock->getArguments().take_back(aboveValues.size()));
   rewriter.replaceOpWithNewOp<jeff::YieldOp>(oldTerminator, yields);
-
-  return success();
 }
 
 namespace {
@@ -609,15 +606,15 @@ static Value integerConstant(OpBuilder& builder, Location loc, IntegerType type,
       builder.getIntegerAttr(type, value.zextOrTrunc(type.getWidth()));
   switch (type.getWidth()) {
   case 1:
-    return {jeff::IntConst1Op::create(builder, loc, attribute)};
+    return jeff::IntConst1Op::create(builder, loc, attribute).getResult();
   case 8:
-    return {jeff::IntConst8Op::create(builder, loc, attribute)};
+    return jeff::IntConst8Op::create(builder, loc, attribute).getResult();
   case 16:
-    return {jeff::IntConst16Op::create(builder, loc, attribute)};
+    return jeff::IntConst16Op::create(builder, loc, attribute).getResult();
   case 32:
-    return {jeff::IntConst32Op::create(builder, loc, attribute)};
+    return jeff::IntConst32Op::create(builder, loc, attribute).getResult();
   case 64:
-    return {jeff::IntConst64Op::create(builder, loc, attribute)};
+    return jeff::IntConst64Op::create(builder, loc, attribute).getResult();
   default:
     llvm_unreachable("unsupported jeff integer width");
   }
@@ -1034,9 +1031,10 @@ struct LowerRegisterComparison final : OpRewritePattern<arith::CmpIOp> {
         [&](int64_t index) -> Value {
           auto position =
               arith::ConstantIndexOp::create(rewriter, read.getLoc(), index);
-          return {cbit::LoadOp::create(rewriter, read.getLoc(),
-                                       rewriter.getI1Type(), read.getReg(),
-                                       position)};
+          return cbit::LoadOp::create(rewriter, read.getLoc(),
+                                      rewriter.getI1Type(), read.getReg(),
+                                      position)
+              .getResult();
         });
     rewriter.replaceOp(op, result);
     if (read->use_empty()) {
@@ -1219,9 +1217,10 @@ struct ConvertQCOWellKnownGateToJeff final
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
 
-    return convertJeffGate<QCOOpType, JeffOpType, JeffBaseAdjoint>(
+    convertJeffGate<QCOOpType, JeffOpType, JeffBaseAdjoint>(
         op, adaptor, rewriter, state, std::make_index_sequence<NumTargets>{},
         std::make_index_sequence<NumParams>{});
+    return success();
   }
 };
 
@@ -1657,14 +1656,10 @@ struct ConvertIfOpToJeff final : RegionMovingConversionPattern<IfOpType> {
     auto jeffSwitch = jeff::SwitchOp::create(
         rewriter, loc, outTypes, adaptor.getCondition(), initArgs, 2);
 
-    if (failed(moveRegion(op.getElseRegion(), jeffSwitch.getBranches()[0],
-                          rewriter, getTypeConverter(), aboveValues, state))) {
-      return failure();
-    }
-    if (failed(moveRegion(op.getThenRegion(), jeffSwitch.getBranches()[1],
-                          rewriter, getTypeConverter(), aboveValues, state))) {
-      return failure();
-    }
+    moveRegion(op.getElseRegion(), jeffSwitch.getBranches()[0], rewriter,
+               getTypeConverter(), aboveValues, state);
+    moveRegion(op.getThenRegion(), jeffSwitch.getBranches()[1], rewriter,
+               getTypeConverter(), aboveValues, state);
 
     // Add trivial default case
     {
@@ -1772,10 +1767,8 @@ struct ConvertSCFForOpToJeff final : RegionMovingConversionPattern<scf::ForOp> {
         rewriter, op.getLoc(), outTypes, adaptor.getLowerBound(),
         adaptor.getUpperBound(), adaptor.getStep(), initArgs);
 
-    if (failed(moveRegion(op.getRegion(), jeffFor.getRegion(), rewriter,
-                          getTypeConverter(), aboveValues, state))) {
-      return failure();
-    }
+    moveRegion(op.getRegion(), jeffFor.getRegion(), rewriter,
+               getTypeConverter(), aboveValues, state);
 
     // Update tensor values
     const auto numResults = op.getNumResults();
@@ -1856,14 +1849,10 @@ struct ConvertSCFWhileOpToJeff final
     auto jeffWhile =
         jeff::WhileOp::create(rewriter, op.getLoc(), outTypes, inits);
 
-    if (failed(moveRegion(op.getBefore(), jeffWhile.getBefore(), rewriter,
-                          getTypeConverter(), aboveValues, state))) {
-      return failure();
-    }
-    if (failed(moveRegion(op.getAfter(), jeffWhile.getAfter(), rewriter,
-                          getTypeConverter(), aboveValues, state))) {
-      return failure();
-    }
+    moveRegion(op.getBefore(), jeffWhile.getBefore(), rewriter,
+               getTypeConverter(), aboveValues, state);
+    moveRegion(op.getAfter(), jeffWhile.getAfter(), rewriter,
+               getTypeConverter(), aboveValues, state);
 
     // Update tensor values
     const auto numResults = op.getNumResults();

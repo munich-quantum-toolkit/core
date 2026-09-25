@@ -13,13 +13,16 @@
 
 #pragma once
 
+#include "mqt/Support/Diagnostics.h"
+
 #include <cstdint>
 #include <optional>
 #include <vector>
 
 namespace llvm {
 class Function;
-}
+class Module;
+} // namespace llvm
 
 namespace qir {
 
@@ -41,11 +44,12 @@ namespace qir {
 ///
 /// @param entryPoint QIR entry point to rewrite in place.
 /// @return Whether an irreversible boundary was found and truncated.
-/// @throws std::invalid_argument for an unsupported profile, signature or
+/// Returns an error for an unsupported profile, signature or
 /// effects. Base Profile extraction additionally rejects non-terminal
 /// irreversible regions and defined helpers; neither profile supports indirect
 /// calls.
-bool prepareForStateExtraction(llvm::Function& entryPoint);
+[[nodiscard]] mlir::FailureOr<bool>
+prepareForStateExtraction(llvm::Function& entryPoint);
 
 /// Return logical qubit IDs in output order for deferred sampling.
 /// Only an acyclic unconditional Base or Adaptive path with constant gate

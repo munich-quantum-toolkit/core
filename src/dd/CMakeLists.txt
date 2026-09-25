@@ -11,8 +11,13 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-dd)
   file(GLOB_RECURSE DD_SOURCES **.cpp)
 
   add_mqt_core_library(${MQT_CORE_TARGET_NAME}-dd ALIAS_NAME DD)
+  mqt_target_disable_exceptions(${MQT_CORE_TARGET_NAME}-dd)
 
   target_sources(${MQT_CORE_TARGET_NAME}-dd PRIVATE ${DD_SOURCES})
+  foreach(json_source PackageStatistics TableStatistics UniqueTableStatistics
+                      MemoryManagerStatistics)
+    mqt_source_enable_exceptions(statistics/${json_source}.cpp)
+  endforeach()
 
   target_sources(
     ${MQT_CORE_TARGET_NAME}-dd PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR}
@@ -20,6 +25,8 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-dd)
 
   target_link_libraries(${MQT_CORE_TARGET_NAME}-dd
                         PRIVATE $<BUILD_INTERFACE:nlohmann_json::nlohmann_json>)
+
+  target_link_libraries(${MQT_CORE_TARGET_NAME}-dd PUBLIC MQT::CoreSupport)
 
   include(GenerateExportHeader)
   generate_export_header(${MQT_CORE_TARGET_NAME}-dd BASE_NAME mqt_core_dd)

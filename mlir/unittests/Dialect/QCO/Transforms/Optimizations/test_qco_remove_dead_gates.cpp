@@ -69,7 +69,7 @@ protected:
     context->loadAllAvailableDialects();
   }
 
-  static LogicalResult runRemoveDeadGates(ModuleOp module) {
+  static mlir::LogicalResult runRemoveDeadGates(ModuleOp module) {
     PassManager pm(module.getContext());
     pm.addPass(createRemoveDeadGates());
     return pm.run(module);

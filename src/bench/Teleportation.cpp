@@ -14,6 +14,8 @@
 
 #include "EvaluationUtils.hpp"
 
+#include "mlir/Support/LogicalResult.h"
+
 #include <string_view>
 
 namespace mqt::bench {
@@ -22,12 +24,16 @@ Teleportation::Teleportation() : output_{.name = "result", .width = 1} {}
 
 const Output& Teleportation::output() const noexcept { return output_; }
 
-double Teleportation::probability(const std::string_view outcome) const {
-  detail::validateOutcome(outcome, output_.width);
+mlir::FailureOr<double>
+Teleportation::probability(const std::string_view outcome) const {
+  if (mlir::failed(detail::validateOutcome(outcome, output_.width))) {
+    return mlir::failure();
+  }
   return outcome == "0" ? 1. : 0.;
 }
 
-Evaluation Teleportation::evaluate(const Counts& counts) const {
+mlir::FailureOr<Evaluation>
+Teleportation::evaluate(const Counts& counts) const {
   return detail::evaluate(*this, counts, "0");
 }
 

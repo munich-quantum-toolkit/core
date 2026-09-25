@@ -10,9 +10,11 @@
 
 #include "dd/DDDefinitions.hpp"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
-#include "mqt/Dialect/QCO/Utils/DDAdapter.h"
 #include "mqt/Dialect/QIR/Execution/Runtime/QIR.h"
 #include "mqt/Dialect/QIR/Execution/Runtime/Runtime.h"
+
+#include "support/Diagnostics.hpp"
+#include "support/TestSupport.hpp"
 
 #include "gmock/gmock-matchers.h"
 #include "gtest/gtest.h"
@@ -30,6 +32,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #ifdef _WIN32
 #define SYSTEM _wsystem
@@ -52,22 +55,21 @@ protected:
 };
 
 TEST(QIRRuntimeArgumentsTest, RejectsInvalidArrayDimensions) {
-  EXPECT_THROW(__quantum__rt__array_create_1d(0, 1), std::invalid_argument);
-  EXPECT_THROW(__quantum__rt__array_create_1d(sizeof(Qubit*), -1),
-               std::invalid_argument);
-  EXPECT_THROW(
+  EXPECT_DEATH(__quantum__rt__array_create_1d(0, 1), ".+");
+  EXPECT_DEATH(__quantum__rt__array_create_1d(sizeof(Qubit*), -1), ".+");
+  EXPECT_DEATH(
       __quantum__rt__array_create_1d(2, std::numeric_limits<int64_t>::max()),
-      std::length_error);
+      ".+");
 }
 
 TEST(QIRRuntimeArgumentsTest, RejectsInvalidTupleSizes) {
-  EXPECT_THROW(__quantum__rt__tuple_create(-1), std::invalid_argument);
-  EXPECT_THROW(__quantum__rt__tuple_create(std::numeric_limits<int64_t>::max()),
-               std::length_error);
+  EXPECT_DEATH(__quantum__rt__tuple_create(-1), ".+");
+  EXPECT_DEATH(__quantum__rt__tuple_create(std::numeric_limits<int64_t>::max()),
+               ".+");
 
   auto* controls = __quantum__rt__array_create_1d(sizeof(Qubit*), 0);
   auto* tuple = __quantum__rt__tuple_create(1);
-  EXPECT_THROW(__quantum__qis__rx__ctl(controls, tuple), std::invalid_argument);
+  EXPECT_DEATH(__quantum__qis__rx__ctl(controls, tuple), ".+");
   __quantum__rt__tuple_update_reference_count(tuple, -1);
   __quantum__rt__array_update_reference_count(controls, -1);
 }
@@ -79,43 +81,116 @@ TEST_F(QIRRuntimeTest, RejectsInvalidDynamicResourceUse) {
   __quantum__rt__qubit_release(qubit);
   __quantum__rt__result_release(result);
 
-  EXPECT_THROW(__quantum__qis__x__body(qubit), std::out_of_range);
-  EXPECT_THROW(__quantum__rt__read_result(result), std::out_of_range);
-  EXPECT_THROW(__quantum__rt__qubit_release(qubit), std::out_of_range);
-  EXPECT_THROW(__quantum__rt__result_release(result), std::out_of_range);
+  EXPECT_DEATH(__quantum__qis__x__body(qubit), ".+");
+  EXPECT_DEATH(__quantum__rt__read_result(result), ".+");
+  EXPECT_DEATH(__quantum__rt__qubit_release(qubit), ".+");
+  EXPECT_DEATH(__quantum__rt__result_release(result), ".+");
 }
 
 TEST_F(QIRRuntimeTest, RejectsMixedStaticAndDynamicResourceManagement) {
   __quantum__rt__initialize(nullptr);
   __quantum__qis__x__body(nullptr);
-  EXPECT_THROW(__quantum__rt__qubit_allocate(nullptr), std::logic_error);
+  EXPECT_DEATH(__quantum__rt__qubit_allocate(nullptr), ".+");
 
   __quantum__rt__initialize(nullptr);
   __quantum__qis__mz__body(nullptr, nullptr);
-  EXPECT_THROW(__quantum__rt__result_allocate(nullptr), std::logic_error);
+  EXPECT_DEATH(__quantum__rt__result_allocate(nullptr), ".+");
+}
+
+TEST_F(QIRRuntimeTest, ReportsInvalidControlArraysAndTuples) {
+  __quantum__rt__initialize(nullptr);
+  EXPECT_DEATH(__quantum__qis__x__ctl(nullptr, nullptr),
+               "control array must not be null");
+  auto* controls = __quantum__rt__array_create_1d(1, 0);
+  EXPECT_DEATH(__quantum__qis__x__ctl(controls, nullptr), "qubit pointers");
+  EXPECT_DEATH(__quantum__qis__rx__ctl(controls, nullptr),
+               "tuple must not be null");
+  auto* tuple = __quantum__rt__tuple_create(sizeof(double) + sizeof(Qubit*));
+  EXPECT_DEATH(__quantum__qis__rx__ctl(nullptr, tuple),
+               "control array must not be null");
+  EXPECT_DEATH(__quantum__rt__array_get_size_1d(nullptr),
+               "array must not be null");
+  __quantum__rt__initialize(nullptr);
+}
+
+TEST_F(QIRRuntimeTest, ReportsInvalidBulkResourceArguments) {
+  __quantum__rt__initialize(nullptr);
+  auto& runtime = Runtime::getInstance();
+  for (const int64_t size : {-1, 1}) {
+    bool error = false;
+    __quantum__rt__qubit_array_allocate(size, nullptr, &error);
+    EXPECT_TRUE(error);
+
+    error = false;
+    __quantum__rt__result_array_allocate(size, nullptr, &error);
+    EXPECT_TRUE(error);
+
+    EXPECT_DEATH(__quantum__rt__result_array_allocate(size, nullptr, nullptr),
+                 "resource array allocation");
+    EXPECT_DEATH(__quantum__rt__qubit_array_release(size, nullptr),
+                 "resource array release");
+    EXPECT_DEATH(
+        __quantum__rt__result_array_record_output(size, nullptr, nullptr),
+        "result array output");
+  }
+  std::array<Result*, 1> results{};
+  bool error = true;
+  __quantum__rt__result_array_allocate(1, results.data(), &error);
+  EXPECT_FALSE(error);
+  ASSERT_NE(results[0], nullptr);
+  EXPECT_FALSE(__quantum__rt__read_result(results[0]));
+  __quantum__rt__result_array_release(1, results.data());
+  EXPECT_DEATH(__quantum__rt__result_array_release(1, results.data()),
+               "result");
+  EXPECT_DEATH(
+      __quantum__rt__result_array_record_output(1, results.data(), nullptr),
+      "Result not allocated");
+  EXPECT_DEATH(__quantum__rt__result_record_output(results[0], nullptr),
+               "Result not allocated");
+  EXPECT_TRUE(runtime.getMeasurements().empty());
+}
+
+TEST_F(QIRRuntimeTest, RollsBackFailedBulkQubitAllocation) {
+  __quantum__rt__initialize(nullptr);
+  std::vector<Qubit*> qubits(dd::Package::MAX_POSSIBLE_QUBITS + 1);
+  bool error = false;
+  __quantum__rt__qubit_array_allocate(static_cast<int64_t>(qubits.size()),
+                                      qubits.data(), &error);
+  EXPECT_TRUE(error);
+
+  EXPECT_TRUE(std::ranges::all_of(
+      qubits, [](const auto* qubit) { return qubit == nullptr; }));
+  auto* qubit = __quantum__rt__qubit_allocate(&error);
+  EXPECT_FALSE(error);
+  ASSERT_NE(qubit, nullptr);
+  __quantum__rt__qubit_release(qubit);
+
+  __quantum__rt__initialize(nullptr);
 }
 
 TEST_F(QIRRuntimeTest, RejectsStaticQubitBeyondDDRange) {
   __quantum__rt__initialize(nullptr);
   auto* qubit = reinterpret_cast<Qubit*>(dd::Package::MAX_POSSIBLE_QUBITS);
-  EXPECT_THROW(__quantum__qis__x__body(qubit), std::out_of_range);
+  EXPECT_DEATH(__quantum__qis__x__body(qubit), ".+");
 
-  __quantum__rt__initialize(nullptr);
-  constexpr std::array<dd::fp, 0> params{};
-  std::array<Qubit*, 0> controls{};
-  std::array<Qubit*, 1> targets{qubit};
-  EXPECT_THROW(Runtime::getInstance().apply(
-                   mlir::qco::getStandardGateMatrix<mlir::qco::XOp>(params),
-                   controls, targets),
-               std::out_of_range);
+  Runtime runtime{0};
+  const auto matrix = mlir::qco::XOp::getUnitaryMatrix();
+  ::mqt::test::value(runtime.apply(matrix, {}, std::array<Qubit*, 1>{nullptr}));
+  EXPECT_EQ(::mqt::test::errorKind(
+                [&] { return runtime.apply(matrix, {}, std::array{qubit}); }),
+            ::mqt::ErrorCategory::OutOfRange);
+  ::mqt::test::value(runtime.measure(static_cast<Qubit*>(nullptr),
+                                     static_cast<Result*>(nullptr)));
+  EXPECT_TRUE(::mqt::test::value(runtime.deref(nullptr))->r);
 }
 
 TEST_F(QIRRuntimeTest, RejectsDynamicQubitBeyondDDRange) {
   Runtime runtime{0};
   for (size_t i = 0; i < dd::Package::MAX_POSSIBLE_QUBITS; ++i) {
-    static_cast<void>(runtime.qAlloc());
+    static_cast<void>(::mqt::test::value(runtime.qAlloc()));
   }
-  EXPECT_THROW(runtime.qAlloc(), std::out_of_range);
+  EXPECT_FALSE(
+      ::mqt::test::errorMessage([&] { return runtime.qAlloc(); }).empty());
 }
 
 } // namespace
@@ -124,9 +199,9 @@ TEST_F(QIRRuntimeTest, RejectsDynamicQubitBeyondDDRange) {
 /// The default Labeled schema emits `labeled` in HEADER and METADATA.
 TEST_F(QIRRuntimeTest, OutputFraming) {
   auto& runtime = Runtime::getInstance();
-  runtime.outputProgramHeader();
-  runtime.outputShotStart();
-  runtime.outputShotEnd();
+  ::mqt::test::value(runtime.outputProgramHeader());
+  ::mqt::test::value(runtime.outputShotStart());
+  ::mqt::test::value(runtime.outputShotEnd());
   std::ostringstream expected;
   expected << "HEADER\tschema_id\tlabeled\n"
            << "HEADER\tschema_version\t2.1\n"
@@ -142,14 +217,14 @@ TEST_F(QIRRuntimeTest, OutputFraming) {
 // - OUTPUT records carry the label column.
 TEST_F(QIRRuntimeTest, OutputFramingLabeled) {
   auto& runtime = Runtime::getInstance();
-  runtime.outputProgramHeader();
-  runtime.outputShotStart();
-  runtime.outputBool(true, "bool_label");
-  runtime.outputInt(42, "int_label");
-  runtime.outputFloat(3.14, "double_label");
-  runtime.outputTuple(2, "tuple_label");
-  runtime.outputArray(3, "array_label");
-  runtime.outputShotEnd();
+  ::mqt::test::value(runtime.outputProgramHeader());
+  ::mqt::test::value(runtime.outputShotStart());
+  ::mqt::test::value(runtime.outputBool(true, "bool_label"));
+  ::mqt::test::value(runtime.outputInt(42, "int_label"));
+  ::mqt::test::value(runtime.outputFloat(3.14, "double_label"));
+  ::mqt::test::value(runtime.outputTuple(2, "tuple_label"));
+  ::mqt::test::value(runtime.outputArray(3, "array_label"));
+  ::mqt::test::value(runtime.outputShotEnd());
   std::ostringstream expected;
   expected << "HEADER\tschema_id\tlabeled\n"
            << "HEADER\tschema_version\t2.1\n"
@@ -171,14 +246,14 @@ TEST_F(QIRRuntimeTest, OutputFramingLabeled) {
 TEST_F(QIRRuntimeTest, OutputFramingOrdered) {
   auto& runtime = Runtime::getInstance();
   runtime.setOutputSchema(Runtime::OutputSchema::Ordered);
-  runtime.outputProgramHeader();
-  runtime.outputShotStart();
-  runtime.outputBool(true, "bool_label");
-  runtime.outputInt(42, "int_label");
-  runtime.outputFloat(3.14, "double_label");
-  runtime.outputTuple(2, "tuple_label");
-  runtime.outputArray(3, "array_label");
-  runtime.outputShotEnd();
+  ::mqt::test::value(runtime.outputProgramHeader());
+  ::mqt::test::value(runtime.outputShotStart());
+  ::mqt::test::value(runtime.outputBool(true, "bool_label"));
+  ::mqt::test::value(runtime.outputInt(42, "int_label"));
+  ::mqt::test::value(runtime.outputFloat(3.14, "double_label"));
+  ::mqt::test::value(runtime.outputTuple(2, "tuple_label"));
+  ::mqt::test::value(runtime.outputArray(3, "array_label"));
+  ::mqt::test::value(runtime.outputShotEnd());
   std::ostringstream expected;
   expected << "HEADER\tschema_id\tordered\n"
            << "HEADER\tschema_version\t2.1\n"
@@ -419,15 +494,15 @@ TEST_F(QIRRuntimeTest, SwapGate) {
   auto* r0 = reinterpret_cast<Result*>(0UL);
   auto* r1 = reinterpret_cast<Result*>(1UL);
   __quantum__rt__initialize(nullptr);
-  Runtime::getInstance().outputProgramHeader();
-  Runtime::getInstance().outputShotStart();
+  ::mqt::test::value(Runtime::getInstance().outputProgramHeader());
+  ::mqt::test::value(Runtime::getInstance().outputShotStart());
   __quantum__qis__x__body(q0);
   __quantum__qis__swap__body(q0, q1);
   __quantum__qis__mz__body(q0, r0);
   __quantum__qis__mz__body(q1, r1);
   __quantum__rt__result_record_output(r0, "r0");
   __quantum__rt__result_record_output(r1, "r1");
-  Runtime::getInstance().outputShotEnd();
+  ::mqt::test::value(Runtime::getInstance().outputShotEnd());
   std::ostringstream expected;
   expected << "OUTPUT\tRESULT\t0\tr0\n"
            << "OUTPUT\tRESULT\t1\tr1\n";
@@ -633,8 +708,8 @@ TEST_F(QIRRuntimeTest, BellPairStatic) {
   auto* r0 = reinterpret_cast<Result*>(0UL);
   auto* r1 = reinterpret_cast<Result*>(1UL);
   __quantum__rt__initialize(nullptr);
-  Runtime::getInstance().outputProgramHeader();
-  Runtime::getInstance().outputShotStart();
+  ::mqt::test::value(Runtime::getInstance().outputProgramHeader());
+  ::mqt::test::value(Runtime::getInstance().outputShotStart());
   __quantum__qis__h__body(q0);
   __quantum__qis__cx__body(q0, q1);
   __quantum__qis__mz__body(q0, r0);
@@ -644,7 +719,7 @@ TEST_F(QIRRuntimeTest, BellPairStatic) {
   EXPECT_EQ(m1, m2);
   __quantum__rt__result_record_output(r0, "r0");
   __quantum__rt__result_record_output(r1, "r1");
-  Runtime::getInstance().outputShotEnd();
+  ::mqt::test::value(Runtime::getInstance().outputShotEnd());
   std::ostringstream expected;
   expected << "OUTPUT\tRESULT\t" << m1 << "\tr0\n"
            << "OUTPUT\tRESULT\t" << m2 << "\tr1\n";
@@ -653,8 +728,8 @@ TEST_F(QIRRuntimeTest, BellPairStatic) {
 
 TEST_F(QIRRuntimeTest, BellPairDynamic) {
   __quantum__rt__initialize(nullptr);
-  Runtime::getInstance().outputProgramHeader();
-  Runtime::getInstance().outputShotStart();
+  ::mqt::test::value(Runtime::getInstance().outputProgramHeader());
+  ::mqt::test::value(Runtime::getInstance().outputShotStart());
   auto* q0 = __quantum__rt__qubit_allocate(nullptr);
   auto* q1 = __quantum__rt__qubit_allocate(nullptr);
   auto* r0 = __quantum__rt__result_allocate(nullptr);
@@ -670,7 +745,7 @@ TEST_F(QIRRuntimeTest, BellPairDynamic) {
   EXPECT_EQ(m1, m2);
   __quantum__rt__result_record_output(r0, "r0");
   __quantum__rt__result_record_output(r1, "r1");
-  Runtime::getInstance().outputShotEnd();
+  ::mqt::test::value(Runtime::getInstance().outputShotEnd());
   std::ostringstream expected;
   expected << "OUTPUT\tRESULT\t" << m1 << "\tr0\n"
            << "OUTPUT\tRESULT\t" << m2 << "\tr1\n";
@@ -685,8 +760,8 @@ TEST_F(QIRRuntimeTest, BellPairStaticReverse) {
   auto* r0 = reinterpret_cast<Result*>(0UL);
   auto* r1 = reinterpret_cast<Result*>(1UL);
   __quantum__rt__initialize(nullptr);
-  Runtime::getInstance().outputProgramHeader();
-  Runtime::getInstance().outputShotStart();
+  ::mqt::test::value(Runtime::getInstance().outputProgramHeader());
+  ::mqt::test::value(Runtime::getInstance().outputShotStart());
   __quantum__qis__h__body(q1);
   __quantum__qis__cx__body(q1, q0);
   __quantum__qis__mz__body(q0, r0);
@@ -696,7 +771,7 @@ TEST_F(QIRRuntimeTest, BellPairStaticReverse) {
   EXPECT_EQ(m1, m2);
   __quantum__rt__result_record_output(r0, "r0");
   __quantum__rt__result_record_output(r1, "r1");
-  Runtime::getInstance().outputShotEnd();
+  ::mqt::test::value(Runtime::getInstance().outputShotEnd());
   std::ostringstream expected;
   expected << "OUTPUT\tRESULT\t" << m1 << "\tr0\n"
            << "OUTPUT\tRESULT\t" << m2 << "\tr1\n";
@@ -705,8 +780,8 @@ TEST_F(QIRRuntimeTest, BellPairStaticReverse) {
 
 TEST_F(QIRRuntimeTest, BellPairDynamicReverse) {
   __quantum__rt__initialize(nullptr);
-  Runtime::getInstance().outputProgramHeader();
-  Runtime::getInstance().outputShotStart();
+  ::mqt::test::value(Runtime::getInstance().outputProgramHeader());
+  ::mqt::test::value(Runtime::getInstance().outputShotStart());
   auto* q0 = __quantum__rt__qubit_allocate(nullptr);
   auto* q1 = __quantum__rt__qubit_allocate(nullptr);
   auto* r0 = __quantum__rt__result_allocate(nullptr);
@@ -722,7 +797,7 @@ TEST_F(QIRRuntimeTest, BellPairDynamicReverse) {
   EXPECT_EQ(m1, m2);
   __quantum__rt__result_record_output(r0, "r0");
   __quantum__rt__result_record_output(r1, "r1");
-  Runtime::getInstance().outputShotEnd();
+  ::mqt::test::value(Runtime::getInstance().outputShotEnd());
   std::ostringstream expected;
   expected << "OUTPUT\tRESULT\t" << m1 << "\tr0\n"
            << "OUTPUT\tRESULT\t" << m2 << "\tr1\n";
@@ -822,8 +897,8 @@ TEST_F(QIRRuntimeTest, TakeStateReturnsStateAndResetsRuntime) {
 
 TEST_F(QIRRuntimeTest, AdaptiveRecordOutputs) {
   __quantum__rt__initialize(nullptr);
-  Runtime::getInstance().outputProgramHeader();
-  Runtime::getInstance().outputShotStart();
+  ::mqt::test::value(Runtime::getInstance().outputProgramHeader());
+  ::mqt::test::value(Runtime::getInstance().outputShotStart());
   auto* q0 = __quantum__rt__qubit_allocate(nullptr);
   auto* q1 = __quantum__rt__qubit_allocate(nullptr);
   auto* q2 = __quantum__rt__qubit_allocate(nullptr);
@@ -856,7 +931,7 @@ TEST_F(QIRRuntimeTest, AdaptiveRecordOutputs) {
   __quantum__rt__bool_record_output(b2, "m2");
   __quantum__rt__int_record_output(weight, "hamming_weight");
   __quantum__rt__double_record_output(mean, "mean");
-  Runtime::getInstance().outputShotEnd();
+  ::mqt::test::value(Runtime::getInstance().outputShotEnd());
 
   std::ostringstream expected;
   expected.setf(std::ios::boolalpha);
@@ -949,7 +1024,7 @@ TEST_F(QIRRuntimeTest, ReusesReleasedWiresWithoutReusingHandles) {
     __quantum__qis__x__body(qubit);
     __quantum__rt__qubit_release(qubit);
   }
-  EXPECT_THROW(__quantum__qis__x__body(first), std::out_of_range);
+  EXPECT_DEATH(__quantum__qis__x__body(first), ".+");
   auto state = Runtime::getInstance().takeState();
   EXPECT_EQ(state.numQubits, 1);
   state.dd->decRef(state.edge);
@@ -986,8 +1061,8 @@ TEST_F(QIRRuntimeTest, DisabledTextOutputStillRecordsResults) {
   auto& runtime = Runtime::getInstance();
   __quantum__rt__initialize(nullptr);
   runtime.disableOutput();
-  runtime.outputProgramHeader();
-  runtime.outputShotStart();
+  ::mqt::test::value(runtime.outputProgramHeader());
+  ::mqt::test::value(runtime.outputShotStart());
   __quantum__qis__x__body(nullptr);
   __quantum__qis__mz__body(nullptr, nullptr);
   __quantum__rt__result_record_output(nullptr, "one");
@@ -998,7 +1073,7 @@ TEST_F(QIRRuntimeTest, DisabledTextOutputStillRecordsResults) {
   __quantum__rt__double_record_output(0.3, nullptr);
   __quantum__rt__tuple_record_output(1, nullptr);
   __quantum__rt__array_record_output(1, nullptr);
-  runtime.outputShotEnd();
+  ::mqt::test::value(runtime.outputShotEnd());
   EXPECT_EQ(runtime.getMeasurements(), "1111");
   EXPECT_TRUE(sink.str().empty());
   runtime.setOstream(sink);
@@ -1016,19 +1091,117 @@ TEST(QIRRuntimeGrowth, PreservesStateAndPhaseAcrossGrowthAndTransfer) {
     for (size_t job = 0; job < 2; ++job) {
       runtime.applyGlobalPhase(dd::PI);
       for (size_t q = 0; q < width; ++q) {
-        auto* qubit = dynamic ? runtime.qAlloc() : reinterpret_cast<Qubit*>(q);
+        auto* qubit = dynamic ? ::mqt::test::value(runtime.qAlloc())
+                              : reinterpret_cast<Qubit*>(q);
         const std::array targets{qubit};
-        runtime.apply(x, {}, targets);
+        ::mqt::test::value(runtime.apply(x, {}, targets));
       }
       auto state = runtime.takeState();
       EXPECT_EQ(state.numQubits, width);
       EXPECT_GE(state.dd->qubits(), width);
       EXPECT_LT(state.dd->qubits(), 2 * width);
-      const auto amplitude =
-          state.edge.getValueByPath(width, std::string(width, '1'));
+      const auto amplitude = ::mqt::test::value(
+          state.edge.getValueByPath(width, std::string(width, '1')));
       EXPECT_NEAR(amplitude.real(), -1., 1e-12);
       EXPECT_NEAR(amplitude.imag(), 0., 1e-12);
       state.dd->decRef(state.edge);
     }
   }
+}
+
+TEST(QIRRuntimeErrors, ReportsStreamFailuresWithoutThrowing) {
+  qir::Runtime runtime{0};
+  std::ostringstream stream;
+  stream.setstate(std::ios::badbit);
+  runtime.setOstream(stream);
+  EXPECT_THAT(
+      ::mqt::test::errorMessage([&] { return runtime.outputProgramHeader(); }),
+      ::testing::HasSubstr("Failed to write QIR output"));
+  EXPECT_EQ(::mqt::test::errorKind(
+                [&] { return runtime.outputBool(true, "result"); }),
+            ::mqt::ErrorCategory::IO);
+  EXPECT_EQ(::mqt::test::errorKind([&] { return runtime.outputShotEnd(); }),
+            ::mqt::ErrorCategory::IO);
+  EXPECT_TRUE(stream.str().empty());
+  stream.clear();
+  stream.exceptions(std::ios::badbit);
+  const auto diagnostic =
+      ::mqt::test::diagnostic([&] { return runtime.outputShotStart(); });
+  ASSERT_TRUE(diagnostic);
+  EXPECT_EQ(diagnostic->category, ::mqt::ErrorCategory::InvalidArgument);
+  EXPECT_EQ(diagnostic->severity, ::mqt::DiagnosticSeverity::Error);
+  EXPECT_FALSE(diagnostic->status);
+  EXPECT_THAT(diagnostic->message, ::testing::HasSubstr("exceptions disabled"));
+  stream.exceptions(std::ios::goodbit);
+  ::mqt::test::value(runtime.outputShotStart());
+  ::mqt::test::value(runtime.outputBool(true, "result"));
+  ::mqt::test::value(runtime.outputShotEnd());
+  EXPECT_THAT(stream.str(), ::testing::HasSubstr("START"));
+  EXPECT_THAT(stream.str(),
+              ::testing::HasSubstr("OUTPUT\tBOOL\ttrue\tresult\nEND\t0\n"));
+}
+
+TEST(QIRRuntimeErrors, ReportsResourceFailuresAtTheCall) {
+  qir::Runtime runtime{0};
+  auto* qubit = ::mqt::test::value(runtime.qAlloc());
+  auto* result = ::mqt::test::value(runtime.rAlloc());
+  ::mqt::test::value(runtime.qFree(qubit));
+  const std::array controls{qubit};
+  const std::array<std::complex<dd::fp>, 4> x{0., 1., 1., 0.};
+  EXPECT_THAT(
+      ::mqt::test::errorMessage([&] { return runtime.apply(x, controls, {}); }),
+      ::testing::HasSubstr("Qubit not allocated"));
+  EXPECT_EQ(
+      ::mqt::test::errorKind([&] { return runtime.apply(x, {}, controls); }),
+      ::mqt::ErrorCategory::OutOfRange);
+  EXPECT_THAT(
+      ::mqt::test::errorMessage([&] { return runtime.reset(controls); }),
+      ::testing::HasSubstr("Qubit not allocated"));
+  EXPECT_THAT(
+      ::mqt::test::errorMessage([&] { return runtime.measure(qubit, result); }),
+      ::testing::HasSubstr("Qubit not allocated"));
+  auto* liveQubit = ::mqt::test::value(runtime.qAlloc());
+  EXPECT_EQ(
+      ::mqt::test::errorKind([&] { return runtime.swap(liveQubit, qubit); }),
+      ::mqt::ErrorCategory::OutOfRange);
+  EXPECT_EQ(::mqt::test::errorKind([&] { return runtime.qFree(qubit); }),
+            ::mqt::ErrorCategory::OutOfRange);
+  ::mqt::test::value(runtime.rFree(result));
+  EXPECT_THAT(::mqt::test::errorMessage(
+                  [&] { return runtime.measure(liveQubit, result); }),
+              ::testing::HasSubstr("Result not allocated"));
+  EXPECT_EQ(::mqt::test::errorKind([&] { return runtime.rFree(result); }),
+            ::mqt::ErrorCategory::OutOfRange);
+  auto* liveResult = ::mqt::test::value(runtime.rAlloc());
+  ::mqt::test::value(runtime.apply(x, {}, std::array{liveQubit}));
+  ::mqt::test::value(runtime.measure(liveQubit, liveResult));
+  EXPECT_TRUE(::mqt::test::value(runtime.deref(liveResult))->r);
+  ::mqt::test::value(runtime.qFree(liveQubit));
+  ::mqt::test::value(runtime.rFree(liveResult));
+
+  runtime.reset();
+  ::mqt::test::value(runtime.apply(x, {}, std::array<Qubit*, 1>{nullptr}));
+  EXPECT_EQ(::mqt::test::errorKind([&] { return runtime.qAlloc(); }),
+            ::mqt::ErrorCategory::InvalidArgument);
+  ::mqt::test::value(runtime.measure(static_cast<Qubit*>(nullptr),
+                                     static_cast<Result*>(nullptr)));
+  EXPECT_EQ(::mqt::test::errorKind([&] { return runtime.rAlloc(); }),
+            ::mqt::ErrorCategory::InvalidArgument);
+  EXPECT_TRUE(::mqt::test::value(runtime.deref(nullptr))->r);
+}
+
+TEST(QIRRuntimeErrors, RejectsWrongGateMatrixDimensions) {
+  qir::Runtime runtime{0};
+  const std::array<Qubit*, 1> targets{nullptr};
+  ::mqt::test::value(
+      runtime.apply(mlir::qco::XOp::getUnitaryMatrix(), {}, targets));
+  const std::array<std::complex<dd::fp>, 1> wrongSize{1.};
+  EXPECT_EQ(::mqt::test::errorKind(
+                [&] { return runtime.apply(wrongSize, {}, targets); }),
+            ::mqt::ErrorCategory::InvalidArgument);
+  auto state = runtime.takeState();
+  EXPECT_EQ(state.numQubits, 1);
+  EXPECT_EQ(::mqt::test::value(state.edge.getValueByPath(1, "1")),
+            std::complex<dd::fp>(1., 0.));
+  state.dd->decRef(state.edge);
 }

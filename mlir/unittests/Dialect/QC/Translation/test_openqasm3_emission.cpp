@@ -21,6 +21,8 @@
 #include "mqt/Support/Passes.h"
 #include "mqt/Target/OpenQASM/Frontend.h"
 
+#include "support/TestSupport.hpp"
+
 #include "gtest/gtest.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -1668,9 +1670,9 @@ TEST(OpenQASM3EmissionTest, PreservesControlledGatesAndAngleTables) {
   PassManager manager(&context);
   manager.addPass(createQCToQCO());
   ASSERT_TRUE(succeeded(manager.run(*restored)));
-  dd::Package package(2);
+  auto package = ::mqt::test::value(dd::Package::create(2));
   auto functionality = qco::buildFunctionality(
-      restored->lookupSymbol<func::FuncOp>("main"), package);
+      restored->lookupSymbol<func::FuncOp>("main"), *package);
   ASSERT_TRUE(succeeded(functionality));
   const auto matrix = functionality->getMatrix(2);
   for (size_t row = 0; row < 4; ++row) {
@@ -2002,11 +2004,13 @@ TEST(OpenQASM3EmissionTest, RejectsExplicitRuntimeAssertionsWithoutOutput) {
   std::string output;
   llvm::raw_string_ostream stream(output);
   bool diagnosed = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    diagnosed |= diagnostic.str().find("unsupported operation 'cf.assert'") !=
-                 std::string::npos;
-    return success();
-  });
+  mlir::ScopedDiagnosticHandler handler(
+      &context, [&](mlir::Diagnostic& diagnostic) {
+        diagnosed |=
+            diagnostic.str().find("unsupported operation 'cf.assert'") !=
+            std::string::npos;
+        return mlir::success();
+      });
   EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*moduleOp, stream)));
   EXPECT_TRUE(diagnosed);
   EXPECT_TRUE(output.empty());
@@ -2538,7 +2542,8 @@ TEST(OpenQASM3EmissionTest,
           *emitted, &context,
           {.gatePolicy = openqasm::frontend::GatePolicy::Strict});
       ASSERT_TRUE(restored);
-      dd::Package package(width);
+      auto packageOwner = ::mqt::test::value(dd::Package::create(width));
+      auto& package = *packageOwner;
       PassManager manager(&context);
       manager.addPass(createInlinerPass());
       manager.addPass(createCanonicalizerPass());

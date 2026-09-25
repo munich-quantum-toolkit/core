@@ -13,7 +13,13 @@
 
 #pragma once
 
+#include "support/Diagnostics.hpp"
+
 #include "qdmi/client.h"
+
+#include "mlir/Support/LogicalResult.h"
+
+#include "llvm/Support/ErrorHandling.h"
 
 #include <cstdint>
 #include <cstring>
@@ -21,6 +27,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <variant>
 
 namespace qdmi {
@@ -52,6 +59,28 @@ namespace detail {
     -> std::optional<std::string>;
 } // namespace detail
 
+/// Emit a diagnostic retaining the provider's original status.
+[[nodiscard]] mlir::LogicalResult emitError(int status, std::string message);
+
+/// Report failures and warnings, leaving the successful path allocation-free.
+[[nodiscard]] mlir::LogicalResult checkError(int result,
+                                             std::string_view message);
+
+/// Convert a diagnosed operation to its C status at the immediate ABI boundary.
+/// Forward diagnostics while preserving provider-specific codes.
+template <class Function> int invokeStatus(Function&& function) {
+  int status = QDMI_ERROR_FATAL;
+  ::mqt::ScopedDiagnosticHandler handler(
+      [&](const ::mqt::Diagnostic& diagnostic) {
+        if (diagnostic.severity == ::mqt::DiagnosticSeverity::Error) {
+          status = diagnostic.status.value_or(QDMI_ERROR_FATAL);
+        }
+        return mlir::failure();
+      });
+  return mlir::succeeded(std::forward<Function>(function)()) ? QDMI_SUCCESS
+                                                             : status;
+}
+
 template <class Concrete> class Singleton {
 protected:
   /// Protected constructor to enforce the singleton pattern.
@@ -82,19 +111,6 @@ public:
     return *instance;
   }
 };
-
-/// Function used to mark unreachable code
-///
-/// Uses compiler-specific extensions if possible. Even if no extension
-/// is used, undefined behavior is still raised by an empty function body and
-/// the noreturn attribute.
-[[noreturn]] inline void unreachable() {
-#ifdef __GNUC__ // GCC, Clang, ICC
-  __builtin_unreachable();
-#elif defined(_MSC_VER) // MSVC
-  __assume(false);
-#endif
-}
 
 // NOLINTBEGIN(bugprone-macro-parentheses)
 #define ADD_SINGLE_VALUE_PROPERTY(prop_name, prop_type, prop_value, prop,      \
@@ -198,17 +214,8 @@ constexpr auto toString(const QDMI_STATUS result) -> const char* {
   case QDMI_ERROR_TIMEOUT:
     return "Timeout";
   }
-  unreachable();
+  llvm_unreachable("Invalid QDMI enum value");
 }
-
-/// Throws an exception if the result indicates an error.
-/// @param result The result of a QDMI operation
-/// @param msg The error message to include in the exception
-/// @throws std::bad_alloc if the result is QDMI_ERROR_OUTOFMEM
-/// @throws std::out_of_range if the result is QDMI_ERROR_OUTOFRANGE
-/// @throws std::invalid_argument if the result is QDMI_ERROR_INVALIDARGUMENT
-/// @throws std::runtime_error for all other error results
-auto throwIfError(int result, const std::string& msg) -> void;
 
 /// Returns the string representation of the given session parameter @p param.
 constexpr auto toString(const QDMI_Session_Parameter param) -> const char* {
@@ -238,7 +245,7 @@ constexpr auto toString(const QDMI_Session_Parameter param) -> const char* {
   case QDMI_SESSION_PARAMETER_CUSTOM5:
     return "CUSTOM5";
   }
-  unreachable();
+  llvm_unreachable("Invalid QDMI enum value");
 }
 
 /// Returns the string representation of the given session property @p prop.
@@ -259,7 +266,7 @@ constexpr auto toString(const QDMI_Session_Property prop) -> const char* {
   case QDMI_SESSION_PROPERTY_CUSTOM5:
     return "CUSTOM5";
   }
-  unreachable();
+  llvm_unreachable("Invalid QDMI enum value");
 }
 
 /// Returns the string representation of the given device session parameter
@@ -294,7 +301,7 @@ constexpr auto toString(const QDMI_Device_Session_Parameter param) -> const
   case QDMI_DEVICE_SESSION_PARAMETER_CUSTOM5:
     return "CUSTOM5";
   }
-  unreachable();
+  llvm_unreachable("Invalid QDMI enum value");
 }
 
 /// Returns the string representation of the given site property @p prop.
@@ -339,7 +346,7 @@ constexpr auto toString(const QDMI_Site_Property prop) -> const char* {
   case QDMI_SITE_PROPERTY_CUSTOM5:
     return "CUSTOM5";
   }
-  unreachable();
+  llvm_unreachable("Invalid QDMI enum value");
 }
 
 /// Returns the string representation of the given operation property @p prop.
@@ -380,7 +387,7 @@ constexpr auto toString(const QDMI_Operation_Property prop) -> const char* {
   case QDMI_OPERATION_PROPERTY_CUSTOM5:
     return "CUSTOM5";
   }
-  unreachable();
+  llvm_unreachable("Invalid QDMI enum value");
 }
 
 /// Returns the string representation of the given device property @p prop.
@@ -433,7 +440,7 @@ constexpr auto toString(const QDMI_Device_Property prop) -> const char* {
   case QDMI_DEVICE_PROPERTY_CUSTOM5:
     return "CUSTOM5";
   }
-  unreachable();
+  llvm_unreachable("Invalid QDMI enum value");
 }
 
 } // namespace qdmi

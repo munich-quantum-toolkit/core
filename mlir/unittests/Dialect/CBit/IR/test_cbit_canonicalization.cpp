@@ -46,7 +46,7 @@ protected:
                          func::FuncDialect>();
   }
 
-  LogicalResult canonicalize(ModuleOp moduleOp) {
+  mlir::LogicalResult canonicalize(ModuleOp moduleOp) {
     PassManager manager(&context_);
     manager.addPass(createCanonicalizerPass());
     return manager.run(moduleOp);

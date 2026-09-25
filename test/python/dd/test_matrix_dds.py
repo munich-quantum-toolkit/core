@@ -176,7 +176,7 @@ def test_rejects_conflicting_controls() -> None:
     package = DDPackage(2)
     matrix = np.array([[0, 1], [1, 0]], dtype=np.complex128)
     controls = {Control(0, Control.Type.Pos), Control(0, Control.Type.Neg)}
-    with pytest.raises(RuntimeError, match="duplicate"):
+    with pytest.raises(ValueError, match="duplicate"):
         package.multi_controlled_single_qubit_gate(matrix, controls, 1)
 
 
@@ -216,7 +216,7 @@ def test_from_matrix_dimensions() -> None:
     for shape in ((2, 3), (3, 3)):
         with pytest.raises(ValueError, match=r"square|power of two"):
             package.from_matrix(np.zeros(shape, dtype=np.complex128))
-    with pytest.raises(RuntimeError, match="capacity"):
+    with pytest.raises(ValueError, match="capacity"):
         package.from_matrix(np.zeros((4, 4), dtype=np.complex128))
 
 
@@ -242,3 +242,13 @@ def test_invalid_identity_path(decisions: str) -> None:
     with pytest.raises(ValueError, match="invalid digit"):
         identity.get_entry_by_path(1, decisions)
     assert identity.get_entry_by_path(1, "3ignored") == 1
+
+
+def test_untracked_release() -> None:
+    """Reject an unbalanced release at the Python boundary."""
+    package = DDPackage(1)
+    gate = package.single_qubit_gate(np.array([[0, 1], [1, 0]], dtype=np.complex128), 0)
+    package.inc_ref_mat(gate)
+    package.dec_ref_mat(gate)
+    with pytest.raises(ValueError, match="Edge is not part of the root set"):
+        package.dec_ref_mat(gate)

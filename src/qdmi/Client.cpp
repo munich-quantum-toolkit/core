@@ -12,10 +12,13 @@
 
 #include "qdmi/common/Common.hpp"
 #include "qdmi/common/DeviceConfiguration.hpp"
-#include "qdmi/common/Diagnostics.hpp"
 #include "qdmi/driver/DriverExtension.hpp"
 
+#include "support/DiagnosticFormatting.hpp"
+
 #include "qdmi/client.h"
+
+#include "mlir/Support/LogicalResult.h"
 
 #include <algorithm>
 #include <complex>
@@ -29,7 +32,6 @@
 #include <optional>
 #include <span>
 #include <sstream>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -50,43 +52,85 @@
 #endif
 
 namespace qdmi {
+namespace detail {
+mlir::FailureOr<std::vector<std::string>>
+parseShots(const std::string_view shots, const size_t numShots) {
+  if (numShots == 0) {
+    if (!shots.empty()) {
+      return qdmi::emitError(QDMI_ERROR_FATAL, "Number of shots mismatch");
+    }
+    return std::vector<std::string>{};
+  }
+
+  std::vector<std::string> parsed;
+  parsed.reserve(numShots);
+  size_t start = 0;
+  while (true) {
+    const auto end = shots.find(',', start);
+    parsed.emplace_back(shots.substr(start, end - start));
+    if (end == std::string_view::npos) {
+      break;
+    }
+    start = end + 1;
+  }
+  if (parsed.size() != numShots) {
+    return qdmi::emitError(QDMI_ERROR_FATAL, "Number of shots mismatch");
+  }
+  return parsed;
+}
+
+} // namespace detail
+
 namespace {
 template <typename T>
-std::map<std::string, T>
+mlir::FailureOr<std::map<std::string, T>>
 getSparseResult(const detail::ClientAPI& api, QDMI_Job job, size_t programIndex,
                 const QDMI_Job_Result keysResult,
                 const QDMI_Job_Result valuesResult,
                 const std::string& description, const std::string& valueType,
                 const std::string& mismatch) {
   size_t keysSize = 0;
-  qdmi::throwIfError(
-      api.job_get_results(job, programIndex, keysResult, 0, nullptr, &keysSize),
-      "Querying " + description + " keys size");
+  if (mlir::failed(
+          qdmi::checkError(api.job_get_results(job, programIndex, keysResult, 0,
+                                               nullptr, &keysSize),
+                           "Querying " + description + " keys size"))) {
+    return mlir::failure();
+  }
 
   if (keysSize == 0) {
-    return {};
+    return std::map<std::string, T>{};
   }
 
   std::string keys(keysSize, '\0');
-  qdmi::throwIfError(api.job_get_results(job, programIndex, keysResult,
-                                         keysSize, keys.data(), nullptr),
-                     "Querying " + description + " keys");
+  if (mlir::failed(
+          qdmi::checkError(api.job_get_results(job, programIndex, keysResult,
+                                               keysSize, keys.data(), nullptr),
+                           "Querying " + description + " keys"))) {
+    return mlir::failure();
+  }
   keys.pop_back();
 
   size_t valuesSize = 0;
-  qdmi::throwIfError(api.job_get_results(job, programIndex, valuesResult, 0,
-                                         nullptr, &valuesSize),
-                     "Querying " + description + " values size");
+  if (mlir::failed(
+          qdmi::checkError(api.job_get_results(job, programIndex, valuesResult,
+                                               0, nullptr, &valuesSize),
+                           "Querying " + description + " values size"))) {
+    return mlir::failure();
+  }
 
   if (valuesSize % sizeof(T) != 0) {
-    throw std::runtime_error("Invalid " + description +
-                             " values size: not a multiple of " + valueType);
+    return qdmi::emitError(QDMI_ERROR_FATAL,
+                           "Invalid " + description +
+                               " values size: not a multiple of " + valueType);
   }
 
   std::vector<T> values(valuesSize / sizeof(T));
-  qdmi::throwIfError(api.job_get_results(job, programIndex, valuesResult,
-                                         valuesSize, values.data(), nullptr),
-                     "Querying " + description + " values");
+  if (mlir::failed(qdmi::checkError(
+          api.job_get_results(job, programIndex, valuesResult, valuesSize,
+                              values.data(), nullptr),
+          "Querying " + description + " values"))) {
+    return mlir::failure();
+  }
 
   /// Parse the comma-separated keys.
   std::map<std::string, T> result;
@@ -99,14 +143,14 @@ getSparseResult(const detail::ClientAPI& api, QDMI_Job job, size_t programIndex,
   size_t idx = 0;
   while (std::getline(keysStream, key, ',')) {
     if (idx >= values.size()) {
-      throw std::runtime_error(mismatch);
+      return qdmi::emitError(QDMI_ERROR_FATAL, mismatch);
     }
     result[key] = values[idx];
     ++idx;
   }
 
   if (idx != values.size()) {
-    throw std::runtime_error(mismatch);
+    return qdmi::emitError(QDMI_ERROR_FATAL, mismatch);
   }
   return result;
 }
@@ -144,24 +188,30 @@ void closeLibrary(LibraryHandle library) { dlclose(library); }
 #endif
 
 [[nodiscard]] auto normalizePath(const std::filesystem::path& path)
-    -> std::filesystem::path {
+    -> mlir::FailureOr<std::filesystem::path> {
   if (path.empty()) {
-    throw std::invalid_argument("QDMI driver path must not be empty");
+    return qdmi::emitError(QDMI_ERROR_INVALIDARGUMENT,
+                           "QDMI driver path must not be empty");
   }
   std::error_code error;
   auto normalized = std::filesystem::weakly_canonical(
       std::filesystem::absolute(path, error), error);
   if (error) {
-    normalized = std::filesystem::absolute(path).lexically_normal();
+    normalized = std::filesystem::absolute(path, error).lexically_normal();
+    if (error) {
+      return qdmi::emitError(QDMI_ERROR_INVALIDARGUMENT, error.message());
+    }
   }
   return normalized;
 }
 
-[[nodiscard]] auto packagedDriverPath() -> std::filesystem::path {
+[[nodiscard]] auto packagedDriverPath()
+    -> mlir::FailureOr<std::filesystem::path> {
   const auto directory = detail::moduleDirectory(
       reinterpret_cast<const void*>(&packagedDriverPath));
   if (directory.empty()) {
-    throw std::runtime_error("Cannot locate the MQT Core QDMI library");
+    return qdmi::emitError(QDMI_ERROR_FATAL,
+                           "Cannot locate the MQT Core QDMI library");
   }
   auto filename = std::filesystem::path{MQT_CORE_QDMI_DEFAULT_DRIVER_FILENAME};
   for (const auto& candidate : {
@@ -173,7 +223,8 @@ void closeLibrary(LibraryHandle library) { dlclose(library); }
            directory.parent_path() / "lib64" / filename,
            directory.parent_path() / "bin" / filename,
        }) {
-    if (std::filesystem::exists(candidate)) {
+    std::error_code error;
+    if (std::filesystem::exists(candidate, error)) {
       return candidate;
     }
   }
@@ -185,7 +236,7 @@ void closeLibrary(LibraryHandle library) { dlclose(library); }
 }
 
 [[nodiscard]] auto requestedDriverPath(const SessionConfig& config)
-    -> std::filesystem::path {
+    -> mlir::FailureOr<std::filesystem::path> {
   if (config.driverPath) {
     return normalizePath(*config.driverPath);
   }
@@ -193,7 +244,10 @@ void closeLibrary(LibraryHandle library) { dlclose(library); }
     return normalizePath(detail::pathFromString(*environment));
   }
   const auto packaged = packagedDriverPath();
-  return packaged.has_parent_path() ? normalizePath(packaged) : packaged;
+  if (mlir::failed(packaged)) {
+    return mlir::failure();
+  }
+  return packaged->has_parent_path() ? normalizePath(*packaged) : packaged;
 }
 
 struct DriverExtension {
@@ -209,18 +263,18 @@ struct LoadedDriver : detail::ClientAPI {
 
 template <class Function>
 [[nodiscard]] auto loadSymbol(LibraryHandle library, const char* name)
-    -> Function {
+    -> mlir::FailureOr<Function> {
   /// NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
   const auto function = reinterpret_cast<Function>(findSymbol(library, name));
   if (function == nullptr) {
-    throw std::runtime_error("QDMI driver is missing symbol " +
-                             std::string(name));
+    return qdmi::emitError(QDMI_ERROR_FATAL, "QDMI driver is missing symbol " +
+                                                 std::string(name));
   }
   return function;
 }
 
 [[nodiscard]] auto loadClient(const std::filesystem::path& path)
-    -> std::shared_ptr<const LoadedDriver> {
+    -> mlir::FailureOr<std::shared_ptr<const LoadedDriver>> {
   struct DriverCache {
     std::mutex mutex;
     std::map<std::filesystem::path, std::shared_ptr<const LoadedDriver>>
@@ -236,8 +290,9 @@ template <class Function>
   }
   auto* const library = openLibrary(path);
   if (library == nullptr) {
-    throw std::runtime_error("Cannot load QDMI driver '" +
-                             detail::pathToString(path) + "'");
+    return qdmi::emitError(QDMI_ERROR_FATAL, "Cannot load QDMI driver '" +
+                                                 detail::pathToString(path) +
+                                                 "'");
   }
 
   const std::shared_ptr<void> owner{
@@ -245,21 +300,32 @@ template <class Function>
       [](void* handle) { closeLibrary(static_cast<LibraryHandle>(handle)); }};
   auto api = std::make_shared<LoadedDriver>();
   api->library = owner;
-  const auto actualAbi =
+  const auto version =
       loadSymbol<decltype(&QDMI_driver_get_client_abi_version)>(
-          library, "QDMI_driver_get_client_abi_version")();
+          library, "QDMI_driver_get_client_abi_version");
+  if (mlir::failed(version)) {
+    return mlir::failure();
+  }
+  const auto actualAbi = (*version)();
   if (QDMI_VERSION_MAJOR(actualAbi) !=
           QDMI_VERSION_MAJOR(QDMI_CLIENT_ABI_VERSION) ||
       QDMI_VERSION_MINOR(actualAbi) !=
           QDMI_VERSION_MINOR(QDMI_CLIENT_ABI_VERSION)) {
-    throw std::runtime_error("QDMI driver has incompatible ABI " +
-                             std::to_string(QDMI_VERSION_MAJOR(actualAbi)) +
-                             "." +
-                             std::to_string(QDMI_VERSION_MINOR(actualAbi)));
+    return qdmi::emitError(QDMI_ERROR_FATAL,
+                           "QDMI driver has incompatible ABI " +
+                               std::to_string(QDMI_VERSION_MAJOR(actualAbi)) +
+                               "." +
+                               std::to_string(QDMI_VERSION_MINOR(actualAbi)));
   }
 
 #define LOAD_CLIENT_SYMBOL(symbol)                                             \
-  api->symbol = loadSymbol<decltype(api->symbol)>(library, "QDMI_" #symbol)
+  {                                                                            \
+    auto result = loadSymbol<decltype(api->symbol)>(library, "QDMI_" #symbol); \
+    if (mlir::failed(result)) {                                                \
+      return mlir::failure();                                                  \
+    }                                                                          \
+    api->symbol = *result;                                                     \
+  }
   LOAD_CLIENT_SYMBOL(session_alloc);
   LOAD_CLIENT_SYMBOL(session_init);
   LOAD_CLIENT_SYMBOL(session_free);
@@ -295,21 +361,33 @@ template <class Function>
 using SessionGuard =
     std::unique_ptr<QDMI_Session_impl_d, decltype(&QDMI_session_free)>;
 
-void validateSessionAllocation(const int status, QDMI_Session session) {
+mlir::LogicalResult validateSessionAllocation(const int status,
+                                              QDMI_Session session) {
   if (session == nullptr &&
       (status == QDMI_SUCCESS || status == QDMI_WARN_GENERAL)) {
-    throw std::runtime_error("The QDMI driver returned a null session");
+    return qdmi::emitError(QDMI_ERROR_FATAL,
+                           "The QDMI driver returned a null session");
   }
-  qdmi::throwIfError(status, "Allocating QDMI session");
+  return qdmi::checkError(status, "Allocating QDMI session");
 }
 
 [[nodiscard]] auto allocateSession(const SessionConfig& config)
-    -> std::shared_ptr<detail::DriverSession> {
-  const auto api = loadClient(requestedDriverPath(config));
+    -> mlir::FailureOr<std::shared_ptr<detail::DriverSession>> {
+  const auto path = requestedDriverPath(config);
+  if (mlir::failed(path)) {
+    return mlir::failure();
+  }
+  const auto loaded = loadClient(*path);
+  if (mlir::failed(loaded)) {
+    return mlir::failure();
+  }
+  const auto& api = *loaded;
   QDMI_Session session = nullptr;
   const auto status = api->session_alloc(&session);
   SessionGuard guard{session, api->session_free};
-  validateSessionAllocation(status, session);
+  if (mlir::failed(validateSessionAllocation(status, session))) {
+    return mlir::failure();
+  }
   auto owner = std::make_shared<detail::DriverSession>(api, session);
   /// Ownership transfers only after the shared allocation succeeds.
   /// NOLINTNEXTLINE(bugprone-unused-return-value)
@@ -318,36 +396,65 @@ void validateSessionAllocation(const int status, QDMI_Session session) {
 }
 } // namespace
 
-void builtin_driver::addManifest(const std::filesystem::path& path) {
-  const auto driver = loadClient(packagedDriverPath());
+mlir::LogicalResult
+builtin_driver::addManifest(const std::filesystem::path& path) {
+  const auto driverPath = packagedDriverPath();
+  if (mlir::failed(driverPath)) {
+    return mlir::failure();
+  }
+  const auto loaded = loadClient(*driverPath);
+  if (mlir::failed(loaded)) {
+    return mlir::failure();
+  }
+  const auto& driver = *loaded;
   if (driver->extension.addManifest == nullptr) {
-    throw std::runtime_error(
+    return qdmi::emitError(
+        QDMI_ERROR_FATAL,
         "The MQT Core QDMI driver does not support device manifests");
   }
-  const auto filename = detail::pathToString(normalizePath(path));
-  throwIfError(driver->extension.addManifest(filename.c_str()),
-               "Registering QDMI device manifest");
+  const auto normalized = normalizePath(path);
+  if (mlir::failed(normalized)) {
+    return mlir::failure();
+  }
+  const auto filename = detail::pathToString(*normalized);
+  return qdmi::checkError(driver->extension.addManifest(filename.c_str()),
+                          "Registering QDMI device manifest");
 }
 
-std::vector<std::string> builtin_driver::registeredDeviceIds() {
-  const auto driver = loadClient(packagedDriverPath());
+mlir::FailureOr<std::vector<std::string>>
+builtin_driver::registeredDeviceIds() {
+  const auto path = packagedDriverPath();
+  if (mlir::failed(path)) {
+    return mlir::failure();
+  }
+  const auto loaded = loadClient(*path);
+  if (mlir::failed(loaded)) {
+    return mlir::failure();
+  }
+  const auto& driver = *loaded;
   const auto query = driver->extension.registeredDeviceIds;
   if (query == nullptr) {
-    throw std::runtime_error(
+    return qdmi::emitError(
+        QDMI_ERROR_FATAL,
         "The MQT Core QDMI driver does not support offline enumeration");
   }
   size_t size = 0;
-  throwIfError(query(0, nullptr, &size), "Querying registered QDMI device IDs");
+  if (mlir::failed(qdmi::checkError(query(0, nullptr, &size),
+                                    "Querying registered QDMI device IDs"))) {
+    return mlir::failure();
+  }
   std::string buffer(size, '\0');
-  if (size != 0) {
-    throwIfError(query(size, buffer.data(), nullptr),
-                 "Querying registered QDMI device IDs");
+  if (size != 0 &&
+      mlir::failed(qdmi::checkError(query(size, buffer.data(), nullptr),
+                                    "Querying registered QDMI device IDs"))) {
+    return mlir::failure();
   }
   std::vector<std::string> ids;
   for (size_t start = 0; start < buffer.size();) {
     const auto end = buffer.find('\0', start);
     if (end == std::string::npos) {
-      throw std::runtime_error("The QDMI driver returned an unterminated ID");
+      return qdmi::emitError(QDMI_ERROR_FATAL,
+                             "The QDMI driver returned an unterminated ID");
     }
     ids.emplace_back(buffer.substr(start, end - start));
     start = end + 1;
@@ -355,18 +462,27 @@ std::vector<std::string> builtin_driver::registeredDeviceIds() {
   return ids;
 }
 
-Device builtin_driver::openDevice(
+mlir::FailureOr<Device> builtin_driver::openDevice(
     const std::string_view id, const std::string_view deviceSessionJson,
     const std::optional<std::filesystem::path>& driverPath) {
   if (id.empty() || id.find('\0') != std::string_view::npos) {
-    throw std::invalid_argument(
+    return qdmi::emitError(
+        QDMI_ERROR_INVALIDARGUMENT,
         "QDMI device ID must not be empty or contain null bytes");
   }
-  const auto driver = driverPath ? loadClient(normalizePath(*driverPath))
-                                 : loadClient(packagedDriverPath());
+  const auto path =
+      driverPath ? normalizePath(*driverPath) : packagedDriverPath();
+  if (mlir::failed(path)) {
+    return mlir::failure();
+  }
+  const auto loaded = loadClient(*path);
+  if (mlir::failed(loaded)) {
+    return mlir::failure();
+  }
+  const auto& driver = *loaded;
   if (driver->extension.allocateSession == nullptr) {
-    throw std::runtime_error(
-        "The QDMI driver does not support targeted sessions");
+    return qdmi::emitError(
+        QDMI_ERROR_FATAL, "The QDMI driver does not support targeted sessions");
   }
   QDMI_Session session = nullptr;
   const std::string deviceId{id};
@@ -374,29 +490,41 @@ Device builtin_driver::openDevice(
       deviceId.c_str(), deviceSessionJson.size(),
       deviceSessionJson.empty() ? nullptr : deviceSessionJson.data(), &session);
   SessionGuard guard{session, driver->session_free};
-  validateSessionAllocation(status, session);
+  if (mlir::failed(validateSessionAllocation(status, session))) {
+    return mlir::failure();
+  }
   auto owner = std::make_shared<detail::DriverSession>(driver, session);
   /// NOLINTNEXTLINE(bugprone-unused-return-value)
   guard.release();
-  throwIfError(driver->session_init(session),
-               "Initializing QDMI device session");
+  if (mlir::failed(qdmi::checkError(driver->session_init(session),
+                                    "Initializing QDMI device session"))) {
+    return mlir::failure();
+  }
   size_t size = 0;
-  throwIfError(driver->session_query_session_property(
-                   session, QDMI_SESSION_PROPERTY_DEVICES, 0, nullptr, &size),
-               "Querying QDMI device");
+  if (mlir::failed(qdmi::checkError(
+          driver->session_query_session_property(
+              session, QDMI_SESSION_PROPERTY_DEVICES, 0, nullptr, &size),
+          "Querying QDMI device"))) {
+    return mlir::failure();
+  }
   if (size != sizeof(QDMI_Device)) {
-    throw std::runtime_error(
+    return qdmi::emitError(
+        QDMI_ERROR_FATAL,
         "A targeted QDMI session must expose exactly one device");
   }
   QDMI_Device device = nullptr;
-  throwIfError(driver->session_query_session_property(
-                   session, QDMI_SESSION_PROPERTY_DEVICES, size,
-                   static_cast<void*>(&device), nullptr),
-               "Querying QDMI device");
-  if (device == nullptr) {
-    throw std::runtime_error("A targeted QDMI session returned a null device");
+  if (mlir::failed(
+          qdmi::checkError(driver->session_query_session_property(
+                               session, QDMI_SESSION_PROPERTY_DEVICES, size,
+                               static_cast<void*>(&device), nullptr),
+                           "Querying QDMI device"))) {
+    return mlir::failure();
   }
-  return {device, std::move(owner)};
+  if (device == nullptr) {
+    return qdmi::emitError(QDMI_ERROR_FATAL,
+                           "A targeted QDMI session returned a null device");
+  }
+  return Device{device, std::move(owner)};
 }
 
 void detail::JobDeleter::operator()(QDMI_Job_impl_d* const job) const {
@@ -405,103 +533,115 @@ void detail::JobDeleter::operator()(QDMI_Job_impl_d* const job) const {
   }
 }
 
-size_t Site::getIndex() const {
+mlir::FailureOr<size_t> Site::getIndex() const {
   return queryProperty<size_t>(QDMI_SITE_PROPERTY_INDEX);
 }
-std::optional<uint64_t> Site::getT1() const {
+mlir::FailureOr<std::optional<uint64_t>> Site::getT1() const {
   return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_T1);
 }
-std::optional<uint64_t> Site::getT2() const {
+mlir::FailureOr<std::optional<uint64_t>> Site::getT2() const {
   return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_T2);
 }
-std::optional<std::string> Site::getName() const {
+mlir::FailureOr<std::optional<std::string>> Site::getName() const {
   return queryProperty<std::optional<std::string>>(QDMI_SITE_PROPERTY_NAME);
 }
-std::optional<int64_t> Site::getXCoordinate() const {
+mlir::FailureOr<std::optional<int64_t>> Site::getXCoordinate() const {
   return queryProperty<std::optional<int64_t>>(QDMI_SITE_PROPERTY_XCOORDINATE);
 }
-std::optional<int64_t> Site::getYCoordinate() const {
+mlir::FailureOr<std::optional<int64_t>> Site::getYCoordinate() const {
   return queryProperty<std::optional<int64_t>>(QDMI_SITE_PROPERTY_YCOORDINATE);
 }
-std::optional<int64_t> Site::getZCoordinate() const {
+mlir::FailureOr<std::optional<int64_t>> Site::getZCoordinate() const {
   return queryProperty<std::optional<int64_t>>(QDMI_SITE_PROPERTY_ZCOORDINATE);
 }
-bool Site::isZone() const {
-  return queryProperty<std::optional<bool>>(QDMI_SITE_PROPERTY_ISZONE)
-      .value_or(false);
+mlir::FailureOr<bool> Site::isZone() const {
+  auto result = queryProperty<std::optional<bool>>(QDMI_SITE_PROPERTY_ISZONE);
+  if (mlir::failed(result)) {
+    return mlir::failure();
+  }
+  return (*result).value_or(false);
 }
-std::optional<uint64_t> Site::getXExtent() const {
+mlir::FailureOr<std::optional<uint64_t>> Site::getXExtent() const {
   return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_XEXTENT);
 }
-std::optional<uint64_t> Site::getYExtent() const {
+mlir::FailureOr<std::optional<uint64_t>> Site::getYExtent() const {
   return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_YEXTENT);
 }
-std::optional<uint64_t> Site::getZExtent() const {
+mlir::FailureOr<std::optional<uint64_t>> Site::getZExtent() const {
   return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_ZEXTENT);
 }
-std::optional<uint64_t> Site::getModuleIndex() const {
+mlir::FailureOr<std::optional<uint64_t>> Site::getModuleIndex() const {
   return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_MODULEINDEX);
 }
-std::optional<uint64_t> Site::getSubmoduleIndex() const {
+mlir::FailureOr<std::optional<uint64_t>> Site::getSubmoduleIndex() const {
   return queryProperty<std::optional<uint64_t>>(
       QDMI_SITE_PROPERTY_SUBMODULEINDEX);
 }
-std::string Operation::getName(const std::vector<Site>& sites,
-                               const std::vector<double>& params) const {
+mlir::FailureOr<std::string>
+Operation::getName(const std::vector<Site>& sites,
+                   const std::vector<double>& params) const {
   return queryProperty<std::string>(QDMI_OPERATION_PROPERTY_NAME, sites,
                                     params);
 }
-std::optional<size_t>
+mlir::FailureOr<std::optional<size_t>>
 Operation::getQubitsNum(const std::vector<Site>& sites,
                         const std::vector<double>& params) const {
   return queryProperty<std::optional<size_t>>(QDMI_OPERATION_PROPERTY_QUBITSNUM,
                                               sites, params);
 }
-size_t Operation::getParametersNum(const std::vector<Site>& sites,
-                                   const std::vector<double>& params) const {
+mlir::FailureOr<size_t>
+Operation::getParametersNum(const std::vector<Site>& sites,
+                            const std::vector<double>& params) const {
   return queryProperty<size_t>(QDMI_OPERATION_PROPERTY_PARAMETERSNUM, sites,
                                params);
 }
-std::optional<uint64_t>
+mlir::FailureOr<std::optional<uint64_t>>
 Operation::getDuration(const std::vector<Site>& sites,
                        const std::vector<double>& params) const {
   return queryProperty<std::optional<uint64_t>>(
       QDMI_OPERATION_PROPERTY_DURATION, sites, params);
 }
-std::optional<double>
+mlir::FailureOr<std::optional<double>>
 Operation::getFidelity(const std::vector<Site>& sites,
                        const std::vector<double>& params) const {
   return queryProperty<std::optional<double>>(QDMI_OPERATION_PROPERTY_FIDELITY,
                                               sites, params);
 }
-std::optional<uint64_t>
+mlir::FailureOr<std::optional<uint64_t>>
 Operation::getInteractionRadius(const std::vector<Site>& sites,
                                 const std::vector<double>& params) const {
   return queryProperty<std::optional<uint64_t>>(
       QDMI_OPERATION_PROPERTY_INTERACTIONRADIUS, sites, params);
 }
-std::optional<uint64_t>
+mlir::FailureOr<std::optional<uint64_t>>
 Operation::getBlockingRadius(const std::vector<Site>& sites,
                              const std::vector<double>& params) const {
   return queryProperty<std::optional<uint64_t>>(
       QDMI_OPERATION_PROPERTY_BLOCKINGRADIUS, sites, params);
 }
-std::optional<double>
+mlir::FailureOr<std::optional<double>>
 Operation::getIdlingFidelity(const std::vector<Site>& sites,
                              const std::vector<double>& params) const {
   return queryProperty<std::optional<double>>(
       QDMI_OPERATION_PROPERTY_IDLINGFIDELITY, sites, params);
 }
-bool Operation::isZoned() const {
-  return queryProperty<std::optional<bool>>(QDMI_OPERATION_PROPERTY_ISZONED, {},
-                                            {})
-      .value_or(false);
+mlir::FailureOr<bool> Operation::isZoned() const {
+  auto result = queryProperty<std::optional<bool>>(
+      QDMI_OPERATION_PROPERTY_ISZONED, {}, {});
+  if (mlir::failed(result)) {
+    return mlir::failure();
+  }
+  return (*result).value_or(false);
 }
-std::optional<std::vector<Site>> Operation::getSites() const {
-  const auto& qdmiSites = queryProperty<std::optional<std::vector<QDMI_Site>>>(
+mlir::FailureOr<std::optional<std::vector<Site>>> Operation::getSites() const {
+  auto qdmiSitesResult = queryProperty<std::optional<std::vector<QDMI_Site>>>(
       QDMI_OPERATION_PROPERTY_SITES, {}, {});
+  if (mlir::failed(qdmiSitesResult)) {
+    return mlir::failure();
+  }
+  auto& qdmiSites = (*qdmiSitesResult);
   if (!qdmiSites.has_value()) {
-    return std::nullopt;
+    return std::optional<std::vector<Site>>{};
   }
   std::vector<Site> returnedSites;
   returnedSites.reserve(qdmiSites->size());
@@ -509,66 +649,75 @@ std::optional<std::vector<Site>> Operation::getSites() const {
                          [this](const QDMI_Site& site) -> Site {
                            return {device_, session_, site};
                          });
-  return returnedSites;
+  return std::optional<std::vector<Site>>{std::move(returnedSites)};
 }
-std::optional<std::vector<std::pair<Site, Site>>>
+mlir::FailureOr<std::optional<std::vector<std::pair<Site, Site>>>>
 Operation::getSitePairs() const {
-  if (const auto qubitsNum = getQubitsNum({}, {});
-      !qubitsNum.has_value() || *qubitsNum != 2 || isZoned()) {
-    return std::nullopt; // Not a 2-qubit operation or operation is zoned
+  auto qubitsNum = getQubitsNum({}, {});
+  if (mlir::failed(qubitsNum)) {
+    return mlir::failure();
   }
-
-  const auto sitesOpt = getSites();
-  if (!sitesOpt.has_value()) {
-    return std::nullopt;
+  if ((*qubitsNum) != 2) {
+    return std::optional<std::vector<std::pair<Site, Site>>>{};
   }
-
-  const auto& sitesVec = *sitesOpt;
-  if (sitesVec.empty() || sitesVec.size() % 2 != 0) {
-    return std::nullopt; // Invalid: no sites or odd number of sites
+  auto zoned = isZoned();
+  if (mlir::failed(zoned)) {
+    return mlir::failure();
   }
-
+  if ((*zoned)) {
+    return std::optional<std::vector<std::pair<Site, Site>>>{};
+  }
+  auto sites = getSites();
+  if (mlir::failed(sites)) {
+    return mlir::failure();
+  }
+  const auto& sitesOpt = (*sites);
+  if (!sitesOpt || sitesOpt->empty() || sitesOpt->size() % 2 != 0) {
+    return std::optional<std::vector<std::pair<Site, Site>>>{};
+  }
   std::vector<std::pair<Site, Site>> pairs;
-  pairs.reserve(sitesVec.size() / 2);
-
-  for (size_t i = 0; i < sitesVec.size(); i += 2) {
-    pairs.emplace_back(sitesVec[i], sitesVec[i + 1]);
+  pairs.reserve(sitesOpt->size() / 2);
+  for (size_t i = 0; i < sitesOpt->size(); i += 2) {
+    pairs.emplace_back((*sitesOpt)[i], (*sitesOpt)[i + 1]);
   }
-
-  return pairs;
+  return std::optional<std::vector<std::pair<Site, Site>>>{std::move(pairs)};
 }
-std::optional<uint64_t>
+mlir::FailureOr<std::optional<uint64_t>>
 Operation::getMeanShuttlingSpeed(const std::vector<Site>& sites,
                                  const std::vector<double>& params) const {
   return queryProperty<std::optional<uint64_t>>(
       QDMI_OPERATION_PROPERTY_MEANSHUTTLINGSPEED, sites, params);
 }
-std::string Device::getId() const {
+mlir::FailureOr<std::string> Device::getId() const {
   return queryProperty<std::string>(QDMI_DEVICE_PROPERTY_ID);
 }
-std::string Device::getName() const {
+mlir::FailureOr<std::string> Device::getName() const {
   return queryProperty<std::string>(QDMI_DEVICE_PROPERTY_NAME);
 }
 
-std::string Device::getVersion() const {
+mlir::FailureOr<std::string> Device::getVersion() const {
   return queryProperty<std::string>(QDMI_DEVICE_PROPERTY_VERSION);
 }
 
-QDMI_Device_Status Device::getStatus() const {
+mlir::FailureOr<QDMI_Device_Status> Device::getStatus() const {
   return queryProperty<QDMI_Device_Status>(QDMI_DEVICE_PROPERTY_STATUS);
 }
 
-std::string Device::getLibraryVersion() const {
+mlir::FailureOr<std::string> Device::getLibraryVersion() const {
   return queryProperty<std::string>(QDMI_DEVICE_PROPERTY_LIBRARYVERSION);
 }
 
-size_t Device::getQubitsNum() const {
+mlir::FailureOr<size_t> Device::getQubitsNum() const {
   return queryProperty<size_t>(QDMI_DEVICE_PROPERTY_QUBITSNUM);
 }
 
-std::vector<Site> Device::getSites() const {
-  const auto& qdmiSites =
+mlir::FailureOr<std::vector<Site>> Device::getSites() const {
+  auto qdmiSitesResult =
       queryProperty<std::vector<QDMI_Site>>(QDMI_DEVICE_PROPERTY_SITES);
+  if (mlir::failed(qdmiSitesResult)) {
+    return mlir::failure();
+  }
+  auto& qdmiSites = (*qdmiSitesResult);
   std::vector<Site> sites;
   sites.reserve(qdmiSites.size());
   std::ranges::transform(qdmiSites, std::back_inserter(sites),
@@ -578,43 +727,75 @@ std::vector<Site> Device::getSites() const {
   return sites;
 }
 
-std::vector<Site> Device::getRegularSites() const {
-  auto allSites = getSites();
-  const auto newEnd = std::ranges::remove_if(
-      allSites, [](const auto& s) { return s.isZone(); });
-  allSites.erase(newEnd.begin(), newEnd.end());
-  return allSites;
+mlir::FailureOr<std::vector<Site>> Device::getRegularSites() const {
+  auto result = getSites();
+  if (mlir::failed(result)) {
+    return mlir::failure();
+  }
+  std::vector<Site> sites;
+  for (auto& site : (*result)) {
+    auto zone = site.isZone();
+    if (mlir::failed(zone)) {
+      return mlir::failure();
+    }
+    if (!(*zone)) {
+      sites.emplace_back(std::move(site));
+    }
+  }
+  return sites;
 }
 
-std::vector<Site> Device::getZones() const {
-  const auto& allSites = getSites();
-  std::vector<Site> zones;
-  zones.reserve(3);
-  std::ranges::copy_if(allSites, std::back_inserter(zones),
-                       [](const auto& s) { return s.isZone(); });
-  return zones;
+mlir::FailureOr<std::vector<Site>> Device::getZones() const {
+  auto result = getSites();
+  if (mlir::failed(result)) {
+    return mlir::failure();
+  }
+  std::vector<Site> sites;
+  for (auto& site : (*result)) {
+    auto zone = site.isZone();
+    if (mlir::failed(zone)) {
+      return mlir::failure();
+    }
+    if ((*zone)) {
+      sites.emplace_back(std::move(site));
+    }
+  }
+  return sites;
 }
 
-std::vector<Operation> Device::getOperations() const {
-  const auto& qdmiOperations = queryProperty<std::vector<QDMI_Operation>>(
+mlir::FailureOr<std::vector<Operation>> Device::getOperations() const {
+  auto qdmiOperationsResult = queryProperty<std::vector<QDMI_Operation>>(
       QDMI_DEVICE_PROPERTY_OPERATIONS);
+  if (mlir::failed(qdmiOperationsResult)) {
+    return mlir::failure();
+  }
+  auto& qdmiOperations = (*qdmiOperationsResult);
   return wrapOperations(qdmiOperations);
 }
 
-std::optional<std::vector<Operation>>
+mlir::FailureOr<std::optional<std::vector<Operation>>>
 Device::queryCustomOperations(const CustomProperty property) const {
-  const auto qdmiProperty = detail::toDeviceProperty(property);
-  const auto handles = detail::queryHandleArray<QDMI_Operation>(
+  auto propertyResult = detail::toDeviceProperty(property);
+  if (mlir::failed(propertyResult)) {
+    return mlir::failure();
+  }
+  const auto qdmiProperty = (*propertyResult);
+  auto handlesResult = detail::queryHandleArray<QDMI_Operation>(
       [this, qdmiProperty](const size_t size, void* value, size_t* sizeRet) {
         return api().device_query_device_property(device_, qdmiProperty, size,
                                                   value, sizeRet);
       },
       "custom operation list " +
           std::to_string(static_cast<unsigned>(property)));
-  if (!handles.has_value()) {
-    return std::nullopt;
+  if (mlir::failed(handlesResult)) {
+    return mlir::failure();
   }
-  return wrapOperations(*handles);
+  auto& handles = (*handlesResult);
+  if (!handles.has_value()) {
+    return std::optional<std::vector<Operation>>{};
+  }
+  return std::optional<std::vector<Operation>>{
+      std::move(wrapOperations(*handles))};
 }
 
 std::vector<Operation>
@@ -628,13 +809,17 @@ Device::wrapOperations(const std::span<const QDMI_Operation> operations) const {
   return wrappedOperations;
 }
 
-std::optional<std::vector<std::pair<Site, Site>>>
+mlir::FailureOr<std::optional<std::vector<std::pair<Site, Site>>>>
 Device::getCouplingMap() const {
-  const auto& qdmiCouplingMap = queryProperty<
+  auto qdmiCouplingMapResult = queryProperty<
       std::optional<std::vector<std::pair<QDMI_Site, QDMI_Site>>>>(
       QDMI_DEVICE_PROPERTY_COUPLINGMAP);
+  if (mlir::failed(qdmiCouplingMapResult)) {
+    return mlir::failure();
+  }
+  auto& qdmiCouplingMap = (*qdmiCouplingMapResult);
   if (!qdmiCouplingMap.has_value()) {
-    return std::nullopt;
+    return std::optional<std::vector<std::pair<Site, Site>>>{};
   }
 
   std::vector<std::pair<Site, Site>> couplingMap;
@@ -647,53 +832,57 @@ Device::getCouplingMap() const {
                                Site{device_, session_, pair.second},
                            };
                          });
-  return couplingMap;
+  return std::optional<std::vector<std::pair<Site, Site>>>{
+      std::move(couplingMap)};
 }
 
-std::optional<size_t> Device::getQueueLength() const {
+mlir::FailureOr<std::optional<size_t>> Device::getQueueLength() const {
   return queryProperty<std::optional<size_t>>(QDMI_DEVICE_PROPERTY_QUEUELENGTH);
 }
 
-std::optional<std::string> Device::getLengthUnit() const {
+mlir::FailureOr<std::optional<std::string>> Device::getLengthUnit() const {
   return queryProperty<std::optional<std::string>>(
       QDMI_DEVICE_PROPERTY_LENGTHUNIT);
 }
 
-std::optional<double> Device::getLengthScaleFactor() const {
+mlir::FailureOr<std::optional<double>> Device::getLengthScaleFactor() const {
   return queryProperty<std::optional<double>>(
       QDMI_DEVICE_PROPERTY_LENGTHSCALEFACTOR);
 }
 
-std::optional<std::string> Device::getDurationUnit() const {
+mlir::FailureOr<std::optional<std::string>> Device::getDurationUnit() const {
   return queryProperty<std::optional<std::string>>(
       QDMI_DEVICE_PROPERTY_DURATIONUNIT);
 }
 
-std::optional<double> Device::getDurationScaleFactor() const {
+mlir::FailureOr<std::optional<double>> Device::getDurationScaleFactor() const {
   return queryProperty<std::optional<double>>(
       QDMI_DEVICE_PROPERTY_DURATIONSCALEFACTOR);
 }
 
-std::optional<uint64_t> Device::getMinAtomDistance() const {
+mlir::FailureOr<std::optional<uint64_t>> Device::getMinAtomDistance() const {
   return queryProperty<std::optional<uint64_t>>(
       QDMI_DEVICE_PROPERTY_MINATOMDISTANCE);
 }
 
-std::vector<QDMI_Program_Format> Device::getSupportedProgramFormats() const {
+mlir::FailureOr<std::vector<QDMI_Program_Format>>
+Device::getSupportedProgramFormats() const {
   return queryProperty<std::vector<QDMI_Program_Format>>(
       QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS);
 }
 
-std::vector<Device> Device::getChildDevices() const {
+mlir::FailureOr<std::vector<Device>> Device::getChildDevices() const {
   size_t size = 0;
   auto result = api().device_query_device_property(
       device_, QDMI_DEVICE_PROPERTY_CHILDDEVICES, 0, nullptr, &size);
   if (result == QDMI_ERROR_NOTSUPPORTED) {
-    return {};
+    return std::vector<Device>{};
   }
-  qdmi::throwIfError(result, "Querying child devices size");
+  if (mlir::failed(checkError(result, "Querying child devices size"))) {
+    return mlir::failure();
+  }
   if (size % sizeof(QDMI_Device) != 0) {
-    throw std::runtime_error("Invalid child device list size");
+    return qdmi::emitError(QDMI_ERROR_FATAL, "Invalid child device list size");
   }
 
   std::vector<QDMI_Device> handles(size / sizeof(QDMI_Device));
@@ -701,7 +890,9 @@ std::vector<Device> Device::getChildDevices() const {
     result = api().device_query_device_property(
         device_, QDMI_DEVICE_PROPERTY_CHILDDEVICES, size,
         static_cast<void*>(handles.data()), nullptr);
-    qdmi::throwIfError(result, "Querying child devices");
+    if (mlir::failed(checkError(result, "Querying child devices"))) {
+      return mlir::failure();
+    }
   }
 
   std::vector<Device> devices;
@@ -713,15 +904,17 @@ std::vector<Device> Device::getChildDevices() const {
   return devices;
 }
 
-Job Device::submitJob(const std::string& program,
-                      const QDMI_Program_Format format, const size_t numShots,
-                      const std::optional<CustomJobParameter>& custom1,
-                      const std::optional<CustomJobParameter>& custom2,
-                      const std::optional<CustomJobParameter>& custom3,
-                      const std::optional<CustomJobParameter>& custom4,
-                      const std::optional<CustomJobParameter>& custom5) const {
+mlir::FailureOr<Job>
+Device::submitJob(const std::string& program, const QDMI_Program_Format format,
+                  const size_t numShots,
+                  const std::optional<CustomJobParameter>& custom1,
+                  const std::optional<CustomJobParameter>& custom2,
+                  const std::optional<CustomJobParameter>& custom3,
+                  const std::optional<CustomJobParameter>& custom4,
+                  const std::optional<CustomJobParameter>& custom5) const {
   if (isBinaryProgramFormat(format)) {
-    throw std::invalid_argument(
+    return qdmi::emitError(
+        QDMI_ERROR_INVALIDARGUMENT,
         "Binary program formats require exact-byte submission");
   }
 
@@ -729,15 +922,16 @@ Job Device::submitJob(const std::string& program,
                         custom3, custom4, custom5);
 }
 
-Job Device::submitJob(const std::string& program,
-                      const QDMI_Program_Format format,
-                      const std::optional<CustomJobParameter>& custom1,
-                      const std::optional<CustomJobParameter>& custom2,
-                      const std::optional<CustomJobParameter>& custom3,
-                      const std::optional<CustomJobParameter>& custom4,
-                      const std::optional<CustomJobParameter>& custom5) const {
+mlir::FailureOr<Job>
+Device::submitJob(const std::string& program, const QDMI_Program_Format format,
+                  const std::optional<CustomJobParameter>& custom1,
+                  const std::optional<CustomJobParameter>& custom2,
+                  const std::optional<CustomJobParameter>& custom3,
+                  const std::optional<CustomJobParameter>& custom4,
+                  const std::optional<CustomJobParameter>& custom5) const {
   if (isBinaryProgramFormat(format)) {
-    throw std::invalid_argument(
+    return qdmi::emitError(
+        QDMI_ERROR_INVALIDARGUMENT,
         "Binary program formats require exact-byte submission");
   }
 
@@ -745,47 +939,53 @@ Job Device::submitJob(const std::string& program,
                         custom3, custom4, custom5);
 }
 
-Job Device::submitJob(const std::span<const std::byte> program,
-                      const QDMI_Program_Format format, const size_t numShots,
-                      const std::optional<CustomJobParameter>& custom1,
-                      const std::optional<CustomJobParameter>& custom2,
-                      const std::optional<CustomJobParameter>& custom3,
-                      const std::optional<CustomJobParameter>& custom4,
-                      const std::optional<CustomJobParameter>& custom5) const {
+mlir::FailureOr<Job>
+Device::submitJob(const std::span<const std::byte> program,
+                  const QDMI_Program_Format format, const size_t numShots,
+                  const std::optional<CustomJobParameter>& custom1,
+                  const std::optional<CustomJobParameter>& custom2,
+                  const std::optional<CustomJobParameter>& custom3,
+                  const std::optional<CustomJobParameter>& custom4,
+                  const std::optional<CustomJobParameter>& custom5) const {
 
   return submitPrograms({&program, 1}, format, numShots, custom1, custom2,
                         custom3, custom4, custom5);
 }
 
-Job Device::submitJob(const std::span<const std::byte> program,
-                      const QDMI_Program_Format format,
-                      const std::optional<CustomJobParameter>& custom1,
-                      const std::optional<CustomJobParameter>& custom2,
-                      const std::optional<CustomJobParameter>& custom3,
-                      const std::optional<CustomJobParameter>& custom4,
-                      const std::optional<CustomJobParameter>& custom5) const {
+mlir::FailureOr<Job>
+Device::submitJob(const std::span<const std::byte> program,
+                  const QDMI_Program_Format format,
+                  const std::optional<CustomJobParameter>& custom1,
+                  const std::optional<CustomJobParameter>& custom2,
+                  const std::optional<CustomJobParameter>& custom3,
+                  const std::optional<CustomJobParameter>& custom4,
+                  const std::optional<CustomJobParameter>& custom5) const {
 
   return submitPrograms({&program, 1}, format, std::nullopt, custom1, custom2,
                         custom3, custom4, custom5);
 }
 
-Job Device::submitPrograms(
-    const std::span<const std::string> programs,
-    const QDMI_Program_Format format, const std::optional<size_t> numShots,
-    const std::optional<CustomJobParameter>& custom1,
-    const std::optional<CustomJobParameter>& custom2,
-    const std::optional<CustomJobParameter>& custom3,
-    const std::optional<CustomJobParameter>& custom4,
-    const std::optional<CustomJobParameter>& custom5) const {
+mlir::FailureOr<Job>
+Device::submitPrograms(const std::span<const std::string> programs,
+                       const QDMI_Program_Format format,
+                       const std::optional<size_t> numShots,
+                       const std::optional<CustomJobParameter>& custom1,
+                       const std::optional<CustomJobParameter>& custom2,
+                       const std::optional<CustomJobParameter>& custom3,
+                       const std::optional<CustomJobParameter>& custom4,
+                       const std::optional<CustomJobParameter>& custom5) const {
   auto job = trySubmitPrograms(programs, format, numShots, custom1, custom2,
                                custom3, custom4, custom5);
-  if (!job) {
-    qdmi::throwIfError(QDMI_ERROR_NOTSUPPORTED, "Setting programs");
+  if (mlir::failed(job)) {
+    return mlir::failure();
   }
-  return std::move(*job);
+  if (!*job) {
+    return qdmi::emitError(QDMI_ERROR_NOTSUPPORTED, "Setting programs");
+  }
+  return std::move(**job);
 }
 
-std::optional<Job> Device::trySubmitPrograms(
+mlir::FailureOr<std::optional<Job>> Device::trySubmitPrograms(
     const std::span<const std::string> programs,
     const QDMI_Program_Format format, const std::optional<size_t> numShots,
     const std::optional<CustomJobParameter>& custom1,
@@ -794,7 +994,8 @@ std::optional<Job> Device::trySubmitPrograms(
     const std::optional<CustomJobParameter>& custom4,
     const std::optional<CustomJobParameter>& custom5) const {
   if (isBinaryProgramFormat(format)) {
-    throw std::invalid_argument(
+    return qdmi::emitError(
+        QDMI_ERROR_INVALIDARGUMENT,
         "Binary program formats require exact-byte submission");
   }
   std::vector<size_t> sizes;
@@ -804,7 +1005,8 @@ std::optional<Job> Device::trySubmitPrograms(
   for (const auto& program : programs) {
     const auto terminator = program.find('\0');
     if (terminator != std::string::npos && terminator != program.size() - 1) {
-      throw std::invalid_argument(
+      return qdmi::emitError(
+          QDMI_ERROR_INVALIDARGUMENT,
           "Text programs must not contain embedded null bytes");
     }
     sizes.push_back(program.size() + (terminator == std::string::npos ? 1 : 0));
@@ -814,7 +1016,7 @@ std::optional<Job> Device::trySubmitPrograms(
                             custom3, custom4, custom5);
 }
 
-Job Device::submitPrograms(
+mlir::FailureOr<Job> Device::submitPrograms(
     const std::span<const std::span<const std::byte>> programs,
     const QDMI_Program_Format format, const std::optional<size_t> numShots,
     const std::optional<CustomJobParameter>& custom1,
@@ -824,13 +1026,16 @@ Job Device::submitPrograms(
     const std::optional<CustomJobParameter>& custom5) const {
   auto job = trySubmitPrograms(programs, format, numShots, custom1, custom2,
                                custom3, custom4, custom5);
-  if (!job) {
-    qdmi::throwIfError(QDMI_ERROR_NOTSUPPORTED, "Setting programs");
+  if (mlir::failed(job)) {
+    return mlir::failure();
   }
-  return std::move(*job);
+  if (!*job) {
+    return qdmi::emitError(QDMI_ERROR_NOTSUPPORTED, "Setting programs");
+  }
+  return std::move(**job);
 }
 
-std::optional<Job> Device::trySubmitPrograms(
+mlir::FailureOr<std::optional<Job>> Device::trySubmitPrograms(
     const std::span<const std::span<const std::byte>> programs,
     const QDMI_Program_Format format, const std::optional<size_t> numShots,
     const std::optional<CustomJobParameter>& custom1,
@@ -850,7 +1055,7 @@ std::optional<Job> Device::trySubmitPrograms(
                             custom3, custom4, custom5);
 }
 
-std::optional<Job> Device::submitProgramsImpl(
+mlir::FailureOr<std::optional<Job>> Device::submitProgramsImpl(
     const QDMI_Program_Format format, const std::span<const size_t> sizes,
     const std::span<const void* const> programs,
     const std::optional<size_t> numShots,
@@ -860,83 +1065,121 @@ std::optional<Job> Device::submitProgramsImpl(
     const std::optional<CustomJobParameter>& custom4,
     const std::optional<CustomJobParameter>& custom5) const {
   QDMI_Job job = nullptr;
-  qdmi::throwIfError(api().device_create_job(device_, &job), "Creating job");
+  if (mlir::failed(qdmi::checkError(api().device_create_job(device_, &job),
+                                    "Creating job"))) {
+    return mlir::failure();
+  }
   Job jobWrapper{job, session_};
-  qdmi::throwIfError(api().job_set_parameter(jobWrapper,
-                                             QDMI_JOB_PARAMETER_PROGRAMFORMAT,
-                                             sizeof(format), &format),
-                     "Setting program format");
+  if (mlir::failed(qdmi::checkError(
+          api().job_set_parameter(jobWrapper, QDMI_JOB_PARAMETER_PROGRAMFORMAT,
+                                  sizeof(format), &format),
+          "Setting program format"))) {
+    return mlir::failure();
+  }
   if (numShots.has_value()) {
-    qdmi::throwIfError(api().job_set_parameter(jobWrapper,
-                                               QDMI_JOB_PARAMETER_SHOTSNUM,
-                                               sizeof(*numShots), &*numShots),
-                       "Setting number of shots");
+    if (mlir::failed(qdmi::checkError(
+            api().job_set_parameter(jobWrapper, QDMI_JOB_PARAMETER_SHOTSNUM,
+                                    sizeof(*numShots), &*numShots),
+            "Setting number of shots"))) {
+      return mlir::failure();
+    }
   }
 
   if (custom1.has_value()) {
-    setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM1, *custom1);
+    if (mlir::failed(setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM1,
+                                       *custom1))) {
+      return mlir::failure();
+    }
   }
   if (custom2.has_value()) {
-    setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM2, *custom2);
+    if (mlir::failed(setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM2,
+                                       *custom2))) {
+      return mlir::failure();
+    }
   }
   if (custom3.has_value()) {
-    setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM3, *custom3);
+    if (mlir::failed(setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM3,
+                                       *custom3))) {
+      return mlir::failure();
+    }
   }
   if (custom4.has_value()) {
-    setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM4, *custom4);
+    if (mlir::failed(setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM4,
+                                       *custom4))) {
+      return mlir::failure();
+    }
   }
   if (custom5.has_value()) {
-    setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM5, *custom5);
+    if (mlir::failed(setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM5,
+                                       *custom5))) {
+      return mlir::failure();
+    }
   }
 
   const auto result = api().job_set_programs(
       jobWrapper, &format, programs.size(), sizes.data(), programs.data());
   if (result == QDMI_ERROR_NOTSUPPORTED) {
-    return std::nullopt;
+    return std::optional<Job>{};
   }
-  qdmi::throwIfError(result, "Setting programs");
-  qdmi::throwIfError(api().job_submit(jobWrapper), "Submitting job");
-  return jobWrapper;
+  if (mlir::failed(qdmi::checkError(result, "Setting programs"))) {
+    return mlir::failure();
+  }
+  if (mlir::failed(
+          qdmi::checkError(api().job_submit(jobWrapper), "Submitting job"))) {
+    return mlir::failure();
+  }
+  return std::optional<Job>{std::move(jobWrapper)};
 }
 
-Job Device::retrieveJobById(const std::string_view jobId) const {
+mlir::FailureOr<Job>
+Device::retrieveJobById(const std::string_view jobId) const {
   const std::string id{jobId};
   QDMI_Job job = nullptr;
-  qdmi::throwIfError(
-      api().session_retrieve_job_by_id(device_, id.c_str(), &job),
-      "Retrieving job");
+  if (mlir::failed(qdmi::checkError(
+          api().session_retrieve_job_by_id(device_, id.c_str(), &job),
+          "Retrieving job"))) {
+    return mlir::failure();
+  }
   return Job{job, session_};
 }
 
-void Device::setCustomJobParam(QDMI_Job job, const QDMI_Job_Parameter param,
-                               const CustomJobParameter& value) const {
-  std::visit(
+mlir::LogicalResult
+Device::setCustomJobParam(QDMI_Job job, const QDMI_Job_Parameter param,
+                          const CustomJobParameter& value) const {
+  return std::visit(
       [&]<typename CustomValue>(const CustomValue& customValue) {
         using T = std::decay_t<CustomValue>;
         if constexpr (std::is_same_v<T, std::string>) {
-          qdmi::throwIfError(api().job_set_parameter(job, param,
-                                                     customValue.size() + 1,
-                                                     customValue.c_str()),
-                             "Setting custom parameter");
+          if (mlir::failed(qdmi::checkError(
+                  api().job_set_parameter(job, param, customValue.size() + 1,
+                                          customValue.c_str()),
+                  "Setting custom parameter"))) {
+            return mlir::failure();
+          }
         } else {
           static_assert(std::is_trivially_copyable_v<T>,
                         "Custom job parameters must be trivially copyable");
-          qdmi::throwIfError(
-              api().job_set_parameter(job, param, sizeof(T), &customValue),
-              "Setting custom parameter");
+          if (mlir::failed(qdmi::checkError(
+                  api().job_set_parameter(job, param, sizeof(T), &customValue),
+                  "Setting custom parameter"))) {
+            return mlir::failure();
+          }
         }
+        return mlir::success();
       },
       value);
 }
 
-QDMI_Job_Status Job::check() const {
+mlir::FailureOr<QDMI_Job_Status> Job::check() const {
   QDMI_Job_Status status{};
-  qdmi::throwIfError(api().job_check(job_.get(), &status),
-                     "Checking job status");
+  if (mlir::failed(qdmi::checkError(api().job_check(job_.get(), &status),
+                                    "Checking job status"))) {
+    return mlir::failure();
+  }
   return status;
 }
 
-bool Job::wait(const size_t timeout) const {
+mlir::FailureOr<bool> Job::wait(const size_t timeout) const {
   const auto ret = api().job_wait(job_.get(), timeout);
   if (ret == QDMI_SUCCESS) {
     return true;
@@ -944,15 +1187,17 @@ bool Job::wait(const size_t timeout) const {
   if (ret == QDMI_ERROR_TIMEOUT) {
     return false;
   }
-  qdmi::throwIfError(ret, "Waiting for job");
-  qdmi::unreachable();
+  if (mlir::failed(checkError(ret, "Waiting for job"))) {
+    return mlir::failure();
+  }
+  return true;
 }
 
-void Job::cancel() const {
-  qdmi::throwIfError(api().job_cancel(job_.get()), "Cancelling job");
+mlir::LogicalResult Job::cancel() const {
+  return qdmi::checkError(api().job_cancel(job_.get()), "Cancelling job");
 }
 
-std::string Job::getId() const {
+mlir::FailureOr<std::string> Job::getId() const {
   return detail::queryProperty<std::string>(
       [this](const size_t size, void* value, size_t* sizeRet) {
         return api().job_query_property(job_.get(), QDMI_JOB_PROPERTY_ID, size,
@@ -961,67 +1206,89 @@ std::string Job::getId() const {
       "Querying job ID", "Querying job ID size");
 }
 
-QDMI_Program_Format Job::getProgramFormat() const {
+mlir::FailureOr<QDMI_Program_Format> Job::getProgramFormat() const {
   QDMI_Program_Format format{};
-  qdmi::throwIfError(api().job_query_property(job_.get(),
-                                              QDMI_JOB_PROPERTY_PROGRAMFORMAT,
-                                              sizeof(format), &format, nullptr),
-                     "Querying program format");
+  if (mlir::failed(qdmi::checkError(
+          api().job_query_property(job_.get(), QDMI_JOB_PROPERTY_PROGRAMFORMAT,
+                                   sizeof(format), &format, nullptr),
+          "Querying program format"))) {
+    return mlir::failure();
+  }
   return format;
 }
 
-std::vector<std::byte> Job::getProgramBytes() const {
+mlir::FailureOr<std::vector<std::byte>> Job::getProgramBytes() const {
   size_t size = 0;
-  qdmi::throwIfError(api().job_query_property(job_.get(),
-                                              QDMI_JOB_PROPERTY_PROGRAM, 0,
-                                              nullptr, &size),
-                     "Querying program size");
+  if (mlir::failed(qdmi::checkError(
+          api().job_query_property(job_.get(), QDMI_JOB_PROPERTY_PROGRAM, 0,
+                                   nullptr, &size),
+          "Querying program size"))) {
+    return mlir::failure();
+  }
 
   std::vector<std::byte> program(size);
-  if (size != 0) {
-    qdmi::throwIfError(api().job_query_property(job_.get(),
-                                                QDMI_JOB_PROPERTY_PROGRAM, size,
-                                                program.data(), nullptr),
-                       "Querying program");
+  if (size != 0 &&
+      mlir::failed(qdmi::checkError(
+          api().job_query_property(job_.get(), QDMI_JOB_PROPERTY_PROGRAM, size,
+                                   program.data(), nullptr),
+          "Querying program"))) {
+    return mlir::failure();
   }
+
   return program;
 }
 
-std::string Job::getProgram() const {
-  const auto format = getProgramFormat();
+mlir::FailureOr<std::string> Job::getProgram() const {
+  auto formatResult = getProgramFormat();
+  if (mlir::failed(formatResult)) {
+    return mlir::failure();
+  }
+  auto const& format = (*formatResult);
   if (isBinaryProgramFormat(format)) {
-    throw std::invalid_argument(
-        "Cannot decode a binary program as a string; use getProgramBytes()");
+    return qdmi::emitError(QDMI_ERROR_INVALIDARGUMENT,
+                           "Cannot decode a binary program as a string; use "
+                           "getProgramBytes()");
   }
 
-  const auto program = getProgramBytes();
+  auto programResult = getProgramBytes();
+  if (mlir::failed(programResult)) {
+    return mlir::failure();
+  }
+  auto& program = (*programResult);
   if (program.empty() || program.back() != std::byte{0}) {
-    throw std::invalid_argument(
+    return qdmi::emitError(
+        QDMI_ERROR_INVALIDARGUMENT,
         "Cannot decode program as a null-terminated string; use "
         "getProgramBytes() for binary payloads");
   }
-  return {reinterpret_cast<const char*>(program.data()), program.size() - 1};
+  return std::string(reinterpret_cast<const char*>(program.data()),
+                     program.size() - 1);
 }
 
-size_t Job::getNumShots() const {
+mlir::FailureOr<size_t> Job::getNumShots() const {
   size_t numShots = 0;
-  qdmi::throwIfError(
-      api().job_query_property(job_.get(), QDMI_JOB_PROPERTY_SHOTSNUM,
-                               sizeof(numShots), &numShots, nullptr),
-      "Querying number of shots");
+  if (mlir::failed(qdmi::checkError(
+          api().job_query_property(job_.get(), QDMI_JOB_PROPERTY_SHOTSNUM,
+                                   sizeof(numShots), &numShots, nullptr),
+          "Querying number of shots"))) {
+    return mlir::failure();
+  }
   return numShots;
 }
 
-size_t Job::getNumPrograms() const {
+mlir::FailureOr<size_t> Job::getNumPrograms() const {
   size_t count = 0;
-  qdmi::throwIfError(api().job_query_property(job_.get(),
-                                              QDMI_JOB_PROPERTY_PROGRAMSNUM,
-                                              sizeof(count), &count, nullptr),
-                     "Querying program count");
+  if (mlir::failed(qdmi::checkError(
+          api().job_query_property(job_.get(), QDMI_JOB_PROPERTY_PROGRAMSNUM,
+                                   sizeof(count), &count, nullptr),
+          "Querying program count"))) {
+    return mlir::failure();
+  }
   return count;
 }
 
-std::optional<std::vector<QDMI_Job_Status>> Job::getProgramStatuses() const {
+mlir::FailureOr<std::optional<std::vector<QDMI_Job_Status>>>
+Job::getProgramStatuses() const {
   auto statuses =
       detail::queryProperty<std::optional<std::vector<QDMI_Job_Status>>>(
           [&](size_t size, void* value, size_t* sizeRet) {
@@ -1030,28 +1297,43 @@ std::optional<std::vector<QDMI_Job_Status>> Job::getProgramStatuses() const {
                                             size, value, sizeRet);
           },
           "Querying program statuses", "Querying program status size");
-  if (statuses && statuses->size() != getNumPrograms()) {
-    throw std::runtime_error("Program status count does not match the job");
+  if (mlir::failed(statuses)) {
+    return mlir::failure();
+  }
+  if (!*statuses) {
+    return statuses;
+  }
+  const auto count = getNumPrograms();
+  if (mlir::failed(count)) {
+    return mlir::failure();
+  }
+  if ((**statuses).size() != *count) {
+    return qdmi::emitError(QDMI_ERROR_FATAL,
+                           "Program status count does not match the job");
   }
   return statuses;
 }
 
-std::vector<std::byte> Job::getResults(const QDMI_Job_Result result,
-                                       const size_t programIndex) const {
+mlir::FailureOr<std::vector<std::byte>>
+Job::getResults(const QDMI_Job_Result result, const size_t programIndex) const {
   size_t size = 0;
-  qdmi::throwIfError(api().job_get_results(job_.get(), programIndex, result, 0,
-                                           nullptr, &size),
-                     "Querying result size");
+  if (mlir::failed(
+          qdmi::checkError(api().job_get_results(job_.get(), programIndex,
+                                                 result, 0, nullptr, &size),
+                           "Querying result size"))) {
+    return mlir::failure();
+  }
   std::vector<std::byte> value(size);
-  if (size != 0) {
-    qdmi::throwIfError(api().job_get_results(job_.get(), programIndex, result,
+  if (size != 0 && mlir::failed(qdmi::checkError(
+                       api().job_get_results(job_.get(), programIndex, result,
                                              size, value.data(), nullptr),
-                       "Querying result");
+                       "Querying result"))) {
+    return mlir::failure();
   }
   return value;
 }
 
-std::optional<size_t> Job::getQueuePosition() const {
+mlir::FailureOr<std::optional<size_t>> Job::getQueuePosition() const {
   size_t queuePosition = 0;
   const auto result =
       api().job_query_property(job_.get(), QDMI_JOB_PROPERTY_QUEUEPOSITION,
@@ -1059,78 +1341,102 @@ std::optional<size_t> Job::getQueuePosition() const {
   return detail::queuePositionFromResult(result, queuePosition);
 }
 
-std::vector<std::string> Job::getShots(const size_t programIndex) const {
+mlir::FailureOr<std::vector<std::string>>
+Job::getShots(const size_t programIndex) const {
   size_t shotsSize = 0;
-  qdmi::throwIfError(api().job_get_results(job_.get(), programIndex,
-                                           QDMI_JOB_RESULT_SHOTS, 0, nullptr,
-                                           &shotsSize),
-                     "Querying shots size");
+  if (mlir::failed(qdmi::checkError(
+          api().job_get_results(job_.get(), programIndex, QDMI_JOB_RESULT_SHOTS,
+                                0, nullptr, &shotsSize),
+          "Querying shots size"))) {
+    return mlir::failure();
+  }
 
   if (shotsSize == 0) {
-    return {};
+    return std::vector<std::string>{};
   }
 
   std::string shots(shotsSize, '\0');
-  qdmi::throwIfError(api().job_get_results(job_.get(), programIndex,
-                                           QDMI_JOB_RESULT_SHOTS, shotsSize,
-                                           shots.data(), nullptr),
-                     "Querying shots");
+  if (mlir::failed(qdmi::checkError(
+          api().job_get_results(job_.get(), programIndex, QDMI_JOB_RESULT_SHOTS,
+                                shotsSize, shots.data(), nullptr),
+          "Querying shots"))) {
+    return mlir::failure();
+  }
   shots.pop_back();
 
-  return detail::parseShots(shots, getNumShots());
+  auto count = getNumShots();
+  if (mlir::failed(count)) {
+    return mlir::failure();
+  }
+  return detail::parseShots(shots, (*count));
 }
 
-std::map<std::string, size_t> Job::getCounts(const size_t programIndex) const {
+mlir::FailureOr<std::map<std::string, size_t>>
+Job::getCounts(const size_t programIndex) const {
   return getSparseResult<size_t>(
       api(), job_.get(), programIndex, QDMI_JOB_RESULT_HIST_KEYS,
       QDMI_JOB_RESULT_HIST_VALUES, "histogram", "size_t",
       "Histogram key/value count mismatch");
 }
 
-std::vector<std::complex<double>>
+mlir::FailureOr<std::vector<std::complex<double>>>
 Job::getDenseStateVector(const size_t programIndex) const {
   size_t size = 0;
-  qdmi::throwIfError(api().job_get_results(job_.get(), programIndex,
-                                           QDMI_JOB_RESULT_STATEVECTOR_DENSE, 0,
-                                           nullptr, &size),
-                     "Querying dense state vector size");
+  if (mlir::failed(qdmi::checkError(
+          api().job_get_results(job_.get(), programIndex,
+                                QDMI_JOB_RESULT_STATEVECTOR_DENSE, 0, nullptr,
+                                &size),
+          "Querying dense state vector size"))) {
+    return mlir::failure();
+  }
 
   if (size % sizeof(std::complex<double>) != 0) {
-    throw std::runtime_error(
+    return qdmi::emitError(
+        QDMI_ERROR_FATAL,
         "Invalid state vector size: not a multiple of complex<double>");
   }
 
   std::vector<std::complex<double>> stateVector(size /
                                                 sizeof(std::complex<double>));
-  qdmi::throwIfError(api().job_get_results(job_.get(), programIndex,
-                                           QDMI_JOB_RESULT_STATEVECTOR_DENSE,
-                                           size, stateVector.data(), nullptr),
-                     "Querying dense state vector");
+  if (mlir::failed(qdmi::checkError(
+          api().job_get_results(job_.get(), programIndex,
+                                QDMI_JOB_RESULT_STATEVECTOR_DENSE, size,
+                                stateVector.data(), nullptr),
+          "Querying dense state vector"))) {
+    return mlir::failure();
+  }
   return stateVector;
 }
 
-std::vector<double>
+mlir::FailureOr<std::vector<double>>
 Job::getDenseProbabilities(const size_t programIndex) const {
   size_t size = 0;
-  qdmi::throwIfError(api().job_get_results(job_.get(), programIndex,
-                                           QDMI_JOB_RESULT_PROBABILITIES_DENSE,
-                                           0, nullptr, &size),
-                     "Querying dense probabilities size");
+  if (mlir::failed(qdmi::checkError(
+          api().job_get_results(job_.get(), programIndex,
+                                QDMI_JOB_RESULT_PROBABILITIES_DENSE, 0, nullptr,
+                                &size),
+          "Querying dense probabilities size"))) {
+    return mlir::failure();
+  }
 
   if (size % sizeof(double) != 0) {
-    throw std::runtime_error(
+    return qdmi::emitError(
+        QDMI_ERROR_FATAL,
         "Invalid probabilities size: not a multiple of double");
   }
 
   std::vector<double> probabilities(size / sizeof(double));
-  qdmi::throwIfError(api().job_get_results(job_.get(), programIndex,
-                                           QDMI_JOB_RESULT_PROBABILITIES_DENSE,
-                                           size, probabilities.data(), nullptr),
-                     "Querying dense probabilities");
+  if (mlir::failed(qdmi::checkError(
+          api().job_get_results(job_.get(), programIndex,
+                                QDMI_JOB_RESULT_PROBABILITIES_DENSE, size,
+                                probabilities.data(), nullptr),
+          "Querying dense probabilities"))) {
+    return mlir::failure();
+  }
   return probabilities;
 }
 
-std::map<std::string, std::complex<double>>
+mlir::FailureOr<std::map<std::string, std::complex<double>>>
 Job::getSparseStateVector(const size_t programIndex) const {
   return getSparseResult<std::complex<double>>(
       api(), job_.get(), programIndex, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS,
@@ -1138,7 +1444,7 @@ Job::getSparseStateVector(const size_t programIndex) const {
       "complex<double>", "Sparse state vector key/value count mismatch");
 }
 
-std::map<std::string, double>
+mlir::FailureOr<std::map<std::string, double>>
 Job::getSparseProbabilities(const size_t programIndex) const {
   return getSparseResult<double>(
       api(), job_.get(), programIndex,
@@ -1147,85 +1453,144 @@ Job::getSparseProbabilities(const size_t programIndex) const {
       "double", "Sparse probabilities key/value count mismatch");
 }
 
-Device Session::openDevice(const std::string_view id,
-                           const SessionConfig& config) {
-  return Session(config).getDevice(id);
+mlir::FailureOr<Device> Session::openDevice(const std::string_view id,
+                                            const SessionConfig& config) {
+  auto session = Session::create(config);
+  if (mlir::failed(session)) {
+    return mlir::failure();
+  }
+  return session->getDevice(id);
 }
 
-std::vector<std::string> Session::getDeviceIds() {
+mlir::FailureOr<std::vector<std::string>> Session::getDeviceIds() {
   std::vector<std::string> ids;
-  for (const auto& device : getDevices()) {
-    ids.emplace_back(device.getId());
+  const auto devices = getDevices();
+  if (mlir::failed(devices)) {
+    return mlir::failure();
+  }
+  for (const auto& device : *devices) {
+    const auto id = device.getId();
+    if (mlir::failed(id)) {
+      return mlir::failure();
+    }
+    ids.emplace_back(*id);
   }
   return ids;
 }
 
-Device Session::getDevice(const std::string_view id) {
+mlir::FailureOr<Device> Session::getDevice(const std::string_view id) {
   if (id.empty() || id.find('\0') != std::string_view::npos) {
-    throw std::invalid_argument(
+    return qdmi::emitError(
+        QDMI_ERROR_INVALIDARGUMENT,
         "QDMI device ID must not be empty or contain null bytes");
   }
   const auto devices = getDevices();
+  if (mlir::failed(devices)) {
+    return mlir::failure();
+  }
   std::string available;
-  for (const auto& device : devices) {
+  for (const auto& device : *devices) {
     const auto candidateId = device.getId();
-    if (candidateId == id) {
+    if (mlir::failed(candidateId)) {
+      return mlir::failure();
+    }
+    if (*candidateId == id) {
       return device;
     }
     if (!available.empty()) {
       available += ", ";
     }
-    available += candidateId;
+    available += *candidateId;
   }
-  throw std::out_of_range("QDMI driver session has no device with ID '" +
-                          std::string(id) + "'; available IDs: " + available);
+  return qdmi::emitError(QDMI_ERROR_OUTOFRANGE,
+                         "QDMI driver session has no device with ID '" +
+                             std::string(id) +
+                             "'; available IDs: " + available);
 }
 
-Session::Session(const SessionConfig& config) {
-  session_ = allocateSession(config);
-
-  const auto setParameter = [this](const std::optional<std::string>& value,
-                                   QDMI_Session_Parameter param) -> void {
+mlir::FailureOr<Session> Session::create(const SessionConfig& config) {
+  auto allocated = allocateSession(config);
+  if (mlir::failed(allocated)) {
+    return mlir::failure();
+  }
+  Session session;
+  session.session_ = std::move(*allocated);
+  const auto setParameter =
+      [&session](const std::optional<std::string>& value,
+                 QDMI_Session_Parameter param) -> mlir::LogicalResult {
     if (!value) {
-      return;
+      return mlir::success();
     }
-    const auto status = static_cast<QDMI_STATUS>(api().session_set_parameter(
-        session_->handle.get(), param, value->size() + 1U, value->c_str()));
+    const auto status = session.api().session_set_parameter(
+        session.session_->handle.get(), param, value->size() + 1U,
+        value->c_str());
     if (status == QDMI_ERROR_NOTSUPPORTED) {
-      qdmi::diagnostics::info("Session parameter {} not supported (skipped)",
-                              qdmi::toString(param));
-      return;
+      ::mqt::diagnostics::info("Session parameter {} not supported (skipped)",
+                               qdmi::toString(param));
+      return mlir::success();
     }
-    if (status != QDMI_SUCCESS) {
-      std::ostringstream message;
-      message << "Setting session parameter " << qdmi::toString(param) << ": "
-              << qdmi::toString(status) << " (status = " << status << ")";
-      qdmi::throwIfError(status, message.str());
-    }
+    return qdmi::checkError(status, std::string("Setting session parameter ") +
+                                        qdmi::toString(param));
   };
-
-  setParameter(config.token, QDMI_SESSION_PARAMETER_TOKEN);
-  if (config.authFile) {
-    const std::optional authFile = detail::pathToString(*config.authFile);
-    setParameter(authFile, QDMI_SESSION_PARAMETER_AUTHFILE);
+  if (mlir::failed(setParameter(config.token, QDMI_SESSION_PARAMETER_TOKEN))) {
+    return mlir::failure();
   }
-  setParameter(config.authUrl, QDMI_SESSION_PARAMETER_AUTHURL);
-  setParameter(config.username, QDMI_SESSION_PARAMETER_USERNAME);
-  setParameter(config.password, QDMI_SESSION_PARAMETER_PASSWORD);
-  setParameter(config.projectId, QDMI_SESSION_PARAMETER_PROJECTID);
-  setParameter(config.custom1, QDMI_SESSION_PARAMETER_CUSTOM1);
-  setParameter(config.custom2, QDMI_SESSION_PARAMETER_CUSTOM2);
-  setParameter(config.custom3, QDMI_SESSION_PARAMETER_CUSTOM3);
-  setParameter(config.custom4, QDMI_SESSION_PARAMETER_CUSTOM4);
-  setParameter(config.custom5, QDMI_SESSION_PARAMETER_CUSTOM5);
-
-  qdmi::throwIfError(api().session_init(session_->handle.get()),
-                     "Initializing session");
+  if (mlir::failed(
+          setParameter(config.authUrl, QDMI_SESSION_PARAMETER_AUTHURL))) {
+    return mlir::failure();
+  }
+  if (mlir::failed(
+          setParameter(config.username, QDMI_SESSION_PARAMETER_USERNAME))) {
+    return mlir::failure();
+  }
+  if (mlir::failed(
+          setParameter(config.password, QDMI_SESSION_PARAMETER_PASSWORD))) {
+    return mlir::failure();
+  }
+  if (mlir::failed(
+          setParameter(config.projectId, QDMI_SESSION_PARAMETER_PROJECTID))) {
+    return mlir::failure();
+  }
+  if (mlir::failed(
+          setParameter(config.custom1, QDMI_SESSION_PARAMETER_CUSTOM1))) {
+    return mlir::failure();
+  }
+  if (mlir::failed(
+          setParameter(config.custom2, QDMI_SESSION_PARAMETER_CUSTOM2))) {
+    return mlir::failure();
+  }
+  if (mlir::failed(
+          setParameter(config.custom3, QDMI_SESSION_PARAMETER_CUSTOM3))) {
+    return mlir::failure();
+  }
+  if (mlir::failed(
+          setParameter(config.custom4, QDMI_SESSION_PARAMETER_CUSTOM4))) {
+    return mlir::failure();
+  }
+  if (mlir::failed(
+          setParameter(config.custom5, QDMI_SESSION_PARAMETER_CUSTOM5))) {
+    return mlir::failure();
+  }
+  if (config.authFile &&
+      mlir::failed(setParameter(detail::pathToString(*config.authFile),
+                                QDMI_SESSION_PARAMETER_AUTHFILE))) {
+    return mlir::failure();
+  }
+  if (mlir::failed(qdmi::checkError(
+          session.api().session_init(session.session_->handle.get()),
+          "Initializing session"))) {
+    return mlir::failure();
+  }
+  return session;
 }
 
-std::vector<Device> Session::getDevices() {
-  const auto& qdmiDevices =
+mlir::FailureOr<std::vector<Device>> Session::getDevices() {
+  auto qdmiDevicesResult =
       queryProperty<std::vector<QDMI_Device>>(QDMI_SESSION_PROPERTY_DEVICES);
+  if (mlir::failed(qdmiDevicesResult)) {
+    return mlir::failure();
+  }
+  auto& qdmiDevices = (*qdmiDevicesResult);
   std::vector<Device> devices;
   devices.reserve(qdmiDevices.size());
   std::ranges::transform(qdmiDevices, std::back_inserter(devices),

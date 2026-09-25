@@ -13,6 +13,18 @@ endif()
 function(mqt_mlir_apply_target_options target_name)
   target_link_libraries(${target_name} PRIVATE MQT::ProjectOptions)
   llvm_update_compile_flags(${target_name})
+  if(MSVC)
+    # LLVM's helper disables both EH and the normal STL exception ABI. Match Core's /EHsc policy
+    # without changing the RTTI configuration inherited from the installed LLVM.
+    get_target_property(compile_options ${target_name} COMPILE_OPTIONS)
+    list(TRANSFORM compile_options REPLACE "/EHs-c-" "/EHsc")
+    set_property(TARGET ${target_name} PROPERTY COMPILE_OPTIONS ${compile_options})
+    get_target_property(compile_definitions ${target_name} COMPILE_DEFINITIONS)
+    if(compile_definitions)
+      list(REMOVE_ITEM compile_definitions _HAS_EXCEPTIONS=0)
+      set_property(TARGET ${target_name} PROPERTY COMPILE_DEFINITIONS ${compile_definitions})
+    endif()
+  endif()
   mqt_llvm_target_disable_rtti(${target_name})
 
   include(CheckCXXCompilerFlag)

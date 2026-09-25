@@ -28,17 +28,37 @@
 #include <cstddef>
 #include <string>
 #include <string_view>
+#include <variant>
 
 namespace mqt::bench {
 
+/// One validated benchmark instance from the JSON registry.
+using BenchmarkInstance =
+    std::variant<BV, GHZ, Grover, ModularMultiplier, Multiplexer, QFT, QFTAdder,
+                 QPE, RepeatUntilSuccess, Shor, Teleportation, WState>;
+
+/// A validated instance and its normalized metadata, ready for generation.
+struct ParsedBenchmark {
+  BenchmarkInstance instance;
+  std::string benchmarkId;
+  std::string caseId;
+  std::string manifestJSON;
+};
+
+/// Parse and normalize a benchmark, returning a diagnostic on invalid input.
+[[nodiscard]] MQT_CORE_BENCH_EXPORT mlir::FailureOr<ParsedBenchmark>
+parseInstanceSpecificationJSON(
+    std::string_view json,
+    std::string_view source = "<instance-specification>");
+
 /// Return the benchmark ID from a strict instance specification.
-[[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
+[[nodiscard]] MQT_CORE_BENCH_EXPORT mlir::FailureOr<std::string>
 benchmarkIdFromInstanceSpecificationJSON(
     std::string_view json,
     std::string_view source = "<instance-specification>");
 
 /// Return the benchmark ID from a strict manifest envelope.
-[[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
+[[nodiscard]] MQT_CORE_BENCH_EXPORT mlir::FailureOr<std::string>
 benchmarkIdFromManifestJSON(std::string_view json,
                             std::string_view source = "<manifest>");
 
@@ -46,41 +66,42 @@ benchmarkIdFromManifestJSON(std::string_view json,
 [[nodiscard]] MQT_CORE_BENCH_EXPORT std::string listBenchmarksJSON();
 
 /// Return the instance specification schema for a benchmark as canonical JSON.
-[[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
+[[nodiscard]] MQT_CORE_BENCH_EXPORT mlir::FailureOr<std::string>
 describeBenchmarkJSON(std::string_view benchmark);
 
 /// Family-specific JSON conversions and stable semantic case IDs.
 #define MQT_BENCHMARK_FAMILY(TYPE, STEM, ID, DEFINITION_VERSION)               \
-  [[nodiscard]] MQT_CORE_BENCH_EXPORT TYPE                                     \
+  [[nodiscard]] MQT_CORE_BENCH_EXPORT mlir::FailureOr<TYPE>                    \
   STEM##FromInstanceSpecificationJSON(std::string_view json,                   \
                                       std::string_view source =                \
                                           "<instance-specification>");         \
   [[nodiscard]] MQT_CORE_BENCH_EXPORT std::string toInstanceSpecificationJSON( \
       const TYPE& benchmark);                                                  \
-  [[nodiscard]] MQT_CORE_BENCH_EXPORT TYPE STEM##FromManifestJSON(             \
-      std::string_view json, std::string_view source = "<manifest>");          \
+  [[nodiscard]] MQT_CORE_BENCH_EXPORT mlir::FailureOr<TYPE>                    \
+  STEM##FromManifestJSON(std::string_view json,                                \
+                         std::string_view source = "<manifest>");              \
   [[nodiscard]] MQT_CORE_BENCH_EXPORT std::string toManifestJSON(              \
       const TYPE& benchmark);                                                  \
   [[nodiscard]] MQT_CORE_BENCH_EXPORT std::string caseId(const TYPE& benchmark);
 #include "bench/BenchmarkFamilies.inc"
 
 /// Parse sampled outcomes from a strict counts document.
-[[nodiscard]] MQT_CORE_BENCH_EXPORT Counts
+[[nodiscard]] MQT_CORE_BENCH_EXPORT mlir::FailureOr<Counts>
 countsFromJSON(std::string_view json, std::string_view source = "<counts>");
 
 /// Evaluate a counts document against a benchmark manifest.
-[[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
+[[nodiscard]] MQT_CORE_BENCH_EXPORT mlir::FailureOr<std::string>
 evaluateJSON(std::string_view manifest, std::string_view counts,
              std::string_view manifestSource = "<manifest>",
              std::string_view countsSource = "<counts>");
 
 /// Serialize one evaluation result as canonical JSON.
-[[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
+[[nodiscard]] MQT_CORE_BENCH_EXPORT mlir::FailureOr<std::string>
 evaluationToJSON(std::string_view caseId, size_t shots,
                  const Evaluation& evaluation);
 
 /// Serialize classical factor verification without distribution-fit metrics.
-[[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
+[[nodiscard]] MQT_CORE_BENCH_EXPORT mlir::FailureOr<std::string>
 evaluationToJSON(std::string_view caseId, size_t shots,
                  const ShorEvaluation& evaluation);
 

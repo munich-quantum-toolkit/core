@@ -16,3 +16,5 @@ target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQIRRuntime ${llvm_native_l
 
 target_compile_definitions(${TARGET_NAME}
                            PRIVATE QIR_FILES_DIR="${PROJECT_SOURCE_DIR}/test/circuits")
+
+target_include_directories(${TARGET_NAME} PRIVATE ${MQT_MLIR_UNITTESTS_DIR})

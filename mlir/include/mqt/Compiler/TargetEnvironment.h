@@ -11,6 +11,7 @@
 #pragma once
 
 #include "mqt/Compiler/Target.h"
+#include "mqt/Support/Diagnostics.h"
 
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -18,7 +19,6 @@
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/Support/Error.h"
 
 #include <cstdint>
 #include <optional>
@@ -92,19 +92,19 @@ public:
   ///
   /// Numeric versions accept one to three components; omitted components are
   /// zero, and the stored version always uses major.minor.patch.
-  [[nodiscard]] static llvm::Expected<PayloadSpecification>
+  [[nodiscard]] static mlir::FailureOr<PayloadSpecification>
   create(PayloadFormat format, std::vector<ProgramCapability> capabilities = {},
          bool optionalCapabilitiesKnown = false);
 
   /// Reconstruct a context-free value from its typed MLIR attribute.
-  [[nodiscard]] static llvm::Expected<PayloadSpecification>
+  [[nodiscard]] static mlir::FailureOr<PayloadSpecification>
   create(mqt::PayloadSpecAttr attribute);
 
   /// Return the exact payload format.
   [[nodiscard]] const PayloadFormat& format() const noexcept;
 
   /// Return the compiler output selected by the payload format.
-  [[nodiscard]] llvm::Expected<ProgramFormat> compilerOutput() const;
+  [[nodiscard]] mlir::FailureOr<ProgramFormat> compilerOutput() const;
 
   /// Return effective payload capabilities in reported order.
   [[nodiscard]] llvm::ArrayRef<ProgramCapability> capabilities() const noexcept;
@@ -134,7 +134,7 @@ public:
   TargetEnvironment(const CompilerTarget& target, PayloadSpecification payload);
 
   /// Reconstruct the context-free pair from its typed MLIR attribute.
-  [[nodiscard]] static llvm::Expected<TargetEnvironment>
+  [[nodiscard]] static mlir::FailureOr<TargetEnvironment>
   create(mqt::TargetEnvAttr attribute);
 
   /// Return the compiler target.

@@ -97,8 +97,9 @@ protected:
                                        &context_);
   }
 
-  LogicalResult applyInsertPattern(InsertOp insert,
-                                   RewriterBase::Listener* listener = nullptr) {
+  mlir::LogicalResult
+  applyInsertPattern(InsertOp insert,
+                     RewriterBase::Listener* listener = nullptr) {
     RewritePatternSet patterns(&context_);
     InsertOp::getCanonicalizationPatterns(patterns, &context_);
     FrozenRewritePatternSet frozen(std::move(patterns));

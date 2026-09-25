@@ -75,4 +75,5 @@ function(add_mqt_python_binding package_name target_name)
     TARGETS ${target_name}
     DESTINATION ${ARG_INSTALL_DIR}
     COMPONENT ${MQT_${package_name}_TARGET_NAME}_Python)
+  target_include_directories(${target_name} PRIVATE ${PROJECT_SOURCE_DIR}/bindings)
 endfunction()

@@ -11,12 +11,12 @@
 #pragma once
 
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
+#include "mqt/Support/Diagnostics.h"
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/Support/Error.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -78,7 +78,7 @@ public:
   class DurationUnit {
   public:
     /// Create a validated duration unit.
-    [[nodiscard]] static llvm::Expected<DurationUnit>
+    [[nodiscard]] static mlir::FailureOr<DurationUnit>
     create(std::string unit, double scaleFactor);
 
     /// Return the target's duration unit.
@@ -98,7 +98,7 @@ public:
   class Site {
   public:
     /// Create validated hardware-site metadata.
-    [[nodiscard]] static llvm::Expected<Site>
+    [[nodiscard]] static mlir::FailureOr<Site>
     create(SiteId id, std::optional<std::string> name = std::nullopt,
            std::optional<uint64_t> t1 = std::nullopt,
            std::optional<uint64_t> t2 = std::nullopt);
@@ -129,7 +129,7 @@ public:
   class SiteTuple {
   public:
     /// Create a validated site tuple with optional calibration overrides.
-    [[nodiscard]] static llvm::Expected<SiteTuple>
+    [[nodiscard]] static mlir::FailureOr<SiteTuple>
     create(std::vector<SiteId> sites,
            std::optional<uint64_t> duration = std::nullopt,
            std::optional<double> fidelity = std::nullopt);
@@ -192,14 +192,14 @@ public:
     };
 
     /// Create a validated operation capability.
-    [[nodiscard]] static llvm::Expected<OperationCapability>
+    [[nodiscard]] static mlir::FailureOr<OperationCapability>
     create(std::string name, size_t arity, size_t numParameters,
            std::vector<SiteTuple> siteTuples = {},
            std::optional<uint64_t> duration = std::nullopt,
            std::optional<double> fidelity = std::nullopt);
 
     /// Create a validated operation capability.
-    [[nodiscard]] static llvm::Expected<OperationCapability>
+    [[nodiscard]] static mlir::FailureOr<OperationCapability>
     create(std::string name, Arity arity, size_t numParameters,
            std::vector<SiteTuple> siteTuples = {},
            std::optional<uint64_t> duration = std::nullopt,
@@ -311,31 +311,31 @@ public:
   };
 
   /// Create an unnamed target with dense site IDs `0..numSites-1`.
-  [[nodiscard]] static llvm::Expected<CompilerTarget>
+  [[nodiscard]] static mlir::FailureOr<CompilerTarget>
   create(size_t numSites, Connectivity connectivity,
          NativeOperations nativeOperations,
          std::optional<DurationUnit> durationUnit = std::nullopt);
 
   /// Create a named target with dense site IDs `0..numSites-1`.
-  [[nodiscard]] static llvm::Expected<CompilerTarget>
+  [[nodiscard]] static mlir::FailureOr<CompilerTarget>
   create(std::string name, size_t numSites, Connectivity connectivity,
          NativeOperations nativeOperations,
          std::optional<DurationUnit> durationUnit = std::nullopt);
 
   /// Create an unnamed target from detailed sites.
-  [[nodiscard]] static llvm::Expected<CompilerTarget>
+  [[nodiscard]] static mlir::FailureOr<CompilerTarget>
   create(std::vector<Site> sites, Connectivity connectivity,
          NativeOperations nativeOperations,
          std::optional<DurationUnit> durationUnit = std::nullopt);
 
   /// Create a named target from detailed sites.
-  [[nodiscard]] static llvm::Expected<CompilerTarget>
+  [[nodiscard]] static mlir::FailureOr<CompilerTarget>
   create(std::string name, std::vector<Site> sites, Connectivity connectivity,
          NativeOperations nativeOperations,
          std::optional<DurationUnit> durationUnit = std::nullopt);
 
   /// Reconstruct a validated compiler target from its MLIR attribute.
-  [[nodiscard]] static llvm::Expected<CompilerTarget>
+  [[nodiscard]] static mlir::FailureOr<CompilerTarget>
   create(mqt::CompilationTargetAttr attribute);
 
   /// Copying shares immutable storage; rvalues copy and keep the source valid.
@@ -429,7 +429,7 @@ private:
 
   explicit CompilerTarget(std::shared_ptr<const Storage> storage);
 
-  [[nodiscard]] static llvm::Expected<CompilerTarget>
+  [[nodiscard]] static mlir::FailureOr<CompilerTarget>
   createImpl(std::optional<std::string> name, std::vector<Site> sites,
              Connectivity connectivity, NativeOperations nativeOperations,
              std::optional<DurationUnit> durationUnit);

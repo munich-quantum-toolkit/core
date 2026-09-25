@@ -13,6 +13,7 @@
 #include "mqt/bench/Generate.h"
 
 #include "TestUtils.h"
+#include "support/TestSupport.hpp"
 
 #include "gtest/gtest.h"
 
@@ -23,13 +24,14 @@ namespace mqt::bench {
 using namespace mlir;
 
 TEST(GenerateProgramTest, EmitsStructuredBVWithMethodSpecificResources) {
-  const BV staticBenchmark{{.hiddenBitstring = "101"}};
-  const BV dynamicBenchmark{
-      {.hiddenBitstring = "101", .method = BVMethod::Dynamic}};
+  const auto staticBenchmark =
+      ::mqt::test::value(BV::create({.hiddenBitstring = "101"}));
+  const auto dynamicBenchmark = ::mqt::test::value(
+      BV::create({.hiddenBitstring = "101", .method = BVMethod::Dynamic}));
   auto staticProgram = generate(staticBenchmark);
   auto dynamicProgram = generate(dynamicBenchmark);
-  ASSERT_TRUE(staticProgram);
-  ASSERT_TRUE(dynamicProgram);
+  ASSERT_TRUE(succeeded(staticProgram));
+  ASSERT_TRUE(succeeded(dynamicProgram));
 
   EXPECT_EQ(test::countOps<qc::AllocOp>(staticProgram->module()), 1U);
   EXPECT_EQ(test::countOps<memref::AllocOp>(staticProgram->module()), 1U);

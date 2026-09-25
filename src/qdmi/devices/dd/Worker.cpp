@@ -13,6 +13,7 @@
 #include "qdmi/common/DeviceConfiguration.hpp"
 
 #include "WorkerProtocol.hpp"
+#include "support/Diagnostics.hpp"
 
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallString.h"
@@ -26,7 +27,6 @@
 #include <cerrno>
 #include <chrono>
 #include <filesystem>
-#include <iostream>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -101,8 +101,8 @@ bool Worker::start() {
   llvm::SmallString<128> directory;
   if (const auto error =
           llvm::sys::fs::createUniqueDirectory("mqt-dd", directory)) {
-    std::cerr << "Cannot create DDSIM worker socket: " + error.message()
-              << '\n';
+    std::ignore =
+        mqt::emitError("Cannot create DDSIM worker socket: " + error.message());
     return false;
   }
   const llvm::scope_exit cleanup(
@@ -111,7 +111,7 @@ bool Worker::start() {
   llvm::sys::path::append(socketPath, "socket");
   auto listener = llvm::ListeningSocket::createUnix(socketPath);
   if (!listener) {
-    std::cerr << llvm::toString(listener.takeError()) << '\n';
+    std::ignore = mqt::emitError(llvm::toString(listener.takeError()));
     return false;
   }
   const auto executablePath =
@@ -127,7 +127,7 @@ bool Worker::start() {
     process_ = llvm::sys::ExecuteNoWait(executable, {executable, socketPath},
                                         std::nullopt, {}, 0, &error);
     if (process_.Pid == 0) {
-      std::cerr << "Cannot start DDSIM worker: " + error << '\n';
+      std::ignore = mqt::emitError("Cannot start DDSIM worker: " + error);
       return false;
     }
   }
@@ -151,22 +151,36 @@ bool Worker::start() {
       return false;
     }
   }
-  std::cerr << "DDSIM worker did not connect before the startup deadline."
-            << '\n';
+  std::ignore = mqt::emitError(
+      "DDSIM worker did not connect before the startup deadline.");
   return false;
 }
 bool Worker::execute(const WorkerRequest& request, WorkerResponse& response) {
   if (!stream_ && !start()) {
     return false;
   }
-  std::string bytes;
-  if (writeFrame(*stream_, encode(request)) && readFrame(*stream_, bytes) &&
-      decode(bytes, response)) {
-    return true;
+  if (writeFrame(*stream_, encode(request))) {
+    std::string bytes;
+    while (readFrame(*stream_, bytes)) {
+      WorkerResponse message;
+      if (!decode(bytes, message)) {
+        break;
+      }
+      for (const auto& diagnostic : message.diagnostics) {
+        mqt::emitDiagnostic(diagnostic);
+      }
+      if (message.completed) {
+        response = std::move(message);
+        return true;
+      }
+      if (message.succeeded || !message.shots.empty() || message.state ||
+          message.output || message.diagnostics.empty()) {
+        break;
+      }
+    }
   }
-
-  std::cerr << "DDSIM worker exited or returned an incomplete response."
-            << '\n';
+  std::ignore =
+      mqt::emitError("DDSIM worker exited or returned an incomplete response.");
   return false;
 }
 WorkerPool::~WorkerPool() { shutdown(); }

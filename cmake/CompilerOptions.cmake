@@ -20,6 +20,7 @@ function(enable_project_options target_name)
 
   if(MSVC)
     target_compile_options(${target_name} INTERFACE /utf-8 /Zm10 /EHsc)
+    target_compile_definitions(${target_name} INTERFACE NOMINMAX)
   else()
     option(ENABLE_COVERAGE "Enable coverage reporting for gcc/clang" FALSE)
     if(ENABLE_COVERAGE)
@@ -65,5 +66,21 @@ function(enable_project_options target_name)
   # Expose missing direct includes by disabling libc++'s optional transitive includes.
   if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
     target_compile_definitions(${target_name} INTERFACE _LIBCPP_REMOVE_TRANSITIVE_INCLUDES)
+  endif()
+endfunction()
+
+# Keep compiler exception policy here. MSVC retains its normal STL and unwind ABI.
+function(mqt_target_disable_exceptions target_name)
+  if(NOT MSVC)
+    target_compile_options(${target_name} PRIVATE -fno-exceptions)
+  endif()
+endfunction()
+
+# Dependency and language boundaries contain exceptions locally.
+function(mqt_source_enable_exceptions source)
+  if(MSVC)
+    set_source_files_properties(${source} PROPERTIES COMPILE_OPTIONS "/EHsc")
+  else()
+    set_source_files_properties(${source} PROPERTIES COMPILE_OPTIONS "-fexceptions")
   endif()
 endfunction()

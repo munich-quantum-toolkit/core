@@ -329,7 +329,7 @@ buildAdjacentInsertExtractProgram(MLIRContext* context,
   return moduleOp;
 }
 
-static LogicalResult canonicalize(ModuleOp moduleOp) {
+static mlir::LogicalResult canonicalize(ModuleOp moduleOp) {
   PassManager manager(moduleOp.getContext());
   manager.addPass(createCanonicalizerPass());
   return manager.run(moduleOp);

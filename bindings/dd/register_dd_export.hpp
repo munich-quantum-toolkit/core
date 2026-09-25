@@ -14,6 +14,8 @@
 #include "dd/Export.hpp"
 #include "dd/Package.hpp"
 
+#include "Result.hpp"
+
 #include "nanobind/nanobind.h"
 #include "nanobind/stl/string.h" /// NOLINT(misc-include-cleaner)
 
@@ -52,7 +54,8 @@ Notes:
       [](dd::Package& p, const nb::bytes& data, const bool binary = true) {
         std::istringstream is(std::string(data.c_str(), data.size()),
                               std::ios::in | std::ios::binary);
-        return p.deserialize<Node>(is, binary);
+        return ::mqt::bindings::invoke(
+            [&] { return p.deserialize<Node>(is, binary); });
       },
       "dd_package"_a, "data"_a, "binary"_a = true,
       /// keep the DD package alive while the returned DD is alive.

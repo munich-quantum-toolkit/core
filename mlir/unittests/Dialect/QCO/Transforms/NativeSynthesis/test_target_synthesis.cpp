@@ -21,6 +21,7 @@
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 
 #include "ExactUnitaryTest.h"
+#include "support/TestSupport.hpp"
 
 #include "gtest/gtest.h"
 
@@ -89,8 +90,8 @@ using mlir::qco::UOp;
 using mlir::qco::XOp;
 using mlir::qco::ZOp;
 
-template <class T> [[nodiscard]] static T valid(llvm::Expected<T> value) {
-  return llvm::cantFail(std::move(value));
+template <class T> [[nodiscard]] static T valid(mlir::FailureOr<T> value) {
+  return ::mqt::test::value(std::move(value));
 }
 
 [[nodiscard]] static mlir::func::FuncOp mainFunction(ModuleOp module) {

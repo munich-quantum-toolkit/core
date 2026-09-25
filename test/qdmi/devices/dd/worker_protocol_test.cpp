@@ -9,6 +9,7 @@
  */
 
 #include "WorkerProtocol.hpp"
+#include "support/Diagnostics.hpp"
 
 #include "gtest/gtest.h"
 
@@ -91,19 +92,32 @@ TEST(WorkerProtocol, PreservesExactPayloadAndResultMetadata) {
   response.output = "OUTPUT\tBOOL\ttrue\n";
   response.qubits = 2;
   response.state = std::string("DD\0bytes", 8);
+  response.diagnostics.push_back({
+      .message = "warning",
+      .category = mqt::ErrorCategory::NotSupported,
+      .severity = mqt::DiagnosticSeverity::Warning,
+      .status = -5,
+  });
   WorkerResponse result;
   ASSERT_TRUE(decode(encode(response), result));
+  EXPECT_TRUE(result.completed);
   EXPECT_TRUE(result.succeeded);
   EXPECT_EQ(result.shots, response.shots);
   EXPECT_EQ(result.output, response.output);
   EXPECT_EQ(result.qubits, response.qubits);
   EXPECT_EQ(result.state, response.state);
+  ASSERT_EQ(result.diagnostics.size(), 1);
+  EXPECT_EQ(result.diagnostics[0].message, "warning");
+  EXPECT_EQ(result.diagnostics[0].category, mqt::ErrorCategory::NotSupported);
+  EXPECT_EQ(result.diagnostics[0].severity, mqt::DiagnosticSeverity::Warning);
+  EXPECT_EQ(result.diagnostics[0].status, -5);
 }
 
 TEST(WorkerProtocol, RejectsTruncationTrailingBytesAndInvalidResults) {
   WorkerResponse response;
   response.succeeded = true;
   response.shots = {"01"};
+  response.diagnostics.push_back({.message = "error"});
   const auto bytes = encode(response);
   for (size_t size = 0; size < bytes.size(); ++size) {
     WorkerResponse result;
@@ -116,6 +130,18 @@ TEST(WorkerProtocol, RejectsTruncationTrailingBytesAndInvalidResults) {
   EXPECT_FALSE(decode(bytes + "x", result));
   response.shots = {"02"};
   EXPECT_FALSE(decode(encode(response), result));
+  response.shots.clear();
+  auto invalidMetadata = encode(response);
+  const auto categoryOffset =
+      invalidMetadata.find("error") + std::string("error").size();
+  ASSERT_LT(categoryOffset + 1, invalidMetadata.size());
+  invalidMetadata[categoryOffset + 1] = static_cast<char>(255);
+  EXPECT_FALSE(decode(invalidMetadata, result));
+  invalidMetadata[categoryOffset + 1] =
+      static_cast<char>(mqt::DiagnosticSeverity::Error);
+  invalidMetadata[categoryOffset] = static_cast<char>(255);
+  EXPECT_FALSE(decode(invalidMetadata, result));
+
   const auto request = encode(WorkerRequest{
       .format = 7,
       .program = "payload",

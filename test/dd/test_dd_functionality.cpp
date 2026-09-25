@@ -15,6 +15,8 @@
 #include "dd/RealNumber.hpp"
 #include "dd/StateGeneration.hpp"
 
+#include "support/TestSupport.hpp"
+
 #include "gtest/gtest.h"
 
 #include <cmath>
@@ -25,8 +27,9 @@
 namespace dd {
 
 TEST(DDGateConstruction, AppliesGlobalPhase) {
-  Package package(1);
-  auto state = makeZeroState(1, package);
+  auto packageOwner = ::mqt::test::value(Package::create(1));
+  auto& package = *packageOwner;
+  auto state = ::mqt::test::value(makeZeroState(1, package));
 
   const auto phased = applyGlobalPhase(state, std::numbers::pi / 2., package);
   EXPECT_EQ(state, phased);
@@ -49,7 +52,8 @@ TEST(DDGateConstruction, AppliesGlobalPhase) {
 }
 
 TEST(DDGateConstruction, ScalarGlobalPhaseSurvivesCollection) {
-  Package package(0);
+  auto packageOwner = ::mqt::test::value(Package::create(0));
+  auto& package = *packageOwner;
   auto state = vEdge::one();
   applyGlobalPhase(state, 0.3, package);
   package.garbageCollect(true);
@@ -62,9 +66,10 @@ TEST(DDGateConstruction, ScalarGlobalPhaseSurvivesCollection) {
 TEST(DDGateConstruction, VectorKroneckerWithTerminal) {
   constexpr std::size_t nq = 1;
   constexpr auto root = vEdge::one();
-  Package package(nq);
+  auto packageOwner = ::mqt::test::value(Package::create(nq));
+  auto& package = *packageOwner;
 
-  const auto zeroState = makeZeroState(nq, package);
+  const auto zeroState = ::mqt::test::value(makeZeroState(nq, package));
   const auto extendedRoot = package.kronecker(zeroState, root, 0);
   EXPECT_EQ(zeroState, extendedRoot);
 

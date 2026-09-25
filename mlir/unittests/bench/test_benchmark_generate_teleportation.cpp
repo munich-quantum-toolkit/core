@@ -15,6 +15,7 @@
 #include "mqt/bench/Generate.h"
 
 #include "TestUtils.h"
+#include "support/TestSupport.hpp"
 
 #include "gtest/gtest.h"
 
@@ -30,7 +31,7 @@ using namespace mlir;
 
 TEST(GenerateProgramTest, KeepsTeleportationFeedForwardAndReturnsOnlyBob) {
   auto program = generate(Teleportation{});
-  ASSERT_TRUE(program);
+  ASSERT_TRUE(succeeded(program));
   auto moduleOp = program->module();
 
   SmallVector<qc::MeasureOp> measurements;

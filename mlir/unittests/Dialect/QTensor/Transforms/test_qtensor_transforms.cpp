@@ -39,7 +39,7 @@ using namespace mlir;
 namespace {
 TEST(QTensorTransformsTest, ShrinkToFitPreservesMetadata) {
   DialectRegistry registry;
-  registry.insert<arith::ArithDialect, func::FuncDialect, mqt::MQTDialect,
+  registry.insert<arith::ArithDialect, func::FuncDialect, mlir::mqt::MQTDialect,
                   qco::QCODialect, qtensor::QTensorDialect>();
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
@@ -74,13 +74,13 @@ TEST(QTensorTransformsTest, ShrinkToFitPreservesMetadata) {
   EXPECT_EQ(cast<RankedTensorType>(allocation.getType()).getShape(),
             ArrayRef<int64_t>{1});
   EXPECT_EQ(allocation->getAttrOfType<StringAttr>(
-                mqt::MQTDialect::RegisterNameAttrHelper::getNameStr()),
+                mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr()),
             StringAttr::get(&context, "q"));
 }
 
 TEST(QTensorTransformsTest, HugeDeclaredTensorUsesSparseShrinkPlan) {
   DialectRegistry registry;
-  registry.insert<arith::ArithDialect, func::FuncDialect, mqt::MQTDialect,
+  registry.insert<arith::ArithDialect, func::FuncDialect, mlir::mqt::MQTDialect,
                   qco::QCODialect, qtensor::QTensorDialect>();
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
