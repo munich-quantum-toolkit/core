@@ -112,9 +112,6 @@ Hellinger fidelity.
 
 - Work through the {doc}`compiler tutorial <tutorials/index>` to explain
   representations, optimizations, control flow, and hardware constraints.
-- Read the [Shor benchmark reference](benchmarks.md#shor-order-finding) for
-  input limits and JSON interfaces.
-- Try the [QPE examples](benchmarks.md#quantum-phase-estimation) to isolate
-  phase estimation with a known eigenstate.
 - Use {doc}`mlir/target_compilation` and {doc}`qdmi/driver` to compile for other
   devices and inspect their capabilities.
+- Explore {doc}`benchmarks` for other program families and reference metrics.

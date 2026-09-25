@@ -22,7 +22,9 @@
 namespace mqt::bench {
 
 /// Parameters for semiclassical order finding with 2n phase bits and 2n+3
-/// qubits. `number` must be odd and satisfy `3 <= number <= MAX_NUMBER`.
+/// qubits.
+///
+/// `number` must be odd and satisfy `3 <= number <= MAX_NUMBER`.
 /// `base` must satisfy `1 < base < number` and be coprime to `number`.
 struct ShorOptions {
   static constexpr uint64_t MAX_NUMBER = (uint64_t{1} << 31U) - 1U;

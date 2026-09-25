@@ -474,7 +474,7 @@ error correction, magic-state distillation, or cultivation.
 
 The `shor` family implements the semiclassical circuit in Sections 2.3–2.4 of
 [Beauregard's algorithm](https://arxiv.org/abs/quant-ph/0205095). An odd
-`number` from 3 through $2^{31}-1$ and a coprime `base` with
+`number` from $3$ through $2^{31}-1$ and a coprime `base` with
 $1 < \mathtt{base} < \mathtt{number}$ (default 2) define an instance. Prime
 moduli are valid. For an $n$-bit modulus, the circuit uses $2n+3$ qubits and
 returns $2n$ phase bits.

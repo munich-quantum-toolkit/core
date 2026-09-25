@@ -329,9 +329,8 @@ Shor's algorithm
 
 order finding
   **Preferred term:** order finding. **Accepted aliases:** none. Finding the
-  smallest positive exponent :math:`r` for which a given base :math:`a`
-  satisfies :math:`a^r \equiv 1 \pmod{N}`, with :math:`a` coprime to
-  :math:`N`.
+  smallest positive exponent $r$ for which a given base $a$ satisfies
+  $a^r \equiv 1 \pmod{N}$, with $a$ coprime to $N$.
 
 continued fraction
   **Preferred term:** continued fraction. **Accepted aliases:** none. A nested
