@@ -2339,6 +2339,10 @@ private:
       const SyntaxExpressionId syntaxId,
       const std::optional<uint64_t> expectedWidth = std::nullopt) {
     const auto& expression = syntax.expressions[syntaxId];
+    if (expression.kind == Expr::Kind::Slice) {
+      return fail(expression.location,
+                  "classical slice expressions are not supported");
+    }
     if (expression.kind == Expr::Kind::BitString) {
       llvm::SmallString<64> digits;
       for (char digit : expression.identifier) {
@@ -2799,6 +2803,9 @@ private:
     case Expr::Kind::Index:
       return fail(expression.location,
                   "expected a scalar arithmetic expression");
+    case Expr::Kind::Slice:
+      return fail(expression.location,
+                  "classical slice expressions are not supported");
     case Expr::Kind::Int:
     case Expr::Kind::Float:
     case Expr::Kind::Bool:
@@ -3088,6 +3095,63 @@ private:
     return success();
   }
 
+  [[nodiscard]] FailureOr<std::vector<uint64_t>>
+  constantSliceIndices(const Slice& slice, uint64_t width, SMLoc location) {
+    if ((slice.start && !isConstantExpression(*slice.start)) ||
+        (slice.step && !isConstantExpression(*slice.step)) ||
+        (slice.stop && !isConstantExpression(*slice.stop))) {
+      return fail(location, "runtime register slices are not supported");
+    }
+    bool positive = true;
+    uint64_t stride = 1;
+    if (slice.step) {
+      MQT_OQ3_TRY_ASSIGN(constant, evaluateConstant(*slice.step));
+      if (!isInteger(constant.type)) {
+        return fail(location,
+                    "register slice step must be an integer expression");
+      }
+      if (constant.type == ScalarType::Uint) {
+        stride = std::get<uint64_t>(constant.value);
+      } else {
+        const auto step = std::get<int64_t>(constant.value);
+        positive = step > 0;
+        /// Unsigned magnitude also handles INT64_MIN without signed overflow.
+        stride = positive ? static_cast<uint64_t>(step)
+                          : uint64_t{0} - static_cast<uint64_t>(step);
+      }
+    }
+    if (stride == 0) {
+      return fail(location, "register slice step must not be zero");
+    }
+    const auto endpoint = [&](std::optional<SyntaxExpressionId> id,
+                              uint64_t fallback) -> FailureOr<uint64_t> {
+      if (!id) {
+        return fallback;
+      }
+      MQT_OQ3_TRY_ASSIGN(value, constantIndex(*id, width, location));
+      if (!value || *value >= width) {
+        return fail(location, "register slice index is out of bounds");
+      }
+      return *value;
+    };
+    MQT_OQ3_TRY_ASSIGN(start, endpoint(slice.start, positive ? 0 : width - 1));
+    MQT_OQ3_TRY_ASSIGN(stop, endpoint(slice.stop, positive ? width - 1 : 0));
+    if ((positive && start > stop) || (!positive && start < stop)) {
+      return fail(location, "register slice must not be empty");
+    }
+    const auto distance = positive ? stop - start : start - stop;
+    std::vector<uint64_t> indices;
+    indices.reserve(distance / stride + 1);
+    for (uint64_t offset = 0; offset <= distance;) {
+      indices.push_back(positive ? start + offset : start - offset);
+      if (stride > distance - offset) {
+        break;
+      }
+      offset += stride;
+    }
+    return indices;
+  }
+
   [[nodiscard]] LogicalResult analyzeBody(ArrayRef<SyntaxStatementId> source,
                                           std::vector<StatementId>& destination,
                                           const bool global) {
@@ -3375,6 +3439,9 @@ private:
   [[nodiscard]] LogicalResult
   analyzeAssignment(SMLoc location, const SyntaxAssignment& assignment,
                     std::vector<StatementId>& destination) {
+    if (assignment.target.slice) {
+      return fail(location, "classical slice assignments are not supported");
+    }
     const auto* symbol = lookup(assignment.target.identifier);
     if (symbol != nullptr && symbol->kind == SymbolKind::Scalar) {
       if (assignment.target.index) {
@@ -4778,19 +4845,24 @@ private:
     }
 
     std::vector<std::vector<QubitReference>> selections;
-    size_t broadcastWidth = 1;
+    std::optional<size_t> registerWidth;
     for (const auto& operand : call.operands) {
       MQT_OQ3_TRY_ASSIGN(selection, resolveQubitOperand(operand));
-      if (selection.size() > 1) {
-        if (broadcastWidth != 1 && broadcastWidth != selection.size()) {
+      const auto* symbol = lookup(operand.identifier);
+      const bool registerOperand = !operand.index && symbol != nullptr &&
+                                   symbol->kind == SymbolKind::Register &&
+                                   !program.registers[symbol->id].isScalar;
+      if (registerOperand) {
+        if (registerWidth && *registerWidth != selection.size()) {
           return fail(call.location,
                       "all broadcasting operands must have the same width");
         }
-        broadcastWidth = selection.size();
+        registerWidth = selection.size();
       }
       selections.push_back(std::move(selection));
     }
 
+    const auto broadcastWidth = registerWidth.value_or(1);
     std::vector<GateApplication> applications;
     applications.reserve(broadcastWidth);
     size_t affineComparisons = 0;
@@ -4864,7 +4936,7 @@ private:
         return fail(operand.location,
                     "unknown gate-local qubit '" + operand.identifier + "'");
       }
-      if (operand.index) {
+      if (operand.index || operand.slice) {
         return fail(operand.location, "gate-local qubits cannot be indexed");
       }
       return std::vector<QubitReference>{
@@ -4882,6 +4954,22 @@ private:
     }
     const auto reg = static_cast<RegisterId>(symbol->id);
     const auto width = program.registers[reg].width;
+    if (operand.slice && program.registers[reg].isScalar) {
+      return fail(operand.location, "cannot slice a scalar qubit");
+    }
+    if (operand.slice) {
+      MQT_OQ3_TRY_ASSIGN(indices, constantSliceIndices(*operand.slice, width,
+                                                       operand.location));
+      std::vector<QubitReference> selection;
+      for (const auto index : indices) {
+        selection.push_back({
+            .kind = QubitReferenceKind::Register,
+            .symbol = reg,
+            .index = index,
+        });
+      }
+      return selection;
+    }
     if (!operand.index) {
       std::vector<QubitReference> selection;
       selection.reserve(width);
@@ -4967,6 +5055,18 @@ private:
     }
     const auto reg = static_cast<RegisterId>(symbol->id);
     const auto width = program.registers[reg].width;
+    if (reference.slice && program.registers[reg].isScalar) {
+      return fail(reference.location, "cannot slice a scalar bit");
+    }
+    if (reference.slice) {
+      MQT_OQ3_TRY_ASSIGN(indices, constantSliceIndices(*reference.slice, width,
+                                                       reference.location));
+      std::vector<frontend::BitReference> result;
+      for (const auto index : indices) {
+        result.push_back({.reg = reg, .index = index});
+      }
+      return result;
+    }
     if (!reference.index) {
       std::vector<frontend::BitReference> result;
       result.reserve(width);

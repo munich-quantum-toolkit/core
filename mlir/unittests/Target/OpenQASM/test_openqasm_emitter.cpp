@@ -62,6 +62,39 @@ using namespace mlir::openqasm::test;
 
 namespace {
 
+TEST(OpenQASMTargetTest, PreservesOneBarrierForConstantSelections) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+qubit[4] q;
+qubit[3] r;
+const int first = 3;
+const int step = -2;
+barrier q[first:step:0], r[1:2];
+)qasm";
+  MLIRContext context;
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  PassManager manager(&context);
+  manager.addPass(createCanonicalizerPass());
+  ASSERT_TRUE(succeeded(manager.run(*moduleOp)));
+  size_t barriers = 0;
+  moduleOp->walk([&](qc::BarrierOp barrier) {
+    ++barriers;
+    ASSERT_EQ(barrier.getQubits().size(), 4);
+    const auto expected = std::to_array<uint64_t>({3, 1, 1, 2});
+    for (auto [qubit, index] : llvm::zip_equal(barrier.getQubits(), expected)) {
+      auto load = qubit.getDefiningOp<memref::LoadOp>();
+      ASSERT_TRUE(load);
+      APInt value;
+      ASSERT_TRUE(
+          matchPattern(load.getIndices().front(), m_ConstantInt(&value)));
+      EXPECT_EQ(value.getZExtValue(), index);
+    }
+  });
+  EXPECT_EQ(barriers, 1);
+}
+
 TEST(OpenQASMTargetTest, ImportsNonNullTerminatedSourceView) {
   std::string storage = "OPENQASM 3.1; qubit q; U(0, 0, 0) q;invalid suffix";
   const auto source = StringRef(storage).take_front(storage.find("invalid"));

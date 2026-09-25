@@ -36,6 +36,91 @@ using namespace mlir::openqasm::test;
 
 namespace {
 
+TEST(OpenQASMFrontendTest, ResolvesRegisterSlicesInSelectionOrder) {
+  using namespace openqasm::frontend;
+  const auto cases =
+      std::to_array<std::pair<StringRef, std::vector<uint64_t>>>({
+          {"0:2", {0, 1, 2}},
+          {"1::5", {1, 2, 3, 4, 5}},
+          {"::2", {0, 1, 2}},
+          {"1:2:5", {1, 3, 5}},
+          {"5:-2:0", {5, 3, 1}},
+          {"-3:-1", {3, 4, 5}},
+          {":", {0, 1, 2, 3, 4, 5}},
+          {":-2:", {5, 3, 1}},
+          {"2:2", {2}},
+          {"0:9223372036854775807:5", {0}},
+          {"5:(-9223372036854775807 - 1):0", {5}},
+          {"0:uint(-1):5", {0}},
+      });
+  for (const auto& [slice, expected] : cases) {
+    SCOPED_TRACE(slice.str());
+    auto analyzed =
+        analyzeOpenQASM("OPENQASM 3.1; qubit[6] q; x q[" + slice.str() +
+                        "]; "
+                        "reset q[" +
+                        slice.str() + "]; barrier q[" + slice.str() +
+                        "]; "
+                        "bit[6] c = 0; measure q[" +
+                        slice.str() + "] -> c[" + slice.str() + "];");
+    ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+    std::vector<uint64_t> actual;
+    for (const auto& statement : analyzed.program->statements) {
+      if (const auto* gate = std::get_if<GateApplication>(&statement.data)) {
+        actual.push_back(gate->qubits.front().index);
+      }
+      if (const auto* measure =
+              std::get_if<MeasurementStatement>(&statement.data)) {
+        ASSERT_EQ(measure->qubits.size(), expected.size());
+        for (size_t i = 0; i < expected.size(); ++i) {
+          EXPECT_EQ(measure->qubits[i].index, expected[i]);
+          EXPECT_EQ(measure->targets[i].index, expected[i]);
+        }
+      }
+    }
+    EXPECT_EQ(actual, expected);
+  }
+}
+
+TEST(OpenQASMFrontendTest, RejectsInvalidRegisterSlices) {
+  const auto cases = std::to_array<std::pair<StringRef, StringRef>>({
+      {"x q[0:0:2];", "step must not be zero"},
+      {"x q[2:0];", "must not be empty"},
+      {"x q[0:-1:2];", "must not be empty"},
+      {"x q[-4:1];", "out of bounds"},
+      {"x q[0:3];", "out of bounds"},
+      {"x q[0:1.5];", "integer expression"},
+      {"x q[0:true:2];", "integer expression"},
+      {"cx q[0:1], q[0:1];", "distinct qubits"},
+      {"cx q[0:1], r[0:2];", "same width"},
+      {"cx q[0:0], r[0:2];", "same width"},
+      {"cx q[0:2], r[0:0];", "same width"},
+      {"measure q[0:1] -> c;", "same width"},
+      {"qubit scalar; x scalar[:];", "scalar qubit"},
+      {"bit scalar = 0; measure q[0:0] -> scalar[:];", "scalar bit"},
+      {"int last = 2; x q[0:last];", "runtime register slices"},
+      {"int last = 2; reset q[0:last];", "runtime register slices"},
+      {"int last = 2; measure q[0:last] -> c;", "runtime register slices"},
+      {"int last = 2; barrier q[0:last];", "runtime register slices"},
+      {"c[0:1] = 0;", "classical slice assignments"},
+      {"c[2:-1:0] ^= \"001\";", "indexed compound assignments"},
+      {"bit[2] value = c[0:1];", "classical slice expressions"},
+      {"gate local a { x a[:]; }", "cannot be indexed"},
+      {"ctrl(2) @ x q[0:1], r[0];", "qubit operands"},
+  });
+  for (const auto& [statement, diagnostic] : cases) {
+    SCOPED_TRACE(statement.str());
+    auto analyzed = openqasm::frontend::analyzeOpenQASM(
+        "OPENQASM 3.1; qubit[3] q; qubit[3] r; bit[3] c = 0; " +
+        statement.str());
+    ASSERT_FALSE(analyzed);
+    ASSERT_FALSE(analyzed.diagnostics.empty());
+    EXPECT_NE(analyzed.diagnostics.front().message.find(diagnostic.str()),
+              std::string::npos)
+        << analyzed.diagnostics.front().message;
+  }
+}
+
 TEST(OpenQASMFrontendTest, ContinuePreservesDefiniteInitialization) {
   for (const auto* source : {
            "OPENQASM 3.0; continue;",
