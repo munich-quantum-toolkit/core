@@ -54,7 +54,7 @@ protected:
     DialectRegistry registry;
     registry
         .insert<arith::ArithDialect, cbit::CBitDialect, func::FuncDialect,
-                memref::MemRefDialect, mqt::MQTDialect, qc::QCDialect,
+                memref::MemRefDialect, mlir::mqt::MQTDialect, qc::QCDialect,
                 qco::QCODialect, qtensor::QTensorDialect, scf::SCFDialect>();
     context = std::make_unique<MLIRContext>(registry);
     context->loadAllAvailableDialects();
@@ -160,7 +160,7 @@ TEST_F(MQTIRTest, RejectsInvalidSourceFunctionNames) {
 
 TEST_F(MQTIRTest, RoundTripsTypedCompilationTarget) {
   const auto compilationTarget =
-      dyn_cast_if_present<mqt::CompilationTargetAttr>(
+      dyn_cast_if_present<mlir::mqt::CompilationTargetAttr>(
           parseAttr(R"mlir(#mqt.compilation_target<
             name = "device",
             sites = [<id = 4>, <id = 7>],
@@ -184,15 +184,15 @@ TEST_F(MQTIRTest, RoundTripsTypedCompilationTarget) {
   EXPECT_EQ(compilationTarget.getSites()[0].getId(), 4);
   EXPECT_EQ(compilationTarget.getSites()[1].getId(), 7);
   EXPECT_EQ(compilationTarget.getConnectivity(),
-            mqt::ConnectivityKind::Explicit);
+            mlir::mqt::ConnectivityKind::Explicit);
   EXPECT_EQ(compilationTarget.getNativeOperations(),
-            mqt::NativeOperationsKind::Explicit);
+            mlir::mqt::NativeOperationsKind::Explicit);
   ASSERT_EQ(compilationTarget.getOperations().size(), 3U);
   EXPECT_EQ(compilationTarget.getOperations()[0].getArity().getKind(),
-            mqt::OperationArityKind::Fixed);
+            mlir::mqt::OperationArityKind::Fixed);
   EXPECT_EQ(compilationTarget.getOperations()[1].getArity().getValue(), 0U);
   EXPECT_EQ(compilationTarget.getOperations()[2].getArity().getKind(),
-            mqt::OperationArityKind::Variadic);
+            mlir::mqt::OperationArityKind::Variadic);
   ASSERT_EQ(compilationTarget.getOperations()[0].getSiteTuples().size(), 1U);
   const auto tuple = compilationTarget.getOperations()[0].getSiteTuples()[0];
   EXPECT_EQ(tuple.getSites(), (ArrayRef<int64_t>{4, 7}));
@@ -218,14 +218,15 @@ TEST_F(MQTIRTest, RoundTripsMaximumSiteIds) {
 }
 
 TEST_F(MQTIRTest, RoundTripsSiteTupleCalibration) {
-  const auto durationOnly = dyn_cast_if_present<mqt::SiteTupleAttr>(
+  const auto durationOnly = dyn_cast_if_present<mlir::mqt::SiteTupleAttr>(
       parseAttr(R"mlir(#mqt.site_tuple<[4, 7], duration = 0>)mlir"));
   ASSERT_TRUE(durationOnly);
   EXPECT_EQ(durationOnly.getDuration(), 0U);
   EXPECT_FALSE(durationOnly.getFidelity());
   EXPECT_EQ(roundTrip(durationOnly), durationOnly);
 
-  const auto calibrated = dyn_cast_if_present<mqt::SiteTupleAttr>(parseAttr(
+  const auto calibrated = dyn_cast_if_present<
+      mlir::mqt::SiteTupleAttr>(parseAttr(
       R"mlir(#mqt.site_tuple<[4, 7], fidelity = 9.900000e-01 : f64, duration = 40>)mlir"));
   ASSERT_TRUE(calibrated);
   EXPECT_EQ(calibrated.getDuration(), 40U);
@@ -234,14 +235,16 @@ TEST_F(MQTIRTest, RoundTripsSiteTupleCalibration) {
 }
 
 TEST_F(MQTIRTest, RepresentsUnrestrictedTargetFacts) {
-  const auto unrestricted = dyn_cast_if_present<mqt::CompilationTargetAttr>(
-      parseAttr(R"mlir(#mqt.compilation_target<
+  const auto unrestricted =
+      dyn_cast_if_present<mlir::mqt::CompilationTargetAttr>(
+          parseAttr(R"mlir(#mqt.compilation_target<
           sites = [<id = 0>], connectivity = all_to_all,
           couplings = [], native_operations = unrestricted, operations = []>)mlir"));
   ASSERT_TRUE(unrestricted);
-  EXPECT_EQ(unrestricted.getConnectivity(), mqt::ConnectivityKind::AllToAll);
+  EXPECT_EQ(unrestricted.getConnectivity(),
+            mlir::mqt::ConnectivityKind::AllToAll);
   EXPECT_EQ(unrestricted.getNativeOperations(),
-            mqt::NativeOperationsKind::Unrestricted);
+            mlir::mqt::NativeOperationsKind::Unrestricted);
 }
 
 TEST_F(MQTIRTest, RejectsInvalidTargetLeaves) {
@@ -350,20 +353,20 @@ TEST_F(MQTIRTest, ManagesAndFindsEntryPoint) {
     }
   )mlir");
   ASSERT_TRUE(moduleOp);
-  auto main = mqt::getEntryPoint(*moduleOp);
+  auto main = mlir::mqt::getEntryPoint(*moduleOp);
   ASSERT_TRUE(main);
   EXPECT_EQ(main.getSymName(), "main");
-  EXPECT_TRUE(mqt::isEntryPoint(main));
+  EXPECT_TRUE(mlir::mqt::isEntryPoint(main));
 
-  mqt::removeEntryPoint(main);
-  EXPECT_FALSE(mqt::isEntryPoint(main));
-  EXPECT_FALSE(mqt::getEntryPoint(*moduleOp));
+  mlir::mqt::removeEntryPoint(main);
+  EXPECT_FALSE(mlir::mqt::isEntryPoint(main));
+  EXPECT_FALSE(mlir::mqt::getEntryPoint(*moduleOp));
 
   auto helper = moduleOp->lookupSymbol<func::FuncOp>("helper");
   ASSERT_TRUE(helper);
-  mqt::setEntryPoint(helper);
-  EXPECT_TRUE(mqt::isEntryPoint(helper));
-  EXPECT_EQ(mqt::getEntryPoint(*moduleOp), helper);
+  mlir::mqt::setEntryPoint(helper);
+  EXPECT_TRUE(mlir::mqt::isEntryPoint(helper));
+  EXPECT_EQ(mlir::mqt::getEntryPoint(*moduleOp), helper);
 }
 
 TEST_F(MQTIRTest, RejectsInvalidEntryPoints) {
@@ -447,11 +450,11 @@ TEST_F(MQTIRTest, ChecksQuantumAllocationPlacement) {
       ASSERT_TRUE(moduleOp);
       auto main = moduleOp->lookupSymbol<func::FuncOp>("main");
       ASSERT_TRUE(main);
-      mqt::setEntryPoint(main);
+      mlir::mqt::setEntryPoint(main);
 
       bool sawPlacementError = false;
-      ScopedDiagnosticHandler handler(
-          context.get(), [&](Diagnostic& diagnostic) {
+      mlir::ScopedDiagnosticHandler handler(
+          context.get(), [&](mlir::Diagnostic& diagnostic) {
             sawPlacementError |=
                 StringRef(diagnostic.str())
                     .contains("dynamic quantum allocations must be in the "
@@ -527,11 +530,13 @@ TEST_F(MQTIRTest, RejectsMutuallyRecursiveUnitaryFunctions) {
        }) {
     SCOPED_TRACE(source.str());
     bool sawRecursion = false;
-    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
-      sawRecursion |= StringRef(diagnostic.str())
-                          .contains("unitary function must not be recursive");
-      return success();
-    });
+    mlir::ScopedDiagnosticHandler handler(
+        context.get(), [&](mlir::Diagnostic& diagnostic) {
+          sawRecursion |=
+              StringRef(diagnostic.str())
+                  .contains("unitary function must not be recursive");
+          return success();
+        });
     EXPECT_FALSE(parse(source));
     EXPECT_TRUE(sawRecursion);
   }
@@ -583,11 +588,13 @@ TEST_F(MQTIRTest, RejectsEmptyUnitaryBodies) {
        }) {
     SCOPED_TRACE(source.str());
     bool sawEmptyBody = false;
-    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
-      sawEmptyBody |= StringRef(diagnostic.str())
-                          .contains("unitary function body must not be empty");
-      return success();
-    });
+    mlir::ScopedDiagnosticHandler handler(
+        context.get(), [&](mlir::Diagnostic& diagnostic) {
+          sawEmptyBody |=
+              StringRef(diagnostic.str())
+                  .contains("unitary function body must not be empty");
+          return success();
+        });
     EXPECT_FALSE(parse(source));
     EXPECT_TRUE(sawEmptyBody);
   }
@@ -595,11 +602,12 @@ TEST_F(MQTIRTest, RejectsEmptyUnitaryBodies) {
 
 TEST_F(MQTIRTest, RejectsCyclicUnitaryQubitFlow) {
   bool sawCycle = false;
-  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
-    sawCycle |= StringRef(diagnostic.str())
-                    .contains("unitary QCO result has cyclic qubit flow");
-    return success();
-  });
+  mlir::ScopedDiagnosticHandler handler(
+      context.get(), [&](mlir::Diagnostic& diagnostic) {
+        sawCycle |= StringRef(diagnostic.str())
+                        .contains("unitary QCO result has cyclic qubit flow");
+        return success();
+      });
   EXPECT_FALSE(parse(R"mlir(
     func.func private @cyclic(%q: !qco.qubit) -> !qco.qubit
         attributes {mqt.unitary} {
@@ -647,10 +655,11 @@ TEST_F(MQTIRTest, RejectsMalformedUnitaryBodyOperations) {
        }) {
     SCOPED_TRACE(source.str());
     bool sawOperandError = false;
-    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
-      sawOperandError |= StringRef(diagnostic.str()).contains("operand");
-      return success();
-    });
+    mlir::ScopedDiagnosticHandler handler(
+        context.get(), [&](mlir::Diagnostic& diagnostic) {
+          sawOperandError |= StringRef(diagnostic.str()).contains("operand");
+          return success();
+        });
     EXPECT_FALSE(parse(source));
     EXPECT_TRUE(sawOperandError);
   }
@@ -683,10 +692,11 @@ TEST_F(MQTIRTest, RejectsMalformedCallsInUnitaryCallees) {
        }) {
     SCOPED_TRACE(source.str());
     bool sawMissingCallee = false;
-    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
-      sawMissingCallee |= StringRef(diagnostic.str()).contains("callee");
-      return success();
-    });
+    mlir::ScopedDiagnosticHandler handler(
+        context.get(), [&](mlir::Diagnostic& diagnostic) {
+          sawMissingCallee |= StringRef(diagnostic.str()).contains("callee");
+          return success();
+        });
     EXPECT_FALSE(parse(source));
     EXPECT_TRUE(sawMissingCallee);
   }
@@ -907,8 +917,9 @@ TEST_F(MQTIRTest, RoundTripsTypedTargetEnvironment) {
   )mlir");
   ASSERT_TRUE(moduleOp);
 
-  const auto targetEnv = moduleOp.get()->getAttrOfType<mqt::TargetEnvAttr>(
-      mqt::TargetEnvAttr::name);
+  const auto targetEnv =
+      moduleOp.get()->getAttrOfType<mlir::mqt::TargetEnvAttr>(
+          mlir::mqt::TargetEnvAttr::name);
   ASSERT_TRUE(targetEnv);
   const auto compilationTarget = targetEnv.getCompilationTarget();
   EXPECT_EQ(compilationTarget.getName().getValue(), "device");
@@ -916,9 +927,9 @@ TEST_F(MQTIRTest, RoundTripsTypedTargetEnvironment) {
   EXPECT_EQ(compilationTarget.getSites()[0].getId(), 10);
   EXPECT_EQ(compilationTarget.getSites()[1].getId(), 20);
   EXPECT_EQ(compilationTarget.getConnectivity(),
-            mqt::ConnectivityKind::Explicit);
+            mlir::mqt::ConnectivityKind::Explicit);
   EXPECT_EQ(compilationTarget.getNativeOperations(),
-            mqt::NativeOperationsKind::Explicit);
+            mlir::mqt::NativeOperationsKind::Explicit);
   ASSERT_EQ(compilationTarget.getOperations().size(), 1U);
   const auto operationSites = compilationTarget.getOperations()
                                   .front()
@@ -935,7 +946,7 @@ TEST_F(MQTIRTest, RoundTripsTypedTargetEnvironment) {
   EXPECT_EQ(payloadSpecification.getFormat().getProfile().getValue(),
             "dynamic");
   EXPECT_EQ(payloadSpecification.getFormat().getEncoding(),
-            mqt::PayloadEncoding::Binary);
+            mlir::mqt::PayloadEncoding::Binary);
   EXPECT_FALSE(payloadSpecification.getOptionalCapabilitiesKnown());
   ASSERT_EQ(payloadSpecification.getCapabilities().size(), 1U);
   ASSERT_EQ(
@@ -944,12 +955,13 @@ TEST_F(MQTIRTest, RoundTripsTypedTargetEnvironment) {
 
   const auto reparsed = roundTrip(*moduleOp);
   ASSERT_TRUE(reparsed);
-  EXPECT_EQ((*reparsed)->getAttr(mqt::TargetEnvAttr::name), targetEnv);
+  EXPECT_EQ((*reparsed)->getAttr(mlir::mqt::TargetEnvAttr::name), targetEnv);
 }
 
 TEST_F(MQTIRTest, RepresentsEmptyPayloadCapabilities) {
-  const auto payload = dyn_cast_if_present<mqt::PayloadSpecAttr>(parseAttr(
-      R"mlir(#mqt.payload_spec<format = #mqt.payload_format<
+  const auto payload =
+      dyn_cast_if_present<mlir::mqt::PayloadSpecAttr>(parseAttr(
+          R"mlir(#mqt.payload_spec<format = #mqt.payload_format<
           id = "openqasm", version = "3.0.0", profile = "", encoding = text>,
           capabilities = [], optional_capabilities_known = true>)mlir"));
   ASSERT_TRUE(payload);

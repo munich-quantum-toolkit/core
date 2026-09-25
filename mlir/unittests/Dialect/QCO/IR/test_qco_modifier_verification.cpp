@@ -59,10 +59,11 @@ TEST(QCOModifierVerificationTest, RequiresUniqueInputsAndPositionalYields) {
     auto first = yield.getOperand(0);
     auto second = yield.getOperand(1);
     std::string diagnostic;
-    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& message) {
-      diagnostic = message.str();
-      return success();
-    });
+    mlir::ScopedDiagnosticHandler handler(&context,
+                                          [&](mlir::Diagnostic& message) {
+                                            diagnostic = message.str();
+                                            return success();
+                                          });
     for (auto firstYield : {second, first}) {
       yield->setOperands({firstYield, first});
       diagnostic.clear();
@@ -87,8 +88,8 @@ TEST(QCOModifierVerificationTest, RequiresUniqueInputsAndPositionalYields) {
 TEST(QCOModifierVerificationTest, RequiresMatchingControlResults) {
   MLIRContext context;
   context.loadDialect<qco::QCODialect, func::FuncDialect>();
-  ScopedDiagnosticHandler handler(&context,
-                                  [](Diagnostic&) { return success(); });
+  mlir::ScopedDiagnosticHandler handler(
+      &context, [](mlir::Diagnostic&) { return success(); });
   EXPECT_FALSE(parseSourceString<ModuleOp>(R"mlir(
     func.func @test(%c: !qco.qubit, %q: !qco.qubit) -> !qco.qubit {
       %out = "qco.ctrl"(%c, %q) <{
@@ -108,10 +109,11 @@ TEST(QCOModifierVerificationTest, RejectsCyclicWireProducers) {
   MLIRContext context;
   context.loadDialect<qco::QCODialect, func::FuncDialect>();
   std::string diagnostic;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& message) {
-    diagnostic = message.str();
-    return success();
-  });
+  mlir::ScopedDiagnosticHandler handler(&context,
+                                        [&](mlir::Diagnostic& message) {
+                                          diagnostic = message.str();
+                                          return success();
+                                        });
   EXPECT_FALSE(parseSourceString<ModuleOp>(R"mlir(
     func.func @test(%q0: !qco.qubit, %q1: !qco.qubit)
         -> (!qco.qubit, !qco.qubit) {

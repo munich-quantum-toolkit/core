@@ -380,33 +380,36 @@ Compile a file and submit it to DDSIM:
 
 ```cpp
 #include "mqt/Compiler/QDMIAdapter.h"
+#include "mqt/Compiler/Programs.h"
 #include "qdmi/Client.hpp"
-#include "llvm/Support/Error.h"
-#include "llvm/Support/raw_ostream.h"
+#include "mlir/Support/LogicalResult.h"
 
-auto device = qdmi::Session::openDevice("mqt.ddsim.default");
-auto input = mlir::QCProgram::fromOpenQASMFile("input.qasm");
-if (!input) {
-  return 1;
-}
-auto compiled = mlir::compileProgram(std::move(*input), device);
-if (!compiled) {
-  llvm::errs() << llvm::toString(compiled.takeError()) << '\n';
-  return 1;
-}
-auto job = mlir::submitProgram(device, *compiled);
-if (!job) {
-  llvm::errs() << llvm::toString(job.takeError()) << '\n';
-  return 1;
-}
-if (!job->wait()) {
-  return 1;
+#include <utility>
+
+int main() {
+  auto device = qdmi::Session::openDevice("mqt.ddsim.default");
+  if (mlir::failed(device)) {
+    return 1;
+  }
+  auto input = mlir::QCProgram::fromOpenQASMFile("input.qasm");
+  if (!input) {
+    return 1;
+  }
+  auto compiled = mlir::compileProgram(std::move(*input), *device);
+  if (mlir::failed(compiled)) {
+    return 1;
+  }
+  auto job = mlir::submitProgram(*device, *compiled);
+  if (mlir::failed(job)) {
+    return 1;
+  }
+  auto completed = job->wait();
+  return mlir::failed(completed) || !*completed ? 1 : 0;
 }
 ```
 
-`compilerTargetFromDevice` and `compilerTargetFromDeviceId` also remain
-available for hardware snapshots and staged compilation with a
-`TargetEnvironment`.
+`compilerTargetFromDevice` and `compilerTargetFromDeviceId` provide hardware
+snapshots for staged compilation with a `TargetEnvironment`.
 
 ### Payload support
 

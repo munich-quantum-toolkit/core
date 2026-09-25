@@ -100,4 +100,5 @@ if(NOT TARGET ${TARGET_NAME})
       DESTINATION .
       COMPONENT ${MQT_CORE_TARGET_NAME}_Python)
   endif()
+
 endif()

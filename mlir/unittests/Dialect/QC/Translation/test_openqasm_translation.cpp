@@ -969,7 +969,7 @@ static SmallVector<Value> conditionIndexedBit(qc::QCProgramBuilder& b) {
   return {c, out};
 }
 
-static LogicalResult convertQCToQCO(ModuleOp moduleOp) {
+static mlir::LogicalResult convertQCToQCO(ModuleOp moduleOp) {
   PassManager manager(moduleOp.getContext());
   manager.addPass(createQCToQCO());
   return manager.run(moduleOp);

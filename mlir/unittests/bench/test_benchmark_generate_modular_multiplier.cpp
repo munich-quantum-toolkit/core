@@ -14,6 +14,7 @@
 #include "mqt/bench/Generate.h"
 
 #include "TestUtils.h"
+#include "support/TestSupport.hpp"
 
 #include "gtest/gtest.h"
 
@@ -38,16 +39,18 @@ static void expectCoherentModularMultiplier(const size_t bits,
   if (pattern.empty()) {
     pattern = std::string(bits, '+');
   }
-  const ModularMultiplier benchmark{{
+  const auto benchmark = ::mqt::test::value(ModularMultiplier::create({
       .multiplier = dd::intToBinaryString(multiplier, bits),
       .modulus = dd::intToBinaryString(modulus, bits),
       .multiplicand = pattern,
       .control = controlInput,
-  }};
+  }));
   auto program = test::generateQCO(benchmark);
   ASSERT_TRUE(program);
 
-  dd::Package package(0);
+  auto packageOwner = ::mqt::test::value(dd::Package::create(0));
+
+  auto& package = *packageOwner;
   auto state = qco::simulateStatevector(
       mlir::mqt::getEntryPoint(program->module()), package);
   ASSERT_TRUE(succeeded(state));
@@ -115,12 +118,13 @@ TEST(GenerateProgramTest, VerifiesEverySmallModularMultiplierBasisInput) {
       for (size_t multiplier = 1; multiplier < modulus; ++multiplier) {
         for (size_t input = 0; input < limit; ++input) {
           for (size_t control = 0; control < 2; ++control) {
-            const ModularMultiplier benchmark({
-                .multiplier = dd::intToBinaryString(multiplier, bits),
-                .modulus = dd::intToBinaryString(modulus, bits),
-                .multiplicand = dd::intToBinaryString(input, bits),
-                .control = control == 0 ? '0' : '1',
-            });
+            const auto benchmark =
+                ::mqt::test::value(ModularMultiplier::create({
+                    .multiplier = dd::intToBinaryString(multiplier, bits),
+                    .modulus = dd::intToBinaryString(modulus, bits),
+                    .multiplicand = dd::intToBinaryString(input, bits),
+                    .control = control == 0 ? '0' : '1',
+                }));
             const auto expected =
                 std::to_string(control) + dd::intToBinaryString(input, bits) +
                 dd::intToBinaryString(control * multiplier * input % modulus,
@@ -144,13 +148,13 @@ TEST(GenerateProgramTest, KeepsLargestModularMultiplierFiniteAndStructured) {
   constexpr size_t bits = ModularMultiplierOptions::MAX_BITS;
   const auto multiplier = std::string(bits - 1U, '0') + "1";
   const auto modulus = "1" + std::string(bits - 1U, '0');
-  auto program = generate(ModularMultiplier{{
+  auto program = generate(::mqt::test::value(ModularMultiplier::create({
       .multiplier = multiplier,
       .modulus = modulus,
       .multiplicand = std::string(bits, '+'),
       .control = '+',
-  }});
-  ASSERT_TRUE(program);
+  })));
+  ASSERT_TRUE(succeeded(program));
   auto moduleOp = program->module();
 
   const auto table = test::angleTable(moduleOp);
@@ -163,18 +167,20 @@ TEST(GenerateProgramTest, KeepsLargestModularMultiplierFiniteAndStructured) {
 }
 
 TEST(GenerateProgramTest, SamplesModularMultiplierAgainstReference) {
-  test::expectSamplingMatchesReference(ModularMultiplier{{
-      .multiplier = "011",
-      .modulus = "101",
-      .multiplicand = "+++",
-      .control = '+',
-  }});
-  test::expectSamplingMatchesReference(ModularMultiplier{{
-      .multiplier = "010",
-      .modulus = "100",
-      .multiplicand = "+++",
-      .control = '+',
-  }});
+  test::expectSamplingMatchesReference(
+      ::mqt::test::value(ModularMultiplier::create({
+          .multiplier = "011",
+          .modulus = "101",
+          .multiplicand = "+++",
+          .control = '+',
+      })));
+  test::expectSamplingMatchesReference(
+      ::mqt::test::value(ModularMultiplier::create({
+          .multiplier = "010",
+          .modulus = "100",
+          .multiplicand = "+++",
+          .control = '+',
+      })));
 }
 
 } // namespace mqt::bench

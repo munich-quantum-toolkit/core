@@ -13,6 +13,7 @@
 #include "dd/ComplexValue.hpp"
 #include "dd/ComputeTable.hpp"
 #include "dd/DDDefinitions.hpp"
+#include "dd/DDpackageConfig.hpp"
 #include "dd/Edge.hpp"
 #include "dd/Export.hpp"
 #include "dd/MemoryManager.hpp"
@@ -23,6 +24,9 @@
 #include "dd/UnaryComputeTable.hpp"
 #include "dd/UniqueTable.hpp"
 #include "dd/statistics/PackageStatistics.hpp"
+
+#include "support/Diagnostics.hpp"
+#include "support/TestSupport.hpp"
 
 #include "gtest/gtest.h"
 #include "nlohmann/json.hpp"
@@ -35,6 +39,7 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -210,23 +215,23 @@ struct TestGate {
 
 MatrixDD getDD(const TestGate& gate, Package& package) {
   if (gate.type == Fixture::SWAP) {
-    return package.makeTwoQubitGateDD(SWAP_MAT, gate.controls,
-                                      gate.targets.at(0), gate.targets.at(1));
+    return ::mqt::test::value(package.makeTwoQubitGateDD(
+        SWAP_MAT, gate.controls, gate.targets.at(0), gate.targets.at(1)));
   }
-  return package.makeGateDD(singleQubitMatrix(gate.type), gate.controls,
-                            gate.targets.at(0));
+  return ::mqt::test::value(package.makeGateDD(
+      singleQubitMatrix(gate.type), gate.controls, gate.targets.at(0)));
 }
 } // namespace
 TEST(DDPackageTest, TrivialTest) {
-  auto dd = std::make_unique<Package>(2);
+  auto dd = ::mqt::test::value(Package::create(2));
   EXPECT_EQ(dd->qubits(), 2);
 
   auto const xGate = getDD(TestGate(0, Fixture::X), *dd);
   auto const hGate = getDD(TestGate(0, Fixture::H), *dd);
 
-  ASSERT_EQ(hGate.getValueByPath(1, "0"), SQRT2_2);
+  ASSERT_EQ(::mqt::test::value(hGate.getValueByPath(1, "0")), SQRT2_2);
 
-  auto const zeroState = makeZeroState(1, *dd);
+  auto const zeroState = ::mqt::test::value(makeZeroState(1, *dd));
   auto const hState = dd->multiply(hGate, zeroState);
   auto const oneState = dd->multiply(xGate, zeroState);
 
@@ -241,12 +246,16 @@ TEST(DDPackageTest, ComputeTableConfigurationAndClear) {
   using BinaryTable = ComputeTable<size_t, size_t, size_t>;
   using UnaryTable = UnaryComputeTable<size_t, size_t>;
   for (const size_t buckets : {0U, 3U}) {
-    EXPECT_THROW(BinaryTable{buckets}, std::invalid_argument);
-    EXPECT_THROW(UnaryTable{buckets}, std::invalid_argument);
+    EXPECT_EQ(
+        ::mqt::test::errorKind([&] { return BinaryTable::create(buckets); }),
+        ::mqt::ErrorCategory::InvalidArgument);
+    EXPECT_EQ(
+        ::mqt::test::errorKind([&] { return UnaryTable::create(buckets); }),
+        ::mqt::ErrorCategory::InvalidArgument);
   }
   for (const size_t buckets : {1U, 2U, 4U}) {
-    BinaryTable binary(buckets);
-    UnaryTable unary(buckets);
+    auto binary = ::mqt::test::value(BinaryTable::create(buckets));
+    auto unary = ::mqt::test::value(UnaryTable::create(buckets));
     for (size_t value = 0; value < 2; ++value) {
       binary.insert(1, 2, value);
       unary.insert(1, value);
@@ -262,10 +271,11 @@ TEST(DDPackageTest, ComputeTableConfigurationAndClear) {
       EXPECT_EQ(unary.getStats().numEntries, 0);
     }
     binary.insert(1, 2, 7);
-    EXPECT_THROW(binary.resize(3), std::invalid_argument);
+    EXPECT_EQ(::mqt::test::errorKind([&] { return binary.resize(3); }),
+              ::mqt::ErrorCategory::InvalidArgument);
     ASSERT_NE(binary.lookup(1, 2), nullptr);
     EXPECT_EQ(*binary.lookup(1, 2), 7);
-    binary.resize(8);
+    ::mqt::test::value(binary.resize(8));
     EXPECT_EQ(binary.getStats().numBuckets, 8);
     EXPECT_EQ(binary.getStats().numEntries, 0);
     EXPECT_EQ(binary.lookup(1, 2), nullptr);
@@ -276,11 +286,11 @@ TEST(DDPackageTest, ComputeTableConfigurationAndClear) {
 }
 
 TEST(DDPackageTest, BellState) {
-  auto dd = std::make_unique<Package>(2);
+  auto dd = ::mqt::test::value(Package::create(2));
 
   auto const hGate = getDD(TestGate(1, Fixture::H), *dd);
   auto const cxGate = getDD(TestGate(Control{1}, 0, Fixture::X), *dd);
-  auto const zeroState = makeZeroState(2, *dd);
+  auto const zeroState = ::mqt::test::value(makeZeroState(2, *dd));
 
   auto const bellState = dd->multiply(dd->multiply(cxGate, hGate), zeroState);
   bellState.printVector();
@@ -289,15 +299,19 @@ TEST(DDPackageTest, BellState) {
   auto const bellState2 = dd->multiply(dd->multiply(cxGate, hGate), zeroState);
   EXPECT_EQ(bellState, bellState2);
 
-  ASSERT_EQ(bellState.getValueByPath(dd->qubits(), "00"), SQRT2_2);
-  ASSERT_EQ(bellState.getValueByPath(dd->qubits(), "01"), 0.);
-  ASSERT_EQ(bellState.getValueByPath(dd->qubits(), "10"), 0.);
-  ASSERT_EQ(bellState.getValueByPath(dd->qubits(), "11"), SQRT2_2);
+  ASSERT_EQ(::mqt::test::value(bellState.getValueByPath(dd->qubits(), "00")),
+            SQRT2_2);
+  ASSERT_EQ(::mqt::test::value(bellState.getValueByPath(dd->qubits(), "01")),
+            0.);
+  ASSERT_EQ(::mqt::test::value(bellState.getValueByPath(dd->qubits(), "10")),
+            0.);
+  ASSERT_EQ(::mqt::test::value(bellState.getValueByPath(dd->qubits(), "11")),
+            SQRT2_2);
 
-  ASSERT_EQ(bellState.getValueByIndex(0), SQRT2_2);
-  ASSERT_EQ(bellState.getValueByIndex(1), 0.);
-  ASSERT_EQ(bellState.getValueByIndex(2), 0.);
-  ASSERT_EQ(bellState.getValueByIndex(3), SQRT2_2);
+  ASSERT_EQ(::mqt::test::value(bellState.getValueByIndex(0)), SQRT2_2);
+  ASSERT_EQ(::mqt::test::value(bellState.getValueByIndex(1)), 0.);
+  ASSERT_EQ(::mqt::test::value(bellState.getValueByIndex(2)), 0.);
+  ASSERT_EQ(::mqt::test::value(bellState.getValueByIndex(3)), SQRT2_2);
 
   auto const goalState = CVec{{SQRT2_2, 0.}, {0., 0.}, {0., 0.}, {SQRT2_2, 0.}};
   ASSERT_EQ(bellState.getVector(), goalState);
@@ -313,7 +327,7 @@ TEST(DDPackageTest, BellState) {
 
 TEST(DDPackageTest, QFTState) {
   // Create a package with 3 qubits
-  auto dd = std::make_unique<Package>(3);
+  auto dd = ::mqt::test::value(Package::create(3));
 
   // Simulate a QFT on 3 qubits
   auto const h0Gate = getDD(TestGate(0, Fixture::H), *dd);
@@ -331,14 +345,15 @@ TEST(DDPackageTest, QFTState) {
   qftOp = dd->multiply(h2Gate, qftOp);
 
   qftOp = dd->multiply(swapGate, qftOp);
-  auto const qftState = dd->multiply(qftOp, makeZeroState(3, *dd));
+  auto const qftState =
+      dd->multiply(qftOp, ::mqt::test::value(makeZeroState(3, *dd)));
 
   qftState.printVector();
 
   for (size_t qubit = 0; qubit < 7; ++qubit) {
-    ASSERT_NEAR(qftState.getValueByIndex(qubit).real(), 0.5 * SQRT2_2,
-                RealNumber::eps);
-    ASSERT_EQ(qftState.getValueByIndex(qubit).imag(), 0);
+    ASSERT_NEAR(::mqt::test::value(qftState.getValueByIndex(qubit)).real(),
+                0.5 * SQRT2_2, RealNumber::eps);
+    ASSERT_EQ(::mqt::test::value(qftState.getValueByIndex(qubit)).imag(), 0);
   }
 
   checkDotOptions(qftState);
@@ -350,45 +365,49 @@ TEST(DDPackageTest, QFTState) {
 }
 
 TEST(DDPackageTest, CorruptedBellState) {
-  auto dd = std::make_unique<Package>(2);
+  auto dd = ::mqt::test::value(Package::create(2));
 
   auto const hGate = getDD(TestGate(1, Fixture::H), *dd);
   auto const cxGate = getDD(TestGate(Control{1}, 0, Fixture::X), *dd);
-  auto const zeroState = makeZeroState(2, *dd);
+  auto const zeroState = ::mqt::test::value(makeZeroState(2, *dd));
 
   auto bellState = dd->multiply(dd->multiply(cxGate, hGate), zeroState);
 
   bellState.w = dd->cn.lookup(0.5, 0);
   // prints a warning
   std::mt19937_64 mt; // NOLINT(cert-msc51-cpp)
-  std::cout << dd->measureAll(bellState, false, mt) << "\n";
+  std::cout << ::mqt::test::value(dd->measureAll(bellState, false, mt)) << "\n";
 
   bellState.w = Complex::zero();
 
-  ASSERT_THROW(dd->measureAll(bellState, false, mt), std::runtime_error);
+  EXPECT_EQ(::mqt::test::errorKind(
+                [&] { return dd->measureAll(bellState, false, mt); }),
+            ::mqt::ErrorCategory::Numerical);
 
-  ASSERT_THROW(dd->measureOneCollapsing(bellState, 0, mt), std::runtime_error);
+  EXPECT_EQ(::mqt::test::errorKind(
+                [&] { return dd->measureOneCollapsing(bellState, 0, mt); }),
+            ::mqt::ErrorCategory::Numerical);
 }
 
 TEST(DDPackageTest, NegativeControl) {
-  auto dd = std::make_unique<Package>(2);
+  auto dd = ::mqt::test::value(Package::create(2));
 
   auto const xGate =
       getDD(TestGate(Control{1, Control::Type::Neg}, 0, Fixture::X), *dd);
-  auto const zeroState = makeZeroState(2, *dd);
+  auto const zeroState = ::mqt::test::value(makeZeroState(2, *dd));
   auto const state01 = dd->multiply(xGate, zeroState);
-  EXPECT_EQ(state01.getValueByIndex(0b01).real(), 1.);
+  EXPECT_EQ(::mqt::test::value(state01.getValueByIndex(0b01)).real(), 1.);
 }
 
 TEST(DDPackageTest, IdentityTrace) {
-  auto dd = std::make_unique<Package>(4);
+  auto dd = ::mqt::test::value(Package::create(4));
   auto const fullTrace = dd->trace(Package::makeIdent(), 4);
 
   ASSERT_EQ(fullTrace.r, 1.);
 }
 
 TEST(DDPackageTest, CNotKronTrace) {
-  auto dd = std::make_unique<Package>(4);
+  auto dd = ::mqt::test::value(Package::create(4));
   auto const cxGate = getDD(TestGate(Control{1}, 0, Fixture::X), *dd);
   auto const cxGateKron = dd->kronecker(cxGate, cxGate, 2);
   auto const fullTrace = dd->trace(cxGateKron, 4);
@@ -396,14 +415,14 @@ TEST(DDPackageTest, CNotKronTrace) {
 }
 
 TEST(DDPackageTest, PartialIdentityTrace) {
-  auto dd = std::make_unique<Package>(2);
+  auto dd = ::mqt::test::value(Package::create(2));
   auto const tr = dd->partialTrace(Package::makeIdent(), {false, true});
   auto const mul = dd->multiply(tr, tr);
   EXPECT_EQ(RealNumber::val(mul.w.r), 1.);
 }
 
 TEST(DDPackageTest, PartialSWapMatTrace) {
-  auto dd = std::make_unique<Package>(2);
+  auto dd = ::mqt::test::value(Package::create(2));
   auto const swapGate = getDD(TestGate(Targets{0, 1}, Fixture::SWAP), *dd);
   auto const ptr = dd->partialTrace(swapGate, {true, false});
   auto const fullTrace = dd->trace(ptr, 1);
@@ -415,7 +434,8 @@ TEST(DDPackageTest, PartialSWapMatTrace) {
 }
 
 TEST(DDPackageTest, PartialTraceMatchesDenseOracleAcrossIdentityLevels) {
-  Package package(3);
+  auto packageOwner = ::mqt::test::value(Package::create(3));
+  auto& package = *packageOwner;
   CMat input(8, CVec(8));
   for (size_t row = 0; row < 8; ++row) {
     for (size_t col = 0; col < 8; ++col) {
@@ -423,10 +443,15 @@ TEST(DDPackageTest, PartialTraceMatchesDenseOracleAcrossIdentityLevels) {
                          std::cos(static_cast<fp>((2 * row) + col))};
     }
   }
-  const auto x = package.makeGateDD(X_MAT, 0);
-  const auto zx = package.multiply(package.makeGateDD(Z_MAT, 2), x);
-  for (const auto& matrix :
-       {Package::makeIdent(), x, zx, package.makeDDFromMatrix(input)}) {
+  const auto x = ::mqt::test::value(package.makeGateDD(X_MAT, 0));
+  const auto zx =
+      package.multiply(::mqt::test::value(package.makeGateDD(Z_MAT, 2)), x);
+  for (const auto& matrix : {
+           Package::makeIdent(),
+           x,
+           zx,
+           ::mqt::test::value(package.makeDDFromMatrix(input)),
+       }) {
     const auto dense = matrix.getMatrix(3);
     const auto fullTrace = package.trace(matrix, 3);
     for (size_t mask = 0; mask < 8; ++mask) {
@@ -476,7 +501,7 @@ TEST(DDPackageTest, PartialTraceKeepInnerQubits) {
   // proper elimination in subsequent trace calls.
 
   constexpr std::size_t numQubits = 8;
-  auto dd = std::make_unique<Package>(numQubits);
+  auto dd = ::mqt::test::value(Package::create(numQubits));
   const auto swapGate = getDD(TestGate(Targets{0, 1}, Fixture::SWAP), *dd);
   auto swapKron = swapGate;
   for (std::size_t i = 0; i < 3; ++i) {
@@ -497,7 +522,7 @@ TEST(DDPackageTest, TraceComplexity) {
   // Check that the full trace computation scales with the number of nodes
   // instead of paths in the DD due to the usage of a compute table
   for (std::size_t numQubits = 1; numQubits <= 10; ++numQubits) {
-    auto dd = std::make_unique<Package>(numQubits);
+    auto dd = ::mqt::test::value(Package::create(numQubits));
     auto const& computeTable = dd->getTraceComputeTable();
     const auto hGate = getDD(TestGate(0, Fixture::H), *dd);
     auto hKron = hGate;
@@ -516,7 +541,7 @@ TEST(DDPackageTest, KeepBottomQubitsPartialTraceComplexity) {
   // where the remaining qubits should not be eliminated, the function does not
   // recurse further but immediately returns the current CachedEdge<Node>.
   constexpr std::size_t numQubits = 8;
-  auto dd = std::make_unique<Package>(numQubits);
+  auto dd = ::mqt::test::value(Package::create(numQubits));
   auto const& uniqueTable = dd->getUniqueTable<mNode>();
   const auto hGate = getDD(TestGate(0, Fixture::H), *dd);
   auto hKron = hGate;
@@ -545,7 +570,7 @@ TEST(DDPackageTest, PartialTraceComplexity) {
   // paths in the DD. This situation arises particularly when tracing out the
   // bottom qubits.
   constexpr std::size_t numQubits = 9;
-  auto dd = std::make_unique<Package>(numQubits);
+  auto dd = ::mqt::test::value(Package::create(numQubits));
   auto const& uniqueTable = dd->getUniqueTable<mNode>();
   const auto hGate = getDD(TestGate(0, Fixture::H), *dd);
   auto hKron = hGate;
@@ -574,53 +599,56 @@ TEST(DDPackageTest, PartialTraceComplexity) {
 
 TEST(DDPackageTest, StateGenerationManipulation) {
   constexpr std::size_t nqubits = 6;
-  auto dd = std::make_unique<Package>(nqubits);
+  auto dd = ::mqt::test::value(Package::create(nqubits));
   auto b = std::vector<bool>(nqubits, false);
   b[0] = b[1] = true;
-  auto const e = makeBasisState(nqubits, b, *dd);
-  auto const f = makeBasisState(nqubits,
-                                {
-                                    BasisStates::zero,
-                                    BasisStates::one,
-                                    BasisStates::plus,
-                                    BasisStates::minus,
-                                    BasisStates::left,
-                                    BasisStates::right,
-                                },
-                                *dd);
+  auto const e = ::mqt::test::value(makeBasisState(nqubits, b, *dd));
+  auto const f = ::mqt::test::value(makeBasisState(nqubits,
+                                                   {
+                                                       BasisStates::zero,
+                                                       BasisStates::one,
+                                                       BasisStates::plus,
+                                                       BasisStates::minus,
+                                                       BasisStates::left,
+                                                       BasisStates::right,
+                                                   },
+                                                   *dd));
   dd->vUniqueTable.print<vNode>();
   dd->decRef(e);
   dd->decRef(f);
 }
 
 TEST(DDPackageTest, VectorSerializationTest) {
-  auto dd = std::make_unique<Package>(2);
+  auto dd = ::mqt::test::value(Package::create(2));
 
   for (const bool binary : {false, true}) {
     std::stringstream serialized{};
     serialize(vEdge::one(), serialized, binary);
-    EXPECT_EQ(dd->deserialize<vNode>(serialized, binary), vEdge::one());
+    EXPECT_EQ(::mqt::test::value(dd->deserialize<vNode>(serialized, binary)),
+              vEdge::one());
   }
 
   auto const hGate = getDD(TestGate(1, Fixture::H), *dd);
   auto const cxGate = getDD(TestGate(Control{1}, 0, Fixture::X), *dd);
-  auto const zeroState = makeZeroState(2, *dd);
+  auto const zeroState = ::mqt::test::value(makeZeroState(2, *dd));
 
   auto const bellState = dd->multiply(dd->multiply(cxGate, hGate), zeroState);
 
-  serialize(bellState, "bell_state.dd", false);
-  auto deserializedBellState = dd->deserialize<vNode>("bell_state.dd", false);
+  ::mqt::test::value(serialize(bellState, "bell_state.dd", false));
+  auto deserializedBellState =
+      ::mqt::test::value(dd->deserialize<vNode>("bell_state.dd", false));
   EXPECT_EQ(bellState, deserializedBellState);
   std::filesystem::remove("bell_state.dd");
 
-  serialize(bellState, "bell_state_binary.dd", true);
-  deserializedBellState = dd->deserialize<vNode>("bell_state_binary.dd", true);
+  ::mqt::test::value(serialize(bellState, "bell_state_binary.dd", true));
+  deserializedBellState =
+      ::mqt::test::value(dd->deserialize<vNode>("bell_state_binary.dd", true));
   EXPECT_EQ(bellState, deserializedBellState);
   std::filesystem::remove("bell_state_binary.dd");
 }
 
 TEST(DDPackageTest, BellMatrix) {
-  auto dd = std::make_unique<Package>(2);
+  auto dd = ::mqt::test::value(Package::create(2));
 
   auto const hGate = getDD(TestGate(1, Fixture::H), *dd);
   auto const cxGate = getDD(TestGate(Control{1}, 0, Fixture::X), *dd);
@@ -629,30 +657,50 @@ TEST(DDPackageTest, BellMatrix) {
 
   bellMatrix.printMatrix(dd->qubits());
 
-  ASSERT_EQ(bellMatrix.getValueByPath(dd->qubits(), "00"), SQRT2_2);
-  ASSERT_EQ(bellMatrix.getValueByPath(dd->qubits(), "02"), 0.);
-  ASSERT_EQ(bellMatrix.getValueByPath(dd->qubits(), "20"), 0.);
-  ASSERT_EQ(bellMatrix.getValueByPath(dd->qubits(), "22"), SQRT2_2);
+  ASSERT_EQ(::mqt::test::value(bellMatrix.getValueByPath(dd->qubits(), "00")),
+            SQRT2_2);
+  ASSERT_EQ(::mqt::test::value(bellMatrix.getValueByPath(dd->qubits(), "02")),
+            0.);
+  ASSERT_EQ(::mqt::test::value(bellMatrix.getValueByPath(dd->qubits(), "20")),
+            0.);
+  ASSERT_EQ(::mqt::test::value(bellMatrix.getValueByPath(dd->qubits(), "22")),
+            SQRT2_2);
 
-  ASSERT_EQ(bellMatrix.getValueByIndex(dd->qubits(), 0, 0), SQRT2_2);
-  ASSERT_EQ(bellMatrix.getValueByIndex(dd->qubits(), 1, 0), 0.);
-  ASSERT_EQ(bellMatrix.getValueByIndex(dd->qubits(), 2, 0), 0.);
-  ASSERT_EQ(bellMatrix.getValueByIndex(dd->qubits(), 3, 0), SQRT2_2);
+  ASSERT_EQ(::mqt::test::value(bellMatrix.getValueByIndex(dd->qubits(), 0, 0)),
+            SQRT2_2);
+  ASSERT_EQ(::mqt::test::value(bellMatrix.getValueByIndex(dd->qubits(), 1, 0)),
+            0.);
+  ASSERT_EQ(::mqt::test::value(bellMatrix.getValueByIndex(dd->qubits(), 2, 0)),
+            0.);
+  ASSERT_EQ(::mqt::test::value(bellMatrix.getValueByIndex(dd->qubits(), 3, 0)),
+            SQRT2_2);
 
-  ASSERT_EQ(bellMatrix.getValueByIndex(dd->qubits(), 0, 1), 0.);
-  ASSERT_EQ(bellMatrix.getValueByIndex(dd->qubits(), 1, 1), SQRT2_2);
-  ASSERT_EQ(bellMatrix.getValueByIndex(dd->qubits(), 2, 1), SQRT2_2);
-  ASSERT_EQ(bellMatrix.getValueByIndex(dd->qubits(), 3, 1), 0.);
+  ASSERT_EQ(::mqt::test::value(bellMatrix.getValueByIndex(dd->qubits(), 0, 1)),
+            0.);
+  ASSERT_EQ(::mqt::test::value(bellMatrix.getValueByIndex(dd->qubits(), 1, 1)),
+            SQRT2_2);
+  ASSERT_EQ(::mqt::test::value(bellMatrix.getValueByIndex(dd->qubits(), 2, 1)),
+            SQRT2_2);
+  ASSERT_EQ(::mqt::test::value(bellMatrix.getValueByIndex(dd->qubits(), 3, 1)),
+            0.);
 
-  ASSERT_EQ(bellMatrix.getValueByIndex(dd->qubits(), 0, 2), SQRT2_2);
-  ASSERT_EQ(bellMatrix.getValueByIndex(dd->qubits(), 1, 2), 0.);
-  ASSERT_EQ(bellMatrix.getValueByIndex(dd->qubits(), 2, 2), 0.);
-  ASSERT_EQ(bellMatrix.getValueByIndex(dd->qubits(), 3, 2), -SQRT2_2);
+  ASSERT_EQ(::mqt::test::value(bellMatrix.getValueByIndex(dd->qubits(), 0, 2)),
+            SQRT2_2);
+  ASSERT_EQ(::mqt::test::value(bellMatrix.getValueByIndex(dd->qubits(), 1, 2)),
+            0.);
+  ASSERT_EQ(::mqt::test::value(bellMatrix.getValueByIndex(dd->qubits(), 2, 2)),
+            0.);
+  ASSERT_EQ(::mqt::test::value(bellMatrix.getValueByIndex(dd->qubits(), 3, 2)),
+            -SQRT2_2);
 
-  ASSERT_EQ(bellMatrix.getValueByIndex(dd->qubits(), 0, 3), 0.);
-  ASSERT_EQ(bellMatrix.getValueByIndex(dd->qubits(), 1, 3), SQRT2_2);
-  ASSERT_EQ(bellMatrix.getValueByIndex(dd->qubits(), 2, 3), -SQRT2_2);
-  ASSERT_EQ(bellMatrix.getValueByIndex(dd->qubits(), 3, 3), 0.);
+  ASSERT_EQ(::mqt::test::value(bellMatrix.getValueByIndex(dd->qubits(), 0, 3)),
+            0.);
+  ASSERT_EQ(::mqt::test::value(bellMatrix.getValueByIndex(dd->qubits(), 1, 3)),
+            SQRT2_2);
+  ASSERT_EQ(::mqt::test::value(bellMatrix.getValueByIndex(dd->qubits(), 2, 3)),
+            -SQRT2_2);
+  ASSERT_EQ(::mqt::test::value(bellMatrix.getValueByIndex(dd->qubits(), 3, 3)),
+            0.);
 
   auto const goalRow0 = CVec{{SQRT2_2, 0.}, {0., 0.}, {SQRT2_2, 0.}, {0., 0.}};
   auto const goalRow1 = CVec{{0., 0.}, {SQRT2_2, 0.}, {0., 0.}, {SQRT2_2, 0.}};
@@ -668,12 +716,13 @@ TEST(DDPackageTest, BellMatrix) {
 }
 
 TEST(DDPackageTest, MatrixSerializationTest) {
-  auto dd = std::make_unique<Package>(2);
+  auto dd = ::mqt::test::value(Package::create(2));
 
   for (const bool binary : {false, true}) {
     std::stringstream serialized{};
     serialize(mEdge::one(), serialized, binary);
-    EXPECT_EQ(dd->deserialize<mNode>(serialized, binary), mEdge::one());
+    EXPECT_EQ(::mqt::test::value(dd->deserialize<mNode>(serialized, binary)),
+              mEdge::one());
   }
 
   auto const hGate = getDD(TestGate(1, Fixture::H), *dd);
@@ -681,71 +730,89 @@ TEST(DDPackageTest, MatrixSerializationTest) {
 
   auto const bellMatrix = dd->multiply(cxGate, hGate);
 
-  serialize(bellMatrix, "bell_matrix.dd", false);
-  auto deserializedBellMatrix = dd->deserialize<mNode>("bell_matrix.dd", false);
+  ::mqt::test::value(serialize(bellMatrix, "bell_matrix.dd", false));
+  auto deserializedBellMatrix =
+      ::mqt::test::value(dd->deserialize<mNode>("bell_matrix.dd", false));
   EXPECT_EQ(bellMatrix, deserializedBellMatrix);
   std::filesystem::remove("bell_matrix.dd");
 
-  serialize(bellMatrix, "bell_matrix_binary.dd", true);
+  ::mqt::test::value(serialize(bellMatrix, "bell_matrix_binary.dd", true));
   deserializedBellMatrix =
-      dd->deserialize<mNode>("bell_matrix_binary.dd", true);
+      ::mqt::test::value(dd->deserialize<mNode>("bell_matrix_binary.dd", true));
   EXPECT_EQ(bellMatrix, deserializedBellMatrix);
   std::filesystem::remove("bell_matrix_binary.dd");
 }
 
 TEST(DDPackageTest, SerializationErrors) {
-  auto dd = std::make_unique<Package>(2);
+  auto dd = ::mqt::test::value(Package::create(2));
 
   auto const hGate = getDD(TestGate(1, Fixture::H), *dd);
   auto const cxGate = getDD(TestGate(Control{1}, 0, Fixture::X), *dd);
-  auto const zeroState = makeZeroState(2, *dd);
+  auto const zeroState = ::mqt::test::value(makeZeroState(2, *dd));
   auto const bellState = dd->multiply(dd->multiply(cxGate, hGate), zeroState);
 
   // test non-existing file
-  EXPECT_THROW(serialize(bellState, "./path/that/does/not/exist/filename.dd"),
-               std::invalid_argument);
-  EXPECT_THROW(
-      dd->deserialize<vNode>("./path/that/does/not/exist/filename.dd", true),
-      std::invalid_argument);
+  EXPECT_EQ(::mqt::test::errorKind([&] {
+              return serialize(bellState,
+                               "./path/that/does/not/exist/filename.dd");
+            }),
+            ::mqt::ErrorCategory::IO);
+  EXPECT_EQ(::mqt::test::errorKind([&] {
+              return dd->deserialize<vNode>(
+                  "./path/that/does/not/exist/filename.dd", true);
+            }),
+            ::mqt::ErrorCategory::IO);
 
   // test wrong version number
   std::stringstream ss{};
   ss << 2 << "\n";
-  EXPECT_THROW(dd->deserialize<vNode>(ss, false), std::runtime_error);
+  EXPECT_EQ(
+      ::mqt::test::errorKind([&] { return dd->deserialize<vNode>(ss, false); }),
+      ::mqt::ErrorCategory::InvalidArgument);
   ss << 2 << "\n";
-  EXPECT_THROW(dd->deserialize<mNode>(ss, false), std::runtime_error);
+  EXPECT_EQ(
+      ::mqt::test::errorKind([&] { return dd->deserialize<mNode>(ss, false); }),
+      ::mqt::ErrorCategory::InvalidArgument);
 
   ss.str("");
   std::remove_const_t<decltype(SERIALIZATION_VERSION)> version = 2;
   ss.write(reinterpret_cast<const char*>(&version),
            sizeof(decltype(SERIALIZATION_VERSION)));
-  EXPECT_THROW(dd->deserialize<vNode>(ss, true), std::runtime_error);
+  EXPECT_EQ(
+      ::mqt::test::errorKind([&] { return dd->deserialize<vNode>(ss, true); }),
+      ::mqt::ErrorCategory::InvalidArgument);
   ss.write(reinterpret_cast<const char*>(&version),
            sizeof(decltype(SERIALIZATION_VERSION)));
-  EXPECT_THROW(dd->deserialize<mNode>(ss, true), std::runtime_error);
+  EXPECT_EQ(
+      ::mqt::test::errorKind([&] { return dd->deserialize<mNode>(ss, true); }),
+      ::mqt::ErrorCategory::InvalidArgument);
 
   // test wrong format
   ss.str("");
   ss << "1\n";
   ss << "not_complex\n";
-  EXPECT_THROW(dd->deserialize<vNode>(ss), std::runtime_error);
+  EXPECT_EQ(::mqt::test::errorKind([&] { return dd->deserialize<vNode>(ss); }),
+            ::mqt::ErrorCategory::InvalidArgument);
   ss << "1\n";
   ss << "not_complex\n";
-  EXPECT_THROW(dd->deserialize<mNode>(ss), std::runtime_error);
+  EXPECT_EQ(::mqt::test::errorKind([&] { return dd->deserialize<mNode>(ss); }),
+            ::mqt::ErrorCategory::InvalidArgument);
 
   ss.str("");
   ss << "1\n";
   ss << "1.0\n";
   ss << "no_node_here\n";
-  EXPECT_THROW(dd->deserialize<vNode>(ss), std::runtime_error);
+  EXPECT_EQ(::mqt::test::errorKind([&] { return dd->deserialize<vNode>(ss); }),
+            ::mqt::ErrorCategory::InvalidArgument);
   ss << "1\n";
   ss << "1.0\n";
   ss << "no_node_here\n";
-  EXPECT_THROW(dd->deserialize<mNode>(ss), std::runtime_error);
+  EXPECT_EQ(::mqt::test::errorKind([&] { return dd->deserialize<mNode>(ss); }),
+            ::mqt::ErrorCategory::InvalidArgument);
 }
 
 TEST(DDPackageTest, Ancillaries) {
-  auto dd = std::make_unique<Package>(4);
+  auto dd = ::mqt::test::value(Package::create(4));
   auto const hGate = getDD(TestGate(0, Fixture::H), *dd);
   auto const cxGate = getDD(TestGate(Control{0}, 1, Fixture::X), *dd);
   auto const bellMatrix = dd->multiply(cxGate, hGate);
@@ -781,10 +848,10 @@ TEST(DDPackageTest, Ancillaries) {
 }
 
 TEST(DDPackageTest, GarbageVector) {
-  auto dd = std::make_unique<Package>(4);
+  auto dd = ::mqt::test::value(Package::create(4));
   auto const hGate = getDD(TestGate(0, Fixture::H), *dd);
   auto const cxGate = getDD(TestGate(Control{0}, 1, Fixture::X), *dd);
-  auto const zeroState = makeZeroState(2, *dd);
+  auto const zeroState = ::mqt::test::value(makeZeroState(2, *dd));
   auto bellState = dd->multiply(dd->multiply(cxGate, hGate), zeroState);
   std::cout << "Bell State:\n";
   bellState.printVector();
@@ -815,7 +882,7 @@ TEST(DDPackageTest, GarbageVector) {
 }
 
 TEST(DDPackageTest, GarbageMatrix) {
-  auto dd = std::make_unique<Package>(4);
+  auto dd = ::mqt::test::value(Package::create(4));
   auto const hGate = getDD(TestGate(0, Fixture::H), *dd);
   auto const cxGate = getDD(TestGate(Control{0}, 1, Fixture::X), *dd);
   auto const bellMatrix = dd->multiply(cxGate, hGate);
@@ -852,10 +919,10 @@ TEST(DDPackageTest, GarbageMatrix) {
 }
 
 TEST(DDPackageTest, ReduceGarbageVector) {
-  auto dd = std::make_unique<Package>(3);
+  auto dd = ::mqt::test::value(Package::create(3));
   auto const xGate = getDD(TestGate(2, Fixture::X), *dd);
   auto const hGate = getDD(TestGate(2, Fixture::H), *dd);
-  auto const zeroState = makeZeroState(3, *dd);
+  auto const zeroState = ::mqt::test::value(makeZeroState(3, *dd));
   auto initialState = dd->multiply(dd->multiply(hGate, xGate), zeroState);
   std::cout << "Initial State:\n";
   initialState.printVector();
@@ -865,23 +932,23 @@ TEST(DDPackageTest, ReduceGarbageVector) {
       dd->reduceGarbage(initialState, {false, true, true});
   std::cout << "After reduceGarbage():\n";
   reducedState.printVector();
-  EXPECT_EQ(reducedState, makeZeroState(3, *dd));
+  EXPECT_EQ(reducedState, ::mqt::test::value(makeZeroState(3, *dd)));
 
   dd->incRef(initialState);
   auto const reducedState2 =
       dd->reduceGarbage(initialState, {false, true, true}, true);
 
-  EXPECT_EQ(reducedState2, makeZeroState(3, *dd));
+  EXPECT_EQ(reducedState2, ::mqt::test::value(makeZeroState(3, *dd)));
 }
 
 TEST(DDPackageTest, ReduceGarbageVectorTGate) {
   constexpr auto nqubits = 2U;
-  const auto dd = std::make_unique<Package>(nqubits);
+  const auto dd = ::mqt::test::value(Package::create(nqubits));
   const auto xGate0 = getDD(TestGate(0, Fixture::X), *dd);
   const auto xGate1 = getDD(TestGate(1, Fixture::X), *dd);
   const auto tdgGate0 = getDD(TestGate(0, Fixture::Tdg), *dd);
 
-  auto const zeroState = makeZeroState(nqubits, *dd);
+  auto const zeroState = ::mqt::test::value(makeZeroState(nqubits, *dd));
   auto initialState = dd->multiply(
       dd->multiply(tdgGate0, dd->multiply(xGate0, xGate1)), zeroState);
   std::cout << "Initial State:\n";
@@ -897,7 +964,7 @@ TEST(DDPackageTest, ReduceGarbageVectorTGate) {
 }
 
 TEST(DDPackageTest, ReduceGarbageMatrix) {
-  auto dd = std::make_unique<Package>(3);
+  auto dd = ::mqt::test::value(Package::create(3));
   auto const hGate = getDD(TestGate(0, Fixture::H), *dd);
   auto const cNotGate = getDD(TestGate(Controls{0}, 1, Fixture::X), *dd);
 
@@ -941,7 +1008,7 @@ TEST(DDPackageTest, ReduceGarbageMatrix) {
 
 TEST(DDPackageTest, ReduceGarbageMatrix2) {
   constexpr auto nqubits = 3U;
-  const auto dd = std::make_unique<Package>(nqubits);
+  const auto dd = ::mqt::test::value(Package::create(nqubits));
   const auto controlledSwapGate =
       getDD(TestGate(Controls{1}, Targets{0, 2}, Fixture::SWAP), *dd);
   const auto hGate = getDD(TestGate(0, Fixture::H), *dd);
@@ -973,7 +1040,7 @@ TEST(DDPackageTest, ReduceGarbageMatrix2) {
 
 TEST(DDPackageTest, ReduceGarbageMatrixNoGarbage) {
   constexpr auto nqubits = 2U;
-  const auto dd = std::make_unique<Package>(nqubits);
+  const auto dd = ::mqt::test::value(Package::create(nqubits));
   const auto tdgGate0 = getDD(TestGate(0, Fixture::Tdg), *dd);
   const auto tdgGate1 = getDD(TestGate(1, Fixture::Tdg), *dd);
 
@@ -992,7 +1059,7 @@ TEST(DDPackageTest, ReduceGarbageMatrixNoGarbage) {
 
 TEST(DDPackageTest, ReduceGarbageMatrixTGate) {
   constexpr auto nqubits = 2U;
-  const auto dd = std::make_unique<Package>(nqubits);
+  const auto dd = ::mqt::test::value(Package::create(nqubits));
   const auto tdgGate0 = getDD(TestGate(0, Fixture::Tdg), *dd);
   const auto tdgGate1 = getDD(TestGate(1, Fixture::Tdg), *dd);
 
@@ -1018,58 +1085,88 @@ TEST(DDPackageTest, ReduceGarbageMatrixTGate) {
 
 TEST(DDPackageTest, InvalidMakeBasisStateAndGate) {
   auto const nqubits = 2U;
-  auto dd = std::make_unique<Package>(nqubits);
-  EXPECT_THROW(getDD(TestGate(3, Fixture::X), *dd), std::runtime_error);
+  auto dd = ::mqt::test::value(Package::create(nqubits));
+  EXPECT_EQ(::mqt::test::errorKind([&] { return dd->makeGateDD(X_MAT, 3); }),
+            ::mqt::ErrorCategory::InvalidArgument);
 }
 
 TEST(DDPackageTest, RejectsGateConstructionInEmptyPackage) {
-  auto dd = std::make_unique<Package>(0U);
-  EXPECT_THROW(dd->makeGateDD(X_MAT, 0U), std::runtime_error);
-  EXPECT_THROW(dd->makeTwoQubitGateDD(SWAP_MAT, 0U, 0U), std::runtime_error);
-  EXPECT_THROW(dd->makeThreeQubitGateDD(THREE_QUBIT_MAT, 0U, 0U, 0U),
-               std::runtime_error);
+  auto dd = ::mqt::test::value(Package::create(0U));
+  EXPECT_EQ(::mqt::test::errorKind([&] { return dd->makeGateDD(X_MAT, 0U); }),
+            ::mqt::ErrorCategory::InvalidArgument);
+  EXPECT_EQ(::mqt::test::errorKind(
+                [&] { return dd->makeTwoQubitGateDD(SWAP_MAT, 0U, 0U); }),
+            ::mqt::ErrorCategory::InvalidArgument);
+  EXPECT_EQ(::mqt::test::errorKind([&] {
+              return dd->makeThreeQubitGateDD(THREE_QUBIT_MAT, 0U, 0U, 0U);
+            }),
+            ::mqt::ErrorCategory::InvalidArgument);
 }
 
 TEST(DDPackageTest, RejectsOverlappingGateQubits) {
-  auto dd = std::make_unique<Package>(5U);
+  auto dd = ::mqt::test::value(Package::create(5U));
 
   // Duplicate two-qubit targets
-  EXPECT_THROW(dd->makeTwoQubitGateDD(SWAP_MAT, 1U, 1U), std::runtime_error);
+  EXPECT_EQ(::mqt::test::errorKind(
+                [&] { return dd->makeTwoQubitGateDD(SWAP_MAT, 1U, 1U); }),
+            ::mqt::ErrorCategory::InvalidArgument);
 
   // Control coincides with single-qubit target
-  EXPECT_THROW(dd->makeGateDD(X_MAT, Controls{{1}}, 1U), std::runtime_error);
+  EXPECT_EQ(::mqt::test::errorKind(
+                [&] { return dd->makeGateDD(X_MAT, Controls{{1}}, 1U); }),
+            ::mqt::ErrorCategory::InvalidArgument);
 
   // Duplicate three-qubit targets
-  EXPECT_THROW(dd->makeThreeQubitGateDD(THREE_QUBIT_MAT, 0U, 0U, 1U),
-               std::runtime_error);
-  EXPECT_THROW(dd->makeThreeQubitGateDD(THREE_QUBIT_MAT, 0U, 1U, 0U),
-               std::runtime_error);
-  EXPECT_THROW(dd->makeThreeQubitGateDD(THREE_QUBIT_MAT, 2U, 1U, 2U),
-               std::runtime_error);
-  EXPECT_THROW(dd->makeThreeQubitGateDD(THREE_QUBIT_MAT, 1U, 1U, 1U),
-               std::runtime_error);
+  EXPECT_EQ(::mqt::test::errorKind([&] {
+              return dd->makeThreeQubitGateDD(THREE_QUBIT_MAT, 0U, 0U, 1U);
+            }),
+            ::mqt::ErrorCategory::InvalidArgument);
+  EXPECT_EQ(::mqt::test::errorKind([&] {
+              return dd->makeThreeQubitGateDD(THREE_QUBIT_MAT, 0U, 1U, 0U);
+            }),
+            ::mqt::ErrorCategory::InvalidArgument);
+  EXPECT_EQ(::mqt::test::errorKind([&] {
+              return dd->makeThreeQubitGateDD(THREE_QUBIT_MAT, 2U, 1U, 2U);
+            }),
+            ::mqt::ErrorCategory::InvalidArgument);
+  EXPECT_EQ(::mqt::test::errorKind([&] {
+              return dd->makeThreeQubitGateDD(THREE_QUBIT_MAT, 1U, 1U, 1U);
+            }),
+            ::mqt::ErrorCategory::InvalidArgument);
 
   // Extra control coincides with a target
-  EXPECT_THROW(
-      dd->makeThreeQubitGateDD(THREE_QUBIT_MAT, Controls{{1}}, 0U, 1U, 2U),
-      std::runtime_error);
-  EXPECT_THROW(
-      dd->makeThreeQubitGateDD(THREE_QUBIT_MAT, Control{0}, 0U, 1U, 2U),
-      std::runtime_error);
+  EXPECT_EQ(::mqt::test::errorKind([&] {
+              return dd->makeThreeQubitGateDD(THREE_QUBIT_MAT, Controls{{1}},
+                                              0U, 1U, 2U);
+            }),
+            ::mqt::ErrorCategory::InvalidArgument);
+  EXPECT_EQ(::mqt::test::errorKind([&] {
+              return dd->makeThreeQubitGateDD(THREE_QUBIT_MAT, Control{0}, 0U,
+                                              1U, 2U);
+            }),
+            ::mqt::ErrorCategory::InvalidArgument);
 }
 
 TEST(DDPackageTest, RejectsConflictingControlPolarities) {
-  Package package(5);
+  auto packageOwner = ::mqt::test::value(Package::create(5));
+  auto& package = *packageOwner;
   const Controls controls{{0, Control::Type::Neg}, {0, Control::Type::Pos}};
-  EXPECT_THROW(package.makeGateDD(X_MAT, controls, 1), std::runtime_error);
-  EXPECT_THROW(package.makeTwoQubitGateDD(SWAP_MAT, controls, 1, 2),
-               std::runtime_error);
-  EXPECT_THROW(package.makeThreeQubitGateDD(THREE_QUBIT_MAT, controls, 1, 2, 3),
-               std::runtime_error);
+  EXPECT_EQ(::mqt::test::errorKind(
+                [&] { return package.makeGateDD(X_MAT, controls, 1); }),
+            ::mqt::ErrorCategory::InvalidArgument);
+  EXPECT_EQ(::mqt::test::errorKind([&] {
+              return package.makeTwoQubitGateDD(SWAP_MAT, controls, 1, 2);
+            }),
+            ::mqt::ErrorCategory::InvalidArgument);
+  EXPECT_EQ(::mqt::test::errorKind([&] {
+              return package.makeThreeQubitGateDD(THREE_QUBIT_MAT, controls, 1,
+                                                  2, 3);
+            }),
+            ::mqt::ErrorCategory::InvalidArgument);
 }
 
 TEST(DDPackageTest, PackageReset) {
-  auto dd = std::make_unique<Package>(1);
+  auto dd = ::mqt::test::value(Package::create(1));
 
   // one node in unique table of variable 0
   auto xGate = getDD(TestGate(0, Fixture::X), *dd);
@@ -1091,12 +1188,12 @@ TEST(DDPackageTest, PackageReset) {
 }
 
 TEST(DDPackageTest, ResetClearsRoots) {
-  auto dd = std::make_unique<Package>(2);
+  auto dd = ::mqt::test::value(Package::create(2));
 
   const auto& vRoots = dd->getRootSet<vNode>();
   const auto& mRoots = dd->getRootSet<mNode>();
 
-  const auto vec = dd::makeZeroState(2, *dd);
+  const auto vec = ::mqt::test::value(dd::makeZeroState(2, *dd));
   const auto mat = getDD(TestGate(0, Fixture::X), *dd);
 
   dd->incRef(vec);
@@ -1112,13 +1209,13 @@ TEST(DDPackageTest, ResetClearsRoots) {
 }
 
 TEST(DDPackageTest, DuplicatetrackDoesNotLeaveStaleRoot) {
-  auto dd = std::make_unique<Package>(1);
+  auto dd = ::mqt::test::value(Package::create(1));
 
   auto& vRoots = dd->getRootSet<vNode>();
   auto& mRoots = dd->getRootSet<mNode>();
 
   // vector root
-  auto const vec = dd::makeZeroState(1, *dd);
+  auto const vec = ::mqt::test::value(dd::makeZeroState(1, *dd));
   EXPECT_EQ(vRoots.size(), 1U);
   dd->incRef(vec);
   EXPECT_EQ(vRoots.at(vec), 2U);
@@ -1126,7 +1223,6 @@ TEST(DDPackageTest, DuplicatetrackDoesNotLeaveStaleRoot) {
   EXPECT_EQ(vRoots.at(vec), 1U);
   dd->decRef(vec);
   EXPECT_TRUE(vRoots.empty());
-  EXPECT_THROW(dd->decRef(vec), std::invalid_argument);
 
   // matrix root
   auto const mat = getDD(TestGate(0, Fixture::X), *dd);
@@ -1138,11 +1234,10 @@ TEST(DDPackageTest, DuplicatetrackDoesNotLeaveStaleRoot) {
   EXPECT_EQ(mRoots.at(mat), 1U);
   dd->decRef(mat);
   EXPECT_TRUE(mRoots.empty());
-  EXPECT_THROW(dd->decRef(mat), std::invalid_argument);
 }
 
 TEST(DDPackageTest, Inverse) {
-  auto dd = std::make_unique<Package>(1);
+  auto dd = ::mqt::test::value(Package::create(1));
   auto const x = getDD(TestGate(0, Fixture::X), *dd);
   auto const xdag = dd->conjugateTranspose(x);
   EXPECT_EQ(x, xdag);
@@ -1161,7 +1256,7 @@ TEST(DDPackageTest, Inverse) {
 }
 
 TEST(DDPackageTest, trackTwiceThenuntrackTwice) {
-  auto dd = std::make_unique<Package>(1);
+  auto dd = ::mqt::test::value(Package::create(1));
 
   auto& mRoots = dd->getRootSet<mNode>();
 
@@ -1190,16 +1285,17 @@ TEST(DDPackageTest, trackTwiceThenuntrackTwice) {
 }
 
 TEST(DDPackageTest, UniqueTableGrowthPreservesLookupsStatisticsAndRoots) {
-  Package package(0);
-  package.resize(1);
-  const auto state = makeZeroState(1, package);
+  auto packageOwner = ::mqt::test::value(Package::create(0));
+  auto& package = *packageOwner;
+  ::mqt::test::value(package.resize(1));
+  const auto state = ::mqt::test::value(makeZeroState(1, package));
   const GateMatrix x{0., 1., 1., 0.};
-  const auto gate = package.makeGateDD(x, 0);
+  const auto gate = ::mqt::test::value(package.makeGateDD(x, 0));
   package.incRef(gate);
   const auto vectorStats = package.vUniqueTable.getStats(0).toString();
   const auto matrixStats = package.mUniqueTable.getStats(0).toString();
   for (const size_t width : {1, 4, 4}) {
-    package.resize(width);
+    ::mqt::test::value(package.resize(width));
     EXPECT_EQ(package.vUniqueTable.getStats(0).toString(), vectorStats);
     EXPECT_EQ(package.mUniqueTable.getStats(0).toString(), matrixStats);
     for (const auto* table : {&package.vUniqueTable, &package.mUniqueTable}) {
@@ -1215,9 +1311,9 @@ TEST(DDPackageTest, UniqueTableGrowthPreservesLookupsStatisticsAndRoots) {
   }
   EXPECT_EQ(package.makeDDNode(0, std::array{vEdge::one(), vEdge::zero()}),
             state);
-  EXPECT_EQ(package.makeGateDD(x, 0), gate);
-  const auto largerState = makeZeroState(4, package);
-  const auto largerGate = package.makeGateDD(x, 3);
+  EXPECT_EQ(::mqt::test::value(package.makeGateDD(x, 0)), gate);
+  const auto largerState = ::mqt::test::value(makeZeroState(4, package));
+  const auto largerGate = ::mqt::test::value(package.makeGateDD(x, 3));
   package.incRef(largerGate);
   package.decRef(largerState);
   package.decRef(largerGate);
@@ -1226,22 +1322,23 @@ TEST(DDPackageTest, UniqueTableGrowthPreservesLookupsStatisticsAndRoots) {
   EXPECT_EQ(package.mUniqueTable.getNumEntries(), 1);
   EXPECT_EQ(package.makeDDNode(0, std::array{vEdge::one(), vEdge::zero()}),
             state);
-  EXPECT_EQ(package.makeGateDD(x, 0), gate);
+  EXPECT_EQ(::mqt::test::value(package.makeGateDD(x, 0)), gate);
   package.decRef(state);
   package.decRef(gate);
   package.garbageCollect(true);
   EXPECT_EQ(package.vUniqueTable.getNumEntries(), 0);
   EXPECT_EQ(package.mUniqueTable.getNumEntries(), 0);
-  package.resize(0);
-  package.resize(1);
-  const auto fresh = makeZeroState(1, package);
+  ::mqt::test::value(package.resize(0));
+  ::mqt::test::value(package.resize(1));
+  const auto fresh = ::mqt::test::value(makeZeroState(1, package));
   EXPECT_EQ(fresh.getVector(), (CVec{1., 0.}));
   package.decRef(fresh);
 }
 
 TEST(DDPackageTest, UniqueTableEntryCountControlsCollection) {
   auto manager = MemoryManager::create<vNode>(4);
-  UniqueTable table(manager, {.nBuckets = 4, .initialGCLimit = 2});
+  auto table = ::mqt::test::value(
+      UniqueTable::create(manager, {.nBuckets = 4, .initialGCLimit = 2}));
   table.resize(2);
   auto* low = manager.get<vNode>();
   low->v = 0;
@@ -1280,7 +1377,7 @@ TEST(DDPackageTest, UniqueTableEntryCountControlsCollection) {
 }
 
 TEST(DDPackageTest, UniqueTableAllocation) {
-  auto dd = std::make_unique<Package>(1);
+  auto dd = ::mqt::test::value(Package::create(1));
 
   auto const allocs = dd->vMemoryManager.getStats().numAllocated;
   std::cout << allocs << "\n";
@@ -1303,7 +1400,7 @@ TEST(DDPackageTest, UniqueTableAllocation) {
 }
 
 TEST(DDPackageTest, SpecialCaseTerminal) {
-  auto dd = std::make_unique<Package>(2);
+  auto dd = ::mqt::test::value(Package::create(2));
   auto const one = vEdge::one();
   for (const auto& options : {
            std::array{true, false, false, false},
@@ -1321,15 +1418,15 @@ TEST(DDPackageTest, SpecialCaseTerminal) {
   EXPECT_TRUE(dd->kronecker(zero, one, 0).isZeroTerminal());
   EXPECT_TRUE(dd->kronecker(one, one, 0).isOneTerminal());
 
-  EXPECT_EQ(one.getValueByPath(0, ""), 1.);
-  EXPECT_EQ(one.getValueByIndex(0), 1.);
-  EXPECT_EQ(mEdge::one().getValueByIndex(0, 0, 0), 1.);
+  EXPECT_EQ(::mqt::test::value(one.getValueByPath(0, "")), 1.);
+  EXPECT_EQ(::mqt::test::value(one.getValueByIndex(0)), 1.);
+  EXPECT_EQ(::mqt::test::value(mEdge::one().getValueByIndex(0, 0, 0)), 1.);
 
   EXPECT_EQ(dd->innerProduct(zero, zero), ComplexValue(0.));
 }
 
 TEST(DDPackageTest, KroneckerProduct) {
-  auto dd = std::make_unique<Package>(2);
+  auto dd = ::mqt::test::value(Package::create(2));
   auto const x = getDD(TestGate(0, Fixture::X), *dd);
   auto const kronecker = dd->kronecker(x, x, 1);
   EXPECT_EQ(kronecker.p->v, 1);
@@ -1347,16 +1444,16 @@ TEST(DDPackageTest, KroneckerProduct) {
 }
 
 TEST(DDPackageTest, KroneckerProductVectors) {
-  auto dd = std::make_unique<Package>(2);
-  auto const zeroState = makeZeroState(1, *dd);
+  auto dd = ::mqt::test::value(Package::create(2));
+  auto const zeroState = ::mqt::test::value(makeZeroState(1, *dd));
   auto const kronecker = dd->kronecker(zeroState, zeroState, 1);
 
-  auto const expected = makeZeroState(2, *dd);
+  auto const expected = ::mqt::test::value(makeZeroState(2, *dd));
   EXPECT_EQ(kronecker, expected);
 }
 
 TEST(DDPackageTest, KroneckerIdentityHandling) {
-  auto dd = std::make_unique<Package>(3U);
+  auto dd = ::mqt::test::value(Package::create(3U));
   // create a Hadamard gate on the middle qubit
   auto const h = getDD(TestGate(1U, Fixture::H), *dd);
   // create a single qubit identity
@@ -1378,11 +1475,14 @@ TEST(DDPackageTest, KroneckerIdentityHandling) {
 }
 
 TEST(DDPackageTest, KroneckerRespectsBottomWidthAcrossCalls) {
-  Package package(4);
-  const auto top = package.makeGateDD(H_MAT, 0);
+  auto packageOwner = ::mqt::test::value(Package::create(4));
+  auto& package = *packageOwner;
+  const auto top = ::mqt::test::value(package.makeGateDD(H_MAT, 0));
   const auto topDense = top.getMatrix(1);
-  for (const auto& bottom :
-       {Package::makeIdent(), package.makeGateDD(X_MAT, 0)}) {
+  for (const auto& bottom : {
+           Package::makeIdent(),
+           ::mqt::test::value(package.makeGateDD(X_MAT, 0)),
+       }) {
     for (const size_t width : {1U, 2U, 3U, 2U, 1U}) {
       SCOPED_TRACE(width);
       const auto bottomDense = bottom.getMatrix(width);
@@ -1400,19 +1500,21 @@ TEST(DDPackageTest, KroneckerRespectsBottomWidthAcrossCalls) {
 }
 
 TEST(DDPackageTest, KroneckerRespectsIndexModeAcrossCalls) {
-  Package package(4);
-  const auto top = package.makeGateDD(H_MAT, 2);
-  const auto bottom = package.makeGateDD(X_MAT, 0);
+  auto packageOwner = ::mqt::test::value(Package::create(4));
+  auto& package = *packageOwner;
+  const auto top = ::mqt::test::value(package.makeGateDD(H_MAT, 2));
+  const auto bottom = ::mqt::test::value(package.makeGateDD(X_MAT, 0));
   for (const bool shift : {true, false, false, true}) {
     const auto result = package.kronecker(top, bottom, 1, shift);
-    const auto expected =
-        package.multiply(package.makeGateDD(H_MAT, shift ? 3 : 2), bottom);
+    const auto expected = package.multiply(
+        ::mqt::test::value(package.makeGateDD(H_MAT, shift ? 3 : 2)), bottom);
     EXPECT_EQ(result.getMatrix(4), expected.getMatrix(4));
   }
 }
 
 TEST(DDPackageTest, EmbedsDenseMatricesInOperandOrder) {
-  Package package(6);
+  auto packageOwner = ::mqt::test::value(Package::create(6));
+  auto& package = *packageOwner;
   for (const size_t count : {1U, 2U, 3U, 4U}) {
     const std::array<Qubit, 4> wires{4, 1, 5, 2};
     const auto targets = std::span{wires}.first(count);
@@ -1428,7 +1530,8 @@ TEST(DDPackageTest, EmbedsDenseMatricesInOperandOrder) {
         continue;
       }
       const auto actual =
-          package.makeGateDD(entries, targets, controls).getMatrix(6);
+          ::mqt::test::value(package.makeGateDD(entries, targets, controls))
+              .getMatrix(6);
       const auto localIndex = [targets](const size_t index) {
         size_t result = 0;
         for (const auto target : targets) {
@@ -1461,49 +1564,73 @@ TEST(DDPackageTest, EmbedsDenseMatricesInOperandOrder) {
 }
 
 TEST(DDPackageTest, MatrixViewsValidateDimensionsAndQubits) {
-  Package package(4);
+  auto packageOwner = ::mqt::test::value(Package::create(4));
+  auto& package = *packageOwner;
   const std::array scalar{std::complex<fp>{0.25, 0.5}};
-  EXPECT_EQ(package.makeGateDD(scalar, {}),
+  EXPECT_EQ(::mqt::test::value(package.makeGateDD(scalar, {})),
             mEdge::terminal(package.cn.lookup(scalar[0])));
   const auto entry = [&scalar](size_t, size_t) { return scalar[0]; };
-  EXPECT_TRUE(package.makeDDFromMatrix(0, entry).isOneTerminal());
-  EXPECT_EQ(package.makeDDFromMatrix(1, entry), package.makeGateDD(scalar, {}));
-  EXPECT_THROW(package.makeDDFromMatrix(3, entry), std::invalid_argument);
-  EXPECT_THROW(package.makeDDFromMatrix(32, entry), std::runtime_error);
-  EXPECT_THROW(package.makeDDFromMatrix(CMat(32, CVec(32))),
-               std::runtime_error);
+  EXPECT_TRUE(
+      ::mqt::test::value(package.makeDDFromMatrix(0, entry)).isOneTerminal());
+  EXPECT_EQ(::mqt::test::value(package.makeDDFromMatrix(1, entry)),
+            ::mqt::test::value(package.makeGateDD(scalar, {})));
+  EXPECT_EQ(::mqt::test::errorKind(
+                [&] { return package.makeDDFromMatrix(3, entry); }),
+            ::mqt::ErrorCategory::InvalidArgument);
+  EXPECT_EQ(::mqt::test::errorKind(
+                [&] { return package.makeDDFromMatrix(32, entry); }),
+            ::mqt::ErrorCategory::InvalidArgument);
+  EXPECT_EQ(::mqt::test::errorKind(
+                [&] { return package.makeDDFromMatrix(CMat(32, CVec(32))); }),
+            ::mqt::ErrorCategory::InvalidArgument);
   const std::array<Qubit, 4> targets{3, 0, 2, 1};
   const std::vector<std::complex<fp>> matrix(256);
-  EXPECT_THROW(package.makeGateDD(scalar, targets), std::invalid_argument);
-  EXPECT_THROW(package.makeGateDD(matrix, targets, Controls{{0}}),
-               std::invalid_argument);
-  EXPECT_THROW(package.makeGateDD(scalar, {}, Controls{{0}}),
-               std::invalid_argument);
+  EXPECT_EQ(::mqt::test::errorKind(
+                [&] { return package.makeGateDD(scalar, targets); }),
+            ::mqt::ErrorCategory::InvalidArgument);
+  EXPECT_EQ(::mqt::test::errorKind([&] {
+              return package.makeGateDD(matrix, targets, Controls{{0}});
+            }),
+            ::mqt::ErrorCategory::InvalidArgument);
+  EXPECT_EQ(::mqt::test::errorKind(
+                [&] { return package.makeGateDD(scalar, {}, Controls{{0}}); }),
+            ::mqt::ErrorCategory::InvalidArgument);
   const std::array<Qubit, 4> duplicates{3, 0, 2, 2};
-  EXPECT_THROW(package.makeGateDD(matrix, duplicates), std::runtime_error);
+  EXPECT_EQ(::mqt::test::errorKind(
+                [&] { return package.makeGateDD(matrix, duplicates); }),
+            ::mqt::ErrorCategory::InvalidArgument);
   const std::array<Qubit, 4> outside{4, 0, 2, 1};
-  EXPECT_THROW(package.makeGateDD(matrix, outside), std::runtime_error);
+  EXPECT_EQ(::mqt::test::errorKind(
+                [&] { return package.makeGateDD(matrix, outside); }),
+            ::mqt::ErrorCategory::InvalidArgument);
   const std::array<Qubit, std::numeric_limits<size_t>::digits> tooMany{};
-  EXPECT_THROW(package.makeGateDD(scalar, tooMany), std::invalid_argument);
-  Package empty(0);
-  EXPECT_EQ(empty.makeGateDD(scalar, {}),
+  EXPECT_EQ(::mqt::test::errorKind(
+                [&] { return package.makeGateDD(scalar, tooMany); }),
+            ::mqt::ErrorCategory::InvalidArgument);
+  auto emptyOwner = ::mqt::test::value(Package::create(0));
+  auto& empty = *emptyOwner;
+  EXPECT_EQ(::mqt::test::value(empty.makeGateDD(scalar, {})),
             mEdge::terminal(empty.cn.lookup(scalar[0])));
 }
 
 TEST(DDPackageTest, MatrixConstructionRejectsRaggedRows) {
-  Package package(1);
+  auto packageOwner = ::mqt::test::value(Package::create(1));
+  auto& package = *packageOwner;
   for (const CMat& matrix : {
            CMat{{1., 0.}, {}},
            CMat{{1., 0.}, {0.}},
            CMat{{1., 0.}, {0., 1., 0.}},
        }) {
-    EXPECT_THROW(package.makeDDFromMatrix(matrix), std::invalid_argument);
+    EXPECT_EQ(::mqt::test::errorKind(
+                  [&] { return package.makeDDFromMatrix(matrix); }),
+              ::mqt::ErrorCategory::InvalidArgument);
   }
 }
 
 TEST(DDPackageTest, NormalizationDominantPhaseIsIndependentOfScale) {
   const auto check = []<class Node, template <class> class EdgeType> {
-    Package package(1);
+    auto packageOwner = ::mqt::test::value(Package::create(1));
+    auto& package = *packageOwner;
     const auto make = [&package](const ComplexValue second,
                                  const ComplexValue factor) {
       constexpr size_t count = IsVector<Node> ? RADIX : NEDGE;
@@ -1560,7 +1687,8 @@ TEST(DDPackageTest, BalancedNormalizationBoundsErrorAndSharesWeights) {
   for (const fp scale : {1e-8, 1., 1e8}) {
     for (const fp sign : {1., -1.}) {
       SCOPED_TRACE(::testing::Message() << scale << " * " << sign);
-      Package package(1);
+      auto packageOwner = ::mqt::test::value(Package::create(1));
+      auto& package = *packageOwner;
       const ComplexValue first{scale, 0.25 * scale};
       const auto second =
           ComplexValue{scale + (0.75 * RealNumber::eps),
@@ -1584,7 +1712,8 @@ TEST(DDPackageTest, BalancedNormalizationBoundsErrorAndSharesWeights) {
 TEST(DDPackageTest, VectorNormalizationCompensatesStoredDominantWeight) {
   const auto check = []<template <class> class EdgeType> {
     for (const auto second : {ComplexValue{4., 0.}, ComplexValue{0., 4.}}) {
-      Package package(1);
+      auto packageOwner = ::mqt::test::value(Package::create(1));
+      auto& package = *packageOwner;
       const auto stored = package.cn.lookup(0.8 + (0.75 * RealNumber::eps));
       const auto input = std::array{ComplexValue{3., 0.}, second};
       std::array<EdgeType<vNode>, RADIX> edges{};
@@ -1614,8 +1743,9 @@ TEST(DDPackageTest, VectorNormalizationCompensatesStoredDominantWeight) {
 
 TEST(DDPackageTest, GroverRetainsCompactAccurateState) {
   constexpr size_t qubits = 20;
-  Package package(qubits);
-  auto state = makeZeroState(qubits, package);
+  auto packageOwner = ::mqt::test::value(Package::create(qubits));
+  auto& package = *packageOwner;
+  auto state = ::mqt::test::value(makeZeroState(qubits, package));
   const GateMatrix h{SQRT2_2, SQRT2_2, SQRT2_2, -SQRT2_2};
   const GateMatrix x{0., 1., 1., 0.};
   const GateMatrix z{1., 0., 0., -1.};
@@ -1625,8 +1755,10 @@ TEST(DDPackageTest, GroverRetainsCompactAccurateState) {
   }
   const auto apply = [&](const GateMatrix& gate, size_t q,
                          const Controls& gateControls = Controls{}) {
-    const auto next = package.multiply(
-        package.makeGateDD(gate, gateControls, static_cast<Qubit>(q)), state);
+    const auto next =
+        package.multiply(::mqt::test::value(package.makeGateDD(
+                             gate, gateControls, static_cast<Qubit>(q))),
+                         state);
     package.incRef(next);
     package.decRef(state);
     state = next;
@@ -1687,7 +1819,10 @@ TEST(DDPackageTest, GroverRetainsCompactAccurateState) {
     const auto [nodeNorm, nodeSum] = moments(moments, state.p);
     const Number root{static_cast<std::complex<fp>>(state.w)};
     const auto norm = std::norm(root) * nodeNorm;
-    const Number marked{state.getValueByPath(qubits, std::string(qubits, '1'))};
+    const Number marked{
+        ::mqt::test::value(
+            state.getValueByPath(qubits, std::string(qubits, '1'))),
+    };
     const auto angle = static_cast<fp>((2 * k) + 1) * theta;
     const auto overlap =
         std::sin(angle) * marked +
@@ -1704,7 +1839,7 @@ TEST(DDPackageTest, GroverRetainsCompactAccurateState) {
 }
 
 TEST(DDPackageTest, NearZeroNormalize) {
-  auto dd = std::make_unique<Package>(2);
+  auto dd = ::mqt::test::value(Package::create(2));
   const fp nearZero = RealNumber::eps / 10;
   vEdge ve{};
   ve.p = dd->vMemoryManager.get<vNode>();
@@ -1761,11 +1896,11 @@ TEST(DDPackageTest, NearZeroNormalize) {
 }
 
 TEST(DDPackageTest, DestructiveMeasurementAll) {
-  auto dd = std::make_unique<Package>(4);
+  auto dd = ::mqt::test::value(Package::create(4));
   auto const hGate0 = getDD(TestGate(0, Fixture::H), *dd);
   auto const hGate1 = getDD(TestGate(1, Fixture::H), *dd);
   auto const plusMatrix = dd->multiply(hGate0, hGate1);
-  auto const zeroState = makeZeroState(2, *dd);
+  auto const zeroState = ::mqt::test::value(makeZeroState(2, *dd));
   auto plusState = dd->multiply(plusMatrix, zeroState);
   dd->incRef(plusState);
 
@@ -1777,7 +1912,7 @@ TEST(DDPackageTest, DestructiveMeasurementAll) {
   ASSERT_EQ(vBefore[0], vBefore[2]);
   ASSERT_EQ(vBefore[0], vBefore[3]);
 
-  const std::string m = dd->measureAll(plusState, true, mt);
+  const std::string m = ::mqt::test::value(dd->measureAll(plusState, true, mt));
 
   const CVec vAfter = plusState.getVector();
   const int i = std::stoi(m, nullptr, 2);
@@ -1786,13 +1921,13 @@ TEST(DDPackageTest, DestructiveMeasurementAll) {
 }
 
 TEST(DDPackageTest, MeasurementProbabilitiesMatchDenseState) {
-  auto dd = std::make_unique<Package>(2);
+  auto dd = ::mqt::test::value(Package::create(2));
   for (const CVec& amplitudes : {
            CVec{0.5, 0.5, 0.5, 0.5},
            CVec{{0., 0.5}, 0.5, 0., SQRT2_2},
            CVec{1., 0., 0., 1.},
        }) {
-    const auto state = makeStateFromVector(amplitudes, *dd);
+    const auto state = ::mqt::test::value(makeStateFromVector(amplitudes, *dd));
     for (Qubit qubit = 0; qubit < 2; ++qubit) {
       std::array<fp, 2> expected{};
       for (size_t i = 0; i < amplitudes.size(); ++i) {
@@ -1808,17 +1943,17 @@ TEST(DDPackageTest, MeasurementProbabilitiesMatchDenseState) {
 }
 
 TEST(DDPackageTest, DestructiveMeasurementOne) {
-  auto dd = std::make_unique<Package>(4);
+  auto dd = ::mqt::test::value(Package::create(4));
   auto const hGate0 = getDD(TestGate(0, Fixture::H), *dd);
   auto const hGate1 = getDD(TestGate(1, Fixture::H), *dd);
   auto const plusMatrix = dd->multiply(hGate0, hGate1);
-  auto const zeroState = makeZeroState(2, *dd);
+  auto const zeroState = ::mqt::test::value(makeZeroState(2, *dd));
   auto plusState = dd->multiply(plusMatrix, zeroState);
   dd->incRef(plusState);
 
   std::mt19937_64 mt{0}; // NOLINT(cert-msc51-cpp)
 
-  const char m = dd->measureOneCollapsing(plusState, 0, mt);
+  const char m = ::mqt::test::value(dd->measureOneCollapsing(plusState, 0, mt));
   const CVec vAfter = plusState.getVector();
 
   ASSERT_EQ(m, '0');
@@ -1828,36 +1963,9 @@ TEST(DDPackageTest, DestructiveMeasurementOne) {
   ASSERT_EQ(vAfter[3], 0.);
 }
 
-TEST(DDPackageTest, MeasurementRejectsMissingQubits) {
-  Package package(8);
-  std::mt19937_64 rng(17);
-  const auto initialRng = rng;
-  for (const size_t width : {0U, 2U}) {
-    auto state = makeZeroState(width, package);
-    const auto original = state;
-    for (const Qubit index :
-         {static_cast<Qubit>(width), std::numeric_limits<Qubit>::max()}) {
-      EXPECT_THROW(Package::determineMeasurementProbabilities(state, index),
-                   std::invalid_argument);
-      EXPECT_THROW(package.measureOneCollapsing(state, index, rng),
-                   std::invalid_argument);
-      EXPECT_THROW(package.performCollapsingMeasurement(state, index, 1., true),
-                   std::invalid_argument);
-      EXPECT_EQ(state, original);
-      EXPECT_EQ(rng, initialRng);
-    }
-    package.decRef(state);
-  }
-  auto offsetState = makeZeroState(1, package, 2);
-  EXPECT_THROW(Package::determineMeasurementProbabilities(offsetState, 0),
-               std::invalid_argument);
-  EXPECT_THROW(package.performCollapsingMeasurement(offsetState, 0, 1., true),
-               std::invalid_argument);
-  package.decRef(offsetState);
-}
-
 TEST(DDPackageTest, CollapsingMeasurementPreservesComplexAmplitudes) {
-  Package package(3);
+  auto packageOwner = ::mqt::test::value(Package::create(3));
+  auto& package = *packageOwner;
   for (const std::complex<fp> phase :
        {std::complex<fp>{1., 0.}, {0., 1.}, {-1., 0.}}) {
     CVec amplitudes{
@@ -1866,7 +1974,8 @@ TEST(DDPackageTest, CollapsingMeasurementPreservesComplexAmplitudes) {
     for (auto& amplitude : amplitudes) {
       amplitude *= phase;
     }
-    const auto original = makeStateFromVector(amplitudes, package);
+    const auto original =
+        ::mqt::test::value(makeStateFromVector(amplitudes, package));
     for (Qubit qubit = 0; qubit < 3; ++qubit) {
       for (const bool measureZero : {true, false}) {
         fp probability = 0.;
@@ -1896,16 +2005,21 @@ TEST(DDPackageTest, CollapsingMeasurementPreservesComplexAmplitudes) {
 }
 
 TEST(DDPackageTest, FullMeasurementPreservesBitOrder) {
-  Package package(17);
+  auto packageOwner = ::mqt::test::value(Package::create(17));
+  auto& package = *packageOwner;
   std::vector<bool> bits(17);
   bits[0] = bits[5] = bits[16] = true;
-  auto state = makeBasisState(17, bits, package);
+  auto state = ::mqt::test::value(makeBasisState(17, bits, package));
   std::string expected(17, '0');
   expected[0] = expected[11] = expected[16] = '1';
   std::mt19937_64 actualRng(17);
   for (const bool collapse : {false, true}) {
-    EXPECT_EQ(package.measureAll(state, collapse, actualRng), expected);
-    EXPECT_EQ(state.getValueByIndex((1U << 16U) | (1U << 5U) | 1U), 1.);
+    EXPECT_EQ(
+        ::mqt::test::value(package.measureAll(state, collapse, actualRng)),
+        expected);
+    EXPECT_EQ(::mqt::test::value(
+                  state.getValueByIndex((1U << 16U) | (1U << 5U) | 1U)),
+              1.);
   }
   package.decRef(state);
 }
@@ -2036,10 +2150,10 @@ TEST(DDPackageTest, BasicNumericInstabilityTest) {
 TEST(DDPackageTest, BasicNumericStabilityTest) {
   using limits = std::numeric_limits<fp>;
 
-  auto dd = std::make_unique<Package>(1);
+  auto dd = ::mqt::test::value(Package::create(1));
   auto const tol = RealNumber::eps;
   ComplexNumbers::setTolerance(limits::epsilon());
-  auto const state = makeZeroState(1, *dd);
+  auto const state = ::mqt::test::value(makeZeroState(1, *dd));
   auto const h = getDD(TestGate(0, Fixture::H), *dd);
   auto const state1 = dd->multiply(h, state);
   auto const z = getDD(TestGate(0, Fixture::Z), *dd);
@@ -2063,7 +2177,7 @@ TEST(DDPackageTest, BasicNumericStabilityTest) {
 }
 
 TEST(DDPackageTest, NormalizationNumericStabilityTest) {
-  auto dd = std::make_unique<Package>(1);
+  auto dd = ::mqt::test::value(Package::create(1));
   const auto phaseMatrix = [](const fp angle) {
     return GateMatrix{1, 0, 0, std::polar(1., angle)};
   };
@@ -2072,8 +2186,9 @@ TEST(DDPackageTest, NormalizationNumericStabilityTest) {
     std::cout << std::setprecision(17) << "x: " << x << " | lambda: " << lambda
               << " | cos(lambda): " << std::cos(lambda)
               << " | sin(lambda): " << std::sin(lambda) << "\n";
-    auto const p = dd->makeGateDD(phaseMatrix(lambda), 0);
-    auto const pdag = dd->makeGateDD(phaseMatrix(-lambda), 0);
+    auto const p = ::mqt::test::value(dd->makeGateDD(phaseMatrix(lambda), 0));
+    auto const pdag =
+        ::mqt::test::value(dd->makeGateDD(phaseMatrix(-lambda), 0));
     auto const result = dd->multiply(p, pdag);
     EXPECT_TRUE(result.isIdentity());
     dd->cUniqueTable.clear();
@@ -2082,12 +2197,12 @@ TEST(DDPackageTest, NormalizationNumericStabilityTest) {
 }
 
 TEST(DDPackageTest, FidelityOfMeasurementOutcomes) {
-  const auto dd = std::make_unique<Package>(3);
+  const auto dd = ::mqt::test::value(Package::create(3));
 
   const auto hGate = getDD(TestGate(2, Fixture::H), *dd);
   const auto cxGate1 = getDD(TestGate(Control{2}, 1, Fixture::X), *dd);
   const auto cxGate2 = getDD(TestGate(Control{1}, 0, Fixture::X), *dd);
-  const auto zeroState = makeZeroState(3, *dd);
+  const auto zeroState = ::mqt::test::value(makeZeroState(3, *dd));
 
   const auto ghzState = dd->multiply(
       cxGate2, dd->multiply(cxGate1, dd->multiply(hGate, zeroState)));
@@ -2095,12 +2210,13 @@ TEST(DDPackageTest, FidelityOfMeasurementOutcomes) {
   SparsePVec probs{};
   probs[0] = 0.5;
   probs[7] = 0.5;
-  const auto fidelity = Package::fidelityOfMeasurementOutcomes(ghzState, probs);
+  const auto fidelity = ::mqt::test::value(
+      Package::fidelityOfMeasurementOutcomes(ghzState, probs));
   EXPECT_NEAR(fidelity, 1.0, RealNumber::eps);
 }
 
 TEST(DDPackageTest, CloseToIdentity) {
-  auto dd = std::make_unique<Package>(3);
+  auto dd = ::mqt::test::value(Package::create(3));
   auto const id = Package::makeIdent();
   EXPECT_TRUE(dd->isCloseToIdentity(id));
   mEdge close{};
@@ -2135,7 +2251,7 @@ TEST(DDPackageTest, CloseToIdentity) {
 TEST(DDPackageTest, CloseToIdentityWithGarbageAtTheBeginning) {
   constexpr fp tol = 1.0E-10;
   constexpr auto nqubits = 3U;
-  auto dd = std::make_unique<Package>(nqubits);
+  auto dd = ::mqt::test::value(Package::create(nqubits));
   auto const controlledSwapGate =
       getDD(TestGate(Controls{1}, Targets{0, 2}, Fixture::SWAP), *dd);
   auto const hGate = getDD(TestGate(0, Fixture::H), *dd);
@@ -2159,7 +2275,7 @@ TEST(DDPackageTest, CloseToIdentityWithGarbageAtTheBeginning) {
 TEST(DDPackageTest, CloseToIdentityWithGarbageAtTheEnd) {
   constexpr fp tol = 1.0E-10;
   constexpr auto nqubits = 3U;
-  const auto dd = std::make_unique<Package>(nqubits);
+  const auto dd = ::mqt::test::value(Package::create(nqubits));
 
   const auto controlledSwapGate =
       getDD(TestGate(Controls{1}, Targets{0, 2}, Fixture::SWAP), *dd);
@@ -2188,7 +2304,7 @@ TEST(DDPackageTest, CloseToIdentityWithGarbageAtTheEnd) {
 TEST(DDPackageTest, CloseToIdentityWithGarbageInTheMiddle) {
   constexpr fp tol = 1.0E-10;
   constexpr auto nqubits = 3U;
-  const auto dd = std::make_unique<Package>(nqubits);
+  const auto dd = ::mqt::test::value(Package::create(nqubits));
 
   const auto zGate = getDD(TestGate(2, Fixture::Z), *dd);
 
@@ -2216,7 +2332,7 @@ TEST(DDPackageTest, CloseToIdentityWithGarbageInTheMiddle) {
 
 TEST(DDPackageTest, calCulpDistance) {
   constexpr auto nrQubits = 1U;
-  auto const dd = std::make_unique<Package>(nrQubits);
+  auto const dd = ::mqt::test::value(Package::create(nrQubits));
   const auto tmp0 = ulpDistance(1 + 1e-12, 1);
   const auto tmp1 = ulpDistance(1, 1);
   EXPECT_TRUE(tmp0 > 0);
@@ -2224,9 +2340,9 @@ TEST(DDPackageTest, calCulpDistance) {
 }
 
 TEST(DDPackageTest, stateFromVectorBell) {
-  const auto dd = std::make_unique<Package>(2);
+  const auto dd = ::mqt::test::value(Package::create(2));
   const auto v = std::vector<std::complex<fp>>{SQRT2_2, 0, 0, SQRT2_2};
-  const auto s = makeStateFromVector(v, *dd);
+  const auto s = ::mqt::test::value(makeStateFromVector(v, *dd));
   ASSERT_NE(s.p, nullptr);
   EXPECT_EQ(s.p->v, 1);
   EXPECT_EQ(s.p->e[0].w.r->value, SQRT2_2);
@@ -2246,20 +2362,21 @@ TEST(DDPackageTest, stateFromVectorBell) {
 }
 
 TEST(DDPackageTest, stateFromVectorEmpty) {
-  auto dd = std::make_unique<Package>(1);
+  auto dd = ::mqt::test::value(Package::create(1));
   auto const v = std::vector<std::complex<fp>>{};
-  EXPECT_TRUE(makeStateFromVector(v, *dd).isOneTerminal());
+  EXPECT_TRUE(::mqt::test::value(makeStateFromVector(v, *dd)).isOneTerminal());
 }
 
 TEST(DDPackageTest, stateFromVectorNoPowerOfTwo) {
-  auto dd = std::make_unique<Package>(3);
+  auto dd = ::mqt::test::value(Package::create(3));
   auto const v = std::vector<std::complex<fp>>{1, 2, 3, 4, 5};
-  EXPECT_THROW(makeStateFromVector(v, *dd), std::invalid_argument);
+  EXPECT_EQ(::mqt::test::errorKind([&] { return makeStateFromVector(v, *dd); }),
+            ::mqt::ErrorCategory::InvalidArgument);
 }
 
 TEST(DDPackageTest, stateFromScalar) {
-  const auto dd = std::make_unique<Package>(1);
-  const auto s = makeStateFromVector({1}, *dd);
+  const auto dd = ::mqt::test::value(Package::create(1));
+  const auto s = ::mqt::test::value(makeStateFromVector({1}, *dd));
   EXPECT_TRUE(s.isTerminal());
   EXPECT_EQ(s.w.r->value, 1);
   EXPECT_EQ(s.w.i->value, 0);
@@ -2267,9 +2384,9 @@ TEST(DDPackageTest, stateFromScalar) {
 
 TEST(DDPackageTest, expectationValueGlobalOperators) {
   constexpr Qubit maxQubits = 3;
-  const auto dd = std::make_unique<Package>(maxQubits);
+  const auto dd = ::mqt::test::value(Package::create(maxQubits));
   for (Qubit nrQubits = 1; nrQubits < maxQubits + 1; ++nrQubits) {
-    const auto zeroState = makeZeroState(nrQubits, *dd);
+    const auto zeroState = ::mqt::test::value(makeZeroState(nrQubits, *dd));
 
     // Definition global operators
     const auto singleSiteX = getDD(TestGate(0, Fixture::X), *dd);
@@ -2288,18 +2405,19 @@ TEST(DDPackageTest, expectationValueGlobalOperators) {
     }
 
     // Global Expectation values
-    EXPECT_EQ(dd->expectationValue(globalX, zeroState), 0);
-    EXPECT_EQ(dd->expectationValue(globalZ, zeroState), 1);
-    EXPECT_EQ(dd->expectationValue(globalHadamard, zeroState),
-              std::pow(SQRT2_2, nrQubits));
+    EXPECT_EQ(::mqt::test::value(dd->expectationValue(globalX, zeroState)), 0);
+    EXPECT_EQ(::mqt::test::value(dd->expectationValue(globalZ, zeroState)), 1);
+    EXPECT_EQ(
+        ::mqt::test::value(dd->expectationValue(globalHadamard, zeroState)),
+        std::pow(SQRT2_2, nrQubits));
   }
 }
 
 TEST(DDPackageTest, expectationValueLocalOperators) {
   constexpr Qubit maxQubits = 3;
-  const auto dd = std::make_unique<Package>(maxQubits);
+  const auto dd = ::mqt::test::value(Package::create(maxQubits));
   for (Qubit nrQubits = 1; nrQubits < maxQubits + 1; ++nrQubits) {
-    const auto zeroState = makeZeroState(nrQubits, *dd);
+    const auto zeroState = ::mqt::test::value(makeZeroState(nrQubits, *dd));
 
     // Local expectation values at each site
     for (Qubit site = 0; site < nrQubits - 1; ++site) {
@@ -2308,29 +2426,32 @@ TEST(DDPackageTest, expectationValueLocalOperators) {
       auto const zGate = getDD(TestGate(site, Fixture::Z), *dd);
       auto const hadamard = getDD(TestGate(site, Fixture::H), *dd);
 
-      EXPECT_EQ(dd->expectationValue(xGate, zeroState), 0);
-      EXPECT_EQ(dd->expectationValue(zGate, zeroState), 1);
-      EXPECT_EQ(dd->expectationValue(hadamard, zeroState), SQRT2_2);
+      EXPECT_EQ(::mqt::test::value(dd->expectationValue(xGate, zeroState)), 0);
+      EXPECT_EQ(::mqt::test::value(dd->expectationValue(zGate, zeroState)), 1);
+      EXPECT_EQ(::mqt::test::value(dd->expectationValue(hadamard, zeroState)),
+                SQRT2_2);
     }
   }
 }
 
-TEST(DDPackageTest, expectationValueExceptions) {
+TEST(DDPackageTest, ExpectationValueRejectsLargerObservable) {
   constexpr auto nrQubits = 2U;
 
-  const auto dd = std::make_unique<Package>(nrQubits);
-  const auto zeroState = makeZeroState(nrQubits - 1, *dd);
+  const auto dd = ::mqt::test::value(Package::create(nrQubits));
+  const auto zeroState = ::mqt::test::value(makeZeroState(nrQubits - 1, *dd));
   const auto xGate = getDD(TestGate(1, Fixture::X), *dd);
 
-  EXPECT_ANY_THROW(dd->expectationValue(xGate, zeroState));
+  EXPECT_EQ(::mqt::test::errorKind(
+                [&] { return dd->expectationValue(xGate, zeroState); }),
+            ::mqt::ErrorCategory::InvalidArgument);
 }
 
 TEST(DDPackageTest, DDFromSingleQubitMatrix) {
   const auto inputMatrix = CMat{{SQRT2_2, SQRT2_2}, {SQRT2_2, -SQRT2_2}};
 
   constexpr auto nrQubits = 1U;
-  const auto dd = std::make_unique<Package>(nrQubits);
-  const auto matDD = dd->makeDDFromMatrix(inputMatrix);
+  const auto dd = ::mqt::test::value(Package::create(nrQubits));
+  const auto matDD = ::mqt::test::value(dd->makeDDFromMatrix(inputMatrix));
   const auto outputMatrix = matDD.getMatrix(dd->qubits());
 
   EXPECT_EQ(inputMatrix, outputMatrix);
@@ -2341,8 +2462,8 @@ TEST(DDPackageTest, DDFromTwoQubitMatrix) {
       CMat{{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}, {0, 0, 1, 0}};
 
   constexpr auto nrQubits = 2U;
-  const auto dd = std::make_unique<Package>(nrQubits);
-  const auto matDD = dd->makeDDFromMatrix(inputMatrix);
+  const auto dd = ::mqt::test::value(Package::create(nrQubits));
+  const auto matDD = ::mqt::test::value(dd->makeDDFromMatrix(inputMatrix));
   const auto outputMatrix = matDD.getMatrix(dd->qubits());
 
   EXPECT_EQ(inputMatrix, outputMatrix);
@@ -2357,8 +2478,8 @@ TEST(DDPackageTest, DDFromTwoQubitAsymmetricalMatrix) {
   };
 
   constexpr auto nrQubits = 2U;
-  const auto dd = std::make_unique<Package>(nrQubits);
-  const auto matDD = dd->makeDDFromMatrix(inputMatrix);
+  const auto dd = ::mqt::test::value(Package::create(nrQubits));
+  const auto matDD = ::mqt::test::value(dd->makeDDFromMatrix(inputMatrix));
   const auto outputMatrix = matDD.getMatrix(dd->qubits());
 
   EXPECT_EQ(inputMatrix, outputMatrix);
@@ -2373,8 +2494,8 @@ TEST(DDPackageTest, DDFromThreeQubitMatrix) {
   };
 
   constexpr auto nrQubits = 3U;
-  const auto dd = std::make_unique<Package>(nrQubits);
-  const auto matDD = dd->makeDDFromMatrix(inputMatrix);
+  const auto dd = ::mqt::test::value(Package::create(nrQubits));
+  const auto matDD = ::mqt::test::value(dd->makeDDFromMatrix(inputMatrix));
 
   const auto outputMatrix = matDD.getMatrix(dd->qubits());
 
@@ -2385,33 +2506,39 @@ TEST(DDPackageTest, DDFromEmptyMatrix) {
   const auto inputMatrix = CMat{};
 
   constexpr auto nrQubits = 3U;
-  const auto dd = std::make_unique<Package>(nrQubits);
-  EXPECT_TRUE(dd->makeDDFromMatrix(inputMatrix).isOneTerminal());
+  const auto dd = ::mqt::test::value(Package::create(nrQubits));
+  EXPECT_TRUE(
+      ::mqt::test::value(dd->makeDDFromMatrix(inputMatrix)).isOneTerminal());
 }
 
 TEST(DDPackageTest, DDFromNonPowerOfTwoMatrix) {
   auto const inputMatrix = CMat{{0, 1, 2}, {3, 4, 5}, {6, 7, 8}};
 
   constexpr auto nrQubits = 3U;
-  const auto dd = std::make_unique<Package>(nrQubits);
-  EXPECT_THROW(dd->makeDDFromMatrix(inputMatrix), std::invalid_argument);
+  const auto dd = ::mqt::test::value(Package::create(nrQubits));
+  EXPECT_EQ(
+      ::mqt::test::errorKind([&] { return dd->makeDDFromMatrix(inputMatrix); }),
+      ::mqt::ErrorCategory::InvalidArgument);
 }
 
 TEST(DDPackageTest, DDFromNonSquareMatrix) {
   const auto inputMatrix = CMat{{0, 1, 2, 3}, {4, 5, 6, 7}};
 
   constexpr auto nrQubits = 3U;
-  const auto dd = std::make_unique<Package>(nrQubits);
-  EXPECT_THROW(dd->makeDDFromMatrix(inputMatrix), std::invalid_argument);
+  const auto dd = ::mqt::test::value(Package::create(nrQubits));
+  EXPECT_EQ(
+      ::mqt::test::errorKind([&] { return dd->makeDDFromMatrix(inputMatrix); }),
+      ::mqt::ErrorCategory::InvalidArgument);
 }
 
 TEST(DDPackageTest, DDFromSingleElementMatrix) {
   const auto inputMatrix = CMat{{1}};
 
   constexpr auto nrQubits = 1U;
-  const auto dd = std::make_unique<Package>(nrQubits);
+  const auto dd = ::mqt::test::value(Package::create(nrQubits));
 
-  EXPECT_TRUE(dd->makeDDFromMatrix(inputMatrix).isOneTerminal());
+  EXPECT_TRUE(
+      ::mqt::test::value(dd->makeDDFromMatrix(inputMatrix)).isOneTerminal());
 }
 
 constexpr TwoQubitGateMatrix CX_MAT{
@@ -2423,7 +2550,7 @@ constexpr TwoQubitGateMatrix CZ_MAT{
 
 TEST(DDPackageTest, TwoQubitControlledGateDDConstruction) {
   constexpr auto nrQubits = 5U;
-  const auto dd = std::make_unique<Package>(nrQubits);
+  const auto dd = ::mqt::test::value(Package::create(nrQubits));
 
   const auto gateMatrices =
       std::vector{std::pair{X_MAT, CX_MAT}, std::pair{Z_MAT, CZ_MAT}};
@@ -2437,10 +2564,10 @@ TEST(DDPackageTest, TwoQubitControlledGateDDConstruction) {
         if (control == target) {
           continue;
         }
-        const auto controlledGateDD =
-            dd->makeTwoQubitGateDD(controlledGateMatrix, control, target);
-        const auto gateDD =
-            dd->makeGateDD(gateMatrix, Control{control}, target);
+        const auto controlledGateDD = ::mqt::test::value(
+            dd->makeTwoQubitGateDD(controlledGateMatrix, control, target));
+        const auto gateDD = ::mqt::test::value(
+            dd->makeGateDD(gateMatrix, Control{control}, target));
         EXPECT_EQ(controlledGateDD, gateDD);
       }
     }
@@ -2449,7 +2576,7 @@ TEST(DDPackageTest, TwoQubitControlledGateDDConstruction) {
 
 TEST(DDPackageTest, TwoQubitControlledGateDDConstructionNegativeControls) {
   constexpr auto nrQubits = 5U;
-  const auto dd = std::make_unique<Package>(nrQubits);
+  const auto dd = ::mqt::test::value(Package::create(nrQubits));
 
   const auto gateMatrices =
       std::vector{std::pair{X_MAT, CX_MAT}, std::pair{Z_MAT, CZ_MAT}};
@@ -2468,12 +2595,13 @@ TEST(DDPackageTest, TwoQubitControlledGateDDConstructionNegativeControls) {
           }
           for (const auto controlType :
                {Control::Type::Pos, Control::Type::Neg}) {
-            const auto controlledGateDD = dd->makeTwoQubitGateDD(
-                controlledGateMatrix, Controls{{control0, controlType}},
-                control1, target);
-            const auto gateDD = dd->makeGateDD(
+            const auto controlledGateDD =
+                ::mqt::test::value(dd->makeTwoQubitGateDD(
+                    controlledGateMatrix, Controls{{control0, controlType}},
+                    control1, target));
+            const auto gateDD = ::mqt::test::value(dd->makeGateDD(
                 gateMatrix, Controls{{control0, controlType}, control1},
-                target);
+                target));
             EXPECT_EQ(controlledGateDD, gateDD);
           }
         }
@@ -2484,14 +2612,14 @@ TEST(DDPackageTest, TwoQubitControlledGateDDConstructionNegativeControls) {
 
 TEST(DDPackageTest, TwoQubitGateDDConstruction) {
   constexpr auto nrQubits = 4U;
-  const auto dd = std::make_unique<Package>(nrQubits);
+  const auto dd = ::mqt::test::value(Package::create(nrQubits));
 
   const auto decomposition = [&](const Controls& extra, const Qubit target0,
                                  const Qubit target1) {
     const auto controlledX = [&](const Qubit control, const Qubit target) {
       auto controls = extra;
       controls.emplace(control);
-      return dd->makeGateDD(X_MAT, controls, target);
+      return ::mqt::test::value(dd->makeGateDD(X_MAT, controls, target));
     };
     const auto first = controlledX(target0, target1);
     const auto middle = controlledX(target1, target0);
@@ -2504,7 +2632,8 @@ TEST(DDPackageTest, TwoQubitGateDDConstruction) {
         continue;
       }
 
-      EXPECT_EQ(dd->makeTwoQubitGateDD(SWAP_MAT, target0, target1),
+      EXPECT_EQ(::mqt::test::value(
+                    dd->makeTwoQubitGateDD(SWAP_MAT, target0, target1)),
                 decomposition({}, target0, target1));
 
       for (Qubit extra = 0; extra < nrQubits; ++extra) {
@@ -2514,10 +2643,10 @@ TEST(DDPackageTest, TwoQubitGateDDConstruction) {
         for (const auto type : {Control::Type::Pos, Control::Type::Neg}) {
           const Control control{extra, type};
           const Controls controls{control};
-          const auto controlled =
-              dd->makeTwoQubitGateDD(SWAP_MAT, controls, target0, target1);
-          EXPECT_EQ(controlled, dd->makeTwoQubitGateDD(SWAP_MAT, control,
-                                                       target0, target1));
+          const auto controlled = ::mqt::test::value(
+              dd->makeTwoQubitGateDD(SWAP_MAT, controls, target0, target1));
+          EXPECT_EQ(controlled, ::mqt::test::value(dd->makeTwoQubitGateDD(
+                                    SWAP_MAT, control, target0, target1)));
           EXPECT_EQ(controlled, decomposition(controls, target0, target1));
         }
       }
@@ -2527,13 +2656,13 @@ TEST(DDPackageTest, TwoQubitGateDDConstruction) {
 
 TEST(DDPackageTest, ThreeQubitGateDDConstruction) {
   constexpr auto nrQubits = 4U;
-  const auto dd = std::make_unique<Package>(nrQubits);
+  const auto dd = ::mqt::test::value(Package::create(nrQubits));
 
   const auto decomposition = [&](Controls controls, const Qubit control0,
                                  const Qubit control1, const Qubit target) {
     controls.emplace(control0);
     controls.emplace(control1);
-    return dd->makeGateDD(X_MAT, controls, target);
+    return ::mqt::test::value(dd->makeGateDD(X_MAT, controls, target));
   };
 
   for (Qubit control0 = 0; control0 < nrQubits; ++control0) {
@@ -2546,7 +2675,8 @@ TEST(DDPackageTest, ThreeQubitGateDDConstruction) {
           continue;
         }
 
-        EXPECT_EQ(dd->makeThreeQubitGateDD(CCX_MAT, control0, control1, target),
+        EXPECT_EQ(::mqt::test::value(dd->makeThreeQubitGateDD(
+                      CCX_MAT, control0, control1, target)),
                   decomposition({}, control0, control1, target));
 
         for (Qubit extra = 0; extra < nrQubits; ++extra) {
@@ -2556,11 +2686,11 @@ TEST(DDPackageTest, ThreeQubitGateDDConstruction) {
           for (const auto type : {Control::Type::Pos, Control::Type::Neg}) {
             const Control control{extra, type};
             const Controls controls{control};
-            const auto controlled = dd->makeThreeQubitGateDD(
-                CCX_MAT, controls, control0, control1, target);
+            const auto controlled = ::mqt::test::value(dd->makeThreeQubitGateDD(
+                CCX_MAT, controls, control0, control1, target));
             EXPECT_EQ(controlled,
-                      dd->makeThreeQubitGateDD(CCX_MAT, control, control0,
-                                               control1, target));
+                      ::mqt::test::value(dd->makeThreeQubitGateDD(
+                          CCX_MAT, control, control0, control1, target)));
             EXPECT_EQ(controlled,
                       decomposition(controls, control0, control1, target));
           }
@@ -2573,14 +2703,17 @@ TEST(DDPackageTest, ThreeQubitGateDDConstruction) {
 TEST(DDPackageTest, ArithmeticAcrossSkippedMatrixLevels) {
   constexpr auto qubits = 6U;
   constexpr auto dimension = 1U << qubits;
-  Package package(qubits);
-  auto x = package.multiply(package.makeGateDD(H_MAT, qubits - 1),
-                            package.makeGateDD(X_MAT, 0));
+  auto packageOwner = ::mqt::test::value(Package::create(qubits));
+  auto& package = *packageOwner;
+  auto x = package.multiply(
+      ::mqt::test::value(package.makeGateDD(H_MAT, qubits - 1)),
+      ::mqt::test::value(package.makeGateDD(X_MAT, 0)));
   x.w = package.cn.lookup(ComplexValue{x.w} * ComplexValue{0.3, -0.7});
-  const auto y = package.multiply(
-      package.makeGateDD(GateMatrix{0, {0, -1}, {0, 1}, 0}, qubits - 1),
-      package.makeGateDD(S_MAT, 0));
-  const auto low = package.makeGateDD(H_MAT, 0);
+  const auto y =
+      package.multiply(::mqt::test::value(package.makeGateDD(
+                           GateMatrix{0, {0, -1}, {0, 1}, 0}, qubits - 1)),
+                       ::mqt::test::value(package.makeGateDD(S_MAT, 0)));
+  const auto low = ::mqt::test::value(package.makeGateDD(H_MAT, 0));
   const std::array operands{x, y, low};
   for (const auto& operand : operands) {
     package.incRef(operand);
@@ -2625,8 +2758,8 @@ TEST(DDPackageTest, InnerProductTopNodeConjugation) {
   // 2 qubit state is rotated Rxx(-2) equivalent to
   // Ising model evolution up to a time T=1
   constexpr auto nrQubits = 2U;
-  const auto dd = std::make_unique<Package>(nrQubits);
-  const auto zeroState = makeZeroState(nrQubits, *dd);
+  const auto dd = ::mqt::test::value(Package::create(nrQubits));
+  const auto zeroState = ::mqt::test::value(makeZeroState(nrQubits, *dd));
   const auto cosTheta = std::cos(1.);
   const auto sinTheta = std::sin(1.);
   const TwoQubitGateMatrix evolutionMatrix{
@@ -2637,7 +2770,8 @@ TEST(DDPackageTest, InnerProductTopNodeConjugation) {
           {std::complex<fp>{0., sinTheta}, 0, 0, cosTheta},
       },
   };
-  const auto rxx = dd->makeTwoQubitGateDD(evolutionMatrix, 0, 1);
+  const auto rxx =
+      ::mqt::test::value(dd->makeTwoQubitGateDD(evolutionMatrix, 0, 1));
   const auto op = getDD(TestGate(0, Fixture::Z), *dd);
 
   const auto evolvedState = dd->multiply(rxx, zeroState);
@@ -2645,17 +2779,18 @@ TEST(DDPackageTest, InnerProductTopNodeConjugation) {
   // Actual evolution results in approximately -0.416
   // If the top node in the inner product is not conjugated properly,
   // it will result in +0.416.
-  EXPECT_NEAR(dd->expectationValue(op, evolvedState), -0.416, 0.001);
+  EXPECT_NEAR(::mqt::test::value(dd->expectationValue(op, evolvedState)),
+              -0.416, 0.001);
 }
 
 /// Normalization must return temporary nodes to the memory manager when
 /// multiplication produces the zero terminal.
 TEST(DDPackageTest, DDNodeLeakRegressionTest) {
   constexpr auto nqubits = 1U;
-  auto dd = std::make_unique<Package>(nqubits);
+  auto dd = ::mqt::test::value(Package::create(nqubits));
 
-  const auto dd1 = dd->makeGateDD(ZERO_PROJECTOR, 0U);
-  const auto dd2 = dd->makeGateDD(ONE_PROJECTOR, 0U);
+  const auto dd1 = ::mqt::test::value(dd->makeGateDD(ZERO_PROJECTOR, 0U));
+  const auto dd2 = ::mqt::test::value(dd->makeGateDD(ONE_PROJECTOR, 0U));
   dd->multiply(dd1, dd2);
   dd->garbageCollect(true);
   EXPECT_EQ(dd->mMemoryManager.getStats().numUsed, 0U);
@@ -2665,10 +2800,10 @@ TEST(DDPackageTest, DDNodeLeakRegressionTest) {
 /// cache hit. Repeated zero products must not allocate or leak nodes.
 TEST(DDPackageTest, CTPerformanceRegressionTest) {
   constexpr auto nqubits = 1U;
-  auto dd = std::make_unique<Package>(nqubits);
+  auto dd = ::mqt::test::value(Package::create(nqubits));
 
-  const auto dd1 = dd->makeGateDD(ZERO_PROJECTOR, 0U);
-  const auto dd2 = dd->makeGateDD(ONE_PROJECTOR, 0U);
+  const auto dd1 = ::mqt::test::value(dd->makeGateDD(ZERO_PROJECTOR, 0U));
+  const auto dd2 = ::mqt::test::value(dd->makeGateDD(ONE_PROJECTOR, 0U));
   constexpr auto repetitions = 10U;
   for (auto i = 0U; i < repetitions; ++i) {
     dd->multiply(dd1, dd2);
@@ -2683,7 +2818,7 @@ TEST(DDPackageTest, CTPerformanceRegressionTest) {
 
 TEST(DDPackageTest, DataStructureStatistics) {
   constexpr auto nqubits = 1U;
-  const auto dd = std::make_unique<Package>(nqubits);
+  const auto dd = ::mqt::test::value(Package::create(nqubits));
   const auto stats = nlohmann::json::parse(getDataStructureStatisticsString());
 
   EXPECT_EQ(stats["vNode"]["size_B"], 64U);
@@ -2700,7 +2835,7 @@ TEST(DDPackageTest, DataStructureStatistics) {
 
 TEST(DDPackageTest, DDStatistics) {
   constexpr auto nqubits = 2U;
-  const auto dd = std::make_unique<Package>(nqubits);
+  const auto dd = ::mqt::test::value(Package::create(nqubits));
   const auto dummyGate = getDD(TestGate(0U, Fixture::X), *dd);
   EXPECT_NE(dummyGate.p, nullptr);
   const auto statsString = getStatisticsString(*dd, true);
@@ -2724,10 +2859,10 @@ TEST(DDPackageTest, DDStatistics) {
 }
 
 TEST(DDPackageTest, ReduceAncillaRegression) {
-  const auto dd = std::make_unique<Package>(2);
+  const auto dd = ::mqt::test::value(Package::create(2));
   const auto inputMatrix =
       CMat{{1, 1, 1, 1}, {1, -1, 1, -1}, {1, 1, -1, -1}, {1, -1, -1, 1}};
-  auto const inputDD = dd->makeDDFromMatrix(inputMatrix);
+  auto const inputDD = ::mqt::test::value(dd->makeDDFromMatrix(inputMatrix));
   dd->incRef(inputDD);
   const auto outputDD = dd->reduceAncillae(inputDD, {true, false});
 
@@ -2742,72 +2877,76 @@ TEST(DDPackageTest, WideCoherentAdditionRetainsNormalizationAndPhase) {
   for (const size_t width : {8U, 120U, 150U}) {
     for (const ComplexValue phase : {ComplexValue{1., 0.}, {0., 1.}}) {
       SCOPED_TRACE(::testing::Message() << width << " / " << phase);
-      Package package(width);
-      const auto plus =
-          makeBasisState(width, std::vector(width, BasisStates::plus), package);
-      const auto minus = makeBasisState(
-          width, std::vector(width, BasisStates::minus), package);
-      const auto sum = package.add2(vCachedEdge{plus.p, SQRT2_2},
-                                    vCachedEdge{minus.p, phase * SQRT2_2},
-                                    static_cast<Qubit>(width - 1));
-      auto state = package.cn.lookup(sum);
-      package.incRef(state);
+      auto package = ::mqt::test::value(Package::create(width));
+      const auto plus = ::mqt::test::value(makeBasisState(
+          width, std::vector(width, BasisStates::plus), *package));
+      const auto minus = ::mqt::test::value(makeBasisState(
+          width, std::vector(width, BasisStates::minus), *package));
+      const auto sum = package->add2(vCachedEdge{plus.p, SQRT2_2},
+                                     vCachedEdge{minus.p, phase * SQRT2_2},
+                                     static_cast<Qubit>(width - 1));
+      auto state = package->cn.lookup(sum);
+      package->incRef(state);
       ASSERT_FALSE(state.isZeroTerminal());
-      EXPECT_NEAR(package.innerProduct(state, state).r, 1., 1e-11);
+      EXPECT_NEAR(package->innerProduct(state, state).r, 1., 1e-11);
       for (size_t qubit = 0; qubit < width; ++qubit) {
-        state = package.applyOperation(
-            package.makeGateDD(H_MAT, static_cast<Qubit>(qubit)), state);
+        state = package->applyOperation(::mqt::test::value(package->makeGateDD(
+                                            H_MAT, static_cast<Qubit>(qubit))),
+                                        state);
       }
       /// H on every wire maps the two product states to distinct basis states.
-      const auto zero = state.getValueByPath(width, std::string(width, '0'));
-      const auto one = state.getValueByPath(width, std::string(width, '1'));
+      const auto zero = ::mqt::test::value(
+          state.getValueByPath(width, std::string(width, '0')));
+      const auto one = ::mqt::test::value(
+          state.getValueByPath(width, std::string(width, '1')));
       EXPECT_NEAR(std::abs(zero - std::complex<fp>{SQRT2_2, 0.}), 0., 1e-11);
       EXPECT_NEAR(std::abs(one - std::complex<fp>{phase.r, phase.i} * SQRT2_2),
                   0., 1e-11);
-      package.decRef(state);
-      package.decRef(plus);
-      package.decRef(minus);
+      package->decRef(state);
+      package->decRef(plus);
+      package->decRef(minus);
     }
   }
 }
 
 TEST(DDPackageTest, WideMagnitudeAdditionRetainsNormalization) {
   constexpr size_t width = 150;
-  Package package(width);
-  const auto plus =
-      makeBasisState(width, std::vector(width, BasisStates::plus), package);
-  const auto minus =
-      makeBasisState(width, std::vector(width, BasisStates::minus), package);
-  const auto sum = package.addMagnitudes(vCachedEdge{plus.p, SQRT2_2},
-                                         vCachedEdge{minus.p, SQRT2_2},
-                                         static_cast<Qubit>(width - 1));
-  const auto state = package.cn.lookup(sum);
-  package.incRef(state);
+  auto package = ::mqt::test::value(Package::create(width));
+  const auto plus = ::mqt::test::value(
+      makeBasisState(width, std::vector(width, BasisStates::plus), *package));
+  const auto minus = ::mqt::test::value(
+      makeBasisState(width, std::vector(width, BasisStates::minus), *package));
+  const auto sum = package->addMagnitudes(vCachedEdge{plus.p, SQRT2_2},
+                                          vCachedEdge{minus.p, SQRT2_2},
+                                          static_cast<Qubit>(width - 1));
+  const auto state = package->cn.lookup(sum);
+  package->incRef(state);
   ASSERT_FALSE(state.isZeroTerminal());
-  EXPECT_NEAR(package.innerProduct(state, state).r, 1., 1e-11);
-  EXPECT_NEAR(package.fidelity(plus, state), 1., 1e-11);
-  package.decRef(state);
-  package.decRef(plus);
-  package.decRef(minus);
+  EXPECT_NEAR(package->innerProduct(state, state).r, 1., 1e-11);
+  EXPECT_NEAR(package->fidelity(plus, state), 1., 1e-11);
+  package->decRef(state);
+  package->decRef(plus);
+  package->decRef(minus);
 }
 
 TEST(DDPackageTest, ConjugationAfterGarbageCollection) {
-  auto dd = std::make_unique<Package>(1);
-  const auto input = makeStateFromVector({SQRT2_2, {0., SQRT2_2}}, *dd);
+  auto dd = ::mqt::test::value(Package::create(1));
+  const auto input =
+      ::mqt::test::value(makeStateFromVector({SQRT2_2, {0., SQRT2_2}}, *dd));
   const auto expected = dd->conjugate(input).getVector();
 
   /// Cached results are unreferenced and may be collected and reused.
   ASSERT_TRUE(dd->garbageCollect(true));
-  const auto replacement = makeZeroState(1, *dd);
+  const auto replacement = ::mqt::test::value(makeZeroState(1, *dd));
   EXPECT_EQ(dd->conjugate(input).getVector(), expected);
   dd->decRef(input);
   dd->decRef(replacement);
 }
 
 TEST(DDPackageTest, VectorMagnitudeAdditionAfterGarbageCollection) {
-  auto dd = std::make_unique<Package>(1);
-  const auto a = makeStateFromVector({1., 0.}, *dd);
-  const auto b = makeStateFromVector({0.6, 0.8}, *dd);
+  auto dd = ::mqt::test::value(Package::create(1));
+  const auto a = ::mqt::test::value(makeStateFromVector({1., 0.}, *dd));
+  const auto b = ::mqt::test::value(makeStateFromVector({0.6, 0.8}, *dd));
   const vCachedEdge x{a.p, a.w};
   const vCachedEdge y{b.p, b.w};
   const auto result = dd->addMagnitudes(x, y, 0);
@@ -2815,7 +2954,8 @@ TEST(DDPackageTest, VectorMagnitudeAdditionAfterGarbageCollection) {
       vEdge{.p = result.p, .w = dd->cn.lookup(result.w)}.getVector();
 
   ASSERT_TRUE(dd->garbageCollect(true));
-  const auto replacement = makeStateFromVector({0., 1.}, *dd);
+  const auto replacement =
+      ::mqt::test::value(makeStateFromVector({0., 1.}, *dd));
   const auto again = dd->addMagnitudes(x, y, 0);
   EXPECT_EQ((vEdge{.p = again.p, .w = dd->cn.lookup(again.w)}.getVector()),
             expected);
@@ -2825,7 +2965,7 @@ TEST(DDPackageTest, VectorMagnitudeAdditionAfterGarbageCollection) {
 }
 
 TEST(DDPackageTest, MatrixMagnitudeAdditionAfterGarbageCollection) {
-  auto dd = std::make_unique<Package>(1);
+  auto dd = ::mqt::test::value(Package::create(1));
   const auto a = getDD(TestGate(0, Fixture::Z), *dd);
   const auto b = getDD(TestGate(0, Fixture::H), *dd);
   dd->incRef(a);
@@ -2848,7 +2988,7 @@ TEST(DDPackageTest, MatrixMagnitudeAdditionAfterGarbageCollection) {
 }
 
 TEST(DDPackageTest, VectorConjugate) {
-  const auto dd = std::make_unique<Package>(2);
+  const auto dd = ::mqt::test::value(Package::create(2));
 
   EXPECT_EQ(dd->conjugate(vEdge::zero()), vEdge::zero());
 
@@ -2863,7 +3003,7 @@ TEST(DDPackageTest, VectorConjugate) {
       {-0.5 * SQRT2_2, -0.5 * SQRT2_2},
   };
 
-  const auto vecDD = makeStateFromVector(vec, *dd);
+  const auto vecDD = ::mqt::test::value(makeStateFromVector(vec, *dd));
   std::cout << "Vector:\n";
   vecDD.printVector();
   const auto conjVecDD = dd->conjugate(vecDD);
@@ -2879,7 +3019,7 @@ TEST(DDPackageTest, VectorConjugate) {
 }
 
 TEST(DDPackageTest, ReduceAncillaIdentity) {
-  const auto dd = std::make_unique<Package>(2);
+  const auto dd = ::mqt::test::value(Package::create(2));
   auto const inputDD = Package::makeIdent();
   const auto outputDD = dd->reduceAncillae(inputDD, {true, true});
 
@@ -2891,7 +3031,7 @@ TEST(DDPackageTest, ReduceAncillaIdentity) {
 }
 
 TEST(DDPackageTest, ReduceAncillaIdentityBeforeFirstNode) {
-  const auto dd = std::make_unique<Package>(2);
+  const auto dd = ::mqt::test::value(Package::create(2));
 
   auto const xGate = getDD(TestGate(0, Fixture::X), *dd);
   dd->incRef(xGate);
@@ -2905,7 +3045,7 @@ TEST(DDPackageTest, ReduceAncillaIdentityBeforeFirstNode) {
 }
 
 TEST(DDPackageTest, ReduceAncillaIdentityAfterLastNode) {
-  const auto dd = std::make_unique<Package>(2);
+  const auto dd = ::mqt::test::value(Package::create(2));
   auto const xGate = getDD(TestGate(1, Fixture::X), *dd);
   dd->incRef(xGate);
   const auto outputDD = dd->reduceAncillae(xGate, {true, false});
@@ -2918,7 +3058,7 @@ TEST(DDPackageTest, ReduceAncillaIdentityAfterLastNode) {
 }
 
 TEST(DDPackageTest, ReduceAncillaIdentityBetweenTwoNodes) {
-  const auto dd = std::make_unique<Package>(3);
+  const auto dd = ::mqt::test::value(Package::create(3));
   const auto xGate0 = getDD(TestGate(0, Fixture::X), *dd);
   const auto xGate2 = getDD(TestGate(2, Fixture::X), *dd);
   auto const state = dd->multiply(xGate0, xGate2);
@@ -2936,7 +3076,7 @@ TEST(DDPackageTest, ReduceAncillaIdentityBetweenTwoNodes) {
 }
 
 TEST(DDPackageTest, ReduceGarbageIdentity) {
-  const auto dd = std::make_unique<Package>(2);
+  const auto dd = ::mqt::test::value(Package::create(2));
   auto const inputDD = Package::makeIdent();
   auto outputDD = dd->reduceGarbage(inputDD, {true, true});
 
@@ -2953,7 +3093,7 @@ TEST(DDPackageTest, ReduceGarbageIdentity) {
 }
 
 TEST(DDPackageTest, ReduceGarbageIdentityBeforeFirstNode) {
-  const auto dd = std::make_unique<Package>(2);
+  const auto dd = ::mqt::test::value(Package::create(2));
   auto const xGate = getDD(TestGate(0, Fixture::X), *dd);
   dd->incRef(xGate);
 
@@ -2973,7 +3113,7 @@ TEST(DDPackageTest, ReduceGarbageIdentityBeforeFirstNode) {
 }
 
 TEST(DDPackageTest, ReduceGarbageIdentityAfterLastNode) {
-  const auto dd = std::make_unique<Package>(2);
+  const auto dd = ::mqt::test::value(Package::create(2));
   auto const xGate = getDD(TestGate(1, Fixture::X), *dd);
   dd->incRef(xGate);
 
@@ -2993,7 +3133,7 @@ TEST(DDPackageTest, ReduceGarbageIdentityAfterLastNode) {
 }
 
 TEST(DDPackageTest, ReduceGarbageIdentityBetweenTwoNodes) {
-  const auto dd = std::make_unique<Package>(3);
+  const auto dd = ::mqt::test::value(Package::create(3));
   const auto xGate0 = getDD(TestGate(0, Fixture::X), *dd);
   const auto xGate2 = getDD(TestGate(2, Fixture::X), *dd);
   auto const state = dd->multiply(xGate0, xGate2);
@@ -3023,10 +3163,10 @@ TEST(DDPackageTest, ReduceGarbageIdentityBetweenTwoNodes) {
   EXPECT_EQ(outputMatrix, expected);
 }
 TEST(DDPackageTest, MagnitudeAdditionAvoidsSquaredWeightOverflow) {
-  Package package(1);
+  auto package = ::mqt::test::value(Package::create(1));
   for (const fp weight : {1e-200, 1e200}) {
     const auto edge = vCachedEdge::terminal(ComplexValue{weight});
-    const auto sum = package.addMagnitudes(edge, edge, 0);
+    const auto sum = package->addMagnitudes(edge, edge, 0);
     ASSERT_TRUE(std::isfinite(sum.w.r));
     EXPECT_NEAR(sum.w.r / weight, std::sqrt(2.), 1e-15);
     EXPECT_EQ(sum.w.i, 0.);
@@ -3034,85 +3174,90 @@ TEST(DDPackageTest, MagnitudeAdditionAvoidsSquaredWeightOverflow) {
 }
 TEST(DDPackageTest, WideHadamardMatricesPreserveRootScale) {
   constexpr size_t width = 128;
-  Package package(width + 1);
+  auto package = ::mqt::test::value(Package::create(width + 1));
   auto matrix = mEdge::one();
-  package.incRef(matrix);
+  package->incRef(matrix);
   for (size_t q = 0; q < width; ++q) {
-    matrix = package.applyOperation(
-        package.makeGateDD(H_MAT, static_cast<Qubit>(q)), matrix);
+    matrix = package->applyOperation(
+        ::mqt::test::value(package->makeGateDD(H_MAT, static_cast<Qubit>(q))),
+        matrix);
   }
   const auto expected = std::ldexp(1., -static_cast<int>(width / 2));
   const auto check = [&](const mEdge& value, size_t n, fp amplitude) {
     ASSERT_FALSE(value.isZeroTerminal());
-    const auto actual = value.getValueByPath(n, std::string(n, '0'));
+    const auto actual =
+        ::mqt::test::value(value.getValueByPath(n, std::string(n, '0')));
     EXPECT_NEAR(actual.real() / amplitude, 1., 1e-12);
     EXPECT_EQ(actual.imag(), 0.);
   };
   check(matrix, width, expected);
-  check(package.conjugateTranspose(matrix), width, expected);
-  check(package.partialTrace(matrix, std::vector<bool>(width, false)), width,
+  check(package->conjugateTranspose(matrix), width, expected);
+  check(package->partialTrace(matrix, std::vector<bool>(width, false)), width,
         expected);
-  Package other(width);
-  check(other.transfer(matrix), width, expected);
+  auto other = ::mqt::test::value(Package::create(width));
+  check(other->transfer(matrix), width, expected);
   for (const bool binary : {false, true}) {
     std::stringstream stream;
     serialize(matrix, stream, binary);
-    check(other.deserialize<mNode>(stream, binary), width, expected);
+    check(::mqt::test::value(other->deserialize<mNode>(stream, binary)), width,
+          expected);
   }
-  const auto h = package.makeGateDD(H_MAT, 0);
+  const auto h = ::mqt::test::value(package->makeGateDD(H_MAT, 0));
   for (size_t repetition = 0; repetition < 2; ++repetition) {
-    check(package.kronecker(matrix, h, 1), width + 1, expected * SQRT2_2);
-    check(package.kronecker(h, matrix, width), width + 1, expected * SQRT2_2);
-    EXPECT_TRUE(package.multiply(matrix, matrix).isIdentity(false));
+    check(package->kronecker(matrix, h, 1), width + 1, expected * SQRT2_2);
+    check(package->kronecker(h, matrix, width), width + 1, expected * SQRT2_2);
+    EXPECT_TRUE(package->multiply(matrix, matrix).isIdentity(false));
   }
-  package.garbageCollect(true);
+  package->garbageCollect(true);
   check(matrix, width, expected);
   for (size_t q = width; q-- > 0;) {
-    matrix = package.applyOperation(
-        package.makeGateDD(H_MAT, static_cast<Qubit>(q)), matrix);
+    matrix = package->applyOperation(
+        ::mqt::test::value(package->makeGateDD(H_MAT, static_cast<Qubit>(q))),
+        matrix);
   }
   EXPECT_TRUE(matrix.isIdentity(false));
-  package.decRef(matrix);
+  package->decRef(matrix);
 }
 
 TEST(DDPackageTest, MatrixRootsRemainDistinctAndSurviveCollection) {
-  Package package(1);
-  const auto first = mEdge::terminal(package.cn.lookupRoot(1e-100));
+  auto package = ::mqt::test::value(Package::create(1));
+  const auto first = mEdge::terminal(package->cn.lookupRoot(1e-100));
   const auto secondValue = std::nextafter(1e-100, 1.);
-  const auto second = mEdge::terminal(package.cn.lookupRoot(secondValue));
-  package.incRef(first);
-  package.incRef(second);
-  EXPECT_EQ(package.getRootSet<mNode>().size(), 2U);
-  EXPECT_EQ(package.computeActiveCounts().reals, 2U);
-  package.garbageCollect(true);
+  const auto second = mEdge::terminal(package->cn.lookupRoot(secondValue));
+  package->incRef(first);
+  package->incRef(second);
+  EXPECT_EQ(package->getRootSet<mNode>().size(), 2U);
+  EXPECT_EQ(package->computeActiveCounts().reals, 2U);
+  package->garbageCollect(true);
   EXPECT_EQ(RealNumber::val(first.w.r), 1e-100);
   EXPECT_EQ(RealNumber::val(second.w.r), secondValue);
-  package.decRef(first);
-  package.garbageCollect(true);
+  package->decRef(first);
+  package->garbageCollect(true);
   EXPECT_EQ(RealNumber::val(second.w.r), secondValue);
-  package.decRef(second);
-  package.garbageCollect(true);
-  EXPECT_EQ(package.cUniqueTable.getStats().numEntries, 1U);
-  package.reset();
-  EXPECT_EQ(RealNumber::val(package.cn.lookupRoot(1e-100).r), 1e-100);
+  package->decRef(second);
+  package->garbageCollect(true);
+  EXPECT_EQ(package->cUniqueTable.getStats().numEntries, 1U);
+  package->reset();
+  EXPECT_EQ(RealNumber::val(package->cn.lookupRoot(1e-100).r), 1e-100);
 
-  const auto root = package.cn.lookupRoot(RealNumber::eps / 2.);
+  const auto root = package->cn.lookupRoot(RealNumber::eps / 2.);
   EXPECT_EQ(RealNumber::val(root.r), RealNumber::eps / 2.);
-  const auto ordinary = package.cn.lookup(1.25 * RealNumber::eps);
+  const auto ordinary = package->cn.lookup(1.25 * RealNumber::eps);
   EXPECT_EQ(RealNumber::val(ordinary.r), 1.25 * RealNumber::eps);
-  EXPECT_EQ(package.cn.lookup(ordinary).r, ordinary.r);
+  EXPECT_EQ(package->cn.lookup(ordinary).r, ordinary.r);
 }
 
 TEST(DDPackageTest, MatrixRootSerializationPreservesSubnormals) {
-  Package package(1);
+  auto package = ::mqt::test::value(Package::create(1));
   for (const fp value :
        {1e-100, 1e-310, std::numeric_limits<fp>::denorm_min()}) {
     SCOPED_TRACE(value);
-    const auto root = mEdge::terminal(package.cn.lookupRoot({value, -value}));
+    const auto root = mEdge::terminal(package->cn.lookupRoot({value, -value}));
     for (const bool binary : {false, true}) {
       std::stringstream stream;
       serialize(root, stream, binary);
-      const auto restored = package.deserialize<mNode>(stream, binary);
+      const auto restored =
+          ::mqt::test::value(package->deserialize<mNode>(stream, binary));
       EXPECT_EQ(RealNumber::val(restored.w.r), value);
       EXPECT_EQ(RealNumber::val(restored.w.i), -value);
     }
@@ -3120,7 +3265,7 @@ TEST(DDPackageTest, MatrixRootSerializationPreservesSubnormals) {
 }
 
 TEST(DDPackageTest, LargeMatrixNormalizationPreservesEntries) {
-  Package package(1);
+  auto package = ::mqt::test::value(Package::create(1));
   const auto scale = std::scalbn(1., 600);
   const GateMatrix matrix{
       std::complex<fp>{scale, scale},
@@ -3130,37 +3275,160 @@ TEST(DDPackageTest, LargeMatrixNormalizationPreservesEntries) {
   };
   std::array<mEdge, NEDGE> edges{};
   for (size_t i = 0; i < NEDGE; ++i) {
-    edges[i] = mEdge::terminal(package.cn.lookupRoot(ComplexValue{matrix[i]}));
+    edges[i] = mEdge::terminal(package->cn.lookupRoot(ComplexValue{matrix[i]}));
   }
-  for (const auto& result :
-       {package.makeGateDD(matrix, 0), package.makeDDNode(0, edges)}) {
+  for (const auto& result : {
+           ::mqt::test::value(package->makeGateDD(matrix, 0)),
+           package->makeDDNode(0, edges),
+       }) {
     for (size_t i = 0; i < NEDGE; ++i) {
-      EXPECT_EQ(result.getValueByPath(1, std::to_string(i)), matrix[i]);
+      EXPECT_EQ(::mqt::test::value(result.getValueByPath(1, std::to_string(i))),
+                matrix[i]);
     }
   }
 }
 
 TEST(DDPackageTest, KroneckerRestoresNormalizationAfterInterningChanges) {
-  Package package(2);
+  auto package = ::mqt::test::value(Package::create(2));
   const auto dominant = 1. / std::sqrt(1.25);
-  const auto initial = package.cn.lookup(dominant + (.8 * RealNumber::eps));
+  const auto initial = package->cn.lookup(dominant + (.8 * RealNumber::eps));
   ASSERT_GT(RealNumber::val(initial.r), dominant);
   const auto raw =
-      package.makeDDNode(0, std::array{
-                                vCachedEdge::one(),
-                                vCachedEdge::terminal(ComplexValue{.3, .4}),
-                            });
-  const auto zero = package.makeDDNode(
+      package->makeDDNode(0, std::array{
+                                 vCachedEdge::one(),
+                                 vCachedEdge::terminal(ComplexValue{.3, .4}),
+                             });
+  const auto zero = package->makeDDNode(
       0, std::array{vCachedEdge::one(), vCachedEdge::zero()});
-  const vEdge x{.p = raw.p, .w = package.cn.lookup(10.)};
-  const vEdge y{.p = zero.p, .w = package.cn.lookup(10.)};
-  const auto expected = x.getValueByIndex(0) * y.getValueByIndex(0);
-  const auto nearer = package.cn.lookup(dominant - (.5 * RealNumber::eps));
+  const vEdge x{.p = raw.p, .w = package->cn.lookup(10.)};
+  const vEdge y{.p = zero.p, .w = package->cn.lookup(10.)};
+  const auto expected = ::mqt::test::value(x.getValueByIndex(0)) *
+                        ::mqt::test::value(y.getValueByIndex(0));
+  const auto nearer = package->cn.lookup(dominant - (.5 * RealNumber::eps));
   ASSERT_NE(nearer.r, initial.r);
   for (size_t repetition = 0; repetition < 2; ++repetition) {
-    const auto result = package.kronecker(x, y, 1);
-    EXPECT_NEAR(std::abs(result.getValueByIndex(0) - expected), 0., 1e-13);
+    const auto result = package->kronecker(x, y, 1);
+    EXPECT_NEAR(
+        std::abs(::mqt::test::value(result.getValueByIndex(0)) - expected), 0.,
+        1e-13);
   }
 }
 
+} // namespace dd
+
+namespace dd {
+TEST(DDPackageTest, RejectsInvalidConfigurationBeforeAllocation) {
+  EXPECT_EQ(::mqt::test::errorKind([&] {
+              return Package::create(Package::MAX_POSSIBLE_QUBITS + 1);
+            }),
+            ::mqt::ErrorCategory::InvalidArgument);
+  DDPackageConfig config;
+  config.ctVecAddNumBucket = 3;
+  EXPECT_EQ(::mqt::test::errorKind([&] { return Package::create(1, config); }),
+            ::mqt::ErrorCategory::InvalidArgument);
+  config.ctVecAddNumBucket = 1;
+  config.utMatNumBucket = 0;
+  EXPECT_EQ(::mqt::test::errorKind([&] { return Package::create(1, config); }),
+            ::mqt::ErrorCategory::InvalidArgument);
+  config.utMatNumBucket = 1;
+  config.utVecInitialAllocationSize = 0;
+  EXPECT_EQ(::mqt::test::errorKind([&] { return Package::create(1, config); }),
+            ::mqt::ErrorCategory::InvalidArgument);
+  auto package = ::mqt::test::value(Package::create(1));
+  EXPECT_EQ(::mqt::test::errorKind([&] {
+              return package->resize(Package::MAX_POSSIBLE_QUBITS + 1);
+            }),
+            ::mqt::ErrorCategory::InvalidArgument);
+  EXPECT_EQ(package->qubits(), 1);
+  EXPECT_EQ(::mqt::test::value(makeZeroState(1, *package)).getVector(),
+            (CVec{1., 0.}));
+}
+
+TEST(DDPackageTest, RejectsMalformedSerializationAndRecovers) {
+  auto package = ::mqt::test::value(Package::create(2));
+  const auto state = ::mqt::test::value(
+      makeBasisState(2, {BasisStates::right, BasisStates::left}, *package));
+  std::ostringstream binary;
+  serialize(state, binary, true);
+  const auto bytes = binary.str();
+  for (const auto length : {size_t{0}, size_t{1}, bytes.size() - 1}) {
+    std::istringstream truncated(bytes.substr(0, length));
+    EXPECT_EQ(::mqt::test::errorKind(
+                  [&] { return package->deserialize<vNode>(truncated, true); }),
+              ::mqt::ErrorCategory::InvalidArgument);
+  }
+  for (const auto* invalid : {
+           "",
+           "\n",
+           "1\n",
+           "1\n1\n0 0\n",
+           "1\n1\n0 0 (\n",
+           "1\n1\n0 0 (x 1) ()\n",
+           "1\n1\n0 0 (-1 nan) ()\n",
+           "1\n1\n0 0 (-1 1) () trailing\n",
+           "1\n1\n0 0 (-1 1) ()\n0 0 (-1 1) ()\n",
+           "1\n1\n0 0 (99 1) ()\n",
+           "1\n1\n0 2 (-1 1) ()\n",
+           "1\n1e9999\n",
+           "1\n1\n999999999999999999999999999 0 (-1 1) ()\n",
+       }) {
+    std::istringstream input(invalid);
+    EXPECT_EQ(::mqt::test::errorKind(
+                  [&] { return package->deserialize<vNode>(input); }),
+              ::mqt::ErrorCategory::InvalidArgument);
+  }
+  std::istringstream throwingInput(bytes);
+  throwingInput.exceptions(std::ios::badbit);
+  EXPECT_EQ(::mqt::test::errorKind([&] {
+              return package->deserialize<vNode>(throwingInput, true);
+            }),
+            ::mqt::ErrorCategory::IO);
+  std::istringstream partialIndex(
+      bytes.substr(0, sizeof(SERIALIZATION_VERSION) + (2 * sizeof(fp)) + 1));
+  EXPECT_EQ(::mqt::test::errorKind([&] {
+              return package->deserialize<vNode>(partialIndex, true);
+            }),
+            ::mqt::ErrorCategory::InvalidArgument);
+  /// Reject nonfinite binary weights at both the root and node boundaries.
+  const auto rootOffset = sizeof(SERIALIZATION_VERSION);
+  const auto nodeWeightOffset = rootOffset + (2 * sizeof(fp)) +
+                                sizeof(int64_t) + sizeof(Qubit) +
+                                sizeof(int64_t);
+  for (const auto offset : {rootOffset, nodeWeightOffset}) {
+    auto nonfinite = bytes;
+    const auto infinity = std::numeric_limits<fp>::infinity();
+    std::memcpy(&nonfinite.at(offset), &infinity, sizeof(infinity));
+    std::istringstream input(nonfinite);
+    EXPECT_EQ(::mqt::test::errorKind(
+                  [&] { return package->deserialize<vNode>(input, true); }),
+              ::mqt::ErrorCategory::InvalidArgument);
+  }
+  for (const bool isBinary : {false, true}) {
+    std::stringstream stream;
+    serialize(state, stream, isBinary);
+    EXPECT_EQ(::mqt::test::value(package->deserialize<vNode>(stream, isBinary)),
+              state);
+  }
+}
+
+TEST(DDPackageTest, RejectsUnrepresentableMeasurementOutcomes) {
+  auto package = ::mqt::test::value(Package::create(65));
+  const auto wide = ::mqt::test::value(makeZeroState(65, *package));
+  EXPECT_EQ(::mqt::test::errorKind([&] {
+              return Package::fidelityOfMeasurementOutcomes(wide, {{0, 1.}});
+            }),
+            ::mqt::ErrorCategory::OutOfRange);
+  const auto state = ::mqt::test::value(makeZeroState(2, *package));
+  for (const auto& permutation :
+       {Permutation{{Qubit{2}, Qubit{0}}}, Permutation{{Qubit{0}, Qubit{1}}}}) {
+    EXPECT_EQ(::mqt::test::errorKind([&] {
+                return Package::fidelityOfMeasurementOutcomes(state, {{0, 1.}},
+                                                              permutation);
+              }),
+              ::mqt::ErrorCategory::OutOfRange);
+  }
+  EXPECT_EQ(::mqt::test::value(Package::fidelityOfMeasurementOutcomes(
+                vEdge::zero(), {{0, 1.}})),
+            0.);
+}
 } // namespace dd

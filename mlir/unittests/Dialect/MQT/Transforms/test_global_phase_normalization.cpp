@@ -1083,7 +1083,7 @@ TEST_F(GlobalPhaseNormalizationTest,
 
 TEST_F(GlobalPhaseNormalizationTest, VerifiesPracticalConstantAngleRange) {
   const auto verifyAngle = [&](const double angle,
-                               const bool useQCO) -> LogicalResult {
+                               const bool useQCO) -> mlir::LogicalResult {
     OwningOpRef moduleOp = ModuleOp::create(UnknownLoc::get(context.get()));
     OpBuilder builder(context.get());
     builder.setInsertionPointToStart(moduleOp->getBody());

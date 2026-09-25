@@ -12,6 +12,8 @@
 
 #include "qdmi/driver/Driver.hpp"
 
+#include "mlir/Support/LogicalResult.h"
+
 #include <cstddef>
 #include <filesystem>
 #include <string>
@@ -21,7 +23,7 @@
 namespace qdmi::detail {
 
 /// Rejects IDs that the QDMI string-property ABI cannot represent.
-void validateDeviceId(std::string_view id);
+mlir::LogicalResult validateDeviceId(std::string_view id);
 
 /// Stages one low-precedence device manifest before the driver is frozen.
 auto stageDeviceManifest(const std::filesystem::path& path) -> int;
@@ -40,7 +42,7 @@ auto parseDeviceSessionJson(const char* data, size_t size,
 /// Discovers configured QDMI devices without loading their libraries.
 class DeviceRegistry {
 public:
-  DeviceRegistry();
+  [[nodiscard]] static mlir::FailureOr<DeviceRegistry> discover();
 
   [[nodiscard]] const std::vector<qdmi::DeviceDefinition>& definitions() const {
     return definitions_;
@@ -51,6 +53,7 @@ public:
   }
 
 private:
+  DeviceRegistry() = default;
   std::vector<qdmi::DeviceDefinition> definitions_;
   std::vector<std::string> disabledIds_;
 };

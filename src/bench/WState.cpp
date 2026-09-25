@@ -13,34 +13,42 @@
 #include "bench/Evaluation.hpp"
 
 #include "EvaluationUtils.hpp"
+#include "support/Diagnostics.hpp"
+
+#include "mlir/Support/LogicalResult.h"
 
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <stdexcept>
 #include <string_view>
 
 namespace mqt::bench {
 
-WState::WState(const WStateOptions options)
-    : options_(options), output_{.name = "result", .width = options.qubits} {
+mlir::FailureOr<WState> WState::create(const WStateOptions options) {
   if (options.qubits == 0 ||
       options.qubits >
           static_cast<size_t>(std::numeric_limits<int64_t>::max())) {
-    throw std::invalid_argument("W-state qubits must be positive and fit "
-                                "circuit dimensions");
+    return ::mqt::emitError("W-state qubits must be positive and fit "
+                            "circuit dimensions",
+                            ::mqt::ErrorCategory::InvalidArgument);
   }
+  return WState(options);
 }
+WState::WState(const WStateOptions options)
+    : options_(options), output_{.name = "result", .width = options.qubits} {}
 const WStateOptions& WState::options() const noexcept { return options_; }
 const Output& WState::output() const noexcept { return output_; }
-double WState::probability(const std::string_view outcome) const {
-  detail::validateOutcome(outcome, output_.width);
+mlir::FailureOr<double>
+WState::probability(const std::string_view outcome) const {
+  if (mlir::failed(detail::validateOutcome(outcome, output_.width))) {
+    return mlir::failure();
+  }
   return std::ranges::count(outcome, '1') == 1
              ? 1. / static_cast<double>(options_.qubits)
              : 0.;
 }
-Evaluation WState::evaluate(const Counts& counts) const {
+mlir::FailureOr<Evaluation> WState::evaluate(const Counts& counts) const {
   return detail::evaluate(*this, counts);
 }
 

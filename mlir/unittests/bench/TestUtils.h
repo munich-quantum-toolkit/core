@@ -15,6 +15,8 @@
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mqt/bench/Generate.h"
 
+#include "support/TestSupport.hpp"
+
 #include "gtest/gtest.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -33,8 +35,10 @@ namespace mqt::bench::test {
 template <class Benchmark>
 [[nodiscard]] std::optional<mlir::QCOProgram>
 generateQCO(const Benchmark& benchmark) {
+  ::mqt::test::DiagnosticCapture programDiagnostics;
   auto program = generate(benchmark);
-  if (!program) {
+  if (failed(program)) {
+    ADD_FAILURE() << "Benchmark generation failed";
     return std::nullopt;
   }
   auto compiled = mlir::runDefaultPipeline(
@@ -48,13 +52,16 @@ generateQCO(const Benchmark& benchmark) {
 template <class Benchmark>
 void expectSamplingMatchesReference(const Benchmark& benchmark,
                                     double tolerance = 0.03) {
+  ::mqt::test::DiagnosticCapture programDiagnostics;
   auto program = generateQCO(benchmark);
   ASSERT_TRUE(program);
   constexpr size_t shots = 16'384;
   auto counts =
       mlir::qco::sample(mlir::mqt::getEntryPoint(program->module()), shots, 17);
   ASSERT_TRUE(mlir::succeeded(counts));
-  EXPECT_LT(benchmark.evaluate(*counts).totalVariationDistance, tolerance);
+  EXPECT_LT(
+      ::mqt::test::value(benchmark.evaluate(*counts)).totalVariationDistance,
+      tolerance);
 }
 
 [[nodiscard]] inline mlir::DenseElementsAttr

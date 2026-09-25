@@ -13,6 +13,7 @@
 #include "mqt/bench/Generate.h"
 
 #include "TestUtils.h"
+#include "support/TestSupport.hpp"
 
 #include "gtest/gtest.h"
 
@@ -31,8 +32,9 @@ namespace mqt::bench {
 using namespace mlir;
 
 TEST(GenerateProgramTest, EmitsUniformLinearQuantumMultiplexer) {
-  auto program = generate(Multiplexer{{.qubits = 3}});
-  ASSERT_TRUE(program);
+  auto program =
+      generate(::mqt::test::value(Multiplexer::create({.qubits = 3})));
+  ASSERT_TRUE(succeeded(program));
   auto moduleOp = program->module();
 
   qc::CtrlOp controlledRotation;
@@ -79,16 +81,17 @@ TEST(GenerateProgramTest, EmitsUniformLinearQuantumMultiplexer) {
 }
 
 TEST(GenerateProgramTest, SerializesTheLargestQuantumMultiplexer) {
-  auto program =
-      generate(Multiplexer{{.qubits = MultiplexerOptions::MAX_QUBITS}});
-  ASSERT_TRUE(program);
+  auto program = generate(::mqt::test::value(
+      Multiplexer::create({.qubits = MultiplexerOptions::MAX_QUBITS})));
+  ASSERT_TRUE(succeeded(program));
   EXPECT_LT(test::countOperations(program->module()), 150U);
 
   test::expectJeffRoundTrip(std::move(*program));
 }
 
 TEST(GenerateProgramTest, SamplesMultiplexerAgainstReference) {
-  test::expectSamplingMatchesReference(Multiplexer{{.qubits = 3}});
+  test::expectSamplingMatchesReference(
+      ::mqt::test::value(Multiplexer::create({.qubits = 3})));
 }
 
 } // namespace mqt::bench

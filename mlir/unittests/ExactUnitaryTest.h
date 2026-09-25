@@ -13,6 +13,8 @@
 #include "dd/Package.hpp"
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
 
+#include "support/TestSupport.hpp"
+
 #include "gtest/gtest.h"
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -39,7 +41,7 @@ inline void expectFullUnitaryEqual(mlir::ModuleOp expectedModule,
       *expectedModule.getBody()->getOps<mlir::func::FuncOp>().begin();
   auto actualFunc =
       *actualModule.getBody()->getOps<mlir::func::FuncOp>().begin();
-  auto package = std::make_unique<dd::Package>(numQubits);
+  auto package = ::mqt::test::value(dd::Package::create(numQubits));
   const auto expected = mlir::qco::buildFunctionality(expectedFunc, *package);
   const auto actual = mlir::qco::buildFunctionality(actualFunc, *package);
   ASSERT_TRUE(mlir::succeeded(expected));

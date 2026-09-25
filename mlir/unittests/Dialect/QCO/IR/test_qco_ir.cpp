@@ -846,13 +846,14 @@ TEST_F(QCOTest, UnitaryVerifierDiagnosesMalformedCalls) {
   ASSERT_TRUE(moduleOp);
 
   bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
-    sawExpectedDiagnostic |=
-        StringRef(diagnostic.str())
-            .contains("requires one trailing qubit operand for every qubit "
-                      "result");
-    return success();
-  });
+  mlir::ScopedDiagnosticHandler handler(
+      context.get(), [&](mlir::Diagnostic& diagnostic) {
+        sawExpectedDiagnostic |=
+            StringRef(diagnostic.str())
+                .contains("requires one trailing qubit operand for every qubit "
+                          "result");
+        return success();
+      });
   EXPECT_TRUE(failed(verify(*moduleOp)));
   EXPECT_TRUE(sawExpectedDiagnostic);
 }
@@ -1089,12 +1090,14 @@ TEST_F(QCOTest, UnitaryVerifierRejectsNonFiniteConstantParameters) {
 
   for (const auto source : invalidPrograms) {
     bool sawExpectedDiagnostic = false;
-    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
-      sawExpectedDiagnostic |= StringRef(diagnostic.str())
-                                   .contains("constant parameter expression at "
-                                             "index 0 must be finite");
-      return success();
-    });
+    mlir::ScopedDiagnosticHandler handler(
+        context.get(), [&](mlir::Diagnostic& diagnostic) {
+          sawExpectedDiagnostic |=
+              StringRef(diagnostic.str())
+                  .contains("constant parameter expression at "
+                            "index 0 must be finite");
+          return success();
+        });
     EXPECT_FALSE(parseSourceString<ModuleOp>(source, context.get()));
     EXPECT_TRUE(sawExpectedDiagnostic);
   }
@@ -1279,8 +1282,8 @@ TEST_F(QCOTest, ModifiersRecursivelyRejectNonUnitaryOperations) {
           buildInvalidNestedModifierBody(builder, modifier, forbiddenOperation);
 
       bool sawExpectedDiagnostic = false;
-      ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic&
-                                                             diagnostic) {
+      mlir::ScopedDiagnosticHandler handler(context.get(), [&](mlir::Diagnostic&
+                                                                   diagnostic) {
         sawExpectedDiagnostic |=
             StringRef(diagnostic.str())
                 .contains(
@@ -1310,8 +1313,8 @@ TEST_F(QCOTest, ModifiersRejectDirectAndNestedQubitCaptures) {
       auto* modifierOp = buildInvalidModifierCapture(builder, modifier, nested);
 
       bool sawExpectedDiagnostic = false;
-      ScopedDiagnosticHandler handler(
-          context.get(), [&](Diagnostic& diagnostic) {
+      mlir::ScopedDiagnosticHandler handler(
+          context.get(), [&](mlir::Diagnostic& diagnostic) {
             sawExpectedDiagnostic |=
                 StringRef(diagnostic.str())
                     .contains("body must not capture qubits from above; use "
@@ -1781,12 +1784,13 @@ TEST_F(QCOTest, IfOpRejectsMismatchedClassicalYield) {
   )mlir";
 
   bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
-    sawExpectedDiagnostic |= StringRef(diagnostic.str())
-                                 .contains("must yield 2 values for parent "
-                                           "operation but yields 1");
-    return success();
-  });
+  mlir::ScopedDiagnosticHandler handler(
+      context.get(), [&](mlir::Diagnostic& diagnostic) {
+        sawExpectedDiagnostic |= StringRef(diagnostic.str())
+                                     .contains("must yield 2 values for parent "
+                                               "operation but yields 1");
+        return success();
+      });
   EXPECT_FALSE(parseSourceString<ModuleOp>(mlirCode, context.get()));
   EXPECT_TRUE(sawExpectedDiagnostic);
 }
@@ -1807,10 +1811,11 @@ TEST_F(QCOTest, ModifierYieldStillRejectsClassicalValues) {
   )mlir";
 
   std::string diagnosticMessage;
-  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
-    diagnosticMessage += diagnostic.str();
-    return success();
-  });
+  mlir::ScopedDiagnosticHandler handler(context.get(),
+                                        [&](mlir::Diagnostic& diagnostic) {
+                                          diagnosticMessage += diagnostic.str();
+                                          return success();
+                                        });
   EXPECT_FALSE(parseSourceString<ModuleOp>(mlirCode, context.get()));
   EXPECT_TRUE(StringRef(diagnosticMessage)
                   .contains("'qco.yield' op operand 0 has type 'i1' but parent "
@@ -2359,8 +2364,8 @@ TEST_F(QCOTest, IndexSwitchConstantSuccessor) {
 
   switchOp->setAttr(
       "cases", DenseI64ArrayAttr::get(context.get(), ArrayRef<int64_t>{0}));
-  ScopedDiagnosticHandler handler(context.get(),
-                                  [](Diagnostic&) { return success(); });
+  mlir::ScopedDiagnosticHandler handler(
+      context.get(), [](mlir::Diagnostic&) { return success(); });
   EXPECT_TRUE(switchOp.verify().failed());
 
   switchOp->setAttr(
@@ -3737,7 +3742,7 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(allocQubitNoMeasure)}));
 
 // UnrollModifiers
-static LogicalResult runUnrollModifiers(ModuleOp moduleOp) {
+static mlir::LogicalResult runUnrollModifiers(ModuleOp moduleOp) {
   PassManager pm(moduleOp.getContext());
   pm.addPass(mlir::mqt::createUnrollModifiers());
   return pm.run(moduleOp);
@@ -3973,10 +3978,11 @@ TEST_F(QCOTest, UnrollModifiersLeavesNonIntegerPowUntouched) {
 
 TEST_F(QCOTest, BarrierRejectsMismatchedQubitArity) {
   std::string diagnostics;
-  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
-    diagnostics += diagnostic.str();
-    return success();
-  });
+  mlir::ScopedDiagnosticHandler handler(context.get(),
+                                        [&](mlir::Diagnostic& diagnostic) {
+                                          diagnostics += diagnostic.str();
+                                          return success();
+                                        });
   auto program = parseSourceString<ModuleOp>(R"mlir(
     func.func @test(%q: !qco.qubit) -> (!qco.qubit, !qco.qubit) {
       %out:2 = qco.barrier %q : !qco.qubit -> !qco.qubit, !qco.qubit

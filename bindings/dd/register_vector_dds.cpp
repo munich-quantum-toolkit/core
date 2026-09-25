@@ -11,6 +11,7 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/Node.hpp"
 
+#include "Result.hpp"
 #include "register_dd_export.hpp"
 
 #include "nanobind/nanobind.h"
@@ -83,9 +84,11 @@ void registerVectorDDs(const nb::module_& m) {
           for (auto bit = 0U; bit < digits; ++bit) {
             decisions[bit] = ((index >> bit) & 1U) != 0U ? '1' : '0';
           }
-          return v.getValueByPath(numQubits, decisions);
+          return ::mqt::bindings::invoke(
+              [&] { return v.getValueByPath(numQubits, decisions); });
         }
-        return v.getValueByIndex(index);
+        return ::mqt::bindings::invoke(
+            [&] { return v.getValueByIndex(index); });
       },
       "key"_a, "Get the amplitude of a basis state by index.");
 
@@ -93,7 +96,8 @@ void registerVectorDDs(const nb::module_& m) {
       "get_amplitude",
       [](const dd::vEdge& v, const size_t numQubits,
          const std::string& decisions) {
-        return v.getValueByPath(numQubits, decisions);
+        return ::mqt::bindings::invoke(
+            [&] { return v.getValueByPath(numQubits, decisions); });
       },
       "num_qubits"_a, "decisions"_a,
       R"pb(Get the amplitude of a basis state by decisions.

@@ -26,6 +26,7 @@
 #include "mqt/Dialect/QCO/Utils/DDAdapter.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
+#include "mqt/Support/Diagnostics.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -54,6 +55,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/Error.h"
 
 #include <algorithm>
 #include <array>
@@ -72,6 +74,17 @@
 #include <vector>
 
 namespace mlir::qco {
+
+template <typename Function>
+static auto diagnoseDD(Operation* op, Function&& function) {
+  ::mqt::ScopedDiagnosticHandler handler(
+      [&](const ::mqt::Diagnostic& diagnostic) {
+        emitNativeDiagnostic(op, diagnostic);
+        return success();
+      });
+  return std::forward<Function>(function)();
+}
+
 namespace {
 
 struct QubitMap {
@@ -238,9 +251,11 @@ resolveDouble(Value value, const ClassicalEnv& classical, Operation* op) {
          << "floating-point SSA value has no concrete QCO DD binding";
 }
 
-using StandardGateFactory = dd::MatrixDD (*)(dd::Package&, ArrayRef<double>,
-                                             size_t, ArrayRef<dd::Qubit>,
-                                             const dd::Controls&);
+using StandardGateFactory = FailureOr<dd::MatrixDD> (*)(dd::Package&,
+                                                        ArrayRef<double>,
+                                                        size_t,
+                                                        ArrayRef<dd::Qubit>,
+                                                        const dd::Controls&);
 
 namespace {
 struct DecodedStandardGate {
@@ -249,13 +264,17 @@ struct DecodedStandardGate {
 };
 } // namespace
 
-template <typename GateOp>
+template <typename GateOp, size_t NumParams>
 static auto buildStandardGateDD(dd::Package& package,
                                 ArrayRef<double> parameters, size_t numQubits,
                                 ArrayRef<dd::Qubit> targets,
-                                const dd::Controls& controls) -> dd::MatrixDD {
-  return makeGateDD(package, getStandardGateMatrix<GateOp>(parameters),
-                    numQubits, targets, controls);
+                                const dd::Controls& controls)
+    -> FailureOr<dd::MatrixDD> {
+  assert(parameters.size() == NumParams);
+  std::array<double, NumParams> values{};
+  std::copy_n(parameters.begin(), NumParams, values.begin());
+  return makeGateDD(package, getStandardGateMatrix<GateOp>(values), numQubits,
+                    targets, controls);
 }
 
 /// `std::nullopt` if @p unitary is not a standard gate; failure if its unitary
@@ -265,7 +284,8 @@ decodeStandardGate(UnitaryOpInterface unitary, const ClassicalEnv& classical) {
   Operation* op = unitary.getOperation();
   TypeSwitch<Operation*, StandardGateFactory> typeSwitch(op);
 #define MQT_GATE(KEY, NAME, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)       \
-  typeSwitch.Case<KEY##Op>([](auto) { return &buildStandardGateDD<KEY##Op>; });
+  typeSwitch.Case<KEY##Op>(                                                    \
+      [](auto) { return &buildStandardGateDD<KEY##Op, PARAMS>; });
 #include "mqt/Conversion/GateTable.def"
   const auto factory = typeSwitch.Default(nullptr);
   if (factory == nullptr) {
@@ -338,8 +358,13 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
            << "unitary matrix dimension does not match its target count";
   }
 
-  state = walk.dd->applyOperation(
-      makeGateDD(*walk.dd, local, walk.qubits->numQubits, wires), state);
+  auto gate = diagnoseDD(op, [&] {
+    return makeGateDD(*walk.dd, local, walk.qubits->numQubits, wires);
+  });
+  if (failed(gate)) {
+    return failure();
+  }
+  state = walk.dd->applyOperation(*gate, state);
   return walk.qubits->remapUnitary(unitary);
 }
 
@@ -356,10 +381,14 @@ static LogicalResult applyDecodedStandard(UnitaryOpInterface unitary,
   if (failed(targets)) {
     return failure();
   }
-  state = walk.dd->applyOperation(gate.build(*walk.dd, gate.parameters,
-                                             walk.qubits->numQubits, *targets,
-                                             controls),
-                                  state);
+  auto matrix = diagnoseDD(unitary, [&] {
+    return gate.build(*walk.dd, gate.parameters, walk.qubits->numQubits,
+                      *targets, controls);
+  });
+  if (failed(matrix)) {
+    return failure();
+  }
+  state = walk.dd->applyOperation(*matrix, state);
   return walk.qubits->remapUnitary(unitary);
 }
 
@@ -505,20 +534,16 @@ lookupInteger(Value value, const ClassicalEnv& classical, Operation* op) {
   return integer.getValue();
 }
 
-static LogicalResult bindInteger(Value dest, const llvm::APInt& value,
-                                 ClassicalEnv& classical) {
+static void bindInteger(Value dest, const llvm::APInt& value,
+                        ClassicalEnv& classical) {
   const Type type = dest.getType();
-  if (!isa<IntegerType, IndexType>(type)) {
-    return failure();
-  }
+  assert((isa<IntegerType, IndexType>(type)));
   const unsigned width =
       isa<IndexType>(type) ? 64U : cast<IntegerType>(type).getWidth();
   classical.values[dest] = IntegerAttr::get(type, value.zextOrTrunc(width));
-  return success();
 }
 
-static LogicalResult allocateRegister(cbit::AllocOp alloc,
-                                      ClassicalEnv& classical) {
+static void allocateRegister(cbit::AllocOp alloc, ClassicalEnv& classical) {
   const auto width =
       static_cast<size_t>(alloc.getResult().getType().getWidth());
   ClassicalEnv::RegisterBit initialValue;
@@ -527,7 +552,6 @@ static LogicalResult allocateRegister(cbit::AllocOp alloc,
   }
   classical.registers[alloc.getResult()] =
       std::make_shared<ClassicalEnv::RegisterState>(width, initialValue);
-  return success();
 }
 
 static FailureOr<size_t> resolveRegisterIndex(Value index,
@@ -593,9 +617,9 @@ static LogicalResult loadRegister(cbit::LoadOp load, ClassicalEnv& classical) {
   if (!cell.value) {
     return load.emitError() << "read from an undefined CBit register element";
   }
-  return bindInteger(load.getResult(),
-                     llvm::APInt(1, static_cast<uint64_t>(*cell.value)),
-                     classical);
+  bindInteger(load.getResult(),
+              llvm::APInt(1, static_cast<uint64_t>(*cell.value)), classical);
+  return success();
 }
 
 static LogicalResult readRegister(cbit::ReadOp read, ClassicalEnv& classical) {
@@ -615,7 +639,8 @@ static LogicalResult readRegister(cbit::ReadOp read, ClassicalEnv& classical) {
     }
     value.setBitVal(static_cast<unsigned>(index), *cell.value);
   }
-  return bindInteger(read.getResult(), value, classical);
+  bindInteger(read.getResult(), value, classical);
+  return success();
 }
 
 static LogicalResult writeRegister(cbit::WriteOp write,
@@ -736,7 +761,8 @@ static LogicalResult applyDivision(OpTy op, ClassicalEnv& classical,
   if (failed(lhs)) {
     return failure();
   }
-  return bindInteger(op.getResult(), combine(*lhs, *rhs), classical);
+  bindInteger(op.getResult(), combine(*lhs, *rhs), classical);
+  return success();
 }
 
 static LogicalResult applyIntegerCast(Value in, Value out, Operation* op,
@@ -753,7 +779,8 @@ static LogicalResult applyIntegerCast(Value in, Value out, Operation* op,
   } else if (width < value->getBitWidth()) {
     *value = value->trunc(width);
   }
-  return bindInteger(out, *value, classical);
+  bindInteger(out, *value, classical);
+  return success();
 }
 
 static LogicalResult foldClassicalOp(Operation& op, ClassicalEnv& classical) {
@@ -830,7 +857,8 @@ static LogicalResult applyIntegerBinaryOp(OpTy op, ClassicalEnv& classical,
       return foldClassicalOp(*op, classical);
     }
   }
-  return bindInteger(op.getResult(), combine(*lhs, *rhs), classical);
+  bindInteger(op.getResult(), combine(*lhs, *rhs), classical);
+  return success();
 }
 
 static LogicalResult applyFloatOp(Operation& op, ClassicalEnv& classical) {
@@ -862,11 +890,11 @@ static LogicalResult applyFloatOp(Operation& op, ClassicalEnv& classical) {
     return foldClassicalOp(op, classical);
   }
   if (auto cmp = dyn_cast<arith::CmpFOp>(op)) {
-    return bindInteger(
-        cmp.getResult(),
-        llvm::APInt(1, static_cast<uint64_t>(arith::applyCmpPredicate(
-                           cmp.getPredicate(), lhs, operands[1]))),
-        classical);
+    bindInteger(cmp.getResult(),
+                llvm::APInt(1, static_cast<uint64_t>(arith::applyCmpPredicate(
+                                   cmp.getPredicate(), lhs, operands[1]))),
+                classical);
+    return success();
   }
   const llvm::APFloat result =
       TypeSwitch<Operation*, llvm::APFloat>(&op)
@@ -1000,9 +1028,10 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
         if (failed(value)) {
           return failure();
         }
-        return bindInteger(count.getResult(),
-                           llvm::APInt(value->getBitWidth(), value->popcount()),
-                           classical);
+        bindInteger(count.getResult(),
+                    llvm::APInt(value->getBitWidth(), value->popcount()),
+                    classical);
+        return success();
       })
       .Case<arith::AddFOp, arith::SubFOp, arith::MulFOp, arith::DivFOp,
             arith::RemFOp, arith::NegFOp, arith::CmpFOp, arith::MaximumFOp,
@@ -1028,7 +1057,8 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
                          ? (left ? *lhs : *rhs)
                          : lhs->shl(left ? amount : width - amount) |
                                rhs->lshr(left ? width - amount : amount);
-        return bindInteger(shift->getResult(0), value, classical);
+        bindInteger(shift->getResult(0), value, classical);
+        return success();
       })
       .Case([&](arith::DivUIOp value) {
         return applyDivision(
@@ -1112,7 +1142,8 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
                      << "floating-point value is outside the destination "
                         "integer range during QCO DD simulation";
             }
-            return bindInteger(out, result, classical);
+            bindInteger(out, result, classical);
+            return success();
           })
       .Default([](Operation* unsupported) {
         return unsupported->emitError()
@@ -1295,7 +1326,7 @@ static FailureOr<TensorSlots> allocateZeroQubits(size_t count, WalkState& walk,
   }
   const size_t required = walk.qubits->numQubits + count;
   if (walk.dd->qubits() < required) {
-    walk.dd->resize(required);
+    std::ignore = walk.dd->resize(required);
   }
 
   const size_t first = walk.qubits->numQubits;
@@ -1309,14 +1340,13 @@ static FailureOr<TensorSlots> allocateZeroQubits(size_t count, WalkState& walk,
             dd::vCachedEdge::zero(),
         });
     extended = {.p = node.p, .w = state.w};
-    walk.dd->incRef(extended);
   } else {
-    auto zeros = dd::makeZeroState(count, *walk.dd, first);
+    const auto zeros = *dd::makeZeroState(count, *walk.dd, first);
     extended = walk.dd->kronecker(zeros, state, first, /*incIdx=*/false);
-    walk.dd->incRef(extended);
     walk.dd->decRef(zeros);
   }
   walk.dd->decRef(state);
+  walk.dd->incRef(extended);
   state = extended;
 
   TensorSlots slots;
@@ -1490,7 +1520,8 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
         return applyMemRefLoad(load, *walk.classical);
       })
       .Case([&](cbit::AllocOp alloc) {
-        return allocateRegister(alloc, *walk.classical);
+        allocateRegister(alloc, *walk.classical);
+        return success();
       })
       .Case([&](cbit::LoadOp load) {
         return loadRegister(load, *walk.classical);
@@ -1529,9 +1560,14 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
             walk.qubits->bind(measureOp.getQubitOut(), *q);
             return success();
           }
-          const char bit = walk.dd->measureOneCollapsing(state, *q, *walk.rng);
+          auto bit = diagnoseDD(measureOp, [&] {
+            return walk.dd->measureOneCollapsing(state, *q, *walk.rng);
+          });
+          if (failed(bit)) {
+            return failure();
+          }
           walk.classical->values[measureOp.getResult()] =
-              BoolAttr::get(measureOp.getContext(), bit == '1');
+              BoolAttr::get(measureOp.getContext(), *bit == '1');
           walk.qubits->bind(measureOp.getQubitOut(), *q);
           return success();
         }
@@ -1550,12 +1586,21 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
             return resetOp.emitError()
                    << "qubit SSA value is not mapped for QCO DD construction";
           }
-          const char bit = walk.dd->measureOneCollapsing(state, *q, *walk.rng);
-          if (bit == '1') {
-            state = walk.dd->applyOperation(
-                makeGateDD(*walk.dd, getStandardGateMatrix<XOp>({}),
-                           walk.qubits->numQubits, {*q}),
-                state);
+          auto bit = diagnoseDD(resetOp, [&] {
+            return walk.dd->measureOneCollapsing(state, *q, *walk.rng);
+          });
+          if (failed(bit)) {
+            return failure();
+          }
+          if (*bit == '1') {
+            auto gate = diagnoseDD(resetOp, [&] {
+              return makeGateDD(*walk.dd, XOp::getUnitaryMatrix(),
+                                walk.qubits->numQubits, {*q});
+            });
+            if (failed(gate)) {
+              return failure();
+            }
+            state = walk.dd->applyOperation(*gate, state);
           }
           walk.qubits->bind(resetOp.getQubitOut(), *q);
           return success();
@@ -1635,12 +1680,10 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
           if (failed(bindValuePairs(carried, iterArgs, walk, forOp))) {
             return failure();
           }
-          if (failed(bindInteger(
-                  body.getArgument(0),
-                  range->induction.trunc(range->induction.getBitWidth() - 1),
-                  *walk.classical))) {
-            return failure();
-          }
+          bindInteger(
+              body.getArgument(0),
+              range->induction.trunc(range->induction.getBitWidth() - 1),
+              *walk.classical);
           if (failed(walkBlock(body, walk, state))) {
             return failure();
           }
@@ -1897,7 +1940,7 @@ prepare(func::FuncOp func, dd::Package& dd,
     }
   }
   if (dd.qubits() < qubits.numQubits) {
-    dd.resize(qubits.numQubits);
+    std::ignore = dd.resize(qubits.numQubits);
   }
   return prepared;
 }
@@ -2096,10 +2139,11 @@ simulateStatevector(func::FuncOp func, dd::Package& dd,
   }
   DenseSet<dd::Qubit> measuredWires;
   Operation* deferredMeasurementUse = nullptr;
-  auto state = simulateImpl(
-      func, dd::makeZeroState(prepared->qubits.numQubits, dd), dd, *prepared,
-      nullptr, options, &plan->deferredMeasurements, nullptr, &measuredWires,
-      &deferredMeasurementUse, /*validateQuantumReturn=*/false);
+  const auto initial = *dd::makeZeroState(prepared->qubits.numQubits, dd);
+  auto state =
+      simulateImpl(func, initial, dd, *prepared, nullptr, options,
+                   &plan->deferredMeasurements, nullptr, &measuredWires,
+                   &deferredMeasurementUse, /*validateQuantumReturn=*/false);
   if (failed(state) && deferredMeasurementUse != nullptr) {
     return deferredMeasurementUse->emitError()
            << "statevector extraction cannot use a measurement result or "
@@ -2186,7 +2230,12 @@ sampleImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
     if (succeeded(state)) {
       const auto guard = llvm::make_scope_exit([&] { dd.decRef(*state); });
       for (size_t i = 0; i < shots; ++i) {
-        if (failed(record(classical, dd.measureAll(*state, false, rng)))) {
+        auto basis =
+            diagnoseDD(func, [&] { return dd.measureAll(*state, false, rng); });
+        if (failed(basis)) {
+          return failure();
+        }
+        if (failed(record(classical, std::move(*basis)))) {
           return failure();
         }
       }
@@ -2210,9 +2259,15 @@ sampleImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
       return failure();
     }
     const auto guard = llvm::make_scope_exit([&] { dd.decRef(*state); });
-    std::string basis = plan->outputs.empty()
-                            ? dd.measureAll(*state, false, rng)
-                            : std::string{};
+    std::string basis;
+    if (plan->outputs.empty()) {
+      auto measured =
+          diagnoseDD(func, [&] { return dd.measureAll(*state, false, rng); });
+      if (failed(measured)) {
+        return failure();
+      }
+      basis = std::move(*measured);
+    }
     if (failed(record(classical, std::move(basis)))) {
       return failure();
     }
@@ -2232,16 +2287,16 @@ sample(func::FuncOp func, size_t shots, uint64_t seed,
     shotResults->clear();
     shotResults->reserve(shots);
   }
-  auto dd = std::make_unique<dd::Package>(0);
+  auto dd = std::move(*dd::Package::create(0));
   std::mt19937_64 rng(seed == 0 ? std::random_device{}() : seed);
   auto prepared = prepare(func, *dd, argumentBindings);
   if (failed(prepared)) {
     return failure();
   }
   std::optional<dd::VectorDD> state;
+  const auto initial = *dd::makeZeroState(prepared->qubits.numQubits, *dd);
   auto counts =
-      sampleImpl(func, dd::makeZeroState(prepared->qubits.numQubits, *dd), *dd,
-                 shots, rng, *prepared, shotResults,
+      sampleImpl(func, initial, *dd, shots, rng, *prepared, shotResults,
                  retainedState != nullptr ? &state : nullptr, options);
   if (succeeded(counts) && state && retainedState != nullptr) {
     retainedState->state = *state;

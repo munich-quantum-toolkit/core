@@ -11,8 +11,8 @@
 #pragma once
 
 #include "mqt/Compiler/Programs.h"
+#include "mqt/Support/Diagnostics.h"
 
-#include <optional>
 #include <string>
 #include <string_view>
 
@@ -39,48 +39,50 @@ struct GeneratedBenchmark {
 };
 
 /// Generate a configured Bernstein--Vazirani benchmark.
-[[nodiscard]] std::optional<mlir::QCProgram> generate(const BV& benchmark);
+[[nodiscard]] mlir::FailureOr<mlir::QCProgram> generate(const BV& benchmark);
 
 /// Generate the QC program for a configured GHZ benchmark.
-[[nodiscard]] std::optional<mlir::QCProgram> generate(const GHZ& benchmark);
+[[nodiscard]] mlir::FailureOr<mlir::QCProgram> generate(const GHZ& benchmark);
 
 /// Generate the QC program for a configured Grover benchmark.
-[[nodiscard]] std::optional<mlir::QCProgram> generate(const Grover& benchmark);
+[[nodiscard]] mlir::FailureOr<mlir::QCProgram>
+generate(const Grover& benchmark);
 
 /// Generate a configured modular multiplier benchmark.
-[[nodiscard]] std::optional<mlir::QCProgram>
+[[nodiscard]] mlir::FailureOr<mlir::QCProgram>
 generate(const ModularMultiplier& benchmark);
 
 /// Generate the QC program for a configured quantum multiplexer benchmark.
-[[nodiscard]] std::optional<mlir::QCProgram>
+[[nodiscard]] mlir::FailureOr<mlir::QCProgram>
 generate(const Multiplexer& benchmark);
 
 /// Generate a configured quantum Fourier-transform benchmark.
-[[nodiscard]] std::optional<mlir::QCProgram> generate(const QFT& benchmark);
+[[nodiscard]] mlir::FailureOr<mlir::QCProgram> generate(const QFT& benchmark);
 
 /// Generate a configured QFT adder benchmark.
-[[nodiscard]] std::optional<mlir::QCProgram>
+[[nodiscard]] mlir::FailureOr<mlir::QCProgram>
 generate(const QFTAdder& benchmark);
 
 /// Generate the QC program for a configured QPE benchmark.
-[[nodiscard]] std::optional<mlir::QCProgram> generate(const QPE& benchmark);
+[[nodiscard]] mlir::FailureOr<mlir::QCProgram> generate(const QPE& benchmark);
 
 /// Generate the repeat-until-success benchmark.
-[[nodiscard]] std::optional<mlir::QCProgram>
+[[nodiscard]] mlir::FailureOr<mlir::QCProgram>
 generate(const RepeatUntilSuccess& benchmark);
 
 /// Generate structured semiclassical Shor order finding.
-[[nodiscard]] std::optional<mlir::QCProgram> generate(const Shor& benchmark);
+[[nodiscard]] mlir::FailureOr<mlir::QCProgram> generate(const Shor& benchmark);
 
 /// Generate the quantum teleportation benchmark.
-[[nodiscard]] std::optional<mlir::QCProgram>
+[[nodiscard]] mlir::FailureOr<mlir::QCProgram>
 generate(const Teleportation& benchmark);
 
 /// Generate the QC program for a configured W-state benchmark.
-[[nodiscard]] std::optional<mlir::QCProgram> generate(const WState& benchmark);
+[[nodiscard]] mlir::FailureOr<mlir::QCProgram>
+generate(const WState& benchmark);
 
 /// Parse a benchmark instance specification and generate the benchmark.
-[[nodiscard]] std::optional<GeneratedBenchmark>
+[[nodiscard]] mlir::FailureOr<GeneratedBenchmark>
 generate(std::string_view instanceSpecificationJSON,
          std::string_view source = "<instance-specification>");
 

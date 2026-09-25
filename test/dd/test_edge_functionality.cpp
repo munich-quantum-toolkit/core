@@ -14,6 +14,9 @@
 #include "dd/RealNumber.hpp"
 #include "dd/StateGeneration.hpp"
 
+#include "support/Diagnostics.hpp"
+#include "support/TestSupport.hpp"
+
 #include "gtest/gtest.h"
 
 #include <cmath>
@@ -21,7 +24,6 @@
 #include <cstddef>
 #include <limits>
 #include <memory>
-#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -32,84 +34,110 @@ namespace dd {
 ///-----------------------------------------------------------------------------
 
 TEST(VectorFunctionality, GetValueByPathTerminal) {
-  EXPECT_EQ(vEdge::zero().getValueByPath(0, "0"), 0.);
-  EXPECT_EQ(vEdge::one().getValueByPath(0, "0"), 1.);
+  EXPECT_EQ(::mqt::test::value(vEdge::zero().getValueByPath(0, "0")), 0.);
+  EXPECT_EQ(::mqt::test::value(vEdge::one().getValueByPath(0, "0")), 1.);
 }
 
 TEST(VectorFunctionality, GetValueByIndexTerminal) {
-  EXPECT_EQ(vEdge::zero().getValueByIndex(0), 0.);
-  EXPECT_EQ(vEdge::one().getValueByIndex(0), 1.);
+  EXPECT_EQ(::mqt::test::value(vEdge::zero().getValueByIndex(0)), 0.);
+  EXPECT_EQ(::mqt::test::value(vEdge::one().getValueByIndex(0)), 1.);
 }
 
 TEST(VectorFunctionality, GetValueByIndexEndianness) {
-  auto dd = std::make_unique<Package>(2);
+  auto dd = ::mqt::test::value(Package::create(2));
   const CVec state = {
       std::sqrt(0.1),
       std::sqrt(0.2),
       std::sqrt(0.3),
       std::sqrt(0.4),
   };
-  const auto stateDD = makeStateFromVector(state, *dd);
+  const auto stateDD = ::mqt::test::value(makeStateFromVector(state, *dd));
 
   for (std::size_t i = 0U; i < state.size(); ++i) {
-    EXPECT_EQ(state[i], stateDD.getValueByIndex(i));
+    EXPECT_EQ(state[i], ::mqt::test::value(stateDD.getValueByIndex(i)));
   }
 }
 
 TEST(VectorFunctionality, WideIndices) {
   constexpr auto digits = std::numeric_limits<size_t>::digits;
-  auto dd = std::make_unique<Package>(digits + 1U);
-  const auto ones =
-      makeBasisState(digits, std::vector<bool>(digits, true), *dd);
-  EXPECT_EQ(ones.getValueByIndex(std::numeric_limits<size_t>::max()), 1.);
-  const auto zero = makeZeroState(digits + 1U, *dd);
-  EXPECT_EQ(zero.getValueByIndex(0), 1.);
-  EXPECT_EQ(zero.getValueByIndex(std::numeric_limits<size_t>::max()), 0.);
-  EXPECT_THROW(vEdge::one().getValueByIndex(1), std::out_of_range);
-  EXPECT_THROW(makeZeroState(3, *dd).getValueByIndex(8), std::out_of_range);
+  auto dd = ::mqt::test::value(Package::create(digits + 1U));
+  const auto ones = ::mqt::test::value(
+      makeBasisState(digits, std::vector<bool>(digits, true), *dd));
+  EXPECT_EQ(::mqt::test::value(
+                ones.getValueByIndex(std::numeric_limits<size_t>::max())),
+            1.);
+  const auto zero = ::mqt::test::value(makeZeroState(digits + 1U, *dd));
+  EXPECT_EQ(::mqt::test::value(zero.getValueByIndex(0)), 1.);
+  EXPECT_EQ(::mqt::test::value(
+                zero.getValueByIndex(std::numeric_limits<size_t>::max())),
+            0.);
+  EXPECT_EQ(
+      ::mqt::test::errorKind([&] { return vEdge::one().getValueByIndex(1); }),
+      ::mqt::ErrorCategory::OutOfRange);
+  EXPECT_EQ(
+      ::mqt::test::errorKind([&] {
+        return ::mqt::test::value(makeZeroState(3, *dd)).getValueByIndex(8);
+      }),
+      ::mqt::ErrorCategory::OutOfRange);
 }
 
 TEST(VectorFunctionality, InvalidPaths) {
-  auto dd = std::make_unique<Package>(2);
-  const auto zero = makeZeroState(2, *dd);
-  EXPECT_THROW(zero.getValueByPath(2, "2"), std::out_of_range);
+  auto dd = ::mqt::test::value(Package::create(2));
+  const auto zero = ::mqt::test::value(makeZeroState(2, *dd));
+  EXPECT_EQ(::mqt::test::errorKind([&] { return zero.getValueByPath(2, "2"); }),
+            ::mqt::ErrorCategory::OutOfRange);
   for (const auto* path : {"20", "91", "/0", "x0"}) {
-    EXPECT_THROW(zero.getValueByPath(2, path), std::invalid_argument);
+    EXPECT_EQ(
+        ::mqt::test::errorKind([&] { return zero.getValueByPath(2, path); }),
+        ::mqt::ErrorCategory::InvalidArgument);
   }
-  EXPECT_EQ(zero.getValueByPath(2, "00ignored"), 1.);
+  EXPECT_EQ(::mqt::test::value(zero.getValueByPath(2, "00ignored")), 1.);
 }
 
 TEST(MatrixFunctionality, WideIndices) {
   constexpr auto digits = std::numeric_limits<size_t>::digits;
-  auto dd = std::make_unique<Package>(digits + 1U);
-  const auto gate = dd->makeGateDD(GateMatrix{0., {0., -1.}, {0., 1.}, 0.}, 0);
-  EXPECT_EQ(gate.getValueByIndex(digits + 1U, 0, 1), std::complex<fp>(0, -1));
-  EXPECT_EQ(gate.getValueByIndex(digits + 1U, 1, 0), std::complex<fp>(0, 1));
-  EXPECT_EQ(gate.getValueByIndex(digits + 1U, 2, 1), 0.);
-  const auto highGate =
-      dd->makeGateDD(GateMatrix{0., {0., -1.}, {0., 1.}, 0.}, digits);
-  EXPECT_EQ(highGate.getValueByIndex(digits + 1U, 0, 0), 0.);
-  EXPECT_EQ(mEdge::one().getValueByIndex(digits,
-                                         std::numeric_limits<size_t>::max(),
-                                         std::numeric_limits<size_t>::max()),
+  auto dd = ::mqt::test::value(Package::create(digits + 1U));
+  const auto gate = ::mqt::test::value(
+      dd->makeGateDD(GateMatrix{0., {0., -1.}, {0., 1.}, 0.}, 0));
+  EXPECT_EQ(::mqt::test::value(gate.getValueByIndex(digits + 1U, 0, 1)),
+            std::complex<fp>(0, -1));
+  EXPECT_EQ(::mqt::test::value(gate.getValueByIndex(digits + 1U, 1, 0)),
+            std::complex<fp>(0, 1));
+  EXPECT_EQ(::mqt::test::value(gate.getValueByIndex(digits + 1U, 2, 1)), 0.);
+  const auto highGate = ::mqt::test::value(
+      dd->makeGateDD(GateMatrix{0., {0., -1.}, {0., 1.}, 0.}, digits));
+  EXPECT_EQ(::mqt::test::value(highGate.getValueByIndex(digits + 1U, 0, 0)),
+            0.);
+  EXPECT_EQ(::mqt::test::value(mEdge::one().getValueByIndex(
+                digits, std::numeric_limits<size_t>::max(),
+                std::numeric_limits<size_t>::max())),
             1.);
-  EXPECT_THROW(gate.getValueByIndex(1, 2, 0), std::out_of_range);
-  EXPECT_THROW(mEdge::one().getValueByIndex(1, 0, 2), std::out_of_range);
+  EXPECT_EQ(
+      ::mqt::test::errorKind([&] { return gate.getValueByIndex(1, 2, 0); }),
+      ::mqt::ErrorCategory::OutOfRange);
+  EXPECT_EQ(::mqt::test::errorKind(
+                [&] { return mEdge::one().getValueByIndex(1, 0, 2); }),
+            ::mqt::ErrorCategory::OutOfRange);
 }
 
 TEST(MatrixFunctionality, InvalidPaths) {
-  EXPECT_THROW(mEdge::one().getValueByPath(1, ""), std::out_of_range);
+  EXPECT_EQ(::mqt::test::errorKind(
+                [&] { return mEdge::one().getValueByPath(1, ""); }),
+            ::mqt::ErrorCategory::OutOfRange);
   for (const auto* path : {"4", "9", "/", "x"}) {
-    EXPECT_THROW(mEdge::one().getValueByPath(1, path), std::invalid_argument);
+    EXPECT_EQ(::mqt::test::errorKind(
+                  [&] { return mEdge::one().getValueByPath(1, path); }),
+              ::mqt::ErrorCategory::InvalidArgument);
   }
-  EXPECT_EQ(mEdge::one().getValueByPath(1, "3ignored"), 1.);
+  EXPECT_EQ(::mqt::test::value(mEdge::one().getValueByPath(1, "3ignored")), 1.);
 }
 
 TEST(EdgeFunctionality, NonpositiveExportThresholds) {
-  auto dd = std::make_unique<Package>(1);
-  const auto vector = makeStateFromVector(CVec{0.6, {0., 0.8}}, *dd);
-  const auto matrix =
-      dd->makeGateDD(GateMatrix{0., {0., -1.}, {0., 1.}, 0.}, 0);
+  auto dd = ::mqt::test::value(Package::create(1));
+  const auto vector =
+      ::mqt::test::value(makeStateFromVector(CVec{0.6, {0., 0.8}}, *dd));
+  const auto matrix = ::mqt::test::value(
+      dd->makeGateDD(GateMatrix{0., {0., -1.}, {0., 1.}, 0.}, 0));
   for (const auto threshold : {0., -1., std::numeric_limits<fp>::quiet_NaN()}) {
     EXPECT_EQ(vector.getVector(threshold), vector.getVector());
     EXPECT_EQ(vector.getSparseVector(threshold), vector.getSparseVector());
@@ -124,27 +152,27 @@ TEST(VectorFunctionality, GetVectorTerminal) {
 }
 
 TEST(VectorFunctionality, GetVectorRoundtrip) {
-  auto dd = std::make_unique<Package>(2);
+  auto dd = ::mqt::test::value(Package::create(2));
   const CVec state = {
       std::sqrt(0.1),
       std::sqrt(0.2),
       std::sqrt(0.3),
       std::sqrt(0.4),
   };
-  const auto stateDD = makeStateFromVector(state, *dd);
+  const auto stateDD = ::mqt::test::value(makeStateFromVector(state, *dd));
   const auto stateVec = stateDD.getVector();
   EXPECT_EQ(stateVec, state);
 }
 
 TEST(VectorFunctionality, GetVectorTolerance) {
-  auto dd = std::make_unique<Package>(2);
+  auto dd = ::mqt::test::value(Package::create(2));
   const CVec state = {
       std::sqrt(0.1),
       std::sqrt(0.2),
       std::sqrt(0.3),
       std::sqrt(0.4),
   };
-  const auto stateDD = makeStateFromVector(state, *dd);
+  const auto stateDD = ::mqt::test::value(makeStateFromVector(state, *dd));
   const auto stateVec = stateDD.getVector(std::sqrt(0.1));
   EXPECT_EQ(stateVec, state);
   const auto stateVec2 = stateDD.getVector(std::sqrt(0.1) + RealNumber::eps);
@@ -160,14 +188,14 @@ TEST(VectorFunctionality, GetSparseVectorTerminal) {
 }
 
 TEST(VectorFunctionality, GetSparseVectorConsistency) {
-  auto dd = std::make_unique<Package>(2);
+  auto dd = ::mqt::test::value(Package::create(2));
   const CVec state = {
       std::sqrt(0.1),
       std::sqrt(0.2),
       std::sqrt(0.3),
       std::sqrt(0.4),
   };
-  const auto stateDD = makeStateFromVector(state, *dd);
+  const auto stateDD = ::mqt::test::value(makeStateFromVector(state, *dd));
   const auto stateSparseVec = stateDD.getSparseVector();
   const auto stateVec = stateDD.getVector();
   for (const auto& [index, value] : stateSparseVec) {
@@ -176,14 +204,14 @@ TEST(VectorFunctionality, GetSparseVectorConsistency) {
 }
 
 TEST(VectorFunctionality, GetSparseVectorTolerance) {
-  auto dd = std::make_unique<Package>(2);
+  auto dd = ::mqt::test::value(Package::create(2));
   const CVec state = {
       std::sqrt(0.1),
       std::sqrt(0.2),
       std::sqrt(0.3),
       std::sqrt(0.4),
   };
-  const auto stateDD = makeStateFromVector(state, *dd);
+  const auto stateDD = ::mqt::test::value(makeStateFromVector(state, *dd));
   const auto stateSparseVec = stateDD.getSparseVector(std::sqrt(0.1));
   for (const auto& [index, value] : stateSparseVec) {
     EXPECT_EQ(value, state[index]);
@@ -206,14 +234,14 @@ TEST(VectorFunctionality, PrintVectorTerminal) {
 }
 
 TEST(VectorFunctionality, PrintVector) {
-  auto dd = std::make_unique<Package>(2);
+  auto dd = ::mqt::test::value(Package::create(2));
   const CVec state = {
       std::sqrt(0.1),
       std::sqrt(0.2),
       std::sqrt(0.3),
       std::sqrt(0.4),
   };
-  const auto stateDD = makeStateFromVector(state, *dd);
+  const auto stateDD = ::mqt::test::value(makeStateFromVector(state, *dd));
   testing::internal::CaptureStdout();
   stateDD.printVector();
   const auto stateStr = testing::internal::GetCapturedStdout();
@@ -230,14 +258,14 @@ TEST(VectorFunctionality, AddToVectorTerminal) {
 TEST(VectorFunctionality, AddToVector) {
   CVec vec = {0., 0., 0., 0.};
 
-  auto dd = std::make_unique<Package>(2);
+  auto dd = ::mqt::test::value(Package::create(2));
   const CVec state = {
       std::sqrt(0.1),
       std::sqrt(0.2),
       std::sqrt(0.3),
       std::sqrt(0.4),
   };
-  const auto stateDD = makeStateFromVector(state, *dd);
+  const auto stateDD = ::mqt::test::value(makeStateFromVector(state, *dd));
   stateDD.addToVector(vec);
   EXPECT_EQ(vec, state);
 }
@@ -248,9 +276,9 @@ TEST(VectorFunctionality, SizeTerminal) {
 }
 
 TEST(VectorFunctionality, SizeBellState) {
-  auto dd = std::make_unique<Package>(2);
+  auto dd = ::mqt::test::value(Package::create(2));
   const CVec state = {SQRT2_2, 0., 0., SQRT2_2};
-  const auto bell = makeStateFromVector(state, *dd);
+  const auto bell = ::mqt::test::value(makeStateFromVector(state, *dd));
   EXPECT_EQ(bell.size(), 4);
 }
 
@@ -259,19 +287,21 @@ TEST(VectorFunctionality, SizeBellState) {
 ///-----------------------------------------------------------------------------
 
 TEST(MatrixFunctionality, GetValueByPathTerminal) {
-  EXPECT_EQ(mEdge::zero().getValueByPath(0, "0"), 0.);
-  EXPECT_EQ(mEdge::one().getValueByPath(0, "0"), 1.);
+  EXPECT_EQ(::mqt::test::value(mEdge::zero().getValueByPath(0, "0")), 0.);
+  EXPECT_EQ(::mqt::test::value(mEdge::one().getValueByPath(0, "0")), 1.);
 }
 
 TEST(MatrixFunctionality, GetValueByIndexTerminal) {
-  EXPECT_EQ(mEdge::zero().getValueByIndex(0, 0, 0), 0.);
-  EXPECT_EQ(mEdge::one().getValueByIndex(0, 0, 0), 1.);
+  EXPECT_EQ(::mqt::test::value(mEdge::zero().getValueByIndex(0, 0, 0)), 0.);
+  EXPECT_EQ(::mqt::test::value(mEdge::one().getValueByIndex(0, 0, 0)), 1.);
 }
 
 TEST(MatrixFunctionality, ScalarAccessPreservesImplicitIdentities) {
-  Package package(3);
+  auto packageOwner = ::mqt::test::value(Package::create(3));
+  auto& package = *packageOwner;
   const auto phase = package.cn.lookup(0.5, -0.5);
-  auto gate = package.makeGateDD(GateMatrix{0., 1., 1., 0.}, 1);
+  auto gate =
+      ::mqt::test::value(package.makeGateDD(GateMatrix{0., 1., 1., 0.}, 1));
   gate.w = phase;
   for (const auto& matrix : {mEdge::zero(), mEdge::terminal(phase), gate}) {
     const auto dense = matrix.getMatrix(3);
@@ -282,15 +312,17 @@ TEST(MatrixFunctionality, ScalarAccessPreservesImplicitIdentities) {
           path[bit] = static_cast<char>('0' + (2 * ((row >> bit) & 1U)) +
                                         ((col >> bit) & 1U));
         }
-        EXPECT_EQ(matrix.getValueByIndex(3, row, col), dense[row][col]);
-        EXPECT_EQ(matrix.getValueByPath(3, path), dense[row][col]);
+        EXPECT_EQ(::mqt::test::value(matrix.getValueByIndex(3, row, col)),
+                  dense[row][col]);
+        EXPECT_EQ(::mqt::test::value(matrix.getValueByPath(3, path)),
+                  dense[row][col]);
       }
     }
   }
 }
 
 TEST(MatrixFunctionality, GetValueByIndexEndianness) {
-  auto dd = std::make_unique<Package>(2);
+  auto dd = ::mqt::test::value(Package::create(2));
   // clang-format off
   const CMat mat = {
     {std::sqrt(0.1),  std::sqrt(0.2),  std::sqrt(0.3),  std::sqrt(0.4)},
@@ -299,11 +331,12 @@ TEST(MatrixFunctionality, GetValueByIndexEndianness) {
     {-std::sqrt(0.4), -std::sqrt(0.1), -std::sqrt(0.2), std::sqrt(0.3)},};
   // clang-format on
 
-  const auto matDD = dd->makeDDFromMatrix(mat);
+  const auto matDD = ::mqt::test::value(dd->makeDDFromMatrix(mat));
 
   for (std::size_t i = 0U; i < mat.size(); ++i) {
     for (std::size_t j = 0U; j < mat.size(); ++j) {
-      const auto val = matDD.getValueByIndex(dd->qubits(), i, j);
+      const auto val =
+          ::mqt::test::value(matDD.getValueByIndex(dd->qubits(), i, j));
       const auto ref = mat[i][j];
       EXPECT_NEAR(ref.real(), val.real(), 1e-10);
       EXPECT_NEAR(ref.imag(), val.imag(), 1e-10);
@@ -317,7 +350,7 @@ TEST(MatrixFunctionality, GetMatrixTerminal) {
 }
 
 TEST(MatrixFunctionality, GetMatrixRoundtrip) {
-  auto dd = std::make_unique<Package>(2);
+  auto dd = ::mqt::test::value(Package::create(2));
   // clang-format off
   const CMat mat = {
     {std::sqrt(0.1),  std::sqrt(0.2),  std::sqrt(0.3),  std::sqrt(0.4)},
@@ -326,11 +359,12 @@ TEST(MatrixFunctionality, GetMatrixRoundtrip) {
     {-std::sqrt(0.4), -std::sqrt(0.1), -std::sqrt(0.2), std::sqrt(0.3)},};
   // clang-format on
 
-  const auto matDD = dd->makeDDFromMatrix(mat);
+  const auto matDD = ::mqt::test::value(dd->makeDDFromMatrix(mat));
   const auto matVec = matDD.getMatrix(dd->qubits());
   for (std::size_t i = 0U; i < mat.size(); ++i) {
     for (std::size_t j = 0U; j < mat.size(); ++j) {
-      const auto val = matDD.getValueByIndex(dd->qubits(), i, j);
+      const auto val =
+          ::mqt::test::value(matDD.getValueByIndex(dd->qubits(), i, j));
       const auto ref = mat[i][j];
       EXPECT_NEAR(ref.real(), val.real(), 1e-10);
       EXPECT_NEAR(ref.imag(), val.imag(), 1e-10);
@@ -339,7 +373,7 @@ TEST(MatrixFunctionality, GetMatrixRoundtrip) {
 }
 
 TEST(MatrixFunctionality, GetMatrixTolerance) {
-  auto dd = std::make_unique<Package>(2);
+  auto dd = ::mqt::test::value(Package::create(2));
   // clang-format off
   const CMat mat = {
     {std::sqrt(0.1),  std::sqrt(0.2),  std::sqrt(0.3),  std::sqrt(0.4)},
@@ -348,11 +382,12 @@ TEST(MatrixFunctionality, GetMatrixTolerance) {
     {-std::sqrt(0.4), -std::sqrt(0.1), -std::sqrt(0.2), std::sqrt(0.3)},};
   // clang-format on
 
-  const auto matDD = dd->makeDDFromMatrix(mat);
+  const auto matDD = ::mqt::test::value(dd->makeDDFromMatrix(mat));
   const auto matVec = matDD.getMatrix(dd->qubits(), std::sqrt(0.1));
   for (std::size_t i = 0U; i < mat.size(); ++i) {
     for (std::size_t j = 0U; j < mat.size(); ++j) {
-      const auto val = matDD.getValueByIndex(dd->qubits(), i, j);
+      const auto val =
+          ::mqt::test::value(matDD.getValueByIndex(dd->qubits(), i, j));
       const auto ref = mat[i][j];
       EXPECT_NEAR(ref.real(), val.real(), 1e-10);
       EXPECT_NEAR(ref.imag(), val.imag(), 1e-10);
@@ -375,7 +410,7 @@ TEST(MatrixFunctionality, GetSparseMatrixTerminal) {
 }
 
 TEST(MatrixFunctionality, GetSparseMatrixConsistency) {
-  auto dd = std::make_unique<Package>(2);
+  auto dd = ::mqt::test::value(Package::create(2));
   // clang-format off
   const CMat mat = {
     {std::sqrt(0.1),  std::sqrt(0.2),  std::sqrt(0.3),  std::sqrt(0.4)},
@@ -384,7 +419,7 @@ TEST(MatrixFunctionality, GetSparseMatrixConsistency) {
     {-std::sqrt(0.4), -std::sqrt(0.1), -std::sqrt(0.2), std::sqrt(0.3)},};
   // clang-format on
 
-  const auto matDD = dd->makeDDFromMatrix(mat);
+  const auto matDD = ::mqt::test::value(dd->makeDDFromMatrix(mat));
   const auto matSparse = matDD.getSparseMatrix(dd->qubits());
   const auto matDense = matDD.getMatrix(dd->qubits());
   for (const auto& [index, value] : matSparse) {
@@ -395,7 +430,7 @@ TEST(MatrixFunctionality, GetSparseMatrixConsistency) {
 }
 
 TEST(MatrixFunctionality, GetSparseMatrixTolerance) {
-  auto dd = std::make_unique<Package>(2);
+  auto dd = ::mqt::test::value(Package::create(2));
   // clang-format off
   const CMat mat = {
     {std::sqrt(0.1),  std::sqrt(0.2),  std::sqrt(0.3),  std::sqrt(0.4)},
@@ -404,7 +439,7 @@ TEST(MatrixFunctionality, GetSparseMatrixTolerance) {
     {-std::sqrt(0.4), -std::sqrt(0.1), -std::sqrt(0.2), std::sqrt(0.3)},};
   // clang-format on
 
-  const auto matDD = dd->makeDDFromMatrix(mat);
+  const auto matDD = ::mqt::test::value(dd->makeDDFromMatrix(mat));
   const auto matSparse = matDD.getSparseMatrix(dd->qubits(), std::sqrt(0.1));
   const auto matDense = matDD.getMatrix(dd->qubits());
   for (const auto& [index, value] : matSparse) {
@@ -433,7 +468,7 @@ TEST(MatrixFunctionality, PrintMatrixTerminal) {
 }
 
 TEST(MatrixFunctionality, PrintMatrix) {
-  auto dd = std::make_unique<Package>(2);
+  auto dd = ::mqt::test::value(Package::create(2));
   // clang-format off
   const CMat mat = {
     {std::sqrt(0.1),  std::sqrt(0.2),  std::sqrt(0.3),  std::sqrt(0.4)},
@@ -442,7 +477,7 @@ TEST(MatrixFunctionality, PrintMatrix) {
     {-std::sqrt(0.4), -std::sqrt(0.1), -std::sqrt(0.2), std::sqrt(0.3)},};
   // clang-format on
 
-  const auto matDD = dd->makeDDFromMatrix(mat);
+  const auto matDD = ::mqt::test::value(dd->makeDDFromMatrix(mat));
   testing::internal::CaptureStdout();
   matDD.printMatrix(dd->qubits());
   const auto matStr = testing::internal::GetCapturedStdout();
@@ -474,7 +509,7 @@ TEST(MatrixFunctionality, SizeTerminal) {
 }
 
 TEST(MatrixFunctionality, SizeBellState) {
-  auto dd = std::make_unique<Package>(2);
+  auto dd = ::mqt::test::value(Package::create(2));
   // clang-format off
   const CMat mat = {
     {SQRT2_2, 0., 0., SQRT2_2},
@@ -483,7 +518,7 @@ TEST(MatrixFunctionality, SizeBellState) {
     {SQRT2_2, 0., 0., -SQRT2_2},};
   // clang-format on
 
-  const auto bell = dd->makeDDFromMatrix(mat);
+  const auto bell = ::mqt::test::value(dd->makeDDFromMatrix(mat));
   EXPECT_EQ(bell.size(), 3);
 }
 

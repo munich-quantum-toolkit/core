@@ -18,6 +18,8 @@
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 
+#include "support/TestSupport.hpp"
+
 #include "gtest/gtest.h"
 
 #include "mlir/AsmParser/AsmParser.h"
@@ -48,15 +50,15 @@
 #include <vector>
 
 namespace mqt::test::compiler {
-template <class T> [[nodiscard]] static T valid(llvm::Expected<T> value) {
-  return llvm::cantFail(std::move(value));
+template <class T> [[nodiscard]] static T valid(mlir::FailureOr<T> value) {
+  return ::mqt::test::value(std::move(value));
 }
 
-template <class T>
-static void expectInvalid(llvm::Expected<T> value,
+template <class Function>
+static void expectInvalid(Function&& function,
                           const std::string_view expectedMessage) {
-  ASSERT_FALSE(value);
-  EXPECT_EQ(llvm::toString(value.takeError()), expectedMessage);
+  EXPECT_EQ(::mqt::test::errorMessage(std::forward<Function>(function)),
+            expectedMessage);
 }
 
 namespace {
@@ -107,68 +109,91 @@ TEST(PayloadSpecificationTest, ValidatesAndRoundTripsTypedAttribute) {
   EXPECT_EQ(reconstructed.materialize(context), attribute);
 
   expectInvalid(
-      mlir::PayloadSpecification::create(mlir::mqt::PayloadSpecAttr{}),
+      [&] {
+        return mlir::PayloadSpecification::create(mlir::mqt::PayloadSpecAttr{});
+      },
       "Invalid payload specification: Payload specification attribute must "
       "not be null");
-  expectInvalid(mlir::PayloadSpecification::create(
-                    {.id = "qir", .version = "2.1.0.1", .profile = "base"}),
-                "Invalid payload specification: Payload format version must "
-                "use major[.minor[.patch]]");
   expectInvalid(
-      mlir::PayloadSpecification::create({.id = "", .version = "2.1.0"}),
+      [&] {
+        return mlir::PayloadSpecification::create(
+            {.id = "qir", .version = "2.1.0.1", .profile = "base"});
+      },
+      "Invalid payload specification: Payload format version must "
+      "use major[.minor[.patch]]");
+  expectInvalid(
+      [&] {
+        return mlir::PayloadSpecification::create(
+            {.id = "", .version = "2.1.0"});
+      },
       "Invalid payload specification: Payload format requires an ID and "
       "version");
   expectInvalid(
-      mlir::PayloadSpecification::create(
-          {.id = std::string("qir\0", 4), .version = "2.1.0"}),
+      [&] {
+        return mlir::PayloadSpecification::create(
+            {.id = std::string("qir\0", 4), .version = "2.1.0"});
+      },
       "Invalid payload specification: Payload format fields must not contain "
       "null characters");
   expectInvalid(
-      mlir::PayloadSpecification::create({.id = "qir", .version = "2.1.0"},
-                                         {{.id = ""}}),
+      [&] {
+        return mlir::PayloadSpecification::create(
+            {.id = "qir", .version = "2.1.0"}, {{.id = ""}});
+      },
       "Invalid payload specification: Program capability ID must not be "
       "empty");
   expectInvalid(
-      mlir::PayloadSpecification::create({.id = "qir", .version = "2.1.0"},
-                                         {{.id = std::string("x\0", 2)}}),
+      [&] {
+        return mlir::PayloadSpecification::create(
+            {.id = "qir", .version = "2.1.0"}, {{.id = std::string("x\0", 2)}});
+      },
       "Invalid payload specification: Program capability ID must not contain "
       "a null character");
   expectInvalid(
-      mlir::PayloadSpecification::create(
-          {.id = "qir", .version = "2.1.0"},
-          {{.id = "capability", .constraints = {{.id = ""}}}}),
+      [&] {
+        return mlir::PayloadSpecification::create(
+            {.id = "qir", .version = "2.1.0"},
+            {{.id = "capability", .constraints = {{.id = ""}}}});
+      },
       "Invalid payload specification: Program constraint ID must not be "
       "empty");
   expectInvalid(
-      mlir::PayloadSpecification::create(
-          {.id = "qir", .version = "2.1.0"},
-          {
-              {
-                  .id = "capability",
-                  .constraints = {{.id = std::string("x\0", 2)}},
-              },
-          }),
+      [&] {
+        return mlir::PayloadSpecification::create(
+            {.id = "qir", .version = "2.1.0"},
+            {
+                {
+                    .id = "capability",
+                    .constraints = {{.id = std::string("x\0", 2)}},
+                },
+            });
+      },
       "Invalid payload specification: Program constraint ID must not contain "
       "a null character");
   expectInvalid(
-      mlir::PayloadSpecification::create(
-          {.id = "qir", .version = "2.1.0", .profile = "base"},
-          {
-              {
-                  .id = "integer-computation",
-                  .constraints = {{.id = "width"}, {.id = "width"}},
-              },
-          }),
+      [&] {
+        return mlir::PayloadSpecification::create(
+            {.id = "qir", .version = "2.1.0", .profile = "base"},
+            {
+                {
+                    .id = "integer-computation",
+                    .constraints = {{.id = "width"}, {.id = "width"}},
+                },
+            });
+      },
       "Invalid payload specification: Program capability contains a duplicate "
       "constraint ID");
-  expectInvalid(mlir::PayloadSpecification::create(
-                    {.id = "qir", .version = "2.1.0", .profile = "base"},
-                    {
-                        {.id = "integer-computation", .value = 64},
-                        {.id = "integer-computation", .value = 64},
-                    }),
-                "Invalid payload specification: Payload specification contains "
-                "a duplicate capability ID/value pair");
+  expectInvalid(
+      [&] {
+        return mlir::PayloadSpecification::create(
+            {.id = "qir", .version = "2.1.0", .profile = "base"},
+            {
+                {.id = "integer-computation", .value = 64},
+                {.id = "integer-computation", .value = 64},
+            });
+      },
+      "Invalid payload specification: Payload specification contains "
+      "a duplicate capability ID/value pair");
 }
 
 TEST(PayloadSpecificationTest, NormalizesExactVersionComponents) {
@@ -191,7 +216,7 @@ TEST(PayloadSpecificationTest, NormalizesExactVersionComponents) {
   EXPECT_EQ(valid(qasm.compilerOutput()), mlir::ProgramFormat::OpenQASM3);
   const auto exactMajor = valid(mlir::PayloadSpecification::create(
       {.id = "qir", .version = "2", .profile = "base"}));
-  expectInvalid(exactMajor.compilerOutput(),
+  expectInvalid([&] { return exactMajor.compilerOutput(); },
                 "Invalid payload specification: MQT Compiler cannot emit the "
                 "selected payload format");
 }
@@ -484,128 +509,185 @@ TEST(CompilerTargetTest, CanonicalizesConnectedTopologyAndCachesDistances) {
 }
 
 TEST(CompilerTargetTest, RejectsInvalidMetadata) {
-  expectInvalid(Target::create(0, Connectivity::allToAll(),
-                               NativeOperations::unrestricted()),
-                "Compiler target must contain at least one site");
+  expectInvalid(
+      [&] {
+        return Target::create(0, Connectivity::allToAll(),
+                              NativeOperations::unrestricted());
+      },
+      "Compiler target must contain at least one site");
   if constexpr (sizeof(size_t) >= sizeof(uint64_t)) {
     expectInvalid(
-        Target::create(std::numeric_limits<size_t>::max(),
-                       Connectivity::allToAll(),
-                       NativeOperations::unrestricted()),
+        [&] {
+          return Target::create(std::numeric_limits<size_t>::max(),
+                                Connectivity::allToAll(),
+                                NativeOperations::unrestricted());
+        },
         "Compiler target site count exceeds the nonnegative i64 site domain");
   }
-  expectInvalid(Site::create(-1),
+  expectInvalid([&] { return Site::create(-1); },
                 "Compiler target site ID must be nonnegative");
-  expectInvalid(Site::create(0, ""),
+  expectInvalid([&] { return Site::create(0, ""); },
                 "Compiler target site name must not be empty when present");
-  expectInvalid(Site::create(0, std::nullopt, 0),
+  expectInvalid([&] { return Site::create(0, std::nullopt, 0); },
                 "Compiler target site T1 must be positive");
-  expectInvalid(Site::create(0, std::nullopt, std::nullopt, 0),
+  expectInvalid([&] { return Site::create(0, std::nullopt, std::nullopt, 0); },
                 "Compiler target site T2 must be positive");
-  expectInvalid(DurationUnit::create("", 1.),
+  expectInvalid([&] { return DurationUnit::create("", 1.); },
                 "Compiler target duration unit must not be empty");
   expectInvalid(
-      DurationUnit::create("ns", 0.),
+      [&] { return DurationUnit::create("ns", 0.); },
       "Compiler target duration scale factor must be positive and finite");
   expectInvalid(
-      DurationUnit::create("ns", std::numeric_limits<double>::infinity()),
+      [&] {
+        return DurationUnit::create("ns",
+                                    std::numeric_limits<double>::infinity());
+      },
       "Compiler target duration scale factor must be positive and finite");
-  expectInvalid(SiteTuple::create({0, 0}),
+  expectInvalid([&] { return SiteTuple::create({0, 0}); },
                 "Compiler target site tuple contains a duplicate site");
-  expectInvalid(SiteTuple::create({-1}),
+  expectInvalid([&] { return SiteTuple::create({-1}); },
                 "Compiler target site tuple contains a negative site ID");
   expectInvalid(
-      SiteTuple::create({0}, std::nullopt, -0.1),
+      [&] { return SiteTuple::create({0}, std::nullopt, -0.1); },
       "Compiler target site-tuple fidelity must be finite and in [0, 1]");
-  expectInvalid(OperationCapability::create("", 1, 0),
+  expectInvalid([&] { return OperationCapability::create("", 1, 0); },
                 "Compiler target operation name must not be empty");
-  expectInvalid(OperationCapability::create("x", Arity::variadic(0), 0),
-                "Compiler target operation variadic minimum must be positive");
   expectInvalid(
-      OperationCapability::create(
-          "gphase", Arity::fixed(0), 1,
-          std::vector{valid(SiteTuple::create(std::vector<SiteId>{}))}),
+      [&] { return OperationCapability::create("x", Arity::variadic(0), 0); },
+      "Compiler target operation variadic minimum must be positive");
+  expectInvalid(
+      [&] {
+        return OperationCapability::create(
+            "gphase", Arity::fixed(0), 1,
+            std::vector{valid(SiteTuple::create(std::vector<SiteId>{}))});
+      },
       "Compiler target zero-arity operation cannot contain site tuples");
   expectInvalid(
-      OperationCapability::create(
-          "h", Arity::variadic(1), 0,
-          std::vector{valid(SiteTuple::create(std::vector<SiteId>{0}))}),
+      [&] {
+        return OperationCapability::create(
+            "h", Arity::variadic(1), 0,
+            std::vector{valid(SiteTuple::create(std::vector<SiteId>{0}))});
+      },
       "Compiler target variadic operation cannot contain site tuples");
   expectInvalid(
-      OperationCapability::create(
-          "x", 1, 0, std::vector{valid(SiteTuple::create({0, 1}))}),
+      [&] {
+        return OperationCapability::create(
+            "x", 1, 0, std::vector{valid(SiteTuple::create({0, 1}))});
+      },
       "Compiler target operation site tuple does not match its arity");
-  expectInvalid(OperationCapability::create("x", 1, 0,
-                                            std::vector{
-                                                valid(SiteTuple::create({0})),
-                                                valid(SiteTuple::create({0})),
-                                            }),
-                "Compiler target operation contains a duplicate site tuple");
   expectInvalid(
-      OperationCapability::create("x", 1, 0, {}, std::nullopt,
-                                  std::numeric_limits<double>::quiet_NaN()),
+      [&] {
+        return OperationCapability::create("x", 1, 0,
+                                           std::vector{
+                                               valid(SiteTuple::create({0})),
+                                               valid(SiteTuple::create({0})),
+                                           });
+      },
+      "Compiler target operation contains a duplicate site tuple");
+  expectInvalid(
+      [&] {
+        return OperationCapability::create(
+            "x", 1, 0, {}, std::nullopt,
+            std::numeric_limits<double>::quiet_NaN());
+      },
       "Compiler target operation fidelity must be finite and in [0, 1]");
 
-  expectInvalid(Target::create(std::vector<Site>{}, Connectivity::allToAll(),
-                               NativeOperations::unrestricted()),
-                "Compiler target must contain at least one site");
-  expectInvalid(Target::create("", 1, Connectivity::allToAll(),
-                               NativeOperations::unrestricted()),
-                "Compiler target name must not be empty when present");
-  expectInvalid(Target::create("invalid", 0, Connectivity::allToAll(),
-                               NativeOperations::unrestricted()),
-                "Compiler target must contain at least one site");
-  expectInvalid(Target::create(
-                    std::vector{valid(Site::create(1)), valid(Site::create(1))},
-                    Connectivity::allToAll(), NativeOperations::unrestricted()),
-                "Compiler target contains duplicate site IDs");
-  expectInvalid(Target::create(
-                    std::vector{valid(Site::create(0, std::nullopt, 1))},
-                    Connectivity::allToAll(), NativeOperations::unrestricted()),
-                "Compiler target timing metadata requires a duration unit");
   expectInvalid(
-      Target::create(1, Connectivity::allToAll(),
-                     NativeOperations::fromOperations({
-                         valid(OperationCapability::create("x", 1, 0, {}, 1)),
-                     })),
+      [&] {
+        return Target::create(std::vector<Site>{}, Connectivity::allToAll(),
+                              NativeOperations::unrestricted());
+      },
+      "Compiler target must contain at least one site");
+  expectInvalid(
+      [&] {
+        return Target::create("", 1, Connectivity::allToAll(),
+                              NativeOperations::unrestricted());
+      },
+      "Compiler target name must not be empty when present");
+  expectInvalid(
+      [&] {
+        return Target::create("invalid", 0, Connectivity::allToAll(),
+                              NativeOperations::unrestricted());
+      },
+      "Compiler target must contain at least one site");
+  expectInvalid(
+      [&] {
+        return Target::create(
+            std::vector{valid(Site::create(1)), valid(Site::create(1))},
+            Connectivity::allToAll(), NativeOperations::unrestricted());
+      },
+      "Compiler target contains duplicate site IDs");
+  expectInvalid(
+      [&] {
+        return Target::create(
+            std::vector{valid(Site::create(0, std::nullopt, 1))},
+            Connectivity::allToAll(), NativeOperations::unrestricted());
+      },
       "Compiler target timing metadata requires a duration unit");
   expectInvalid(
-      Target::create(
-          1, Connectivity::allToAll(),
-          NativeOperations::fromOperations({
-              valid(OperationCapability::create(
-                  "x", 1, 0, std::vector{valid(SiteTuple::create({0}, 1))})),
-          })),
+      [&] {
+        return Target::create(
+            1, Connectivity::allToAll(),
+            NativeOperations::fromOperations({
+                valid(OperationCapability::create("x", 1, 0, {}, 1)),
+            }));
+      },
       "Compiler target timing metadata requires a duration unit");
-  expectInvalid(Target::create(2, Connectivity::fromCouplings({{0, 0}}),
-                               NativeOperations::unrestricted()),
-                "Compiler target topology contains a self-coupling");
-  expectInvalid(Target::create(2, Connectivity::fromCouplings({{0, 2}}),
-                               NativeOperations::unrestricted()),
-                "Compiler target topology references an unknown site");
-  expectInvalid(Target::create(3, Connectivity::fromCouplings({{0, 1}}),
-                               NativeOperations::unrestricted()),
-                "Compiler target topology must be connected");
   expectInvalid(
-      Target::create(
-          2, Connectivity::allToAll(),
-          NativeOperations::fromOperations({
-              valid(OperationCapability::create(
-                  "x", 1, 0, std::vector{valid(SiteTuple::create({2}))})),
-          })),
+      [&] {
+        return Target::create(
+            1, Connectivity::allToAll(),
+            NativeOperations::fromOperations({
+                valid(OperationCapability::create(
+                    "x", 1, 0, std::vector{valid(SiteTuple::create({0}, 1))})),
+            }));
+      },
+      "Compiler target timing metadata requires a duration unit");
+  expectInvalid(
+      [&] {
+        return Target::create(2, Connectivity::fromCouplings({{0, 0}}),
+                              NativeOperations::unrestricted());
+      },
+      "Compiler target topology contains a self-coupling");
+  expectInvalid(
+      [&] {
+        return Target::create(2, Connectivity::fromCouplings({{0, 2}}),
+                              NativeOperations::unrestricted());
+      },
+      "Compiler target topology references an unknown site");
+  expectInvalid(
+      [&] {
+        return Target::create(3, Connectivity::fromCouplings({{0, 1}}),
+                              NativeOperations::unrestricted());
+      },
+      "Compiler target topology must be connected");
+  expectInvalid(
+      [&] {
+        return Target::create(
+            2, Connectivity::allToAll(),
+            NativeOperations::fromOperations({
+                valid(OperationCapability::create(
+                    "x", 1, 0, std::vector{valid(SiteTuple::create({2}))})),
+            }));
+      },
       "Compiler target operation site tuple references an unknown site");
   expectInvalid(
-      Target::create(1, Connectivity::allToAll(),
-                     NativeOperations::fromOperations({
-                         valid(OperationCapability::create("cx", 2, 0)),
-                     })),
+      [&] {
+        return Target::create(
+            1, Connectivity::allToAll(),
+            NativeOperations::fromOperations({
+                valid(OperationCapability::create("cx", 2, 0)),
+            }));
+      },
       "Compiler target operation arity exceeds its site count");
   expectInvalid(
-      Target::create(
-          2, Connectivity::allToAll(),
-          NativeOperations::fromOperations({
-              valid(OperationCapability::create("h", Arity::variadic(3), 0)),
-          })),
+      [&] {
+        return Target::create(
+            2, Connectivity::allToAll(),
+            NativeOperations::fromOperations({
+                valid(OperationCapability::create("h", Arity::variadic(3), 0)),
+            }));
+      },
       "Compiler target operation variadic minimum exceeds its site count");
 }
 
@@ -776,18 +858,22 @@ TEST(CompilerTargetTest, RoundTripsSupportedTargetStates) {
     EXPECT_EQ(reconstructed.materialize(context), attribute);
   }
 
-  expectInvalid(Target::create(mlir::mqt::CompilationTargetAttr{}),
-                "Compiler target attribute must not be null");
+  expectInvalid(
+      [&] { return Target::create(mlir::mqt::CompilationTargetAttr{}); },
+      "Compiler target attribute must not be null");
 
   const auto site =
       mlir::mqt::SiteAttr::get(&context, 0, {}, std::nullopt, std::nullopt);
   const auto secondSite =
       mlir::mqt::SiteAttr::get(&context, 1, {}, std::nullopt, std::nullopt);
-  expectInvalid(Target::create(mlir::mqt::CompilationTargetAttr::get(
-                    &context, {}, {site, secondSite}, {},
-                    mlir::mqt::ConnectivityKind::Explicit, {},
-                    mlir::mqt::NativeOperationsKind::Unrestricted, {})),
-                "Compiler target topology must be connected");
+  expectInvalid(
+      [&] {
+        return Target::create(mlir::mqt::CompilationTargetAttr::get(
+            &context, {}, {site, secondSite}, {},
+            mlir::mqt::ConnectivityKind::Explicit, {},
+            mlir::mqt::NativeOperationsKind::Unrestricted, {}));
+      },
+      "Compiler target topology must be connected");
 }
 
 TEST(CompilerTargetTest, EnforcesExactOrderedOperationApplicability) {

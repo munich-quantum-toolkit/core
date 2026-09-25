@@ -216,3 +216,12 @@ def test_invalid_path(decisions: str) -> None:
         state.get_amplitude(1, decisions)
     assert state.get_amplitude(1, "0ignored") == 1
     package.dec_ref_vec(state)
+
+
+def test_untracked_release() -> None:
+    """Reject an unbalanced release at the Python boundary."""
+    package = DDPackage(1)
+    state = package.zero_state(1)
+    package.dec_ref_vec(state)
+    with pytest.raises(ValueError, match="Edge is not part of the root set"):
+        package.dec_ref_vec(state)

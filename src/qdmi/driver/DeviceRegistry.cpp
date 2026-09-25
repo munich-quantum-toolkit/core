@@ -15,15 +15,21 @@
 #include "qdmi/driver/Driver.hpp"
 #include "qdmi/driver/SessionConfig.hpp"
 
+#include "JSON.hpp"
+
 #include "nlohmann/json.hpp"
 #include "nlohmann/json_fwd.hpp"
 #include "qdmi/constants.h"
 
+#include "mlir/Support/LogicalResult.h"
+
 #include <algorithm>
-#include <cstddef>
+#include <array>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <initializer_list>
+#include <iterator>
 #include <map>
 #include <mutex>
 #include <new>
@@ -37,13 +43,16 @@
 #include <vector>
 
 namespace qdmi::detail {
-void validateDeviceId(const std::string_view id) {
+mlir::LogicalResult validateDeviceId(const std::string_view id) {
   if (id.empty()) {
-    throw std::invalid_argument("Device definition ID must not be empty");
+    return qdmi::emitError(QDMI_ERROR_INVALIDARGUMENT,
+                           "Device definition ID must not be empty");
   }
   if (id.find('\0') != std::string_view::npos) {
-    throw std::invalid_argument("Device definition ID must not contain NUL");
+    return qdmi::emitError(QDMI_ERROR_INVALIDARGUMENT,
+                           "Device definition ID must not contain NUL");
   }
+  return mlir::success();
 }
 
 namespace {
@@ -75,40 +84,44 @@ struct DeviceManifestState {
   return pathToString(source) + ":" + std::string(path);
 }
 
-void requireObject(const Json& value, const std::filesystem::path& source,
-                   const std::string_view path) {
+mlir::LogicalResult requireObject(const Json& value,
+                                  const std::filesystem::path& source,
+                                  const std::string_view path) {
   if (!value.is_object()) {
-    throw std::invalid_argument(sourceLabel(source, path) +
-                                " must be an object");
+    return qdmi::emitError(QDMI_ERROR_INVALIDARGUMENT,
+                           sourceLabel(source, path) + " must be an object");
   }
+  return mlir::success();
 }
 
-void rejectUnknownKeys(const Json& value,
-                       const std::initializer_list<std::string_view> allowed,
-                       const std::filesystem::path& source,
-                       const std::string_view path) {
+mlir::LogicalResult rejectUnknownKeys(
+    const Json& value, const std::initializer_list<std::string_view> allowed,
+    const std::filesystem::path& source, const std::string_view path) {
   for (const auto& [key, unused] : value.items()) {
     static_cast<void>(unused);
     if (std::ranges::find(allowed, key) == allowed.end()) {
-      throw std::invalid_argument(sourceLabel(source, path) +
-                                  " contains unknown key '" + key + "'");
+      return qdmi::emitError(QDMI_ERROR_INVALIDARGUMENT,
+                             sourceLabel(source, path) +
+                                 " contains unknown key '" + key + "'");
     }
   }
+  return mlir::success();
 }
 
 [[nodiscard]] auto optionalString(const Json& value, const std::string& key,
                                   const std::filesystem::path& source,
                                   const std::string& path)
-    -> std::optional<std::string> {
+    -> mlir::FailureOr<std::optional<std::string>> {
   const auto it = value.find(key);
   if (it == value.end()) {
-    return std::nullopt;
+    return std::optional<std::string>{};
   }
   if (!it->is_string()) {
-    throw std::invalid_argument(sourceLabel(source, path + "." + key) +
-                                " must be a string");
+    return qdmi::emitError(QDMI_ERROR_INVALIDARGUMENT,
+                           sourceLabel(source, path + "." + key) +
+                               " must be a string");
   }
-  return it->get<std::string>();
+  return std::optional<std::string>{std::move(it->get<std::string>())};
 }
 
 [[nodiscard]] auto resolvePath(std::filesystem::path path,
@@ -120,88 +133,112 @@ void rejectUnknownKeys(const Json& value,
   return path.lexically_normal();
 }
 
-[[nodiscard]] auto absolutePath(const std::filesystem::path& path)
-    -> std::filesystem::path {
-  if (path.empty()) {
-    return {};
-  }
-  return std::filesystem::absolute(path).lexically_normal();
-}
-
 [[nodiscard]] auto
 parseSessionPatch(const Json& value, const std::filesystem::path& source,
                   const std::string& path, const std::filesystem::path& base)
-    -> DeviceSessionConfig {
-  requireObject(value, source, path);
-  rejectUnknownKeys(value,
-                    {
-                        "base-url",
-                        "token",
-                        "auth-file",
-                        "auth-url",
-                        "username",
-                        "password",
-                        "custom1",
-                        "custom2",
-                        "custom3",
-                        "custom4",
-                        "custom5",
-                        "device-config",
-                    },
-                    source, path);
+    -> mlir::FailureOr<DeviceSessionConfig> {
+  if (mlir::failed(requireObject(value, source, path))) {
+    return mlir::failure();
+  }
+  if (mlir::failed(rejectUnknownKeys(value,
+                                     {
+                                         "base-url",
+                                         "token",
+                                         "auth-file",
+                                         "auth-url",
+                                         "username",
+                                         "password",
+                                         "custom1",
+                                         "custom2",
+                                         "custom3",
+                                         "custom4",
+                                         "custom5",
+                                         "device-config",
+                                     },
+                                     source, path))) {
+    return mlir::failure();
+  }
   DeviceSessionConfig patch;
-  patch.baseUrl = optionalString(value, "base-url", source, path);
-  patch.token = optionalString(value, "token", source, path);
-  patch.authUrl = optionalString(value, "auth-url", source, path);
-  patch.username = optionalString(value, "username", source, path);
-  patch.password = optionalString(value, "password", source, path);
-  patch.custom1 = optionalString(value, "custom1", source, path);
-  patch.custom2 = optionalString(value, "custom2", source, path);
-  patch.custom3 = optionalString(value, "custom3", source, path);
-  patch.custom4 = optionalString(value, "custom4", source, path);
-  patch.custom5 = optionalString(value, "custom5", source, path);
+  const std::array<std::pair<const char*, std::optional<std::string>*>, 10>
+      fields = {
+          {
+              {"base-url", &patch.baseUrl},
+              {"token", &patch.token},
+              {"auth-url", &patch.authUrl},
+              {"username", &patch.username},
+              {"password", &patch.password},
+              {"custom1", &patch.custom1},
+              {"custom2", &patch.custom2},
+              {"custom3", &patch.custom3},
+              {"custom4", &patch.custom4},
+              {"custom5", &patch.custom5},
+          },
+  };
+  for (const auto& [key, destination] : fields) {
+    auto result = optionalString(value, key, source, path);
+    if (mlir::failed(result)) {
+      return mlir::failure();
+    }
+    *destination = (*std::move(result));
+  }
   if (const auto config = value.find("device-config"); config != value.end()) {
     const auto configPath = path + ".device-config";
-    requireObject(*config, source, configPath);
-    rejectUnknownKeys(*config, {"inline", "file"}, source, configPath);
+    if (mlir::failed(requireObject(*config, source, configPath))) {
+      return mlir::failure();
+    }
+    if (mlir::failed(rejectUnknownKeys(*config, {"inline", "file"}, source,
+                                       configPath))) {
+      return mlir::failure();
+    }
     const auto inlineConfig = config->find("inline");
     const auto fileConfig = config->find("file");
     if ((inlineConfig == config->end()) == (fileConfig == config->end())) {
-      throw std::invalid_argument(sourceLabel(source, configPath) +
-                                  " must contain exactly one of 'inline' and "
-                                  "'file'");
+      return qdmi::emitError(QDMI_ERROR_INVALIDARGUMENT,
+                             sourceLabel(source, configPath) +
+                                 " must contain exactly one of 'inline' and "
+                                 "'file'");
     }
     if (inlineConfig != config->end()) {
       if (!inlineConfig->is_object()) {
-        throw std::invalid_argument(
-            sourceLabel(source, configPath + ".inline") + " must be an object");
+        return qdmi::emitError(QDMI_ERROR_INVALIDARGUMENT,
+                               sourceLabel(source, configPath + ".inline") +
+                                   " must be an object");
       }
       patch.deviceConfiguration =
           InlineDeviceConfiguration{.json = inlineConfig->dump()};
     } else {
-      const auto file = optionalString(*config, "file", source, configPath);
-      if (!file || file->empty() || file->find('\0') != std::string::npos) {
-        throw std::invalid_argument(sourceLabel(source, configPath + ".file") +
-                                    " must be a non-empty path without null "
-                                    "bytes");
+      if (!fileConfig->is_string() ||
+          fileConfig->get_ref<const std::string&>().empty() ||
+          fileConfig->get_ref<const std::string&>().find('\0') !=
+              std::string::npos) {
+        return qdmi::emitError(QDMI_ERROR_INVALIDARGUMENT,
+                               sourceLabel(source, configPath + ".file") +
+                                   " must be a non-empty string");
       }
       patch.deviceConfiguration = FileDeviceConfiguration{
-          .path = resolvePath(pathFromString(*file), base),
+          .path = resolvePath(
+              pathFromString(fileConfig->get_ref<const std::string&>()), base),
       };
     }
   }
-  if (auto authFile = optionalString(value, "auth-file", source, path)) {
-    if (authFile->empty() || authFile->find('\0') != std::string::npos) {
-      throw std::invalid_argument(sourceLabel(source, path + ".auth-file") +
-                                  " must be a non-empty path without null "
-                                  "bytes");
+  auto authFile = optionalString(value, "auth-file", source, path);
+  if (mlir::failed(authFile)) {
+    return mlir::failure();
+  }
+  if (*authFile) {
+    if ((*authFile)->empty() || (*authFile)->find('\0') != std::string::npos) {
+      return qdmi::emitError(
+          QDMI_ERROR_INVALIDARGUMENT,
+          sourceLabel(source, path + ".auth-file") +
+              " must be a non-empty path without null bytes");
     }
-    patch.authFile = resolvePath(pathFromString(*authFile), base);
+    patch.authFile = resolvePath(pathFromString(**authFile), base);
   }
   if (patch.deviceConfiguration && (patch.custom1 || patch.custom2)) {
-    throw std::invalid_argument(
+    return qdmi::emitError(
+        QDMI_ERROR_INVALIDARGUMENT,
         sourceLabel(source, path) +
-        " must not combine device-config with custom1 or custom2");
+            " must not combine device-config with custom1 or custom2");
   }
   return patch;
 }
@@ -209,41 +246,68 @@ parseSessionPatch(const Json& value, const std::filesystem::path& source,
 [[nodiscard]] auto
 parseDevicePatch(const Json& value, const std::filesystem::path& source,
                  const std::string& path, const std::filesystem::path& base)
-    -> DefinitionPatch {
-  requireObject(value, source, path);
-  rejectUnknownKeys(value, {"id", "library", "prefix", "enabled", "session"},
-                    source, path);
-  const auto id = optionalString(value, "id", source, path);
-  if (!id || id->empty()) {
-    throw std::invalid_argument(sourceLabel(source, path + ".id") +
-                                " must be a non-empty string");
+    -> mlir::FailureOr<DefinitionPatch> {
+  if (mlir::failed(requireObject(value, source, path))) {
+    return mlir::failure();
   }
-  validateDeviceId(*id);
+  if (mlir::failed(rejectUnknownKeys(
+          value, {"id", "library", "prefix", "enabled", "session"}, source,
+          path))) {
+    return mlir::failure();
+  }
+  auto idResult = optionalString(value, "id", source, path);
+  if (mlir::failed(idResult)) {
+    return mlir::failure();
+  }
+  const auto& id = (*idResult);
+  if (!id || id->empty()) {
+    return qdmi::emitError(QDMI_ERROR_INVALIDARGUMENT,
+                           sourceLabel(source, path + ".id") +
+                               " must be a non-empty string");
+  }
+  if (mlir::failed(validateDeviceId(*id))) {
+    return mlir::failure();
+  }
   DefinitionPatch patch;
   patch.id = *id;
   patch.source = source;
-  if (auto library = optionalString(value, "library", source, path)) {
-    if (library->empty() || library->find('\0') != std::string::npos) {
-      throw std::invalid_argument(sourceLabel(source, path + ".library") +
-                                  " must be a non-empty path without null "
-                                  "bytes");
-    }
-    patch.library = resolvePath(pathFromString(*library), base);
+  auto library = optionalString(value, "library", source, path);
+  if (mlir::failed(library)) {
+    return mlir::failure();
   }
-  patch.prefix = optionalString(value, "prefix", source, path);
+  if (*library) {
+    if ((*library)->empty() || (*library)->find('\0') != std::string::npos) {
+      return qdmi::emitError(
+          QDMI_ERROR_INVALIDARGUMENT,
+          sourceLabel(source, path + ".library") +
+              " must be a non-empty path without null bytes");
+    }
+    patch.library = resolvePath(pathFromString(**library), base);
+  }
+  auto prefix = optionalString(value, "prefix", source, path);
+  if (mlir::failed(prefix)) {
+    return mlir::failure();
+  }
+  patch.prefix = (*std::move(prefix));
   if (patch.prefix && patch.prefix->find('\0') != std::string::npos) {
-    throw std::invalid_argument(sourceLabel(source, path + ".prefix") +
-                                " must not contain null bytes");
+    return qdmi::emitError(QDMI_ERROR_INVALIDARGUMENT,
+                           sourceLabel(source, path + ".prefix") +
+                               " must not contain null bytes");
   }
   if (const auto it = value.find("enabled"); it != value.end()) {
     if (!it->is_boolean()) {
-      throw std::invalid_argument(sourceLabel(source, path + ".enabled") +
-                                  " must be a boolean");
+      return qdmi::emitError(QDMI_ERROR_INVALIDARGUMENT,
+                             sourceLabel(source, path + ".enabled") +
+                                 " must be a boolean");
     }
     patch.enabled = it->get<bool>();
   }
   if (const auto it = value.find("session"); it != value.end()) {
-    patch.session = parseSessionPatch(*it, source, path + ".session", base);
+    auto session = parseSessionPatch(*it, source, path + ".session", base);
+    if (mlir::failed(session)) {
+      return mlir::failure();
+    }
+    patch.session = (*std::move(session));
   }
   return patch;
 }
@@ -251,57 +315,82 @@ parseDevicePatch(const Json& value, const std::filesystem::path& source,
 [[nodiscard]] auto parseConfiguration(const Json& root,
                                       const std::filesystem::path& source,
                                       const std::filesystem::path& base)
-    -> std::vector<DefinitionPatch> {
-  requireObject(root, source, "$");
-  rejectUnknownKeys(root, {"schema-version", "qdmi"}, source, "$");
+    -> mlir::FailureOr<std::vector<DefinitionPatch>> {
+  if (mlir::failed(requireObject(root, source, "$"))) {
+    return mlir::failure();
+  }
+  if (mlir::failed(
+          rejectUnknownKeys(root, {"schema-version", "qdmi"}, source, "$"))) {
+    return mlir::failure();
+  }
   const auto version = root.find("schema-version");
-  if (version == root.end() || !version->is_number_integer() ||
-      version->get<int>() != 1) {
-    throw std::invalid_argument(sourceLabel(source, "$.schema-version") +
-                                " must be the integer 1");
+  if (version == root.end() || !version->is_number_integer() || *version != 1) {
+    return qdmi::emitError(QDMI_ERROR_INVALIDARGUMENT,
+                           sourceLabel(source, "$.schema-version") +
+                               " must be the integer 1");
   }
   const auto qdmiConfig = root.find("qdmi");
   if (qdmiConfig == root.end()) {
-    return {};
+    return std::vector<DefinitionPatch>{};
   }
-  requireObject(*qdmiConfig, source, "$.qdmi");
-  rejectUnknownKeys(*qdmiConfig, {"devices"}, source, "$.qdmi");
+  if (mlir::failed(requireObject(*qdmiConfig, source, "$.qdmi"))) {
+    return mlir::failure();
+  }
+  if (mlir::failed(
+          rejectUnknownKeys(*qdmiConfig, {"devices"}, source, "$.qdmi"))) {
+    return mlir::failure();
+  }
   const auto devices = qdmiConfig->find("devices");
   if (devices == qdmiConfig->end()) {
-    return {};
+    return std::vector<DefinitionPatch>{};
   }
   if (!devices->is_array()) {
-    throw std::invalid_argument(sourceLabel(source, "$.qdmi.devices") +
-                                " must be an array");
+    return qdmi::emitError(QDMI_ERROR_INVALIDARGUMENT,
+                           sourceLabel(source, "$.qdmi.devices") +
+                               " must be an array");
   }
   std::set<std::string> ids;
   std::vector<DefinitionPatch> patches;
   patches.reserve(devices->size());
   for (size_t i = 0; i < devices->size(); ++i) {
-    auto patch =
+    auto result =
         parseDevicePatch((*devices)[i], source,
                          "$.qdmi.devices[" + std::to_string(i) + "]", base);
+    if (mlir::failed(result)) {
+      return mlir::failure();
+    }
+    auto& patch = (*result);
     if (!ids.emplace(patch.id).second) {
-      throw std::invalid_argument(sourceLabel(source, "$.qdmi.devices") +
-                                  " contains duplicate id '" + patch.id + "'");
+      return qdmi::emitError(QDMI_ERROR_INVALIDARGUMENT,
+                             sourceLabel(source, "$.qdmi.devices") +
+                                 " contains duplicate id '" + patch.id + "'");
     }
     patches.emplace_back(std::move(patch));
   }
   return patches;
 }
 
-[[nodiscard]] auto readJson(const std::filesystem::path& path) -> Json {
+[[nodiscard]] mlir::FailureOr<Json>
+parseJson(std::string_view text, const std::filesystem::path& source) {
+  return mqt::detail::parseJSON(text, pathToString(source), nullptr,
+                                QDMI_ERROR_INVALIDARGUMENT);
+}
+
+[[nodiscard]] mlir::FailureOr<Json>
+readJson(const std::filesystem::path& path) {
   std::ifstream stream(path);
   if (!stream) {
-    throw std::runtime_error("Cannot open QDMI configuration file: " +
-                             pathToString(path));
+    return qdmi::emitError(QDMI_ERROR_NOTFOUND,
+                           "Cannot open QDMI configuration file: " +
+                               pathToString(path));
   }
-  try {
-    return Json::parse(stream);
-  } catch (const Json::parse_error& error) {
-    throw std::invalid_argument(pathToString(path) +
-                                ": invalid JSON: " + error.what());
+  const std::string text{std::istreambuf_iterator<char>(stream), {}};
+  if (stream.bad()) {
+    return qdmi::emitError(QDMI_ERROR_FATAL,
+                           "Cannot read QDMI configuration file: " +
+                               pathToString(path));
   }
+  return parseJson(text, path);
 }
 
 void mergePatch(DefinitionPatch& target, const DefinitionPatch& source) {
@@ -314,7 +403,7 @@ void mergePatch(DefinitionPatch& target, const DefinitionPatch& source) {
 
 void appendIfFile(std::vector<std::filesystem::path>& files,
                   const std::filesystem::path& path) {
-  const auto absolute = absolutePath(path);
+  const auto& absolute = path;
   if (absolute.empty()) {
     return;
   }
@@ -324,34 +413,50 @@ void appendIfFile(std::vector<std::filesystem::path>& files,
   }
 }
 
-void appendFragments(std::vector<std::filesystem::path>& files,
-                     const std::filesystem::path& directory) {
-  const auto absolute = absolutePath(directory);
+mlir::LogicalResult appendFragments(std::vector<std::filesystem::path>& files,
+                                    const std::filesystem::path& directory) {
+  const auto& absolute = directory;
   if (absolute.empty()) {
-    return;
+    return mlir::success();
   }
   std::error_code error;
   if (!std::filesystem::is_directory(absolute, error)) {
-    return;
+    return mlir::success();
   }
   std::vector<std::filesystem::path> found;
-  const auto manifestSuffix = std::filesystem::path{".qdmi.json"}.native();
-  for (const auto& entry : std::filesystem::directory_iterator(absolute)) {
-    if (entry.is_regular_file() &&
-        entry.path().filename().native().ends_with(manifestSuffix)) {
-      found.emplace_back(entry.path());
+  for (std::filesystem::directory_iterator entry(absolute, error), end;
+       !error && entry != end; entry.increment(error)) {
+    const auto regular = entry->is_regular_file(error);
+    if (error) {
+      return qdmi::emitError(QDMI_ERROR_FATAL, pathToString(entry->path()) +
+                                                   ": " + error.message());
     }
+    if (regular && entry->path().filename().native().ends_with(
+                       std::filesystem::path{".qdmi.json"}.native())) {
+      found.emplace_back(entry->path());
+    }
+  }
+  if (error) {
+    return qdmi::emitError(QDMI_ERROR_FATAL,
+                           pathToString(absolute) + ": " + error.message());
   }
   std::ranges::sort(found);
   files.insert(files.end(), found.begin(), found.end());
+  return mlir::success();
 }
 
 [[nodiscard]] auto nearestProjectConfiguration(std::filesystem::path directory)
-    -> std::optional<std::filesystem::path> {
+    -> mlir::FailureOr<std::optional<std::filesystem::path>> {
   while (!directory.empty()) {
     auto dedicated = directory / "qdmi.json";
-    if (std::filesystem::is_regular_file(dedicated)) {
-      return dedicated;
+    std::error_code error;
+    if (std::filesystem::is_regular_file(dedicated, error)) {
+      return std::optional<std::filesystem::path>{std::move(dedicated)};
+    }
+    if (error && error != std::errc::no_such_file_or_directory &&
+        error != std::errc::not_a_directory) {
+      return qdmi::emitError(QDMI_ERROR_FATAL,
+                             pathToString(dedicated) + ": " + error.message());
     }
     const auto parent = directory.parent_path();
     if (parent == directory) {
@@ -359,30 +464,38 @@ void appendFragments(std::vector<std::filesystem::path>& files,
     }
     directory = parent;
   }
-  return std::nullopt;
+  return std::optional<std::filesystem::path>{};
 }
 
-[[nodiscard]] auto discoverFiles() -> std::vector<std::filesystem::path> {
+[[nodiscard]] auto discoverFiles(const std::filesystem::path& cwd)
+    -> mlir::FailureOr<std::vector<std::filesystem::path>> {
   std::vector<std::filesystem::path> files;
-  const auto root =
-      moduleDirectory(reinterpret_cast<const void*>(&discoverFiles));
-  appendFragments(files, root);
-  appendFragments(files, root / "bin");
-  appendFragments(files, root / "lib");
-  appendFragments(files, root / "mqt-core" / "qdmi");
-  appendFragments(files, root / "qdmi");
+  const auto root = resolvePath(
+      moduleDirectory(reinterpret_cast<const void*>(&discoverFiles)), cwd);
+  for (const auto& directory : {
+           root,
+           root / "bin",
+           root / "lib",
+           root / "mqt-core" / "qdmi",
+           root / "qdmi",
+       }) {
+    if (mlir::failed(appendFragments(files, directory))) {
+      return mlir::failure();
+    }
+  }
 
   std::optional<std::filesystem::path> explicitFile;
   if (auto value = environment("MQT_CORE_QDMI_CONFIG_FILE")) {
     explicitFile = pathFromString(*value);
   }
   if (explicitFile) {
-    const auto resolved =
-        resolvePath(*explicitFile, std::filesystem::current_path());
-    if (!std::filesystem::is_regular_file(resolved)) {
-      throw std::runtime_error("Explicit QDMI configuration file does not "
-                               "exist: " +
-                               pathToString(resolved));
+    const auto resolved = resolvePath(*explicitFile, cwd);
+    std::error_code error;
+    if (!std::filesystem::is_regular_file(resolved, error)) {
+      return qdmi::emitError(QDMI_ERROR_FATAL,
+                             "Explicit QDMI configuration file does not "
+                             "exist: " +
+                                 pathToString(resolved));
     }
     files.emplace_back(resolved);
     return files;
@@ -405,27 +518,30 @@ void appendFragments(std::vector<std::filesystem::path>& files,
                  pathFromString(*home) / ".config" / "mqt-core" / "qdmi.json");
   }
 #endif
-  if (auto project =
-          nearestProjectConfiguration(std::filesystem::current_path())) {
-    files.emplace_back(std::move(*project));
+  auto project = nearestProjectConfiguration(cwd);
+  if (mlir::failed(project)) {
+    return mlir::failure();
+  }
+  if ((*project)) {
+    files.emplace_back(*(*project));
+  }
+  for (auto& file : files) {
+    file = resolvePath(std::move(file), cwd);
   }
   return files;
 }
 
 [[nodiscard]] auto materialize(const DefinitionPatch& patch)
-    -> std::optional<qdmi::DeviceDefinition> {
-  if (!patch.enabled.value_or(true)) {
-    return std::nullopt;
-  }
+    -> mlir::FailureOr<qdmi::DeviceDefinition> {
   if (!patch.library || patch.library->empty()) {
-    throw std::invalid_argument(pathToString(patch.source) +
-                                ": enabled device '" + patch.id +
-                                "' is missing library");
+    return qdmi::emitError(QDMI_ERROR_INVALIDARGUMENT,
+                           pathToString(patch.source) + ": enabled device '" +
+                               patch.id + "' is missing library");
   }
   if (!patch.prefix || patch.prefix->empty()) {
-    throw std::invalid_argument(pathToString(patch.source) +
-                                ": enabled device '" + patch.id +
-                                "' is missing prefix");
+    return qdmi::emitError(QDMI_ERROR_INVALIDARGUMENT,
+                           pathToString(patch.source) + ": enabled device '" +
+                               patch.id + "' is missing prefix");
   }
   qdmi::DeviceDefinition definition;
   definition.id = patch.id;
@@ -462,12 +578,24 @@ auto stageDeviceManifest(const std::filesystem::path& path) -> int {
       return QDMI_ERROR_LIBNOTFOUND;
     }
 
-    const auto patches = parseConfiguration(readJson(canonical), canonical,
-                                            canonical.parent_path());
-    for (const auto& patch : patches) {
-      if (const auto definition = materialize(patch);
-          definition &&
-          !std::filesystem::is_regular_file(definition->library)) {
+    auto root = readJson(canonical);
+    if (mlir::failed(root)) {
+      return QDMI_ERROR_INVALIDARGUMENT;
+    }
+    const auto patches =
+        parseConfiguration(*root, canonical, canonical.parent_path());
+    if (mlir::failed(patches)) {
+      return QDMI_ERROR_INVALIDARGUMENT;
+    }
+    for (const auto& patch : *patches) {
+      if (!patch.enabled.value_or(true)) {
+        continue;
+      }
+      const auto definition = materialize(patch);
+      if (mlir::failed(definition)) {
+        return QDMI_ERROR_INVALIDARGUMENT;
+      }
+      if (!std::filesystem::is_regular_file(definition->library)) {
         return QDMI_ERROR_LIBNOTFOUND;
       }
     }
@@ -479,7 +607,7 @@ auto stageDeviceManifest(const std::filesystem::path& path) -> int {
     if (state.frozen) {
       return QDMI_ERROR_BADSTATE;
     }
-    for (const auto& patch : patches) {
+    for (const auto& patch : *patches) {
       if (state.ids.contains(patch.id)) {
         return QDMI_ERROR_INVALIDARGUMENT;
       }
@@ -487,7 +615,7 @@ auto stageDeviceManifest(const std::filesystem::path& path) -> int {
     auto paths = state.paths;
     auto storedIds = state.ids;
     paths.emplace_back(canonical);
-    for (const auto& patch : patches) {
+    for (const auto& patch : *patches) {
       storedIds.emplace(patch.id);
     }
     state.paths.swap(paths);
@@ -509,9 +637,17 @@ auto parseDeviceSessionJson(const char* const data, const size_t size,
     return QDMI_SUCCESS;
   }
   try {
-    const auto value = Json::parse(std::string_view{data, size});
-    config = parseSessionPatch(value, "<device-session-json>", "$",
-                               std::filesystem::current_path());
+    const auto value =
+        parseJson(std::string_view{data, size}, "<device-session-json>");
+    if (mlir::failed(value)) {
+      return QDMI_ERROR_INVALIDARGUMENT;
+    }
+    auto parsed = parseSessionPatch(*value, "<device-session-json>", "$",
+                                    std::filesystem::current_path());
+    if (mlir::failed(parsed)) {
+      return QDMI_ERROR_INVALIDARGUMENT;
+    }
+    config = std::move(*parsed);
     return QDMI_SUCCESS;
   } catch (const std::bad_alloc&) {
     return QDMI_ERROR_OUTOFMEM;
@@ -537,43 +673,68 @@ void rollbackDeviceManifestFreeze() {
   state.frozen = false;
 }
 
-DeviceRegistry::DeviceRegistry() {
+mlir::FailureOr<DeviceRegistry> DeviceRegistry::discover() {
+  std::error_code filesystemError;
+  const auto cwd = std::filesystem::current_path(filesystemError);
+  if (filesystemError) {
+    return qdmi::emitError(QDMI_ERROR_FATAL, "Cannot read current directory: " +
+                                                 filesystemError.message());
+  }
+  auto files = discoverFiles(cwd);
+  if (mlir::failed(files)) {
+    return mlir::failure();
+  }
   std::map<std::string, DefinitionPatch> merged;
-  const auto mergePatches = [&merged](std::vector<DefinitionPatch> patches) {
-    for (auto& patch : patches) {
+  const auto mergePatches =
+      [&merged](const Json& root, const std::filesystem::path& source,
+                const std::filesystem::path& base) -> mlir::LogicalResult {
+    auto result = parseConfiguration(root, source, base);
+    if (mlir::failed(result)) {
+      return mlir::failure();
+    }
+    for (auto& patch : (*result)) {
       if (auto const it = merged.find(patch.id); it != merged.end()) {
         mergePatch(it->second, patch);
       } else {
         merged.emplace(patch.id, std::move(patch));
       }
     }
+    return mlir::success();
   };
-
-  auto files = freezeDeviceManifests();
-  const auto discovered = discoverFiles();
-  files.insert(files.end(), discovered.begin(), discovered.end());
-  for (const auto& file : files) {
-    mergePatches(parseConfiguration(readJson(file), file, file.parent_path()));
+  auto staged = freezeDeviceManifests();
+  files->insert(files->begin(), staged.begin(), staged.end());
+  for (const auto& file : (*files)) {
+    auto root = readJson(file);
+    if (mlir::failed(root)) {
+      return mlir::failure();
+    }
+    if (mlir::failed(mergePatches((*root), file, file.parent_path()))) {
+      return mlir::failure();
+    }
   }
-  const auto inlineBase = std::filesystem::current_path();
   if (auto inlineJson = environment("MQT_CORE_QDMI_CONFIG_JSON")) {
-    try {
-      mergePatches(parseConfiguration(
-          Json::parse(*inlineJson), "<MQT_CORE_QDMI_CONFIG_JSON>", inlineBase));
-    } catch (const Json::parse_error& error) {
-      throw std::invalid_argument(
-          std::string("<MQT_CORE_QDMI_CONFIG_JSON>: invalid JSON: ") +
-          error.what());
+    auto root = parseJson(*inlineJson, "<MQT_CORE_QDMI_CONFIG_JSON>");
+    if (mlir::failed(root)) {
+      return mlir::failure();
+    }
+    if (mlir::failed(
+            mergePatches((*root), "<MQT_CORE_QDMI_CONFIG_JSON>", cwd))) {
+      return mlir::failure();
     }
   }
+  DeviceRegistry registry;
   for (auto& [unused, patch] : merged) {
-    static_cast<void>(unused);
     if (!patch.enabled.value_or(true)) {
-      disabledIds_.emplace_back(std::move(patch.id));
-    } else if (auto definition = materialize(patch)) {
-      definitions_.emplace_back(std::move(*definition));
+      registry.disabledIds_.emplace_back(std::move(patch.id));
+    } else {
+      auto definition = materialize(patch);
+      if (mlir::failed(definition)) {
+        return mlir::failure();
+      }
+      registry.definitions_.emplace_back((*std::move(definition)));
     }
   }
+  return registry;
 }
 
 } // namespace qdmi::detail

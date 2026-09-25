@@ -13,6 +13,7 @@
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/Target.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
+#include "mqt/Support/Diagnostics.h"
 
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
@@ -26,7 +27,6 @@
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Errc.h"
-#include "llvm/Support/Error.h"
 #include "llvm/Support/VersionTuple.h"
 
 #include <cassert>
@@ -37,9 +37,10 @@
 
 namespace mlir {
 
-[[nodiscard]] static llvm::Error invalidPayload(const llvm::Twine& message) {
-  return llvm::createStringError(llvm::errc::invalid_argument,
-                                 "Invalid payload specification: " + message);
+[[nodiscard]] static LogicalResult invalidPayload(const llvm::Twine& message) {
+  return ::mqt::emitError(
+      llvm::Twine("Invalid payload specification: " + message).str(),
+      ::mqt::ErrorCategory::InvalidArgument);
 }
 
 [[nodiscard]] static std::optional<std::string>
@@ -58,7 +59,7 @@ normalizePayloadVersion(llvm::StringRef version) {
   return value.contains('\0');
 }
 
-llvm::Expected<PayloadSpecification>
+FailureOr<PayloadSpecification>
 PayloadSpecification::create(PayloadFormat format,
                              std::vector<ProgramCapability> capabilities,
                              const bool optionalCapabilitiesKnown) {
@@ -122,7 +123,7 @@ PayloadSpecification::create(PayloadFormat format,
                               optionalCapabilitiesKnown);
 }
 
-llvm::Expected<PayloadSpecification>
+FailureOr<PayloadSpecification>
 PayloadSpecification::create(const mqt::PayloadSpecAttr attribute) {
   if (!attribute) {
     return invalidPayload("Payload specification attribute must not be null");
@@ -177,7 +178,7 @@ const PayloadFormat& PayloadSpecification::format() const noexcept {
   return format_;
 }
 
-llvm::Expected<ProgramFormat> PayloadSpecification::compilerOutput() const {
+FailureOr<ProgramFormat> PayloadSpecification::compilerOutput() const {
   if (format_.id == "openqasm" && format_.version == "3.1.0" &&
       format_.profile.empty() && format_.encoding == PayloadEncoding::Text) {
     return ProgramFormat::OpenQASM3;
@@ -241,20 +242,20 @@ TargetEnvironment::TargetEnvironment(const CompilerTarget& target,
                                      PayloadSpecification payload)
     : target_(target), payloadSpecification_(std::move(payload)) {}
 
-llvm::Expected<TargetEnvironment>
+FailureOr<TargetEnvironment>
 TargetEnvironment::create(const mqt::TargetEnvAttr attribute) {
   if (!attribute) {
-    return llvm::createStringError(llvm::errc::invalid_argument,
-                                   "Target environment must not be null");
+    return ::mqt::emitError("Target environment must not be null",
+                            ::mqt::ErrorCategory::InvalidArgument);
   }
   auto target = CompilerTarget::create(attribute.getCompilationTarget());
-  if (!target) {
-    return target.takeError();
+  if (failed(target)) {
+    return failure();
   }
   auto payload =
       PayloadSpecification::create(attribute.getPayloadSpecification());
-  if (!payload) {
-    return payload.takeError();
+  if (failed(payload)) {
+    return failure();
   }
   return TargetEnvironment(*target, std::move(*payload));
 }
@@ -310,10 +311,14 @@ void TargetEnvironmentAnalysis::resolve() const {
     error_ = "module does not contain mqt.target_env";
     return;
   }
+  ::mqt::ScopedDiagnosticHandler diagnostic(
+      [&](const ::mqt::Diagnostic& value) {
+        error_ = value.message;
+        return success();
+      });
   auto environment =
       TargetEnvironment::create(llvm::cast<mqt::TargetEnvAttr>(attribute_));
-  if (!environment) {
-    error_ = llvm::toString(environment.takeError());
+  if (failed(environment)) {
     return;
   }
   environment_.emplace(std::move(*environment));

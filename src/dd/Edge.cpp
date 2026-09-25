@@ -17,6 +17,10 @@
 #include "dd/Node.hpp"
 #include "dd/RealNumber.hpp"
 
+#include "support/Diagnostics.hpp"
+
+#include "mlir/Support/LogicalResult.h"
+
 #include <algorithm>
 #include <array>
 #include <cassert>
@@ -28,7 +32,6 @@
 #include <iostream>
 #include <limits>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <unordered_set>
@@ -43,15 +46,17 @@ namespace dd {
 template <class Node>
 auto Edge<Node>::getValueByPath(const std::size_t numQubits,
                                 const std::string& decisions) const
-    -> std::complex<fp> {
+    -> mlir::FailureOr<std::complex<fp>> {
   if (decisions.size() < numQubits) {
-    throw std::out_of_range(
-        "Decision path is shorter than the number of qubits.");
+    return ::mqt::emitError(
+        "Decision path is shorter than the number of qubits.",
+        ::mqt::ErrorCategory::OutOfRange);
   }
   const auto path = std::string_view(decisions).substr(0, numQubits);
   if (path.find_first_not_of(IsVector<Node> ? "01" : "0123") !=
       std::string_view::npos) {
-    throw std::invalid_argument("Decision path contains an invalid digit.");
+    return ::mqt::emitError("Decision path contains an invalid digit.",
+                            ::mqt::ErrorCategory::InvalidArgument);
   }
   auto c = static_cast<std::complex<fp>>(w);
   if constexpr (IsVector<Node>) {
@@ -68,7 +73,7 @@ auto Edge<Node>::getValueByPath(const std::size_t numQubits,
     // node is not at the expected level (skipped node)
     if (r.isTerminal() || r.p->v != level - 1U) {
       if (r.isZeroTerminal() || tmp == 1U || tmp == 2U) {
-        return 0.;
+        return std::complex<fp>{0.};
       }
       --level;
       continue;
@@ -205,13 +210,15 @@ auto Edge<Node>::normalize(Node* p, const std::array<Edge, RADIX>& e,
 }
 
 template <class Node>
-auto Edge<Node>::getValueByIndex(const std::size_t i) const -> std::complex<fp>
+auto Edge<Node>::getValueByIndex(const std::size_t i) const
+    -> mlir::FailureOr<std::complex<fp>>
   requires IsVector<Node>
 {
   const auto numQubits = isTerminal() ? 0U : static_cast<size_t>(p->v) + 1U;
   if (numQubits < std::numeric_limits<size_t>::digits &&
       (i >> numQubits) != 0U) {
-    throw std::out_of_range("Vector index is out of range.");
+    return ::mqt::emitError("Vector index is out of range.",
+                            ::mqt::ErrorCategory::OutOfRange);
   }
   auto edge = *this;
   auto amplitude = static_cast<std::complex<fp>>(edge.w);
@@ -272,7 +279,7 @@ auto Edge<Node>::printVector() const -> void
   }
   const std::size_t element = 2ULL << p->v;
   for (auto i = 0ULL; i < element; i++) {
-    const auto amplitude = getValueByIndex(i);
+    const auto amplitude = (*getValueByIndex(i));
     const auto n = static_cast<std::size_t>(p->v) + 1U;
     for (auto j = n; j > 0; --j) {
       std::cout << ((i >> (j - 1)) & 1ULL);
@@ -411,12 +418,13 @@ auto Edge<Node>::normalize(Node* p, const std::array<Edge, NEDGE>& e,
 template <class Node>
 auto Edge<Node>::getValueByIndex(const std::size_t numQubits,
                                  const std::size_t i, const std::size_t j) const
-    -> std::complex<fp>
+    -> mlir::FailureOr<std::complex<fp>>
   requires IsMatrix<Node>
 {
   if (numQubits < std::numeric_limits<size_t>::digits &&
       ((i >> numQubits) != 0U || (j >> numQubits) != 0U)) {
-    throw std::out_of_range("Matrix index is out of range.");
+    return ::mqt::emitError("Matrix index is out of range.",
+                            ::mqt::ErrorCategory::OutOfRange);
   }
   if (isTerminal()) {
     return i == j ? static_cast<std::complex<fp>>(w) : 0.;
@@ -432,7 +440,7 @@ auto Edge<Node>::getValueByIndex(const std::size_t numQubits,
         q < std::numeric_limits<size_t>::digits ? (j >> q) & 1U : 0U;
     if (edge.isTerminal() || edge.p->v != q) {
       if (edge.isZeroTerminal() || rowBit != colBit) {
-        return 0.;
+        return std::complex<fp>{0.};
       }
     } else {
       edge = edge.p->e[(2 * rowBit) + colBit];
@@ -496,7 +504,7 @@ auto Edge<Node>::printMatrix(const std::size_t numQubits) const -> void
   const std::size_t element = 1ULL << numQubits;
   for (auto i = 0ULL; i < element; ++i) {
     for (auto j = 0ULL; j < element; ++j) {
-      const auto amplitude = getValueByIndex(numQubits, i, j);
+      const auto amplitude = (*getValueByIndex(numQubits, i, j));
       std::cout << amplitude << " ";
     }
     std::cout << "\n";

@@ -17,11 +17,15 @@
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mqt/Dialect/QIR/Execution/JIT/Session.h"
 #include "mqt/Dialect/QIR/Execution/Runtime/Runtime.h"
+#include "mqt/Support/Diagnostics.h"
 
 #include "WorkerProtocol.hpp"
+#include "support/Diagnostics.hpp"
 
 #include "qdmi/constants.h"
 
+#include "mlir/IR/Diagnostics.h"
+#include "mlir/IR/MLIRContext.h"
 #include "mlir/Support/LogicalResult.h"
 
 #include "llvm/ADT/StringRef.h"
@@ -33,7 +37,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <exception>
+#include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -41,6 +45,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -49,6 +54,11 @@ namespace {
     -> std::optional<mlir::QCOProgram> {
   auto context = mlir::createCompilerContext();
   context->disableMultithreading();
+  context->getDiagEngine().registerHandler([](mlir::Diagnostic& diagnostic) {
+    mqt::emitDiagnostic(mlir::toNativeDiagnostic(
+        diagnostic, mqt::ErrorCategory::InvalidArgument));
+    return mlir::success();
+  });
   auto moduleOp = mlir::qc::translateOpenQASMToQC(source, context.get());
   if (!moduleOp) {
     return std::nullopt;
@@ -78,7 +88,7 @@ struct Execution {
     /// NOLINTNEXTLINE(misc-const-correctness): MLIR handles remain mutable.
     auto entryPoint = mlir::mqt::getEntryPoint(qcoProgram->module());
     if (entryPoint == nullptr) {
-      std::cerr << "QCO program has no entry point" << '\n';
+      std::ignore = mqt::emitError("QCO program has no entry point");
       return false;
     }
     if (numShots_ != 0) {
@@ -92,7 +102,11 @@ struct Execution {
       stateVecDD_ = retainedState.state;
       return true;
     }
-    dd_ = std::make_unique<dd::Package>();
+    auto package = dd::Package::create();
+    if (mlir::failed(package)) {
+      return false;
+    }
+    dd_ = std::move(*package);
     auto state = mlir::qco::simulateStatevector(entryPoint, *dd_);
     if (mlir::failed(state)) {
       return false;
@@ -104,23 +118,29 @@ struct Execution {
     const llvm::StringRef irBytes(program_.data(), program_.size());
     const bool sampling = numShots_ != 0;
     std::optional<std::ostringstream> output;
-    auto jitSession = qir::JitSession(
+    auto jitSession = qir::JitSession::create(
         irBytes, "QDMI job",
         sampling ? qir::Execution::Sampling : qir::Execution::StateExtraction,
         sampling ? seed_ : std::nullopt);
-    auto& runtime = jitSession.runtime();
+    if (mlir::failed(jitSession)) {
+      return false;
+    }
+    auto& runtime = (*jitSession)->runtime();
     if (sampling && captureQIROutput_) {
       runtime.setOstream(output.emplace());
     } else {
       runtime.disableOutput();
     }
     bool stateAvailable = !sampling;
-    const auto rc = sampling
-                        ? jitSession.sample(numShots_, shots_, &stateAvailable)
-                        : jitSession.run();
-    if (rc != 0) {
-      std::cerr << "QIR program returned exit code " + std::to_string(rc)
-                << '\n';
+    auto rc = sampling
+                  ? (*jitSession)->sample(numShots_, shots_, &stateAvailable)
+                  : mlir::FailureOr<int64_t>((*jitSession)->run());
+    if (mlir::failed(rc)) {
+      return false;
+    }
+    if (*rc != 0) {
+      std::ignore = mqt::emitError("QIR program returned exit code " +
+                                   std::to_string(*rc));
       return false;
     }
     if (output) {
@@ -139,8 +159,19 @@ struct Execution {
   }
 };
 
-qdmi::dd::WorkerResponse execute(const qdmi::dd::WorkerRequest& request) {
+qdmi::dd::WorkerResponse execute(const qdmi::dd::WorkerRequest& request,
+                                 llvm::raw_socket_stream& stream) {
   qdmi::dd::WorkerResponse response;
+  mqt::ScopedDiagnosticHandler const capture(
+      [&](const mqt::Diagnostic& diagnostic) {
+        qdmi::dd::WorkerResponse notification;
+        notification.completed = false;
+        notification.diagnostics.push_back(diagnostic);
+        if (!qdmi::dd::writeFrame(stream, qdmi::dd::encode(notification))) {
+          std::exit(1);
+        }
+        return mlir::success();
+      });
   Execution execution{
       .program_ = request.program,
       .numShots_ = static_cast<size_t>(request.shots),
@@ -149,12 +180,7 @@ qdmi::dd::WorkerResponse execute(const qdmi::dd::WorkerRequest& request) {
   };
   const bool qasm = request.format == QDMI_PROGRAM_FORMAT_QASM2 ||
                     request.format == QDMI_PROGRAM_FORMAT_QASM3;
-  try {
-    response.succeeded =
-        qasm ? execution.qasmProgram() : execution.qirProgram();
-  } catch (const std::exception& error) {
-    std::cerr << "DDSIM program failed: " << error.what() << '\n';
-  }
+  response.succeeded = qasm ? execution.qasmProgram() : execution.qirProgram();
   if (response.succeeded) {
     response.shots = std::move(execution.shots_);
     response.output = std::move(execution.qirOutput_);
@@ -195,8 +221,9 @@ int main(int argc, char** argv) {
     if (!qdmi::dd::decode(bytes, request)) {
       return 1;
     }
-    /// execute destroys the program's JIT, runtime, and DDs before reuse.
-    auto const response = execute(request);
+    /// execute destroys the JIT, runtime, DDs, and diagnostic scope before
+    /// reuse.
+    auto const response = execute(request, stream);
     if (!qdmi::dd::writeFrame(stream, qdmi::dd::encode(response))) {
       return 1;
     }

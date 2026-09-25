@@ -12,8 +12,9 @@ macro(PACKAGE_ADD_TEST testname linklibs)
     add_executable(${testname} ${ARGN})
     # Ensure test executables remain runnable from the build tree during GoogleTest discovery
     set_property(TARGET ${testname} PROPERTY BUILD_WITH_INSTALL_RPATH FALSE)
-    target_link_libraries(${testname} PRIVATE ${linklibs} GTest::gmock GTest::gtest_main
-                                              MQT::ProjectOptions MQT::ProjectWarnings)
+    target_link_libraries(
+      ${testname} PRIVATE ${linklibs} MQTCoreTestSupport GTest::gmock GTest::gtest_main
+                          MQT::ProjectOptions MQT::ProjectWarnings)
     gtest_discover_tests(
       ${testname} DISCOVERY_MODE PRE_TEST
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
@@ -31,8 +32,9 @@ macro(PACKAGE_ADD_TEST_WITH_WORKING_DIR testname linklibs test_working_directory
     add_executable(${testname} ${ARGN})
     # Ensure test executables remain runnable from the build tree during GoogleTest discovery
     set_property(TARGET ${testname} PROPERTY BUILD_WITH_INSTALL_RPATH FALSE)
-    target_link_libraries(${testname} PRIVATE ${linklibs} GTest::gmock GTest::gtest_main
-                                              MQT::ProjectOptions MQT::ProjectWarnings)
+    target_link_libraries(
+      ${testname} PRIVATE ${linklibs} MQTCoreTestSupport GTest::gmock GTest::gtest_main
+                          MQT::ProjectOptions MQT::ProjectWarnings)
     gtest_discover_tests(
       ${testname} DISCOVERY_MODE PRE_TEST
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}

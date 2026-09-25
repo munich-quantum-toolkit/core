@@ -13,6 +13,8 @@
 #include "bench/Evaluation.hpp"
 #include "bench/mqt_core_bench_export.h"
 
+#include "mlir/Support/LogicalResult.h"
+
 #include <cstddef>
 #include <optional>
 #include <string>
@@ -31,18 +33,22 @@ struct GroverOptions {
 /// A validated single-solution Grover benchmark.
 class MQT_CORE_BENCH_EXPORT Grover final {
 public:
-  explicit Grover(GroverOptions options);
+  [[nodiscard]] static mlir::FailureOr<Grover> create(GroverOptions options);
 
   [[nodiscard]] const GroverOptions& options() const noexcept;
   /// Return the number of search qubits.
   [[nodiscard]] size_t qubits() const noexcept;
   [[nodiscard]] const Output& output() const noexcept;
   /// Return the ideal probability of a big-endian logical outcome.
-  [[nodiscard]] double probability(std::string_view outcome) const;
+  [[nodiscard]] mlir::FailureOr<double>
+  probability(std::string_view outcome) const;
   /// Compare sampled logical outcomes with the ideal distribution.
-  [[nodiscard]] Evaluation evaluate(const Counts& counts) const;
+  [[nodiscard]] mlir::FailureOr<Evaluation>
+  evaluate(const Counts& counts) const;
 
 private:
+  explicit Grover(GroverOptions options);
+
   GroverOptions options_;
   Output output_;
   double markedProbability_;

@@ -168,23 +168,18 @@ struct DeviceLibrary {
 /// from a dynamic library at runtime. It inherits from DeviceLibrary and
 /// overrides the constructor and destructor to open and close the library.
 class DynamicDeviceLibrary final : public DeviceLibrary {
-  /// Handle to the dynamic library
   void* libHandle_;
-
-  DynamicDeviceLibrary(void* handle, const std::string& libName,
-                       const std::string& prefix);
+  bool initialized_ = false;
+  explicit DynamicDeviceLibrary(void* handle) : libHandle_(handle) {}
+  mlir::LogicalResult initialize(const std::string& prefix);
   friend auto getDynamicDeviceLibrary(const std::string& libName,
                                       const std::string& prefix)
-      -> std::shared_ptr<DynamicDeviceLibrary>;
+      -> mlir::FailureOr<std::shared_ptr<DynamicDeviceLibrary>>;
 
 public:
-  /// Constructs a DynamicDeviceLibrary object.
-  ///
-  /// This constructor loads the QDMI device interface functions
-  /// from the dynamic library specified by `libName` and `prefix`.
-  /// @param libName is the name of the dynamic library to load.
-  /// @param prefix is the prefix used for the function names in the library.
-  DynamicDeviceLibrary(const std::string& libName, const std::string& prefix);
+  /// Load and initialize a provider, releasing partial resources on failure.
+  [[nodiscard]] static mlir::FailureOr<std::shared_ptr<DynamicDeviceLibrary>>
+  create(const std::string& libName, const std::string& prefix);
 
   /// Destructor for the DynamicDeviceLibrary.
   ///
@@ -223,34 +218,18 @@ private:
   /// QDMI_Job_impl_d objects.
   std::unordered_map<QDMI_Job, std::unique_ptr<QDMI_Job_impl_d>> jobs_;
 
-public:
-  /// Constructs a top-level QDMI device from an exclusively owned
-  /// library.
-  /// @param lib is the device library to take ownership of.
-  /// @param config is the configuration for device session parameters.
-  /// @param id is the configured stable ID; empty for an unnamed child.
-  /// @param strict rejects session parameters the device does not support.
-  explicit QDMI_Device_impl_d(std::unique_ptr<qdmi::DeviceLibrary>&& lib,
-                              const qdmi::DeviceSessionConfig& config = {},
-                              std::string id = {}, const bool strict = false)
-      : QDMI_Device_impl_d(std::shared_ptr(std::move(lib)), config,
-                           std::move(id), nullptr, strict) {}
+  explicit QDMI_Device_impl_d(std::shared_ptr<qdmi::DeviceLibrary> library)
+      : library_(std::move(library)) {}
+  mlir::LogicalResult initialize(const qdmi::DeviceSessionConfig& config,
+                                 QDMI_Child_Device childDevice, bool strict);
 
-  /// Constructor for the QDMI device.
-  ///
-  /// This constructor initializes the device session and allocates
-  /// the device session handle.
-  /// @param lib is a shared pointer to the device library that provides the
-  /// device interface functions.
-  /// @param config is the configuration for device session parameters.
-  /// @param id is the configured stable ID; empty for an unnamed child.
-  /// @param strict rejects session parameters the device does not support.
-  /// @param childDevice optionally selects a child device for this wrapper.
-  explicit QDMI_Device_impl_d(std::shared_ptr<qdmi::DeviceLibrary> lib,
-                              const qdmi::DeviceSessionConfig& config = {},
-                              std::string id = {},
-                              QDMI_Child_Device childDevice = nullptr,
-                              bool strict = false);
+public:
+  /// Open a device session and its children. Failure releases partial sessions.
+  [[nodiscard]] static mlir::FailureOr<std::unique_ptr<QDMI_Device_impl_d>>
+  create(std::shared_ptr<qdmi::DeviceLibrary> library,
+         const qdmi::DeviceSessionConfig& config = {},
+         QDMI_Child_Device childDevice = nullptr, std::string id = {},
+         bool strict = false);
 
   /// Destructor for the QDMI device.
   ///
@@ -413,7 +392,11 @@ class Driver final : public Singleton<Driver> {
   friend class Session;
 
   /// Private constructor to enforce the singleton pattern.
-  Driver();
+  Driver() = default;
+
+  /// Called with stateMutex_ held. A failed discovery can be retried.
+  mlir::LogicalResult initialize();
+  bool initialized_ = false;
 
   /// Guards all mutable driver state below.
   mutable std::mutex stateMutex_;
@@ -423,9 +406,6 @@ class Driver final : public Singleton<Driver> {
 
   /// Ensures that the configured client catalog is materialized once.
   std::once_flag clientCatalogOnce_;
-
-  /// Vector of unique pointers to QDMI_Device_impl_d objects.
-  std::vector<std::unique_ptr<QDMI_Device_impl_d>> devices_;
 
   /// Registered definitions in stable registration order.
   std::vector<DeviceDefinition> definitions_;
@@ -440,7 +420,8 @@ class Driver final : public Singleton<Driver> {
   std::vector<QDMI_Device> clientDevices_;
 
   /// Opened devices indexed by their stable registration ID.
-  std::unordered_map<std::string, QDMI_Device> openedDevices_;
+  std::unordered_map<std::string, std::unique_ptr<QDMI_Device_impl_d>>
+      openedDevices_;
 
   /// Device IDs whose persistent sessions are being opened.
   std::unordered_set<std::string> openingDeviceIds_;
@@ -455,7 +436,8 @@ class Driver final : public Singleton<Driver> {
 
   /// Opens a fresh device session with per-call overrides.
   auto openFresh(std::string_view id, const DeviceSessionConfig& overrides,
-                 bool strict = false) -> std::shared_ptr<QDMI_Device_impl_d>;
+                 bool strict = false)
+      -> mlir::FailureOr<std::shared_ptr<QDMI_Device_impl_d>>;
 
 public:
   /// @returns the instance owned by this driver library.
@@ -467,32 +449,35 @@ public:
   /// Registers a device definition without loading its library.
   /// @param definition The definition to validate and store.
   /// @param replace Whether an existing unopened definition may be replaced.
-  /// @throws std::invalid_argument If the definition is incomplete or its ID is
-  /// already registered.
-  /// @throws std::runtime_error If replacing an already opened definition.
-  void registerDevice(DeviceDefinition definition, bool replace = false);
+  /// Returns QDMI_ERROR_INVALIDARGUMENT If the definition is incomplete or its
+  /// ID is already registered. Returns an error If replacing an already opened
+  /// definition.
+  [[nodiscard]] mlir::LogicalResult registerDevice(DeviceDefinition definition,
+                                                   bool replace = false);
 
   /// Registers a device definition unless its ID is already present.
   /// @param definition The definition to validate and store.
   /// @returns Whether the definition was inserted.
-  /// @throws std::invalid_argument If the definition is incomplete.
+  /// Returns QDMI_ERROR_INVALIDARGUMENT If the definition is incomplete.
   ///
   /// Existing and explicitly disabled IDs are not inserted. The
   /// complete definition is validated before checking for either condition.
-  auto registerDeviceIfAbsent(DeviceDefinition definition) -> bool;
+  auto registerDeviceIfAbsent(DeviceDefinition definition)
+      -> mlir::FailureOr<bool>;
 
   /// Lists the stable IDs of all registered devices.
   /// @returns The enabled device IDs in deterministic registration order.
   ///
   /// This query includes runtime registrations and does not load device
   /// libraries or expose their definitions.
-  [[nodiscard]] auto registeredDeviceIds() const -> std::vector<std::string>;
+  [[nodiscard]] auto registeredDeviceIds()
+      -> mlir::FailureOr<std::vector<std::string>>;
 
   /// Opens the registered device with the given stable ID.
   /// @returns The existing device handle when the ID is already open.
-  /// @throws std::out_of_range If the ID is unknown.
-  /// @throws std::runtime_error If loading or session initialization fails.
-  auto open(std::string_view id) -> QDMI_Device;
+  /// Returns QDMI_ERROR_NOTFOUND If the ID is unknown.
+  /// Returns an error If loading or session initialization fails.
+  auto open(std::string_view id) -> mlir::FailureOr<QDMI_Device>;
 
   /// Allocates a new session.
   /// @see QDMI_session_alloc

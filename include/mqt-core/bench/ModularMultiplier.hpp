@@ -13,6 +13,8 @@
 #include "bench/Evaluation.hpp"
 #include "bench/mqt_core_bench_export.h"
 
+#include "mlir/Support/LogicalResult.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -44,7 +46,8 @@ struct ModularMultiplierOptions {
 /// modulus.
 class MQT_CORE_BENCH_EXPORT ModularMultiplier final {
 public:
-  explicit ModularMultiplier(ModularMultiplierOptions options);
+  [[nodiscard]] static mlir::FailureOr<ModularMultiplier>
+  create(ModularMultiplierOptions options);
 
   [[nodiscard]] const ModularMultiplierOptions& options() const noexcept;
   [[nodiscard]] const Output& output() const noexcept;
@@ -52,11 +55,15 @@ public:
   [[nodiscard]] const std::optional<std::string>&
   expectedResult() const noexcept;
   /// Return the ideal probability of a big-endian logical outcome.
-  [[nodiscard]] double probability(std::string_view outcome) const;
+  [[nodiscard]] mlir::FailureOr<double>
+  probability(std::string_view outcome) const;
   /// Compare sampled logical outcomes with the ideal distribution.
-  [[nodiscard]] Evaluation evaluate(const Counts& counts) const;
+  [[nodiscard]] mlir::FailureOr<Evaluation>
+  evaluate(const Counts& counts) const;
 
 private:
+  explicit ModularMultiplier(ModularMultiplierOptions options);
+
   ModularMultiplierOptions options_;
   Output output_;
   std::optional<std::string> expectedResult_;

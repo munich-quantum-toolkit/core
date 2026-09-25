@@ -26,8 +26,11 @@ function(run_failure description)
     RESULT_VARIABLE result
     OUTPUT_VARIABLE output
     ERROR_VARIABLE error)
-  if(result EQUAL 0)
-    message(FATAL_ERROR "${description} unexpectedly succeeded:\n${output}${error}")
+  if(NOT result EQUAL 1)
+    message(FATAL_ERROR "${description} returned ${result}, expected 1:\n${output}${error}")
+  endif()
+  if(error STREQUAL "")
+    message(FATAL_ERROR "${description} failed without a diagnostic")
   endif()
 endfunction()
 
@@ -38,12 +41,15 @@ endif()
 file(REMOVE_RECURSE "${OUTPUT_DIR}")
 file(MAKE_DIRECTORY "${OUTPUT_DIR}")
 
+run_failure("missing command" "${CLI}")
+
 run_success("top-level help" help_output "${CLI}" --help)
 if(help_output MATCHES "cfg-hide-cold-paths")
   message(FATAL_ERROR "help exposed unrelated LLVM options")
 endif()
 
 run_success("benchmark listing" list_output "${CLI}" list)
+run_failure("unknown benchmark" "${CLI}" describe unknown)
 string(JSON benchmark_count LENGTH "${list_output}" benchmarks)
 if(NOT benchmark_count EQUAL 12)
   message(FATAL_ERROR "list returned ${benchmark_count} benchmarks instead of 12")
@@ -71,7 +77,27 @@ endif()
 set(instance_specification "${OUTPUT_DIR}/instance-specification.json")
 file(WRITE "${instance_specification}"
      "{\"schema_version\":1,\"benchmark\":\"multiplexer\",\"parameters\":{\"qubits\":2}}\n")
-set(qc_directory "${OUTPUT_DIR}/qc")
+set(qc_directory "${OUTPUT_DIR}/qc-ü")
+run_failure(
+  "missing instance specification"
+  "${CLI}"
+  generate
+  --instance-specification
+  "${OUTPUT_DIR}/missing.json"
+  --format
+  qc
+  --output
+  "${qc_directory}")
+run_failure(
+  "output path is an existing file"
+  "${CLI}"
+  generate
+  --instance-specification
+  "${instance_specification}"
+  --format
+  qc
+  --output
+  "${instance_specification}")
 run_success(
   "QC generation"
   generate_output
@@ -162,6 +188,30 @@ endif()
 
 set(counts "${OUTPUT_DIR}/counts.json")
 file(WRITE "${counts}" "{\"schema_version\":1,\"counts\":{\"00\":2,\"10\":1,\"11\":1}}\n")
+run_failure(
+  "manifest from standard input"
+  "${CLI}"
+  evaluate
+  --manifest
+  -
+  --counts
+  "${counts}")
+run_failure(
+  "missing manifest"
+  "${CLI}"
+  evaluate
+  --manifest
+  "${OUTPUT_DIR}/missing.json"
+  --counts
+  "${counts}")
+run_failure(
+  "missing counts"
+  "${CLI}"
+  evaluate
+  --manifest
+  "${manifest_path}"
+  --counts
+  "${OUTPUT_DIR}/missing.json")
 execute_process(
   COMMAND "${CLI}" evaluate --manifest "${manifest_path}" --counts -
   INPUT_FILE "${counts}"
@@ -205,6 +255,23 @@ endif()
 file(SIZE "${jeff_path}" jeff_size)
 if(jeff_size EQUAL 0)
   message(FATAL_ERROR "jeff generation produced an empty file")
+endif()
+
+set(blocked_directory "${OUTPUT_DIR}/file-not-directory")
+file(WRITE "${blocked_directory}" "preserve this file")
+run_failure(
+  "output parent is a file"
+  "${CLI}"
+  generate
+  --instance-specification
+  "${instance_specification}"
+  --format
+  qc
+  --output
+  "${blocked_directory}/child")
+file(READ "${blocked_directory}" retained_contents)
+if(NOT retained_contents STREQUAL "preserve this file")
+  message(FATAL_ERROR "failed publication changed the blocking file")
 endif()
 
 set(invalid_format_directory "${OUTPUT_DIR}/invalid-format")

@@ -13,6 +13,8 @@
 #include "bench/Evaluation.hpp"
 #include "bench/mqt_core_bench_export.h"
 
+#include "mlir/Support/LogicalResult.h"
+
 #include <cstddef>
 #include <string_view>
 
@@ -28,13 +30,17 @@ struct WStateOptions {
 /// Prepare the equal, positive-amplitude superposition of single excitations.
 class MQT_CORE_BENCH_EXPORT WState final {
 public:
-  explicit WState(WStateOptions options);
+  [[nodiscard]] static mlir::FailureOr<WState> create(WStateOptions options);
   [[nodiscard]] const WStateOptions& options() const noexcept;
   [[nodiscard]] const Output& output() const noexcept;
-  [[nodiscard]] double probability(std::string_view outcome) const;
-  [[nodiscard]] Evaluation evaluate(const Counts& counts) const;
+  [[nodiscard]] mlir::FailureOr<double>
+  probability(std::string_view outcome) const;
+  [[nodiscard]] mlir::FailureOr<Evaluation>
+  evaluate(const Counts& counts) const;
 
 private:
+  explicit WState(WStateOptions options);
+
   WStateOptions options_;
   Output output_;
 };

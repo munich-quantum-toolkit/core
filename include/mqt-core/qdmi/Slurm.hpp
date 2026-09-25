@@ -29,9 +29,9 @@ namespace qdmi::slurm {
 /// selection. It does not verify a Slurm allocation, authenticate the caller,
 /// or authorize access to the device. The provider or operating system must
 /// enforce access independently.
-/// @throws std::runtime_error If the license value is missing, malformed,
+/// Returns an error if the license value is missing, malformed,
 /// compound, remote, has a non-unit count, names an unknown device, or names a
 /// device in another state.
-[[nodiscard]] Device openDeviceFromLicense();
+[[nodiscard]] mlir::FailureOr<Device> openDeviceFromLicense();
 
 } // namespace qdmi::slurm

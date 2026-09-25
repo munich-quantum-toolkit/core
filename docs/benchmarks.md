@@ -210,13 +210,20 @@ evaluation, instances, instance specifications, and manifests.
 
 ```cpp
 #include "bench/Grover.hpp"
+#include "mlir/Support/LogicalResult.h"
 
 #include <cassert>
 
 int main() {
-  const mqt::bench::Grover benchmark{{.markedBitstring = "101"}};
-  const auto evaluation = benchmark.evaluate({{"101", 1000}});
-  assert(evaluation.successProbability == 1.0);
+  const auto created = mqt::bench::Grover::create({.markedBitstring = "101"});
+  if (mlir::failed(created)) {
+    return 1;
+  }
+  const auto evaluated = created->evaluate({{"101", 1000}});
+  if (mlir::failed(evaluated)) {
+    return 1;
+  }
+  assert(evaluated->successProbability == 1.0);
 }
 ```
 
@@ -227,8 +234,8 @@ target_link_libraries(my-benchmark PRIVATE MQT::CoreBench)
 
 The source build also provides `MQT::CoreBenchGenerate`. It exposes typed
 `mqt::bench::generate(...)` overloads from `mqt/bench/Generate.h` and returns a
-`mlir::QCProgram`. This target is not installed until MQT Core installs the
-wider MLIR compiler API.
+`mlir::FailureOr<mlir::QCProgram>`, emitting diagnostics on failure. This target
+is only available in source builds.
 
 ## Add a benchmark
 

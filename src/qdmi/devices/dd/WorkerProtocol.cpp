@@ -10,6 +10,8 @@
 
 #include "WorkerProtocol.hpp"
 
+#include "support/Diagnostics.hpp"
+
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ExecutionEngine/Orc/Shared/SimplePackedSerialization.h"
 #include "llvm/Support/Errno.h"
@@ -35,8 +37,10 @@ constexpr uint32_t VERSION = 1;
 using Header = SPSArgList<uint32_t, uint32_t, uint64_t>;
 using Request =
     SPSArgList<int32_t, SPSString, uint64_t, SPSOptional<uint64_t>, uint8_t>;
-using Response = SPSArgList<uint8_t, SPSOptional<SPSString>, uint32_t,
+using Response = SPSArgList<uint8_t, uint8_t, SPSOptional<SPSString>, uint32_t,
                             SPSOptional<SPSString>>;
+using Diagnostic =
+    SPSArgList<SPSString, uint8_t, uint8_t, SPSOptional<int32_t>>;
 
 /// Validate the presence byte before SPS can deserialize it as a C++ bool.
 template <class Tag, class T>
@@ -168,16 +172,30 @@ bool decode(llvm::StringRef bytes, WorkerRequest& request) {
 }
 
 std::string encode(const WorkerResponse& response) {
-  auto size = Response::size(static_cast<uint8_t>(response.succeeded),
+  auto size = Response::size(static_cast<uint8_t>(response.completed),
+                             static_cast<uint8_t>(response.succeeded),
                              response.output, response.qubits, response.state) +
-              sizeof(uint64_t);
+              (2 * sizeof(uint64_t));
+  for (const auto& diagnostic : response.diagnostics) {
+    size += Diagnostic::size(
+        diagnostic.message, static_cast<uint8_t>(diagnostic.category),
+        static_cast<uint8_t>(diagnostic.severity), diagnostic.status);
+  }
   for (const auto& shot : response.shots) {
     size += SPSArgList<SPSString>::size(shot);
   }
   std::string bytes(size, '\0');
   SPSOutputBuffer buffer(bytes.data(), bytes.size());
-  Response::serialize(buffer, static_cast<uint8_t>(response.succeeded),
-                      response.output, response.qubits, response.state);
+  Response::serialize(buffer, static_cast<uint8_t>(response.completed),
+                      static_cast<uint8_t>(response.succeeded), response.output,
+                      response.qubits, response.state);
+  SPSArgList<uint64_t>::serialize(
+      buffer, static_cast<uint64_t>(response.diagnostics.size()));
+  for (const auto& diagnostic : response.diagnostics) {
+    Diagnostic::serialize(
+        buffer, diagnostic.message, static_cast<uint8_t>(diagnostic.category),
+        static_cast<uint8_t>(diagnostic.severity), diagnostic.status);
+  }
   SPSArgList<uint64_t>::serialize(buffer,
                                   static_cast<uint64_t>(response.shots.size()));
   for (const auto& shot : response.shots) {
@@ -190,13 +208,17 @@ bool decode(llvm::StringRef bytes, WorkerResponse& response) {
   SPSInputBuffer buffer(bytes.data(), bytes.size());
   std::optional<llvm::StringRef> output;
   std::optional<llvm::StringRef> state;
+  uint8_t completed = 0;
   uint8_t succeeded = 0;
-  if (!SPSArgList<uint8_t>::deserialize(buffer, succeeded) ||
+  if (!SPSArgList<uint8_t, uint8_t>::deserialize(buffer, completed,
+                                                 succeeded) ||
       !readOptional<SPSString>(buffer, output) ||
       !SPSArgList<uint32_t>::deserialize(buffer, response.qubits) ||
-      !readOptional<SPSString>(buffer, state) || succeeded > 1) {
+      !readOptional<SPSString>(buffer, state) || completed > 1 ||
+      succeeded > 1) {
     return false;
   }
+  response.completed = completed != 0;
   response.succeeded = succeeded != 0;
   if (output) {
     response.output = output->str();
@@ -205,6 +227,29 @@ bool decode(llvm::StringRef bytes, WorkerResponse& response) {
     response.state = state->str();
   }
   uint64_t count = 0;
+  if (!SPSArgList<uint64_t>::deserialize(buffer, count) ||
+      count > bytes.size()) {
+    return false;
+  }
+  for (uint64_t i = 0; i < count; ++i) {
+    llvm::StringRef message;
+    uint8_t category = 0;
+    uint8_t severity = 0;
+    std::optional<int32_t> status;
+    if (!SPSArgList<SPSString, uint8_t, uint8_t>::deserialize(
+            buffer, message, category, severity) ||
+        !readOptional<int32_t>(buffer, status) ||
+        category > static_cast<uint8_t>(mqt::ErrorCategory::NotSupported) ||
+        severity > static_cast<uint8_t>(mqt::DiagnosticSeverity::Error)) {
+      return false;
+    }
+    response.diagnostics.push_back({
+        .message = message.str(),
+        .category = static_cast<mqt::ErrorCategory>(category),
+        .severity = static_cast<mqt::DiagnosticSeverity>(severity),
+        .status = status,
+    });
+  }
   if (!SPSArgList<uint64_t>::deserialize(buffer, count) ||
       count > bytes.size() / sizeof(uint64_t)) {
     return false;

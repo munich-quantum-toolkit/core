@@ -27,6 +27,9 @@ differences between these guides; neither upstream document is imported in full.
 
 ## C++ choices
 
+LLVM and MLIR are required dependencies available to every Core library. Reuse
+their facilities when the standard library has no suitable equivalent.
+
 - Use C++20 standard-library facilities before adding a project abstraction or
   dependency.
 - Keep variables local, initialize them when declared, and give each name one

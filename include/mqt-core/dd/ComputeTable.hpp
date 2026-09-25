@@ -16,11 +16,14 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/statistics/TableStatistics.hpp"
 
+#include "support/Diagnostics.hpp"
+
+#include "mlir/Support/LogicalResult.h"
+
 #include <bit>
 #include <cstddef>
 #include <functional>
 #include <iostream>
-#include <stdexcept>
 #include <type_traits>
 #include <vector>
 
@@ -36,19 +39,27 @@ public:
   /// Default number of buckets for the compute table
   static constexpr std::size_t DEFAULT_NUM_BUCKETS = 16384U;
 
-  /// Default constructor
-  /// @param numBuckets Number of hash table buckets. Must be a power of two.
-  explicit ComputeTable(const size_t numBuckets = DEFAULT_NUM_BUCKETS) {
-    // numBuckets must be a power of two
+  ComputeTable() : ComputeTable(DEFAULT_NUM_BUCKETS) {}
+
+  [[nodiscard]] static mlir::FailureOr<ComputeTable>
+  create(const size_t numBuckets) {
     if (!std::has_single_bit(numBuckets)) {
-      throw std::invalid_argument("Number of buckets must be a power of two.");
+      return ::mqt::emitError("Number of buckets must be a power of two.",
+                              ::mqt::ErrorCategory::InvalidArgument);
     }
+    return ComputeTable(numBuckets);
+  }
+
+private:
+  friend class Package;
+  explicit ComputeTable(const size_t numBuckets) {
     stats.entrySize = sizeof(Entry);
     stats.numBuckets = numBuckets;
     valid = std::vector(numBuckets, false);
     table = std::vector<Entry>(numBuckets);
   }
 
+public:
   /// An entry in the compute table
   ///
   /// A triple consisting of the left operand, the right operand, and
@@ -134,13 +145,17 @@ public:
 
   /// Replace the bucket storage and discard cached results.
   /// The capacity must be a power of two. Invalidates lookup result pointers.
-  /// Allocation failure leaves the table unchanged.
-  void resize(const size_t numBuckets) {
-    ComputeTable replacement(numBuckets);
-    table.swap(replacement.table);
-    valid.swap(replacement.valid);
+  /// Invalid capacity leaves the table unchanged.
+  [[nodiscard]] mlir::LogicalResult resize(const size_t numBuckets) {
+    auto replacement = create(numBuckets);
+    if (mlir::failed(replacement)) {
+      return mlir::failure();
+    }
+    table.swap(replacement->table);
+    valid.swap(replacement->valid);
     stats.numBuckets = numBuckets;
     stats.reset();
+    return mlir::success();
   }
 
   /// Print the statistics of the compute table

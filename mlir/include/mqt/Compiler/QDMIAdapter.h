@@ -14,14 +14,15 @@
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/Target.h"
 #include "mqt/Compiler/TargetEnvironment.h"
+#include "mqt/Support/Diagnostics.h"
 #include "qdmi/common/Common.hpp"
-
-#include "llvm/Support/Error.h"
 
 #include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
+#include <utility>
 #include <vector>
 
 namespace qdmi {
@@ -39,37 +40,36 @@ namespace mlir {
 /// site for one-qubit operations, every undirected topology edge for two-qubit
 /// operations, and every ordered tuple of distinct sites for higher arities.
 /// Each supported ordered placement carries optional calibration data.
-[[nodiscard]] llvm::Expected<CompilerTarget>
+[[nodiscard]] mlir::FailureOr<CompilerTarget>
 compilerTargetFromDevice(const qdmi::Device& device);
 
 /// Open a QDMI device by stable ID and snapshot it as a compiler target.
 ///
-/// This adapter contains exceptions from the QDMI C++ API and returns
-/// them as LLVM errors. The returned target owns all queried metadata.
-[[nodiscard]] llvm::Expected<CompilerTarget>
+/// QDMI failures retain their status in scoped diagnostics. The returned target
+/// owns all queried metadata.
+[[nodiscard]] mlir::FailureOr<CompilerTarget>
 compilerTargetFromDeviceId(std::string_view deviceId);
 
 /// List the stable IDs visible to a fresh QDMI session.
 ///
-/// This adapter contains exceptions from QDMI session discovery and
-/// returns them as LLVM errors.
-[[nodiscard]] llvm::Expected<std::vector<std::string>>
+/// Discovery failures retain their status in scoped diagnostics.
+[[nodiscard]] mlir::FailureOr<std::vector<std::string>>
 registeredQDMIDeviceIds();
 
 /// Compiler-supported capabilities of a QDMI program format.
-[[nodiscard]] llvm::Expected<PayloadSpecification>
+[[nodiscard]] mlir::FailureOr<PayloadSpecification>
 payloadSpecificationForProgramFormat(QDMI_Program_Format format);
 
 /// Snapshot the device and select its executable payload before compilation.
 /// Preference: Adaptive QIR (binary, text), OpenQASM 3, Base QIR (binary,
 /// text).
-[[nodiscard]] llvm::Expected<TargetEnvironment> targetEnvironmentFromDevice(
+[[nodiscard]] mlir::FailureOr<TargetEnvironment> targetEnvironmentFromDevice(
     const qdmi::Device& device,
     std::optional<QDMI_Program_Format> format = std::nullopt);
 
 /// Check equality of legality-relevant contracts, ignoring calibration data.
 /// Ordered site IDs and ordered operation operands retain their meaning.
-[[nodiscard]] llvm::Error
+[[nodiscard]] mlir::LogicalResult
 validateTargetCompatibility(const TargetEnvironment& compiled,
                             const TargetEnvironment& destination);
 
@@ -77,7 +77,7 @@ validateTargetCompatibility(const TargetEnvironment& compiled,
 class CompiledProgram {
 public:
   /// Compile and serialize for one selected hardware/payload contract.
-  [[nodiscard]] static llvm::Expected<CompiledProgram>
+  [[nodiscard]] static mlir::FailureOr<CompiledProgram>
   compile(CompilerInput&& program, const TargetEnvironment& environment,
           const CompilationOptions& options = {});
 
@@ -99,13 +99,13 @@ private:
 };
 
 /// Compile for a QDMI device.
-[[nodiscard]] llvm::Expected<CompiledProgram>
+[[nodiscard]] mlir::FailureOr<CompiledProgram>
 compileProgram(CompilerInput&& program, const qdmi::Device& device,
                std::optional<QDMI_Program_Format> format = std::nullopt,
                const CompilationOptions& options = {});
 
 /// Validate the destination contract before creating and submitting a QDMI job.
-[[nodiscard]] llvm::Expected<qdmi::Job> submitProgram(
+[[nodiscard]] mlir::FailureOr<qdmi::Job> submitProgram(
     const qdmi::Device& device, const CompiledProgram& program,
     int64_t numShots = 1024,
     const std::optional<qdmi::CustomJobParameter>& custom1 = std::nullopt,
@@ -115,9 +115,8 @@ compileProgram(CompilerInput&& program, const qdmi::Device& device,
     const std::optional<qdmi::CustomJobParameter>& custom5 = std::nullopt);
 
 /// Compile and submit source using one snapshot of the destination.
-[[nodiscard]] llvm::Expected<qdmi::Job> submitProgram(
-    const qdmi::Device& device, CompilerInput&& program,
-    int64_t numShots = 1024,
+[[nodiscard]] mlir::FailureOr<qdmi::Job> submitProgram(
+    const qdmi::Device& device, CompilerInput&& input, int64_t numShots = 1024,
     std::optional<QDMI_Program_Format> format = std::nullopt,
     const std::optional<qdmi::CustomJobParameter>& custom1 = std::nullopt,
     const std::optional<qdmi::CustomJobParameter>& custom2 = std::nullopt,

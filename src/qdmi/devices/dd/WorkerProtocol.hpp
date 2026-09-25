@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "support/Diagnostics.hpp"
+
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/raw_socket_stream.h"
 
@@ -34,7 +36,9 @@ struct WorkerRequest {
   bool captureOutput = false;
 };
 struct WorkerResponse {
+  bool completed = true;
   bool succeeded = false;
+  std::vector<mqt::Diagnostic> diagnostics;
   std::vector<std::string> shots;
   std::optional<std::string> output;
   uint32_t qubits = 0;

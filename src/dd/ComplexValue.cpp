@@ -13,18 +13,23 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/RealNumber.hpp"
 
+#include "support/Diagnostics.hpp"
+
+#include "mlir/Support/LogicalResult.h"
+
 #include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <functional>
 #include <iomanip>
+#include <ios>
 #include <istream>
+#include <locale>
 #include <ostream>
 #include <sstream>
-#include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 
 namespace dd {
@@ -56,27 +61,69 @@ void ComplexValue::readBinary(std::istream& is) {
   RealNumber::readBinary(i, is);
 }
 
-void ComplexValue::fromString(const std::string& realStr, std::string imagStr) {
-  const auto parse = [](const std::string& text) {
-    try {
-      return std::stod(text);
-    } catch (const std::out_of_range&) {
-      /// stod may report underflow for a representable subnormal value.
-      const auto value = std::strtod(text.c_str(), nullptr);
-      if (std::fpclassify(value) == FP_SUBNORMAL) {
-        return value;
-      }
-      throw;
+mlir::FailureOr<ComplexValue> ComplexValue::parse(std::string_view text) {
+  ComplexValue value;
+  auto const readPart = [](std::string_view& input, fp& part) {
+    std::istringstream stream{std::string(input)};
+    stream.imbue(std::locale::classic());
+    stream >> std::noskipws >> part;
+    /// libc++ reports underflow even when the subnormal result is
+    /// representable.
+    if ((stream.fail() && std::fpclassify(part) != FP_SUBNORMAL) ||
+        !std::isfinite(part)) {
+      return false;
     }
+    const auto consumed = static_cast<size_t>(
+        stream.rdbuf()->pubseekoff(0, std::ios_base::cur, std::ios_base::in));
+    const auto number = input.substr(0, consumed);
+    if (number.find_first_not_of("0123456789eE+-.") != std::string_view::npos ||
+        (std::fpclassify(part) == FP_ZERO &&
+         number.substr(0, number.find_first_of("eE"))
+                 .find_first_of("123456789") != std::string_view::npos)) {
+      return false;
+    }
+    input.remove_prefix(consumed);
+    return true;
   };
-  r = realStr.empty() ? 0. : parse(realStr);
-
-  std::erase(imagStr, ' ');
-  std::erase(imagStr, 'i');
-  if (imagStr == "+" || imagStr == "-") {
-    imagStr = imagStr + "1";
+  auto const imaginaryUnit = [](std::string_view input) {
+    return input == "i" || input == "I";
+  };
+  if (text.empty()) {
+    return value;
   }
-  i = imagStr.empty() ? 0. : parse(imagStr);
+  /// A real prefix can instead be the coefficient of a purely imaginary value.
+  auto remaining = text;
+  fp first = 0.;
+  if (readPart(remaining, first)) {
+    if (remaining.empty()) {
+      return ComplexValue{first};
+    }
+    if (imaginaryUnit(remaining)) {
+      return ComplexValue{0., first};
+    }
+    value.r = first;
+    text = remaining;
+  }
+  /// The serialized format permits spaces around the imaginary sign.
+  std::string imaginary(text);
+  std::erase(imaginary, ' ');
+  text = imaginary;
+  if (text.starts_with('+')) {
+    text.remove_prefix(1);
+  }
+  if (imaginaryUnit(text)) {
+    value.i = 1.;
+    return value;
+  }
+  if (text.starts_with('-') && imaginaryUnit(text.substr(1))) {
+    value.i = -1.;
+    return value;
+  }
+  if (!readPart(text, value.i) || !imaginaryUnit(text)) {
+    return ::mqt::emitError("Invalid serialized complex number.",
+                            ::mqt::ErrorCategory::InvalidArgument);
+  }
+  return value;
 }
 
 std::pair<std::uint64_t, std::uint64_t>

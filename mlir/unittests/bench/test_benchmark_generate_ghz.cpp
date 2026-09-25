@@ -12,6 +12,7 @@
 #include "mqt/bench/Generate.h"
 
 #include "TestUtils.h"
+#include "support/TestSupport.hpp"
 
 #include "gtest/gtest.h"
 
@@ -22,19 +23,19 @@ TEST(GenerateProgramTest, SamplesEveryGHZVariantAgainstReference) {
     for (const auto basis : {GHZBasis::Z, GHZBasis::X}) {
       SCOPED_TRACE(static_cast<int>(topology));
       SCOPED_TRACE(static_cast<int>(basis));
-      test::expectSamplingMatchesReference(
-          GHZ{{.qubits = 3, .topology = topology, .basis = basis}});
+      test::expectSamplingMatchesReference(::mqt::test::value(
+          GHZ::create({.qubits = 3, .topology = topology, .basis = basis})));
     }
   }
 }
 
 TEST(GenerateProgramTest, KeepsLargestGHZStructured) {
   for (const auto topology : {GHZTopology::Linear, GHZTopology::Star}) {
-    auto program = generate(GHZ{{
+    auto program = generate(::mqt::test::value(GHZ::create({
         .qubits = GHZOptions::MAX_QUBITS,
         .topology = topology,
-    }});
-    ASSERT_TRUE(program);
+    })));
+    ASSERT_TRUE(succeeded(program));
     EXPECT_LT(test::countOperations(program->module()), 100U);
   }
 }

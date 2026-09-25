@@ -64,14 +64,14 @@ protected:
   }
 
   /// Adds the hadamardLiftingPass to the current context and runs it.
-  static LogicalResult runHadamardLiftingPass(ModuleOp moduleOp) {
+  static mlir::LogicalResult runHadamardLiftingPass(ModuleOp moduleOp) {
     PassManager pm(moduleOp.getContext());
     pm.addPass(createHadamardLifting());
     return pm.run(moduleOp);
   }
 
   /// Adds the canonicalizerPass to the current context and runs it.
-  static LogicalResult runCanonicalizerPass(ModuleOp moduleOp) {
+  static mlir::LogicalResult runCanonicalizerPass(ModuleOp moduleOp) {
     PassManager pm(moduleOp.getContext());
     pm.addPass(createCanonicalizerPass());
     if (failed(pm.run(moduleOp))) {

@@ -13,6 +13,9 @@
 #include "bench/Evaluation.hpp"
 
 #include "EvaluationUtils.hpp"
+#include "support/Diagnostics.hpp"
+
+#include "mlir/Support/LogicalResult.h"
 
 #include <algorithm>
 #include <cmath>
@@ -20,7 +23,6 @@
 #include <cstdint>
 #include <numbers>
 #include <numeric>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -93,10 +95,16 @@ struct SignedMagnitude {
 
 } // namespace
 
-Phase::Phase(uint64_t numerator, const uint64_t denominator) {
+mlir::FailureOr<Phase> Phase::create(const uint64_t numerator,
+                                     const uint64_t denominator) {
   if (denominator == 0) {
-    throw std::invalid_argument("phase denominator must not be zero");
+    return ::mqt::emitError("phase denominator must not be zero",
+                            ::mqt::ErrorCategory::InvalidArgument);
   }
+  return Phase(numerator, denominator);
+}
+
+Phase::Phase(uint64_t numerator, const uint64_t denominator) {
   numerator %= denominator;
   const auto divisor = std::gcd(numerator, denominator);
   numerator_ = numerator / divisor;
@@ -107,18 +115,23 @@ uint64_t Phase::numerator() const noexcept { return numerator_; }
 
 uint64_t Phase::denominator() const noexcept { return denominator_; }
 
+mlir::FailureOr<QPE> QPE::create(QPEOptions options) {
+  if (options.precision == 0 || options.precision > QPEOptions::MAX_PRECISION) {
+    return ::mqt::emitError("QPE precision must be between 1 and 1000000",
+                            ::mqt::ErrorCategory::InvalidArgument);
+  }
+  if (options.method != QPEMethod::Standard &&
+      options.method != QPEMethod::Iterative) {
+    return ::mqt::emitError("unknown QPE method",
+                            ::mqt::ErrorCategory::InvalidArgument);
+  }
+
+  return QPE(options);
+}
+
 QPE::QPE(QPEOptions options)
     : options_(options), output_{.name = "result", .width = options_.precision},
       scaledRemainder_(options_.phase.numerator()) {
-  if (options_.precision == 0 ||
-      options_.precision > QPEOptions::MAX_PRECISION) {
-    throw std::invalid_argument("QPE precision must be between 1 and 1000000");
-  }
-  if (options_.method != QPEMethod::Standard &&
-      options_.method != QPEMethod::Iterative) {
-    throw std::invalid_argument("unknown QPE method");
-  }
-
   lowerOutcome_.assign(options_.precision, '0');
   const auto denominator = options_.phase.denominator();
   for (auto& bit : lowerOutcome_) {
@@ -135,8 +148,10 @@ const QPEOptions& QPE::options() const noexcept { return options_; }
 
 const Output& QPE::output() const noexcept { return output_; }
 
-double QPE::probability(const std::string_view outcome) const {
-  detail::validateOutcome(outcome, output_.width);
+mlir::FailureOr<double> QPE::probability(const std::string_view outcome) const {
+  if (mlir::failed(detail::validateOutcome(outcome, output_.width))) {
+    return mlir::failure();
+  }
   const auto difference = subtractModulo(lowerOutcome_, outcome);
   const auto integerBits = bitLength(difference.magnitude);
   if (integerBits > 600) {
@@ -180,7 +195,7 @@ double QPE::probability(const std::string_view outcome) const {
   return probability;
 }
 
-Evaluation QPE::evaluate(const Counts& counts) const {
+mlir::FailureOr<Evaluation> QPE::evaluate(const Counts& counts) const {
   return detail::evaluate(*this, counts);
 }
 

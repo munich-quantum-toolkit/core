@@ -8,21 +8,69 @@
  * Licensed under the MIT License
  */
 
-/// @file TestUtils.hpp
-/// Shared test utilities for QDMI components.
-
 #pragma once
+
+#include "support/Diagnostics.hpp"
+
+#include "gtest/gtest.h"
+
+#include "mlir/Support/LogicalResult.h"
 
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <optional>
 #include <random>
-#include <stdexcept>
 #include <string>
 #include <utility>
 
 namespace mqt::test {
+/// Capture diagnostics before a tested operation, including move-only results.
+class DiagnosticCapture {
+public:
+  std::optional<Diagnostic> error;
+  ScopedDiagnosticHandler handler{[this](const Diagnostic& diagnostic) {
+    if (diagnostic.severity != DiagnosticSeverity::Error) {
+      return mlir::failure();
+    }
+    if (!error) {
+      error = diagnostic;
+    }
+    return mlir::success();
+  }};
+};
+
+template <class Result> auto value(Result result) {
+  if (failed(result)) {
+    ADD_FAILURE() << "Expected a successful result";
+    std::abort();
+  }
+  if constexpr (requires { typename Result::value_type; }) {
+    return std::move(*result);
+  }
+}
+
+template <class Function>
+std::optional<Diagnostic> diagnostic(Function&& function) {
+  DiagnosticCapture capture;
+  auto const result = std::invoke(std::forward<Function>(function));
+  EXPECT_EQ(failed(result), capture.error.has_value());
+  return std::move(capture.error);
+}
+template <class Function> std::string errorMessage(Function&& function) {
+  auto error = diagnostic(std::forward<Function>(function));
+  return error ? error->message : std::string{};
+}
+template <class Function>
+std::optional<ErrorCategory> errorKind(Function&& function) {
+  auto error = diagnostic(std::forward<Function>(function));
+  return error ? std::optional(error->category) : std::nullopt;
+}
+template <class Function> std::optional<int> errorStatus(Function&& function) {
+  auto error = diagnostic(std::forward<Function>(function));
+  return error ? error->status : std::nullopt;
+}
 
 /// Temporarily sets or unsets an environment variable and restores its value.
 class ScopedEnvironmentVariable {
@@ -52,7 +100,8 @@ public:
 private:
   void set(const std::optional<std::string>& value) const {
     if (!setWithoutChecking(value)) {
-      throw std::runtime_error("Failed to set environment variable " + name_);
+      ADD_FAILURE() << "Failed to set environment variable " << name_;
+      std::abort();
     }
   }
 

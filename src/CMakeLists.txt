@@ -52,6 +52,8 @@ if(NOT TARGET MQT::ProjectOptions)
   list(APPEND MQT_CORE_TARGETS project_options)
 endif()
 
+add_subdirectory(support)
+
 add_subdirectory(bench)
 
 add_subdirectory(dd)

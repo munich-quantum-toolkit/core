@@ -6,6 +6,8 @@
 #
 # Licensed under the MIT License
 
+include(${CMAKE_CURRENT_LIST_DIR}/CompilerOptions.cmake)
+
 function(kebab_to_camel output input)
   string(REPLACE "-" ";" parts "${input}")
   set(result "")

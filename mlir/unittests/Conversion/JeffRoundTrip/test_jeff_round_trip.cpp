@@ -360,14 +360,14 @@ static Value nestedWhileOpIfOp(qco::QCOProgramBuilder& b) {
   return b.measure(res[0]).second;
 }
 
-static LogicalResult convertQCOToJeff(ModuleOp moduleOp) {
+static mlir::LogicalResult convertQCOToJeff(ModuleOp moduleOp) {
   PassManager pm(moduleOp.getContext());
   pm.addPass(mlir::mqt::createUnrollModifiers());
   pm.addPass(createQCOToJeff());
   return pm.run(moduleOp);
 }
 
-static LogicalResult convertJeffToQCO(ModuleOp moduleOp) {
+static mlir::LogicalResult convertJeffToQCO(ModuleOp moduleOp) {
   PassManager pm(moduleOp.getContext());
   pm.addPass(createJeffToQCO());
   return pm.run(moduleOp);
@@ -398,11 +398,13 @@ TEST_F(JeffRoundTripTest, RejectsNonNormalizedModifiersBeforeMutation) {
     llvm::raw_string_ostream beforeStream(before);
     module->print(beforeStream);
     bool diagnosed = false;
-    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
-      diagnosed |= diagnostic.str().find("every modifier argument in order") !=
-                   std::string::npos;
-      return success();
-    });
+    mlir::ScopedDiagnosticHandler handler(
+        context.get(), [&](mlir::Diagnostic& diagnostic) {
+          diagnosed |=
+              diagnostic.str().find("every modifier argument in order") !=
+              std::string::npos;
+          return success();
+        });
     PassManager pm(context.get());
     pm.addPass(createQCOToJeff());
     EXPECT_TRUE(failed(pm.run(*module)));
@@ -481,13 +483,14 @@ TEST(JeffRoundTripRegressionTest, RejectsInvalidJeffModuleMetadata) {
     auto moduleOp = ModuleOp::create(builder.getUnknownLoc());
     moduleOp->setAttrs(builder.getDictionaryAttr(attributes));
     bool sawExpectedDiagnostic = false;
-    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-      std::string message;
-      llvm::raw_string_ostream stream(message);
-      diagnostic.print(stream);
-      sawExpectedDiagnostic |= StringRef(message).contains(expected);
-      return success();
-    });
+    mlir::ScopedDiagnosticHandler handler(
+        &context, [&](mlir::Diagnostic& diagnostic) {
+          std::string message;
+          llvm::raw_string_ostream stream(message);
+          diagnostic.print(stream);
+          sawExpectedDiagnostic |= StringRef(message).contains(expected);
+          return success();
+        });
     EXPECT_TRUE(failed(convertJeffToQCO(moduleOp)));
     EXPECT_TRUE(sawExpectedDiagnostic);
   };

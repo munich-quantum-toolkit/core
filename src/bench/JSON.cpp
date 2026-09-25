@@ -24,10 +24,16 @@
 #include "bench/Teleportation.hpp"
 #include "bench/WState.hpp"
 
-#include "SHA256.hpp"
+#include "JSON.hpp"
+#include "support/Diagnostics.hpp"
 
 #include "nlohmann/json.hpp"
 #include "nlohmann/json_fwd.hpp"
+
+#include "mlir/Support/LogicalResult.h"
+
+#include "llvm/ADT/StringExtras.h"
+#include "llvm/Support/SHA256.h"
 
 #include <algorithm>
 #include <array>
@@ -38,11 +44,11 @@
 #include <limits>
 #include <numeric>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace mqt::bench {
@@ -61,28 +67,40 @@ template <class Benchmark> struct BenchmarkMetadata;
     static constexpr uint64_t definitionVersion = DEFINITION_VERSION;          \
   };                                                                           \
   [[nodiscard]] Json STEM##InstanceSpecificationSchema();                      \
-  [[nodiscard]] std::string evaluate##TYPE(std::string_view manifest,          \
-                                           std::string_view source,            \
-                                           const Counts& counts);
+  [[nodiscard]] mlir::FailureOr<std::string> evaluate##TYPE(                   \
+      std::string_view manifest, std::string_view source,                      \
+      const Counts& counts);
 #include "bench/BenchmarkFamilies.inc"
 
 using InstanceSpecificationSchemaFunction = Json (*)();
-using EvaluationFunction = std::string (*)(std::string_view, std::string_view,
-                                           const Counts&);
+using EvaluationFunction = mlir::FailureOr<std::string> (*)(std::string_view,
+                                                            std::string_view,
+                                                            const Counts&);
 
 struct RegistryEntry {
   std::string_view id;
   uint64_t definitionVersion;
   InstanceSpecificationSchemaFunction instanceSpecificationSchema;
   EvaluationFunction evaluate;
+  mlir::FailureOr<BenchmarkInstance> (*parse)(std::string_view,
+                                              std::string_view);
 };
 constexpr std::array REGISTRY{
 #define MQT_BENCHMARK_FAMILY(TYPE, STEM, ID, DEFINITION_VERSION)               \
-  RegistryEntry{.id = (ID),                                                    \
-                .definitionVersion = (DEFINITION_VERSION),                     \
-                .instanceSpecificationSchema =                                 \
-                    STEM##InstanceSpecificationSchema,                         \
-                .evaluate = evaluate##TYPE},
+  RegistryEntry{                                                               \
+      .id = (ID),                                                              \
+      .definitionVersion = (DEFINITION_VERSION),                               \
+      .instanceSpecificationSchema = STEM##InstanceSpecificationSchema,        \
+      .evaluate = evaluate##TYPE,                                              \
+      .parse =                                                                 \
+          +[](std::string_view json,                                           \
+              std::string_view source) -> mlir::FailureOr<BenchmarkInstance> { \
+        auto result = STEM##FromInstanceSpecificationJSON(json, source);       \
+        if (mlir::failed(result)) {                                            \
+          return mlir::failure();                                              \
+        }                                                                      \
+        return BenchmarkInstance{(*std::move(result))};                        \
+      }},
 #include "bench/BenchmarkFamilies.inc"
 };
 static_assert(
@@ -106,445 +124,706 @@ findBenchmark(const std::string_view benchmark) {
   return nullptr;
 }
 
-[[noreturn]] void fail(const std::string_view source,
-                       const std::string_view pointer,
-                       const std::string_view message) {
-  throw std::invalid_argument(std::string(source) + ":" + std::string(pointer) +
-                              " " + std::string(message));
+[[nodiscard]] mlir::LogicalResult fail(const std::string_view source,
+                                       const std::string_view pointer,
+                                       const std::string_view message) {
+  return ::mqt::emitError(std::string(source) + ":" + std::string(pointer) +
+                              " " + std::string(message),
+                          ::mqt::ErrorCategory::InvalidArgument);
 }
 
 template <class Factory>
 [[nodiscard]] auto constructBenchmark(const std::string_view source,
-                                      const Factory& factory) {
-  try {
-    return factory();
-  } catch (const std::invalid_argument& error) {
-    fail(source, "$/parameters", error.what());
-  }
+                                      Factory&& factory) {
+  ::mqt::ScopedDiagnosticHandler const context(
+      [&](const ::mqt::Diagnostic& diagnostic) {
+        auto located = diagnostic;
+        located.message =
+            std::string(source) + ":$/parameters " + located.message;
+        ::mqt::emitDiagnostic(located);
+        return mlir::success();
+      });
+  return std::forward<Factory>(factory)();
 }
 
-[[nodiscard]] Json parseJSON(const std::string_view text,
-                             const std::string_view source) {
+[[nodiscard]] mlir::FailureOr<Json> parseJSON(const std::string_view text,
+                                              const std::string_view source) {
   std::vector<std::unordered_set<std::string>> keysByDepth;
-  const Json::parser_callback_t rejectDuplicates =
-      [&](const int depth, const Json::parse_event_t event, Json& parsed) {
-        if (event == Json::parse_event_t::object_start) {
-          const auto index = static_cast<size_t>(depth);
-          if (keysByDepth.size() <= index) {
-            keysByDepth.resize(index + 1U);
-          }
-          keysByDepth[index].clear();
-        } else if (event == Json::parse_event_t::key) {
-          const auto index = static_cast<size_t>(depth - 1);
-          const auto& key = parsed.get_ref<const std::string&>();
-          auto& keys = keysByDepth.at(index);
-          if (!keys.emplace(key).second) {
-            fail(source, "$", "contains duplicate key '" + key + "'");
-          }
-        }
-        return true;
-      };
-
-  try {
-    return Json::parse(text.begin(), text.end(), rejectDuplicates);
-  } catch (const Json::exception& error) {
-    throw std::invalid_argument(std::string(source) +
-                                ": invalid JSON: " + error.what());
+  auto duplicate = mlir::success();
+  const auto rejectDuplicates = [&](const int depth,
+                                    const Json::parse_event_t event,
+                                    Json& parsed) {
+    if (event == Json::parse_event_t::object_start) {
+      const auto index = static_cast<size_t>(depth);
+      if (keysByDepth.size() <= index) {
+        keysByDepth.resize(index + 1U);
+      }
+      keysByDepth[index].clear();
+    } else if (event == Json::parse_event_t::key) {
+      const auto index = static_cast<size_t>(depth - 1);
+      const auto& key = parsed.get_ref<const std::string&>();
+      if (!keysByDepth[index].emplace(key).second &&
+          mlir::succeeded(duplicate)) {
+        duplicate = fail(source, "$", "contains duplicate key '" + key + "'");
+      }
+    }
+    return true;
+  };
+  auto result = mqt::detail::parseJSON(text, source, rejectDuplicates);
+  if (mlir::failed(duplicate)) {
+    return mlir::failure();
   }
+  return result;
 }
 
-void requireObject(const Json& value, const std::string_view source,
-                   const std::string_view pointer) {
+mlir::LogicalResult requireObject(const Json& value,
+                                  const std::string_view source,
+                                  const std::string_view pointer) {
   if (!value.is_object()) {
-    fail(source, pointer, "must be an object");
+    return fail(source, pointer, "must be an object");
   }
+  return mlir::success();
 }
 
-void rejectUnknownKeys(const Json& value,
-                       const std::initializer_list<std::string_view> known,
-                       const std::string_view source,
-                       const std::string_view pointer) {
+mlir::LogicalResult rejectUnknownKeys(
+    const Json& value, const std::initializer_list<std::string_view> known,
+    const std::string_view source, const std::string_view pointer) {
   for (const auto& [key, unused] : value.items()) {
     static_cast<void>(unused);
     if (std::ranges::find(known, key) == known.end()) {
-      fail(source, pointer, "contains unknown key '" + key + "'");
+      return fail(source, pointer, "contains unknown key '" + key + "'");
     }
   }
+  return mlir::success();
 }
 
-[[nodiscard]] const Json& required(const Json& value, const char* const key,
-                                   const std::string_view source,
-                                   const std::string_view pointer) {
+[[nodiscard]] mlir::FailureOr<const Json*>
+required(const Json& value, const char* const key,
+         const std::string_view source, const std::string_view pointer) {
   const auto found = value.find(key);
   if (found == value.end()) {
-    fail(source, std::string(pointer) + "/" + key, "is required");
+    return fail(source, std::string(pointer) + "/" + key, "is required");
   }
-  return *found;
+  return &*found;
 }
 
-[[nodiscard]] uint64_t unsignedInteger(const Json& value,
-                                       const std::string_view source,
-                                       const std::string_view pointer) {
+[[nodiscard]] mlir::FailureOr<uint64_t>
+unsignedInteger(const Json& value, const std::string_view source,
+                const std::string_view pointer) {
   if (value.is_number_float()) {
-    fail(source, pointer, "must be encoded as an integer");
+    return fail(source, pointer, "must be encoded as an integer");
   }
   if (!value.is_number_unsigned() &&
       (!value.is_number_integer() || value.get<int64_t>() < 0)) {
-    fail(source, pointer, "must be a non-negative integer");
+    return fail(source, pointer, "must be a non-negative integer");
   }
-  try {
-    return value.get<uint64_t>();
-  } catch (const Json::exception&) {
-    fail(source, pointer, "must fit an unsigned 64-bit integer");
-  }
+  return value.get<uint64_t>();
 }
 
-[[nodiscard]] size_t sizeValue(const Json& value, const std::string_view source,
-                               const std::string_view pointer) {
-  const auto parsed = unsignedInteger(value, source, pointer);
+[[nodiscard]] mlir::FailureOr<size_t>
+sizeValue(const Json& value, const std::string_view source,
+          const std::string_view pointer) {
+  auto result = unsignedInteger(value, source, pointer);
+  if (mlir::failed(result)) {
+    return mlir::failure();
+  }
+  const auto parsed = (*result);
   if (parsed > std::numeric_limits<size_t>::max()) {
-    fail(source, pointer, "must fit size_t");
+    return fail(source, pointer, "must fit size_t");
   }
   return static_cast<size_t>(parsed);
 }
 
-[[nodiscard]] std::string stringValue(const Json& value,
-                                      const std::string_view source,
-                                      const std::string_view pointer) {
+[[nodiscard]] mlir::FailureOr<std::string>
+stringValue(const Json& value, const std::string_view source,
+            const std::string_view pointer) {
   if (!value.is_string()) {
-    fail(source, pointer, "must be a string");
+    return fail(source, pointer, "must be a string");
   }
   return value.get<std::string>();
 }
 
-void requireSchemaVersion(const Json& root, const std::string_view source) {
-  const auto version =
-      unsignedInteger(required(root, "schema_version", source, "$"), source,
-                      "$/schema_version");
+mlir::LogicalResult requireSchemaVersion(const Json& root,
+                                         const std::string_view source) {
+  auto schemaVersionField = required(root, "schema_version", source, "$");
+  if (mlir::failed(schemaVersionField)) {
+    return mlir::failure();
+  }
+  auto schemaVersionValue =
+      unsignedInteger(*(*schemaVersionField), source, "$/schema_version");
+  if (mlir::failed(schemaVersionValue)) {
+    return mlir::failure();
+  }
+  const auto version = (*schemaVersionValue);
   if (version != SCHEMA_VERSION) {
-    fail(source, "$/schema_version", "must be 1");
+    return fail(source, "$/schema_version", "must be 1");
   }
+  return mlir::success();
 }
 
-[[nodiscard]] const RegistryEntry&
+[[nodiscard]] mlir::FailureOr<const RegistryEntry*>
 requireBenchmarkEntry(const Json& root, const std::string_view source) {
-  const auto benchmark = stringValue(required(root, "benchmark", source, "$"),
-                                     source, "$/benchmark");
+  auto benchmarkField = required(root, "benchmark", source, "$");
+  if (mlir::failed(benchmarkField)) {
+    return mlir::failure();
+  }
+  auto benchmarkValue = stringValue(*(*benchmarkField), source, "$/benchmark");
+  if (mlir::failed(benchmarkValue)) {
+    return mlir::failure();
+  }
+  const auto& benchmark = (*benchmarkValue);
   if (const auto* entry = findBenchmark(benchmark)) {
-    return *entry;
+    return entry;
   }
-  fail(source, "$/benchmark",
-       "selects unsupported benchmark '" + benchmark + "'");
+  return fail(source, "$/benchmark",
+              "selects unsupported benchmark '" + benchmark + "'");
 }
 
-[[nodiscard]] Json
-instanceSpecificationEnvelope(const std::string_view text,
-                              const std::string_view source) {
-  auto root = parseJSON(text, source);
-  requireObject(root, source, "$");
-  rejectUnknownKeys(root, {"schema_version", "benchmark", "parameters"}, source,
-                    "$");
-  requireSchemaVersion(root, source);
-  static_cast<void>(requireBenchmarkEntry(root, source));
-  requireObject(required(root, "parameters", source, "$"), source,
-                "$/parameters");
-  return root;
+[[nodiscard]] mlir::FailureOr<Json> envelope(const std::string_view text,
+                                             const std::string_view source,
+                                             const bool manifest) {
+  auto parsed = parseJSON(text, source);
+  if (mlir::failed(parsed)) {
+    return mlir::failure();
+  }
+  auto& root = (*parsed);
+  if (mlir::failed(requireObject(root, source, "$"))) {
+    return mlir::failure();
+  }
+  auto const keyError =
+      manifest
+          ? rejectUnknownKeys(root,
+                              {
+                                  "schema_version",
+                                  "case_id",
+                                  "benchmark",
+                                  "definition_version",
+                                  "parameters",
+                                  "outputs",
+                                  "reference",
+                              },
+                              source, "$")
+          : rejectUnknownKeys(root,
+                              {"schema_version", "benchmark", "parameters"},
+                              source, "$");
+  if (mlir::failed(keyError)) {
+    return mlir::failure();
+  }
+  if (mlir::failed(requireSchemaVersion(root, source))) {
+    return mlir::failure();
+  }
+  auto entry = requireBenchmarkEntry(root, source);
+  if (mlir::failed(entry)) {
+    return mlir::failure();
+  }
+  auto parameters = required(root, "parameters", source, "$");
+  if (mlir::failed(parameters)) {
+    return mlir::failure();
+  }
+  if (mlir::failed(requireObject(*(*parameters), source, "$/parameters"))) {
+    return mlir::failure();
+  }
+  if (manifest) {
+    auto definitionVersionField =
+        required(root, "definition_version", source, "$");
+    if (mlir::failed(definitionVersionField)) {
+      return mlir::failure();
+    }
+    auto definitionVersionValue = unsignedInteger(
+        *(*definitionVersionField), source, "$/definition_version");
+    if (mlir::failed(definitionVersionValue)) {
+      return mlir::failure();
+    }
+    const auto definition = (*definitionVersionValue);
+    if (definition != (*entry)->definitionVersion) {
+      return fail(source, "$/definition_version",
+                  "must be " + std::to_string((*entry)->definitionVersion));
+    }
+    auto caseIdField = required(root, "case_id", source, "$");
+    if (mlir::failed(caseIdField)) {
+      return mlir::failure();
+    }
+    auto caseIdValue = stringValue(*(*caseIdField), source, "$/case_id");
+    if (mlir::failed(caseIdValue)) {
+      return mlir::failure();
+    }
+    const auto& caseId = (*caseIdValue);
+    static_cast<void>(caseId);
+    auto outputsField = required(root, "outputs", source, "$");
+    if (mlir::failed(outputsField)) {
+      return mlir::failure();
+    }
+    const auto& outputs = *(*outputsField);
+    if (!outputs.is_array()) {
+      return fail(source, "$/outputs", "must be an array");
+    }
+    auto referenceField = required(root, "reference", source, "$");
+    if (mlir::failed(referenceField)) {
+      return mlir::failure();
+    }
+    const auto& reference = *(*referenceField);
+    if (mlir::failed(requireObject(reference, source, "$/reference"))) {
+      return mlir::failure();
+    }
+  }
+  return std::move(root);
 }
 
-[[nodiscard]] Json manifestEnvelope(const std::string_view text,
-                                    const std::string_view source) {
-  auto root = parseJSON(text, source);
-  requireObject(root, source, "$");
-  rejectUnknownKeys(root,
-                    {
-                        "schema_version",
-                        "case_id",
-                        "benchmark",
-                        "definition_version",
-                        "parameters",
-                        "outputs",
-                        "reference",
-                    },
-                    source, "$");
-  requireSchemaVersion(root, source);
-  const auto& benchmark = requireBenchmarkEntry(root, source);
-  const auto definition =
-      unsignedInteger(required(root, "definition_version", source, "$"), source,
-                      "$/definition_version");
-  const auto expectedDefinition = benchmark.definitionVersion;
-  if (definition != expectedDefinition) {
-    fail(source, "$/definition_version",
-         "must be " + std::to_string(expectedDefinition));
-  }
-  static_cast<void>(
-      stringValue(required(root, "case_id", source, "$"), source, "$/case_id"));
-  requireObject(required(root, "parameters", source, "$"), source,
-                "$/parameters");
-  if (!required(root, "outputs", source, "$").is_array()) {
-    fail(source, "$/outputs", "must be an array");
-  }
-  requireObject(required(root, "reference", source, "$"), source,
-                "$/reference");
-  return root;
-}
-
-void requireBenchmark(const Json& root, const std::string_view expected,
-                      const std::string_view source) {
-  const auto actual = stringValue(required(root, "benchmark", source, "$"),
-                                  source, "$/benchmark");
+mlir::LogicalResult requireBenchmark(const Json& root,
+                                     const std::string_view expected,
+                                     const std::string_view source) {
+  const auto& actual = root["benchmark"].get_ref<const std::string&>();
   if (actual != expected) {
-    fail(source, "$/benchmark", "must be '" + std::string(expected) + "'");
+    return fail(source, "$/benchmark",
+                "must be '" + std::string(expected) + "'");
   }
+  return mlir::success();
 }
 
-[[nodiscard]] BV parseBVParameters(const Json& parameters,
-                                   const std::string_view source) {
-  rejectUnknownKeys(parameters, {"hidden_bitstring", "method"}, source,
-                    "$/parameters");
+[[nodiscard]] mlir::FailureOr<BV>
+parseBVParameters(const Json& parameters, const std::string_view source) {
+  if (mlir::failed(rejectUnknownKeys(parameters, {"hidden_bitstring", "method"},
+                                     source, "$/parameters"))) {
+    return mlir::failure();
+  }
+  auto hiddenBitstringField =
+      required(parameters, "hidden_bitstring", source, "$/parameters");
+  if (mlir::failed(hiddenBitstringField)) {
+    return mlir::failure();
+  }
+  auto hiddenBitstringValue = stringValue(*(*hiddenBitstringField), source,
+                                          "$/parameters/hidden_bitstring");
+  if (mlir::failed(hiddenBitstringValue)) {
+    return mlir::failure();
+  }
   BVOptions options{
-      .hiddenBitstring = stringValue(
-          required(parameters, "hidden_bitstring", source, "$/parameters"),
-          source, "$/parameters/hidden_bitstring"),
+      .hiddenBitstring = (*hiddenBitstringValue),
   };
   if (const auto method = parameters.find("method");
       method != parameters.end()) {
-    const auto value = stringValue(*method, source, "$/parameters/method");
+    auto methodValue = stringValue(*method, source, "$/parameters/method");
+    if (mlir::failed(methodValue)) {
+      return mlir::failure();
+    }
+    const auto& value = (*methodValue);
     if (value == "static") {
       options.method = BVMethod::Static;
     } else if (value == "dynamic") {
       options.method = BVMethod::Dynamic;
     } else {
-      fail(source, "$/parameters/method", "must be 'static' or 'dynamic'");
+      return fail(source, "$/parameters/method",
+                  "must be 'static' or 'dynamic'");
     }
   }
   return constructBenchmark(source,
-                            [&options] { return BV(std::move(options)); });
+                            [&] { return BV::create(std::move(options)); });
 }
 
-[[nodiscard]] GHZ parseGHZParameters(const Json& parameters,
-                                     const std::string_view source) {
-  rejectUnknownKeys(parameters, {"qubits", "topology", "basis"}, source,
-                    "$/parameters");
-  GHZOptions options{
-      .qubits =
-          sizeValue(required(parameters, "qubits", source, "$/parameters"),
-                    source, "$/parameters/qubits"),
-  };
-  if (const auto topology = parameters.find("topology");
-      topology != parameters.end()) {
-    const auto value = stringValue(*topology, source, "$/parameters/topology");
-    if (value == "linear") {
-      options.topology = GHZTopology::Linear;
-    } else if (value == "star") {
-      options.topology = GHZTopology::Star;
-    } else {
-      fail(source, "$/parameters/topology", "must be 'linear' or 'star'");
-    }
-  }
-  if (const auto basis = parameters.find("basis"); basis != parameters.end()) {
-    const auto value = stringValue(*basis, source, "$/parameters/basis");
-    if (value == "z") {
-      options.basis = GHZBasis::Z;
-    } else if (value == "x") {
-      options.basis = GHZBasis::X;
-    } else {
-      fail(source, "$/parameters/basis", "must be 'z' or 'x'");
-    }
-  }
-  return constructBenchmark(source, [&options] { return GHZ(options); });
-}
-
-[[nodiscard]] Grover parseGroverParameters(const Json& parameters,
-                                           const std::string_view source) {
-  rejectUnknownKeys(parameters, {"marked_bitstring", "iterations"}, source,
-                    "$/parameters");
-  GroverOptions options{
-      .markedBitstring = stringValue(
-          required(parameters, "marked_bitstring", source, "$/parameters"),
-          source, "$/parameters/marked_bitstring"),
-  };
-  if (const auto iterations = parameters.find("iterations");
-      iterations != parameters.end()) {
-    options.iterations =
-        sizeValue(*iterations, source, "$/parameters/iterations");
-  }
-  return constructBenchmark(source,
-                            [&options] { return Grover(std::move(options)); });
-}
-
-[[nodiscard]] ModularMultiplier
+[[nodiscard]] mlir::FailureOr<ModularMultiplier>
 parseModularMultiplierParameters(const Json& parameters,
                                  const std::string_view source) {
-  rejectUnknownKeys(parameters,
-                    {"multiplier", "modulus", "multiplicand", "control"},
-                    source, "$/parameters");
+  if (mlir::failed(rejectUnknownKeys(
+          parameters, {"multiplier", "modulus", "multiplicand", "control"},
+          source, "$/parameters"))) {
+    return mlir::failure();
+  }
   auto control = std::string("1");
   if (const auto value = parameters.find("control");
       value != parameters.end()) {
-    control = stringValue(*value, source, "$/parameters/control");
+    auto controlValue = stringValue(*value, source, "$/parameters/control");
+    if (mlir::failed(controlValue)) {
+      return mlir::failure();
+    }
+    control = (*controlValue);
   }
   if (control.size() != 1U) {
-    fail(source, "$/parameters/control", "must be '0', '1', or '+'");
+    return fail(source, "$/parameters/control", "must be '0', '1', or '+'");
+  }
+  auto multiplicandField =
+      required(parameters, "multiplicand", source, "$/parameters");
+  if (mlir::failed(multiplicandField)) {
+    return mlir::failure();
+  }
+  auto multiplicandValue =
+      stringValue(*(*multiplicandField), source, "$/parameters/multiplicand");
+  if (mlir::failed(multiplicandValue)) {
+    return mlir::failure();
+  }
+  auto modulusField = required(parameters, "modulus", source, "$/parameters");
+  if (mlir::failed(modulusField)) {
+    return mlir::failure();
+  }
+  auto modulusValue =
+      stringValue(*(*modulusField), source, "$/parameters/modulus");
+  if (mlir::failed(modulusValue)) {
+    return mlir::failure();
+  }
+  auto multiplierField =
+      required(parameters, "multiplier", source, "$/parameters");
+  if (mlir::failed(multiplierField)) {
+    return mlir::failure();
+  }
+  auto multiplierValue =
+      stringValue(*(*multiplierField), source, "$/parameters/multiplier");
+  if (mlir::failed(multiplierValue)) {
+    return mlir::failure();
   }
   return constructBenchmark(source, [&] {
-    return ModularMultiplier({
-        .multiplier = stringValue(
-            required(parameters, "multiplier", source, "$/parameters"), source,
-            "$/parameters/multiplier"),
-        .modulus =
-            stringValue(required(parameters, "modulus", source, "$/parameters"),
-                        source, "$/parameters/modulus"),
-        .multiplicand = stringValue(
-            required(parameters, "multiplicand", source, "$/parameters"),
-            source, "$/parameters/multiplicand"),
+    return ModularMultiplier::create({
+        .multiplier = (*multiplierValue),
+        .modulus = (*modulusValue),
+        .multiplicand = (*multiplicandValue),
         .control = control.front(),
     });
   });
 }
 
-[[nodiscard]] Multiplexer
+[[nodiscard]] mlir::FailureOr<GHZ>
+parseGHZParameters(const Json& parameters, const std::string_view source) {
+  if (mlir::failed(rejectUnknownKeys(parameters,
+                                     {"qubits", "topology", "basis"}, source,
+                                     "$/parameters"))) {
+    return mlir::failure();
+  }
+  auto qubitsField = required(parameters, "qubits", source, "$/parameters");
+  if (mlir::failed(qubitsField)) {
+    return mlir::failure();
+  }
+  auto qubitsValue = sizeValue(*(*qubitsField), source, "$/parameters/qubits");
+  if (mlir::failed(qubitsValue)) {
+    return mlir::failure();
+  }
+  GHZOptions options{
+      .qubits = (*qubitsValue),
+  };
+  if (const auto topology = parameters.find("topology");
+      topology != parameters.end()) {
+    auto topologyValue =
+        stringValue(*topology, source, "$/parameters/topology");
+    if (mlir::failed(topologyValue)) {
+      return mlir::failure();
+    }
+    const auto& value = (*topologyValue);
+    if (value == "linear") {
+      options.topology = GHZTopology::Linear;
+    } else if (value == "star") {
+      options.topology = GHZTopology::Star;
+    } else {
+      return fail(source, "$/parameters/topology",
+                  "must be 'linear' or 'star'");
+    }
+  }
+  if (const auto basis = parameters.find("basis"); basis != parameters.end()) {
+    auto basisValue = stringValue(*basis, source, "$/parameters/basis");
+    if (mlir::failed(basisValue)) {
+      return mlir::failure();
+    }
+    const auto& value = (*basisValue);
+    if (value == "z") {
+      options.basis = GHZBasis::Z;
+    } else if (value == "x") {
+      options.basis = GHZBasis::X;
+    } else {
+      return fail(source, "$/parameters/basis", "must be 'z' or 'x'");
+    }
+  }
+  return constructBenchmark(source, [&] { return GHZ::create(options); });
+}
+
+[[nodiscard]] mlir::FailureOr<Grover>
+parseGroverParameters(const Json& parameters, const std::string_view source) {
+  if (mlir::failed(rejectUnknownKeys(parameters,
+                                     {"marked_bitstring", "iterations"}, source,
+                                     "$/parameters"))) {
+    return mlir::failure();
+  }
+  auto markedBitstringField =
+      required(parameters, "marked_bitstring", source, "$/parameters");
+  if (mlir::failed(markedBitstringField)) {
+    return mlir::failure();
+  }
+  auto markedBitstringValue = stringValue(*(*markedBitstringField), source,
+                                          "$/parameters/marked_bitstring");
+  if (mlir::failed(markedBitstringValue)) {
+    return mlir::failure();
+  }
+  GroverOptions options{
+      .markedBitstring = (*markedBitstringValue),
+  };
+  if (const auto iterations = parameters.find("iterations");
+      iterations != parameters.end()) {
+    auto iterationsValue =
+        sizeValue(*iterations, source, "$/parameters/iterations");
+    if (mlir::failed(iterationsValue)) {
+      return mlir::failure();
+    }
+    options.iterations.emplace(*iterationsValue);
+  }
+  return constructBenchmark(source,
+                            [&] { return Grover::create(std::move(options)); });
+}
+
+[[nodiscard]] mlir::FailureOr<Multiplexer>
 parseMultiplexerParameters(const Json& parameters,
                            const std::string_view source) {
-  rejectUnknownKeys(parameters, {"qubits"}, source, "$/parameters");
+  if (mlir::failed(
+          rejectUnknownKeys(parameters, {"qubits"}, source, "$/parameters"))) {
+    return mlir::failure();
+  }
+  auto qubitsField = required(parameters, "qubits", source, "$/parameters");
+  if (mlir::failed(qubitsField)) {
+    return mlir::failure();
+  }
+  auto qubitsValue = sizeValue(*(*qubitsField), source, "$/parameters/qubits");
+  if (mlir::failed(qubitsValue)) {
+    return mlir::failure();
+  }
   return constructBenchmark(source, [&] {
-    return Multiplexer({
-        .qubits =
-            sizeValue(required(parameters, "qubits", source, "$/parameters"),
-                      source, "$/parameters/qubits"),
+    return Multiplexer::create({
+        .qubits = (*qubitsValue),
     });
   });
 }
 
-[[nodiscard]] QFT parseQFTParameters(const Json& parameters,
-                                     const std::string_view source) {
-  rejectUnknownKeys(parameters, {"qubits", "period_exponent", "method"}, source,
-                    "$/parameters");
+[[nodiscard]] mlir::FailureOr<QFT>
+parseQFTParameters(const Json& parameters, const std::string_view source) {
+  if (mlir::failed(rejectUnknownKeys(parameters,
+                                     {"qubits", "period_exponent", "method"},
+                                     source, "$/parameters"))) {
+    return mlir::failure();
+  }
+  auto periodExponentField =
+      required(parameters, "period_exponent", source, "$/parameters");
+  if (mlir::failed(periodExponentField)) {
+    return mlir::failure();
+  }
+  auto periodExponentValue = sizeValue(*(*periodExponentField), source,
+                                       "$/parameters/period_exponent");
+  if (mlir::failed(periodExponentValue)) {
+    return mlir::failure();
+  }
+  auto qubitsField = required(parameters, "qubits", source, "$/parameters");
+  if (mlir::failed(qubitsField)) {
+    return mlir::failure();
+  }
+  auto qubitsValue = sizeValue(*(*qubitsField), source, "$/parameters/qubits");
+  if (mlir::failed(qubitsValue)) {
+    return mlir::failure();
+  }
   QFTOptions options{
-      .qubits =
-          sizeValue(required(parameters, "qubits", source, "$/parameters"),
-                    source, "$/parameters/qubits"),
-      .periodExponent = sizeValue(
-          required(parameters, "period_exponent", source, "$/parameters"),
-          source, "$/parameters/period_exponent"),
+      .qubits = (*qubitsValue),
+      .periodExponent = (*periodExponentValue),
   };
   if (const auto method = parameters.find("method");
       method != parameters.end()) {
-    const auto value = stringValue(*method, source, "$/parameters/method");
+    auto methodValue = stringValue(*method, source, "$/parameters/method");
+    if (mlir::failed(methodValue)) {
+      return mlir::failure();
+    }
+    const auto& value = (*methodValue);
     if (value == "standard") {
       options.method = QFTMethod::Standard;
     } else if (value == "semiclassical") {
       options.method = QFTMethod::Semiclassical;
     } else {
-      fail(source, "$/parameters/method",
-           "must be 'standard' or 'semiclassical'");
+      return fail(source, "$/parameters/method",
+                  "must be 'standard' or 'semiclassical'");
     }
   }
-  return constructBenchmark(source, [&options] { return QFT(options); });
+  return constructBenchmark(source, [&] { return QFT::create(options); });
 }
 
-[[nodiscard]] QFTAdder parseQFTAdderParameters(const Json& parameters,
-                                               const std::string_view source) {
-  rejectUnknownKeys(parameters, {"addend", "accumulator", "method", "overflow"},
-                    source, "$/parameters");
+[[nodiscard]] mlir::FailureOr<QFTAdder>
+parseQFTAdderParameters(const Json& parameters, const std::string_view source) {
+  if (mlir::failed(rejectUnknownKeys(
+          parameters, {"addend", "accumulator", "method", "overflow"}, source,
+          "$/parameters"))) {
+    return mlir::failure();
+  }
+  auto accumulatorField =
+      required(parameters, "accumulator", source, "$/parameters");
+  if (mlir::failed(accumulatorField)) {
+    return mlir::failure();
+  }
+  auto accumulatorValue =
+      stringValue(*(*accumulatorField), source, "$/parameters/accumulator");
+  if (mlir::failed(accumulatorValue)) {
+    return mlir::failure();
+  }
+  auto addendField = required(parameters, "addend", source, "$/parameters");
+  if (mlir::failed(addendField)) {
+    return mlir::failure();
+  }
+  auto addendValue =
+      stringValue(*(*addendField), source, "$/parameters/addend");
+  if (mlir::failed(addendValue)) {
+    return mlir::failure();
+  }
   QFTAdderOptions options{
-      .addend =
-          stringValue(required(parameters, "addend", source, "$/parameters"),
-                      source, "$/parameters/addend"),
-      .accumulator = stringValue(
-          required(parameters, "accumulator", source, "$/parameters"), source,
-          "$/parameters/accumulator"),
+      .addend = (*addendValue),
+      .accumulator = (*accumulatorValue),
   };
   if (const auto it = parameters.find("method"); it != parameters.end()) {
-    const auto value = stringValue(*it, source, "$/parameters/method");
+    auto methodValue = stringValue(*it, source, "$/parameters/method");
+    if (mlir::failed(methodValue)) {
+      return mlir::failure();
+    }
+    const auto& value = (*methodValue);
     if (value == "register") {
       options.method = QFTAdderMethod::Register;
     } else if (value == "constant") {
       options.method = QFTAdderMethod::Constant;
     } else {
-      fail(source, "$/parameters/method", "must be 'register' or 'constant'");
+      return fail(source, "$/parameters/method",
+                  "must be 'register' or 'constant'");
     }
   }
   if (const auto it = parameters.find("overflow"); it != parameters.end()) {
-    const auto value = stringValue(*it, source, "$/parameters/overflow");
+    auto overflowValue = stringValue(*it, source, "$/parameters/overflow");
+    if (mlir::failed(overflowValue)) {
+      return mlir::failure();
+    }
+    const auto& value = (*overflowValue);
     if (value == "wrap") {
       options.overflow = QFTAdderOverflow::Wrap;
     } else if (value == "carry") {
       options.overflow = QFTAdderOverflow::Carry;
     } else {
-      fail(source, "$/parameters/overflow", "must be 'wrap' or 'carry'");
+      return fail(source, "$/parameters/overflow", "must be 'wrap' or 'carry'");
     }
   }
   return constructBenchmark(
-      source, [&options] { return QFTAdder(std::move(options)); });
+      source, [&] { return QFTAdder::create(std::move(options)); });
 }
 
-[[nodiscard]] QPE parseQPEParameters(const Json& parameters,
-                                     const std::string_view source) {
-  rejectUnknownKeys(parameters, {"precision", "phase", "method"}, source,
-                    "$/parameters");
-  const auto precision =
-      sizeValue(required(parameters, "precision", source, "$/parameters"),
-                source, "$/parameters/precision");
-  const auto& phase = required(parameters, "phase", source, "$/parameters");
-  requireObject(phase, source, "$/parameters/phase");
-  rejectUnknownKeys(phase, {"numerator", "denominator"}, source,
-                    "$/parameters/phase");
-  const auto numerator = unsignedInteger(
-      required(phase, "numerator", source, "$/parameters/phase"), source,
-      "$/parameters/phase/numerator");
-  const auto denominator = unsignedInteger(
-      required(phase, "denominator", source, "$/parameters/phase"), source,
-      "$/parameters/phase/denominator");
+[[nodiscard]] mlir::FailureOr<QPE>
+parseQPEParameters(const Json& parameters, const std::string_view source) {
+  if (mlir::failed(rejectUnknownKeys(parameters,
+                                     {"precision", "phase", "method"}, source,
+                                     "$/parameters"))) {
+    return mlir::failure();
+  }
+  auto precisionField =
+      required(parameters, "precision", source, "$/parameters");
+  if (mlir::failed(precisionField)) {
+    return mlir::failure();
+  }
+  auto precisionValue =
+      sizeValue(*(*precisionField), source, "$/parameters/precision");
+  if (mlir::failed(precisionValue)) {
+    return mlir::failure();
+  }
+  const auto precision = (*precisionValue);
+  auto phaseField = required(parameters, "phase", source, "$/parameters");
+  if (mlir::failed(phaseField)) {
+    return mlir::failure();
+  }
+  const auto& phase = *(*phaseField);
+  if (mlir::failed(requireObject(phase, source, "$/parameters/phase"))) {
+    return mlir::failure();
+  }
+  if (mlir::failed(rejectUnknownKeys(phase, {"numerator", "denominator"},
+                                     source, "$/parameters/phase"))) {
+    return mlir::failure();
+  }
+  auto numeratorField =
+      required(phase, "numerator", source, "$/parameters/phase");
+  if (mlir::failed(numeratorField)) {
+    return mlir::failure();
+  }
+  auto numeratorValue = unsignedInteger(*(*numeratorField), source,
+                                        "$/parameters/phase/numerator");
+  if (mlir::failed(numeratorValue)) {
+    return mlir::failure();
+  }
+  const auto numerator = (*numeratorValue);
+  auto denominatorField =
+      required(phase, "denominator", source, "$/parameters/phase");
+  if (mlir::failed(denominatorField)) {
+    return mlir::failure();
+  }
+  auto denominatorValue = unsignedInteger(*(*denominatorField), source,
+                                          "$/parameters/phase/denominator");
+  if (mlir::failed(denominatorValue)) {
+    return mlir::failure();
+  }
+  const auto denominator = (*denominatorValue);
   auto method = QPEMethod::Standard;
   if (const auto value = parameters.find("method"); value != parameters.end()) {
-    const auto name = stringValue(*value, source, "$/parameters/method");
+    auto methodValue = stringValue(*value, source, "$/parameters/method");
+    if (mlir::failed(methodValue)) {
+      return mlir::failure();
+    }
+    const auto& name = (*methodValue);
     if (name == "standard") {
       method = QPEMethod::Standard;
     } else if (name == "iterative") {
       method = QPEMethod::Iterative;
     } else {
-      fail(source, "$/parameters/method", "must be 'standard' or 'iterative'");
+      return fail(source, "$/parameters/method",
+                  "must be 'standard' or 'iterative'");
     }
   }
+  auto phaseValue = constructBenchmark(
+      source, [&] { return Phase::create(numerator, denominator); });
+  if (mlir::failed(phaseValue)) {
+    return mlir::failure();
+  }
   return constructBenchmark(source, [&] {
-    return QPE({
+    return QPE::create({
         .precision = precision,
-        .phase = Phase(numerator, denominator),
+        .phase = (*phaseValue),
         .method = method,
     });
   });
 }
 
-[[nodiscard]] RepeatUntilSuccess
+[[nodiscard]] mlir::FailureOr<RepeatUntilSuccess>
 parseRepeatUntilSuccessParameters(const Json& parameters,
                                   const std::string_view source) {
-  rejectUnknownKeys(parameters, {"data_qubits"}, source, "$/parameters");
+  if (mlir::failed(rejectUnknownKeys(parameters, {"data_qubits"}, source,
+                                     "$/parameters"))) {
+    return mlir::failure();
+  }
   RepeatUntilSuccessOptions options;
   if (const auto width = parameters.find("data_qubits");
       width != parameters.end()) {
-    options.dataQubits = sizeValue(*width, source, "$/parameters/data_qubits");
+    auto dataQubitsValue =
+        sizeValue(*width, source, "$/parameters/data_qubits");
+    if (mlir::failed(dataQubitsValue)) {
+      return mlir::failure();
+    }
+    options.dataQubits = (*dataQubitsValue);
   }
-  return constructBenchmark(source,
-                            [&options] { return RepeatUntilSuccess(options); });
+  return constructBenchmark(
+      source, [&] { return RepeatUntilSuccess::create(options); });
 }
 
-[[nodiscard]] Teleportation
+[[nodiscard]] mlir::FailureOr<Teleportation>
 parseTeleportationParameters(const Json& parameters,
                              const std::string_view source) {
-  rejectUnknownKeys(parameters, {}, source, "$/parameters");
+  if (mlir::failed(rejectUnknownKeys(parameters, {}, source, "$/parameters"))) {
+    return mlir::failure();
+  }
   return Teleportation{};
 }
 
-[[nodiscard]] WState parseWStateParameters(const Json& parameters,
-                                           const std::string_view source) {
-  rejectUnknownKeys(parameters, {"qubits"}, source, "$/parameters");
-  return constructBenchmark(source, [&] {
-    return WState({
-        .qubits =
-            sizeValue(required(parameters, "qubits", source, "$/parameters"),
-                      source, "$/parameters/qubits"),
-    });
-  });
+[[nodiscard]] mlir::FailureOr<WState>
+parseWStateParameters(const Json& parameters, const std::string_view source) {
+  if (mlir::failed(
+          rejectUnknownKeys(parameters, {"qubits"}, source, "$/parameters"))) {
+    return mlir::failure();
+  }
+  auto field = required(parameters, "qubits", source, "$/parameters");
+  if (mlir::failed(field)) {
+    return mlir::failure();
+  }
+  auto qubits = sizeValue(**field, source, "$/parameters/qubits");
+  if (mlir::failed(qubits)) {
+    return mlir::failure();
+  }
+  return constructBenchmark(
+      source, [&] { return WState::create({.qubits = *qubits}); });
 }
 
 [[nodiscard]] std::string_view topologyName(const GHZTopology topology) {
@@ -567,18 +846,29 @@ parseTeleportationParameters(const Json& parameters,
   return method == QPEMethod::Standard ? "standard" : "iterative";
 }
 
-[[nodiscard]] Shor parseShorParameters(const Json& parameters,
-                                       std::string_view source) {
-  rejectUnknownKeys(parameters, {"number", "base"}, source, "$/parameters");
-  ShorOptions options{
-      .number = unsignedInteger(
-          required(parameters, "number", source, "$/parameters"), source,
-          "$/parameters/number"),
-  };
-  if (const auto base = parameters.find("base"); base != parameters.end()) {
-    options.base = unsignedInteger(*base, source, "$/parameters/base");
+[[nodiscard]] mlir::FailureOr<Shor>
+parseShorParameters(const Json& parameters, std::string_view source) {
+  if (mlir::failed(rejectUnknownKeys(parameters, {"number", "base"}, source,
+                                     "$/parameters"))) {
+    return mlir::failure();
   }
-  return constructBenchmark(source, [&] { return Shor(options); });
+  auto field = required(parameters, "number", source, "$/parameters");
+  if (mlir::failed(field)) {
+    return mlir::failure();
+  }
+  auto number = unsignedInteger(**field, source, "$/parameters/number");
+  if (mlir::failed(number)) {
+    return mlir::failure();
+  }
+  ShorOptions options{.number = *number};
+  if (const auto base = parameters.find("base"); base != parameters.end()) {
+    auto value = unsignedInteger(*base, source, "$/parameters/base");
+    if (mlir::failed(value)) {
+      return mlir::failure();
+    }
+    options.base = *value;
+  }
+  return constructBenchmark(source, [&] { return Shor::create(options); });
 }
 
 [[nodiscard]] Json parametersJSON(const Shor& benchmark) {
@@ -779,7 +1069,9 @@ template <class Benchmark>
   auto input = std::string(CASE_DOMAIN);
   input.push_back('\0');
   input += semantic.dump();
-  return "sha256-" + detail::sha256Hex(input);
+  return "sha256-" +
+         llvm::toHex(llvm::SHA256::hash(llvm::arrayRefFromStringRef(input)),
+                     true);
 }
 
 template <class Benchmark>
@@ -800,25 +1092,28 @@ template <class Benchmark>
 }
 
 template <class Benchmark, class ParseParameters>
-[[nodiscard]] Benchmark
-parseInstanceSpecification(const std::string_view text,
-                           const std::string_view source,
-                           const ParseParameters& parseParameters) {
-  const auto root = instanceSpecificationEnvelope(text, source);
-  requireBenchmark(root, BenchmarkMetadata<Benchmark>::id, source);
-  return parseParameters(root.at("parameters"), source);
-}
-
-template <class Benchmark, class ParseParameters>
-[[nodiscard]] Benchmark parseManifest(const std::string_view text,
-                                      const std::string_view source,
-                                      const ParseParameters& parseParameters) {
-  const auto root = manifestEnvelope(text, source);
-  requireBenchmark(root, BenchmarkMetadata<Benchmark>::id, source);
-  auto benchmark = parseParameters(root.at("parameters"), source);
-  if (root.dump() != manifestJSON(benchmark).dump()) {
-    fail(source, "$",
-         "does not match its resolved benchmark instance and case ID");
+[[nodiscard]] mlir::FailureOr<Benchmark>
+parseBenchmark(const std::string_view text, const std::string_view source,
+               const ParseParameters& parseParameters, const bool manifest) {
+  auto parsed = envelope(text, source, manifest);
+  if (mlir::failed(parsed)) {
+    return mlir::failure();
+  }
+  const auto& root = (*parsed);
+  if (mlir::failed(
+          requireBenchmark(root, BenchmarkMetadata<Benchmark>::id, source))) {
+    return mlir::failure();
+  }
+  auto benchmark = parseParameters(root["parameters"], source);
+  if (mlir::failed(benchmark)) {
+    return mlir::failure();
+  }
+  if (manifest) {
+    const auto expected = manifestJSON((*benchmark));
+    if (root.dump() != expected.dump()) {
+      return fail(source, "$",
+                  "does not match its resolved benchmark instance and case ID");
+    }
   }
   return benchmark;
 }
@@ -1302,20 +1597,29 @@ template <class Benchmark>
 }
 
 template <class Benchmark>
-[[nodiscard]] std::string evaluateBenchmark(const Benchmark& benchmark,
-                                            const Counts& counts) {
+[[nodiscard]] mlir::FailureOr<std::string>
+evaluateBenchmark(const Benchmark& benchmark, const Counts& counts) {
+  auto evaluation = benchmark.evaluate(counts);
+  if (mlir::failed(evaluation)) {
+    return mlir::failure();
+  }
+  const auto id = caseId(benchmark);
+  /// Evaluation validates the total before this sum.
   const auto shots = std::accumulate(
       counts.begin(), counts.end(), size_t{0},
       [](const size_t sum, const auto& item) { return sum + item.second; });
-  return evaluationToJSON(caseId(benchmark), shots, benchmark.evaluate(counts));
+  return evaluationToJSON(id, shots, (*evaluation));
 }
 
 #define MQT_BENCHMARK_FAMILY(TYPE, STEM, ID, DEFINITION_VERSION)               \
-  std::string evaluate##TYPE(const std::string_view manifest,                  \
-                             const std::string_view source,                    \
-                             const Counts& counts) {                           \
-    return evaluateBenchmark(STEM##FromManifestJSON(manifest, source),         \
-                             counts);                                          \
+  mlir::FailureOr<std::string> evaluate##TYPE(const std::string_view manifest, \
+                                              const std::string_view source,   \
+                                              const Counts& counts) {          \
+    auto result = STEM##FromManifestJSON(manifest, source);                    \
+    if (mlir::failed(result)) {                                                \
+      return mlir::failure();                                                  \
+    }                                                                          \
+    return evaluateBenchmark((*result), counts);                               \
   }
 #include "bench/BenchmarkFamilies.inc"
 
@@ -1331,17 +1635,24 @@ template <class Benchmark>
 
 } // namespace
 
-std::string
+mlir::FailureOr<std::string>
 benchmarkIdFromInstanceSpecificationJSON(const std::string_view json,
                                          const std::string_view source) {
-  return instanceSpecificationEnvelope(json, source)
-      .at("benchmark")
-      .get<std::string>();
+  auto result = envelope(json, source, false);
+  if (mlir::failed(result)) {
+    return mlir::failure();
+  }
+  return (*result)["benchmark"].get<std::string>();
 }
 
-std::string benchmarkIdFromManifestJSON(const std::string_view json,
-                                        const std::string_view source) {
-  return manifestEnvelope(json, source).at("benchmark").get<std::string>();
+mlir::FailureOr<std::string>
+benchmarkIdFromManifestJSON(const std::string_view json,
+                            const std::string_view source) {
+  auto result = envelope(json, source, true);
+  if (mlir::failed(result)) {
+    return mlir::failure();
+  }
+  return (*result)["benchmark"].get<std::string>();
 }
 
 std::string listBenchmarksJSON() {
@@ -1359,26 +1670,27 @@ std::string listBenchmarksJSON() {
       .dump();
 }
 
-std::string describeBenchmarkJSON(const std::string_view benchmark) {
+mlir::FailureOr<std::string>
+describeBenchmarkJSON(const std::string_view benchmark) {
   if (const auto* entry = findBenchmark(benchmark)) {
     return entry->instanceSpecificationSchema().dump();
   }
-  throw std::invalid_argument("unsupported benchmark '" +
-                              std::string(benchmark) + "'");
+  return ::mqt::emitError("unsupported benchmark '" + std::string(benchmark) +
+                              "'",
+                          ::mqt::ErrorCategory::InvalidArgument);
 }
 
 #define MQT_BENCHMARK_FAMILY(TYPE, STEM, ID, DEFINITION_VERSION)               \
-  TYPE STEM##FromInstanceSpecificationJSON(const std::string_view json,        \
-                                           const std::string_view source) {    \
-    return parseInstanceSpecification<TYPE>(json, source,                      \
-                                            parse##TYPE##Parameters);          \
+  mlir::FailureOr<TYPE> STEM##FromInstanceSpecificationJSON(                   \
+      const std::string_view json, const std::string_view source) {            \
+    return parseBenchmark<TYPE>(json, source, parse##TYPE##Parameters, false); \
   }                                                                            \
   std::string toInstanceSpecificationJSON(const TYPE& benchmark) {             \
     return instanceSpecificationJSON(benchmark).dump();                        \
   }                                                                            \
-  TYPE STEM##FromManifestJSON(const std::string_view json,                     \
-                              const std::string_view source) {                 \
-    return parseManifest<TYPE>(json, source, parse##TYPE##Parameters);         \
+  mlir::FailureOr<TYPE> STEM##FromManifestJSON(                                \
+      const std::string_view json, const std::string_view source) {            \
+    return parseBenchmark<TYPE>(json, source, parse##TYPE##Parameters, true);  \
   }                                                                            \
   std::string toManifestJSON(const TYPE& benchmark) {                          \
     return manifestJSON(benchmark).dump();                                     \
@@ -1388,16 +1700,33 @@ std::string describeBenchmarkJSON(const std::string_view benchmark) {
   }
 #include "bench/BenchmarkFamilies.inc"
 
-Counts countsFromJSON(const std::string_view json,
-                      const std::string_view source) {
-  const auto root = parseJSON(json, source);
-  requireObject(root, source, "$");
-  rejectUnknownKeys(root, {"schema_version", "counts"}, source, "$");
-  requireSchemaVersion(root, source);
-  const auto& values = required(root, "counts", source, "$");
-  requireObject(values, source, "$/counts");
+mlir::FailureOr<Counts> countsFromJSON(const std::string_view json,
+                                       const std::string_view source) {
+  auto parsed = parseJSON(json, source);
+  if (mlir::failed(parsed)) {
+    return mlir::failure();
+  }
+  const auto& root = (*parsed);
+  if (mlir::failed(requireObject(root, source, "$"))) {
+    return mlir::failure();
+  }
+  if (mlir::failed(
+          rejectUnknownKeys(root, {"schema_version", "counts"}, source, "$"))) {
+    return mlir::failure();
+  }
+  if (mlir::failed(requireSchemaVersion(root, source))) {
+    return mlir::failure();
+  }
+  auto field = required(root, "counts", source, "$");
+  if (mlir::failed(field)) {
+    return mlir::failure();
+  }
+  const auto& values = *(*field);
+  if (mlir::failed(requireObject(values, source, "$/counts"))) {
+    return mlir::failure();
+  }
   if (values.empty()) {
-    fail(source, "$/counts", "must not be empty");
+    return fail(source, "$/counts", "must not be empty");
   }
 
   Counts result;
@@ -1406,15 +1735,19 @@ Counts countsFromJSON(const std::string_view json,
     if (outcome.empty() || !std::ranges::all_of(outcome, [](const char bit) {
           return bit == '0' || bit == '1';
         })) {
-      fail(source, "$/counts", "outcomes must be non-empty bitstrings");
+      return fail(source, "$/counts", "outcomes must be non-empty bitstrings");
     }
     const auto pointer = "$/counts/" + outcome;
-    const auto count = sizeValue(countJSON, source, pointer);
+    auto countResult = sizeValue(countJSON, source, pointer);
+    if (mlir::failed(countResult)) {
+      return mlir::failure();
+    }
+    const auto count = (*countResult);
     if (count == 0) {
-      fail(source, pointer, "must be positive");
+      return fail(source, pointer, "must be positive");
     }
     if (count > std::numeric_limits<size_t>::max() - shots) {
-      fail(source, "$/counts", "total shot count exceeds size_t");
+      return fail(source, "$/counts", "total shot count exceeds size_t");
     }
     shots += count;
     result.emplace(outcome, count);
@@ -1422,22 +1755,32 @@ Counts countsFromJSON(const std::string_view json,
   return result;
 }
 
-std::string evaluateJSON(const std::string_view manifest,
-                         const std::string_view counts,
-                         const std::string_view manifestSource,
-                         const std::string_view countsSource) {
-  const auto id = benchmarkIdFromManifestJSON(manifest, manifestSource);
-  const auto parsedCounts = countsFromJSON(counts, countsSource);
-  return findBenchmark(id)->evaluate(manifest, manifestSource, parsedCounts);
+mlir::FailureOr<std::string> evaluateJSON(const std::string_view manifest,
+                                          const std::string_view counts,
+                                          const std::string_view manifestSource,
+                                          const std::string_view countsSource) {
+  auto id = benchmarkIdFromManifestJSON(manifest, manifestSource);
+  if (mlir::failed(id)) {
+    return mlir::failure();
+  }
+  auto parsedCounts = countsFromJSON(counts, countsSource);
+  if (mlir::failed(parsedCounts)) {
+    return mlir::failure();
+  }
+  return findBenchmark((*id))->evaluate(manifest, manifestSource,
+                                        (*parsedCounts));
 }
 
-std::string evaluationToJSON(const std::string_view caseIdValue,
-                             const size_t shots, const Evaluation& evaluation) {
+mlir::FailureOr<std::string>
+evaluationToJSON(const std::string_view caseIdValue, const size_t shots,
+                 const Evaluation& evaluation) {
   if (!validCaseId(caseIdValue)) {
-    throw std::invalid_argument("case ID must be a full lowercase SHA-256 ID");
+    return ::mqt::emitError("case ID must be a full lowercase SHA-256 ID",
+                            ::mqt::ErrorCategory::InvalidArgument);
   }
   if (shots == 0) {
-    throw std::invalid_argument("evaluation requires at least one shot");
+    return ::mqt::emitError("evaluation requires at least one shot",
+                            ::mqt::ErrorCategory::InvalidArgument);
   }
   const auto validMetric = [](const double value) {
     return std::isfinite(value) && value >= 0. && value <= 1.;
@@ -1446,8 +1789,8 @@ std::string evaluationToJSON(const std::string_view caseIdValue,
       !validMetric(evaluation.squaredHellingerFidelity) ||
       (evaluation.successProbability &&
        !validMetric(*evaluation.successProbability))) {
-    throw std::invalid_argument(
-        "evaluation metrics must be finite and in [0, 1]");
+    return ::mqt::emitError("evaluation metrics must be finite and in [0, 1]",
+                            ::mqt::ErrorCategory::InvalidArgument);
   }
 
   Json success = nullptr;
@@ -1473,26 +1816,30 @@ std::string evaluationToJSON(const std::string_view caseIdValue,
       .dump();
 }
 
-std::string evaluationToJSON(std::string_view caseIdValue, size_t shots,
-                             const ShorEvaluation& evaluation) {
+mlir::FailureOr<std::string>
+evaluationToJSON(std::string_view caseIdValue, size_t shots,
+                 const ShorEvaluation& evaluation) {
   if (!validCaseId(caseIdValue) || shots == 0) {
-    throw std::invalid_argument(
-        "evaluation requires a SHA-256 case ID and at least one shot");
+    return ::mqt::emitError(
+        "evaluation requires a SHA-256 case ID and at least one shot",
+        ::mqt::ErrorCategory::InvalidArgument);
   }
   if (!std::isfinite(evaluation.successProbability) ||
       evaluation.successProbability < 0. ||
       evaluation.successProbability > 1. ||
       evaluation.factors.has_value() != (evaluation.successProbability > 0.)) {
-    throw std::invalid_argument("factor verification requires a success "
-                                "fraction in [0, 1] and factors on success");
+    return ::mqt::emitError("factor verification requires a success "
+                            "fraction in [0, 1] and factors on success",
+                            ::mqt::ErrorCategory::InvalidArgument);
   }
   Json factors = nullptr;
   if (evaluation.factors) {
     const auto [first, second] = *evaluation.factors;
     if (first < 2 || first > second ||
         second > ShorOptions::MAX_NUMBER / first) {
-      throw std::invalid_argument("factors must form a sorted nontrivial pair "
-                                  "within the supported range");
+      return ::mqt::emitError("factors must form a sorted nontrivial pair "
+                              "within the supported range",
+                              ::mqt::ErrorCategory::InvalidArgument);
     }
     factors = Json::array({first, second});
   }
@@ -1504,6 +1851,31 @@ std::string evaluationToJSON(std::string_view caseIdValue, size_t shots,
       {"shots", shots},
   }
       .dump();
+}
+
+mlir::FailureOr<ParsedBenchmark>
+parseInstanceSpecificationJSON(const std::string_view json,
+                               const std::string_view source) {
+  auto id = benchmarkIdFromInstanceSpecificationJSON(json, source);
+  if (mlir::failed(id)) {
+    return mlir::failure();
+  }
+  auto instance = findBenchmark((*id))->parse(json, source);
+  if (mlir::failed(instance)) {
+    return mlir::failure();
+  }
+  return std::visit(
+      [&](auto&& benchmark) {
+        auto caseIdValue = caseId(benchmark);
+        auto manifest = toManifestJSON(benchmark);
+        return ParsedBenchmark{
+            .instance = std::forward<decltype(benchmark)>(benchmark),
+            .benchmarkId = (*std::move(id)),
+            .caseId = std::move(caseIdValue),
+            .manifestJSON = std::move(manifest),
+        };
+      },
+      (*std::move(instance)));
 }
 
 } // namespace mqt::bench

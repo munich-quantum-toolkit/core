@@ -18,23 +18,34 @@ Save this as `main.cpp`:
 ```cpp
 #include "dd/Package.hpp"
 #include "dd/StateGeneration.hpp"
+#include "mlir/Support/LogicalResult.h"
 
 #include <iostream>
 
 int main() {
-  dd::Package package(2);
-  const auto state = dd::makeGHZState(2, package);
+  auto created = dd::Package::create(2);
+  if (mlir::failed(created)) {
+    return 1;
+  }
+  auto& package = **created;
+  auto generated = dd::makeGHZState(2, package);
+  if (mlir::failed(generated)) {
+    return 1;
+  }
+  const auto state = *generated;
   for (const auto amplitude : state.getVector()) {
     std::cout << amplitude << '\n';
   }
   package.decRef(state);
+  return 0;
 }
 ```
 
-The DD package owns its nodes. The state returned by `makeGHZState` holds a
-reference until `decRef` releases it. Keep the package alive while using the
-state. Converting a DD to a dense vector takes space exponential in the number
-of qubits; this example has only four amplitudes.
+The DD package owns its nodes; keep it alive while using the state. Release each
+owned reference once with `decRef`. A dense vector takes space exponential in
+the qubit count; this example has only four amplitudes. Native single-qubit
+measurement requires the measured qubit to be present in the state. Python
+checks both reference ownership and qubit bounds at the binding boundary.
 
 Save the following as `CMakeLists.txt`:
 
@@ -93,6 +104,44 @@ with TemporaryDirectory() as directory:
     assert len(amplitudes) == len(expected)
     assert all(abs(actual - ideal) < 1e-6 for actual, ideal in zip(amplitudes, expected))
 ```
+
+## Handle native errors
+
+Fallible operations return `mlir::FailureOr<T>` or `mlir::LogicalResult` for
+status alone. Check `mlir::failed(result)` before dereferencing a value.
+Infallible operations return ordinary values or `void`. An `optional<T>` can
+represent successful absence, such as an unsupported optional QDMI property.
+Borrowed results use pointers; keep their owner alive.
+
+When migrating from throwing native APIs, replace `try`/`catch` with a result
+check and use `create(...)` for fallible construction. Python retains its
+exception categories: `ValueError` for invalid arguments, `IndexError` for range
+errors, and `RuntimeError` for unsupported QDMI operations.
+
+Diagnostics carry the message, severity, error category, and original QDMI
+status when applicable. Install a handler **before** calling the operation:
+
+```cpp
+#include "support/Diagnostics.hpp"
+
+mqt::ScopedDiagnosticHandler handler([](const mqt::Diagnostic& diagnostic) {
+  std::cerr << diagnostic.message << '\n';
+  return mlir::success();
+});
+auto package = dd::Package::create(2);
+if (mlir::failed(package)) {
+  return 1;
+}
+```
+
+Handlers run synchronously on their installing thread, newest first, and must
+not throw. Success consumes a diagnostic; failure forwards it to the previous
+handler. Unhandled diagnostics go to stderr. Install handlers on each worker
+thread. Diagnostics emitted inside a handler start at the previous handler.
+
+Allocation exhaustion and unexpected dependency exceptions are not recoverable
+native API errors. See [QIR runtime failures](qir/index.md#runtime-failures) for
+the direct-execution contract.
 
 ## Extend the compiler or QIR runtime
 

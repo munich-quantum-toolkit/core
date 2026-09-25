@@ -17,48 +17,28 @@
 #include "dd/Package.hpp"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 
+#include "mlir/Support/LogicalResult.h"
+
 #include "llvm/ADT/ArrayRef.h"
 
+#include <array>
 #include <cstddef>
 #include <span>
-#include <stdexcept>
+#include <tuple>
 
 namespace mlir::qco {
 
-/// Obtain the canonical matrix for a standard QCO gate operation.
-///
-/// Fixed gates provide a static `getUnitaryMatrix()` factory. Parameterized
-/// gates provide a static `unitaryMatrix(...)` factory with up to three
-/// parameters. This helper presents both forms through one runtime-sized
-/// parameter view for the QCO interpreter and QIR runtime.
-///
-/// @tparam GateOp Standard QCO gate operation type.
-/// @param parameters Concrete gate parameters in operation order.
-/// @return The operation's canonical QCO matrix type.
-/// @throws std::invalid_argument If the parameter count does not match the
-/// gate.
-template <typename GateOp>
-[[nodiscard]] auto getStandardGateMatrix(llvm::ArrayRef<double> parameters) {
-  if constexpr (requires { GateOp::unitaryMatrix(0., 0., 0.); }) {
-    if (parameters.size() != 3) {
-      throw std::invalid_argument("Expected three gate parameters");
-    }
-    return GateOp::unitaryMatrix(parameters[0], parameters[1], parameters[2]);
-  } else if constexpr (requires { GateOp::unitaryMatrix(0., 0.); }) {
-    if (parameters.size() != 2) {
-      throw std::invalid_argument("Expected two gate parameters");
-    }
-    return GateOp::unitaryMatrix(parameters[0], parameters[1]);
-  } else if constexpr (requires { GateOp::unitaryMatrix(0.); }) {
-    if (parameters.size() != 1) {
-      throw std::invalid_argument("Expected one gate parameter");
-    }
-    return GateOp::unitaryMatrix(parameters[0]);
-  } else {
-    if (!parameters.empty()) {
-      throw std::invalid_argument("Expected no gate parameters");
-    }
+/// Build a standard gate matrix from a statically sized parameter list.
+/// The gate factory checks arity at compile time.
+template <typename GateOp, size_t N>
+[[nodiscard]] auto
+getStandardGateMatrix(const std::array<double, N>& parameters) {
+  if constexpr (N == 0) {
     return GateOp::getUnitaryMatrix();
+  } else {
+    return std::apply(
+        [](auto... values) { return GateOp::unitaryMatrix(values...); },
+        parameters);
   }
 }
 
@@ -72,13 +52,13 @@ template <typename GateOp>
 /// @pre `numQubits <= package.qubits()`. Every target and control is smaller
 /// than `numQubits`; targets are unique and disjoint from controls.
 /// @return A matrix decision diagram for the embedded operation.
-/// @throws std::invalid_argument If the matrix dimension and target count
+/// Returns an error if the matrix dimension and target count
 /// differ or sparse controls accompany a matrix with more than three targets.
 [[nodiscard]] auto makeGateDD(dd::Package& package,
                               std::span<const Complex> matrix, size_t numQubits,
                               llvm::ArrayRef<dd::Qubit> targets,
                               const dd::Controls& controls = {})
-    -> dd::MatrixDD;
+    -> FailureOr<dd::MatrixDD>;
 
 template <typename Matrix>
   requires requires(const Matrix& matrix) { matrix.entries(); }
@@ -86,7 +66,7 @@ template <typename Matrix>
                               const size_t numQubits,
                               const llvm::ArrayRef<dd::Qubit> targets,
                               const dd::Controls& controls = {})
-    -> dd::MatrixDD {
+    -> FailureOr<dd::MatrixDD> {
   return makeGateDD(package, matrix.entries(), numQubits, targets, controls);
 }
 

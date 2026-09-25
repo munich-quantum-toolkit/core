@@ -91,7 +91,7 @@ protected:
 
 } // namespace
 
-static LogicalResult runQCOToQCConversion(ModuleOp moduleOp) {
+static mlir::LogicalResult runQCOToQCConversion(ModuleOp moduleOp) {
   PassManager pm(moduleOp.getContext());
   pm.addPass(createQCOToQC());
   return pm.run(moduleOp);
@@ -139,10 +139,11 @@ TEST(QCOToQCRegressionTest, RejectsUnsupportedDynamicTensorOwnership) {
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
     ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
     std::string diagnostics;
-    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-      diagnostics += diagnostic.str();
-      return success();
-    });
+    mlir::ScopedDiagnosticHandler handler(&context,
+                                          [&](mlir::Diagnostic& diagnostic) {
+                                            diagnostics += diagnostic.str();
+                                            return success();
+                                          });
     EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
     EXPECT_NE(diagnostics.find("QCO-to-QC requires"), std::string::npos);
     EXPECT_TRUE(succeeded(verify(*moduleOp)));
@@ -165,10 +166,11 @@ TEST(QCOToQCRegressionTest, RejectsBorrowedTensorConsumption) {
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
   std::string diagnostics;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    diagnostics += diagnostic.str();
-    return success();
-  });
+  mlir::ScopedDiagnosticHandler handler(&context,
+                                        [&](mlir::Diagnostic& diagnostic) {
+                                          diagnostics += diagnostic.str();
+                                          return success();
+                                        });
   EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
   EXPECT_NE(
       diagnostics.find(
@@ -243,10 +245,11 @@ TEST(QCOToQCRegressionTest, RejectsBranchWirePermutation) {
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
   std::string diagnostics;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    diagnostics += diagnostic.str();
-    return success();
-  });
+  mlir::ScopedDiagnosticHandler handler(&context,
+                                        [&](mlir::Diagnostic& diagnostic) {
+                                          diagnostics += diagnostic.str();
+                                          return success();
+                                        });
   EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
   EXPECT_NE(diagnostics.find("positional quantum state correspondence"),
             std::string::npos);
@@ -282,10 +285,11 @@ TEST(QCOToQCRegressionTest, RejectsLoopWirePermutation) {
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
   std::string diagnostics;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    diagnostics += diagnostic.str();
-    return success();
-  });
+  mlir::ScopedDiagnosticHandler handler(&context,
+                                        [&](mlir::Diagnostic& diagnostic) {
+                                          diagnostics += diagnostic.str();
+                                          return success();
+                                        });
   EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
   EXPECT_NE(diagnostics.find("positional quantum state correspondence"),
             std::string::npos);
@@ -322,10 +326,11 @@ TEST(QCOToQCRegressionTest, RejectsChangingQuantumWhileArity) {
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
   std::string diagnostics;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    diagnostics += diagnostic.str();
-    return success();
-  });
+  mlir::ScopedDiagnosticHandler handler(&context,
+                                        [&](mlir::Diagnostic& diagnostic) {
+                                          diagnostics += diagnostic.str();
+                                          return success();
+                                        });
   EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
   EXPECT_NE(diagnostics.find("positional quantum state correspondence"),
             std::string::npos);
@@ -482,11 +487,12 @@ module {
     ASSERT_TRUE(moduleOp);
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
     bool sawExpectedDiagnostic = false;
-    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-      sawExpectedDiagnostic |=
-          StringRef(diagnostic.str()).contains("cannot preserve");
-      return success();
-    });
+    mlir::ScopedDiagnosticHandler handler(
+        &context, [&](mlir::Diagnostic& diagnostic) {
+          sawExpectedDiagnostic |=
+              StringRef(diagnostic.str()).contains("cannot preserve");
+          return success();
+        });
     EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
     EXPECT_TRUE(sawExpectedDiagnostic);
   }
@@ -512,11 +518,12 @@ TEST(QCOToQCRegressionTest, RejectsUnrepresentableFunctionResultAttributes) {
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    sawExpectedDiagnostic |=
-        StringRef(diagnostic.str()).contains("cannot preserve attributes");
-    return success();
-  });
+  mlir::ScopedDiagnosticHandler handler(
+      &context, [&](mlir::Diagnostic& diagnostic) {
+        sawExpectedDiagnostic |=
+            StringRef(diagnostic.str()).contains("cannot preserve attributes");
+        return success();
+      });
   EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
   EXPECT_TRUE(sawExpectedDiagnostic);
 }
@@ -540,12 +547,14 @@ module {
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    sawExpectedDiagnostic |= StringRef(diagnostic.str())
-                                 .contains("must return its qubit arguments "
-                                           "positionally");
-    return success();
-  });
+  mlir::ScopedDiagnosticHandler handler(
+      &context, [&](mlir::Diagnostic& diagnostic) {
+        sawExpectedDiagnostic |=
+            StringRef(diagnostic.str())
+                .contains("must return its qubit arguments "
+                          "positionally");
+        return success();
+      });
   EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
   EXPECT_TRUE(sawExpectedDiagnostic);
 }
@@ -568,10 +577,11 @@ TEST(QCOToQCRegressionTest, RejectsMissingPositionalQubitResults) {
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
   std::string diagnosticText;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    diagnosticText += diagnostic.str();
-    return success();
-  });
+  mlir::ScopedDiagnosticHandler handler(&context,
+                                        [&](mlir::Diagnostic& diagnostic) {
+                                          diagnosticText += diagnostic.str();
+                                          return success();
+                                        });
   EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
   EXPECT_NE(
       diagnosticText.find(
@@ -1669,10 +1679,11 @@ TEST(QCOToQCRegressionTest, RejectsPermutationsInControlFlowRegions) {
     ASSERT_TRUE(moduleOp);
     ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
     std::string diagnostics;
-    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-      diagnostics += diagnostic.str();
-      return success();
-    });
+    mlir::ScopedDiagnosticHandler handler(&context,
+                                          [&](mlir::Diagnostic& diagnostic) {
+                                            diagnostics += diagnostic.str();
+                                            return success();
+                                          });
     EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
     EXPECT_NE(diagnostics.find("positional quantum state correspondence"),
               std::string::npos);

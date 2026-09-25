@@ -15,8 +15,12 @@ if(NOT TARGET ${TARGET_NAME})
     ${TARGET_NAME} PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/.."
                               RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/..")
   target_compile_definitions(${TARGET_NAME} PRIVATE QDMI_driver_EXPORTS)
+  mqt_target_disable_exceptions(${TARGET_NAME})
+  mqt_source_enable_exceptions(DeviceRegistry.cpp)
+  mqt_source_enable_exceptions(CAPI.cpp)
 
-  target_sources(${TARGET_NAME} PRIVATE DeviceRegistry.cpp Driver.cpp)
+  target_sources(${TARGET_NAME} PRIVATE CAPI.cpp DeviceRegistry.cpp Driver.cpp)
+  target_include_directories(${TARGET_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/src/common)
 
   target_sources(
     ${TARGET_NAME}

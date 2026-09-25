@@ -28,6 +28,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <tuple>
 
 using namespace mlir;
 using namespace mlir::qc;
@@ -74,8 +75,8 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
 
     CtrlOp::create(rewriter, op.getLoc(), controls, targets,
                    [&](ValueRange mergedTargets) {
-                     mqt::inlineBodyReturningYields(*innerCtrlOp.getBody(),
-                                                    mergedTargets, rewriter);
+                     std::ignore = mqt::inlineBodyReturningYields(
+                         *innerCtrlOp.getBody(), mergedTargets, rewriter);
                    });
     rewriter.eraseOp(op);
     return success();

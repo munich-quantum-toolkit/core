@@ -136,8 +136,8 @@ public:
     raw_indented_ostream bodyOutput(bodyStream);
     output = &bodyOutput;
 
-    if (failed(emitDeclarations()) ||
-        failed(emitBlock(function.getBody().front()))) {
+    emitDeclarations();
+    if (failed(emitBlock(function.getBody().front()))) {
       return failure();
     }
     if (outputs.empty()) {
@@ -492,7 +492,7 @@ private:
     return {};
   }
 
-  [[nodiscard]] LogicalResult emitDeclarations() {
+  void emitDeclarations() {
     for (const auto& result : outputs) {
       *output << "output " << result.kind << ' ' << result.name << ";\n";
     }
@@ -526,7 +526,6 @@ private:
       }
     }
     *output << '\n';
-    return success();
   }
 
   [[nodiscard]] LogicalResult emitGateDefinition(func::FuncOp gate) {
@@ -1699,8 +1698,7 @@ private:
                                                      ValueRange operands) {
     auto callee = resolveGateCallee(operation);
     if (callee == nullptr) {
-      fail(operation, "call does not match an exportable gate function");
-      return failure();
+      return fail(operation, "call does not match an exportable gate function");
     }
 
     GateCall call;
