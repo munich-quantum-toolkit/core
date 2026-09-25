@@ -1993,9 +1993,6 @@ private:
     auto start = emitExpression(builder, loop.start, {});
     auto step = emitExpression(builder, loop.step, {});
     auto stop = emitExpression(builder, loop.stop, {});
-    if (!start || !step || !stop) {
-      return {};
-    }
     return {start, step, stop};
   }
 

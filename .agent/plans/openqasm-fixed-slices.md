@@ -1,6 +1,6 @@
 # OpenQASM slices with known lengths
 
-Status: in progress. The final complexity review remains.
+Status: complete.
 
 ## Scope and decisions
 
@@ -35,10 +35,6 @@ arguments; pipeline boundaries still verify linearity. The jeff register
 read/write conversion reads raw operands after region conversion remaps their
 types, matching the existing scalar load/store conversion.
 
-## Work remaining
-
-- Complete the complexity review of both PR diffs.
-
 ## Validation
 
 The release build passes all 920 tests across the OpenQASM (206), compiler
@@ -48,5 +44,4 @@ indices, integer-limit ranges, and OpenQASM/jeff round trips.
 
 CLI checks compile static, affine quantum, and affine classical selections to
 QCO, QIR, jeff, and OpenQASM, then reimport the exported OpenQASM to QIR.
-Repository lint passes. Full-file C++ lint covers the complete PR diff; the
-corrected emitter test include is checked in a focused follow-up.
+Repository lint and full-file C++ lint pass.
