@@ -86,22 +86,22 @@ class Job:
     def cancel(self) -> None:
         """Cancels the job."""
 
-    def get_shots(self) -> list[str]:
+    def get_shots(self, program_index: int = 0) -> list[str]:
         """Returns the raw shot results from the job."""
 
-    def get_counts(self) -> dict[str, int]:
+    def get_counts(self, program_index: int = 0) -> dict[str, int]:
         """Returns the measurement counts from the job."""
 
-    def get_dense_statevector(self) -> list[complex]:
+    def get_dense_statevector(self, program_index: int = 0) -> list[complex]:
         """Returns the dense statevector from the job (typically only available from simulator devices)."""
 
-    def get_dense_probabilities(self) -> list[float]:
+    def get_dense_probabilities(self, program_index: int = 0) -> list[float]:
         """Returns the dense probabilities from the job (typically only available from simulator devices)."""
 
-    def get_sparse_statevector(self) -> dict[str, complex]:
+    def get_sparse_statevector(self, program_index: int = 0) -> dict[str, complex]:
         """Returns the sparse statevector from the job (typically only available from simulator devices)."""
 
-    def get_sparse_probabilities(self) -> dict[str, float]:
+    def get_sparse_probabilities(self, program_index: int = 0) -> dict[str, float]:
         """Returns the sparse probabilities from the job (typically only available from simulator devices)."""
 
     @overload
@@ -163,6 +163,17 @@ class Job:
         """The exact bytes of the submitted program."""
 
     @property
+    def num_programs(self) -> int:
+        """The number of programs in input order."""
+
+    @property
+    def program_statuses(self) -> list[Job.Status] | None:
+        """Individual outcomes, or None when unsupported."""
+
+    def get_results(self, result: int, program_index: int = 0) -> bytes:
+        """Returns an indexed result as exact bytes."""
+
+    @property
     def num_shots(self) -> int:
         """The number of shots."""
 
@@ -208,8 +219,6 @@ class ProgramFormat(enum.Enum):
     QPY = 7
 
     IQM_JSON = 8
-
-    BATCH_JOB = 9
 
     CUSTOM1 = 999999995
 
@@ -382,6 +391,62 @@ class Device:
         custom5: str | bool | float | None = None,
     ) -> Job:
         """Submits an exact byte payload to the device."""
+
+    @overload
+    def submit_programs(
+        self,
+        programs: Sequence[str],
+        program_format: ProgramFormat,
+        num_shots: int | None = None,
+        *,
+        custom1: str | bool | float | None = None,
+        custom2: str | bool | float | None = None,
+        custom3: str | bool | float | None = None,
+        custom4: str | bool | float | None = None,
+        custom5: str | bool | float | None = None,
+    ) -> Job: ...
+    @overload
+    def submit_programs(
+        self,
+        programs: Sequence[bytes],
+        program_format: ProgramFormat,
+        num_shots: int | None = None,
+        *,
+        custom1: str | bool | float | None = None,
+        custom2: str | bool | float | None = None,
+        custom3: str | bool | float | None = None,
+        custom4: str | bool | float | None = None,
+        custom5: str | bool | float | None = None,
+    ) -> Job:
+        """Submits an ordered program list with common parameters."""
+
+    @overload
+    def try_submit_programs(
+        self,
+        programs: Sequence[str],
+        program_format: ProgramFormat,
+        num_shots: int | None = None,
+        *,
+        custom1: str | bool | float | None = None,
+        custom2: str | bool | float | None = None,
+        custom3: str | bool | float | None = None,
+        custom4: str | bool | float | None = None,
+        custom5: str | bool | float | None = None,
+    ) -> Job | None: ...
+    @overload
+    def try_submit_programs(
+        self,
+        programs: Sequence[bytes],
+        program_format: ProgramFormat,
+        num_shots: int | None = None,
+        *,
+        custom1: str | bool | float | None = None,
+        custom2: str | bool | float | None = None,
+        custom3: str | bool | float | None = None,
+        custom4: str | bool | float | None = None,
+        custom5: str | bool | float | None = None,
+    ) -> Job | None:
+        """Returns None only when the device rejects this list before submission."""
 
     def retrieve_job_by_id(self, job_id: str) -> Job:
         """Retrieves an existing job by its device-provided ID."""

@@ -35,6 +35,7 @@
 #include <memory>
 #include <optional>
 #include <random>
+#include <span>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -614,7 +615,7 @@ TEST_P(DriverJobTest, JobQueryProperty) {
   }
   size_t numShots = 1;
   result = QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_SHOTSNUM,
-                                  sizeof(QDMI_Program_Format), &numShots);
+                                  sizeof(numShots), &numShots);
   EXPECT_THAT(result, testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
   if (result == QDMI_SUCCESS) {
     numShots = 0;
@@ -1611,19 +1612,19 @@ TEST(DeviceRegistrationTest, RetrievesExistingJobs) {
 
   const auto retrievedJob = device.retrieveJobById("session-job");
   EXPECT_EQ(retrievedJob.getId(), "session-job");
-  EXPECT_EQ(retrievedJob.getProgramsNum(), 2U);
+  EXPECT_EQ(retrievedJob.getNumPrograms(), 2U);
   EXPECT_EQ(retrievedJob.getNumShots(), 2U);
   EXPECT_EQ(retrievedJob.getShots(), (std::vector<std::string>{"10", "01"}));
-  EXPECT_EQ(retrievedJob.getResults(0U, QDMI_JOB_RESULT_CUSTOM5),
+  EXPECT_EQ(retrievedJob.getResults(QDMI_JOB_RESULT_CUSTOM5, 0U),
             (std::vector<std::byte>{std::byte{'x'}, std::byte{0},
                                     std::byte{'y'}, std::byte{0}}));
   EXPECT_EQ(retrievedJob.getShots(1U), (std::vector<std::string>{"11", "00"}));
-  EXPECT_EQ(retrievedJob.getResults(1U, QDMI_JOB_RESULT_CUSTOM5),
+  EXPECT_EQ(retrievedJob.getResults(QDMI_JOB_RESULT_CUSTOM5, 1U),
             (std::vector<std::byte>{std::byte{'z'}, std::byte{0}}));
-  EXPECT_EQ(retrievedJob.getResults(1U, QDMI_JOB_RESULT_CUSTOM5),
-            retrievedJob.getResults(1U, QDMI_JOB_RESULT_CUSTOM5));
+  EXPECT_EQ(retrievedJob.getResults(QDMI_JOB_RESULT_CUSTOM5, 1U),
+            retrievedJob.getResults(QDMI_JOB_RESULT_CUSTOM5, 1U));
   EXPECT_THROW(std::ignore =
-                   retrievedJob.getResults(2U, QDMI_JOB_RESULT_CUSTOM5),
+                   retrievedJob.getResults(QDMI_JOB_RESULT_CUSTOM5, 2U),
                std::out_of_range);
 }
 
@@ -1643,11 +1644,15 @@ TEST(DeviceRegistrationTest, SubmitsOrderedBinaryProgramsAtomically) {
       },
   };
 
+  const std::array<std::span<const std::byte>, 2> views{
+      programs[0],
+      programs[1],
+  };
   const auto job =
-      device.submitPrograms(programs, QDMI_PROGRAM_FORMAT_QIRBASEMODULE, 3U);
-  EXPECT_EQ(job.getProgramsNum(), programs.size());
-  EXPECT_EQ(job.getResults(0U, QDMI_JOB_RESULT_CUSTOM5), programs[0]);
-  EXPECT_EQ(job.getResults(1U, QDMI_JOB_RESULT_CUSTOM5), programs[1]);
+      device.submitPrograms(views, QDMI_PROGRAM_FORMAT_QIRBASEMODULE, 3U);
+  EXPECT_EQ(job.getNumPrograms(), programs.size());
+  EXPECT_EQ(job.getResults(QDMI_JOB_RESULT_CUSTOM5, 0U), programs[0]);
+  EXPECT_EQ(job.getResults(QDMI_JOB_RESULT_CUSTOM5, 1U), programs[1]);
 }
 
 TEST(DeviceRegistrationTest, SubmitsOrderedTextProgramsAtomically) {
@@ -1657,9 +1662,9 @@ TEST(DeviceRegistrationTest, SubmitsOrderedTextProgramsAtomically) {
 
   const auto job =
       device.submitPrograms(programs, QDMI_PROGRAM_FORMAT_QASM3, 3U);
-  ASSERT_EQ(job.getProgramsNum(), programs.size());
+  ASSERT_EQ(job.getNumPrograms(), programs.size());
   for (size_t index = 0U; index < programs.size(); ++index) {
-    const auto output = job.getResults(index, QDMI_JOB_RESULT_CUSTOM5);
+    const auto output = job.getResults(QDMI_JOB_RESULT_CUSTOM5, index);
     ASSERT_EQ(output.size(), programs[index].size() + 1U);
     EXPECT_EQ(
         std::memcmp(output.data(), programs[index].c_str(), output.size()), 0);

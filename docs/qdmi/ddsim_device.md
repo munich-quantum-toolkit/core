@@ -75,6 +75,24 @@ order. Their keys and values share that order. Sparse exports require at most 64
 qubits on a 64-bit platform; wider states return `QDMI_ERROR_NOTSUPPORTED`
 because their basis indices do not fit the sparse representation.
 
+## Multi-program execution
+
+DDSIM executes programs concurrently in reusable worker processes. A shared
+LLVM thread pool bounds active workers using physical cores and process
+affinity. Each program creates its own compiler, JIT, runtime, and DD state;
+results retain independent DD packages after workers become available again.
+DDSIM requires an LLVM build with threading enabled.
+
+One failing or cancelled program does not discard completed siblings. Cancelling
+a job stops its active workers and removes its queued work. A crashed worker is
+replaced for later submissions; its program is not replayed automatically. The
+worker executable is installed beside the device library and must move with it.
+
+A common explicit seed is applied independently to each program, matching
+separate submissions. QIR output capture is indexed by program, like shots,
+counts, and state results. Worker reuse supports ordinary QDMI programs; it does
+not isolate arbitrary native process-global side effects between executions.
+
 ## QIR output capture
 
 Set `QDMI_DEVICE_JOB_PARAMETER_CUSTOM2` to a `bool` value of `true` before
