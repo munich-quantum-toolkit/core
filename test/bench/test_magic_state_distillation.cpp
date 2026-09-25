@@ -104,4 +104,4 @@ TEST(MagicStateDistillation, RoundTripsStrictJSONAndSemanticCaseIds) {
   EXPECT_NE(evaluation.find(R"("success_probability":1.0)"), std::string::npos);
 }
 
-} /* namespace mqt::bench */
+} // namespace mqt::bench

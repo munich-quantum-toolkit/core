@@ -373,6 +373,19 @@ void requireBenchmark(const Json& root, const std::string_view expected,
                             [&options] { return Grover(std::move(options)); });
 }
 
+[[nodiscard]] MagicStateDistillation
+parseMagicStateDistillationParameters(const Json& parameters,
+                                      const std::string_view source) {
+  rejectUnknownKeys(parameters, {"levels"}, source, "$/parameters");
+  MagicStateDistillationOptions options;
+  if (const auto levels = parameters.find("levels");
+      levels != parameters.end()) {
+    options.levels = sizeValue(*levels, source, "$/parameters/levels");
+  }
+  return constructBenchmark(
+      source, [&options] { return MagicStateDistillation(options); });
+}
+
 [[nodiscard]] ModularMultiplier
 parseModularMultiplierParameters(const Json& parameters,
                                  const std::string_view source) {
@@ -516,19 +529,6 @@ parseMultiplexerParameters(const Json& parameters,
   });
 }
 
-[[nodiscard]] MagicStateDistillation
-parseMagicStateDistillationParameters(const Json& parameters,
-                                      const std::string_view source) {
-  rejectUnknownKeys(parameters, {"levels"}, source, "$/parameters");
-  MagicStateDistillationOptions options;
-  if (const auto levels = parameters.find("levels");
-      levels != parameters.end()) {
-    options.levels = sizeValue(*levels, source, "$/parameters/levels");
-  }
-  return constructBenchmark(
-      source, [&options] { return MagicStateDistillation(options); });
-}
-
 [[nodiscard]] RepeatUntilSuccess
 parseRepeatUntilSuccessParameters(const Json& parameters,
                                   const std::string_view source) {
@@ -625,6 +625,10 @@ parseTeleportationParameters(const Json& parameters,
   };
 }
 
+[[nodiscard]] Json parametersJSON(const MagicStateDistillation& benchmark) {
+  return {{"levels", benchmark.options().levels}};
+}
+
 [[nodiscard]] Json parametersJSON(const ModularMultiplier& benchmark) {
   const auto& options = benchmark.options();
   return {
@@ -679,10 +683,6 @@ parseTeleportationParameters(const Json& parameters,
   };
 }
 
-[[nodiscard]] Json parametersJSON(const MagicStateDistillation& benchmark) {
-  return {{"levels", benchmark.options().levels}};
-}
-
 [[nodiscard]] Json parametersJSON(const RepeatUntilSuccess& benchmark) {
   return {{"data_qubits", benchmark.options().dataQubits}};
 }
@@ -735,6 +735,11 @@ parseTeleportationParameters(const Json& parameters,
                                benchmark.options().markedBitstring);
 }
 
+[[nodiscard]] Json referenceJSON(const MagicStateDistillation& benchmark) {
+  return analyticReferenceJSON(benchmark.output(), "magic_state_distillation",
+                               "00");
+}
+
 [[nodiscard]] Json referenceJSON(const ModularMultiplier& benchmark) {
   return analyticReferenceJSON(benchmark.output(), "modular_multiplier",
                                benchmark.expectedResult());
@@ -755,11 +760,6 @@ parseTeleportationParameters(const Json& parameters,
 
 [[nodiscard]] Json referenceJSON(const QPE& benchmark) {
   return analyticReferenceJSON(benchmark.output(), "qpe_dirichlet");
-}
-
-[[nodiscard]] Json referenceJSON(const MagicStateDistillation& benchmark) {
-  return analyticReferenceJSON(benchmark.output(), "magic_state_distillation",
-                               "00");
 }
 
 [[nodiscard]] Json referenceJSON(const RepeatUntilSuccess& benchmark) {
@@ -970,6 +970,27 @@ template <class Benchmark>
           },
       },
       {"required", {"marked_bitstring"}},
+      {"type", "object"},
+  });
+}
+
+[[nodiscard]] Json magicStateDistillationInstanceSpecificationSchema() {
+  return baseInstanceSpecificationSchema<MagicStateDistillation>({
+      {"additionalProperties", false},
+      {
+          "properties",
+          {
+              {
+                  "levels",
+                  {
+                      {"default", 1},
+                      {"minimum", 1},
+                      {"maximum", 4},
+                      {"type", "integer"},
+                  },
+              },
+          },
+      },
       {"type", "object"},
   });
 }
@@ -1239,27 +1260,6 @@ template <class Benchmark>
           },
       },
       {"required", {"precision", "phase"}},
-      {"type", "object"},
-  });
-}
-
-[[nodiscard]] Json magicStateDistillationInstanceSpecificationSchema() {
-  return baseInstanceSpecificationSchema<MagicStateDistillation>({
-      {"additionalProperties", false},
-      {
-          "properties",
-          {
-              {
-                  "levels",
-                  {
-                      {"default", 1},
-                      {"minimum", 1},
-                      {"maximum", 4},
-                      {"type", "integer"},
-                  },
-              },
-          },
-      },
       {"type", "object"},
   });
 }

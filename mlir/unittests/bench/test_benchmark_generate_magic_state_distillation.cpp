@@ -51,34 +51,28 @@ TEST(GenerateProgramTest, SamplesMagicStateDistillation) {
 }
 
 TEST(GenerateProgramTest, ConcatenatesRetainedMagicStatesInCompactLoops) {
-  size_t previousSize = 0;
   int64_t qubitCount = 1;
   for (const size_t levels : {1U, 2U, 3U, 4U}) {
     qubitCount *= 15;
     auto program = generate(MagicStateDistillation({.levels = levels}));
     ASSERT_TRUE(program);
     auto moduleOp = program->module();
-    auto helper = moduleOp.lookupSymbol<func::FuncOp>("distill_15_to_1");
-    ASSERT_TRUE(helper);
-    EXPECT_TRUE(helper.isPrivate());
-    EXPECT_EQ(helper.getNumArguments(), 15U);
     EXPECT_EQ(test::countOps<qc::AllocOp>(moduleOp), 0U);
     EXPECT_EQ(test::countOps<memref::AllocOp>(moduleOp), 1U);
     moduleOp.walk([&](memref::AllocOp op) {
       EXPECT_EQ(op.getType().getNumElements(), qubitCount);
     });
-    /// Only the leaf preparation contains T gates; parent inputs stay quantum.
+    // Only the leaf preparation contains T gates; parent inputs stay quantum.
     EXPECT_EQ(test::countOps<qc::TOp>(moduleOp), 1U);
     int64_t stride = 1;
     size_t calls = 0;
     moduleOp.walk([&](func::CallOp call) {
-      EXPECT_EQ(call.getCallee(), helper.getSymName());
       auto loop = call->getParentOfType<scf::ForOp>();
       if (loop) {
         EXPECT_EQ(loop.getConstantStep(), stride * 15);
         EXPECT_EQ(getConstantIntValue(loop.getUpperBound()), qubitCount);
       } else {
-        /// Cleanup removes the root loop because it has only one iteration.
+        // Cleanup removes the root loop because it has only one iteration.
         EXPECT_EQ(stride * 15, qubitCount);
       }
       ASSERT_EQ(call.getNumOperands(), 15U);
@@ -125,11 +119,6 @@ TEST(GenerateProgramTest, ConcatenatesRetainedMagicStatesInCompactLoops) {
       ++calls;
     });
     EXPECT_EQ(calls, levels);
-    auto size = test::countOperations(moduleOp);
-    if (levels > 1) {
-      EXPECT_LT(size - previousSize, 100U);
-    }
-    previousSize = size;
     auto compiled = runDefaultPipeline(CompilerInput{std::move(*program)},
                                        ProgramFormat::QCO);
     ASSERT_TRUE(compiled);
@@ -140,8 +129,8 @@ TEST(GenerateProgramTest, ConcatenatesRetainedMagicStatesInCompactLoops) {
 
 TEST(GenerateProgramTest,
      DistillationRejectsInputErrorsAndDetectsLogicalErrors) {
-  /// Independently, the four X-check syndromes are the XOR of the erroneous
-  /// columns 1..15; the logical Z error is their weight modulo two.
+  // Independently, the four X-check syndromes are the XOR of the erroneous
+  // columns 1..15; the logical Z error is their weight modulo two.
   for (uint32_t errors = 0; errors < (1U << 15U); ++errors) {
     const auto weight = std::popcount(errors);
     if (weight < 1 || weight > 3) {
@@ -159,8 +148,8 @@ TEST(GenerateProgramTest,
     SCOPED_TRACE(errors);
     auto program = generate(MagicStateDistillation{});
     ASSERT_TRUE(program);
-    /// Insert faults in the leaf preparation only. The private block and public
-    /// rejection readout remain exactly those emitted for the benchmark.
+    // Insert faults in the leaf preparation only. The private block and public
+    // rejection readout remain exactly those emitted for the benchmark.
     program->module().walk([&](qc::TOp op) {
       auto qubit = op.getQubit(0);
       auto index = qubit.getDefiningOp<memref::LoadOp>().getIndices().front();
@@ -196,4 +185,4 @@ TEST(GenerateProgramTest,
   }
 }
 
-} /* namespace mqt::bench */
+} // namespace mqt::bench

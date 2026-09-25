@@ -47,4 +47,4 @@ Evaluation MagicStateDistillation::evaluate(const Counts& counts) const {
   return detail::evaluate(*this, counts, "00");
 }
 
-} /* namespace mqt::bench */
+} // namespace mqt::bench
