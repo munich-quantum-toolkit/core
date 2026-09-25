@@ -83,6 +83,25 @@ protected:
   }
 };
 
+TEST_F(MQTIRTest, PreservesAndValidatesOpenQASMOutputMetadata) {
+  auto moduleOp = parse(R"mlir(module {
+    func.func @main() -> (i1 {mqt.qasm_output_name = "accepted", mqt.qasm_output_type = "bool"},
+                         i1 {mqt.qasm_output_name = "count", mqt.qasm_output_type = "uint"}) {
+      %one = arith.constant true
+      return %one, %one : i1, i1
+    }
+  })mlir");
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(roundTrip(*moduleOp));
+  EXPECT_FALSE(parse(R"mlir(module {
+    func.func private @bad() -> (i1 {mqt.qasm_output_name = "same"},
+                                i1 {mqt.qasm_output_name = "same"})
+  })mlir"));
+  EXPECT_FALSE(parse(R"mlir(module {
+    func.func private @bad() -> (i1 {mqt.qasm_output_type = "complex"})
+  })mlir"));
+}
+
 TEST_F(MQTIRTest, CompilationSeedHasModuleScopeAnd64Bits) {
   auto moduleOp =
       parse("module attributes {mqt.compilation_seed = -1 : i64} {}");

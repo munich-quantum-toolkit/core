@@ -853,13 +853,16 @@ static Value expressionNestedMathFunctions(qc::QCProgramBuilder& b) {
   return measureToRegister(b, {q});
 }
 
-static Value expressionConstFloat(qc::QCProgramBuilder& b) {
+static SmallVector<Value> expressionConstFloat(qc::QCProgramBuilder& b) {
   constexpr double theta = std::numbers::pi / 4.0;
   auto q = b.allocQubit();
   b.h(q);
   b.rx(theta, q);
   b.ry(theta * 2.0, q);
-  return measureToRegister(b, {q});
+  return {
+      arith::ConstantOp::create(b, b.getF64FloatAttr(theta)).getResult(),
+      measureToRegister(b, {q}),
+  };
 }
 
 static SmallVector<Value> expressionMutableFloat(qc::QCProgramBuilder& b) {
@@ -869,7 +872,10 @@ static SmallVector<Value> expressionMutableFloat(qc::QCProgramBuilder& b) {
   b.ry(0.75, q);
   auto theta =
       arith::ConstantOp::create(b, b.getF64FloatAttr(0.75)).getResult();
-  return {theta, measureToRegister(b, {q})};
+  return {
+      theta,
+      measureToRegister(b, {q}),
+  };
 }
 
 static SmallVector<Value>
@@ -878,7 +884,12 @@ expressionConstIntArithmetic(qc::QCProgramBuilder& b) {
   b.h(q[3]);
   b.h(q[5]);
   b.rx(8.0, q[3]);
-  return {measureToRegister(b, {q[3], q[5]})};
+  return {
+      arith::ConstantOp::create(b, b.getI64IntegerAttr(8)).getResult(),
+      arith::ConstantOp::create(b, b.getI64IntegerAttr(3)).getResult(),
+      arith::ConstantOp::create(b, b.getI64IntegerAttr(5)).getResult(),
+      measureToRegister(b, {q[3], q[5]}),
+  };
 }
 
 static SmallVector<Value> conditionLiteral(qc::QCProgramBuilder& b) {
@@ -1010,6 +1021,10 @@ TEST_P(OpenQASMTranslationTest, ProgramEquivalence) {
   /// metadata.
   translated->walk([](Operation* op) {
     op->removeAttr(mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr());
+    if (isa<func::FuncOp>(op)) {
+      /// Source output names/types are checked by dedicated output tests.
+      op->removeAttr("res_attrs");
+    }
   });
 
   ASSERT_TRUE(succeeded(convertQCToQCO(translated.get())));

@@ -121,6 +121,7 @@ private:
   bool deferMeasurements_ = false;
   bool extractState_ = false;
   bool invalidStateExtraction_ = false;
+  bool binaryOutput_ = true;
   std::unordered_set<dd::Qubit> measuredQubits_;
   std::string measurements;
   uintptr_t currentMaxQubitAddress;
@@ -243,10 +244,10 @@ public:
   auto outputBool(bool value, const char* label) const -> void;
 
   /// Emit `OUTPUT\tINT\t<value>[\tlabel]\n` to the output stream.
-  auto outputInt(int64_t value, const char* label) const -> void;
+  auto outputInt(int64_t value, const char* label) -> void;
 
   /// Emit `OUTPUT\tDOUBLE\t<value>[\tlabel]\n` to the output stream.
-  auto outputFloat(double value, const char* label) const -> void;
+  auto outputFloat(double value, const char* label) -> void;
 
   /// Emit `OUTPUT\tTUPLE\t<elementCount>[\tlabel]\n` to the output stream.
   auto outputTuple(int64_t elementCount, const char* label) const -> void;

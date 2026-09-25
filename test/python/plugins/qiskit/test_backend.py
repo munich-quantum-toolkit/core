@@ -18,9 +18,10 @@ from typing import TYPE_CHECKING, Protocol, get_type_hints
 import numpy as np
 import pytest
 from qiskit import QuantumCircuit
-from qiskit.circuit import Parameter
+from qiskit.circuit import ClassicalRegister, Parameter, QuantumRegister
 from qiskit.circuit.library import UnitaryGate
 from qiskit.providers import JobStatus
+from qiskit.providers.basic_provider import BasicSimulator
 
 from mqt.core.plugins.qiskit import (
     CircuitValidationError,
@@ -689,3 +690,23 @@ def test_sc_target_preserves_placements_and_physical_calibration(unit: str, seco
     assert target["ccx"][0, 1, 2].error == pytest.approx(0.05)
     assert not target.instruction_supported(operation_name="ccx", qargs=(1, 2, 3))
     assert target["measure"][0,] is None
+
+
+@pytest.mark.parametrize("memory", [False, True])
+def test_classical_results_match_native_qiskit(ddsim_backend: QDMIBackend, *, memory: bool) -> None:
+    """Preserve register widths, holes, reversed destinations, and final writes."""
+    q = QuantumRegister(3, "q")
+    first = ClassicalRegister(3, "first")
+    second = ClassicalRegister(2, "second")
+    circuit = QuantumCircuit(q, first, second)
+    circuit.x(q[0])
+    circuit.x(q[2])
+    circuit.measure(q[0], first[2])
+    circuit.measure(q[1], second[1])
+    circuit.measure(q[2], second[1])
+    circuit.measure(q[1], first[0])
+    actual = ddsim_backend.run(circuit, shots=8, memory=memory).result()
+    expected = BasicSimulator().run(circuit, shots=8, memory=memory).result()
+    assert actual.get_counts() == expected.get_counts() == {"10 100": 8}
+    if memory:
+        assert actual.get_memory() == expected.get_memory()

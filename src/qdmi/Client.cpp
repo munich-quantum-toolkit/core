@@ -678,6 +678,24 @@ std::map<std::string, size_t> Job::getCounts() const {
       "histogram", "size_t", "Histogram key/value count mismatch");
 }
 
+std::optional<std::string> Job::getQIROutput() const {
+  return detail::queryCustomValue<std::string>(
+      [this](size_t size, void* value, size_t* sizeRet) {
+        return QDMI_job_get_results(job_.get(), QDMI_JOB_RESULT_QIR_OUTPUT,
+                                    size, value, sizeRet);
+      },
+      "QIR output");
+}
+
+std::optional<std::string> Job::getQASM3Output() const {
+  return detail::queryCustomValue<std::string>(
+      [this](size_t size, void* value, size_t* sizeRet) {
+        return QDMI_job_get_results(job_.get(), QDMI_JOB_RESULT_QASM3_OUTPUT,
+                                    size, value, sizeRet);
+      },
+      "OpenQASM 3 output");
+}
+
 std::vector<std::complex<double>> Job::getDenseStateVector() const {
   size_t size = 0;
   qdmi::throwIfError(QDMI_job_get_results(job_.get(),

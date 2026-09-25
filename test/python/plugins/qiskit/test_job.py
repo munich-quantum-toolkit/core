@@ -26,6 +26,7 @@ from qiskit.quantum_info import SparsePauliOp
 from test_mock_backend import MockQDMIDevice
 
 from mqt.core.plugins.qiskit import CircuitValidationError, JobSubmissionError, QDMIBackend
+from mqt.core.plugins.qiskit.serializers import SerializedProgram
 from mqt.core.qdmi import Job
 
 if TYPE_CHECKING:
@@ -365,3 +366,30 @@ def test_estimator_nonzero_uncertainty(recording_backend: RecordingBackend, monk
     assert len(jobs) == 1
     np.testing.assert_equal(result.data["evs"], [4, 0, 0])
     np.testing.assert_equal(result.data["stds"], [2.5, 0.5, 0.5])
+
+
+@pytest.mark.parametrize("memory", [False, True])
+def test_serializer_mapping_preserves_final_classical_destinations(
+    recording_backend: RecordingBackend, monkeypatch: pytest.MonkeyPatch, *, memory: bool
+) -> None:
+    """Aggregate overwritten raw outputs and preserve initialized source holes."""
+    backend, handles, _ = recording_backend
+    circuit = QuantumCircuit(3, 4)
+    serialize = backend._serialize_circuit  # ruff:ignore[private-member-access]
+
+    def mapped_serializer(circuit: QuantumCircuit, formats: object) -> tuple[SerializedProgram, ProgramFormat]:
+        payload, fmt = serialize(circuit, formats)  # ty: ignore[invalid-argument-type]
+        assert isinstance(payload, str)
+        return SerializedProgram(payload, 3, (None, 2, 0, None)), fmt
+
+    monkeypatch.setattr(backend, "_serialize_circuit", mapped_serializer)
+    job = backend.run(circuit, shots=4, memory=memory)
+    handle = handles[0]
+    handle.get_shots.side_effect = None
+    handle.get_shots.return_value = ["101", "111", "101", "111"]
+    handle.get_counts.side_effect = None
+    handle.get_counts.return_value = {"101": 2, "111": 2}
+    result = job.result()
+    assert result.get_counts() == {"0110": 4}
+    if memory:
+        assert result.get_memory() == ["0110"] * 4

@@ -110,9 +110,11 @@ result = value;
   auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  size_t undefinedInitializers = 0;
   moduleOp->walk([&](Operation* operation) {
-    EXPECT_NE(operation->getName().getStringRef(), "ub.poison");
+    undefinedInitializers += operation->getName().getStringRef() == "ub.poison";
   });
+  EXPECT_EQ(undefinedInitializers, 1);
 }
 
 TEST(OpenQASMTargetTest, ContinueSkipsUnreachableQuantumOperations) {

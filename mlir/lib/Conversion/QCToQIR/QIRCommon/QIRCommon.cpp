@@ -530,7 +530,12 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
     state.returnedCregs.push_back(registerIndex);
   };
 
-  for (auto operand : returnOp.getOperands()) {
+  for (auto [index, operand] : llvm::enumerate(returnOp.getOperands())) {
+    if (funcOp.getResultAttr(index, "mqt.qasm_output_name") &&
+        !isa<cbit::RegisterType>(operand.getType())) {
+      return returnOp.emitError(
+          "QIR export of scalar OpenQASM outputs is not supported");
+    }
     if (auto measureOp = operand.getDefiningOp<MeasureOp>()) {
       state.returnedScalarResults.insert(measureOp.getOperation());
     } else if (auto allocOp = operand.getDefiningOp<cbit::AllocOp>();
@@ -621,6 +626,8 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
     keptReturnTypes.push_back(zero.getType());
   }
   returnOp.getOperandsMutable().assign(keptOperands);
+  /// Source output metadata described the results now consumed by recording.
+  funcOp->removeAttr("res_attrs");
   funcOp.setFunctionType(FunctionType::get(funcOp.getContext(),
                                            funcOp.getFunctionType().getInputs(),
                                            keptReturnTypes));

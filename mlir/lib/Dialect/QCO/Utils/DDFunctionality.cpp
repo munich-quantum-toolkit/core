@@ -34,6 +34,7 @@
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "mlir/Dialect/UB/IR/UBOps.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
@@ -199,6 +200,7 @@ struct LoopRange {
 };
 struct SamplingPlan {
   bool dynamic = false;
+  bool implicitMeasurement = false;
   SmallVector<Value> outputs;
   DenseSet<Operation*> deferredMeasurements;
 };
@@ -928,6 +930,10 @@ static LogicalResult applyFloatOp(Operation& op, ClassicalEnv& classical) {
 }
 
 static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
+  if (auto poison = dyn_cast<ub::PoisonOp>(op)) {
+    classical.values[poison.getResult()] = UnitAttr::get(op.getContext());
+    return success();
+  }
   const auto isUnsupportedFloat = [](Type type) {
     return isa<FloatType>(type) && !type.isF64();
   };
@@ -1762,7 +1768,7 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
         const StringRef dialect = unsupported->getName().getDialectNamespace();
         if (dialect == arith::ArithDialect::getDialectNamespace() ||
             dialect == math::MathDialect::getDialectNamespace() ||
-            isa<LLVM::FshlOp, LLVM::FshrOp>(unsupported)) {
+            isa<LLVM::FshlOp, LLVM::FshrOp, ub::PoisonOp>(unsupported)) {
           return applyClassicalOp(*unsupported, *walk.classical);
         }
         return unsupported->emitError()
@@ -1991,7 +1997,8 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
 
 static bool mayMeasureOrReset(func::FuncOp func, DenseSet<Operation*>& active,
                               DenseMap<Operation*, bool>& cachedResults,
-                              SymbolTableCollection& symbols) {
+                              SymbolTableCollection& symbols,
+                              bool measurementsOnly = false) {
   if (const auto it = cachedResults.find(func); it != cachedResults.end()) {
     return it->second;
   }
@@ -2000,14 +2007,15 @@ static bool mayMeasureOrReset(func::FuncOp func, DenseSet<Operation*>& active,
   }
   const auto guard = llvm::make_scope_exit([&] { active.erase(func); });
   const auto result = func.getBody().walk([&](Operation* op) -> WalkResult {
-    if (isa<MeasureOp, ResetOp>(op)) {
+    if (isa<MeasureOp>(op) || (!measurementsOnly && isa<ResetOp>(op))) {
       return WalkResult::interrupt();
     }
     if (auto call = dyn_cast<func::CallOp>(op)) {
       auto callee = symbols.lookupNearestSymbolFrom<func::FuncOp>(
           call, call.getCalleeAttr());
       if (!callee || callee.isDeclaration() ||
-          mayMeasureOrReset(callee, active, cachedResults, symbols)) {
+          mayMeasureOrReset(callee, active, cachedResults, symbols,
+                            measurementsOnly)) {
         return WalkResult::interrupt();
       }
     }
@@ -2044,8 +2052,9 @@ static void analyzeSampling(func::FuncOp func, SamplingPlan& plan) {
   });
 }
 
-static FailureOr<SamplingPlan>
-getSamplingPlan(func::FuncOp func, bool statevectorAnalysis = false) {
+static FailureOr<SamplingPlan> getSamplingPlan(func::FuncOp func,
+                                               bool statevectorAnalysis = false,
+                                               bool captureOutput = false) {
   Block& entry = func.getBody().front();
   SamplingPlan plan;
   auto returnOp = dyn_cast<func::ReturnOp>(entry.getTerminator());
@@ -2056,7 +2065,9 @@ getSamplingPlan(func::FuncOp func, bool statevectorAnalysis = false) {
 
   bool hasOther = false;
   for (Value value : returnOp.getOperands()) {
-    if (isa<cbit::RegisterType>(value.getType())) {
+    if (isa<cbit::RegisterType>(value.getType()) ||
+        (!statevectorAnalysis && captureOutput &&
+         isa<IntegerType, FloatType>(value.getType()))) {
       plan.outputs.push_back(value);
     } else {
       hasOther = true;
@@ -2069,6 +2080,14 @@ getSamplingPlan(func::FuncOp func, bool statevectorAnalysis = false) {
   }
 
   analyzeSampling(func, plan);
+  plan.implicitMeasurement = plan.outputs.empty();
+  if (captureOutput && plan.implicitMeasurement) {
+    DenseSet<Operation*> active;
+    DenseMap<Operation*, bool> cachedResults;
+    SymbolTableCollection symbols;
+    plan.implicitMeasurement =
+        !mayMeasureOrReset(func, active, cachedResults, symbols, true);
+  }
   return plan;
 }
 
@@ -2104,30 +2123,78 @@ simulateStatevector(func::FuncOp func, dd::Package& dd,
 
 static FailureOr<std::string> encodeOutcome(ArrayRef<Value> outputs,
                                             const ClassicalEnv& classical,
-                                            std::string basis) {
+                                            std::string basis,
+                                            DDProgramOutput* programOutput) {
+  std::vector<Attribute> values;
+  bool binary = true;
+  const auto encodeBit = [&](Attribute value, std::string& outcome) {
+    if (auto bit = dyn_cast<IntegerAttr>(value);
+        bit && bit.getType().isInteger(1)) {
+      outcome.push_back(bit.getInt() ? '1' : '0');
+    } else {
+      binary = false;
+    }
+  };
   if (outputs.empty()) {
+    if (programOutput != nullptr) {
+      programOutput->shots.emplace_back();
+    }
     return basis;
   }
   std::string outcome;
-  for (Value value : llvm::reverse(outputs)) {
+  for (Value value : outputs) {
+    if (!isa<cbit::RegisterType>(value.getType())) {
+      auto scalar = classical.values.lookup(value);
+      if (!scalar) {
+        const auto wire = classical.deferredMeasurements.find(value);
+        if (wire == classical.deferredMeasurements.end() ||
+            wire->second >= basis.size()) {
+          return emitError(value.getLoc())
+                 << "returned scalar is not available";
+        }
+        scalar = IntegerAttr::get(
+            value.getType(),
+            basis[basis.size() - 1 - wire->second] == '1' ? 1 : 0);
+      }
+      values.push_back(scalar);
+      encodeBit(scalar, outcome);
+      continue;
+    }
     const auto reg = classical.registers.find(value);
     if (reg == classical.registers.end()) {
       return emitError(value.getLoc())
              << "returned CBit register is not mapped for QCO DD simulation";
     }
-    for (size_t i = reg->second->size(); i > 0; --i) {
-      const size_t index = i - 1;
+    SmallVector<Attribute> bits;
+    for (size_t index = 0; index < reg->second->size(); ++index) {
       const auto& cell = (*reg->second)[index];
+      Attribute bit;
       if (cell.value) {
-        outcome.push_back(*cell.value ? '1' : '0');
+        bit = IntegerAttr::get(IntegerType::get(value.getContext(), 1),
+                               *cell.value ? 1 : 0);
       } else if (cell.deferredWire && *cell.deferredWire < basis.size()) {
-        outcome.push_back(basis[basis.size() - 1 - *cell.deferredWire]);
+        bit = IntegerAttr::get(
+            IntegerType::get(value.getContext(), 1),
+            basis[basis.size() - 1 - *cell.deferredWire] == '1' ? 1 : 0);
+      } else if (programOutput != nullptr) {
+        bit = UnitAttr::get(value.getContext());
       } else {
         return emitError(value.getLoc())
                << "returned CBit register element " << index << " is undefined";
       }
+      bits.push_back(bit);
+      encodeBit(bit, outcome);
     }
+    values.push_back(ArrayAttr::get(value.getContext(), bits));
   }
+  if (programOutput != nullptr) {
+    programOutput->shots.push_back(std::move(values));
+    programOutput->binary &= binary;
+  }
+  if (!binary) {
+    return std::string{};
+  }
+  std::ranges::reverse(outcome);
   return outcome;
 }
 
@@ -2135,9 +2202,10 @@ static FailureOr<std::map<std::string, size_t>>
 sampleImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
            size_t shots, std::mt19937_64& rng, const PreparedState& prepared,
            std::vector<std::string>* shotResults,
-           std::optional<dd::VectorDD>* retainedState) {
+           std::optional<dd::VectorDD>* retainedState,
+           DDProgramOutput* programOutput) {
   const auto inputGuard = llvm::make_scope_exit([&] { dd.decRef(in); });
-  auto plan = getSamplingPlan(func);
+  auto plan = getSamplingPlan(func, false, programOutput != nullptr);
   if (failed(plan)) {
     return failure();
   }
@@ -2157,7 +2225,11 @@ sampleImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
 
   const auto record = [&](const ClassicalEnv& classical,
                           std::string basis) -> LogicalResult {
-    auto outcome = encodeOutcome(plan->outputs, classical, std::move(basis));
+    if (plan->outputs.empty() && !plan->implicitMeasurement) {
+      basis.clear();
+    }
+    auto outcome = encodeOutcome(plan->outputs, classical, std::move(basis),
+                                 programOutput);
     if (failed(outcome)) {
       return failure();
     }
@@ -2179,7 +2251,11 @@ sampleImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
     if (succeeded(state)) {
       const auto guard = llvm::make_scope_exit([&] { dd.decRef(*state); });
       for (size_t i = 0; i < shots; ++i) {
-        if (failed(record(classical, dd.measureAll(*state, false, rng)))) {
+        const auto basis =
+            !plan->deferredMeasurements.empty() || plan->implicitMeasurement
+                ? dd.measureAll(*state, false, rng)
+                : std::string{};
+        if (failed(record(classical, basis))) {
           return failure();
         }
       }
@@ -2203,7 +2279,7 @@ sampleImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
       return failure();
     }
     const auto guard = llvm::make_scope_exit([&] { dd.decRef(*state); });
-    std::string basis = plan->outputs.empty()
+    std::string basis = plan->implicitMeasurement
                             ? dd.measureAll(*state, false, rng)
                             : std::string{};
     if (failed(record(classical, std::move(basis)))) {
@@ -2216,7 +2292,12 @@ sampleImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
 FailureOr<std::map<std::string, size_t>>
 sample(func::FuncOp func, size_t shots, uint64_t seed,
        const DDArgumentBindings& argumentBindings,
-       std::vector<std::string>* shotResults, DDSamplingState* retainedState) {
+       std::vector<std::string>* shotResults, DDSamplingState* retainedState,
+       DDProgramOutput* programOutput) {
+  if (programOutput != nullptr) {
+    *programOutput = {};
+    programOutput->shots.reserve(shots);
+  }
   if (retainedState != nullptr) {
     *retainedState = {};
   }
@@ -2231,9 +2312,16 @@ sample(func::FuncOp func, size_t shots, uint64_t seed,
     return failure();
   }
   std::optional<dd::VectorDD> state;
-  auto counts = sampleImpl(
-      func, dd::makeZeroState(prepared->qubits.numQubits, *dd), *dd, shots, rng,
-      *prepared, shotResults, retainedState != nullptr ? &state : nullptr);
+  auto counts =
+      sampleImpl(func, dd::makeZeroState(prepared->qubits.numQubits, *dd), *dd,
+                 shots, rng, *prepared, shotResults,
+                 retainedState != nullptr ? &state : nullptr, programOutput);
+  if (succeeded(counts) && programOutput != nullptr && !programOutput->binary) {
+    counts->clear();
+    if (shotResults != nullptr) {
+      shotResults->clear();
+    }
+  }
   if (succeeded(counts) && state && retainedState != nullptr) {
     retainedState->state = *state;
     retainedState->dd = std::move(dd);

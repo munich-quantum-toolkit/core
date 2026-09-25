@@ -225,20 +225,22 @@ class QDMIDevice(Device):
         return self._execution_time
 
     def _select_program_format(self) -> ProgramFormat:
-        """Select QASM3 before QASM2 and reject all other format sets.
+        """Select IQM JSON or OpenQASM from the advertised formats.
 
         Returns:
             The selected QDMI program format.
 
         Raises:
-            PennyLaneUnsupportedFormatError: If neither OpenQASM version is advertised.
+            PennyLaneUnsupportedFormatError: If no supported circuit format is advertised.
         """
         formats = set(self._qdmi_device.supported_program_formats())
+        if ProgramFormat.IQM_JSON in formats:
+            return ProgramFormat.IQM_JSON
         if ProgramFormat.QASM3 in formats:
             return ProgramFormat.QASM3
         if ProgramFormat.QASM2 in formats:
             return ProgramFormat.QASM2
-        msg = f"QDMI device '{self._device_name}' advertises neither OpenQASM 3 nor OpenQASM 2."
+        msg = f"QDMI device '{self._device_name}' advertises neither IQM JSON, OpenQASM 3, nor OpenQASM 2."
         raise UnsupportedFormatError(msg)
 
     def preprocess_transforms(self, execution_config: ExecutionConfig | None = None) -> CompilePipeline:
@@ -336,7 +338,7 @@ class QDMIDevice(Device):
         if not bitstrings:
             return np.asarray([], dtype=np.int8)
         packed = np.frombuffer("".join(cleaned).encode("ascii"), dtype=np.int8).reshape(shots, width)
-        # QDMI spells the highest-index site first; PennyLane starts with wire zero.
+        # QDMI spells the highest output position first; PennyLane starts with wire zero.
         return packed[:, ::-1][:, converted.measurement_order] - ord("0")
 
     @staticmethod

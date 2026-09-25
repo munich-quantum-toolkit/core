@@ -877,8 +877,36 @@ LogicalResult MQTDialect::verifyRegionArgAttribute(
 }
 
 LogicalResult MQTDialect::verifyRegionResultAttribute(
-    Operation* operation, unsigned /*regionIndex*/, unsigned /*resultIndex*/,
+    Operation* operation, unsigned regionIndex, unsigned resultIndex,
     const NamedAttribute attribute) {
+  const auto attributeName = attribute.getName();
+  if (attributeName == QasmOutputNameAttrHelper::getNameStr() ||
+      attributeName == QasmOutputTypeAttrHelper::getNameStr()) {
+    auto function = dyn_cast<FunctionOpInterface>(operation);
+    if (!function || regionIndex != 0) {
+      return operation->emitError(
+          "OpenQASM output metadata requires a function result");
+    }
+    if (failed(verifyName(operation, attribute))) {
+      return failure();
+    }
+    const auto value = cast<StringAttr>(attribute.getValue()).getValue();
+    if (attributeName == QasmOutputTypeAttrHelper::getNameStr()) {
+      if (value != "bit" && value != "bit_register" && value != "bool" &&
+          value != "int" && value != "uint" && value != "float") {
+        return operation->emitError("unsupported OpenQASM output type");
+      }
+    } else {
+      for (unsigned index = 0; index < function.getNumResults(); ++index) {
+        if (index != resultIndex &&
+            function.getResultAttr(index, attributeName) ==
+                attribute.getValue()) {
+          return operation->emitError("duplicate OpenQASM output name");
+        }
+      }
+    }
+    return success();
+  }
   return operation->emitError()
          << "attribute '" << attribute.getName().getValue()
          << "' is not valid on a region result";

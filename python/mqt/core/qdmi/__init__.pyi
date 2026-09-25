@@ -40,6 +40,12 @@ class Job:
     def get_counts(self) -> dict[str, int]:
         """Returns the measurement counts from the job."""
 
+    def get_qir_output(self) -> str | None:
+        """Returns the complete QIR output stream, or None when unsupported."""
+
+    def get_qasm3_output(self) -> str | None:
+        """Returns complete per-shot OpenQASM 3 JSON, or None when unsupported."""
+
     def get_dense_statevector(self) -> list[complex]:
         """Returns the dense statevector from the job (typically only available from simulator devices)."""
 

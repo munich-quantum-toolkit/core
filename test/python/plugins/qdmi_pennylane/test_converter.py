@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from unittest.mock import Mock
 
@@ -510,3 +511,52 @@ def test_graph_decomposition_targets_advertised_gates(
     device.execute((decomposed,))
     payload = qdmi.submissions[0][0]
     assert "cz " in payload
+
+
+def test_iqm_converter_preserves_native_rotations_and_output_order(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Check PRX synthesis against PennyLane matrices and permuted wire samples."""
+    qdmi = StubDevice(
+        [operation("prx", 1, 2), operation("cz", 2)],
+        [ProgramFormat.IQM_JSON],
+        result_factory=lambda _program, shots: ["01"] * shots,
+    )
+    sites = []
+    for index, name in enumerate(["QB9", "QB2"]):
+        site = Mock()
+        site.index.return_value = index
+        site.name.return_value = name
+        sites.append(site)
+    monkeypatch.setattr(qdmi, "sites", lambda: sites, raising=False)
+    patch_open_device(monkeypatch, qdmi)
+    device = QDMIDevice("fake.qdmi", wires=["left", "right"])
+
+    @qp.qnode(device, shots=4)
+    def circuit():
+        qp.RX(0.21, "left")
+        qp.RY(-0.34, "left")
+        qp.RZ(0.57, "left")
+        qp.CZ(wires=["right", "left"])
+        return qp.sample(wires=["right", "left"])
+
+    np.testing.assert_array_equal(circuit(), [[0, 1]] * 4)
+    payload, fmt, _, _ = qdmi.submissions[0]
+    assert fmt == ProgramFormat.IQM_JSON
+    instructions = json.loads(payload)["instructions"]
+    actual = np.eye(2, dtype=complex)
+    for instruction in instructions[:-2]:
+        assert instruction["locus"] == ["QB9"]
+        theta, phase = instruction["args"]["angle"], instruction["args"]["phase"]
+        rotation = (
+            np.asarray(qp.RZ.compute_matrix(phase))
+            @ np.asarray(qp.RX.compute_matrix(theta))
+            @ np.asarray(qp.RZ.compute_matrix(-phase))
+        )
+        actual = rotation @ actual
+    expected = (
+        np.asarray(qp.RZ.compute_matrix(0.57))
+        @ np.asarray(qp.RY.compute_matrix(-0.34))
+        @ np.asarray(qp.RX.compute_matrix(0.21))
+    )
+    np.testing.assert_allclose(actual, expected, atol=1e-14)
+    assert instructions[-2]["locus"] == ["QB2", "QB9"]
+    assert instructions[-1] == {"name": "measure", "locus": ["QB9", "QB2"], "args": {"key": "m"}}

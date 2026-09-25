@@ -185,6 +185,8 @@ private:
   /// Opt-in textual QIR records, separate from measurement shots and counts.
   bool captureQIROutput_ = false;
   std::optional<std::string> qirOutput_;
+  std::optional<std::string> qasmOutput_;
+  bool binaryOutput_ = true;
 
   /// Handle for the asynchronous job
   std::future<void> jobHandle_;

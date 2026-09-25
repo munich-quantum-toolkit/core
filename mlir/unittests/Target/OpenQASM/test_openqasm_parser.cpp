@@ -100,7 +100,7 @@ TEST(OpenQASMFrontendTest, LocatesVersionAndOutputDiagnosticsPrecisely) {
   llvm::SourceMgr outputSources;
   outputSources.AddNewSourceBuffer(
       llvm::MemoryBuffer::getMemBufferCopy(
-          "OPENQASM 3.1;\nqubit q;\noutput bit result;\n",
+          "OPENQASM 3.1;\nqubit q;\noutput angle result;\n",
           "incomplete-output.qasm"),
       llvm::SMLoc());
   auto output = openqasm::frontend::analyzeOpenQASM(outputSources);

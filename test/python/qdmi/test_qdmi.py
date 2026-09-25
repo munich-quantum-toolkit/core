@@ -942,3 +942,22 @@ def test_operation_keeps_fresh_session_alive() -> None:
     """An operation should remain usable after its device wrapper is destroyed."""
     operation = open_device("mqt.sc.default").operations()[0]
     assert operation.name()
+
+
+def test_complete_qasm_output_keeps_numeric_and_undefined_values() -> None:
+    """Numeric zero/one and undefined values never become partial binary samples."""
+    device = open_device("mqt.ddsim.default")
+    job = device.submit_job(
+        "OPENQASM 3.0; bit[2] bits; bits[0] = 1; bool accepted = true; uint[1] count = 1;",
+        ProgramFormat.QASM3,
+        num_shots=3,
+    )
+    assert job.wait()
+    output = job.get_qasm3_output()
+    assert output is not None
+    assert json.loads(output) == [{"bits": [1, None], "accepted": True, "count": 1}] * 3
+    assert job.get_qir_output() is None
+    with pytest.raises(RuntimeError, match="supported"):
+        job.get_shots()
+    with pytest.raises(RuntimeError, match="supported"):
+        job.get_counts()

@@ -36,7 +36,7 @@ if(TARGET MQT::CoreQDMI_DDSIM_Device)
   target_include_directories(${TARGET_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
   llvm_map_components_to_libnames(llvm_native_libs asmparser bitwriter core support)
-  target_link_libraries(${TARGET_NAME} PRIVATE ${llvm_native_libs})
+  target_link_libraries(${TARGET_NAME} PRIVATE ${llvm_native_libs} nlohmann_json::nlohmann_json)
 
   # On Windows, we need to copy the DLL to the test executable directory
   if(WIN32)

@@ -86,8 +86,14 @@ public:
   /// If supplied, stateAvailable is set only when successful terminal sampling
   /// leaves an uncollapsed state. The caller may then use runtime().takeState()
   /// before executing the session again.
+  /// binaryOutput is false if any execution records a nonbinary value.
   int64_t sample(size_t shots, std::vector<std::string>& results,
-                 bool* stateAvailable = nullptr);
+                 bool* stateAvailable = nullptr, bool* binaryOutput = nullptr);
+
+  /// Whether the module can record numeric output, requiring full capture.
+  [[nodiscard]] bool mayRecordNonBinaryOutput() const {
+    return mayRecordNonBinaryOutput_;
+  }
 
   [[nodiscard]] auto runtime() -> Runtime&;
 
@@ -97,6 +103,7 @@ private:
   EntryPointFn* entryPointFn_ = nullptr;
   std::optional<std::vector<uintptr_t>> samplingOutputs_;
   bool initializesRuntime_ = false;
+  bool mayRecordNonBinaryOutput_ = false;
   Execution execution_;
 
   /// Initializes the native target, asm printer and asm parser.

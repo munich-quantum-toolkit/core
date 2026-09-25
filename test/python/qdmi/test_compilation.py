@@ -392,7 +392,7 @@ def test_default_payload_supports_measurement_controlled_loop() -> None:
 def test_qir_artifact_rejects_unsupported_entry_result() -> None:
     """Keep scalar program outputs distinct from the QDMI QIR status return."""
     source = "OPENQASM 3.0; qubit q; bit c = measure q; int[32] k = int[32](c);"
-    with pytest.raises(ValueError, match=r"i64 \(\) entry point"):
+    with pytest.raises(ValueError, match="Compilation failed for selected payload"):
         compile_program(source, target="mqt.ddsim.default")
 
 
@@ -470,3 +470,11 @@ def test_qir_output_capture_requires_qir_sampling(program_format: ProgramFormat,
     # The RTTI-free adapter can lose the nested exception text on macOS.
     with pytest.raises(ValueError, match="Failed to submit compiled program"):
         submit_program(compiled, target=device, num_shots=shots, custom2=True)
+
+
+@pytest.mark.parametrize("declaration", ["uint[1] count = 1", "int count = 0", "bool accepted = true"])
+def test_qir_export_rejects_unrecorded_scalar_outputs(declaration: str, capfd: pytest.CaptureFixture[str]) -> None:
+    """Never turn selected program output into an entry-point exit code."""
+    with pytest.raises(RuntimeError, match="Compiler action failed"):
+        compile_program(f"OPENQASM 3.0; {declaration};", output=OutputFormat.QIR_ADAPTIVE)
+    assert "QIR export of scalar OpenQASM outputs is not supported" in capfd.readouterr().err

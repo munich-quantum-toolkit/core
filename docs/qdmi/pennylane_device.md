@@ -15,11 +15,11 @@ advertised by the selected QDMI device, submitted through the QDMI bindings, and
 reconstructed from finite-shot QDMI results.
 
 Any registered gate-based QDMI device can use this integration if it advertises
-OpenQASM 3 or OpenQASM 2, accepts finite-shot jobs, and returns
-computational-basis samples. Specialized neutral-atom interfaces, pulse-level
-control, and analytic execution are unsupported. The examples below use the
-local [DD-based simulator device](ddsim_device.md) included with MQT Core and
-require no credentials or remote resources.
+IQM JSON, OpenQASM 3, or OpenQASM 2, accepts finite-shot jobs, and returns
+binary samples. Specialized neutral-atom interfaces, pulse-level control, and
+analytic execution are unsupported. The examples below use the local
+[DD-based simulator device](ddsim_device.md) included with MQT Core and require
+no credentials or remote resources.
 
 Install MQT Core with the optional PennyLane dependency into the active
 environment:
@@ -64,9 +64,15 @@ finite-shot results from the samples returned through QDMI.
 
 MQT Core selects the program format in the following order:
 
-1. OpenQASM 3 if the QDMI device advertises it.
-2. OpenQASM 2 only if OpenQASM 3 is unavailable.
-3. A format error before job creation if neither format is available.
+1. IQM JSON if advertised, using native PRX rotations and CZ gates.
+2. OpenQASM 3 if advertised.
+3. OpenQASM 2 if advertised.
+4. A format error before job creation if none is available.
+
+The IQM converter sends a single circuit with physical site names and a final
+measurement in device-wire order. Its result positions are independent of site
+names. The plugin reconstructs PennyLane's requested wire order from QDMI's
+bit-zero-on-the-right strings, including custom wire labels and subsets.
 
 The OpenQASM 3 converter selects operation spellings advertised by the QDMI
 device and validates the program against its topology. If conversion fails, MQT

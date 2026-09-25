@@ -42,6 +42,13 @@ struct DDSamplingState {
   dd::VectorDD state{};
 };
 
+/// Complete classical return values in execution order. CBit registers are
+/// arrays of i1 attributes; undefined cells are unit attributes.
+struct DDProgramOutput {
+  std::vector<std::vector<Attribute>> shots;
+  bool binary = true;
+};
+
 /// Build a matrix DD for a unitary QCO function.
 ///
 /// The function must have one block. The interpreter supports concrete QCO and
@@ -124,10 +131,17 @@ FailureOr<dd::VectorDD> simulateStatevector(
 /// On failure, it may contain an incomplete sequence.
 /// @param retainedState Optional output, cleared before sampling and populated
 /// only after successful terminal sampling. It owns the uncollapsed state.
+/// @param programOutput Optional complete classical output. Includes scalar
+/// returns as output data and suppresses implicit measurement when any output
+/// or explicit measurement exists. Only i1 scalars and defined CBit cells form
+/// binary counts/shots; other values clear these results without failing
+/// execution. Callers retaining source types must additionally distinguish
+/// one-bit integers from Booleans.
 /// @return Outcome counts, or failure for an unsupported program.
 FailureOr<std::map<std::string, size_t>>
 sample(func::FuncOp func, size_t shots, uint64_t seed = 0,
        const DDArgumentBindings& argumentBindings = DDArgumentBindings(),
        std::vector<std::string>* shotResults = nullptr,
-       DDSamplingState* retainedState = nullptr);
+       DDSamplingState* retainedState = nullptr,
+       DDProgramOutput* programOutput = nullptr);
 } // namespace mlir::qco

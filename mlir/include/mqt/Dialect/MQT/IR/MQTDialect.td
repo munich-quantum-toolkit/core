@@ -38,6 +38,11 @@ def MQTDialect : Dialect {
     register declaration, including local reference buffers created during
     conversion. Input and register names share one function-wide
     namespace.
+    `mqt.qasm_output_name` and `mqt.qasm_output_type` on function results
+    preserve the selected OpenQASM output's name and source type. The type is
+    `bit`, `bit_register`, `bool`, `int`, `uint`, or `float`; it distinguishes
+    numeric types from binary outputs after lowering to signless integers.
+    Transformations must preserve these attributes with the corresponding result.
     `mqt.entry_point` marks the single public, defined `func.func` program entry
     in a module. Dynamic quantum allocations (`qc.alloc`, `qco.alloc`,
     qubit `memref.alloc`, and `qtensor.alloc`) must appear directly in its
@@ -63,7 +68,8 @@ def MQTDialect : Dialect {
       "::mlir::IntegerAttr":$input_id, "::mlir::StringAttr":$source_name,
       "::mlir::DictionaryAttr":$parameter_group,
       "::mlir::StringAttr":$register_name, "::mlir::UnitAttr":$entry_point,
-      "::mlir::UnitAttr":$unitary);
+      "::mlir::UnitAttr":$unitary, "::mlir::StringAttr":$qasm_output_name,
+      "::mlir::StringAttr":$qasm_output_type);
 
   let hasOperationAttrVerify = 1;
   let hasRegionArgAttrVerify = 1;

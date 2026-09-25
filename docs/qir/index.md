@@ -208,22 +208,20 @@ print(qiskit_job.get_counts())
 
 ## Retrieve the QIR output stream through QDMI
 
-Counts summarize recorded measurement results and Boolean values. Adaptive
-compilation records returned CBit registers containing computed values as
-Booleans, preserving bit order and overwritten values. Registers containing only
-measurement results retain result-array recording. QIR's textual output stream
-also preserves output labels, array and tuple records, other recorded scalar
-values, and shot framing. Enable capture with DDSIM's boolean `custom2`
-parameter, then request its string result from `CustomProperty.CUSTOM1`:
+Counts are available when all recorded leaves are measurement results or Boolean
+values. Adaptive compilation records returned CBit registers containing computed
+values as Booleans, preserving bit order and overwritten values. Registers
+containing only measurement results retain result-array recording. QIR's textual
+output stream also preserves output labels, array and tuple records, other
+recorded scalar values, and shot framing. Enable capture with DDSIM's boolean
+`custom2` parameter, then retrieve its standard QIR output result:
 
 ```{code-cell} ipython3
-from mqt.core.qdmi import CustomProperty
-
 recorded_job = device.submit_job(
     adaptive.to_bitcode(), ProgramFormat.QIR_ADAPTIVE_MODULE, num_shots=2, custom1=7, custom2=True
 )
 assert recorded_job.wait()
-output = recorded_job.get_custom_result(CustomProperty.CUSTOM1, str)
+output = recorded_job.get_qir_output()
 assert isinstance(output, str)
 assert output.count("START\n") == 2 and output.count("END\t0\n") == 2
 print(output, end="")
@@ -231,16 +229,18 @@ print("Counts:", recorded_job.get_counts())
 assert recorded_job.get_counts() == {"0": 2}
 ```
 
-The parameter and result slots are separate: **job parameter CUSTOM1** is the
-seed; **job result CUSTOM1** contains the captured text. The same capture API
-works for Base and Adaptive profiles, with text or bitcode input.
+DDSIM automatically captures programs that may record nonbinary values. Such a
+job exposes counts and shots only if every executed recording was binary;
+otherwise both queries are unsupported while the complete stream remains
+available. Numeric zero and one are still numeric outputs. `custom2=True`
+enables capture for binary-only programs, and the former custom result remains
+an alias for compatibility.
 
-Capture is off by default. Enabling it executes the program for each shot and
-retains the complete stream in memory, so start with a small shot count. The
-stream uses QIR record order; QDMI shots and counts place the highest-index bit
-first. Capture jobs still expose those normal results, but do not retain an
-uncollapsed statevector. OpenQASM jobs and zero-shot state-extraction jobs
-reject capture. See {doc}`DDSIM <../qdmi/ddsim_device>` for the C API parameter
+Capture executes the program for each shot and retains the stream in memory, so
+start with a small shot count. The stream uses QIR record order; QDMI binary
+shots put output bit zero on the right. Capture jobs do not retain an
+uncollapsed statevector. OpenQASM and zero-shot state-extraction jobs reject
+`custom2`. See {doc}`DDSIM <../qdmi/ddsim_device>` for the C API parameter
 types.
 
 ## Execution contracts

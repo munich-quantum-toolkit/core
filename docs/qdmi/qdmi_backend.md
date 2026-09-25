@@ -437,6 +437,16 @@ def serialize(circuit: QuantumCircuit, backend: QDMIBackend) -> bytes: ...
 {py:func}`~mqt.core.qdmi.is_binary_program_format` states which kind a format
 carries. The backend checks the returned type against the format and raises
 {py:class}`~mqt.core.plugins.qiskit.exceptions.TranslationError` on a mismatch.
+Formats such as IQM JSON expose measurement positions rather than Qiskit
+classical destinations. Their serializers return
+{py:class}`~mqt.core.plugins.qiskit.serializers.SerializedProgram` with the
+payload, raw output width, and one output index per source classical bit.
+Indices start at zero on the right of QDMI bitstrings. `None` denotes an
+unwritten source bit initialized to zero; overwritten destinations select the
+last recording. Result reconstruction preserves register widths and merges
+histogram entries that differ only in overwritten or unused recordings.
+Serializers returning plain strings or bytes retain the identity mapping.
+
 A serializer reads the device through
 {py:attr}`~mqt.core.plugins.qiskit.backend.QDMIBackend.device` and the supported
 operations through
