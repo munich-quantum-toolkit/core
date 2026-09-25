@@ -31,7 +31,7 @@ template <> struct type_caster<qdmi::CustomJobParameter> {
   NB_TYPE_CASTER(qdmi::CustomJobParameter,
                  const_name("str | bool | int | float | bytes"))
 
-  // Nanobind requires these caster method names.
+  // nanobind requires these caster method names.
   // NOLINTNEXTLINE(readability-identifier-naming)
   bool from_python(handle src, uint32_t flags, cleanup_list* cleanup) {
     if (isinstance<bytes>(src)) {
