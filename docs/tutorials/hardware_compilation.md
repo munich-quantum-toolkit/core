@@ -379,6 +379,6 @@ For further reference:
   pipelines, serialization, and the Python, CLI, and C++ interfaces.
 - Explore {doc}`../mlir/qiskit`, {doc}`../mlir/OpenQASM`, and
   {doc}`../qir/index` for interoperability and output formats.
-- Try {doc}`../benchmarks` for structured programs with analytic references.
+- Try {doc}`../benchmarks` for structured programs with references.
 - Use [MLIR development policy](../development.md#mlir) when you are ready to
   implement a compiler change.

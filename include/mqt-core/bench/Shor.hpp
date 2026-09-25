@@ -22,7 +22,8 @@
 namespace mqt::bench {
 
 /// Parameters for semiclassical order finding with 2n phase bits and 2n+3
-/// qubits.
+/// qubits. `number` must be odd and satisfy `3 <= number <= MAX_NUMBER`.
+/// `base` must satisfy `1 < base < number` and be coprime to `number`.
 struct ShorOptions {
   static constexpr uint64_t MAX_NUMBER = (uint64_t{1} << 31U) - 1U;
   uint64_t number;
@@ -39,10 +40,8 @@ struct ShorEvaluation {
   std::optional<FactorPair> factors;
 };
 
-/// Structured semiclassical order finding for an odd modulus of at most 31
-/// bits.
+/// A validated semiclassical Shor order-finding benchmark.
 ///
-/// The base must satisfy 1 < base < number and be coprime to number.
 /// Evaluation uses exact continued fractions and verifies factors by division.
 /// It does not compute an ideal phase distribution or the order classically.
 class MQT_CORE_BENCH_EXPORT Shor final {

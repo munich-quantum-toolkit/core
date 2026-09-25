@@ -35,7 +35,7 @@ void registerWState(const nb::module_& m);
 // The nanobind module macro requires its module handle by value.
 // NOLINTNEXTLINE(performance-unnecessary-value-param)
 NB_MODULE(MQT_CORE_MODULE_NAME, m) {
-  m.doc() = "Typed benchmark instances and analytic references.";
+  m.doc() = "Typed benchmark instances and references.";
 
   nb::class_<bench::Output>(m, "Output",
                             "One logical classical output register.")
@@ -91,8 +91,8 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
       "repeat_until_success", "Repeat-until-success benchmark instance.");
   registerRepeatUntilSuccess(repeatUntilSuccess);
 
-  nb::module_ shor = m.def_submodule(
-      "shor", "Shor order finding and classical factor recovery.");
+  nb::module_ shor =
+      m.def_submodule("shor", "Shor benchmark instances and options.");
   registerShor(shor);
 
   const nb::module_ teleportation = m.def_submodule(

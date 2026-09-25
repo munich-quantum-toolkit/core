@@ -51,10 +51,10 @@ Then choose a starting point:
 
 | Task                                 | Start here                                                                                                                                                                                                                                                                    |
 | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Compile and execute a program**    | Estimate a phase with [QPE](https://mqt.readthedocs.io/projects/core/en/stable/getting_started.html); explore [compilation and execution](https://mqt.readthedocs.io/projects/core/en/stable/compilation/index.html).                                                         |
+| **Compile and execute a program**    | Factor 21 with [Shor's algorithm](https://mqt.readthedocs.io/projects/core/en/stable/getting_started.html); explore [compilation and execution](https://mqt.readthedocs.io/projects/core/en/stable/compilation/index.html).                                                   |
 | **Connect or implement a device**    | [Discover devices](https://mqt.readthedocs.io/projects/core/en/stable/qdmi/driver.html#python-bindings), [integrate SDKs, or implement an interface](https://mqt.readthedocs.io/projects/core/en/stable/qdmi/index.html).                                                     |
 | **Use decision diagrams**            | Represent states and operations in C++ or Python: [DD quickstart](https://mqt.readthedocs.io/projects/core/en/stable/dd_package.html#quickstart).                                                                                                                             |
-| **Generate and evaluate benchmarks** | [Configure quantum programs](https://mqt.readthedocs.io/projects/core/en/stable/benchmarks.html#configure-a-typed-instance) and compare results with analytic references.                                                                                                     |
+| **Generate and evaluate benchmarks** | [Configure quantum programs](https://mqt.readthedocs.io/projects/core/en/stable/benchmarks.html#configure-a-typed-instance) and compare results with references.                                                                                                              |
 | **Exchange quantum programs**        | [Qiskit to QIR](https://mqt.readthedocs.io/projects/core/en/stable/qir/index.html#from-a-qiskit-circuit-to-qir), [OpenQASM](https://mqt.readthedocs.io/projects/core/en/stable/mlir/OpenQASM.html), and [jeff](https://mqt.readthedocs.io/projects/core/en/stable/jeff.html). |
 | **Embed or extend MQT Core**         | [Use the C++ libraries](https://mqt.readthedocs.io/projects/core/en/stable/cpp_api.html#use-the-dd-library) or [extend the MLIR compiler](https://mqt.readthedocs.io/projects/core/en/stable/development.html#mlir).                                                          |
 
@@ -95,7 +95,6 @@ QASM3: (3, 7)
 The
 [factoring walkthrough](https://mqt.readthedocs.io/projects/core/en/stable/getting_started.html)
 explains the measured phase, continued fractions, and verified factor recovery.
-The driver handles classical prechecks and retries; the callback owns execution.
 
 ## Development
 

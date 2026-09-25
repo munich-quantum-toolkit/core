@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""Shor order finding and classical factor recovery."""
+"""Shor benchmark instances and options."""
 
 import enum
 from collections.abc import Callable, Mapping
@@ -20,11 +20,11 @@ class Options:
     def __init__(self, *, number: int, base: int = 2) -> None: ...
     @property
     def number(self) -> int:
-        """The odd modulus, at most 2**31 - 1."""
+        """The odd modulus, from 3 through :math:`2^{31}-1`."""
 
     @property
     def base(self) -> int:
-        """The base, coprime to the modulus."""
+        """The base, from 2 through the modulus minus one and coprime to it."""
 
 class Evaluation:
     """Verified factors recovered from measured phases."""
@@ -38,7 +38,7 @@ class Evaluation:
         """A sorted factor pair, or ``None``."""
 
 class Shor:
-    """Semiclassical order finding with one reused query qubit."""
+    """A validated semiclassical Shor benchmark."""
 
     def __init__(self, options: Options) -> None: ...
     @property
@@ -91,7 +91,7 @@ class FactorResult:
     def status(self) -> FactorStatus: ...
     @property
     def factors(self) -> tuple[int, int] | None:
-        """A verified sorted pair, or ``None``."""
+        """A verified sorted factor pair, or ``None``."""
 
     @property
     def attempts(self) -> int:

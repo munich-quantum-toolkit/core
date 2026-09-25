@@ -13,12 +13,12 @@
 #include "bench/Shor.hpp"
 
 #include "nanobind/nanobind.h"
-#include "nanobind/stl/function.h"    /// NOLINT(misc-include-cleaner)
-#include "nanobind/stl/map.h"         /// NOLINT(misc-include-cleaner)
-#include "nanobind/stl/optional.h"    /// NOLINT(misc-include-cleaner)
-#include "nanobind/stl/pair.h"        /// NOLINT(misc-include-cleaner)
-#include "nanobind/stl/string.h"      /// NOLINT(misc-include-cleaner)
-#include "nanobind/stl/string_view.h" /// NOLINT(misc-include-cleaner)
+#include "nanobind/stl/function.h"    // NOLINT(misc-include-cleaner)
+#include "nanobind/stl/map.h"         // NOLINT(misc-include-cleaner)
+#include "nanobind/stl/optional.h"    // NOLINT(misc-include-cleaner)
+#include "nanobind/stl/pair.h"        // NOLINT(misc-include-cleaner)
+#include "nanobind/stl/string.h"      // NOLINT(misc-include-cleaner)
+#include "nanobind/stl/string_view.h" // NOLINT(misc-include-cleaner)
 
 #include <cstddef>
 #include <cstdint>
@@ -28,16 +28,17 @@ namespace mqt {
 namespace nb = nanobind;
 using namespace nb::literals;
 
-/// NOLINTNEXTLINE(misc-use-internal-linkage)
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerShor(nb::module_& m) {
   nb::class_<bench::ShorOptions>(
       m, "Options", "Parameters for semiclassical Shor order finding.")
       .def(nb::init<uint64_t, uint64_t>(), nb::kw_only(), "number"_a,
            "base"_a = 2)
       .def_ro("number", &bench::ShorOptions::number,
-              "The odd modulus, at most 2**31 - 1.")
-      .def_ro("base", &bench::ShorOptions::base,
-              "The base, coprime to the modulus.");
+              R"pb(The odd modulus, from 3 through :math:`2^{31}-1`.)pb")
+      .def_ro(
+          "base", &bench::ShorOptions::base,
+          "The base, from 2 through the modulus minus one and coprime to it.");
   nb::class_<bench::ShorEvaluation>(
       m, "Evaluation", "Verified factors recovered from measured phases.")
       .def_ro("success_probability", &bench::ShorEvaluation::successProbability,
@@ -45,8 +46,8 @@ void registerShor(nb::module_& m) {
               "factor pair.")
       .def_ro("factors", &bench::ShorEvaluation::factors,
               "A sorted factor pair, or ``None``.");
-  nb::class_<bench::Shor>(
-      m, "Shor", "Semiclassical order finding with one reused query qubit.")
+  nb::class_<bench::Shor>(m, "Shor",
+                          "A validated semiclassical Shor benchmark.")
       .def(nb::init<bench::ShorOptions>(), "options"_a)
       .def_prop_ro("options", &bench::Shor::options,
                    nb::rv_policy::reference_internal,
@@ -96,7 +97,7 @@ void registerShor(nb::module_& m) {
                                   "Result of a bounded factoring workflow.")
       .def_ro("status", &bench::FactorResult::status)
       .def_ro("factors", &bench::FactorResult::factors,
-              "A verified sorted pair, or ``None``.")
+              "A verified sorted factor pair, or ``None``.")
       .def_ro("attempts", &bench::FactorResult::attempts,
               "The number of attempted bases.");
   m.def(

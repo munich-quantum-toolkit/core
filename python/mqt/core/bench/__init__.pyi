@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""Typed benchmark instances and analytic references."""
+"""Typed benchmark instances and references."""
 
 from mqt.core.bench import bv as bv
 from mqt.core.bench import ghz as ghz

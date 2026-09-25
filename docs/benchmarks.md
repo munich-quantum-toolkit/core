@@ -238,8 +238,8 @@ Adding a family requires five extension points:
    `include/mqt-core/bench/BenchmarkFamilies.inc`. Its expansions provide the
    public JSON declarations and the synchronized semantic and MLIR registry
    glue.
-2. Add the typed instance, any options and validation, an analytic reference,
-   and evaluation under `include/mqt-core/bench/` and `src/bench/`. Add the
+2. Add the typed instance, any options and validation, a reference, and
+   evaluation under `include/mqt-core/bench/` and `src/bench/`. Add the
    family-specific parameter JSON, reference JSON, parser, and schema body to
    `src/bench/JSON.cpp`.
 3. Declare and implement the structured emitter under `mlir/bench/`, add its
@@ -263,45 +263,6 @@ Before evaluation, normalize backend results to the manifest's big-endian
 `result` order.
 
 ## Benchmark families
-
-### Shor order finding
-
-The `shor` family implements the semiclassical circuit in Sections 2.3–2.4 of
-[Beauregard's algorithm](https://arxiv.org/abs/quant-ph/0205095). It accepts an
-odd `number` from 3 through `2**31 - 1` and a coprime `base` satisfying
-`1 < base < number` (default 2). Prime moduli are valid order-finding instances.
-For an $n$-bit modulus, it allocates $2n+3$ qubits and returns exactly $2n$
-phase bits, at most 62. These bounds let classical recovery use 64-bit integers.
-
-```{code-cell} ipython3
-from mqt.core.bench import shor
-
-order_finding = shor.Shor(shor.Options(number=21))
-assert order_finding.output.width == 10
-assert order_finding.evaluate({"0010101011": 64}).factors == (3, 7)
-print(order_finding.instance_specification_json)
-```
-
-The generated QC program keeps loops and private register-based arithmetic
-helpers. The in-place multiplier shares Fourier addition with the modular
-multiplier below and clears its workspace using inverse arithmetic. Generation
-precomputes modular powers and rotation tables of polynomial size; it does not
-compute the order or enumerate a modular orbit. Device compilation applies the
-normal inliner and target lowering. See {doc}`getting_started` for execution,
-phase interpretation, and the callback-based `shor.factor` workflow through
-Adaptive QIR and OpenQASM 3.
-
-The circuit uses exact Fourier arithmetic. The 31-bit input limit bounds
-representation size, not practical simulation cost or device capacity.
-
-The manifest uses reference kind `verification`, model `shor_factors`, and
-version 1. Evaluation reports optional sorted `factors` and the shot-weighted
-`success_probability`: the fraction of outcomes that independently reveal a
-verified pair. Its JSON has `factors` as a pair or `null` and only
-`success_probability` in `metrics`. There is no efficiently supplied ideal
-phase-distribution reference, TVD, or Hellinger metric. Invalid outcome strings,
-empty counts, and zero total shots are rejected; unsuccessful phases are valid
-data.
 
 ### Quantum phase estimation
 
@@ -508,6 +469,31 @@ The input width limit does not guarantee that a device or compiler supports that
 many qubits. See {doc}`mlir/target_compilation` for device and control-flow
 limits. The benchmark simulates an ideal adaptive circuit; it does not model
 error correction, magic-state distillation, or cultivation.
+
+### Shor order finding
+
+The `shor` family implements the semiclassical circuit in Sections 2.3–2.4 of
+[Beauregard's algorithm](https://arxiv.org/abs/quant-ph/0205095). An odd
+`number` from 3 through $2^{31}-1$ and a coprime `base` with
+$1 < \mathtt{base} < \mathtt{number}$ (default 2) define an instance. Prime
+moduli are valid. For an $n$-bit modulus, the circuit uses $2n+3$ qubits and
+returns $2n$ phase bits.
+
+```{code-cell} ipython3
+from mqt.core.bench import shor
+
+order_finding = shor.Shor(shor.Options(number=21))
+assert order_finding.output.width == 10
+assert order_finding.evaluate({"0010101011": 64}).factors == (3, 7)
+```
+
+The manifest uses a `verification` reference with model `shor_factors`.
+Evaluation reports a sorted factor pair, when found, and the fraction of shots
+that independently yield verified factors. It does not report an ideal phase
+distribution, TVD, or Hellinger fidelity. An unsuccessful phase is valid data;
+invalid outcomes and empty counts are rejected. The input limit bounds classical
+recovery, not simulation cost. See {doc}`getting_started` for phase
+interpretation, execution, and the callback-based factoring workflow.
 
 ### W-state preparation
 

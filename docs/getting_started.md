@@ -9,21 +9,20 @@ mystnb:
 # Compile and execute Shor's algorithm
 
 Factor 21 with a structured quantum program, the compiler, and the bundled DDSIM
-simulator. Install MQT Core in a Python 3.11 or newer environment as described
-in {doc}`installation`. The Python wheel includes the compiler and simulator
-used here.
+simulator. Install MQT Core as described in {doc}`installation`. The Python
+wheel includes the compiler and simulator used here.
 
 ## Factor a number
 
 {term}`Shor's algorithm` combines quantum {term}`order finding` with classical
 factor recovery. For a chosen base $a$ coprime to $N$, the quantum circuit
 estimates phases of the modular multiplication $x \mapsto ax \bmod N$. Continued
-fractions turn measured phases into candidate exponents; modular exponentiation
-and greatest common divisors verify possible factors.
+fractions yield candidate exponents from the measured phases. The driver checks
+each exponent by modular exponentiation, uses greatest common divisors to find
+possible factors, and verifies them by division.
 
-The following example is the same source as the README. The factoring driver
-selects bases and recovers factors. Its `run` callback owns device selection,
-compilation, shot count, and execution seed.
+The factoring driver selects bases and recovers factors. Its `run` callback owns
+device selection, compilation, shot count, and execution seed.
 
 ```{code-cell} ipython3
 :load: _build/readme_example.py
@@ -111,11 +110,11 @@ Hellinger fidelity.
 
 ## Continue
 
+- Work through the {doc}`compiler tutorial <tutorials/index>` to explain
+  representations, optimizations, control flow, and hardware constraints.
 - Read the [Shor benchmark reference](benchmarks.md#shor-order-finding) for
   input limits and JSON interfaces.
 - Try the [QPE examples](benchmarks.md#quantum-phase-estimation) to isolate
   phase estimation with a known eigenstate.
-- Work through the {doc}`compiler tutorial <tutorials/index>` to explain
-  representations, optimizations, control flow, and hardware constraints.
 - Use {doc}`mlir/target_compilation` and {doc}`qdmi/driver` to compile for other
   devices and inspect their capabilities.

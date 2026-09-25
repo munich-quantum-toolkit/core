@@ -295,8 +295,7 @@ benchmark instance
   **Preferred term:** benchmark instance. **Accepted alias:** instance when the
   benchmark context is clear. One validated member of a benchmark family with
   every default resolved. It owns a logical output and an analytic or
-  verification reference and
-  can be used to generate a program or manifest.
+  verification reference and can be used to generate a program or manifest.
 
 benchmark instance specification
 instance specification
@@ -330,8 +329,9 @@ Shor's algorithm
 
 order finding
   **Preferred term:** order finding. **Accepted aliases:** none. Finding the
-  smallest positive exponent r for which a given base a satisfies a^r = 1
-  modulo N, with a coprime to N.
+  smallest positive exponent :math:`r` for which a given base :math:`a`
+  satisfies :math:`a^r \equiv 1 \pmod{N}`, with :math:`a` coprime to
+  :math:`N`.
 
 continued fraction
   **Preferred term:** continued fraction. **Accepted aliases:** none. A nested
