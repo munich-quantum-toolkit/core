@@ -19,11 +19,11 @@ class Options:
     def __init__(self, *, marked_bitstring: str, measurement_strength: float | None = None) -> None: ...
     @property
     def marked_bitstring(self) -> str:
-        """The big-endian marked outcome."""
+        """The big-endian marked outcome with 2 through 62 bits."""
 
     @property
     def measurement_strength(self) -> float | None:
-        """The :math:`\\kappa`-measurement strength, or ``None`` for :math:`2^{-n/2}`."""
+        """The finite strength :math:`0<\\kappa\\leq 2^{-n/2}`, or ``None`` for the upper bound."""
 
 class Grover:
     """A validated weak-measurement Grover benchmark.

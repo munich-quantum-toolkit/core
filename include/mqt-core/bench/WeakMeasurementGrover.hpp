@@ -25,9 +25,9 @@ struct WeakMeasurementGroverOptions {
   /// Largest supported search-register width.
   static constexpr size_t MAX_QUBITS = 62;
 
-  /// Big-endian marked outcome. Its width is the number of search qubits.
+  /// Big-endian marked outcome with 2 through 62 search qubits.
   std::string markedBitstring;
-  /// Measurement strength, or no value to use 2^(-n/2).
+  /// Finite strength in (0, 2^(-n/2)], or no value to use the upper bound.
   std::optional<double> measurementStrength = std::nullopt;
 };
 

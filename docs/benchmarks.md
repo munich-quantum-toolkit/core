@@ -280,11 +280,12 @@ For $n$ search qubits, the default measurement strength is
 \kappa=2^{-n/2}.
 ```
 
-The benchmark accepts $0<\kappa\leq 2^{-n/2}$, the range in which the paper
-proves the Grover step robust to the measurements. A smaller value disturbs the
-search state less but makes each successful probe outcome less likely. The
-analytic reference scores the marked search state after the loop terminates; it
-does not score the number of iterations.
+The big-endian marked bitstring has 2–62 bits. The benchmark accepts
+$0<\kappa\leq 2^{-n/2}$, the range in which the paper proves the Grover step
+robust to the measurements. A smaller value disturbs the search state less but
+makes each successful probe outcome less likely. The analytic reference scores
+the marked search state after the loop terminates; it does not score the number
+of iterations.
 
 ```{code-cell} ipython3
 import math
