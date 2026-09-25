@@ -1146,11 +1146,11 @@ def submit_program(
     target: str | mqt.core.qdmi.Device,
     num_shots: int = 1024,
     program_format: mqt.core.qdmi.ProgramFormat | None = None,
-    custom1: str | bool | float | None = None,
-    custom2: str | bool | float | None = None,
-    custom3: str | bool | float | None = None,
-    custom4: str | bool | float | None = None,
-    custom5: str | bool | float | None = None,
+    custom1: str | bool | float | bytes | None = None,
+    custom2: str | bool | float | bytes | None = None,
+    custom3: str | bool | float | bytes | None = None,
+    custom4: str | bool | float | bytes | None = None,
+    custom5: str | bool | float | bytes | None = None,
     options: CompilationOptions | None = None,
 ) -> mqt.core.qdmi.Job:
     """Compile source or submit a compiled program to a device.

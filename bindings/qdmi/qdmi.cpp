@@ -13,7 +13,7 @@
 #include "qdmi/driver/Driver.hpp"
 #include "qdmi/driver/SessionConfig.hpp"
 
-#include "CustomJobParameter.hpp"
+#include "CustomJobParameter.hpp" // NOLINT(misc-include-cleaner)
 
 #include "nanobind/nanobind.h"
 #include "nanobind/operators.h"
@@ -246,10 +246,9 @@ when the custom slot is unsupported.)pb");
       .value("CUSTOM4", QDMI_PROGRAM_FORMAT_CUSTOM4)
       .value("CUSTOM5", QDMI_PROGRAM_FORMAT_CUSTOM5);
 
-  qdmiModule.def(
-      "is_binary_program_format", &qdmi::isBinaryProgramFormat,
-      "program_format"_a,
-      R"pb(Returns whether a program format carries a binary payload.
+  qdmiModule.def("is_binary_program_format", &qdmi::isBinaryProgramFormat,
+                 "program_format"_a,
+                 R"pb(Returns whether a program format carries a binary payload.
 
 ``QIR_BASE_MODULE``, ``QIR_ADAPTIVE_MODULE``, and ``QPY`` hold bitcode or
 another serialized object. Such a payload may contain a null byte and is not

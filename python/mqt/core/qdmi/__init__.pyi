@@ -304,11 +304,11 @@ class Device:
         program_format: ProgramFormat,
         num_shots: int | None = None,
         *,
-        custom1: str | bool | float | None = None,
-        custom2: str | bool | float | None = None,
-        custom3: str | bool | float | None = None,
-        custom4: str | bool | float | None = None,
-        custom5: str | bool | float | None = None,
+        custom1: str | bool | float | bytes | None = None,
+        custom2: str | bool | float | bytes | None = None,
+        custom3: str | bool | float | bytes | None = None,
+        custom4: str | bool | float | bytes | None = None,
+        custom5: str | bool | float | bytes | None = None,
     ) -> Job:
         """Submits a text job to the device."""
 
@@ -319,11 +319,11 @@ class Device:
         program_format: ProgramFormat,
         num_shots: int | None = None,
         *,
-        custom1: str | bool | float | None = None,
-        custom2: str | bool | float | None = None,
-        custom3: str | bool | float | None = None,
-        custom4: str | bool | float | None = None,
-        custom5: str | bool | float | None = None,
+        custom1: str | bool | float | bytes | None = None,
+        custom2: str | bool | float | bytes | None = None,
+        custom3: str | bool | float | bytes | None = None,
+        custom4: str | bool | float | bytes | None = None,
+        custom5: str | bool | float | bytes | None = None,
     ) -> Job:
         """Submits an exact byte payload to the device."""
 

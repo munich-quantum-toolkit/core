@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <cstring>
 #include <new>
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -414,9 +415,9 @@ extern "C" int TEST_SESSION_QDMI_device_job_set_parameter(
     if (value == nullptr || size == 0) {
       return QDMI_ERROR_INVALIDARGUMENT;
     }
-    const auto* bytes = static_cast<const std::byte*>(value);
+    const auto bytes = std::span{static_cast<const std::byte*>(value), size};
     job->customParameters[parameter - QDMI_DEVICE_JOB_PARAMETER_CUSTOM1].assign(
-        bytes, bytes + size);
+        bytes.begin(), bytes.end());
   }
   if (parameter == QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT) {
     if (value == nullptr || size != sizeof(job->format)) {
