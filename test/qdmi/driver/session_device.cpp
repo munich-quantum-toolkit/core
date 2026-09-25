@@ -257,6 +257,14 @@ extern "C" int TEST_SESSION_QDMI_device_session_set_parameter(
   if (session->initialized) {
     return QDMI_ERROR_BADSTATE;
   }
+  if (param == QDMI_DEVICE_SESSION_PARAMETER_TOKEN) {
+    if (failureMode() == "token-unsupported") {
+      return QDMI_ERROR_NOTSUPPORTED;
+    }
+    if (failureMode() == "token-denied") {
+      return QDMI_ERROR_PERMISSIONDENIED;
+    }
+  }
   if (param == QDMI_DEVICE_SESSION_PARAMETER_CHILDDEVICE) {
     if (value == nullptr || size != sizeof(QDMI_Child_Device)) {
       return QDMI_ERROR_INVALIDARGUMENT;

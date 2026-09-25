@@ -144,12 +144,6 @@ def test_unregistering_an_unknown_format_does_nothing() -> None:
     assert registry.get(ProgramFormat.CUSTOM1) is None
 
 
-def test_non_circuit_format_is_rejected() -> None:
-    """A format that does not carry a serialized circuit cannot have a serializer."""
-    with pytest.raises(ValueError, match="does not carry a serialized circuit"):
-        _registry().register(ProgramFormat.BATCH_JOB, _serializer)
-
-
 def test_module_functions_share_one_registry(monkeypatch: pytest.MonkeyPatch) -> None:
     """The public functions read and write the same process-wide registry."""
     monkeypatch.setattr(serializers, "_REGISTRY", _registry())
@@ -191,14 +185,6 @@ def test_entry_point_with_unknown_format_warns() -> None:
 
     with pytest.warns(UserWarning, match="does not name a program format"):
         assert registry.get(ProgramFormat.CUSTOM2) is None
-
-
-def test_entry_point_for_non_circuit_format_warns() -> None:
-    """An entry point for a format that carries no serialized circuit is skipped."""
-    registry = _registry([_entry_point("BATCH_JOB", "pkg.mod:serializer", _serializer)])
-
-    with pytest.warns(UserWarning, match="does not carry a serialized circuit"):
-        assert registry.get(ProgramFormat.BATCH_JOB) is None
 
 
 def test_entry_point_that_fails_to_load_warns() -> None:
@@ -299,13 +285,6 @@ def test_preferred_program_formats_orders_a_shuffled_list() -> None:
         ProgramFormat.QIR_BASE_STRING,
         ProgramFormat.QASM2,
     ]
-
-
-def test_preferred_program_formats_drops_non_circuit_formats() -> None:
-    """A format that carries no serialized circuit cannot be serialized into."""
-    reported = [ProgramFormat.QASM3, ProgramFormat.BATCH_JOB]
-
-    assert serializers.preferred_program_formats(reported) == [ProgramFormat.QASM3]
 
 
 def test_preferred_program_formats_puts_unnamed_formats_last(monkeypatch: pytest.MonkeyPatch) -> None:

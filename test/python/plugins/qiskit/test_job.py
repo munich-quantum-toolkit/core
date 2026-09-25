@@ -55,10 +55,11 @@ def recording_backend(
         width = original.num_clbits
         events.append("submit")
         job = MagicMock()
+        job.program_statuses = None
         job.num_shots = num_shots
         job.check.side_effect = lambda: (events.append("check"), Job.Status.DONE)[1]
-        job.get_shots.side_effect = lambda: (events.append("shots"), ["0" * width] * num_shots)[1]
-        job.get_counts.side_effect = lambda: (events.append("counts"), {"0" * width: num_shots})[1]
+        job.get_shots.side_effect = lambda _program_index=0: (events.append("shots"), ["0" * width] * num_shots)[1]
+        job.get_counts.side_effect = lambda _program_index=0: (events.append("counts"), {"0" * width: num_shots})[1]
         type(job).id = PropertyMock(side_effect=lambda: (events.append("id"), "remote-id")[1])
         jobs.append(job)
         return job
@@ -82,7 +83,7 @@ def test_batch_order_and_repeated_reads(recording_backend: RecordingBackend, *, 
         handle.get_shots.return_value = [f"{index:02b}"] * 4
         handle.get_counts.side_effect = None
         handle.get_counts.return_value = {f"{index:02b}": 4}
-        handle.check.side_effect = [Job.Status.RUNNING, Job.Status.DONE]
+        handle.check.side_effect = [Job.Status.DONE]
         handle.wait.side_effect = lambda: (events.append("wait"), True)[1]
     result = job.result()
     assert events.count("wait") == 3
@@ -107,7 +108,7 @@ def test_memory_order_registers_and_correlations(
     qc.metadata = {"experiment": "joint"}
     samples = ["101", "000", "011", "100"]
     job = backend.run(qc, shots=4, memory=True)
-    jobs[0].get_shots.side_effect = lambda: samples
+    jobs[0].get_shots.side_effect = lambda _program_index=0: samples
     result = job.result()
     assert result.get_memory() == ["10 1", "00 0", "01 1", "10 0"]
     assert result.get_counts() == Counter(result.get_memory())
@@ -118,7 +119,7 @@ def test_memory_order_registers_and_correlations(
 
     def run(circuits: Sequence[QuantumCircuit], **options: object) -> QDMIJob:
         handle = original_run(circuits, parameter_values=None, **options)
-        jobs[-1].get_shots.side_effect = lambda: samples
+        jobs[-1].get_shots.side_effect = lambda _program_index=0: samples
         return handle
 
     monkeypatch.setattr(backend, "run", run)
@@ -196,7 +197,7 @@ def test_malformed_memory_raises(recording_backend: RecordingBackend, samples: l
     """Reject missing shots, invalid characters, and incorrect classical widths."""
     backend, jobs, _ = recording_backend
     job = backend.run(QuantumCircuit(1, 1), shots=4, memory=True)
-    jobs[0].get_shots.side_effect = lambda: samples
+    jobs[0].get_shots.side_effect = lambda _program_index=0: samples
     with pytest.raises(JobError, match="Invalid QDMI"):
         job.result()
     jobs[0].cancel.assert_not_called()
@@ -207,7 +208,7 @@ def test_malformed_histogram_raises(recording_backend: RecordingBackend, counts:
     """Reject histogram data that cannot describe the requested classical samples."""
     backend, jobs, _ = recording_backend
     job = backend.run(QuantumCircuit(1, 1), shots=4)
-    jobs[0].get_counts.side_effect = lambda: counts
+    jobs[0].get_counts.side_effect = lambda _program_index=0: counts
     with pytest.raises(JobError, match="Invalid QDMI"):
         job.result()
 
@@ -387,7 +388,7 @@ def test_estimator_nonzero_uncertainty(recording_backend: RecordingBackend, monk
 
     def run(circuits: Sequence[QuantumCircuit], **options: object) -> QDMIJob:
         job = original_run(circuits, parameter_values=None, **options)
-        jobs[-1].get_counts.side_effect = lambda: {"00": 1, "01": 1, "10": 1, "11": 1}
+        jobs[-1].get_counts.side_effect = lambda _program_index=0: {"00": 1, "01": 1, "10": 1, "11": 1}
         return job
 
     monkeypatch.setattr(backend, "run", run)
@@ -476,3 +477,38 @@ def test_existing_job_constructor_rejects_mismatched_inputs(
     assert not jobs
     for handle in handles:
         handle.check.assert_not_called()
+
+
+@pytest.mark.parametrize("memory", [False, True])
+def test_native_program_group_preserves_circuit_results(
+    recording_backend: RecordingBackend, monkeypatch: pytest.MonkeyPatch, *, memory: bool
+) -> None:
+    """Native lists retain Qiskit experiment order and avoid single submissions."""
+    backend, singles, _ = recording_backend
+    shared = MagicMock()
+    shared.id = "native-id"
+    shared.program_statuses = [Job.Status.DONE] * 3
+    shared.check.return_value = Job.Status.DONE
+    shared.wait.return_value = True
+    shared.get_shots.side_effect = lambda program_index: [f"{program_index:02b}"] * 4
+    shared.get_counts.side_effect = lambda program_index: {f"{program_index:02b}": 4}
+    native = MagicMock(return_value=shared)
+    monkeypatch.setattr(backend.device, "try_submit_programs", native)
+    circuits = [QuantumCircuit(2, 2, name=f"native-{index}") for index in range(3)]
+    job = backend.run(circuits, shots=4, memory=memory)
+    result = job.result()
+    assert result.get_counts() == [{"00": 4}, {"01": 4}, {"10": 4}]
+    if memory:
+        assert result.get_memory(2) == ["10"] * 4
+    assert not singles
+    native.assert_called_once()
+    programs, program_format, shots = native.call_args.args
+    assert len(programs) == 3
+    assert all(isinstance(program, str) for program in programs)
+    assert program_format == ProgramFormat.QASM3
+    assert shots == 4
+    assert [entry.attempts[0].program_index for entry in job.entries] == [0, 1, 2]
+    shared.wait.assert_called_once()
+    shared.check.assert_called_once()
+    assert job.status().name == "DONE"
+    shared.check.assert_called_once()

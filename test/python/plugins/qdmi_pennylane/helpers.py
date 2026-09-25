@@ -138,6 +138,9 @@ class StubDevice:
             return None
         return [(_site(first), _site(second)) for first, second in self._coupling_map]
 
+    def try_submit_programs(self, *_args: object, **_kwargs: object) -> None:
+        """Reject native groups before submission to exercise independent jobs."""
+
     def submit_job(
         self,
         program: str,
@@ -153,6 +156,7 @@ class StubDevice:
         self.submissions.append((program, program_format, num_shots, parameters))
         shots = list(self._result_factory(program, num_shots))
         job = Mock()
+        job.program_statuses = None
         job_id = str(len(self.submissions))
         job.id = job_id
         self.events.append(f"submit:{job_id}")
@@ -166,7 +170,7 @@ class StubDevice:
 
         job.wait.side_effect = wait
         job.cancel.side_effect = cancel
-        job.check.side_effect = [QDMIJob.Status.RUNNING, QDMIJob.Status.DONE]
+        job.check.return_value = QDMIJob.Status.DONE
         if self._expose_shots:
             job.get_shots.return_value = shots
         else:

@@ -290,7 +290,13 @@ process.
 ## Multi-Circuit Execution
 
 The backend supports both single-circuit and multi-circuit execution. You can
-submit multiple circuits in a single call:
+submit multiple circuits in a single call. Circuits with the same program format
+and shot count use one native QDMI job when the device supports that program
+list. Otherwise, the backend submits independent jobs before waiting for
+results. Each entry retains its result index and attempt history; recovery
+replaces only confirmed failed circuits and keeps successful siblings.
+
+For example:
 
 ```{code-cell} ipython3
 # Create multiple circuits
@@ -528,8 +534,7 @@ QASM2
 
 Device-native formats take precedence. Among standard formats, those with
 classical control precede restricted profiles; binary encoding wins ties within
-a QIR profile. `BATCH_JOB` does not carry serialized circuits and cannot have a
-program serializer.
+a QIR profile.
 
 ### Device Introspection
 

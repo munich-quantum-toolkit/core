@@ -16,8 +16,7 @@ A format fixes the kind of payload it carries, so there are two signatures. A
 text format takes a :class:`TextProgramSerializer`, which returns :class:`str`.
 A binary format takes a :class:`BinaryProgramSerializer`, which returns
 :class:`bytes`. :func:`~mqt.core.qdmi.is_binary_program_format` states which
-kind a format carries. ``BATCH_JOB`` takes no serializer because it carries a
-list of jobs rather than a serialized circuit.
+kind a format carries.
 
 MQT Core registers its own OpenQASM 2 and OpenQASM 3 serializers here. Every
 other format belongs to the package that owns the device. Such a package
@@ -129,7 +128,7 @@ ProgramSerializer = TextProgramSerializer | BinaryProgramSerializer
 
 #: Preferred formats, in descending order: device-native formats first, then
 #: standard formats with classical control before restricted profiles. Binary
-#: encoding wins ties within a QIR profile. Excludes ``BATCH_JOB``.
+#: encoding wins ties within a QIR profile.
 PROGRAM_FORMAT_PREFERENCE: tuple[ProgramFormat, ...] = (
     ProgramFormat.IQM_JSON,
     ProgramFormat.CUSTOM1,
@@ -187,12 +186,8 @@ class _ProgramSerializerRegistry:
             replace: Replace an existing serializer for the same format.
 
         Raises:
-            ValueError: If the format does not carry a serialized circuit, or if
-                the format already has a serializer and ``replace`` is false.
+            ValueError: If the format already has a serializer and ``replace`` is false.
         """
-        if fmt == ProgramFormat.BATCH_JOB:
-            msg = f"{fmt.name} does not carry a serialized circuit, so it cannot have a program serializer."
-            raise ValueError(msg)
         if not replace and fmt in self._serializers:
             msg = f"A program serializer for {fmt.name} is already registered. Pass replace=True to override it."
             raise ValueError(msg)
@@ -252,8 +247,8 @@ class _ProgramSerializerRegistry:
     def _load_entry_point(entry_point: EntryPoint) -> tuple[ProgramFormat, ProgramSerializer] | None:
         """Resolve one entry point into a format and its serializer.
 
-        An entry point that names an unknown program format, names ``BATCH_JOB``,
-        or fails to load produces a warning and is skipped, so one broken package
+        An entry point that names an unknown program format or fails to load
+        produces a warning and is skipped, so one broken package
         cannot make every other serializer unreachable.
 
         Args:
@@ -269,15 +264,6 @@ class _ProgramSerializerRegistry:
             warnings.warn(
                 f"Entry point '{entry_point.name}' in group '{ENTRY_POINT_GROUP}' does not name a program format "
                 f"and will be skipped.",
-                UserWarning,
-                stacklevel=2,
-            )
-            return None
-
-        if fmt == ProgramFormat.BATCH_JOB:
-            warnings.warn(
-                f"Entry point '{entry_point.name}' in group '{ENTRY_POINT_GROUP}' names a program format that "
-                f"does not carry a serialized circuit and will be skipped.",
                 UserWarning,
                 stacklevel=2,
             )
@@ -344,12 +330,10 @@ def preferred_program_formats(formats: Iterable[ProgramFormat]) -> list[ProgramF
         formats: The program formats the device accepts.
 
     Returns:
-        Those of the given formats that can carry a serialized circuit, most
-        preferred first. A format that :data:`PROGRAM_FORMAT_PREFERENCE` does
+        The given formats, most preferred first. A format that :data:`PROGRAM_FORMAT_PREFERENCE` does
         not name comes after every format it does name, in the order it was
         given.
     """
     ranks = {fmt: rank for rank, fmt in enumerate(PROGRAM_FORMAT_PREFERENCE)}
     unranked = len(PROGRAM_FORMAT_PREFERENCE)
-    candidates = [fmt for fmt in formats if fmt != ProgramFormat.BATCH_JOB]
-    return sorted(candidates, key=lambda fmt: ranks.get(fmt, unranked))
+    return sorted(formats, key=lambda fmt: ranks.get(fmt, unranked))
