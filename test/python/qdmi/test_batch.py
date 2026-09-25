@@ -16,8 +16,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from mqt.core.plugins.qdmi_batch import BatchEntry, _Batch  # ruff:ignore[import-private-name] Test the shared engine directly.
 from mqt.core.qdmi import Job
+from mqt.core.qdmi.batch import BatchEntry, _Batch  # ruff:ignore[import-private-name] Test the shared engine directly.
 
 
 class BatchFixture:
@@ -62,7 +62,7 @@ def test_retry_allowance_survives_collection_and_manual_replacements(max_retries
     fixture = BatchFixture(max_retries)
     fixture.status = Job.Status.FAILED
     batch = fixture.batch
-    batch.resubmit([0, 1, 2])
+    batch.submit()
     snapshot = batch.entries
     for _ in range(2):
         with pytest.raises(RuntimeError, match="3 batch entries"):
@@ -85,7 +85,7 @@ def test_collect_first_and_retry_only_failed_entries() -> None:
     """Collect siblings before replacement and reuse successful results."""
     fixture = BatchFixture()
     batch = fixture.batch
-    batch.resubmit([0, 1, 2])
+    batch.submit()
     fixture.jobs[0].check.return_value = Job.Status.FAILED
     batch.collect()
     assert fixture.submitted == [0, 1, 2]
@@ -105,7 +105,7 @@ def test_uncertain_or_completed_jobs_are_never_automatically_replaced(failure: s
     """Cancellation, uncertain status, timeouts, and read failures require explicit recovery."""
     fixture = BatchFixture()
     batch = fixture.batch
-    batch.resubmit([0, 1, 2])
+    batch.submit()
     handle = fixture.jobs[0]
     cause = RuntimeError("provider unavailable")
     if failure == "cancelled":
@@ -139,7 +139,7 @@ def test_read_recovery_reuses_original_job() -> None:
     """Retry reading the same handle while retaining earlier diagnostic causes."""
     fixture = BatchFixture()
     batch = fixture.batch
-    batch.resubmit([0, 1, 2])
+    batch.submit()
     cause = RuntimeError("temporary result read failure")
     fixture.jobs[1].get_shots.side_effect = [cause, ["recovered"]]
     batch.collect()
@@ -161,7 +161,7 @@ def test_partial_submission_preserves_unknown_and_untouched_entries(*, interrupt
         fixture.submission_error = KeyboardInterrupt()
     batch = fixture.batch
     with pytest.raises(KeyboardInterrupt if interrupted else RuntimeError):
-        batch.resubmit([0, 1, 2])
+        batch.submit()
     assert len(fixture.jobs) == 1
     batch.collect()
     assert batch.entries[0].result == "0"
@@ -171,7 +171,8 @@ def test_partial_submission_preserves_unknown_and_untouched_entries(*, interrupt
     with pytest.raises(ValueError, match="allow_unknown"):
         batch.resubmit([1, 2])
     assert fixture.submitted == [0, 1]
-    batch.resubmit([1, 2], allow_unknown=True)
+    batch.resubmit([1], allow_unknown=True)
+    batch.submit()
     batch.complete()
     assert fixture.submitted == [0, 1, 1, 2]
     assert len(batch.entries[1].attempts) == 2
@@ -182,7 +183,7 @@ def test_failed_replacement_preserves_attempts_and_stops_admission() -> None:
     """A replacement submission failure preserves earlier replacements and stops new ones."""
     fixture = BatchFixture()
     fixture.status = Job.Status.FAILED
-    fixture.batch.resubmit([0, 1, 2])
+    fixture.batch.submit()
     fixture.error_at = 5
     fixture.status = Job.Status.DONE
     with pytest.raises(RuntimeError, match="admission failed"):
@@ -199,7 +200,7 @@ def test_failed_replacement_preserves_attempts_and_stops_admission() -> None:
 def test_interrupt_stops_collection_but_keeps_batch_recoverable() -> None:
     """Interruption leaves collected results and unvisited handles available."""
     fixture = BatchFixture()
-    fixture.batch.resubmit([0, 1, 2])
+    fixture.batch.submit()
     fixture.jobs[1].check.side_effect = KeyboardInterrupt()
     with pytest.raises(KeyboardInterrupt):
         fixture.batch.complete()
@@ -215,7 +216,7 @@ def test_explicit_cancel_disables_automatic_replacements() -> None:
     """Cancellation attempts every handle and prevents subsequent automatic replacement."""
     fixture = BatchFixture()
     fixture.status = Job.Status.FAILED
-    fixture.batch.resubmit([0, 1, 2])
+    fixture.batch.submit()
     failure = RuntimeError("cancel failed")
     fixture.jobs[0].cancel.side_effect = failure
     assert fixture.batch.cancel() is False
@@ -228,18 +229,50 @@ def test_explicit_cancel_disables_automatic_replacements() -> None:
 
 
 @pytest.mark.parametrize("indices", [[0, 0], [0, -1], [0, 3], [True], [0.5]])
-def test_validate_entire_selection_before_submitting(indices: list[int]) -> None:
+@pytest.mark.parametrize("method", ["submit", "resubmit"])
+def test_validate_entire_selection_before_submitting(indices: list[int], method: str) -> None:
     """Invalid or duplicate indices must not admit any replacement."""
     fixture = BatchFixture()
     with pytest.raises(ValueError, match="distinct valid"):
-        fixture.batch.resubmit(indices)
+        getattr(fixture.batch, method)(indices)
     assert not fixture.submitted
+
+
+def test_submit_only_admits_untouched_entries() -> None:
+    """Initial submission and resumption never replace an existing attempt."""
+    fixture = BatchFixture()
+    batch = fixture.batch
+    batch.submit([1])
+    with pytest.raises(ValueError, match="use resubmit"):
+        batch.submit([0, 1])
+    with pytest.raises(ValueError, match="use submit"):
+        batch.resubmit([0], allow_unknown=True)
+    assert fixture.submitted == [1]
+    batch.submit()
+    batch.submit()
+    batch.submit([])
+    batch.complete()
+    assert fixture.submitted == [1, 0, 2]
+    assert [entry.result for entry in batch.entries] == ["0", "1", "2"]
+
+
+def test_submit_skips_uncertain_admissions() -> None:
+    """Resuming untouched entries never repeats a submission with unknown acceptance."""
+    fixture = BatchFixture()
+    fixture.error_at = 2
+    with pytest.raises(RuntimeError, match="admission failed"):
+        fixture.batch.submit()
+    fixture.batch.submit()
+    assert fixture.submitted == [0, 1, 2]
+    assert fixture.batch.entries[1].attempts[0].handle is None
+    with pytest.raises(ValueError, match="use resubmit"):
+        fixture.batch.submit([1])
 
 
 def test_other_retries_do_not_repeat_unrelated_result_reads() -> None:
     """A failed task must not turn another task's read error into an automatic read loop."""
     fixture = BatchFixture()
-    fixture.batch.resubmit([0, 1, 2])
+    fixture.batch.submit()
     fixture.jobs[0].check.return_value = Job.Status.FAILED
     fixture.jobs[1].get_shots.side_effect = RuntimeError("read unavailable")
     with pytest.raises(RuntimeError, match="read unavailable"):
@@ -253,7 +286,7 @@ def test_manual_replacement_does_not_override_known_running_work() -> None:
     """Even explicit uncertainty permission cannot replace a known active job."""
     fixture = BatchFixture()
     fixture.status = Job.Status.RUNNING
-    fixture.batch.resubmit([0, 1, 2])
+    fixture.batch.submit()
     with pytest.raises(ValueError, match="Cannot replace"):
         fixture.batch.resubmit([0], allow_unknown=True)
     assert fixture.submitted == [0, 1, 2]
@@ -264,7 +297,7 @@ def test_manual_replacement_does_not_override_known_running_work() -> None:
 def test_multiple_failure_causes_remain_available() -> None:
     """The aggregate chains the first cause while later causes and successes remain accessible."""
     fixture = BatchFixture()
-    fixture.batch.resubmit([0, 1, 2])
+    fixture.batch.submit()
     causes = [RuntimeError("first"), RuntimeError("second")]
     for handle, cause in zip(fixture.jobs, causes, strict=False):
         handle.get_shots.side_effect = cause
@@ -278,7 +311,7 @@ def test_multiple_failure_causes_remain_available() -> None:
 def test_cancel_skips_confirmed_terminal_attempts() -> None:
     """Cancel an outstanding replacement without sending requests for finished attempts."""
     fixture = BatchFixture()
-    fixture.batch.resubmit([0, 1, 2])
+    fixture.batch.submit()
     fixture.jobs[0].check.return_value = Job.Status.FAILED
     fixture.batch.collect()
     fixture.batch.resubmit([0])

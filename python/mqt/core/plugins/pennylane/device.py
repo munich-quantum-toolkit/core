@@ -31,7 +31,7 @@ from mqt.core.qdmi import Job as QDMIJobHandle
 from mqt.core.qdmi import ProgramFormat
 from mqt.core.qdmi.driver import open_device
 
-from ..qdmi_batch import _validate_max_retries
+from ...qdmi.batch import _validate_max_retries
 from .converter import _ConvertedProgram, _ProgramConverter
 from .exceptions import (
     PennyLaneConfigurationError as ConfigurationError,
@@ -143,7 +143,7 @@ class QDMIDevice(Device):
             an integration such as Slurm.
         session_parameters: QDMI device-session keyword arguments.
         job_parameters: QDMI custom job keyword arguments.
-        max_retries: Maximum automatic replacements per failed entry; zero disables them.
+        max_retries: Maximum automatic replacements per failed entry; disabled by default.
     """
 
     capabilities = DeviceCapabilities(supported_mcm_methods=[])
@@ -157,7 +157,7 @@ class QDMIDevice(Device):
         device: QDMIDeviceHandle | None = None,
         session_parameters: QDMISessionParameters | None = None,
         job_parameters: QDMIJobParameters | None = None,
-        max_retries: int = 3,
+        max_retries: int = 0,
     ) -> None:
         """Initialize from a stable ID or an open QDMI device.
 
@@ -373,7 +373,7 @@ class QDMIDevice(Device):
 
         job = PennyLaneJob(self, prepared, tuple(tape.shots.has_partitioned_shots for tape in tapes), single=single)
         self.last_job = job
-        job.resubmit(range(len(job.entries)))
+        job.submit()
         return job.result()
 
 
@@ -386,7 +386,7 @@ class DDSIMDevice(QDMIDevice):
         *,
         session_parameters: QDMISessionParameters | None = None,
         job_parameters: QDMIJobParameters | None = None,
-        max_retries: int = 3,
+        max_retries: int = 0,
     ) -> None:
         """Open the built-in DDSIM device by its stable QDMI ID."""
         super().__init__(

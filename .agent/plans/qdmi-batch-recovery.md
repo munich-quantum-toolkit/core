@@ -2,57 +2,60 @@
 
 Status: complete.
 
-## Outcome and scope
+## Behavior and ownership
 
-Both Python QDMI adapters preserve accepted work, partial results, submission
-attempts, and original errors. They collect submitted entries before reporting
-execution failures and automatically replace confirmed failed jobs up to
-`max_retries` times (default three). The shared implementation lives in
-`python/mqt/core/plugins/qdmi_batch.py`; result conversion stays in each
-adapter. The user guide is `docs/qdmi/batch_recovery.md`.
+Both adapters preserve accepted work, cached successes, submission attempts, and
+original errors. Automatic replacement is opt-in (`max_retries=0` by default);
+only confirmed `FAILED` jobs qualify. Retry allowances belong to logical entries
+and do not reset across collection or manual replacement.
 
-Exceptions expose the batch through `job`; adapters retain `last_job` for
-interruption recovery. Entry snapshots include input and shot-copy indices,
-handles, last observed statuses, cached results, and failure stages and causes.
-A submission failure stops new admissions without cancelling accepted work.
+`submit(indices=None)` admits untouched entries, defaulting to all remaining
+untouched entries. `resubmit(indices, allow_unknown=False)` replaces previous
+attempts. Both use one internal submission path. Unknown acceptance requires
+explicit permission to duplicate work; known running or completed jobs cannot be
+replaced. Submission failures stop further admission. Cancellation is explicit
+and disables automatic replacement.
 
-## Decisions and limits
+Exceptions expose `job`; adapters retain `last_job` before first submission.
+Qiskit's documented `programs` input holds prepared payload/format pairs, while
+its existing positional constructor continues to accept submitted handles.
 
-Automatic retry counts belong to logical entries and never reset across result
-collection or explicit replacement. Only a successful status query reporting
-`FAILED` authorizes automatic replacement. Cancellation, uncertain submission,
-timeouts, and result-read errors require explicit recovery. Provider SDKs retain
-transport retry ownership.
+The shared Python implementation and inspection records live in
+`python/mqt/core/qdmi/batch.py`. Native QDMI is installed as the package
+initializer, retaining public type names and native submodules. A narrow binding
+fallback restores package paths omitted by scikit-build-core 1.0.3's editable
+loader. It can be removed when native initializers are recognized.
 
-Manual replacement of unknown outcomes requires `allow_unknown=True` because it
-can duplicate an execution. Completed or known running jobs cannot be replaced.
-Explicit cancellation disables further automatic replacements, attempts all
-outstanding known handles, and skips confirmed terminal attempts.
+## Recovery and native multi-program boundary
 
-Recovery is in-process and applies to adapter batches, including expanded shot
-copies. It does not reconstruct QNodes, gradients, optimizers, or notebook
-state. Qiskit batches created by `backend.run()` retain programs for
-replacement; direct wrappers of existing handles support collection and
-cancellation only. No QDMI ABI, provider, scheduler, or dependency changes are
-required.
+The adapter guides contain opt-in and recovery examples. PennyLane's public
+`construct_batch(..., level="device")` retains the postprocessor needed to
+recover forward measurement values, including broadcasts and shot vectors.
+Recovery does not resume differentiation, optimizers, or arbitrary QNode return
+containers, and remains within the same process.
+
+Logical result ordering is separate from provider job identity. Native
+multi-program selection remains in the follow-ups to QDMI #509 and Core #2373,
+coordinated in Core #2359. Those consumers must map logical outputs to native
+jobs and result indices, group compatible format/shot/options settings, and
+retain independent submissions when native batching is unsupported. An ambiguous
+submission must never trigger fallback. Under the proposed aggregate contract,
+recovery follows the whole native job's lifecycle and failure state; per-program
+failure cannot be inferred. No grouping machinery, C++ recovery API, scheduler,
+or transport retries are introduced here.
 
 ## Validation
 
 ```bash
-uv run --no-sync pytest -q \
-  test/python/plugins/test_qdmi_batch.py \
+uv run --no-sync pytest -q test/python/qdmi \
   test/python/plugins/qdmi_pennylane test/python/plugins/qiskit
 ```
 
-306 passed on Python 3.14. Coverage includes retry budgets, partial admission,
-interruption, cancellation, result reuse, failure causes, ordering, shot copies,
-native primitives, tracking, and DDSIM handle lifetimes.
-
-The full Ponytail review removed redundant wrappers, guards, and unused test
-setup, and replaced custom retrieval-error storage with `ExceptionGroup`.
-
-- `uvx nox -s lint`: passed, including repository-wide Ruff and ty checks.
-- `uvx nox --non-interactive -s docs`: passed, including executable notebooks,
-  generated references, and local HTML links.
-- Native DDSIM Qiskit probe: submission, cached results, and cancellation of a
-  completed batch passed. No paid cloud jobs were submitted.
+- Editable install: 621 tests passed on Python 3.14.
+- Fresh wheel in an isolated environment: the same 621 tests passed, plus an
+  explicit package/submodule/type-name and native DDSIM execution probe.
+- Stub regeneration completed without generated API changes.
+- Repository lint and type checks passed.
+- Full executable documentation and local HTML link checks passed.
+- The changed binding passed full-file C++ analysis and formatting checks.
+- Synthetic failures and local DDSIM only; no paid cloud jobs were submitted.

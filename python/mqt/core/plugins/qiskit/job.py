@@ -25,7 +25,7 @@ from qiskit.result.models import ExperimentResult
 
 from mqt.core.qdmi import Job as QDMIJobHandle
 
-from ..qdmi_batch import BatchEntry, JobAttempt, _Batch
+from ...qdmi.batch import BatchEntry, JobAttempt, _Batch
 from .exceptions import JobExecutionError, JobSubmissionError
 
 if TYPE_CHECKING:
@@ -67,36 +67,37 @@ class QDMIJob(JobV1):
 
     Args:
         backend: The backend this job runs on.
-        jobs: Submitted QDMI jobs, in circuit order.
+        jobs: Submitted QDMI jobs, in circuit order; omit when supplying programs.
         circuits: The executed circuits, used to snapshot result headers.
         shots: Requested shots per circuit.
         memory: Whether to collect genuine ordered shots.
-        max_retries: Automatic replacement limit for batches prepared by the backend.
-        _programs: Internal snapshot of serialized programs for backend-created batches.
+        max_retries: Automatic replacement limit; disabled by default.
+        programs: Serialized (payload, format) pairs in circuit order, for a new batch.
+            Provide either programs or submitted jobs. Programs are retained for replacement.
     """
 
     def __init__(
         self,
         backend: QDMIBackend,
-        jobs: Sequence[QDMIJobHandle],
-        circuits: Sequence[QuantumCircuit],
+        jobs: Sequence[QDMIJobHandle] = (),
+        circuits: Sequence[QuantumCircuit] = (),
         *,
         shots: int,
         memory: bool,
-        max_retries: int = 3,
-        _programs: Sequence[tuple[str | bytes, ProgramFormat]] | None = None,
+        max_retries: int = 0,
+        programs: Sequence[tuple[str | bytes, ProgramFormat]] | None = None,
     ) -> None:
         """Initialize without querying remote job IDs.
 
         Raises:
-            ValueError: If the jobs and circuits are empty or differ in length.
+            ValueError: If circuits are empty or the submission inputs conflict or differ in length.
         """
         if (
             not circuits
-            or (len(jobs) != len(circuits) and not (_programs is not None and not jobs))
-            or (_programs is not None and len(_programs) != len(circuits))
+            or (programs is not None and (jobs or len(programs) != len(circuits)))
+            or (programs is None and len(jobs) != len(circuits))
         ):
-            msg = "QDMIJob requires one submitted job per circuit and at least one circuit."
+            msg = "QDMIJob requires nonempty circuits and either one job or one program per circuit."
             raise ValueError(msg)
         super().__init__(backend=backend, job_id="")
         self._backend: QDMIBackend = backend
@@ -112,7 +113,7 @@ class QDMIJob(JobV1):
         self._shots = shots
         self._memory = memory
         self._result: Result | None = None
-        self._programs = tuple(_programs) if _programs is not None else None
+        self._programs = tuple(programs) if programs is not None else None
         self._batch: _Batch[ExperimentResult] = _Batch(
             [BatchEntry(i, attempts=(JobAttempt(handle=jobs[i]),) if jobs else ()) for i in range(len(circuits))],
             submit=self._submit_entry if self._programs is not None else None,
@@ -299,14 +300,9 @@ class QDMIJob(JobV1):
             return JobStatus.INITIALIZING
         return JobStatus.DONE
 
-    def submit(self) -> None:
-        """This method should not be called.
+    def submit(self, indices: Sequence[int] | None = None) -> None:
+        """Submit selected untouched entries, or all remaining untouched entries.
 
-        QDMI jobs are submitted via
-        :meth:`~mqt.core.plugins.qiskit.backend.QDMIBackend.run`.
+        Previously attempted entries require :meth:`resubmit`.
         """
-        msg = (
-            "You should never have to submit jobs by calling this method. "
-            "The job instance is only for checking the progress and retrieving the results of the submitted job."
-        )
-        raise NotImplementedError(msg)
+        self._batch.submit(indices)

@@ -376,23 +376,39 @@ properties, routing, analytic execution, or QDMI batch jobs.
 
 ## Recovery
 
-Set `max_retries` when constructing a device, for example
-`qp.device("mqt.ddsim.default", wires=2, max_retries=0)` to disable automatic
-replacement executions. The default is three replacements per confirmed failed
-entry. See [batch retries and recovery](batch_recovery.md) for eligibility and
-manual replacement.
+Automatic replacements are **off by default** (`max_retries=0`). Opt in with
+`qp.device("mqt.ddsim.default", wires=2, max_retries=3)` to allow up to three
+replacement executions per confirmed failed entry. These additional executions
+can incur charges. Cancelled jobs, timeouts, uncertain submissions, and
+result-read errors are never automatically replaced; the allowance does not
+reset on repeated calls.
 
-```python
+Accepted jobs and successful results survive failures. For forward-result
+recovery, retain PennyLane's
+[`construct_batch`](https://docs.pennylane.ai/en/stable/code/api/pennylane.workflow.construct_batch.html)
+postprocessor before execution. A transient result-read error can then be
+retried using the same jobs:
+
+```{code-cell} ipython3
 from mqt.core.plugins.pennylane import PennyLaneExecutionError
 
+tapes, postprocess = qp.workflow.construct_batch(bell_state, level="device")()
 try:
-    counts = bell_state()
+    samples = bell_device.execute(tapes)
 except PennyLaneExecutionError as error:
-    batch = error.job
-    entries = batch.collect()  # Read accepted jobs without submitting replacements.
-    available = [entry.result for entry in entries if entry.result is not None]
+    samples = error.job.result()
+counts = postprocess(samples)[0]
 ```
 
-After interruption, recover the handle from `bell_device.last_job`. Its
-`result()` returns samples for preprocessed tapes, not the original QNode's
-postprocessed return value.
+Use `error.job` or `bell_device.last_job` after interruption. Its `entries`
+retain attempts and original errors; `collect()` reads accepted work without
+submitting anything. `submit()` starts untouched entries, while `resubmit([i])`
+replaces a failed or cancelled attempt. Unknown outcomes require
+`allow_unknown=True` and may duplicate work; known running or completed jobs
+cannot be replaced. `cancel()` explicitly cancels outstanding work and disables
+automatic replacements.
+
+Recovery stays within the same process. The saved postprocessor restores
+measurement values, including broadcasts and shot vectors; it does not resume an
+interrupted gradient or optimizer, or restore arbitrary QNode return containers.
+Do not call recovery methods concurrently on the same handle.

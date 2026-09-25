@@ -310,6 +310,8 @@ preview = true
 docstring-code-format = true
 
 [tool.ruff.lint.per-file-ignores]
+# QDMI has a native __init__ extension.
+"python/mqt/core/qdmi/**" = [ "INP001" ]
 "test/python/**" = [ "INP001", "T20" ]
 "test/slurm/**" = [ "DOC201", "DOC501", "INP001" ]
 "docs/**" = [ "INP001", "T20" ]

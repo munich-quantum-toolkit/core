@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""Retained attempts and shared recovery for the QDMI adapters."""
+"""Retained attempts and recovery of QDMI submissions."""
 
 from __future__ import annotations
 
@@ -112,7 +112,33 @@ class _Batch(Generic[_Result]):
         attempt = self._entries[index].attempts[position]
         self._set_attempt(index, replace(attempt, failures=(*attempt.failures, JobFailure(stage, cause))), position)
 
-    def submit(self, indices: Sequence[int], *, automatic: bool = False) -> None:
+    def _validate_indices(self, indices: Sequence[int]) -> tuple[int, ...]:
+        selected = tuple(indices)
+        if any(
+            isinstance(index, bool) or not isinstance(index, Integral) or not 0 <= index < len(self._entries)
+            for index in selected
+        ) or len(set(selected)) != len(selected):
+            msg = "Indices must be distinct valid batch entry indices."
+            raise ValueError(msg)
+        return selected
+
+    def submit(self, indices: Sequence[int] | None = None) -> None:
+        """Submit untouched entries, or all remaining untouched entries by default.
+
+        Raises:
+            ValueError: If a selected entry has already been attempted.
+        """
+        selected = (
+            tuple(i for i, entry in enumerate(self._entries) if not entry.attempts)
+            if indices is None
+            else self._validate_indices(indices)
+        )
+        if any(self._entries[index].attempts for index in selected):
+            msg = "Selected entries have already been attempted; use resubmit() to replace them."
+            raise ValueError(msg)
+        self._submit_entries(selected)
+
+    def _submit_entries(self, indices: Sequence[int], *, automatic: bool = False) -> None:
         """Submit selected entries, retaining earlier work if admission fails.
 
         The adapter's submission error preserves the original cause.
@@ -120,8 +146,10 @@ class _Batch(Generic[_Result]):
         Raises:
             RuntimeError: If the batch was constructed without submission data.
         """
+        if not indices:
+            return
         if self._submit is None:
-            msg = "Replacement requires a batch created by the adapter."
+            msg = "Submission requires prepared programs."
             raise RuntimeError(msg)
         for index in indices:
             entry = self._entries[index]
@@ -211,7 +239,7 @@ class _Batch(Generic[_Result]):
             ]
             if not retry:
                 break
-            self.submit(retry, automatic=True)
+            self._submit_entries(retry, automatic=True)
             self.collect(retry)
         missing = [index for index, entry in enumerate(self._entries) if entry.result is None]
         if missing:
@@ -239,17 +267,12 @@ class _Batch(Generic[_Result]):
         if not isinstance(allow_unknown, bool):
             msg = "allow_unknown must be a boolean."
             raise TypeError(msg)
-        selected = tuple(indices)
-        if any(
-            isinstance(index, bool) or not isinstance(index, Integral) or not 0 <= index < len(self._entries)
-            for index in selected
-        ) or len(set(selected)) != len(selected):
-            msg = "Replacement indices must be distinct valid batch entry indices."
-            raise ValueError(msg)
+        selected = self._validate_indices(indices)
         for index in selected:
             entry = self._entries[index]
             if not entry.attempts:
-                continue
+                msg = f"Entry {index} has not been attempted; use submit() for its first submission."
+                raise ValueError(msg)
             attempt = entry.attempts[-1]
             status = attempt.status
             if attempt.result is not None or attempt.status == Job.Status.DONE:
@@ -266,7 +289,7 @@ class _Batch(Generic[_Result]):
             if status is not None or not allow_unknown:
                 msg = f"Cannot replace entry {index}: status {status}; unknown outcomes require allow_unknown=True."
                 raise ValueError(msg)
-        self.submit(selected)
+        self._submit_entries(selected)
 
     def cancel(self) -> bool:
         """Disable automatic replacements and attempt every explicit cancellation.

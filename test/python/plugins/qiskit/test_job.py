@@ -25,14 +25,13 @@ from qiskit.providers import JobError
 from qiskit.quantum_info import SparsePauliOp
 from test_mock_backend import MockQDMIDevice
 
-from mqt.core.plugins.qiskit import CircuitValidationError, JobExecutionError, JobSubmissionError, QDMIBackend
-from mqt.core.qdmi import Job
+from mqt.core.plugins.qiskit import CircuitValidationError, JobExecutionError, JobSubmissionError, QDMIBackend, QDMIJob
+from mqt.core.qdmi import Job, ProgramFormat
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from mqt.core.plugins.qiskit import QDMIJob
-    from mqt.core.qdmi import Device, ProgramFormat
+    from mqt.core.qdmi import Device
 
     RecordingBackend = tuple[QDMIBackend, list[MagicMock], list[str]]
 
@@ -76,6 +75,7 @@ def test_batch_order_and_repeated_reads(recording_backend: RecordingBackend, *, 
     backend, jobs, events = recording_backend
     circuits = [QuantumCircuit(2, 2, name=f"circuit-{index}") for index in range(3)]
     job = backend.run(circuits, shots=4, memory=memory)
+    job.submit()
     assert events == ["formats", "submit", "submit", "submit"]
     for index, handle in enumerate(jobs):
         handle.get_shots.side_effect = None
@@ -382,7 +382,7 @@ def test_automatic_replacement_keeps_successful_results(recording_backend: Recor
     """A failed first task is replaced while later successful experiments stay cached."""
     backend, jobs, events = recording_backend
     circuits = [QuantumCircuit(1, 1, metadata={"input": i}) for i in range(3)]
-    job = backend.run(circuits, shots=4, memory=True)
+    job = backend.run(circuits, shots=4, memory=True, max_retries=3)
     jobs[0].check.side_effect = lambda: Job.Status.FAILED
     assert job.job_id() == "remote-id"
     job.collect()
@@ -403,7 +403,7 @@ def test_automatic_replacement_keeps_successful_results(recording_backend: Recor
         handle.cancel.assert_not_called()
 
 
-@pytest.mark.parametrize(("configured", "override", "expected"), [(None, None, 3), (0, None, 0), (2, 1, 1)])
+@pytest.mark.parametrize(("configured", "override", "expected"), [(None, None, 0), (3, None, 3), (2, 1, 1), (3, 0, 0)])
 def test_configured_retry_limit(
     recording_backend: RecordingBackend,
     monkeypatch: pytest.MonkeyPatch,
@@ -468,7 +468,7 @@ def test_recover_partial_submission(
     assert not job.entries[3].attempts
     job.collect()
     monkeypatch.setattr(backend.device, "submit_job", original)
-    job.resubmit([2, 3])
+    job.submit([2, 3])
     with pytest.raises(ValueError, match="allow_unknown"):
         job.resubmit([1])
     job.resubmit([1], allow_unknown=True)
@@ -477,3 +477,50 @@ def test_recover_partial_submission(
     assert len(results) == 4
     jobs[0].get_counts.assert_called_once()
     jobs[0].cancel.assert_not_called()
+
+
+def test_prepared_and_existing_job_constructors(recording_backend: RecordingBackend) -> None:
+    """Prepared programs submit explicitly; existing handles remain collectable without new work."""
+    backend, jobs, events = recording_backend
+    circuits = [QuantumCircuit(1, 1)] * 2
+    programs = [("OPENQASM 3.0; qubit q; bit c; c = measure q;", ProgramFormat.QASM3)] * 2
+    job = QDMIJob(backend, circuits=circuits, programs=programs, shots=4, memory=False)
+    assert not jobs
+    job.submit([1])
+    job.submit()
+    job.submit()
+    assert len(jobs) == 2
+    assert [len(entry.attempts) for entry in job.entries] == [1, 1]
+    assert job.result().get_counts() == [{"0": 4}, {"0": 4}]
+    existing = QDMIJob(backend, jobs, circuits, shots=4, memory=False)
+    existing.submit()
+    assert existing.result().get_counts() == [{"0": 4}, {"0": 4}]
+    assert events.count("submit") == 2
+    jobs[0].check.side_effect = lambda: Job.Status.FAILED
+    with pytest.raises(RuntimeError, match="prepared programs"):
+        QDMIJob(backend, jobs, circuits, shots=4, memory=False).resubmit([0])
+
+
+@pytest.mark.parametrize(
+    ("job_count", "program_count", "circuit_count"),
+    [
+        (0, None, 0),
+        (0, None, 1),
+        (0, 0, 1),
+        (1, 1, 1),
+        (2, None, 1),
+        (0, 2, 1),
+    ],
+)
+def test_job_constructor_rejects_conflicting_inputs(
+    recording_backend: RecordingBackend, job_count: int, program_count: int | None, circuit_count: int
+) -> None:
+    """Invalid constructor inputs cannot trigger native submissions or status queries."""
+    backend, jobs, _ = recording_backend
+    handles = [MagicMock() for _ in range(job_count)]
+    programs = None if program_count is None else [("program", ProgramFormat.QASM3)] * program_count
+    with pytest.raises(ValueError, match="either one job or one program"):
+        QDMIJob(backend, handles, [QuantumCircuit(1, 1)] * circuit_count, programs=programs, shots=4, memory=False)
+    assert not jobs
+    for handle in handles:
+        handle.check.assert_not_called()

@@ -481,7 +481,8 @@ def test_partial_submission_retains_pennylane_batch(monkeypatch: pytest.MonkeyPa
     batch.collect()
     assert batch.entries[0].result is not None
     monkeypatch.setattr(qdmi, "submit_job", original)
-    batch.resubmit([1, 2], allow_unknown=True)
+    batch.resubmit([1], allow_unknown=True)
+    batch.submit()
     assert [samples.shape for samples in batch.result()] == [(2, 2), (3, 2), (4, 2)]
     assert device.submitted_jobs == 3
     assert not any(event.startswith("cancel") for event in qdmi.events)
@@ -534,6 +535,30 @@ def test_tracking_interruption_keeps_accepted_handle(monkeypatch: pytest.MonkeyP
     assert batch is not None
     assert batch.entries[0].attempts[0].handle is not None
     assert not batch.entries[1].attempts
-    batch.resubmit([1])
+    batch.submit([1])
     assert [samples.shape for samples in batch.result()] == [(2, 2), (3, 2)]
     assert device.submitted_jobs == 2
+
+
+@pytest.mark.parametrize("opt_in", [False, True])
+def test_automatic_replacements_require_opt_in(monkeypatch: pytest.MonkeyPatch, *, opt_in: bool) -> None:
+    """The default preserves failed jobs; explicit configuration permits bounded replacements."""
+    qdmi = stub_device()
+    original = qdmi.submit_job
+
+    def submit(program: str, program_format: ProgramFormat, num_shots: int, **parameters: object) -> QDMIJobHandle:
+        handle = cast("Mock", original(program, program_format, num_shots, **parameters))
+        handle.check.side_effect = None
+        handle.check.return_value = QDMIJobHandle.Status.FAILED
+        return cast("QDMIJobHandle", handle)
+
+    monkeypatch.setattr(qdmi, "submit_job", submit)
+    patch_open_device(monkeypatch, qdmi)
+    device = QDMIDevice("fake.qdmi", wires=2, **({"max_retries": 3} if opt_in else {}))
+    tape = qp.tape.QuantumScript([], [qp.sample(wires=[0, 1])], shots=2)
+    with pytest.raises(PennyLaneExecutionError):
+        device.execute(tape)
+    assert device.last_job is not None
+    with pytest.raises(PennyLaneExecutionError):
+        device.last_job.result()
+    assert device.submitted_jobs == (4 if opt_in else 1)

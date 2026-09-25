@@ -14,7 +14,7 @@ from __future__ import annotations
 from time import monotonic
 from typing import TYPE_CHECKING, cast
 
-from ..qdmi_batch import BatchEntry, _Batch
+from ...qdmi.batch import BatchEntry, _Batch
 from .exceptions import PennyLaneExecutionError
 
 if TYPE_CHECKING:
@@ -80,6 +80,17 @@ class PennyLaneJob:
         if self._device.tracker.active:
             self._device.tracker.update(executions=1, shots=shots)
             self._device.tracker.record()
+
+    def submit(self, indices: Sequence[int] | None = None) -> None:
+        """Submit selected untouched entries, or all remaining untouched entries.
+
+        Previously attempted entries require :meth:`resubmit`.
+        """
+        started = monotonic()
+        try:
+            self._batch.submit(indices)
+        finally:
+            self._device._execution_time += monotonic() - started
 
     def collect(self) -> tuple[BatchEntry[np.ndarray], ...]:
         """Read existing jobs without replacement executions or aggregate errors.

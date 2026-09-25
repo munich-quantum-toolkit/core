@@ -33,8 +33,8 @@ from qiskit.transpiler import InstructionProperties, Target
 
 from ...qdmi import Device as QDMIDevice
 from ...qdmi import ProgramFormat, is_binary_program_format
+from ...qdmi.batch import _validate_max_retries
 from ...qdmi.driver import open_device
-from ..qdmi_batch import _validate_max_retries
 from .exceptions import (
     CircuitValidationError,
     TranslationError,
@@ -389,7 +389,7 @@ class QDMIBackend(BackendV2):
         Returns:
             Default Options with shots=1024 and memory=False.
         """
-        return Options(shots=1024, memory=False, max_retries=3)
+        return Options(shots=1024, memory=False, max_retries=0)
 
     def _target_num_qubits(self) -> int:
         """Number of addressable qubits to expose in the Target.
@@ -845,15 +845,14 @@ class QDMIBackend(BackendV2):
 
         job = QDMIJob(
             self,
-            [],
-            prepared_circuits,
+            circuits=prepared_circuits,
             shots=shots,
             memory=memory,
             max_retries=max_retries,
-            _programs=serialized_circuits,
+            programs=serialized_circuits,
         )
         self.last_job = job
-        job.resubmit(range(len(prepared_circuits)))
+        job.submit()
         return job
 
 

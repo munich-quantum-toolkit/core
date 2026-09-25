@@ -240,9 +240,15 @@ print(f"Success: {exp_result.success}")
 
 ### Recovery
 
-Set `backend.set_options(max_retries=3)` to configure automatic replacement of
-confirmed failed jobs. Override it per batch with
-`backend.run(circuits, max_retries=0)` to disable replacements.
+Automatic replacements are **off by default** (`max_retries=0`). Opt in with
+`backend.set_options(max_retries=3)` or `backend.run(circuits, max_retries=3)`
+to allow up to three replacement executions per confirmed failed entry. These
+additional executions can incur charges. Cancelled jobs, timeouts, uncertain
+submissions, and result-read errors are never automatically replaced; the
+allowance does not reset on repeated calls.
+
+Accepted jobs and successful results survive failures. Inspect them without
+submitting replacements:
 
 ```python
 from mqt.core.plugins.qiskit import JobExecutionError, JobSubmissionError
@@ -256,11 +262,17 @@ except (JobSubmissionError, JobExecutionError) as error:
     available = [entry.result for entry in entries if entry.result is not None]
 ```
 
-After interruption, the handle is available as `backend.last_job`. See
-[batch retries and recovery](batch_recovery.md) for retained attempts, retry
-limits, and explicit replacement. Batches created by `backend.run()` retain the
-programs required for replacements; directly wrapping existing handles with
-`QDMIJob(...)` supports collection and cancellation only.
+After interruption, use `backend.last_job`. `job.submit()` starts untouched
+entries; `job.resubmit([i])` replaces a failed or cancelled attempt. Unknown
+outcomes require `allow_unknown=True` and may duplicate work; known running or
+completed jobs cannot be replaced. Then call `job.result()` for the complete
+Qiskit result. `job.cancel()` explicitly cancels outstanding work and disables
+automatic replacements. Earlier attempts and errors remain in `job.entries`.
+
+Recovery stays within the same process; do not call recovery methods
+concurrently on the same handle. Direct wrappers of existing handles support
+collection and cancellation; replacements require the prepared programs retained
+by `backend.run()`.
 
 ## Multi-Circuit Execution
 

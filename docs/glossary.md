@@ -17,17 +17,6 @@ implementation.
 ```{glossary}
 :sorted:
 
-batch entry
-  **Preferred term:** batch entry. **Accepted aliases:** none. One logical
-  execution in a QDMI adapter batch, including any replacement attempts. In
-  PennyLane, each preprocessed tape and shot copy has its own entry.
-
-replacement execution
-  **Preferred term:** replacement execution. **Accepted alias:** job retry.
-  A new execution submitted for a batch entry. Unlike retrying a service
-  request or reading results again, it creates another job and can incur
-  additional charges.
-
 CDA
 Chair for Design Automation
   **Preferred term:** Chair for Design Automation. **Accepted abbreviation:**
