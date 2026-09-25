@@ -13,7 +13,10 @@ import os
 import mqt.core.qdmi
 
 def add_manifest(manifest_path: str | os.PathLike) -> None:
-    """Register an installed device manifest before opening devices."""
+    """Register an installed device manifest before listing or opening devices."""
+
+def registered_device_ids() -> list[str]:
+    """List enabled stable IDs without loading devices or contacting providers. The first call fixes the MQT Core QDMI driver configuration."""
 
 def open_device(
     device_id: str,

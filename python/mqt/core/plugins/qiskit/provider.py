@@ -17,7 +17,7 @@ from __future__ import annotations
 import warnings
 from typing import TYPE_CHECKING
 
-from ...qdmi import device_ids
+from ...qdmi.builtin_driver import registered_device_ids
 from .backend import QDMIBackend
 from .exceptions import UnsupportedDeviceError
 
@@ -58,8 +58,8 @@ class QDMIProvider:
 
     @staticmethod
     def device_ids() -> list[str]:
-        """Return the devices visible to a fresh QDMI driver session."""
-        return device_ids()
+        """Return configured stable IDs without loading devices or contacting providers."""
+        return registered_device_ids()
 
     def backends(self, name: str | None = None) -> list[QDMIBackend]:
         """Return all available backends, optionally filtered by name substring.
