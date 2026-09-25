@@ -12,10 +12,10 @@
 
 #include "qdmi/common/Common.hpp"
 #include "qdmi/common/Diagnostics.hpp"
+#include "qdmi/driver/DriverExtension.hpp"
 #include "qdmi/driver/SessionConfig.hpp"
 
 #include "DeviceRegistry.hpp"
-#include "DriverExtension.hpp"
 
 #include "qdmi/client.h"
 #include "qdmi/device.h"
