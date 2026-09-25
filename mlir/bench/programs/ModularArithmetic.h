@@ -10,21 +10,16 @@
 
 #pragma once
 
-#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Value.h"
 #include "mlir/Support/LLVM.h"
 
 #include "llvm/ADT/APInt.h"
 
-#include <cstddef>
 #include <cstdint>
 
 namespace mlir::qc {
 class QCProgramBuilder;
 } // namespace mlir::qc
-namespace mlir::func {
-class FuncOp;
-} // namespace mlir::func
 
 namespace mqt::bench::detail {
 
@@ -41,14 +36,5 @@ void multiplyAccumulate(mlir::qc::QCProgramBuilder& builder,
                         mlir::Value accumulator, mlir::Value work,
                         mlir::Value angles, mlir::Value offset, int64_t bits,
                         bool inverse = false);
-
-/// Create reusable private helpers for controlled in-place modular
-/// multiplication. Arguments are control, n-bit value, n+1-bit zero
-/// accumulator, zero work qubit, phase table, and offset. Tables for a and its
-/// modular inverse are consecutive. Requires a coprime to N and value < N.
-/// Exact arithmetic restores workspace to zero.
-mlir::func::FuncOp createInPlaceMultiplier(mlir::qc::QCProgramBuilder& builder,
-                                           int64_t bits,
-                                           mlir::RankedTensorType anglesType);
 
 } // namespace mqt::bench::detail

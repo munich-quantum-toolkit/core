@@ -8,9 +8,11 @@
  * Licensed under the MIT License
  */
 
-#include "bench/Shor.hpp"
+#include "Shor.h"
 
+#include "bench/Shor.hpp"
 #include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
+#include "mqt/Dialect/QC/IR/QCDialect.h"
 
 #include "ModularArithmetic.h"
 #include "Programs.h"
@@ -26,6 +28,7 @@
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringRef.h"
 
 #include <bit>
 #include <cstddef>
@@ -35,7 +38,7 @@
 namespace mqt::bench {
 using namespace mlir;
 
-/// Extended Euclid on coprime residues below 2^31.
+// Extended Euclid on coprime residues below 2^31.
 [[nodiscard]] static uint64_t inverseModulo(uint64_t value, uint64_t modulus) {
   auto remainder = static_cast<int64_t>(modulus);
   auto nextRemainder = static_cast<int64_t>(value);
@@ -55,6 +58,49 @@ using namespace mlir;
   }
   return static_cast<uint64_t>(coefficient);
 }
+
+namespace detail {
+
+func::FuncOp createInPlaceMultiplier(qc::QCProgramBuilder& builder,
+                                     int64_t bits,
+                                     RankedTensorType anglesType) {
+  auto qubitType = qc::QubitType::get(builder.getContext());
+  SmallVector<Type> types{
+      qubitType,
+      MemRefType::get({bits}, qubitType),
+      MemRefType::get({bits + 1}, qubitType),
+      qubitType,
+      anglesType,
+      builder.getIndexType(),
+  };
+  const auto createAccumulator = [&](StringRef name, bool inverse) {
+    return builder.createFunction(name, types, [&](ValueRange arguments) {
+      multiplyAccumulate(builder, arguments[0], arguments[1], arguments[2],
+                         arguments[3], arguments[4], arguments[5], bits,
+                         inverse);
+      return SmallVector<Value>{};
+    });
+  };
+  auto accumulate = createAccumulator("shor_accumulate", false);
+  auto subtract = createAccumulator("shor_uncompute", true);
+  return builder.createFunction(
+      "shor_multiply", types, [&](ValueRange arguments) {
+        builder.call(accumulate, arguments);
+        builder.scfFor(0, bits, 1, [&](Value index) {
+          builder.cswap(arguments[0], builder.loadQubit(arguments[1], index),
+                        builder.loadQubit(arguments[2], index));
+        });
+        auto inverseOffset = arith::AddIOp::create(
+            builder, arguments[5],
+            builder.indexConstant((bits + 1) * (bits + 1)));
+        SmallVector<Value> inverseArguments(arguments);
+        inverseArguments.back() = inverseOffset;
+        builder.call(subtract, inverseArguments);
+        return SmallVector<Value>{};
+      });
+}
+
+} // namespace detail
 
 SmallVector<Value> shor(qc::QCProgramBuilder& builder, const Shor& benchmark) {
   const auto& options = benchmark.options();

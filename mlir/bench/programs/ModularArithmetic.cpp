@@ -11,12 +11,10 @@
 #include "ModularArithmetic.h"
 
 #include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
-#include "mqt/Dialect/QC/IR/QCDialect.h"
 
 #include "QFTUtils.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/IR/ValueRange.h"
 
@@ -88,18 +86,22 @@ static void modularAdd(qc::QCProgramBuilder& builder, Value accumulator,
   auto overflowIndex = builder.indexConstant(data.width - 1);
 
   if (inverse) {
-    /// Reverse the modular-adder operations and every phase rotation.
+    // Reverse the modular-adder operations and every phase rotation.
     phaseAdd(builder, accumulator, data, addendOffset, controls, true);
+
     inverseQFT(builder, accumulator, data.width);
     builder.x(builder.loadQubit(accumulator, overflowIndex));
     builder.cx(builder.loadQubit(accumulator, overflowIndex), work);
     builder.x(builder.loadQubit(accumulator, overflowIndex));
     forwardQFT(builder, accumulator, data.width);
+
     phaseAdd(builder, accumulator, data, addendOffset, controls, false);
     phaseAdd(builder, accumulator, data, data.modulusOffset, work, true);
+
     inverseQFT(builder, accumulator, data.width);
     builder.cx(builder.loadQubit(accumulator, overflowIndex), work);
     forwardQFT(builder, accumulator, data.width);
+
     phaseAdd(builder, accumulator, data, data.modulusOffset, {}, false);
     phaseAdd(builder, accumulator, data, addendOffset, controls, true);
     return;
@@ -152,45 +154,6 @@ void multiplyAccumulate(qc::QCProgramBuilder& builder, Value control,
                inverse);
   });
   inverseQFT(builder, accumulator, width);
-}
-
-func::FuncOp createInPlaceMultiplier(qc::QCProgramBuilder& builder,
-                                     int64_t bits,
-                                     RankedTensorType anglesType) {
-  auto qubitType = qc::QubitType::get(builder.getContext());
-  SmallVector<Type> types{
-      qubitType,
-      MemRefType::get({bits}, qubitType),
-      MemRefType::get({bits + 1}, qubitType),
-      qubitType,
-      anglesType,
-      builder.getIndexType(),
-  };
-  const auto createAccumulator = [&](StringRef name, bool inverse) {
-    return builder.createFunction(name, types, [&](ValueRange arguments) {
-      multiplyAccumulate(builder, arguments[0], arguments[1], arguments[2],
-                         arguments[3], arguments[4], arguments[5], bits,
-                         inverse);
-      return SmallVector<Value>{};
-    });
-  };
-  auto accumulate = createAccumulator("shor_accumulate", false);
-  auto subtract = createAccumulator("shor_uncompute", true);
-  return builder.createFunction(
-      "shor_multiply", types, [&](ValueRange arguments) {
-        builder.call(accumulate, arguments);
-        builder.scfFor(0, bits, 1, [&](Value index) {
-          builder.cswap(arguments[0], builder.loadQubit(arguments[1], index),
-                        builder.loadQubit(arguments[2], index));
-        });
-        auto inverseOffset = arith::AddIOp::create(
-            builder, arguments[5],
-            builder.indexConstant((bits + 1) * (bits + 1)));
-        SmallVector<Value> inverseArguments(arguments);
-        inverseArguments.back() = inverseOffset;
-        builder.call(subtract, inverseArguments);
-        return SmallVector<Value>{};
-      });
 }
 
 } // namespace mqt::bench::detail

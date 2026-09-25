@@ -29,7 +29,7 @@
 namespace mqt::bench {
 namespace {
 
-/// Products of reduced residues fit because the modulus is at most 31 bits.
+// Products of reduced residues fit because the modulus is at most 31 bits.
 [[nodiscard]] uint64_t powerModulo(uint64_t base, uint64_t exponent,
                                    uint64_t modulus) {
   uint64_t result = 1;
@@ -84,7 +84,7 @@ recoverFactors(const ShorOptions& options, uint64_t numerator,
   return std::nullopt;
 }
 
-/// Odd inputs are at most 31 bits, so at most 23,170 trial divisions suffice.
+// Odd inputs are at most 31 bits, so at most 23,170 trial divisions suffice.
 [[nodiscard]] bool isPrime(uint64_t number) {
   for (uint64_t divisor = 3; divisor * divisor <= number; divisor += 2) {
     if (number % divisor == 0) {

@@ -19,6 +19,7 @@
 #include "mqt/bench/Generate.h"
 
 #include "ModularArithmetic.h"
+#include "Shor.h"
 #include "TestUtils.h"
 
 #include "gtest/gtest.h"
@@ -26,9 +27,13 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Verifier.h"
 
 #include "llvm/ADT/APInt.h"
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/SmallVector.h"
 
 #include <bit>
 #include <cmath>
@@ -46,8 +51,8 @@
 namespace mqt::bench {
 using namespace mlir;
 
-/// Tiny independent modular-permutation reference followed by a discrete
-/// Fourier transform.
+// Tiny independent modular-permutation reference followed by a discrete
+// Fourier transform.
 static std::vector<double> shorReference(uint64_t number, uint64_t base) {
   const auto size = size_t{1} << (2U * std::bit_width(number));
   std::vector<size_t> residues(size);
@@ -73,7 +78,7 @@ static std::vector<double> shorReference(uint64_t number, uint64_t base) {
 }
 
 TEST(GenerateProgramTest, SamplesShorAndRecoversFactors) {
-  /// Keep the circuit small enough for unoptimized coverage builds.
+  // Keep the circuit small enough for unoptimized coverage builds.
   constexpr uint64_t number = 15;
   const Shor benchmark({.number = number});
   auto program = test::generateQCO(benchmark);
