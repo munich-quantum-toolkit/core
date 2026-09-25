@@ -27,7 +27,15 @@ if(NOT TARGET ${TARGET_NAME})
            ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/Client.hpp
            ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/Slurm.hpp)
 
-  target_link_libraries(${TARGET_NAME} PUBLIC qdmi::qdmi MQT::CoreQDMICommon MQT::CoreQDMIDriver)
+  target_link_libraries(
+    ${TARGET_NAME}
+    PUBLIC qdmi::qdmi MQT::CoreQDMICommon
+    PRIVATE ${CMAKE_DL_LIBS})
+
+  target_compile_definitions(
+    ${TARGET_NAME}
+    PRIVATE "MQT_CORE_QDMI_DEFAULT_DRIVER_FILENAME=\"$<TARGET_FILE_NAME:MQT::CoreQDMIDriver>\"")
+  add_dependencies(${TARGET_NAME} ${MQT_CORE_TARGET_NAME}-qdmi-driver)
 
   list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
 endif()

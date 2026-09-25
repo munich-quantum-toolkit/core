@@ -517,7 +517,7 @@ class CompilerTarget:
 
     @staticmethod
     def from_device_id(device_id: str, **session_parameters: Unpack[QDMISessionParameters]) -> CompilerTarget:
-        """Open a registered device and snapshot its compiler target."""
+        """Open a client-visible device and snapshot its compiler target."""
 
     @property
     def name(self) -> str | None:

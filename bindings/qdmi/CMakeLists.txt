@@ -20,6 +20,7 @@ if(NOT TARGET ${TARGET_NAME})
     INSTALL_DIR
     .
     LINK_LIBS
-    MQT::CoreQDMI)
+    MQT::CoreQDMI
+    nlohmann_json::nlohmann_json)
 
 endif()

@@ -13,8 +13,7 @@ from __future__ import annotations
 import pytest
 
 from mqt.core.mlir import OutputFormat, QIRProfile, QIRProgram, compile_program
-from mqt.core.qdmi import CustomProperty, ProgramFormat
-from mqt.core.qdmi.driver import open_device
+from mqt.core.qdmi import CustomProperty, ProgramFormat, open_device
 
 qirrunner = pytest.importorskip("qirrunner")
 

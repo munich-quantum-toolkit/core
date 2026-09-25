@@ -33,7 +33,7 @@ from mqt.core.mlir import (
     sample,
     submit_program,
 )
-from mqt.core.qdmi.driver import open_device
+from mqt.core.qdmi import open_device
 ```
 
 ## Predict the logical result
