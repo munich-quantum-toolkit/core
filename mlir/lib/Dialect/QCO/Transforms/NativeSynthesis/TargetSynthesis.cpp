@@ -528,14 +528,14 @@ const std::optional<uint8_t>*
 NativeCostTable::lookup(const Matrix4x4& matrix,
                         CompilerTarget::GateKind entangler,
                         uint64_t hash) const {
-  const auto [begin, end] = index_.equal_range(hash);
-  for (auto it = begin; it != end; ++it) {
-    const auto& entry = entries_[it->second];
-    if (entry.entangler == entangler && sameMatrix(entry.matrix, matrix)) {
-      return &entry.count;
-    }
+  const auto it = index_.find(hash);
+  if (it == index_.end()) {
+    return nullptr;
   }
-  return nullptr;
+  const auto& entry = entries_[it->second];
+  return entry.entangler == entangler && sameMatrix(entry.matrix, matrix)
+             ? &entry.count
+             : nullptr;
 }
 
 std::unique_ptr<const NativeCostTable>
@@ -549,11 +549,12 @@ NativeCostTable::precompute(Operation* root, CompilerTarget::GateKind entangler,
       return;
     }
     const auto hash = matrixHash(matrix, entangler);
-    if (result->lookup(matrix, entangler, hash) != nullptr) {
+    /// Keep one entry per fingerprint; collisions remain cache misses.
+    if (result->index_.contains(hash)) {
       return;
     }
     const auto native = decomposeUnitary2QWeyl(matrix, entangler, seed);
-    result->index_.emplace(hash, result->entries_.size());
+    result->index_.try_emplace(hash, result->entries_.size());
     result->entries_.push_back({
         .matrix = matrix,
         .entangler = entangler,
