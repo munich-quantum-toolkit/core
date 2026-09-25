@@ -70,7 +70,11 @@ significant bit. Signed casts use two's-complement representation, with bit
 
 `float(value)` and `float[64](value)` accept numeric and Boolean values.
 Bit-string literals contain binary digits, optionally separated by underscores,
-and must match the destination register width.
+and must match the destination register width. Leading zeros count toward that
+width; the rightmost digit initializes bit zero. For example,
+`bit[6] b = "00_1101"` has value 13, and `b[3:-1:1]` has value `"011"`: the
+first selected bit becomes bit zero of the slice. These are the OpenQASM
+[bit-register conventions](https://openqasm.com/language/types.html#classical-bits-and-registers).
 
 Textual includes use LLVM SourceMgr lookup: paths are tried relative to the
 process working directory, then in the include directories supplied to

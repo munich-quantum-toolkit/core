@@ -37,10 +37,17 @@ types, matching the existing scalar load/store conversion.
 
 ## Validation
 
-The release build passes all 920 tests across the OpenQASM (206), compiler
-(259), QTensor (46), QC translation (219), jeff round-trip (153), and benchmark
-(37) test binaries. Compiler regressions cover overlapping selections, affine
-indices, integer-limit ranges, and OpenQASM/jeff round trips.
+Execution regressions live in the QIR JIT suite, which already links the
+runtime. They check asymmetric bitstrings, affine quantum and classical
+selections, overlapping assignments, fixed-width expressions, and representative
+integer-limit ranges. Compiler tests retain the jeff interchange check without
+linking the JIT. Export tests cover OpenQASM round trips.
+
+The latest release build passes 493 tests: QIR JIT (57), compiler (233), and
+OpenQASM frontend/emitter (203). Bit-string literals preserve leading zeros and
+put bit zero on the right; QIR execution exposes the corresponding recording
+order. Reading unwritten bits remains invalid, independently of the separate
+complete-output work in #2626.
 
 CLI checks compile static, affine quantum, and affine classical selections to
 QCO, QIR, jeff, and OpenQASM, then reimport the exported OpenQASM to QIR.

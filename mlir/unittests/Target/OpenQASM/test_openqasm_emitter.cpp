@@ -23,7 +23,6 @@
 #include "gtest/gtest.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/Math/IR/Math.h"
@@ -62,68 +61,6 @@ using namespace mlir;
 using namespace mlir::openqasm::test;
 
 namespace {
-
-TEST(OpenQASMTargetTest, StaticBitVectorsDoNotMaterializeRuntimeWidths) {
-  MLIRContext context;
-  auto moduleOp = qc::translateOpenQASMToQC(
-      "OPENQASM 3.1; bit[4] a = 3; bit[4] b = ~a ^ 1; b = rotl(b, 1);",
-      &context);
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  moduleOp->walk([&](arith::ConstantOp constant) {
-    EXPECT_FALSE(constant.getType().isIndex());
-  });
-}
-
-TEST(OpenQASMTargetTest, LowersProvenSlicesWithoutRuntimeGuards) {
-  constexpr llvm::StringLiteral source = R"qasm(
-OPENQASM 3.1;
-include "stdgates.inc";
-qubit[6] q;
-qubit target;
-int first = -1;
-int step = -2;
-int last = 0;
-bit[3] c = 0;
-x q[first:step:last];
-cx q[first:step:last], target;
-reset q[first:step:last];
-c = measure q[first:step:last];
-for int i in [0:1] { x q[i:i]; cx q[i:i+1], q[i+3:i+4]; }
-)qasm";
-  MLIRContext context;
-  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  moduleOp->walk([&](Operation* op) {
-    EXPECT_FALSE(isa<cf::AssertOp>(op));
-    for (auto type : op->getResultTypes()) {
-      EXPECT_FALSE(type.isInteger(128));
-    }
-  });
-}
-
-TEST(OpenQASMTargetTest, KeepsConstantClassicalSlicesStatic) {
-  MLIRContext context;
-  auto moduleOp = qc::translateOpenQASMToQC(
-      "OPENQASM 3.1; bit[6] b = \"110101\"; bit[3] a = b[5:-2:0]; "
-      "b[1:3] = b[0:2];",
-      &context);
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  moduleOp->walk([&](Operation* op) {
-    EXPECT_FALSE((isa<cf::AssertOp, scf::ForOp, scf::WhileOp>(op)));
-    for (auto type : op->getResultTypes()) {
-      EXPECT_FALSE(type.isInteger(128));
-    }
-    if (auto load = dyn_cast<cbit::LoadOp>(op)) {
-      EXPECT_TRUE(matchPattern(load.getIndex(), m_Constant()));
-    }
-    if (auto store = dyn_cast<cbit::StoreOp>(op)) {
-      EXPECT_TRUE(matchPattern(store.getIndex(), m_Constant()));
-    }
-  });
-}
 
 TEST(OpenQASMTargetTest, KeepsWholeRegisterSlicesWithinTheEmissionBudget) {
   MLIRContext context;

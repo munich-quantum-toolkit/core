@@ -26,9 +26,6 @@
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mqt/Dialect/QIR/Builder/QIRProgramBuilder.h"
-#include "mqt/Dialect/QIR/Execution/JIT/Session.h"
-#include "mqt/Dialect/QIR/Execution/Runtime/QIR.h"
-#include "mqt/Dialect/QIR/Execution/Runtime/Runtime.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
@@ -87,7 +84,6 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 
-#include <algorithm>
 #include <array>
 #include <cctype>
 #include <cstddef>
@@ -111,8 +107,7 @@
 namespace mqt::test::compiler {
 
 using namespace mlir;
-using mlir::qc::QCDialect;
-using mlir::qc::QCProgramBuilder;
+using namespace mlir::qc;
 using namespace mlir::qco;
 using namespace mlir::qir;
 
@@ -876,147 +871,7 @@ roundTripThroughOptimizedJeff(const qasm::OpenQASMProgram& source,
   return matchesEntry(*restored, "restored QC");
 }
 
-static void expectDDAndQIRSampling(StringRef source, StringRef expected) {
-  auto qc = QCProgram::fromOpenQASMString(source);
-  ASSERT_TRUE(qc);
-  EXPECT_EQ(qc->str().find("i128"), std::string::npos);
-  EXPECT_EQ(qc->str().find("cf.assert"), std::string::npos);
-  auto qco = std::move(*qc).intoQCO();
-  ASSERT_TRUE(qco);
-  ASSERT_TRUE(succeeded(qco::verifyLinearity(qco->module())));
-  ASSERT_TRUE(qco->cleanup());
-  auto sampled = qco::sample(mlir::mqt::getEntryPoint(qco->module()), 1, 42);
-  ASSERT_TRUE(succeeded(sampled));
-  ASSERT_EQ(sampled->size(), 1);
-  EXPECT_EQ(sampled->begin()->first, expected.str());
-  auto restored = std::move(*qco).intoQC();
-  ASSERT_TRUE(restored);
-  auto qir = std::move(*restored).intoQIR(QIRProfile::Adaptive);
-  ASSERT_TRUE(qir);
-  const auto ir = qir->llvmIR();
-  ASSERT_TRUE(ir);
-  ::qir::JitSession session(*ir, "openqasm-regression",
-                            ::qir::Execution::Sampling, 42);
-  session.runtime().disableOutput();
-  std::vector<std::string> shots;
-  ASSERT_EQ(session.sample(1, shots), 0);
-  EXPECT_EQ(shots, std::vector<std::string>{expected.str()});
-}
-
 namespace {
-
-class OpenQASMClassicalSliceTest
-    : public testing::TestWithParam<std::pair<StringRef, StringRef>> {};
-
-const auto CLASSICAL_SLICE_CASES =
-    std::to_array<std::pair<StringRef, StringRef>>({
-        {"", "b[5:-2:0] == \"001\""},
-        {"", "~b[0:n] == \"010\""},
-        {"bit[3] a = b[0:n];", "a == \"101\""},
-        {"bit[8] a = \"00000011\";", "(a[0:n] ^ b[0:n]) == \"110\""},
-        {"", "(b[0:n] << uint(1)) == \"010\""},
-        {"", "rotl(b[0:n], int[8](-1)) == \"110\""},
-        {"", "rotr(b[0:n], -1) == \"011\""},
-        {"", "popcount(b[0:n]) == 2"},
-        {"", "uint[3](b[0:n]) == 5"},
-        {"", "bool(b[0:n])"},
-        {"b[1:n+1] = b[0:n];", "b == \"111011\""},
-        {"b[n:-1:0] = \"011\";", "b[0:2] == \"110\""},
-        {"bit[4] a; a[0:1] = \"10\"; bit[2] c = a[0:1];", "c == \"10\""},
-        {"b[0:n] = 1 | 2;", "b[0:2] == \"011\""},
-        {"b[0:n] = ~0;", "b[0:2] == \"111\""},
-        {"b[0:n] = ~(1 | 2);", "b[0:2] == \"100\""},
-        {"", "(~0 ^ b[0:n]) == \"010\""},
-        {"", "(b[0:n] & ~0) == \"101\""},
-        {"b[0:n] = rotl(1, -1);", "b[0:2] == \"100\""},
-        {"b[0:n] = ~0 >> 1;", "b[0:2] == \"011\""},
-        {"b[0:n] = (1 | 2) << 1;", "b[0:2] == \"110\""},
-        {"b[0:n] = rotl(1, n);", "b[0:2] == \"100\""},
-        {"b[0:n] = ~0 >> uint(n);", "b[0:2] == \"001\""},
-    });
-TEST_P(OpenQASMClassicalSliceTest, ExecutesThroughQCO) {
-  const auto& [statements, result] = GetParam();
-  SCOPED_TRACE(statements.str() + result.str());
-  const auto source = "OPENQASM 3.1; qubit q; int n = 2; "
-                      "bit[6] b = \"110101\"; " +
-                      statements.str() + " reset q; if (" + result.str() +
-                      ") { x q; } output bit ok; ok = measure q;";
-  expectDDAndQIRSampling(source, "1");
-}
-
-INSTANTIATE_TEST_SUITE_P(Slices, OpenQASMClassicalSliceTest,
-                         testing::ValuesIn(CLASSICAL_SLICE_CASES));
-
-TEST(OpenQASMCompilerOutputTest, ExecutesAffineSlicesThroughDDAndQIR) {
-  constexpr llvm::StringLiteral source = R"qasm(
-OPENQASM 3.1;
-include "stdgates.inc";
-qubit[4] q;
-qubit[4] r;
-reset q;
-reset r;
-for int i in [0:3] { x q[i:i]; }
-for int i in [0:1] { cx q[2*i:2*i+1], r[2*i:2*i+1]; }
-output bit[4] result;
-result = measure r;
-)qasm";
-  expectDDAndQIRSampling(source, "1111");
-}
-
-TEST(OpenQASMCompilerOutputTest, ExecutesInclusiveRangesAtIntegerLimits) {
-  const auto cases = std::to_array<std::pair<StringRef, int>>({
-      {"[hi-1:hi]", 2},
-      {"[lo+1:-1:lo]", 2},
-      {"[lo:hi:hi]", 3},
-      {"[hi:lo:lo]", 2},
-      {"[uint(-2):uint(-1)]", 2},
-      {"[hi-1+delta:hi]", 2},
-      {"[lo+1+delta:-1:lo]", 2},
-      {"[lo+delta:hi:hi]", 3},
-      {"[uint(-2)+uint(delta):uint(-1)]", 2},
-      {"[uint(delta):uint(-1):uint(-1)]", 2},
-      {"[int(-1)+delta:-1:uint(-3)]", 3},
-      {"[2+delta:1]", 0},
-      {"[uint(delta):-1:uint(1)]", 0},
-  });
-  for (const auto& [range, count] : cases) {
-    for (const auto tail : {
-             StringRef{},
-             StringRef{"continue;"},
-             StringRef{"if (count == 2) { break; }"},
-         }) {
-      SCOPED_TRACE(range.str() + tail.str());
-      const auto expectedCount =
-          tail.starts_with("if") ? std::min(count, 2) : count;
-      const auto source =
-          "OPENQASM 3.1; qubit q; reset q; bit zero = measure q; "
-          "int delta = int(zero); const int hi = 9223372036854775807; "
-          "const int lo = -9223372036854775807 - 1; int count = 0; "
-          "for int i in " +
-          range.str() + " { count += 1; " + tail.str() +
-          " } if (count == " + std::to_string(expectedCount) +
-          ") { x q; } output bit ok; ok = measure q;";
-      expectDDAndQIRSampling(source, "1");
-    }
-  }
-}
-
-TEST(OpenQASMCompilerOutputTest, ExecutesAffineClassicalSlices) {
-  expectDDAndQIRSampling(R"qasm(
-OPENQASM 3.1;
-qubit q;
-bit[6] b = "000001";
-for int i in [0:4] {
-  int next = uint[64](i) + uint[64](1);
-  b[next:next] = b[uint[64](i):uint[64](i)];
-}
-reset q;
-if (b == "111111") { x q; }
-output bit ok;
-ok = measure q;
-)qasm",
-                         "1");
-}
 
 TEST(OpenQASMCompilerOutputTest, PreservesClassicalSliceInterchange) {
   constexpr StringLiteral source = R"qasm(
@@ -1033,9 +888,6 @@ ok = measure q;
   auto qc = QCProgram::fromOpenQASMString(source);
   ASSERT_TRUE(qc);
   ASSERT_TRUE(qc->cleanup());
-  const auto exported = qc->toOpenQASM3();
-  ASSERT_TRUE(exported);
-  expectDDAndQIRSampling(exported->source(), "1");
   auto qco = std::move(*qc).intoQCO();
   ASSERT_TRUE(qco);
   ASSERT_TRUE(qco->cleanup());

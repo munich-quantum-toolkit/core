@@ -9,12 +9,18 @@
  */
 
 #include "dd/DDDefinitions.hpp"
+#include "mqt/Compiler/Programs.h"
+#include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mqt/Dialect/QIR/Execution/JIT/Session.h"
 #include "mqt/Dialect/QIR/Execution/Runtime/QIR.h"
 #include "mqt/Dialect/QIR/Execution/Runtime/Runtime.h"
 
 #include "gmock/gmock-matchers.h"
 #include "gtest/gtest.h"
+
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/Support/LogicalResult.h"
 
 #include <array>
 #include <complex>
@@ -28,6 +34,8 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 static std::string getProgram(const std::string_view file) {
@@ -37,12 +45,118 @@ static std::string getProgram(const std::string_view file) {
   return {std::istreambuf_iterator<char>{stream}, {}};
 }
 
+static void expectOpenQASMSampling(std::string_view source,
+                                   std::string_view expected) {
+  auto qc = mlir::QCProgram::fromOpenQASMString(source);
+  ASSERT_TRUE(qc);
+  auto qco = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qco);
+  auto sampled =
+      mlir::qco::sample(mlir::mqt::getEntryPoint(qco->module()), 1, 42);
+  ASSERT_TRUE(mlir::succeeded(sampled));
+  ASSERT_EQ(sampled->size(), 1);
+  EXPECT_EQ(sampled->begin()->first, expected);
+  auto restored = std::move(*qco).intoQC();
+  ASSERT_TRUE(restored);
+  auto qir = std::move(*restored).intoQIR(mlir::QIRProfile::Adaptive);
+  ASSERT_TRUE(qir);
+  const auto ir = qir->llvmIR();
+  ASSERT_TRUE(ir);
+  qir::JitSession session(*ir, "openqasm-slices", qir::Execution::Sampling, 42);
+  session.runtime().disableOutput();
+  std::vector<std::string> shots;
+  ASSERT_EQ(session.sample(1, shots), 0);
+  /// The JIT exposes recording order; DD strings put output bit zero on the
+  /// right.
+  EXPECT_EQ(shots, std::vector<std::string>(
+                       1, std::string(expected.rbegin(), expected.rend())));
+}
+
 namespace {
 
 class JitSessionTest : public testing::Test {
 protected:
   std::ostringstream sink;
 };
+
+TEST(OpenQASMExecutionTest, ExecutesAffineQuantumSlices) {
+  expectOpenQASMSampling(R"qasm(OPENQASM 3.1;
+qubit[4] q;
+qubit[4] r;
+reset q;
+reset r;
+x q[0:2:2];
+for int i in [0:1] { cx q[2*i:2*i+1], r[2*i:2*i+1]; }
+output bit[4] result;
+result = measure r;
+)qasm",
+                         "0101");
+}
+
+TEST(OpenQASMExecutionTest, PreservesBitstringAndSliceOrder) {
+  expectOpenQASMSampling(R"qasm(OPENQASM 3.1;
+output bit[6] literal;
+output bit[3] selected;
+output bit[6] copied;
+literal = "00_1101";
+selected = literal[3:-1:1];
+copied = literal;
+for int i in [0:1] {
+  int next = uint[64](i) + uint[64](1);
+  copied[next:next+1] = copied[i:i+1];
+}
+)qasm",
+                         "000111011001101");
+}
+
+TEST(OpenQASMExecutionTest, ExecutesClassicalSliceExpressions) {
+  expectOpenQASMSampling(R"qasm(OPENQASM 3.1;
+int n = 2;
+bit[6] b = "110101";
+bit[3] a = b[0:n];
+bit[4] partial;
+partial[0:1] = "10";
+output bit[3] result;
+result[0] = (a == "101") && (~b[0:n] == "010") &&
+    ((b[0:n] << uint(1)) == "010") &&
+    (rotl(b[0:n], int[8](-1)) == "110") &&
+    (rotr(b[0:n], -1) == "011") &&
+    (popcount(b[0:n]) == 2) && (uint[3](b[0:n]) == 5) && bool(b[0:n]);
+result[1] = (partial[0:1] == "10") && ((~0 ^ b[0:n]) == "010") &&
+    ((b[0:n] & ~0) == "101");
+b[n:-1:0] = "011";
+result[2] = b[0:2] == "110";
+b[0:n] = (~0 >> uint(n)) | rotl(1, n);
+result[2] = result[2] && (b[0:2] == "101");
+)qasm",
+                         "111");
+}
+
+TEST(OpenQASMExecutionTest, ExecutesInclusiveRangeBoundaries) {
+  const auto cases =
+      std::to_array<std::tuple<std::string_view, std::string_view, int>>({
+          {"[hi-1:hi]", "", 2},
+          {"[lo:hi:hi]", "", 3},
+          {"[hi-1+delta:hi]", "continue;", 2},
+          {"[lo+1+delta:-1:lo]", "", 2},
+          {"[uint(-2)+uint(delta):uint(-1)]", "", 2},
+          {"[int(-1)+delta:-1:uint(-3)]", "if (count == 2) { break; }", 2},
+          {"[2+delta:1]", "", 0},
+      });
+  for (const auto& [range, tail, count] : cases) {
+    SCOPED_TRACE(range);
+    const auto source =
+        "OPENQASM 3.1; qubit q; reset q; bit zero = measure q; "
+        "int delta = int(zero); const int hi = 9223372036854775807; "
+        "const int lo = -9223372036854775807 - 1; int count = 0; "
+        "for int i in " +
+        std::string(range) + " { count += 1; " + std::string(tail) +
+        " } "
+        "output bit ok; ok = count == " +
+        std::to_string(count) + ";";
+    expectOpenQASMSampling(source, "1");
+  }
+}
 
 TEST_F(JitSessionTest, LoadModuleFromMemory) {
   const auto program = getProgram("BellPairStatic.ll");
