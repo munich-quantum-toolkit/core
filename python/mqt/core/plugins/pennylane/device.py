@@ -304,15 +304,12 @@ class QDMIDevice(Device):
         Raises:
             PennyLaneExecutionError: If the job exposes neither result representation.
         """
+        shots_error = None
         try:
-            shots = job.get_shots()
+            if shots := job.get_shots():
+                return shots
         except RuntimeError as exc:
             shots_error = exc
-            shots = []
-        else:
-            shots_error = None
-        if shots:
-            return shots
 
         try:
             counts = job.get_counts()

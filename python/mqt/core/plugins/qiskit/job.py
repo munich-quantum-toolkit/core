@@ -222,14 +222,13 @@ class QDMIJob(JobV1):
             return self._result
         self._batch.complete()
         try:
-            experiment_results = [entry.result for entry in self.entries]
             self._result = Result(
                 backend_name=self._backend.name,
                 backend_version=self._backend.backend_version,
                 job_id=self.job_id(),
                 success=True,
                 date=datetime.datetime.now(datetime.UTC).isoformat(),
-                results=experiment_results,
+                results=[entry.result for entry in self.entries],
             )
         except BaseException as exc:
             self._batch.record_failure(0, "assembly", exc)
