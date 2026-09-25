@@ -17,6 +17,7 @@
 #include "mlir/Support/LLVM.h"
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 
@@ -24,7 +25,6 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -54,7 +54,7 @@ private:
 
   uint64_t seed_ = 0;
   std::vector<Entry> entries_;
-  std::unordered_multimap<uint64_t, size_t> index_;
+  DenseMap<uint64_t, size_t> index_;
 };
 
 /// Read-only native synthesis decisions with bounded numerical caches.
