@@ -2647,7 +2647,7 @@ TEST_F(CompilerPipelineTest, IndexedPlacementPreservesSparseSitesAndLoopBody) {
       qco::sample(mlir::mqt::getEntryPoint(qasmProgram.module()), 1, 42);
   ASSERT_TRUE(succeeded(outcomes));
   ASSERT_EQ(outcomes->size(), 1);
-  /// Without a CBit output register, sampling reports the physical wire state.
+  // Without a CBit output register, sampling reports the physical wire state.
   EXPECT_EQ(outcomes->begin()->first, "10000000");
   auto qasmQC = std::move(qasmProgram).intoQC();
   ASSERT_TRUE(qasmQC);

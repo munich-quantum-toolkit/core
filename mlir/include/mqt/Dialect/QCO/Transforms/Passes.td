@@ -150,7 +150,7 @@ def UnrollLoopsForPayload : Pass<"unroll-loops-for-payload", "mlir::ModuleOp"> {
     linear QCO state through iteration arguments instead of capturing it.
   }];
   let options = [Option<"maxOperations", "max-operations", "uint64_t",
-                        "1000000000",
+                        "1'000'000'000",
                         "Maximum number of cloned loop-body operations.">];
 }
 
