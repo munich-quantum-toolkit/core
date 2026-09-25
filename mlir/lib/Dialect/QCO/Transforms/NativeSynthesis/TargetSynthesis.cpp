@@ -820,8 +820,11 @@ protected:
       signalPassFailure();
       return;
     }
+    // Fixed-pulse lowering must preserve constrained rotation parameters.
     if (targetBasis &&
-        targetBasis->singleQubit != CompilerTarget::SingleQubitBasis::U) {
+        targetBasis->singleQubit != CompilerTarget::SingleQubitBasis::U &&
+        targetBasis->singleQubit !=
+            CompilerTarget::SingleQubitBasis::FixedRotation) {
       RewritePatternSet patterns(&getContext());
       decomposition::populateParameterizedSingleQubitRunCompositionPatterns(
           patterns, targetBasis->singleQubit, &target);
