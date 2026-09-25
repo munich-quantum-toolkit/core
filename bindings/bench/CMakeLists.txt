@@ -10,15 +10,16 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-bench-bindings)
   set(BENCH_SOURCES
       register_bench.cpp
       register_bv.cpp
-      register_modular_multiplier.cpp
       register_ghz.cpp
       register_grover.cpp
+      register_modular_multiplier.cpp
       register_multiplexer.cpp
       register_qft.cpp
       register_qft_adder.cpp
       register_qpe.cpp
       register_repeat_until_success.cpp
-      register_teleportation.cpp)
+      register_teleportation.cpp
+      register_w_state.cpp)
 
   add_mqt_python_binding(
     CORE

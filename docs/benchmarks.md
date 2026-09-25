@@ -431,3 +431,33 @@ The input width limit does not guarantee that a device or compiler supports that
 many qubits. See {doc}`mlir/target_compilation` for device and control-flow
 limits. The benchmark simulates an ideal adaptive circuit; it does not model
 error correction, magic-state distillation, or cultivation.
+
+### W-state preparation
+
+The `w-state` family prepares the equal, positive-amplitude superposition of all
+single-excitation states:
+
+```{math}
+|W_n\rangle = \frac{1}{\sqrt n}\sum_{j=0}^{n-1}|2^j\rangle.
+```
+
+`qubits` must be positive. The ideal probability is $1/n$ for each
+single-excitation bitstring and zero otherwise.
+
+```{code-cell} ipython3
+from mqt.core import mlir
+from mqt.core.bench import w_state
+
+w = w_state.WState(w_state.Options(qubits=3))
+counts = mlir.sample(w.generate(), shots=4096, seed=17)
+assert set(counts) == {"001", "010", "100"}
+assert w.evaluate(counts).total_variation_distance < 0.03
+assert w.probability("010") == 1 / 3
+
+large_w = w_state.WState(w_state.Options(qubits=256))
+large_counts = mlir.sample(large_w.generate(), shots=64, seed=17)
+assert sum(large_counts.values()) == 64
+assert all(len(outcome) == 256 and outcome.count("1") == 1 for outcome in large_counts)
+```
+
+DD sampling needs no dense statevector, but intermediate DDs determine cost.
