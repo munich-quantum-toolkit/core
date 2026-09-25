@@ -112,6 +112,9 @@ public:
   /// Return whether optional capability metadata is complete.
   [[nodiscard]] bool optionalCapabilitiesKnown() const noexcept;
 
+  /// Whether generated switches may have arbitrary nesting and case counts.
+  [[nodiscard]] bool supportsUnrestrictedMultiwayBranching() const noexcept;
+
   /// Materialize the selected contract as a typed MLIR attribute.
   [[nodiscard]] mqt::PayloadSpecAttr materialize(MLIRContext& context) const;
 
@@ -143,7 +146,8 @@ public:
 
   /// Whether indexed qubits can retain runtime addresses through placement.
   /// Requires Adaptive QIR and an all-to-all target whose operations have no
-  /// site-specific restrictions. Payload control-flow limits still apply.
+  /// site-specific restrictions.
+  /// Other payload control-flow limits still apply.
   [[nodiscard]] bool supportsIndexedQubits() const noexcept;
 
   /// Materialize the pair as a typed MLIR attribute.

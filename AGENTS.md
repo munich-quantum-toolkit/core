@@ -41,9 +41,12 @@ Use relevant sections of the [development policy](docs/development.md) and the
   `docs/glossary.md`. Preserve project names such as `jeff` and `jeff-mlir`.
   Update the glossary when introducing or changing public or ambiguous terms.
 - Document contracts, reasons, ownership, numerical limits, and useful examples.
-  Remove repetition of code, boilerplate parameters, change narration, and
-  unsupported assurances. Use symbol references instead of brittle line
-  pointers. Keep prompts and review history out of code and API docs.
+  Keep small additions brief; extend existing explanations and link to the
+  owning reference for details. Follow the
+  [prose policy](docs/development.md#prose-and-terminology). Remove repetition
+  of code, boilerplate parameters, change narration, and unsupported assurances.
+  Use symbol references instead of brittle line pointers. Keep prompts and
+  review history out of code and API docs.
 - Test changed behavior and concrete regressions, not implementation details.
   Low-impact edits need no new tests. Before weakening a test, check history,
   callers, invariants, and resource limits; equal line coverage or a shared
@@ -59,15 +62,14 @@ Use relevant sections of the [development policy](docs/development.md) and the
   scoped workarounds with a technical reason, reproducer, and removal condition.
 - Follow the
   [release documentation policy](docs/development.md#release-documentation).
-  Record notable changes under Unreleased. Fold refinements to never-released
-  functionality into its feature entry; document migrations from released APIs,
-  not intermediate unreleased designs.
+  Describe user-facing changes and required migrations in PR descriptions. Do
+  not change `CHANGELOG.md` or `UPGRADING.md` except in release-preparation PRs
+  or when explicitly asked. Document migrations from released APIs, not
+  intermediate unreleased designs.
 - Changelog entries name the PR and every contributing author, for example
   `([#123]) ([**@username**])`, with link definitions at the bottom.
 - Never commit or print secrets or personal data. Use documented environment
   variables and repository secrets.
-- Do not edit files marked as generated from an external template. Contribute
-  those changes to the MQT templates repository or its update workflow.
 
 ## C++ and MLIR
 
@@ -149,11 +151,11 @@ default; changed-line clang-tidy alone is insufficient. Inspect which files ran.
 Keep pass and option documentation aligned with actual scope, defaults,
 supported shapes, limitations, and failure modes.
 
-Inspect the final diff and status. Exclude generated, template-managed, secret,
-and unrelated files. Tie validation to the final code: rerun affected checks
-following edits and distinguish passes from skipped, blocked, or pending checks.
-Report checks run and their outcomes; stop after required gates pass unless a
-concrete remaining risk justifies more validation.
+Inspect the final diff and status. Exclude generated, secret, and unrelated
+files. Tie validation to the final code: rerun affected checks following edits
+and distinguish passes from skipped, blocked, or pending checks. Report checks
+run and their outcomes; stop after required gates pass unless a concrete
+remaining risk justifies more validation.
 
 ## Plans and audits
 

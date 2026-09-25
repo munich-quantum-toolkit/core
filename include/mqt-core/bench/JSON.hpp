@@ -21,7 +21,9 @@
 #include "bench/QFTAdder.hpp"
 #include "bench/QPE.hpp"
 #include "bench/RepeatUntilSuccess.hpp"
+#include "bench/Shor.hpp"
 #include "bench/Teleportation.hpp"
+#include "bench/WState.hpp"
 #include "bench/mqt_core_bench_export.h"
 
 #include <cstddef>
@@ -77,5 +79,10 @@ evaluateJSON(std::string_view manifest, std::string_view counts,
 [[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
 evaluationToJSON(std::string_view caseId, size_t shots,
                  const Evaluation& evaluation);
+
+/// Serialize classical factor verification without distribution-fit metrics.
+[[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
+evaluationToJSON(std::string_view caseId, size_t shots,
+                 const ShorEvaluation& evaluation);
 
 } // namespace mqt::bench

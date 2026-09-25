@@ -20,6 +20,7 @@
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
+#include "mqt/Support/RandomSeed.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h" // IWYU pragma: keep (Passes.h.inc)
 #include "mlir/Dialect/Math/IR/Math.h"
@@ -43,6 +44,7 @@
 #include "mlir/Support/TypeID.h"
 #include "mlir/Support/WalkResult.h"
 #include "mlir/Transforms/FoldUtils.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
@@ -80,6 +82,7 @@ struct FusableTwoQubitRun {
 ///
 /// The target basis is fixed for the pass; no SSA values or locations are kept.
 struct LastTwoQubitDecomposition {
+  uint64_t seed = 2023;
   Matrix4x4 matrix;
   std::optional<decomposition::TwoQubitNativeDecomposition> native;
 
@@ -87,7 +90,7 @@ struct LastTwoQubitDecomposition {
   get(const Matrix4x4& nextMatrix, CompilerTarget::GateKind entangler) {
     if (!native || matrix.data != nextMatrix.data) {
       matrix = nextMatrix;
-      native = decomposeUnitary2QWeyl(matrix, entangler);
+      native = decomposeUnitary2QWeyl(matrix, entangler, seed);
     }
     return native;
   }
@@ -518,6 +521,21 @@ static LogicalResult synthesizeTargetOperation(
   if (!basis) {
     return unsupported("the target has no usable synthesis basis");
   }
+  if (auto controlled = dyn_cast<CtrlOp>(operation);
+      controlled && basis->singleQubit == CompilerTarget::SingleQubitBasis::U &&
+      controlled.getNumTargets() == 1 &&
+      controlled.getNumBodyUnitaries() == 1 &&
+      isa<U2Op>(controlled.getBodyUnitary(0).getOperation())) {
+    /// Canonicalization may shorten a native controlled U(pi/2, phi, lambda)
+    /// to U2. Restore its native form before attempting matrix synthesis.
+    decomposition::synthesizeParameterizedUnitary1Q(
+        rewriter, controlled.getBodyUnitary(0).getOperation(),
+        basis->singleQubit);
+    if (sites ? target.supports(operation, *sites)
+              : target.supports(operation)) {
+      return success();
+    }
+  }
   rewriter.setInsertionPoint(operation);
   if (op.isSingleQubit()) {
     Matrix2x2 matrix;
@@ -652,7 +670,7 @@ static bool fuseTwoQubitGateRun(IRRewriter& rewriter, UnitaryOpInterface head,
   }
   const auto native = decomposeUnitary2QWeyl(
       reverseEntangler ? run.composed.reorderForQubits(1, 0) : run.composed,
-      *basis.entangler);
+      *basis.entangler, lastDecomposition.seed);
   if (!native || (shrinkOnly && native->numBasisUses >= run.numTwoQ) ||
       (target != nullptr
            ? !reducesNativeCost(run, native->numBasisUses, *target,
@@ -683,9 +701,11 @@ static bool fuseTwoQubitGates(IRRewriter& rewriter, ModuleOp moduleOp,
                               CompilerTarget::SynthesisBasis basis,
                               const CompilerTarget* target = nullptr,
                               const SiteMap* sites = nullptr,
-                              bool shrinkOnly = false) {
+                              bool shrinkOnly = false, uint64_t seed = 2023) {
   bool changed = false;
-  LastTwoQubitDecomposition lastDecomposition;
+  LastTwoQubitDecomposition lastDecomposition{
+      .seed = compilationSeed(moduleOp, seed),
+  };
   /// A run's successors have already been visited when its head erases them.
   moduleOp->walk<WalkOrder::PostOrder, ReverseIterator>(
       [&](Operation* operation) {
@@ -779,6 +799,7 @@ private:
 
 struct TargetNativeSynthesisPass final
     : impl::TargetNativeSynthesisBase<TargetNativeSynthesisPass> {
+  using TargetNativeSynthesisBase::TargetNativeSynthesisBase;
 
 protected:
   void runOnOperation() override {
@@ -797,6 +818,19 @@ protected:
       signalPassFailure();
       return;
     }
+    if (targetBasis &&
+        targetBasis->singleQubit != CompilerTarget::SingleQubitBasis::U) {
+      RewritePatternSet patterns(&getContext());
+      decomposition::populateParameterizedSingleQubitRunCompositionPatterns(
+          patterns, targetBasis->singleQubit, &target);
+      decomposition::populateFuseSingleQubitUnitaryRunsPatterns(
+          patterns, targetBasis->singleQubit, /*skipControlledBodies=*/true,
+          &target);
+      if (failed(applyPatternsGreedily(moduleOp, std::move(patterns)))) {
+        signalPassFailure();
+        return;
+      }
+    }
     const bool indexed = environment.environment().supportsIndexedQubits();
     auto sites = collectStaticSites(moduleOp, indexed);
     if (failed(sites)) {
@@ -808,10 +842,12 @@ protected:
     IRRewriter rewriter(&getContext(), &listener);
     if (targetBasis && targetBasis->entangler) {
       fuseTwoQubitGates(rewriter, moduleOp, *targetBasis, &target,
-                        indexed ? nullptr : &*sites);
+                        indexed ? nullptr : &*sites, false, seed);
     }
     listener.foldPending();
-    LastTwoQubitDecomposition lastDecomposition;
+    LastTwoQubitDecomposition lastDecomposition{
+        .seed = compilationSeed(moduleOp, seed),
+    };
     /// Rewrite users before producers so each unvisited operation retains its
     /// original operands and their collected sites.
     const auto result = moduleOp->walk<WalkOrder::PostOrder, ReverseIterator>(

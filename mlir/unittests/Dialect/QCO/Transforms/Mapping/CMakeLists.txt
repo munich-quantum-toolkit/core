@@ -15,6 +15,7 @@ target_link_libraries(
           MLIRParser
           MLIRMQTDialect
           MQTCompilerTarget
+          MLIRQCODDFunctionality
           MLIRQCOProgramBuilder
           MLIRQTensorUtils
           MLIRQCOTransforms

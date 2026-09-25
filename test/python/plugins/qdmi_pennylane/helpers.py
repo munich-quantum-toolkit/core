@@ -166,7 +166,7 @@ class StubDevice:
 
         job.wait.side_effect = wait
         job.cancel.side_effect = cancel
-        job.check.return_value = QDMIJob.Status.DONE
+        job.check.side_effect = [QDMIJob.Status.RUNNING, QDMIJob.Status.DONE]
         if self._expose_shots:
             job.get_shots.return_value = shots
         else:

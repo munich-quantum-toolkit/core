@@ -202,6 +202,14 @@ bool PayloadSpecification::optionalCapabilitiesKnown() const noexcept {
   return optionalCapabilitiesKnown_;
 }
 
+bool PayloadSpecification::supportsUnrestrictedMultiwayBranching()
+    const noexcept {
+  return llvm::any_of(capabilities_, [](const auto& capability) {
+    return capability.id == ProgramCapability::MULTIWAY_BRANCHING &&
+           capability.value == 0 && capability.constraints.empty();
+  });
+}
+
 mqt::PayloadSpecAttr
 PayloadSpecification::materialize(MLIRContext& context) const {
   const auto format = mqt::PayloadFormatAttr::get(

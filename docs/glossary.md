@@ -143,6 +143,11 @@ dialect
   dialect lets one IR contain concepts from several abstraction levels without
   forcing them into one universal instruction set.
 
+compilation seed
+  An optional seed that overrides MQT pass-local seeds during one compilation.
+  It controls mapping, Pauli twirling, and numerical synthesis retries.
+  Execution sampling uses a separate seed.
+
 pass
   A procedure that inspects or changes IR while preserving the invariants
   declared by its input and output contracts. A pass normally runs as one step
@@ -260,6 +265,8 @@ QCO
 QTensor
   MQT's dialect for one-dimensional collections of qubits used with QCO. Its
   operations preserve the linear ownership of the contained quantum values.
+  Each slot retains its qubit identity: extraction borrows a qubit and insertion
+  restores it to the same underlying slot. Gates can change its state.
 
 reference semantics
   A model in which an operation changes an object reached through a stable
@@ -287,8 +294,8 @@ linear ownership
 benchmark instance
   **Preferred term:** benchmark instance. **Accepted alias:** instance when the
   benchmark context is clear. One validated member of a benchmark family with
-  every default resolved. It owns a logical output and analytic reference and
-  can be used to generate a program or manifest.
+  every default resolved. It owns a logical output and an analytic or
+  verification reference and can be used to generate a program or manifest.
 
 benchmark instance specification
 instance specification
@@ -326,12 +333,32 @@ iQPE
   reuses one query qubit for each output bit. Each round applies corrections
   controlled by earlier measurement results.
 
+Shor's algorithm
+  **Preferred term:** Shor's algorithm. **Accepted alias:** Shor when naming the
+  benchmark family. A factoring algorithm that combines quantum order finding
+  with classical arithmetic to recover and verify nontrivial factors.
+
+order finding
+  **Preferred term:** order finding. **Accepted aliases:** none. Finding the
+  smallest positive exponent $r$ for which a given base $a$ satisfies
+  $a^r \equiv 1 \pmod{N}$, with $a$ coprime to $N$.
+
+continued fraction
+  **Preferred term:** continued fraction. **Accepted aliases:** none. A nested
+  representation of a number by integer parts and reciprocals. Truncations,
+  called convergents, give rational approximations used to recover candidate
+  exponents from measured phases in Shor's algorithm.
+
 semiclassical quantum Fourier transform
 semiclassical QFT
   **Preferred term:** semiclassical quantum Fourier transform. **Accepted
   alias:** semiclassical QFT. A quantum Fourier-transform method that measures,
   resets, and reuses one qubit for each output bit. Each round applies rotations
   controlled by earlier measurement results.
+
+W state
+  **Preferred term:** W state. The equal, positive-amplitude superposition of
+  all computational-basis states with exactly one qubit in state one.
 ```
 
 ## Index

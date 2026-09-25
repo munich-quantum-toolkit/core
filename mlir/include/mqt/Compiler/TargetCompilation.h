@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "mqt/Compiler/CompilationOptions.h"
+
 namespace mlir {
 
 class TargetEnvironment;
@@ -18,7 +20,7 @@ class OpPassManager;
 /// Populate the canonical compiler-target pipeline.
 ///
 /// Inlines reusable functions, decomposes supported multi-controlled gates,
-/// performs target-independent optimization, maps to the target topology,
+/// maps to the target topology, fuses blocks in the target basis,
 /// synthesizes native operations, performs a final local cleanup, and verifies
 /// target conformance. The context that runs this low-level pipeline must
 /// register inliner extensions for its callable dialects.
@@ -27,8 +29,11 @@ class OpPassManager;
 /// The supplied environment is authoritative: the pipeline attaches it to the
 /// module and shares its prepared target with every target-dependent pass.
 /// The environment must remain unchanged during pipeline execution.
+/// Use runWithCompilationOptions to apply compilation-wide seed and
+/// instrumentation settings when running this pipeline.
 void populateTargetCompilationPipeline(OpPassManager& pm,
-                                       const TargetEnvironment& environment);
+                                       const TargetEnvironment& environment,
+                                       const MappingOptions& mapping = {});
 
 /// Populate target-native block synthesis without routing.
 ///
@@ -37,7 +42,10 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
 /// two-qubit runs in the native basis, and verifies target conformance. Input
 /// must use structured QCO/SCF control flow. The supplied environment is
 /// authoritative and must remain unchanged during pipeline execution.
+/// Use runWithCompilationOptions to apply compilation-wide seed and
+/// instrumentation settings when running this pipeline.
 void populateTargetSynthesisPipeline(OpPassManager& pm,
-                                     const TargetEnvironment& environment);
+                                     const TargetEnvironment& environment,
+                                     const MappingOptions& mapping = {});
 
 } // namespace mlir

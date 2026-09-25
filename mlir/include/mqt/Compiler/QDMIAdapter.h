@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "mqt/Compiler/CompilationOptions.h"
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/Target.h"
 #include "mqt/Compiler/TargetEnvironment.h"
@@ -78,7 +79,7 @@ public:
   /// Compile and serialize for one selected hardware/payload contract.
   [[nodiscard]] static llvm::Expected<CompiledProgram>
   compile(CompilerInput&& program, const TargetEnvironment& environment,
-          bool enableTiming = false, bool enableStatistics = false);
+          const CompilationOptions& options = {});
 
   [[nodiscard]] const TargetEnvironment& environment() const noexcept {
     return environment_;
@@ -101,7 +102,7 @@ private:
 [[nodiscard]] llvm::Expected<CompiledProgram>
 compileProgram(CompilerInput&& program, const qdmi::Device& device,
                std::optional<QDMI_Program_Format> format = std::nullopt,
-               bool enableTiming = false, bool enableStatistics = false);
+               const CompilationOptions& options = {});
 
 /// Validate the destination contract before creating and submitting a QDMI job.
 [[nodiscard]] llvm::Expected<qdmi::Job> submitProgram(
@@ -118,11 +119,11 @@ compileProgram(CompilerInput&& program, const qdmi::Device& device,
     const qdmi::Device& device, CompilerInput&& program,
     int64_t numShots = 1024,
     std::optional<QDMI_Program_Format> format = std::nullopt,
-    bool enableTiming = false, bool enableStatistics = false,
     const std::optional<qdmi::CustomJobParameter>& custom1 = std::nullopt,
     const std::optional<qdmi::CustomJobParameter>& custom2 = std::nullopt,
     const std::optional<qdmi::CustomJobParameter>& custom3 = std::nullopt,
     const std::optional<qdmi::CustomJobParameter>& custom4 = std::nullopt,
-    const std::optional<qdmi::CustomJobParameter>& custom5 = std::nullopt);
+    const std::optional<qdmi::CustomJobParameter>& custom5 = std::nullopt,
+    const CompilationOptions& options = {});
 
 } // namespace mlir

@@ -324,6 +324,17 @@ device = QDMIDevice(
 )
 ```
 
+Automatic retries are disabled (`max_retries=0`). To retry confirmed failed jobs
+up to three times, set the option when creating the device:
+
+```python
+device = qp.device("mqt.ddsim.default", wires=2, max_retries=3)
+```
+
+Retries create additional executions and can incur charges. Successful jobs are
+reused; errors that do not confirm job failure require
+[explicit recovery](#recovering-results-after-a-failure).
+
 An integration can return an already-open device. Pass that handle directly to
 the generic class. Do not repeat session parameters because the session already
 exists. For example, a Slurm job can reuse the device selected by its license:
@@ -373,3 +384,45 @@ hardware gates or provide routing.
 
 The interface does not implement pulse programming, device-specific non-gate
 properties, routing, analytic execution, or QDMI batch jobs.
+
+## Recovering results after a failure
+
+If execution fails, the device keeps accepted jobs and successful results.
+Retrieve the batch handle from `error.job` on a
+{py:class}`~mqt.core.plugins.pennylane.exceptions.PennyLaneExecutionError`, or
+from `device.last_job` after an interruption inside `device.execute()`. Each
+`execute()` call clears this attribute until its batch is prepared. QNode
+preprocessing happens before `execute()` and does not update it.
+
+To recover a QNode's measurement values, save its executable tapes and
+postprocessor **before execution**. For the Bell-state QNode above, use
+PennyLane's
+[`construct_batch`](https://docs.pennylane.ai/en/stable/code/api/pennylane.workflow.construct_batch.html):
+
+```{code-cell} ipython3
+tapes, postprocess = qp.workflow.construct_batch(bell_state, level="device")()
+samples = bell_device.execute(tapes)
+counts = postprocess(samples)[0]
+```
+
+If this execution stops, keep the same Python session. After resolving a
+connection or result-read problem, recover the measurement values from the
+retained jobs:
+
+```{code-cell} ipython3
+job = bell_device.last_job
+assert job is not None  # A batch was prepared by execute().
+entries = job.collect()
+counts = postprocess(job.result())[0]
+```
+
+`collect()` reads accepted work without starting new executions; its entries
+retain attempts, results, and errors. If needed, use `job.submit()` for
+untouched inputs or `job.resubmit([i])` to replace a failed or cancelled
+attempt, then retrieve the result again. Successful results are reused. See
+{py:class}`~mqt.core.plugins.pennylane.job.PennyLaneJob` for uncertain
+submissions and explicit cancellation.
+
+This workflow recovers forward measurements, including broadcasts and shot
+vectors. It does not restore arbitrary QNode return containers or resume an
+interrupted gradient or optimizer.

@@ -222,7 +222,7 @@ protected:
 INSTANTIATE_TEST_SUITE_P(Profiles, QIRSamplingPlan,
                          testing::Values("base_profile", "adaptive_profile"));
 
-TEST_P(QIRSamplingPlan, PreservesRepeatedOutputsAndOverwrittenResults) {
+TEST_P(QIRSamplingPlan, PreservesOutputOrderAndOverwrittenResults) {
   const auto outputs = samplingOutputs(R"(
 define i64 @main() #0 {
 entry:
@@ -295,8 +295,14 @@ TEST_P(QIRSamplingPlan, RejectsControlFlowMemoryAndResets) {
            "call void @__quantum__qis__reset__body(ptr null)\nret i64 0",
            "call void @__quantum__qis__mz__body(ptr null, ptr null)\n"
            "%r = call i1 @__quantum__rt__read_result(ptr null)\nret i64 0",
+           "call void @__quantum__qis__mz__body(ptr null, ptr null)\n"
+           "%r = call i1 @__quantum__rt__read_result(ptr null)\n"
+           "call void @__quantum__rt__bool_record_output(i1 %r, ptr null)\n"
+           "ret i64 0",
            "call void @__quantum__qis__x__body(ptr null)\n"
            "call void @__quantum__rt__initialize(ptr null)\nret i64 0",
+           "call void @__quantum__rt__bool_record_output(i1 true, ptr null)\n"
+           "ret i64 0",
            "ret i64 1",
        }) {
     SCOPED_TRACE(body);
@@ -310,6 +316,7 @@ declare void @__quantum__qis__mz__body(ptr, ptr)
 declare void @__quantum__qis__x__body(ptr)
 declare void @__quantum__rt__initialize(ptr)
 declare i1 @__quantum__rt__read_result(ptr)
+declare void @__quantum__rt__bool_record_output(i1, ptr)
 attributes #0 = { "entry_point" "qir_profiles"="base_profile" }
 )";
     EXPECT_FALSE(samplingOutputs(ir).has_value());

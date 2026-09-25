@@ -13,7 +13,6 @@
 #include "mqt/Compiler/Target.h"
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
-#include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
@@ -27,9 +26,9 @@
 #include "mqt/Dialect/QCO/Utils/WireIterator.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
+#include "mqt/Support/RandomSeed.h"
 
 #include "mlir/Analysis/SliceAnalysis.h"
-#include "mlir/Analysis/TopologicalSortUtils.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/Block.h"
@@ -56,7 +55,6 @@
 #include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/Support/Allocator.h"
 #include "llvm/Support/ErrorHandling.h"
 
 #include <algorithm>
@@ -64,6 +62,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstddef>
+#include <deque>
 #include <iterator>
 #include <memory>
 #include <optional>
@@ -503,23 +502,39 @@ private:
 
     Layout layout;
     IndexPairType swap;
-    Node* parent;
-    size_t depth;
-    float f;
+    Node* parent = nullptr;
+    size_t depth = 0;
+    float f = 0;
 
-    /// Construct a root node with the given layout. Initialize the
-    /// sequence with an empty vector and set the cost to zero.
-    explicit Node(Layout layout)
-        : layout(std::move(layout)), parent(nullptr), depth(0), f(0) {}
+    /// Construct a root node with the given layout.
+    explicit Node(const Layout& initialLayout) { reset(initialLayout); }
 
     /// Construct a non-root node from its parent node. Apply the given swap to
     /// the layout of the parent node.
     Node(Node* parent, const IndexPairType& swap, const Window& window,
-         const CompilerTarget& target, const Parameters& params)
-        : layout(parent->layout), swap(swap), parent(parent),
-          depth(parent->depth + 1), f(0) {
+         const CompilerTarget& target, const Parameters& params) {
+      reset(parent, swap, window, target, params);
+    }
+
+    /// Reuse layout capacity when starting a new search.
+    void reset(const Layout& initialLayout) {
+      layout = initialLayout;
+      swap = {};
+      parent = nullptr;
+      depth = 0;
+      f = 0;
+    }
+
+    /// Reuse layout capacity when replacing a previously searched node.
+    void reset(Node* nextParent, const IndexPairType& nextSwap,
+               const Window& window, const CompilerTarget& target,
+               const Parameters& params) {
+      layout = nextParent->layout;
+      swap = nextSwap;
+      parent = nextParent;
+      depth = parent->depth + 1;
       layout.swap(swap.first, swap.second);
-      f = g(params.alpha) + h(window, target, params); // NOLINT
+      f = params.alpha * static_cast<float>(depth) + h(window, target, params);
     }
 
     /// Return true, if the current SWAP sequence makes all gates in the front
@@ -531,13 +546,17 @@ private:
       return target.areAdjacent(hw0, hw1);
     }
 
-  private:
-    /// Calculate the path cost for the A* search algorithm.
-    /// The path costs are the weighted sum of the currently required SWAPs.
-    [[nodiscard]] float g(const float alpha) const {
-      return alpha * static_cast<float>(depth);
+    /// Return the sequence of SWAPs from the root to this node.
+    [[nodiscard]] SmallVector<IndexPairType> swaps() const {
+      SmallVector<IndexPairType> seq(depth);
+      auto it = seq.rbegin();
+      for (const Node* n = this; n->parent != nullptr; n = n->parent, ++it) {
+        *it = n->swap;
+      }
+      return seq;
     }
 
+  private:
     /// Calculate the heuristic cost for the A* search algorithm.
     ///
     /// Computes the minimal number of SWAPs required to route each gate in
@@ -561,9 +580,55 @@ private:
     }
   };
 
+  /// Memory arena for A* search nodes, enabling reuse across searches to reduce
+  /// allocation overhead. Nodes are allocated once and reused via reset.
+  class Arena {
+  public:
+    /// Constructs an arena with a limited memory budget.
+    /// The budget of nodes is derived as
+    ///
+    ///    `searchMemoryLimit / (sizeof(Node) + 2 * nsites * sizeof(size_t))`
+    ///
+    /// where the final summand accounts for the Node's layout member.
+    explicit Arena(size_t nsites, size_t searchMemoryLimit)
+        : budget(std::max<size_t>(
+              1, searchMemoryLimit /
+                     (sizeof(Node) + 2 * nsites * sizeof(size_t)))) {}
+
+    /// Constructs and returns a pointer to a new node, or nullptr if the arena
+    /// is full. Reuses storage from previous searches when available.
+    template <typename... Args> Node* construct(Args&&... args) {
+      if (full()) {
+        return nullptr;
+      }
+
+      if (index == nodes.size()) {
+        nodes.emplace_back(std::forward<Args>(args)...);
+      } else {
+        nodes[index].reset(std::forward<Args>(args)...);
+      }
+      return &nodes[index++];
+    }
+
+    /// Returns true if the number of allocated nodes has reached the budget.
+    [[nodiscard]] bool full() const { return index >= budget; }
+
+    /// Resets the arena for a new search. Retains allocated storage. Only the
+    /// logical size (index) is reset to zero.
+    void reset() { index = 0; }
+
+  private:
+    /// Storage for nodes. Uses deque for stable pointers across insertions.
+    std::deque<Node> nodes;
+    /// Maximum number of nodes permitted by the memory budget.
+    size_t budget;
+    /// Next available slot in nodes. Acts as the logical size counter.
+    size_t index{0};
+  };
+
   /// Describes the graph F of arXiv:1602.05150v3.
-  struct FGraph {
-    explicit FGraph(const CompilerTarget& target)
+  struct TokenSwapGraph {
+    explicit TokenSwapGraph(const CompilerTarget& target)
         : f_(llvm::to_vector(llvm::seq(target.numSites()))),
           target_(&target) {};
 
@@ -644,9 +709,8 @@ public:
 protected:
   void runOnOperation() override {
     auto moduleOp = getOperation();
-    if (!std::isfinite(alpha.getValue()) || alpha <= 0 || niterations == 0 ||
-        ntrials == 0) {
-      moduleOp.emitError("mapping requires finite alpha > 0, niterations > 0, "
+    if (!std::isfinite(alpha.getValue()) || alpha <= 0 || ntrials == 0) {
+      moduleOp.emitError("mapping requires finite alpha > 0, niterations >= 0, "
                          "and ntrials > 0");
       signalPassFailure();
       return;
@@ -696,32 +760,23 @@ protected:
     auto& wires = computation->wires;
     auto& infos = computation->infos;
     auto layout = generateLayout(wires, infos);
-    if (failed(layout)) {
-      func.emitError() << "failed to refine random initial layouts";
-      signalPassFailure();
-      return;
-    }
 
     IRRewriter rewriter(&getContext());
     std::tie(wires, infos) = std::move(
-        applyPlacement(body, *target, *layout, *computation, rewriter));
+        applyPlacement(body, *target, layout, *computation, rewriter));
 
     RoutingBundle bundle{
         .wires = std::move(wires),
         .infos = std::move(infos),
-        .layout = std::move(*layout),
+        .layout = std::move(layout),
     };
 
-    const auto routeRes =
-        route<WireDirection::Forward, RoutingMode::Hot>(bundle, &rewriter);
-    if (failed(routeRes)) {
-      func.emitError() << "failed to map the function";
-      signalPassFailure();
-      return;
-    }
+    /// Each concurrent trial and the final route own separate search storage.
+    Arena arena(target->numSites(), searchMemoryLimit);
+    const auto stats = route<WireDirection::Forward, RoutingMode::Hot>(
+        bundle, arena, &rewriter);
 
     // Collect statistics.
-    const auto stats = *routeRes;
     numSwaps += stats.nswaps;
 
     // Fix SSA dominance errors.
@@ -879,11 +934,12 @@ private:
     return iterator.qubit();
   }
 
-  /// Place frequently interacting program qubits near each other.
+  /// Return an initial layout and whether identity needs no routing.
   ///
-  /// Nested control flow has no single interaction frequency, so leave those
-  /// programs to the identity and random starts.
-  [[nodiscard]] std::optional<Layout>
+  /// Otherwise, place frequently interacting qubits near each other. Nested
+  /// control flow has no single interaction frequency, so leave those programs
+  /// to the identity and random starts.
+  [[nodiscard]] std::optional<std::pair<Layout, bool>>
   generateGreedyLayout(Wires wires, const WireInfos& infos) const {
     DenseMap<IndexPairType, size_t> weights;
     bool supported = true;
@@ -904,8 +960,14 @@ private:
           }
           return WalkResult::advance();
         });
-    if (!supported || weights.empty()) {
+    if (!supported) {
       return std::nullopt;
+    }
+    if (llvm::all_of(weights, [&](const auto& interaction) {
+          const auto [a, b] = interaction.first;
+          return target->areAdjacent(a, b);
+        })) {
+      return std::pair{Layout::identity(target->numSites()), true};
     }
 
     const size_t nprogram = infos.size();
@@ -919,6 +981,69 @@ private:
       neighbours[b].emplace_back(a, weight);
       degree[a] += weight;
       degree[b] += weight;
+    }
+
+    /// Embed disjoint logical paths along one path through the target sites.
+    /// ponytail: One hardware walk; add bounded backtracking only for measured
+    /// missed embeddings.
+    if (llvm::all_of(neighbours, [](const auto& adjacent) {
+          return adjacent.size() <= 2;
+        })) {
+      SmallVector<size_t> order;
+      SmallVector<bool> visited(nprogram, false);
+      for (size_t start = 0; start < nprogram; ++start) {
+        if (neighbours[start].size() > 1 || visited[start]) {
+          continue;
+        }
+        size_t current = start;
+        while (current != nprogram) {
+          order.push_back(current);
+          visited[current] = true;
+          size_t next = nprogram;
+          for (const auto& [partner, weight] : neighbours[current]) {
+            if (!visited[partner]) {
+              next = partner;
+            }
+          }
+          current = next;
+        }
+      }
+      if (order.size() == nprogram) {
+        SmallVector<size_t> remaining(nhardware, 0);
+        SmallVector<bool> usedHardware(nhardware, false);
+        for (size_t hw = 0; hw < nhardware; ++hw) {
+          target->forEachNeighbour(hw, [&](size_t) { ++remaining[hw]; });
+        }
+        auto current = static_cast<size_t>(
+            std::distance(remaining.begin(), llvm::min_element(remaining)));
+        SmallVector<size_t> mapping(nhardware, nhardware);
+        size_t placed = 0;
+        while (current != nhardware && placed < nprogram) {
+          mapping[order[placed++]] = current;
+          usedHardware[current] = true;
+          target->forEachNeighbour(
+              current, [&](size_t neighbour) { --remaining[neighbour]; });
+          size_t next = nhardware;
+          target->forEachNeighbour(current, [&](size_t neighbour) {
+            if (!usedHardware[neighbour] &&
+                (remaining[neighbour] != 0 || placed + 1 == nprogram) &&
+                (next == nhardware ||
+                 std::tie(remaining[neighbour], neighbour) <
+                     std::tie(remaining[next], next))) {
+              next = neighbour;
+            }
+          });
+          current = next;
+        }
+        if (placed == nprogram) {
+          for (size_t hw = 0; hw < nhardware; ++hw) {
+            if (!usedHardware[hw]) {
+              mapping[placed++] = hw;
+            }
+          }
+          return std::pair{Layout::fromMapping(mapping), false};
+        }
+      }
     }
 
     SmallVector<size_t> centrality(nhardware, 0);
@@ -978,116 +1103,90 @@ private:
         mapping[prog++] = hw;
       }
     }
-    return Layout::fromMapping(mapping);
+    return std::pair{Layout::fromMapping(mapping), false};
   }
 
-  /// Refine identity, random, and greedy starts with forward/backward routing.
-  /// Keep the raw greedy start too: refinement can worsen forward routing.
+  /// Refine greedy, identity, and random starts with forward/backward routing.
   /// Score each candidate with a forward traversal, preserving its start
   /// layout.
-  FailureOr<Layout> generateLayout(const Wires& wires, const WireInfos& infos) {
-    std::mt19937_64 rng{seed};
+  Layout generateLayout(const Wires& wires, const WireInfos& infos) {
+    const auto greedy = generateGreedyLayout(wires, infos);
+    if (greedy && greedy->second) {
+      return greedy->first;
+    }
 
     struct Trial {
       RoutingBundle bundle;
-      size_t iterations;
       Statistics stats{};
-      bool success{false};
     };
 
     SmallVector<Trial, 0> trials;
-    trials.reserve(ntrials + 2);
-    for (size_t i = 0; i < ntrials; ++i) {
+    trials.reserve(ntrials);
+
+    const auto addTrial = [&](const Layout& layout) {
       trials.emplace_back(
-          RoutingBundle{
-              .wires = wires,
-              .infos = infos,
-              .layout = i == 0 ? Layout::identity(target->numSites())
-                               : Layout::random(target->numSites(),
-                                                target->numSites(), rng()),
-          },
-          niterations);
+          RoutingBundle{.wires = wires, .infos = infos, .layout = layout});
+    };
+
+    if (greedy) {
+      addTrial(greedy->first);
     }
-    if (const auto greedy = generateGreedyLayout(wires, infos)) {
-      trials.emplace_back(
-          RoutingBundle{.wires = wires, .infos = infos, .layout = *greedy},
-          niterations);
-      trials.emplace_back(
-          RoutingBundle{.wires = wires, .infos = infos, .layout = *greedy}, 0);
+
+    if (trials.size() < ntrials) {
+      addTrial(Layout::identity(target->numSites()));
+
+      auto rng = makeMt19937(compilationSeed(getOperation(), seed));
+      for (size_t i = trials.size(); i < ntrials; ++i) {
+        addTrial(Layout::random(target->numSites(), target->numSites(), rng()));
+      }
     }
+
+    assert(ntrials == trials.size());
 
     parallelForEach(&getContext(), trials, [&, this](Trial& t) {
-      for (size_t i = 0; i < t.iterations; ++i) {
-        const auto fwRouteRes = route<WireDirection::Forward>(t.bundle);
-        if (failed(fwRouteRes)) {
-          return;
-        }
+      Arena arena(target->numSites(), searchMemoryLimit);
+      for (size_t i = 0; i < niterations; ++i) {
+        route<WireDirection::Forward>(t.bundle, arena);
+        route<WireDirection::Backward>(t.bundle, arena);
+      }
 
-        const auto bwRouteRes = route<WireDirection::Backward>(t.bundle);
-        if (failed(bwRouteRes)) {
-          return;
-        }
-      }
-      auto scoringBundle = t.bundle;
-      const auto score = route<WireDirection::Forward>(scoringBundle);
-      if (failed(score)) {
-        return;
-      }
-      t.stats = *score;
-      t.success = true;
+      // Because the final forward pass will update the bundle's layout, save
+      // and restore the final initial layout later.
+      Layout initial(t.bundle.layout);
+
+      t.stats = route<WireDirection::Forward>(t.bundle, arena);
+      t.bundle.layout = std::move(initial);
     });
 
-    Trial* best = nullptr;
-    for (Trial& t : trials) {
-      if (t.success &&
-          (best == nullptr || best->stats.nswaps > t.stats.nswaps)) {
-        best = &t;
-      }
-    }
-
-    if (best == nullptr) {
-      return failure();
-    }
-
+    auto* const best =
+        llvm::min_element(trials, [](const Trial& a, const Trial& b) {
+          return a.stats.nswaps < b.stats.nswaps;
+        });
     return best->bundle.layout;
   }
 
-  /// Perform A* search to find a sequence of SWAPs that makes all two-qubit ops
-  /// inside the first layer executable.
-  ///
-  /// The iteration budget is b^{3} node expansions, i.e. roughly a depth-3
-  /// search in a tree with branching factor b, where b is the product of the
-  /// architecture's maximum qubit degree and the maximum number of two-qubit
-  /// gates in any layer: `b = maxDegree × ⌈N/2⌉`. A hard cap prevents
-  /// impractical runtimes on larger architectures.
-  ///
-  /// Returns `failure`, if the A* search fails.
-  FailureOr<SmallVector<IndexPairType>> search(const Window& window,
-                                               const Layout& layout) const {
-    constexpr size_t cap = 25'000'000UL;
-
-    const size_t b = target->maxDegree() * ((target->numSites() + 1) / 2);
-    const size_t budget = std::min(b * b * b, cap);
-
+  /// Route the leading interaction with bounded A* node storage.
+  /// Drain queued states at the limit, then use distance-reducing SWAPs.
+  [[nodiscard]] SmallVector<IndexPairType>
+  search(const Window& window, const Layout& layout, Arena& arena) const {
     const Parameters params{.alpha = alpha, .lambda = lambda};
 
-    llvm::SpecificBumpPtrAllocator<Node> arena;
-    llvm::PriorityQueue<Node*, std::vector<Node*>, Node::ComparePointer>
-        frontier;
+    arena.reset();
+    Node* root = arena.construct(layout);
+    assert(root != nullptr);
 
-    // Early exit, if the root node is a goal node already.
-    Node* root = std::construct_at(arena.Allocate(), layout);
     if (root->isGoal(window.front(), *target)) {
       return SmallVector<IndexPairType>{};
     }
 
+    SmallVector<IndexPairType, 6> expansionSet;
+    DenseMap<ArrayRef<size_t>, size_t> bestDepth;
+
+    llvm::PriorityQueue<Node*, std::vector<Node*>, Node::ComparePointer>
+        frontier;
     frontier.emplace(root);
 
-    DenseMap<ArrayRef<size_t>, size_t> bestDepth;
-    SmallVector<IndexPairType, 6> expansionSet;
-
-    size_t i = 0;
-    while (!frontier.empty() && i < budget) {
+    while (!frontier.empty()) {
       Node* curr = frontier.top();
       frontier.pop();
 
@@ -1101,7 +1200,6 @@ private:
       if (!inserted) {
         if (const auto otherDepth = it->getSecond();
             curr->depth >= otherDepth) {
-          ++i;
           continue;
         }
 
@@ -1112,14 +1210,7 @@ private:
       // sequence of SWAPs from this node to the root.
 
       if (curr->isGoal(window.front(), *target)) {
-        SmallVector<IndexPairType> seq(curr->depth);
-        size_t j = seq.size() - 1;
-        for (const Node* n = curr; n->parent != nullptr; n = n->parent) {
-          seq[j] = n->swap;
-          --j;
-        }
-
-        return seq;
+        return curr->swaps();
       }
 
       // Given a layout, create child-nodes for each possible SWAP
@@ -1129,22 +1220,54 @@ private:
       for (const auto& [q0, q1] = window.front(); const auto prog : {q0, q1}) {
         const auto hw0 = curr->layout.getHardwareIndex(prog);
         target->forEachNeighbour(hw0, [&](const auto hw1) {
-          // Ensure consistent hashing/comparison.
-          const IndexPairType swap = std::minmax(hw0, hw1);
+          const IndexPairType swap = std::minmax(hw0, hw1); // Canonical SWAP.
           if (is_contained(expansionSet, swap)) {
             return;
           }
-          expansionSet.push_back(swap);
 
-          frontier.emplace(std::construct_at(arena.Allocate(), curr, swap,
-                                             window, *target, params));
+          if (Node* child =
+                  arena.construct(curr, swap, window, *target, params)) {
+            expansionSet.push_back(swap);
+            frontier.emplace(child);
+          }
+        });
+      }
+    }
+
+    /// A connected target always permits a SWAP that brings the pair closer.
+    /// ponytail: Greedy completion can cost later gates; increase the search
+    /// budget when routing quality matters more than memory use.
+
+    Node current(layout);
+    SmallVector<IndexPairType> swaps;
+
+    const auto [q0, q1] = window.front();
+    while (!current.isGoal(window.front(), *target)) {
+      const auto [a, b] = current.layout.getHardwareIndices(q0, q1);
+      const auto distance = target->distanceBetween(a, b);
+
+      std::optional<Node> best;
+      for (const auto [from, to] : {IndexPairType{a, b}, IndexPairType{b, a}}) {
+        target->forEachNeighbour(from, [&](size_t next) {
+          if (target->distanceBetween(next, to) >= distance) {
+            return;
+          }
+
+          const IndexPairType swap = std::minmax(from, next); // Canonical SWAP.
+
+          Node candidate(&current, swap, window, *target, params);
+          if (!best || candidate.f < best->f) {
+            best = std::move(candidate);
+          }
         });
       }
 
-      ++i;
+      assert(best && "connected target must have a distance-reducing edge");
+      swaps.push_back(best->swap);
+      current.layout = std::move(best->layout);
     }
 
-    return failure();
+    return swaps;
   }
 
   /// Return the SWAP sequence to move from one layout to another.
@@ -1155,7 +1278,7 @@ private:
       return {};
     }
     Layout curr(from);
-    FGraph f(*target);
+    TokenSwapGraph f(*target);
     SmallVector<IndexPairType> swaps;
 
     while (true) {
@@ -1192,21 +1315,21 @@ private:
   /// with the key difference that the goal permutation is not static.
   [[nodiscard]] std::tuple<Layout, SmallVector<IndexPairType>,
                            SmallVector<IndexPairType>>
-  converge(const Layout& lhs, const Layout& rhs) const {
+  converge(const Layout& lhs, const Layout& rhs) {
     if (lhs == rhs) {
       return {lhs, {}, {}};
     }
     std::array layouts{Layout(lhs), Layout(rhs)};
-    std::array graphs{FGraph(*target), FGraph(*target)};
+    std::array graphs{TokenSwapGraph(*target), TokenSwapGraph(*target)};
     std::array<SmallVector<IndexPairType>, 2> swaps{};
 
-    std::mt19937 gen(seed);
+    auto gen = makeMt19937(compilationSeed(getOperation(), seed));
     std::uniform_int_distribution coin(0, 1);
 
     while (true) {
       size_t i = 0;
       for (; i < 2; ++i) {
-        FGraph& f = graphs[i];
+        TokenSwapGraph& f = graphs[i];
 
         f.reset();
         f.construct(layouts[i], layouts[(i + 1) % 2]);
@@ -1254,7 +1377,7 @@ private:
   Layout driveby(Range layouts, const size_t niterations = 1) {
     assert(!layouts.empty() && "expected at least one layout");
 
-    FGraph f(*target);
+    TokenSwapGraph f(*target);
     Layout curr(*layouts.begin());
 
     // Nudge curr towards target by applying a happy SWAP chain.
@@ -1282,7 +1405,6 @@ private:
   template <WireDirection Direction>
   Window getWindow(Wires wires, const WireInfos& infos) {
     Window window;
-    window.reserve(1 + nlookahead);
 
     SmallVector<IndexPairType> prev;
     SmallVector<IndexPairType> next;
@@ -1307,7 +1429,7 @@ private:
 
                 if (!is_contained(prev, gate)) {
                   window.emplace_back(gate);
-                  if (window.size() == 1 + nlookahead) {
+                  if (window.size() - 1 == nlookahead) {
                     return WalkResult::interrupt();
                   }
                 }
@@ -1667,12 +1789,11 @@ private:
 
   /// Processes the composite unitary by routing the nested operation and
   /// inserting epilogue SWAPs. Updates the parent bundle and returns the
-  /// accumulated statistics, or `failure` if routing fails.
+  /// accumulated statistics.
   template <WireDirection Direction, RoutingMode Mode = RoutingMode::Cold>
     requires(Mode != RoutingMode::Hot || Direction == WireDirection::Forward)
-  FailureOr<Statistics> dispatch(const CompositeUnitary& composite,
-                                 RoutingBundle& parent,
-                                 IRRewriter* rewriter = nullptr) {
+  Statistics dispatch(const CompositeUnitary& composite, RoutingBundle& parent,
+                      Arena& arena, IRRewriter* rewriter = nullptr) {
     const auto& [op, indices] = composite;
 
     SmallVector<size_t> permutation(indices.size());
@@ -1775,12 +1896,7 @@ private:
     Statistics totalStats;
 
     for (auto& child : children) {
-      const auto stats = route<Direction, Mode>(child, rewriter);
-      if (failed(stats)) {
-        return failure();
-      }
-
-      totalStats.merge(*stats);
+      totalStats.merge(route<Direction, Mode>(child, arena, rewriter));
 
       if constexpr (Mode == RoutingMode::Hot) {
         for_each(child.wires, [](auto& it) { std::ranges::advance(it, -1); });
@@ -1810,12 +1926,7 @@ private:
         children[1].infos.insertOrUpdate(i, prog);
       }
 
-      const auto stats = route<Direction, Mode>(children[1], rewriter);
-      if (failed(stats)) {
-        return failure();
-      }
-
-      totalStats.merge(*stats);
+      totalStats.merge(route<Direction, Mode>(children[1], arena, rewriter));
 
       if constexpr (Mode == RoutingMode::Hot) {
         for_each(children[1].wires,
@@ -1921,13 +2032,11 @@ private:
   /// Iterates over a dynamically computed window of layers and uses A* search
   /// to find a SWAP sequence that makes each layer executable. Depending on
   /// the template parameter, this function only updates the layout or also
-  /// inserts the SWAPs into the IR. Returns `FailureOr<Statistics>` containing
-  /// the accumulated statistics on success, or `failure` if A* is unable to
-  /// find a solution.
+  /// inserts the SWAPs into the IR. Returns the accumulated statistics.
   template <WireDirection Direction, RoutingMode Mode = RoutingMode::Cold>
     requires(Mode != RoutingMode::Hot || Direction == WireDirection::Forward)
-  FailureOr<Statistics> route(RoutingBundle& bundle,
-                              IRRewriter* rewriter = nullptr) {
+  Statistics route(RoutingBundle& bundle, Arena& arena,
+                   IRRewriter* rewriter = nullptr) {
     auto& [wires, infos, layout] = bundle;
 
     Statistics stats;
@@ -1943,12 +2052,8 @@ private:
             place(composite, bundle, *rewriter);
           }
 
-          auto res = dispatch<Direction, Mode>(composite, bundle, rewriter);
-          if (failed(res)) {
-            return failure();
-          }
-
-          stats.merge(*res);
+          stats.merge(
+              dispatch<Direction, Mode>(composite, bundle, arena, rewriter));
 
           // Once the composite is mapped, move past this op by incrementing
           // the respective wires.
@@ -1965,10 +2070,7 @@ private:
         break;
       }
 
-      const auto swaps = search(window, layout);
-      if (failed(swaps)) {
-        return failure();
-      }
+      const auto swaps = search(window, layout, arena);
 
       if constexpr (Mode == RoutingMode::Hot) {
 
@@ -1980,7 +2082,7 @@ private:
         for_each(wires, [](auto& it) { std::ranges::advance(it, -1); });
       }
 
-      insertSWAPs<Mode>(*swaps, bundle, stats, rewriter);
+      insertSWAPs<Mode>(swaps, bundle, stats, rewriter);
 
       if constexpr (Mode == RoutingMode::Hot) {
 

@@ -140,6 +140,29 @@ static llvm::cl::opt<std::string> payloadSpecification(
     llvm::cl::desc("Selected payload as a typed #mqt.payload_spec attribute"),
     llvm::cl::value_desc("attribute"), llvm::cl::init(""));
 
+static llvm::cl::opt<uint64_t>
+    compilationSeedOption("seed",
+                          llvm::cl::desc("Override all compiler random seeds"));
+static llvm::cl::opt<size_t> mappingTrials(
+    "mapping-trials",
+    llvm::cl::desc(
+        "Positive native mapping trial count (default: logical CPUs)"));
+static llvm::cl::opt<size_t> mappingIterations(
+    "mapping-iterations",
+    llvm::cl::desc(
+        "Forward/backward layout refinement rounds; zero skips refinement"),
+    llvm::cl::init(MappingOptions{}.iterations));
+static llvm::cl::opt<size_t>
+    mappingLookahead("mapping-lookahead",
+                     llvm::cl::desc("Additional two-qubit gates considered "
+                                    "during routing (zero disables lookahead)"),
+                     llvm::cl::init(MappingOptions{}.lookahead));
+static llvm::cl::opt<size_t> mappingSearchMemoryLimit(
+    "mapping-search-memory-limit",
+    llvm::cl::desc("Estimated node and layout bytes per routing search, per "
+                   "concurrent trial (zero disables node expansion)"),
+    llvm::cl::init(MappingOptions{}.searchMemoryLimit));
+
 static llvm::cl::opt<std::string> qdmiConfig(
     "qdmi-config",
     llvm::cl::desc("Use an explicit QDMI registry configuration file"),
@@ -405,6 +428,33 @@ static int runCompiler(int argc, char** argv) {
   llvm::cl::ParseCommandLineOptions(argc, argv,
                                     "MQT Compiler Collection Driver\n");
 
+  if ((mappingTrials.getNumOccurrences() != 0 ||
+       mappingIterations.getNumOccurrences() != 0 ||
+       mappingLookahead.getNumOccurrences() != 0 ||
+       mappingSearchMemoryLimit.getNumOccurrences() != 0) &&
+      qdmiDevice.empty()) {
+    llvm::errs() << "Mapping controls require --qdmi-device.\n";
+    return 1;
+  }
+  if (mappingTrials.getNumOccurrences() != 0 && mappingTrials == 0) {
+    llvm::errs() << "--mapping-trials must be greater than zero.\n";
+    return 1;
+  }
+  const CompilationOptions options{
+      .seed = compilationSeedOption.getNumOccurrences() == 0
+                  ? std::nullopt
+                  : std::optional<uint64_t>{compilationSeedOption.getValue()},
+      .mapping =
+          {
+              .trials = mappingTrials.getNumOccurrences() == 0
+                            ? std::nullopt
+                            : std::optional<size_t>{mappingTrials.getValue()},
+              .iterations = mappingIterations,
+              .lookahead = mappingLookahead,
+              .searchMemoryLimit = mappingSearchMemoryLimit,
+          },
+  };
+
   const bool isolated = runIsolatedPipeline || runReproducer;
   if (isolated &&
       ((runIsolatedPipeline && runReproducer) ||
@@ -596,7 +646,7 @@ static int runCompiler(int argc, char** argv) {
         if (failed(populate(pm))) {
           return failure();
         }
-        return pm.run(*program.mod);
+        return runWithCompilationOptions(pm, *program.mod, options);
       };
 
   if (isolated) {
@@ -614,7 +664,8 @@ static int runCompiler(int argc, char** argv) {
                failed(qco::verifyLinearity(*program.mod))) {
       return 1;
     }
-    if (failed(applyPassManagerCLOptions(pm)) || failed(pm.run(*program.mod))) {
+    if (failed(applyPassManagerCLOptions(pm)) ||
+        failed(runWithCompilationOptions(pm, *program.mod, options))) {
       return 1;
     }
     if (!runReproducer && failed(qco::verifyLinearity(*program.mod))) {
@@ -667,7 +718,8 @@ static int runCompiler(int argc, char** argv) {
           pm.addPass(createInlinerPass());
         }
         if (targetEnvironment) {
-          populateTargetCompilationPipeline(pm, *targetEnvironment);
+          populateTargetCompilationPipeline(pm, *targetEnvironment,
+                                            options.mapping);
           return success();
         }
         populateQCOCleanupPipeline(pm);

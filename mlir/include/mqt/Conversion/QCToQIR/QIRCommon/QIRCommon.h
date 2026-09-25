@@ -149,8 +149,8 @@ void populateQCToQIRPatterns(RewritePatternSet& patterns,
 /// measurements tracked during conversion. Follows the QIR specification for
 /// labeled output schema.
 ///
-/// Results that are part of registers are recorded via
-/// `__quantum__rt__result_array_record_output`.
+/// Measurement registers use `__quantum__rt__result_array_record_output`.
+/// Computed registers use an array record followed by Boolean records.
 ///
 /// Results that are not part of registers (i.e., measurements without register
 /// info) are grouped under a default `__unnamed__` label recorded via
@@ -171,16 +171,19 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
 /// effect-free, affect only quantum resources, or store to a provably distinct
 /// constant index of the same register. The QIR measurement can then write
 /// directly to the destination without changing observable order or control
-/// flow. Other stores to returned registers are rejected; local CBit stores
-/// retain their ordinary semantics.
+/// flow. Adaptive conversion can keep computed registers in Boolean storage;
+/// Base conversion rejects them. Local CBit stores retain ordinary semantics.
 ///
 /// This must be called **before** func-to-LLVM conversion, while
 /// `func::ReturnOp`, `qc::MeasureOp`, and `cbit::StoreOp` are still in the IR.
 ///
 /// @param moduleOp The top-level module operation to walk
 /// @param state The lowering state populated for profile-specific conversion
-[[nodiscard]] LogicalResult prepareClassicalResults(Operation* moduleOp,
-                                                    LoweringState& state);
+/// @param allowComputedOutputs Whether returned registers may contain computed
+/// bits
+[[nodiscard]] LogicalResult
+prepareClassicalResults(Operation* moduleOp, LoweringState& state,
+                        bool allowComputedOutputs = false);
 
 /// Returns a result pointer for a measurement that does not write into a
 /// returned classical bit register

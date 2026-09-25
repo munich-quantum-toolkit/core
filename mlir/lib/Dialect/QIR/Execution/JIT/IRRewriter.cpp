@@ -313,12 +313,11 @@ getStaticSamplingOutputs(const llvm::Function& entryPoint) {
           return std::nullopt;
         }
         terminal = true;
-        outputs.push_back(it->second);
+        outputs.emplace_back(it->second);
         continue;
       }
       if ((name == "__quantum__rt__tuple_record_output" ||
            name == "__quantum__rt__array_record_output" ||
-           name == "__quantum__rt__bool_record_output" ||
            name == "__quantum__rt__int_record_output" ||
            name == "__quantum__rt__double_record_output") &&
           call->arg_size() == 2 &&

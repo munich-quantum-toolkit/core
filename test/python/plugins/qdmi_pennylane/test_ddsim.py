@@ -12,8 +12,14 @@
 
 from __future__ import annotations
 
+import gc
+from typing import TYPE_CHECKING
+
 import numpy as np
 import pytest
+
+if TYPE_CHECKING:
+    from mqt.core.qdmi import Job
 
 try:
     import pennylane as qp
@@ -22,7 +28,7 @@ except ImportError:
 
 import networkx as nx
 
-from mqt.core.plugins.pennylane import DDSIMDevice, PennyLaneValidationError
+from mqt.core.plugins.pennylane import DDSIMDevice, PennyLaneJob, PennyLaneValidationError
 
 GRAPH_EDGES = ((0, 1), (0, 2), (1, 2), (2, 3))
 
@@ -175,3 +181,56 @@ def test_device_requires_qnode_shots() -> None:
         circuit()
     assert device.submitted_jobs == 0
     assert qp.set_shots(circuit, shots=5)() == pytest.approx(1.0)
+
+
+def test_retained_native_job_outlives_adapter() -> None:
+    """An exposed native attempt keeps its device session after the adapter is released."""
+    device = DDSIMDevice(wires=1)
+    tape = qp.tape.QuantumScript([qp.PauliX(0)], [qp.sample(wires=[0])], shots=4)
+    device.execute(tape)
+    batch = device.last_job
+    assert batch is not None
+    handle = batch.entries[0].attempts[0].handle
+    assert handle is not None
+    del batch, device
+    gc.collect()
+    assert handle.get_shots() == ["1"] * 4
+
+
+@pytest.mark.parametrize("shots", [8, [(8, 2), 16]])
+def test_postprocessor_recovers_forward_measurements(
+    monkeypatch: pytest.MonkeyPatch, shots: int | list[tuple[int, int] | int]
+) -> None:
+    """Retained PennyLane postprocessing reconstructs broadcasts, shot vectors, and measurements."""
+    device = DDSIMDevice(wires=1, max_retries=3)
+
+    @qp.qnode(device, shots=shots, diff_method=None)
+    def circuit(angles: np.ndarray):
+        qp.RY(angles, 0)
+        return qp.expval(qp.Z(0)), qp.probs(wires=[0])
+
+    angles = np.array([0.0, np.pi])
+    expected = circuit(angles)
+    tapes, postprocess = qp.workflow.construct_batch(circuit, level="device")(angles)
+    original = PennyLaneJob._samples  # ruff:ignore[private-member-access] Inject a failure after native submission.
+    reads = []
+
+    def read(batch: PennyLaneJob, index: int, job: Job):
+        reads.append(job)
+        if len(reads) == 2:
+            raise KeyboardInterrupt
+        return original(batch, index, job)
+
+    monkeypatch.setattr(PennyLaneJob, "_samples", read)
+    with pytest.raises(KeyboardInterrupt):
+        device.execute(tapes)
+    batch = device.last_job
+    assert batch is not None
+    submitted = device.submitted_jobs
+    first_samples = batch.entries[0].result
+    assert first_samples is not None
+    recovered = postprocess(batch.result())[0]
+    np.testing.assert_equal(recovered, expected)
+    assert device.submitted_jobs == submitted
+    assert batch.entries[0].result is first_samples
+    assert reads.count(reads[0]) == 1

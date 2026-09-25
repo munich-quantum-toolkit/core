@@ -137,7 +137,7 @@ private:
   auto enlargeState(size_t maxQubit) -> void;
   void configureStaticResources(std::optional<size_t> qubits,
                                 std::optional<size_t> results);
-  auto sampleMeasurements(std::span<const uintptr_t> qubits, size_t shots,
+  auto sampleMeasurements(std::span<const uintptr_t> outputs, size_t shots,
                           std::vector<std::string>& results) -> void;
   static auto staticQubitId(const Qubit* qubit) -> dd::Qubit {
     const auto id = reinterpret_cast<uintptr_t>(qubit);

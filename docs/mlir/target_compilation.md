@@ -64,6 +64,39 @@ that the device still has matching sites, topology, operations, timing units,
 and program capabilities. Names and calibration-only changes do not require
 recompilation. Use `device.submit_job` to submit raw payloads.
 
+### Compilation options
+
+```python
+from mqt.core.mlir import CompilationOptions, MappingOptions
+
+options = CompilationOptions(
+    seed=7,
+    mapping=MappingOptions(trials=4, iterations=2, lookahead=10, search_memory_limit=8 * 1024 * 1024),
+)
+compiled = compile_program(bell_qasm, target=device, options=options)
+```
+
+The same `options` argument is available on typed compilation methods and source
+submission. Set `enable_timing` and `enable_statistics` on this object; compiler
+entry points accept these controls only through `options`. An explicit seed
+overrides compiler randomness, including custom pass seeds; `None` preserves
+existing pass settings. Execution sampling has a separate seed. For the CLI:
+
+```console
+mqt-cc input.qasm --qdmi-device mqt.sc.iqm.garnet \
+  '--payload-spec=#mqt.payload_spec<format = <id = "qir", version = "2.1.0", profile = "base", encoding = text>, capabilities = [], optional_capabilities_known = false>' \
+  --seed 7 --mapping-trials 4 --mapping-iterations 2 --mapping-lookahead 10 \
+  --mapping-search-memory-limit 8388608
+```
+
+Trials must be positive. Omitted trials use the logical CPU count; iterations
+default to one forward/backward refinement round. Zero iterations score each
+initial layout directly. Lookahead is the number of additional two-qubit gates
+considered during routing. It defaults to 20; zero considers only the current
+gate. All-to-all placement ignores valid mapping controls. Repeatable mapping
+requires the same build, input, target, seed, and mapping controls, including an
+explicit trial count. Layouts may change between releases.
+
 ### Choose a format
 
 The compiler selects the first supported format in this order: Adaptive QIR
@@ -151,7 +184,22 @@ Mapping explores one initial-layout trial per available logical CPU by default,
 using LLVM's affinity-aware CPU count with a minimum of one. An explicit
 `ntrials` value overrides this default. Set both `ntrials` and `seed` on the
 `place-and-route` pass for reproducible results across machines. Disabling
-multithreading runs the same trials sequentially.
+multithreading runs the same trials sequentially. The trial budget includes a
+greedy layout when available, followed by identity if a slot remains and random
+layouts for the remaining slots. Every trial uses the same refinement count.
+
+Each routing search limits its estimated node and layout storage to 256 MiB by
+default. When the budget is exhausted, it checks queued states before falling
+back to SWAPs that reduce the leading interaction's distance. Set
+`MappingOptions.search_memory_limit` in bytes, or use the CLI's
+`--mapping-search-memory-limit`, to trade memory for routing quality; zero
+disables node expansion. The equivalent `place-and-route` pass option is
+`search-memory-limit`. Each concurrent trial reuses its bounded node and layout
+storage across searches and releases it when the trial finishes. For example, 20
+active trials with 512 MiB each allow about 10 GiB of estimated search storage.
+Container overhead, target distance caches, and IR storage are additional; this
+setting does not cap total process memory. Changing the budget can change
+layouts and gate counts; more memory does not guarantee fewer gates.
 
 Native synthesis collects constant runs on the same two qubits, including
 interleaved single-qubit gates, and resynthesizes them in the target's selected
@@ -219,11 +267,11 @@ For explicit restrictions, use the constants on
 accepted.
 
 Target compilation requires structured QCO/SCF input. Producers of raw CFG
-branches must normalize them before target compilation; runtime assertions are
-allowed. The pipeline removes unused symbols, propagates constants, and runs QCO
-cleanup before deciding which loops need expansion. It then specializes loops
-required by the selected payload or by placement, cleans up the resulting IR,
-and checks the remaining control flow with `legalize-control-flow`:
+branches must normalize them before target compilation. The pipeline removes
+unused symbols, propagates constants, and runs QCO cleanup before deciding which
+loops need expansion. It then specializes loops required by the selected payload
+or by placement, cleans up the resulting IR, and checks the remaining control
+flow with `legalize-control-flow`:
 
 | Capability           | Residual operations                                 |
 | -------------------- | --------------------------------------------------- |
@@ -233,11 +281,12 @@ and checks the remaining control flow with `legalize-control-flow`:
 | `multiway-branching` | `qco.index_switch` and classical `scf.index_switch` |
 
 A finite `scf.for` that exceeds the selected counted-iteration contract is fully
-unrolled when this clones at most 65,536 body operations. The same bound applies
-to loops unrolled for qubit placement. Cleanup runs again because unrolling can
-make nested bounds and conditions constant. An unsupported index switch is
-lowered to a linear chain of nested forward branches when that form fits the
-selected contract. Before expansion, the compiler checks the selected
+unrolled when this clones at most one billion body operations by default. The
+`unroll-loops-for-payload` pass exposes this limit as `max-operations`. The same
+bound applies to loops unrolled for qubit placement. Cleanup runs again because
+unrolling can make nested bounds and conditions constant. An unsupported index
+switch is lowered to a linear chain of nested forward branches when that form
+fits the selected contract. Before expansion, the compiler checks the selected
 forward-branching nesting limit and a compiler safety limit of 256 total
 control-flow levels, including enclosing control flow. This compiler limit is
 not a QDMI requirement and does not apply to switches retained under multiway
@@ -269,8 +318,13 @@ name.
 Other payloads, explicit topology, and site-specific operations require exact
 quantum addresses. Bounded specialization exposes those addresses before
 placement or routing. Residual unsupported tensor control flow produces a
-diagnostic before allocation changes. OpenQASM export continues to require
-static quantum indices.
+diagnostic before allocation changes. Mapped OpenQASM uses static physical
+qubits; indexed tensor loops must fit the default one-billion-operation
+unrolling budget. Runtime-dependent indices that cannot be specialized are
+unsupported. Logical qubit indices can remain dynamic in targetless OpenQASM
+export. Constant rank-one `f64` table reads use switches that group equal
+entries and require unrestricted multiway branching from the selected payload.
+Their size grows with the table data and number of reads.
 
 The supported constraints are `max-control-flow-nesting-depth` on all four
 capabilities, `max-iteration-count` on both iteration capabilities, and

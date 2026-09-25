@@ -45,8 +45,15 @@ def MergeSingleQubitRotationGates
 
     When every angle in the chain is a compile-time constant, the same algorithm
     runs on host scalars and emits constant `U` / `gphase` results directly.
-    Otherwise it emits `arith` / `math` operations that compute the merged
-    parameters at run time.
+    Symbolic RZ-RX-RZ and RZ-RY-RZ chains reuse their Euler angles directly;
+    either outer RZ may be absent. H/RZ pairs in either order also use direct
+    angles via Hadamard conjugation. Gate operands are normalized modulo `4*pi`
+    before angle arithmetic, preserving the full unitary under control.
+    Constants fold immediately; symbolic operands use `4*atan(tan(angle/4))`,
+    which remains bindable after Qiskit and jeff export. This bounds each input
+    to `[-2*pi, 2*pi]` without restricting shared scalar inputs or expressions.
+    Other dynamic chains emit
+    `arith` / `math` operations that compute the merged parameters at run time.
 
     The emitted `UOp` is defined by $U = \exp [i (\phi + \lambda) / 2] R_z (\phi) R_y (\theta) R_z (\lambda)$.
     Normalizing either extracted Z angle into $[-\pi, \pi)$ by $\pm 2\pi$ flips
@@ -56,7 +63,7 @@ def MergeSingleQubitRotationGates
     restores exact matrix equality (including global phase). This applies even
     to chains of purely $\mathrm{SU}(2)$ gates (`rx`, `ry`, `rz`, `r`).
     On the host (static) path, a near-zero correction may be omitted; on the
-    SSA (dynamic) path a `GPhaseOp` is always emitted. After greedy merging,
+    SSA (dynamic) path a `GPhaseOp` carries any remaining correction. After greedy merging,
     the implementation directly invokes the shared global-phase normalization
     utility to combine, normalize, and remove trivial corrections in their
     respective scopes.
@@ -86,6 +93,15 @@ def FuseSingleQubitUnitaryRuns
     The pass also composes supported named gates with dynamic `f64` parameters
     and emits conservative runtime sequences in the requested basis. Dynamic
     `pow` and arbitrary dynamic unitaries remain unchanged.
+
+    Symbolic ZXZ/ZYZ chains reuse their angles directly in the `u`, `zyz`,
+    `zxz`, and `zsxx` bases; XZX/XYX chains do so in `xzx`, `xyx`, and `r`.
+    Either outer rotation may be absent. Gate operands are normalized modulo
+    `4*pi` before angle arithmetic, as in `merge-single-qubit-rotation-gates`.
+    H/RZ pairs in either order use direct angles in every basis, requiring at
+    most three gates (one in the `u` basis).
+    These conversions need no quaternion extraction or conditional expressions.
+    Other dynamic chains use runtime Euler-angle extraction.
   }];
   let options = [Option<
       "basis", "basis", "std::string", "\"zyz\"",
@@ -127,12 +143,15 @@ def UnrollLoopsForPayload : Pass<"unroll-loops-for-payload", "mlir::ModuleOp"> {
     require fixed quantum indices and specialize these loops. Scalar loops
     remain when supported by the payload. Run QCO cleanup first to move
     complete constant-slot tensor accesses outside structured control flow.
-    The pass limits the total number of cloned body operations to 65,536.
+    The `max-operations` option limits cloned body operations to one billion by default.
     Run constant propagation and QCO cleanup again after this pass, then
     `legalize-control-flow` to check the remaining branches and loops.
     After folding static branches, the pass checks that all SCF loops carry
     linear QCO state through iteration arguments instead of capturing it.
   }];
+  let options = [Option<"maxOperations", "max-operations", "uint64_t",
+                        "1'000'000'000",
+                        "Maximum number of cloned loop-body operations.">];
 }
 
 def LegalizeControlFlow : Pass<"legalize-control-flow", "mlir::ModuleOp"> {
@@ -206,13 +225,33 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
 
     Routing uses undirected target connectivity. Target-native synthesis realizes operations and inserted SWAPs in a supported operand direction.
 
+    Each search limits retained nodes using `search-memory-limit`, an estimated
+    byte budget for the nodes and their qubit layouts (256 MiB by default).
+    At least the root node is retained; zero disables node expansion.
+    The pass stops allocating nodes at the limit, checks the remaining queue,
+    and, if no solution is queued, completes the route with SWAPs that reduce
+    the leading pair's distance. This always makes progress on a connected
+    target. Changing the budget can change the selected initial layout and
+    final gate count or depth; more memory does not guarantee fewer gates.
+    Queue, visited-map, allocator, and linear fallback workspace overhead are
+    additional. Each concurrent trial reuses this bounded storage across its
+    searches and releases it when the trial finishes. Final SWAP insertion
+    uses separate storage after the trials finish. Target distance caches and
+    IR are separate; this is not a process memory limit.
+
     To iteratively refine the mapping, the pass performs multiple forward and backward traversals of the circuit. In
     each traversal, the pass routes the circuit and updates the dynamic-to-static mapping based on the routing decisions
     made during that traversal. By performing multiple traversals, the pass can iteratively refine the mapping and
     potentially find a more optimal solution. This behavior is controlled by the `niterations` parameter.
 
-    The pass option `ntrials` determines the number of initial refinement trials:
-    one identity layout and the remaining layouts chosen randomly.
+    Programs without nested control flow keep the identity layout immediately
+    when all two-qubit interactions are already adjacent on the target.
+    This avoids constructing and refining alternative layouts.
+
+    Otherwise, the pass option `ntrials` determines the number of initial refinement trials:
+    a greedy layout when available, then identity if a slot remains, and random
+    layouts for the remaining slots. Every trial uses `niterations` refinement
+    rounds before scoring; zero scores the initial layouts directly.
     It defaults to the number of available logical CPUs reported by LLVM, taking
     CPU affinity into account, with a minimum of one. Disabling multithreading
     runs the same trials sequentially; it does not reduce the trial count.
@@ -222,10 +261,14 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
 
     For programs with two-qubit interactions and no nested control flow on their
     wires, the pass also constructs an interaction-weighted greedy layout.
-    It places frequently interacting qubits nearby, starting at a central
-    target site. Both the raw and refined greedy layouts are additional
-    candidates, independent of `ntrials`. A final forward routing traversal
-    scores each candidate. The pass selects the initial layout with the fewest
+    For disjoint interaction paths and isolated qubits, it first tries to place
+    them along one path through the target sites. The walk prefers neighbors
+    with fewer unused edges and accepts only a complete placement; it does not
+    backtrack. Other interaction graphs and failed walks use the weighted
+    greedy layout, which places frequently interacting qubits nearby, starting
+    at a central target site. This layout occupies the first trial slot.
+    A final forward routing traversal scores each candidate. The pass selects
+    the initial layout with the fewest
     SWAPs in that traversal, retaining the earlier candidate on a tie.
   }];
   let options = [Option<"nlookahead", "nlookahead", "std::size_t", "20",
@@ -236,14 +279,18 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
                         "The lambda factor in the cost function.">,
                  Option<"niterations", "niterations", "std::size_t", "1",
                         "The number of forwards and backwards traversal to "
-                        "improve the initial layout. Must be > 0.">,
+                        "improve the initial layout. Must be >= 0.">,
                  Option<"ntrials", "ntrials", "std::size_t",
                         "llvm::hardware_concurrency().compute_thread_count()",
-                        "The number of identity/random trials of "
+                        "The total number of greedy/identity/random trials of "
                         "the forwards and backwards mechanism. Defaults to "
                         "the available logical CPU count. Must be > 0.">,
                  Option<"seed", "seed", "std::size_t", "42",
-                        "A seed used for randomization.">];
+                        "A seed used for randomization.">,
+                 Option<"searchMemoryLimit", "search-memory-limit", "size_t",
+                        "256UL * 1024 * 1024",
+                        "Estimated node and layout bytes per search. "
+                        "Zero disables node expansion.">];
   let statistics = [Statistic<"numSwaps", "num-inserted-swaps",
                               "The number of inserted SWAPs">];
 }
@@ -264,6 +311,12 @@ def TargetNativeSynthesis : Pass<"target-native-synthesis", "mlir::ModuleOp"> {
     are left for individual lowering. Barriers, non-unitary operations, and
     unavailable matrices stop a run.
 
+    For non-U bases, constant single-qubit runs are fused when they contain an
+    unsupported gate or resynthesis reduces their gate count. Native gates
+    outside the selected synthesis basis remain supported. Optional symbolic
+    fusion preserves native runs and uses only direct Euler identities;
+    other runs are left for individual lowering to retain exportability.
+
     Unknown native-operation metadata is valid when no
     surviving unitary operation needs it. Otherwise, the pass fails when the
     metadata is unknown, no complete basis exists, or an operation has no
@@ -273,6 +326,8 @@ def TargetNativeSynthesis : Pass<"target-native-synthesis", "mlir::ModuleOp"> {
     Numerical decomposition failure is diagnosed before emitting a replacement.
     The input may be modified on failure.
   }];
+  let options = [Option<"seed", "seed", "uint64_t", "2023",
+                        "Seed for numerical synthesis retries.">];
 }
 
 def VerifyTargetConformance

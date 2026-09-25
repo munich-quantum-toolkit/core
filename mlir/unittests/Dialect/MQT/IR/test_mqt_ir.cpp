@@ -83,6 +83,19 @@ protected:
   }
 };
 
+TEST_F(MQTIRTest, CompilationSeedHasModuleScopeAnd64Bits) {
+  auto moduleOp =
+      parse("module attributes {mqt.compilation_seed = -1 : i64} {}");
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(roundTrip(*moduleOp));
+  EXPECT_FALSE(parse("module attributes {mqt.compilation_seed = 7 : i128} {}"));
+  EXPECT_FALSE(parse("module attributes {mqt.compilation_seed = 7 : si64} {}"));
+  EXPECT_FALSE(parse("module attributes {mqt.compilation_seed = \"7\"} {}"));
+  EXPECT_FALSE(parse(R"(module {
+    func.func @main() attributes {mqt.compilation_seed = 7 : i64} { return }
+  })"));
+}
+
 TEST_F(MQTIRTest, AcceptsProgramInputAndRegisterNames) {
   EXPECT_TRUE(parse(R"mlir(
     module {
@@ -706,6 +719,44 @@ TEST_F(MQTIRTest, RejectsDuplicateInputNames) {
       }
     }
   )mlir"));
+}
+
+TEST_F(MQTIRTest, AcceptsOpaqueInputIdentities) {
+  EXPECT_TRUE(parse(R"mlir(
+    module {
+      func.func @main(%first: f64 {mqt.input_name = "a", mqt.input_id = 0 : i128},
+                      %second: f64 {mqt.input_name = "b", mqt.input_id = -1 : i128}) {
+        return
+      }
+    }
+  )mlir"));
+}
+
+TEST_F(MQTIRTest, RejectsInvalidInputIdentities) {
+  for (const auto* source : {
+           R"mlir(module {
+         func.func @main(%arg: f64 {mqt.input_id = 1 : i128}) { return }
+       })mlir",
+           R"mlir(module {
+         func.func @main(%arg: f64 {mqt.input_name = "a", mqt.input_id = 1 : i64}) { return }
+       })mlir",
+           R"mlir(module {
+         func.func @main(%arg: f64 {mqt.input_name = "a", mqt.input_id = 1 : ui128}) { return }
+       })mlir",
+           R"mlir(module {
+         func.func @main(%arg: f64 {mqt.input_name = "a", mqt.input_id = "id"}) { return }
+       })mlir",
+           R"mlir(module {
+         func.func @main(%a: f64 {mqt.input_name = "a", mqt.input_id = 1 : i128},
+                         %b: f64 {mqt.input_name = "b", mqt.input_id = 1 : i128}) { return }
+       })mlir",
+           R"mlir(module {
+         func.func @main() attributes {mqt.input_id = 1 : i128} { return }
+       })mlir",
+       }) {
+    SCOPED_TRACE(source);
+    EXPECT_FALSE(parse(source));
+  }
 }
 
 TEST_F(MQTIRTest, RejectsInvalidInputGroups) {

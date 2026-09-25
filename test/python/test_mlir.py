@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+from functools import partial
 from pathlib import Path
 from threading import Event, Thread
 
@@ -25,8 +26,10 @@ from qiskit.circuit import Gate, library
 from qiskit.quantum_info import Operator
 
 from mqt.core.mlir import (
+    CompilationOptions,
     CompilerTarget,
     JeffProgram,
+    MappingOptions,
     OpenQASMProgram,
     OutputFormat,
     PayloadEncoding,
@@ -40,6 +43,7 @@ from mqt.core.mlir import (
     QIRProgram,
     TargetEnvironment,
     compile_program,
+    submit_program,
 )
 from mqt.core.qdmi import ProgramFormat
 from mqt.core.qdmi.driver import open_device
@@ -416,6 +420,112 @@ def test_compile_program_exposes_raw_and_optimized_qco() -> None:
     assert raw.ir != optimized.ir
 
 
+def test_mapping_options_defaults() -> None:
+    """Keep the public mapping defaults independent of CPU count except trials."""
+    options = MappingOptions()
+    assert options.trials is None
+    assert options.iterations == 1
+    assert options.lookahead == 20
+    assert options.search_memory_limit == 256 * 1024 * 1024
+
+
+@pytest.mark.parametrize(
+    ("method", "all_to_all"),
+    [("compile_for_target", False), ("compile_for_target", True), ("synthesize_for_target", True)],
+)
+def test_mapping_options_reject_zero_trials(method: str, *, all_to_all: bool) -> None:
+    """Reject invalid public mapping controls before rewriting the input."""
+    target = CompilerTarget(
+        2,
+        connectivity=(
+            CompilerTarget.Connectivity.all_to_all() if all_to_all else CompilerTarget.Connectivity([(0, 1)])
+        ),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
+    program = QCProgram.from_openqasm_str(QASM_STRING).to_qco()
+    before = program.ir
+
+    mapping = MappingOptions(trials=0)
+    with pytest.raises(RuntimeError, match="mapping trials must be greater than zero"):
+        getattr(program, method)(_test_target_environment(target), options=CompilationOptions(seed=7, mapping=mapping))
+
+    assert program.ir == before
+
+
+@pytest.mark.parametrize("seed", [0, 7])
+@pytest.mark.parametrize("iterations", [0, 2])
+@pytest.mark.parametrize("lookahead", [0, 5])
+@pytest.mark.parametrize("search_memory_limit", [0, 1024])
+def test_explicit_mapping_options_are_repeatable(
+    seed: int, iterations: int, lookahead: int, search_memory_limit: int
+) -> None:
+    """Use fixed native trials for repeatable sparse-target compilation."""
+    source = """OPENQASM 3.1;
+include "stdgates.inc";
+qubit[4] q;
+bit[4] out;
+h q[0]; cx q[0], q[3]; cx q[1], q[2];
+cx q[0], q[2]; cx q[1], q[3]; cx q[0], q[1];
+out = measure q;
+"""
+    target = CompilerTarget(
+        4,
+        connectivity=CompilerTarget.Connectivity([(0, 1), (1, 2), (2, 3)]),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
+    options = CompilationOptions(
+        seed=seed,
+        mapping=MappingOptions(
+            trials=3, iterations=iterations, lookahead=lookahead, search_memory_limit=search_memory_limit
+        ),
+    )
+    outputs = []
+    for _ in range(2):
+        program = QCProgram.from_openqasm_str(source).to_qco()
+        program.compile_for_target(_test_target_environment(target), options=options)
+        outputs.append(program.ir)
+    assert outputs[0] == outputs[1]
+    assert options.seed == seed
+    assert options.mapping.trials == 3
+    assert options.mapping.iterations == iterations
+    assert options.mapping.lookahead == lookahead
+    assert options.mapping.search_memory_limit == search_memory_limit
+
+    payloads = []
+    for _ in range(2):
+        payload = compile_program(source, target=target, output=OutputFormat.QIR_BASE, options=options)
+        assert isinstance(payload, QIRProgram)
+        payloads.append(payload.ir)
+    assert payloads[0] == payloads[1]
+
+
+@pytest.mark.parametrize("output_kind", ["typed", "payload", "device", "submit"])
+def test_compilation_entry_points_forward_mapping_options(output_kind: str, capfd: pytest.CaptureFixture[str]) -> None:
+    """Keep mapping controls effective through every public target entry point."""
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity([(0, 1)]),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
+    mapping = MappingOptions(trials=0)
+    options = CompilationOptions(mapping=mapping)
+    if output_kind == "submit":
+        compile_call = partial(submit_program, QASM_STRING, target="mqt.ddsim.default", options=options)
+    elif output_kind == "device":
+        compile_call = partial(compile_program, QASM_STRING, target="mqt.ddsim.default", options=options)
+    elif output_kind == "typed":
+        compile_call = partial(
+            compile_program, QASM_STRING, target=target, output=OutputFormat.QIR_BASE, options=options
+        )
+    else:
+        compile_call = partial(
+            compile_program, QASM_STRING, target=target, program_format=ProgramFormat.QASM3, options=options
+        )
+    with pytest.raises((RuntimeError, ValueError)):
+        compile_call()
+    assert "mapping trials must be greater than zero" in capfd.readouterr().err
+
+
 @requires_qiskit_translation
 def test_empty_compiled_program_round_trips_through_mlir() -> None:
     """Reload empty compiled IR through both typed program APIs."""
@@ -542,6 +652,132 @@ def test_target_compiles_single_qubit_gates_without_entangler(num_sites: int) ->
     result = program.to_qc().to_qiskit(target=target)
     assert set(result.count_ops()) <= {"sx", "x", "rz"}
     assert np.allclose(Operator(result).data, Operator(source).data)
+
+
+@requires_qiskit_translation
+def test_symbolic_su2_compiles_and_binds_after_export() -> None:
+    """Compile symbolic SU2 circuits with bindable parameters and exact phase."""
+    source = library.efficient_su2(2, reps=1, entanglement="circular")
+    source.global_phase = source.parameters[0] / 5 - 0.3
+    program = QCProgram.from_qiskit(source).to_qco()
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("sx", 1, 0),
+            CompilerTarget.OperationCapability("x", 1, 0),
+            CompilerTarget.OperationCapability("rz", 1, 1),
+            CompilerTarget.OperationCapability("cz", 2, 0),
+            CompilerTarget.OperationCapability("gphase", 0, 1),
+        ]),
+    )
+    program.compile_for_target(_test_target_environment(target))
+    result = program.to_qiskit(target=target)
+    assert set(result.count_ops()) <= {"sx", "x", "rz", "cz"}
+    assert result.parameters == source.parameters
+    values = dict(zip(source.parameters, np.linspace(-3 * np.pi, 3 * np.pi, source.num_parameters), strict=True))
+    bound = result.assign_parameters(values)
+    assert bound.num_parameters == 0
+    assert np.allclose(Operator(bound).data, Operator(source.assign_parameters(values)).data, atol=1e-10, rtol=0)
+
+
+@requires_qiskit_translation
+def test_symbolic_x_euler_chain_exports_for_target() -> None:
+    """Keep an X-outer Euler chain bindable through the synthesis API."""
+    angles = qiskit.circuit.ParameterVector("theta", 3)
+    source = QuantumCircuit(1)
+    source.rx(angles[0], 0)
+    source.rz(angles[1], 0)
+    source.rx(angles[2], 0)
+    source.global_phase = angles[0] / 5 - 0.3
+    target = CompilerTarget(
+        1,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("r", 1, 2),
+            CompilerTarget.OperationCapability("gphase", 0, 1),
+        ]),
+    )
+    program = QCProgram.from_qiskit(source).to_qco()
+    program.synthesize_for_target(_test_target_environment(target))
+    result = program.to_qiskit(target=target)
+    assert result.parameters == source.parameters
+    assert set(result.count_ops()) <= {"r"}
+    values = dict(zip(angles, [-3 * np.pi, 0.37, 4 * np.pi], strict=True))
+    assert np.allclose(
+        Operator(result.assign_parameters(values)).data,
+        Operator(source.assign_parameters(values)).data,
+        atol=1e-10,
+        rtol=0,
+    )
+
+
+@requires_qiskit_translation
+@pytest.mark.parametrize("shape", ["native_xyx", "non_native_xyx", "long_zsxx", "h_rz"])
+def test_target_fusion_preserves_native_gates_and_symbolic_exports(shape: str) -> None:
+    """Optional fusion preserves native gates and bindable Qiskit/jeff output."""
+    angles = qiskit.circuit.ParameterVector("theta", 3)
+    source = QuantumCircuit(1)
+    native = {"x": 0, "sx": 0, "rz": 1, "gphase": 1}
+    if shape == "h_rz":
+        source.h(0)
+        source.rz(angles[0], 0)
+        native = {"u": 3, "gphase": 1}
+    elif shape == "long_zsxx":
+        for angle in angles:
+            source.rz(angle, 0)
+            source.sx(0)
+    else:
+        source.rx(angles[0], 0)
+        source.ry(angles[1], 0)
+        source.rx(angles[2], 0)
+        if shape == "native_xyx":
+            native.update(rx=1, ry=1)
+    target = CompilerTarget(
+        1,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability(gate, 0 if gate == "gphase" else 1, parameters)
+            for gate, parameters in native.items()
+        ]),
+    )
+    program = QCProgram.from_qiskit(source).to_qco()
+    program.compile_for_target(_test_target_environment(target))
+    result = program.to_qiskit(target=target)
+    assert result.parameters == source.parameters
+    if shape in {"native_xyx", "long_zsxx"}:
+        assert result.count_ops() == source.count_ops()
+    values = dict(zip(source.parameters, [0.31, -1.2, 2.7], strict=False))
+    assert np.allclose(
+        Operator(result.assign_parameters(values)).data,
+        Operator(source.assign_parameters(values)).data,
+        atol=1e-10,
+        rtol=0,
+    )
+    assert program.to_jeff(copy=True).is_valid
+
+
+@requires_qiskit_translation
+def test_symbolic_fusion_normalizes_gate_operands_after_scalar_expressions() -> None:
+    """Normalize each gate use while preserving a shared symbol's scaled use."""
+    angle = qiskit.circuit.Parameter("theta")
+    source = QuantumCircuit(1)
+    source.rz(angle / 2, 0)
+    source.rx(0.37, 0)
+    source.rz(angle, 0)
+    program = QCProgram.from_qiskit(source).to_qco()
+    program.cleanup()
+    program.fuse_single_qubit_unitary_runs(basis="zsxx")
+    result = program.to_qiskit()
+    assert result.parameters == source.parameters
+    assert program.to_jeff(copy=True).is_valid
+    values = {angle: 17 * np.pi}
+    assert np.allclose(
+        Operator(result.assign_parameters(values)).data,
+        Operator(source.assign_parameters(values)).data,
+        atol=1e-10,
+        rtol=0,
+    )
 
 
 @requires_qiskit_translation
@@ -1173,3 +1409,44 @@ def test_native_compilation_releases_gil(tmp_path: Path, mode: str) -> None:
         sys.setswitchinterval(interval)
     assert not thread.is_alive()
     assert program.is_valid
+
+
+@pytest.mark.parametrize("seed", [0, 7, 2**63 + 7, 2**64 - 1])
+def test_compilation_seed_overrides_custom_pass_seed(seed: int) -> None:
+    """Override pass settings without retaining temporary compiler metadata."""
+    source = QCProgram.from_openqasm_str(QASM_STRING).to_qco()
+    expected = source.copy()
+    expected.run_pass_pipeline(f"pauli-twirl-2q-gates{{seed={seed}}}")
+    actual = source.copy()
+    actual.run_pass_pipeline("pauli-twirl-2q-gates{seed=99}", options=CompilationOptions(seed=seed))
+    assert actual.ir == expected.ir
+    assert "mqt.compilation_seed" not in actual.ir
+    compiled = compile_program(
+        source,
+        output=OutputFormat.QCO_OPTIMIZED,
+        qco_pipeline="pauli-twirl-2q-gates{seed=99}",
+        options=CompilationOptions(seed=seed),
+    )
+    expected.cleanup()
+    assert compiled.ir == expected.ir
+
+
+def test_compilation_seed_reaches_nested_modules() -> None:
+    """The outer compilation seed overrides an inner module's captured seed."""
+    inner = QCProgram.from_openqasm_str(QASM_STRING).to_qco()
+    nested = inner.ir.replace("module {", "module attributes {mqt.compilation_seed = 99 : i64} {", 1)
+    source = QCOProgram.from_mlir_str(f"module {{ {nested} }}")
+    actual = source.copy()
+    actual.run_pass_pipeline("builtin.module(pauli-twirl-2q-gates{seed=99})", options=CompilationOptions(seed=6))
+    expected = QCOProgram.from_mlir_str(f"module {{ {inner.ir} }}")
+    expected.run_pass_pipeline("builtin.module(pauli-twirl-2q-gates{seed=6})")
+    assert actual.ir.replace(" attributes {mqt.compilation_seed = 99 : i64}", "") == expected.ir
+    assert actual.ir != source.ir
+
+
+def test_compilation_timing_and_statistics(capfd: pytest.CaptureFixture[str]) -> None:
+    """Shared options reach MLIR timing and statistics instrumentation."""
+    compile_program(QASM_STRING, options=CompilationOptions(enable_timing=True, enable_statistics=True))
+    output = capfd.readouterr().err
+    assert "Execution time report" in output
+    assert "Pass statistics report" in output

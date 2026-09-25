@@ -29,6 +29,11 @@ def QCODialect : Dialect {
         receive quantum resources as arguments. The MQT entry-point verifier
         checks this rule across the program.
 
+    Register slots retain their qubit identities, and quantum operands must
+    denote disjoint resources. See the shared
+    [quantum resource contract](index.md#quantum-resource-contract) for helper
+    boundaries, dynamic-index preconditions, and semantic round trips.
+
         Example:
         ```mlir
         %q_out = qco.h %q_in                       // Consumes %q_in, produces %q_out

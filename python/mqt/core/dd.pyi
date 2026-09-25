@@ -148,7 +148,8 @@ class VectorDD:
     ) -> None:
         """Convert the DD to an SVG file that can be viewed in a browser.
 
-        Requires the `dot` command from Graphviz to be installed and available in the PATH.
+        Uses PyGraphviz 2 or later when installed. Otherwise, requires the `dot` command
+        from Graphviz to be available in the PATH.
 
         Args:
             filename: The filename of the SVG file. Any file extension will be replaced by `.dot` and then `.svg`.
@@ -275,7 +276,8 @@ class MatrixDD:
     ) -> None:
         """Convert the DD to an SVG file that can be viewed in a browser.
 
-        Requires the `dot` command from Graphviz to be installed and available in the PATH.
+        Uses PyGraphviz 2 or later when installed. Otherwise, requires the `dot` command
+        from Graphviz to be available in the PATH.
 
         Args:
             filename: The filename of the SVG file. Any file extension will be replaced by `.dot` and then `.svg`.

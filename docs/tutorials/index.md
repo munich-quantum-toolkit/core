@@ -18,7 +18,8 @@ needed.
 6. **{doc}`jeff_exchange`:** hand a structured program between compiler
    processes, preserve phase and loops, then compile it for execution.
 
-For a first execution, use the {doc}`QPE walkthrough <../getting_started>`. The
+For a first execution, use the
+{doc}`Shor factoring walkthrough <../getting_started>`. The
 {doc}`compiler guide <../mlir/mqt_compiler_collection>` describes interfaces and
 options; these tutorials explain their effects through experiments.
 

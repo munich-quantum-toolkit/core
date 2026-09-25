@@ -35,6 +35,12 @@ namespace mlir::qco {
 /// size of a dynamic one-dimensional QTensor argument.
 using DDArgumentBindings = DenseMap<Value, Attribute>;
 
+/// Execution budget shared by nested while loops and calls in one simulation.
+/// Counted loops and the total number of gates are not bounded by this budget.
+struct DDExecutionOptions {
+  size_t maxWhileIterations = 1'000'000'000;
+};
+
 /// An uncollapsed sampling state and the package that owns its DD nodes.
 /// A null package means that sampling did not retain a state.
 struct DDSamplingState {
@@ -45,18 +51,18 @@ struct DDSamplingState {
 /// Build a matrix DD for a unitary QCO function.
 ///
 /// The function must have one block. The interpreter supports concrete QCO and
-/// SCF structured control, non-recursive calls, common scalar math,
-/// one-dimensional memrefs, dense rank-one f64 tensor constants and element
-/// extraction, and QTensor bookkeeping. `qco.static` values, or
+/// SCF structured control, non-recursive calls, common
+/// scalar math, one-dimensional memrefs, dense rank-one f64 tensor constants
+/// and element extraction, and QTensor bookkeeping. `qco.static` values, or
 /// qubit arguments when no static values exist, set the wire map. Entry-block
 /// `qco.alloc` and statically sized `qtensor.alloc` operations add subsequent
 /// wires in instruction order. Measurements, resets, symbolic control, and
 /// other runtime allocation are not supported.
 ///
-/// Runtime-bound parameters are supported for standard gates, direct
-/// `qco.call` operations, and a sole standard gate inside `qco.ctrl`.
-/// Custom matrices and composite modifiers must have a compile-time-known
-/// matrix.
+/// Runtime-bound parameters are supported for standard gates, ordinary and
+/// gate-function calls, a sole standard gate inside `qco.ctrl`, and `qco.pow`
+/// with a compile-time-known body matrix. Other composite modifiers and custom
+/// matrices must have a compile-time-known matrix.
 ///
 /// The containing module must pass MLIR verification and
 /// `qco::verifyLinearity`.
@@ -67,14 +73,17 @@ struct DDSamplingState {
 /// @return Matrix DD, or failure for an unsupported program.
 FailureOr<dd::MatrixDD> buildFunctionality(
     func::FuncOp func, dd::Package& dd,
-    const DDArgumentBindings& argumentBindings = DDArgumentBindings());
+    const DDArgumentBindings& argumentBindings = DDArgumentBindings(),
+    const DDExecutionOptions& options = {});
 
 /// Simulate a single-block QCO function.
 ///
 /// In addition to the operations supported by `buildFunctionality`, simulation
 /// supports measurements, resets, CBit registers, and runtime qubit and QTensor
 /// allocation. QCO and SCF structured control requires concrete values. A
-/// shared 10000-step limit bounds loops and calls. `qco.sink` and
+/// configurable budget of one billion iterations bounds `scf.while` execution
+/// per simulation (per shot for dynamic sampling). Counted
+/// loops, branches, and nonrecursive calls have no step limit. `qco.sink` and
 /// `qtensor.dealloc` mark lifetimes but do not remove DD wires.
 ///
 /// The containing module must pass MLIR verification and
@@ -90,7 +99,8 @@ FailureOr<dd::MatrixDD> buildFunctionality(
 FailureOr<dd::VectorDD>
 simulate(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
          std::mt19937_64& rng,
-         const DDArgumentBindings& argumentBindings = DDArgumentBindings());
+         const DDArgumentBindings& argumentBindings = DDArgumentBindings(),
+         const DDExecutionOptions& options = {});
 
 /// Simulate a zero-state QCO function without collapsing terminal
 /// measurements.
@@ -102,7 +112,8 @@ simulate(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
 /// @param argumentBindings Scalar values and dynamic QTensor argument sizes.
 FailureOr<dd::VectorDD> simulateStatevector(
     func::FuncOp func, dd::Package& dd,
-    const DDArgumentBindings& argumentBindings = DDArgumentBindings());
+    const DDArgumentBindings& argumentBindings = DDArgumentBindings(),
+    const DDExecutionOptions& options = {});
 
 /// Sample a single-block QCO function from the zero state.
 ///
@@ -128,5 +139,6 @@ FailureOr<std::map<std::string, size_t>>
 sample(func::FuncOp func, size_t shots, uint64_t seed = 0,
        const DDArgumentBindings& argumentBindings = DDArgumentBindings(),
        std::vector<std::string>* shotResults = nullptr,
-       DDSamplingState* retainedState = nullptr);
+       DDSamplingState* retainedState = nullptr,
+       const DDExecutionOptions& options = {});
 } // namespace mlir::qco

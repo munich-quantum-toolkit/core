@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "mqt/Compiler/CompilationOptions.h"
+
 #include "mlir/Support/LLVM.h"
 
 #include <cstdint>
@@ -24,7 +26,13 @@ class PassManager;
 mlir::LogicalResult runWithPassManager(
     mlir::ModuleOp moduleOp,
     mlir::function_ref<void(mlir::OpPassManager&)> populatePasses,
-    mlir::StringRef errorMessage);
+    mlir::StringRef errorMessage, const mlir::CompilationOptions& options = {});
+
+/// Run passes with scoped compilation options; restore input metadata on
+/// completion.
+mlir::LogicalResult
+runWithCompilationOptions(mlir::PassManager& pm, mlir::ModuleOp moduleOp,
+                          const mlir::CompilationOptions& options);
 
 /// Register the QCO passes, upstream transforms, and named compiler pipelines.
 void registerMQTCompilerPasses();
@@ -48,7 +56,7 @@ void populateDecomposeMultiControlledPipeline(mlir::OpPassManager& pm,
 /// Parse and run a module-level MLIR textual pass pipeline.
 [[nodiscard]] mlir::LogicalResult
 runPassPipeline(mlir::ModuleOp moduleOp, mlir::StringRef pipeline,
-                bool enableTiming = false, bool enableStatistics = false);
+                const mlir::CompilationOptions& options = {});
 
 /// Populate a QC-oriented cleanup pipeline on the given pass manager.
 ///

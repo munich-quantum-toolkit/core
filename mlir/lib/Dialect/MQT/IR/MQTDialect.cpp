@@ -19,6 +19,7 @@
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
+#include "mqt/Support/RandomSeed.h"
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -751,6 +752,15 @@ verifyRegisterName(Operation* operation, const NamedAttribute attribute) {
 LogicalResult
 MQTDialect::verifyOperationAttribute(Operation* operation,
                                      const NamedAttribute attribute) {
+  if (attribute.getName() == COMPILATION_SEED_ATTR) {
+    auto seed = dyn_cast<IntegerAttr>(attribute.getValue());
+    if (!isa<ModuleOp>(operation) || !seed ||
+        !seed.getType().isSignlessInteger(64)) {
+      return operation->emitError(
+          "mqt.compilation_seed requires a signless i64 on a module");
+    }
+    return success();
+  }
   if (attribute.getName() == TargetEnvAttr::name) {
     if (!isa<ModuleOp>(operation)) {
       return operation->emitError()
@@ -789,7 +799,8 @@ MQTDialect::verifyOperationAttribute(Operation* operation,
     }
     return verifyParameterGroup(operation, attribute.getValue());
   }
-  if (attribute.getName() == InputNameAttrHelper::getNameStr()) {
+  if (attribute.getName() == InputNameAttrHelper::getNameStr() ||
+      attribute.getName() == InputIdAttrHelper::getNameStr()) {
     return operation->emitError()
            << "attribute '" << attribute.getName().getValue()
            << "' is only valid on a function argument";
@@ -803,6 +814,7 @@ LogicalResult MQTDialect::verifyRegionArgAttribute(
     const NamedAttribute attribute) {
   const auto attributeName = attribute.getName();
   if (attributeName != InputNameAttrHelper::getNameStr() &&
+      attributeName != InputIdAttrHelper::getNameStr() &&
       attributeName != ParameterGroupAttrHelper::getNameStr()) {
     return operation->emitError()
            << "attribute '" << attribute.getName().getValue()
@@ -816,6 +828,23 @@ LogicalResult MQTDialect::verifyRegionArgAttribute(
            << "' requires a function entry-block argument";
   }
 
+  if (attributeName == InputIdAttrHelper::getNameStr()) {
+    const auto id = dyn_cast<IntegerAttr>(attribute.getValue());
+    if (!id || !id.getType().isSignlessInteger(128)) {
+      return operation->emitError("input identity must be an i128 attribute");
+    }
+    if (!function.getArgAttrOfType<StringAttr>(
+            argIndex, InputNameAttrHelper::getNameStr())) {
+      return operation->emitError("input identity requires an input name");
+    }
+    for (unsigned index = 0; index < function.getNumArguments(); ++index) {
+      if (index != argIndex &&
+          function.getArgAttr(index, attributeName) == id) {
+        return operation->emitError("duplicate input identity");
+      }
+    }
+    return success();
+  }
   if (attributeName == ParameterGroupAttrHelper::getNameStr()) {
     return verifyInputGroup(function, operation, argIndex,
                             attribute.getValue());

@@ -13,13 +13,14 @@
 
 #pragma once
 
+#include "dd/DDDefinitions.hpp"
 #include "dd/statistics/TableStatistics.hpp"
 
-#include <algorithm>
 #include <bit>
 #include <cstddef>
 #include <functional>
 #include <stdexcept>
+#include <type_traits>
 #include <vector>
 
 namespace dd {
@@ -46,8 +47,8 @@ public:
 
   /// An entry in the compute table
   struct Entry {
-    OperandType operand;
-    ResultType result;
+    OperandType operand{};
+    ResultType result{};
   };
 
   /// Get a reference to the underlying table
@@ -58,8 +59,10 @@ public:
 
   /// Compute the hash value for a given operand
   [[nodiscard]] std::size_t hash(const OperandType& a) const {
+    const auto key = std::hash<OperandType>{}(a);
     const auto mask = stats.numBuckets - 1;
-    return std::hash<OperandType>{}(a)&mask;
+    /// Mix aligned addresses before reducing to the power-of-two bucket count.
+    return (std::is_pointer_v<OperandType> ? murmur64(key) : key) & mask;
   }
 
   /// Insert a new entry into the compute table
@@ -102,7 +105,10 @@ public:
   /// Clear the compute table
   ///
   /// Sets all entries to invalid.
-  void clear() { std::fill(valid.begin(), valid.end(), false); }
+  void clear() {
+    valid.assign(valid.size(), false);
+    stats.reset();
+  }
 
 private:
   /// The actual table storing the entries

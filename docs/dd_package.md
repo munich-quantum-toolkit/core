@@ -93,12 +93,13 @@ with np.printoptions(precision=3, suppress=True):
   print(unitary)
 ```
 
-If [Graphviz](https://www.graphviz.org/) is installed, use
-{py:meth}`~mqt.core.dd.VectorDD.to_svg` to export a decision diagram as SVG.
-IPython can display the resulting file in a notebook. DOT exports use unique
-node IDs assigned in traversal order, so ordinary exports do not depend on
-memory addresses. The `memory=True` option includes addresses as debugging
-information.
+Use {py:meth}`~mqt.core.dd.VectorDD.to_svg` to render a decision diagram as SVG.
+It uses
+[PyGraphviz](https://pygraphviz.github.io/documentation/stable/install.html) 2
+or later when installed, or the `dot` command otherwise. IPython can display the
+resulting file in a notebook. DOT exports use unique node IDs assigned in
+traversal order, so ordinary exports do not depend on memory addresses. The
+`memory=True` option includes addresses as debugging information.
 
 ```{code-cell} ipython3
 ---
@@ -115,6 +116,23 @@ SVG(filename="bell_state.svg")
 ```
 
 See {py:class}`~mqt.core.dd.DDPackage` for the full API.
+
+## Memory and Cache Growth
+
+Node unique tables start with 64 buckets per qubit level and grow independently
+as levels fill. This avoids reserving large tables for sparsely populated
+levels. The matrix-vector cache starts with 16,384 entries. After garbage
+collection, it can grow to accommodate surviving vector nodes when past cache
+hits indicate reuse. Automatic growth stops at 1,048,576 entries. Other compute
+caches keep their initial capacities.
+
+This policy trades memory for less recomputation; it can slow workloads whose
+useful cache entries already fit. The cache ceiling does not bound total package
+memory. C++ callers can still set initial capacities with `dd::DDPackageConfig`;
+an initial matrix-vector capacity at or above the growth ceiling stays fixed.
+Collection and reset retain grown table capacities. Node pools retain their
+slabs until reset or destruction and zero fresh entries on acquisition, so
+unused reserved slots need not occupy resident memory.
 
 ## How do Quantum Decision Diagrams Work?
 
@@ -319,9 +337,32 @@ the squared magnitudes of the outgoing edge weights to $1$ and is consistent
 with quantum semantics, where basis states $\ket{0}$ and $\ket{1}$ are observed
 after measurement with probabilities that are squared magnitudes of the
 respective weights. MQT Core selects a maximum-magnitude edge (preferring the
-left edge within numerical tolerance) and makes its normalized weight real and
-nonnegative. The incoming edge retains its complex phase. Normalization proceeds
-bottom-up; complex-number comparisons use the package tolerance.
+left edge when squared magnitudes agree within relative tolerance) and makes its
+normalized weight real and nonnegative. The incoming edge retains its complex
+phase. Normalization proceeds bottom-up; complex-number comparisons use the
+package tolerance. Recursive addition extracts a common incoming scale before
+visiting child nodes and restores it on return. This keeps small basis-state
+amplitudes from being discarded before the normalized parent is reconstructed.
+The same rule applies to magnitude addition.
+
+Cached vector normalization projects nearly equal or opposite coefficients onto
+the corresponding balanced pair before dividing by their norm. For unit-norm
+child states, this changes the local vector by at most the absolute tolerance in
+Euclidean norm, apart from roundoff. The incoming weight also compensates for
+reuse of a stored dominant weight. These steps limit amplification of small
+coefficient differences; they do not bound accumulated circuit error.
+
+Floating-point arithmetic makes this canonicity approximate. Ordinary real
+components reuse the nearest stored value within the absolute tolerance,
+preferring the smaller magnitude on a tie; zero, one, and $1/\sqrt{2}$ have
+priority. The default tolerance is $2^{-42}$ (1024 times double-precision
+machine epsilon). The numeric index hashes binary intervals without rounding
+stored values. C++ callers can set a finite, nonnegative global tolerance with
+{cpp-api:func}`dd::ComplexNumbers::setTolerance`. A smaller tolerance can reduce
+error amplification in small subproblems, but may also prevent sharing of nearly
+equal subgraphs. Neither tolerance choice guarantees polynomial DD size for a
+circuit. Set the tolerance before creating packages: changing it does not
+recanonicalize existing decision diagrams.
 
 ````{admonition} Example _(Normalization of Decision Diagrams)_
 :class: tip
@@ -421,6 +462,15 @@ can be shared. Each node's outgoing edge weights are divided by the weight with
 the highest magnitude, selecting the leftmost one in a tie. The normalized
 outgoing weights have magnitude at most $1$; the extracted factor moves to the
 incoming edge.
+
+The matrix root carries the global scale. Its real components use a separate
+exact index, retaining tolerance-based priority for nonzero special constants.
+This preserves roots below the ordinary absolute tolerance, such as the
+$2^{-64}$ root of $H^{\otimes 128}$. Internal normalized coefficients still use
+the ordinary tolerance. Matrix normalization removes a common power-of-two scale
+before squared magnitudes and division, then retains the original root weight.
+Small local matrix entries remain subject to zero tolerance, and intermediate
+and final values must still fit the floating-point representation.
 
 ````{admonition} Example _(Matrix Decision Diagrams)_
 :class: tip

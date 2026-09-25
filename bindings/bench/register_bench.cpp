@@ -20,21 +20,23 @@ namespace nb = nanobind;
 
 // forward declarations
 void registerBV(const nb::module_& m);
-void registerModularMultiplier(const nb::module_& m);
 void registerGHZ(const nb::module_& m);
 void registerGrover(const nb::module_& m);
 void registerMagicStateDistillation(const nb::module_& m);
+void registerModularMultiplier(const nb::module_& m);
 void registerMultiplexer(const nb::module_& m);
 void registerQFT(const nb::module_& m);
 void registerQFTAdder(const nb::module_& m);
 void registerQPE(const nb::module_& m);
 void registerRepeatUntilSuccess(const nb::module_& m);
+void registerShor(nb::module_& m);
 void registerTeleportation(const nb::module_& m);
+void registerWState(const nb::module_& m);
 
 // The nanobind module macro requires its module handle by value.
 // NOLINTNEXTLINE(performance-unnecessary-value-param)
 NB_MODULE(MQT_CORE_MODULE_NAME, m) {
-  m.doc() = "Typed benchmark instances and analytic references.";
+  m.doc() = "Typed benchmark instances and references.";
 
   nb::class_<bench::Output>(m, "Output",
                             "One logical classical output register.")
@@ -57,11 +59,6 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
       "bv", "Bernstein--Vazirani benchmark instances and options.");
   registerBV(bv);
 
-  const nb::module_ modularMultiplier = m.def_submodule(
-      "modular_multiplier",
-      R"pb(Modular multiplier benchmark instances and options.)pb");
-  registerModularMultiplier(modularMultiplier);
-
   const nb::module_ ghz =
       m.def_submodule("ghz", "GHZ benchmark instances and options.");
   registerGHZ(ghz);
@@ -74,6 +71,10 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
       m.def_submodule("magic_state_distillation",
                       "Concatenated 15-to-1 magic-state distillation.");
   registerMagicStateDistillation(magicStateDistillation);
+  const nb::module_ modularMultiplier = m.def_submodule(
+      "modular_multiplier",
+      R"pb(Modular multiplier benchmark instances and options.)pb");
+  registerModularMultiplier(modularMultiplier);
 
   const nb::module_ multiplexer = m.def_submodule(
       "multiplexer", "Quantum multiplexer benchmark instances and options.");
@@ -95,9 +96,16 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
       "repeat_until_success", "Repeat-until-success benchmark instance.");
   registerRepeatUntilSuccess(repeatUntilSuccess);
 
+  nb::module_ shor =
+      m.def_submodule("shor", "Shor benchmark instances and options.");
+  registerShor(shor);
+
   const nb::module_ teleportation = m.def_submodule(
       "teleportation", "Quantum teleportation benchmark instance.");
   registerTeleportation(teleportation);
+
+  registerWState(
+      m.def_submodule("w_state", "W-state benchmark instances and options."));
 }
 
 } // namespace mqt

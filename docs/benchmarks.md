@@ -9,13 +9,13 @@ mystnb:
 # Structured quantum benchmarks
 
 MQT Core defines each structured quantum benchmark by benchmark-specific
-parameters and an analytic reference. A benchmark instance can produce a
-structured QC program, a resolved manifest, and a stable case ID. The generated
-program returns one classical register named `result`. Outcome strings are
-big-endian: the highest-index result bit is the leftmost character.
+parameters and an analytic or verification reference. A benchmark instance can
+produce a structured QC program, a resolved manifest, and a stable case ID. The
+generated program returns one classical register named `result`. Outcome strings
+are big-endian: the highest-index result bit is the leftmost character.
 
-For an end-to-end device example, start with {doc}`getting_started`. It compares
-standard and iterative QPE and evaluates exact and non-exact phases. The
+For an end-to-end device example, start with {doc}`getting_started`, which
+factors 21 with Shor's algorithm. The
 [repeat-until-success example](#repeat-until-success) below demonstrates an
 adaptive retry loop and a phase-sensitive readout.
 
@@ -238,8 +238,8 @@ Adding a family requires five extension points:
    `include/mqt-core/bench/BenchmarkFamilies.inc`. Its expansions provide the
    public JSON declarations and the synchronized semantic and MLIR registry
    glue.
-2. Add the typed instance, any options and validation, an analytic reference,
-   and evaluation under `include/mqt-core/bench/` and `src/bench/`. Add the
+2. Add the typed instance, any options and validation, a reference, and
+   evaluation under `include/mqt-core/bench/` and `src/bench/`. Add the
    family-specific parameter JSON, reference JSON, parser, and schema body to
    `src/bench/JSON.cpp`.
 3. Declare and implement the structured emitter under `mlir/bench/`, add its
@@ -263,6 +263,44 @@ Before evaluation, normalize backend results to the manifest's big-endian
 `result` order.
 
 ## Benchmark families
+
+### Quantum phase estimation
+
+The `qpe` family estimates a supplied phase using a phase gate and a known
+eigenstate. Standard QPE uses a query register and inverse QFT; iterative QPE
+measures, resets, and reuses one query qubit with measurement feedback. At
+eight-bit precision they use nine and two qubits, respectively.
+
+```{code-cell} ipython3
+from fractions import Fraction
+
+from mqt.core.bench import qpe
+from mqt.core.mlir import compile_program, submit_program
+from mqt.core.qdmi.driver import open_device
+
+device = open_device("mqt.ddsim.default")
+for method in (qpe.Method.STANDARD, qpe.Method.ITERATIVE):
+    phase_estimation = qpe.QPE(qpe.Options(precision=8, phase=Fraction(3, 8), method=method))
+    compiled = compile_program(phase_estimation.generate(), target=device)
+    job = submit_program(compiled, target=device, num_shots=64, custom1=17)
+    job.wait()
+    assert job.get_counts() == {"01100000": 64}
+    assert phase_estimation.evaluate(job.get_counts()).total_variation_distance < 1e-12
+```
+
+A phase such as $1/3$ lies between eight-bit estimates, giving a distribution
+over nearby values. TVD compares the sampled distribution with this benchmark's
+analytic reference; finite samples generally have nonzero distance.
+
+```{code-cell} ipython3
+approximate = qpe.QPE(qpe.Options(precision=8, phase=Fraction(1, 3), method=qpe.Method.ITERATIVE))
+compiled = compile_program(approximate.generate(), target=device)
+job = submit_program(compiled, target=device, num_shots=4096, custom1=17)
+job.wait()
+evaluation = approximate.evaluate(job.get_counts())
+assert evaluation.total_variation_distance < 0.08
+print(f"Total variation distance: {evaluation.total_variation_distance:.3f}")
+```
 
 ### QFT addition
 
@@ -514,3 +552,58 @@ for requested_format in (None, ProgramFormat.QASM3):
 Higher levels provide larger structured programs; support for their generation
 does not guarantee a given device's capacity. These adaptive jobs expose counts,
 without an uncollapsed statevector; see {doc}`qdmi/ddsim_device`.
+
+### Shor order finding
+
+The `shor` family implements the semiclassical circuit in Sections 2.3–2.4 of
+[Beauregard's algorithm](https://arxiv.org/abs/quant-ph/0205095). An odd
+`number` from $3$ through $2^{31}-1$ and a coprime `base` with
+$1 < \mathtt{base} < \mathtt{number}$ (default 2) define an instance. Prime
+moduli are valid. For an $n$-bit modulus, the circuit uses $2n+3$ qubits and
+returns $2n$ phase bits.
+
+```{code-cell} ipython3
+from mqt.core.bench import shor
+
+order_finding = shor.Shor(shor.Options(number=21))
+assert order_finding.output.width == 10
+assert order_finding.evaluate({"0010101011": 64}).factors == (3, 7)
+```
+
+The manifest uses a `verification` reference with model `shor_factors`.
+Evaluation reports a sorted factor pair, when found, and the fraction of shots
+that independently yield verified factors. It does not report an ideal phase
+distribution, TVD, or Hellinger fidelity. An unsuccessful phase is valid data;
+invalid outcomes and empty counts are rejected. The input limit bounds classical
+recovery, not simulation cost. See {doc}`getting_started` for phase
+interpretation, execution, and the callback-based factoring workflow.
+
+### W-state preparation
+
+The `w-state` family prepares the equal, positive-amplitude superposition of all
+single-excitation states:
+
+```{math}
+|W_n\rangle = \frac{1}{\sqrt n}\sum_{j=0}^{n-1}|2^j\rangle.
+```
+
+`qubits` must be positive. The ideal probability is $1/n$ for each
+single-excitation bitstring and zero otherwise.
+
+```{code-cell} ipython3
+from mqt.core import mlir
+from mqt.core.bench import w_state
+
+w = w_state.WState(w_state.Options(qubits=3))
+counts = mlir.sample(w.generate(), shots=4096, seed=17)
+assert set(counts) == {"001", "010", "100"}
+assert w.evaluate(counts).total_variation_distance < 0.03
+assert w.probability("010") == 1 / 3
+
+large_w = w_state.WState(w_state.Options(qubits=256))
+large_counts = mlir.sample(large_w.generate(), shots=64, seed=17)
+assert sum(large_counts.values()) == 64
+assert all(len(outcome) == 256 and outcome.count("1") == 1 for outcome in large_counts)
+```
+
+DD sampling needs no dense statevector, but intermediate DDs determine cost.

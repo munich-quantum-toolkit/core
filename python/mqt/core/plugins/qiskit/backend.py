@@ -32,18 +32,16 @@ from qiskit.providers import BackendV2, Options
 from qiskit.transpiler import InstructionProperties, Target
 
 from ...qdmi import Device as QDMIDevice
-from ...qdmi import Job as QDMIJobHandle
 from ...qdmi import ProgramFormat, is_binary_program_format
 from ...qdmi.driver import open_device
 from .exceptions import (
     CircuitValidationError,
-    JobSubmissionError,
     TranslationError,
     UnsupportedDeviceError,
     UnsupportedFormatError,
     UnsupportedOperationError,
 )
-from .job import QDMIJob, _cancel_jobs
+from .job import QDMIJob
 from .serializers import preferred_program_formats, program_serializer, register_program_serializer
 
 if TYPE_CHECKING:
@@ -309,6 +307,7 @@ class QDMIBackend(BackendV2):
         super().__init__(name=device.name(), provider=provider, backend_version=device.version())
         self._device = device
         self._device_id = device_id
+        self.last_job: QDMIJob | None = None
 
         self._target = self._build_target()
 
@@ -389,7 +388,7 @@ class QDMIBackend(BackendV2):
         Returns:
             Default Options with shots=1024 and memory=False.
         """
-        return Options(shots=1024, memory=False)
+        return Options(shots=1024, memory=False, max_retries=0)
 
     def _target_num_qubits(self) -> int:
         """Number of addressable qubits to expose in the Target.
@@ -740,7 +739,7 @@ class QDMIBackend(BackendV2):
             parameter_values: Optional parameter values to bind to the circuits. If provided, must be a sequence
                 with one entry per circuit. Each entry can be either a dictionary mapping parameters to values,
                 or a sequence of values in the order of circuit.parameters.
-            **options: Execution options: nonnegative integer ``shots`` and boolean ``memory``.
+            **options: Execution options: nonnegative integer ``shots`` and ``max_retries``, and boolean ``memory``.
                 Memory requires genuine QDMI SHOTS results. Simulator seeds are unsupported.
 
         Returns:
@@ -772,6 +771,7 @@ class QDMIBackend(BackendV2):
             >>> qc2.measure_all()
             >>> job = backend.run([qc1, qc2], parameter_values=[{theta: 0.5}, {theta: 1.5}])
         """  # ruff:ignore[docstring-extraneous-exception] The validation helper raises operation errors.
+        self.last_job = None
         circuits = [run_input] if isinstance(run_input, QuantumCircuit) else run_input
 
         if not circuits:
@@ -805,12 +805,13 @@ class QDMIBackend(BackendV2):
             msg = f"Invalid 'memory' value: {memory!r}"
             raise CircuitValidationError(msg)
 
-        supported_formats = self._device.supported_program_formats()
-
-        qdmi_jobs: list[QDMIJobHandle] = []
+        max_retries = options.get("max_retries", self._options.max_retries)
+        if isinstance(max_retries, bool) or not isinstance(max_retries, Integral) or max_retries < 0:
+            msg = f"max_retries must be a nonnegative integer, got {max_retries!r}."
+            raise CircuitValidationError(msg)
+        max_retries = int(max_retries)
         prepared_circuits: list[QuantumCircuit] = []
         # Prepare every circuit before submitting any job, so validation cannot leave a partial batch.
-        serialized_circuits: list[tuple[str | bytes, ProgramFormat]] = []
 
         for idx, circuit in enumerate(circuits):
             bound_circuit = circuit
@@ -836,24 +837,18 @@ class QDMIBackend(BackendV2):
 
             self._validate_circuit(bound_circuit)
 
-            # Serialize the circuit into a program format the device accepts
-            serialized_circuits.append(self._serialize_circuit(bound_circuit, supported_formats))
             prepared_circuits.append(bound_circuit)
 
-        # Second pass: submit all validated circuits
-        try:
-            for program, program_format in serialized_circuits:
-                try:
-                    qdmi_jobs.append(
-                        self._device.submit_job(program=program, program_format=program_format, num_shots=shots)
-                    )
-                except Exception as exc:
-                    msg = f"Failed to submit job to device: {exc}"
-                    raise JobSubmissionError(msg) from exc
-            return QDMIJob(self, qdmi_jobs, prepared_circuits, shots=shots, memory=memory)
-        except BaseException:
-            _cancel_jobs(qdmi_jobs)
-            raise
+        job = QDMIJob.from_circuits(
+            self,
+            prepared_circuits,
+            shots=shots,
+            memory=memory,
+            max_retries=max_retries,
+        )
+        self.last_job = job
+        job.submit()
+        return job
 
 
 # Register bundled OpenQASM serializers when the Qiskit adapter is imported.

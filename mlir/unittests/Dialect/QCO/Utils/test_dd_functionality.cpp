@@ -41,8 +41,10 @@
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Parser/Parser.h"
+#include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
+#include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/FormatVariadic.h"
@@ -1807,6 +1809,42 @@ TEST_F(QCODDFunctionalityTest, Rejects) {
   }
 }
 
+TEST_F(QCODDFunctionalityTest, ExecuteParameterizedGateCallsWithGlobalPhase) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func private @gate(%angle: f64, %q: !qco.qubit) -> !qco.qubit
+        attributes {mqt.unitary} {
+      %scale = arith.constant -0.5 : f64
+      %phase = arith.mulf %angle, %scale : f64
+      qco.gphase(%phase)
+      %out = qco.rx(%angle) %q : !qco.qubit -> !qco.qubit
+      return %out : !qco.qubit
+    }
+    func.func @main(%angle: f64) {
+      %q = qco.static 0 : !qco.qubit
+      %a = qco.call @gate(%angle, %q) : (f64, !qco.qubit) -> !qco.qubit
+      %b = qco.call @gate(%angle, %a) : (f64, !qco.qubit) -> !qco.qubit
+      qco.sink %b : !qco.qubit
+      return
+    }
+  })mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+  auto function = mainFunc(*mod);
+  DDArgumentBindings bindings;
+  bindings[function.getArgument(0)] =
+      FloatAttr::get(Float64Type::get(context.get()), std::numbers::pi / 2);
+  dd::Package package(1);
+  auto result = buildFunctionality(function, package, bindings);
+  ASSERT_TRUE(succeeded(result));
+  const auto matrix = result->getMatrix(1);
+  for (size_t row = 0; row < 2; ++row) {
+    for (size_t column = 0; column < 2; ++column) {
+      EXPECT_NEAR(std::abs(matrix[row][column] - (row == column ? 0. : -1.)),
+                  0., 1e-12);
+    }
+  }
+}
+
 TEST_F(QCODDFunctionalityTest, SimulateScfForAndFuncCallWithClassicalValues) {
   auto mod = parseSourceString<ModuleOp>(R"mlir(
     module {
@@ -2107,8 +2145,8 @@ TEST_F(QCODDFunctionalityTest, RejectsUnsupportedFuncCalls) {
 TEST_F(QCODDFunctionalityTest, HandlesScfForBounds) {
   for (const auto [lower, upper, step, succeeds] : {
            std::tuple<int64_t, int64_t, int64_t, bool>{3, 3, 1, true},
-           {0, 10000, 1, true},
-           {0, 10001, 1, false},
+           {0, 100000, 1, true},
+           {0, 100001, 1, true},
            {0, 3, 0, false},
            {0, 3, -1, false},
        }) {
@@ -2202,11 +2240,11 @@ TEST_F(QCODDFunctionalityTest, HandlesScfForBounds) {
   expectSimulatesFromZero(mainFunc(*unsignedExtreme), false);
 }
 
-TEST_F(QCODDFunctionalityTest, ScfForSharesExecutionBudget) {
+TEST_F(QCODDFunctionalityTest, ExecutesNestedCountedLoops) {
   auto mod = buildModule([](QCOProgramBuilder& b) {
     auto q = b.staticQubit(0);
     auto outer = b.scfFor(
-        0, 100, 1, ValueRange{q},
+        0, 1000, 1, ValueRange{q},
         [&](Value /*iv*/, ValueRange outerArgs) -> SmallVector<Value> {
           return b.scfFor(0, 100, 1, outerArgs,
                           [&](Value /*innerIv*/, ValueRange innerArgs)
@@ -2217,19 +2255,16 @@ TEST_F(QCODDFunctionalityTest, ScfForSharesExecutionBudget) {
   });
   ASSERT_TRUE(mod);
 
-  auto dd = std::make_unique<dd::Package>(1);
-  EXPECT_TRUE(
-      failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng)));
-  EXPECT_TRUE(dd->getRootSet<dd::vNode>().empty());
+  expectSimulatesFromZero(mainFunc(*mod), false);
 }
 
-TEST_F(QCODDFunctionalityTest, ExecutionBudgetIncludesBranchesAndCalls) {
+TEST_F(QCODDFunctionalityTest, ExecutesBranchesAndCallsInCountedLoops) {
   for (const StringRef source : {
            R"mlir(module {
              func.func @main() {
                %true = arith.constant true
                %zero = arith.constant 0 : index
-               %limit = arith.constant 10000 : index
+               %limit = arith.constant 100000 : index
                %one = arith.constant 1 : index
                scf.for %i = %zero to %limit step %one {
                  scf.if %true {
@@ -2244,7 +2279,7 @@ TEST_F(QCODDFunctionalityTest, ExecutionBudgetIncludesBranchesAndCalls) {
              }
              func.func @main() {
                %zero = arith.constant 0 : index
-               %limit = arith.constant 10000 : index
+               %limit = arith.constant 100000 : index
                %one = arith.constant 1 : index
                scf.for %i = %zero to %limit step %one {
                  func.call @noop() : () -> ()
@@ -2253,7 +2288,87 @@ TEST_F(QCODDFunctionalityTest, ExecutionBudgetIncludesBranchesAndCalls) {
              }
            })mlir",
        }) {
-    expectMlirSimulationFails(0, source);
+    auto mod = parseSourceString<ModuleOp>(source, context.get());
+    ASSERT_TRUE(mod);
+    expectSimulatesFromZero(mainFunc(*mod), false);
+  }
+}
+
+TEST_F(QCODDFunctionalityTest, RejectsUnboundedWhileLoop) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main() {
+      %true = arith.constant true
+      scf.while : () -> () {
+        scf.condition(%true)
+      } do {
+        scf.yield
+      }
+      return
+    }
+  })mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  dd::Package package(0);
+  EXPECT_TRUE(failed(
+      simulate(mainFunc(*moduleOp), dd::makeZeroState(0, package), package, rng,
+               DDArgumentBindings(), {.maxWhileIterations = 10})));
+}
+
+TEST_F(QCODDFunctionalityTest, SharesExactWhileBudgetAcrossCalls) {
+  for (const auto& [first, second, accepted, limit] : {
+           std::tuple{100, 0, true, size_t{100}},
+           {101, 0, false, 100},
+           {50, 50, true, 100},
+           {50, 51, false, 100},
+           {100001, 0, true, DDExecutionOptions{}.maxWhileIterations},
+       }) {
+    SCOPED_TRACE(first);
+    SCOPED_TRACE(second);
+    const auto source = llvm::formatv(R"mlir(
+      module {{
+        func.func private @consume(%limit: index) {{
+          %zero = arith.constant 0 : index
+          %one = arith.constant 1 : index
+          %result = scf.while (%i = %zero) : (index) -> index {{
+            %condition = arith.cmpi slt, %i, %limit : index
+            scf.condition(%condition) %i : index
+          } do {{
+          ^bb0(%i: index):
+            %next = arith.addi %i, %one : index
+            scf.yield %next : index
+          }
+          return
+        }
+        func.func @main() {{
+          %first = arith.constant {0} : index
+          %second = arith.constant {1} : index
+          func.call @consume(%first) : (index) -> ()
+          func.call @consume(%second) : (index) -> ()
+          return
+        }
+      }
+    )mlir",
+                                      first, second)
+                            .str();
+    auto moduleOp = parseSourceString<ModuleOp>(source, context.get());
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    bool diagnosed = false;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      diagnosed |= diagnostic.str().find("configured while-iteration limit") !=
+                   std::string::npos;
+      return success();
+    });
+    dd::Package package(0);
+    auto output =
+        simulate(mainFunc(*moduleOp), dd::makeZeroState(0, package), package,
+                 rng, DDArgumentBindings(), {.maxWhileIterations = limit});
+    EXPECT_EQ(succeeded(output), accepted);
+    EXPECT_EQ(diagnosed, !accepted);
+    if (succeeded(output)) {
+      EXPECT_TRUE(output->isOneTerminal());
+      package.decRef(*output);
+    }
   }
 }
 
@@ -2657,6 +2772,68 @@ TEST_F(QCODDFunctionalityTest, SampleDefersNestedTerminalMeasurement) {
   ASSERT_TRUE(succeeded(histogram));
   ASSERT_EQ(histogram->size(), 2U);
   EXPECT_EQ(histogram->at("0") + histogram->at("1"), shots);
+}
+
+TEST_F(QCODDFunctionalityTest, FixedGatePowersPreserveFullMatrix) {
+  for (const auto* gate :
+       {"x", "y", "z", "h", "s", "sdg", "t", "tdg", "sx", "sxdg"}) {
+    const std::string source = std::string(R"mlir(module {
+      func.func @main(%exponent: f64) {
+        %q = qco.static 0 : !qco.qubit
+        %out = qco.pow(%exponent) (%a = %q) {
+          %b = qco.)mlir") + gate +
+                               R"mlir( %a : !qco.qubit -> !qco.qubit
+          qco.yield %b : !qco.qubit
+        } : {!qco.qubit} -> {!qco.qubit}
+        qco.sink %out : !qco.qubit
+        return
+      }
+    })mlir";
+    auto original = parseSourceString<ModuleOp>(source, context.get());
+    auto rewritten = parseSourceString<ModuleOp>(source, context.get());
+    ASSERT_TRUE(original);
+    ASSERT_TRUE(rewritten);
+    PassManager manager(context.get());
+    manager.addPass(createCanonicalizerPass());
+    ASSERT_TRUE(succeeded(manager.run(*rewritten)));
+    auto before = mainFunc(*original);
+    auto after = mainFunc(*rewritten);
+    EXPECT_TRUE(after.getBody().getOps<PowOp>().empty());
+    for (const auto exponent :
+         {-3.5, -0.5, 0., 0.5, 1.25, 3., 9007199254740991.}) {
+      SCOPED_TRACE(std::string(gate) + "^" + std::to_string(exponent));
+      const auto value =
+          FloatAttr::get(Float64Type::get(context.get()), exponent);
+      OwningOpRef<ModuleOp> constant = original->clone();
+      auto constantFunction = mainFunc(*constant);
+      OpBuilder builder(context.get());
+      builder.setInsertionPointToStart(&constantFunction.front());
+      auto constantExponent =
+          arith::ConstantOp::create(builder, constantFunction.getLoc(), value);
+      constantFunction.getArgument(0).replaceAllUsesWith(constantExponent);
+      ASSERT_TRUE(succeeded(manager.run(*constant)));
+      EXPECT_TRUE(constantFunction.getBody().getOps<PowOp>().empty());
+      dd::Package package(1);
+      auto expected =
+          buildFunctionality(before, package, {{before.getArgument(0), value}});
+      ASSERT_TRUE(succeeded(expected));
+      const auto left = expected->getMatrix(1);
+      for (auto function : {after, constantFunction}) {
+        auto actual = buildFunctionality(function, package,
+                                         {{function.getArgument(0), value}});
+        ASSERT_TRUE(succeeded(actual));
+        const auto right = actual->getMatrix(1);
+        for (size_t row = 0; row < 2; ++row) {
+          for (size_t column = 0; column < 2; ++column) {
+            EXPECT_NEAR(std::abs(left[row][column] - right[row][column]), 0.,
+                        5e-13);
+          }
+        }
+        package.decRef(*actual);
+      }
+      package.decRef(*expected);
+    }
+  }
 }
 
 TEST_F(QCODDFunctionalityTest, SymbolicParametersUseBindings) {

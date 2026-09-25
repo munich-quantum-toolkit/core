@@ -182,6 +182,29 @@ TEST(QCToQIRAdaptiveNativeTest, UsesSharedAllocationVerifierForStandalonePass) {
   EXPECT_TRUE(module->lookupSymbol<func::FuncOp>("main"));
 }
 
+TEST(QCToQIRAdaptiveNativeTest, RejectsExplicitRuntimeAssertions) {
+  MLIRContext context;
+  context.loadDialect<arith::ArithDialect, func::FuncDialect,
+                      cf::ControlFlowDialect>();
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main() attributes {mqt.entry_point} {
+      %condition = arith.constant false
+      cf.assert %condition, "unsupported runtime precondition"
+      return
+    }
+  })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  bool diagnosed = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    diagnosed |= diagnostic.str().find("cf.assert") != std::string::npos;
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*moduleOp)));
+  EXPECT_TRUE(diagnosed);
+}
+
 TEST(QCToQIRAdaptiveNativeTest, RejectsMultipleReturnsBeforeOutputPreparation) {
   MLIRContext context;
   context
@@ -526,37 +549,6 @@ TEST(QCToQIRAdaptiveNativeTest,
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
 }
 
-TEST(QCToQIRAdaptiveNativeTest, LowersControlFlowAssertions) {
-  MLIRContext context;
-  context
-      .loadDialect<qc::QCDialect, arith::ArithDialect, cf::ControlFlowDialect,
-                   func::FuncDialect, LLVM::LLVMDialect>();
-  qc::QCProgramBuilder builder(&context);
-  builder.initialize();
-  auto condition = LLVM::UndefOp::create(builder, builder.getI1Type());
-  cf::AssertOp::create(builder, condition, "runtime precondition");
-  auto module = builder.finalize();
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversion(*module)));
-  EXPECT_TRUE(succeeded(verify(*module)));
-
-  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>("abort"));
-  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>("puts"));
-  EXPECT_TRUE(module->lookupSymbol<LLVM::GlobalOp>("assert_msg"));
-  bool retainsAssertion = false;
-  bool hasConditionalBranch = false;
-  bool hasUnreachableFailure = false;
-  module->walk([&](Operation* operation) {
-    retainsAssertion |= isa<cf::AssertOp>(operation);
-    hasConditionalBranch |= isa<LLVM::CondBrOp>(operation);
-    hasUnreachableFailure |= isa<LLVM::UnreachableOp>(operation);
-  });
-  EXPECT_FALSE(retainsAssertion);
-  EXPECT_TRUE(hasConditionalBranch);
-  EXPECT_TRUE(hasUnreachableFailure);
-}
-
 TEST(QCToQIRAdaptiveNativeTest, LowersPopulationCountThroughMathToLLVM) {
   MLIRContext context;
   context.loadDialect<qc::QCDialect, func::FuncDialect, LLVM::LLVMDialect,
@@ -894,29 +886,42 @@ TEST(QCToQIRAdaptiveNativeTest, RecordsReturnedRegisterMeasurement) {
       module->lookupSymbol<LLVM::GlobalOp>("qir.result_label_named_result"));
 }
 
-TEST(QCToQIRAdaptiveNativeTest, RejectsNonMeasurementClassicalStore) {
-  MLIRContext context;
-  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
-                      LLVM::LLVMDialect, memref::MemRefDialect>();
-  qc::QCProgramBuilder builder(&context);
-  builder.initialize();
-  auto c = builder.allocClassicalBitRegister(1);
-  builder.storeClassicalBit(builder.boolConstant(true), c, 0);
-  builder.retype(c.getType());
-  auto module = builder.finalize(c);
-  ASSERT_TRUE(module);
+TEST(QCToQIRAdaptiveNativeTest, RecordsComputedClassicalWrites) {
+  for (const auto& [wholeRegister, measured] : {
+           std::pair{false, false},
+           {true, false},
+           {true, true},
+       }) {
+    SCOPED_TRACE(wholeRegister);
+    SCOPED_TRACE(measured);
+    MLIRContext context;
+    context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                        LLVM::LLVMDialect, memref::MemRefDialect>();
+    qc::QCProgramBuilder builder(&context);
+    builder.initialize();
+    auto reg = builder.allocClassicalBitRegister(wholeRegister ? 2 : 1);
+    if (measured) {
+      builder.measure(builder.allocQubit(), reg, 0);
+    }
+    if (wholeRegister) {
+      auto value =
+          arith::ConstantIntOp::create(builder, builder.getUnknownLoc(), 3, 2);
+      cbit::WriteOp::create(builder, builder.getUnknownLoc(), value, reg);
+    } else {
+      builder.storeClassicalBit(builder.boolConstant(true), reg, 0);
+    }
+    builder.retype(reg.getType());
+    auto moduleOp = builder.finalize(reg);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
-  bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    std::string message;
-    llvm::raw_string_ostream stream(message);
-    diagnostic.print(stream);
-    sawExpectedDiagnostic |= StringRef(message).contains(
-        "does not support non-measurement stores to returned CBit registers");
-    return success();
-  });
-  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*module)));
-  EXPECT_TRUE(sawExpectedDiagnostic);
+    ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*moduleOp)));
+    EXPECT_TRUE(succeeded(verify(*moduleOp)));
+    EXPECT_TRUE(
+        moduleOp->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_BOOL_RECORD_OUTPUT));
+    EXPECT_FALSE(moduleOp->lookupSymbol<LLVM::LLVMFuncOp>(
+        qir::QIR_RESULT_ARRAY_RECORD_OUTPUT));
+  }
 }
 
 TEST(QCToQIRAdaptiveNativeTest, AcceptsZeroInitializedClassicalRegister) {
@@ -1031,7 +1036,7 @@ TEST(QCToQIRAdaptiveNativeTest, SupportsDynamicInternalRegisterIndices) {
   EXPECT_TRUE(succeeded(verify(*module)));
 }
 
-TEST(QCToQIRAdaptiveNativeTest, RejectsNonMeasurementStoreAfterMeasurement) {
+TEST(QCToQIRAdaptiveNativeTest, RecordsComputedStoreAfterMeasurement) {
   MLIRContext context;
   context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
                       LLVM::LLVMDialect, memref::MemRefDialect>();
@@ -1045,17 +1050,10 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsNonMeasurementStoreAfterMeasurement) {
   auto module = builder.finalize(c);
   ASSERT_TRUE(module);
 
-  bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    std::string message;
-    llvm::raw_string_ostream stream(message);
-    diagnostic.print(stream);
-    sawExpectedDiagnostic |= StringRef(message).contains(
-        "does not support non-measurement stores to returned CBit registers");
-    return success();
-  });
-  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*module)));
-  EXPECT_TRUE(sawExpectedDiagnostic);
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+  EXPECT_TRUE(
+      module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_BOOL_RECORD_OUTPUT));
 }
 
 TEST(QCToQIRAdaptiveNativeTest, RejectsUnsupportedIntegerMemref) {

@@ -16,6 +16,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from itertools import permutations
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 import numpy as np
 import pytest
@@ -1366,6 +1367,87 @@ def test_custom_gate_definitions_are_interned_by_name_and_body() -> None:
     assert 'mqt.source_name = "shared"' in program.ir
     assert [item.operation.name for item in restored.data] == ["shared", "shared", "shared"]
     assert np.allclose(Operator(restored).data, Operator(circuit).data)
+
+
+@pytest.mark.parametrize("wrapper", ["plain", "nested", "controlled", "annotated"])
+def test_array_parameter_gate_definitions(wrapper: str) -> None:
+    """Import array-valued gates without sending objects to the scalar C API."""
+    gate = library.PermutationGate([2, 0, 1])
+    if wrapper == "nested":
+        definition = QuantumCircuit(3)
+        definition.append(gate, [2, 0, 1])
+        gate = definition.to_gate()
+    elif wrapper == "controlled":
+        # Qiskit requires a definition before constructing an eager control.
+        definition = QuantumCircuit(3)
+        definition.swap(0, 2)
+        definition.swap(1, 2)
+        gate.definition = definition
+        gate = gate.control(1, annotated=False)
+    elif wrapper == "annotated":
+        gate = AnnotatedOperation(gate, [InverseModifier(), ControlModifier(1)])
+    circuit = QuantumCircuit(gate.num_qubits)
+    circuit.append(gate, list(reversed(range(gate.num_qubits))))
+
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+
+    assert np.allclose(Operator(restored).data, Operator(circuit).data)
+
+
+def test_array_parameter_definitions_remain_distinct() -> None:
+    """Preserve distinct permutation patterns in the same circuit."""
+    circuit = QuantumCircuit(3)
+    for pattern in ([2, 0, 1], [1, 0, 2], [2, 0, 1]):
+        circuit.append(library.PermutationGate(pattern), range(3))
+    program = QCProgram.from_qiskit(circuit)
+
+    assert program.ir.count("mqt.unitary") == 2
+    assert np.allclose(Operator(program.to_qiskit()).data, Operator(circuit).data)
+
+
+@pytest.mark.parametrize("pattern", list(permutations(range(4))))
+def test_permutation_lowering_patterns(pattern: tuple[int, ...]) -> None:
+    """Cover identity, disjoint cycles, and both orientations of long cycles."""
+    circuit = QuantumCircuit(4)
+    circuit.append(library.PermutationGate(list(pattern)), range(4))
+
+    assert np.allclose(Operator(QCProgram.from_qiskit(circuit).to_qiskit()).data, Operator(circuit).data)
+
+
+@pytest.mark.parametrize("pattern", [[0, 0, 2], [0, 1, 3], [-1, 1, 2]])
+def test_invalid_permutation_is_rejected(pattern: list[int]) -> None:
+    """Validate mutated input patterns before indexing the permutation."""
+    gate = library.PermutationGate([0, 1, 2])
+    gate.params[0][:] = pattern
+    circuit = QuantumCircuit(3)
+    circuit.append(gate, range(3))
+
+    with pytest.raises(RuntimeError, match="permutation"):
+        QCProgram.from_qiskit(circuit)
+
+
+def test_array_parameter_instruction_with_classical_operands() -> None:
+    """Resolve custom Instruction qubits and clbits through its definition."""
+    definition = QuantumCircuit(1, 1)
+    definition.x(0)
+    definition.measure(0, 0)
+    instruction = Instruction("array_measure", 1, 1, [np.array([1, 2])])
+    instruction.definition = definition
+    circuit = QuantumCircuit(2, 2)
+    circuit.append(instruction, [1], [1])
+
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+
+    assert restored == circuit.decompose()
+
+
+def test_opaque_array_parameter_instruction_is_rejected() -> None:
+    """Reject opaque object-valued operations with a catchable diagnostic."""
+    circuit = QuantumCircuit(1)
+    circuit.append(Instruction("opaque_array", 1, 0, [np.array([1, 2])]), [0])
+
+    with pytest.raises(RuntimeError, match="no circuit definition"):
+        QCProgram.from_qiskit(circuit)
 
 
 def test_custom_gate_with_standard_name_is_not_mistranslated() -> None:
@@ -3595,6 +3677,92 @@ def test_direct_symbolic_parameters_round_trip_with_shared_identity() -> None:
         Operator(restored.assign_parameters({restored_theta: value})).data,
         Operator(circuit.assign_parameters({theta: value})).data,
     )
+
+
+@pytest.mark.parametrize("identity", [0, (1 << 128) - 1])
+@pytest.mark.parametrize("pipeline", ["qc", "qco", "optimized"])
+def test_original_parameter_binds_after_compiler_round_trip(identity: int, pipeline: str) -> None:
+    """Keep the original externally bindable identity through native IR."""
+    theta = Parameter("theta", uuid=UUID(int=identity))
+    circuit = QuantumCircuit(1, global_phase=theta / 4)
+    circuit.ry(2 * theta, 0)
+    qc = QCProgram.from_qiskit(circuit)
+    program = QCProgram.from_mlir_str(qc.ir)
+    if pipeline != "qc":
+        qco = program.to_qco()
+        if pipeline == "optimized":
+            qco.run_pass_pipeline("mqt-qco-default")
+        program = qco.to_qc()
+    restored = program.to_qiskit()
+
+    assert restored.parameters == {theta}
+    assert np.allclose(
+        Operator(restored.assign_parameters({theta: 0.3})).data,
+        Operator(circuit.assign_parameters({theta: 0.3})).data,
+    )
+    assert program.copy().to_qiskit().parameters == {theta}
+
+
+def test_original_parameter_identity_is_shared_in_control_flow() -> None:
+    """Preserve free parameter identity in sibling conditional blocks."""
+    theta = Parameter("theta")
+    circuit = QuantumCircuit(1, 1, global_phase=theta)
+    with circuit.if_test((circuit.clbits[0], True)) as else_:
+        circuit.rx(theta, 0)
+    with else_:
+        circuit.ry(theta / 2, 0)
+    restored = QCProgram.from_qiskit(circuit).to_qco().to_qiskit()
+
+    assert restored.parameters == {theta}
+    for block in restored.data[0].operation.blocks:
+        assert block.parameters == {theta}
+    assert not restored.assign_parameters({theta: 0.2}).parameters
+
+
+def test_original_parameter_vector_binds_after_mlir_round_trip() -> None:
+    """Preserve vector element and root UUIDs, including unused elements."""
+    vector = ParameterVector("theta", 12)
+    circuit = QuantumCircuit(1, global_phase=vector[0])
+    circuit.rx(vector[10] + vector[2], 0)
+    program = QCProgram.from_qiskit(circuit).to_qco()
+    restored = QCProgram.from_mlir_str(program.to_qc().ir).to_qiskit()
+
+    assert restored.parameters == {vector[0], vector[2], vector[10]}
+    restored_vector = next(iter(restored.parameters)).vector
+    assert restored_vector.uuid == vector.uuid
+    assert list(restored_vector) == list(vector)
+    values = [0.01 * index for index in range(12)]
+    assert np.allclose(
+        Operator(restored.assign_parameters({vector: values}, strict=False)).data,
+        Operator(circuit.assign_parameters({vector: values}, strict=False)).data,
+    )
+
+
+@pytest.mark.parametrize("second_identity", [1, 2])
+def test_vector_input_id_consistency(second_identity: int) -> None:
+    """Support opaque group names but require one root UUID per vector."""
+    program = QCProgram.from_mlir_str(
+        """module {
+  func.func @main(
+      %a: f64 {mqt.input_name = "v[0]", mqt.input_id = 0 : i128,
+               mqt.parameter_group = {identity = "opaque", name = "v", index = 0 : i64, size = 2 : i64}},
+      %b: f64 {mqt.input_name = "v[1]", mqt.input_id = SECOND : i128,
+               mqt.parameter_group = {identity = "opaque", name = "v", index = 1 : i64, size = 2 : i64}})
+      attributes {mqt.entry_point} {
+    %q = qc.alloc : !qc.qubit
+    qc.rx(%a) %q : !qc.qubit
+    qc.rz(%b) %q : !qc.qubit
+    qc.dealloc %q : !qc.qubit
+    return
+  }
+}""".replace("SECOND", str(second_identity))
+    )
+    if second_identity == 1:
+        restored = program.to_qiskit()
+        assert [parameter.uuid.int for parameter in restored.parameters] == [0, 1]
+    else:
+        with pytest.raises(RuntimeError, match="inconsistent parameter-vector input identities"):
+            program.to_qiskit()
 
 
 def test_sparse_parameter_vector_round_trip_preserves_order_and_binding() -> None:

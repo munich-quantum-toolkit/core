@@ -1,6 +1,3 @@
-<!--- This file has been generated from an external template. Please do not modify it directly. -->
-<!--- Changes should be contributed to https://github.com/munich-quantum-toolkit/templates. -->
-
 # Tooling
 
 This page summarizes the main tools, software, and standards used in MQT Core.

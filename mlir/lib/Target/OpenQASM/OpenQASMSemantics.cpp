@@ -63,7 +63,7 @@ namespace {
 constexpr uint64_t REGISTER_WIDTH_LIMIT = 100'000;
 constexpr uint64_t TOTAL_REGISTER_ELEMENT_LIMIT = 100'000;
 constexpr size_t EXPRESSION_DEPTH_LIMIT = 256;
-constexpr size_t TYPED_STATEMENT_LIMIT = 1'000'000;
+constexpr size_t TYPED_STATEMENT_LIMIT = 100'000'000;
 constexpr size_t AFFINE_DISTINCTNESS_COMPARISON_LIMIT = 1'024;
 constexpr uint32_t DEFAULT_ANGLE_WIDTH = 52;
 constexpr uint32_t MAX_ANGLE_WIDTH = 52;

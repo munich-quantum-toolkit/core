@@ -208,10 +208,13 @@ print(qiskit_job.get_counts())
 
 ## Retrieve the QIR output stream through QDMI
 
-Counts summarize recorded measurement bits. QIR's textual output stream also
-preserves output labels, array and tuple records, other recorded scalar values,
-and shot framing. Enable capture with DDSIM's boolean `custom2` parameter, then
-request its string result from `CustomProperty.CUSTOM1`:
+Counts summarize recorded measurement results and Boolean values. Adaptive
+compilation records returned CBit registers containing computed values as
+Booleans, preserving bit order and overwritten values. Registers containing only
+measurement results retain result-array recording. QIR's textual output stream
+also preserves output labels, array and tuple records, other recorded scalar
+values, and shot framing. Enable capture with DDSIM's boolean `custom2`
+parameter, then request its string result from `CustomProperty.CUSTOM1`:
 
 ```{code-cell} ipython3
 from mqt.core.qdmi import CustomProperty
@@ -302,13 +305,14 @@ result bits directly and formats textual records only when capture is enabled.
 Sampling supports Base and Adaptive formats. With output capture disabled, for
 either profile with an acyclic, unconditional entry path, constant gate
 arguments, terminal Z measurements and scalar result records, DDSIM prepares the
-DD once and samples it for all shots. The runtime retains repeated and reordered
+DD once and samples it for all shots. The runtime retains repeated or reordered
 result records in program order, including after SWAPs. The QDMI device reverses
 each shot for most-significant-bit first serialization before constructing its
 histogram. Programs with classical memory accesses, helper calls, conditional
-branches, resets, dynamic resources or generic controlled argument arrays use
-ordinary per-shot execution. These inputs remain supported by the runner; they
-are not eligible for this sampling optimization. A fixed seed reproduces a shot
+branches, resets, dynamic resources, Boolean output records, or generic
+controlled argument arrays use ordinary per-shot execution. These inputs remain
+supported by the runner; they are not eligible for this sampling optimization,
+including when all Boolean records are constant. A fixed seed reproduces a shot
 sequence for the same execution path; sequences need not match across different
 sampling algorithms or software versions.
 
@@ -345,9 +349,6 @@ Both profiles preserve global phase and logical wire order, including SWAPs.
 LLVM target triples must match the host architecture and operating system
 because the JIT executes in process.
 
-The generic submission APIs reject QDMI calibration and batch-job formats. Use
-{py:meth}`~mqt.core.qdmi.Device.submit_calibration_job` or
-{cpp-api:func}`qdmi::Device::submitCalibrationJob` for calibration. These APIs
-accept an optional provider-defined configuration payload and no shot count; the
-payload is not an executable circuit. Batch jobs contain job handles rather than
-serialized program bytes and require a separate typed API.
+The generic submission APIs reject the QDMI batch-job format. Batch jobs contain
+job handles rather than serialized program bytes and require a separate typed
+API.

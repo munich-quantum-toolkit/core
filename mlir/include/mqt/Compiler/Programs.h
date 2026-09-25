@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "mqt/Compiler/CompilationOptions.h"
+
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OwningOpRef.h"
@@ -240,8 +242,7 @@ public:
 
   /// Run an MLIR textual QCO pass pipeline in place.
   [[nodiscard]] bool runPassPipeline(std::string_view pipeline,
-                                     bool enableTiming = false,
-                                     bool enableStatistics = false);
+                                     const CompilationOptions& options = {});
 
   /// Merge consecutive single-qubit rotation gates.
   [[nodiscard]] bool mergeSingleQubitRotationGates();
@@ -270,17 +271,16 @@ public:
   ///
   /// Do not rely on the program contents if compilation fails.
   [[nodiscard]] bool compileForTarget(const TargetEnvironment& environment,
-                                      bool enableTiming = false,
-                                      bool enableStatistics = false);
+                                      const CompilationOptions& options = {});
 
   /// Synthesize native operations for an all-to-all target in place.
   ///
   /// Assigns static sites and resynthesizes constant two-qubit runs in the
   /// native basis, without routing.
   /// Do not rely on the program contents if synthesis fails.
-  [[nodiscard]] bool synthesizeForTarget(const TargetEnvironment& environment,
-                                         bool enableTiming = false,
-                                         bool enableStatistics = false);
+  [[nodiscard]] bool
+  synthesizeForTarget(const TargetEnvironment& environment,
+                      const CompilationOptions& options = {});
 
   /// Consume this program and convert it to QC.
   [[nodiscard]] std::optional<QCProgram> intoQC() &&;
@@ -373,7 +373,7 @@ using CompilerProgram = std::variant<QCProgram, QCOProgram, JeffProgram,
 [[nodiscard]] std::optional<CompilerProgram>
 runDefaultPipeline(CompilerInput&& program, ProgramFormat output,
                    std::string_view qcoPipeline = "mqt-qco-default",
-                   bool enableTiming = false, bool enableStatistics = false);
+                   const CompilationOptions& options = {});
 
 /// Run the coordinated default compiler pipeline for a target.
 ///
@@ -382,6 +382,6 @@ runDefaultPipeline(CompilerInput&& program, ProgramFormat output,
 [[nodiscard]] std::optional<CompilerProgram>
 runDefaultPipeline(CompilerInput&& program,
                    const TargetEnvironment& environment,
-                   bool enableTiming = false, bool enableStatistics = false);
+                   const CompilationOptions& options = {});
 
 } // namespace mlir

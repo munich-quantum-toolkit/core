@@ -51,53 +51,50 @@ Then choose a starting point:
 
 | Task                                 | Start here                                                                                                                                                                                                                                                                    |
 | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Compile and execute a program**    | Estimate a phase with [QPE](https://mqt.readthedocs.io/projects/core/en/stable/getting_started.html); explore [compilation and execution](https://mqt.readthedocs.io/projects/core/en/stable/compilation/index.html).                                                         |
+| **Compile and execute a program**    | Factor 21 with [Shor's algorithm](https://mqt.readthedocs.io/projects/core/en/stable/getting_started.html); explore [compilation and execution](https://mqt.readthedocs.io/projects/core/en/stable/compilation/index.html).                                                   |
 | **Connect or implement a device**    | [Discover devices](https://mqt.readthedocs.io/projects/core/en/stable/qdmi/driver.html#python-bindings), [integrate SDKs, or implement an interface](https://mqt.readthedocs.io/projects/core/en/stable/qdmi/index.html).                                                     |
 | **Use decision diagrams**            | Represent states and operations in C++ or Python: [DD quickstart](https://mqt.readthedocs.io/projects/core/en/stable/dd_package.html#quickstart).                                                                                                                             |
-| **Generate and evaluate benchmarks** | [Configure quantum programs](https://mqt.readthedocs.io/projects/core/en/stable/benchmarks.html#configure-a-typed-instance) and compare results with analytic references.                                                                                                     |
+| **Generate and evaluate benchmarks** | [Configure quantum programs](https://mqt.readthedocs.io/projects/core/en/stable/benchmarks.html#configure-a-typed-instance) and compare results with references.                                                                                                              |
 | **Exchange quantum programs**        | [Qiskit to QIR](https://mqt.readthedocs.io/projects/core/en/stable/qir/index.html#from-a-qiskit-circuit-to-qir), [OpenQASM](https://mqt.readthedocs.io/projects/core/en/stable/mlir/OpenQASM.html), and [jeff](https://mqt.readthedocs.io/projects/core/en/stable/jeff.html). |
 | **Embed or extend MQT Core**         | [Use the C++ libraries](https://mqt.readthedocs.io/projects/core/en/stable/cpp_api.html#use-the-dd-library) or [extend the MLIR compiler](https://mqt.readthedocs.io/projects/core/en/stable/development.html#mlir).                                                          |
 
 ## Getting Started
 
-Estimate the phase `3/8` with eight bits of precision using
-**iterative quantum phase estimation (QPE)**. This uses two qubits and
-measurement feedback. Compile for the bundled DDSIM device, then submit the
-compiled program:
+Factor 21 with **Shor's algorithm**, using modular arithmetic, a reused query
+qubit, and measurement feedback. The callback compiles each circuit for the
+bundled DDSIM device and submits 64 shots through each payload format:
 
 ```python
-from fractions import Fraction
-
-from mqt.core.bench import qpe
+from mqt.core.bench import shor
 from mqt.core.mlir import compile_program, submit_program
+from mqt.core.qdmi import ProgramFormat
 from mqt.core.qdmi.driver import open_device
 
-benchmark = qpe.QPE(qpe.Options(precision=8, phase=Fraction(3, 8), method=qpe.Method.ITERATIVE))
-program = benchmark.generate()
 device = open_device("mqt.ddsim.default")
-compiled = compile_program(program, target=device)
-job = submit_program(compiled, target=device, num_shots=1024)
-job.wait()
 
-counts = job.get_counts()
-outcome = max(counts, key=lambda bits: counts[bits])
-phase = Fraction(int(outcome, 2), 2**benchmark.output.width)
-assert phase == benchmark.options.phase
-assert benchmark.evaluate(counts).total_variation_distance < 1e-12
-print(f"Counts: {counts}")
-print(f"Estimated phase: {phase}")
+
+def run(benchmark: shor.Shor) -> dict[str, int]:
+    compiled = compile_program(benchmark.generate(), target=device, program_format=program_format)
+    job = submit_program(compiled, target=device, num_shots=64, custom1=17)
+    job.wait()
+    return job.get_counts()
+
+
+for program_format in (ProgramFormat.QIR_ADAPTIVE_MODULE, ProgramFormat.QASM3):
+    result = shor.factor(21, run)
+    assert result.status == shor.FactorStatus.SUCCESS
+    assert result.factors == (3, 7)
+    print(f"{program_format.name}: {result.factors}")
 ```
 
 ```text
-Counts: {'01100000': 1024}
-Estimated phase: 3/8
+QIR_ADAPTIVE_MODULE: (3, 7)
+QASM3: (3, 7)
 ```
 
 The
-[QPE walkthrough](https://mqt.readthedocs.io/projects/core/en/stable/getting_started.html)
-compares standard and iterative QPE and evaluates a phase that cannot be
-represented exactly with eight bits. This phase-gate benchmark illustrates the
-phase-estimation step used in algorithms such as Shor's.
+[factoring walkthrough](https://mqt.readthedocs.io/projects/core/en/stable/getting_started.html)
+explains the measured phase, continued fractions, and verified factor recovery.
 
 ## Development
 

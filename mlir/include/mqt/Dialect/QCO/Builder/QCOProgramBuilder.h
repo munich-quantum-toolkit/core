@@ -52,14 +52,14 @@ namespace qco {
 /// `mqt.entry_point` function. Helpers receive allocated qubits as arguments.
 ///
 /// @par Structured control flow:
+/// These rules apply to linear results; `qcoIf` may prepend classical results.
 /// Callbacks for `qcoIf`, `qcoIndexSwitch`, `scfFor`, and `scfWhile` must
-/// preserve input types and tensor register IDs by result position. Scalar
-/// qubit outputs may permute the input qubits but must preserve the set of
-/// extracted tensor slots. Results are assigned to input slots by position.
-/// Equal constant indices are supported; dynamic indices must use the same
-/// SSA value as the input. Unsupported changes terminate with a usage error.
-/// Reinsert qubits inside each callback and carry the full tensor when the set
-/// of extracted slots must change.
+/// preserve each input's type and qubit or register identity by result
+/// position. An extracted qubit must return to the same underlying register
+/// slot. Known resource and constant-index changes terminate with a usage
+/// error; equality of dynamic indices remains a program precondition. Carry
+/// complete tensors across region boundaries, or keep the remaining tensor
+/// outside the region while passing only extracted qubits.
 ///
 /// @par Example Usage:
 /// ```c++
@@ -110,8 +110,8 @@ public:
 
   /// Create a private function.
   ///
-  /// The callback must return one trailing qubit for every qubit argument, in
-  /// qubit-argument order.
+  /// The callback must return one trailing value for every scalar qubit or
+  /// complete quantum register argument, in argument order.
   /// The body must not dynamically allocate qubits or qubit tensors.
   func::FuncOp
   createFunction(StringRef name, TypeRange argumentTypes,
@@ -124,7 +124,7 @@ public:
 
   /// Call a function, using `qco.call` for a unitary function.
   ///
-  /// Ordinary results are followed by the updated qubit arguments.
+  /// Ordinary results are followed by updated scalar qubits and registers.
   SmallVector<Value> call(func::FuncOp callee, ValueRange operands);
 
   //===--------------------------------------------------------------------===//
@@ -1490,6 +1490,9 @@ public:
   /// Constructs an if operation that takes a bool Value and a range of qubit
   /// and qtensor values that are used in the then/else region of this
   /// operation. The values are passed down as block arguments to each region.
+  /// Both branches may return classical values before their linear results.
+  /// Result types must match between branches. Classical results require an
+  /// explicit elseBody; classical inputs are captured from the enclosing scope.
   /// Qubits that were extracted from a tensor that is used as an argument for
   /// this operation are automatically inserted before the operation is
   /// constructed.
@@ -1659,7 +1662,8 @@ public:
   /// Construct an scf.for operation
   ///
   /// Constructs an scf.for operation with the given loop boundaries and
-  /// stepsize and a range of qubit and qtensor values for its iter args. Qubits
+  /// stepsize and classical, qubit, or qtensor iter args, in any order. The
+  /// callback must preserve their types. Qubits
   /// that were extracted from a tensor that is used as an argument for this
   /// operation are automatically inserted before the operation is constructed.
   ///
@@ -1697,8 +1701,10 @@ public:
 
   /// Construct an scf.while operation
   ///
-  /// Constructs an scf.while with a range of qubit and qtensor values for its
-  /// iter args. Qubits that were extracted from a tensor that is used as an
+  /// Constructs an scf.while with classical, qubit, or qtensor iter args in any
+  /// order. Both callbacks must preserve their types. The before callback must
+  /// return the values passed to scfCondition. Qubits extracted from a tensor
+  /// that is used as an
   /// argument for this operation are automatically inserted before the
   /// operation is constructed.
   ///
@@ -1735,7 +1741,7 @@ public:
                       function_ref<SmallVector<Value>(ValueRange)> beforeBody,
                       function_ref<SmallVector<Value>(ValueRange)> afterBody);
 
-  /// Construct an scf.condition operation with yielded values
+  /// Construct an scf.condition with classical, qubit, or qtensor values
   ///
   /// @param condition Condition for the condition operation
   /// @param yieldedValues ValueRange of the yieldedValues
@@ -1874,24 +1880,12 @@ private:
   ///
   /// For each tensor in @p initArgs, any qubits extracted from it that
   /// are not also present in @p initArgs are inserted back. The latest tensor
-  /// values after inserting the qubits are returned. Qubit values are returned
-  /// without modifications.
+  /// values after inserting the qubits are returned. Other values are
+  /// unchanged.
   ///
   /// @param initArgs ValueRange of the initial values
   /// @return SmallVector of the updated values of the initial values.
   SmallVector<Value> prepareInitArgs(ValueRange initArgs);
-
-  struct RegisterInfo {
-    Type type;
-    int64_t regId;
-    Value regIndex;
-  };
-
-  /// Save input associations before constructing a structured region.
-  SmallVector<RegisterInfo> getRegisterInfo(ValueRange values) const;
-
-  /// Check callback results and restore indices that dominate the region.
-  void restoreRegisterInfo(ValueRange values, ArrayRef<RegisterInfo> inputs);
 
   /// Reinsert the given extracted qubits in definition order.
   Value insertExtractedQubits(Value tensor, MutableArrayRef<Qubit> qubits);

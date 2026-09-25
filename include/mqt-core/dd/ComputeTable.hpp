@@ -13,14 +13,15 @@
 
 #pragma once
 
+#include "dd/DDDefinitions.hpp"
 #include "dd/statistics/TableStatistics.hpp"
 
-#include <algorithm>
 #include <bit>
 #include <cstddef>
 #include <functional>
 #include <iostream>
 #include <stdexcept>
+#include <type_traits>
 #include <vector>
 
 namespace dd {
@@ -53,9 +54,9 @@ public:
   /// A triple consisting of the left operand, the right operand, and
   /// the result of a binary operation.
   struct Entry {
-    LeftOperandType leftOperand;
-    RightOperandType rightOperand;
-    ResultType result;
+    LeftOperandType leftOperand{};
+    RightOperandType rightOperand{};
+    ResultType result{};
   };
 
   /// Compute the hash value for a given pair of operands
@@ -66,7 +67,10 @@ public:
                                  const RightOperandType& rightOperand) const {
     const auto h1 = std::hash<LeftOperandType>{}(leftOperand);
     const auto h2 = std::hash<RightOperandType>{}(rightOperand);
-    const auto hash = combineHash(h1, h2);
+    /// Mix aligned addresses before reducing to the power-of-two bucket count.
+    const auto hash =
+        combineHash(std::is_pointer_v<LeftOperandType> ? murmur64(h1) : h1,
+                    std::is_pointer_v<RightOperandType> ? murmur64(h2) : h2);
     const auto mask = stats.numBuckets - 1;
     return hash & mask;
   }
@@ -123,7 +127,21 @@ public:
   /// Clear the compute table
   ///
   /// Sets all entries to invalid.
-  void clear() { std::fill(valid.begin(), valid.end(), false); }
+  void clear() {
+    valid.assign(valid.size(), false);
+    stats.reset();
+  }
+
+  /// Replace the bucket storage and discard cached results.
+  /// The capacity must be a power of two. Invalidates lookup result pointers.
+  /// Allocation failure leaves the table unchanged.
+  void resize(const size_t numBuckets) {
+    ComputeTable replacement(numBuckets);
+    table.swap(replacement.table);
+    valid.swap(replacement.valid);
+    stats.numBuckets = numBuckets;
+    stats.reset();
+  }
 
   /// Print the statistics of the compute table
   /// @param os The output stream to print to

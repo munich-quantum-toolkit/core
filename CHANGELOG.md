@@ -8,26 +8,6 @@ The format is based on a mixture of [Keep a Changelog] and [Common Changelog].
 This project adheres to [Semantic Versioning], with the exception that minor
 releases may include breaking changes.
 
-## [Unreleased]
-
-### Added
-
-- ✨ Add a 15-to-1 magic-state distillation benchmark with one to four
-  concatenated levels, ideal inputs, and C++, Python, and CLI interfaces.
-  ([#2543]) ([**@burgholzer**])
-
-### Changed
-
-- ✨ Optimize constant two-qubit blocks before placement and during native
-  synthesis. Remove cancelled interactions before routing and preserve cheaper
-  native operations in both target compilation and synthesis. Avoid redundant
-  cleanup in both target pipelines. ([#2537]) ([**@burgholzer**])
-
-### Fixed
-
-- 🐛 Execute parameterized unitary calls in DD simulation, including gate
-  helpers reimported from compiled OpenQASM. ([#2543]) ([**@burgholzer**])
-
 ## [4.0.0] - 2026-09-11
 
 ### MQT Core 4: a compiler foundation built on MLIR and LLVM
@@ -1104,7 +1084,6 @@ for previous changelogs._
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v4.0.0...HEAD
 [4.0.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v4.0.0
 [3.10.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.10.0
 [3.9.2]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.9.2
@@ -1132,9 +1111,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
-[#2543]: https://github.com/munich-quantum-toolkit/core/pull/2543
 [#2538]: https://github.com/munich-quantum-toolkit/core/pull/2538
-[#2537]: https://github.com/munich-quantum-toolkit/core/pull/2537
 [#2535]: https://github.com/munich-quantum-toolkit/core/pull/2535
 [#2531]: https://github.com/munich-quantum-toolkit/core/pull/2531
 [#2526]: https://github.com/munich-quantum-toolkit/core/pull/2526

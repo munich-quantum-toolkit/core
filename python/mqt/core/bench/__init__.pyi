@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""Typed benchmark instances and analytic references."""
+"""Typed benchmark instances and references."""
 
 from mqt.core.bench import bv as bv
 from mqt.core.bench import ghz as ghz
@@ -18,7 +18,9 @@ from mqt.core.bench import qft as qft
 from mqt.core.bench import qft_adder as qft_adder
 from mqt.core.bench import qpe as qpe
 from mqt.core.bench import repeat_until_success as repeat_until_success
+from mqt.core.bench import shor as shor
 from mqt.core.bench import teleportation as teleportation
+from mqt.core.bench import w_state as w_state
 
 class Output:
     """One logical classical output register."""
