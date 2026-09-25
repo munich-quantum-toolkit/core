@@ -615,7 +615,7 @@ private:
     const auto compoundLocation = current().loc;
     const auto compoundSpelling = current().spelling;
     if (compound) {
-      if (target->index.has_value()) {
+      if (target->index || target->slice) {
         return sink.error(current().loc,
                           "indexed compound assignments are not supported");
       }

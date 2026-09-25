@@ -103,6 +103,7 @@ TEST(OpenQASMFrontendTest, RejectsInvalidRegisterSlices) {
       {"int last = 2; measure q[0:last] -> c;", "runtime register slices"},
       {"int last = 2; barrier q[0:last];", "runtime register slices"},
       {"c[0:1] = 0;", "classical slice assignments"},
+      {"c[2:-1:0] ^= \"001\";", "indexed compound assignments"},
       {"bit[2] value = c[0:1];", "classical slice expressions"},
       {"gate local a { x a[:]; }", "cannot be indexed"},
       {"ctrl(2) @ x q[0:1], r[0];", "qubit operands"},
