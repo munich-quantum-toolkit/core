@@ -1676,13 +1676,12 @@ Raises:
     ValueError: When the program is not closed, is unsupported for statevector
         simulation, or the statevector dimensions exceed addressable memory.)pb");
 
-  m.def(
-      "sample", &sample, "program"_a, "shots"_a = 1024U, "seed"_a = 0U,
-      nb::sig("def sample(program: str | os.PathLike[str] | "
-              "qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | "
-              "JeffProgram | OpenQASMProgram, shots: int = 1024, seed: int = "
-              "0) -> dict[str, int]"),
-      R"pb(Sample a supported input after translating or converting it to QCO.
+  m.def("sample", &sample, "program"_a, "shots"_a = 1024U, "seed"_a = 0U,
+        nb::sig("def sample(program: str | os.PathLike[str] | "
+                "qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | "
+                "JeffProgram | OpenQASMProgram, shots: int = 1024, seed: int = "
+                "0) -> dict[str, int]"),
+        R"pb(Sample a supported input after translating or converting it to QCO.
 
 An existing QCO program is used without copying. See
 {py:meth}`QCOProgram.sample` for the shot, seed, histogram, and error

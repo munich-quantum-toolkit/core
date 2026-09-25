@@ -649,7 +649,7 @@ def test_custom_parameter_bytes_preserve_seed(ddsim_device: Device, submission: 
 @pytest.mark.parametrize("payload", [b"", struct.pack("=Q", 2**64 - 1), struct.pack("=q", -(2**63))])
 def test_custom_parameter_bytes_reject_invalid_seed_width(ddsim_device: Device, payload: bytes) -> None:
     """Empty payloads and 64-bit values cannot masquerade as the native int seed."""
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="parameter"):
         ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom1=payload)
 
 
