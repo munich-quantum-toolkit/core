@@ -516,6 +516,9 @@ auto QDMI_Job_impl_d::setParameter(QDMI_Job_Parameter param, const size_t size,
       QDMI_IS_INVALID_ENUM_VALUE(param, QDMI_JOB_PARAMETER)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
+  if (param == 1) {
+    return QDMI_ERROR_NOTSUPPORTED;
+  }
   return device_->api().device_job_set_parameter(
       deviceJob_, toDeviceJobParameter(param), size, value);
 }
