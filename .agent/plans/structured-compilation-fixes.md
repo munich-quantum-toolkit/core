@@ -11,7 +11,8 @@ diagnostics for unsupported inputs. Preserve quantum phase, wire identity,
 classical memory ordering, and QCO linearity.
 
 The affected boundaries are Boolean tensor conversion in
-`mlir/lib/Conversion/JeffToQCO/`, measurement destination preparation in
+`mlir/lib/Conversion/JeffToQCO/`, captured helper arguments in
+`mlir/lib/Conversion/QCOToJeff/`, measurement destination preparation in
 `mlir/lib/Conversion/QCToQIR/QIRCommon/`, and structured unitary lowering in
 `mlir/lib/Dialect/QCO/Transforms/NativeSynthesis/`.
 
@@ -27,6 +28,8 @@ The affected boundaries are Boolean tensor conversion in
 - Boolean array constants and creation import directly to CBit registers; length
   becomes the static register width. Invalid element counts and types fail
   before conversion. Wider integer arrays retain tensor conversion.
+- Jeff control-flow regions capture helper function arguments even when function
+  signature conversion has detached the original block arguments.
 - Shared QIR preparation moves pure, speculatable index computations before
   measurements after validating all output stores. Classical memory effects,
   measurement-dependent indices, and unsupported computations remain barriers.
@@ -41,8 +44,9 @@ The affected boundaries are Boolean tensor conversion in
 Build the following targets with the release preset and run their executables
 under `build/release/mlir/unittests/`:
 
-- `mqt-core-mlir-unittest-jeff-round-trip`: 156 tests passed, including
-  serialized exchange, bit ordering, malformed arrays, and wider integer arrays.
+- `mqt-core-mlir-unittest-jeff-round-trip`: 157 tests passed, including
+  serialized exchange, helper argument capture, bit ordering, malformed arrays,
+  and wider integer arrays.
 - `mqt-core-mlir-unittest-qc-to-qir-adaptive`: 164 tests passed, including safe
   index scheduling and rejection without mutation.
 - `mqt-core-mlir-unittest-qc-to-qir-base`: 138 tests passed.
@@ -54,8 +58,11 @@ Repository lint and `mlir-doc` generation passed. The `cpp-lint` session
 requires clang-tidy 23; the available version is 22, so that check remains
 pending.
 
-After rebuilding the editable package, the local pilot passes all 16 small DDSIM
-cases through both direct and jeff exchange routes, plus four larger exchange
-cases. Each successful case passes its 4096-shot analytic check. These are
-correctness observations, not performance measurements or claims of unrestricted
-benchmark support.
+After rebuilding the editable package, the local pilot passes 17 small cases
+through both direct and jeff exchange routes on DDSIM and the reset-enabled
+topology mock. W-state also passes at 16 qubits on both routes and targets. Shor
+factoring 15 recovers factors on DDSIM before and after jeff exchange. Both
+topology-mock routes compile Shor to Adaptive QIR, but the 64-shot mapped
+payload exceeded the 180-second execution limit. These are correctness
+observations and a bounded feasibility result, not performance measurements or
+claims of unrestricted benchmark support.
