@@ -1099,6 +1099,26 @@ size_t CompilerTarget::distanceBetween(size_t source, size_t target) const {
   return storage_->distances[(source * numSites()) + target];
 }
 
+SmallVector<size_t> CompilerTarget::shortestPathBetween(size_t source,
+                                                        size_t target) const {
+  const auto distance = distanceBetween(source, target);
+  SmallVector<size_t> path(distance + 1);
+  path.front() = source;
+  path.back() = target;
+  for (size_t step = 1; step < distance; ++step) {
+    const auto& neighbours = storage_->adjacency[path[step - 1]];
+    /// Undirected distances let each step read the same destination row.
+    const auto* const next = llvm::find_if(neighbours, [&](size_t neighbour) {
+      return storage_->distances[target * numSites() + neighbour] ==
+             distance - step;
+    });
+    assert(next != neighbours.end() &&
+           "Connected topology must have a distance-reducing neighbour");
+    path[step] = *next;
+  }
+  return path;
+}
+
 size_t CompilerTarget::maxDegree() const noexcept {
   return storage_->maximumDegree;
 }
