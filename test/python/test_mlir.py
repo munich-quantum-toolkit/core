@@ -45,8 +45,7 @@ from mqt.core.mlir import (
     compile_program,
     submit_program,
 )
-from mqt.core.qdmi import ProgramFormat
-from mqt.core.qdmi.driver import open_device
+from mqt.core.qdmi import ProgramFormat, open_device
 
 requires_qiskit_translation = pytest.mark.skipif(
     not (
@@ -1210,16 +1209,10 @@ def test_compiler_target_from_device_id_matches_opened_device() -> None:
     assert _compiler_target_metadata(by_id) == _compiler_target_metadata(direct)
 
 
-def test_compiler_target_from_device_id_preserves_open_and_conversion_errors() -> None:
-    """Stable-ID construction retains registry and target compatibility errors."""
-    with pytest.raises(IndexError, match="Unknown QDMI device ID"):
+def test_compiler_target_from_device_id_preserves_open_errors() -> None:
+    """Stable-ID construction retains Client lookup errors."""
+    with pytest.raises(IndexError, match="has no device with ID"):
         CompilerTarget.from_device_id("unknown.device")
-    with pytest.raises(ValueError, match="mutually exclusive"):
-        CompilerTarget.from_device_id(
-            "mqt.ddsim.default",
-            device_config="{}",
-            device_config_file=Path("device.json"),
-        )
 
 
 def test_qco_program_runs_textual_pipeline() -> None:

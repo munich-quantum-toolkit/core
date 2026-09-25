@@ -105,7 +105,7 @@ or resets do not support state extraction.
 ```{code-cell} ipython3
 from mqt.core.mlir import compile_program, submit_program
 from mqt.core.qdmi import ProgramFormat
-from mqt.core.qdmi.driver import open_device
+from mqt.core.qdmi import open_device
 
 bell_qasm = """OPENQASM 3.1;
 include "stdgates.inc";

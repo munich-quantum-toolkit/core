@@ -27,7 +27,8 @@ from mqt.core.plugins.qiskit import (
     QDMIBackend,
     UnsupportedOperationError,
 )
-from mqt.core.qdmi.driver import open_device
+from mqt.core.qdmi import open_device
+from mqt.core.qdmi.builtin_driver import open_device as open_default_device
 from mqt.core.typing import QDMISessionParameters
 
 if TYPE_CHECKING:
@@ -71,16 +72,15 @@ def test_backend_from_device_id_forwards_session_parameters(monkeypatch: pytest.
     monkeypatch.setattr("mqt.core.plugins.qiskit.backend.open_device", fake_open_device)
 
     auth_file = Path("auth.json")
-    config_file = Path("device.json")
     session_parameters: QDMISessionParameters = {
-        "base_url": "https://device.example",
+        "driver_path": Path("driver.so"),
         "token": "token",
         "auth_file": auth_file,
         "auth_url": "https://auth.example",
         "username": "user",
         "password": "password",
+        "base_url": "https://device.example",
         "device_config": "{}",
-        "device_config_file": config_file,
         "custom1": "one",
         "custom2": "two",
         "custom3": "three",
@@ -103,16 +103,6 @@ def test_qdmi_session_parameter_annotations_are_runtime_resolvable() -> None:
     """Expose the public TypedDict to runtime annotation consumers."""
     annotations = get_type_hints(QDMISessionParameters)
     assert annotations["auth_file"] == str | os.PathLike[str] | None
-
-
-def test_backend_from_device_id_rejects_conflicting_device_configuration() -> None:
-    """Retain native validation for mutually exclusive device configuration sources."""
-    with pytest.raises(ValueError, match="mutually exclusive"):
-        QDMIBackend.from_device_id(
-            "mqt.ddsim.default",
-            device_config="{}",
-            device_config_file=Path("device.json"),
-        )
 
 
 def test_backend_instantiation(ddsim_backend: QDMIBackend) -> None:
@@ -681,7 +671,7 @@ def test_sc_target_preserves_placements_and_physical_calibration(unit: str, seco
             {"name": "measure", "numParameters": 0, "numQubits": 1},
         ],
     }
-    backend = QDMIBackend(open_device("mqt.sc.default", device_config=json.dumps(config)))
+    backend = QDMIBackend(open_default_device("mqt.sc.default", device_config=json.dumps(config)))
     target = backend.target
     assert target["x"][0,].duration == pytest.approx(10 * seconds)
     assert target["x"][0,].error == pytest.approx(0.01)

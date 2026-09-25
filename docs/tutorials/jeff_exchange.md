@@ -210,7 +210,7 @@ The received jeff program is still a compiler input. Compile it for DDSIM, which
 selects Adaptive QIR, then submit the resulting payload through QDMI:
 
 ```{code-cell} ipython3
-from mqt.core.qdmi.driver import open_device
+from mqt.core.qdmi import open_device
 
 device = open_device("mqt.ddsim.default")
 compiled = compile_program(feedback_received, target=device)

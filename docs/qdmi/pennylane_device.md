@@ -310,13 +310,13 @@ import pennylane as qp
 
 from mqt.core.plugins.pennylane import QDMIDevice
 
-device_id = "stable ID returned by the QDMI device registration"
+device_id = "stable ID reported by the QDMI driver"
 device = QDMIDevice(
     device_id=device_id,
     wires=["a", "b", "c", "d"],
     session_parameters={
-        "base_url": "device endpoint or selector",
         "token": "...",
+        "base_url": "https://device.example",
     },
     job_parameters={
         "custom1": "device-specific job value",

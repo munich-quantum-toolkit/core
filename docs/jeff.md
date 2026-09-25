@@ -104,7 +104,7 @@ compatible payload, then submit it:
 
 ```{code-cell} ipython3
 from mqt.core.mlir import submit_program
-from mqt.core.qdmi.driver import open_device
+from mqt.core.qdmi import open_device
 
 device = open_device("mqt.ddsim.default")
 compiled = compile_program(received, target=device)
