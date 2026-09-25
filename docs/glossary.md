@@ -207,6 +207,12 @@ operation capability
   `CompilerTarget.OperationCapability` in Python. An MLIR operation is an IR
   instance, not this capability description.
 
+Native trapped-ion gates
+  **Preferred terms:** GPI, GPI2, MS, and ZZ. **Accepted aliases:** none. Gates
+  with the IonQ matrix conventions and parameters measured in turns (one turn
+  is 2π radians). Ordinary rotation gates such as RZ and RZZ use radians.
+  See {doc}`mlir/target_compilation` for synthesis and export support.
+
 conversion target
   **Preferred term:** conversion target. **Accepted aliases:** none. The MLIR
   legality rules used by a dialect conversion. It is distinct from an MQT
@@ -348,13 +354,6 @@ semiclassical QFT
 W state
   **Preferred term:** W state. The equal, positive-amplitude superposition of
   all computational-basis states with exactly one qubit in state one.
-
-Native trapped-ion gates
-  **Preferred terms:** GPI, GPI2, MS, and ZZ. **Accepted aliases:** none. Gates
-  with the IonQ matrix conventions and parameters measured in turns (one turn
-  is 2π radians). Ordinary rotation gates such as RZ and RZZ use radians.
-  See {doc}`mlir/target_compilation` for synthesis and export support.
-
 ```
 
 ## Index
