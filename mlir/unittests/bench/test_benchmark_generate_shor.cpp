@@ -19,7 +19,7 @@
 #include "mqt/bench/Generate.h"
 
 #include "ModularArithmetic.h"
-#include "Shor.h"
+#include "ShorMultiplier.h"
 #include "TestUtils.h"
 
 #include "gtest/gtest.h"

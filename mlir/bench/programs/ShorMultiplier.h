@@ -23,6 +23,8 @@ namespace mqt::bench::detail {
 
 /// Build Shor's controlled in-place multiplier from consecutive phase-table
 /// rows for a multiplier and its modular inverse.
+/// The multiplier is coprime to the modulus, the value is below the modulus,
+/// and the accumulator and work qubit start and end at zero.
 mlir::func::FuncOp createInPlaceMultiplier(mlir::qc::QCProgramBuilder& builder,
                                            int64_t bits,
                                            mlir::RankedTensorType anglesType);

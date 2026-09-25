@@ -8,15 +8,15 @@
  * Licensed under the MIT License
  */
 
-#include "Shor.h"
-
 #include "bench/Shor.hpp"
+
 #include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 
 #include "ModularArithmetic.h"
 #include "Programs.h"
 #include "QFTUtils.h"
+#include "ShorMultiplier.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
