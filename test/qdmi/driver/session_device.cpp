@@ -17,6 +17,7 @@
 #include <new>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 struct QDMI_Child_Device_impl_d {};
 
@@ -36,6 +37,7 @@ struct QDMI_Device_Job_impl_d {
   QDMI_Device_Session session = nullptr;
   bool retrieved = false;
   QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_MAX;
+  std::array<std::vector<std::byte>, 5> customParameters;
 };
 
 namespace {
@@ -407,6 +409,15 @@ extern "C" int TEST_SESSION_QDMI_device_job_set_parameter(
   if (job->retrieved) {
     return QDMI_ERROR_BADSTATE;
   }
+  if (parameter >= QDMI_DEVICE_JOB_PARAMETER_CUSTOM1 &&
+      parameter <= QDMI_DEVICE_JOB_PARAMETER_CUSTOM5) {
+    if (value == nullptr || size == 0) {
+      return QDMI_ERROR_INVALIDARGUMENT;
+    }
+    const auto* bytes = static_cast<const std::byte*>(value);
+    job->customParameters[parameter - QDMI_DEVICE_JOB_PARAMETER_CUSTOM1].assign(
+        bytes, bytes + size);
+  }
   if (parameter == QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT) {
     if (value == nullptr || size != sizeof(job->format)) {
       return QDMI_ERROR_INVALIDARGUMENT;
@@ -460,6 +471,19 @@ extern "C" int TEST_SESSION_QDMI_device_job_get_results(QDMI_Device_Job job,
                                                         size_t size,
                                                         void* value,
                                                         size_t* sizeRet) {
+  if (result >= QDMI_JOB_RESULT_CUSTOM1 && result <= QDMI_JOB_RESULT_CUSTOM5) {
+    const auto& bytes = job->customParameters[result - QDMI_JOB_RESULT_CUSTOM1];
+    if (sizeRet != nullptr) {
+      *sizeRet = bytes.size();
+    }
+    if (value != nullptr) {
+      if (size < bytes.size()) {
+        return QDMI_ERROR_INVALIDARGUMENT;
+      }
+      std::memcpy(value, bytes.data(), bytes.size());
+    }
+    return QDMI_SUCCESS;
+  }
   if (result == QDMI_JOB_RESULT_HIST_KEYS) {
     return queryString(
         parameter(job->session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM3), size,
