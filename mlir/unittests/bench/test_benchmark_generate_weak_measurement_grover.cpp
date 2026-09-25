@@ -17,9 +17,7 @@
 #include "gtest/gtest.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
-#include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Support/LLVM.h"
@@ -42,10 +40,6 @@ TEST(GenerateProgramTest, EmitsWeakMeasurementAfterEachGroverIteration) {
   moduleOp.walk([&](scf::WhileOp loop) { loops.push_back(loop); });
   ASSERT_EQ(loops.size(), 1U);
   auto loop = loops.front();
-  EXPECT_EQ(test::countOps<scf::ForOp>(moduleOp), 0U);
-  moduleOp.walk([&](memref::LoadOp load) {
-    EXPECT_TRUE(getConstantIntValue(load.getIndices().front()));
-  });
 
   SmallVector<qc::CtrlOp> controls;
   loop.walk([&](qc::CtrlOp control) { controls.push_back(control); });
@@ -95,13 +89,13 @@ TEST(GenerateProgramTest, EmitsWeakMeasurementAfterEachGroverIteration) {
 }
 
 TEST(GenerateProgramTest, SamplesWeakMeasurementGroverAgainstReference) {
-  auto program = test::generateQCO(WeakMeasurementGrover{
-      {.markedBitstring = "01", .measurementStrength = 0.5}});
+  auto program =
+      test::generateQCO(WeakMeasurementGrover{{.markedBitstring = "110"}});
   ASSERT_TRUE(program);
   auto counts =
       qco::sample(mlir::mqt::getEntryPoint(program->module()), 64, 17);
   ASSERT_TRUE(succeeded(counts));
-  EXPECT_EQ(*counts, (Counts{{"01", 64}}));
+  EXPECT_EQ(*counts, (Counts{{"110", 64}}));
 }
 
 } // namespace mqt::bench

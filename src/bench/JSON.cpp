@@ -23,8 +23,8 @@
 #include "bench/RepeatUntilSuccess.hpp"
 #include "bench/Shor.hpp"
 #include "bench/Teleportation.hpp"
-#include "bench/WeakMeasurementGrover.hpp"
 #include "bench/WState.hpp"
+#include "bench/WeakMeasurementGrover.hpp"
 
 #include "SHA256.hpp"
 

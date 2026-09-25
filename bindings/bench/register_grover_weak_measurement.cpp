@@ -33,11 +33,11 @@ void registerWeakMeasurementGrover(const nb::module_& m) {
            "marked_bitstring"_a, "measurement_strength"_a = nb::none())
       .def_ro("marked_bitstring",
               &bench::WeakMeasurementGroverOptions::markedBitstring,
-              "The big-endian marked outcome.")
+              "The big-endian marked outcome with 2 through 62 bits.")
       .def_ro(
           "measurement_strength",
           &bench::WeakMeasurementGroverOptions::measurementStrength,
-          R"pb(The :math:`\kappa`-measurement strength, or ``None`` for :math:`2^{-n/2}`.)pb");
+          R"pb(The finite strength :math:`0<\kappa\leq 2^{-n/2}`, or ``None`` for the upper bound.)pb");
 
   auto grover = nb::class_<bench::WeakMeasurementGrover>(
       m, "Grover",
