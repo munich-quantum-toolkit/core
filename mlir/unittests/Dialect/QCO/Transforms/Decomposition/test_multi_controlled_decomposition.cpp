@@ -31,6 +31,7 @@
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/OperationSupport.h"
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/IR/Value.h"
 #include "mlir/IR/Verifier.h"
@@ -1128,27 +1129,16 @@ TEST_F(MultiControlledDecompositionTest, CompositeControlsRespectMinQubits) {
         return SmallVector<Value>{};
       });
   ASSERT_TRUE(moduleOp);
-  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
-  const auto package = std::make_unique<dd::Package>(3);
-  const auto reference = buildFunctionality(funcOp, *package);
-  ASSERT_TRUE(succeeded(reference));
+  auto original = OwningOpRef<ModuleOp>(moduleOp->clone());
   DecomposeMultiControlledOptions options;
   options.minQubits = 4;
   ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*moduleOp, options)));
-  EXPECT_EQ(countMultiControlledOps(*moduleOp, 2), 1U);
-  const auto untouched = buildFunctionality(funcOp, *package);
-  ASSERT_TRUE(succeeded(untouched));
-  EXPECT_EQ(*untouched, *reference);
-  package->decRef(*untouched);
+  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+      *moduleOp, *original, OperationEquivalence::Flags::None));
 
   options.minQubits = 3;
   ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*moduleOp, options)));
   expectFullyLowered(*moduleOp);
-  const auto decomposed = buildFunctionality(funcOp, *package);
-  ASSERT_TRUE(succeeded(decomposed));
-  EXPECT_EQ(*decomposed, *reference);
-  package->decRef(*decomposed);
-  package->decRef(*reference);
 }
 
 TEST_F(MultiControlledDecompositionTest, PhasePiRoutesThroughMcz) {

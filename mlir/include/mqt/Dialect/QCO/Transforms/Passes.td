@@ -530,10 +530,8 @@ def DecomposeMultiControlled
     `qco.rx`, `qco.ry`, `qco.rz`, `qco.swap`, or constant-angle `qco.p` body, and
     `qco.rccx`. Rotation angles may be constants or runtime SSA values,
     including classical expressions inside the control region.
-    Composite control bodies meeting the width threshold are distributed over
-    their operations before decomposition. At the default threshold, composite
-    controlled operations spanning fewer than three qubits in total (controls
-    plus targets) are not distributed.
+    Controls over composite bodies are distributed across their operations
+    before decomposition, subject to the same width threshold.
 
     | Family | Width (qubits) | Decomposition |
     | ------ | -------------- | ------------- |

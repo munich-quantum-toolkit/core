@@ -7,8 +7,7 @@
 # Licensed under the MIT License
 
 set(mqt_transforms_target mqt-core-mlir-unittests-mqt-transforms)
-add_executable(${mqt_transforms_target} test_global_phase_normalization.cpp
-                                        test_unroll_modifiers.cpp)
+add_executable(${mqt_transforms_target} test_global_phase_normalization.cpp)
 
 target_link_libraries(
   ${mqt_transforms_target}
@@ -24,8 +23,6 @@ target_link_libraries(
           MLIRQCToQCO
           MLIRQCDialect
           MLIRQCODDFunctionality
-          MLIRQCOProgramBuilder
-          MLIRQCOUtils
           MLIRExactUnitaryTest
           MLIRQCODialect
           MLIRQTensorDialect

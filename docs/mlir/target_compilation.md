@@ -247,14 +247,15 @@ dialect in their context.
 Use {py:meth}`~mqt.core.mlir.QCOProgram.synthesize_for_target` to translate an
 existing QCO program to an all-to-all target's native gate set. It uses the same
 native block synthesis as target compilation, without routing. This pipeline
-inlines calls, decomposes large controls (including composite bodies), assigns
-static sites, performs native synthesis, and verifies target conformance. It
-accepts structured QCO/SCF input and uses the same target environment and
-global-phase policy as target compilation. Explicit connectivity is rejected;
-use `compile_for_target` when routing is required.
+inlines calls, decomposes controlled gates, assigns static sites, performs
+native synthesis, and verifies target conformance. It accepts structured QCO/SCF
+input and uses the same target environment and global-phase policy as target
+compilation. Explicit connectivity is rejected; use `compile_for_target` when
+routing is required.
 
-Composite bodies nested inside inverse or power modifiers can still prevent
-control decomposition in both pipelines (tracked in [#2588]).
+Both target pipelines decompose composite controlled gates. Bodies nested inside
+inverse or power modifiers require a suitable native synthesis path
+([#2588]).
 
 [#2588]: https://github.com/munich-quantum-toolkit/core/issues/2588
 

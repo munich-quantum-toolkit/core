@@ -13,6 +13,7 @@
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
+#include "mqt/Dialect/MQT/Transforms/UnrollModifiers.h"
 #include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
@@ -3933,6 +3934,20 @@ static Value powTwoDisjointUnrolled(QCOProgramBuilder& b) {
     return SmallVector{b.t(qubits[0])};
   });
   return measureRegister(b, {first[0], second[0]});
+}
+
+TEST_F(QCOTest, NonCompositeControlsLeaveIRUnchanged) {
+  for (const auto build : {emptyCtrl, trivialCtrl}) {
+    auto moduleOp = QCOProgramBuilder::build(context.get(), build);
+    auto original = OwningOpRef<ModuleOp>(moduleOp->clone());
+    auto function = *moduleOp->getOps<func::FuncOp>().begin();
+    auto control = *function.getOps<CtrlOp>().begin();
+    IRRewriter rewriter(context.get());
+
+    EXPECT_TRUE(failed(mlir::mqt::unrollControl(control, rewriter)));
+    EXPECT_TRUE(areModulesStructurallyEquivalent(*moduleOp, *original));
+    EXPECT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+  }
 }
 
 TEST_F(QCOTest, UnrollModifiersSplitsCtrl) {

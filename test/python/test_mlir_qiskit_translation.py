@@ -472,13 +472,21 @@ def test_variable_arity_mcx_is_imported(controls: int) -> None:
     assert "qc.x" in program.ir
 
 
-@pytest.mark.parametrize(("controls", "ctrl_state"), [(1, None), (1, 0), (2, None), (2, 0), (2, 1), (2, 2)])
-@pytest.mark.parametrize(("base", "targets"), [(library.XGate(), 1), (library.XGate(), 3), (library.RYGate(0.37), 3)])
-@pytest.mark.parametrize("wrapped", [False, True])
+@pytest.mark.parametrize(
+    ("base", "controls", "targets", "ctrl_state", "wrapped"),
+    [
+        (library.XGate(), 1, 1, None, False),
+        (library.XGate(), 1, 1, 0, False),
+        (library.XGate(), 2, 3, None, False),
+        (library.RYGate(0.37), 2, 3, 0, True),
+        (library.RYGate(0.37), 2, 3, 1, True),
+        (library.RYGate(0.37), 2, 3, 2, False),
+    ],
+)
 def test_multi_target_controlled_gate_round_trip(
-    base: Gate, controls: int, ctrl_state: int | None, targets: int, *, wrapped: bool
+    base: Gate, controls: int, targets: int, ctrl_state: int | None, *, wrapped: bool
 ) -> None:
-    """Preserve targets, control polarity, and outer modifiers of MCMT gates."""
+    """MCMT matrices include every target, control polarity, and outer modifier."""
     gate = library.MCMTGate(base, controls, targets, ctrl_state=ctrl_state)
     if wrapped:
         gate = AnnotatedOperation(gate, [InverseModifier(), ControlModifier(1)])

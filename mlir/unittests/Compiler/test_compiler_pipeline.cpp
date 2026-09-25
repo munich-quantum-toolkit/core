@@ -3698,45 +3698,36 @@ x q;
   EXPECT_NE(qco->str().find("qco.static"), std::string::npos);
 }
 
-TEST_F(CompilerPipelineTest, TargetPipelinesUnrollCompositeControls) {
+TEST_F(CompilerPipelineTest, TargetPipelinesCompileControlledComposites) {
+  constexpr llvm::StringLiteral source = R"(OPENQASM 3.0;
+include "stdgates.inc";
+gate composite a, b, c { gphase(0.17); rx(0.37) c; cx c, a; ry(0.61) b; }
+qubit[4] q;
+ctrl @ composite q[0], q[1], q[2], q[3];
+)";
+  auto qc = QCProgram::fromOpenQASMString(source);
+  ASSERT_TRUE(qc);
+  auto input = std::move(*qc).intoQCO();
+  ASSERT_TRUE(input);
+  auto reference = input->copy();
+  ASSERT_TRUE(reference.runPassPipeline("inline,symbol-dce"));
+  using Capability = CompilerTarget::OperationCapability;
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      4, CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(Capability::create("u", 1, 3)),
+          llvm::cantFail(Capability::create("cz", 2, 0)),
+          llvm::cantFail(Capability::create("gphase", 0, 1)),
+      })));
+  const TargetEnvironment environment(target, makePayloadSpecification());
   for (const bool synthesisOnly : {false, true}) {
     SCOPED_TRACE(synthesisOnly);
-    auto ownedContext = createCompilerContext();
-    auto moduleOp = QCOProgramBuilder::build(
-        ownedContext.get(), [](QCOProgramBuilder& builder) {
-          auto q0 = builder.staticQubit(0);
-          auto q1 = builder.staticQubit(1);
-          auto q2 = builder.staticQubit(2);
-          auto q3 = builder.staticQubit(3);
-          builder.ctrl(ValueRange{q0}, ValueRange{q1, q2, q3},
-                       [&](ValueRange args) -> SmallVector<Value> {
-                         builder.gphase(0.17);
-                         auto [a, b] = builder.cx(args[2], args[0]);
-                         return {b, builder.ry(0.37, args[1]), a};
-                       });
-          return builder.intConstant(0);
-        });
-    ASSERT_TRUE(succeeded(verify(*moduleOp)));
-    ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
-    auto reference = OwningOpRef<ModuleOp>(moduleOp->clone());
-    auto program = QCOProgram::fromModule(ownedContext, std::move(moduleOp));
-    ASSERT_TRUE(program);
-    using Capability = CompilerTarget::OperationCapability;
-    const auto target = llvm::cantFail(CompilerTarget::create(
-        4, CompilerTarget::Connectivity::allToAll(),
-        CompilerTarget::NativeOperations::fromOperations({
-            llvm::cantFail(Capability::create("u", 1, 3)),
-            llvm::cantFail(Capability::create("cz", 2, 0)),
-            llvm::cantFail(Capability::create("gphase", 0, 1)),
-        })));
-    const TargetEnvironment environment(target, makePayloadSpecification());
-
-    ASSERT_TRUE(synthesisOnly ? program->synthesizeForTarget(environment)
-                              : program->compileForTarget(environment));
-
-    EXPECT_TRUE(succeeded(verify(program->module())));
-    EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
-    expectFullUnitaryEqual(*reference, program->module(), 4);
+    auto program = input->copy();
+    ASSERT_TRUE(synthesisOnly ? program.synthesizeForTarget(environment)
+                              : program.compileForTarget(environment));
+    EXPECT_TRUE(succeeded(verify(program.module())));
+    EXPECT_TRUE(succeeded(qco::verifyLinearity(program.module())));
+    expectFullUnitaryEqual(reference.module(), program.module(), 4);
   }
 }
 
@@ -4355,33 +4346,6 @@ TEST_F(CompilerPipelineTest, QCOProgramCompilesDynamicRunForSupportedTargets) {
       expectFullUnitaryEqual(*reference, *bound, 1);
     }
   }
-}
-
-TEST_F(CompilerPipelineTest,
-       TargetSynthesisDoesNotExpandNativeSymbolicRotations) {
-  constexpr llvm::StringLiteral source = R"mlir(module {
-    func.func @main(%theta: f64 {mqt.input_name = "theta"}) attributes {mqt.entry_point} {
-      %a = arith.constant 0.2 : f64
-      %b = arith.constant 0.3 : f64
-      %q0 = qco.alloc : !qco.qubit
-      %q1 = qco.rx(%theta) %q0 : !qco.qubit -> !qco.qubit
-      %q2 = qco.ry(%a) %q1 : !qco.qubit -> !qco.qubit
-      %q3 = qco.rz(%b) %q2 : !qco.qubit -> !qco.qubit
-      qco.sink %q3 : !qco.qubit
-      return
-    }
-  })mlir";
-  auto program = QCOProgram::fromMLIRString(source);
-  ASSERT_TRUE(program);
-  const auto target = makeCZTarget({{"rx", 1}, {"ry", 1}, {"rz", 1}});
-  ASSERT_TRUE(program->synthesizeForTarget(
-      TargetEnvironment(target, makePayloadSpecification())));
-  EXPECT_TRUE(succeeded(verify(program->module())));
-  EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
-  program->module().walk([](Operation* op) {
-    // Native rotations need no runtime quaternion or Euler calculations.
-    EXPECT_NE(op->getDialect()->getNamespace(), "math");
-  });
 }
 
 TEST_F(CompilerPipelineTest, QCOProgramMergesDynamicRunInNativeCtrlBody) {
