@@ -41,6 +41,8 @@ if(APPLE)
   set(CMAKE_LINK_LIBRARY_USING_mqt_llvm_hidden_SUPPORTED TRUE)
 endif()
 
+add_subdirectory(support)
+
 add_subdirectory(bench)
 
 add_subdirectory(dd)

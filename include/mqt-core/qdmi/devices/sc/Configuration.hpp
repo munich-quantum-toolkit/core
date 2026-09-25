@@ -13,6 +13,8 @@
 
 #pragma once
 
+#include "qdmi/common/Common.hpp"
+
 #include <cstdint>
 #include <istream>
 #include <optional>
@@ -71,9 +73,10 @@ struct Device {
 };
 
 /// Parse and validate a device description and report errors with @p source.
-[[nodiscard]] Device readJSON(std::string_view json, std::string_view source);
-[[nodiscard]] Device readJSON(std::istream& stream,
-                              std::string_view source = "input");
-[[nodiscard]] Device readJSON(const std::string& path);
+[[nodiscard]] mlir::FailureOr<Device> readJSON(std::string_view json,
+                                               std::string_view source);
+[[nodiscard]] mlir::FailureOr<Device>
+readJSON(std::istream& stream, std::string_view source = "input");
+[[nodiscard]] mlir::FailureOr<Device> readJSON(const std::string& path);
 
 } // namespace sc

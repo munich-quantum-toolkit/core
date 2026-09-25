@@ -21,23 +21,29 @@
 #include "dd/UnaryComputeTable.hpp"
 #include "dd/UniqueTable.hpp"
 
+#include "support/Diagnostics.hpp"
+#include "support/TestSupport.hpp"
+
+#include "gtest/gtest.h"
+
 #include <array>
 #include <cmath>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <functional>
-#include <gtest/gtest.h>
-#include <stdexcept>
+#include <utility>
 #include <vector>
 
 using namespace dd;
 TEST(DDTableTest, CanonicalHashesAreIndependentOfAllocationAddresses) {
-  Package first(2);
-  Package second(2);
+  auto firstOwner = ::mqt::test::value(Package::create(2));
+  auto& first = *firstOwner;
+  auto secondOwner = ::mqt::test::value(Package::create(2));
+  auto& second = *secondOwner;
   const CVec amplitudes{{0.3, 0.2}, {0.4, -0.1}, {0.5, 0.1}, {0.6, -0.2}};
-  const auto left = makeStateFromVector(amplitudes, first);
-  const auto right = makeStateFromVector(amplitudes, second);
+  const auto left = ::mqt::test::value(makeStateFromVector(amplitudes, first));
+  const auto right =
+      ::mqt::test::value(makeStateFromVector(amplitudes, second));
   ASSERT_NE(left.p, right.p);
   ASSERT_NE(left.w.r, right.w.r);
   EXPECT_EQ(left.p->id, right.p->id);
@@ -46,17 +52,20 @@ TEST(DDTableTest, CanonicalHashesAreIndependentOfAllocationAddresses) {
   EXPECT_EQ(
       std::hash<vCachedEdge>{}(vCachedEdge{left.p, ComplexValue{left.w}}),
       std::hash<vCachedEdge>{}(vCachedEdge{right.p, ComplexValue{right.w}}));
-  const ComputeTable<vNode*, vNode*, vCachedEdge> binary(64);
-  const UnaryComputeTable<vNode*, vCachedEdge> unary(64);
+  const auto binary =
+      ::mqt::test::value(ComputeTable<vNode*, vNode*, vCachedEdge>::create(64));
+  const auto unary =
+      ::mqt::test::value(UnaryComputeTable<vNode*, vCachedEdge>::create(64));
   EXPECT_EQ(binary.hash(left.p, left.p), binary.hash(right.p, right.p));
   EXPECT_EQ(unary.hash(left.p), unary.hash(right.p));
   const GateMatrix gate{1., 2., 3., 4.};
-  const auto leftMatrix = first.makeGateDD(gate, 0);
-  const auto rightMatrix = second.makeGateDD(gate, 0);
+  const auto leftMatrix = ::mqt::test::value(first.makeGateDD(gate, 0));
+  const auto rightMatrix = ::mqt::test::value(second.makeGateDD(gate, 0));
   ASSERT_NE(leftMatrix.p, rightMatrix.p);
   EXPECT_EQ(leftMatrix.p->id, rightMatrix.p->id);
   EXPECT_EQ(std::hash<mEdge>{}(leftMatrix), std::hash<mEdge>{}(rightMatrix));
-  const ComputeTable<mNode*, vNode*, vCachedEdge> matrixVector(64);
+  const auto matrixVector =
+      ::mqt::test::value(ComputeTable<mNode*, vNode*, vCachedEdge>::create(64));
   EXPECT_EQ(matrixVector.hash(leftMatrix.p, left.p),
             matrixVector.hash(rightMatrix.p, right.p));
 
@@ -64,21 +73,25 @@ TEST(DDTableTest, CanonicalHashesAreIndependentOfAllocationAddresses) {
   const auto* priorSlot = left.p;
   first.decRef(left);
   first.garbageCollect(true);
-  const auto replacement = makeStateFromVector(CVec{1., 2., 3., 4.}, first);
+  const auto replacement =
+      ::mqt::test::value(makeStateFromVector(CVec{1., 2., 3., 4.}, first));
   if (replacement.p == priorSlot) {
     EXPECT_EQ(replacement.p->id, priorId);
   }
   first.reset();
-  const auto fresh = makeStateFromVector(amplitudes, first);
+  const auto fresh = ::mqt::test::value(makeStateFromVector(amplitudes, first));
   EXPECT_EQ(fresh.p->id, right.p->id);
 
-  Package reuse(1);
-  const auto old = makeStateFromVector(CVec{0.3, 0.4}, reuse);
+  auto reuseOwner = ::mqt::test::value(Package::create(1));
+  auto& reuse = *reuseOwner;
+  const auto old =
+      ::mqt::test::value(makeStateFromVector(CVec{0.3, 0.4}, reuse));
   const auto* oldSlot = old.p;
   const auto oldId = old.p->id;
   reuse.decRef(old);
   reuse.garbageCollect(true);
-  const auto next = makeStateFromVector(CVec{0.5, 0.6}, reuse);
+  const auto next =
+      ::mqt::test::value(makeStateFromVector(CVec{0.5, 0.6}, reuse));
   EXPECT_EQ(next.p, oldSlot);
   EXPECT_EQ(next.p->id, oldId);
 }
@@ -88,24 +101,25 @@ TEST(DDTableTest, RehashPreservesCanonicalNodesAndOwnedRoots) {
   config.utVecNumBucket = 2;
   config.utMatNumBucket = 2;
   config.utMaxNumBucket = 16;
-  Package package(2, config);
+  auto packageOwner = ::mqt::test::value(Package::create(2, config));
+  auto& package = *packageOwner;
   std::vector<vEdge> states;
   std::vector<mEdge> gates;
   for (size_t i = 1; i <= 40; ++i) {
     const auto angle = static_cast<double>(i) / 100.;
-    states.push_back(
-        makeStateFromVector(CVec{std::cos(angle), std::sin(angle)}, package));
-    gates.push_back(package.makeGateDD(
+    states.push_back(::mqt::test::value(
+        makeStateFromVector(CVec{std::cos(angle), std::sin(angle)}, package)));
+    gates.push_back(::mqt::test::value(package.makeGateDD(
         GateMatrix{
             std::cos(angle),
             -std::sin(angle),
             std::sin(angle),
             std::cos(angle),
         },
-        0));
+        0)));
     package.incRef(gates.back());
   }
-  package.resize(3);
+  ::mqt::test::value(package.resize(3));
   for (const auto* table : {&package.vUniqueTable, &package.mUniqueTable}) {
     EXPECT_EQ(table->getStats(2).numBuckets, 2);
     EXPECT_EQ(table->getStats(0).numBuckets, 16);
@@ -116,17 +130,17 @@ TEST(DDTableTest, RehashPreservesCanonicalNodesAndOwnedRoots) {
   package.garbageCollect(true);
   for (size_t i = 1; i <= 40; ++i) {
     const auto angle = static_cast<double>(i) / 100.;
-    const auto duplicate =
-        makeStateFromVector(CVec{std::cos(angle), std::sin(angle)}, package);
+    const auto duplicate = ::mqt::test::value(
+        makeStateFromVector(CVec{std::cos(angle), std::sin(angle)}, package));
     EXPECT_EQ(duplicate, states[i - 1]);
-    EXPECT_EQ(package.makeGateDD(
+    EXPECT_EQ(::mqt::test::value(package.makeGateDD(
                   GateMatrix{
                       std::cos(angle),
                       -std::sin(angle),
                       std::sin(angle),
                       std::cos(angle),
                   },
-                  0),
+                  0)),
               gates[i - 1]);
     const auto values = dd::getVector(states[i - 1]);
     ASSERT_EQ(values.size(), 2);
@@ -145,22 +159,39 @@ TEST(DDTableTest, RehashPreservesCanonicalNodesAndOwnedRoots) {
     EXPECT_EQ(table->getStats(0).numBuckets, 16);
     EXPECT_EQ(table->getStats(0).numEntries, 0);
   }
-  const auto fresh = makeZeroState(2, package);
+  const auto fresh = ::mqt::test::value(makeZeroState(2, package));
   EXPECT_EQ(dd::getVector(fresh), (CVec{1., 0., 0., 0.}));
   package.decRef(fresh);
 }
 
 TEST(DDTableTest, InitialLevelsAndCapacityValidation) {
   auto manager = MemoryManager::create<vNode>();
-  EXPECT_THROW((UniqueTable(manager, {.nBuckets = 0})), std::invalid_argument);
-  EXPECT_THROW((UniqueTable(manager, {.nBuckets = 3})), std::invalid_argument);
-  EXPECT_THROW((UniqueTable(manager, {.nBuckets = 4, .maxBuckets = 0})),
-               std::invalid_argument);
-  EXPECT_THROW((UniqueTable(manager, {.nBuckets = 4, .maxBuckets = 2})),
-               std::invalid_argument);
-  EXPECT_THROW((UniqueTable(manager, {.nBuckets = 4, .maxBuckets = 6})),
-               std::invalid_argument);
-  UniqueTable table(manager, {.nVars = 1, .nBuckets = 1});
+  for (const auto& [initial, maximum] : {
+           std::pair{0U, 4U},
+           {3U, 4U},
+           {4U, 0U},
+           {4U, 2U},
+           {4U, 6U},
+       }) {
+    EXPECT_EQ(::mqt::test::errorKind([&] {
+                return UniqueTable::create(
+                    manager, {.nBuckets = initial, .maxBuckets = maximum});
+              }),
+              ::mqt::ErrorCategory::InvalidArgument);
+    DDPackageConfig config;
+    config.utVecNumBucket = initial;
+    config.utMatNumBucket = 1;
+    config.utMaxNumBucket = maximum;
+    EXPECT_EQ(
+        ::mqt::test::errorKind([&] { return Package::create(1, config); }),
+        ::mqt::ErrorCategory::InvalidArgument);
+    std::swap(config.utVecNumBucket, config.utMatNumBucket);
+    EXPECT_EQ(
+        ::mqt::test::errorKind([&] { return Package::create(1, config); }),
+        ::mqt::ErrorCategory::InvalidArgument);
+  }
+  auto table = ::mqt::test::value(
+      UniqueTable::create(manager, {.nVars = 1, .nBuckets = 1}));
   auto* node = manager.get<vNode>();
   node->v = 0;
   node->e = {vEdge::one(), vEdge::zero()};
@@ -172,7 +203,8 @@ TEST(DDTableTest, InitialLevelsAndCapacityValidation) {
 }
 TEST(DDTableTest, FixedCapacityUsesMatchingInitialAndMaximum) {
   auto manager = MemoryManager::create<vNode>();
-  UniqueTable table(manager, {.nVars = 1, .nBuckets = 1, .maxBuckets = 1});
+  auto table = ::mqt::test::value(UniqueTable::create(
+      manager, {.nVars = 1, .nBuckets = 1, .maxBuckets = 1}));
   for (const auto bit : {false, true}) {
     auto* node = manager.get<vNode>();
     node->v = 0;
@@ -186,12 +218,13 @@ TEST(DDTableTest, FixedCapacityUsesMatchingInitialAndMaximum) {
 }
 
 TEST(DDTableTest, DefaultPackageGrowsPopulatedLevels) {
-  Package package(2);
+  auto packageOwner = ::mqt::test::value(Package::create(2));
+  auto& package = *packageOwner;
   EXPECT_EQ(package.vUniqueTable.getStats(0).numBuckets, 64);
   for (size_t i = 1; i <= 65; ++i) {
     const auto angle = static_cast<double>(i) / 4096.;
-    const auto state =
-        makeStateFromVector(CVec{std::cos(angle), std::sin(angle)}, package);
+    const auto state = ::mqt::test::value(
+        makeStateFromVector(CVec{std::cos(angle), std::sin(angle)}, package));
     package.decRef(state);
   }
   EXPECT_GT(package.vUniqueTable.getStats(0).numBuckets, 64);
@@ -204,7 +237,8 @@ TEST(DDTableTest, DefaultPackageGrowsPopulatedLevels) {
 TEST(DDTableTest, UnaryCacheDistributesAlignedPointers) {
   struct alignas(64) Key {};
   std::array<Key, 64> keys{};
-  UnaryComputeTable<const Key*, size_t> table(64);
+  auto table =
+      ::mqt::test::value(UnaryComputeTable<const Key*, size_t>::create(64));
   for (size_t i = 0; i < keys.size(); ++i) {
     table.insert(&keys[i], i);
     ASSERT_NE(table.lookup(&keys[i]), nullptr);
@@ -232,10 +266,11 @@ TEST(DDTableTest, AdaptiveMultiplicationCachePreservesStateAcrossCollection) {
   for (const size_t initialBuckets : {4U, 64U}) {
     DDPackageConfig config;
     config.ctMatVecMultNumBucket = initialBuckets;
-    Package package(3, config);
-    const auto state = makeStateFromVector(input, package);
-    const auto gate =
-        package.makeGateDD(GateMatrix{SQRT2_2, SQRT2_2, SQRT2_2, -SQRT2_2}, 0);
+    auto packageOwner = ::mqt::test::value(Package::create(3, config));
+    auto& package = *packageOwner;
+    const auto state = ::mqt::test::value(makeStateFromVector(input, package));
+    const auto gate = ::mqt::test::value(
+        package.makeGateDD(GateMatrix{SQRT2_2, SQRT2_2, SQRT2_2, -SQRT2_2}, 0));
     package.incRef(gate);
     const auto& stats = package.matrixVectorMultiplication.getStats();
     static_cast<void>(package.multiply(gate, state));
@@ -243,8 +278,8 @@ TEST(DDTableTest, AdaptiveMultiplicationCachePreservesStateAcrossCollection) {
     EXPECT_EQ(stats.numBuckets, initialBuckets);
     for (size_t i = 0; i < 2 * initialBuckets; ++i) {
       const auto result = package.multiply(gate, state);
-      EXPECT_NEAR(dd::getValueByIndex(result, 0).real(), expected[0].real(),
-                  1e-12);
+      EXPECT_NEAR(::mqt::test::value(dd::getValueByIndex(result, 0)).real(),
+                  expected[0].real(), 1e-12);
     }
     ASSERT_GE(stats.hits, initialBuckets);
     ASSERT_TRUE(package.garbageCollect(true));

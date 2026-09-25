@@ -13,6 +13,8 @@
 #include "bench/Evaluation.hpp"
 #include "bench/mqt_core_bench_export.h"
 
+#include "mlir/Support/LogicalResult.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -48,12 +50,15 @@ struct ShorEvaluation {
 /// It does not compute an ideal phase distribution or the order classically.
 class MQT_CORE_BENCH_EXPORT Shor final {
 public:
-  explicit Shor(ShorOptions options);
+  [[nodiscard]] static mlir::FailureOr<Shor> create(ShorOptions options);
   [[nodiscard]] const ShorOptions& options() const noexcept;
   [[nodiscard]] const Output& output() const noexcept;
-  [[nodiscard]] ShorEvaluation evaluate(const Counts& counts) const;
+  [[nodiscard]] mlir::FailureOr<ShorEvaluation>
+  evaluate(const Counts& counts) const;
 
 private:
+  explicit Shor(ShorOptions options);
+
   ShorOptions options_;
   Output output_;
 };
@@ -79,8 +84,9 @@ struct FactorResult {
 /// perfect powers are handled classically. Other inputs try base 2 first, then
 /// seeded random bases. The callback owns device selection, shots, and
 /// execution seeds. Invalid counts and callback errors propagate to the caller.
-[[nodiscard]] MQT_CORE_BENCH_EXPORT FactorResult
-factor(uint64_t number, const std::function<Counts(const Shor&)>& run,
+[[nodiscard]] MQT_CORE_BENCH_EXPORT mlir::FailureOr<FactorResult>
+factor(uint64_t number,
+       const std::function<mlir::FailureOr<Counts>(const Shor&)>& run,
        const FactorOptions& options = {});
 
 } // namespace mqt::bench

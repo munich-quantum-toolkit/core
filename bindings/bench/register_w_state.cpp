@@ -11,17 +11,21 @@
 #include "bench/JSON.hpp"
 #include "bench/WState.hpp"
 
+#include "Result.hpp"
+
 #include "nanobind/nanobind.h"
 #include "nanobind/stl/map.h"         // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/string.h"      // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/string_view.h" // NOLINT(misc-include-cleaner)
 
 #include <cstddef>
+#include <new>
 
 namespace mqt {
 
 namespace nb = nanobind;
 using namespace nb::literals;
+using bindings::bindResult;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerWState(const nb::module_& m) {
@@ -32,16 +36,23 @@ void registerWState(const nb::module_& m) {
 
   auto wState = nb::class_<bench::WState>(
       m, "WState", "A validated W-state preparation benchmark.");
-  wState.def(nb::init<bench::WStateOptions>(), "options"_a)
+  wState
+      .def(
+          "__init__",
+          [](bench::WState* self, bench::WStateOptions options) {
+            new (self) bench::WState(::mqt::bindings::invoke(
+                [&] { return bench::WState::create(options); }));
+          },
+          "options"_a)
       .def_prop_ro("options", &bench::WState::options,
                    nb::rv_policy::reference_internal,
                    "The resolved benchmark parameters.")
       .def_prop_ro("output", &bench::WState::output,
                    nb::rv_policy::reference_internal,
                    "The logical output register.")
-      .def("probability", &bench::WState::probability, "outcome"_a,
+      .def("probability", bindResult(&bench::WState::probability), "outcome"_a,
            "Return the ideal probability of an outcome.")
-      .def("evaluate", &bench::WState::evaluate, "counts"_a,
+      .def("evaluate", bindResult(&bench::WState::evaluate), "counts"_a,
            "Compare sampled counts with the ideal distribution.")
       .def(
           "generate",
@@ -69,11 +80,13 @@ void registerWState(const nb::module_& m) {
           [](const bench::WState& value) { return bench::caseId(value); },
           "The stable semantic case ID.")
       .def_static("from_instance_specification_json",
-                  &bench::wStateFromInstanceSpecificationJSON, "json"_a,
-                  nb::kw_only(), "source"_a = "<instance-specification>",
+                  bindResult(&bench::wStateFromInstanceSpecificationJSON),
+                  "json"_a, nb::kw_only(),
+                  "source"_a = "<instance-specification>",
                   "Parse a strict benchmark instance specification.")
-      .def_static("from_manifest_json", &bench::wStateFromManifestJSON,
-                  "json"_a, nb::kw_only(), "source"_a = "<manifest>",
+      .def_static("from_manifest_json",
+                  bindResult(&bench::wStateFromManifestJSON), "json"_a,
+                  nb::kw_only(), "source"_a = "<manifest>",
                   "Parse a strict benchmark manifest.");
 }
 

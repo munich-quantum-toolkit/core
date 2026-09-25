@@ -21,8 +21,8 @@
 #pragma once
 
 // NOLINTBEGIN(modernize-use-using)
-// QIR ABI names are prescribed by the specification.
-// NOLINTBEGIN(readability-identifier-naming,bugprone-reserved-identifier)
+/// QIR ABI names are prescribed by the specification.
+/// NOLINTBEGIN(readability-identifier-naming,bugprone-reserved-identifier)
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -30,6 +30,7 @@
 #ifdef __cplusplus
 #define MQT_QIR_NOEXCEPT noexcept
 extern "C" {
+
 #else
 #define MQT_QIR_NOEXCEPT
 #endif
@@ -250,7 +251,7 @@ void __quantum__rt__array_record_output(int64_t size,
 void __quantum__rt__result_array_record_output(int64_t, Result**,
                                                const char*) MQT_QIR_NOEXCEPT;
 
-// NOLINTEND(readability-identifier-naming,bugprone-reserved-identifier)
+/// NOLINTEND(readability-identifier-naming,bugprone-reserved-identifier)
 // NOLINTEND(modernize-use-using)
 
 #ifdef __cplusplus

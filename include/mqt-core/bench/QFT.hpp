@@ -13,6 +13,8 @@
 #include "bench/Evaluation.hpp"
 #include "bench/mqt_core_bench_export.h"
 
+#include "mlir/Support/LogicalResult.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <string_view>
@@ -43,16 +45,20 @@ struct QFTOptions {
 /// A validated QFT benchmark.
 class MQT_CORE_BENCH_EXPORT QFT final {
 public:
-  explicit QFT(QFTOptions options);
+  [[nodiscard]] static mlir::FailureOr<QFT> create(QFTOptions options);
 
   [[nodiscard]] const QFTOptions& options() const noexcept;
   [[nodiscard]] const Output& output() const noexcept;
   /// Return the ideal probability of a big-endian logical outcome.
-  [[nodiscard]] double probability(std::string_view outcome) const;
+  [[nodiscard]] mlir::FailureOr<double>
+  probability(std::string_view outcome) const;
   /// Compare sampled logical outcomes with the ideal distribution.
-  [[nodiscard]] Evaluation evaluate(const Counts& counts) const;
+  [[nodiscard]] mlir::FailureOr<Evaluation>
+  evaluate(const Counts& counts) const;
 
 private:
+  explicit QFT(QFTOptions options);
+
   QFTOptions options_;
   Output output_;
 };

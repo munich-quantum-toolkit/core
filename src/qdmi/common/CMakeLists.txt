@@ -21,12 +21,11 @@ if(NOT TARGET ${TARGET_NAME})
            ${MQT_CORE_INCLUDE_BUILD_DIR}
            FILES
            ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/common/Common.hpp
-           ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/common/DeviceConfiguration.hpp
-           ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/common/Diagnostics.hpp)
+           ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/common/DeviceConfiguration.hpp)
 
   target_link_libraries(
     ${TARGET_NAME}
-    PUBLIC qdmi::qdmi LLVMSupport
+    PUBLIC qdmi::qdmi MQT::CoreSupport
     PRIVATE $<BUILD_LOCAL_INTERFACE:qdmi::qdmi_project_warnings> ${CMAKE_DL_LIBS})
 
   target_include_directories(${TARGET_NAME} SYSTEM PUBLIC "$<BUILD_INTERFACE:${LLVM_INCLUDE_DIRS}>")

@@ -11,6 +11,23 @@ mystnb:
 DDSIM executes quantum programs locally through QDMI using
 [decision diagrams](../dd_package.md).
 
+## Job isolation
+
+DDSIM parses, compiles, and executes OpenQASM and QIR in worker processes. Each
+worker handles one job at a time and discards its job state before reuse.
+Concurrent jobs use separate workers.
+
+Worker crashes, communication errors, and startup failures set the job to
+`FAILED`; the host and other jobs remain usable. Only complete successful
+results are published. Failed jobs expose no partial results and are never
+replayed automatically. Cancellation terminates the assigned worker; wait
+timeouts leave jobs running. Device shutdown closes and reaps its workers.
+
+The worker executable must stay beside the provider library. Use
+`mqt_copy_qdmi_runtime` to copy both into a native application. This boundary
+contains DDSIM crashes; it is not a hostile-code sandbox and does not isolate
+other QDMI providers.
+
 ## Capabilities
 
 The simulator device accepts OpenQASM 2, OpenQASM 3, and textual or binary QIR

@@ -242,10 +242,11 @@ TEST_F(ConstantFoldingTest, VerifyFiniteParametersChecksDirectConstants) {
       *builder,
       builder->getF64FloatAttr(std::numeric_limits<double>::quiet_NaN()));
   std::string diagnostic;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& emitted) {
-    diagnostic = emitted.str();
-    return success();
-  });
+  mlir::ScopedDiagnosticHandler handler(&context,
+                                        [&](mlir::Diagnostic& emitted) {
+                                          diagnostic = emitted.str();
+                                          return success();
+                                        });
   EXPECT_TRUE(succeeded(mlir::mqt::verifyFiniteConstantParameters(
       module->getOperation(), {finite.getResult()})));
   EXPECT_TRUE(diagnostic.empty());

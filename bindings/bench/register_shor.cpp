@@ -12,6 +12,8 @@
 #include "bench/JSON.hpp"
 #include "bench/Shor.hpp"
 
+#include "Result.hpp"
+
 #include "nanobind/nanobind.h"
 #include "nanobind/stl/function.h"    // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/map.h"         // NOLINT(misc-include-cleaner)
@@ -20,13 +22,18 @@
 #include "nanobind/stl/string.h"      // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/string_view.h" // NOLINT(misc-include-cleaner)
 
+#include "mlir/Support/LogicalResult.h"
+
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <functional>
+#include <new>
 
 namespace mqt {
 namespace nb = nanobind;
 using namespace nb::literals;
+using bindings::bindResult;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerShor(nb::module_& m) {
@@ -48,14 +55,20 @@ void registerShor(nb::module_& m) {
               "A sorted factor pair, or ``None``.");
   nb::class_<bench::Shor>(m, "Shor",
                           "A validated semiclassical Shor benchmark.")
-      .def(nb::init<bench::ShorOptions>(), "options"_a)
+      .def(
+          "__init__",
+          [](bench::Shor* self, bench::ShorOptions options) {
+            new (self) bench::Shor(::mqt::bindings::invoke(
+                [&] { return bench::Shor::create(options); }));
+          },
+          "options"_a)
       .def_prop_ro("options", &bench::Shor::options,
                    nb::rv_policy::reference_internal,
                    "The resolved benchmark parameters.")
       .def_prop_ro(
           "output", &bench::Shor::output, nb::rv_policy::reference_internal,
           "The big-endian phase register with twice the modulus bit width.")
-      .def("evaluate", &bench::Shor::evaluate, "counts"_a,
+      .def("evaluate", bindResult(&bench::Shor::evaluate), "counts"_a,
            "Recover factors using exact continued fractions and verify them by "
            "division.")
       .def(
@@ -82,10 +95,12 @@ void registerShor(nb::module_& m) {
           [](const bench::Shor& value) { return bench::caseId(value); },
           "The stable semantic case ID.")
       .def_static("from_instance_specification_json",
-                  &bench::shorFromInstanceSpecificationJSON, "json"_a,
-                  nb::kw_only(), "source"_a = "<instance-specification>",
+                  bindResult(&bench::shorFromInstanceSpecificationJSON),
+                  "json"_a, nb::kw_only(),
+                  "source"_a = "<instance-specification>",
                   "Parse a strict benchmark instance specification.")
-      .def_static("from_manifest_json", &bench::shorFromManifestJSON, "json"_a,
+      .def_static("from_manifest_json",
+                  bindResult(&bench::shorFromManifestJSON), "json"_a,
                   nb::kw_only(), "source"_a = "<manifest>",
                   "Parse a strict benchmark manifest.");
   nb::enum_<bench::FactorStatus>(m, "FactorStatus",
@@ -105,8 +120,25 @@ void registerShor(nb::module_& m) {
       [](uint64_t number,
          const std::function<bench::Counts(const bench::Shor&)>& run,
          size_t maxAttempts, uint64_t seed) {
-        return bench::factor(number, run,
-                             {.maxAttempts = maxAttempts, .seed = seed});
+        return ::mqt::bindings::invoke([&] {
+          std::exception_ptr error;
+          auto result =
+              bench::factor(number,
+                            [&](const bench::Shor& benchmark)
+                                -> mlir::FailureOr<bench::Counts> {
+                              try {
+                                return run(benchmark);
+                              } catch (...) {
+                                error = std::current_exception();
+                                return mlir::failure();
+                              }
+                            },
+                            {.maxAttempts = maxAttempts, .seed = seed});
+          if (error) {
+            std::rethrow_exception(error);
+          }
+          return result;
+        });
       },
       "number"_a, "run"_a, nb::kw_only(), "max_attempts"_a = 16, "seed"_a = 0,
       R"pb(Find one nontrivial factor pair with a bounded number of attempted bases.

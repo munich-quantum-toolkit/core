@@ -114,13 +114,13 @@ protected:
 
 } // namespace
 
-static LogicalResult runQCToQCOConversion(ModuleOp moduleOp) {
+static mlir::LogicalResult runQCToQCOConversion(ModuleOp moduleOp) {
   PassManager pm(moduleOp.getContext());
   pm.addPass(createQCToQCO());
   return pm.run(moduleOp);
 }
 
-static LogicalResult runQCOToQCConversion(ModuleOp moduleOp) {
+static mlir::LogicalResult runQCOToQCConversion(ModuleOp moduleOp) {
   PassManager pm(moduleOp.getContext());
   pm.addPass(createQCOToQC());
   return pm.run(moduleOp);
@@ -245,7 +245,7 @@ public:
       : OpConversionPattern(typeConverter, context),
         sourcePreserved(sourcePreserved) {}
 
-  LogicalResult
+  mlir::LogicalResult
   matchAndRewrite(func::FuncOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     if (!op->hasAttr("test.reject_region_move")) {
@@ -301,8 +301,8 @@ module {
   RewritePatternSet patterns(&context);
   patterns.add<RejectingRegionMovePattern>(typeConverter, &context,
                                            sourcePreserved);
-  ScopedDiagnosticHandler handler(
-      &context, [](Diagnostic& /*diagnostic*/) { return success(); });
+  mlir::ScopedDiagnosticHandler handler(
+      &context, [](mlir::Diagnostic& /*diagnostic*/) { return success(); });
   EXPECT_TRUE(
       failed(applyPartialConversion(*moduleOp, target, std::move(patterns))));
   EXPECT_TRUE(sourcePreserved);
@@ -835,12 +835,14 @@ module {
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    sawExpectedDiagnostic |=
-        StringRef(diagnostic.str())
-            .contains("QC-to-QCO does not support unstructured control flow");
-    return success();
-  });
+  mlir::ScopedDiagnosticHandler handler(
+      &context, [&](mlir::Diagnostic& diagnostic) {
+        sawExpectedDiagnostic |=
+            StringRef(diagnostic.str())
+                .contains(
+                    "QC-to-QCO does not support unstructured control flow");
+        return success();
+      });
 
   EXPECT_TRUE(failed(runQCToQCOConversion(*moduleOp)));
   EXPECT_TRUE(sawExpectedDiagnostic);
@@ -864,12 +866,13 @@ module {
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    sawExpectedDiagnostic |=
-        StringRef(diagnostic.str())
-            .contains("requires one-dimensional qubit register storage");
-    return success();
-  });
+  mlir::ScopedDiagnosticHandler handler(
+      &context, [&](mlir::Diagnostic& diagnostic) {
+        sawExpectedDiagnostic |=
+            StringRef(diagnostic.str())
+                .contains("requires one-dimensional qubit register storage");
+        return success();
+      });
 
   PassManager pm(&context);
   pm.enableVerifier(false);
@@ -895,12 +898,13 @@ module {
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    sawExpectedDiagnostic |=
-        StringRef(diagnostic.str())
-            .contains("requires a directly allocated qubit register");
-    return success();
-  });
+  mlir::ScopedDiagnosticHandler handler(
+      &context, [&](mlir::Diagnostic& diagnostic) {
+        sawExpectedDiagnostic |=
+            StringRef(diagnostic.str())
+                .contains("requires a directly allocated qubit register");
+        return success();
+      });
 
   PassManager pm(&context);
   pm.enableVerifier(false);
@@ -1136,10 +1140,12 @@ module {
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
     OwningOpRef<ModuleOp> original = moduleOp->clone();
     bool sawExpectedDiagnostic = false;
-    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-      sawExpectedDiagnostic |= StringRef(diagnostic.str()).contains(expected);
-      return success();
-    });
+    mlir::ScopedDiagnosticHandler handler(
+        &context, [&](mlir::Diagnostic& diagnostic) {
+          sawExpectedDiagnostic |=
+              StringRef(diagnostic.str()).contains(expected);
+          return success();
+        });
     EXPECT_TRUE(failed(runQCToQCOConversion(*moduleOp)));
     EXPECT_TRUE(sawExpectedDiagnostic);
     EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
@@ -1176,12 +1182,13 @@ module {
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
     bool sawExpectedDiagnostic = false;
-    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-      sawExpectedDiagnostic |=
-          StringRef(diagnostic.str())
-              .contains("borrowed registers require private functions");
-      return success();
-    });
+    mlir::ScopedDiagnosticHandler handler(
+        &context, [&](mlir::Diagnostic& diagnostic) {
+          sawExpectedDiagnostic |=
+              StringRef(diagnostic.str())
+                  .contains("borrowed registers require private functions");
+          return success();
+        });
 
     PassManager pm(&context);
     pm.enableVerifier(false);
@@ -1231,13 +1238,14 @@ module {
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
     bool sawExpectedDiagnostic = false;
-    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-      sawExpectedDiagnostic |=
-          StringRef(diagnostic.str())
-              .contains("cannot capture quantum values in an unsupported "
-                        "region-bearing operation");
-      return success();
-    });
+    mlir::ScopedDiagnosticHandler handler(
+        &context, [&](mlir::Diagnostic& diagnostic) {
+          sawExpectedDiagnostic |=
+              StringRef(diagnostic.str())
+                  .contains("cannot capture quantum values in an unsupported "
+                            "region-bearing operation");
+          return success();
+        });
 
     PassManager pm(&context);
     pm.enableVerifier(false);
@@ -1364,11 +1372,12 @@ module {
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    sawExpectedDiagnostic |=
-        StringRef(diagnostic.str()).contains("use the same dynamic index");
-    return success();
-  });
+  mlir::ScopedDiagnosticHandler handler(
+      &context, [&](mlir::Diagnostic& diagnostic) {
+        sawExpectedDiagnostic |=
+            StringRef(diagnostic.str()).contains("use the same dynamic index");
+        return success();
+      });
   EXPECT_TRUE(failed(runQCToQCOConversion(*moduleOp)));
   EXPECT_TRUE(sawExpectedDiagnostic);
 }
@@ -1395,11 +1404,12 @@ module {
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    sawExpectedDiagnostic |=
-        StringRef(diagnostic.str()).contains("same constant index");
-    return success();
-  });
+  mlir::ScopedDiagnosticHandler handler(
+      &context, [&](mlir::Diagnostic& diagnostic) {
+        sawExpectedDiagnostic |=
+            StringRef(diagnostic.str()).contains("same constant index");
+        return success();
+      });
   EXPECT_TRUE(failed(runQCToQCOConversion(*moduleOp)));
   EXPECT_TRUE(sawExpectedDiagnostic);
 }
@@ -2096,13 +2106,14 @@ TEST_F(QCToQCORegressionTest, RejectsConsumedBorrowedQubit) {
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    sawExpectedDiagnostic |=
-        StringRef(diagnostic.str())
-            .contains(
-                "cannot convert a function that consumes a qubit argument");
-    return success();
-  });
+  mlir::ScopedDiagnosticHandler handler(
+      &context, [&](mlir::Diagnostic& diagnostic) {
+        sawExpectedDiagnostic |=
+            StringRef(diagnostic.str())
+                .contains(
+                    "cannot convert a function that consumes a qubit argument");
+        return success();
+      });
   EXPECT_TRUE(failed(runQCToQCOConversion(*moduleOp)));
   EXPECT_TRUE(sawExpectedDiagnostic);
 }

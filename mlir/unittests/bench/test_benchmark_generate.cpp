@@ -33,6 +33,7 @@
 #include "mqt/bench/Generate.h"
 
 #include "TestUtils.h"
+#include "support/TestSupport.hpp"
 
 #include "gtest/gtest.h"
 
@@ -79,50 +80,61 @@ TEST(GenerateProgramTest, RejectsInvalidInstanceSpecifications) {
 template <class Benchmark>
 static void expectQCAndJeff(const Benchmark& benchmark) {
   auto program = generate(benchmark);
-  ASSERT_TRUE(mlir::succeeded(program));
+  ASSERT_TRUE(succeeded(program));
   test::expectJeffRoundTrip(std::move(*program));
 }
 
 TEST(GenerateProgramTest, GeneratesEveryBenchmarkMethodAsQCAndJeff) {
-  expectQCAndJeff(BV{{.hiddenBitstring = "101"}});
-  expectQCAndJeff(BV{{.hiddenBitstring = "101", .method = BVMethod::Dynamic}});
-  expectQCAndJeff(ModularMultiplier{{
+  expectQCAndJeff(::mqt::test::value(BV::create({.hiddenBitstring = "101"})));
+  expectQCAndJeff(::mqt::test::value(
+      BV::create({.hiddenBitstring = "101", .method = BVMethod::Dynamic})));
+  expectQCAndJeff(::mqt::test::value(ModularMultiplier::create({
       .multiplier = "011",
       .modulus = "101",
       .multiplicand = "+++",
       .control = '+',
-  }});
-  expectQCAndJeff(GHZ{{.qubits = 3}});
-  expectQCAndJeff(Grover{{.markedBitstring = "101"}});
-  expectQCAndJeff(MagicStateDistillation{{.levels = 1}});
-  expectQCAndJeff(Multiplexer{{.qubits = 3}});
-  expectQCAndJeff(QFT{{.qubits = 3, .periodExponent = 1}});
-  expectQCAndJeff(QFT{
-      {.qubits = 3, .periodExponent = 1, .method = QFTMethod::Semiclassical}});
-  expectQCAndJeff(QFTAdder{{
+  })));
+  expectQCAndJeff(::mqt::test::value(GHZ::create({.qubits = 3})));
+  expectQCAndJeff(
+      ::mqt::test::value(Grover::create({.markedBitstring = "101"})));
+  expectQCAndJeff(
+      ::mqt::test::value(MagicStateDistillation::create({.levels = 1})));
+  expectQCAndJeff(::mqt::test::value(Multiplexer::create({.qubits = 3})));
+  expectQCAndJeff(
+      ::mqt::test::value(QFT::create({.qubits = 3, .periodExponent = 1})));
+  expectQCAndJeff(::mqt::test::value(QFT::create(
+      {.qubits = 3, .periodExponent = 1, .method = QFTMethod::Semiclassical})));
+  expectQCAndJeff(::mqt::test::value(QFTAdder::create({
       .addend = "101",
       .accumulator = "001",
       .method = QFTAdderMethod::Constant,
       .overflow = QFTAdderOverflow::Carry,
-  }});
-  expectQCAndJeff(QFTAdder{{.addend = "+++", .accumulator = "001"}});
-  expectQCAndJeff(QPE{{.precision = 3, .phase = Phase(3, 8)}});
-  expectQCAndJeff(QPE{
-      {.precision = 3, .phase = Phase(3, 8), .method = QPEMethod::Iterative}});
-  expectQCAndJeff(RepeatUntilSuccess{});
-  expectQCAndJeff(Shor{{.number = 15}});
+  })));
+  expectQCAndJeff(::mqt::test::value(
+      QFTAdder::create({.addend = "+++", .accumulator = "001"})));
+  expectQCAndJeff(::mqt::test::value(QPE::create(
+      {.precision = 3, .phase = ::mqt::test::value(Phase::create(3, 8))})));
+  expectQCAndJeff(::mqt::test::value(
+      QPE::create({.precision = 3,
+                   .phase = ::mqt::test::value(Phase::create(3, 8)),
+                   .method = QPEMethod::Iterative})));
+  expectQCAndJeff(::mqt::test::value(RepeatUntilSuccess::create()));
+  expectQCAndJeff(::mqt::test::value(Shor::create({.number = 15})));
   expectQCAndJeff(Teleportation{});
-  expectQCAndJeff(WState{{.qubits = 3}});
-  expectQCAndJeff(WeakMeasurementGrover{{.markedBitstring = "101"}});
+  expectQCAndJeff(::mqt::test::value(WState::create({.qubits = 3})));
+  expectQCAndJeff(::mqt::test::value(
+      WeakMeasurementGrover::create({.markedBitstring = "101"})));
 }
 
 template <class Benchmark>
 static void expectReference(const Benchmark& benchmark, const Counts& counts) {
-  EXPECT_LT(benchmark.evaluate(counts).totalVariationDistance, 0.08);
+  EXPECT_LT(
+      ::mqt::test::value(benchmark.evaluate(counts)).totalVariationDistance,
+      0.08);
 }
 
 static void expectReference(const Shor& benchmark, const Counts& counts) {
-  const auto result = benchmark.evaluate(counts);
+  const auto result = ::mqt::test::value(benchmark.evaluate(counts));
   ASSERT_TRUE(result.factors);
   EXPECT_EQ(result.factors->first * result.factors->second,
             benchmark.options().number);
@@ -138,13 +150,13 @@ static void expectQIRSampling(const Benchmark& benchmark,
   const auto bitcode = qirProgram.toBitcode();
   ASSERT_TRUE(mlir::succeeded(bitcode));
   ASSERT_FALSE(bitcode->empty());
-  qir::JitSession session(
+  auto session = ::mqt::test::value(qir::JitSession::create(
       llvm::StringRef(reinterpret_cast<const char*>(bitcode->data()),
                       bitcode->size()),
-      "benchmark-bitcode", qir::Execution::Sampling, 17);
-  session.runtime().disableOutput();
+      "benchmark-bitcode", qir::Execution::Sampling, 17));
+  session->runtime().disableOutput();
   std::vector<std::string> outcomes;
-  ASSERT_EQ(session.sample(shots, outcomes), 0);
+  ASSERT_EQ(::mqt::test::value(session->sample(shots, outcomes)), 0);
   ASSERT_EQ(outcomes.size(), shots);
   Counts qirCounts;
   for (const auto& outcome : outcomes) {
@@ -157,7 +169,7 @@ static void expectQIRSampling(const Benchmark& benchmark,
 template <class Benchmark>
 static void expectPortableExecution(const Benchmark& benchmark, size_t shots) {
   auto qc = generate(benchmark);
-  ASSERT_TRUE(mlir::succeeded(qc));
+  ASSERT_TRUE(succeeded(qc));
   auto compiled =
       runDefaultPipeline(CompilerInput{qc->copy()}, ProgramFormat::Jeff);
   ASSERT_TRUE(mlir::succeeded(compiled));
@@ -181,30 +193,33 @@ static void expectPortableExecution(const Benchmark& benchmark, size_t shots) {
 TEST(GenerateProgramTest, ExecutesRuntimePhasesThroughJeffAndAdaptiveQIR) {
   for (auto method : {QPEMethod::Standard, QPEMethod::Iterative}) {
     for (auto phase : {
-             Phase(1, 3),
-             Phase(uint64_t{1} << 63U, std::numeric_limits<uint64_t>::max()),
+             ::mqt::test::value(Phase::create(1, 3)),
+             ::mqt::test::value(Phase::create(
+                 uint64_t{1} << 63U, std::numeric_limits<uint64_t>::max())),
          }) {
       SCOPED_TRACE(static_cast<int>(method));
       SCOPED_TRACE(phase.numerator());
       expectPortableExecution(
-          QPE{{.precision = 3, .phase = phase, .method = method}}, 2048);
+          ::mqt::test::value(
+              QPE::create({.precision = 3, .phase = phase, .method = method})),
+          2048);
     }
   }
-  expectPortableExecution(QFTAdder{{
+  expectPortableExecution(::mqt::test::value(QFTAdder::create({
                               .addend = "101",
                               .accumulator = "011",
                               .method = QFTAdderMethod::Constant,
                               .overflow = QFTAdderOverflow::Carry,
-                          }},
+                          })),
                           2048);
-  expectPortableExecution(ModularMultiplier{{
+  expectPortableExecution(::mqt::test::value(ModularMultiplier::create({
                               .multiplier = "011",
                               .modulus = "101",
                               .multiplicand = "+++",
                               .control = '+',
-                          }},
+                          })),
                           2048);
-  expectPortableExecution(Shor{{.number = 15}}, 64);
+  expectPortableExecution(::mqt::test::value(Shor::create({.number = 15})), 64);
 }
 
 TEST(GenerateProgramTest, RoundTripsRuntimePhasesThroughOpenQASM) {
@@ -213,14 +228,15 @@ TEST(GenerateProgramTest, RoundTripsRuntimePhasesThroughOpenQASM) {
     const size_t precision = method == QPEMethod::Standard ? 1U : 8U;
     const auto phase =
         method == QPEMethod::Standard
-            ? Phase(uint64_t{1} << 63U, std::numeric_limits<uint64_t>::max())
-            : Phase(3, 8);
+            ? ::mqt::test::value(Phase::create(
+                  uint64_t{1} << 63U, std::numeric_limits<uint64_t>::max()))
+            : ::mqt::test::value(Phase::create(3, 8));
     SCOPED_TRACE(static_cast<int>(method));
     SCOPED_TRACE(phase.numerator());
-    const QPE benchmark{
-        {.precision = precision, .phase = phase, .method = method}};
+    const auto benchmark = ::mqt::test::value(QPE::create(
+        {.precision = precision, .phase = phase, .method = method}));
     auto qc = generate(benchmark);
-    ASSERT_TRUE(mlir::succeeded(qc));
+    ASSERT_TRUE(succeeded(qc));
     auto qasm = qc->toOpenQASM3();
     ASSERT_TRUE(mlir::succeeded(qasm));
     auto restored = QCProgram::fromOpenQASMString(qasm->source());
@@ -237,14 +253,14 @@ TEST(GenerateProgramTest, RoundTripsRuntimePhasesThroughOpenQASM) {
 template <class Benchmark>
 static void expectStaticTargetExecution(const Benchmark& benchmark) {
   auto qc = generate(benchmark);
-  ASSERT_TRUE(mlir::succeeded(qc));
+  ASSERT_TRUE(succeeded(qc));
   auto target =
       CompilerTarget::create(16, CompilerTarget::Connectivity::allToAll(),
                              CompilerTarget::NativeOperations::unrestricted());
-  ASSERT_TRUE(static_cast<bool>(target));
+  ASSERT_TRUE(succeeded(target));
   auto basePayload = PayloadSpecification::create(
       {.id = "qir", .version = "2.1", .profile = "base"});
-  ASSERT_TRUE(static_cast<bool>(basePayload));
+  ASSERT_TRUE(succeeded(basePayload));
   const TargetEnvironment baseTarget(*target, std::move(*basePayload));
   auto compiled = runDefaultPipeline(CompilerInput{qc->copy()}, baseTarget);
   ASSERT_TRUE(mlir::succeeded(compiled));
@@ -254,7 +270,7 @@ static void expectStaticTargetExecution(const Benchmark& benchmark) {
 
   auto qasmPayload =
       PayloadSpecification::create({.id = "openqasm", .version = "3.1"});
-  ASSERT_TRUE(static_cast<bool>(qasmPayload));
+  ASSERT_TRUE(succeeded(qasmPayload));
   const TargetEnvironment qasmTarget(*target, std::move(*qasmPayload));
   compiled = runDefaultPipeline(CompilerInput{std::move(*qc)}, qasmTarget);
   ASSERT_TRUE(mlir::succeeded(compiled));
@@ -269,36 +285,37 @@ static void expectStaticTargetExecution(const Benchmark& benchmark) {
 }
 
 TEST(GenerateProgramTest, ExportsConstantAdderRuntimePhasesToOpenQASM) {
-  auto program = generate(QFTAdder{{
+  auto program = generate(::mqt::test::value(QFTAdder::create({
       .addend = "101",
       .accumulator = "001",
       .method = QFTAdderMethod::Constant,
       .overflow = QFTAdderOverflow::Carry,
-  }});
-  ASSERT_TRUE(mlir::succeeded(program));
-  EXPECT_TRUE(mlir::succeeded(program->toOpenQASM3()));
+  })));
+  ASSERT_TRUE(succeeded(program));
+  EXPECT_TRUE(program->toOpenQASM3());
 }
 
 TEST(GenerateProgramTest, CompilesRuntimePhasesForStaticTargets) {
-  expectStaticTargetExecution(QPE{{.precision = 3, .phase = Phase(1, 3)}});
-  expectStaticTargetExecution(QFTAdder{{
+  expectStaticTargetExecution(::mqt::test::value(QPE::create(
+      {.precision = 3, .phase = ::mqt::test::value(Phase::create(1, 3))})));
+  expectStaticTargetExecution(::mqt::test::value(QFTAdder::create({
       .addend = "101",
       .accumulator = "011",
       .method = QFTAdderMethod::Constant,
       .overflow = QFTAdderOverflow::Carry,
-  }});
-  expectStaticTargetExecution(ModularMultiplier{{
+  })));
+  expectStaticTargetExecution(::mqt::test::value(ModularMultiplier::create({
       .multiplier = "011",
       .modulus = "101",
       .multiplicand = "+++",
       .control = '+',
-  }});
+  })));
 }
 
 TEST(GenerateProgramTest, RoundTripsWStateThroughOpenQASM) {
-  const WState benchmark{{.qubits = 3}};
+  const auto benchmark = ::mqt::test::value(WState::create({.qubits = 3}));
   auto qc = generate(benchmark);
-  ASSERT_TRUE(mlir::succeeded(qc));
+  ASSERT_TRUE(succeeded(qc));
   auto qasm = qc->toOpenQASM3();
   ASSERT_TRUE(mlir::succeeded(qasm));
   auto restored = QCProgram::fromOpenQASMString(qasm->source());
@@ -308,6 +325,22 @@ TEST(GenerateProgramTest, RoundTripsWStateThroughOpenQASM) {
   auto counts = qco::sample(mlir::mqt::getEntryPoint(qco->module()), 2048, 17);
   ASSERT_TRUE(succeeded(counts));
   expectReference(benchmark, *counts);
+}
+
+TEST(GenerateProgramTest, ReturnsSourceDiagnosticsAndRecovers) {
+  ::mqt::test::DiagnosticCapture invalidDiagnostics;
+  auto invalid = generate(
+      R"({"schema_version":1,"benchmark":"ghz","parameters":{"qubits":0}})",
+      "invalid.json");
+  ASSERT_FALSE(succeeded(invalid));
+  const auto diagnostic = invalidDiagnostics.error->message;
+  EXPECT_NE(diagnostic.find("invalid.json:$/parameters"), std::string::npos);
+  EXPECT_NE(diagnostic.find("GHZ qubits"), std::string::npos);
+
+  auto valid = generate(
+      R"({"schema_version":1,"benchmark":"ghz","parameters":{"qubits":2}})");
+  ASSERT_TRUE(succeeded(valid));
+  EXPECT_EQ(valid->benchmarkId, "ghz");
 }
 
 } // namespace mqt::bench

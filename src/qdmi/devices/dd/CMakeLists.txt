@@ -25,7 +25,10 @@ if(NOT TARGET ${TARGET_NAME})
   target_sources(${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS
                                        ${CMAKE_CURRENT_BINARY_DIR}/include FILES ${QDMI_HDRS})
 
-  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreDD MQT::CoreQDMICommon LLVMSupport)
+  mqt_target_disable_exceptions(${TARGET_NAME})
+  mqt_source_enable_exceptions(Device.cpp)
+  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreDD MQT::CoreQDMICommon MQT::CoreSupport
+                                               LLVMSupport)
   mqt_llvm_target_disable_rtti(${TARGET_NAME})
   # Keep symbols from static dependencies local. A plugin-enabled host can otherwise interpose
   # LLVM's process-wide registries when it loads this device.
@@ -37,9 +40,11 @@ if(NOT TARGET ${TARGET_NAME})
   set(WORKER_TARGET ${MQT_CORE_TARGET_NAME}-ddsim-worker)
   add_executable(${WORKER_TARGET} WorkerMain.cpp WorkerProtocol.cpp)
   target_compile_features(${WORKER_TARGET} PRIVATE cxx_std_20)
+  mqt_target_disable_exceptions(${WORKER_TARGET})
   target_link_libraries(
     ${WORKER_TARGET}
-    PRIVATE MQT::CoreDD
+    PRIVATE MQT::CoreSupport
+            MQT::CoreDD
             MQT::CoreQDMICommon
             MLIRQCODDFunctionality
             MQTCompilerPrograms

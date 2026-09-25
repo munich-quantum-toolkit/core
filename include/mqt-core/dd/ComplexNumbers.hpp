@@ -20,6 +20,8 @@
 #include "dd/Edge.hpp"
 #include "dd/RealNumberUniqueTable.hpp"
 
+#include "mlir/Support/LogicalResult.h"
+
 #include <complex>
 #include <cstddef>
 
@@ -42,8 +44,8 @@ public:
   /// This is global to all packages. Existing DDs are not recanonicalized.
   ///
   /// @param tol The new positive, normal tolerance.
-  /// @throws std::invalid_argument If the tolerance is not positive and normal.
-  static void setTolerance(fp tol);
+  /// Return failure if the tolerance is not positive and normal.
+  [[nodiscard]] static mlir::LogicalResult setTolerance(fp tol);
 
   /// Compute the squared magnitude of a complex number.
   ///

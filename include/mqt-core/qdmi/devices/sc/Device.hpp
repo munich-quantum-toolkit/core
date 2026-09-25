@@ -14,7 +14,8 @@
 #pragma once
 
 #include "mqt_sc_qdmi/device.h"
-#include "qdmi/common/Diagnostics.hpp"
+
+#include "support/DiagnosticFormatting.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -39,13 +40,13 @@ template <class Callable>
   try {
     return std::forward<Callable>(callable)();
   } catch (const std::bad_alloc&) {
-    qdmi::diagnostics::error("Out of memory while {}", action);
+    ::mqt::diagnostics::error("Out of memory while {}", action);
     return QDMI_ERROR_OUTOFMEM;
   } catch (const std::exception& error) {
-    qdmi::diagnostics::error("Failed while {}: {}", action, error.what());
+    ::mqt::diagnostics::error("Failed while {}: {}", action, error.what());
     return QDMI_ERROR_FATAL;
   } catch (...) {
-    qdmi::diagnostics::error("Failed while {}: unknown exception", action);
+    ::mqt::diagnostics::error("Failed while {}: unknown exception", action);
     return QDMI_ERROR_FATAL;
   }
 }

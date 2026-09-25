@@ -13,6 +13,8 @@
 #include "mqt/bench/Generate.h"
 
 #include "TestUtils.h"
+#include "support/Diagnostics.hpp"
+#include "support/TestSupport.hpp"
 
 #include "gtest/gtest.h"
 
@@ -32,9 +34,9 @@ namespace mqt::bench {
 using namespace mlir;
 
 TEST(GenerateProgramTest, EmitsWeakMeasurementAfterEachGroverIteration) {
-  auto program = generate(WeakMeasurementGrover{
-      {.markedBitstring = "01", .measurementStrength = 0.5}});
-  ASSERT_TRUE(mlir::succeeded(program));
+  auto program = generate(::mqt::test::value(WeakMeasurementGrover::create(
+      {.markedBitstring = "01", .measurementStrength = 0.5})));
+  ASSERT_TRUE(succeeded(program));
   auto moduleOp = program->module();
 
   SmallVector<scf::WhileOp> loops;
@@ -90,9 +92,9 @@ TEST(GenerateProgramTest, EmitsWeakMeasurementAfterEachGroverIteration) {
 }
 
 TEST(GenerateProgramTest, SamplesWeakMeasurementGroverAgainstReference) {
-  auto program =
-      test::generateQCO(WeakMeasurementGrover{{.markedBitstring = "110"}});
-  ASSERT_TRUE(mlir::succeeded(program));
+  auto program = test::generateQCO(::mqt::test::value(
+      WeakMeasurementGrover::create({.markedBitstring = "110"})));
+  ASSERT_TRUE(program);
   auto counts =
       qco::sample(mlir::mqt::getEntryPoint(program->module()), 64, 17);
   ASSERT_TRUE(succeeded(counts));

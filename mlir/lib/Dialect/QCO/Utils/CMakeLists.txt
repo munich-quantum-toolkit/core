@@ -56,8 +56,6 @@ target_sources(
          ${UTILS_HEADERS_BUILD})
 
 function(mqt_add_dd_adapter suffix dd_target)
-  set(LLVM_REQUIRES_EH ON)
-  set(LLVM_REQUIRES_RTTI ON)
   add_mlir_library(
     MLIRQCODDAdapter${suffix}
     PARTIAL_SOURCES_INTENDED

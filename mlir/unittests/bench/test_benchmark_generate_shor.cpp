@@ -19,6 +19,7 @@
 
 #include "ShorMultiplier.h"
 #include "TestUtils.h"
+#include "support/TestSupport.hpp"
 
 #include "gtest/gtest.h"
 
@@ -71,13 +72,13 @@ static std::vector<double> shorReference(uint64_t number, uint64_t base) {
 TEST(GenerateProgramTest, SamplesShorAndRecoversFactors) {
   // Keep the circuit small enough for unoptimized coverage builds.
   constexpr uint64_t number = 15;
-  const Shor benchmark({.number = number});
+  const auto benchmark = ::mqt::test::value(Shor::create({.number = number}));
   auto program = test::generateQCO(benchmark);
   ASSERT_TRUE(mlir::succeeded(program));
   auto counts =
       qco::sample(mlir::mqt::getEntryPoint(program->module()), 64, 17);
   ASSERT_TRUE(succeeded(counts));
-  auto evaluation = benchmark.evaluate(*counts);
+  auto evaluation = ::mqt::test::value(benchmark.evaluate(*counts));
   ASSERT_TRUE(evaluation.factors);
   EXPECT_EQ(evaluation.factors->first * evaluation.factors->second, number);
   const auto reference = shorReference(number, 2);
@@ -94,7 +95,7 @@ TEST(GenerateProgramTest, SamplesShorAndRecoversFactors) {
       qco::sample(mlir::mqt::getEntryPoint(program->module()), 256, 17,
                   qco::DDArgumentBindings{}, nullptr, nullptr, {}, 1);
   ASSERT_TRUE(succeeded(shared));
-  EXPECT_TRUE(benchmark.evaluate(*shared).factors);
+  EXPECT_TRUE(::mqt::test::value(benchmark.evaluate(*shared)).factors);
 }
 
 static mlir::FailureOr<QCOProgram>
@@ -160,10 +161,10 @@ TEST(GenerateProgramTest, VerifiesSmallInPlaceMultiplierBasisStates) {
         continue;
       }
       auto program = inPlaceMultiplier(number, multiplier);
-      ASSERT_TRUE(mlir::succeeded(program));
-      dd::Package package(qubits);
+      ASSERT_TRUE(program);
+      auto package = ::mqt::test::value(dd::Package::create(qubits));
       auto functionality = qco::buildFunctionality(
-          mlir::mqt::getEntryPoint(program->module()), package);
+          mlir::mqt::getEntryPoint(program->module()), *package);
       ASSERT_TRUE(succeeded(functionality));
       for (uint64_t value = 0; value < number; ++value) {
         for (size_t control = 0; control < 2; ++control) {
@@ -171,17 +172,18 @@ TEST(GenerateProgramTest, VerifiesSmallInPlaceMultiplierBasisStates) {
               std::vector<uint64_t>{number, multiplier, value, control}));
           dd::CVec input(size_t{1} << qubits);
           input[(value << 1U) | control] = 1.;
-          auto state = package.applyOperation(
-              *functionality, dd::makeStateFromVector(input, package));
+          auto state = package->applyOperation(
+              *functionality,
+              ::mqt::test::value(dd::makeStateFromVector(input, *package)));
           auto output = dd::getVector(state);
-          package.decRef(state);
+          package->decRef(state);
           const auto product =
               control != 0 ? multiplier * value % number : value;
           const auto expected = (product << 1U) | control;
           EXPECT_NEAR(std::norm(output[expected]), 1., 1e-11);
         }
       }
-      package.decRef(*functionality);
+      package->decRef(*functionality);
     }
   }
 }
@@ -206,15 +208,16 @@ TEST(GenerateProgramTest, PreservesMultiplierCoherenceAndUncomputesWorkspace) {
           expected[(product << 1U) | control] = amplitude;
         }
       }
-      dd::Package package(qubits);
+      auto package = ::mqt::test::value(dd::Package::create(qubits));
       auto functionality = qco::buildFunctionality(
-          mlir::mqt::getEntryPoint(program->module()), package);
+          mlir::mqt::getEntryPoint(program->module()), *package);
       ASSERT_TRUE(succeeded(functionality));
-      auto state = package.applyOperation(
-          *functionality, dd::makeStateFromVector(input, package));
+      auto state = package->applyOperation(
+          *functionality,
+          ::mqt::test::value(dd::makeStateFromVector(input, *package)));
       auto output = dd::getVector(state);
-      package.decRef(state);
-      package.decRef(*functionality);
+      package->decRef(state);
+      package->decRef(*functionality);
       ASSERT_EQ(output.size(), expected.size());
       const auto overlap = std::inner_product(
           expected.begin(), expected.end(), output.begin(),
@@ -230,9 +233,10 @@ TEST(GenerateProgramTest, PreservesMultiplierCoherenceAndUncomputesWorkspace) {
 }
 
 TEST(GenerateProgramTest, KeepsLargestShorStructuredAndCompilable) {
-  const Shor benchmark({.number = ShorOptions::MAX_NUMBER});
+  const auto benchmark =
+      ::mqt::test::value(Shor::create({.number = ShorOptions::MAX_NUMBER}));
   auto program = generate(benchmark);
-  ASSERT_TRUE(mlir::succeeded(program));
+  ASSERT_TRUE(succeeded(program));
   EXPECT_LT(program->str().size(), 32'768U);
   auto qcoProgram = std::move(*program).intoQCO();
   ASSERT_TRUE(mlir::succeeded(qcoProgram));

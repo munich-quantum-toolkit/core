@@ -13,39 +13,49 @@
 #include "bench/Evaluation.hpp"
 
 #include "EvaluationUtils.hpp"
+#include "support/Diagnostics.hpp"
+
+#include "mlir/Support/LogicalResult.h"
 
 #include <cmath>
 #include <cstddef>
-#include <stdexcept>
 #include <string_view>
 
 namespace mqt::bench {
 
-GHZ::GHZ(GHZOptions options)
-    : options_(options), output_{.name = "result", .width = options_.qubits} {
-  if (options_.qubits == 0 || options_.qubits > GHZOptions::MAX_QUBITS) {
-    throw std::invalid_argument("GHZ qubits must be between 1 and 1000000");
+mlir::FailureOr<GHZ> GHZ::create(GHZOptions options) {
+  if (options.qubits == 0 || options.qubits > GHZOptions::MAX_QUBITS) {
+    return ::mqt::emitError("GHZ qubits must be between 1 and 1000000",
+                            ::mqt::ErrorCategory::InvalidArgument);
   }
-  if (options_.topology != GHZTopology::Linear &&
-      options_.topology != GHZTopology::Star) {
-    throw std::invalid_argument("unknown GHZ topology");
+  if (options.topology != GHZTopology::Linear &&
+      options.topology != GHZTopology::Star) {
+    return ::mqt::emitError("unknown GHZ topology",
+                            ::mqt::ErrorCategory::InvalidArgument);
   }
-  if (options_.basis != GHZBasis::Z && options_.basis != GHZBasis::X) {
-    throw std::invalid_argument("unknown GHZ measurement basis");
+  if (options.basis != GHZBasis::Z && options.basis != GHZBasis::X) {
+    return ::mqt::emitError("unknown GHZ measurement basis",
+                            ::mqt::ErrorCategory::InvalidArgument);
   }
-  if (options_.basis == GHZBasis::X &&
-      options_.qubits > GHZOptions::MAX_X_BASIS_QUBITS) {
-    throw std::invalid_argument(
-        "GHZ X-basis qubits must be between 1 and 1075");
+  if (options.basis == GHZBasis::X &&
+      options.qubits > GHZOptions::MAX_X_BASIS_QUBITS) {
+    return ::mqt::emitError("GHZ X-basis qubits must be between 1 and 1075",
+                            ::mqt::ErrorCategory::InvalidArgument);
   }
+  return GHZ(options);
 }
+
+GHZ::GHZ(GHZOptions options)
+    : options_(options), output_{.name = "result", .width = options_.qubits} {}
 
 const GHZOptions& GHZ::options() const noexcept { return options_; }
 
 const Output& GHZ::output() const noexcept { return output_; }
 
-double GHZ::probability(const std::string_view outcome) const {
-  detail::validateOutcome(outcome, output_.width);
+mlir::FailureOr<double> GHZ::probability(const std::string_view outcome) const {
+  if (mlir::failed(detail::validateOutcome(outcome, output_.width))) {
+    return mlir::failure();
+  }
 
   if (options_.basis == GHZBasis::Z) {
     const auto allZero = outcome.find('1') == std::string_view::npos;
@@ -63,7 +73,7 @@ double GHZ::probability(const std::string_view outcome) const {
   return std::ldexp(1., 1 - static_cast<int>(options_.qubits));
 }
 
-Evaluation GHZ::evaluate(const Counts& counts) const {
+mlir::FailureOr<Evaluation> GHZ::evaluate(const Counts& counts) const {
   return detail::evaluate(*this, counts);
 }
 

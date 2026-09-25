@@ -10,24 +10,25 @@
 
 #pragma once
 
+#include "support/Diagnostics.hpp"
+#include "support/TestSupport.hpp"
+
 #include "gtest/gtest.h"
 
 #include <functional>
-#include <stdexcept>
 #include <string_view>
 
 namespace mqt::bench::test {
 
 inline void expectInvalidJSON(const std::function<void()>& operation,
                               const std::string_view diagnostic) {
-  try {
-    operation();
-    FAIL() << "Expected invalid JSON input";
-  } catch (const std::invalid_argument& error) {
-    EXPECT_NE(std::string_view(error.what()).find(diagnostic),
-              std::string_view::npos)
-        << error.what();
-  }
+  ::mqt::test::DiagnosticCapture capture;
+  operation();
+  ASSERT_TRUE(capture.error);
+  EXPECT_EQ(capture.error->category, ::mqt::ErrorCategory::InvalidArgument);
+  EXPECT_NE(std::string_view(capture.error->message).find(diagnostic),
+            std::string_view::npos)
+      << capture.error->message;
 }
 
 } // namespace mqt::bench::test

@@ -26,6 +26,7 @@
 #include "mqt/Dialect/QCO/Utils/DDAdapter.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
+#include "mqt/Support/Diagnostics.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -54,6 +55,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/Threading.h"
 
 #include <algorithm>
@@ -83,6 +85,17 @@
 #include <vector>
 
 namespace mlir::qco {
+
+template <typename Function>
+static auto diagnoseDD(Operation* op, Function&& function) {
+  ::mqt::ScopedDiagnosticHandler handler(
+      [&](const ::mqt::Diagnostic& diagnostic) {
+        emitNativeDiagnostic(op, diagnostic);
+        return success();
+      });
+  return std::forward<Function>(function)();
+}
+
 namespace {
 struct WorkerBudget {
   std::mutex mutex;
@@ -358,9 +371,11 @@ resolveDouble(Value value, const ClassicalEnv& classical, Operation* op) {
          << "floating-point SSA value has no concrete QCO DD binding";
 }
 
-using StandardGateFactory = dd::MatrixDD (*)(dd::Package&, ArrayRef<double>,
-                                             size_t, ArrayRef<dd::Qubit>,
-                                             const dd::Controls&);
+using StandardGateFactory = FailureOr<dd::MatrixDD> (*)(dd::Package&,
+                                                        ArrayRef<double>,
+                                                        size_t,
+                                                        ArrayRef<dd::Qubit>,
+                                                        const dd::Controls&);
 
 namespace {
 struct DecodedStandardGate {
@@ -369,13 +384,17 @@ struct DecodedStandardGate {
 };
 } // namespace
 
-template <typename GateOp>
+template <typename GateOp, size_t NumParams>
 static auto buildStandardGateDD(dd::Package& package,
                                 ArrayRef<double> parameters, size_t numQubits,
                                 ArrayRef<dd::Qubit> targets,
-                                const dd::Controls& controls) -> dd::MatrixDD {
-  return makeGateDD(package, getStandardGateMatrix<GateOp>(parameters),
-                    numQubits, targets, controls);
+                                const dd::Controls& controls)
+    -> FailureOr<dd::MatrixDD> {
+  assert(parameters.size() == NumParams);
+  std::array<double, NumParams> values{};
+  std::copy_n(parameters.begin(), NumParams, values.begin());
+  return makeGateDD(package, getStandardGateMatrix<GateOp>(values), numQubits,
+                    targets, controls);
 }
 
 /// `std::nullopt` if @p unitary is not a standard gate; failure if its unitary
@@ -385,7 +404,8 @@ decodeStandardGate(UnitaryOpInterface unitary, const ClassicalEnv& classical) {
   Operation* op = unitary.getOperation();
   TypeSwitch<Operation*, StandardGateFactory> typeSwitch(op);
 #define MQT_GATE(KEY, NAME, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)       \
-  typeSwitch.Case<KEY##Op>([](auto) { return &buildStandardGateDD<KEY##Op>; });
+  typeSwitch.Case<KEY##Op>(                                                    \
+      [](auto) { return &buildStandardGateDD<KEY##Op, PARAMS>; });
 #include "mqt/Conversion/GateTable.def"
   const auto factory = typeSwitch.Default(nullptr);
   if (factory == nullptr) {
@@ -458,8 +478,13 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
            << "unitary matrix dimension does not match its target count";
   }
 
-  state = walk.dd->applyOperation(
-      makeGateDD(*walk.dd, local, walk.qubits->numQubits, wires), state);
+  auto gate = diagnoseDD(op, [&] {
+    return makeGateDD(*walk.dd, local, walk.qubits->numQubits, wires);
+  });
+  if (failed(gate)) {
+    return failure();
+  }
+  state = walk.dd->applyOperation(*gate, state);
   return walk.qubits->remapUnitary(unitary);
 }
 
@@ -476,7 +501,13 @@ static LogicalResult applyDecodedStandard(UnitaryOpInterface unitary,
   if (failed(targets)) {
     return failure();
   }
-  dd::MatrixDD matrix;
+  const auto build = [&] {
+    return diagnoseDD(unitary, [&] {
+      return gate.build(*walk.dd, gate.parameters, walk.qubits->numQubits,
+                        *targets, controls);
+    });
+  };
+  FailureOr<dd::MatrixDD> matrix = failure();
   if constexpr (std::is_same_v<StateDD, dd::VectorDD>) {
     if (walk.gates != nullptr) {
       auto& variants = walk.gates->entries[unitary.getOperation()];
@@ -489,11 +520,13 @@ static LogicalResult applyDecodedStandard(UnitaryOpInterface unitary,
       if (found != variants.end()) {
         matrix = found->matrix;
       } else {
-        matrix = gate.build(*walk.dd, gate.parameters, walk.qubits->numQubits,
-                            *targets, controls);
+        matrix = build();
+        if (failed(matrix)) {
+          return failure();
+        }
         // Bound gate-cache storage to eight matrices per operation.
         if (variants.size() < 8) {
-          walk.dd->incRef(matrix);
+          walk.dd->incRef(*matrix);
           variants.push_back(GateCache::Entry{
               .numQubits = walk.qubits->numQubits,
               .targets =
@@ -501,19 +534,20 @@ static LogicalResult applyDecodedStandard(UnitaryOpInterface unitary,
               .controls = controls,
               .parameters = SmallVector<double>(gate.parameters.begin(),
                                                 gate.parameters.end()),
-              .matrix = matrix,
+              .matrix = *matrix,
           });
         }
       }
     } else {
-      matrix = gate.build(*walk.dd, gate.parameters, walk.qubits->numQubits,
-                          *targets, controls);
+      matrix = build();
     }
   } else {
-    matrix = gate.build(*walk.dd, gate.parameters, walk.qubits->numQubits,
-                        *targets, controls);
+    matrix = build();
   }
-  state = walk.dd->applyOperation(matrix, state);
+  if (failed(matrix)) {
+    return failure();
+  }
+  state = walk.dd->applyOperation(*matrix, state);
   return walk.qubits->remapUnitary(unitary);
 }
 
@@ -1439,7 +1473,7 @@ static FailureOr<TensorSlots> allocateZeroQubits(size_t count, WalkState& walk,
   }
   const size_t required = walk.qubits->numQubits + count;
   if (walk.dd->qubits() < required) {
-    walk.dd->resize(required);
+    std::ignore = walk.dd->resize(required);
   }
 
   const size_t first = walk.qubits->numQubits;
@@ -1453,14 +1487,13 @@ static FailureOr<TensorSlots> allocateZeroQubits(size_t count, WalkState& walk,
             dd::vCachedEdge::zero(),
         });
     extended = {.p = node.p, .w = state.w};
-    walk.dd->incRef(extended);
   } else {
-    auto zeros = dd::makeZeroState(count, *walk.dd, first);
+    const auto zeros = *dd::makeZeroState(count, *walk.dd, first);
     extended = walk.dd->kronecker(zeros, state, first, /*incIdx=*/false);
-    walk.dd->incRef(extended);
     walk.dd->decRef(zeros);
   }
   walk.dd->decRef(state);
+  walk.dd->incRef(extended);
   state = extended;
 
   TensorSlots slots;
@@ -1674,9 +1707,14 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
             walk.qubits->bind(measureOp.getQubitOut(), *q);
             return success();
           }
-          const char bit = walk.dd->measureOneCollapsing(state, *q, *walk.rng);
+          auto bit = diagnoseDD(measureOp, [&] {
+            return walk.dd->measureOneCollapsing(state, *q, *walk.rng);
+          });
+          if (failed(bit)) {
+            return failure();
+          }
           walk.classical->values[measureOp.getResult()] =
-              BoolAttr::get(measureOp.getContext(), bit == '1');
+              BoolAttr::get(measureOp.getContext(), *bit == '1');
           walk.qubits->bind(measureOp.getQubitOut(), *q);
           return success();
         }
@@ -1695,12 +1733,21 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
             return resetOp.emitError()
                    << "qubit SSA value is not mapped for QCO DD construction";
           }
-          const char bit = walk.dd->measureOneCollapsing(state, *q, *walk.rng);
-          if (bit == '1') {
-            state = walk.dd->applyOperation(
-                makeGateDD(*walk.dd, getStandardGateMatrix<XOp>({}),
-                           walk.qubits->numQubits, {*q}),
-                state);
+          auto bit = diagnoseDD(resetOp, [&] {
+            return walk.dd->measureOneCollapsing(state, *q, *walk.rng);
+          });
+          if (failed(bit)) {
+            return failure();
+          }
+          if (*bit == '1') {
+            auto gate = diagnoseDD(resetOp, [&] {
+              return makeGateDD(*walk.dd, XOp::getUnitaryMatrix(),
+                                walk.qubits->numQubits, {*q});
+            });
+            if (failed(gate)) {
+              return failure();
+            }
+            state = walk.dd->applyOperation(*gate, state);
           }
           walk.qubits->bind(resetOp.getQubitOut(), *q);
           return success();
@@ -2037,7 +2084,7 @@ prepare(func::FuncOp func, dd::Package& dd,
     }
   }
   if (dd.qubits() < qubits.numQubits) {
-    dd.resize(qubits.numQubits);
+    std::ignore = dd.resize(qubits.numQubits);
   }
   return prepared;
 }
@@ -2236,10 +2283,11 @@ simulateStatevector(func::FuncOp func, dd::Package& dd,
   }
   DenseSet<dd::Qubit> measuredWires;
   Operation* deferredMeasurementUse = nullptr;
-  auto state = simulateImpl(
-      func, dd::makeZeroState(prepared->qubits.numQubits, dd), dd, *prepared,
-      nullptr, options, &plan->deferredMeasurements, nullptr, &measuredWires,
-      &deferredMeasurementUse, /*validateQuantumReturn=*/false);
+  const auto initial = *dd::makeZeroState(prepared->qubits.numQubits, dd);
+  auto state =
+      simulateImpl(func, initial, dd, *prepared, nullptr, options,
+                   &plan->deferredMeasurements, nullptr, &measuredWires,
+                   &deferredMeasurementUse, /*validateQuantumReturn=*/false);
   if (failed(state) && deferredMeasurementUse != nullptr) {
     return deferredMeasurementUse->emitError()
            << "statevector extraction cannot use a measurement result or "
@@ -2326,7 +2374,7 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
   };
   ordered.resize(shots);
   Group first{
-      .state = dd::makeZeroState(prepared.qubits.numQubits, dd),
+      .state = *dd::makeZeroState(prepared.qubits.numQubits, dd),
       .qubits = prepared.qubits,
       .tensors = prepared.tensors.clone(),
       .classical = prepared.classical.clone(),
@@ -2349,7 +2397,7 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
   GateCache gateCache(dd);
   std::function<LogicalResult(Block::iterator, Group)> visit =
       [&](Block::iterator current, Group group) -> LogicalResult {
-    const auto guard = llvm::make_scope_exit([&] { dd.decRef(group.state); });
+    const auto guard = llvm::scope_exit([&] { dd.decRef(group.state); });
     WalkState walk{
         .qubits = &group.qubits,
         .tensors = &group.tensors,
@@ -2463,10 +2511,10 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
           branch.qubits.bind(measure.getQubitOut(), *q);
         } else {
           if (!measuredZero) {
-            branch.state =
-                dd.applyOperation(makeGateDD(dd, getStandardGateMatrix<XOp>({}),
-                                             branch.qubits.numQubits, {*q}),
-                                  branch.state);
+            branch.state = dd.applyOperation(
+                *makeGateDD(dd, getStandardGateMatrix<XOp>({}),
+                            branch.qubits.numQubits, {*q}),
+                branch.state);
           }
           branch.qubits.bind(reset.getQubitOut(), *q);
         }
@@ -2529,10 +2577,17 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
       return failure();
     }
     for (const auto id : group.ids) {
-      auto outcome = encodeOutcome(plan.outputs, group.classical,
-                                   plan.outputs.empty()
-                                       ? dd.measureAll(group.state, false, rng)
-                                       : std::string{});
+      std::string basis;
+      if (plan.outputs.empty()) {
+        auto measured = diagnoseDD(
+            func, [&] { return dd.measureAll(group.state, false, rng); });
+        if (failed(measured)) {
+          return failure();
+        }
+        basis = std::move(*measured);
+      }
+      auto outcome =
+          encodeOutcome(plan.outputs, group.classical, std::move(basis));
       if (failed(outcome)) {
         return failure();
       }
@@ -2601,7 +2656,12 @@ sampleImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
     if (succeeded(state)) {
       const auto guard = llvm::scope_exit([&] { dd.decRef(*state); });
       for (size_t i = 0; i < shots; ++i) {
-        if (failed(record(classical, dd.measureAll(*state, false, rng)))) {
+        auto basis =
+            diagnoseDD(func, [&] { return dd.measureAll(*state, false, rng); });
+        if (failed(basis)) {
+          return failure();
+        }
+        if (failed(record(classical, std::move(*basis)))) {
           return failure();
         }
       }
@@ -2629,9 +2689,15 @@ sampleImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
       return failure();
     }
     const auto guard = llvm::scope_exit([&] { dd.decRef(*state); });
-    std::string basis = plan->outputs.empty()
-                            ? dd.measureAll(*state, false, rng)
-                            : std::string{};
+    std::string basis;
+    if (plan->outputs.empty()) {
+      auto measured =
+          diagnoseDD(func, [&] { return dd.measureAll(*state, false, rng); });
+      if (failed(measured)) {
+        return failure();
+      }
+      basis = std::move(*measured);
+    }
     if (failed(record(classical, std::move(basis)))) {
       return failure();
     }
@@ -2652,9 +2718,8 @@ sample(func::FuncOp func, size_t shots, uint64_t seed,
     shotResults->reserve(shots);
   }
   size_t grant = reserveSamplingWorkers(1, shots);
-  const auto release =
-      llvm::make_scope_exit([&] { releaseSamplingWorkers(grant); });
-  auto dd = std::make_unique<dd::Package>(0);
+  const auto release = llvm::scope_exit([&] { releaseSamplingWorkers(grant); });
+  auto dd = std::move(*dd::Package::create(0));
   std::mt19937_64 rng(seed == 0 ? std::random_device{}() : seed);
   auto prepared = prepare(func, *dd, argumentBindings);
   if (failed(prepared)) {
@@ -2677,7 +2742,7 @@ sample(func::FuncOp func, size_t shots, uint64_t seed,
     bool adaptive = plan->dynamic;
     if (!adaptive) {
       auto result =
-          sampleImpl(func, dd::makeZeroState(prepared->qubits.numQubits, *dd),
+          sampleImpl(func, *dd::makeZeroState(prepared->qubits.numQubits, *dd),
                      *dd, shots, rng, *prepared, shotResults,
                      retainedState != nullptr ? &state : nullptr, options,
                      /*forceDynamic=*/false, &adaptive);
@@ -2712,7 +2777,7 @@ sample(func::FuncOp func, size_t shots, uint64_t seed,
           return counts;
         }
         return sampleImpl(func,
-                          dd::makeZeroState(prepared->qubits.numQubits, *dd),
+                          *dd::makeZeroState(prepared->qubits.numQubits, *dd),
                           *dd, shots, rng, *prepared, shotResults, nullptr,
                           options, /*forceDynamic=*/true);
       }
@@ -2729,7 +2794,7 @@ sample(func::FuncOp func, size_t shots, uint64_t seed,
           .shots = {},
       });
       for (size_t i = 1; i < workers; ++i) {
-        auto package = std::make_unique<dd::Package>(0);
+        auto package = std::move(*dd::Package::create(0));
         auto next = prepare(func, *package, argumentBindings);
         if (failed(next)) {
           return failure();
@@ -2753,7 +2818,7 @@ sample(func::FuncOp func, size_t shots, uint64_t seed,
           const size_t count = (shots / workers) + (i < shots % workers);
           return sampleImpl(
               func,
-              dd::makeZeroState(worker.prepared.qubits.numQubits, *worker.dd),
+              *dd::makeZeroState(worker.prepared.qubits.numQubits, *worker.dd),
               *worker.dd, count, workerRng, worker.prepared, &worker.shots,
               nullptr, options, /*forceDynamic=*/true);
         }));
@@ -2778,9 +2843,9 @@ sample(func::FuncOp func, size_t shots, uint64_t seed,
                           : FailureOr<std::map<std::string, size_t>>(failure());
     }
   }
+  const auto initial = *dd::makeZeroState(prepared->qubits.numQubits, *dd);
   auto counts =
-      sampleImpl(func, dd::makeZeroState(prepared->qubits.numQubits, *dd), *dd,
-                 shots, rng, *prepared, shotResults,
+      sampleImpl(func, initial, *dd, shots, rng, *prepared, shotResults,
                  retainedState != nullptr ? &state : nullptr, options);
   if (succeeded(counts) && state && retainedState != nullptr) {
     retainedState->state = *state;

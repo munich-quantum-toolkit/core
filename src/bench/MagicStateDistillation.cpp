@@ -13,25 +13,33 @@
 #include "bench/Evaluation.hpp"
 
 #include "EvaluationUtils.hpp"
+#include "support/Diagnostics.hpp"
+
+#include "mlir/Support/LogicalResult.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <stdexcept>
 #include <string_view>
+#include <utility>
 
 namespace mqt::bench {
 
+mlir::FailureOr<MagicStateDistillation>
+MagicStateDistillation::create(MagicStateDistillationOptions options) {
+  if (options.levels == 0 ||
+      options.levels >
+          static_cast<size_t>(std::numeric_limits<int64_t>::max()) / 5) {
+    return ::mqt::emitError("magic-state-distillation levels must be positive "
+                            "and fit circuit dimensions",
+                            ::mqt::ErrorCategory::InvalidArgument);
+  }
+  return MagicStateDistillation(std::move(options));
+}
+
 MagicStateDistillation::MagicStateDistillation(
     MagicStateDistillationOptions options)
-    : options_(options), output_{.name = "result", .width = 2} {
-  if (options_.levels == 0 ||
-      options_.levels >
-          static_cast<size_t>(std::numeric_limits<int64_t>::max()) / 5) {
-    throw std::invalid_argument("magic-state-distillation levels must be "
-                                "positive and fit circuit dimensions");
-  }
-}
+    : options_(options), output_{.name = "result", .width = 2} {}
 
 const MagicStateDistillationOptions&
 MagicStateDistillation::options() const noexcept {
@@ -42,13 +50,16 @@ const Output& MagicStateDistillation::output() const noexcept {
   return output_;
 }
 
-double
+mlir::FailureOr<double>
 MagicStateDistillation::probability(const std::string_view outcome) const {
-  detail::validateOutcome(outcome, output_.width);
+  if (mlir::failed(detail::validateOutcome(outcome, output_.width))) {
+    return mlir::failure();
+  }
   return outcome == "00" ? 1. : 0.;
 }
 
-Evaluation MagicStateDistillation::evaluate(const Counts& counts) const {
+mlir::FailureOr<Evaluation>
+MagicStateDistillation::evaluate(const Counts& counts) const {
   return detail::evaluate(*this, counts, "00");
 }
 

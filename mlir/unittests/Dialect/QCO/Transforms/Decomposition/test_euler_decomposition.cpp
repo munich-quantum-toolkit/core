@@ -264,7 +264,7 @@ static void bindLeadingArguments(func::FuncOp funcOp, ArrayRef<double> values) {
   }
 }
 
-static LogicalResult canonicalizeBoundValues(ModuleOp mlirModule) {
+static mlir::LogicalResult canonicalizeBoundValues(ModuleOp mlirModule) {
   PassManager pm(mlirModule.getContext());
   pm.addPass(createCanonicalizerPass());
   return pm.run(mlirModule);
@@ -708,7 +708,7 @@ static void expectSplitFixtureSegments(func::FuncOp funcOp, StringRef basis,
   EXPECT_EQ(after, rzsx) << "basis=" << basis.str();
 }
 
-static LogicalResult runFuse(ModuleOp mlirModule, StringRef basis) {
+static mlir::LogicalResult runFuse(ModuleOp mlirModule, StringRef basis) {
   PassManager pm(mlirModule.getContext());
   qco::FuseSingleQubitUnitaryRunsOptions opts;
   opts.basis = basis.str();

@@ -554,9 +554,8 @@ runDefaultPipeline(CompilerInput&& program,
                    const TargetEnvironment& environment,
                    const CompilationOptions& options) {
   auto output = environment.payloadSpecification().compilerOutput();
-  if (!output) {
-    llvm::errs() << llvm::toString(output.takeError()) << '\n';
-    return failure();
+  if (failed(output)) {
+    return std::nullopt;
   }
   return runDefaultPipelineImpl(std::move(program), *output, &environment,
                                 "mqt-qco-default", options);

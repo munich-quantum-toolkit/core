@@ -13,7 +13,11 @@
 
 #pragma once
 
+#include "support/Diagnostics.hpp"
+
 #include "qdmi/client.h"
+
+#include "mlir/Support/LogicalResult.h"
 
 #include "llvm/Support/ErrorHandling.h"
 
@@ -24,6 +28,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <variant>
 
 namespace qdmi {
@@ -55,6 +60,28 @@ namespace detail {
   return {utf8};
 }
 } // namespace detail
+
+/// Emit a diagnostic retaining the provider's original status.
+[[nodiscard]] mlir::LogicalResult emitError(int status, std::string message);
+
+/// Report failures and warnings, leaving the successful path allocation-free.
+[[nodiscard]] mlir::LogicalResult checkError(int result,
+                                             std::string_view message);
+
+/// Convert a diagnosed operation to its C status at the immediate ABI boundary.
+/// Forward diagnostics while preserving provider-specific codes.
+template <class Function> int invokeStatus(Function&& function) {
+  int status = QDMI_ERROR_FATAL;
+  ::mqt::ScopedDiagnosticHandler handler(
+      [&](const ::mqt::Diagnostic& diagnostic) {
+        if (diagnostic.severity == ::mqt::DiagnosticSeverity::Error) {
+          status = diagnostic.status.value_or(QDMI_ERROR_FATAL);
+        }
+        return mlir::failure();
+      });
+  return mlir::succeeded(std::forward<Function>(function)()) ? QDMI_SUCCESS
+                                                             : status;
+}
 
 template <class Concrete> class Singleton {
 protected:
@@ -187,16 +214,6 @@ constexpr auto toString(const QDMI_STATUS result) -> const char* {
   }
   llvm_unreachable("Invalid QDMI enum value");
 }
-
-/// Throws an exception if the result indicates an error.
-///
-/// @param result The result of a QDMI operation
-/// @param msg The error message to include in the exception
-/// @throws std::bad_alloc if the result is QDMI_ERROR_OUTOFMEM
-/// @throws std::out_of_range if the result is QDMI_ERROR_OUTOFRANGE
-/// @throws std::invalid_argument if the result is QDMI_ERROR_INVALIDARGUMENT
-/// @throws std::runtime_error for all other error results
-auto throwIfError(int result, const std::string& msg) -> void;
 
 /// Returns the string representation of the given session parameter @p param.
 constexpr auto toString(const QDMI_Session_Parameter param) -> const char* {

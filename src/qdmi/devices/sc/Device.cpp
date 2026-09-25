@@ -18,10 +18,14 @@
 #include "mqt_sc_qdmi/types.h"
 #include "qdmi/common/Common.hpp"
 #include "qdmi/common/DeviceConfiguration.hpp"
-#include "qdmi/common/Diagnostics.hpp"
 #include "qdmi/devices/sc/Configuration.hpp"
 
+#include "support/DiagnosticFormatting.hpp"
+
+#include "mlir/Support/LogicalResult.h"
+
 #include <algorithm>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -31,7 +35,6 @@
 #include <new>
 #include <optional>
 #include <span>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -52,9 +55,8 @@ materializeTuple(const std::vector<uint64_t>& indices,
   std::vector<MQT_SC_QDMI_Site> tuple;
   tuple.reserve(indices.size());
   for (const auto index : indices) {
-    if (index >= sites.size()) {
-      throw std::invalid_argument("operation site index is out of range");
-    }
+    /// readJSON validates the tuple before materialization.
+    assert(index < sites.size());
     tuple.emplace_back(sites[index]);
   }
   return tuple;
@@ -76,7 +78,15 @@ int MQT_SC_QDMI_Device_Session_impl_d::init() {
     if (!loaded) {
       return loadStatus;
     }
-    const auto configuration = sc::readJSON(loaded->json, loaded->source);
+    mlir::FailureOr<sc::Device> parsed;
+    const auto parseStatus = qdmi::invokeStatus([&] {
+      parsed = sc::readJSON(loaded->json, loaded->source);
+      return mlir::LogicalResult(parsed);
+    });
+    if (parseStatus != QDMI_SUCCESS) {
+      return parseStatus;
+    }
+    const auto& configuration = (*parsed);
 
     std::vector<std::unique_ptr<MQT_SC_QDMI_Site_impl_d>> newSiteStorage;
     std::vector<MQT_SC_QDMI_Site> newSites;
@@ -92,7 +102,7 @@ int MQT_SC_QDMI_Device_Session_impl_d::init() {
       newSiteStorage.emplace_back(std::move(site));
     }
     for (const auto& override : configuration.qubitProperties.overrides) {
-      auto& site = newSiteStorage.at(override.qubit);
+      auto& site = newSiteStorage[override.qubit];
       if (override.name) {
         site->name = override.name;
       }
@@ -107,7 +117,7 @@ int MQT_SC_QDMI_Device_Session_impl_d::init() {
     std::vector<std::pair<MQT_SC_QDMI_Site, MQT_SC_QDMI_Site>> newCouplingMap;
     newCouplingMap.reserve(configuration.couplings.size());
     for (const auto& [first, second] : configuration.couplings) {
-      newCouplingMap.emplace_back(newSites.at(first), newSites.at(second));
+      newCouplingMap.emplace_back(newSites[first], newSites[second]);
     }
 
     std::vector<std::unique_ptr<MQT_SC_QDMI_Operation_impl_d>>
@@ -147,11 +157,8 @@ int MQT_SC_QDMI_Device_Session_impl_d::init() {
       std::ranges::sort(operation->supportedSites, siteTupleLess);
       for (const auto& override : operationConfiguration.siteOverrides) {
         auto tuple = materializeTuple(override.sites, newSites);
-        if (!std::ranges::binary_search(operation->supportedSites, tuple,
-                                        siteTupleLess)) {
-          throw std::invalid_argument(
-              "operation site override is not a supported tuple");
-        }
+        assert(std::ranges::binary_search(operation->supportedSites, tuple,
+                                          siteTupleLess));
         operation->overrides.emplace_back(
             std::move(tuple), MQT_SC_QDMI_Operation_impl_d::Calibration{
                                   .duration = override.duration,
@@ -181,22 +188,15 @@ int MQT_SC_QDMI_Device_Session_impl_d::init() {
     const std::string_view source =
         loaded ? std::string_view(loaded->source)
                : std::string_view("selected configuration");
-    qdmi::diagnostics::error(
+    ::mqt::diagnostics::error(
         "Out of memory while initializing SC device from {}", source);
     return QDMI_ERROR_OUTOFMEM;
-  } catch (const std::invalid_argument& error) {
-    const std::string_view source =
-        loaded ? std::string_view(loaded->source)
-               : std::string_view("selected configuration");
-    qdmi::diagnostics::error("Invalid SC device configuration from {}: {}",
-                             source, error.what());
-    return QDMI_ERROR_INVALIDARGUMENT;
   } catch (const std::exception& error) {
     const std::string_view source =
         loaded ? std::string_view(loaded->source)
                : std::string_view("selected configuration");
-    qdmi::diagnostics::error("Failed to initialize SC device from {}: {}",
-                             source, error.what());
+    ::mqt::diagnostics::error("Failed to initialize SC device from {}: {}",
+                              source, error.what());
     return QDMI_ERROR_FATAL;
   }
 }

@@ -594,7 +594,7 @@ out = measure q;
   auto pair = moduleOp->lookupSymbol<func::FuncOp>("pair");
   ASSERT_TRUE(pair);
   EXPECT_TRUE(pair.isPrivate());
-  EXPECT_TRUE(mqt::isUnitaryFunction(pair));
+  EXPECT_TRUE(mlir::mqt::isUnitaryFunction(pair));
   const std::array<Type, 3> expectedTypes{
       Float64Type::get(&context),
       qc::QubitType::get(&context),
@@ -604,7 +604,7 @@ out = measure q;
   EXPECT_EQ(std::distance(pair.getOps<qc::CallOp>().begin(),
                           pair.getOps<qc::CallOp>().end()),
             0);
-  auto entry = mqt::getEntryPoint(*moduleOp);
+  auto entry = mlir::mqt::getEntryPoint(*moduleOp);
   ASSERT_TRUE(entry);
   size_t pairCalls = 0;
   entry.walk([&](qc::CallOp) { ++pairCalls; });
@@ -689,7 +689,7 @@ x $0;
 
   MLIRContext context;
   std::string diagnostic;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& value) {
+  mlir::ScopedDiagnosticHandler handler(&context, [&](mlir::Diagnostic& value) {
     diagnostic = value.str();
     return success();
   });
@@ -862,12 +862,12 @@ _mqt_entry0 q;
   auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  auto entry = mqt::getEntryPoint(*moduleOp);
+  auto entry = mlir::mqt::getEntryPoint(*moduleOp);
   ASSERT_TRUE(entry);
   for (const auto* const name : {"main", "_mqt_entry", "_mqt_entry0"}) {
     auto gate = moduleOp->lookupSymbol<func::FuncOp>(name);
     ASSERT_TRUE(gate);
-    EXPECT_TRUE(mqt::isUnitaryFunction(gate));
+    EXPECT_TRUE(mlir::mqt::isUnitaryFunction(gate));
     EXPECT_NE(entry, gate);
   }
 }
@@ -929,14 +929,14 @@ bit result = measure q;
 
   auto repeated = moduleOp->lookupSymbol<func::FuncOp>("repeated");
   ASSERT_TRUE(repeated);
-  EXPECT_FALSE(mqt::isUnitaryFunction(repeated));
+  EXPECT_FALSE(mlir::mqt::isUnitaryFunction(repeated));
   auto wrapper = moduleOp->lookupSymbol<func::FuncOp>("wrapper");
   ASSERT_TRUE(wrapper);
-  EXPECT_FALSE(mqt::isUnitaryFunction(wrapper));
+  EXPECT_FALSE(mlir::mqt::isUnitaryFunction(wrapper));
   EXPECT_EQ(std::distance(repeated.getOps<scf::ForOp>().begin(),
                           repeated.getOps<scf::ForOp>().end()),
             1);
-  auto entry = mqt::getEntryPoint(*moduleOp);
+  auto entry = mlir::mqt::getEntryPoint(*moduleOp);
   ASSERT_TRUE(entry);
   auto calls = entry.getOps<func::CallOp>();
   ASSERT_EQ(std::distance(calls.begin(), calls.end()), 1);
@@ -1562,11 +1562,12 @@ TEST(OpenQASMTargetTest, EmitsStructuredDiagnosticsWithIncludeStacks) {
   MLIRContext context;
   std::string message;
   Location location = UnknownLoc::get(&context);
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    message = diagnostic.str();
-    location = diagnostic.getLocation();
-    return success();
-  });
+  mlir::ScopedDiagnosticHandler handler(&context,
+                                        [&](mlir::Diagnostic& diagnostic) {
+                                          message = diagnostic.str();
+                                          location = diagnostic.getLocation();
+                                          return success();
+                                        });
   auto moduleOp = qc::translateOpenQASMToQC(sourceMgr, &context);
   EXPECT_FALSE(moduleOp);
   EXPECT_NE(message.find("cannot be represented exactly"), std::string::npos);
@@ -2063,7 +2064,7 @@ inv @ looped(pi / 2) q;
 
   MLIRContext context;
   std::string diagnostic;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& value) {
+  mlir::ScopedDiagnosticHandler handler(&context, [&](mlir::Diagnostic& value) {
     diagnostic = value.str();
     return success();
   });
@@ -2086,7 +2087,7 @@ inv @ wrapper q;
   MLIRContext context;
   std::string diagnostic;
   Location location = UnknownLoc::get(&context);
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& value) {
+  mlir::ScopedDiagnosticHandler handler(&context, [&](mlir::Diagnostic& value) {
     diagnostic = value.str();
     location = value.getLocation();
     return success();
@@ -2119,8 +2120,8 @@ x q;
   auto wrapper = moduleOp->lookupSymbol<func::FuncOp>("wrapper");
   ASSERT_TRUE(looped);
   ASSERT_TRUE(wrapper);
-  EXPECT_TRUE(mqt::isUnitaryFunction(looped));
-  EXPECT_TRUE(mqt::isUnitaryFunction(wrapper));
+  EXPECT_TRUE(mlir::mqt::isUnitaryFunction(looped));
+  EXPECT_TRUE(mlir::mqt::isUnitaryFunction(wrapper));
   EXPECT_EQ(std::distance(wrapper.getOps<qc::CallOp>().begin(),
                           wrapper.getOps<qc::CallOp>().end()),
             1);
@@ -2949,7 +2950,7 @@ TEST(OpenQASMTargetTest, StopsEmissionAtEveryOperationBudgetBoundary) {
       SCOPED_TRACE(limit);
       MLIRContext context;
       size_t diagnostics = 0;
-      ScopedDiagnosticHandler handler(&context, [&](Diagnostic&) {
+      mlir::ScopedDiagnosticHandler handler(&context, [&](mlir::Diagnostic&) {
         ++diagnostics;
         return success();
       });

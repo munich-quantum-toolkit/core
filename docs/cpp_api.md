@@ -106,6 +106,44 @@ target_link_libraries(my-application PRIVATE MQT::CoreDD)
 Point `CMAKE_PREFIX_PATH` at the source installation's prefix. See
 {doc}`installation` for source builds and other CMake integration options.
 
+## Handle native errors
+
+Fallible operations return `mlir::FailureOr<T>` or `mlir::LogicalResult` for
+status alone. Check `mlir::failed(result)` before dereferencing a value.
+Infallible operations return ordinary values or `void`. An `optional<T>` can
+represent successful absence, such as an unsupported optional QDMI property.
+Borrowed results use pointers; keep their owner alive.
+
+When migrating from throwing native APIs, replace `try`/`catch` with a result
+check and use `create(...)` for fallible construction. Python retains its
+exception categories: `ValueError` for invalid arguments, `IndexError` for range
+errors, and `RuntimeError` for unsupported QDMI operations.
+
+Diagnostics carry the message, severity, error category, and original QDMI
+status when applicable. Install a handler **before** calling the operation:
+
+```cpp
+#include "support/Diagnostics.hpp"
+
+mqt::ScopedDiagnosticHandler handler([](const mqt::Diagnostic& diagnostic) {
+  std::cerr << diagnostic.message << '\n';
+  return mlir::success();
+});
+auto package = dd::Package::create(2);
+if (mlir::failed(package)) {
+  return 1;
+}
+```
+
+Handlers run synchronously on their installing thread, newest first, and must
+not throw. Success consumes a diagnostic; failure forwards it to the previous
+handler. Unhandled diagnostics go to stderr. Install handlers on each worker
+thread. Diagnostics emitted inside a handler start at the previous handler.
+
+Allocation exhaustion and unexpected dependency exceptions are not recoverable
+native API errors. See [QIR runtime failures](qir/index.md#runtime-failures) for
+the direct-execution contract.
+
 ## Extend the compiler or QIR runtime
 
 The MLIR compiler and QIR runtime use source-tree C++ interfaces. They are not

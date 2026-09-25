@@ -47,7 +47,7 @@ protected:
   void SetUp() override {
     DialectRegistry registry;
     registry.insert<arith::ArithDialect, cbit::CBitDialect, func::FuncDialect,
-                    mqt::MQTDialect>();
+                    mlir::mqt::MQTDialect>();
     context = std::make_unique<MLIRContext>(registry);
     context->loadAllAvailableDialects();
   }

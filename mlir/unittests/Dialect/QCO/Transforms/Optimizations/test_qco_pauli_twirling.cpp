@@ -80,7 +80,7 @@ protected:
     return builder.finalize();
   }
 
-  static LogicalResult runPass(ModuleOp moduleOp, const uint64_t seed) {
+  static mlir::LogicalResult runPass(ModuleOp moduleOp, const uint64_t seed) {
     PassManager pm(moduleOp.getContext());
     pm.addPass(createPauliTwirl2QGates({.seed = seed}));
     return pm.run(moduleOp);

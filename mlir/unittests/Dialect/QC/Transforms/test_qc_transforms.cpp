@@ -39,7 +39,7 @@ namespace {
 TEST(QCTransformsTest, ShrinkQubitRegistersPreservesMetadata) {
   DialectRegistry registry;
   registry.insert<arith::ArithDialect, func::FuncDialect, memref::MemRefDialect,
-                  mqt::MQTDialect, qc::QCDialect>();
+                  mlir::mqt::MQTDialect, qc::QCDialect>();
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
 
@@ -69,7 +69,7 @@ TEST(QCTransformsTest, ShrinkQubitRegistersPreservesMetadata) {
   ASSERT_TRUE(allocation);
   EXPECT_EQ(allocation.getType().getShape(), ArrayRef<int64_t>{1});
   EXPECT_EQ(allocation->getAttrOfType<StringAttr>(
-                mqt::MQTDialect::RegisterNameAttrHelper::getNameStr()),
+                mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr()),
             StringAttr::get(&context, "q"));
 }
 } // namespace

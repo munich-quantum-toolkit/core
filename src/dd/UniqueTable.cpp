@@ -13,27 +13,39 @@
 #include "dd/MemoryManager.hpp"
 #include "dd/Node.hpp"
 
-#include "statistics/StatisticsJson.hpp"
+#include "support/Diagnostics.hpp"
 
-#include "nlohmann/json.hpp"
+#include "mlir/Support/LogicalResult.h"
 
-#include <algorithm>
 #include <bit>
 #include <cstddef>
-#include <stdexcept>
 #include <string>
 
 namespace dd {
 
+mlir::LogicalResult UniqueTable::checkCapacity(const size_t initial,
+                                               const size_t maximum) {
+  if (!std::has_single_bit(initial) || !std::has_single_bit(maximum) ||
+      maximum < initial) {
+    return ::mqt::emitError(
+        "Unique table capacities must be powers of two, with maximum "
+        "at least the initial capacity.",
+        ::mqt::ErrorCategory::InvalidArgument);
+  }
+  return mlir::success();
+}
+
+mlir::FailureOr<UniqueTable>
+UniqueTable::create(MemoryManager& manager, const UniqueTableConfig& config) {
+  if (mlir::failed(checkCapacity(config.nBuckets, config.maxBuckets))) {
+    return mlir::failure();
+  }
+  return UniqueTable(manager, config);
+}
+
 UniqueTable::UniqueTable(MemoryManager& manager,
                          const UniqueTableConfig& config)
     : cfg(config), gcLimit(config.initialGCLimit), memoryManager(&manager) {
-  if (!std::has_single_bit(cfg.nBuckets) ||
-      !std::has_single_bit(cfg.maxBuckets) || cfg.maxBuckets < cfg.nBuckets) {
-    throw std::invalid_argument(
-        "Unique table capacities must be powers of two, with maximum at least "
-        "the initial capacity.");
-  }
   resize(config.nVars);
 }
 
@@ -116,40 +128,6 @@ void UniqueTable::clear() {
 const UniqueTableStatistics&
 UniqueTable::getStats(const std::size_t idx) const noexcept {
   return stats.at(idx);
-}
-
-nlohmann::basic_json<> toJson(const UniqueTable& table,
-                              const bool includeIndividualTables) {
-  const auto& stats = table.getStats();
-  if (std::ranges::all_of(stats, [](const UniqueTableStatistics& stat) {
-        return stat.peakNumEntries == 0U;
-      })) {
-    return "unused";
-  }
-
-  UniqueTableStatistics totalStats;
-  for (const auto& stat : stats) {
-    totalStats.entrySize = std::max(totalStats.entrySize, stat.entrySize);
-    totalStats.numBuckets += stat.numBuckets;
-    totalStats.numEntries += stat.numEntries;
-    totalStats.peakNumEntries += stat.peakNumEntries;
-    totalStats.collisions += stat.collisions;
-    totalStats.hits += stat.hits;
-    totalStats.lookups += stat.lookups;
-    totalStats.inserts += stat.inserts;
-    totalStats.gcRuns = std::max(totalStats.gcRuns, stat.gcRuns);
-  }
-
-  nlohmann::basic_json<> j;
-  j["total"] = toJson(totalStats);
-  if (includeIndividualTables) {
-    std::size_t v = 0U;
-    for (const auto& stat : stats) {
-      j[std::to_string(v)] = toJson(stat);
-      ++v;
-    }
-  }
-  return j;
 }
 
 std::size_t UniqueTable::getNumEntries() const noexcept { return entryCount_; }

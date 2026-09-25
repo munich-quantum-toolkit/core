@@ -25,8 +25,6 @@ if(WIN32)
 endif()
 target_link_libraries(mqt-core-bench PRIVATE MQT::CoreBenchGenerate MLIRSupport)
 mqt_mlir_target_use_project_options(mqt-core-bench)
-unset(LLVM_REQUIRES_EH)
-unset(LLVM_REQUIRES_RTTI)
 mlir_check_all_link_libraries(mqt-core-bench)
 
 if(MQT_CORE_INSTALL)

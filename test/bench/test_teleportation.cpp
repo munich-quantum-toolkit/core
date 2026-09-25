@@ -13,10 +13,11 @@
 #include "bench/Teleportation.hpp"
 
 #include "JSONTestUtils.hpp"
+#include "support/Diagnostics.hpp"
+#include "support/TestSupport.hpp"
 
 #include "gtest/gtest.h"
 
-#include <stdexcept>
 #include <string>
 
 namespace mqt::bench {
@@ -24,37 +25,42 @@ namespace mqt::bench {
 using test::expectInvalidJSON;
 
 TEST(Teleportation, ChecksTheTeleportedState) {
-  const Teleportation benchmark;
+  const auto benchmark = Teleportation{};
   EXPECT_EQ(benchmark.output(), (Output{"result", 1}));
-  EXPECT_DOUBLE_EQ(benchmark.probability("0"), 1.);
-  EXPECT_DOUBLE_EQ(benchmark.probability("1"), 0.);
-  EXPECT_THROW(static_cast<void>(benchmark.probability("00")),
-               std::invalid_argument);
-  EXPECT_THROW(static_cast<void>(benchmark.probability("x")),
-               std::invalid_argument);
+  EXPECT_DOUBLE_EQ(::mqt::test::value(benchmark.probability("0")), 1.);
+  EXPECT_DOUBLE_EQ(::mqt::test::value(benchmark.probability("1")), 0.);
+  EXPECT_EQ(::mqt::test::errorKind([&] { return benchmark.probability("00"); }),
+            ::mqt::ErrorCategory::InvalidArgument);
+  EXPECT_EQ(::mqt::test::errorKind([&] { return benchmark.probability("x"); }),
+            ::mqt::ErrorCategory::InvalidArgument);
 
-  const auto exact = benchmark.evaluate({{"0", 8}});
+  const auto exact = ::mqt::test::value(benchmark.evaluate({{"0", 8}}));
   EXPECT_DOUBLE_EQ(exact.totalVariationDistance, 0.);
   EXPECT_DOUBLE_EQ(exact.squaredHellingerFidelity, 1.);
   EXPECT_EQ(exact.successProbability, 1.);
 
-  const auto noisy = benchmark.evaluate({{"0", 6}, {"1", 2}});
+  const auto noisy =
+      ::mqt::test::value(benchmark.evaluate({{"0", 6}, {"1", 2}}));
   EXPECT_DOUBLE_EQ(noisy.totalVariationDistance, 0.25);
   EXPECT_DOUBLE_EQ(noisy.squaredHellingerFidelity, 0.75);
   EXPECT_EQ(noisy.successProbability, 0.75);
 }
 
 TEST(Teleportation, RoundTripsJSON) {
-  const auto parsed = teleportationFromInstanceSpecificationJSON(
-      R"({"schema_version":1,"benchmark":"teleportation","parameters":{}})");
+  const auto parsed =
+      ::mqt::test::value(teleportationFromInstanceSpecificationJSON(
+          R"({"schema_version":1,"benchmark":"teleportation","parameters":{}})"));
   EXPECT_EQ(
       toInstanceSpecificationJSON(parsed),
       R"({"benchmark":"teleportation","parameters":{},"schema_version":1})");
 
-  const Teleportation benchmark;
+  const auto benchmark = Teleportation{};
   const auto manifest = toManifestJSON(benchmark);
-  EXPECT_EQ(toManifestJSON(teleportationFromManifestJSON(manifest)), manifest);
-  EXPECT_EQ(benchmarkIdFromManifestJSON(manifest), "teleportation");
+  EXPECT_EQ(toManifestJSON(
+                ::mqt::test::value(teleportationFromManifestJSON(manifest))),
+            manifest);
+  EXPECT_EQ(::mqt::test::value(benchmarkIdFromManifestJSON(manifest)),
+            "teleportation");
   EXPECT_NE(manifest.find("\"model\":\"teleportation\""), std::string::npos);
   EXPECT_NE(manifest.find("\"parameters\":{}"), std::string::npos);
 }
@@ -66,7 +72,7 @@ TEST(Teleportation, UsesSemanticCaseIds) {
 
 TEST(Teleportation, DescribesJSONSchema) {
   EXPECT_NE(
-      describeBenchmarkJSON("teleportation")
+      ::mqt::test::value(describeBenchmarkJSON("teleportation"))
           .find(
               R"("parameters":{"additionalProperties":false,"properties":{},"type":"object"})"),
       std::string::npos);
@@ -82,9 +88,9 @@ TEST(Teleportation, RejectsInvalidJSONParameters) {
 }
 
 TEST(Teleportation, EvaluatesCountsFromJSON) {
-  const auto evaluation =
+  const auto evaluation = ::mqt::test::value(
       evaluateJSON(toManifestJSON(Teleportation{}),
-                   R"({"schema_version":1,"counts":{"0":8}})");
+                   R"({"schema_version":1,"counts":{"0":8}})"));
   EXPECT_NE(evaluation.find("\"success_probability\":1.0"), std::string::npos);
   EXPECT_NE(evaluation.find("\"total_variation_distance\":0.0"),
             std::string::npos);

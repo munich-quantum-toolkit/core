@@ -18,6 +18,7 @@
 #include "mqt/bench/Generate.h"
 
 #include "TestUtils.h"
+#include "support/TestSupport.hpp"
 
 #include "gtest/gtest.h"
 
@@ -47,11 +48,11 @@ namespace mqt::bench {
 using namespace mlir;
 
 TEST(GenerateProgramTest, BoundsLargestQuantumQFTAdderPayload) {
-  auto program = generate(QFTAdder{{
+  auto program = generate(::mqt::test::value(QFTAdder::create({
       .addend = std::string(QFTAdderOptions::MAX_QUBITS, '+'),
       .accumulator = std::string(QFTAdderOptions::MAX_QUBITS - 1, '0') + "1",
-  }});
-  ASSERT_TRUE(mlir::succeeded(program));
+  })));
+  ASSERT_TRUE(succeeded(program));
   EXPECT_LT(program->str().size(), 8192U);
 }
 
@@ -70,13 +71,13 @@ TEST(GenerateProgramTest, ComputesWideClassicalQFTAdderPhasesAccurately) {
           addend[width - 1 - bit] = '1';
         }
       }
-      auto program = generate(QFTAdder{{
+      auto program = generate(::mqt::test::value(QFTAdder::create({
           .addend = addend,
           .accumulator = std::string(width, '0'),
           .method = QFTAdderMethod::Constant,
           .overflow = overflow,
-      }});
-      ASSERT_TRUE(mlir::succeeded(program));
+      })));
+      ASSERT_TRUE(succeeded(program));
       EXPECT_LT(program->str().size(), 8192U);
       qc::POp phase;
       program->module().walk([&](qc::POp op) {
@@ -150,12 +151,12 @@ TEST(GenerateProgramTest, SamplesEverySmallQFTAdderOperandPair) {
           for (size_t accumulator = 0; accumulator < (size_t{1} << width);
                ++accumulator) {
             const auto addendBits = dd::intToBinaryString(addend, width);
-            const QFTAdder benchmark{{
+            const auto benchmark = ::mqt::test::value(QFTAdder::create({
                 .addend = addendBits,
                 .accumulator = dd::intToBinaryString(accumulator, width),
                 .method = method,
                 .overflow = overflow,
-            }};
+            }));
             SCOPED_TRACE(toInstanceSpecificationJSON(benchmark));
             const auto total = (addend + accumulator) % (size_t{1} << sumWidth);
             const auto expected =
@@ -183,15 +184,16 @@ TEST(GenerateProgramTest, PreservesQFTAdderRelativePhases) {
           width + (overflow == QFTAdderOverflow::Carry ? 1U : 0U);
       for (size_t accumulator = 0; accumulator < (size_t{1} << width);
            ++accumulator) {
-        const QFTAdder benchmark{{
+        const auto benchmark = ::mqt::test::value(QFTAdder::create({
             .addend = std::string(width, '+'),
             .accumulator = dd::intToBinaryString(accumulator, width),
             .overflow = overflow,
-        }};
+        }));
         SCOPED_TRACE(toInstanceSpecificationJSON(benchmark));
         auto program = test::generateQCO(benchmark);
-        ASSERT_TRUE(mlir::succeeded(program));
-        dd::Package package(0);
+        ASSERT_TRUE(program);
+        auto packageOwner = ::mqt::test::value(dd::Package::create(0));
+        auto& package = *packageOwner;
         auto state = qco::simulateStatevector(
             mlir::mqt::getEntryPoint(program->module()), package);
         ASSERT_TRUE(succeeded(state));
@@ -221,8 +223,8 @@ TEST(GenerateProgramTest, PreservesQFTAdderRelativePhases) {
 }
 
 TEST(GenerateProgramTest, SamplesPartlySuperposedQFTAdder) {
-  test::expectSamplingMatchesReference(
-      QFTAdder{{.addend = "1+0", .accumulator = "001"}});
+  test::expectSamplingMatchesReference(::mqt::test::value(
+      QFTAdder::create({.addend = "1+0", .accumulator = "001"})));
 }
 
 } // namespace mqt::bench

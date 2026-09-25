@@ -69,3 +69,5 @@ string(REPLACE ";" "\",\"" QIR_EXECUTABLES "\"${QIR_EXECUTABLES}\"")
 
 # add all executables as initializer list of std::filesystem::path's
 target_compile_definitions(${TARGET_NAME} PRIVATE TEST_EXECUTABLES=${QIR_EXECUTABLES})
+
+target_include_directories(${TARGET_NAME} PRIVATE ${MQT_MLIR_UNITTESTS_DIR})
