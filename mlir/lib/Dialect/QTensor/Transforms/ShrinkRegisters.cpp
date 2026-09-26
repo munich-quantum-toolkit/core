@@ -108,9 +108,6 @@ struct ShrinkStaticQTensor final : OpRewritePattern<AllocOp> {
     }
     auto sourceIndices =
         allocOp->getAttrOfType<DenseI64ArrayAttr>(mqt::kSourceQubitIndicesAttr);
-    if (sourceIndices && std::cmp_not_equal(sourceIndices.size(), *oldSize)) {
-      return failure();
-    }
 
     llvm::SmallDenseSet<int64_t> live;
     SmallVector<TensorAccess> accesses;

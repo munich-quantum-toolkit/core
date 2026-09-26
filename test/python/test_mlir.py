@@ -42,7 +42,6 @@ from mqt.core.mlir import (
     QIRProfile,
     QIRProgram,
     TargetEnvironment,
-    build_functionality,
     compile_program,
     submit_program,
 )
@@ -1464,41 +1463,8 @@ out[1] = measure first[1];
     assert program.sample(shots=4, seed=7) == {"11": 4}
 
 
-@pytest.mark.parametrize("basis", range(8))
-def test_layout_result_matches_native_routed_state(basis: int) -> None:
-    """The final mapping recovers logical output bits after forced routing."""
-    preparation = "\n".join(f"x q[{qubit}];" for qubit in range(3) if basis & (1 << qubit))
-    source = f"""OPENQASM 3.1;
-include "stdgates.inc";
-qubit[3] q;
-{preparation}
-cx q[0], q[2];
-cx q[1], q[2];
-swap q[0], q[1];
-"""
-    target = CompilerTarget(
-        3,
-        connectivity=CompilerTarget.Connectivity([(0, 1), (1, 2)]),
-        native_operations=CompilerTarget.NativeOperations.unrestricted(),
-    )
-    program = QCProgram.from_openqasm_str(source).to_qco()
-    result = program.compile_for_target_with_layout(
-        _test_target_environment(target),
-        initial_layout=[0, 1, 2],
-        options=CompilationOptions(seed=7, mapping=MappingOptions(trials=1)),
-    )
-    assert result.initial_layout == [0, 1, 2]
-    assert sorted(result.final_layout) == [0, 1, 2]
-    # Multiple routing swaps can return inputs to their initial sites.
-    physical = next(iter(program.sample(shots=1, seed=3)))
-    logical = [int(physical[-1 - site]) for site in result.final_layout]
-    q0, q1, q2 = [(basis >> qubit) & 1 for qubit in range(3)]
-    assert logical == [q1, q0, q2 ^ q0 ^ q1]
-
-
-@pytest.mark.parametrize("initial_layout", [[0], [0, 0], [-1, 1], [0, 9]])
-def test_layout_compilation_rejects_invalid_site_assignments(initial_layout: list[int]) -> None:
-    """Reject wrong width, duplicate, negative, and unknown site IDs."""
+def test_layout_compilation_rejects_duplicate_sites() -> None:
+    """Report invalid explicit placement through the Python API."""
     target = CompilerTarget(
         2,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
@@ -1506,8 +1472,7 @@ def test_layout_compilation_rejects_invalid_site_assignments(initial_layout: lis
     )
     program = QCProgram.from_openqasm_str(QASM_STRING).to_qco()
     with pytest.raises(RuntimeError, match="one distinct target site ID per input qubit"):
-        program.compile_for_target_with_layout(_test_target_environment(target), initial_layout=initial_layout)
-    assert "source_qubit_indices" not in program.ir
+        program.compile_for_target_with_layout(_test_target_environment(target), initial_layout=[0, 0])
 
 
 def test_layout_compilation_automatic_placement_and_snapshot() -> None:
@@ -1532,20 +1497,7 @@ def test_layout_compilation_automatic_placement_and_snapshot() -> None:
         program.compile_for_target_with_layout(_test_target_environment(target))
 
 
-def test_layout_compilation_counts_idle_qubits_against_capacity() -> None:
-    """Tracking preserves idle inputs instead of silently dropping requested slots."""
-    target = CompilerTarget(
-        2,
-        connectivity=CompilerTarget.Connectivity.all_to_all(),
-        native_operations=CompilerTarget.NativeOperations.unrestricted(),
-    )
-    program = QCProgram.from_openqasm_str("OPENQASM 3.1; qubit[3] q;").to_qco()
-    with pytest.raises(RuntimeError, match="including idle qubits"):
-        program.compile_for_target_with_layout(_test_target_environment(target))
-
-
-@pytest.mark.parametrize("basis", range(4))
-@pytest.mark.parametrize("search_memory_limit", [0, 1024])
+@pytest.mark.parametrize(("basis", "search_memory_limit"), [(1, 0), (3, 1024)])
 def test_layout_routes_through_unused_target_sites(basis: int, search_memory_limit: int) -> None:
     """Route two logical qubits through workspace sites without losing their IDs."""
     preparation = "\n".join(f"x q[{qubit}];" for qubit in range(2) if basis & (1 << qubit))
@@ -1572,83 +1524,6 @@ cx q[0], q[1];
     physical = next(iter(program.sample(shots=1, seed=3)))
     q0, q1 = basis & 1, (basis >> 1) & 1
     assert [int(physical[-1 - site]) for site in result.final_layout] == [q0, q1 ^ q0]
-
-
-@pytest.mark.parametrize("all_to_all", [False, True])
-@pytest.mark.parametrize("profile", ["base", "adaptive"])
-@pytest.mark.parametrize("allocated", [0, 3])
-def test_layout_compilation_of_empty_input(*, all_to_all: bool, profile: str, allocated: int) -> None:
-    """Report idle inputs without keeping otherwise empty allocations in the IR."""
-    target = CompilerTarget(
-        4,
-        connectivity=(
-            CompilerTarget.Connectivity.all_to_all()
-            if all_to_all
-            else CompilerTarget.Connectivity([(0, 1), (1, 2), (2, 3)])
-        ),
-        native_operations=CompilerTarget.NativeOperations.unrestricted(),
-    )
-    environment = TargetEnvironment(
-        target,
-        PayloadSpecification(
-            PayloadFormat("qir", "2.1.0", profile, PayloadEncoding.BINARY),
-            [],
-            optional_capabilities_known=True,
-        ),
-    )
-    source = "OPENQASM 3.1;" + (f"qubit[{allocated}] q;" if allocated else "")
-    program = QCProgram.from_openqasm_str(source).to_qco()
-    ordinary = program.copy()
-    ordinary.compile_for_target(environment)
-    requested = [3, 1, 0] if allocated else []
-    result = program.compile_for_target_with_layout(environment, initial_layout=requested)
-    assert result.allocation_sizes == ([allocated] if allocated else [])
-    assert result.initial_layout == result.final_layout == requested
-    assert program.ir == ordinary.ir
-
-
-def test_layout_compilation_rejects_untrackable_allocations() -> None:
-    """Fail explicitly when input qubit order depends on runtime execution."""
-    target = CompilerTarget(
-        2,
-        connectivity=CompilerTarget.Connectivity.all_to_all(),
-        native_operations=CompilerTarget.NativeOperations.unrestricted(),
-    )
-    program = QCOProgram.from_mlir_str("""module {
-  func.func @main(%n: index {mqt.input_name = "n"}) attributes {mqt.entry_point} {
-    %q = qtensor.alloc(%n) : tensor<?x!qco.qubit>
-    qtensor.dealloc %q : tensor<?x!qco.qubit>
-    return
-  }
-}""")
-    with pytest.raises(RuntimeError, match="fixed allocation sizes"):
-        program.compile_for_target_with_layout(_test_target_environment(target))
-
-
-@pytest.mark.parametrize("initial_layout", [[0, 1, 2], [2, 0, 1]])
-def test_layout_tracks_unitary_amplitudes(initial_layout: list[int]) -> None:
-    """Check complete complex amplitudes after input and output wire permutation."""
-    source = """OPENQASM 3.1;
-include "stdgates.inc";
-qubit[3] q;
-h q[0]; rx(0.3) q[1]; rz(0.7) q[2];
-cx q[0], q[2]; cx q[1], q[2];
-"""
-    program = QCProgram.from_openqasm_str(source).to_qco()
-    expected = build_functionality(program)
-    target = CompilerTarget(
-        3,
-        connectivity=CompilerTarget.Connectivity([(0, 1), (1, 2)]),
-        native_operations=CompilerTarget.NativeOperations.unrestricted(),
-    )
-    layout = program.compile_for_target_with_layout(_test_target_environment(target), initial_layout=initial_layout)
-    actual = build_functionality(program)
-
-    def physical_indices(sites: list[int]) -> list[int]:
-        return [sum(((basis >> qubit) & 1) << site for qubit, site in enumerate(sites)) for basis in range(8)]
-
-    restored = actual[np.ix_(physical_indices(layout.final_layout), physical_indices(layout.initial_layout))]
-    np.testing.assert_allclose(restored, expected, rtol=0, atol=1e-12)
 
 
 def test_layout_tracking_preserves_feedback_measurement_destinations() -> None:

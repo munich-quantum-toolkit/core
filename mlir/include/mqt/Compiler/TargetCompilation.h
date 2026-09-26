@@ -29,6 +29,9 @@ struct MappingResult {
   std::vector<size_t> allocationSizes;
   std::vector<int64_t> initialLayout;
   std::vector<int64_t> finalLayout;
+  /// Initial-to-final target indices, including all workspace sites.
+  /// Indices refer to CompilerTarget::sites() order, not target site IDs.
+  std::vector<size_t> routingPermutation;
 };
 
 /// Populate the canonical compiler-target pipeline.

@@ -54,7 +54,7 @@ def MQTDialect : Dialect {
     `discardQubitLayout` first.
 
     `mqt.source_qubit_indices` tracks native input slots: a dense i64 array of
-    distinct nonnegative indices, one per `qco.alloc` or static `qtensor.alloc`
+    distinct nonnegative indices, one per `qco.alloc` or fixed-size `qtensor.alloc`
     slot. Tensor shrinking retains surviving entries; placement consumes them.
     Removed slots remain idle inputs in the returned snapshot.
 

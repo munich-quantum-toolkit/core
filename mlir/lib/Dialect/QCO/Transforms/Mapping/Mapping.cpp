@@ -532,6 +532,9 @@ LogicalResult prepareLayout(ModuleOp moduleOp, const CompilerTarget& target,
                 builder.getDenseI64ArrayAttr(indices));
   }
   tracking.sourceToProgram.assign(count, std::numeric_limits<size_t>::max());
+  for (auto site : llvm::seq(target.numSites())) {
+    tracking.result.routingPermutation.push_back(site);
+  }
   return success();
 }
 
@@ -665,7 +668,7 @@ protected:
     applyPlacement(func.getFunctionBody(), target, layout, *computation,
                    rewriter, false);
     if (tracking_ != nullptr) {
-      tracking_->result.finalLayout = sourceLayout(target, layout, *tracking_);
+      tracking_->result.finalLayout = tracking_->result.initialLayout;
     }
   }
 
@@ -993,6 +996,10 @@ protected:
     if (tracking_ != nullptr) {
       tracking_->result.initialLayout =
           sourceLayout(*target, layout, *tracking_);
+      for (auto [site, program] :
+           llvm::enumerate(tracking_->result.routingPermutation)) {
+        program = layout.getProgramIndex(site);
+      }
     }
     IRRewriter rewriter(&getContext());
     std::tie(wires, infos) = std::move(
@@ -1012,6 +1019,9 @@ protected:
     if (tracking_ != nullptr) {
       tracking_->result.finalLayout =
           sourceLayout(*target, bundle.layout, *tracking_);
+      for (auto& program : tracking_->result.routingPermutation) {
+        program = bundle.layout.getHardwareIndex(program);
+      }
     }
 
     // Collect statistics.
