@@ -325,8 +325,6 @@ std::size_t std::hash<dd::ComplexValue>::operator()(
     const dd::ComplexValue& c) const noexcept {
   const auto hashComponent = [](dd::fp value) {
     const auto rounded = std::round(value / dd::RealNumber::eps);
-    // Hash the zero bucket directly: MSVC 19.51 on ARM64 can preserve -0
-    // through std::hash even though both signs must have the same hash.
     return rounded == 0. ? size_t{0} : std::hash<dd::fp>{}(rounded);
   };
   return dd::combineHash(hashComponent(c.r), hashComponent(c.i));
