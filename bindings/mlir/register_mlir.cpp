@@ -23,6 +23,7 @@
 #include "qdmi/Client.hpp"
 #include "qdmi/driver/SessionConfig.hpp"
 
+#include "../qdmi/CustomJobParameter.hpp"
 #include "qiskit/Qiskit.h"
 
 #include "nanobind/nanobind.h"

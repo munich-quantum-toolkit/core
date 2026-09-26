@@ -13,6 +13,8 @@
 #include "qdmi/driver/Driver.hpp"
 #include "qdmi/driver/SessionConfig.hpp"
 
+#include "CustomJobParameter.hpp" // NOLINT(misc-include-cleaner)
+
 #include "nanobind/nanobind.h"
 #include "nanobind/operators.h"
 #include "nanobind/stl/complex.h"    // NOLINT(misc-include-cleaner)

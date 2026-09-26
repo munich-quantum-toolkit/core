@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import struct
 import subprocess
 import sys
 from collections import Counter
@@ -622,6 +623,34 @@ def test_device_submit_job_handles_custom_parameters(ddsim_device: Device) -> No
         ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom4="value")
     with pytest.raises(RuntimeError, match=r"Setting custom parameter: Not supported\."):
         ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom5="value")
+
+
+@pytest.mark.parametrize("submission", ["text", "binary", "compiled", "source"])
+def test_custom_parameter_bytes_preserve_seed(ddsim_device: Device, submission: str) -> None:
+    """Packed native values reach direct and compiler submission unchanged."""
+    source = 'OPENQASM 3.0; include "stdgates.inc"; qubit q; bit c; h q; c = measure q;'
+    seed = struct.pack("@i", 1234567)
+    expected = ddsim_device.submit_job(source, ProgramFormat.QASM3, 64, custom1=1234567)
+    if submission == "text":
+        actual = ddsim_device.submit_job(source, ProgramFormat.QASM3, 64, custom1=seed)
+    elif submission == "binary":
+        compiled = compile_program(source, output=OutputFormat.QIR_BASE)
+        actual = ddsim_device.submit_job(compiled.to_bitcode(), ProgramFormat.QIR_BASE_MODULE, 64, custom1=seed)
+    elif submission == "compiled":
+        compiled = compile_program(source, target=ddsim_device)
+        actual = submit_program(compiled, target=ddsim_device, num_shots=64, custom1=seed)
+    else:
+        actual = submit_program(source, target=ddsim_device, num_shots=64, custom1=seed)
+    expected.wait()
+    actual.wait()
+    assert actual.get_shots() == expected.get_shots()
+
+
+@pytest.mark.parametrize("payload", [b"", struct.pack("=Q", 2**64 - 1), struct.pack("=q", -(2**63))])
+def test_custom_parameter_bytes_reject_invalid_seed_width(ddsim_device: Device, payload: bytes) -> None:
+    """Empty payloads and 64-bit values cannot masquerade as the native int seed."""
+    with pytest.raises(ValueError, match="parameter"):
+        ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom1=payload)
 
 
 def test_device_submit_job_without_shots(ddsim_device: Device) -> None:

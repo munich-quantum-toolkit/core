@@ -15,11 +15,16 @@
 
 #include "qdmi/client.h"
 
+#include <cstddef>
 #include <string>
 #include <variant>
+#include <vector>
 
 namespace qdmi {
-using CustomJobParameter = std::variant<std::string, bool, int, double>;
+/// Custom scalar values use their native C++ representation. Byte vectors carry
+/// an exact, nonempty payload without a terminator; its type is device-defined.
+using CustomJobParameter =
+    std::variant<std::string, bool, int, double, std::vector<std::byte>>;
 
 template <class Concrete> class Singleton {
 protected:
