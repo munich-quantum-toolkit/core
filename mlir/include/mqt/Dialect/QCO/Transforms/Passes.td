@@ -11,6 +11,41 @@
 
 include "mlir/Pass/PassBase.td"
 
+def ResynthesizeCNOTPhase : Pass<"resynthesize-cnot-phase", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect"];
+  let summary = "Reduce CNOT counts by resynthesizing parity networks";
+  let description = [{
+    Optimizes scalar regions containing CNOT (`qco.ctrl` with one control and
+    a single `qco.x` body) and `rz`, `p`, `z`, `s`, `sdg`, `t`, and `tdg` gates.
+    All phase parameters, including symbolic values, are retained unchanged.
+    Each phase gate acts on the same input parity as before, preserving the
+    complete unitary, including global phase, without angle arithmetic.
+
+    Implements GraySynth from Amy, Azimzadeh, and Mosca,
+    [On the CNOT-Complexity of CNOT-Phase Circuits](https://arxiv.org/abs/1712.01859),
+    followed by Gaussian elimination to restore the final linear map. A
+    candidate is independently replayed and installed only if it uses strictly
+    fewer CNOTs. The number of phase gates stays unchanged. This is an
+    all-to-all optimization; circuit depth and routing cost can increase.
+    Run it before placement and routing. It is not in the default pipeline.
+
+    Other gates touching a region's wires, tensor wire transfers, operations
+    with effects, and region operations end a block. Disjoint operations
+    without effects or regions may be crossed. Nested blocks are optimized
+    independently, including modifier bodies. Run QCO cleanup first to expose
+    scalar wires in tensor-backed programs. Unsupported operations are retained.
+    Input that violates QCO's single-use wire contract is rejected.
+
+    Blocks are split at the qubit and gate limits. Synthesis stops as soon as
+    its CNOT budget cannot beat the original block. Parities use one 64-bit
+    word; `max-qubits` must be between 1 and 64 and `max-gates` must be positive.
+  }];
+  let options = [Option<"maxQubits", "max-qubits", "unsigned", "64",
+                        "Maximum number of qubits per block (1 to 64).">,
+                 Option<"maxGates", "max-gates", "unsigned", "512",
+                        "Maximum number of supported gates per block.">];
+}
+
 def MergeSingleQubitRotationGates
     : Pass<"merge-single-qubit-rotation-gates", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect",
