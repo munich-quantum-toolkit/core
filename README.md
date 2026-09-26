@@ -67,8 +67,7 @@ bundled DDSIM device and submits 64 shots through each payload format:
 ```python
 from mqt.core.bench import shor
 from mqt.core.mlir import compile_program, submit_program
-from mqt.core.qdmi import ProgramFormat
-from mqt.core.qdmi.driver import open_device
+from mqt.core.qdmi import ProgramFormat, open_device
 
 device = open_device("mqt.ddsim.default")
 

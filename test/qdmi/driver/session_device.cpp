@@ -13,9 +13,11 @@
 #include <array>
 #include <atomic>
 #include <cstddef>
+#include <cstdlib>
 #include <cstring>
 #include <new>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 
 struct QDMI_Child_Device_impl_d {};
@@ -54,6 +56,13 @@ auto initializeCallback() -> std::atomic<InitializeCallback>& {
 [[nodiscard]] auto finalizations() -> std::atomic_size_t& {
   static std::atomic_size_t count = 0;
   return count;
+}
+
+constexpr auto FAILURE_MODE = "MQT_CORE_QDMI_TEST_DEVICE_FAILURE";
+
+[[nodiscard]] auto failureMode() -> std::string_view {
+  const auto* const value = std::getenv(FAILURE_MODE);
+  return value == nullptr ? std::string_view{} : std::string_view{value};
 }
 
 [[nodiscard]] auto activeSessions() -> std::atomic_size_t& {
@@ -173,6 +182,10 @@ extern "C" int TEST_SESSION_QDMI_device_initialize() {
   if (const auto callback = initializeCallback().load()) {
     return callback();
   }
+  if (const auto* status = std::getenv("MQT_CORE_QDMI_TEST_DEVICE_INIT_STATUS");
+      status != nullptr && status == std::string_view{"permission-denied"}) {
+    return QDMI_ERROR_PERMISSIONDENIED;
+  }
   return QDMI_SUCCESS;
 }
 
@@ -193,6 +206,11 @@ TEST_SESSION_QDMI_device_session_alloc(QDMI_Device_Session* session) {
   if (session == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
+  const auto mode = failureMode();
+  if (mode == "alloc-null") {
+    *session = nullptr;
+    return QDMI_SUCCESS;
+  }
   // The QDMI C API transfers this allocation through an opaque raw handle.
   // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
   *session = new (std::nothrow) QDMI_Device_Session_impl_d;
@@ -200,6 +218,9 @@ TEST_SESSION_QDMI_device_session_alloc(QDMI_Device_Session* session) {
     return QDMI_ERROR_OUTOFMEM;
   }
   ++activeSessions();
+  if (mode == "alloc-error-handle") {
+    return QDMI_ERROR_PERMISSIONDENIED;
+  }
   return QDMI_SUCCESS;
 }
 
@@ -259,7 +280,14 @@ extern "C" int TEST_SESSION_QDMI_device_session_query_device_property(
   if (session == nullptr || !session->initialized) {
     return QDMI_ERROR_BADSTATE;
   }
+  if (prop == QDMI_DEVICE_PROPERTY_ID) {
+    return queryString("test.device-default", size, value, sizeRet);
+  }
   if (prop == QDMI_DEVICE_PROPERTY_CHILDDEVICES) {
+    if (parameter(session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM5) ==
+        "permission-denied") {
+      return QDMI_ERROR_PERMISSIONDENIED;
+    }
     if (session->child != nullptr ||
         parameter(session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM5) !=
             "with-child") {
@@ -274,6 +302,9 @@ extern "C" int TEST_SESSION_QDMI_device_session_query_device_property(
     }
     if (size < required) {
       return QDMI_ERROR_INVALIDARGUMENT;
+    }
+    if (failureMode() == "children-null") {
+      return QDMI_SUCCESS;
     }
     const auto* const child = childDeviceHandle();
     std::memcpy(value, static_cast<const void*>(&child),

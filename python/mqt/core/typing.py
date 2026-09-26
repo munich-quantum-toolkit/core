@@ -21,6 +21,7 @@ def __dir__() -> list[str]:
 class QDMISessionParameters(TypedDict, total=False):
     """Keyword arguments accepted when opening a QDMI device session."""
 
+    driver_path: str | os.PathLike[str] | None
     base_url: str | None
     token: str | None
     auth_file: str | os.PathLike[str] | None

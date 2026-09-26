@@ -10,13 +10,11 @@
 
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 import sys
 from collections import Counter
-from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 from packaging import version
@@ -32,24 +30,30 @@ from mqt.core.qdmi import (
     Device,
     Job,
     ProgramFormat,
+    Session,
+    device_ids,
     is_binary_program_format,
-)
-from mqt.core.qdmi.driver import (
-    DeviceDefinition,
     open_device,
-    registered_device_ids,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 CustomValueType = type[str] | type[bool] | type[int] | type[float] | type[bytes]
 
 
 def _get_devices() -> list[Device]:
-    """Open all registered QDMI devices.
+    """Open all devices visible to a fresh Client session.
 
     Returns:
         List of all available QDMI devices.
     """
-    return [open_device(device_id) for device_id in registered_device_ids()]
+    return Session().devices
+
+
+def test_device_ids() -> None:
+    """List the default session's client-visible stable IDs."""
+    assert device_ids() == Session().device_ids
 
 
 @pytest.fixture(params=_get_devices())
@@ -110,6 +114,11 @@ def test_device_name(device: Device) -> None:
     name = device.name()
     assert isinstance(name, str)
     assert len(name) > 0
+
+
+def test_device_id(device: Device) -> None:
+    """Test that each client-visible device has a stable ID."""
+    assert device.id
 
 
 def test_device_version(device: Device) -> None:
@@ -781,58 +790,8 @@ def test_simulator_job_result_bindings(ddsim_device: Device) -> None:
     assert sparse_probabilities == pytest.approx({"00": 0.5, "11": 0.5})
 
 
-def test_device_registration_bindings() -> None:
-    """Exercise registration without leaving invalid devices in the shared registry."""
-    ids_before = registered_device_ids()
-    script = """
-from pathlib import Path
-
-import pytest
-
-from mqt.core.qdmi.driver import (
-    DeviceDefinition,
-    open_device,
-    register_device,
-    register_device_if_absent,
-    registered_device_ids,
-)
-
-ids_before = registered_device_ids()
-library_path = Path("/nonexistent/lib.so")
-definition = DeviceDefinition("python.missing", library_path, "PREFIX")
-assert definition.device_id == "python.missing"
-assert definition.library_path == library_path
-assert definition.prefix == "PREFIX"
-register_device(definition)
-with pytest.raises(RuntimeError):
-    open_device("python.missing")
-
-definition = DeviceDefinition("python.if-absent", "/nonexistent/device.so", "PREFIX")
-assert register_device_if_absent(definition) is True
-assert register_device_if_absent(definition) is False
-with pytest.raises(ValueError, match="library must not be empty"):
-    register_device_if_absent(DeviceDefinition("python.if-absent", "", "PREFIX"))
-assert registered_device_ids() == [*ids_before, "python.missing", "python.if-absent"]
-"""
-    subprocess.run([sys.executable, "-c", script], check=True)  # ruff: ignore[subprocess-without-shell-equals-true]
-    assert registered_device_ids() == ids_before
-
-
-def test_open_device_rejects_unknown_id() -> None:
-    """Opening requires a stable registered ID."""
-    with pytest.raises(IndexError, match="Unknown QDMI device ID"):
-        open_device("python.unknown")
-
-
-def test_open_device_creates_a_fresh_session() -> None:
-    """Stable-ID opens should return separately owned sessions."""
-    first = open_device("mqt.sc.default")
-    second = open_device("mqt.sc.default")
-    assert first != second
-
-
 @pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="Requires POSIX named pipes")
-@pytest.mark.parametrize("entrypoint", ["driver", "slurm", "compiler"])
+@pytest.mark.parametrize("entrypoint", ["driver", "builtin_driver", "slurm", "compiler"])
 def test_device_open_releases_gil(tmp_path: Path, entrypoint: str) -> None:
     """A Python thread can supply configuration while native opening waits."""
     script = """
@@ -843,8 +802,8 @@ from pathlib import Path
 from threading import Thread
 
 from mqt.core.mlir import CompilerTarget
-from mqt.core.qdmi import slurm
-from mqt.core.qdmi.driver import open_device
+from mqt.core.qdmi import builtin_driver, slurm
+from mqt.core.qdmi import open_device
 
 fifo = Path(sys.argv[1]) / "device.json"
 os.mkfifo(fifo)
@@ -868,6 +827,8 @@ writer.start()
 entrypoint = sys.argv[2]
 if entrypoint == "driver":
     assert open_device("mqt.sc.default").qubits_num() > 0
+elif entrypoint == "builtin_driver":
+    assert builtin_driver.open_device("mqt.sc.default").qubits_num() > 0
 elif entrypoint == "slurm":
     assert slurm.open_device_from_license().qubits_num() > 0
 else:
@@ -879,57 +840,6 @@ writer.join()
         check=True,
         timeout=15,
     )
-
-
-def test_device_configuration_arguments_are_mutually_exclusive() -> None:
-    """Typed device configuration must select exactly one source."""
-    DeviceDefinition(
-        "python.inline-config",
-        "/nonexistent/device.so",
-        "PREFIX",
-        device_config="{}",
-    )
-    DeviceDefinition(
-        "python.file-config",
-        "/nonexistent/device.so",
-        "PREFIX",
-        device_config_file="device.json",
-    )
-    with pytest.raises(ValueError, match="mutually exclusive"):
-        DeviceDefinition(
-            "python.config-conflict",
-            "/nonexistent/device.so",
-            "PREFIX",
-            device_config="{}",
-            device_config_file="device.json",
-        )
-    with pytest.raises(ValueError, match="mutually exclusive"):
-        open_device(
-            "mqt.sc.default",
-            device_config="{}",
-            device_config_file="device.json",
-        )
-
-
-def test_sc_open_device_accepts_runtime_configuration(tmp_path: Path) -> None:
-    """The built-in SC provider should materialize a per-open file model."""
-    configuration = json.loads(Path("json/sc/mqt-core-qdmi-sc-device.json").read_text(encoding="utf-8"))
-    configuration["name"] = "Python custom SC device"
-    configuration["numQubits"] = 5
-    configuration["couplings"] = [[0, 1], [1, 2], [2, 3], [3, 4]]
-    configuration["qubitProperties"]["overrides"] = []
-    for operation in configuration["operations"]:
-        operation.pop("sites", None)
-        operation["siteOverrides"] = []
-    configuration_file = tmp_path / "sc-device.json"
-    configuration_file.write_text(json.dumps(configuration), encoding="utf-8")
-
-    device = open_device(
-        "mqt.sc.default",
-        device_config_file=configuration_file,
-    )
-    assert device.name() == "Python custom SC device"
-    assert device.qubits_num() == 5
 
 
 def test_site_keeps_fresh_session_alive() -> None:

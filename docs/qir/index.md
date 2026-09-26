@@ -73,7 +73,7 @@ Open DDSIM by its stable device ID and submit the Base program as text:
 
 ```{code-cell} ipython3
 from mqt.core.qdmi import ProgramFormat
-from mqt.core.qdmi.driver import open_device
+from mqt.core.qdmi import open_device
 
 device = open_device("mqt.ddsim.default")
 job = device.submit_job(base.llvm_ir, ProgramFormat.QIR_BASE_STRING, num_shots=256, custom1=7)
