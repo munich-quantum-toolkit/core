@@ -2747,24 +2747,30 @@ TEST(DDPackageTest, WideCoherentAdditionRetainsNormalizationAndPhase) {
           makeBasisState(width, std::vector(width, BasisStates::plus), package);
       const auto minus = makeBasisState(
           width, std::vector(width, BasisStates::minus), package);
-      const auto sum = package.add2(vCachedEdge{plus.p, SQRT2_2},
-                                    vCachedEdge{minus.p, phase * SQRT2_2},
-                                    static_cast<Qubit>(width - 1));
-      auto state = package.cn.lookup(sum);
-      package.incRef(state);
-      ASSERT_FALSE(state.isZeroTerminal());
-      EXPECT_NEAR(package.innerProduct(state, state).r, 1., 1e-11);
-      for (size_t qubit = 0; qubit < width; ++qubit) {
-        state = package.applyOperation(
-            package.makeGateDD(H_MAT, static_cast<Qubit>(qubit)), state);
+      for (const fp scale : {1e-200, 0.5, 0.7, 1., 2., 1e200}) {
+        SCOPED_TRACE(scale);
+        auto sum = package.add2(vCachedEdge{plus.p, SQRT2_2 * scale},
+                                vCachedEdge{minus.p, phase * (SQRT2_2 * scale)},
+                                static_cast<Qubit>(width - 1));
+        // Compare the normalized result without losing a tiny vector root.
+        sum.w = sum.w / scale;
+        auto state = package.cn.lookup(sum);
+        package.incRef(state);
+        ASSERT_FALSE(state.isZeroTerminal());
+        EXPECT_NEAR(package.innerProduct(state, state).r, 1., 1e-11);
+        for (size_t qubit = 0; qubit < width; ++qubit) {
+          state = package.applyOperation(
+              package.makeGateDD(H_MAT, static_cast<Qubit>(qubit)), state);
+        }
+        // H on every wire maps the two product states to distinct basis states.
+        const auto zero = state.getValueByPath(width, std::string(width, '0'));
+        const auto one = state.getValueByPath(width, std::string(width, '1'));
+        EXPECT_NEAR(std::abs(zero - std::complex<fp>{SQRT2_2, 0.}), 0., 1e-11);
+        EXPECT_NEAR(
+            std::abs(one - std::complex<fp>{phase.r, phase.i} * SQRT2_2), 0.,
+            1e-11);
+        package.decRef(state);
       }
-      /// H on every wire maps the two product states to distinct basis states.
-      const auto zero = state.getValueByPath(width, std::string(width, '0'));
-      const auto one = state.getValueByPath(width, std::string(width, '1'));
-      EXPECT_NEAR(std::abs(zero - std::complex<fp>{SQRT2_2, 0.}), 0., 1e-11);
-      EXPECT_NEAR(std::abs(one - std::complex<fp>{phase.r, phase.i} * SQRT2_2),
-                  0., 1e-11);
-      package.decRef(state);
       package.decRef(plus);
       package.decRef(minus);
     }
@@ -2778,15 +2784,19 @@ TEST(DDPackageTest, WideMagnitudeAdditionRetainsNormalization) {
       makeBasisState(width, std::vector(width, BasisStates::plus), package);
   const auto minus =
       makeBasisState(width, std::vector(width, BasisStates::minus), package);
-  const auto sum = package.addMagnitudes(vCachedEdge{plus.p, SQRT2_2},
-                                         vCachedEdge{minus.p, SQRT2_2},
-                                         static_cast<Qubit>(width - 1));
-  const auto state = package.cn.lookup(sum);
-  package.incRef(state);
-  ASSERT_FALSE(state.isZeroTerminal());
-  EXPECT_NEAR(package.innerProduct(state, state).r, 1., 1e-11);
-  EXPECT_NEAR(package.fidelity(plus, state), 1., 1e-11);
-  package.decRef(state);
+  for (const fp scale : {1e-200, 0.5, 0.7, 1., 2., 1e200}) {
+    SCOPED_TRACE(scale);
+    auto sum = package.addMagnitudes(vCachedEdge{plus.p, SQRT2_2 * scale},
+                                     vCachedEdge{minus.p, SQRT2_2 * scale},
+                                     static_cast<Qubit>(width - 1));
+    sum.w = sum.w / scale;
+    const auto state = package.cn.lookup(sum);
+    package.incRef(state);
+    ASSERT_FALSE(state.isZeroTerminal());
+    EXPECT_NEAR(package.innerProduct(state, state).r, 1., 1e-11);
+    EXPECT_NEAR(package.fidelity(plus, state), 1., 1e-11);
+    package.decRef(state);
+  }
   package.decRef(plus);
   package.decRef(minus);
 }
