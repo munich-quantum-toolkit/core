@@ -20,6 +20,7 @@
 #include "bench/QPE.hpp"
 #include "bench/RepeatUntilSuccess.hpp"
 #include "bench/Teleportation.hpp"
+#include "bench/WeakMeasurementGrover.hpp"
 
 #include "gtest/gtest.h"
 
@@ -82,6 +83,9 @@ using mqt::bench::teleportationFromInstanceSpecificationJSON;
 using mqt::bench::teleportationFromManifestJSON;
 using mqt::bench::toInstanceSpecificationJSON;
 using mqt::bench::toManifestJSON;
+using mqt::bench::WeakMeasurementGrover;
+using mqt::bench::weakMeasurementGroverFromInstanceSpecificationJSON;
+using mqt::bench::weakMeasurementGroverFromManifestJSON;
 
 void expectInvalid(const std::function<void()>& operation,
                    const std::string_view diagnostic) {
@@ -180,6 +184,15 @@ TEST(BenchmarkJSON,
       toInstanceSpecificationJSON(grover),
       R"({"benchmark":"grover","parameters":{"iterations":1,"marked_bitstring":"10"},"schema_version":1})");
 
+  const auto weakMeasurementGrover =
+      weakMeasurementGroverFromInstanceSpecificationJSON(
+          R"({"schema_version":1,"benchmark":"grover-weak-measurement","parameters":{"marked_bitstring":"10"}})");
+  ASSERT_TRUE(weakMeasurementGrover.options().measurementStrength);
+  EXPECT_DOUBLE_EQ(*weakMeasurementGrover.options().measurementStrength, 0.5);
+  EXPECT_EQ(
+      toInstanceSpecificationJSON(weakMeasurementGrover),
+      R"({"benchmark":"grover-weak-measurement","parameters":{"marked_bitstring":"10","measurement_strength":0.5},"schema_version":1})");
+
   const auto multiplexer = multiplexerFromInstanceSpecificationJSON(
       R"({"schema_version":1,"benchmark":"multiplexer","parameters":{"qubits":7}})");
   EXPECT_EQ(multiplexer.options().qubits, 7);
@@ -234,6 +247,8 @@ TEST(BenchmarkJSON, RoundTripsSelfCheckingManifests) {
   const GHZ ghz{
       {.qubits = 4, .topology = GHZTopology::Star, .basis = GHZBasis::X}};
   const Grover grover{{.markedBitstring = "001", .iterations = 2}};
+  const WeakMeasurementGrover weakMeasurementGrover{
+      {.markedBitstring = "001", .measurementStrength = 0.25}};
   const Multiplexer multiplexer{{.qubits = 7}};
   const QFT qft{
       {.qubits = 4, .periodExponent = 2, .method = QFTMethod::Semiclassical}};
@@ -247,6 +262,8 @@ TEST(BenchmarkJSON, RoundTripsSelfCheckingManifests) {
   const auto modularMultiplierManifest = toManifestJSON(modularMultiplier);
   const auto ghzManifest = toManifestJSON(ghz);
   const auto groverManifest = toManifestJSON(grover);
+  const auto weakMeasurementGroverManifest =
+      toManifestJSON(weakMeasurementGrover);
   const auto multiplexerManifest = toManifestJSON(multiplexer);
   const auto qftManifest = toManifestJSON(qft);
   const auto qftAdderManifest = toManifestJSON(qftAdder);
@@ -260,6 +277,9 @@ TEST(BenchmarkJSON, RoundTripsSelfCheckingManifests) {
   EXPECT_EQ(toManifestJSON(ghzFromManifestJSON(ghzManifest)), ghzManifest);
   EXPECT_EQ(toManifestJSON(groverFromManifestJSON(groverManifest)),
             groverManifest);
+  EXPECT_EQ(toManifestJSON(weakMeasurementGroverFromManifestJSON(
+                weakMeasurementGroverManifest)),
+            weakMeasurementGroverManifest);
   EXPECT_EQ(toManifestJSON(multiplexerFromManifestJSON(multiplexerManifest)),
             multiplexerManifest);
   EXPECT_EQ(toManifestJSON(qftFromManifestJSON(qftManifest)), qftManifest);
@@ -277,6 +297,8 @@ TEST(BenchmarkJSON, RoundTripsSelfCheckingManifests) {
             "modular-multiplier");
   EXPECT_EQ(benchmarkIdFromManifestJSON(ghzManifest), "ghz");
   EXPECT_EQ(benchmarkIdFromManifestJSON(groverManifest), "grover");
+  EXPECT_EQ(benchmarkIdFromManifestJSON(weakMeasurementGroverManifest),
+            "grover-weak-measurement");
   EXPECT_EQ(benchmarkIdFromManifestJSON(multiplexerManifest), "multiplexer");
   EXPECT_EQ(benchmarkIdFromManifestJSON(qftManifest), "qft");
   EXPECT_EQ(benchmarkIdFromManifestJSON(qftAdderManifest), "qft-adder");
@@ -288,6 +310,11 @@ TEST(BenchmarkJSON, RoundTripsSelfCheckingManifests) {
   EXPECT_NE(ghzManifest.find("\"case_id\":\"" + caseId(ghz) + "\""),
             std::string::npos);
   EXPECT_NE(groverManifest.find("\"success_outcome\":\"001\""),
+            std::string::npos);
+  EXPECT_NE(weakMeasurementGroverManifest.find(
+                "\"model\":\"grover_weak_measurement\""),
+            std::string::npos);
+  EXPECT_NE(weakMeasurementGroverManifest.find("\"success_outcome\":\"001\""),
             std::string::npos);
   EXPECT_NE(modularMultiplierManifest.find("\"model\":\"modular_multiplier\""),
             std::string::npos);
@@ -317,6 +344,12 @@ TEST(BenchmarkJSON, UsesStableSemanticCaseIds) {
   EXPECT_NE(caseId(linear), caseId(star));
   EXPECT_NE(caseId(BV{{.hiddenBitstring = "1"}}),
             caseId(BV{{.hiddenBitstring = "1", .method = BVMethod::Dynamic}}));
+  EXPECT_EQ(caseId(WeakMeasurementGrover{{.markedBitstring = "10"}}),
+            caseId(WeakMeasurementGrover{
+                {.markedBitstring = "10", .measurementStrength = 0.5}}));
+  EXPECT_NE(caseId(WeakMeasurementGrover{{.markedBitstring = "10"}}),
+            caseId(WeakMeasurementGrover{
+                {.markedBitstring = "10", .measurementStrength = 0.25}}));
   EXPECT_EQ(caseId(ModularMultiplier{{.multiplier = "011",
                                       .modulus = "101",
                                       .multiplicand = "+++",
@@ -424,6 +457,16 @@ TEST(BenchmarkJSON,
             R"({"schema_version":1,"benchmark":"multiplexer","parameters":{"qubits":7,"angles":[]}})"));
       },
       "unknown key 'angles'");
+  for (const auto* strength : {"0", "0.3", "true", "\"0.25\""}) {
+    const auto instance =
+        std::string{
+            R"({"schema_version":1,"benchmark":"grover-weak-measurement","parameters":{"marked_bitstring":"0000","measurement_strength":)"} +
+        strength + "}}";
+    EXPECT_THROW(
+        static_cast<void>(
+            weakMeasurementGroverFromInstanceSpecificationJSON(instance)),
+        std::invalid_argument);
+  }
   expectInvalid(
       [] {
         static_cast<void>(modularMultiplierFromInstanceSpecificationJSON(
@@ -538,11 +581,13 @@ TEST(BenchmarkJSON, RejectsAlteredOrUnresolvedManifestData) {
 TEST(BenchmarkJSON, ListsBenchmarksAndDescribesStandardSchemas) {
   EXPECT_EQ(
       listBenchmarksJSON(),
-      R"({"benchmarks":[{"definition_version":1,"id":"bv"},{"definition_version":1,"id":"ghz"},{"definition_version":1,"id":"grover"},{"definition_version":1,"id":"magic-state-distillation"},{"definition_version":1,"id":"modular-multiplier"},{"definition_version":1,"id":"multiplexer"},{"definition_version":1,"id":"qft"},{"definition_version":1,"id":"qft-adder"},{"definition_version":1,"id":"qpe"},{"definition_version":1,"id":"repeat-until-success"},{"definition_version":1,"id":"shor"},{"definition_version":1,"id":"teleportation"},{"definition_version":1,"id":"w-state"}],"schema_version":1})");
+      R"({"benchmarks":[{"definition_version":1,"id":"bv"},{"definition_version":1,"id":"ghz"},{"definition_version":1,"id":"grover"},{"definition_version":1,"id":"grover-weak-measurement"},{"definition_version":1,"id":"magic-state-distillation"},{"definition_version":1,"id":"modular-multiplier"},{"definition_version":1,"id":"multiplexer"},{"definition_version":1,"id":"qft"},{"definition_version":1,"id":"qft-adder"},{"definition_version":1,"id":"qpe"},{"definition_version":1,"id":"repeat-until-success"},{"definition_version":1,"id":"shor"},{"definition_version":1,"id":"teleportation"},{"definition_version":1,"id":"w-state"}],"schema_version":1})");
   const auto bv = describeBenchmarkJSON("bv");
   const auto modularMultiplier = describeBenchmarkJSON("modular-multiplier");
   const auto ghz = describeBenchmarkJSON("ghz");
   const auto grover = describeBenchmarkJSON("grover");
+  const auto weakMeasurementGrover =
+      describeBenchmarkJSON("grover-weak-measurement");
   const auto multiplexer = describeBenchmarkJSON("multiplexer");
   const auto qft = describeBenchmarkJSON("qft");
   const auto qftAdder = describeBenchmarkJSON("qft-adder");
@@ -559,6 +604,9 @@ TEST(BenchmarkJSON, ListsBenchmarksAndDescribesStandardSchemas) {
   EXPECT_NE(modularMultiplier.find("\"pattern\":\"^1[01]+$\""),
             std::string::npos);
   EXPECT_NE(grover.find("\"maxLength\":62"), std::string::npos);
+  EXPECT_NE(weakMeasurementGrover.find("\"exclusiveMinimum\":0"),
+            std::string::npos);
+  EXPECT_NE(weakMeasurementGrover.find("\"maximum\":0.5"), std::string::npos);
   EXPECT_NE(multiplexer.find("\"maximum\":1024"), std::string::npos);
   EXPECT_NE(multiplexer.find("\"minimum\":2"), std::string::npos);
   EXPECT_NE(qft.find("\"period_exponent\""), std::string::npos);
@@ -596,6 +644,13 @@ TEST(BenchmarkJSON, ParsesCountsAndSerializesEvaluations) {
   const auto generic = evaluateJSON(
       toManifestJSON(bv), R"({"schema_version":1,"counts":{"11":8,"00":2}})");
   EXPECT_NE(generic.find("\"success_probability\":0.8"), std::string::npos);
+
+  const WeakMeasurementGrover weakMeasurementGrover{{.markedBitstring = "11"}};
+  const auto weakMeasurementGroverEvaluation =
+      evaluateJSON(toManifestJSON(weakMeasurementGrover),
+                   R"({"schema_version":1,"counts":{"11":8,"00":2}})");
+  EXPECT_NE(weakMeasurementGroverEvaluation.find("\"success_probability\":0.8"),
+            std::string::npos);
 
   const Multiplexer multiplexer{{.qubits = 2}};
   const auto multiplexerEvaluation =

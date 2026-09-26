@@ -21,7 +21,8 @@ add_executable(
   test_benchmark_generate_repeat_until_success.cpp
   test_benchmark_generate_shor.cpp
   test_benchmark_generate_teleportation.cpp
-  test_benchmark_generate_w_state.cpp)
+  test_benchmark_generate_w_state.cpp
+  test_benchmark_generate_weak_measurement_grover.cpp)
 
 target_link_libraries(mqt-core-mlir-unittests-benchmark
                       PRIVATE GTest::gtest_main MQT::CoreBenchGenerate MLIRQCODDFunctionality)

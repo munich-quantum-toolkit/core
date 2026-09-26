@@ -24,6 +24,7 @@
 #include "bench/Shor.hpp"
 #include "bench/Teleportation.hpp"
 #include "bench/WState.hpp"
+#include "bench/WeakMeasurementGrover.hpp"
 #include "bench/mqt_core_bench_export.h"
 
 #include <cstddef>

@@ -30,6 +30,7 @@ class QPE;
 class RepeatUntilSuccess;
 class Shor;
 class Teleportation;
+class WeakMeasurementGrover;
 class WState;
 } // namespace mqt::bench
 
@@ -80,6 +81,11 @@ SmallVector<Value> shor(qc::QCProgramBuilder& builder, const Shor& benchmark);
 /// Emit the quantum teleportation benchmark.
 SmallVector<Value> teleportation(qc::QCProgramBuilder& builder,
                                  const Teleportation& benchmark);
+
+/// Emit one configured weak-measurement Grover benchmark.
+SmallVector<Value>
+weakMeasurementGrover(qc::QCProgramBuilder& builder,
+                      const WeakMeasurementGrover& benchmark);
 
 /// Emit one configured W-state benchmark.
 SmallVector<Value> wState(qc::QCProgramBuilder& builder,

@@ -264,6 +264,42 @@ Before evaluation, normalize backend results to the manifest's big-endian
 
 ## Benchmark families
 
+### Grover search with weak measurement
+
+The `grover-weak-measurement` family implements the weakly measured Grover
+search from [Andrés-Martínez and Heunen](https://arxiv.org/html/2009.08832v4).
+It prepares the uniform state and applies one Grover iteration before each
+$\kappa$-measurement. The measurement computes the marked-state predicate with
+$O_\chi$, applies controlled $R_\kappa$ to a probe, uncomputes $O_\chi$, and
+measures the probe. The loop continues on $0$ and exits on $1$; at exit, the
+search register is the marked state.
+
+For $n$ search qubits, the default measurement strength is
+
+```{math}
+\kappa=2^{-n/2}.
+```
+
+The big-endian marked bitstring has 2–62 bits. The benchmark accepts
+$0<\kappa\leq 2^{-n/2}$, the range in which the paper proves the Grover step
+robust to the measurements. A smaller value disturbs the search state less but
+makes each successful probe outcome less likely. The analytic reference scores
+the marked search state after the loop terminates; it does not score the number
+of iterations.
+
+```{code-cell} ipython3
+import math
+
+from mqt.core import mlir
+from mqt.core.bench import grover_weak_measurement
+
+benchmark = grover_weak_measurement.Grover(
+    grover_weak_measurement.Options(marked_bitstring="101")
+)
+assert math.isclose(benchmark.options.measurement_strength, 2 ** (-3 / 2))
+assert mlir.sample(benchmark.generate(), shots=128, seed=17) == {"101": 128}
+```
+
 ### Quantum phase estimation
 
 The `qpe` family estimates a supplied phase using a phase gate and a known
