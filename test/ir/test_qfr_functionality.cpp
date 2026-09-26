@@ -381,6 +381,27 @@ TEST_F(QFRFunctionality, OperationEquality) {
   EXPECT_FALSE(p.equals(pm));
   EXPECT_NE(p, pm);
 
+  // controlled phase gates are symmetric in control and target
+  const auto cp01 = StandardOperation(0, 1, P, {2.0});
+  const auto cp10 = StandardOperation(1, 0, P, {2.0});
+  EXPECT_TRUE(cp01.equals(cp10));
+  EXPECT_EQ(cp01, cp10);
+  // controlled RZ and RZZ gates are not
+  const auto crz01 = StandardOperation(0, 1, RZ, {2.0});
+  const auto crz10 = StandardOperation(1, 0, RZ, {2.0});
+  EXPECT_FALSE(crz01.equals(crz10));
+  EXPECT_NE(crz01, crz10);
+  const auto mcrz = StandardOperation(Controls{0U, 1U}, 2U, RZ, {2.0});
+  const auto mcrzSwapped = StandardOperation(Controls{0U, 2U}, 1U, RZ, {2.0});
+  EXPECT_FALSE(mcrz.equals(mcrzSwapped));
+  EXPECT_NE(mcrz, mcrzSwapped);
+  const auto crzz =
+      StandardOperation(Controls{0U}, Targets{1U, 2U}, RZZ, {2.0});
+  const auto crzzSwapped =
+      StandardOperation(Controls{1U}, Targets{0U, 2U}, RZZ, {2.0});
+  EXPECT_FALSE(crzz.equals(crzzSwapped));
+  EXPECT_NE(crzz, crzzSwapped);
+
   const auto measure0 = NonUnitaryOperation(0, 0U);
   const auto measure1 = NonUnitaryOperation(0, 1U);
   const auto measure2 = NonUnitaryOperation(1, 0U);

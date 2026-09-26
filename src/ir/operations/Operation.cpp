@@ -118,7 +118,11 @@ bool Operation::equals(const Operation& op) const {
     return false;
   }
 
-  if (isDiagonalGate()) {
+  // Diagonal gates of the form diag(1, ..., 1, e^{i phi}) (e.g., Z, S, T, P)
+  // act symmetrically on all their positive controls and targets, so the roles
+  // may be exchanged. This does not hold for RZ and RZZ, whose controlled
+  // versions are not symmetric under exchanging controls and targets.
+  if (isDiagonalGate() && type != RZ && type != RZZ) {
     // check pos. controls and targets together
     const auto& usedQubits1 = getUsedQubits();
     const auto& usedQubits2 = op.getUsedQubits();
