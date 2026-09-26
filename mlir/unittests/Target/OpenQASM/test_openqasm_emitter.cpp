@@ -149,7 +149,8 @@ TEST(OpenQASMTargetTest,
   MLIRContext context;
   auto moduleOp = qc::translateOpenQASMToQC(
       "OPENQASM 3.0; array[int, 2, 3] a = {{1, 2, 3}, {4, 5, 6}}; "
-      "array[int, 2, 3] b = a; a[-1, -1] = a[0, 0]; a = b; b = b;",
+      "array[int, 2, 3] b = a; a[-1, -1] = a[0, 0]; a = b; b = b; "
+      "a[0] = b[-1];",
       &context);
   ASSERT_TRUE(moduleOp);
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
@@ -162,7 +163,10 @@ TEST(OpenQASMTargetTest,
   size_t copies = 0;
   moduleOp->walk([&](memref::CopyOp) { ++copies; });
   // Whole-array copies stay compact; self-assignment needs no operation.
-  EXPECT_EQ(copies, 2);
+  EXPECT_EQ(copies, 3);
+  // Row copies remain bulk operations, independent of the row size.
+  moduleOp->walk(
+      [&](scf::ForOp) { ADD_FAILURE() << "copy must not become a loop"; });
   moduleOp->walk(
       [&](cf::AssertOp) { ADD_FAILURE() << "index is statically safe"; });
 }
