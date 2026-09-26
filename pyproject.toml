@@ -152,7 +152,7 @@ build = [
   "vcs-versioning>=2.3",
 ]
 cpp-lint = [
-  "cpp-linter==1.13",
+  "cpp-linter==1.14",
   "nanobind~=3.1.0",
 ]
 test-base = [
