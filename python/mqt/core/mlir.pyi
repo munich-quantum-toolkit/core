@@ -515,6 +515,9 @@ class Program:
     def ir(self) -> str:
         """The textual MLIR representation of this program."""
 
+    def discard_layout(self) -> None:
+        """Explicitly discard retained or invalidated qubit layout metadata."""
+
 class MappingOptions:
     """Native mapping controls."""
 
@@ -579,6 +582,25 @@ class CompilationOptions:
     @mapping.setter
     def mapping(self, arg: MappingOptions, /) -> None: ...
 
+class MappingResult:
+    """Detached input-to-site layout snapshot from native compilation."""
+
+    @property
+    def allocation_sizes(self) -> list[int]:
+        """Input allocation sizes in entry-block order; tensor slots use ascending indices."""
+
+    @property
+    def initial_layout(self) -> list[int]:
+        """Initial target site ID for each input qubit, including idle qubits."""
+
+    @property
+    def final_layout(self) -> list[int]:
+        """Final target site ID for each input qubit after routing."""
+
+    @property
+    def routing_permutation(self) -> list[int]:
+        """Initial-to-final target indices for every site, including routing workspace. Indices follow target site order."""
+
 class QCProgram(Program):
     """A compiler program in the QC dialect.
 
@@ -618,13 +640,18 @@ class QCProgram(Program):
     def to_openqasm3(self) -> OpenQASMProgram:
         """Clean up and emit this QC program as OpenQASM 3 without QCO optimization."""
 
-    def to_qiskit(self, *, target: CompilerTarget | None = None) -> qiskit.circuit.QuantumCircuit:
+    def to_qiskit(
+        self, *, target: CompilerTarget | None = None, mapping_result: MappingResult | None = None
+    ) -> qiskit.circuit.QuantumCircuit:
         """Translate this QC program to a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` without consuming it.
 
         Args:
             target: The optional compiler target used for mapping. When provided, emit
                 a canonical physical circuit. All qubits must be static, and their site
                 IDs must belong to the target.
+            mapping_result: The snapshot from compiling this program with ``target``.
+                Supplies the initial layout and full routing permutation. Use the same
+                target and make no further circuit transformations before export.
         """
 
     def to_qco(self, *, copy: bool = False) -> QCOProgram:
@@ -717,18 +744,32 @@ class QCOProgram(Program):
     def compile_for_target(self, target_environment: TargetEnvironment, *, options: CompilationOptions = ...) -> None:
         """Compile this QCO program for the target in place. Do not rely on its contents if compilation fails. Failures raise RuntimeError with the emitted MLIR diagnostics."""
 
+    def compile_for_target_with_layout(
+        self,
+        target_environment: TargetEnvironment,
+        *,
+        initial_layout: Sequence[int] = [],
+        options: CompilationOptions = ...,
+    ) -> MappingResult:
+        """Compile in place and return initial and final site assignments. Input allocations must have fixed sizes in the entry block. An empty initial_layout selects automatic placement; otherwise supply one distinct target site ID per input qubit. This preserves idle input wires. The returned snapshot is not updated by later transformations. Do not rely on program contents after failure."""
+
     def synthesize_for_target(
         self, target_environment: TargetEnvironment, *, options: CompilationOptions = ...
     ) -> None:
         """Synthesize native operations for an all-to-all target in place. Assigns static sites and resynthesizes constant two-qubit runs in the native basis, without routing. Do not rely on the program contents if synthesis fails. Failures raise RuntimeError with the emitted MLIR diagnostics."""
 
-    def to_qiskit(self, *, target: CompilerTarget | None = None) -> qiskit.circuit.QuantumCircuit:
+    def to_qiskit(
+        self, *, target: CompilerTarget | None = None, mapping_result: MappingResult | None = None
+    ) -> qiskit.circuit.QuantumCircuit:
         """Export a Qiskit circuit without consuming or modifying this program.
 
         Args:
             target: The optional compiler target used for mapping. When provided, static
                 site IDs map to dense physical-qubit indices in target site order.
                 Dynamic qubits and static IDs absent from the target are rejected.
+            mapping_result: The snapshot from compiling this program with ``target``.
+                Supplies the initial layout and full routing permutation. Use the same
+                target and make no further circuit transformations before export.
         """
 
     def to_qc(self, *, copy: bool = False) -> QCProgram:

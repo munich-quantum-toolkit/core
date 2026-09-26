@@ -431,7 +431,13 @@ def test_mapping_options_defaults() -> None:
 
 @pytest.mark.parametrize(
     ("method", "all_to_all"),
-    [("compile_for_target", False), ("compile_for_target", True), ("synthesize_for_target", True)],
+    [
+        ("compile_for_target", False),
+        ("compile_for_target", True),
+        ("synthesize_for_target", True),
+        ("compile_for_target_with_layout", False),
+        ("compile_for_target_with_layout", True),
+    ],
 )
 def test_mapping_options_reject_zero_trials(method: str, *, all_to_all: bool) -> None:
     """Reject invalid public mapping controls before rewriting the input."""
@@ -1359,7 +1365,7 @@ def test_qc_program_num_gates() -> None:
     assert program.num_two_qubit_gates() == 1
 
 
-@pytest.mark.parametrize("mode", ["targetless", "target_output", "target_payload", "source", "path"])
+@pytest.mark.parametrize("mode", ["targetless", "target_output", "target_payload", "target_layout", "source", "path"])
 def test_native_compilation_releases_gil(tmp_path: Path, mode: str) -> None:
     """Python threads progress during native parsing and each compilation overload."""
     source = 'OPENQASM 3.0; include "stdgates.inc"; qubit[2] q;\n' + (
@@ -1371,6 +1377,7 @@ def test_native_compilation_releases_gil(tmp_path: Path, mode: str) -> None:
         native_operations=CompilerTarget.NativeOperations.unrestricted(),
     )
     program = compile_program(source, output=OutputFormat.QCO)
+    environment = _test_target_environment(target)
     invalid_source = source + "unknown_gate q[0];"
     path = tmp_path / "invalid.qasm"
     path.write_text(invalid_source, encoding="utf-8")
@@ -1396,6 +1403,8 @@ def test_native_compilation_releases_gil(tmp_path: Path, mode: str) -> None:
                 compile_program(program, target=target, output=OutputFormat.OPENQASM3)
             elif mode == "target_payload":
                 compile_program(program, target=target, program_format=ProgramFormat.QASM3)
+            elif mode == "target_layout":
+                program.copy().compile_for_target_with_layout(environment)
             else:
                 # Parsing fails before the compilation release scope can be reached.
                 with pytest.raises(RuntimeError, match="Compiler action failed"):
@@ -1409,6 +1418,134 @@ def test_native_compilation_releases_gil(tmp_path: Path, mode: str) -> None:
         sys.setswitchinterval(interval)
     assert not thread.is_alive()
     assert program.is_valid
+
+
+@pytest.mark.parametrize("all_to_all", [False, True])
+@pytest.mark.parametrize("profile", ["base", "adaptive"])
+def test_layout_compilation_preserves_idle_slots_and_source_order(*, all_to_all: bool, profile: str) -> None:
+    """Track allocation slots even when first use and allocation order differ."""
+    source = """OPENQASM 3.1;
+include "stdgates.inc";
+qubit[2] first;
+qubit second;
+bit[2] out;
+x second; x first[1];
+out[0] = measure second;
+out[1] = measure first[1];
+"""
+    target = CompilerTarget(
+        "sparse layout",
+        [CompilerTarget.Site(10), CompilerTarget.Site(30), CompilerTarget.Site(20)],
+        connectivity=(
+            CompilerTarget.Connectivity.all_to_all()
+            if all_to_all
+            else CompilerTarget.Connectivity([(10, 30), (30, 20)])
+        ),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
+    program = QCProgram.from_openqasm_str(source).to_qco()
+    result = program.compile_for_target_with_layout(
+        TargetEnvironment(
+            target,
+            PayloadSpecification(
+                PayloadFormat("qir", "2.1.0", profile, PayloadEncoding.BINARY),
+                [],
+                optional_capabilities_known=True,
+            ),
+        ),
+        initial_layout=[20, 10, 30],
+        options=CompilationOptions(seed=7, mapping=MappingOptions(trials=1)),
+    )
+    assert result.allocation_sizes == [2, 1]
+    assert result.initial_layout == [20, 10, 30]
+    assert result.final_layout == [20, 10, 30]
+    assert "source_qubit_indices" not in program.ir
+    assert program.sample(shots=4, seed=7) == {"11": 4}
+
+
+def test_layout_compilation_rejects_duplicate_sites() -> None:
+    """Report invalid explicit placement through the Python API."""
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
+    program = QCProgram.from_openqasm_str(QASM_STRING).to_qco()
+    with pytest.raises(RuntimeError, match="one distinct target site ID per input qubit"):
+        program.compile_for_target_with_layout(_test_target_environment(target), initial_layout=[0, 0])
+
+
+def test_layout_compilation_automatic_placement_and_snapshot() -> None:
+    """Return source layouts for automatic mapping and detach them from the program."""
+    target = CompilerTarget(
+        3,
+        connectivity=CompilerTarget.Connectivity([(0, 1), (1, 2)]),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
+    program = QCProgram.from_openqasm_str(QASM_STRING).to_qco()
+    result = program.compile_for_target_with_layout(
+        _test_target_environment(target), options=CompilationOptions(seed=7, mapping=MappingOptions(trials=2))
+    )
+    initial = result.initial_layout
+    final = result.final_layout
+    assert result.allocation_sizes == [2]
+    assert len(set(initial)) == len(set(final)) == 2
+    program.cleanup()
+    assert result.initial_layout == initial
+    assert result.final_layout == final
+    with pytest.raises(RuntimeError, match="requires unmapped input"):
+        program.compile_for_target_with_layout(_test_target_environment(target))
+
+
+@pytest.mark.parametrize(("basis", "search_memory_limit"), [(1, 0), (3, 1024)])
+def test_layout_routes_through_unused_target_sites(basis: int, search_memory_limit: int) -> None:
+    """Route two logical qubits through workspace sites without losing their IDs."""
+    preparation = "\n".join(f"x q[{qubit}];" for qubit in range(2) if basis & (1 << qubit))
+    program = QCProgram.from_openqasm_str(f"""OPENQASM 3.1;
+include "stdgates.inc";
+qubit[2] q;
+{preparation}
+cx q[0], q[1];
+""").to_qco()
+    target = CompilerTarget(
+        4,
+        connectivity=CompilerTarget.Connectivity([(0, 1), (1, 2), (2, 3)]),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
+    result = program.compile_for_target_with_layout(
+        _test_target_environment(target),
+        initial_layout=[0, 3],
+        options=CompilationOptions(
+            seed=7, mapping=MappingOptions(trials=2, iterations=2, lookahead=0, search_memory_limit=search_memory_limit)
+        ),
+    )
+    assert result.initial_layout == [0, 3]
+    assert len(set(result.final_layout)) == 2
+    physical = next(iter(program.sample(shots=1, seed=3)))
+    q0, q1 = basis & 1, (basis >> 1) & 1
+    assert [int(physical[-1 - site]) for site in result.final_layout] == [q0, q1 ^ q0]
+
+
+def test_layout_tracking_preserves_feedback_measurement_destinations() -> None:
+    """Retain classical destinations across conditional native routing."""
+    program = QCProgram.from_openqasm_str("""OPENQASM 3.1;
+include "stdgates.inc";
+qubit[3] q;
+bit[2] out;
+x q[0];
+out[0] = measure q[0];
+if (out[0]) { cx q[0], q[2]; }
+out[1] = measure q[2];
+""").to_qco()
+    target = CompilerTarget(
+        3,
+        connectivity=CompilerTarget.Connectivity([(0, 1), (1, 2)]),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
+    result = program.compile_for_target_with_layout(_test_target_environment(target), initial_layout=[0, 1, 2])
+    assert result.initial_layout == [0, 1, 2]
+    assert sorted(result.final_layout) == [0, 1, 2]
+    assert program.sample(shots=8, seed=2) == {"11": 8}
 
 
 @pytest.mark.parametrize("seed", [0, 7, 2**63 + 7, 2**64 - 1])

@@ -11,9 +11,11 @@
 #include "mqt/Dialect/QCO/Transforms/Mapping/Mapping.h"
 
 #include "mqt/Compiler/Target.h"
+#include "mqt/Compiler/TargetCompilation.h"
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
@@ -29,10 +31,13 @@
 #include "mqt/Support/RandomSeed.h"
 
 #include "mlir/Analysis/SliceAnalysis.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/Block.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/Dominance.h"
@@ -62,8 +67,10 @@
 #include <cassert>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <iterator>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <random>
@@ -277,15 +284,20 @@ static LogicalResult checkCapacity(func::FuncOp func,
 /// checks succeeded.
 static std::pair<Wires, WireInfos>
 applyPlacement(Region& body, const CompilerTarget& target, const Layout& layout,
-               Computation& computation, IRRewriter& rewriter) {
+               Computation& computation, IRRewriter& rewriter,
+               bool addWorkspace = true) {
   SmallVector<Value> staticQubits;
-  staticQubits.reserve(layout.nHardwareQubits());
+  staticQubits.resize(layout.nHardwareQubits());
 
   rewriter.setInsertionPointToStart(&body.front());
   for (size_t hw = 0; hw < layout.nHardwareQubits(); ++hw) {
+    if (!addWorkspace &&
+        layout.getProgramIndex(hw) >= computation.wires.size()) {
+      continue;
+    }
     auto op =
         StaticOp::create(rewriter, body.getLoc(), target.siteForVertex(hw));
-    staticQubits.emplace_back(op.getQubit());
+    staticQubits[hw] = op.getQubit();
     rewriter.setInsertionPointAfter(op);
   }
 
@@ -330,7 +342,8 @@ applyPlacement(Region& body, const CompilerTarget& target, const Layout& layout,
   }
 
   rewriter.setInsertionPoint(body.back().getTerminator());
-  for (size_t prog = wires.size(); prog < layout.nHardwareQubits(); ++prog) {
+  for (size_t prog = wires.size();
+       addWorkspace && prog < layout.nHardwareQubits(); ++prog) {
     const auto hw = layout.getHardwareIndex(prog);
     auto qubit = staticQubits[hw];
 
@@ -344,7 +357,8 @@ applyPlacement(Region& body, const CompilerTarget& target, const Layout& layout,
 
 /// Assign allocation slots to sites without traversing or expanding their uses.
 static LogicalResult placeIndexedAllocations(func::FuncOp function,
-                                             const CompilerTarget& target) {
+                                             const CompilerTarget& target,
+                                             LayoutTracking* tracking) {
   SmallVector<Operation*> allocations;
   llvm::DenseSet<CompilerTarget::SiteId> occupied;
   function.walk([&](StaticOp op) {
@@ -371,19 +385,46 @@ static LogicalResult placeIndexedAllocations(func::FuncOp function,
              << target.numSites();
     }
     required += width;
+    if (tracking != nullptr) {
+      auto sources = operation.getAttrOfType<DenseI64ArrayAttr>(
+          mqt::kSourceQubitIndicesAttr);
+      if (!sources || std::cmp_not_equal(sources.size(), width) ||
+          llvm::any_of(sources.asArrayRef(), [&](int64_t source) {
+            return source < 0 || std::cmp_greater_equal(
+                                     source, tracking->sourceToProgram.size());
+          })) {
+        return operation.emitError(
+            "input qubit identity was lost during layout preparation");
+      }
+    }
     allocations.push_back(&operation);
+  }
+  if (tracking != nullptr) {
+    tracking->result.initialLayout.assign(tracking->sourceToProgram.size(), -1);
   }
   IRRewriter rewriter(function.getContext());
   size_t vertex = 0;
   for (Operation* allocation : allocations) {
     rewriter.setInsertionPoint(allocation);
+    auto sources = allocation->getAttrOfType<DenseI64ArrayAttr>(
+        mqt::kSourceQubitIndicesAttr);
+    size_t slot = 0;
     const auto nextQubit = [&] {
-      while (occupied.contains(target.siteForVertex(vertex))) {
-        ++vertex;
+      CompilerTarget::SiteId site = 0;
+      if (tracking != nullptr && !tracking->requested.empty()) {
+        site = tracking->requested[sources[slot]];
+      } else {
+        while (occupied.contains(target.siteForVertex(vertex))) {
+          ++vertex;
+        }
+        site = target.siteForVertex(vertex++);
       }
-      return StaticOp::create(rewriter, allocation->getLoc(),
-                              target.siteForVertex(vertex++));
+      if (tracking != nullptr) {
+        tracking->result.initialLayout[sources[slot++]] = site;
+      }
+      return StaticOp::create(rewriter, allocation->getLoc(), site);
     };
+    allocation->removeAttr(mqt::kSourceQubitIndicesAttr);
     if (isa<AllocOp>(allocation)) {
       auto qubit = nextQubit();
       qubit->setDiscardableAttrs(allocation->getDiscardableAttrDictionary());
@@ -401,7 +442,169 @@ static LogicalResult placeIndexedAllocations(func::FuncOp function,
     tensor->setDiscardableAttrs(allocation->getDiscardableAttrDictionary());
     rewriter.replaceOp(allocation, tensor.getResult());
   }
+  if (tracking != nullptr) {
+    // Removed inputs still need snapshot sites.
+    for (auto [source, site] :
+         llvm::enumerate(tracking->result.initialLayout)) {
+      if (site != -1) {
+        continue;
+      }
+      if (!tracking->requested.empty()) {
+        site = tracking->requested[source];
+      } else {
+        while (occupied.contains(target.siteForVertex(vertex))) {
+          ++vertex;
+        }
+        site = target.siteForVertex(vertex++);
+      }
+    }
+    tracking->result.finalLayout = tracking->result.initialLayout;
+  }
   return success();
+}
+
+LogicalResult prepareLayout(ModuleOp moduleOp, const CompilerTarget& target,
+                            LayoutTracking& tracking) {
+  auto func = mqt::getEntryPoint(moduleOp);
+  if (!func || !llvm::hasSingleElement(func.getBody()) ||
+      llvm::any_of(func.getArgumentTypes(), isLinearQubitType)) {
+    moduleOp.emitError("layout tracking requires an entry block with locally "
+                       "allocated qubits");
+    return failure();
+  }
+  SmallVector<std::pair<Operation*, size_t>> allocations;
+  size_t count = 0;
+  const auto validation = moduleOp.walk([&](Operation* op) {
+    if (isa<StaticOp>(op) || op->hasAttr(mqt::kSourceQubitIndicesAttr)) {
+      op->emitError("layout tracking requires unmapped input without "
+                    "source tags");
+      return WalkResult::interrupt();
+    }
+    if (!isa<AllocOp, qtensor::AllocOp>(op)) {
+      return WalkResult::advance();
+    }
+    if (op->getBlock() != &func.getBody().front()) {
+      op->emitError("layout tracking requires allocations in the entry block");
+      return WalkResult::interrupt();
+    }
+    size_t size = 1;
+    if (auto tensor = dyn_cast<qtensor::AllocOp>(op)) {
+      auto extent = getConstantIntValue(tensor.getSize());
+      if (!extent || *extent < 0) {
+        op->emitError("layout tracking requires fixed allocation sizes");
+        return WalkResult::interrupt();
+      }
+      size = static_cast<size_t>(*extent);
+    }
+    if (size > target.numSites() - count) {
+      op->emitError("layout tracking requires a target site for every input "
+                    "qubit, including idle qubits");
+      return WalkResult::interrupt();
+    }
+    allocations.emplace_back(op, size);
+    count += size;
+    return WalkResult::advance();
+  });
+  if (validation.wasInterrupted()) {
+    return failure();
+  }
+  if (!tracking.requested.empty()) {
+    llvm::SmallDenseSet<int64_t> sites;
+    if (tracking.requested.size() != count ||
+        llvm::any_of(tracking.requested, [&](int64_t site) {
+          return !target.vertexForSite(site) || !sites.insert(site).second;
+        })) {
+      func.emitError("initial layout requires one distinct target site ID "
+                     "per input qubit");
+      return failure();
+    }
+  }
+  Builder builder(moduleOp.getContext());
+  int64_t offset = 0;
+  for (auto [op, size] : allocations) {
+    tracking.result.allocationSizes.push_back(size);
+    SmallVector<int64_t> indices;
+    indices.reserve(size);
+    for (size_t i = 0; i < size; ++i) {
+      indices.push_back(offset++);
+    }
+    op->setAttr(mqt::kSourceQubitIndicesAttr,
+                builder.getDenseI64ArrayAttr(indices));
+  }
+  tracking.sourceToProgram.assign(count, std::numeric_limits<size_t>::max());
+  for (auto site : llvm::seq(target.numSites())) {
+    tracking.result.routingPermutation.push_back(site);
+  }
+  return success();
+}
+
+/// Preserve discovery order; track removed inputs through workspace
+/// permutations.
+static LogicalResult collectSourceOrder(func::FuncOp func,
+                                        const Computation& computation,
+                                        LayoutTracking& tracking) {
+  size_t program = 0;
+  const auto record = [&](Operation* allocation, int64_t index) {
+    auto sources = allocation->getAttrOfType<DenseI64ArrayAttr>(
+        mqt::kSourceQubitIndicesAttr);
+    if (!sources || index < 0 || index >= sources.size()) {
+      return failure();
+    }
+    const auto source = sources[index];
+    if (source < 0 ||
+        std::cmp_greater_equal(source, tracking.sourceToProgram.size()) ||
+        tracking.sourceToProgram[source] !=
+            std::numeric_limits<size_t>::max()) {
+      return failure();
+    }
+    tracking.sourceToProgram[source] = program++;
+    return success();
+  };
+  for (auto alloc : computation.scalarAllocations) {
+    if (failed(record(alloc, 0))) {
+      return func.emitError(
+          "input qubit identity was lost during layout preparation");
+    }
+  }
+  for (const auto& tensor : computation.tensorAllocations) {
+    for (auto* operation : tensor.operations) {
+      if (auto extract = dyn_cast<ExtractOp>(operation)) {
+        auto index = getConstantIntValue(extract.getIndex());
+        if (!index || failed(record(tensor.allocation, *index))) {
+          return func.emitError(
+              "input qubit identity was lost during layout preparation");
+        }
+      }
+    }
+  }
+  for (auto& index : tracking.sourceToProgram) {
+    if (index == std::numeric_limits<size_t>::max()) {
+      index = program++;
+    }
+  }
+  return success();
+}
+
+/// Complete a requested source layout with deterministic workspace placement.
+static Layout requestedLayout(const CompilerTarget& target,
+                              const LayoutTracking& tracking) {
+  auto layout = Layout::identity(target.numSites());
+  for (auto [source, site] : llvm::enumerate(tracking.requested)) {
+    layout.swap(layout.getHardwareIndex(tracking.sourceToProgram[source]),
+                *target.vertexForSite(site));
+  }
+  return layout;
+}
+
+static std::vector<int64_t> sourceLayout(const CompilerTarget& target,
+                                         const Layout& layout,
+                                         const LayoutTracking& tracking) {
+  std::vector<int64_t> result;
+  result.reserve(tracking.sourceToProgram.size());
+  for (auto program : tracking.sourceToProgram) {
+    result.push_back(target.siteForVertex(layout.getHardwareIndex(program)));
+  }
+  return result;
 }
 
 namespace {
@@ -410,8 +613,9 @@ struct PlacementPass final
     : PassWrapper<PlacementPass, OperationPass<ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(PlacementPass)
 
-  explicit PlacementPass(const CompilerTarget& compilerTarget)
-      : target(compilerTarget) {}
+  explicit PlacementPass(const CompilerTarget& compilerTarget,
+                         LayoutTracking* tracking = nullptr)
+      : tracking_(tracking), target(compilerTarget) {}
 
   void getDependentDialects(DialectRegistry& registry) const override {
     registry.insert<QCODialect, qtensor::QTensorDialect>();
@@ -433,7 +637,7 @@ protected:
 
     const auto& environment = getAnalysis<TargetEnvironmentAnalysis>();
     if (environment && environment.environment().supportsIndexedQubits()) {
-      if (failed(placeIndexedAllocations(func, target))) {
+      if (failed(placeIndexedAllocations(func, target, tracking_))) {
         signalPassFailure();
       }
       return;
@@ -445,13 +649,31 @@ protected:
       return;
     }
 
-    const auto layout = Layout::identity(computation->wires.size());
+    if (tracking_ != nullptr &&
+        failed(collectSourceOrder(func, *computation, *tracking_))) {
+      signalPassFailure();
+      return;
+    }
+    const auto layout =
+        tracking_ != nullptr && !tracking_->requested.empty()
+            ? requestedLayout(target, *tracking_)
+            : Layout::identity(tracking_ != nullptr
+                                   ? tracking_->sourceToProgram.size()
+                                   : computation->wires.size());
+    if (tracking_ != nullptr) {
+      tracking_->result.initialLayout =
+          sourceLayout(target, layout, *tracking_);
+    }
     IRRewriter rewriter(&getContext());
     applyPlacement(func.getFunctionBody(), target, layout, *computation,
-                   rewriter);
+                   rewriter, false);
+    if (tracking_ != nullptr) {
+      tracking_->result.finalLayout = tracking_->result.initialLayout;
+    }
   }
 
 private:
+  LayoutTracking* tracking_ = nullptr;
   CompilerTarget target;
 };
 
@@ -706,6 +928,9 @@ public:
   explicit MappingPass(const MappingPassOptions& options)
       : MappingPassBase(options) {}
 
+  MappingPass(const MappingPassOptions& options, LayoutTracking* tracking)
+      : MappingPassBase(options), tracking_(tracking) {}
+
 protected:
   void runOnOperation() override {
     auto moduleOp = getOperation();
@@ -759,8 +984,23 @@ protected:
     auto& body = func.getFunctionBody();
     auto& wires = computation->wires;
     auto& infos = computation->infos;
-    auto layout = generateLayout(wires, infos);
+    if (tracking_ != nullptr &&
+        failed(collectSourceOrder(func, *computation, *tracking_))) {
+      signalPassFailure();
+      return;
+    }
+    auto layout = tracking_ != nullptr && !tracking_->requested.empty()
+                      ? requestedLayout(*target, *tracking_)
+                      : generateLayout(wires, infos);
 
+    if (tracking_ != nullptr) {
+      tracking_->result.initialLayout =
+          sourceLayout(*target, layout, *tracking_);
+      for (auto [site, program] :
+           llvm::enumerate(tracking_->result.routingPermutation)) {
+        program = layout.getProgramIndex(site);
+      }
+    }
     IRRewriter rewriter(&getContext());
     std::tie(wires, infos) = std::move(
         applyPlacement(body, *target, layout, *computation, rewriter));
@@ -775,6 +1015,14 @@ protected:
     Arena arena(target->numSites(), searchMemoryLimit);
     const auto stats = route<WireDirection::Forward, RoutingMode::Hot>(
         bundle, arena, &rewriter);
+
+    if (tracking_ != nullptr) {
+      tracking_->result.finalLayout =
+          sourceLayout(*target, bundle.layout, *tracking_);
+      for (auto& program : tracking_->result.routingPermutation) {
+        program = bundle.layout.getHardwareIndex(program);
+      }
+    }
 
     // Collect statistics.
     numSwaps += stats.nswaps;
@@ -2100,13 +2348,24 @@ private:
     return stats;
   }
 
+  LayoutTracking* tracking_ = nullptr;
   const CompilerTarget* target = nullptr;
 };
 
 } // namespace
 
 std::unique_ptr<Pass> createPlacementPass(const CompilerTarget& target) {
-  return std::make_unique<PlacementPass>(target);
+  return createPlacementPass(target, {});
+}
+
+std::unique_ptr<Pass> createPlacementPass(const CompilerTarget& target,
+                                          LayoutTracking* tracking) {
+  return std::make_unique<PlacementPass>(target, tracking);
+}
+
+std::unique_ptr<Pass> createMappingPass(const MappingPassOptions& options,
+                                        LayoutTracking* tracking) {
+  return std::make_unique<MappingPass>(options, tracking);
 }
 
 } // namespace mlir::qco

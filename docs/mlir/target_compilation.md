@@ -456,5 +456,70 @@ When exporting a program that has already been mapped to a
 target site ID to its index in {py:attr}`~mqt.core.mlir.CompilerTarget.sites`
 and creates a canonical physical Qiskit circuit. The circuit has one register
 named {code}`q` with {py:attr}`~mqt.core.mlir.CompilerTarget.num_sites` qubits.
-This option does not run target compilation or emit Qiskit layout metadata.
 Target-aware export requires static qubits whose site IDs belong to that target.
+Pass the native compilation result as `mapping_result` to include a complete
+Qiskit layout, as described below.
+
+## Initial and final qubit layouts
+
+Use `QCOProgram.compile_for_target_with_layout` to choose placement or recover
+logical output positions after routing:
+
+```python
+from mqt.core.mlir import CompilationOptions, MappingOptions, QCProgram
+
+program = QCProgram.from_openqasm_str(bell_qasm).to_qco()
+layout = program.compile_for_target_with_layout(
+    environment,
+    initial_layout=[0, 2],
+    options=CompilationOptions(seed=42, mapping=MappingOptions(trials=4, iterations=2, lookahead=10)),
+)
+print(layout.initial_layout)
+print(layout.final_layout)
+```
+
+The `TargetEnvironment` must contain sites `0` and `2` and support the circuit.
+`initial_layout` supplies one distinct **target site ID** per input qubit, not
+an index into `target.sites`. Omit it or pass `[]` for automatic placement.
+Explicit placement skips trials and refinement; lookahead still controls
+routing.
+
+Both result lists follow entry-block allocation order and ascending tensor
+slots. For tensors of sizes two and one, the order is
+`[first[0], first[1], second[0]]`, regardless of first use. `allocation_sizes`
+records those boundaries. Classical measurement destinations are unchanged.
+
+Idle input slots count against target capacity and remain in the result. Inputs
+must be local entry-block allocations with compile-time constant sizes; runtime
+sizes, nested allocations, and already mapped inputs are unsupported. Qubits
+removed before this call cannot be recovered. Invalid inputs raise an error; do
+not rely on program contents after failure.
+
+Adaptive all-to-all placement requires retained tensor allocations to have
+static result types, as produced by the Qiskit and OpenQASM frontends.
+
+`routing_permutation` maps each initial physical position to its final position,
+including workspace sites. These are indices into `target.sites`, unlike the
+site IDs in `initial_layout` and `final_layout`. Pass the snapshot and the same
+target to Qiskit export:
+
+```python
+circuit = program.to_qiskit(target=environment.target, mapping_result=layout)
+print(circuit.layout.final_index_layout())
+```
+
+`MappingResult` describes this compilation. Export before further circuit
+transformations; later edits do not update the snapshot. MLIR serialization
+retains the program but does not include this detached result.
+
+Native compilation and imported Qiskit provenance use separate input identities.
+Discard imported provenance before compilation to use allocation order as the
+logical input order; see [transpiler layouts](qiskit.md#transpiler-layouts).
+
+C++ callers use `QCOProgram::compileForTargetWithLayout`. This synchronous call
+requires one entry point directly in the program module and rejects additional
+nested entry points. It returns a result only after native synthesis, target
+conformance, pass-manager verification, and final QCO linearity checks succeed.
+Run ordinary native pipelines with `runWithCompilationOptions` to manage
+imported layout provenance; calling `PassManager::run` directly bypasses that
+policy.

@@ -12,6 +12,7 @@
 
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/Target.h"
+#include "mqt/Compiler/TargetCompilation.h"
 
 #include "nanobind/nanobind.h"
 
@@ -25,6 +26,7 @@ namespace nb = nanobind;
 /// Return a new Qiskit QuantumCircuit, optionally for a compiler target.
 [[nodiscard]] nb::object
 exportCircuit(const mlir::QCProgram& program,
-              const mlir::CompilerTarget* target = nullptr);
+              const mlir::CompilerTarget* target = nullptr,
+              const mlir::MappingResult* mappingResult = nullptr);
 
 } // namespace mqt::bindings::qiskit

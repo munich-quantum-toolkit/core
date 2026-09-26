@@ -11,6 +11,7 @@
 #include "mqt/Support/Passes.h"
 
 #include "mqt/Conversion/CBitToMemRef/CBitToMemRef.h"
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QC/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
@@ -20,6 +21,7 @@
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Pass/PassRegistry.h"
 #include "mlir/Support/LLVM.h"
@@ -39,12 +41,14 @@ static void addSimplificationPasses(OpPassManager& pm) {
   pm.addPass(createCSEPass());
 }
 
-LogicalResult runWithPassManager(
-    ModuleOp mod, const function_ref<void(OpPassManager&)> populatePasses,
-    const StringRef errorMessage, const CompilationOptions& options) {
+LogicalResult
+runWithPassManager(ModuleOp mod,
+                   const function_ref<void(OpPassManager&)> populatePasses,
+                   const StringRef errorMessage,
+                   const CompilationOptions& options, bool preservesLayout) {
   PassManager pm(mod.getContext());
   populatePasses(pm);
-  if (failed(runWithCompilationOptions(pm, mod, options))) {
+  if (failed(runWithCompilationOptions(pm, mod, options, preservesLayout))) {
     return mod.emitError(errorMessage);
   }
   return success();
@@ -127,7 +131,11 @@ LogicalResult runPassPipeline(ModuleOp mod, const StringRef pipeline,
 }
 
 LogicalResult runWithCompilationOptions(PassManager& pm, ModuleOp moduleOp,
-                                        const CompilationOptions& options) {
+                                        const CompilationOptions& options,
+                                        bool preservesLayout) {
+  if (!preservesLayout) {
+    mqt::invalidateQubitLayout(moduleOp);
+  }
   if (options.enableTiming) {
     pm.enableTiming();
   }

@@ -13,6 +13,7 @@
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/MQT/Utils/GatePowering.h"
 #include "mqt/Dialect/MQT/Utils/Modifiers.h"
@@ -2041,6 +2042,10 @@ protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
     auto moduleOp = getOperation();
+    if (failed(mqt::requireNoQubitLayout(moduleOp))) {
+      signalPassFailure();
+      return;
+    }
     const auto modifiers = moduleOp.walk([](Operation* op) {
       if (!isa<CtrlOp, InvOp, PowOp>(op)) {
         return WalkResult::advance();

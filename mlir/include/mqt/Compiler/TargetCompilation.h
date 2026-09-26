@@ -12,10 +12,27 @@
 
 #include "mqt/Compiler/CompilationOptions.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <vector>
+
 namespace mlir {
 
 class TargetEnvironment;
 class OpPassManager;
+
+/// Initial and final target site IDs, including idle inputs.
+///
+/// Entries follow entry-block allocation order and ascending tensor slots.
+/// Later transformations do not update this snapshot.
+struct MappingResult {
+  std::vector<size_t> allocationSizes;
+  std::vector<int64_t> initialLayout;
+  std::vector<int64_t> finalLayout;
+  /// Initial-to-final target indices, including all workspace sites.
+  /// Indices refer to CompilerTarget::sites() order, not target site IDs.
+  std::vector<size_t> routingPermutation;
+};
 
 /// Populate the canonical compiler-target pipeline.
 ///
