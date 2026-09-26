@@ -24,6 +24,8 @@ releases may include breaking changes.
 ### Fixed
 
 - 🐛 Export V and V† gates to Qiskit ([#2433]) ([**@burgholzer**])
+- 🐛 Do not treat controlled `RZ` and `RZZ` operations as symmetric in controls
+  and targets in `Operation::equals` ([#2635]) ([**@DongjaeLee-Dd2dD2**])
 
 ## [3.10.0] - 2026-09-05
 
@@ -838,6 +840,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2635]: https://github.com/munich-quantum-toolkit/core/pull/2635
 [#2611]: https://github.com/munich-quantum-toolkit/core/pull/2611
 [#2563]: https://github.com/munich-quantum-toolkit/core/pull/2563
 [#2522]: https://github.com/munich-quantum-toolkit/core/pull/2522
@@ -1076,6 +1079,7 @@ for previous changelogs._
 
 <!-- Contributor -->
 
+[**@DongjaeLee-Dd2dD2**]: https://github.com/DongjaeLee-Dd2dD2
 [**@burgholzer**]: https://github.com/burgholzer
 [**@simon1hofmann**]: https://github.com/simon1hofmann
 [**@ystade**]: https://github.com/ystade
