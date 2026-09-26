@@ -153,6 +153,7 @@ def OneTargetThreeParameter : TargetAndParameterArityTrait<1, 3>;
 def TwoTargetZeroParameter : TargetAndParameterArityTrait<2, 0>;
 def TwoTargetOneParameter : TargetAndParameterArityTrait<2, 1>;
 def TwoTargetTwoParameter : TargetAndParameterArityTrait<2, 2>;
+def TwoTargetThreeParameter : TargetAndParameterArityTrait<2, 3>;
 def ThreeTargetZeroParameter : TargetAndParameterArityTrait<3, 0>;
 
 //===----------------------------------------------------------------------===//
@@ -529,6 +530,79 @@ def ROp : QCOp<"r", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
   let builders = [OpBuilder<(ins "Value":$qubit_in,
       "const std::variant<double, Value>&":$theta,
       "const std::variant<double, Value>&":$phi)>];
+}
+
+def GPIOp : QCOp<"gpi", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
+  let summary = "Apply a GPI gate";
+  let description = [{
+    GPI(φ) = i R(π, 2πφ). Parameters are measured in turns (one turn is 2π radians).
+  }];
+  let arguments =
+      (ins Arg<QubitType, "target qubit", [MemRead, MemWrite]>:$qubit_in,
+          Arg<F64, "phi in turns">:$phi);
+  let assemblyFormat = "`(` $phi `)` $qubit_in attr-dict `:` type($qubit_in)";
+  let extraClassDeclaration = [{
+    [[nodiscard]] static StringRef getBaseSymbol() { return "gpi"; }
+  }];
+  let builders = [OpBuilder<(ins "Value":$qubit_in,
+      "const std::variant<double, Value>&":$phi)>];
+}
+
+def GPI2Op
+    : QCOp<"gpi2", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
+  let summary = "Apply a GPI2 gate";
+  let description = [{
+    GPI2(φ) = R(π/2, 2πφ). Parameters are measured in turns (one turn is 2π radians).
+  }];
+  let arguments =
+      (ins Arg<QubitType, "target qubit", [MemRead, MemWrite]>:$qubit_in,
+          Arg<F64, "phi in turns">:$phi);
+  let assemblyFormat = "`(` $phi `)` $qubit_in attr-dict `:` type($qubit_in)";
+  let extraClassDeclaration = [{
+    [[nodiscard]] static StringRef getBaseSymbol() { return "gpi2"; }
+  }];
+  let builders = [OpBuilder<(ins "Value":$qubit_in,
+      "const std::variant<double, Value>&":$phi)>];
+}
+
+def MSOp : QCOp<"ms", traits = [UnitaryOpInterface, TwoTargetThreeParameter]> {
+  let summary = "Apply a MS gate";
+  let description = [{
+    MS(φ₀, φ₁, θ) conjugates RXX(2πθ) by RZ(2πφ₀) and RZ(2πφ₁) on its first and second targets. Parameters are measured in turns (one turn is 2π radians).
+  }];
+  let arguments =
+      (ins Arg<QubitType, "target qubit", [MemRead, MemWrite]>:$qubit0_in,
+          Arg<QubitType, "target qubit", [MemRead, MemWrite]>:$qubit1_in,
+          Arg<F64, "phi0 in turns">:$phi0, Arg<F64, "phi1 in turns">:$phi1,
+          Arg<F64, "theta in turns">:$theta);
+  let assemblyFormat =
+      "`(` $phi0 `,` $phi1 `,` $theta `)` $qubit0_in `,` $qubit1_in attr-dict "
+      "`:` type($qubit0_in) `,` type($qubit1_in)";
+  let extraClassDeclaration = [{
+    [[nodiscard]] static StringRef getBaseSymbol() { return "ms"; }
+  }];
+  let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
+      "const std::variant<double, Value>&":$phi0,
+      "const std::variant<double, Value>&":$phi1,
+      "const std::variant<double, Value>&":$theta)>];
+}
+
+def ZZOp : QCOp<"zz", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
+  let summary = "Apply a ZZ gate";
+  let description = [{
+    ZZ(θ) = RZZ(2πθ). Parameters are measured in turns (one turn is 2π radians).
+  }];
+  let arguments =
+      (ins Arg<QubitType, "target qubit", [MemRead, MemWrite]>:$qubit0_in,
+          Arg<QubitType, "target qubit", [MemRead, MemWrite]>:$qubit1_in,
+          Arg<F64, "theta in turns">:$theta);
+  let assemblyFormat = "`(` $theta `)` $qubit0_in `,` $qubit1_in attr-dict `:` "
+                       "type($qubit0_in) `,` type($qubit1_in)";
+  let extraClassDeclaration = [{
+    [[nodiscard]] static StringRef getBaseSymbol() { return "zz"; }
+  }];
+  let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
+      "const std::variant<double, Value>&":$theta)>];
 }
 
 def U2Op : QCOp<"u2", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {

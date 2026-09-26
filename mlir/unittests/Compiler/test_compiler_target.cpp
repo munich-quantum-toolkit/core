@@ -75,6 +75,37 @@ using Site = Target::Site;
 using SiteId = Target::SiteId;
 using SiteTuple = Target::SiteTuple;
 
+TEST(CompilerTargetTest, NativeIonBasisRequiresUsablePhasesAndEntanglingAngle) {
+  for (const bool useMS : {false, true}) {
+    for (const double angle : {.125, .25}) {
+      for (const bool fixedPhase : {false, true}) {
+        std::vector operations{
+            valid(OperationCapability::create(
+                "gpi2", 1, 1, {}, std::nullopt, std::nullopt,
+                fixedPhase ? std::vector<std::optional<double>>{0.}
+                           : std::vector<std::optional<double>>{})),
+            valid(OperationCapability::create(
+                useMS ? "ms" : "zz", 2, useMS ? 3 : 1, {}, std::nullopt,
+                std::nullopt,
+                useMS ? std::vector<std::optional<double>>{std::nullopt,
+                                                           std::nullopt, angle,}
+                      : std::vector<std::optional<double>>{angle})),
+        };
+        const auto target =
+            valid(Target::create(2, Connectivity::allToAll(),
+                                 NativeOperations::fromOperations(operations)));
+        if (fixedPhase) {
+          EXPECT_FALSE(target.synthesisBasis());
+        } else {
+          ASSERT_TRUE(target.synthesisBasis());
+          EXPECT_EQ(target.synthesisBasis()->entangler.has_value(),
+                    angle == .25);
+        }
+      }
+    }
+  }
+}
+
 TEST(PayloadSpecificationTest, ValidatesAndRoundTripsTypedAttribute) {
   mlir::MLIRContext context;
   context.loadDialect<mlir::mqt::MQTDialect>();

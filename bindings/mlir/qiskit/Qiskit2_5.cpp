@@ -35,6 +35,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <numbers>
 #include <optional>
 #include <span>
 #include <stdexcept>
@@ -778,6 +779,65 @@ standardGateMapping(const std::string_view name) {
   return gate == nullptr ? std::nullopt : std::optional{gate->translation};
 }
 
+// Recognize only complete native definitions, including their global phase.
+[[nodiscard]] static std::optional<StandardGateMapping>
+nativeIonGate(nb::handle operation, std::string_view name) {
+  using Gate = mlir::qc::StandardGate;
+  const auto gate = llvm::StringSwitch<std::optional<Gate>>(name)
+                        .Case("gpi", Gate::GPI)
+                        .Case("gpi2", Gate::GPI2)
+                        .Case("ms", Gate::MS)
+                        .Case("zz", Gate::ZZ)
+                        .Default(std::nullopt);
+  if (!gate) {
+    return std::nullopt;
+  }
+  const auto& descriptor = mlir::qc::getStandardGateDescriptor(*gate);
+  const nb::object parameters = operation.attr("params");
+  if (nb::len(parameters) != descriptor.parameterCount ||
+      nb::cast<size_t>(operation.attr("num_qubits")) !=
+          descriptor.targetCount) {
+    return std::nullopt;
+  }
+  const nb::object definition = operation.attr("definition");
+  if (definition.is_none()) {
+    return std::nullopt;
+  }
+  try {
+    auto expected = nb::module_::import_("qiskit").attr("QuantumCircuit")(
+        descriptor.targetCount);
+    std::vector<nb::object> angles;
+    for (nb::handle parameter : nb::iter(parameters)) {
+      angles.push_back(nb::float_(2. * std::numbers::pi) * parameter);
+    }
+    if (*gate == Gate::GPI || *gate == Gate::GPI2) {
+      expected.attr("r")(*gate == Gate::GPI ? std::numbers::pi
+                                            : std::numbers::pi / 2.,
+                         angles[0], 0);
+      if (*gate == Gate::GPI) {
+        expected.attr("global_phase") = std::numbers::pi / 2.;
+      }
+    } else if (*gate == Gate::ZZ) {
+      expected.attr("rzz")(angles[0], 0, 1);
+    } else {
+      for (size_t index = 0; index < 2; ++index) {
+        expected.attr("rz")(-angles[index], index);
+      }
+      expected.attr("rxx")(angles[2], 0, 1);
+      for (size_t index = 0; index < 2; ++index) {
+        expected.attr("rz")(angles[index], index);
+      }
+    }
+    if (definition.equal(expected)) {
+      return StandardGateMapping{*gate, 0};
+    }
+  } catch (const nb::python_error&) {
+    // Non-scalar parameters and other custom definitions use normal import.
+    return std::nullopt;
+  }
+  return std::nullopt;
+}
+
 namespace {
 class NativeControlFlowReader;
 
@@ -976,6 +1036,7 @@ public:
       } else if (isPythonGate(operation)) {
         result.kind = OperationKind::Gate;
         const auto terminal = terminalPythonGate(operation);
+        auto parameterSource = operation;
         if (nb::isinstance(terminal,
                            nb::module_::import_("qiskit.circuit.library")
                                .attr("PermutationGate"))) {
@@ -990,8 +1051,19 @@ public:
           }
         } else if (isPythonStandardGate(operation)) {
           result.standardGate = standardGateMapping(result.name);
+        } else {
+          parameterSource = terminal;
+          if (const auto entry = nativeGates_.find(index);
+              entry != nativeGates_.end()) {
+            result.standardGate = entry->second;
+          } else if (auto mapping = nativeIonGate(terminal, result.name)) {
+            nativeGates_.emplace(index, *mapping);
+            result.standardGate = mapping;
+          }
+        }
+        if (result.standardGate) {
           for (const nb::handle parameter :
-               nb::iter(operation.attr("params"))) {
+               nb::iter(parameterSource.attr("params"))) {
             result.parameters.push_back(normalizePythonParameter(parameter));
           }
         }
@@ -1190,6 +1262,7 @@ private:
   const QkCircuit* circuit_ = nullptr;
   const QkControlFlowInstruction* parent_ = nullptr;
   std::shared_ptr<DefinitionRegistry> definitions_;
+  mutable std::unordered_map<size_t, StandardGateMapping> nativeGates_;
 };
 } // namespace
 
