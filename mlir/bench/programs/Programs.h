@@ -21,6 +21,7 @@ namespace mqt::bench {
 class BV;
 class GHZ;
 class Grover;
+class MagicStateDistillation;
 class ModularMultiplier;
 class Multiplexer;
 class QFT;
@@ -45,6 +46,11 @@ SmallVector<Value> ghz(qc::QCProgramBuilder& builder, const GHZ& benchmark);
 /// Emit one configured Grover benchmark.
 SmallVector<Value> grover(qc::QCProgramBuilder& builder,
                           const Grover& benchmark);
+
+/// Emit concatenated 15-to-1 magic-state distillation.
+SmallVector<Value>
+magicStateDistillation(qc::QCProgramBuilder& builder,
+                       const MagicStateDistillation& benchmark);
 
 /// Emit one configured modular multiplier benchmark.
 SmallVector<Value> modularMultiplier(qc::QCProgramBuilder& builder,

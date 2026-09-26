@@ -470,6 +470,47 @@ many qubits. See {doc}`mlir/target_compilation` for device and control-flow
 limits. The benchmark simulates an ideal adaptive circuit; it does not model
 error correction, magic-state distillation, or cultivation.
 
+### Magic-state distillation
+
+The `magic-state-distillation` family implements concatenated 15-to-1
+Reed–Muller distillation of $|T\rangle = T|+\rangle$ states. It follows the
+direct input-state protocol in
+[Bravyi and Haah, Appendix A](https://arxiv.org/pdf/1209.2426), using the
+15-qubit code of [Bravyi and Kitaev](https://arxiv.org/abs/quant-ph/0403025).
+Each block measures Z checks, applies conditional Clifford corrections, measures
+X checks, and decodes one retained state.
+
+Set `levels` to 1–4 (default 1). A level consumes the actual retained quantum
+outputs of the preceding level. The circuit allocates exactly
+$15^{\mathrm{levels}}$ qubits: 15, 225, 3,375, or 50,625.
+
+The two-bit `result` combines a sticky rejection flag in bit 1 with a root-state
+check in bit 0. Ideal input states give `00` with probability one. Every block
+runs once, including blocks whose inputs come from a rejected subtree. The
+benchmark does not model input noise, physical error correction, or retries, so
+this example does not measure fidelity improvement from noisy inputs.
+
+#### Sample the 15-qubit circuit directly
+
+This example uses 16 shots to keep execution short. The circuit runs once per
+shot because later gates depend on intermediate measurements. Increase the shot
+count when collecting statistics; the ideal output here is deterministic.
+
+```{code-cell} ipython3
+from mqt.core.bench import magic_state_distillation
+from mqt.core.mlir import sample
+
+distillation = magic_state_distillation.MagicStateDistillation()
+direct_counts = sample(distillation.generate(), shots=16, seed=17)
+assert direct_counts == {"00": 16}
+print(direct_counts)
+```
+
+Higher levels provide larger structured programs; support for their generation
+does not guarantee a given device's capacity. For device execution, see
+{doc}`qdmi/ddsim_device`; adaptive jobs expose counts, not an uncollapsed
+statevector.
+
 ### Shor order finding
 
 The `shor` family implements the semiclassical circuit in Sections 2.3–2.4 of

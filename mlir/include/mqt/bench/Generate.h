@@ -20,6 +20,7 @@ namespace mqt::bench {
 class BV;
 class GHZ;
 class Grover;
+class MagicStateDistillation;
 class ModularMultiplier;
 class Multiplexer;
 class QFT;
@@ -46,6 +47,10 @@ struct GeneratedBenchmark {
 
 /// Generate the QC program for a configured Grover benchmark.
 [[nodiscard]] std::optional<mlir::QCProgram> generate(const Grover& benchmark);
+
+/// Generate concatenated 15-to-1 magic-state distillation.
+[[nodiscard]] std::optional<mlir::QCProgram>
+generate(const MagicStateDistillation& benchmark);
 
 /// Generate a configured modular multiplier benchmark.
 [[nodiscard]] std::optional<mlir::QCProgram>
