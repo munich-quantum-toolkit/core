@@ -112,6 +112,7 @@ TEST(OpenQASMFrontendTest, RejectsInvalidRegisterSlices) {
       {"for int i in [0:1] { cx q[i:i+1], q[i:i+1]; }", "distinct qubits"},
       {"c[2:-1:0] ^= \"001\";", "indexed compound assignments"},
       {"int step = 0; x q[0:step:2];", "step must not be zero"},
+      {"c[:] = c[:, 0];", "only arrays support multiple indices"},
       {"int first = 2; x q[first:0];", "must not be empty"},
       {"int last = 2; bit[2] out = measure q[0:last];", "same width"},
       {"int last = 1; c[0:last] = \"111\";", "width must match"},
@@ -199,6 +200,8 @@ TEST(OpenQASMFrontendTest, CopiesArraysWithMatchingTypes) {
            "array[bool, 1, 1] b = a[1]; a[0] = b;",
            "array[int, 4] a = {0, 1, 2, 3}; array[int, 2] b = a[0:2:3]; "
            "a[-2:-1] = b; a[:2] = a[1:]; a[:-1:] = a;",
+           "array[int, 2] a = {1, 2}; array[int, 2] b = a[::]; "
+           "b[::1] = a[0::1];",
            "array[int, 2, 3] a = {{0, 1, 2}, {3, 4, 5}}; int i = -1; "
            "array[int, 2] b = a[:1, i]; a[:, 0] = b;",
            "array[int, 2, 3] a; a[0, 1] = 1; a[1, 1] = 2; "
@@ -219,7 +222,6 @@ TEST(OpenQASMFrontendTest, RejectsInvalidClassicalArrays) {
   const auto cases =
       std::to_array<std::pair<llvm::StringLiteral, llvm::StringLiteral>>({
           {"array[int, -1] a;", "non-negative"},
-          {"array[int, 2] a = {1, 2}; a[0:0] = a;", "array range assignments"},
           {"array[int, 0] a = {1};", "initializer length"},
           {"array[int, 0] a; a[0] = 1;", "out of bounds"},
           {"array[int, 0] a = {}; int b = a[-1];", "out of bounds"},
@@ -234,9 +236,9 @@ TEST(OpenQASMFrontendTest, RejectsInvalidClassicalArrays) {
               "array[int, 2] a = {1, 2}; int n = 1; a = a[0:n:1];",
               "compile-time",
           },
-          {"array[int, 2] a = {1, 2}; a = a[::];", "requires a step"},
           {"array[int, 2] a = {1, 2}; int n = a[0:0];", "not a scalar"},
-          {"array[int, 2] a = {1, 2}; a[:] += a;", "array or subarray source"},
+          {"array[int, 2] a = {1, 2}; a[:] += a;",
+           "indexed compound assignments"},
           {
               "array[int, 3] a; a[0] = 1; a[2] = 2; a[0:1] = a[1:2];",
               "uninitialized",

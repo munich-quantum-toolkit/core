@@ -2428,11 +2428,13 @@ private:
       auto width = program.registers[reg].width;
       std::vector<frontend::BitReference> selection;
       if (expression.slice) {
-        MQT_OQ3_TRY_ASSIGN(bits, resolveBits({
-                                     .location = expression.location,
-                                     .identifier = expression.identifier,
-                                     .slice = expression.slice,
-                                 }));
+        MQT_OQ3_TRY_ASSIGN(
+            bits, resolveBits({
+                      .location = expression.location,
+                      .identifier = expression.identifier,
+                      .slice = expression.slice,
+                      .additionalIndices = expression.additionalIndices,
+                  }));
         selection = std::move(bits);
         width = selection.size();
         for (const auto& bit : selection) {
@@ -2854,7 +2856,7 @@ private:
                   "expected a scalar arithmetic expression");
     case Expr::Kind::Slice:
       return fail(expression.location,
-                  "classical slice expressions are not supported");
+                  "slice is not a scalar arithmetic expression");
     case Expr::Kind::Int:
     case Expr::Kind::Float:
     case Expr::Kind::Bool:
@@ -4010,9 +4012,6 @@ private:
     const auto* symbol = lookup(assignment.target.identifier);
     if (symbol != nullptr && symbol->kind == SymbolKind::Array) {
       const auto array = symbol->id;
-      if (assignment.target.slice) {
-        return fail(location, "array range assignments are not supported");
-      }
       MQT_OQ3_TRY_ASSIGN(
           selection,
           analyzeArraySelection(array, assignment.target.index,
