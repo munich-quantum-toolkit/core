@@ -201,6 +201,7 @@ TEST(OpenQASMFrontendTest, RejectsInvalidClassicalArrays) {
   const auto cases =
       std::to_array<std::pair<llvm::StringLiteral, llvm::StringLiteral>>({
           {"array[int, -1] a;", "non-negative"},
+          {"array[int, 2] a = {1, 2}; a[0:0] = a;", "array range assignments"},
           {"array[int, 0] a = {1};", "initializer length"},
           {"array[int, 0] a; a[0] = 1;", "out of bounds"},
           {"array[int, 0] a = {}; int b = a[-1];", "out of bounds"},

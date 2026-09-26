@@ -3849,6 +3849,9 @@ private:
     const auto* symbol = lookup(assignment.target.identifier);
     if (symbol != nullptr && symbol->kind == SymbolKind::Array) {
       const auto array = symbol->id;
+      if (assignment.target.slice) {
+        return fail(location, "array range assignments are not supported");
+      }
       if (!assignment.target.index) {
         return analyzeArrayCopy(array, assignment.value, location, destination);
       }
