@@ -160,6 +160,14 @@ runtime destination index does not establish new initialization facts. Copies
 also preserve quantized angle values. Array arithmetic and compound assignments
 are not supported.
 
+Copies also accept inclusive ranges in any dimension: `a[1:3]`, `a[0:2:4]`, or
+`a[:, 1]`. Bounds and steps must be compile-time integers. Negative bounds count
+from the end; a negative step reverses the selection. Omitted endpoints select
+the dimension's ends in the step's direction, so `a[:-1:]` reverses it. Ranges
+retain their dimensions, while scalar indices remove them. Empty ranges, zero
+steps, and out-of-bounds endpoints are rejected. Overlapping assignments such as
+`a[1:] = a[:3];` for a five-element array copy the original source values.
+
 Angle arrays use the same widths and compile-time quantization as scalar angle
 declarations. Values in initializer lists and assignments to individual entries
 must be compile-time float or angle expressions, but the element index can be
@@ -180,9 +188,11 @@ for int i in [0:2] {
 
 Arrays lower to typed MLIR `memref.alloca` stack storage. The aggregate element
 limit bounds the array payload to 800,000 bytes per entry-point invocation.
-Compiler cleanup uses upstream SROA and mem2reg to remove eligible storage.
-Arrays whose storage and computations disappear can also export to Base QIR,
-jeff, and OpenQASM.
+Overlapping copies reuse at most one equally sized scratch allocation per array,
+so the combined payload is at most 1,600,000 bytes, independent of loop
+iterations. Compiler cleanup uses upstream SROA and mem2reg to remove eligible
+storage. Arrays whose storage and computations disappear can also export to Base
+QIR, jeff, and OpenQASM.
 
 Remaining arrays work through QC/QCO and Adaptive QIR conversion. Adaptive QIR
 uses native LLVM stack storage, with no host C allocation or assertion runtime.
@@ -191,10 +201,10 @@ conservatively require loop support for residual dynamic indices. See the
 [QIR 2.1 array contract](https://github.com/qir-alliance/qir-spec/blob/2.1/specification/Memory_Management.md#array-support).
 
 Arrays are internal storage, not implicit outputs; assign selected elements to
-scalar or bit outputs when needed. Range slices, concatenation, array outputs,
-runtime angle conversion, and jeff or OpenQASM export of array storage are not
-yet supported. Gate definitions cannot capture mutable arrays; pass selected
-entries as gate parameters instead.
+scalar or bit outputs when needed. Runtime-sized ranges, concatenation, array
+outputs, runtime angle conversion, and jeff or OpenQASM export of array storage
+are not yet supported. Gate definitions cannot capture mutable arrays; pass
+selected entries as gate parameters instead.
 
 ### Qubit indices and classical registers
 
