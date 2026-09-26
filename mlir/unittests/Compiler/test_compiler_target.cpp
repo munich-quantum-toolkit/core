@@ -33,6 +33,7 @@
 #include "mlir/Support/LLVM.h"
 
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Error.h"
 
 #include <array>
@@ -400,6 +401,9 @@ TEST(CompilerTargetTest, ConstructsDenseUnnamedAllToAllTarget) {
   EXPECT_FALSE(target.areAdjacent(1, 1));
   EXPECT_EQ(target.distanceBetween(0, 2), 1);
   EXPECT_EQ(target.distanceBetween(2, 2), 0);
+  EXPECT_EQ(target.shortestPathBetween(0, 2),
+            (llvm::SmallVector<size_t>{0, 2}));
+  EXPECT_EQ(target.shortestPathBetween(2, 2), (llvm::SmallVector<size_t>{2}));
   EXPECT_EQ(target.maxDegree(), 2);
 
   std::vector<size_t> neighbours;
@@ -475,12 +479,60 @@ TEST(CompilerTargetTest, CanonicalizesConnectedTopologyAndCachesDistances) {
   EXPECT_FALSE(target.areAdjacent(0, 2));
   EXPECT_EQ(target.distanceBetween(0, 2), 2);
   EXPECT_EQ(target.distanceBetween(2, 0), 2);
+  EXPECT_EQ(target.shortestPathBetween(0, 2),
+            (llvm::SmallVector<size_t>{0, 1, 2}));
+  EXPECT_EQ(target.shortestPathBetween(2, 0),
+            (llvm::SmallVector<size_t>{2, 1, 0}));
   EXPECT_EQ(target.maxDegree(), 2);
 
   std::vector<size_t> neighbours;
   target.forEachNeighbour(
       1, [&](const auto neighbour) { neighbours.emplace_back(neighbour); });
   EXPECT_EQ(neighbours, (std::vector<size_t>{0, 2}));
+}
+
+TEST(CompilerTargetTest, ShortestPathsUseDeterministicMinimumHopRoutes) {
+  const auto target = valid(Target::create(
+      6,
+      Connectivity::fromCouplings(
+          {{5, 4}, {2, 0}, {3, 2}, {1, 3}, {4, 2}, {0, 1}, {5, 3}}),
+      NativeOperations::unrestricted()));
+  const std::array<std::array<size_t, 6>, 6> distances{
+      {
+          {0, 1, 1, 2, 2, 3},
+          {1, 0, 2, 1, 3, 2},
+          {1, 2, 0, 1, 1, 2},
+          {2, 1, 1, 0, 2, 1},
+          {2, 3, 1, 2, 0, 1},
+          {3, 2, 2, 1, 1, 0},
+      },
+  };
+  EXPECT_EQ(target.shortestPathBetween(0, 5),
+            (llvm::SmallVector<size_t>{0, 1, 3, 5}));
+  for (size_t source = 0; source < target.numSites(); ++source) {
+    for (size_t destination = 0; destination < target.numSites();
+         ++destination) {
+      const auto path = target.shortestPathBetween(source, destination);
+      ASSERT_EQ(path.size(), distances[source][destination] + 1);
+      EXPECT_EQ(path.front(), source);
+      EXPECT_EQ(path.back(), destination);
+      EXPECT_EQ(target.distanceBetween(source, destination),
+                distances[source][destination]);
+      for (size_t step = 1; step < path.size(); ++step) {
+        EXPECT_TRUE(target.areAdjacent(path[step - 1], path[step]));
+      }
+    }
+  }
+}
+
+TEST(CompilerTargetTest, ShortestPathsOnSingleSiteTargets) {
+  for (const auto& connectivity :
+       {Connectivity::allToAll(), Connectivity::fromCouplings({})}) {
+    const auto target = valid(
+        Target::create(1, connectivity, NativeOperations::unrestricted()));
+    EXPECT_EQ(target.shortestPathBetween(0, 0), (llvm::SmallVector<size_t>{0}));
+    EXPECT_EQ(target.distanceBetween(0, 0), 0);
+  }
 }
 
 TEST(CompilerTargetTest, RejectsInvalidMetadata) {
@@ -1111,7 +1163,7 @@ TEST(CompilerTargetTest, SupportsArbitrarilyControlledBaseOperations) {
   }
 }
 
-TEST(CompilerTargetTest, SharesLazyDistancesAcrossConcurrentCopies) {
+TEST(CompilerTargetTest, SharesLazyTopologyCacheAcrossConcurrentCopies) {
   std::vector<Site> sites;
   std::vector<Coupling> couplings;
   for (SiteId id = 0; id < 64; ++id) {
@@ -1127,9 +1179,16 @@ TEST(CompilerTargetTest, SharesLazyDistancesAcrossConcurrentCopies) {
     for (size_t source = 0; source < target.numSites(); ++source) {
       for (size_t destination = 0; destination < target.numSites();
            ++destination) {
-        EXPECT_EQ(target.distanceBetween(source, destination),
-                  source > destination ? source - destination
-                                       : destination - source);
+        const auto path = target.shortestPathBetween(source, destination);
+        const auto distance =
+            source > destination ? source - destination : destination - source;
+        ASSERT_EQ(path.size(), distance + 1);
+        EXPECT_EQ(path.front(), source);
+        EXPECT_EQ(path.back(), destination);
+        EXPECT_EQ(target.distanceBetween(source, destination), distance);
+        for (size_t step = 1; step < path.size(); ++step) {
+          EXPECT_TRUE(target.areAdjacent(path[step - 1], path[step]));
+        }
       }
     }
   };

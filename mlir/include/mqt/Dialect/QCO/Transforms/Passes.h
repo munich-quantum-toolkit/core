@@ -21,6 +21,10 @@
 #include <cstdint>
 #include <memory>
 
+namespace mlir {
+class OpPassManager;
+} // namespace mlir
+
 namespace mlir::qco {
 
 #define GEN_PASS_DECL
@@ -51,5 +55,9 @@ createFuseTwoQubitGates(const CompilerTarget& target);
 [[nodiscard]] std::unique_ptr<Pass>
 createDecomposeMultiControlled(const CompilerTarget& target,
                                uint64_t minQubits = 3);
+
+/// Normalize placed QCO, synthesize native gates, and verify target support.
+/// Requires a valid target environment and placed qubits.
+void populateTargetNativeSynthesisPipeline(OpPassManager& pm);
 
 } // namespace mlir::qco
