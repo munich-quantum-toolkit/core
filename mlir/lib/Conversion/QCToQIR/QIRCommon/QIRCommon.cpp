@@ -16,6 +16,7 @@
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
+#include "mqt/Support/MemRefCopy.h"
 
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
 #include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
@@ -38,7 +39,6 @@
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/MemRef/Transforms/Transforms.h"
-#include "mlir/Dialect/MemRef/Utils/MemRefUtils.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Dialect/Tensor/Transforms/BufferizableOpInterfaceImpl.h"
@@ -97,46 +97,6 @@ void registerQIRClassicalTensorDialects(DialectRegistry& registry) {
   tensor::registerBufferizableOpInterfaceExternalModels(registry);
 }
 
-namespace {
-/// Avoid a dependency on the MLIR runner's memrefCopy runtime in QIR.
-struct LowerStridedCopy final : OpRewritePattern<memref::CopyOp> {
-  explicit LowerStridedCopy(MLIRContext* context)
-      : OpRewritePattern(context, /*benefit=*/2) {}
-
-  LogicalResult matchAndRewrite(memref::CopyOp copy,
-                                PatternRewriter& rewriter) const override {
-    auto sourceType = dyn_cast<MemRefType>(copy.getSource().getType());
-    auto targetType = dyn_cast<MemRefType>(copy.getTarget().getType());
-    if (!sourceType || !targetType) {
-      return failure();
-    }
-    if (memref::isStaticShapeAndContiguousRowMajor(sourceType) &&
-        memref::isStaticShapeAndContiguousRowMajor(targetType)) {
-      return failure(); // The standard lowering emits memcpy for these copies.
-    }
-    const auto loc = copy.getLoc();
-    auto zero = arith::ConstantIndexOp::create(rewriter, loc, 0);
-    auto one = arith::ConstantIndexOp::create(rewriter, loc, 1);
-    SmallVector<Value> sizes;
-    for (int64_t dimension = 0; dimension < sourceType.getRank(); ++dimension) {
-      sizes.push_back(
-          memref::DimOp::create(rewriter, loc, copy.getSource(), dimension));
-    }
-    scf::buildLoopNest(
-        rewriter, loc, SmallVector<Value>(sizes.size(), zero), sizes,
-        SmallVector<Value>(sizes.size(), one),
-        [&](OpBuilder& builder, Location location, ValueRange indices) {
-          auto value = memref::LoadOp::create(builder, location,
-                                              copy.getSource(), indices);
-          memref::StoreOp::create(builder, location, value, copy.getTarget(),
-                                  indices);
-        });
-    rewriter.eraseOp(copy);
-    return success();
-  }
-};
-} // namespace
-
 LogicalResult finalizeQIRConversion(ModuleOp moduleOp, ConversionTarget& target,
                                     LLVMTypeConverter& typeConverter) {
   auto* ctx = moduleOp.getContext();
@@ -175,7 +135,8 @@ LogicalResult finalizeQIRConversion(ModuleOp moduleOp, ConversionTarget& target,
       math::MathDialect, memref::MemRefDialect, scf::SCFDialect,
       tensor::TensorDialect, bufferization::BufferizationDialect>();
   LLVMTypeConverter memoryTypeConverter(ctx);
-  patterns.add<LowerStridedCopy>(ctx);
+  // Avoid the MLIR runner's memrefCopy runtime; retain memcpy where possible.
+  patterns.add<mqt::LowerMemRefCopy>(ctx, /*onlyStrided=*/true);
   populateSCFToControlFlowConversionPatterns(patterns);
   memref::populateExpandStridedMetadataPatterns(patterns);
   populateAffineToStdConversionPatterns(patterns);
