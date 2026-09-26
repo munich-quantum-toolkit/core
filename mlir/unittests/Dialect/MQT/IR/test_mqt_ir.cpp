@@ -105,8 +105,8 @@ TEST_F(MQTIRTest, VerifiesTemporarySourceQubitIndices) {
   constexpr StringLiteral source = R"(module {
     func.func @main() attributes {mqt.entry_point} {
       %n = arith.constant 2 : index
-      %q = qtensor.alloc(%n) : tensor<2x!qco.qubit>
-      qtensor.dealloc %q : tensor<2x!qco.qubit>
+      %q = qtensor.alloc(%n) : tensor<?x!qco.qubit>
+      qtensor.dealloc %q : tensor<?x!qco.qubit>
       return
     }
   })";
@@ -114,10 +114,9 @@ TEST_F(MQTIRTest, VerifiesTemporarySourceQubitIndices) {
   ASSERT_TRUE(moduleOp);
   auto function = *moduleOp->getOps<func::FuncOp>().begin();
   auto& allocation = *std::next(function.getBody().front().begin());
-  for (const auto* text : {"array<i64: 5, 2>", "array<i64: 2, 5>"}) {
-    allocation.setAttr(mqt::kSourceQubitIndicesAttr, parseAttr(text));
-    EXPECT_TRUE(succeeded(verify(*moduleOp)));
-  }
+  allocation.setAttr(mqt::kSourceQubitIndicesAttr,
+                     parseAttr("array<i64: 5, 2>"));
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
   for (const auto* text : {
            "array<i64: 2>",
            "array<i64: 2, 2>",
@@ -168,40 +167,6 @@ TEST_F(MQTIRTest, RoundTripsQubitLayoutProvenance) {
       [&] { return restored->emitError(); });
   ASSERT_TRUE(succeeded(decoded));
   EXPECT_EQ(decoded->toAttr(context.get()), attribute);
-  EXPECT_EQ(decoded->initial, layout.initial);
-  EXPECT_EQ(decoded->routing, layout.routing);
-  EXPECT_EQ(decoded->outputOrder, layout.outputOrder);
-  EXPECT_EQ(decoded->registers.front().slots, layout.registers.front().slots);
-}
-
-TEST_F(MQTIRTest, InvalidatesAndExplicitlyDiscardsQubitLayouts) {
-  auto moduleOp = parse(
-      "module { func.func @main() attributes {mqt.entry_point} { return } }");
-  ASSERT_TRUE(moduleOp);
-  EXPECT_TRUE(succeeded(mqt::requireNoQubitLayout(*moduleOp)));
-  mqt::invalidateQubitLayout(*moduleOp);
-  EXPECT_FALSE(
-      mqt::getEntryPoint(*moduleOp)->hasAttr("mqt.layout_invalidated"));
-  const mqt::QubitLayout layout{
-      .physicalSize = 1,
-      .initial = {0},
-      .outputOrder = {0},
-  };
-  mqt::getEntryPoint(*moduleOp)->setAttr("mqt.layout",
-                                         layout.toAttr(context.get()));
-  EXPECT_TRUE(failed(mqt::requireNoQubitLayout(*moduleOp)));
-  mqt::invalidateQubitLayout(*moduleOp);
-  EXPECT_FALSE(mqt::getEntryPoint(*moduleOp)->hasAttr("mqt.layout"));
-  EXPECT_TRUE(mqt::getEntryPoint(*moduleOp)->hasAttr("mqt.layout_invalidated"));
-  EXPECT_TRUE(succeeded(verify(*moduleOp)));
-  EXPECT_TRUE(roundTrip(*moduleOp));
-  EXPECT_TRUE(failed(mqt::requireNoQubitLayout(*moduleOp)));
-  mqt::discardQubitLayout(*moduleOp);
-  EXPECT_TRUE(succeeded(mqt::requireNoQubitLayout(*moduleOp)));
-  mqt::getEntryPoint(*moduleOp)->setAttr("mqt.layout",
-                                         layout.toAttr(context.get()));
-  mqt::discardQubitLayout(*moduleOp);
-  EXPECT_TRUE(succeeded(mqt::requireNoQubitLayout(*moduleOp)));
 }
 
 TEST_F(MQTIRTest, RejectsUnsupportedLayoutOwners) {

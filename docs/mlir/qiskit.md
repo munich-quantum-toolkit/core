@@ -185,26 +185,15 @@ Other powers require canonicalization or synthesis.
 
 ### Transpiler layouts
 
-The Qiskit 2.5 adapter preserves `TranspileLayout` in `mqt.layout` on the
-program's sole `mqt.entry_point` function and reconstructs it on export. Import
-leaves gates on their circuit wires without reapplying the layout. Core stores
-no Python objects and calls no Qiskit transpiler algorithms.
+Qiskit's `TranspileLayout` records two maps: the initial placement of logical
+inputs and the final permutation of physical wires caused by routing. Its
+`final_index_layout()` composes them to give each input's final position.
 
-Supported layouts include partial assignments, unused physical positions, loose
-and ancillary qubits, source registers, and independent output-wire ordering.
-Input indices must be distinct and contiguous; physical positions must exist.
-Partial final maps require explicit, complete output-wire ordering. Missing
-assignments stay missing, so Qiskit helpers requiring total layouts may reject
-them. Bare `Layout` objects and malformed metadata are rejected. Other Qiskit
-minor versions need their own adapter.
-
-Copies, MLIR serialization, and plain QC/QCO conversions preserve layouts.
-Compiler transformations, including cleanup, routing, reuse, and custom pass
-pipelines, invalidate them; Qiskit export then raises an error. Native
-`MappingResult` snapshots do not update imported layouts.
-
-OpenQASM, QIR/LLVM, and jeff reject retained or invalidated layouts. Call
-`discard_layout()` to accept losing this metadata before conversion or export:
+Import stores this provenance as `mqt.layout` on the program's sole
+`mqt.entry_point` function. Export reconstructs it without moving gates to
+different wires. Copies, MLIR serialization, and QC/QCO conversions preserve it.
+Compiler transformations invalidate it; export then requires `discard_layout()`.
+Discard changes only metadata.
 
 ```python
 program = QCProgram.from_qiskit(transpiled_circuit)
@@ -213,7 +202,33 @@ program.discard_layout()
 source = program.to_openqasm3().source
 ```
 
-Discard leaves operations unchanged. C++ callers use `Program::discardLayout()`;
+For native target compilation, pass its `MappingResult` to export a complete
+Qiskit layout, including the routing permutation of workspace qubits:
+
+```python
+program = QCProgram.from_qiskit(circuit).to_qco()
+mapping = program.compile_for_target_with_layout(target_environment)
+compiled = program.to_qiskit(target=target, mapping_result=mapping)
+final_positions = compiled.layout.final_index_layout()
+```
+
+Use the same target and compiled program, without intervening transformations.
+Layout positions follow target site order; they are not target site IDs. Logical
+inputs follow the snapshot's allocation order, and additional physical wires
+appear as ancillas. This layout describes the input to native compilation. It
+does not compose with imported provenance: discard an imported layout before
+compilation when choosing this input identity. Without a snapshot or retained
+provenance, export leaves `circuit.layout` unset.
+
+Imported layouts may contain partial assignments, unused positions, loose or
+ancillary qubits, source registers, and independent output-wire ordering. Input
+indices must be contiguous and unique, and physical positions must exist.
+Partial final maps require complete output-wire ordering. Missing assignments
+remain missing; Qiskit helpers that require total layouts can reject them. Bare
+`Layout` objects and malformed metadata are rejected.
+
+OpenQASM, QIR/LLVM, and jeff require `discard_layout()` before exporting
+retained or invalidated provenance. C++ callers use `Program::discardLayout()`;
 the CLI uses `mqt-cc --discard-layout`. Pass authors must preserve, update, or
 invalidate layouts when changing wire identity or order; see the
 {doc}`MQT dialect <MQT>` for the schema and lifetime rules.

@@ -16,6 +16,7 @@
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/QDMIAdapter.h"
 #include "mqt/Compiler/Target.h"
+#include "mqt/Compiler/TargetCompilation.h"
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
@@ -1237,7 +1238,10 @@ Programs own their MLIR module. Conversions can consume a program; use
           "initial_layout", &mlir::MappingResult::initialLayout,
           "Initial target site ID for each input qubit, including idle qubits.")
       .def_ro("final_layout", &mlir::MappingResult::finalLayout,
-              "Final target site ID for each input qubit after routing.");
+              "Final target site ID for each input qubit after routing.")
+      .def_ro("routing_permutation", &mlir::MappingResult::routingPermutation,
+              "Initial-to-final target indices for every site, including "
+              "routing workspace. Indices follow target site order.");
 
   auto qcProgram = nb::class_<mlir::QCProgram, mlir::Program>(
       m, "QCProgram", R"pb(A compiler program in the QC dialect.
@@ -1301,19 +1305,26 @@ before conversion to QCO.)pb");
       .def(
           "to_qiskit",
           [](const mlir::QCProgram& program,
-             const mlir::CompilerTarget* const target) {
+             const mlir::CompilerTarget* const target,
+             const mlir::MappingResult* const mappingResult) {
             requireValid(program);
-            return bindings::qiskit::exportCircuit(program, target);
+            return bindings::qiskit::exportCircuit(program, target,
+                                                   mappingResult);
           },
           nb::kw_only(), "target"_a = nb::none(),
+          "mapping_result"_a = nb::none(),
           nb::sig("def to_qiskit(self, *, target: CompilerTarget | None = "
-                  "None) -> qiskit.circuit.QuantumCircuit"),
+                  "None, mapping_result: MappingResult | None = None) "
+                  "-> qiskit.circuit.QuantumCircuit"),
           R"pb(Translate this QC program to a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` without consuming it.
 
 Args:
     target: The optional compiler target used for mapping. When provided, emit
         a canonical physical circuit. All qubits must be static, and their site
-        IDs must belong to the target.)pb")
+        IDs must belong to the target.
+    mapping_result: The snapshot from compiling this program with ``target``.
+        Supplies the initial layout and full routing permutation. Use the same
+        target and make no further circuit transformations before export.)pb")
       .def(
           "to_qco",
           [](mlir::QCProgram& value, const bool copy) {
@@ -1502,21 +1513,27 @@ operations.)pb");
       .def(
           "to_qiskit",
           [](const mlir::QCOProgram& program,
-             const mlir::CompilerTarget* target) {
+             const mlir::CompilerTarget* target,
+             const mlir::MappingResult* mappingResult) {
             requireValid(program);
             auto qc = takeResult(program.copy().intoQC());
-            return bindings::qiskit::exportCircuit(qc, target);
+            return bindings::qiskit::exportCircuit(qc, target, mappingResult);
           },
           nb::kw_only(), "target"_a = nb::none(),
+          "mapping_result"_a = nb::none(),
           nb::sig(
-              "def to_qiskit(self, *, target: CompilerTarget | None = None) "
+              "def to_qiskit(self, *, target: CompilerTarget | None = None, "
+              "mapping_result: MappingResult | None = None) "
               "-> qiskit.circuit.QuantumCircuit"),
           R"pb(Export a Qiskit circuit without consuming or modifying this program.
 
 Args:
     target: The optional compiler target used for mapping. When provided, static
         site IDs map to dense physical-qubit indices in target site order.
-        Dynamic qubits and static IDs absent from the target are rejected.)pb")
+        Dynamic qubits and static IDs absent from the target are rejected.
+    mapping_result: The snapshot from compiling this program with ``target``.
+        Supplies the initial layout and full routing permutation. Use the same
+        target and make no further circuit transformations before export.)pb")
       .def(
           "to_qc",
           [](mlir::QCOProgram& value, const bool copy) {

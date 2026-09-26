@@ -11,6 +11,7 @@
 // Keep the public declaration visible so this definition is type-checked.
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/Target.h"
+#include "mqt/Compiler/TargetCompilation.h"
 #include "mqt/Dialect/CBit/IR/CBitAttributes.h"
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
@@ -2921,7 +2922,8 @@ collectGateDefinition(mlir::func::FuncOp function) {
 }
 
 nb::object exportCircuit(const mlir::QCProgram& program,
-                         const mlir::CompilerTarget* const target) {
+                         const mlir::CompilerTarget* const target,
+                         const mlir::MappingResult* const mappingResult) {
   mlir::OwningOpRef<mlir::ModuleOp> expanded = program.module().clone();
   auto moduleOp = *expanded;
   auto function = mlir::mqt::getEntryPoint(moduleOp);
@@ -2941,6 +2943,58 @@ nb::object exportCircuit(const mlir::QCProgram& program,
       throw std::runtime_error("invalid qubit layout metadata");
     }
     layout = std::move(*parsed);
+  }
+  if (mappingResult != nullptr) {
+    if (target == nullptr) {
+      throw std::runtime_error(
+          "mapping_result requires the compilation target");
+    }
+    if (layout) {
+      throw std::runtime_error("discard_layout() before exporting a native "
+                               "mapping_result");
+    }
+    const auto width = target->numSites();
+    const auto inputs = mappingResult->initialLayout.size();
+    if (inputs > width || mappingResult->routingPermutation.size() != width) {
+      throw std::runtime_error(
+          "mapping_result does not match the target width");
+    }
+    layout.emplace();
+    layout->physicalSize = static_cast<int64_t>(width);
+    layout->inputCount = static_cast<int64_t>(inputs);
+    std::vector<bool> used(width, false);
+    for (const auto site : mappingResult->initialLayout) {
+      const auto index = target->vertexForSite(site);
+      if (!index) {
+        throw std::runtime_error(
+            "mapping_result contains an unknown target site");
+      }
+      layout->initial.push_back(static_cast<int64_t>(*index));
+      used[*index] = true;
+    }
+    for (size_t index = 0; index < width; ++index) {
+      if (!used[index]) {
+        layout->ancillas.push_back(
+            static_cast<int64_t>(layout->initial.size()));
+        layout->initial.push_back(static_cast<int64_t>(index));
+      }
+    }
+    if (inputs != 0) {
+      mlir::mqt::LayoutRegister reg{
+          .name = "input",
+          .slots = std::vector<int64_t>(inputs),
+      };
+      std::iota(reg.slots.begin(), reg.slots.end(), int64_t{0});
+      layout->registers.push_back(std::move(reg));
+    }
+    if (!layout->ancillas.empty()) {
+      layout->registers.push_back(
+          {.name = "ancilla", .slots = layout->ancillas, .ancillary = true});
+    }
+    layout->routing.emplace(mappingResult->routingPermutation.begin(),
+                            mappingResult->routingPermutation.end());
+    layout->outputOrder.resize(width);
+    std::iota(layout->outputOrder.begin(), layout->outputOrder.end(), 0);
   }
   mlir::RewritePatternSet patterns(moduleOp.getContext());
   mlir::mqt::populateIntegerExpansionPatterns(patterns);
