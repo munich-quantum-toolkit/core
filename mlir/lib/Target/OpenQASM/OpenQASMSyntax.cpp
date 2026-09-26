@@ -120,6 +120,12 @@ LogicalResult SyntaxBuilder::assignment(SMLoc location,
   return success();
 }
 
+LogicalResult SyntaxBuilder::arrayDecl(SMLoc location,
+                                       SyntaxArrayDeclaration declaration) {
+  std::ignore = addStatement(location, std::move(declaration));
+  return success();
+}
+
 LogicalResult
 SyntaxBuilder::qubitRegister(SMLoc location, StringRef identifier,
                              std::optional<SyntaxExpressionId> size) {

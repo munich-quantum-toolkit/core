@@ -51,17 +51,18 @@ QCO, and `jeff` dialects, so each output checkpoint names its dialect.
 
 ### Input support
 
-| OpenQASM concept           | Support and restrictions                                                                                                                                                                                                                                                  |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Versions and includes      | Versionless input and versions 2.0, 3.0, and 3.1 are accepted within the supported subset below. `stdgates.inc`, `qelib1.inc`, and nested textual includes are supported.                                                                                                 |
-| Classical types            | `bit`, `bool`, `int`, `uint`, and `float` declarations are supported, including integer widths 1–64. Initialized compile-time `angle[N]` values support widths 1–52. Other sized numeric declarations, general arrays, complex values, and aliases are not yet supported. |
-| Outputs                    | Explicit `output` declarations are preserved in source order. Without any explicit output, global classical variables become outputs.                                                                                                                                     |
-| Gates                      | Language gates, the standard libraries, custom gates, broadcasting, and `inv`, `ctrl`, `negctrl`, and `pow` modifiers are supported. Custom definitions remain private QC functions instead of being expanded at every use. Recursive custom gates are rejected.          |
-| Quantum statements         | Measurement, reset, barrier, logical qubits, and physical qubits are supported. The QC translation rejects programs that mix logical allocation with physical qubits.                                                                                                     |
-| Expressions                | Scalar arithmetic, comparisons, Boolean expressions, and the supported math functions are type checked before translation. Initialized bit registers support `~`, `&`, `\|`, `^`, `<<`, `>>`, `popcount`, `rotl`, and `rotr`.                                             |
-| Structured control         | `if`, `switch`, supported range-based `for`, and `while`. `break` exits the innermost enclosing loop; `continue` advances to its next iteration. Both may appear inside conditional and switch bodies.                                                                    |
-| Dynamic indexing           | Classical bit indices can be dynamic and must remain in bounds. A nonconstant qubit index must be a proven affine expression as described below.                                                                                                                          |
-| Unsupported language areas | Subroutines, `extern`, calibration and timing constructs, input declarations, and arbitrary arrays are diagnosed.                                                                                                                                                         |
+| OpenQASM concept           | Support and restrictions                                                                                                                                                                                                                                         |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Versions and includes      | Versionless input and versions 2.0, 3.0, and 3.1 are accepted within the supported subset below. `stdgates.inc`, `qelib1.inc`, and nested textual includes are supported.                                                                                        |
+| Classical types            | `bit`, `bool`, `int`, `uint`, and `float` declarations are supported, including integer widths 1–64. Initialized compile-time `angle[N]` values support widths 1–52. Other sized scalar declarations, complex values, and aliases are not yet supported.         |
+| Outputs                    | Explicit `output` declarations are preserved in source order. Without any explicit output, global scalars and bit registers become outputs.                                                                                                                      |
+| Gates                      | Language gates, the standard libraries, custom gates, broadcasting, and `inv`, `ctrl`, `negctrl`, and `pow` modifiers are supported. Custom definitions remain private QC functions instead of being expanded at every use. Recursive custom gates are rejected. |
+| Quantum statements         | Measurement, reset, barrier, logical qubits, and physical qubits are supported. The QC translation rejects programs that mix logical allocation with physical qubits.                                                                                            |
+| Expressions                | Scalar arithmetic, comparisons, Boolean expressions, and the supported math functions are type checked before translation. Initialized bit registers support `~`, `&`, `\|`, `^`, `<<`, `>>`, `popcount`, `rotl`, and `rotr`.                                    |
+| Structured control         | `if`, `switch`, supported range-based `for`, and `while`. `break` exits the innermost enclosing loop; `continue` advances to its next iteration. Both may appear inside conditional and switch bodies.                                                           |
+| Dynamic indexing           | Classical bit and array indices can be dynamic and must remain in bounds. A nonconstant qubit index must be a proven affine expression as described below.                                                                                                       |
+| Classical arrays           | Global, fixed-size, one-dimensional arrays of `bool`, `int`, `uint`, `float`, and `angle`, as described below.                                                                                                                                                   |
+| Unsupported language areas | Subroutines, `extern`, calibration and timing constructs, and input declarations are diagnosed.                                                                                                                                                                  |
 
 Sized `uint[N](bits)` and `int[N](bits)` casts accept an initialized `bit[N]`
 register when the constant width is 1 through 64. Bit zero is the least
@@ -124,7 +125,62 @@ division by nonnegative integer literals that fit the angle width, comparisons,
 and `sin`, `cos`, and `tan`. Mixed-width angle operands promote to the wider
 width. It uses round-to-nearest, ties-to-even for float conversion and
 narrowing. Runtime angle state, reassignment, bit-level angle operations, and
-angle inputs or outputs are not supported.
+angle inputs or outputs are not supported. Angle arrays support runtime indexing
+of compile-time entries as described below.
+
+### Classical arrays
+
+OpenQASM 3 declarations such as `array[int[8], 3] values = {1, 2, 3};` allocate
+mutable, one-dimensional storage. Arrays must be global; their length must be a
+non-negative compile-time integer; zero-length arrays are supported. Each array
+and the combined number of array and register elements are limited to 100,000.
+Integer element widths range from 1 through 64; `float` and `float[64]` use
+double precision. Initializer lists must match the declared length. Without an
+initializer, elements are undefined.
+
+Element reads, assignments, and compound assignments accept constant or runtime
+integer indices. Negative indices count from the end (`values[-1]` is the last
+element). Constant out-of-range indices are diagnosed; dynamic indices must
+remain in bounds. A static read requires that element to be initialized. A
+dynamic read requires every element to be initialized; writing a dynamic index
+does not establish definite initialization.
+
+Angle arrays use the same widths and compile-time quantization as scalar angle
+declarations. Initializers and assigned values must be compile-time float or
+angle expressions, but the element index can be dynamic. Use `float(angles[i])`
+for arithmetic on an entry's value in radians. This angle-to-float cast is an
+intentional extension to OpenQASM. Runtime fixed-width angle arithmetic and
+mixed-type comparisons are diagnosed. For example:
+
+```openqasm3
+OPENQASM 3.0;
+include "stdgates.inc";
+array[angle[32], 3] angles = {0.0, pi / 2, pi};
+qubit q;
+for int i in [0:2] {
+  ry(angles[i]) q;
+}
+```
+
+Arrays lower to typed MLIR `memref.alloca` stack storage. The aggregate element
+limit bounds the array payload to 800,000 bytes per entry-point invocation.
+Compiler cleanup uses upstream SROA and mem2reg to remove eligible storage.
+Arrays whose storage and computations disappear can also export to Base QIR,
+jeff, and OpenQASM.
+
+Remaining arrays work through QC/QCO and Adaptive QIR conversion. Adaptive QIR
+uses native LLVM stack storage, with no host C allocation or assertion runtime.
+The emitted capability flags include arrays and element types, and
+conservatively require loop support for residual dynamic indices. See the
+[QIR 2.1 array contract](https://github.com/qir-alliance/qir-spec/blob/2.1/specification/Memory_Management.md#array-support).
+
+Arrays are internal storage, not implicit outputs; assign selected elements to
+scalar or bit outputs when needed. Multidimensional arrays, array slices,
+whole-array copies, array outputs, runtime angle conversion, and jeff or
+OpenQASM export of array storage are not yet supported. Gate definitions cannot
+capture mutable arrays; pass selected entries as gate parameters instead.
+
+### Qubit indices and classical registers
 
 The frontend accepts a nonconstant qubit index only when it proves that every
 value is in the register and that operands of one gate or explicit barrier are

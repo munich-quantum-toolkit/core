@@ -866,6 +866,60 @@ TEST_F(QIRTest, UsesTranslationCompatibleModuleFlagWidths) {
   EXPECT_EQ(arraysValue.getType(), IntegerType::get(context.get(), 32));
 }
 
+TEST_F(QIRTest, ClassicalStorageRequiresArrayAndElementCapabilities) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    llvm.func @__quantum__qis__mz__body(!llvm.ptr, !llvm.ptr)
+    llvm.func @__quantum__rt__read_result(!llvm.ptr) -> i1
+    llvm.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
+      %two = llvm.mlir.constant(2 : i64) : i64
+      %memory = llvm.alloca %two x f64 : (i64) -> !llvm.ptr
+      %resource = llvm.mlir.zero : !llvm.ptr
+      llvm.call @__quantum__qis__mz__body(%resource, %resource) : (!llvm.ptr, !llvm.ptr) -> ()
+      %bit = llvm.call @__quantum__rt__read_result(%resource) : (!llvm.ptr) -> i1
+      %index = llvm.zext %bit : i1 to i64
+      %element = llvm.getelementptr %memory[%index] : (!llvm.ptr, i64) -> !llvm.ptr, f64
+      %value = llvm.mlir.constant(1.0 : f64) : f64
+      llvm.store %value, %element : f64, !llvm.ptr
+      %zero = llvm.mlir.constant(0 : i64) : i64
+      llvm.return %zero : i64
+    }
+  })mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(attachQIRMetadata(*moduleOp, true)));
+  const auto arrays = findModuleFlag(*moduleOp, "arrays");
+  ASSERT_TRUE(arrays);
+  EXPECT_EQ(cast<IntegerAttr>(arrays.getValue()).getInt(), 1);
+  const auto floating = findModuleFlag(*moduleOp, "float_computations");
+  ASSERT_TRUE(floating);
+  EXPECT_EQ(floating.getValue(),
+            Builder(context.get()).getStrArrayAttr({"double"}));
+  const auto loops = findModuleFlag(*moduleOp, "backwards_branching");
+  ASSERT_TRUE(loops);
+  EXPECT_EQ(cast<IntegerAttr>(loops.getValue()).getInt(), 2);
+}
+
+TEST_F(QIRTest, OutputLabelPointerDoesNotRequireArrays) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    llvm.mlir.global internal constant @labels("xresult\00")
+    llvm.func @__quantum__rt__result_record_output(!llvm.ptr, !llvm.ptr)
+    llvm.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
+      %labels = llvm.mlir.addressof @labels : !llvm.ptr
+      %label = llvm.getelementptr inbounds %labels[0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<8 x i8>
+      %result = llvm.mlir.zero : !llvm.ptr
+      llvm.call @__quantum__rt__result_record_output(%result, %label) : (!llvm.ptr, !llvm.ptr) -> ()
+      %zero = llvm.mlir.constant(0 : i64) : i64
+      llvm.return %zero : i64
+    }
+  })mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(attachQIRMetadata(*moduleOp, true)));
+  const auto arrays = findModuleFlag(*moduleOp, "arrays");
+  ASSERT_TRUE(arrays);
+  EXPECT_EQ(cast<IntegerAttr>(arrays.getValue()).getInt(), 0);
+}
+
 TEST_F(QIRTest, DerivesAdaptiveClassicalCapabilities) {
   OpBuilder builder(context.get());
   const auto location = builder.getUnknownLoc();

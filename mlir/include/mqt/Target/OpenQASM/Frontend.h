@@ -36,6 +36,7 @@ using ExpressionId = uint32_t;
 using BitVectorExpressionId = uint32_t;
 using RegisterId = uint32_t;
 using ScalarId = uint32_t;
+using ArrayId = uint32_t;
 using ConditionId = uint32_t;
 using StatementId = uint32_t;
 
@@ -105,6 +106,7 @@ enum class ExpressionKind : uint8_t {
   Constant,
   GateParameter,
   Variable,
+  ArrayLoad,
   Cast,
   BitVectorCast,
   Condition,
@@ -141,6 +143,7 @@ struct ScalarExpression {
   std::variant<bool, int64_t, uint64_t, double> constant = 0.0;
   uint32_t parameter = 0;
   ScalarId variable = 0;
+  ArrayId array = 0;
   ExpressionId lhs = 0;
   ExpressionId rhs = 0;
   BitVectorExpressionId bitVector = 0;
@@ -187,6 +190,14 @@ struct BitVectorExpression {
 struct ScalarDeclaration {
   ScalarType type = ScalarType::Int;
   unsigned integerWidth = 0;
+  std::string name;
+  SourceLocation location;
+};
+
+struct ArrayDeclaration {
+  ScalarType type = ScalarType::Int;
+  unsigned elementWidth = 0;
+  uint64_t length = 0;
   std::string name;
   SourceLocation location;
 };
@@ -305,6 +316,17 @@ struct BitAssignmentStatement {
   ConditionId value = 0;
 };
 
+struct ArrayDeclarationStatement {
+  ArrayId array = 0;
+  std::vector<ExpressionId> initializer;
+};
+
+struct ArrayAssignmentStatement {
+  ArrayId array = 0;
+  ExpressionId index = 0;
+  ExpressionId value = 0;
+};
+
 struct BitVectorAssignmentStatement {
   RegisterId target = 0;
   BitVectorExpressionId value = 0;
@@ -361,13 +383,12 @@ struct SwitchStatement {
   std::vector<StatementId> defaultStatements;
 };
 
-using StatementData =
-    std::variant<DeclarationStatement, ScalarDeclarationStatement,
-                 ScalarAssignmentStatement, BitAssignmentStatement,
-                 BitVectorAssignmentStatement, GateApplication,
-                 MeasurementStatement, ResetStatement, BarrierStatement,
-                 IfStatement, ForStatement, WhileStatement, SwitchStatement,
-                 BreakStatement, ContinueStatement>;
+using StatementData = std::variant<
+    DeclarationStatement, ScalarDeclarationStatement, ArrayDeclarationStatement,
+    ArrayAssignmentStatement, ScalarAssignmentStatement, BitAssignmentStatement,
+    BitVectorAssignmentStatement, GateApplication, MeasurementStatement,
+    ResetStatement, BarrierStatement, IfStatement, ForStatement, WhileStatement,
+    SwitchStatement, BreakStatement, ContinueStatement>;
 
 struct Statement {
   StatementData data;
@@ -392,6 +413,7 @@ struct TypedProgram {
   std::vector<BitVectorExpression> bitVectorExpressions;
   std::vector<ConditionExpression> conditions;
   std::vector<ScalarDeclaration> scalars;
+  std::vector<ArrayDeclaration> arrays;
   std::vector<RegisterDeclaration> registers;
   std::vector<GateDefinition> gates;
   std::vector<Statement> statements;

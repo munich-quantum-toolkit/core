@@ -53,6 +53,7 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Transforms/DialectConversion.h"
+#include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
@@ -102,6 +103,25 @@ LogicalResult finalizeQIRConversion(ModuleOp moduleOp, ConversionTarget& target,
     return failure();
   }
 
+  if (moduleOp
+          .walk([](Operation* op) {
+            if (isa<memref::AllocOp, memref::DeallocOp, memref::ReallocOp>(
+                    op)) {
+              op->emitError("QIR classical storage requires stack allocation");
+              return WalkResult::interrupt();
+            }
+            if (auto alloca = dyn_cast<memref::AllocaOp>(op);
+                alloca && !alloca.getType().hasStaticShape()) {
+              op->emitError(
+                  "QIR classical stack storage requires a static shape");
+              return WalkResult::interrupt();
+            }
+            return WalkResult::advance();
+          })
+          .wasInterrupted()) {
+    return failure();
+  }
+
   RewritePatternSet patterns(ctx);
   target.addIllegalDialect<arith::ArithDialect, cf::ControlFlowDialect,
                            math::MathDialect, memref::MemRefDialect,
@@ -117,6 +137,7 @@ LogicalResult finalizeQIRConversion(ModuleOp moduleOp, ConversionTarget& target,
   }
   PassManager manager(ctx);
   manager.addPass(createReconcileUnrealizedCastsPass());
+  manager.addPass(createCanonicalizerPass());
   return manager.run(moduleOp);
 }
 
@@ -493,11 +514,9 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
 
   funcOp.walk([&](memref::AllocOp allocOp) {
     const auto type = allocOp.getType();
-    if (type.getRank() != 1 || !isa<QubitType>(type.getElementType())) {
+    if (isa<QubitType>(type.getElementType()) && type.getRank() != 1) {
       allocOp.emitError(
-          "QIR conversion only supports generic memrefs for "
-          "one-dimensional qc.qubit registers; use CBit for classical "
-          "registers");
+          "QIR conversion only supports one-dimensional qc.qubit registers");
       hasInvalidMemory = true;
     }
   });
@@ -531,6 +550,11 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
   };
 
   for (auto operand : returnOp.getOperands()) {
+    if (auto memref = dyn_cast<MemRefType>(operand.getType());
+        memref && !isa<QubitType>(memref.getElementType())) {
+      return returnOp.emitError("QIR conversion does not support memref "
+                                "outputs; return scalar values instead");
+    }
     if (auto measureOp = operand.getDefiningOp<MeasureOp>()) {
       state.returnedScalarResults.insert(measureOp.getOperation());
     } else if (auto allocOp = operand.getDefiningOp<cbit::AllocOp>();
