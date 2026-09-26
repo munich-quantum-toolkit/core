@@ -184,6 +184,7 @@ TEST(OpenQASMFrontendTest, FoldsArraySizeQueriesWithoutReadingElements) {
       {"sizeof(a, sizeof(a) - 1)", 3},
       {"sizeof(a[-1])", 3},
       {"sizeof(a[i])", 3},
+      {"sizeof(a[:i], 1)", 3},
       {"sizeof(a[:, i])", 2},
       {"sizeof(a[:, 0:2:2], 1)", 2},
       {"sizeof(a[:-1:, -1])", 2},
@@ -218,7 +219,7 @@ TEST(OpenQASMFrontendTest, RejectsInvalidArraySizeQueries) {
           {"sizeof(a, i)", "compile-time integer"},
           {"sizeof(a[2])", "index is out of bounds"},
           {"sizeof(a[0:0:1])", "step must not be zero"},
-          {"sizeof(a[:i])", "compile-time bounds"},
+          {"sizeof(a[:i])", "compile-time extent"},
           {"sizeof(a[true])", "integer expression"},
           {"sizeof(a[0, 0, 0])", "one index per dimension"},
           {"sizeof(a, 0, 1)", "expected ')'"},
@@ -269,6 +270,10 @@ TEST(OpenQASMFrontendTest, CopiesArraysWithMatchingTypes) {
            "array[int, 2] a = {1, 2}; "
            "array[int, 1] b = a[0:9223372036854775807:1]; "
            "b = a[1:-9223372036854775807-1:0];",
+           "array[int, 2] a = {1, 2}; int n = 1; "
+           "array[int, 2] b = a[:n]; a = b[0:n:1];",
+           "array[int, 2, 3] a = {{1, 2, 3}, {4, 5, 6}}; int n = 1; "
+           "array[int, 2] b = a[0:n, n]; a[:n, 0] = b;",
        }) {
     SCOPED_TRACE(source);
     auto analyzed = openqasm::frontend::analyzeOpenQASM(
@@ -291,10 +296,23 @@ TEST(OpenQASMFrontendTest, RejectsInvalidClassicalArrays) {
           {"array[int, 2] a = {1, 2}; a = a[0:2];", "out of bounds"},
           {"array[int, 2] a = {1, 2}; a = a[-3:1];", "out of bounds"},
           {"array[int, 2] a = {1, 2}; a = a[0.0:1];", "requires integers"},
-          {"array[int, 2] a = {1, 2}; int n = 1; a = a[:n];", "compile-time"},
           {
-              "array[int, 2] a = {1, 2}; int n = 1; a = a[0:n:1];",
-              "compile-time",
+              "array[int, 2] a = {1, 2}; float n = 1.0; a = a[0:n:1];",
+              "step must be an integer",
+          },
+          {
+              "array[int, 2] a = {1, 2}; int n = 1; a = a[0:0:n];",
+              "step must not be zero",
+          },
+          {
+              "array[int, 2] a; a[0] = 1; int n = 0; "
+              "array[int, 1] b = a[:n];",
+              "uninitialized",
+          },
+          {
+              "array[int, 2] a; array[int, 2] b = {1, 2}; int n = 1; "
+              "a[:n] = b; int x = a[0];",
+              "uninitialized",
           },
           {"array[int, 2] a = {1, 2}; int n = a[0:0];", "not a scalar"},
           {"array[int, 2] a = {1, 2}; a[:] += a;",

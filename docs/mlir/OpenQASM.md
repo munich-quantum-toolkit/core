@@ -161,18 +161,25 @@ also preserve quantized angle values. Array arithmetic and compound assignments
 are not supported.
 
 Copies also accept inclusive ranges in any dimension: `a[1:3]`, `a[0:2:4]`, or
-`a[:, 1]`. Bounds and steps must be compile-time integers. Negative bounds count
-from the end; a negative step reverses the selection. Omitted endpoints select
-the dimension's ends in the step's direction, so `a[:-1:]` reverses it. Ranges
-retain their dimensions, while scalar indices remove them. Empty ranges, zero
-steps, and out-of-bounds endpoints are rejected. Overlapping assignments such as
-`a[1:] = a[:3];` for a five-element array copy the original source values.
+`a[:, 1]`. Bounds and steps may be runtime integers. Negative bounds count from
+the end; a negative step reverses the selection. Omitted endpoints select the
+dimension's ends in the step's direction, so `a[:-1:]` reverses it. Ranges
+retain their dimensions, while scalar indices remove them. Statically empty
+ranges, zero steps, and out-of-bounds endpoints are rejected. Overlapping
+assignments such as `a[1:] = a[:3];` for a five-element array copy the original
+source values. Runtime ranges require in-bounds endpoints, nonzero steps, a
+direction that produces a nonempty range, and matching copy shapes. Steps must
+fit in a signed 64-bit integer. These are runtime preconditions; no assertions
+are emitted. Runtime-selected sources require the whole source array
+initialized; runtime-selected destinations establish no new
+definite-initialization facts.
 
 `sizeof(a)` returns the first dimension's length as a compile-time `uint`;
 `sizeof(a, d)` selects a zero-based, compile-time integer dimension. Subarrays
 and fixed ranges are supported: `sizeof(a[0])` gives a matrix's row length. The
 query does not read array elements, so the array need not be initialized. Use it
-in declarations or loop bounds, such as `[0:sizeof(a)-1]`.
+in declarations or loop bounds, such as `[0:sizeof(a)-1]`. The queried extent
+must be known at compile time.
 
 Angle arrays use the same widths and compile-time quantization as scalar angle
 declarations. Values in initializer lists and assignments to individual entries
@@ -207,10 +214,10 @@ conservatively require loop support for residual dynamic indices. See the
 [QIR 2.1 array contract](https://github.com/qir-alliance/qir-spec/blob/2.1/specification/Memory_Management.md#array-support).
 
 Arrays are internal storage, not implicit outputs; assign selected elements to
-scalar or bit outputs when needed. Runtime-sized ranges, concatenation, array
-outputs, runtime angle conversion, and jeff or OpenQASM export of array storage
-are not yet supported. Gate definitions cannot capture mutable arrays; pass
-selected entries as gate parameters instead.
+scalar or bit outputs when needed. Concatenation, array outputs, runtime angle
+conversion, and jeff or OpenQASM export of array storage are not yet supported.
+Gate definitions cannot capture mutable arrays; pass selected entries as gate
+parameters instead.
 
 ### Qubit indices and classical registers
 
