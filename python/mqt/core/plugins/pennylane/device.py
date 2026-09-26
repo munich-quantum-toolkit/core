@@ -137,8 +137,8 @@ class QDMIDevice(Device):
         Raises:
             PennyLaneConfigurationError: If configuration or requested wires are invalid.
         """
-        self._session_parameters = dict(session_parameters or {})
-        self._job_parameters = dict(job_parameters or {})
+        self._session_parameters: QDMISessionParameters = session_parameters.copy() if session_parameters else {}
+        self._job_parameters: QDMIJobParameters = job_parameters.copy() if job_parameters else {}
         _validate_parameter_names(self._session_parameters, _SESSION_PARAMETERS, "session")
         _validate_parameter_names(self._job_parameters, _JOB_PARAMETERS, "job")
 
