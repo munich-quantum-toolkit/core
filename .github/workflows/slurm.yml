@@ -13,6 +13,7 @@ on:
       - "pyproject.toml"
       - "python/mqt/core/qdmi/**"
       - "src/qdmi/**"
+      - "spank/**"
       - "test/slurm/**"
       - "test/qdmi/**"
       - "test/python/qdmi/**"
@@ -28,6 +29,7 @@ on:
       - "pyproject.toml"
       - "python/mqt/core/qdmi/**"
       - "src/qdmi/**"
+      - "spank/**"
       - "test/slurm/**"
       - "test/qdmi/**"
       - "test/python/qdmi/**"
@@ -44,7 +46,7 @@ permissions:
 
 jobs:
   slurm:
-    name: Slurm 25.11 and QDMI devices
+    name: Slurm 25.11, QDMI devices, and SPANK
     runs-on: ubuntu-26.04
     timeout-minutes: 45
     env:
@@ -77,6 +79,16 @@ jobs:
         uses: Mozilla-Actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
         with:
           version: v0.16.0
+
+      - name: Build and lint the standalone SPANK component
+        run: |
+          sudo apt-get update
+          curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm-install.sh"
+          sudo bash "$RUNNER_TEMP/llvm-install.sh" 23
+          sudo apt-get install --no-install-recommends -y clang-tidy-23 libslurm-dev
+          cmake -S spank -B build/spank -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          cmake --build build/spank
+          clang-tidy-23 -p build/spank spank/spank.cpp --warnings-as-errors='*'
 
       - name: Build the MQT Core wheel
         timeout-minutes: 15

@@ -10,6 +10,12 @@ services:
   controller:
     build:
       context: .
+      additional_contexts:
+        core: ${MQT_CORE_SLURM_CORE:-../..}
+        workload: ${MQT_CORE_SLURM_WORKLOAD:-../..}
+        dist: ${MQT_CORE_SLURM_DIST:-./dist}
+      args:
+        SETUP_SCRIPT: ${MQT_CORE_SLURM_SETUP_SCRIPT:-}
       target: controller
     hostname: controller
     privileged: true
@@ -19,9 +25,12 @@ services:
       - /run/lock
     volumes:
       - /sys/fs/cgroup:/sys/fs/cgroup:rw
-      - ../..:/workspace:ro
+      - ${MQT_CORE_SLURM_CORE:-../..}:/workspace:ro
+      - ${MQT_CORE_SLURM_WORKLOAD:-../..}:/workload:ro
       - ${MQT_CORE_SLURM_RUNTIME:-./runtime}:/runtime
-      - ./slurm.conf:/etc/slurm/slurm.conf:ro
+      - ${MQT_CORE_SLURM_RUNTIME:-./runtime}/jobs:/jobs
+      - ${MQT_CORE_SLURM_RUNTIME:-./runtime}/slurm.conf:/etc/slurm/slurm.conf:ro
+      - ${MQT_CORE_SLURM_RUNTIME:-./runtime}/plugstack.conf:/etc/slurm/plugstack.conf:ro
       - ./cgroup.conf:/etc/slurm/cgroup.conf:ro
     healthcheck:
       test:
@@ -41,6 +50,12 @@ services:
   node1:
     build:
       context: .
+      additional_contexts:
+        core: ${MQT_CORE_SLURM_CORE:-../..}
+        workload: ${MQT_CORE_SLURM_WORKLOAD:-../..}
+        dist: ${MQT_CORE_SLURM_DIST:-./dist}
+      args:
+        SETUP_SCRIPT: ${MQT_CORE_SLURM_SETUP_SCRIPT:-}
       target: compute
     hostname: node1
     privileged: true
@@ -53,9 +68,12 @@ services:
       - /run/lock
     volumes:
       - /sys/fs/cgroup:/sys/fs/cgroup:rw
-      - ../..:/workspace:ro
+      - ${MQT_CORE_SLURM_CORE:-../..}:/workspace:ro
+      - ${MQT_CORE_SLURM_WORKLOAD:-../..}:/workload:ro
       - ${MQT_CORE_SLURM_RUNTIME:-./runtime}:/runtime
-      - ./slurm.conf:/etc/slurm/slurm.conf:ro
+      - ${MQT_CORE_SLURM_RUNTIME:-./runtime}/jobs:/jobs
+      - ${MQT_CORE_SLURM_RUNTIME:-./runtime}/slurm.conf:/etc/slurm/slurm.conf:ro
+      - ${MQT_CORE_SLURM_RUNTIME:-./runtime}/plugstack.conf:/etc/slurm/plugstack.conf:ro
       - ./cgroup.conf:/etc/slurm/cgroup.conf:ro
     healthcheck:
       test:
@@ -75,6 +93,12 @@ services:
   node2:
     build:
       context: .
+      additional_contexts:
+        core: ${MQT_CORE_SLURM_CORE:-../..}
+        workload: ${MQT_CORE_SLURM_WORKLOAD:-../..}
+        dist: ${MQT_CORE_SLURM_DIST:-./dist}
+      args:
+        SETUP_SCRIPT: ${MQT_CORE_SLURM_SETUP_SCRIPT:-}
       target: compute
     hostname: node2
     privileged: true
@@ -87,9 +111,12 @@ services:
       - /run/lock
     volumes:
       - /sys/fs/cgroup:/sys/fs/cgroup:rw
-      - ../..:/workspace:ro
+      - ${MQT_CORE_SLURM_CORE:-../..}:/workspace:ro
+      - ${MQT_CORE_SLURM_WORKLOAD:-../..}:/workload:ro
       - ${MQT_CORE_SLURM_RUNTIME:-./runtime}:/runtime
-      - ./slurm.conf:/etc/slurm/slurm.conf:ro
+      - ${MQT_CORE_SLURM_RUNTIME:-./runtime}/jobs:/jobs
+      - ${MQT_CORE_SLURM_RUNTIME:-./runtime}/slurm.conf:/etc/slurm/slurm.conf:ro
+      - ${MQT_CORE_SLURM_RUNTIME:-./runtime}/plugstack.conf:/etc/slurm/plugstack.conf:ro
       - ./cgroup.conf:/etc/slurm/cgroup.conf:ro
     healthcheck:
       test:

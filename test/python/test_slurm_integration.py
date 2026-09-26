@@ -111,7 +111,7 @@ def test_preflight_does_not_touch_runtime(tmp_path: Path, monkeypatch: pytest.Mo
 
 def test_diagnostic_failure_still_tears_down(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """An unavailable diagnostic service must not orphan a failed cluster."""
-    (tmp_path / "core.whl").touch()
+    (tmp_path / "mqt_core-0.whl").touch()
     monkeypatch.setattr(runner, "DIST", tmp_path)
     monkeypatch.setattr(runner, "RUNTIME", tmp_path / "runtime")
     monkeypatch.setattr(runner, "run", lambda *args: subprocess.CompletedProcess(args, 0, "2", ""))
@@ -150,3 +150,88 @@ def test_invocations_use_distinct_projects_and_artifacts(monkeypatch: pytest.Mon
     assert first.RUNTIME != second.RUNTIME
     assert calls[0][0] != calls[1][0]
     assert calls[0][1] != calls[1][1]
+
+
+def test_provider_options_preserve_command_arguments(tmp_path: Path) -> None:
+    """Keep workload arguments separate from fixture and reference options."""
+    setup = tmp_path / "setup.sh"
+    setup.touch()
+    options = runner.parse_arguments((
+        "--workload",
+        str(tmp_path),
+        "--setup-script",
+        "setup.sh",
+        "--device-license",
+        "provider.device",
+        "--reference",
+        "PROVIDER_PROFILE=profile=value",
+        "--",
+        "python3",
+        "probe.py",
+        "--label",
+        "one argument",
+    ))
+    assert options.workload == tmp_path
+    assert options.reference == ["PROVIDER_PROFILE=profile=value"]
+    assert options.command == ["python3", "probe.py", "--label", "one argument"]
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ("--device-license", "provider.device"),
+        ("--", "python3", "probe.py"),
+        ("--device-license", "provider.device:2", "--", "/bin/true"),
+        ("--reference", "PROVIDER_PROFILE"),
+        ("--reference", "PROVIDER_PROFILE=two words"),
+    ],
+)
+def test_invalid_provider_inputs_fail_before_docker(arguments: tuple[str, ...]) -> None:
+    """Reject incomplete or unrepresentable fixture inputs at the CLI."""
+    with pytest.raises(SystemExit) as error:
+        runner.parse_arguments(arguments)
+    assert error.value.code == 2
+
+
+def test_setup_script_must_stay_inside_workload(tmp_path: Path) -> None:
+    """Do not accept a setup script that the workload build context cannot supply."""
+    workload = tmp_path / "workload"
+    workload.mkdir()
+    (tmp_path / "outside.sh").touch()
+    with pytest.raises(SystemExit) as error:
+        runner.parse_arguments(("--workload", str(workload), "--setup-script", "../outside.sh"))
+    assert error.value.code == 2
+
+
+def test_provider_modes_keep_references_in_job_configuration(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pass the same references directly to the job and through the plugin defaults."""
+    monkeypatch.setattr(runner, "RUNTIME", tmp_path)
+    options = runner.parse_arguments((
+        "--device-license",
+        "provider.device",
+        "--qdmi-config-file",
+        "/opt/provider.qdmi.json",
+        "--reference",
+        "PROVIDER_PROFILE=profile",
+        "--",
+        "python3",
+        "/workload/probe.py",
+    ))
+    configurations = []
+    commands = []
+
+    def controller(*command: str, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        configuration = tmp_path / "plugstack.conf"
+        configurations.append(configuration.read_text() if configuration.exists() else "")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(runner, "job", controller)
+    runner.test_provider(options)
+    assert commands[0][:3] == ("env", "PROVIDER_PROFILE=profile", "MQT_CORE_QDMI_CONFIG_FILE=/opt/provider.qdmi.json")
+    assert commands[1][0] == "srun"
+    assert commands[0][-2:] == commands[1][-2:] == ("python3", "/workload/probe.py")
+    assert not configurations[0]
+    assert "licenses=provider.device" in configurations[1]
+    assert "reference=PROVIDER_PROFILE:provider.device:profile" in configurations[1]
+    assert not (tmp_path / "plugstack.conf").read_text()

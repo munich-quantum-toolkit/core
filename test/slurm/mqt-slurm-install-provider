@@ -1,0 +1,35 @@
+#!/bin/sh
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
+#
+# Licensed under the MIT License
+
+set -eu
+
+case "$PROVIDER_INSTALL_MODE" in
+    native) : "${PROVIDER_RUNTIME_COMPONENT:?Set the provider Runtime install component}" ;;
+    wheel) ;;
+    *) echo "Unknown provider install mode: $PROVIDER_INSTALL_MODE" >&2; exit 1 ;;
+esac
+
+apt-get update
+DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+    libcurl4t64
+
+for provider_wheel in /tmp/provider/wheels/*.whl; do
+    for core_wheel in /tmp/dist/mqt_core-*.whl; do
+        uv pip install --system --break-system-packages \
+            "$provider_wheel[qiskit]" "$core_wheel[qiskit,pennylane]"
+    done
+done
+
+if [ "$PROVIDER_INSTALL_MODE" = native ]; then
+    cp -a /tmp/provider/native /opt/provider-native
+fi
+
+uv cache clean
+apt-get clean
+rm -rf /var/lib/apt/lists/*

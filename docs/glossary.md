@@ -114,6 +114,12 @@ Quantum Device Management Interface
   discovering quantum-device properties and submitting and controlling work
   without coupling software to one device implementation.
 
+SPANK
+  **Preferred term:** SPANK. **Accepted expansion:** Slurm Plug-in Architecture
+  for Node and job Kontrol. Slurm's plugin interface for job launch hooks.
+  Core's optional SPANK component transports configuration references to jobs;
+  it does not authorize provider access.
+
 QIR
 Quantum Intermediate Representation
   **Preferred term:** Quantum Intermediate Representation. **Accepted

@@ -58,7 +58,7 @@ def main() -> None:
         "node": os.environ["SLURM_JOB_NODELIST"],
         "shots": SHOTS,
     }
-    runtime = Path("/runtime")
+    runtime = Path("/jobs")
     result_path = runtime / f"ddsim-{job_id}.json"
     temporary = result_path.with_suffix(".tmp")
     temporary.write_text(json.dumps(result, sort_keys=True), encoding="utf-8")
