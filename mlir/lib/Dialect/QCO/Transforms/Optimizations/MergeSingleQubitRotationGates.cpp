@@ -17,6 +17,8 @@
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Utils/WireIterator.h"
 
+#include "Decomposition/PulseSynthesis.h"
+
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/IR/Builders.h"
@@ -747,10 +749,11 @@ static void emitParameterizedGPhaseIfNeeded(RewriterBase& rewriter,
   }
 }
 
-static Value emitRuntimeEulerAngles(RewriterBase& rewriter, Location loc,
-                                    Value qubit, RuntimeEulerAngles angles,
-                                    decomposition::SingleQubitBasis basis,
-                                    const ScalarConsts<Value>& consts) {
+static Value emitRuntimeEulerAngles(
+    RewriterBase& rewriter, Location loc, Value qubit,
+    RuntimeEulerAngles angles, decomposition::SingleQubitBasis basis,
+    const ScalarConsts<Value>& consts,
+    const CompilerTarget::FixedRotationBasis* fixedRotation = nullptr) {
   auto [theta, phi, lambda, phase] = angles;
 
   const bool usesZYZAngles = basis == decomposition::SingleQubitBasis::ZYZ ||
@@ -791,6 +794,39 @@ static Value emitRuntimeEulerAngles(RewriterBase& rewriter, Location loc,
     qubit = UOp::create(rewriter, loc, qubit, theta.v, phi.v, lambda.v)
                 .getQubitOut();
     break;
+  case decomposition::SingleQubitBasis::FixedRotation: {
+    assert(fixedRotation &&
+           "fixed-pulse synthesis requires a pulse descriptor");
+    const auto constant = [&](double value) {
+      return Val<Value>::constant(rewriter, loc, value);
+    };
+    const auto emit = [&](CompilerTarget::GateKind gate, Val<Value> angle) {
+      switch (gate) {
+      case CompilerTarget::GateKind::RX:
+        qubit = emitRotationIfNeeded<RXOp>(rewriter, loc, qubit, angle);
+        break;
+      case CompilerTarget::GateKind::RY:
+        qubit = emitRotationIfNeeded<RYOp>(rewriter, loc, qubit, angle);
+        break;
+      default:
+        qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit, angle);
+        break;
+      }
+    };
+    if (isConstantAngle(theta)) {
+      emit(fixedRotation->freeGate, sumAngles(phi, lambda));
+      break;
+    }
+    const double correction = decomposition::emitFixedRotationSequence(
+        *fixedRotation, theta, phi, lambda, mqt::valueToConstantDouble(theta.v),
+        constant,
+        [&](Val<Value> angle) { emit(fixedRotation->freeGate, angle); },
+        [&](double angle) { emit(fixedRotation->gate, constant(angle)); });
+    if (correction != 0.) {
+      phase = phase + constant(correction);
+    }
+    break;
+  }
   case decomposition::SingleQubitBasis::ZSXX:
     if (isConstantAngle(theta, std::numbers::pi / 2.0)) {
       const auto halfPi =
@@ -1008,6 +1044,7 @@ struct MergeSingleQubitRotationGatesPattern final
     case decomposition::SingleQubitBasis::U:
       return 1;
     case decomposition::SingleQubitBasis::ZSXX:
+    case decomposition::SingleQubitBasis::FixedRotation:
       return 5;
     case decomposition::SingleQubitBasis::ZYZ:
     case decomposition::SingleQubitBasis::ZXZ:
@@ -1299,12 +1336,12 @@ bool decomposition::canSynthesizeParameterizedUnitary1Q(Operation* op) {
   return op != nullptr && isa<RXOp, RYOp, RZOp, POp, ROp, U2Op, UOp>(op);
 }
 
-void decomposition::synthesizeParameterizedUnitary1Q(RewriterBase& rewriter,
-                                                     Operation* op,
-                                                     SingleQubitBasis basis) {
+void decomposition::synthesizeParameterizedUnitary1Q(
+    RewriterBase& rewriter, Operation* op, SingleQubitBasis basis,
+    const CompilerTarget::FixedRotationBasis* fixedRotation) {
   assert(canSynthesizeParameterizedUnitary1Q(op) &&
          "operation must support parameterized one-qubit synthesis");
-  if (isSingleQubitBasisGate(op, basis)) {
+  if (isSingleQubitBasisGate(op, basis, fixedRotation)) {
     return;
   }
 
@@ -1319,16 +1356,54 @@ void decomposition::synthesizeParameterizedUnitary1Q(RewriterBase& rewriter,
   }
   const bool usesDirectZYZAngles = basis == SingleQubitBasis::ZYZ ||
                                    basis == SingleQubitBasis::ZXZ ||
-                                   basis == SingleQubitBasis::ZSXX;
+                                   basis == SingleQubitBasis::ZSXX ||
+                                   basis == SingleQubitBasis::FixedRotation;
   if (basis == SingleQubitBasis::U || usesDirectZYZAngles) {
     const auto consts = makeConsts<Value>(rewriter, op->getLoc());
     Value qubit;
     if (basis == SingleQubitBasis::U) {
       qubit = emitDirectU(rewriter, unitary, consts);
     } else {
-      qubit = emitRuntimeEulerAngles(
-          rewriter, op->getLoc(), unitary.getInputQubit(0),
-          directZYZAnglesFromGate(unitary, rewriter, consts), basis, consts);
+      const auto angles = directZYZAnglesFromGate(unitary, rewriter, consts);
+      qubit = unitary.getInputQubit(0);
+      if (basis == SingleQubitBasis::FixedRotation &&
+          fixedRotation != nullptr &&
+          fixedRotation->freeGate != CompilerTarget::GateKind::RZ) {
+        // Keep symbolic angles algebraic: emit each physical Z/Y/Z rotation
+        // in the cyclic local frame instead of introducing inverse trig.
+        const auto axes = fixedRotation->axes();
+        const auto halfPi = consts.pi / consts.two;
+        const auto emitPhysical = [&](CompilerTarget::GateKind gate,
+                                      Val<Value> angle) {
+          if (isConstantAngle(angle)) {
+            return;
+          }
+          RuntimeEulerAngles local{
+              .theta = consts.zero,
+              .phi = consts.zero,
+              .lambda = consts.zero,
+              .phase = consts.zero,
+          };
+          if (gate == axes[2]) {
+            local.lambda = angle;
+          } else {
+            local.theta = angle;
+            if (gate == axes[0]) {
+              local.phi = -halfPi;
+              local.lambda = halfPi;
+            }
+          }
+          qubit = emitRuntimeEulerAngles(rewriter, op->getLoc(), qubit, local,
+                                         basis, consts, fixedRotation);
+        };
+        emitPhysical(CompilerTarget::GateKind::RZ, angles.lambda);
+        emitPhysical(CompilerTarget::GateKind::RY, angles.theta);
+        emitPhysical(CompilerTarget::GateKind::RZ, angles.phi);
+        emitParameterizedGPhaseIfNeeded(rewriter, op->getLoc(), angles.phase);
+      } else {
+        qubit = emitRuntimeEulerAngles(rewriter, op->getLoc(), qubit, angles,
+                                       basis, consts, fixedRotation);
+      }
     }
     rewriter.replaceOp(op, qubit);
     return;

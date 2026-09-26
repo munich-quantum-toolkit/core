@@ -30,6 +30,7 @@ add_mlir_library(
   MLIRQCOTransformsIncGen)
 
 mqt_mlir_target_use_project_options(MLIRQCOTransforms)
+target_include_directories(MLIRQCOTransforms PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 file(GLOB_RECURSE PASSES_HEADERS_SOURCE
      ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QCO/Transforms/*.h)
