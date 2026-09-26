@@ -10,6 +10,10 @@ releases may include breaking changes.
 
 ## [Unreleased]
 
+## [3.10.1] - 2026-09-26
+
+_If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#3101)._
+
 ### Added
 
 - 👷 Enable testing on Python 3.15 ([#2611]) ([**@denialhaag**])
@@ -17,15 +21,15 @@ releases may include breaking changes.
 ### Changed
 
 - ✨ Use optional PyGraphviz 2 or later for decision diagram SVG exports,
-  retaining the system `dot` fallback ([#2563]) ([**@denialhaag**])
+  retaining the system `dot` fallback ([#2571]) ([**@denialhaag**])
 - 🔧 Use Ninja and shared CMake presets on all platforms, removing `-windows`
   from preset names ([#2522]) ([**@denialhaag**])
 
 ### Fixed
 
-- 🐛 Export V and V† gates to Qiskit ([#2433]) ([**@burgholzer**])
 - 🐛 Do not treat controlled `RZ` and `RZZ` operations as symmetric in controls
   and targets in `Operation::equals` ([#2635]) ([**@DongjaeLee-Dd2dD2**])
+- 🐛 Export $V$ and $V^\dagger$ gates to Qiskit ([#2433]) ([**@burgholzer**])
 
 ## [3.10.0] - 2026-09-05
 
@@ -813,7 +817,8 @@ for previous changelogs._
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.10.0...v3.x
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.10.1...v3.x
+[3.10.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.10.1
 [3.10.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.10.0
 [3.9.2]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.9.2
 [3.9.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.9.1
@@ -842,7 +847,7 @@ for previous changelogs._
 
 [#2635]: https://github.com/munich-quantum-toolkit/core/pull/2635
 [#2611]: https://github.com/munich-quantum-toolkit/core/pull/2611
-[#2563]: https://github.com/munich-quantum-toolkit/core/pull/2563
+[#2571]: https://github.com/munich-quantum-toolkit/core/pull/2571
 [#2522]: https://github.com/munich-quantum-toolkit/core/pull/2522
 [#2433]: https://github.com/munich-quantum-toolkit/core/pull/2433
 [#2399]: https://github.com/munich-quantum-toolkit/core/pull/2399
