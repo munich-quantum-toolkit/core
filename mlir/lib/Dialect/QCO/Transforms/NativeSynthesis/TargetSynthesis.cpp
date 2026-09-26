@@ -12,6 +12,7 @@
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
+#include "mqt/Dialect/MQT/Utils/Modifiers.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
@@ -456,11 +457,13 @@ static LogicalResult prepareGlobalPhases(ModuleOp moduleOp,
   if (!entryPoint) {
     return success();
   }
-  for (auto& block : entryPoint.getBody()) {
-    for (auto phase : llvm::make_early_inc_range(block.getOps<GPhaseOp>())) {
+  entryPoint.walk([](GPhaseOp phase) {
+    // Each classical execution path has its own unobservable global phase.
+    // Quantum modifiers must retain phases that normalization cannot extract.
+    if (!isExcludedFromTopLevelUnitaryWalk(phase)) {
       phase.erase();
     }
-  }
+  });
   return success();
 }
 
@@ -564,10 +567,6 @@ static LogicalResult synthesizeTargetOperation(
   if (!basis->entangler) {
     return unsupported("the target has no usable two-qubit entangler");
   }
-  Matrix4x4 matrix;
-  if (!assignTwoQubitOpMatrix(op, matrix)) {
-    return unsupported("its unitary matrix is not available at compile time");
-  }
   const bool reverseEntangler =
       sites && !target.supports(*basis->entangler, *sites);
   if (reverseEntangler &&
@@ -576,6 +575,66 @@ static LogicalResult synthesizeTargetOperation(
     return operation->emitError()
            << "no supported synthesis-basis placement is known for its "
               "static sites";
+  }
+  Matrix4x4 matrix;
+  if (!assignTwoQubitOpMatrix(op, matrix)) {
+    auto controlled = dyn_cast<CtrlOp>(operation);
+    auto phase =
+        controlled && controlled.getNumControls() == 1 &&
+                controlled.getNumTargets() == 1 &&
+                controlled.getNumBodyUnitaries() == 1
+            ? dyn_cast<POp>(controlled.getBodyUnitary(0).getOperation())
+            : POp{};
+    if (!phase) {
+      return unsupported("its unitary matrix is not available at compile time");
+    }
+
+    // The verified modifier body contains only eager classical support ops
+    // besides P. Keep their evaluation in the same classical scope.
+    mqt::hoistSupportingOpsBefore(*controlled.getBody(), phase, controlled,
+                                  rewriter);
+    rewriter.setInsertionPoint(controlled);
+    auto loc = controlled.getLoc();
+    auto half =
+        arith::ConstantOp::create(rewriter, loc, rewriter.getF64FloatAttr(0.5));
+    Value angle = arith::MulFOp::create(rewriter, loc, phase.getTheta(), half);
+    Value negative = arith::NegFOp::create(rewriter, loc, angle);
+    auto controlPhase =
+        POp::create(rewriter, loc, controlled.getInputControl(0), angle);
+    auto targetPhase =
+        POp::create(rewriter, loc, controlled.getInputTarget(0), angle);
+    const auto cx = [&](Value control, Value targetQubit) {
+      return CtrlOp::create(
+          rewriter, loc, control, targetQubit, [&](Value qubit) {
+            return XOp::create(rewriter, loc, qubit).getOutputQubit(0);
+          });
+    };
+    auto first =
+        cx(controlPhase.getOutputQubit(0), targetPhase.getOutputQubit(0));
+    auto correction =
+        POp::create(rewriter, loc, first.getOutputTarget(0), negative);
+    auto second = cx(first.getOutputControl(0), correction.getOutputQubit(0));
+    rewriter.replaceOp(controlled, second.getOutputQubits());
+
+    // CP(theta) = P_c(theta/2) P_t(theta/2) CX P_t(-theta/2) CX.
+    // Lower users first, preserving wire order and full relative phase.
+    const std::array<Operation*, 5> gates{
+        controlPhase, targetPhase, first, correction, second,
+    };
+    for (auto* gateOperation : llvm::reverse(gates)) {
+      auto gate = cast<UnitaryOpInterface>(gateOperation);
+      auto gateSites = sites;
+      if (sites && gate.isSingleQubit()) {
+        gateSites = gate.getOperation() == controlPhase.getOperation()
+                        ? sites->take_front(1)
+                        : sites->drop_front(1);
+      }
+      if (failed(synthesizeTargetOperation(rewriter, gate, target, basis,
+                                           gateSites, lastDecomposition))) {
+        return failure();
+      }
+    }
+    return success();
   }
   Value input0 = op.getInputQubit(0);
   Value input1 = op.getInputQubit(1);

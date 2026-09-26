@@ -222,7 +222,13 @@ mixtures of all target operations or use calibration costs.
 
 Target synthesis preserves a native `gphase`. If the target does not support
 `gphase`, target synthesis preserves relative phase effects and removes only the
-unobservable global phase of the entry point.
+unobservable global phase of the entry point, including its classical branches
+and loops. Phases in helper functions and phases that remain inside quantum
+modifiers are retained.
+
+Single-controlled phase gates with runtime angles are lowered to phase gates and
+two CX gates, then synthesized in the target basis. Other non-native two-qubit
+gates require a compile-time unitary matrix.
 
 Use {py:meth}`~mqt.core.mlir.QCOProgram.compile_for_target` with the target
 environment to apply target compilation to an existing QCO program. Compilation

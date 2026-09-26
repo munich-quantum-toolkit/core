@@ -321,7 +321,7 @@ def TargetNativeSynthesis : Pass<"target-native-synthesis", "mlir::ModuleOp"> {
     surviving unitary operation needs it. Otherwise, the pass fails when the
     metadata is unknown, no complete basis exists, or an operation has no
     compile-time unitary matrix and cannot be synthesized as a parameterized
-    single-qubit gate.
+    single-qubit gate or a single-controlled phase gate.
 
     Numerical decomposition failure is diagnosed before emitting a replacement.
     The input may be modified on failure.
