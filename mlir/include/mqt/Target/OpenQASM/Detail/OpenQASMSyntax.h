@@ -270,7 +270,9 @@ struct SyntaxIf {
 
 struct SyntaxFor {
   StringRef inductionVariable;
-  bool isUnsigned = false;
+  ScalarKind type = ScalarKind::Int;
+  std::optional<SyntaxExpressionId> width;
+  std::optional<SyntaxExpressionId> iterable;
   SyntaxExpressionId start = 0;
   SyntaxExpressionId step = 0;
   SyntaxExpressionId stop = 0;
@@ -387,9 +389,8 @@ public:
          function_ref<LogicalResult()> thenContinuation,
          function_ref<LogicalResult()> elseContinuation);
   [[nodiscard]] LogicalResult
-  forStmt(SMLoc location, StringRef inductionVariable, bool isUnsigned,
-          SyntaxExpressionId start, SyntaxExpressionId step,
-          SyntaxExpressionId stop, function_ref<LogicalResult()> continuation);
+  forStmt(SMLoc location, SyntaxFor loop,
+          function_ref<LogicalResult()> continuation);
   [[nodiscard]] LogicalResult breakStmt(SMLoc location);
   [[nodiscard]] LogicalResult continueStmt(SMLoc location);
   [[nodiscard]] LogicalResult

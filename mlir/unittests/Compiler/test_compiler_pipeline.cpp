@@ -1061,6 +1061,79 @@ TEST_F(CompilerPipelineTest, BaseProfileLowersCompleteTensorLifetime) {
 TEST_F(CompilerPipelineTest, ClassicalArraysSurviveQCQCOAndQIR) {
   constexpr auto programs = std::to_array<llvm::StringLiteral>({
       R"qasm(OPENQASM 3.0;
+        qubit probe;
+        U(pi / 2, 0, 0) probe;
+        bit choice = measure probe;
+        array[int, 3] a = {1, 2, 3};
+        int last = int(choice) + 1;
+        int expected = 3 + 3 * int(choice);
+        int sum = 0;
+        for int x in a[:last] { sum += x; last = 0; }
+        int step = 1 - 2 * int(choice);
+        int first = 0;
+        for int x in a[:step:] { first = x; break; }
+        qubit q;
+        if (sum == expected && first == 1 + 2 * int(choice)) {
+          U(pi, 0, 0) q;
+        }
+        output bit result;
+        result = measure q;
+      )qasm",
+      R"qasm(OPENQASM 3.0;
+        array[int, 2, 3] a = {{1, 2, 3}, {4, 5, 6}};
+        int sum = 0;
+        int start = 2;
+        int step = -1;
+        for int x in a[1, start:step:] {
+          sum = sum * 10 + x;
+          start = 0; step = 1; x = 0;
+        }
+        array[int, 0] empty;
+        for int x in empty { sum = 0; }
+        for int x in empty { break; }
+        qubit q;
+        if (sum == 654 && a[1, 2] == 6) { U(pi, 0, 0) q; }
+        output bit result;
+        result = measure q;
+      )qasm",
+      R"qasm(OPENQASM 3.0;
+        array[int, 4] a = {1, 2, 3, 4};
+        int sum = 0;
+        for int x in a {
+          if (x == 2) { a[2] = 5; continue; }
+          for int y in a[:1] {
+            if (y == 2) { break; }
+            sum += x;
+          }
+          if (x == 5) { break; }
+        }
+        qubit q;
+        if (sum == 6) { U(pi, 0, 0) q; }
+        output bit result;
+        result = measure q;
+      )qasm",
+      R"qasm(OPENQASM 3.0;
+        array[int[8], 2] signed = {127, -1};
+        array[uint[8], 2] unsigned = {128, 255};
+        array[bool, 2] flags = {true, false};
+        array[float, 2] reals = {0.25, 0.75};
+        array[angle[8], 2] angles = {0.0, pi};
+        int sum = 0;
+        for int[8] x in signed { sum += int(x); x = 0; }
+        for uint x in unsigned { sum += int(x); }
+        for int[8] x in unsigned { sum += int(x); }
+        int count = 0;
+        for bool flag in flags { if (flag) { count += 1; } flag = false; }
+        float total = 0;
+        for float[64] x in reals { total += x; }
+        qubit q;
+        if (sum == 380 && count == 1 && total == 1.0) {
+          for angle[8] theta in angles { U(theta, 0, 0) q; theta = 0.0; }
+        }
+        output bit result;
+        result = measure q;
+      )qasm",
+      R"qasm(OPENQASM 3.0;
         array[angle[8], 2] angles = {0.0, pi};
         array[int, 0] empty;
         array[float, 0] initializedEmpty = {};
