@@ -3343,7 +3343,9 @@ TEST_F(QCODDFunctionalityTest, ArrayFillsKeepBoundsChecksAndWhileBudget) {
     SCOPED_TRACE(setup);
     // The first case must still reject the out-of-bounds fill. The second fill
     // fits, but must not exempt the subsequent while loop from its budget.
-    expectMlirSimulationFails(0, std::string(R"mlir(module { func.func @main() {
+    auto moduleOp =
+        parseSourceString<ModuleOp>(std::string(
+                                        R"mlir(module { func.func @main() {
       %zero = arith.constant 0 : index
       %one = arith.constant 1 : index
       %true = arith.constant true
@@ -3358,7 +3360,16 @@ TEST_F(QCODDFunctionalityTest, ArrayFillsKeepBoundsChecksAndWhileBudget) {
         scf.yield
       }
       return
-    } })mlir");
+    } })mlir",
+                                    context.get());
+    ASSERT_TRUE(moduleOp);
+    dd::Package package(0);
+    const DDExecutionOptions options{.maxWhileIterations = 10};
+    EXPECT_TRUE(
+        failed(simulate(mainFunc(*moduleOp), dd::makeZeroState(0, package),
+                        package, rng, DDArgumentBindings(), options)));
+    EXPECT_TRUE(failed(sample(mainFunc(*moduleOp), 1, 1, DDArgumentBindings(),
+                              nullptr, nullptr, options)));
   }
 }
 
