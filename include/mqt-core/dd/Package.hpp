@@ -800,10 +800,15 @@ public:
       return {x.p, rWeight};
     }
 
-    /// Keep a common incoming scale outside recursion so small amplitudes do
-    /// not disappear before their normalized parent is reconstructed.
-    const auto scale = std::max(
+    // Keep a common incoming scale outside recursion so small amplitudes do
+    // not disappear before their normalized parent is reconstructed. Leave
+    // weights near unit scale unchanged; otherwise use a power of two to avoid
+    // extra rounding that can disrupt shared subgraphs.
+    const auto maxComponent = std::max(
         {std::abs(x.w.r), std::abs(x.w.i), std::abs(y.w.r), std::abs(y.w.i)});
+    const auto scale = maxComponent >= 0.5 && maxComponent < 2.
+                           ? 1.
+                           : std::scalbn(1., std::ilogb(maxComponent));
     const CachedEdge<Node> left{x.p, x.w / scale};
     const CachedEdge<Node> right{y.p, y.w / scale};
 
@@ -854,8 +859,11 @@ public:
       return {x.p, rWeight};
     }
 
-    const auto scale = std::max(
+    const auto maxComponent = std::max(
         {std::abs(x.w.r), std::abs(x.w.i), std::abs(y.w.r), std::abs(y.w.i)});
+    const auto scale = maxComponent >= 0.5 && maxComponent < 2.
+                           ? 1.
+                           : std::scalbn(1., std::ilogb(maxComponent));
     const CachedEdge<Node> left{x.p, x.w / scale};
     const CachedEdge<Node> right{y.p, y.w / scale};
 
