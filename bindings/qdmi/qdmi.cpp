@@ -13,8 +13,6 @@
 #include "qdmi/driver/Driver.hpp"
 #include "qdmi/driver/SessionConfig.hpp"
 
-#include "CustomJobParameter.hpp" // NOLINT(misc-include-cleaner)
-
 #include "nanobind/nanobind.h"
 #include "nanobind/operators.h"
 #include "nanobind/stl/complex.h"    // NOLINT(misc-include-cleaner)
@@ -28,12 +26,34 @@
 #include "qdmi/client.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <span>
 #include <string>
 #include <utility>
 #include <vector>
+
+namespace nanobind::detail {
+
+template <> struct type_caster<std::vector<std::byte>> {
+  NB_TYPE_CASTER(std::vector<std::byte>, const_name("bytes"))
+
+  /// NOLINTNEXTLINE(readability-identifier-naming)
+  bool from_python(handle src, [[maybe_unused]] uint32_t flags,
+                   [[maybe_unused]] cleanup_list* cleanup) {
+    if (!isinstance<bytes>(src)) {
+      return false;
+    }
+    const auto data = borrow<bytes>(src);
+    const auto buffer =
+        std::span{static_cast<const std::byte*>(data.data()), data.size()};
+    value.assign(buffer.begin(), buffer.end());
+    return true;
+  }
+};
+
+} // namespace nanobind::detail
 
 namespace mqt {
 

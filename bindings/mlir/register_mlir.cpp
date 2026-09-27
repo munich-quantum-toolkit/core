@@ -23,7 +23,6 @@
 #include "qdmi/Client.hpp"
 #include "qdmi/driver/SessionConfig.hpp"
 
-#include "../qdmi/CustomJobParameter.hpp"
 #include "qiskit/Qiskit.h"
 
 #include "nanobind/nanobind.h"
@@ -64,6 +63,27 @@
 #include <utility>
 #include <variant>
 #include <vector>
+
+namespace nanobind::detail {
+
+template <> struct type_caster<std::vector<std::byte>> {
+  NB_TYPE_CASTER(std::vector<std::byte>, const_name("bytes"))
+
+  /// NOLINTNEXTLINE(readability-identifier-naming)
+  bool from_python(handle src, [[maybe_unused]] uint32_t flags,
+                   [[maybe_unused]] cleanup_list* cleanup) {
+    if (!isinstance<bytes>(src)) {
+      return false;
+    }
+    const auto data = borrow<bytes>(src);
+    const auto buffer =
+        std::span{static_cast<const std::byte*>(data.data()), data.size()};
+    value.assign(buffer.begin(), buffer.end());
+    return true;
+  }
+};
+
+} // namespace nanobind::detail
 
 namespace mqt {
 
