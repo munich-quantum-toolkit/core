@@ -141,6 +141,7 @@ qdmi::SessionConfig makeDriverSessionConfig(
         qdmi::detail::pathToString(*deviceConfigFile);
   }
   return session.empty() ? std::string{} : session.dump();
+}
 
 template <typename Query>
 [[nodiscard]] nb::object queryCustomValue(Query query,
