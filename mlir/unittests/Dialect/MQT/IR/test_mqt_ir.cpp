@@ -101,181 +101,38 @@ TEST_F(MQTIRTest, CompilationSeedHasModuleScopeAnd64Bits) {
   })"));
 }
 
-TEST_F(MQTIRTest, VerifiesTemporarySourceQubitIndices) {
-  constexpr StringLiteral source = R"(module {
-    func.func @main() attributes {mqt.entry_point} {
-      %n = arith.constant 2 : index
-      %q = qtensor.alloc(%n) : tensor<?x!qco.qubit>
-      qtensor.dealloc %q : tensor<?x!qco.qubit>
-      return
-    }
-  })";
-  auto moduleOp = parse(source);
-  ASSERT_TRUE(moduleOp);
-  auto function = *moduleOp->getOps<func::FuncOp>().begin();
-  auto& allocation = *std::next(function.getBody().front().begin());
-  allocation.setAttr(mqt::kSourceQubitIndicesAttr,
-                     parseAttr("array<i64: 5, 2>"));
-  EXPECT_TRUE(succeeded(verify(*moduleOp)));
-  for (const auto* text : {
-           "array<i64: 2>",
-           "array<i64: 2, 2>",
-           "array<i64: -1, 2>",
-           "array<i32: 2, 5>",
-       }) {
-    allocation.setAttr(mqt::kSourceQubitIndicesAttr, parseAttr(text));
-    EXPECT_TRUE(failed(verify(*moduleOp)));
-  }
-  allocation.removeAttr(mqt::kSourceQubitIndicesAttr);
-  (*moduleOp)->setAttr(mqt::kSourceQubitIndicesAttr,
-                       parseAttr("array<i64: 2, 5>"));
-  EXPECT_TRUE(failed(verify(*moduleOp)));
-}
-
-TEST_F(MQTIRTest, RoundTripsQubitLayoutProvenance) {
+TEST_F(MQTIRTest, RoundTripsLayoutMetadata) {
   const mqt::QubitLayout layout{
-      .physicalSize = 5,
-      .initial = {1, 4, -1, 0},
-      .routing = std::vector<int64_t>{3, 1, 4, -1, 2},
-      .outputOrder = {2, 0, 4, 1, 3},
+      .initial = {1, 2, 0},
+      .routing = std::vector<int64_t>{2, 0, 1},
       .inputCount = 3,
-      .ancillas = {3},
-      .registers =
-          {
-              {
-                  .name = "source",
-                  .slots = {1, 2, 0, -1},
-                  .ancillary = false,
-              },
-              {
-                  .name = "workspace",
-                  .slots = {3},
-                  .ancillary = true,
-              },
-          },
   };
   auto moduleOp = parse(
       "module { func.func @main() attributes {mqt.entry_point} { return } }");
   ASSERT_TRUE(moduleOp);
   const auto attribute = layout.toAttr(context.get());
-  mqt::getEntryPoint(*moduleOp)->setAttr("mqt.layout", attribute);
+  (*moduleOp)->setAttr("mqt.layout", attribute);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   auto restored = roundTrip(*moduleOp);
   ASSERT_TRUE(restored);
-  const auto decoded = mqt::QubitLayout::fromAttr(
-      mqt::getEntryPoint(*restored)->getAttr("mqt.layout"),
-      [&] { return restored->emitError(); });
+  const auto decoded =
+      mqt::QubitLayout::fromAttr((*restored)->getAttr("mqt.layout"),
+                                 [&] { return restored->emitError(); });
   ASSERT_TRUE(succeeded(decoded));
   EXPECT_EQ(decoded->toAttr(context.get()), attribute);
 }
 
 TEST_F(MQTIRTest, RejectsUnsupportedLayoutOwners) {
-  for (const bool invalidated : {false, true}) {
-    SCOPED_TRACE(invalidated);
-    for (const StringRef owner : {"module", "helper", "nested", "competing"}) {
-      SCOPED_TRACE(owner.str());
-      auto moduleOp = parse(R"mlir(module {
-        func.func @main() attributes {mqt.entry_point} { return }
-        func.func @helper() { return }
-        module @nested {
-          func.func @child() { return }
-        }
-      })mlir");
-      ASSERT_TRUE(moduleOp);
-      auto entry = mqt::getEntryPoint(*moduleOp);
-      auto helper = moduleOp->lookupSymbol<func::FuncOp>("helper");
-      auto nested = *moduleOp->getOps<ModuleOp>().begin();
-      auto child = nested.lookupSymbol<func::FuncOp>("child");
-      Operation* annotated = entry;
-      if (owner == "module") {
-        annotated = moduleOp->getOperation();
-      } else if (owner == "helper") {
-        annotated = helper;
-      } else {
-        mqt::setEntryPoint(child);
-        if (owner == "nested") {
-          annotated = child;
-        }
-      }
-      annotated->setAttr(
-          invalidated ? "mqt.layout_invalidated" : "mqt.layout",
-          invalidated ? Attribute(UnitAttr::get(context.get()))
-                      : Attribute(mqt::QubitLayout{}.toAttr(context.get())));
-      EXPECT_TRUE(failed(verify(*moduleOp)));
-    }
-  }
-}
-
-TEST_F(MQTIRTest, RejectsMalformedQubitLayoutSchema) {
-  auto moduleOp = parse(
-      "module { func.func @main() attributes {mqt.entry_point} { return } }");
+  auto moduleOp = parse(R"mlir(module {
+    func.func @main() attributes {mqt.entry_point} { return }
+    func.func @helper() { return }
+  })mlir");
   ASSERT_TRUE(moduleOp);
-  const auto emit = [&] { return moduleOp->emitError(); };
-  EXPECT_TRUE(failed(mqt::QubitLayout::fromAttr({}, emit)));
-  Builder builder(context.get());
-  const mqt::QubitLayout layout{
-      .physicalSize = 2,
-      .initial = {1, 0},
-      .outputOrder = {0, 1},
-  };
-  const auto attribute = layout.toAttr(context.get());
-  const auto reject = [&](StringRef name, Attribute replacement) {
-    NamedAttrList fields(attribute);
-    fields.set(name, replacement);
-    EXPECT_TRUE(failed(
-        mqt::QubitLayout::fromAttr(fields.getDictionary(context.get()), emit)))
-        << name.str();
-  };
-  reject("unknown", builder.getUnitAttr());
-  for (const auto* const name :
-       {"physical_size", "initial", "output_order", "ancillas", "registers"}) {
-    reject(name, builder.getUnitAttr());
-    NamedAttrList fields(attribute);
-    fields.erase(name);
-    EXPECT_TRUE(failed(
-        mqt::QubitLayout::fromAttr(fields.getDictionary(context.get()), emit)));
-  }
-  reject("physical_size", builder.getI64IntegerAttr(-1));
-  reject("physical_size", builder.getI32IntegerAttr(2));
-  for (const auto* const name : {"initial", "output_order", "ancillas"}) {
-    reject(name, builder.getDenseI64ArrayAttr({0, 0}));
-    reject(name, builder.getDenseI64ArrayAttr({0, 2}));
-    reject(name, builder.getDenseI64ArrayAttr({-2, 1}));
-  }
-  reject("output_order", builder.getDenseI64ArrayAttr({0}));
-  reject("routing", builder.getUnitAttr());
-  reject("routing", builder.getDenseI64ArrayAttr({0}));
-  reject("routing", builder.getDenseI64ArrayAttr({0, 0}));
-  reject("input_count", builder.getUnitAttr());
-  reject("input_count", builder.getI32IntegerAttr(1));
-  reject("input_count", builder.getI64IntegerAttr(-1));
-  reject("input_count", builder.getI64IntegerAttr(3));
-  reject("registers", builder.getArrayAttr({builder.getUnitAttr()}));
-  const std::array invalidGroups{
-      R"mlir([{name = "", slots = array<i64: 0>, ancillary = false}])mlir",
-      R"mlir([{name = "q\00", slots = array<i64: 0>, ancillary = false}])mlir",
-      R"mlir([{name = "q", slots = array<i64>, ancillary = false}])mlir",
-      R"mlir([{name = "q", slots = array<i64: 2>, ancillary = false}])mlir",
-      R"mlir([{name = "q", slots = array<i64: 0>}])mlir",
-      R"mlir([{name = "q", slots = array<i64: 0>, ancillary = true}])mlir",
-      R"mlir([{name = "q", slots = array<i64: 0>, ancillary = false},
-              {name = "q", slots = array<i64: 1>, ancillary = false}])mlir",
-      R"mlir([{name = "q", slots = array<i64: 0>, ancillary = false},
-              {name = "r", slots = array<i64: 0>, ancillary = false}])mlir",
-  };
-  for (const auto* const text : invalidGroups) {
-    reject("registers", parseAttr(text));
-  }
-  mqt::getEntryPoint(*moduleOp)->setAttr("mqt.layout_invalidated",
-                                         builder.getStringAttr("bad"));
+  auto helper = moduleOp->lookupSymbol<func::FuncOp>("helper");
+  helper->setAttr(
+      "mqt.layout",
+      mqt::QubitLayout{.initial = {0}, .inputCount = 1}.toAttr(context.get()));
   EXPECT_TRUE(failed(verify(*moduleOp)));
-  mqt::getEntryPoint(*moduleOp)->setAttr("mqt.layout_invalidated",
-                                         builder.getUnitAttr());
-  mqt::getEntryPoint(*moduleOp)->setAttr("mqt.layout", attribute);
-  EXPECT_TRUE(failed(verify(*moduleOp)));
-  EXPECT_FALSE(parse(R"mlir(module {
-    func.func private @bad() attributes {mqt.layout_invalidated}
-  })mlir"));
 }
 
 TEST_F(MQTIRTest, AcceptsProgramInputAndRegisterNames) {

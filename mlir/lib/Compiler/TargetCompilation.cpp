@@ -29,14 +29,11 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
 
-#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseSet.h"
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <numeric>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -52,13 +49,18 @@ public:
 
   explicit PrepareTargetCompilationPass(TargetEnvironment environment,
                                         bool allToAllOnly = false,
-                                        MappingOptions mapping = {},
-                                        qco::LayoutTracking* tracking = nullptr)
+                                        MappingOptions mapping = {})
       : environment_(std::move(environment)), allToAllOnly_(allToAllOnly),
-        mapping_(mapping), tracking_(tracking) {}
+        mapping_(mapping) {}
 
 protected:
   void runOnOperation() override {
+    if (getOperation()->hasAttr("mqt.layout")) {
+      getOperation().emitError("discard existing layout metadata before target "
+                               "compilation");
+      signalPassFailure();
+      return;
+    }
     if (mapping_.trials == 0) {
       getOperation().emitError("mapping trials must be greater than zero");
       signalPassFailure();
@@ -86,12 +88,6 @@ protected:
       signalPassFailure();
       return;
     }
-    if (tracking_ != nullptr &&
-        failed(qco::prepareLayout(getOperation(), environment_.target(),
-                                  *tracking_))) {
-      signalPassFailure();
-      return;
-    }
     markAnalysesPreserved<TargetEnvironmentAnalysis>();
   }
 
@@ -99,15 +95,13 @@ private:
   TargetEnvironment environment_;
   bool allToAllOnly_;
   MappingOptions mapping_;
-  qco::LayoutTracking* tracking_;
 };
 
 } /* namespace */
 
 static FailureOr<mqt::QubitLayout>
-composeCompiledLayout(ModuleOp moduleOp, const CompilerTarget& target,
-                      const MappingResult& mapping,
-                      const std::optional<mqt::QubitLayout>& source) {
+compiledLayout(ModuleOp moduleOp, const CompilerTarget& target,
+               const qco::LayoutTracking& mapping) {
   const size_t width = target.numSites();
   const size_t sourceCount = mapping.initialLayout.size();
   if (sourceCount > width || mapping.routingPermutation.size() != width) {
@@ -132,63 +126,13 @@ composeCompiledLayout(ModuleOp moduleOp, const CompilerTarget& target,
   }
 
   mqt::QubitLayout layout;
-  layout.physicalSize = static_cast<int64_t>(width);
-  layout.outputOrder.resize(width);
-  std::iota(layout.outputOrder.begin(), layout.outputOrder.end(), 0);
-  std::vector<int64_t> previousRouting(width);
-  std::iota(previousRouting.begin(), previousRouting.end(), 0);
-  if (source) {
-    if (std::cmp_not_equal(source->physicalSize, sourceCount) ||
-        source->initial.size() != sourceCount ||
-        std::ranges::any_of(source->initial,
-                            [](int64_t site) { return site < 0; }) ||
-        (source->routing &&
-         std::ranges::any_of(*source->routing,
-                             [](int64_t site) { return site < 0; }))) {
-      return moduleOp.emitError(
-          "native compilation requires a complete imported qubit layout");
-    }
-    layout.inputCount = source->inputCount.value_or(
-        static_cast<int64_t>(sourceCount - source->ancillas.size()));
-    layout.ancillas = source->ancillas;
-    layout.registers = source->registers;
-    for (const auto initial : source->initial) {
-      layout.initial.push_back(placement[initial]);
-    }
-    if (source->routing) {
-      for (size_t wire = 0; wire < sourceCount; ++wire) {
-        layout.outputOrder[placement[wire]] =
-            placement[source->outputOrder[wire]];
-        previousRouting[wire] = (*source->routing)[wire];
-      }
-    }
-  } else {
-    layout.inputCount = static_cast<int64_t>(sourceCount);
-    layout.initial.assign(placement.begin(),
-                          placement.begin() +
-                              static_cast<std::ptrdiff_t>(sourceCount));
-    if (sourceCount != 0) {
-      mqt::LayoutRegister input{.name = "input"};
-      input.slots.resize(sourceCount);
-      std::iota(input.slots.begin(), input.slots.end(), 0);
-      layout.registers.push_back(std::move(input));
-    }
-  }
-  for (size_t index = sourceCount; index < width; ++index) {
-    layout.ancillas.push_back(static_cast<int64_t>(layout.initial.size()));
-    layout.initial.push_back(placement[index]);
-  }
+  layout.inputCount = static_cast<int64_t>(sourceCount);
+  layout.initial = std::move(placement);
 
-  std::vector<int64_t> inversePlacement(width);
-  for (size_t index = 0; index < width; ++index) {
-    inversePlacement[placement[index]] = static_cast<int64_t>(index);
-  }
   layout.routing.emplace(width);
   for (size_t initial = 0; initial < width; ++initial) {
-    const auto oldWire = inversePlacement[initial];
-    const auto afterOldRouting = placement[previousRouting[oldWire]];
     (*layout.routing)[initial] =
-        static_cast<int64_t>(mapping.routingPermutation[afterOldRouting]);
+        static_cast<int64_t>(mapping.routingPermutation[initial]);
   }
   return layout;
 }
@@ -210,7 +154,7 @@ static void populateTargetPipeline(OpPassManager& pm,
                                    const MappingOptions& mapping,
                                    qco::LayoutTracking* tracking) {
   pm.addPass(std::make_unique<PrepareTargetCompilationPass>(environment, false,
-                                                            mapping, tracking));
+                                                            mapping));
   const auto& target = environment.target();
   pm.addPass(createInlinerPass());
   pm.addPass(createSymbolDCEPass());
@@ -261,14 +205,16 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   populateTargetPipeline(pm, environment, mapping, {});
 }
 
-std::optional<MappingResult>
-QCOProgram::compileForTargetWithLayout(const TargetEnvironment& environment,
-                                       llvm::ArrayRef<int64_t> initialLayout,
-                                       const CompilationOptions& options) {
-  if (failed(mqt::verifyLayoutEntryPoint(mod())) || !hasValidLinearity()) {
-    return std::nullopt;
-  }
+bool QCOProgram::compileForTarget(const TargetEnvironment& environment,
+                                  const CompilationOptions& options) {
   auto entryPoint = mqt::getEntryPoint(mod());
+  if (!entryPoint || !hasValidLinearity()) {
+    return false;
+  }
+  if (options.mapping.trials == 0) {
+    mod().emitError("mapping trials must be greater than zero");
+    return false;
+  }
   std::vector<std::optional<int64_t>> inputSegments;
   llvm::SmallDenseSet<int64_t> staticSites;
   for (Operation& operation : entryPoint.getBody().front()) {
@@ -278,77 +224,65 @@ QCOProgram::compileForTargetWithLayout(const TargetEnvironment& environment,
           !staticSites.insert(site).second) {
         staticQubit.emitError("preplaced qubit requires a distinct target "
                               "site ID");
-        return std::nullopt;
+        return false;
       }
       inputSegments.emplace_back(site);
     } else if (isa<qco::AllocOp, qtensor::AllocOp>(operation)) {
       inputSegments.emplace_back(std::nullopt);
     }
   }
-  if (!staticSites.empty() && !initialLayout.empty()) {
-    entryPoint.emitError("explicit initial layout cannot move preplaced "
-                         "static qubits");
-    return std::nullopt;
+  if (mod()->hasAttr("mqt.layout")) {
+    mod().emitError("discard existing layout metadata before target "
+                    "compilation");
+    return false;
   }
-  if (entryPoint->hasAttr("mqt.layout_invalidated")) {
-    entryPoint.emitError("discard invalidated qubit layout before native "
-                         "compilation");
-    return std::nullopt;
+  qco::LayoutTracking tracking;
+  const auto prepared =
+      qco::prepareLayout(mod(), environment.target(), tracking);
+  if (failed(prepared)) {
+    return false;
   }
-  std::optional<mqt::QubitLayout> source;
-  if (const auto attribute = entryPoint->getAttr("mqt.layout")) {
-    auto parsed = mqt::QubitLayout::fromAttr(
-        attribute, [&] { return entryPoint.emitError(); });
-    if (failed(parsed)) {
-      return std::nullopt;
-    }
-    source = std::move(*parsed);
-  }
-  if (source && !staticSites.empty()) {
-    entryPoint.emitError("cannot recompose qubit layout for preplaced static "
-                         "qubits; import the circuit with dynamic inputs");
-    return std::nullopt;
-  }
-  qco::LayoutTracking tracking{.requested = initialLayout};
+  auto* activeTracking = *prepared ? &tracking : nullptr;
   if (failed(runWithPassManager(
           mod(),
           [&](OpPassManager& pm) {
-            populateTargetPipeline(pm, environment, options.mapping, &tracking);
+            populateTargetPipeline(pm, environment, options.mapping,
+                                   activeTracking);
           },
-          "failed to compile the QCO program with layout tracking", options)) ||
+          "failed to compile the QCO program for the target", options, true)) ||
       !hasValidLinearity()) {
-    return std::nullopt;
+    mod().walk(
+        [](Operation* op) { op->removeAttr(mqt::kSourceQubitIndicesAttr); });
+    return false;
+  }
+  if (activeTracking == nullptr) {
+    return true;
   }
   if (!staticSites.empty()) {
-    MappingResult combined;
+    std::vector<int64_t> combined;
     size_t allocation = 0;
     size_t wire = 0;
     for (const auto site : inputSegments) {
       if (site) {
-        combined.allocationSizes.push_back(1);
-        combined.initialLayout.push_back(*site);
-        combined.finalLayout.push_back(*site);
+        combined.push_back(*site);
         continue;
       }
-      const auto count = tracking.result.allocationSizes[allocation++];
-      combined.allocationSizes.push_back(count);
+      const auto count = tracking.allocationSizes[allocation++];
       for (size_t index = 0; index < count; ++index, ++wire) {
-        combined.initialLayout.push_back(tracking.result.initialLayout[wire]);
-        combined.finalLayout.push_back(tracking.result.finalLayout[wire]);
+        combined.push_back(tracking.initialLayout[wire]);
       }
     }
-    combined.routingPermutation = std::move(tracking.result.routingPermutation);
-    tracking.result = std::move(combined);
+    tracking.initialLayout = std::move(combined);
   }
-  auto layout = composeCompiledLayout(mod(), environment.target(),
-                                      tracking.result, source);
+  if (tracking.initialLayout.empty()) {
+    return true;
+  }
+  auto layout = compiledLayout(mod(), environment.target(), tracking);
   if (failed(layout)) {
-    return std::nullopt;
+    return false;
   }
-  mqt::discardQubitLayout(mod());
-  mqt::getEntryPoint(mod())->setAttr("mqt.layout",
-                                     layout->toAttr(mod().getContext()));
-  return std::move(tracking.result);
+  mod()->setAttr("mqt.layout", layout->toAttr(mod().getContext()));
+  return true;
 }
 
 void populateTargetSynthesisPipeline(OpPassManager& pm,

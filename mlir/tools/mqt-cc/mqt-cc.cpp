@@ -112,10 +112,9 @@ static llvm::cl::opt<std::string>
                                 "qir-adaptive, openqasm3, or jeff"),
                  llvm::cl::value_desc("format"), llvm::cl::init("qc"));
 
-static llvm::cl::opt<bool> discardLayout(
-    "discard-layout",
-    llvm::cl::desc(
-        "Explicitly discard retained or invalidated qubit layout metadata"));
+static llvm::cl::opt<bool>
+    discardLayout("discard-layout",
+                  llvm::cl::desc("Discard qubit layout metadata"));
 
 static llvm::cl::opt<std::string> passPipeline(
     "pass-pipeline",
@@ -628,22 +627,12 @@ static int runCompiler(int argc, char** argv) {
     program = loadJeffFile(inputFilename, &context);
     break;
   }
-  if (!program.mod ||
-      (!runReproducer && failed(mqt::verifyQubitLayoutOwner(*program.mod)))) {
+  if (!program.mod) {
     return 1;
   }
   if (discardLayout) {
     mqt::discardQubitLayout(*program.mod);
   }
-  if (!isolated &&
-      (*parsedOutputFormat == OutputFormat::Jeff ||
-       *parsedOutputFormat == OutputFormat::OpenQASM3 ||
-       *parsedOutputFormat == OutputFormat::QIRBase ||
-       *parsedOutputFormat == OutputFormat::QIRAdaptive) &&
-      failed(mqt::requireNoQubitLayout(*program.mod))) {
-    return 1;
-  }
-
   const auto parseCustomPipeline = [&](OpPassManager& pm) {
     auto [anchor, pipeline] = StringRef(passPipeline).trim().split('(');
     if (anchor.rtrim() != ModuleOp::getOperationName() ||
@@ -733,32 +722,35 @@ static int runCompiler(int argc, char** argv) {
   const bool requiresPostQcoPasses =
       *parsedOutputFormat != OutputFormat::QCImport &&
       *parsedOutputFormat != OutputFormat::QCO;
-  if (requiresPostQcoPasses && failed(runPasses([&](OpPassManager& pm) {
-        if (!compilerTarget &&
-            (*parsedOutputFormat == OutputFormat::QIRBase ||
-             *parsedOutputFormat == OutputFormat::QIRAdaptive)) {
-          pm.addPass(createInlinerPass());
-        }
-        if (targetEnvironment) {
-          populateTargetCompilationPipeline(pm, *targetEnvironment,
-                                            options.mapping);
-          return success();
-        }
-        populateQCOCleanupPipeline(pm);
-        if (passPipeline.getNumOccurrences() != 0) {
-          if (failed(parseCustomPipeline(pm))) {
-            return failure();
-          }
-        } else {
-          if (enableDecomposeMultiControlled) {
-            populateDecomposeMultiControlledPipeline(
-                pm, decomposeMultiControlledMinQubits.getValue());
-          }
-          populateDefaultQCOOptimizationPipeline(pm);
-        }
-        populateQCOCleanupPipeline(pm);
-        return success();
-      }))) {
+  if (requiresPostQcoPasses &&
+      failed(runPasses(
+          [&](OpPassManager& pm) {
+            if (!compilerTarget &&
+                (*parsedOutputFormat == OutputFormat::QIRBase ||
+                 *parsedOutputFormat == OutputFormat::QIRAdaptive)) {
+              pm.addPass(createInlinerPass());
+            }
+            if (targetEnvironment) {
+              populateTargetCompilationPipeline(pm, *targetEnvironment,
+                                                options.mapping);
+              return success();
+            }
+            populateQCOCleanupPipeline(pm);
+            if (passPipeline.getNumOccurrences() != 0) {
+              if (failed(parseCustomPipeline(pm))) {
+                return failure();
+              }
+            } else {
+              if (enableDecomposeMultiControlled) {
+                populateDecomposeMultiControlledPipeline(
+                    pm, decomposeMultiControlledMinQubits.getValue());
+              }
+              populateDefaultQCOOptimizationPipeline(pm);
+            }
+            populateQCOCleanupPipeline(pm);
+            return success();
+          },
+          targetEnvironment.has_value()))) {
     return 1;
   }
 

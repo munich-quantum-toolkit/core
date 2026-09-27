@@ -472,7 +472,7 @@ data. Operation durations are absent because they were unavailable. See
 {doc}`../qdmi/sc_device` for their stable IDs and {doc}`../qdmi/configuration`
 for registry configuration.
 
-If the program should use fewer physical qubits, run the {code}`mqt-qubit-reuse`
+If the program should use fewer device qubits, run the {code}`mqt-qubit-reuse`
 pipeline before target compilation.
 
 ## Qiskit export
@@ -485,72 +485,28 @@ target site ID to its index in {py:attr}`~mqt.core.mlir.CompilerTarget.sites`
 and creates a canonical physical Qiskit circuit. The circuit has one register
 named {code}`q` with {py:attr}`~mqt.core.mlir.CompilerTarget.num_sites` qubits.
 Target-aware export requires static qubits whose site IDs belong to that target.
-A program compiled with layout tracking carries its Qiskit layout in the IR.
+Target compilation attaches layout metadata to the program.
 
-## Initial and final qubit layouts
+## Layout metadata
 
-Use `QCOProgram.compile_for_target_with_layout` to choose placement or recover
-logical output positions after routing:
+`compile_for_target` assigns program qubits to device qubits and attaches the
+resulting layout to the QCO program.
 
 ```python
-from mqt.core.mlir import CompilationOptions, MappingOptions, QCProgram
-
 program = QCProgram.from_openqasm_str(bell_qasm).to_qco()
-layout = program.compile_for_target_with_layout(
-    environment,
-    initial_layout=[0, 2],
-    options=CompilationOptions(seed=42, mapping=MappingOptions(trials=4, iterations=2, lookahead=10)),
-)
-print(layout.initial_layout)
-print(layout.final_layout)
-```
-
-The `TargetEnvironment` must contain sites `0` and `2` and support the circuit.
-`initial_layout` supplies one distinct **target site ID** per input qubit, not
-an index into `target.sites`. Omit it or pass `[]` for automatic placement.
-Explicit placement skips trials and refinement; lookahead still controls
-routing.
-
-Both result lists follow entry-block allocation order and ascending tensor
-slots. For tensors of sizes two and one, the order is
-`[first[0], first[1], second[0]]`, regardless of first use. `allocation_sizes`
-records those boundaries. Classical measurement destinations are unchanged.
-
-Idle input slots count against target capacity and remain in the result. Inputs
-must be local entry-block allocations with compile-time constant sizes or
-preplaced static qubits at distinct target sites. Runtime sizes and nested
-allocations are unsupported. An explicit `initial_layout` cannot move preplaced
-qubits. Mixed static and dynamic inputs require adaptive all-to-all placement.
-Qubits removed before this call cannot be recovered. Invalid inputs raise an
-error; do not rely on program contents after failure.
-
-Adaptive all-to-all placement requires retained tensor allocations to have
-static result types, as produced by the Qiskit and OpenQASM frontends.
-
-`routing_permutation` maps each initial physical position to its final position,
-including workspace sites. These are indices into `target.sites`, unlike the
-site IDs in `initial_layout` and `final_layout`. Pass the same target to Qiskit
-export for circuits the exporter supports:
-
-```python
+program.compile_for_target(environment)
 circuit = program.to_qiskit(target=environment.target)
 print(circuit.layout.final_index_layout())
 ```
 
-The compiled QCO program retains the layout through MLIR serialization and
-QC/QCO conversion. Later circuit transformations invalidate it; export then
-requires `discard_layout()`. If the input carries a complete Qiskit layout,
-compilation composes that provenance with the new placement and routing.
-Composition requires complete layout assignments and dynamically allocated input
-wires. An already placed program with static qubits can produce a layout when it
-has no prior layout, but its earlier layout cannot be recomposed after unused
-static qubits have been removed. See
+The attached layout records placement and routing through unused device qubits.
+The Qiskit exporter uses it for circuits it supports. Programs with an attached
+layout must call `discard_layout()` before target compilation; importing an
+existing Qiskit layout and recompiling it is not supported. See
 [transpiler layouts](qiskit.md#transpiler-layouts).
 
-C++ callers use `QCOProgram::compileForTargetWithLayout`. This synchronous call
-requires one entry point directly in the program module and rejects additional
-nested entry points. It returns a result only after native synthesis, target
-conformance, pass-manager verification, and final QCO linearity checks succeed.
-Run ordinary native pipelines with `runWithCompilationOptions` to manage
-imported layout provenance; calling `PassManager::run` directly bypasses that
-policy.
+To retain layout metadata, program qubits need fixed-size allocations in the
+entry block or static references at distinct target sites. Mixed static and
+dynamic qubits require adaptive all-to-all placement. If a program declares more
+qubits than the device but shrinks to fit during compilation, it compiles
+without an attached layout. Later transformations clear layout metadata.

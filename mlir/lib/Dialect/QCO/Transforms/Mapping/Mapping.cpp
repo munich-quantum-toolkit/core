@@ -400,7 +400,7 @@ static LogicalResult placeIndexedAllocations(func::FuncOp function,
     allocations.push_back(&operation);
   }
   if (tracking != nullptr) {
-    tracking->result.initialLayout.assign(tracking->sourceToProgram.size(), -1);
+    tracking->initialLayout.assign(tracking->sourceToProgram.size(), -1);
   }
   IRRewriter rewriter(function.getContext());
   size_t vertex = 0;
@@ -410,17 +410,12 @@ static LogicalResult placeIndexedAllocations(func::FuncOp function,
         mqt::kSourceQubitIndicesAttr);
     size_t slot = 0;
     const auto nextQubit = [&] {
-      CompilerTarget::SiteId site = 0;
-      if (tracking != nullptr && !tracking->requested.empty()) {
-        site = tracking->requested[sources[slot]];
-      } else {
-        while (occupied.contains(target.siteForVertex(vertex))) {
-          ++vertex;
-        }
-        site = target.siteForVertex(vertex++);
+      while (occupied.contains(target.siteForVertex(vertex))) {
+        ++vertex;
       }
+      const auto site = target.siteForVertex(vertex++);
       if (tracking != nullptr) {
-        tracking->result.initialLayout[sources[slot++]] = site;
+        tracking->initialLayout[sources[slot++]] = site;
       }
       return StaticOp::create(rewriter, allocation->getLoc(), site);
     };
@@ -443,61 +438,51 @@ static LogicalResult placeIndexedAllocations(func::FuncOp function,
     rewriter.replaceOp(allocation, tensor.getResult());
   }
   if (tracking != nullptr) {
-    // Removed inputs still need snapshot sites.
-    for (auto [source, site] :
-         llvm::enumerate(tracking->result.initialLayout)) {
+    /// Idle program qubits still need device sites.
+    for (auto& site : tracking->initialLayout) {
       if (site != -1) {
         continue;
       }
-      if (!tracking->requested.empty()) {
-        site = tracking->requested[source];
-      } else {
-        while (occupied.contains(target.siteForVertex(vertex))) {
-          ++vertex;
-        }
-        site = target.siteForVertex(vertex++);
+      while (occupied.contains(target.siteForVertex(vertex))) {
+        ++vertex;
       }
+      site = target.siteForVertex(vertex++);
     }
-    tracking->result.finalLayout = tracking->result.initialLayout;
   }
   return success();
 }
 
-LogicalResult prepareLayout(ModuleOp moduleOp, const CompilerTarget& target,
-                            LayoutTracking& tracking) {
+FailureOr<bool> prepareLayout(ModuleOp moduleOp, const CompilerTarget& target,
+                              LayoutTracking& tracking) {
   auto func = mqt::getEntryPoint(moduleOp);
   if (!func || !llvm::hasSingleElement(func.getBody()) ||
       llvm::any_of(func.getArgumentTypes(), isLinearQubitType)) {
-    moduleOp.emitError("layout tracking requires an entry block with locally "
-                       "allocated qubits");
-    return failure();
+    return false;
   }
   SmallVector<std::pair<Operation*, size_t>> allocations;
   size_t count = 0;
+  bool invalidTags = false;
   const auto validation = moduleOp.walk([&](Operation* op) {
     if (op->hasAttr(mqt::kSourceQubitIndicesAttr)) {
       op->emitError("layout tracking requires input without source tags");
+      invalidTags = true;
       return WalkResult::interrupt();
     }
     if (!isa<AllocOp, qtensor::AllocOp>(op)) {
       return WalkResult::advance();
     }
     if (op->getBlock() != &func.getBody().front()) {
-      op->emitError("layout tracking requires allocations in the entry block");
       return WalkResult::interrupt();
     }
     size_t size = 1;
     if (auto tensor = dyn_cast<qtensor::AllocOp>(op)) {
       auto extent = getConstantIntValue(tensor.getSize());
       if (!extent || *extent < 0) {
-        op->emitError("layout tracking requires fixed allocation sizes");
         return WalkResult::interrupt();
       }
       size = static_cast<size_t>(*extent);
     }
     if (size > target.numSites() - count) {
-      op->emitError("layout tracking requires a target site for every input "
-                    "qubit, including idle qubits");
       return WalkResult::interrupt();
     }
     allocations.emplace_back(op, size);
@@ -505,23 +490,15 @@ LogicalResult prepareLayout(ModuleOp moduleOp, const CompilerTarget& target,
     return WalkResult::advance();
   });
   if (validation.wasInterrupted()) {
-    return failure();
-  }
-  if (!tracking.requested.empty()) {
-    llvm::SmallDenseSet<int64_t> sites;
-    if (tracking.requested.size() != count ||
-        llvm::any_of(tracking.requested, [&](int64_t site) {
-          return !target.vertexForSite(site) || !sites.insert(site).second;
-        })) {
-      func.emitError("initial layout requires one distinct target site ID "
-                     "per input qubit");
+    if (invalidTags) {
       return failure();
     }
+    return false;
   }
   Builder builder(moduleOp.getContext());
   int64_t offset = 0;
   for (auto [op, size] : allocations) {
-    tracking.result.allocationSizes.push_back(size);
+    tracking.allocationSizes.push_back(size);
     SmallVector<int64_t> indices;
     indices.reserve(size);
     for (size_t i = 0; i < size; ++i) {
@@ -532,9 +509,9 @@ LogicalResult prepareLayout(ModuleOp moduleOp, const CompilerTarget& target,
   }
   tracking.sourceToProgram.assign(count, std::numeric_limits<size_t>::max());
   for (auto site : llvm::seq(target.numSites())) {
-    tracking.result.routingPermutation.push_back(site);
+    tracking.routingPermutation.push_back(site);
   }
-  return success();
+  return true;
 }
 
 /// Preserve discovery order; track removed inputs through workspace
@@ -582,17 +559,6 @@ static LogicalResult collectSourceOrder(func::FuncOp func,
     }
   }
   return success();
-}
-
-/// Complete a requested source layout with deterministic workspace placement.
-static Layout requestedLayout(const CompilerTarget& target,
-                              const LayoutTracking& tracking) {
-  auto layout = Layout::identity(target.numSites());
-  for (auto [source, site] : llvm::enumerate(tracking.requested)) {
-    layout.swap(layout.getHardwareIndex(tracking.sourceToProgram[source]),
-                *target.vertexForSite(site));
-  }
-  return layout;
 }
 
 static std::vector<int64_t> sourceLayout(const CompilerTarget& target,
@@ -653,22 +619,15 @@ protected:
       signalPassFailure();
       return;
     }
-    const auto layout =
-        tracking_ != nullptr && !tracking_->requested.empty()
-            ? requestedLayout(target, *tracking_)
-            : Layout::identity(tracking_ != nullptr
-                                   ? tracking_->sourceToProgram.size()
-                                   : computation->wires.size());
+    const auto layout = Layout::identity(tracking_ != nullptr
+                                             ? tracking_->sourceToProgram.size()
+                                             : computation->wires.size());
     if (tracking_ != nullptr) {
-      tracking_->result.initialLayout =
-          sourceLayout(target, layout, *tracking_);
+      tracking_->initialLayout = sourceLayout(target, layout, *tracking_);
     }
     IRRewriter rewriter(&getContext());
     applyPlacement(func.getFunctionBody(), target, layout, *computation,
                    rewriter, false);
-    if (tracking_ != nullptr) {
-      tracking_->result.finalLayout = tracking_->result.initialLayout;
-    }
   }
 
 private:
@@ -988,15 +947,12 @@ protected:
       signalPassFailure();
       return;
     }
-    auto layout = tracking_ != nullptr && !tracking_->requested.empty()
-                      ? requestedLayout(*target, *tracking_)
-                      : generateLayout(wires, infos);
+    auto layout = generateLayout(wires, infos);
 
     if (tracking_ != nullptr) {
-      tracking_->result.initialLayout =
-          sourceLayout(*target, layout, *tracking_);
+      tracking_->initialLayout = sourceLayout(*target, layout, *tracking_);
       for (auto [site, program] :
-           llvm::enumerate(tracking_->result.routingPermutation)) {
+           llvm::enumerate(tracking_->routingPermutation)) {
         program = layout.getProgramIndex(site);
       }
     }
@@ -1016,9 +972,7 @@ protected:
         bundle, arena, &rewriter);
 
     if (tracking_ != nullptr) {
-      tracking_->result.finalLayout =
-          sourceLayout(*target, bundle.layout, *tracking_);
-      for (auto& program : tracking_->result.routingPermutation) {
+      for (auto& program : tracking_->routingPermutation) {
         program = bundle.layout.getHardwareIndex(program);
       }
     }

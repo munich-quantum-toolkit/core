@@ -764,14 +764,14 @@ MQTDialect::verifyOperationAttribute(Operation* operation,
     return success();
   }
   if (attribute.getName() == kSourceQubitIndicesAttr) {
-    int64_t width = 0;
+    int64_t width = -1;
     if (isa<qco::AllocOp>(operation)) {
       width = 1;
     } else if (auto tensor = dyn_cast<qtensor::AllocOp>(operation)) {
-      width = getConstantIntValue(tensor.getSize()).value_or(0);
+      width = getConstantIntValue(tensor.getSize()).value_or(-1);
     }
     auto indices = dyn_cast<DenseI64ArrayAttr>(attribute.getValue());
-    if (width <= 0 || !indices || indices.size() != width) {
+    if (width < 0 || !indices || indices.size() != width) {
       return operation->emitError("source qubit indices require one i64 entry "
                                   "per fixed allocation slot");
     }
@@ -784,39 +784,9 @@ MQTDialect::verifyOperationAttribute(Operation* operation,
     }
     return success();
   }
-  if (attribute.getName() == "mqt.layout" ||
-      attribute.getName() == "mqt.layout_invalidated") {
-    if (!isa<func::FuncOp>(operation) || !isEntryPoint(operation)) {
-      return operation->emitError(
-          "qubit layout metadata is only valid on the program entry point");
-    }
-    auto moduleOp = operation->getParentOfType<ModuleOp>();
-    if (!moduleOp) {
-      return operation->emitError("qubit layout requires a program module");
-    }
-    if (failed(verifyLayoutEntryPoint(moduleOp)) ||
-        getEntryPoint(moduleOp) != operation) {
-      return operation->emitError(
-          "qubit layout must belong to the program module's entry point");
-    }
-    for (auto parent = moduleOp->getParentOfType<ModuleOp>(); parent;
-         parent = parent->getParentOfType<ModuleOp>()) {
-      if (getEntryPoint(parent)) {
-        return operation->emitError(
-            "qubit layout cannot belong to a nested program entry point");
-      }
-    }
-    if (operation->hasAttr("mqt.layout") &&
-        operation->hasAttr("mqt.layout_invalidated")) {
-      return operation->emitError(
-          "retained and invalidated qubit layouts are mutually exclusive");
-    }
-    if (attribute.getName() == "mqt.layout_invalidated") {
-      if (!isa<UnitAttr>(attribute.getValue())) {
-        return operation->emitError(
-            "invalidated qubit layout must be a unit attribute");
-      }
-      return success();
+  if (attribute.getName() == "mqt.layout") {
+    if (!isa<ModuleOp>(operation)) {
+      return operation->emitError("qubit layout belongs on a program module");
     }
     return success(succeeded(QubitLayout::fromAttr(
         attribute.getValue(), [&] { return operation->emitError(); })));

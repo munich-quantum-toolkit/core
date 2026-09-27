@@ -295,7 +295,6 @@ QCProgram::fromModule(std::shared_ptr<MLIRContext> context,
   }
   storage.context->getOrLoadDialect<mqt::MQTDialect>();
   if (failed(verify(*storage.mod)) ||
-      failed(mqt::verifyQubitLayoutOwner(*storage.mod)) ||
       (!mqt::getEntryPoint(*storage.mod) &&
        failed(mqt::verifyQuantumAllocations(*storage.mod)))) {
     return std::nullopt;
@@ -394,7 +393,6 @@ QCOProgram::fromModule(std::shared_ptr<MLIRContext> context,
   }
   storage.context->getOrLoadDialect<mqt::MQTDialect>();
   if (failed(verify(*storage.mod)) ||
-      failed(mqt::verifyQubitLayoutOwner(*storage.mod)) ||
       (!mqt::getEntryPoint(*storage.mod) &&
        failed(mqt::verifyQuantumAllocations(*storage.mod)))) {
     return std::nullopt;

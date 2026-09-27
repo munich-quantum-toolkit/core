@@ -134,7 +134,7 @@ LogicalResult runWithCompilationOptions(PassManager& pm, ModuleOp moduleOp,
                                         const CompilationOptions& options,
                                         bool preservesLayout) {
   if (!preservesLayout) {
-    mqt::invalidateQubitLayout(moduleOp);
+    mqt::discardQubitLayout(moduleOp);
   }
   if (options.enableTiming) {
     pm.enableTiming();

@@ -929,109 +929,32 @@ public:
     if (!nb::isinstance(metadata, transpiler.attr("TranspileLayout"))) {
       throw std::runtime_error("unsupported Qiskit layout metadata");
     }
-    const auto initial = metadata.attr("initial_layout");
-    const auto assignments =
-        nb::cast<nb::dict>(initial.attr("get_virtual_bits")());
-    const auto inputIndices =
-        nb::cast<nb::dict>(metadata.attr("input_qubit_mapping"));
-    std::vector<nb::object> logical(nb::len(inputIndices), nb::none());
-    for (auto [bit, rawIndex] : inputIndices) {
-      size_t index = 0;
-      if (!nb::try_cast(rawIndex, index) || index >= logical.size() ||
-          !logical[index].is_none()) {
-        throw std::runtime_error("Qiskit layout input order must contain "
-                                 "distinct contiguous indices");
-      }
-      logical[index] = nb::borrow<nb::object>(bit);
-    }
-    mlir::mqt::QubitLayout result{.physicalSize = numQubits()};
-    result.initial.assign(logical.size(), -1);
-    for (auto [bit, position] : assignments) {
-      int64_t site = 0;
-      if (!inputIndices.contains(bit) || !nb::try_cast(position, site) ||
-          site < 0) {
-        throw std::runtime_error("Qiskit initial layout contains an unknown "
-                                 "input or invalid position");
-      }
-      result.initial[nb::cast<size_t>(inputIndices[bit])] = site;
-    }
-    result.outputOrder.resize(numQubits());
-    std::iota(result.outputOrder.begin(), result.outputOrder.end(), 0);
-    const auto count = metadata.attr("_input_qubit_count");
-    if (!count.is_none()) {
+    mlir::mqt::QubitLayout result;
+    for (nb::handle site : nb::iter(metadata.attr("initial_index_layout")())) {
       int64_t value = 0;
-      if (!nb::try_cast(count, value)) {
-        throw std::runtime_error("Qiskit layout input count is invalid");
+      if (!nb::try_cast(site, value)) {
+        throw std::runtime_error("Qiskit initial layout must be complete");
       }
-      result.inputCount = value;
+      result.initial.push_back(value);
     }
-    const auto physicalIndex = [&](nb::handle bit) {
-      return pythonUnsignedAttribute(
-          pythonCircuit_.attr("find_bit")(bit), "index",
-          "Qiskit layout refers to a missing circuit qubit");
-    };
-    const auto output = metadata.attr("_output_qubit_list");
-    if (!output.is_none()) {
-      result.outputOrder.clear();
-      for (nb::handle bit : nb::iter(output)) {
-        result.outputOrder.push_back(static_cast<int64_t>(physicalIndex(bit)));
-      }
+    if (result.initial.size() != numQubits()) {
+      throw std::runtime_error("Qiskit initial layout must cover every qubit");
     }
-    const auto final = metadata.attr("final_layout");
-    if (!final.is_none()) {
-      if (output.is_none()) {
-        result.outputOrder.clear();
+    const auto count = metadata.attr("_input_qubit_count");
+    if (count.is_none()) {
+      throw std::runtime_error("Qiskit layout requires an input qubit count");
+    }
+    result.inputCount = nb::cast<int64_t>(count);
+    if (const auto final = metadata.attr("final_layout"); !final.is_none()) {
+      if (metadata.attr("_output_qubit_list").is_none()) {
+        throw std::runtime_error(
+            "Qiskit routing layout requires output qubit order");
       }
-      result.routing.emplace(numQubits(), -1);
-      for (auto [bit, position] :
-           nb::cast<nb::dict>(final.attr("get_virtual_bits")())) {
-        int64_t site = 0;
-        const auto index = physicalIndex(bit);
-        if (index >= result.routing->size() || !nb::try_cast(position, site) ||
-            site < 0) {
-          throw std::runtime_error(
-              "Qiskit final layout contains an invalid position");
-        }
-        (*result.routing)[index] = site;
-        if (output.is_none()) {
-          result.outputOrder.push_back(static_cast<int64_t>(index));
-        }
+      result.routing.emplace();
+      for (nb::handle site : nb::iter(metadata.attr("routing_permutation")())) {
+        result.routing->push_back(nb::cast<int64_t>(site));
       }
     }
-    const auto circuitModule = nb::module_::import_("qiskit.circuit");
-    nb::dict registers;
-    for (nb::handle reg : nb::iter(initial.attr("get_registers")())) {
-      registers[reg] = nb::bool_(true);
-    }
-    for (auto [index, bit] : llvm::enumerate(logical)) {
-      if (!nb::isinstance(bit, circuitModule.attr("Qubit"))) {
-        throw std::runtime_error("Qiskit layout logical inputs must be qubits");
-      }
-      if (nb::isinstance(bit, circuitModule.attr("AncillaQubit"))) {
-        result.ancillas.push_back(static_cast<int64_t>(index));
-      }
-      const auto reg = bit.attr("_register");
-      if (!reg.is_none()) {
-        registers[reg] = nb::bool_(true);
-      }
-    }
-    for (auto [reg, unused] : registers) {
-      mlir::mqt::LayoutRegister group{
-          .name = pythonStringAttribute(reg, "name",
-                                        "Qiskit layout register has no name"),
-          .ancillary =
-              nb::isinstance(reg, circuitModule.attr("AncillaRegister")),
-      };
-      for (nb::handle member : nb::iter(reg)) {
-        group.slots.push_back(inputIndices.contains(member)
-                                  ? nb::cast<int64_t>(inputIndices[member])
-                                  : -1);
-      }
-      result.registers.push_back(std::move(group));
-    }
-    llvm::sort(result.registers, [](const auto& lhs, const auto& rhs) {
-      return lhs.name < rhs.name;
-    });
     return result;
   }
 
@@ -2254,68 +2177,33 @@ public:
 
   void setLayout(const mlir::mqt::QubitLayout& layout) override {
     const auto physical = nb::cast<nb::list>(pythonCircuit_.attr("qubits"));
-    if (nb::len(physical) != static_cast<size_t>(layout.physicalSize)) {
+    if (nb::len(physical) != layout.initial.size()) {
       throw std::runtime_error("qubit layout no longer matches circuit "
                                "resources; discard_layout() before export");
     }
-    const auto circuitModule = nb::module_::import_("qiskit.circuit");
     const auto transpiler = nb::module_::import_("qiskit.transpiler");
-    std::vector<nb::object> logical(layout.initial.size());
-    nb::list registers;
-    for (const auto& group : layout.registers) {
-      const auto reg = circuitModule.attr(group.ancillary ? "AncillaRegister"
-                                                          : "QuantumRegister")(
-          group.slots.size(), group.name);
-      registers.append(reg);
-      for (auto [slot, index] : llvm::enumerate(group.slots)) {
-        if (index >= 0) {
-          logical[static_cast<size_t>(index)] = reg[nb::int_(slot)];
-        }
-      }
-    }
+    const auto circuitModule = nb::module_::import_("qiskit.circuit");
+    const auto input =
+        circuitModule.attr("QuantumRegister")(layout.initial.size(), "input");
     nb::dict initial;
-    nb::dict inputs;
-    for (auto [index, bit] : llvm::enumerate(logical)) {
-      if (!bit.is_valid()) {
-        bit = circuitModule.attr(
-            llvm::is_contained(layout.ancillas, static_cast<int64_t>(index))
-                ? "AncillaQubit"
-                : "Qubit")();
-      }
-      inputs[bit] = nb::int_(index);
-      if (layout.initial[index] >= 0) {
-        initial[bit] = nb::int_(layout.initial[index]);
-      }
-    }
-    auto initialLayout = transpiler.attr("Layout")(initial);
-    for (nb::handle reg : registers) {
-      initialLayout.attr("add_register")(reg);
-      /// add_register fills gaps; retain only the original assignments.
-      for (nb::handle bit : nb::iter(reg)) {
-        if (!initial.contains(bit)) {
-          initialLayout.attr("__delitem__")(bit);
-        }
-      }
+    nb::dict indices;
+    for (auto [index, site] : llvm::enumerate(layout.initial)) {
+      const auto bit = input[nb::int_(index)];
+      initial[bit] = nb::int_(site);
+      indices[bit] = nb::int_(index);
     }
     nb::object final = nb::none();
     if (layout.routing) {
-      nb::dict routing;
-      for (auto [index, site] : llvm::enumerate(*layout.routing)) {
-        if (site >= 0) {
-          routing[physical[index]] = nb::int_(site);
-        }
+      nb::dict positions;
+      for (auto [site, output] : llvm::enumerate(*layout.routing)) {
+        positions[physical[site]] = nb::int_(output);
       }
-      final = transpiler.attr("Layout")(routing);
-    }
-    nb::list output;
-    for (const auto index : layout.outputOrder) {
-      output.append(physical[index]);
+      final = transpiler.attr("Layout")(positions);
     }
     pythonCircuit_.attr("_layout") = transpiler.attr("TranspileLayout")(
-        initialLayout, inputs, final,
-        nb::arg("_input_qubit_count") =
-            layout.inputCount ? nb::cast(*layout.inputCount) : nb::none(),
-        nb::arg("_output_qubit_list") = output);
+        transpiler.attr("Layout")(initial), indices, final,
+        nb::arg("_input_qubit_count") = layout.inputCount,
+        nb::arg("_output_qubit_list") = physical);
   }
 
   void addGate(const StandardGateMapping mapping,

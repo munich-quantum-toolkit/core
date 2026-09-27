@@ -6,11 +6,10 @@
 //
 // Licensed under the MIT License
 
-module {
-  func.func @main() attributes {mqt.entry_point, mqt.layout = {
-  physical_size = 2 : i64, initial = array<i64: 1, 0>,
-  output_order = array<i64: 0, 1>, ancillas = array<i64>, registers = []
-  }} {
+module attributes {mqt.layout = {
+  initial = array<i64: 1, 0>, input_count = 2 : i64
+}} {
+  func.func @main() attributes {mqt.entry_point} {
     %q = memref.alloc() : memref<2x!qc.qubit>
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index

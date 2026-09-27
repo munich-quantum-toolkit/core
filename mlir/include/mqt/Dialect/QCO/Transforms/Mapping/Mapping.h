@@ -10,18 +10,17 @@
 
 #pragma once
 
-#include "mqt/Compiler/TargetCompilation.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 
 #include "mlir/Pass/Pass.h"
 #include "mlir/Support/LogicalResult.h"
 
-#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 namespace mlir {
 
@@ -30,17 +29,17 @@ class ModuleOp;
 
 namespace qco {
 
-/// Scratch state owned by one synchronous compileForTargetWithLayout call.
-/// Passes borrow it for that invocation only; do not nest or reuse them.
+/// State shared by preparation and placement during one compilation.
 struct LayoutTracking {
-  llvm::ArrayRef<int64_t> requested;
-  MappingResult result;
+  std::vector<size_t> allocationSizes;
+  std::vector<int64_t> initialLayout;
+  std::vector<size_t> routingPermutation;
   llvm::SmallVector<size_t> sourceToProgram;
 };
 /// Record input slots during target preparation.
-[[nodiscard]] LogicalResult prepareLayout(ModuleOp moduleOp,
-                                          const CompilerTarget& target,
-                                          LayoutTracking& tracking);
+[[nodiscard]] FailureOr<bool> prepareLayout(ModuleOp moduleOp,
+                                            const CompilerTarget& target,
+                                            LayoutTracking& tracking);
 std::unique_ptr<Pass> createMappingPass(const MappingPassOptions& options,
                                         LayoutTracking* tracking);
 

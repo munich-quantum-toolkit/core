@@ -20,7 +20,6 @@
 
 #include <cstdint>
 #include <optional>
-#include <string>
 #include <vector>
 
 namespace mlir::mqt {
@@ -29,28 +28,14 @@ namespace mlir::mqt {
 inline constexpr llvm::StringLiteral kSourceQubitIndicesAttr =
     "mqt.source_qubit_indices";
 
-/// Source register slots refer to logical inputs; -1 denotes an absent input.
-struct LayoutRegister {
-  std::string name;
-  std::vector<int64_t> slots;
-  bool ancillary = false;
-};
-
-/// Circuit-wire provenance; see the MQT dialect reference for the schema.
+/// Layout metadata; see the MQT dialect reference for the schema.
 ///
-/// initial maps logical inputs to physical positions; outputOrder maps those
-/// positions to circuit wires. final[i] = routing[outputOrder[initial[i]]], or
-/// initial[i] when routing is absent. Missing assignments use -1.
-/// Register slots and ancillas index logical inputs; inputCount excludes
-/// workspace.
+/// initial maps program qubits to device positions. routing maps those
+/// positions to final device positions. inputCount excludes workspace qubits.
 struct QubitLayout {
-  int64_t physicalSize = 0;
   std::vector<int64_t> initial;
   std::optional<std::vector<int64_t>> routing;
-  std::vector<int64_t> outputOrder;
-  std::optional<int64_t> inputCount;
-  std::vector<int64_t> ancillas;
-  std::vector<LayoutRegister> registers;
+  int64_t inputCount = 0;
 
   [[nodiscard]] DictionaryAttr toAttr(MLIRContext* context) const;
   [[nodiscard]] static FailureOr<QubitLayout>
@@ -58,17 +43,7 @@ struct QubitLayout {
            llvm::function_ref<InFlightDiagnostic()> emitError);
 };
 
-/// Require one entry point directly in the module and no nested entry points.
-[[nodiscard]] LogicalResult verifyLayoutEntryPoint(ModuleOp moduleOp);
-
-/// Require any layout provenance to belong to this program's sole entry point.
-[[nodiscard]] LogicalResult verifyQubitLayoutOwner(ModuleOp moduleOp);
-
-/// Invalidate retained layout provenance on the program entry point.
-void invalidateQubitLayout(ModuleOp moduleOp);
-/// Discard retained and invalidated layout provenance on the entry point.
+/// Discard layout metadata on the program module.
 void discardQubitLayout(ModuleOp moduleOp);
-/// Reject entry-point layout provenance at an output boundary.
-[[nodiscard]] LogicalResult requireNoQubitLayout(ModuleOp moduleOp);
 
 } // namespace mlir::mqt

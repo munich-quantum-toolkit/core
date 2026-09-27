@@ -212,16 +212,6 @@ bool QCOProgram::decomposeMultiControlled(uint64_t minQubits) {
       "failed to decompose multi-controlled gates"));
 }
 
-bool QCOProgram::compileForTarget(const TargetEnvironment& environment,
-                                  const CompilationOptions& options) {
-  return succeeded(runQCOTransformPasses(
-      mod(),
-      [&environment, &options](OpPassManager& pm) {
-        populateTargetCompilationPipeline(pm, environment, options.mapping);
-      },
-      "failed to compile the QCO program for the target", options));
-}
-
 bool QCOProgram::synthesizeForTarget(const TargetEnvironment& environment,
                                      const CompilationOptions& options) {
   return succeeded(runQCOTransformPasses(
@@ -229,7 +219,7 @@ bool QCOProgram::synthesizeForTarget(const TargetEnvironment& environment,
       [&environment, &options](OpPassManager& pm) {
         populateTargetSynthesisPipeline(pm, environment, options.mapping);
       },
-      "failed to synthesize the QCO program for the target", options));
+      "failed to synthesize the QCO program for the target", options, true));
 }
 
 std::optional<QCProgram> QCOProgram::intoQC() && {
@@ -301,9 +291,6 @@ bool JeffProgram::cleanup() {
 }
 
 std::vector<std::byte> JeffProgram::toBytes() const {
-  if (failed(mqt::requireNoQubitLayout(mod()))) {
-    return {};
-  }
   const auto serialized = serialize(mod());
   const auto bytes = serialized.asBytes();
   std::vector<std::byte> result(bytes.size());
@@ -312,9 +299,6 @@ std::vector<std::byte> JeffProgram::toBytes() const {
 }
 
 bool JeffProgram::write(const std::filesystem::path& path) const {
-  if (failed(mqt::requireNoQubitLayout(mod()))) {
-    return false;
-  }
   if (failed(serializeToFile(mod(), path.string()))) {
     mod().emitError() << "failed to write jeff file '" << path.string() << "'";
     return false;
@@ -356,9 +340,6 @@ QIRProfile QIRProgram::profile() const noexcept { return profile_; }
 
 [[nodiscard]] static std::unique_ptr<llvm::Module>
 translateToLLVM(ModuleOp mod, llvm::LLVMContext& context) {
-  if (failed(mqt::requireNoQubitLayout(mod))) {
-    return nullptr;
-  }
   auto llvmModule = translateModuleToLLVMIR(mod, context);
   if (!llvmModule) {
     mod.emitError("failed to translate QIR MLIR to LLVM IR");

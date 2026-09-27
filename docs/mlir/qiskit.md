@@ -40,7 +40,7 @@ captures. Parameters and parameter vectors are created once per export.
 | Parameter-vector elements                                               | Supported            | Supported                          |
 | Dense numeric unitaries up to eight qubits                              | Supported            | Supported                          |
 | Register aliases or interleaved membership                              | Rejected             | Rejected                           |
-| Transpiler layout metadata                                              | Preserved            | Reconstructed when still valid     |
+| Complete transpiler layout metadata                                     | Preserved            | Reconstructed when still valid     |
 
 Classical-expression variables may refer to Clbits or ClassicalRegisters in the
 containing circuit. This includes values used only by the condition or switch
@@ -185,55 +185,23 @@ Other powers require canonicalization or synthesis.
 
 ### Transpiler layouts
 
-Qiskit's `TranspileLayout` records two maps: the initial placement of logical
-inputs and the final permutation of physical wires caused by routing. Its
-`final_index_layout()` composes them to give each input's final position.
-
-Import stores this provenance as `mqt.layout` on the program's sole
-`mqt.entry_point` function. Export reconstructs it without moving gates to
-different wires. Copies, MLIR serialization, and QC/QCO conversions preserve it.
-Compiler transformations invalidate it; export then requires `discard_layout()`.
-Discard changes only metadata.
+A complete Qiskit `TranspileLayout` maps program qubits to device qubits and
+records routing. Import stores those numeric maps as `mqt.layout` on the program
+module; export constructs a Qiskit layout from them. Copies, MLIR serialization,
+and QC/QCO conversions preserve the metadata. Other compiler transformations
+clear it.
 
 ```python
 program = QCProgram.from_qiskit(transpiled_circuit)
 restored = program.copy().to_qco().to_qc().to_qiskit()
-program.discard_layout()
-source = program.to_openqasm3().source
 ```
 
-Native target compilation retains a complete layout in the program, including
-the routing permutation of workspace qubits:
-
-```python
-program = QCProgram.from_qiskit(circuit).to_qco()
-program.compile_for_target_with_layout(target_environment)
-compiled = program.to_qiskit(target=target_environment.target)
-final_positions = compiled.layout.final_index_layout()
-```
-
-Layout positions follow target site order; they are not target site IDs. An
-imported layout retains its logical input identities and register structure;
-native placement and routing update their physical positions. With no imported
-layout, logical inputs follow allocation order and additional physical wires
-appear as ancillas. The compiled layout survives MLIR serialization and QC/QCO
-conversion. Without retained provenance, export leaves `circuit.layout` unset.
-Compilation requires a complete imported layout to compose placements and
-routing; partial layouts remain available for import and export without native
-recompilation.
-
-Imported layouts may contain partial assignments, unused positions, loose or
-ancillary qubits, source registers, and independent output-wire ordering. Input
-indices must be contiguous and unique, and physical positions must exist.
-Partial final maps require complete output-wire ordering. Missing assignments
-remain missing; Qiskit helpers that require total layouts can reject them. Bare
-`Layout` objects and malformed metadata are rejected.
-
-OpenQASM, QIR/LLVM, and jeff require `discard_layout()` before exporting
-retained or invalidated provenance. C++ callers use `Program::discardLayout()`;
-the CLI uses `mqt-cc --discard-layout`. Pass authors must preserve, update, or
-invalidate layouts when changing wire identity or order; see the
-{doc}`MQT dialect <MQT>` for the schema and lifetime rules.
+Target compilation rejects programs with an attached layout. Call
+`discard_layout()` to compile the current circuit as a new program. The numeric
+mapping does not retain Qiskit input register names or input ancilla labels;
+incomplete layouts are unsupported. See {doc}`MQT dialect <MQT>` for the
+metadata schema and {doc}`target compilation <target_compilation>` for
+placement.
 
 Names passed between Qiskit and the compiler must not contain NUL characters.
 The importer checks names before native access. Arithmetic-progression loop

@@ -93,7 +93,7 @@ public:
   /// module. Consuming or destroying the program invalidates the operation.
   [[nodiscard]] ModuleOp module() const;
 
-  /// Explicitly discard retained or invalidated layout provenance.
+  /// Discard layout metadata.
   void discardLayout();
 
 protected:
@@ -273,23 +273,11 @@ public:
   /// (@p minQubits must be at least 3; default 3 means wider than two-qubit).
   [[nodiscard]] bool decomposeMultiControlled(uint64_t minQubits = 3);
 
-  /// Compile this program for a target in place.
-  ///
+  /// Compile for a target and attach layout metadata when possible.
+  /// Programs with an attached layout are rejected.
   /// Do not rely on the program contents if compilation fails.
   [[nodiscard]] bool compileForTarget(const TargetEnvironment& environment,
                                       const CompilationOptions& options = {});
-
-  /// Compile in place and return a snapshot of the input-to-site layouts.
-  ///
-  /// Requires one entry point with fixed-size local entry-block allocations.
-  /// Supply one distinct target site ID per input, including idle inputs, or
-  /// leave initialLayout empty for automatic placement. Returns a result only
-  /// after the complete pipeline and final linearity verification succeed.
-  /// Do not rely on the program contents if compilation fails.
-  [[nodiscard]] std::optional<MappingResult>
-  compileForTargetWithLayout(const TargetEnvironment& environment,
-                             llvm::ArrayRef<int64_t> initialLayout = {},
-                             const CompilationOptions& options = {});
 
   /// Synthesize native operations for an all-to-all target in place.
   ///
