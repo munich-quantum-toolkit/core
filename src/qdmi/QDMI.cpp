@@ -271,6 +271,7 @@ template <class Function>
   LOAD_CLIENT_SYMBOL(job_set_parameter);
   LOAD_CLIENT_SYMBOL(job_set_programs);
   LOAD_CLIENT_SYMBOL(job_get_program);
+  LOAD_CLIENT_SYMBOL(job_get_program_status);
   LOAD_CLIENT_SYMBOL(job_query_property);
   LOAD_CLIENT_SYMBOL(job_submit);
   LOAD_CLIENT_SYMBOL(job_cancel);
@@ -1020,17 +1021,28 @@ size_t Job::getNumPrograms() const {
   return count;
 }
 
+std::optional<QDMI_Job_Status>
+Job::getProgramStatus(const size_t programIndex) const {
+  QDMI_Job_Status status{};
+  const auto result =
+      api().job_get_program_status(job_.get(), programIndex, &status);
+  if (result == QDMI_ERROR_NOTSUPPORTED) {
+    return std::nullopt;
+  }
+  qdmi::throwIfError(result, "Querying program status");
+  return status;
+}
+
 std::optional<std::vector<QDMI_Job_Status>> Job::getProgramStatuses() const {
-  auto statuses =
-      detail::queryProperty<std::optional<std::vector<QDMI_Job_Status>>>(
-          [&](size_t size, void* value, size_t* sizeRet) {
-            return api().job_query_property(job_.get(),
-                                            QDMI_JOB_PROPERTY_PROGRAMSTATUSES,
-                                            size, value, sizeRet);
-          },
-          "Querying program statuses", "Querying program status size");
-  if (statuses && statuses->size() != getNumPrograms()) {
-    throw std::runtime_error("Program status count does not match the job");
+  std::vector<QDMI_Job_Status> statuses;
+  const auto count = getNumPrograms();
+  statuses.reserve(count);
+  for (size_t i = 0; i < count; ++i) {
+    const auto status = getProgramStatus(i);
+    if (!status) {
+      return std::nullopt;
+    }
+    statuses.push_back(*status);
   }
   return statuses;
 }

@@ -400,6 +400,9 @@ when the custom slot is unsupported.)pb");
   job.def_prop_ro("num_programs", &qdmi::Job::getNumPrograms,
                   nb::call_guard<nb::gil_scoped_release>(),
                   "The number of programs in input order.");
+  job.def("get_program_status", &qdmi::Job::getProgramStatus, "program_index"_a,
+          nb::call_guard<nb::gil_scoped_release>(),
+          "Return one program outcome, or None when unsupported.");
   job.def_prop_ro("program_statuses", &qdmi::Job::getProgramStatuses,
                   nb::call_guard<nb::gil_scoped_release>(),
                   "Individual outcomes, or None when unsupported.");

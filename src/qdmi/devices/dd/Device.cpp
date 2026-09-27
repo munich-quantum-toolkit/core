@@ -651,6 +651,22 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getProgram(const size_t programIndex,
   }
   return QDMI_SUCCESS;
 }
+auto MQT_DDSIM_QDMI_Device_Job_impl_d::getProgramStatus(
+    const size_t programIndex, QDMI_Job_Status* status) const -> QDMI_STATUS {
+  if (status == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  const std::scoped_lock lock(execution_->mutex);
+  if (programs_.empty()) {
+    return QDMI_ERROR_BADSTATE;
+  }
+  if (programIndex >= programs_.size()) {
+    return QDMI_ERROR_OUTOFRANGE;
+  }
+  *status = execution_->programs[programIndex].status;
+  return QDMI_SUCCESS;
+}
+
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::queryProperty(
     const QDMI_Device_Job_Property prop, const size_t size, void* value,
     size_t* sizeRet) const -> QDMI_STATUS {
@@ -660,8 +676,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::queryProperty(
   }
   const std::scoped_lock lock(execution_->mutex);
   if (programs_.empty() && (prop == QDMI_DEVICE_JOB_PROPERTY_PROGRAM ||
-                            prop == QDMI_DEVICE_JOB_PROPERTY_PROGRAMSNUM ||
-                            prop == QDMI_DEVICE_JOB_PROPERTY_PROGRAMSTATUSES)) {
+                            prop == QDMI_DEVICE_JOB_PROPERTY_PROGRAMSNUM)) {
     return QDMI_ERROR_BADSTATE;
   }
   if (prop == QDMI_DEVICE_JOB_PROPERTY_PROGRAMFORMAT &&
@@ -678,15 +693,6 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::queryProperty(
                             numShots_, prop, size, value, sizeRet)
   ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_JOB_PROPERTY_PROGRAMSNUM, size_t,
                             programs_.size(), prop, size, value, sizeRet)
-  if (prop == QDMI_DEVICE_JOB_PROPERTY_PROGRAMSTATUSES) {
-    std::vector<QDMI_Job_Status> statuses;
-    statuses.reserve(execution_->programs.size());
-    for (const auto& program : execution_->programs) {
-      statuses.push_back(program.status);
-    }
-    ADD_LIST_PROPERTY(QDMI_DEVICE_JOB_PROPERTY_PROGRAMSTATUSES, QDMI_Job_Status,
-                      statuses, prop, size, value, sizeRet)
-  }
   if (programs_.size() == 1) {
     const auto& program = programs_.front();
     if (format_ != QDMI_PROGRAM_FORMAT_QIRBASEMODULE &&
@@ -1259,6 +1265,13 @@ int MQT_DDSIM_QDMI_device_job_get_program(MQT_DDSIM_QDMI_Device_Job job,
                                           size_t* sizeRet) {
   return job == nullptr ? QDMI_ERROR_INVALIDARGUMENT
                         : job->getProgram(programIndex, size, data, sizeRet);
+}
+
+int MQT_DDSIM_QDMI_device_job_get_program_status(MQT_DDSIM_QDMI_Device_Job job,
+                                                 const size_t programIndex,
+                                                 QDMI_Job_Status* status) {
+  return job == nullptr ? QDMI_ERROR_INVALIDARGUMENT
+                        : job->getProgramStatus(programIndex, status);
 }
 
 int MQT_DDSIM_QDMI_device_job_query_property(

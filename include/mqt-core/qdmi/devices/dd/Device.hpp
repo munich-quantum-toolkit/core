@@ -188,6 +188,10 @@ public:
   auto getProgram(size_t programIndex, size_t size, void* data,
                   size_t* sizeRet) const -> QDMI_STATUS;
 
+  /// Queries one program status.
+  auto getProgramStatus(size_t programIndex, QDMI_Job_Status* status) const
+      -> QDMI_STATUS;
+
   /// Queries a property of the job.
   /// @see MQT_DDSIM_QDMI_device_job_query_property
   auto queryProperty(QDMI_Device_Job_Property prop, size_t size, void* value,

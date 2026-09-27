@@ -172,6 +172,9 @@ class Job:
     def num_programs(self) -> int:
         """The number of programs in input order."""
 
+    def get_program_status(self, program_index: int) -> Job.Status | None:
+        """Return one program outcome, or None when unsupported."""
+
     @property
     def program_statuses(self) -> list[Job.Status] | None:
         """Individual outcomes, or None when unsupported."""

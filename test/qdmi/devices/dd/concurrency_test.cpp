@@ -175,22 +175,22 @@ TEST(Concurrency, NativeProgramsRunConcurrentlyAndCancelQueuedWork) {
   const size_t count = static_cast<size_t>(limit) + 1;
   qdmi_test::ControlledJob running{job.job, count, limit};
   std::vector<QDMI_Job_Status> statuses(count);
-  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_query_property(
-                job.job, QDMI_DEVICE_JOB_PROPERTY_PROGRAMSTATUSES,
-                statuses.size() * sizeof(QDMI_Job_Status), statuses.data(),
-                nullptr),
-            QDMI_SUCCESS);
+  for (size_t i = 0; i < statuses.size(); ++i) {
+    ASSERT_EQ(
+        MQT_DDSIM_QDMI_device_job_get_program_status(job.job, i, &statuses[i]),
+        QDMI_SUCCESS);
+  }
   EXPECT_EQ(
       std::count(statuses.begin(), statuses.end(), QDMI_JOB_STATUS_RUNNING),
       limit);
   EXPECT_EQ(statuses.back(), QDMI_JOB_STATUS_QUEUED);
   ASSERT_EQ(MQT_DDSIM_QDMI_device_job_cancel(job.job), QDMI_SUCCESS);
   running.canceled();
-  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_query_property(
-                job.job, QDMI_DEVICE_JOB_PROPERTY_PROGRAMSTATUSES,
-                statuses.size() * sizeof(QDMI_Job_Status), statuses.data(),
-                nullptr),
-            QDMI_SUCCESS);
+  for (size_t i = 0; i < statuses.size(); ++i) {
+    ASSERT_EQ(
+        MQT_DDSIM_QDMI_device_job_get_program_status(job.job, i, &statuses[i]),
+        QDMI_SUCCESS);
+  }
   EXPECT_TRUE(std::ranges::all_of(statuses, [](auto status) {
     return status == QDMI_JOB_STATUS_CANCELED;
   }));
