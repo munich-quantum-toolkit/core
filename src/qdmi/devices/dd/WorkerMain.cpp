@@ -34,9 +34,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
+#include <future>
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <random>
 #include <span>
 #include <sstream>
 #include <string>
@@ -48,7 +50,6 @@ namespace {
 [[nodiscard]] auto parseQASMToQCO(const std::string_view source)
     -> std::optional<mlir::QCOProgram> {
   auto context = mlir::createCompilerContext();
-  context->disableMultithreading();
   auto moduleOp = mlir::qc::translateOpenQASMToQC(source, context.get());
   if (!moduleOp) {
     return std::nullopt;
@@ -66,6 +67,8 @@ struct Execution {
   size_t numShots_;
   std::optional<uint64_t> seed_;
   bool captureQIROutput_;
+  size_t workerSlots_;
+  bool automaticWorkers_;
   std::optional<std::string> qirOutput_;
   std::vector<std::string> shots_;
   std::unique_ptr<dd::Package> dd_;
@@ -83,9 +86,10 @@ struct Execution {
     }
     if (numShots_ != 0) {
       mlir::qco::DDSamplingState retainedState;
-      if (mlir::failed(mlir::qco::sample(
-              entryPoint, numShots_, seed_.value_or(0),
-              mlir::qco::DDArgumentBindings{}, &shots_, &retainedState))) {
+      if (mlir::failed(
+              mlir::qco::sample(entryPoint, numShots_, seed_.value_or(0),
+                                mlir::qco::DDArgumentBindings{}, &shots_,
+                                &retainedState, {}, workerSlots_))) {
         return false;
       }
       dd_ = std::move(retainedState.dd);
@@ -115,13 +119,89 @@ struct Execution {
       runtime.disableOutput();
     }
     bool stateAvailable = !sampling;
-    const auto rc = sampling
-                        ? jitSession.sample(numShots_, shots_, &stateAvailable)
-                        : jitSession.run();
-    if (rc != 0) {
-      std::cerr << "QIR program returned exit code " + std::to_string(rc)
-                << '\n';
-      return false;
+    const bool large = jitSession.canShareCompiledCode() &&
+                       jitSession.quantumCallSites() >= 32;
+    const size_t automatic =
+        std::clamp(numShots_ / (large ? 32 : 256), size_t{1},
+                   large ? size_t{32} : size_t{8});
+    size_t workers = 1;
+    if (sampling && !jitSession.canSampleTerminal()) {
+      workers =
+          automaticWorkers_ ? std::min(workerSlots_, automatic) : workerSlots_;
+    }
+    if (workers == 1) {
+      const auto rc =
+          sampling ? jitSession.sample(numShots_, shots_, &stateAvailable)
+                   : jitSession.run();
+      if (rc != 0) {
+        std::cerr << "QIR program returned exit code " << rc << '\n';
+        return false;
+      }
+    } else {
+      std::mt19937_64 rng(seed_.value_or(std::random_device{}()));
+      std::vector<uint64_t> workerSeeds(workers);
+      for (size_t i = 1; i < workers; ++i) {
+        workerSeeds[i] = rng();
+      }
+      std::vector<std::vector<std::string>> parts(workers);
+      std::vector<std::string> records(workers);
+      std::vector<std::future<int64_t>> tasks;
+      tasks.reserve(workers);
+      const bool shareCode = jitSession.canShareCompiledCode();
+      for (size_t i = 0; i < workers; ++i) {
+        tasks.push_back(std::async(std::launch::async, [&, i] {
+          std::unique_ptr<qir::JitSession> peer;
+          std::unique_ptr<qir::Runtime> workerRuntime;
+          if (i != 0 && shareCode) {
+            workerRuntime = jitSession.makeWorkerRuntime(workerSeeds[i]);
+          } else if (i != 0) {
+            peer = std::make_unique<qir::JitSession>(
+                irBytes, "QDMI job", qir::Execution::Sampling, workerSeeds[i]);
+          }
+          qir::Runtime* worker = &runtime;
+          if (workerRuntime) {
+            worker = workerRuntime.get();
+          } else if (peer) {
+            worker = &peer->runtime();
+          }
+          std::ostringstream localOutput;
+          if (i != 0) {
+            if (captureQIROutput_) {
+              worker->setOstream(localOutput);
+            } else {
+              worker->disableOutput();
+            }
+          }
+          const size_t count = (numShots_ / workers) +
+                               static_cast<size_t>(i < numShots_ % workers);
+          const auto code = workerRuntime
+                                ? jitSession.sampleWithRuntime(*worker, count,
+                                                               parts[i], false)
+                                : (i == 0 ? jitSession : *peer)
+                                      .sample(count, parts[i], nullptr, i == 0);
+          if (i != 0 && captureQIROutput_) {
+            records[i] = std::move(localOutput).str();
+          }
+          return code;
+        }));
+      }
+      int64_t firstError = 0;
+      for (size_t i = 0; i < workers; ++i) {
+        const auto code = tasks[i].get();
+        if (firstError == 0 && code != 0) {
+          firstError = code;
+        }
+        shots_.insert(shots_.end(), parts[i].begin(), parts[i].end());
+      }
+      if (firstError != 0) {
+        std::cerr << "QIR program returned exit code " << firstError << '\n';
+        return false;
+      }
+      if (output) {
+        for (size_t i = 1; i < workers; ++i) {
+          *output << records[i];
+        }
+      }
     }
     if (output) {
       qirOutput_ = std::move(*output).str();
@@ -146,6 +226,8 @@ qdmi::dd::WorkerResponse execute(const qdmi::dd::WorkerRequest& request) {
       .numShots_ = static_cast<size_t>(request.shots),
       .seed_ = request.seed,
       .captureQIROutput_ = request.captureOutput,
+      .workerSlots_ = static_cast<size_t>(request.workerSlots),
+      .automaticWorkers_ = request.automaticWorkers,
   };
   const bool qasm = request.format == QDMI_PROGRAM_FORMAT_QASM2 ||
                     request.format == QDMI_PROGRAM_FORMAT_QASM3;

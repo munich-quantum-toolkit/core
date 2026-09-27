@@ -162,6 +162,8 @@ private:
   size_t numShots_ = 1024;
   std::optional<int> seed_;
   bool captureQIROutput_ = false;
+  /// Maximum shot workers per program; zero selects automatic allocation.
+  size_t maxWorkers_ = 0;
   std::shared_ptr<qdmi::dd::Execution> execution_;
 
 public:

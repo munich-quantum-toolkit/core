@@ -997,7 +997,13 @@ TEST_F(DDSimulatorDeviceTest, SubmitJobCustomSupportedTypes) {
                std::invalid_argument);
   EXPECT_THROW(submitWithCustoms(42, 2), std::invalid_argument);
   EXPECT_THROW(submitWithCustoms(3.14, 2), std::invalid_argument);
-  for (size_t i = 3; i <= 5; ++i) {
+  EXPECT_NO_THROW(std::ignore =
+                      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3,
+                                       10, std::nullopt, std::nullopt, 4));
+  EXPECT_THROW(submitWithCustoms(std::string("custom"), 3),
+               std::invalid_argument);
+  EXPECT_THROW(submitWithCustoms(true, 3), std::invalid_argument);
+  for (size_t i = 4; i <= 5; ++i) {
     submitWithCustoms(std::string("custom"), i);
     submitWithCustoms(42, i);
     submitWithCustoms(3.14, i);

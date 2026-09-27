@@ -87,7 +87,31 @@ public:
   /// leaves an uncollapsed state. The caller may then use runtime().takeState()
   /// before executing the session again.
   int64_t sample(size_t shots, std::vector<std::string>& results,
-                 bool* stateAvailable = nullptr);
+                 bool* stateAvailable = nullptr, bool emitHeader = true);
+
+  /// Whether sampling may share the compiled entry point. Eligible modules
+  /// have only constant globals and calls to the QIR runtime or LLVM
+  /// intrinsics.
+  [[nodiscard]] bool canShareCompiledCode() const;
+
+  /// Number of direct quantum instruction calls in the loaded module.
+  [[nodiscard]] size_t quantumCallSites() const { return quantumCallSites_; }
+
+  /// Create a seeded runtime for one worker. Keep this session alive until all
+  /// workers finish; each runtime and its output stream belong to one worker.
+  /// Throws std::logic_error when the module is not eligible.
+  [[nodiscard]] std::unique_ptr<Runtime> makeWorkerRuntime(uint64_t seed) const;
+
+  /// Sample with a worker runtime without changing this session's runtime.
+  /// Concurrent calls require separate runtimes from makeWorkerRuntime().
+  /// Throws std::logic_error when a separate runtime is not eligible.
+  int64_t sampleWithRuntime(Runtime& runtime, size_t shots,
+                            std::vector<std::string>& results,
+                            bool emitHeader = true,
+                            bool* stateAvailable = nullptr);
+
+  /// Whether the current output mode can use one retained terminal state.
+  [[nodiscard]] bool canSampleTerminal() const;
 
   [[nodiscard]] auto runtime() -> Runtime&;
 
@@ -97,7 +121,11 @@ private:
   EntryPointFn* entryPointFn_ = nullptr;
   std::optional<std::vector<uintptr_t>> samplingOutputs_;
   bool initializesRuntime_ = false;
+  bool shareCompiledCode_ = false;
+  size_t quantumCallSites_ = 0;
   Execution execution_;
+
+  int64_t runWithRuntime(Runtime& runtime);
 
   /// Initializes the native target, asm printer and asm parser.
   /// Safe to call multiple times; the work runs only on the first call.

@@ -31,11 +31,13 @@
 #include <array>
 #include <atomic>
 #include <cassert>
+#include <charconv>
 #include <chrono>
 #include <complex>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <exception>
 #include <iostream>
@@ -47,10 +49,12 @@
 #include <numeric>
 #include <optional>
 #include <ranges>
+#include <semaphore>
 #include <span>
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -300,8 +304,24 @@ struct Execution {
 
 namespace {
 struct Executor {
+  const size_t limit = [] {
+    const size_t hardware = std::max(
+        1U, llvm::heavyweight_hardware_concurrency().compute_thread_count());
+    if (const char* raw = std::getenv("MQT_CORE_DD_WORKER_BUDGET")) {
+      const std::string_view value(raw);
+      size_t parsed = 0;
+      const auto [end, error] =
+          std::from_chars(value.begin(), value.end(), parsed);
+      if (error == std::errc{} && end == value.end() && parsed > 0) {
+        return std::min(parsed, hardware);
+      }
+    }
+    return hardware;
+  }();
+  std::counting_semaphore<> slots{static_cast<ptrdiff_t>(limit)};
   WorkerPool workers;
-  llvm::DefaultThreadPool threads{llvm::heavyweight_hardware_concurrency()};
+  llvm::DefaultThreadPool threads{
+      llvm::heavyweight_hardware_concurrency(static_cast<unsigned>(limit))};
 
   ~Executor() { workers.shutdown(); }
 };
@@ -549,6 +569,23 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::setParameter(
     }
     captureQIROutput_ = *static_cast<const bool*>(value);
     return QDMI_SUCCESS;
+  case QDMI_DEVICE_JOB_PARAMETER_CUSTOM3:
+    if (value == nullptr) {
+      return QDMI_SUCCESS;
+    }
+    if (size == sizeof(int)) {
+      const auto requested = *static_cast<const int*>(value);
+      if (requested < 0) {
+        return QDMI_ERROR_INVALIDARGUMENT;
+      }
+      maxWorkers_ = static_cast<size_t>(requested);
+      return QDMI_SUCCESS;
+    }
+    if (size == sizeof(size_t)) {
+      maxWorkers_ = *static_cast<const size_t*>(value);
+      return QDMI_SUCCESS;
+    }
+    return QDMI_ERROR_INVALIDARGUMENT;
   default:
     return QDMI_ERROR_NOTSUPPORTED;
   }
@@ -687,6 +724,21 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
     return QDMI_ERROR_NOTSUPPORTED;
   }
   auto& executor = qdmi::dd::executor();
+  const size_t perProgramLimit =
+      std::max(size_t{1}, executor.limit / programs_.size());
+  const bool qir = format_ == QDMI_PROGRAM_FORMAT_QIRBASESTRING ||
+                   format_ == QDMI_PROGRAM_FORMAT_QIRBASEMODULE ||
+                   format_ == QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING ||
+                   format_ == QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE;
+  const size_t automatic = numShots_ == 0
+                               ? 1
+                               : std::clamp(numShots_ / (qir ? 32 : 256),
+                                            size_t{1}, qir ? size_t{32} : 8);
+  const size_t desired = std::min({
+      maxWorkers_ == 0 ? automatic : maxWorkers_,
+      perProgramLimit,
+      std::max(size_t{1}, numShots_),
+  });
   execution->remaining = programs_.size();
   execution->status = QDMI_JOB_STATUS_QUEUED;
   for (auto& program : execution->programs) {
@@ -700,9 +752,14 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
           .shots = numShots_,
           .seed = seed_,
           .captureOutput = captureQIROutput_,
+          .automaticWorkers = maxWorkers_ == 0,
       };
       executor.threads.async([execution, index, request = std::move(request),
-                              &executor] {
+                              desired, &executor]() mutable {
+        executor.slots.acquire();
+        size_t grant = 1;
+        const llvm::scope_exit releaseSlots(
+            [&] { executor.slots.release(static_cast<ptrdiff_t>(grant)); });
         std::shared_ptr<qdmi::dd::Worker> worker;
         {
           const std::scoped_lock guard(execution->mutex);
@@ -713,6 +770,10 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
           program.status = QDMI_JOB_STATUS_RUNNING;
           execution->status = QDMI_JOB_STATUS_RUNNING;
         }
+        while (grant < desired && executor.slots.try_acquire()) {
+          ++grant;
+        }
+        request.workerSlots = grant;
         auto& device = qdmi::dd::Device::get();
         device.increaseRunningJobs();
         bool reusable = false;
