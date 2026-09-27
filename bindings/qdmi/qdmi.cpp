@@ -25,35 +25,16 @@
 #include "nanobind/stl/vector.h"     // NOLINT(misc-include-cleaner)
 #include "qdmi/client.h"
 
+#include <array>
 #include <cstddef>
-#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <span>
 #include <string>
+#include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
-
-namespace nanobind::detail {
-
-template <> struct type_caster<std::vector<std::byte>> {
-  NB_TYPE_CASTER(std::vector<std::byte>, const_name("bytes"))
-
-  /// NOLINTNEXTLINE(readability-identifier-naming)
-  bool from_python(handle src, [[maybe_unused]] uint32_t flags,
-                   [[maybe_unused]] cleanup_list* cleanup) {
-    if (!isinstance<bytes>(src)) {
-      return false;
-    }
-    const auto data = borrow<bytes>(src);
-    const auto buffer =
-        std::span{static_cast<const std::byte*>(data.data()), data.size()};
-    value.assign(buffer.begin(), buffer.end());
-    return true;
-  }
-};
-
-} // namespace nanobind::detail
 
 namespace mqt {
 
@@ -65,6 +46,28 @@ void registerSlurm(nb::module_& qdmiModule);
 } // namespace bindings
 
 namespace {
+using PythonCustomJobParameter =
+    std::variant<std::string, bool, int, double, nb::bytes>;
+
+[[nodiscard]] std::optional<qdmi::CustomJobParameter>
+toCustomJobParameter(const std::optional<PythonCustomJobParameter>& parameter) {
+  if (!parameter) {
+    return std::nullopt;
+  }
+  return std::visit(
+      [](const auto& value) -> qdmi::CustomJobParameter {
+        if constexpr (std::is_same_v<std::decay_t<decltype(value)>,
+                                     nb::bytes>) {
+          const auto bytes =
+              std::as_bytes(std::span(value.c_str(), value.size()));
+          return std::vector<std::byte>(bytes.begin(), bytes.end());
+        } else {
+          return value;
+        }
+      },
+      *parameter);
+}
+
 template <typename Query>
 [[nodiscard]] nb::object queryCustomValue(Query query,
                                           const nb::handle valueType) {
@@ -415,18 +418,23 @@ when the custom slot is unsupported.)pb");
       "submit_job",
       [](const qdmi::Device& self, const std::string& program,
          const QDMI_Program_Format format, const std::optional<size_t> numShots,
-         const std::optional<qdmi::CustomJobParameter>& custom1,
-         const std::optional<qdmi::CustomJobParameter>& custom2,
-         const std::optional<qdmi::CustomJobParameter>& custom3,
-         const std::optional<qdmi::CustomJobParameter>& custom4,
-         const std::optional<qdmi::CustomJobParameter>& custom5) {
+         const std::optional<PythonCustomJobParameter>& custom1,
+         const std::optional<PythonCustomJobParameter>& custom2,
+         const std::optional<PythonCustomJobParameter>& custom3,
+         const std::optional<PythonCustomJobParameter>& custom4,
+         const std::optional<PythonCustomJobParameter>& custom5) {
+        const auto params = std::array{
+            toCustomJobParameter(custom1), toCustomJobParameter(custom2),
+            toCustomJobParameter(custom3), toCustomJobParameter(custom4),
+            toCustomJobParameter(custom5),
+        };
         const nb::gil_scoped_release release;
         if (numShots.has_value()) {
-          return self.submitJob(program, format, *numShots, custom1, custom2,
-                                custom3, custom4, custom5);
+          return self.submitJob(program, format, *numShots, params[0],
+                                params[1], params[2], params[3], params[4]);
         }
-        return self.submitJob(program, format, custom1, custom2, custom3,
-                              custom4, custom5);
+        return self.submitJob(program, format, params[0], params[1], params[2],
+                              params[3], params[4]);
       },
       "program"_a, "program_format"_a, "num_shots"_a = nb::none(),
       nb::kw_only(), "custom1"_a = nb::none(), "custom2"_a = nb::none(),
@@ -438,20 +446,25 @@ when the custom slot is unsupported.)pb");
       "submit_job",
       [](const qdmi::Device& self, const nb::bytes& program,
          const QDMI_Program_Format format, const std::optional<size_t> numShots,
-         const std::optional<qdmi::CustomJobParameter>& custom1,
-         const std::optional<qdmi::CustomJobParameter>& custom2,
-         const std::optional<qdmi::CustomJobParameter>& custom3,
-         const std::optional<qdmi::CustomJobParameter>& custom4,
-         const std::optional<qdmi::CustomJobParameter>& custom5) {
+         const std::optional<PythonCustomJobParameter>& custom1,
+         const std::optional<PythonCustomJobParameter>& custom2,
+         const std::optional<PythonCustomJobParameter>& custom3,
+         const std::optional<PythonCustomJobParameter>& custom4,
+         const std::optional<PythonCustomJobParameter>& custom5) {
+        const auto params = std::array{
+            toCustomJobParameter(custom1), toCustomJobParameter(custom2),
+            toCustomJobParameter(custom3), toCustomJobParameter(custom4),
+            toCustomJobParameter(custom5),
+        };
         const auto bytes = std::span{
             static_cast<const std::byte*>(program.data()), program.size()};
         const nb::gil_scoped_release release;
         if (numShots.has_value()) {
-          return self.submitJob(bytes, format, *numShots, custom1, custom2,
-                                custom3, custom4, custom5);
+          return self.submitJob(bytes, format, *numShots, params[0], params[1],
+                                params[2], params[3], params[4]);
         }
-        return self.submitJob(bytes, format, custom1, custom2, custom3, custom4,
-                              custom5);
+        return self.submitJob(bytes, format, params[0], params[1], params[2],
+                              params[3], params[4]);
       },
       "program"_a, "program_format"_a, "num_shots"_a = nb::none(),
       nb::kw_only(), "custom1"_a = nb::none(), "custom2"_a = nb::none(),
