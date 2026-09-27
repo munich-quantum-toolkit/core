@@ -75,6 +75,7 @@ struct ClientAPI {
   decltype(&::QDMI_job_free) job_free{};
   decltype(&::QDMI_job_set_parameter) job_set_parameter{};
   decltype(&::QDMI_job_set_programs) job_set_programs{};
+  decltype(&::QDMI_job_get_program) job_get_program{};
   decltype(&::QDMI_job_query_property) job_query_property{};
   decltype(&::QDMI_job_submit) job_submit{};
   decltype(&::QDMI_job_cancel) job_cancel{};
@@ -928,10 +929,11 @@ public:
   /// Gets a textual program without its terminating null byte.
   /// @throws std::invalid_argument If the format is not textual or the device
   /// does not return a null-terminated payload.
-  [[nodiscard]] std::string getProgram() const;
+  [[nodiscard]] std::string getProgram(size_t programIndex = 0) const;
 
   /// Gets the submitted program bytes exactly as returned by the device.
-  [[nodiscard]] std::vector<std::byte> getProgramBytes() const;
+  [[nodiscard]] std::vector<std::byte>
+  getProgramBytes(size_t programIndex = 0) const;
 
   /// Get the number of shots
   [[nodiscard]] size_t getNumShots() const;

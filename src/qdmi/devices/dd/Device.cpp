@@ -573,17 +573,16 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::setParameter(
   }
 }
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::setPrograms(
-    const QDMI_Program_Format* format, size_t count, const size_t* sizes,
+    const QDMI_Program_Format format, size_t count, const size_t* sizes,
     const void* const* programs) -> QDMI_STATUS {
-  if (format == nullptr || count == 0 ||
-      IS_INVALID_ARGUMENT(*format, QDMI_PROGRAM_FORMAT)) {
+  if (count == 0 || IS_INVALID_ARGUMENT(format, QDMI_PROGRAM_FORMAT)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   const std::scoped_lock lock(execution_->mutex);
   if (execution_->status != QDMI_JOB_STATUS_CREATED) {
     return QDMI_ERROR_BADSTATE;
   }
-  if (std::ranges::find(SUPPORTED_PROGRAM_FORMATS, *format) ==
+  if (std::ranges::find(SUPPORTED_PROGRAM_FORMATS, format) ==
       SUPPORTED_PROGRAM_FORMATS.end()) {
     return QDMI_ERROR_NOTSUPPORTED;
   }
@@ -593,8 +592,8 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::setPrograms(
   if (sizes == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  const bool text = *format != QDMI_PROGRAM_FORMAT_QIRBASEMODULE &&
-                    *format != QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE;
+  const bool text = format != QDMI_PROGRAM_FORMAT_QIRBASEMODULE &&
+                    format != QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE;
   const std::span programSizes{sizes, count};
   const std::span programPointers{programs, count};
   std::vector<std::string> copied;
@@ -619,7 +618,37 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::setPrograms(
   std::vector<qdmi::dd::Execution::Program> states(count);
   programs_ = std::move(copied);
   execution_->programs = std::move(states);
-  format_ = *format;
+  format_ = format;
+  return QDMI_SUCCESS;
+}
+
+auto MQT_DDSIM_QDMI_Device_Job_impl_d::getProgram(const size_t programIndex,
+                                                  const size_t size, void* data,
+                                                  size_t* sizeRet) const
+    -> QDMI_STATUS {
+  const std::scoped_lock lock(execution_->mutex);
+  if (programs_.empty()) {
+    return QDMI_ERROR_BADSTATE;
+  }
+  if (programIndex >= programs_.size()) {
+    return QDMI_ERROR_OUTOFRANGE;
+  }
+  const auto& program = programs_[programIndex];
+  const bool text = format_ != QDMI_PROGRAM_FORMAT_QIRBASEMODULE &&
+                    format_ != QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE;
+  const size_t requiredSize = program.size() + (text ? 1U : 0U);
+  if (data != nullptr) {
+    if (size < requiredSize) {
+      return QDMI_ERROR_INVALIDARGUMENT;
+    }
+    std::memcpy(data, program.data(), program.size());
+    if (text) {
+      std::span(static_cast<char*>(data), requiredSize).back() = '\0';
+    }
+  }
+  if (sizeRet != nullptr) {
+    *sizeRet = requiredSize;
+  }
   return QDMI_SUCCESS;
 }
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::queryProperty(
@@ -1211,7 +1240,7 @@ int MQT_DDSIM_QDMI_device_job_set_parameter(
 }
 
 int MQT_DDSIM_QDMI_device_job_set_programs(MQT_DDSIM_QDMI_Device_Job job,
-                                           const QDMI_Program_Format* format,
+                                           const QDMI_Program_Format format,
                                            size_t count, const size_t* sizes,
                                            const void* const* programs) {
   if (job == nullptr) {
@@ -1222,6 +1251,14 @@ int MQT_DDSIM_QDMI_device_job_set_programs(MQT_DDSIM_QDMI_Device_Job job,
   } catch (const std::bad_alloc&) {
     return QDMI_ERROR_OUTOFMEM;
   }
+}
+
+int MQT_DDSIM_QDMI_device_job_get_program(MQT_DDSIM_QDMI_Device_Job job,
+                                          const size_t programIndex,
+                                          const size_t size, void* data,
+                                          size_t* sizeRet) {
+  return job == nullptr ? QDMI_ERROR_INVALIDARGUMENT
+                        : job->getProgram(programIndex, size, data, sizeRet);
 }
 
 int MQT_DDSIM_QDMI_device_job_query_property(

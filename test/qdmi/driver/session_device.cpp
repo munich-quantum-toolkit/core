@@ -493,6 +493,7 @@ extern "C" int TEST_SESSION_QDMI_device_job_set_parameter(
     const auto bytes = std::span{static_cast<const std::byte*>(value), size};
     job->customParameters[parameter - QDMI_DEVICE_JOB_PARAMETER_CUSTOM1].assign(
         bytes.begin(), bytes.end());
+    return QDMI_SUCCESS;
   }
   if (parameter == QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT) {
     if (value == nullptr || size != sizeof(QDMI_Program_Format)) {
@@ -516,9 +517,9 @@ extern "C" int TEST_SESSION_QDMI_device_job_set_parameter(
 }
 
 extern "C" int TEST_SESSION_QDMI_device_job_set_programs(
-    QDMI_Device_Job job, const QDMI_Program_Format* format, const size_t count,
+    QDMI_Device_Job job, const QDMI_Program_Format format, const size_t count,
     const size_t* sizes, const void* const* programs) {
-  if (job == nullptr || format == nullptr || count == 0U) {
+  if (job == nullptr || count == 0U) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   if (job->retrieved || job->submitted) {
@@ -542,9 +543,24 @@ extern "C" int TEST_SESSION_QDMI_device_job_set_programs(
                           programSizes[index]};
     copies.emplace_back(bytes.begin(), bytes.end());
   }
-  job->format = *format;
+  job->format = format;
   job->programs = std::move(copies);
   return QDMI_SUCCESS;
+}
+
+extern "C" int TEST_SESSION_QDMI_device_job_get_program(
+    QDMI_Device_Job job, const size_t programIndex, const size_t size,
+    void* data, size_t* sizeRet) {
+  if (job == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  if (job->programs.empty()) {
+    return QDMI_ERROR_BADSTATE;
+  }
+  if (programIndex >= job->programs.size()) {
+    return QDMI_ERROR_OUTOFRANGE;
+  }
+  return queryBytes(job->programs[programIndex], size, data, sizeRet);
 }
 
 extern "C" int TEST_SESSION_QDMI_device_job_query_property(

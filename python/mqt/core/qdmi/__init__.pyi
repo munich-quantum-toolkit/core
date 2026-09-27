@@ -158,9 +158,15 @@ class Job:
     def program(self) -> str:
         """The submitted program."""
 
+    def get_program(self, program_index: int = 0) -> str:
+        """Return one submitted text program by input index."""
+
     @property
     def program_bytes(self) -> bytes:
         """The exact bytes of the submitted program."""
+
+    def get_program_bytes(self, program_index: int = 0) -> bytes:
+        """Return one submitted program's exact bytes by input index."""
 
     @property
     def num_programs(self) -> int:
@@ -399,11 +405,11 @@ class Device:
         program_format: ProgramFormat,
         num_shots: int | None = None,
         *,
-        custom1: str | bool | float | None = None,
-        custom2: str | bool | float | None = None,
-        custom3: str | bool | float | None = None,
-        custom4: str | bool | float | None = None,
-        custom5: str | bool | float | None = None,
+        custom1: str | bool | float | bytes | None = None,
+        custom2: str | bool | float | bytes | None = None,
+        custom3: str | bool | float | bytes | None = None,
+        custom4: str | bool | float | bytes | None = None,
+        custom5: str | bool | float | bytes | None = None,
     ) -> Job: ...
     @overload
     def submit_programs(
@@ -412,11 +418,11 @@ class Device:
         program_format: ProgramFormat,
         num_shots: int | None = None,
         *,
-        custom1: str | bool | float | None = None,
-        custom2: str | bool | float | None = None,
-        custom3: str | bool | float | None = None,
-        custom4: str | bool | float | None = None,
-        custom5: str | bool | float | None = None,
+        custom1: str | bool | float | bytes | None = None,
+        custom2: str | bool | float | bytes | None = None,
+        custom3: str | bool | float | bytes | None = None,
+        custom4: str | bool | float | bytes | None = None,
+        custom5: str | bool | float | bytes | None = None,
     ) -> Job:
         """Submits an ordered program list with common parameters."""
 
@@ -427,11 +433,11 @@ class Device:
         program_format: ProgramFormat,
         num_shots: int | None = None,
         *,
-        custom1: str | bool | float | None = None,
-        custom2: str | bool | float | None = None,
-        custom3: str | bool | float | None = None,
-        custom4: str | bool | float | None = None,
-        custom5: str | bool | float | None = None,
+        custom1: str | bool | float | bytes | None = None,
+        custom2: str | bool | float | bytes | None = None,
+        custom3: str | bool | float | bytes | None = None,
+        custom4: str | bool | float | bytes | None = None,
+        custom5: str | bool | float | bytes | None = None,
     ) -> Job | None: ...
     @overload
     def try_submit_programs(
@@ -440,11 +446,11 @@ class Device:
         program_format: ProgramFormat,
         num_shots: int | None = None,
         *,
-        custom1: str | bool | float | None = None,
-        custom2: str | bool | float | None = None,
-        custom3: str | bool | float | None = None,
-        custom4: str | bool | float | None = None,
-        custom5: str | bool | float | None = None,
+        custom1: str | bool | float | bytes | None = None,
+        custom2: str | bool | float | bytes | None = None,
+        custom3: str | bool | float | bytes | None = None,
+        custom4: str | bool | float | bytes | None = None,
+        custom5: str | bool | float | bytes | None = None,
     ) -> Job | None:
         """Returns None only when the device rejects this list before submission."""
 

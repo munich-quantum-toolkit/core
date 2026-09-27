@@ -106,7 +106,7 @@ int setProgram(MQT_DDSIM_QDMI_Device_Job job, const QDMI_Program_Format fmt,
   const auto bytesToSend =
       isTextProgramFormat ? program.size() + 1 : program.size();
   const void* const programData = program.data();
-  return MQT_DDSIM_QDMI_device_job_set_programs(job, &fmt, 1U, &bytesToSend,
+  return MQT_DDSIM_QDMI_device_job_set_programs(job, fmt, 1U, &bytesToSend,
                                                 &programData);
 }
 

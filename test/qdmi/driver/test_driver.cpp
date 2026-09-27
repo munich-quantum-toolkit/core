@@ -560,7 +560,7 @@ TEST_P(DriverTest, JobSetParameter) {
 
 TEST_P(DriverTest, JobSetPrograms) {
   constexpr auto format = QDMI_PROGRAM_FORMAT_QASM2;
-  EXPECT_EQ(QDMI_job_set_programs(nullptr, &format, 0U, nullptr, nullptr),
+  EXPECT_EQ(QDMI_job_set_programs(nullptr, format, 0U, nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
@@ -1667,16 +1667,13 @@ TEST(DeviceRegistrationTest, RetrievesExistingJobs) {
   EXPECT_EQ(retrievedJob.getNumPrograms(), 2U);
   EXPECT_EQ(retrievedJob.getNumShots(), 2U);
   EXPECT_EQ(retrievedJob.getShots(), (std::vector<std::string>{"10", "01"}));
-  EXPECT_EQ(retrievedJob.getResults(QDMI_JOB_RESULT_CUSTOM5, 0U),
+  EXPECT_EQ(retrievedJob.getProgramBytes(0U),
             (std::vector<std::byte>{std::byte{'x'}, std::byte{0},
                                     std::byte{'y'}, std::byte{0}}));
   EXPECT_EQ(retrievedJob.getShots(1U), (std::vector<std::string>{"11", "00"}));
-  EXPECT_EQ(retrievedJob.getResults(QDMI_JOB_RESULT_CUSTOM5, 1U),
+  EXPECT_EQ(retrievedJob.getProgramBytes(1U),
             (std::vector<std::byte>{std::byte{'z'}, std::byte{0}}));
-  EXPECT_EQ(retrievedJob.getResults(QDMI_JOB_RESULT_CUSTOM5, 1U),
-            retrievedJob.getResults(QDMI_JOB_RESULT_CUSTOM5, 1U));
-  EXPECT_THROW(std::ignore =
-                   retrievedJob.getResults(QDMI_JOB_RESULT_CUSTOM5, 2U),
+  EXPECT_THROW(std::ignore = retrievedJob.getProgramBytes(2U),
                std::out_of_range);
 }
 
@@ -1703,8 +1700,8 @@ TEST(DeviceRegistrationTest, SubmitsOrderedBinaryProgramsAtomically) {
   const auto job =
       device.submitPrograms(views, QDMI_PROGRAM_FORMAT_QIRBASEMODULE, 3U);
   EXPECT_EQ(job.getNumPrograms(), programs.size());
-  EXPECT_EQ(job.getResults(QDMI_JOB_RESULT_CUSTOM5, 0U), programs[0]);
-  EXPECT_EQ(job.getResults(QDMI_JOB_RESULT_CUSTOM5, 1U), programs[1]);
+  EXPECT_EQ(job.getProgramBytes(0U), programs[0]);
+  EXPECT_EQ(job.getProgramBytes(1U), programs[1]);
 }
 
 TEST(DeviceRegistrationTest, SubmitsOrderedTextProgramsAtomically) {
@@ -1716,10 +1713,7 @@ TEST(DeviceRegistrationTest, SubmitsOrderedTextProgramsAtomically) {
       device.submitPrograms(programs, QDMI_PROGRAM_FORMAT_QASM3, 3U);
   ASSERT_EQ(job.getNumPrograms(), programs.size());
   for (size_t index = 0U; index < programs.size(); ++index) {
-    const auto output = job.getResults(QDMI_JOB_RESULT_CUSTOM5, index);
-    ASSERT_EQ(output.size(), programs[index].size() + 1U);
-    EXPECT_EQ(
-        std::memcmp(output.data(), programs[index].c_str(), output.size()), 0);
+    EXPECT_EQ(job.getProgram(index), programs[index]);
   }
 }
 
@@ -1734,10 +1728,10 @@ TEST(DeviceRegistrationTest, RejectedProgramListPreservesPreviousPayload) {
   constexpr std::array payload{std::byte{'x'}, std::byte{0}};
   const std::array sizes{payload.size(), payload.size()};
   const std::array<const void*, 2> pointers{payload.data(), nullptr};
-  ASSERT_EQ(QDMI_job_set_programs(job.get(), &format, 1U, sizes.data(),
+  ASSERT_EQ(QDMI_job_set_programs(job.get(), format, 1U, sizes.data(),
                                   pointers.data()),
             QDMI_SUCCESS);
-  EXPECT_EQ(QDMI_job_set_programs(job.get(), &format, 2U, sizes.data(),
+  EXPECT_EQ(QDMI_job_set_programs(job.get(), format, 2U, sizes.data(),
                                   pointers.data()),
             QDMI_ERROR_INVALIDARGUMENT);
   size_t count = 0U;
@@ -1746,8 +1740,8 @@ TEST(DeviceRegistrationTest, RejectedProgramListPreservesPreviousPayload) {
             QDMI_SUCCESS);
   EXPECT_EQ(count, 1U);
   std::array<std::byte, 2> actual{};
-  EXPECT_EQ(QDMI_job_query_property(job.get(), QDMI_JOB_PROPERTY_PROGRAM,
-                                    actual.size(), actual.data(), nullptr),
+  EXPECT_EQ(QDMI_job_get_program(job.get(), 0U, actual.size(), actual.data(),
+                                 nullptr),
             QDMI_SUCCESS);
   EXPECT_EQ(actual, payload);
 }

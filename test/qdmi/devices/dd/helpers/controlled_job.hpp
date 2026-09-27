@@ -110,8 +110,8 @@ public:
       pointers.push_back(program.c_str());
     }
     const auto format = QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING;
-    if (MQT_DDSIM_QDMI_device_job_set_programs(job, &format, count,
-                                               sizes.data(), pointers.data()) !=
+    if (MQT_DDSIM_QDMI_device_job_set_programs(job, format, count, sizes.data(),
+                                               pointers.data()) !=
             QDMI_SUCCESS ||
         setShots(job, 1) != QDMI_SUCCESS ||
         MQT_DDSIM_QDMI_device_job_submit(job) != QDMI_SUCCESS) {

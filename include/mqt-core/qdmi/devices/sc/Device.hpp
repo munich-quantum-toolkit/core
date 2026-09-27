@@ -71,8 +71,8 @@ struct MQT_SC_QDMI_Device_Job_impl_d {
   void free();
   int setParameter(QDMI_Device_Job_Parameter parameter, size_t size,
                    const void* value);
-  int setPrograms(const QDMI_Program_Format* format, size_t count,
-                  const size_t* sizes, const void* const* programs);
+  int setPrograms(QDMI_Program_Format format, size_t count, const size_t* sizes,
+                  const void* const* programs);
   int queryProperty(QDMI_Device_Job_Property property, size_t size, void* value,
                     size_t* sizeRet);
   int submit();

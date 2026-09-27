@@ -270,6 +270,7 @@ template <class Function>
   LOAD_CLIENT_SYMBOL(job_free);
   LOAD_CLIENT_SYMBOL(job_set_parameter);
   LOAD_CLIENT_SYMBOL(job_set_programs);
+  LOAD_CLIENT_SYMBOL(job_get_program);
   LOAD_CLIENT_SYMBOL(job_query_property);
   LOAD_CLIENT_SYMBOL(job_submit);
   LOAD_CLIENT_SYMBOL(job_cancel);
@@ -890,7 +891,7 @@ std::optional<Job> Device::submitProgramsImpl(
   }
 
   const auto result = api().job_set_programs(
-      jobWrapper, &format, programs.size(), sizes.data(), programs.data());
+      jobWrapper, format, programs.size(), sizes.data(), programs.data());
   if (result == QDMI_ERROR_NOTSUPPORTED) {
     return std::nullopt;
   }
@@ -971,31 +972,29 @@ QDMI_Program_Format Job::getProgramFormat() const {
   return format;
 }
 
-std::vector<std::byte> Job::getProgramBytes() const {
+std::vector<std::byte> Job::getProgramBytes(const size_t programIndex) const {
   size_t size = 0;
-  qdmi::throwIfError(api().job_query_property(job_.get(),
-                                              QDMI_JOB_PROPERTY_PROGRAM, 0,
-                                              nullptr, &size),
-                     "Querying program size");
+  qdmi::throwIfError(
+      api().job_get_program(job_.get(), programIndex, 0, nullptr, &size),
+      "Querying program size");
 
   std::vector<std::byte> program(size);
   if (size != 0) {
-    qdmi::throwIfError(api().job_query_property(job_.get(),
-                                                QDMI_JOB_PROPERTY_PROGRAM, size,
-                                                program.data(), nullptr),
+    qdmi::throwIfError(api().job_get_program(job_.get(), programIndex, size,
+                                             program.data(), nullptr),
                        "Querying program");
   }
   return program;
 }
 
-std::string Job::getProgram() const {
+std::string Job::getProgram(const size_t programIndex) const {
   const auto format = getProgramFormat();
   if (isBinaryProgramFormat(format)) {
     throw std::invalid_argument(
         "Cannot decode a binary program as a string; use getProgramBytes()");
   }
 
-  const auto program = getProgramBytes();
+  const auto program = getProgramBytes(programIndex);
   if (program.empty() || program.back() != std::byte{0}) {
     throw std::invalid_argument(
         "Cannot decode program as a null-terminated string; use "

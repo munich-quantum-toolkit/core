@@ -365,9 +365,13 @@ when the custom slot is unsupported.)pb");
                   nb::call_guard<nb::gil_scoped_release>(),
                   "The format of the submitted program.");
 
-  job.def_prop_ro("program", &qdmi::Job::getProgram,
-                  nb::call_guard<nb::gil_scoped_release>(),
-                  "The submitted program.");
+  job.def_prop_ro(
+      "program", [](const qdmi::Job& self) { return self.getProgram(); },
+      nb::call_guard<nb::gil_scoped_release>(), "The submitted program.");
+
+  job.def("get_program", &qdmi::Job::getProgram, "program_index"_a = 0,
+          nb::call_guard<nb::gil_scoped_release>(),
+          "Return one submitted text program by input index.");
 
   job.def_prop_ro(
       "program_bytes",
@@ -379,6 +383,18 @@ when the custom slot is unsupported.)pb");
         return nb::bytes(program.data(), program.size());
       },
       "The exact bytes of the submitted program.");
+
+  job.def(
+      "get_program_bytes",
+      [](const qdmi::Job& self, const size_t programIndex) {
+        const auto program = [&] {
+          const nb::gil_scoped_release release;
+          return self.getProgramBytes(programIndex);
+        }();
+        return nb::bytes(program.data(), program.size());
+      },
+      "program_index"_a = 0,
+      "Return one submitted program's exact bytes by input index.");
 
   job.def_prop_ro("num_programs", &qdmi::Job::getNumPrograms,
                   nb::call_guard<nb::gil_scoped_release>(),
@@ -651,14 +667,19 @@ when the custom slot is unsupported.)pb");
       "submit_programs",
       [](const qdmi::Device& self, const std::vector<std::string>& programs,
          QDMI_Program_Format format, std::optional<size_t> numShots,
-         const std::optional<qdmi::CustomJobParameter>& custom1,
-         const std::optional<qdmi::CustomJobParameter>& custom2,
-         const std::optional<qdmi::CustomJobParameter>& custom3,
-         const std::optional<qdmi::CustomJobParameter>& custom4,
-         const std::optional<qdmi::CustomJobParameter>& custom5) {
+         const std::optional<PythonCustomJobParameter>& custom1,
+         const std::optional<PythonCustomJobParameter>& custom2,
+         const std::optional<PythonCustomJobParameter>& custom3,
+         const std::optional<PythonCustomJobParameter>& custom4,
+         const std::optional<PythonCustomJobParameter>& custom5) {
+        const auto params = std::array{
+            toCustomJobParameter(custom1), toCustomJobParameter(custom2),
+            toCustomJobParameter(custom3), toCustomJobParameter(custom4),
+            toCustomJobParameter(custom5),
+        };
         const nb::gil_scoped_release release;
-        return self.submitPrograms(programs, format, numShots, custom1, custom2,
-                                   custom3, custom4, custom5);
+        return self.submitPrograms(programs, format, numShots, params[0],
+                                   params[1], params[2], params[3], params[4]);
       },
       "programs"_a, "program_format"_a, "num_shots"_a = nb::none(),
       nb::kw_only(), "custom1"_a = nb::none(), "custom2"_a = nb::none(),
@@ -670,11 +691,16 @@ when the custom slot is unsupported.)pb");
       "submit_programs",
       [](const qdmi::Device& self, const std::vector<nb::bytes>& programs,
          QDMI_Program_Format format, std::optional<size_t> numShots,
-         const std::optional<qdmi::CustomJobParameter>& custom1,
-         const std::optional<qdmi::CustomJobParameter>& custom2,
-         const std::optional<qdmi::CustomJobParameter>& custom3,
-         const std::optional<qdmi::CustomJobParameter>& custom4,
-         const std::optional<qdmi::CustomJobParameter>& custom5) {
+         const std::optional<PythonCustomJobParameter>& custom1,
+         const std::optional<PythonCustomJobParameter>& custom2,
+         const std::optional<PythonCustomJobParameter>& custom3,
+         const std::optional<PythonCustomJobParameter>& custom4,
+         const std::optional<PythonCustomJobParameter>& custom5) {
+        const auto params = std::array{
+            toCustomJobParameter(custom1), toCustomJobParameter(custom2),
+            toCustomJobParameter(custom3), toCustomJobParameter(custom4),
+            toCustomJobParameter(custom5),
+        };
         std::vector<std::span<const std::byte>> payloads;
         payloads.reserve(programs.size());
         for (const auto& program : programs) {
@@ -682,8 +708,8 @@ when the custom slot is unsupported.)pb");
                                 program.size());
         }
         const nb::gil_scoped_release release;
-        return self.submitPrograms(payloads, format, numShots, custom1, custom2,
-                                   custom3, custom4, custom5);
+        return self.submitPrograms(payloads, format, numShots, params[0],
+                                   params[1], params[2], params[3], params[4]);
       },
       "programs"_a, "program_format"_a, "num_shots"_a = nb::none(),
       nb::kw_only(), "custom1"_a = nb::none(), "custom2"_a = nb::none(),
@@ -695,14 +721,20 @@ when the custom slot is unsupported.)pb");
       "try_submit_programs",
       [](const qdmi::Device& self, const std::vector<std::string>& programs,
          QDMI_Program_Format format, std::optional<size_t> numShots,
-         const std::optional<qdmi::CustomJobParameter>& custom1,
-         const std::optional<qdmi::CustomJobParameter>& custom2,
-         const std::optional<qdmi::CustomJobParameter>& custom3,
-         const std::optional<qdmi::CustomJobParameter>& custom4,
-         const std::optional<qdmi::CustomJobParameter>& custom5) {
+         const std::optional<PythonCustomJobParameter>& custom1,
+         const std::optional<PythonCustomJobParameter>& custom2,
+         const std::optional<PythonCustomJobParameter>& custom3,
+         const std::optional<PythonCustomJobParameter>& custom4,
+         const std::optional<PythonCustomJobParameter>& custom5) {
+        const auto params = std::array{
+            toCustomJobParameter(custom1), toCustomJobParameter(custom2),
+            toCustomJobParameter(custom3), toCustomJobParameter(custom4),
+            toCustomJobParameter(custom5),
+        };
         const nb::gil_scoped_release release;
-        return self.trySubmitPrograms(programs, format, numShots, custom1,
-                                      custom2, custom3, custom4, custom5);
+        return self.trySubmitPrograms(programs, format, numShots, params[0],
+                                      params[1], params[2], params[3],
+                                      params[4]);
       },
       "programs"_a, "program_format"_a, "num_shots"_a = nb::none(),
       nb::kw_only(), "custom1"_a = nb::none(), "custom2"_a = nb::none(),
@@ -714,11 +746,16 @@ when the custom slot is unsupported.)pb");
       "try_submit_programs",
       [](const qdmi::Device& self, const std::vector<nb::bytes>& programs,
          QDMI_Program_Format format, std::optional<size_t> numShots,
-         const std::optional<qdmi::CustomJobParameter>& custom1,
-         const std::optional<qdmi::CustomJobParameter>& custom2,
-         const std::optional<qdmi::CustomJobParameter>& custom3,
-         const std::optional<qdmi::CustomJobParameter>& custom4,
-         const std::optional<qdmi::CustomJobParameter>& custom5) {
+         const std::optional<PythonCustomJobParameter>& custom1,
+         const std::optional<PythonCustomJobParameter>& custom2,
+         const std::optional<PythonCustomJobParameter>& custom3,
+         const std::optional<PythonCustomJobParameter>& custom4,
+         const std::optional<PythonCustomJobParameter>& custom5) {
+        const auto params = std::array{
+            toCustomJobParameter(custom1), toCustomJobParameter(custom2),
+            toCustomJobParameter(custom3), toCustomJobParameter(custom4),
+            toCustomJobParameter(custom5),
+        };
         std::vector<std::span<const std::byte>> payloads;
         payloads.reserve(programs.size());
         for (const auto& program : programs) {
@@ -726,8 +763,9 @@ when the custom slot is unsupported.)pb");
                                 program.size());
         }
         const nb::gil_scoped_release release;
-        return self.trySubmitPrograms(payloads, format, numShots, custom1,
-                                      custom2, custom3, custom4, custom5);
+        return self.trySubmitPrograms(payloads, format, numShots, params[0],
+                                      params[1], params[2], params[3],
+                                      params[4]);
       },
       "programs"_a, "program_format"_a, "num_shots"_a = nb::none(),
       nb::kw_only(), "custom1"_a = nb::none(), "custom2"_a = nb::none(),

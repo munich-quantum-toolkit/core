@@ -132,7 +132,7 @@ TEST(JobParameters, BinaryProgramRoundTripsExactly) {
 
   const size_t size = program.size();
   const void* const data = program.data();
-  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_set_programs(job.job, &QIR_BINARY_FORMAT,
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_set_programs(job.job, QIR_BINARY_FORMAT,
                                                    1U, &size, &data),
             QDMI_SUCCESS);
 
@@ -149,6 +149,11 @@ TEST(JobParameters, BinaryProgramRoundTripsExactly) {
                 result.data(), nullptr),
             QDMI_SUCCESS);
   EXPECT_EQ(result, expected);
+  result.fill(std::byte{0});
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_program(
+                job.job, 0U, result.size(), result.data(), nullptr),
+            QDMI_SUCCESS);
+  EXPECT_EQ(result, expected);
 }
 
 TEST(JobParameters, ProgramListsValidateAtomically) {
@@ -159,30 +164,34 @@ TEST(JobParameters, ProgramListsValidateAtomically) {
   const std::array<const void*, 1> programs{&program};
 
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_programs(
-                nullptr, &QASM3_FORMAT, 1U, sizes.data(), programs.data()),
+                nullptr, QASM3_FORMAT, 1U, sizes.data(), programs.data()),
             QDMI_ERROR_INVALIDARGUMENT);
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_programs(
-                job.job, nullptr, 1U, sizes.data(), programs.data()),
-            QDMI_ERROR_INVALIDARGUMENT);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_programs(
-                job.job, &QASM3_FORMAT, 0U, sizes.data(), programs.data()),
+                job.job, QASM3_FORMAT, 0U, sizes.data(), programs.data()),
             QDMI_ERROR_INVALIDARGUMENT);
   constexpr auto invalid = QDMI_PROGRAM_FORMAT_MAX;
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_programs(
-                job.job, &invalid, 1U, sizes.data(), programs.data()),
+                job.job, invalid, 1U, sizes.data(), programs.data()),
             QDMI_ERROR_INVALIDARGUMENT);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_programs(job.job, &QASM3_FORMAT, 1U,
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_programs(job.job, QASM3_FORMAT, 1U,
                                                    sizes.data(), nullptr),
             QDMI_SUCCESS);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_programs(job.job, &QASM3_FORMAT, 1U,
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_programs(job.job, QASM3_FORMAT, 1U,
                                                    nullptr, programs.data()),
             QDMI_ERROR_INVALIDARGUMENT);
   constexpr std::array<size_t, 2> twoSizes{1U, 1U};
   const std::array<const void*, 2> twoPrograms{&program, &program};
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_programs(job.job, &QASM3_FORMAT, 2U,
-                                                   twoSizes.data(),
-                                                   twoPrograms.data()),
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_programs(
+                job.job, QASM3_FORMAT, 2U, twoSizes.data(), twoPrograms.data()),
             QDMI_SUCCESS);
+  size_t programSize = 0U;
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_program(job.job, 1U, 0U, nullptr,
+                                                  &programSize),
+            QDMI_SUCCESS);
+  EXPECT_EQ(programSize, 1U);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_program(job.job, 2U, 0U, nullptr,
+                                                  nullptr),
+            QDMI_ERROR_OUTOFRANGE);
 }
 
 TEST(JobParameters, RejectsUnterminatedTextProgram) {
@@ -191,7 +200,7 @@ TEST(JobParameters, RejectsUnterminatedTextProgram) {
 
   const size_t size = strlen(qdmi_test::QASM3_BELL_SAMPLING);
   const void* const program = qdmi_test::QASM3_BELL_SAMPLING;
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_programs(j.job, &QASM3_FORMAT, 1U,
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_programs(j.job, QASM3_FORMAT, 1U,
                                                    &size, &program),
             QDMI_ERROR_INVALIDARGUMENT);
 }
@@ -203,7 +212,7 @@ TEST(JobParameters, RejectsInteriorNullInTextProgram) {
   constexpr auto program = std::to_array("OPENQASM 3.0;\0garbage");
   const size_t size = program.size();
   const void* const data = program.data();
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_programs(j.job, &QASM3_FORMAT, 1U,
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_programs(j.job, QASM3_FORMAT, 1U,
                                                    &size, &data),
             QDMI_ERROR_INVALIDARGUMENT);
 }
