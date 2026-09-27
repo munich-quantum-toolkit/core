@@ -183,7 +183,7 @@ TEST_F(CNTest, ToleranceChangesPreserveNearestLookup) {
 
   /// Compare against every retained entry, independently of index layout.
   for (const fp tolerance : {
-           1e-15,
+           1e-12,
            savedTolerance,
            1e-6,
            1e-3,

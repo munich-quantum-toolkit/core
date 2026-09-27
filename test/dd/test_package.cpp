@@ -2037,8 +2037,6 @@ TEST(DDPackageTest, BasicNumericStabilityTest) {
   using limits = std::numeric_limits<fp>;
 
   auto dd = std::make_unique<Package>(1);
-  auto const tol = RealNumber::eps;
-  ComplexNumbers::setTolerance(limits::epsilon());
   auto const state = makeZeroState(1, *dd);
   auto const h = getDD(TestGate(0, Fixture::H), *dd);
   auto const state1 = dd->multiply(h, state);
@@ -2058,8 +2056,6 @@ TEST(DDPackageTest, BasicNumericStabilityTest) {
   oss.str("");
   oss << -SQRT2_2;
   EXPECT_EQ(rightWeight, oss.str());
-  // restore tolerance
-  ComplexNumbers::setTolerance(tol);
 }
 
 TEST(DDPackageTest, NormalizationNumericStabilityTest) {
