@@ -150,8 +150,8 @@ TEST(JobParameters, BinaryProgramRoundTripsExactly) {
             QDMI_SUCCESS);
   EXPECT_EQ(result, expected);
   result.fill(std::byte{0});
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_program(
-                job.job, 0U, result.size(), result.data(), nullptr),
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_program(job.job, 0U, result.size(),
+                                                  result.data(), nullptr),
             QDMI_SUCCESS);
   EXPECT_EQ(result, expected);
 }
@@ -189,9 +189,9 @@ TEST(JobParameters, ProgramListsValidateAtomically) {
                                                   &programSize),
             QDMI_SUCCESS);
   EXPECT_EQ(programSize, 1U);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_program(job.job, 2U, 0U, nullptr,
-                                                  nullptr),
-            QDMI_ERROR_OUTOFRANGE);
+  EXPECT_EQ(
+      MQT_DDSIM_QDMI_device_job_get_program(job.job, 2U, 0U, nullptr, nullptr),
+      QDMI_ERROR_OUTOFRANGE);
 }
 
 TEST(JobParameters, RejectsUnterminatedTextProgram) {
