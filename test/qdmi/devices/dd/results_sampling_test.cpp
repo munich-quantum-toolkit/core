@@ -60,16 +60,23 @@ protected:
   static constexpr size_t NUM_SHOTS = 1024;
   static constexpr size_t NUM_QUBITS = 3;
 
-  static Histogram runProgram(const QDMI_Program_Format format,
-                              const std::string_view program,
-                              const std::optional<int> seed = std::nullopt,
-                              std::vector<std::string>* samples = nullptr) {
+  static Histogram
+  runProgram(const QDMI_Program_Format format, const std::string_view program,
+             const std::optional<int> seed = std::nullopt,
+             std::vector<std::string>* samples = nullptr,
+             const std::optional<size_t> workers = std::nullopt) {
     const qdmi_test::SessionGuard s{};
     const qdmi_test::JobGuard j{s.session};
     EXPECT_EQ(qdmi_test::setProgram(j.job, format, program), QDMI_SUCCESS);
     EXPECT_EQ(qdmi_test::setShots(j.job, NUM_SHOTS), QDMI_SUCCESS);
     if (seed.has_value()) {
       EXPECT_EQ(qdmi_test::setSeed(j.job, *seed), QDMI_SUCCESS);
+    }
+    if (workers) {
+      EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                    j.job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM3, sizeof(*workers),
+                    &*workers),
+                QDMI_SUCCESS);
     }
     EXPECT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
     auto shots = getShots(j.job);
@@ -275,6 +282,35 @@ b[0] = measure q[1];
   EXPECT_EQ(keys, (std::vector<std::string>{"0000", "0110"}));
   EXPECT_EQ(std::accumulate(values.begin(), values.end(), size_t{0}),
             NUM_SHOTS);
+  std::vector<std::string> first;
+  std::vector<std::string> second;
+  for (const size_t workers : {0U, 4U}) {
+    EXPECT_EQ(
+        runProgram(QDMI_PROGRAM_FORMAT_QASM3, program, 7, &first, workers),
+        runProgram(QDMI_PROGRAM_FORMAT_QASM3, program, 7, &second, workers));
+    EXPECT_EQ(first, second);
+  }
+  EXPECT_EQ(runProgram(QDMI_PROGRAM_FORMAT_QASM3, program, 7, &first),
+            runProgram(QDMI_PROGRAM_FORMAT_QASM3, program, 7, &second, 0));
+  EXPECT_EQ(first, second);
+}
+
+TEST_F(QIRHistogramTestString, AdaptiveWorkersRepeatSeededShots) {
+  const auto program = qdmi_test::getQIRProgram("AdaptiveRecordOutputs.ll");
+  std::vector<std::string> first;
+  std::vector<std::string> second;
+  for (const size_t workers : {0U, 4U}) {
+    EXPECT_EQ(runProgram(QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING, program, 7,
+                         &first, workers),
+              runProgram(QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING, program, 7,
+                         &second, workers));
+    EXPECT_EQ(first, second);
+  }
+  EXPECT_EQ(
+      runProgram(QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING, program, 7, &first),
+      runProgram(QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING, program, 7, &second,
+                 0));
+  EXPECT_EQ(first, second);
 }
 
 TEST(ResultsSampling, EmptyQASM3YieldsEmptyHistogram) {
@@ -473,6 +509,11 @@ TEST(QIROutput, CapturesTypedRecordsAndValidatesBuffers) {
                 job.job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM2, sizeof(capture),
                 &capture),
             QDMI_SUCCESS);
+  const size_t workers = 4;
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                job.job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM3, sizeof(workers),
+                &workers),
+            QDMI_SUCCESS);
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
                 job.job, 0, QDMI_JOB_RESULT_CUSTOM1, 0, nullptr, nullptr),
             QDMI_ERROR_BADSTATE);
@@ -480,7 +521,7 @@ TEST(QIROutput, CapturesTypedRecordsAndValidatesBuffers) {
                 job.job, QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
                 qdmi_test::getQIRProgram("AdaptiveRecordOutputs.ll")),
             QDMI_SUCCESS);
-  ASSERT_EQ(qdmi_test::setShots(job.job, 2), QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::setShots(job.job, 4), QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::submitAndWait(job.job, 0), QDMI_SUCCESS);
   const auto size = qdmi_test::querySize(job.job, QDMI_JOB_RESULT_CUSTOM1);
   ASSERT_GT(size, 1U);
@@ -496,6 +537,13 @@ TEST(QIROutput, CapturesTypedRecordsAndValidatesBuffers) {
   EXPECT_EQ(output.back(), '\0');
   EXPECT_TRUE(output.starts_with("HEADER\tschema_id\t"));
   EXPECT_TRUE(output.ends_with(std::string("END\t0\n\0", 7)));
+  size_t starts = 0;
+  for (size_t pos = 0; (pos = output.find("START\n", pos)) != std::string::npos;
+       pos += 6) {
+    ++starts;
+  }
+  EXPECT_EQ(starts, 4U);
+  EXPECT_EQ(output.find("HEADER\tschema_id\t", 1), std::string::npos);
   for (const auto* type :
        {"RESULT", "BOOL", "INT", "DOUBLE", "TUPLE", "ARRAY"}) {
     EXPECT_NE(output.find(std::string("OUTPUT\t") + type + "\t"),

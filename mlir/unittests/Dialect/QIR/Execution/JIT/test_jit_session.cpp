@@ -28,6 +28,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <iterator>
 #include <sstream>
 #include <stdexcept>
@@ -618,10 +619,37 @@ define i64 @main() #0 {
 attributes #0 = { "entry_point" "qir_profiles"="base_profile" }
 )";
   qir::JitSession session(ir, "side-effects");
+  EXPECT_FALSE(session.canShareCompiledCode());
   session.runtime().disableOutput();
   std::vector<std::string> results;
+  qir::Runtime worker(17);
+  EXPECT_THROW(session.sampleWithRuntime(worker, 1, results), std::logic_error);
   EXPECT_EQ(session.sample(5, results), 1);
   EXPECT_EQ(results.size(), 2);
+}
+
+TEST(QIRBatchSampling, SharesCompiledCodeWithPrivateConcurrentRuntimes) {
+  const auto ir = getProgram("BellPairAdaptive.ll");
+  qir::JitSession shared(ir, "shared", qir::Execution::Sampling, 17);
+  ASSERT_TRUE(shared.canShareCompiledCode());
+  std::array<std::vector<std::string>, 2> actual;
+  std::array<std::future<int64_t>, 2> tasks;
+  for (size_t i = 0; i < tasks.size(); ++i) {
+    tasks[i] = std::async(std::launch::async, [&, i] {
+      auto worker = shared.makeWorkerRuntime(21 + i);
+      worker->disableOutput();
+      return shared.sampleWithRuntime(*worker, 128, actual[i], false);
+    });
+  }
+  for (size_t i = 0; i < tasks.size(); ++i) {
+    EXPECT_EQ(tasks[i].get(), 0);
+    qir::JitSession reference(ir, "reference", qir::Execution::Sampling,
+                              21 + i);
+    reference.runtime().disableOutput();
+    std::vector<std::string> expected;
+    ASSERT_EQ(reference.sample(128, expected), 0);
+    EXPECT_EQ(actual[i], expected);
+  }
 }
 
 TEST(QIRBatchSampling, ResetsProgramsWithoutInitializeBetweenShots) {
@@ -825,6 +853,7 @@ declare void @__quantum__rt__bool_record_output(i1, ptr)
 attributes #0 = { "entry_point" "qir_profiles"="base_profile" "required_num_qubits"="1" "required_num_results"="1" }
 )";
   qir::JitSession session(ir, "boolean-output", qir::Execution::Sampling);
+  EXPECT_EQ(session.quantumCallSites(), 1U);
   session.runtime().disableOutput();
   std::vector<std::string> shots;
   bool available = false;

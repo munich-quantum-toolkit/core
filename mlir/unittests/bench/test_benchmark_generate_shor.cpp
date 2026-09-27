@@ -100,6 +100,11 @@ TEST(GenerateProgramTest, SamplesShorAndRecoversFactors) {
     distance += std::abs(reference[phase] - observed) / 2.;
   }
   EXPECT_LT(distance, 0.4);
+  auto shared =
+      qco::sample(mlir::mqt::getEntryPoint(program->module()), 256, 17,
+                  qco::DDArgumentBindings{}, nullptr, nullptr, {}, 1);
+  ASSERT_TRUE(succeeded(shared));
+  EXPECT_TRUE(benchmark.evaluate(*shared).factors);
 }
 
 static std::optional<QCOProgram>

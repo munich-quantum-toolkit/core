@@ -181,6 +181,11 @@ TEST(ResultsStatevector, SamplingRetainsStateWithoutChangingSamples) {
     ASSERT_EQ(qdmi_test::setProgram(job.job, format, program), QDMI_SUCCESS);
     ASSERT_EQ(qdmi_test::setShots(job.job, 64), QDMI_SUCCESS);
     ASSERT_EQ(qdmi_test::setSeed(job.job, 7), QDMI_SUCCESS);
+    const size_t workers = 4;
+    ASSERT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                  job.job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM3, sizeof(workers),
+                  &workers),
+              QDMI_SUCCESS);
     ASSERT_EQ(qdmi_test::submitAndWait(job.job, 0), QDMI_SUCCESS);
     const auto counts = qdmi_test::getHistogram(job.job);
     const auto state = qdmi_test::getDenseState(job.job);

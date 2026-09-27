@@ -55,6 +55,7 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <future>
 #include <initializer_list>
 #include <limits>
 #include <map>
@@ -1359,6 +1360,206 @@ TEST_F(QCODDFunctionalityTest, SampleDynamicMeasureIf) {
   EXPECT_EQ(hist->begin()->second, shots);
 }
 
+TEST_F(QCODDFunctionalityTest, AdaptiveWorkersAndTopLevelBranches) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto [q, bit] = b.measure(b.h(b.staticQubit(0)));
+    q = b.qcoIf(
+        bit, q, [&](Value arg) { return b.h(arg); },
+        [&](Value arg) { return arg; });
+    b.sink(q);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  for (const size_t workers : {1U, 2U, 4U, 0U}) {
+    std::vector<std::string> first;
+    std::vector<std::string> second;
+    const auto a = sample(mainFunc(*mod), 512, 19, DDArgumentBindings{}, &first,
+                          nullptr, {}, workers);
+    const auto b = sample(mainFunc(*mod), 512, 19, DDArgumentBindings{},
+                          &second, nullptr, {}, workers);
+    ASSERT_TRUE(succeeded(a));
+    ASSERT_TRUE(succeeded(b));
+    EXPECT_EQ(first, second);
+    EXPECT_EQ(*a, *b);
+    EXPECT_EQ(first.size(), 512U);
+    EXPECT_NEAR(static_cast<double>(a->at("1")), 128., 50.);
+  }
+}
+
+TEST_F(QCODDFunctionalityTest, TopLevelResetBranchesPreserveCorrelations) {
+  for (const bool entangled : {false, true}) {
+    auto mod = buildModule([entangled](QCOProgramBuilder& b) {
+      auto q0 = b.h(b.staticQubit(0));
+      auto q1 = b.staticQubit(1);
+      if (entangled) {
+        std::tie(q0, q1) = b.cx(q0, q1);
+      } else {
+        q1 = b.x(q1);
+      }
+      b.sink(b.reset(q0));
+      b.sink(q1);
+      return b.intConstant(0);
+    });
+    ASSERT_TRUE(mod);
+    const auto hist = sample(mainFunc(*mod), 2000, 31, DDArgumentBindings{},
+                             nullptr, nullptr, {}, 2);
+    ASSERT_TRUE(succeeded(hist));
+    if (entangled) {
+      EXPECT_NEAR(static_cast<double>(hist->at("10")), 1000., 120.);
+      EXPECT_EQ(hist->at("00") + hist->at("10"), 2000U);
+    } else {
+      EXPECT_EQ(*hist, (std::map<std::string, size_t>{{"10", 2000}}));
+    }
+  }
+}
+
+TEST_F(QCODDFunctionalityTest, BranchesCopyClassicalRegisterStorage) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto reg =
+        b.allocClassicalBitRegister(1, {}, cbit::Initialization::Undefined);
+    auto [q, bit] = b.measure(b.h(b.staticQubit(0)), reg, 0);
+    q = b.qcoIf(
+        bit, q, [&](Value arg) { return arg; }, [&](Value arg) { return arg; });
+    b.sink(q);
+    return reg;
+  });
+  ASSERT_TRUE(mod);
+  const auto hist = sample(mainFunc(*mod), 1024, 23, DDArgumentBindings{},
+                           nullptr, nullptr, {}, 2);
+  ASSERT_TRUE(succeeded(hist));
+  EXPECT_NEAR(static_cast<double>(hist->at("0")), 512., 90.);
+  EXPECT_NEAR(static_cast<double>(hist->at("1")), 512., 90.);
+}
+
+TEST_F(QCODDFunctionalityTest, BranchesThroughCountedMeasurementsAndResets) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() -> !cbit.reg<3> {
+        %reg = cbit.alloc(#cbit.init<undefined>) : !cbit.reg<3>
+        %q = qco.static 0 : !qco.qubit
+        %zero = arith.constant 0 : index
+        %one = arith.constant 1 : index
+        %three = arith.constant 3 : index
+        %out = scf.for %i = %zero to %three step %one
+            iter_args(%current = %q) -> !qco.qubit {
+          %h = qco.h %current : !qco.qubit -> !qco.qubit
+          %measured, %bit = qco.measure %h : !qco.qubit
+          cbit.store %bit, %reg[%i] : !cbit.reg<3>
+          %reset = qco.reset %measured : !qco.qubit -> !qco.qubit
+          scf.yield %reset : !qco.qubit
+        }
+        qco.sink %out : !qco.qubit
+        return %reg : !cbit.reg<3>
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+
+  for (const size_t workers : {1U, 4U}) {
+    std::vector<std::string> first;
+    std::vector<std::string> second;
+    const auto a = sample(mainFunc(*mod), 2048, 41, DDArgumentBindings{},
+                          &first, nullptr, {}, workers);
+    const auto b = sample(mainFunc(*mod), 2048, 41, DDArgumentBindings{},
+                          &second, nullptr, {}, workers);
+    ASSERT_TRUE(succeeded(a));
+    ASSERT_TRUE(succeeded(b));
+    EXPECT_EQ(first, second);
+    EXPECT_EQ(*a, *b);
+    EXPECT_EQ(a->size(), 8U);
+    for (const auto& [outcome, count] : *a) {
+      EXPECT_EQ(outcome.size(), 3U);
+      EXPECT_NEAR(static_cast<double>(count), 256., 70.);
+    }
+  }
+}
+
+TEST_F(QCODDFunctionalityTest, BranchesThroughNestedCountedLoops) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() -> !cbit.reg<4> {
+        %reg = cbit.alloc(#cbit.init<undefined>) : !cbit.reg<4>
+        %q = qco.static 0 : !qco.qubit
+        %zero = arith.constant 0 : index
+        %one = arith.constant 1 : index
+        %two = arith.constant 2 : index
+        %out = scf.for %i = %zero to %two step %one
+            iter_args(%outerq = %q) -> !qco.qubit {
+          %inner = scf.for %j = %zero to %two step %one
+              iter_args(%innerq = %outerq) -> !qco.qubit {
+            %offset = arith.muli %i, %two : index
+            %index = arith.addi %offset, %j : index
+            %h = qco.h %innerq : !qco.qubit -> !qco.qubit
+            %measured, %bit = qco.measure %h : !qco.qubit
+            cbit.store %bit, %reg[%index] : !cbit.reg<4>
+            %reset = qco.reset %measured : !qco.qubit -> !qco.qubit
+            scf.yield %reset : !qco.qubit
+          }
+          scf.yield %inner : !qco.qubit
+        }
+        qco.sink %out : !qco.qubit
+        return %reg : !cbit.reg<4>
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+
+  const auto counts = sample(mainFunc(*mod), 1024, 43, DDArgumentBindings{},
+                             nullptr, nullptr, {}, 4);
+  ASSERT_TRUE(succeeded(counts));
+  EXPECT_EQ(counts->size(), 16U);
+  for (const auto& [outcome, count] : *counts) {
+    EXPECT_EQ(outcome.size(), 4U);
+    EXPECT_GT(count, 0U);
+  }
+}
+
+TEST_F(QCODDFunctionalityTest, ConcurrentSamplingSharesReadOnlyContext) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto [q, bit] = b.measure(b.h(b.staticQubit(0)));
+    q = b.qcoIf(
+        bit, q, [&](Value arg) { return b.h(arg); },
+        [&](Value arg) { return arg; });
+    b.sink(q);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+  const auto run = [&] {
+    return sample(mainFunc(*mod), 128, 29, DDArgumentBindings{}, nullptr,
+                  nullptr, {}, 4);
+  };
+  auto first = std::async(std::launch::async, run);
+  auto second = std::async(std::launch::async, run);
+  auto a = first.get();
+  auto b = second.get();
+  ASSERT_TRUE(succeeded(a));
+  ASSERT_TRUE(succeeded(b));
+  EXPECT_EQ(*a, *b);
+}
+
+TEST_F(QCODDFunctionalityTest, DisabledContextUsesOneSamplingWorker) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto [q, bit] = b.measure(b.h(b.staticQubit(0)));
+    q = b.qcoIf(
+        bit, q, [&](Value arg) { return b.x(arg); },
+        [&](Value arg) { return arg; });
+    b.sink(q);
+    return bit;
+  });
+  ASSERT_TRUE(mod);
+  context->disableMultithreading();
+  std::vector<std::string> serial;
+  std::vector<std::string> capped;
+  ASSERT_TRUE(succeeded(sample(mainFunc(*mod), 512, 29, DDArgumentBindings{},
+                               &serial, nullptr, {}, 1)));
+  ASSERT_TRUE(succeeded(sample(mainFunc(*mod), 512, 29, DDArgumentBindings{},
+                               &capped, nullptr, {}, 4)));
+  EXPECT_EQ(capped, serial);
+}
+
 TEST_F(QCODDFunctionalityTest, SampleHandlesZeroShotsAndSimulationFailure) {
   auto unitary = buildModule([](QCOProgramBuilder& b) {
     auto q = b.x(b.staticQubit(0));
@@ -1370,6 +1571,10 @@ TEST_F(QCODDFunctionalityTest, SampleHandlesZeroShotsAndSimulationFailure) {
   const auto empty = sample(mainFunc(*unitary), 0, 1);
   ASSERT_TRUE(succeeded(empty));
   EXPECT_TRUE(empty->empty());
+  const auto emptyParallel = sample(
+      mainFunc(*unitary), 0, 1, DDArgumentBindings{}, nullptr, nullptr, {}, 8);
+  ASSERT_TRUE(succeeded(emptyParallel));
+  EXPECT_TRUE(emptyParallel->empty());
 
   auto dynamic = parseSourceString<ModuleOp>(R"mlir(
     module {

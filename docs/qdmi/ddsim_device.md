@@ -47,6 +47,26 @@ to a positive `int` seed. The Python API exposes the same parameter as
 from the system. The seed controls OpenQASM and QIR sampling. State extraction
 does not use this seed.
 
+Adaptive sampling selects its worker count automatically by default. QCO
+programs share work before measurements and resets when these operations occur
+in the top-level stream or counted loops. Other QCO programs and adaptive QIR
+programs can run independent shots in parallel. Terminal measurements still use
+one simulation for all shots. Set `QDMI_DEVICE_JOB_PARAMETER_CUSTOM3` to a
+`size_t` maximum worker count (`custom3` in Python). Zero selects automatic
+allocation; one selects serial execution. For QCO and short QIR programs,
+automatic allocation uses roughly one worker per 256 shots, up to eight. Large
+QIR programs with shareable JIT code may use up to 32 workers. The DDSIM device
+reserves one CPU slot for each active program process and shares its remaining
+slots among their shot workers. Programs in one native job each receive at most
+their share of the budget. Set `MQT_CORE_DD_WORKER_BUDGET` to a positive integer
+before starting the parent process to cap the total active slots; the default
+uses LLVM's physical-core-aware thread strategy. An invalid value falls back to
+that default. Each host process has its own budget; coordinate separate host
+processes externally. Direct QCO sampling applies the same setting
+independently. A fixed seed and effective worker count reproduce ordered shots;
+changing the worker count may change individual shots. The C++ and Python QDMI
+clients may also pass a nonnegative native `int` to `custom3`.
+
 Under the hood, the QDMI device imports OpenQASM into the compiler's QC
 representation, lowers it to QCO, and executes it with the QCO DD utilities.
 This is the same compiler-backed simulation path exposed by
@@ -78,10 +98,15 @@ because their basis indices do not fit the sparse representation.
 ## Multi-program execution
 
 DDSIM executes programs concurrently in reusable worker processes. A shared LLVM
-thread pool bounds active workers using physical cores and process affinity.
-Each program creates its own compiler, JIT, runtime, and DD state; results
-retain independent DD packages after workers become available again. DDSIM
-requires an LLVM build with threading enabled.
+thread pool and CPU-slot budget bound active simulation workers using physical
+cores and process affinity. The parent grants each worker process its shot
+worker allowance with each program request, including when a process is reused.
+An earlier single-program job can occupy all slots until it finishes. Terminal
+programs can temporarily reserve more slots than they use because the parent
+grants slots before the child classifies its program. Each program creates its
+own compiler, JIT, runtime, and DD state; results retain independent DD packages
+after workers become available again. DDSIM requires an LLVM build with
+threading enabled.
 
 One failing or cancelled program does not discard completed siblings. Cancelling
 a job stops its active workers and removes its queued work. A crashed worker is
