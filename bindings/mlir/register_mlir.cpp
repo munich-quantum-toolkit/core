@@ -44,6 +44,7 @@
 #include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <array>
 #include <cctype>
 #include <complex>
 #include <cstddef>
@@ -73,6 +74,26 @@ using DenseVector = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<1>,
                                 nb::c_contig, nb::device::cpu>;
 using DenseMatrix = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<2>,
                                 nb::c_contig, nb::device::cpu>;
+
+using PythonCustomJobParameter =
+    std::variant<std::string, bool, int, double, nb::bytes>;
+
+[[nodiscard]] static std::optional<qdmi::CustomJobParameter>
+toCustomJobParameter(const std::optional<PythonCustomJobParameter>& parameter) {
+  if (!parameter) {
+    return std::nullopt;
+  }
+  return std::visit(
+      [](const auto& value) -> qdmi::CustomJobParameter {
+        if constexpr (std::is_same_v<std::decay_t<decltype(value)>,
+                                     nb::bytes>) {
+          return std::as_bytes(std::span(value.c_str(), value.size()));
+        } else {
+          return value;
+        }
+      },
+      *parameter);
+}
 
 template <class T>
 [[nodiscard]] static T takeResult(std::optional<T>&& result) {
@@ -413,16 +434,21 @@ compileProgramForTarget(const nb::object& program, const nb::object& target,
 submitProgram(const nb::object& program, const nb::object& target,
               int64_t numShots,
               std::optional<QDMI_Program_Format> programFormat,
-              const std::optional<qdmi::CustomJobParameter>& custom1,
-              const std::optional<qdmi::CustomJobParameter>& custom2,
-              const std::optional<qdmi::CustomJobParameter>& custom3,
-              const std::optional<qdmi::CustomJobParameter>& custom4,
-              const std::optional<qdmi::CustomJobParameter>& custom5,
+              const std::optional<PythonCustomJobParameter>& custom1,
+              const std::optional<PythonCustomJobParameter>& custom2,
+              const std::optional<PythonCustomJobParameter>& custom3,
+              const std::optional<PythonCustomJobParameter>& custom4,
+              const std::optional<PythonCustomJobParameter>& custom5,
               std::optional<mlir::CompilationOptions> options) {
   if (numShots < 0) {
     throw nb::value_error("num_shots must be nonnegative");
   }
   const auto device = resolveDevice(target);
+  const auto params = std::array{
+      toCustomJobParameter(custom1), toCustomJobParameter(custom2),
+      toCustomJobParameter(custom3), toCustomJobParameter(custom4),
+      toCustomJobParameter(custom5),
+  };
   if (nb::isinstance<mlir::CompiledProgram>(program)) {
     if (options) {
       throw nb::value_error(
@@ -434,14 +460,16 @@ submitProgram(const nb::object& program, const nb::object& target,
           "program_format conflicts with the compiled payload");
     }
     const nb::gil_scoped_release release;
-    return takeResult(mlir::submitProgram(device, compiled, numShots, custom1,
-                                          custom2, custom3, custom4, custom5));
+    return takeResult(mlir::submitProgram(device, compiled, numShots, params[0],
+                                          params[1], params[2], params[3],
+                                          params[4]));
   }
   auto input = programFromInput(program, false);
   const nb::gil_scoped_release release;
-  return takeResult(mlir::submitProgram(
-      device, std::move(input), numShots, programFormat, custom1, custom2,
-      custom3, custom4, custom5, options.value_or(mlir::CompilationOptions{})));
+  return takeResult(
+      mlir::submitProgram(device, std::move(input), numShots, programFormat,
+                          params[0], params[1], params[2], params[3], params[4],
+                          options.value_or(mlir::CompilationOptions{})));
 }
 
 template <class Function>
