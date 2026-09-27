@@ -45,10 +45,12 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
+#include <chrono>
 #include <cmath>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <iostream>
 #include <memory>
 #include <numbers>
 #include <random>
@@ -445,14 +447,33 @@ expectMatchesReferenceOnCoherentState(func::FuncOp funcOp, size_t numControls,
 
   const auto dd = std::make_unique<dd::Package>(numQubits);
   std::mt19937_64 rng(0);
+  const auto logStats = [&](const char* phase) {
+    std::size_t vectorGcRuns = 0;
+    for (const auto& stats : dd->vUniqueTable.getStats()) {
+      vectorGcRuns += stats.gcRuns;
+    }
+    const auto& addStats = dd->vectorAdd.getStats();
+    std::cerr << "coherent phase=" << phase << " k=" << numControls
+              << " add_lookups=" << addStats.lookups
+              << " add_hits=" << addStats.hits
+              << " add_inserts=" << addStats.inserts
+              << " add_collisions=" << addStats.collisions
+              << " vector_peak=" << dd->vMemoryManager.getStats().peakNumUsed
+              << " matrix_peak=" << dd->mMemoryManager.getStats().peakNumUsed
+              << " vector_gc=" << vectorGcRuns << std::endl;
+  };
+  std::cerr << "coherent phase=simulate k=" << numControls << std::endl;
   const auto decomposedOutput = simulate(
       funcOp, makeCoherentControlInput(numControls, targetOne, *dd), *dd, rng);
   ASSERT_TRUE(succeeded(decomposedOutput));
+  logStats("reference");
   const auto referenceOutput = dd->applyOperation(
       makeControlledGateDD(*dd, numControls, referenceMatrix),
       makeCoherentControlInput(numControls, targetOne, *dd));
 
+  logStats("compare");
   expectStatesNear(*dd, *decomposedOutput, referenceOutput);
+  logStats("done");
 
   dd->decRef(*decomposedOutput);
   dd->decRef(referenceOutput);
@@ -794,6 +815,9 @@ TEST_F(MultiControlledDecompositionTest,
   for (const auto k : K_COHERENT_PAULI_CONTROL_COUNTS) {
     for (const auto pauli :
          {ControlledPauli::X, ControlledPauli::Y, ControlledPauli::Z}) {
+      const auto start = std::chrono::steady_clock::now();
+      std::cerr << "coherent case=start k=" << k
+                << " pauli=" << static_cast<unsigned>(pauli) << std::endl;
       SCOPED_TRACE(testing::Message()
                    << "k=" << k << " pauli=" << static_cast<unsigned>(pauli));
       auto moduleOp = buildControlledPauliModule(context(), k, pauli);
@@ -801,6 +825,12 @@ TEST_F(MultiControlledDecompositionTest,
       ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded());
       auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
       expectMatchesControlledPauliOnCoherentState(funcOp, k, pauli);
+      std::cerr << "coherent case=done k=" << k
+                << " pauli=" << static_cast<unsigned>(pauli) << " seconds="
+                << std::chrono::duration<double>(
+                       std::chrono::steady_clock::now() - start)
+                       .count()
+                << std::endl;
     }
   }
 }
