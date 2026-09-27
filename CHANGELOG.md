@@ -8,6 +8,13 @@ The format is based on a mixture of [Keep a Changelog] and [Common Changelog].
 This project adheres to [Semantic Versioning], with the exception that minor
 releases may include breaking changes.
 
+## [Unreleased]
+
+### Added
+
+- ✨ Forward device-specific Qiskit backend options to QDMI custom job
+  parameters, including exact byte values. ([#2618]) ([**@burgholzer**])
+
 ## [4.0.0] - 2026-09-11
 
 ### MQT Core 4: a compiler foundation built on MLIR and LLVM
@@ -1111,6 +1118,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2618]: https://github.com/munich-quantum-toolkit/core/pull/2618
 [#2538]: https://github.com/munich-quantum-toolkit/core/pull/2538
 [#2535]: https://github.com/munich-quantum-toolkit/core/pull/2535
 [#2531]: https://github.com/munich-quantum-toolkit/core/pull/2531

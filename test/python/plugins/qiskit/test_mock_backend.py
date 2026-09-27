@@ -1041,6 +1041,17 @@ def test_execution_options_defaults_overrides_and_validation(monkeypatch: pytest
     submit.assert_not_called()
 
 
+def test_execution_options_forward_exact_bytes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Forward custom bytes unchanged through the backend submission hook."""
+    device = MockQDMIDevice(num_qubits=1)
+    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
+    submit = Mock(return_value=device.MockJob(num_clbits=1, shots=1))
+    monkeypatch.setattr(device, "submit_job", submit)
+    monkeypatch.setattr(QDMIBackend, "_job_parameters", lambda _self, _options: {"custom1": b"\x00\xff"})
+    backend.run(QuantumCircuit(1), shots=1)
+    assert submit.call_args.kwargs["custom1"] == b"\x00\xff"
+
+
 def test_execution_options_survive_retry(monkeypatch: pytest.MonkeyPatch) -> None:
     """A replacement job keeps the options resolved for the original run."""
     device = MockQDMIDevice(num_qubits=1)
