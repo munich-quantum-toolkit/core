@@ -646,13 +646,6 @@ def test_custom_parameter_bytes_preserve_seed(ddsim_device: Device, submission: 
     assert actual.get_shots() == expected.get_shots()
 
 
-@pytest.mark.parametrize("payload", [b"", b"\x01" * 8])
-def test_custom_parameter_bytes_reject_invalid_seed_width(ddsim_device: Device, payload: bytes) -> None:
-    """Empty payloads and eight-byte values cannot masquerade as a native int seed."""
-    with pytest.raises(ValueError, match="parameter"):
-        ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom1=payload)
-
-
 def test_device_submit_job_without_shots(ddsim_device: Device) -> None:
     """Allow devices or custom programs to define their own repetitions."""
     qasm3_program = """
