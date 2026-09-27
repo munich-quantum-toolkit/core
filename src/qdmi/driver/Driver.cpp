@@ -147,6 +147,7 @@ DynamicDeviceLibrary::DynamicDeviceLibrary(void* handle,
     LOAD_DYNAMIC_SYMBOL(device_job_set_parameter)
     LOAD_DYNAMIC_SYMBOL(device_job_set_programs)
     LOAD_DYNAMIC_SYMBOL(device_job_get_program)
+    LOAD_DYNAMIC_SYMBOL(device_job_get_program_status)
     LOAD_DYNAMIC_SYMBOL(device_job_query_property)
     LOAD_DYNAMIC_SYMBOL(device_job_submit)
     LOAD_DYNAMIC_SYMBOL(device_job_cancel)
@@ -539,6 +540,12 @@ auto QDMI_Job_impl_d::getProgram(const size_t programIndex, const size_t size,
                                                       size, data, sizeRet);
 }
 
+auto QDMI_Job_impl_d::getProgramStatus(const size_t programIndex,
+                                       QDMI_Job_Status* status) const -> int {
+  return device_->getLibrary().device_job_get_program_status(
+      deviceJob_, programIndex, status);
+}
+
 namespace {
 [[nodiscard]] auto toDeviceJobProperty(const QDMI_Job_Property& prop)
     -> QDMI_Device_Job_Property {
@@ -555,8 +562,6 @@ namespace {
     return QDMI_DEVICE_JOB_PROPERTY_QUEUEPOSITION;
   case QDMI_JOB_PROPERTY_PROGRAMSNUM:
     return QDMI_DEVICE_JOB_PROPERTY_PROGRAMSNUM;
-  case QDMI_JOB_PROPERTY_PROGRAMSTATUSES:
-    return QDMI_DEVICE_JOB_PROPERTY_PROGRAMSTATUSES;
   case QDMI_JOB_PROPERTY_CUSTOM1:
     return QDMI_DEVICE_JOB_PROPERTY_CUSTOM1;
   case QDMI_JOB_PROPERTY_CUSTOM2:
@@ -1118,6 +1123,14 @@ int QDMI_job_get_program(QDMI_Job job, const size_t programIndex,
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   return job->getProgram(programIndex, size, data, sizeRet);
+}
+
+int QDMI_job_get_program_status(QDMI_Job job, const size_t programIndex,
+                                QDMI_Job_Status* status) {
+  if (job == nullptr || status == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  return job->getProgramStatus(programIndex, status);
 }
 
 int QDMI_job_query_property(QDMI_Job job, QDMI_Job_Property prop,

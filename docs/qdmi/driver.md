@@ -75,10 +75,10 @@ submission could duplicate execution.
 Use `job.num_programs` and the optional `program_index` argument on result
 methods to retrieve results in input order. Use `job.get_program(index)` or
 `job.get_program_bytes(index)` to read an input payload; a retrieved historical
-job may not expose it. `job.program_statuses` reports individual outcomes when
-supported, or `None` otherwise. A successful program's results remain available
-if another program fails or is cancelled. Cancelling uses the shared native job
-handle.
+job may not expose it. `job.get_program_status(index)` reports one outcome when
+supported, or `None` otherwise. `job.program_statuses` collects the outcomes in
+input order. A successful program's results remain available if another program
+fails or is cancelled. Cancelling uses the shared native job handle.
 
 ## Building the Bundled Devices
 

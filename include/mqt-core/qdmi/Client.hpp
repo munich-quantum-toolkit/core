@@ -76,6 +76,7 @@ struct ClientAPI {
   decltype(&::QDMI_job_set_parameter) job_set_parameter{};
   decltype(&::QDMI_job_set_programs) job_set_programs{};
   decltype(&::QDMI_job_get_program) job_get_program{};
+  decltype(&::QDMI_job_get_program_status) job_get_program_status{};
   decltype(&::QDMI_job_query_property) job_query_property{};
   decltype(&::QDMI_job_submit) job_submit{};
   decltype(&::QDMI_job_cancel) job_cancel{};
@@ -940,6 +941,10 @@ public:
 
   /// Returns the number of programs in input order.
   [[nodiscard]] size_t getNumPrograms() const;
+
+  /// Returns one program outcome, or no value when unsupported.
+  [[nodiscard]] std::optional<QDMI_Job_Status>
+  getProgramStatus(size_t programIndex) const;
 
   /// Returns individual outcomes, or no value when unsupported.
   [[nodiscard]] std::optional<std::vector<QDMI_Job_Status>>
