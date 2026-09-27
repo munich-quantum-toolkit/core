@@ -397,9 +397,9 @@ class QDMIBackend(BackendV2):
         override this hook to map their values to QDMI custom job parameters.
         An override replaces this implementation and must handle every option
         it declares. The mapping contains resolved backend defaults and per-run
-        overrides, including ``shots``, ``memory``, and ``max_retries``. This hook
-        runs once, before any job is submitted, and must not submit jobs or
-        mutate backend options.
+        overrides, excluding the base options ``shots``, ``memory``, and
+        ``max_retries``. This hook runs once, before any job is submitted, and
+        must not submit jobs or mutate backend options.
 
         Args:
             options: Effective execution options for every circuit in this run.
@@ -410,8 +410,8 @@ class QDMIBackend(BackendV2):
         Raises:
             CircuitValidationError: If an option has no submission mapping.
         """
-        if unsupported := options.keys() - {"shots", "memory", "max_retries"}:
-            msg = f"Unsupported execution options: {', '.join(sorted(unsupported))}"
+        if options:
+            msg = f"Unsupported execution options: {', '.join(sorted(options))}"
             raise CircuitValidationError(msg)
         return {}
 
@@ -836,7 +836,10 @@ class QDMIBackend(BackendV2):
             msg = f"max_retries must be a nonnegative integer, got {max_retries!r}."
             raise CircuitValidationError(msg)
         max_retries = int(max_retries)
-        job_parameters = self._job_parameters({**dict(self._options), **options})
+        effective_options = {**dict(self._options), **options}
+        job_parameters = self._job_parameters({
+            name: value for name, value in effective_options.items() if name not in {"shots", "memory", "max_retries"}
+        })
         prepared_circuits: list[QuantumCircuit] = []
         # Prepare every circuit before submitting any job, so validation cannot leave a partial batch.
 

@@ -534,8 +534,9 @@ program serializer.
 
 Backend subclasses can add named execution options in `_default_options` and
 implement `_job_parameters(options)` to validate and encode them as QDMI
-`custom1` through `custom5` submission parameters. The hook receives backend
-defaults merged with per-run overrides and runs before any circuit is submitted.
+`custom1` through `custom5` submission parameters. The hook receives the
+subclass's defaults merged with per-run overrides, excluding the base options
+`shots`, `memory`, and `max_retries`. It runs before any circuit is submitted.
 Unknown option names are rejected. The base hook rejects declared options it
 cannot encode, so a subclass that adds options must override it and handle each
 one. The generic backend defines no vendor-specific option names or values.

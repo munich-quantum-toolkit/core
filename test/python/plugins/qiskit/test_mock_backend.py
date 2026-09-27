@@ -1011,6 +1011,7 @@ class ExecutionOptionsBackend(QDMIBackend):
 
     def _job_parameters(self, options: Mapping[str, object]) -> QDMIJobParameters:  # ruff:ignore[no-self-use]
         mode = options["execution_mode"]
+        assert options == {"execution_mode": mode}
         if mode not in {"default", "selected"}:
             msg = "Invalid execution_mode"
             raise CircuitValidationError(msg)
