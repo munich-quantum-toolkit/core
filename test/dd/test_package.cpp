@@ -2738,6 +2738,28 @@ TEST(DDPackageTest, ReduceAncillaRegression) {
   EXPECT_EQ(outputMatrix, expected);
 }
 
+TEST(DDPackageTest, AddCacheKeyRetainsCommonScale) {
+  Package package(1);
+  const auto zero = package.makeDDNode<vNode, CachedEdge>(
+      0, {vCachedEdge::one(), vCachedEdge::zero()});
+  const auto one = package.makeDDNode<vNode, CachedEdge>(
+      0, {vCachedEdge::zero(), vCachedEdge::one()});
+  ASSERT_NE(zero.p, one.p);
+
+  const auto first =
+      package.add2(vCachedEdge{zero.p, ComplexValue{0., -0.375}},
+                   vCachedEdge{one.p, ComplexValue{0.75, 0.}}, 0);
+  const auto lookups = package.vectorAdd.getStats().lookups;
+  const auto hits = package.vectorAdd.getStats().hits;
+
+  const auto second =
+      package.add2(vCachedEdge{zero.p, ComplexValue{0., -0.75}},
+                   vCachedEdge{one.p, ComplexValue{1.5, 0.}}, 0);
+  EXPECT_EQ(first.p, second.p);
+  EXPECT_EQ(package.vectorAdd.getStats().lookups, lookups + 1);
+  EXPECT_EQ(package.vectorAdd.getStats().hits, hits + 1);
+}
+
 TEST(DDPackageTest, WideCoherentAdditionRetainsNormalizationAndPhase) {
   for (const size_t width : {8U, 120U, 150U}) {
     for (const ComplexValue phase : {ComplexValue{1., 0.}, {0., 1.}}) {
@@ -2752,7 +2774,7 @@ TEST(DDPackageTest, WideCoherentAdditionRetainsNormalizationAndPhase) {
         auto sum = package.add2(vCachedEdge{plus.p, SQRT2_2 * scale},
                                 vCachedEdge{minus.p, phase * (SQRT2_2 * scale)},
                                 static_cast<Qubit>(width - 1));
-        // Compare the normalized result without losing a tiny vector root.
+        /// Compare the normalized result without losing a tiny vector root.
         sum.w = sum.w / scale;
         auto state = package.cn.lookup(sum);
         package.incRef(state);
@@ -2762,7 +2784,8 @@ TEST(DDPackageTest, WideCoherentAdditionRetainsNormalizationAndPhase) {
           state = package.applyOperation(
               package.makeGateDD(H_MAT, static_cast<Qubit>(qubit)), state);
         }
-        // H on every wire maps the two product states to distinct basis states.
+        /// H on every wire maps the two product states to distinct basis
+        /// states.
         const auto zero = state.getValueByPath(width, std::string(width, '0'));
         const auto one = state.getValueByPath(width, std::string(width, '1'));
         EXPECT_NEAR(std::abs(zero - std::complex<fp>{SQRT2_2, 0.}), 0., 1e-11);

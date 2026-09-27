@@ -340,12 +340,11 @@ respective weights. MQT Core selects a maximum-magnitude edge (preferring the
 left edge when squared magnitudes agree within relative tolerance) and makes its
 normalized weight real and nonnegative. The incoming edge retains its complex
 phase. Normalization proceeds bottom-up; complex-number comparisons use the
-package tolerance. Recursive addition leaves weights near unit scale unchanged.
-For smaller or larger weights, it extracts a common power-of-two scale before
-visiting child nodes and restores it on return. This keeps small basis-state
-amplitudes from being discarded before the normalized parent is reconstructed,
-while avoiding extra rounding from general division that can prevent subgraph
-sharing. The same rule applies to magnitude addition.
+package tolerance. Recursive addition divides both operands by their largest
+component before visiting child nodes and restores that scale on return. This
+keeps small basis-state amplitudes from being discarded before the normalized
+parent is reconstructed, while making the dominant component exactly one for
+subgraph sharing. The same rule applies to magnitude addition.
 
 Cached vector normalization projects nearly equal or opposite coefficients onto
 the corresponding balanced pair before dividing by their norm. For unit-norm
