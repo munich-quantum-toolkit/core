@@ -494,6 +494,7 @@ def test_native_program_group_preserves_circuit_results(
     shared.get_counts.side_effect = lambda program_index: {f"{program_index:02b}": 4}
     native = MagicMock(return_value=shared)
     monkeypatch.setattr(backend.device, "try_submit_programs", native)
+    monkeypatch.setattr(backend, "_job_parameters", lambda _options: {"custom1": "native-options"})
     circuits = [QuantumCircuit(2, 2, name=f"native-{index}") for index in range(3)]
     job = backend.run(circuits, shots=4, memory=memory)
     result = job.result()
@@ -507,6 +508,7 @@ def test_native_program_group_preserves_circuit_results(
     assert all(isinstance(program, str) for program in programs)
     assert program_format == ProgramFormat.QASM3
     assert shots == 4
+    assert native.call_args.kwargs == {"custom1": "native-options"}
     assert [entry.attempts[0].program_index for entry in job.entries] == [0, 1, 2]
     shared.wait.assert_called_once()
     shared.check.assert_called_once()
