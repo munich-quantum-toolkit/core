@@ -180,6 +180,7 @@ class QDMIJob(JobV1):
             cast("Sequence[str] | Sequence[bytes]", [self._programs[index][0] for index in indices]),
             self._programs[indices[0]][1],
             self._shots,
+            **self._job_parameters,
         )
 
     def collect(self) -> tuple[BatchEntry[ExperimentResult], ...]:
