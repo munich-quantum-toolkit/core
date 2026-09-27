@@ -77,27 +77,22 @@ The `custom1` through `custom5` arguments of
 Strings include a terminating null byte. Booleans, integers, and floats use
 native C++ `bool`, `int`, and `double`, respectively.
 
-Use nonempty `bytes` for other representations. For example, if a device defines
-`custom1` as a `uint64_t` execution-time limit:
+Use nonempty `bytes` when the device defines a binary representation. For
+example, to send a three-byte payload containing a zero byte:
 
 ```python
-import struct
-
 job = device.submit_job(
     program,
     program_format,
-    custom1=struct.pack("=Q", 60),
+    custom1=b"\x01\x00\xff",
 )
 ```
 
-`struct.pack` checks the integer range before submission. `=Q` uses native byte
-order and an eight-byte unsigned integer; `=q` selects a signed integer of the
-same width. QDMI copies the payload during submission without numeric conversion
-or an added terminator. Empty byte payloads raise `ValueError`; the device
-validates the meaning and size of other payloads. In C++, supply a
-`std::span<const std::byte>` as the custom parameter. Its buffer must remain
-valid until submission returns. These bytes describe a local QDMI ABI value, not
-a network encoding.
+QDMI copies these bytes during submission without adding a terminator. Empty
+byte payloads raise `ValueError`; the device defines and validates their meaning
+and size. In C++, supply a `std::span<const std::byte>` as the custom parameter.
+Its buffer must remain valid until submission returns. These bytes describe a
+local QDMI ABI value, not a network encoding.
 
 ## Usage
 
