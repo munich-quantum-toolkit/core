@@ -556,7 +556,13 @@ TEST(DDComplexTest, HashesSignedQuantizedWeights) {
     }
     EXPECT_GT(hashes.size(), 1U);
   }
-  EXPECT_EQ(hash({0., 0.}), hash({-0., -0.}));
+  for (const fp zero : {0., -0., RealNumber::eps / 4., -RealNumber::eps / 4.}) {
+    EXPECT_EQ(hash({zero, zero}), hash({0., 0.}));
+    EXPECT_EQ(hash({zero, 0.}), hash({0., 0.}));
+    EXPECT_EQ(hash({0., zero}), hash({0., 0.}));
+    EXPECT_EQ(hash({zero, 0.5}), hash({0., 0.5}));
+    EXPECT_EQ(hash({0.5, zero}), hash({0.5, 0.}));
+  }
 }
 
 TEST(DDComplexTest, PreservesFlagsWhenRelinkingNumbers) {
