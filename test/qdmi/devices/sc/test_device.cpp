@@ -582,8 +582,8 @@ TEST_F(ScQDMIJobSpecificationTest, JobSetParameter) {
 }
 
 TEST_F(ScQDMISpecificationTest, JobSetPrograms) {
-  EXPECT_EQ(MQT_SC_QDMI_device_job_set_programs(nullptr, nullptr, 0U, nullptr,
-                                                nullptr),
+  EXPECT_EQ(MQT_SC_QDMI_device_job_set_programs(
+                nullptr, QDMI_PROGRAM_FORMAT_MAX, 0U, nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
@@ -593,16 +593,17 @@ TEST_F(ScQDMIJobSpecificationTest, JobSetPrograms) {
   constexpr std::array<size_t, 1> sizes{1U};
   const std::array<const void*, 1> programs{&program};
 
-  EXPECT_EQ(MQT_SC_QDMI_device_job_set_programs(job, nullptr, 1U, sizes.data(),
+  EXPECT_EQ(MQT_SC_QDMI_device_job_set_programs(job, QDMI_PROGRAM_FORMAT_MAX,
+                                                1U, sizes.data(),
                                                 programs.data()),
             QDMI_ERROR_INVALIDARGUMENT);
-  EXPECT_EQ(MQT_SC_QDMI_device_job_set_programs(job, &format, 0U, sizes.data(),
+  EXPECT_EQ(MQT_SC_QDMI_device_job_set_programs(job, format, 0U, sizes.data(),
                                                 programs.data()),
             QDMI_ERROR_INVALIDARGUMENT);
-  EXPECT_EQ(MQT_SC_QDMI_device_job_set_programs(job, &format, 1U, sizes.data(),
+  EXPECT_EQ(MQT_SC_QDMI_device_job_set_programs(job, format, 1U, sizes.data(),
                                                 nullptr),
             QDMI_ERROR_NOTSUPPORTED);
-  EXPECT_EQ(MQT_SC_QDMI_device_job_set_programs(job, &format, 1U, nullptr,
+  EXPECT_EQ(MQT_SC_QDMI_device_job_set_programs(job, format, 1U, nullptr,
                                                 programs.data()),
             QDMI_ERROR_NOTSUPPORTED);
 }

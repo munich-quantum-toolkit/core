@@ -145,6 +145,7 @@ LoadedDeviceAPI::LoadedDeviceAPI(void* handle, const std::string& libName,
     LOAD_DYNAMIC_SYMBOL(device_job_free)
     LOAD_DYNAMIC_SYMBOL(device_job_set_parameter)
     LOAD_DYNAMIC_SYMBOL(device_job_set_programs)
+    LOAD_DYNAMIC_SYMBOL(device_job_get_program)
     LOAD_DYNAMIC_SYMBOL(device_job_query_property)
     LOAD_DYNAMIC_SYMBOL(device_job_submit)
     LOAD_DYNAMIC_SYMBOL(device_job_cancel)
@@ -523,12 +524,18 @@ auto QDMI_Job_impl_d::setParameter(QDMI_Job_Parameter param, const size_t size,
       deviceJob_, toDeviceJobParameter(param), size, value);
 }
 
-auto QDMI_Job_impl_d::setPrograms(const QDMI_Program_Format* const format,
+auto QDMI_Job_impl_d::setPrograms(const QDMI_Program_Format format,
                                   const size_t count, const size_t* const sizes,
                                   const void* const* const programs) const
     -> int {
   return device_->getLibrary().device_job_set_programs(deviceJob_, format,
                                                        count, sizes, programs);
+}
+
+auto QDMI_Job_impl_d::getProgram(const size_t programIndex, const size_t size,
+                                 void* data, size_t* sizeRet) const -> int {
+  return device_->getLibrary().device_job_get_program(deviceJob_, programIndex,
+                                                      size, data, sizeRet);
 }
 
 namespace {
@@ -1095,13 +1102,21 @@ int QDMI_job_set_parameter(QDMI_Job job, QDMI_Job_Parameter param,
   return job->setParameter(param, size, value);
 }
 
-int QDMI_job_set_programs(QDMI_Job job, const QDMI_Program_Format* format,
+int QDMI_job_set_programs(QDMI_Job job, const QDMI_Program_Format format,
                           const size_t count, const size_t* sizes,
                           const void* const* programs) {
   if (job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   return job->setPrograms(format, count, sizes, programs);
+}
+
+int QDMI_job_get_program(QDMI_Job job, const size_t programIndex,
+                         const size_t size, void* data, size_t* sizeRet) {
+  if (job == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  return job->getProgram(programIndex, size, data, sizeRet);
 }
 
 int QDMI_job_query_property(QDMI_Job job, QDMI_Job_Property prop,

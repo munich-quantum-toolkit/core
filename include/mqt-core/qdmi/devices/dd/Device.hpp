@@ -180,9 +180,13 @@ public:
   auto setParameter(QDMI_Device_Job_Parameter param, size_t size,
                     const void* value) -> QDMI_STATUS;
 
-  auto setPrograms(const QDMI_Program_Format* format, size_t count,
+  auto setPrograms(QDMI_Program_Format format, size_t count,
                    const size_t* sizes, const void* const* programs)
       -> QDMI_STATUS;
+
+  /// Retrieves a program payload in input order.
+  auto getProgram(size_t programIndex, size_t size, void* data,
+                  size_t* sizeRet) const -> QDMI_STATUS;
 
   /// Queries a property of the job.
   /// @see MQT_DDSIM_QDMI_device_job_query_property
