@@ -1,7 +1,7 @@
 # Compiler layout audit
 
-Status: complete. Base: upstream `main` at
-`6ad2b659a89f21482975ff03c42a2d3c53c09696`. Compatibility target: PR [#2607] at
+Status: reviewed. Base: upstream `main` at
+`3b38625c7d087a02aac2223786695d6d8be5780e`. Compatibility target: PR [#2607] at
 `d8fdef1b4c112b02cb7d463e91ac73f9ada7b4b8`.
 
 ## Result and applied changes
@@ -17,9 +17,11 @@ state and scoring; it does not supply either public contract.
   is removed. All-to-all final placement copies the initial snapshot; an unused
   pipeline include is removed.
 - Native results include the exact physical routing permutation, including
-  workspace sites. `to_qiskit(target=..., mapping_result=...)` constructs a full
-  `TranspileLayout`. Source mappings use target site IDs; the routing
-  permutation and Qiskit layouts use indices in target site order.
+  workspace sites. Tracked compilation composes complete imported provenance
+  with native placement and routing and retains the resulting layout in QCO IR.
+  `to_qiskit(target=...)` constructs a full `TranspileLayout` from that IR.
+  Source mappings use target site IDs; routing and Qiskit layouts use indices in
+  target site order.
 - Documentation describes current contracts, input identities, and export
   workflows. Historical implementation and review narration is removed.
 
@@ -36,13 +38,16 @@ membership; SDK helpers may require complete maps.
   Module-boundary validation is separate from attribute verification because
   MLIR parsing uses a temporary enclosing module.
 - Native source order is entry-block allocation order, then ascending tensor
-  slots. Allocations have compile-time constant sizes. Idle inputs consume
-  target capacity and retain identities through workspace routing.
-- Explicit placement is complete. Tracked compilation returns its detached
-  snapshot only after the complete pipeline and linearity verification succeed.
-- Use a native snapshot with the same target and unchanged compiled program. It
-  describes native allocation inputs; it does not compose imported Qiskit
-  provenance. Exporters require explicit discard of invalidated provenance.
+  slots, including preplaced static inputs. Allocations have compile-time
+  constant sizes. Idle inputs consume target capacity and retain identities
+  through workspace routing.
+- Explicit placement is complete. Tracked compilation writes provenance only
+  after the complete pipeline and linearity verification succeed. The returned
+  mapping snapshot still provides target site IDs for callers.
+- Imported layouts require total initial and routing maps for native
+  composition. Existing layouts on preplaced static QCO inputs are rejected:
+  removing idle static qubits can erase their wire identity before a second
+  placement. Exporters require explicit discard of invalidated provenance.
 - Adaptive all-to-all placement requires static result types for retained
   tensors. Ordinary and tracked compilation share this existing restriction;
   frontends produce static types for fixed allocations. General tensor shape
@@ -52,6 +57,25 @@ The full native permutation costs O(target sites) storage and linear snapshot
 work. Ordinary compilation does not construct it. No new performance claim is
 made. Source tags, workspace tracking, partial metadata support, and the
 module-wide preparation scan retain real contracts and are not redundant.
+
+## Verification prototype and remaining gaps
+
+A scratch QCEC-style DD prototype applied the reference and compiled gates in
+construction and alternating order, tracking bare SWAPs and correcting the
+declared final permutation. Both schemes accepted a Qiskit-routed input after
+native re-placement and rejected the former uncomposed layout. Direct QCO DD
+construction also matched `P_final * U_reference * P_initial^-1` on a routed
+unitary with workspace. A nonidentity Qiskit output wire list required
+conjugating both the raw final map and output order; the regression checks
+Qiskit's operator and layout interpretation.
+
+Current QCO DD functionality construction rejects measurements, so adaptive
+feedback needs a branch-aware verification contract beyond unitary DDs. QCO
+runtime-indexed tensor programs can retain native initial placement, but the
+Qiskit exporter rejects them; no Qiskit layout contract is imposed there. Sparse
+target site IDs must be converted to dense target order before allocating QCEC
+DD variables. The `mqt-cc` CLI still runs ordinary compilation and does not
+request tracked layout output; a future verifier needs that bridge.
 
 ## Test reductions
 
@@ -98,15 +122,17 @@ automatic merge is not sufficient.
 
 - Clang 23 Release with ThinLTO and mold builds successfully.
 - `ctest --preset release-clang-ipo -j 8`: 3,651 passed, one existing skip
-  (`ScQDMIJobSpecificationTest.QueryJobId`).
-- The combined PR #2607 build: 3,672 passed with the same skip.
-- `pytest test/python/test_mlir.py test/python/test_mlir_qiskit_translation.py test/python/qdmi/test_compilation.py`:
-  634 passed on each build, using Qiskit 2.5.2 and local DDSIM/SC device
-  libraries.
+  (`ScQDMIJobSpecificationTest.QueryJobId`). The final layout-composition edit
+  passed all focused compiler layout tests afterward.
+- The earlier combined PR #2607 checkout ran 3,672 tests with the same skip.
+  PR #2607 is unchanged; its overlap still needs the resolution above.
+- `pytest test/python/test_mlir_qiskit_translation.py`: 441 passed after the
+  final composition edit. The earlier wider compiler, Qiskit, and QDMI Python
+  run passed 634 tests on the combined checkout, using Qiskit 2.5.2.
 - `uvx nox -s stubs` and
   `cmake --build --preset release-clang-ipo --target mlir-doc` succeed.
-- `uvx nox -s lint` and `uvx nox -s cpp-lint` pass; C++ lint checks every line
-  of all changed C++ files against main.
+- `uvx nox -s lint` and whole-file `uvx nox -s cpp-lint` pass after two findings
+  in the new composition helper were fixed.
 
 [#2553]: https://github.com/munich-quantum-toolkit/core/pull/2553
 [#2607]: https://github.com/munich-quantum-toolkit/core/pull/2607

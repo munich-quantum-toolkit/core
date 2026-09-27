@@ -202,23 +202,25 @@ program.discard_layout()
 source = program.to_openqasm3().source
 ```
 
-For native target compilation, pass its `MappingResult` to export a complete
-Qiskit layout, including the routing permutation of workspace qubits:
+Native target compilation retains a complete layout in the program, including
+the routing permutation of workspace qubits:
 
 ```python
 program = QCProgram.from_qiskit(circuit).to_qco()
-mapping = program.compile_for_target_with_layout(target_environment)
-compiled = program.to_qiskit(target=target, mapping_result=mapping)
+program.compile_for_target_with_layout(target_environment)
+compiled = program.to_qiskit(target=target_environment.target)
 final_positions = compiled.layout.final_index_layout()
 ```
 
-Use the same target and compiled program, without intervening transformations.
-Layout positions follow target site order; they are not target site IDs. Logical
-inputs follow the snapshot's allocation order, and additional physical wires
-appear as ancillas. This layout describes the input to native compilation. It
-does not compose with imported provenance: discard an imported layout before
-compilation when choosing this input identity. Without a snapshot or retained
-provenance, export leaves `circuit.layout` unset.
+Layout positions follow target site order; they are not target site IDs. An
+imported layout retains its logical input identities and register structure;
+native placement and routing update their physical positions. With no imported
+layout, logical inputs follow allocation order and additional physical wires
+appear as ancillas. The compiled layout survives MLIR serialization and QC/QCO
+conversion. Without retained provenance, export leaves `circuit.layout` unset.
+Compilation requires a complete imported layout to compose placements and
+routing; partial layouts remain available for import and export without native
+recompilation.
 
 Imported layouts may contain partial assignments, unused positions, loose or
 ancillary qubits, source registers, and independent output-wire ordering. Input

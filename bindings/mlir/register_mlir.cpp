@@ -1355,26 +1355,21 @@ before conversion to QCO.)pb");
       .def(
           "to_qiskit",
           [](const mlir::QCProgram& program,
-             const mlir::CompilerTarget* const target,
-             const mlir::MappingResult* const mappingResult) {
+             const mlir::CompilerTarget* const target) {
             requireValid(program);
-            return bindings::qiskit::exportCircuit(program, target,
-                                                   mappingResult);
+            return bindings::qiskit::exportCircuit(program, target);
           },
           nb::kw_only(), "target"_a = nb::none(),
-          "mapping_result"_a = nb::none(),
           nb::sig("def to_qiskit(self, *, target: CompilerTarget | None = "
-                  "None, mapping_result: MappingResult | None = None) "
-                  "-> qiskit.circuit.QuantumCircuit"),
+                  "None) -> qiskit.circuit.QuantumCircuit"),
           R"pb(Translate this QC program to a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` without consuming it.
+
+A program compiled with layout tracking retains its layout for export.
 
 Args:
     target: The optional compiler target used for mapping. When provided, emit
         a canonical physical circuit. All qubits must be static, and their site
-        IDs must belong to the target.
-    mapping_result: The snapshot from compiling this program with ``target``.
-        Supplies the initial layout and full routing permutation. Use the same
-        target and make no further circuit transformations before export.)pb")
+        IDs must belong to the target.)pb")
       .def(
           "to_qco",
           [](mlir::QCProgram& value, const bool copy) {
@@ -1563,27 +1558,22 @@ operations.)pb");
       .def(
           "to_qiskit",
           [](const mlir::QCOProgram& program,
-             const mlir::CompilerTarget* target,
-             const mlir::MappingResult* mappingResult) {
+             const mlir::CompilerTarget* target) {
             requireValid(program);
             auto qc = takeResult(program.copy().intoQC());
-            return bindings::qiskit::exportCircuit(qc, target, mappingResult);
+            return bindings::qiskit::exportCircuit(qc, target);
           },
           nb::kw_only(), "target"_a = nb::none(),
-          "mapping_result"_a = nb::none(),
-          nb::sig(
-              "def to_qiskit(self, *, target: CompilerTarget | None = None, "
-              "mapping_result: MappingResult | None = None) "
-              "-> qiskit.circuit.QuantumCircuit"),
+          nb::sig("def to_qiskit(self, *, target: CompilerTarget | None = "
+                  "None) -> qiskit.circuit.QuantumCircuit"),
           R"pb(Export a Qiskit circuit without consuming or modifying this program.
+
+A program compiled with layout tracking retains its layout for export.
 
 Args:
     target: The optional compiler target used for mapping. When provided, static
         site IDs map to dense physical-qubit indices in target site order.
-        Dynamic qubits and static IDs absent from the target are rejected.
-    mapping_result: The snapshot from compiling this program with ``target``.
-        Supplies the initial layout and full routing permutation. Use the same
-        target and make no further circuit transformations before export.)pb")
+        Dynamic qubits and static IDs absent from the target are rejected.)pb")
       .def(
           "to_qc",
           [](mlir::QCOProgram& value, const bool copy) {

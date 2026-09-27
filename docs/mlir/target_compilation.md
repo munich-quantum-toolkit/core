@@ -485,8 +485,7 @@ target site ID to its index in {py:attr}`~mqt.core.mlir.CompilerTarget.sites`
 and creates a canonical physical Qiskit circuit. The circuit has one register
 named {code}`q` with {py:attr}`~mqt.core.mlir.CompilerTarget.num_sites` qubits.
 Target-aware export requires static qubits whose site IDs belong to that target.
-Pass the native compilation result as `mapping_result` to include a complete
-Qiskit layout, as described below.
+A program compiled with layout tracking carries its Qiskit layout in the IR.
 
 ## Initial and final qubit layouts
 
@@ -518,31 +517,35 @@ slots. For tensors of sizes two and one, the order is
 records those boundaries. Classical measurement destinations are unchanged.
 
 Idle input slots count against target capacity and remain in the result. Inputs
-must be local entry-block allocations with compile-time constant sizes; runtime
-sizes, nested allocations, and already mapped inputs are unsupported. Qubits
-removed before this call cannot be recovered. Invalid inputs raise an error; do
-not rely on program contents after failure.
+must be local entry-block allocations with compile-time constant sizes or
+preplaced static qubits at distinct target sites. Runtime sizes and nested
+allocations are unsupported. An explicit `initial_layout` cannot move preplaced
+qubits. Mixed static and dynamic inputs require adaptive all-to-all placement.
+Qubits removed before this call cannot be recovered. Invalid inputs raise an
+error; do not rely on program contents after failure.
 
 Adaptive all-to-all placement requires retained tensor allocations to have
 static result types, as produced by the Qiskit and OpenQASM frontends.
 
 `routing_permutation` maps each initial physical position to its final position,
 including workspace sites. These are indices into `target.sites`, unlike the
-site IDs in `initial_layout` and `final_layout`. Pass the snapshot and the same
-target to Qiskit export:
+site IDs in `initial_layout` and `final_layout`. Pass the same target to Qiskit
+export for circuits the exporter supports:
 
 ```python
-circuit = program.to_qiskit(target=environment.target, mapping_result=layout)
+circuit = program.to_qiskit(target=environment.target)
 print(circuit.layout.final_index_layout())
 ```
 
-`MappingResult` describes this compilation. Export before further circuit
-transformations; later edits do not update the snapshot. MLIR serialization
-retains the program but does not include this detached result.
-
-Native compilation and imported Qiskit provenance use separate input identities.
-Discard imported provenance before compilation to use allocation order as the
-logical input order; see [transpiler layouts](qiskit.md#transpiler-layouts).
+The compiled QCO program retains the layout through MLIR serialization and
+QC/QCO conversion. Later circuit transformations invalidate it; export then
+requires `discard_layout()`. If the input carries a complete Qiskit layout,
+compilation composes that provenance with the new placement and routing.
+Composition requires complete layout assignments and dynamically allocated input
+wires. An already placed program with static qubits can produce a layout when it
+has no prior layout, but its earlier layout cannot be recomposed after unused
+static qubits have been removed. See
+[transpiler layouts](qiskit.md#transpiler-layouts).
 
 C++ callers use `QCOProgram::compileForTargetWithLayout`. This synchronous call
 requires one entry point directly in the program module and rejects additional

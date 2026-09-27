@@ -4784,7 +4784,7 @@ def test_native_mapping_exports_full_qiskit_layout(*, routed: bool) -> None:
     circuit.cx(0, 1)
     program = QCProgram.from_qiskit(circuit).to_qco()
     mapping = program.compile_for_target_with_layout(_test_target_environment(target), initial_layout=[30, 10, 40])
-    exported = program.to_qiskit(target=target, mapping_result=mapping)
+    exported = program.to_qiskit(target=target)
     layout = exported.layout
     assert layout is not None
     assert layout.initial_index_layout() == [1, 0, 3, 2]
@@ -4796,9 +4796,68 @@ def test_native_mapping_exports_full_qiskit_layout(*, routed: bool) -> None:
     np.testing.assert_allclose(Operator.from_circuit(exported).data, Operator(expected).data, atol=1e-12)
     qc = program.to_qc()
     np.testing.assert_allclose(
-        Operator.from_circuit(qc.to_qiskit(target=target, mapping_result=mapping)).data,
+        Operator.from_circuit(qc.to_qiskit(target=target)).data,
         Operator(expected).data,
         atol=1e-12,
     )
-    with pytest.raises(RuntimeError, match="requires the compilation target"):
-        qc.to_qiskit(mapping_result=mapping)
+
+
+def test_native_mapping_composes_imported_qiskit_layout() -> None:
+    """Native placement composes a routed input layout and retains original inputs."""
+    original = QuantumCircuit(3)
+    original.h(0)
+    original.cx(0, 2)
+    original.cx(0, 1)
+    routed = transpile(
+        original,
+        coupling_map=[[0, 1], [1, 0], [1, 2], [2, 1]],
+        initial_layout=[2, 1, 0],
+        optimization_level=0,
+        seed_transpiler=4,
+    )
+    target = CompilerTarget(
+        4,
+        connectivity=CompilerTarget.Connectivity([(0, 1), (1, 2), (2, 3)]),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
+    program = QCProgram.from_qiskit(routed).to_qco()
+    mapping = program.compile_for_target_with_layout(_test_target_environment(target), initial_layout=[1, 0, 3])
+    compiled = program.to_qiskit(target=target)
+    assert compiled.layout is not None
+    assert routed.layout is not None
+    input_layout = compiled.layout.initial_index_layout(filter_ancillas=True)
+    assert len(input_layout) == 3
+    assert input_layout == [mapping.initial_layout[wire] for wire in routed.layout.initial_index_layout()]
+    expected = QuantumCircuit(4)
+    expected.compose(original, [0, 1, 2], inplace=True)
+    assert Operator.from_circuit(compiled).equiv(Operator(expected))
+    restored = QCProgram.from_mlir_str(program.to_qc().ir).to_qiskit(target=target)
+    assert restored.layout is not None
+    assert restored.layout.initial_index_layout() == compiled.layout.initial_index_layout()
+    assert restored.layout.routing_permutation() == compiled.layout.routing_permutation()
+
+
+def test_native_mapping_composes_output_wire_order() -> None:
+    """The output wire order changes the final permutation, not placement."""
+    source = QuantumRegister(3, "source")
+    circuit = QuantumCircuit(3)
+    circuit.h(0)
+    circuit.cx(0, 2)
+    vars(circuit)["_layout"] = TranspileLayout(
+        Layout(dict(zip(source, [2, 0, 1], strict=True))),
+        dict(zip(source, range(3), strict=True)),
+        Layout(dict(zip(circuit.qubits, [1, 2, 0], strict=True))),
+        _input_qubit_count=3,
+        _output_qubit_list=[circuit.qubits[i] for i in [2, 0, 1]],
+    )
+    target = CompilerTarget(
+        3,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
+    program = QCProgram.from_qiskit(circuit).to_qco()
+    program.compile_for_target_with_layout(_test_target_environment(target), initial_layout=[1, 0, 2])
+    compiled = program.to_qiskit(target=target)
+    assert compiled.layout is not None
+    assert compiled.layout.initial_index_layout() == [2, 1, 0]
+    assert Operator.from_circuit(compiled).equiv(Operator.from_circuit(circuit))

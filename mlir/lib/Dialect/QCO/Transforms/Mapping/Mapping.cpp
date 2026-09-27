@@ -475,9 +475,8 @@ LogicalResult prepareLayout(ModuleOp moduleOp, const CompilerTarget& target,
   SmallVector<std::pair<Operation*, size_t>> allocations;
   size_t count = 0;
   const auto validation = moduleOp.walk([&](Operation* op) {
-    if (isa<StaticOp>(op) || op->hasAttr(mqt::kSourceQubitIndicesAttr)) {
-      op->emitError("layout tracking requires unmapped input without "
-                    "source tags");
+    if (op->hasAttr(mqt::kSourceQubitIndicesAttr)) {
+      op->emitError("layout tracking requires input without source tags");
       return WalkResult::interrupt();
     }
     if (!isa<AllocOp, qtensor::AllocOp>(op)) {

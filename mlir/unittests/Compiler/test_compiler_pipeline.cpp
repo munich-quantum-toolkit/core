@@ -2343,10 +2343,11 @@ TEST_F(CompilerPipelineTest, TargetLayoutPreservesScalarAllocationOrder) {
   auto result = program->compileForTargetWithLayout(
       TargetEnvironment(target, makePayloadSpecification()), {2, 0, 1});
   ASSERT_TRUE(result);
-  EXPECT_TRUE(mlir::mqt::getEntryPoint(program->module())
-                  ->hasAttr("mqt.layout_invalidated"));
-  EXPECT_FALSE(
-      mlir::mqt::getEntryPoint(program->module())->hasAttr("mqt.layout"));
+  auto composed = mlir::mqt::QubitLayout::fromAttr(
+      mlir::mqt::getEntryPoint(program->module())->getAttr("mqt.layout"),
+      [&] { return program->module().emitError(); });
+  ASSERT_TRUE(succeeded(composed));
+  EXPECT_EQ(composed->initial, (std::vector<int64_t>{0, 2, 1}));
   EXPECT_EQ(result->allocationSizes, (std::vector<size_t>{1, 1, 1}));
   EXPECT_EQ(result->initialLayout, (std::vector<int64_t>{2, 0, 1}));
   EXPECT_EQ(result->finalLayout, result->initialLayout);
@@ -2395,7 +2396,9 @@ out[1] = measure first[1];
       ASSERT_TRUE(result);
       if (automatic) {
         ASSERT_TRUE(ordinary.compileForTarget(environment, options));
-        EXPECT_EQ(program->str(), ordinary.str());
+        auto withoutLayout = program->copy();
+        mlir::mqt::discardQubitLayout(withoutLayout.module());
+        EXPECT_EQ(withoutLayout.str(), ordinary.str());
       }
       EXPECT_EQ(result->allocationSizes, (std::vector<size_t>{2, 1}));
       ASSERT_EQ(result->initialLayout.size(), 3);
@@ -2520,7 +2523,9 @@ TEST_F(CompilerPipelineTest,
     }
   })mlir");
   ASSERT_TRUE(physical);
-  EXPECT_FALSE(physical->compileForTargetWithLayout(environment));
+  auto placed = physical->compileForTargetWithLayout(environment);
+  ASSERT_TRUE(placed);
+  EXPECT_EQ(placed->initialLayout, (std::vector<int64_t>{0}));
 
   auto argument = QCOProgram::fromMLIRString(R"mlir(module {
     func.func @main(%q: !qco.qubit) attributes {mqt.entry_point} {
