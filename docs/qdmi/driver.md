@@ -74,25 +74,17 @@ access.
 The `custom1` through `custom5` arguments of
 {py:meth}`mqt.core.qdmi.Device.submit_job` and
 {py:func}`mqt.core.mlir.submit_program` use the device's documented types.
-Strings include a terminating null byte. Booleans, integers, and floats use
-native C++ `bool`, `int`, and `double`, respectively.
-
-Use nonempty `bytes` when the device defines a binary representation. For
-example, to send a three-byte payload containing a zero byte:
+Strings include a null terminator; `bool`, `int`, and `float` use C++ `bool`,
+`int`, and `double`. For a device-defined binary payload, pass nonempty `bytes`:
 
 ```python
-job = device.submit_job(
-    program,
-    program_format,
-    custom1=b"\x01\x00\xff",
-)
+job = device.submit_job(program, program_format, custom1=b"\x01\x00\xff")
 ```
 
-QDMI copies these bytes during submission without adding a terminator. Empty
-byte payloads raise `ValueError`; the device defines and validates their meaning
-and size. In C++, supply a `std::span<const std::byte>` as the custom parameter.
-Its buffer must remain valid until submission returns. These bytes describe a
-local QDMI ABI value, not a network encoding.
+QDMI copies raw bytes without a terminator; empty payloads raise `ValueError`.
+The device defines their meaning and size. In C++, pass a
+`std::span<const std::byte>` whose buffer stays valid until submission returns.
+The bytes describe a local QDMI ABI value, not a network encoding.
 
 ## Usage
 

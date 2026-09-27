@@ -533,32 +533,24 @@ Job Device::retrieveJobById(const std::string_view jobId) const {
 
 void Device::setCustomJobParam(QDMI_Job job, const QDMI_Job_Parameter param,
                                const CustomJobParameter& value) {
-  std::visit(
-      [&]<typename CustomValue>(const CustomValue& customValue) {
-        using T = std::decay_t<CustomValue>;
+  const auto [size, data] = std::visit(
+      []<typename T>(const T& payload) -> std::pair<size_t, const void*> {
         if constexpr (std::is_same_v<T, std::string>) {
-          qdmi::throwIfError(QDMI_job_set_parameter(job, param,
-                                                    customValue.size() + 1,
-                                                    customValue.c_str()),
-                             "Setting custom parameter");
+          return {payload.size() + 1, payload.c_str()};
         } else if constexpr (std::is_same_v<T, std::span<const std::byte>>) {
-          if (customValue.empty()) {
-            throw std::invalid_argument(
-                "Custom parameter bytes must not be empty");
-          }
-          qdmi::throwIfError(QDMI_job_set_parameter(job, param,
-                                                    customValue.size(),
-                                                    customValue.data()),
-                             "Setting custom parameter");
+          return {payload.size(), payload.data()};
         } else {
           static_assert(std::is_trivially_copyable_v<T>,
                         "Custom job parameters must be trivially copyable");
-          qdmi::throwIfError(
-              QDMI_job_set_parameter(job, param, sizeof(T), &customValue),
-              "Setting custom parameter");
+          return {sizeof(T), &payload};
         }
       },
       value);
+  if (size == 0) {
+    throw std::invalid_argument("Custom parameter bytes must not be empty");
+  }
+  qdmi::throwIfError(QDMI_job_set_parameter(job, param, size, data),
+                     "Setting custom parameter");
 }
 
 QDMI_Job_Status Job::check() const {
