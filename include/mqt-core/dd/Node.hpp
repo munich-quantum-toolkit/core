@@ -27,8 +27,7 @@ namespace dd {
 /// Base class for all DD nodes.
 ///
 /// This class is used to store common information for all DD nodes.
-/// The `flags` makes the implicit padding explicit and can be used for storing
-/// node properties.
+/// Flags and the stable slot ID occupy the space after the list pointer.
 /// Data Layout (8)|(2|2|4) = 16B.
 struct NodeBase : LLBase {
   /// Variable index
@@ -41,6 +40,9 @@ struct NodeBase : LLBase {
   ///
   /// 0b1 = mark flag used for mark-and-sweep garbage collection
   std::uint16_t flags = 0;
+
+  /// Slot ID assigned on first insertion and retained across reuse.
+  uint32_t id = 0;
 
   /// Mark flag used for mark-and-sweep garbage collection
   static constexpr std::uint16_t MARK_FLAG = 0b1U;
