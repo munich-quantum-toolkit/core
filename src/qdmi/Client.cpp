@@ -541,7 +541,7 @@ void Device::setCustomJobParam(QDMI_Job job, const QDMI_Job_Parameter param,
                                                     customValue.size() + 1,
                                                     customValue.c_str()),
                              "Setting custom parameter");
-        } else if constexpr (std::is_same_v<T, std::vector<std::byte>>) {
+        } else if constexpr (std::is_same_v<T, std::span<const std::byte>>) {
           if (customValue.empty()) {
             throw std::invalid_argument(
                 "Custom parameter bytes must not be empty");

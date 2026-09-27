@@ -92,11 +92,12 @@ job = device.submit_job(
 
 `struct.pack` checks the integer range before submission. `=Q` uses native byte
 order and an eight-byte unsigned integer; `=q` selects a signed integer of the
-same width. The client copies the payload without numeric conversion or an added
-terminator. Empty byte payloads raise `ValueError`; the device validates the
-meaning and size of other payloads. In C++, supply a `std::vector<std::byte>` as
-the custom parameter. These bytes describe a local QDMI ABI value, not a network
-encoding.
+same width. QDMI copies the payload during submission without numeric conversion
+or an added terminator. Empty byte payloads raise `ValueError`; the device
+validates the meaning and size of other payloads. In C++, supply a
+`std::span<const std::byte>` as the custom parameter. Its buffer must remain
+valid until submission returns. These bytes describe a local QDMI ABI value, not
+a network encoding.
 
 ## Usage
 

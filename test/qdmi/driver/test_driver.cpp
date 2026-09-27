@@ -1349,7 +1349,7 @@ TEST(DeviceRegistrationTest, CustomJobParametersPreserveNativeRepresentations) {
     std::memcpy(bytes.data(), &value, sizeof(value));
     return bytes;
   };
-  const std::array payloads{
+  std::array payloads{
       bytesOf(uint64_t{UINT64_MAX}),
       bytesOf(int64_t{INT64_MIN}),
       bytesOf(1.25F),
@@ -1364,9 +1364,13 @@ TEST(DeviceRegistrationTest, CustomJobParametersPreserveNativeRepresentations) {
   const auto job =
       device.submitJob("program", QDMI_PROGRAM_FORMAT_QASM3, 1, payloads[0],
                        payloads[1], payloads[2], payloads[3], payloads[4]);
+  const auto expectedPayloads = payloads;
+  for (auto& payload : payloads) {
+    payload.clear();
+  }
   for (size_t i = 0; i < slots.size(); ++i) {
     EXPECT_EQ(job.getCustomResult<std::vector<std::byte>>(slots[i]),
-              payloads[i]);
+              expectedPayloads[i]);
   }
   const auto scalarJob =
       device.submitJob("program", QDMI_PROGRAM_FORMAT_QASM3, 1,

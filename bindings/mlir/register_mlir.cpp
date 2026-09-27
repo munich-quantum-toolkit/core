@@ -87,9 +87,7 @@ toCustomJobParameter(const std::optional<PythonCustomJobParameter>& parameter) {
       [](const auto& value) -> qdmi::CustomJobParameter {
         if constexpr (std::is_same_v<std::decay_t<decltype(value)>,
                                      nb::bytes>) {
-          const auto bytes =
-              std::as_bytes(std::span(value.c_str(), value.size()));
-          return std::vector<std::byte>(bytes.begin(), bytes.end());
+          return std::as_bytes(std::span(value.c_str(), value.size()));
         } else {
           return value;
         }
