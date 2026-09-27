@@ -4,6 +4,11 @@ This document describes breaking changes and how to upgrade. For a complete list
 of changes including minor and patch releases, please refer to the
 [changelog](CHANGELOG.md).
 
+## Unreleased
+
+`dd::ComplexNumbers::setTolerance` requires a positive, normal value. Replace
+zero, subnormal, or invalid tolerances before constructing DDs.
+
 ## [4.0.0]
 
 ### Migrating from MQT Core 3 to 4

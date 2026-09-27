@@ -359,7 +359,7 @@ components reuse the nearest stored value within the absolute tolerance,
 preferring the smaller magnitude on a tie; zero, one, and $1/\sqrt{2}$ have
 priority. The default tolerance is $2^{-42}$ (1024 times double-precision
 machine epsilon). The numeric index hashes binary intervals without rounding
-stored values. C++ callers can set a finite, nonnegative global tolerance with
+stored values. C++ callers can set a positive, normal global tolerance with
 {cpp-api:func}`dd::ComplexNumbers::setTolerance`. A smaller tolerance can reduce
 error amplification in small subproblems, but may also prevent sharing of nearly
 equal subgraphs. Neither tolerance choice guarantees polynomial DD size for a
