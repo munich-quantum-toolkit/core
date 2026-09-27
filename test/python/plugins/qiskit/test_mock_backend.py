@@ -1068,7 +1068,7 @@ def test_primitives_forward_backend_execution_options(monkeypatch: pytest.Monkey
     backend = ExecutionOptionsBackend(device)  # ty: ignore[invalid-argument-type]
     backend.set_options(execution_mode="selected")
     job = device.MockJob(num_clbits=1, shots=4)
-    monkeypatch.setattr(job, "get_shots", lambda: ["0"] * 4)
+    monkeypatch.setattr(job, "get_shots", lambda _program_index=0: ["0"] * 4)
     submit = Mock(return_value=job)
     monkeypatch.setattr(device, "submit_job", submit)
     circuit = QuantumCircuit(1)
