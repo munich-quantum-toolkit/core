@@ -39,8 +39,9 @@ public:
 
   /// Set the numerical tolerance for comparisons of floats.
   /// This is global to all packages. Existing DDs are not recanonicalized.
-  /// @param tol The new finite, non-negative tolerance.
-  static void setTolerance(fp tol) noexcept;
+  /// @param tol The new positive, normal tolerance.
+  /// @throws std::invalid_argument If the tolerance is not positive and normal.
+  static void setTolerance(fp tol);
 
   /// Compute the squared magnitude of a complex number.
   /// @param a The complex number.

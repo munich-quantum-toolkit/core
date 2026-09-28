@@ -32,7 +32,7 @@ struct RealNumber;
 /// Hashed buckets avoid concentrating small values and values above one in a
 /// single sorted list. Lookup returns the nearest entry within tolerance,
 /// preferring the smaller magnitude on a tie. Zero, one, and sqrt(1/2) have
-/// priority. The global tolerance must be finite and non-negative.
+/// priority. The global tolerance must be positive and normal.
 class RealNumberUniqueTable {
   /// Initial power-of-two bucket count.
   static constexpr size_t NBUCKET = 65536U;

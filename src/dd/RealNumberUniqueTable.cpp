@@ -178,10 +178,9 @@ void RealNumberUniqueTable::updateTolerance() {
   if (indexedTolerance == RealNumber::eps) {
     return;
   }
-  assert(std::isfinite(RealNumber::eps) && RealNumber::eps >= 0.);
+  assert(std::isnormal(RealNumber::eps) && RealNumber::eps > 0.);
   /// Eight to sixteen tolerances per cell keeps clustered chains short.
-  const auto exponent =
-      RealNumber::eps == 0. ? -1074 : std::ilogb(RealNumber::eps) + 4;
+  const auto exponent = std::ilogb(RealNumber::eps) + 4;
   if (exponent != cellExponent && stats.numEntries != 0) {
     rehash(table.size(), exponent);
   } else {

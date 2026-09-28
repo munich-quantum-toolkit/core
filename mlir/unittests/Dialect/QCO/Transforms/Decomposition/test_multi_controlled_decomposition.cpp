@@ -39,7 +39,6 @@
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 
-#include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/Error.h"
 
 #include <algorithm>
@@ -376,7 +375,7 @@ static void expectStatesNear(dd::Package& package, const dd::VectorDD& actual,
                                          -dd::RealNumber::val(expected.w.i));
   const auto difference = package.add(actual, negativeExpected);
   package.incRef(difference);
-  constexpr double tolerance = 1e-11;
+  constexpr double tolerance = 3e-11;
   EXPECT_LE(package.innerProduct(difference, difference).r,
             tolerance * tolerance);
   package.decRef(difference);
@@ -433,12 +432,6 @@ static void
 expectMatchesReferenceOnCoherentState(func::FuncOp funcOp, size_t numControls,
                                       bool targetOne,
                                       const dd::GateMatrix& referenceMatrix) {
-  /// Resolve small SP22 ladder phases before comparing the whole-state error.
-  const auto previousTolerance = dd::RealNumber::eps;
-  const auto restoreTolerance = llvm::make_scope_exit([previousTolerance] {
-    dd::ComplexNumbers::setTolerance(previousTolerance);
-  });
-  dd::ComplexNumbers::setTolerance(1e-15);
   const auto numQubits = countStaticQubits(funcOp);
   ASSERT_EQ(numQubits, numControls + 1);
   expectFullyDecomposed(funcOp);

@@ -2037,8 +2037,6 @@ TEST(DDPackageTest, BasicNumericStabilityTest) {
   using limits = std::numeric_limits<fp>;
 
   auto dd = std::make_unique<Package>(1);
-  auto const tol = RealNumber::eps;
-  ComplexNumbers::setTolerance(limits::epsilon());
   auto const state = makeZeroState(1, *dd);
   auto const h = getDD(TestGate(0, Fixture::H), *dd);
   auto const state1 = dd->multiply(h, state);
@@ -2058,8 +2056,6 @@ TEST(DDPackageTest, BasicNumericStabilityTest) {
   oss.str("");
   oss << -SQRT2_2;
   EXPECT_EQ(rightWeight, oss.str());
-  // restore tolerance
-  ComplexNumbers::setTolerance(tol);
 }
 
 TEST(DDPackageTest, NormalizationNumericStabilityTest) {
@@ -2738,6 +2734,28 @@ TEST(DDPackageTest, ReduceAncillaRegression) {
   EXPECT_EQ(outputMatrix, expected);
 }
 
+TEST(DDPackageTest, AddCacheKeyRetainsCommonScale) {
+  Package package(1);
+  const auto zero = package.makeDDNode<vNode, CachedEdge>(
+      0, {vCachedEdge::one(), vCachedEdge::zero()});
+  const auto one = package.makeDDNode<vNode, CachedEdge>(
+      0, {vCachedEdge::zero(), vCachedEdge::one()});
+  ASSERT_NE(zero.p, one.p);
+
+  const auto first =
+      package.add2(vCachedEdge{zero.p, ComplexValue{0., -0.375}},
+                   vCachedEdge{one.p, ComplexValue{0.75, 0.}}, 0);
+  const auto lookups = package.vectorAdd.getStats().lookups;
+  const auto hits = package.vectorAdd.getStats().hits;
+
+  const auto second =
+      package.add2(vCachedEdge{zero.p, ComplexValue{0., -0.75}},
+                   vCachedEdge{one.p, ComplexValue{1.5, 0.}}, 0);
+  EXPECT_EQ(first.p, second.p);
+  EXPECT_EQ(package.vectorAdd.getStats().lookups, lookups + 1);
+  EXPECT_EQ(package.vectorAdd.getStats().hits, hits + 1);
+}
+
 TEST(DDPackageTest, WideCoherentAdditionRetainsNormalizationAndPhase) {
   for (const size_t width : {8U, 120U, 150U}) {
     for (const ComplexValue phase : {ComplexValue{1., 0.}, {0., 1.}}) {
@@ -2747,24 +2765,31 @@ TEST(DDPackageTest, WideCoherentAdditionRetainsNormalizationAndPhase) {
           makeBasisState(width, std::vector(width, BasisStates::plus), package);
       const auto minus = makeBasisState(
           width, std::vector(width, BasisStates::minus), package);
-      const auto sum = package.add2(vCachedEdge{plus.p, SQRT2_2},
-                                    vCachedEdge{minus.p, phase * SQRT2_2},
-                                    static_cast<Qubit>(width - 1));
-      auto state = package.cn.lookup(sum);
-      package.incRef(state);
-      ASSERT_FALSE(state.isZeroTerminal());
-      EXPECT_NEAR(package.innerProduct(state, state).r, 1., 1e-11);
-      for (size_t qubit = 0; qubit < width; ++qubit) {
-        state = package.applyOperation(
-            package.makeGateDD(H_MAT, static_cast<Qubit>(qubit)), state);
+      for (const fp scale : {1e-200, 0.5, 0.7, 1., 2., 1e200}) {
+        SCOPED_TRACE(scale);
+        auto sum = package.add2(vCachedEdge{plus.p, SQRT2_2 * scale},
+                                vCachedEdge{minus.p, phase * (SQRT2_2 * scale)},
+                                static_cast<Qubit>(width - 1));
+        /// Compare the normalized result without losing a tiny vector root.
+        sum.w = sum.w / scale;
+        auto state = package.cn.lookup(sum);
+        package.incRef(state);
+        ASSERT_FALSE(state.isZeroTerminal());
+        EXPECT_NEAR(package.innerProduct(state, state).r, 1., 1e-11);
+        for (size_t qubit = 0; qubit < width; ++qubit) {
+          state = package.applyOperation(
+              package.makeGateDD(H_MAT, static_cast<Qubit>(qubit)), state);
+        }
+        /// H on every wire maps the two product states to distinct basis
+        /// states.
+        const auto zero = state.getValueByPath(width, std::string(width, '0'));
+        const auto one = state.getValueByPath(width, std::string(width, '1'));
+        EXPECT_NEAR(std::abs(zero - std::complex<fp>{SQRT2_2, 0.}), 0., 1e-11);
+        EXPECT_NEAR(
+            std::abs(one - std::complex<fp>{phase.r, phase.i} * SQRT2_2), 0.,
+            1e-11);
+        package.decRef(state);
       }
-      /// H on every wire maps the two product states to distinct basis states.
-      const auto zero = state.getValueByPath(width, std::string(width, '0'));
-      const auto one = state.getValueByPath(width, std::string(width, '1'));
-      EXPECT_NEAR(std::abs(zero - std::complex<fp>{SQRT2_2, 0.}), 0., 1e-11);
-      EXPECT_NEAR(std::abs(one - std::complex<fp>{phase.r, phase.i} * SQRT2_2),
-                  0., 1e-11);
-      package.decRef(state);
       package.decRef(plus);
       package.decRef(minus);
     }
@@ -2778,15 +2803,19 @@ TEST(DDPackageTest, WideMagnitudeAdditionRetainsNormalization) {
       makeBasisState(width, std::vector(width, BasisStates::plus), package);
   const auto minus =
       makeBasisState(width, std::vector(width, BasisStates::minus), package);
-  const auto sum = package.addMagnitudes(vCachedEdge{plus.p, SQRT2_2},
-                                         vCachedEdge{minus.p, SQRT2_2},
-                                         static_cast<Qubit>(width - 1));
-  const auto state = package.cn.lookup(sum);
-  package.incRef(state);
-  ASSERT_FALSE(state.isZeroTerminal());
-  EXPECT_NEAR(package.innerProduct(state, state).r, 1., 1e-11);
-  EXPECT_NEAR(package.fidelity(plus, state), 1., 1e-11);
-  package.decRef(state);
+  for (const fp scale : {1e-200, 0.5, 0.7, 1., 2., 1e200}) {
+    SCOPED_TRACE(scale);
+    auto sum = package.addMagnitudes(vCachedEdge{plus.p, SQRT2_2 * scale},
+                                     vCachedEdge{minus.p, SQRT2_2 * scale},
+                                     static_cast<Qubit>(width - 1));
+    sum.w = sum.w / scale;
+    const auto state = package.cn.lookup(sum);
+    package.incRef(state);
+    ASSERT_FALSE(state.isZeroTerminal());
+    EXPECT_NEAR(package.innerProduct(state, state).r, 1., 1e-11);
+    EXPECT_NEAR(package.fidelity(plus, state), 1., 1e-11);
+    package.decRef(state);
+  }
   package.decRef(plus);
   package.decRef(minus);
 }

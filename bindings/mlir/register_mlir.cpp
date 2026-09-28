@@ -49,6 +49,7 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <filesystem>
 #include <limits>
 #include <map>
@@ -69,6 +70,23 @@ namespace mqt {
 
 namespace nb = nanobind;
 using namespace nb::literals;
+
+#ifdef __APPLE__
+/// Translate standard exceptions that nanobind's split-mode backend can miss
+/// on Darwin.
+static void translateRuntimeError(const std::exception_ptr& error,
+                                  void* /*unused*/) {
+  try {
+    std::rethrow_exception(error);
+  } catch (const std::range_error& exception) {
+    PyErr_SetString(PyExc_ValueError, exception.what());
+  } catch (const std::overflow_error& exception) {
+    PyErr_SetString(PyExc_OverflowError, exception.what());
+  } catch (const std::runtime_error& exception) {
+    PyErr_SetString(PyExc_RuntimeError, exception.what());
+  }
+}
+#endif
 
 using DenseVector = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<1>,
                                 nb::c_contig, nb::device::cpu>;
@@ -598,6 +616,10 @@ generateBenchmark(const std::string_view instanceSpecificationJSON) {
 }
 
 NB_MODULE(MQT_CORE_MODULE_NAME, m) {
+#ifdef __APPLE__
+  nb::register_exception_translator(&translateRuntimeError);
+#endif
+
   m.doc() = "MQT Core MLIR compiler bindings.";
 
   nb::module_::import_("typing");
