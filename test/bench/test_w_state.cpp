@@ -72,6 +72,7 @@ TEST(WState, RoundTripsStrictManifestsAndEvaluatesCounts) {
   EXPECT_EQ(caseId(wStateFromInstanceSpecificationJSON(
                 toInstanceSpecificationJSON(benchmark))),
             caseId(benchmark));
+  EXPECT_NE(caseId(benchmark), caseId(WState{{.qubits = 3}}));
   EXPECT_EQ(toManifestJSON(wStateFromManifestJSON(manifest)), manifest);
   EXPECT_NE(manifest.find(R"("model":"w_state")"), std::string::npos);
   const auto evaluation = evaluateJSON(

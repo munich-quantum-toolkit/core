@@ -165,16 +165,18 @@ TEST(Shor, PropagatesCallbackFailuresAndRejectsInvalidDriverInputs) {
 }
 
 TEST(Shor, RoundTripsJsonAndUsesAVerificationReference) {
+  const auto schema = describeBenchmarkJSON("shor");
+  EXPECT_NE(schema.find(R"("minimum":3)"), std::string::npos);
+  EXPECT_NE(schema.find(R"("required":["number"])"), std::string::npos);
   const auto benchmark = shorFromInstanceSpecificationJSON(
       R"({"schema_version":1,"benchmark":"shor","parameters":{"number":21}})");
   EXPECT_EQ(caseId(benchmark), caseId(Shor({.number = 21, .base = 2})));
   EXPECT_NE(caseId(benchmark), caseId(Shor({.number = 21, .base = 4})));
-  EXPECT_EQ(caseId(benchmark),
-            caseId(shorFromManifestJSON(toManifestJSON(benchmark))));
-  EXPECT_NE(toManifestJSON(benchmark).find("\"kind\":\"verification\""),
-            std::string::npos);
+  const auto manifest = toManifestJSON(benchmark);
+  EXPECT_EQ(toManifestJSON(shorFromManifestJSON(manifest)), manifest);
+  EXPECT_NE(manifest.find("\"kind\":\"verification\""), std::string::npos);
   const auto result = evaluateJSON(
-      toManifestJSON(benchmark),
+      manifest,
       R"({"schema_version":1,"counts":{"0010101011":3,"0000000000":1}})");
   EXPECT_NE(result.find("\"success_probability\":0.75"), std::string::npos);
   EXPECT_NE(result.find("\"factors\":[3,7]"), std::string::npos);
