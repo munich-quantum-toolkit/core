@@ -16,11 +16,6 @@
 
 #include "mlir/Support/LLVM.h"
 
-#include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/SmallPtrSet.h"
-#include "llvm/ADT/SmallVector.h"
-
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -48,9 +43,10 @@ private:
     CompilerTarget::GateKind entangler;
     std::optional<uint8_t> count;
   };
-  const std::optional<uint8_t>* lookup(const Matrix4x4& matrix,
-                                       CompilerTarget::GateKind entangler,
-                                       uint64_t hash) const;
+
+  [[nodiscard]] const std::optional<uint8_t>*
+  lookup(const Matrix4x4& matrix, CompilerTarget::GateKind entangler,
+         uint64_t hash) const;
 
   uint64_t seed_ = 0;
   std::vector<Entry> entries_;
@@ -133,7 +129,7 @@ public:
   /// Observe one original operation, with vertices in its operand order.
   void append(Operation* operation, ArrayRef<size_t> vertices);
   /// Observe a routing SWAP before updating the logical-to-physical layout.
-  void appendSwap(size_t a, size_t b);
+  void appendSwap(size_t first, size_t second);
   /// End pending runs before entering another region; retain this block's
   /// depth.
   void flush();
@@ -143,7 +139,9 @@ public:
   std::optional<std::pair<size_t, size_t>> score();
   /// Signed first-SWAP adjustment: appended cost minus prefix and standalone
   /// cost. May be positive. Does not consume the pending run.
-  int64_t swapCostAdjustment(size_t a, size_t b, size_t standaloneCost);
+  /// Assumes first < second.
+  int64_t swapCostAdjustment(size_t first, size_t second,
+                             size_t standaloneCost);
 
 private:
   struct Run {
