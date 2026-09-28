@@ -19,7 +19,7 @@ from unittest.mock import Mock
 
 import pytest
 from qiskit import qasm2, qasm3
-from qiskit.circuit import Gate, IfElseOp, Parameter, QuantumCircuit
+from qiskit.circuit import ClassicalRegister, Clbit, Gate, IfElseOp, Parameter, QuantumCircuit
 from qiskit.quantum_info import SparsePauliOp
 from qiskit.transpiler import Target
 
@@ -478,10 +478,12 @@ def test_backend_qasm3_serialization_success() -> None:
     assert "cx q[0], q[1]" in program
 
 
-def test_backend_qasm3_zero_initializes_classical_bits() -> None:
-    """Initialize every QASM 3 classical bit before measurement."""
-    qc = QuantumCircuit(2, 2)
+@pytest.mark.parametrize("width", [1, 2, 65])
+def test_backend_qasm3_zero_initializes_classical_register(width: int) -> None:
+    """Initialize the whole register with one assignment before partial measurement."""
+    qc = QuantumCircuit(2, width)
     qc.measure(0, 0)
+    original = qc.copy()
 
     device = MockQDMIDevice(num_qubits=2, operations=["measure"])
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
@@ -490,9 +492,30 @@ def test_backend_qasm3_zero_initializes_classical_bits() -> None:
 
     assert fmt == ProgramFormat.QASM3
     assert isinstance(program, str)
-    assert "c[0] = false;" in program
-    assert "c[1] = false;" in program
-    assert program.index("c[0] = false;") < program.index("c[0] = measure q[0];")
+    assert program.count("c = 0;") == 1
+    assert "= false;" not in program
+    assert program.index("c = 0;") < program.index("c[0] = measure q[0];")
+    assert qc == original
+
+
+def test_backend_qasm3_zero_initializes_registers_and_loose_bits() -> None:
+    """Initialize multiple registers and loose bits without assigning empty registers."""
+    qc = QuantumCircuit(1)
+    qc.add_bits([Clbit()])
+    qc.add_register(ClassicalRegister(0, "empty"), ClassicalRegister(1, "a"), ClassicalRegister(3, "b"))
+    qc.measure(0, 3)
+
+    device = MockQDMIDevice(num_qubits=1, operations=["measure"])
+    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
+
+    program, _ = backend._serialize_circuit(qc, [ProgramFormat.QASM3])  # ruff:ignore[private-member-access]
+
+    assert isinstance(program, str)
+    for assignment in ("a = 0;", "b = 0;", "_bit0 = false;"):
+        assert program.count(assignment) == 1
+        assert program.index(assignment) < program.index("b[1] = measure q[0];")
+    assert "empty =" not in program
+    assert program.count("= false;") == 1
 
 
 def test_backend_qasm2_serialization_success() -> None:
