@@ -12,6 +12,7 @@
 
 #include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
 
+#include "GroverUtils.h"
 #include "Programs.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -29,28 +30,10 @@ namespace mqt::bench {
 
 using namespace mlir;
 
-static void maskMarkedState(qc::QCProgramBuilder& builder,
-                            llvm::ArrayRef<Value> search,
-                            std::string_view markedBitstring) {
-  for (size_t index = 0; index < search.size(); ++index) {
-    if (markedBitstring[search.size() - 1 - index] == '0') {
-      builder.x(search[index]);
-    }
-  }
-}
-
-static void markPhase(qc::QCProgramBuilder& builder,
-                      llvm::ArrayRef<Value> search,
-                      std::string_view markedBitstring) {
-  maskMarkedState(builder, search, markedBitstring);
-  builder.mcz(search.drop_back(), search.back());
-  maskMarkedState(builder, search, markedBitstring);
-}
-
 static void groverIteration(qc::QCProgramBuilder& builder,
                             llvm::ArrayRef<Value> search,
                             std::string_view markedBitstring) {
-  markPhase(builder, search, markedBitstring);
+  detail::markPhase(builder, search, markedBitstring);
   for (auto qubit : search) {
     builder.h(qubit);
     builder.x(qubit);
@@ -65,11 +48,11 @@ static void groverIteration(qc::QCProgramBuilder& builder,
 static void computePredicate(qc::QCProgramBuilder& builder,
                              llvm::ArrayRef<Value> search, Value work,
                              std::string_view markedBitstring) {
-  maskMarkedState(builder, search, markedBitstring);
+  detail::maskMarkedState(builder, search, markedBitstring);
   builder.h(work);
   builder.mcz(search, work);
   builder.h(work);
-  maskMarkedState(builder, search, markedBitstring);
+  detail::maskMarkedState(builder, search, markedBitstring);
 }
 
 SmallVector<Value>
