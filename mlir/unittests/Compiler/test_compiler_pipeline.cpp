@@ -2705,6 +2705,33 @@ c[1] = measure q[3];
   }
 }
 
+TEST_F(CompilerPipelineTest, OverCapacityInputsCompileWithoutLayout) {
+  auto program = QCOProgram::fromMLIRString(R"mlir(module {
+    func.func @main() attributes {mqt.entry_point} {
+      %c0 = arith.constant 0 : index
+      %c2 = arith.constant 2 : index
+      %static = qco.static 0 : !qco.qubit
+      %tensor = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+      %rest, %q = qtensor.extract %tensor[%c0] : tensor<2x!qco.qubit>
+      %out = qco.x %q : !qco.qubit -> !qco.qubit
+      qco.sink %out : !qco.qubit
+      qtensor.dealloc %rest : tensor<2x!qco.qubit>
+      %static_out = qco.x %static : !qco.qubit -> !qco.qubit
+      qco.sink %static_out : !qco.qubit
+      return
+    }
+  })mlir");
+  ASSERT_TRUE(program);
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(2, CompilerTarget::Connectivity::allToAll(),
+                             CompilerTarget::NativeOperations::unrestricted()));
+  const auto payload = llvm::cantFail(payloadSpecificationForProgramFormat(
+      QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE));
+  ASSERT_TRUE(program->compileForTarget(TargetEnvironment(target, payload)));
+  EXPECT_FALSE(program->module()->hasAttr("mqt.layout"));
+  EXPECT_TRUE(succeeded(verify(program->module())));
+}
+
 TEST_F(CompilerPipelineTest, IndexedPlacementPreservesSparseSitesAndLoopBody) {
   auto program = QCOProgram::fromMLIRString(R"mlir(module {
     func.func @main() -> i1 attributes {mqt.entry_point} {

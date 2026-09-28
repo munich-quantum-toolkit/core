@@ -89,6 +89,10 @@ mqt-cc input.qasm --qdmi-device mqt.sc.iqm.garnet \
   --mapping-search-memory-limit 8388608
 ```
 
+Add `--emit=qco-optimized -o mapped.mlir` to write the mapped QCO program with
+layout metadata. The payload specification still defines the target's execution
+capabilities.
+
 Trials must be positive. Omitted trials use the logical CPU count; iterations
 default to one forward/backward refinement round. Zero iterations score each
 initial layout directly. Lookahead is the number of additional two-qubit gates

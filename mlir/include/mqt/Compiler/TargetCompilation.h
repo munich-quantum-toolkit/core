@@ -12,10 +12,22 @@
 
 #include "mqt/Compiler/CompilationOptions.h"
 
+#include "mlir/Support/LogicalResult.h"
+
 namespace mlir {
 
 class TargetEnvironment;
 class OpPassManager;
+class ModuleOp;
+class PassManager;
+
+/// Compile a QCO module for a target and attach layout metadata when possible.
+/// The pass manager must use the module's context and contain no passes.
+/// CLI instrumentation may be configured before the call.
+[[nodiscard]] LogicalResult
+runTargetCompilation(ModuleOp moduleOp, PassManager& pm,
+                     const TargetEnvironment& environment,
+                     const CompilationOptions& options = {});
 
 /// Populate the canonical compiler-target pipeline.
 ///
@@ -29,6 +41,8 @@ class OpPassManager;
 /// The supplied environment is authoritative: the pipeline attaches it to the
 /// module and shares its prepared target with every target-dependent pass.
 /// The environment must remain unchanged during pipeline execution.
+/// This low-level pipeline does not attach layout metadata; use
+/// runTargetCompilation when the mapping must be retained.
 /// Use runWithCompilationOptions to apply compilation-wide seed and
 /// instrumentation settings when running this pipeline.
 void populateTargetCompilationPipeline(OpPassManager& pm,

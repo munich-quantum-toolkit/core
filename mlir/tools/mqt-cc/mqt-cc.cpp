@@ -483,9 +483,10 @@ static int runCompiler(int argc, char** argv) {
           "--qdmi-device and --payload-spec must be provided together.")
           .failed() ||
       reportQDMIErrorIf(
-          !qdmiDevice.empty() && outputFormat.getNumOccurrences() != 0,
-          "--emit cannot be combined with --qdmi-device; --payload-spec "
-          "selects the output.")
+          !qdmiDevice.empty() && outputFormat.getNumOccurrences() != 0 &&
+              outputFormat != "qco-optimized",
+          "Only --emit=qco-optimized can be combined with --qdmi-device; "
+          "--payload-spec selects the executable output.")
           .failed() ||
       reportQDMIErrorIf(
           !qdmiConfig.empty() && !qdmiListDevices && qdmiDevice.empty(),
@@ -595,18 +596,20 @@ static int runCompiler(int argc, char** argv) {
       llvm::errs() << llvm::toString(compilerOutput.takeError()) << '\n';
       return 1;
     }
-    switch (*compilerOutput) {
-    case ProgramFormat::OpenQASM3:
-      parsedOutputFormat = OutputFormat::OpenQASM3;
-      break;
-    case ProgramFormat::QIRBase:
-      parsedOutputFormat = OutputFormat::QIRBase;
-      break;
-    case ProgramFormat::QIRAdaptive:
-      parsedOutputFormat = OutputFormat::QIRAdaptive;
-      break;
-    default:
-      llvm_unreachable("Unsupported target compiler output");
+    if (outputFormat.getNumOccurrences() == 0) {
+      switch (*compilerOutput) {
+      case ProgramFormat::OpenQASM3:
+        parsedOutputFormat = OutputFormat::OpenQASM3;
+        break;
+      case ProgramFormat::QIRBase:
+        parsedOutputFormat = OutputFormat::QIRBase;
+        break;
+      case ProgramFormat::QIRAdaptive:
+        parsedOutputFormat = OutputFormat::QIRAdaptive;
+        break;
+      default:
+        llvm_unreachable("Unsupported target compiler output");
+      }
     }
     targetEnvironment.emplace(std::move(*compilerTarget),
                               std::move(*selectedPayload));
@@ -722,35 +725,33 @@ static int runCompiler(int argc, char** argv) {
   const bool requiresPostQcoPasses =
       *parsedOutputFormat != OutputFormat::QCImport &&
       *parsedOutputFormat != OutputFormat::QCO;
-  if (requiresPostQcoPasses &&
-      failed(runPasses(
-          [&](OpPassManager& pm) {
-            if (!compilerTarget &&
-                (*parsedOutputFormat == OutputFormat::QIRBase ||
-                 *parsedOutputFormat == OutputFormat::QIRAdaptive)) {
-              pm.addPass(createInlinerPass());
-            }
-            if (targetEnvironment) {
-              populateTargetCompilationPipeline(pm, *targetEnvironment,
-                                                options.mapping);
-              return success();
-            }
-            populateQCOCleanupPipeline(pm);
-            if (passPipeline.getNumOccurrences() != 0) {
-              if (failed(parseCustomPipeline(pm))) {
-                return failure();
-              }
-            } else {
-              if (enableDecomposeMultiControlled) {
-                populateDecomposeMultiControlledPipeline(
-                    pm, decomposeMultiControlledMinQubits.getValue());
-              }
-              populateDefaultQCOOptimizationPipeline(pm);
-            }
-            populateQCOCleanupPipeline(pm);
-            return success();
-          },
-          targetEnvironment.has_value()))) {
+  if (targetEnvironment) {
+    PassManager pm(&context);
+    if (failed(applyPassManagerCLOptions(pm)) ||
+        failed(runTargetCompilation(*program.mod, pm, *targetEnvironment,
+                                    options))) {
+      return 1;
+    }
+  } else if (requiresPostQcoPasses && failed(runPasses([&](OpPassManager& pm) {
+               if (*parsedOutputFormat == OutputFormat::QIRBase ||
+                   *parsedOutputFormat == OutputFormat::QIRAdaptive) {
+                 pm.addPass(createInlinerPass());
+               }
+               populateQCOCleanupPipeline(pm);
+               if (passPipeline.getNumOccurrences() != 0) {
+                 if (failed(parseCustomPipeline(pm))) {
+                   return failure();
+                 }
+               } else {
+                 if (enableDecomposeMultiControlled) {
+                   populateDecomposeMultiControlledPipeline(
+                       pm, decomposeMultiControlledMinQubits.getValue());
+                 }
+                 populateDefaultQCOOptimizationPipeline(pm);
+               }
+               populateQCOCleanupPipeline(pm);
+               return success();
+             }))) {
     return 1;
   }
 

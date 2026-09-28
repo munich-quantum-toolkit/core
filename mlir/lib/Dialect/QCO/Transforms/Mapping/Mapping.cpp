@@ -206,8 +206,32 @@ static LogicalResult validateRoutingOperations(func::FuncOp func) {
 ///
 /// If any of the above assumptions are violated, the function returns
 /// failure without changing the IR.
-static FailureOr<Computation> discoverComputation(func::FuncOp func) {
+static FailureOr<Computation> discoverComputation(func::FuncOp func,
+                                                  LayoutTracking* tracking) {
   Computation computation;
+
+  const auto recordSource = [&](Operation* allocation,
+                                std::optional<int64_t> slot) -> LogicalResult {
+    if (tracking == nullptr) {
+      return success();
+    }
+    auto sources = allocation->getAttrOfType<DenseI64ArrayAttr>(
+        mqt::kSourceQubitIndicesAttr);
+    if (!sources || !slot || *slot < 0 || *slot >= sources.size()) {
+      return func.emitError(
+          "input qubit identity was lost during layout preparation");
+    }
+    const auto source = sources[*slot];
+    if (source < 0 ||
+        std::cmp_greater_equal(source, tracking->sourceToProgram.size()) ||
+        tracking->sourceToProgram[source] !=
+            std::numeric_limits<size_t>::max()) {
+      return func.emitError(
+          "input qubit identity was lost during layout preparation");
+    }
+    tracking->sourceToProgram[source] = computation.wires.size();
+    return success();
+  };
 
   for (Operation& op : func.getBody().front()) {
     TypeSwitch<Operation*>(&op)
@@ -221,6 +245,9 @@ static FailureOr<Computation> discoverComputation(func::FuncOp func) {
   }
 
   for (auto alloc : computation.scalarAllocations) {
+    if (failed(recordSource(alloc, 0))) {
+      return failure();
+    }
     const auto index = computation.wires.size();
     computation.wires.emplace_back(alloc.getResult());
     computation.infos.insertOrUpdate(index, index);
@@ -237,6 +264,11 @@ static FailureOr<Computation> discoverComputation(func::FuncOp func) {
         if (!isInitPhase) {
           return func.emitError() << "must extract and insert all qubits at "
                                      "once";
+        }
+
+        if (failed(recordSource(tensor.allocation,
+                                getConstantIntValue(extract.getIndex())))) {
+          return failure();
         }
 
         auto qubit = extract.getResult();
@@ -259,6 +291,15 @@ static FailureOr<Computation> discoverComputation(func::FuncOp func) {
       return operation->emitError(
           "mapping requires a flat qtensor extract/insert chain ending in "
           "deallocation; lower tensor control flow before mapping");
+    }
+  }
+
+  if (tracking != nullptr) {
+    size_t program = computation.wires.size();
+    for (auto& index : tracking->sourceToProgram) {
+      if (index == std::numeric_limits<size_t>::max()) {
+        index = program++;
+      }
     }
   }
 
@@ -459,6 +500,13 @@ FailureOr<bool> prepareLayout(ModuleOp moduleOp, const CompilerTarget& target,
       llvm::any_of(func.getArgumentTypes(), isLinearQubitType)) {
     return false;
   }
+  llvm::DenseSet<CompilerTarget::SiteId> occupied;
+  func.walk([&](StaticOp op) {
+    occupied.insert(static_cast<CompilerTarget::SiteId>(op.getIndex()));
+  });
+  if (occupied.size() > target.numSites()) {
+    return false;
+  }
   SmallVector<std::pair<Operation*, size_t>> allocations;
   size_t count = 0;
   bool invalidTags = false;
@@ -482,7 +530,7 @@ FailureOr<bool> prepareLayout(ModuleOp moduleOp, const CompilerTarget& target,
       }
       size = static_cast<size_t>(*extent);
     }
-    if (size > target.numSites() - count) {
+    if (size > target.numSites() - occupied.size() - count) {
       return WalkResult::interrupt();
     }
     allocations.emplace_back(op, size);
@@ -512,53 +560,6 @@ FailureOr<bool> prepareLayout(ModuleOp moduleOp, const CompilerTarget& target,
     tracking.routingPermutation.push_back(site);
   }
   return true;
-}
-
-/// Preserve discovery order; track removed inputs through workspace
-/// permutations.
-static LogicalResult collectSourceOrder(func::FuncOp func,
-                                        const Computation& computation,
-                                        LayoutTracking& tracking) {
-  size_t program = 0;
-  const auto record = [&](Operation* allocation, int64_t index) {
-    auto sources = allocation->getAttrOfType<DenseI64ArrayAttr>(
-        mqt::kSourceQubitIndicesAttr);
-    if (!sources || index < 0 || index >= sources.size()) {
-      return failure();
-    }
-    const auto source = sources[index];
-    if (source < 0 ||
-        std::cmp_greater_equal(source, tracking.sourceToProgram.size()) ||
-        tracking.sourceToProgram[source] !=
-            std::numeric_limits<size_t>::max()) {
-      return failure();
-    }
-    tracking.sourceToProgram[source] = program++;
-    return success();
-  };
-  for (auto alloc : computation.scalarAllocations) {
-    if (failed(record(alloc, 0))) {
-      return func.emitError(
-          "input qubit identity was lost during layout preparation");
-    }
-  }
-  for (const auto& tensor : computation.tensorAllocations) {
-    for (auto* operation : tensor.operations) {
-      if (auto extract = dyn_cast<ExtractOp>(operation)) {
-        auto index = getConstantIntValue(extract.getIndex());
-        if (!index || failed(record(tensor.allocation, *index))) {
-          return func.emitError(
-              "input qubit identity was lost during layout preparation");
-        }
-      }
-    }
-  }
-  for (auto& index : tracking.sourceToProgram) {
-    if (index == std::numeric_limits<size_t>::max()) {
-      index = program++;
-    }
-  }
-  return success();
 }
 
 static std::vector<int64_t> sourceLayout(const CompilerTarget& target,
@@ -607,18 +608,13 @@ protected:
       }
       return;
     }
-    auto computation = discoverComputation(func);
+    auto computation = discoverComputation(func, tracking_);
     if (failed(computation) ||
         failed(checkCapacity(func, target, *computation))) {
       signalPassFailure();
       return;
     }
 
-    if (tracking_ != nullptr &&
-        failed(collectSourceOrder(func, *computation, *tracking_))) {
-      signalPassFailure();
-      return;
-    }
     const auto layout = Layout::identity(tracking_ != nullptr
                                              ? tracking_->sourceToProgram.size()
                                              : computation->wires.size());
@@ -932,7 +928,7 @@ protected:
       return;
     }
 
-    auto computation = discoverComputation(func);
+    auto computation = discoverComputation(func, tracking_);
     if (failed(computation) ||
         failed(checkCapacity(func, *target, *computation))) {
       signalPassFailure();
@@ -942,11 +938,6 @@ protected:
     auto& body = func.getFunctionBody();
     auto& wires = computation->wires;
     auto& infos = computation->infos;
-    if (tracking_ != nullptr &&
-        failed(collectSourceOrder(func, *computation, *tracking_))) {
-      signalPassFailure();
-      return;
-    }
     auto layout = generateLayout(wires, infos);
 
     if (tracking_ != nullptr) {

@@ -2914,16 +2914,6 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
 
   auto context = mlir::createCompilerContext();
   const auto layout = view->layout();
-  mlir::DictionaryAttr layoutAttr;
-  if (layout) {
-    layoutAttr = layout->toAttr(context.get());
-    if (failed(mlir::mqt::QubitLayout::fromAttr(layoutAttr, [&] {
-          return mlir::emitError(mlir::UnknownLoc::get(context.get()));
-        }))) {
-      throw std::runtime_error(
-          "Qiskit circuit has invalid qubit layout metadata");
-    }
-  }
   mlir::qc::QCProgramBuilder builder(context.get());
   llvm::SmallVector<mlir::Type> resultTypes;
   if (view->numClbits() == 0U) {
@@ -3017,8 +3007,8 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
 
   auto moduleOp = classicalStorage.empty() ? builder.finalize()
                                            : builder.finalize(classicalStorage);
-  if (layoutAttr) {
-    (*moduleOp)->setAttr("mqt.layout", layoutAttr);
+  if (layout) {
+    (*moduleOp)->setAttr("mqt.layout", layout->toAttr(context.get()));
   }
   validateGeneratedControlFlow(moduleOp->getOperation());
   auto program = mlir::QCProgram::fromModule(context, std::move(moduleOp));

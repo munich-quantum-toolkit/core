@@ -16,6 +16,7 @@
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
@@ -205,15 +206,22 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   populateTargetPipeline(pm, environment, mapping, {});
 }
 
-bool QCOProgram::compileForTarget(const TargetEnvironment& environment,
-                                  const CompilationOptions& options) {
-  auto entryPoint = mqt::getEntryPoint(mod());
-  if (!entryPoint || !hasValidLinearity()) {
-    return false;
+LogicalResult runTargetCompilation(ModuleOp moduleOp, PassManager& pm,
+                                   const TargetEnvironment& environment,
+                                   const CompilationOptions& options) {
+  if (!pm.empty() || pm.getContext() != moduleOp.getContext()) {
+    return moduleOp.emitError(
+        "target compilation requires an empty pass manager for this context");
+  }
+  auto entryPoint = mqt::getEntryPoint(moduleOp);
+  if (!entryPoint) {
+    return moduleOp.emitError("target compilation requires an entry point");
+  }
+  if (failed(qco::verifyLinearity(moduleOp))) {
+    return failure();
   }
   if (options.mapping.trials == 0) {
-    mod().emitError("mapping trials must be greater than zero");
-    return false;
+    return moduleOp.emitError("mapping trials must be greater than zero");
   }
   std::vector<std::optional<int64_t>> inputSegments;
   llvm::SmallDenseSet<int64_t> staticSites;
@@ -224,39 +232,34 @@ bool QCOProgram::compileForTarget(const TargetEnvironment& environment,
           !staticSites.insert(site).second) {
         staticQubit.emitError("preplaced qubit requires a distinct target "
                               "site ID");
-        return false;
+        return failure();
       }
       inputSegments.emplace_back(site);
     } else if (isa<qco::AllocOp, qtensor::AllocOp>(operation)) {
       inputSegments.emplace_back(std::nullopt);
     }
   }
-  if (mod()->hasAttr("mqt.layout")) {
-    mod().emitError("discard existing layout metadata before target "
-                    "compilation");
-    return false;
+  if (moduleOp->hasAttr("mqt.layout")) {
+    return moduleOp.emitError("discard existing layout metadata before target "
+                              "compilation");
   }
   qco::LayoutTracking tracking;
   const auto prepared =
-      qco::prepareLayout(mod(), environment.target(), tracking);
+      qco::prepareLayout(moduleOp, environment.target(), tracking);
   if (failed(prepared)) {
-    return false;
+    return failure();
   }
   auto* activeTracking = *prepared ? &tracking : nullptr;
-  if (failed(runWithPassManager(
-          mod(),
-          [&](OpPassManager& pm) {
-            populateTargetPipeline(pm, environment, options.mapping,
-                                   activeTracking);
-          },
-          "failed to compile the QCO program for the target", options, true)) ||
-      !hasValidLinearity()) {
-    mod().walk(
+  populateTargetPipeline(pm, environment, options.mapping, activeTracking);
+  if (failed(runWithCompilationOptions(pm, moduleOp, options, true)) ||
+      failed(qco::verifyLinearity(moduleOp))) {
+    moduleOp.walk(
         [](Operation* op) { op->removeAttr(mqt::kSourceQubitIndicesAttr); });
-    return false;
+    return moduleOp.emitError(
+        "failed to compile the QCO program for the target");
   }
   if (activeTracking == nullptr) {
-    return true;
+    return success();
   }
   if (!staticSites.empty()) {
     std::vector<int64_t> combined;
@@ -275,14 +278,20 @@ bool QCOProgram::compileForTarget(const TargetEnvironment& environment,
     tracking.initialLayout = std::move(combined);
   }
   if (tracking.initialLayout.empty()) {
-    return true;
+    return success();
   }
-  auto layout = compiledLayout(mod(), environment.target(), tracking);
+  auto layout = compiledLayout(moduleOp, environment.target(), tracking);
   if (failed(layout)) {
-    return false;
+    return failure();
   }
-  mod()->setAttr("mqt.layout", layout->toAttr(mod().getContext()));
-  return true;
+  moduleOp->setAttr("mqt.layout", layout->toAttr(moduleOp.getContext()));
+  return success();
+}
+
+bool QCOProgram::compileForTarget(const TargetEnvironment& environment,
+                                  const CompilationOptions& options) {
+  PassManager pm(mod().getContext());
+  return succeeded(runTargetCompilation(mod(), pm, environment, options));
 }
 
 void populateTargetSynthesisPipeline(OpPassManager& pm,
