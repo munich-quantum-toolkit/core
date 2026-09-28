@@ -51,7 +51,7 @@ if TYPE_CHECKING:
     from qiskit.circuit import Instruction, Parameter
     from qiskit.circuit.parameterexpression import ParameterValueType
 
-    from ...typing import QDMISessionParameters, QiskitEstimatorOptions, QiskitSamplerOptions
+    from ...typing import QDMIJobParameters, QDMISessionParameters, QiskitEstimatorOptions, QiskitSamplerOptions
     from .provider import QDMIProvider
 
     ParametersType = Mapping[Parameter, ParameterValueType] | Iterable[ParameterValueType]
@@ -386,9 +386,34 @@ class QDMIBackend(BackendV2):
         """Return default backend options.
 
         Returns:
-            Default Options with shots=1024 and memory=False.
+            Default options with shots=1024, memory=False, and max_retries=0.
         """
         return Options(shots=1024, memory=False, max_retries=0)
+
+    def _job_parameters(self, options: Mapping[str, object]) -> QDMIJobParameters:  # ruff:ignore[no-self-use]
+        """Validate and encode backend-specific execution options before submission.
+
+        Subclasses declare supported options in :meth:`_default_options` and
+        override this hook to map their values to QDMI custom job parameters.
+        An override replaces this implementation and must handle every option
+        it declares. The mapping contains resolved backend defaults and per-run
+        overrides, excluding the base options ``shots``, ``memory``, and
+        ``max_retries``. This hook runs once, before any job is submitted, and
+        must not submit jobs or mutate backend options.
+
+        Args:
+            options: Effective execution options for every circuit in this run.
+
+        Returns:
+            Custom keyword arguments for :meth:`~mqt.core.qdmi.Device.submit_job`.
+
+        Raises:
+            CircuitValidationError: If an option has no submission mapping.
+        """
+        if options:
+            msg = f"Unsupported execution options: {', '.join(sorted(options))}"
+            raise CircuitValidationError(msg)
+        return {}
 
     def _target_num_qubits(self) -> int:
         """Number of addressable qubits to expose in the Target.
@@ -741,6 +766,7 @@ class QDMIBackend(BackendV2):
                 or a sequence of values in the order of circuit.parameters.
             **options: Execution options: nonnegative integer ``shots`` and ``max_retries``, and boolean ``memory``.
                 Memory requires genuine QDMI SHOTS results. Simulator seeds are unsupported.
+                Subclasses may declare additional options and encode them in ``_job_parameters``.
 
         Returns:
             Job handle for the execution. For multiple circuits, the job aggregates results from all circuits.
@@ -810,6 +836,10 @@ class QDMIBackend(BackendV2):
             msg = f"max_retries must be a nonnegative integer, got {max_retries!r}."
             raise CircuitValidationError(msg)
         max_retries = int(max_retries)
+        effective_options = {**dict(self._options), **options}
+        job_parameters = self._job_parameters({
+            name: value for name, value in effective_options.items() if name not in {"shots", "memory", "max_retries"}
+        })
         prepared_circuits: list[QuantumCircuit] = []
         # Prepare every circuit before submitting any job, so validation cannot leave a partial batch.
 
@@ -845,6 +875,7 @@ class QDMIBackend(BackendV2):
             shots=shots,
             memory=memory,
             max_retries=max_retries,
+            job_parameters=job_parameters,
         )
         self.last_job = job
         job.submit()

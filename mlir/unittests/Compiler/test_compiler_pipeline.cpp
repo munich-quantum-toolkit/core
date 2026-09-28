@@ -873,6 +873,35 @@ roundTripThroughOptimizedJeff(const qasm::OpenQASMProgram& source,
 
 namespace {
 
+TEST(OpenQASMCompilerOutputTest, PreservesClassicalSliceInterchange) {
+  constexpr StringLiteral source = R"qasm(
+OPENQASM 3.1;
+bit[6] b = "110101";
+bit[3] a = b[5:-2:0];
+b[1:3] = b[0:2];
+qubit q;
+reset q;
+if (a == "001" && b == "111011") { x q; }
+output bit ok;
+ok = measure q;
+)qasm";
+  auto qc = QCProgram::fromOpenQASMString(source);
+  ASSERT_TRUE(qc);
+  ASSERT_TRUE(qc->cleanup());
+  auto qco = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qco);
+  ASSERT_TRUE(qco->cleanup());
+  auto jeff = std::move(*qco).intoJeff();
+  ASSERT_TRUE(jeff);
+  auto restored = std::move(*jeff).intoQCO();
+  ASSERT_TRUE(restored);
+  auto counts =
+      qco::sample(mlir::mqt::getEntryPoint(restored->module()), 1, 42);
+  ASSERT_TRUE(succeeded(counts));
+  ASSERT_EQ(counts->size(), 1);
+  EXPECT_EQ(counts->begin()->first, "1");
+}
+
 TEST(OpenQASMCompilerOutputTest, LowersAffineQuantumLoopsToJeff) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.0;
@@ -1152,23 +1181,6 @@ TEST_P(OpenQASMJeffPipelineTest, TraversesTheExplicitJeffRoundTrip) {
                      OutputRecordingShape::AdaptiveArrays);
 }
 
-class OpenQASMJeffBoundaryTest
-    : public testing::TestWithParam<qasm::OpenQASMProgram> {};
-
-TEST_P(OpenQASMJeffBoundaryTest, FailsAtQCOToJeff) {
-  const auto& source = GetParam();
-  auto qc = QCProgram::fromOpenQASMString(source.source.str());
-  ASSERT_TRUE(qc) << source.name.str() << ": OpenQASM to QC";
-  auto qco = std::move(*qc).intoQCO();
-  ASSERT_TRUE(qco) << source.name.str() << ": QC to QCO";
-  ASSERT_TRUE(qco->cleanup()) << source.name.str() << ": QCO cleanup";
-  ASSERT_TRUE(qco->runPassPipeline("mqt-qco-default"))
-      << source.name.str() << ": QCO optimization";
-  ASSERT_TRUE(qco->cleanup()) << source.name.str() << ": optimized QCO cleanup";
-  EXPECT_FALSE(std::move(*qco).intoJeff())
-      << source.name.str() << ": unexpectedly converted to jeff";
-}
-
 TEST_P(OpenQASMBasePipelineTest, ReachesBaseAndAdaptiveQIR) {
   const auto& source = GetParam();
   std::optional<QCProgram> restoredQC;
@@ -1195,10 +1207,6 @@ INSTANTIATE_TEST_SUITE_P(OpenQASMPrograms, OpenQASMBasePipelineTest,
 
 INSTANTIATE_TEST_SUITE_P(OpenQASMPrograms, OpenQASMJeffPipelineTest,
                          testing::ValuesIn(qasm::jeffCompatiblePrograms()),
-                         openQASMProgramName);
-
-INSTANTIATE_TEST_SUITE_P(OpenQASMPrograms, OpenQASMJeffBoundaryTest,
-                         testing::ValuesIn(qasm::jeffIncompatiblePrograms()),
                          openQASMProgramName);
 
 } // namespace
@@ -3696,6 +3704,48 @@ x q;
       qco->runPassPipeline("place-and-route{ntrials=1},target-native-synthesis,"
                            "verify-target-conformance"));
   EXPECT_NE(qco->str().find("qco.static"), std::string::npos);
+}
+
+TEST_F(CompilerPipelineTest, TargetPipelinesCompileControlledComposites) {
+  using Capability = CompilerTarget::OperationCapability;
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      4, CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(Capability::create("u", 1, 3)),
+          llvm::cantFail(Capability::create("cz", 2, 0)),
+          llvm::cantFail(Capability::create("gphase", 0, 1)),
+      })));
+  const TargetEnvironment environment(target, makePayloadSpecification());
+  for (const auto [modifier, entangler] : {
+           std::pair{"", "cx c, a;"},
+           {"inv @ ", "cx c, a;"},
+           {"pow(2) @ ", ""},
+           {"pow(-2) @ ", ""},
+       }) {
+    SCOPED_TRACE(modifier);
+    const auto source = std::string(R"(OPENQASM 3.0;
+include "stdgates.inc";
+gate composite a, b, c { gphase(0.17); rx(0.37) c;
+)") + entangler + R"(
+ry(0.61) b; rz(-0.29) a; }
+qubit[4] q;
+ctrl @ )" + modifier + "composite q[0], q[1], q[2], q[3];";
+    auto qc = QCProgram::fromOpenQASMString(source);
+    ASSERT_TRUE(qc);
+    auto input = std::move(*qc).intoQCO();
+    ASSERT_TRUE(input);
+    auto reference = input->copy();
+    ASSERT_TRUE(reference.runPassPipeline("inline,symbol-dce"));
+    for (const bool synthesisOnly : {false, true}) {
+      SCOPED_TRACE(synthesisOnly);
+      auto program = input->copy();
+      ASSERT_TRUE(synthesisOnly ? program.synthesizeForTarget(environment)
+                                : program.compileForTarget(environment));
+      EXPECT_TRUE(succeeded(verify(program.module())));
+      EXPECT_TRUE(succeeded(qco::verifyLinearity(program.module())));
+      expectFullUnitaryEqual(reference.module(), program.module(), 4);
+    }
+  }
 }
 
 TEST_F(CompilerPipelineTest, TargetSynthesisResynthesizesTwoQubitBlocks) {

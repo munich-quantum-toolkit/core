@@ -530,6 +530,10 @@ def DecomposeMultiControlled
     `qco.rx`, `qco.ry`, `qco.rz`, `qco.swap`, or constant-angle `qco.p` body, and
     `qco.rccx`. Rotation angles may be constants or runtime SSA values,
     including classical expressions inside the control region.
+    Controls over composite bodies are distributed across their operations
+    before decomposition, subject to the same width threshold. Nested inverse
+    bodies are unrolled in reverse order; power bodies require a constant integer
+    exponent and operations on disjoint wires.
 
     | Family | Width (qubits) | Decomposition |
     | ------ | -------------- | ------------- |

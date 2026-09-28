@@ -22,7 +22,9 @@
 #include <cstdint>
 #include <functional>
 #include <iostream>
+#include <limits>
 #include <ranges>
+#include <stdexcept>
 #include <type_traits>
 #include <vector>
 
@@ -119,6 +121,12 @@ public:
     }
 
     // if node not found → add it to front of unique table bucket
+    if (p->id == 0U) {
+      if (nextId_ == std::numeric_limits<uint32_t>::max()) {
+        throw std::overflow_error("Unique table node IDs exhausted.");
+      }
+      p->id = ++nextId_;
+    }
     p->setNext(tables[v][key]);
     tables[v][key] = p;
     stats[v].trackInsert();
@@ -151,6 +159,9 @@ public:
   std::size_t garbageCollect(bool force = false);
 
   void clear();
+
+  /// Restart ID assignment after the associated memory manager has reset.
+  void resetIds() noexcept { nextId_ = 0U; }
 
   template <class Node> void print() const {
     static_assert(std::is_base_of_v<NodeBase, Node>,
@@ -206,6 +217,9 @@ private:
 
   /// Total entries across all levels, used by per-operation collection checks.
   std::size_t entryCount_ = 0U;
+
+  /// IDs belong to memory slots and persist across GC and slot reuse.
+  uint32_t nextId_ = 0U;
 
   template <class Node> void grow(const size_t v) {
     Table old(tables[v].size() * 2U);

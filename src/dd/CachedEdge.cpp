@@ -202,7 +202,7 @@ template struct CachedEdge<mNode>;
 template <class Node>
 auto std::hash<dd::CachedEdge<Node>>::operator()(
     const dd::CachedEdge<Node>& e) const noexcept -> std::size_t {
-  const auto h1 = dd::murmur64(reinterpret_cast<std::size_t>(e.p));
+  const auto h1 = dd::murmur64(e.p == nullptr ? 0U : e.p->id);
   const auto h2 = std::hash<dd::ComplexValue>{}(e.w);
   return dd::combineHash(h1, h2);
 }

@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     from qiskit.circuit import QuantumCircuit
 
     from mqt.core.qdmi import ProgramFormat
+    from mqt.core.typing import QDMIJobParameters
 
     from .backend import QDMIBackend
 
@@ -76,6 +77,7 @@ class QDMIJob(JobV1):
         memory: Whether to collect genuine ordered shots.
         max_retries: Lifetime replacement limit per confirmed failed entry;
             disabled by default. Cancelled or uncertain jobs are never retried.
+        job_parameters: Custom submission parameters retained for replacements.
     """
 
     def __init__(
@@ -87,6 +89,7 @@ class QDMIJob(JobV1):
         shots: int,
         memory: bool,
         max_retries: int = 0,
+        job_parameters: QDMIJobParameters | None = None,
     ) -> None:
         """Initialize without querying remote job IDs.
 
@@ -109,6 +112,7 @@ class QDMIJob(JobV1):
         ]
         self._shots = shots
         self._memory = memory
+        self._job_parameters = job_parameters or {}
         self._result: Result | None = None
         self._programs: tuple[tuple[str | bytes, ProgramFormat], ...] | None = None
         if jobs is None:
@@ -138,6 +142,7 @@ class QDMIJob(JobV1):
         shots: int,
         memory: bool,
         max_retries: int = 0,
+        job_parameters: QDMIJobParameters | None = None,
     ) -> Self:
         """Prepare an unsubmitted batch from bound, backend-ready circuits.
 
@@ -148,7 +153,9 @@ class QDMIJob(JobV1):
         Returns:
             A batch ready for :meth:`submit`, with programs retained for recovery.
         """
-        return cls(backend, None, circuits, shots=shots, memory=memory, max_retries=max_retries)
+        return cls(
+            backend, None, circuits, shots=shots, memory=memory, max_retries=max_retries, job_parameters=job_parameters
+        )
 
     @property
     def entries(self) -> tuple[BatchEntry[ExperimentResult], ...]:
@@ -158,7 +165,9 @@ class QDMIJob(JobV1):
     def _submit_entry(self, index: int) -> QDMIJobHandle:
         assert self._programs is not None
         program, program_format = self._programs[index]
-        return self._backend.device.submit_job(program=program, program_format=program_format, num_shots=self._shots)
+        return self._backend.device.submit_job(
+            program=program, program_format=program_format, num_shots=self._shots, **self._job_parameters
+        )
 
     def collect(self) -> tuple[BatchEntry[ExperimentResult], ...]:
         """Read existing jobs without replacement executions or aggregate errors.
