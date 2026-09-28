@@ -22,10 +22,10 @@ namespace mqt::bench {
 
 /// Parameters for one weak-measurement Grover benchmark instance.
 struct WeakMeasurementGroverOptions {
-  /// Largest supported search-register width.
-  static constexpr size_t MAX_QUBITS = 62;
+  /// Largest width whose default strength is a normal double.
+  static constexpr size_t MAX_QUBITS = 2'044;
 
-  /// Big-endian marked outcome with 2 through 62 search qubits.
+  /// Big-endian marked outcome with 2 through 2044 search qubits.
   std::string markedBitstring;
   /// Finite strength in (0, 2^(-n/2)], or no value to use the upper bound.
   std::optional<double> measurementStrength = std::nullopt;

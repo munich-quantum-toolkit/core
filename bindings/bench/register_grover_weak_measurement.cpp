@@ -33,7 +33,7 @@ void registerWeakMeasurementGrover(const nb::module_& m) {
            "marked_bitstring"_a, "measurement_strength"_a = nb::none())
       .def_ro("marked_bitstring",
               &bench::WeakMeasurementGroverOptions::markedBitstring,
-              "The big-endian marked outcome with 2 through 62 bits.")
+              "The big-endian marked outcome with 2 through 2044 bits.")
       .def_ro(
           "measurement_strength",
           &bench::WeakMeasurementGroverOptions::measurementStrength,

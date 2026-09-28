@@ -9,6 +9,7 @@
  */
 
 #include "bench/Evaluation.hpp"
+#include "bench/JSON.hpp"
 #include "bench/WeakMeasurementGrover.hpp"
 
 #include "gtest/gtest.h"
@@ -20,8 +21,17 @@
 
 namespace {
 
+using mqt::bench::benchmarkIdFromManifestJSON;
+using mqt::bench::caseId;
+using mqt::bench::describeBenchmarkJSON;
+using mqt::bench::evaluateJSON;
 using mqt::bench::Output;
+using mqt::bench::toInstanceSpecificationJSON;
+using mqt::bench::toManifestJSON;
 using mqt::bench::WeakMeasurementGrover;
+using mqt::bench::weakMeasurementGroverFromInstanceSpecificationJSON;
+using mqt::bench::weakMeasurementGroverFromManifestJSON;
+using mqt::bench::WeakMeasurementGroverOptions;
 
 TEST(WeakMeasurementGrover, ResolvesTheDefaultMeasurementStrength) {
   const WeakMeasurementGrover benchmark{{.markedBitstring = "101"}};
@@ -42,11 +52,19 @@ TEST(WeakMeasurementGrover, AcceptsStrengthsInTheProvenRegime) {
   const WeakMeasurementGrover weaker{
       {.markedBitstring = "0000", .measurementStrength = 0.125}};
   EXPECT_DOUBLE_EQ(*weaker.options().measurementStrength, 0.125);
+
+  const WeakMeasurementGrover largest{
+      {.markedBitstring =
+           std::string(WeakMeasurementGroverOptions::MAX_QUBITS, '0')}};
+  ASSERT_TRUE(largest.options().measurementStrength);
+  EXPECT_DOUBLE_EQ(*largest.options().measurementStrength,
+                   std::numeric_limits<double>::min());
 }
 
 TEST(WeakMeasurementGrover, RejectsUnsupportedOptions) {
   for (const auto& marked :
-       {std::string{"0"}, std::string{"0x"}, std::string(63, '0')}) {
+       {std::string{"0"}, std::string{"0x"},
+        std::string(WeakMeasurementGroverOptions::MAX_QUBITS + 1, '0')}) {
     EXPECT_THROW(
         static_cast<void>(WeakMeasurementGrover{{.markedBitstring = marked}}),
         std::invalid_argument);

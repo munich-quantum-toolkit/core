@@ -19,7 +19,7 @@ class Options:
     def __init__(self, *, marked_bitstring: str, measurement_strength: float | None = None) -> None: ...
     @property
     def marked_bitstring(self) -> str:
-        """The big-endian marked outcome with 2 through 62 bits."""
+        """The big-endian marked outcome with 2 through 2044 bits."""
 
     @property
     def measurement_strength(self) -> float | None:

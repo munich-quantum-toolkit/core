@@ -37,7 +37,7 @@ WeakMeasurementGrover::WeakMeasurementGrover(
   if (width < 2 || width > WeakMeasurementGroverOptions::MAX_QUBITS) {
     throw std::invalid_argument(
         "weak-measurement Grover requires a marked bitstring of width 2 "
-        "through 62");
+        "through 2044");
   }
   detail::validateOutcome(options_.markedBitstring, width);
 
