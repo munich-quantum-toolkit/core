@@ -60,8 +60,11 @@ COPY --from=workload \
     --exclude=**/__pycache__ --exclude=test/slurm/runtime --exclude=test/slurm/dist \
     . /workload
 
-FROM base AS provider-build
+FROM ubuntu:26.04 AS provider-build
 
+COPY --from=uv /uv /uvx /bin/
+
+ARG SETUP_SCRIPT=""
 ARG PROVIDER_RUNTIME_COMPONENT=""
 ARG CMAKE_ARGS=""
 RUN --mount=type=bind,from=provider-source,source=/workload,target=/workload \
@@ -69,7 +72,7 @@ RUN --mount=type=bind,from=provider-source,source=/workload,target=/workload \
     && if [ -n "$SETUP_SCRIPT" ]; then \
         apt-get update \
         && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
-            build-essential cmake git libcurl4-openssl-dev libssl-dev \
+            build-essential ca-certificates cmake git libcurl4-openssl-dev libssl-dev python3 \
         && CMAKE_BUILD_PARALLEL_LEVEL=2 uv build /workload --wheel --out-dir /opt/provider/wheels \
             --config-setting=build-dir=/tmp/provider-build \
         && if [ -n "$PROVIDER_RUNTIME_COMPONENT" ]; then \

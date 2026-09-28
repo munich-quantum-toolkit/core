@@ -35,6 +35,12 @@ namespace mlir::qco {
 /// size of a dynamic one-dimensional QTensor argument.
 using DDArgumentBindings = DenseMap<Value, Attribute>;
 
+/// Execution budget shared by nested while loops and calls in one simulation.
+/// Counted loops and the total number of gates are not bounded by this budget.
+struct DDExecutionOptions {
+  size_t maxWhileIterations = 1'000'000'000;
+};
+
 /// An uncollapsed sampling state and the package that owns its DD nodes.
 /// A null package means that sampling did not retain a state.
 struct DDSamplingState {
@@ -67,14 +73,16 @@ struct DDSamplingState {
 /// @return Matrix DD, or failure for an unsupported program.
 FailureOr<dd::MatrixDD> buildFunctionality(
     func::FuncOp func, dd::Package& dd,
-    const DDArgumentBindings& argumentBindings = DDArgumentBindings());
+    const DDArgumentBindings& argumentBindings = DDArgumentBindings(),
+    const DDExecutionOptions& options = {});
 
 /// Simulate a single-block QCO function.
 ///
 /// In addition to the operations supported by `buildFunctionality`, simulation
 /// supports measurements, resets, CBit registers, and runtime qubit and QTensor
 /// allocation. QCO and SCF structured control requires concrete values. A
-/// shared limit of 100000 iterations bounds `scf.while` execution. Counted
+/// configurable budget of one billion iterations bounds `scf.while` execution
+/// per simulation (per shot for dynamic sampling). Counted
 /// loops, branches, and nonrecursive calls have no step limit. `qco.sink` and
 /// `qtensor.dealloc` mark lifetimes but do not remove DD wires.
 ///
@@ -91,7 +99,8 @@ FailureOr<dd::MatrixDD> buildFunctionality(
 FailureOr<dd::VectorDD>
 simulate(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
          std::mt19937_64& rng,
-         const DDArgumentBindings& argumentBindings = DDArgumentBindings());
+         const DDArgumentBindings& argumentBindings = DDArgumentBindings(),
+         const DDExecutionOptions& options = {});
 
 /// Simulate a zero-state QCO function without collapsing terminal
 /// measurements.
@@ -103,7 +112,8 @@ simulate(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
 /// @param argumentBindings Scalar values and dynamic QTensor argument sizes.
 FailureOr<dd::VectorDD> simulateStatevector(
     func::FuncOp func, dd::Package& dd,
-    const DDArgumentBindings& argumentBindings = DDArgumentBindings());
+    const DDArgumentBindings& argumentBindings = DDArgumentBindings(),
+    const DDExecutionOptions& options = {});
 
 /// Sample a single-block QCO function from the zero state.
 ///
@@ -129,5 +139,6 @@ FailureOr<std::map<std::string, size_t>>
 sample(func::FuncOp func, size_t shots, uint64_t seed = 0,
        const DDArgumentBindings& argumentBindings = DDArgumentBindings(),
        std::vector<std::string>* shotResults = nullptr,
-       DDSamplingState* retainedState = nullptr);
+       DDSamplingState* retainedState = nullptr,
+       const DDExecutionOptions& options = {});
 } // namespace mlir::qco

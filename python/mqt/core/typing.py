@@ -39,11 +39,11 @@ class QDMISessionParameters(TypedDict, total=False):
 class QDMIJobParameters(TypedDict, total=False):
     """Custom keyword arguments accepted when submitting a QDMI job."""
 
-    custom1: str | bool | float | None
-    custom2: str | bool | float | None
-    custom3: str | bool | float | None
-    custom4: str | bool | float | None
-    custom5: str | bool | float | None
+    custom1: str | bool | float | bytes | None
+    custom2: str | bool | float | bytes | None
+    custom3: str | bool | float | bytes | None
+    custom4: str | bool | float | bytes | None
+    custom5: str | bool | float | bytes | None
 
 
 class QiskitSamplerOptions(TypedDict, total=False):

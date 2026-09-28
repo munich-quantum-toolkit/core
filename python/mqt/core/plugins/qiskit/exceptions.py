@@ -8,8 +8,18 @@
 
 """Custom exception types for QDMI Qiskit integration."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from qiskit.providers import JobError
+
+if TYPE_CHECKING:
+    from .job import QDMIJob
+
 __all__ = [
     "CircuitValidationError",
+    "JobExecutionError",
     "JobSubmissionError",
     "QDMIQiskitError",
     "TranslationError",
@@ -45,6 +55,20 @@ class CircuitValidationError(QDMIQiskitError):
 
 class JobSubmissionError(QDMIQiskitError):
     """Raised when job submission to the QDMI device fails."""
+
+    def __init__(self, message: str, *, job: QDMIJob | None = None) -> None:
+        """Retain the batch handle for inspection and recovery."""
+        super().__init__(message)
+        self.job = job
+
+
+class JobExecutionError(JobError):
+    """An aggregate execution failure with a recoverable batch handle."""
+
+    def __init__(self, message: str, *, job: QDMIJob) -> None:
+        """Retain the batch handle for inspection and recovery."""
+        super().__init__(message)
+        self.job = job
 
 
 class UnsupportedFormatError(QDMIQiskitError):

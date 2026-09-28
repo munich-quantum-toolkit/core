@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+import importlib
+
 import pytest
 
 from mqt.core import bench
@@ -60,6 +62,14 @@ def test_ghz_evaluation() -> None:
     assert evaluation.total_variation_distance == pytest.approx(0.5)
     assert evaluation.squared_hellinger_fidelity == pytest.approx(0.5)
     assert evaluation.success_probability is None
+
+
+def test_importing_mlir_preserves_benchmark_overflow_error() -> None:
+    """Keep benchmark overflow translation after loading the MLIR module."""
+    importlib.import_module("mqt.core.mlir")
+    benchmark = ghz.GHZ(ghz.Options(qubits=2))
+    with pytest.raises(OverflowError, match="total shot count exceeds size_t"):
+        benchmark.evaluate({"00": 2**64 - 1, "11": 1})
 
 
 def test_ghz_json_roundtrip() -> None:

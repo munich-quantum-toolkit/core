@@ -16,8 +16,10 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/RealNumber.hpp"
 
+#include <bit>
 #include <complex>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <iostream>
 #include <string>
@@ -129,16 +131,18 @@ ComplexValue operator/(const Complex& c1, fp real);
 template <> struct std::hash<dd::Complex> {
   /// Compute the hash value for a complex number.
   ///
-  /// Reinterprets the pointers to the real and imaginary part as
-  /// integers and computes the hash value for those. Afterwards, the two hash
-  /// values are combined.
+  /// Hashes the canonical real values, independently of their addresses.
   /// @param c The complex number to compute the hash value for.
   /// @returns The hash value.
   /// @see dd::murmur64
   /// @see dd::combineHash
   std::size_t operator()(dd::Complex const& c) const noexcept {
-    const auto h1 = dd::murmur64(reinterpret_cast<std::size_t>(c.r));
-    const auto h2 = dd::murmur64(reinterpret_cast<std::size_t>(c.i));
+    const auto valueBits = [](const dd::RealNumber* p) {
+      const auto value = dd::RealNumber::val(p);
+      return std::bit_cast<uint64_t>(value == 0. ? 0. : value);
+    };
+    const auto h1 = dd::murmur64(valueBits(c.r));
+    const auto h2 = dd::murmur64(valueBits(c.i));
     return dd::combineHash(h1, h2);
   }
 };

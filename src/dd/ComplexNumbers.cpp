@@ -18,10 +18,16 @@
 #include <cmath>
 #include <complex>
 #include <cstddef>
+#include <stdexcept>
 
 namespace dd {
 
-void ComplexNumbers::setTolerance(fp tol) noexcept { RealNumber::eps = tol; }
+void ComplexNumbers::setTolerance(fp tol) {
+  if (!std::isnormal(tol) || tol <= 0.) {
+    throw std::invalid_argument("DD tolerance must be positive and normal");
+  }
+  RealNumber::eps = tol;
+}
 
 fp ComplexNumbers::mag2(const Complex& a) noexcept {
   return static_cast<ComplexValue>(a).mag2();

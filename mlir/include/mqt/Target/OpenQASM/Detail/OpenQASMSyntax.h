@@ -61,6 +61,7 @@ struct Expr {
     UintCast,
     AngleCast,
     Index,
+    Slice,
     Neg,
     Not,
     BitNot,
@@ -134,6 +135,13 @@ struct Modifier {
   std::optional<SyntaxExpressionId> argument = std::nullopt;
 };
 
+/// An inclusive register range. Missing endpoints select the register ends.
+struct Slice {
+  std::optional<SyntaxExpressionId> start;
+  std::optional<SyntaxExpressionId> step;
+  std::optional<SyntaxExpressionId> stop;
+};
+
 /// @ingroup ParseVocabulary
 /// A gate operand: a (possibly indexed) identifier, or a hardware qubit.
 struct Operand {
@@ -141,6 +149,7 @@ struct Operand {
   StringRef identifier;
   std::optional<SyntaxExpressionId> index = std::nullopt;
   std::optional<uint64_t> hardwareQubit;
+  std::optional<Slice> slice;
 };
 
 /// A (possibly indexed) classical reference (e.g., `c` or `c[0]`).
@@ -148,6 +157,7 @@ struct BitReference {
   SMLoc location;
   StringRef identifier;
   std::optional<SyntaxExpressionId> index = std::nullopt;
+  std::optional<Slice> slice;
 };
 
 /// @ingroup ParseVocabulary
@@ -176,6 +186,7 @@ struct SyntaxExpression {
   std::optional<uint64_t> hardwareQubit;
   std::optional<SyntaxExpressionId> lhs;
   std::optional<SyntaxExpressionId> rhs;
+  std::optional<Slice> slice;
 };
 
 struct SyntaxGateCall {

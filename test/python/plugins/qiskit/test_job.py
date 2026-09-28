@@ -25,14 +25,13 @@ from qiskit.providers import JobError
 from qiskit.quantum_info import SparsePauliOp
 from test_mock_backend import MockQDMIDevice
 
-from mqt.core.plugins.qiskit import CircuitValidationError, JobSubmissionError, QDMIBackend
-from mqt.core.qdmi import Job
+from mqt.core.plugins.qiskit import CircuitValidationError, JobExecutionError, JobSubmissionError, QDMIBackend, QDMIJob
+from mqt.core.qdmi import Job, ProgramFormat
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from mqt.core.plugins.qiskit import QDMIJob
-    from mqt.core.qdmi import Device, ProgramFormat
+    from mqt.core.qdmi import Device
 
     RecordingBackend = tuple[QDMIBackend, list[MagicMock], list[str]]
 
@@ -76,6 +75,7 @@ def test_batch_order_and_repeated_reads(recording_backend: RecordingBackend, *, 
     backend, jobs, events = recording_backend
     circuits = [QuantumCircuit(2, 2, name=f"circuit-{index}") for index in range(3)]
     job = backend.run(circuits, shots=4, memory=memory)
+    job.submit()
     assert events == ["formats", "submit", "submit", "submit"]
     for index, handle in enumerate(jobs):
         handle.get_shots.side_effect = None
@@ -83,7 +83,7 @@ def test_batch_order_and_repeated_reads(recording_backend: RecordingBackend, *, 
         handle.get_counts.side_effect = None
         handle.get_counts.return_value = {f"{index:02b}": 4}
         handle.check.side_effect = [Job.Status.RUNNING, Job.Status.DONE]
-        handle.wait.side_effect = lambda: events.append("wait")
+        handle.wait.side_effect = lambda: (events.append("wait"), True)[1]
     result = job.result()
     assert events.count("wait") == 3
     assert events.count("id") == 1
@@ -153,10 +153,10 @@ def test_result_header_snapshot(recording_backend: RecordingBackend) -> None:
 
 @pytest.mark.parametrize("stage", ["wait", "check", "get_shots", "get_counts", "id"])
 @pytest.mark.parametrize("error", [RuntimeError("original failure"), KeyboardInterrupt()])
-def test_collection_failure_cancels_every_job(
+def test_collection_failure_preserves_every_job(
     recording_backend: RecordingBackend, stage: str, error: BaseException
 ) -> None:
-    """Cleanup includes later jobs and never masks the original exception."""
+    """Preserve handles and collect later results unless the user interrupts."""
     backend, jobs, _ = recording_backend
     job = backend.run([QuantumCircuit(1, 1)] * 3, shots=4, memory=stage == "get_shots")
     if stage == "wait":
@@ -165,25 +165,30 @@ def test_collection_failure_cancels_every_job(
         type(jobs[0]).id = PropertyMock(side_effect=error)
     else:
         getattr(jobs[0], stage).side_effect = error
-    jobs[0].cancel.side_effect = RuntimeError("cancellation failed")
-    with pytest.raises(type(error)) as caught:
+    with pytest.raises(JobExecutionError if isinstance(error, Exception) else type(error)) as caught:
         job.result()
-    assert caught.value is error
+    assert caught.value is error or caught.value.__cause__ is error
+    assert backend.last_job is job
+    if isinstance(error, Exception):
+        assert isinstance(caught.value, JobExecutionError)
+        assert caught.value.job is job
+        assert all(entry.result is not None for entry in job.entries[1:])
     for handle in jobs:
-        handle.cancel.assert_called_once()
+        handle.cancel.assert_not_called()
 
 
 @pytest.mark.parametrize("status", [Job.Status.FAILED, Job.Status.CANCELED, Job.Status.RUNNING])
 def test_unsuccessful_jobs_raise(recording_backend: RecordingBackend, status: Job.Status) -> None:
     """An unsuccessful job must not become an empty successful primitive result."""
     backend, jobs, _ = recording_backend
-    job = backend.run([QuantumCircuit(1, 1)] * 2, shots=4, memory=True)
+    job = backend.run([QuantumCircuit(1, 1)] * 2, shots=4, memory=True, max_retries=0)
     jobs[0].check.side_effect = lambda: status
     with pytest.raises(JobError, match="did not complete successfully"):
         job.result()
     for handle in jobs:
-        handle.cancel.assert_called_once()
-        handle.get_shots.assert_not_called()
+        handle.cancel.assert_not_called()
+    jobs[0].get_shots.assert_not_called()
+    jobs[1].get_shots.assert_called_once()
 
 
 @pytest.mark.parametrize("samples", [[], ["0"], ["2"] * 4, ["00"] * 4, [""] * 4])
@@ -194,7 +199,7 @@ def test_malformed_memory_raises(recording_backend: RecordingBackend, samples: l
     jobs[0].get_shots.side_effect = lambda: samples
     with pytest.raises(JobError, match="Invalid QDMI"):
         job.result()
-    jobs[0].cancel.assert_called_once()
+    jobs[0].cancel.assert_not_called()
 
 
 @pytest.mark.parametrize("counts", [{}, {"0": 3}, {"0": -1, "1": 5}, {"0": 4.0}, {"2": 4}, {"00": 4}])
@@ -208,15 +213,16 @@ def test_malformed_histogram_raises(recording_backend: RecordingBackend, counts:
 
 
 @pytest.mark.parametrize("error", [RuntimeError("submission failed"), KeyboardInterrupt()])
-def test_submission_failure_cleanup(
-    recording_backend: RecordingBackend, monkeypatch: pytest.MonkeyPatch, error: BaseException
+@pytest.mark.parametrize("failed_index", [0, 1])
+def test_submission_failure_recovery(
+    recording_backend: RecordingBackend, monkeypatch: pytest.MonkeyPatch, error: BaseException, failed_index: int
 ) -> None:
-    """Clean up accepted jobs when a later submission fails or is interrupted."""
+    """Keep accepted jobs and expose the uncertain submission after admission fails."""
     backend, jobs, _ = recording_backend
     submit = backend.device.submit_job
 
     def failing_submit(*, program: str, program_format: ProgramFormat, num_shots: int) -> Job:
-        if len(jobs) == 2:
+        if len(jobs) == failed_index:
             raise error
         return submit(program=program, program_format=program_format, num_shots=num_shots)
 
@@ -224,9 +230,18 @@ def test_submission_failure_cleanup(
     with pytest.raises((JobSubmissionError, KeyboardInterrupt)) as caught:
         backend.run([QuantumCircuit(1, 1)] * 3)
     assert caught.value is error or caught.value.__cause__ is error
-    assert len(jobs) == 2
+    job = backend.last_job
+    assert job is not None
+    if isinstance(caught.value, JobSubmissionError):
+        assert caught.value.job is job
+    job.collect()
+    monkeypatch.setattr(backend.device, "submit_job", submit)
+    job.submit()
+    job.resubmit([failed_index], allow_unknown=True)
+    assert job.result().get_counts() == [{"0": 1024}] * 3
+    jobs[0].get_counts.assert_called_once()
     for handle in jobs:
-        handle.cancel.assert_called_once()
+        handle.cancel.assert_not_called()
 
 
 def test_validation_before_submission(recording_backend: RecordingBackend) -> None:
@@ -239,8 +254,23 @@ def test_validation_before_submission(recording_backend: RecordingBackend) -> No
     assert not jobs
 
 
+def test_preparation_interruption_clears_last_job(
+    recording_backend: RecordingBackend, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An interrupted new run cannot expose a preceding batch as its recovery handle."""
+    backend, jobs, _ = recording_backend
+    previous = backend.run(QuantumCircuit(1, 1), shots=1)
+    monkeypatch.setattr(backend, "_serialize_circuit", MagicMock(side_effect=KeyboardInterrupt))
+    with pytest.raises(KeyboardInterrupt):
+        backend.run(QuantumCircuit(1, 1), shots=2)
+    assert backend.last_job is None
+    assert previous.result().get_counts() == {"0": 1}
+    assert len(jobs) == 1
+
+
 @pytest.mark.parametrize(
-    "options", [{"shots": 1.5}, {"shots": True}, {"memory": 1}, {"seed_simulator": 1}, {"unknown": None}]
+    "options",
+    [{"shots": 1.5}, {"shots": True}, {"memory": 1}, {"max_retries": True}, {"seed_simulator": 1}, {"unknown": None}],
 )
 def test_invalid_options(recording_backend: RecordingBackend, options: dict[str, object]) -> None:
     """Reject ineffective or lossy options before submission."""
@@ -286,9 +316,10 @@ def test_counts_only_device() -> None:
     result = backend.estimator().run([(QuantumCircuit(1), "Z")], precision=0.5).result()[0]
     assert result.metadata["shots"] == 4
     assert -1 <= result.data["evs"] <= 1
-    with pytest.raises(NotImplementedError) as caught:
+    with pytest.raises(JobExecutionError) as caught:
         backend.sampler().run([qc], shots=4).result()
-    assert "SHOTS" in caught.value.__notes__[0]
+    assert isinstance(caught.value.__cause__, NotImplementedError)
+    assert "SHOTS" in caught.value.__cause__.__notes__[0]
 
 
 def test_sampler_batching_and_mixed_shots(recording_backend: RecordingBackend) -> None:
@@ -365,3 +396,83 @@ def test_estimator_nonzero_uncertainty(recording_backend: RecordingBackend, monk
     assert len(jobs) == 1
     np.testing.assert_equal(result.data["evs"], [4, 0, 0])
     np.testing.assert_equal(result.data["stds"], [2.5, 0.5, 0.5])
+
+
+@pytest.mark.parametrize("read_id_before_retry", [False, True])
+def test_automatic_replacement_keeps_successful_results(
+    recording_backend: RecordingBackend, *, read_id_before_retry: bool
+) -> None:
+    """Replacing a failed task preserves the batch ID and cached successful experiments."""
+    backend, jobs, events = recording_backend
+    circuits = [QuantumCircuit(1, 1, metadata={"input": i}) for i in range(3)]
+    job = backend.run(circuits, shots=4, memory=True, max_retries=3)
+    jobs[0].check.side_effect = lambda: Job.Status.FAILED
+    type(jobs[0]).id = PropertyMock(side_effect=lambda: (events.append("id"), "original-id")[1])
+    if read_id_before_retry:
+        assert job.job_id() == "original-id"
+    job.collect()
+    result = job.result()
+    assert len(jobs) == 4
+    assert result.job_id == job.job_id() == "original-id"
+    assert events.count("id") == 1
+    assert result.results is not None
+    assert [experiment.header["metadata"] for experiment in result.results] == [{"input": i} for i in range(3)]
+    assert job.result() is result
+    for handle in jobs[1:]:
+        handle.get_shots.assert_called_once()
+        handle.cancel.assert_not_called()
+
+
+@pytest.mark.parametrize(("configured", "override", "expected"), [(None, None, 0), (3, None, 3), (2, 1, 1), (3, 0, 0)])
+def test_configured_retry_limit(
+    recording_backend: RecordingBackend,
+    monkeypatch: pytest.MonkeyPatch,
+    configured: int | None,
+    override: int | None,
+    expected: int,
+) -> None:
+    """Backend defaults and per-run overrides bound automatic replacements."""
+    backend, jobs, _ = recording_backend
+    original = backend.device.submit_job
+
+    def submit(*, program: str, program_format: ProgramFormat, num_shots: int) -> Job:
+        handle = original(program=program, program_format=program_format, num_shots=num_shots)
+        jobs[-1].check.side_effect = lambda: Job.Status.FAILED
+        return handle
+
+    monkeypatch.setattr(backend.device, "submit_job", submit)
+    if configured is not None:
+        backend.set_options(max_retries=configured)
+    options = {} if override is None else {"max_retries": override}
+    job = backend.run(QuantumCircuit(1, 1), parameter_values=None, **options)
+    with pytest.raises(JobExecutionError):
+        job.result()
+    assert len(jobs) == 1 + expected
+
+
+def test_prepared_and_existing_job_constructors(recording_backend: RecordingBackend) -> None:
+    """Circuit-based jobs submit explicitly; wrapping existing handles does not create work."""
+    backend, jobs, events = recording_backend
+    circuits = [QuantumCircuit(1, 1)] * 2
+    job = QDMIJob.from_circuits(backend, circuits, shots=4, memory=False)
+    assert not jobs
+    job.submit()
+    assert job.result().get_counts() == [{"0": 4}, {"0": 4}]
+    existing = QDMIJob(backend, jobs, circuits, shots=4, memory=False)
+    existing.submit()
+    assert existing.result().get_counts() == [{"0": 4}, {"0": 4}]
+    assert events.count("submit") == 2
+
+
+@pytest.mark.parametrize(("job_count", "circuit_count"), [(0, 0), (0, 1), (2, 1)])
+def test_existing_job_constructor_rejects_mismatched_inputs(
+    recording_backend: RecordingBackend, job_count: int, circuit_count: int
+) -> None:
+    """Each wrapped job needs its circuit metadata before any remote operation."""
+    backend, jobs, _ = recording_backend
+    handles = [MagicMock() for _ in range(job_count)]
+    with pytest.raises(ValueError, match="at least one circuit and one submitted job"):
+        QDMIJob(backend, handles, [QuantumCircuit(1, 1)] * circuit_count, shots=4, memory=False)
+    assert not jobs
+    for handle in handles:
+        handle.check.assert_not_called()
