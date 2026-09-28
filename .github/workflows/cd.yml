@@ -1,4 +1,5 @@
 name: CD 🚀
+# Temporary: exercise PR packaging builds for scikit-build-core 1.1.
 on:
   release:
     types: [published]
