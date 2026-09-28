@@ -137,6 +137,8 @@ def _run_tests(
     pytest_run_args: Sequence[str] = (),
 ) -> None:
     env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
+    # Coverage's execv patch is only supported on POSIX.
+    env["MQT_COVERAGE_PROCESS_PATCH"] = "subprocess" if os.name == "nt" else "execv"
     if shutil.which("cmake") is None:
         session.install("cmake")
     if shutil.which("ninja") is None:
