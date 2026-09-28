@@ -248,26 +248,10 @@ public:
 
   void inject(spank_t spank) const {
     const auto expression = jobEnvironment(spank, LICENSE_ENVIRONMENT);
-    std::vector<std::string_view> selected;
-    if (expression) {
-      std::string_view remaining{*expression};
-      do {
-        const auto end = remaining.find_first_of(",|");
-        auto token = remaining.substr(0, end);
-        const auto begin = token.find_first_not_of(" \t");
-        token = begin == std::string_view::npos ? std::string_view{}
-                                                : token.substr(begin);
-        const auto id = token.substr(0, token.find_first_of(":@ \t"));
-        if (std::ranges::find(licenses_, id) != licenses_.end()) {
-          selected.push_back(id);
-        }
-        if (end == std::string_view::npos) {
-          break;
-        }
-        remaining.remove_prefix(end + 1);
-      } while (true);
-    }
-    if (selected.empty()) {
+    const auto selected = std::ranges::find_if(licenses_, [&](const auto& id) {
+      return expression && (*expression == id || *expression == id + ":1");
+    });
+    if (selected == licenses_.end()) {
       if (catalogueOption_ ||
           std::ranges::any_of(references_, [](const auto& reference) {
             return reference.option.has_value();
@@ -280,11 +264,8 @@ public:
 
     apply(spank, CATALOGUE_ENVIRONMENT, catalogueDefault_, catalogueOption_);
     for (const auto& reference : references_) {
-      const bool applicable = std::ranges::any_of(selected, [&](const auto id) {
-        return std::ranges::find(reference.licenses, id) !=
-               reference.licenses.end();
-      });
-      if (!applicable) {
+      if (std::ranges::find(reference.licenses, *selected) ==
+          reference.licenses.end()) {
         if (reference.option) {
           throw std::runtime_error(
               "QDMI reference does not apply to this license");

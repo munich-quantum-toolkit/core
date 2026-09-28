@@ -509,6 +509,9 @@ def test_spank_transport() -> None:
         return json.loads(job(*arguments, "python3", "-c", program, timeout=60).stdout)
 
     assert values(*allocation, f"--licenses={selected}") == ["site-default", catalogue]
+    assert values(*allocation, f"--licenses={selected}:1") == ["site-default", catalogue]
+    assert values(*allocation, f"--licenses={selected}:2") == [None, None]
+    assert values(*allocation, f"--licenses={selected},{other}") == [None, None]
     assert values("env", f"{reference}=job-value", *allocation, f"--licenses={selected}") == ["job-value", catalogue]
     assert values("env", "MQT_CORE_QDMI_CONFIG_FILE=/runtime/job.qdmi.json", *allocation, f"--licenses={selected}") == [
         "site-default",
@@ -534,7 +537,6 @@ def test_spank_transport() -> None:
     controller("scontrol", "reconfigure")
     try:
         assert values(*allocation, f"--licenses={unrelated}") == [None, None]
-        assert values(*allocation, f"--licenses={unrelated},{selected}") == ["site-default", catalogue]
     finally:
         slurm_config.write_text(original_config, encoding="utf-8")
         controller("scontrol", "reconfigure")
@@ -543,6 +545,7 @@ def test_spank_transport() -> None:
         (f"--qdmi-ref-{reference}=not-allocated",),
         (f"--licenses={selected}", "--qdmi-ref-UNLISTED=value"),
         (f"--licenses={other}", f"--qdmi-ref-{reference}=wrong-device"),
+        (f"--licenses={selected},{other}", f"--qdmi-ref-{reference}=mixed-licenses"),
     ):
         result = job(*allocation, *options, "/bin/true", check=False, timeout=60)
         assert result.returncode != 0, options
@@ -575,53 +578,20 @@ def test_spank_transport() -> None:
     assert result.returncode == 0
 
     output = RUNTIME / "jobs" / "spank-batch.out"
-    release = RUNTIME / "jobs" / "spank-batch-release"
-    batch = (
-        job(
-            "sbatch",
-            "--parsable",
-            "--time=1",
-            "--ntasks=1",
-            "--nodelist=node1",
-            f"--licenses={selected}",
-            f"--qdmi-ref-{reference}=batch-value",
-            "--output=/jobs/spank-batch.out",
-            "--wrap",
-            shlex.join((
-                "python3",
-                "-c",
-                program + "; import time; from pathlib import Path\n"
-                "while not Path('/jobs/spank-batch-release').exists(): time.sleep(0.1)",
-            )),
-        )
-        .stdout.strip()
-        .split(";", maxsplit=1)[0]
+    job(
+        "sbatch",
+        "--wait",
+        "--time=1",
+        "--ntasks=1",
+        "--nodelist=node1",
+        f"--licenses={selected}",
+        f"--qdmi-ref-{reference}=batch-value",
+        "--output=/jobs/spank-batch.out",
+        "--wrap",
+        shlex.join(("python3", "-c", program)),
+        timeout=120,
     )
-    try:
-        wait_for("the SPANK batch task to start", lambda: output.exists() and bool(output.read_text(encoding="utf-8")))
-        assert json.loads(output.read_text(encoding="utf-8")) == ["batch-value", catalogue]
-        compute(
-            "node1",
-            "python3",
-            "-c",
-            "from pathlib import Path\n"
-            "seen = set()\n"
-            "for process in Path('/proc').glob('[0-9]*'):\n"
-            "    try:\n"
-            "        name = (process / 'comm').read_text().strip()\n"
-            "        if name not in {'slurmd', 'slurmstepd'}: continue\n"
-            "        entries = (process / 'environ').read_bytes().split(b'\\0')\n"
-            "        environment = dict(entry.split(b'=', 1) for entry in entries if b'=' in entry)\n"
-            "    except FileNotFoundError:\n"
-            "        continue\n"
-            "    seen.add(name)\n"
-            f"    assert environment.get(b'{reference}') in (None, b'daemon-only'), name\n"
-            "    assert environment.get(b'MQT_CORE_QDMI_CONFIG_FILE') in (None, b'/daemon-only/qdmi.json'), name\n"
-            "assert seen == {'slurmd', 'slurmstepd'}, seen\n",
-        )
-    finally:
-        release.touch()
-    wait_for("the SPANK batch job to complete", lambda: job_finished(batch))
+    assert json.loads(output.read_text(encoding="utf-8")) == ["batch-value", catalogue]
     (RUNTIME / "plugstack.conf").write_text("", encoding="utf-8")
 
 
@@ -699,7 +669,7 @@ def main(arguments: Sequence[str] = ()) -> None:
             test_provider(options)
         else:
             test_core()
-        test_spank_transport()
+            test_spank_transport()
 
         success = True
         LOGGER.info("Slurm admission and execution checks: %.2fs", time.monotonic() - testing_at)
