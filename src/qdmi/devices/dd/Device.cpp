@@ -41,6 +41,7 @@
 #include <cstring>
 #include <exception>
 #include <iostream>
+#include <iterator>
 #include <limits>
 #include <map>
 #include <memory>
@@ -308,11 +309,11 @@ struct Executor {
     const size_t hardware = std::max(
         1U, llvm::heavyweight_hardware_concurrency().compute_thread_count());
     if (const char* raw = std::getenv("MQT_CORE_DD_WORKER_BUDGET")) {
-      const std::string_view value(raw);
       size_t parsed = 0;
-      const auto [end, error] =
-          std::from_chars(value.begin(), value.end(), parsed);
-      if (error == std::errc{} && end == value.end() && parsed > 0) {
+      const auto* last =
+          std::next(raw, static_cast<ptrdiff_t>(std::strlen(raw)));
+      const auto [end, error] = std::from_chars(raw, last, parsed);
+      if (error == std::errc{} && end == last && parsed > 0) {
         return std::min(parsed, hardware);
       }
     }
