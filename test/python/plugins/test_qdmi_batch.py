@@ -11,21 +11,26 @@
 from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
-from typing import cast
-from unittest.mock import Mock
+from typing import TYPE_CHECKING, cast
+from unittest.mock import Mock, PropertyMock
 
 import pytest
 
 from mqt.core.plugins.qdmi_batch import Batch, BatchEntry
 from mqt.core.qdmi import Job
 
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
 
 class BatchFixture:
     """Three entries with independently controllable provider outcomes."""
 
-    def __init__(self, max_retries: int = 3) -> None:
+    def __init__(self, max_retries: int = 3, *, native: bool = False) -> None:
         """Build a batch with a bounded replacement count and recorded submissions."""
         self.submitted: list[int] = []
+        self.native_calls: list[list[int]] = []
+        self.native = native
         self.jobs: list[Mock] = []
         self.error_at: int | None = None
         self.submission_error: BaseException = RuntimeError("admission failed")
@@ -33,7 +38,9 @@ class BatchFixture:
         self.batch: Batch[str] = Batch(
             [BatchEntry(i) for i in range(3)],
             submit=self.submit,
-            decode=lambda _i, job: job.get_shots()[0],
+            submit_programs=self.submit_programs,
+            group_by=[0, 0, 0] if native else None,
+            decode=lambda _i, job, program_index: job.get_shots(program_index)[0],
             submission_error=RuntimeError,
             execution_error=RuntimeError,
             max_retries=max_retries,
@@ -44,10 +51,24 @@ class BatchFixture:
         self.submitted.append(index)
         if len(self.submitted) == self.error_at:
             raise self.submission_error
+        return self._job([index])
+
+    def submit_programs(self, indices: Sequence[int]) -> Job | None:
+        """Return a recorded native attempt, or reject it before submission."""
+        self.native_calls.append(list(indices))
+        if not self.native:
+            return None
+        self.submitted.extend(indices)
+        if self.error_at is not None:
+            raise self.submission_error
+        return self._job(indices)
+
+    def _job(self, indices: Sequence[int]) -> Job:
         job = Mock()
+        job.program_statuses = None
         job.check.return_value = self.status
         job.wait.return_value = True
-        job.get_shots.return_value = [str(index)]
+        job.get_shots.side_effect = lambda program_index=0: [str(indices[program_index])]
         self.jobs.append(job)
         return cast("Job", job)
 
@@ -166,7 +187,7 @@ def test_partial_submission_preserves_unknown_and_untouched_entries(*, interrupt
     assert batch.entries[1].attempts[0].handle is None
     assert batch.entries[1].attempts[0].failures[0].cause is fixture.submission_error
     assert not batch.entries[2].attempts
-    with pytest.raises(ValueError, match="allow_unknown"):
+    with pytest.raises(ValueError, match="use submit"):
         batch.resubmit([1, 2])
     assert fixture.submitted == [0, 1]
     batch.submit()
@@ -293,3 +314,119 @@ def test_cancel_skips_confirmed_terminal_attempts() -> None:
     for handle in fixture.jobs[:3]:
         handle.cancel.assert_not_called()
     fixture.jobs[3].cancel.assert_called_once()
+
+
+@pytest.mark.parametrize("unsupported", [False, True])
+def test_native_group_or_single_fallback_preserves_attempts(*, unsupported: bool) -> None:
+    """A rejected setter has no attempt or budget; accepted lists share one handle."""
+    fixture = BatchFixture(native=True)
+    fixture.native = not unsupported
+    fixture.batch.submit()
+    fixture.batch.complete()
+    assert fixture.native_calls == [[0, 1, 2]]
+    assert fixture.submitted == [0, 1, 2]
+    assert [entry.result for entry in fixture.batch.entries] == ["0", "1", "2"]
+    assert all(len(entry.attempts) == 1 and entry.automatic_retries == 0 for entry in fixture.batch.entries)
+    assert [entry.attempts[0].program_index for entry in fixture.batch.entries] == (
+        [0, 0, 0] if unsupported else [0, 1, 2]
+    )
+    assert len(fixture.jobs) == (3 if unsupported else 1)
+    for job in fixture.jobs:
+        job.wait.assert_called_once()
+        job.check.assert_called_once()
+
+
+def test_native_partial_failure_retries_only_failed_programs() -> None:
+    """A failed aggregate retains successful siblings and remaps replacement indices."""
+    fixture = BatchFixture(native=True)
+    fixture.batch.submit()
+    shared = fixture.jobs[0]
+    shared.check.return_value = Job.Status.FAILED
+    outcomes = PropertyMock(return_value=[Job.Status.FAILED, Job.Status.DONE, Job.Status.FAILED])
+    type(shared).program_statuses = outcomes
+    fixture.batch.complete()
+    assert fixture.native_calls == [[0, 1, 2], [0, 2]]
+    assert fixture.submitted == [0, 1, 2, 0, 2]
+    assert [entry.result for entry in fixture.batch.entries] == ["0", "1", "2"]
+    assert [entry.attempts[-1].program_index for entry in fixture.batch.entries] == [0, 1, 1]
+    assert [entry.automatic_retries for entry in fixture.batch.entries] == [1, 0, 1]
+    shared.get_shots.assert_called_once_with(1)
+    shared.check.assert_called_once()
+    shared.wait.assert_called_once()
+    outcomes.assert_called_once()
+    assert fixture.batch.statuses() == (Job.Status.DONE,) * 3
+    shared.check.assert_called_once()
+
+
+@pytest.mark.parametrize("stage", ["outcomes", "result"])
+def test_native_read_failure_never_replaces_execution(stage: str) -> None:
+    """A failed status artifact or result download is retried on its original handle."""
+    fixture = BatchFixture(native=True)
+    fixture.batch.submit()
+    shared = fixture.jobs[0]
+    cause = RuntimeError("download unavailable")
+    if stage == "outcomes":
+        shared.check.return_value = Job.Status.FAILED
+        type(shared).program_statuses = PropertyMock(side_effect=[cause, [Job.Status.DONE] * 3])
+    else:
+        shared.get_shots.side_effect = [cause, ["1"], ["2"], ["0"]]
+    with pytest.raises(RuntimeError, match="download unavailable"):
+        fixture.batch.complete()
+    assert fixture.native_calls == [[0, 1, 2]]
+    assert fixture.submitted == [0, 1, 2]
+    if stage == "result":
+        assert [entry.result for entry in fixture.batch.entries] == [None, "1", "2"]
+    fixture.batch.complete()
+    assert [entry.result for entry in fixture.batch.entries] == ["0", "1", "2"]
+    assert fixture.native_calls == [[0, 1, 2]]
+
+
+def test_uncertain_native_admission_has_no_single_fallback() -> None:
+    """A native submission error marks all selected programs uncertain without replay."""
+    fixture = BatchFixture(native=True)
+    fixture.error_at = 1
+    with pytest.raises(RuntimeError, match="admission failed"):
+        fixture.batch.submit()
+    assert not fixture.jobs
+    assert fixture.submitted == [0, 1, 2]
+    assert all(entry.attempts[0].handle is None for entry in fixture.batch.entries)
+    with pytest.raises(ValueError, match="allow_unknown"):
+        fixture.batch.resubmit([0, 1])
+    assert not fixture.batch.cancel()
+    fixture.error_at = None
+    fixture.batch.resubmit([0, 1], allow_unknown=True)
+    assert fixture.native_calls == [[0, 1, 2], [0, 1]]
+
+
+def test_shared_cancel_and_individual_status_before_manual_replacement() -> None:
+    """Cancellation visits a shared handle once; a failed sibling cannot replace a success."""
+    fixture = BatchFixture(native=True)
+    fixture.batch.submit()
+    shared = fixture.jobs[0]
+    cause = RuntimeError("cancellation unavailable")
+    shared.cancel.side_effect = cause
+    assert not fixture.batch.cancel()
+    shared.cancel.assert_called_once()
+    assert all(entry.attempts[0].failures[-1].cause is cause for entry in fixture.batch.entries)
+    shared.check.return_value = Job.Status.FAILED
+    shared.program_statuses = [Job.Status.DONE, Job.Status.CANCELED, Job.Status.FAILED]
+    with pytest.raises(ValueError, match="Cannot replace"):
+        fixture.batch.resubmit([0, 2])
+    fixture.batch.resubmit([1, 2])
+    assert fixture.native_calls == [[0, 1, 2], [1, 2]]
+    assert shared.check.call_count == 2
+
+
+def test_running_native_job_does_not_require_final_outcomes() -> None:
+    """Unavailable final artifacts cannot turn confirmed active work into uncertainty."""
+    fixture = BatchFixture(native=True)
+    fixture.batch.submit()
+    shared = fixture.jobs[0]
+    shared.check.return_value = Job.Status.RUNNING
+    outcomes = PropertyMock(side_effect=RuntimeError("outcomes not ready"))
+    type(shared).program_statuses = outcomes
+    assert fixture.batch.statuses() == (Job.Status.RUNNING,) * 3
+    with pytest.raises(ValueError, match="Cannot replace"):
+        fixture.batch.resubmit([0, 1], allow_unknown=True)
+    assert fixture.submitted == [0, 1, 2]
+    outcomes.assert_not_called()

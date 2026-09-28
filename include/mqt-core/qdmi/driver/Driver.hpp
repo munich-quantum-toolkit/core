@@ -126,6 +126,9 @@ struct DeviceLibrary {
   decltype(QDMI_device_job_free)* device_job_free{};
   /// Function pointer to @ref QDMI_device_job_set_parameter.
   decltype(QDMI_device_job_set_parameter)* device_job_set_parameter{};
+  decltype(QDMI_device_job_set_programs)* device_job_set_programs{};
+  decltype(QDMI_device_job_get_program)* device_job_get_program{};
+  decltype(QDMI_device_job_get_program_status)* device_job_get_program_status{};
   /// Function pointer to @ref QDMI_device_job_query_property.
   decltype(QDMI_device_job_query_property)* device_job_query_property{};
   /// Function pointer to @ref QDMI_device_job_submit.
@@ -327,6 +330,20 @@ public:
   auto setParameter(QDMI_Job_Parameter param, size_t size,
                     const void* value) const -> int;
 
+  auto setPrograms(QDMI_Program_Format format, size_t count,
+                   const size_t* sizes, const void* const* programs) const
+      -> int;
+
+  /// Retrieves an indexed program payload.
+  /// @see QDMI_job_get_program
+  auto getProgram(size_t programIndex, size_t size, void* data,
+                  size_t* sizeRet) const -> int;
+
+  /// Queries an indexed program status.
+  /// @see QDMI_job_get_program_status
+  auto getProgramStatus(size_t programIndex, QDMI_Job_Status* status) const
+      -> int;
+
   /// Queries a property of the job.
   /// @see QDMI_job_query_property
   auto queryProperty(QDMI_Job_Property prop, size_t size, void* value,
@@ -351,8 +368,8 @@ public:
 
   /// Gets the results of the job.
   /// @see QDMI_job_get_results
-  auto getResults(QDMI_Job_Result result, size_t size, void* data,
-                  size_t* sizeRet) const -> int;
+  auto getResults(size_t programIndex, QDMI_Job_Result result, size_t size,
+                  void* data, size_t* sizeRet) const -> int;
 
   /// Frees the job.
   /// @note This function just forwards to the device's @ref
