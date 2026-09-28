@@ -10,33 +10,26 @@
 
 #pragma once
 
-#include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
-
-#include "mlir/IR/Value.h"
-
 #include "llvm/ADT/ArrayRef.h"
 
-#include <cstddef>
 #include <string_view>
+
+namespace mlir {
+class Value;
+
+namespace qc {
+class QCProgramBuilder;
+} // namespace qc
+} // namespace mlir
 
 namespace mqt::bench::detail {
 
-inline void maskMarkedState(mlir::qc::QCProgramBuilder& builder,
-                            llvm::ArrayRef<mlir::Value> search,
-                            std::string_view markedBitstring) {
-  for (size_t index = 0; index < search.size(); ++index) {
-    if (markedBitstring[search.size() - 1 - index] == '0') {
-      builder.x(search[index]);
-    }
-  }
-}
+void maskMarkedState(mlir::qc::QCProgramBuilder& builder,
+                     llvm::ArrayRef<mlir::Value> search,
+                     std::string_view markedBitstring);
 
-inline void markPhase(mlir::qc::QCProgramBuilder& builder,
-                      llvm::ArrayRef<mlir::Value> search,
-                      std::string_view markedBitstring) {
-  maskMarkedState(builder, search, markedBitstring);
-  builder.mcz(search.drop_back(), search.back());
-  maskMarkedState(builder, search, markedBitstring);
-}
+void markPhase(mlir::qc::QCProgramBuilder& builder,
+               llvm::ArrayRef<mlir::Value> search,
+               std::string_view markedBitstring);
 
 } // namespace mqt::bench::detail
