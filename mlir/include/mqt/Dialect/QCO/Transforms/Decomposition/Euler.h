@@ -114,14 +114,18 @@ void synthesizeParameterizedUnitary1Q(RewriterBase& rewriter, Operation* op,
 ///
 /// @param skipControlledBodies When set, single-qubit gates nested in
 /// `qco.ctrl` bodies are left untouched.
+/// @param target When set, require a shorter run if every gate is supported.
+/// Individual lowering owns site-specific native support.
 void populateFuseSingleQubitUnitaryRunsPatterns(
     RewritePatternSet& patterns, SingleQubitBasis basis,
-    bool skipControlledBodies = false);
+    bool skipControlledBodies = false, const CompilerTarget* target = nullptr);
 
 /// Populates patterns that compose profitable parameterized single-qubit runs.
 ///
-/// The patterns emit @p basis directly.
+/// The patterns emit @p basis directly. With @p target, preserve native runs
+/// and only use direct Euler identities, keeping optional fusion exportable.
 void populateParameterizedSingleQubitRunCompositionPatterns(
-    RewritePatternSet& patterns, SingleQubitBasis basis);
+    RewritePatternSet& patterns, SingleQubitBasis basis,
+    const CompilerTarget* target = nullptr);
 
 } // namespace mlir::qco::decomposition

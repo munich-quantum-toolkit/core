@@ -20,7 +20,6 @@
   "exclude": [
     "^spank/",
     "^test/slurm/Dockerfile$",
-    "^test/slurm/validation_environment\\.cpp$",
     "^\\.[^/]+",
     "/\\.[^/]+",
     ".*\\.qasm",

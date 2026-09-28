@@ -37,11 +37,13 @@ if TYPE_CHECKING or HAS_PENNYLANE:
         PennyLaneValidationError,
         QDMIPluginError,
     )
+    from .job import PennyLaneJob
 
     __all__ += [
         "DDSIMDevice",
         "PennyLaneConfigurationError",
         "PennyLaneExecutionError",
+        "PennyLaneJob",
         "PennyLaneTranslationError",
         "PennyLaneUnsupportedFormatError",
         "PennyLaneUnsupportedOperationError",

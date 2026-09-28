@@ -15,11 +15,16 @@
 
 #include "qdmi/client.h"
 
+#include <cstddef>
+#include <span>
 #include <string>
 #include <variant>
 
 namespace qdmi {
-using CustomJobParameter = std::variant<std::string, bool, int, double>;
+/// Custom scalars use their native C++ representation. Byte spans borrow an
+/// exact, nonempty payload until the synchronous submission call returns.
+using CustomJobParameter =
+    std::variant<std::string, bool, int, double, std::span<const std::byte>>;
 
 template <class Concrete> class Singleton {
 protected:

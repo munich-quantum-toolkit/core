@@ -18,7 +18,7 @@ auto fromFile = mlir::QCProgram::fromOpenQASMFile("program.qasm");
 
 The lower-level `mlir::qc::translateOpenQASMToQC` importer accepts
 `OpenQASMImportOptions`. Its `gatePolicy` field selects the gate policy, and
-`maxOperations` limits the number of inserted QC operations (10,000,000 by
+`maxOperations` limits the number of inserted QC operations (1,000,000,000 by
 default). Exceeding the limit emits a diagnostic and returns no program.
 
 Python provides the corresponding constructors:
@@ -70,7 +70,11 @@ significant bit. Signed casts use two's-complement representation, with bit
 
 `float(value)` and `float[64](value)` accept numeric and Boolean values.
 Bit-string literals contain binary digits, optionally separated by underscores,
-and must match the destination register width.
+and must match the destination register width. Leading zeros count toward that
+width; the rightmost digit initializes bit zero. For example,
+`bit[6] b = "00_1101"` has value 13, and `b[3:-1:1]` has value `"011"`: the
+first selected bit becomes bit zero of the slice. These are the OpenQASM
+[bit-register conventions](https://openqasm.com/language/types.html#classical-bits-and-registers).
 
 Textual includes use LLVM SourceMgr lookup: paths are tried relative to the
 process working directory, then in the include directories supplied to
@@ -132,13 +136,44 @@ form remains known. A nested loop bound can use proven induction variables from
 enclosing loops. The proof treats an inclusive range as its full interval and
 does not use the step's congruence.
 
-The frontend normalizes constant negative indices relative to the register
-width. It rejects measurement-derived values, nonconstant negative indices,
-nonlinear expressions, unsupported integer operators, and ranges whose step is
-not known to be positive when their induction variable reaches a qubit index.
-Mutations in repeating loops and unequal branch values invalidate scalar facts.
-Branch conditions do not add proof facts. Classical bit indexing and loops that
-do not index qubits keep their runtime behavior.
+The frontend normalizes negative indices relative to the register width when it
+can prove their sign. It rejects measurement-derived values, indices whose sign
+is unknown, nonlinear expressions, unsupported integer operators, and ranges
+whose step is not known to be positive when their induction variable reaches a
+qubit index. Mutations in repeating loops and unequal branch values invalidate
+scalar facts. Branch conditions do not add proof facts. Classical bit indexing
+and loops that do not index qubits keep their runtime behavior.
+
+Register operands support inclusive slices `q[first:last]` and
+`q[first:step:last]`, including negative indices and negative steps. Omitted
+endpoints select the register ends in the step's direction. With the default
+step, `q[:last]` means `q[0:last]` and includes `last`; `q[:2]` selects qubits
+`0`, `1`, and `2`. Constant slices expand in selection order. Gates broadcast
+over slices; a slice does not supply multiple control arguments to `ctrl(n)`.
+
+Slice lengths and steps must be statically known. Bounds may use the same proven
+affine expressions as scalar qubit indices. For example, `q[i:i]` selects
+`q[i]`, and `q[i:i+1]` selects two qubits when both are in bounds. A slice
+remains a register operand, so all register operands of a broadcast must have
+the same length, including one-element slices. Measurement-selected ranges and
+unproved lengths, bounds, or operand distinctness are rejected during analysis.
+Slice lowering adds no runtime assertions or wider integer arithmetic.
+
+Classical slices support fixed-width bit-vector expressions and assignments.
+Their first selected bit becomes bit zero of the value. Assignments snapshot the
+source before writing, so overlapping copies are safe. Constant selections use
+scalar bit operations; selecting a whole register in order uses a register read
+or write. Compound assignments to indexed bits or slices are not supported.
+
+Reads through nonconstant classical indices require the whole source register to
+be initialized. Such writes do not prove whole-register initialization,
+including measurement writes. Constant selections track initialization per bit.
+
+For convenience, import also accepts three-part slices with an omitted final
+bound and measurement between a scalar and a one-element register. Export
+expands slices and emits scalar measurements that follow the OpenQASM
+[range grammar](https://openqasm.com/grammar/index.html) and
+[measurement types](https://openqasm.com/language/insts.html#measurement).
 
 Bit registers use `!cbit.reg<N>` in QC. OpenQASM 2 initializes each register to
 zero. OpenQASM 3 leaves each register undefined until a statement writes it. A
@@ -236,12 +271,11 @@ evaluated before the loop. An empty-range guard prevents underflow when
 converting the upper bound. Loop-carried values retain their initial values when
 the range is empty.
 
-On import, dynamic ranges with signed bounds and a positive signed constant step
-use 64-bit arithmetic when their bodies contain no `break` or `continue`. The
-loop tests the unsigned distance to the inclusive endpoint before continuing, so
-a final increment that wraps cannot cause another iteration. This supports round
-trips without restricting the signed range of the endpoints. Other range forms
-can still require wider arithmetic that the exporter rejects.
+On import, inclusive integer ranges use 64-bit arithmetic, including unsigned
+bounds, negative steps, `break`, and `continue`. The loop tests the unsigned
+distance to the endpoint before continuing, so a final increment that wraps
+cannot cause another iteration. Range lowering does not require wider integer
+types that the exporter rejects.
 
 Entry-function while loops use `while (true)` and a conditional `break`, so
 condition-region expressions are evaluated once per iteration. Gate functions
@@ -362,10 +396,11 @@ Inline expressions, including those in gate functions, have a nesting limit of
 256 and an expansion budget of 4,096 values per expression. The total width of
 classical registers, including wide snapshots, is limited to 1,048,576 bits.
 Import limits affine proofs to 256 levels and 4,096 distinct expressions per
-proof and QC emission to 10,000,000 inserted operations. Textual expansion is
-limited to 1,000,000 statements and 1,000,000 file-include expansions, including
-empty files. Standard-library includes count as statements. Include nesting is
-limited to 64 levels. Exceeding any bound produces a diagnostic and no program.
+proof and QC emission to 1,000,000,000 inserted operations. Textual expansion is
+limited to 100,000,000 statements and 1,000,000 file-include expansions,
+including empty files. Standard-library includes count as statements. Include
+nesting is limited to 64 levels. Exceeding any bound produces a diagnostic and
+no program.
 
 The exporter rejects unsupported operations, including explicit `cf.assert`
 operations and live poison values. It does not silently discard them. Programs

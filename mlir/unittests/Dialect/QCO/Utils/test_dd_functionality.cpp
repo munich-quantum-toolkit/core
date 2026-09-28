@@ -2245,7 +2245,7 @@ TEST_F(QCODDFunctionalityTest, ExecutesBranchesAndCallsInCountedLoops) {
 }
 
 TEST_F(QCODDFunctionalityTest, RejectsUnboundedWhileLoop) {
-  expectMlirSimulationFails(0, R"mlir(module {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
     func.func @main() {
       %true = arith.constant true
       scf.while : () -> () {
@@ -2255,15 +2255,22 @@ TEST_F(QCODDFunctionalityTest, RejectsUnboundedWhileLoop) {
       }
       return
     }
-  })mlir");
+  })mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  dd::Package package(0);
+  EXPECT_TRUE(failed(
+      simulate(mainFunc(*moduleOp), dd::makeZeroState(0, package), package, rng,
+               DDArgumentBindings(), {.maxWhileIterations = 10})));
 }
 
 TEST_F(QCODDFunctionalityTest, SharesExactWhileBudgetAcrossCalls) {
-  for (const auto& [first, second, accepted] : {
-           std::tuple{100000, 0, true},
-           {100001, 0, false},
-           {50000, 50000, true},
-           {50000, 50001, false},
+  for (const auto& [first, second, accepted, limit] : {
+           std::tuple{100, 0, true, size_t{100}},
+           {101, 0, false, 100},
+           {50, 50, true, 100},
+           {50, 51, false, 100},
+           {100001, 0, true, DDExecutionOptions{}.maxWhileIterations},
        }) {
     SCOPED_TRACE(first);
     SCOPED_TRACE(second);
@@ -2298,13 +2305,14 @@ TEST_F(QCODDFunctionalityTest, SharesExactWhileBudgetAcrossCalls) {
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
     bool diagnosed = false;
     ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
-      diagnosed |=
-          diagnostic.str().find("100000 while iterations") != std::string::npos;
+      diagnosed |= diagnostic.str().find("configured while-iteration limit") !=
+                   std::string::npos;
       return success();
     });
     dd::Package package(0);
-    auto output = simulate(mainFunc(*moduleOp), dd::makeZeroState(0, package),
-                           package, rng);
+    auto output =
+        simulate(mainFunc(*moduleOp), dd::makeZeroState(0, package), package,
+                 rng, DDArgumentBindings(), {.maxWhileIterations = limit});
     EXPECT_EQ(succeeded(output), accepted);
     EXPECT_EQ(diagnosed, !accepted);
     if (succeeded(output)) {

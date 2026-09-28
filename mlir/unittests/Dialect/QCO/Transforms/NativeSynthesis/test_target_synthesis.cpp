@@ -776,7 +776,9 @@ TEST_F(TargetSynthesisTest,
         *synthesized, target, mlir::qco::createVerifyTargetConformance())));
     ASSERT_TRUE(mlir::succeeded(mlir::verify(*synthesized)));
     ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*synthesized)));
-    expectEquivalent(expected, synthesized);
+    /// Compare the full circuit at DD precision; synthesis and DD rounding
+    /// accumulate across the repeated decompositions. Keep global phase.
+    ::mqt::test::expectFullUnitaryEqual(*expected, *synthesized, 3);
   }
 }
 
@@ -1320,6 +1322,81 @@ TEST_F(TargetSynthesisTest,
   ASSERT_TRUE(mlir::succeeded(runTargetPass(
       *synthesized, target, mlir::qco::createVerifyTargetConformance())));
   expectEquivalent(expected, synthesized);
+}
+
+TEST_F(TargetSynthesisTest, TargetNativeSingleQubitFusionRequiresImprovement) {
+  const auto target = valid(
+      Target::create(1, Connectivity::allToAll(),
+                     NativeOperations::fromOperations({
+                         valid(OperationCapability::create("h", 1, 0)),
+                         valid(OperationCapability::create("x", 1, 0)),
+                         valid(OperationCapability::create("sx", 1, 0)),
+                         valid(OperationCapability::create("rz", 1, 1)),
+                         valid(OperationCapability::create("gphase", 0, 1)),
+                     })));
+  for (const bool longRun : {false, true}) {
+    const auto circuit = [longRun](QCOProgramBuilder& builder) {
+      auto qubit = builder.staticQubit(0);
+      qubit = builder.h(qubit);
+      if (longRun) {
+        qubit = builder.rz(0.3, qubit);
+        qubit = builder.h(qubit);
+        qubit = builder.rz(0.4, qubit);
+        qubit = builder.h(qubit);
+        qubit = builder.rz(0.5, qubit);
+      }
+      return builder.intConstant(0);
+    };
+    auto expected = build(circuit);
+    auto synthesized = build(circuit);
+    ASSERT_TRUE(mlir::succeeded(runTargetPass(
+        *synthesized, target, mlir::qco::createTargetNativeSynthesis())));
+    ASSERT_TRUE(mlir::succeeded(runTargetPass(
+        *synthesized, target, mlir::qco::createVerifyTargetConformance())));
+    if (longRun) {
+      EXPECT_LT(countOps<mlir::qco::UnitaryOpInterface>(*synthesized) -
+                    countOps<GPhaseOp>(*synthesized),
+                6U);
+    } else {
+      EXPECT_EQ(countOps<HOp>(*synthesized), 1U);
+    }
+    expectEquivalent(expected, synthesized);
+  }
+}
+
+TEST_F(TargetSynthesisTest,
+       TargetNativeSingleQubitFusionPreservesNativeControlBody) {
+  auto moduleOp = mlir::parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%theta: f64) -> (!qco.qubit, !qco.qubit) {
+        %c = qco.static 0 : !qco.qubit
+        %q = qco.static 1 : !qco.qubit
+        %c1, %q1 = qco.ctrl(%c) targets(%arg = %q) {
+          %rotated = qco.rx(%theta) %arg : !qco.qubit -> !qco.qubit
+          qco.yield %rotated : !qco.qubit
+        } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
+        return %c1, %q1 : !qco.qubit, !qco.qubit
+      }
+    }
+  )mlir",
+                                                    context.get());
+  ASSERT_TRUE(moduleOp);
+  const auto target = valid(
+      Target::create(2, Connectivity::allToAll(),
+                     NativeOperations::fromOperations({
+                         valid(OperationCapability::create("x", 1, 0)),
+                         valid(OperationCapability::create("sx", 1, 0)),
+                         valid(OperationCapability::create("rz", 1, 1)),
+                         valid(OperationCapability::create("gphase", 0, 1)),
+                         valid(OperationCapability::create(
+                             "rx", OperationCapability::Arity::variadic(2), 1)),
+                     })));
+  ASSERT_TRUE(mlir::succeeded(runTargetPass(
+      *moduleOp, target, mlir::qco::createTargetNativeSynthesis())));
+  ASSERT_TRUE(mlir::succeeded(runTargetPass(
+      *moduleOp, target, mlir::qco::createVerifyTargetConformance())));
+  EXPECT_EQ(countOps<CtrlOp>(*moduleOp), 1U);
+  EXPECT_EQ(countOps<mlir::qco::RXOp>(*moduleOp), 1U);
 }
 
 TEST_F(TargetSynthesisTest,

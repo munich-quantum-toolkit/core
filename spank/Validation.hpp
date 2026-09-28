@@ -20,37 +20,29 @@
 
 #pragma once
 
-#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cerrno>
 #include <chrono>
-#include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <fcntl.h>
 #include <memory>
 #include <signal.h> // NOLINT(modernize-deprecated-headers)
 #include <stdexcept>
 #include <string>
-#include <string_view>
 #include <sys/mman.h>
 #include <sys/prctl.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <thread>
 #include <unistd.h>
-#include <vector>
 
 namespace mqt::spank {
 
 class Validation final {
-  static constexpr size_t MAX_ENVIRONMENT_BYTES = 128UL * 1024;
-  enum class State : uint8_t { Empty, Copying, Checking, Available, Failed };
+  enum class State : uint8_t { Empty, Checking, Available, Failed };
   struct Shared {
     std::atomic<State> state{State::Empty};
-    size_t size = 0;
-    std::array<char, MAX_ENVIRONMENT_BYTES> snapshot{};
   };
   static_assert(std::atomic<State>::is_always_lock_free);
 
@@ -77,46 +69,21 @@ public:
   }
 
   void check(const std::string& executable, const int timeout,
-             const std::string& device, std::vector<std::string> environment) {
+             const std::string& device, char* const* environment) {
     if (shared_ == nullptr) {
       throw std::runtime_error("launch validation was not prepared");
     }
-    std::vector<std::string_view> ordered(environment.begin(),
-                                          environment.end());
-    std::ranges::sort(ordered);
-    std::string snapshot = device + '\0';
-    for (const auto entry : ordered) {
-      if (!entry.starts_with("SLURM_") && !entry.starts_with("SLURMD_")) {
-        snapshot += entry;
-        snapshot += '\0';
-      }
-      if (snapshot.size() > MAX_ENVIRONMENT_BYTES) {
-        throw std::runtime_error("validation environment exceeds 128 KiB");
-      }
-    }
-
     const auto deadline =
         std::chrono::steady_clock::now() + std::chrono::seconds(timeout + 2);
     auto expected = State::Empty;
-    if (shared_->state.compare_exchange_strong(expected, State::Copying)) {
-      std::memcpy(shared_->snapshot.data(), snapshot.data(), snapshot.size());
-      shared_->size = snapshot.size();
-      shared_->state.store(State::Checking, std::memory_order_release);
+    if (shared_->state.compare_exchange_strong(expected, State::Checking)) {
       const bool available = execute(executable, timeout, device, environment);
       shared_->state.store(available ? State::Available : State::Failed,
                            std::memory_order_release);
     }
 
     while (true) {
-      auto state = shared_->state.load(std::memory_order_acquire);
-      if (state >= State::Checking &&
-          (shared_->size != snapshot.size() ||
-           std::memcmp(shared_->snapshot.data(), snapshot.data(),
-                       snapshot.size()) != 0)) {
-        state = execute(executable, timeout, device, environment)
-                    ? State::Available
-                    : State::Failed;
-      }
+      const auto state = shared_->state.load(std::memory_order_acquire);
       if (state == State::Available) {
         return;
       }
@@ -132,8 +99,7 @@ public:
 
 private:
   static bool execute(const std::string& executable, const int timeout,
-                      const std::string& device,
-                      std::vector<std::string>& environment) {
+                      const std::string& device, char* const* environment) {
     const auto seconds = std::to_string(timeout);
     // execve does not modify the strings despite its mutable argument types.
     // NOLINTBEGIN(cppcoreguidelines-pro-type-const-cast)
@@ -143,13 +109,6 @@ private:
         const_cast<char*>(seconds.c_str()),    static_cast<char*>(nullptr),
     };
     // NOLINTEND(cppcoreguidelines-pro-type-const-cast)
-    std::vector<char*> envp;
-    envp.reserve(environment.size() + 1);
-    for (auto& entry : environment) {
-      envp.push_back(entry.data());
-    }
-    envp.push_back(nullptr);
-
     const auto parent = getpid();
     const auto child = fork();
     if (child < 0) {
@@ -183,7 +142,7 @@ private:
       if (sink > STDERR_FILENO) {
         close(sink);
       }
-      execve(executable.c_str(), arguments.data(), envp.data());
+      execve(executable.c_str(), arguments.data(), environment);
       _exit(1);
     }
     static_cast<void>(setpgid(child, child));

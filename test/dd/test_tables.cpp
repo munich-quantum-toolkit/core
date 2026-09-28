@@ -8,6 +8,8 @@
  * Licensed under the MIT License
  */
 
+#include "dd/ComplexValue.hpp"
+#include "dd/ComputeTable.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/DDpackageConfig.hpp"
 #include "dd/MemoryManager.hpp"
@@ -23,11 +25,63 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <gtest/gtest.h>
 #include <stdexcept>
 #include <vector>
 
 using namespace dd;
+TEST(DDTableTest, CanonicalHashesAreIndependentOfAllocationAddresses) {
+  Package first(2);
+  Package second(2);
+  const CVec amplitudes{{0.3, 0.2}, {0.4, -0.1}, {0.5, 0.1}, {0.6, -0.2}};
+  const auto left = makeStateFromVector(amplitudes, first);
+  const auto right = makeStateFromVector(amplitudes, second);
+  ASSERT_NE(left.p, right.p);
+  ASSERT_NE(left.w.r, right.w.r);
+  EXPECT_EQ(left.p->id, right.p->id);
+  EXPECT_EQ(std::hash<Complex>{}(left.w), std::hash<Complex>{}(right.w));
+  EXPECT_EQ(std::hash<vEdge>{}(left), std::hash<vEdge>{}(right));
+  EXPECT_EQ(
+      std::hash<vCachedEdge>{}(vCachedEdge{left.p, ComplexValue{left.w}}),
+      std::hash<vCachedEdge>{}(vCachedEdge{right.p, ComplexValue{right.w}}));
+  const ComputeTable<vNode*, vNode*, vCachedEdge> binary(64);
+  const UnaryComputeTable<vNode*, vCachedEdge> unary(64);
+  EXPECT_EQ(binary.hash(left.p, left.p), binary.hash(right.p, right.p));
+  EXPECT_EQ(unary.hash(left.p), unary.hash(right.p));
+  const GateMatrix gate{1., 2., 3., 4.};
+  const auto leftMatrix = first.makeGateDD(gate, 0);
+  const auto rightMatrix = second.makeGateDD(gate, 0);
+  ASSERT_NE(leftMatrix.p, rightMatrix.p);
+  EXPECT_EQ(leftMatrix.p->id, rightMatrix.p->id);
+  EXPECT_EQ(std::hash<mEdge>{}(leftMatrix), std::hash<mEdge>{}(rightMatrix));
+  const ComputeTable<mNode*, vNode*, vCachedEdge> matrixVector(64);
+  EXPECT_EQ(matrixVector.hash(leftMatrix.p, left.p),
+            matrixVector.hash(rightMatrix.p, right.p));
+
+  const auto priorId = left.p->id;
+  const auto* priorSlot = left.p;
+  first.decRef(left);
+  first.garbageCollect(true);
+  const auto replacement = makeStateFromVector(CVec{1., 2., 3., 4.}, first);
+  if (replacement.p == priorSlot) {
+    EXPECT_EQ(replacement.p->id, priorId);
+  }
+  first.reset();
+  const auto fresh = makeStateFromVector(amplitudes, first);
+  EXPECT_EQ(fresh.p->id, right.p->id);
+
+  Package reuse(1);
+  const auto old = makeStateFromVector(CVec{0.3, 0.4}, reuse);
+  const auto* oldSlot = old.p;
+  const auto oldId = old.p->id;
+  reuse.decRef(old);
+  reuse.garbageCollect(true);
+  const auto next = makeStateFromVector(CVec{0.5, 0.6}, reuse);
+  EXPECT_EQ(next.p, oldSlot);
+  EXPECT_EQ(next.p->id, oldId);
+}
+
 TEST(DDTableTest, RehashPreservesCanonicalNodesAndOwnedRoots) {
   DDPackageConfig config;
   config.utVecNumBucket = 2;

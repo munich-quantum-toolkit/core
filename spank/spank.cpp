@@ -34,7 +34,6 @@
 #include <string>
 #include <string_view>
 #include <system_error>
-#include <utility>
 #include <vector>
 
 extern "C" {
@@ -285,44 +284,16 @@ public:
         values == nullptr) {
       throw std::runtime_error("could not read the job environment");
     }
-    std::vector<std::string> environment;
-    size_t bytes = 0;
     // S_JOB_ENV is a borrowed, null-terminated array owned by Slurm.
-    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-    for (size_t index = 0; values[index] != nullptr; ++index) {
-      std::string entry{values[index]};
-      bytes += entry.size() + 1;
-      if (bytes > 128UL * 1024) {
-        throw std::runtime_error("validation environment exceeds 128 KiB");
-      }
-      environment.push_back(std::move(entry));
-    }
-    // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-    validation.check(checker_, timeout_, device, std::move(environment));
+    validation.check(checker_, timeout_, device, values);
   }
 
   auto inject(spank_t spank) const -> std::optional<std::string> {
     const auto expression = jobEnvironment(spank, LICENSE_ENVIRONMENT);
-    std::vector<std::string_view> selected;
-    if (expression) {
-      std::string_view remaining{*expression};
-      do {
-        const auto end = remaining.find_first_of(",|");
-        auto token = remaining.substr(0, end);
-        const auto begin = token.find_first_not_of(" \t");
-        token = begin == std::string_view::npos ? std::string_view{}
-                                                : token.substr(begin);
-        const auto id = token.substr(0, token.find_first_of(":@ \t"));
-        if (std::ranges::find(licenses_, id) != licenses_.end()) {
-          selected.push_back(id);
-        }
-        if (end == std::string_view::npos) {
-          break;
-        }
-        remaining.remove_prefix(end + 1);
-      } while (true);
-    }
-    if (selected.empty()) {
+    const auto selected = std::ranges::find_if(licenses_, [&](const auto& id) {
+      return expression && (*expression == id || *expression == id + ":1");
+    });
+    if (selected == licenses_.end()) {
       if (catalogueOption_ ||
           std::ranges::any_of(references_, [](const auto& reference) {
             return reference.option.has_value();
@@ -335,11 +306,8 @@ public:
 
     apply(spank, CATALOGUE_ENVIRONMENT, catalogueDefault_, catalogueOption_);
     for (const auto& reference : references_) {
-      const bool applicable = std::ranges::any_of(selected, [&](const auto id) {
-        return std::ranges::find(reference.licenses, id) !=
-               reference.licenses.end();
-      });
-      if (!applicable) {
+      if (std::ranges::find(reference.licenses, *selected) ==
+          reference.licenses.end()) {
         if (reference.option) {
           throw std::runtime_error(
               "QDMI reference does not apply to this license");
@@ -352,12 +320,7 @@ public:
     if (!validationEnabled()) {
       return std::nullopt;
     }
-    if (selected.size() != 1 ||
-        (*expression != selected.front() &&
-         *expression != std::string{selected.front()} + ":1")) {
-      throw std::runtime_error("validation requires one unit device license");
-    }
-    return std::string{selected.front()};
+    return *selected;
   }
 
 private:

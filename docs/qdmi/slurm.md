@@ -29,9 +29,20 @@ Core an access-control boundary because a program can also call
 
 ## Install the software
 
-Install the same MQT Core package on each compute node. The package contains the
-MQT Core QDMI interface and the bundled QDMI devices. You can use a shared
-software environment or install the same wheel on each node.
+Deploy the components according to each node's role:
+
+- **Submission/login nodes:** Slurm clients and, when injection is enabled, the
+  shared SPANK module and matching `plugstack.conf` configuration.
+- **Compute nodes:** `slurmd`, cgroup v2, the selected workload environment, and
+  the SPANK module when enabled. Use consistent numeric user and group IDs
+  across nodes.
+- **Controller:** `slurmctld` owns scheduling and cluster-wide license counts.
+  Provider SDKs are unnecessary here. Persistent accounting can use `slurmdbd`;
+  local static licenses do not require it.
+
+Make the same MQT Core package available on each compute node through a shared
+software environment or identical per-node installations. Provider credentials
+belong to the job user's context.
 
 Choose one provider installation for each workload:
 
@@ -43,9 +54,11 @@ Choose one provider installation for each workload:
   catalogue. Python workloads still use Core from their Python environment.
 
 Catalogue paths and referenced libraries must be readable by the job user on
-every participating node. Core's existing catalogue precedence still applies,
-including `MQT_CORE_QDMI_CONFIG_JSON` overrides. Configuration injection does
-not change driver discovery or resolve credentials.
+every participating node. With `MQT_CORE_QDMI_CONFIG_FILE` set, definitions are
+merged from packaged catalogues, then that file, then
+`MQT_CORE_QDMI_CONFIG_JSON`, in increasing precedence. The explicit file
+replaces system, user, and project discovery. See
+[configuration precedence](configuration.md#discovery-and-precedence).
 
 Install Slurm, Munge, and systemd. Start Munge before Slurm. Use the same Munge
 key on all nodes. Keep this key outside the QDMI device configuration.
@@ -57,11 +70,14 @@ ProctrackType=proctrack/cgroup
 TaskPlugin=task/cgroup,task/affinity
 JobAcctGatherType=jobacct_gather/cgroup
 SelectType=select/cons_tres
-SelectTypeParameters=CR_CPU
+SelectTypeParameters=CR_CPU_Memory
+DefMemPerCPU=256
 ```
 
-Use the cgroup plugin to constrain processors and memory. For example, use this
-`cgroup.conf`:
+The fixture allocates 256 MiB per CPU by default on its two 512 MiB nodes. Set
+the memory defaults and node capacities for your cluster. The memory-aware
+selection setting makes allocated memory available to cgroup enforcement. Use
+this `cgroup.conf`:
 
 ```ini
 CgroupPlugin=autodetect
@@ -152,9 +168,12 @@ installation directory. The component retains its GPL-3.0-or-later license and
 is distributed through Core's source checkout, separately from the MIT runtime,
 wheels, and sdists.
 
-Load the module **once** in the site's `plugstack.conf`. Declare concrete
-catalogue IDs and non-secret references permitted for each ID. For example,
-after registering `amazon.braket.sv1` and `iqm.site.qc1`:
+Install the module and matching `plugstack.conf` on submission/login and compute
+nodes. The submission-side plugin registers the `--qdmi-*` command options; the
+compute-side plugin applies them at task launch. Load the module **once** per
+plugstack. Declare concrete catalogue IDs and non-secret references permitted
+for each ID. For example, after registering `amazon.braket.sv1` and
+`iqm.site.qc1`:
 
 ```ini
 required /usr/local/lib/slurm/mqt-core-qdmi-spank.so licenses=amazon.braket.sv1,iqm.site.qc1 qdmi_config_file=/etc/mqt-core/qdmi.json reference=AWS_PROFILE:amazon.braket.sv1:quantum reference=IQM_TOKENS_FILE:iqm.site.qc1:
@@ -187,17 +206,17 @@ and executable credential commands do not belong in this configuration. Provider
 credential chains remain inside the job process. The plugin does not read
 credentials from the Slurm daemon's environment.
 
-Unmatched jobs receive no defaults. Explicit QDMI options without an applicable
-license fail. Invalid configuration, empty or overlong reference values, and
-references scoped to another device also fail. Failures prevent task launch
-without draining nodes. Successful injection does not verify a catalogue or
-guarantee provider access; the application still opens the device normally.
+Injection applies only when the complete license expression is one configured
+`ID` or `ID:1`. Compound expressions, remote licenses, and other counts receive
+no defaults. Explicit QDMI options without an exact match fail. Invalid
+configuration, empty or overlong reference values, and references scoped to
+another device also fail. Failures prevent task launch without draining nodes.
+Successful injection does not verify a catalogue or guarantee provider access;
+the application still opens the device normally.
 
 Provider-specific installation and credentials remain in the
 [Braket guide](https://github.com/munich-quantum-software/amazon-braket-qdmi-device)
-and [IQM guide](https://github.com/iqm-finland/QDMI-on-IQM). Provider migrations
-replace the legacy SPANK module and options, including IQM's embedded early
-validation and alias-derived license names. Use one shared module per cluster.
+and [IQM guide](https://github.com/iqm-finland/QDMI-on-IQM).
 
 ## Optionally validate before task launch
 
@@ -212,23 +231,35 @@ Validation is disabled when `validate` is absent. `validation_timeout` defaults
 to 30 seconds and accepts whole seconds from 1 to 3600. The selected license
 must name one configured device with an implicit count or `:1`.
 
-The module runs the checker as the job user with a copy of the job environment
-after configuration injection. It does not load a provider in a Slurm daemon. An
+The module runs the checker as the job user with the job environment after
+configuration injection. It does not load a provider in a Slurm daemon. An
 unavailable device, checker failure, or timeout prevents tasks using that check
 from starting and does not drain the node. The checker still accepts both `IDLE`
 and `BUSY`; it does not reserve the device or authorize a later submission.
 
-Each node caches the first check per job step. Tasks with matching configuration
-reuse its result; tasks with different configuration run their own bounded
-check. Other tasks may already have started when a check fails. The comparison
-includes the device ID and all environment entries except `SLURM_` and `SLURMD_`
-metadata. Provider configuration must not depend on those metadata variables.
-Environments larger than 128 KiB are rejected when validation is enabled.
+Each node runs one check per job step and shares the result across its tasks.
+Tasks on another node may already have started when a check fails. All tasks
+must use the same site-established provider runtime, catalogue, and credentials
+on that node, configured before this hook. Place the module after plugins that
+set these inputs. Task prologs run later and must not change them.
 
-Place the module after other plugins that set provider configuration. Slurm runs
-task prologs after the validation hook, so task prologs must not change provider
-configuration. This is a readiness snapshot of the inputs at the hook; the
-application must still handle changes in device availability and credentials.
+The configured checker must use the workload's provider runtime. It cannot
+validate a virtual environment, module, credentials, or container activated
+later in a batch script. For such jobs, leave automatic validation disabled and
+run the checker inside the chosen environment after setup, for example:
+
+```bash
+#!/bin/bash
+#SBATCH --licenses=mqt.sc.default
+set -eu
+source /path/to/venv/bin/activate
+export MQT_CORE_QDMI_CONFIG_FILE=/path/to/qdmi.json
+mqt-core-qdmi-check --device mqt.sc.default --timeout 30
+python workload.py
+```
+
+Both forms provide a readiness snapshot. The application must still handle
+changes in device availability and credentials.
 
 ## Submit a DDSIM job
 
@@ -372,8 +403,8 @@ For failures after selection, inspect the stage that failed:
 
 ## Run the integration tests
 
-From a source checkout on a Linux Docker host with cgroup v2, build one wheel
-and run the fixture:
+Use rootful Docker on a disposable Linux host with cgroup v2. From a source
+checkout, build one wheel and run the fixture:
 
 ```console
 uv build --wheel --out-dir test/slurm/dist

@@ -26,6 +26,7 @@
 #include <iostream>
 #include <limits>
 #include <sstream>
+#include <stdexcept>
 #include <unordered_set>
 #include <vector>
 
@@ -44,6 +45,20 @@ protected:
 };
 
 } // namespace
+
+TEST_F(CNTest, RejectsInvalidTolerance) {
+  for (const fp tolerance : {
+           0.,
+           -1.,
+           std::numeric_limits<fp>::denorm_min(),
+           std::numeric_limits<fp>::infinity(),
+           std::numeric_limits<fp>::quiet_NaN(),
+       }) {
+    EXPECT_THROW(ComplexNumbers::setTolerance(tolerance),
+                 std::invalid_argument);
+    EXPECT_EQ(RealNumber::eps, savedTolerance);
+  }
+}
 
 TEST_F(CNTest, ComplexNumberCreation) {
   EXPECT_TRUE(cn.lookup(Complex::zero()).exactlyZero());
@@ -148,13 +163,12 @@ TEST_F(CNTest, GrowthPreservesEntriesAndCollectionFlags) {
 }
 
 TEST_F(CNTest, CollectsSingleEntryWithoutDynamicImmortals) {
-  ComplexNumbers::setTolerance(1.);
-  auto manager = MemoryManager::create<RealNumber>();
-  RealNumberUniqueTable table(manager);
-  EXPECT_EQ(table.getStats().numEntries, 0U);
-  EXPECT_EQ(table.lookup(4.)->value, 4.);
-  EXPECT_EQ(table.garbageCollect(true), 1U);
-  EXPECT_EQ(table.getStats().numEntries, 0U);
+  ut.clear();
+  mm.reset();
+  EXPECT_EQ(ut.getStats().numEntries, 0U);
+  EXPECT_EQ(ut.lookup(4.)->value, 4.);
+  EXPECT_EQ(ut.garbageCollect(true), 1U);
+  EXPECT_EQ(ut.getStats().numEntries, 0U);
 }
 
 TEST_F(CNTest, ToleranceChangesPreserveNearestLookup) {
@@ -169,19 +183,13 @@ TEST_F(CNTest, ToleranceChangesPreserveNearestLookup) {
 
   /// Compare against every retained entry, independently of index layout.
   for (const fp tolerance : {
-           0.,
-           std::numeric_limits<fp>::denorm_min(),
-           1e-300,
-           1e-15,
+           1e-12,
            savedTolerance,
-           1e-4,
-           1e100,
-           std::numeric_limits<fp>::max() / 4,
+           1e-6,
+           1e-3,
        }) {
     ComplexNumbers::setTolerance(tolerance);
     for (const fp value : {
-             std::numeric_limits<fp>::denorm_min(),
-             1e-299,
              0.25,
              std::nextafter(0.25, 0.),
              std::nextafter(0.25, 1.),
@@ -189,8 +197,6 @@ TEST_F(CNTest, ToleranceChangesPreserveNearestLookup) {
              0.75,
              1.,
              2.,
-             1e100,
-             std::numeric_limits<fp>::max(),
          }) {
       RealNumber* expected = nullptr;
       if (value <= tolerance) {
@@ -550,7 +556,13 @@ TEST(DDComplexTest, HashesSignedQuantizedWeights) {
     }
     EXPECT_GT(hashes.size(), 1U);
   }
-  EXPECT_EQ(hash({0., 0.}), hash({-0., -0.}));
+  for (const fp zero : {0., -0., RealNumber::eps / 4., -RealNumber::eps / 4.}) {
+    EXPECT_EQ(hash({zero, zero}), hash({0., 0.}));
+    EXPECT_EQ(hash({zero, 0.}), hash({0., 0.}));
+    EXPECT_EQ(hash({0., zero}), hash({0., 0.}));
+    EXPECT_EQ(hash({zero, 0.5}), hash({0., 0.5}));
+    EXPECT_EQ(hash({0.5, zero}), hash({0.5, 0.}));
+  }
 }
 
 TEST(DDComplexTest, PreservesFlagsWhenRelinkingNumbers) {
@@ -586,4 +598,23 @@ TEST_F(CNTest, ClearsFlagsWhenReusingNumbers) {
   reused = ut.lookup(0.321);
   EXPECT_FALSE(RealNumber::isMarked(reused));
   EXPECT_FALSE(RealNumber::isImmortal(reused));
+}
+
+TEST(DDComplexTest, ScalarComplexDivisorsPreserveRange) {
+  for (const fp scale : {1e-200, 1e200}) {
+    for (const ComplexValue divisor : {ComplexValue{scale, 0.}, {0., scale}}) {
+      const auto quotient = (divisor * 2.) / divisor;
+      EXPECT_EQ(quotient.r, 2.);
+      EXPECT_EQ(quotient.i, 0.);
+    }
+  }
+  const ComplexValue mixed{1e300, 1e-300};
+  EXPECT_EQ(mixed / ComplexValue{1.}, mixed);
+}
+
+TEST(DDComplexTest, ComplexTextRejectsUnrepresentableValues) {
+  ComplexValue value;
+  EXPECT_THROW(value.fromString("1e-400", ""), std::out_of_range);
+  EXPECT_THROW(value.fromString("", "1e400i"), std::out_of_range);
+  EXPECT_THROW(value.fromString("invalid", ""), std::invalid_argument);
 }

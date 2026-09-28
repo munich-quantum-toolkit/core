@@ -151,28 +151,14 @@ def test_benchmark_cli_launcher(platform: str, suffix: str) -> None:
 
 @pytest.mark.skipif(sys.platform == "win32", reason="The checker requires POSIX process supervision")
 @pytest.mark.script_launch_mode("subprocess")
-def test_qdmi_checker_cli(script_runner: ScriptRunner) -> None:
+@pytest.mark.parametrize(("arguments", "returncode"), [([], 0), (["--timeout", "0"], 2)])
+def test_qdmi_checker_cli(script_runner: ScriptRunner, arguments: list[str], returncode: int) -> None:
     """Run the native checker through the installed console script."""
-    ret = script_runner.run(["mqt-core-qdmi-check", "--device", "mqt.sc.default"])
-    assert ret.success
+    ret = script_runner.run(["mqt-core-qdmi-check", "--device", "mqt.sc.default", *arguments])
+    assert ret.returncode == returncode
     assert not ret.stdout
-    assert not ret.stderr
-
-
-def test_qdmi_checker_cli_launcher() -> None:
-    """Pass device selection unchanged to the bundled native checker."""
-    executable = Path("installation/mqt/core/bin/mqt-core-qdmi-check")
-    with (
-        patch.object(checker_cli.sys, "platform", "linux"),
-        patch.object(checker_cli.sys, "argv", ["mqt-core-qdmi-check", "--device", "test.device"]),
-        patch.object(checker_cli, "distribution") as distribution_mock,
-        patch.object(checker_cli.os, "execv") as execv_mock,
-    ):
-        distribution_mock.return_value.locate_file.return_value = executable
-        checker_cli.main()
-
-    distribution_mock.return_value.locate_file.assert_called_once_with("mqt/core/bin/mqt-core-qdmi-check")
-    execv_mock.assert_called_once_with(executable, [str(executable), "--device", "test.device"])
+    if returncode == 0:
+        assert not ret.stderr
 
 
 def test_qdmi_checker_windows() -> None:

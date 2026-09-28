@@ -14,6 +14,7 @@
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 
 #include "ExactUnitaryTest.h"
@@ -22,6 +23,7 @@
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
@@ -30,6 +32,7 @@
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/IR/Value.h"
 #include "mlir/IR/Verifier.h"
+#include "mlir/Parser/Parser.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/WalkResult.h"
@@ -37,6 +40,7 @@
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringRef.h"
 
 #include <array>
 #include <cassert>
@@ -69,9 +73,7 @@ protected:
     SmallVector<double, 4> angles;
   };
 
-  MergeSingleQubitRotationGatesTest() : builder(&context) {}
-
-  void SetUp() override {
+  MergeSingleQubitRotationGatesTest() : builder(&context) {
     context.loadDialect<QCODialect>();
     context.loadDialect<func::FuncDialect>();
     context.loadDialect<arith::ArithDialect>();
@@ -1004,6 +1006,212 @@ TEST_F(MergeSingleQubitRotationGatesTest,
 }
 
 TEST_F(MergeSingleQubitRotationGatesTest,
+       mergesSymbolicEulerChainsWithBoundedAngles) {
+  for (const bool useX : {false, true}) {
+    SCOPED_TRACE(useX);
+    module = QCOProgramBuilder::build(&context, [&](auto& b) {
+      auto [control, target] =
+          b.ctrl(b.staticQubit(0), b.staticQubit(1), [&](Value qubit) {
+            qubit = b.rz(0.1, qubit);
+            qubit = useX ? b.rx(0.2, qubit) : b.ry(0.2, qubit);
+            return b.rz(0.4, qubit);
+          });
+      return SmallVector<Value>{control, target};
+    });
+    auto funcOp = module->lookupSymbol<func::FuncOp>("main");
+    module->walk([&](UnitaryOpInterface op) {
+      if (isa<RXOp, RYOp, RZOp>(op.getOperation())) {
+        const auto index = funcOp.getNumArguments();
+        funcOp.insertArgument(index, Float64Type::get(&context), {},
+                              funcOp.getLoc());
+        op.getParameter(0).replaceAllUsesWith(funcOp.getArgument(index));
+      }
+    });
+    ASSERT_EQ(funcOp.getNumArguments(), 3U);
+    ASSERT_TRUE(succeeded(verify(*module)));
+    ASSERT_TRUE(succeeded(verifyLinearity(*module)));
+    OwningOpRef<ModuleOp> original = module->clone();
+    ASSERT_TRUE(succeeded(runMergePass(*module)));
+    ASSERT_TRUE(succeeded(verify(*module)));
+    ASSERT_TRUE(succeeded(verifyLinearity(*module)));
+    EXPECT_EQ(countOps<UOp>(), 1);
+    EXPECT_EQ(countOps<math::Atan2Op>(), 0);
+    EXPECT_EQ(countOps<math::SinOp>(), 0);
+    EXPECT_EQ(countOps<math::CosOp>(), 0);
+    EXPECT_EQ(countOps<arith::SelectOp>(), 0);
+
+    for (const auto angles : {
+             std::array{0.0, 0.0, 0.0},
+             std::array{PI, PI, PI},
+             std::array{2 * PI, -2 * PI, 2 * PI},
+             std::array{-3 * PI, 0.37, 4 * PI},
+             std::array{37 * PI, 0.37, -29 * PI},
+             std::array{1.0e5, 0.37, 1.0e5},
+         }) {
+      SCOPED_TRACE(testing::PrintToString(angles));
+      OwningOpRef<ModuleOp> before = original->clone();
+      OwningOpRef<ModuleOp> after = module->clone();
+      bindLeadingArgs(before->lookupSymbol<func::FuncOp>("main"), angles);
+      bindLeadingArgs(after->lookupSymbol<func::FuncOp>("main"), angles);
+      PassManager pm(&context);
+      pm.addPass(createCanonicalizerPass());
+      ASSERT_TRUE(succeeded(pm.run(*after)));
+      ASSERT_TRUE(succeeded(verify(*after)));
+      ASSERT_TRUE(succeeded(verifyLinearity(*after)));
+      ::mqt::test::expectFullUnitaryEqual(*before, *after, 2);
+    }
+  }
+}
+
+TEST_F(MergeSingleQubitRotationGatesTest,
+       fusesSymbolicEulerChainsDirectlyInCompatibleBases) {
+  for (const auto* basisName : {"u", "zyz", "zxz", "zsxx", "xzx", "xyx", "r"}) {
+    SCOPED_TRACE(basisName);
+    const auto basis = *decomposition::parseSingleQubitBasis(basisName);
+    FuseSingleQubitUnitaryRunsOptions options;
+    options.basis = basisName;
+    const bool outerX = basis == decomposition::SingleQubitBasis::XZX ||
+                        basis == decomposition::SingleQubitBasis::XYX ||
+                        basis == decomposition::SingleQubitBasis::R;
+    for (const StringRef middleGate : {"rx", "ry", "rz", "h"}) {
+      SCOPED_TRACE(middleGate.str());
+      const bool hadamard = middleGate == "h";
+      const bool rotateX = outerX && !hadamard;
+      for (const unsigned outerMask : {0U, 1U, 2U, 3U}) {
+        if ((hadamard && (outerMask == 0 || outerMask == 3)) ||
+            (middleGate == (outerX ? "rx" : "rz") && outerMask != 0)) {
+          continue;
+        }
+        SCOPED_TRACE(outerMask);
+        module = QCOProgramBuilder::build(&context, [&](auto& b) {
+          auto [control, target] =
+              b.ctrl(b.staticQubit(0), b.staticQubit(1), [&](Value qubit) {
+                if ((outerMask & 1U) != 0) {
+                  qubit = rotateX ? b.rx(0.1, qubit) : b.rz(0.1, qubit);
+                }
+                qubit = middleGate == "rx"   ? b.rx(0.2, qubit)
+                        : middleGate == "ry" ? b.ry(0.2, qubit)
+                        : hadamard           ? b.h(qubit)
+                                             : b.rz(0.2, qubit);
+                if ((outerMask & 2U) != 0) {
+                  qubit = rotateX ? b.rx(0.4, qubit) : b.rz(0.4, qubit);
+                }
+                return qubit;
+              });
+          return SmallVector<Value>{control, target};
+        });
+        auto funcOp = module->lookupSymbol<func::FuncOp>("main");
+        module->walk([&](UnitaryOpInterface op) {
+          if (isa<RXOp, RYOp, RZOp>(op.getOperation())) {
+            const auto index = funcOp.getNumArguments();
+            funcOp.insertArgument(index, Float64Type::get(&context), {},
+                                  funcOp.getLoc());
+            op.getParameter(0).replaceAllUsesWith(funcOp.getArgument(index));
+          }
+        });
+        ASSERT_TRUE(succeeded(verify(*module)));
+        ASSERT_TRUE(succeeded(verifyLinearity(*module)));
+        OwningOpRef<ModuleOp> original = module->clone();
+        PassManager fusion(&context);
+        fusion.addPass(createFuseSingleQubitUnitaryRuns(options));
+        ASSERT_TRUE(succeeded(fusion.run(*module)));
+        ASSERT_TRUE(succeeded(verify(*module)));
+        ASSERT_TRUE(succeeded(verifyLinearity(*module)));
+        EXPECT_EQ(countOps<math::Atan2Op>(), 0);
+        EXPECT_EQ(countOps<math::SinOp>(), 0);
+        EXPECT_EQ(countOps<math::CosOp>(), 0);
+        EXPECT_EQ(countOps<arith::SelectOp>(), 0);
+        unsigned gateCount = 0;
+        module->walk([&](UnitaryOpInterface op) {
+          // Phase normalization may lift a P gate onto the control wire.
+          if (op.isSingleQubit() && op->getParentOfType<CtrlOp>()) {
+            ++gateCount;
+            EXPECT_TRUE(decomposition::isSingleQubitBasisGate(op, basis));
+          }
+        });
+        EXPECT_GT(gateCount, 0U);
+        EXPECT_LE(gateCount,
+                  basis == decomposition::SingleQubitBasis::U ? 1U
+                  : !hadamard && basis == decomposition::SingleQubitBasis::ZSXX
+                      ? 5U
+                      : 3U);
+
+        for (const auto angles : {
+                 std::array{0.0, 0.0, 0.0},
+                 std::array{PI, PI, PI},
+                 std::array{2 * PI, -2 * PI, 2 * PI},
+                 std::array{-2 * PI, 2 * PI, -2 * PI},
+                 std::array{-3 * PI, 0.37, 4 * PI},
+                 std::array{37 * PI, 0.37, -29 * PI},
+                 std::array{1.0e5, 0.37, 1.0e5},
+             }) {
+          SCOPED_TRACE(testing::PrintToString(angles));
+          OwningOpRef<ModuleOp> before = original->clone();
+          OwningOpRef<ModuleOp> after = module->clone();
+          auto values = ArrayRef(angles).take_front(funcOp.getNumArguments());
+          bindLeadingArgs(before->lookupSymbol<func::FuncOp>("main"), values);
+          bindLeadingArgs(after->lookupSymbol<func::FuncOp>("main"), values);
+          PassManager canonicalizer(&context);
+          canonicalizer.addPass(createCanonicalizerPass());
+          ASSERT_TRUE(succeeded(canonicalizer.run(*after)));
+          ASSERT_TRUE(succeeded(verify(*after)));
+          ASSERT_TRUE(succeeded(verifyLinearity(*after)));
+          ::mqt::test::expectFullUnitaryEqual(*before, *after, 2);
+        }
+      }
+    }
+  }
+}
+
+TEST_F(MergeSingleQubitRotationGatesTest,
+       normalizesSharedGateExpressionsIndependently) {
+  for (const auto* basisName : {"u", "zyz", "zsxx"}) {
+    SCOPED_TRACE(basisName);
+    module = parseSourceString<ModuleOp>(R"mlir(
+      module {
+        func.func @main(%theta: f64) -> !qco.qubit {
+          %two = arith.constant 2.0 : f64
+          %half = arith.divf %theta, %two : f64
+          %middle = arith.constant 0.37 : f64
+          %q = qco.static 0 : !qco.qubit
+          %q1 = qco.rz(%half) %q : !qco.qubit -> !qco.qubit
+          %q2 = qco.rx(%middle) %q1 : !qco.qubit -> !qco.qubit
+          %q3 = qco.rz(%theta) %q2 : !qco.qubit -> !qco.qubit
+          return %q3 : !qco.qubit
+        }
+      })mlir",
+                                         &context);
+    ASSERT_TRUE(module);
+    OwningOpRef<ModuleOp> original = module->clone();
+    FuseSingleQubitUnitaryRunsOptions options;
+    options.basis = basisName;
+    PassManager fusion(&context);
+    fusion.addPass(createFuseSingleQubitUnitaryRuns(options));
+    ASSERT_TRUE(succeeded(fusion.run(*module)));
+    for (const double angle : {2 * PI, -2 * PI, 17 * PI, 1.0e5}) {
+      SCOPED_TRACE(angle);
+      OwningOpRef<ModuleOp> before = original->clone();
+      OwningOpRef<ModuleOp> after = module->clone();
+      bindLeadingArgs(before->lookupSymbol<func::FuncOp>("main"), {angle});
+      bindLeadingArgs(after->lookupSymbol<func::FuncOp>("main"), {angle});
+      PassManager canonicalizer(&context);
+      canonicalizer.addPass(createCanonicalizerPass());
+      ASSERT_TRUE(succeeded(canonicalizer.run(*after)));
+      ASSERT_TRUE(succeeded(verify(*after)));
+      ASSERT_TRUE(succeeded(verifyLinearity(*after)));
+      after->walk([&](UnitaryOpInterface op) {
+        for (Value parameter : op.getParameters()) {
+          const auto value = mlir::mqt::valueToConstantDouble(parameter);
+          ASSERT_TRUE(value);
+          EXPECT_LE(std::abs(*value), 4 * PI);
+        }
+      });
+      ::mqt::test::expectFullUnitaryEqual(*before, *after, 1);
+    }
+  }
+}
+
+TEST_F(MergeSingleQubitRotationGatesTest,
        mergeDynamicAngleRotationsUsesSsaPath) {
   // Pure-Z chain with unfoldable angle SSA forces Val<Value> merge (not the
   // host Val<double> path exercised by constant-angle tests above).
@@ -1105,6 +1313,8 @@ TEST_F(MergeSingleQubitRotationGatesTest,
   EXPECT_EQ(countOps<HOp>(), 0);
   EXPECT_EQ(countOps<RZOp>(), 0);
   EXPECT_EQ(countOps<UOp>(), 1);
+  EXPECT_EQ(countOps<math::SqrtOp>(), 0);
+  EXPECT_EQ(countOps<math::Atan2Op>(), 0);
 
   UOp uOp = nullptr;
   module->walk([&](UOp op) { uOp = op; });

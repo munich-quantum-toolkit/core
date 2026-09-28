@@ -30,10 +30,6 @@ struct OpenQASMProgram {
 /// OpenQASM programs that additionally round-trip through jeff.
 [[nodiscard]] llvm::ArrayRef<OpenQASMProgram> jeffCompatiblePrograms();
 
-/// OpenQASM programs accepted by the standard pipeline but rejected when QCO
-/// is converted to jeff.
-[[nodiscard]] llvm::ArrayRef<OpenQASMProgram> jeffIncompatiblePrograms();
-
 /// Straight-line compiler programs that additionally support Base QIR.
 [[nodiscard]] llvm::ArrayRef<OpenQASMProgram> baseProfilePrograms();
 

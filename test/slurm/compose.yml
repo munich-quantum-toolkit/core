@@ -47,7 +47,7 @@ services:
       retries: 30
       start_period: 5s
 
-  node1:
+  node1: &compute
     build:
       context: .
       additional_contexts:
@@ -91,44 +91,5 @@ services:
       start_period: 5s
 
   node2:
-    build:
-      context: .
-      additional_contexts:
-        core: ${MQT_CORE_SLURM_CORE:-../..}
-        workload: ${MQT_CORE_SLURM_WORKLOAD:-../..}
-        dist: ${MQT_CORE_SLURM_DIST:-./dist}
-      args:
-        SETUP_SCRIPT: ${MQT_CORE_SLURM_SETUP_SCRIPT:-}
-      target: compute
+    <<: *compute
     hostname: node2
-    privileged: true
-    cgroup: host
-    depends_on:
-      controller:
-        condition: service_healthy
-    tmpfs:
-      - /run
-      - /run/lock
-    volumes:
-      - /sys/fs/cgroup:/sys/fs/cgroup:rw
-      - ${MQT_CORE_SLURM_CORE:-../..}:/workspace:ro
-      - ${MQT_CORE_SLURM_WORKLOAD:-../..}:/workload:ro
-      - ${MQT_CORE_SLURM_RUNTIME:-./runtime}:/runtime
-      - ${MQT_CORE_SLURM_RUNTIME:-./runtime}/jobs:/jobs
-      - ${MQT_CORE_SLURM_RUNTIME:-./runtime}/slurm.conf:/etc/slurm/slurm.conf:ro
-      - ${MQT_CORE_SLURM_RUNTIME:-./runtime}/plugstack.conf:/etc/slurm/plugstack.conf:ro
-      - ./cgroup.conf:/etc/slurm/cgroup.conf:ro
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "systemctl",
-          "is-active",
-          "--quiet",
-          "munge.service",
-          "slurmd.service",
-        ]
-      interval: 2s
-      timeout: 2s
-      retries: 30
-      start_period: 5s

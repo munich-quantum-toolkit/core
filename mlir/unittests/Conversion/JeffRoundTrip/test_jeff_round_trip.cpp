@@ -649,6 +649,46 @@ TEST(JeffRoundTripRegressionTest, PreservesLiveOldArrayValues) {
   EXPECT_EQ(histogram->at("10"), 1);
 }
 
+TEST(JeffRoundTripRegressionTest,
+     ReadsAndWritesRegistersInsideConvertedRegions) {
+  MLIRContext context;
+  context.loadDialect<cbit::CBitDialect, qco::QCODialect, arith::ArithDialect,
+                      scf::SCFDialect, func::FuncDialect, jeff::JeffDialect>();
+  auto program = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main() -> !cbit.reg<3> attributes {mqt.entry_point} {
+      %q = qco.alloc : !qco.qubit
+      %remaining, %choose = qco.measure %q : !qco.qubit
+      qco.sink %remaining : !qco.qubit
+      %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<3>
+      %initial = arith.constant 5 : i3
+      cbit.write %initial, %reg : i3, !cbit.reg<3>
+      scf.if %choose {
+        %old = cbit.read %reg : !cbit.reg<3> -> i3
+        %one = arith.constant 1 : i3
+        %next = arith.xori %old, %one : i3
+        cbit.write %next, %reg : i3, !cbit.reg<3>
+      } else {
+        %old = cbit.read %reg : !cbit.reg<3> -> i3
+        %three = arith.constant 3 : i3
+        %next = arith.xori %old, %three : i3
+        cbit.write %next, %reg : i3, !cbit.reg<3>
+      }
+      return %reg : !cbit.reg<3>
+    }
+  })mlir",
+                                             &context);
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(succeeded(convertQCOToJeff(*program)));
+  ASSERT_TRUE(succeeded(verify(*program)));
+  auto bytes = serialize(*program);
+  program = deserialize(&context, bytes);
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(succeeded(convertJeffToQCO(*program)));
+  auto counts = qco::sample(program->lookupSymbol<func::FuncOp>("main"), 1, 1);
+  ASSERT_TRUE(succeeded(counts));
+  EXPECT_EQ(counts->at("110"), 1);
+}
+
 TEST(JeffRoundTripRegressionTest, ConvertsSignedIndexComparison) {
   MLIRContext context;
   context.loadDialect<qco::QCODialect, arith::ArithDialect, func::FuncDialect,
