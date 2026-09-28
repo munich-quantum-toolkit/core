@@ -16,8 +16,13 @@
 #include "qdmi/client.h"
 
 #include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <filesystem>
+#include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <variant>
 
 namespace qdmi {
@@ -25,6 +30,32 @@ namespace qdmi {
 /// exact, nonempty payload until the synchronous submission call returns.
 using CustomJobParameter =
     std::variant<std::string, bool, int, double, std::span<const std::byte>>;
+namespace detail {
+/// Encode a native filesystem path as UTF-8.
+[[nodiscard]] inline auto pathToString(const std::filesystem::path& path)
+    -> std::string {
+  const auto utf8 = path.u8string();
+  std::string value(utf8.size(), '\0');
+  if (!utf8.empty()) {
+    std::memcpy(value.data(), utf8.data(), utf8.size());
+  }
+  return value;
+}
+
+/// Decode a UTF-8 filesystem path into the native representation.
+[[nodiscard]] inline auto pathFromString(const std::string_view value)
+    -> std::filesystem::path {
+  std::u8string utf8(value.size(), u8'\0');
+  if (!value.empty()) {
+    std::memcpy(utf8.data(), value.data(), value.size());
+  }
+  return {utf8};
+}
+
+/// Read an environment value as UTF-8.
+[[nodiscard]] auto environment(std::string_view name)
+    -> std::optional<std::string>;
+} // namespace detail
 
 template <class Concrete> class Singleton {
 protected:
@@ -360,6 +391,8 @@ constexpr auto toString(const QDMI_Operation_Property prop) -> const char* {
 /// Returns the string representation of the given device property @p prop.
 constexpr auto toString(const QDMI_Device_Property prop) -> const char* {
   switch (prop) {
+  case QDMI_DEVICE_PROPERTY_ID:
+    return "ID";
   case QDMI_DEVICE_PROPERTY_NAME:
     return "NAME";
   case QDMI_DEVICE_PROPERTY_VERSION:

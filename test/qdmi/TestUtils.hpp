@@ -14,7 +14,10 @@
 #pragma once
 
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <optional>
+#include <random>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -66,6 +69,34 @@ private:
 
   std::string name_;
   std::optional<std::string> previous_;
+};
+
+class TemporaryDirectory {
+public:
+  TemporaryDirectory() {
+    path_ = std::filesystem::temp_directory_path() /
+            ("mqt-core-qdmi-registry-test-" +
+             std::to_string(std::random_device{}()));
+    std::filesystem::remove_all(path_);
+    std::filesystem::create_directories(path_);
+  }
+
+  ~TemporaryDirectory() { std::filesystem::remove_all(path_); }
+
+  [[nodiscard]] const std::filesystem::path& path() const { return path_; }
+
+  [[nodiscard]] std::filesystem::path
+  write(const std::filesystem::path& relative,
+        const std::string& contents) const {
+    const auto path = path_ / relative;
+    std::filesystem::create_directories(path.parent_path());
+    std::ofstream output(path);
+    output << contents;
+    return path;
+  }
+
+private:
+  std::filesystem::path path_;
 };
 
 } // namespace mqt::test

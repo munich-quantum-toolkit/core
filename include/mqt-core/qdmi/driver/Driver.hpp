@@ -205,6 +205,9 @@ enum class SessionStatus : uint8_t {
 /// Definition of the QDMI Device.
 struct QDMI_Device_impl_d {
 private:
+  /// Stable ID assigned by the driver.
+  std::string id_;
+
   /// The device library that provides the device interface functions.
   /// @note This must be a pointer type as we need access to dynamic and static
   /// libraries that are subclasses of qdmi::DeviceLibrary.
@@ -224,9 +227,13 @@ public:
   /// library.
   /// @param lib is the device library to take ownership of.
   /// @param config is the configuration for device session parameters.
+  /// @param id is the configured stable ID; empty for an unnamed child.
+  /// @param strict rejects session parameters the device does not support.
   explicit QDMI_Device_impl_d(std::unique_ptr<qdmi::DeviceLibrary>&& lib,
-                              const qdmi::DeviceSessionConfig& config = {})
-      : QDMI_Device_impl_d(std::shared_ptr(std::move(lib)), config) {}
+                              const qdmi::DeviceSessionConfig& config = {},
+                              std::string id = {}, const bool strict = false)
+      : QDMI_Device_impl_d(std::shared_ptr(std::move(lib)), config,
+                           std::move(id), nullptr, strict) {}
 
   /// Constructor for the QDMI device.
   ///
@@ -235,10 +242,14 @@ public:
   /// @param lib is a shared pointer to the device library that provides the
   /// device interface functions.
   /// @param config is the configuration for device session parameters.
+  /// @param id is the configured stable ID; empty for an unnamed child.
+  /// @param strict rejects session parameters the device does not support.
   /// @param childDevice optionally selects a child device for this wrapper.
   explicit QDMI_Device_impl_d(std::shared_ptr<qdmi::DeviceLibrary> lib,
                               const qdmi::DeviceSessionConfig& config = {},
-                              QDMI_Child_Device childDevice = nullptr);
+                              std::string id = {},
+                              QDMI_Child_Device childDevice = nullptr,
+                              bool strict = false);
 
   /// Destructor for the QDMI device.
   ///
@@ -359,9 +370,15 @@ private:
   /// Snapshot of devices visible when this session was allocated.
   std::vector<QDMI_Device> devices_;
 
+  /// Owns the device created by a targeted private allocation.
+  std::shared_ptr<QDMI_Device_impl_d> ownedDevice_;
+
 public:
   /// Constructor from an explicit device-handle snapshot.
   explicit QDMI_Session_impl_d(const std::vector<QDMI_Device>& devices);
+
+  /// Constructor for one privately targeted device session.
+  explicit QDMI_Session_impl_d(std::shared_ptr<QDMI_Device_impl_d> device);
 
   /// Initializes the session.
   /// @see QDMI_session_init
@@ -432,11 +449,11 @@ class Driver final : public Singleton<Driver> {
   void materializeClientCatalog();
 
   /// Opens a fresh device session with per-call overrides.
-  auto openFresh(std::string_view id, const DeviceSessionConfig& overrides)
-      -> std::shared_ptr<QDMI_Device_impl_d>;
+  auto openFresh(std::string_view id, const DeviceSessionConfig& overrides,
+                 bool strict = false) -> std::shared_ptr<QDMI_Device_impl_d>;
 
 public:
-  /// @returns the process-wide Driver instance.
+  /// @returns the instance owned by this driver library.
   ///
   /// This out-of-line accessor keeps static-library consumers from
   /// instantiating separate singleton storage in different translation units.
@@ -475,6 +492,11 @@ public:
   /// Allocates a new session.
   /// @see QDMI_session_alloc
   auto sessionAlloc(QDMI_Session* session) -> int;
+
+  /// Allocates a strict one-device session for the private Core extension.
+  auto sessionAllocForDevice(std::string_view id,
+                             const DeviceSessionConfig& config,
+                             QDMI_Session* session) -> int;
 
   /// Frees a session.
   /// @see QDMI_session_free
