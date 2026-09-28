@@ -237,8 +237,10 @@ TEST(OpenQASMFrontendTest, RejectsInvalidClassicalArrays) {
               "compile-time",
           },
           {"array[int, 2] a = {1, 2}; int n = a[0:0];", "not a scalar"},
-          {"array[int, 2] a = {1, 2}; a[:] += a;",
-           "indexed compound assignments"},
+          {
+              "array[int, 2] a = {1, 2}; a[:] += a;",
+              "indexed compound assignments",
+          },
           {
               "array[int, 3] a; a[0] = 1; a[2] = 2; a[0:1] = a[1:2];",
               "uninitialized",
