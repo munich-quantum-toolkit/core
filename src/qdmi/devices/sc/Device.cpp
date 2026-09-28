@@ -528,15 +528,11 @@ int MQT_SC_QDMI_device_job_get_program(MQT_SC_QDMI_Device_Job job,
                                        void* /*data*/, size_t* /*sizeRet*/) {
   return job == nullptr ? QDMI_ERROR_INVALIDARGUMENT : QDMI_ERROR_NOTSUPPORTED;
 }
-/// NOLINTBEGIN(readability-non-const-parameter,misc-const-correctness): ABI
-/// requires a mutable output pointer.
 int MQT_SC_QDMI_device_job_get_program_status(MQT_SC_QDMI_Device_Job job,
                                               size_t /*programIndex*/,
-                                              QDMI_Job_Status* status) {
-  return job == nullptr || status == nullptr ? QDMI_ERROR_INVALIDARGUMENT
-                                             : QDMI_ERROR_NOTSUPPORTED;
+                                              QDMI_Job_Status* /*status*/) {
+  return job == nullptr ? QDMI_ERROR_INVALIDARGUMENT : QDMI_ERROR_NOTSUPPORTED;
 }
-/// NOLINTEND(readability-non-const-parameter,misc-const-correctness)
 
 int MQT_SC_QDMI_device_job_query_property(
     MQT_SC_QDMI_Device_Job job, const QDMI_Device_Job_Property property,

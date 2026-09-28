@@ -563,14 +563,10 @@ extern "C" int TEST_SESSION_QDMI_device_job_get_program(
   return queryBytes(job->programs[programIndex], size, data, sizeRet);
 }
 
-/// NOLINTBEGIN(readability-non-const-parameter,misc-const-correctness): ABI
-/// requires a mutable output pointer.
 extern "C" int TEST_SESSION_QDMI_device_job_get_program_status(
-    QDMI_Device_Job job, size_t /*programIndex*/, QDMI_Job_Status* status) {
-  return job == nullptr || status == nullptr ? QDMI_ERROR_INVALIDARGUMENT
-                                             : QDMI_ERROR_NOTSUPPORTED;
+    QDMI_Device_Job job, size_t /*programIndex*/, QDMI_Job_Status* /*status*/) {
+  return job == nullptr ? QDMI_ERROR_INVALIDARGUMENT : QDMI_ERROR_NOTSUPPORTED;
 }
-/// NOLINTEND(readability-non-const-parameter,misc-const-correctness)
 
 extern "C" int TEST_SESSION_QDMI_device_job_query_property(
     QDMI_Device_Job job, const QDMI_Device_Job_Property prop, const size_t size,
