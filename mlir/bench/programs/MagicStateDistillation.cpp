@@ -129,6 +129,7 @@ magicStateDistillation(qc::QCProgramBuilder& builder,
   builder.tdg(root);
   builder.h(root);
   builder.measure(root, result, 0);
+  // Reuse the measured root to expose rejection without another qubit.
   builder.reset(root);
   builder.scfIf(builder.loadClassicalBit(rejection, 0),
                 [&] { builder.x(root); });
