@@ -1279,15 +1279,13 @@ protected:
       signalPassFailure();
       return;
     }
-    if (targetBasis &&
-        targetBasis->singleQubit != CompilerTarget::SingleQubitBasis::U) {
-      RewritePatternSet patterns(&getContext());
-      decomposition::populateParameterizedSingleQubitRunCompositionPatterns(
-          patterns, targetBasis->singleQubit, &target);
-      decomposition::populateFuseSingleQubitUnitaryRunsPatterns(
-          patterns, targetBasis->singleQubit, /*skipControlledBodies=*/true,
-          &target);
-      if (failed(applyPatternsGreedily(moduleOp, std::move(patterns)))) {
+    if (targetBasis) {
+      const auto policy = decomposition::SingleQubitFusionPolicy::forTarget(
+          targetBasis->singleQubit);
+      if (failed(decomposition::fuseSingleQubitUnitaryRuns(
+              moduleOp, targetBasis->singleQubit, policy, &target,
+              GreedyRewriteConfig{}.enableConstantCSE(false))) ||
+          failed(prepareGlobalPhases(moduleOp, target))) {
         signalPassFailure();
         return;
       }

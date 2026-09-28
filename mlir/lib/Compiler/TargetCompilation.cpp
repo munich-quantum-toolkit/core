@@ -103,15 +103,7 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   pm.addPass(qco::createLegalizeControlFlow());
   pm.addPass(qco::createDecomposeMultiControlled(target));
   pm.addPass(qco::createFuseTwoQubitGates(target));
-  /// Non-U targets fuse during native synthesis, avoiding an intermediate U
-  /// representation and its symbolic phase correction.
-  if (const auto basis = target.synthesisBasis();
-      !basis || basis->singleQubit == CompilerTarget::SingleQubitBasis::U) {
-    /// The U optimizer also merges dynamic controlled bodies into native U
-    /// gates and preserves isolated gates. Native synthesis does not yet cover
-    /// both behaviors; keep this path until their synthesis contracts agree.
-    populateDefaultQCOOptimizationPipeline(pm);
-  }
+  pm.addPass(qco::createFuseSingleQubitUnitaryRuns(target));
   switch (target.connectivityKind()) {
   case CompilerTarget::Connectivity::Kind::Explicit: {
     qco::MappingPassOptions mappingOptions;
@@ -143,6 +135,7 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
   pm.addPass(qco::createLegalizeControlFlow());
   pm.addPass(qco::createDecomposeMultiControlled(target));
   pm.addPass(qco::createFuseTwoQubitGates(target));
+  pm.addPass(qco::createFuseSingleQubitUnitaryRuns(target));
   pm.addPass(qco::createPlacementPass(target));
   qco::populateTargetNativeSynthesisPipeline(pm);
 }

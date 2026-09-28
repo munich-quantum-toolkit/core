@@ -3771,17 +3771,21 @@ TEST_F(CompilerPipelineTest, TargetSynthesisResynthesizesTwoQubitBlocks) {
       })));
   const TargetEnvironment environment(target, makePayloadSpecification());
 
-  ASSERT_TRUE(program->synthesizeForTarget(environment));
-
-  EXPECT_TRUE(verify(program->module()).succeeded());
-  EXPECT_TRUE(qco::verifyLinearity(program->module()).succeeded());
-  expectFullUnitaryEqual(*reference, program->module(), 2);
-  size_t numTwoQubitGates = 0;
-  program->module().walk([&](qco::UnitaryOpInterface unitary) {
-    numTwoQubitGates += unitary.isTwoQubit();
-  });
-  /// Individual lowering needs four CZ gates; the whole block needs two.
-  EXPECT_EQ(numTwoQubitGates, 2);
+  for (const bool synthesisOnly : {false, true}) {
+    SCOPED_TRACE(synthesisOnly);
+    auto compiled = program->copy();
+    ASSERT_TRUE(synthesisOnly ? compiled.synthesizeForTarget(environment)
+                              : compiled.compileForTarget(environment));
+    EXPECT_TRUE(verify(compiled.module()).succeeded());
+    EXPECT_TRUE(qco::verifyLinearity(compiled.module()).succeeded());
+    expectFullUnitaryEqual(*reference, compiled.module(), 2);
+    size_t numTwoQubitGates = 0;
+    compiled.module().walk([&](qco::UnitaryOpInterface unitary) {
+      numTwoQubitGates += unitary.isTwoQubit();
+    });
+    // Individual lowering needs four CZ gates; the whole block needs two.
+    EXPECT_EQ(numTwoQubitGates, 2);
+  }
   EXPECT_FALSE(program->synthesizeForTarget(TargetEnvironment(
       makeSparseUCZTarget(true), makePayloadSpecification())));
 }
@@ -4366,13 +4370,20 @@ TEST_F(CompilerPipelineTest, QCOProgramCompilesDynamicRunForSupportedTargets) {
 }
 
 TEST_F(CompilerPipelineTest, QCOProgramMergesDynamicRunInNativeCtrlBody) {
-  constexpr llvm::StringLiteral source = R"mlir(module {
+  for (
+      const auto* body : {
+          R"mlir(%h = qco.h %arg : !qco.qubit -> !qco.qubit
+                  %rz = qco.rz(%theta) %h : !qco.qubit -> !qco.qubit)mlir",
+          R"mlir(%u = qco.u(%theta, %theta, %theta) %arg : !qco.qubit -> !qco.qubit
+                  %rz = qco.u(%theta, %theta, %theta) %u : !qco.qubit -> !qco.qubit)mlir",
+      }) {
+    SCOPED_TRACE(body);
+    const auto source = std::string(R"mlir(module {
     func.func @main(%theta: f64 {mqt.input_name = "theta"}) attributes {mqt.entry_point} {
       %q0 = qco.alloc : !qco.qubit
       %q1 = qco.alloc : !qco.qubit
       %control, %target = qco.ctrl(%q0) targets(%arg = %q1) {
-        %h = qco.h %arg : !qco.qubit -> !qco.qubit
-        %rz = qco.rz(%theta) %h : !qco.qubit -> !qco.qubit
+  )mlir") + body + R"mlir(
         qco.yield %rz : !qco.qubit
       } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
       qco.sink %control : !qco.qubit
@@ -4380,41 +4391,42 @@ TEST_F(CompilerPipelineTest, QCOProgramMergesDynamicRunInNativeCtrlBody) {
       return
     }
   })mlir";
-  using OperationCapability = CompilerTarget::OperationCapability;
-  std::vector operations{
-      llvm::cantFail(OperationCapability::create("x", 1, 0)),
-      llvm::cantFail(OperationCapability::create("sx", 1, 0)),
-      llvm::cantFail(OperationCapability::create("rz", 1, 1)),
-      llvm::cantFail(OperationCapability::create("cz", 2, 0)),
-      llvm::cantFail(OperationCapability::create(
-          "u", OperationCapability::Arity::variadic(1), 3)),
-  };
-  const auto target = llvm::cantFail(CompilerTarget::create(
-      2, CompilerTarget::Connectivity::allToAll(),
-      CompilerTarget::NativeOperations::fromOperations(operations)));
-  ASSERT_TRUE(target.synthesisBasis());
-  ASSERT_EQ(target.synthesisBasis()->singleQubit,
-            CompilerTarget::SingleQubitBasis::U);
+    using OperationCapability = CompilerTarget::OperationCapability;
+    std::vector operations{
+        llvm::cantFail(OperationCapability::create("x", 1, 0)),
+        llvm::cantFail(OperationCapability::create("sx", 1, 0)),
+        llvm::cantFail(OperationCapability::create("rz", 1, 1)),
+        llvm::cantFail(OperationCapability::create("cz", 2, 0)),
+        llvm::cantFail(OperationCapability::create(
+            "u", OperationCapability::Arity::variadic(1), 3)),
+    };
+    const auto target = llvm::cantFail(CompilerTarget::create(
+        2, CompilerTarget::Connectivity::allToAll(),
+        CompilerTarget::NativeOperations::fromOperations(operations)));
+    ASSERT_TRUE(target.synthesisBasis());
+    ASSERT_EQ(target.synthesisBasis()->singleQubit,
+              CompilerTarget::SingleQubitBasis::U);
 
-  auto program = QCOProgram::fromMLIRString(source);
-  ASSERT_TRUE(program);
-  ASSERT_TRUE(program->compileForTarget(
-      TargetEnvironment(target, makePayloadSpecification())));
+    auto program = QCOProgram::fromMLIRString(source);
+    ASSERT_TRUE(program);
+    ASSERT_TRUE(program->compileForTarget(
+        TargetEnvironment(target, makePayloadSpecification())));
 
-  auto compiled = parseRecordedModule(program->str());
-  ASSERT_TRUE(compiled);
-  EXPECT_TRUE(verify(*compiled).succeeded());
+    auto compiled = parseRecordedModule(program->str());
+    ASSERT_TRUE(compiled);
+    EXPECT_TRUE(verify(*compiled).succeeded());
 
-  CtrlOp ctrl;
-  compiled->walk([&](CtrlOp op) { ctrl = op; });
-  ASSERT_TRUE(ctrl);
-  ASSERT_EQ(ctrl.getNumBodyUnitaries(), 1U);
-  EXPECT_TRUE(isa<UOp>(ctrl.getBodyUnitary(0).getOperation()));
+    CtrlOp ctrl;
+    compiled->walk([&](CtrlOp op) { ctrl = op; });
+    ASSERT_TRUE(ctrl);
+    ASSERT_EQ(ctrl.getNumBodyUnitaries(), 1U);
+    EXPECT_TRUE(isa<UOp>(ctrl.getBodyUnitary(0).getOperation()));
 
-  auto main = compiled->lookupSymbol<func::FuncOp>("main");
-  ASSERT_TRUE(main);
-  ASSERT_EQ(main.getNumArguments(), 1U);
-  EXPECT_FALSE(main.getArgument(0).use_empty());
+    auto main = compiled->lookupSymbol<func::FuncOp>("main");
+    ASSERT_TRUE(main);
+    ASSERT_EQ(main.getNumArguments(), 1U);
+    EXPECT_FALSE(main.getArgument(0).use_empty());
+  }
 }
 
 TEST_F(CompilerPipelineTest,

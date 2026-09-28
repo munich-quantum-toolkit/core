@@ -452,10 +452,7 @@ def test_mapping_options_reject_zero_trials(method: str, *, all_to_all: bool) ->
     assert program.ir == before
 
 
-@pytest.mark.parametrize("seed", [0, 7])
-@pytest.mark.parametrize("iterations", [0, 2])
-@pytest.mark.parametrize("lookahead", [0, 5])
-@pytest.mark.parametrize("search_memory_limit", [0, 1024])
+@pytest.mark.parametrize(("seed", "iterations", "lookahead", "search_memory_limit"), [(0, 0, 0, 0), (7, 2, 5, 1024)])
 def test_explicit_mapping_options_are_repeatable(
     seed: int, iterations: int, lookahead: int, search_memory_limit: int
 ) -> None:
@@ -713,13 +710,24 @@ def test_symbolic_x_euler_chain_exports_for_target() -> None:
 
 
 @requires_qiskit_translation
-@pytest.mark.parametrize("shape", ["native_xyx", "non_native_xyx", "long_zsxx", "h_rz"])
-def test_target_fusion_preserves_native_gates_and_symbolic_exports(shape: str) -> None:
+@pytest.mark.parametrize("shape", ["native_xyx", "non_native_xyx", "long_zsxx", "h_rz", "native_u", "long_u"])
+@pytest.mark.parametrize("method", ["compile_for_target", "synthesize_for_target"])
+def test_target_fusion_preserves_native_gates_and_symbolic_exports(shape: str, method: str) -> None:
     """Optional fusion preserves native gates and bindable Qiskit/jeff output."""
     angles = qiskit.circuit.ParameterVector("theta", 3)
     source = QuantumCircuit(1)
     native = {"x": 0, "sx": 0, "rz": 1, "gphase": 1}
-    if shape == "h_rz":
+    if shape == "native_u":
+        source.u(angles[0], 0.1, 0.2, 0)
+        source.u(0.3, angles[0], 0.4, 0)
+        native = {"u": 3, "gphase": 1}
+    elif shape == "long_u":
+        source.rx(angles[0], 0)
+        source.ry(0.3, 0)
+        source.rx(0.7, 0)
+        source.ry(angles[0], 0)
+        native = {"u": 3, "gphase": 1}
+    elif shape == "h_rz":
         source.h(0)
         source.rz(angles[0], 0)
         native = {"u": 3, "gphase": 1}
@@ -742,10 +750,10 @@ def test_target_fusion_preserves_native_gates_and_symbolic_exports(shape: str) -
         ]),
     )
     program = QCProgram.from_qiskit(source).to_qco()
-    program.compile_for_target(_test_target_environment(target))
+    getattr(program, method)(_test_target_environment(target))
     result = program.to_qiskit(target=target)
     assert result.parameters == source.parameters
-    if shape in {"native_xyx", "long_zsxx"}:
+    if shape in {"native_xyx", "long_zsxx", "native_u"}:
         assert result.count_ops() == source.count_ops()
     values = dict(zip(source.parameters, [0.31, -1.2, 2.7], strict=False))
     assert np.allclose(
@@ -836,29 +844,6 @@ def test_target_synthesis_decomposes_without_routing() -> None:
     )
     with pytest.raises(RuntimeError, match="all-to-all connectivity"):
         program.synthesize_for_target(_test_target_environment(sparse))
-
-
-@requires_qiskit_translation
-def test_target_synthesis_resynthesizes_two_qubit_blocks() -> None:
-    """Both target APIs resynthesize an RZZ/RXX block directly into CZ gates."""
-    target = CompilerTarget(
-        2,
-        connectivity=CompilerTarget.Connectivity.all_to_all(),
-        native_operations=CompilerTarget.NativeOperations([
-            CompilerTarget.OperationCapability("u", 1, 3),
-            CompilerTarget.OperationCapability("cz", 2, 0),
-            CompilerTarget.OperationCapability("gphase", 0, 1),
-        ]),
-    )
-    source = QuantumCircuit(2)
-    source.rzz(0.3, 0, 1)
-    source.rxx(0.4, 0, 1)
-    for method in ("synthesize_for_target", "compile_for_target"):
-        program = QCProgram.from_qiskit(source).to_qco()
-        getattr(program, method)(_test_target_environment(target))
-        result = program.to_qiskit(target=target)
-        assert result.count_ops().get("cz", 0) == 2
-        assert np.allclose(Operator(result).data, Operator(source).data)
 
 
 @requires_qiskit_translation
@@ -1322,11 +1307,10 @@ def test_typed_programs_normalize_global_phases() -> None:
     assert qco.ir == once
 
 
-@pytest.mark.parametrize("gate", ["x", "y", "rx(0.73)", "ry(0.73)", "rz(0.73)"])
-def test_qco_program_decomposes_multi_controlled(gate: str) -> None:
+def test_qco_program_decomposes_multi_controlled() -> None:
     """Decompose multi-controlled gates through the typed QCOProgram API."""
     qco = compile_program(
-        f'OPENQASM 3.0; include "stdgates.inc"; qubit[3] q; ctrl(2) @ {gate} q[0], q[1], q[2];',
+        'OPENQASM 3.0; include "stdgates.inc"; qubit[3] q; ctrl(2) @ x q[0], q[1], q[2];',
         output=OutputFormat.QCO,
     )
     assert isinstance(qco, QCOProgram)

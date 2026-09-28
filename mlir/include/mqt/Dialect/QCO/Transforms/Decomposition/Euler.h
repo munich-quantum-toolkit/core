@@ -16,11 +16,14 @@
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Location.h"
 #include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
 
 #include <cstddef>
 #include <optional>
 
 namespace mlir {
+class GreedyRewriteConfig;
+class ModuleOp;
 class Operation;
 class RewriterBase;
 class RewritePatternSet;
@@ -109,23 +112,55 @@ void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase);
 void synthesizeParameterizedUnitary1Q(RewriterBase& rewriter, Operation* op,
                                       SingleQubitBasis basis);
 
+/// Run-rewrite choices resolved by the calling pass, independently of native
+/// target capabilities. Individual lowering owns site-specific support.
+struct SingleQubitFusionPolicy {
+  enum class RuntimeExpressions { DirectOnly, ControlledBodies, General };
+
+  bool preserveSingletons = false;
+  bool skipControlledBodies = false;
+  bool preserveNativeParameterizedRuns = false;
+  RuntimeExpressions runtimeExpressions = RuntimeExpressions::General;
+
+  /// Keep optional fusion exportable; general expressions remain available
+  /// when a controlled body must be merged into a native U operation.
+  static SingleQubitFusionPolicy forTarget(SingleQubitBasis basis) {
+    const bool usesU = basis == SingleQubitBasis::U;
+    return {
+        .preserveSingletons = true,
+        .skipControlledBodies = !usesU,
+        .preserveNativeParameterizedRuns = true,
+        .runtimeExpressions = usesU ? RuntimeExpressions::ControlledBodies
+                                    : RuntimeExpressions::DirectOnly,
+    };
+  }
+};
+
+/// Compose runtime runs before matrix fusion can split their constant segments.
+LogicalResult fuseSingleQubitUnitaryRuns(ModuleOp moduleOp,
+                                         SingleQubitBasis basis,
+                                         SingleQubitFusionPolicy policy,
+                                         const CompilerTarget* target,
+                                         const GreedyRewriteConfig& config);
+
 /// Populates @p patterns with the single-qubit run fusion rewrite for
 /// @p basis (the reusable core of `fuse-single-qubit-unitary-runs`).
 ///
-/// @param skipControlledBodies When set, single-qubit gates nested in
-/// `qco.ctrl` bodies are left untouched.
-/// @param target When set, require a shorter run if every gate is supported.
-/// Individual lowering owns site-specific native support.
+/// Requires a shorter run if every gate is native to @p target, or belongs to
+/// @p basis when no target is supplied.
 void populateFuseSingleQubitUnitaryRunsPatterns(
     RewritePatternSet& patterns, SingleQubitBasis basis,
-    bool skipControlledBodies = false, const CompilerTarget* target = nullptr);
+    SingleQubitFusionPolicy policy = {},
+    const CompilerTarget* target = nullptr);
 
 /// Populates patterns that compose profitable parameterized single-qubit runs.
 ///
-/// The patterns emit @p basis directly. With @p target, preserve native runs
-/// and only use direct Euler identities, keeping optional fusion exportable.
+/// The patterns emit @p basis directly. @p target supplies native gate support;
+/// @p policy selects controlled-body ownership, native-run preservation, and
+/// whether fusion may emit general runtime expressions.
 void populateParameterizedSingleQubitRunCompositionPatterns(
     RewritePatternSet& patterns, SingleQubitBasis basis,
+    SingleQubitFusionPolicy policy = {},
     const CompilerTarget* target = nullptr);
 
 } // namespace mlir::qco::decomposition
