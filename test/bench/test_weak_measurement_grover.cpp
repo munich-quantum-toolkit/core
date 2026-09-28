@@ -53,18 +53,21 @@ TEST(WeakMeasurementGrover, AcceptsStrengthsInTheProvenRegime) {
       {.markedBitstring = "0000", .measurementStrength = 0.125}};
   EXPECT_DOUBLE_EQ(*weaker.options().measurementStrength, 0.125);
 
-  const WeakMeasurementGrover largest{
-      {.markedBitstring =
-           std::string(WeakMeasurementGroverOptions::MAX_QUBITS, '0')}};
+  const WeakMeasurementGrover largest{{
+      .markedBitstring =
+          std::string(WeakMeasurementGroverOptions::MAX_QUBITS, '0'),
+  }};
   ASSERT_TRUE(largest.options().measurementStrength);
   EXPECT_DOUBLE_EQ(*largest.options().measurementStrength,
                    std::numeric_limits<double>::min());
 }
 
 TEST(WeakMeasurementGrover, RejectsUnsupportedOptions) {
-  for (const auto& marked :
-       {std::string{"0"}, std::string{"0x"},
-        std::string(WeakMeasurementGroverOptions::MAX_QUBITS + 1, '0')}) {
+  for (const auto& marked : {
+           std::string{"0"},
+           std::string{"0x"},
+           std::string(WeakMeasurementGroverOptions::MAX_QUBITS + 1, '0'),
+       }) {
     EXPECT_THROW(
         static_cast<void>(WeakMeasurementGrover{{.markedBitstring = marked}}),
         std::invalid_argument);
