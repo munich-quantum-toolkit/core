@@ -1243,7 +1243,7 @@ private:
 
           const auto standalone = env.nativeSwapCost.value_or(1L);
           const auto prefix =
-              curr->isRoot() && state.costs
+              curr->isRoot() && state.costs && env.nativeSwapCost.has_value()
                   ? state.costs->swapCostAdjustment(indices.first,
                                                     indices.second, standalone)
                   : 0;
