@@ -9,6 +9,7 @@
  */
 
 #include "bench/Evaluation.hpp"
+#include "bench/JSON.hpp"
 #include "bench/ModularMultiplier.hpp"
 
 #include "gtest/gtest.h"
@@ -16,16 +17,36 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <functional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 
 namespace {
 
+using mqt::bench::benchmarkIdFromManifestJSON;
+using mqt::bench::caseId;
 using mqt::bench::Counts;
+using mqt::bench::describeBenchmarkJSON;
+using mqt::bench::evaluateJSON;
 using mqt::bench::ModularMultiplier;
+using mqt::bench::modularMultiplierFromInstanceSpecificationJSON;
+using mqt::bench::modularMultiplierFromManifestJSON;
 using mqt::bench::ModularMultiplierOptions;
 using mqt::bench::Output;
+using mqt::bench::toInstanceSpecificationJSON;
+using mqt::bench::toManifestJSON;
+
+void expectInvalidModularMultiplierJSON(const std::function<void()>& operation,
+                                        const std::string_view diagnostic) {
+  try {
+    operation();
+    FAIL() << "Expected invalid JSON input";
+  } catch (const std::invalid_argument& error) {
+    EXPECT_NE(std::string(error.what()).find(diagnostic), std::string::npos)
+        << error.what();
+  }
+}
 
 TEST(ModularMultiplier, StoresParametersAndOutput) {
   const ModularMultiplier benchmark{{
@@ -254,6 +275,115 @@ TEST(ModularMultiplier, KeepsTheLargestReferenceWeightRepresentable) {
   EXPECT_EQ(basis.expectedResult(), outcome);
   EXPECT_GT(benchmark.probability(outcome), 0.);
   EXPECT_EQ(benchmark.evaluate({{outcome, 1}}).successProbability, 1.);
+}
+
+TEST(ModularMultiplier, ResolvesJSONInputsAndRoundTripsManifest) {
+  const auto benchmark = modularMultiplierFromInstanceSpecificationJSON(
+      R"({"schema_version":1,"benchmark":"modular-multiplier","parameters":{"multiplier":"011","modulus":"101","multiplicand":"111"}})");
+  EXPECT_EQ(benchmark.options().control, '1');
+  EXPECT_EQ(benchmark.expectedResult(), "11110001");
+  const auto manifest = toManifestJSON(benchmark);
+  EXPECT_NE(manifest.find("\"success_outcome\":\"11110001\""),
+            std::string::npos);
+  EXPECT_EQ(modularMultiplierFromManifestJSON(manifest).expectedResult(),
+            benchmark.expectedResult());
+  EXPECT_EQ(caseId(benchmark), caseId(ModularMultiplier({.multiplier = "011",
+                                                         .modulus = "101",
+                                                         .multiplicand = "111",
+                                                         .control = '1'})));
+  EXPECT_NE(
+      caseId(benchmark),
+      caseId(ModularMultiplier(
+          {.multiplier = "011", .modulus = "101", .multiplicand = "110"})));
+  EXPECT_NE(caseId(benchmark), caseId(ModularMultiplier({.multiplier = "011",
+                                                         .modulus = "101",
+                                                         .multiplicand = "111",
+                                                         .control = '0'})));
+  for (const auto* control : {"\"\"", "\"11\"", "\"x\"", "true", "1"}) {
+    const auto instance =
+        std::string(
+            R"({"schema_version":1,"benchmark":"modular-multiplier","parameters":{"multiplier":"011","modulus":"101","multiplicand":"111","control":)") +
+        control + "}}";
+    EXPECT_THROW(static_cast<void>(
+                     modularMultiplierFromInstanceSpecificationJSON(instance)),
+                 std::invalid_argument);
+  }
+  EXPECT_THROW(
+      static_cast<void>(modularMultiplierFromInstanceSpecificationJSON(
+          R"({"schema_version":1,"benchmark":"modular-multiplier","parameters":{"multiplier":"011","modulus":"101"}})")),
+      std::invalid_argument);
+}
+
+TEST(ModularMultiplier, SerializesResolvedJSONParameters) {
+  const auto benchmark = modularMultiplierFromInstanceSpecificationJSON(
+      R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"101","multiplicand":"+++","multiplier":"011"},"schema_version":1})");
+  EXPECT_EQ(benchmark.options().multiplier, "011");
+  EXPECT_EQ(benchmark.options().modulus, "101");
+  EXPECT_EQ(
+      toInstanceSpecificationJSON(benchmark),
+      R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"101","multiplicand":"+++","multiplier":"011"},"schema_version":1})");
+
+  const auto manifest = toManifestJSON(benchmark);
+  EXPECT_EQ(toManifestJSON(modularMultiplierFromManifestJSON(manifest)),
+            manifest);
+  EXPECT_EQ(benchmarkIdFromManifestJSON(manifest), "modular-multiplier");
+  EXPECT_NE(manifest.find("\"model\":\"modular_multiplier\""),
+            std::string::npos);
+  EXPECT_NE(manifest.find("\"width\":8"), std::string::npos);
+  EXPECT_EQ(caseId(benchmark), caseId(ModularMultiplier{{.multiplier = "011",
+                                                         .modulus = "101",
+                                                         .multiplicand = "+++",
+                                                         .control = '+'}}));
+  EXPECT_NE(caseId(benchmark), caseId(ModularMultiplier{{.multiplier = "001",
+                                                         .modulus = "101",
+                                                         .multiplicand = "+++",
+                                                         .control = '+'}}));
+}
+
+TEST(ModularMultiplier, RejectsInvalidInstanceJSON) {
+  expectInvalidModularMultiplierJSON(
+      [] {
+        static_cast<void>(modularMultiplierFromInstanceSpecificationJSON(
+            R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"101","multiplicand":"+++","multiplier":"011","extra":true},"schema_version":1})"));
+      },
+      "unknown key 'extra'");
+  expectInvalidModularMultiplierJSON(
+      [] {
+        static_cast<void>(modularMultiplierFromInstanceSpecificationJSON(
+            R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"1001","multiplicand":"+++","multiplier":"011"},"schema_version":1})"));
+      },
+      "equal widths");
+  expectInvalidModularMultiplierJSON(
+      [] {
+        static_cast<void>(modularMultiplierFromInstanceSpecificationJSON(
+            R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"010","multiplicand":"+++","multiplier":"011"},"schema_version":1})"));
+      },
+      "canonical");
+  expectInvalidModularMultiplierJSON(
+      [] {
+        static_cast<void>(modularMultiplierFromInstanceSpecificationJSON(
+            R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"101","multiplicand":"+++","multiplier":"101"},"schema_version":1})"));
+      },
+      "0 < a < N");
+}
+
+TEST(ModularMultiplier, DescribesSchemaAndEvaluatesJSON) {
+  const auto schema = describeBenchmarkJSON("modular-multiplier");
+  EXPECT_NE(schema.find("\"maxLength\":63"), std::string::npos);
+  EXPECT_NE(schema.find("\"pattern\":\"^1[01]+$\""), std::string::npos);
+
+  const ModularMultiplier benchmark{{
+      .multiplier = "011",
+      .modulus = "101",
+      .multiplicand = "+++",
+      .control = '+',
+  }};
+  const auto evaluation = evaluateJSON(
+      toManifestJSON(benchmark),
+      R"({"schema_version":1,"counts":{"00000000":1,"10000000":1,"00010000":1,"10010011":1,"00100000":1,"10100001":1,"00110000":1,"10110100":1,"01000000":1,"11000010":1,"01010000":1,"11010000":1,"01100000":1,"11100011":1,"01110000":1,"11110001":1}})");
+  EXPECT_NE(evaluation.find("\"success_probability\":1.0"), std::string::npos);
+  EXPECT_NE(evaluation.find("\"total_variation_distance\":0.0"),
+            std::string::npos);
 }
 
 } // namespace

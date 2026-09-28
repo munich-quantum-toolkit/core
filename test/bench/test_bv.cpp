@@ -10,6 +10,7 @@
 
 #include "bench/BV.hpp"
 #include "bench/Evaluation.hpp"
+#include "bench/JSON.hpp"
 
 #include "gtest/gtest.h"
 
@@ -18,10 +19,18 @@
 
 namespace {
 
+using mqt::bench::benchmarkIdFromManifestJSON;
 using mqt::bench::BV;
+using mqt::bench::bvFromInstanceSpecificationJSON;
+using mqt::bench::bvFromManifestJSON;
 using mqt::bench::BVMethod;
 using mqt::bench::BVOptions;
+using mqt::bench::caseId;
+using mqt::bench::describeBenchmarkJSON;
+using mqt::bench::evaluateJSON;
 using mqt::bench::Output;
+using mqt::bench::toInstanceSpecificationJSON;
+using mqt::bench::toManifestJSON;
 
 TEST(BV, UsesTheStaticMethodByDefault) {
   const BV benchmark{{.hiddenBitstring = "101"}};
@@ -56,6 +65,28 @@ TEST(BV, GivesTheHiddenBitstringAsASelectedOutcome) {
     ASSERT_TRUE(evaluation.successProbability);
     EXPECT_DOUBLE_EQ(*evaluation.successProbability, 0.8);
   }
+}
+
+TEST(BV, RoundTripsJSONAndEvaluatesCounts) {
+  const auto defaults = bvFromInstanceSpecificationJSON(
+      R"({"schema_version":1,"benchmark":"bv","parameters":{"hidden_bitstring":"101"}})");
+  EXPECT_EQ(defaults.options().method, BVMethod::Static);
+  EXPECT_EQ(
+      toInstanceSpecificationJSON(defaults),
+      R"({"benchmark":"bv","parameters":{"hidden_bitstring":"101","method":"static"},"schema_version":1})");
+
+  const BV dynamic{{.hiddenBitstring = "101", .method = BVMethod::Dynamic}};
+  const auto manifest = toManifestJSON(dynamic);
+  EXPECT_EQ(toManifestJSON(bvFromManifestJSON(manifest)), manifest);
+  EXPECT_EQ(benchmarkIdFromManifestJSON(manifest), "bv");
+  EXPECT_NE(caseId(BV{{.hiddenBitstring = "1"}}),
+            caseId(BV{{.hiddenBitstring = "1", .method = BVMethod::Dynamic}}));
+  EXPECT_NE(describeBenchmarkJSON("bv").find("\"dynamic\""), std::string::npos);
+
+  const auto evaluation =
+      evaluateJSON(toManifestJSON(BV{{.hiddenBitstring = "11"}}),
+                   R"({"schema_version":1,"counts":{"11":8,"00":2}})");
+  EXPECT_NE(evaluation.find("\"success_probability\":0.8"), std::string::npos);
 }
 
 } // namespace

@@ -9,18 +9,27 @@
  */
 
 #include "bench/Evaluation.hpp"
+#include "bench/JSON.hpp"
 #include "bench/QFT.hpp"
 
 #include "gtest/gtest.h"
 
 #include <stdexcept>
+#include <string>
 
 namespace {
 
+using mqt::bench::benchmarkIdFromManifestJSON;
+using mqt::bench::caseId;
+using mqt::bench::describeBenchmarkJSON;
 using mqt::bench::Output;
 using mqt::bench::QFT;
+using mqt::bench::qftFromInstanceSpecificationJSON;
+using mqt::bench::qftFromManifestJSON;
 using mqt::bench::QFTMethod;
 using mqt::bench::QFTOptions;
+using mqt::bench::toInstanceSpecificationJSON;
+using mqt::bench::toManifestJSON;
 
 TEST(QFT, UsesTheStandardMethodByDefault) {
   const QFT benchmark{{.qubits = 3, .periodExponent = 1}};
@@ -66,6 +75,32 @@ TEST(QFT, GivesFourPeaksForPeriodFour) {
   EXPECT_DOUBLE_EQ(evaluation.totalVariationDistance, 0.);
   EXPECT_DOUBLE_EQ(evaluation.squaredHellingerFidelity, 1.);
   EXPECT_FALSE(evaluation.successProbability);
+}
+
+TEST(QFT, ParsesInstanceSpecificationsAndRoundTripsManifests) {
+  const auto defaults = qftFromInstanceSpecificationJSON(
+      R"({"schema_version":1,"benchmark":"qft","parameters":{"qubits":4,"period_exponent":2}})");
+  EXPECT_EQ(defaults.options().method, QFTMethod::Standard);
+  EXPECT_EQ(
+      toInstanceSpecificationJSON(defaults),
+      R"({"benchmark":"qft","parameters":{"method":"standard","period_exponent":2,"qubits":4},"schema_version":1})");
+
+  const QFT benchmark{
+      {.qubits = 4, .periodExponent = 2, .method = QFTMethod::Semiclassical}};
+  const auto manifest = toManifestJSON(benchmark);
+  EXPECT_EQ(toManifestJSON(qftFromManifestJSON(manifest)), manifest);
+  EXPECT_EQ(benchmarkIdFromManifestJSON(manifest), "qft");
+  EXPECT_NE(manifest.find("\"case_id\":\"" + caseId(benchmark) + "\""),
+            std::string::npos);
+}
+
+TEST(QFT, UsesSemanticJSONCaseIdsAndDescribesSchema) {
+  EXPECT_NE(caseId(QFT{{.qubits = 3, .periodExponent = 1}}),
+            caseId(QFT{{.qubits = 3,
+                        .periodExponent = 1,
+                        .method = QFTMethod::Semiclassical}}));
+  EXPECT_NE(describeBenchmarkJSON("qft").find("\"period_exponent\""),
+            std::string::npos);
 }
 
 } // namespace

@@ -10,6 +10,7 @@
 
 #include "bench/Evaluation.hpp"
 #include "bench/Grover.hpp"
+#include "bench/JSON.hpp"
 
 #include "gtest/gtest.h"
 
@@ -21,8 +22,14 @@
 
 namespace {
 
+using mqt::bench::benchmarkIdFromManifestJSON;
+using mqt::bench::describeBenchmarkJSON;
 using mqt::bench::Grover;
+using mqt::bench::groverFromInstanceSpecificationJSON;
+using mqt::bench::groverFromManifestJSON;
 using mqt::bench::Output;
+using mqt::bench::toInstanceSpecificationJSON;
+using mqt::bench::toManifestJSON;
 
 TEST(Grover, ResolvesTheDefaultIterationCountOnce) {
   const Grover grover{{.markedBitstring = "10"}};
@@ -71,6 +78,24 @@ TEST(Grover, EvaluatesTheMarkedOutcomeAsSuccess) {
   EXPECT_DOUBLE_EQ(evaluation.squaredHellingerFidelity, 1.);
   ASSERT_TRUE(evaluation.successProbability.has_value());
   EXPECT_DOUBLE_EQ(*evaluation.successProbability, 0.25);
+}
+
+TEST(Grover, RoundTripsJSONWithResolvedIterations) {
+  const auto defaults = groverFromInstanceSpecificationJSON(
+      R"({"schema_version":1,"benchmark":"grover","parameters":{"marked_bitstring":"10"}})");
+  ASSERT_TRUE(defaults.options().iterations);
+  EXPECT_EQ(*defaults.options().iterations, 1);
+  EXPECT_EQ(
+      toInstanceSpecificationJSON(defaults),
+      R"({"benchmark":"grover","parameters":{"iterations":1,"marked_bitstring":"10"},"schema_version":1})");
+
+  const Grover configured{{.markedBitstring = "001", .iterations = 2}};
+  const auto manifest = toManifestJSON(configured);
+  EXPECT_EQ(toManifestJSON(groverFromManifestJSON(manifest)), manifest);
+  EXPECT_EQ(benchmarkIdFromManifestJSON(manifest), "grover");
+  EXPECT_NE(manifest.find("\"success_outcome\":\"001\""), std::string::npos);
+  EXPECT_NE(describeBenchmarkJSON("grover").find("\"maxLength\":62"),
+            std::string::npos);
 }
 
 } // namespace
