@@ -401,54 +401,24 @@ private:
   using Window = SmallVector<IndexPairType>;
   using Score = std::pair<size_t, size_t>;
 
-  /// Global mapping environment. Initialized once, then borrowed read-only.
-  class Environment {
-  public:
-    static FailureOr<Environment>
-    create(ModuleOp root, const TargetEnvironmentAnalysis& analysis,
-           size_t fallbackSeed) {
-      const auto seed = compilationSeed(root, fallbackSeed);
-      const auto entry = mqt::getEntryPoint(root);
-
-      const auto& target = analysis.environment().target();
-      if (target.connectivityKind() !=
-          CompilerTarget::Connectivity::Kind::Explicit) {
-        return root->emitError() << "expected an explicit target topology";
-      }
-
-      const auto basis = target.synthesisBasis();
-      if (basis && basis->entangler &&
-          target.nativeOperationsKind() ==
-              CompilerTarget::NativeOperations::Kind::Explicit) {
-        return Environment(
-            target, NativeCostTable::precompute(entry, *basis->entangler, seed),
-            seed);
-      }
-
-      return Environment(target, seed);
-    }
-
+  /// Invocation data is prepared before trials, then borrowed read-only.
+  struct Environment {
+    const CompilerTarget& target;
+    uint64_t seed;
     std::unique_ptr<const NativeCostTable> nativeCosts;
     std::optional<size_t> nativeSwapCost;
-    const CompilerTarget& target;
-    size_t seed;
 
-  private:
-    /// Create a default environment without synthesis infos.
-    Environment(const CompilerTarget& target, size_t seed)
-        : target(target), seed(seed) {}
+    void prepareNativeCosts(Operation* root) {
+      const auto basis = target.synthesisBasis();
+      if (!basis || !basis->entangler ||
+          target.nativeOperationsKind() !=
+              CompilerTarget::NativeOperations::Kind::Explicit) {
+        return;
+      }
+      nativeCosts = NativeCostTable::precompute(root, *basis->entangler, seed);
 
-    /// Construct a mapping environment with synthesis infos and compute uniform
-    /// swap costs. If the costs aren't uniform, set the swap costs to
-    /// std::nullopt.
-    Environment(const CompilerTarget& target,
-                std::unique_ptr<const NativeCostTable> nativeCosts, size_t seed)
-        : nativeCosts(std::move(nativeCosts)), target(target), seed(seed) {
-
-      // A uniform edge cost permits the existing distance heuristic to retain
-      // its units. Site-dependent costs need a weighted-distance heuristic.
-
-      NativeCostAnalysis analysis(seed, this->nativeCosts.get());
+      /// Uniform SWAP costs keep the distance heuristic in native-gate units.
+      NativeCostAnalysis analysis(seed, nativeCosts.get());
       for (const auto& [a, b] : target.couplings()) {
         const auto next = analysis.swapCost(target, std::array{a, b});
         if (!next || (nativeSwapCost && nativeSwapCost != next)) {
@@ -750,8 +720,10 @@ protected:
       return;
     }
 
-    const auto env = Environment::create(moduleOp, targetAnalysis, seed);
-    if (failed(env)) {
+    const auto& target = targetAnalysis.environment().target();
+    if (target.connectivityKind() !=
+        CompilerTarget::Connectivity::Kind::Explicit) {
+      moduleOp.emitError() << "expected an explicit target topology";
       signalPassFailure();
       return;
     }
@@ -770,22 +742,23 @@ protected:
 
     auto computation = discoverComputation(func);
     if (failed(computation) ||
-        failed(checkCapacity(func, env->target, *computation))) {
+        failed(checkCapacity(func, target, *computation))) {
       signalPassFailure();
       return;
     }
 
+    Environment env{.target = target, .seed = compilationSeed(moduleOp, seed)};
     const auto [layout, expectedScore] =
-        generateLayout(computation->wires, *env);
+        generateLayout(computation->wires, func, env);
 
     IRRewriter rewriter(&getContext());
-    Arena arena(env->target.numSites(), searchMemoryLimit);
-    RoutingState state(applyPlacement(func.getFunctionBody(), env->target,
-                                      layout, *computation, rewriter),
-                       layout, *env);
+    Arena arena(target.numSites(), searchMemoryLimit);
+    RoutingState state(applyPlacement(func.getFunctionBody(), target, layout,
+                                      *computation, rewriter),
+                       layout, env);
 
     const auto stats = route<WireDirection::Forward, RoutingMode::Hot>(
-        state, arena, *env, &rewriter);
+        state, arena, env, &rewriter);
 
     assert((!expectedScore ||
             (state.costs ? state.costs->score() : std::nullopt)
@@ -1125,11 +1098,12 @@ private:
   /// Score each candidate with a forward traversal, preserving its start
   /// layout.
   std::pair<Layout, std::optional<Score>>
-  generateLayout(const Wires& wires, const Environment& env) {
+  generateLayout(const Wires& wires, func::FuncOp func, Environment& env) {
     const auto greedy = generateGreedyLayout(wires, env);
     if (greedy && greedy->second) {
       return {greedy->first, std::nullopt};
     }
+    env.prepareNativeCosts(func);
 
     struct Trial {
       Layout layout;
@@ -1232,15 +1206,10 @@ private:
       // Given a layout, create child-nodes for each possible SWAP
       // between two neighboring hardware qubits.
 
-      llvm::SmallDenseSet<IndexPairType, 8> seen;
       for (const auto& [q0, q1] = window.front(); const auto prog : {q0, q1}) {
         const auto hw0 = curr->layout.getHardwareIndex(prog);
         env.target.forEachNeighbour(hw0, [&](const auto hw1) {
           const IndexPairType indices(std::minmax(hw0, hw1));
-          if (seen.contains(indices)) {
-            return;
-          }
-
           const auto standalone = env.nativeSwapCost.value_or(1L);
           const auto prefix =
               curr->isRoot() && state.costs && env.nativeSwapCost.has_value()
@@ -1255,7 +1224,6 @@ private:
                 .prefix = prefix,
             };
             child->initializeChild(curr, candidate, window, env.target, params);
-            seen.insert(indices);
             frontier.emplace(child);
           }
         });
@@ -1946,6 +1914,9 @@ private:
     requires(Mode != RoutingMode::Hot || Direction == WireDirection::Forward)
   Statistics route(RoutingState& state, Arena& arena, const Environment& env,
                    IRRewriter* rewriter = nullptr) {
+    if (state.costs) {
+      state.costs->reset(Direction);
+    }
     Operation* boundary = nullptr;
     for (auto& wire : state.wires) {
       if (wire != std::default_sentinel) {

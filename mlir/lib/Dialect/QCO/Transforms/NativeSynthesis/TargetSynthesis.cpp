@@ -742,6 +742,29 @@ NativeCostTracker::NativeCostTracker(const CompilerTarget& target,
       partners_(target.numSites(), target.numSites()),
       depths_(target.numSites()) {}
 
+void NativeCostTracker::reset(WireDirection direction) {
+  direction_ = direction;
+  std::ranges::fill(partners_, partners_.size());
+  std::ranges::fill(depths_, 0);
+  trailingGates_.clear();
+  if (direction == WireDirection::Backward) {
+    trailingGates_.resize(partners_.size());
+  }
+  cancellations_.clear();
+  count_ = depth_ = 0;
+  available_ = true;
+}
+
+Matrix4x4 NativeCostTracker::withTrailingGates(Matrix4x4 matrix, size_t a,
+                                               size_t b) const {
+  for (size_t vertex : {a, b}) {
+    if (const auto& gate = trailingGates_[vertex]) {
+      matrix.premultiplyBy(gate->embedInTwoQubit(vertex == a ? 0 : 1));
+    }
+  }
+  return matrix;
+}
+
 void NativeCostTracker::charge(size_t cost, size_t a, size_t b) {
   count_ += cost;
   if (cost != 0) {
@@ -775,21 +798,35 @@ void NativeCostTracker::flush() {
   for (size_t vertex = 0; vertex < partners_.size(); ++vertex) {
     flush(vertex);
   }
+  std::ranges::fill(trailingGates_, std::nullopt);
 }
 
 void NativeCostTracker::appendPair(const Matrix4x4& matrix, size_t cost,
                                    size_t a, size_t b) {
-  const auto ordered = a < b ? matrix : matrix.reorderForQubits(1, 0);
+  const auto [first, second] = std::minmax(a, b);
+  auto ordered = a < b ? matrix : matrix.reorderForQubits(1, 0);
+  bool hasTrailingGates = false;
+  if (direction_ == WireDirection::Backward) {
+    hasTrailingGates = trailingGates_[a] || trailingGates_[b];
+    ordered = withTrailingGates(ordered, first, second);
+    trailingGates_[a].reset();
+    trailingGates_[b].reset();
+  }
   if (partners_[a] != b) {
     flush(a);
     flush(b);
-    runs_[std::min(a, b)] = {.matrix = ordered, .separateCost = cost};
+    runs_[first] = {
+        .matrix = ordered,
+        .separateCost = cost,
+        .canFuse = hasTrailingGates,
+    };
     partners_[a] = b;
     partners_[b] = a;
     return;
   }
-  auto& run = runs_[std::min(a, b)];
-  run.matrix.premultiplyBy(ordered);
+  auto& run = runs_[first];
+  run.matrix = direction_ == WireDirection::Forward ? ordered * run.matrix
+                                                    : run.matrix * ordered;
   run.separateCost += cost;
   run.canFuse = true;
 }
@@ -808,6 +845,9 @@ void NativeCostTracker::append(Operation* operation,
     size_t depth = 0;
     for (size_t vertex : vertices) {
       flush(vertex);
+      if (direction_ == WireDirection::Backward) {
+        trailingGates_[vertex].reset();
+      }
       depth = std::max(depth, depths_[vertex]);
     }
     for (size_t vertex : vertices) {
@@ -820,16 +860,29 @@ void NativeCostTracker::append(Operation* operation,
     return;
   }
   /// Adjacent inverses must not split an earlier pending run on another pair.
-  /// Their shared wires keep both gates together in the routing traversal.
+  /// Their shared wires keep both gates together in either traversal direction.
   const auto twoQubitMatrix = twoQubitRunMemberMatrix(unitary);
   if (twoQubitMatrix) {
-    auto next = uniqueUnitaryUser(unitary.getOutputQubit(0));
-    if (next && next == uniqueUnitaryUser(unitary.getOutputQubit(1))) {
+    const auto neighbour = [&](unsigned index) {
+      return direction_ == WireDirection::Forward
+                 ? uniqueUnitaryUser(unitary.getOutputQubit(index))
+                 : dyn_cast_if_present<UnitaryOpInterface>(
+                       unitary.getInputQubit(index).getDefiningOp());
+    };
+    auto next = neighbour(0);
+    if (next && next == neighbour(1)) {
       if (auto inverse = twoQubitRunMemberMatrix(next)) {
-        if (next.getInputQubit(0) != unitary.getOutputQubit(0)) {
+        const bool reversed =
+            direction_ == WireDirection::Forward
+                ? next.getInputQubit(0) != unitary.getOutputQubit(0)
+                : next.getOutputQubit(0) != unitary.getInputQubit(0);
+        if (reversed) {
           inverse = inverse->reorderForQubits(1, 0);
         }
-        if ((*inverse * *twoQubitMatrix).isApprox(Matrix4x4::identity())) {
+        const auto product = direction_ == WireDirection::Forward
+                                 ? *inverse * *twoQubitMatrix
+                                 : *twoQubitMatrix * *inverse;
+        if (product.isApprox(Matrix4x4::identity())) {
           cancellations_.insert(next.getOperation());
           return;
         }
@@ -846,6 +899,12 @@ void NativeCostTracker::append(Operation* operation,
     const auto matrix = oneQubitRunMemberMatrix(unitary);
     if (!matrix) {
       flush(vertex);
+      if (direction_ == WireDirection::Backward) {
+        trailingGates_[vertex].reset();
+      }
+    } else if (direction_ == WireDirection::Backward) {
+      auto& trailing = trailingGates_[vertex];
+      trailing = trailing ? *trailing * *matrix : *matrix;
     } else if (const size_t partner = partners_[vertex];
                partner != partners_.size()) {
       auto& run = runs_[std::min(vertex, partner)];
@@ -862,6 +921,10 @@ void NativeCostTracker::append(Operation* operation,
   } else {
     flush(a);
     flush(b);
+    if (direction_ == WireDirection::Backward) {
+      trailingGates_[a].reset();
+      trailingGates_[b].reset();
+    }
     charge(*cost, a, b);
   }
 }
@@ -908,9 +971,12 @@ int64_t NativeCostTracker::swapCostAdjustment(size_t first, size_t second,
   };
   const auto& run = runs_[first];
   const size_t before = pendingCost(first, second);
-  const size_t after =
-      analysis_.runCost(SWAPOp::getUnitaryMatrix() * run.matrix,
-                        run.separateCost + standaloneCost, target_, sites);
+  const auto swap = SWAPOp::getUnitaryMatrix();
+  const auto matrix = direction_ == WireDirection::Forward
+                          ? swap * run.matrix
+                          : run.matrix * withTrailingGates(swap, first, second);
+  const size_t after = analysis_.runCost(
+      matrix, run.separateCost + standaloneCost, target_, sites);
   return static_cast<int64_t>(after) - static_cast<int64_t>(before) -
          static_cast<int64_t>(standaloneCost);
 }

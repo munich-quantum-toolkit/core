@@ -214,10 +214,13 @@ layouts and gate counts; more memory does not guarantee fewer gates.
 When routing is needed, mapping prepares a read-only table of at most 1024
 numerical native counts from original gates and constant two-qubit runs, in both
 operand orders and with adjacent SWAPs. Preparation stops when the table is
-full. Trials share this table. Each live region's cost tracker retains up to 64
-additional counts for routing-dependent matrices. The numerical payload is about
-264 KiB for the shared table and 17 KiB per local cache, plus indexing,
-allocator, and per-site tracking overhead. These allocations are separate from
+full. Already-adjacent greedy layouts skip preparation and cost tracking. Trials
+share this table. Each live region's cost tracker retains up to 64 additional
+counts for routing-dependent matrices. The numerical payload is about 264 KiB
+for the shared table and 17 KiB per local cache, plus indexing, allocator, and
+per-site tracking overhead. Backward refinement also retains one pending
+single-qubit matrix per site to preserve circuit order. Each traversal resets
+accounting while retaining numerical caches. These allocations are separate from
 the search budget. Native synthesis caches up to 64 full decompositions per
 analysis (about 55 KiB including single-qubit factors). Caches are local to one
 pass invocation or traversal and retain no IR handles. Exact matrix and
