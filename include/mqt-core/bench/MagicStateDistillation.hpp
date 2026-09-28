@@ -20,7 +20,8 @@ namespace mqt::bench {
 
 /// Parameters for concatenated 15-to-1 Reed--Muller distillation.
 struct MagicStateDistillationOptions {
-  /// Concatenated levels in [1, 4], using exactly 15^levels qubits.
+  /// Concatenated levels in [1, 4], using exactly \f$15^{\mathrm{levels}}\f$
+  /// qubits.
   size_t levels = 1;
 };
 

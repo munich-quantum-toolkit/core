@@ -71,6 +71,7 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
       "magic_state_distillation",
       "Magic-state distillation benchmark instances and options.");
   registerMagicStateDistillation(magicStateDistillation);
+
   const nb::module_ modularMultiplier = m.def_submodule(
       "modular_multiplier",
       R"pb(Modular multiplier benchmark instances and options.)pb");

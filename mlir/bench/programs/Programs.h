@@ -47,7 +47,7 @@ SmallVector<Value> ghz(qc::QCProgramBuilder& builder, const GHZ& benchmark);
 SmallVector<Value> grover(qc::QCProgramBuilder& builder,
                           const Grover& benchmark);
 
-/// Emit concatenated 15-to-1 magic-state distillation.
+/// Emit one configured magic-state distillation benchmark.
 SmallVector<Value>
 magicStateDistillation(qc::QCProgramBuilder& builder,
                        const MagicStateDistillation& benchmark);

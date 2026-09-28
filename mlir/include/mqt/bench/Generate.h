@@ -48,7 +48,7 @@ struct GeneratedBenchmark {
 /// Generate the QC program for a configured Grover benchmark.
 [[nodiscard]] std::optional<mlir::QCProgram> generate(const Grover& benchmark);
 
-/// Generate concatenated 15-to-1 magic-state distillation.
+/// Generate the QC program for a configured magic-state distillation benchmark.
 [[nodiscard]] std::optional<mlir::QCProgram>
 generate(const MagicStateDistillation& benchmark);
 

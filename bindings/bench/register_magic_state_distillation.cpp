@@ -29,8 +29,9 @@ void registerMagicStateDistillation(const nb::module_& m) {
       m, "Options",
       "Parameters for concatenated 15-to-1 magic-state distillation.")
       .def(nb::init<size_t>(), nb::kw_only(), "levels"_a = 1)
-      .def_ro("levels", &bench::MagicStateDistillationOptions::levels,
-              "Concatenated levels in [1, 4], using 15**levels qubits.");
+      .def_ro(
+          "levels", &bench::MagicStateDistillationOptions::levels,
+          R"pb(Concatenated levels in [1, 4], using :math:`15^{\mathrm{levels}}` qubits.)pb");
   auto magicStateDistillation = nb::class_<bench::MagicStateDistillation>(
       m, "MagicStateDistillation",
       R"pb(A validated concatenated magic-state distillation benchmark.
@@ -38,7 +39,7 @@ void registerMagicStateDistillation(const nb::module_& m) {
 Inputs are ideal :math:`|T\rangle = T|+\rangle` states.
 Bit 1 flags any rejected block; bit 0 checks the retained root state in the T
 basis. Ideal output is ``00``. Each level consumes the preceding level's
-retained quantum outputs, using exactly ``15**levels`` qubits.)pb");
+retained quantum outputs, using exactly :math:`15^{\mathrm{levels}}` qubits.)pb");
   magicStateDistillation
       .def(nb::init<bench::MagicStateDistillationOptions>(),
            "options"_a = bench::MagicStateDistillationOptions{})
