@@ -11,11 +11,9 @@
 from __future__ import annotations
 
 import operator
-from contextlib import suppress
-from time import monotonic
+from numbers import Integral
 from typing import TYPE_CHECKING, Any, cast
 
-import numpy as np
 import pennylane as qp
 from pennylane.devices import Device, DeviceCapabilities, ExecutionConfig
 from pennylane.devices.preprocess import (
@@ -29,16 +27,12 @@ from pennylane.transforms import broadcast_expand, defer_measurements, split_non
 from pennylane.transforms.core import CompilePipeline
 
 from mqt.core.qdmi import Device as QDMIDeviceHandle
-from mqt.core.qdmi import Job as QDMIJobHandle
 from mqt.core.qdmi import ProgramFormat
 from mqt.core.qdmi.driver import open_device
 
-from .converter import _ConvertedProgram, _ProgramConverter
+from .converter import _ProgramConverter
 from .exceptions import (
     PennyLaneConfigurationError as ConfigurationError,
-)
-from .exceptions import (
-    PennyLaneExecutionError as ExecutionError,
 )
 from .exceptions import (
     PennyLaneUnsupportedFormatError as UnsupportedFormatError,
@@ -49,6 +43,7 @@ from .exceptions import (
 from .exceptions import (
     PennyLaneValidationError as ValidationError,
 )
+from .job import PennyLaneJob
 
 if TYPE_CHECKING:
     from collections.abc import Hashable, Mapping, Sequence
@@ -143,6 +138,7 @@ class QDMIDevice(Device):
             an integration such as Slurm.
         session_parameters: QDMI device-session keyword arguments.
         job_parameters: QDMI custom job keyword arguments.
+        max_retries: Maximum automatic replacements per failed entry; disabled by default.
     """
 
     capabilities = DeviceCapabilities(supported_mcm_methods=[])
@@ -156,14 +152,20 @@ class QDMIDevice(Device):
         device: QDMIDeviceHandle | None = None,
         session_parameters: QDMISessionParameters | None = None,
         job_parameters: QDMIJobParameters | None = None,
+        max_retries: int = 0,
     ) -> None:
         """Initialize from a stable ID or an open QDMI device.
 
         Raises:
             PennyLaneConfigurationError: If configuration or requested wires are invalid.
         """
-        self._session_parameters = dict(session_parameters or {})
-        self._job_parameters = dict(job_parameters or {})
+        if isinstance(max_retries, bool) or not isinstance(max_retries, Integral) or max_retries < 0:
+            msg = f"max_retries must be a nonnegative integer, got {max_retries!r}."
+            raise ConfigurationError(msg)
+        self._max_retries = int(max_retries)
+        self.last_job: PennyLaneJob | None = None
+        self._session_parameters: QDMISessionParameters = session_parameters.copy() if session_parameters else {}
+        self._job_parameters: QDMIJobParameters = job_parameters.copy() if job_parameters else {}
         _validate_parameter_names(self._session_parameters, _SESSION_PARAMETERS, "session")
         _validate_parameter_names(self._job_parameters, _JOB_PARAMETERS, "job")
 
@@ -287,109 +289,6 @@ class QDMIDevice(Device):
             raise ValidationError(msg)
         return tuple(shot_copy.shots for shot_copy in shots.shot_vector for _ in range(shot_copy.copies))
 
-    @staticmethod
-    def _shots_or_counts(job: QDMIJobHandle) -> list[str]:
-        """Read ordered shots, falling back to an equivalent expansion of counts.
-
-        Returns:
-            One QDMI bit string per shot.
-
-        Raises:
-            PennyLaneExecutionError: If the job exposes neither result representation.
-        """
-        try:
-            shots = job.get_shots()
-        except RuntimeError:
-            shots = []
-        if shots:
-            return shots
-
-        try:
-            counts = job.get_counts()
-        except RuntimeError as exc:
-            msg = "The QDMI job exposes neither raw shots nor measurement counts."
-            raise ExecutionError(msg) from exc
-        return [bitstring for bitstring, count in sorted(counts.items()) for _ in range(count)]
-
-    def _samples(self, job: QDMIJobHandle, converted: _ConvertedProgram, shots: int) -> np.ndarray:
-        """Convert QDMI bit strings to PennyLane sample rows.
-
-        Returns:
-            A shot-by-wire array in PennyLane measurement order.
-
-        Raises:
-            PennyLaneExecutionError: If QDMI returns malformed or incomplete results.
-        """
-        bitstrings = self._shots_or_counts(job)
-        if len(bitstrings) != shots:
-            msg = f"QDMI returned {len(bitstrings)} samples for a {shots}-shot job."
-            raise ExecutionError(msg)
-
-        width = len(converted.wire_map)
-        cleaned: list[str] = []
-        for bitstring in bitstrings:
-            clean = bitstring.replace(" ", "")
-            if len(clean) != width or clean.strip("01"):
-                msg = f"QDMI returned an invalid {width}-wire shot: {bitstring!r}."
-                raise ExecutionError(msg)
-            cleaned.append(clean)
-        if not bitstrings:
-            return np.asarray([], dtype=np.int8)
-        packed = np.frombuffer("".join(cleaned).encode("ascii"), dtype=np.int8).reshape(shots, width)
-        # QDMI spells the highest-index site first; PennyLane starts with wire zero.
-        return packed[:, ::-1][:, converted.measurement_order] - ord("0")
-
-    @staticmethod
-    def _require_done(job: QDMIJobHandle) -> None:
-        """Require successful QDMI completion.
-
-        Raises:
-            PennyLaneExecutionError: If the terminal QDMI status is not ``DONE``.
-        """
-        status = job.check()
-        if status != QDMIJobHandle.Status.DONE:
-            msg = f"QDMI job '{job.id}' finished with status {status.name}."
-            raise ExecutionError(msg)
-
-    def _submit(self, converted: _ConvertedProgram, shots: int) -> QDMIJobHandle:
-        """Submit one QDMI job.
-
-        Returns:
-            The submitted job.
-
-        Raises:
-            PennyLaneExecutionError: If submission fails.
-        """
-        try:
-            job = self._qdmi_device.submit_job(
-                converted.payload,
-                converted.program_format,
-                shots,
-                **self._job_parameters,
-            )
-            self._submitted_jobs += 1
-        except (RuntimeError, ValueError) as exc:
-            msg = f"QDMI execution on '{self._device_name}' failed: {exc}"
-            raise ExecutionError(msg) from exc
-        return job
-
-    def _result(self, job: QDMIJobHandle, converted: _ConvertedProgram, shots: int) -> np.ndarray:
-        """Wait for and decode one QDMI job.
-
-        Returns:
-            Raw samples from the completed job.
-
-        Raises:
-            PennyLaneExecutionError: If waiting or execution fails.
-        """
-        try:
-            job.wait()
-        except (RuntimeError, ValueError) as exc:
-            msg = f"QDMI execution on '{self._device_name}' failed: {exc}"
-            raise ExecutionError(msg) from exc
-        self._require_done(job)
-        return self._samples(job, converted, shots)
-
     def execute(
         self,
         circuits: QuantumScriptOrBatch,
@@ -400,6 +299,7 @@ class QDMIDevice(Device):
         Returns:
             One result for every preprocessed input tape.
         """
+        self.last_job = None
         del execution_config
         single = isinstance(circuits, qp.tape.QuantumScript)
         tapes = (circuits,) if single else tuple(circuits)
@@ -411,34 +311,17 @@ class QDMIDevice(Device):
             self.tracker.update(batches=1, batch_len=len(tapes))
             self.tracker.record()
 
-        submitted: list[tuple[int, _ConvertedProgram, int, QDMIJobHandle]] = []
-        tape_results: list[list[np.ndarray]] = [[] for _ in tapes]
-        started = monotonic()
-        try:
-            for index, (converted, shot_copies) in enumerate(prepared):
-                for shots in shot_copies:
-                    submitted.append((index, converted, shots, self._submit(converted, shots)))
-                    if self.tracker.active:
-                        self.tracker.update(executions=1, shots=shots)
-                        self.tracker.record()
-
-            for index, converted, shots, job in submitted:
-                tape_results[index].append(self._result(job, converted, shots))
-        except BaseException:
-            for *_unused, job in submitted:
-                with suppress(BaseException):
-                    job.cancel()
-            raise
-        finally:
-            self._execution_time += monotonic() - started
-
-        results = tuple(
-            tuple(samples) if tape.shots.has_partitioned_shots else samples[0]
-            for tape, samples in zip(tapes, tape_results, strict=True)
+        job = PennyLaneJob(
+            self,
+            prepared,
+            tuple(tape.shots.has_partitioned_shots for tape in tapes),
+            single=single,
+            parameters=self._job_parameters,
+            max_retries=self._max_retries,
         )
-        if single:
-            return cast("Result", results[0])
-        return cast("ResultBatch", results)
+        self.last_job = job
+        job.submit()
+        return job.result()
 
 
 class DDSIMDevice(QDMIDevice):
@@ -450,6 +333,7 @@ class DDSIMDevice(QDMIDevice):
         *,
         session_parameters: QDMISessionParameters | None = None,
         job_parameters: QDMIJobParameters | None = None,
+        max_retries: int = 0,
     ) -> None:
         """Open the built-in DDSIM device by its stable QDMI ID."""
         super().__init__(
@@ -457,4 +341,5 @@ class DDSIMDevice(QDMIDevice):
             wires=wires,
             session_parameters=session_parameters,
             job_parameters=job_parameters,
+            max_retries=max_retries,
         )

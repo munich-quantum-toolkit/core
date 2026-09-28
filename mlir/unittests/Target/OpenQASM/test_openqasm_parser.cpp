@@ -369,8 +369,7 @@ TEST(OpenQASMFrontendTest, LimitsTextualIncludeExpansion) {
     auto parsed = openqasm::frontend::parseOpenQASM(sourceMgr);
     ASSERT_FALSE(parsed);
     ASSERT_FALSE(parsed.diagnostics.empty());
-    EXPECT_NE(parsed.diagnostics.front().message.find(
-                  emptyLeaf ? "include expansion" : "statement limit"),
+    EXPECT_NE(parsed.diagnostics.front().message.find("include expansion"),
               std::string::npos);
   }
 }

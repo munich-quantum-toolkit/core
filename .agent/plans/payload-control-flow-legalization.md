@@ -20,8 +20,9 @@ are in `docs/mlir/target_compilation.md` and the QCO `Passes.td`.
   unrolling exposes constant bounds and branches.
 - Reuse MLIR trip counts, zero/one-trip promotion, and full unrolling. Require
   literal bounds, signed-arithmetic safety, and a scaled step that fits the IV
-  type. Interpret unsigned bounds with zero extension. Limit the pass to 65,536
-  cloned body operations. A temporary constant lets LLVM unroll terminator-only
+  type. Interpret unsigned bounds with zero extension. Bound cloned body
+  operations with `max-operations`, raised to one billion by the subsequent
+  [Shor work](shor.md). A temporary constant lets LLVM unroll terminator-only
   state updates under the same budget; cleanup removes it.
 - Build switch fallbacks iteratively. Preflight the payload's branch-depth limit
   and a compiler limit of 256 total control-flow levels, including moved case

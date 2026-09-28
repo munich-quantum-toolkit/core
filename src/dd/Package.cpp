@@ -83,6 +83,8 @@ void Package::resize(const std::size_t nq) {
 void Package::reset() {
   clearUniqueTables();
   resetMemoryManagers();
+  vUniqueTable.resetIds();
+  mUniqueTable.resetIds();
   clearComputeTables();
   roots.reset();
 }

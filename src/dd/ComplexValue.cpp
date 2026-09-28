@@ -323,7 +323,9 @@ std::ostream& operator<<(std::ostream& os, const ComplexValue& c) {
 
 std::size_t std::hash<dd::ComplexValue>::operator()(
     const dd::ComplexValue& c) const noexcept {
-  const auto h1 = std::hash<dd::fp>{}(std::round(c.r / dd::RealNumber::eps));
-  const auto h2 = std::hash<dd::fp>{}(std::round(c.i / dd::RealNumber::eps));
-  return dd::combineHash(h1, h2);
+  const auto hashComponent = [](dd::fp value) {
+    const auto rounded = std::round(value / dd::RealNumber::eps);
+    return rounded == 0. ? size_t{0} : std::hash<dd::fp>{}(rounded);
+  };
+  return dd::combineHash(hashComponent(c.r), hashComponent(c.i));
 }
