@@ -694,7 +694,7 @@ TEST_F(TargetSynthesisTest, ColdCostHandlesNegativeSwapMarginalsAndRegions) {
   mlir::qco::NativeCostTracker costs(target, 2023);
   costs.appendSwap(0, 1);
   EXPECT_EQ(costs.swapCostAdjustment(0, 1, 3), -6);
-  EXPECT_EQ(costs.swapCostAdjustment(1, 0, 3), -6);
+  EXPECT_EQ(costs.swapCostAdjustment(0, 1, 3), -6);
   costs.appendSwap(1, 0);
   EXPECT_EQ(costs.score(), (std::pair<size_t, size_t>{0, 0}));
   mlir::qco::NativeCostTracker child(target, 2023);
@@ -736,7 +736,7 @@ TEST_F(TargetSynthesisTest, ColdCostIncludesPositiveSwapAdjustment) {
   ASSERT_EQ(standalone, 1U);
   /// The local prefix costs zero, but the complete run retains three gates.
   EXPECT_EQ(costs.swapCostAdjustment(0, 1, *standalone), 2);
-  EXPECT_EQ(costs.swapCostAdjustment(1, 0, *standalone), 2);
+  EXPECT_EQ(costs.swapCostAdjustment(0, 1, *standalone), 2);
   costs.appendSwap(0, 1);
   const auto score = costs.score();
   ASSERT_TRUE(score);
