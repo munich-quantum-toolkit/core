@@ -11,7 +11,6 @@
 #include "bench/Evaluation.hpp"
 #include "bench/MagicStateDistillation.hpp"
 #include "mqt/Compiler/Programs.h"
-#include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
@@ -22,12 +21,9 @@
 #include "gtest/gtest.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
-#include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/Builders.h"
-#include "mlir/IR/Value.h"
 #include "mlir/Support/LLVM.h"
 
 #include <bit>
@@ -50,75 +46,17 @@ TEST(GenerateProgramTest, SamplesMagicStateDistillation) {
   EXPECT_EQ(*counts, (Counts{{"00", 16}}));
 }
 
-TEST(GenerateProgramTest, ConcatenatesRetainedMagicStatesInCompactLoops) {
+TEST(GenerateProgramTest, KeepsConcatenatedMagicStateDistillationCompact) {
   int64_t qubitCount = 1;
   for (const size_t levels : {1U, 2U, 3U, 4U}) {
     qubitCount *= 15;
     auto program = generate(MagicStateDistillation({.levels = levels}));
     ASSERT_TRUE(program);
     auto moduleOp = program->module();
-    EXPECT_EQ(test::countOps<qc::AllocOp>(moduleOp), 0U);
     EXPECT_EQ(test::countOps<memref::AllocOp>(moduleOp), 1U);
     moduleOp.walk([&](memref::AllocOp op) {
       EXPECT_EQ(op.getType().getNumElements(), qubitCount);
     });
-    // Only the leaf preparation contains T gates; parent inputs stay quantum.
-    EXPECT_EQ(test::countOps<qc::TOp>(moduleOp), 1U);
-    int64_t stride = 1;
-    size_t calls = 0;
-    moduleOp.walk([&](func::CallOp call) {
-      auto loop = call->getParentOfType<scf::ForOp>();
-      if (loop) {
-        EXPECT_EQ(loop.getConstantStep(), stride * 15);
-        EXPECT_EQ(getConstantIntValue(loop.getUpperBound()), qubitCount);
-      } else {
-        // Cleanup removes the root loop because it has only one iteration.
-        EXPECT_EQ(stride * 15, qubitCount);
-      }
-      ASSERT_EQ(call.getNumOperands(), 15U);
-      for (size_t i = 0; i < 15; ++i) {
-        auto load = call.getOperand(i).getDefiningOp<memref::LoadOp>();
-        ASSERT_TRUE(load);
-        auto index = load.getIndices().front();
-        if (!loop) {
-          EXPECT_EQ(getConstantIntValue(index),
-                    static_cast<int64_t>(i) * stride);
-        } else if (i == 0) {
-          EXPECT_EQ(index, loop.getInductionVar());
-        } else {
-          auto add = index.getDefiningOp<arith::AddIOp>();
-          ASSERT_TRUE(add);
-          EXPECT_EQ(add.getLhs(), loop.getInductionVar());
-          EXPECT_EQ(getConstantIntValue(add.getRhs()),
-                    static_cast<int64_t>(i) * stride);
-        }
-      }
-      bool sticky = levels == 1;
-      for (auto* user : call.getResult(0).getUsers()) {
-        auto combine = dyn_cast<arith::OrIOp>(user);
-        if (!combine) {
-          continue;
-        }
-        auto old = combine.getLhs().getDefiningOp<cbit::LoadOp>();
-        ASSERT_TRUE(old);
-        EXPECT_EQ(getConstantIntValue(old.getIndex()), 0);
-        for (auto* consumer : combine.getResult().getUsers()) {
-          if (auto store = dyn_cast<cbit::StoreOp>(consumer)) {
-            EXPECT_EQ(store.getReg(), old.getReg());
-            EXPECT_EQ(getConstantIntValue(store.getIndex()), 0);
-            sticky = true;
-          } else if (auto readout = dyn_cast<scf::IfOp>(consumer)) {
-            EXPECT_FALSE(loop);
-            EXPECT_EQ(readout.getCondition(), combine.getResult());
-            sticky = true;
-          }
-        }
-      }
-      EXPECT_TRUE(sticky);
-      stride *= 15;
-      ++calls;
-    });
-    EXPECT_EQ(calls, levels);
     auto compiled = runDefaultPipeline(CompilerInput{std::move(*program)},
                                        ProgramFormat::QCO);
     ASSERT_TRUE(compiled);

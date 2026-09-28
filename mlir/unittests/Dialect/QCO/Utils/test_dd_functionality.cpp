@@ -2070,7 +2070,7 @@ TEST_F(QCODDFunctionalityTest, ParameterizedUnitaryCallsUseClassicalBindings) {
   auto matrix = buildFunctionality(func, package, bindings);
   ASSERT_TRUE(succeeded(matrix));
   const auto dense = matrix->getMatrix(1);
-  /// Two rotations and their global phases give iX, checking the phase too.
+  // Two rotations and their global phases give iX, checking the phase too.
   EXPECT_NEAR(std::abs(dense[0][0]), 0., 1e-12);
   EXPECT_NEAR(std::abs(dense[1][1]), 0., 1e-12);
   EXPECT_NEAR(std::abs(dense[0][1] - std::complex<double>(0., 1.)), 0., 1e-12);

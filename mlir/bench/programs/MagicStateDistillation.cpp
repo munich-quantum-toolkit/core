@@ -35,10 +35,7 @@ using namespace mlir;
 
 namespace {
 
-// Decoder for columns 1..15, logical row all ones, then the four coordinate
-// rows. Its inverse maps input bits 0..4 to those five generator rows and
-// bits 5..14 to the physical unit vectors at CORRECTION_QUBITS.
-// Fixed Gaussian elimination of that binary encoding matrix gives these CXs.
+// CNOT network exposing the 10 Z-check syndromes on qubits 5–14.
 constexpr std::array<std::pair<size_t, size_t>, 52> DECODER{
     {
         {0, 1},  {0, 2},  {0, 3},  {0, 4},  {0, 5},  {0, 6},  {0, 7}, {0, 8},
@@ -59,12 +56,11 @@ constexpr std::array<size_t, 10> CORRECTION_QUBITS{
 static Value distillMagicStates(qc::QCProgramBuilder& builder,
                                 ValueRange qubits) {
   assert(qubits.size() == 15);
-  // Bravyi--Haah, arXiv:1209.2426, Appendix A: project raw magic states
-  // onto Z checks, correct with A(w), apply U, then postselect X checks.
+  // One 15-to-1 distillation block (Bravyi--Haah, Appendix A).
   for (const auto& [control, target] : DECODER) {
     builder.cx(qubits[control], qubits[target]);
   }
-  SmallVector<Value, 10> syndrome;
+  SmallVector<Value> syndrome;
   for (size_t i = 5; i < 15; ++i) {
     syndrome.push_back(builder.measure(qubits[i]));
   }
@@ -73,14 +69,11 @@ static Value distillMagicStates(qc::QCProgramBuilder& builder,
   }
   for (size_t i = 0; i < syndrome.size(); ++i) {
     builder.scfIf(syndrome[i], [&] {
-      // A = T X T-dagger equals S X up to global phase and fixes |T>.
       auto qubit = qubits[CORRECTION_QUBITS[i]];
       builder.x(qubit);
       builder.s(qubit);
     });
   }
-  // The even rows have weight eight and the odd row has weight fifteen:
-  // transversal T-dagger implements logical T, hence U = S-dagger^tensor15.
   for (auto qubit : qubits) {
     builder.sdg(qubit);
   }
@@ -120,7 +113,7 @@ magicStateDistillation(qc::QCProgramBuilder& builder,
   });
   for (int64_t stride = 1; stride < size; stride *= 15) {
     builder.scfFor(0, size, stride * 15, [&](Value first) {
-      SmallVector<Value, 15> qubits;
+      SmallVector<Value> qubits;
       for (int64_t i = 0; i < 15; ++i) {
         auto index = arith::AddIOp::create(builder, first,
                                            builder.indexConstant(i * stride));
@@ -136,8 +129,6 @@ magicStateDistillation(qc::QCProgramBuilder& builder,
   builder.tdg(root);
   builder.h(root);
   builder.measure(root, result, 0);
-  // QIR lacks writes of computed bits to result slots (qir-spec issue #65).
-  // Reuse the measured root to expose rejection without another qubit.
   builder.reset(root);
   builder.scfIf(builder.loadClassicalBit(rejection, 0),
                 [&] { builder.x(root); });
