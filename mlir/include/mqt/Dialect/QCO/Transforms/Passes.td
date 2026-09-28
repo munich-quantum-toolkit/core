@@ -45,8 +45,15 @@ def MergeSingleQubitRotationGates
 
     When every angle in the chain is a compile-time constant, the same algorithm
     runs on host scalars and emits constant `U` / `gphase` results directly.
-    Otherwise it emits `arith` / `math` operations that compute the merged
-    parameters at run time.
+    Symbolic RZ-RX-RZ and RZ-RY-RZ chains reuse their Euler angles directly;
+    either outer RZ may be absent. H/RZ pairs in either order also use direct
+    angles via Hadamard conjugation. Gate operands are normalized modulo `4*pi`
+    before angle arithmetic, preserving the full unitary under control.
+    Constants fold immediately; symbolic operands use `4*atan(tan(angle/4))`,
+    which remains bindable after Qiskit and jeff export. This bounds each input
+    to `[-2*pi, 2*pi]` without restricting shared scalar inputs or expressions.
+    Other dynamic chains emit
+    `arith` / `math` operations that compute the merged parameters at run time.
 
     The emitted `UOp` is defined by $U = \exp [i (\phi + \lambda) / 2] R_z (\phi) R_y (\theta) R_z (\lambda)$.
     Normalizing either extracted Z angle into $[-\pi, \pi)$ by $\pm 2\pi$ flips
@@ -56,7 +63,7 @@ def MergeSingleQubitRotationGates
     restores exact matrix equality (including global phase). This applies even
     to chains of purely $\mathrm{SU}(2)$ gates (`rx`, `ry`, `rz`, `r`).
     On the host (static) path, a near-zero correction may be omitted; on the
-    SSA (dynamic) path a `GPhaseOp` is always emitted. After greedy merging,
+    SSA (dynamic) path a `GPhaseOp` carries any remaining correction. After greedy merging,
     the implementation directly invokes the shared global-phase normalization
     utility to combine, normalize, and remove trivial corrections in their
     respective scopes.
@@ -86,6 +93,15 @@ def FuseSingleQubitUnitaryRuns
     The pass also composes supported named gates with dynamic `f64` parameters
     and emits conservative runtime sequences in the requested basis. Dynamic
     `pow` and arbitrary dynamic unitaries remain unchanged.
+
+    Symbolic ZXZ/ZYZ chains reuse their angles directly in the `u`, `zyz`,
+    `zxz`, and `zsxx` bases; XZX/XYX chains do so in `xzx`, `xyx`, and `r`.
+    Either outer rotation may be absent. Gate operands are normalized modulo
+    `4*pi` before angle arithmetic, as in `merge-single-qubit-rotation-gates`.
+    H/RZ pairs in either order use direct angles in every basis, requiring at
+    most three gates (one in the `u` basis).
+    These conversions need no quaternion extraction or conditional expressions.
+    Other dynamic chains use runtime Euler-angle extraction.
   }];
   let options = [Option<
       "basis", "basis", "std::string", "\"zyz\"",
@@ -127,12 +143,15 @@ def UnrollLoopsForPayload : Pass<"unroll-loops-for-payload", "mlir::ModuleOp"> {
     require fixed quantum indices and specialize these loops. Scalar loops
     remain when supported by the payload. Run QCO cleanup first to move
     complete constant-slot tensor accesses outside structured control flow.
-    The pass limits the total number of cloned body operations to 65,536.
+    The `max-operations` option limits cloned body operations to one billion by default.
     Run constant propagation and QCO cleanup again after this pass, then
     `legalize-control-flow` to check the remaining branches and loops.
     After folding static branches, the pass checks that all SCF loops carry
     linear QCO state through iteration arguments instead of capturing it.
   }];
+  let options = [Option<"maxOperations", "max-operations", "uint64_t",
+                        "1'000'000'000",
+                        "Maximum number of cloned loop-body operations.">];
 }
 
 def LegalizeControlFlow : Pass<"legalize-control-flow", "mlir::ModuleOp"> {
@@ -291,6 +310,12 @@ def TargetNativeSynthesis : Pass<"target-native-synthesis", "mlir::ModuleOp"> {
     placements. Equal-cost runs and runs whose numerical decomposition fails
     are left for individual lowering. Barriers, non-unitary operations, and
     unavailable matrices stop a run.
+
+    For non-U bases, constant single-qubit runs are fused when they contain an
+    unsupported gate or resynthesis reduces their gate count. Native gates
+    outside the selected synthesis basis remain supported. Optional symbolic
+    fusion preserves native runs and uses only direct Euler identities;
+    other runs are left for individual lowering to retain exportability.
 
     Unknown native-operation metadata is valid when no
     surviving unitary operation needs it. Otherwise, the pass fails when the
@@ -505,6 +530,10 @@ def DecomposeMultiControlled
     `qco.rx`, `qco.ry`, `qco.rz`, `qco.swap`, or constant-angle `qco.p` body, and
     `qco.rccx`. Rotation angles may be constants or runtime SSA values,
     including classical expressions inside the control region.
+    Controls over composite bodies are distributed across their operations
+    before decomposition, subject to the same width threshold. Nested inverse
+    bodies are unrolled in reverse order; power bodies require a constant integer
+    exponent and operations on disjoint wires.
 
     | Family | Width (qubits) | Decomposition |
     | ------ | -------------- | ------------- |

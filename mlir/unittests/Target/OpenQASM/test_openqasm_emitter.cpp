@@ -62,6 +62,48 @@ using namespace mlir::openqasm::test;
 
 namespace {
 
+TEST(OpenQASMTargetTest, KeepsWholeRegisterSlicesWithinTheEmissionBudget) {
+  MLIRContext context;
+  auto moduleOp = qc::translateOpenQASMToQC(
+      "OPENQASM 3.1; bit[50000] a = 0; bit[50000] b = a[:]; b[:] = a;",
+      &context, {.maxOperations = 16});
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+}
+
+TEST(OpenQASMTargetTest, PreservesOneBarrierForConstantSelections) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+qubit[4] q;
+qubit[3] r;
+const int first = 3;
+const int step = -2;
+barrier q[first:step:0], r[1:2];
+)qasm";
+  MLIRContext context;
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  PassManager manager(&context);
+  manager.addPass(createCanonicalizerPass());
+  ASSERT_TRUE(succeeded(manager.run(*moduleOp)));
+  size_t barriers = 0;
+  moduleOp->walk([&](qc::BarrierOp barrier) {
+    ++barriers;
+    ASSERT_EQ(barrier.getQubits().size(), 4);
+    const auto expected = std::to_array<uint64_t>({3, 1, 1, 2});
+    for (auto [qubit, index] : llvm::zip_equal(barrier.getQubits(), expected)) {
+      auto load = qubit.getDefiningOp<memref::LoadOp>();
+      ASSERT_TRUE(load);
+      APInt value;
+      ASSERT_TRUE(
+          matchPattern(load.getIndices().front(), m_ConstantInt(&value)));
+      EXPECT_EQ(value.getZExtValue(), index);
+    }
+  });
+  EXPECT_EQ(barriers, 1);
+}
+
 TEST(OpenQASMTargetTest, ImportsNonNullTerminatedSourceView) {
   std::string storage = "OPENQASM 3.1; qubit q; U(0, 0, 0) q;invalid suffix";
   const auto source = StringRef(storage).take_front(storage.find("invalid"));
@@ -2887,6 +2929,8 @@ TEST(OpenQASMTargetTest, StopsEmissionAtEveryOperationBudgetBoundary) {
       R"qasm(OPENQASM 3.1; qubit[4] q; for int i in [0:3] { x q[-i * 1 + 3]; })qasm",
       R"qasm(OPENQASM 3.1; bit[8] c = "00000001"; int n = 1; c = (~c & c) | (c ^ c); c = (c << uint(n + 1)) >> uint(n); c = rotl(~c, n + 1); c = rotr(c, 2);)qasm",
       R"qasm(OPENQASM 3.1; output uint[8] result; uint[8] n = 1; result = (~n & n) | (n ^ n); result = (result << uint(n + 1)) >> n; result = uint[8](-int(sin(float(n + 1))));)qasm",
+      R"qasm(OPENQASM 3.1; bit[6] b = "110101"; bit[3] a = b[5:-2:0]; b[1:3] = a;)qasm",
+      R"qasm(OPENQASM 3.1; qubit[4] q; bit[4] b = 0; for int i in [0:3] { x q[i:i]; b[i:i] = measure q[i:i]; })qasm",
   };
   for (const auto* source : sources) {
     SCOPED_TRACE(source);

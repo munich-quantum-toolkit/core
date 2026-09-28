@@ -18,10 +18,8 @@
 
 #include <bit>
 #include <cstddef>
-#include <functional>
 #include <iostream>
 #include <stdexcept>
-#include <type_traits>
 #include <vector>
 
 namespace dd {
@@ -65,12 +63,8 @@ public:
   /// @return The hash value
   [[nodiscard]] std::size_t hash(const LeftOperandType& leftOperand,
                                  const RightOperandType& rightOperand) const {
-    const auto h1 = std::hash<LeftOperandType>{}(leftOperand);
-    const auto h2 = std::hash<RightOperandType>{}(rightOperand);
-    /// Mix aligned addresses before reducing to the power-of-two bucket count.
-    const auto hash =
-        combineHash(std::is_pointer_v<LeftOperandType> ? murmur64(h1) : h1,
-                    std::is_pointer_v<RightOperandType> ? murmur64(h2) : h2);
+    const auto hash = combineHash(hashComputeOperand(leftOperand),
+                                  hashComputeOperand(rightOperand));
     const auto mask = stats.numBuckets - 1;
     return hash & mask;
   }

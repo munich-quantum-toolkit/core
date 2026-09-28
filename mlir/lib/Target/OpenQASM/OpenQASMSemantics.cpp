@@ -63,7 +63,7 @@ namespace {
 constexpr uint64_t REGISTER_WIDTH_LIMIT = 100'000;
 constexpr uint64_t TOTAL_REGISTER_ELEMENT_LIMIT = 100'000;
 constexpr size_t EXPRESSION_DEPTH_LIMIT = 256;
-constexpr size_t TYPED_STATEMENT_LIMIT = 1'000'000;
+constexpr size_t TYPED_STATEMENT_LIMIT = 100'000'000;
 constexpr size_t AFFINE_DISTINCTNESS_COMPARISON_LIMIT = 1'024;
 constexpr uint32_t DEFAULT_ANGLE_WIDTH = 52;
 constexpr uint32_t MAX_ANGLE_WIDTH = 52;
@@ -686,7 +686,7 @@ private:
     }
     cache.try_emplace(expression, std::nullopt);
     const auto& value = program.expressions.at(expression);
-    if (value.integerWidth != 0) {
+    if (value.integerWidth != 0 && value.integerWidth != 64) {
       return std::nullopt;
     }
     std::optional<AffineForm> result;
@@ -1716,6 +1716,7 @@ private:
       case Expr::Kind::ShiftRight:
         return evaluateConstantBitwise(expression);
       case Expr::Kind::Index:
+      case Expr::Kind::Slice:
         return fail(expression.location,
                     "expression is not a compile-time constant");
       case Expr::Kind::PopCount:
@@ -1930,6 +1931,7 @@ private:
         return constant.type;
       }
       case Expr::Kind::Index:
+      case Expr::Kind::Slice:
         return fail(expression.location,
                     "expression is not a compile-time constant");
       case Expr::Kind::PopCount:
@@ -2274,6 +2276,7 @@ private:
       case Expr::Kind::Bool:
         return true;
       case Expr::Kind::Index:
+      case Expr::Kind::Slice:
       case Expr::Kind::PopCount:
       case Expr::Kind::BitString:
       case Expr::Kind::BitCast:
@@ -2316,6 +2319,7 @@ private:
              !program.registers[symbol->id].isScalar;
     }
     switch (expression.kind) {
+    case Expr::Kind::Slice:
     case Expr::Kind::BitString:
     case Expr::Kind::BitCast:
       return true;
@@ -2388,7 +2392,8 @@ private:
           .scalar = scalar,
       });
     }
-    if (expression.kind == Expr::Kind::Identifier) {
+    if (expression.kind == Expr::Kind::Identifier ||
+        expression.kind == Expr::Kind::Slice) {
       const auto* symbol = lookup(expression.identifier);
       if (symbol == nullptr || symbol->kind != SymbolKind::Register ||
           program.registers[symbol->id].kind != RegisterKind::Bit) {
@@ -2406,22 +2411,37 @@ private:
                     "gate definitions cannot capture outer bit register '" +
                         expression.identifier + "'");
       }
-      const auto width = program.registers[reg].width;
+      auto width = program.registers[reg].width;
+      std::vector<frontend::BitReference> selection;
+      if (expression.slice) {
+        MQT_OQ3_TRY_ASSIGN(bits, resolveBits({
+                                     .location = expression.location,
+                                     .identifier = expression.identifier,
+                                     .slice = expression.slice,
+                                 }));
+        selection = std::move(bits);
+        width = selection.size();
+        for (const auto& bit : selection) {
+          if (failed(ensureBitInitialized(bit, expression.location))) {
+            return failure();
+          }
+        }
+      } else if (!initializedBits[registerStateSlots_[reg]]->all()) {
+        return fail(expression.location,
+                    "classical condition bit has not been initialized");
+      }
       if (expectedWidth && *expectedWidth != width) {
         return fail(expression.location,
                     "bit-vector operand widths must match");
       }
-      for (uint64_t bit = 0; bit < width; ++bit) {
-        if (failed(ensureBitInitialized(
-                {.reg = reg, .index = bit, .dynamicIndex = std::nullopt},
-                expression.location))) {
-          return failure();
-        }
+      if (isWholeRegisterSelection(selection, reg)) {
+        selection.clear();
       }
       return addBitVectorExpression({
           .kind = BitVectorExpressionKind::Register,
           .width = width,
           .reg = reg,
+          .selection = std::move(selection),
       });
     }
 
@@ -2799,6 +2819,9 @@ private:
     case Expr::Kind::Index:
       return fail(expression.location,
                   "expected a scalar arithmetic expression");
+    case Expr::Kind::Slice:
+      return fail(expression.location,
+                  "classical slice expressions are not supported");
     case Expr::Kind::Int:
     case Expr::Kind::Float:
     case Expr::Kind::Bool:
@@ -3086,6 +3109,152 @@ private:
     }
     currentIncludeContext.reset();
     return success();
+  }
+
+  [[nodiscard]] std::optional<ExpressionId>
+  normalizeProvenIndex(ExpressionId index, uint64_t width) {
+    auto form = buildAffineForm(index);
+    if (!form) {
+      return std::nullopt;
+    }
+    const bool negative = provesUpperBound(*form, llvm::DynamicAPInt(-1));
+    if (negative) {
+      form->constant += unsignedCoefficient(width);
+    }
+    if (!provesLowerBound(*form, llvm::DynamicAPInt(0)) ||
+        !provesUpperBound(*form, unsignedCoefficient(width - 1))) {
+      return std::nullopt;
+    }
+    if (isAffineConstant(*form)) {
+      return addConstant({
+          .type = ScalarType::Int,
+          .value = static_cast<int64_t>(form->constant),
+      });
+    }
+    const auto expanded = expandAffineScalarValues(index);
+    assert(expanded && "affine indices must have expandable expressions");
+    if (!negative) {
+      return expanded;
+    }
+    return addExpression({
+        .kind = ExpressionKind::Add,
+        .type = ScalarType::Int,
+        .lhs = *expanded,
+        .rhs = addConstant(
+            {.type = ScalarType::Int, .value = static_cast<int64_t>(width)}),
+    });
+  }
+
+  /// Expand a bounded affine selection with a known length. Bounds and
+  /// distinctness remain frontend proof obligations, including nonconstant
+  /// indices.
+  [[nodiscard]] FailureOr<std::vector<ExpressionId>>
+  resolveSliceIndices(const Slice& slice, uint64_t width, SMLoc location) {
+    bool positive = true;
+    uint64_t stride = 1;
+    if (slice.step) {
+      Constant constant;
+      if (isConstantExpression(*slice.step)) {
+        MQT_OQ3_TRY_ASSIGN(value, evaluateConstant(*slice.step));
+        constant = value;
+      } else {
+        MQT_OQ3_TRY_ASSIGN(step, analyzeExpression(*slice.step));
+        const auto form = buildAffineForm(step);
+        if (!form || !isAffineConstant(*form)) {
+          return fail(location, "register slice step must be statically known");
+        }
+        constant = {
+            .type = ScalarType::Int,
+            .value = static_cast<int64_t>(form->constant),
+        };
+      }
+      if (!isInteger(constant.type)) {
+        return fail(location,
+                    "register slice step must be an integer expression");
+      }
+      if (constant.type == ScalarType::Uint) {
+        stride = std::get<uint64_t>(constant.value);
+      } else {
+        const auto step = std::get<int64_t>(constant.value);
+        positive = step > 0;
+        /// Unsigned magnitude also handles INT64_MIN without signed overflow.
+        stride = positive ? static_cast<uint64_t>(step)
+                          : uint64_t{0} - static_cast<uint64_t>(step);
+      }
+    }
+    if (stride == 0) {
+      return fail(location, "register slice step must not be zero");
+    }
+    const auto endpoint = [&](std::optional<SyntaxExpressionId> id,
+                              uint64_t fallback) -> FailureOr<ExpressionId> {
+      if (!id) {
+        return addConstant(
+            {.type = ScalarType::Int, .value = static_cast<int64_t>(fallback)});
+      }
+      MQT_OQ3_TRY_ASSIGN(value, constantIndex(*id, width, location));
+      if (value) {
+        if (*value >= width) {
+          return fail(location, "register slice index is out of bounds");
+        }
+        return addConstant(
+            {.type = ScalarType::Int, .value = static_cast<int64_t>(*value)});
+      }
+      MQT_OQ3_TRY_ASSIGN(index, analyzeExpression(*id));
+      if (!isInteger(program.expressions[index].type)) {
+        return fail(location,
+                    "register slice index must be an integer expression");
+      }
+      const auto normalized = normalizeProvenIndex(index, width);
+      if (!normalized) {
+        return fail(location,
+                    "cannot prove that register slice index is in bounds");
+      }
+      return *normalized;
+    };
+    MQT_OQ3_TRY_ASSIGN(start, endpoint(slice.start, positive ? 0 : width - 1));
+    MQT_OQ3_TRY_ASSIGN(stop, endpoint(slice.stop, positive ? width - 1 : 0));
+    const auto startForm = buildAffineForm(start);
+    const auto stopForm = buildAffineForm(stop);
+    assert(startForm && stopForm && "slice endpoints must be affine");
+    auto difference = addAffineForms(*stopForm, negateAffineForm(*startForm));
+    if (!positive) {
+      difference = negateAffineForm(difference);
+    }
+    if (!isAffineConstant(difference)) {
+      return fail(location, "register slice length must be statically known");
+    }
+    if (difference.constant < 0) {
+      return fail(location, "register slice must not be empty");
+    }
+    const auto distance =
+        static_cast<uint64_t>(static_cast<int64_t>(difference.constant));
+    std::vector<ExpressionId> indices;
+    indices.reserve(distance / stride + 1);
+    for (uint64_t offset = 0; offset <= distance;) {
+      const auto signedOffset = positive ? static_cast<int64_t>(offset)
+                                         : -static_cast<int64_t>(offset);
+      if (isAffineConstant(*startForm)) {
+        indices.push_back(addConstant({
+            .type = ScalarType::Int,
+            .value = static_cast<int64_t>(startForm->constant) + signedOffset,
+        }));
+      } else if (offset == 0) {
+        indices.push_back(start);
+      } else {
+        indices.push_back(addExpression({
+            .kind = ExpressionKind::Add,
+            .type = ScalarType::Int,
+            .lhs = start,
+            .rhs =
+                addConstant({.type = ScalarType::Int, .value = signedOffset}),
+        }));
+      }
+      if (stride > distance - offset) {
+        break;
+      }
+      offset += stride;
+    }
+    return indices;
   }
 
   [[nodiscard]] LogicalResult analyzeBody(ArrayRef<SyntaxStatementId> source,
@@ -3377,7 +3546,7 @@ private:
                     std::vector<StatementId>& destination) {
     const auto* symbol = lookup(assignment.target.identifier);
     if (symbol != nullptr && symbol->kind == SymbolKind::Scalar) {
-      if (assignment.target.index) {
+      if (assignment.target.index || assignment.target.slice) {
         return fail(location, "scalar assignments cannot have an index");
       }
       ScalarAssignmentStatement typed{
@@ -3415,20 +3584,32 @@ private:
     }
     const auto targetReg = static_cast<RegisterId>(symbol->id);
     if (!assignment.target.index && !program.registers[targetReg].isScalar) {
-      MQT_OQ3_TRY_ASSIGN(
-          bitVector, analyzeBitVectorExpression(
-                         assignment.value, program.registers[targetReg].width));
-      for (uint64_t bit = 0; bit < program.registers[targetReg].width; ++bit) {
-        markBitInitialized({
-            .reg = targetReg,
-            .index = bit,
-            .dynamicIndex = std::nullopt,
-        });
+      auto width = program.registers[targetReg].width;
+      std::vector<frontend::BitReference> selection;
+      if (assignment.target.slice) {
+        MQT_OQ3_TRY_ASSIGN(targets, resolveBits(assignment.target));
+        selection = std::move(targets);
+        width = selection.size();
+      }
+      MQT_OQ3_TRY_ASSIGN(bitVector,
+                         analyzeBitVectorExpression(assignment.value, width));
+      if (selection.empty()) {
+        mutableBitInitialization(registerStateSlots_[targetReg]).set();
+      } else {
+        for (const auto& target : selection) {
+          markBitInitialized(target);
+        }
+        if (isWholeRegisterSelection(selection, targetReg)) {
+          selection.clear();
+        }
       }
       MQT_OQ3_TRY_ASSIGN(
           statement,
           addStatement(location, BitVectorAssignmentStatement{
-                                     .target = targetReg, .value = bitVector}));
+                                     .target = targetReg,
+                                     .value = bitVector,
+                                     .selection = std::move(selection),
+                                 }));
       destination.push_back(statement);
       return success();
     }
@@ -4778,19 +4959,24 @@ private:
     }
 
     std::vector<std::vector<QubitReference>> selections;
-    size_t broadcastWidth = 1;
+    std::optional<size_t> registerWidth;
     for (const auto& operand : call.operands) {
       MQT_OQ3_TRY_ASSIGN(selection, resolveQubitOperand(operand));
-      if (selection.size() > 1) {
-        if (broadcastWidth != 1 && broadcastWidth != selection.size()) {
+      const auto* symbol = lookup(operand.identifier);
+      const bool registerOperand = !operand.index && symbol != nullptr &&
+                                   symbol->kind == SymbolKind::Register &&
+                                   !program.registers[symbol->id].isScalar;
+      if (registerOperand) {
+        if (registerWidth && *registerWidth != selection.size()) {
           return fail(call.location,
                       "all broadcasting operands must have the same width");
         }
-        broadcastWidth = selection.size();
+        registerWidth = selection.size();
       }
       selections.push_back(std::move(selection));
     }
 
+    const auto broadcastWidth = registerWidth.value_or(1);
     std::vector<GateApplication> applications;
     applications.reserve(broadcastWidth);
     size_t affineComparisons = 0;
@@ -4864,7 +5050,7 @@ private:
         return fail(operand.location,
                     "unknown gate-local qubit '" + operand.identifier + "'");
       }
-      if (operand.index) {
+      if (operand.index || operand.slice) {
         return fail(operand.location, "gate-local qubits cannot be indexed");
       }
       return std::vector<QubitReference>{
@@ -4882,6 +5068,29 @@ private:
     }
     const auto reg = static_cast<RegisterId>(symbol->id);
     const auto width = program.registers[reg].width;
+    if (operand.slice && program.registers[reg].isScalar) {
+      return fail(operand.location, "cannot slice a scalar qubit");
+    }
+    const auto makeReference = [&](ExpressionId index) {
+      QubitReference result{.symbol = reg};
+      const auto& expression = program.expressions[index];
+      if (expression.kind == ExpressionKind::Constant) {
+        result.index =
+            static_cast<uint64_t>(std::get<int64_t>(expression.constant));
+      } else {
+        result.provenIndex = index;
+      }
+      return result;
+    };
+    if (operand.slice) {
+      MQT_OQ3_TRY_ASSIGN(indices, resolveSliceIndices(*operand.slice, width,
+                                                      operand.location));
+      std::vector<QubitReference> selection;
+      for (const auto index : indices) {
+        selection.push_back(makeReference(index));
+      }
+      return selection;
+    }
     if (!operand.index) {
       std::vector<QubitReference> selection;
       selection.reserve(width);
@@ -4916,45 +5125,12 @@ private:
       return fail(operand.location,
                   "qubit index must be an integer expression");
     }
-    const auto form = buildAffineForm(index);
-    if (!form) {
+    const auto normalized = normalizeProvenIndex(index, width);
+    if (!normalized) {
       return fail(operand.location,
                   "cannot prove that qubit index is in bounds");
     }
-    if (isAffineConstant(*form)) {
-      auto value = static_cast<int64_t>(form->constant);
-      if (value < 0) {
-        value += static_cast<int64_t>(width);
-      }
-      if (value < 0 || std::cmp_greater_equal(value, width)) {
-        return fail(operand.location,
-                    "cannot prove that qubit index is in bounds");
-      }
-      return std::vector<QubitReference>{
-          {
-              .kind = QubitReferenceKind::Register,
-              .symbol = reg,
-              .index = static_cast<uint64_t>(value),
-              .provenIndex = std::nullopt,
-          },
-      };
-    }
-    if (!provesLowerBound(*form, llvm::DynamicAPInt(0)) ||
-        !provesUpperBound(
-            *form, unsignedCoefficient(static_cast<uint64_t>(width - 1)))) {
-      return fail(operand.location,
-                  "cannot prove that qubit index is in bounds");
-    }
-    const auto expandedIndex = expandAffineScalarValues(index);
-    assert(expandedIndex &&
-           "proven affine indices must have expandable expressions");
-    return std::vector<QubitReference>{
-        {
-            .kind = QubitReferenceKind::Register,
-            .symbol = reg,
-            .provenIndex = expandedIndex,
-        },
-    };
+    return std::vector<QubitReference>{makeReference(*normalized)};
   }
 
   [[nodiscard]] FailureOr<std::vector<frontend::BitReference>>
@@ -4967,6 +5143,30 @@ private:
     }
     const auto reg = static_cast<RegisterId>(symbol->id);
     const auto width = program.registers[reg].width;
+    if (reference.slice && program.registers[reg].isScalar) {
+      return fail(reference.location, "cannot slice a scalar bit");
+    }
+    const auto makeReference = [&](ExpressionId index) {
+      frontend::BitReference result{.reg = reg};
+      const auto& expression = program.expressions[index];
+      if (expression.kind == ExpressionKind::Constant) {
+        result.index =
+            static_cast<uint64_t>(std::get<int64_t>(expression.constant));
+      } else {
+        result.dynamicIndex = index;
+        result.provenInBounds = true;
+      }
+      return result;
+    };
+    if (reference.slice) {
+      MQT_OQ3_TRY_ASSIGN(indices, resolveSliceIndices(*reference.slice, width,
+                                                      reference.location));
+      std::vector<frontend::BitReference> result;
+      for (const auto index : indices) {
+        result.push_back(makeReference(index));
+      }
+      return result;
+    }
     if (!reference.index) {
       std::vector<frontend::BitReference> result;
       result.reserve(width);
@@ -4994,9 +5194,22 @@ private:
       return fail(reference.location,
                   "classical bit index must be an integer expression");
     }
+    if (const auto normalized = normalizeProvenIndex(dynamic, width)) {
+      return std::vector<frontend::BitReference>{makeReference(*normalized)};
+    }
     return std::vector<frontend::BitReference>{
         {.reg = reg, .dynamicIndex = dynamic},
     };
+  }
+
+  [[nodiscard]] bool
+  isWholeRegisterSelection(ArrayRef<frontend::BitReference> selection,
+                           RegisterId reg) const {
+    return selection.size() == program.registers[reg].width &&
+           llvm::all_of(llvm::enumerate(selection), [](const auto& entry) {
+             const auto& bit = entry.value();
+             return !bit.dynamicIndex && bit.index == entry.index();
+           });
   }
 
   [[nodiscard]] LogicalResult
