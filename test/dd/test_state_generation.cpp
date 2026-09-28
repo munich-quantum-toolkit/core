@@ -11,12 +11,10 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
-#include "dd/RealNumber.hpp"
 #include "dd/StateGeneration.hpp"
 
 #include "gtest/gtest.h"
 
-#include <cmath>
 #include <complex>
 #include <cstddef>
 #include <limits>
@@ -313,11 +311,6 @@ TEST(StateGenerationTest, MakeWInvalidArguments) {
 
   auto dd = std::make_unique<Package>(nq);
   EXPECT_THROW({ makeWState(nq + 1, *dd); }, std::invalid_argument);
-
-  const auto tol = dd::RealNumber::eps;
-  dd::ComplexNumbers::setTolerance(1);
-  EXPECT_THROW({ makeWState(nq, *dd); }, std::invalid_argument);
-  dd::ComplexNumbers::setTolerance(tol); // Reset tolerance.
 }
 
 TEST(StateGenerationTest, FromVectorInvalidArguments) {

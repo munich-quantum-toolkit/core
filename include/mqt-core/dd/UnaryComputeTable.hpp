@@ -18,9 +18,7 @@
 
 #include <bit>
 #include <cstddef>
-#include <functional>
 #include <stdexcept>
-#include <type_traits>
 #include <vector>
 
 namespace dd {
@@ -59,10 +57,8 @@ public:
 
   /// Compute the hash value for a given operand
   [[nodiscard]] std::size_t hash(const OperandType& a) const {
-    const auto key = std::hash<OperandType>{}(a);
     const auto mask = stats.numBuckets - 1;
-    /// Mix aligned addresses before reducing to the power-of-two bucket count.
-    return (std::is_pointer_v<OperandType> ? murmur64(key) : key) & mask;
+    return hashComputeOperand(a) & mask;
   }
 
   /// Insert a new entry into the compute table

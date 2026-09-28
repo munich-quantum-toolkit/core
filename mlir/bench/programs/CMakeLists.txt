@@ -11,6 +11,7 @@ add_library(
   BV.cpp
   GHZ.cpp
   Grover.cpp
+  ModularArithmetic.cpp
   ModularMultiplier.cpp
   Multiplexer.cpp
   QFT.cpp
@@ -18,7 +19,10 @@ add_library(
   QFTUtils.cpp
   QPE.cpp
   RepeatUntilSuccess.cpp
-  Teleportation.cpp)
-target_link_libraries(MQTBenchmarkPrograms PUBLIC MQT::CoreBench MLIRQCProgramBuilder
-                                                  MLIRArithDialect MLIRTensorDialect)
+  Shor.cpp
+  Teleportation.cpp
+  WState.cpp)
+target_link_libraries(
+  MQTBenchmarkPrograms PUBLIC MQT::CoreBench MLIRQCProgramBuilder MLIRArithDialect MLIRMathDialect
+                              MLIRTensorDialect)
 mqt_mlir_target_use_project_options(MQTBenchmarkPrograms)

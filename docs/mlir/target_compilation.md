@@ -272,11 +272,16 @@ dialect in their context.
 Use {py:meth}`~mqt.core.mlir.QCOProgram.synthesize_for_target` to translate an
 existing QCO program to an all-to-all target's native gate set. It uses the same
 native block synthesis as target compilation, without routing. This pipeline
-inlines calls, decomposes multi-controlled gates, assigns static sites, performs
+inlines calls, decomposes controlled gates, assigns static sites, performs
 native synthesis, and verifies target conformance. It accepts structured QCO/SCF
 input and uses the same target environment and global-phase policy as target
 compilation. Explicit connectivity is rejected; use `compile_for_target` when
 routing is required.
+
+Both target pipelines decompose controlled composite gates, including inverse
+bodies and constant integer powers of operations on disjoint wires. Other
+composite powers require native target support or a synthesis rule for that
+operation.
 
 Synthesis runs in place and raises `RuntimeError` with MLIR diagnostics on
 failure. Earlier pass changes may remain on the program, so copy it first when
@@ -306,11 +311,12 @@ flow with `legalize-control-flow`:
 | `multiway-branching` | `qco.index_switch` and classical `scf.index_switch` |
 
 A finite `scf.for` that exceeds the selected counted-iteration contract is fully
-unrolled when this clones at most 65,536 body operations. The same bound applies
-to loops unrolled for qubit placement. Cleanup runs again because unrolling can
-make nested bounds and conditions constant. An unsupported index switch is
-lowered to a linear chain of nested forward branches when that form fits the
-selected contract. Before expansion, the compiler checks the selected
+unrolled when this clones at most one billion body operations by default. The
+`unroll-loops-for-payload` pass exposes this limit as `max-operations`. The same
+bound applies to loops unrolled for qubit placement. Cleanup runs again because
+unrolling can make nested bounds and conditions constant. An unsupported index
+switch is lowered to a linear chain of nested forward branches when that form
+fits the selected contract. Before expansion, the compiler checks the selected
 forward-branching nesting limit and a compiler safety limit of 256 total
 control-flow levels, including enclosing control flow. This compiler limit is
 not a QDMI requirement and does not apply to switches retained under multiway
@@ -343,12 +349,12 @@ Other payloads, explicit topology, and site-specific operations require exact
 quantum addresses. Bounded specialization exposes those addresses before
 placement or routing. Residual unsupported tensor control flow produces a
 diagnostic before allocation changes. Mapped OpenQASM uses static physical
-qubits; indexed tensor loops must fit the existing 65,536-operation unrolling
-budget. Runtime-dependent indices that cannot be specialized are unsupported.
-Logical qubit indices can remain dynamic in targetless OpenQASM export. Constant
-rank-one `f64` table reads use switches that group equal entries and require
-unrestricted multiway branching from the selected payload. Their size grows with
-the table data and number of reads.
+qubits; indexed tensor loops must fit the default one-billion-operation
+unrolling budget. Runtime-dependent indices that cannot be specialized are
+unsupported. Logical qubit indices can remain dynamic in targetless OpenQASM
+export. Constant rank-one `f64` table reads use switches that group equal
+entries and require unrestricted multiway branching from the selected payload.
+Their size grows with the table data and number of reads.
 
 The supported constraints are `max-control-flow-nesting-depth` on all four
 capabilities, `max-iteration-count` on both iteration capabilities, and

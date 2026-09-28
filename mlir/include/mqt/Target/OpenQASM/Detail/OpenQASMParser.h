@@ -238,6 +238,51 @@ private:
     return *expr;
   }
 
+  [[nodiscard]] LogicalResult
+  parseSubscript(std::optional<SyntaxExpressionId>& index,
+                 std::optional<Slice>& slice) {
+    if (failed(expect(TokenKind::LBracket))) {
+      return failure();
+    }
+    std::optional<SyntaxExpressionId> first;
+    if (current().kind != TokenKind::Colon) {
+      auto expression = parseExpression();
+      if (failed(expression)) {
+        return failure();
+      }
+      first = expression;
+    }
+    if (current().kind != TokenKind::Colon) {
+      index = first;
+      return expect(TokenKind::RBracket);
+    }
+    advance();
+    Slice range{.start = first};
+    if (current().kind != TokenKind::RBracket) {
+      if (current().kind != TokenKind::Colon) {
+        auto expression = parseExpression();
+        if (failed(expression)) {
+          return failure();
+        }
+        range.stop = expression;
+      }
+      if (current().kind == TokenKind::Colon) {
+        advance();
+        range.step = range.stop;
+        range.stop.reset();
+        if (current().kind != TokenKind::RBracket) {
+          auto stop = parseExpression();
+          if (failed(stop)) {
+            return failure();
+          }
+          range.stop = stop;
+        }
+      }
+    }
+    slice = range;
+    return expect(TokenKind::RBracket);
+  }
+
   //===--- Version ------------------------------------------------------===//
 
   [[nodiscard]] LogicalResult parseVersion() {
@@ -570,7 +615,7 @@ private:
     const auto compoundLocation = current().loc;
     const auto compoundSpelling = current().spelling;
     if (compound) {
-      if (target->index.has_value()) {
+      if (target->index || target->slice) {
         return sink.error(current().loc,
                           "indexed compound assignments are not supported");
       }
@@ -889,15 +934,11 @@ private:
     }
     operand.identifier = current().identifier;
     advance();
-    std::optional<SyntaxExpressionId> index;
     if (current().kind == TokenKind::LBracket) {
-      auto designator = parseDesignator();
-      if (failed(designator)) {
+      if (failed(parseSubscript(operand.index, operand.slice))) {
         return failure();
       }
-      index = *designator;
     }
-    operand.index = index;
     return operand;
   }
 
@@ -909,15 +950,11 @@ private:
     }
     reference.identifier = current().identifier;
     advance();
-    std::optional<SyntaxExpressionId> index;
     if (current().kind == TokenKind::LBracket) {
-      auto designator = parseDesignator();
-      if (failed(designator)) {
+      if (failed(parseSubscript(reference.index, reference.slice))) {
         return failure();
       }
-      index = *designator;
     }
-    reference.index = index;
     return reference;
   }
 
@@ -1453,12 +1490,10 @@ private:
       expr.identifier = current().identifier;
       advance();
       if (current().kind == TokenKind::LBracket) {
-        auto designator = parseDesignator();
-        if (failed(designator)) {
+        if (failed(parseSubscript(expr.lhs, expr.slice))) {
           return failure();
         }
-        expr.kind = Expr::Kind::Index;
-        expr.lhs = *designator;
+        expr.kind = expr.slice ? Expr::Kind::Slice : Expr::Kind::Index;
       }
       return sink.addExpression(expr);
     }

@@ -209,6 +209,18 @@ intToBinaryString(const std::size_t value, const std::size_t nbits) {
   return k;
 }
 
+/// Hash canonical DD operands without depending on node addresses.
+template <class T>
+[[nodiscard]] std::size_t hashComputeOperand(const T& value) {
+  if constexpr (std::is_pointer_v<T> && requires { value->id; }) {
+    return murmur64(value == nullptr ? 0U : value->id);
+  } else if constexpr (std::is_pointer_v<T>) {
+    return murmur64(std::hash<T>{}(value));
+  } else {
+    return std::hash<T>{}(value);
+  }
+}
+
 struct vNode;
 struct mNode;
 

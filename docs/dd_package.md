@@ -340,10 +340,11 @@ respective weights. MQT Core selects a maximum-magnitude edge (preferring the
 left edge when squared magnitudes agree within relative tolerance) and makes its
 normalized weight real and nonnegative. The incoming edge retains its complex
 phase. Normalization proceeds bottom-up; complex-number comparisons use the
-package tolerance. Recursive addition extracts a common incoming scale before
-visiting child nodes and restores it on return. This keeps small basis-state
-amplitudes from being discarded before the normalized parent is reconstructed.
-The same rule applies to magnitude addition.
+package tolerance. Recursive addition divides both operands by their largest
+component before visiting child nodes and restores that scale on return. This
+keeps small basis-state amplitudes from being discarded before the normalized
+parent is reconstructed, while making the dominant component exactly one for
+subgraph sharing. The same rule applies to magnitude addition.
 
 Cached vector normalization projects nearly equal or opposite coefficients onto
 the corresponding balanced pair before dividing by their norm. For unit-norm
@@ -357,7 +358,7 @@ components reuse the nearest stored value within the absolute tolerance,
 preferring the smaller magnitude on a tie; zero, one, and $1/\sqrt{2}$ have
 priority. The default tolerance is $2^{-42}$ (1024 times double-precision
 machine epsilon). The numeric index hashes binary intervals without rounding
-stored values. C++ callers can set a finite, nonnegative global tolerance with
+stored values. C++ callers can set a positive, normal global tolerance with
 {cpp-api:func}`dd::ComplexNumbers::setTolerance`. A smaller tolerance can reduce
 error amplification in small subproblems, but may also prevent sharing of nearly
 equal subgraphs. Neither tolerance choice guarantees polynomial DD size for a

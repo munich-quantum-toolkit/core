@@ -1165,8 +1165,7 @@ TEST_F(MappingPassFixture, RejectNonExplicitTopologyBeforeMutation) {
   EXPECT_TRUE(failed(runPass(moduleOp.get(), target, MappingPassOptions{})));
   EXPECT_EQ(printModule(moduleOp.get()), before);
   EXPECT_TRUE(
-      StringRef(diagnostics)
-          .contains("expected an explicit target topology"));
+      StringRef(diagnostics).contains("expected an explicit target topology"));
 }
 
 TEST_F(MappingPassFixture, RejectOversizedPlacementBeforeMutation) {
