@@ -25,12 +25,17 @@
 #include <algorithm>
 #include <atomic>
 #include <barrier>
+#include <charconv>
 #include <cstddef>
+#include <cstdlib>
+#include <cstring>
+#include <iterator>
 #include <memory>
 #include <numbers>
 #include <numeric>
 #include <ranges>
 #include <string>
+#include <system_error>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -168,8 +173,15 @@ TEST(Concurrency, ConcurrentQIRJobsOwnTheirRuntimeState) {
 }
 
 TEST(Concurrency, NativeProgramsRunConcurrentlyAndCancelQueuedWork) {
-  const auto limit =
-      llvm::heavyweight_hardware_concurrency().compute_thread_count();
+  auto limit = llvm::heavyweight_hardware_concurrency().compute_thread_count();
+  if (const char* raw = std::getenv("MQT_CORE_DD_WORKER_BUDGET")) {
+    unsigned configured = 0;
+    const auto* last = std::next(raw, static_cast<ptrdiff_t>(std::strlen(raw)));
+    const auto [end, error] = std::from_chars(raw, last, configured);
+    if (error == std::errc{} && end == last && configured > 0) {
+      limit = std::min(limit, configured);
+    }
+  }
   const qdmi_test::SessionGuard session{};
   const qdmi_test::JobGuard job{session.session};
   const size_t count = static_cast<size_t>(limit) + 1;

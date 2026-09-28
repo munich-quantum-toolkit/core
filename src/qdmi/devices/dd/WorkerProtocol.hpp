@@ -32,6 +32,8 @@ struct WorkerRequest {
   uint64_t shots = 0;
   std::optional<uint64_t> seed;
   bool captureOutput = false;
+  uint64_t workerSlots = 1;
+  bool automaticWorkers = true;
 };
 struct WorkerResponse {
   bool succeeded = false;
