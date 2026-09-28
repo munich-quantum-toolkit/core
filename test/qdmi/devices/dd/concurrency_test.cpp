@@ -28,12 +28,13 @@
 #include <charconv>
 #include <cstddef>
 #include <cstdlib>
+#include <cstring>
+#include <iterator>
 #include <memory>
 #include <numbers>
 #include <numeric>
 #include <ranges>
 #include <string>
-#include <string_view>
 #include <system_error>
 #include <thread>
 #include <utility>
@@ -174,11 +175,10 @@ TEST(Concurrency, ConcurrentQIRJobsOwnTheirRuntimeState) {
 TEST(Concurrency, NativeProgramsRunConcurrentlyAndCancelQueuedWork) {
   auto limit = llvm::heavyweight_hardware_concurrency().compute_thread_count();
   if (const char* raw = std::getenv("MQT_CORE_DD_WORKER_BUDGET")) {
-    const std::string_view value(raw);
     unsigned configured = 0;
-    const auto [end, error] =
-        std::from_chars(value.begin(), value.end(), configured);
-    if (error == std::errc{} && end == value.end() && configured > 0) {
+    const auto* last = std::next(raw, static_cast<ptrdiff_t>(std::strlen(raw)));
+    const auto [end, error] = std::from_chars(raw, last, configured);
+    if (error == std::errc{} && end == last && configured > 0) {
       limit = std::min(limit, configured);
     }
   }
