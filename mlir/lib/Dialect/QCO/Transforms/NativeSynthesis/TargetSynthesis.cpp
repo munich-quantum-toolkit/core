@@ -866,19 +866,22 @@ void NativeCostTracker::append(Operation* operation,
   }
 }
 
-void NativeCostTracker::appendSwap(size_t a, size_t b) {
+void NativeCostTracker::appendSwap(size_t first, size_t second) {
   if (!available_) {
     return;
   }
-  const auto cost = analysis_.swapCost(target_, std::array{
-                                                    target_.siteForVertex(a),
-                                                    target_.siteForVertex(b),
-                                                });
+
+  const auto cost =
+      analysis_.swapCost(target_, std::array{
+                                      target_.siteForVertex(first),
+                                      target_.siteForVertex(second),
+                                  });
   if (!cost) {
     available_ = false;
     return;
   }
-  appendPair(SWAPOp::getUnitaryMatrix(), *cost, a, b);
+
+  appendPair(SWAPOp::getUnitaryMatrix(), *cost, first, second);
 }
 
 void NativeCostTracker::merge(NativeCostTracker& child) {
@@ -893,12 +896,12 @@ std::optional<std::pair<size_t, size_t>> NativeCostTracker::score() {
   return available_ ? std::optional(std::pair{count_, depth_}) : std::nullopt;
 }
 
-int64_t NativeCostTracker::swapCostAdjustment(size_t a, size_t b,
+int64_t NativeCostTracker::swapCostAdjustment(size_t first, size_t second,
                                               size_t standaloneCost) {
-  if (!available_ || partners_[a] != b) {
+  if (!available_ || partners_[first] != second) {
     return 0;
   }
-  const auto [first, second] = std::minmax(a, b);
+
   const std::array sites{
       target_.siteForVertex(first),
       target_.siteForVertex(second),

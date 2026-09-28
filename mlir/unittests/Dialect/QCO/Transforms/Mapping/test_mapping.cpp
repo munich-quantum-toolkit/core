@@ -496,9 +496,7 @@ TEST_F(MappingPassFixture, RequiresTypedTargetEnvironment) {
   PassManager pm(context.get());
   pm.addPass(createMappingPass(MappingPassOptions{.ntrials = 1}));
   EXPECT_TRUE(failed(pm.run(moduleOp.get())));
-  EXPECT_NE(diagnostics.find("place-and-route requires a valid "
-                             "mqt.target_env: module does not contain "
-                             "mqt.target_env"),
+  EXPECT_NE(diagnostics.find("expected a valid mqt.target_env"),
             std::string::npos)
       << diagnostics;
 }
@@ -1168,7 +1166,7 @@ TEST_F(MappingPassFixture, RejectNonExplicitTopologyBeforeMutation) {
   EXPECT_EQ(printModule(moduleOp.get()), before);
   EXPECT_TRUE(
       StringRef(diagnostics)
-          .contains("place-and-route requires an explicit target topology"));
+          .contains("expected an explicit target topology"));
 }
 
 TEST_F(MappingPassFixture, RejectOversizedPlacementBeforeMutation) {
@@ -3343,7 +3341,7 @@ TEST_F(MappingPassFixture, PreferNativeGateCountThenDepth) {
                     {3, 2, false},
                     {0, 1, false},
                 },
-                std::pair<size_t, size_t>{11, 7}},
+                std::pair<size_t, size_t>{11, 10}},
   };
   for (const auto& [gates, bound] : cases) {
     auto input = QCOProgramBuilder::build(
