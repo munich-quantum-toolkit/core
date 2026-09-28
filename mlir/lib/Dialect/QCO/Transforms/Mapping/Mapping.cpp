@@ -448,7 +448,7 @@ private:
       // A uniform edge cost permits the existing distance heuristic to retain
       // its units. Site-dependent costs need a weighted-distance heuristic.
 
-      NativeCostAnalysis analysis(seed, nativeCosts.get());
+      NativeCostAnalysis analysis(seed, this->nativeCosts.get());
       for (const auto& [a, b] : target.couplings()) {
         const auto next = analysis.swapCost(target, std::array{a, b});
         if (!next || (nativeSwapCost && nativeSwapCost != next)) {
@@ -1250,7 +1250,10 @@ private:
 
           if (Node* child = arena.allocate()) {
             const SwapCandidate candidate = {
-                .indices = indices, .standalone = standalone, .prefix = prefix};
+                .indices = indices,
+                .standalone = standalone,
+                .prefix = prefix,
+            };
             child->initializeChild(curr, candidate, window, env.target, params);
             seen.insert(indices);
             frontier.emplace(child);
