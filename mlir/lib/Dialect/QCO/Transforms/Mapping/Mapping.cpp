@@ -583,22 +583,11 @@ private:
   public:
     /// Push a node onto the frontier.
     void push(Node* node) {
-      const auto key = node->layout.getProgramToHardware();
-      const auto [it, inserted] = best.try_emplace(key, node);
-      if (inserted) {
-        queue.emplace(node);
-        return;
+      auto*& incumbent = best[node->layout.getProgramToHardware()];
+      if (incumbent == nullptr || node->cost < incumbent->cost) {
+        incumbent = node;
+        queue.push(node);
       }
-
-      Node* other = it->second;
-
-      /// Don't insert the new node, if it has higher costs.
-      if (node->cost >= other->cost) {
-        return;
-      }
-
-      it->second = node;
-      queue.push(node);
     }
 
     /// Pop a node from the frontier.
@@ -608,12 +597,11 @@ private:
         queue.pop();
 
         const auto key = node->layout.getProgramToHardware();
-        const auto it = best.find(key);
 
         // If the node matches the entry in the best map, it's valid.
         // Otherwise, the node was superseded by a cheaper state. Thus, drop it.
 
-        if (it != best.end() && it->second == node) {
+        if (best.lookup(key) == node) {
           return node;
         }
       }
