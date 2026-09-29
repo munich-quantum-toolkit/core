@@ -900,7 +900,7 @@ decomposeUnitary2QWeyl(const Matrix4x4& target,
 SynthesizedUnitary2Q
 emitUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0, Value qubit1,
                   const TwoQubitNativeDecomposition& decomposition,
-                  const CompilerTarget::SynthesisBasis basis) {
+                  const CompilerTarget::SynthesisBasis& basis) {
   if (!basis.entangler) {
     llvm::reportFatalInternalError(
         "two-qubit emission requires a synthesis-basis entangler");

@@ -468,7 +468,9 @@ public:
   [[nodiscard]] llvm::ArrayRef<GateKind> supportedGates() const noexcept;
 
   /// Return a globally usable single-qubit basis with an optional entangler.
-  [[nodiscard]] std::optional<SynthesisBasis> synthesisBasis() const noexcept;
+  /// The cached basis remains valid while this target or a copy exists.
+  [[nodiscard]] const std::optional<SynthesisBasis>&
+  synthesisBasis() const noexcept;
 
   /// Materialize the source target facts as a typed MLIR attribute.
   [[nodiscard]] mqt::CompilationTargetAttr

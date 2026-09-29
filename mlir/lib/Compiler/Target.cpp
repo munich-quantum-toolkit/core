@@ -1423,7 +1423,7 @@ ArrayRef<GateKind> CompilerTarget::supportedGates() const noexcept {
   return storage_->supportedGates;
 }
 
-std::optional<CompilerTarget::SynthesisBasis>
+const std::optional<CompilerTarget::SynthesisBasis>&
 CompilerTarget::synthesisBasis() const noexcept {
   return storage_->basis;
 }

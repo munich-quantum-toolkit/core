@@ -211,7 +211,7 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   pm.addPass(qco::createFuseTwoQubitGates(target));
   /// Non-U targets fuse during native synthesis, avoiding an intermediate U
   /// representation and its symbolic phase correction.
-  if (const auto basis = target.synthesisBasis();
+  if (const auto& basis = target.synthesisBasis();
       !basis || basis->singleQubit == CompilerTarget::SingleQubitBasis::U) {
     /// The U optimizer also merges dynamic controlled bodies into native U
     /// gates and preserves isolated gates. Native synthesis does not yet cover

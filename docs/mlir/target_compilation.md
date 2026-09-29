@@ -198,6 +198,11 @@ Zero and integer-π pulses do not supply the required mixing. The constructive
 method also rejects angles that require more than 64 fixed pulses per effective
 quarter turn, to bound circuit expansion. These restrictions affect synthesis;
 matching fixed native operations remains available for every finite angle.
+Fixed-pulse targets use individual single-qubit lowering; generic run fusion can
+change the required pulse angles. Two-qubit run fusion remains available.
+Routing costs count native two-qubit gates, not the number of fixed pulses.
+Constraints on other gate families are checked, but do not create additional
+synthesis bases. Parameter ranges and relations are not supported.
 
 Use plain tuples for placements without calibration. Use
 `CompilerTarget.SiteTuple([1, 0], duration=40, fidelity=0.99)` to attach

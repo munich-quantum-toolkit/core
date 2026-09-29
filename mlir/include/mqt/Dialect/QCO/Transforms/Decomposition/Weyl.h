@@ -351,6 +351,6 @@ decomposeUnitary2QWeyl(const Matrix4x4& target,
 [[nodiscard]] SynthesizedUnitary2Q
 emitUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0, Value qubit1,
                   const TwoQubitNativeDecomposition& decomposition,
-                  CompilerTarget::SynthesisBasis basis);
+                  const CompilerTarget::SynthesisBasis& basis);
 
 } // namespace mlir::qco::decomposition

@@ -657,6 +657,46 @@ TEST_F(TargetSynthesisTest, ReadOnlyNativeCostMatchesSynthesis) {
   }
 }
 
+TEST_F(TargetSynthesisTest, NativeCostMatchesFixedPulseSynthesis) {
+  const auto target = valid(Target::create(
+      2, Connectivity::allToAll(),
+      NativeOperations::fromOperations({
+          valid(OperationCapability::create("ry", 1, 1)),
+          valid(OperationCapability::create("rz", 1, 1, {}, std::nullopt,
+                                            std::nullopt, {.37})),
+          valid(OperationCapability::create("cz", 2, 0)),
+          valid(OperationCapability::create("gphase", 0, 1)),
+      })));
+  auto program = build([](QCOProgramBuilder& builder) {
+    auto [a, b] = builder.cx(builder.staticQubit(0), builder.staticQubit(1));
+    std::tie(a, b) = builder.swap(a, b);
+    builder.sink(a);
+    builder.sink(b);
+    return builder.intConstant(0);
+  });
+  OwningOpRef<ModuleOp> expected = program->clone();
+  const auto shared = mlir::qco::NativeCostTable::precompute(
+      *program, Target::GateKind::CZ, 2023);
+  mlir::qco::NativeCostTracker tracker(target, 2023, shared.get());
+  for (auto gate :
+       mainFunction(*program).getOps<mlir::qco::UnitaryOpInterface>()) {
+    tracker.append(gate, std::array<size_t, 2>{0, 1});
+  }
+  const auto score = tracker.score();
+  ASSERT_TRUE(score);
+  ASSERT_TRUE(mlir::succeeded(runTargetPass(
+      *program, target, mlir::qco::createTargetNativeSynthesis())));
+  ASSERT_TRUE(mlir::succeeded(
+      runPass(*program, mlir::qco::createVerifyTargetConformance())));
+  size_t emitted = 0;
+  for (auto gate :
+       mainFunction(*program).getOps<mlir::qco::UnitaryOpInterface>()) {
+    emitted += static_cast<size_t>(gate.isTwoQubit());
+  }
+  EXPECT_EQ(score->first, emitted);
+  expectEquivalent(expected, program);
+}
+
 TEST_F(TargetSynthesisTest, NativeCostPreservesSingletonNativeGates) {
   const auto target = valid(
       Target::create(2, Connectivity::allToAll(),

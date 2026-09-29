@@ -1225,6 +1225,7 @@ Raises:
           },
           "Recognized native gates supported by the target.")
       .def_prop_ro("synthesis_basis", &mlir::CompilerTarget::synthesisBasis,
+                   nb::rv_policy::copy,
                    "A target-wide single-qubit basis with an optional "
                    "entangler, or None when no single-qubit basis is usable.")
       .def(

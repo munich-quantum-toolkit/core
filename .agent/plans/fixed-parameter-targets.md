@@ -29,14 +29,16 @@ rotation as an arbitrary rotation.
 
 Numeric and symbolic synthesis share one fixed-pulse recipe. Pulse-plan details
 stay internal; Python exposes target capabilities and the selected basis kind.
+Routing and synthesis borrow the cached basis, including its pulse sequence;
+Python property access retains value semantics.
 
 ## Validation
 
-The compiler suite passed 235 tests; native synthesis passed 64 tests, including
-1,944 full-matrix cases across all six axis pairs, both signs, fractional and
-non-Clifford angles, optional half turns, and numeric or symbolic parameters.
-Python target tests passed 386 cases, including numerical and symbolic input
-gates. Generated stubs, repository lint, and full changed-file C++ lint passed.
+The rebased compiler suite passed 243 tests, native synthesis passed 78, and
+mapping passed 125. Native synthesis includes 1,944 full-matrix cases across all
+six axis pairs and a regression comparing routing costs with fixed-pulse
+emission. Python fixed-parameter tests passed 362 cases, including numeric and
+symbolic input gates. Generated stubs are unchanged.
 
 ## Follow-up
 

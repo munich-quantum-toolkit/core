@@ -508,7 +508,7 @@ private:
     std::optional<size_t> nativeSwapCost;
 
     void prepareNativeCosts(Operation* root) {
-      const auto basis = target.synthesisBasis();
+      const auto& basis = target.synthesisBasis();
       if (!basis || !basis->entangler ||
           target.nativeOperationsKind() !=
               CompilerTarget::NativeOperations::Kind::Explicit) {
