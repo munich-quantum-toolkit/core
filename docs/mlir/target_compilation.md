@@ -198,6 +198,11 @@ Zero and integer-π pulses do not supply the required mixing. The constructive
 method also rejects angles that require more than 64 fixed pulses per effective
 quarter turn, to bound circuit expansion. These restrictions affect synthesis;
 matching fixed native operations remains available for every finite angle.
+
+Without a usable synthesis basis, full compilation can still reject native gate
+sequences when optimization combines them into an unsupported operation or
+angle. For example, two native RZ(0.37) pulses may become RZ(0.74).
+
 Fixed-pulse targets use individual single-qubit lowering; generic run fusion can
 change the required pulse angles. Two-qubit run fusion remains available.
 Routing costs count native two-qubit gates, not the number of fixed pulses.
