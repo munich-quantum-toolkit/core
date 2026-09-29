@@ -124,7 +124,7 @@ TEST(QFTAdder, BoundsTheSumWidthAndKeepsReferenceWeightsRepresentable) {
       std::invalid_argument);
 }
 
-TEST(QFTAdder, ParsesInstanceSpecificationsAndRoundTripsManifests) {
+TEST(QFTAdder, RoundTripsJSON) {
   const auto defaults = qftAdderFromInstanceSpecificationJSON(
       R"({"schema_version":1,"benchmark":"qft-adder","parameters":{"addend":"+++","accumulator":"001"}})");
   EXPECT_EQ(defaults.options().method, QFTAdderMethod::Register);
@@ -139,13 +139,34 @@ TEST(QFTAdder, ParsesInstanceSpecificationsAndRoundTripsManifests) {
   EXPECT_EQ(benchmarkIdFromManifestJSON(manifest), "qft-adder");
   EXPECT_NE(manifest.find("\"model\":\"qft_adder\""), std::string::npos);
   EXPECT_NE(manifest.find("\"width\":6"), std::string::npos);
+
+  const QFTAdder constant{{
+      .addend = "110",
+      .accumulator = "001",
+      .method = QFTAdderMethod::Constant,
+      .overflow = QFTAdderOverflow::Carry,
+  }};
+  const auto constantManifest = toManifestJSON(constant);
+  EXPECT_EQ(toManifestJSON(qftAdderFromManifestJSON(constantManifest)),
+            constantManifest);
 }
 
-TEST(QFTAdder, UsesSemanticJSONCaseIdsAndDescribesSchema) {
+TEST(QFTAdder, UsesSemanticCaseIds) {
   EXPECT_EQ(caseId(QFTAdder{{.addend = "+++", .accumulator = "001"}}),
-            caseId(QFTAdder{{.addend = "+++", .accumulator = "001"}}));
+            caseId(QFTAdder{{.addend = "+++",
+                             .accumulator = "001",
+                             .method = QFTAdderMethod::Register,
+                             .overflow = QFTAdderOverflow::Wrap}}));
   EXPECT_NE(caseId(QFTAdder{{.addend = "+++", .accumulator = "001"}}),
             caseId(QFTAdder{{.addend = "++++", .accumulator = "0001"}}));
+  EXPECT_NE(caseId(QFTAdder{{.addend = "110",
+                             .accumulator = "001",
+                             .method = QFTAdderMethod::Constant,
+                             .overflow = QFTAdderOverflow::Carry}}),
+            caseId(QFTAdder{{.addend = "110", .accumulator = "001"}}));
+}
+
+TEST(QFTAdder, DescribesJSONSchema) {
   const auto schema = describeBenchmarkJSON("qft-adder");
   EXPECT_NE(schema.find("\"maxLength\":1024"), std::string::npos);
   EXPECT_NE(schema.find("\"minLength\":1"), std::string::npos);
@@ -192,10 +213,6 @@ TEST(QFTAdder, EvaluatesCountsFromJSON) {
                    R"({"schema_version":1,"counts":{"0111":8,"0110":2}})");
   EXPECT_NE(constantEvaluation.find("\"success_probability\":0.8"),
             std::string::npos);
-  EXPECT_EQ(toManifestJSON(qftAdderFromManifestJSON(toManifestJSON(constant))),
-            toManifestJSON(constant));
-  EXPECT_NE(caseId(constant),
-            caseId(QFTAdder{{.addend = "110", .accumulator = "001"}}));
 }
 
 } // namespace

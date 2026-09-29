@@ -67,7 +67,7 @@ TEST(BV, GivesTheHiddenBitstringAsASelectedOutcome) {
   }
 }
 
-TEST(BV, RoundTripsJSONAndEvaluatesCounts) {
+TEST(BV, RoundTripsJSON) {
   const auto defaults = bvFromInstanceSpecificationJSON(
       R"({"schema_version":1,"benchmark":"bv","parameters":{"hidden_bitstring":"101"}})");
   EXPECT_EQ(defaults.options().method, BVMethod::Static);
@@ -79,10 +79,18 @@ TEST(BV, RoundTripsJSONAndEvaluatesCounts) {
   const auto manifest = toManifestJSON(dynamic);
   EXPECT_EQ(toManifestJSON(bvFromManifestJSON(manifest)), manifest);
   EXPECT_EQ(benchmarkIdFromManifestJSON(manifest), "bv");
+}
+
+TEST(BV, UsesSemanticCaseIds) {
   EXPECT_NE(caseId(BV{{.hiddenBitstring = "1"}}),
             caseId(BV{{.hiddenBitstring = "1", .method = BVMethod::Dynamic}}));
-  EXPECT_NE(describeBenchmarkJSON("bv").find("\"dynamic\""), std::string::npos);
+}
 
+TEST(BV, DescribesJSONSchema) {
+  EXPECT_NE(describeBenchmarkJSON("bv").find("\"dynamic\""), std::string::npos);
+}
+
+TEST(BV, EvaluatesCountsFromJSON) {
   const auto evaluation =
       evaluateJSON(toManifestJSON(BV{{.hiddenBitstring = "11"}}),
                    R"({"schema_version":1,"counts":{"11":8,"00":2}})");

@@ -12,11 +12,12 @@
 #include "bench/JSON.hpp"
 #include "bench/Teleportation.hpp"
 
+#include "JSONTestUtils.hpp"
+
 #include "gtest/gtest.h"
 
 #include <stdexcept>
 #include <string>
-#include <string_view>
 
 namespace {
 
@@ -30,6 +31,7 @@ using mqt::bench::teleportationFromInstanceSpecificationJSON;
 using mqt::bench::teleportationFromManifestJSON;
 using mqt::bench::toInstanceSpecificationJSON;
 using mqt::bench::toManifestJSON;
+using mqt::bench::test::expectInvalidJSON;
 
 TEST(Teleportation, ChecksTheTeleportedState) {
   const Teleportation benchmark;
@@ -52,7 +54,7 @@ TEST(Teleportation, ChecksTheTeleportedState) {
   EXPECT_EQ(noisy.successProbability, 0.75);
 }
 
-TEST(Teleportation, ParsesInstanceSpecificationsAndRoundTripsManifests) {
+TEST(Teleportation, RoundTripsJSON) {
   const auto parsed = teleportationFromInstanceSpecificationJSON(
       R"({"schema_version":1,"benchmark":"teleportation","parameters":{}})");
   EXPECT_EQ(
@@ -67,9 +69,12 @@ TEST(Teleportation, ParsesInstanceSpecificationsAndRoundTripsManifests) {
   EXPECT_NE(manifest.find("\"parameters\":{}"), std::string::npos);
 }
 
-TEST(Teleportation, UsesAStableJSONCaseIdAndDescribesSchema) {
+TEST(Teleportation, UsesSemanticCaseIds) {
   EXPECT_EQ(caseId(Teleportation{}), "sha256-de1348477e2604539b963a28bc19f5d3"
                                      "ed27ed86fc6608366bbc6eb9b55855f6");
+}
+
+TEST(Teleportation, DescribesJSONSchema) {
   EXPECT_NE(
       describeBenchmarkJSON("teleportation")
           .find(
@@ -77,16 +82,13 @@ TEST(Teleportation, UsesAStableJSONCaseIdAndDescribesSchema) {
       std::string::npos);
 }
 
-TEST(Teleportation, RejectsUnknownJSONParameters) {
-  try {
-    static_cast<void>(teleportationFromInstanceSpecificationJSON(
-        R"({"schema_version":1,"benchmark":"teleportation","parameters":{"qubits":3}})"));
-    FAIL() << "Expected invalid JSON input";
-  } catch (const std::invalid_argument& error) {
-    EXPECT_NE(std::string_view(error.what()).find("unknown key 'qubits'"),
-              std::string_view::npos)
-        << error.what();
-  }
+TEST(Teleportation, RejectsInvalidJSONParameters) {
+  expectInvalidJSON(
+      [] {
+        static_cast<void>(teleportationFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"teleportation","parameters":{"qubits":3}})"));
+      },
+      "unknown key 'qubits'");
 }
 
 TEST(Teleportation, EvaluatesCountsFromJSON) {

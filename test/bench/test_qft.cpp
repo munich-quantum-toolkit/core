@@ -77,7 +77,7 @@ TEST(QFT, GivesFourPeaksForPeriodFour) {
   EXPECT_FALSE(evaluation.successProbability);
 }
 
-TEST(QFT, ParsesInstanceSpecificationsAndRoundTripsManifests) {
+TEST(QFT, RoundTripsJSON) {
   const auto defaults = qftFromInstanceSpecificationJSON(
       R"({"schema_version":1,"benchmark":"qft","parameters":{"qubits":4,"period_exponent":2}})");
   EXPECT_EQ(defaults.options().method, QFTMethod::Standard);
@@ -90,15 +90,16 @@ TEST(QFT, ParsesInstanceSpecificationsAndRoundTripsManifests) {
   const auto manifest = toManifestJSON(benchmark);
   EXPECT_EQ(toManifestJSON(qftFromManifestJSON(manifest)), manifest);
   EXPECT_EQ(benchmarkIdFromManifestJSON(manifest), "qft");
-  EXPECT_NE(manifest.find("\"case_id\":\"" + caseId(benchmark) + "\""),
-            std::string::npos);
 }
 
-TEST(QFT, UsesSemanticJSONCaseIdsAndDescribesSchema) {
+TEST(QFT, UsesSemanticCaseIds) {
   EXPECT_NE(caseId(QFT{{.qubits = 3, .periodExponent = 1}}),
             caseId(QFT{{.qubits = 3,
                         .periodExponent = 1,
                         .method = QFTMethod::Semiclassical}}));
+}
+
+TEST(QFT, DescribesJSONSchema) {
   EXPECT_NE(describeBenchmarkJSON("qft").find("\"period_exponent\""),
             std::string::npos);
 }

@@ -12,12 +12,13 @@
 #include "bench/JSON.hpp"
 #include "bench/RepeatUntilSuccess.hpp"
 
+#include "JSONTestUtils.hpp"
+
 #include "gtest/gtest.h"
 
 #include <numbers>
 #include <stdexcept>
 #include <string>
-#include <string_view>
 
 namespace {
 
@@ -32,6 +33,7 @@ using mqt::bench::repeatUntilSuccessFromManifestJSON;
 using mqt::bench::RepeatUntilSuccessOptions;
 using mqt::bench::toInstanceSpecificationJSON;
 using mqt::bench::toManifestJSON;
+using mqt::bench::test::expectInvalidJSON;
 
 TEST(RepeatUntilSuccess, HasTheOutput) {
   const RepeatUntilSuccess benchmark;
@@ -72,7 +74,7 @@ TEST(RepeatUntilSuccess, EvaluatesTheReferenceWithoutASuccessOutcome) {
   EXPECT_FALSE(allZero.successProbability);
 }
 
-TEST(RepeatUntilSuccess, ParsesInstanceSpecificationsAndRoundTripsManifests) {
+TEST(RepeatUntilSuccess, RoundTripsJSON) {
   const auto defaults = repeatUntilSuccessFromInstanceSpecificationJSON(
       R"({"schema_version":1,"benchmark":"repeat-until-success","parameters":{}})");
   EXPECT_EQ(
@@ -95,11 +97,14 @@ TEST(RepeatUntilSuccess, ParsesInstanceSpecificationsAndRoundTripsManifests) {
             32U);
 }
 
-TEST(RepeatUntilSuccess, UsesSemanticJSONCaseIdsAndDescribesSchema) {
+TEST(RepeatUntilSuccess, UsesSemanticCaseIds) {
   EXPECT_EQ(caseId(RepeatUntilSuccess{}),
             caseId(RepeatUntilSuccess{{.dataQubits = 1}}));
   EXPECT_NE(caseId(RepeatUntilSuccess{}),
             caseId(RepeatUntilSuccess{{.dataQubits = 5}}));
+}
+
+TEST(RepeatUntilSuccess, DescribesJSONSchema) {
   EXPECT_NE(
       describeBenchmarkJSON("repeat-until-success")
           .find(
@@ -116,15 +121,12 @@ TEST(RepeatUntilSuccess, RejectsInvalidJSONParameters) {
             width + "}}")),
         std::invalid_argument);
   }
-  try {
-    static_cast<void>(repeatUntilSuccessFromInstanceSpecificationJSON(
-        R"({"schema_version":1,"benchmark":"repeat-until-success","parameters":{"attempts":1}})"));
-    FAIL() << "Expected invalid JSON input";
-  } catch (const std::invalid_argument& error) {
-    EXPECT_NE(std::string_view(error.what()).find("unknown key 'attempts'"),
-              std::string_view::npos)
-        << error.what();
-  }
+  expectInvalidJSON(
+      [] {
+        static_cast<void>(repeatUntilSuccessFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"repeat-until-success","parameters":{"attempts":1}})"));
+      },
+      "unknown key 'attempts'");
 }
 
 TEST(RepeatUntilSuccess, EvaluatesCountsFromJSON) {

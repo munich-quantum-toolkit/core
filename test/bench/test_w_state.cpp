@@ -63,27 +63,41 @@ TEST(WState, RejectsInvalidParametersAndOutcomes) {
                std::invalid_argument);
 }
 
-TEST(WState, RoundTripsStrictManifestsAndEvaluatesCounts) {
+TEST(WState, RoundTripsJSON) {
+  const WState benchmark{{.qubits = 2}};
+  const auto instance = toInstanceSpecificationJSON(benchmark);
+  EXPECT_EQ(toInstanceSpecificationJSON(
+                wStateFromInstanceSpecificationJSON(instance)),
+            instance);
+  const auto manifest = toManifestJSON(benchmark);
+  EXPECT_EQ(toManifestJSON(wStateFromManifestJSON(manifest)), manifest);
+  EXPECT_NE(manifest.find(R"("model":"w_state")"), std::string::npos);
+}
+
+TEST(WState, UsesSemanticCaseIds) {
+  EXPECT_NE(caseId(WState{{.qubits = 2}}), caseId(WState{{.qubits = 3}}));
+}
+
+TEST(WState, DescribesJSONSchema) {
   const auto schema = describeBenchmarkJSON("w-state");
   EXPECT_NE(schema.find(R"("minimum":1)"), std::string::npos);
   EXPECT_NE(schema.find(R"("required":["qubits"])"), std::string::npos);
-  const WState benchmark{{.qubits = 2}};
-  const auto manifest = toManifestJSON(benchmark);
-  EXPECT_EQ(caseId(wStateFromInstanceSpecificationJSON(
-                toInstanceSpecificationJSON(benchmark))),
-            caseId(benchmark));
-  EXPECT_NE(caseId(benchmark), caseId(WState{{.qubits = 3}}));
-  EXPECT_EQ(toManifestJSON(wStateFromManifestJSON(manifest)), manifest);
-  EXPECT_NE(manifest.find(R"("model":"w_state")"), std::string::npos);
-  const auto evaluation = evaluateJSON(
-      manifest, R"({"schema_version":1,"counts":{"01":10,"10":10}})");
-  EXPECT_NE(evaluation.find(R"("squared_hellinger_fidelity":1.0)"),
-            std::string::npos);
-  EXPECT_NE(evaluation.find(R"("shots":20)"), std::string::npos);
+}
+
+TEST(WState, RejectsInvalidJSONParameters) {
   EXPECT_THROW(
       static_cast<void>(wStateFromInstanceSpecificationJSON(
           R"({"schema_version":1,"benchmark":"w-state","parameters":{"qubits":0}})")),
       std::invalid_argument);
+}
+
+TEST(WState, EvaluatesCountsFromJSON) {
+  const auto evaluation =
+      evaluateJSON(toManifestJSON(WState{{.qubits = 2}}),
+                   R"({"schema_version":1,"counts":{"01":10,"10":10}})");
+  EXPECT_NE(evaluation.find(R"("squared_hellinger_fidelity":1.0)"),
+            std::string::npos);
+  EXPECT_NE(evaluation.find(R"("shots":20)"), std::string::npos);
 }
 
 } // namespace mqt::bench

@@ -80,7 +80,7 @@ TEST(Grover, EvaluatesTheMarkedOutcomeAsSuccess) {
   EXPECT_DOUBLE_EQ(*evaluation.successProbability, 0.25);
 }
 
-TEST(Grover, RoundTripsJSONWithResolvedIterations) {
+TEST(Grover, RoundTripsJSON) {
   const auto defaults = groverFromInstanceSpecificationJSON(
       R"({"schema_version":1,"benchmark":"grover","parameters":{"marked_bitstring":"10"}})");
   ASSERT_TRUE(defaults.options().iterations);
@@ -94,6 +94,9 @@ TEST(Grover, RoundTripsJSONWithResolvedIterations) {
   EXPECT_EQ(toManifestJSON(groverFromManifestJSON(manifest)), manifest);
   EXPECT_EQ(benchmarkIdFromManifestJSON(manifest), "grover");
   EXPECT_NE(manifest.find("\"success_outcome\":\"001\""), std::string::npos);
+}
+
+TEST(Grover, DescribesJSONSchema) {
   EXPECT_NE(describeBenchmarkJSON("grover").find("\"maxLength\":62"),
             std::string::npos);
 }

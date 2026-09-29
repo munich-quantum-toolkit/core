@@ -12,13 +12,14 @@
 #include "bench/JSON.hpp"
 #include "bench/QPE.hpp"
 
+#include "JSONTestUtils.hpp"
+
 #include "gtest/gtest.h"
 
 #include <cstddef>
 #include <numbers>
 #include <stdexcept>
 #include <string>
-#include <string_view>
 
 namespace {
 
@@ -32,6 +33,7 @@ using mqt::bench::qpeFromManifestJSON;
 using mqt::bench::QPEMethod;
 using mqt::bench::toInstanceSpecificationJSON;
 using mqt::bench::toManifestJSON;
+using mqt::bench::test::expectInvalidJSON;
 
 TEST(Phase, NormalizesTurns) {
   EXPECT_EQ(Phase(10, 8), Phase(1, 4));
@@ -122,7 +124,7 @@ TEST(QPE, SupportsArbitraryWidthOutcomes) {
   EXPECT_NEAR(qpe.probability(upper), 27. / (4. * pi * pi), 1e-15);
 }
 
-TEST(QPE, ParsesInstanceSpecificationsAndRoundTripsManifests) {
+TEST(QPE, RoundTripsJSON) {
   const auto parsed = qpeFromInstanceSpecificationJSON(
       R"({"schema_version":1,"benchmark":"qpe","parameters":{"precision":4,"phase":{"numerator":10,"denominator":8},"method":"iterative"}})");
   EXPECT_EQ(parsed.options().phase, Phase(1, 4));
@@ -139,32 +141,30 @@ TEST(QPE, ParsesInstanceSpecificationsAndRoundTripsManifests) {
   EXPECT_EQ(manifest.find("0.333"), std::string::npos);
 }
 
-TEST(QPE, RejectsInvalidJSONParametersAndDescribesSchema) {
-  const auto expectInvalid = [](const std::string_view instance,
-                                const std::string_view diagnostic) {
-    try {
-      static_cast<void>(qpeFromInstanceSpecificationJSON(instance));
-      FAIL() << "Expected invalid JSON input";
-    } catch (const std::invalid_argument& error) {
-      EXPECT_NE(std::string_view(error.what()).find(diagnostic),
-                std::string_view::npos)
-          << error.what();
-    }
-  };
-  expectInvalid(
-      R"({"schema_version":1,"benchmark":"qpe","parameters":{"precision":2,"phase":{"numerator":1,"denominator":4,"numerator":2}}})",
-      "duplicate key 'numerator'");
-  expectInvalid(
-      R"({"schema_version":1,"benchmark":"qpe","parameters":{"precision":2,"phase":{"numerator":9007199254740993.0,"denominator":9007199254740994}}})",
-      "encoded as an integer");
-  expectInvalid(
-      R"({"schema_version":1,"benchmark":"qpe","parameters":{"precision":18446744073709551615,"phase":{"numerator":1,"denominator":4}}})",
-      "between 1 and 1000000");
-  expectInvalid(
-      R"({"schema_version":1,"benchmark":"qpe","parameters":{"precision":2,"phase":{"numerator":1,"denominator":0}}})",
-      "denominator must not be zero");
+TEST(QPE, DescribesJSONSchema) {
   EXPECT_NE(describeBenchmarkJSON("qpe").find("\"iterative\""),
             std::string::npos);
+}
+
+TEST(QPE, RejectsInvalidJSONParameters) {
+  expectInvalidJSON(
+      [] {
+        static_cast<void>(qpeFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"qpe","parameters":{"precision":2,"phase":{"numerator":9007199254740993.0,"denominator":9007199254740994}}})"));
+      },
+      "encoded as an integer");
+  expectInvalidJSON(
+      [] {
+        static_cast<void>(qpeFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"qpe","parameters":{"precision":18446744073709551615,"phase":{"numerator":1,"denominator":4}}})"));
+      },
+      "between 1 and 1000000");
+  expectInvalidJSON(
+      [] {
+        static_cast<void>(qpeFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"qpe","parameters":{"precision":2,"phase":{"numerator":1,"denominator":0}}})"));
+      },
+      "denominator must not be zero");
 }
 
 } // namespace
