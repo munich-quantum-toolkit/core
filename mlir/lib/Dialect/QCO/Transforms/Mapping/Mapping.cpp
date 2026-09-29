@@ -579,14 +579,15 @@ private:
     }
   };
 
-  class FrontierPriorityQueue {
+  /// A deduplicated priority queue for A* search nodes.
+  class SearchFrontier {
   public:
     /// Push a node onto the frontier.
     void push(Node* node) {
-      const auto [it, inserted] =
-          best.try_emplace(node->layout.getProgramToHardware(), node);
+      const auto key = node->layout.getProgramToHardware();
+      const auto [it, inserted] = best.try_emplace(key, node);
       if (inserted) {
-        frontier.emplace(node);
+        queue.emplace(node);
         return;
       }
 
@@ -597,26 +598,37 @@ private:
         return;
       }
 
-      // Otherwise, if the new node has lower costs and leads to the same
-      // layout. Update the best map and reheapify the queue.
       it->second = node;
-      *other = *node; // TODO: This copies the layout.
-      frontier.reheapify();
+      queue.push(node);
     }
 
     /// Pop a node from the frontier.
-    Node* pop() {
-      Node* node = frontier.top();
-      frontier.pop();
-      return node;
+    [[nodiscard]] Node* pop() {
+      while (!queue.empty()) {
+        Node* node = queue.top();
+        queue.pop();
+
+        const auto key = node->layout.getProgramToHardware();
+        const auto it = best.find(key);
+
+        // If the node matches the entry in the best map, it's valid.
+        // Otherwise, the node was superseded by a cheaper state. Thus, drop it.
+
+        if (it != best.end() && it->second == node) {
+          return node;
+        }
+      }
+
+      return nullptr;
     }
 
     /// Return true, if the frontier is empty.
-    [[nodiscard]] bool empty() const { return frontier.empty(); }
+    [[nodiscard]] bool empty() const { return queue.empty(); }
 
   private:
-    llvm::PriorityQueue<Node*, std::vector<Node*>, Node::ComparePointer>
-        frontier;
+    /// Priority queue of node pointers managed by the caller.
+    llvm::PriorityQueue<Node*, std::vector<Node*>, Node::ComparePointer> queue;
+    /// Maps a layout to the node that reached it using the lowest cost.
     DenseMap<ArrayRef<size_t>, Node*> best;
   };
 
@@ -1219,7 +1231,7 @@ private:
       return SmallVector<IndexPairType>{};
     }
 
-    FrontierPriorityQueue frontier;
+    SearchFrontier frontier;
     frontier.push(root);
 
     while (!frontier.empty()) {
@@ -1257,6 +1269,7 @@ private:
                 .standalone = standalone,
                 .prefix = prefix,
             };
+            
             child->initializeChild(curr, candidate, window, env.target, params);
             seen.insert(indices);
             frontier.push(child);
