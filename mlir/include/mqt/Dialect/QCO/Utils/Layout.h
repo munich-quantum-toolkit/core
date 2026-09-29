@@ -34,11 +34,15 @@ namespace mlir::qco {
 /// `[0, nProgramQubits)` and `[0, nHardwareQubits)`, with `nProgramQubits <=
 /// nHardwareQubits`, and every program qubit is mapped to a distinct hardware
 /// qubit. Unmapped hardware slots carry a sentinel value.
+/// The site count must not exceed `std::numeric_limits<T>::max()` so that
+/// the sentinel cannot also denote a qubit.
 
 /// Note that we use the terminology "hardware" and "program" qubits here,
 /// because "virtual" (opposed to physical) and "static" (opposed to dynamic)
 /// are C++ keywords.
 template <class T> class Layout {
+  static_assert(std::is_integral_v<T> && std::is_unsigned_v<T> &&
+                !std::is_same_v<T, bool>);
   /// Sentinel stored in `programToHardware_` and `hardwareToProgram_` entries
   /// that do not currently hold a valid index.
   constexpr static T UNMAPPED = std::numeric_limits<T>::max();
@@ -51,21 +55,24 @@ public:
   /// index in `[0, nqubits)` to the i-th hardware index in `[0, nqubits)`.
   /// Sets both `nProgramQubits` and `nHardwareQubits` to `nqubits`.
   static Layout<T> identity(size_t nqubits) {
-    return fromMapping(to_vector(llvm::seq<T>(nqubits)));
+    checkSize(nqubits);
+    return fromMapping(to_vector(llvm::seq<T>(static_cast<T>(nqubits))));
   }
 
   /// Construct and return a random layout that maps every program qubit
   /// index in `[0, nProgramQubits)` to a distinct hardware index drawn from
   /// `[0, nHardwareQubits)`.
   static Layout<T> random(size_t nProgramQubits, size_t nHardwareQubits,
-                       size_t seed) {
+                          size_t seed) {
     assert(nProgramQubits <= nHardwareQubits &&
            "cannot map more program qubits than hardware qubits");
-    auto hwIndices = llvm::to_vector(llvm::seq(nHardwareQubits));
+    checkSize(nHardwareQubits);
+    auto hwIndices =
+        llvm::to_vector(llvm::seq<T>(static_cast<T>(nHardwareQubits)));
     llvm::shuffle(hwIndices.begin(), hwIndices.end(), std::mt19937_64{seed});
 
     Layout<T> layout(nProgramQubits, nHardwareQubits);
-    for (size_t prog = 0; prog < nProgramQubits; ++prog) {
+    for (T prog = 0; prog < nProgramQubits; ++prog) {
       layout.add(prog, hwIndices[prog]);
     }
     return layout;
@@ -75,8 +82,9 @@ public:
   /// where mapping[prog] = hw.
   /// Sets both `nProgramQubits` and `nHardwareQubits` to `mapping.size()`.
   static Layout<T> fromMapping(ArrayRef<T> mapping) {
+    checkSize(mapping.size());
     llvm::SmallBitVector seen(mapping.size());
-    for (const size_t hw : mapping) {
+    for (const auto hw : mapping) {
       if (hw >= mapping.size() || seen.test(hw)) {
         llvm::reportFatalUsageError("mapping must be a permutation");
       }
@@ -85,7 +93,7 @@ public:
 
     Layout<T> layout(mapping.size(), mapping.size());
     for (const auto [prog, hw] : enumerate(mapping)) {
-      layout.add(prog, hw);
+      layout.add(static_cast<T>(prog), hw);
     }
     return layout;
   }
@@ -105,7 +113,7 @@ public:
   }
 
   /// Lookup and return program index for a hardware index.
-  [[nodiscard]] size_t getProgramIndex(T hw) const {
+  [[nodiscard]] T getProgramIndex(T hw) const {
     assert(hw < hardwareToProgram_.size() && "hardware index out of bounds");
     const auto prog = hardwareToProgram_[hw];
     assert(prog != UNMAPPED && "hardware index not mapped");
@@ -113,7 +121,7 @@ public:
   }
 
   /// Lookup and return hardware index for a program index.
-  [[nodiscard]] size_t getHardwareIndex(T prog) const {
+  [[nodiscard]] T getHardwareIndex(T prog) const {
     assert(prog < programToHardware_.size() && "program index out of bounds");
     const auto hw = programToHardware_[prog];
     assert(hw != UNMAPPED && "program index not mapped");
@@ -150,8 +158,8 @@ public:
     if (hwA == hwB) {
       return;
     }
-    const size_t progA = hardwareToProgram_[hwA];
-    const size_t progB = hardwareToProgram_[hwB];
+    const auto progA = hardwareToProgram_[hwA];
+    const auto progB = hardwareToProgram_[hwB];
     assert(progA != UNMAPPED && "hardware index not mapped");
     assert(progB != UNMAPPED && "hardware index not mapped");
     hardwareToProgram_[hwA] = progB;
@@ -175,7 +183,7 @@ public:
   /// program qubit `prog`. Requires every program qubit to be mapped.
   [[nodiscard]] ArrayRef<T> getProgramToHardware() const {
 #ifndef NDEBUG
-    for (const size_t hw : programToHardware_) {
+    for (const auto hw : programToHardware_) {
       assert(hw != UNMAPPED && "program qubit not mapped");
     }
 #endif
@@ -189,6 +197,12 @@ public:
   }
 
 private:
+  static void checkSize(size_t nqubits) {
+    if (nqubits > UNMAPPED) {
+      llvm::reportFatalUsageError("layout exceeds qubit index capacity");
+    }
+  }
+
   Layout(size_t nProgramQubits, size_t nHardwareQubits)
       : programToHardware_(nProgramQubits, UNMAPPED),
         hardwareToProgram_(nHardwareQubits, UNMAPPED) {}
