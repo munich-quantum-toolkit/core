@@ -59,86 +59,88 @@ struct RuntimeScalar {
 
   static RuntimeScalar constant(RewriterBase& rewriter, Location loc,
                                 double x) {
-    return {mqt::constantFromScalar(rewriter, loc, x), &rewriter, loc};
+    return {.v = mqt::constantFromScalar(rewriter, loc, x),
+            .rewriter = &rewriter,
+            .loc = loc};
   }
 
   [[nodiscard]] RuntimeScalar operator+(RuntimeScalar o) const {
     return {
-        arith::AddFOp::create(*rewriter, loc, v, o.v).getResult(),
-        rewriter,
-        loc,
+        .v = arith::AddFOp::create(*rewriter, loc, v, o.v).getResult(),
+        .rewriter = rewriter,
+        .loc = loc,
     };
   }
   [[nodiscard]] RuntimeScalar operator-(RuntimeScalar o) const {
     return {
-        arith::SubFOp::create(*rewriter, loc, v, o.v).getResult(),
-        rewriter,
-        loc,
+        .v = arith::SubFOp::create(*rewriter, loc, v, o.v).getResult(),
+        .rewriter = rewriter,
+        .loc = loc,
     };
   }
   [[nodiscard]] RuntimeScalar operator*(RuntimeScalar o) const {
     return {
-        arith::MulFOp::create(*rewriter, loc, v, o.v).getResult(),
-        rewriter,
-        loc,
+        .v = arith::MulFOp::create(*rewriter, loc, v, o.v).getResult(),
+        .rewriter = rewriter,
+        .loc = loc,
     };
   }
   [[nodiscard]] RuntimeScalar operator/(RuntimeScalar o) const {
     return {
-        arith::DivFOp::create(*rewriter, loc, v, o.v).getResult(),
-        rewriter,
-        loc,
+        .v = arith::DivFOp::create(*rewriter, loc, v, o.v).getResult(),
+        .rewriter = rewriter,
+        .loc = loc,
     };
   }
   [[nodiscard]] RuntimeScalar operator-() const {
     return {
-        arith::NegFOp::create(*rewriter, loc, v).getResult(),
-        rewriter,
-        loc,
+        .v = arith::NegFOp::create(*rewriter, loc, v).getResult(),
+        .rewriter = rewriter,
+        .loc = loc,
     };
   }
 
   [[nodiscard]] RuntimeScalar sin() const {
     return {
-        math::SinOp::create(*rewriter, loc, v).getResult(),
-        rewriter,
-        loc,
+        .v = math::SinOp::create(*rewriter, loc, v).getResult(),
+        .rewriter = rewriter,
+        .loc = loc,
     };
   }
   [[nodiscard]] RuntimeScalar cos() const {
     return {
-        math::CosOp::create(*rewriter, loc, v).getResult(),
-        rewriter,
-        loc,
+        .v = math::CosOp::create(*rewriter, loc, v).getResult(),
+        .rewriter = rewriter,
+        .loc = loc,
     };
   }
   [[nodiscard]] RuntimeScalar abs() const {
     return {
-        math::AbsFOp::create(*rewriter, loc, v).getResult(),
-        rewriter,
-        loc,
+        .v = math::AbsFOp::create(*rewriter, loc, v).getResult(),
+        .rewriter = rewriter,
+        .loc = loc,
     };
   }
   [[nodiscard]] RuntimeScalar floor() const {
     return {
-        math::FloorOp::create(*rewriter, loc, v).getResult(),
-        rewriter,
-        loc,
+        .v = math::FloorOp::create(*rewriter, loc, v).getResult(),
+        .rewriter = rewriter,
+        .loc = loc,
     };
   }
   [[nodiscard]] RuntimeScalar sqrt() const {
     return {
-        math::SqrtOp::create(*rewriter, loc, v).getResult(),
-        rewriter,
-        loc,
+        .v = math::SqrtOp::create(*rewriter, loc, v).getResult(),
+        .rewriter = rewriter,
+        .loc = loc,
     };
   }
   [[nodiscard]] RuntimeScalar atan2(RuntimeScalar x) const {
     // `*this` is y, `x` is x — same order as std::atan2 / math.atan2.
     return {
-        math::Atan2Op::create(*rewriter, loc, v, x.v).getResult(),
-        rewriter,
-        loc,
+        .v = math::Atan2Op::create(*rewriter, loc, v, x.v).getResult(),
+        .rewriter = rewriter,
+        .loc = loc,
     };
   }
   [[nodiscard]] Value oge(RuntimeScalar o) const {
@@ -164,9 +166,10 @@ struct RuntimeScalar {
   }
   static RuntimeScalar select(Value c, RuntimeScalar t, RuntimeScalar f) {
     return {
-        arith::SelectOp::create(*t.rewriter, t.loc, c, t.v, f.v).getResult(),
-        t.rewriter,
-        t.loc,
+        .v = arith::SelectOp::create(*t.rewriter, t.loc, c, t.v, f.v)
+                 .getResult(),
+        .rewriter = t.rewriter,
+        .loc = t.loc,
     };
   }
 };
@@ -334,13 +337,16 @@ static RuntimeScalar normalizeGateAngle(RuntimeScalar angle) {
   const auto scaled = angle / four;
   auto tangent = math::TanOp::create(*angle.rewriter, angle.loc, scaled.v);
   auto principal = math::AtanOp::create(*angle.rewriter, angle.loc, tangent);
-  return RuntimeScalar{principal, angle.rewriter, angle.loc} * four;
+  return RuntimeScalar{
+             .v = principal, .rewriter = angle.rewriter, .loc = angle.loc} *
+         four;
 }
 
 static RuntimeScalar gateParam(UnitaryOpInterface op, unsigned i,
                                RewriterBase& rewriter, Location loc) {
   Value p = op.getParameter(i);
-  return normalizeGateAngle(RuntimeScalar{p, &rewriter, loc});
+  return normalizeGateAngle(
+      RuntimeScalar{.v = p, .rewriter = &rewriter, .loc = loc});
 }
 
 /// Converts a supported single-qubit gate to quaternion representation.

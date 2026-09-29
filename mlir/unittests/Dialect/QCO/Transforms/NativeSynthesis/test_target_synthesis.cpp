@@ -15,6 +15,7 @@
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Weyl.h"
 #include "mqt/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mqt/Dialect/QCO/Transforms/NativeSynthesis/NativeCost.h"
@@ -47,6 +48,7 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
@@ -1908,6 +1910,44 @@ TEST_F(TargetSynthesisTest, TargetNativeSingleQubitFusionRequiresImprovement) {
   }
 }
 
+TEST_F(TargetSynthesisTest, SingleQubitFusionPreservesNativeSymbolicRuns) {
+  context->loadDialect<mlir::math::MathDialect>();
+  auto original = mlir::parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%theta: f64) -> !qco.qubit {
+        %q0 = qco.static 0 : !qco.qubit
+        %q1 = qco.u(%theta, %theta, %theta) %q0 : !qco.qubit -> !qco.qubit
+        %q2 = qco.u(%theta, %theta, %theta) %q1 : !qco.qubit -> !qco.qubit
+        return %q2 : !qco.qubit
+      }
+    }
+  )mlir",
+                                                    context.get());
+  ASSERT_TRUE(original);
+  const auto target = makeUCxTarget();
+  for (const bool useTarget : {false, true}) {
+    SCOPED_TRACE(useTarget);
+    for (const bool preserve : {false, true}) {
+      SCOPED_TRACE(preserve);
+      OwningOpRef<ModuleOp> moduleOp = original->clone();
+      const mlir::qco::decomposition::SingleQubitFusionPolicy policy{
+          .preserveNativeParameterizedRuns = preserve,
+      };
+      ASSERT_TRUE(
+          mlir::succeeded(mlir::qco::decomposition::fuseSingleQubitUnitaryRuns(
+              *moduleOp, Target::SingleQubitBasis::U, policy,
+              useTarget ? &target : nullptr,
+              mlir::GreedyRewriteConfig{}.enableConstantCSE(false))));
+      ASSERT_TRUE(mlir::succeeded(mlir::verify(*moduleOp)));
+      ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*moduleOp)));
+      EXPECT_EQ(countOps<UOp>(*moduleOp), preserve ? 2U : 1U);
+      if (preserve) {
+        EXPECT_EQ(printModule(*moduleOp), printModule(*original));
+      }
+    }
+  }
+}
+
 TEST_F(TargetSynthesisTest,
        TargetNativeSingleQubitFusionPreservesNativeControlBody) {
   auto moduleOp = mlir::parseSourceString<ModuleOp>(R"mlir(
@@ -2017,10 +2057,12 @@ TEST_F(TargetSynthesisTest, TargetNativeSynthesisRestoresControlledU2) {
   )mlir",
                                                     context.get());
   ASSERT_TRUE(moduleOp);
-  const auto target = valid(Target::create(
-      2, Connectivity::allToAll(),
-      NativeOperations::fromOperations({valid(OperationCapability::create(
-          "u", OperationCapability::Arity::variadic(1), 3))})));
+  const auto target = valid(
+      Target::create(2, Connectivity::allToAll(),
+                     NativeOperations::fromOperations({
+                         valid(OperationCapability::create(
+                             "u", OperationCapability::Arity::variadic(1), 3)),
+                     })));
   ASSERT_TRUE(mlir::succeeded(runTargetPass(
       *moduleOp, target, mlir::qco::createTargetNativeSynthesis())));
   EXPECT_EQ(countOps<CtrlOp>(*moduleOp), 1U);

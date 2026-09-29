@@ -626,17 +626,34 @@ TEST_P(MergeFixedSingleQubitGateTest, PreservesMatrix) {
   module = builder.finalize();
 
   OwningOpRef<ModuleOp> original = module->clone();
-  ASSERT_TRUE(runMergePass(*module).succeeded());
-
-  ::mqt::test::expectFullUnitaryEqual(*original, *module, 1);
-  EXPECT_EQ(countOps<IdOp>(), 0);
-  if (GetParam() == FixedGateType::Id) {
-    // Folding the identity leaves a single RX, which does not need merging.
-    EXPECT_EQ(countOps<UOp>(), 0);
-    EXPECT_EQ(countOps<RXOp>(), 1);
-  } else {
-    EXPECT_EQ(countOps<UOp>(), 1);
-    EXPECT_EQ(countOps<RXOp>(), 0);
+  for (const bool symbolic : {false, true}) {
+    SCOPED_TRACE(symbolic);
+    module = original->clone();
+    auto funcOp = cast<func::FuncOp>(module->getBody()->front());
+    if (symbolic) {
+      funcOp.insertArgument(0, Float64Type::get(&context), {}, funcOp.getLoc());
+      module->walk(
+          [&](RXOp op) { op.getThetaMutable().assign(funcOp.getArgument(0)); });
+    }
+    ASSERT_TRUE(runMergePass(*module).succeeded());
+    EXPECT_EQ(countOps<IdOp>(), 0);
+    if (GetParam() == FixedGateType::Id) {
+      // Folding the identity leaves a single RX, which does not need merging.
+      EXPECT_EQ(countOps<UOp>(), 0);
+      EXPECT_EQ(countOps<RXOp>(), 1);
+    } else {
+      EXPECT_EQ(countOps<UOp>(), 1);
+      EXPECT_EQ(countOps<RXOp>(), 0);
+    }
+    if (symbolic) {
+      bindLeadingArgs(funcOp, {0.37});
+      PassManager canonicalizer(&context);
+      canonicalizer.addPass(createCanonicalizerPass());
+      ASSERT_TRUE(succeeded(canonicalizer.run(*module)));
+    }
+    ASSERT_TRUE(succeeded(verify(*module)));
+    ASSERT_TRUE(succeeded(verifyLinearity(*module)));
+    ::mqt::test::expectFullUnitaryEqual(*original, *module, 1);
   }
 }
 
