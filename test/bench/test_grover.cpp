@@ -20,16 +20,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace {
-
-using mqt::bench::benchmarkIdFromManifestJSON;
-using mqt::bench::describeBenchmarkJSON;
-using mqt::bench::Grover;
-using mqt::bench::groverFromInstanceSpecificationJSON;
-using mqt::bench::groverFromManifestJSON;
-using mqt::bench::Output;
-using mqt::bench::toInstanceSpecificationJSON;
-using mqt::bench::toManifestJSON;
+namespace mqt::bench {
 
 TEST(Grover, ResolvesTheDefaultIterationCountOnce) {
   const Grover grover{{.markedBitstring = "10"}};
@@ -101,4 +92,4 @@ TEST(Grover, DescribesJSONSchema) {
             std::string::npos);
 }
 
-} // namespace
+} // namespace mqt::bench

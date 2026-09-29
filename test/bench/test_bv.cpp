@@ -17,20 +17,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace {
-
-using mqt::bench::benchmarkIdFromManifestJSON;
-using mqt::bench::BV;
-using mqt::bench::bvFromInstanceSpecificationJSON;
-using mqt::bench::bvFromManifestJSON;
-using mqt::bench::BVMethod;
-using mqt::bench::BVOptions;
-using mqt::bench::caseId;
-using mqt::bench::describeBenchmarkJSON;
-using mqt::bench::evaluateJSON;
-using mqt::bench::Output;
-using mqt::bench::toInstanceSpecificationJSON;
-using mqt::bench::toManifestJSON;
+namespace mqt::bench {
 
 TEST(BV, UsesTheStaticMethodByDefault) {
   const BV benchmark{{.hiddenBitstring = "101"}};
@@ -97,4 +84,4 @@ TEST(BV, EvaluatesCountsFromJSON) {
   EXPECT_NE(evaluation.find("\"success_probability\":0.8"), std::string::npos);
 }
 
-} // namespace
+} // namespace mqt::bench

@@ -19,19 +19,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace {
-
-using mqt::bench::benchmarkIdFromManifestJSON;
-using mqt::bench::caseId;
-using mqt::bench::describeBenchmarkJSON;
-using mqt::bench::evaluateJSON;
-using mqt::bench::Output;
-using mqt::bench::toInstanceSpecificationJSON;
-using mqt::bench::toManifestJSON;
-using mqt::bench::WeakMeasurementGrover;
-using mqt::bench::weakMeasurementGroverFromInstanceSpecificationJSON;
-using mqt::bench::weakMeasurementGroverFromManifestJSON;
-using mqt::bench::WeakMeasurementGroverOptions;
+namespace mqt::bench {
 
 TEST(WeakMeasurementGrover, ResolvesTheDefaultMeasurementStrength) {
   const WeakMeasurementGrover benchmark{{.markedBitstring = "101"}};
@@ -157,4 +145,4 @@ TEST(WeakMeasurementGrover, EvaluatesCountsFromJSON) {
   EXPECT_NE(evaluation.find(R"("success_probability":0.8)"), std::string::npos);
 }
 
-} // namespace
+} // namespace mqt::bench

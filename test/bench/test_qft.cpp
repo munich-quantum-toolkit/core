@@ -17,19 +17,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace {
-
-using mqt::bench::benchmarkIdFromManifestJSON;
-using mqt::bench::caseId;
-using mqt::bench::describeBenchmarkJSON;
-using mqt::bench::Output;
-using mqt::bench::QFT;
-using mqt::bench::qftFromInstanceSpecificationJSON;
-using mqt::bench::qftFromManifestJSON;
-using mqt::bench::QFTMethod;
-using mqt::bench::QFTOptions;
-using mqt::bench::toInstanceSpecificationJSON;
-using mqt::bench::toManifestJSON;
+namespace mqt::bench {
 
 TEST(QFT, UsesTheStandardMethodByDefault) {
   const QFT benchmark{{.qubits = 3, .periodExponent = 1}};
@@ -104,4 +92,4 @@ TEST(QFT, DescribesJSONSchema) {
             std::string::npos);
 }
 
-} // namespace
+} // namespace mqt::bench

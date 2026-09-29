@@ -21,19 +21,9 @@
 #include <stdexcept>
 #include <string>
 
-namespace {
+namespace mqt::bench {
 
-using mqt::bench::benchmarkIdFromManifestJSON;
-using mqt::bench::describeBenchmarkJSON;
-using mqt::bench::Output;
-using mqt::bench::Phase;
-using mqt::bench::QPE;
-using mqt::bench::qpeFromInstanceSpecificationJSON;
-using mqt::bench::qpeFromManifestJSON;
-using mqt::bench::QPEMethod;
-using mqt::bench::toInstanceSpecificationJSON;
-using mqt::bench::toManifestJSON;
-using mqt::bench::test::expectInvalidJSON;
+using test::expectInvalidJSON;
 
 TEST(Phase, NormalizesTurns) {
   EXPECT_EQ(Phase(10, 8), Phase(1, 4));
@@ -167,4 +157,4 @@ TEST(QPE, RejectsInvalidJSONParameters) {
       "denominator must not be zero");
 }
 
-} // namespace
+} // namespace mqt::bench

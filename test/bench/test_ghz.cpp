@@ -21,21 +21,9 @@
 #include <stdexcept>
 #include <string>
 
-namespace {
+namespace mqt::bench {
 
-using mqt::bench::benchmarkIdFromManifestJSON;
-using mqt::bench::caseId;
-using mqt::bench::describeBenchmarkJSON;
-using mqt::bench::GHZ;
-using mqt::bench::GHZBasis;
-using mqt::bench::ghzFromInstanceSpecificationJSON;
-using mqt::bench::ghzFromManifestJSON;
-using mqt::bench::GHZOptions;
-using mqt::bench::GHZTopology;
-using mqt::bench::Output;
-using mqt::bench::toInstanceSpecificationJSON;
-using mqt::bench::toManifestJSON;
-using mqt::bench::test::expectInvalidJSON;
+using test::expectInvalidJSON;
 
 TEST(GHZ, UsesDocumentedDefaults) {
   const GHZ ghz{{.qubits = 3}};
@@ -165,4 +153,4 @@ TEST(GHZ, RejectsInvalidJSONParameters) {
       "between 1 and 1075");
 }
 
-} // namespace
+} // namespace mqt::bench

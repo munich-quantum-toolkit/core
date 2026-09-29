@@ -20,20 +20,9 @@
 #include <stdexcept>
 #include <string>
 
-namespace {
+namespace mqt::bench {
 
-using mqt::bench::benchmarkIdFromManifestJSON;
-using mqt::bench::caseId;
-using mqt::bench::describeBenchmarkJSON;
-using mqt::bench::evaluateJSON;
-using mqt::bench::Multiplexer;
-using mqt::bench::multiplexerFromInstanceSpecificationJSON;
-using mqt::bench::multiplexerFromManifestJSON;
-using mqt::bench::MultiplexerOptions;
-using mqt::bench::Output;
-using mqt::bench::toInstanceSpecificationJSON;
-using mqt::bench::toManifestJSON;
-using mqt::bench::test::expectInvalidJSON;
+using test::expectInvalidJSON;
 
 TEST(Multiplexer, StoresTheTotalQubitCountAndOutput) {
   const Multiplexer benchmark{{.qubits = 7}};
@@ -144,4 +133,4 @@ TEST(Multiplexer, EvaluatesCountsFromJSON) {
             std::string::npos);
 }
 
-} // namespace
+} // namespace mqt::bench

@@ -23,8 +23,7 @@
 #include <string>
 #include <vector>
 
-namespace {
-using namespace mqt::bench;
+namespace mqt::bench {
 
 TEST(Shor, ValidatesParametersAndPhaseWidth) {
   const Shor benchmark({.number = 21});
@@ -214,4 +213,4 @@ TEST(Shor, EvaluatesCountsFromJSON) {
   EXPECT_EQ(result.find("squared_hellinger_fidelity"), std::string::npos);
 }
 
-} // namespace
+} // namespace mqt::bench

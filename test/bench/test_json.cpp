@@ -21,20 +21,9 @@
 #include <stdexcept>
 #include <string>
 
-namespace {
+namespace mqt::bench {
 
-using mqt::bench::benchmarkIdFromInstanceSpecificationJSON;
-using mqt::bench::caseId;
-using mqt::bench::countsFromJSON;
-using mqt::bench::describeBenchmarkJSON;
-using mqt::bench::Evaluation;
-using mqt::bench::evaluationToJSON;
-using mqt::bench::GHZ;
-using mqt::bench::ghzFromInstanceSpecificationJSON;
-using mqt::bench::ghzFromManifestJSON;
-using mqt::bench::listBenchmarksJSON;
-using mqt::bench::toManifestJSON;
-using mqt::bench::test::expectInvalidJSON;
+using test::expectInvalidJSON;
 
 // GHZ is a representative fixture for the shared JSON contracts below.
 
@@ -193,4 +182,4 @@ TEST(BenchmarkJSON, RejectsInvalidEvaluations) {
                std::invalid_argument);
 }
 
-} // namespace
+} // namespace mqt::bench

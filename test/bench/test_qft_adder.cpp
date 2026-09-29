@@ -16,20 +16,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace {
-
-using mqt::bench::benchmarkIdFromManifestJSON;
-using mqt::bench::caseId;
-using mqt::bench::describeBenchmarkJSON;
-using mqt::bench::evaluateJSON;
-using mqt::bench::QFTAdder;
-using mqt::bench::qftAdderFromInstanceSpecificationJSON;
-using mqt::bench::qftAdderFromManifestJSON;
-using mqt::bench::QFTAdderMethod;
-using mqt::bench::QFTAdderOptions;
-using mqt::bench::QFTAdderOverflow;
-using mqt::bench::toInstanceSpecificationJSON;
-using mqt::bench::toManifestJSON;
+namespace mqt::bench {
 
 TEST(QFTAdder, PreservesConfiguredOperandsAndOverflow) {
   for (const auto method :
@@ -215,4 +202,4 @@ TEST(QFTAdder, EvaluatesCountsFromJSON) {
             std::string::npos);
 }
 
-} // namespace
+} // namespace mqt::bench
