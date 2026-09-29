@@ -123,11 +123,15 @@ def _serialize_to_qasm3(circuit: QuantumCircuit, backend: QDMIBackend) -> str:
     if circuit.num_clbits:
         initialization = circuit.copy_empty_like(vars_mode="drop")
         initialization.global_phase = 0
+        for creg in initialization.cregs:
+            if creg.size:
+                initialization.store(creg, 0)
         for clbit in initialization.clbits:
-            initialization.store(
-                clbit,
-                False,  # ruff: ignore[boolean-positional-value-in-call] Qiskit store arguments are positional-only.
-            )
+            if not initialization.find_bit(clbit).registers:
+                initialization.store(
+                    clbit,
+                    False,  # ruff: ignore[boolean-positional-value-in-call] Qiskit store arguments are positional-only.
+                )
         circuit = circuit.compose(initialization, front=True, inplace=False)
 
     exclusion_list = set()

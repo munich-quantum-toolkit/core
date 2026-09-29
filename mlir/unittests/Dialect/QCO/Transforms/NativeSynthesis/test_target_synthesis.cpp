@@ -15,9 +15,12 @@
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QCO/Transforms/Decomposition/Weyl.h"
 #include "mqt/Dialect/QCO/Transforms/Mapping/Mapping.h"
+#include "mqt/Dialect/QCO/Transforms/NativeSynthesis/NativeCost.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
+#include "mqt/Dialect/QCO/Utils/WireIterator.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 
 #include "ExactUnitaryTest.h"
@@ -45,6 +48,8 @@
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
@@ -411,6 +416,536 @@ TEST_F(TargetSynthesisTest, NativeSynthesisFusesSwapWithCx) {
   }
 }
 
+TEST_F(TargetSynthesisTest, ReadOnlyNativeCostMatchesSynthesis) {
+  for (const auto* entangler : {
+           "cx",
+           "cz",
+           "ecr",
+           "iswap",
+           "sqrt_iswap",
+           "rxx",
+           "ryy",
+           "rzx",
+           "rzz",
+       }) {
+    for (const bool reverse : {false, true}) {
+      SCOPED_TRACE(testing::Message() << entangler << ", reverse=" << reverse);
+      const auto target = valid(Target::create(
+          2, Connectivity::allToAll(),
+          NativeOperations::fromOperations({
+              valid(OperationCapability::create("u", 1, 3)),
+              valid(OperationCapability::create("gphase", 0, 1)),
+              valid(OperationCapability::create(
+                  entangler, 2,
+                  llvm::StringRef(entangler).starts_with("r") ? 1 : 0,
+                  {
+                      valid(SiteTuple::create(
+                          reverse ? std::vector<Target::SiteId>{1, 0}
+                                  : std::vector<Target::SiteId>{0, 1})),
+                  })),
+          })));
+      auto moduleOp = build([](QCOProgramBuilder& builder) {
+        auto [a, b] =
+            builder.cx(builder.staticQubit(0), builder.staticQubit(1));
+        std::tie(a, b) = builder.swap(a, b);
+        return builder.intConstant(0);
+      });
+      const auto before = printModule(*moduleOp);
+      const auto shared = mlir::qco::NativeCostTable::precompute(
+          *moduleOp, *target.synthesisBasis()->entangler, 2023);
+      mlir::qco::NativeCostAnalysis analysis(2023, shared.get());
+      const std::array<Target::SiteId, 2> sites{0, 1};
+      size_t separate = 0;
+      auto composed = mlir::qco::Matrix4x4::identity();
+      for (auto gate :
+           mainFunction(*moduleOp).getOps<mlir::qco::UnitaryOpInterface>()) {
+        const auto cost = analysis.operationCost(gate, target, sites);
+        ASSERT_TRUE(cost);
+        separate += *cost;
+        const auto matrix = gate.getUnitaryMatrix<mlir::qco::Matrix4x4>();
+        ASSERT_TRUE(matrix);
+        composed.premultiplyBy(*matrix);
+      }
+      const auto estimate = analysis.runCost(composed, separate, target, sites);
+      mlir::qco::NativeCostTracker tracker(target, 2023, shared.get());
+      auto gates = llvm::to_vector(
+          mainFunction(*moduleOp).getOps<mlir::qco::UnitaryOpInterface>());
+      for (const auto direction : {
+               mlir::qco::WireDirection::Forward,
+               mlir::qco::WireDirection::Backward,
+           }) {
+        tracker.reset(direction);
+        for (size_t i = 0; i < gates.size(); ++i) {
+          tracker.append(gates[direction == mlir::qco::WireDirection::Forward
+                                   ? i
+                                   : gates.size() - i - 1],
+                         std::array<size_t, 2>{0, 1});
+        }
+        ASSERT_TRUE(tracker.score());
+        EXPECT_EQ(tracker.score()->first, estimate);
+      }
+      EXPECT_EQ(printModule(*moduleOp), before);
+      ASSERT_TRUE(mlir::succeeded(runTargetPass(
+          *moduleOp, target, mlir::qco::createTargetNativeSynthesis())));
+      size_t count = 0;
+      for (auto gate :
+           mainFunction(*moduleOp).getOps<mlir::qco::UnitaryOpInterface>()) {
+        count += static_cast<size_t>(gate.isTwoQubit());
+      }
+      EXPECT_EQ(estimate, count);
+    }
+  }
+}
+
+TEST_F(TargetSynthesisTest, NativeCostPreservesSingletonNativeGates) {
+  const auto target = valid(
+      Target::create(2, Connectivity::allToAll(),
+                     NativeOperations::fromOperations({
+                         valid(OperationCapability::create("u", 1, 3)),
+                         valid(OperationCapability::create("gphase", 0, 1)),
+                         valid(OperationCapability::create("rxx", 2, 1)),
+                     })));
+  for (const bool followedByOneQubitGate : {false, true}) {
+    auto moduleOp = build([&](QCOProgramBuilder& builder) {
+      auto [a, b] = builder.rxx(std::numbers::pi, builder.staticQubit(0),
+                                builder.staticQubit(1));
+      if (followedByOneQubitGate) {
+        a = builder.h(a);
+      }
+      return builder.intConstant(0);
+    });
+    mlir::qco::NativeCostTracker tracker(target, 2023);
+    const std::array<size_t, 2> vertices{0, 1};
+    for (auto gate :
+         mainFunction(*moduleOp).getOps<mlir::qco::UnitaryOpInterface>()) {
+      tracker.append(
+          gate, llvm::ArrayRef(vertices).take_front(gate.isTwoQubit() ? 2 : 1));
+      if (!followedByOneQubitGate) {
+        /// RXX(pi) is local, but remains native unless another gate joins it.
+        mlir::qco::NativeCostAnalysis analysis(2023);
+        const auto swapCost =
+            analysis.swapCost(target, std::array<Target::SiteId, 2>{0, 1});
+        ASSERT_TRUE(swapCost);
+        EXPECT_EQ(tracker.swapCostAdjustment(0, 1, *swapCost), -1);
+      }
+    }
+    const auto score = tracker.score();
+    ASSERT_TRUE(score);
+    EXPECT_EQ(score->first, followedByOneQubitGate ? 0U : 1U);
+    ASSERT_TRUE(mlir::succeeded(runTargetPass(
+        *moduleOp, target, mlir::qco::createTargetNativeSynthesis())));
+    size_t emitted = 0;
+    moduleOp->walk([&](mlir::qco::UnitaryOpInterface gate) {
+      emitted += static_cast<size_t>(gate.isTwoQubit());
+    });
+    EXPECT_EQ(score->first, emitted);
+  }
+}
+
+TEST_F(TargetSynthesisTest, NativeCostPreservesCircuitOrderInBothDirections) {
+  using mlir::qco::Matrix4x4;
+  using mlir::qco::NativeCostTracker;
+  using mlir::qco::UnitaryOpInterface;
+  using mlir::qco::WireDirection;
+  Matrix4x4 a;
+  a.data = CX_MATRIX;
+  auto b = SWAPOp::getUnitaryMatrix();
+  b(3, 3) = std::polar(1.0, 0.37);
+  for (const bool reverseOperands : {false, true}) {
+    const auto local =
+        HOp::getUnitaryMatrix().embedInTwoQubit(reverseOperands ? 1 : 0);
+    const auto c = (b * local * a).adjoint();
+    auto moduleOp = build([&](QCOProgramBuilder& builder) {
+      auto q0 = builder.staticQubit(0);
+      auto q1 = builder.staticQubit(1);
+      const std::array matrices{a, b, c};
+      for (size_t i = 0; i < matrices.size(); ++i) {
+        if (i == 1) {
+          q0 = builder.h(q0);
+        }
+        auto values = builder.unitary(
+            reverseOperands ? ValueRange{q1, q0} : ValueRange{q0, q1},
+            denseMatrix(builder, 4, matrices[i].data));
+        q0 = values[reverseOperands ? 1 : 0];
+        q1 = values[reverseOperands ? 0 : 1];
+      }
+      return builder.intConstant(0);
+    });
+    auto gates =
+        llvm::to_vector(mainFunction(*moduleOp).getOps<UnitaryOpInterface>());
+    const auto target = makeUCxTarget();
+    NativeCostTracker tracker(target, 2023);
+    const std::array<size_t, 2> vertices = reverseOperands
+                                               ? std::array<size_t, 2>{1, 0}
+                                               : std::array<size_t, 2>{0, 1};
+    /// Reuse the tracker across direction changes, as layout refinement does.
+    for (const auto direction : {
+             WireDirection::Forward,
+             WireDirection::Backward,
+             WireDirection::Forward,
+         }) {
+      tracker.reset(direction);
+      for (size_t i = 0; i < gates.size(); ++i) {
+        auto gate =
+            gates[direction == WireDirection::Forward ? i
+                                                      : gates.size() - i - 1];
+        tracker.append(gate, gate.isTwoQubit() ? llvm::ArrayRef(vertices)
+                                               : llvm::ArrayRef<size_t>{0});
+      }
+      /// The circuit product C B H A is identity; reversing it is not.
+      auto completed = tracker;
+      EXPECT_EQ(completed.score(), (std::pair<size_t, size_t>{0, 0}));
+      EXPECT_EQ(tracker.swapCostAdjustment(0, 1, 3), 0);
+      EXPECT_EQ(tracker.swapCostAdjustment(0, 1, 3), 0);
+      tracker.appendSwap(0, 1);
+      EXPECT_EQ(tracker.score(), (std::pair<size_t, size_t>{3, 3}));
+    }
+    ASSERT_TRUE(succeeded(runTargetPass(
+        *moduleOp, target, mlir::qco::createTargetNativeSynthesis())));
+    EXPECT_EQ(countOps<CtrlOp>(*moduleOp), 0U);
+  }
+}
+
+TEST_F(TargetSynthesisTest,
+       BackwardNativeCostKeepsOnlyTrailingSingleQubitGates) {
+  const auto target = valid(
+      Target::create(2, Connectivity::allToAll(),
+                     NativeOperations::fromOperations({
+                         valid(OperationCapability::create("u", 1, 3)),
+                         valid(OperationCapability::create("gphase", 0, 1)),
+                         valid(OperationCapability::create("rxx", 2, 1)),
+                     })));
+  for (const bool before : {false, true}) {
+    auto moduleOp = build([&](QCOProgramBuilder& builder) {
+      auto a = builder.staticQubit(0);
+      auto b = builder.staticQubit(1);
+      if (before) {
+        a = builder.ry(0.37, a);
+      }
+      std::tie(a, b) = builder.rxx(std::numbers::pi, a, b);
+      if (!before) {
+        a = builder.ry(0.37, a);
+      }
+      return builder.intConstant(0);
+    });
+    mlir::qco::NativeCostTracker tracker(target, 2023);
+    tracker.reset(mlir::qco::WireDirection::Backward);
+    auto gates = llvm::to_vector(
+        mainFunction(*moduleOp).getOps<mlir::qco::UnitaryOpInterface>());
+    const std::array<size_t, 2> vertices{0, 1};
+    for (auto gate : llvm::reverse(gates)) {
+      tracker.append(
+          gate, llvm::ArrayRef(vertices).take_front(gate.isTwoQubit() ? 2 : 1));
+    }
+    ASSERT_TRUE(tracker.score());
+    EXPECT_EQ(tracker.score()->first, before ? 1U : 0U);
+    if (!before) {
+      /// A region boundary must discard the pending single-qubit suffix.
+      tracker.reset(mlir::qco::WireDirection::Backward);
+      tracker.append(gates.back(), llvm::ArrayRef(vertices).take_front(1));
+      tracker.flush();
+      tracker.append(gates.front(), vertices);
+      EXPECT_EQ(tracker.score(), (std::pair<size_t, size_t>{1, 1}));
+    }
+    ASSERT_TRUE(succeeded(runTargetPass(
+        *moduleOp, target, mlir::qco::createTargetNativeSynthesis())));
+    EXPECT_EQ(countOps<RXXOp>(*moduleOp), before ? 1U : 0U);
+  }
+}
+
+TEST_F(TargetSynthesisTest, NativeCachesPreserveDecompositionsAfterEviction) {
+  using mlir::qco::Matrix4x4;
+  using mlir::qco::NativeCostAnalysis;
+  using mlir::qco::NativeCostTable;
+  using mlir::qco::decomposition::decomposeUnitary2QWeyl;
+  const auto target = makeUCxTarget();
+  const std::array<Target::SiteId, 2> sites{0, 1};
+  for (const uint64_t seed : {7U, 99U}) {
+    auto moduleOp = build([](QCOProgramBuilder& builder) {
+      auto [a, b] = builder.cx(builder.staticQubit(0), builder.staticQubit(1));
+      std::tie(a, b) = builder.swap(a, b);
+      return builder.intConstant(0);
+    });
+    const auto shared =
+        NativeCostTable::precompute(*moduleOp, Target::GateKind::CX, seed);
+    moduleOp = {};
+    NativeCostAnalysis analysis(seed, shared.get());
+    NativeCostAnalysis otherSeed(seed + 1, shared.get());
+    /// Revisit recent entries, then exceed both local capacities. Interleave
+    /// count and full-result queries to check their independent result state.
+    for (size_t i = 0; i < 240; ++i) {
+      auto matrix = Matrix4x4::identity();
+      matrix(3, 3) = std::polar(1.0, static_cast<double>((i / 2) % 73) * 0.031);
+      if (i % 31 == 0) {
+        matrix(0, 3) = 4e-11;
+      }
+      const auto expectedCount =
+          decomposeUnitary2QWeyl(matrix, Target::GateKind::CX, seed);
+      EXPECT_EQ(analysis.matrixCost(matrix, target, sites),
+                expectedCount
+                    ? std::optional<size_t>(expectedCount->numBasisUses)
+                    : std::nullopt);
+      for (const auto basis : {
+               Target::GateKind::CX,
+               Target::GateKind::CZ,
+               Target::GateKind::ISWAP,
+               Target::GateKind::SQRTISWAP,
+           }) {
+        const auto expected = decomposeUnitary2QWeyl(matrix, basis, seed);
+        const auto actual = analysis.decompose(matrix, basis);
+        ASSERT_EQ(actual.has_value(), expected.has_value());
+        if (!expected) {
+          continue;
+        }
+        EXPECT_EQ(actual->numBasisUses, expected->numBasisUses);
+        EXPECT_EQ(actual->globalPhase, expected->globalPhase);
+        ASSERT_EQ(actual->singleQubitFactors.size(),
+                  expected->singleQubitFactors.size());
+        for (size_t j = 0; j < actual->singleQubitFactors.size(); ++j) {
+          EXPECT_EQ(actual->singleQubitFactors[j].data,
+                    expected->singleQubitFactors[j].data);
+        }
+      }
+      const auto expectedOther =
+          decomposeUnitary2QWeyl(matrix, Target::GateKind::CX, seed + 1);
+      EXPECT_EQ(otherSeed.matrixCost(matrix, target, sites),
+                expectedOther
+                    ? std::optional<size_t>(expectedOther->numBasisUses)
+                    : std::nullopt);
+    }
+  }
+}
+
+TEST_F(TargetSynthesisTest, NativeCacheCopiesAndMovesOwnTheirEntries) {
+  using mlir::qco::Matrix4x4;
+  using mlir::qco::NativeCostAnalysis;
+  using mlir::qco::decomposition::decomposeUnitary2QWeyl;
+  auto matrix = Matrix4x4::identity();
+  matrix(3, 3) = std::polar(1.0, 0.371);
+  const auto basis = Target::GateKind::CX;
+  const auto expected = decomposeUnitary2QWeyl(matrix, basis, 7);
+  ASSERT_TRUE(expected);
+  const auto check = [&](NativeCostAnalysis& analysis) {
+    const auto& actual = analysis.decompose(matrix, basis);
+    ASSERT_TRUE(actual);
+    EXPECT_EQ(actual->numBasisUses, expected->numBasisUses);
+    EXPECT_EQ(actual->globalPhase, expected->globalPhase);
+    ASSERT_EQ(actual->singleQubitFactors.size(),
+              expected->singleQubitFactors.size());
+    for (size_t i = 0; i < actual->singleQubitFactors.size(); ++i) {
+      EXPECT_EQ(actual->singleQubitFactors[i].data,
+                expected->singleQubitFactors[i].data);
+    }
+  };
+  NativeCostAnalysis original(7);
+  check(original);
+  NativeCostAnalysis copied(original);
+  original = NativeCostAnalysis(7);
+  check(copied);
+  NativeCostAnalysis assigned(99);
+  assigned = copied;
+  copied = NativeCostAnalysis(7);
+  check(assigned);
+  NativeCostAnalysis moved(std::move(assigned));
+  check(moved);
+  NativeCostAnalysis moveAssigned(99);
+  moveAssigned = std::move(moved);
+  check(moveAssigned);
+}
+
+TEST_F(TargetSynthesisTest, NativeCostPreservesSupportedSymbolicOperations) {
+  auto moduleOp = mlir::parseSourceString<ModuleOp>(R"mlir(
+module {
+  func.func @main(%angle: f64) {
+    %a = qco.static 0 : !qco.qubit
+    %b = qco.static 1 : !qco.qubit
+    %c, %d = qco.rxx(%angle) %a, %b : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+    qco.sink %c : !qco.qubit
+    qco.sink %d : !qco.qubit
+    return
+  }
+})mlir",
+                                                    context.get());
+  ASSERT_TRUE(moduleOp);
+  auto gate = *mainFunction(*moduleOp).getOps<RXXOp>().begin();
+  mlir::qco::NativeCostAnalysis analysis(2023);
+  const std::array<Target::SiteId, 2> sites{0, 1};
+  EXPECT_EQ(analysis.operationCost(gate, makeOneWayRxxTarget(), sites), 1U);
+  EXPECT_FALSE(analysis.operationCost(gate, makeUCxTarget(), sites));
+  EXPECT_FALSE(analysis.matrixCost(SWAPOp::getUnitaryMatrix(),
+                                   makeOneWayUCxTarget(),
+                                   std::array<Target::SiteId, 2>{0, 2}));
+  for (const auto& target : {makeOneWayRxxTarget(), makeUCxTarget()}) {
+    mlir::qco::NativeCostTracker tracker(target, 2023);
+    for (const auto direction : {
+             mlir::qco::WireDirection::Forward,
+             mlir::qco::WireDirection::Backward,
+         }) {
+      tracker.reset(direction);
+      tracker.appendSwap(0, 1);
+      tracker.append(gate, std::array<size_t, 2>{0, 1});
+      EXPECT_EQ(tracker.swapCostAdjustment(0, 1, 3), 0);
+      EXPECT_EQ(tracker.score().has_value(), target.supports(gate, sites));
+    }
+  }
+}
+
+TEST_F(TargetSynthesisTest, ColdCostKeepsRunsAcrossCancelingPairs) {
+  const auto target = makeUCxTarget(std::vector{
+      valid(Site::create(0)),
+      valid(Site::create(1)),
+      valid(Site::create(2)),
+  });
+  auto moduleOp = build([](QCOProgramBuilder& builder) {
+    auto a = builder.staticQubit(0);
+    auto b = builder.staticQubit(1);
+    auto c = builder.staticQubit(2);
+    std::tie(a, b) = builder.swap(a, b);
+    std::tie(b, c) = builder.cx(b, c);
+    std::tie(b, c) = builder.cx(b, c);
+    std::tie(a, b) = builder.cx(a, b);
+    return builder.intConstant(0);
+  });
+  const auto before = printModule(*moduleOp);
+  llvm::SmallVector<
+      std::pair<mlir::qco::UnitaryOpInterface, llvm::SmallVector<size_t>>>
+      ordered;
+  llvm::DenseMap<Value, size_t> sites;
+  for (auto allocation :
+       mainFunction(*moduleOp).getOps<mlir::qco::StaticOp>()) {
+    sites[allocation.getQubit()] = static_cast<size_t>(allocation.getIndex());
+  }
+  for (auto gate :
+       mainFunction(*moduleOp).getOps<mlir::qco::UnitaryOpInterface>()) {
+    llvm::SmallVector<size_t> vertices;
+    for (Value input : gate.getInputQubits()) {
+      vertices.push_back(sites.at(input));
+    }
+    ordered.emplace_back(gate, vertices);
+    for (size_t i = 0; i < vertices.size(); ++i) {
+      sites[gate.getOutputQubit(i)] = vertices[i];
+    }
+  }
+  mlir::qco::NativeCostTracker costs(target, 2023);
+  for (const auto direction : {
+           mlir::qco::WireDirection::Forward,
+           mlir::qco::WireDirection::Backward,
+       }) {
+    costs.reset(direction);
+    for (size_t i = 0; i < ordered.size(); ++i) {
+      auto& [gate, vertices] =
+          ordered[direction == mlir::qco::WireDirection::Forward
+                      ? i
+                      : ordered.size() - i - 1];
+      costs.append(gate, vertices);
+    }
+    EXPECT_EQ(costs.score(), (std::pair<size_t, size_t>{2, 2}));
+  }
+  EXPECT_EQ(printModule(*moduleOp), before);
+  ASSERT_TRUE(mlir::succeeded(runTargetPass(
+      *moduleOp, target, mlir::qco::createTargetNativeSynthesis())));
+  EXPECT_EQ(countOps<CtrlOp>(*moduleOp), 2U);
+}
+
+TEST_F(TargetSynthesisTest, ColdCostHandlesNegativeSwapMarginalsAndRegions) {
+  const auto target = makeUCxTarget();
+  mlir::qco::NativeCostTracker costs(target, 2023);
+  for (const auto direction : {
+           mlir::qco::WireDirection::Forward,
+           mlir::qco::WireDirection::Backward,
+       }) {
+    costs.reset(direction);
+    costs.appendSwap(0, 1);
+    EXPECT_EQ(costs.swapCostAdjustment(0, 1, 3), -6);
+    EXPECT_EQ(costs.swapCostAdjustment(0, 1, 3), -6);
+    costs.appendSwap(1, 0);
+    EXPECT_EQ(costs.score(), (std::pair<size_t, size_t>{0, 0}));
+    mlir::qco::NativeCostTracker child(target, 2023);
+    child.reset(direction);
+    child.appendSwap(0, 1);
+    costs.merge(child);
+    costs.appendSwap(0, 1);
+    EXPECT_EQ(costs.score(), (std::pair<size_t, size_t>{6, 3}));
+  }
+}
+
+TEST_F(TargetSynthesisTest, ColdCostIncludesPositiveSwapAdjustment) {
+  const auto target = valid(
+      Target::create(2, Connectivity::allToAll(),
+                     NativeOperations::fromOperations({
+                         valid(OperationCapability::create("u", 1, 3)),
+                         valid(OperationCapability::create("gphase", 0, 1)),
+                         valid(OperationCapability::create("rxx", 2, 1)),
+                         valid(OperationCapability::create("swap", 2, 0)),
+                     })));
+  auto moduleOp = build([](QCOProgramBuilder& builder) {
+    auto a = builder.staticQubit(0);
+    auto b = builder.staticQubit(1);
+    for (size_t i = 0; i < 2; ++i) {
+      std::tie(a, b) = builder.rxx(std::numbers::pi / 2, a, b);
+    }
+    std::tie(a, b) = builder.swap(a, b);
+    return builder.intConstant(0);
+  });
+  const auto before = printModule(*moduleOp);
+  mlir::qco::NativeCostTracker costs(target, 2023);
+  mlir::qco::NativeCostAnalysis analysis(2023);
+  const auto standalone =
+      analysis.swapCost(target, std::array<Target::SiteId, 2>{0, 1});
+  ASSERT_EQ(standalone, 1U);
+  for (const auto direction : {
+           mlir::qco::WireDirection::Forward,
+           mlir::qco::WireDirection::Backward,
+       }) {
+    costs.reset(direction);
+    for (auto gate : mainFunction(*moduleOp).getOps<RXXOp>()) {
+      costs.append(gate, std::array<size_t, 2>{0, 1});
+    }
+    auto prefix = costs;
+    ASSERT_TRUE(prefix.score());
+    EXPECT_EQ(prefix.score()->first, 0U);
+    /// The local run costs zero, but extending it retains three gates.
+    EXPECT_EQ(costs.swapCostAdjustment(0, 1, *standalone), 2);
+    EXPECT_EQ(costs.swapCostAdjustment(0, 1, *standalone), 2);
+    costs.appendSwap(0, 1);
+    ASSERT_TRUE(costs.score());
+    EXPECT_EQ(costs.score()->first, 3U);
+  }
+  EXPECT_EQ(printModule(*moduleOp), before);
+  ASSERT_TRUE(succeeded(runTargetPass(
+      *moduleOp, target, mlir::qco::createTargetNativeSynthesis())));
+  size_t emitted = 0;
+  moduleOp->walk([&](mlir::qco::UnitaryOpInterface gate) {
+    emitted += static_cast<size_t>(gate.isTwoQubit());
+  });
+  EXPECT_EQ(costs.score()->first, emitted);
+}
+
+TEST_F(TargetSynthesisTest, ColdCostBarrierJoinsQubitDependencies) {
+  const auto target = makeUCxTarget(std::vector{
+      valid(Site::create(0)),
+      valid(Site::create(1)),
+      valid(Site::create(2)),
+      valid(Site::create(3)),
+  });
+  auto moduleOp = build([](QCOProgramBuilder& builder) {
+    static_cast<void>(builder.barrier({
+        builder.staticQubit(0),
+        builder.staticQubit(1),
+        builder.staticQubit(2),
+        builder.staticQubit(3),
+    }));
+    return builder.intConstant(0);
+  });
+  mlir::qco::NativeCostTracker costs(target, 2023);
+  costs.appendSwap(0, 1);
+  auto barrier =
+      *mainFunction(*moduleOp).getOps<mlir::qco::BarrierOp>().begin();
+  costs.append(barrier.getOperation(), std::array<size_t, 4>{0, 1, 2, 3});
+  costs.appendSwap(2, 3);
+  EXPECT_EQ(costs.score(), (std::pair<size_t, size_t>{6, 6}));
+}
+
 TEST_F(TargetSynthesisTest, NativeSynthesisUsesBlockCostInTargetBasis) {
   for (const auto* basis : {"cz", "sqrt_iswap", "rzz"}) {
     const bool nativeSwap = llvm::StringRef(basis) == "rzz";
@@ -544,6 +1079,15 @@ TEST_F(TargetSynthesisTest,
       attachTestEnvironment(*moduleOp, makeUCxTarget());
     }
     const auto before = printModule(*moduleOp);
+
+    const auto shared = mlir::qco::NativeCostTable::precompute(
+        *moduleOp, Target::GateKind::CX, 2023);
+    mlir::qco::NativeCostAnalysis analysis(2023, shared.get());
+    auto gate = *mainFunction(*moduleOp)
+                     .getOps<mlir::qco::UnitaryOpInterface>()
+                     .begin();
+    EXPECT_FALSE(analysis.operationCost(gate, makeUCxTarget(),
+                                        std::array<Target::SiteId, 2>{0, 1}));
 
     if (required) {
       const auto diagnostics =
