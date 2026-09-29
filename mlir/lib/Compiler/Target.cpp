@@ -380,21 +380,23 @@ llvm::Expected<CompilerTarget::OperationCapability>
 CompilerTarget::OperationCapability::create(
     std::string name, size_t arity, size_t numParameters,
     std::vector<SiteTuple> siteTuples, std::optional<uint64_t> duration,
-    std::optional<double> fidelity, std::optional<std::string> canonicalName) {
+    std::optional<double> fidelity,
+    const std::optional<std::string>& canonicalName) {
   return create(std::move(name), Arity::fixed(arity), numParameters,
-                std::move(siteTuples), duration, fidelity,
-                std::move(canonicalName));
+                std::move(siteTuples), duration, fidelity, canonicalName);
 }
 
 llvm::Expected<CompilerTarget::OperationCapability>
 CompilerTarget::OperationCapability::create(
     std::string name, Arity arity, size_t numParameters,
     std::vector<SiteTuple> siteTuples, std::optional<uint64_t> duration,
-    std::optional<double> fidelity, std::optional<std::string> canonicalName) {
+    std::optional<double> fidelity,
+    const std::optional<std::string>& canonicalName) {
   if (StringRef(name).trim().empty()) {
     return invalidTarget("Compiler target operation name must not be empty");
   }
-  auto canonical = canonicalOperationName(canonicalName.value_or(name));
+  auto canonical =
+      canonicalOperationName(canonicalName ? *canonicalName : name);
   if (canonical.empty()) {
     return invalidTarget(
         "Compiler target canonical operation name must not be empty");

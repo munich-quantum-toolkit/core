@@ -198,7 +198,7 @@ public:
            std::vector<SiteTuple> siteTuples = {},
            std::optional<uint64_t> duration = std::nullopt,
            std::optional<double> fidelity = std::nullopt,
-           std::optional<std::string> canonicalName = std::nullopt);
+           const std::optional<std::string>& canonicalName = std::nullopt);
 
     /// Create a validated operation capability.
     [[nodiscard]] static llvm::Expected<OperationCapability>
@@ -206,7 +206,7 @@ public:
            std::vector<SiteTuple> siteTuples = {},
            std::optional<uint64_t> duration = std::nullopt,
            std::optional<double> fidelity = std::nullopt,
-           std::optional<std::string> canonicalName = std::nullopt);
+           const std::optional<std::string>& canonicalName = std::nullopt);
 
     /// Return the exact reported operation name.
     [[nodiscard]] llvm::StringRef name() const noexcept;

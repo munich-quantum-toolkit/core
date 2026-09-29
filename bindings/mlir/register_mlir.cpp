@@ -866,7 +866,7 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
                  siteTuples,
              const std::optional<uint64_t> duration,
              const std::optional<double> fidelity,
-             std::optional<std::string> canonicalName) {
+             const std::optional<std::string>& canonicalName) {
             constructFromExpected(
                 self,
                 mlir::CompilerTarget::OperationCapability::create(
@@ -874,7 +874,7 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
                     std::move(siteTuples)
                         .value_or(
                             std::vector<mlir::CompilerTarget::SiteTuple>{}),
-                    duration, fidelity, std::move(canonicalName)));
+                    duration, fidelity, canonicalName));
           },
           "name"_a, "arity"_a, "num_parameters"_a, "site_tuples"_a = nb::none(),
           "duration"_a = nb::none(), "fidelity"_a = nb::none(), nb::kw_only(),
@@ -887,7 +887,7 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
                  siteTuples,
              const std::optional<uint64_t> duration,
              const std::optional<double> fidelity,
-             std::optional<std::string> canonicalName) {
+             const std::optional<std::string>& canonicalName) {
             constructFromExpected(
                 self,
                 mlir::CompilerTarget::OperationCapability::create(
@@ -895,7 +895,7 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
                     std::move(siteTuples)
                         .value_or(
                             std::vector<mlir::CompilerTarget::SiteTuple>{}),
-                    duration, fidelity, std::move(canonicalName)));
+                    duration, fidelity, canonicalName));
           },
           "name"_a, "arity"_a, "num_parameters"_a, "site_tuples"_a = nb::none(),
           "duration"_a = nb::none(), "fidelity"_a = nb::none(), nb::kw_only(),
