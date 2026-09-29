@@ -28,7 +28,6 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/WalkResult.h"
-#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/STLExtras.h"
@@ -194,15 +193,22 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   pm.addPass(std::make_unique<PrepareTargetCompilationPass>(environment, false,
                                                             mapping));
   const auto& target = environment.target();
-  pm.addPass(createInlinerPass());
+  const bool preserveGates = target.nativeOperationsKind() ==
+                             CompilerTarget::NativeOperations::Kind::Explicit;
+  pm.addPass(preserveGates
+                 ? createInlinerPass({},
+                                     [](OpPassManager& nested) {
+                                       nested.addPass(
+                                           qco::createQCOCanonicalizer(true));
+                                     })
+                 : createInlinerPass());
   pm.addPass(createSymbolDCEPass());
   pm.addPass(createSCCPPass());
-  populateQCOCleanupPipeline(pm);
+  populateQCOCleanupPipeline(pm, preserveGates);
   pm.addPass(qco::createUnrollLoopsForPayload());
   pm.addPass(createSCCPPass());
   /// Unrolling exposes static tensor slots and unreachable callees.
-  pm.addPass(createCanonicalizerPass(
-      GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit)));
+  pm.addPass(qco::createQCOCanonicalizer(preserveGates));
   pm.addPass(createCSEPass());
   pm.addPass(qtensor::createShrinkQTensorToFitPass());
   pm.addPass(createSymbolDCEPass());
@@ -212,7 +218,7 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   /// Non-U targets fuse during native synthesis, avoiding an intermediate U
   /// representation and its symbolic phase correction.
   if (const auto& basis = target.synthesisBasis();
-      !basis || basis->singleQubit == CompilerTarget::SingleQubitBasis::U) {
+      basis && basis->singleQubit == CompilerTarget::SingleQubitBasis::U) {
     /// The U optimizer also merges dynamic controlled bodies into native U
     /// gates and preserves isolated gates. Native synthesis does not yet cover
     /// both behaviors; keep this path until their synthesis contracts agree.
@@ -234,7 +240,7 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
     pm.addPass(qco::createPlacementPass(target));
     break;
   }
-  qco::populateTargetNativeSynthesisPipeline(pm);
+  qco::populateTargetNativeSynthesisPipeline(pm, preserveGates);
 }
 
 void populateTargetSynthesisPipeline(OpPassManager& pm,
@@ -243,14 +249,22 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
   pm.addPass(std::make_unique<PrepareTargetCompilationPass>(environment, true,
                                                             mapping));
   const auto& target = environment.target();
-  pm.addPass(createInlinerPass());
+  const bool preserveGates = target.nativeOperationsKind() ==
+                             CompilerTarget::NativeOperations::Kind::Explicit;
+  pm.addPass(preserveGates
+                 ? createInlinerPass({},
+                                     [](OpPassManager& nested) {
+                                       nested.addPass(
+                                           qco::createQCOCanonicalizer(true));
+                                     })
+                 : createInlinerPass());
   pm.addPass(createSymbolDCEPass());
-  populateQCOCleanupPipeline(pm);
+  populateQCOCleanupPipeline(pm, preserveGates);
   pm.addPass(qco::createLegalizeControlFlow());
   pm.addPass(qco::createDecomposeMultiControlled(target));
   pm.addPass(qco::createFuseTwoQubitGates(target));
   pm.addPass(qco::createPlacementPass(target));
-  qco::populateTargetNativeSynthesisPipeline(pm);
+  qco::populateTargetNativeSynthesisPipeline(pm, preserveGates);
 }
 
 } // namespace mlir

@@ -4015,6 +4015,86 @@ TEST_F(CompilerPipelineTest, TargetSynthesisResynthesizesTwoQubitBlocks) {
       makeSparseUCZTarget(true), makePayloadSpecification())));
 }
 
+TEST_F(CompilerPipelineTest, TargetPipelinesPreserveNativeGateSequences) {
+  using Capability = CompilerTarget::OperationCapability;
+  using Case = std::tuple<const char*, const char*, uint32_t,
+                          std::vector<std::optional<double>>>;
+  for (const auto& [gate, arguments, arity, parameters] : {
+           Case{"rz", "(0.37)", 1, {.37}},
+           Case{"rx", "(pi / 2)", 1, {std::numbers::pi / 2}},
+           Case{"s", "", 1, {}},
+           Case{"t", "", 1, {}},
+           Case{"sx", "", 1, {}},
+           Case{"u", "(pi / 2, 0.2, 0.3)", 1, {std::numbers::pi / 2, .2, .3}},
+           Case{"rzz", "(0.37)", 2, {.37}},
+       }) {
+    SCOPED_TRACE(gate);
+    const std::string wires = arity == 1 ? "a" : "a, b";
+    const std::string pulse = std::string(gate) + arguments + " " + wires + ";";
+    std::string source = "OPENQASM 3.0; include \"stdgates.inc\"; gate pair ";
+    source.append(wires)
+        .append(" { ")
+        .append(pulse)
+        .append(pulse)
+        .append(" } qubit[2] q; pair q[0]")
+        .append(arity == 1 ? ";" : ", q[1];");
+    auto input = QCProgram::fromOpenQASMString(source);
+    ASSERT_TRUE(input);
+    auto reference = input->copy().intoQCO();
+    ASSERT_TRUE(reference);
+    ASSERT_TRUE(reference->runPassPipeline("inline,symbol-dce"));
+    for (const bool withSingleQubitBasis : {false, true}) {
+      SCOPED_TRACE(withSingleQubitBasis);
+      std::vector capabilities{
+          llvm::cantFail(Capability::create(gate, arity, parameters.size(), {},
+                                            std::nullopt, std::nullopt,
+                                            parameters)),
+          llvm::cantFail(Capability::create("gphase", 0, 1)),
+      };
+      if (withSingleQubitBasis) {
+        capabilities.push_back(llvm::cantFail(Capability::create("u", 1, 3)));
+      }
+      const auto target = llvm::cantFail(CompilerTarget::create(
+          2, CompilerTarget::Connectivity::allToAll(),
+          CompilerTarget::NativeOperations::fromOperations(capabilities)));
+      const TargetEnvironment environment(
+          target, llvm::cantFail(payloadSpecificationForProgramFormat(
+                      QDMI_PROGRAM_FORMAT_QASM3)));
+      for (const bool synthesisOnly : {false, true}) {
+        SCOPED_TRACE(synthesisOnly);
+        auto program = input->copy().intoQCO();
+        ASSERT_TRUE(program);
+        ASSERT_TRUE(synthesisOnly ? program->synthesizeForTarget(environment)
+                                  : program->compileForTarget(environment));
+        EXPECT_TRUE(succeeded(verify(program->module())));
+        EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
+        expectFullUnitaryEqual(reference->module(), program->module(), 2);
+      }
+      auto output =
+          runDefaultPipeline(CompilerInput{input->copy()}, environment);
+      ASSERT_TRUE(output);
+      auto exported = QCProgram::fromOpenQASMString(
+          std::get<OpenQASMProgram>(*output).source());
+      ASSERT_TRUE(exported);
+      auto roundTrip = std::move(*exported).intoQCO();
+      ASSERT_TRUE(roundTrip);
+      PassManager inlineExport(roundTrip->module().getContext());
+      inlineExport.addPass(createInlinerPass({}, [](OpPassManager& nested) {
+        nested.addPass(qco::createQCOCanonicalizer(true));
+      }));
+      inlineExport.addPass(createSymbolDCEPass());
+      ASSERT_TRUE(succeeded(inlineExport.run(roundTrip->module())));
+      roundTrip->module().walk<WalkOrder::PreOrder>(
+          [&](qco::UnitaryOpInterface gate) {
+            EXPECT_TRUE(target.supports(gate.getOperation()))
+                << gate->getName().getStringRef().str();
+            return WalkResult::skip();
+          });
+      expectFullUnitaryEqual(reference->module(), roundTrip->module(), 2);
+    }
+  }
+}
+
 TEST_F(CompilerPipelineTest, TargetCompilationFusesOnlyWithUsableNativeBasis) {
   using NativeOperations = CompilerTarget::NativeOperations;
   using OperationCapability = CompilerTarget::OperationCapability;

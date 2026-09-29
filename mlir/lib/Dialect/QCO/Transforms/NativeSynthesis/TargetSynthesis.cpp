@@ -1348,14 +1348,15 @@ protected:
       signalPassFailure();
       return;
     }
-    // Fixed-pulse lowering must preserve constrained rotation parameters.
     if (targetBasis &&
-        targetBasis->singleQubit != CompilerTarget::SingleQubitBasis::U &&
-        targetBasis->singleQubit !=
-            CompilerTarget::SingleQubitBasis::FixedRotation) {
+        targetBasis->singleQubit != CompilerTarget::SingleQubitBasis::U) {
       RewritePatternSet patterns(&getContext());
-      decomposition::populateParameterizedSingleQubitRunCompositionPatterns(
-          patterns, targetBasis->singleQubit, &target);
+      // Symbolic composition does not yet account for fixed-pulse costs.
+      if (targetBasis->singleQubit !=
+          CompilerTarget::SingleQubitBasis::FixedRotation) {
+        decomposition::populateParameterizedSingleQubitRunCompositionPatterns(
+            patterns, targetBasis->singleQubit, &target);
+      }
       decomposition::populateFuseSingleQubitUnitaryRunsPatterns(
           patterns, targetBasis->singleQubit, /*skipControlledBodies=*/true,
           &target);
@@ -1514,10 +1515,10 @@ std::unique_ptr<Pass> createFuseTwoQubitGates(const CompilerTarget& target) {
   return std::make_unique<FuseTwoQubitGatesPass>(target);
 }
 
-void populateTargetNativeSynthesisPipeline(OpPassManager& pm) {
+void populateTargetNativeSynthesisPipeline(OpPassManager& pm,
+                                           bool preserveGates) {
   /// Placement consumes allocations; native synthesis normalizes phases.
-  pm.addPass(createCanonicalizerPass(
-      GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit)));
+  pm.addPass(createQCOCanonicalizer(preserveGates));
   /// Reuse unchanged classical reads before native synthesis splits their uses.
   pm.addPass(createCSEPass());
   pm.addPass(createRemoveDeadValuesPass());

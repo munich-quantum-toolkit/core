@@ -76,7 +76,9 @@ void populateQCExportPipeline(mlir::OpPassManager& pm);
 /// Populate a QCO-oriented cleanup pipeline on the given pass manager.
 ///
 /// Adds generic cleanup, qtensor shrink-to-fit, and dead-value removal.
-void populateQCOCleanupPipeline(mlir::OpPassManager& pm);
+/// Set @p preserveGates to leave gate rewriting to target-aware synthesis.
+void populateQCOCleanupPipeline(mlir::OpPassManager& pm,
+                                bool preserveGates = false);
 
 /// Populate a QIR-oriented cleanup pipeline on the given pass manager.
 ///

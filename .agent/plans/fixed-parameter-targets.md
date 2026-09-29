@@ -32,13 +32,22 @@ stay internal; Python exposes target capabilities and the selected basis kind.
 Routing and synthesis borrow the cached basis, including its pulse sequence;
 Python property access retains value semantics.
 
+Target cleanup applies structural and classical canonicalization, preserving
+gate forms for target-aware synthesis. The inliner's cleanup follows the same
+rule. Non-universal targets keep their native sequences; operations outside the
+native set still need a usable basis. Numeric fixed-pulse fusion uses the cached
+recipe and only shortens already native runs. Symbolic fixed-pulse runs continue
+to use individual lowering because symbolic fusion does not model pulse costs.
+
 ## Validation
 
-The rebased compiler suite passed 243 tests, native synthesis passed 78, and
-mapping passed 125. Native synthesis includes 1,944 full-matrix cases across all
-six axis pairs and a regression comparing routing costs with fixed-pulse
-emission. Python fixed-parameter tests passed 362 cases, including numeric and
-symbolic input gates. Generated stubs are unchanged.
+The compiler suite passed 244 tests, native synthesis passed 79, and mapping
+passed 125. Native synthesis includes 1,944 full-matrix cases across all six
+axis pairs and a regression comparing routing costs with fixed-pulse emission.
+Further regressions cover native-only compilation and OpenQASM export, and
+fixed-pulse fusion with exact phase. Python fixed-parameter tests passed 362
+cases, including numeric and symbolic input gates. Generated stubs are
+unchanged.
 
 ## Follow-up
 

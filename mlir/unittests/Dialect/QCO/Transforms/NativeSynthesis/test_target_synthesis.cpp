@@ -426,6 +426,44 @@ TEST_F(TargetSynthesisTest, FixedPulseSynthesisPreservesFullUnitary) {
   }
 }
 
+TEST_F(TargetSynthesisTest, FixedPulseFusionPreservesNativeAngles) {
+  for (const auto angle : {.37, std::numbers::pi / 4, std::numbers::pi / 2}) {
+    SCOPED_TRACE(angle);
+    const auto target = valid(Target::create(
+        1, Connectivity::allToAll(),
+        NativeOperations::fromOperations({
+            valid(OperationCapability::create("rx", 1, 1, {}, std::nullopt,
+                                              std::nullopt, {angle})),
+            valid(OperationCapability::create("rz", 1, 1)),
+            valid(OperationCapability::create("gphase", 0, 1)),
+        })));
+    for (const bool cancel : {false, true}) {
+      SCOPED_TRACE(cancel);
+      const auto circuit = [&](QCOProgramBuilder& builder) {
+        auto qubit = builder.rx(angle, builder.staticQubit(0));
+        if (cancel) {
+          qubit = builder.rz(std::numbers::pi, qubit);
+        }
+        qubit = builder.rx(angle, qubit);
+        if (cancel) {
+          qubit = builder.rz(-std::numbers::pi, qubit);
+        }
+        builder.sink(qubit);
+        return builder.intConstant(0);
+      };
+      auto expected = build(circuit);
+      auto actual = build(circuit);
+      ASSERT_TRUE(mlir::succeeded(runTargetPass(
+          *actual, target, mlir::qco::createTargetNativeSynthesis())));
+      ASSERT_TRUE(mlir::succeeded(
+          runPass(*actual, mlir::qco::createVerifyTargetConformance())));
+      expectEquivalent(expected, actual);
+      EXPECT_EQ(countOps<mlir::qco::RXOp>(*actual), cancel ? 0 : 2);
+      EXPECT_EQ(countOps<mlir::qco::RZOp>(*actual), 0);
+    }
+  }
+}
+
 TEST_F(TargetSynthesisTest, FixedHalfTurnUsesOnePulse) {
   for (const auto* const name : {"rx", "ry"}) {
     for (double half : {std::numbers::pi, -std::numbers::pi}) {
