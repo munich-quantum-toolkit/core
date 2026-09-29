@@ -303,8 +303,9 @@ static LogicalResult checkCapacity(func::FuncOp func,
 /// the i-th program qubit. The function assumes that discovery and capacity
 /// checks succeeded.
 static FailureOr<Wires>
-applyPlacement(Region& body, const CompilerTarget& target, const Layout& layout,
-               Computation& computation, IRRewriter& rewriter) {
+applyPlacement(Region& body, const CompilerTarget& target,
+               const Layout<QubitIndex>& layout, Computation& computation,
+               IRRewriter& rewriter) {
   LayoutRecorder recorder(cast<func::FuncOp>(body.getParentOp()), target);
   SmallVector<Value> staticQubits;
   staticQubits.reserve(layout.nHardwareQubits());
@@ -715,7 +716,7 @@ private:
     /// Priority queue of node pointers managed by the caller.
     llvm::PriorityQueue<Node*, std::vector<Node*>, Node::ComparePointer> queue;
     /// Maps a layout to the node that reached it using the lowest cost.
-    DenseMap<ArrayRef<size_t>, Node*> best;
+    DenseMap<ArrayRef<QubitIndex>, Node*> best;
   };
 
   /// Memory arena for A* search nodes, enabling reuse across searches to reduce
