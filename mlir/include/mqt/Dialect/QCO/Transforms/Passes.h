@@ -38,9 +38,14 @@ namespace mlir::qco {
 #define GEN_PASS_REGISTRATION
 #include "mqt/Dialect/QCO/Transforms/Passes.h.inc" // IWYU pragma: export
 
-/// Canonicalize QCO; optionally preserve gate forms for target synthesis.
-/// Identity folding and dead-code elimination remain enabled.
-[[nodiscard]] std::unique_ptr<Pass> createQCOCanonicalizer(bool preserveGates);
+/// Canonicalize structure while preserving explicitly supported gate forms.
+/// Unrestricted targets use the standard MLIR canonicalizer.
+[[nodiscard]] std::unique_ptr<Pass>
+createTargetCanonicalizer(const CompilerTarget& target);
+
+/// Inline functions using the target's canonicalization policy.
+[[nodiscard]] std::unique_ptr<Pass>
+createTargetInliner(const CompilerTarget& target);
 
 /// Create target-independent two-qubit gate fusion.
 ///
@@ -63,6 +68,6 @@ createDecomposeMultiControlled(const CompilerTarget& target,
 /// Normalize placed QCO, synthesize native gates, and verify target support.
 /// Requires a valid target environment and placed qubits.
 void populateTargetNativeSynthesisPipeline(OpPassManager& pm,
-                                           bool preserveGates = true);
+                                           const CompilerTarget& target);
 
 } // namespace mlir::qco

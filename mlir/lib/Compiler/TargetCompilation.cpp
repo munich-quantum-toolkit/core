@@ -16,7 +16,6 @@
 #include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
-#include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
@@ -188,35 +187,20 @@ private:
 
 } /* namespace */
 
-static void populateTargetCleanupPipeline(OpPassManager& pm,
-                                          bool preserveGates) {
-  pm.addPass(qco::createQCOCanonicalizer(preserveGates));
-  pm.addPass(mqt::createNormalizeGlobalPhases());
-  pm.addPass(createCSEPass());
-  pm.addPass(qtensor::createShrinkQTensorToFitPass());
-  pm.addPass(createSymbolDCEPass());
-  pm.addPass(createRemoveDeadValuesPass());
-}
-
 void populateTargetCompilationPipeline(OpPassManager& pm,
                                        const TargetEnvironment& environment,
                                        const MappingOptions& mapping) {
   pm.addPass(std::make_unique<PrepareTargetCompilationPass>(environment, false,
                                                             mapping));
   const auto& target = environment.target();
-  const bool preserveGates = target.nativeOperationsKind() ==
-                             CompilerTarget::NativeOperations::Kind::Explicit;
-  pm.addPass(createInlinerPass({}, [preserveGates](OpPassManager& nested) {
-    nested.addPass(preserveGates ? qco::createQCOCanonicalizer(true)
-                                 : createCanonicalizerPass());
-  }));
+  pm.addPass(qco::createTargetInliner(target));
   pm.addPass(createSymbolDCEPass());
   pm.addPass(createSCCPPass());
-  populateTargetCleanupPipeline(pm, preserveGates);
+  populateQCOCleanupPipeline(pm, qco::createTargetCanonicalizer(target));
   pm.addPass(qco::createUnrollLoopsForPayload());
   pm.addPass(createSCCPPass());
   /// Unrolling exposes static tensor slots and unreachable callees.
-  pm.addPass(qco::createQCOCanonicalizer(preserveGates));
+  pm.addPass(qco::createTargetCanonicalizer(target));
   pm.addPass(createCSEPass());
   pm.addPass(qtensor::createShrinkQTensorToFitPass());
   pm.addPass(createSymbolDCEPass());
@@ -248,7 +232,7 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
     pm.addPass(qco::createPlacementPass(target));
     break;
   }
-  qco::populateTargetNativeSynthesisPipeline(pm, preserveGates);
+  qco::populateTargetNativeSynthesisPipeline(pm, target);
 }
 
 void populateTargetSynthesisPipeline(OpPassManager& pm,
@@ -257,19 +241,14 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
   pm.addPass(std::make_unique<PrepareTargetCompilationPass>(environment, true,
                                                             mapping));
   const auto& target = environment.target();
-  const bool preserveGates = target.nativeOperationsKind() ==
-                             CompilerTarget::NativeOperations::Kind::Explicit;
-  pm.addPass(createInlinerPass({}, [preserveGates](OpPassManager& nested) {
-    nested.addPass(preserveGates ? qco::createQCOCanonicalizer(true)
-                                 : createCanonicalizerPass());
-  }));
+  pm.addPass(qco::createTargetInliner(target));
   pm.addPass(createSymbolDCEPass());
-  populateTargetCleanupPipeline(pm, preserveGates);
+  populateQCOCleanupPipeline(pm, qco::createTargetCanonicalizer(target));
   pm.addPass(qco::createLegalizeControlFlow());
   pm.addPass(qco::createDecomposeMultiControlled(target));
   pm.addPass(qco::createFuseTwoQubitGates(target));
   pm.addPass(qco::createPlacementPass(target));
-  qco::populateTargetNativeSynthesisPipeline(pm, preserveGates);
+  qco::populateTargetNativeSynthesisPipeline(pm, target);
 }
 
 } // namespace mlir

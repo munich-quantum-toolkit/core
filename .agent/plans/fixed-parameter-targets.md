@@ -35,13 +35,14 @@ semantics.
 
 Target cleanup applies structural and classical canonicalization, preserving
 gate forms for target-aware synthesis. The inliner's cleanup follows the same
-rule. This selection stays within target compilation; general cleanup keeps its
-original API. The selector includes QCO lifetime and control-flow patterns,
-which cannot be omitted without breaking linearity. Non-universal targets keep
-their native sequences; operations outside the native set still need a usable
-basis. Numeric fixed-pulse fusion uses the cached recipe and only shortens
-already native runs. Symbolic fixed-pulse runs continue to use individual
-lowering because symbolic fusion does not model pulse costs.
+rule. Target pass factories select canonicalization; target pipelines reuse the
+shared QCO cleanup sequence with that canonicalizer. The selector includes QCO
+lifetime and control-flow patterns, which cannot be omitted without breaking
+linearity. Non-universal targets keep their native sequences; operations outside
+the native set still need a usable basis. Numeric fixed-pulse fusion uses the
+cached recipe and only shortens already native runs. Symbolic fixed-pulse runs
+continue to use individual lowering because symbolic fusion does not model pulse
+costs.
 
 ## Validation
 

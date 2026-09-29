@@ -1551,18 +1551,29 @@ std::unique_ptr<Pass> createFuseTwoQubitGates(const CompilerTarget& target) {
   return std::make_unique<FuseTwoQubitGatesPass>(target);
 }
 
-std::unique_ptr<Pass> createQCOCanonicalizer(bool preserveGates) {
-  if (!preserveGates) {
+std::unique_ptr<Pass> createTargetCanonicalizer(const CompilerTarget& target) {
+  if (target.nativeOperationsKind() ==
+      CompilerTarget::NativeOperations::Kind::Unrestricted) {
     return createCanonicalizerPass(
         GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit));
   }
   return std::make_unique<CanonicalizeStructurePass>();
 }
 
+std::unique_ptr<Pass> createTargetInliner(const CompilerTarget& target) {
+  if (target.nativeOperationsKind() ==
+      CompilerTarget::NativeOperations::Kind::Unrestricted) {
+    return createInlinerPass();
+  }
+  return createInlinerPass({}, [](OpPassManager& nested) {
+    nested.addPass(std::make_unique<CanonicalizeStructurePass>());
+  });
+}
+
 void populateTargetNativeSynthesisPipeline(OpPassManager& pm,
-                                           bool preserveGates) {
+                                           const CompilerTarget& target) {
   /// Placement consumes allocations; native synthesis normalizes phases.
-  pm.addPass(createQCOCanonicalizer(preserveGates));
+  pm.addPass(createTargetCanonicalizer(target));
   /// Reuse unchanged classical reads before native synthesis splits their uses.
   pm.addPass(createCSEPass());
   pm.addPass(createRemoveDeadValuesPass());

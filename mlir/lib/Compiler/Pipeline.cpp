@@ -131,9 +131,9 @@ std::optional<QIRProgram> QCProgram::intoQIR(QIRProfile profile) && {
 //===----------------------------------------------------------------------===//
 
 bool QCOProgram::cleanup() {
-  return succeeded(
-      runQCOTransformPasses(mod(), populateQCOCleanupPipeline,
-                            "failed to run the QCO cleanup pipeline"));
+  return succeeded(runQCOTransformPasses(
+      mod(), [](OpPassManager& pm) { populateQCOCleanupPipeline(pm); },
+      "failed to run the QCO cleanup pipeline"));
 }
 
 bool QCOProgram::normalizeGlobalPhases() {

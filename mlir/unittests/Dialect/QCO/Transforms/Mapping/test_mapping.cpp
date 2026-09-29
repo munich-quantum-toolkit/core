@@ -3402,7 +3402,7 @@ TEST_F(MappingPassFixture, PreferNativeGateCountThenDepth) {
                   MappingPassOptions{
                       .ntrials = 4, .seed = 42, .searchMemoryLimit = 0})));
       PassManager native(context.get());
-      populateTargetNativeSynthesisPipeline(native);
+      populateTargetNativeSynthesisPipeline(native, target);
       ASSERT_TRUE(succeeded(native.run(*moduleOp)));
       ASSERT_TRUE(succeeded(verify(*moduleOp)));
       ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
@@ -3469,7 +3469,7 @@ TEST_F(MappingPassFixture, PreserveBasisStatesAfterNativeScoredCompilation) {
               EXPECT_TRUE(succeeded(verifyLinearity(*moduleOp)));
               EXPECT_TRUE(isExecutable(getEntryPoint(*moduleOp), target));
               PassManager synthesis(context.get());
-              populateTargetNativeSynthesisPipeline(synthesis);
+              populateTargetNativeSynthesisPipeline(synthesis, target);
               ASSERT_TRUE(succeeded(synthesis.run(*moduleOp)));
               ASSERT_TRUE(succeeded(verify(*moduleOp)));
               ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
@@ -3562,7 +3562,7 @@ TEST_F(MappingPassFixture, PreserveRegionsWithIdleWiresAcrossCostAvailability) {
             ASSERT_TRUE(succeeded(verify(*moduleOp)));
             ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
             PassManager native(context.get());
-            populateTargetNativeSynthesisPipeline(native);
+            populateTargetNativeSynthesisPipeline(native, target);
             ASSERT_TRUE(succeeded(native.run(*moduleOp)));
             ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
             const auto actual = qco::sample(getEntryPoint(*moduleOp), 1, 42);
@@ -3829,7 +3829,7 @@ TEST_F(MappingPassFixture, NativeGuidancePreservesAlternatingPairs) {
                                        .ntrials = 2,
                                        .searchMemoryLimit = budget})));
         PassManager native(context.get());
-        populateTargetNativeSynthesisPipeline(native);
+        populateTargetNativeSynthesisPipeline(native, target);
         ASSERT_TRUE(succeeded(native.run(*moduleOp)));
         ASSERT_TRUE(succeeded(verify(*moduleOp)));
         ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
@@ -3889,7 +3889,7 @@ TEST_F(MappingPassFixture, NativeScoringChecksTerminalMeasurementSites) {
     ASSERT_TRUE(succeeded(runPass(
         *moduleOp, target, MappingPassOptions{.ntrials = 4, .seed = seed})));
     PassManager native(context.get());
-    populateTargetNativeSynthesisPipeline(native);
+    populateTargetNativeSynthesisPipeline(native, target);
     ASSERT_TRUE(succeeded(native.run(*moduleOp)));
     ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
     const auto actual = qco::sample(getEntryPoint(*moduleOp), 1, 42);
@@ -3936,7 +3936,7 @@ module {
   ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
   EXPECT_TRUE(isExecutable(getEntryPoint(*moduleOp), target));
   PassManager native(context.get());
-  populateTargetNativeSynthesisPipeline(native);
+  populateTargetNativeSynthesisPipeline(native, target);
   EXPECT_TRUE(failed(native.run(*moduleOp)));
   EXPECT_GT(count, 0);
 }

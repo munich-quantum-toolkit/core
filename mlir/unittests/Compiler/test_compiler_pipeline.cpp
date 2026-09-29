@@ -4079,9 +4079,7 @@ TEST_F(CompilerPipelineTest, TargetPipelinesPreserveNativeGateSequences) {
       auto roundTrip = std::move(*exported).intoQCO();
       ASSERT_TRUE(roundTrip);
       PassManager inlineExport(roundTrip->module().getContext());
-      inlineExport.addPass(createInlinerPass({}, [](OpPassManager& nested) {
-        nested.addPass(qco::createQCOCanonicalizer(true));
-      }));
+      inlineExport.addPass(qco::createTargetInliner(target));
       inlineExport.addPass(createSymbolDCEPass());
       ASSERT_TRUE(succeeded(inlineExport.run(roundTrip->module())));
       roundTrip->module().walk<WalkOrder::PreOrder>(

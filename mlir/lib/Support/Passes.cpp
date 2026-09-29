@@ -32,6 +32,8 @@
 
 #include <bit>
 #include <cstdint>
+#include <memory>
+#include <utility>
 
 using namespace mlir;
 
@@ -171,9 +173,12 @@ void populateQCCleanupPipeline(OpPassManager& pm) {
   pm.addPass(createRemoveDeadValuesPass());
 }
 
-void populateQCOCleanupPipeline(OpPassManager& pm) {
-  pm.addPass(createCanonicalizerPass(
-      GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit)));
+void populateQCOCleanupPipeline(OpPassManager& pm,
+                                std::unique_ptr<Pass> canonicalizer) {
+  pm.addPass(canonicalizer ? std::move(canonicalizer)
+                           : createCanonicalizerPass(
+                                 GreedyRewriteConfig{}.setMaxIterations(
+                                     GreedyRewriteConfig::kNoLimit)));
   pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
   pm.addPass(createCSEPass());
   pm.addPass(qtensor::createShrinkQTensorToFitPass());
@@ -199,8 +204,9 @@ void populateJeffCleanupPipeline(OpPassManager& pm) {
 }
 
 [[nodiscard]] LogicalResult runQCOCleanupPipeline(ModuleOp mod) {
-  return runWithPassManager(mod, populateQCOCleanupPipeline,
-                            "Failed to run the QCO cleanup pipeline.");
+  return runWithPassManager(
+      mod, [](OpPassManager& pm) { populateQCOCleanupPipeline(pm); },
+      "Failed to run the QCO cleanup pipeline.");
 }
 
 [[nodiscard]] LogicalResult runQIRCleanupPipeline(ModuleOp mod,
