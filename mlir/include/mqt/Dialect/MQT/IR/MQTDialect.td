@@ -219,12 +219,16 @@ def NativeOperationAttr : MQTAttr<"NativeOperation", "native_operation"> {
         arity = #mqt.operation_arity<kind = fixed, value = 2>,
         num_parameters = 0, site_tuples = [<[4, 7]>]>
     ```
+
+    An optional `canonical_name` associates a backend-specific spelling with
+    its compiler operation. Without it, the compiler normalizes `name`.
   }];
   let parameters = (ins "StringAttr":$name, "OperationArityAttr":$arity,
       "uint64_t":$num_parameters,
       MQTArrayRefParameter<"SiteTupleAttr">:$site_tuples,
       MQTOptionalUInt64Parameter<>:$duration,
-      OptionalParameter<"FloatAttr">:$fidelity);
+      OptionalParameter<"FloatAttr">:$fidelity,
+      OptionalParameter<"StringAttr">:$canonical_name);
   let assemblyFormat = "`<` struct(params) `>`";
   let genVerifyDecl = 1;
 }

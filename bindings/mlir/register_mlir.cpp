@@ -622,6 +622,10 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
 
   m.doc() = "MQT Core MLIR compiler bindings.";
 
+  m.def("_qiskit_native_gate_name", &bindings::qiskit::nativeGateName,
+        "operation"_a,
+        "Recognize native target gates using the Qiskit translation adapter.");
+
   nb::module_::import_("typing");
   nb::module_::import_("mqt.core.qdmi");
 
@@ -861,7 +865,8 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
              std::optional<std::vector<mlir::CompilerTarget::SiteTuple>>
                  siteTuples,
              const std::optional<uint64_t> duration,
-             const std::optional<double> fidelity) {
+             const std::optional<double> fidelity,
+             std::optional<std::string> canonicalName) {
             constructFromExpected(
                 self,
                 mlir::CompilerTarget::OperationCapability::create(
@@ -869,10 +874,11 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
                     std::move(siteTuples)
                         .value_or(
                             std::vector<mlir::CompilerTarget::SiteTuple>{}),
-                    duration, fidelity));
+                    duration, fidelity, std::move(canonicalName)));
           },
           "name"_a, "arity"_a, "num_parameters"_a, "site_tuples"_a = nb::none(),
-          "duration"_a = nb::none(), "fidelity"_a = nb::none())
+          "duration"_a = nb::none(), "fidelity"_a = nb::none(), nb::kw_only(),
+          "canonical_name"_a = nb::none())
       .def(
           "__init__",
           [](mlir::CompilerTarget::OperationCapability& self, std::string name,
@@ -880,7 +886,8 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
              std::optional<std::vector<mlir::CompilerTarget::SiteTuple>>
                  siteTuples,
              const std::optional<uint64_t> duration,
-             const std::optional<double> fidelity) {
+             const std::optional<double> fidelity,
+             std::optional<std::string> canonicalName) {
             constructFromExpected(
                 self,
                 mlir::CompilerTarget::OperationCapability::create(
@@ -888,10 +895,11 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
                     std::move(siteTuples)
                         .value_or(
                             std::vector<mlir::CompilerTarget::SiteTuple>{}),
-                    duration, fidelity));
+                    duration, fidelity, std::move(canonicalName)));
           },
           "name"_a, "arity"_a, "num_parameters"_a, "site_tuples"_a = nb::none(),
-          "duration"_a = nb::none(), "fidelity"_a = nb::none())
+          "duration"_a = nb::none(), "fidelity"_a = nb::none(), nb::kw_only(),
+          "canonical_name"_a = nb::none())
       .def_prop_ro(
           "name",
           [](const mlir::CompilerTarget::OperationCapability& operation) {
@@ -1345,8 +1353,9 @@ The exporter restores attached layout metadata when it is valid.
 
 Args:
     target: The optional compiler target used for mapping. When provided, emit
-        a canonical device circuit. All qubits must be static, and their site
-        IDs must belong to the target.)pb")
+        a device circuit. All qubits must be static, and their site IDs must
+        belong to the target. Select applicable backend operation names;
+        this does not validate device execution support.)pb")
       .def(
           "to_qco",
           [](mlir::QCProgram& value, const bool copy) {
@@ -1527,7 +1536,9 @@ The exporter restores attached layout metadata when it is valid.
 Args:
     target: The optional compiler target used for mapping. When provided, static
         site IDs map to dense device-qubit indices in target site order.
-        Dynamic qubits and static IDs absent from the target are rejected.)pb")
+        Dynamic qubits and static IDs absent from the target are rejected.
+        Select applicable backend operation names; this does not validate
+        device execution support.)pb")
       .def(
           "to_qc",
           [](mlir::QCOProgram& value, const bool copy) {

@@ -29,6 +29,10 @@
 #include <variant>
 #include <vector>
 
+namespace mlir {
+class CompilerTarget;
+} // namespace mlir
+
 namespace mqt::bindings::qiskit {
 
 namespace nb = nanobind;
@@ -435,8 +439,11 @@ public:
   [[nodiscard]] virtual std::unique_ptr<CircuitReader>
   openCircuit(nb::handle circuit) const = 0;
   [[nodiscard]] virtual bool supportsGate(StandardGateMapping gate) const = 0;
+  [[nodiscard]] virtual std::optional<std::string>
+  nativeGateName(nb::handle operation) const = 0;
   [[nodiscard]] virtual std::unique_ptr<CircuitWriter>
-  createCircuit(uint32_t looseQubits, uint32_t looseClbits) const = 0;
+  createCircuit(uint32_t looseQubits, uint32_t looseClbits,
+                const mlir::CompilerTarget* target = nullptr) const = 0;
   virtual void
   registerCustomGate(std::string_view symbol, std::string_view name,
                      const std::vector<std::string>& formalParameters,

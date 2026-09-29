@@ -15,12 +15,18 @@
 
 #include "nanobind/nanobind.h"
 
+#include <optional>
+#include <string>
+
 namespace mqt::bindings::qiskit {
 
 namespace nb = nanobind;
 
 /// Import a Qiskit QuantumCircuit into a newly owned QC program.
 [[nodiscard]] mlir::QCProgram importCircuit(nb::handle circuit);
+
+/// Return the canonical name of an unmodified standard gate, if supported.
+[[nodiscard]] std::optional<std::string> nativeGateName(nb::handle operation);
 
 /// Return a new Qiskit QuantumCircuit, optionally for a compiler target.
 [[nodiscard]] nb::object

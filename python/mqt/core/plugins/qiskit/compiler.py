@@ -11,10 +11,10 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from warnings import warn
 
-from qiskit.circuit import Barrier, ControlFlowOp, ControlledGate, Delay, Parameter, Store
+from qiskit.circuit import Barrier, ControlFlowOp, ControlledGate, Delay, Measure, Parameter, Reset, Store
 from qiskit.circuit.controlflow import BreakLoopOp, ContinueLoopOp
-from qiskit.circuit.library import get_standard_gate_name_mapping
 from qiskit.providers import BackendV2
 from qiskit.transpiler import Target
 
@@ -34,9 +34,12 @@ def compiler_target_from_qiskit(
 ) -> CompilerTarget:
     """Snapshot standard operations and connectivity from a Qiskit target.
 
-    Preserve ordered operation sites, including directional two-qubit gates.
+    Preserve backend operation names and ordered sites, including directional
+    two-qubit gates. Target-aware Qiskit export restores these names.
     Connectivity comes from two-qubit operation sites and is undirected.
     Global phase is circuit metadata and is always permitted.
+    Gate recognition uses the same adapter and Qiskit versions as circuit import/export.
+    Unsupported operations are omitted with a warning unless explicitly selected.
     Delay, barrier, and control-flow instructions do not
     describe native gates and are omitted. Timing, calibration, and scheduling
     properties are not transferred. This does not assert device support for
@@ -45,7 +48,8 @@ def compiler_target_from_qiskit(
     Args:
         source: A target with a known positive qubit count, or a BackendV2.
         operation_names: Restrict the snapshot to these target operation names.
-            By default, inspect every operation.
+            By default, retain every representable operation. Explicitly selected
+            operations must all be representable.
         name: Optional name of the compiler target; defaults to the backend name.
 
     Returns:
@@ -53,11 +57,13 @@ def compiler_target_from_qiskit(
 
     Raises:
         TypeError: The source is not a Target or BackendV2.
-        ValueError: The target has custom gates, constrained parameters (including
-            explicit angle bounds), open controls, an unknown width, or
-            connectivity that Core cannot represent.
+        ValueError: An explicitly selected operation is unsupported, no native
+            operations remain, or the width or connectivity cannot be represented.
     """
-    from ...mlir import CompilerTarget  # ruff: ignore[import-outside-top-level] Keep MLIR optional for QDMI-only use.
+    from ...mlir import (  # ruff: ignore[import-outside-top-level] Keep MLIR optional for QDMI-only use.
+        CompilerTarget,
+        _qiskit_native_gate_name,
+    )
 
     if isinstance(source, BackendV2):
         if name is None:
@@ -70,9 +76,6 @@ def compiler_target_from_qiskit(
         msg = "Qiskit target must have a known positive qubit count"
         raise ValueError(msg)
 
-    standards = get_standard_gate_name_mapping()
-    # Qiskit versions before 2.5 do not support target angle bounds.
-    has_angle_bounds = getattr(source, "gate_has_angle_bounds", None)
     operations = []
     couplings: set[tuple[int, int]] = set()
     all_to_all = source.num_qubits == 1
@@ -85,24 +88,35 @@ def compiler_target_from_qiskit(
         qargs = source.qargs_for_operation_name(operation_name)
         if qargs is not None and not qargs:
             continue
-        instruction_type = instruction if isinstance(instruction, type) else instruction.base_class
+        instruction_type = instruction if isinstance(instruction, type) else type(instruction)
         if issubclass(instruction_type, (Barrier, Delay, ControlFlowOp, BreakLoopOp, ContinueLoopOp, Store)):
             continue
-        standard = standards.get(operation_name)
-        if isinstance(instruction, type) or standard is None or instruction_type is not standard.base_class:
-            msg = f"Cannot represent custom Qiskit target operation {operation_name!r}"
-            raise ValueError(msg)
+        if isinstance(instruction, Measure):
+            native_name = "measure"
+        elif isinstance(instruction, Reset):
+            native_name = "reset"
+        else:
+            native_name = _qiskit_native_gate_name(instruction)
+        if native_name == "gphase":
+            continue
+        reason = None
         if isinstance(instruction, ControlledGate) and instruction.ctrl_state != (1 << instruction.num_ctrl_qubits) - 1:
-            msg = f"Cannot represent open controls for {operation_name}"
-            raise ValueError(msg)
-        parameters = instruction.params
-        if (
-            any(not isinstance(parameter, Parameter) for parameter in parameters)
-            or len(set(parameters)) != len(parameters)
-            or (has_angle_bounds is not None and has_angle_bounds(operation_name))
+            reason = "open controls"
+        elif native_name is None:
+            reason = "custom or unsupported operation"
+        elif (
+            any(not isinstance(parameter, Parameter) for parameter in instruction.params)
+            or len(set(instruction.params)) != len(instruction.params)
+            or source.gate_has_angle_bounds(operation_name)
         ):
-            msg = f"Cannot represent parameter constraints for {operation_name}"
-            raise ValueError(msg)
+            reason = "parameter constraints"
+        if reason is not None:
+            msg = f"Cannot represent {reason} for {operation_name!r}"
+            if operation_names is not None:
+                raise ValueError(msg)
+            warn(f"{msg}; omitting it from the compiler target", UserWarning, stacklevel=2)
+            continue
+        assert native_name is not None
         sites = None if qargs is None else sorted(qargs)
         arity = instruction.num_qubits
         if arity == 2:
@@ -110,11 +124,15 @@ def compiler_target_from_qiskit(
                 all_to_all = True
             else:
                 couplings.update((min(a, b), max(a, b)) for a, b in sites)
-        if operation_name != "global_phase":
-            operations.append(
-                CompilerTarget.OperationCapability(operation_name, arity, len(parameters), site_tuples=sites)
+        operations.append(
+            CompilerTarget.OperationCapability(
+                operation_name, arity, len(instruction.params), site_tuples=sites, canonical_name=native_name
             )
+        )
 
+    if not operations:
+        msg = "Qiskit target has no representable native operations"
+        raise ValueError(msg)
     operations.append(CompilerTarget.OperationCapability("gphase", CompilerTarget.OperationArity.fixed(0), 1))
     if len(couplings) == source.num_qubits * (source.num_qubits - 1) // 2:
         all_to_all = True

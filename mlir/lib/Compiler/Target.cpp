@@ -377,24 +377,27 @@ CompilerTarget::OperationCapability::Arity::Arity(Kind kind,
     : kind_(kind), value_(value) {}
 
 llvm::Expected<CompilerTarget::OperationCapability>
-CompilerTarget::OperationCapability::create(std::string name, size_t arity,
-                                            size_t numParameters,
-                                            std::vector<SiteTuple> siteTuples,
-                                            std::optional<uint64_t> duration,
-                                            std::optional<double> fidelity) {
+CompilerTarget::OperationCapability::create(
+    std::string name, size_t arity, size_t numParameters,
+    std::vector<SiteTuple> siteTuples, std::optional<uint64_t> duration,
+    std::optional<double> fidelity, std::optional<std::string> canonicalName) {
   return create(std::move(name), Arity::fixed(arity), numParameters,
-                std::move(siteTuples), duration, fidelity);
+                std::move(siteTuples), duration, fidelity,
+                std::move(canonicalName));
 }
 
 llvm::Expected<CompilerTarget::OperationCapability>
-CompilerTarget::OperationCapability::create(std::string name, Arity arity,
-                                            size_t numParameters,
-                                            std::vector<SiteTuple> siteTuples,
-                                            std::optional<uint64_t> duration,
-                                            std::optional<double> fidelity) {
-  auto canonicalName = canonicalOperationName(name);
-  if (canonicalName.empty()) {
+CompilerTarget::OperationCapability::create(
+    std::string name, Arity arity, size_t numParameters,
+    std::vector<SiteTuple> siteTuples, std::optional<uint64_t> duration,
+    std::optional<double> fidelity, std::optional<std::string> canonicalName) {
+  if (StringRef(name).trim().empty()) {
     return invalidTarget("Compiler target operation name must not be empty");
+  }
+  auto canonical = canonicalOperationName(canonicalName.value_or(name));
+  if (canonical.empty()) {
+    return invalidTarget(
+        "Compiler target canonical operation name must not be empty");
   }
   if (auto error =
           validateFidelity(fidelity, "Compiler target operation fidelity")) {
@@ -426,7 +429,7 @@ CompilerTarget::OperationCapability::create(std::string name, Arity arity,
     }
   }
 
-  return OperationCapability(std::move(name), std::move(canonicalName), arity,
+  return OperationCapability(std::move(name), std::move(canonical), arity,
                              numParameters, std::move(siteTuples), duration,
                              fidelity);
 }
@@ -978,7 +981,10 @@ CompilerTarget::create(const mqt::CompilationTargetAttr attribute) {
       auto operation = OperationCapability::create(
           operationAttr.getName().getValue().str(), arity,
           static_cast<size_t>(operationAttr.getNumParameters()),
-          std::move(siteTuples), operationAttr.getDuration(), fidelity);
+          std::move(siteTuples), operationAttr.getDuration(), fidelity,
+          operationAttr.getCanonicalName()
+              ? std::optional{operationAttr.getCanonicalName().getValue().str()}
+              : std::nullopt);
       if (!operation) {
         return operation.takeError();
       }
@@ -1293,7 +1299,10 @@ CompilerTarget::materialize(MLIRContext& context) const {
     operationAttrs.emplace_back(mqt::NativeOperationAttr::get(
         &context, builder.getStringAttr(operation.name()), arityAttr,
         operation.numParameters(), siteTupleAttrs, operation.duration(),
-        fidelityAttr));
+        fidelityAttr,
+        operation.canonicalName() != canonicalOperationName(operation.name())
+            ? builder.getStringAttr(operation.canonicalName())
+            : StringAttr{}));
   }
 
   const auto connectivity = connectivityKind() == Connectivity::Kind::AllToAll

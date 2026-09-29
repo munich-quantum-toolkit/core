@@ -12,11 +12,16 @@ the narrower range above; the adapter checks it before inspecting a circuit.
 
 ## Compiler targets
 
-Use {py:func}`mqt.core.plugins.qiskit.compiler_target_from_qiskit` to snapshot a
-Qiskit `Target` or `BackendV2` as a {py:class}`~mqt.core.mlir.CompilerTarget`.
-The adapter preserves standard gates and ordered operation sites. Routing uses
-undirected connectivity; this does not make directed gates bidirectional. An
-optional `operation_names` subset restricts the available operations.
+Use {py:func}`~mqt.core.plugins.qiskit.compiler.compiler_target_from_qiskit` to
+snapshot a Qiskit `Target` or `BackendV2` as a
+{py:class}`~mqt.core.mlir.CompilerTarget`. The adapter preserves standard gates
+and ordered operation sites. Routing uses undirected connectivity; this does not
+make directed gates bidirectional. An optional `operation_names` subset
+restricts the available operations. Recognition uses the versioned circuit
+import/export adapter, with the same Qiskit version requirements. The compiler
+uses canonical gate names and retains backend aliases. Export with
+`program.to_qiskit(target=target)` restores an applicable alias on each ordered
+placement. Aliased instructions carry their standard operation as a definition.
 
 ```python
 from qiskit.providers.fake_provider import GenericBackendV2
@@ -28,12 +33,15 @@ target = compiler_target_from_qiskit(backend)
 
 Only independent, unrestricted gate parameters are representable. Fixed angles,
 parameter expressions, repeated parameters, explicit angle bounds, open
-controls, and custom gates are rejected. Connectivity comes from two-qubit
-operation sites; the qubit count must be known and the topology connected.
-Calibration and scheduling data are not transferred. Global phase is always
-allowed as circuit metadata; delay, barrier, and control-flow instructions are
-not native gates. The snapshot does not assert device support for classical
-control flow.
+controls, and custom gates are omitted with warnings, so an extra unsupported
+instruction does not exclude an otherwise usable backend. Explicitly requested
+operations are rejected if unsupported. Connectivity comes from retained
+two-qubit operation sites; the qubit count must be known and the topology
+connected. Calibration and scheduling data are not transferred. Global phase is
+always allowed as circuit metadata; delay, barrier, and control-flow
+instructions are not native gates. The snapshot does not assert device support
+for classical control flow or guarantee that the retained basis supports native
+synthesis.
 
 To check Qiskit export support, call `program.to_qiskit(target=target)` on the
 **compiled output** and use the returned circuit. The exporter validates the

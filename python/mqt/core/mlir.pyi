@@ -21,6 +21,9 @@ import mqt.core.qdmi
 from mqt.core.qdmi import Device
 from mqt.core.typing import QDMISessionParameters
 
+def _qiskit_native_gate_name(operation: object) -> str | None:
+    """Recognize native target gates using the Qiskit translation adapter."""
+
 def _generate_benchmark(instance_specification_json: str) -> QCProgram:
     """Generate the QC program described by an instance specification."""
 
@@ -293,6 +296,8 @@ class CompilerTarget:
             site_tuples: Sequence[CompilerTarget.SiteTuple | Sequence[int]] | None = None,
             duration: int | None = None,
             fidelity: float | None = None,
+            *,
+            canonical_name: str | None = None,
         ) -> None: ...
         @property
         def name(self) -> str:
@@ -625,8 +630,9 @@ class QCProgram(Program):
 
         Args:
             target: The optional compiler target used for mapping. When provided, emit
-                a canonical device circuit. All qubits must be static, and their site
-                IDs must belong to the target.
+                a device circuit. All qubits must be static, and their site IDs must
+                belong to the target. Select applicable backend operation names;
+                this does not validate device execution support.
         """
 
     def to_qco(self, *, copy: bool = False) -> QCOProgram:
@@ -733,6 +739,8 @@ class QCOProgram(Program):
             target: The optional compiler target used for mapping. When provided, static
                 site IDs map to dense device-qubit indices in target site order.
                 Dynamic qubits and static IDs absent from the target are rejected.
+                Restore applicable backend operation names; this does not validate
+                the circuit against the target.
         """
 
     def to_qc(self, *, copy: bool = False) -> QCProgram:

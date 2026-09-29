@@ -191,19 +191,22 @@ public:
       size_t value_;
     };
 
-    /// Create a validated operation capability.
+    /// Create a validated operation capability. An explicit canonical name
+    /// associates a backend-specific name with its compiler operation.
     [[nodiscard]] static llvm::Expected<OperationCapability>
     create(std::string name, size_t arity, size_t numParameters,
            std::vector<SiteTuple> siteTuples = {},
            std::optional<uint64_t> duration = std::nullopt,
-           std::optional<double> fidelity = std::nullopt);
+           std::optional<double> fidelity = std::nullopt,
+           std::optional<std::string> canonicalName = std::nullopt);
 
     /// Create a validated operation capability.
     [[nodiscard]] static llvm::Expected<OperationCapability>
     create(std::string name, Arity arity, size_t numParameters,
            std::vector<SiteTuple> siteTuples = {},
            std::optional<uint64_t> duration = std::nullopt,
-           std::optional<double> fidelity = std::nullopt);
+           std::optional<double> fidelity = std::nullopt,
+           std::optional<std::string> canonicalName = std::nullopt);
 
     /// Return the exact reported operation name.
     [[nodiscard]] llvm::StringRef name() const noexcept;
