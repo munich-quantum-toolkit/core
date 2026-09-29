@@ -33,6 +33,7 @@ class CanonicalizeStructurePass final
 public:
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(CanonicalizeStructurePass)
 
+protected:
   LogicalResult initialize(MLIRContext* context) override {
     RewritePatternSet patterns(context);
     for (auto* dialect : context->getLoadedDialects()) {
@@ -47,7 +48,6 @@ public:
     return success();
   }
 
-protected:
   void runOnOperation() override {
     if (failed(applyPatternsGreedily(getOperation(), patterns_,
                                      GreedyRewriteConfig{}.setMaxIterations(
