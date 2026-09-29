@@ -9,18 +9,15 @@
  */
 
 #include "bench/Evaluation.hpp"
+#include "bench/JSON.hpp"
 #include "bench/QFT.hpp"
 
 #include "gtest/gtest.h"
 
 #include <stdexcept>
+#include <string>
 
-namespace {
-
-using mqt::bench::Output;
-using mqt::bench::QFT;
-using mqt::bench::QFTMethod;
-using mqt::bench::QFTOptions;
+namespace mqt::bench {
 
 TEST(QFT, UsesTheStandardMethodByDefault) {
   const QFT benchmark{{.qubits = 3, .periodExponent = 1}};
@@ -68,4 +65,31 @@ TEST(QFT, GivesFourPeaksForPeriodFour) {
   EXPECT_FALSE(evaluation.successProbability);
 }
 
-} // namespace
+TEST(QFT, RoundTripsJSON) {
+  const auto defaults = qftFromInstanceSpecificationJSON(
+      R"({"schema_version":1,"benchmark":"qft","parameters":{"qubits":4,"period_exponent":2}})");
+  EXPECT_EQ(defaults.options().method, QFTMethod::Standard);
+  EXPECT_EQ(
+      toInstanceSpecificationJSON(defaults),
+      R"({"benchmark":"qft","parameters":{"method":"standard","period_exponent":2,"qubits":4},"schema_version":1})");
+
+  const QFT benchmark{
+      {.qubits = 4, .periodExponent = 2, .method = QFTMethod::Semiclassical}};
+  const auto manifest = toManifestJSON(benchmark);
+  EXPECT_EQ(toManifestJSON(qftFromManifestJSON(manifest)), manifest);
+  EXPECT_EQ(benchmarkIdFromManifestJSON(manifest), "qft");
+}
+
+TEST(QFT, UsesSemanticCaseIds) {
+  EXPECT_NE(caseId(QFT{{.qubits = 3, .periodExponent = 1}}),
+            caseId(QFT{{.qubits = 3,
+                        .periodExponent = 1,
+                        .method = QFTMethod::Semiclassical}}));
+}
+
+TEST(QFT, DescribesJSONSchema) {
+  EXPECT_NE(describeBenchmarkJSON("qft").find("\"period_exponent\""),
+            std::string::npos);
+}
+
+} // namespace mqt::bench
