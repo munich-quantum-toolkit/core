@@ -164,9 +164,11 @@ TEST(BenchmarkJSON, ParsesCounts) {
 TEST(BenchmarkJSON, SerializesEvaluations) {
   const auto serialized =
       evaluationToJSON("sha256-" + std::string(64, '0'), 100,
-                       Evaluation{.totalVariationDistance = 0.,
-                                  .squaredHellingerFidelity = 1.,
-                                  .successProbability = std::nullopt});
+                       Evaluation{
+                           .totalVariationDistance = 0.,
+                           .squaredHellingerFidelity = 1.,
+                           .successProbability = std::nullopt,
+                       });
   EXPECT_NE(serialized.find("\"squared_hellinger_fidelity\":1.0"),
             std::string::npos);
   EXPECT_NE(serialized.find("\"success_probability\":null"), std::string::npos);
