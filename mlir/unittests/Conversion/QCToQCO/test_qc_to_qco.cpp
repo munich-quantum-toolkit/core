@@ -909,6 +909,38 @@ module {
   EXPECT_TRUE(sawExpectedDiagnostic);
 }
 
+TEST_F(QCToQCORegressionTest, ThreadsReferencesThroughExternalCalls) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func private @external(!qc.qubit, memref<2x!qc.qubit>)
+      func.func @main() {
+        %q = qc.alloc : !qc.qubit
+        %reg = memref.alloc() : memref<2x!qc.qubit>
+        func.call @external(%q, %reg) : (!qc.qubit, memref<2x!qc.qubit>) -> ()
+        func.call @external(%q, %reg) : (!qc.qubit, memref<2x!qc.qubit>) -> ()
+        memref.dealloc %reg : memref<2x!qc.qubit>
+        qc.dealloc %q : !qc.qubit
+        return
+      }
+    }
+  )mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  auto external = moduleOp->lookupSymbol<func::FuncOp>("external");
+  EXPECT_TRUE(external.isExternal());
+  EXPECT_EQ(external.getFunctionType().getInputs(),
+            external.getFunctionType().getResults());
+  auto main = moduleOp->lookupSymbol<func::FuncOp>("main");
+  auto calls = llvm::to_vector(main.getOps<func::CallOp>());
+  ASSERT_EQ(calls.size(), 2U);
+  ASSERT_EQ(calls[0].getNumResults(), 2U);
+  EXPECT_TRUE(llvm::equal(calls[1].getOperands(), calls[0].getResults()));
+}
+
 TEST_F(QCToQCORegressionTest, ConvertsQubitFunctionArgumentsToTrailingResults) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
