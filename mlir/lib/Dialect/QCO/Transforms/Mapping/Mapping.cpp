@@ -480,6 +480,7 @@ private:
     std::optional<NativeCostTracker> costs;
   };
 
+  /// Describes a SWAP and its associated costs.
   struct SwapCandidate {
     /// The hardware indices on which the SWAP acts.
     IndexPairType indices;
@@ -575,6 +576,44 @@ private:
       }
       return costs;
     }
+  };
+
+  /// A deduplicated priority queue for A* search nodes.
+  class SearchFrontier {
+  public:
+    /// Push a node onto the frontier.
+    void push(Node* node) {
+      auto*& incumbent = best[node->layout.getProgramToHardware()];
+      if (incumbent == nullptr || node->cost < incumbent->cost) {
+        incumbent = node;
+        queue.push(node);
+      }
+    }
+
+    /// Pop a node from the frontier.
+    [[nodiscard]] Node* pop() {
+      while (!queue.empty()) {
+        Node* node = queue.top();
+        queue.pop();
+
+        const auto key = node->layout.getProgramToHardware();
+
+        // If the node matches the entry in the best map, it's valid.
+        // Otherwise, the node was superseded by a cheaper state. Thus, drop it.
+
+        if (best.lookup(key) == node) {
+          return node;
+        }
+      }
+
+      return nullptr;
+    }
+
+  private:
+    /// Priority queue of node pointers managed by the caller.
+    llvm::PriorityQueue<Node*, std::vector<Node*>, Node::ComparePointer> queue;
+    /// Maps a layout to the node that reached it using the lowest cost.
+    DenseMap<ArrayRef<size_t>, Node*> best;
   };
 
   /// Memory arena for A* search nodes, enabling reuse across searches to reduce
@@ -1176,26 +1215,11 @@ private:
       return SmallVector<IndexPairType>{};
     }
 
-    DenseMap<ArrayRef<size_t>, int64_t> bestCost;
-    llvm::PriorityQueue<Node*, std::vector<Node*>, Node::ComparePointer>
-        frontier;
-    frontier.emplace(root);
+    SearchFrontier frontier;
+    frontier.push(root);
 
-    while (!frontier.empty()) {
-      Node* curr = frontier.top();
-      frontier.pop();
-
-      /// After the first edge, future costs depend only on the layout. Keep
-      /// the least accumulated cost, including the one-time prefix adjustment.
-
-      const auto [it, inserted] =
-          bestCost.try_emplace(curr->layout.getProgramToHardware(), curr->cost);
-      if (!inserted) {
-        if (curr->cost >= it->getSecond()) {
-          continue;
-        }
-        it->second = curr->cost;
-      }
+    Node* curr = frontier.pop();
+    for (; curr != nullptr; curr = frontier.pop()) {
 
       // If the currently visited node is a goal node, reconstruct the
       // sequence of SWAPs from this node to the root.
@@ -1229,9 +1253,10 @@ private:
                 .standalone = standalone,
                 .prefix = prefix,
             };
+
             child->initializeChild(curr, candidate, window, env.target, params);
             seen.insert(indices);
-            frontier.emplace(child);
+            frontier.push(child);
           }
         });
       }
