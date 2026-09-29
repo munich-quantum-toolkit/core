@@ -25,7 +25,7 @@ struct WStateOptions {
   size_t qubits;
 };
 
-/// Prepare the equal, positive-amplitude superposition of single excitations.
+/// A validated W-state benchmark.
 class MQT_CORE_BENCH_EXPORT WState final {
 public:
   explicit WState(WStateOptions options);
