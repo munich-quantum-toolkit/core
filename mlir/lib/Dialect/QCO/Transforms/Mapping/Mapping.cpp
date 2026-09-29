@@ -621,9 +621,6 @@ private:
       return nullptr;
     }
 
-    /// Return true, if the frontier is empty.
-    [[nodiscard]] bool empty() const { return queue.empty(); }
-
   private:
     /// Priority queue of node pointers managed by the caller.
     llvm::PriorityQueue<Node*, std::vector<Node*>, Node::ComparePointer> queue;
@@ -1233,11 +1230,8 @@ private:
     SearchFrontier frontier;
     frontier.push(root);
 
-    while (!frontier.empty()) {
-      Node* curr = frontier.pop();
-      if (curr == nullptr) {
-        break;
-      }
+    Node* curr = frontier.pop();
+    for(; curr != nullptr; curr = frontier.pop()) {
 
       // If the currently visited node is a goal node, reconstruct the
       // sequence of SWAPs from this node to the root.
