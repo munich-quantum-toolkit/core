@@ -24,6 +24,8 @@
 using namespace mlir;
 using namespace mlir::qco;
 
+namespace {
+
 template <typename T> class LayoutTest : public ::testing::Test {};
 template <typename T> class LayoutDeathTest : public LayoutTest<T> {};
 using IndexTypes = ::testing::Types<uint8_t, uint16_t, uint32_t, uint64_t>;
@@ -139,8 +141,10 @@ TYPED_TEST(LayoutTest, SwapSameHardwareIsNoOp) {
 }
 
 TEST(LayoutBoundaryTest, LargestByteLayoutPreservesEveryIndex) {
-  for (const auto& layout : {Layout<uint8_t>::identity(255),
-                             Layout<uint8_t>::random(255, 255, 42)}) {
+  for (const auto& layout : {
+           Layout<uint8_t>::identity(255),
+           Layout<uint8_t>::random(255, 255, 42),
+       }) {
     ASSERT_EQ(layout.nHardwareQubits(), 255);
     for (uint8_t prog = 0; prog < 255; ++prog) {
       const auto hw = layout.getHardwareIndex(prog);
@@ -180,3 +184,5 @@ TYPED_TEST(LayoutTest, SwapCommutesWithItself) {
 
   EXPECT_EQ(layout, before);
 }
+
+} // namespace

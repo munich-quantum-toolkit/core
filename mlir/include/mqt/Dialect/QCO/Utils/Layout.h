@@ -12,6 +12,7 @@
 
 #include "mlir/Support/LLVM.h"
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/SmallBitVector.h"
@@ -72,7 +73,7 @@ public:
     llvm::shuffle(hwIndices.begin(), hwIndices.end(), std::mt19937_64{seed});
 
     Layout<T> layout(nProgramQubits, nHardwareQubits);
-    for (T prog = 0; prog < nProgramQubits; ++prog) {
+    for (const auto prog : llvm::seq(static_cast<T>(nProgramQubits))) {
       layout.add(prog, hwIndices[prog]);
     }
     return layout;

@@ -313,10 +313,11 @@ applyPlacement(Region& body, const CompilerTarget& target,
                IRRewriter& rewriter) {
   LayoutRecorder recorder(cast<func::FuncOp>(body.getParentOp()), target);
   SmallVector<Value> staticQubits;
-  staticQubits.reserve(layout.nHardwareQubits());
+  const auto nhardware = static_cast<QubitIndex>(layout.nHardwareQubits());
+  staticQubits.reserve(nhardware);
 
   rewriter.setInsertionPointToStart(&body.front());
-  for (QubitIndex hw = 0; hw < layout.nHardwareQubits(); ++hw) {
+  for (QubitIndex hw = 0; hw < nhardware; ++hw) {
     auto op =
         StaticOp::create(rewriter, body.getLoc(), target.siteForVertex(hw));
     staticQubits.emplace_back(op.getQubit());
@@ -360,7 +361,7 @@ applyPlacement(Region& body, const CompilerTarget& target,
   }
 
   rewriter.setInsertionPoint(body.back().getTerminator());
-  for (; prog < layout.nHardwareQubits(); ++prog) {
+  for (; prog < nhardware; ++prog) {
     const auto hw = layout.getHardwareIndex(prog);
     auto qubit = staticQubits[hw];
 
@@ -776,7 +777,8 @@ private:
     /// symmetric (essentially: undirected).
     void construct(const Layout<QubitIndex>& from,
                    const Layout<QubitIndex>& to) {
-      for (QubitIndex u = 0; u < target_->numSites(); ++u) {
+      for (const auto u :
+           llvm::seq(static_cast<QubitIndex>(target_->numSites()))) {
         target_->forEachNeighbour(u, [&](const QubitIndex v) {
           if (shouldAddEdge(u, v, from, to)) {
             f_.addEdge(u, v);
@@ -1125,8 +1127,8 @@ private:
                        true};
     }
 
-    const size_t nprogram = wires.size();
-    const size_t nhardware = env.target.numSites();
+    const auto nprogram = static_cast<QubitIndex>(wires.size());
+    const auto nhardware = static_cast<QubitIndex>(env.target.numSites());
     SmallVector<SmallVector<std::pair<QubitIndex, size_t>>> neighbours(
         nprogram);
     SmallVector<size_t> degree(nprogram, 0);
@@ -1155,7 +1157,7 @@ private:
         while (current != nprogram) {
           order.push_back(current);
           visited[current] = true;
-          auto next = static_cast<QubitIndex>(nprogram);
+          auto next = nprogram;
           for (const auto& [partner, weight] : neighbours[current]) {
             if (!visited[partner]) {
               next = partner;
@@ -1172,15 +1174,14 @@ private:
         }
         auto current = static_cast<QubitIndex>(
             std::distance(remaining.begin(), llvm::min_element(remaining)));
-        SmallVector<QubitIndex> mapping(nhardware,
-                                        static_cast<QubitIndex>(nhardware));
+        SmallVector<QubitIndex> mapping(nhardware, nhardware);
         size_t placed = 0;
         while (current != nhardware && placed < nprogram) {
           mapping[order[placed++]] = current;
           usedHardware[current] = true;
           env.target.forEachNeighbour(
               current, [&](QubitIndex neighbour) { --remaining[neighbour]; });
-          auto next = static_cast<QubitIndex>(nhardware);
+          auto next = nhardware;
           env.target.forEachNeighbour(current, [&](QubitIndex neighbour) {
             if (!usedHardware[neighbour] &&
                 (remaining[neighbour] != 0 || placed + 1 == nprogram) &&
@@ -1213,11 +1214,10 @@ private:
     }
 
     // The out-of-range hardware index marks an unplaced program qubit.
-    SmallVector<QubitIndex> mapping(nhardware,
-                                    static_cast<QubitIndex>(nhardware));
+    SmallVector<QubitIndex> mapping(nhardware, nhardware);
     SmallVector<bool> used(nhardware, false);
     for (size_t placed = 0; placed < nprogram; ++placed) {
-      auto prog = static_cast<QubitIndex>(nprogram);
+      auto prog = nprogram;
       for (QubitIndex candidate = 0; candidate < nprogram; ++candidate) {
         if (mapping[candidate] == nhardware &&
             (prog == nprogram ||
@@ -1227,7 +1227,7 @@ private:
         }
       }
 
-      auto best = static_cast<QubitIndex>(nhardware);
+      auto best = nhardware;
       size_t bestCost = 0;
       for (QubitIndex hw = 0; hw < nhardware; ++hw) {
         if (used[hw]) {
@@ -1255,7 +1255,7 @@ private:
     }
 
     // Complete the permutation with unused sites for routing workspace.
-    auto prog = static_cast<QubitIndex>(nprogram);
+    auto prog = nprogram;
     for (QubitIndex hw = 0; hw < nhardware; ++hw) {
       if (!used[hw]) {
         mapping[prog++] = hw;
@@ -1900,7 +1900,8 @@ private:
   static SmallVector<QubitIndex> sitePermutation(const Layout<QubitIndex>& from,
                                                  const Layout<QubitIndex>& to) {
     SmallVector<QubitIndex> permutation(from.nHardwareQubits());
-    for (QubitIndex site = 0; site < permutation.size(); ++site) {
+    for (const auto site :
+         llvm::seq(static_cast<QubitIndex>(permutation.size()))) {
       permutation[site] = to.getHardwareIndex(from.getProgramIndex(site));
     }
     return permutation;
@@ -1908,8 +1909,8 @@ private:
 
   static void permuteWires(Wires& wires, ArrayRef<QubitIndex> permutation) {
     Wires reordered(wires.size());
-    for (QubitIndex site = 0; site < wires.size(); ++site) {
-      reordered[permutation[site]] = wires[site];
+    for (auto [wire, site] : llvm::zip_equal(wires, permutation)) {
+      reordered[site] = wire;
     }
     wires = std::move(reordered);
   }
