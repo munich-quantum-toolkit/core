@@ -480,7 +480,7 @@ private:
     std::optional<NativeCostTracker> costs;
   };
 
-  /// Describes a SWAP at its associated costs.
+  /// Describes a SWAP and its associated costs.
   struct SwapCandidate {
     /// The hardware indices on which the SWAP acts.
     IndexPairType indices;
