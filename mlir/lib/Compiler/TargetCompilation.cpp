@@ -190,11 +190,7 @@ private:
 
 static void populateTargetCleanupPipeline(OpPassManager& pm,
                                           bool preserveGates) {
-  if (!preserveGates) {
-    populateQCOCleanupPipeline(pm);
-    return;
-  }
-  pm.addPass(qco::createQCOCanonicalizer(true));
+  pm.addPass(qco::createQCOCanonicalizer(preserveGates));
   pm.addPass(mqt::createNormalizeGlobalPhases());
   pm.addPass(createCSEPass());
   pm.addPass(qtensor::createShrinkQTensorToFitPass());

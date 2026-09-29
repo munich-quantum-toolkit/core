@@ -180,15 +180,15 @@ makeFixedRotationBasis(GateKind gate, GateKind freeGate, double angle) {
   if (magnitude <= mqt::PARAMETER_COMPARISON_TOLERANCE) {
     return std::nullopt;
   }
+  auto& zAngles = result.quarterTurnAngles;
   const double directCount = std::round(halfPi / magnitude);
   if (directCount >= 1. && directCount <= static_cast<double>(maxPulses) &&
       std::abs(directCount * magnitude - halfPi) <=
           mqt::PARAMETER_COMPARISON_TOLERANCE) {
-    std::vector<double> zAngles(static_cast<size_t>(directCount) + 1, 0.);
+    zAngles.resize(static_cast<size_t>(directCount) + 1);
     const double axis = (!isX ? halfPi : 0.) + (angle < 0. ? pi : 0.);
     zAngles.front() = axis;
     zAngles.back() = -axis;
-    result.quarterTurnAngles = std::move(zAngles);
     return result;
   }
   const double sine = std::sin(angle);
@@ -211,13 +211,12 @@ makeFixedRotationBasis(GateKind gate, GateKind freeGate, double angle) {
       isX ? (sine < 0. ? halfPi : -halfPi) : (sine < 0. ? pi : 0.);
   const double before = halfPi - gamma + eta;
   const double after = -gamma - eta - halfPi;
-  std::vector<double> zAngles(2 * blocks + 1);
+  zAngles.resize(2 * blocks + 1);
   zAngles.front() = before;
   for (size_t block = 0; block < blocks; ++block) {
     zAngles[2 * block + 1] = middle;
     zAngles[2 * block + 2] = block + 1 == blocks ? after : after + before;
   }
-  result.quarterTurnAngles = std::move(zAngles);
   return result;
 }
 
@@ -938,6 +937,10 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
     }
   }
 
+  if (!singleQubit) {
+    return std::nullopt;
+  }
+
   const auto supportsOnEveryCoupling = [&](GateKind gate) {
     if (sites.size() < 2) {
       return false;
@@ -983,15 +986,12 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
   /// NOLINTNEXTLINE(readability-qualified-auto): portable iterator type.
   const auto entangler =
       std::ranges::find_if(entanglerPreference, supportsOnEveryCoupling);
-  if (!singleQubit) {
-    return std::nullopt;
-  }
   return SynthesisBasis{
       .singleQubit = *singleQubit,
       .entangler = entangler == entanglerPreference.end()
                        ? std::nullopt
                        : std::optional{*entangler},
-      .fixedRotation = fixedRotation,
+      .fixedRotation = std::move(fixedRotation),
   };
 }
 
