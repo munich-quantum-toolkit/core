@@ -30,6 +30,7 @@ __all__ = [
 
 if TYPE_CHECKING or HAS_QISKIT:
     from .backend import QDMIBackend
+    from .compiler import compiler_target_from_qiskit
     from .exceptions import (
         CircuitValidationError,
         JobExecutionError,
@@ -60,6 +61,7 @@ if TYPE_CHECKING or HAS_QISKIT:
         "TranslationError",
         "UnsupportedFormatError",
         "UnsupportedOperationError",
+        "compiler_target_from_qiskit",
         "program_serializer",
         "register_program_serializer",
         "unregister_program_serializer",

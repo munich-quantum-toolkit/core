@@ -10,6 +10,38 @@ MQT Core exposes two distinct Qiskit interfaces:
 Install `mqt-core[qiskit]`. Direct compiler translation requires a version in
 the narrower range above; the adapter checks it before inspecting a circuit.
 
+## Compiler targets
+
+Use {py:func}`mqt.core.plugins.qiskit.compiler_target_from_qiskit` to snapshot a
+Qiskit `Target` or `BackendV2` as a {py:class}`~mqt.core.mlir.CompilerTarget`.
+The adapter preserves standard gates and ordered operation sites. Routing uses
+undirected connectivity; this does not make directed gates bidirectional. An
+optional `operation_names` subset restricts the available operations.
+
+```python
+from qiskit.providers.fake_provider import GenericBackendV2
+from mqt.core.plugins.qiskit import compiler_target_from_qiskit
+
+backend = GenericBackendV2(3, basis_gates=["sx", "x", "rz", "cx"])
+target = compiler_target_from_qiskit(backend)
+```
+
+Only independent, unrestricted gate parameters are representable. Fixed angles,
+parameter expressions, repeated parameters, explicit angle bounds, open
+controls, and custom gates are rejected. Connectivity comes from two-qubit
+operation sites; the qubit count must be known and the topology connected.
+Calibration and scheduling data are not transferred. Global phase is always
+allowed as circuit metadata; delay, barrier, and control-flow instructions are
+not native gates. The snapshot does not assert device support for classical
+control flow.
+
+To check Qiskit export support, call `program.to_qiskit(target=target)` on the
+**compiled output** and use the returned circuit. The exporter validates the
+program and the installed Qiskit adapter without consuming or modifying the
+program. Unsupported forms raise an exception with a diagnostic. Do not infer
+exportability from source constructs: compilation can eliminate or introduce
+operations, and a successful export does not imply device execution support.
+
 ## Circuit translation contract
 
 Each output block owns one private Python circuit. Numeric instructions use a
