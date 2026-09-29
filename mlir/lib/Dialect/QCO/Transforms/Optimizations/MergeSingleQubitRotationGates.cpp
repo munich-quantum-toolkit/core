@@ -59,9 +59,11 @@ struct RuntimeScalar {
 
   static RuntimeScalar constant(RewriterBase& rewriter, Location loc,
                                 double x) {
-    return {.v = mqt::constantFromScalar(rewriter, loc, x),
-            .rewriter = &rewriter,
-            .loc = loc};
+    return {
+        .v = mqt::constantFromScalar(rewriter, loc, x),
+        .rewriter = &rewriter,
+        .loc = loc,
+    };
   }
 
   [[nodiscard]] RuntimeScalar operator+(RuntimeScalar o) const {
@@ -338,7 +340,10 @@ static RuntimeScalar normalizeGateAngle(RuntimeScalar angle) {
   auto tangent = math::TanOp::create(*angle.rewriter, angle.loc, scaled.v);
   auto principal = math::AtanOp::create(*angle.rewriter, angle.loc, tangent);
   return RuntimeScalar{
-             .v = principal, .rewriter = angle.rewriter, .loc = angle.loc} *
+             .v = principal,
+             .rewriter = angle.rewriter,
+             .loc = angle.loc,
+         } *
          four;
 }
 
