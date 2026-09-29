@@ -12,6 +12,7 @@
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
+#include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mqt/Dialect/MQT/Utils/Modifiers.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
@@ -513,6 +514,11 @@ static void reorderTwoQubitOperation(IRRewriter& rewriter,
   rewriter.setInsertionPoint(unitary);
   auto reordered = cast<UnitaryOpInterface>(
       rewriter.clone(*unitary.getOperation(), mapping));
+  if (auto ms = dyn_cast<MSOp>(reordered.getOperation())) {
+    auto phi0 = ms.getPhi0();
+    ms.getPhi0Mutable().assign(ms.getPhi1());
+    ms.getPhi1Mutable().assign(phi0);
+  }
   rewriter.replaceOp(
       unitary.getOperation(),
       ValueRange{reordered.getOutputQubit(1), reordered.getOutputQubit(0)});
@@ -523,6 +529,18 @@ std::optional<bool> NativeCostAnalysis::nativeOrientation(
   if (sites ? target.supports(operation.getOperation(), *sites)
             : target.supports(operation.getOperation())) {
     return false;
+  }
+  if (auto ms = dyn_cast<MSOp>(operation.getOperation()); ms && sites) {
+    if (target.supportsOperation("ms", 2, 3,
+                                 std::array{(*sites)[1], (*sites)[0]},
+                                 std::array{
+                                     mqt::valueToDouble(ms.getPhi1()),
+                                     mqt::valueToDouble(ms.getPhi0()),
+                                     mqt::valueToDouble(ms.getTheta()),
+                                 })) {
+      return true;
+    }
+    return std::nullopt;
   }
   if (sites && operation.isTwoQubit() && isOperandSwapInvariant(operation) &&
       target.supports(operation.getOperation(),

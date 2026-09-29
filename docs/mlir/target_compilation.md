@@ -238,7 +238,11 @@ reduces a general decomposition from four pulses to three. Two-qubit synthesis
 uses MS(0, 0, 0.25) or ZZ(0.25) on a supported orientation of each coupling.
 Fixed parameter restrictions must admit these values. Single-qubit synthesis
 accepts symbolic input angles; two-qubit synthesis still requires a constant
-matrix unless the input gate is already native.
+matrix unless the input gate is already native. Native inverses also work with
+symbolic parameters when the target admits the resulting parameters. GPI2
+inversion uses three unchanged pulses and a global phase correction to avoid
+losing a half-turn shift at large phases. Reversing an MS placement exchanges
+its two phase parameters.
 
 Exports retain the native names and parameters. OpenQASM and Python circuit
 exports provide equivalent gate definitions. Python import preserves gates with

@@ -70,7 +70,7 @@ public:
       : seed_(seed), shared_(shared) {}
 
   /// Whether an operation is native, and whether its operands must be reversed.
-  /// Only operand-swap-invariant operations can use reversed native support.
+  /// Reversal preserves the gate; MS also exchanges its operand phases.
   static std::optional<bool> nativeOrientation(UnitaryOpInterface operation,
                                                const CompilerTarget& target,
                                                Sites sites);

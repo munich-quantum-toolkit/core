@@ -951,8 +951,9 @@ def test_native_ion_gate_exports(gate: str, params: list[float]) -> None:
 @requires_qiskit_translation
 @pytest.mark.parametrize("gate", ["gpi", "gpi2", "ms", "zz"])
 @pytest.mark.parametrize("symbolic", [False, True])
-def test_native_ion_gate_circuit_round_trip(gate: str, *, symbolic: bool) -> None:
-    """Import exported native definitions without expanding or resynthesizing them."""
+@pytest.mark.parametrize("inverse", [False, True])
+def test_native_ion_gate_circuit_round_trip(gate: str, *, symbolic: bool, inverse: bool) -> None:
+    """Compile native gates and their inverses without a fallback synthesis basis."""
     width = 2 if gate in {"ms", "zz"} else 1
     arguments = "%theta, %phi, %angle" if gate == "ms" else "%theta"
     signature = '%theta: f64 {mqt.input_name = "theta"}' if symbolic else ""
@@ -972,19 +973,29 @@ def test_native_ion_gate_circuit_round_trip(gate: str, *, symbolic: bool) -> Non
         return
       }}
     }}""").to_qiskit()
+    if inverse:
+        operation = source.data[0].operation.inverse(annotated=True)
+        source = QuantumCircuit(width)
+        source.append(operation, range(width))
     target = CompilerTarget(
         width,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations([
-            CompilerTarget.OperationCapability(gate, width, 3 if gate == "ms" else 1),
+            CompilerTarget.OperationCapability(
+                gate,
+                width,
+                3 if gate == "ms" else 1,
+                fixed_parameters=[0.13] if gate == "gpi2" and not symbolic else [],
+            ),
+            CompilerTarget.OperationCapability("gphase", 0, 1),
         ]),
     )
     program = QCProgram.from_qiskit(source).to_qco()
     program.compile_for_target(_test_target_environment(target))
     result = program.to_qiskit(target=target)
-    assert result.count_ops() == {gate: 1}
+    assert result.count_ops() == {gate: 3 if inverse and gate == "gpi2" else 1}
     assert result.parameters == source.parameters
-    for value in [-0.37, 0.0, 0.25]:
+    for value in [-0.37, 0.0, 0.25, 1e16]:
         bindings = dict.fromkeys(source.parameters, value)
         assert np.allclose(
             Operator(result.assign_parameters(bindings)).data,

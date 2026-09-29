@@ -383,6 +383,85 @@ TEST_F(TargetSynthesisTest, NativeIonSynthesisPreservesFullUnitary) {
   }
 }
 
+TEST_F(TargetSynthesisTest, ReversedMSExchangesPhasesWithoutSynthesisBasis) {
+  for (const bool symbolic : {false, true}) {
+    SCOPED_TRACE(symbolic);
+    auto source = mlir::parseSourceString<ModuleOp>(R"mlir(
+      module {
+        func.func @main(%phi0: f64, %phi1: f64) -> (!qco.qubit, !qco.qubit) {
+          %theta = arith.constant 0.17 : f64
+          %q0 = qco.static 0 : !qco.qubit
+          %q1 = qco.static 1 : !qco.qubit
+          %r0, %r1 = qco.ms(%phi0, %phi1, %theta) %q0, %q1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+          return %r0, %r1 : !qco.qubit, !qco.qubit
+        }
+      }
+    )mlir",
+                                                    context.get());
+    ASSERT_TRUE(source);
+    const auto bindPhases = [&](ModuleOp moduleOp, double phi0, double phi1) {
+      auto function = mainFunction(moduleOp);
+      mlir::OpBuilder builder(context.get());
+      builder.setInsertionPointToStart(&function.getBody().front());
+      for (const auto [index, value] :
+           llvm::enumerate(std::array{phi0, phi1})) {
+        auto constant = mlir::arith::ConstantOp::create(
+            builder, function.getLoc(), builder.getF64FloatAttr(value));
+        function.getArgument(index).replaceAllUsesWith(constant.getResult());
+      }
+    };
+    if (!symbolic) {
+      bindPhases(*source, .13, -.21);
+    }
+    const auto makeTarget = [&](bool exchangePhases) {
+      std::vector<std::optional<double>> parameters{
+          std::nullopt,
+          std::nullopt,
+          .17,
+      };
+      if (!symbolic) {
+        parameters[0] = exchangePhases ? -.21 : .13;
+        parameters[1] = exchangePhases ? .13 : -.21;
+      }
+      return valid(
+          Target::create(2, Connectivity::allToAll(),
+                         NativeOperations::fromOperations({
+                             valid(OperationCapability::create(
+                                 "ms", 2, 3, {valid(SiteTuple::create({1, 0}))},
+                                 std::nullopt, std::nullopt, parameters)),
+                         })));
+    };
+    const auto target = makeTarget(true);
+    auto gate = *mainFunction(*source).getOps<mlir::qco::MSOp>().begin();
+    const std::array<Target::SiteId, 2> sites{0, 1};
+    EXPECT_EQ(
+        mlir::qco::NativeCostAnalysis::nativeOrientation(gate, target, sites),
+        true);
+    mlir::qco::NativeCostAnalysis costs(42);
+    EXPECT_EQ(costs.operationCost(gate, target, sites), 1U);
+    if (!symbolic) {
+      EXPECT_FALSE(mlir::qco::NativeCostAnalysis::nativeOrientation(
+                       gate, makeTarget(false), sites)
+                       .has_value());
+    }
+    OwningOpRef<ModuleOp> synthesized = source->clone();
+    ASSERT_TRUE(mlir::succeeded(runTargetPass(
+        *synthesized, target, mlir::qco::createTargetNativeSynthesis())));
+    ASSERT_TRUE(mlir::succeeded(
+        runPass(*synthesized, mlir::qco::createVerifyTargetConformance())));
+    EXPECT_EQ(countOps<mlir::qco::MSOp>(*synthesized), 1U);
+    EXPECT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*synthesized)));
+    for (const auto [phi0, phi1] :
+         {std::pair{.13, -.21}, std::pair{0., 0.}, std::pair{-.4, .7}}) {
+      OwningOpRef<ModuleOp> expected = source->clone();
+      OwningOpRef<ModuleOp> actual = synthesized->clone();
+      bindPhases(*expected, phi0, phi1);
+      bindPhases(*actual, phi0, phi1);
+      expectEquivalent(expected, actual);
+    }
+  }
+}
+
 TEST_F(TargetSynthesisTest, RuntimeNativeIonSynthesisPreservesFullUnitary) {
   for (const auto* basis : {"u", "gpi2", "gpi"}) {
     SCOPED_TRACE(basis);

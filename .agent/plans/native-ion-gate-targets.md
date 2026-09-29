@@ -28,20 +28,21 @@ only GPI2 is available, replace GPI with two GPI2 pulses and the required global
 phase. Numeric and symbolic paths share this pulse recipe. Two-qubit synthesis
 reuses the existing RXX/RZZ decomposers with fully entangling MS(0, 0, 1/4) or
 ZZ(1/4). Operation matching and basis selection share the fixed-parameter check.
-Broader angle-domain restrictions and calibration-aware pulse optimization are
-outside this change.
+Native inverse rewrites preserve symbolic parameters. GPI2 uses three pulses and
+a global phase correction because adding half a turn can lose precision for
+large phases. MS placement reversal exchanges both qubits and their phases;
+native matching checks the reordered fixed values before emission. Broader
+angle-domain restrictions and calibration-aware pulse optimization are outside
+this change.
 
 ## Validation
 
-The compiler suite passed 236 tests; native synthesis passed 66 tests; QCO IR
-passed 573 tests; QC translation passed 213 tests; the QIR runtime passed 81
-tests. Python target and export tests passed 422 cases; circuit translation
-passed 419 cases. These cover numeric and symbolic native round trips and
-changed custom definitions. Downstream checks also cover native gate
-preservation and one-qubit circuits with wider target operations. Generated
-stubs, repository lint, and full changed-file C++ lint passed.
+The compiler suite passed 245 tests; native synthesis passed 82; QCO IR passed
+577; mapping passed 125. All 533 Python MLIR tests passed. These cover numeric
+and symbolic native round trips and inverses, large phases, fixed GPI2 phases,
+and reversed MS placements with unequal phases and fixed-parameter checks. Stub
+generation left the public API unchanged.
 
 ## Follow-up
 
-Bench consumes these capabilities in a separate adapter update. Symbolic
-multi-gate fusion retains the export limitation tracked by #2559.
+Bench consumes these capabilities in a separate adapter update.
