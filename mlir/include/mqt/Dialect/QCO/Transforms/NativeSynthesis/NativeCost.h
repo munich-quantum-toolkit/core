@@ -13,6 +13,7 @@
 #include "mqt/Compiler/Target.h"
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Weyl.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
+#include "mqt/Dialect/QCO/Utils/WireIterator.h"
 
 #include "mlir/Support/LLVM.h"
 
@@ -54,7 +55,7 @@ private:
 };
 
 /// Read-only native synthesis decisions with bounded numerical caches.
-/// Keep instances local to a routing traversal or synthesis invocation.
+/// Keep instances local to a routing state or synthesis invocation.
 /// They retain no IR handles or target state.
 /// Supplied sites follow operand order and match the operation's arity.
 /// Unavailable results cover unsupported lowering and numerical failure.
@@ -126,7 +127,11 @@ public:
   NativeCostTracker(const CompilerTarget& target, uint64_t seed,
                     const NativeCostTable* shared = nullptr);
 
-  /// Observe one original operation, with vertices in its operand order.
+  /// Start a traversal with empty accounting state, retaining numerical caches.
+  void reset(WireDirection direction);
+
+  /// Observe one original operation in traversal order, with vertices in its
+  /// operand order. Matrices always represent forward circuit execution.
   void append(Operation* operation, ArrayRef<size_t> vertices);
   /// Observe a routing SWAP before updating the logical-to-physical layout.
   void appendSwap(size_t first, size_t second);
@@ -137,8 +142,9 @@ public:
   void merge(NativeCostTracker& child);
   /// Finish pending runs and return count/depth, or unavailable lowering.
   std::optional<std::pair<size_t, size_t>> score();
-  /// Signed first-SWAP adjustment: appended cost minus prefix and standalone
-  /// cost. May be positive. Does not consume the pending run.
+  /// Signed first-SWAP adjustment: extended run minus current and standalone
+  /// costs. Append in forward traversal; prepend in backward traversal.
+  /// May be positive. Does not consume the pending run.
   /// Assumes first < second.
   int64_t swapCostAdjustment(size_t first, size_t second,
                              size_t standaloneCost);
@@ -150,6 +156,9 @@ private:
     bool canFuse = false;
   };
 
+  /// Include the single-qubit suffix encountered first in backward traversal.
+  /// Its matrix remains in forward circuit order.
+  Matrix4x4 withTrailingGates(Matrix4x4 matrix, size_t a, size_t b) const;
   size_t pendingCost(size_t a, size_t b);
   void flush(size_t vertex);
   void appendPair(const Matrix4x4& matrix, size_t cost, size_t a, size_t b);
@@ -160,7 +169,9 @@ private:
   SmallVector<Run, 0> runs_;
   SmallVector<size_t> partners_;
   SmallVector<size_t> depths_;
-  /// Immediate canceling successors are consumed before routing advances again.
+  SmallVector<std::optional<Matrix2x2>, 0> trailingGates_;
+  WireDirection direction_ = WireDirection::Forward;
+  /// Immediate inverse pairs are consumed in traversal order.
   SmallPtrSet<Operation*, 4> cancellations_;
   size_t count_ = 0;
   size_t depth_ = 0;

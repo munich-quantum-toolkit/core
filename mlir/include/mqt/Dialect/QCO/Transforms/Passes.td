@@ -234,14 +234,16 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     - `h(gate, p)` is `dist(p[gate.first], p[gate.second]) - 1`.
 
     When a native-cost estimate is available and standalone SWAP cost is uniform
-    across target edges, scoring and final routing measure both terms in native
+    across target edges, refinement, scoring, and final routing measure both terms in native
     two-qubit gates. The first SWAP receives the signed adjustment
     `cost(prefix + SWAP) - cost(prefix) - cost(SWAP)` for the pending two-qubit
     run. Fusion can reduce this cost. Extending a cheaper prefix can also raise
     it. This adjustment is applied once. Later steps use standalone SWAP cost.
     Layout dominance compares accumulated cost, including the adjustment.
-    Forward/backward layout refinement keeps the distance cost above. Missing
-    or nonuniform SWAP costs retain that distance cost for all searches.
+    Backward refinement prepends the SWAP to the already-routed suffix instead.
+    Both directions compose matrices in circuit order. Each traversal starts
+    with empty accounting state and reuses its numerical caches. Missing or
+    nonuniform SWAP costs retain distance costs for all searches.
     This is heuristic search, not a guarantee of optimal native cost.
 
     Routing uses undirected target connectivity. Target-native synthesis realizes operations and inserted SWAPs in a supported operand direction.

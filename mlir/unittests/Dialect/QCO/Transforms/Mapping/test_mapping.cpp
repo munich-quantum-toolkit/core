@@ -1328,11 +1328,22 @@ TEST_F(MappingPassFixture, PreserveStoredRegisterControlDuringRouting) {
 }
 
 TEST_P(MappingPassTest, FailNoEntryPoint) {
-  const auto& target = GetParam();
-
-  OwningOpRef m = ModuleOp::create(UnknownLoc::get(context.get()));
-  auto res = runPass(m.get(), target, MappingPassOptions{});
-  ASSERT_TRUE(res.failed());
+  for (const auto& target : {GetParam(), withNativeBasis(GetParam(), "cx")}) {
+    OwningOpRef m = ModuleOp::create(UnknownLoc::get(context.get()));
+    attachTestEnvironment(*m, target);
+    const auto before = printModule(*m);
+    std::string diagnostics;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      diagnostics += diagnostic.str();
+      return success();
+    });
+    PassManager pm(context.get());
+    pm.addPass(createMappingPass(MappingPassOptions{}));
+    EXPECT_TRUE(failed(pm.run(*m)));
+    EXPECT_NE(diagnostics.find("does not contain an entry point function"),
+              std::string::npos);
+    EXPECT_EQ(printModule(*m), before);
+  }
 }
 
 TEST_P(MappingPassTest, MapScalarAllocation) {
