@@ -1235,6 +1235,9 @@ private:
 
     while (!frontier.empty()) {
       Node* curr = frontier.pop();
+      if (curr == nullptr) {
+        break;
+      }
 
       // If the currently visited node is a goal node, reconstruct the
       // sequence of SWAPs from this node to the root.
