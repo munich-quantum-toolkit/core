@@ -174,7 +174,7 @@ public:
         typeConverter_(&typeConverter) {}
 
   [[nodiscard]] LoweringState& getState() const { return *state_; }
-  [[nodiscard]] TypeConverter* getQuantumTypeConverter() const {
+  [[nodiscard]] TypeConverter* getQCToQCOTypeConverter() const {
     return typeConverter_;
   }
 
@@ -954,20 +954,20 @@ struct ConvertFuncOp final : StatefulOpConversionPattern<func::FuncOp> {
   LogicalResult
   matchAndRewrite(func::FuncOp op, OpAdaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (getQuantumTypeConverter()->isSignatureLegal(op.getFunctionType())) {
+    if (getQCToQCOTypeConverter()->isSignatureLegal(op.getFunctionType())) {
       return failure();
     }
 
     TypeConverter::SignatureConversion signature(op.getNumArguments());
-    if (failed(getQuantumTypeConverter()->convertSignatureArgs(
+    if (failed(getQCToQCOTypeConverter()->convertSignatureArgs(
             op.getArgumentTypes(), signature))) {
       return failure();
     }
     SmallVector<Type> inputs;
     SmallVector<Type> results;
-    if (failed(getQuantumTypeConverter()->convertTypes(op.getArgumentTypes(),
+    if (failed(getQCToQCOTypeConverter()->convertTypes(op.getArgumentTypes(),
                                                        inputs)) ||
-        failed(getQuantumTypeConverter()->convertTypes(op.getResultTypes(),
+        failed(getQCToQCOTypeConverter()->convertTypes(op.getResultTypes(),
                                                        results))) {
       return failure();
     }
@@ -995,7 +995,7 @@ struct ConvertFuncOp final : StatefulOpConversionPattern<func::FuncOp> {
       return success();
     }
     auto convertedEntry = rewriter.convertRegionTypes(
-        &op.getBody(), *getQuantumTypeConverter(), &signature);
+        &op.getBody(), *getQCToQCOTypeConverter(), &signature);
     if (failed(convertedEntry)) {
       return failure();
     }
@@ -1037,7 +1037,7 @@ struct ConvertFuncCallOp final : StatefulOpConversionPattern<func::CallOp> {
       }
     }
     SmallVector<Type> resultTypes;
-    if (failed(getQuantumTypeConverter()->convertTypes(op.getResultTypes(),
+    if (failed(getQCToQCOTypeConverter()->convertTypes(op.getResultTypes(),
                                                        resultTypes))) {
       return failure();
     }
@@ -1544,7 +1544,7 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
 
     // Inline region and convert the block signature to QCO types.
     if (failed(moveRegion(op.getRegion(), qcoOp.getRegion(), rewriter,
-                          getQuantumTypeConverter()))) {
+                          getQCToQCOTypeConverter()))) {
       return failure();
     }
 
@@ -1592,7 +1592,7 @@ struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
 
     // Inline region and convert the block signature to QCO types.
     if (failed(moveRegion(op.getRegion(), qcoOp.getRegion(), rewriter,
-                          getQuantumTypeConverter()))) {
+                          getQCToQCOTypeConverter()))) {
       return failure();
     }
 
@@ -1641,7 +1641,7 @@ struct ConvertQCPowOp final : StatefulOpConversionPattern<qc::PowOp> {
 
     // Inline region and convert the block signature to QCO types.
     if (failed(moveRegion(op.getRegion(), qcoOp.getRegion(), rewriter,
-                          getQuantumTypeConverter()))) {
+                          getQCToQCOTypeConverter()))) {
       return failure();
     }
 
