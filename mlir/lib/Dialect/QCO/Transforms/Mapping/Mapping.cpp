@@ -1231,7 +1231,7 @@ private:
     frontier.push(root);
 
     Node* curr = frontier.pop();
-    for(; curr != nullptr; curr = frontier.pop()) {
+    for (; curr != nullptr; curr = frontier.pop()) {
 
       // If the currently visited node is a goal node, reconstruct the
       // sequence of SWAPs from this node to the root.
