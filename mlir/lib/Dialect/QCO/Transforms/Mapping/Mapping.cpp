@@ -1269,7 +1269,7 @@ private:
                 .standalone = standalone,
                 .prefix = prefix,
             };
-            
+
             child->initializeChild(curr, candidate, window, env.target, params);
             seen.insert(indices);
             frontier.push(child);
