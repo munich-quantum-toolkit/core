@@ -2929,16 +2929,13 @@ collectGateDefinition(mlir::func::FuncOp function) {
 // Reuse custom-gate export so native gates retain their names and definitions.
 static void defineNativeGates(mlir::ModuleOp moduleOp) {
   using namespace mlir;
-  SmallVector<qc::UnitaryOpInterface> gates;
-  moduleOp.walk([&](Operation* op) {
-    if (isa<qc::GPIOp, qc::GPI2Op, qc::MSOp, qc::ZZOp>(op)) {
-      gates.push_back(cast<qc::UnitaryOpInterface>(op));
-    }
-  });
   SymbolTable symbols(moduleOp);
   llvm::StringMap<func::FuncOp> definitions;
   OpBuilder builder(moduleOp.getContext());
-  for (auto gate : gates) {
+  moduleOp.walk([&](qc::UnitaryOpInterface gate) {
+    if (!isa<qc::GPIOp, qc::GPI2Op, qc::MSOp, qc::ZZOp>(gate.getOperation())) {
+      return;
+    }
     const auto name = gate.getBaseSymbol();
     auto function = definitions.lookup(name);
     if (!function) {
@@ -2993,7 +2990,7 @@ static void defineNativeGates(mlir::ModuleOp moduleOp) {
     qc::CallOp::create(builder, gate.getLoc(), FlatSymbolRefAttr::get(function),
                        operands);
     gate.erase();
-  }
+  });
 }
 
 nb::object exportCircuit(const mlir::QCProgram& program,
