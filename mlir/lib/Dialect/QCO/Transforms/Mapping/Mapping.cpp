@@ -66,7 +66,6 @@
 #include <deque>
 #include <iterator>
 #include <limits>
-#include <llvm/Support/Debug.h>
 #include <memory>
 #include <optional>
 #include <random>
@@ -1269,7 +1268,7 @@ private:
                 .standalone = standalone,
                 .prefix = prefix,
             };
-            
+
             child->initializeChild(curr, candidate, window, env.target, params);
             seen.insert(indices);
             frontier.push(child);
