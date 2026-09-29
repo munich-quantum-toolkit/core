@@ -170,12 +170,19 @@ class StatefulOpConversionPattern : public OpConversionPattern<OpType> {
 public:
   StatefulOpConversionPattern(TypeConverter& typeConverter,
                               MLIRContext* context, LoweringState* state)
-      : OpConversionPattern<OpType>(typeConverter, context), state_(state) {}
+      : OpConversionPattern<OpType>(context), state_(state),
+        typeConverter_(&typeConverter) {}
 
   [[nodiscard]] LoweringState& getState() const { return *state_; }
+  [[nodiscard]] TypeConverter* getQCToQCOTypeConverter() const {
+    return typeConverter_;
+  }
 
 private:
   LoweringState* state_;
+  /// Quantum operands use region-local state, not automatic materializations.
+  /// The converter is needed only for signatures and explicit result types.
+  TypeConverter* typeConverter_;
 };
 } // namespace
 
@@ -947,21 +954,21 @@ struct ConvertFuncOp final : StatefulOpConversionPattern<func::FuncOp> {
   LogicalResult
   matchAndRewrite(func::FuncOp op, OpAdaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (getTypeConverter()->isSignatureLegal(op.getFunctionType())) {
+    if (getQCToQCOTypeConverter()->isSignatureLegal(op.getFunctionType())) {
       return failure();
     }
 
     TypeConverter::SignatureConversion signature(op.getNumArguments());
-    if (failed(getTypeConverter()->convertSignatureArgs(op.getArgumentTypes(),
-                                                        signature))) {
+    if (failed(getQCToQCOTypeConverter()->convertSignatureArgs(
+            op.getArgumentTypes(), signature))) {
       return failure();
     }
     SmallVector<Type> inputs;
     SmallVector<Type> results;
-    if (failed(
-            getTypeConverter()->convertTypes(op.getArgumentTypes(), inputs)) ||
-        failed(
-            getTypeConverter()->convertTypes(op.getResultTypes(), results))) {
+    if (failed(getQCToQCOTypeConverter()->convertTypes(op.getArgumentTypes(),
+                                                       inputs)) ||
+        failed(getQCToQCOTypeConverter()->convertTypes(op.getResultTypes(),
+                                                       results))) {
       return failure();
     }
 
@@ -988,7 +995,7 @@ struct ConvertFuncOp final : StatefulOpConversionPattern<func::FuncOp> {
       return success();
     }
     auto convertedEntry = rewriter.convertRegionTypes(
-        &op.getBody(), *getTypeConverter(), &signature);
+        &op.getBody(), *getQCToQCOTypeConverter(), &signature);
     if (failed(convertedEntry)) {
       return failure();
     }
@@ -1030,8 +1037,8 @@ struct ConvertFuncCallOp final : StatefulOpConversionPattern<func::CallOp> {
       }
     }
     SmallVector<Type> resultTypes;
-    if (failed(getTypeConverter()->convertTypes(op.getResultTypes(),
-                                                resultTypes))) {
+    if (failed(getQCToQCOTypeConverter()->convertTypes(op.getResultTypes(),
+                                                       resultTypes))) {
       return failure();
     }
     auto materialized = materializeQubits(state, op, qcQubits, rewriter);
@@ -1537,7 +1544,7 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
 
     // Inline region and convert the block signature to QCO types.
     if (failed(moveRegion(op.getRegion(), qcoOp.getRegion(), rewriter,
-                          getTypeConverter()))) {
+                          getQCToQCOTypeConverter()))) {
       return failure();
     }
 
@@ -1585,7 +1592,7 @@ struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
 
     // Inline region and convert the block signature to QCO types.
     if (failed(moveRegion(op.getRegion(), qcoOp.getRegion(), rewriter,
-                          getTypeConverter()))) {
+                          getQCToQCOTypeConverter()))) {
       return failure();
     }
 
@@ -1634,7 +1641,7 @@ struct ConvertQCPowOp final : StatefulOpConversionPattern<qc::PowOp> {
 
     // Inline region and convert the block signature to QCO types.
     if (failed(moveRegion(op.getRegion(), qcoOp.getRegion(), rewriter,
-                          getTypeConverter()))) {
+                          getQCToQCOTypeConverter()))) {
       return failure();
     }
 
@@ -2182,7 +2189,7 @@ protected:
              ConvertQCPowOp, ConvertQCYieldOp, ConvertQCCallOp>(
             typeConverter, context, &state);
 
-    patterns.add<ConvertMemRefStoreOp>(typeConverter, context);
+    patterns.add<ConvertMemRefStoreOp>(context);
 
     // Not part of the central gate table.
     patterns.add<ConvertQCGateToQCO<qc::GPhaseOp, qco::GPhaseOp, 0, 1>>(
