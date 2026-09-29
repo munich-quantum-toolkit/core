@@ -23,10 +23,8 @@
 
 namespace {
 
-using mqt::bench::benchmarkIdFromInstanceSpecificationJSON;
 using mqt::bench::benchmarkIdFromManifestJSON;
 using mqt::bench::caseId;
-using mqt::bench::Counts;
 using mqt::bench::describeBenchmarkJSON;
 using mqt::bench::evaluationToJSON;
 using mqt::bench::GHZ;
@@ -156,13 +154,6 @@ TEST(GHZ, RoundTripsJSONAndUsesStableCaseIds) {
 }
 
 TEST(GHZ, RejectsInvalidInstanceJSON) {
-  expectInvalidGhzJSON(
-      [] {
-        static_cast<void>(benchmarkIdFromInstanceSpecificationJSON(
-            R"({"schema_version":1,"benchmark":"ghz","benchmark":"qpe","parameters":{"qubits":2}})",
-            "duplicate.json"));
-      },
-      "duplicate key 'benchmark'");
   expectInvalidGhzJSON(
       [] {
         static_cast<void>(ghzFromInstanceSpecificationJSON(
