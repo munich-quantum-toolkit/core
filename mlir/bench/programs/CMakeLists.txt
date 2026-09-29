@@ -11,6 +11,7 @@ add_library(
   BV.cpp
   GHZ.cpp
   Grover.cpp
+  GroverUtils.cpp
   MagicStateDistillation.cpp
   ModularArithmetic.cpp
   ModularMultiplier.cpp
@@ -22,6 +23,7 @@ add_library(
   RepeatUntilSuccess.cpp
   Shor.cpp
   Teleportation.cpp
+  WeakMeasurementGrover.cpp
   WState.cpp)
 target_link_libraries(
   MQTBenchmarkPrograms PUBLIC MQT::CoreBench MLIRQCProgramBuilder MLIRArithDialect MLIRMathDialect

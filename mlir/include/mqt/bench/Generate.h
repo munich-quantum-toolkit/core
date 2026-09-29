@@ -29,6 +29,7 @@ class QPE;
 class RepeatUntilSuccess;
 class Shor;
 class Teleportation;
+class WeakMeasurementGrover;
 class WState;
 
 /// A generated program and the normalized semantic instance that produced it.
@@ -80,6 +81,10 @@ generate(const RepeatUntilSuccess& benchmark);
 /// Generate the quantum teleportation benchmark.
 [[nodiscard]] std::optional<mlir::QCProgram>
 generate(const Teleportation& benchmark);
+
+/// Generate a configured weak-measurement Grover benchmark.
+[[nodiscard]] std::optional<mlir::QCProgram>
+generate(const WeakMeasurementGrover& benchmark);
 
 /// Generate the QC program for a configured W-state benchmark.
 [[nodiscard]] std::optional<mlir::QCProgram> generate(const WState& benchmark);

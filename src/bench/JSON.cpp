@@ -24,6 +24,7 @@
 #include "bench/Shor.hpp"
 #include "bench/Teleportation.hpp"
 #include "bench/WState.hpp"
+#include "bench/WeakMeasurementGrover.hpp"
 
 #include "SHA256.hpp"
 
@@ -218,6 +219,15 @@ void rejectUnknownKeys(const Json& value,
   return value.get<std::string>();
 }
 
+[[nodiscard]] double numberValue(const Json& value,
+                                 const std::string_view source,
+                                 const std::string_view pointer) {
+  if (!value.is_number()) {
+    fail(source, pointer, "must be a number");
+  }
+  return value.get<double>();
+}
+
 void requireSchemaVersion(const Json& root, const std::string_view source) {
   const auto version =
       unsignedInteger(required(root, "schema_version", source, "$"), source,
@@ -371,6 +381,25 @@ void requireBenchmark(const Json& root, const std::string_view expected,
   }
   return constructBenchmark(source,
                             [&options] { return Grover(std::move(options)); });
+}
+
+[[nodiscard]] WeakMeasurementGrover
+parseWeakMeasurementGroverParameters(const Json& parameters,
+                                     const std::string_view source) {
+  rejectUnknownKeys(parameters, {"marked_bitstring", "measurement_strength"},
+                    source, "$/parameters");
+  WeakMeasurementGroverOptions options{
+      .markedBitstring = stringValue(
+          required(parameters, "marked_bitstring", source, "$/parameters"),
+          source, "$/parameters/marked_bitstring"),
+  };
+  if (const auto strength = parameters.find("measurement_strength");
+      strength != parameters.end()) {
+    options.measurementStrength =
+        numberValue(*strength, source, "$/parameters/measurement_strength");
+  }
+  return constructBenchmark(
+      source, [&options] { return WeakMeasurementGrover(std::move(options)); });
 }
 
 [[nodiscard]] MagicStateDistillation
@@ -625,6 +654,14 @@ parseTeleportationParameters(const Json& parameters,
   };
 }
 
+[[nodiscard]] Json parametersJSON(const WeakMeasurementGrover& benchmark) {
+  const auto& options = benchmark.options();
+  return {
+      {"marked_bitstring", options.markedBitstring},
+      {"measurement_strength", *options.measurementStrength},
+  };
+}
+
 [[nodiscard]] Json parametersJSON(const MagicStateDistillation& benchmark) {
   return {{"levels", benchmark.options().levels}};
 }
@@ -732,6 +769,11 @@ parseTeleportationParameters(const Json& parameters,
 
 [[nodiscard]] Json referenceJSON(const Grover& benchmark) {
   return analyticReferenceJSON(benchmark.output(), "grover_single_marked",
+                               benchmark.options().markedBitstring);
+}
+
+[[nodiscard]] Json referenceJSON(const WeakMeasurementGrover& benchmark) {
+  return analyticReferenceJSON(benchmark.output(), "grover_weak_measurement",
                                benchmark.options().markedBitstring);
 }
 
@@ -965,6 +1007,36 @@ template <class Benchmark>
                       {"minLength", 2},
                       {"pattern", "^[01]+$"},
                       {"type", "string"},
+                  },
+              },
+          },
+      },
+      {"required", {"marked_bitstring"}},
+      {"type", "object"},
+  });
+}
+
+[[nodiscard]] Json weakMeasurementGroverInstanceSpecificationSchema() {
+  return baseInstanceSpecificationSchema<WeakMeasurementGrover>({
+      {"additionalProperties", false},
+      {
+          "properties",
+          {
+              {
+                  "marked_bitstring",
+                  {
+                      {"maxLength", WeakMeasurementGroverOptions::MAX_QUBITS},
+                      {"minLength", 2},
+                      {"pattern", "^[01]+$"},
+                      {"type", "string"},
+                  },
+              },
+              {
+                  "measurement_strength",
+                  {
+                      {"exclusiveMinimum", 0},
+                      {"maximum", 0.5},
+                      {"type", "number"},
                   },
               },
           },
