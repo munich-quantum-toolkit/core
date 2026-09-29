@@ -21,6 +21,7 @@ namespace mqt::bench {
 class BV;
 class GHZ;
 class Grover;
+class MagicStateDistillation;
 class ModularMultiplier;
 class Multiplexer;
 class QFT;
@@ -29,6 +30,7 @@ class QPE;
 class RepeatUntilSuccess;
 class Shor;
 class Teleportation;
+class WeakMeasurementGrover;
 class WState;
 } // namespace mqt::bench
 
@@ -45,6 +47,11 @@ SmallVector<Value> ghz(qc::QCProgramBuilder& builder, const GHZ& benchmark);
 /// Emit one configured Grover benchmark.
 SmallVector<Value> grover(qc::QCProgramBuilder& builder,
                           const Grover& benchmark);
+
+/// Emit one configured magic-state distillation benchmark.
+SmallVector<Value>
+magicStateDistillation(qc::QCProgramBuilder& builder,
+                       const MagicStateDistillation& benchmark);
 
 /// Emit one configured modular multiplier benchmark.
 SmallVector<Value> modularMultiplier(qc::QCProgramBuilder& builder,
@@ -74,6 +81,11 @@ SmallVector<Value> shor(qc::QCProgramBuilder& builder, const Shor& benchmark);
 /// Emit the quantum teleportation benchmark.
 SmallVector<Value> teleportation(qc::QCProgramBuilder& builder,
                                  const Teleportation& benchmark);
+
+/// Emit one configured weak-measurement Grover benchmark.
+SmallVector<Value>
+weakMeasurementGrover(qc::QCProgramBuilder& builder,
+                      const WeakMeasurementGrover& benchmark);
 
 /// Emit one configured W-state benchmark.
 SmallVector<Value> wState(qc::QCProgramBuilder& builder,
