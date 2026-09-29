@@ -11,13 +11,16 @@
 #pragma once
 
 #include "mqt/Compiler/Target.h"
+#include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Location.h"
 #include "mlir/Support/LLVM.h"
 
+#include <cmath>
 #include <cstddef>
+#include <numbers>
 #include <optional>
 
 namespace mlir {
@@ -131,5 +134,52 @@ void populateFuseSingleQubitUnitaryRunsPatterns(
 void populateParameterizedSingleQubitRunCompositionPatterns(
     RewritePatternSet& patterns, SingleQubitBasis basis,
     const CompilerTarget* target = nullptr);
+
+namespace detail {
+
+/// Emit local ZYZ angles with fixed pulses, returning the phase correction.
+/// Numeric and SSA callers supply constants and emitters for their angle type.
+/// Callers handle a statically zero theta by emitting phi + lambda directly.
+template <typename Angle>
+double
+emitFixedRotationSequence(const CompilerTarget::FixedRotationBasis& basis,
+                          Angle theta, Angle phi, Angle lambda,
+                          std::optional<double> constantTheta, auto constant,
+                          auto emitFree, auto emitPulse) {
+  constexpr double pi = std::numbers::pi;
+  constexpr double halfPi = pi / 2.;
+  const auto matchesTheta = [&](double value) {
+    return constantTheta && std::abs(*constantTheta - value) <=
+                                mqt::PARAMETER_COMPARISON_TOLERANCE;
+  };
+  const auto quarterTurn = [&] {
+    emitFree(constant(basis.quarterTurnAngles.front()));
+    for (size_t i = 1; i < basis.quarterTurnAngles.size(); ++i) {
+      emitPulse(basis.angle);
+      emitFree(constant(basis.quarterTurnAngles[i]));
+    }
+  };
+  if (matchesTheta(halfPi)) {
+    emitFree(lambda - constant(halfPi));
+    quarterTurn();
+    emitFree(phi + constant(halfPi));
+    return 0.;
+  }
+  if (matchesTheta(pi) && basis.halfTurnAngle) {
+    const double axis = basis.gate == basis.axes()[0] ? 0. : halfPi;
+    emitFree(lambda + constant(axis));
+    emitPulse(*basis.halfTurnAngle);
+    emitFree(phi + constant(pi) - constant(axis));
+    return *basis.halfTurnAngle < 0. ? pi : 0.;
+  }
+  emitFree(lambda);
+  quarterTurn();
+  emitFree(theta + constant(pi));
+  quarterTurn();
+  emitFree(phi + constant(pi));
+  return pi;
+}
+
+} // namespace detail
 
 } // namespace mlir::qco::decomposition

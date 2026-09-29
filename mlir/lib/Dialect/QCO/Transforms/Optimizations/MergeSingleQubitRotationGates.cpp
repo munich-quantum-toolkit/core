@@ -17,8 +17,6 @@
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Utils/WireIterator.h"
 
-#include "Decomposition/PulseSynthesis.h"
-
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/IR/Builders.h"
@@ -817,7 +815,7 @@ static Value emitRuntimeEulerAngles(
       emit(fixedRotation->freeGate, sumAngles(phi, lambda));
       break;
     }
-    const double correction = decomposition::emitFixedRotationSequence(
+    const double correction = decomposition::detail::emitFixedRotationSequence(
         *fixedRotation, theta, phi, lambda, mqt::valueToConstantDouble(theta.v),
         constant,
         [&](Val<Value> angle) { emit(fixedRotation->freeGate, angle); },

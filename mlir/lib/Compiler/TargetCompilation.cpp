@@ -16,6 +16,7 @@
 #include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
@@ -187,6 +188,20 @@ private:
 
 } /* namespace */
 
+static void populateTargetCleanupPipeline(OpPassManager& pm,
+                                          bool preserveGates) {
+  if (!preserveGates) {
+    populateQCOCleanupPipeline(pm);
+    return;
+  }
+  pm.addPass(qco::createQCOCanonicalizer(true));
+  pm.addPass(mqt::createNormalizeGlobalPhases());
+  pm.addPass(createCSEPass());
+  pm.addPass(qtensor::createShrinkQTensorToFitPass());
+  pm.addPass(createSymbolDCEPass());
+  pm.addPass(createRemoveDeadValuesPass());
+}
+
 void populateTargetCompilationPipeline(OpPassManager& pm,
                                        const TargetEnvironment& environment,
                                        const MappingOptions& mapping) {
@@ -195,16 +210,13 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   const auto& target = environment.target();
   const bool preserveGates = target.nativeOperationsKind() ==
                              CompilerTarget::NativeOperations::Kind::Explicit;
-  pm.addPass(preserveGates
-                 ? createInlinerPass({},
-                                     [](OpPassManager& nested) {
-                                       nested.addPass(
-                                           qco::createQCOCanonicalizer(true));
-                                     })
-                 : createInlinerPass());
+  pm.addPass(createInlinerPass({}, [preserveGates](OpPassManager& nested) {
+    nested.addPass(preserveGates ? qco::createQCOCanonicalizer(true)
+                                 : createCanonicalizerPass());
+  }));
   pm.addPass(createSymbolDCEPass());
   pm.addPass(createSCCPPass());
-  populateQCOCleanupPipeline(pm, preserveGates);
+  populateTargetCleanupPipeline(pm, preserveGates);
   pm.addPass(qco::createUnrollLoopsForPayload());
   pm.addPass(createSCCPPass());
   /// Unrolling exposes static tensor slots and unreachable callees.
@@ -251,15 +263,12 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
   const auto& target = environment.target();
   const bool preserveGates = target.nativeOperationsKind() ==
                              CompilerTarget::NativeOperations::Kind::Explicit;
-  pm.addPass(preserveGates
-                 ? createInlinerPass({},
-                                     [](OpPassManager& nested) {
-                                       nested.addPass(
-                                           qco::createQCOCanonicalizer(true));
-                                     })
-                 : createInlinerPass());
+  pm.addPass(createInlinerPass({}, [preserveGates](OpPassManager& nested) {
+    nested.addPass(preserveGates ? qco::createQCOCanonicalizer(true)
+                                 : createCanonicalizerPass());
+  }));
   pm.addPass(createSymbolDCEPass());
-  populateQCOCleanupPipeline(pm, preserveGates);
+  populateTargetCleanupPipeline(pm, preserveGates);
   pm.addPass(qco::createLegalizeControlFlow());
   pm.addPass(qco::createDecomposeMultiControlled(target));
   pm.addPass(qco::createFuseTwoQubitGates(target));

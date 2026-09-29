@@ -30,18 +30,21 @@
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/Dialect.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/Iterators.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/Operation.h"
+#include "mlir/IR/OperationSupport.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Value.h"
 #include "mlir/IR/Visitors.h"
 #include "mlir/Interfaces/FunctionInterfaces.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
+#include "mlir/Rewrite/FrozenRewritePatternSet.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Support/TypeID.h"
@@ -1505,6 +1508,39 @@ protected:
   }
 };
 
+/// Gate-changing canonicalization can leave a target's native gate set.
+class CanonicalizeStructurePass final
+    : public PassWrapper<CanonicalizeStructurePass, OperationPass<>> {
+public:
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(CanonicalizeStructurePass)
+
+protected:
+  LogicalResult initialize(MLIRContext* context) override {
+    RewritePatternSet patterns(context);
+    for (auto* dialect : context->getLoadedDialects()) {
+      dialect->getCanonicalizationPatterns(patterns);
+    }
+    for (auto operation : context->getRegisteredOperations()) {
+      if (!operation.hasInterface<UnitaryOpInterface>()) {
+        operation.getCanonicalizationPatterns(patterns, context);
+      }
+    }
+    patterns_ = FrozenRewritePatternSet(std::move(patterns));
+    return success();
+  }
+
+  void runOnOperation() override {
+    if (failed(applyPatternsGreedily(getOperation(), patterns_,
+                                     GreedyRewriteConfig{}.setMaxIterations(
+                                         GreedyRewriteConfig::kNoLimit)))) {
+      signalPassFailure();
+    }
+  }
+
+private:
+  FrozenRewritePatternSet patterns_;
+};
+
 } // namespace
 
 std::unique_ptr<Pass> createFuseTwoQubitGates() {
@@ -1513,6 +1549,14 @@ std::unique_ptr<Pass> createFuseTwoQubitGates() {
 
 std::unique_ptr<Pass> createFuseTwoQubitGates(const CompilerTarget& target) {
   return std::make_unique<FuseTwoQubitGatesPass>(target);
+}
+
+std::unique_ptr<Pass> createQCOCanonicalizer(bool preserveGates) {
+  if (!preserveGates) {
+    return createCanonicalizerPass(
+        GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit));
+  }
+  return std::make_unique<CanonicalizeStructurePass>();
 }
 
 void populateTargetNativeSynthesisPipeline(OpPassManager& pm,

@@ -27,17 +27,21 @@ Only inspect parameter values for constrained capabilities. Unrestricted targets
 keep their existing pipelines. Basis selection must never treat a fixed-angle
 rotation as an arbitrary rotation.
 
-Numeric and symbolic synthesis share one fixed-pulse recipe. Pulse-plan details
-stay internal; Python exposes target capabilities and the selected basis kind.
-Routing and synthesis borrow the cached basis, including its pulse sequence;
-Python property access retains value semantics.
+Numeric and symbolic synthesis share one fixed-pulse recipe in the existing
+Euler utilities. Pulse-plan details stay internal; Python exposes target
+capabilities and the selected basis kind. Routing and synthesis borrow the
+cached basis, including its pulse sequence; Python property access retains value
+semantics.
 
 Target cleanup applies structural and classical canonicalization, preserving
 gate forms for target-aware synthesis. The inliner's cleanup follows the same
-rule. Non-universal targets keep their native sequences; operations outside the
-native set still need a usable basis. Numeric fixed-pulse fusion uses the cached
-recipe and only shortens already native runs. Symbolic fixed-pulse runs continue
-to use individual lowering because symbolic fusion does not model pulse costs.
+rule. This selection stays within target compilation; general cleanup keeps its
+original API. The selector includes QCO lifetime and control-flow patterns,
+which cannot be omitted without breaking linearity. Non-universal targets keep
+their native sequences; operations outside the native set still need a usable
+basis. Numeric fixed-pulse fusion uses the cached recipe and only shortens
+already native runs. Symbolic fixed-pulse runs continue to use individual
+lowering because symbolic fusion does not model pulse costs.
 
 ## Validation
 

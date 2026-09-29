@@ -24,6 +24,7 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Pass/PassRegistry.h"
 #include "mlir/Support/LLVM.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/ScopeExit.h"
@@ -170,8 +171,9 @@ void populateQCCleanupPipeline(OpPassManager& pm) {
   pm.addPass(createRemoveDeadValuesPass());
 }
 
-void populateQCOCleanupPipeline(OpPassManager& pm, bool preserveGates) {
-  pm.addPass(qco::createQCOCanonicalizer(preserveGates));
+void populateQCOCleanupPipeline(OpPassManager& pm) {
+  pm.addPass(createCanonicalizerPass(
+      GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit)));
   pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
   pm.addPass(createCSEPass());
   pm.addPass(qtensor::createShrinkQTensorToFitPass());
@@ -197,9 +199,8 @@ void populateJeffCleanupPipeline(OpPassManager& pm) {
 }
 
 [[nodiscard]] LogicalResult runQCOCleanupPipeline(ModuleOp mod) {
-  return runWithPassManager(
-      mod, [](OpPassManager& pm) { populateQCOCleanupPipeline(pm); },
-      "Failed to run the QCO cleanup pipeline.");
+  return runWithPassManager(mod, populateQCOCleanupPipeline,
+                            "Failed to run the QCO cleanup pipeline.");
 }
 
 [[nodiscard]] LogicalResult runQIRCleanupPipeline(ModuleOp mod,

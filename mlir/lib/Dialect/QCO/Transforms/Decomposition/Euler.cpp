@@ -14,8 +14,6 @@
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 
-#include "Decomposition/PulseSynthesis.h"
-
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Location.h"
 #include "mlir/IR/Operation.h"
@@ -67,12 +65,12 @@ bool isSingleQubitBasisGate(
                basis == SingleQubitBasis::XZX ||
                basis == SingleQubitBasis::ZSXX;
       })
-      .Case<RYOp, RXOp>([&](auto rotation) {
-        return isa<RXOp>(rotation) ? (basis == SingleQubitBasis::ZXZ ||
-                                      basis == SingleQubitBasis::XZX ||
-                                      basis == SingleQubitBasis::XYX)
-                                   : (basis == SingleQubitBasis::ZYZ ||
-                                      basis == SingleQubitBasis::XYX);
+      .Case([&](RYOp) {
+        return basis == SingleQubitBasis::ZYZ || basis == SingleQubitBasis::XYX;
+      })
+      .Case([&](RXOp) {
+        return basis == SingleQubitBasis::ZXZ ||
+               basis == SingleQubitBasis::XZX || basis == SingleQubitBasis::XYX;
       })
       .Case([&](UOp) { return basis == SingleQubitBasis::U; })
       .Case<SXOp, XOp>([&](auto) { return basis == SingleQubitBasis::ZSXX; })
@@ -376,7 +374,7 @@ struct Unitary1QEulerPlan {
                             ? SynthesisStep::Kind::RX
                             : SynthesisStep::Kind::RY;
       phase = angles.phase +
-              emitFixedRotationSequence(
+              detail::emitFixedRotationSequence(
                   *fixedRotation, angles.theta, angles.phi, angles.lambda,
                   angles.theta, [](double value) { return value; },
                   [&](double angle) {
