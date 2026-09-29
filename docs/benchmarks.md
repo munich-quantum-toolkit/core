@@ -264,73 +264,46 @@ Before evaluation, normalize backend results to the manifest's big-endian
 
 ## Benchmark families
 
-### Quantum phase estimation
+### Magic-state distillation
 
-The `qpe` family estimates a supplied phase using a phase gate and a known
-eigenstate. Standard QPE uses a query register and inverse QFT; iterative QPE
-measures, resets, and reuses one query qubit with measurement feedback. At
-eight-bit precision they use nine and two qubits, respectively.
+The `magic-state-distillation` family implements concatenated 15-to-1
+Reed–Muller distillation of $|T\rangle = T|+\rangle$ states. It follows the
+direct input-state protocol in
+[Bravyi and Haah, Appendix A](https://arxiv.org/pdf/1209.2426), using the
+15-qubit code of [Bravyi and Kitaev](https://arxiv.org/abs/quant-ph/0403025).
+Each block measures Z checks, applies conditional Clifford corrections, measures
+X checks, and decodes one retained state.
 
-```{code-cell} ipython3
-from fractions import Fraction
+Set `levels` to 1–4 (default 1). A level consumes the actual retained quantum
+outputs of the preceding level. The circuit allocates exactly
+$15^{\mathrm{levels}}$ qubits: 15, 225, 3,375, or 50,625.
 
-from mqt.core.bench import qpe
-from mqt.core.mlir import compile_program, submit_program
-from mqt.core.qdmi.driver import open_device
+The two-bit `result` combines a sticky rejection flag in bit 1 with a root-state
+check in bit 0. Ideal input states give `00` with probability one. Every block
+runs once, including blocks whose inputs come from a rejected subtree. The
+benchmark does not model input noise, physical error correction, or retries, so
+this example does not measure fidelity improvement from noisy inputs.
 
-device = open_device("mqt.ddsim.default")
-for method in (qpe.Method.STANDARD, qpe.Method.ITERATIVE):
-    phase_estimation = qpe.QPE(qpe.Options(precision=8, phase=Fraction(3, 8), method=method))
-    compiled = compile_program(phase_estimation.generate(), target=device)
-    job = submit_program(compiled, target=device, num_shots=64, custom1=17)
-    job.wait()
-    assert job.get_counts() == {"01100000": 64}
-    assert phase_estimation.evaluate(job.get_counts()).total_variation_distance < 1e-12
-```
+#### Sample the 15-qubit circuit directly
 
-A phase such as $1/3$ lies between eight-bit estimates, giving a distribution
-over nearby values. TVD compares the sampled distribution with this benchmark's
-analytic reference; finite samples generally have nonzero distance.
+This example uses 16 shots to keep execution short. The circuit runs once per
+shot because later gates depend on intermediate measurements. Increase the shot
+count when collecting statistics; the ideal output here is deterministic.
 
 ```{code-cell} ipython3
-approximate = qpe.QPE(qpe.Options(precision=8, phase=Fraction(1, 3), method=qpe.Method.ITERATIVE))
-compiled = compile_program(approximate.generate(), target=device)
-job = submit_program(compiled, target=device, num_shots=4096, custom1=17)
-job.wait()
-evaluation = approximate.evaluate(job.get_counts())
-assert evaluation.total_variation_distance < 0.08
-print(f"Total variation distance: {evaluation.total_variation_distance:.3f}")
+from mqt.core.bench import magic_state_distillation
+from mqt.core.mlir import sample
+
+distillation = magic_state_distillation.MagicStateDistillation()
+direct_counts = sample(distillation.generate(), shots=16, seed=17)
+assert direct_counts == {"00": 16}
+print(direct_counts)
 ```
 
-### QFT addition
-
-The `qft-adder` family adds two equal-width operands. `REGISTER` stores the
-addend in qubits and applies controlled phases; `CONSTANT` combines the known
-addend into one phase per accumulator qubit. Both use the same exact QFT and
-inverse QFT. `WRAP` keeps an $n$-bit sum, while `CARRY` keeps an extra sum bit.
-
-```{code-cell} ipython3
-from mqt.core import mlir
-from mqt.core.bench import qft_adder
-
-adder = qft_adder.QFTAdder(
-    qft_adder.Options(
-        addend="110",
-        accumulator="011",
-        method=qft_adder.Method.CONSTANT,
-        overflow=qft_adder.Overflow.CARRY,
-    )
-)
-assert mlir.sample(adder.generate(), shots=128, seed=17) == {"1001": 128}
-```
-
-Operands are big-endian strings; leading zeros set their common width. The
-accumulator and constant addends must be binary. Register addends may also use
-`+` for independently prepared $|+\rangle$ qubits, such as `addend="1+0"`.
-Register results concatenate the addend and sum so their correlation remains
-observable. Constant results contain only the sum. `expected_result` is the
-unique logical outcome for basis inputs and `None` for a superposed addend. The
-total sum width, including an optional carry bit, is limited to 1024.
+Higher levels provide larger structured programs; support for their generation
+does not guarantee a given device's capacity. For device execution, see
+{doc}`qdmi/ddsim_device`; adaptive jobs expose counts, not an uncollapsed
+statevector.
 
 ### Modular multiplier
 
@@ -380,6 +353,74 @@ Computational-basis measurements cannot detect arbitrary relative-phase errors.
 Native tests therefore also compare complete coherent states and require clean
 work-qubit recovery. A single correct basis result does not certify a unitary on
 every input.
+
+### QFT addition
+
+The `qft-adder` family adds two equal-width operands. `REGISTER` stores the
+addend in qubits and applies controlled phases; `CONSTANT` combines the known
+addend into one phase per accumulator qubit. Both use the same exact QFT and
+inverse QFT. `WRAP` keeps an $n$-bit sum, while `CARRY` keeps an extra sum bit.
+
+```{code-cell} ipython3
+from mqt.core import mlir
+from mqt.core.bench import qft_adder
+
+adder = qft_adder.QFTAdder(
+    qft_adder.Options(
+        addend="110",
+        accumulator="011",
+        method=qft_adder.Method.CONSTANT,
+        overflow=qft_adder.Overflow.CARRY,
+    )
+)
+assert mlir.sample(adder.generate(), shots=128, seed=17) == {"1001": 128}
+```
+
+Operands are big-endian strings; leading zeros set their common width. The
+accumulator and constant addends must be binary. Register addends may also use
+`+` for independently prepared $|+\rangle$ qubits, such as `addend="1+0"`.
+Register results concatenate the addend and sum so their correlation remains
+observable. Constant results contain only the sum. `expected_result` is the
+unique logical outcome for basis inputs and `None` for a superposed addend. The
+total sum width, including an optional carry bit, is limited to 1024.
+
+### Quantum phase estimation
+
+The `qpe` family estimates a supplied phase using a phase gate and a known
+eigenstate. Standard QPE uses a query register and inverse QFT; iterative QPE
+measures, resets, and reuses one query qubit with measurement feedback. At
+eight-bit precision they use nine and two qubits, respectively.
+
+```{code-cell} ipython3
+from fractions import Fraction
+
+from mqt.core.bench import qpe
+from mqt.core.mlir import compile_program, submit_program
+from mqt.core.qdmi.driver import open_device
+
+device = open_device("mqt.ddsim.default")
+for method in (qpe.Method.STANDARD, qpe.Method.ITERATIVE):
+    phase_estimation = qpe.QPE(qpe.Options(precision=8, phase=Fraction(3, 8), method=method))
+    compiled = compile_program(phase_estimation.generate(), target=device)
+    job = submit_program(compiled, target=device, num_shots=64, custom1=17)
+    job.wait()
+    assert job.get_counts() == {"01100000": 64}
+    assert phase_estimation.evaluate(job.get_counts()).total_variation_distance < 1e-12
+```
+
+A phase such as $1/3$ lies between eight-bit estimates, giving a distribution
+over nearby values. TVD compares the sampled distribution with this benchmark's
+analytic reference; finite samples generally have nonzero distance.
+
+```{code-cell} ipython3
+approximate = qpe.QPE(qpe.Options(precision=8, phase=Fraction(1, 3), method=qpe.Method.ITERATIVE))
+compiled = compile_program(approximate.generate(), target=device)
+job = submit_program(compiled, target=device, num_shots=4096, custom1=17)
+job.wait()
+evaluation = approximate.evaluate(job.get_counts())
+assert evaluation.total_variation_distance < 0.08
+print(f"Total variation distance: {evaluation.total_variation_distance:.3f}")
+```
 
 ### Repeat until success
 
