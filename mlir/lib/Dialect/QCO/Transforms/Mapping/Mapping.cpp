@@ -1103,6 +1103,7 @@ private:
     if (greedy && greedy->second) {
       return {greedy->first, std::nullopt};
     }
+
     env.prepareNativeCosts(func);
 
     struct Trial {
@@ -1206,10 +1207,15 @@ private:
       // Given a layout, create child-nodes for each possible SWAP
       // between two neighboring hardware qubits.
 
+      llvm::SmallDenseSet<IndexPairType, 8> seen;
       for (const auto& [q0, q1] = window.front(); const auto prog : {q0, q1}) {
         const auto hw0 = curr->layout.getHardwareIndex(prog);
         env.target.forEachNeighbour(hw0, [&](const auto hw1) {
           const IndexPairType indices(std::minmax(hw0, hw1));
+          if (seen.contains(indices)) {
+            return;
+          }
+
           const auto standalone = env.nativeSwapCost.value_or(1L);
           const auto prefix =
               curr->isRoot() && state.costs && env.nativeSwapCost.has_value()
@@ -1224,6 +1230,7 @@ private:
                 .prefix = prefix,
             };
             child->initializeChild(curr, candidate, window, env.target, params);
+            seen.insert(indices);
             frontier.emplace(child);
           }
         });
