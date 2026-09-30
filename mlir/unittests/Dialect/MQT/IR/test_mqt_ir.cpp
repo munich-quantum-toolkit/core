@@ -269,7 +269,7 @@ TEST_F(MQTIRTest, RoundTripsTypedCompilationTarget) {
             couplings = [<source = 4, target = 7>],
             native_operations = explicit,
             operations = [
-                <name = "native_cx", canonical_name = "cx",
+                <name = "cx",
                     arity = #mqt.operation_arity<kind = fixed, value = 2>,
                     num_parameters = 0,
                     site_tuples = [<[4, 7], fidelity = 9.900000e-01 : f64>]>,
@@ -289,10 +289,6 @@ TEST_F(MQTIRTest, RoundTripsTypedCompilationTarget) {
   EXPECT_EQ(compilationTarget.getNativeOperations(),
             mqt::NativeOperationsKind::Explicit);
   ASSERT_EQ(compilationTarget.getOperations().size(), 3U);
-  EXPECT_EQ(compilationTarget.getOperations()[0].getName().getValue(),
-            "native_cx");
-  EXPECT_EQ(compilationTarget.getOperations()[0].getCanonicalName().getValue(),
-            "cx");
   EXPECT_EQ(compilationTarget.getOperations()[0].getArity().getKind(),
             mqt::OperationArityKind::Fixed);
   EXPECT_EQ(compilationTarget.getOperations()[1].getArity().getValue(), 0U);
@@ -370,10 +366,6 @@ TEST_F(MQTIRTest, RejectsInvalidTargetLeaves) {
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.operation_arity<
       kind = variadic, value = 0>)mlir"));
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.native_operation<name = "",
-      arity = #mqt.operation_arity<kind = fixed, value = 1>,
-      num_parameters = 0, site_tuples = []>)mlir"));
-  EXPECT_FALSE(parseAttr(R"mlir(#mqt.native_operation<name = "native_x",
-      canonical_name = " ",
       arity = #mqt.operation_arity<kind = fixed, value = 1>,
       num_parameters = 0, site_tuples = []>)mlir"));
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.native_operation<name = "gphase",

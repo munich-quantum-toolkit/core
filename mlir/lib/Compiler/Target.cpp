@@ -166,6 +166,8 @@ constexpr std::array GATE_SPECIFICATIONS{
     canonical = "r";
   } else if (canonical == "i") {
     canonical = "id";
+  } else if (canonical == "u1") {
+    canonical = "p";
   } else if (canonical == "u3") {
     canonical = "u";
   } else if (canonical == "cnot") {
@@ -377,29 +379,24 @@ CompilerTarget::OperationCapability::Arity::Arity(Kind kind,
     : kind_(kind), value_(value) {}
 
 llvm::Expected<CompilerTarget::OperationCapability>
-CompilerTarget::OperationCapability::create(
-    std::string name, size_t arity, size_t numParameters,
-    std::vector<SiteTuple> siteTuples, std::optional<uint64_t> duration,
-    std::optional<double> fidelity,
-    const std::optional<std::string>& canonicalName) {
+CompilerTarget::OperationCapability::create(std::string name, size_t arity,
+                                            size_t numParameters,
+                                            std::vector<SiteTuple> siteTuples,
+                                            std::optional<uint64_t> duration,
+                                            std::optional<double> fidelity) {
   return create(std::move(name), Arity::fixed(arity), numParameters,
-                std::move(siteTuples), duration, fidelity, canonicalName);
+                std::move(siteTuples), duration, fidelity);
 }
 
 llvm::Expected<CompilerTarget::OperationCapability>
-CompilerTarget::OperationCapability::create(
-    std::string name, Arity arity, size_t numParameters,
-    std::vector<SiteTuple> siteTuples, std::optional<uint64_t> duration,
-    std::optional<double> fidelity,
-    const std::optional<std::string>& canonicalName) {
-  if (StringRef(name).trim().empty()) {
+CompilerTarget::OperationCapability::create(std::string name, Arity arity,
+                                            size_t numParameters,
+                                            std::vector<SiteTuple> siteTuples,
+                                            std::optional<uint64_t> duration,
+                                            std::optional<double> fidelity) {
+  auto canonicalName = canonicalOperationName(name);
+  if (canonicalName.empty()) {
     return invalidTarget("Compiler target operation name must not be empty");
-  }
-  auto canonical =
-      canonicalOperationName(canonicalName ? *canonicalName : name);
-  if (canonical.empty()) {
-    return invalidTarget(
-        "Compiler target canonical operation name must not be empty");
   }
   if (auto error =
           validateFidelity(fidelity, "Compiler target operation fidelity")) {
@@ -431,7 +428,7 @@ CompilerTarget::OperationCapability::create(
     }
   }
 
-  return OperationCapability(std::move(name), std::move(canonical), arity,
+  return OperationCapability(std::move(name), std::move(canonicalName), arity,
                              numParameters, std::move(siteTuples), duration,
                              fidelity);
 }
@@ -983,10 +980,7 @@ CompilerTarget::create(const mqt::CompilationTargetAttr attribute) {
       auto operation = OperationCapability::create(
           operationAttr.getName().getValue().str(), arity,
           static_cast<size_t>(operationAttr.getNumParameters()),
-          std::move(siteTuples), operationAttr.getDuration(), fidelity,
-          operationAttr.getCanonicalName()
-              ? std::optional{operationAttr.getCanonicalName().getValue().str()}
-              : std::nullopt);
+          std::move(siteTuples), operationAttr.getDuration(), fidelity);
       if (!operation) {
         return operation.takeError();
       }
@@ -1301,10 +1295,7 @@ CompilerTarget::materialize(MLIRContext& context) const {
     operationAttrs.emplace_back(mqt::NativeOperationAttr::get(
         &context, builder.getStringAttr(operation.name()), arityAttr,
         operation.numParameters(), siteTupleAttrs, operation.duration(),
-        fidelityAttr,
-        operation.canonicalName() != canonicalOperationName(operation.name())
-            ? builder.getStringAttr(operation.canonicalName())
-            : StringAttr{}));
+        fidelityAttr));
   }
 
   const auto connectivity = connectivityKind() == Connectivity::Kind::AllToAll

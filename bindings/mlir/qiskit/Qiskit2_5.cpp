@@ -2218,6 +2218,26 @@ public:
                const std::vector<uint32_t>& qubits,
                const std::vector<Parameter>& parameters) override {
     const auto* gate = versionGate(mapping);
+    if (target_ != nullptr) {
+      for (const auto& operation : target_->operations()) {
+        const auto* candidate = versionGate(operation.name());
+        if (candidate == nullptr || candidate->translation != mapping ||
+            !operation.arity().accepts(qubits.size()) ||
+            operation.numParameters() != parameters.size()) {
+          continue;
+        }
+        if (operation.siteTuples().empty() ||
+            std::ranges::any_of(operation.siteTuples(), [&](const auto& tuple) {
+              return std::ranges::equal(tuple.sites(), qubits, {}, {},
+                                        [&](uint32_t qubit) {
+                                          return target_->siteForVertex(qubit);
+                                        });
+            })) {
+          gate = candidate;
+          break;
+        }
+      }
+    }
     if (gate == nullptr) {
       const auto& descriptor =
           mlir::qc::getStandardGateDescriptor(mapping.gate);
@@ -2247,7 +2267,6 @@ public:
       checkExitCode(qk_circuit_gate(nativeCircuit(), gate->native,
                                     qubits.data(), numbers.data()),
                     "adding gate");
-      applyTargetName(gate->name, qubits, parameters.size());
       return;
     }
     nb::list values;
@@ -2268,7 +2287,6 @@ public:
     /// As with numeric appends, this private circuit has no builder scope or
     /// cached duration.
     pythonCircuit_.attr("_data").attr("append")(instruction);
-    applyTargetName(gate->name, qubits, parameters.size());
   }
 
   void addCustomGate(std::string_view name, const std::vector<uint32_t>& qubits,
@@ -2329,12 +2347,10 @@ public:
   void addMeasure(const uint32_t qubit, const uint32_t clbit) override {
     checkExitCode(qk_circuit_measure(nativeCircuit(), qubit, clbit),
                   "adding measurement");
-    applyTargetName("measure", std::array{qubit}, 0);
   }
 
   void addReset(const uint32_t qubit) override {
     checkExitCode(qk_circuit_reset(nativeCircuit(), qubit), "adding reset");
-    applyTargetName("reset", std::array{qubit}, 0);
   }
 
   void addBarrier(const std::vector<uint32_t>& qubits) override {
@@ -2450,54 +2466,6 @@ public:
   }
 
 private:
-  void applyTargetName(llvm::StringRef name, std::span<const uint32_t> qubits,
-                       size_t numParameters) {
-    if (target_ == nullptr) {
-      return;
-    }
-    for (const auto& operation : target_->operations()) {
-      if (operation.canonicalName() != name ||
-          !operation.arity().accepts(qubits.size()) ||
-          operation.numParameters() != numParameters) {
-        continue;
-      }
-      if (!operation.siteTuples().empty() &&
-          !std::ranges::any_of(operation.siteTuples(), [&](const auto& tuple) {
-            return std::ranges::equal(
-                tuple.sites(), qubits, {}, {},
-                [&](uint32_t qubit) { return target_->siteForVertex(qubit); });
-          })) {
-        continue;
-      }
-      if (operation.name() != name) {
-        nb::object data = pythonCircuit_.attr("data");
-        auto instruction = data[nb::len(data) - 1U];
-        auto gate = instruction.attr("operation");
-        const auto circuitModule = nb::module_::import_("qiskit.circuit");
-        // Renamed standard gates retain their old name in Qiskit's packed
-        // representation. A named instruction with a definition preserves
-        // both the backend spelling and the operation's semantics.
-        auto definition = circuitModule.attr("QuantumCircuit")(
-            gate.attr("num_qubits"), gate.attr("num_clbits"));
-        definition.attr("append")(gate, definition.attr("qubits"),
-                                  definition.attr("clbits"));
-        auto alias =
-            nb::isinstance(gate, circuitModule.attr("Gate"))
-                ? circuitModule.attr("Gate")(
-                      nb::str(operation.name().data(), operation.name().size()),
-                      gate.attr("num_qubits"), gate.attr("params"))
-                : circuitModule.attr("Instruction")(
-                      nb::str(operation.name().data(), operation.name().size()),
-                      gate.attr("num_qubits"), gate.attr("num_clbits"),
-                      gate.attr("params"));
-        alias.attr("definition") = definition;
-        data[nb::len(data) - 1U] =
-            instruction.attr("replace")(nb::arg("operation") = alias);
-      }
-      return;
-    }
-  }
-
   [[nodiscard]] QkCircuit* nativeCircuit() const {
     /// Reborrow after Python calls; no native pointer outlives its data owner.
     auto data = pythonCircuit_.attr("_data");
@@ -2792,9 +2760,16 @@ public:
       return "gphase";
     }
     const auto* gate = versionGate(name);
+    // CompilerTarget only recognizes single-controlled X/Z as fixed native
+    // controlled gates. Other circuit-import mappings need decomposition.
+    if (gate != nullptr &&
+        (gate->translation.controls != 0 ||
+         gate->translation.gate == mlir::qc::StandardGate::CU) &&
+        gate->name != "cx" && gate->name != "cz") {
+      return std::nullopt;
+    }
     return gate == nullptr ? std::nullopt
-                           : std::optional{std::string(
-                                 versionGate(gate->translation)->name)};
+                           : std::optional{std::string(gate->name)};
   }
 
   [[nodiscard]] std::unique_ptr<CircuitWriter>

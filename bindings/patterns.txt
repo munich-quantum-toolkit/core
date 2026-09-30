@@ -138,8 +138,6 @@ mqt\.core\.mlir\.CompilerTarget\.OperationCapability\.__init__$:
         site_tuples: Sequence[CompilerTarget.SiteTuple | Sequence[int]] | None = None,
         duration: int | None = None,
         fidelity: float | None = None,
-        *,
-        canonical_name: str | None = None,
     ) -> None:
         \doc
 
