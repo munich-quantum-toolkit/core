@@ -294,7 +294,7 @@ static Value forwardedRegister(Value value, Block& block, ValueRange inputs,
 
 namespace {
 
-/// Converts a constant jeff i1 array to a CBit register.
+/// Converts jeff.int_array_const1 to cbit.alloc + cbit.store
 struct ConvertJeffIntArrayConst1OpToCBit final
     : OpConversionPattern<jeff::IntArrayConst1Op> {
   using OpConversionPattern::OpConversionPattern;
@@ -325,31 +325,7 @@ struct ConvertJeffIntArrayConst1OpToCBit final
   }
 };
 
-/// Converts a jeff array of i1 values to a CBit register.
-struct ConvertJeffIntArrayCreateOpToCBit final
-    : OpConversionPattern<jeff::IntArrayCreateOp> {
-  using OpConversionPattern::OpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(jeff::IntArrayCreateOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    const auto registerType = getCBitType(op.getType());
-    if (!registerType) {
-      return failure();
-    }
-    auto reg = cbit::AllocOp::create(rewriter, op.getLoc(), registerType,
-                                     cbit::Initialization::Undefined);
-    for (auto [i, bit] : llvm::enumerate(adaptor.getInArray())) {
-      auto index = arith::ConstantIndexOp::create(rewriter, op.getLoc(),
-                                                  static_cast<int64_t>(i));
-      cbit::StoreOp::create(rewriter, op.getLoc(), bit, reg, index);
-    }
-    rewriter.replaceOp(op, reg);
-    return success();
-  }
-};
-
-/// Converts a jeff zero-initialized i1 array to a CBit register.
+/// Converts jeff.int_array_zero to cbit.alloc
 struct ConvertJeffIntArrayZeroOpToCBit final
     : OpConversionPattern<jeff::IntArrayZeroOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -372,7 +348,25 @@ struct ConvertJeffIntArrayZeroOpToCBit final
   }
 };
 
-/// Converts a jeff i1-array update to a CBit store.
+/// Converts jeff.int_array_get_index to cbit.load
+struct ConvertJeffIntArrayGetIndexOpToCBit final
+    : OpConversionPattern<jeff::IntArrayGetIndexOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(jeff::IntArrayGetIndexOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto reg = adaptor.getInArray();
+    if (!isa<cbit::RegisterType>(reg.getType())) {
+      return failure();
+    }
+    auto index = toIndex(op.getLoc(), adaptor.getIndex(), rewriter);
+    rewriter.replaceOpWithNewOp<cbit::LoadOp>(op, op.getType(), reg, index);
+    return success();
+  }
+};
+
+/// Converts jeff.int_array_set_index to cbit.store
 struct ConvertJeffIntArraySetIndexOpToCBit final
     : OpConversionPattern<jeff::IntArraySetIndexOp> {
   ConvertJeffIntArraySetIndexOpToCBit(TypeConverter& converter,
@@ -421,25 +415,7 @@ struct ConvertJeffLogicalShift final : OpConversionPattern<jeff::IntBinaryOp> {
   }
 };
 
-/// Converts a jeff i1-array access to a CBit load.
-struct ConvertJeffIntArrayGetIndexOpToCBit final
-    : OpConversionPattern<jeff::IntArrayGetIndexOp> {
-  using OpConversionPattern::OpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(jeff::IntArrayGetIndexOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto reg = adaptor.getInArray();
-    if (!isa<cbit::RegisterType>(reg.getType())) {
-      return failure();
-    }
-    auto index = toIndex(op.getLoc(), adaptor.getIndex(), rewriter);
-    rewriter.replaceOpWithNewOp<cbit::LoadOp>(op, op.getType(), reg, index);
-    return success();
-  }
-};
-
-/// A CBit register's width is the length of the source jeff array.
+/// Converts jeff.int_array_length on !cbit.reg to arith.constant
 struct ConvertJeffIntArrayLengthOpToCBit final
     : OpConversionPattern<jeff::IntArrayLengthOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -454,6 +430,30 @@ struct ConvertJeffIntArrayLengthOpToCBit final
     }
     rewriter.replaceOpWithNewOp<arith::ConstantIntOp>(op, op.getType(),
                                                       registerType.getWidth());
+    return success();
+  }
+};
+
+/// Converts jeff.int_array_create to cbit.alloc + cbit.store
+struct ConvertJeffIntArrayCreateOpToCBit final
+    : OpConversionPattern<jeff::IntArrayCreateOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(jeff::IntArrayCreateOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    const auto registerType = getCBitType(op.getType());
+    if (!registerType) {
+      return failure();
+    }
+    auto reg = cbit::AllocOp::create(rewriter, op.getLoc(), registerType,
+                                     cbit::Initialization::Undefined);
+    for (auto [i, bit] : llvm::enumerate(adaptor.getInArray())) {
+      auto index = arith::ConstantIndexOp::create(rewriter, op.getLoc(),
+                                                  static_cast<int64_t>(i));
+      cbit::StoreOp::create(rewriter, op.getLoc(), bit, reg, index);
+    }
+    rewriter.replaceOp(op, reg);
     return success();
   }
 };
@@ -1335,13 +1335,15 @@ protected:
     populateReturnOpTypeConversionPattern(patterns, typeConverter);
     populateCallOpTypeConversionPattern(patterns, typeConverter);
     patterns.add<ConvertJeffMainToQCO>(typeConverter, context, *entryPoint);
+    patterns
+        .add<ConvertJeffIntArrayConst1OpToCBit, ConvertJeffIntArrayZeroOpToCBit,
+             ConvertJeffIntArrayGetIndexOpToCBit>(typeConverter, context,
+                                                  PatternBenefit(2));
     patterns.add<ConvertJeffIntArraySetIndexOpToCBit>(typeConverter, context,
                                                       sharedArrayUpdates);
-    patterns.add<
-        ConvertJeffIntArrayConst1OpToCBit, ConvertJeffIntArrayCreateOpToCBit,
-        ConvertJeffIntArrayZeroOpToCBit, ConvertJeffLogicalShift,
-        ConvertJeffIntArrayGetIndexOpToCBit, ConvertJeffIntArrayLengthOpToCBit>(
-        typeConverter, context, PatternBenefit(2));
+    patterns.add<ConvertJeffLogicalShift, ConvertJeffIntArrayLengthOpToCBit,
+                 ConvertJeffIntArrayCreateOpToCBit>(typeConverter, context,
+                                                    PatternBenefit(2));
     patterns.add<
         ConvertJeffQuregAllocOpToQCO, ConvertJeffQuregExtractIndexOpToQCO,
         ConvertJeffQuregInsertIndexOpToQCO, ConvertJeffQuregFreeZeroOpToQCO,

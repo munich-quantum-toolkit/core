@@ -513,8 +513,10 @@ static LogicalResult moveRegion(Region& source, Region& dest,
   return success();
 }
 
-/// Capture function arguments whose block is detached during type conversion.
-static void collectCapturedValues(Region& region, SetVector<Value>& values) {
+/// Collects values used in the region and defined outside it.
+///
+/// Includes block arguments from blocks detached during type conversion.
+static void getAboveValues(Region& region, SetVector<Value>& values) {
   getUsedValuesDefinedAbove(region, values);
   region.walk([&](Operation* nested) {
     for (Value operand : nested->getOperands()) {
@@ -1636,8 +1638,8 @@ struct ConvertIfOpToJeff final : RegionMovingConversionPattern<IfOpType> {
     auto loc = op.getLoc();
 
     SetVector<Value> aboveValues;
-    collectCapturedValues(op.getElseRegion(), aboveValues);
-    collectCapturedValues(op.getThenRegion(), aboveValues);
+    getAboveValues(op.getElseRegion(), aboveValues);
+    getAboveValues(op.getThenRegion(), aboveValues);
 
     SmallVector<Value> initArgs;
     ValueRange qubits;
@@ -1757,7 +1759,7 @@ struct ConvertSCFForOpToJeff final : RegionMovingConversionPattern<scf::ForOp> {
   matchAndRewrite(scf::ForOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     SetVector<Value> aboveValues;
-    collectCapturedValues(op.getRegion(), aboveValues);
+    getAboveValues(op.getRegion(), aboveValues);
 
     SmallVector<Value> initArgs;
     llvm::append_range(initArgs, adaptor.getInitArgs());
@@ -1841,8 +1843,8 @@ struct ConvertSCFWhileOpToJeff final
   matchAndRewrite(scf::WhileOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     SetVector<Value> aboveValues;
-    collectCapturedValues(op.getBefore(), aboveValues);
-    collectCapturedValues(op.getAfter(), aboveValues);
+    getAboveValues(op.getBefore(), aboveValues);
+    getAboveValues(op.getAfter(), aboveValues);
 
     SmallVector<Value> inits;
     llvm::append_range(inits, adaptor.getInits());
