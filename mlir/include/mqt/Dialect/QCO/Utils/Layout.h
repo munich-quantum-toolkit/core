@@ -57,7 +57,7 @@ public:
   /// index in `[0, nqubits)` to the i-th hardware index in `[0, nqubits)`.
   /// Sets both `nProgramQubits` and `nHardwareQubits` to `nqubits`.
   static Layout<T> identity(size_t nqubits) {
-    checkSize(nqubits);
+    assert(nqubits <= UNMAPPED && "layout exceeds qubit index capacity");
     return fromMapping(to_vector(llvm::seq<T>(static_cast<T>(nqubits))));
   }
 
@@ -68,7 +68,8 @@ public:
                           size_t seed) {
     assert(nProgramQubits <= nHardwareQubits &&
            "cannot map more program qubits than hardware qubits");
-    checkSize(nHardwareQubits);
+    assert(nHardwareQubits <= UNMAPPED &&
+           "layout exceeds qubit index capacity");
     auto hwIndices =
         llvm::to_vector(llvm::seq<T>(static_cast<T>(nHardwareQubits)));
     llvm::shuffle(hwIndices.begin(), hwIndices.end(), std::mt19937_64{seed});
@@ -84,7 +85,7 @@ public:
   /// where mapping[prog] = hw.
   /// Sets both `nProgramQubits` and `nHardwareQubits` to `mapping.size()`.
   static Layout<T> fromMapping(ArrayRef<T> mapping) {
-    checkSize(mapping.size());
+    assert(mapping.size() <= UNMAPPED && "layout exceeds qubit index capacity");
     llvm::SmallBitVector seen(mapping.size());
     for (const auto hw : mapping) {
       if (hw >= mapping.size() || seen.test(hw)) {
@@ -199,12 +200,6 @@ public:
   }
 
 private:
-  static void checkSize(size_t nqubits) {
-    if (nqubits > UNMAPPED) {
-      llvm::reportFatalUsageError("layout exceeds qubit index capacity");
-    }
-  }
-
   Layout(size_t nProgramQubits, size_t nHardwareQubits)
       : programToHardware_(nProgramQubits, UNMAPPED),
         hardwareToProgram_(nHardwareQubits, UNMAPPED) {}
