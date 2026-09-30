@@ -20,6 +20,10 @@ DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
     libcurl4t64
 
 for provider_wheel in /tmp/provider/wheels/*.whl; do
+    if [ ! -f "$provider_wheel" ]; then
+        echo "No provider wheel found in /tmp/provider/wheels" >&2
+        exit 1
+    fi
     for core_wheel in /tmp/dist/mqt_core-*.whl; do
         uv pip install --system --break-system-packages \
             "$provider_wheel[qiskit]" "$core_wheel[qiskit,pennylane]"
