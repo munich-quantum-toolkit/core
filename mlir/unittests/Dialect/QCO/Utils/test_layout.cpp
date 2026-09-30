@@ -27,10 +27,8 @@ using namespace mlir::qco;
 namespace {
 
 template <typename T> class LayoutTest : public ::testing::Test {};
-template <typename T> class LayoutDeathTest : public LayoutTest<T> {};
 using IndexTypes = ::testing::Types<uint8_t, uint16_t, uint32_t, uint64_t>;
 TYPED_TEST_SUITE(LayoutTest, IndexTypes);
-TYPED_TEST_SUITE(LayoutDeathTest, IndexTypes);
 
 TYPED_TEST(LayoutTest, DefaultConstructedIsEmpty) {
   const Layout<TypeParam> layout;
@@ -60,6 +58,8 @@ TYPED_TEST(LayoutTest, RandomPlacesEveryProgramOnDistinctHardware) {
 
   EXPECT_EQ(layout.nProgramQubits(), nProg);
   EXPECT_EQ(layout.nHardwareQubits(), nHw);
+  constexpr std::array<TypeParam, nProg> expected{1, 0, 3};
+  EXPECT_EQ(layout.getProgramToHardware(), ArrayRef<TypeParam>(expected));
 
   llvm::DenseSet<TypeParam> mappedHwIndices;
   for (size_t prog = 0; prog < nProg; ++prog) {

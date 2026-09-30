@@ -1211,6 +1211,31 @@ TEST_F(MappingPassFixture, RejectOversizedPlacementBeforeMutation) {
               "requires 2 program qubits, but the target site count is 1"));
 }
 
+TEST_F(MappingPassFixture, RejectIndexCapacityBeforeMutation) {
+  const auto target = getSquareGridTarget(256);
+  for (const bool placement : {false, true}) {
+    SCOPED_TRACE(placement);
+    QCOProgramBuilder builder(context.get());
+    builder.initialize();
+    builder.sink(builder.allocQubit());
+    auto moduleOp = builder.finalize();
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    attachTestEnvironment(*moduleOp, target);
+    const auto before = printModule(*moduleOp);
+
+    std::string diagnostics;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      diagnostics += diagnostic.str();
+      return success();
+    });
+    EXPECT_TRUE(failed(placement
+                           ? runPlacement(*moduleOp, target)
+                           : runPass(*moduleOp, target, MappingPassOptions{})));
+    EXPECT_EQ(printModule(*moduleOp), before);
+    EXPECT_TRUE(StringRef(diagnostics).contains("mapping index capacity"));
+  }
+}
+
 TEST_F(MappingPassFixture, KeepWorkspaceSparseOnLargeTarget) {
   constexpr size_t numTargetQubits = 64;
   std::vector<CompilerTarget::Coupling> couplings;

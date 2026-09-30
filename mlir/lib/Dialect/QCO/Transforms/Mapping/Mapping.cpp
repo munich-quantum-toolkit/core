@@ -289,6 +289,11 @@ static FailureOr<Computation> discoverComputation(func::FuncOp func) {
 static LogicalResult checkCapacity(func::FuncOp func,
                                    const CompilerTarget& target,
                                    const Computation& computation) {
+  if (target.numSites() > std::numeric_limits<QubitIndex>::max()) {
+    return func.emitError()
+           << "target site count exceeds mapping index capacity ("
+           << +std::numeric_limits<QubitIndex>::max() << ")";
+  }
   if (computation.wires.size() <= target.numSites()) {
     return success();
   }

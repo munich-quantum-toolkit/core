@@ -12,10 +12,10 @@
 
 #include "mlir/Support/LLVM.h"
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Sequence.h"
-#include "llvm/ADT/SmallBitVector.h"
-#include "llvm/Support/Debug.h"
+#include "llvm/ADT/SmallVector.h"
 
 #include <cassert>
 #include <cstddef>
@@ -23,8 +23,6 @@
 #include <random>
 #include <tuple>
 #include <type_traits>
-
-#define DEBUG_TYPE "layout"
 
 namespace mlir::qco {
 
@@ -85,14 +83,6 @@ public:
   /// Sets both `nProgramQubits` and `nHardwareQubits` to `mapping.size()`.
   static Layout<T> fromMapping(ArrayRef<T> mapping) {
     assert(mapping.size() <= UNMAPPED && "layout exceeds qubit index capacity");
-
-    LLVM_DEBUG({
-      llvm::SmallBitVector seen(mapping.size());
-      for (const auto hw : mapping) {
-        assert(hw < mapping.size() && !seen.test(hw));
-        seen.set(hw);
-      }
-    });
 
     Layout<T> layout(mapping.size(), mapping.size());
     for (const auto [prog, hw] : enumerate(mapping)) {
@@ -185,11 +175,9 @@ public:
   /// `nProgramQubits()`, where entry `prog` is the hardware index assigned to
   /// program qubit `prog`. Requires every program qubit to be mapped.
   [[nodiscard]] ArrayRef<T> getProgramToHardware() const {
-    LLVM_DEBUG({
-      for (const auto hw : programToHardware_) {
-        assert(hw != UNMAPPED && "program qubit not mapped");
-      }
-    });
+    assert(llvm::none_of(programToHardware_,
+                         [](T hw) { return hw == UNMAPPED; }) &&
+           "program qubit not mapped");
     return programToHardware_;
   }
 
