@@ -196,10 +196,10 @@ program = QCProgram.from_qiskit(transpiled_circuit)
 restored = program.copy().to_qco().to_qc().to_qiskit()
 ```
 
-Target compilation rejects programs with an attached layout. Call
-`discard_layout()` to compile the current circuit as a new program. The numeric
-mapping does not retain Qiskit input register names or input ancilla labels;
-incomplete layouts are unsupported. See {doc}`MQT dialect <MQT>` for the
+Target compilation replaces any attached layout and compiles the current circuit
+as a new program. It does not compose the previous layout with the new one. The
+numeric mapping does not retain Qiskit input register names or input ancilla
+labels; incomplete layouts are unsupported. See {doc}`MQT dialect <MQT>` for the
 metadata schema and {doc}`target compilation <target_compilation>` for
 placement.
 

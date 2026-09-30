@@ -10,7 +10,6 @@
 
 #include "mqt/Compiler/TargetCompilation.h"
 
-#include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/Target.h"
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
@@ -23,6 +22,8 @@
 #include "mqt/Dialect/QTensor/Transforms/Passes.h"
 #include "mqt/Support/Passes.h"
 
+#include "mlir/Dialect/Utils/StaticValueUtils.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/Visitors.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
@@ -31,15 +32,85 @@
 #include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <optional>
+#include <numeric>
 #include <utility>
-#include <vector>
 
 namespace mlir {
+
+/// Retain source order before cleanup removes idle inputs or shrinks tensors.
+static LogicalResult prepareLayout(ModuleOp moduleOp,
+                                   const CompilerTarget& target) {
+  moduleOp->removeAttr("mqt.layout");
+  moduleOp->removeAttr(mqt::kSourceQubitCountAttr);
+  auto entry = mqt::getEntryPoint(moduleOp);
+  if (!entry || !llvm::hasSingleElement(entry.getBody()) ||
+      llvm::any_of(entry.getArgumentTypes(), qco::isLinearQubitType)) {
+    return success();
+  }
+  SmallVector<std::pair<Operation*, size_t>> roots;
+  llvm::SmallDenseSet<int64_t> staticSites;
+  size_t count = 0;
+  bool invalid = false;
+  const auto result = moduleOp.walk([&](Operation* op) {
+    if (op->hasAttr(mqt::kSourceQubitIndicesAttr)) {
+      op->emitError("layout preparation requires input without source tags");
+      invalid = true;
+      return WalkResult::interrupt();
+    }
+    if (!isa<qco::AllocOp, qco::StaticOp, qtensor::AllocOp>(op)) {
+      return WalkResult::advance();
+    }
+    if (op->getBlock() != &entry.getBody().front()) {
+      return WalkResult::interrupt();
+    }
+    size_t size = 1;
+    if (auto qubit = dyn_cast<qco::StaticOp>(op)) {
+      const auto site = static_cast<int64_t>(qubit.getIndex());
+      if (!target.vertexForSite(site) || !staticSites.insert(site).second) {
+        qubit.emitError("preplaced qubit requires a distinct target site ID");
+        invalid = true;
+        return WalkResult::interrupt();
+      }
+    } else if (auto tensor = dyn_cast<qtensor::AllocOp>(op)) {
+      const auto extent = getConstantIntValue(tensor.getSize());
+      if (!extent || *extent <= 0) {
+        return WalkResult::interrupt();
+      }
+      size = static_cast<size_t>(*extent);
+    }
+    if (size > target.numSites() - count) {
+      return WalkResult::interrupt();
+    }
+    roots.emplace_back(op, size);
+    count += size;
+    return WalkResult::advance();
+  });
+  if (invalid) {
+    return failure();
+  }
+  if (result.wasInterrupted() || count == 0) {
+    return success();
+  }
+  Builder builder(moduleOp.getContext());
+  int64_t offset = 0;
+  for (auto [op, size] : roots) {
+    SmallVector<int64_t> indices(size);
+    std::iota(indices.begin(), indices.end(), offset);
+    offset += static_cast<int64_t>(size);
+    op->setAttr(mqt::kSourceQubitIndicesAttr,
+                builder.getDenseI64ArrayAttr(indices));
+  }
+  moduleOp->setAttr(mqt::kSourceQubitCountAttr,
+                    builder.getI64IntegerAttr(static_cast<int64_t>(count)));
+  return success();
+}
+
 namespace {
 
 class PrepareTargetCompilationPass
@@ -56,12 +127,7 @@ public:
 
 protected:
   void runOnOperation() override {
-    if (getOperation()->hasAttr("mqt.layout")) {
-      getOperation().emitError("discard existing layout metadata before target "
-                               "compilation");
-      signalPassFailure();
-      return;
-    }
+    getOperation()->removeAttr("mqt.layout");
     if (mapping_.trials == 0) {
       getOperation().emitError("mapping trials must be greater than zero");
       signalPassFailure();
@@ -89,6 +155,11 @@ protected:
       signalPassFailure();
       return;
     }
+    if (!allToAllOnly_ &&
+        failed(prepareLayout(getOperation(), environment_.target()))) {
+      signalPassFailure();
+      return;
+    }
     markAnalysesPreserved<TargetEnvironmentAnalysis>();
   }
 
@@ -100,60 +171,9 @@ private:
 
 } /* namespace */
 
-static FailureOr<mqt::QubitLayout>
-compiledLayout(ModuleOp moduleOp, const CompilerTarget& target,
-               const qco::LayoutTracking& mapping) {
-  const size_t width = target.numSites();
-  const size_t sourceCount = mapping.initialLayout.size();
-  if (sourceCount > width || mapping.routingPermutation.size() != width) {
-    return moduleOp.emitError(
-        "native qubit layout does not match target width");
-  }
-  std::vector<int64_t> placement;
-  placement.reserve(width);
-  std::vector<bool> used(width, false);
-  for (const auto site : mapping.initialLayout) {
-    const auto vertex = target.vertexForSite(site);
-    if (!vertex || used[*vertex]) {
-      return moduleOp.emitError("native qubit layout has an invalid site");
-    }
-    placement.push_back(static_cast<int64_t>(*vertex));
-    used[*vertex] = true;
-  }
-  for (size_t vertex = 0; vertex < width; ++vertex) {
-    if (!used[vertex]) {
-      placement.push_back(static_cast<int64_t>(vertex));
-    }
-  }
-
-  mqt::QubitLayout layout;
-  layout.inputCount = static_cast<int64_t>(sourceCount);
-  layout.initial = std::move(placement);
-
-  layout.routing.emplace(width);
-  for (size_t initial = 0; initial < width; ++initial) {
-    (*layout.routing)[initial] =
-        static_cast<int64_t>(mapping.routingPermutation[initial]);
-  }
-  return layout;
-}
-
-static void populatePostPlacementPipeline(OpPassManager& pm) {
-  /// Placement consumes allocations; native synthesis normalizes phases.
-  pm.addPass(createCanonicalizerPass(
-      GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit)));
-  /// Reuse unchanged classical reads before native synthesis splits their uses.
-  pm.addPass(createCSEPass());
-  pm.addPass(createRemoveDeadValuesPass());
-  pm.addPass(qco::createTargetNativeSynthesis());
-  pm.addPass(createCSEPass());
-  pm.addPass(qco::createVerifyTargetConformance());
-}
-
-static void populateTargetPipeline(OpPassManager& pm,
-                                   const TargetEnvironment& environment,
-                                   const MappingOptions& mapping,
-                                   qco::LayoutTracking* tracking) {
+void populateTargetCompilationPipeline(OpPassManager& pm,
+                                       const TargetEnvironment& environment,
+                                       const MappingOptions& mapping) {
   pm.addPass(std::make_unique<PrepareTargetCompilationPass>(environment, false,
                                                             mapping));
   const auto& target = environment.target();
@@ -190,108 +210,14 @@ static void populateTargetPipeline(OpPassManager& pm,
     mappingOptions.niterations = mapping.iterations;
     mappingOptions.nlookahead = mapping.lookahead;
     mappingOptions.searchMemoryLimit = mapping.searchMemoryLimit;
-    pm.addPass(qco::createMappingPass(mappingOptions, tracking));
+    pm.addPass(qco::createMappingPass(mappingOptions));
     break;
   }
   case CompilerTarget::Connectivity::Kind::AllToAll:
-    pm.addPass(qco::createPlacementPass(target, tracking));
+    pm.addPass(qco::createPlacementPass(target));
     break;
   }
-  populatePostPlacementPipeline(pm);
-}
-
-void populateTargetCompilationPipeline(OpPassManager& pm,
-                                       const TargetEnvironment& environment,
-                                       const MappingOptions& mapping) {
-  populateTargetPipeline(pm, environment, mapping, {});
-}
-
-LogicalResult runTargetCompilation(ModuleOp moduleOp, PassManager& pm,
-                                   const TargetEnvironment& environment,
-                                   const CompilationOptions& options) {
-  if (!pm.empty() || pm.getContext() != moduleOp.getContext()) {
-    return moduleOp.emitError(
-        "target compilation requires an empty pass manager for this context");
-  }
-  auto entryPoint = mqt::getEntryPoint(moduleOp);
-  if (!entryPoint) {
-    return moduleOp.emitError("target compilation requires an entry point");
-  }
-  if (failed(qco::verifyLinearity(moduleOp))) {
-    return failure();
-  }
-  if (options.mapping.trials == 0) {
-    return moduleOp.emitError("mapping trials must be greater than zero");
-  }
-  std::vector<std::optional<int64_t>> inputSegments;
-  llvm::SmallDenseSet<int64_t> staticSites;
-  for (Operation& operation : entryPoint.getBody().front()) {
-    if (auto staticQubit = dyn_cast<qco::StaticOp>(operation)) {
-      const auto site = static_cast<int64_t>(staticQubit.getIndex());
-      if (!environment.target().vertexForSite(site) ||
-          !staticSites.insert(site).second) {
-        staticQubit.emitError("preplaced qubit requires a distinct target "
-                              "site ID");
-        return failure();
-      }
-      inputSegments.emplace_back(site);
-    } else if (isa<qco::AllocOp, qtensor::AllocOp>(operation)) {
-      inputSegments.emplace_back(std::nullopt);
-    }
-  }
-  if (moduleOp->hasAttr("mqt.layout")) {
-    return moduleOp.emitError("discard existing layout metadata before target "
-                              "compilation");
-  }
-  qco::LayoutTracking tracking;
-  const auto prepared =
-      qco::prepareLayout(moduleOp, environment.target(), tracking);
-  if (failed(prepared)) {
-    return failure();
-  }
-  auto* activeTracking = *prepared ? &tracking : nullptr;
-  populateTargetPipeline(pm, environment, options.mapping, activeTracking);
-  if (failed(runWithCompilationOptions(pm, moduleOp, options, true)) ||
-      failed(qco::verifyLinearity(moduleOp))) {
-    moduleOp.walk(
-        [](Operation* op) { op->removeAttr(mqt::kSourceQubitIndicesAttr); });
-    return moduleOp.emitError(
-        "failed to compile the QCO program for the target");
-  }
-  if (activeTracking == nullptr) {
-    return success();
-  }
-  if (!staticSites.empty()) {
-    std::vector<int64_t> combined;
-    size_t allocation = 0;
-    size_t wire = 0;
-    for (const auto site : inputSegments) {
-      if (site) {
-        combined.push_back(*site);
-        continue;
-      }
-      const auto count = tracking.allocationSizes[allocation++];
-      for (size_t index = 0; index < count; ++index, ++wire) {
-        combined.push_back(tracking.initialLayout[wire]);
-      }
-    }
-    tracking.initialLayout = std::move(combined);
-  }
-  if (tracking.initialLayout.empty()) {
-    return success();
-  }
-  auto layout = compiledLayout(moduleOp, environment.target(), tracking);
-  if (failed(layout)) {
-    return failure();
-  }
-  moduleOp->setAttr("mqt.layout", layout->toAttr(moduleOp.getContext()));
-  return success();
-}
-
-bool QCOProgram::compileForTarget(const TargetEnvironment& environment,
-                                  const CompilationOptions& options) {
-  PassManager pm(mod().getContext());
-  return succeeded(runTargetCompilation(mod(), pm, environment, options));
+  qco::populateTargetNativeSynthesisPipeline(pm);
 }
 
 void populateTargetSynthesisPipeline(OpPassManager& pm,
@@ -307,7 +233,7 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
   pm.addPass(qco::createDecomposeMultiControlled(target));
   pm.addPass(qco::createFuseTwoQubitGates(target));
   pm.addPass(qco::createPlacementPass(target));
-  populatePostPlacementPipeline(pm);
+  qco::populateTargetNativeSynthesisPipeline(pm);
 }
 
 } // namespace mlir

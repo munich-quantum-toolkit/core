@@ -11,13 +11,10 @@
 #pragma once
 
 #include "mqt/Compiler/CompilationOptions.h"
-#include "mqt/Compiler/TargetCompilation.h"
 
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OwningOpRef.h"
-
-#include "llvm/ADT/ArrayRef.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -92,9 +89,6 @@ public:
   /// The returned operation remains valid while this program owns its
   /// module. Consuming or destroying the program invalidates the operation.
   [[nodiscard]] ModuleOp module() const;
-
-  /// Discard layout metadata.
-  void discardLayout();
 
 protected:
   struct Storage {
@@ -274,7 +268,7 @@ public:
   [[nodiscard]] bool decomposeMultiControlled(uint64_t minQubits = 3);
 
   /// Compile for a target and attach layout metadata when possible.
-  /// Programs with an attached layout are rejected.
+  /// Replace any attached layout, treating the current circuit as a new input.
   /// Do not rely on the program contents if compilation fails.
   [[nodiscard]] bool compileForTarget(const TargetEnvironment& environment,
                                       const CompilationOptions& options = {});

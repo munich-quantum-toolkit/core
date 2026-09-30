@@ -14,15 +14,12 @@
 #include "mqt/Compiler/Target.h"
 #include "mqt/Compiler/TargetCompilation.h"
 #include "mqt/Compiler/TargetEnvironment.h"
-#include "mqt/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
-#include "mqt/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
-#include "mqt/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
 #include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
@@ -89,7 +86,6 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 
-#include <algorithm>
 #include <array>
 #include <cctype>
 #include <cmath>
@@ -2205,13 +2201,7 @@ c = measure q;
       EXPECT_EQ(moduleOp->getAttr(COMPILATION_SEED_ATTR), previousSeed);
       moduleOp->removeAttr(COMPILATION_SEED_ATTR);
       // Different seeds may select the same layout; compare equal seeds only.
-      if (lowLevel) {
-        auto withoutLayout = expected.copy();
-        mlir::mqt::discardQubitLayout(withoutLayout.module());
-        EXPECT_EQ(program.str(), withoutLayout.str());
-      } else {
-        EXPECT_EQ(program.str(), expected.str());
-      }
+      EXPECT_EQ(program.str(), expected.str());
     }
   }
 }
@@ -2271,17 +2261,17 @@ cx q[0], q[3]; cx q[1], q[3];
                 1e-12);
     }
   }
-  EXPECT_EQ(program->str().find("source_qubit_indices"), std::string::npos);
+  EXPECT_EQ(program->str().find("source_qubit_"), std::string::npos);
 }
 
-TEST_F(CompilerPipelineTest, TargetCompilationRejectsExistingLayout) {
+TEST_F(CompilerPipelineTest, TargetCompilationReplacesExistingLayout) {
   auto qc = QCProgram::fromOpenQASMString("OPENQASM 3.1; qubit q;");
   ASSERT_TRUE(qc);
   auto program = std::move(*qc).intoQCO();
   ASSERT_TRUE(program);
   program->module()->setAttr("mqt.layout",
                              mlir::mqt::QubitLayout{
-                                 .initial = {0},
+                                 .initial = {1, 0},
                                  .inputCount = 1,
                              }
                                  .toAttr(program->module().getContext()));
@@ -2289,9 +2279,16 @@ TEST_F(CompilerPipelineTest, TargetCompilationRejectsExistingLayout) {
       CompilerTarget::create(1, CompilerTarget::Connectivity::allToAll(),
                              CompilerTarget::NativeOperations::unrestricted()));
   const TargetEnvironment environment(target, makePayloadSpecification());
-  EXPECT_FALSE(program->compileForTarget(environment));
-  EXPECT_FALSE(program->synthesizeForTarget(environment));
-  EXPECT_TRUE(program->module()->hasAttr("mqt.layout"));
+  auto synthesis = program->copy();
+  ASSERT_TRUE(program->compileForTarget(environment));
+  auto layout = mlir::mqt::QubitLayout::fromAttr(
+      program->module()->getAttr("mqt.layout"),
+      [&] { return program->module().emitError(); });
+  ASSERT_TRUE(succeeded(layout));
+  EXPECT_EQ(layout->inputCount, 1);
+  EXPECT_EQ(layout->initial, (std::vector<int64_t>{0}));
+  ASSERT_TRUE(synthesis.synthesizeForTarget(environment));
+  EXPECT_FALSE(synthesis.module()->hasAttr("mqt.layout"));
 }
 
 // Test: target compilation decomposes, maps, synthesizes, and verifies.
@@ -2705,6 +2702,47 @@ c[1] = measure q[3];
   }
 }
 
+TEST_F(CompilerPipelineTest, TargetLayoutIncludesStaticAndIdleInputs) {
+  auto program = QCOProgram::fromMLIRString(R"mlir(module {
+    func.func @main() attributes {mqt.entry_point} {
+      %c1 = arith.constant 1 : index
+      %c2 = arith.constant 2 : index
+      %static = qco.static 19 : !qco.qubit
+      %scalar = qco.alloc : !qco.qubit
+      %tensor = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+      %a = qco.x %static : !qco.qubit -> !qco.qubit
+      qco.sink %a : !qco.qubit
+      %b = qco.h %scalar : !qco.qubit -> !qco.qubit
+      qco.sink %b : !qco.qubit
+      %rest, %qubit = qtensor.extract %tensor[%c1] : tensor<2x!qco.qubit>
+      %c = qco.x %qubit : !qco.qubit -> !qco.qubit
+      qco.sink %c : !qco.qubit
+      qtensor.dealloc %rest : tensor<2x!qco.qubit>
+      return
+    }
+  })mlir");
+  ASSERT_TRUE(program);
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      {
+          llvm::cantFail(CompilerTarget::Site::create(7)),
+          llvm::cantFail(CompilerTarget::Site::create(19)),
+          llvm::cantFail(CompilerTarget::Site::create(42)),
+          llvm::cantFail(CompilerTarget::Site::create(53)),
+      },
+      CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::unrestricted()));
+  const auto payload = llvm::cantFail(payloadSpecificationForProgramFormat(
+      QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE));
+  ASSERT_TRUE(program->compileForTarget(TargetEnvironment(target, payload)));
+  auto layout = mlir::mqt::QubitLayout::fromAttr(
+      program->module()->getAttr("mqt.layout"),
+      [&] { return program->module().emitError(); });
+  ASSERT_TRUE(succeeded(layout));
+  EXPECT_EQ(layout->inputCount, 4);
+  EXPECT_EQ(layout->initial, (std::vector<int64_t>{1, 0, 3, 2}));
+  EXPECT_EQ(program->str().find("source_qubit_"), std::string::npos);
+}
+
 TEST_F(CompilerPipelineTest, OverCapacityInputsCompileWithoutLayout) {
   auto program = QCOProgram::fromMLIRString(R"mlir(module {
     func.func @main() attributes {mqt.entry_point} {
@@ -2777,7 +2815,6 @@ TEST_F(CompilerPipelineTest, IndexedPlacementPreservesSparseSitesAndLoopBody) {
   EXPECT_EQ(outcomes->begin()->first, "10000000");
   auto qasmQC = std::move(qasmProgram).intoQC();
   ASSERT_TRUE(qasmQC);
-  qasmQC->discardLayout();
   auto qasm = qasmQC->toOpenQASM3();
   ASSERT_TRUE(qasm);
   EXPECT_TRUE(StringRef(qasm->source()).contains("$7"));
@@ -2801,7 +2838,6 @@ TEST_F(CompilerPipelineTest, IndexedPlacementPreservesSparseSitesAndLoopBody) {
   auto qc = std::move(*program).intoQC();
   ASSERT_TRUE(qc);
   EXPECT_TRUE(StringRef(qc->str()).contains("mqt.register_name = \"qubits\""));
-  qc->discardLayout();
   auto qir = std::move(*qc).intoQIR(QIRProfile::Adaptive);
   ASSERT_TRUE(qir);
   auto llvmIR = qir->llvmIR();

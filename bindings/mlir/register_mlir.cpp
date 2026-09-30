@@ -16,7 +16,6 @@
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/QDMIAdapter.h"
 #include "mqt/Compiler/Target.h"
-#include "mqt/Compiler/TargetCompilation.h"
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
@@ -1235,14 +1234,7 @@ Programs own their MLIR module. Conversions can consume a program; use
             requireValid(value);
             return value.str();
           },
-          "Return the textual MLIR representation of this program.")
-      .def(
-          "discard_layout",
-          [](mlir::Program& program) {
-            requireValid(program);
-            program.discardLayout();
-          },
-          "Discard qubit layout metadata.");
+          "Return the textual MLIR representation of this program.");
 
   nb::class_<mlir::MappingOptions>(m, "MappingOptions",
                                    "Native mapping controls.")
@@ -1493,8 +1485,9 @@ operations.)pb");
           "target_environment"_a, nb::kw_only(),
           "options"_a = mlir::CompilationOptions{},
           "Compile for the target and attach layout metadata when possible. "
-          "Discard existing layout metadata before "
-          "compilation. Failures raise RuntimeError with MLIR diagnostics.")
+          "Replace existing layout metadata. Do not rely on program contents "
+          "if compilation fails. Failures raise RuntimeError with MLIR "
+          "diagnostics.")
       .def(
           "synthesize_for_target",
           [](mlir::QCOProgram& program,

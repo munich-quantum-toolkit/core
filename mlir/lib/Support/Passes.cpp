@@ -11,7 +11,6 @@
 #include "mqt/Support/Passes.h"
 
 #include "mqt/Conversion/CBitToMemRef/CBitToMemRef.h"
-#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QC/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
@@ -134,7 +133,7 @@ LogicalResult runWithCompilationOptions(PassManager& pm, ModuleOp moduleOp,
                                         const CompilationOptions& options,
                                         bool preservesLayout) {
   if (!preservesLayout) {
-    mqt::discardQubitLayout(moduleOp);
+    moduleOp->removeAttr("mqt.layout");
   }
   if (options.enableTiming) {
     pm.enableTiming();

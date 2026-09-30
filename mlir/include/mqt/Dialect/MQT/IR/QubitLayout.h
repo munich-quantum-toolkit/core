@@ -24,6 +24,10 @@
 
 namespace mlir::mqt {
 
+/// Number of input slots being tracked until placement publishes the layout.
+inline constexpr llvm::StringLiteral kSourceQubitCountAttr =
+    "mqt.source_qubit_count";
+
 /// Input slot IDs retained through tensor shrinking and consumed by placement.
 inline constexpr llvm::StringLiteral kSourceQubitIndicesAttr =
     "mqt.source_qubit_indices";
@@ -42,8 +46,5 @@ struct QubitLayout {
   fromAttr(Attribute attribute,
            llvm::function_ref<InFlightDiagnostic()> emitError);
 };
-
-/// Discard layout metadata on the program module.
-void discardQubitLayout(ModuleOp moduleOp);
 
 } // namespace mlir::mqt

@@ -19,6 +19,7 @@
 #include "llvm/Support/Casting.h"
 
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 using namespace mlir;
@@ -60,7 +61,8 @@ QubitLayout::fromAttr(Attribute attribute,
   const auto size = initialAttr.size();
   const auto validPermutation = [size](ArrayRef<int64_t> values) {
     llvm::SmallDenseSet<int64_t> seen;
-    return values.size() == size && llvm::all_of(values, [&](int64_t value) {
+    return std::cmp_equal(values.size(), size) &&
+           llvm::all_of(values, [&](int64_t value) {
              return value >= 0 && value < size && seen.insert(value).second;
            });
   };
@@ -83,8 +85,4 @@ QubitLayout::fromAttr(Attribute attribute,
                            routingAttr.asArrayRef().end());
   }
   return result;
-}
-
-void mlir::mqt::discardQubitLayout(ModuleOp moduleOp) {
-  moduleOp->removeAttr("mqt.layout");
 }

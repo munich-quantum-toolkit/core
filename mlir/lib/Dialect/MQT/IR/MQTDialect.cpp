@@ -763,9 +763,18 @@ MQTDialect::verifyOperationAttribute(Operation* operation,
     }
     return success();
   }
+  if (attribute.getName() == kSourceQubitCountAttr) {
+    auto count = dyn_cast<IntegerAttr>(attribute.getValue());
+    if (!isa<ModuleOp>(operation) || !count ||
+        !count.getType().isSignlessInteger(64) || count.getInt() < 0) {
+      return operation->emitError(
+          "source qubit count requires a nonnegative i64 on a module");
+    }
+    return success();
+  }
   if (attribute.getName() == kSourceQubitIndicesAttr) {
     int64_t width = -1;
-    if (isa<qco::AllocOp>(operation)) {
+    if (isa<qco::AllocOp, qco::StaticOp>(operation)) {
       width = 1;
     } else if (auto tensor = dyn_cast<qtensor::AllocOp>(operation)) {
       width = getConstantIntValue(tensor.getSize()).value_or(-1);

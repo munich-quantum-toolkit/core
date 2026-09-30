@@ -4700,17 +4700,18 @@ def test_native_mapping_exports_full_qiskit_layout(*, routed: bool) -> None:
     )
 
 
-def test_native_compilation_rejects_imported_qiskit_layout() -> None:
-    """A Qiskit layout stays available for direct export and must be discarded before compilation."""
+def test_native_compilation_replaces_imported_qiskit_layout() -> None:
+    """Compilation treats the current physical circuit as its input program."""
     source = QuantumCircuit(2)
     source.cx(0, 1)
-    circuit = transpile(source, coupling_map=[[0, 1]], optimization_level=0)
+    circuit = transpile(source, coupling_map=[[0, 1]], initial_layout=[1, 0], optimization_level=0)
     program = QCProgram.from_qiskit(circuit).to_qco()
     target = CompilerTarget(
         2,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations.unrestricted(),
     )
-    with pytest.raises(RuntimeError, match="discard existing layout metadata"):
-        program.compile_for_target(_test_target_environment(target))
-    assert program.to_qiskit().layout is not None
+    program.compile_for_target(_test_target_environment(target))
+    exported = program.to_qiskit(target=target)
+    assert exported.layout is not None
+    np.testing.assert_allclose(Operator.from_circuit(exported).data, Operator(circuit).data, atol=1e-12)

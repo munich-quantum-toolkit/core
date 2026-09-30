@@ -2179,7 +2179,7 @@ public:
     const auto physical = nb::cast<nb::list>(pythonCircuit_.attr("qubits"));
     if (nb::len(physical) != layout.initial.size()) {
       throw std::runtime_error("qubit layout no longer matches circuit "
-                               "resources; discard_layout() before export");
+                               "resources");
     }
     const auto transpiler = nb::module_::import_("qiskit.transpiler");
     const auto circuitModule = nb::module_::import_("qiskit.circuit");

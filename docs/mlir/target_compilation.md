@@ -504,9 +504,9 @@ print(circuit.layout.final_index_layout())
 ```
 
 The attached layout records placement and routing through unused device qubits.
-The Qiskit exporter uses it for circuits it supports. Programs with an attached
-layout must call `discard_layout()` before target compilation; importing an
-existing Qiskit layout and recompiling it is not supported. See
+The Qiskit exporter uses it for circuits it supports. Target compilation
+replaces any previous layout and treats the current circuit as a new input
+program. See
 [transpiler layouts](qiskit.md#transpiler-layouts).
 
 To retain layout metadata, program qubits need fixed-size allocations in the

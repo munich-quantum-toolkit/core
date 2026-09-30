@@ -515,9 +515,6 @@ class Program:
     def ir(self) -> str:
         """The textual MLIR representation of this program."""
 
-    def discard_layout(self) -> None:
-        """Discard qubit layout metadata."""
-
 class MappingOptions:
     """Native mapping controls."""
 
@@ -720,7 +717,7 @@ class QCOProgram(Program):
         """Decompose controlled X/Y/Z/SWAP and RX/RY/RZ gates, qco.rccx, and constant-angle phase gates that act on at least min_qubits qubits (min_qubits must be at least 3; default 3 means wider than two-qubit)."""
 
     def compile_for_target(self, target_environment: TargetEnvironment, *, options: CompilationOptions = ...) -> None:
-        """Compile for the target and attach layout metadata when possible. Discard existing layout metadata before compilation. Failures raise RuntimeError with MLIR diagnostics."""
+        """Compile for the target and attach layout metadata when possible. Replace existing layout metadata. Do not rely on program contents if compilation fails. Failures raise RuntimeError with MLIR diagnostics."""
 
     def synthesize_for_target(
         self, target_environment: TargetEnvironment, *, options: CompilationOptions = ...

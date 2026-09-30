@@ -16,7 +16,6 @@
 #include "mqt/Conversion/QCOToQC/QCOToQC.h"
 #include "mqt/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
 #include "mqt/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
-#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
@@ -212,6 +211,16 @@ bool QCOProgram::decomposeMultiControlled(uint64_t minQubits) {
       "failed to decompose multi-controlled gates"));
 }
 
+bool QCOProgram::compileForTarget(const TargetEnvironment& environment,
+                                  const CompilationOptions& options) {
+  return succeeded(runQCOTransformPasses(
+      mod(),
+      [&environment, &options](OpPassManager& pm) {
+        populateTargetCompilationPipeline(pm, environment, options.mapping);
+      },
+      "failed to compile the QCO program for the target", options));
+}
+
 bool QCOProgram::synthesizeForTarget(const TargetEnvironment& environment,
                                      const CompilationOptions& options) {
   return succeeded(runQCOTransformPasses(
@@ -219,7 +228,7 @@ bool QCOProgram::synthesizeForTarget(const TargetEnvironment& environment,
       [&environment, &options](OpPassManager& pm) {
         populateTargetSynthesisPipeline(pm, environment, options.mapping);
       },
-      "failed to synthesize the QCO program for the target", options, true));
+      "failed to synthesize the QCO program for the target", options));
 }
 
 std::optional<QCProgram> QCOProgram::intoQC() && {

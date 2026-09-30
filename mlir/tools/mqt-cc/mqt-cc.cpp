@@ -22,7 +22,6 @@
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
-#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/Translation/TranslateOpenQASMToQC.h"
@@ -111,10 +110,6 @@ static llvm::cl::opt<std::string>
                                 "qco, qco-optimized, qir-base, "
                                 "qir-adaptive, openqasm3, or jeff"),
                  llvm::cl::value_desc("format"), llvm::cl::init("qc"));
-
-static llvm::cl::opt<bool>
-    discardLayout("discard-layout",
-                  llvm::cl::desc("Discard qubit layout metadata"));
 
 static llvm::cl::opt<std::string> passPipeline(
     "pass-pipeline",
@@ -633,9 +628,6 @@ static int runCompiler(int argc, char** argv) {
   if (!program.mod) {
     return 1;
   }
-  if (discardLayout) {
-    mqt::discardQubitLayout(*program.mod);
-  }
   const auto parseCustomPipeline = [&](OpPassManager& pm) {
     auto [anchor, pipeline] = StringRef(passPipeline).trim().split('(');
     if (anchor.rtrim() != ModuleOp::getOperationName() ||
@@ -726,10 +718,13 @@ static int runCompiler(int argc, char** argv) {
       *parsedOutputFormat != OutputFormat::QCImport &&
       *parsedOutputFormat != OutputFormat::QCO;
   if (targetEnvironment) {
-    PassManager pm(&context);
-    if (failed(applyPassManagerCLOptions(pm)) ||
-        failed(runTargetCompilation(*program.mod, pm, *targetEnvironment,
-                                    options))) {
+    if (failed(qco::verifyLinearity(*program.mod)) ||
+        failed(runPasses([&](OpPassManager& pm) {
+          populateTargetCompilationPipeline(pm, *targetEnvironment,
+                                            options.mapping);
+          return success();
+        })) ||
+        failed(qco::verifyLinearity(*program.mod))) {
       return 1;
     }
   } else if (requiresPostQcoPasses && failed(runPasses([&](OpPassManager& pm) {

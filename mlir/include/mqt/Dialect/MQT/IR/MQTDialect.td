@@ -39,9 +39,11 @@ def MQTDialect : Dialect {
     transformations that may change qubit identity. Raw IR editors must preserve,
     update, or discard the layout when changing qubit identity or order.
 
+    `mqt.source_qubit_count` records the input count during target preparation.
+    Placement consumes it when publishing the completed layout.
     `mqt.source_qubit_indices` tracks native input slots: a dense i64 array of
-    distinct nonnegative indices, one per `qco.alloc` or fixed-size `qtensor.alloc`
-    slot. Tensor shrinking retains surviving entries; placement consumes them.
+    distinct nonnegative indices, one per `qco.alloc`, `qco.static`, or fixed-size
+    `qtensor.alloc` slot. Tensor shrinking retains surviving entries; placement consumes them.
     Removed slots remain in the attached layout.
 
     `mqt.input_name` records the source-level name of a function input.
