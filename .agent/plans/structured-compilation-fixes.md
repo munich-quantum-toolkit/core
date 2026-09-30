@@ -57,12 +57,3 @@ under `build/release/mlir/unittests/`:
 Repository lint and `mlir-doc` generation passed. The `cpp-lint` session
 requires clang-tidy 23; the available version is 22, so that check remains
 pending.
-
-After rebuilding the editable package, the local pilot passes 17 small cases
-through both direct and jeff exchange routes on DDSIM and the reset-enabled
-topology mock. W-state also passes at 16 qubits on both routes and targets. Shor
-factoring 15 recovers factors on DDSIM before and after jeff exchange. Both
-topology-mock routes compile Shor to Adaptive QIR, but the 64-shot mapped
-payload exceeded the 180-second execution limit. These are correctness
-observations and a bounded feasibility result, not performance measurements or
-claims of unrestricted benchmark support.
