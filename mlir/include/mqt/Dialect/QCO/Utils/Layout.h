@@ -165,10 +165,8 @@ public:
     const auto progB = hardwareToProgram_[hwB];
     assert(progA != UNMAPPED && "hardware index not mapped");
     assert(progB != UNMAPPED && "hardware index not mapped");
-    hardwareToProgram_[hwA] = progB;
-    hardwareToProgram_[hwB] = progA;
-    programToHardware_[progA] = hwB;
-    programToHardware_[progB] = hwA;
+    std::swap(hardwareToProgram_[hwA], hardwareToProgram_[hwB]);
+    std::swap(programToHardware_[progA], programToHardware_[progB]);
   }
 
   /// Return the number of program qubits this layout was declared with.
