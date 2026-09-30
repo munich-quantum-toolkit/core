@@ -12,13 +12,22 @@
 
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cstddef>
+#include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <iostream>
 #include <new>
 #include <span>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
+
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 
 struct QDMI_Child_Device_impl_d {};
 
@@ -241,6 +250,39 @@ TEST_SESSION_QDMI_device_session_init(QDMI_Device_Session session) {
   if (session->initialized) {
     return QDMI_ERROR_BADSTATE;
   }
+  const auto mode = parameter(session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM4);
+  if (mode == "fail-init") {
+    std::cerr << "provider credential must stay private\n";
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  if (mode == "crash") {
+    std::abort();
+  }
+#ifndef _WIN32
+  if (mode == "descendant") {
+    const auto child = fork();
+    if (child < 0) {
+      return QDMI_ERROR_FATAL;
+    }
+    if (child == 0) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(500));
+      {
+        std::ofstream marker(
+            parameter(session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM3));
+        marker << "survived\n";
+      }
+      _exit(0);
+    }
+  }
+  if (mode == "hang" || mode == "hang-free") {
+    std::ofstream marker(
+        parameter(session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM3));
+    marker << getpid() << '\n';
+  }
+#endif
+  if (mode == "hang") {
+    std::this_thread::sleep_for(std::chrono::hours(1));
+  }
   session->initialized = true;
   return QDMI_SUCCESS;
 }
@@ -249,6 +291,10 @@ extern "C" void
 TEST_SESSION_QDMI_device_session_free(QDMI_Device_Session session) {
   if (session == nullptr) {
     return;
+  }
+  if (parameter(session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM4) ==
+      "hang-free") {
+    std::this_thread::sleep_for(std::chrono::hours(1));
   }
   --activeSessions();
   // This releases the opaque handle allocated by device_session_alloc.
@@ -318,6 +364,10 @@ extern "C" int TEST_SESSION_QDMI_device_session_query_device_property(
     return value == nullptr ? QDMI_SUCCESS : QDMI_ERROR_INVALIDARGUMENT;
   }
   if (prop == QDMI_DEVICE_PROPERTY_STATUS) {
+    if (parameter(session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM4) ==
+        "fail-query") {
+      return QDMI_ERROR_NOTSUPPORTED;
+    }
     return queryValue(
         deviceStatus(parameter(session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM4)),
         size, value, sizeRet);

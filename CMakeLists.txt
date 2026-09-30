@@ -115,7 +115,6 @@ if(MQT_CORE_INSTALL)
   set(CMAKE_INSTALL_RPATH ${BASEPOINT} ${BASEPOINT}/${CMAKE_INSTALL_LIBDIR}
                           ${BASEPOINT}/../${CMAKE_INSTALL_LIBDIR})
   set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
-  set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 endif()
 
 # add main library code
@@ -174,6 +173,9 @@ endif()
 if(BUILD_MQT_CORE_BINDINGS)
   set(MQT_CORE_WHEEL_TARGETS mqt-core-bench-bindings mqt-core-bench-library mqt-core-dd
                              mqt-core-dd-bindings mqt-core-qdmi-bindings)
+  if(TARGET mqt-core-qdmi-check)
+    list(APPEND MQT_CORE_WHEEL_TARGETS mqt-core-qdmi-check)
+  endif()
   if(BUILD_MQT_CORE_MLIR)
     list(APPEND MQT_CORE_WHEEL_TARGETS mqt-core-bench mqt-core-mlir-bindings)
   endif()

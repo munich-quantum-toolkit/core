@@ -22,4 +22,13 @@ if(TARGET MQT::CoreQDMI)
   endif()
   add_dependencies(${TARGET_NAME} mqt-core-qdmi-session-device)
   mqt_copy_qdmi_runtime(${TARGET_NAME})
+  if(TARGET mqt-core-qdmi-check)
+    add_test(
+      NAME mqt-core-qdmi-check-cli
+      COMMAND
+        ${CMAKE_COMMAND} "-DCHECKER=$<TARGET_FILE:mqt-core-qdmi-check>"
+        "-DSESSION_DEVICE=$<TARGET_FILE:mqt-core-qdmi-session-device>"
+        "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/checker" -P
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_check_cli.cmake")
+  endif()
 endif()
