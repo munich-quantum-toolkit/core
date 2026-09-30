@@ -474,7 +474,7 @@ static LogicalResult prepareGlobalPhases(ModuleOp moduleOp,
   }
   entryPoint.walk([](GPhaseOp phase) {
     // Each classical execution path has its own unobservable global phase.
-    // Quantum modifiers must retain phases that normalization cannot extract.
+    // QCO modifiers must retain phases that normalization cannot extract.
     if (!isExcludedFromTopLevelUnitaryWalk(phase)) {
       phase.erase();
     }
@@ -1100,8 +1100,9 @@ static LogicalResult synthesizeTargetOperation(
     auto loc = controlled.getLoc();
     auto half =
         arith::ConstantOp::create(rewriter, loc, rewriter.getF64FloatAttr(0.5));
-    Value angle = arith::MulFOp::create(rewriter, loc, phase.getTheta(), half);
-    Value negative = arith::NegFOp::create(rewriter, loc, angle);
+    auto angle = arith::MulFOp::create(rewriter, loc, phase.getTheta(), half)
+                     .getResult();
+    auto negative = arith::NegFOp::create(rewriter, loc, angle).getResult();
     auto controlPhase =
         POp::create(rewriter, loc, controlled.getInputControl(0), angle);
     auto targetPhase =

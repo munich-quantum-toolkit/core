@@ -255,7 +255,7 @@ mixtures of all target operations or use calibration costs.
 Target synthesis preserves a native `gphase`. If the target does not support
 `gphase`, target synthesis preserves relative phase effects and removes only the
 unobservable global phase of the entry point, including its classical branches
-and loops. Phases in helper functions and phases that remain inside quantum
+and loops. Global phases in helper functions and those that remain inside QCO
 modifiers are retained.
 
 Single-controlled phase gates with runtime angles are lowered to phase gates and
