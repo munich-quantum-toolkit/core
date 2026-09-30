@@ -150,7 +150,7 @@ void populateQCToQIRPatterns(RewritePatternSet& patterns,
 /// labeled output schema.
 ///
 /// Measurement registers use `__quantum__rt__result_array_record_output`.
-/// Computed registers use an array record followed by Boolean records.
+/// Computed registers use an array record followed by boolean records.
 ///
 /// Results that are not part of registers (i.e., measurements without register
 /// info) are grouped under a default `__unnamed__` label recorded via
@@ -166,7 +166,8 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
 ///
 /// Requires a single entry-function return. Inventories classical result
 /// registers and validates output stores before changing IR. On failure,
-/// emits diagnostics and leaves IR unchanged; discard \p state.
+/// emits diagnostics and leaves IR unchanged. After failure, the caller must
+/// discard \p state because it may contain incomplete register information.
 ///
 /// For measurement-only returned registers, the store and measurement must
 /// share a block. The index must be available at measurement or become
@@ -177,7 +178,7 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
 /// index of the same register.
 ///
 /// With \p allowComputedOutputs, returned registers that contain computed
-/// bits use Boolean storage and keep ordinary stores. Otherwise these stores
+/// bits use boolean storage and keep ordinary stores. Otherwise these stores
 /// fail. Local CBit stores retain ordinary semantics.
 ///
 /// Call while `func::ReturnOp`, `qc::MeasureOp`, and `cbit::StoreOp` remain

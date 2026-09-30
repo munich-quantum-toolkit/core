@@ -348,7 +348,7 @@ struct ConvertJeffIntArrayZeroOpToCBit final
   }
 };
 
-/// Converts jeff.int_array_get_index to cbit.load
+/// Converts jeff.int_array_get_index on !cbit.reg to cbit.load
 struct ConvertJeffIntArrayGetIndexOpToCBit final
     : OpConversionPattern<jeff::IntArrayGetIndexOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -366,7 +366,7 @@ struct ConvertJeffIntArrayGetIndexOpToCBit final
   }
 };
 
-/// Converts jeff.int_array_set_index to cbit.store
+/// Converts jeff.int_array_set_index on !cbit.reg to cbit.store
 struct ConvertJeffIntArraySetIndexOpToCBit final
     : OpConversionPattern<jeff::IntArraySetIndexOp> {
   ConvertJeffIntArraySetIndexOpToCBit(TypeConverter& converter,

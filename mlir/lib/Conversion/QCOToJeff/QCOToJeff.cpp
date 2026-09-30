@@ -513,7 +513,7 @@ static LogicalResult moveRegion(Region& source, Region& dest,
   return success();
 }
 
-/// Collects values used in the region and defined outside it.
+/// Collects values used in the region and defined outside of it.
 ///
 /// Includes block arguments from blocks detached during type conversion.
 static void getAboveValues(Region& region, SetVector<Value>& values) {
