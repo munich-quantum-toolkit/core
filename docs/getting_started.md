@@ -4,6 +4,7 @@ kernelspec:
   name: python3
 mystnb:
   number_source_lines: true
+  execution_timeout: 120
 ---
 
 # Compile and execute Shor's algorithm

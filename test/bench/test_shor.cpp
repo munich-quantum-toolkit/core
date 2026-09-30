@@ -23,8 +23,7 @@
 #include <string>
 #include <vector>
 
-namespace {
-using namespace mqt::bench;
+namespace mqt::bench {
 
 TEST(Shor, ValidatesParametersAndPhaseWidth) {
   const Shor benchmark({.number = 21});
@@ -164,25 +163,28 @@ TEST(Shor, PropagatesCallbackFailuresAndRejectsInvalidDriverInputs) {
   EXPECT_THROW(factor(21, {}), std::invalid_argument);
 }
 
-TEST(Shor, RoundTripsJsonAndUsesAVerificationReference) {
+TEST(Shor, RoundTripsJSON) {
+  const auto benchmark = shorFromInstanceSpecificationJSON(
+      R"({"schema_version":1,"benchmark":"shor","parameters":{"number":21}})");
+  const auto manifest = toManifestJSON(benchmark);
+  EXPECT_EQ(toManifestJSON(shorFromManifestJSON(manifest)), manifest);
+  EXPECT_NE(manifest.find("\"kind\":\"verification\""), std::string::npos);
+}
+
+TEST(Shor, UsesSemanticCaseIds) {
   const auto benchmark = shorFromInstanceSpecificationJSON(
       R"({"schema_version":1,"benchmark":"shor","parameters":{"number":21}})");
   EXPECT_EQ(caseId(benchmark), caseId(Shor({.number = 21, .base = 2})));
   EXPECT_NE(caseId(benchmark), caseId(Shor({.number = 21, .base = 4})));
-  EXPECT_EQ(caseId(benchmark),
-            caseId(shorFromManifestJSON(toManifestJSON(benchmark))));
-  EXPECT_NE(toManifestJSON(benchmark).find("\"kind\":\"verification\""),
-            std::string::npos);
-  const auto result = evaluateJSON(
-      toManifestJSON(benchmark),
-      R"({"schema_version":1,"counts":{"0010101011":3,"0000000000":1}})");
-  EXPECT_NE(result.find("\"success_probability\":0.75"), std::string::npos);
-  EXPECT_NE(result.find("\"factors\":[3,7]"), std::string::npos);
-  EXPECT_EQ(result.find("total_variation_distance"), std::string::npos);
-  EXPECT_EQ(result.find("squared_hellinger_fidelity"), std::string::npos);
 }
 
-TEST(Shor, RejectsInvalidJsonTypesAndParameters) {
+TEST(Shor, DescribesJSONSchema) {
+  const auto schema = describeBenchmarkJSON("shor");
+  EXPECT_NE(schema.find(R"("minimum":3)"), std::string::npos);
+  EXPECT_NE(schema.find(R"("required":["number"])"), std::string::npos);
+}
+
+TEST(Shor, RejectsInvalidJSONParameters) {
   for (const auto* parameters : {
            R"({"number":true})",
            R"({"number":21.0})",
@@ -201,4 +203,14 @@ TEST(Shor, RejectsInvalidJsonTypesAndParameters) {
   }
 }
 
-} // namespace
+TEST(Shor, EvaluatesCountsFromJSON) {
+  const auto result = evaluateJSON(
+      toManifestJSON(Shor({.number = 21})),
+      R"({"schema_version":1,"counts":{"0010101011":3,"0000000000":1}})");
+  EXPECT_NE(result.find("\"success_probability\":0.75"), std::string::npos);
+  EXPECT_NE(result.find("\"factors\":[3,7]"), std::string::npos);
+  EXPECT_EQ(result.find("total_variation_distance"), std::string::npos);
+  EXPECT_EQ(result.find("squared_hellinger_fidelity"), std::string::npos);
+}
+
+} // namespace mqt::bench

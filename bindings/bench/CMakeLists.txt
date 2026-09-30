@@ -12,6 +12,8 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-bench-bindings)
       register_bv.cpp
       register_ghz.cpp
       register_grover.cpp
+      register_grover_weak_measurement.cpp
+      register_magic_state_distillation.cpp
       register_modular_multiplier.cpp
       register_multiplexer.cpp
       register_qft.cpp

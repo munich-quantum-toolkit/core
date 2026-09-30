@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Protocol, get_type_hints
 import numpy as np
 import pytest
 from qiskit import QuantumCircuit
-from qiskit.circuit import Parameter
+from qiskit.circuit import ClassicalRegister, Clbit, Parameter
 from qiskit.circuit.library import UnitaryGate
 from qiskit.providers import JobStatus
 
@@ -26,7 +26,9 @@ from mqt.core.plugins.qiskit import (
     CircuitValidationError,
     QDMIBackend,
     UnsupportedOperationError,
+    program_serializer,
 )
+from mqt.core.qdmi import ProgramFormat
 from mqt.core.qdmi.driver import open_device
 from mqt.core.typing import QDMISessionParameters
 
@@ -651,6 +653,27 @@ def test_backend_supports_multicontrolled_gates(ddsim_backend: QDMIBackend) -> N
     job = ddsim_backend.run(qc, shots=100)
     counts = job.result().get_counts()
     assert sum(counts.values()) == 100
+
+
+def test_backend_qasm3_zero_initializes_classical_bits(ddsim_backend: QDMIBackend) -> None:
+    """Initialize nonempty registers once and loose bits individually before measurement."""
+    qc = QuantumCircuit(1)
+    qc.add_bits([Clbit()])
+    qc.add_register(ClassicalRegister(0, "empty"), ClassicalRegister(1, "a"), ClassicalRegister(3, "b"))
+    qc.measure(0, 3)
+    original = qc.copy()
+
+    serializer = program_serializer(ProgramFormat.QASM3)
+    assert serializer is not None
+    program = serializer(qc, ddsim_backend)
+
+    assert isinstance(program, str)
+    for assignment in ("a = 0;", "b = 0;", "_bit0 = false;"):
+        assert program.count(assignment) == 1
+        assert program.index(assignment) < program.index("b[1] = measure q[0];")
+    assert "empty =" not in program
+    assert program.count("= false;") == 1
+    assert qc == original
 
 
 def test_backend_openqasm3_translation_works_for_native_gates(ddsim_backend: QDMIBackend) -> None:

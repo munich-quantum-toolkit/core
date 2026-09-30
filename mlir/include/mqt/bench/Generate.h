@@ -20,6 +20,7 @@ namespace mqt::bench {
 class BV;
 class GHZ;
 class Grover;
+class MagicStateDistillation;
 class ModularMultiplier;
 class Multiplexer;
 class QFT;
@@ -28,6 +29,7 @@ class QPE;
 class RepeatUntilSuccess;
 class Shor;
 class Teleportation;
+class WeakMeasurementGrover;
 class WState;
 
 /// A generated program and the normalized semantic instance that produced it.
@@ -46,6 +48,10 @@ struct GeneratedBenchmark {
 
 /// Generate the QC program for a configured Grover benchmark.
 [[nodiscard]] std::optional<mlir::QCProgram> generate(const Grover& benchmark);
+
+/// Generate the QC program for a configured magic-state distillation benchmark.
+[[nodiscard]] std::optional<mlir::QCProgram>
+generate(const MagicStateDistillation& benchmark);
 
 /// Generate a configured modular multiplier benchmark.
 [[nodiscard]] std::optional<mlir::QCProgram>
@@ -75,6 +81,10 @@ generate(const RepeatUntilSuccess& benchmark);
 /// Generate the quantum teleportation benchmark.
 [[nodiscard]] std::optional<mlir::QCProgram>
 generate(const Teleportation& benchmark);
+
+/// Generate a configured weak-measurement Grover benchmark.
+[[nodiscard]] std::optional<mlir::QCProgram>
+generate(const WeakMeasurementGrover& benchmark);
 
 /// Generate the QC program for a configured W-state benchmark.
 [[nodiscard]] std::optional<mlir::QCProgram> generate(const WState& benchmark);

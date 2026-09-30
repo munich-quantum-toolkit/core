@@ -9,18 +9,20 @@
  */
 
 #include "bench/Evaluation.hpp"
+#include "bench/JSON.hpp"
 #include "bench/RepeatUntilSuccess.hpp"
+
+#include "JSONTestUtils.hpp"
 
 #include "gtest/gtest.h"
 
 #include <numbers>
 #include <stdexcept>
+#include <string>
 
-namespace {
+namespace mqt::bench {
 
-using mqt::bench::Output;
-using mqt::bench::RepeatUntilSuccess;
-using mqt::bench::RepeatUntilSuccessOptions;
+using test::expectInvalidJSON;
 
 TEST(RepeatUntilSuccess, HasTheOutput) {
   const RepeatUntilSuccess benchmark;
@@ -61,4 +63,68 @@ TEST(RepeatUntilSuccess, EvaluatesTheReferenceWithoutASuccessOutcome) {
   EXPECT_FALSE(allZero.successProbability);
 }
 
-} // namespace
+TEST(RepeatUntilSuccess, RoundTripsJSON) {
+  const auto defaults = repeatUntilSuccessFromInstanceSpecificationJSON(
+      R"({"schema_version":1,"benchmark":"repeat-until-success","parameters":{}})");
+  EXPECT_EQ(
+      toInstanceSpecificationJSON(defaults),
+      R"({"benchmark":"repeat-until-success","parameters":{"data_qubits":1},"schema_version":1})");
+
+  const RepeatUntilSuccess benchmark;
+  const auto manifest = toManifestJSON(benchmark);
+  EXPECT_EQ(toManifestJSON(repeatUntilSuccessFromManifestJSON(manifest)),
+            manifest);
+  EXPECT_EQ(benchmarkIdFromManifestJSON(manifest), "repeat-until-success");
+  EXPECT_NE(manifest.find("\"model\":\"repeat_until_success\""),
+            std::string::npos);
+  EXPECT_NE(manifest.find("\"parameters\":{\"data_qubits\":1}"),
+            std::string::npos);
+  EXPECT_EQ(repeatUntilSuccessFromManifestJSON(
+                toManifestJSON(RepeatUntilSuccess({.dataQubits = 32})))
+                .options()
+                .dataQubits,
+            32U);
+}
+
+TEST(RepeatUntilSuccess, UsesSemanticCaseIds) {
+  EXPECT_EQ(caseId(RepeatUntilSuccess{}),
+            caseId(RepeatUntilSuccess{{.dataQubits = 1}}));
+  EXPECT_NE(caseId(RepeatUntilSuccess{}),
+            caseId(RepeatUntilSuccess{{.dataQubits = 5}}));
+}
+
+TEST(RepeatUntilSuccess, DescribesJSONSchema) {
+  EXPECT_NE(
+      describeBenchmarkJSON("repeat-until-success")
+          .find(
+              R"("data_qubits":{"default":1,"maximum":1000000,"minimum":1,"type":"integer"})"),
+      std::string::npos);
+}
+
+TEST(RepeatUntilSuccess, RejectsInvalidJSONParameters) {
+  for (const auto* width : {"0", "1000001", "-1", "1.5", "true", "\"5\""}) {
+    EXPECT_THROW(
+        static_cast<void>(repeatUntilSuccessFromInstanceSpecificationJSON(
+            std::string(
+                R"({"schema_version":1,"benchmark":"repeat-until-success","parameters":{"data_qubits":)") +
+            width + "}}")),
+        std::invalid_argument);
+  }
+  expectInvalidJSON(
+      [] {
+        static_cast<void>(repeatUntilSuccessFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"repeat-until-success","parameters":{"attempts":1}})"));
+      },
+      "unknown key 'attempts'");
+}
+
+TEST(RepeatUntilSuccess, EvaluatesCountsFromJSON) {
+  const auto evaluation =
+      evaluateJSON(toManifestJSON(RepeatUntilSuccess{}),
+                   R"({"schema_version":1,"counts":{"0":993,"1":7}})");
+  EXPECT_NE(evaluation.find("\"success_probability\":null"), std::string::npos);
+  EXPECT_NE(evaluation.find("\"total_variation_distance\":"),
+            std::string::npos);
+}
+
+} // namespace mqt::bench
