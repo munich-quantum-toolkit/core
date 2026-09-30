@@ -14,11 +14,12 @@
 
 #include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/SmallBitVector.h"
+#include "llvm/Support/Debug.h"
+#include "llvm/ADT/STLExtras.h"
 
 #include <cassert>
 #include <cstddef>
 #include <limits>
-#include <llvm/Support/Debug.h>
 #include <random>
 #include <tuple>
 #include <type_traits>
@@ -70,7 +71,7 @@ public:
     assert(nHardwareQubits <= UNMAPPED &&
            "layout exceeds qubit index capacity");
     auto hwIndices = to_vector(llvm::seq<T>(static_cast<T>(nHardwareQubits)));
-    shuffle(hwIndices.begin(), hwIndices.end(), std::mt19937_64{seed});
+    llvm::shuffle(hwIndices.begin(), hwIndices.end(), std::mt19937_64{seed});
 
     Layout<T> layout(nProgramQubits, nHardwareQubits);
     for (const auto prog : llvm::seq(static_cast<T>(nProgramQubits))) {
