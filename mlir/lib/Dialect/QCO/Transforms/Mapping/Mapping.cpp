@@ -66,6 +66,7 @@
 #include <deque>
 #include <iterator>
 #include <limits>
+#include <llvm/Support/Debug.h>
 #include <memory>
 #include <optional>
 #include <random>
@@ -401,6 +402,52 @@ private:
   using Window = SmallVector<IndexPairType>;
   using Score = std::pair<size_t, size_t>;
 
+  enum class RoutingMode : bool { Cold, Hot };
+
+  /// A fast, flat cone data structure designed specifically for layer-by-layer
+  /// iteration. All elements are stored sequentially in a single contiguous
+  /// buffer.
+  class LayeredCone {
+  public:
+    LayeredCone() = default;
+
+    /// Add a new layer to the cone.
+    void startNextLayer() { layerOffsets_.emplace_back(storage_.size()); }
+
+    /// Appends a single element to the current active layer.
+    void pushToCurrentLayer(const IndexPairType& gate) {
+      assert(layerOffsets_.size() > 1 &&
+             "No active layer. Call startNextLayer() first.");
+      storage_.emplace_back(gate);
+      layerOffsets_.back() = storage_.size();
+    }
+
+    /// Returns a slice view (ArrayRef) of a specific layer.
+    [[nodiscard]] ArrayRef<IndexPairType> getLayer(size_t i) const {
+      assert(i < nlayers() && "Layer index out of bounds");
+      const auto start = layerOffsets_[i];
+      const auto end = layerOffsets_[i + 1];
+      return {storage_.data() + start, end - start};
+    }
+
+    /// Returns the total number of layers.
+    [[nodiscard]] size_t nlayers() const { return layerOffsets_.size() - 1; }
+
+    /// Return true, if the cone is empty.
+    [[nodiscard]] bool empty() const { return storage_.empty(); }
+
+    /// Return the vertex of the cone.
+    [[nodiscard]] IndexPairType vertex() const { return storage_.front(); }
+
+  private:
+    /// Flat contiguous array storing all elements across all layers.
+    SmallVector<IndexPairType> storage_;
+
+    /// Offsets marking the start index of each layer in the storage, where [l]
+    /// defines the start of the layer l and [l + 1] its end.
+    SmallVector<size_t, 8> layerOffsets_ = {0};
+  };
+
   /// Invocation data is prepared before trials, then borrowed read-only.
   struct Environment {
     const CompilerTarget& target;
@@ -429,8 +476,6 @@ private:
       }
     }
   };
-
-  enum class RoutingMode : bool { Cold, Hot };
 
   struct CompositeUnitary {
     /// The composite op (e.g. SCF).
@@ -517,7 +562,7 @@ private:
 
     /// Initialize a child from its parent while reusing layout capacity.
     void initializeChild(Node* nextParent, const SwapCandidate& candidate,
-                         const Window& window, const CompilerTarget& target,
+                         const LayeredCone& cone, const CompilerTarget& target,
                          const Parameters& params) {
       layout = nextParent->layout;
       layout.swap(candidate.indices.first, candidate.indices.second);
@@ -526,7 +571,7 @@ private:
       cost = nextParent->cost + static_cast<int64_t>(candidate.standalone) +
              candidate.prefix;
       f = params.alpha * static_cast<float>(cost) +
-          static_cast<float>(candidate.standalone) * h(window, target, params);
+          static_cast<float>(candidate.standalone) * h(cone, target, params);
 
       swap = candidate.indices;
       parent = nextParent;
@@ -562,18 +607,20 @@ private:
     /// between its hardware qubits. Intuitively, this is the number of SWAPs
     /// that a naive router would insert to route the layers (with a constant
     /// layout).
-    [[nodiscard]] float h(const Window& window, const CompilerTarget& target,
+    [[nodiscard]] float h(const LayeredCone& cone, const CompilerTarget& target,
                           const Parameters& params) const {
       float costs{0};
       float decay{1.};
 
-      for (const auto& progs : window) {
-        const auto [prog0, prog1] = progs;
-        const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
-        const size_t nswaps = target.distanceBetween(hw0, hw1) - 1;
-        costs += decay * static_cast<float>(nswaps);
+      for (size_t i = 0; i < cone.nlayers(); ++i) {
+        for (const auto [prog0, prog1] : cone.getLayer(i)) {
+          const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
+          const size_t nswaps = target.distanceBetween(hw0, hw1) - 1;
+          costs += decay * static_cast<float>(nswaps);
+        }
         decay *= params.lambda;
       }
+
       return costs;
     }
   };
@@ -1202,7 +1249,7 @@ private:
   /// Route the leading interaction with bounded A* node storage.
   /// Drain queued states at the limit, then use distance-reducing SWAPs.
   [[nodiscard]] SmallVector<IndexPairType>
-  search(const Window& window, RoutingState& state, Arena& arena,
+  search(const LayeredCone& cone, RoutingState& state, Arena& arena,
          const Environment& env) const {
     const Parameters params{.alpha = alpha, .lambda = lambda};
 
@@ -1211,7 +1258,7 @@ private:
     assert(root != nullptr && "expected root allocation to succeed");
 
     root->initializeRoot(state.layout);
-    if (root->isGoal(window.front(), env.target)) {
+    if (root->isGoal(cone.vertex(), env.target)) {
       return SmallVector<IndexPairType>{};
     }
 
@@ -1224,7 +1271,7 @@ private:
       // If the currently visited node is a goal node, reconstruct the
       // sequence of SWAPs from this node to the root.
 
-      if (curr->isGoal(window.front(), env.target)) {
+      if (curr->isGoal(cone.vertex(), env.target)) {
         return curr->swaps();
       }
 
@@ -1232,7 +1279,7 @@ private:
       // between two neighboring hardware qubits.
 
       llvm::SmallDenseSet<IndexPairType, 8> seen;
-      for (const auto& [q0, q1] = window.front(); const auto prog : {q0, q1}) {
+      for (const auto [q0, q1] = cone.vertex(); const auto prog : {q0, q1}) {
         const auto hw0 = curr->layout.getHardwareIndex(prog);
         env.target.forEachNeighbour(hw0, [&](const auto hw1) {
           const IndexPairType indices(std::minmax(hw0, hw1));
@@ -1254,7 +1301,7 @@ private:
                 .prefix = prefix,
             };
 
-            child->initializeChild(curr, candidate, window, env.target, params);
+            child->initializeChild(curr, candidate, cone, env.target, params);
             seen.insert(indices);
             frontier.push(child);
           }
@@ -1266,7 +1313,7 @@ private:
     /// Greedy completion can cost later gates. Thus, increase the search
     /// budget when routing quality matters more than memory use.
 
-    const auto [prog0, prog1] = window.front();
+    const auto [prog0, prog1] = cone.vertex();
     const auto [hw0, hw1] = state.layout.getHardwareIndices(prog0, prog1);
     const auto path = env.target.shortestPathBetween(hw0, hw1);
 
@@ -1472,6 +1519,95 @@ private:
         });
 
     return window;
+  }
+
+  /// TODO
+  template <WireDirection Direction>
+  LayeredCone getCone(Wires wires, const Layout& layout, Operation* boundary,
+                      const Environment& env) {
+    LayeredCone cone;
+    llvm::SmallDenseSet<Operation*> freeze;
+    walkProgramGraph<Direction>(
+        MutableArrayRef(wires.data(), wires.size()),
+        [&](const Frontier& frontier, ReleasedOps& released) {
+          for (const auto& [op, indices] : frontier) {
+            if (indices.size() == 1 &&
+                (boundary == nullptr || precedes<Direction>(op, boundary))) {
+              released.emplace_back(op);
+            }
+          }
+
+          if (released.empty()) {
+            if (cone.nlayers() > 0) {
+              cone.startNextLayer();
+              for (const auto& [op, indices] : frontier) {
+                if (freeze.contains(op) ||
+                    (boundary != nullptr &&
+                     !precedes<Direction>(op, boundary))) {
+                  continue;
+                }
+
+                if (!isa<BarrierOp>(op) && isa<UnitaryOpInterface>(op)) {
+                  const auto i0 = indices[0];
+                  const auto i1 = indices[1];
+                  const auto prog0 = layout.getProgramIndex(i0);
+                  const auto prog1 = layout.getProgramIndex(i1);
+                  const IndexPairType gate = std::minmax(prog0, prog1);
+                  cone.pushToCurrentLayer(gate);
+                }
+
+                released.emplace_back(op);
+              }
+            } else {
+
+              /// Choose "promising" vertex of cone and thus freeze all other
+              /// front gates.
+
+              struct Candidate {
+                IndexPairType indices;
+                Operation* op;
+                size_t cost;
+              };
+
+              std::optional<Candidate> best;
+              for (const auto& [op, indices] : frontier) {
+                if (boundary != nullptr && !precedes<Direction>(op, boundary)) {
+                  continue;
+                }
+
+                if (!isa<BarrierOp>(op) && isa<UnitaryOpInterface>(op)) {
+                  const auto i0 = indices[0];
+                  const auto i1 = indices[1];
+                  const auto prog0 = layout.getProgramIndex(i0);
+                  const auto prog1 = layout.getProgramIndex(i1);
+                  const IndexPairType gate = std::minmax(prog0, prog1);
+                  const auto cost = env.target.distanceBetween(i0, i1);
+
+                  if (!best.has_value()) {
+                    best.emplace(gate, op, cost);
+                  } else if (best->cost > cost) {
+                    freeze.insert(best->op);
+                    best.emplace(gate, op, cost);
+                  }
+
+                  continue;
+                }
+
+                released.emplace_back(op);
+              }
+
+              if (best.has_value()) {
+                cone.startNextLayer();
+                cone.pushToCurrentLayer(best->indices);
+                released.emplace_back(best->op);
+              }
+            }
+          }
+
+          return cone.nlayers() == 4 ? WalkResult::interrupt()
+                                     : WalkResult::advance();
+        });
+    return cone;
   }
 
   /// Both modes leave cursors at the next operation on each physical wire.
@@ -1949,6 +2085,7 @@ private:
     if (state.costs) {
       state.costs->reset(Direction);
     }
+
     Operation* boundary = nullptr;
     for (auto& wire : state.wires) {
       if (wire != std::default_sentinel) {
@@ -1985,13 +2122,13 @@ private:
         continue;
       }
 
-      const auto window =
-          getWindow<Direction>(state.wires, state.layout, boundary);
-      if (window.empty()) {
+      const LayeredCone cone =
+          getCone<Direction>(state.wires, state.layout, boundary, env);
+      if (cone.empty()) {
         break;
       }
 
-      const auto swaps = search(window, state, arena, env);
+      const auto swaps = search(cone, state, arena, env);
       insertSWAPs<Mode>(swaps, state, stats, rewriter);
     }
 
