@@ -41,6 +41,7 @@
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringRef.h"
 
 #include <array>
 #include <cmath>
@@ -1177,6 +1178,77 @@ TEST_F(QCOMatrixTest, InverseDynamicRzXOpMatrix) {
   auto moduleOp = parseSourceString<ModuleOp>(mlirCode, context.get());
   ASSERT_TRUE(moduleOp);
   EXPECT_FALSE(invMatrix(*moduleOp).has_value());
+}
+
+TEST_F(QCOMatrixTest, NativeIonInversesPreserveSymbolicParametersAndPhase) {
+  for (const StringRef gateName : {"gpi", "gpi2", "ms", "zz"}) {
+    SCOPED_TRACE(gateName.str());
+    auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+      module {
+        func.func @test(%phi0: f64, %phi1: f64, %theta: f64,
+                       %q0: !qco.qubit, %q1: !qco.qubit)
+            -> (!qco.qubit, !qco.qubit) {
+          %r0, %r1 = qco.inv(%a = %q0, %b = %q1) {
+            qco.yield %a, %b : !qco.qubit, !qco.qubit
+          } : {!qco.qubit, !qco.qubit} -> {!qco.qubit, !qco.qubit}
+          return %r0, %r1 : !qco.qubit, !qco.qubit
+        }
+      }
+    )mlir",
+                                                context.get());
+    ASSERT_TRUE(moduleOp);
+    auto function = *moduleOp->getOps<func::FuncOp>().begin();
+    auto inverse = firstInvOp(*moduleOp);
+    auto* yielded = inverse.getBody()->getTerminator();
+    OpBuilder builder(yielded);
+    const auto loc = inverse.getLoc();
+    auto q0 = inverse.getBody()->getArgument(0);
+    auto q1 = inverse.getBody()->getArgument(1);
+    auto phi0 = function.getArgument(0);
+    if (gateName == "gpi" || gateName == "gpi2") {
+      Value output = gateName == "gpi"
+                         ? GPIOp::create(builder, loc, q0, phi0).getResult()
+                         : GPI2Op::create(builder, loc, q0, phi0).getResult();
+      yielded->setOperands({output, q1});
+    } else if (gateName == "ms") {
+      yielded->setOperands(MSOp::create(builder, loc, q0, q1, phi0,
+                                        function.getArgument(1),
+                                        function.getArgument(2))
+                               .getResults());
+    } else {
+      yielded->setOperands(
+          ZZOp::create(builder, loc, q0, q1, function.getArgument(2))
+              .getResults());
+    }
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+    OwningOpRef<ModuleOp> original = moduleOp->clone();
+    ASSERT_TRUE(succeeded(runQCOCleanupPipeline(*moduleOp)));
+    EXPECT_TRUE(function.getBody().getOps<InvOp>().empty());
+    ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+    for (const auto values : {
+             std::array{.13, -.21, .17},
+             std::array{0., 0., 0.},
+             std::array{1.0e16, -.21, -.37},
+         }) {
+      SCOPED_TRACE(testing::PrintToString(values));
+      OwningOpRef<ModuleOp> expected = original->clone();
+      OwningOpRef<ModuleOp> actual = moduleOp->clone();
+      for (auto bound : {*expected, *actual}) {
+        auto func = *bound.getOps<func::FuncOp>().begin();
+        OpBuilder binder(&func.getBody().front(),
+                         func.getBody().front().begin());
+        for (const auto [index, value] : llvm::enumerate(values)) {
+          auto constant = arith::ConstantOp::create(
+              binder, func.getLoc(), binder.getF64FloatAttr(value));
+          func.getArgument(index).replaceAllUsesWith(constant.getResult());
+        }
+      }
+      ASSERT_TRUE(succeeded(runQCOCleanupPipeline(*actual)));
+      ASSERT_TRUE(succeeded(verifyLinearity(*actual)));
+      ::mqt::test::expectFullUnitaryEqual(*expected, *actual, 2);
+    }
+  }
 }
 /// @}
 
