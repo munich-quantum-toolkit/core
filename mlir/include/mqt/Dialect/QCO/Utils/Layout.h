@@ -41,9 +41,10 @@ namespace mlir::qco {
 /// Note that we use the terminology "hardware" and "program" qubits here,
 /// because "virtual" (opposed to physical) and "static" (opposed to dynamic)
 /// are C++ keywords.
-template <class T> class Layout {
-  static_assert(std::is_integral_v<T> && std::is_unsigned_v<T> &&
-                !std::is_same_v<T, bool>);
+template <class T>
+  requires(std::is_integral_v<T> && std::is_unsigned_v<T> &&
+           !std::is_same_v<T, bool>)
+class Layout {
   /// Sentinel stored in `programToHardware_` and `hardwareToProgram_` entries
   /// that do not currently hold a valid index.
   constexpr static T UNMAPPED = std::numeric_limits<T>::max();
