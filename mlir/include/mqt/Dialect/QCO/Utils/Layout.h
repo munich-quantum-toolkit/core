@@ -12,10 +12,10 @@
 
 #include "mlir/Support/LLVM.h"
 
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/SmallBitVector.h"
 #include "llvm/Support/Debug.h"
-#include "llvm/ADT/STLExtras.h"
 
 #include <cassert>
 #include <cstddef>
