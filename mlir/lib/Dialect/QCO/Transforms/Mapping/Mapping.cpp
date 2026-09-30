@@ -1526,7 +1526,11 @@ private:
   LayeredCone getCone(Wires wires, const Layout& layout, Operation* boundary,
                       const Environment& env) {
     LayeredCone cone;
+
+    SmallVector<IndexPairType> prev;
+    SmallVector<IndexPairType> next;
     llvm::SmallDenseSet<Operation*> freeze;
+
     walkProgramGraph<Direction>(
         MutableArrayRef(wires.data(), wires.size()),
         [&](const Frontier& frontier, ReleasedOps& released) {
@@ -1553,11 +1557,18 @@ private:
                   const auto prog0 = layout.getProgramIndex(i0);
                   const auto prog1 = layout.getProgramIndex(i1);
                   const IndexPairType gate = std::minmax(prog0, prog1);
-                  cone.pushToCurrentLayer(gate);
+
+                  if (!is_contained(prev, gate)) {
+                    cone.pushToCurrentLayer(gate);
+                  }
+                  next.emplace_back(gate);
                 }
 
                 released.emplace_back(op);
               }
+
+              prev.swap(next);
+              next.clear();
             } else {
 
               /// Choose "promising" vertex of cone and thus freeze all other
@@ -1604,7 +1615,7 @@ private:
             }
           }
 
-          return cone.nlayers() == 4 ? WalkResult::interrupt()
+          return cone.nlayers() == 5 ? WalkResult::interrupt()
                                      : WalkResult::advance();
         });
     return cone;
