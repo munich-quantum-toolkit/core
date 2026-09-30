@@ -22,9 +22,12 @@
 #include <cassert>
 #include <cstddef>
 #include <limits>
+#include <llvm/Support/Debug.h>
 #include <random>
 #include <tuple>
 #include <type_traits>
+
+#define DEBUG_TYPE "layout"
 
 namespace mlir::qco {
 
@@ -158,9 +161,11 @@ public:
   void swap(T hwA, T hwB) {
     assert(hwA < hardwareToProgram_.size() && "hardware index out of bounds");
     assert(hwB < hardwareToProgram_.size() && "hardware index out of bounds");
+    
     if (hwA == hwB) {
       return;
     }
+    
     const auto progA = hardwareToProgram_[hwA];
     const auto progB = hardwareToProgram_[hwB];
     assert(progA != UNMAPPED && "hardware index not mapped");
@@ -183,11 +188,11 @@ public:
   /// `nProgramQubits()`, where entry `prog` is the hardware index assigned to
   /// program qubit `prog`. Requires every program qubit to be mapped.
   [[nodiscard]] ArrayRef<T> getProgramToHardware() const {
-#ifndef NDEBUG
-    for (const auto hw : programToHardware_) {
-      assert(hw != UNMAPPED && "program qubit not mapped");
-    }
-#endif
+    LLVM_DEBUG({
+      for (const auto hw : programToHardware_) {
+        assert(hw != UNMAPPED && "program qubit not mapped");
+      }
+    });
     return programToHardware_;
   }
 
@@ -203,10 +208,8 @@ private:
         hardwareToProgram_(nHardwareQubits, UNMAPPED) {}
 
   /// Maps a program qubit index to its hardware index.
-  /// Size equals `nProgramQubits()`.
   SmallVector<T> programToHardware_;
   /// Maps a hardware qubit index to its program index.
-  /// Size equals `nHardwareQubits()`.
   SmallVector<T> hardwareToProgram_;
 };
 } // namespace mlir::qco
