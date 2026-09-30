@@ -289,14 +289,10 @@ static FailureOr<Computation> discoverComputation(func::FuncOp func) {
 static LogicalResult checkCapacity(func::FuncOp func,
                                    const CompilerTarget& target,
                                    const Computation& computation) {
-  if (target.numSites() > std::numeric_limits<QubitIndex>::max()) {
-    return func.emitError()
-           << "target site count exceeds mapping index capacity ("
-           << +std::numeric_limits<QubitIndex>::max() << ")";
-  }
   if (computation.wires.size() <= target.numSites()) {
     return success();
   }
+
   return func.emitError() << "requires " << computation.wires.size()
                           << " program qubits, but the target site count is "
                           << target.numSites();
@@ -544,7 +540,7 @@ private:
     /// The composite op (e.g. SCF).
     Operation* op = nullptr;
     /// Indices into a wire vector, where the order of indices has no meaning.
-    SmallVector<QubitIndex> indices;
+    SmallVector<size_t> indices;
   };
 
   /// Statistics collected while routing.
@@ -777,9 +773,8 @@ private:
     /// symmetric (essentially: undirected).
     void construct(const Layout<QubitIndex>& from,
                    const Layout<QubitIndex>& to) {
-      for (const auto u :
-           llvm::seq(static_cast<QubitIndex>(target_->numSites()))) {
-        target_->forEachNeighbour(u, [&](const QubitIndex v) {
+      for (size_t u = 0; u < target_->numSites(); ++u) {
+        target_->forEachNeighbour(u, [&](const auto v) {
           if (shouldAddEdge(u, v, from, to)) {
             f_.addEdge(u, v);
           }
@@ -1820,9 +1815,7 @@ private:
                       if (!defer(cf) &&
                           (!composite ||
                            precedes<Direction>(op, composite->op))) {
-                        composite.emplace(
-                            op, SmallVector<QubitIndex>(indices.begin(),
-                                                        indices.end()));
+                        composite.emplace(op, indices);
                       }
                       return false;
                     })
@@ -1873,8 +1866,7 @@ private:
         TypeSwitch<Operation*, Operation*>(composite.op)
             .Case<scf::ForOp, scf::WhileOp, IfOp, IndexSwitchOp>(
                 [&](auto op) { return extend(op, addons, rewriter); });
-    composite.indices = to_vector(
-        llvm::seq<QubitIndex>(static_cast<QubitIndex>(parent.wires.size())));
+    composite.indices = to_vector(llvm::seq(parent.wires.size()));
     for (auto [site, result] : enumerate(resultNumbers)) {
       parent.wires[site] = WireIterator(composite.op->getResult(result));
     }
