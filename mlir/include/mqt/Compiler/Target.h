@@ -374,8 +374,18 @@ public:
   /// Return whether two valid dense compiler vertices are adjacent.
   [[nodiscard]] bool areAdjacent(size_t source, size_t target) const;
 
-  /// Return the cached shortest-path distance between valid vertices.
+  /// Return the cached minimum number of couplings between valid dense
+  /// vertices. Explicit topologies cache breadth-first searches because every
+  /// coupling has unit cost.
   [[nodiscard]] size_t distanceBetween(size_t source, size_t target) const;
+
+  /// Return a shortest path of dense vertices, including both endpoints.
+  /// Uses the distance cache shared by target copies. Among equally short
+  /// paths, choose the smallest next vertex at each step. Equal endpoints
+  /// return a one-vertex path. Both endpoints must be valid dense vertices;
+  /// use siteForVertex() to convert path entries to target site IDs.
+  [[nodiscard]] llvm::SmallVector<size_t>
+  shortestPathBetween(size_t source, size_t target) const;
 
   /// Invoke @p callback for every neighbour of a valid dense vertex.
   void forEachNeighbour(size_t vertex,

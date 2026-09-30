@@ -58,6 +58,19 @@ extensions = [
     "sphinxext.opengraph",
 ]
 
+# Both builders execute notebooks that write to the same source directory.
+llms_txt_build_parallel = False
+
+# The Markdown builder omits these nodes; keep warnings for new unsupported types.
+# Remove each name when the builder gains support for it.
+llms_txt_suppress_unknown_node_warnings = [
+    "PassthroughTextElement",
+    "abbreviation",
+    "admonition",
+    "caption",
+    "citation",
+]
+
 source_suffix = [".rst", ".md"]
 
 exclude_patterns = [
