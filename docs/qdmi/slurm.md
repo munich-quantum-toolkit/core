@@ -218,6 +218,49 @@ Provider-specific installation and credentials remain in the
 [Braket guide](https://github.com/munich-quantum-software/amazon-braket-qdmi-device)
 and [IQM guide](https://github.com/iqm-finland/QDMI-on-IQM).
 
+## Optionally validate before task launch
+
+Administrators can enable a bounded readiness check by adding the absolute
+checker path to the shared module's plugstack line:
+
+```ini
+required /usr/local/lib/slurm/mqt-core-qdmi-spank.so licenses=mqt.sc.default validate=/usr/local/bin/mqt-core-qdmi-check validation_timeout=30
+```
+
+Validation is disabled when `validate` is absent. `validation_timeout` defaults
+to 30 seconds and accepts whole seconds from 1 to 3600. The selected license
+must name one configured device with an implicit count or `:1`.
+
+The module runs the checker as the job user with the job environment after
+configuration injection. It does not load a provider in a Slurm daemon. An
+unavailable device, checker failure, or timeout prevents tasks using that check
+from starting and does not drain the node. The checker still accepts both `IDLE`
+and `BUSY`; it does not reserve the device or authorize a later submission.
+
+Each node runs one check per job step and shares the result across its tasks.
+Tasks on another node may already have started when a check fails. All tasks
+must use the same site-established provider runtime, catalogue, and credentials
+on that node, configured before this hook. Place the module after plugins that
+set these inputs. Task prologs run later and must not change them.
+
+The configured checker must use the workload's provider runtime. It cannot
+validate a virtual environment, module, credentials, or container activated
+later in a batch script. For such jobs, leave automatic validation disabled and
+run the checker inside the chosen environment after setup, for example:
+
+```bash
+#!/bin/bash
+#SBATCH --licenses=mqt.sc.default
+set -eu
+source /path/to/venv/bin/activate
+export MQT_CORE_QDMI_CONFIG_FILE=/path/to/qdmi.json
+mqt-core-qdmi-check --device mqt.sc.default --timeout 30
+python workload.py
+```
+
+Both forms provide a readiness snapshot. The application must still handle
+changes in device availability and credentials.
+
 ## Submit a DDSIM job
 
 Save this program as `bell.py` in a location that all compute nodes can read:
