@@ -12,12 +12,8 @@
 
 #include "mlir/Support/LLVM.h"
 
-#include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/SmallBitVector.h"
-#include "llvm/ADT/SmallVector.h"
-#include "llvm/Support/ErrorHandling.h"
 
 #include <cassert>
 #include <cstddef>
@@ -88,7 +84,7 @@ public:
   /// Sets both `nProgramQubits` and `nHardwareQubits` to `mapping.size()`.
   static Layout<T> fromMapping(ArrayRef<T> mapping) {
     assert(mapping.size() <= UNMAPPED && "layout exceeds qubit index capacity");
-    
+
     LLVM_DEBUG({
       llvm::SmallBitVector seen(mapping.size());
       for (const auto hw : mapping) {
