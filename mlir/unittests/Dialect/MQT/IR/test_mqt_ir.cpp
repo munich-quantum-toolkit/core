@@ -112,6 +112,31 @@ TEST_F(MQTIRTest, SourceQubitCountIsNonnegativeModuleMetadata) {
   })"));
 }
 
+TEST_F(MQTIRTest, SourceQubitIndicesMatchAllocationSlots) {
+  const auto source = [](const char* indices) {
+    return std::string(R"mlir(module {
+      func.func @main() attributes {mqt.entry_point} {
+        %c2 = arith.constant 2 : index
+        %q = qtensor.alloc(%c2) {mqt.source_qubit_indices = )mlir") +
+           indices + R"mlir(} : tensor<2x!qco.qubit>
+        qtensor.dealloc %q : tensor<2x!qco.qubit>
+        return
+      }
+    })mlir";
+  };
+  EXPECT_TRUE(parse(source("array<i64: 0, 1>")));
+  for (const auto* indices : {
+           "array<i64: 0>",
+           "array<i32: 0, 1>",
+           "0 : i64",
+           "array<i64: -1, 1>",
+           "array<i64: 0, 0>",
+       }) {
+    SCOPED_TRACE(indices);
+    EXPECT_FALSE(parse(source(indices)));
+  }
+}
+
 TEST_F(MQTIRTest, RoundTripsLayoutMetadata) {
   const mqt::QubitLayout layout{
       .initial = {1, 2, 0},

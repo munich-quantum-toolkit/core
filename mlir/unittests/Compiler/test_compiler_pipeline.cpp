@@ -2264,6 +2264,33 @@ cx q[0], q[3]; cx q[1], q[3];
   EXPECT_EQ(program->str().find("source_qubit_"), std::string::npos);
 }
 
+TEST_F(CompilerPipelineTest, TargetLayoutRejectsInvalidInputRoots) {
+  for (const auto& [body, expected] : {
+           std::pair{R"mlir(
+             %q = qco.alloc {mqt.source_qubit_indices = array<i64: 0>} : !qco.qubit
+             qco.sink %q : !qco.qubit
+           )mlir",
+                     "layout preparation requires input without source tags"},
+           std::pair{R"mlir(
+             %q = qco.static 1 : !qco.qubit
+             qco.sink %q : !qco.qubit
+           )mlir",
+                     "preplaced qubit requires a distinct target site ID"},
+       }) {
+    SCOPED_TRACE(body);
+    auto program = QCOProgram::fromMLIRString(
+        std::string(
+            "module { func.func @main() attributes {mqt.entry_point} {") +
+        body + "return } }");
+    ASSERT_TRUE(program);
+    std::string diagnostics;
+    EXPECT_FALSE(compileForTargetWithDiagnostics(
+        *program, makePayloadSpecification(), diagnostics));
+    EXPECT_TRUE(StringRef(diagnostics).contains(expected)) << diagnostics;
+    EXPECT_FALSE(program->module()->hasAttr("mqt.layout"));
+  }
+}
+
 TEST_F(CompilerPipelineTest, TargetCompilationReplacesExistingLayout) {
   auto qc = QCProgram::fromOpenQASMString("OPENQASM 3.1; qubit q;");
   ASSERT_TRUE(qc);

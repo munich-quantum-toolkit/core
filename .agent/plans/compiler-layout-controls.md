@@ -23,10 +23,11 @@ The owning files are `mlir/lib/Compiler/TargetCompilation.cpp`,
 
 ## Validation
 
-Native compiler, mapping, and MQT IR suites passed with 241, 125, and 38 tests.
+Native compiler, mapping, and MQT IR suites passed with 242, 125, and 39 tests.
 They cover placement, routed unitary semantics, recompilation, idle inputs, and
-malformed metadata. All three `mqt-core-mqt-cc-` CTest checks passed, including
-mapped QCO output. Python MLIR and translation suites passed with 560 tests:
+malformed metadata, including invalid source labels and target sites. All three
+`mqt-core-mqt-cc-` CTest checks passed, including mapped QCO output. Python MLIR
+and translation suites passed with 560 tests:
 
 ```console
 pytest test/python/test_mlir.py test/python/test_mlir_qiskit_translation.py
