@@ -966,7 +966,7 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
       .value("XYX", mlir::CompilerTarget::SingleQubitBasis::XYX)
       .value("ZYZ", mlir::CompilerTarget::SingleQubitBasis::ZYZ)
       .value("ZXZ", mlir::CompilerTarget::SingleQubitBasis::ZXZ)
-      .value("FixedRotation",
+      .value("FIXED_ROTATION",
              mlir::CompilerTarget::SingleQubitBasis::FixedRotation);
 
   auto synthesisBasis = nb::class_<mlir::CompilerTarget::SynthesisBasis>(
@@ -1244,7 +1244,7 @@ Raises:
           },
           "name"_a, "arity"_a, "num_parameters"_a = nb::none(),
           "sites"_a = nb::none(), nb::kw_only(),
-          "parameters"_a = std::vector<std::optional<double>>{},
+          "parameters"_a.sig("()") = std::vector<std::optional<double>>{},
           R"pb(Check whether the target supports an operation.
 
 Args:

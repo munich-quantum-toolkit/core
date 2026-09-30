@@ -668,7 +668,7 @@ def test_fixed_parameter_target_capability(arity: int | CompilerTarget.Operation
         ]),
     )
     assert target.synthesis_basis is not None
-    assert target.synthesis_basis.single_qubit == CompilerTarget.SingleQubitBasis.FixedRotation
+    assert target.synthesis_basis.single_qubit == CompilerTarget.SingleQubitBasis.FIXED_ROTATION
     assert not target.supports_operation("rx", 1, 1)
     assert target.supports_operation("rx", 1, parameters=[np.pi / 2], sites=[0])
     assert not target.supports_operation("rx", 1, parameters=[np.pi])

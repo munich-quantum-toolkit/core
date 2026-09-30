@@ -46,13 +46,28 @@ costs.
 
 ## Validation
 
-The compiler suite passed 244 tests, native synthesis passed 79, and mapping
-passed 125. Native synthesis includes 1,944 full-matrix cases across all six
-axis pairs and a regression comparing routing costs with fixed-pulse emission.
-Further regressions cover native-only compilation and OpenQASM export, and
-fixed-pulse fusion with exact phase. Python fixed-parameter tests passed 362
-cases, including numeric and symbolic input gates. Generated stubs are
-unchanged.
+Run these commands from the repository root after the build and environment
+setup in [AGENTS.md](../../AGENTS.md#build-and-validation). The recorded results
+below are from local validation, not hosted CI.
+
+- `build/release/mlir/unittests/Compiler/mqt-core-mlir-unittests-compiler`: 244
+  tests passed, including native-only compilation and OpenQASM export.
+- `build/release/mlir/unittests/Dialect/QCO/Transforms/NativeSynthesis/mqt-core-mlir-unittest-target-synthesis`:
+  79 tests passed, including 1,944 full-matrix cases across all six axis pairs,
+  routing-cost agreement, and phase-preserving fixed-pulse fusion. Append
+  `--gtest_filter='TargetSynthesisTest.*FixedPulse*'` to run only those focused
+  checks.
+- `build/release/mlir/unittests/Dialect/QCO/Transforms/Mapping/mqt-core-mlir-unittest-mapping`:
+  125 tests passed.
+- `uv run --no-sync pytest test/python/test_mlir.py -k 'fixed_parameter or fixed_pulse'`:
+  362 cases passed, covering the Python API and numeric and symbolic input
+  gates.
+- `uvx nox -s stubs`: passed; regenerated Python signatures include
+  `FIXED_ROTATION` and the empty-tuple `parameters` default.
+
+The native-suite results are from the preceding implementation validation. They
+were not rerun for the binding-only changes; the Python cases and stub
+generation were. Hosted CI is separate and was not rerun locally.
 
 ## Follow-up
 
