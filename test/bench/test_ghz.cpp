@@ -10,6 +10,9 @@
 
 #include "bench/Evaluation.hpp"
 #include "bench/GHZ.hpp"
+#include "bench/JSON.hpp"
+
+#include "JSONTestUtils.hpp"
 
 #include "gtest/gtest.h"
 
@@ -18,14 +21,9 @@
 #include <stdexcept>
 #include <string>
 
-namespace {
+namespace mqt::bench {
 
-using mqt::bench::Counts;
-using mqt::bench::GHZ;
-using mqt::bench::GHZBasis;
-using mqt::bench::GHZOptions;
-using mqt::bench::GHZTopology;
-using mqt::bench::Output;
+using test::expectInvalidJSON;
 
 TEST(GHZ, UsesDocumentedDefaults) {
   const GHZ ghz{{.qubits = 3}};
@@ -102,4 +100,57 @@ TEST(GHZ, ValidatesOutcomesAndShotCounts) {
                std::overflow_error);
 }
 
-} // namespace
+TEST(GHZ, RoundTripsJSON) {
+  const auto defaults = ghzFromInstanceSpecificationJSON(
+      R"({"parameters":{"qubits":3},"benchmark":"ghz","schema_version":1})");
+  EXPECT_EQ(defaults.options().topology, GHZTopology::Linear);
+  EXPECT_EQ(defaults.options().basis, GHZBasis::Z);
+  EXPECT_EQ(
+      toInstanceSpecificationJSON(defaults),
+      R"({"benchmark":"ghz","parameters":{"basis":"z","qubits":3,"topology":"linear"},"schema_version":1})");
+
+  const GHZ configured{
+      {.qubits = 4, .topology = GHZTopology::Star, .basis = GHZBasis::X}};
+  const auto manifest = toManifestJSON(configured);
+  EXPECT_EQ(toManifestJSON(ghzFromManifestJSON(manifest)), manifest);
+  EXPECT_EQ(benchmarkIdFromManifestJSON(manifest), "ghz");
+}
+
+TEST(GHZ, UsesSemanticCaseIds) {
+  const auto defaults = ghzFromInstanceSpecificationJSON(
+      R"({"parameters":{"qubits":3},"benchmark":"ghz","schema_version":1})");
+  EXPECT_EQ(caseId(defaults), caseId(GHZ{{.qubits = 3}}));
+  EXPECT_NE(caseId(defaults),
+            caseId(GHZ{{.qubits = 3, .topology = GHZTopology::Star}}));
+  EXPECT_EQ(caseId(defaults), "sha256-a222c0c57bcecb4f5e7ea72bab439683"
+                              "92861a52c5cb7c9c13aeaffffa059a65");
+}
+
+TEST(GHZ, DescribesJSONSchema) {
+  const auto schema = describeBenchmarkJSON("ghz");
+  EXPECT_NE(schema.find("\"maximum\":1000000"), std::string::npos);
+  EXPECT_NE(schema.find("\"maximum\":1075"), std::string::npos);
+}
+
+TEST(GHZ, RejectsInvalidJSONParameters) {
+  expectInvalidJSON(
+      [] {
+        static_cast<void>(ghzFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"ghz","parameters":{"qubits":2,"extra":true}})"));
+      },
+      "unknown key 'extra'");
+  expectInvalidJSON(
+      [] {
+        static_cast<void>(ghzFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"ghz","parameters":{"qubits":2.5}})"));
+      },
+      "encoded as an integer");
+  expectInvalidJSON(
+      [] {
+        static_cast<void>(ghzFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"ghz","parameters":{"basis":"x","qubits":1076}})"));
+      },
+      "between 1 and 1075");
+}
+
+} // namespace mqt::bench

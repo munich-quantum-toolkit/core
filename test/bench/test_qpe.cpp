@@ -9,22 +9,21 @@
  */
 
 #include "bench/Evaluation.hpp"
+#include "bench/JSON.hpp"
 #include "bench/QPE.hpp"
+
+#include "JSONTestUtils.hpp"
 
 #include "gtest/gtest.h"
 
-#include <cmath>
 #include <cstddef>
 #include <numbers>
 #include <stdexcept>
 #include <string>
 
-namespace {
+namespace mqt::bench {
 
-using mqt::bench::Output;
-using mqt::bench::Phase;
-using mqt::bench::QPE;
-using mqt::bench::QPEMethod;
+using test::expectInvalidJSON;
 
 TEST(Phase, NormalizesTurns) {
   EXPECT_EQ(Phase(10, 8), Phase(1, 4));
@@ -115,4 +114,47 @@ TEST(QPE, SupportsArbitraryWidthOutcomes) {
   EXPECT_NEAR(qpe.probability(upper), 27. / (4. * pi * pi), 1e-15);
 }
 
-} // namespace
+TEST(QPE, RoundTripsJSON) {
+  const auto parsed = qpeFromInstanceSpecificationJSON(
+      R"({"schema_version":1,"benchmark":"qpe","parameters":{"precision":4,"phase":{"numerator":10,"denominator":8},"method":"iterative"}})");
+  EXPECT_EQ(parsed.options().phase, Phase(1, 4));
+  EXPECT_EQ(parsed.options().method, QPEMethod::Iterative);
+  EXPECT_EQ(
+      toInstanceSpecificationJSON(parsed),
+      R"({"benchmark":"qpe","parameters":{"method":"iterative","phase":{"denominator":4,"numerator":1},"precision":4},"schema_version":1})");
+
+  const QPE benchmark{
+      {.precision = 5, .phase = Phase(1, 3), .method = QPEMethod::Iterative}};
+  const auto manifest = toManifestJSON(benchmark);
+  EXPECT_EQ(toManifestJSON(qpeFromManifestJSON(manifest)), manifest);
+  EXPECT_EQ(benchmarkIdFromManifestJSON(manifest), "qpe");
+  EXPECT_EQ(manifest.find("0.333"), std::string::npos);
+}
+
+TEST(QPE, DescribesJSONSchema) {
+  EXPECT_NE(describeBenchmarkJSON("qpe").find("\"iterative\""),
+            std::string::npos);
+}
+
+TEST(QPE, RejectsInvalidJSONParameters) {
+  expectInvalidJSON(
+      [] {
+        static_cast<void>(qpeFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"qpe","parameters":{"precision":2,"phase":{"numerator":9007199254740993.0,"denominator":9007199254740994}}})"));
+      },
+      "encoded as an integer");
+  expectInvalidJSON(
+      [] {
+        static_cast<void>(qpeFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"qpe","parameters":{"precision":18446744073709551615,"phase":{"numerator":1,"denominator":4}}})"));
+      },
+      "between 1 and 1000000");
+  expectInvalidJSON(
+      [] {
+        static_cast<void>(qpeFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"qpe","parameters":{"precision":2,"phase":{"numerator":1,"denominator":0}}})"));
+      },
+      "denominator must not be zero");
+}
+
+} // namespace mqt::bench

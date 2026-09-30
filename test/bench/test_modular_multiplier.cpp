@@ -9,7 +9,10 @@
  */
 
 #include "bench/Evaluation.hpp"
+#include "bench/JSON.hpp"
 #include "bench/ModularMultiplier.hpp"
+
+#include "JSONTestUtils.hpp"
 
 #include "gtest/gtest.h"
 
@@ -20,12 +23,9 @@
 #include <string>
 #include <string_view>
 
-namespace {
+namespace mqt::bench {
 
-using mqt::bench::Counts;
-using mqt::bench::ModularMultiplier;
-using mqt::bench::ModularMultiplierOptions;
-using mqt::bench::Output;
+using test::expectInvalidJSON;
 
 TEST(ModularMultiplier, StoresParametersAndOutput) {
   const ModularMultiplier benchmark{{
@@ -256,4 +256,123 @@ TEST(ModularMultiplier, KeepsTheLargestReferenceWeightRepresentable) {
   EXPECT_EQ(benchmark.evaluate({{outcome, 1}}).successProbability, 1.);
 }
 
-} // namespace
+TEST(ModularMultiplier, RoundTripsJSON) {
+  const auto benchmark = modularMultiplierFromInstanceSpecificationJSON(
+      R"({"schema_version":1,"benchmark":"modular-multiplier","parameters":{"multiplier":"011","modulus":"101","multiplicand":"111"}})");
+  EXPECT_EQ(benchmark.options().control, '1');
+  EXPECT_EQ(benchmark.expectedResult(), "11110001");
+  const auto manifest = toManifestJSON(benchmark);
+  EXPECT_NE(manifest.find("\"success_outcome\":\"11110001\""),
+            std::string::npos);
+  EXPECT_EQ(modularMultiplierFromManifestJSON(manifest).expectedResult(),
+            benchmark.expectedResult());
+
+  const auto superposed = modularMultiplierFromInstanceSpecificationJSON(
+      R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"101","multiplicand":"+++","multiplier":"011"},"schema_version":1})");
+  EXPECT_EQ(superposed.options().multiplier, "011");
+  EXPECT_EQ(superposed.options().modulus, "101");
+  EXPECT_EQ(
+      toInstanceSpecificationJSON(superposed),
+      R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"101","multiplicand":"+++","multiplier":"011"},"schema_version":1})");
+
+  const auto superposedManifest = toManifestJSON(superposed);
+  EXPECT_EQ(
+      toManifestJSON(modularMultiplierFromManifestJSON(superposedManifest)),
+      superposedManifest);
+  EXPECT_EQ(benchmarkIdFromManifestJSON(superposedManifest),
+            "modular-multiplier");
+  EXPECT_NE(superposedManifest.find("\"model\":\"modular_multiplier\""),
+            std::string::npos);
+  EXPECT_NE(superposedManifest.find("\"width\":8"), std::string::npos);
+}
+
+TEST(ModularMultiplier, UsesSemanticCaseIds) {
+  const auto benchmark = modularMultiplierFromInstanceSpecificationJSON(
+      R"({"schema_version":1,"benchmark":"modular-multiplier","parameters":{"multiplier":"011","modulus":"101","multiplicand":"111"}})");
+  EXPECT_EQ(caseId(benchmark), caseId(ModularMultiplier({.multiplier = "011",
+                                                         .modulus = "101",
+                                                         .multiplicand = "111",
+                                                         .control = '1'})));
+  EXPECT_NE(
+      caseId(benchmark),
+      caseId(ModularMultiplier(
+          {.multiplier = "011", .modulus = "101", .multiplicand = "110"})));
+  EXPECT_NE(caseId(benchmark), caseId(ModularMultiplier({.multiplier = "011",
+                                                         .modulus = "101",
+                                                         .multiplicand = "111",
+                                                         .control = '0'})));
+
+  const auto superposed = modularMultiplierFromInstanceSpecificationJSON(
+      R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"101","multiplicand":"+++","multiplier":"011"},"schema_version":1})");
+  EXPECT_EQ(caseId(superposed), caseId(ModularMultiplier{{.multiplier = "011",
+                                                          .modulus = "101",
+                                                          .multiplicand = "+++",
+                                                          .control = '+'}}));
+  EXPECT_NE(caseId(superposed), caseId(ModularMultiplier{{.multiplier = "001",
+                                                          .modulus = "101",
+                                                          .multiplicand = "+++",
+                                                          .control = '+'}}));
+}
+
+TEST(ModularMultiplier, DescribesJSONSchema) {
+  const auto schema = describeBenchmarkJSON("modular-multiplier");
+  EXPECT_NE(schema.find("\"maxLength\":63"), std::string::npos);
+  EXPECT_NE(schema.find("\"pattern\":\"^1[01]+$\""), std::string::npos);
+}
+
+TEST(ModularMultiplier, RejectsInvalidJSONParameters) {
+  for (const auto* control : {"\"\"", "\"11\"", "\"x\"", "true", "1"}) {
+    const auto instance =
+        std::string(
+            R"({"schema_version":1,"benchmark":"modular-multiplier","parameters":{"multiplier":"011","modulus":"101","multiplicand":"111","control":)") +
+        control + "}}";
+    EXPECT_THROW(static_cast<void>(
+                     modularMultiplierFromInstanceSpecificationJSON(instance)),
+                 std::invalid_argument);
+  }
+  EXPECT_THROW(
+      static_cast<void>(modularMultiplierFromInstanceSpecificationJSON(
+          R"({"schema_version":1,"benchmark":"modular-multiplier","parameters":{"multiplier":"011","modulus":"101"}})")),
+      std::invalid_argument);
+  expectInvalidJSON(
+      [] {
+        static_cast<void>(modularMultiplierFromInstanceSpecificationJSON(
+            R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"101","multiplicand":"+++","multiplier":"011","extra":true},"schema_version":1})"));
+      },
+      "unknown key 'extra'");
+  expectInvalidJSON(
+      [] {
+        static_cast<void>(modularMultiplierFromInstanceSpecificationJSON(
+            R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"1001","multiplicand":"+++","multiplier":"011"},"schema_version":1})"));
+      },
+      "equal widths");
+  expectInvalidJSON(
+      [] {
+        static_cast<void>(modularMultiplierFromInstanceSpecificationJSON(
+            R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"010","multiplicand":"+++","multiplier":"011"},"schema_version":1})"));
+      },
+      "canonical");
+  expectInvalidJSON(
+      [] {
+        static_cast<void>(modularMultiplierFromInstanceSpecificationJSON(
+            R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"101","multiplicand":"+++","multiplier":"101"},"schema_version":1})"));
+      },
+      "0 < a < N");
+}
+
+TEST(ModularMultiplier, EvaluatesCountsFromJSON) {
+  const ModularMultiplier benchmark{{
+      .multiplier = "011",
+      .modulus = "101",
+      .multiplicand = "+++",
+      .control = '+',
+  }};
+  const auto evaluation = evaluateJSON(
+      toManifestJSON(benchmark),
+      R"({"schema_version":1,"counts":{"00000000":1,"10000000":1,"00010000":1,"10010011":1,"00100000":1,"10100001":1,"00110000":1,"10110100":1,"01000000":1,"11000010":1,"01010000":1,"11010000":1,"01100000":1,"11100011":1,"01110000":1,"11110001":1}})");
+  EXPECT_NE(evaluation.find("\"success_probability\":1.0"), std::string::npos);
+  EXPECT_NE(evaluation.find("\"total_variation_distance\":0.0"),
+            std::string::npos);
+}
+
+} // namespace mqt::bench

@@ -62,25 +62,42 @@ TEST(MagicStateDistillation, EvaluatesAcceptanceAndRootStateTogether) {
   EXPECT_EQ(mixed.successProbability, 0.625);
 }
 
-TEST(MagicStateDistillation, RoundTripsStrictJSONAndSemanticCaseIds) {
+TEST(MagicStateDistillation, RoundTripsJSON) {
   const auto defaults = magicStateDistillationFromInstanceSpecificationJSON(
       R"({"schema_version":1,"benchmark":"magic-state-distillation","parameters":{}})");
-  EXPECT_EQ(caseId(defaults), caseId(MagicStateDistillation({.levels = 1})));
   EXPECT_EQ(
       toInstanceSpecificationJSON(defaults),
       R"({"benchmark":"magic-state-distillation","parameters":{"levels":1},"schema_version":1})");
   for (const size_t levels : {1U, 2U, 3U, 4U}) {
     const MagicStateDistillation benchmark({.levels = levels});
-    EXPECT_EQ(caseId(magicStateDistillationFromInstanceSpecificationJSON(
-                  toInstanceSpecificationJSON(benchmark))),
-              caseId(benchmark));
-    EXPECT_EQ(caseId(magicStateDistillationFromManifestJSON(
-                  toManifestJSON(benchmark))),
-              caseId(benchmark));
-    if (levels != 1) {
-      EXPECT_NE(caseId(benchmark), caseId(defaults));
-    }
+    const auto instance = toInstanceSpecificationJSON(benchmark);
+    EXPECT_EQ(
+        toInstanceSpecificationJSON(
+            magicStateDistillationFromInstanceSpecificationJSON(instance)),
+        instance);
+    const auto manifest = toManifestJSON(benchmark);
+    EXPECT_EQ(toManifestJSON(magicStateDistillationFromManifestJSON(manifest)),
+              manifest);
   }
+}
+
+TEST(MagicStateDistillation, UsesSemanticCaseIds) {
+  const auto defaults = magicStateDistillationFromInstanceSpecificationJSON(
+      R"({"schema_version":1,"benchmark":"magic-state-distillation","parameters":{}})");
+  EXPECT_EQ(caseId(defaults), caseId(MagicStateDistillation({.levels = 1})));
+  for (const size_t levels : {2U, 3U, 4U}) {
+    EXPECT_NE(caseId(MagicStateDistillation({.levels = levels})),
+              caseId(defaults));
+  }
+}
+
+TEST(MagicStateDistillation, DescribesJSONSchema) {
+  EXPECT_NE(
+      describeBenchmarkJSON("magic-state-distillation").find(R"("maximum":4)"),
+      std::string::npos);
+}
+
+TEST(MagicStateDistillation, RejectsInvalidJSONParameters) {
   for (const auto* parameters : {
            R"({"levels":0})",
            R"({"levels":5})",
@@ -96,11 +113,12 @@ TEST(MagicStateDistillation, RoundTripsStrictJSONAndSemanticCaseIds) {
             parameters + "}")),
         std::invalid_argument);
   }
-  EXPECT_NE(
-      describeBenchmarkJSON("magic-state-distillation").find(R"("maximum":4)"),
-      std::string::npos);
-  const auto evaluation = evaluateJSON(
-      toManifestJSON(defaults), R"({"schema_version":1,"counts":{"00":256}})");
+}
+
+TEST(MagicStateDistillation, EvaluatesCountsFromJSON) {
+  const auto evaluation =
+      evaluateJSON(toManifestJSON(MagicStateDistillation{}),
+                   R"({"schema_version":1,"counts":{"00":256}})");
   EXPECT_NE(evaluation.find(R"("success_probability":1.0)"), std::string::npos);
 }
 

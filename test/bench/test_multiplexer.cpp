@@ -9,7 +9,10 @@
  */
 
 #include "bench/Evaluation.hpp"
+#include "bench/JSON.hpp"
 #include "bench/Multiplexer.hpp"
+
+#include "JSONTestUtils.hpp"
 
 #include "gtest/gtest.h"
 
@@ -17,11 +20,9 @@
 #include <stdexcept>
 #include <string>
 
-namespace {
+namespace mqt::bench {
 
-using mqt::bench::Multiplexer;
-using mqt::bench::MultiplexerOptions;
-using mqt::bench::Output;
+using test::expectInvalidJSON;
 
 TEST(Multiplexer, StoresTheTotalQubitCountAndOutput) {
   const Multiplexer benchmark{{.qubits = 7}};
@@ -81,4 +82,55 @@ TEST(Multiplexer, KeepsTheLargestUniformControlWeightRepresentable) {
       0.);
 }
 
-} // namespace
+TEST(Multiplexer, RoundTripsJSON) {
+  const auto parsed = multiplexerFromInstanceSpecificationJSON(
+      R"({"schema_version":1,"benchmark":"multiplexer","parameters":{"qubits":7}})");
+  EXPECT_EQ(parsed.options().qubits, 7);
+  EXPECT_EQ(
+      toInstanceSpecificationJSON(parsed),
+      R"({"benchmark":"multiplexer","parameters":{"qubits":7},"schema_version":1})");
+
+  const auto manifest = toManifestJSON(parsed);
+  EXPECT_EQ(toManifestJSON(multiplexerFromManifestJSON(manifest)), manifest);
+  EXPECT_EQ(benchmarkIdFromManifestJSON(manifest), "multiplexer");
+  EXPECT_NE(manifest.find("\"model\":\"multiplexer\""), std::string::npos);
+}
+
+TEST(Multiplexer, UsesSemanticCaseIds) {
+  const auto parsed = multiplexerFromInstanceSpecificationJSON(
+      R"({"schema_version":1,"benchmark":"multiplexer","parameters":{"qubits":7}})");
+  EXPECT_EQ(caseId(parsed), caseId(Multiplexer{{.qubits = 7}}));
+  EXPECT_NE(caseId(parsed), caseId(Multiplexer{{.qubits = 6}}));
+}
+
+TEST(Multiplexer, DescribesJSONSchema) {
+  const auto schema = describeBenchmarkJSON("multiplexer");
+  EXPECT_NE(schema.find("\"maximum\":1024"), std::string::npos);
+  EXPECT_NE(schema.find("\"minimum\":2"), std::string::npos);
+}
+
+TEST(Multiplexer, RejectsInvalidJSONParameters) {
+  expectInvalidJSON(
+      [] {
+        static_cast<void>(multiplexerFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"multiplexer","parameters":{"qubits":1}})"));
+      },
+      "between 2 and 1024");
+  expectInvalidJSON(
+      [] {
+        static_cast<void>(multiplexerFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"multiplexer","parameters":{"qubits":7,"angles":[]}})"));
+      },
+      "unknown key 'angles'");
+}
+
+TEST(Multiplexer, EvaluatesCountsFromJSON) {
+  const auto evaluation =
+      evaluateJSON(toManifestJSON(Multiplexer{{.qubits = 2}}),
+                   R"({"schema_version":1,"counts":{"00":8,"01":2}})");
+  EXPECT_NE(evaluation.find("\"success_probability\":null"), std::string::npos);
+  EXPECT_NE(evaluation.find("\"total_variation_distance\":"),
+            std::string::npos);
+}
+
+} // namespace mqt::bench

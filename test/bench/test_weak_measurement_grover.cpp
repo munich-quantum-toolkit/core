@@ -19,19 +19,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace {
-
-using mqt::bench::benchmarkIdFromManifestJSON;
-using mqt::bench::caseId;
-using mqt::bench::describeBenchmarkJSON;
-using mqt::bench::evaluateJSON;
-using mqt::bench::Output;
-using mqt::bench::toInstanceSpecificationJSON;
-using mqt::bench::toManifestJSON;
-using mqt::bench::WeakMeasurementGrover;
-using mqt::bench::weakMeasurementGroverFromInstanceSpecificationJSON;
-using mqt::bench::weakMeasurementGroverFromManifestJSON;
-using mqt::bench::WeakMeasurementGroverOptions;
+namespace mqt::bench {
 
 TEST(WeakMeasurementGrover, ResolvesTheDefaultMeasurementStrength) {
   const WeakMeasurementGrover benchmark{{.markedBitstring = "101"}};
@@ -99,7 +87,7 @@ TEST(WeakMeasurementGrover, EvaluatesTheMarkedOutcomeAsSuccess) {
   EXPECT_NEAR(*evaluation.successProbability, 0.9, 1e-15);
 }
 
-TEST(WeakMeasurementGrover, RoundTripsStrictJSONAndSemanticCaseIds) {
+TEST(WeakMeasurementGrover, RoundTripsJSON) {
   const auto defaults = weakMeasurementGroverFromInstanceSpecificationJSON(
       R"({"schema_version":1,"benchmark":"grover-weak-measurement","parameters":{"marked_bitstring":"10"}})");
   ASSERT_TRUE(defaults.options().measurementStrength);
@@ -107,13 +95,8 @@ TEST(WeakMeasurementGrover, RoundTripsStrictJSONAndSemanticCaseIds) {
   EXPECT_EQ(
       toInstanceSpecificationJSON(defaults),
       R"({"benchmark":"grover-weak-measurement","parameters":{"marked_bitstring":"10","measurement_strength":0.5},"schema_version":1})");
-  EXPECT_EQ(caseId(defaults),
-            caseId(WeakMeasurementGrover{
-                {.markedBitstring = "10", .measurementStrength = 0.5}}));
-
   const WeakMeasurementGrover weaker{
       {.markedBitstring = "10", .measurementStrength = 0.25}};
-  EXPECT_NE(caseId(defaults), caseId(weaker));
   const auto manifest = toManifestJSON(weaker);
   EXPECT_EQ(toManifestJSON(weakMeasurementGroverFromManifestJSON(manifest)),
             manifest);
@@ -121,7 +104,27 @@ TEST(WeakMeasurementGrover, RoundTripsStrictJSONAndSemanticCaseIds) {
   EXPECT_NE(manifest.find(R"("model":"grover_weak_measurement")"),
             std::string::npos);
   EXPECT_NE(manifest.find(R"("success_outcome":"10")"), std::string::npos);
+}
 
+TEST(WeakMeasurementGrover, UsesSemanticCaseIds) {
+  const auto defaults = weakMeasurementGroverFromInstanceSpecificationJSON(
+      R"({"schema_version":1,"benchmark":"grover-weak-measurement","parameters":{"marked_bitstring":"10"}})");
+  EXPECT_EQ(caseId(defaults),
+            caseId(WeakMeasurementGrover{
+                {.markedBitstring = "10", .measurementStrength = 0.5}}));
+  EXPECT_NE(caseId(defaults),
+            caseId(WeakMeasurementGrover{
+                {.markedBitstring = "10", .measurementStrength = 0.25}}));
+}
+
+TEST(WeakMeasurementGrover, DescribesJSONSchema) {
+  const auto schema = describeBenchmarkJSON("grover-weak-measurement");
+  EXPECT_NE(schema.find(R"("exclusiveMinimum":0)"), std::string::npos);
+  EXPECT_NE(schema.find(R"("maximum":0.5)"), std::string::npos);
+  EXPECT_NE(schema.find(R"("maxLength":2044)"), std::string::npos);
+}
+
+TEST(WeakMeasurementGrover, RejectsInvalidJSONParameters) {
   for (const auto* strength : {"0", "0.3", "true", "\"0.25\""}) {
     const auto instance =
         std::string{
@@ -132,14 +135,14 @@ TEST(WeakMeasurementGrover, RoundTripsStrictJSONAndSemanticCaseIds) {
             weakMeasurementGroverFromInstanceSpecificationJSON(instance)),
         std::invalid_argument);
   }
-  const auto schema = describeBenchmarkJSON("grover-weak-measurement");
-  EXPECT_NE(schema.find(R"("exclusiveMinimum":0)"), std::string::npos);
-  EXPECT_NE(schema.find(R"("maximum":0.5)"), std::string::npos);
-  EXPECT_NE(schema.find(R"("maxLength":2044)"), std::string::npos);
+}
+
+TEST(WeakMeasurementGrover, EvaluatesCountsFromJSON) {
+  const WeakMeasurementGrover benchmark{{.markedBitstring = "10"}};
   const auto evaluation =
-      evaluateJSON(toManifestJSON(defaults),
+      evaluateJSON(toManifestJSON(benchmark),
                    R"({"schema_version":1,"counts":{"10":8,"00":2}})");
   EXPECT_NE(evaluation.find(R"("success_probability":0.8)"), std::string::npos);
 }
 
-} // namespace
+} // namespace mqt::bench
