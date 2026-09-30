@@ -162,27 +162,26 @@ void populateQCToQIRPatterns(RewritePatternSet& patterns,
 void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
                         LoweringState& state);
 
-/// Prepares classical result registers for QIR conversion
+/// Prepares classical result registers before func-to-LLVM conversion.
 ///
 /// Requires a single entry-function return. Inventories classical result
-/// registers and validates output stores before rewriting returns or stores.
-/// A returned-register store must share a block with its measurement and use
-/// an index available there or computed by pure, speculatable operations
-/// without regions in that block. These computations move before the
-/// measurement. Intervening operations must be effect-free, affect only quantum
-/// resources, or store to a provably distinct constant index of the same
-/// register. The QIR measurement can then write directly to the destination
-/// without changing observable order or control flow. Adaptive conversion can
-/// keep computed registers in Boolean storage; Base conversion rejects them.
-/// Local CBit stores retain ordinary semantics.
+/// registers and validates output stores before changing IR. On failure,
+/// emits diagnostics and leaves IR unchanged; discard \p state.
 ///
-/// This must be called **before** func-to-LLVM conversion, while
-/// `func::ReturnOp`, `qc::MeasureOp`, and `cbit::StoreOp` are still in the IR.
+/// For measurement-only returned registers, the store and measurement must
+/// share a block. The index must be available at measurement or become
+/// available by moving pure, speculatable operations without regions from
+/// that block before it. Removes fused stores so QIR measurements write
+/// directly to their destinations. Intervening operations must be effect-free,
+/// affect only quantum resources, or store to a provably distinct constant
+/// index of the same register.
 ///
-/// @param moduleOp The top-level module operation to walk
-/// @param state The lowering state populated for profile-specific conversion
-/// @param allowComputedOutputs Whether returned registers may contain computed
-/// bits
+/// With \p allowComputedOutputs, returned registers that contain computed
+/// bits use Boolean storage and keep ordinary stores. Otherwise these stores
+/// fail. Local CBit stores retain ordinary semantics.
+///
+/// Call while `func::ReturnOp`, `qc::MeasureOp`, and `cbit::StoreOp` remain
+/// in the IR.
 [[nodiscard]] LogicalResult
 prepareClassicalResults(Operation* moduleOp, LoweringState& state,
                         bool allowComputedOutputs = false);

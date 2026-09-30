@@ -19,13 +19,11 @@ def QCToQIRBase : Pass<"qc-to-qir-base", "mlir::ModuleOp"> {
 
     Requirements:
 
-    - Stores to returned CBit registers must share a block with their measurement,
-      use an index available at measurement or computed by pure, speculatable
-      operations without regions in that block, and have no intervening effects
-      that can access CBit storage. The pass moves these index computations before
-      the measurement. Stores to provably distinct constant indices of the same
-      register are allowed. Base Profile also requires these indices to be
-      constant.
+    - Stores to returned CBit registers must write measurement results at
+      constant indices that are available or safely computable before measurement.
+      The store and measurement must share a block. Intervening effects must be
+      limited to quantum resources or stores to distinct constant indices of the
+      same register.
     - Input is a valid module in the QC dialect.
     - The entry function must be marked with `mqt.entry_point`.
     - The input entry function must consist of a single block.
