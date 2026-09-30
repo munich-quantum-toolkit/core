@@ -73,9 +73,8 @@ public:
            "cannot map more program qubits than hardware qubits");
     assert(nHardwareQubits <= UNMAPPED &&
            "layout exceeds qubit index capacity");
-    auto hwIndices =
-        llvm::to_vector(llvm::seq<T>(static_cast<T>(nHardwareQubits)));
-    llvm::shuffle(hwIndices.begin(), hwIndices.end(), std::mt19937_64{seed});
+    auto hwIndices = to_vector(llvm::seq<T>(static_cast<T>(nHardwareQubits)));
+    shuffle(hwIndices.begin(), hwIndices.end(), std::mt19937_64{seed});
 
     Layout<T> layout(nProgramQubits, nHardwareQubits);
     for (const auto prog : llvm::seq(static_cast<T>(nProgramQubits))) {
@@ -161,11 +160,11 @@ public:
   void swap(T hwA, T hwB) {
     assert(hwA < hardwareToProgram_.size() && "hardware index out of bounds");
     assert(hwB < hardwareToProgram_.size() && "hardware index out of bounds");
-    
+
     if (hwA == hwB) {
       return;
     }
-    
+
     const auto progA = hardwareToProgram_[hwA];
     const auto progB = hardwareToProgram_[hwB];
     assert(progA != UNMAPPED && "hardware index not mapped");
