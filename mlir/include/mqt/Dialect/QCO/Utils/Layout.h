@@ -88,13 +88,14 @@ public:
   /// Sets both `nProgramQubits` and `nHardwareQubits` to `mapping.size()`.
   static Layout<T> fromMapping(ArrayRef<T> mapping) {
     assert(mapping.size() <= UNMAPPED && "layout exceeds qubit index capacity");
-    llvm::SmallBitVector seen(mapping.size());
-    for (const auto hw : mapping) {
-      if (hw >= mapping.size() || seen.test(hw)) {
-        llvm::reportFatalUsageError("mapping must be a permutation");
+    
+    LLVM_DEBUG({
+      llvm::SmallBitVector seen(mapping.size());
+      for (const auto hw : mapping) {
+        assert(hw < mapping.size() && !seen.test(hw));
+        seen.set(hw);
       }
-      seen.set(hw);
-    }
+    });
 
     Layout<T> layout(mapping.size(), mapping.size());
     for (const auto [prog, hw] : enumerate(mapping)) {

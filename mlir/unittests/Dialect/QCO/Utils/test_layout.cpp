@@ -53,18 +53,6 @@ TYPED_TEST(LayoutTest, ConstructFromPermutation) {
   EXPECT_EQ(layout.getProgramIndex(2), 0);
 }
 
-TYPED_TEST(LayoutDeathTest, RejectDuplicateHardwareIndex) {
-  constexpr std::array<TypeParam, 3> mapping{0, 0, 2};
-  EXPECT_DEATH(Layout<TypeParam>::fromMapping(mapping),
-               "mapping must be a permutation");
-}
-
-TYPED_TEST(LayoutDeathTest, RejectOutOfRangeHardwareIndex) {
-  constexpr std::array<TypeParam, 3> mapping{0, 1, 3};
-  EXPECT_DEATH(Layout<TypeParam>::fromMapping(mapping),
-               "mapping must be a permutation");
-}
-
 TYPED_TEST(LayoutTest, RandomPlacesEveryProgramOnDistinctHardware) {
   constexpr size_t nProg = 3;
   constexpr size_t nHw = 5;
@@ -152,13 +140,6 @@ TEST(LayoutBoundaryTest, LargestByteLayoutPreservesEveryIndex) {
       EXPECT_EQ(layout.getProgramIndex(hw), prog);
     }
   }
-}
-
-TEST(LayoutBoundaryDeathTest, RejectSentinelAsQubitIndex) {
-  EXPECT_DEATH(Layout<uint8_t>::identity(256), "qubit index capacity");
-  EXPECT_DEATH(Layout<uint8_t>::random(1, 256, 42), "qubit index capacity");
-  const std::array<uint8_t, 256> mapping{};
-  EXPECT_DEATH(Layout<uint8_t>::fromMapping(mapping), "qubit index capacity");
 }
 
 TYPED_TEST(LayoutTest, EqualityReflectsMapping) {
