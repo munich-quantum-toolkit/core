@@ -250,60 +250,99 @@ LogicalResult fuseSingleQubitUnitaryRuns(ModuleOp moduleOp,
                                          SingleQubitFusionPolicy policy,
                                          const CompilerTarget* target,
                                          const GreedyRewriteConfig& config) {
-  if (policy.preserveSingletons &&
-      !moduleOp
-           .walk([](UnitaryOpInterface op) {
-             return isRunMemberCandidate(op) &&
-                            isRunMemberCandidate(dyn_cast<UnitaryOpInterface>(
-                                *op.getOutputQubit(0).user_begin()))
-                        ? WalkResult::interrupt()
-                        : WalkResult::advance();
-           })
-           .wasInterrupted()) {
+  SingleQubitRunFusion fusion(basis, policy, target, config);
+  return failure(moduleOp
+                     ->walk<WalkOrder::PostOrder, ReverseIterator>(
+                         [&](Operation* operation) {
+                           return failed(fusion.apply(operation))
+                                      ? WalkResult::interrupt()
+                                      : WalkResult::advance();
+                         })
+                     .wasInterrupted());
+}
+
+SingleQubitRunFusion::SingleQubitRunFusion(SingleQubitBasis basis,
+                                           SingleQubitFusionPolicy policy,
+                                           const CompilerTarget* target,
+                                           GreedyRewriteConfig config)
+    : basis_(basis), policy_(policy), target_(target), config_(config) {
+  // Do not rewrite producers or unrelated runs during the caller's walk.
+  config_.setStrictness(GreedyRewriteStrictness::ExistingAndNewOps);
+}
+
+LogicalResult SingleQubitRunFusion::apply(Operation* operation) {
+  auto head = dyn_cast<UnitaryOpInterface>(operation);
+  if (!isRunMemberCandidate(head) ||
+      (policy_.skipControlledBodies && operation->getParentOfType<CtrlOp>())) {
     return success();
   }
-  const bool hasRuntimeParameters =
-      moduleOp
-          .walk([](UnitaryOpInterface op) {
-            return canSynthesizeParameterizedUnitary1Q(op.getOperation()) &&
-                           llvm::any_of(op.getParameters(),
-                                        [](Value parameter) {
-                                          return !mqt::valueToConstantDouble(
-                                              parameter);
-                                        })
-                       ? WalkResult::interrupt()
-                       : WalkResult::advance();
-          })
-          .wasInterrupted();
+  Value input = head.getInputQubit(0);
+  if (isRunMemberCandidate(
+          dyn_cast_or_null<UnitaryOpInterface>(input.getDefiningOp())) ||
+      (policy_.preserveSingletons &&
+       !isRunMemberCandidate(dyn_cast<UnitaryOpInterface>(
+           *head.getOutputQubit(0).user_begin())))) {
+    return success();
+  }
+  bool hasRuntimeParameters = false;
+  SmallVector<Operation*> members;
+  SmallVector<Operation*> candidates;
+  const auto collectCandidates = [&] {
+    candidates.clear();
+    auto start = dyn_cast<UnitaryOpInterface>(*input.user_begin());
+    if (!isRunMemberCandidate(start)) {
+      return;
+    }
+    bool predecessorHasMatrix = false;
+    for (auto* current : WireRange(start.getOutputQubit(0))) {
+      auto op = dyn_cast<UnitaryOpInterface>(current);
+      if (!isRunMemberCandidate(op)) {
+        break;
+      }
+      members.push_back(current);
+      hasRuntimeParameters =
+          hasRuntimeParameters ||
+          (canSynthesizeParameterizedUnitary1Q(op.getOperation()) &&
+           llvm::any_of(op.getParameters(), [](Value parameter) {
+             return !mqt::valueToConstantDouble(parameter);
+           }));
+      if ((!policy_.preserveSingletons ||
+           isRunMemberCandidate(dyn_cast<UnitaryOpInterface>(
+               *op.getOutputQubit(0).user_begin()))) &&
+          !predecessorHasMatrix) {
+        candidates.push_back(current);
+      }
+      predecessorHasMatrix = getRunMemberMatrix(op).has_value();
+    }
+  };
+  collectCandidates();
+  if (candidates.empty()) {
+    return success();
+  }
   if (hasRuntimeParameters) {
-    RewritePatternSet patterns(moduleOp.getContext());
-    populateParameterizedSingleQubitRunCompositionPatterns(patterns, basis,
-                                                           policy, target);
-    if (failed(applyPatternsGreedily(moduleOp, std::move(patterns), config))) {
+    if (!runtimePatterns_) {
+      RewritePatternSet patterns(operation->getContext());
+      populateParameterizedSingleQubitRunCompositionPatterns(patterns, basis_,
+                                                             policy_, target_);
+      runtimePatterns_.emplace(std::move(patterns));
+    }
+    if (failed(applyOpPatternsGreedily(members, *runtimePatterns_, config_))) {
       return failure();
     }
+    // Runtime rewrites can replace the collected operations.
+    members.clear();
+    collectCandidates();
   }
-  RewritePatternSet patterns(moduleOp.getContext());
-  populateFuseSingleQubitUnitaryRunsPatterns(patterns, basis, policy, target);
-  // Seed only run heads: one rewrite can erase every other member of a run.
-  SmallVector<Operation*> candidates;
-  moduleOp->walk<WalkOrder::PostOrder, ReverseIterator>(
-      [&](UnitaryOpInterface op) {
-        if (!isRunMemberCandidate(op) ||
-            (policy.preserveSingletons &&
-             !isRunMemberCandidate(dyn_cast<UnitaryOpInterface>(
-                 *op.getOutputQubit(0).user_begin())))) {
-          return;
-        }
-        auto predecessor = dyn_cast_or_null<UnitaryOpInterface>(
-            op.getInputQubit(0).getDefiningOp());
-        if (!getRunMemberMatrix(predecessor)) {
-          candidates.push_back(op.getOperation());
-        }
-      });
-  return candidates.empty()
-             ? success()
-             : applyOpPatternsGreedily(candidates, std::move(patterns), config);
+  if (candidates.empty()) {
+    return success();
+  }
+  if (!matrixPatterns_) {
+    RewritePatternSet patterns(input.getContext());
+    populateFuseSingleQubitUnitaryRunsPatterns(patterns, basis_, policy_,
+                                               target_);
+    matrixPatterns_.emplace(std::move(patterns));
+  }
+  return applyOpPatternsGreedily(candidates, *matrixPatterns_, config_);
 }
 
 void populateFuseSingleQubitUnitaryRunsPatterns(RewritePatternSet& patterns,

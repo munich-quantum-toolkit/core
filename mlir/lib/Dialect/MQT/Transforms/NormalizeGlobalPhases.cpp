@@ -259,7 +259,7 @@ namespace {
 
 class GlobalPhaseNormalizer final {
 public:
-  explicit GlobalPhaseNormalizer(MLIRContext* context) : rewriter(context) {}
+  explicit GlobalPhaseNormalizer(RewriterBase& rewriter) : rewriter(rewriter) {}
 
   void normalize(Region& region) { normalizeRegion(region); }
 
@@ -474,7 +474,7 @@ private:
     return std::nullopt;
   }
 
-  IRRewriter rewriter;
+  RewriterBase& rewriter;
 };
 
 struct NormalizeGlobalPhases final
@@ -492,7 +492,12 @@ protected:
 } // namespace
 
 LogicalResult normalizeGlobalPhases(ModuleOp moduleOp) {
-  GlobalPhaseNormalizer normalizer(moduleOp.getContext());
+  IRRewriter rewriter(moduleOp.getContext());
+  return normalizeGlobalPhases(moduleOp, rewriter);
+}
+
+LogicalResult normalizeGlobalPhases(ModuleOp moduleOp, RewriterBase& rewriter) {
+  GlobalPhaseNormalizer normalizer(rewriter);
   normalizer.normalize(moduleOp.getRegion());
   return success();
 }

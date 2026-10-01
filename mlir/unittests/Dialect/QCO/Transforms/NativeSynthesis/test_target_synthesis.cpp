@@ -1910,6 +1910,35 @@ TEST_F(TargetSynthesisTest, TargetNativeSingleQubitFusionRequiresImprovement) {
   }
 }
 
+TEST_F(TargetSynthesisTest, SingleQubitFusionTouchesOnlySelectedWire) {
+  auto moduleOp = build([](QCOProgramBuilder& builder) {
+    for (size_t site = 0; site < 2; ++site) {
+      auto qubit = builder.staticQubit(site);
+      qubit = builder.h(qubit);
+      qubit = builder.t(qubit);
+    }
+    return builder.intConstant(0);
+  });
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*moduleOp)));
+  ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*moduleOp)));
+  OwningOpRef<ModuleOp> original = moduleOp->clone();
+  const auto target = makeUCxTarget();
+  const auto policy =
+      mlir::qco::decomposition::SingleQubitFusionPolicy::forTarget(
+          Target::SingleQubitBasis::U);
+  mlir::qco::decomposition::SingleQubitRunFusion fusion(
+      Target::SingleQubitBasis::U, policy, &target);
+  auto head = *mainFunction(*moduleOp).getOps<HOp>().begin();
+  ASSERT_TRUE(mlir::succeeded(fusion.apply(head)));
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*moduleOp)));
+  ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*moduleOp)));
+  EXPECT_EQ(countOps<UOp>(*moduleOp), 1U);
+  EXPECT_EQ(countOps<HOp>(*moduleOp), 1U);
+  EXPECT_EQ(countOps<mlir::qco::TOp>(*moduleOp), 1U);
+  expectEquivalent(original, moduleOp);
+}
+
 TEST_F(TargetSynthesisTest, SingleQubitFusionResumesAfterSymbolicGate) {
   auto moduleOp = mlir::parseSourceString<ModuleOp>(R"mlir(
     module {
@@ -2073,6 +2102,41 @@ TEST_F(TargetSynthesisTest, SingleQubitSynthesisNeedsNoEntangler) {
   ASSERT_TRUE(mlir::succeeded(runTargetPass(
       *synthesized, target, mlir::qco::createVerifyTargetConformance())));
   expectEquivalent(expected, synthesized);
+}
+
+TEST_F(TargetSynthesisTest, FusionPhasePreservesFollowingControlSite) {
+  auto moduleOp = mlir::parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() -> (!qco.qubit, !qco.qubit) {
+        %c = qco.static 0 : !qco.qubit
+        %q = qco.static 1 : !qco.qubit
+        %c1, %q1 = qco.ctrl(%c) targets(%arg = %q) {
+          %x = qco.x %arg : !qco.qubit -> !qco.qubit
+          %y = qco.y %x : !qco.qubit -> !qco.qubit
+          qco.yield %y : !qco.qubit
+        } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
+        %c2 = qco.h %c1 : !qco.qubit -> !qco.qubit
+        return %c2, %q1 : !qco.qubit, !qco.qubit
+      }
+    }
+  )mlir",
+                                                    context.get());
+  ASSERT_TRUE(moduleOp);
+  OwningOpRef<ModuleOp> original = moduleOp->clone();
+  const auto target = valid(
+      Target::create(2, Connectivity::allToAll(),
+                     NativeOperations::fromOperations({
+                         valid(OperationCapability::create(
+                             "u", OperationCapability::Arity::variadic(1), 3)),
+                         valid(OperationCapability::create("gphase", 0, 1)),
+                     })));
+  ASSERT_TRUE(mlir::succeeded(runTargetPass(
+      *moduleOp, target, mlir::qco::createTargetNativeSynthesis())));
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*moduleOp)));
+  ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*moduleOp)));
+  ASSERT_TRUE(mlir::succeeded(runTargetPass(
+      *moduleOp, target, mlir::qco::createVerifyTargetConformance())));
+  expectEquivalent(original, moduleOp);
 }
 
 TEST_F(TargetSynthesisTest, TargetNativeSynthesisRestoresControlledU2) {

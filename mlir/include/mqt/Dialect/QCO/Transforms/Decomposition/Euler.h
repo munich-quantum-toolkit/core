@@ -15,8 +15,10 @@
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Location.h"
+#include "mlir/Rewrite/FrozenRewritePatternSet.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 #include <cstddef>
 #include <optional>
@@ -136,7 +138,28 @@ struct SingleQubitFusionPolicy {
   }
 };
 
-/// Compose runtime runs before matrix fusion can split their constant segments.
+/// Fuse one wire at a time during an existing reverse-order traversal.
+/// Reuse within one MLIR context.
+/// The caller must visit users before producers: fusion can erase successors.
+class SingleQubitRunFusion {
+public:
+  SingleQubitRunFusion(SingleQubitBasis basis, SingleQubitFusionPolicy policy,
+                       const CompilerTarget* target,
+                       GreedyRewriteConfig config = {});
+
+  /// Ignore non-heads; compose runtime runs before their constant segments.
+  LogicalResult apply(Operation* operation);
+
+private:
+  SingleQubitBasis basis_;
+  SingleQubitFusionPolicy policy_;
+  const CompilerTarget* target_;
+  GreedyRewriteConfig config_;
+  std::optional<FrozenRewritePatternSet> runtimePatterns_;
+  std::optional<FrozenRewritePatternSet> matrixPatterns_;
+};
+
+/// Standalone driver; target synthesis reuses its existing traversal instead.
 LogicalResult fuseSingleQubitUnitaryRuns(ModuleOp moduleOp,
                                          SingleQubitBasis basis,
                                          SingleQubitFusionPolicy policy,

@@ -51,6 +51,7 @@
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/xxhash.h"
@@ -332,7 +333,9 @@ static LogicalResult propagateSites(ValueRange inputs, ValueRange outputs,
 
 /// Visit each region once. Branches must agree and loop backedges must retain
 /// the entry sites; neither rule is implied by all-to-all placement.
-static FailureOr<SiteMap> collectStaticSites(Operation* root, bool indexed) {
+static FailureOr<SiteMap>
+collectStaticSites(Operation* root, bool indexed,
+                   SmallVectorImpl<Operation*>* unitaries = nullptr) {
   SiteMap sites;
   auto result = root->walk([&](Operation* operation, const WalkStage& stage) {
     const auto propagate = [&](ValueRange inputs, ValueRange outputs) {
@@ -380,6 +383,11 @@ static FailureOr<SiteMap> collectStaticSites(Operation* root, bool indexed) {
         sites.try_emplace(output, std::nullopt);
       }
     } else if (isa<UnitaryOpInterface, ResetOp, MeasureOp>(operation)) {
+      if (unitaries != nullptr) {
+        operation->walk<WalkOrder::PreOrder>([&](UnitaryOpInterface unitary) {
+          unitaries->push_back(unitary.getOperation());
+        });
+      }
       if (propagate(operation->getOperands(), operation->getResults())
               .wasInterrupted()) {
         return WalkResult::interrupt();
@@ -435,8 +443,11 @@ static SmallVector<SiteId, 2> getOperationSites(Operation* operation,
 /// Normalize relative phase effects and discard only the unobservable global
 /// phase of an entry point when the target cannot represent it.
 static LogicalResult prepareGlobalPhases(ModuleOp moduleOp,
-                                         const CompilerTarget& target) {
-  if (failed(mqt::normalizeGlobalPhases(moduleOp))) {
+                                         const CompilerTarget& target,
+                                         RewriterBase* rewriter = nullptr) {
+  if (failed(rewriter != nullptr
+                 ? mqt::normalizeGlobalPhases(moduleOp, *rewriter)
+                 : mqt::normalizeGlobalPhases(moduleOp))) {
     return failure();
   }
   if (target.supportsOperation("gphase", 0, 1)) {
@@ -1160,23 +1171,32 @@ static bool fuseTwoQubitGateRun(IRRewriter& rewriter, UnitaryOpInterface head,
   return true;
 }
 
-static bool fuseTwoQubitGates(IRRewriter& rewriter, ModuleOp moduleOp,
-                              CompilerTarget::SynthesisBasis basis,
-                              NativeCostAnalysis& analysis,
-                              const CompilerTarget* target = nullptr,
-                              const SiteMap* sites = nullptr,
-                              bool shrinkOnly = false) {
+static FailureOr<bool> fuseTwoQubitGates(
+    IRRewriter& rewriter, ModuleOp moduleOp,
+    CompilerTarget::SynthesisBasis basis, NativeCostAnalysis& analysis,
+    const CompilerTarget* target = nullptr, const SiteMap* sites = nullptr,
+    bool shrinkOnly = false,
+    decomposition::SingleQubitRunFusion* oneQubitFusion = nullptr) {
   bool changed = false;
   /// A run's successors have already been visited when its head erases them.
-  moduleOp->walk<WalkOrder::PostOrder, ReverseIterator>(
+  const auto result = moduleOp->walk<WalkOrder::PostOrder, ReverseIterator>(
       [&](Operation* operation) {
         auto unitary = dyn_cast<UnitaryOpInterface>(operation);
+        if (oneQubitFusion != nullptr && unitary && unitary.isSingleQubit()) {
+          return failed(oneQubitFusion->apply(operation))
+                     ? WalkResult::interrupt()
+                     : WalkResult::advance();
+        }
         const auto matrix = twoQubitRunMemberMatrix(unitary);
         if (matrix && !feedsFromSameTwoQubitRun(unitary)) {
           changed |= fuseTwoQubitGateRun(rewriter, unitary, *matrix, basis,
                                          target, sites, analysis, shrinkOnly);
         }
+        return WalkResult::advance();
       });
+  if (result.wasInterrupted()) {
+    return failure();
+  }
   return changed;
 }
 
@@ -1208,9 +1228,11 @@ protected:
     }
     IRRewriter rewriter(&getContext());
     NativeCostAnalysis analysis(compilationSeed(moduleOp, 2023));
-    if (fuseTwoQubitGates(rewriter, moduleOp, *basis, analysis,
-                          target_ ? &*target_ : nullptr, nullptr, true) &&
-        failed(mlir::mqt::normalizeGlobalPhases(moduleOp))) {
+    const auto changed =
+        fuseTwoQubitGates(rewriter, moduleOp, *basis, analysis,
+                          target_ ? &*target_ : nullptr, nullptr, true);
+    if (failed(changed) ||
+        (*changed && failed(mlir::mqt::normalizeGlobalPhases(moduleOp)))) {
       signalPassFailure();
     }
   }
@@ -1220,7 +1242,7 @@ private:
 };
 
 /// Track generated wire sites and defer folding until builders finish.
-class SynthesisListener final : public OpBuilder::Listener {
+class SynthesisListener final : public RewriterBase::Listener {
 public:
   SynthesisListener(MLIRContext* context, SiteMap& sites)
       : folder_(context), sites_(sites) {}
@@ -1252,6 +1274,12 @@ public:
     pending_.clear();
   }
 
+  void notifyOperationErased(Operation* operation) override {
+    if (auto constant = dyn_cast<arith::ConstantOp>(operation)) {
+      llvm::erase(pending_, constant);
+    }
+  }
+
 private:
   OperationFolder folder_;
   SiteMap& sites_;
@@ -1279,19 +1307,11 @@ protected:
       signalPassFailure();
       return;
     }
-    if (targetBasis) {
-      const auto policy = decomposition::SingleQubitFusionPolicy::forTarget(
-          targetBasis->singleQubit);
-      if (failed(decomposition::fuseSingleQubitUnitaryRuns(
-              moduleOp, targetBasis->singleQubit, policy, &target,
-              GreedyRewriteConfig{})) ||
-          failed(prepareGlobalPhases(moduleOp, target))) {
-        signalPassFailure();
-        return;
-      }
-    }
     const bool indexed = environment.environment().supportsIndexedQubits();
-    auto sites = collectStaticSites(moduleOp, indexed);
+    SmallVector<Operation*> unitaries;
+    auto sites = collectStaticSites(
+        moduleOp, indexed,
+        targetBasis && !targetBasis->entangler ? &unitaries : nullptr);
     if (failed(sites)) {
       signalPassFailure();
       return;
@@ -1300,11 +1320,34 @@ protected:
     SynthesisListener listener(&getContext(), *sites);
     IRRewriter rewriter(&getContext(), &listener);
     NativeCostAnalysis analysis(compilationSeed(moduleOp, seed));
-    if (targetBasis && targetBasis->entangler) {
-      fuseTwoQubitGates(rewriter, moduleOp, *targetBasis, analysis, &target,
-                        indexed ? nullptr : &*sites);
+    if (targetBasis) {
+      const auto policy = decomposition::SingleQubitFusionPolicy::forTarget(
+          targetBasis->singleQubit);
+      decomposition::SingleQubitRunFusion fusion(
+          targetBasis->singleQubit, policy, &target,
+          GreedyRewriteConfig{}.setListener(&listener));
+      // Without a 2Q sweep, reuse the operations visited during site
+      // collection.
+      for (auto* operation : llvm::reverse(unitaries)) {
+        if (failed(fusion.apply(operation))) {
+          signalPassFailure();
+          return;
+        }
+      }
+      if (targetBasis->entangler &&
+          failed(fuseTwoQubitGates(rewriter, moduleOp, *targetBasis, analysis,
+                                   &target, indexed ? nullptr : &*sites, false,
+                                   &fusion))) {
+        signalPassFailure();
+        return;
+      }
     }
     listener.foldPending();
+    if (targetBasis &&
+        failed(prepareGlobalPhases(moduleOp, target, &rewriter))) {
+      signalPassFailure();
+      return;
+    }
     /// Rewrite users before producers so each unvisited operation retains its
     /// original operands and their collected sites.
     const auto result = moduleOp->walk<WalkOrder::PostOrder, ReverseIterator>(
