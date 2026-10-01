@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "mqt/Compiler/Target.h"
 #include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/QC/Translation/StandardGate.h"
 
@@ -435,8 +436,12 @@ public:
   [[nodiscard]] virtual std::unique_ptr<CircuitReader>
   openCircuit(nb::handle circuit) const = 0;
   [[nodiscard]] virtual bool supportsGate(StandardGateMapping gate) const = 0;
+  [[nodiscard]] virtual mlir::CompilerTarget
+  importTarget(nb::handle target, nb::handle operationNames,
+               const std::optional<std::string>& name) const = 0;
   [[nodiscard]] virtual std::unique_ptr<CircuitWriter>
-  createCircuit(uint32_t looseQubits, uint32_t looseClbits) const = 0;
+  createCircuit(uint32_t looseQubits, uint32_t looseClbits,
+                const mlir::CompilerTarget* target = nullptr) const = 0;
   virtual void
   registerCustomGate(std::string_view symbol, std::string_view name,
                      const std::vector<std::string>& formalParameters,

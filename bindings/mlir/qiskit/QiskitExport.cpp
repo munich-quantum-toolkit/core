@@ -3002,7 +3002,7 @@ nb::object exportCircuit(const mlir::QCProgram& program,
                                     definition.formalParameters,
                                     std::move(definitionWriter));
   }
-  auto writer = translation->createCircuit(looseQubits, looseClbits);
+  auto writer = translation->createCircuit(looseQubits, looseClbits, target);
   for (const auto& reg : state.quantumRegisters) {
     writer->addQuantumRegister(reg.name,
                                static_cast<uint32_t>(reg.bits.size()));

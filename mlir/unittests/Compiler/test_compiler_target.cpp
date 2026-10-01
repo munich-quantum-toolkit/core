@@ -760,6 +760,7 @@ TEST(CompilerTargetTest, RoundTripsTypedCompilationTargetAttribute) {
           0, 0.97)),
       valid(OperationCapability::create("gphase", Arity::fixed(0), 1)),
       valid(OperationCapability::create("h", Arity::variadic(1), 0)),
+      valid(OperationCapability::create("u1", 1, 1)),
   };
   const auto target =
       valid(Target::create("device", std::move(sites),
@@ -779,6 +780,9 @@ TEST(CompilerTargetTest, RoundTripsTypedCompilationTargetAttribute) {
   EXPECT_EQ(reconstructed.supportsOperation("h", 3, 0), true);
   EXPECT_EQ(reconstructed.operations()[1].arity(), Arity::fixed(0));
   EXPECT_EQ(reconstructed.operations()[2].arity(), Arity::variadic(1));
+  EXPECT_EQ(reconstructed.operations()[3].name(), "u1");
+  EXPECT_EQ(reconstructed.operations()[3].canonicalName(), "p");
+  EXPECT_TRUE(reconstructed.supportsOperation("p", 1, 1, {7}));
   EXPECT_EQ(reconstructed.synthesisBasis(), target.synthesisBasis());
 }
 

@@ -166,6 +166,8 @@ constexpr std::array GATE_SPECIFICATIONS{
     canonical = "r";
   } else if (canonical == "i") {
     canonical = "id";
+  } else if (canonical == "u1") {
+    canonical = "p";
   } else if (canonical == "u3") {
     canonical = "u";
   } else if (canonical == "cnot") {

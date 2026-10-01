@@ -10,11 +10,13 @@
 
 import enum
 import os
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from typing import Annotated, Literal, Unpack, overload
 
 import numpy as np
 import qiskit.circuit
+import qiskit.providers
+import qiskit.transpiler
 
 import mqt.core.dd
 import mqt.core.qdmi
@@ -440,6 +442,33 @@ class CompilerTarget:
         """Snapshot a circuit-model QDMI device."""
 
     @staticmethod
+    def from_qiskit(
+        source: qiskit.transpiler.Target | qiskit.providers.BackendV2,
+        *,
+        operation_names: Iterable[str] | None = None,
+        name: str | None = None,
+    ) -> CompilerTarget:
+        """Snapshot native operations and connectivity from Qiskit.
+
+        Args:
+            source: Qiskit Target or BackendV2 with a known positive qubit count.
+            operation_names: Qiskit Target operation names to retain. By default,
+                include every representable operation. Explicit selections must all be
+                representable.
+            name: Override the target name. By default, use the backend name when
+                source is a BackendV2; a Target produces an unnamed snapshot.
+
+        Returns:
+            An independent compiler target. Unrepresentable gates are omitted with
+            warnings when operation_names is not set. Calibration and scheduling data
+            are not included.
+
+        Raises:
+            TypeError: If source is neither a Target nor a BackendV2.
+            ValueError: If the selected operations or connectivity cannot be represented.
+        """
+
+    @staticmethod
     def from_device_id(device_id: str, **session_parameters: Unpack[QDMISessionParameters]) -> CompilerTarget:
         """Open a registered device and snapshot its compiler target."""
 
@@ -486,7 +515,14 @@ class CompilerTarget:
     def supports_operation(
         self, name: str, arity: int, num_parameters: int | None = None, sites: Sequence[int] | None = None
     ) -> bool:
-        """Whether the target supports an operation."""
+        """Check whether the target supports an operation.
+
+        Args:
+            name: Operation name. Recognized aliases are normalized.
+            arity: Number of qubits used by the operation.
+            num_parameters: Number of real-valued parameters. None accepts any count.
+            sites: Ordered target site IDs. None checks support on any placement.
+        """
 
 class TargetEnvironment:
     """A compiler target and its selected payload specification."""
@@ -604,7 +640,12 @@ class QCProgram(Program):
 
     @staticmethod
     def from_qiskit(circuit: qiskit.circuit.QuantumCircuit) -> QCProgram:
-        """Translate a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` to QC MLIR."""
+        """Translate a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` to QC MLIR.
+
+        Args:
+            circuit: Circuit to import. A complete transpiler layout is retained as
+                metadata.
+        """
 
     def copy(self) -> QCProgram:
         """Return an independent copy of this program."""
@@ -621,12 +662,14 @@ class QCProgram(Program):
     def to_qiskit(self, *, target: CompilerTarget | None = None) -> qiskit.circuit.QuantumCircuit:
         """Translate this QC program to a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` without consuming it.
 
-        The exporter restores attached layout metadata when it is valid.
+        The exporter restores attached layout metadata when it is compatible with the
+        selected target.
 
         Args:
-            target: The optional compiler target used for mapping. When provided, emit
-                a canonical device circuit. All qubits must be static, and their site
-                IDs must belong to the target.
+            target: Map static site IDs to qubit indices in target site order. All
+                qubits must be static sites of the target. Select applicable standard
+                gate names without checking device execution support. None applies no
+                target site mapping.
         """
 
     def to_qco(self, *, copy: bool = False) -> QCOProgram:
@@ -727,12 +770,14 @@ class QCOProgram(Program):
     def to_qiskit(self, *, target: CompilerTarget | None = None) -> qiskit.circuit.QuantumCircuit:
         """Export a Qiskit circuit without consuming or modifying this program.
 
-        The exporter restores attached layout metadata when it is valid.
+        The exporter restores attached layout metadata when it is compatible with the
+        selected target.
 
         Args:
-            target: The optional compiler target used for mapping. When provided, static
-                site IDs map to dense device-qubit indices in target site order.
-                Dynamic qubits and static IDs absent from the target are rejected.
+            target: Map static site IDs to qubit indices in target site order. All
+                qubits must be static sites of the target. Select applicable standard
+                gate names without checking device execution support. None applies no
+                target site mapping.
         """
 
     def to_qc(self, *, copy: bool = False) -> QCProgram:
