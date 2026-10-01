@@ -627,9 +627,10 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
         nb::sig("def import_target(target: qiskit.transpiler.Target, *, "
                 "operation_names: collections.abc.Iterable[str] | None = None, "
                 "name: str | None = None) -> CompilerTarget"),
-        "Snapshot standard operations and connectivity from a Qiskit Target. "
-        "Unsupported operations are omitted with warnings unless explicitly "
-        "selected; timing and calibration data are not transferred.");
+        R"pb(Snapshot standard operations and connectivity from a Qiskit Target.
+
+Unsupported operations are omitted with warnings unless explicitly
+selected; timing and calibration data are not transferred.)pb");
 
   nb::module_::import_("typing");
   nb::module_::import_("mqt.core.qdmi");

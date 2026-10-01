@@ -25,7 +25,11 @@ from mqt.core.typing import QDMISessionParameters
 def import_target(
     target: qiskit.transpiler.Target, *, operation_names: Iterable[str] | None = None, name: str | None = None
 ) -> CompilerTarget:
-    """Snapshot standard operations and connectivity from a Qiskit Target. Unsupported operations are omitted with warnings unless explicitly selected; timing and calibration data are not transferred."""
+    """Snapshot standard operations and connectivity from a Qiskit Target.
+
+    Unsupported operations are omitted with warnings unless explicitly
+    selected; timing and calibration data are not transferred.
+    """
 
 def _generate_benchmark(instance_specification_json: str) -> QCProgram:
     """Generate the QC program described by an instance specification."""
