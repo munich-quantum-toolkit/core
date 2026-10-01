@@ -10,19 +10,22 @@
 
 import enum
 import os
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from typing import Annotated, Literal, Unpack, overload
 
 import numpy as np
 import qiskit.circuit
+import qiskit.transpiler
 
 import mqt.core.dd
 import mqt.core.qdmi
 from mqt.core.qdmi import Device
 from mqt.core.typing import QDMISessionParameters
 
-def _qiskit_native_gate_name(operation: object) -> str | None:
-    """Recognize native target gates using the Qiskit translation adapter."""
+def import_target(
+    target: qiskit.transpiler.Target, *, operation_names: Iterable[str] | None = None, name: str | None = None
+) -> CompilerTarget:
+    """Snapshot standard operations and connectivity from a Qiskit Target. Unsupported operations are omitted with warnings unless explicitly selected; timing and calibration data are not transferred."""
 
 def _generate_benchmark(instance_specification_json: str) -> QCProgram:
     """Generate the QC program described by an instance specification."""

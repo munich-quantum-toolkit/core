@@ -17,11 +17,14 @@ snapshot a Qiskit `Target` or `BackendV2` as a
 {py:class}`~mqt.core.mlir.CompilerTarget`. The adapter preserves standard gates
 and ordered operation sites. Routing uses undirected connectivity; this does not
 make directed gates bidirectional. An optional `operation_names` subset
-restricts the available operations. Recognition uses the versioned circuit
-import/export adapter, with the same Qiskit version requirements. The compiler
-uses canonical gate names. Export with `program.to_qiskit(target=target)`
-selects an applicable standard gate on each ordered placement, including legacy
-`u1` and `u3` instructions. Custom backend operation names are not supported.
+restricts the available operations. Conversion uses the versioned C++ circuit
+import/export adapter, with the same Qiskit version requirements. Its
+{py:func}`~mqt.core.mlir.import_target` binding accepts a `Target` directly; the
+Python wrapper also accepts a `BackendV2` and supplies its default name. The
+compiler uses canonical gate names. Export with
+`program.to_qiskit(target=target)` selects an applicable standard gate on each
+ordered placement, including legacy `u1` and `u3` instructions. Custom backend
+operation names are not supported.
 
 ```python
 from qiskit.providers.fake_provider import GenericBackendV2

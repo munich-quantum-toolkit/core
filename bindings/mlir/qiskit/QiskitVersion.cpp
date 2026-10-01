@@ -145,8 +145,9 @@ std::unique_ptr<VersionedTranslation> selectTranslation() {
       version.text + "'; supported versions: " + supportedVersionRanges());
 }
 
-std::optional<std::string> nativeGateName(nb::handle operation) {
-  return selectTranslation()->nativeGateName(operation);
+mlir::CompilerTarget importTarget(nb::handle target, nb::handle operationNames,
+                                  const std::optional<std::string>& name) {
+  return selectTranslation()->importTarget(target, operationNames, name);
 }
 
 } // namespace mqt::bindings::qiskit

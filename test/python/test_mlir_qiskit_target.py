@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 from qiskit import QuantumCircuit
 from qiskit.circuit import Gate, Measure, Parameter, Reset
@@ -32,7 +34,14 @@ from qiskit.quantum_info import Operator
 from qiskit.transpiler import Target
 from qiskit_support import supports_qiskit_translation
 
-from mqt.core.mlir import CompilerTarget, PayloadFormat, PayloadSpecification, QCProgram, TargetEnvironment
+from mqt.core.mlir import (
+    CompilerTarget,
+    PayloadFormat,
+    PayloadSpecification,
+    QCProgram,
+    TargetEnvironment,
+    import_target,
+)
 from mqt.core.plugins.qiskit import compiler_target_from_qiskit
 
 if not supports_qiskit_translation():
@@ -85,8 +94,36 @@ def test_fixed_parameter_constraints() -> None:
     source.add_instruction(RZGate(0.5))
     with pytest.raises(ValueError, match="parameter constraints for 'rz'"):
         compiler_target_from_qiskit(source, operation_names=["rz"])
-    with pytest.warns(UserWarning, match="parameter constraints"), pytest.raises(ValueError, match="no representable"):
+    with (
+        pytest.warns(UserWarning, match="parameter constraints") as warnings,
+        pytest.raises(ValueError, match="no representable"),
+    ):
         compiler_target_from_qiskit(source)
+    assert warnings[0].filename == __file__
+
+
+@pytest.mark.filterwarnings("error:Cannot represent.*:UserWarning")
+def test_target_warning_as_error() -> None:
+    """A native conversion warning respects the caller's warning filters."""
+    source = Target(num_qubits=1)
+    source.add_instruction(RZGate(0.5))
+    with pytest.raises(UserWarning, match="parameter constraints"):
+        compiler_target_from_qiskit(source)
+
+
+def test_native_target_import() -> None:
+    """The bound importer returns an owned snapshot and accepts iterables."""
+    source = Target(num_qubits=1)
+    source.add_instruction(XGate())
+    converted = import_target(source, operation_names=iter(["x", "x"]), name="native")
+    source.add_instruction(RZGate(Parameter("angle")))
+    assert converted.name == "native"
+    assert {operation.name for operation in converted.operations} == {"x", "gphase"}
+    with pytest.raises(ValueError, match="no representable"):
+        import_target(source, operation_names=[])
+    for convert in (import_target, compiler_target_from_qiskit):
+        with pytest.raises(TypeError, match="Expected a Qiskit Target"):
+            convert(cast("Target", object()))
 
 
 @pytest.mark.parametrize("bounds", [None, [None] * 3, [(-float("inf"), float("inf"))] * 3])

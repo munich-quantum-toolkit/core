@@ -25,8 +25,11 @@ namespace nb = nanobind;
 /// Import a Qiskit QuantumCircuit into a newly owned QC program.
 [[nodiscard]] mlir::QCProgram importCircuit(nb::handle circuit);
 
-/// Return the Qiskit name of a standard gate supported as a native capability.
-[[nodiscard]] std::optional<std::string> nativeGateName(nb::handle operation);
+/// Snapshot a Qiskit Target into an owned compiler target.
+/// Unsupported operations are omitted with warnings unless explicitly selected.
+[[nodiscard]] mlir::CompilerTarget
+importTarget(nb::handle target, nb::handle operationNames,
+             const std::optional<std::string>& name);
 
 /// Return a new Qiskit QuantumCircuit, optionally for a compiler target.
 [[nodiscard]] nb::object

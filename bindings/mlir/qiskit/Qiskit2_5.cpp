@@ -18,6 +18,7 @@
 #include "nanobind/ndarray.h"
 #include "nanobind/stl/complex.h"
 #include "nanobind/stl/string.h"
+#include "nanobind/stl/vector.h"
 #include "qiskit/complex.h"
 #include "qiskit/version.h"
 #include <qiskit.h> // Must precede the extension function table.
@@ -28,6 +29,7 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSwitch.h"
+#include "llvm/Support/Error.h"
 
 #include <algorithm>
 #include <array>
@@ -38,6 +40,7 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <set>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -2743,33 +2746,170 @@ public:
     return versionGate(gate) != nullptr;
   }
 
-  [[nodiscard]] std::optional<std::string>
-  nativeGateName(nb::handle operation) const override {
-    if (!nb::isinstance(operation,
-                        nb::module_::import_("qiskit.circuit").attr("Gate")) ||
-        (nb::hasattr(operation, "base_gate") && !canUnwrapControl(operation))) {
-      return std::nullopt;
+  [[nodiscard]] mlir::CompilerTarget
+  importTarget(nb::handle target, nb::handle operationNames,
+               const std::optional<std::string>& name) const override {
+    using Target = mlir::CompilerTarget;
+    const auto takeResult = []<class T>(llvm::Expected<T> result) {
+      if (!result) {
+        throw nb::value_error(llvm::toString(result.takeError()).c_str());
+      }
+      return std::move(*result);
+    };
+    if (!nb::isinstance(
+            target, nb::module_::import_("qiskit.transpiler").attr("Target"))) {
+      throw nb::type_error("Expected a Qiskit Target");
     }
-    const auto identity = pythonStandardGateIdentity(operation);
-    if (identity.is_none()) {
-      return std::nullopt;
+    size_t numQubits = 0;
+    if (!nb::try_cast(target.attr("num_qubits"), numQubits) || numQubits == 0) {
+      throw nb::value_error(
+          "Qiskit target must have a known positive qubit count");
     }
-    const auto name = pythonStringAttribute(
-        identity, "name", "Qiskit standard gate has an invalid name");
-    if (name == "global_phase") {
-      return "gphase";
+
+    const auto circuit = nb::module_::import_("qiskit.circuit");
+    const auto controlFlow = nb::module_::import_("qiskit.circuit.controlflow");
+    const auto ignoredTypes = nb::make_tuple(
+        circuit.attr("Barrier"), circuit.attr("Delay"),
+        circuit.attr("ControlFlowOp"), controlFlow.attr("BreakLoopOp"),
+        controlFlow.attr("ContinueLoopOp"), circuit.attr("Store"));
+    const auto parameter = circuit.attr("Parameter")("_mqt_target_parameter");
+    const auto available = target.attr("operation_names");
+    std::set<std::string> names;
+    for (auto item : nb::borrow<nb::iterable>(operationNames.is_none()
+                                                  ? nb::handle(available)
+                                                  : operationNames)) {
+      names.insert(nb::cast<std::string>(item));
     }
-    const auto* gate = versionGate(name);
-    // CompilerTarget only recognizes single-controlled X/Z as fixed native
-    // controlled gates. Other circuit-import mappings need decomposition.
-    if (gate != nullptr &&
-        (gate->translation.controls != 0 ||
-         gate->translation.gate == mlir::qc::StandardGate::CU) &&
-        gate->name != "cx" && gate->name != "cz") {
-      return std::nullopt;
+
+    std::vector<Target::OperationCapability> operations;
+    std::set<Target::Coupling> couplings;
+    bool allToAll = numQubits == 1;
+    for (const auto& operationName : names) {
+      const auto quotedName =
+          nb::cast<std::string>(nb::repr(nb::cast(operationName)));
+      if (!nb::cast<bool>(available.attr("__contains__")(operationName))) {
+        throw nb::value_error(
+            ("Qiskit target does not expose operation " + quotedName).c_str());
+      }
+      const auto instruction =
+          target.attr("operation_from_name")(operationName);
+      const auto qargs = target.attr("qargs_for_operation_name")(operationName);
+      const auto instructionType =
+          instruction.is_type() ? nb::handle(instruction) : instruction.type();
+      const auto nativeName =
+          nb::isinstance(instruction, circuit.attr("Measure"))
+              ? std::optional<std::string>("measure")
+          : nb::isinstance(instruction, circuit.attr("Reset"))
+              ? std::optional<std::string>("reset")
+              : nativeGateName(instruction);
+      if ((!qargs.is_none() && nb::len(qargs) == 0) ||
+          nb::issubclass(instructionType, ignoredTypes) ||
+          nativeName == "gphase") {
+        if (!operationNames.is_none()) {
+          throw nb::value_error(("Qiskit target operation " + quotedName +
+                                 " has no native gate applicability")
+                                    .c_str());
+        }
+        continue;
+      }
+
+      std::string reason;
+      size_t numParameters = 0;
+      if (nb::isinstance(instruction, circuit.attr("ControlledGate")) &&
+          nb::cast<uint64_t>(instruction.attr("ctrl_state")) !=
+              closedControlState(
+                  nb::cast<uint64_t>(instruction.attr("num_ctrl_qubits")))) {
+        reason = "open controls";
+      } else if (!nativeName) {
+        reason = "custom or unsupported operation";
+      } else if (operationName != *nativeName) {
+        reason = "custom operation name";
+      } else {
+        const nb::object parameters = instruction.attr("params");
+        numParameters = nb::len(parameters);
+        const auto slots = std::vector<nb::object>(numParameters, parameter);
+        bool supported = nb::cast<bool>(target.attr("instruction_supported")(
+            operationName, nb::arg("parameters") = slots));
+        if (supported && nb::cast<bool>(target.attr("gate_has_angle_bounds")(
+                             operationName))) {
+          for (const auto bound : {
+                   -std::numeric_limits<double>::infinity(),
+                   std::numeric_limits<double>::infinity(),
+               }) {
+            if (!nb::cast<bool>(target.attr("supported_angle_bound")(
+                    operationName,
+                    std::vector<double>(numParameters, bound)))) {
+              supported = false;
+              break;
+            }
+          }
+        }
+        if (!supported) {
+          reason = "parameter constraints";
+        }
+      }
+      if (!reason.empty()) {
+        auto message = "Cannot represent " + reason;
+        message += " for ";
+        message += quotedName;
+        if (!operationNames.is_none()) {
+          throw nb::value_error(message.c_str());
+        }
+        message += "; omitting it from the compiler target";
+        if (PyErr_WarnEx(PyExc_UserWarning, message.c_str(), 2) < 0) {
+          throw nb::python_error();
+        }
+        continue;
+      }
+
+      std::vector<Target::SiteTuple> placements;
+      if (!qargs.is_none()) {
+        std::vector<std::vector<Target::SiteId>> sites;
+        for (auto tuple : nb::borrow<nb::iterable>(qargs)) {
+          sites.push_back(nb::cast<std::vector<Target::SiteId>>(tuple));
+        }
+        std::ranges::sort(sites);
+        for (auto& tuple : sites) {
+          placements.push_back(
+              takeResult(Target::SiteTuple::create(std::move(tuple))));
+        }
+      }
+      const auto arity = nb::cast<size_t>(instruction.attr("num_qubits"));
+      auto capability = takeResult(Target::OperationCapability::create(
+          operationName, arity, numParameters, std::move(placements)));
+      if (arity == 2) {
+        if (qargs.is_none()) {
+          allToAll = true;
+        } else {
+          for (const auto& placement : capability.siteTuples()) {
+            const auto sites = placement.sites();
+            couplings.emplace(std::min(sites[0], sites[1]),
+                              std::max(sites[0], sites[1]));
+          }
+        }
+      }
+      operations.push_back(std::move(capability));
     }
-    return gate == nullptr ? std::nullopt
-                           : std::optional{std::string(gate->name)};
+    if (operations.empty()) {
+      throw nb::value_error(
+          "Qiskit target has no representable native operations");
+    }
+    operations.push_back(takeResult(Target::OperationCapability::create(
+        "gphase", Target::OperationCapability::Arity::fixed(0), 1)));
+    if (numQubits - 1 <= std::numeric_limits<size_t>::max() / numQubits &&
+        couplings.size() == numQubits * (numQubits - 1) / 2) {
+      allToAll = true;
+    }
+    const auto connectivity =
+        allToAll
+            ? Target::Connectivity::allToAll()
+            : Target::Connectivity::fromCouplings(std::vector<Target::Coupling>(
+                  couplings.begin(), couplings.end()));
+    const auto nativeOperations =
+        Target::NativeOperations::fromOperations(operations);
+    return takeResult(
+        name ? Target::create(*name, numQubits, connectivity, nativeOperations)
+             : Target::create(numQubits, connectivity, nativeOperations));
   }
 
   [[nodiscard]] std::unique_ptr<CircuitWriter>
@@ -2815,6 +2955,35 @@ public:
   }
 
 private:
+  [[nodiscard]] static std::optional<std::string>
+  nativeGateName(nb::handle operation) {
+    if (!nb::isinstance(operation,
+                        nb::module_::import_("qiskit.circuit").attr("Gate")) ||
+        (nb::hasattr(operation, "base_gate") && !canUnwrapControl(operation))) {
+      return std::nullopt;
+    }
+    const auto identity = pythonStandardGateIdentity(operation);
+    if (identity.is_none()) {
+      return std::nullopt;
+    }
+    const auto name = pythonStringAttribute(
+        identity, "name", "Qiskit standard gate has an invalid name");
+    if (name == "global_phase") {
+      return "gphase";
+    }
+    const auto* gate = versionGate(name);
+    // CompilerTarget only recognizes single-controlled X/Z as fixed native
+    // controlled gates. Other circuit-import mappings need decomposition.
+    if (gate != nullptr &&
+        (gate->translation.controls != 0 ||
+         gate->translation.gate == mlir::qc::StandardGate::CU) &&
+        gate->name != "cx" && gate->name != "cz") {
+      return std::nullopt;
+    }
+    return gate == nullptr ? std::nullopt
+                           : std::optional{std::string(gate->name)};
+  }
+
   std::shared_ptr<OutputParameters> parameters_ =
       std::make_shared<OutputParameters>();
   std::shared_ptr<NativeGateRegistry> gates_ =
