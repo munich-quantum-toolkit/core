@@ -489,10 +489,11 @@ When exporting a program that has already been mapped to a
 {py:meth}`~mqt.core.mlir.QCOProgram.to_qiskit` or
 {py:meth}`~mqt.core.mlir.QCProgram.to_qiskit`. The exporter maps each static
 target site ID to its index in {py:attr}`~mqt.core.mlir.CompilerTarget.sites`
-and creates a canonical physical Qiskit circuit. The circuit has one register
-named {code}`q` with {py:attr}`~mqt.core.mlir.CompilerTarget.num_sites` qubits.
-Target-aware export requires static qubits whose site IDs belong to that target.
-Target compilation attaches layout metadata to the program.
+and creates a device circuit using applicable standard gate names from the
+target. The circuit has one register named {code}`q` with
+{py:attr}`~mqt.core.mlir.CompilerTarget.num_sites` qubits. Target-aware export
+requires static qubits whose site IDs belong to that target. Target compilation
+attaches layout metadata when possible.
 
 ## Layout metadata
 

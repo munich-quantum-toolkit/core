@@ -12,59 +12,47 @@ the narrower range above; the adapter checks it before inspecting a circuit.
 
 ## Compiler targets
 
-Use {py:func}`~mqt.core.plugins.qiskit.compiler.compiler_target_from_qiskit` to
-snapshot a Qiskit `Target` or `BackendV2` as a
-{py:class}`~mqt.core.mlir.CompilerTarget`. The adapter preserves standard gates
-and ordered operation sites. Routing uses undirected connectivity; this does not
-make directed gates bidirectional. An optional `operation_names` subset
-restricts the available operations. Conversion uses the versioned C++ circuit
-import/export adapter, with the same Qiskit version requirements. Its
-{py:func}`~mqt.core.mlir.import_target` binding accepts a `Target` directly; the
-Python wrapper also accepts a `BackendV2` and supplies its default name. The
-compiler uses canonical gate names. Export with
-`program.to_qiskit(target=target)` selects an applicable standard gate on each
-ordered placement, including legacy `u1` and `u3` instructions. Custom backend
-operation names are not supported.
+Use {py:meth}`~mqt.core.mlir.CompilerTarget.from_qiskit` to create a compiler
+target from a Qiskit `Target` or `BackendV2`:
 
 ```python
 from qiskit.providers.fake_provider import GenericBackendV2
-from mqt.core.plugins.qiskit import compiler_target_from_qiskit
+from mqt.core.mlir import CompilerTarget
 
 backend = GenericBackendV2(3, basis_gates=["sx", "x", "rz", "cx"])
-target = compiler_target_from_qiskit(backend)
+target = CompilerTarget.from_qiskit(backend)
 ```
 
-Qiskit target matching treats symbolic parameter slots as unrestricted,
-including expressions and repeated symbols. Fixed angles, restrictive angle
-bounds, open controls, custom names, and unsupported gates are omitted with
-warnings. Controlled gates other than CX and CZ cannot yet be retained as native
-compiler operations, even when circuit import supports them. Explicitly
-requested operations are rejected if unsupported or if they have no native gate
-applicability. Connectivity comes from retained two-qubit operation sites; the
-qubit count must be known and the topology connected. Calibration and scheduling
-data are not transferred. Global phase is always allowed as circuit metadata;
-delay, barrier, control-flow instructions, and empty applicability are ignored
-by default. The snapshot does not assert device support for classical control
-flow or guarantee that the retained basis supports native synthesis.
+The result is an independent structural snapshot. A backend supplies the default
+target name; pass `name` to override it. Qiskit standard gates, measurement,
+reset, and their ordered qubit placements become native capabilities. Parameter
+slots must accept arbitrary values. The compiler uses canonical gate names;
+`to_qiskit(target=target)` emits applicable standard names such as `u1` and `u3`
+where the target uses those legacy spellings.
 
-In particular, target-native synthesis currently needs a common single-qubit
-basis across sites and a common entangler across routing edges. Converting a
-target with different entanglers on different edges does not remove this limit.
-Use `operation_names` to select a usable subset when necessary.
+Routing connectivity is undirected and comes from the retained two-qubit gates.
+Gate applicability keeps its original qubit order. The target needs a known,
+positive qubit count and a connected routing graph. Global phase is always
+allowed as circuit metadata.
 
-To check Qiskit export support, call `program.to_qiskit(target=target)` on the
-**compiled output** and use the returned circuit. The exporter validates the
-program and the installed Qiskit adapter without consuming or modifying the
-program. Unsupported forms raise an exception with a diagnostic. Do not infer
-exportability from source constructs: compilation can eliminate or introduce
-operations, and a successful export does not imply device execution support.
+By default, unrepresentable gates are omitted with a warning. This includes
+custom gates or names, fixed angles, restricted angle bounds, open controls, and
+controlled gates other than CX and CZ. Delay, barrier, classical control flow,
+and operations with no applicable qubits are omitted without a warning. Pass
+`operation_names` to retain a subset; every selected name must be representable.
+Calibration, timing, and scheduling data are not copied.
+
+The snapshot does not guarantee that compilation can synthesize the requested
+circuit. Target-native synthesis requires a common single-qubit basis across
+sites and a common entangler across routing edges. After compilation, call
+`program.to_qiskit(target=target)` to check whether the output can be exported
+as a Qiskit circuit. Successful export does not verify that a device can run it.
 
 ## Circuit translation contract
 
-Each output block owns one private Python circuit. Numeric instructions use a
-borrowed C API view; symbolic gates, classical expressions, and control flow use
-Python construction. Blocks share their parent's exact bits and lexical variable
-captures. Parameters and parameter vectors are created once per export.
+The compiler imports circuit operations without changing the source circuit.
+Export creates a new circuit and preserves parameter identities across nested
+control flow.
 
 | Circuit feature                                                         | Import               | Export                             |
 | ----------------------------------------------------------------------- | -------------------- | ---------------------------------- |
@@ -187,16 +175,13 @@ runtime shifts so overshifts produce zero; export preserves the guards.
 Rotations and population count are expanded through the same bounded integer
 lowering used by jeff. Unsupported operations, invalid widths, non-finite
 constants, unsupported index uses, and dynamic for-loop bounds fail during
-validation. Programs without classical outputs have a void entry function. For
-compatibility, Qiskit export also ignores a lone constant-zero `i64` return.
-Whole-register reads map to Qiskit `ClassicalRegister` expressions, and writes
-map to atomic Qiskit `Store` operations. Indexed stores assume that their
-runtime index is in bounds. The Qiskit C API does not expose `Store`, so the
-adapter inspects and constructs that instruction through Qiskit's public Python
-classes, as it already does for structured control flow. Internal entry-block
-CBit storage becomes additional Qiskit registers, ordered before returned
-registers; Qiskit exposes all circuit storage. OpenQASM remains the source
-interchange path for arbitrary register widths.
+validation. Programs without classical outputs have a void entry function.
+Qiskit export also accepts a lone constant-zero `i64` return. Whole-register
+reads map to Qiskit `ClassicalRegister` expressions, and writes map to atomic
+Qiskit `Store` operations. Indexed stores assume that their runtime index is in
+bounds. Internal entry-block CBit storage becomes additional Qiskit registers,
+ordered before returned registers; Qiskit exposes all circuit storage. OpenQASM
+remains the source interchange path for arbitrary register widths.
 
 Every public CBit output is exported as a Qiskit `ClassicalRegister`; an unnamed
 allocation receives a collision-free `_mqt_cN` name. This preserves the CBit
@@ -207,11 +192,8 @@ Conditions and switch targets may read a zero-initialized CBit register. An
 undefined CBit may be read only after a definite write to that bit, and every
 bit of an undefined returned register must be definitely initialized. Branches
 intersect their initialization facts. A while loop's before region executes at
-least once; its after region may execute zero times. The exporter saves
-supported scalar snapshots in local variables when a later write, control-flow
-edge, or region crossing prevents safe re-evaluation. It bounds expression depth
-by saving intermediate runtime values. This policy does not depend on unused
-control-flow results and remains valid after compiler cleanup. Reads wider than
+least once; its after region may execute zero times. The exporter preserves
+scalar values across later writes and control-flow boundaries. Reads wider than
 64 bits remain subject to the snapshot checks.
 
 Each exported measurement must write to one static public CBit in the same
@@ -252,17 +234,9 @@ metadata schema and {doc}`target compilation <target_compilation>` for
 placement.
 
 Names passed between Qiskit and the compiler must not contain NUL characters.
-The importer checks names before native access. Arithmetic-progression loop
-lists without jumps use range lowering. List loops with jumps and
-variable-bearing switch cases use balanced dispatch. The 64-level nesting limit
-also applies to generated SCF, and expansion limits account for duplicated
-switch bodies.
-
-Input validation finishes before an MLIR module is created. Generic output
-validation finishes before Qiskit construction starts; the version-specific
-adapter validates its constructed blocks before returning the top-level circuit.
-Unsupported programs therefore fail without modifying the source object or
-exposing a partial result.
+Loop lists with jumps and switch cases with variables are supported within the
+64-level nesting and definition-expansion limits. Unsupported programs fail
+without changing the source object or exposing a partial result.
 
 The binding imports Qiskit only when circuit translation is requested. It
 accepts versions in the registered {code}`>=2.5.0,<2.6.0` range and verifies the

@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "mqt/Compiler/Target.h"
 #include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/QC/Translation/StandardGate.h"
 
@@ -28,10 +29,6 @@
 #include <utility>
 #include <variant>
 #include <vector>
-
-namespace mlir {
-class CompilerTarget;
-} // namespace mlir
 
 namespace mqt::bindings::qiskit {
 

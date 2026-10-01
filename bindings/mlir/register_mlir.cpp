@@ -622,16 +622,6 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
 
   m.doc() = "MQT Core MLIR compiler bindings.";
 
-  m.def("import_target", &bindings::qiskit::importTarget, "target"_a,
-        nb::kw_only(), "operation_names"_a = nb::none(), "name"_a = nb::none(),
-        nb::sig("def import_target(target: qiskit.transpiler.Target, *, "
-                "operation_names: collections.abc.Iterable[str] | None = None, "
-                "name: str | None = None) -> CompilerTarget"),
-        R"pb(Snapshot standard operations and connectivity from a Qiskit Target.
-
-Unsupported operations are omitted with warnings unless explicitly
-selected; timing and calibration data are not transferred.)pb");
-
   nb::module_::import_("typing");
   nb::module_::import_("mqt.core.qdmi");
 
@@ -1105,6 +1095,31 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
             return takeResult(std::move(target));
           },
           "device"_a, "Snapshot a circuit-model QDMI device.")
+      .def_static("from_qiskit", &bindings::qiskit::importTarget, "source"_a,
+                  nb::kw_only(), "operation_names"_a = nb::none(),
+                  "name"_a = nb::none(),
+                  nb::sig("def from_qiskit(source: qiskit.transpiler.Target | "
+                          "qiskit.providers.BackendV2, *, operation_names: "
+                          "collections.abc.Iterable[str] | None = None, "
+                          "name: str | None = None) -> CompilerTarget"),
+                  R"pb(Snapshot native operations and connectivity from Qiskit.
+
+Args:
+    source: Qiskit Target or BackendV2 with a known positive qubit count.
+    operation_names: Qiskit Target operation names to retain. By default,
+        include every representable operation. Explicit selections must all be
+        representable.
+    name: Override the target name. By default, use the backend name when
+        source is a BackendV2; a Target produces an unnamed snapshot.
+
+Returns:
+    An independent compiler target. Unrepresentable gates are omitted with
+    warnings when operation_names is not set. Calibration and scheduling data
+    are not included.
+
+Raises:
+    TypeError: If source is neither a Target nor a BackendV2.
+    ValueError: If the selected operations or connectivity cannot be represented.)pb")
       .def_static(
           "from_device_id",
           [](const std::string& deviceId, std::optional<std::string> baseUrl,
@@ -1210,7 +1225,14 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
             return target.supportsOperation(name, arity, numParameters);
           },
           "name"_a, "arity"_a, "num_parameters"_a = nb::none(),
-          "sites"_a = nb::none(), "Whether the target supports an operation.");
+          "sites"_a = nb::none(),
+          R"pb(Check whether the target supports an operation.
+
+Args:
+    name: Operation name. Recognized aliases are normalized.
+    arity: Number of qubits used by the operation.
+    num_parameters: Number of real-valued parameters. None accepts any count.
+    sites: Ordered target site IDs. None checks support on any placement.)pb");
 
   nb::class_<mlir::TargetEnvironment>(
       m, "TargetEnvironment",
@@ -1314,7 +1336,11 @@ before conversion to QCO.)pb");
           "circuit"_a,
           nb::sig("def from_qiskit(circuit: qiskit.circuit.QuantumCircuit) "
                   "-> QCProgram"),
-          R"pb(Translate a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` to QC MLIR.)pb")
+          R"pb(Translate a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` to QC MLIR.
+
+Args:
+    circuit: Circuit to import. A complete transpiler layout is retained as
+        metadata.)pb")
       .def("copy", &copyProgram<mlir::QCProgram>,
            "Return an independent copy of this program.")
       .def("cleanup", &BooleanMemberAdapter<&mlir::QCProgram::cleanup>::call,
@@ -1351,13 +1377,14 @@ before conversion to QCO.)pb");
                   "None) -> qiskit.circuit.QuantumCircuit"),
           R"pb(Translate this QC program to a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` without consuming it.
 
-The exporter restores attached layout metadata when it is valid.
+The exporter restores attached layout metadata when it is compatible with the
+selected target.
 
 Args:
-    target: The optional compiler target used for mapping. When provided, emit
-        a device circuit. All qubits must be static, and their site IDs must
-        belong to the target. Select applicable standard gate names;
-        this does not validate device execution support.)pb")
+    target: Map static site IDs to qubit indices in target site order. All
+        qubits must be static sites of the target. Select applicable standard
+        gate names without checking device execution support. None applies no
+        target site mapping.)pb")
       .def(
           "to_qco",
           [](mlir::QCProgram& value, const bool copy) {
@@ -1533,14 +1560,14 @@ operations.)pb");
                   "None) -> qiskit.circuit.QuantumCircuit"),
           R"pb(Export a Qiskit circuit without consuming or modifying this program.
 
-The exporter restores attached layout metadata when it is valid.
+The exporter restores attached layout metadata when it is compatible with the
+selected target.
 
 Args:
-    target: The optional compiler target used for mapping. When provided, static
-        site IDs map to dense device-qubit indices in target site order.
-        Dynamic qubits and static IDs absent from the target are rejected.
-        Select applicable standard gate names; this does not validate
-        device execution support.)pb")
+    target: Map static site IDs to qubit indices in target site order. All
+        qubits must be static sites of the target. Select applicable standard
+        gate names without checking device execution support. None applies no
+        target site mapping.)pb")
       .def(
           "to_qc",
           [](mlir::QCOProgram& value, const bool copy) {

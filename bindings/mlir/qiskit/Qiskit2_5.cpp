@@ -2221,7 +2221,10 @@ public:
                const std::vector<uint32_t>& qubits,
                const std::vector<Parameter>& parameters) override {
     const auto* gate = versionGate(mapping);
-    if (target_ != nullptr) {
+    /// Only P and U3 have alternative names in this Qiskit gate table.
+    if (target_ != nullptr && gate != nullptr &&
+        (mapping.gate == mlir::qc::StandardGate::P ||
+         mapping.gate == mlir::qc::StandardGate::U3)) {
       for (const auto& operation : target_->operations()) {
         const auto* candidate = versionGate(operation.name());
         if (candidate == nullptr || candidate->translation != mapping ||
@@ -2747,7 +2750,7 @@ public:
   }
 
   [[nodiscard]] mlir::CompilerTarget
-  importTarget(nb::handle target, nb::handle operationNames,
+  importTarget(nb::handle source, nb::handle operationNames,
                const std::optional<std::string>& name) const override {
     using Target = mlir::CompilerTarget;
     const auto takeResult = []<class T>(llvm::Expected<T> result) {
@@ -2756,9 +2759,19 @@ public:
       }
       return std::move(*result);
     };
+    auto target = nb::borrow<nb::object>(source);
+    auto targetName = name;
+    if (nb::isinstance(
+            target,
+            nb::module_::import_("qiskit.providers").attr("BackendV2"))) {
+      if (!targetName) {
+        targetName = nb::cast<std::string>(target.attr("name"));
+      }
+      target = target.attr("target");
+    }
     if (!nb::isinstance(
             target, nb::module_::import_("qiskit.transpiler").attr("Target"))) {
-      throw nb::type_error("Expected a Qiskit Target");
+      throw nb::type_error("Expected a Qiskit Target or BackendV2");
     }
     size_t numQubits = 0;
     if (!nb::try_cast(target.attr("num_qubits"), numQubits) || numQubits == 0) {
@@ -2856,7 +2869,7 @@ public:
           throw nb::value_error(message.c_str());
         }
         message += "; omitting it from the compiler target";
-        if (PyErr_WarnEx(PyExc_UserWarning, message.c_str(), 2) < 0) {
+        if (PyErr_WarnEx(PyExc_UserWarning, message.c_str(), 1) < 0) {
           throw nb::python_error();
         }
         continue;
@@ -2908,14 +2921,14 @@ public:
     const auto nativeOperations =
         Target::NativeOperations::fromOperations(operations);
     return takeResult(
-        name ? Target::create(*name, numQubits, connectivity, nativeOperations)
-             : Target::create(numQubits, connectivity, nativeOperations));
+        targetName ? Target::create(*targetName, numQubits, connectivity,
+                                    nativeOperations)
+                   : Target::create(numQubits, connectivity, nativeOperations));
   }
 
   [[nodiscard]] std::unique_ptr<CircuitWriter>
   createCircuit(const uint32_t looseQubits, const uint32_t looseClbits,
                 const mlir::CompilerTarget* target) const override {
-    // Keep the native append path unchanged for targets without aliases.
     if (target != nullptr &&
         std::ranges::none_of(target->operations(), [](const auto& operation) {
           return operation.name() != operation.canonicalName();
@@ -2972,8 +2985,7 @@ private:
       return "gphase";
     }
     const auto* gate = versionGate(name);
-    // CompilerTarget only recognizes single-controlled X/Z as fixed native
-    // controlled gates. Other circuit-import mappings need decomposition.
+    /// The compiler treats only CX and CZ as native controlled gates.
     if (gate != nullptr &&
         (gate->translation.controls != 0 ||
          gate->translation.gate == mlir::qc::StandardGate::CU) &&
