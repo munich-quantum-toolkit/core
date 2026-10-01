@@ -25,6 +25,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/ErrorHandling.h"
 
@@ -57,6 +58,24 @@ struct PendingItem {
 };
 } // namespace impl
 
+/// Reusable traversal storage. A scratch instance must not be shared by walks
+/// that overlap; completed walks retain capacity, but no IR handles.
+struct WalkProgramGraphScratch {
+  DenseMap<Operation*, impl::PendingItem> pending;
+  Frontier frontier;
+  ReleasedOps released;
+  SmallVector<size_t> curr;
+  SmallVector<size_t> next;
+
+  void clear() {
+    pending.clear();
+    frontier.clear();
+    released.clear();
+    curr.clear();
+    next.clear();
+  }
+};
+
 /// Walk the graph-like circuit IR of QCO dialect programs.
 /// Depending on the template parameter, the function walks the IR in
 /// topological order in forward or backward direction, respectively. Towards
@@ -77,22 +96,17 @@ struct PendingItem {
 /// The function modifies the given wires in-place.
 template <WireDirection Direction>
 void walkProgramGraph(MutableArrayRef<WireIterator> wires,
-                      WalkProgramGraphFn fn) {
+                      WalkProgramGraphFn fn, WalkProgramGraphScratch& scratch) {
   using namespace impl;
   using Traits = WireTraversalTraits<Direction>;
 
-  DenseMap<Operation*, PendingItem> pending;
+  scratch.clear();
+  const auto cleanup = llvm::make_scope_exit([&] { scratch.clear(); });
+  auto& [pending, frontier, released, curr, next] = scratch;
   pending.reserve((wires.size() + 1) / 2);
-
-  Frontier frontier;
   frontier.reserve((wires.size() + 1) / 2);
-
-  ReleasedOps released;
-
-  SmallVector<size_t> curr(wires.size());
+  curr.resize(wires.size());
   std::iota(curr.begin(), curr.end(), 0UL);
-
-  SmallVector<size_t> next;
   next.reserve(wires.size());
 
   while (!curr.empty()) {
@@ -111,7 +125,8 @@ void walkProgramGraph(MutableArrayRef<WireIterator> wires,
           item.indices_.emplace_back(i);
 
           if (item.ready()) {
-            frontier.try_emplace(it.operation(), item.indices_);
+            frontier.try_emplace(it.operation(), std::move(item.indices_));
+            pending.erase(mapIt);
           }
         } else {
           const auto nqubits =
@@ -177,11 +192,11 @@ void walkProgramGraph(MutableArrayRef<WireIterator> wires,
 
           if (nqubits == 1) {
             frontier.try_emplace(it.operation(), SmallVector{i});
+          } else {
+            PendingItem item(nqubits);
+            item.indices_.emplace_back(i);
+            pending.try_emplace(it.operation(), std::move(item));
           }
-
-          PendingItem item(nqubits);
-          item.indices_.emplace_back(i);
-          pending.try_emplace(it.operation(), std::move(item));
         }
 
         break;
@@ -194,21 +209,33 @@ void walkProgramGraph(MutableArrayRef<WireIterator> wires,
       return;
     }
 
+    const bool releaseAll = released.size() == frontier.size();
     for (Operation* op : released) {
-      const auto mapIt = pending.find(op);
-      assert(mapIt != pending.end());
+      const auto mapIt = frontier.find(op);
+      assert(mapIt != frontier.end());
 
-      for (size_t i : mapIt->second.indices_) {
+      for (size_t i : mapIt->second) {
         std::ranges::advance(wires[i], Traits::stride());
         next.emplace_back(i);
       }
 
-      pending.erase(mapIt);
-      frontier.erase(op);
+      if (!releaseAll) {
+        frontier.erase(mapIt);
+      }
+    }
+    if (releaseAll) {
+      frontier.clear();
     }
 
     curr.swap(next);
     next.clear();
   }
+}
+
+template <WireDirection Direction>
+void walkProgramGraph(MutableArrayRef<WireIterator> wires,
+                      WalkProgramGraphFn fn) {
+  WalkProgramGraphScratch scratch;
+  walkProgramGraph<Direction>(wires, fn, scratch);
 }
 } // namespace mlir::qco

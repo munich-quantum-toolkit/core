@@ -398,8 +398,56 @@ private:
 struct MappingPass : impl::MappingPassBase<MappingPass> {
 private:
   using IndexPairType = std::pair<size_t, size_t>;
-  using Window = SmallVector<IndexPairType>;
   using Score = std::pair<size_t, size_t>;
+  using RoutePlan = SmallVector<SmallVector<IndexPairType>, 0>;
+
+  enum class RoutingMode : bool { Cold, Hot };
+  enum class RoutingPolicy : uint8_t { Main, Wave, Serial };
+
+  /// A fast, flat "wave"-like data structure designed specifically for
+  /// layer-by-layer ("ripple") iteration. All elements are stored sequentially
+  /// in a single contiguous buffer.
+  class Wave {
+  public:
+    Wave() = default;
+
+    /// Add a new, empty ripple to the wave.
+    void addRipple() { offsets_.emplace_back(storage_.size()); }
+
+    /// Appends a single element to the current active ripple.
+    void push(const IndexPairType& gate) {
+      assert(offsets_.size() > 1 && "No active layer. Call addRipple() first.");
+      storage_.emplace_back(gate);
+      offsets_.back() = storage_.size();
+    }
+
+    /// Returns a slice view (ArrayRef) of a specific layer.
+    [[nodiscard]] ArrayRef<IndexPairType> getRipple(size_t i) const {
+      assert(i < nripples() && "Ripple index out of bounds");
+      const auto start = offsets_[i];
+      const auto end = offsets_[i + 1];
+      return {storage_.data() + start, end - start};
+    }
+
+    /// Returns the total number of ripples.
+    [[nodiscard]] size_t nripples() const { return offsets_.size() - 1; }
+
+    /// Returns the total number of elements.
+    [[nodiscard]] size_t size() const { return storage_.size(); }
+
+    /// Return true, if the wave is empty.
+    [[nodiscard]] bool empty() const { return storage_.empty(); }
+
+    /// Return the front of the wave.
+    [[nodiscard]] IndexPairType front() const { return storage_.front(); }
+
+  private:
+    /// Flat contiguous array storing all elements across all ripples.
+    SmallVector<IndexPairType> storage_;
+    /// Offsets marking the start index of each ripple in the storage, where [r]
+    /// defines the start of the ripple r and [r + 1] its end.
+    SmallVector<size_t, 8> offsets_ = {0};
+  };
 
   /// Invocation data is prepared before trials, then borrowed read-only.
   struct Environment {
@@ -407,6 +455,48 @@ private:
     uint64_t seed;
     std::unique_ptr<const NativeCostTable> nativeCosts;
     std::optional<size_t> nativeSwapCost;
+    bool immutableIR = false;
+
+    struct Interaction {
+      SmallVector<IndexPairType, 2> endpoints;
+      bool gate;
+    };
+    SmallVector<Interaction, 0> interactions;
+    SmallVector<SmallVector<size_t, 0>, 0> wireGraph;
+    DenseMap<Operation*, size_t> interactionIndex{0};
+
+    void prepareGraph(Wires wires, func::FuncOp func) {
+      const auto flat = func.walk<WalkOrder::PreOrder>([&](Operation* op) {
+        if (isa<UnitaryOpInterface>(op)) {
+          return WalkResult::skip();
+        }
+        return op != func.getOperation() && op->getNumRegions() != 0
+                   ? WalkResult::interrupt()
+                   : WalkResult::advance();
+      });
+      if (flat.wasInterrupted()) {
+        return;
+      }
+      wireGraph.resize(wires.size());
+      walkProgramGraph<WireDirection::Forward>(
+          MutableArrayRef(wires.data(), wires.size()),
+          [&](const Frontier& frontier, ReleasedOps& released) {
+            for (const auto& [op, indices] : frontier) {
+              if (!indices.empty()) {
+                const auto id = interactions.size();
+                auto& node = interactions.emplace_back();
+                node.gate = !isa<BarrierOp>(op) && isa<UnitaryOpInterface>(op);
+                for (const auto q : indices) {
+                  node.endpoints.emplace_back(q, wireGraph[q].size());
+                  wireGraph[q].push_back(id);
+                }
+                interactionIndex.try_emplace(op, id);
+              }
+              released.push_back(op);
+            }
+            return WalkResult::advance();
+          });
+    }
 
     void prepareNativeCosts(Operation* root) {
       const auto basis = target.synthesisBasis();
@@ -429,8 +519,6 @@ private:
       }
     }
   };
-
-  enum class RoutingMode : bool { Cold, Hot };
 
   struct CompositeUnitary {
     /// The composite op (e.g. SCF).
@@ -455,6 +543,17 @@ private:
     float lambda;
   };
 
+  struct GraphScratch {
+    struct Ready {
+      size_t id;
+      SmallVector<size_t, 2> sites;
+    };
+    SmallVector<size_t> cursor, current, nextSites, released, seen, arrival;
+    SmallVector<Ready> ready;
+    SmallVector<size_t> compactReady;
+    SmallVector<IndexPairType> prev, next;
+  };
+
   /// Wire slots are physical sites; layout alone tracks logical qubits.
   struct RoutingState {
     /// Create state from layout, enforcing wire[i] = i-th site.
@@ -471,13 +570,19 @@ private:
     RoutingState(Wires wires, Layout layout, const Environment& env)
         : wires(std::move(wires)), layout(std::move(layout)) {
       if (env.nativeCosts) {
-        costs.emplace(env.target, env.seed, env.nativeCosts.get());
+        costs.emplace(env.target, env.seed, env.nativeCosts.get(),
+                      env.nativeSwapCost);
       }
     }
 
     Wires wires;
     Layout layout;
     std::optional<NativeCostTracker> costs;
+    WalkProgramGraphScratch traversal;
+    GraphScratch lookahead;
+    bool collectScore = true;
+    RoutingPolicy policy = RoutingPolicy::Main;
+    RoutePlan* plan = nullptr;
   };
 
   /// Describes a SWAP and its associated costs.
@@ -516,20 +621,22 @@ private:
     }
 
     /// Initialize a child from its parent while reusing layout capacity.
-    void initializeChild(Node* nextParent, const SwapCandidate& candidate,
-                         const Window& window, const CompilerTarget& target,
-                         const Parameters& params) {
+    void initializeChild(Node* nextParent, const SwapCandidate& candidate) {
       layout = nextParent->layout;
       layout.swap(candidate.indices.first, candidate.indices.second);
 
       depth = nextParent->depth + 1;
       cost = nextParent->cost + static_cast<int64_t>(candidate.standalone) +
              candidate.prefix;
-      f = params.alpha * static_cast<float>(cost) +
-          static_cast<float>(candidate.standalone) * h(window, target, params);
-
       swap = candidate.indices;
       parent = nextParent;
+    }
+
+    /// Evaluate the lookahead only after the frontier accepts this node.
+    void updatePriority(const Wave& wave, const CompilerTarget& target,
+                        const Parameters& params, size_t standalone) {
+      f = params.alpha * static_cast<float>(cost) +
+          static_cast<float>(standalone) * h(wave, target, params);
     }
 
     /// Return true, if the current SWAP sequence makes all gates in the front
@@ -562,18 +669,20 @@ private:
     /// between its hardware qubits. Intuitively, this is the number of SWAPs
     /// that a naive router would insert to route the layers (with a constant
     /// layout).
-    [[nodiscard]] float h(const Window& window, const CompilerTarget& target,
+    [[nodiscard]] float h(const Wave& wave, const CompilerTarget& target,
                           const Parameters& params) const {
       float costs{0};
       float decay{1.};
 
-      for (const auto& progs : window) {
-        const auto [prog0, prog1] = progs;
-        const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
-        const size_t nswaps = target.distanceBetween(hw0, hw1) - 1;
-        costs += decay * static_cast<float>(nswaps);
+      for (size_t i = 0; i < wave.nripples(); ++i) {
+        for (const auto [prog0, prog1] : wave.getRipple(i)) {
+          const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
+          const size_t nswaps = target.distanceBetween(hw0, hw1) - 1;
+          costs += decay * static_cast<float>(nswaps);
+        }
         decay *= params.lambda;
       }
+
       return costs;
     }
   };
@@ -581,10 +690,19 @@ private:
   /// A deduplicated priority queue for A* search nodes.
   class SearchFrontier {
   public:
+    void clear() {
+      queue.clear();
+      best.clear();
+    }
+
     /// Push a node onto the frontier.
-    void push(Node* node) {
+    void push(Node* node, const Wave& wave, const CompilerTarget& target,
+              const Parameters& params, size_t standalone) {
       auto*& incumbent = best[node->layout.getProgramToHardware()];
       if (incumbent == nullptr || node->cost < incumbent->cost) {
+        if (!node->isRoot()) {
+          node->updatePriority(wave, target, params, standalone);
+        }
         incumbent = node;
         queue.push(node);
       }
@@ -645,9 +763,15 @@ private:
 
     /// Resets the arena for a new search. Retains allocated storage. Only the
     /// logical size (index) is reset to zero.
-    void reset() { index = 0; }
+    void reset() {
+      frontier_.clear();
+      index = 0;
+    }
+
+    SearchFrontier& frontier() { return frontier_; }
 
   private:
+    SearchFrontier frontier_;
     /// Storage for nodes. Uses deque for stable pointers across insertions.
     std::deque<Node> nodes;
     /// Maximum number of nodes permitted by the memory budget.
@@ -787,14 +911,23 @@ protected:
     }
 
     Environment env{.target = target, .seed = compilationSeed(moduleOp, seed)};
-    const auto [layout, expectedScore] =
+    auto [layout, expectedScore, policy, plan] =
         generateLayout(computation->wires, func, env);
+    env.immutableIR = false;
 
     IRRewriter rewriter(&getContext());
     Arena arena(target.numSites(), searchMemoryLimit);
     RoutingState state(applyPlacement(func.getFunctionBody(), target, layout,
                                       *computation, rewriter),
                        layout, env);
+    state.policy = policy;
+    if (!env.wireGraph.empty()) {
+      state.plan = &plan;
+#ifdef NDEBUG
+      // Replay does not choose SWAPs; retain scoring only for the debug check.
+      state.costs.reset();
+#endif
+    }
 
     const auto stats = route<WireDirection::Forward, RoutingMode::Hot>(
         state, arena, env, &rewriter);
@@ -1136,73 +1269,100 @@ private:
   /// Refine greedy, identity, and random starts with forward/backward routing.
   /// Score each candidate with a forward traversal, preserving its start
   /// layout.
-  std::pair<Layout, std::optional<Score>>
+  std::tuple<Layout, std::optional<Score>, RoutingPolicy, RoutePlan>
   generateLayout(const Wires& wires, func::FuncOp func, Environment& env) {
     const auto greedy = generateGreedyLayout(wires, env);
     if (greedy && greedy->second) {
-      return {greedy->first, std::nullopt};
+      return {greedy->first, std::nullopt, RoutingPolicy::Main, RoutePlan{}};
     }
 
     env.prepareNativeCosts(func);
+    env.immutableIR = true;
+    env.prepareGraph(wires, func);
 
     struct Trial {
       Layout layout;
       /// Synthesis available: (native-count, depth). Otherwise, (max(), swaps).
       Score score;
+      RoutingPolicy policy = RoutingPolicy::Main;
+      RoutePlan plan;
     };
 
     SmallVector<Trial, 0> trials;
     trials.reserve(ntrials);
 
+    const auto addStart = [&](const Layout& layout) {
+      for (const auto policy :
+           {RoutingPolicy::Main, RoutingPolicy::Wave, RoutingPolicy::Serial}) {
+        if (trials.size() < ntrials) {
+          trials.emplace_back(layout, Score{}, policy);
+        }
+      }
+    };
     if (greedy) {
-      trials.emplace_back(greedy->first);
+      addStart(greedy->first);
     }
 
     if (trials.size() < ntrials) {
-      trials.emplace_back(Layout::identity(env.target.numSites()));
+      addStart(Layout::identity(env.target.numSites()));
 
       auto rng = makeMt19937(env.seed);
-      for (size_t i = trials.size(); i < ntrials; ++i) {
-        trials.emplace_back(Layout::random(env.target.numSites(),
-                                           env.target.numSites(), rng()));
+      while (trials.size() < ntrials) {
+        addStart(Layout::random(env.target.numSites(), env.target.numSites(),
+                                rng()));
       }
     }
 
     assert(ntrials == trials.size());
 
-    parallelForEach(&getContext(), trials, [&, this](Trial& t) {
+    SmallVector<Trial*> unique;
+    for (auto& trial : trials) {
+      if (none_of(unique, [&](const Trial* previous) {
+            return previous->policy == trial.policy &&
+                   previous->layout == trial.layout;
+          })) {
+        unique.push_back(&trial);
+      }
+    }
+    parallelForEach(&getContext(), unique, [&, this](Trial* candidate) {
+      auto& t = *candidate;
       Arena arena(env.target.numSites(), searchMemoryLimit);
 
-      {
-        auto state = RoutingState::fromLayout(wires, t.layout, env);
-        for (size_t i = 0; i < niterations; ++i) {
-          route<WireDirection::Forward>(state, arena, env);
-          route<WireDirection::Backward>(state, arena, env);
-        }
-        t.layout = std::move(state.layout);
+      auto state = RoutingState::fromLayout(wires, t.layout, env);
+      state.policy = t.policy;
+      state.collectScore = false;
+      for (size_t i = 0; i < niterations; ++i) {
+        route<WireDirection::Forward>(state, arena, env);
+        route<WireDirection::Backward>(state, arena, env);
+      }
+      t.layout = state.layout;
+      state.wires.assign(env.target.numSites(), WireIterator{});
+      for (auto [program, wire] : enumerate(wires)) {
+        state.wires[t.layout.getHardwareIndex(program)] = wire;
+      }
+      if (!env.wireGraph.empty()) {
+        state.plan = &t.plan;
       }
 
-      /// Refinement may permute wire cursors. Score from the original roots,
-      /// preserving only the initial layout selected for final placement.
-      auto state = RoutingState::fromLayout(wires, t.layout, env);
-
+      state.collectScore = true;
       const auto score = route<WireDirection::Forward>(state, arena, env);
       const auto quality = state.costs ? state.costs->score() : std::nullopt;
       t.score = quality.value_or(
           std::pair{std::numeric_limits<size_t>::max(), score.nswaps});
     });
 
-    Trial* const best = min_element(trials, [](const Trial& a, const Trial& b) {
-      return a.score < b.score;
-    });
+    Trial* const best =
+        *min_element(unique, [](const Trial* a, const Trial* b) {
+          return a->score < b->score;
+        });
 
-    return {best->layout, best->score};
+    return {best->layout, best->score, best->policy, std::move(best->plan)};
   }
 
   /// Route the leading interaction with bounded A* node storage.
   /// Drain queued states at the limit, then use distance-reducing SWAPs.
   [[nodiscard]] SmallVector<IndexPairType>
-  search(const Window& window, RoutingState& state, Arena& arena,
+  search(const Wave& wave, RoutingState& state, Arena& arena,
          const Environment& env) const {
     const Parameters params{.alpha = alpha, .lambda = lambda};
 
@@ -1211,12 +1371,13 @@ private:
     assert(root != nullptr && "expected root allocation to succeed");
 
     root->initializeRoot(state.layout);
-    if (root->isGoal(window.front(), env.target)) {
+    if (root->isGoal(wave.front(), env.target)) {
       return SmallVector<IndexPairType>{};
     }
 
-    SearchFrontier frontier;
-    frontier.push(root);
+    auto& frontier = arena.frontier();
+    frontier.push(root, wave, env.target, params,
+                  env.nativeSwapCost.value_or(1L));
 
     Node* curr = frontier.pop();
     for (; curr != nullptr; curr = frontier.pop()) {
@@ -1224,22 +1385,17 @@ private:
       // If the currently visited node is a goal node, reconstruct the
       // sequence of SWAPs from this node to the root.
 
-      if (curr->isGoal(window.front(), env.target)) {
+      if (curr->isGoal(wave.front(), env.target)) {
         return curr->swaps();
       }
 
       // Given a layout, create child-nodes for each possible SWAP
       // between two neighboring hardware qubits.
 
-      llvm::SmallDenseSet<IndexPairType, 8> seen;
-      for (const auto& [q0, q1] = window.front(); const auto prog : {q0, q1}) {
+      for (const auto [q0, q1] = wave.front(); const auto prog : {q0, q1}) {
         const auto hw0 = curr->layout.getHardwareIndex(prog);
         env.target.forEachNeighbour(hw0, [&](const auto hw1) {
           const IndexPairType indices(std::minmax(hw0, hw1));
-          if (seen.contains(indices)) {
-            return;
-          }
-
           const auto standalone = env.nativeSwapCost.value_or(1L);
           const auto prefix =
               curr->isRoot() && state.costs && env.nativeSwapCost.has_value()
@@ -1254,9 +1410,8 @@ private:
                 .prefix = prefix,
             };
 
-            child->initializeChild(curr, candidate, window, env.target, params);
-            seen.insert(indices);
-            frontier.push(child);
+            child->initializeChild(curr, candidate);
+            frontier.push(child, wave, env.target, params, standalone);
           }
         });
       }
@@ -1266,7 +1421,7 @@ private:
     /// Greedy completion can cost later gates. Thus, increase the search
     /// budget when routing quality matters more than memory use.
 
-    const auto [prog0, prog1] = window.front();
+    const auto [prog0, prog1] = wave.front();
     const auto [hw0, hw1] = state.layout.getHardwareIndices(prog0, prog1);
     const auto path = env.target.shortestPathBetween(hw0, hw1);
 
@@ -1424,8 +1579,8 @@ private:
   /// Collect a routing lookahead window of up to `1 + nlookahead` ready
   /// two-qubit gates, while skipping qubit-pair blocks.
   template <WireDirection Direction>
-  Window getWindow(Wires wires, const Layout& layout, Operation* boundary) {
-    Window window;
+  Wave getWindow(Wires wires, const Layout& layout, Operation* boundary) {
+    Wave window;
 
     SmallVector<IndexPairType> prev;
     SmallVector<IndexPairType> next;
@@ -1453,7 +1608,8 @@ private:
                 const IndexPairType gate = std::minmax(prog0, prog1);
 
                 if (!is_contained(prev, gate)) {
-                  window.emplace_back(gate);
+                  window.addRipple();
+                  window.push(gate);
                   if (window.size() - 1 == nlookahead) {
                     return WalkResult::interrupt();
                   }
@@ -1472,6 +1628,338 @@ private:
         });
 
     return window;
+  }
+
+  template <WireDirection Direction>
+  static void graphCursor(const Wires& wires, const Layout& layout,
+                          const Environment& env,
+                          SmallVectorImpl<size_t>& cursor) {
+    constexpr size_t end = std::numeric_limits<size_t>::max();
+    cursor.assign(env.wireGraph.size(), end);
+    for (auto [site, source] : enumerate(wires)) {
+      auto wire = source;
+      const auto q = layout.getProgramIndex(site);
+      if (q >= cursor.size()) {
+        continue;
+      }
+      for (; wire != std::default_sentinel; std::ranges::advance(
+               wire, WireTraversalTraits<Direction>::stride())) {
+        const auto it = env.interactionIndex.find(wire.operation());
+        if (it == env.interactionIndex.end()) {
+          continue;
+        }
+        const auto& node = env.interactions[it->second];
+        for (const auto [program, position] : node.endpoints) {
+          if (program == q) {
+            cursor[q] = position;
+            break;
+          }
+        }
+        break;
+      }
+    }
+  }
+
+  /// Preserve the original window's arrival order, including one-qubit steps.
+  template <WireDirection Direction>
+  Wave getMainWindow(const Wires& wires, const Layout& layout,
+                     Operation* boundary, const Environment& env,
+                     GraphScratch& scratch) {
+    if (env.wireGraph.empty()) {
+      return getWindow<Direction>(wires, layout, boundary);
+    }
+    constexpr size_t end = std::numeric_limits<size_t>::max();
+    graphCursor<Direction>(wires, layout, env, scratch.cursor);
+    auto& cursor = scratch.cursor;
+    Wave wave;
+    using Ready = GraphScratch::Ready;
+    auto& ready = scratch.ready;
+    auto& current = scratch.current;
+    auto& nextSites = scratch.nextSites;
+    auto& released = scratch.released;
+    auto& seen = scratch.seen;
+    auto& arrival = scratch.arrival;
+    auto& prev = scratch.prev;
+    auto& next = scratch.next;
+    ready.clear();
+    current.clear();
+    nextSites.clear();
+    released.clear();
+    seen.assign(cursor.size(), end);
+    arrival.assign(cursor.size(), 0);
+    prev.clear();
+    next.clear();
+    size_t tick = 0;
+    for (size_t site = 0; site < wires.size(); ++site) {
+      current.push_back(site);
+    }
+    while (!current.empty()) {
+      for (const auto site : current) {
+        const auto q = layout.getProgramIndex(site);
+        if (q >= cursor.size() || cursor[q] == end) {
+          continue;
+        }
+        const auto id = env.wireGraph[q][cursor[q]];
+        const auto& node = env.interactions[id];
+        seen[q] = id;
+        arrival[q] = tick++;
+        if (all_of(node.endpoints,
+                   [&](IndexPairType e) { return seen[e.first] == id; })) {
+          auto& r = ready.emplace_back(id);
+          for (const auto [program, position] : node.endpoints) {
+            r.sites.push_back(layout.getHardwareIndex(program));
+          }
+          llvm::sort(r.sites, [&](size_t a, size_t b) {
+            return arrival[layout.getProgramIndex(a)] <
+                   arrival[layout.getProgramIndex(b)];
+          });
+        }
+      }
+      released.clear();
+      for (const auto& r : ready) {
+        if (r.sites.size() == 1) {
+          released.push_back(r.id);
+        }
+      }
+      if (released.empty()) {
+        for (const auto& r : ready) {
+          if (env.interactions[r.id].gate) {
+            const IndexPairType pair =
+                std::minmax(layout.getProgramIndex(r.sites[0]),
+                            layout.getProgramIndex(r.sites[1]));
+            if (!is_contained(prev, pair)) {
+              wave.addRipple();
+              wave.push(pair);
+              if (wave.size() - 1 == nlookahead) {
+                return wave;
+              }
+            }
+            next.push_back(pair);
+          }
+          released.push_back(r.id);
+        }
+        prev.swap(next);
+        next.clear();
+      }
+      nextSites.clear();
+      for (const auto id : released) {
+        const auto it =
+            llvm::find_if(ready, [&](const Ready& r) { return r.id == id; });
+        for (const auto site : it->sites) {
+          const auto q = layout.getProgramIndex(site);
+          const auto position = cursor[q];
+          if constexpr (Direction == WireDirection::Forward) {
+            cursor[q] =
+                position + 1 == env.wireGraph[q].size() ? end : position + 1;
+          } else {
+            cursor[q] = position == 0 ? end : position - 1;
+          }
+          nextSites.push_back(site);
+        }
+      }
+      llvm::erase_if(
+          ready, [&](const Ready& r) { return is_contained(released, r.id); });
+      current.swap(nextSites);
+    }
+    return wave;
+  }
+
+  template <WireDirection Direction>
+  Wave getIndexedWave(const Wires& wires, const Layout& layout,
+                      const Environment& env, GraphScratch& scratch,
+                      bool serial = false) {
+    constexpr size_t end = std::numeric_limits<size_t>::max();
+    graphCursor<Direction>(wires, layout, env, scratch.cursor);
+    auto& cursor = scratch.cursor;
+    const auto skipUnary = [&](size_t q) {
+      while (cursor[q] != end &&
+             env.interactions[env.wireGraph[q][cursor[q]]].endpoints.size() ==
+                 1) {
+        if constexpr (Direction == WireDirection::Forward) {
+          cursor[q] =
+              cursor[q] + 1 == env.wireGraph[q].size() ? end : cursor[q] + 1;
+        } else {
+          cursor[q] = cursor[q] == 0 ? end : cursor[q] - 1;
+        }
+      }
+    };
+    for (size_t q = 0; q < cursor.size(); ++q) {
+      skipUnary(q);
+    }
+    Wave wave;
+    auto& prev = scratch.prev;
+    auto& next = scratch.next;
+    auto& ready = scratch.compactReady;
+    prev.clear();
+    next.clear();
+    while (wave.empty() || wave.size() - 1 < nlookahead) {
+      ready.clear();
+      for (size_t site = 0; site < wires.size(); ++site) {
+        const auto q = layout.getProgramIndex(site);
+        if (q >= cursor.size() || cursor[q] == end) {
+          continue;
+        }
+        const auto id = env.wireGraph[q][cursor[q]];
+        const auto& node = env.interactions[id];
+        if (all_of(node.endpoints, [&](IndexPairType e) {
+              return cursor[e.first] == e.second &&
+                     layout.getHardwareIndex(e.first) <= site;
+            })) {
+          ready.push_back(id);
+        }
+      }
+      if (ready.empty()) {
+        break;
+      }
+      if (wave.empty() && !serial) {
+        auto first = llvm::min_element(ready, [&](size_t a, size_t b) {
+          const auto distance = [&](size_t id) {
+            const auto& node = env.interactions[id];
+            if (!node.gate) {
+              return end;
+            }
+            const auto [a, b] = layout.getHardwareIndices(
+                node.endpoints[0].first, node.endpoints[1].first);
+            return env.target.distanceBetween(a, b);
+          };
+          return distance(a) < distance(b);
+        });
+        ready[0] = *first;
+        ready.resize(1);
+      }
+      if (!serial) {
+        wave.addRipple();
+      }
+      for (const auto id : ready) {
+        const auto& node = env.interactions[id];
+        if (node.gate) {
+          const IndexPairType gate =
+              std::minmax(node.endpoints[0].first, node.endpoints[1].first);
+          if (!is_contained(prev, gate)) {
+            if (serial) {
+              wave.addRipple();
+            }
+            wave.push(gate);
+            if (wave.size() - 1 == nlookahead) {
+              return wave;
+            }
+          }
+          next.push_back(gate);
+        }
+        for (const auto [q, position] : node.endpoints) {
+          if constexpr (Direction == WireDirection::Forward) {
+            cursor[q] =
+                position + 1 == env.wireGraph[q].size() ? end : position + 1;
+          } else {
+            cursor[q] = position == 0 ? end : position - 1;
+          }
+          skipUnary(q);
+        }
+      }
+      prev.swap(next);
+      next.clear();
+    }
+    return wave;
+  }
+
+  /// Build compact lookahead, preserving region boundaries in the fallback.
+  template <WireDirection Direction>
+  Wave getWave(const Wires& source, const Layout& layout, Operation* boundary,
+               const Environment& env, GraphScratch& scratch) {
+    if (!env.wireGraph.empty()) {
+      return getIndexedWave<Direction>(source, layout, env, scratch);
+    }
+    Wires wires(source);
+    Wave wave;
+
+    SmallVector<IndexPairType> prev;
+    SmallVector<IndexPairType> next;
+
+    walkProgramGraph<Direction>(
+        MutableArrayRef(wires.data(), wires.size()),
+        [&](const Frontier& frontier, ReleasedOps& released) {
+          for (const auto& [op, indices] : frontier) {
+            if (indices.size() == 1 &&
+                (boundary == nullptr || precedes<Direction>(op, boundary))) {
+              released.emplace_back(op);
+            }
+          }
+
+          if (released.empty()) {
+            if (wave.nripples() > 0) {
+              wave.addRipple();
+              for (const auto& [op, indices] : frontier) {
+                if (boundary != nullptr && !precedes<Direction>(op, boundary)) {
+                  continue;
+                }
+
+                if (!isa<BarrierOp>(op) && isa<UnitaryOpInterface>(op)) {
+                  const auto i0 = indices[0];
+                  const auto i1 = indices[1];
+                  const auto prog0 = layout.getProgramIndex(i0);
+                  const auto prog1 = layout.getProgramIndex(i1);
+                  const IndexPairType gate = std::minmax(prog0, prog1);
+
+                  if (!is_contained(prev, gate)) {
+                    wave.push(gate);
+                    if (wave.size() == 1 + nlookahead) {
+                      return WalkResult::interrupt();
+                    }
+                  }
+                  next.emplace_back(gate);
+                }
+
+                released.emplace_back(op);
+              }
+
+              prev.swap(next);
+              next.clear();
+            } else {
+
+              struct Candidate {
+                IndexPairType indices;
+                Operation* op;
+                size_t cost;
+              };
+
+              SmallVector<Candidate> candidates;
+              for (const auto& [op, indices] : frontier) {
+                if (boundary != nullptr && !precedes<Direction>(op, boundary)) {
+                  continue;
+                }
+
+                if (!isa<BarrierOp>(op) && isa<UnitaryOpInterface>(op)) {
+                  const auto i0 = indices[0];
+                  const auto i1 = indices[1];
+                  const auto prog0 = layout.getProgramIndex(i0);
+                  const auto prog1 = layout.getProgramIndex(i1);
+                  candidates.emplace_back(
+                      IndexPairType(std::minmax(prog0, prog1)), op,
+                      env.target.distanceBetween(i0, i1));
+                } else {
+                  released.emplace_back(op);
+                }
+              }
+
+              if (!candidates.empty()) {
+                const auto it = llvm::min_element(
+                    candidates, [](const Candidate& a, const Candidate& b) {
+                      return a.cost < b.cost;
+                    });
+                assert(it != candidates.end());
+                wave.addRipple();
+                const Candidate& c = *it;
+                wave.push(c.indices);
+                prev.emplace_back(c.indices);
+                released.emplace_back(c.op);
+              }
+            }
+          }
+
+          return WalkResult::advance();
+        });
+
+    return wave;
   }
 
   /// Both modes leave cursors at the next operation on each physical wire.
@@ -1651,38 +2139,42 @@ private:
     /// Keep the earliest ready region in block order. Hot placement threads
     /// every wire through it, so later regions must wait for its exit layout.
 
-    walkProgramGraph<Direction>(wires, [&](const Frontier& frontier,
-                                           ReleasedOps& released) {
-      for (const auto& [op, indices] : frontier) {
-        if (boundary != nullptr && precedes<Direction>(boundary, op)) {
-          continue;
-        }
+    walkProgramGraph<Direction>(
+        wires,
+        [&](const Frontier& frontier, ReleasedOps& released) {
+          for (const auto& [op, indices] : frontier) {
+            if (boundary != nullptr && precedes<Direction>(boundary, op)) {
+              continue;
+            }
 
-        const auto release =
-            TypeSwitch<Operation*, bool>(op)
-                .Case([](BarrierOp&) { return true; })
-                .Case([&](UnitaryOpInterface&) {
-                  if (indices.size() == 1) {
-                    return true;
-                  }
+            const auto release =
+                TypeSwitch<Operation*, bool>(op)
+                    .Case([](BarrierOp&) { return true; })
+                    .Case([&](UnitaryOpInterface&) {
+                      if (indices.size() == 1) {
+                        return true;
+                      }
 
-                  return env.target.areAdjacent(indices[0], indices[1]);
-                })
-                .Case([](ResetOp&) { return true; })
-                .Case([&](MeasureOp& m) {
-                  if (Direction == WireDirection::Backward) {
-                    return true;
-                  }
+                      return env.target.areAdjacent(indices[0], indices[1]);
+                    })
+                    .Case([](ResetOp&) { return true; })
+                    .Case([&](MeasureOp& m) {
+                      if (Direction == WireDirection::Backward) {
+                        return true;
+                      }
 
-                  return measurementNeedsRouting(m, measurementRouting);
-                })
-                .template Case<AllocOp, StaticOp, qtensor::ExtractOp>(
-                    [](auto&) { return Direction == WireDirection::Forward; })
-                .template Case<SinkOp, qtensor::InsertOp, YieldOp, scf::YieldOp,
-                               scf::ConditionOp>(
-                    [](auto&) { return Direction == WireDirection::Backward; })
-                .template Case<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp>(
-                    [&](auto& cf) {
+                      return measurementNeedsRouting(m, measurementRouting);
+                    })
+                    .template Case<AllocOp, StaticOp, qtensor::ExtractOp>(
+                        [](auto&) {
+                          return Direction == WireDirection::Forward;
+                        })
+                    .template Case<SinkOp, qtensor::InsertOp, YieldOp,
+                                   scf::YieldOp, scf::ConditionOp>([](auto&) {
+                      return Direction == WireDirection::Backward;
+                    })
+                    .template Case<IfOp, IndexSwitchOp, scf::ForOp,
+                                   scf::WhileOp>([&](auto& cf) {
                       if (!defer(cf) &&
                           (!composite ||
                            precedes<Direction>(op, composite->op))) {
@@ -1690,30 +2182,31 @@ private:
                       }
                       return false;
                     })
-                .Default([&](auto) { return false; });
+                    .Default([&](auto) { return false; });
 
-        if (release) {
-          released.emplace_back(op);
+            if (release) {
+              released.emplace_back(op);
 
-          if (state.costs) {
-            SmallVector<size_t, 2> vertices(indices.begin(), indices.end());
-            /// Frontier indices are in traversal order, not operand order.
-            if (auto gate = dyn_cast<UnitaryOpInterface>(op);
-                gate && gate.isTwoQubit() &&
-                wires[indices[0]].qubit() != gate.getOutputQubit(0)) {
-              std::swap(vertices[0], vertices[1]);
+              if (state.costs) {
+                SmallVector<size_t, 2> vertices(indices.begin(), indices.end());
+                /// Frontier indices are in traversal order, not operand order.
+                if (auto gate = dyn_cast<UnitaryOpInterface>(op);
+                    gate && gate.isTwoQubit() &&
+                    wires[indices[0]].qubit() != gate.getOutputQubit(0)) {
+                  std::swap(vertices[0], vertices[1]);
+                }
+                state.costs->append(op, vertices);
+              }
             }
-            state.costs->append(op, vertices);
           }
-        }
-      }
 
-      if (released.empty()) {
-        return WalkResult::interrupt();
-      }
+          if (released.empty()) {
+            return WalkResult::interrupt();
+          }
 
-      return WalkResult::advance();
-    });
+          return WalkResult::advance();
+        },
+        state.traversal);
 
     return composite;
   }
@@ -1837,6 +2330,8 @@ private:
     for (auto [index, region] : enumerate(op->getRegions())) {
       auto& child = children.emplace_back(Wires(env.target.numSites()),
                                           parent.layout, env);
+      child.policy = parent.policy;
+      child.collectScore = parent.collectScore;
 
       auto roots = getQubitValues(Direction == WireDirection::Forward
                                       ? region.front().getArguments()
@@ -1947,19 +2442,25 @@ private:
   Statistics route(RoutingState& state, Arena& arena, const Environment& env,
                    IRRewriter* rewriter = nullptr) {
     if (state.costs) {
-      state.costs->reset(Direction);
+      state.costs->reset(Direction,
+                         Mode == RoutingMode::Cold && env.immutableIR,
+                         state.collectScore);
     }
+
     Operation* boundary = nullptr;
-    for (auto& wire : state.wires) {
-      if (wire != std::default_sentinel) {
-        auto* block = wire.qubit().getParentBlock();
-        boundary = nextRoutingBoundary<Direction>(
-            Direction == WireDirection::Forward ? &block->front()
-                                                : &block->back());
-        break;
+    if (env.wireGraph.empty()) {
+      for (auto& wire : state.wires) {
+        if (wire != std::default_sentinel) {
+          auto* block = wire.qubit().getParentBlock();
+          boundary = nextRoutingBoundary<Direction>(
+              Direction == WireDirection::Forward ? &block->front()
+                                                  : &block->back());
+          break;
+        }
       }
     }
 
+    size_t planStep = 0;
     Statistics stats;
     while (true) {
       auto composite = advance<Direction>(state, boundary, env);
@@ -1985,14 +2486,43 @@ private:
         continue;
       }
 
-      const auto window =
-          getWindow<Direction>(state.wires, state.layout, boundary);
-      if (window.empty()) {
+      const auto nextSwaps =
+          [&]() -> std::optional<SmallVector<IndexPairType>> {
+        if constexpr (Mode == RoutingMode::Hot) {
+          if (state.plan != nullptr) {
+            if (planStep == state.plan->size()) {
+              return std::nullopt;
+            }
+            return (*state.plan)[planStep++];
+          }
+        }
+        const Wave wave =
+            state.policy == RoutingPolicy::Main ||
+                    (state.policy == RoutingPolicy::Serial &&
+                     env.wireGraph.empty())
+                ? getMainWindow<Direction>(state.wires, state.layout, boundary,
+                                           env, state.lookahead)
+            : state.policy == RoutingPolicy::Serial
+                ? getIndexedWave<Direction>(state.wires, state.layout, env,
+                                            state.lookahead, true)
+                : getWave<Direction>(state.wires, state.layout, boundary, env,
+                                     state.lookahead);
+        if (wave.empty()) {
+          return std::nullopt;
+        }
+
+        return search(wave, state, arena, env);
+      };
+      const auto swaps = nextSwaps();
+      if (!swaps) {
         break;
       }
-
-      const auto swaps = search(window, state, arena, env);
-      insertSWAPs<Mode>(swaps, state, stats, rewriter);
+      if constexpr (Mode == RoutingMode::Cold) {
+        if (state.plan != nullptr) {
+          state.plan->push_back(*swaps);
+        }
+      }
+      insertSWAPs<Mode>(*swaps, state, stats, rewriter);
     }
 
     if constexpr (Direction == WireDirection::Forward) {

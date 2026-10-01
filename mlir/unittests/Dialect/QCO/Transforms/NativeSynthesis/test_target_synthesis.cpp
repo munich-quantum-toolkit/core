@@ -497,6 +497,199 @@ TEST_F(TargetSynthesisTest, ReadOnlyNativeCostMatchesSynthesis) {
   }
 }
 
+TEST_F(TargetSynthesisTest, ColdNativeMetadataMatchesLiveAccounting) {
+  using mlir::qco::NativeCostTable;
+  using mlir::qco::NativeCostTracker;
+  using mlir::qco::UnitaryOpInterface;
+  using mlir::qco::WireDirection;
+  const auto target = makeOneWayUCxTarget();
+  for (const bool reverseOperands : {false, true}) {
+    auto moduleOp = build([&](QCOProgramBuilder& builder) {
+      auto a = builder.staticQubit(reverseOperands ? 1 : 0);
+      auto b = builder.staticQubit(reverseOperands ? 0 : 1);
+      a = builder.ry(0.37, a);
+      /// Overlapping inverse pairs must still be consumed in traversal order.
+      for (size_t i = 0; i < 3; ++i) {
+        std::tie(a, b) = builder.cx(a, b);
+      }
+      a = builder.h(a);
+      std::tie(a, b) = builder.swap(a, b);
+      return builder.intConstant(0);
+    });
+    const auto shared =
+        NativeCostTable::precompute(*moduleOp, Target::GateKind::CX, 2023);
+    auto gates =
+        llvm::to_vector(mainFunction(*moduleOp).getOps<UnitaryOpInterface>());
+    const std::array<size_t, 2> vertices = reverseOperands
+                                               ? std::array<size_t, 2>{1, 0}
+                                               : std::array<size_t, 2>{0, 1};
+    mlir::qco::NativeCostAnalysis analysis(2023, shared.get());
+    const auto swapCost =
+        analysis.swapCost(target, std::array<Target::SiteId, 2>{0, 1});
+    ASSERT_TRUE(swapCost);
+    NativeCostTracker cached(target, 2023, shared.get(), swapCost);
+    NativeCostTracker live(target, 2023, shared.get());
+    for (const auto direction : {
+             WireDirection::Forward,
+             WireDirection::Backward,
+             WireDirection::Forward,
+         }) {
+      cached.reset(direction, true);
+      live.reset(direction);
+      for (size_t i = 0; i < gates.size(); ++i) {
+        auto gate =
+            gates[direction == WireDirection::Forward ? i
+                                                      : gates.size() - i - 1];
+        auto sites =
+            llvm::ArrayRef(vertices).take_front(gate.isTwoQubit() ? 2 : 1);
+        cached.append(gate, sites);
+        live.append(gate, sites);
+        EXPECT_EQ(cached.swapCostAdjustment(0, 1, 3),
+                  live.swapCostAdjustment(0, 1, 3));
+        auto completedCached = cached;
+        auto completedLive = live;
+        EXPECT_EQ(completedCached.score(), completedLive.score());
+      }
+      cached.appendSwap(0, 1);
+      live.appendSwap(0, 1);
+      EXPECT_EQ(cached.swapCostAdjustment(0, 1, *swapCost),
+                live.swapCostAdjustment(0, 1, *swapCost));
+      EXPECT_EQ(cached.score(), live.score());
+    }
+  }
+}
+
+TEST_F(TargetSynthesisTest, NativeGuidanceDoesNotNeedCompletedScores) {
+  using mlir::qco::NativeCostTable;
+  using mlir::qco::NativeCostTracker;
+  using mlir::qco::UnitaryOpInterface;
+  using mlir::qco::WireDirection;
+  const auto target = makeUCxTarget(std::vector{
+      valid(Site::create(0)),
+      valid(Site::create(1)),
+      valid(Site::create(2)),
+  });
+  auto moduleOp = build([](QCOProgramBuilder& builder) {
+    auto [a, b] = builder.rxx(std::numbers::pi / 4., builder.staticQubit(0),
+                              builder.staticQubit(1));
+    a = builder.h(a);
+    auto c = builder.staticQubit(2);
+    std::tie(a, c) = builder.cx(a, c);
+    c = builder.reset(c);
+    return builder.intConstant(0);
+  });
+  const auto shared =
+      NativeCostTable::precompute(*moduleOp, Target::GateKind::CX, 2023);
+  const auto gates =
+      llvm::to_vector(mainFunction(*moduleOp).getOps<UnitaryOpInterface>());
+  ASSERT_EQ(gates.size(), 3U);
+  const std::array<llvm::SmallVector<size_t, 2>, 3> vertices{
+      llvm::SmallVector<size_t, 2>{0, 1},
+      {0},
+      {0, 2},
+  };
+  auto reset = *mainFunction(*moduleOp).getOps<mlir::qco::ResetOp>().begin();
+  for (const auto direction :
+       {WireDirection::Forward, WireDirection::Backward}) {
+    for (const bool nested : {false, true}) {
+      NativeCostTracker full(target, 2023, shared.get());
+      NativeCostTracker guidance(target, 2023, shared.get());
+      full.reset(direction, true);
+      guidance.reset(direction, true, false);
+      for (size_t i = 0; i < gates.size(); ++i) {
+        const auto index =
+            direction == WireDirection::Forward ? i : gates.size() - i - 1;
+        full.append(gates[index], vertices[index]);
+        guidance.append(gates[index], vertices[index]);
+        for (size_t a = 0; a < 3; ++a) {
+          for (size_t b = a + 1; b < 3; ++b) {
+            EXPECT_EQ(guidance.swapCostAdjustment(a, b, 3),
+                      full.swapCostAdjustment(a, b, 3));
+          }
+        }
+      }
+      full.flush();
+      guidance.flush();
+      full.appendSwap(0, 1);
+      guidance.appendSwap(0, 1);
+      EXPECT_EQ(guidance.swapCostAdjustment(0, 1, 3),
+                full.swapCostAdjustment(0, 1, 3));
+      EXPECT_LT(guidance.swapCostAdjustment(0, 1, 3), 0);
+
+      if (nested) {
+        NativeCostTracker fullChild(target, 2023, shared.get());
+        NativeCostTracker guidanceChild(target, 2023, shared.get());
+        fullChild.reset(direction, true);
+        guidanceChild.reset(direction, true, false);
+        fullChild.append(reset, std::array<size_t, 1>{2});
+        guidanceChild.append(reset, std::array<size_t, 1>{2});
+        full.merge(fullChild);
+        guidance.merge(guidanceChild);
+      } else {
+        full.append(reset, std::array<size_t, 1>{2});
+        guidance.append(reset, std::array<size_t, 1>{2});
+      }
+      EXPECT_EQ(full.swapCostAdjustment(0, 1, 3), 0);
+      EXPECT_EQ(guidance.swapCostAdjustment(0, 1, 3), 0);
+      EXPECT_FALSE(full.score());
+      EXPECT_FALSE(guidance.score());
+
+      guidance.reset(direction, true);
+      guidance.appendSwap(0, 1);
+      EXPECT_EQ(guidance.score(), (std::pair<size_t, size_t>{3, 3}));
+    }
+  }
+}
+
+TEST_F(TargetSynthesisTest, MutableNativeAccountingIgnoresCachedMetadata) {
+  using mlir::qco::NativeCostTable;
+  using mlir::qco::NativeCostTracker;
+  using mlir::qco::UnitaryOpInterface;
+  using mlir::qco::WireDirection;
+  auto moduleOp = build([](QCOProgramBuilder& builder) {
+    auto [a, b] = builder.rxx(std::numbers::pi / 4., builder.staticQubit(0),
+                              builder.staticQubit(1));
+    std::tie(a, b) = builder.rxx(-std::numbers::pi / 4., a, b);
+    return builder.intConstant(0);
+  });
+  const auto target = makeUCxTarget();
+  const auto shared =
+      NativeCostTable::precompute(*moduleOp, Target::GateKind::CX, 2023);
+  auto gates =
+      llvm::to_vector(mainFunction(*moduleOp).getOps<UnitaryOpInterface>());
+  const std::array<size_t, 2> sites{0, 1};
+  NativeCostTracker reused(target, 2023, shared.get());
+  reused.reset(WireDirection::Forward, true);
+  for (auto gate : gates) {
+    reused.append(gate, sites);
+  }
+  EXPECT_EQ(reused.score(), (std::pair<size_t, size_t>{0, 0}));
+
+  auto rotation = mlir::cast<RXXOp>(gates.back().getOperation());
+  auto angle = rotation.getTheta().getDefiningOp<mlir::arith::ConstantOp>();
+  ASSERT_TRUE(angle);
+  angle.setValueAttr(
+      mlir::FloatAttr::get(angle.getType(), std::numbers::pi / 8.));
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*moduleOp)));
+
+  /// Entering mutable routing must discard both cached matrices and inverses.
+  for (const auto direction :
+       {WireDirection::Forward, WireDirection::Backward}) {
+    reused.reset(direction);
+    NativeCostTracker fresh(target, 2023);
+    fresh.reset(direction);
+    for (size_t i = 0; i < gates.size(); ++i) {
+      auto gate =
+          gates[direction == WireDirection::Forward ? i : gates.size() - i - 1];
+      reused.append(gate, sites);
+      fresh.append(gate, sites);
+    }
+    EXPECT_EQ(reused.score(), fresh.score());
+    ASSERT_TRUE(reused.score());
+    EXPECT_GT(reused.score()->first, 0U);
+  }
+}
+
 TEST_F(TargetSynthesisTest, NativeCostPreservesSingletonNativeGates) {
   const auto target = valid(
       Target::create(2, Connectivity::allToAll(),
@@ -719,13 +912,26 @@ TEST_F(TargetSynthesisTest, NativeCachesPreserveDecompositionsAfterEviction) {
 TEST_F(TargetSynthesisTest, NativeCacheCopiesAndMovesOwnTheirEntries) {
   using mlir::qco::Matrix4x4;
   using mlir::qco::NativeCostAnalysis;
+  using mlir::qco::NativeCostTable;
   using mlir::qco::decomposition::decomposeUnitary2QWeyl;
+  const auto target = makeUCxTarget();
+  const std::array<Target::SiteId, 2> sites{0, 1};
+  auto moduleOp =
+      build([](QCOProgramBuilder& builder) { return builder.intConstant(0); });
+  const auto shared =
+      NativeCostTable::precompute(*moduleOp, Target::GateKind::CX, 7);
   auto matrix = Matrix4x4::identity();
   matrix(3, 3) = std::polar(1.0, 0.371);
   const auto basis = Target::GateKind::CX;
   const auto expected = decomposeUnitary2QWeyl(matrix, basis, 7);
   ASSERT_TRUE(expected);
   const auto check = [&](NativeCostAnalysis& analysis) {
+    EXPECT_EQ(analysis.matrixCost(matrix, target, sites),
+              expected->numBasisUses);
+    EXPECT_EQ(analysis.matrixCost(SWAPOp::getUnitaryMatrix(), target, sites),
+              3U);
+    EXPECT_EQ(analysis.matrixCost(matrix, target, sites),
+              expected->numBasisUses);
     const auto& actual = analysis.decompose(matrix, basis);
     ASSERT_TRUE(actual);
     EXPECT_EQ(actual->numBasisUses, expected->numBasisUses);
@@ -737,14 +943,14 @@ TEST_F(TargetSynthesisTest, NativeCacheCopiesAndMovesOwnTheirEntries) {
                 expected->singleQubitFactors[i].data);
     }
   };
-  NativeCostAnalysis original(7);
+  NativeCostAnalysis original(7, shared.get());
   check(original);
   NativeCostAnalysis copied(original);
-  original = NativeCostAnalysis(7);
+  original = NativeCostAnalysis(7, shared.get());
   check(copied);
   NativeCostAnalysis assigned(99);
   assigned = copied;
-  copied = NativeCostAnalysis(7);
+  copied = NativeCostAnalysis(7, shared.get());
   check(assigned);
   NativeCostAnalysis moved(std::move(assigned));
   check(moved);

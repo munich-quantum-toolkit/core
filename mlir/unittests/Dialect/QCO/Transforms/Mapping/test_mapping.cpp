@@ -3161,6 +3161,29 @@ TEST_F(MappingPassFixture, LookaheadAllocationFollowsCircuitSize) {
   }
 }
 
+TEST_F(MappingPassFixture, MaximumLookaheadPreservesRoutingSemantics) {
+  context->disableMultithreading();
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      6, Connectivity::fromCouplings({{0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 5}}),
+      NativeOperations::unrestricted()));
+  auto moduleOp =
+      makeRoutingBasisProgram(context.get(), false, false, 0b010101);
+  const auto expected = qco::sample(getEntryPoint(*moduleOp), 1, 42);
+  ASSERT_TRUE(succeeded(expected));
+
+  ASSERT_TRUE(succeeded(runPass(
+      *moduleOp, target,
+      MappingPassOptions{.nlookahead = std::numeric_limits<size_t>::max(),
+                         .ntrials = 2,
+                         .seed = 42})));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(*moduleOp), target));
+  const auto actual = qco::sample(getEntryPoint(*moduleOp), 1, 42);
+  ASSERT_TRUE(succeeded(actual));
+  EXPECT_EQ(*actual, *expected);
+}
+
 TEST_F(MappingPassFixture, DefaultTrialsMatchAvailableCPUs) {
   const auto expectedTrials =
       llvm::hardware_concurrency().compute_thread_count();

@@ -524,7 +524,7 @@ static bool sameMatrix(const Matrix4x4& a, const Matrix4x4& b) {
   return std::memcmp(aBytes.data(), bBytes.data(), aBytes.size()) == 0;
 }
 
-const std::optional<uint8_t>*
+const NativeCostTable::Entry*
 NativeCostTable::lookup(const Matrix4x4& matrix,
                         CompilerTarget::GateKind entangler,
                         uint64_t hash) const {
@@ -534,8 +534,39 @@ NativeCostTable::lookup(const Matrix4x4& matrix,
   }
   const auto& entry = entries_[it->second];
   return entry.entangler == entangler && sameMatrix(entry.matrix, matrix)
-             ? &entry.count
+             ? &entry
              : nullptr;
+}
+
+/// The adjacent inverse on both wires, in the requested traversal direction.
+static Operation* adjacentInverse(UnitaryOpInterface unitary,
+                                  const Matrix4x4& matrix,
+                                  WireDirection direction) {
+  const auto neighbour = [&](unsigned index) {
+    return direction == WireDirection::Forward
+               ? uniqueUnitaryUser(unitary.getOutputQubit(index))
+               : dyn_cast_if_present<UnitaryOpInterface>(
+                     unitary.getInputQubit(index).getDefiningOp());
+  };
+  auto next = neighbour(0);
+  if (next && next == neighbour(1)) {
+    if (auto inverse = twoQubitRunMemberMatrix(next)) {
+      const bool reversed =
+          direction == WireDirection::Forward
+              ? next.getInputQubit(0) != unitary.getOutputQubit(0)
+              : next.getOutputQubit(0) != unitary.getInputQubit(0);
+      if (reversed) {
+        inverse = inverse->reorderForQubits(1, 0);
+      }
+      const auto product = direction == WireDirection::Forward
+                               ? *inverse * matrix
+                               : matrix * *inverse;
+      if (product.isApprox(Matrix4x4::identity())) {
+        return next.getOperation();
+      }
+    }
+  }
+  return nullptr;
 }
 
 std::unique_ptr<const NativeCostTable>
@@ -573,12 +604,26 @@ NativeCostTable::precompute(Operation* root, CompilerTarget::GateKind entangler,
   add(Matrix4x4::identity());
   add(swap);
   root->walk([&](Operation* op) {
-    if (result->entries_.size() == capacity) {
-      return WalkResult::interrupt();
-    }
     auto unitary = dyn_cast<UnitaryOpInterface>(op);
+    if (!unitary) {
+      return WalkResult::advance();
+    }
+    auto& info = result->operations_[op];
+    if (const auto matrix = oneQubitRunMemberMatrix(unitary)) {
+      info.singleQubit = result->singleQubitMatrices_.size();
+      result->singleQubitMatrices_.push_back(*matrix);
+    }
     const auto matrix = twoQubitRunMemberMatrix(unitary);
     if (!matrix) {
+      return WalkResult::advance();
+    }
+    info.twoQubit = result->twoQubitMatrices_.size();
+    result->twoQubitMatrices_.push_back(*matrix);
+    info.forwardInverse =
+        adjacentInverse(unitary, *matrix, WireDirection::Forward);
+    info.backwardInverse =
+        adjacentInverse(unitary, *matrix, WireDirection::Backward);
+    if (result->entries_.size() == capacity) {
       return WalkResult::advance();
     }
     addOrientations(*matrix);
@@ -633,27 +678,32 @@ NativeCostAnalysis::decompose(const Matrix4x4& matrix,
 std::optional<uint8_t>
 NativeCostAnalysis::count(const Matrix4x4& matrix,
                           CompilerTarget::GateKind entangler) {
-  if (lastCount_ && lastCount_->entangler == entangler &&
-      lastCount_->matrix.data == matrix.data) {
-    return lastCount_->count;
+  const auto* last = lastSharedCount_;
+  if (last == nullptr && lastCount_ < counts_.size()) {
+    last = &counts_[lastCount_];
+  }
+  if (last != nullptr && last->entangler == entangler &&
+      last->matrix.data == matrix.data) {
+    return last->count;
   }
   const auto hash = matrixHash(matrix, entangler);
   if (shared_->seed_ == seed_) {
     if (const auto* cached = shared_->lookup(matrix, entangler, hash)) {
-      lastCount_ = {.matrix = matrix, .entangler = entangler, .count = *cached};
-      return *cached;
+      lastSharedCount_ = cached;
+      return cached->count;
     }
   }
   for (size_t i = 0; i < countHashes_.size(); ++i) {
     const auto& entry = counts_[i];
     if (countHashes_[i] == hash && entry.entangler == entangler &&
         sameMatrix(entry.matrix, matrix)) {
-      lastCount_ = entry;
+      lastCount_ = i;
+      lastSharedCount_ = nullptr;
       return entry.count;
     }
   }
   const auto native = decomposeUnitary2QWeyl(matrix, entangler, seed_);
-  lastCount_ = {
+  NativeCostTable::Entry entry{
       .matrix = matrix,
       .entangler = entangler,
       .count = native ? std::optional(native->numBasisUses) : std::nullopt,
@@ -663,14 +713,17 @@ NativeCostAnalysis::count(const Matrix4x4& matrix,
     countHashes_.reserve(CACHE_SIZE);
   }
   if (counts_.size() < CACHE_SIZE) {
-    counts_.push_back(*lastCount_);
+    lastCount_ = counts_.size();
+    counts_.push_back(entry);
     countHashes_.push_back(hash);
   } else {
-    counts_[nextCount_] = *lastCount_;
+    lastCount_ = nextCount_;
+    counts_[nextCount_] = entry;
     countHashes_[nextCount_] = hash;
     nextCount_ = (nextCount_ + 1) % CACHE_SIZE;
   }
-  return lastCount_->count;
+  lastSharedCount_ = nullptr;
+  return counts_[lastCount_].count;
 }
 
 std::optional<size_t>
@@ -711,7 +764,9 @@ NativeCostAnalysis::matrixCost(const Matrix4x4& matrix,
   if (!reverse) {
     return std::nullopt;
   }
-  const auto ordered = *reverse ? matrix.reorderForQubits(1, 0) : matrix;
+  const auto reversed =
+      *reverse ? std::optional(matrix.reorderForQubits(1, 0)) : std::nullopt;
+  const auto& ordered = reversed ? *reversed : matrix;
   if (shared_ != nullptr) {
     return count(ordered, *basis->entangler);
   }
@@ -737,13 +792,18 @@ NativeCostAnalysis::swapCost(const CompilerTarget& target,
 
 NativeCostTracker::NativeCostTracker(const CompilerTarget& target,
                                      uint64_t seed,
-                                     const NativeCostTable* shared)
-    : target_(target), analysis_(seed, shared), runs_(target.numSites()),
+                                     const NativeCostTable* shared,
+                                     std::optional<size_t> uniformSwapCost)
+    : target_(target), analysis_(seed, shared), shared_(shared),
+      uniformSwapCost_(uniformSwapCost), runs_(target.numSites()),
       partners_(target.numSites(), target.numSites()),
       depths_(target.numSites()) {}
 
-void NativeCostTracker::reset(WireDirection direction) {
+void NativeCostTracker::reset(WireDirection direction, bool immutableIR,
+                              bool collectScore) {
   direction_ = direction;
+  immutableIR_ = immutableIR;
+  collectScore_ = collectScore;
   std::ranges::fill(partners_, partners_.size());
   std::ranges::fill(depths_, 0);
   trailingGates_.clear();
@@ -790,7 +850,9 @@ void NativeCostTracker::flush(size_t vertex) {
   }
   const size_t partner = partners_[vertex];
   const auto [a, b] = std::minmax(vertex, partner);
-  charge(pendingCost(a, b), a, b);
+  if (collectScore_) {
+    charge(pendingCost(a, b), a, b);
+  }
   partners_[a] = partners_[b] = partners_.size();
 }
 
@@ -831,9 +893,39 @@ void NativeCostTracker::appendPair(const Matrix4x4& matrix, size_t cost,
   run.canFuse = true;
 }
 
+void NativeCostTracker::appendSingleQubit(const Matrix2x2* matrix,
+                                          size_t vertex) {
+  if (matrix == nullptr) {
+    flush(vertex);
+    if (direction_ == WireDirection::Backward) {
+      trailingGates_[vertex].reset();
+    }
+  } else if (direction_ == WireDirection::Backward) {
+    auto& trailing = trailingGates_[vertex];
+    trailing = trailing ? *trailing * *matrix : *matrix;
+  } else if (const size_t partner = partners_[vertex];
+             partner != partners_.size()) {
+    auto& run = runs_[std::min(vertex, partner)];
+    run.matrix.premultiplyBy(matrix->embedInTwoQubit(vertex < partner ? 0 : 1));
+    run.canFuse = true;
+  }
+}
+
 void NativeCostTracker::append(Operation* operation,
                                ArrayRef<size_t> vertices) {
   if (!available_ || cancellations_.erase(operation)) {
+    return;
+  }
+  const NativeCostTable::OperationInfo* info = nullptr;
+  if (immutableIR_ && shared_ != nullptr) {
+    const auto it = shared_->operations_.find(operation);
+    if (it != shared_->operations_.end()) {
+      info = &it->second;
+    }
+  }
+  if (info != nullptr && info->singleQubit && target_.synthesisBasis()) {
+    appendSingleQubit(&shared_->singleQubitMatrices_[*info->singleQubit],
+                      vertices.front());
     return;
   }
   SmallVector<CompilerTarget::SiteId, 2> sites;
@@ -861,32 +953,22 @@ void NativeCostTracker::append(Operation* operation,
   }
   /// Adjacent inverses must not split an earlier pending run on another pair.
   /// Their shared wires keep both gates together in either traversal direction.
-  const auto twoQubitMatrix = twoQubitRunMemberMatrix(unitary);
-  if (twoQubitMatrix) {
-    const auto neighbour = [&](unsigned index) {
-      return direction_ == WireDirection::Forward
-                 ? uniqueUnitaryUser(unitary.getOutputQubit(index))
-                 : dyn_cast_if_present<UnitaryOpInterface>(
-                       unitary.getInputQubit(index).getDefiningOp());
-    };
-    auto next = neighbour(0);
-    if (next && next == neighbour(1)) {
-      if (auto inverse = twoQubitRunMemberMatrix(next)) {
-        const bool reversed =
-            direction_ == WireDirection::Forward
-                ? next.getInputQubit(0) != unitary.getOutputQubit(0)
-                : next.getOutputQubit(0) != unitary.getInputQubit(0);
-        if (reversed) {
-          inverse = inverse->reorderForQubits(1, 0);
-        }
-        const auto product = direction_ == WireDirection::Forward
-                                 ? *inverse * *twoQubitMatrix
-                                 : *twoQubitMatrix * *inverse;
-        if (product.isApprox(Matrix4x4::identity())) {
-          cancellations_.insert(next.getOperation());
-          return;
-        }
-      }
+  const auto liveTwoQubitMatrix =
+      info != nullptr ? std::nullopt : twoQubitRunMemberMatrix(unitary);
+  const auto* twoQubitMatrix =
+      info != nullptr && info->twoQubit
+          ? &shared_->twoQubitMatrices_[*info->twoQubit]
+      : liveTwoQubitMatrix ? &*liveTwoQubitMatrix
+                           : nullptr;
+  if (twoQubitMatrix != nullptr) {
+    Operation* inverse =
+        info != nullptr
+            ? (direction_ == WireDirection::Forward ? info->forwardInverse
+                                                    : info->backwardInverse)
+            : adjacentInverse(unitary, *twoQubitMatrix, direction_);
+    if (inverse != nullptr) {
+      cancellations_.insert(inverse);
+      return;
     }
   }
   const auto cost = analysis_.operationCost(unitary, target_, sites);
@@ -896,27 +978,19 @@ void NativeCostTracker::append(Operation* operation,
   }
   if (unitary.isSingleQubit()) {
     const size_t vertex = vertices.front();
-    const auto matrix = oneQubitRunMemberMatrix(unitary);
-    if (!matrix) {
-      flush(vertex);
-      if (direction_ == WireDirection::Backward) {
-        trailingGates_[vertex].reset();
-      }
-    } else if (direction_ == WireDirection::Backward) {
-      auto& trailing = trailingGates_[vertex];
-      trailing = trailing ? *trailing * *matrix : *matrix;
-    } else if (const size_t partner = partners_[vertex];
-               partner != partners_.size()) {
-      auto& run = runs_[std::min(vertex, partner)];
-      run.matrix.premultiplyBy(
-          matrix->embedInTwoQubit(vertex < partner ? 0 : 1));
-      run.canFuse = true;
-    }
+    const auto liveMatrix =
+        info != nullptr ? std::nullopt : oneQubitRunMemberMatrix(unitary);
+    const auto* matrix =
+        info != nullptr && info->singleQubit
+            ? &shared_->singleQubitMatrices_[*info->singleQubit]
+        : liveMatrix ? &*liveMatrix
+                     : nullptr;
+    appendSingleQubit(matrix, vertex);
     return;
   }
   const size_t a = vertices[0];
   const size_t b = vertices[1];
-  if (twoQubitMatrix) {
+  if (twoQubitMatrix != nullptr) {
     appendPair(*twoQubitMatrix, *cost, a, b);
   } else {
     flush(a);
@@ -935,10 +1009,12 @@ void NativeCostTracker::appendSwap(size_t first, size_t second) {
   }
 
   const auto cost =
-      analysis_.swapCost(target_, std::array{
-                                      target_.siteForVertex(first),
-                                      target_.siteForVertex(second),
-                                  });
+      uniformSwapCost_
+          ? uniformSwapCost_
+          : analysis_.swapCost(target_, std::array{
+                                            target_.siteForVertex(first),
+                                            target_.siteForVertex(second),
+                                        });
   if (!cost) {
     available_ = false;
     return;
@@ -956,7 +1032,8 @@ void NativeCostTracker::merge(NativeCostTracker& child) {
 
 std::optional<std::pair<size_t, size_t>> NativeCostTracker::score() {
   flush();
-  return available_ ? std::optional(std::pair{count_, depth_}) : std::nullopt;
+  return available_ && collectScore_ ? std::optional(std::pair{count_, depth_})
+                                     : std::nullopt;
 }
 
 int64_t NativeCostTracker::swapCostAdjustment(size_t first, size_t second,

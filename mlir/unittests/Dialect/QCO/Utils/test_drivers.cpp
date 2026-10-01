@@ -291,3 +291,44 @@ TEST_F(DriversFixture, ProgramWalkRetainsUnreleasedReadyOperations) {
   EXPECT_TRUE(
       llvm::all_of(prev, [&](Operation* op) { return curr.contains(op); }));
 }
+
+TEST_F(DriversFixture, PartialReleasePreservesReadyOrderAndIndices) {
+  auto mod = getProgram();
+  auto wires = getWires(*mod);
+  WalkProgramGraphScratch scratch;
+  SmallVector<std::pair<Operation*, SmallVector<size_t>>> retained;
+  DenseSet<Operation*> visited;
+
+  const auto callback = [&](const Frontier& frontier, ReleasedOps& released) {
+    EXPECT_GE(frontier.size(), retained.size());
+    if (frontier.size() < retained.size()) {
+      return WalkResult::interrupt();
+    }
+    for (const auto& [previous, current] : llvm::zip(retained, frontier)) {
+      EXPECT_EQ(previous.first, current.first);
+      EXPECT_EQ(previous.second, current.second);
+    }
+    retained.assign(frontier.begin(), frontier.end());
+    if (!retained.empty()) {
+      Operation* op = retained.back().first;
+      retained.pop_back();
+      EXPECT_TRUE(visited.insert(op).second);
+      released.push_back(op);
+    }
+    return WalkResult::advance();
+  };
+
+  walkProgramGraph<WireDirection::Forward>(wires, callback, scratch);
+  EXPECT_EQ(visited.size(), 24U);
+  EXPECT_TRUE(llvm::all_of(wires, [](const WireIterator& it) {
+    return it == std::default_sentinel;
+  }));
+
+  visited.clear();
+  for_each(wires, [](WireIterator& it) { --it; });
+  walkProgramGraph<WireDirection::Backward>(wires, callback, scratch);
+  EXPECT_EQ(visited.size(), 24U);
+  EXPECT_TRUE(llvm::all_of(wires, [](const WireIterator& it) {
+    return it == std::default_sentinel;
+  }));
+}

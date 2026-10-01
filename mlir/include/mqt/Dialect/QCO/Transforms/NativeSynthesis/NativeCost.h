@@ -17,6 +17,8 @@
 
 #include "mlir/Support/LLVM.h"
 
+#include "llvm/ADT/DenseMap.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -29,8 +31,9 @@ namespace mlir::qco {
 class UnitaryOpInterface;
 
 /// Immutable numerical costs prepared once before routing trials. Construction
-/// requires linear QCO IR. No IR handles survive construction; target support
-/// and operand direction remain the caller's responsibility.
+/// requires linear QCO IR. Operation metadata is valid only while that IR
+/// stays unchanged. Numerical entries survive mutations; target support and
+/// operand direction remain the caller's responsibility.
 class NativeCostTable {
 public:
   static std::unique_ptr<const NativeCostTable>
@@ -39,15 +42,25 @@ public:
 
 private:
   friend class NativeCostAnalysis;
+  friend class NativeCostTracker;
+  struct OperationInfo {
+    std::optional<size_t> singleQubit;
+    std::optional<size_t> twoQubit;
+    Operation* forwardInverse = nullptr;
+    Operation* backwardInverse = nullptr;
+  };
+  DenseMap<Operation*, OperationInfo> operations_;
+  std::vector<Matrix2x2> singleQubitMatrices_;
+  std::vector<Matrix4x4> twoQubitMatrices_;
   struct Entry {
     Matrix4x4 matrix;
     CompilerTarget::GateKind entangler;
     std::optional<uint8_t> count;
   };
 
-  [[nodiscard]] const std::optional<uint8_t>*
-  lookup(const Matrix4x4& matrix, CompilerTarget::GateKind entangler,
-         uint64_t hash) const;
+  [[nodiscard]] const Entry* lookup(const Matrix4x4& matrix,
+                                    CompilerTarget::GateKind entangler,
+                                    uint64_t hash) const;
 
   uint64_t seed_ = 0;
   std::vector<Entry> entries_;
@@ -112,7 +125,8 @@ private:
   std::vector<NativeCostTable::Entry> counts_;
   std::vector<uint64_t> countHashes_;
   size_t nextCount_ = 0;
-  std::optional<NativeCostTable::Entry> lastCount_;
+  size_t lastCount_ = 0;
+  const NativeCostTable::Entry* lastSharedCount_ = nullptr;
   std::vector<DecompositionEntry> decompositions_;
   std::vector<uint64_t> decompositionHashes_;
   size_t nextDecomposition_ = 0;
@@ -124,11 +138,16 @@ private:
 /// Depth counts qubit dependencies only, without classical scheduling.
 class NativeCostTracker {
 public:
+  /// A supplied SWAP cost must hold on every coupling of this target.
   NativeCostTracker(const CompilerTarget& target, uint64_t seed,
-                    const NativeCostTable* shared = nullptr);
+                    const NativeCostTable* shared = nullptr,
+                    std::optional<size_t> uniformSwapCost = std::nullopt);
 
   /// Start a traversal with empty accounting state, retaining numerical caches.
-  void reset(WireDirection direction);
+  /// Use operation metadata only for the unchanged IR used to build the table.
+  /// Disable score collection when only SWAP guidance is needed.
+  void reset(WireDirection direction, bool immutableIR = false,
+             bool collectScore = true);
 
   /// Observe one original operation in traversal order, with vertices in its
   /// operand order. Matrices always represent forward circuit execution.
@@ -141,6 +160,7 @@ public:
   /// Include a finished nested block once, without execution-frequency weights.
   void merge(NativeCostTracker& child);
   /// Finish pending runs and return count/depth, or unavailable lowering.
+  /// Returns unavailable when score collection is disabled.
   std::optional<std::pair<size_t, size_t>> score();
   /// Signed first-SWAP adjustment: extended run minus current and standalone
   /// costs. Append in forward traversal; prepend in backward traversal.
@@ -162,10 +182,15 @@ private:
   size_t pendingCost(size_t a, size_t b);
   void flush(size_t vertex);
   void appendPair(const Matrix4x4& matrix, size_t cost, size_t a, size_t b);
+  void appendSingleQubit(const Matrix2x2* matrix, size_t vertex);
   void charge(size_t cost, size_t a, size_t b);
 
   const CompilerTarget& target_;
   NativeCostAnalysis analysis_;
+  const NativeCostTable* shared_;
+  std::optional<size_t> uniformSwapCost_;
+  bool immutableIR_ = false;
+  bool collectScore_ = true;
   SmallVector<Run, 0> runs_;
   SmallVector<size_t> partners_;
   SmallVector<size_t> depths_;
