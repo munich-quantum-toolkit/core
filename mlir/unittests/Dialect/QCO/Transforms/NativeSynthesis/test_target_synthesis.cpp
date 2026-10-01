@@ -2033,7 +2033,7 @@ TEST_F(TargetSynthesisTest,
        }) {
     SCOPED_TRACE(entangler);
     const auto target = valid(Target::create(
-        2, Connectivity::allToAll(),
+        2, Connectivity::fromCouplings({{0, 1}}),
         NativeOperations::fromOperations({
             valid(OperationCapability::create(
                 single, 1, std::string(single) == "u" ? 3 : 2)),
