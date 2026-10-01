@@ -404,48 +404,50 @@ private:
 
   enum class RoutingMode : bool { Cold, Hot };
 
-  /// A fast, flat cone data structure designed specifically for layer-by-layer
-  /// iteration. All elements are stored sequentially in a single contiguous
-  /// buffer.
-  class LayeredCone {
+  /// A fast, flat "wave"-like data structure designed specifically for
+  /// layer-by-layer ("ripple") iteration. All elements are stored sequentially
+  /// in a single contiguous buffer.
+  class Wave {
   public:
-    LayeredCone() = default;
+    Wave() = default;
 
-    /// Add a new layer to the cone.
-    void startNextLayer() { layerOffsets_.emplace_back(storage_.size()); }
+    /// Add a new, empty ripple to the wave.
+    void addRipple() { offsets_.emplace_back(storage_.size()); }
 
-    /// Appends a single element to the current active layer.
-    void pushToCurrentLayer(const IndexPairType& gate) {
-      assert(layerOffsets_.size() > 1 &&
+    /// Appends a single element to the current active ripple.
+    void push(const IndexPairType& gate) {
+      assert(offsets_.size() > 1 &&
              "No active layer. Call startNextLayer() first.");
       storage_.emplace_back(gate);
-      layerOffsets_.back() = storage_.size();
+      offsets_.back() = storage_.size();
     }
 
     /// Returns a slice view (ArrayRef) of a specific layer.
-    [[nodiscard]] ArrayRef<IndexPairType> getLayer(size_t i) const {
-      assert(i < nlayers() && "Layer index out of bounds");
-      const auto start = layerOffsets_[i];
-      const auto end = layerOffsets_[i + 1];
+    [[nodiscard]] ArrayRef<IndexPairType> getRipple(size_t i) const {
+      assert(i < nripples() && "Ripple index out of bounds");
+      const auto start = offsets_[i];
+      const auto end = offsets_[i + 1];
       return {storage_.data() + start, end - start};
     }
 
-    /// Returns the total number of layers.
-    [[nodiscard]] size_t nlayers() const { return layerOffsets_.size() - 1; }
+    /// Returns the total number of ripples.
+    [[nodiscard]] size_t nripples() const { return offsets_.size() - 1; }
 
-    /// Return true, if the cone is empty.
+    /// Returns the total number of elements.
+    [[nodiscard]] size_t size() const { return storage_.size(); }
+
+    /// Return true, if the wave is empty.
     [[nodiscard]] bool empty() const { return storage_.empty(); }
 
-    /// Return the vertex of the cone.
-    [[nodiscard]] IndexPairType vertex() const { return storage_.front(); }
+    /// Return the front of the wave.
+    [[nodiscard]] IndexPairType front() const { return storage_.front(); }
 
   private:
-    /// Flat contiguous array storing all elements across all layers.
+    /// Flat contiguous array storing all elements across all ripples.
     SmallVector<IndexPairType> storage_;
-
-    /// Offsets marking the start index of each layer in the storage, where [l]
-    /// defines the start of the layer l and [l + 1] its end.
-    SmallVector<size_t, 8> layerOffsets_ = {0};
+    /// Offsets marking the start index of each ripple in the storage, where [r]
+    /// defines the start of the ripple r and [r + 1] its end.
+    SmallVector<size_t, 8> offsets_ = {0};
   };
 
   /// Invocation data is prepared before trials, then borrowed read-only.
@@ -562,7 +564,7 @@ private:
 
     /// Initialize a child from its parent while reusing layout capacity.
     void initializeChild(Node* nextParent, const SwapCandidate& candidate,
-                         const LayeredCone& cone, const CompilerTarget& target,
+                         const Wave& wave, const CompilerTarget& target,
                          const Parameters& params) {
       layout = nextParent->layout;
       layout.swap(candidate.indices.first, candidate.indices.second);
@@ -571,7 +573,7 @@ private:
       cost = nextParent->cost + static_cast<int64_t>(candidate.standalone) +
              candidate.prefix;
       f = params.alpha * static_cast<float>(cost) +
-          static_cast<float>(candidate.standalone) * h(cone, target, params);
+          static_cast<float>(candidate.standalone) * h(wave, target, params);
 
       swap = candidate.indices;
       parent = nextParent;
@@ -607,13 +609,13 @@ private:
     /// between its hardware qubits. Intuitively, this is the number of SWAPs
     /// that a naive router would insert to route the layers (with a constant
     /// layout).
-    [[nodiscard]] float h(const LayeredCone& cone, const CompilerTarget& target,
+    [[nodiscard]] float h(const Wave& wave, const CompilerTarget& target,
                           const Parameters& params) const {
       float costs{0};
       float decay{1.};
 
-      for (size_t i = 0; i < cone.nlayers(); ++i) {
-        for (const auto [prog0, prog1] : cone.getLayer(i)) {
+      for (size_t i = 0; i < wave.nripples(); ++i) {
+        for (const auto [prog0, prog1] : wave.getRipple(i)) {
           const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
           const size_t nswaps = target.distanceBetween(hw0, hw1) - 1;
           costs += decay * static_cast<float>(nswaps);
@@ -1249,7 +1251,7 @@ private:
   /// Route the leading interaction with bounded A* node storage.
   /// Drain queued states at the limit, then use distance-reducing SWAPs.
   [[nodiscard]] SmallVector<IndexPairType>
-  search(const LayeredCone& cone, RoutingState& state, Arena& arena,
+  search(const Wave& wave, RoutingState& state, Arena& arena,
          const Environment& env) const {
     const Parameters params{.alpha = alpha, .lambda = lambda};
 
@@ -1258,7 +1260,7 @@ private:
     assert(root != nullptr && "expected root allocation to succeed");
 
     root->initializeRoot(state.layout);
-    if (root->isGoal(cone.vertex(), env.target)) {
+    if (root->isGoal(wave.front(), env.target)) {
       return SmallVector<IndexPairType>{};
     }
 
@@ -1271,7 +1273,7 @@ private:
       // If the currently visited node is a goal node, reconstruct the
       // sequence of SWAPs from this node to the root.
 
-      if (curr->isGoal(cone.vertex(), env.target)) {
+      if (curr->isGoal(wave.front(), env.target)) {
         return curr->swaps();
       }
 
@@ -1279,7 +1281,7 @@ private:
       // between two neighboring hardware qubits.
 
       llvm::SmallDenseSet<IndexPairType, 8> seen;
-      for (const auto [q0, q1] = cone.vertex(); const auto prog : {q0, q1}) {
+      for (const auto [q0, q1] = wave.front(); const auto prog : {q0, q1}) {
         const auto hw0 = curr->layout.getHardwareIndex(prog);
         env.target.forEachNeighbour(hw0, [&](const auto hw1) {
           const IndexPairType indices(std::minmax(hw0, hw1));
@@ -1301,7 +1303,7 @@ private:
                 .prefix = prefix,
             };
 
-            child->initializeChild(curr, candidate, cone, env.target, params);
+            child->initializeChild(curr, candidate, wave, env.target, params);
             seen.insert(indices);
             frontier.push(child);
           }
@@ -1313,7 +1315,7 @@ private:
     /// Greedy completion can cost later gates. Thus, increase the search
     /// budget when routing quality matters more than memory use.
 
-    const auto [prog0, prog1] = cone.vertex();
+    const auto [prog0, prog1] = wave.front();
     const auto [hw0, hw1] = state.layout.getHardwareIndices(prog0, prog1);
     const auto path = env.target.shortestPathBetween(hw0, hw1);
 
@@ -1523,13 +1525,12 @@ private:
 
   /// TODO
   template <WireDirection Direction>
-  LayeredCone getCone(Wires wires, const Layout& layout, Operation* boundary,
-                      const Environment& env) {
-    LayeredCone cone;
+  Wave getWave(Wires wires, const Layout& layout, Operation* boundary,
+               const Environment& env) {
+    Wave wave;
 
     SmallVector<IndexPairType> prev;
     SmallVector<IndexPairType> next;
-    llvm::SmallDenseSet<Operation*> freeze;
 
     walkProgramGraph<Direction>(
         MutableArrayRef(wires.data(), wires.size()),
@@ -1542,45 +1543,8 @@ private:
           }
 
           if (released.empty()) {
-            if (cone.nlayers() > 0) {
-              cone.startNextLayer();
-              for (const auto& [op, indices] : frontier) {
-                if (freeze.contains(op) ||
-                    (boundary != nullptr &&
-                     !precedes<Direction>(op, boundary))) {
-                  continue;
-                }
-
-                if (!isa<BarrierOp>(op) && isa<UnitaryOpInterface>(op)) {
-                  const auto i0 = indices[0];
-                  const auto i1 = indices[1];
-                  const auto prog0 = layout.getProgramIndex(i0);
-                  const auto prog1 = layout.getProgramIndex(i1);
-                  const IndexPairType gate = std::minmax(prog0, prog1);
-
-                  if (!is_contained(prev, gate)) {
-                    cone.pushToCurrentLayer(gate);
-                  }
-                  next.emplace_back(gate);
-                }
-
-                released.emplace_back(op);
-              }
-
-              prev.swap(next);
-              next.clear();
-            } else {
-
-              /// Choose "promising" vertex of cone and thus freeze all other
-              /// front gates.
-
-              struct Candidate {
-                IndexPairType indices;
-                Operation* op;
-                size_t cost;
-              };
-
-              std::optional<Candidate> best;
+            if (wave.nripples() > 0) {
+              wave.addRipple();
               for (const auto& [op, indices] : frontier) {
                 if (boundary != nullptr && !precedes<Direction>(op, boundary)) {
                   continue;
@@ -1592,33 +1556,67 @@ private:
                   const auto prog0 = layout.getProgramIndex(i0);
                   const auto prog1 = layout.getProgramIndex(i1);
                   const IndexPairType gate = std::minmax(prog0, prog1);
-                  const auto cost = env.target.distanceBetween(i0, i1);
 
-                  if (!best.has_value()) {
-                    best.emplace(gate, op, cost);
-                  } else if (best->cost > cost) {
-                    freeze.insert(best->op);
-                    best.emplace(gate, op, cost);
+                  if (!is_contained(prev, gate)) {
+                    wave.push(gate);
+                    if (wave.size() == 1 + nlookahead) {
+                      return WalkResult::interrupt();
+                    }
                   }
-
-                  continue;
+                  next.emplace_back(gate);
                 }
 
                 released.emplace_back(op);
               }
 
-              if (best.has_value()) {
-                cone.startNextLayer();
-                cone.pushToCurrentLayer(best->indices);
-                released.emplace_back(best->op);
+              prev.swap(next);
+              next.clear();
+            } else {
+
+              struct Candidate {
+                IndexPairType indices;
+                Operation* op;
+                size_t cost;
+              };
+
+              SmallVector<Candidate> candidates;
+              for (const auto& [op, indices] : frontier) {
+                if (boundary != nullptr && !precedes<Direction>(op, boundary)) {
+                  continue;
+                }
+
+                if (!isa<BarrierOp>(op) && isa<UnitaryOpInterface>(op)) {
+                  const auto i0 = indices[0];
+                  const auto i1 = indices[1];
+                  const auto prog0 = layout.getProgramIndex(i0);
+                  const auto prog1 = layout.getProgramIndex(i1);
+                  candidates.emplace_back(
+                      IndexPairType(std::minmax(prog0, prog1)), op,
+                      env.target.distanceBetween(i0, i1));
+                } else {
+                  released.emplace_back(op);
+                }
+              }
+
+              if (!candidates.empty()) {
+                const auto it = llvm::min_element(
+                    candidates, [](const Candidate& a, const Candidate& b) {
+                      return a.cost < b.cost;
+                    });
+                assert(it != candidates.end());
+                wave.addRipple();
+                const Candidate& c = *it;
+                wave.push(c.indices);
+                prev.emplace_back(c.indices);
+                released.emplace_back(c.op);
               }
             }
           }
 
-          return cone.nlayers() == 5 ? WalkResult::interrupt()
-                                     : WalkResult::advance();
+          return WalkResult::advance();
         });
-    return cone;
+
+    return wave;
   }
 
   /// Both modes leave cursors at the next operation on each physical wire.
@@ -2133,13 +2131,13 @@ private:
         continue;
       }
 
-      const LayeredCone cone =
-          getCone<Direction>(state.wires, state.layout, boundary, env);
-      if (cone.empty()) {
+      const Wave wave =
+          getWave<Direction>(state.wires, state.layout, boundary, env);
+      if (wave.empty()) {
         break;
       }
 
-      const auto swaps = search(cone, state, arena, env);
+      const auto swaps = search(wave, state, arena, env);
       insertSWAPs<Mode>(swaps, state, stats, rewriter);
     }
 
