@@ -235,13 +235,21 @@ struct Unitary1QEulerPlan {
   /// Number of native gates in the planned sequence (excludes `gphase`).
   [[nodiscard]] std::size_t gateCount() const { return steps.size(); }
 
+  /// A full turn of a Pauli rotation contributes a minus sign.
+  double normalizeRotationAngle(double angle) {
+    const double wrapped = mod2pi(angle);
+    phase += 0.5 * (angle - wrapped);
+    return wrapped;
+  }
+
   /// Appends a rotation step for non-negligible angles.
   ///
   /// @param kind The rotation axis (RZ/RY/RX)
   /// @param angle The rotation angle in radians.
   void appendRotation(const SynthesisStep::Kind kind, const double angle) {
-    if (!isNearZeroRotationAngle(angle)) {
-      steps.emplace_back(kind, angle);
+    const double wrapped = normalizeRotationAngle(angle);
+    if (!isNearZeroRotationAngle(wrapped)) {
+      steps.emplace_back(kind, wrapped);
     }
   }
 
@@ -251,8 +259,9 @@ struct Unitary1QEulerPlan {
   /// @param axis The rotation axis in the XY-plane (`0` for `Rx`, `π/2` for
   /// `Ry`).
   void appendRStep(const double angle, const double axis) {
-    if (!isNearZeroRotationAngle(angle)) {
-      steps.emplace_back(SynthesisStep::Kind::R, angle, axis);
+    const double wrapped = normalizeRotationAngle(angle);
+    if (!isNearZeroRotationAngle(wrapped)) {
+      steps.emplace_back(SynthesisStep::Kind::R, wrapped, axis);
     }
   }
 
@@ -262,10 +271,10 @@ struct Unitary1QEulerPlan {
   /// @param basis The basis to use for the decomposition.
   void appendDecomposition(const EulerAngles& angles,
                            const SingleQubitBasis basis) {
+    phase = angles.phase;
     if (isNearZeroRotationAngle(angles.theta) &&
         isNearZeroRotationAngle(angles.phi) &&
         isNearZeroRotationAngle(angles.lambda)) {
-      phase = angles.phase;
       return;
     }
 
@@ -285,11 +294,12 @@ struct Unitary1QEulerPlan {
         appendRStep(angles.phi + angles.lambda, 0.0);
         break;
       case SingleQubitBasis::U:
-        steps.emplace_back(SynthesisStep::Kind::U, 0.0, angles.phi,
-                           angles.lambda);
+        if (!isNearZeroRotationAngle(mod2pi(angles.phi + angles.lambda))) {
+          steps.emplace_back(SynthesisStep::Kind::U, 0.0, angles.phi,
+                             angles.lambda);
+        }
         break;
       }
-      phase = angles.phase;
       return;
     }
 
@@ -298,37 +308,31 @@ struct Unitary1QEulerPlan {
       appendRotation(SynthesisStep::Kind::RZ, angles.lambda);
       steps.emplace_back(SynthesisStep::Kind::RY, angles.theta);
       appendRotation(SynthesisStep::Kind::RZ, angles.phi);
-      phase = angles.phase;
       break;
     case SingleQubitBasis::ZXZ:
       appendRotation(SynthesisStep::Kind::RZ, angles.lambda);
       steps.emplace_back(SynthesisStep::Kind::RX, angles.theta);
       appendRotation(SynthesisStep::Kind::RZ, angles.phi);
-      phase = angles.phase;
       break;
     case SingleQubitBasis::XZX:
       appendRotation(SynthesisStep::Kind::RX, angles.lambda);
       steps.emplace_back(SynthesisStep::Kind::RZ, angles.theta);
       appendRotation(SynthesisStep::Kind::RX, angles.phi);
-      phase = angles.phase;
       break;
     case SingleQubitBasis::XYX:
       appendRotation(SynthesisStep::Kind::RX, angles.lambda);
       steps.emplace_back(SynthesisStep::Kind::RY, angles.theta);
       appendRotation(SynthesisStep::Kind::RX, angles.phi);
-      phase = angles.phase;
       break;
     case SingleQubitBasis::R:
       appendRStep(angles.lambda, 0.0);
       steps.emplace_back(SynthesisStep::Kind::R, angles.theta,
                          std::numbers::pi / 2.0);
       appendRStep(angles.phi, 0.0);
-      phase = angles.phase;
       break;
     case SingleQubitBasis::U:
       steps.emplace_back(SynthesisStep::Kind::U, angles.theta, angles.phi,
                          angles.lambda);
-      phase = angles.phase;
       break;
     case SingleQubitBasis::ZSXX: {
       constexpr double pi = std::numbers::pi;
@@ -339,19 +343,19 @@ struct Unitary1QEulerPlan {
         appendRotation(SynthesisStep::Kind::RZ, angles.lambda - halfPi);
         steps.emplace_back(SynthesisStep::Kind::SX);
         appendRotation(SynthesisStep::Kind::RZ, angles.phi + halfPi);
-        phase = angles.phase - quarterPi;
+        phase -= quarterPi;
         return;
       }
 
       appendRotation(SynthesisStep::Kind::RZ, angles.lambda);
       if (isNearZeroRotationAngle(angles.theta - pi)) {
         steps.emplace_back(SynthesisStep::Kind::X);
-        phase = angles.phase - halfPi;
+        phase -= halfPi;
       } else {
         steps.emplace_back(SynthesisStep::Kind::SX);
         appendRotation(SynthesisStep::Kind::RZ, angles.theta + pi);
         steps.emplace_back(SynthesisStep::Kind::SX);
-        phase = angles.phase + halfPi;
+        phase += halfPi;
       }
       appendRotation(SynthesisStep::Kind::RZ, angles.phi + pi);
       break;
@@ -377,6 +381,22 @@ planUnitary1QEuler(const Matrix2x2& targetMatrix,
 
   const EulerAngles angles = anglesFromUnitary(targetMatrix, basis);
   plan.appendDecomposition(angles, basis);
+  // K(phi) A(theta) K(lambda) = K(phi + pi) A(-theta) K(lambda - pi).
+  // Prefer the equivalent representative when it removes an outer rotation.
+  constexpr double pi = std::numbers::pi;
+  if (basis != SingleQubitBasis::U && plan.gateCount() > 1 &&
+      (isNearZeroRotationAngle(mod2pi(angles.phi + pi)) ||
+       isNearZeroRotationAngle(mod2pi(angles.lambda + pi)))) {
+    Unitary1QEulerPlan alternate;
+    alternate.appendDecomposition({.theta = -angles.theta,
+                                   .phi = angles.phi + pi,
+                                   .lambda = angles.lambda - pi,
+                                   .phase = angles.phase},
+                                  basis);
+    if (alternate.gateCount() < plan.gateCount()) {
+      return alternate;
+    }
+  }
   return plan;
 }
 

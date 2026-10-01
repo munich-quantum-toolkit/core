@@ -761,14 +761,13 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergeConsecutiveWithGateInBetween) {
 // # Numerical Correctness
 // ##################################################
 
-/// Test: RZ(π) → RY(π) → RX(π) should merge into U(0, 0, 0) with a π global
-/// phase.
+/// RZ(π) → RY(π) → RX(π) needs only a π global phase.
 TEST_F(MergeSingleQubitRotationGatesTest, numericalRotationIdentity) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RZ, .angles = {PI}},
                              {.type = GateType::RY, .angles = {PI}},
                              {.type = GateType::RX, .angles = {PI}}})
                   .succeeded());
-  EXPECT_EQ(countOps<UOp>(), 1);
+  EXPECT_EQ(countOps<UOp>(), 0);
   EXPECT_EQ(countOps<RYOp>(), 0);
   EXPECT_EQ(countOps<RZOp>(), 0);
   EXPECT_EQ(countOps<GPhaseOp>(), 1);
