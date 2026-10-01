@@ -315,24 +315,6 @@ TEST(QCToQIRBaseNativeTest, RejectsRepeatedMeasurementToDifferentBits) {
   });
 }
 
-TEST(QCToQIRBaseNativeTest, RejectsMixedQubitAllocationModes) {
-  for (const bool registerAllocation : {false, true}) {
-    SCOPED_TRACE(registerAllocation);
-    expectMeasurementOrderRejected(
-        [registerAllocation](qc::QCProgramBuilder& builder) {
-          auto qubit = builder.staticQubit(5);
-          if (registerAllocation) {
-            memref::AllocOp::create(builder,
-                                    MemRefType::get({1}, qubit.getType()));
-          } else {
-            qc::AllocOp::create(builder);
-          }
-          return builder.measure(qubit);
-        },
-        "cannot mix static and dynamic qubit allocation modes");
-  }
-}
-
 TEST(QCToQIRBaseNativeTest, RejectsRuntimeQubitRegisterIndex) {
   expectMeasurementOrderRejected(
       [](qc::QCProgramBuilder& builder) {

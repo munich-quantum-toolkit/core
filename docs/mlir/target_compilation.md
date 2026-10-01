@@ -276,20 +276,22 @@ dialect in their context.
 
 ### Synthesis without routing
 
-Use {py:meth}`~mqt.core.mlir.QCOProgram.synthesize_for_target` to translate an
-existing QCO program to an all-to-all target's native gate set. It uses the same
-native block synthesis as target compilation, without routing. This pipeline
-inlines calls, decomposes controlled gates, assigns static sites, performs
-native synthesis, and verifies target conformance. It accepts structured QCO/SCF
-input and uses the same target environment and global-phase policy as target
-compilation. It attaches an initial layout when placement can track the program
-qubits. Explicit connectivity is rejected; use `compile_for_target` when routing
-is required.
+Use {py:meth}`~mqt.core.mlir.QCOProgram.synthesize_for_target` to translate a
+QCO program to a target's native gate set without routing. Dynamic qubits
+require all-to-all connectivity and receive an initial layout. Static qubits
+keep their device site IDs and may use an explicit topology. The pipeline
+inlines calls, decomposes non-native controlled gates, places dynamic qubits,
+performs native synthesis, and checks target support and topology. It accepts
+structured QCO/SCF input and uses the same target environment and global-phase
+policy as target compilation.
 
 Both target pipelines decompose controlled composite gates, including inverse
 bodies and constant integer powers of operations on disjoint wires. Other
 composite powers require native target support or a synthesis rule for that
-operation.
+operation. Gates acting on three or more qubits need a target-independent
+decomposition before native synthesis and routing, unless the target supports
+them natively. Explicit-topology routing handles only one- and two-qubit gates;
+static circuits may keep native wider gates at supported device sites.
 
 Synthesis runs in place and raises `RuntimeError` with MLIR diagnostics on
 failure. Earlier pass changes may remain on the program, so copy it first when
@@ -494,8 +496,8 @@ Target compilation attaches layout metadata to the program.
 
 ## Layout metadata
 
-`compile_for_target` assigns program qubits to device qubits and attaches the
-resulting layout to the QCO program.
+For dynamic qubits, `compile_for_target` assigns program qubits to device qubits
+and attaches the resulting layout to the QCO program.
 
 ```python
 program = QCProgram.from_openqasm_str(bell_qasm).to_qco()
@@ -510,9 +512,10 @@ order. Otherwise, it exports the circuit without a layout. Target compilation
 rejects a program with an attached layout. See
 [transpiler layouts](qiskit.md#transpiler-layouts).
 
-To retain layout metadata, program qubits need fixed-size allocations in the
-entry block. Static references are tracked only with adaptive all-to-all
-placement; other target pipelines can compile them without attaching a layout.
-If a program declares more qubits than the device but shrinks to fit during
+Static qubits name device sites directly. A program must use either static or
+dynamic qubits. Static circuits must fit the target topology; compilation and
+synthesis preserve their site IDs and do not attach a layout. For dynamic
+qubits, layout metadata requires fixed-size allocations in the entry block. If a
+program declares more qubits than the device but shrinks to fit during
 compilation, it compiles without an attached layout. Later transformations clear
 layout metadata.

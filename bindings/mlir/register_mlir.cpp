@@ -1502,10 +1502,11 @@ operations.)pb");
           },
           "target_environment"_a, nb::kw_only(),
           "options"_a = mlir::CompilationOptions{},
-          "Synthesize native operations for an all-to-all target in place. "
-          "Assigns static sites, attaches layout metadata when possible, and "
-          "resynthesizes constant two-qubit runs in the native basis, without "
-          "routing. "
+          "Synthesize native operations without routing. Dynamic qubits "
+          "require "
+          "all-to-all connectivity and receive layout metadata when possible. "
+          "Static qubits keep their device site IDs and must fit the target "
+          "topology. "
           "Do not rely on the program contents if synthesis fails. Failures "
           "raise RuntimeError with the emitted MLIR diagnostics.")
       .def(

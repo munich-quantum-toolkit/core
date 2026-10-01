@@ -378,6 +378,8 @@ LogicalResult mlir::mqt::verifyQuantumAllocations(ModuleOp moduleOp) {
   Block* entryBlock = entryPoint && !entryPoint.isExternal()
                           ? &entryPoint.getBody().front()
                           : nullptr;
+  bool hasStatic = false;
+  bool hasDynamic = false;
   const auto result =
       moduleOp.walk<WalkOrder::PreOrder>([&](Operation* operation) {
         if (isa<ModuleOp>(operation) && operation != moduleOp.getOperation()) {
@@ -389,6 +391,13 @@ LogicalResult mlir::mqt::verifyQuantumAllocations(ModuleOp moduleOp) {
             operation->getNumResults() == 1) {
           auto type = dyn_cast<MemRefType>(operation->getResult(0).getType());
           allocatesQubits = type && isa<qc::QubitType>(type.getElementType());
+        }
+        hasDynamic |= allocatesQubits;
+        hasStatic |= isa<qc::StaticOp, qco::StaticOp>(operation);
+        if (hasDynamic && hasStatic) {
+          operation->emitOpError(
+              "cannot mix static and dynamic qubit allocation modes");
+          return WalkResult::interrupt();
         }
         if (allocatesQubits &&
             (!entryBlock || operation->getBlock() != entryBlock)) {
@@ -774,7 +783,7 @@ MQTDialect::verifyOperationAttribute(Operation* operation,
   }
   if (attribute.getName() == kSourceQubitIndicesAttr) {
     int64_t width = -1;
-    if (isa<qco::AllocOp, qco::StaticOp>(operation)) {
+    if (isa<qco::AllocOp>(operation)) {
       width = 1;
     } else if (auto tensor = dyn_cast<qtensor::AllocOp>(operation)) {
       width = getConstantIntValue(tensor.getSize()).value_or(-1);

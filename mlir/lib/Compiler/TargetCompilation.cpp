@@ -31,7 +31,6 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
 
-#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 
@@ -54,7 +53,6 @@ static LogicalResult prepareLayout(ModuleOp moduleOp,
     return success();
   }
   SmallVector<std::pair<Operation*, size_t>> roots;
-  llvm::SmallDenseSet<int64_t> staticSites;
   size_t count = 0;
   bool invalid = false;
   const auto result = moduleOp.walk([&](Operation* op) {
@@ -63,21 +61,14 @@ static LogicalResult prepareLayout(ModuleOp moduleOp,
       invalid = true;
       return WalkResult::interrupt();
     }
-    if (!isa<qco::AllocOp, qco::StaticOp, qtensor::AllocOp>(op)) {
+    if (!isa<qco::AllocOp, qtensor::AllocOp>(op)) {
       return WalkResult::advance();
     }
     if (op->getBlock() != &entry.getBody().front()) {
       return WalkResult::interrupt();
     }
     size_t size = 1;
-    if (auto qubit = dyn_cast<qco::StaticOp>(op)) {
-      const auto site = static_cast<int64_t>(qubit.getIndex());
-      if (!target.vertexForSite(site) || !staticSites.insert(site).second) {
-        qubit.emitError("preplaced qubit requires a distinct target site ID");
-        invalid = true;
-        return WalkResult::interrupt();
-      }
-    } else if (auto tensor = dyn_cast<qtensor::AllocOp>(op)) {
+    if (auto tensor = dyn_cast<qtensor::AllocOp>(op)) {
       const auto extent = getConstantIntValue(tensor.getSize());
       if (!extent || *extent <= 0) {
         return WalkResult::interrupt();
@@ -94,8 +85,7 @@ static LogicalResult prepareLayout(ModuleOp moduleOp,
   if (invalid) {
     return failure();
   }
-  if (result.wasInterrupted() || count == 0 ||
-      (!staticSites.empty() && !environment.supportsIndexedQubits())) {
+  if (result.wasInterrupted() || count == 0) {
     return success();
   }
   Builder builder(moduleOp.getContext());
@@ -139,8 +129,28 @@ protected:
       signalPassFailure();
       return;
     }
-    if (allToAllOnly_ && environment_.target().connectivityKind() !=
-                             CompilerTarget::Connectivity::Kind::AllToAll) {
+    if (failed(mqt::verifyQuantumAllocations(getOperation()))) {
+      signalPassFailure();
+      return;
+    }
+    bool hasStatic = false;
+    const auto staticSites = getOperation().walk([&](qco::StaticOp op) {
+      hasStatic = true;
+      const auto site = static_cast<CompilerTarget::SiteId>(op.getIndex());
+      if (environment_.target().vertexForSite(site)) {
+        return WalkResult::advance();
+      }
+      op.emitError() << "target does not contain static site " << site;
+      return WalkResult::interrupt();
+    });
+    if (staticSites.wasInterrupted()) {
+      signalPassFailure();
+      return;
+    }
+    if (allToAllOnly_ &&
+        environment_.target().connectivityKind() !=
+            CompilerTarget::Connectivity::Kind::AllToAll &&
+        !hasStatic) {
       getOperation().emitError(
           "target synthesis requires all-to-all connectivity; use target "
           "compilation for routing");
@@ -161,7 +171,9 @@ protected:
       signalPassFailure();
       return;
     }
-    if (failed(prepareLayout(getOperation(), environment_))) {
+    if (hasStatic) {
+      getOperation()->removeAttr(mqt::kSourceQubitCountAttr);
+    } else if (failed(prepareLayout(getOperation(), environment_))) {
       signalPassFailure();
       return;
     }

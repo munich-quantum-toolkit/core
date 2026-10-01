@@ -370,16 +370,7 @@ static LogicalResult placeIndexedAllocations(func::FuncOp function,
                                              const CompilerTarget& target) {
   LayoutRecorder recorder(function, target);
   SmallVector<Operation*> allocations;
-  llvm::DenseSet<CompilerTarget::SiteId> occupied;
-  function.walk([&](StaticOp op) {
-    occupied.insert(static_cast<CompilerTarget::SiteId>(op.getIndex()));
-    recorder.record(
-        op, 0,
-        target.vertexForSite(static_cast<CompilerTarget::SiteId>(op.getIndex()))
-            .value_or(target.numSites()));
-    op->removeAttr(mqt::kSourceQubitIndicesAttr);
-  });
-  size_t required = occupied.size();
+  size_t required = 0;
   for (Operation& operation : function.getBody().front()) {
     size_t width = 0;
     if (isa<AllocOp>(operation)) {
@@ -408,9 +399,6 @@ static LogicalResult placeIndexedAllocations(func::FuncOp function,
     rewriter.setInsertionPoint(allocation);
     int64_t slot = 0;
     const auto nextQubit = [&] {
-      while (occupied.contains(target.siteForVertex(vertex))) {
-        ++vertex;
-      }
       recorder.record(allocation, slot++, vertex);
       return StaticOp::create(rewriter, allocation->getLoc(),
                               target.siteForVertex(vertex++));
@@ -435,6 +423,16 @@ static LogicalResult placeIndexedAllocations(func::FuncOp function,
     rewriter.replaceOp(allocation, tensor.getResult());
   }
   return recorder.finish();
+}
+
+static bool needsPlacement(func::FuncOp function) {
+  if (!function.getOps<StaticOp>().empty()) {
+    return false;
+  }
+  auto moduleOp = function->getParentOfType<ModuleOp>();
+  return moduleOp->hasAttr(mqt::kSourceQubitCountAttr) ||
+         !function.getOps<AllocOp>().empty() ||
+         !function.getOps<qtensor::AllocOp>().empty();
 }
 
 namespace {
@@ -462,6 +460,10 @@ protected:
     if (!func) {
       moduleOp.emitError() << "does not contain an entry point function";
       signalPassFailure();
+      return;
+    }
+
+    if (!needsPlacement(func)) {
       return;
     }
 
@@ -868,6 +870,10 @@ protected:
     if (!func) {
       moduleOp.emitError() << "does not contain an entry point function";
       signalPassFailure();
+      return;
+    }
+
+    if (!needsPlacement(func)) {
       return;
     }
 

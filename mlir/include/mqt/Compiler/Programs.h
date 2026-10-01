@@ -273,11 +273,11 @@ public:
   [[nodiscard]] bool compileForTarget(const TargetEnvironment& environment,
                                       const CompilationOptions& options = {});
 
-  /// Synthesize native operations for an all-to-all target in place.
+  /// Synthesize native operations without routing.
   ///
-  /// Assigns static sites, attaches layout metadata when possible, and
-  /// resynthesizes constant two-qubit runs in the native basis, without
-  /// routing. Do not rely on the program contents if synthesis fails.
+  /// Dynamic qubits require all-to-all connectivity and receive layout metadata
+  /// when possible. Static qubits keep their device site IDs and must fit the
+  /// target topology. Do not rely on the program contents if synthesis fails.
   [[nodiscard]] bool
   synthesizeForTarget(const TargetEnvironment& environment,
                       const CompilationOptions& options = {});

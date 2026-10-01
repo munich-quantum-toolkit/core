@@ -1842,10 +1842,9 @@ TEST_F(TargetSynthesisTest,
 
   const auto diagnostics = expectTargetFailure(
       *module, target, mlir::qco::createTargetNativeSynthesis());
-  EXPECT_NE(diagnostics.find(
-                "no supported synthesis-basis placement is known for its "
-                "static sites"),
-            std::string::npos)
+  EXPECT_NE(
+      diagnostics.find("two-qubit operation does not fit target topology"),
+      std::string::npos)
       << diagnostics;
 }
 
