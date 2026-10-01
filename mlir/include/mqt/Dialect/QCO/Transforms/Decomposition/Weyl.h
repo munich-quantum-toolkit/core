@@ -32,10 +32,8 @@ namespace mlir::qco::decomposition {
 
 /// CX with the control on the first (high-bit) qubit.
 inline constexpr Matrix4x4 CANONICAL_CONTROLLED_X =
-    Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0,  // row 0
-                            0.0, 1.0, 0.0, 0.0,  // row 1
-                            0.0, 0.0, 0.0, 1.0,  // row 2
-                            0.0, 0.0, 1.0, 0.0); // row 3
+    Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
+                            0.0, 1.0, 0.0, 0.0, 1.0, 0.0);
 
 /// Tolerance for complex symmetric `M2` diagonalization.
 inline constexpr double WEYL_DIAGONALIZATION_TOLERANCE = 1e-13;

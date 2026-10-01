@@ -2053,7 +2053,7 @@ TEST_F(TargetSynthesisTest,
     ASSERT_TRUE(mlir::succeeded(runTargetPass(
         *synthesized, target, mlir::qco::createVerifyTargetConformance())));
 
-    // Bind only after synthesis so every case exercises the symbolic path.
+    /// Bind only after synthesis so every case exercises the symbolic path.
     for (const double angle :
          {0.0, 0.371, -1.23, std::numbers::pi, 2.0 * std::numbers::pi, 7.1}) {
       SCOPED_TRACE(angle);

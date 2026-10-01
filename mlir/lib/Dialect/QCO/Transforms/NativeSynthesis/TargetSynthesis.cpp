@@ -485,8 +485,8 @@ static LogicalResult prepareGlobalPhases(ModuleOp moduleOp,
     return success();
   }
   entryPoint.walk([](GPhaseOp phase) {
-    // Each classical execution path has its own unobservable global phase.
-    // QCO modifiers must retain phases that normalization cannot extract.
+    /// Each classical execution path has its own unobservable global phase.
+    /// QCO modifiers must retain phases that normalization cannot extract.
     if (!isExcludedFromTopLevelUnitaryWalk(phase)) {
       phase.erase();
     }

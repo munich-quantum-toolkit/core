@@ -166,11 +166,7 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
                         LoweringState& state);
 
 /// Prepares classical result registers before func-to-LLVM conversion.
-///
-/// Requires a single entry-function return. Inventories classical result
-/// registers and validates output stores before changing IR. On failure,
-/// emits diagnostics and leaves IR unchanged. After failure, the caller must
-/// discard \p state because it may contain incomplete register information.
+/// Requires a single entry-function return. On failure, discard \p state.
 ///
 /// For measurement-only returned registers, the store and measurement must
 /// share a block. The index must be available at measurement or become
