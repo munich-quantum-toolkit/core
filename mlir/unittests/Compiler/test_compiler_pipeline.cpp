@@ -2311,6 +2311,24 @@ TEST_F(CompilerPipelineTest, TargetCompilationRejectsExistingLayout) {
   EXPECT_TRUE(program->module()->hasAttr("mqt.layout"));
 }
 
+TEST_F(CompilerPipelineTest, TargetSynthesisRecordsInitialLayout) {
+  auto qc = QCProgram::fromOpenQASMString("OPENQASM 3.1; qubit q; x q;");
+  ASSERT_TRUE(qc);
+  auto program = std::move(*qc).intoQCO();
+  ASSERT_TRUE(program);
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(2, CompilerTarget::Connectivity::allToAll(),
+                             CompilerTarget::NativeOperations::unrestricted()));
+  ASSERT_TRUE(program->synthesizeForTarget(
+      TargetEnvironment(target, makePayloadSpecification())));
+  auto layout = mlir::mqt::QubitLayout::fromAttr(
+      program->module()->getAttr("mqt.layout"),
+      [&] { return program->module().emitError(); });
+  ASSERT_TRUE(succeeded(layout));
+  EXPECT_EQ(layout->initial, (std::vector<int64_t>{0, 1}));
+  EXPECT_EQ(layout->inputCount, 1);
+}
+
 // Test: target compilation decomposes, maps, synthesizes, and verifies.
 TEST_F(CompilerPipelineTest, QCOProgramCompilesForTarget) {
   auto qc = QCProgram::fromOpenQASMString(qasm::multipleControlledX);

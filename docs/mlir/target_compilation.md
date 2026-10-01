@@ -282,8 +282,9 @@ native block synthesis as target compilation, without routing. This pipeline
 inlines calls, decomposes controlled gates, assigns static sites, performs
 native synthesis, and verifies target conformance. It accepts structured QCO/SCF
 input and uses the same target environment and global-phase policy as target
-compilation. Explicit connectivity is rejected; use `compile_for_target` when
-routing is required.
+compilation. It attaches an initial layout when placement can track the program
+qubits. Explicit connectivity is rejected; use `compile_for_target` when routing
+is required.
 
 Both target pipelines decompose controlled composite gates, including inverse
 bodies and constant integer powers of operations on disjoint wires. Other

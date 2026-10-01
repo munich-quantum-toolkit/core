@@ -161,7 +161,7 @@ protected:
       signalPassFailure();
       return;
     }
-    if (!allToAllOnly_ && failed(prepareLayout(getOperation(), environment_))) {
+    if (failed(prepareLayout(getOperation(), environment_))) {
       signalPassFailure();
       return;
     }
