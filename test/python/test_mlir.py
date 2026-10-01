@@ -452,7 +452,10 @@ def test_mapping_options_reject_zero_trials(method: str, *, all_to_all: bool) ->
     assert program.ir == before
 
 
-@pytest.mark.parametrize(("seed", "iterations", "lookahead", "search_memory_limit"), [(0, 0, 0, 0), (7, 2, 5, 1024)])
+@pytest.mark.parametrize("seed", [0, 7])
+@pytest.mark.parametrize("iterations", [0, 2])
+@pytest.mark.parametrize("lookahead", [0, 5])
+@pytest.mark.parametrize("search_memory_limit", [0, 1024])
 def test_explicit_mapping_options_are_repeatable(
     seed: int, iterations: int, lookahead: int, search_memory_limit: int
 ) -> None:
@@ -844,6 +847,29 @@ def test_target_synthesis_decomposes_without_routing() -> None:
     )
     with pytest.raises(RuntimeError, match="all-to-all connectivity"):
         program.synthesize_for_target(_test_target_environment(sparse))
+
+
+@requires_qiskit_translation
+def test_target_synthesis_resynthesizes_two_qubit_blocks() -> None:
+    """Both target APIs resynthesize an RZZ/RXX block directly into CZ gates."""
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("u", 1, 3),
+            CompilerTarget.OperationCapability("cz", 2, 0),
+            CompilerTarget.OperationCapability("gphase", 0, 1),
+        ]),
+    )
+    source = QuantumCircuit(2)
+    source.rzz(0.3, 0, 1)
+    source.rxx(0.4, 0, 1)
+    for method in ("synthesize_for_target", "compile_for_target"):
+        program = QCProgram.from_qiskit(source).to_qco()
+        getattr(program, method)(_test_target_environment(target))
+        result = program.to_qiskit(target=target)
+        assert result.count_ops().get("cz", 0) == 2
+        assert np.allclose(Operator(result).data, Operator(source).data)
 
 
 @requires_qiskit_translation
@@ -1307,10 +1333,11 @@ def test_typed_programs_normalize_global_phases() -> None:
     assert qco.ir == once
 
 
-def test_qco_program_decomposes_multi_controlled() -> None:
+@pytest.mark.parametrize("gate", ["x", "y", "rx(0.73)", "ry(0.73)", "rz(0.73)"])
+def test_qco_program_decomposes_multi_controlled(gate: str) -> None:
     """Decompose multi-controlled gates through the typed QCOProgram API."""
     qco = compile_program(
-        'OPENQASM 3.0; include "stdgates.inc"; qubit[3] q; ctrl(2) @ x q[0], q[1], q[2];',
+        f'OPENQASM 3.0; include "stdgates.inc"; qubit[3] q; ctrl(2) @ {gate} q[0], q[1], q[2];',
         output=OutputFormat.QCO,
     )
     assert isinstance(qco, QCOProgram)
