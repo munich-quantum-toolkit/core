@@ -150,6 +150,11 @@ struct FuseSingleQubitUnitaryRunsPattern final
     if (!isRunMemberCandidate(op)) {
       return failure();
     }
+    if (policy.preserveSingletons &&
+        !isRunMemberCandidate(
+            dyn_cast<UnitaryOpInterface>(*op.getOutputQubit(0).user_begin()))) {
+      return failure();
+    }
     auto predecessor = dyn_cast_or_null<UnitaryOpInterface>(
         op.getInputQubit(0).getDefiningOp());
     if (getRunMemberMatrix(predecessor)) {
@@ -242,6 +247,18 @@ LogicalResult fuseSingleQubitUnitaryRuns(ModuleOp moduleOp,
                                          SingleQubitFusionPolicy policy,
                                          const CompilerTarget* target,
                                          const GreedyRewriteConfig& config) {
+  if (policy.preserveSingletons &&
+      !moduleOp
+           .walk([](UnitaryOpInterface op) {
+             return isRunMemberCandidate(op) &&
+                            isRunMemberCandidate(dyn_cast<UnitaryOpInterface>(
+                                *op.getOutputQubit(0).user_begin()))
+                        ? WalkResult::interrupt()
+                        : WalkResult::advance();
+           })
+           .wasInterrupted()) {
+    return success();
+  }
   const bool hasRuntimeParameters =
       moduleOp
           .walk([](UnitaryOpInterface op) {
