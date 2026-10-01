@@ -388,11 +388,14 @@ planUnitary1QEuler(const Matrix2x2& targetMatrix,
       (isNearZeroRotationAngle(mod2pi(angles.phi + pi)) ||
        isNearZeroRotationAngle(mod2pi(angles.lambda + pi)))) {
     Unitary1QEulerPlan alternate;
-    alternate.appendDecomposition({.theta = -angles.theta,
-                                   .phi = angles.phi + pi,
-                                   .lambda = angles.lambda - pi,
-                                   .phase = angles.phase},
-                                  basis);
+    alternate.appendDecomposition(
+        {
+            .theta = -angles.theta,
+            .phi = angles.phi + pi,
+            .lambda = angles.lambda - pi,
+            .phase = angles.phase,
+        },
+        basis);
     if (alternate.gateCount() < plan.gateCount()) {
       return alternate;
     }

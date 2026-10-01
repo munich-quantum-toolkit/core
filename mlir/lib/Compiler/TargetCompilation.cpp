@@ -103,7 +103,12 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   pm.addPass(qco::createLegalizeControlFlow());
   pm.addPass(qco::createDecomposeMultiControlled(target));
   pm.addPass(qco::createFuseTwoQubitGates(target));
-  pm.addPass(qco::createFuseSingleQubitUnitaryRuns(target));
+  // U fusion shrinks runs before routing. Other bases can expand symbolic
+  // runs, so emit them once during native synthesis, after cleanup.
+  if (const auto basis = target.synthesisBasis();
+      basis && basis->singleQubit == CompilerTarget::SingleQubitBasis::U) {
+    pm.addPass(qco::createFuseSingleQubitUnitaryRuns(target));
+  }
   switch (target.connectivityKind()) {
   case CompilerTarget::Connectivity::Kind::Explicit: {
     qco::MappingPassOptions mappingOptions;
@@ -135,7 +140,10 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
   pm.addPass(qco::createLegalizeControlFlow());
   pm.addPass(qco::createDecomposeMultiControlled(target));
   pm.addPass(qco::createFuseTwoQubitGates(target));
-  pm.addPass(qco::createFuseSingleQubitUnitaryRuns(target));
+  if (const auto basis = target.synthesisBasis();
+      basis && basis->singleQubit == CompilerTarget::SingleQubitBasis::U) {
+    pm.addPass(qco::createFuseSingleQubitUnitaryRuns(target));
+  }
   pm.addPass(qco::createPlacementPass(target));
   qco::populateTargetNativeSynthesisPipeline(pm);
 }
