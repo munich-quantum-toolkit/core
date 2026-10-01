@@ -1710,7 +1710,7 @@ provides-extras = ["pennylane", "qiskit"]
 build = [
     { name = "cmake", specifier = ">=4.4.1" },
     { name = "nanobind", specifier = "~=3.1.0" },
-    { name = "scikit-build-core", specifier = ">=1.0.3" },
+    { name = "scikit-build-core", specifier = ">=1.1" },
     { name = "vcs-versioning", specifier = ">=2.3" },
 ]
 cpp-lint = [
@@ -1732,7 +1732,7 @@ dev = [
     { name = "pytest-sugar", specifier = ">=1.1.1" },
     { name = "pytest-xdist", specifier = ">=3.8" },
     { name = "qiskit", extras = ["qasm3-import"], specifier = ">=2.1" },
-    { name = "scikit-build-core", specifier = ">=1.0.3" },
+    { name = "scikit-build-core", specifier = ">=1.1" },
     { name = "vcs-versioning", specifier = ">=2.3" },
 ]
 docs = [
@@ -3093,15 +3093,15 @@ wheels = [
 
 [[package]]
 name = "scikit-build-core"
-version = "1.0.3"
+version = "1.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "packaging" },
     { name = "pathspec" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/8d/7c/0f69b0c7150ce4bcee78c199fe3b7e03a6e01578451bd5d5d1a58beb32f9/scikit_build_core-1.0.3.tar.gz", hash = "sha256:a4d7a05978ee37975c37743510c8991e2debce7ef83afb0a07c0c576fd4f16e8", size = 477539, upload-time = "2026-07-12T05:08:30.298Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e8/d7/fdd4c33b3cc9ab91feda3b3c526a2df64e296b26e2edb1cdba24525a2697/scikit_build_core-1.1.0.tar.gz", hash = "sha256:d421f837a0f645e51b99fc0d8b00c976917845d954d609ce6b06b11b2c94621b", size = 513774, upload-time = "2026-09-25T20:48:37.623Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b7/b0/7ad8fa9aebb0835b2e20afebf1483cbe175d1612fe01e85042ce9ced8755/scikit_build_core-1.0.3-py3-none-any.whl", hash = "sha256:ae95427b7d3c14a6cf8bbfd4d901f6138ab64c99e20cbe8ea7d75cd26093f085", size = 278294, upload-time = "2026-07-12T05:08:28.725Z" },
+    { url = "https://files.pythonhosted.org/packages/66/bc/e68458dbbe42123bb3b2d35c1412613367e0826fbe0327e109c114a556ff/scikit_build_core-1.1.0-py3-none-any.whl", hash = "sha256:ef439fc8b352913ef6e76257e3115a7910c9f294a2cf27781b6f571cf6cd0033", size = 292901, upload-time = "2026-09-25T20:48:35.965Z" },
 ]
 
 [[package]]
