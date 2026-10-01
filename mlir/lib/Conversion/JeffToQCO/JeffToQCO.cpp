@@ -220,11 +220,11 @@ static cbit::RegisterType getCBitType(Type type) {
   return cbit::RegisterType::get(type.getContext(), tensorType.getShape()[0]);
 }
 
-/// Earlier bit reads finish using an array before a later storage update.
-/// Other users can pass an alias to values that remain live after the update.
+/// Earlier bit reads and static length queries need no snapshot.
+/// Other users may keep old array contents live after the update.
 static bool needsArrayCopy(Value value, Operation* update) {
   return llvm::any_of(value.getUsers(), [&](Operation* user) {
-    if (user == update) {
+    if (user == update || isa<jeff::IntArrayLengthOp>(user)) {
       return false;
     }
     auto* ancestor = update->getBlock()->findAncestorOpInBlock(*user);

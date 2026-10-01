@@ -1035,6 +1035,49 @@ TEST(JeffRoundTripRegressionTest, RejectsLiveOldArrayAcrossSwitchRegions) {
   }
 }
 
+TEST(JeffRoundTripRegressionTest, AcceptsArrayLengthAfterSwitchUpdate) {
+  MLIRContext context;
+  context.loadDialect<cbit::CBitDialect, arith::ArithDialect, func::FuncDialect,
+                      qco::QCODialect, jeff::JeffDialect>();
+  auto program = parseSourceString<ModuleOp>(R"mlir(
+    module attributes {jeff.entrypoint = 0 : ui16, jeff.strings = ["main"]} {
+      func.func @main(%select: i1) -> (tensor<1xi1>, i32) {
+        %size = jeff.int_const32(1) : i32
+        %index = jeff.int_const32(0) : i32
+        %bit = jeff.int_const1(true) : i1
+        %old = jeff.int_array_zero(%size) : tensor<1xi1>
+        %result = jeff.switch (%select, %old, %index, %bit)
+            : (i1, tensor<1xi1>, i32, i1) -> (tensor<1xi1>)
+        case 0 args(%array, %idx, %value) {
+          jeff.yield %array : tensor<1xi1>
+        }
+        case 1 args(%array, %idx, %value) {
+          %new = jeff.int_array_set_index(%idx) %array %value
+              : i32, tensor<1xi1>, i1 -> tensor<1xi1>
+          jeff.yield %new : tensor<1xi1>
+        }
+        default args(%array, %idx, %value) {
+          jeff.yield %array : tensor<1xi1>
+        }
+        %length = jeff.int_array_length %old : tensor<1xi1> -> i32
+        return %result, %length : tensor<1xi1>, i32
+      }
+    })mlir",
+                                             &context);
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(succeeded(verify(*program)));
+  ASSERT_TRUE(succeeded(convertJeffToQCO(*program)));
+  EXPECT_TRUE(succeeded(verify(*program)));
+  size_t allocations = 0;
+  size_t snapshots = 0;
+  program->walk([&](Operation* op) {
+    allocations += isa<cbit::AllocOp>(op);
+    snapshots += isa<cbit::ReadOp, cbit::WriteOp>(op);
+  });
+  EXPECT_EQ(allocations, 1);
+  EXPECT_EQ(snapshots, 0);
+}
+
 TEST(JeffRoundTripRegressionTest, PreservesClassicalIfResults) {
   DialectRegistry registry;
   registry.insert<mlir::mqt::MQTDialect, arith::ArithDialect, cbit::CBitDialect,
