@@ -740,6 +740,48 @@ static Val<Value> sumAngles(Val<Value> lhs, Val<Value> rhs) {
   return lhs + rhs;
 }
 
+/// Merge only the unrestricted axis of a fixed-RX target.
+static LogicalResult mergeParameterizedRZ(RZOp op, PatternRewriter& rewriter) {
+  auto next = dyn_cast<RZOp>(*op.getQubitOut().user_begin());
+  if (!next || next->getBlock() != op->getBlock() ||
+      (mqt::valueToConstantDouble(op.getTheta()) &&
+       mqt::valueToConstantDouble(next.getTheta()))) {
+    return failure();
+  }
+  const auto negates = [](Value lhs, Value rhs) {
+    if (auto negation = lhs.getDefiningOp<arith::NegFOp>()) {
+      return negation.getOperand() == rhs;
+    }
+    if (auto product = lhs.getDefiningOp<arith::MulFOp>()) {
+      return (product.getLhs() == rhs &&
+              mqt::valueToConstantDouble(product.getRhs()) == -1.) ||
+             (product.getRhs() == rhs &&
+              mqt::valueToConstantDouble(product.getLhs()) == -1.);
+    }
+    return false;
+  };
+  if (negates(op.getTheta(), next.getTheta()) ||
+      negates(next.getTheta(), op.getTheta())) {
+    rewriter.replaceOp(next, op.getQubitIn());
+  } else {
+    rewriter.setInsertionPoint(next);
+    const auto loc = next.getLoc();
+    const auto angle = sumAngles(normalizeGateAngle(Val<Value>{
+                                     .v = op.getTheta(),
+                                     .rewriter = &rewriter,
+                                     .loc = loc,
+                                 }),
+                                 normalizeGateAngle(Val<Value>{
+                                     .v = next.getTheta(),
+                                     .rewriter = &rewriter,
+                                     .loc = loc,
+                                 }));
+    rewriter.replaceOpWithNewOp<RZOp>(next, op.getQubitIn(), angle.v);
+  }
+  rewriter.eraseOp(op);
+  return success();
+}
+
 static void emitParameterizedGPhaseIfNeeded(RewriterBase& rewriter,
                                             Location loc, Val<Value> phase) {
   if (!isConstantAngle(phase)) {
@@ -754,9 +796,11 @@ static Value emitRuntimeEulerAngles(
     const CompilerTarget::FixedRotationBasis* fixedRotation = nullptr) {
   auto [theta, phi, lambda, phase] = angles;
 
-  const bool usesZYZAngles = basis == decomposition::SingleQubitBasis::ZYZ ||
-                             basis == decomposition::SingleQubitBasis::ZXZ ||
-                             basis == decomposition::SingleQubitBasis::ZSXX;
+  const bool usesZYZAngles =
+      basis == decomposition::SingleQubitBasis::ZYZ ||
+      basis == decomposition::SingleQubitBasis::ZXZ ||
+      basis == decomposition::SingleQubitBasis::ZSXX ||
+      basis == decomposition::SingleQubitBasis::FixedRotation;
   if (usesZYZAngles && isConstantAngle(theta)) {
     qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit,
                                        sumAngles(phi, lambda));
@@ -798,28 +842,15 @@ static Value emitRuntimeEulerAngles(
     const auto constant = [&](double value) {
       return Val<Value>::constant(rewriter, loc, value);
     };
-    const auto emit = [&](CompilerTarget::GateKind gate, Val<Value> angle) {
-      switch (gate) {
-      case CompilerTarget::GateKind::RX:
-        qubit = emitRotationIfNeeded<RXOp>(rewriter, loc, qubit, angle);
-        break;
-      case CompilerTarget::GateKind::RY:
-        qubit = emitRotationIfNeeded<RYOp>(rewriter, loc, qubit, angle);
-        break;
-      default:
-        qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit, angle);
-        break;
-      }
-    };
-    if (isConstantAngle(theta)) {
-      emit(fixedRotation->freeGate, sumAngles(phi, lambda));
-      break;
-    }
     const double correction = decomposition::detail::emitFixedRotationSequence(
         *fixedRotation, theta, phi, lambda, mqt::valueToConstantDouble(theta.v),
         constant,
-        [&](Val<Value> angle) { emit(fixedRotation->freeGate, angle); },
-        [&](double angle) { emit(fixedRotation->gate, constant(angle)); });
+        [&](Val<Value> angle) {
+          qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit, angle);
+        },
+        [&](double angle) {
+          qubit = RXOp::create(rewriter, loc, qubit, angle).getQubitOut();
+        });
     if (correction != 0.) {
       phase = phase + constant(correction);
     }
@@ -1364,44 +1395,8 @@ void decomposition::synthesizeParameterizedUnitary1Q(
     } else {
       const auto angles = directZYZAnglesFromGate(unitary, rewriter, consts);
       qubit = unitary.getInputQubit(0);
-      if (basis == SingleQubitBasis::FixedRotation &&
-          fixedRotation != nullptr &&
-          fixedRotation->freeGate != CompilerTarget::GateKind::RZ) {
-        // Keep symbolic angles algebraic: emit each physical Z/Y/Z rotation
-        // in the cyclic local frame instead of introducing inverse trig.
-        const auto axes = fixedRotation->axes();
-        const auto halfPi = consts.pi / consts.two;
-        const auto emitPhysical = [&](CompilerTarget::GateKind gate,
-                                      Val<Value> angle) {
-          if (isConstantAngle(angle)) {
-            return;
-          }
-          RuntimeEulerAngles local{
-              .theta = consts.zero,
-              .phi = consts.zero,
-              .lambda = consts.zero,
-              .phase = consts.zero,
-          };
-          if (gate == axes[2]) {
-            local.lambda = angle;
-          } else {
-            local.theta = angle;
-            if (gate == axes[0]) {
-              local.phi = -halfPi;
-              local.lambda = halfPi;
-            }
-          }
-          qubit = emitRuntimeEulerAngles(rewriter, op->getLoc(), qubit, local,
-                                         basis, consts, fixedRotation);
-        };
-        emitPhysical(CompilerTarget::GateKind::RZ, angles.lambda);
-        emitPhysical(CompilerTarget::GateKind::RY, angles.theta);
-        emitPhysical(CompilerTarget::GateKind::RZ, angles.phi);
-        emitParameterizedGPhaseIfNeeded(rewriter, op->getLoc(), angles.phase);
-      } else {
-        qubit = emitRuntimeEulerAngles(rewriter, op->getLoc(), qubit, angles,
-                                       basis, consts, fixedRotation);
-      }
+      qubit = emitRuntimeEulerAngles(rewriter, op->getLoc(), qubit, angles,
+                                     basis, consts, fixedRotation);
     }
     rewriter.replaceOp(op, qubit);
     return;
@@ -1421,9 +1416,13 @@ namespace mlir::qco::decomposition {
 void populateParameterizedSingleQubitRunCompositionPatterns(
     RewritePatternSet& patterns, SingleQubitBasis basis,
     const CompilerTarget* target) {
+  RZOp::getCanonicalizationPatterns(patterns, patterns.getContext());
+  if (basis == SingleQubitBasis::FixedRotation) {
+    patterns.add(mergeParameterizedRZ);
+    return;
+  }
   RXOp::getCanonicalizationPatterns(patterns, patterns.getContext());
   RYOp::getCanonicalizationPatterns(patterns, patterns.getContext());
-  RZOp::getCanonicalizationPatterns(patterns, patterns.getContext());
   POp::getCanonicalizationPatterns(patterns, patterns.getContext());
   patterns.add<MergeSingleQubitRotationGatesPattern>(patterns.getContext(),
                                                      basis, target);

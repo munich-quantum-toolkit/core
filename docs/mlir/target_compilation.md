@@ -186,24 +186,22 @@ accepts only RX(π/2). A nonempty list has one entry per parameter; `None` leave
 that parameter unrestricted. Multiple capabilities can describe different fixed
 values or placements. Constants match with absolute tolerance `1e-15`, without
 angle wrapping; symbolic values do not match fixed values. Omit the list for
-unrestricted parameters. The compiler derives a synthesis sequence from one
-unrestricted rotation axis and a fixed angle about a different axis, available
-on every site. Any distinct pair of RX, RY, and RZ is supported. This covers
-positive and negative quarter turns, 45° pulses, and non-Clifford angles such as
-0.37 radians. The sequence is computed once per target and reused for numeric
-and symbolic input gates. Available native half turns shorten suitable
-decompositions.
+unrestricted parameters. Fixed-pulse synthesis requires unrestricted RZ and
+RX(π/2) or RX(-π/2), available on every site. This covers Rigetti's native
+single-qubit gates. Available RX(π) or RX(-π) pulses shorten suitable
+decompositions. Numeric and symbolic input gates share the same recipe and
+preserve global phase.
 
-Zero and integer-π pulses do not supply the required mixing. The constructive
-method also rejects angles that require more than 64 fixed pulses per effective
-quarter turn, to bound circuit expansion. These restrictions affect synthesis;
-matching fixed native operations remains available for every finite angle.
+Other fixed values, including other dyadic fractions of π, remain valid native
+capabilities but do not create additional synthesis bases. They require a
+supported basis when a non-native operation needs decomposition.
 
 Target cleanup preserves gate forms, including sequences of native gates on
 targets without a synthesis basis. Operations outside the native set still need
 a usable synthesis basis. Numeric single-qubit run fusion uses the fixed-pulse
 recipe and keeps native runs unless it can shorten them. Symbolic fixed-pulse
-runs use individual gate lowering. Two-qubit run fusion remains available.
+runs use individual gate lowering, with adjacent unrestricted RZ operations
+merged before and after synthesis. Two-qubit run fusion remains available.
 Routing costs count native two-qubit gates, not the number of fixed pulses.
 Constraints on other gate families are checked, but do not create additional
 synthesis bases. Parameter ranges and relations are not supported.

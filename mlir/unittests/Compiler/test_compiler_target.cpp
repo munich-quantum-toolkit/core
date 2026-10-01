@@ -1020,8 +1020,15 @@ TEST(CompilerTargetTest, ResolvesFixedPulseBasisOnlyOnEverySite) {
   EXPECT_FALSE(target.synthesisBasis()->entangler);
 }
 
-TEST(CompilerTargetTest, RejectsDegenerateOrExcessiveFixedPulseSynthesis) {
-  for (double angle : {0., std::numbers::pi, 2. * std::numbers::pi, 1e-8}) {
+TEST(CompilerTargetTest, KeepsUnsupportedPulseAnglesNativeWithoutSynthesis) {
+  for (double angle : {
+           0.,
+           .37,
+           std::numbers::pi / 4.,
+           std::numbers::pi,
+           2. * std::numbers::pi,
+           1e-8,
+       }) {
     const auto target = valid(Target::create(
         1, Connectivity::allToAll(),
         NativeOperations::fromOperations({
@@ -1032,6 +1039,22 @@ TEST(CompilerTargetTest, RejectsDegenerateOrExcessiveFixedPulseSynthesis) {
     EXPECT_FALSE(target.synthesisBasis());
     EXPECT_TRUE(target.supportsOperation(
         "rx", 1, 1, std::nullopt, std::array<std::optional<double>, 1>{angle}));
+  }
+}
+
+TEST(CompilerTargetTest, FixedPulseSynthesisRequiresRZAndRX) {
+  for (const auto& [free, pulse] :
+       {std::pair{"rx", "ry"}, std::pair{"rz", "ry"}}) {
+    const auto target = valid(Target::create(
+        1, Connectivity::allToAll(),
+        NativeOperations::fromOperations({
+            valid(OperationCapability::create(free, 1, 1)),
+            valid(OperationCapability::create("gphase", 0, 1)),
+            valid(OperationCapability::create(pulse, 1, 1, {}, std::nullopt,
+                                              std::nullopt,
+                                              {std::numbers::pi / 2.})),
+        })));
+    EXPECT_FALSE(target.synthesisBasis());
   }
 }
 

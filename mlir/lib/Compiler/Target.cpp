@@ -161,78 +161,6 @@ constexpr std::array GATE_SPECIFICATIONS{
 
 } // namespace
 
-// Work in a cyclic coordinate frame with the free rotation axis as Z.
-// The two-pulse construction has reachable polar angle 2 asin(|sin(angle)|).
-static std::optional<CompilerTarget::FixedRotationBasis>
-makeFixedRotationBasis(GateKind gate, GateKind freeGate, double angle) {
-  constexpr double pi = std::numbers::pi;
-  constexpr double halfPi = pi / 2.;
-  constexpr size_t maxPulses = 64;
-  CompilerTarget::FixedRotationBasis result{
-      .gate = gate,
-      .freeGate = freeGate,
-      .angle = angle,
-      .quarterTurnAngles = {},
-      .halfTurnAngle = std::nullopt,
-  };
-  const bool isX = gate == result.axes()[0];
-  const double magnitude = std::abs(angle);
-  if (magnitude <= mqt::PARAMETER_COMPARISON_TOLERANCE) {
-    return std::nullopt;
-  }
-  auto& zAngles = result.quarterTurnAngles;
-  const double directCount = std::round(halfPi / magnitude);
-  if (directCount >= 1. && directCount <= static_cast<double>(maxPulses) &&
-      std::abs(directCount * magnitude - halfPi) <=
-          mqt::PARAMETER_COMPARISON_TOLERANCE) {
-    zAngles.resize(static_cast<size_t>(directCount) + 1);
-    const double axis = (!isX ? halfPi : 0.) + (angle < 0. ? pi : 0.);
-    zAngles.front() = axis;
-    zAngles.back() = -axis;
-    return result;
-  }
-  const double sine = std::sin(angle);
-  const double reach = 2. * std::asin(std::min(1., std::abs(sine)));
-  if (reach <= mqt::PARAMETER_COMPARISON_TOLERANCE) {
-    return std::nullopt;
-  }
-  const double count = std::ceil(halfPi / reach);
-  if (count > static_cast<double>(maxPulses) / 2.) {
-    return std::nullopt;
-  }
-  const auto blocks = static_cast<size_t>(count);
-  const double theta = halfPi / count;
-  const double cosine =
-      std::clamp(std::sin(theta / 2.) / std::abs(sine), 0., 1.);
-  const double middle = 2. * std::acos(cosine);
-  const double gamma =
-      std::atan2(std::sin(middle / 2.), std::cos(angle) * cosine);
-  const double eta =
-      isX ? (sine < 0. ? halfPi : -halfPi) : (sine < 0. ? pi : 0.);
-  const double before = halfPi - gamma + eta;
-  const double after = -gamma - eta - halfPi;
-  zAngles.resize(2 * blocks + 1);
-  zAngles.front() = before;
-  for (size_t block = 0; block < blocks; ++block) {
-    zAngles[2 * block + 1] = middle;
-    zAngles[2 * block + 2] = block + 1 == blocks ? after : after + before;
-  }
-  return result;
-}
-
-std::array<CompilerTarget::GateKind, 3>
-CompilerTarget::FixedRotationBasis::axes() const {
-  switch (freeGate) {
-  case GateKind::RX:
-    return {GateKind::RY, GateKind::RZ, GateKind::RX};
-  case GateKind::RY:
-    return {GateKind::RZ, GateKind::RX, GateKind::RY};
-  default:
-    assert(freeGate == GateKind::RZ && "free gate must be a rotation");
-    return {GateKind::RX, GateKind::RY, GateKind::RZ};
-  }
-}
-
 [[nodiscard]] static std::string canonicalOperationName(StringRef name) {
   auto canonical = name.trim().lower();
   if (canonical == "prx") {
@@ -888,52 +816,30 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
   } else if (supportsOnEverySite(GateKind::RY) &&
              supportsOnEverySite(GateKind::RZ)) {
     singleQubit = SingleQubitBasis::ZYZ;
-  } else {
-    const auto supportsPulse = [&](StringRef name, double angle) {
+  } else if (supportsOnEverySite(GateKind::RZ)) {
+    const auto supportsPulse = [&](double angle) {
       return llvm::all_of(siteIds, [&](SiteId site) {
         return supportsOperation(
-            name, 1, 1, ArrayRef<SiteId>(&site, 1), false,
+            "rx", 1, 1, ArrayRef<SiteId>(&site, 1), false,
             [angle](size_t) { return std::optional{angle}; });
       });
     };
-    for (GateKind freeGate : {GateKind::RZ, GateKind::RX, GateKind::RY}) {
-      if (!supportsOnEverySite(freeGate)) {
+    for (double quarter : {std::numbers::pi / 2., -std::numbers::pi / 2.}) {
+      if (!supportsPulse(quarter)) {
         continue;
       }
-      for (const auto& operation : operations) {
-        if ((operation.canonicalName() != "rx" &&
-             operation.canonicalName() != "ry" &&
-             operation.canonicalName() != "rz") ||
-            operation.numParameters() != 1 ||
-            operation.fixedParameters().empty() ||
-            !operation.fixedParameters()[0]) {
-          continue;
+      fixedRotation = {
+          .quarterTurnAngle = quarter,
+          .halfTurnAngle = std::nullopt,
+      };
+      for (double half : {std::numbers::pi, -std::numbers::pi}) {
+        if (supportsPulse(half)) {
+          fixedRotation->halfTurnAngle = half;
+          break;
         }
-        const auto gate = operation.canonicalName() == "rx"   ? GateKind::RX
-                          : operation.canonicalName() == "ry" ? GateKind::RY
-                                                              : GateKind::RZ;
-        if (gate == freeGate) {
-          continue;
-        }
-        auto candidate = makeFixedRotationBasis(
-            gate, freeGate, *operation.fixedParameters()[0]);
-        if (!candidate ||
-            (fixedRotation && candidate->quarterTurnAngles.size() >=
-                                  fixedRotation->quarterTurnAngles.size()) ||
-            !supportsPulse(operation.canonicalName(), candidate->angle)) {
-          continue;
-        }
-        for (double half : {std::numbers::pi, -std::numbers::pi}) {
-          if (supportsPulse(operation.canonicalName(), half)) {
-            candidate->halfTurnAngle = half;
-            break;
-          }
-        }
-        fixedRotation = std::move(candidate);
       }
-    }
-    if (fixedRotation) {
       singleQubit = SingleQubitBasis::FixedRotation;
+      break;
     }
   }
 
@@ -991,7 +897,7 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
       .entangler = entangler == entanglerPreference.end()
                        ? std::nullopt
                        : std::optional{*entangler},
-      .fixedRotation = std::move(fixedRotation),
+      .fixedRotation = fixedRotation,
   };
 }
 

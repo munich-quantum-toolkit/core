@@ -18,7 +18,6 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -311,22 +310,13 @@ public:
     XYX,           ///< `RX(φ) * RY(θ) * RX(λ)`.
     ZYZ,           ///< `RZ(φ) * RY(θ) * RZ(λ)`.
     ZXZ,           ///< `RZ(φ) * RX(θ) * RZ(λ)`.
-    FixedRotation, ///< An arbitrary rotation and fixed pulses about another
-                   ///< axis.
+    FixedRotation, ///< `RZ` with fixed `RX(±π/2)` and optional `RX(±π)`.
   };
 
-  /// Fixed pulse combined with arbitrary rotations about a distinct axis.
+  /// Fixed RX pulses combined with unrestricted RZ rotations.
   struct FixedRotationBasis {
-    GateKind gate;
-    GateKind freeGate;
-    double angle;
-    /// Free rotation angles before, between, and after fixed pulses.
-    /// Together they implement a local RX(π/2).
-    std::vector<double> quarterTurnAngles;
+    double quarterTurnAngle;
     std::optional<double> halfTurnAngle;
-
-    /// Physical gates for local X/Y/Z; local Z is the free rotation axis.
-    [[nodiscard]] std::array<GateKind, 3> axes() const;
 
     friend bool operator==(const FixedRotationBasis&,
                            const FixedRotationBasis&) = default;

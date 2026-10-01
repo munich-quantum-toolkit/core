@@ -131,15 +131,17 @@ void populateFuseSingleQubitUnitaryRunsPatterns(
 ///
 /// The patterns emit @p basis directly. With @p target, preserve native runs
 /// and only use direct Euler identities, keeping optional fusion exportable.
+/// Fixed-RX bases only merge adjacent RZ operations.
 void populateParameterizedSingleQubitRunCompositionPatterns(
     RewritePatternSet& patterns, SingleQubitBasis basis,
     const CompilerTarget* target = nullptr);
 
 namespace detail {
 
-/// Emit local ZYZ angles with fixed pulses, returning the phase correction.
-/// Numeric and SSA callers supply constants and emitters for their angle type.
-/// Callers handle a statically zero theta by emitting phi + lambda directly.
+/// Emit ZYZ angles using RZ and fixed RX pulses, returning the phase
+/// correction. Numeric and SSA callers supply constants and emitters for their
+/// angle type. Callers handle a statically zero theta by emitting phi + lambda
+/// directly.
 template <typename Angle>
 double
 emitFixedRotationSequence(const CompilerTarget::FixedRotationBasis& basis,
@@ -152,31 +154,24 @@ emitFixedRotationSequence(const CompilerTarget::FixedRotationBasis& basis,
     return constantTheta && std::abs(*constantTheta - value) <=
                                 mqt::PARAMETER_COMPARISON_TOLERANCE;
   };
-  const auto quarterTurn = [&] {
-    emitFree(constant(basis.quarterTurnAngles.front()));
-    for (size_t i = 1; i < basis.quarterTurnAngles.size(); ++i) {
-      emitPulse(basis.angle);
-      emitFree(constant(basis.quarterTurnAngles[i]));
-    }
-  };
+  const double offset = basis.quarterTurnAngle < 0. ? pi : 0.;
   if (matchesTheta(halfPi)) {
-    emitFree(lambda - constant(halfPi));
-    quarterTurn();
-    emitFree(phi + constant(halfPi));
+    emitFree(lambda + constant(offset - halfPi));
+    emitPulse(basis.quarterTurnAngle);
+    emitFree(phi + constant(halfPi - offset));
     return 0.;
   }
   if (matchesTheta(pi) && basis.halfTurnAngle) {
-    const double axis = basis.gate == basis.axes()[0] ? 0. : halfPi;
-    emitFree(lambda + constant(axis));
+    emitFree(lambda);
     emitPulse(*basis.halfTurnAngle);
-    emitFree(phi + constant(pi) - constant(axis));
+    emitFree(phi + constant(pi));
     return *basis.halfTurnAngle < 0. ? pi : 0.;
   }
-  emitFree(lambda);
-  quarterTurn();
+  emitFree(lambda + constant(offset));
+  emitPulse(basis.quarterTurnAngle);
   emitFree(theta + constant(pi));
-  quarterTurn();
-  emitFree(phi + constant(pi));
+  emitPulse(basis.quarterTurnAngle);
+  emitFree(phi + constant(pi - offset));
   return pi;
 }
 

@@ -683,26 +683,15 @@ def test_fixed_parameter_target_capability(arity: int | CompilerTarget.Operation
 @requires_qiskit_translation
 @pytest.mark.parametrize("theta", [0.0, np.pi / 2, np.pi, 0.47, "symbolic"])
 @pytest.mark.parametrize("gate", ["u", "rx", "p"])
-@pytest.mark.parametrize(
-    ("free", "pulse", "pulse_angle"),
-    [
-        (free, pulse, angle)
-        for free in ("rx", "ry", "rz")
-        for pulse in ("rx", "ry", "rz")
-        if pulse != free
-        for angle in (np.pi / 2, -np.pi / 2, np.pi / 4, -0.37)
-    ],
-)
-def test_fixed_pulse_compilation_preserves_phase(
-    theta: float | str, gate: str, free: str, pulse: str, pulse_angle: float
-) -> None:
-    """Compile into arbitrary and fixed rotations about distinct axes, preserving phase."""
+@pytest.mark.parametrize("pulse_angle", [np.pi / 2, -np.pi / 2])
+def test_fixed_pulse_compilation_preserves_phase(theta: float | str, gate: str, pulse_angle: float) -> None:
+    """Compile into RZ and fixed RX quarter turns, preserving phase."""
     target = CompilerTarget(
         1,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations([
-            CompilerTarget.OperationCapability(pulse, 1, 1, fixed_parameters=[pulse_angle]),
-            CompilerTarget.OperationCapability(free, 1, 1),
+            CompilerTarget.OperationCapability("rx", 1, 1, fixed_parameters=[pulse_angle]),
+            CompilerTarget.OperationCapability("rz", 1, 1),
             CompilerTarget.OperationCapability("gphase", 0, 1),
         ]),
     )
@@ -715,13 +704,52 @@ def test_fixed_pulse_compilation_preserves_phase(
     program = QCProgram.from_qiskit(source).to_qco()
     program.compile_for_target(_test_target_environment(target))
     result = program.to_qiskit(target=target)
-    assert set(result.count_ops()) <= {pulse, free}
-    assert all(item.operation.params == [pulse_angle] for item in result.data if item.operation.name == pulse)
+    assert set(result.count_ops()) <= {"rx", "rz"}
+    assert all(item.operation.params == [pulse_angle] for item in result.data if item.operation.name == "rx")
     for value in [-0.6, 0.0, np.pi / 2, np.pi]:
         bindings = {parameter: value} if isinstance(parameter, qiskit.circuit.Parameter) else {}
         assert np.allclose(
             Operator(result.assign_parameters(bindings)).data,
             Operator(source.assign_parameters(bindings)).data,
+        )
+
+
+@requires_qiskit_translation
+@pytest.mark.parametrize("shape", ["sum", "cancel", "after_synthesis"])
+def test_fixed_pulse_merges_symbolic_rz(shape: str) -> None:
+    """Merge the unrestricted axis without changing fixed RX pulses or phase."""
+    num_qubits = 2 if shape == "cancel" else 1
+    target = CompilerTarget(
+        num_qubits,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("rx", 1, 1, fixed_parameters=[np.pi / 2]),
+            CompilerTarget.OperationCapability("rz", 1, 1),
+            CompilerTarget.OperationCapability("gphase", 0, 1),
+        ]),
+    )
+    a, b = qiskit.circuit.ParameterVector("angle", 2)
+    source = QuantumCircuit(num_qubits)
+    if shape == "after_synthesis":
+        source.rx(a, 0)
+    else:
+        source.rz(a, 0)
+    source.rz(-a if shape == "cancel" else b, 0)
+    if shape == "cancel":
+        # Keep the named input in use: Qiskit export rejects unused inputs.
+        source.rz(a, 1)
+    program = QCProgram.from_qiskit(source).to_qco()
+    program.compile_for_target(_test_target_environment(target))
+    result = program.to_qiskit(target=target)
+    assert result.count_ops().get("rz", 0) == {"sum": 1, "cancel": 1, "after_synthesis": 3}[shape]
+    assert all(item.operation.params == [np.pi / 2] for item in result.data if item.operation.name == "rx")
+    for lhs, rhs in [(0.4, -0.1), (1e20, 1.0), (1e300, -1e300)]:
+        values = {a: lhs, b: rhs}
+        assert np.allclose(
+            Operator(result.assign_parameters(values, strict=False)).data,
+            Operator(source.assign_parameters(values, strict=False)).data,
+            atol=1e-10,
+            rtol=0,
         )
 
 
