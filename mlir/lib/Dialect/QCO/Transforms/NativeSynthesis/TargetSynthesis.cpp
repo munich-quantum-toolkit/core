@@ -12,6 +12,7 @@
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
+#include "mqt/Dialect/MQT/Utils/Modifiers.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
@@ -107,6 +108,18 @@ static bool isWalkableUnitaryShell(Operation* op) {
 static bool assignTwoQubitOpMatrix(UnitaryOpInterface op, Matrix4x4& matrix) {
   return (!isa<CtrlOp>(op) || op.getNumControls() == 1) &&
          op.getUnitaryMatrix4x4(matrix);
+}
+
+template <typename Gate>
+static Gate singleControlledGate(Operation* operation) {
+  auto controlled = dyn_cast<CtrlOp>(operation);
+  if (!controlled || controlled.getNumControls() != 1 ||
+      controlled.getNumTargets() != 1) {
+    return {};
+  }
+  auto body =
+      mqt::getSoleBodyUnitary<UnitaryOpInterface>(*controlled.getBody());
+  return body ? dyn_cast<Gate>(body.getOperation()) : Gate{};
 }
 
 /// Return the constant matrix when `unitary` is a single-qubit run member.
@@ -471,11 +484,13 @@ static LogicalResult prepareGlobalPhases(ModuleOp moduleOp,
   if (!entryPoint) {
     return success();
   }
-  for (auto& block : entryPoint.getBody()) {
-    for (auto phase : llvm::make_early_inc_range(block.getOps<GPhaseOp>())) {
+  entryPoint.walk([](GPhaseOp phase) {
+    /// Each classical execution path has its own unobservable global phase.
+    /// QCO modifiers must retain phases that normalization cannot extract.
+    if (!isExcludedFromTopLevelUnitaryWalk(phase)) {
       phase.erase();
     }
-  }
+  });
   return success();
 }
 
@@ -487,11 +502,7 @@ static bool isOperandSwapInvariant(UnitaryOpInterface unitary) {
   if (auto exchange = dyn_cast<XXPlusYYOp>(operation)) {
     return matchPattern(exchange.getBeta(), m_AnyZeroFloat());
   }
-  auto controlled = dyn_cast<CtrlOp>(operation);
-  return controlled && controlled.getNumControls() == 1 &&
-         controlled.getNumTargets() == 1 &&
-         controlled.getNumBodyUnitaries() == 1 &&
-         isa<ZOp>(controlled.getBodyUnitary(0).getOperation());
+  return static_cast<bool>(singleControlledGate<ZOp>(operation));
 }
 
 static void reorderTwoQubitOperation(IRRewriter& rewriter,
@@ -720,6 +731,11 @@ NativeCostAnalysis::operationCost(UnitaryOpInterface operation,
   }
   Matrix4x4 matrix;
   if (!assignTwoQubitOpMatrix(operation, matrix)) {
+    if (singleControlledGate<POp>(operation.getOperation())) {
+      const auto cxCost =
+          matrixCost(decomposition::CANONICAL_CONTROLLED_X, target, sites);
+      return cxCost ? std::optional<size_t>{2 * *cxCost} : std::nullopt;
+    }
     return std::nullopt;
   }
   return matrixCost(matrix, target, sites);
@@ -1006,6 +1022,37 @@ int64_t NativeCostTracker::swapCostAdjustment(size_t first, size_t second,
          static_cast<int64_t>(standaloneCost);
 }
 
+/// Expand a symbolic CP while its classical support remains in scope.
+/// CP(theta) = P_c(theta/2) P_t(theta/2) CX P_t(-theta/2) CX.
+static void lowerRuntimeControlledPhase(IRRewriter& rewriter, CtrlOp controlled,
+                                        POp phase) {
+  mqt::hoistSupportingOpsBefore(*controlled.getBody(), phase, controlled,
+                                rewriter);
+  rewriter.setInsertionPoint(controlled);
+  auto loc = controlled.getLoc();
+  auto half =
+      arith::ConstantOp::create(rewriter, loc, rewriter.getF64FloatAttr(0.5));
+  auto angle =
+      arith::MulFOp::create(rewriter, loc, phase.getTheta(), half).getResult();
+  auto negative = arith::NegFOp::create(rewriter, loc, angle).getResult();
+  auto controlPhase =
+      POp::create(rewriter, loc, controlled.getInputControl(0), angle);
+  auto targetPhase =
+      POp::create(rewriter, loc, controlled.getInputTarget(0), angle);
+  const auto cx = [&](Value control, Value targetQubit) {
+    return CtrlOp::create(
+        rewriter, loc, control, targetQubit, [&](Value qubit) {
+          return XOp::create(rewriter, loc, qubit).getOutputQubit(0);
+        });
+  };
+  auto first =
+      cx(controlPhase.getOutputQubit(0), targetPhase.getOutputQubit(0));
+  auto correction =
+      POp::create(rewriter, loc, first.getOutputTarget(0), negative);
+  auto second = cx(first.getOutputControl(0), correction.getOutputQubit(0));
+  rewriter.replaceOp(controlled, second.getOutputQubits());
+}
+
 static LogicalResult synthesizeTargetOperation(
     IRRewriter& rewriter, UnitaryOpInterface op, const CompilerTarget& target,
     const std::optional<CompilerTarget::SynthesisBasis>& basis,
@@ -1025,16 +1072,12 @@ static LogicalResult synthesizeTargetOperation(
   if (!basis) {
     return unsupported("the target has no usable synthesis basis");
   }
-  if (auto controlled = dyn_cast<CtrlOp>(operation);
-      controlled && basis->singleQubit == CompilerTarget::SingleQubitBasis::U &&
-      controlled.getNumTargets() == 1 &&
-      controlled.getNumBodyUnitaries() == 1 &&
-      isa<U2Op>(controlled.getBodyUnitary(0).getOperation())) {
+  if (auto u2 = singleControlledGate<U2Op>(operation);
+      u2 && basis->singleQubit == CompilerTarget::SingleQubitBasis::U) {
     /// Canonicalization may shorten a native controlled U(pi/2, phi, lambda)
     /// to U2. Restore its native form before attempting matrix synthesis.
-    decomposition::synthesizeParameterizedUnitary1Q(
-        rewriter, controlled.getBodyUnitary(0).getOperation(),
-        basis->singleQubit);
+    decomposition::synthesizeParameterizedUnitary1Q(rewriter, u2.getOperation(),
+                                                    basis->singleQubit);
     if (sites ? target.supports(operation, *sites)
               : target.supports(operation)) {
       return success();
@@ -1068,10 +1111,6 @@ static LogicalResult synthesizeTargetOperation(
   if (!basis->entangler) {
     return unsupported("the target has no usable two-qubit entangler");
   }
-  Matrix4x4 matrix;
-  if (!assignTwoQubitOpMatrix(op, matrix)) {
-    return unsupported("its unitary matrix is not available at compile time");
-  }
   const auto direction =
       analysis.entanglerOrientation(target, *basis->entangler, sites);
   if (!direction) {
@@ -1080,6 +1119,10 @@ static LogicalResult synthesizeTargetOperation(
               "static sites";
   }
   const bool reverseEntangler = *direction;
+  Matrix4x4 matrix;
+  if (!assignTwoQubitOpMatrix(op, matrix)) {
+    return unsupported("its unitary matrix is not available at compile time");
+  }
   Value input0 = op.getInputQubit(0);
   Value input1 = op.getInputQubit(1);
 
@@ -1332,6 +1375,30 @@ protected:
     IRRewriter rewriter(&getContext(), &listener);
     NativeCostAnalysis analysis(compilationSeed(moduleOp, seed));
     if (targetBasis && targetBasis->entangler) {
+      moduleOp->walk<WalkOrder::PostOrder, ReverseIterator>(
+          [&](CtrlOp controlled) {
+            if (isExcludedFromTopLevelUnitaryWalk(controlled)) {
+              return;
+            }
+            auto phase = singleControlledGate<POp>(controlled);
+            Matrix4x4 matrix;
+            if (!phase || assignTwoQubitOpMatrix(controlled, matrix)) {
+              return;
+            }
+            auto siteValues = indexed ? SmallVector<SiteId, 2>{}
+                                      : getOperationSites(controlled, *sites);
+            auto operationSites =
+                indexed ? std::nullopt
+                        : std::optional<ArrayRef<SiteId>>(siteValues);
+            if (analysis.nativeOrientation(controlled, target,
+                                           operationSites) ||
+                !analysis.entanglerOrientation(target, *targetBasis->entangler,
+                                               operationSites)) {
+              return;
+            }
+            lowerRuntimeControlledPhase(rewriter, controlled, phase);
+          });
+      listener.foldPending();
       fuseTwoQubitGates(rewriter, moduleOp, *targetBasis, analysis, &target,
                         indexed ? nullptr : &*sites);
     }

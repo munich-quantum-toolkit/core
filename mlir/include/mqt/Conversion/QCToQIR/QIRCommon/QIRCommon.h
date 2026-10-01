@@ -68,6 +68,9 @@ struct LoweringState {
   /// Destination register index and bit index of each stored measurement.
   DenseMap<Operation*, std::pair<size_t, Value>> cregMeasurements;
 
+  /// Measurement stores kept as SSA users across structural conversion.
+  DenseMap<Operation*, Operation*> deferredMeasurementStores;
+
   /// Indexed scalar results, dynamically allocated in Adaptive and static in
   /// Base.
   DenseMap<int64_t, qir::StaticResult> scalarResults;
@@ -150,7 +153,7 @@ void populateQCToQIRPatterns(RewritePatternSet& patterns,
 /// labeled output schema.
 ///
 /// Measurement registers use `__quantum__rt__result_array_record_output`.
-/// Computed registers use an array record followed by Boolean records.
+/// Computed registers use an array record followed by boolean records.
 ///
 /// Results that are not part of registers (i.e., measurements without register
 /// info) are grouped under a default `__unnamed__` label recorded via
@@ -162,28 +165,31 @@ void populateQCToQIRPatterns(RewritePatternSet& patterns,
 void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
                         LoweringState& state);
 
-/// Prepares classical result registers for QIR conversion
+/// Prepares classical result registers before func-to-LLVM conversion.
+/// Requires a single entry-function return. On failure, discard \p state.
 ///
-/// Requires a single entry-function return. Inventories classical result
-/// registers and validates output stores before rewriting returns or stores.
-/// A returned-register store must share a block with its measurement and use
-/// an index available there (or a constant). Intervening operations must be
-/// effect-free, affect only quantum resources, or store to a provably distinct
-/// constant index of the same register. The QIR measurement can then write
-/// directly to the destination without changing observable order or control
-/// flow. Adaptive conversion can keep computed registers in Boolean storage;
-/// Base conversion rejects them. Local CBit stores retain ordinary semantics.
+/// For measurement-only returned registers, the store and measurement must
+/// share a block. The index must be available at measurement or become
+/// available by moving pure, speculatable operations without regions from
+/// that block before it. Removes fused stores so QIR measurements write
+/// directly to their destinations. Intervening operations must be effect-free,
+/// affect only quantum resources, or store to a provably distinct constant
+/// index of the same register.
 ///
-/// This must be called **before** func-to-LLVM conversion, while
-/// `func::ReturnOp`, `qc::MeasureOp`, and `cbit::StoreOp` are still in the IR.
+/// With \p allowComputedOutputs, returned registers that contain computed
+/// bits use boolean storage and keep ordinary stores. Otherwise these stores
+/// fail. Local CBit stores retain ordinary semantics.
 ///
-/// @param moduleOp The top-level module operation to walk
-/// @param state The lowering state populated for profile-specific conversion
-/// @param allowComputedOutputs Whether returned registers may contain computed
-/// bits
+/// Call while `func::ReturnOp`, `qc::MeasureOp`, and `cbit::StoreOp` remain
+/// in the IR. Adaptive lowering defers fused store removal until SCF and
+/// function conversion have rewritten their index operands.
 [[nodiscard]] LogicalResult
 prepareClassicalResults(Operation* moduleOp, LoweringState& state,
-                        bool allowComputedOutputs = false);
+                        bool allowComputedOutputs = false,
+                        bool deferMeasurementStores = false);
+
+/// Refresh measurement indices from surviving stores and consume those stores.
+void finalizeClassicalResults(LoweringState& state);
 
 /// Returns a result pointer for a measurement that does not write into a
 /// returned classical bit register
