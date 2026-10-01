@@ -1284,7 +1284,7 @@ protected:
           targetBasis->singleQubit);
       if (failed(decomposition::fuseSingleQubitUnitaryRuns(
               moduleOp, targetBasis->singleQubit, policy, &target,
-              GreedyRewriteConfig{}.enableConstantCSE(false))) ||
+              GreedyRewriteConfig{})) ||
           failed(prepareGlobalPhases(moduleOp, target))) {
         signalPassFailure();
         return;

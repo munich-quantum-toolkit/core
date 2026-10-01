@@ -20,15 +20,18 @@
 
 #include "mlir/Dialect/Arith/IR/Arith.h" // IWYU pragma: keep (Passes.h.inc)
 #include "mlir/Dialect/Math/IR/Math.h"   // IWYU pragma: keep (Passes.h.inc)
+#include "mlir/IR/Iterators.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Value.h"
+#include "mlir/IR/Visitors.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/WalkResult.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
 
 #include <cstddef>
 #include <memory>
@@ -282,10 +285,25 @@ LogicalResult fuseSingleQubitUnitaryRuns(ModuleOp moduleOp,
   }
   RewritePatternSet patterns(moduleOp.getContext());
   populateFuseSingleQubitUnitaryRunsPatterns(patterns, basis, policy, target);
-  // Fuse at run heads before visiting members that the rewrite will erase.
-  auto matrixConfig = config;
-  matrixConfig.setUseTopDownTraversal();
-  return applyPatternsGreedily(moduleOp, std::move(patterns), matrixConfig);
+  // Seed only run heads: one rewrite can erase every other member of a run.
+  SmallVector<Operation*> candidates;
+  moduleOp->walk<WalkOrder::PostOrder, ReverseIterator>(
+      [&](UnitaryOpInterface op) {
+        if (!isRunMemberCandidate(op) ||
+            (policy.preserveSingletons &&
+             !isRunMemberCandidate(dyn_cast<UnitaryOpInterface>(
+                 *op.getOutputQubit(0).user_begin())))) {
+          return;
+        }
+        auto predecessor = dyn_cast_or_null<UnitaryOpInterface>(
+            op.getInputQubit(0).getDefiningOp());
+        if (!getRunMemberMatrix(predecessor)) {
+          candidates.push_back(op.getOperation());
+        }
+      });
+  return candidates.empty()
+             ? success()
+             : applyOpPatternsGreedily(candidates, std::move(patterns), config);
 }
 
 void populateFuseSingleQubitUnitaryRunsPatterns(RewritePatternSet& patterns,
