@@ -19,8 +19,9 @@ def QCToQIRBase : Pass<"qc-to-qir-base", "mlir::ModuleOp"> {
 
     Requirements:
 
-    - Stores to returned CBit registers must write measurement results at
-      constant indices that are available or safely computable before measurement.
+    - Stores to returned CBit registers must write measurement results at indices
+      defined by constant operations. Constant expressions must be folded before
+      conversion; constant operations may move before the measurement.
       The store and measurement must share a block. Intervening effects must be
       limited to quantum resources or stores to distinct constant indices of the
       same register.
