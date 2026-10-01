@@ -142,6 +142,7 @@ TEST_F(MQTIRTest, RoundTripsLayoutMetadata) {
       .initial = {1, 2, 0},
       .routing = std::vector<int64_t>{2, 0, 1},
       .inputCount = 3,
+      .sites = std::vector<int64_t>{10, 30, 20},
   };
   auto moduleOp = parse(
       "module { func.func @main() attributes {mqt.entry_point} { return } }");
@@ -171,6 +172,10 @@ TEST_F(MQTIRTest, RejectsMalformedLayoutMetadata) {
           "{initial = array<i64: 1>, input_count = 1 : i64}",
           R"({initial = array<i64: 0>, input_count = 1 : i64, routing = 0 : i64})",
           R"({initial = array<i64: 0>, input_count = 1 : i64, routing = array<i64: 0, 1>})",
+          R"({initial = array<i64: 0>, input_count = 1 : i64, sites = 0 : i64})",
+          R"({initial = array<i64: 0>, input_count = 1 : i64, sites = array<i64>})",
+          R"({initial = array<i64: 0>, input_count = 1 : i64, sites = array<i64: -1>})",
+          R"({initial = array<i64: 0, 1>, input_count = 2 : i64, sites = array<i64: 10, 10>})",
           "{initial = array<i64: 0>, input_count = 1 : i64, extra = 0 : i64}",
       }) {
     SCOPED_TRACE(attribute);

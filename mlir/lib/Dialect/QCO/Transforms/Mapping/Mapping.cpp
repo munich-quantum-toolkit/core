@@ -110,6 +110,7 @@ public:
       layout_.emplace();
       layout_->initial.assign(target.numSites(), -1);
       layout_->inputCount = count.getInt();
+      layout_->sites.emplace(target.siteIds().begin(), target.siteIds().end());
       valid_ = count.getInt() >= 0 &&
                std::cmp_less_equal(count.getInt(), target.numSites());
     }

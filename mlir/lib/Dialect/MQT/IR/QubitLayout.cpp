@@ -36,6 +36,10 @@ DictionaryAttr QubitLayout::toAttr(MLIRContext* context) const {
     fields.push_back(builder.getNamedAttr(
         "routing", builder.getDenseI64ArrayAttr(*routing)));
   }
+  if (sites) {
+    fields.push_back(
+        builder.getNamedAttr("sites", builder.getDenseI64ArrayAttr(*sites)));
+  }
   return builder.getDictionaryAttr(fields);
 }
 
@@ -47,7 +51,8 @@ QubitLayout::fromAttr(Attribute attribute,
     emitError() << "qubit layout must be a dictionary";
     return failure();
   }
-  if (dict.size() != 2 + static_cast<size_t>(dict.get("routing") != nullptr)) {
+  if (dict.size() != 2 + static_cast<size_t>(dict.get("routing") != nullptr) +
+                         static_cast<size_t>(dict.get("sites") != nullptr)) {
     emitError() << "qubit layout has unsupported fields";
     return failure();
   }
@@ -83,6 +88,20 @@ QubitLayout::fromAttr(Attribute attribute,
     }
     result.routing.emplace(routingAttr.asArrayRef().begin(),
                            routingAttr.asArrayRef().end());
+  }
+  if (const auto raw = dict.get("sites")) {
+    const auto sitesAttr = dyn_cast<DenseI64ArrayAttr>(raw);
+    llvm::SmallDenseSet<int64_t> seen;
+    if (!sitesAttr || sitesAttr.size() != size ||
+        !llvm::all_of(sitesAttr.asArrayRef(), [&](int64_t site) {
+          return site >= 0 && seen.insert(site).second;
+        })) {
+      emitError() << "qubit layout sites must contain one distinct nonnegative "
+                     "site ID per position";
+      return failure();
+    }
+    result.sites.emplace(sitesAttr.asArrayRef().begin(),
+                         sitesAttr.asArrayRef().end());
   }
   return result;
 }

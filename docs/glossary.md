@@ -41,13 +41,13 @@ device qubit
   target site on which a program qubit can be placed.
 
 layout metadata
-  **Preferred term:** layout metadata. The mapping from program qubits to
-  device qubits, with a routing permutation when applicable. It does not move
-  operations between circuit wires.
+  **Preferred term:** layout metadata. **Accepted aliases:** none. The mapping
+  from program qubits to device qubits, with a routing permutation when
+  applicable. It does not move operations between circuit wires.
 
 routing permutation
-  **Preferred term:** routing permutation. A map from each device position
-  before routing to its final position.
+  **Preferred term:** routing permutation. **Accepted aliases:** none. A map
+  from each device position before routing to its final position.
 
 Pauli string
   **Preferred term:** Pauli string. **Accepted alias:** Pauli product. A tensor

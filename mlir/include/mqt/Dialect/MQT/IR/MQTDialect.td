@@ -30,6 +30,9 @@ def MQTDialect : Dialect {
     - `routing` (optional): a complete dense i64 permutation from placed device
       positions to final positions. Without it, positions do not change.
     - `input_count`: number of program qubits before workspace qubits.
+    - `sites` (optional): distinct nonnegative target site IDs in device-position
+      order, one per position. Target compilation sets this field. Without it,
+      positions refer to circuit wires, as for imported Qiskit layouts.
 
     The final position of program qubit `i` is `routing[initial[i]]` when
     routing is present. Qiskit input register names and partial layouts are not

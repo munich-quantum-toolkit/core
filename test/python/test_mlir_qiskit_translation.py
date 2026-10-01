@@ -4700,6 +4700,45 @@ def test_native_mapping_exports_full_qiskit_layout(*, routed: bool) -> None:
     )
 
 
+@pytest.mark.parametrize("sites", [[0, 1], [1, 0], [1, 3]])
+def test_native_layout_requires_matching_target_order(sites: list[int]) -> None:
+    """Only attach compiler layouts when exported wires use the recorded order."""
+    target = CompilerTarget(
+        "site order",
+        [CompilerTarget.Site(site) for site in sites],
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
+    circuit = QuantumCircuit(2)
+    circuit.x(0)
+    circuit.h(1)
+    program = QCProgram.from_qiskit(circuit).to_qco()
+    program.compile_for_target(_test_target_environment(target))
+    restored = QCProgram.from_mlir_str(program.to_qc().ir)
+    exported = restored.to_qiskit(target=target)
+    assert exported.layout is not None
+    np.testing.assert_allclose(Operator.from_circuit(exported).data, Operator(circuit).data, atol=1e-12)
+
+    without_target = restored.to_qiskit()
+    assert without_target.layout is None
+    assert without_target.num_qubits == max(sites) + 1
+    expected = QuantumCircuit(max(sites) + 1)
+    expected.compose(exported, qubits=sites, inplace=True)
+    np.testing.assert_allclose(Operator(without_target).data, Operator(expected).data, atol=1e-12)
+
+    reversed_target = CompilerTarget(
+        "reversed site order",
+        list(reversed(target.sites)),
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
+    reordered = restored.to_qiskit(target=reversed_target)
+    assert reordered.layout is None
+    expected = QuantumCircuit(2)
+    expected.compose(exported, qubits=[1, 0], inplace=True)
+    np.testing.assert_allclose(Operator(reordered).data, Operator(expected).data, atol=1e-12)
+
+
 def test_native_compilation_replaces_imported_qiskit_layout() -> None:
     """Compilation treats the current physical circuit as its input program."""
     source = QuantumCircuit(2)

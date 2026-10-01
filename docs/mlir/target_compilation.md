@@ -504,7 +504,8 @@ print(circuit.layout.final_index_layout())
 ```
 
 The attached layout records placement and routing through unused device qubits.
-The Qiskit exporter uses it for circuits it supports. Target compilation
+The Qiskit exporter attaches it only when given a target with the recorded site
+order. Otherwise, it exports the circuit without a layout. Target compilation
 replaces any previous layout and treats the current circuit as a new input
 program. See
 [transpiler layouts](qiskit.md#transpiler-layouts).

@@ -3012,7 +3012,11 @@ nb::object exportCircuit(const mlir::QCProgram& program,
                                  static_cast<uint32_t>(reg.bits.size()));
   }
   emitCircuit(circuit, *writer);
-  if (layout) {
+  // Compiler layouts use target positions; imported layouts use circuit wires.
+  if (layout && layout->initial.size() == state.numQubits &&
+      (layout->sites
+           ? target != nullptr && llvm::equal(*layout->sites, target->siteIds())
+           : target == nullptr)) {
     writer->setLayout(*layout);
   }
   return writer->finish();

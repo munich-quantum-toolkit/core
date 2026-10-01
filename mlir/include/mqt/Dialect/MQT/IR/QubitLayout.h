@@ -40,6 +40,8 @@ struct QubitLayout {
   std::vector<int64_t> initial;
   std::optional<std::vector<int64_t>> routing;
   int64_t inputCount = 0;
+  /// Target site IDs in position order; absent for circuit-wire ordering.
+  std::optional<std::vector<int64_t>> sites;
 
   [[nodiscard]] DictionaryAttr toAttr(MLIRContext* context) const;
   [[nodiscard]] static FailureOr<QubitLayout>
