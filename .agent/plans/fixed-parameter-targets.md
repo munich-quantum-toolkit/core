@@ -168,7 +168,7 @@ build/release/mlir/unittests/Dialect/QCO/Transforms/NativeSynthesis/mqt-core-mli
 build/release/mlir/unittests/Dialect/QCO/Transforms/Mapping/mqt-core-mlir-unittest-mapping
 build/release/mlir/unittests/Dialect/QCO/Transforms/Decomposition/mqt-core-mlir-unittest-decomposition
 build/release/mlir/unittests/Dialect/QCO/Transforms/Optimizations/mqt-core-mlir-unittest-optimizations
-QISKIT_NUM_PROCS=1 uv run --no-sync pytest -n 4 test/python/test_mlir.py
+QISKIT_NUM_PROCS=1 uv run --no-sync pytest -n 4 test/python/test_mlir.py test/python/test_mlir_qiskit_translation.py
 uvx nox -s lint
 ```
 
@@ -176,8 +176,11 @@ Run the owning adapter tests for the final payload checks. Follow
 [repository guidance](../../AGENTS.md#build-and-validation) for binding stubs
 and C++ lint when their implementation changes.
 
-The simplified implementation passed 245 compiler, 80 native-synthesis, 125
-mapping, 315 decomposition, and 204 optimization tests, plus all 162 Python MLIR
-tests. A subsequent complexity review removed obsolete Euler-plan RZ coalescing;
-these results include that deletion. Radian ion gates and Braket consumer checks
+After rebasing onto the layout support in #2553, local validation passed 254
+compiler, 80 native-synthesis, 126 mapping, 315 decomposition, and 204
+optimization tests, plus all 600 Python MLIR and Qiskit translation tests. The
+layout export regression now also checks fixed RX/RZ/iSWAP targets through
+placement and routing. Static fixed-pulse compilation and synthesis retain
+physical sites and reject nonadjacent interactions. The integration review
+required no production changes. Radian ion gates and Braket consumer checks
 remain unimplemented follow-ups.

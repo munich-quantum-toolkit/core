@@ -4659,8 +4659,18 @@ def test_transpiler_added_ancillas_and_routing_round_trip() -> None:
 
 
 @pytest.mark.parametrize("routed", [False, True])
-def test_native_mapping_exports_full_qiskit_layout(*, routed: bool) -> None:
+@pytest.mark.parametrize("basis", ["u", "fixed_rx"])
+def test_native_mapping_exports_full_qiskit_layout(*, routed: bool, basis: str) -> None:
     """Qiskit removes initial placement and routing, including workspace swaps."""
+    operations = (
+        [CompilerTarget.OperationCapability("u", 1, 3), CompilerTarget.OperationCapability("cz", 2, 0)]
+        if basis == "u"
+        else [
+            CompilerTarget.OperationCapability("rz", 1, 1),
+            CompilerTarget.OperationCapability("rx", 1, 1, fixed_parameters=[np.pi / 2]),
+            CompilerTarget.OperationCapability("iswap", 2, 0),
+        ]
+    )
     target = CompilerTarget(
         "sparse line",
         [CompilerTarget.Site(site) for site in [10, 30, 20, 40]],
@@ -4670,8 +4680,7 @@ def test_native_mapping_exports_full_qiskit_layout(*, routed: bool) -> None:
             else CompilerTarget.Connectivity.all_to_all()
         ),
         native_operations=CompilerTarget.NativeOperations([
-            CompilerTarget.OperationCapability("u", 1, 3),
-            CompilerTarget.OperationCapability("cz", 2, 0),
+            *operations,
             CompilerTarget.OperationCapability("gphase", 0, 1),
         ]),
     )
@@ -4684,6 +4693,9 @@ def test_native_mapping_exports_full_qiskit_layout(*, routed: bool) -> None:
     program = QCProgram.from_qiskit(circuit).to_qco()
     program.compile_for_target(_test_target_environment(target))
     exported = program.to_qiskit(target=target)
+    if basis == "fixed_rx":
+        assert set(exported.count_ops()) <= {"rx", "rz", "iswap"}
+        assert all(gate.operation.params == [np.pi / 2] for gate in exported.data if gate.operation.name == "rx")
     layout = exported.layout
     assert layout is not None
     assert sorted(layout.initial_index_layout()) == list(range(4))
