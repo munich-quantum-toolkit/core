@@ -1910,6 +1910,40 @@ TEST_F(TargetSynthesisTest, TargetNativeSingleQubitFusionRequiresImprovement) {
   }
 }
 
+TEST_F(TargetSynthesisTest, SingleQubitFusionResumesAfterSymbolicGate) {
+  auto moduleOp = mlir::parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%theta: f64) -> !qco.qubit {
+        %q0 = qco.static 0 : !qco.qubit
+        %q1 = qco.u(%theta, %theta, %theta) %q0 : !qco.qubit -> !qco.qubit
+        %q2 = qco.h %q1 : !qco.qubit -> !qco.qubit
+        %q3 = qco.t %q2 : !qco.qubit -> !qco.qubit
+        return %q3 : !qco.qubit
+      }
+    }
+  )mlir",
+                                                    context.get());
+  ASSERT_TRUE(moduleOp);
+  const auto target = makeUCxTarget();
+  const auto policy =
+      mlir::qco::decomposition::SingleQubitFusionPolicy::forTarget(
+          Target::SingleQubitBasis::U);
+  ASSERT_TRUE(
+      mlir::succeeded(mlir::qco::decomposition::fuseSingleQubitUnitaryRuns(
+          *moduleOp, Target::SingleQubitBasis::U, policy, &target,
+          mlir::GreedyRewriteConfig{})));
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*moduleOp)));
+  ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*moduleOp)));
+  ASSERT_EQ(countOps<UOp>(*moduleOp), 2U);
+  EXPECT_EQ(countOps<HOp>(*moduleOp), 0U);
+  EXPECT_EQ(countOps<mlir::qco::TOp>(*moduleOp), 0U);
+  auto main = moduleOp->lookupSymbol<mlir::func::FuncOp>("main");
+  auto symbolic = *main.getOps<UOp>().begin();
+  for (auto parameter : symbolic.getParameters()) {
+    EXPECT_EQ(parameter, main.getArgument(0));
+  }
+}
+
 TEST_F(TargetSynthesisTest, SingleQubitFusionPreservesNativeSymbolicRuns) {
   context->loadDialect<mlir::math::MathDialect>();
   auto original = mlir::parseSourceString<ModuleOp>(R"mlir(
