@@ -45,9 +45,9 @@ namespace mlir {
 
 /// Retain source order before cleanup removes idle inputs or shrinks tensors.
 static LogicalResult prepareLayout(ModuleOp moduleOp,
-                                   const CompilerTarget& target) {
-  moduleOp->removeAttr("mqt.layout");
+                                   const TargetEnvironment& environment) {
   moduleOp->removeAttr(mqt::kSourceQubitCountAttr);
+  const auto& target = environment.target();
   auto entry = mqt::getEntryPoint(moduleOp);
   if (!entry || !llvm::hasSingleElement(entry.getBody()) ||
       llvm::any_of(entry.getArgumentTypes(), qco::isLinearQubitType)) {
@@ -94,7 +94,8 @@ static LogicalResult prepareLayout(ModuleOp moduleOp,
   if (invalid) {
     return failure();
   }
-  if (result.wasInterrupted() || count == 0) {
+  if (result.wasInterrupted() || count == 0 ||
+      (!staticSites.empty() && !environment.supportsIndexedQubits())) {
     return success();
   }
   Builder builder(moduleOp.getContext());
@@ -127,7 +128,12 @@ public:
 
 protected:
   void runOnOperation() override {
-    getOperation()->removeAttr("mqt.layout");
+    if (getOperation()->hasAttr("mqt.layout")) {
+      getOperation().emitError("discard existing layout metadata before target "
+                               "compilation");
+      signalPassFailure();
+      return;
+    }
     if (mapping_.trials == 0) {
       getOperation().emitError("mapping trials must be greater than zero");
       signalPassFailure();
@@ -155,8 +161,7 @@ protected:
       signalPassFailure();
       return;
     }
-    if (!allToAllOnly_ &&
-        failed(prepareLayout(getOperation(), environment_.target()))) {
+    if (!allToAllOnly_ && failed(prepareLayout(getOperation(), environment_))) {
       signalPassFailure();
       return;
     }

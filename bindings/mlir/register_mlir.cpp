@@ -1485,7 +1485,7 @@ operations.)pb");
           "target_environment"_a, nb::kw_only(),
           "options"_a = mlir::CompilationOptions{},
           "Compile for the target and attach layout metadata when possible. "
-          "Replace existing layout metadata. Do not rely on program contents "
+          "Reject existing layout metadata. Do not rely on program contents "
           "if compilation fails. Failures raise RuntimeError with MLIR "
           "diagnostics.")
       .def(

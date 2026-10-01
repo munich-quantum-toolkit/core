@@ -2291,7 +2291,7 @@ TEST_F(CompilerPipelineTest, TargetLayoutRejectsInvalidInputRoots) {
   }
 }
 
-TEST_F(CompilerPipelineTest, TargetCompilationReplacesExistingLayout) {
+TEST_F(CompilerPipelineTest, TargetCompilationRejectsExistingLayout) {
   auto qc = QCProgram::fromOpenQASMString("OPENQASM 3.1; qubit q;");
   ASSERT_TRUE(qc);
   auto program = std::move(*qc).intoQCO();
@@ -2306,16 +2306,9 @@ TEST_F(CompilerPipelineTest, TargetCompilationReplacesExistingLayout) {
       CompilerTarget::create(1, CompilerTarget::Connectivity::allToAll(),
                              CompilerTarget::NativeOperations::unrestricted()));
   const TargetEnvironment environment(target, makePayloadSpecification());
-  auto synthesis = program->copy();
-  ASSERT_TRUE(program->compileForTarget(environment));
-  auto layout = mlir::mqt::QubitLayout::fromAttr(
-      program->module()->getAttr("mqt.layout"),
-      [&] { return program->module().emitError(); });
-  ASSERT_TRUE(succeeded(layout));
-  EXPECT_EQ(layout->inputCount, 1);
-  EXPECT_EQ(layout->initial, (std::vector<int64_t>{0}));
-  ASSERT_TRUE(synthesis.synthesizeForTarget(environment));
-  EXPECT_FALSE(synthesis.module()->hasAttr("mqt.layout"));
+  EXPECT_FALSE(program->compileForTarget(environment));
+  EXPECT_FALSE(program->synthesizeForTarget(environment));
+  EXPECT_TRUE(program->module()->hasAttr("mqt.layout"));
 }
 
 // Test: target compilation decomposes, maps, synthesizes, and verifies.
@@ -2795,6 +2788,25 @@ TEST_F(CompilerPipelineTest, OverCapacityInputsCompileWithoutLayout) {
   ASSERT_TRUE(program->compileForTarget(TargetEnvironment(target, payload)));
   EXPECT_FALSE(program->module()->hasAttr("mqt.layout"));
   EXPECT_TRUE(succeeded(verify(program->module())));
+}
+
+TEST_F(CompilerPipelineTest, PreplacedQubitWithoutIndexedPlacementHasNoLayout) {
+  auto program = QCOProgram::fromMLIRString(R"mlir(module {
+    func.func @main() attributes {mqt.entry_point} {
+      %q = qco.static 1 : !qco.qubit
+      %out = qco.x %q : !qco.qubit -> !qco.qubit
+      qco.sink %out : !qco.qubit
+      return
+    }
+  })mlir");
+  ASSERT_TRUE(program);
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(2, CompilerTarget::Connectivity::allToAll(),
+                             CompilerTarget::NativeOperations::unrestricted()));
+  ASSERT_TRUE(program->compileForTarget(
+      TargetEnvironment(target, makePayloadSpecification())));
+  EXPECT_FALSE(program->module()->hasAttr("mqt.layout"));
+  EXPECT_EQ(program->str().find("source_qubit_"), std::string::npos);
 }
 
 TEST_F(CompilerPipelineTest, IndexedPlacementPreservesSparseSitesAndLoopBody) {

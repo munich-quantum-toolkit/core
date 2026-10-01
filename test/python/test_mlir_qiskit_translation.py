@@ -4739,8 +4739,8 @@ def test_native_layout_requires_matching_target_order(sites: list[int]) -> None:
     np.testing.assert_allclose(Operator(reordered).data, Operator(expected).data, atol=1e-12)
 
 
-def test_native_compilation_replaces_imported_qiskit_layout() -> None:
-    """Compilation treats the current physical circuit as its input program."""
+def test_native_compilation_rejects_imported_qiskit_layout() -> None:
+    """Compilation requires a Qiskit circuit without an attached layout."""
     source = QuantumCircuit(2)
     source.cx(0, 1)
     circuit = transpile(source, coupling_map=[[0, 1]], initial_layout=[1, 0], optimization_level=0)
@@ -4750,7 +4750,6 @@ def test_native_compilation_replaces_imported_qiskit_layout() -> None:
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations.unrestricted(),
     )
-    program.compile_for_target(_test_target_environment(target))
-    exported = program.to_qiskit(target=target)
-    assert exported.layout is not None
-    np.testing.assert_allclose(Operator.from_circuit(exported).data, Operator(circuit).data, atol=1e-12)
+    with pytest.raises(RuntimeError, match="discard existing layout metadata"):
+        program.compile_for_target(_test_target_environment(target))
+    assert program.to_qiskit().layout is not None

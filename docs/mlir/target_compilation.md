@@ -506,12 +506,12 @@ print(circuit.layout.final_index_layout())
 The attached layout records placement and routing through unused device qubits.
 The Qiskit exporter attaches it only when given a target with the recorded site
 order. Otherwise, it exports the circuit without a layout. Target compilation
-replaces any previous layout and treats the current circuit as a new input
-program. See
+rejects a program with an attached layout. See
 [transpiler layouts](qiskit.md#transpiler-layouts).
 
 To retain layout metadata, program qubits need fixed-size allocations in the
-entry block or static references at distinct target sites. Mixed static and
-dynamic qubits require adaptive all-to-all placement. If a program declares more
-qubits than the device but shrinks to fit during compilation, it compiles
-without an attached layout. Later transformations clear layout metadata.
+entry block. Static references are tracked only with adaptive all-to-all
+placement; other target pipelines can compile them without attaching a layout.
+If a program declares more qubits than the device but shrinks to fit during
+compilation, it compiles without an attached layout. Later transformations clear
+layout metadata.

@@ -218,7 +218,7 @@ bool QCOProgram::compileForTarget(const TargetEnvironment& environment,
       [&environment, &options](OpPassManager& pm) {
         populateTargetCompilationPipeline(pm, environment, options.mapping);
       },
-      "failed to compile the QCO program for the target", options));
+      "failed to compile the QCO program for the target", options, true));
 }
 
 bool QCOProgram::synthesizeForTarget(const TargetEnvironment& environment,
@@ -228,7 +228,7 @@ bool QCOProgram::synthesizeForTarget(const TargetEnvironment& environment,
       [&environment, &options](OpPassManager& pm) {
         populateTargetSynthesisPipeline(pm, environment, options.mapping);
       },
-      "failed to synthesize the QCO program for the target", options));
+      "failed to synthesize the QCO program for the target", options, true));
 }
 
 std::optional<QCProgram> QCOProgram::intoQC() && {

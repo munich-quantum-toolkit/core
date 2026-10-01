@@ -719,11 +719,13 @@ static int runCompiler(int argc, char** argv) {
       *parsedOutputFormat != OutputFormat::QCO;
   if (targetEnvironment) {
     if (failed(qco::verifyLinearity(*program.mod)) ||
-        failed(runPasses([&](OpPassManager& pm) {
-          populateTargetCompilationPipeline(pm, *targetEnvironment,
-                                            options.mapping);
-          return success();
-        })) ||
+        failed(runPasses(
+            [&](OpPassManager& pm) {
+              populateTargetCompilationPipeline(pm, *targetEnvironment,
+                                                options.mapping);
+              return success();
+            },
+            true)) ||
         failed(qco::verifyLinearity(*program.mod))) {
       return 1;
     }

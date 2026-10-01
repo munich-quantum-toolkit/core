@@ -268,7 +268,7 @@ public:
   [[nodiscard]] bool decomposeMultiControlled(uint64_t minQubits = 3);
 
   /// Compile for a target and attach layout metadata when possible.
-  /// Replace any attached layout, treating the current circuit as a new input.
+  /// Reject a program with attached layout metadata.
   /// Do not rely on the program contents if compilation fails.
   [[nodiscard]] bool compileForTarget(const TargetEnvironment& environment,
                                       const CompilationOptions& options = {});
