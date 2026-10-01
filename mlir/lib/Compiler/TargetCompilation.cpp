@@ -140,10 +140,6 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
   pm.addPass(qco::createLegalizeControlFlow());
   pm.addPass(qco::createDecomposeMultiControlled(target));
   pm.addPass(qco::createFuseTwoQubitGates(target));
-  if (const auto basis = target.synthesisBasis();
-      basis && basis->singleQubit == CompilerTarget::SingleQubitBasis::U) {
-    pm.addPass(qco::createFuseSingleQubitUnitaryRuns(target));
-  }
   pm.addPass(qco::createPlacementPass(target));
   qco::populateTargetNativeSynthesisPipeline(pm);
 }
