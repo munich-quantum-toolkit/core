@@ -68,6 +68,9 @@ struct LoweringState {
   /// Destination register index and bit index of each stored measurement.
   DenseMap<Operation*, std::pair<size_t, Value>> cregMeasurements;
 
+  /// Measurement stores kept as SSA users across structural conversion.
+  DenseMap<Operation*, Operation*> deferredMeasurementStores;
+
   /// Indexed scalar results, dynamically allocated in Adaptive and static in
   /// Base.
   DenseMap<int64_t, qir::StaticResult> scalarResults;
@@ -182,10 +185,15 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
 /// fail. Local CBit stores retain ordinary semantics.
 ///
 /// Call while `func::ReturnOp`, `qc::MeasureOp`, and `cbit::StoreOp` remain
-/// in the IR.
+/// in the IR. Adaptive lowering defers fused store removal until SCF and
+/// function conversion have rewritten their index operands.
 [[nodiscard]] LogicalResult
 prepareClassicalResults(Operation* moduleOp, LoweringState& state,
-                        bool allowComputedOutputs = false);
+                        bool allowComputedOutputs = false,
+                        bool deferMeasurementStores = false);
+
+/// Refresh measurement indices from surviving stores and consume those stores.
+void finalizeClassicalResults(LoweringState& state);
 
 /// Returns a result pointer for a measurement that does not write into a
 /// returned classical bit register

@@ -792,6 +792,37 @@ module {
   }
 }
 
+TEST_F(TargetSynthesisTest, NativeCostEstimatesRuntimeControlledPhase) {
+  auto moduleOp = mlir::parseSourceString<ModuleOp>(R"mlir(
+module {
+  func.func @main(%theta: f64) {
+    %c = qco.static 0 : !qco.qubit
+    %q = qco.static 1 : !qco.qubit
+    %c1, %q1 = qco.ctrl(%c) targets(%arg = %q) {
+      %p = qco.p(%theta) %arg : !qco.qubit -> !qco.qubit
+      qco.yield %p : !qco.qubit
+    } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
+    qco.sink %c1 : !qco.qubit
+    qco.sink %q1 : !qco.qubit
+    return
+  }
+})mlir",
+                                                    context.get());
+  ASSERT_TRUE(moduleOp);
+  auto gate = *mainFunction(*moduleOp).getOps<CtrlOp>().begin();
+  const auto target =
+      makeOneWayUCxTarget(Connectivity::fromCouplings({{0, 1}}));
+  mlir::qco::NativeCostAnalysis analysis(2023);
+  const std::array<Target::SiteId, 2> sites{0, 1};
+  EXPECT_EQ(analysis.operationCost(gate, target, sites), 2U);
+
+  mlir::qco::NativeCostTracker tracker(target, 2023);
+  tracker.reset(mlir::qco::WireDirection::Forward);
+  tracker.append(gate, std::array<size_t, 2>{0, 1});
+  ASSERT_TRUE(tracker.score());
+  EXPECT_EQ(tracker.score()->first, 2U);
+}
+
 TEST_F(TargetSynthesisTest, ColdCostKeepsRunsAcrossCancelingPairs) {
   const auto target = makeUCxTarget(std::vector{
       valid(Site::create(0)),
@@ -2010,6 +2041,10 @@ TEST_F(TargetSynthesisTest,
                 entangler, 2, parameters, {valid(SiteTuple::create({1, 0}))})),
             valid(OperationCapability::create("gphase", 0, 1)),
         })));
+    auto controlled = *mainFunction(*original).getOps<CtrlOp>().begin();
+    mlir::qco::NativeCostAnalysis costs(2023);
+    EXPECT_TRUE(costs.operationCost(controlled, target,
+                                    std::array<Target::SiteId, 2>{0, 1}));
     auto synthesized = OwningOpRef<ModuleOp>(original->clone());
     ASSERT_TRUE(mlir::succeeded(runTargetPass(
         *synthesized, target, mlir::qco::createTargetNativeSynthesis())));
@@ -2061,6 +2096,11 @@ TEST_F(TargetSynthesisTest, NativeRuntimeControlledPhaseStaysUntouched) {
                          valid(OperationCapability::create(
                              "p", OperationCapability::Arity::variadic(2), 1)),
                      })));
+  auto controlled = *mainFunction(*moduleOp).getOps<CtrlOp>().begin();
+  mlir::qco::NativeCostAnalysis costs(2023);
+  EXPECT_EQ(costs.operationCost(controlled, target,
+                                std::array<Target::SiteId, 2>{0, 1}),
+            1U);
   attachTestEnvironment(*moduleOp, target);
   const auto before = printModule(*moduleOp);
   ASSERT_TRUE(mlir::succeeded(runTargetPass(

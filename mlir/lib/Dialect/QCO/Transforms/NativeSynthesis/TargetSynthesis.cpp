@@ -110,6 +110,16 @@ static bool assignTwoQubitOpMatrix(UnitaryOpInterface op, Matrix4x4& matrix) {
          op.getUnitaryMatrix4x4(matrix);
 }
 
+static POp singleControlledPhase(Operation* operation) {
+  auto controlled = dyn_cast<CtrlOp>(operation);
+  if (!controlled || controlled.getNumControls() != 1 ||
+      controlled.getNumTargets() != 1 ||
+      controlled.getNumBodyUnitaries() != 1) {
+    return {};
+  }
+  return dyn_cast<POp>(controlled.getBodyUnitary(0).getOperation());
+}
+
 /// Return the constant matrix when `unitary` is a single-qubit run member.
 static std::optional<Matrix2x2>
 oneQubitRunMemberMatrix(UnitaryOpInterface unitary) {
@@ -723,6 +733,12 @@ NativeCostAnalysis::operationCost(UnitaryOpInterface operation,
   }
   Matrix4x4 matrix;
   if (!assignTwoQubitOpMatrix(operation, matrix)) {
+    if (singleControlledPhase(operation.getOperation())) {
+      constexpr auto cx = Matrix4x4::fromElements(1, 0, 0, 0, 0, 1, 0, 0, 0, 0,
+                                                  0, 1, 0, 0, 1, 0);
+      const auto cxCost = matrixCost(cx, target, sites);
+      return cxCost ? std::optional<size_t>{2 * *cxCost} : std::nullopt;
+    }
     return std::nullopt;
   }
   return matrixCost(matrix, target, sites);
@@ -1081,16 +1097,11 @@ static LogicalResult synthesizeTargetOperation(
   const bool reverseEntangler = *direction;
   Matrix4x4 matrix;
   if (!assignTwoQubitOpMatrix(op, matrix)) {
-    auto controlled = dyn_cast<CtrlOp>(operation);
-    auto phase =
-        controlled && controlled.getNumControls() == 1 &&
-                controlled.getNumTargets() == 1 &&
-                controlled.getNumBodyUnitaries() == 1
-            ? dyn_cast<POp>(controlled.getBodyUnitary(0).getOperation())
-            : POp{};
+    auto phase = singleControlledPhase(operation);
     if (!phase) {
       return unsupported("its unitary matrix is not available at compile time");
     }
+    auto controlled = cast<CtrlOp>(operation);
 
     // The verified modifier body contains only eager classical support ops
     // besides P. Keep their evaluation in the same classical scope.
