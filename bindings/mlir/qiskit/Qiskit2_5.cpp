@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/QC/Translation/StandardGate.h"
 
 #include "QiskitTranslation.h"
@@ -917,6 +918,44 @@ public:
     return normalizePythonParameter(
         pythonAttribute(pythonCircuit_, "global_phase",
                         "Qiskit circuit does not expose its global phase"));
+  }
+
+  [[nodiscard]] std::optional<mlir::mqt::QubitLayout> layout() const override {
+    const nb::object metadata = pythonCircuit_.attr("layout");
+    if (metadata.is_none()) {
+      return std::nullopt;
+    }
+    const auto transpiler = nb::module_::import_("qiskit.transpiler");
+    if (!nb::isinstance(metadata, transpiler.attr("TranspileLayout"))) {
+      throw std::runtime_error("unsupported Qiskit layout metadata");
+    }
+    mlir::mqt::QubitLayout result;
+    for (nb::handle site : nb::iter(metadata.attr("initial_index_layout")())) {
+      int64_t value = 0;
+      if (!nb::try_cast(site, value)) {
+        throw std::runtime_error("Qiskit initial layout must be complete");
+      }
+      result.initial.push_back(value);
+    }
+    if (result.initial.size() != numQubits()) {
+      throw std::runtime_error("Qiskit initial layout must cover every qubit");
+    }
+    const auto count = metadata.attr("_input_qubit_count");
+    if (count.is_none()) {
+      throw std::runtime_error("Qiskit layout requires an input qubit count");
+    }
+    result.inputCount = nb::cast<int64_t>(count);
+    if (const auto final = metadata.attr("final_layout"); !final.is_none()) {
+      if (metadata.attr("_output_qubit_list").is_none()) {
+        throw std::runtime_error(
+            "Qiskit routing layout requires output qubit order");
+      }
+      result.routing.emplace();
+      for (nb::handle site : nb::iter(metadata.attr("routing_permutation")())) {
+        result.routing->push_back(nb::cast<int64_t>(site));
+      }
+    }
+    return result;
   }
 
   [[nodiscard]] OperationKind instructionKind(size_t index) const override {
@@ -2134,6 +2173,37 @@ public:
 
   void setGlobalPhase(const Parameter& phase) override {
     pythonCircuit_.attr("global_phase") = pythonParameter(phase);
+  }
+
+  void setLayout(const mlir::mqt::QubitLayout& layout) override {
+    const auto physical = nb::cast<nb::list>(pythonCircuit_.attr("qubits"));
+    if (nb::len(physical) != layout.initial.size()) {
+      throw std::runtime_error("qubit layout no longer matches circuit "
+                               "resources");
+    }
+    const auto transpiler = nb::module_::import_("qiskit.transpiler");
+    const auto circuitModule = nb::module_::import_("qiskit.circuit");
+    const auto input =
+        circuitModule.attr("QuantumRegister")(layout.initial.size(), "input");
+    nb::dict initial;
+    nb::dict indices;
+    for (auto [index, site] : llvm::enumerate(layout.initial)) {
+      const auto bit = input[nb::int_(index)];
+      initial[bit] = nb::int_(site);
+      indices[bit] = nb::int_(index);
+    }
+    nb::object final = nb::none();
+    if (layout.routing) {
+      nb::dict positions;
+      for (auto [site, output] : llvm::enumerate(*layout.routing)) {
+        positions[physical[site]] = nb::int_(output);
+      }
+      final = transpiler.attr("Layout")(positions);
+    }
+    pythonCircuit_.attr("_layout") = transpiler.attr("TranspileLayout")(
+        transpiler.attr("Layout")(initial), indices, final,
+        nb::arg("_input_qubit_count") = layout.inputCount,
+        nb::arg("_output_qubit_list") = physical);
   }
 
   void addGate(const StandardGateMapping mapping,

@@ -23,6 +23,32 @@ def MQTDialect : Dialect {
     The MQT dialect owns frontend-neutral metadata that must remain meaningful
     across quantum dialect conversions. It defines no operations or types.
 
+    `mqt.layout` is a dictionary on the program module.
+    The dictionary records layout metadata:
+    - `initial`: a complete dense i64 permutation from program qubits to device
+      positions, including workspace qubits.
+    - `routing` (optional): a complete dense i64 permutation from placed device
+      positions to final positions. Without it, positions do not change.
+    - `input_count`: number of program qubits before workspace qubits.
+    - `sites` (optional): distinct nonnegative target site IDs in device-position
+      order, one per position. Target compilation sets this field. Without it,
+      positions refer to circuit wires, as for imported Qiskit layouts.
+
+    The final position of program qubit `i` is `routing[initial[i]]` when
+    routing is present. Qiskit input register names and partial layouts are not
+    retained.
+    The metadata does not affect gates or store SDK objects. Copies and plain
+    QC/QCO conversions retain it. Compiler pipeline runners clear it before
+    transformations that may change qubit identity. Raw IR editors must preserve,
+    update, or discard the layout when changing qubit identity or order.
+
+    `mqt.source_qubit_count` records the input count during target preparation.
+    Placement consumes it when publishing the completed layout.
+    `mqt.source_qubit_indices` tracks native input slots: a dense i64 array of
+    distinct nonnegative indices, one per `qco.alloc` or fixed-size
+    `qtensor.alloc` slot. Tensor shrinking retains surviving entries; placement consumes them.
+    Removed slots remain in the attached layout.
+
     `mqt.input_name` records the source-level name of a function input.
     `mqt.input_id` optionally records an opaque 128-bit source identity on a
     named function input. It is an `i128` attribute, unique within the function;
@@ -43,7 +69,8 @@ def MQTDialect : Dialect {
     qubit `memref.alloc`, and `qtensor.alloc`) must appear directly in its
     entry block. Other functions receive quantum resources as arguments;
     they cannot allocate them. Classical allocations and static qubit references
-    are not subject to this restriction.
+    are not subject to this restriction. A program cannot mix static and
+    dynamic qubit allocation modes.
     `mqt.unitary` marks a private function that defines a unitary operation.
     Its body admits unitary operations and memory-effect-free, region-free
     classical computation, matching the quantum modifier-body contract. Parameter
@@ -60,7 +87,9 @@ def MQTDialect : Dialect {
   }];
 
   let discardableAttrs = (ins "::mlir::StringAttr":$input_name,
-      "::mlir::IntegerAttr":$input_id, "::mlir::StringAttr":$source_name,
+      "::mlir::IntegerAttr":$input_id, "::mlir::DictionaryAttr":$layout,
+      "::mlir::StringAttr":$source_name,
+      "::mlir::DenseI64ArrayAttr":$source_qubit_indices,
       "::mlir::DictionaryAttr":$parameter_group,
       "::mlir::StringAttr":$register_name, "::mlir::UnitAttr":$entry_point,
       "::mlir::UnitAttr":$unitary);

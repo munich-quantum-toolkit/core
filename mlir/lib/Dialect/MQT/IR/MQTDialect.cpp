@@ -12,6 +12,7 @@
 
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCInterfaces.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
@@ -24,6 +25,7 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -376,6 +378,8 @@ LogicalResult mlir::mqt::verifyQuantumAllocations(ModuleOp moduleOp) {
   Block* entryBlock = entryPoint && !entryPoint.isExternal()
                           ? &entryPoint.getBody().front()
                           : nullptr;
+  bool hasStatic = false;
+  bool hasDynamic = false;
   const auto result =
       moduleOp.walk<WalkOrder::PreOrder>([&](Operation* operation) {
         if (isa<ModuleOp>(operation) && operation != moduleOp.getOperation()) {
@@ -387,6 +391,13 @@ LogicalResult mlir::mqt::verifyQuantumAllocations(ModuleOp moduleOp) {
             operation->getNumResults() == 1) {
           auto type = dyn_cast<MemRefType>(operation->getResult(0).getType());
           allocatesQubits = type && isa<qc::QubitType>(type.getElementType());
+        }
+        hasDynamic |= allocatesQubits;
+        hasStatic |= isa<qc::StaticOp, qco::StaticOp>(operation);
+        if (hasDynamic && hasStatic) {
+          operation->emitOpError(
+              "cannot mix static and dynamic qubit allocation modes");
+          return WalkResult::interrupt();
         }
         if (allocatesQubits &&
             (!entryBlock || operation->getBlock() != entryBlock)) {
@@ -760,6 +771,43 @@ MQTDialect::verifyOperationAttribute(Operation* operation,
           "mqt.compilation_seed requires a signless i64 on a module");
     }
     return success();
+  }
+  if (attribute.getName() == kSourceQubitCountAttr) {
+    auto count = dyn_cast<IntegerAttr>(attribute.getValue());
+    if (!isa<ModuleOp>(operation) || !count ||
+        !count.getType().isSignlessInteger(64) || count.getInt() < 0) {
+      return operation->emitError(
+          "source qubit count requires a nonnegative i64 on a module");
+    }
+    return success();
+  }
+  if (attribute.getName() == kSourceQubitIndicesAttr) {
+    int64_t width = -1;
+    if (isa<qco::AllocOp>(operation)) {
+      width = 1;
+    } else if (auto tensor = dyn_cast<qtensor::AllocOp>(operation)) {
+      width = getConstantIntValue(tensor.getSize()).value_or(-1);
+    }
+    auto indices = dyn_cast<DenseI64ArrayAttr>(attribute.getValue());
+    if (width < 0 || !indices || indices.size() != width) {
+      return operation->emitError("source qubit indices require one i64 entry "
+                                  "per fixed allocation slot");
+    }
+    llvm::SmallDenseSet<int64_t> seen;
+    for (auto index : indices.asArrayRef()) {
+      if (index < 0 || !seen.insert(index).second) {
+        return operation->emitError(
+            "source qubit indices must be distinct and nonnegative");
+      }
+    }
+    return success();
+  }
+  if (attribute.getName() == "mqt.layout") {
+    if (!isa<ModuleOp>(operation)) {
+      return operation->emitError("qubit layout belongs on a program module");
+    }
+    return success(succeeded(QubitLayout::fromAttr(
+        attribute.getValue(), [&] { return operation->emitError(); })));
   }
   if (attribute.getName() == TargetEnvAttr::name) {
     if (!isa<ModuleOp>(operation)) {

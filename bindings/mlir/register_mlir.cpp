@@ -1341,9 +1341,11 @@ before conversion to QCO.)pb");
                   "None) -> qiskit.circuit.QuantumCircuit"),
           R"pb(Translate this QC program to a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` without consuming it.
 
+The exporter restores attached layout metadata when it is valid.
+
 Args:
     target: The optional compiler target used for mapping. When provided, emit
-        a canonical physical circuit. All qubits must be static, and their site
+        a canonical device circuit. All qubits must be static, and their site
         IDs must belong to the target.)pb")
       .def(
           "to_qco",
@@ -1475,15 +1477,17 @@ operations.)pb");
             withDiagnostics<nb::exception_type::runtime_error>(
                 program.module().getContext(), "Target compilation failed",
                 [&] {
+                  const nb::gil_scoped_release release;
                   return mlir::success(
                       program.compileForTarget(environment, options));
                 });
           },
           "target_environment"_a, nb::kw_only(),
           "options"_a = mlir::CompilationOptions{},
-          "Compile this QCO program for the target in place. Do not rely on "
-          "its contents if compilation fails. Failures raise RuntimeError "
-          "with the emitted MLIR diagnostics.")
+          "Compile for the target and attach layout metadata when possible. "
+          "Reject existing layout metadata. Do not rely on program contents "
+          "if compilation fails. Failures raise RuntimeError with MLIR "
+          "diagnostics.")
       .def(
           "synthesize_for_target",
           [](mlir::QCOProgram& program,
@@ -1498,9 +1502,11 @@ operations.)pb");
           },
           "target_environment"_a, nb::kw_only(),
           "options"_a = mlir::CompilationOptions{},
-          "Synthesize native operations for an all-to-all target in place. "
-          "Assigns static sites and resynthesizes constant two-qubit runs in "
-          "the native basis, without routing. "
+          "Synthesize native operations without routing. Dynamic qubits "
+          "require "
+          "all-to-all connectivity and receive layout metadata when possible. "
+          "Static qubits keep their device site IDs and must fit the target "
+          "topology. "
           "Do not rely on the program contents if synthesis fails. Failures "
           "raise RuntimeError with the emitted MLIR diagnostics.")
       .def(
@@ -1512,14 +1518,15 @@ operations.)pb");
             return bindings::qiskit::exportCircuit(qc, target);
           },
           nb::kw_only(), "target"_a = nb::none(),
-          nb::sig(
-              "def to_qiskit(self, *, target: CompilerTarget | None = None) "
-              "-> qiskit.circuit.QuantumCircuit"),
+          nb::sig("def to_qiskit(self, *, target: CompilerTarget | None = "
+                  "None) -> qiskit.circuit.QuantumCircuit"),
           R"pb(Export a Qiskit circuit without consuming or modifying this program.
+
+The exporter restores attached layout metadata when it is valid.
 
 Args:
     target: The optional compiler target used for mapping. When provided, static
-        site IDs map to dense physical-qubit indices in target site order.
+        site IDs map to dense device-qubit indices in target site order.
         Dynamic qubits and static IDs absent from the target are rejected.)pb")
       .def(
           "to_qc",
@@ -1570,6 +1577,9 @@ further compilation.)pb");
           [](const mlir::JeffProgram& value) {
             requireValid(value);
             const auto bytes = value.toBytes();
+            if (bytes.empty()) {
+              throw std::runtime_error("failed to serialize jeff program");
+            }
             return nb::bytes(bytes.data(), bytes.size());
           },
           "Serialize this program to its ``jeff`` byte representation.")

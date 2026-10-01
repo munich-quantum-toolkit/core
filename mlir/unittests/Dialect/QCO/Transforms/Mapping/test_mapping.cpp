@@ -482,6 +482,24 @@ TEST_F(MappingPassFixture, StandalonePassesUseSharedAllocationVerifier) {
   }
 }
 
+TEST_F(MappingPassFixture, EmptyProgramNeedsNoPlacementWorkspace) {
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      4, Connectivity::fromCouplings({{0, 1}, {1, 2}, {2, 3}}),
+      NativeOperations::unrestricted()));
+  for (const bool placement : {false, true}) {
+    auto moduleOp = parseSourceString<ModuleOp>(
+        "module { func.func @main() attributes {mqt.entry_point} { return } }",
+        context.get());
+    ASSERT_TRUE(moduleOp);
+    attachTestEnvironment(*moduleOp, target);
+    const auto before = printModule(*moduleOp);
+    PassManager pm(context.get());
+    pm.addPass(placement ? createPlacementPass(target) : createMappingPass());
+    ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
+    EXPECT_EQ(printModule(*moduleOp), before);
+  }
+}
+
 TEST_F(MappingPassFixture, RequiresTypedTargetEnvironment) {
   QCOProgramBuilder builder(context.get());
   builder.initialize();

@@ -801,7 +801,8 @@ def test_target_compilation_exports_canonical_physical_qiskit_circuit() -> None:
     assert restored == mapped.to_qc(copy=True).to_qiskit(target=target)
     assert restored.num_qubits == 5
     assert [(register.name, len(register)) for register in restored.qregs] == [("q", 5)]
-    assert restored.layout is None
+    assert restored.layout is not None
+    assert len(restored.layout.final_index_layout()) == 2
 
 
 @requires_qiskit_translation
@@ -822,10 +823,12 @@ def test_target_synthesis_decomposes_without_routing() -> None:
     source.h(0)
     source.append(library.RYGate(0.7).control(2, annotated=True), [0, 1, 2])
     program = QCProgram.from_qiskit(source).to_qco()
+    original = program.copy()
 
     program.synthesize_for_target(_test_target_environment(target))
 
     result = program.to_qiskit(target=target)
+    assert result.layout is not None
     assert set(result.count_ops()) <= {"sx", "x", "rz", "cz"}
     assert np.allclose(Operator(result).data, Operator(source).data)
 
@@ -835,7 +838,7 @@ def test_target_synthesis_decomposes_without_routing() -> None:
         native_operations=CompilerTarget.NativeOperations.unrestricted(),
     )
     with pytest.raises(RuntimeError, match="all-to-all connectivity"):
-        program.synthesize_for_target(_test_target_environment(sparse))
+        original.synthesize_for_target(_test_target_environment(sparse))
 
 
 @requires_qiskit_translation

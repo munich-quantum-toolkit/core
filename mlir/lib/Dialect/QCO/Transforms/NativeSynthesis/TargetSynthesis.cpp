@@ -432,6 +432,31 @@ static SmallVector<SiteId, 2> getOperationSites(Operation* operation,
   return result;
 }
 
+static LogicalResult verifyTopology(Operation* root,
+                                    const CompilerTarget& target,
+                                    const SiteMap& sites) {
+  if (target.connectivityKind() !=
+      CompilerTarget::Connectivity::Kind::Explicit) {
+    return success();
+  }
+  auto result = root->walk([&](Operation* operation) {
+    auto unitary = dyn_cast<UnitaryOpInterface>(operation);
+    if (!unitary || isExcludedFromTopLevelUnitaryWalk(operation) ||
+        unitary.getNumQubits() != 2 || isa<BarrierOp>(operation)) {
+      return WalkResult::advance();
+    }
+    auto siteIds = getOperationSites(operation, sites);
+    auto first = target.vertexForSite(siteIds[0]);
+    auto second = target.vertexForSite(siteIds[1]);
+    if (first && second && target.areAdjacent(*first, *second)) {
+      return WalkResult::advance();
+    }
+    operation->emitError("two-qubit operation does not fit target topology");
+    return WalkResult::interrupt();
+  });
+  return success(!result.wasInterrupted());
+}
+
 /// Normalize relative phase effects and discard only the unobservable global
 /// phase of an entry point when the target cannot represent it.
 static LogicalResult prepareGlobalPhases(ModuleOp moduleOp,
@@ -1298,6 +1323,10 @@ protected:
       signalPassFailure();
       return;
     }
+    if (!indexed && failed(verifyTopology(moduleOp, target, *sites))) {
+      signalPassFailure();
+      return;
+    }
 
     SynthesisListener listener(&getContext(), *sites);
     IRRewriter rewriter(&getContext(), &listener);
@@ -1355,6 +1384,10 @@ protected:
     const bool indexed = environment.environment().supportsIndexedQubits();
     auto sites = collectStaticSites(moduleOp, indexed);
     if (failed(sites)) {
+      signalPassFailure();
+      return;
+    }
+    if (!indexed && failed(verifyTopology(moduleOp, target, *sites))) {
       signalPassFailure();
       return;
     }

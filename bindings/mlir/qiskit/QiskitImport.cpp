@@ -13,6 +13,7 @@
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/MQT/Utils/DenseUnitary.h"
 #include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
@@ -2912,6 +2913,7 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
       classicalRegisters, view->numClbits(), "classical");
 
   auto context = mlir::createCompilerContext();
+  const auto layout = view->layout();
   mlir::qc::QCProgramBuilder builder(context.get());
   llvm::SmallVector<mlir::Type> resultTypes;
   if (view->numClbits() == 0U) {
@@ -3005,6 +3007,9 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
 
   auto moduleOp = classicalStorage.empty() ? builder.finalize()
                                            : builder.finalize(classicalStorage);
+  if (layout) {
+    (*moduleOp)->setAttr("mqt.layout", layout->toAttr(context.get()));
+  }
   validateGeneratedControlFlow(moduleOp->getOperation());
   auto program = mlir::QCProgram::fromModule(context, std::move(moduleOp));
   if (!program) {

@@ -40,7 +40,7 @@ captures. Parameters and parameter vectors are created once per export.
 | Parameter-vector elements                                               | Supported            | Supported                          |
 | Dense numeric unitaries up to eight qubits                              | Supported            | Supported                          |
 | Register aliases or interleaved membership                              | Rejected             | Rejected                           |
-| Transpiler layout metadata                                              | Accepted and ignored | Not emitted                        |
+| Complete transpiler layout metadata                                     | Preserved            | Reconstructed when still valid     |
 
 Classical-expression variables may refer to Clbits or ClassicalRegisters in the
 containing circuit. This includes values used only by the condition or switch
@@ -183,9 +183,24 @@ Qiskit import preserves inverse, numeric power, and closed-control modifiers on
 dense-unitary operations. Export preserves inverse and closed-control modifiers.
 Other powers require canonicalization or synthesis.
 
-A circuit remains valid when {code}`circ.layout` is present. The importer
-translates the circuit operations and deliberately does not preserve physical or
-virtual layout metadata.
+### Transpiler layouts
+
+A complete Qiskit `TranspileLayout` maps program qubits to device qubits and
+records routing. Import stores those numeric maps as `mqt.layout` on the program
+module; export constructs a Qiskit layout from them. Copies, MLIR serialization,
+and QC/QCO conversions preserve the metadata. Other compiler transformations
+clear it.
+
+```python
+program = QCProgram.from_qiskit(transpiled_circuit)
+restored = program.copy().to_qco().to_qc().to_qiskit()
+```
+
+Target compilation requires a circuit without an attached layout. The numeric
+mapping does not retain Qiskit input register names or input ancilla labels;
+incomplete layouts are unsupported. See {doc}`MQT dialect <MQT>` for the
+metadata schema and {doc}`target compilation <target_compilation>` for
+placement.
 
 Names passed between Qiskit and the compiler must not contain NUL characters.
 The importer checks names before native access. Arithmetic-progression loop

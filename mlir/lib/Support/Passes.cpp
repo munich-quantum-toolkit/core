@@ -20,6 +20,7 @@
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Pass/PassRegistry.h"
 #include "mlir/Support/LLVM.h"
@@ -39,12 +40,14 @@ static void addSimplificationPasses(OpPassManager& pm) {
   pm.addPass(createCSEPass());
 }
 
-LogicalResult runWithPassManager(
-    ModuleOp mod, const function_ref<void(OpPassManager&)> populatePasses,
-    const StringRef errorMessage, const CompilationOptions& options) {
+LogicalResult
+runWithPassManager(ModuleOp mod,
+                   const function_ref<void(OpPassManager&)> populatePasses,
+                   const StringRef errorMessage,
+                   const CompilationOptions& options, bool preservesLayout) {
   PassManager pm(mod.getContext());
   populatePasses(pm);
-  if (failed(runWithCompilationOptions(pm, mod, options))) {
+  if (failed(runWithCompilationOptions(pm, mod, options, preservesLayout))) {
     return mod.emitError(errorMessage);
   }
   return success();
@@ -127,7 +130,11 @@ LogicalResult runPassPipeline(ModuleOp mod, const StringRef pipeline,
 }
 
 LogicalResult runWithCompilationOptions(PassManager& pm, ModuleOp moduleOp,
-                                        const CompilationOptions& options) {
+                                        const CompilationOptions& options,
+                                        bool preservesLayout) {
+  if (!preservesLayout) {
+    moduleOp->removeAttr("mqt.layout");
+  }
   if (options.enableTiming) {
     pm.enableTiming();
   }

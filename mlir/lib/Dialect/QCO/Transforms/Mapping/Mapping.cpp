@@ -14,6 +14,7 @@
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
@@ -32,6 +33,7 @@
 #include "mlir/Analysis/SliceAnalysis.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/Block.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -96,6 +98,80 @@ struct Computation {
   Wires wires;
   SmallVector<AllocOp> scalarAllocations;
   SmallVector<TensorAllocation> tensorAllocations;
+};
+
+/// Consume source labels while the existing placement loop replaces roots.
+class LayoutRecorder {
+public:
+  LayoutRecorder(func::FuncOp function, const CompilerTarget& target)
+      : module_(function->getParentOfType<ModuleOp>()) {
+    if (auto count =
+            module_->getAttrOfType<IntegerAttr>(mqt::kSourceQubitCountAttr)) {
+      layout_.emplace();
+      layout_->initial.assign(target.numSites(), -1);
+      layout_->inputCount = count.getInt();
+      layout_->sites.emplace(target.siteIds().begin(), target.siteIds().end());
+      valid_ = count.getInt() >= 0 &&
+               std::cmp_less_equal(count.getInt(), target.numSites());
+    }
+  }
+
+  void record(Operation* root, std::optional<int64_t> slot, size_t vertex) {
+    if (!layout_) {
+      return;
+    }
+    auto indices =
+        root->getAttrOfType<DenseI64ArrayAttr>(mqt::kSourceQubitIndicesAttr);
+    if (!indices || !slot || *slot < 0 || *slot >= indices.size() ||
+        vertex >= layout_->initial.size()) {
+      valid_ = false;
+      return;
+    }
+    const auto source = indices[*slot];
+    if (source < 0 || source >= layout_->inputCount ||
+        layout_->initial[source] != -1) {
+      valid_ = false;
+      return;
+    }
+    layout_->initial[source] = static_cast<int64_t>(vertex);
+  }
+
+  LogicalResult finish() {
+    module_->removeAttr(mqt::kSourceQubitCountAttr);
+    if (!valid_) {
+      return module_.emitError(
+          "input qubit identity was lost during placement");
+    }
+    if (!layout_) {
+      return success();
+    }
+    std::vector<bool> used(layout_->initial.size(), false);
+    for (const auto vertex : layout_->initial) {
+      if (vertex >= 0) {
+        if (used[vertex]) {
+          return module_.emitError("input qubits share a physical site");
+        }
+        used[vertex] = true;
+      }
+    }
+    size_t next = 0;
+    for (auto& vertex : layout_->initial) {
+      if (vertex < 0) {
+        while (used[next]) {
+          ++next;
+        }
+        vertex = static_cast<int64_t>(next);
+        used[next] = true;
+      }
+    }
+    module_->setAttr("mqt.layout", layout_->toAttr(module_.getContext()));
+    return success();
+  }
+
+private:
+  ModuleOp module_;
+  std::optional<mqt::QubitLayout> layout_;
+  bool valid_ = true;
 };
 
 } // namespace
@@ -223,9 +299,10 @@ static LogicalResult checkCapacity(func::FuncOp func,
 /// Analogously to `discoverComputation`, the i-th extract operation defines
 /// the i-th program qubit. The function assumes that discovery and capacity
 /// checks succeeded.
-static Wires applyPlacement(Region& body, const CompilerTarget& target,
-                            const Layout& layout, Computation& computation,
-                            IRRewriter& rewriter) {
+static FailureOr<Wires>
+applyPlacement(Region& body, const CompilerTarget& target, const Layout& layout,
+               Computation& computation, IRRewriter& rewriter) {
+  LayoutRecorder recorder(cast<func::FuncOp>(body.getParentOp()), target);
   SmallVector<Value> staticQubits;
   staticQubits.reserve(layout.nHardwareQubits());
 
@@ -240,7 +317,9 @@ static Wires applyPlacement(Region& body, const CompilerTarget& target,
   size_t prog = 0;
 
   for (auto alloc : computation.scalarAllocations) {
-    auto qubit = staticQubits[layout.getHardwareIndex(prog++)];
+    const auto vertex = layout.getHardwareIndex(prog++);
+    recorder.record(alloc, 0, vertex);
+    auto qubit = staticQubits[vertex];
 
     rewriter.replaceAllUsesWith(alloc.getResult(), qubit);
     rewriter.eraseOp(alloc);
@@ -250,7 +329,10 @@ static Wires applyPlacement(Region& body, const CompilerTarget& target,
     for (Operation* operation : tensor.operations) {
       TypeSwitch<Operation*>(operation)
           .Case([&](ExtractOp op) {
-            auto qubit = staticQubits[layout.getHardwareIndex(prog++)];
+            const auto vertex = layout.getHardwareIndex(prog++);
+            recorder.record(tensor.allocation,
+                            getConstantIntValue(op.getIndex()), vertex);
+            auto qubit = staticQubits[vertex];
 
             rewriter.replaceAllUsesWith(op.getResult(), qubit);
             rewriter.replaceAllUsesWith(op.getOutTensor(), op.getTensor());
@@ -276,6 +358,9 @@ static Wires applyPlacement(Region& body, const CompilerTarget& target,
     SinkOp::create(rewriter, body.getLoc(), qubit);
   }
 
+  if (failed(recorder.finish())) {
+    return failure();
+  }
   return map_to_vector(staticQubits,
                        [](Value qubit) { return WireIterator(qubit); });
 }
@@ -283,12 +368,9 @@ static Wires applyPlacement(Region& body, const CompilerTarget& target,
 /// Assign allocation slots to sites without traversing or expanding their uses.
 static LogicalResult placeIndexedAllocations(func::FuncOp function,
                                              const CompilerTarget& target) {
+  LayoutRecorder recorder(function, target);
   SmallVector<Operation*> allocations;
-  llvm::DenseSet<CompilerTarget::SiteId> occupied;
-  function.walk([&](StaticOp op) {
-    occupied.insert(static_cast<CompilerTarget::SiteId>(op.getIndex()));
-  });
-  size_t required = occupied.size();
+  size_t required = 0;
   for (Operation& operation : function.getBody().front()) {
     size_t width = 0;
     if (isa<AllocOp>(operation)) {
@@ -315,15 +397,15 @@ static LogicalResult placeIndexedAllocations(func::FuncOp function,
   size_t vertex = 0;
   for (Operation* allocation : allocations) {
     rewriter.setInsertionPoint(allocation);
+    int64_t slot = 0;
     const auto nextQubit = [&] {
-      while (occupied.contains(target.siteForVertex(vertex))) {
-        ++vertex;
-      }
+      recorder.record(allocation, slot++, vertex);
       return StaticOp::create(rewriter, allocation->getLoc(),
                               target.siteForVertex(vertex++));
     };
     if (isa<AllocOp>(allocation)) {
       auto qubit = nextQubit();
+      allocation->removeAttr(mqt::kSourceQubitIndicesAttr);
       qubit->setDiscardableAttrs(allocation->getDiscardableAttrDictionary());
       rewriter.replaceOp(allocation, qubit.getQubit());
       continue;
@@ -336,10 +418,21 @@ static LogicalResult placeIndexedAllocations(func::FuncOp function,
     }
     auto tensor = qtensor::FromElementsOp::create(
         rewriter, allocation->getLoc(), type, qubits);
+    allocation->removeAttr(mqt::kSourceQubitIndicesAttr);
     tensor->setDiscardableAttrs(allocation->getDiscardableAttrDictionary());
     rewriter.replaceOp(allocation, tensor.getResult());
   }
-  return success();
+  return recorder.finish();
+}
+
+static bool needsPlacement(func::FuncOp function) {
+  if (!function.getOps<StaticOp>().empty()) {
+    return false;
+  }
+  auto moduleOp = function->getParentOfType<ModuleOp>();
+  return moduleOp->hasAttr(mqt::kSourceQubitCountAttr) ||
+         !function.getOps<AllocOp>().empty() ||
+         !function.getOps<qtensor::AllocOp>().empty();
 }
 
 namespace {
@@ -370,6 +463,10 @@ protected:
       return;
     }
 
+    if (!needsPlacement(func)) {
+      return;
+    }
+
     const auto& environment = getAnalysis<TargetEnvironmentAnalysis>();
     if (environment && environment.environment().supportsIndexedQubits()) {
       if (failed(placeIndexedAllocations(func, target))) {
@@ -387,8 +484,10 @@ protected:
 
     const auto layout = Layout::identity(computation->wires.size());
     IRRewriter rewriter(&getContext());
-    applyPlacement(func.getFunctionBody(), target, layout, *computation,
-                   rewriter);
+    if (failed(applyPlacement(func.getFunctionBody(), target, layout,
+                              *computation, rewriter))) {
+      signalPassFailure();
+    }
   }
 
 private:
@@ -774,6 +873,10 @@ protected:
       return;
     }
 
+    if (!needsPlacement(func)) {
+      return;
+    }
+
     if (failed(validateRoutingOperations(func))) {
       signalPassFailure();
       return;
@@ -792,9 +895,13 @@ protected:
 
     IRRewriter rewriter(&getContext());
     Arena arena(target.numSites(), searchMemoryLimit);
-    RoutingState state(applyPlacement(func.getFunctionBody(), target, layout,
-                                      *computation, rewriter),
-                       layout, env);
+    auto wires = applyPlacement(func.getFunctionBody(), target, layout,
+                                *computation, rewriter);
+    if (failed(wires)) {
+      signalPassFailure();
+      return;
+    }
+    RoutingState state(std::move(*wires), layout, env);
 
     const auto stats = route<WireDirection::Forward, RoutingMode::Hot>(
         state, arena, env, &rewriter);
@@ -804,6 +911,15 @@ protected:
                     .value_or(std::pair{std::numeric_limits<size_t>::max(),
                                         stats.nswaps}) == *expectedScore) &&
            "cold scoring and hot routing must agree");
+
+    if (auto attr = moduleOp->getAttrOfType<DictionaryAttr>("mqt.layout")) {
+      const auto permutation = sitePermutation(layout, state.layout);
+      const SmallVector<int64_t> routing(permutation.begin(),
+                                         permutation.end());
+      NamedAttrList fields(attr);
+      fields.set("routing", rewriter.getDenseI64ArrayAttr(routing));
+      moduleOp->setAttr("mqt.layout", fields.getDictionary(&getContext()));
+    }
 
     // Collect statistics.
     numSwaps += stats.nswaps;

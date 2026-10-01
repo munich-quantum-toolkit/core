@@ -32,6 +32,23 @@ decision diagrams
   for the plural. A graph representation that shares repeated substructures to
   store and manipulate quantum states and operations compactly.
 
+program qubit
+  **Preferred term:** program qubit. **Accepted alias:** virtual qubit. A qubit
+  named by the input program before assignment to a device site.
+
+device qubit
+  **Preferred term:** device qubit. **Accepted alias:** hardware qubit. A
+  target site on which a program qubit can be placed.
+
+layout metadata
+  **Preferred term:** layout metadata. **Accepted aliases:** none. The mapping
+  from program qubits to device qubits, with a routing permutation when
+  applicable. It does not move operations between circuit wires.
+
+routing permutation
+  **Preferred term:** routing permutation. **Accepted aliases:** none. A map
+  from each device position before routing to its final position.
+
 Pauli string
   **Preferred term:** Pauli string. **Accepted alias:** Pauli product. A tensor
   product of single-qubit identity or Pauli X, Y, and Z operators.

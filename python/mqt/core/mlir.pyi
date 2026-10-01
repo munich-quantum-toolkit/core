@@ -621,9 +621,11 @@ class QCProgram(Program):
     def to_qiskit(self, *, target: CompilerTarget | None = None) -> qiskit.circuit.QuantumCircuit:
         """Translate this QC program to a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` without consuming it.
 
+        The exporter restores attached layout metadata when it is valid.
+
         Args:
             target: The optional compiler target used for mapping. When provided, emit
-                a canonical physical circuit. All qubits must be static, and their site
+                a canonical device circuit. All qubits must be static, and their site
                 IDs must belong to the target.
         """
 
@@ -715,19 +717,21 @@ class QCOProgram(Program):
         """Decompose controlled X/Y/Z/SWAP and RX/RY/RZ gates, qco.rccx, and constant-angle phase gates that act on at least min_qubits qubits (min_qubits must be at least 3; default 3 means wider than two-qubit)."""
 
     def compile_for_target(self, target_environment: TargetEnvironment, *, options: CompilationOptions = ...) -> None:
-        """Compile this QCO program for the target in place. Do not rely on its contents if compilation fails. Failures raise RuntimeError with the emitted MLIR diagnostics."""
+        """Compile for the target and attach layout metadata when possible. Reject existing layout metadata. Do not rely on program contents if compilation fails. Failures raise RuntimeError with MLIR diagnostics."""
 
     def synthesize_for_target(
         self, target_environment: TargetEnvironment, *, options: CompilationOptions = ...
     ) -> None:
-        """Synthesize native operations for an all-to-all target in place. Assigns static sites and resynthesizes constant two-qubit runs in the native basis, without routing. Do not rely on the program contents if synthesis fails. Failures raise RuntimeError with the emitted MLIR diagnostics."""
+        """Synthesize native operations without routing. Dynamic qubits require all-to-all connectivity and receive layout metadata when possible. Static qubits keep their device site IDs and must fit the target topology. Do not rely on the program contents if synthesis fails. Failures raise RuntimeError with the emitted MLIR diagnostics."""
 
     def to_qiskit(self, *, target: CompilerTarget | None = None) -> qiskit.circuit.QuantumCircuit:
         """Export a Qiskit circuit without consuming or modifying this program.
 
+        The exporter restores attached layout metadata when it is valid.
+
         Args:
             target: The optional compiler target used for mapping. When provided, static
-                site IDs map to dense physical-qubit indices in target site order.
+                site IDs map to dense device-qubit indices in target site order.
                 Dynamic qubits and static IDs absent from the target are rejected.
         """
 
