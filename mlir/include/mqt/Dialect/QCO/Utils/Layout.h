@@ -15,7 +15,9 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Sequence.h"
+#include "llvm/ADT/SmallBitVector.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/ErrorHandling.h"
 
 #include <cassert>
 #include <cstddef>
@@ -55,7 +57,9 @@ public:
   /// index in `[0, nqubits)` to the i-th hardware index in `[0, nqubits)`.
   /// Sets both `nProgramQubits` and `nHardwareQubits` to `nqubits`.
   static Layout<T> identity(size_t nqubits) {
-    assert(nqubits <= UNMAPPED && "layout exceeds qubit index capacity");
+    if (nqubits > UNMAPPED) {
+      llvm::reportFatalUsageError("layout exceeds qubit index capacity");
+    }
     return fromMapping(to_vector(llvm::seq<T>(static_cast<T>(nqubits))));
   }
 
@@ -64,10 +68,13 @@ public:
   /// `[0, nHardwareQubits)`.
   static Layout<T> random(size_t nProgramQubits, size_t nHardwareQubits,
                           size_t seed) {
-    assert(nProgramQubits <= nHardwareQubits &&
-           "cannot map more program qubits than hardware qubits");
-    assert(nHardwareQubits <= UNMAPPED &&
-           "layout exceeds qubit index capacity");
+    if (nProgramQubits > nHardwareQubits) {
+      llvm::reportFatalUsageError(
+          "cannot map more program qubits than hardware qubits");
+    }
+    if (nHardwareQubits > UNMAPPED) {
+      llvm::reportFatalUsageError("layout exceeds qubit index capacity");
+    }
     auto hwIndices = to_vector(llvm::seq<T>(static_cast<T>(nHardwareQubits)));
     llvm::shuffle(hwIndices.begin(), hwIndices.end(), std::mt19937_64{seed});
 
@@ -82,11 +89,20 @@ public:
   /// where mapping[prog] = hw.
   /// Sets both `nProgramQubits` and `nHardwareQubits` to `mapping.size()`.
   static Layout<T> fromMapping(ArrayRef<T> mapping) {
-    assert(mapping.size() <= UNMAPPED && "layout exceeds qubit index capacity");
+    if (mapping.size() > UNMAPPED) {
+      llvm::reportFatalUsageError("layout exceeds qubit index capacity");
+    }
+    llvm::SmallBitVector seen(mapping.size());
+    for (const T hw : mapping) {
+      if (hw >= mapping.size() || seen.test(hw)) {
+        llvm::reportFatalUsageError("mapping must be a permutation");
+      }
+      seen.set(hw);
+    }
 
     Layout<T> layout(mapping.size(), mapping.size());
     for (const auto [prog, hw] : enumerate(mapping)) {
-      layout.add(static_cast<T>(prog), hw);
+      layout.add(prog, hw);
     }
     return layout;
   }
@@ -94,19 +110,19 @@ public:
   /// Insert a program:hardware index mapping.
   /// Requires `prog < nProgramQubits`, `hw < nHardwareQubits`, and that
   /// neither `prog` nor `hw` has been mapped previously.
-  void add(T prog, T hw) {
+  void add(size_t prog, size_t hw) {
     assert(prog < programToHardware_.size() && "program index out of bounds");
     assert(hw < hardwareToProgram_.size() && "hardware index out of bounds");
     assert(programToHardware_[prog] == UNMAPPED &&
            "program index already mapped");
     assert(hardwareToProgram_[hw] == UNMAPPED &&
            "hardware index already mapped");
-    programToHardware_[prog] = hw;
-    hardwareToProgram_[hw] = prog;
+    programToHardware_[prog] = static_cast<T>(hw);
+    hardwareToProgram_[hw] = static_cast<T>(prog);
   }
 
   /// Lookup and return program index for a hardware index.
-  [[nodiscard]] T getProgramIndex(T hw) const {
+  [[nodiscard]] T getProgramIndex(size_t hw) const {
     assert(hw < hardwareToProgram_.size() && "hardware index out of bounds");
     const auto prog = hardwareToProgram_[hw];
     assert(prog != UNMAPPED && "hardware index not mapped");
@@ -114,7 +130,7 @@ public:
   }
 
   /// Lookup and return hardware index for a program index.
-  [[nodiscard]] T getHardwareIndex(T prog) const {
+  [[nodiscard]] T getHardwareIndex(size_t prog) const {
     assert(prog < programToHardware_.size() && "program index out of bounds");
     const auto hw = programToHardware_[prog];
     assert(hw != UNMAPPED && "program index not mapped");
@@ -124,28 +140,28 @@ public:
   /// Lookup and return multiple hardware indices at once.
   template <typename... ProgIndices>
     requires(sizeof...(ProgIndices) > 0) &&
-            ((std::is_convertible_v<ProgIndices, T>) && ...)
+            ((std::is_convertible_v<ProgIndices, size_t>) && ...)
   [[nodiscard]] auto getHardwareIndices(ProgIndices... progs) const {
-    return std::tuple{getHardwareIndex(static_cast<T>(progs))...};
+    return std::tuple{getHardwareIndex(static_cast<size_t>(progs))...};
   }
 
   /// Lookup and return multiple program indices at once.
   template <typename... HwIndices>
     requires(sizeof...(HwIndices) > 0) &&
-            ((std::is_convertible_v<HwIndices, T>) && ...)
+            ((std::is_convertible_v<HwIndices, size_t>) && ...)
   [[nodiscard]] auto getProgramIndices(HwIndices... hws) const {
-    return std::tuple{getProgramIndex(static_cast<T>(hws))...};
+    return std::tuple{getProgramIndex(static_cast<size_t>(hws))...};
   }
 
   /// Return true if `hw` currently has a program qubit assigned to it.
-  [[nodiscard]] bool hasProgramAt(T hw) const {
+  [[nodiscard]] bool hasProgramAt(size_t hw) const {
     assert(hw < hardwareToProgram_.size() && "hardware index out of bounds");
     return hardwareToProgram_[hw] != UNMAPPED;
   }
 
   /// Swap the mapping to program indices of two hardware indices.
   /// Both sides must currently have a program qubit assigned.
-  void swap(T hwA, T hwB) {
+  void swap(size_t hwA, size_t hwB) {
     assert(hwA < hardwareToProgram_.size() && "hardware index out of bounds");
     assert(hwB < hardwareToProgram_.size() && "hardware index out of bounds");
 

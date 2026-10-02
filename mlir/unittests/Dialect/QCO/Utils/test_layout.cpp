@@ -51,6 +51,18 @@ TYPED_TEST(LayoutTest, ConstructFromPermutation) {
   EXPECT_EQ(layout.getProgramIndex(2), 0);
 }
 
+TYPED_TEST(LayoutTest, RejectDuplicateHardwareIndex) {
+  constexpr std::array<TypeParam, 3> mapping{0, 0, 2};
+  EXPECT_DEATH(Layout<TypeParam>::fromMapping(mapping),
+               "mapping must be a permutation");
+}
+
+TYPED_TEST(LayoutTest, RejectOutOfRangeHardwareIndex) {
+  constexpr std::array<TypeParam, 3> mapping{0, 1, 3};
+  EXPECT_DEATH(Layout<TypeParam>::fromMapping(mapping),
+               "mapping must be a permutation");
+}
+
 TYPED_TEST(LayoutTest, RandomPlacesEveryProgramOnDistinctHardware) {
   constexpr size_t nProg = 3;
   constexpr size_t nHw = 5;
@@ -141,6 +153,30 @@ TEST(LayoutBoundaryTest, LargestByteLayoutPreservesEveryIndex) {
     }
   }
 }
+
+TEST(LayoutBoundaryTest, RejectCountsBeyondIndexCapacity) {
+  const std::array<uint8_t, 256> mapping{};
+  EXPECT_DEATH(Layout<uint8_t>::identity(256), "qubit index capacity");
+  EXPECT_DEATH(Layout<uint8_t>::random(1, 256, 0), "qubit index capacity");
+  EXPECT_DEATH(Layout<uint8_t>::fromMapping(mapping), "qubit index capacity");
+  EXPECT_DEATH(Layout<uint8_t>::random(2, 1, 0),
+               "cannot map more program qubits");
+}
+
+TEST(LayoutBoundaryTest, WiderIndexSupportsMoreThan65535Sites) {
+  const auto layout = Layout<uint32_t>::identity(65536);
+  EXPECT_EQ(layout.nHardwareQubits(), 65536);
+  EXPECT_EQ(layout.getHardwareIndex(65535), 65535);
+}
+
+#ifndef NDEBUG
+TEST(LayoutBoundaryTest, RejectWideInputBeforeNarrowing) {
+  auto layout = Layout<uint8_t>::identity(1);
+  EXPECT_DEATH(layout.getHardwareIndex(256UL), "program index out of bounds");
+  EXPECT_DEATH(layout.getHardwareIndices(256UL), "program index out of bounds");
+  EXPECT_DEATH(layout.swap(0, 256UL), "hardware index out of bounds");
+}
+#endif
 
 TYPED_TEST(LayoutTest, EqualityReflectsMapping) {
   const auto a = Layout<TypeParam>::random(/*nProgramQubits=*/3,
