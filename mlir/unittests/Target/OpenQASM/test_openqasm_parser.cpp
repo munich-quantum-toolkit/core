@@ -687,6 +687,21 @@ TEST(OpenQASMFrontendTest, DiagnosesUnsupportedReservedFeatureSyntax) {
             std::string::npos);
 }
 
+TEST(OpenQASMFrontendTest, RejectsInvalidInputDeclarations) {
+  constexpr auto sources = std::to_array<llvm::StringLiteral>({
+      "OPENQASM 3.1; input float[32] theta;",
+      "OPENQASM 3.1; input float theta = 1.0;",
+      "OPENQASM 3.1; if (true) { input float theta; }",
+      "OPENQASM 2.0; input float theta;",
+  });
+  for (const auto source : sources) {
+    SCOPED_TRACE(source.str());
+    auto analyzed = openqasm::frontend::analyzeOpenQASM(source);
+    ASSERT_FALSE(analyzed);
+    ASSERT_FALSE(analyzed.diagnostics.empty());
+  }
+}
+
 TEST(OpenQASMFrontendTest, EnforcesNumericSeparatorPlacement) {
   constexpr auto invalidLiterals = std::to_array<llvm::StringLiteral>({
       "1e+_2",
