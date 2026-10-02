@@ -743,6 +743,21 @@ static LogicalResult applyMemRefLoad(memref::LoadOp load,
   return success();
 }
 
+static LogicalResult applyMemRefCopy(memref::CopyOp copy,
+                                     ClassicalEnv& classical) {
+  const auto source = classical.memrefs.find(copy.getSource());
+  const auto target = classical.memrefs.find(copy.getTarget());
+  if (source == classical.memrefs.end() || target == classical.memrefs.end()) {
+    return copy.emitError()
+           << "classical memref is not mapped for QCO DD simulation";
+  }
+  if (source->second->shape != target->second->shape) {
+    return copy.emitError() << "classical memref copy requires matching shapes";
+  }
+  target->second->values = source->second->values;
+  return success();
+}
+
 template <typename OpTy, typename Combine>
 static LogicalResult applyDivision(OpTy op, ClassicalEnv& classical,
                                    Combine combine) {
@@ -1508,6 +1523,9 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
       })
       .Case([&](memref::LoadOp load) {
         return applyMemRefLoad(load, *walk.classical);
+      })
+      .Case([&](memref::CopyOp copy) {
+        return applyMemRefCopy(copy, *walk.classical);
       })
       .Case([&](cf::AssertOp assertion) -> LogicalResult {
         auto condition =
