@@ -1300,6 +1300,24 @@ private:
 
   /// Parse an expression using OpenQASM's precedence hierarchy.
   [[nodiscard]] FailureOr<SyntaxExpressionId> parseExpression() {
+    auto lhs = parseLogicalOr();
+    if (failed(lhs)) {
+      return failure();
+    }
+    SyntaxExpressionId result = *lhs;
+    while (current().kind == TokenKind::DoublePlus) {
+      const auto loc = current().loc;
+      advance();
+      auto rhs = parseLogicalOr();
+      if (failed(rhs)) {
+        return failure();
+      }
+      result = makeBinary(Expr::Kind::Concat, result, *rhs, loc);
+    }
+    return result;
+  }
+
+  [[nodiscard]] FailureOr<SyntaxExpressionId> parseLogicalOr() {
     auto lhs = parseLogicalAnd();
     if (failed(lhs)) {
       return failure();
