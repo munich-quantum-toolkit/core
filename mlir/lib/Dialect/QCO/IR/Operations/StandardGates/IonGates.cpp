@@ -33,7 +33,7 @@ void GPIOp::build(OpBuilder& builder, OperationState& state, Value qubitIn,
 
 Matrix2x2 GPIOp::unitaryMatrix(double phi) {
   return std::complex<double>{0., 1.} *
-         ROp::unitaryMatrix(std::numbers::pi, 2. * std::numbers::pi * phi);
+         ROp::unitaryMatrix(std::numbers::pi, phi);
 }
 
 std::optional<Matrix2x2> GPIOp::getUnitaryMatrix() {
@@ -51,7 +51,7 @@ void GPI2Op::build(OpBuilder& builder, OperationState& state, Value qubitIn,
 }
 
 Matrix2x2 GPI2Op::unitaryMatrix(double phi) {
-  return ROp::unitaryMatrix(std::numbers::pi / 2., 2. * std::numbers::pi * phi);
+  return ROp::unitaryMatrix(std::numbers::pi / 2., phi);
 }
 
 std::optional<Matrix2x2> GPI2Op::getUnitaryMatrix() {
@@ -73,13 +73,10 @@ void MSOp::build(OpBuilder& builder, OperationState& state, Value qubit0In,
 }
 
 Matrix4x4 MSOp::unitaryMatrix(double phi0, double phi1, double theta) {
-  const auto phase0 =
-      RZOp::unitaryMatrix(2. * std::numbers::pi * phi0).embedInTwoQubit(0);
-  const auto phase1 =
-      RZOp::unitaryMatrix(2. * std::numbers::pi * phi1).embedInTwoQubit(1);
+  const auto phase0 = RZOp::unitaryMatrix(phi0).embedInTwoQubit(0);
+  const auto phase1 = RZOp::unitaryMatrix(phi1).embedInTwoQubit(1);
   const auto phase = phase0 * phase1;
-  return phase * RXXOp::unitaryMatrix(2. * std::numbers::pi * theta) *
-         phase.adjoint();
+  return phase * RXXOp::unitaryMatrix(theta) * phase.adjoint();
 }
 
 std::optional<Matrix4x4> MSOp::getUnitaryMatrix() {
@@ -90,22 +87,4 @@ std::optional<Matrix4x4> MSOp::getUnitaryMatrix() {
     return std::nullopt;
   }
   return unitaryMatrix(*phi0, *phi1, *theta);
-}
-
-void ZZOp::build(OpBuilder& builder, OperationState& state, Value qubit0In,
-                 Value qubit1In, const std::variant<double, Value>& theta) {
-  Value thetaValue = variantToValue(builder, state.location, theta);
-  build(builder, state, qubit0In, qubit1In, thetaValue);
-}
-
-Matrix4x4 ZZOp::unitaryMatrix(double theta) {
-  return RZZOp::unitaryMatrix(2. * std::numbers::pi * theta);
-}
-
-std::optional<Matrix4x4> ZZOp::getUnitaryMatrix() {
-  const auto theta = valueToDouble(getTheta());
-  if (!theta) {
-    return std::nullopt;
-  }
-  return unitaryMatrix(*theta);
 }

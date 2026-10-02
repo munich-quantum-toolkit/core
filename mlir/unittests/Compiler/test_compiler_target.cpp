@@ -78,7 +78,7 @@ using SiteTuple = Target::SiteTuple;
 
 TEST(CompilerTargetTest, NativeIonBasisRequiresUsablePhasesAndEntanglingAngle) {
   for (const bool useMS : {false, true}) {
-    for (const double angle : {.125, .25}) {
+    for (const double angle : {std::numbers::pi / 4., std::numbers::pi / 2.}) {
       for (const bool fixedPhase : {false, true}) {
         std::vector operations{
             valid(OperationCapability::create(
@@ -86,7 +86,7 @@ TEST(CompilerTargetTest, NativeIonBasisRequiresUsablePhasesAndEntanglingAngle) {
                 fixedPhase ? std::vector<std::optional<double>>{0.}
                            : std::vector<std::optional<double>>{})),
             valid(OperationCapability::create(
-                useMS ? "ms" : "zz", 2, useMS ? 3 : 1, {}, std::nullopt,
+                useMS ? "ms" : "rzz", 2, useMS ? 3 : 1, {}, std::nullopt,
                 std::nullopt,
                 useMS ? std::vector<std::optional<double>>{std::nullopt,
                                                            std::nullopt, angle,}
@@ -100,7 +100,7 @@ TEST(CompilerTargetTest, NativeIonBasisRequiresUsablePhasesAndEntanglingAngle) {
         } else {
           ASSERT_TRUE(target.synthesisBasis());
           EXPECT_EQ(target.synthesisBasis()->entangler.has_value(),
-                    angle == .25);
+                    angle == std::numbers::pi / 2.);
         }
       }
     }

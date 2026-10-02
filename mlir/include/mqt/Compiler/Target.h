@@ -305,7 +305,6 @@ public:
     GPI,
     GPI2,
     MS,
-    ZZ,
   };
 
   /// Recognized globally usable single-qubit synthesis basis.
@@ -317,8 +316,8 @@ public:
     XYX,  ///< `RX(φ) * RY(θ) * RX(λ)`.
     ZYZ,  ///< `RZ(φ) * RY(θ) * RZ(λ)`.
     ZXZ,  ///< `RZ(φ) * RX(θ) * RZ(λ)`.
-    GPI,  ///< GPI2 / GPI / GPI2, with phases in turns.
-    GPI2, ///< Four GPI2 pulses, with phases in turns.
+    GPI,  ///< GPI2 / GPI / GPI2, with phases in radians.
+    GPI2, ///< Four GPI2 pulses, with phases in radians.
   };
 
   /// Native RX pulses implementing the X rotations of the ZSXX basis.
@@ -457,7 +456,7 @@ public:
                               llvm::ArrayRef<SiteId> sites) const;
 
   /// Return whether a recognized gate is supported by the target.
-  /// MS and ZZ query the synthesis primitives MS(0, 0, 1/4) and ZZ(1/4).
+  /// MS and RZZ query the synthesis primitives MS(0, 0, pi/2) and RZZ(pi/2).
   [[nodiscard]] bool supports(GateKind gate) const;
 
   /// Return whether a recognized gate is supported on ordered target sites.

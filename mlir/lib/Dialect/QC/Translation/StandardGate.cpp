@@ -64,7 +64,6 @@ constexpr std::array DESCRIPTORS{
     StandardGateDescriptor{StandardGate::GPI, "gpi", 1, 0, 1},
     StandardGateDescriptor{StandardGate::GPI2, "gpi2", 1, 0, 1},
     StandardGateDescriptor{StandardGate::MS, "ms", 3, 0, 2},
-    StandardGateDescriptor{StandardGate::ZZ, "zz", 1, 0, 2},
 };
 
 static_assert(
@@ -114,9 +113,6 @@ LogicalResult emitStandardGate(OpBuilder& builder, const Location loc,
     break;
   case StandardGate::MS:
     operationName = MSOp::getOperationName();
-    break;
-  case StandardGate::ZZ:
-    operationName = ZZOp::getOperationName();
     break;
   case StandardGate::GPhase:
     operationName = GPhaseOp::getOperationName();

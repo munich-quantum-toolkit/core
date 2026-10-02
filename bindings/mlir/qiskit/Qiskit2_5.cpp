@@ -797,7 +797,6 @@ nativeIonGate(nb::handle operation, std::string_view name) {
                         .Case("gpi", Gate::GPI)
                         .Case("gpi2", Gate::GPI2)
                         .Case("ms", Gate::MS)
-                        .Case("zz", Gate::ZZ)
                         .Default(std::nullopt);
   if (!gate) {
     return std::nullopt;
@@ -818,7 +817,7 @@ nativeIonGate(nb::handle operation, std::string_view name) {
         descriptor.targetCount);
     std::vector<nb::object> angles;
     for (nb::handle parameter : nb::iter(parameters)) {
-      angles.push_back(nb::float_(2. * std::numbers::pi) * parameter);
+      angles.push_back(nb::borrow<nb::object>(parameter));
     }
     if (*gate == Gate::GPI || *gate == Gate::GPI2) {
       expected.attr("r")(*gate == Gate::GPI ? std::numbers::pi
@@ -827,8 +826,6 @@ nativeIonGate(nb::handle operation, std::string_view name) {
       if (*gate == Gate::GPI) {
         expected.attr("global_phase") = std::numbers::pi / 2.;
       }
-    } else if (*gate == Gate::ZZ) {
-      expected.attr("rzz")(angles[0], 0, 1);
     } else {
       for (size_t index = 0; index < 2; ++index) {
         expected.attr("rz")(-angles[index], index);

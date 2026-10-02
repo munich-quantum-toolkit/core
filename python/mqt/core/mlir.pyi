@@ -372,8 +372,6 @@ class CompilerTarget:
 
         MS = 18
 
-        ZZ = 19
-
     class SingleQubitBasis(enum.Enum):
         """Recognized target-wide single-qubit synthesis basis."""
 

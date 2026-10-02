@@ -41,9 +41,3 @@ void MSOp::build(OpBuilder& builder, OperationState& state, Value qubit0In,
   Value thetaValue = variantToValue(builder, state.location, theta);
   build(builder, state, qubit0In, qubit1In, phi0Value, phi1Value, thetaValue);
 }
-
-void ZZOp::build(OpBuilder& builder, OperationState& state, Value qubit0In,
-                 Value qubit1In, const std::variant<double, Value>& theta) {
-  Value thetaValue = variantToValue(builder, state.location, theta);
-  build(builder, state, qubit0In, qubit1In, thetaValue);
-}

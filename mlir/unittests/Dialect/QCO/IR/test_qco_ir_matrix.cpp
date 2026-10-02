@@ -59,26 +59,26 @@
 using namespace mlir;
 using namespace qco;
 
-TEST(NativeIonGateMatrix, MatchesTurnConventionsAndTargetOrder) {
+TEST(NativeIonGateMatrix, MatchesRadianConventionsAndTargetOrder) {
   using namespace std::complex_literals;
   for (double phi : {-.37, 0., .125, .5, 1.2}) {
-    const auto axis = std::polar(1., 2. * std::numbers::pi * phi);
+    const auto axis = std::polar(1., phi);
     const auto pauli = Matrix2x2::fromElements(0., std::conj(axis), axis, 0.);
     EXPECT_TRUE(GPIOp::unitaryMatrix(phi).isApprox(pauli));
     EXPECT_TRUE(GPI2Op::unitaryMatrix(phi).isApprox(
         (1. / std::numbers::sqrt2) *
         Matrix2x2::fromElements(1., -1i * std::conj(axis), -1i * axis, 1.)));
-    const auto zzPhase = std::polar(1., -std::numbers::pi * phi);
-    EXPECT_TRUE(ZZOp::unitaryMatrix(phi).isApprox(Matrix4x4::fromDiagonal(
+    const auto zzPhase = std::polar(1., -phi / 2.);
+    EXPECT_TRUE(RZZOp::unitaryMatrix(phi).isApprox(Matrix4x4::fromDiagonal(
         zzPhase, std::conj(zzPhase), std::conj(zzPhase), zzPhase)));
   }
   constexpr double phi0 = .13;
   constexpr double phi1 = -.21;
   constexpr double theta = .17;
-  const auto cos = std::cos(std::numbers::pi * theta);
-  const auto sin = -1i * std::sin(std::numbers::pi * theta);
-  const auto sum = std::polar(1., 2. * std::numbers::pi * (phi0 + phi1));
-  const auto difference = std::polar(1., 2. * std::numbers::pi * (phi0 - phi1));
+  const auto cos = std::cos(theta / 2.);
+  const auto sin = -1i * std::sin(theta / 2.);
+  const auto sum = std::polar(1., phi0 + phi1);
+  const auto difference = std::polar(1., phi0 - phi1);
   const auto expected = Matrix4x4::fromElements(
       cos, 0., 0., sin * std::conj(sum), 0., cos, sin * std::conj(difference),
       0., 0., sin * difference, cos, 0., sin * sum, 0., 0., cos);
@@ -232,7 +232,7 @@ TEST_F(QCOMatrixTest,
   auto gpi2 = GPI2Op::create(builder, loc, gpi.getQubitOut(), -.21);
   auto ms = MSOp::create(builder, loc, gpi2.getQubitOut(), q1, .13, -.21, .17);
   auto zz =
-      ZZOp::create(builder, loc, ms.getQubit0Out(), ms.getQubit1Out(), .37);
+      RZZOp::create(builder, loc, ms.getQubit0Out(), ms.getQubit1Out(), .37);
   returned->setOperands({zz.getQubit0Out(), zz.getQubit1Out()});
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   ASSERT_TRUE(gpi.getUnitaryMatrix());
@@ -243,7 +243,7 @@ TEST_F(QCOMatrixTest,
   EXPECT_TRUE(gpi2.getUnitaryMatrix()->isApprox(GPI2Op::unitaryMatrix(-.21)));
   EXPECT_TRUE(
       ms.getUnitaryMatrix()->isApprox(MSOp::unitaryMatrix(.13, -.21, .17)));
-  EXPECT_TRUE(zz.getUnitaryMatrix()->isApprox(ZZOp::unitaryMatrix(.37)));
+  EXPECT_TRUE(zz.getUnitaryMatrix()->isApprox(RZZOp::unitaryMatrix(.37)));
 
   for (Operation* gate : {
            gpi.getOperation(),
@@ -1181,7 +1181,7 @@ TEST_F(QCOMatrixTest, InverseDynamicRzXOpMatrix) {
 }
 
 TEST_F(QCOMatrixTest, NativeIonInversesPreserveSymbolicParametersAndPhase) {
-  for (const StringRef gateName : {"gpi", "gpi2", "ms", "zz"}) {
+  for (const StringRef gateName : {"gpi", "gpi2", "ms", "rzz"}) {
     SCOPED_TRACE(gateName.str());
     auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
       module {
@@ -1217,7 +1217,7 @@ TEST_F(QCOMatrixTest, NativeIonInversesPreserveSymbolicParametersAndPhase) {
                                .getResults());
     } else {
       yielded->setOperands(
-          ZZOp::create(builder, loc, q0, q1, function.getArgument(2))
+          RZZOp::create(builder, loc, q0, q1, function.getArgument(2))
               .getResults());
     }
     ASSERT_TRUE(succeeded(verify(*moduleOp)));

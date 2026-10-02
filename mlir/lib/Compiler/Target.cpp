@@ -175,23 +175,17 @@ constexpr std::array GATE_SPECIFICATIONS{
         .arity = 2,
         .numParameters = 3,
     },
-    GateSpecification{
-        .kind = GateKind::ZZ,
-        .name = "zz",
-        .arity = 2,
-        .numParameters = 1,
-    },
 };
 
 } // namespace
 
-// Native ion entanglers are synthesized at a quarter turn.
+// Fixed parameters must admit the entangler used by native synthesis.
 static std::optional<double> synthesisParameter(GateKind gate, size_t index) {
   if (gate == GateKind::MS) {
-    return index == 2 ? .25 : 0.;
+    return index == 2 ? std::numbers::pi / 2. : 0.;
   }
-  if (gate == GateKind::ZZ) {
-    return .25;
+  if (gate == GateKind::RZZ) {
+    return std::numbers::pi / 2.;
   }
   return std::nullopt;
 }
@@ -942,7 +936,7 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
   constexpr std::array entanglerPreference{
       GateKind::RXX,       GateKind::RYY, GateKind::RZX, GateKind::RZZ,
       GateKind::ISWAP,     GateKind::CZ,  GateKind::CX,  GateKind::ECR,
-      GateKind::SQRTISWAP, GateKind::MS,  GateKind::ZZ,
+      GateKind::SQRTISWAP, GateKind::MS,
   };
   /// NOLINTNEXTLINE(readability-qualified-auto): portable iterator type.
   const auto entangler =

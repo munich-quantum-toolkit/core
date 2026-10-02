@@ -990,8 +990,7 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
       .value("SQRTISWAP", mlir::CompilerTarget::GateKind::SQRTISWAP)
       .value("GPI", mlir::CompilerTarget::GateKind::GPI)
       .value("GPI2", mlir::CompilerTarget::GateKind::GPI2)
-      .value("MS", mlir::CompilerTarget::GateKind::MS)
-      .value("ZZ", mlir::CompilerTarget::GateKind::ZZ);
+      .value("MS", mlir::CompilerTarget::GateKind::MS);
 
   nb::enum_<mlir::CompilerTarget::SingleQubitBasis>(
       compilerTarget, "SingleQubitBasis",

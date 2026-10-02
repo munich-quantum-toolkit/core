@@ -510,18 +510,17 @@ static std::optional<Quat<T>> quaternionFromGate(UnitaryOpInterface op,
         return Quat<T>{.w = c.one, .x = c.zero, .y = c.zero, .z = c.zero};
       })
       .template Case<GPIOp, GPI2Op>([&](auto gate) -> std::optional<Quat<T>> {
-        const auto turns = param(0);
-        if (!turns) {
+        const auto phi = param(0);
+        if (!phi) {
           return std::nullopt;
         }
-        const auto phi = *turns * c.two * c.pi;
         const auto halfTheta =
             isa<GPIOp>(gate) ? c.pi / c.two : c.pi / (c.two * c.two);
         const auto sinHalf = halfTheta.sin();
         return Quat<T>{
             .w = halfTheta.cos(),
-            .x = sinHalf * phi.cos(),
-            .y = sinHalf * phi.sin(),
+            .x = sinHalf * phi->cos(),
+            .y = sinHalf * phi->sin(),
             .z = c.zero,
         };
       })
@@ -964,7 +963,7 @@ directZYZAnglesFromGate(UnitaryOpInterface op, RewriterBase& rewriter,
   }
 
   if (isa<GPIOp, GPI2Op>(op.getOperation())) {
-    const auto phi = parameter(0) * consts.two * consts.pi;
+    const auto phi = parameter(0);
     const bool piPulse = isa<GPIOp>(op.getOperation());
     return {
         .theta = piPulse ? consts.pi : halfPi,

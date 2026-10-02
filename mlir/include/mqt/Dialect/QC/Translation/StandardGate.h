@@ -62,7 +62,6 @@ enum class StandardGate : uint8_t {
   GPI,
   GPI2,
   MS,
-  ZZ,
 };
 
 struct StandardGateDescriptor {

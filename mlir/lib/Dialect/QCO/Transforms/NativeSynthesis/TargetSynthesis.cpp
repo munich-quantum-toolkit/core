@@ -497,7 +497,7 @@ static LogicalResult prepareGlobalPhases(ModuleOp moduleOp,
 
 static bool isOperandSwapInvariant(UnitaryOpInterface unitary) {
   Operation* operation = unitary.getOperation();
-  if (isa<SWAPOp, iSWAPOp, RXXOp, RYYOp, RZZOp, ZZOp>(operation)) {
+  if (isa<SWAPOp, iSWAPOp, RXXOp, RYYOp, RZZOp>(operation)) {
     return true;
   }
   if (auto exchange = dyn_cast<XXPlusYYOp>(operation)) {

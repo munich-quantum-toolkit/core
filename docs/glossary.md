@@ -225,9 +225,9 @@ operation capability
   instance, not this capability description.
 
 Native trapped-ion gates
-  **Preferred terms:** GPI, GPI2, MS, and ZZ. **Accepted aliases:** none. Gates
-  with the IonQ matrix conventions and parameters measured in turns (one turn
-  is 2π radians). Ordinary rotation gates such as RZ and RZZ use radians.
+  **Preferred terms:** GPI, GPI2, MS, and RZZ. **Accepted aliases:** none.
+  Core uses radians for all parameters and the existing RZZ operation for
+  Forte-style targets. Provider adapters convert units and gate names.
   See {doc}`mlir/target_compilation` for synthesis and export support.
 
 conversion target

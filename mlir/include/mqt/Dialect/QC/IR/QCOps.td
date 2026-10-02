@@ -535,11 +535,11 @@ def ROp : QCOp<"r", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
 def GPIOp : QCOp<"gpi", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
   let summary = "Apply a GPI gate";
   let description = [{
-    GPI(φ) = i R(π, 2πφ). Parameters are measured in turns (one turn is 2π radians).
+    GPI(φ) = i R(π, φ). Parameters are measured in radians.
   }];
   let arguments =
       (ins Arg<QubitType, "target qubit", [MemRead, MemWrite]>:$qubit_in,
-          Arg<F64, "phi in turns">:$phi);
+          Arg<F64, "phi in radians">:$phi);
   let assemblyFormat = "`(` $phi `)` $qubit_in attr-dict `:` type($qubit_in)";
   let extraClassDeclaration = [{
     [[nodiscard]] static StringRef getBaseSymbol() { return "gpi"; }
@@ -552,11 +552,11 @@ def GPI2Op
     : QCOp<"gpi2", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
   let summary = "Apply a GPI2 gate";
   let description = [{
-    GPI2(φ) = R(π/2, 2πφ). Parameters are measured in turns (one turn is 2π radians).
+    GPI2(φ) = R(π/2, φ). Parameters are measured in radians.
   }];
   let arguments =
       (ins Arg<QubitType, "target qubit", [MemRead, MemWrite]>:$qubit_in,
-          Arg<F64, "phi in turns">:$phi);
+          Arg<F64, "phi in radians">:$phi);
   let assemblyFormat = "`(` $phi `)` $qubit_in attr-dict `:` type($qubit_in)";
   let extraClassDeclaration = [{
     [[nodiscard]] static StringRef getBaseSymbol() { return "gpi2"; }
@@ -568,13 +568,13 @@ def GPI2Op
 def MSOp : QCOp<"ms", traits = [UnitaryOpInterface, TwoTargetThreeParameter]> {
   let summary = "Apply a MS gate";
   let description = [{
-    MS(φ₀, φ₁, θ) conjugates RXX(2πθ) by RZ(2πφ₀) and RZ(2πφ₁) on its first and second targets. Parameters are measured in turns (one turn is 2π radians).
+    MS(φ₀, φ₁, θ) conjugates RXX(θ) by RZ(φ₀) and RZ(φ₁) on its first and second targets. Parameters are measured in radians.
   }];
   let arguments =
       (ins Arg<QubitType, "target qubit", [MemRead, MemWrite]>:$qubit0_in,
           Arg<QubitType, "target qubit", [MemRead, MemWrite]>:$qubit1_in,
-          Arg<F64, "phi0 in turns">:$phi0, Arg<F64, "phi1 in turns">:$phi1,
-          Arg<F64, "theta in turns">:$theta);
+          Arg<F64, "phi0 in radians">:$phi0, Arg<F64, "phi1 in radians">:$phi1,
+          Arg<F64, "theta in radians">:$theta);
   let assemblyFormat =
       "`(` $phi0 `,` $phi1 `,` $theta `)` $qubit0_in `,` $qubit1_in attr-dict "
       "`:` type($qubit0_in) `,` type($qubit1_in)";
@@ -584,24 +584,6 @@ def MSOp : QCOp<"ms", traits = [UnitaryOpInterface, TwoTargetThreeParameter]> {
   let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
       "const std::variant<double, Value>&":$phi0,
       "const std::variant<double, Value>&":$phi1,
-      "const std::variant<double, Value>&":$theta)>];
-}
-
-def ZZOp : QCOp<"zz", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
-  let summary = "Apply a ZZ gate";
-  let description = [{
-    ZZ(θ) = RZZ(2πθ). Parameters are measured in turns (one turn is 2π radians).
-  }];
-  let arguments =
-      (ins Arg<QubitType, "target qubit", [MemRead, MemWrite]>:$qubit0_in,
-          Arg<QubitType, "target qubit", [MemRead, MemWrite]>:$qubit1_in,
-          Arg<F64, "theta in turns">:$theta);
-  let assemblyFormat = "`(` $theta `)` $qubit0_in `,` $qubit1_in attr-dict `:` "
-                       "type($qubit0_in) `,` type($qubit1_in)";
-  let extraClassDeclaration = [{
-    [[nodiscard]] static StringRef getBaseSymbol() { return "zz"; }
-  }];
-  let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
       "const std::variant<double, Value>&":$theta)>];
 }
 

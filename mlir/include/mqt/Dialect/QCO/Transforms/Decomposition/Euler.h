@@ -135,21 +135,20 @@ void populateParameterizedSingleQubitRunCompositionPatterns(
 namespace detail {
 
 /// Emit GPI2/GPI/GPI2, or four GPI2 pulses, and return the phase correction.
-/// The emitter takes a GPI/GPI2 selector and an angle in turns.
+/// The emitter takes a GPI/GPI2 selector and an angle in radians.
 template <typename Angle>
 double emitGPISequence(Angle theta, Angle phi, Angle lambda, bool useGPI,
                        auto constant, auto emit) {
   constexpr double pi = std::numbers::pi;
-  const auto twoPi = constant(2. * pi);
-  const auto middle = (phi - lambda - theta) / constant(4. * pi);
-  emit(false, -lambda / twoPi);
+  const auto middle = (phi - lambda - theta) / constant(2.);
+  emit(false, -lambda);
   if (useGPI) {
     emit(true, middle);
   } else {
     emit(false, middle);
     emit(false, middle);
   }
-  emit(false, phi / twoPi);
+  emit(false, phi);
   return useGPI ? pi / 2. : pi;
 }
 

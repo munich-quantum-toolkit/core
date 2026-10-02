@@ -251,7 +251,7 @@ struct ReplaceWithKnownGates final : OpRewritePattern<InvOp> {
               return success();
             })
             .Case([&](GPI2Op g) {
-              // GPI2^4 = -I. Do not shift an unbounded phase by half a turn:
+              // GPI2^4 = -I. Do not shift an unbounded phase by pi:
               // floating-point addition can lose that shift entirely.
               Value qubit = g.getInputTarget(0);
               for (unsigned i = 0; i < 3; ++i) {
@@ -265,11 +265,6 @@ struct ReplaceWithKnownGates final : OpRewritePattern<InvOp> {
               rewriter.replaceOpWithNewOp<MSOp>(
                   g, g.getInputTarget(0), g.getInputTarget(1), g.getPhi0(),
                   g.getPhi1(), negTheta(g));
-              return success();
-            })
-            .Case([&](ZZOp g) {
-              rewriter.replaceOpWithNewOp<ZZOp>(
-                  g, g.getInputTarget(0), g.getInputTarget(1), negTheta(g));
               return success();
             })
             .Case([&](RXOp g) {

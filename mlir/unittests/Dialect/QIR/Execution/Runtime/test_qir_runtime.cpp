@@ -442,7 +442,6 @@ TEST_F(QIRRuntimeTest, NativeMSPreservesParametersAndControlledTupleOrder) {
   constexpr double phi0 = .13;
   constexpr double phi1 = -.21;
   constexpr double theta = .17;
-  constexpr double twoPi = 2. * std::numbers::pi;
   for (const bool controlled : {false, true}) {
     for (const bool enabled : {false, true}) {
       __quantum__rt__initialize(nullptr);
@@ -470,11 +469,11 @@ TEST_F(QIRRuntimeTest, NativeMSPreservesParametersAndControlledTupleOrder) {
         __quantum__qis__ms__body(phi0, phi1, theta, q0, q1);
       }
       if (!controlled || enabled) {
-        __quantum__qis__rz__body(-twoPi * phi0, q0);
-        __quantum__qis__rz__body(-twoPi * phi1, q1);
-        __quantum__qis__rxx__body(-twoPi * theta, q0, q1);
-        __quantum__qis__rz__body(twoPi * phi0, q0);
-        __quantum__qis__rz__body(twoPi * phi1, q1);
+        __quantum__qis__rz__body(-phi0, q0);
+        __quantum__qis__rz__body(-phi1, q1);
+        __quantum__qis__rxx__body(-theta, q0, q1);
+        __quantum__qis__rz__body(phi0, q0);
+        __quantum__qis__rz__body(phi1, q1);
       }
       auto state = Runtime::getInstance().takeState();
       const auto amplitude = state.edge.getValueByIndex(enabled ? 5U : 1U);

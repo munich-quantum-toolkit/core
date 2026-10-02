@@ -212,22 +212,23 @@ checks, but cannot be passed to target compilation or target synthesis.
 
 ### Native trapped-ion gates
 
-Core accepts `gpi(phi)`, `gpi2(phi)`, `ms(phi0, phi1, theta)`, and `zz(theta)`
-as target capabilities and QC/QCO operations. Their parameters use **turns**,
-where one turn is 2π radians. GPI equals `i R(pi, 2*pi*phi)`, GPI2 equals
-`R(pi/2, 2*pi*phi)`, and ZZ equals `RZZ(2*pi*theta)`. MS conjugates
-`RXX(2*pi*theta)` by RZ rotations with angles `2*pi*phi0` and `2*pi*phi1` on its
-first and second targets. These conventions follow the
-[IonQ native-gate specification](https://docs.ionq.com/features/getting-started-with-native-gates).
+Core supports Forte-style targets with `gpi(phi)`, `gpi2(phi)`, and the existing
+`rzz(theta)` operation. All parameters use **radians**. GPI equals
+`i R(pi, phi)`; its global phase differs from a π rotation. GPI2 equals
+`R(pi/2, phi)`. Provider adapters convert to and from the
+[IonQ API's turns](https://docs.ionq.com/features/getting-started-with-native-gates)
+using `radians = 2*pi*turns`, and map its ZZ gate to Core's RZZ.
 
 ```python
-ion_target = CompilerTarget(
+from math import pi
+
+forte_target = CompilerTarget(
     2,
     connectivity=CompilerTarget.Connectivity.all_to_all(),
     native_operations=CompilerTarget.NativeOperations([
         CompilerTarget.OperationCapability("gpi", 1, 1),
         CompilerTarget.OperationCapability("gpi2", 1, 1),
-        CompilerTarget.OperationCapability("ms", 2, 3, fixed_parameters=[None, None, 0.25]),
+        CompilerTarget.OperationCapability("rzz", 2, 1, fixed_parameters=[pi / 2]),
         CompilerTarget.OperationCapability("gphase", 0, 1),
     ]),
 )
@@ -235,23 +236,35 @@ ion_target = CompilerTarget(
 
 Arbitrary GPI2 phases on every site provide a single-qubit synthesis basis; GPI
 reduces a general decomposition from four pulses to three. Two-qubit synthesis
-uses MS(0, 0, 0.25) or ZZ(0.25) on a supported orientation of each coupling.
-Fixed parameter restrictions must admit these values. Single-qubit synthesis
-accepts symbolic input angles; two-qubit synthesis still requires a constant
-matrix unless the input gate is already native. Native inverses also work with
-symbolic parameters when the target admits the resulting parameters. GPI2
-inversion uses three unchanged pulses and a global phase correction to avoid
-losing a half-turn shift at large phases. Reversing an MS placement exchanges
-its two phase parameters.
+uses RZZ(π/2) on a supported orientation of each coupling. Fixed parameter
+restrictions must admit this value.
 
-Exports retain the native names and parameters. OpenQASM and Python circuit
-exports provide equivalent gate definitions. Python import preserves gates with
-these canonical definitions, including symbolic parameters. Other custom
-definitions use the usual import path even when their names match. QIR uses MQT
-runtime extensions `__quantum__qis__gpi__body`, `__quantum__qis__gpi2__body`,
-`__quantum__qis__ms__body`, and `__quantum__qis__zz__body`; other QIR runtimes
-must implement them. No provider SDK is required. Core does not enforce a
-provider's parameter ranges or calibration limits.
+MS remains available for targets that use it. `ms(phi0, phi1, theta)` conjugates
+`RXX(theta)` by `RZ(phi0)` and `RZ(phi1)` on its first and second targets, with
+all three parameters in radians. Its synthesis primitive is MS(0, 0, π/2). For
+example, replace the RZZ capability above with:
+
+```python
+CompilerTarget.OperationCapability("ms", 2, 3, fixed_parameters=[None, None, pi / 2])
+```
+
+Reversing an MS placement exchanges its two phase parameters.
+
+Single-qubit synthesis accepts symbolic input angles; two-qubit synthesis
+requires a constant matrix unless the input gate is already native. Native
+inverses also work with symbolic parameters when the target admits the resulting
+parameters. GPI2 inversion uses three unchanged pulses and a global phase
+correction to avoid losing a π shift at large phases.
+
+Exports retain the native names and radian parameters. OpenQASM and Python
+circuit exports provide equivalent definitions for GPI, GPI2, and MS. Python
+import preserves these canonical definitions, including symbolic parameters.
+Other custom definitions keep their semantics even when their names match. QIR
+uses the existing RZZ instruction and MQT runtime extensions
+`__quantum__qis__gpi__body`, `__quantum__qis__gpi2__body`, and
+`__quantum__qis__ms__body`; other QIR runtimes must implement these extensions.
+No provider SDK is required. Provider adapters own serialization, physical
+labels, parameter ranges, and calibration limits.
 
 ### Placements and calibration
 

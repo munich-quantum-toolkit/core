@@ -341,15 +341,17 @@ TEST_F(TargetSynthesisTest, NativeIonSynthesisPreservesFullUnitary) {
           operations.push_back(valid(OperationCapability::create("gpi", 1, 1)));
         }
         operations.push_back(valid(OperationCapability::create(
-            useMS ? "ms" : "zz", 2, useMS ? 3 : 1,
+            useMS ? "ms" : "rzz", 2, useMS ? 3 : 1,
             {
                 valid(SiteTuple::create(
                     reverse ? std::vector<Target::SiteId>{1, 0}
                             : std::vector<Target::SiteId>{0, 1})),
             },
             std::nullopt, std::nullopt,
-            useMS ? std::vector<std::optional<double>>{0., 0., .25}
-                  : std::vector<std::optional<double>>{.25})));
+            useMS
+                ? std::vector<std::optional<double>>{0., 0.,
+                                                     std::numbers::pi / 2.}
+                : std::vector<std::optional<double>>{std::numbers::pi / 2.})));
         const auto target =
             valid(Target::create(2, Connectivity::allToAll(),
                                  NativeOperations::fromOperations(operations)));
@@ -358,7 +360,7 @@ TEST_F(TargetSynthesisTest, NativeIonSynthesisPreservesFullUnitary) {
                   includeGpi ? Target::SingleQubitBasis::GPI
                              : Target::SingleQubitBasis::GPI2);
         EXPECT_EQ(target.synthesisBasis()->entangler,
-                  useMS ? Target::GateKind::MS : Target::GateKind::ZZ);
+                  useMS ? Target::GateKind::MS : Target::GateKind::RZZ);
         for (double theta :
              {0., .37, std::numbers::pi / 2., std::numbers::pi}) {
           const auto circuit = [&](QCOProgramBuilder& builder) {

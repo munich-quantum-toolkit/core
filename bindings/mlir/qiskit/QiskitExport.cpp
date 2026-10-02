@@ -2933,7 +2933,7 @@ static void defineNativeGates(mlir::ModuleOp moduleOp) {
   llvm::StringMap<func::FuncOp> definitions;
   OpBuilder builder(moduleOp.getContext());
   moduleOp.walk([&](qc::UnitaryOpInterface gate) {
-    if (!isa<qc::GPIOp, qc::GPI2Op, qc::MSOp, qc::ZZOp>(gate.getOperation())) {
+    if (!isa<qc::GPIOp, qc::GPI2Op, qc::MSOp>(gate.getOperation())) {
       return;
     }
     const auto name = gate.getBaseSymbol();
@@ -2955,12 +2955,7 @@ static void defineNativeGates(mlir::ModuleOp moduleOp) {
       auto* block = function.addEntryBlock();
       builder.setInsertionPointToStart(block);
       const auto loc = gate.getLoc();
-      Value twoPi = arith::ConstantFloatOp::create(
-          builder, loc, builder.getF64Type(), APFloat(2. * std::numbers::pi));
-      SmallVector<Value> angles;
-      for (auto arg : block->getArguments().take_front(count)) {
-        angles.push_back(arith::MulFOp::create(builder, loc, twoPi, arg));
-      }
+      auto angles = block->getArguments().take_front(count);
       auto qubits = block->getArguments().drop_front(count);
       if (isa<qc::GPIOp, qc::GPI2Op>(gate.getOperation())) {
         const bool piPulse = isa<qc::GPIOp>(gate.getOperation());
@@ -2970,8 +2965,6 @@ static void defineNativeGates(mlir::ModuleOp moduleOp) {
         if (piPulse) {
           qc::GPhaseOp::create(builder, loc, std::numbers::pi / 2.);
         }
-      } else if (isa<qc::ZZOp>(gate.getOperation())) {
-        qc::RZZOp::create(builder, loc, qubits[0], qubits[1], angles[0]);
       } else {
         for (size_t index = 0; index < 2; ++index) {
           Value negative = arith::NegFOp::create(builder, loc, angles[index]);
