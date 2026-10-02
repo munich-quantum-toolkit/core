@@ -384,10 +384,11 @@ CompilerTarget::OperationCapability::create(
     std::string name, size_t arity, size_t numParameters,
     std::vector<SiteTuple> siteTuples, std::optional<uint64_t> duration,
     std::optional<double> fidelity,
-    std::vector<std::optional<double>> fixedParameters) {
+    std::vector<std::optional<double>> fixedParameters,
+    std::optional<std::string> canonicalName) {
   return create(std::move(name), Arity::fixed(arity), numParameters,
                 std::move(siteTuples), duration, fidelity,
-                std::move(fixedParameters));
+                std::move(fixedParameters), std::move(canonicalName));
 }
 
 llvm::Expected<CompilerTarget::OperationCapability>
@@ -395,10 +396,16 @@ CompilerTarget::OperationCapability::create(
     std::string name, Arity arity, size_t numParameters,
     std::vector<SiteTuple> siteTuples, std::optional<uint64_t> duration,
     std::optional<double> fidelity,
-    std::vector<std::optional<double>> fixedParameters) {
-  auto canonicalName = canonicalOperationName(name);
-  if (canonicalName.empty()) {
+    std::vector<std::optional<double>> fixedParameters,
+    std::optional<std::string> canonicalName) {
+  if (canonicalOperationName(name).empty()) {
     return invalidTarget("Compiler target operation name must not be empty");
+  }
+  auto canonical =
+      canonicalOperationName(std::move(canonicalName).value_or(name));
+  if (canonical.empty()) {
+    return invalidTarget(
+        "Compiler target canonical operation name must not be empty");
   }
   if (auto error =
           validateFidelity(fidelity, "Compiler target operation fidelity")) {
@@ -444,7 +451,7 @@ CompilerTarget::OperationCapability::create(
     }
   }
 
-  return OperationCapability(std::move(name), std::move(canonicalName), arity,
+  return OperationCapability(std::move(name), std::move(canonical), arity,
                              numParameters, std::move(siteTuples), duration,
                              fidelity, std::move(fixedParameters));
 }
@@ -798,13 +805,14 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
     });
   };
   std::optional<SingleQubitBasis> singleQubit;
-  std::optional<FixedRotationBasis> fixedRotation;
+  std::optional<RXPulses> rxPulses;
+  bool hasX = true;
   if (supportsOnEverySite(GateKind::U)) {
     singleQubit = SingleQubitBasis::U;
-  } else if (supportsOnEverySite(GateKind::X) &&
-             supportsOnEverySite(GateKind::SX) &&
+  } else if (supportsOnEverySite(GateKind::SX) &&
              supportsOnEverySite(GateKind::RZ)) {
     singleQubit = SingleQubitBasis::ZSXX;
+    hasX = supportsOnEverySite(GateKind::X);
   } else if (supportsOnEverySite(GateKind::R)) {
     singleQubit = SingleQubitBasis::R;
   } else if (supportsOnEverySite(GateKind::RX) &&
@@ -828,17 +836,17 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
       if (!supportsPulse(quarter)) {
         continue;
       }
-      fixedRotation = {
+      rxPulses = {
           .quarterTurnAngle = quarter,
           .halfTurnAngle = std::nullopt,
       };
       for (double half : {std::numbers::pi, -std::numbers::pi}) {
         if (supportsPulse(half)) {
-          fixedRotation->halfTurnAngle = half;
+          rxPulses->halfTurnAngle = half;
           break;
         }
       }
-      singleQubit = SingleQubitBasis::FixedRotation;
+      singleQubit = SingleQubitBasis::ZSXX;
       break;
     }
   }
@@ -897,7 +905,8 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
       .entangler = entangler == entanglerPreference.end()
                        ? std::nullopt
                        : std::optional{*entangler},
-      .fixedRotation = fixedRotation,
+      .rxPulses = rxPulses,
+      .hasX = hasX,
   };
 }
 
@@ -1060,7 +1069,10 @@ CompilerTarget::create(const mqt::CompilationTargetAttr attribute) {
           operationAttr.getName().getValue().str(), arity,
           static_cast<size_t>(operationAttr.getNumParameters()),
           std::move(siteTuples), operationAttr.getDuration(), fidelity,
-          std::move(fixedParameters));
+          std::move(fixedParameters),
+          operationAttr.getCanonicalName()
+              ? std::optional{operationAttr.getCanonicalName().getValue().str()}
+              : std::nullopt);
       if (!operation) {
         return operation.takeError();
       }
@@ -1405,7 +1417,10 @@ CompilerTarget::materialize(MLIRContext& context) const {
     operationAttrs.emplace_back(mqt::NativeOperationAttr::get(
         &context, builder.getStringAttr(operation.name()), arityAttr,
         operation.numParameters(), siteTupleAttrs, operation.duration(),
-        fidelityAttr, fixedParameters));
+        fidelityAttr, fixedParameters,
+        operation.canonicalName() != canonicalOperationName(operation.name())
+            ? builder.getStringAttr(operation.canonicalName())
+            : StringAttr{}));
   }
 
   const auto connectivity = connectivityKind() == Connectivity::Kind::AllToAll

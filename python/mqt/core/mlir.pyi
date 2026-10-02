@@ -295,6 +295,9 @@ class CompilerTarget:
             site_tuples: Sequence[CompilerTarget.SiteTuple | Sequence[int]] | None = None,
             duration: int | None = None,
             fidelity: float | None = None,
+            *,
+            fixed_parameters: Sequence[float | None] = (),
+            canonical_name: str | None = None,
         ) -> None: ...
         @property
         def name(self) -> str:
@@ -315,6 +318,10 @@ class CompilerTarget:
         @property
         def site_tuples(self) -> list[CompilerTarget.SiteTuple]:
             """Supported ordered placements with optional calibration; empty means general applicability."""
+
+        @property
+        def fixed_parameters(self) -> list[float | None]:
+            """Fixed values or None per parameter; empty means unrestricted. Constants use absolute tolerance 1e-15 without angle wrapping."""
 
         @property
         def duration(self) -> int | None:
@@ -513,7 +520,13 @@ class CompilerTarget:
         """A target-wide single-qubit basis with an optional entangler, or None when no single-qubit basis is usable."""
 
     def supports_operation(
-        self, name: str, arity: int, num_parameters: int | None = None, sites: Sequence[int] | None = None
+        self,
+        name: str,
+        arity: int,
+        num_parameters: int | None = None,
+        sites: Sequence[int] | None = None,
+        *,
+        parameters: Sequence[float | None] = (),
     ) -> bool:
         """Check whether the target supports an operation.
 
@@ -522,6 +535,8 @@ class CompilerTarget:
             arity: Number of qubits used by the operation.
             num_parameters: Number of real-valued parameters. None accepts any count.
             sites: Ordered target site IDs. None checks support on any placement.
+            parameters: Known parameter values. Omitted or None values require
+                unrestricted support.
         """
 
 class TargetEnvironment:

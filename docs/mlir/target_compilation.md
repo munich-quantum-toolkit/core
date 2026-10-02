@@ -180,31 +180,35 @@ placements without calibration in this list, and omit operations that are not
 available anywhere. Structural and program-format constructs are not
 compiler-target operations.
 
-Restrict individual gate parameters with `fixed_parameters`. For example,
-`CompilerTarget.OperationCapability("rx", 1, 1, fixed_parameters=[math.pi / 2])`
-accepts only RX(π/2). A nonempty list has one entry per parameter; `None` leaves
-that parameter unrestricted. Multiple capabilities can describe different fixed
-values or placements. Constants match with absolute tolerance `1e-15`, without
-angle wrapping; symbolic values do not match fixed values. Omit the list for
-unrestricted parameters. Fixed-pulse synthesis requires unrestricted RZ and
-RX(π/2) or RX(-π/2), available on every site. This covers Rigetti's native
-single-qubit gates. Available RX(π) or RX(-π) pulses shorten suitable
-decompositions. Numeric and symbolic input gates share the same recipe and
-preserve global phase.
+`fixed_parameters` constrains individual parameters to finite constants. A
+nonempty list has one entry per parameter; `None` leaves a parameter
+unrestricted. An omitted or empty list leaves every parameter unrestricted.
+Multiple capabilities for the same operation form a union of supported values
+and placements. For example, these capabilities accept four RX angles:
 
-Other fixed values, including other dyadic fractions of π, remain valid native
-capabilities but do not create additional synthesis bases. They require a
-supported basis when a non-native operation needs decomposition.
+```python
+from math import pi
 
-Target cleanup preserves gate forms, including sequences of native gates on
-targets without a synthesis basis. Operations outside the native set still need
-a usable synthesis basis. Numeric single-qubit run fusion uses the fixed-pulse
-recipe and keeps native runs unless it can shorten them. Symbolic fixed-pulse
-runs use individual gate lowering, with adjacent unrestricted RZ operations
-merged before and after synthesis. Two-qubit run fusion remains available.
-Routing costs count native two-qubit gates, not the number of fixed pulses.
-Constraints on other gate families are checked, but do not create additional
-synthesis bases. Parameter ranges and relations are not supported.
+rx_pulses = [
+    CompilerTarget.OperationCapability("rx", 1, 1, fixed_parameters=[angle]) for angle in (pi / 2, -pi / 2, pi, -pi)
+]
+```
+
+Constants match with absolute tolerance `1e-15`, without angle wrapping. Unbound
+symbolic values cannot satisfy fixed parameters. Parameter ranges and relations
+are not represented. A device-specific instruction name can specify its compiler
+operation with `canonical_name`, for example
+`OperationCapability("rx_90", 1, 1, fixed_parameters=[pi / 2], canonical_name="rx")`.
+The reported name remains available to exporters.
+
+Target compilation requires a single-qubit synthesis basis available on every
+site. The `ZSXX` basis uses unrestricted RZ and either SX or fixed RX(π/2) or
+RX(-π/2). X or fixed RX(±π) provides an optional shorter half-turn sequence. The
+compiler selects supported pulses from the capabilities and preserves the
+global-phase difference between named X/SX gates and RX rotations. Additional
+fixed angles remain valid capabilities without changing the synthesis recipe.
+Targets without a usable basis support capability queries and conformance
+checks, but cannot be passed to target compilation or target synthesis.
 
 Use plain tuples for placements without calibration. Use
 `CompilerTarget.SiteTuple([1, 0], duration=40, fidelity=0.99)` to attach
@@ -217,8 +221,7 @@ preserve the entry sites. Unsupported or inconsistent site transfers are
 diagnosed, including after all-to-all placement. A synthesis basis must provide
 the same one-qubit gate family on every site. Its entangler is optional:
 one-qubit synthesis does not need one. Two-qubit synthesis requires an entangler
-on every routing edge in at least one direction. A native operation does not
-need a synthesis basis.
+on every routing edge in at least one direction.
 
 Mapping explores one initial-layout trial per available logical CPU by default,
 using LLVM's affinity-aware CPU count with a minimum of one. An explicit

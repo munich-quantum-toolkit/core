@@ -328,30 +328,45 @@ TEST_F(TargetSynthesisTest, TargetPassesRequireTypedEnvironment) {
       << diagnostics;
 }
 
-TEST_F(TargetSynthesisTest, FixedPulseSynthesisPreservesFullUnitary) {
-  for (double pulseAngle : {std::numbers::pi / 2., -std::numbers::pi / 2.}) {
+TEST_F(TargetSynthesisTest, ZSXXSynthesisPreservesFullUnitary) {
+  for (const std::optional<double> pulseAngle : {
+           std::optional<double>{},
+           std::optional{std::numbers::pi / 2.},
+           std::optional{-std::numbers::pi / 2.},
+       }) {
     for (const std::optional<double> halfTurn : {
              std::optional<double>{},
              std::optional{std::numbers::pi},
              std::optional{-std::numbers::pi},
          }) {
+      if (!pulseAngle && halfTurn && *halfTurn < 0.) {
+        continue;
+      }
       SCOPED_TRACE(testing::Message()
-                   << pulseAngle << " " << halfTurn.value_or(0.));
+                   << pulseAngle.value_or(0.) << " " << halfTurn.value_or(0.));
       std::vector operations{
-          valid(OperationCapability::create("rx", 1, 1, {}, std::nullopt,
-                                            std::nullopt, {pulseAngle})),
           valid(OperationCapability::create("rz", 1, 1)),
           valid(OperationCapability::create("cz", 2, 0)),
           valid(OperationCapability::create("gphase", 0, 1)),
       };
+      operations.push_back(
+          pulseAngle
+              ? valid(OperationCapability::create("rx", 1, 1, {}, std::nullopt,
+                                                  std::nullopt, {pulseAngle}))
+              : valid(OperationCapability::create("sx", 1, 0)));
       if (halfTurn) {
-        operations.push_back(valid(OperationCapability::create(
-            "rx", 1, 1, {}, std::nullopt, std::nullopt, {halfTurn})));
+        operations.push_back(
+            pulseAngle
+                ? valid(OperationCapability::create(
+                      "rx", 1, 1, {}, std::nullopt, std::nullopt, {halfTurn}))
+                : valid(OperationCapability::create("x", 1, 0)));
       }
       const auto target =
           valid(Target::create(2, Connectivity::allToAll(),
                                NativeOperations::fromOperations(operations)));
       ASSERT_TRUE(target.synthesisBasis());
+      EXPECT_EQ(target.synthesisBasis()->singleQubit,
+                Target::SingleQubitBasis::ZSXX);
       for (double theta : {0., .37, std::numbers::pi / 2., std::numbers::pi}) {
         const auto circuit = [&](QCOProgramBuilder& builder) {
           auto q0 = builder.u(theta, .42, -.31, builder.staticQubit(0));

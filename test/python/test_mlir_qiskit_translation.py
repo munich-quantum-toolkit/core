@@ -4668,7 +4668,7 @@ def test_native_mapping_exports_full_qiskit_layout(*, routed: bool, basis: str) 
         else [
             CompilerTarget.OperationCapability("rz", 1, 1),
             CompilerTarget.OperationCapability("rx", 1, 1, fixed_parameters=[np.pi / 2]),
-            CompilerTarget.OperationCapability("iswap", 2, 0),
+            CompilerTarget.OperationCapability("cz", 2, 0),
         ]
     )
     target = CompilerTarget(
@@ -4694,7 +4694,7 @@ def test_native_mapping_exports_full_qiskit_layout(*, routed: bool, basis: str) 
     program.compile_for_target(_test_target_environment(target))
     exported = program.to_qiskit(target=target)
     if basis == "fixed_rx":
-        assert set(exported.count_ops()) <= {"rx", "rz", "iswap"}
+        assert set(exported.count_ops()) <= {"rx", "rz", "cz"}
         assert all(gate.operation.params == [np.pi / 2] for gate in exported.data if gate.operation.name == "rx")
     layout = exported.layout
     assert layout is not None

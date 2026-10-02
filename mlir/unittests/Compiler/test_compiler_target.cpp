@@ -899,8 +899,8 @@ TEST(CompilerTargetTest, EnforcesExactOrderedOperationApplicability) {
 
 TEST(CompilerTargetTest, MatchesFixedParametersAndPreservesPlacements) {
   const auto rotation = valid(OperationCapability::create(
-      "r", 1, 2, {valid(SiteTuple::create({0}))}, std::nullopt, std::nullopt,
-      {std::numbers::pi / 2., std::nullopt}));
+      "prx_90", 1, 2, {valid(SiteTuple::create({0}))}, std::nullopt,
+      std::nullopt, {std::numbers::pi / 2., std::nullopt}, "r"));
   const auto target =
       valid(Target::create(2, Connectivity::allToAll(),
                            NativeOperations::fromOperations({rotation})));
@@ -924,6 +924,8 @@ TEST(CompilerTargetTest, MatchesFixedParametersAndPreservesPlacements) {
   const auto attribute = target.materialize(context);
   const auto restored = valid(Target::create(attribute));
   EXPECT_EQ(restored.materialize(context), attribute);
+  EXPECT_EQ(restored.operations()[0].name(), "prx_90");
+  EXPECT_EQ(restored.operations()[0].canonicalName(), "r");
   EXPECT_EQ(restored.operations()[0].fixedParameters(),
             rotation.fixedParameters());
   EXPECT_TRUE(
@@ -1016,7 +1018,7 @@ TEST(CompilerTargetTest, ResolvesFixedPulseBasisOnlyOnEverySite) {
                            NativeOperations::fromOperations(operations)));
   ASSERT_TRUE(target.synthesisBasis());
   EXPECT_EQ(target.synthesisBasis()->singleQubit,
-            Target::SingleQubitBasis::FixedRotation);
+            Target::SingleQubitBasis::ZSXX);
   EXPECT_FALSE(target.synthesisBasis()->entangler);
 }
 

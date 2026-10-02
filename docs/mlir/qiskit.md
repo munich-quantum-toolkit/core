@@ -25,10 +25,12 @@ target = CompilerTarget.from_qiskit(backend)
 
 The result is an independent structural snapshot. A backend supplies the default
 target name; pass `name` to override it. Qiskit standard gates, measurement,
-reset, and their ordered qubit placements become native capabilities. Parameter
-slots must accept arbitrary values. The compiler uses canonical gate names;
-`to_qiskit(target=target)` emits applicable standard names such as `u1` and `u3`
-where the target uses those legacy spellings.
+reset, and their ordered qubit placements become native capabilities. Each
+parameter slot can be unrestricted or fixed to one finite value. Multiple
+instructions of the same gate, such as `RXGate(pi / 2)` and `RXGate(pi)`, retain
+their distinct target names and placements. The compiler uses canonical gate
+names; `to_qiskit(target=target)` selects the target name by gate, parameters,
+and ordered sites. This also preserves legacy spellings such as `u1` and `u3`.
 
 Routing connectivity is undirected and comes from the retained two-qubit gates.
 Gate applicability keeps its original qubit order. The target needs a known,
@@ -36,11 +38,11 @@ positive qubit count and a connected routing graph. Global phase is always
 allowed as circuit metadata.
 
 By default, unrepresentable gates are omitted with a warning. This includes
-custom gates or names, fixed angles, restricted angle bounds, open controls, and
-controlled gates other than CX and CZ. Delay, barrier, classical control flow,
-and operations with no applicable qubits are omitted without a warning. Pass
-`operation_names` to retain a subset; every selected name must be representable.
-Calibration, timing, and scheduling data are not copied.
+custom gates, restricted angle bounds, renamed measurement or reset, open
+controls, and controlled gates other than CX and CZ. Delay, barrier, classical
+control flow, and operations with no applicable qubits are omitted without a
+warning. Pass `operation_names` to retain a subset; every selected name must be
+representable. Calibration, timing, and scheduling data are not copied.
 
 The snapshot does not guarantee that compilation can synthesize the requested
 circuit. Target-native synthesis requires a common single-qubit basis across

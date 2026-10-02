@@ -921,8 +921,7 @@ emitUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0, Value qubit1,
   const auto emitFactor = [&](Value& wire, std::size_t index) {
     const auto synthesized = synthesizeUnitary1QEuler(
         builder, loc, wire, factors[index], /*runSize=*/0,
-        /*hasNonBasisGate=*/true, basis.singleQubit,
-        basis.fixedRotation ? &*basis.fixedRotation : nullptr);
+        /*hasNonBasisGate=*/true, basis.singleQubit, &basis);
     wire = synthesized->qubit;
     globalPhase += synthesized->globalPhase;
   };

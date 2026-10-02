@@ -140,6 +140,7 @@ mqt\.core\.mlir\.CompilerTarget\.OperationCapability\.__init__$:
         fidelity: float | None = None,
         *,
         fixed_parameters: Sequence[float | None] = (),
+        canonical_name: str | None = None,
     ) -> None:
         \doc
 

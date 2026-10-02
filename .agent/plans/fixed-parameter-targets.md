@@ -1,166 +1,131 @@
-# Fixed-parameter targets for Bench and Braket
+# Fixed-parameter compiler targets
 
-Status: in progress. The #2575 simplification is implemented and tested. Native
-ion gates and provider integration remain proposed follow-ups.
+Status: implementation and local validation complete on main `bb0bf98dc`.
 
-## Goal and scope
+## Scope and ownership
 
-Compile MQT Bench circuits for its device gate sets, prioritizing native gates
-exposed by Amazon Braket for verbatim execution. Separate three contracts:
-representing a native operation, synthesizing into a supported native basis, and
-serializing a program the provider accepts. Completion requires checking all
-three; a compiler target or generic OpenQASM round trip alone is insufficient.
+[Core #2575](https://github.com/munich-quantum-toolkit/core/pull/2575) supports
+fixed operation parameters, multiple native alternatives, Qiskit target
+exchange, and RX pulse synthesis with RZ and an existing entangler such as CZ.
+Current Braket devices guide coverage. Existing Core `R`, `RXX`, `RZZ`, and `CZ`
+represent the corresponding PRX, XX, ZZ, and CZ operations; representing an
+operation does not establish a complete synthesis basis or provider execution
+support.
 
-Keep [Core #2575](https://github.com/munich-quantum-toolkit/core/pull/2575)
-focused on fixed-parameter capabilities and Rigetti synthesis. Coordinate native
-ion gates through
-[Core #2578](https://github.com/munich-quantum-toolkit/core/pull/2578), then
-complete Bench import and Braket export in their owning adapters. This plan
-records the dependency order without combining those changes into one PR.
+`CompilerTarget` owns capability validation and basis selection. Native
+synthesis owns phase-correct lowering. Qiskit import/export owns named
+instruction alternatives. Provider adapters own verbatim syntax, physical
+labels, parameter domains, and submission constraints.
 
-The initial coverage matrix follows the
-[Braket native-gate catalogue](https://docs.aws.amazon.com/braket/latest/developerguide/braket-submit-tasks.html)
-and
-[Bench target definitions](https://github.com/munich-quantum-toolkit/bench/tree/d23df0d5d2791b44633858783e62a7468480f362/src/mqt/bench/targets).
+## Device evidence
 
-| Target family                  | Required native gates                             | Core representation and work                                                                          |
-| ------------------------------ | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| Rigetti Ankaa / Bench Ankaa-84 | `rx`, `rz`, `iswap`; RX restricted to ±π/2 and ±π | Constrained `RX`, unrestricted `RZ`, existing `iSWAP`; Bench exposes +π and ±π/2 through named gates. |
-| IonQ Forte                     | `gpi`, `gpi2`, `zz`                               | Native `GPI`/`GPI2`; reuse `RZZ` for Braket `zz`.                                                     |
-| Bench IonQ Aria                | `gpi`, `gpi2`, `ms`                               | Retain native `MS` support even though the current Braket catalogue lists Forte.                      |
-| IQM Garnet / Emerald           | `prx`, `cz`                                       | Reuse Core `R` and `CZ`; check synthesis and external spelling.                                       |
-| AQT IBEX-Q1                    | `prx`, `xx`, `rz`                                 | Reuse Core `R`, `RXX`, and `RZ`; check synthesis and external spelling.                               |
+An unfiltered, paginated AWS `SearchDevices` scan on 2026-10-01 at 23:55 UTC
+covered all five [Braket regions][devices]: `us-east-1`, `us-west-1`,
+`us-west-2`, `eu-north-1`, and `eu-west-2`. `GetDevice` inspected every online
+regional entry. The six online gate QPUs advertised these
+`paradigm.nativeGateSet` values:
 
-Device fixtures must record their identity and capability snapshot. Derive a
-verbatim target from `paradigm.nativeGateSet`, topology, and documented
-parameter restrictions, not the broader service `supportedOperations` list. The
-current Braket catalogue also lists Rigetti Cepheus, but only specifies Ankaa's
-native set; obtain its device metadata before claiming complete current-device
-coverage. Preserve existing support for other Bench targets, including IBM and
-Quantinuum. QuEra analog programs, pulse control, and general approximate
-Clifford+T synthesis are outside this work.
+| Device                  | Region     | Native operations                              |
+| ----------------------- | ---------- | ---------------------------------------------- |
+| Rigetti Cepheus-1-108Q  | us-west-1  | `rx`, `rz`, `cz`, `barrier`                    |
+| IonQ Forte-1            | us-east-1  | `GPI`, `GPI2`, `ZZ`                            |
+| IonQ Forte-Enterprise-1 | us-east-1  | `GPI`, `GPI2`, `ZZ`                            |
+| IQM Garnet              | eu-north-1 | `cz`, `prx`, `cc_prx`, `measure_ff`, `barrier` |
+| IQM Emerald             | eu-north-1 | `cz`, `prx`, `cc_prx`, `measure_ff`, `barrier` |
+| AQT IBEX Q1             | eu-north-1 | `prx`, `xx`, `rz`                              |
 
-## Decisions and follow-up design
+Aquila was online but accepts analog Hamiltonian programs. SV1 and DM1 were
+online simulators, with no native gate set. Ankaa-3 and IonQ Aria were retired.
+Use Cepheus/CZ for the current Rigetti example; retain general iSWAP support.
 
-### Keep capability matching general; keep synthesis small
+All six gate QPUs advertised verbatim, physical qubits, sparse indices, and
+subset measurements. Partial verbatim boxes were enabled except on IonQ. Only
+IonQ allowed unassigned measurements. The broader `supportedOperations` list
+describes compiled inputs and must not replace the native whitelist. Physical
+labels also need translation: Cepheus had 107 active sites in `0..107`,
+excluding `8`, while IQM labels started at `1`. Refresh topology instead of
+embedding these labels.
 
-Retain optional finite fixed values per parameter. An omitted value means an
-unrestricted parameter; separate capabilities express alternatives and
-placements. Matching, serialization, compatibility, and final verification must
-agree. Unbound symbolic values cannot satisfy a fixed parameter. Use the
-existing absolute comparison tolerance, without periodic wrapping that loses
-phase.
+[AWS documents][gates] Rigetti RX angles as ±π/2 and ±π. The live gate metadata
+contains no numerical parameter domains; no additional Braket acceptance bounds
+were verified. In particular, direct AQT API bounds and retired IonQ MS bounds
+must not be assumed to constrain Braket Forte ZZ. Braket angles use radians.
 
-In #2575, `mlir/lib/Compiler/Target.cpp` selects unrestricted RZ with fixed RX
-quarter turns and optional half turns. The shared Euler recipe preserves phase
-for both pulse signs. The arbitrary-angle solver, 64-pulse fallback, coordinate
-transforms, and variable-length pulse plans are removed. The target stores only
-the chosen quarter-turn angle and optional half-turn angle. Routing costs and
-numeric/symbolic emission use the same chosen basis.
+## Implementation decisions
 
-Most device constants being dyadic fractions of π does not require a rational
-angle type, angle snapping, or synthesis for every dyadic fraction. Keep
-ordinary floating-point constants. Add another explicit recipe, such as repeated
-π/4 pulses, only when an identified device requires it. Other declared fixed
-values remain valid for native matching without automatically becoming synthesis
-bases.
+The closest ecosystem model is [Qiskit's target][qiskit-target]: standard gate
+instances carry fixed parameters and distinct names for alternatives. PennyLane
+separates [operation capabilities][pennylane-capabilities] from
+[decomposition predicates][pennylane-decomposition]. CUDA-Q selects
+[backend lowering passes][cudaq-backend]; Microsoft's neutral-atom simulator
+uses [SX/RZ/CZ lowering][qdk-native]. These support separating capability facts,
+small decomposition recipes, and provider execution rules; they do not justify a
+general fixed-angle solver or a common schema across all SDKs.
 
-Structural/classical cleanup, target-aware inlining, and QCO lifetime and
-control-flow canonicalization remain available. Native sequences are preserved
-when no universal basis exists. Restricted cleanup merges or cancels adjacent RZ
-gates before and after synthesis; it leaves fixed RX pulses alone. Symbolic
-merging reuses the existing phase-safe angle normalization. Numeric fusion must
-shorten an already native run. General symbolic pulse costing and unrelated
-square-root-iSWAP cleanup remain outside this change.
+- Keep finite fixed values per parameter. Omitted values are unrestricted;
+  repeated capabilities form a union across values and placements. Unbound
+  parameters cannot satisfy fixed constraints. Preserve absolute matching
+  tolerance and phase; do not wrap parameters during capability matching.
+- Reuse the existing `ZSXX` decomposition for IBM SX/X and fixed RX pulses with
+  unrestricted RZ. Replace `FixedRotation` with optional pulse choices in the
+  synthesis configuration. Account for the phase between SX/X and RX exactly.
+  Both quarter-turn signs and optional half turns are valid choices; emission
+  and routing costs must use the selected capabilities.
+- Require a complete supported synthesis basis for target compilation. This
+  permits ordinary canonicalization before final native lowering and removes
+  special cleanup passes for incomplete native-only targets. Capability queries
+  can still represent such targets. Final output must satisfy the target.
+- Preserve named Qiskit instructions and their constant parameters on target
+  import and export. Multiple RX variants must survive together, including
+  different placements. Do not infer operation semantics from an arbitrary name.
+- Keep general Euler helpers independent of target policy. Do not introduce an
+  arbitrary-angle solver, rational angle representation, or six-axis pulse
+  framework without a concrete device need. Rewrite user documentation around
+  the supported contract and examples.
 
-### Use radians in Core and convert at the producer boundary
-
-Recommend revising the unreleased #2578 design to use radians consistently with
-Core's existing rotations and the
-[Braket SDK gate matrices](https://amazon-braket-sdk-python.readthedocs.io/en/stable/_modules/braket/circuits/gates.html).
-Bench's IonQ gate classes use turns: import their GPI/GPI2 phases, all three MS
-parameters, and ZZ interaction angles with one multiplication by 2π. Identify
-these conventions from the producer's gate definitions, not the name `zz` alone.
-Braket input/output then requires no unit conversion. A direct IonQ interface
-would own its own conversion.
-
-With radian parameters, `GPI(φ) = i R(π, φ)`, `GPI2(φ) = R(π/2, φ)`, and
-`MS(φ₀, φ₁, θ)` is RXX(θ) conjugated by the corresponding RZ phases. Braket
-`zz(θ)` is Core `RZZ(θ)`: remove the duplicate ZZ operation and its
-matrix/runtime plumbing from #2578. Retain GPI/GPI2/MS identities where needed
-to preserve native output. Their names do not justify a new external QIR runtime
-ABI; lower them to existing operations at the QIR boundary unless a concrete
-consumer requires native QIS entry points.
-
-GPI/GPI2 have fixed rotation amounts but continuously variable phase arguments.
-Do not constrain the GPI2 parameter to π/2. MS phases belong to ordered
-operands; its full-entangling interaction is π/2, including Braket's
-omitted-argument default. Existing two-qubit synthesis can use a supported
-full-entangling MS or RZZ instance. When a provider bounds an interaction
-parameter, expose a known-valid synthesis subset, such as fixed RZZ(π/2), rather
-than advertising unrestricted RZZ and relying on export-time rejection. Other
-supported interaction angles remain representable as fixed capabilities without
-promising synthesis from them. The adapter owns device-specific domain
-validation; add richer Core constraints only if concrete Bench circuits require
-more than this conservative subset.
-
-### Validate the actual provider payload
-
-Bench's IonQ models include a free RZ operation, while Braket's native IonQ set
-does not. Keep the benchmark model usable, but require strict verbatim targets
-to lower RZ into native pulses or absorb it into their phases. Import Bench's
-named Rigetti gates through their fixed RX definitions instead of adding new
-Core gates.
-
-The Braket adapter owns native spellings (`prx`, `xx`, `zz`), provider argument
-validation, and
-[verbatim serialization](https://docs.aws.amazon.com/braket/latest/developerguide/braket-openqasm-verbatim-compilation.html).
-Check the final native calls, radian values, and physical placements after
-serialization. Custom OpenQASM definitions that expand into rotations and CNOTs
-do not establish verbatim compatibility. Follow the provider's box and
-measurement rules; IonQ requires all gates in the verbatim region. Apply the
-documented
-[rewiring requirements](https://docs.aws.amazon.com/braket/latest/developerguide/braket-constructing-circuit.html#verbatim-compilation),
-including disabling rewiring for Rigetti. Keep ordinary service compilation and
-strict native compilation as distinct target selections.
-
-## Work remaining, in priority order
-
-- [ ] **P0 — complete native ion coverage in #2578:** adopt radian conventions,
-      reuse RZZ, and keep native GPI/GPI2/MS synthesis independent of the
-      removed arbitrary-angle solver. Reconcile its plan and downstream
-      dependencies before implementation. Verify full matrices, phase, and
-      operand order.
-- [ ] **P0 — close the consumer contract:** add Bench import and strict Braket
-      target/export checks for Rigetti, Forte, and Bench's Aria model.
-      Distinguish Bench-native output from provider-native output and verify
-      parameter conversion exactly once. These checks are required before
-      claiming the hardware use case complete, even though the adapter changes
-      land separately.
-- [ ] **P1 — finish the catalogue:** exercise IQM and AQT through existing Core
-      operations, resolve missing device metadata such as Cepheus, and retain
-      coverage for other Bench families. Extend recipes only for a demonstrated
-      catalogue gap.
+[Core #2578](https://github.com/munich-quantum-toolkit/core/pull/2578) is
+already stacked on #2575 and owns GPI/GPI2 coverage. On rebase, reassess its
+unreleased turn-based gates: prefer radians and existing RZZ, prioritizing Forte
+over retired Aria MS while preserving GPi's phase relative to `R(π, φ)`. Its GPI
+pulse recipe is independent of fixed RX synthesis. Existing R/PRX covers IQM and
+AQT unitary representations. Provider serialization and IQM
+[experimental feedforward][dynamic] remain separate work, including feedback
+groups and result semantics. Follow [verbatim rules][verbatim] at the adapter
+boundary; fixed parameters do not provide complete execution support.
 
 ## Validation
 
-Use offline device fixtures and Braket SDK matrices as the consumer reference;
-no hardware execution is needed. Check each native gate and representative
-compiled Bench circuits. Include numeric and bound symbolic parameters, global
-phase, unequal MS phases with reversed operands, the default MS interaction, and
-named Rigetti fixed gates. Verify native operation names, parameter values, and
-legal placements after export, with failures for unsupported fixed values and
-residual non-native gates such as IonQ RZ.
+- [x] Finish capability-driven ZSXX lowering and remove obsolete cleanup APIs.
+- [x] Validate multiple named/fixed Qiskit capabilities through target round
+      trips.
+- [x] Verify phase, signs, optional half turns, symbolic inputs, routing costs,
+      and rejection of unsupported compilation targets; review the final diff.
+- [x] Regenerate binding stubs and run the required native, Python, and lint
+      checks.
 
-For #2575, tests retain native acceptance of RX(0.37) while rejecting it as a
-synthesis basis. They cover both quarter-turn signs, optional half turns,
-symbolic RZ merging and cancellation, parameter dominance, and consistency
-between routing costs and emitted pulses. The former six-axis matrix tests are
-replaced by 72 full-matrix cases for the supported recipes. Python checks
-include bindings as large as 1e300 and the existing
-[Qiskit input contract](../../docs/mlir/qiskit.md).
+Local validation on the revised implementation passed 985 native tests (254
+compiler, 86 native synthesis, 126 mapping, 315 decomposition, 204 optimization)
+and 631 Python MLIR/Qiskit tests. Binding stubs were regenerated. Independent
+correctness and Ponytail reviews found a missing `canonical_name` stub override
+and obsolete includes; both were corrected. No remaining design or correctness
+finding was identified. Repository lint and full changed-file C++ lint passed.
 
-After building with the repository release preset, run:
+The docs session now rebuilds the local package with documentation generation
+enabled, preventing cached builds from omitting MLIR reference pages. The full
+executable documentation build passed with no Sphinx warnings, followed by the
+generated-page link check.
+
+Refresh the device catalogue with these read-only commands; keep AWS CLI
+pagination enabled and repeat the lookup for each returned online device ARN:
+
+```sh
+for region in us-east-1 us-west-1 us-west-2 eu-north-1 eu-west-2; do
+  aws braket search-devices --profile braket --region "$region" --filters '[]'
+done
+aws braket get-device --profile braket --region "$region" --device-arn "$device_arn"
+```
+
+After building the release preset, run:
 
 ```sh
 build/release/mlir/unittests/Compiler/mqt-core-mlir-unittests-compiler
@@ -168,19 +133,21 @@ build/release/mlir/unittests/Dialect/QCO/Transforms/NativeSynthesis/mqt-core-mli
 build/release/mlir/unittests/Dialect/QCO/Transforms/Mapping/mqt-core-mlir-unittest-mapping
 build/release/mlir/unittests/Dialect/QCO/Transforms/Decomposition/mqt-core-mlir-unittest-decomposition
 build/release/mlir/unittests/Dialect/QCO/Transforms/Optimizations/mqt-core-mlir-unittest-optimizations
-QISKIT_NUM_PROCS=1 uv run --no-sync pytest -n 4 test/python/test_mlir.py test/python/test_mlir_qiskit_translation.py
+QISKIT_NUM_PROCS=1 uv run --no-sync pytest test/python/test_mlir*.py
+uvx nox -s stubs
+uvx nox -s cpp-lint
 uvx nox -s lint
+uvx nox --non-interactive -s docs
 ```
 
-Run the owning adapter tests for the final payload checks. Follow
-[repository guidance](../../AGENTS.md#build-and-validation) for binding stubs
-and C++ lint when their implementation changes.
-
-After rebasing onto the layout support in #2553, local validation passed 254
-compiler, 80 native-synthesis, 126 mapping, 315 decomposition, and 204
-optimization tests, plus all 600 Python MLIR and Qiskit translation tests. The
-layout export regression now also checks fixed RX/RZ/iSWAP targets through
-placement and routing. Static fixed-pulse compilation and synthesis retain
-physical sites and reject nonadjacent interactions. The integration review
-required no production changes. Radian ion gates and Braket consumer checks
-remain unimplemented follow-ups.
+Adapter tests must also inspect native spellings, radians, placements, and
+rules.
+[devices]: https://docs.aws.amazon.com/braket/latest/developerguide/braket-devices.html
+[gates]: https://docs.aws.amazon.com/braket/latest/developerguide/braket-submit-tasks.html
+[dynamic]: https://docs.aws.amazon.com/braket/latest/developerguide/braket-experimental-capabilities.html
+[verbatim]: https://docs.aws.amazon.com/braket/latest/developerguide/braket-constructing-circuit.html#verbatim-compilation
+[qiskit-target]: https://quantum.cloud.ibm.com/docs/en/api/qiskit/qiskit.transpiler.Target
+[pennylane-capabilities]: https://github.com/PennyLaneAI/pennylane/blob/master/pennylane/devices/capabilities.py
+[pennylane-decomposition]: https://github.com/PennyLaneAI/pennylane/blob/master/pennylane/devices/preprocess.py
+[cudaq-backend]: https://nvidia.github.io/cuda-quantum/latest/using/extending/backend.html
+[qdk-native]: https://learn.microsoft.com/en-us/azure/quantum/neutral-atom-noise-models

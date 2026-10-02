@@ -862,7 +862,8 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
                  siteTuples,
              const std::optional<uint64_t> duration,
              const std::optional<double> fidelity,
-             std::vector<std::optional<double>> fixedParameters) {
+             std::vector<std::optional<double>> fixedParameters,
+             std::optional<std::string> canonicalName) {
             constructFromExpected(
                 self,
                 mlir::CompilerTarget::OperationCapability::create(
@@ -870,11 +871,13 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
                     std::move(siteTuples)
                         .value_or(
                             std::vector<mlir::CompilerTarget::SiteTuple>{}),
-                    duration, fidelity, std::move(fixedParameters)));
+                    duration, fidelity, std::move(fixedParameters),
+                    std::move(canonicalName)));
           },
           "name"_a, "arity"_a, "num_parameters"_a, "site_tuples"_a = nb::none(),
           "duration"_a = nb::none(), "fidelity"_a = nb::none(), nb::kw_only(),
-          "fixed_parameters"_a = std::vector<std::optional<double>>{})
+          "fixed_parameters"_a = std::vector<std::optional<double>>{},
+          "canonical_name"_a = nb::none())
       .def(
           "__init__",
           [](mlir::CompilerTarget::OperationCapability& self, std::string name,
@@ -883,7 +886,8 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
                  siteTuples,
              const std::optional<uint64_t> duration,
              const std::optional<double> fidelity,
-             std::vector<std::optional<double>> fixedParameters) {
+             std::vector<std::optional<double>> fixedParameters,
+             std::optional<std::string> canonicalName) {
             constructFromExpected(
                 self,
                 mlir::CompilerTarget::OperationCapability::create(
@@ -891,11 +895,13 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
                     std::move(siteTuples)
                         .value_or(
                             std::vector<mlir::CompilerTarget::SiteTuple>{}),
-                    duration, fidelity, std::move(fixedParameters)));
+                    duration, fidelity, std::move(fixedParameters),
+                    std::move(canonicalName)));
           },
           "name"_a, "arity"_a, "num_parameters"_a, "site_tuples"_a = nb::none(),
           "duration"_a = nb::none(), "fidelity"_a = nb::none(), nb::kw_only(),
-          "fixed_parameters"_a = std::vector<std::optional<double>>{})
+          "fixed_parameters"_a = std::vector<std::optional<double>>{},
+          "canonical_name"_a = nb::none())
       .def_prop_ro(
           "name",
           [](const mlir::CompilerTarget::OperationCapability& operation) {
@@ -965,9 +971,7 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
       .value("XZX", mlir::CompilerTarget::SingleQubitBasis::XZX)
       .value("XYX", mlir::CompilerTarget::SingleQubitBasis::XYX)
       .value("ZYZ", mlir::CompilerTarget::SingleQubitBasis::ZYZ)
-      .value("ZXZ", mlir::CompilerTarget::SingleQubitBasis::ZXZ)
-      .value("FIXED_ROTATION",
-             mlir::CompilerTarget::SingleQubitBasis::FixedRotation);
+      .value("ZXZ", mlir::CompilerTarget::SingleQubitBasis::ZXZ);
 
   auto synthesisBasis = nb::class_<mlir::CompilerTarget::SynthesisBasis>(
       compilerTarget, "SynthesisBasis",

@@ -10,8 +10,10 @@
 
 from __future__ import annotations
 
+from math import pi
 from typing import cast
 
+import numpy as np
 import pytest
 from qiskit import QuantumCircuit
 from qiskit.circuit import Gate, Measure, Parameter, Reset
@@ -23,7 +25,9 @@ from qiskit.circuit.library import (
     CXGate,
     GlobalPhaseGate,
     PhaseGate,
+    RXGate,
     RZGate,
+    SXGate,
     U1Gate,
     U3Gate,
     UGate,
@@ -88,24 +92,41 @@ def test_backend_and_global_operations() -> None:
 
 
 def test_fixed_parameter_constraints() -> None:
-    """A fixed angle cannot become an arbitrary rotation."""
+    """Named discrete angles remain separate capabilities of one gate."""
     source = Target(num_qubits=1)
-    source.add_instruction(RZGate(0.5))
-    with pytest.raises(ValueError, match="parameter constraints for 'rz'"):
-        CompilerTarget.from_qiskit(source, operation_names=["rz"])
-    with (
-        pytest.warns(UserWarning, match="parameter constraints") as warnings,
-        pytest.raises(ValueError, match="no representable"),
-    ):
-        CompilerTarget.from_qiskit(source)
-    assert warnings[0].filename == __file__
+    source.add_instruction(RXGate(pi / 2), name="rx_90")
+    source.add_instruction(RXGate(pi), name="rx_180")
+    source.add_instruction(RZGate(Parameter("angle")))
+    target = CompilerTarget.from_qiskit(source)
+    operations = {operation.name: operation for operation in target.operations}
+    assert operations["rx_90"].canonical_name == operations["rx_180"].canonical_name == "rx"
+    assert operations["rx_90"].fixed_parameters == [pi / 2]
+    assert operations["rx_180"].fixed_parameters == [pi]
+    assert operations["rz"].fixed_parameters == []
+    for angle in (pi / 2, pi):
+        assert target.supports_operation("rx", 1, 1, parameters=[angle])
+    for angle in (None, -pi / 2, 0.3):
+        assert not target.supports_operation("rx", 1, 1, parameters=[angle])
+
+
+def test_partially_fixed_parameter_slots() -> None:
+    """Bound expressions become fixed values; remaining symbols are wildcards."""
+    angle = Parameter("angle")
+    source = Target(num_qubits=1)
+    source.add_instruction(UGate(angle.bind({angle: pi / 2}), angle / 2, 0.0), name="native_u")
+    target = CompilerTarget.from_qiskit(source)
+    operation = next(operation for operation in target.operations if operation.name == "native_u")
+    assert operation.canonical_name == "u"
+    assert operation.fixed_parameters == [pi / 2, None, 0.0]
+    assert target.supports_operation("u", 1, 3, parameters=[pi / 2, None, 0.0])
+    assert not target.supports_operation("u", 1, 3, parameters=[None, None, 0.0])
 
 
 @pytest.mark.filterwarnings("error:Cannot represent.*:UserWarning")
 def test_target_warning_as_error() -> None:
     """A native conversion warning respects the caller's warning filters."""
     source = Target(num_qubits=1)
-    source.add_instruction(RZGate(0.5))
+    source.add_instruction(RZGate(Parameter("angle")), angle_bounds=[(-1.0, 1.0)])
     with pytest.raises(UserWarning, match="parameter constraints"):
         CompilerTarget.from_qiskit(source)
 
@@ -141,13 +162,14 @@ def test_restricted_operation_set() -> None:
     """An explicit subset can omit an unrepresentable operation."""
     source = Target(num_qubits=1)
     source.add_instruction(XGate())
-    source.add_instruction(RZGate(0.5))
+    source.add_instruction(RZGate(Parameter("angle")), angle_bounds=[(-1.0, 1.0)])
     converted = CompilerTarget.from_qiskit(source, operation_names=["x"])
     assert {operation.name for operation in converted.operations} == {"x", "gphase"}
 
-    with pytest.warns(UserWarning, match="parameter constraints"):
+    with pytest.warns(UserWarning, match="parameter constraints") as warnings:
         converted = CompilerTarget.from_qiskit(source)
     assert {operation.name for operation in converted.operations} == {"x", "gphase"}
+    assert warnings[0].filename == __file__
 
 
 def test_angle_bounds_and_open_controls() -> None:
@@ -163,7 +185,7 @@ def test_angle_bounds_and_open_controls() -> None:
 
 
 def test_custom_names_and_operations() -> None:
-    """Reject renamed standard gates and custom gates with standard names."""
+    """Names do not override gate identity; custom gates remain unsupported."""
     source = Target(num_qubits=1)
     source.add_instruction(XGate(), name="native_x")
     source.add_instruction(Gate("x", 1, []))
@@ -171,12 +193,101 @@ def test_custom_names_and_operations() -> None:
     source.add_instruction(GlobalPhaseGate(0.5))
     with pytest.warns(UserWarning, match="custom"):
         converted = CompilerTarget.from_qiskit(source)
-    assert {operation.name for operation in converted.operations} == {"rz", "gphase"}
-    for name in ("native_x", "x"):
+    assert {operation.name for operation in converted.operations} == {"native_x", "rz", "gphase"}
+    assert converted.supports_operation("x", 1, 0)
+    source.add_instruction(Measure(), name="native_measure")
+    source.add_instruction(Reset(), name="native_reset")
+    for name in ("x", "native_measure", "native_reset"):
         with pytest.raises(ValueError, match="custom"):
             CompilerTarget.from_qiskit(source, operation_names=[name])
     with pytest.raises(ValueError, match="no native gate applicability"):
         CompilerTarget.from_qiskit(source, operation_names=["global_phase"])
+
+
+@pytest.mark.parametrize("symbolic", [False, True])
+def test_compile_named_fixed_rotations(*, symbolic: bool) -> None:
+    """Compilation exports executable target names with exact gate phases."""
+    source = Target(num_qubits=2)
+    source.add_instruction(RXGate(pi / 2), name="quarter_turn")
+    source.add_instruction(RXGate(pi), name="half_turn")
+    source.add_instruction(RZGate(Parameter("angle")))
+    source.add_instruction(CXGate())
+    target = CompilerTarget.from_qiskit(source)
+    circuit = QuantumCircuit(2)
+    circuit.rx(pi, 0)
+    circuit.ry(Parameter("theta") if symbolic else 0.3, 1)
+    circuit.cx(0, 1)
+    program = QCProgram.from_qiskit(circuit).to_qco()
+    program.compile_for_target(TargetEnvironment(target, PayloadSpecification(PayloadFormat("openqasm", "3.0"))))
+    exported = program.to_qiskit(target=target)
+    assert any(item.operation.name == "quarter_turn" for item in exported.data)
+    assert all(
+        source.instruction_supported(
+            item.operation.name,
+            tuple(exported.find_bit(qubit).index for qubit in item.qubits),
+            parameters=item.operation.params,
+        )
+        for item in exported.data
+    )
+    if symbolic:
+        exported = exported.assign_parameters({"theta": 0.7})
+        circuit = circuit.assign_parameters({"theta": 0.7})
+    assert np.allclose(Operator(exported).data, Operator(circuit).data)
+    restored = QCProgram.from_qiskit(exported).to_qiskit()
+    assert np.allclose(Operator(restored).data, Operator(circuit).data)
+
+
+def test_export_fixed_rotations_by_parameters_and_sites() -> None:
+    """Select aliases by values and placement, including colliding gate names."""
+    source = Target(num_qubits=2)
+    source.add_instruction(RXGate(pi / 2), {(0,): None}, name="a_quarter")
+    source.add_instruction(RXGate(pi), {(0,): None}, name="b_half")
+    source.add_instruction(RXGate(Parameter("angle")), {(0,): None}, name="z_variable")
+    source.add_instruction(RXGate(pi / 2), {(1,): None}, name="ry")
+    source.add_instruction(CXGate())
+    target = CompilerTarget.from_qiskit(source)
+    circuit = QuantumCircuit(2)
+    circuit.rx(pi / 2, 0)
+    circuit.rx(pi, 0)
+    circuit.rx(Parameter("theta"), 0)
+    circuit.rx(pi / 2, 1)
+    program = QCProgram.from_mlir_str("""module {
+  func.func @main(%theta: f64 {mqt.input_name = "theta"}) attributes {mqt.entry_point} {
+    %quarter = arith.constant 1.5707963267948966 : f64
+    %half = arith.constant 3.141592653589793 : f64
+    %a = qc.static 0 : !qc.qubit
+    %b = qc.static 1 : !qc.qubit
+    qc.rx(%quarter) %a : !qc.qubit
+    qc.rx(%half) %a : !qc.qubit
+    qc.rx(%theta) %a : !qc.qubit
+    qc.rx(%quarter) %b : !qc.qubit
+    return
+  }
+}
+""")
+    exported = program.to_qiskit(target=target)
+    assert [item.operation.name for item in exported.data] == ["a_quarter", "b_half", "z_variable", "ry"]
+    assert all(item.operation.base_class is RXGate for item in exported.data)
+    restored = QCProgram.from_qiskit(exported).to_qiskit()
+    assert np.allclose(
+        Operator(restored.assign_parameters({"theta": 0.3})).data,
+        Operator(circuit.assign_parameters({"theta": 0.3})).data,
+    )
+
+
+def test_named_sx_and_x_keep_phase() -> None:
+    """SX and X keep their exact matrices instead of becoming RX aliases."""
+    source = Target(num_qubits=1)
+    source.add_instruction(SXGate(), name="native_sx")
+    source.add_instruction(XGate(), name="native_x")
+    target = CompilerTarget.from_qiskit(source)
+    circuit = QuantumCircuit(1)
+    circuit.sx(0)
+    circuit.x(0)
+    program = QCProgram.from_openqasm_str('OPENQASM 3.0; include "stdgates.inc"; sx $0; x $0;')
+    exported = program.to_qiskit(target=target)
+    assert [item.operation.name for item in exported.data] == ["native_sx", "native_x"]
+    assert np.allclose(Operator(exported).data, Operator(circuit).data)
 
 
 @pytest.mark.parametrize("qco", [False, True])

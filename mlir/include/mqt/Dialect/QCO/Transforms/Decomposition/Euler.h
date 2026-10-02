@@ -11,16 +11,13 @@
 #pragma once
 
 #include "mqt/Compiler/Target.h"
-#include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Location.h"
 #include "mlir/Support/LLVM.h"
 
-#include <cmath>
 #include <cstddef>
-#include <numbers>
 #include <optional>
 
 namespace mlir {
@@ -63,10 +60,8 @@ struct SynthesizedUnitary1Q {
 };
 
 /// Returns whether @p op belongs to @p basis.
-/// Fixed-pulse bases require their target's @p fixedRotation descriptor.
-[[nodiscard]] bool isSingleQubitBasisGate(
-    Operation* op, SingleQubitBasis basis,
-    const CompilerTarget::FixedRotationBasis* fixedRotation = nullptr);
+[[nodiscard]] bool isSingleQubitBasisGate(Operation* op,
+                                          SingleQubitBasis basis);
 
 /// Extracts `(theta, phi, lambda, phase)` of @p matrix in @p basis.
 ///
@@ -94,7 +89,7 @@ struct SynthesizedUnitary1Q {
 [[nodiscard]] std::optional<SynthesizedUnitary1Q> synthesizeUnitary1QEuler(
     OpBuilder& builder, Location loc, Value qubit, const Matrix2x2& composed,
     std::size_t runSize, bool hasNonBasisGate, SingleQubitBasis basis,
-    const CompilerTarget::FixedRotationBasis* fixedRotation = nullptr);
+    const CompilerTarget::SynthesisBasis* targetBasis = nullptr);
 
 /// Materializes one accumulated phase correction when needed.
 ///
@@ -109,12 +104,12 @@ void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase);
 /// Synthesizes one supported runtime-parameterized operation in @p basis.
 ///
 /// Leaves operations that already belong to @p basis unchanged.
-/// Fixed-pulse bases require their target's @p fixedRotation descriptor.
+/// The optional target basis selects native pulse forms and shortcuts.
 ///
 /// @pre `canSynthesizeParameterizedUnitary1Q(op)` is true.
 void synthesizeParameterizedUnitary1Q(
     RewriterBase& rewriter, Operation* op, SingleQubitBasis basis,
-    const CompilerTarget::FixedRotationBasis* fixedRotation = nullptr);
+    const CompilerTarget::SynthesisBasis* targetBasis = nullptr);
 
 /// Populates @p patterns with the single-qubit run fusion rewrite for
 /// @p basis (the reusable core of `fuse-single-qubit-unitary-runs`).
@@ -131,50 +126,9 @@ void populateFuseSingleQubitUnitaryRunsPatterns(
 ///
 /// The patterns emit @p basis directly. With @p target, preserve native runs
 /// and only use direct Euler identities, keeping optional fusion exportable.
-/// Fixed-RX bases only merge adjacent RZ operations.
+/// ZSXX targets only merge adjacent RZ operations symbolically.
 void populateParameterizedSingleQubitRunCompositionPatterns(
     RewritePatternSet& patterns, SingleQubitBasis basis,
     const CompilerTarget* target = nullptr);
-
-namespace detail {
-
-/// Emit ZYZ angles using RZ and fixed RX pulses, returning the phase
-/// correction. Numeric and SSA callers supply constants and emitters for their
-/// angle type. Callers handle a statically zero theta by emitting phi + lambda
-/// directly.
-template <typename Angle>
-double
-emitFixedRotationSequence(const CompilerTarget::FixedRotationBasis& basis,
-                          Angle theta, Angle phi, Angle lambda,
-                          std::optional<double> constantTheta, auto constant,
-                          auto emitFree, auto emitPulse) {
-  constexpr double pi = std::numbers::pi;
-  constexpr double halfPi = pi / 2.;
-  const auto matchesTheta = [&](double value) {
-    return constantTheta && std::abs(*constantTheta - value) <=
-                                mqt::PARAMETER_COMPARISON_TOLERANCE;
-  };
-  const double offset = basis.quarterTurnAngle < 0. ? pi : 0.;
-  if (matchesTheta(halfPi)) {
-    emitFree(lambda + constant(offset - halfPi));
-    emitPulse(basis.quarterTurnAngle);
-    emitFree(phi + constant(halfPi - offset));
-    return 0.;
-  }
-  if (matchesTheta(pi) && basis.halfTurnAngle) {
-    emitFree(lambda);
-    emitPulse(*basis.halfTurnAngle);
-    emitFree(phi + constant(pi));
-    return *basis.halfTurnAngle < 0. ? pi : 0.;
-  }
-  emitFree(lambda + constant(offset));
-  emitPulse(basis.quarterTurnAngle);
-  emitFree(theta + constant(pi));
-  emitPulse(basis.quarterTurnAngle);
-  emitFree(phi + constant(pi - offset));
-  return pi;
-}
-
-} // namespace detail
 
 } // namespace mlir::qco::decomposition

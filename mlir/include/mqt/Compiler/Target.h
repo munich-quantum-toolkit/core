@@ -154,8 +154,9 @@ public:
 
   /// An operation capability described by a target.
   ///
-  /// The reported name is retained verbatim while
-  /// @ref canonicalName contains its normalized compiler spelling. Operations
+  /// The reported name is retained verbatim while @ref canonicalName identifies
+  /// its compiler operation. By default it is derived from the reported name;
+  /// an explicit override describes named instances such as rx_90. Operations
   /// with no site tuples are generally applicable. A nonempty list gives all
   /// supported ordered placements. Missing tuple calibration values inherit
   /// the operation defaults.
@@ -197,7 +198,8 @@ public:
            std::vector<SiteTuple> siteTuples = {},
            std::optional<uint64_t> duration = std::nullopt,
            std::optional<double> fidelity = std::nullopt,
-           std::vector<std::optional<double>> fixedParameters = {});
+           std::vector<std::optional<double>> fixedParameters = {},
+           std::optional<std::string> canonicalName = std::nullopt);
 
     /// Create a validated operation capability.
     [[nodiscard]] static llvm::Expected<OperationCapability>
@@ -205,12 +207,13 @@ public:
            std::vector<SiteTuple> siteTuples = {},
            std::optional<uint64_t> duration = std::nullopt,
            std::optional<double> fidelity = std::nullopt,
-           std::vector<std::optional<double>> fixedParameters = {});
+           std::vector<std::optional<double>> fixedParameters = {},
+           std::optional<std::string> canonicalName = std::nullopt);
 
     /// Return the exact reported operation name.
     [[nodiscard]] llvm::StringRef name() const noexcept;
 
-    /// Return the canonical lower-case compiler operation name.
+    /// Return the compiler operation name, independently of its reported name.
     [[nodiscard]] llvm::StringRef canonicalName() const noexcept;
 
     /// Return the accepted operation arity.
@@ -303,30 +306,30 @@ public:
 
   /// Recognized globally usable single-qubit synthesis basis.
   enum class SingleQubitBasis : uint8_t {
-    U,             ///< `U(θ, φ, λ)`.
-    ZSXX,          ///< `RZ` / `SX` / `X` synthesis via a ZYZ decomposition.
-    R,             ///< XYX synthesis expressed with `R(θ, φ)`.
-    XZX,           ///< `RX(φ) * RZ(θ) * RX(λ)`.
-    XYX,           ///< `RX(φ) * RY(θ) * RX(λ)`.
-    ZYZ,           ///< `RZ(φ) * RY(θ) * RZ(λ)`.
-    ZXZ,           ///< `RZ(φ) * RX(θ) * RZ(λ)`.
-    FixedRotation, ///< `RZ` with fixed `RX(±π/2)` and optional `RX(±π)`.
+    U,    ///< `U(θ, φ, λ)`.
+    ZSXX, ///< RZ and X quarter turns, with optional X half turns.
+    R,    ///< XYX synthesis expressed with `R(θ, φ)`.
+    XZX,  ///< `RX(φ) * RZ(θ) * RX(λ)`.
+    XYX,  ///< `RX(φ) * RY(θ) * RX(λ)`.
+    ZYZ,  ///< `RZ(φ) * RY(θ) * RZ(λ)`.
+    ZXZ,  ///< `RZ(φ) * RX(θ) * RZ(λ)`.
   };
 
-  /// Fixed RX pulses combined with unrestricted RZ rotations.
-  struct FixedRotationBasis {
+  /// Native RX pulses implementing the X rotations of the ZSXX basis.
+  struct RXPulses {
     double quarterTurnAngle;
     std::optional<double> halfTurnAngle;
 
-    friend bool operator==(const FixedRotationBasis&,
-                           const FixedRotationBasis&) = default;
+    friend bool operator==(const RXPulses&, const RXPulses&) = default;
   };
 
   /// One single-qubit basis and optional entangler usable across the target.
   struct SynthesisBasis {
     SingleQubitBasis singleQubit;
     std::optional<GateKind> entangler;
-    std::optional<FixedRotationBasis> fixedRotation;
+    std::optional<RXPulses> rxPulses;
+    /// Whether the named X shortcut is available when using native SX gates.
+    bool hasX = true;
 
     friend bool operator==(const SynthesisBasis&,
                            const SynthesisBasis&) = default;

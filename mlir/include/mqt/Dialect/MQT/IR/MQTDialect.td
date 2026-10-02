@@ -214,6 +214,8 @@ def NativeOperationAttr : MQTAttr<"NativeOperation", "native_operation"> {
     general applicability; a nonempty list gives all supported ordered
     placements. Optional `fixed_parameters` contains one entry per parameter:
     a finite f64 value for a fixed parameter, or `unit` for an unrestricted one.
+    Optional `canonical_name` identifies the compiler operation when the
+    reported name is a device-specific instruction name.
     The following example records a directional controlled-X operation:
 
     ```mlir
@@ -227,7 +229,8 @@ def NativeOperationAttr : MQTAttr<"NativeOperation", "native_operation"> {
       MQTArrayRefParameter<"SiteTupleAttr">:$site_tuples,
       MQTOptionalUInt64Parameter<>:$duration,
       OptionalParameter<"FloatAttr">:$fidelity,
-      OptionalParameter<"ArrayAttr">:$fixed_parameters);
+      OptionalParameter<"ArrayAttr">:$fixed_parameters,
+      OptionalParameter<"StringAttr">:$canonical_name);
   let assemblyFormat = "`<` struct(params) `>`";
   let genVerifyDecl = 1;
 }

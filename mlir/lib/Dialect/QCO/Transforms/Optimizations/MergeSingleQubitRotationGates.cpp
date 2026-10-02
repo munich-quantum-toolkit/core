@@ -740,7 +740,7 @@ static Val<Value> sumAngles(Val<Value> lhs, Val<Value> rhs) {
   return lhs + rhs;
 }
 
-/// Merge only the unrestricted axis of a fixed-RX target.
+/// Merge the unrestricted RZ axis without changing a target's X pulses.
 static LogicalResult mergeParameterizedRZ(RZOp op, PatternRewriter& rewriter) {
   auto next = dyn_cast<RZOp>(*op.getQubitOut().user_begin());
   if (!next || next->getBlock() != op->getBlock() ||
@@ -793,14 +793,12 @@ static Value emitRuntimeEulerAngles(
     RewriterBase& rewriter, Location loc, Value qubit,
     RuntimeEulerAngles angles, decomposition::SingleQubitBasis basis,
     const ScalarConsts<Value>& consts,
-    const CompilerTarget::FixedRotationBasis* fixedRotation = nullptr) {
+    const CompilerTarget::SynthesisBasis* targetBasis = nullptr) {
   auto [theta, phi, lambda, phase] = angles;
 
-  const bool usesZYZAngles =
-      basis == decomposition::SingleQubitBasis::ZYZ ||
-      basis == decomposition::SingleQubitBasis::ZXZ ||
-      basis == decomposition::SingleQubitBasis::ZSXX ||
-      basis == decomposition::SingleQubitBasis::FixedRotation;
+  const bool usesZYZAngles = basis == decomposition::SingleQubitBasis::ZYZ ||
+                             basis == decomposition::SingleQubitBasis::ZXZ ||
+                             basis == decomposition::SingleQubitBasis::ZSXX;
   if (usesZYZAngles && isConstantAngle(theta)) {
     qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit,
                                        sumAngles(phi, lambda));
@@ -836,45 +834,59 @@ static Value emitRuntimeEulerAngles(
     qubit = UOp::create(rewriter, loc, qubit, theta.v, phi.v, lambda.v)
                 .getQubitOut();
     break;
-  case decomposition::SingleQubitBasis::FixedRotation: {
-    assert(fixedRotation &&
-           "fixed-pulse synthesis requires a pulse descriptor");
+  case decomposition::SingleQubitBasis::ZSXX: {
+    constexpr double pi = std::numbers::pi;
+    constexpr double halfPi = pi / 2.;
+    const auto* pulses = targetBasis != nullptr && targetBasis->rxPulses
+                             ? &*targetBasis->rxPulses
+                             : nullptr;
+    const double offset =
+        pulses != nullptr && pulses->quarterTurnAngle < 0. ? pi : 0.;
+    const double pulsePhase = pulses != nullptr ? 0. : pi / 4.;
     const auto constant = [&](double value) {
       return Val<Value>::constant(rewriter, loc, value);
     };
-    const double correction = decomposition::detail::emitFixedRotationSequence(
-        *fixedRotation, theta, phi, lambda, mqt::valueToConstantDouble(theta.v),
-        constant,
-        [&](Val<Value> angle) {
-          qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit, angle);
-        },
-        [&](double angle) {
-          qubit = RXOp::create(rewriter, loc, qubit, angle).getQubitOut();
-        });
-    if (correction != 0.) {
-      phase = phase + constant(correction);
-    }
-    break;
-  }
-  case decomposition::SingleQubitBasis::ZSXX:
-    if (isConstantAngle(theta, std::numbers::pi / 2.0)) {
-      const auto halfPi =
-          Val<Value>::constant(rewriter, loc, std::numbers::pi / 2.0);
-      const auto quarterPi =
-          Val<Value>::constant(rewriter, loc, std::numbers::pi / 4.0);
-      qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit, lambda - halfPi);
-      qubit = SXOp::create(rewriter, loc, qubit).getQubitOut();
-      qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit, phi + halfPi);
-      phase = phase - quarterPi;
+    const auto quarterTurn = [&] {
+      qubit = pulses
+                  ? RXOp::create(rewriter, loc, qubit, pulses->quarterTurnAngle)
+                        .getQubitOut()
+                  : SXOp::create(rewriter, loc, qubit).getQubitOut();
+    };
+    if (isConstantAngle(theta, halfPi)) {
+      qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit,
+                                         lambda + constant(offset - halfPi));
+      quarterTurn();
+      qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit,
+                                         phi + constant(halfPi - offset));
+      phase = phase - constant(pulsePhase);
       break;
     }
-    phase = phase + consts.pi / consts.two;
-    qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit, lambda);
-    qubit = SXOp::create(rewriter, loc, qubit).getQubitOut();
+    const bool hasHalfTurn = pulses != nullptr
+                                 ? pulses->halfTurnAngle.has_value()
+                                 : targetBasis == nullptr || targetBasis->hasX;
+    if (hasHalfTurn && isConstantAngle(theta, pi)) {
+      qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit, lambda);
+      if (pulses != nullptr) {
+        qubit = RXOp::create(rewriter, loc, qubit, *pulses->halfTurnAngle)
+                    .getQubitOut();
+        phase = phase + constant(*pulses->halfTurnAngle < 0. ? pi : 0.);
+      } else {
+        qubit = XOp::create(rewriter, loc, qubit).getQubitOut();
+        phase = phase - constant(halfPi);
+      }
+      qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit, phi + consts.pi);
+      break;
+    }
+    qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit,
+                                       lambda + constant(offset));
+    quarterTurn();
     qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit, theta + consts.pi);
-    qubit = SXOp::create(rewriter, loc, qubit).getQubitOut();
-    qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit, phi + consts.pi);
+    quarterTurn();
+    qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit,
+                                       phi + constant(pi - offset));
+    phase = phase + constant(pi - 2. * pulsePhase);
     break;
+  }
   case decomposition::SingleQubitBasis::R:
     qubit = emitRIfNeeded(rewriter, loc, qubit, lambda, consts.zero);
     qubit = emitRIfNeeded(rewriter, loc, qubit, theta, consts.pi / consts.two);
@@ -1073,7 +1085,6 @@ struct MergeSingleQubitRotationGatesPattern final
     case decomposition::SingleQubitBasis::U:
       return 1;
     case decomposition::SingleQubitBasis::ZSXX:
-    case decomposition::SingleQubitBasis::FixedRotation:
       return 5;
     case decomposition::SingleQubitBasis::ZYZ:
     case decomposition::SingleQubitBasis::ZXZ:
@@ -1367,10 +1378,10 @@ bool decomposition::canSynthesizeParameterizedUnitary1Q(Operation* op) {
 
 void decomposition::synthesizeParameterizedUnitary1Q(
     RewriterBase& rewriter, Operation* op, SingleQubitBasis basis,
-    const CompilerTarget::FixedRotationBasis* fixedRotation) {
+    const CompilerTarget::SynthesisBasis* targetBasis) {
   assert(canSynthesizeParameterizedUnitary1Q(op) &&
          "operation must support parameterized one-qubit synthesis");
-  if (isSingleQubitBasisGate(op, basis, fixedRotation)) {
+  if (isSingleQubitBasisGate(op, basis)) {
     return;
   }
 
@@ -1385,8 +1396,7 @@ void decomposition::synthesizeParameterizedUnitary1Q(
   }
   const bool usesDirectZYZAngles = basis == SingleQubitBasis::ZYZ ||
                                    basis == SingleQubitBasis::ZXZ ||
-                                   basis == SingleQubitBasis::ZSXX ||
-                                   basis == SingleQubitBasis::FixedRotation;
+                                   basis == SingleQubitBasis::ZSXX;
   if (basis == SingleQubitBasis::U || usesDirectZYZAngles) {
     const auto consts = makeConsts<Value>(rewriter, op->getLoc());
     Value qubit;
@@ -1396,7 +1406,7 @@ void decomposition::synthesizeParameterizedUnitary1Q(
       const auto angles = directZYZAnglesFromGate(unitary, rewriter, consts);
       qubit = unitary.getInputQubit(0);
       qubit = emitRuntimeEulerAngles(rewriter, op->getLoc(), qubit, angles,
-                                     basis, consts, fixedRotation);
+                                     basis, consts, targetBasis);
     }
     rewriter.replaceOp(op, qubit);
     return;
@@ -1417,7 +1427,7 @@ void populateParameterizedSingleQubitRunCompositionPatterns(
     RewritePatternSet& patterns, SingleQubitBasis basis,
     const CompilerTarget* target) {
   RZOp::getCanonicalizationPatterns(patterns, patterns.getContext());
-  if (basis == SingleQubitBasis::FixedRotation) {
+  if (basis == SingleQubitBasis::ZSXX && target != nullptr) {
     patterns.add(mergeParameterizedRZ);
     return;
   }

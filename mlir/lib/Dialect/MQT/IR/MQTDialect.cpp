@@ -253,9 +253,13 @@ LogicalResult NativeOperationAttr::verify(
     const OperationArityAttr arity, const uint64_t numParameters,
     const ArrayRef<SiteTupleAttr> siteTuples,
     const std::optional<uint64_t> /*duration*/, const FloatAttr fidelity,
-    const ArrayAttr fixedParameters) {
+    const ArrayAttr fixedParameters, const StringAttr canonicalName) {
   if (name.getValue().trim().empty()) {
     return emitError() << "compiler target operation name must not be empty";
+  }
+  if (canonicalName && canonicalName.getValue().trim().empty()) {
+    return emitError()
+           << "compiler target canonical operation name must not be empty";
   }
   if (failed(verifyFidelity(emitError, fidelity,
                             "compiler target operation fidelity"))) {

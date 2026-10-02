@@ -30,21 +30,18 @@
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
-#include "mlir/IR/Dialect.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/Iterators.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/Operation.h"
-#include "mlir/IR/OperationSupport.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Value.h"
 #include "mlir/IR/Visitors.h"
 #include "mlir/Interfaces/FunctionInterfaces.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
-#include "mlir/Rewrite/FrozenRewritePatternSet.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Support/TypeID.h"
@@ -1095,14 +1092,12 @@ static LogicalResult synthesizeTargetOperation(
             "its unitary matrix is not available at compile time");
       }
       decomposition::synthesizeParameterizedUnitary1Q(
-          rewriter, operation, basis->singleQubit,
-          basis->fixedRotation ? &*basis->fixedRotation : nullptr);
+          rewriter, operation, basis->singleQubit, &*basis);
       return success();
     }
     const auto synthesized = decomposition::synthesizeUnitary1QEuler(
         rewriter, operation->getLoc(), op.getInputQubit(0), matrix,
-        /*runSize=*/1, /*hasNonBasisGate=*/true, basis->singleQubit,
-        basis->fixedRotation ? &*basis->fixedRotation : nullptr);
+        /*runSize=*/1, /*hasNonBasisGate=*/true, basis->singleQubit, &*basis);
     if (!synthesized) {
       llvm::reportFatalInternalError(
           "target single-qubit basis failed to synthesize a unitary matrix");
@@ -1431,8 +1426,8 @@ protected:
       signalPassFailure();
       return;
     }
-    if (targetBasis && targetBasis->singleQubit ==
-                           CompilerTarget::SingleQubitBasis::FixedRotation) {
+    if (targetBasis &&
+        targetBasis->singleQubit == CompilerTarget::SingleQubitBasis::ZSXX) {
       RewritePatternSet patterns(&getContext());
       decomposition::populateParameterizedSingleQubitRunCompositionPatterns(
           patterns, targetBasis->singleQubit, &target);
@@ -1514,39 +1509,6 @@ protected:
   }
 };
 
-/// Gate-changing canonicalization can leave a target's native gate set.
-class CanonicalizeStructurePass final
-    : public PassWrapper<CanonicalizeStructurePass, OperationPass<>> {
-public:
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(CanonicalizeStructurePass)
-
-protected:
-  LogicalResult initialize(MLIRContext* context) override {
-    RewritePatternSet patterns(context);
-    for (auto* dialect : context->getLoadedDialects()) {
-      dialect->getCanonicalizationPatterns(patterns);
-    }
-    for (auto operation : context->getRegisteredOperations()) {
-      if (!operation.hasInterface<UnitaryOpInterface>()) {
-        operation.getCanonicalizationPatterns(patterns, context);
-      }
-    }
-    patterns_ = FrozenRewritePatternSet(std::move(patterns));
-    return success();
-  }
-
-  void runOnOperation() override {
-    if (failed(applyPatternsGreedily(getOperation(), patterns_,
-                                     GreedyRewriteConfig{}.setMaxIterations(
-                                         GreedyRewriteConfig::kNoLimit)))) {
-      signalPassFailure();
-    }
-  }
-
-private:
-  FrozenRewritePatternSet patterns_;
-};
-
 } // namespace
 
 std::unique_ptr<Pass> createFuseTwoQubitGates() {
@@ -1557,29 +1519,10 @@ std::unique_ptr<Pass> createFuseTwoQubitGates(const CompilerTarget& target) {
   return std::make_unique<FuseTwoQubitGatesPass>(target);
 }
 
-std::unique_ptr<Pass> createTargetCanonicalizer(const CompilerTarget& target) {
-  if (target.nativeOperationsKind() ==
-      CompilerTarget::NativeOperations::Kind::Unrestricted) {
-    return createCanonicalizerPass(
-        GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit));
-  }
-  return std::make_unique<CanonicalizeStructurePass>();
-}
-
-std::unique_ptr<Pass> createTargetInliner(const CompilerTarget& target) {
-  if (target.nativeOperationsKind() ==
-      CompilerTarget::NativeOperations::Kind::Unrestricted) {
-    return createInlinerPass();
-  }
-  return createInlinerPass({}, [](OpPassManager& nested) {
-    nested.addPass(std::make_unique<CanonicalizeStructurePass>());
-  });
-}
-
-void populateTargetNativeSynthesisPipeline(OpPassManager& pm,
-                                           const CompilerTarget& target) {
+void populateTargetNativeSynthesisPipeline(OpPassManager& pm) {
   /// Placement consumes allocations; native synthesis normalizes phases.
-  pm.addPass(createTargetCanonicalizer(target));
+  pm.addPass(createCanonicalizerPass(
+      GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit)));
   /// Reuse unchanged classical reads before native synthesis splits their uses.
   pm.addPass(createCSEPass());
   pm.addPass(createRemoveDeadValuesPass());

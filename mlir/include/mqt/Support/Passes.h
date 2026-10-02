@@ -12,11 +12,9 @@
 
 #include "mqt/Compiler/CompilationOptions.h"
 
-#include "mlir/Pass/Pass.h"
 #include "mlir/Support/LLVM.h"
 
 #include <cstdint>
-#include <memory>
 
 namespace mlir {
 class ModuleOp;
@@ -77,11 +75,8 @@ void populateQCExportPipeline(mlir::OpPassManager& pm);
 
 /// Populate a QCO-oriented cleanup pipeline on the given pass manager.
 ///
-/// Adds canonicalization, qtensor shrink-to-fit, and dead-value removal.
-/// A null canonicalizer selects the standard MLIR canonicalizer.
-void populateQCOCleanupPipeline(
-    mlir::OpPassManager& pm,
-    std::unique_ptr<mlir::Pass> canonicalizer = nullptr);
+/// Adds generic cleanup, qtensor shrink-to-fit, and dead-value removal.
+void populateQCOCleanupPipeline(mlir::OpPassManager& pm);
 
 /// Populate a QIR-oriented cleanup pipeline on the given pass manager.
 ///
