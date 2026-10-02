@@ -97,14 +97,14 @@ SyntaxBuilder::scalarDecl(SMLoc location, const ScalarKind kind,
                           StringRef identifier,
                           std::optional<SyntaxExpressionId> size,
                           std::optional<SyntaxExpressionId> initializer,
-                          const bool isConst, const bool output) {
+                          const bool isConst, const IOQualifier io) {
   SyntaxScalarDeclaration declaration{
       .kind = kind,
       .identifier = identifier,
       .size = size,
       .initializer = initializer,
       .isConst = isConst,
-      .output = output,
+      .io = io,
   };
   std::ignore = addStatement(location, declaration);
   return success();

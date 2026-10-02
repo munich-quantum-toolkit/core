@@ -101,8 +101,10 @@ transformations are wanted.
 
 Imported free parameters and vectors retain their identities through QC/QCO
 conversion, optimization, and MLIR serialization, so exported circuits can be
-bound with the original Qiskit objects. OpenQASM and QIR do not preserve these
-identities; unused named program inputs remain unsupported.
+bound with the original Qiskit objects. OpenQASM 3 export preserves names for
+free parameters that are valid OpenQASM identifiers, but does not preserve
+Qiskit identities or vector grouping. QIR does not preserve those identities;
+unused named program inputs remain unsupported in Qiskit export.
 
 Free symbols become named {code}`f64` program inputs. Parameter-vector elements
 retain their grouping and index, preserving vector order and positional binding

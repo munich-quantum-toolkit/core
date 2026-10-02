@@ -144,6 +144,10 @@ possible extension. The conversion currently supports:
 
 The following limits affect interchange:
 
+- The current jeff-mlir bridge does not preserve named program inputs. Bind
+  parameters before serializing if their names or values are needed after
+  exchange; [#2664](https://github.com/munich-quantum-toolkit/core/issues/2664)
+  tracks name preservation.
 - Import rejects live old array values across mutating control flow and shared
   array updates inside switch or while regions.
 - Quantum allocations and deallocations inside conditional regions, and mutable

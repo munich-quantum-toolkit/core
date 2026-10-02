@@ -810,6 +810,13 @@ protected:
       signalPassFailure();
       return;
     }
+    if (entryPoint.getNumArguments() != 0) {
+      entryPoint.emitError(
+          "QIR Adaptive lowering does not support entry-point arguments; "
+          "bind program parameters before lowering");
+      signalPassFailure();
+      return;
+    }
     auto entryPointName = entryPoint.getSymNameAttr();
     if (failed(mqt::normalizeGlobalPhases(moduleOp))) {
       signalPassFailure();

@@ -124,7 +124,7 @@ private:
     case TokenKind::Uint:
     case TokenKind::Float:
     case TokenKind::Angle:
-      return parseScalarDeclaration(/*isOutput=*/false);
+      return parseScalarDeclaration(IOQualifier::None);
     case TokenKind::Duration:
       return sink.error(current().loc,
                         "'duration' declarations are not supported yet");
@@ -138,6 +138,8 @@ private:
       return parseCregDecl();
     case TokenKind::Output:
       return parseOutputDecl();
+    case TokenKind::Input:
+      return parseInputDecl();
     case TokenKind::Gate:
       return parseGateStatement();
     case TokenKind::Opaque:
@@ -348,12 +350,12 @@ private:
 
   //===--- Declarations -------------------------------------------------===//
 
-  /// Parse `[const] (int|uint|float|bool|angle) <id> [= <initializer>];`.
-  [[nodiscard]] LogicalResult parseScalarDeclaration(const bool isOutput) {
+  /// Parse a scalar declaration with an optional input/output qualifier.
+  [[nodiscard]] LogicalResult parseScalarDeclaration(const IOQualifier io) {
     const auto loc = current().loc;
 
     bool isConst = false;
-    if (!isOutput && current().kind == TokenKind::Const) {
+    if (io == IOQualifier::None && current().kind == TokenKind::Const) {
       isConst = true;
       advance(); // const
     }
@@ -378,7 +380,7 @@ private:
 
     std::optional<SyntaxExpressionId> size;
     if ((kind == TokenKind::Angle || kind == TokenKind::Int ||
-         kind == TokenKind::Uint) &&
+         kind == TokenKind::Uint || kind == TokenKind::Float) &&
         current().kind == TokenKind::LBracket) {
       auto designator = parseDesignator();
       if (failed(designator)) {
@@ -393,11 +395,12 @@ private:
     advance();
 
     const bool hasInitializer = current().kind == TokenKind::Equals;
-    if (isOutput && hasInitializer) {
-      return sink.error(
-          current().loc,
-          "output declarations cannot have an initializer; assign the output "
-          "in a separate statement");
+    if (io != IOQualifier::None && hasInitializer) {
+      return sink.error(current().loc,
+                        io == IOQualifier::Input
+                            ? "input declarations cannot have an initializer"
+                            : "output declarations cannot have an initializer; "
+                              "assign the output in a separate statement");
     }
     if (hasInitializer) {
       advance();
@@ -439,7 +442,7 @@ private:
       scalarKind = ScalarKind::Angle;
     }
     if (failed(sink.scalarDecl(loc, scalarKind, id, size, initializer, isConst,
-                               isOutput))) {
+                               io))) {
       return failure();
     }
     if (measureSource) {
@@ -496,6 +499,16 @@ private:
     return sink.qubitRegister(loc, id, size);
   }
 
+  /// Parse `input float <id>;`.
+  [[nodiscard]] LogicalResult parseInputDecl() {
+    advance();
+    if (current().kind != TokenKind::Float) {
+      return sink.error(current().loc,
+                        "only float input declarations are supported");
+    }
+    return parseScalarDeclaration(IOQualifier::Input);
+  }
+
   /// Parse `output <classical-type> <id>;`.
   [[nodiscard]] LogicalResult parseOutputDecl() {
     advance(); // output
@@ -508,7 +521,7 @@ private:
     if (current().kind == TokenKind::Bool || current().kind == TokenKind::Int ||
         current().kind == TokenKind::Uint ||
         current().kind == TokenKind::Float) {
-      return parseScalarDeclaration(/*isOutput=*/true);
+      return parseScalarDeclaration(IOQualifier::Output);
     }
     if (current().kind == TokenKind::Angle ||
         current().kind == TokenKind::Duration) {

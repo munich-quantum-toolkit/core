@@ -19,6 +19,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <map>
 #include <memory>
 #include <optional>
 #include <span>
@@ -167,6 +168,15 @@ public:
   /// Create an independent QC program copy.
   [[nodiscard]] QCProgram copy() const;
 
+  /// Return named f64 entry-point inputs in function argument order.
+  [[nodiscard]] std::vector<std::string> parameters() const;
+
+  /// Bind named f64 inputs in place, preserving unbound inputs and metadata.
+  /// Reject unknown names, non-finite values, or references to the entry point
+  /// without changing the program. Does not run cleanup or fold expressions.
+  [[nodiscard]] bool
+  bindParameters(const std::map<std::string, double>& values);
+
   /// Run the standard QC cleanup passes in place.
   [[nodiscard]] bool cleanup();
 
@@ -233,6 +243,13 @@ public:
 
   /// Create an independent QCO program copy.
   [[nodiscard]] QCOProgram copy() const;
+
+  /// Return named f64 entry-point inputs in function argument order.
+  [[nodiscard]] std::vector<std::string> parameters() const;
+
+  /// Bind named f64 inputs in place under the same contract as QCProgram.
+  [[nodiscard]] bool
+  bindParameters(const std::map<std::string, double>& values);
 
   /// Run the standard QCO cleanup passes in place.
   [[nodiscard]] bool cleanup();

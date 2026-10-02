@@ -61,6 +61,7 @@ add_mlir_library(
   MQTCompilerPrograms
   PARTIAL_SOURCES_INTENDED
   Programs.cpp
+  ParameterBinding.cpp
   ADDITIONAL_HEADER_DIRS
   ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Compiler
   LINK_LIBS
