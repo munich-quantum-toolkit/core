@@ -1155,6 +1155,38 @@ TEST(CompilerTargetTest, PrefersParameterizedEntanglerOverFixedAlternative) {
   EXPECT_TRUE(target.synthesisBasis()->entangler->parameterized);
 }
 
+TEST(CompilerTargetTest, EntanglerCapabilitiesRespectAnglesAndOperandOrder) {
+  for (const auto& [gate, name] : {
+           std::pair{GateKind::RXX, "rxx"},
+           std::pair{GateKind::RYY, "ryy"},
+           std::pair{GateKind::RZX, "rzx"},
+           std::pair{GateKind::RZZ, "rzz"},
+       }) {
+    SCOPED_TRACE(name);
+    const auto fixed = valid(OperationCapability::create(
+        name, 2, 1, {valid(SiteTuple::create({0, 1}))}, std::nullopt,
+        std::nullopt, {std::numbers::pi / 2.}));
+    const auto arbitrary = valid(OperationCapability::create(
+        name, 2, 1,
+        {valid(SiteTuple::create({1, 0})), valid(SiteTuple::create({1, 2}))}));
+    const auto target =
+        valid(Target::create(3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
+                             NativeOperations::fromOperations({
+                                 valid(OperationCapability::create("u", 1, 3)),
+                                 fixed,
+                                 arbitrary,
+                             })));
+    const Target::Entangler unrestricted{.gate = gate, .parameterized = true};
+    EXPECT_TRUE(target.supports(Target::Entangler{.gate = gate}, {0, 1}));
+    EXPECT_FALSE(target.supports(unrestricted, {0, 1}));
+    EXPECT_TRUE(target.supports(unrestricted, {1, 0}));
+    EXPECT_TRUE(target.supports(unrestricted, {1, 2}));
+    EXPECT_FALSE(target.supports(unrestricted, {2, 1}));
+    ASSERT_TRUE(target.synthesisBasis());
+    EXPECT_EQ(target.synthesisBasis()->entangler, unrestricted);
+  }
+}
+
 TEST(CompilerTargetTest, DerivesControlledEntanglersFromVariadicBases) {
   constexpr std::array bases{
       std::pair{std::string_view{"x"}, GateKind::CX},

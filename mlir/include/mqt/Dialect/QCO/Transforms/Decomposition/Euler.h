@@ -143,7 +143,7 @@ void synthesizeParameterizedUnitary1Q(
 /// @param target When set, require a shorter run if every gate is supported.
 /// Individual lowering owns site-specific native support.
 void populateFuseSingleQubitUnitaryRunsPatterns(
-    RewritePatternSet& patterns, SingleQubitBasis basis,
+    RewritePatternSet& patterns, const CompilerTarget::SynthesisBasis& basis,
     bool skipControlledBodies = false, const CompilerTarget* target = nullptr);
 
 /// Populates patterns that compose profitable parameterized single-qubit runs.
@@ -152,7 +152,7 @@ void populateFuseSingleQubitUnitaryRunsPatterns(
 /// and only use direct Euler identities, keeping optional fusion exportable.
 /// ZSXX targets only merge adjacent RZ operations symbolically.
 void populateParameterizedSingleQubitRunCompositionPatterns(
-    RewritePatternSet& patterns, SingleQubitBasis basis,
+    RewritePatternSet& patterns, const CompilerTarget::SynthesisBasis& basis,
     const CompilerTarget* target = nullptr);
 
 } // namespace mlir::qco::decomposition

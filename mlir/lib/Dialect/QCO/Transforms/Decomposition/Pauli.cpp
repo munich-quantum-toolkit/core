@@ -23,7 +23,6 @@
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/PatternMatch.h"
 
-#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVectorExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -88,26 +87,6 @@ Operation* emitPauliRotation2Q(OpBuilder& builder, Location loc, Value qubit0,
   default:
     llvm_unreachable("gate is not a two-qubit Pauli rotation");
   }
-}
-
-size_t PauliRotationSequence::numEntanglingRotations() const {
-  return static_cast<size_t>(llvm::count_if(rotations, [](const auto& term) {
-    return term.axes[0] != PauliAxis::I && term.axes[1] != PauliAxis::I;
-  }));
-}
-
-bool PauliRotationSequence::requiresCX(
-    CompilerTarget::Entangler entangler) const {
-  return !entangler.parameterized && numEntanglingRotations() != 0;
-}
-
-std::optional<size_t> PauliRotationSequence::nativeEntanglerCount(
-    CompilerTarget::Entangler entangler, std::optional<size_t> cxCount) const {
-  const auto count = numEntanglingRotations();
-  if (!requiresCX(entangler)) {
-    return count;
-  }
-  return cxCount ? std::optional{2 * count * *cxCount} : std::nullopt;
 }
 
 std::optional<PauliRotationSequence> getPauliRotations(Operation* operation) {

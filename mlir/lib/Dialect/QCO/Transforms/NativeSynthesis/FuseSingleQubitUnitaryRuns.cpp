@@ -116,13 +116,13 @@ namespace {
 struct FuseSingleQubitUnitaryRunsPattern final
     : OpInterfaceRewritePattern<UnitaryOpInterface> {
   FuseSingleQubitUnitaryRunsPattern(MLIRContext* context,
-                                    const decomposition::SingleQubitBasis basis,
+                                    const CompilerTarget::SynthesisBasis& basis,
                                     const bool skipControlledBodies,
                                     const CompilerTarget* target)
       : OpInterfaceRewritePattern(context), basis(basis),
         skipControlledBodies(skipControlledBodies), target(target) {}
 
-  decomposition::SingleQubitBasis basis;
+  CompilerTarget::SynthesisBasis basis;
   bool skipControlledBodies;
   const CompilerTarget* target;
 
@@ -153,16 +153,11 @@ struct FuseSingleQubitUnitaryRunsPattern final
       return failure();
     }
 
-    FusableRunScan run = scanFusableRun(op, *headMatrix, basis, target);
-    const auto* targetBasis = target != nullptr && target->synthesisBasis()
-                                  ? &*target->synthesisBasis()
-                                  : nullptr;
+    FusableRunScan run =
+        scanFusableRun(op, *headMatrix, basis.singleQubit, target);
     const auto synthesized = decomposition::synthesizeUnitary1QEuler(
         rewriter, op.getLoc(), op.getInputQubit(0), run.composed, run.gateCount,
-        run.hasNonBasisGate,
-        targetBasis != nullptr
-            ? *targetBasis
-            : CompilerTarget::SynthesisBasis{.singleQubit = basis});
+        run.hasNonBasisGate, basis);
     if (!synthesized) {
       return failure();
     }
@@ -197,13 +192,14 @@ protected:
       return;
     }
 
+    const CompilerTarget::SynthesisBasis synthesisBasis{.singleQubit = *parsed};
     RewritePatternSet compositionPatterns(&getContext());
     decomposition::populateParameterizedSingleQubitRunCompositionPatterns(
-        compositionPatterns, *parsed);
+        compositionPatterns, synthesisBasis);
 
     RewritePatternSet patterns(&getContext());
     decomposition::populateFuseSingleQubitUnitaryRunsPatterns(
-        patterns, *parsed, /*skipControlledBodies=*/false);
+        patterns, synthesisBasis, /*skipControlledBodies=*/false);
 
     if (failed(
             applyPatternsGreedily(moduleOp, std::move(compositionPatterns))) ||
@@ -221,10 +217,9 @@ protected:
 
 namespace mlir::qco::decomposition {
 
-void populateFuseSingleQubitUnitaryRunsPatterns(RewritePatternSet& patterns,
-                                                const SingleQubitBasis basis,
-                                                const bool skipControlledBodies,
-                                                const CompilerTarget* target) {
+void populateFuseSingleQubitUnitaryRunsPatterns(
+    RewritePatternSet& patterns, const CompilerTarget::SynthesisBasis& basis,
+    const bool skipControlledBodies, const CompilerTarget* target) {
   patterns.add<FuseSingleQubitUnitaryRunsPattern>(patterns.getContext(), basis,
                                                   skipControlledBodies, target);
 }

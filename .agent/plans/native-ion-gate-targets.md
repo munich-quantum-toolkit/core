@@ -24,6 +24,11 @@ fixed entangler uses two cached native CX decompositions around a single-qubit
 rotation. P and CP are exact compositions of these rotations and a global phase.
 Numerical KAK remains the specialization for constant gates and fused runs.
 
+Each recognized two-qubit Pauli sequence has exactly one entangling term.
+CompilerTarget owns fixed and unrestricted entangler queries; fusion receives
+the complete synthesis basis. Native cost analysis selects its numerical cache
+in one place.
+
 Reuse the existing scalar-or-SSA gate builder parameters and synthesis-basis
 capabilities. Do not add symbolic dense matrices or a general algebra system.
 Emit selected native RX/R quarter turns directly from the Euler emitter,
@@ -36,7 +41,7 @@ native aliases without changing public targets or Qiskit's session library.
 ## Validation
 
 The compiler, decomposition, optimization, native-synthesis, and mapping suites
-pass all 1001 C++ tests; Python MLIR/Qiskit suites pass all 926 tests. Coverage
+pass all 1002 C++ tests; Python MLIR/Qiskit suites pass all 926 tests. Coverage
 includes runtime binding, full global phase, reversed placements, native gate
 counts, fixed-angle constraints, aliases, and large-angle normalization.
 Generated stubs, repository and whole-file C++ lint, executable docs with

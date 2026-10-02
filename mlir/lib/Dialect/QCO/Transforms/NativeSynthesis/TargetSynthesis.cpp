@@ -537,27 +537,10 @@ std::optional<bool>
 NativeCostAnalysis::entanglerOrientation(const CompilerTarget& target,
                                          CompilerTarget::Entangler entangler,
                                          Sites sites) {
-  const auto supports = [&](ArrayRef<SiteId> orderedSites) {
-    if (!entangler.parameterized) {
-      return target.supports(entangler.gate, orderedSites);
-    }
-    switch (entangler.gate) {
-    case CompilerTarget::GateKind::RXX:
-      return target.supportsOperation("rxx", 2, 1, orderedSites);
-    case CompilerTarget::GateKind::RYY:
-      return target.supportsOperation("ryy", 2, 1, orderedSites);
-    case CompilerTarget::GateKind::RZX:
-      return target.supportsOperation("rzx", 2, 1, orderedSites);
-    case CompilerTarget::GateKind::RZZ:
-      return target.supportsOperation("rzz", 2, 1, orderedSites);
-    default:
-      llvm_unreachable("parameterized synthesis requires a Pauli rotation");
-    }
-  };
-  if (!sites || supports(*sites)) {
+  if (!sites || target.supports(entangler, *sites)) {
     return false;
   }
-  if (supports(std::array{(*sites)[1], (*sites)[0]})) {
+  if (target.supports(entangler, std::array{(*sites)[1], (*sites)[0]})) {
     return true;
   }
   return std::nullopt;
@@ -687,6 +670,10 @@ NativeCostAnalysis::decompose(const Matrix4x4& matrix,
 std::optional<uint8_t>
 NativeCostAnalysis::count(const Matrix4x4& matrix,
                           CompilerTarget::Entangler entangler) {
+  if (shared_ == nullptr) {
+    const auto& native = decompose(matrix, entangler);
+    return native ? std::optional{native->numBasisUses} : std::nullopt;
+  }
   if (lastCount_ && lastCount_->entangler == entangler &&
       lastCount_->matrix.data == matrix.data) {
     return lastCount_->count;
@@ -759,20 +746,12 @@ NativeCostAnalysis::operationCost(UnitaryOpInterface operation,
         !entanglerOrientation(target, *basis.entangler, sites)) {
       return std::nullopt;
     }
-    std::optional<size_t> cxCount;
-    if (sequence->requiresCX(*basis.entangler)) {
-      if (shared_ != nullptr) {
-        cxCount =
-            count(decomposition::CANONICAL_CONTROLLED_X, *basis.entangler);
-      } else {
-        const auto& cx =
-            decompose(decomposition::CANONICAL_CONTROLLED_X, *basis.entangler);
-        if (cx) {
-          cxCount = cx->numBasisUses;
-        }
-      }
+    if (basis.entangler->parameterized) {
+      return 1;
     }
-    return sequence->nativeEntanglerCount(*basis.entangler, cxCount);
+    const auto cxCount =
+        count(decomposition::CANONICAL_CONTROLLED_X, *basis.entangler);
+    return cxCount ? std::optional<size_t>{2 * *cxCount} : std::nullopt;
   }
   return matrixCost(matrix, target, sites);
 }
@@ -789,11 +768,7 @@ NativeCostAnalysis::matrixCost(const Matrix4x4& matrix,
     return std::nullopt;
   }
   const auto ordered = *reverse ? matrix.reorderForQubits(1, 0) : matrix;
-  if (shared_ != nullptr) {
-    return count(ordered, *basis->entangler);
-  }
-  const auto& native = decompose(ordered, *basis->entangler);
-  return native ? std::optional<size_t>(native->numBasisUses) : std::nullopt;
+  return count(ordered, *basis->entangler);
 }
 
 size_t NativeCostAnalysis::runCost(const Matrix4x4& matrix, size_t separateCost,
@@ -1131,7 +1106,7 @@ static LogicalResult synthesizeTargetOperation(
       return unsupported("its unitary matrix is not available at compile time");
     }
     const decomposition::TwoQubitNativeDecomposition* cx = nullptr;
-    if (sequence->requiresCX(*basis->entangler)) {
+    if (!basis->entangler->parameterized) {
       const auto& native = analysis.decompose(
           decomposition::CANONICAL_CONTROLLED_X, *basis->entangler);
       if (!native) {
@@ -1372,10 +1347,9 @@ protected:
         targetBasis->singleQubit != CompilerTarget::SingleQubitBasis::U) {
       RewritePatternSet patterns(&getContext());
       decomposition::populateParameterizedSingleQubitRunCompositionPatterns(
-          patterns, targetBasis->singleQubit, &target);
+          patterns, *targetBasis, &target);
       decomposition::populateFuseSingleQubitUnitaryRunsPatterns(
-          patterns, targetBasis->singleQubit, /*skipControlledBodies=*/true,
-          &target);
+          patterns, *targetBasis, /*skipControlledBodies=*/true, &target);
       if (failed(applyPatternsGreedily(moduleOp, std::move(patterns)))) {
         signalPassFailure();
         return;
@@ -1428,7 +1402,7 @@ protected:
         targetBasis->singleQubit == CompilerTarget::SingleQubitBasis::ZSXX) {
       RewritePatternSet patterns(&getContext());
       decomposition::populateParameterizedSingleQubitRunCompositionPatterns(
-          patterns, targetBasis->singleQubit, &target);
+          patterns, *targetBasis, &target);
       if (failed(applyPatternsGreedily(moduleOp, std::move(patterns)))) {
         signalPassFailure();
         return;

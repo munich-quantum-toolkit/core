@@ -781,10 +781,6 @@ static bool isMergeable(Operation* op) {
              op);
 }
 
-static bool areQuaternionMergeable(Operation* a, Operation* b) {
-  return isMergeable(a) && isMergeable(b);
-}
-
 namespace {
 
 /// Pattern that merges consecutive rotation gates using quaternion
@@ -793,12 +789,12 @@ struct MergeSingleQubitRotationGatesPattern final
     : OpInterfaceRewritePattern<UnitaryOpInterface> {
   explicit MergeSingleQubitRotationGatesPattern(
       MLIRContext* context,
-      std::optional<decomposition::SingleQubitBasis> fusionBasis = std::nullopt,
+      std::optional<CompilerTarget::SynthesisBasis> fusionBasis = std::nullopt,
       const CompilerTarget* target = nullptr)
       : OpInterfaceRewritePattern(context), fusionBasis(fusionBasis),
         target(target) {}
 
-  std::optional<decomposition::SingleQubitBasis> fusionBasis;
+  std::optional<CompilerTarget::SynthesisBasis> fusionBasis;
   const CompilerTarget* target;
 
   /// Checks if this op is the start of a mergeable chain.
@@ -812,7 +808,7 @@ struct MergeSingleQubitRotationGatesPattern final
       return false;
     }
     Operation* defOp = op.getInputQubit(0).getDefiningOp();
-    return defOp == nullptr || !areQuaternionMergeable(defOp, op);
+    return defOp == nullptr || !isMergeable(defOp);
   }
 
   /// Collects a chain of consecutive mergeable gates.
@@ -825,13 +821,12 @@ struct MergeSingleQubitRotationGatesPattern final
   static SmallVector<UnitaryOpInterface>
   collectChain(UnitaryOpInterface start) {
     SmallVector chain{start};
-    WireIterator prev(start.getOutputQubit(0));
-    for (auto curr = std::next(prev); curr != std::default_sentinel; ++curr) {
-      if (!areQuaternionMergeable(prev.operation(), curr.operation())) {
+    for (auto curr = std::next(WireIterator(start.getOutputQubit(0)));
+         curr != std::default_sentinel; ++curr) {
+      if (!isMergeable(curr.operation())) {
         break;
       }
       chain.emplace_back(cast<UnitaryOpInterface>(*curr.operation()));
-      prev = curr;
     }
     return chain;
   }
@@ -923,10 +918,11 @@ struct MergeSingleQubitRotationGatesPattern final
   /// Either outer rotation may be absent. H/RZ pairs use H RZ = RX H to
   /// align the rotation with the output basis. Normalize gate operands before
   /// adding Euler offsets or computing the U phase correction.
-  static LogicalResult tryMergeDirectChain(
-      MutableArrayRef<UnitaryOpInterface> chain, RewriterBase& rewriter,
-      decomposition::SingleQubitBasis basis,
-      const CompilerTarget::SynthesisBasis* nativeBasis = nullptr) {
+  static LogicalResult
+  tryMergeDirectChain(MutableArrayRef<UnitaryOpInterface> chain,
+                      RewriterBase& rewriter,
+                      const CompilerTarget::SynthesisBasis& synthesisBasis) {
+    const auto basis = synthesisBasis.singleQubit;
     const bool outerX = basis == decomposition::SingleQubitBasis::XZX ||
                         basis == decomposition::SingleQubitBasis::XYX ||
                         basis == decomposition::SingleQubitBasis::R;
@@ -1005,12 +1001,9 @@ struct MergeSingleQubitRotationGatesPattern final
     for (auto op : llvm::drop_begin(chain)) {
       rewriter.replaceOp(op, op.getInputQubit(0));
     }
-    Value qubit = emitRuntimeEulerAngles(
-        rewriter, loc, chain.front().getInputQubit(0), angles,
-        nativeBasis != nullptr
-            ? *nativeBasis
-            : CompilerTarget::SynthesisBasis{.singleQubit = basis},
-        consts);
+    Value qubit =
+        emitRuntimeEulerAngles(rewriter, loc, chain.front().getInputQubit(0),
+                               angles, synthesisBasis, consts);
     rewriter.replaceOp(chain.front(), qubit);
     return success();
   }
@@ -1026,10 +1019,9 @@ struct MergeSingleQubitRotationGatesPattern final
   static LogicalResult
   mergeDynamicChain(MutableArrayRef<UnitaryOpInterface> chain,
                     RewriterBase& rewriter,
-                    std::optional<decomposition::SingleQubitBasis> fusionBasis =
-                        std::nullopt) {
-    const auto basis = fusionBasis.value_or(decomposition::SingleQubitBasis::U);
-    if (succeeded(tryMergeDirectChain(chain, rewriter, basis))) {
+                    const CompilerTarget::SynthesisBasis& synthesisBasis) {
+    const auto basis = synthesisBasis.singleQubit;
+    if (succeeded(tryMergeDirectChain(chain, rewriter, synthesisBasis))) {
       return success();
     }
     const Location loc = chain.front()->getLoc();
@@ -1075,9 +1067,9 @@ struct MergeSingleQubitRotationGatesPattern final
         .lambda = lambda,
         .phase = phaseAccum + eulerPhase,
     };
-    Value qubit = emitRuntimeEulerAngles(
-        rewriter, loc, chain.front().getInputQubit(0), angles,
-        CompilerTarget::SynthesisBasis{.singleQubit = basis}, consts);
+    Value qubit =
+        emitRuntimeEulerAngles(rewriter, loc, chain.front().getInputQubit(0),
+                               angles, synthesisBasis, consts);
     rewriter.replaceOp(chain.front(), qubit);
     return success();
   }
@@ -1100,7 +1092,7 @@ struct MergeSingleQubitRotationGatesPattern final
     rewriter.setInsertionPointAfter(chain.back().getOperation());
 
     if (fusionBasis) {
-      if (!shouldComposeForFusion(chain, *fusionBasis)) {
+      if (!shouldComposeForFusion(chain, fusionBasis->singleQubit)) {
         return failure();
       }
       if (target != nullptr) {
@@ -1109,11 +1101,9 @@ struct MergeSingleQubitRotationGatesPattern final
             })) {
           return failure();
         }
-        return tryMergeDirectChain(
-            chain, rewriter, *fusionBasis,
-            target->synthesisBasis() ? &*target->synthesisBasis() : nullptr);
+        return tryMergeDirectChain(chain, rewriter, *fusionBasis);
       }
-      return mergeDynamicChain(chain, rewriter, fusionBasis);
+      return mergeDynamicChain(chain, rewriter, *fusionBasis);
     }
     if (chain.size() < 2) {
       return failure();
@@ -1122,7 +1112,8 @@ struct MergeSingleQubitRotationGatesPattern final
     if (succeeded(tryMergeStaticChain(chain, rewriter))) {
       return success();
     }
-    return mergeDynamicChain(chain, rewriter);
+    return mergeDynamicChain(
+        chain, rewriter, {.singleQubit = decomposition::SingleQubitBasis::U});
   }
 };
 
@@ -1155,10 +1146,10 @@ protected:
 namespace mlir::qco::decomposition {
 
 void populateParameterizedSingleQubitRunCompositionPatterns(
-    RewritePatternSet& patterns, SingleQubitBasis basis,
+    RewritePatternSet& patterns, const CompilerTarget::SynthesisBasis& basis,
     const CompilerTarget* target) {
   RZOp::getCanonicalizationPatterns(patterns, patterns.getContext());
-  if (basis == SingleQubitBasis::ZSXX && target != nullptr) {
+  if (basis.singleQubit == SingleQubitBasis::ZSXX && target != nullptr) {
     patterns.add(mergeParameterizedRZ);
     return;
   }

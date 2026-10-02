@@ -17,7 +17,6 @@
 #include "mlir/Support/LLVM.h"
 
 #include <array>
-#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <variant>
@@ -54,16 +53,11 @@ struct PauliRotation {
 
 /// Commuting rotations sharing one angle, with an explicit global phase.
 /// Represents the existing Pauli rotations, P, and their one-control forms.
+/// Recognized two-qubit operations contain exactly one entangling rotation.
 struct PauliRotationSequence {
   Value angle;
   SmallVector<PauliRotation, 3> rotations;
   double globalPhaseScale = 0.;
-
-  [[nodiscard]] size_t numEntanglingRotations() const;
-  [[nodiscard]] bool requiresCX(CompilerTarget::Entangler entangler) const;
-  [[nodiscard]] std::optional<size_t>
-  nativeEntanglerCount(CompilerTarget::Entangler entangler,
-                       std::optional<size_t> cxCount = std::nullopt) const;
 };
 
 /// Recognizes exact Pauli-generator decompositions without changing the IR.

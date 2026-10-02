@@ -469,6 +469,10 @@ public:
   [[nodiscard]] bool supports(GateKind gate,
                               llvm::ArrayRef<SiteId> sites) const;
 
+  /// Check the fixed or unrestricted entangler capability on ordered sites.
+  [[nodiscard]] bool supports(Entangler entangler,
+                              llvm::ArrayRef<SiteId> sites) const;
+
   /// Return the recognized gates supported by the target.
   [[nodiscard]] llvm::ArrayRef<GateKind> supportedGates() const noexcept;
 

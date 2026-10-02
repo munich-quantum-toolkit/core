@@ -555,9 +555,10 @@ struct CompilerTarget::Storage {
       std::optional<ArrayRef<SiteId>> orderedSites = std::nullopt,
       bool variadicOnly = false,
       function_ref<std::optional<double>(size_t)> parameterAt = nullptr) const;
-  [[nodiscard]] bool supportsGate(
-      GateKind gate,
-      std::optional<ArrayRef<SiteId>> orderedSites = std::nullopt) const;
+  [[nodiscard]] bool
+  supportsGate(GateKind gate,
+               std::optional<ArrayRef<SiteId>> orderedSites = std::nullopt,
+               bool unrestricted = false) const;
   [[nodiscard]] std::optional<SynthesisBasis> resolveSynthesisBasis() const;
 
   std::optional<std::string> name;
@@ -772,7 +773,8 @@ bool CompilerTarget::Storage::supportsOperation(
 }
 
 bool CompilerTarget::Storage::supportsGate(
-    GateKind gate, std::optional<ArrayRef<SiteId>> orderedSites) const {
+    GateKind gate, std::optional<ArrayRef<SiteId>> orderedSites,
+    bool unrestricted) const {
   if ((gate == GateKind::CX &&
        supportsOperation("x", 2, 0, orderedSites, /*variadicOnly=*/true)) ||
       (gate == GateKind::CZ &&
@@ -784,9 +786,11 @@ bool CompilerTarget::Storage::supportsGate(
       std::ranges::find(GATE_SPECIFICATIONS, gate, &GateSpecification::kind);
   assert(specification != GATE_SPECIFICATIONS.end() &&
          "unknown compiler target gate");
-  return supportsOperation(specification->name, specification->arity,
-                           specification->numParameters, orderedSites, false,
-                           [gate](size_t) { return synthesisParameter(gate); });
+  return supportsOperation(
+      specification->name, specification->arity, specification->numParameters,
+      orderedSites, false, [gate, unrestricted](size_t) {
+        return unrestricted ? std::nullopt : synthesisParameter(gate);
+      });
 }
 
 std::optional<CompilerTarget::SynthesisBasis>
@@ -908,16 +912,8 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
     const auto supportsPair = [&](SiteId source, SiteId target) {
       const std::array forward{source, target};
       const std::array reverse{target, source};
-      if (!unrestricted) {
-        return supportsGate(gate, forward) || supportsGate(gate, reverse);
-      }
-      const auto supports = [&](ArrayRef<SiteId> pair) {
-        return supportsOperation(
-            specification->name, specification->arity,
-            specification->numParameters, pair, false,
-            [](size_t) { return std::optional<double>{}; });
-      };
-      return supports(forward) || supports(reverse);
+      return supportsGate(gate, forward, unrestricted) ||
+             supportsGate(gate, reverse, unrestricted);
     };
     if (connectivityKind == Connectivity::Kind::Explicit) {
       return llvm::all_of(couplings, [&](const auto& coupling) {
@@ -1392,6 +1388,11 @@ bool CompilerTarget::supports(GateKind gate) const {
 
 bool CompilerTarget::supports(GateKind gate, ArrayRef<SiteId> sites) const {
   return storage_->supportsGate(gate, sites);
+}
+
+bool CompilerTarget::supports(Entangler entangler,
+                              ArrayRef<SiteId> sites) const {
+  return storage_->supportsGate(entangler.gate, sites, entangler.parameterized);
 }
 
 ArrayRef<GateKind> CompilerTarget::supportedGates() const noexcept {
