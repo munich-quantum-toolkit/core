@@ -20,7 +20,6 @@
 #include "mlir/Support/LLVM.h"
 
 #include "llvm/ADT/BitVector.h"
-#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
 
 #include <cmath>

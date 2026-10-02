@@ -48,6 +48,31 @@ def test_partial_binding_preserves_identity_and_expression(*, qco: bool) -> None
     assert original.parameters == ["a", "b"]
 
 
+@pytest.mark.skipif(not supports_qiskit_translation(), reason=f"No registered Qiskit adapter for {qiskit.__version__}")
+def test_scalar_parameters_round_trip_through_openqasm() -> None:
+    """Named float inputs connect Qiskit and OpenQASM parameter workflows."""
+    theta, phi = Parameter("theta"), Parameter("phi")
+    circuit = QuantumCircuit(1)
+    circuit.ry(theta + 2 * phi, 0)
+    program = QCProgram.from_qiskit(circuit)
+    source = program.to_openqasm3().source
+    assert "input float[64] theta;" in source
+    assert "input float[64] phi;" in source
+
+    restored = QCProgram.from_openqasm_str(source)
+    assert set(restored.parameters) == {"theta", "phi"}
+    assert {parameter.name for parameter in restored.to_qiskit().parameters} == {"theta", "phi"}
+    restored.bind_parameters({"theta": 0.7})
+    assert restored.parameters == ["phi"]
+    restored.bind_parameters({"phi": -0.25})
+    np.testing.assert_allclose(
+        Operator(restored.to_qiskit()).data,
+        Operator(circuit.assign_parameters({theta: 0.7, phi: -0.25})).data,
+        rtol=0,
+        atol=1e-12,
+    )
+
+
 @pytest.mark.parametrize("values", [{"a": 1.0, "unknown": 2.0}, {"a": np.inf}, {"a": np.nan}])
 def test_invalid_binding_is_atomic(values: dict[str, float]) -> None:
     """Invalid assignments leave the input reusable."""

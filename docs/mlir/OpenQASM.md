@@ -51,17 +51,36 @@ QCO, and `jeff` dialects, so each output checkpoint names its dialect.
 
 ### Input support
 
-| OpenQASM concept           | Support and restrictions                                                                                                                                                                                                                                                  |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Versions and includes      | Versionless input and versions 2.0, 3.0, and 3.1 are accepted within the supported subset below. `stdgates.inc`, `qelib1.inc`, and nested textual includes are supported.                                                                                                 |
-| Classical types            | `bit`, `bool`, `int`, `uint`, and `float` declarations are supported, including integer widths 1–64. Initialized compile-time `angle[N]` values support widths 1–52. Other sized numeric declarations, general arrays, complex values, and aliases are not yet supported. |
-| Outputs                    | Explicit `output` declarations are preserved in source order. Without any explicit output, global classical variables become outputs.                                                                                                                                     |
-| Gates                      | Language gates, the standard libraries, custom gates, broadcasting, and `inv`, `ctrl`, `negctrl`, and `pow` modifiers are supported. Custom definitions remain private QC functions instead of being expanded at every use. Recursive custom gates are rejected.          |
-| Quantum statements         | Measurement, reset, barrier, logical qubits, and physical qubits are supported. The QC translation rejects programs that mix logical allocation with physical qubits.                                                                                                     |
-| Expressions                | Scalar arithmetic, comparisons, Boolean expressions, and the supported math functions are type checked before translation. Initialized bit registers support `~`, `&`, `\|`, `^`, `<<`, `>>`, `popcount`, `rotl`, and `rotr`.                                             |
-| Structured control         | `if`, `switch`, supported range-based `for`, and `while`. `break` exits the innermost enclosing loop; `continue` advances to its next iteration. Both may appear inside conditional and switch bodies.                                                                    |
-| Dynamic indexing           | Classical bit indices can be dynamic and must remain in bounds. A nonconstant qubit index must be a proven affine expression as described below.                                                                                                                          |
-| Unsupported language areas | Subroutines, `extern`, calibration and timing constructs, input declarations, and arbitrary arrays are diagnosed.                                                                                                                                                         |
+| OpenQASM concept           | Support and restrictions                                                                                                                                                                                                                                                                  |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Versions and includes      | Versionless input and versions 2.0, 3.0, and 3.1 are accepted within the supported subset below. `stdgates.inc`, `qelib1.inc`, and nested textual includes are supported.                                                                                                                 |
+| Classical types            | `bit`, `bool`, `int`, `uint`, and `float` declarations are supported, including integer widths 1–64 and `float[64]`. Initialized compile-time `angle[N]` values support widths 1–52. Other sized numeric declarations, general arrays, complex values, and aliases are not yet supported. |
+| Inputs                     | Global `input float name;` and `input float[64] name;` become named `f64` entry-point arguments in declaration order. Other input types and widths are diagnosed; names beginning `_mqt_` are reserved. Inputs are not implicit outputs.                                                  |
+| Outputs                    | Explicit `output` declarations are preserved in source order. Without any explicit output, global classical variables become outputs.                                                                                                                                                     |
+| Gates                      | Language gates, the standard libraries, custom gates, broadcasting, and `inv`, `ctrl`, `negctrl`, and `pow` modifiers are supported. Custom definitions remain private QC functions instead of being expanded at every use. Recursive custom gates are rejected.                          |
+| Quantum statements         | Measurement, reset, barrier, logical qubits, and physical qubits are supported. The QC translation rejects programs that mix logical allocation with physical qubits.                                                                                                                     |
+| Expressions                | Scalar arithmetic, comparisons, Boolean expressions, and the supported math functions are type checked before translation. Initialized bit registers support `~`, `&`, `\|`, `^`, `<<`, `>>`, `popcount`, `rotl`, and `rotr`.                                                             |
+| Structured control         | `if`, `switch`, supported range-based `for`, and `while`. `break` exits the innermost enclosing loop; `continue` advances to its next iteration. Both may appear inside conditional and switch bodies.                                                                                    |
+| Dynamic indexing           | Classical bit indices can be dynamic and must remain in bounds. A nonconstant qubit index must be a proven affine expression as described below.                                                                                                                                          |
+| Unsupported language areas | Subroutines, `extern`, calibration and timing constructs, and arbitrary arrays are diagnosed.                                                                                                                                                                                             |
+
+Inputs share the parameter API with Qiskit programs. They remain symbolic until
+bound, so a program can be inspected and transformed before choosing values:
+
+```python
+source = "OPENQASM 3.1; input float theta; qubit q; ry(theta) q;"
+program = QCProgram.from_openqasm_str(source)
+assert program.parameters == ["theta"]
+bound = program.copy()
+bound.bind_parameters({"theta": 0.5})
+assert bound.parameters == []
+```
+
+Binding substitutes values in QC or QCO; a target that requires fixed gate
+angles still needs compilation after binding for each value. Exporting an
+unbound QC program writes `input float[64]` declarations and preserves their
+names. OpenQASM carries names, but not Qiskit parameter identities or vector
+grouping. QIR Base and Adaptive lowering require inputs to be bound first.
 
 Sized `uint[N](bits)` and `int[N](bits)` casts accept an initialized `bit[N]`
 register when the constant width is 1 through 64. Bit zero is the least
@@ -258,6 +277,7 @@ bypasses that QCO optimization round trip.
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Qubits and classical bits | Logical and physical qubits, scalar qubit allocations, static rank-one qubit memrefs, and CBit registers. Logical qubit and CBit indices can be dynamic. Mapped programs require static physical qubits; indexed tensor loops must be specialized before export.    |
 | Quantum operations        | Measurement, reset, barrier, deallocation, global phase, and QC unitary operations. The exporter uses standard gates where available; for example, `sxdg` becomes `inv @ sx` and `u` and `u2` use a shared helper that compensates the OpenQASM 3 `U` global phase. |
+| Program parameters        | Named `f64` entry-point arguments become `input float[64]` declarations in argument order. Names must be unique, valid OpenQASM identifiers that do not conflict with standard gates or use the reserved `_mqt_` prefix.                                            |
 | Reusable gates            | Private functions with leading `f64` parameters followed by scalar qubit arguments and no results. Straight-line `mqt.unitary` functions use `qc.call`; loop-containing gate functions use `func.call`.                                                             |
 | Gate modifiers            | Nested `ctrl`, `inv`, and `pow`. A multi-operation modifier body with target qubits becomes a private generated gate.                                                                                                                                               |
 | Scalar values             | Integers of widths 1–64, `f64`, and internal `index` values, including arithmetic, comparisons, Boolean operations, value-preserving casts, and supported math functions.                                                                                           |
@@ -358,14 +378,14 @@ expressions emitted by the exporter, including Boolean/integer conversions.
 
 ### Export limitations
 
-Export requires one defined, argument-free entry function. Additional functions
-must be private, defined gate functions with leading `f64` parameters followed
-by scalar qubit arguments and no results. Gate functions may contain supported
-scalar expressions, quantum operations, calls, and loops. Measurement, reset,
-barrier, allocation, classical storage, conditionals, switches, and
-`arith.select` are rejected in gate functions. For-loop bounds in gate functions
-must remain constant. Gate while loops require a pure condition region and no
-loop-carried values.
+Export requires one defined entry function whose arguments are named `f64`
+inputs. Additional functions must be private, defined gate functions with
+leading `f64` parameters followed by scalar qubit arguments and no results. Gate
+functions may contain supported scalar expressions, quantum operations, calls,
+and loops. Measurement, reset, barrier, allocation, classical storage,
+conditionals, switches, and `arith.select` are rejected in gate functions.
+For-loop bounds in gate functions must remain constant. Gate while loops require
+a pure condition region and no loop-carried values.
 
 The exporter rejects arbitrary CFGs, multi-block SCF regions, recursive or
 unresolved calls, dynamic qubit indices, dynamic for-loop steps, unsigned

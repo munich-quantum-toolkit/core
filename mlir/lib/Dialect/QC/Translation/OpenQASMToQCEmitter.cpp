@@ -12,6 +12,7 @@
 
 #include "mqt/Dialect/CBit/IR/CBitAttributes.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
+#include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
@@ -146,6 +147,24 @@ public:
   OwningOpRef<ModuleOp> emit() {
     if (emissionBudget.isExhausted() || !preflight()) {
       return nullptr;
+    }
+    auto entry = cast<func::FuncOp>(builder.getInsertionBlock()->getParentOp());
+    for (const auto id : program.inputs) {
+      const auto& input = program.scalars[id];
+      const auto index = entry.getNumArguments();
+      auto attrs = builder.getDictionaryAttr({
+          builder.getNamedAttr(
+              mqt::MQTDialect::InputNameAttrHelper::getNameStr(),
+              builder.getStringAttr(input.name)),
+      });
+      if (failed(entry.insertArgument(index, builder.getF64Type(), attrs,
+                                      getLocation(input.location)))) {
+        emitError(getLocation(input.location))
+            << "OpenQASM QC emission error: cannot create input '" << input.name
+            << "'";
+        return nullptr;
+      }
+      scalarValues[id] = entry.getArgument(index);
     }
     for (const auto& gate : program.gates) {
       emitGateDefinition(gate);

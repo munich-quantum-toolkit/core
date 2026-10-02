@@ -3408,17 +3408,33 @@ private:
   [[nodiscard]] LogicalResult analyzeScalarDeclaration(
       SMLoc location, const SyntaxScalarDeclaration& declaration,
       std::vector<StatementId>& destination, const bool global) {
-    if (declaration.output && !global) {
-      return fail(location, "outputs must be declared at global scope");
+    const bool isInput = declaration.io == IOQualifier::Input;
+    const bool isOutput = declaration.io == IOQualifier::Output;
+    if ((isInput || isOutput) && !global) {
+      return fail(location,
+                  "inputs and outputs must be declared at global scope");
+    }
+    if (isInput && program.openQASM2) {
+      return fail(location, "OpenQASM 2 does not support input declarations");
     }
     const auto type = scalarType(declaration.kind);
+    if (isInput && declaration.identifier.starts_with("_mqt_")) {
+      return fail(location,
+                  "the '_mqt_' prefix is reserved for generated names");
+    }
+    if (type == ScalarType::Float && declaration.size) {
+      MQT_OQ3_TRY_ASSIGN(width, constantWidth(declaration.size, location));
+      if (width != 64) {
+        return fail(location, "float declarations require a width of 64");
+      }
+    }
     unsigned integerWidth = 0;
     if (isInteger(type) && declaration.size) {
       MQT_OQ3_TRY_ASSIGN(width, bitVectorCastWidth(declaration.size, location));
       integerWidth = static_cast<unsigned>(width);
     }
     if (type == ScalarType::Angle) {
-      if (declaration.output) {
+      if (isOutput) {
         return fail(location, "angle outputs are not supported");
       }
       if (!declaration.initializer) {
@@ -3494,10 +3510,15 @@ private:
                        }))) {
       return failure();
     }
+    if (isInput) {
+      initializedScalars[scalarStateSlots_[id]] = true;
+      program.inputs.push_back(id);
+      return success();
+    }
     if (global) {
       const ProgramOutput output{.kind = OutputKind::Scalar, .symbol = id};
       implicitOutputs.push_back(output);
-      if (declaration.output) {
+      if (isOutput) {
         explicitOutputs.push_back(output);
       }
     }

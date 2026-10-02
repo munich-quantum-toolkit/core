@@ -106,10 +106,12 @@ assert bound.parameters == []
 assert parameterized.parameters == ["theta"]
 ```
 
-Partial binding preserves unbound inputs and their source identities. Unknown
-names, non-finite values, and references to the entry point fail without
-changing the program. Binding does not fold expressions; call `cleanup()` when
-needed.
+OpenQASM 3 `input float` and `input float[64]` declarations use the same named
+input API. Both frontends can retain symbolic `f64` parameters through QC and
+QCO transformations. Partial binding preserves unbound inputs and their source
+identities. Unknown names, non-finite values, and references to the entry point
+fail without changing the program. Binding does not fold expressions; call
+`cleanup()` when needed.
 
 ## Select an output format
 

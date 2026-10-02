@@ -15,9 +15,7 @@
 
 #include "mlir/IR/Verifier.h"
 
-#include <cstdint>
 #include <limits>
-#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -54,6 +52,49 @@ TEST(ParameterBinding, PartialBindingPreservesRemainingInputs) {
   EXPECT_TRUE(mlir::succeeded(mlir::verify(qco->module())));
 }
 
+TEST(ParameterBinding, OpenQASMInputsRoundTripThroughQCAndQCO) {
+  auto qc = mlir::QCProgram::fromOpenQASMString(R"(OPENQASM 3.1;
+include "stdgates.inc";
+input float beta;
+input float[64] alpha;
+qubit q;
+rz(alpha + beta) q;
+)");
+  ASSERT_TRUE(qc);
+  EXPECT_EQ(qc->parameters(), (std::vector<std::string>{"beta", "alpha"}));
+  EXPECT_TRUE(mlir::succeeded(mlir::verify(qc->module())));
+  EXPECT_EQ(mlir::mqt::getEntryPoint(qc->module()).getNumResults(), 0);
+
+  auto exported = qc->toOpenQASM3();
+  ASSERT_TRUE(exported);
+  const auto beta = exported->source().find("input float[64] beta;");
+  const auto alpha = exported->source().find("input float[64] alpha;");
+  EXPECT_NE(beta, std::string::npos);
+  EXPECT_NE(alpha, std::string::npos);
+  EXPECT_LT(beta, alpha);
+  auto restored = mlir::QCProgram::fromOpenQASMString(exported->source());
+  ASSERT_TRUE(restored);
+  EXPECT_EQ(restored->parameters(),
+            (std::vector<std::string>{"beta", "alpha"}));
+
+  ASSERT_TRUE(restored->bindParameters({{"beta", 0.25}}));
+  EXPECT_EQ(restored->parameters(), (std::vector<std::string>{"alpha"}));
+  exported = restored->toOpenQASM3();
+  ASSERT_TRUE(exported);
+  EXPECT_EQ(exported->source().find("input float[64] beta;"),
+            std::string::npos);
+  EXPECT_NE(exported->source().find("input float[64] alpha;"),
+            std::string::npos);
+
+  auto qco = std::move(*restored).intoQCO();
+  ASSERT_TRUE(qco);
+  ASSERT_TRUE(qco->cleanup());
+  EXPECT_EQ(qco->parameters(), (std::vector<std::string>{"alpha"}));
+  ASSERT_TRUE(qco->bindParameters({{"alpha", -0.5}}));
+  EXPECT_TRUE(qco->parameters().empty());
+  EXPECT_TRUE(mlir::succeeded(mlir::verify(qco->module())));
+}
+
 TEST(ParameterBinding, InvalidBindingDoesNotChangeProgram) {
   auto qc = mlir::QCProgram::fromMLIRString(R"(
     module {
@@ -72,6 +113,22 @@ TEST(ParameterBinding, InvalidBindingDoesNotChangeProgram) {
   EXPECT_FALSE(
       qc->bindParameters({{"a", std::numeric_limits<double>::infinity()}}));
   EXPECT_EQ(qc->str(), before);
+}
+
+TEST(ParameterBinding, QIRRequiresBoundParameters) {
+  auto qc = mlir::QCProgram::fromOpenQASMString(
+      "OPENQASM 3.1; input float theta; qubit q; ry(theta) q;");
+  ASSERT_TRUE(qc);
+  for (const auto profile :
+       {mlir::QIRProfile::Base, mlir::QIRProfile::Adaptive}) {
+    auto unbound = qc->copy();
+    EXPECT_FALSE(std::move(unbound).intoQIR(profile));
+  }
+}
+
+TEST(ParameterBinding, OpenQASMRejectsReservedInputName) {
+  EXPECT_FALSE(mlir::QCProgram::fromOpenQASMString(
+      "OPENQASM 3.1; input float _mqt_theta; qubit q; ry(_mqt_theta) q;"));
 }
 
 TEST(ParameterBinding, BindingRejectsReferencedEntryPoint) {

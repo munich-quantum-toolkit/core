@@ -103,7 +103,7 @@ struct GateCall {
 
 } // namespace
 
-[[nodiscard]] static bool isValidOutputName(const StringRef value) {
+[[nodiscard]] static bool isValidDeclarationName(const StringRef value) {
   return openqasm::frontend::isValidIdentifier(value) &&
          !value.starts_with("_mqt_") &&
          openqasm::frontend::lookupGate(value) == nullptr;
@@ -214,14 +214,16 @@ private:
   }
 
   [[nodiscard]] std::string outputName(const StringRef requested) {
-    if (isValidOutputName(requested) && usedNames.insert(requested).second) {
+    if (isValidDeclarationName(requested) &&
+        usedNames.insert(requested).second) {
       return requested.str();
     }
     return uniqueName("out", nextScalar);
   }
 
   [[nodiscard]] std::string qubitRegisterName(const StringRef requested) {
-    if (isValidOutputName(requested) && usedNames.insert(requested).second) {
+    if (isValidDeclarationName(requested) &&
+        usedNames.insert(requested).second) {
       return requested.str();
     }
     return uniqueName("q", nextQubit);
@@ -290,9 +292,18 @@ private:
       return fail(function,
                   "expected one defined function with one entry block");
     }
-    if (function.getNumArguments() != 0) {
-      return fail(function, "function arguments and OpenQASM inputs are not "
-                            "supported");
+    for (const auto [index, argument] :
+         llvm::enumerate(function.getArguments())) {
+      const auto name = function.getArgAttrOfType<StringAttr>(
+          index, mqt::MQTDialect::InputNameAttrHelper::getNameStr());
+      if (!argument.getType().isF64() || !name) {
+        return fail(function, "entry-point inputs must be named f64 values");
+      }
+      if (!isValidDeclarationName(name.getValue()) ||
+          !usedNames.insert(name.getValue()).second) {
+        return fail(function, "input name is not a unique OpenQASM identifier");
+      }
+      valueNames.try_emplace(argument, name.str());
     }
     const auto checkRegions = [&](func::FuncOp current) {
       return current.walk([&](Operation* operation) {
@@ -337,7 +348,7 @@ private:
         return failure();
       }
       const auto requested = current.getName();
-      gateNames_.try_emplace(current, isValidOutputName(requested) &&
+      gateNames_.try_emplace(current, isValidDeclarationName(requested) &&
                                               usedNames.insert(requested).second
                                           ? requested.str()
                                           : uniqueName("gate", nextHelper));
@@ -493,6 +504,9 @@ private:
   }
 
   [[nodiscard]] LogicalResult emitDeclarations() {
+    for (auto argument : function.getArguments()) {
+      *output << "input float[64] " << valueNames.at(argument) << ";\n";
+    }
     for (const auto& result : outputs) {
       *output << "output " << result.kind << ' ' << result.name << ";\n";
     }
