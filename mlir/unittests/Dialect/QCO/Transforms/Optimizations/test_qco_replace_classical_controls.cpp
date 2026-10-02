@@ -8,25 +8,28 @@
  * Licensed under the MIT License
  */
 
-#include "Support/IRVerification.h"
-#include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
+#include "mqt/Dialect/QCO/IR/QCODialect.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/Transforms/Passes.h"
 
-#include <gtest/gtest.h>
-#include <llvm/ADT/STLExtras.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/DialectRegistry.h>
-#include <mlir/IR/OwningOpRef.h>
-#include <mlir/IR/Value.h>
-#include <mlir/IR/Verifier.h>
-#include <mlir/Pass/PassManager.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
-#include <mlir/Transforms/Passes.h>
+#include "Support/IRVerification.h"
+
+#include "gtest/gtest.h"
+
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/DialectRegistry.h"
+#include "mlir/IR/OwningOpRef.h"
+#include "mlir/IR/Value.h"
+#include "mlir/IR/Verifier.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
+#include "mlir/Transforms/Passes.h"
+
+#include "llvm/ADT/STLExtras.h"
 
 #include <array>
 #include <complex>
@@ -59,10 +62,8 @@ protected:
     context.loadAllAvailableDialects();
   }
 
-  /**
-   * @brief Adds the replaceClassicalControls pass to the current context and
-   * runs it.
-   */
+  /// Adds the replaceClassicalControls pass to the current context and
+  /// runs it.
   static LogicalResult
   runReplaceClassicalControlsPass(ModuleOp program,
                                   bool liftMeasurements = false) {
@@ -75,9 +76,7 @@ protected:
     return pm.run(program);
   }
 
-  /**
-   * @brief Adds the canonicalizerPass to the current context and runs it.
-   */
+  /// Adds the canonicalizerPass to the current context and runs it.
   static LogicalResult runCanonicalizerPass(ModuleOp program) {
     PassManager pm(program.getContext());
     pm.addPass(createCanonicalizerPass());
@@ -87,11 +86,11 @@ protected:
   static Value outcomeScaledAngle(QCOProgramBuilder& builder, Value outcome,
                                   const double theta, const double trueScale,
                                   const double falseScale) {
-    const Value thetaValue = builder.floatConstant(theta);
-    const Value trueValue = builder.floatConstant(trueScale);
-    const Value falseValue = builder.floatConstant(falseScale);
-    const Value scale = arith::SelectOp::create(builder, builder.getLoc(),
-                                                outcome, trueValue, falseValue);
+    Value thetaValue = builder.floatConstant(theta);
+    Value trueValue = builder.floatConstant(trueScale);
+    Value falseValue = builder.floatConstant(falseScale);
+    Value scale = arith::SelectOp::create(builder, builder.getLoc(), outcome,
+                                          trueValue, falseValue);
     return arith::MulFOp::create(builder, builder.getLoc(), thetaValue, scale);
   }
 };
@@ -155,10 +154,8 @@ TEST(QCOClassicalControlPhaseIdentityTest,
   }
 }
 
-/**
- * @brief Test: Tests replacing a classically controlled gate where there is
- * only one control.
- */
+/// Test: Tests replacing a classically controlled gate where there is
+/// only one control.
 TEST_F(QCOReplaceClassicalControlsTest, replaceClassicalControlsOnlyControl) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
@@ -203,15 +200,15 @@ TEST_F(QCOReplaceClassicalControlsTest, replaceClassicalControlsOnlyControl) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/**
- * @brief Test: Tests replacing a classically controlled gate where only one of
- * two controls can be replaced.
- */
+/// Test: Tests replacing a classically controlled gate where only one of
+/// two controls can be replaced.
 TEST_F(QCOReplaceClassicalControlsTest,
        replaceClassicalControlsOneOfTwoControls) {
-  programBuilder.initialize({programBuilder.getI1Type(),
-                             programBuilder.getI1Type(),
-                             programBuilder.getI1Type()});
+  programBuilder.initialize({
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+  });
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
   auto q2 = programBuilder.allocQubit();
@@ -222,9 +219,7 @@ TEST_F(QCOReplaceClassicalControlsTest,
   Value c0;
   std::tie(q0, c0) = programBuilder.measure(q0);
 
-  SmallVector<Value> q01;
-  SmallVector<Value> q2Vec;
-  std::tie(q01, q2Vec) = programBuilder.ctrl(
+  auto [q01, q2Vec] = programBuilder.ctrl(
       {q0, q1}, {q2}, [&](ValueRange targets) -> SmallVector<Value> {
         return SmallVector<Value>{programBuilder.x(targets[0])};
       });
@@ -239,9 +234,11 @@ TEST_F(QCOReplaceClassicalControlsTest,
   programBuilder.sink(q2);
   program = programBuilder.finalize({c0, c1, c2});
 
-  referenceBuilder.initialize({referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type()});
+  referenceBuilder.initialize({
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+  });
   auto r0 = referenceBuilder.allocQubit();
   auto r1 = referenceBuilder.allocQubit();
   auto r2 = referenceBuilder.allocQubit();
@@ -254,9 +251,9 @@ TEST_F(QCOReplaceClassicalControlsTest,
 
   SmallVector<Value> r12 = referenceBuilder.qcoIf(
       cr0, {r1, r2}, [&](ValueRange qubits) -> SmallVector<Value> {
-        Value t1 = qubits[0];
-        Value t2 = qubits[1];
-        std::tie(t1, t2) = referenceBuilder.cx(t1, t2);
+        const auto inputT1 = qubits[0];
+        const auto inputT2 = qubits[1];
+        const auto [t1, t2] = referenceBuilder.cx(inputT1, inputT2);
         return SmallVector<Value>{t1, t2};
       });
   Value cr1;
@@ -276,15 +273,15 @@ TEST_F(QCOReplaceClassicalControlsTest,
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/**
- * @brief Test: Tests replacing a classically controlled gate where both of the
- * two controls can be replaced.
- */
+/// Test: Tests replacing a classically controlled gate where both of the
+/// two controls can be replaced.
 TEST_F(QCOReplaceClassicalControlsTest,
        replaceClassicalControlsTwoOfTwoControls) {
-  programBuilder.initialize({programBuilder.getI1Type(),
-                             programBuilder.getI1Type(),
-                             programBuilder.getI1Type()});
+  programBuilder.initialize({
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+  });
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
   auto q2 = programBuilder.allocQubit();
@@ -297,9 +294,7 @@ TEST_F(QCOReplaceClassicalControlsTest,
   Value c1;
   std::tie(q1, c1) = programBuilder.measure(q1);
 
-  SmallVector<Value> q01;
-  SmallVector<Value> q2Vec;
-  std::tie(q01, q2Vec) = programBuilder.ctrl(
+  auto [q01, q2Vec] = programBuilder.ctrl(
       {q0, q1}, {q2}, [&](ValueRange targets) -> SmallVector<Value> {
         return SmallVector<Value>{programBuilder.x(targets[0])};
       });
@@ -312,9 +307,11 @@ TEST_F(QCOReplaceClassicalControlsTest,
   programBuilder.sink(q2);
   program = programBuilder.finalize({c0, c1, c2});
 
-  referenceBuilder.initialize({referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type()});
+  referenceBuilder.initialize({
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+  });
   auto r0 = referenceBuilder.allocQubit();
   auto r1 = referenceBuilder.allocQubit();
   auto r2 = referenceBuilder.allocQubit();
@@ -347,15 +344,16 @@ TEST_F(QCOReplaceClassicalControlsTest,
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/**
- * @brief Test: Tests replacing a classically controlled gate where two out of
- * three controls can be replaced.
- */
+/// Test: Tests replacing a classically controlled gate where two out of
+/// three controls can be replaced.
 TEST_F(QCOReplaceClassicalControlsTest,
        replaceClassicalControlsTwoOfThreeControls) {
-  programBuilder.initialize(
-      {programBuilder.getI1Type(), programBuilder.getI1Type(),
-       programBuilder.getI1Type(), programBuilder.getI1Type()});
+  programBuilder.initialize({
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+  });
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
   auto q2 = programBuilder.allocQubit();
@@ -370,9 +368,7 @@ TEST_F(QCOReplaceClassicalControlsTest,
   Value c1;
   std::tie(q1, c1) = programBuilder.measure(q1);
 
-  SmallVector<Value> q012;
-  SmallVector<Value> q3Vec;
-  std::tie(q012, q3Vec) = programBuilder.ctrl(
+  auto [q012, q3Vec] = programBuilder.ctrl(
       {q0, q1, q2}, {q3}, [&](ValueRange targets) -> SmallVector<Value> {
         return SmallVector<Value>{programBuilder.x(targets[0])};
       });
@@ -388,9 +384,12 @@ TEST_F(QCOReplaceClassicalControlsTest,
   programBuilder.sink(q3);
   program = programBuilder.finalize({c0, c1, c2, c3});
 
-  referenceBuilder.initialize(
-      {referenceBuilder.getI1Type(), referenceBuilder.getI1Type(),
-       referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
+  referenceBuilder.initialize({
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+  });
   auto r0 = referenceBuilder.allocQubit();
   auto r1 = referenceBuilder.allocQubit();
   auto r2 = referenceBuilder.allocQubit();
@@ -410,9 +409,10 @@ TEST_F(QCOReplaceClassicalControlsTest,
   SmallVector<Value> r23 =
       referenceBuilder.qcoIf(andOp.getResult(), {r2, r3},
                              [&](ValueRange qubits) -> SmallVector<Value> {
-                               Value t2 = qubits[0];
-                               Value t3 = qubits[1];
-                               std::tie(t2, t3) = referenceBuilder.cx(t2, t3);
+                               const auto inputT2 = qubits[0];
+                               const auto inputT3 = qubits[1];
+                               const auto [t2, t3] =
+                                   referenceBuilder.cx(inputT2, inputT3);
                                return SmallVector<Value>{t2, t3};
                              });
   Value cr2;
@@ -433,14 +433,14 @@ TEST_F(QCOReplaceClassicalControlsTest,
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/**
- * @brief Test: A measured target of a non-phase gate must not be mistaken for a
- * replaceable classical control.
- */
+/// Test: A measured target of a non-phase gate must not be mistaken for a
+/// replaceable classical control.
 TEST_F(QCOReplaceClassicalControlsTest, doNotReplaceMeasuredNonPhaseTarget) {
-  programBuilder.initialize({programBuilder.getI1Type(),
-                             programBuilder.getI1Type(),
-                             programBuilder.getI1Type()});
+  programBuilder.initialize({
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+  });
   auto target = programBuilder.h(programBuilder.allocQubit());
   auto control = programBuilder.h(programBuilder.allocQubit());
 
@@ -457,9 +457,11 @@ TEST_F(QCOReplaceClassicalControlsTest, doNotReplaceMeasuredNonPhaseTarget) {
   program = programBuilder.finalize(
       {initialTargetOutcome, controlOutcome, targetOutcome});
 
-  referenceBuilder.initialize({referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type()});
+  referenceBuilder.initialize({
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+  });
   auto referenceTarget = referenceBuilder.h(referenceBuilder.allocQubit());
   auto referenceControl = referenceBuilder.h(referenceBuilder.allocQubit());
 
@@ -477,9 +479,11 @@ TEST_F(QCOReplaceClassicalControlsTest, doNotReplaceMeasuredNonPhaseTarget) {
       referenceBuilder.measure(referenceTarget);
   referenceBuilder.sink(referenceControl);
   referenceBuilder.sink(referenceTarget);
-  reference = referenceBuilder.finalize({referenceInitialTargetOutcome,
-                                         referenceControlOutcome,
-                                         referenceTargetOutcome});
+  reference = referenceBuilder.finalize({
+      referenceInitialTargetOutcome,
+      referenceControlOutcome,
+      referenceTargetOutcome,
+  });
 
   ASSERT_TRUE(runReplaceClassicalControlsPass(program.get()).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
@@ -488,15 +492,15 @@ TEST_F(QCOReplaceClassicalControlsTest, doNotReplaceMeasuredNonPhaseTarget) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/**
- * @brief Test: A measured control of a multi-target gate can be replaced
- * without attempting a single-target phase-gate swap.
- */
+/// Test: A measured control of a multi-target gate can be replaced
+/// without attempting a single-target phase-gate swap.
 TEST_F(QCOReplaceClassicalControlsTest,
        replaceMeasuredControlOfMultiTargetGate) {
-  programBuilder.initialize({programBuilder.getI1Type(),
-                             programBuilder.getI1Type(),
-                             programBuilder.getI1Type()});
+  programBuilder.initialize({
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+  });
   auto control = programBuilder.h(programBuilder.allocQubit());
   auto target0 = programBuilder.h(programBuilder.allocQubit());
   auto target1 = programBuilder.h(programBuilder.allocQubit());
@@ -516,9 +520,11 @@ TEST_F(QCOReplaceClassicalControlsTest,
   program =
       programBuilder.finalize({controlOutcome, target0Outcome, target1Outcome});
 
-  referenceBuilder.initialize({referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type()});
+  referenceBuilder.initialize({
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+  });
   auto referenceControl = referenceBuilder.h(referenceBuilder.allocQubit());
   auto referenceTarget0 = referenceBuilder.h(referenceBuilder.allocQubit());
   auto referenceTarget1 = referenceBuilder.h(referenceBuilder.allocQubit());
@@ -542,9 +548,11 @@ TEST_F(QCOReplaceClassicalControlsTest,
   referenceBuilder.sink(referenceControl);
   referenceBuilder.sink(referenceTarget0);
   referenceBuilder.sink(referenceTarget1);
-  reference = referenceBuilder.finalize({referenceControlOutcome,
-                                         referenceTarget0Outcome,
-                                         referenceTarget1Outcome});
+  reference = referenceBuilder.finalize({
+      referenceControlOutcome,
+      referenceTarget0Outcome,
+      referenceTarget1Outcome,
+  });
 
   ASSERT_TRUE(runReplaceClassicalControlsPass(program.get()).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
@@ -553,10 +561,8 @@ TEST_F(QCOReplaceClassicalControlsTest,
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/**
- * @brief Test: Tests replacing a classically controlled gate where a phase
- * target gate needs to be swapped with to achieve a replaceable control.
- */
+/// Test: Tests replacing a classically controlled gate where a phase
+/// target gate needs to be swapped with to achieve a replaceable control.
 TEST_F(QCOReplaceClassicalControlsTest, replaceClassicalControlsSwapPhase) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
@@ -626,7 +632,7 @@ TEST_F(QCOReplaceClassicalControlsTest,
   Value referenceInitialTargetOutcome;
   std::tie(referenceTarget, referenceInitialTargetOutcome) =
       referenceBuilder.measure(referenceTarget);
-  const Value selectedPhase = outcomeScaledAngle(
+  Value selectedPhase = outcomeScaledAngle(
       referenceBuilder, referenceInitialTargetOutcome, theta, 0.5, -0.5);
   referenceControl = referenceBuilder.p(selectedPhase, referenceControl);
   Value referenceControlOutcome;
@@ -645,9 +651,11 @@ TEST_F(QCOReplaceClassicalControlsTest,
 TEST_F(QCOReplaceClassicalControlsTest,
        replaceMeasuredRZTargetWithMultiControlPhase) {
   constexpr double theta = 0.789;
-  programBuilder.initialize({programBuilder.getI1Type(),
-                             programBuilder.getI1Type(),
-                             programBuilder.getI1Type()});
+  programBuilder.initialize({
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+  });
   auto q = programBuilder.allocQubitRegister(3);
   for (auto& qubit : q.qubits) {
     qubit = programBuilder.h(qubit);
@@ -655,28 +663,26 @@ TEST_F(QCOReplaceClassicalControlsTest,
   Value targetOutcome;
   std::tie(q[2], targetOutcome) = programBuilder.measure(q[2]);
   auto [controls, target] = programBuilder.mcrz(theta, {q[0], q[1]}, q[2]);
-  Value control0;
-  Value control0Outcome;
-  std::tie(control0, control0Outcome) = programBuilder.measure(controls[0]);
-  Value control1;
-  Value control1Outcome;
-  std::tie(control1, control1Outcome) = programBuilder.measure(controls[1]);
+  auto [control0, control0Outcome] = programBuilder.measure(controls[0]);
+  auto [control1, control1Outcome] = programBuilder.measure(controls[1]);
   programBuilder.sink(control0);
   programBuilder.sink(control1);
   programBuilder.sink(target);
   program = programBuilder.finalize(
       {targetOutcome, control0Outcome, control1Outcome});
 
-  referenceBuilder.initialize({referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type()});
+  referenceBuilder.initialize({
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+  });
   auto r = referenceBuilder.allocQubitRegister(3);
   for (auto& qubit : r.qubits) {
     qubit = referenceBuilder.h(qubit);
   }
   Value referenceTargetOutcome;
   std::tie(r[2], referenceTargetOutcome) = referenceBuilder.measure(r[2]);
-  const Value selectedPhase = outcomeScaledAngle(
+  Value selectedPhase = outcomeScaledAngle(
       referenceBuilder, referenceTargetOutcome, theta, 0.5, -0.5);
   std::tie(r[0], r[1]) = referenceBuilder.cp(selectedPhase, r[0], r[1]);
   Value referenceControl0Outcome;
@@ -686,9 +692,11 @@ TEST_F(QCOReplaceClassicalControlsTest,
   for (auto qubit : r.qubits) {
     referenceBuilder.sink(qubit);
   }
-  reference = referenceBuilder.finalize({referenceTargetOutcome,
-                                         referenceControl0Outcome,
-                                         referenceControl1Outcome});
+  reference = referenceBuilder.finalize({
+      referenceTargetOutcome,
+      referenceControl0Outcome,
+      referenceControl1Outcome,
+  });
 
   ASSERT_TRUE(runReplaceClassicalControlsPass(*program).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(*reference).succeeded());
@@ -697,9 +705,12 @@ TEST_F(QCOReplaceClassicalControlsTest,
 
 TEST_F(QCOReplaceClassicalControlsTest,
        removesRZWhenControlAndTargetAreMeasured) {
-  programBuilder.initialize(
-      {programBuilder.getI1Type(), programBuilder.getI1Type(),
-       programBuilder.getI1Type(), programBuilder.getI1Type()});
+  programBuilder.initialize({
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+  });
   auto control = programBuilder.h(programBuilder.allocQubit());
   auto target = programBuilder.h(programBuilder.allocQubit());
   Value controlOutcome;
@@ -713,13 +724,19 @@ TEST_F(QCOReplaceClassicalControlsTest,
   std::tie(target, outputTargetOutcome) = programBuilder.measure(target);
   programBuilder.sink(control);
   programBuilder.sink(target);
-  program =
-      programBuilder.finalize({controlOutcome, targetOutcome,
-                               outputControlOutcome, outputTargetOutcome});
+  program = programBuilder.finalize({
+      controlOutcome,
+      targetOutcome,
+      outputControlOutcome,
+      outputTargetOutcome,
+  });
 
-  referenceBuilder.initialize(
-      {referenceBuilder.getI1Type(), referenceBuilder.getI1Type(),
-       referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
+  referenceBuilder.initialize({
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+  });
   auto referenceControl = referenceBuilder.h(referenceBuilder.allocQubit());
   auto referenceTarget = referenceBuilder.h(referenceBuilder.allocQubit());
   Value referenceControlOutcome;
@@ -736,9 +753,12 @@ TEST_F(QCOReplaceClassicalControlsTest,
       referenceBuilder.measure(referenceTarget);
   referenceBuilder.sink(referenceControl);
   referenceBuilder.sink(referenceTarget);
-  reference = referenceBuilder.finalize(
-      {referenceControlOutcome, referenceTargetOutcome,
-       referenceOutputControlOutcome, referenceOutputTargetOutcome});
+  reference = referenceBuilder.finalize({
+      referenceControlOutcome,
+      referenceTargetOutcome,
+      referenceOutputControlOutcome,
+      referenceOutputTargetOutcome,
+  });
 
   ASSERT_TRUE(runReplaceClassicalControlsPass(*program).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(*reference).succeeded());
@@ -751,12 +771,16 @@ TEST_P(QCOReplaceClassicalControlsRZZTest,
   const size_t measuredTargetIndex = GetParam();
   const size_t otherTargetIndex = 1U - measuredTargetIndex;
 
-  programBuilder.initialize({programBuilder.getI1Type(),
-                             programBuilder.getI1Type(),
-                             programBuilder.getI1Type()});
+  programBuilder.initialize({
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+  });
   auto control = programBuilder.h(programBuilder.allocQubit());
-  std::array targets{programBuilder.h(programBuilder.allocQubit()),
-                     programBuilder.h(programBuilder.allocQubit())};
+  std::array targets{
+      programBuilder.h(programBuilder.allocQubit()),
+      programBuilder.h(programBuilder.allocQubit()),
+  };
   Value measuredTargetOutcome;
   std::tie(targets[measuredTargetIndex], measuredTargetOutcome) =
       programBuilder.measure(targets[measuredTargetIndex]);
@@ -775,18 +799,21 @@ TEST_P(QCOReplaceClassicalControlsRZZTest,
   program = programBuilder.finalize(
       {measuredTargetOutcome, controlOutcome, otherTargetOutcome});
 
-  referenceBuilder.initialize({referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type()});
+  referenceBuilder.initialize({
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+  });
   auto referenceControl = referenceBuilder.h(referenceBuilder.allocQubit());
   std::array referenceTargets{
       referenceBuilder.h(referenceBuilder.allocQubit()),
-      referenceBuilder.h(referenceBuilder.allocQubit())};
+      referenceBuilder.h(referenceBuilder.allocQubit()),
+  };
   Value referenceMeasuredTargetOutcome;
   std::tie(referenceTargets[measuredTargetIndex],
            referenceMeasuredTargetOutcome) =
       referenceBuilder.measure(referenceTargets[measuredTargetIndex]);
-  const Value selectedAngle = outcomeScaledAngle(
+  Value selectedAngle = outcomeScaledAngle(
       referenceBuilder, referenceMeasuredTargetOutcome, theta, -1.0, 1.0);
   std::tie(referenceControl, referenceTargets[otherTargetIndex]) =
       referenceBuilder.crz(selectedAngle, referenceControl,
@@ -800,9 +827,11 @@ TEST_P(QCOReplaceClassicalControlsRZZTest,
   referenceBuilder.sink(referenceControl);
   referenceBuilder.sink(referenceTargets[0]);
   referenceBuilder.sink(referenceTargets[1]);
-  reference = referenceBuilder.finalize({referenceMeasuredTargetOutcome,
-                                         referenceControlOutcome,
-                                         referenceOtherTargetOutcome});
+  reference = referenceBuilder.finalize({
+      referenceMeasuredTargetOutcome,
+      referenceControlOutcome,
+      referenceOtherTargetOutcome,
+  });
 
   ASSERT_TRUE(runReplaceClassicalControlsPass(*program).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(*reference).succeeded());
@@ -811,16 +840,18 @@ TEST_P(QCOReplaceClassicalControlsRZZTest,
 
 TEST_F(QCOReplaceClassicalControlsTest,
        replaceMeasuredRZZTargetPreservesReversedYields) {
-  programBuilder.initialize({programBuilder.getI1Type(),
-                             programBuilder.getI1Type(),
-                             programBuilder.getI1Type()});
+  programBuilder.initialize({
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+  });
   auto control = programBuilder.h(programBuilder.allocQubit());
   auto target0 = programBuilder.h(programBuilder.allocQubit());
   auto target1 = programBuilder.h(programBuilder.allocQubit());
   Value measuredTargetOutcome;
   std::tie(target0, measuredTargetOutcome) = programBuilder.measure(target0);
-  const Value measuredTarget = target0;
-  const auto [controls, targets] =
+  Value measuredTarget = target0;
+  auto [controls, targets] =
       programBuilder.ctrl({control}, {target0, target1},
                           [&](ValueRange args) -> SmallVector<Value> {
                             auto [output0, output1] =
@@ -854,7 +885,7 @@ TEST_F(QCOReplaceClassicalControlsTest,
   auto passthrough = programBuilder.h(programBuilder.allocQubit());
   Value outcome;
   std::tie(target0, outcome) = programBuilder.measure(target0);
-  const auto [controls, targets] =
+  auto [controls, targets] =
       programBuilder.ctrl({control}, {target0, target1, passthrough},
                           [&](ValueRange args) -> SmallVector<Value> {
                             auto [output0, output1] =
@@ -877,9 +908,11 @@ TEST_F(QCOReplaceClassicalControlsTest,
 TEST_F(QCOReplaceClassicalControlsTest,
        replacesMeasuredRZZTargetWhenAllControlsAreMeasured) {
   constexpr double theta = 0.789;
-  programBuilder.initialize({programBuilder.getI1Type(),
-                             programBuilder.getI1Type(),
-                             programBuilder.getI1Type()});
+  programBuilder.initialize({
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+  });
   auto control = programBuilder.h(programBuilder.allocQubit());
   auto target0 = programBuilder.h(programBuilder.allocQubit());
   auto target1 = programBuilder.h(programBuilder.allocQubit());
@@ -887,7 +920,7 @@ TEST_F(QCOReplaceClassicalControlsTest,
   std::tie(control, controlOutcome) = programBuilder.measure(control);
   Value targetOutcome;
   std::tie(target0, targetOutcome) = programBuilder.measure(target0);
-  const auto [outputControl, outputTargets] =
+  auto [outputControl, outputTargets] =
       programBuilder.crzz(theta, control, target0, target1);
   Value otherTargetOutcome;
   std::tie(target1, otherTargetOutcome) =
@@ -898,9 +931,11 @@ TEST_F(QCOReplaceClassicalControlsTest,
   program = programBuilder.finalize(
       {controlOutcome, targetOutcome, otherTargetOutcome});
 
-  referenceBuilder.initialize({referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type()});
+  referenceBuilder.initialize({
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+  });
   auto referenceControl = referenceBuilder.h(referenceBuilder.allocQubit());
   auto referenceTarget0 = referenceBuilder.h(referenceBuilder.allocQubit());
   auto referenceTarget1 = referenceBuilder.h(referenceBuilder.allocQubit());
@@ -910,7 +945,7 @@ TEST_F(QCOReplaceClassicalControlsTest,
   Value referenceTargetOutcome;
   std::tie(referenceTarget0, referenceTargetOutcome) =
       referenceBuilder.measure(referenceTarget0);
-  const Value selectedAngle = outcomeScaledAngle(
+  Value selectedAngle = outcomeScaledAngle(
       referenceBuilder, referenceTargetOutcome, theta, -1.0, 1.0);
   referenceTarget1 = referenceBuilder.qcoIf(
       referenceControlOutcome, referenceTarget1,
@@ -921,9 +956,11 @@ TEST_F(QCOReplaceClassicalControlsTest,
   referenceBuilder.sink(referenceControl);
   referenceBuilder.sink(referenceTarget0);
   referenceBuilder.sink(referenceTarget1);
-  reference = referenceBuilder.finalize({referenceControlOutcome,
-                                         referenceTargetOutcome,
-                                         referenceOtherTargetOutcome});
+  reference = referenceBuilder.finalize({
+      referenceControlOutcome,
+      referenceTargetOutcome,
+      referenceOtherTargetOutcome,
+  });
 
   ASSERT_TRUE(runReplaceClassicalControlsPass(*program).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(*reference).succeeded());
@@ -932,9 +969,11 @@ TEST_F(QCOReplaceClassicalControlsTest,
 
 TEST_F(QCOReplaceClassicalControlsTest, replacesRZZWhenBothTargetsAreMeasured) {
   constexpr double theta = 0.789;
-  programBuilder.initialize({programBuilder.getI1Type(),
-                             programBuilder.getI1Type(),
-                             programBuilder.getI1Type()});
+  programBuilder.initialize({
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+  });
   auto control = programBuilder.h(programBuilder.allocQubit());
   auto target0 = programBuilder.h(programBuilder.allocQubit());
   auto target1 = programBuilder.h(programBuilder.allocQubit());
@@ -942,7 +981,7 @@ TEST_F(QCOReplaceClassicalControlsTest, replacesRZZWhenBothTargetsAreMeasured) {
   Value outcome1;
   std::tie(target0, outcome0) = programBuilder.measure(target0);
   std::tie(target1, outcome1) = programBuilder.measure(target1);
-  const auto [outputControl, outputTargets] =
+  auto [outputControl, outputTargets] =
       programBuilder.crzz(theta, control, target0, target1);
   Value controlOutcome;
   std::tie(control, controlOutcome) = programBuilder.measure(outputControl);
@@ -951,9 +990,11 @@ TEST_F(QCOReplaceClassicalControlsTest, replacesRZZWhenBothTargetsAreMeasured) {
   programBuilder.sink(outputTargets.second);
   program = programBuilder.finalize({outcome0, outcome1, controlOutcome});
 
-  referenceBuilder.initialize({referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type()});
+  referenceBuilder.initialize({
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+  });
   auto referenceControl = referenceBuilder.h(referenceBuilder.allocQubit());
   auto referenceTarget0 = referenceBuilder.h(referenceBuilder.allocQubit());
   auto referenceTarget1 = referenceBuilder.h(referenceBuilder.allocQubit());
@@ -963,10 +1004,10 @@ TEST_F(QCOReplaceClassicalControlsTest, replacesRZZWhenBothTargetsAreMeasured) {
       referenceBuilder.measure(referenceTarget0);
   std::tie(referenceTarget1, referenceOutcome1) =
       referenceBuilder.measure(referenceTarget1);
-  const Value outcomesDiffer =
+  Value outcomesDiffer =
       arith::XOrIOp::create(referenceBuilder, referenceBuilder.getLoc(),
                             referenceOutcome0, referenceOutcome1);
-  const Value selectedPhase =
+  Value selectedPhase =
       outcomeScaledAngle(referenceBuilder, outcomesDiffer, theta, 0.5, -0.5);
   referenceControl = referenceBuilder.p(selectedPhase, referenceControl);
   Value referenceControlOutcome;
@@ -984,10 +1025,14 @@ TEST_F(QCOReplaceClassicalControlsTest, replacesRZZWhenBothTargetsAreMeasured) {
 }
 
 TEST_F(QCOReplaceClassicalControlsTest, removesRZZWhenAllQubitsAreMeasured) {
-  programBuilder.initialize(
-      {programBuilder.getI1Type(), programBuilder.getI1Type(),
-       programBuilder.getI1Type(), programBuilder.getI1Type(),
-       programBuilder.getI1Type(), programBuilder.getI1Type()});
+  programBuilder.initialize({
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+  });
   auto control = programBuilder.h(programBuilder.allocQubit());
   auto target0 = programBuilder.h(programBuilder.allocQubit());
   auto target1 = programBuilder.h(programBuilder.allocQubit());
@@ -997,7 +1042,7 @@ TEST_F(QCOReplaceClassicalControlsTest, removesRZZWhenAllQubitsAreMeasured) {
   std::tie(control, controlOutcome) = programBuilder.measure(control);
   std::tie(target0, target0Outcome) = programBuilder.measure(target0);
   std::tie(target1, target1Outcome) = programBuilder.measure(target1);
-  const auto [outputControl, outputTargets] =
+  auto [outputControl, outputTargets] =
       programBuilder.crzz(0.789, control, target0, target1);
   control = outputControl;
   target0 = outputTargets.first;
@@ -1011,14 +1056,23 @@ TEST_F(QCOReplaceClassicalControlsTest, removesRZZWhenAllQubitsAreMeasured) {
   programBuilder.sink(control);
   programBuilder.sink(target0);
   programBuilder.sink(target1);
-  program = programBuilder.finalize(
-      {controlOutcome, target0Outcome, target1Outcome, outputControlOutcome,
-       outputTarget0Outcome, outputTarget1Outcome});
+  program = programBuilder.finalize({
+      controlOutcome,
+      target0Outcome,
+      target1Outcome,
+      outputControlOutcome,
+      outputTarget0Outcome,
+      outputTarget1Outcome,
+  });
 
-  referenceBuilder.initialize(
-      {referenceBuilder.getI1Type(), referenceBuilder.getI1Type(),
-       referenceBuilder.getI1Type(), referenceBuilder.getI1Type(),
-       referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
+  referenceBuilder.initialize({
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+  });
   auto referenceControl = referenceBuilder.h(referenceBuilder.allocQubit());
   auto referenceTarget0 = referenceBuilder.h(referenceBuilder.allocQubit());
   auto referenceTarget1 = referenceBuilder.h(referenceBuilder.allocQubit());
@@ -1043,10 +1097,14 @@ TEST_F(QCOReplaceClassicalControlsTest, removesRZZWhenAllQubitsAreMeasured) {
   referenceBuilder.sink(referenceControl);
   referenceBuilder.sink(referenceTarget0);
   referenceBuilder.sink(referenceTarget1);
-  reference = referenceBuilder.finalize(
-      {referenceControlOutcome, referenceTarget0Outcome,
-       referenceTarget1Outcome, referenceOutputControlOutcome,
-       referenceOutputTarget0Outcome, referenceOutputTarget1Outcome});
+  reference = referenceBuilder.finalize({
+      referenceControlOutcome,
+      referenceTarget0Outcome,
+      referenceTarget1Outcome,
+      referenceOutputControlOutcome,
+      referenceOutputTarget0Outcome,
+      referenceOutputTarget1Outcome,
+  });
 
   ASSERT_TRUE(runReplaceClassicalControlsPass(*program).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(*reference).succeeded());
@@ -1061,7 +1119,7 @@ TEST_F(QCOReplaceClassicalControlsTest,
   auto target1 = programBuilder.h(programBuilder.allocQubit());
   Value outcome;
   std::tie(control, outcome) = programBuilder.measure(control);
-  const auto [outputControl, outputTargets] =
+  auto [outputControl, outputTargets] =
       programBuilder.crzz(0.789, control, target0, target1);
   programBuilder.sink(outputControl);
   programBuilder.sink(outputTargets.first);
@@ -1090,9 +1148,11 @@ INSTANTIATE_TEST_SUITE_P(MeasuredTargetPositions,
 TEST_F(QCOReplaceClassicalControlsTest,
        replaceMeasuredRZZTargetWithMultipleControls) {
   constexpr double theta = 0.789;
-  programBuilder.initialize({programBuilder.getI1Type(),
-                             programBuilder.getI1Type(),
-                             programBuilder.getI1Type()});
+  programBuilder.initialize({
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+  });
   auto q = programBuilder.allocQubitRegister(4);
   for (auto& qubit : q.qubits) {
     qubit = programBuilder.h(qubit);
@@ -1101,10 +1161,7 @@ TEST_F(QCOReplaceClassicalControlsTest,
   std::tie(q[2], measuredTargetOutcome) = programBuilder.measure(q[2]);
   auto [controls, targets] =
       programBuilder.mcrzz(theta, {q[0], q[1]}, q[2], q[3]);
-  Value measuredControl;
-  Value controlOutcome;
-  std::tie(measuredControl, controlOutcome) =
-      programBuilder.measure(controls[0]);
+  auto [measuredControl, controlOutcome] = programBuilder.measure(controls[0]);
   Value otherTargetOutcome;
   std::tie(targets.second, otherTargetOutcome) =
       programBuilder.measure(targets.second);
@@ -1115,9 +1172,11 @@ TEST_F(QCOReplaceClassicalControlsTest,
   program = programBuilder.finalize(
       {measuredTargetOutcome, controlOutcome, otherTargetOutcome});
 
-  referenceBuilder.initialize({referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type()});
+  referenceBuilder.initialize({
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+  });
   auto r = referenceBuilder.allocQubitRegister(4);
   for (auto& qubit : r.qubits) {
     qubit = referenceBuilder.h(qubit);
@@ -1125,7 +1184,7 @@ TEST_F(QCOReplaceClassicalControlsTest,
   Value referenceMeasuredTargetOutcome;
   std::tie(r[2], referenceMeasuredTargetOutcome) =
       referenceBuilder.measure(r[2]);
-  const Value selectedAngle = outcomeScaledAngle(
+  Value selectedAngle = outcomeScaledAngle(
       referenceBuilder, referenceMeasuredTargetOutcome, theta, -1.0, 1.0);
   ValueRange referenceControls;
   std::tie(referenceControls, r[3]) =
@@ -1139,9 +1198,11 @@ TEST_F(QCOReplaceClassicalControlsTest,
   for (auto qubit : r.qubits) {
     referenceBuilder.sink(qubit);
   }
-  reference = referenceBuilder.finalize({referenceMeasuredTargetOutcome,
-                                         referenceControlOutcome,
-                                         referenceOtherTargetOutcome});
+  reference = referenceBuilder.finalize({
+      referenceMeasuredTargetOutcome,
+      referenceControlOutcome,
+      referenceOtherTargetOutcome,
+  });
 
   ASSERT_TRUE(runReplaceClassicalControlsPass(*program).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(*reference).succeeded());
@@ -1151,9 +1212,12 @@ TEST_F(QCOReplaceClassicalControlsTest,
 TEST_F(QCOReplaceClassicalControlsTest,
        replaceMeasuredRZZTargetAndMeasuredControl) {
   constexpr double theta = 0.789;
-  programBuilder.initialize(
-      {programBuilder.getI1Type(), programBuilder.getI1Type(),
-       programBuilder.getI1Type(), programBuilder.getI1Type()});
+  programBuilder.initialize({
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+  });
   auto q = programBuilder.allocQubitRegister(4);
   for (auto& qubit : q.qubits) {
     qubit = programBuilder.h(qubit);
@@ -1164,10 +1228,9 @@ TEST_F(QCOReplaceClassicalControlsTest,
   std::tie(q[2], targetOutcome) = programBuilder.measure(q[2]);
   auto [controls, targets] =
       programBuilder.mcrzz(theta, {q[0], q[1]}, q[2], q[3]);
-  Value quantumControl = controls[1];
-  Value quantumControlOutcome;
-  std::tie(quantumControl, quantumControlOutcome) =
-      programBuilder.measure(quantumControl);
+  const auto inputQuantumControl = controls[1];
+  const auto [quantumControl, quantumControlOutcome] =
+      programBuilder.measure(inputQuantumControl);
   Value otherTargetOutcome;
   std::tie(targets.second, otherTargetOutcome) =
       programBuilder.measure(targets.second);
@@ -1175,13 +1238,19 @@ TEST_F(QCOReplaceClassicalControlsTest,
   programBuilder.sink(quantumControl);
   programBuilder.sink(targets.first);
   programBuilder.sink(targets.second);
-  program =
-      programBuilder.finalize({controlOutcome, targetOutcome,
-                               quantumControlOutcome, otherTargetOutcome});
+  program = programBuilder.finalize({
+      controlOutcome,
+      targetOutcome,
+      quantumControlOutcome,
+      otherTargetOutcome,
+  });
 
-  referenceBuilder.initialize(
-      {referenceBuilder.getI1Type(), referenceBuilder.getI1Type(),
-       referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
+  referenceBuilder.initialize({
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+  });
   auto r = referenceBuilder.allocQubitRegister(4);
   for (auto& qubit : r.qubits) {
     qubit = referenceBuilder.h(qubit);
@@ -1190,15 +1259,15 @@ TEST_F(QCOReplaceClassicalControlsTest,
   std::tie(r[0], referenceControlOutcome) = referenceBuilder.measure(r[0]);
   Value referenceTargetOutcome;
   std::tie(r[2], referenceTargetOutcome) = referenceBuilder.measure(r[2]);
-  const Value selectedAngle = outcomeScaledAngle(
+  Value selectedAngle = outcomeScaledAngle(
       referenceBuilder, referenceTargetOutcome, theta, -1.0, 1.0);
   auto conditionalQubits = referenceBuilder.qcoIf(
       referenceControlOutcome, ValueRange{r[1], r[3]},
       [&](ValueRange qubits) -> SmallVector<Value> {
-        Value quantumControl = qubits[0];
-        Value otherTarget = qubits[1];
-        std::tie(quantumControl, otherTarget) =
-            referenceBuilder.crz(selectedAngle, quantumControl, otherTarget);
+        const auto inputQuantumControl = qubits[0];
+        const auto inputOtherTarget = qubits[1];
+        const auto [quantumControl, otherTarget] = referenceBuilder.crz(
+            selectedAngle, inputQuantumControl, inputOtherTarget);
         return {quantumControl, otherTarget};
       });
   r[1] = conditionalQubits[0];
@@ -1208,27 +1277,30 @@ TEST_F(QCOReplaceClassicalControlsTest,
       referenceBuilder.measure(r[1]);
   Value referenceOtherTargetOutcome;
   std::tie(r[3], referenceOtherTargetOutcome) = referenceBuilder.measure(r[3]);
-  for (const Value qubit : r.qubits) {
+  for (Value qubit : r.qubits) {
     referenceBuilder.sink(qubit);
   }
-  reference = referenceBuilder.finalize(
-      {referenceControlOutcome, referenceTargetOutcome,
-       referenceQuantumControlOutcome, referenceOtherTargetOutcome});
+  reference = referenceBuilder.finalize({
+      referenceControlOutcome,
+      referenceTargetOutcome,
+      referenceQuantumControlOutcome,
+      referenceOtherTargetOutcome,
+  });
 
   ASSERT_TRUE(runReplaceClassicalControlsPass(*program).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(*reference).succeeded());
   EXPECT_TRUE(areModulesEquivalentWithPermutations(*program, *reference));
 }
 
-/**
- * @brief Test: Tests that a phase target gate is not swapped with a
- * classical control if it's not necessary.
- */
+/// Test: Tests that a phase target gate is not swapped with a
+/// classical control if it's not necessary.
 TEST_F(QCOReplaceClassicalControlsTest,
        replaceClassicalControlsDontSwapPhaseIfNotNecessary) {
-  programBuilder.initialize({programBuilder.getI1Type(),
-                             programBuilder.getI1Type(),
-                             programBuilder.getI1Type()});
+  programBuilder.initialize({
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+  });
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
   q0 = programBuilder.h(q0);
@@ -1246,9 +1318,11 @@ TEST_F(QCOReplaceClassicalControlsTest,
   programBuilder.sink(q1);
   program = programBuilder.finalize({c0, c1, c2});
 
-  referenceBuilder.initialize({referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type(),
-                               programBuilder.getI1Type()});
+  referenceBuilder.initialize({
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+  });
   auto r0 = referenceBuilder.allocQubit();
   auto r1 = referenceBuilder.allocQubit();
   r0 = referenceBuilder.h(r0);
@@ -1276,10 +1350,8 @@ TEST_F(QCOReplaceClassicalControlsTest,
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/**
- * @brief Test: Tests replacing a classically controlled gate where one of two
- * control qubits of a phase gate is swapped with the target qubit.
- */
+/// Test: Tests replacing a classically controlled gate where one of two
+/// control qubits of a phase gate is swapped with the target qubit.
 TEST_F(QCOReplaceClassicalControlsTest,
        replaceClassicalControlsSwapOneOfTwoPhase) {
   programBuilder.initialize(
@@ -1293,9 +1365,7 @@ TEST_F(QCOReplaceClassicalControlsTest,
 
   Value c0;
   std::tie(q0, c0) = programBuilder.measure(q0);
-  SmallVector<Value> q12;
-  SmallVector<Value> q0Vec;
-  std::tie(q12, q0Vec) = programBuilder.ctrl(
+  auto [q12, q0Vec] = programBuilder.ctrl(
       {q1, q2}, {q0}, [&](ValueRange targets) -> SmallVector<Value> {
         return SmallVector<Value>{programBuilder.z(targets[0])};
       });
@@ -1321,9 +1391,9 @@ TEST_F(QCOReplaceClassicalControlsTest,
 
   SmallVector<Value> r21 = referenceBuilder.qcoIf(
       cr0, {r2, r1}, [&](ValueRange qubits) -> SmallVector<Value> {
-        Value t2 = qubits[0];
-        Value t1 = qubits[1];
-        std::tie(t2, t1) = referenceBuilder.cz(t2, t1);
+        const auto inputT2 = qubits[0];
+        const auto inputT1 = qubits[1];
+        const auto [t2, t1] = referenceBuilder.cz(inputT2, inputT1);
         return SmallVector<Value>{t2, t1};
       });
   Value cr1;
@@ -1341,16 +1411,16 @@ TEST_F(QCOReplaceClassicalControlsTest,
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/**
- * @brief Test: Tests replacing a classically controlled gate where only one of
- * two controls can possibly be swapped with the target qubit of a phase
- * operation.
- */
+/// Test: Tests replacing a classically controlled gate where only one of
+/// two controls can possibly be swapped with the target qubit of a phase
+/// operation.
 TEST_F(QCOReplaceClassicalControlsTest,
        replaceClassicalControlsSwapOnlyPossiblePhase) {
-  programBuilder.initialize({programBuilder.getI1Type(),
-                             programBuilder.getI1Type(),
-                             programBuilder.getI1Type()});
+  programBuilder.initialize({
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+  });
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
   auto q2 = programBuilder.allocQubit();
@@ -1362,9 +1432,7 @@ TEST_F(QCOReplaceClassicalControlsTest,
   std::tie(q0, c0) = programBuilder.measure(q0);
   Value c1;
   std::tie(q1, c1) = programBuilder.measure(q1);
-  SmallVector<Value> q12;
-  SmallVector<Value> q0Vec;
-  std::tie(q12, q0Vec) = programBuilder.ctrl(
+  auto [q12, q0Vec] = programBuilder.ctrl(
       {q1, q2}, {q0}, [&](ValueRange targets) -> SmallVector<Value> {
         return SmallVector<Value>{programBuilder.z(targets[0])};
       });
@@ -1376,9 +1444,11 @@ TEST_F(QCOReplaceClassicalControlsTest,
   programBuilder.sink(q2);
   program = programBuilder.finalize({c0, c1, c2});
 
-  referenceBuilder.initialize({referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type()});
+  referenceBuilder.initialize({
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+  });
   auto r0 = referenceBuilder.allocQubit();
   auto r1 = referenceBuilder.allocQubit();
   auto r2 = referenceBuilder.allocQubit();

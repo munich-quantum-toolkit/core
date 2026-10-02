@@ -8,19 +8,19 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
-#include "mlir/Dialect/MQT/Utils/Parameters.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/Utils/Matrix.h"
+#include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mqt/Dialect/MQT/Utils/GatePowering.h"
+#include "mqt/Dialect/MQT/Utils/Parameters.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/Utils/Matrix.h"
 
-#include <mlir/IR/Builders.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OperationSupport.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/Support/LogicalResult.h>
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/OperationSupport.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/Support/LogicalResult.h"
 
 #include <cmath>
-#include <complex>
 #include <numbers>
 #include <optional>
 #include <variant>
@@ -31,9 +31,7 @@ using namespace mlir::mqt;
 
 namespace {
 
-/**
- * @brief Replace U(0, 0, lambda) with P(lambda).
- */
+/// Replace U(0, 0, λ) with P(λ).
 struct ReplaceUWithP final : OpRewritePattern<UOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -50,9 +48,7 @@ struct ReplaceUWithP final : OpRewritePattern<UOp> {
   }
 };
 
-/**
- * @brief Replace U(theta, -pi / 2, pi / 2) with RX(theta).
- */
+/// Replace U(θ, -π / 2, π / 2) with RX(θ).
 struct ReplaceUWithRX final : OpRewritePattern<UOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -73,9 +69,7 @@ struct ReplaceUWithRX final : OpRewritePattern<UOp> {
   }
 };
 
-/**
- * @brief Replace U(theta, 0, 0) with RY(theta).
- */
+/// Replace U(θ, 0, 0) with RY(θ).
 struct ReplaceUWithRY final : OpRewritePattern<UOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -92,9 +86,7 @@ struct ReplaceUWithRY final : OpRewritePattern<UOp> {
   }
 };
 
-/**
- * @brief Replace U(pi / 2, phi, lambda) with U2(phi, lambda).
- */
+/// Replace U(π / 2, φ, λ) with U2(φ, λ).
 struct ReplaceUWithU2 final : OpRewritePattern<UOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -117,11 +109,9 @@ void UOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
                 const std::variant<double, Value>& theta,
                 const std::variant<double, Value>& phi,
                 const std::variant<double, Value>& lambda) {
-  const auto thetaOperand =
-      variantToValue(odsBuilder, odsState.location, theta);
-  const auto phiOperand = variantToValue(odsBuilder, odsState.location, phi);
-  const auto lambdaOperand =
-      variantToValue(odsBuilder, odsState.location, lambda);
+  auto thetaOperand = variantToValue(odsBuilder, odsState.location, theta);
+  auto phiOperand = variantToValue(odsBuilder, odsState.location, phi);
+  auto lambdaOperand = variantToValue(odsBuilder, odsState.location, lambda);
   build(odsBuilder, odsState, qubitIn, thetaOperand, phiOperand, lambdaOperand);
 }
 
@@ -131,17 +121,8 @@ void UOp::getCanonicalizationPatterns(RewritePatternSet& results,
       context);
 }
 
-Matrix2x2 UOp::unitaryMatrix(const double theta, const double phi,
-                             const double lambda) {
-  using namespace std::complex_literals;
-  const auto halfTheta = theta / 2;
-  const auto c = std::cos(halfTheta);
-  const auto s = std::sin(halfTheta);
-  const auto m01 = s * std::exp(1i * (lambda + std::numbers::pi));
-  const auto m10 = s * std::exp(1i * phi);
-  const auto m11 = c * std::exp(1i * (phi + lambda));
-  return Matrix2x2::fromElements(c, m01,    // row 0
-                                 m10, m11); // row 1
+Matrix2x2 UOp::unitaryMatrix(double theta, double phi, double lambda) {
+  return {.data = computeUMatrix(theta, phi, lambda)};
 }
 
 std::optional<Matrix2x2> UOp::getUnitaryMatrix() {

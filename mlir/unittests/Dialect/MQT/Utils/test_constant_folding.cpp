@@ -8,25 +8,33 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mqt/Dialect/MQT/Utils/Parameters.h"
 
-#include <gtest/gtest.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/IR/Builders.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/BuiltinTypes.h>
-#include <mlir/IR/Location.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OwningOpRef.h>
-#include <mlir/IR/Value.h>
-#include <mlir/Support/LLVM.h>
+#include "gtest/gtest.h"
+
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/Index/IR/IndexDialect.h"
+#include "mlir/Dialect/Index/IR/IndexOps.h"
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/Diagnostics.h"
+#include "mlir/IR/Location.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/OwningOpRef.h"
+#include "mlir/IR/Value.h"
+#include "mlir/IR/Verifier.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
 
 #include <cmath>
 #include <cstdint>
 #include <limits>
 #include <memory>
 #include <optional>
+#include <string>
 
 using namespace mlir;
 
@@ -39,7 +47,8 @@ protected:
   std::unique_ptr<ImplicitLocOpBuilder> builder;
 
   void SetUp() override {
-    context.loadDialect<arith::ArithDialect, func::FuncDialect>();
+    context.loadDialect<arith::ArithDialect, func::FuncDialect,
+                        index::IndexDialect>();
 
     auto loc = FileLineColLoc::get(&context, "<utils-test-builder>", 1, 1);
     module = ModuleOp::create(loc);
@@ -61,6 +70,13 @@ TEST_F(ConstantFoldingTest, valueToDouble) {
 
 TEST_F(ConstantFoldingTest, valueToDoubleCastFromInteger) {
   auto op = arith::ConstantOp::create(*builder, builder->getI32IntegerAttr(42));
+  const auto stdValue = mlir::mqt::valueToDouble(op.getResult());
+  ASSERT_TRUE(stdValue.has_value());
+  EXPECT_DOUBLE_EQ(*stdValue, 42.0);
+}
+
+TEST_F(ConstantFoldingTest, valueToDoubleConstantLike) {
+  auto op = index::ConstantOp::create(*builder, 42);
   const auto stdValue = mlir::mqt::valueToDouble(op.getResult());
   ASSERT_TRUE(stdValue.has_value());
   EXPECT_DOUBLE_EQ(*stdValue, 42.0);
@@ -118,6 +134,16 @@ TEST_F(ConstantFoldingTest, attributeToDoubleUnsignedI128) {
   const auto asDouble = mlir::mqt::attributeToDouble(attr);
   ASSERT_TRUE(asDouble.has_value());
   EXPECT_DOUBLE_EQ(*asDouble, std::ldexp(1.0, 127));
+}
+
+TEST_F(ConstantFoldingTest, valueToConstantAttrPreservesLiteralAttributes) {
+  auto floatAttr = builder->getF64FloatAttr(-0.0);
+  auto floatOp = arith::ConstantOp::create(*builder, floatAttr);
+  EXPECT_EQ(mlir::mqt::valueToConstantAttr(floatOp.getResult()), floatAttr);
+
+  auto indexOp = index::ConstantOp::create(*builder, 42);
+  EXPECT_EQ(mlir::mqt::valueToConstantAttr(indexOp.getResult()),
+            builder->getIndexAttr(42));
 }
 
 TEST_F(ConstantFoldingTest, valueToConstantDoubleNestedFold) {
@@ -209,6 +235,26 @@ TEST_F(ConstantFoldingTest, valueToConstantAttrIdentityFold) {
   EXPECT_DOUBLE_EQ(*mlir::mqt::attributeToDouble(*attr), expectedValue);
 }
 
+TEST_F(ConstantFoldingTest, VerifyFiniteParametersChecksDirectConstants) {
+  auto finite =
+      arith::ConstantOp::create(*builder, builder->getF64FloatAttr(1.0));
+  auto nan = arith::ConstantOp::create(
+      *builder,
+      builder->getF64FloatAttr(std::numeric_limits<double>::quiet_NaN()));
+  std::string diagnostic;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& emitted) {
+    diagnostic = emitted.str();
+    return success();
+  });
+  EXPECT_TRUE(succeeded(mlir::mqt::verifyFiniteConstantParameters(
+      module->getOperation(), {finite.getResult()})));
+  EXPECT_TRUE(diagnostic.empty());
+  EXPECT_TRUE(failed(mlir::mqt::verifyFiniteConstantParameters(
+      module->getOperation(), {finite.getResult(), nan.getResult()})));
+  EXPECT_EQ(diagnostic, "'builtin.module' op constant parameter expression at "
+                        "index 1 must be finite");
+}
+
 TEST_F(ConstantFoldingTest, valueToConstantDoubleSharedOperandsSuccess) {
   // Repeated doubling reuses the same SSA value as both operands. Without
   // memoization this is exponential in `depth`.
@@ -219,7 +265,8 @@ TEST_F(ConstantFoldingTest, valueToConstantDoubleSharedOperandsSuccess) {
   }
   const auto stdValue = mlir::mqt::valueToConstantDouble(v);
   ASSERT_TRUE(stdValue.has_value());
-  EXPECT_DOUBLE_EQ(*stdValue, static_cast<double>(1ULL << depth));
+  EXPECT_DOUBLE_EQ(*stdValue,
+                   static_cast<double>(1ULL << static_cast<unsigned>(depth)));
 }
 
 TEST_F(ConstantFoldingTest, valueToConstantDoubleSharedOperandsFailure) {
@@ -234,7 +281,7 @@ TEST_F(ConstantFoldingTest, valueToConstantDoubleSharedOperandsFailure) {
   OpBuilder::InsertionGuard guard(*builder);
   builder->setInsertionPointToStart(entry);
 
-  const Value arg = entry->getArgument(0);
+  Value arg = entry->getArgument(0);
   SmallVector<Value> nodes = {arg};
   Value v = arg;
   for (int i = 0; i < depth; ++i) {
@@ -245,7 +292,7 @@ TEST_F(ConstantFoldingTest, valueToConstantDoubleSharedOperandsFailure) {
   llvm::DenseMap<Value, std::optional<Attribute>> cache;
   EXPECT_FALSE(mlir::mqt::valueToConstantAttr(v, cache).has_value());
   ASSERT_EQ(cache.size(), nodes.size());
-  for (const Value node : nodes) {
+  for (Value node : nodes) {
     const auto it = cache.find(node);
     ASSERT_NE(it, cache.end());
     EXPECT_FALSE(it->second.has_value());

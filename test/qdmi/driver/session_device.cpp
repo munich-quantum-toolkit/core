@@ -8,15 +8,17 @@
  * Licensed under the MIT License
  */
 
-#include <qdmi/device.h>
+#include "qdmi/device.h"
 
 #include <array>
 #include <atomic>
 #include <cstddef>
 #include <cstring>
 #include <new>
+#include <span>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 struct QDMI_Child_Device_impl_d {};
 
@@ -36,9 +38,27 @@ struct QDMI_Device_Job_impl_d {
   QDMI_Device_Session session = nullptr;
   bool retrieved = false;
   QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_MAX;
+  std::array<std::vector<std::byte>, 5> customParameters;
 };
 
 namespace {
+[[nodiscard]] auto initializations() -> std::atomic_size_t& {
+  static std::atomic_size_t count = 0;
+  return count;
+}
+
+using InitializeCallback = int (*)();
+
+auto initializeCallback() -> std::atomic<InitializeCallback>& {
+  static std::atomic<InitializeCallback> callback = nullptr;
+  return callback;
+}
+
+[[nodiscard]] auto finalizations() -> std::atomic_size_t& {
+  static std::atomic_size_t count = 0;
+  return count;
+}
+
 [[nodiscard]] auto activeSessions() -> std::atomic_size_t& {
   static std::atomic_size_t sessions = 0;
   return sessions;
@@ -90,17 +110,25 @@ namespace {
 [[nodiscard]] auto customOperationHandles()
     -> const std::array<QDMI_Operation, 2>& {
   static QDMI_Operation_impl_d rotate{
-      .name = "custom-rx", .qubitsNum = 1, .parametersNum = 1};
+      .name = "custom-rx",
+      .qubitsNum = 1,
+      .parametersNum = 1,
+  };
   static QDMI_Operation_impl_d controlledNot{
-      .name = "custom-cx", .qubitsNum = 2, .parametersNum = 0};
-  static const std::array<QDMI_Operation, 2> OPERATIONS{&rotate,
-                                                        &controlledNot};
+      .name = "custom-cx",
+      .qubitsNum = 2,
+      .parametersNum = 0,
+  };
+  static const std::array<QDMI_Operation, 2> OPERATIONS{
+      &rotate,
+      &controlledNot,
+  };
   return OPERATIONS;
 }
 
 [[nodiscard]] auto findCustomOperation(QDMI_Operation operation)
     -> const QDMI_Operation_impl_d* {
-  for (auto* const handle : customOperationHandles()) {
+  for (const auto* const handle : customOperationHandles()) {
     if (operation == handle) {
       return handle;
     }
@@ -143,9 +171,25 @@ auto queryValue(const T& result, const size_t size, void* value,
 
 // QDMI requires these exported C symbols to use the configured device prefix.
 // NOLINTBEGIN(readability-identifier-naming)
-extern "C" int TEST_SESSION_QDMI_device_initialize() { return QDMI_SUCCESS; }
+extern "C" int TEST_SESSION_QDMI_device_initialize() {
+  ++initializations();
+  if (const auto callback = initializeCallback().load()) {
+    return callback();
+  }
+  return QDMI_SUCCESS;
+}
 
-extern "C" int TEST_SESSION_QDMI_device_finalize() { return QDMI_SUCCESS; }
+/// Tests install a callback before opening sessions to coordinate
+/// initialization.
+extern "C" void
+TEST_SESSION_set_initialize_callback(InitializeCallback callback) {
+  initializeCallback() = callback;
+}
+
+extern "C" int TEST_SESSION_QDMI_device_finalize() {
+  ++finalizations();
+  return QDMI_SUCCESS;
+}
 
 extern "C" int
 TEST_SESSION_QDMI_device_session_alloc(QDMI_Device_Session* session) {
@@ -234,10 +278,17 @@ extern "C" int TEST_SESSION_QDMI_device_session_query_device_property(
     if (size < required) {
       return QDMI_ERROR_INVALIDARGUMENT;
     }
-    auto* const child = childDeviceHandle();
+    const auto* const child = childDeviceHandle();
     std::memcpy(value, static_cast<const void*>(&child),
                 sizeof(QDMI_Child_Device));
     return QDMI_SUCCESS;
+  }
+  if (prop == QDMI_DEVICE_PROPERTY_CUSTOM4 &&
+      parameter(session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1) ==
+          "lifetime-counts") {
+    return queryValue(
+        std::array{initializations().load(), finalizations().load()}, size,
+        value, sizeRet);
   }
   if (prop == QDMI_DEVICE_PROPERTY_CUSTOM1) {
     const auto& operations = customOperationHandles();
@@ -359,6 +410,15 @@ extern "C" int TEST_SESSION_QDMI_device_job_set_parameter(
   if (job->retrieved) {
     return QDMI_ERROR_BADSTATE;
   }
+  if (parameter >= QDMI_DEVICE_JOB_PARAMETER_CUSTOM1 &&
+      parameter <= QDMI_DEVICE_JOB_PARAMETER_CUSTOM5) {
+    if (value == nullptr || size == 0) {
+      return QDMI_ERROR_INVALIDARGUMENT;
+    }
+    const auto bytes = std::span{static_cast<const std::byte*>(value), size};
+    job->customParameters[parameter - QDMI_DEVICE_JOB_PARAMETER_CUSTOM1].assign(
+        bytes.begin(), bytes.end());
+  }
   if (parameter == QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT) {
     if (value == nullptr || size != sizeof(job->format)) {
       return QDMI_ERROR_INVALIDARGUMENT;
@@ -407,9 +467,32 @@ extern "C" int TEST_SESSION_QDMI_device_job_wait(QDMI_Device_Job /*job*/,
   return QDMI_ERROR_NOTSUPPORTED;
 }
 
-extern "C" int TEST_SESSION_QDMI_device_job_get_results(
-    QDMI_Device_Job /*job*/, QDMI_Job_Result /*result*/, size_t /*size*/,
-    void* /*value*/, size_t* /*sizeRet*/) {
+extern "C" int TEST_SESSION_QDMI_device_job_get_results(QDMI_Device_Job job,
+                                                        QDMI_Job_Result result,
+                                                        size_t size,
+                                                        void* value,
+                                                        size_t* sizeRet) {
+  if (result >= QDMI_JOB_RESULT_CUSTOM1 && result <= QDMI_JOB_RESULT_CUSTOM5) {
+    const auto& bytes = job->customParameters[result - QDMI_JOB_RESULT_CUSTOM1];
+    if (sizeRet != nullptr) {
+      *sizeRet = bytes.size();
+    }
+    if (value != nullptr) {
+      if (size < bytes.size()) {
+        return QDMI_ERROR_INVALIDARGUMENT;
+      }
+      std::memcpy(value, bytes.data(), bytes.size());
+    }
+    return QDMI_SUCCESS;
+  }
+  if (result == QDMI_JOB_RESULT_HIST_KEYS) {
+    return queryString(
+        parameter(job->session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM3), size,
+        value, sizeRet);
+  }
+  if (result == QDMI_JOB_RESULT_HIST_VALUES) {
+    return queryValue(size_t{5}, size, value, sizeRet);
+  }
   return QDMI_ERROR_NOTSUPPORTED;
 }
 

@@ -11,9 +11,9 @@
 #include "qdmi/Client.hpp"
 #include "qdmi/common/Common.hpp"
 
-#include <gmock/gmock-matchers.h>
-#include <gtest/gtest.h>
-#include <qdmi/client.h>
+#include "gmock/gmock-matchers.h"
+#include "gtest/gtest.h"
+#include "qdmi/client.h"
 
 #include <algorithm>
 #include <array>
@@ -78,6 +78,7 @@ protected:
   void SetUp() override { operations = device.getOperations(); }
 };
 
+#ifdef MQT_CORE_QDMI_HAS_DDSIM_DEVICE
 class DDSimulatorDeviceTest : public testing::Test {
 protected:
   Device device;
@@ -130,32 +131,39 @@ cx q[0], q[1];
     return device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 0);
   }
 };
+#endif
 
 } // namespace
 
 TEST(CustomPropertyTest, SelectorsMapToEveryQDMIPropertyFamily) {
   constexpr std::array properties{
       CustomProperty::Custom1, CustomProperty::Custom2, CustomProperty::Custom3,
-      CustomProperty::Custom4, CustomProperty::Custom5};
+      CustomProperty::Custom4, CustomProperty::Custom5,
+  };
   constexpr std::array deviceProperties{
       QDMI_DEVICE_PROPERTY_CUSTOM1, QDMI_DEVICE_PROPERTY_CUSTOM2,
       QDMI_DEVICE_PROPERTY_CUSTOM3, QDMI_DEVICE_PROPERTY_CUSTOM4,
-      QDMI_DEVICE_PROPERTY_CUSTOM5};
+      QDMI_DEVICE_PROPERTY_CUSTOM5,
+  };
   constexpr std::array siteProperties{
       QDMI_SITE_PROPERTY_CUSTOM1, QDMI_SITE_PROPERTY_CUSTOM2,
       QDMI_SITE_PROPERTY_CUSTOM3, QDMI_SITE_PROPERTY_CUSTOM4,
-      QDMI_SITE_PROPERTY_CUSTOM5};
+      QDMI_SITE_PROPERTY_CUSTOM5,
+  };
   constexpr std::array operationProperties{
       QDMI_OPERATION_PROPERTY_CUSTOM1, QDMI_OPERATION_PROPERTY_CUSTOM2,
       QDMI_OPERATION_PROPERTY_CUSTOM3, QDMI_OPERATION_PROPERTY_CUSTOM4,
-      QDMI_OPERATION_PROPERTY_CUSTOM5};
+      QDMI_OPERATION_PROPERTY_CUSTOM5,
+  };
   constexpr std::array jobProperties{
       QDMI_JOB_PROPERTY_CUSTOM1, QDMI_JOB_PROPERTY_CUSTOM2,
       QDMI_JOB_PROPERTY_CUSTOM3, QDMI_JOB_PROPERTY_CUSTOM4,
-      QDMI_JOB_PROPERTY_CUSTOM5};
+      QDMI_JOB_PROPERTY_CUSTOM5,
+  };
   constexpr std::array jobResults{
       QDMI_JOB_RESULT_CUSTOM1, QDMI_JOB_RESULT_CUSTOM2, QDMI_JOB_RESULT_CUSTOM3,
-      QDMI_JOB_RESULT_CUSTOM4, QDMI_JOB_RESULT_CUSTOM5};
+      QDMI_JOB_RESULT_CUSTOM4, QDMI_JOB_RESULT_CUSTOM5,
+  };
 
   for (size_t i = 0; i < properties.size(); ++i) {
     EXPECT_EQ(detail::toDeviceProperty(properties[i]), deviceProperties[i]);
@@ -182,10 +190,78 @@ TEST(CustomPropertyTest, RejectsInvalidSelector) {
                std::invalid_argument);
 }
 
+TEST(StandardPropertyTest, PreservesValuesAndOptionalSupport) {
+  const auto bytes = bytesOf(size_t{42});
+  const auto query = queryBytes(bytes);
+  EXPECT_EQ(detail::queryProperty<size_t>(query, "value", "size"), 42);
+  EXPECT_EQ(
+      detail::queryProperty<std::optional<size_t>>(query, "value", "size"), 42);
+  EXPECT_EQ(detail::queryProperty<std::vector<size_t>>(query, "value", "size"),
+            std::vector<size_t>{42});
+  const std::vector<std::byte> text{std::byte{'x'}, std::byte{0}};
+  EXPECT_EQ(
+      detail::queryProperty<std::string>(queryBytes(text), "value", "size"),
+      "x");
+
+  const auto unsupported = [](size_t, void*, size_t*) {
+    return QDMI_ERROR_NOTSUPPORTED;
+  };
+  EXPECT_EQ(detail::queryProperty<std::optional<size_t>>(unsupported, "value",
+                                                         "size"),
+            std::nullopt);
+  EXPECT_EQ(detail::queryProperty<std::optional<std::string>>(unsupported,
+                                                              "value", "size"),
+            std::nullopt);
+  EXPECT_EQ(detail::queryProperty<std::optional<std::vector<size_t>>>(
+                unsupported, "value", "size"),
+            std::nullopt);
+  EXPECT_THROW(std::ignore =
+                   detail::queryProperty<size_t>(unsupported, "value", "size"),
+               std::runtime_error);
+}
+
+TEST(StandardPropertyTest, RejectsMalformedSizesBeforeReading) {
+  bool read = false;
+  const auto query = [&read](size_t, void* value, size_t* sizeRet) {
+    if (sizeRet != nullptr) {
+      *sizeRet = sizeof(size_t) + 1;
+    }
+    read |= value != nullptr;
+    return QDMI_SUCCESS;
+  };
+  EXPECT_THROW(std::ignore = detail::queryProperty<std::vector<size_t>>(
+                   query, "value", "size"),
+               std::runtime_error);
+  EXPECT_THROW(std::ignore =
+                   detail::queryProperty<std::optional<std::vector<size_t>>>(
+                       query, "value", "size"),
+               std::runtime_error);
+  EXPECT_FALSE(read);
+}
+
+TEST(StandardPropertyTest, ValidatesStringsAndPreservesEmptyValues) {
+  const std::vector<std::byte> empty;
+  EXPECT_TRUE(detail::queryProperty<std::vector<size_t>>(queryBytes(empty),
+                                                         "value", "size")
+                  .empty());
+  EXPECT_THROW(std::ignore = detail::queryProperty<std::string>(
+                   queryBytes(empty), "value", "size"),
+               std::runtime_error);
+  const std::vector<std::byte> unterminated{std::byte{'x'}};
+  EXPECT_THROW(std::ignore = detail::queryProperty<std::optional<std::string>>(
+                   queryBytes(unterminated), "value", "size"),
+               std::runtime_error);
+  const std::vector<std::byte> terminated{std::byte{0}};
+  EXPECT_EQ(detail::queryProperty<std::string>(queryBytes(terminated), "value",
+                                               "size"),
+            "");
+}
+
 TEST(CustomPropertyTest, DecodesSupportedTypes) {
-  const std::vector<std::byte> stringBytes{std::byte{'v'}, std::byte{'a'},
-                                           std::byte{'l'}, std::byte{'u'},
-                                           std::byte{'e'}, std::byte{0}};
+  const std::vector<std::byte> stringBytes{
+      std::byte{'v'}, std::byte{'a'}, std::byte{'l'},
+      std::byte{'u'}, std::byte{'e'}, std::byte{0},
+  };
   EXPECT_EQ(detail::queryCustomValue<std::string>(queryBytes(stringBytes),
                                                   "test property"),
             "value");
@@ -275,6 +351,18 @@ TEST(QueuePositionTest, PropagatesOtherQueryErrors) {
                std::invalid_argument);
 }
 
+TEST(JobShotsTest, PreservesZeroWidthShots) {
+  EXPECT_EQ(detail::parseShots("", 0), std::vector<std::string>{});
+  EXPECT_EQ(detail::parseShots("", 1), std::vector<std::string>{""});
+  EXPECT_EQ(detail::parseShots(",,,", 4),
+            (std::vector<std::string>{"", "", "", ""}));
+}
+
+TEST(JobShotsTest, ValidatesShotCount) {
+  EXPECT_THROW(std::ignore = detail::parseShots("0,1", 1), std::runtime_error);
+  EXPECT_THROW(std::ignore = detail::parseShots("0", 2), std::runtime_error);
+}
+
 TEST(QDMITest, StatusToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_WARN_GENERAL), "General warning");
   EXPECT_STREQ(qdmi::toString(QDMI_SUCCESS), "Success");
@@ -350,8 +438,6 @@ TEST(QDMITest, DevicePropertyToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_OPERATIONS), "OPERATIONS");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_COUPLINGMAP),
                "COUPLING MAP");
-  EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION),
-               "NEEDS CALIBRATION");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_LENGTHUNIT), "LENGTH UNIT");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_LENGTHSCALEFACTOR),
                "LENGTH SCALE FACTOR");
@@ -424,7 +510,6 @@ TEST(QDMITest, BinaryProgramFormatClassification) {
     case QDMI_PROGRAM_FORMAT_QASM3:
     case QDMI_PROGRAM_FORMAT_QIRBASESTRING:
     case QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING:
-    case QDMI_PROGRAM_FORMAT_CALIBRATION:
     case QDMI_PROGRAM_FORMAT_IQMJSON:
     case QDMI_PROGRAM_FORMAT_BATCHJOB:
     case QDMI_PROGRAM_FORMAT_CUSTOM1:
@@ -439,21 +524,22 @@ TEST(QDMITest, BinaryProgramFormatClassification) {
 
   // Every program format QDMI defines. A format added to QDMI must be added
   // here as well so that the loop below covers it.
-  constexpr std::array formats{QDMI_PROGRAM_FORMAT_QASM2,
-                               QDMI_PROGRAM_FORMAT_QASM3,
-                               QDMI_PROGRAM_FORMAT_QIRBASESTRING,
-                               QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
-                               QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
-                               QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE,
-                               QDMI_PROGRAM_FORMAT_CALIBRATION,
-                               QDMI_PROGRAM_FORMAT_QPY,
-                               QDMI_PROGRAM_FORMAT_IQMJSON,
-                               QDMI_PROGRAM_FORMAT_BATCHJOB,
-                               QDMI_PROGRAM_FORMAT_CUSTOM1,
-                               QDMI_PROGRAM_FORMAT_CUSTOM2,
-                               QDMI_PROGRAM_FORMAT_CUSTOM3,
-                               QDMI_PROGRAM_FORMAT_CUSTOM4,
-                               QDMI_PROGRAM_FORMAT_CUSTOM5};
+  constexpr std::array formats{
+      QDMI_PROGRAM_FORMAT_QASM2,
+      QDMI_PROGRAM_FORMAT_QASM3,
+      QDMI_PROGRAM_FORMAT_QIRBASESTRING,
+      QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
+      QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
+      QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE,
+      QDMI_PROGRAM_FORMAT_QPY,
+      QDMI_PROGRAM_FORMAT_IQMJSON,
+      QDMI_PROGRAM_FORMAT_BATCHJOB,
+      QDMI_PROGRAM_FORMAT_CUSTOM1,
+      QDMI_PROGRAM_FORMAT_CUSTOM2,
+      QDMI_PROGRAM_FORMAT_CUSTOM3,
+      QDMI_PROGRAM_FORMAT_CUSTOM4,
+      QDMI_PROGRAM_FORMAT_CUSTOM5,
+  };
 
   for (const auto format : formats) {
     EXPECT_EQ(qdmi::isBinaryProgramFormat(format), expected(format))
@@ -489,13 +575,11 @@ TEST_P(DeviceTest, CouplingMap) {
   EXPECT_NO_THROW(std::ignore = device.getCouplingMap());
 }
 
-TEST_P(DeviceTest, NeedsCalibration) {
-  EXPECT_NO_THROW(std::ignore = device.getNeedsCalibration());
-}
-
+#ifdef MQT_CORE_QDMI_HAS_DDSIM_DEVICE
 TEST_F(DDSimulatorDeviceTest, QueueLengthIsUnavailable) {
   EXPECT_EQ(device.getQueueLength(), std::nullopt);
 }
+#endif
 
 TEST_P(DeviceTest, LengthUnit) {
   EXPECT_NO_THROW(std::ignore = device.getLengthUnit());
@@ -527,9 +611,16 @@ TEST_P(DeviceTest, ChildDevices) {
 
 TEST_P(DeviceTest, UnsupportedCustomPropertyReturnsNullopt) {
   EXPECT_EQ(device.queryCustomProperty<std::vector<std::byte>>(
-                CustomProperty::Custom1),
+                CustomProperty::Custom2),
             std::nullopt);
 }
+
+#ifdef MQT_CORE_QDMI_HAS_DDSIM_DEVICE
+TEST_F(DDSimulatorDeviceTest, ReportsCompilerTargetMetadata) {
+  EXPECT_EQ(device.queryCustomProperty<std::string>(CustomProperty::Custom1),
+            "mqt.compiler-target.v1:all-to-all-homogeneous");
+}
+#endif
 
 TEST_P(SiteTest, Index) {
   for (const auto& site : sites) {
@@ -770,7 +861,7 @@ TEST_P(OperationTest, MeanShuttlingSpeed) {
 TEST_P(OperationTest, UnsupportedCustomPropertyReturnsNullopt) {
   for (const auto& operation : operations) {
     EXPECT_EQ(operation.queryCustomProperty<std::vector<std::byte>>(
-                  CustomProperty::Custom1),
+                  CustomProperty::Custom2),
               std::nullopt);
   }
 }
@@ -792,6 +883,7 @@ TEST_P(DeviceTest, RegularSitesAndZones) {
   }
 }
 
+#ifdef MQT_CORE_QDMI_HAS_DDSIM_DEVICE
 TEST_F(DDSimulatorDeviceTest, SubmitJobReturnsValidJob) {
   const std::string qasm3Program = R"(
 OPENQASM 3.0;
@@ -834,47 +926,10 @@ TEST_F(DDSimulatorDeviceTest, SubmitJobRejectsBatchJobs) {
                std::invalid_argument);
 }
 
-TEST_F(DDSimulatorDeviceTest, SubmitJobSendsCalibrationRunsElsewhere) {
-  // A calibration run takes no shot count and an optional payload, so it has
-  // its own entry point rather than a special case in `submitJob`.
-  EXPECT_THROW(std::ignore = device.submitJob(
-                   std::string{}, QDMI_PROGRAM_FORMAT_CALIBRATION, 0),
-               std::invalid_argument);
-}
-
-TEST_F(DDSimulatorDeviceTest, CalibrationJobReachesTheDevice) {
-  // The DD simulator needs no calibration and rejects the format itself. What
-  // matters is that the client no longer refuses before asking: the failure
-  // comes from the device, as a runtime error rather than an argument error.
-  EXPECT_THROW(std::ignore = device.submitCalibrationJob(), std::runtime_error);
-  EXPECT_THROW(std::ignore = device.submitCalibrationJob("configuration"),
-               std::runtime_error);
-
-  constexpr std::array payload{std::byte{1}, std::byte{2}};
-  EXPECT_THROW(std::ignore = device.submitCalibrationJob(payload),
-               std::runtime_error);
-
-  constexpr std::byte emptyPayloadStorage{};
-  const std::span emptyPayload{&emptyPayloadStorage, size_t{0}};
-  EXPECT_THROW(std::ignore = device.submitCalibrationJob(emptyPayload),
-               std::runtime_error);
-
-  EXPECT_NO_THROW({
-    try {
-      std::ignore = device.submitCalibrationJob();
-    } catch (const std::invalid_argument&) {
-      FAIL() << "the client rejected the calibration run before the device saw "
-                "it";
-    } catch (const std::runtime_error&) { // NOLINT(bugprone-empty-catch)
-      // The device declined, which is its decision to make.
-    }
-  });
-}
-
 TEST_F(DDSimulatorDeviceTest, SubmitJobCustomSupportedTypes) {
   constexpr auto qasm3Program = "OPENQASM 3.0;";
 
-  auto submitWithCustoms = [&](auto custom, const size_t which) {
+  auto const submitWithCustoms = [&](auto custom, const size_t which) {
     try {
       switch (which) {
       case 1:
@@ -907,7 +962,16 @@ TEST_F(DDSimulatorDeviceTest, SubmitJobCustomSupportedTypes) {
     }
   };
   submitWithCustoms(7, 1);
-  for (size_t i = 2; i <= 5; ++i) {
+  EXPECT_NO_THROW(device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
+                                   std::nullopt, false));
+  EXPECT_THROW(device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
+                                std::nullopt, true),
+               std::runtime_error);
+  EXPECT_THROW(submitWithCustoms(std::string("custom"), 2),
+               std::invalid_argument);
+  EXPECT_THROW(submitWithCustoms(42, 2), std::invalid_argument);
+  EXPECT_THROW(submitWithCustoms(3.14, 2), std::invalid_argument);
+  for (size_t i = 3; i <= 5; ++i) {
     submitWithCustoms(std::string("custom"), i);
     submitWithCustoms(42, i);
     submitWithCustoms(3.14, i);
@@ -1064,28 +1128,28 @@ TEST_F(SimulatorJobTest, getDenseStateVectorReturnsValidState) {
   EXPECT_TRUE(job.wait());
 
   const auto stateVector = job.getDenseStateVector();
-  EXPECT_EQ(stateVector.size(), 4); // 2 qubits -> 4 amplitudes
+  EXPECT_EQ(stateVector.size(), 4); // 2 qubits → 4 amplitudes
 
-  // The expected state is (|00> + |11>)/sqrt(2)
+  // The expected state is (|00⟩ + |11⟩)/sqrt(2)
   constexpr double invSqrt2 = 1.0 / std::numbers::sqrt2;
-  EXPECT_NEAR(std::abs(stateVector[0]), invSqrt2, 1e-10); // |00>
-  EXPECT_NEAR(std::abs(stateVector[1]), 0.0, 1e-10);      // |01>
+  EXPECT_NEAR(std::abs(stateVector[0]), invSqrt2, 1e-10); // |00⟩
+  EXPECT_NEAR(std::abs(stateVector[1]), 0.0, 1e-10);      // |01⟩
   EXPECT_NEAR(std::abs(stateVector[2]), 0.0, 1e-10);
-  EXPECT_NEAR(std::abs(stateVector[3]), invSqrt2, 1e-10); // |11>
+  EXPECT_NEAR(std::abs(stateVector[3]), invSqrt2, 1e-10); // |11⟩
 }
 
 TEST_F(SimulatorJobTest, getDenseProbabilitiesReturnsValidProbabilities) {
   EXPECT_TRUE(job.wait());
 
   const auto probabilities = job.getDenseProbabilities();
-  EXPECT_EQ(probabilities.size(), 4); // 2 qubits -> 4 probabilities
+  EXPECT_EQ(probabilities.size(), 4); // 2 qubits → 4 probabilities
 
-  // The expected probabilities are 0.5 for |00> and |11>, and 0 for |01> and
-  // |10>
-  EXPECT_NEAR(probabilities[0], 0.5, 1e-10); // |00>
-  EXPECT_NEAR(probabilities[1], 0.0, 1e-10); // |01>
-  EXPECT_NEAR(probabilities[2], 0.0, 1e-10); // |10>
-  EXPECT_NEAR(probabilities[3], 0.5, 1e-10); // |11>
+  // The expected probabilities are 0.5 for |00⟩ and |11⟩, and 0 for |01⟩ and
+  // |10⟩
+  EXPECT_NEAR(probabilities[0], 0.5, 1e-10); // |00⟩
+  EXPECT_NEAR(probabilities[1], 0.0, 1e-10); // |01⟩
+  EXPECT_NEAR(probabilities[2], 0.0, 1e-10); // |10⟩
+  EXPECT_NEAR(probabilities[3], 0.5, 1e-10); // |11⟩
 }
 
 TEST_F(SimulatorJobTest, getSparseStateVectorReturnsValidState) {
@@ -1093,7 +1157,7 @@ TEST_F(SimulatorJobTest, getSparseStateVectorReturnsValidState) {
 
   const auto sparseStateVector = job.getSparseStateVector();
   EXPECT_EQ(sparseStateVector.size(),
-            2); // Only |00> and |11> should be present
+            2); // Only |00⟩ and |11⟩ should be present
 
   constexpr double invSqrt2 = 1.0 / std::numbers::sqrt2;
   const auto it00 = sparseStateVector.find("00");
@@ -1110,7 +1174,7 @@ TEST_F(SimulatorJobTest, getSparseProbabilitiesReturnsValidProbabilities) {
 
   const auto sparseProbabilities = job.getSparseProbabilities();
   EXPECT_EQ(sparseProbabilities.size(),
-            2); // Only |00> and |11> should be present
+            2); // Only |00⟩ and |11⟩ should be present
 
   const auto it00 = sparseProbabilities.find("00");
   ASSERT_NE(it00, sparseProbabilities.end());
@@ -1120,6 +1184,7 @@ TEST_F(SimulatorJobTest, getSparseProbabilitiesReturnsValidProbabilities) {
   ASSERT_NE(it11, sparseProbabilities.end());
   EXPECT_NEAR(it11->second, 0.5, 1e-10);
 }
+#endif
 
 TEST(AuthenticationTest, SessionParameterToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_SESSION_PARAMETER_TOKEN), "TOKEN");
@@ -1151,6 +1216,20 @@ TEST(AuthenticationTest, SessionConstructionWithToken) {
   SessionConfig config3;
   config3.token = "very_long_token_with_special_characters_!@#$%^&*()";
   EXPECT_NO_THROW({ const Session session(config3); });
+}
+
+TEST(AuthenticationTest, ReportsSkippedUnsupportedParameter) {
+  SessionConfig config;
+  config.token = "test-token";
+
+  testing::internal::CaptureStderr();
+  EXPECT_NO_THROW({ const Session session(config); });
+  const auto diagnostic = testing::internal::GetCapturedStderr();
+  EXPECT_THAT(
+      diagnostic,
+      testing::AllOf(testing::HasSubstr("[mqt-core] [info]"),
+                     testing::HasSubstr(
+                         "Session parameter TOKEN not supported (skipped)")));
 }
 
 TEST(AuthenticationTest, SessionConstructionWithAuthUrl) {
@@ -1223,10 +1302,10 @@ TEST(AuthenticationTest, SessionConstructionWithAuthFile) {
 
   // Existing file (should succeed even if parameter is unsupported)
   const auto tempDir = std::filesystem::temp_directory_path();
-  auto tmpPath = tempDir / ("qdmi_test_auth_" +
-                            std::to_string(std::hash<std::thread::id>{}(
-                                std::this_thread::get_id())) +
-                            ".txt");
+  auto const tmpPath = tempDir / ("qdmi_test_auth_" +
+                                  std::to_string(std::hash<std::thread::id>{}(
+                                      std::this_thread::get_id())) +
+                                  ".txt");
   {
     std::ofstream tmpFile(tmpPath);
     ASSERT_TRUE(tmpFile.is_open()) << "Failed to create temporary file";
@@ -1338,7 +1417,7 @@ TEST(AuthenticationTest, SessionConstructionWithCustomParameters) {
 
 TEST(AuthenticationTest, SessionGetDevicesReturnsList) {
   Session session;
-  auto devices = session.getDevices();
+  auto const devices = session.getDevices();
 
   EXPECT_FALSE(devices.empty());
 
@@ -1353,8 +1432,8 @@ TEST(AuthenticationTest, SessionMultipleInstances) {
   Session session1;
   Session session2;
 
-  auto devices1 = session1.getDevices();
-  auto devices2 = session2.getDevices();
+  auto const devices1 = session1.getDevices();
+  auto const devices2 = session2.getDevices();
 
   // Both should return devices
   EXPECT_FALSE(devices1.empty());
@@ -1366,7 +1445,7 @@ TEST(AuthenticationTest, SessionMultipleInstances) {
 
 TEST(DeviceOwnershipTest, SiteKeepsFreshSessionAlive) {
   const auto site = [] {
-    auto device = Session::openDevice("mqt.sc.default");
+    auto const device = Session::openDevice("mqt.sc.default");
     return device.getSites().front();
   }();
 
@@ -1375,7 +1454,7 @@ TEST(DeviceOwnershipTest, SiteKeepsFreshSessionAlive) {
 
 TEST(DeviceOwnershipTest, OperationKeepsFreshSessionAlive) {
   const auto operation = [] {
-    auto device = Session::openDevice("mqt.sc.default");
+    auto const device = Session::openDevice("mqt.sc.default");
     return device.getOperations().front();
   }();
 
@@ -1384,7 +1463,7 @@ TEST(DeviceOwnershipTest, OperationKeepsFreshSessionAlive) {
 
 TEST(DeviceOwnershipTest, SiteFromOperationKeepsFreshSessionAlive) {
   const auto site = [] {
-    auto device = Session::openDevice("mqt.sc.default");
+    auto const device = Session::openDevice("mqt.sc.default");
     const auto operation = device.getOperations().front();
     return operation.getSites().value().front();
   }();

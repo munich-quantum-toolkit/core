@@ -36,7 +36,7 @@ except ModuleNotFoundError:
 release = version.split("+")[0]
 
 project = "MQT Core"
-author = "Chair for Design Automation, TUM & Munich Quantum Software Company GmbH"
+author = "MQSC & Chair for Design Automation, TUM"
 language = "en"
 project_copyright = "2023 - 2026 Chair for Design Automation, TUM & 2025 - 2026 Munich Quantum Software Company GmbH"
 
@@ -54,9 +54,21 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.intersphinx",
     "sphinx.ext.napoleon",
-    "sphinx.ext.viewcode",
     "sphinxcontrib.bibtex",
     "sphinxext.opengraph",
+]
+
+# Both builders execute notebooks that write to the same source directory.
+llms_txt_build_parallel = False
+
+# The Markdown builder omits these nodes; keep warnings for new unsupported types.
+# Remove each name when the builder gains support for it.
+llms_txt_suppress_unknown_node_warnings = [
+    "PassthroughTextElement",
+    "abbreviation",
+    "admonition",
+    "caption",
+    "citation",
 ]
 
 source_suffix = [".rst", ".md"]
@@ -84,12 +96,11 @@ intersphinx_mapping = {
     "numpy": ("https://numpy.org/doc/stable/", None),
     "qiskit": ("https://quantum.cloud.ibm.com/docs/api/qiskit", None),
     "pennylane": ("https://docs.pennylane.ai/en/stable/", None),
-    "mqt": ("https://mqt.readthedocs.io/en/latest", None),
-    "ddsim": ("https://mqt.readthedocs.io/projects/ddsim/en/latest", None),
-    "qmap": ("https://mqt.readthedocs.io/projects/qmap/en/latest", None),
-    "qcec": ("https://mqt.readthedocs.io/projects/qcec/en/latest", None),
-    "qecc": ("https://mqt.readthedocs.io/projects/qecc/en/latest", None),
-    "syrec": ("https://mqt.readthedocs.io/projects/syrec/en/latest", None),
+    "mqt": ("https://mqt.readthedocs.io/en/stable", None),
+    "ddsim": ("https://mqt.readthedocs.io/projects/ddsim/en/stable", None),
+    "qmap": ("https://mqt.readthedocs.io/projects/qmap/en/stable", None),
+    "qcec": ("https://mqt.readthedocs.io/projects/qcec/en/stable", None),
+    "syrec": ("https://mqt.readthedocs.io/projects/syrec/en/stable", None),
 }
 
 myst_enable_extensions = [
@@ -106,7 +117,7 @@ myst_heading_anchors = 3
 
 # -- Options for {MyST}NB ----------------------------------------------------
 
-nb_execution_mode = "cache"
+nb_execution_mode = "force"
 nb_execution_raise_on_error = True
 
 
@@ -155,15 +166,23 @@ napoleon_google_docstring = True
 napoleon_numpy_docstring = False
 
 # AutoAPI renders these annotations as Python cross-references although they
-# are typing expressions or private Qiskit aliases, not documented objects.
+# are typing expressions, private types, or dependency types absent from their inventories.
 nitpick_ignore_regex = [
-    ("py:class", r"Annotated\[numpy\.typing\.NDArray\[numpy\.complex128\], \{'shape': \(.*\)\}\]"),
+    ("py:(class|obj)", r"_Result"),
+    ("py:class", r"mqt\.core\.plugins\.pennylane\.converter\._ConvertedProgram"),
+    ("py:class", r"qiskit\.result\.models\.ExperimentResult"),
+    (
+        "py:class",
+        r"Annotated\[numpy\.typing\.NDArray\[numpy\.complex128\], \{'shape': \(.*\)(?:, 'writable': False)?\}\]",
+    ),
     ("py:class", r"Ellipsis"),
     ("py:class", r"ParametersType"),
     ("py:class", r"pennylane\.tape\.QuantumScriptOrBatch"),
     ("py:class", r"pennylane\.transforms\.core\.CompilePipeline"),
     ("py:class", r"pennylane\.typing\.(Result|ResultBatch)"),
     ("py:class", r"qiskit\.primitives\.containers\.(Estimator|Sampler)PubLike"),
+    # PennyLane inherits this unqualified reference without exporting its target.
+    ("py:class", r"DeviceCapabilities"),
 ]
 
 # ACM and SIAM reject automated requests after resolving their valid DOI links.
@@ -176,10 +195,12 @@ linkcheck_anchors_ignore_for_url = [
 
 
 cpp_api_tagfile = ("_build/doxygen/mqt-core.tag", "cpp/", "_build/doxygen/xml")
+_qdmi_api_base = "https://munich-quantum-software-stack.github.io/QDMI/latest/"
 qdmi_api_tagfile = (
     "_build/qdmi.tag",
-    "https://munich-quantum-software-stack.github.io/QDMI/v1.3.3/",
+    _qdmi_api_base,
 )
+qdmi_api_tagfile_url = f"{_qdmi_api_base}qdmi.tag"
 
 # -- Options for HTML output -------------------------------------------------
 

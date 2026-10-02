@@ -11,12 +11,13 @@
 /*
  * DDSIM QDMI Device - Session lifecycle and parameters
  */
-#include "helpers/test_utils.hpp"
 #include "mqt_ddsim_qdmi/constants.h"
 #include "mqt_ddsim_qdmi/device.h"
 
-#include <gmock/gmock-matchers.h>
-#include <gtest/gtest.h>
+#include "helpers/test_utils.hpp"
+
+#include "gmock/gmock-matchers.h"
+#include "gtest/gtest.h"
 
 using testing::AnyOf;
 

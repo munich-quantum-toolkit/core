@@ -8,18 +8,19 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QC/Translation/StandardGate.h"
+#include "mqt/Dialect/QC/Translation/StandardGate.h"
 
-#include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
 
-#include <llvm/ADT/StringRef.h>
-#include <llvm/Support/ErrorHandling.h>
-#include <mlir/IR/Builders.h>
-#include <mlir/IR/Location.h>
-#include <mlir/IR/OperationSupport.h>
-#include <mlir/IR/ValueRange.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/Location.h"
+#include "mlir/IR/OperationSupport.h"
+#include "mlir/IR/ValueRange.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
+
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/ErrorHandling.h"
 
 #include <array>
 #include <cstddef>
@@ -91,9 +92,8 @@ lookupStandardGateByOperationSymbol(const llvm::StringRef symbol) {
 }
 
 LogicalResult emitStandardGate(OpBuilder& builder, const Location loc,
-                               const StandardGate gate,
-                               const ValueRange parameters,
-                               const ValueRange qubits) {
+                               const StandardGate gate, ValueRange parameters,
+                               ValueRange qubits) {
   const auto& descriptor = getStandardGateDescriptor(gate);
   if (parameters.size() != descriptor.parameterCount ||
       qubits.size() != descriptor.targetCount) {

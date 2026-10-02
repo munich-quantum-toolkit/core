@@ -8,29 +8,30 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Conversion/CBitToMemRef/CBitToMemRef.h"
+#include "mqt/Conversion/CBitToMemRef/CBitToMemRef.h"
 
-#include "mlir/Dialect/CBit/IR/CBitAttributes.h"
-#include "mlir/Dialect/CBit/IR/CBitDialect.h"
-#include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mqt/Dialect/CBit/IR/CBitAttributes.h"
+#include "mqt/Dialect/CBit/IR/CBitDialect.h"
+#include "mqt/Dialect/CBit/IR/CBitOps.h"
 
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/Func/Transforms/FuncConversions.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
-#include <mlir/Dialect/SCF/Transforms/Patterns.h>
-#include <mlir/IR/BuiltinTypes.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
-#include <mlir/Transforms/DialectConversion.h>
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/Func/Transforms/FuncConversions.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/SCF/Transforms/Patterns.h"
+#include "mlir/IR/BuiltinTypes.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
+#include "mlir/Transforms/DialectConversion.h"
+#include "mlir/Transforms/WalkPatternRewriteDriver.h"
 
-#include <cstdint>
 #include <utility>
 
 namespace mlir {
 
 #define GEN_PASS_DEF_CONVERTCBITTOMEMREF
-#include "mlir/Conversion/CBitToMemRef/CBitToMemRef.h.inc"
+#include "mqt/Conversion/CBitToMemRef/CBitToMemRef.h.inc"
 
 namespace {
 class CBitTypeConverter final : public TypeConverter {
@@ -58,13 +59,17 @@ struct ConvertAllocOp final : OpConversionPattern<cbit::AllocOp> {
     if (op.getInitialization() == cbit::Initialization::Zero) {
       auto zero = arith::ConstantOp::create(rewriter, op.getLoc(),
                                             rewriter.getBoolAttr(false));
-      for (int64_t index = 0; index < type.getDimSize(0); ++index) {
-        auto indexValue =
-            arith::ConstantIndexOp::create(rewriter, op.getLoc(), index);
-        memref::StoreOp::create(rewriter, op.getLoc(), zero.getResult(),
-                                allocation.getResult(),
-                                ValueRange{indexValue.getResult()});
-      }
+      auto lower = arith::ConstantIndexOp::create(rewriter, op.getLoc(), 0);
+      auto upper = arith::ConstantIndexOp::create(rewriter, op.getLoc(),
+                                                  type.getDimSize(0));
+      auto step = arith::ConstantIndexOp::create(rewriter, op.getLoc(), 1);
+      scf::ForOp::create(
+          rewriter, op.getLoc(), lower, upper, step, ValueRange{},
+          [&](OpBuilder& builder, Location location, Value index, ValueRange) {
+            memref::StoreOp::create(builder, location, zero.getResult(),
+                                    allocation.getResult(), ValueRange{index});
+            scf::YieldOp::create(builder, location);
+          });
     }
 
     rewriter.replaceOp(op, allocation.getResult());
@@ -103,9 +108,16 @@ struct ConvertCBitToMemRef final
 protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
-    auto* moduleOp = getOperation();
+    auto moduleOp = getOperation();
     CBitTypeConverter typeConverter;
     ConversionTarget target(*context);
+
+    {
+      RewritePatternSet patterns(context);
+      cbit::populateCBitDecompositionPatterns(patterns);
+      const FrozenRewritePatternSet frozen(std::move(patterns));
+      walkAndApplyPatterns(moduleOp, frozen);
+    }
     RewritePatternSet patterns(context);
 
     target.addIllegalDialect<cbit::CBitDialect>();

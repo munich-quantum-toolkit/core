@@ -20,9 +20,9 @@ add_mlir_library(
 
 mqt_mlir_target_use_project_options(MLIROpenQASMFrontend)
 
-file(GLOB OPENQASM_HEADERS_SOURCE ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Target/OpenQASM/*.h)
+file(GLOB OPENQASM_HEADERS_SOURCE ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Target/OpenQASM/*.h)
 file(GLOB_RECURSE OPENQASM_DETAIL_HEADERS_SOURCE
-     ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Target/OpenQASM/Detail/*.h)
+     ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Target/OpenQASM/Detail/*.h)
 
 target_sources(
   MLIROpenQASMFrontend PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR} FILES

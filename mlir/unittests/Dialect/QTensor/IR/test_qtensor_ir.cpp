@@ -8,40 +8,40 @@
  * Licensed under the MIT License
  */
 
-/**
- * @file test_qtensor_ir.cpp
- * @brief Dedicated unit-test suite for the QTensor MLIR dialect.
- */
+/// @file test_qtensor_ir.cpp
+/// Dedicated unit-test suite for the QTensor MLIR dialect.
+
+#include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
+#include "mqt/Dialect/QCO/IR/QCODialect.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mqt/Dialect/QTensor/IR/QTensorOps.h"
+#include "mqt/Support/Passes.h"
 
 #include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
-#include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
-#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
-#include "mlir/Dialect/QTensor/IR/QTensorUtils.h"
-#include "mlir/Support/Passes.h"
 #include "qco_programs.h"
 
-#include <gtest/gtest.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
-#include <mlir/IR/Builders.h>
-#include <mlir/IR/BuiltinTypeInterfaces.h>
-#include <mlir/IR/BuiltinTypes.h>
-#include <mlir/IR/DialectRegistry.h>
-#include <mlir/IR/Location.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OwningOpRef.h>
-#include <mlir/IR/Types.h>
-#include <mlir/IR/Value.h>
-#include <mlir/IR/Verifier.h>
-#include <mlir/Parser/Parser.h>
-#include <mlir/Pass/PassManager.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Transforms/Passes.h>
+#include "gtest/gtest.h"
+
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinTypeInterfaces.h"
+#include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/DialectRegistry.h"
+#include "mlir/IR/Location.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/OwningOpRef.h"
+#include "mlir/IR/Types.h"
+#include "mlir/IR/Value.h"
+#include "mlir/IR/Verifier.h"
+#include "mlir/Parser/Parser.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Transforms/Passes.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -61,7 +61,7 @@ class QTensorTest : public ::testing::Test {
 protected:
   std::unique_ptr<MLIRContext> context;
 
-  void SetUp() override {
+  QTensorTest() {
     DialectRegistry registry;
     registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,
                     memref::MemRefDialect, QTensorDialect>();
@@ -93,33 +93,6 @@ protected:
     return count;
   }
 };
-
-// ============================================================================
-// QTensorUtils
-// ============================================================================
-
-TEST_F(QTensorTest, AreEquivalentIndicesSameValueIsEquivalent) {
-  QCOProgramBuilder builder(context.get());
-  builder.initialize();
-  auto c2 = arith::ConstantIndexOp::create(builder, 2);
-  EXPECT_TRUE(areEquivalentIndices(c2.getResult(), c2.getResult()));
-}
-
-TEST_F(QTensorTest, AreEquivalentIndicesSameConstantsAreEquivalent) {
-  QCOProgramBuilder builder(context.get());
-  builder.initialize();
-  auto lhs = arith::ConstantIndexOp::create(builder, 2);
-  auto rhs = arith::ConstantIndexOp::create(builder, 2);
-  EXPECT_TRUE(areEquivalentIndices(lhs.getResult(), rhs.getResult()));
-}
-
-TEST_F(QTensorTest, AreEquivalentIndicesDifferentConstantsAreNotEquivalent) {
-  QCOProgramBuilder builder(context.get());
-  builder.initialize();
-  auto c0 = arith::ConstantIndexOp::create(builder, 0);
-  auto c1 = arith::ConstantIndexOp::create(builder, 1);
-  EXPECT_FALSE(areEquivalentIndices(c0.getResult(), c1.getResult()));
-}
 
 // ============================================================================
 // AllocOp
@@ -271,6 +244,30 @@ TEST_F(QTensorTest, InsertOpIndexAtDimFailsVerification) {
 
   ASSERT_TRUE(module);
   EXPECT_TRUE(verify(*module).failed());
+}
+
+TEST_F(QTensorTest, NestedRegisterAccessInsideModifierFailsVerification) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  const auto tensor = builder.qtensorAlloc(1);
+  const auto target = builder.allocQubit();
+  const auto condition = builder.boolConstant(true);
+  auto index = arith::ConstantIndexOp::create(builder, 0);
+
+  auto inverse = qco::InvOp::create(builder, target, [&](Value argument) {
+    return qco::IfOp::create(
+               builder, condition, argument,
+               [&](Value nestedArgument) {
+                 auto extract =
+                     ExtractOp::create(builder, tensor, index.getResult());
+                 InsertOp::create(builder, extract.getResult(),
+                                  extract.getOutTensor(), index.getResult());
+                 return nestedArgument;
+               })
+        .getResult(0);
+  });
+
+  EXPECT_TRUE(verify(inverse).failed());
 }
 
 } // namespace
@@ -450,15 +447,19 @@ TEST_F(QTensorTest, AdjacentInsertExtractKeepsPotentialDynamicAlias) {
 TEST_F(QTensorTest, InsertChainCanonicalizationRemainsLocal) {
   auto program = buildTwoQubitInsertChainProgram(context.get(), false, false);
   ASSERT_TRUE(program);
-  EXPECT_TRUE(verify(*program).succeeded());
+  ASSERT_TRUE(verify(*program).succeeded());
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*program)));
   EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
-  EXPECT_TRUE(verify(*program).succeeded());
+  ASSERT_TRUE(verify(*program).succeeded());
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*program)));
 
   auto reference = buildTwoQubitInsertChainProgram(context.get(), true, false);
   ASSERT_TRUE(reference);
-  EXPECT_TRUE(verify(*reference).succeeded());
+  ASSERT_TRUE(verify(*reference).succeeded());
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*reference)));
   EXPECT_TRUE(runQCOCleanupPipeline(reference.get()).succeeded());
-  EXPECT_TRUE(verify(*reference).succeeded());
+  ASSERT_TRUE(verify(*reference).succeeded());
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*reference)));
 
   EXPECT_EQ(countOps<InsertOp>(*program), 2U);
   EXPECT_EQ(countOps<InsertOp>(*reference), 0U);
@@ -498,6 +499,84 @@ TEST_F(QTensorTest, ResetAfterExtractThroughCommutingInsertIsEliminated) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
+TEST_F(QTensorTest, ResetsOnFreshSlotsAreRemovedAcrossAWideTensor) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  auto tensor = builder.qtensorAlloc(1024);
+  for (int64_t index = 0; index < 1024; ++index) {
+    Value qubit;
+    std::tie(tensor, qubit) = builder.qtensorExtract(tensor, index);
+    qubit = builder.reset(qubit);
+    qubit = builder.h(qubit);
+    tensor = builder.qtensorInsert(qubit, tensor, index);
+  }
+  auto program = builder.finalize();
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(succeeded(verify(*program)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*program)));
+  ASSERT_TRUE(succeeded(canonicalize(*program)));
+  EXPECT_EQ(countOps<qco::ResetOp>(*program), 0U);
+  EXPECT_EQ(countOps<qco::HOp>(*program), 1024U);
+  EXPECT_TRUE(succeeded(verify(*program)));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(*program)));
+}
+
+TEST_F(QTensorTest, ResetsOnUsedSlotsSurviveAcrossAWideTensor) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  auto tensor = builder.qtensorAlloc(128);
+  for (int phase = 0; phase < 2; ++phase) {
+    for (int64_t index = 0; index < 128; ++index) {
+      Value qubit;
+      std::tie(tensor, qubit) = builder.qtensorExtract(tensor, index);
+      if (phase == 1) {
+        qubit = builder.reset(qubit);
+      }
+      qubit = builder.h(qubit);
+      tensor = builder.qtensorInsert(qubit, tensor, index);
+    }
+  }
+  auto program = builder.finalize();
+  ASSERT_TRUE(succeeded(verify(*program)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*program)));
+  ASSERT_TRUE(succeeded(canonicalize(*program)));
+  EXPECT_EQ(countOps<qco::ResetOp>(*program), 128U);
+  EXPECT_EQ(countOps<qco::HOp>(*program), 256U);
+  EXPECT_TRUE(succeeded(verify(*program)));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(*program)));
+}
+
+TEST_F(QTensorTest, FreshSlotResetFoldingStopsAtUnknownIndices) {
+  constexpr auto source = R"mlir(module {
+    func.func @test(%index: index) {
+      %size = arith.constant 4 : index
+      %zero = arith.constant 0 : index
+      %two = arith.constant 2 : index
+      %tensor = qtensor.alloc(%size) : tensor<4x!qco.qubit>
+      %t0, %q0 = qtensor.extract %tensor[%zero] : tensor<4x!qco.qubit>
+      %r0 = qco.reset %q0 : !qco.qubit -> !qco.qubit
+      %h0 = qco.h %r0 : !qco.qubit -> !qco.qubit
+      %t1 = qtensor.insert %h0 into %t0[%zero] : tensor<4x!qco.qubit>
+      %t2, %q1 = qtensor.extract %t1[%index] : tensor<4x!qco.qubit>
+      %h1 = qco.h %q1 : !qco.qubit -> !qco.qubit
+      %t3 = qtensor.insert %h1 into %t2[%index] : tensor<4x!qco.qubit>
+      %t4, %q2 = qtensor.extract %t3[%two] : tensor<4x!qco.qubit>
+      %r2 = qco.reset %q2 : !qco.qubit -> !qco.qubit
+      %t5 = qtensor.insert %r2 into %t4[%two] : tensor<4x!qco.qubit>
+      qtensor.dealloc %t5 : tensor<4x!qco.qubit>
+      return
+    }
+  })mlir";
+  auto program = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(succeeded(verify(*program)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*program)));
+  ASSERT_TRUE(succeeded(canonicalize(*program)));
+  EXPECT_EQ(countOps<qco::ResetOp>(*program), 1U);
+  EXPECT_TRUE(succeeded(verify(*program)));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(*program)));
+}
+
 TEST_F(QTensorTest, ResetAfterExtractThroughSameIndexInsertIsNotEliminated) {
   auto program = buildResetWithSameIndexInsertProgram(context.get(), true);
   ASSERT_TRUE(program);
@@ -515,23 +594,20 @@ TEST_F(QTensorTest, ResetAfterExtractThroughSameIndexInsertIsNotEliminated) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/**
- * @brief Qubit tensors that do not descend from an allocation are compared
- * through the regular SSA mapping.
- *
- * @details
- * A tensor arriving as a function argument has no equivalence group, and the
- * threaded tensor an extraction hands back is only covered once it is mapped
- * explicitly. Both used to abort inside the comparison instead of reporting a
- * result.
- *
- * The two equivalent programs are written differently and converge under the
- * cleanup pipeline, so the comparison is reached from distinct sources. Note
- * that it cannot be reached from distinct *results*: the permutation matching
- * is keyed off the equivalence groups seeded by `qtensor.alloc`, which a
- * function argument never joins, so on this path the comparison is structural.
- * The negative cases below pin down how little it takes to break it.
- */
+/// Qubit tensors that do not descend from an allocation are compared
+/// through the regular SSA mapping.
+///
+/// A tensor arriving as a function argument has no equivalence group, and the
+/// threaded tensor an extraction hands back is only covered once it is mapped
+/// explicitly. Both used to abort inside the comparison instead of reporting a
+/// result.
+///
+/// The two equivalent programs are written differently and converge under the
+/// cleanup pipeline, so the comparison is reached from distinct sources. Note
+/// that it cannot be reached from distinct *results*: the permutation matching
+/// is keyed off the equivalence groups seeded by `qtensor.alloc`, which a
+/// function argument never joins, so on this path the comparison is structural.
+/// The negative cases below pin down how little it takes to break it.
 TEST_F(QTensorTest, ComparesQubitTensorsThatDoNotDescendFromAnAllocation) {
   const auto parse = [&](const char* body) {
     const std::string source = std::string(R"mlir(
@@ -591,16 +667,13 @@ func.func @f(%t: tensor<2x!qco.qubit>) -> tensor<2x!qco.qubit> {
       areModulesEquivalentWithPermutations(program.get(), otherElement.get()));
 }
 
-/**
- * @brief A tracked tensor is never matched against an untracked one.
- *
- * @details
- * Only tensors descending from a `qtensor.alloc` join an equivalence group. The
- * `rhs` guard is what stops a tracked left-hand tensor from being compared
- * against a right-hand one that has no group, which would look the group up on
- * a missing key. It is only reachable once the left-hand side is tracked, so it
- * needs a case where the two sides disagree about that.
- */
+/// A tracked tensor is never matched against an untracked one.
+///
+/// Only tensors descending from a `qtensor.alloc` join an equivalence group.
+/// The `rhs` guard is what stops a tracked left-hand tensor from being compared
+/// against a right-hand one that has no group, which would look the group up on
+/// a missing key. It is only reachable once the left-hand side is tracked, so
+/// it needs a case where the two sides disagree about that.
 TEST_F(QTensorTest, DoesNotMatchATrackedTensorAgainstAnUntrackedOne) {
   const auto parse = [&](const char* worked, const char* released) {
     const std::string source = std::string(R"mlir(
@@ -659,7 +732,7 @@ class QTensorIntegrationTest
 protected:
   std::unique_ptr<MLIRContext> context;
 
-  void SetUp() override {
+  QTensorIntegrationTest() {
     DialectRegistry registry;
     registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,
                     memref::MemRefDialect, QTensorDialect>();

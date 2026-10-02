@@ -8,28 +8,27 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 
-#include <mlir/Dialect/Utils/StaticValueUtils.h>
-#include <mlir/IR/BuiltinTypeInterfaces.h>
-#include <mlir/IR/OpDefinition.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/Support/LLVM.h>
+#include "mlir/Dialect/Utils/StaticValueUtils.h"
+#include "mlir/IR/BuiltinTypeInterfaces.h"
+#include "mlir/IR/OpDefinition.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/Support/LLVM.h"
 
 using namespace mlir;
 using namespace mlir::qtensor;
 
 namespace {
-/**
- * @brief Fold an insert followed immediately by an extract at the same index.
- */
+/// Fold an insert followed immediately by an extract at the same index.
 struct FoldExtractAfterInsertPattern final : OpRewritePattern<ExtractOp> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(ExtractOp extract,
                                 PatternRewriter& rewriter) const override {
     auto insert = extract.getTensor().getDefiningOp<InsertOp>();
-    if (!insert || !insert->hasOneUse() ||
+    if (!insert ||
         !isEqualConstantIntOrValue(insert.getIndex(), extract.getIndex())) {
       return failure();
     }

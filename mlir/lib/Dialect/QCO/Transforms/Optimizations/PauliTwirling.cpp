@@ -8,20 +8,22 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQT/Utils/Modifiers.h"
-#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mqt/Dialect/MQT/Utils/Modifiers.h"
+#include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/Transforms/Passes.h"
+#include "mqt/Support/RandomSeed.h"
 
-#include <llvm/Support/ErrorHandling.h>
-#include <mlir/Dialect/Arith/IR/Arith.h> // IWYU pragma: keep (Passes.h.inc)
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/Location.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/Value.h>
-#include <mlir/IR/Visitors.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/WalkResult.h>
+#include "mlir/Dialect/Arith/IR/Arith.h" // IWYU pragma: keep (Passes.h.inc)
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Location.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/Value.h"
+#include "mlir/IR/Visitors.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/WalkResult.h"
+
+#include "llvm/Support/ErrorHandling.h"
 
 #include <array>
 #include <cstdint>
@@ -31,7 +33,7 @@
 namespace mlir::qco {
 
 #define GEN_PASS_DEF_PAULITWIRL2QGATES
-#include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
+#include "mqt/Dialect/QCO/Transforms/Passes.h.inc"
 
 namespace {
 
@@ -54,81 +56,89 @@ struct Twirl {
 // Rows are ordered by the pre-Pauli pair II, IX, ..., ZZ. Each table is
 // derived from the corresponding QCO gate matrix and satisfies
 // exp(i * phase) * post * gate * pre = gate.
-constexpr std::array<Twirl, 16> CX_TWIRLS = {{
-    {Pauli::I, Pauli::I, Pauli::I, Pauli::I, false},
-    {Pauli::I, Pauli::X, Pauli::I, Pauli::X, false},
-    {Pauli::I, Pauli::Y, Pauli::Z, Pauli::Y, false},
-    {Pauli::I, Pauli::Z, Pauli::Z, Pauli::Z, false},
-    {Pauli::X, Pauli::I, Pauli::X, Pauli::X, false},
-    {Pauli::X, Pauli::X, Pauli::X, Pauli::I, false},
-    {Pauli::X, Pauli::Y, Pauli::Y, Pauli::Z, false},
-    {Pauli::X, Pauli::Z, Pauli::Y, Pauli::Y, true},
-    {Pauli::Y, Pauli::I, Pauli::Y, Pauli::X, false},
-    {Pauli::Y, Pauli::X, Pauli::Y, Pauli::I, false},
-    {Pauli::Y, Pauli::Y, Pauli::X, Pauli::Z, true},
-    {Pauli::Y, Pauli::Z, Pauli::X, Pauli::Y, false},
-    {Pauli::Z, Pauli::I, Pauli::Z, Pauli::I, false},
-    {Pauli::Z, Pauli::X, Pauli::Z, Pauli::X, false},
-    {Pauli::Z, Pauli::Y, Pauli::I, Pauli::Y, false},
-    {Pauli::Z, Pauli::Z, Pauli::I, Pauli::Z, false},
-}};
+constexpr std::array<Twirl, 16> CX_TWIRLS = {
+    {
+        {Pauli::I, Pauli::I, Pauli::I, Pauli::I, false},
+        {Pauli::I, Pauli::X, Pauli::I, Pauli::X, false},
+        {Pauli::I, Pauli::Y, Pauli::Z, Pauli::Y, false},
+        {Pauli::I, Pauli::Z, Pauli::Z, Pauli::Z, false},
+        {Pauli::X, Pauli::I, Pauli::X, Pauli::X, false},
+        {Pauli::X, Pauli::X, Pauli::X, Pauli::I, false},
+        {Pauli::X, Pauli::Y, Pauli::Y, Pauli::Z, false},
+        {Pauli::X, Pauli::Z, Pauli::Y, Pauli::Y, true},
+        {Pauli::Y, Pauli::I, Pauli::Y, Pauli::X, false},
+        {Pauli::Y, Pauli::X, Pauli::Y, Pauli::I, false},
+        {Pauli::Y, Pauli::Y, Pauli::X, Pauli::Z, true},
+        {Pauli::Y, Pauli::Z, Pauli::X, Pauli::Y, false},
+        {Pauli::Z, Pauli::I, Pauli::Z, Pauli::I, false},
+        {Pauli::Z, Pauli::X, Pauli::Z, Pauli::X, false},
+        {Pauli::Z, Pauli::Y, Pauli::I, Pauli::Y, false},
+        {Pauli::Z, Pauli::Z, Pauli::I, Pauli::Z, false},
+    },
+};
 
-constexpr std::array<Twirl, 16> CZ_TWIRLS = {{
-    {Pauli::I, Pauli::I, Pauli::I, Pauli::I, false},
-    {Pauli::I, Pauli::X, Pauli::Z, Pauli::X, false},
-    {Pauli::I, Pauli::Y, Pauli::Z, Pauli::Y, false},
-    {Pauli::I, Pauli::Z, Pauli::I, Pauli::Z, false},
-    {Pauli::X, Pauli::I, Pauli::X, Pauli::Z, false},
-    {Pauli::X, Pauli::X, Pauli::Y, Pauli::Y, false},
-    {Pauli::X, Pauli::Y, Pauli::Y, Pauli::X, true},
-    {Pauli::X, Pauli::Z, Pauli::X, Pauli::I, false},
-    {Pauli::Y, Pauli::I, Pauli::Y, Pauli::Z, false},
-    {Pauli::Y, Pauli::X, Pauli::X, Pauli::Y, true},
-    {Pauli::Y, Pauli::Y, Pauli::X, Pauli::X, false},
-    {Pauli::Y, Pauli::Z, Pauli::Y, Pauli::I, false},
-    {Pauli::Z, Pauli::I, Pauli::Z, Pauli::I, false},
-    {Pauli::Z, Pauli::X, Pauli::I, Pauli::X, false},
-    {Pauli::Z, Pauli::Y, Pauli::I, Pauli::Y, false},
-    {Pauli::Z, Pauli::Z, Pauli::Z, Pauli::Z, false},
-}};
+constexpr std::array<Twirl, 16> CZ_TWIRLS = {
+    {
+        {Pauli::I, Pauli::I, Pauli::I, Pauli::I, false},
+        {Pauli::I, Pauli::X, Pauli::Z, Pauli::X, false},
+        {Pauli::I, Pauli::Y, Pauli::Z, Pauli::Y, false},
+        {Pauli::I, Pauli::Z, Pauli::I, Pauli::Z, false},
+        {Pauli::X, Pauli::I, Pauli::X, Pauli::Z, false},
+        {Pauli::X, Pauli::X, Pauli::Y, Pauli::Y, false},
+        {Pauli::X, Pauli::Y, Pauli::Y, Pauli::X, true},
+        {Pauli::X, Pauli::Z, Pauli::X, Pauli::I, false},
+        {Pauli::Y, Pauli::I, Pauli::Y, Pauli::Z, false},
+        {Pauli::Y, Pauli::X, Pauli::X, Pauli::Y, true},
+        {Pauli::Y, Pauli::Y, Pauli::X, Pauli::X, false},
+        {Pauli::Y, Pauli::Z, Pauli::Y, Pauli::I, false},
+        {Pauli::Z, Pauli::I, Pauli::Z, Pauli::I, false},
+        {Pauli::Z, Pauli::X, Pauli::I, Pauli::X, false},
+        {Pauli::Z, Pauli::Y, Pauli::I, Pauli::Y, false},
+        {Pauli::Z, Pauli::Z, Pauli::Z, Pauli::Z, false},
+    },
+};
 
-constexpr std::array<Twirl, 16> ECR_TWIRLS = {{
-    {Pauli::I, Pauli::I, Pauli::I, Pauli::I, false},
-    {Pauli::I, Pauli::X, Pauli::I, Pauli::X, false},
-    {Pauli::I, Pauli::Y, Pauli::Z, Pauli::Z, true},
-    {Pauli::I, Pauli::Z, Pauli::Z, Pauli::Y, false},
-    {Pauli::X, Pauli::I, Pauli::Y, Pauli::X, true},
-    {Pauli::X, Pauli::X, Pauli::Y, Pauli::I, true},
-    {Pauli::X, Pauli::Y, Pauli::X, Pauli::Y, false},
-    {Pauli::X, Pauli::Z, Pauli::X, Pauli::Z, false},
-    {Pauli::Y, Pauli::I, Pauli::X, Pauli::X, true},
-    {Pauli::Y, Pauli::X, Pauli::X, Pauli::I, true},
-    {Pauli::Y, Pauli::Y, Pauli::Y, Pauli::Y, true},
-    {Pauli::Y, Pauli::Z, Pauli::Y, Pauli::Z, true},
-    {Pauli::Z, Pauli::I, Pauli::Z, Pauli::I, true},
-    {Pauli::Z, Pauli::X, Pauli::Z, Pauli::X, true},
-    {Pauli::Z, Pauli::Y, Pauli::I, Pauli::Z, false},
-    {Pauli::Z, Pauli::Z, Pauli::I, Pauli::Y, true},
-}};
+constexpr std::array<Twirl, 16> ECR_TWIRLS = {
+    {
+        {Pauli::I, Pauli::I, Pauli::I, Pauli::I, false},
+        {Pauli::I, Pauli::X, Pauli::I, Pauli::X, false},
+        {Pauli::I, Pauli::Y, Pauli::Z, Pauli::Z, true},
+        {Pauli::I, Pauli::Z, Pauli::Z, Pauli::Y, false},
+        {Pauli::X, Pauli::I, Pauli::Y, Pauli::X, true},
+        {Pauli::X, Pauli::X, Pauli::Y, Pauli::I, true},
+        {Pauli::X, Pauli::Y, Pauli::X, Pauli::Y, false},
+        {Pauli::X, Pauli::Z, Pauli::X, Pauli::Z, false},
+        {Pauli::Y, Pauli::I, Pauli::X, Pauli::X, true},
+        {Pauli::Y, Pauli::X, Pauli::X, Pauli::I, true},
+        {Pauli::Y, Pauli::Y, Pauli::Y, Pauli::Y, true},
+        {Pauli::Y, Pauli::Z, Pauli::Y, Pauli::Z, true},
+        {Pauli::Z, Pauli::I, Pauli::Z, Pauli::I, true},
+        {Pauli::Z, Pauli::X, Pauli::Z, Pauli::X, true},
+        {Pauli::Z, Pauli::Y, Pauli::I, Pauli::Z, false},
+        {Pauli::Z, Pauli::Z, Pauli::I, Pauli::Y, true},
+    },
+};
 
-constexpr std::array<Twirl, 16> ISWAP_TWIRLS = {{
-    {Pauli::I, Pauli::I, Pauli::I, Pauli::I, false},
-    {Pauli::I, Pauli::X, Pauli::Y, Pauli::Z, false},
-    {Pauli::I, Pauli::Y, Pauli::X, Pauli::Z, true},
-    {Pauli::I, Pauli::Z, Pauli::Z, Pauli::I, false},
-    {Pauli::X, Pauli::I, Pauli::Z, Pauli::Y, false},
-    {Pauli::X, Pauli::X, Pauli::X, Pauli::X, false},
-    {Pauli::X, Pauli::Y, Pauli::Y, Pauli::X, false},
-    {Pauli::X, Pauli::Z, Pauli::I, Pauli::Y, false},
-    {Pauli::Y, Pauli::I, Pauli::Z, Pauli::X, true},
-    {Pauli::Y, Pauli::X, Pauli::X, Pauli::Y, false},
-    {Pauli::Y, Pauli::Y, Pauli::Y, Pauli::Y, false},
-    {Pauli::Y, Pauli::Z, Pauli::I, Pauli::X, true},
-    {Pauli::Z, Pauli::I, Pauli::I, Pauli::Z, false},
-    {Pauli::Z, Pauli::X, Pauli::Y, Pauli::I, false},
-    {Pauli::Z, Pauli::Y, Pauli::X, Pauli::I, true},
-    {Pauli::Z, Pauli::Z, Pauli::Z, Pauli::Z, false},
-}};
+constexpr std::array<Twirl, 16> ISWAP_TWIRLS = {
+    {
+        {Pauli::I, Pauli::I, Pauli::I, Pauli::I, false},
+        {Pauli::I, Pauli::X, Pauli::Y, Pauli::Z, false},
+        {Pauli::I, Pauli::Y, Pauli::X, Pauli::Z, true},
+        {Pauli::I, Pauli::Z, Pauli::Z, Pauli::I, false},
+        {Pauli::X, Pauli::I, Pauli::Z, Pauli::Y, false},
+        {Pauli::X, Pauli::X, Pauli::X, Pauli::X, false},
+        {Pauli::X, Pauli::Y, Pauli::Y, Pauli::X, false},
+        {Pauli::X, Pauli::Z, Pauli::I, Pauli::Y, false},
+        {Pauli::Y, Pauli::I, Pauli::Z, Pauli::X, true},
+        {Pauli::Y, Pauli::X, Pauli::X, Pauli::Y, false},
+        {Pauli::Y, Pauli::Y, Pauli::Y, Pauli::Y, false},
+        {Pauli::Y, Pauli::Z, Pauli::I, Pauli::X, true},
+        {Pauli::Z, Pauli::I, Pauli::I, Pauli::Z, false},
+        {Pauli::Z, Pauli::X, Pauli::Y, Pauli::I, false},
+        {Pauli::Z, Pauli::Y, Pauli::X, Pauli::I, true},
+        {Pauli::Z, Pauli::Z, Pauli::Z, Pauli::Z, false},
+    },
+};
 
 } // namespace
 
@@ -158,8 +168,8 @@ constexpr std::array<Twirl, 16> ISWAP_TWIRLS = {{
   return nullptr;
 }
 
-static Value createPauli(IRRewriter& rewriter, const Location loc,
-                         const Pauli pauli, const Value qubit) {
+static Value createPauli(IRRewriter& rewriter, const Location loc, Pauli pauli,
+                         Value qubit) {
   switch (pauli) {
   case Pauli::I:
     return IdOp::create(rewriter, loc, qubit).getOutputQubit(0);
@@ -176,25 +186,25 @@ static Value createPauli(IRRewriter& rewriter, const Location loc,
 static void twirlGate(IRRewriter& rewriter, UnitaryOpInterface gate,
                       const Twirl& twirl) {
   auto* op = gate.getOperation();
-  const auto firstIn = gate.getInputQubit(0);
-  const auto secondIn = gate.getInputQubit(1);
-  const auto firstOut = gate.getOutputQubit(0);
-  const auto secondOut = gate.getOutputQubit(1);
+  auto firstIn = gate.getInputQubit(0);
+  auto secondIn = gate.getInputQubit(1);
+  auto firstOut = gate.getOutputQubit(0);
+  auto secondOut = gate.getOutputQubit(1);
 
   rewriter.setInsertionPoint(op);
-  const auto newFirstIn =
+  auto newFirstIn =
       createPauli(rewriter, op->getLoc(), twirl.beforeFirst, firstIn);
-  const auto newSecondIn =
+  auto newSecondIn =
       createPauli(rewriter, op->getLoc(), twirl.beforeSecond, secondIn);
-  rewriter.modifyOpInPlace(op, [&]() {
+  rewriter.modifyOpInPlace(op, [&] {
     op->setOperand(0, newFirstIn);
     op->setOperand(1, newSecondIn);
   });
 
   rewriter.setInsertionPointAfter(op);
-  const auto newFirstOut =
+  auto newFirstOut =
       createPauli(rewriter, op->getLoc(), twirl.afterFirst, firstOut);
-  const auto newSecondOut =
+  auto newSecondOut =
       createPauli(rewriter, op->getLoc(), twirl.afterSecond, secondOut);
   rewriter.replaceAllUsesExcept(firstOut, newFirstOut,
                                 newFirstOut.getDefiningOp());
@@ -228,7 +238,7 @@ protected:
     });
 
     IRRewriter rewriter(&getContext());
-    std::mt19937_64 rng(seed);
+    std::mt19937_64 rng(compilationSeed(getOperation(), seed));
     for (auto& [gate, table] : gates) {
       twirlGate(rewriter, gate, (*table)[rng() & 0xFU]);
     }

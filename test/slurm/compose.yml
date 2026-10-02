@@ -20,7 +20,7 @@ services:
     volumes:
       - /sys/fs/cgroup:/sys/fs/cgroup:rw
       - ../..:/workspace:ro
-      - ./runtime:/runtime
+      - ${MQT_CORE_SLURM_RUNTIME:-./runtime}:/runtime
       - ./slurm.conf:/etc/slurm/slurm.conf:ro
       - ./cgroup.conf:/etc/slurm/cgroup.conf:ro
     healthcheck:
@@ -54,7 +54,7 @@ services:
     volumes:
       - /sys/fs/cgroup:/sys/fs/cgroup:rw
       - ../..:/workspace:ro
-      - ./runtime:/runtime
+      - ${MQT_CORE_SLURM_RUNTIME:-./runtime}:/runtime
       - ./slurm.conf:/etc/slurm/slurm.conf:ro
       - ./cgroup.conf:/etc/slurm/cgroup.conf:ro
     healthcheck:
@@ -88,7 +88,7 @@ services:
     volumes:
       - /sys/fs/cgroup:/sys/fs/cgroup:rw
       - ../..:/workspace:ro
-      - ./runtime:/runtime
+      - ${MQT_CORE_SLURM_RUNTIME:-./runtime}:/runtime
       - ./slurm.conf:/etc/slurm/slurm.conf:ro
       - ./cgroup.conf:/etc/slurm/cgroup.conf:ro
     healthcheck:

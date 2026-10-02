@@ -11,12 +11,13 @@
 /*
  * DDSIM QDMI Device - Results: probabilities (dense/sparse)
  */
-#include "helpers/circuits.hpp"
-#include "helpers/test_utils.hpp"
 #include "mqt_ddsim_qdmi/constants.h"
 #include "mqt_ddsim_qdmi/device.h"
 
-#include <gtest/gtest.h>
+#include "helpers/circuits.hpp"
+#include "helpers/test_utils.hpp"
+
+#include "gtest/gtest.h"
 
 #include <cstddef>
 #include <vector>
@@ -30,7 +31,7 @@ TEST(ResultsProbabilities, DenseSumToOneAndBufferTooSmall) {
   ASSERT_EQ(qdmi_test::setShots(j.job, 0), QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
 
-  auto probs = qdmi_test::getDenseProbabilities(j.job);
+  auto const probs = qdmi_test::getDenseProbabilities(j.job);
   ASSERT_FALSE(probs.empty());
   auto sum = 0.0;
   for (const auto& v : probs) {

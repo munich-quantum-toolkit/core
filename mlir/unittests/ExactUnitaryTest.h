@@ -11,12 +11,13 @@
 #pragma once
 
 #include "dd/Package.hpp"
-#include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
+#include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
 
-#include <gtest/gtest.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/Support/LogicalResult.h>
+#include "gtest/gtest.h"
+
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/Support/LogicalResult.h"
 
 #include <cmath>
 #include <cstddef>
@@ -24,21 +25,19 @@
 
 namespace mqt::test {
 
-/**
- * @brief Compare complete QCO function matrices, including global phase.
- *
- * This deliberately performs entry-by-entry matrix equality within @p
- * tolerance. It never quotients out a global phase, so an incorrect rewrite
- * becomes observable here and when the rewritten function is put under an
- * additional control.
- */
+/// Compare complete QCO function matrices, including global phase.
+///
+/// This deliberately performs entry-by-entry matrix equality within @p
+/// tolerance. It never quotients out a global phase, so an incorrect rewrite
+/// becomes observable here and when the rewritten function is put under an
+/// additional control.
 inline void expectFullUnitaryEqual(mlir::ModuleOp expectedModule,
                                    mlir::ModuleOp actualModule,
                                    const std::size_t numQubits,
                                    const double tolerance = 1e-12) {
-  const auto expectedFunc =
+  auto expectedFunc =
       *expectedModule.getBody()->getOps<mlir::func::FuncOp>().begin();
-  const auto actualFunc =
+  auto actualFunc =
       *actualModule.getBody()->getOps<mlir::func::FuncOp>().begin();
   auto package = std::make_unique<dd::Package>(numQubits);
   const auto expected = mlir::qco::buildFunctionality(expectedFunc, *package);

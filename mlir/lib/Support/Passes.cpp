@@ -8,24 +8,29 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Support/Passes.h"
+#include "mqt/Support/Passes.h"
 
-#include "mlir/Conversion/CBitToMemRef/CBitToMemRef.h"
-#include "mlir/Dialect/MQT/Transforms/Passes.h"
-#include "mlir/Dialect/QC/Transforms/Passes.h"
-#include "mlir/Dialect/QCO/Transforms/Passes.h"
-#include "mlir/Dialect/QIR/Transforms/Passes.h"
-#include "mlir/Dialect/QTensor/Transforms/Passes.h"
+#include "mqt/Conversion/CBitToMemRef/CBitToMemRef.h"
+#include "mqt/Dialect/MQT/Transforms/Passes.h"
+#include "mqt/Dialect/QC/Transforms/Passes.h"
+#include "mqt/Dialect/QCO/Transforms/Passes.h"
+#include "mqt/Dialect/QIR/Transforms/Passes.h"
+#include "mqt/Dialect/QTensor/Transforms/Passes.h"
+#include "mqt/Support/RandomSeed.h"
 
-#include <llvm/ADT/StringRef.h>
-#include <llvm/Support/raw_ostream.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/Pass/PassManager.h>
-#include <mlir/Pass/PassRegistry.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
-#include <mlir/Transforms/Passes.h>
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/Pass/Pass.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Pass/PassRegistry.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "mlir/Transforms/Passes.h"
 
+#include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/StringRef.h"
+
+#include <bit>
 #include <cstdint>
 
 using namespace mlir;
@@ -38,31 +43,40 @@ static void addSimplificationPasses(OpPassManager& pm) {
 LogicalResult
 runWithPassManager(ModuleOp mod,
                    const function_ref<void(OpPassManager&)> populatePasses,
-                   const StringRef errorMessage) {
+                   const StringRef errorMessage,
+                   const CompilationOptions& options, bool preservesLayout) {
   PassManager pm(mod.getContext());
   populatePasses(pm);
-  if (pm.run(mod).failed()) {
-    llvm::errs() << errorMessage << "\n";
-    return failure();
+  if (failed(runWithCompilationOptions(pm, mod, options, preservesLayout))) {
+    return mod.emitError(errorMessage);
   }
   return success();
 }
 
 void registerMQTCompilerPasses() {
   static const auto REGISTERED = [] {
+    registerTransformsPasses();
     registerConvertCBitToMemRef();
     qco::registerDecomposeMultiControlled();
     qco::registerFuseSingleQubitUnitaryRuns();
     qco::registerHadamardLifting();
+    qco::registerLegalizeControlFlow();
     qco::registerMeasurementLifting();
     qco::registerMergeSingleQubitRotationGates();
     qco::registerPauliTwirl2QGates();
+    qco::registerMappingPass();
     qco::registerQuantumLoopUnroll();
     qco::registerRemoveDeadGates();
     qco::registerReplaceClassicalControls();
     qco::registerReuseQubits();
+    qco::registerTargetNativeSynthesis();
+    qco::registerUnrollLoopsForPayload();
+    qco::registerVerifyTargetConformance();
     mqt::registerNormalizeGlobalPhases();
     mqt::registerUnrollModifiers();
+    qc::registerShrinkQubitRegistersPass();
+    qtensor::registerShrinkQTensorToFitPass();
+    qir::registerQIRPasses();
     PassPipelineRegistration<>("mqt-qco-default",
                                "Run the default MQT QCO optimization pipeline.",
                                populateDefaultQCOOptimizationPipeline);
@@ -77,6 +91,13 @@ void registerMQTCompilerPasses() {
 
 void populateDefaultQCOOptimizationPipeline(OpPassManager& pm) {
   pm.addPass(qco::createMergeSingleQubitRotationGates());
+}
+
+void populateQIRPreparationPipeline(OpPassManager& pm) {
+  pm.addPass(createInlinerPass());
+  pm.addPass(mqt::createNormalizeGlobalPhases());
+  pm.addPass(mqt::createUnrollModifiers());
+  pm.addPass(createCanonicalizerPass());
 }
 
 void populateQubitReusePipeline(OpPassManager& pm) {
@@ -98,29 +119,55 @@ void populateDecomposeMultiControlledPipeline(OpPassManager& pm,
 }
 
 LogicalResult runPassPipeline(ModuleOp mod, const StringRef pipeline,
-                              const bool enableTiming,
-                              const bool enableStatistics) {
+                              const CompilationOptions& options) {
   registerMQTCompilerPasses();
-  registerTransformsPasses();
   PassManager pm(mod.getContext());
-  if (enableTiming) {
-    pm.enableTiming();
-  }
-  if (enableStatistics) {
-    pm.enableStatistics();
-  }
   if (failed(parsePassPipeline(pipeline, pm))) {
     return mod.emitError() << "failed to parse pass pipeline '" << pipeline
                            << "'";
   }
-  return pm.run(mod);
+  return runWithCompilationOptions(pm, mod, options);
 }
 
-void populateQCCleanupPipeline(OpPassManager& pm) {
+LogicalResult runWithCompilationOptions(PassManager& pm, ModuleOp moduleOp,
+                                        const CompilationOptions& options,
+                                        bool preservesLayout) {
+  if (!preservesLayout) {
+    moduleOp->removeAttr("mqt.layout");
+  }
+  if (options.enableTiming) {
+    pm.enableTiming();
+  }
+  if (options.enableStatistics) {
+    pm.enableStatistics();
+  }
+  auto previous = moduleOp->getAttr(COMPILATION_SEED_ATTR);
+  const auto restoreSeed = llvm::make_scope_exit([&] {
+    if (previous) {
+      moduleOp->setAttr(COMPILATION_SEED_ATTR, previous);
+    } else {
+      moduleOp->removeAttr(COMPILATION_SEED_ATTR);
+    }
+  });
+  if (options.seed) {
+    moduleOp->setAttr(
+        COMPILATION_SEED_ATTR,
+        Builder(moduleOp.getContext())
+            .getI64IntegerAttr(std::bit_cast<int64_t>(*options.seed)));
+  }
+  return pm.run(moduleOp);
+}
+
+void populateQCExportPipeline(OpPassManager& pm) {
   pm.addPass(createCanonicalizerPass());
   pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
   pm.addPass(createCSEPass());
   pm.addPass(qc::createShrinkQubitRegistersPass());
+  pm.addPass(createSymbolDCEPass());
+}
+
+void populateQCCleanupPipeline(OpPassManager& pm) {
+  populateQCExportPipeline(pm);
   pm.addPass(createRemoveDeadValuesPass());
 }
 
@@ -130,6 +177,7 @@ void populateQCOCleanupPipeline(OpPassManager& pm) {
   pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
   pm.addPass(createCSEPass());
   pm.addPass(qtensor::createShrinkQTensorToFitPass());
+  pm.addPass(createSymbolDCEPass());
   pm.addPass(createRemoveDeadValuesPass());
 }
 

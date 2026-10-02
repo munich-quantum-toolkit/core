@@ -8,12 +8,12 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQT/Utils/DenseUnitary.h"
-#include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mqt/Dialect/MQT/Utils/DenseUnitary.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
 
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/Support/LogicalResult.h>
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/Support/LogicalResult.h"
 
 using namespace mlir;
 using namespace mlir::qc;

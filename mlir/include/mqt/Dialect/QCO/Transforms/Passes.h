@@ -1,0 +1,63 @@
+/*
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+ * All rights reserved.
+ *
+ * SPDX-License-Identifier: MIT
+ *
+ * Licensed under the MIT License
+ */
+
+#pragma once
+
+#include "mqt/Compiler/Target.h"
+
+#include "mlir/Interfaces/FunctionInterfaces.h"
+#include "mlir/Pass/Pass.h"
+#include "mlir/Pass/PassRegistry.h"
+
+#include "llvm/Support/Threading.h"
+
+#include <cstdint>
+#include <memory>
+
+namespace mlir {
+class OpPassManager;
+} // namespace mlir
+
+namespace mlir::qco {
+
+#define GEN_PASS_DECL
+#include "mqt/Dialect/QCO/Transforms/Passes.h.inc" // IWYU pragma: export
+
+//===----------------------------------------------------------------------===//
+// Registration
+//===----------------------------------------------------------------------===//
+
+/// Generate the code for registering passes.
+#define GEN_PASS_REGISTRATION
+#include "mqt/Dialect/QCO/Transforms/Passes.h.inc" // IWYU pragma: export
+
+/// Create target-independent two-qubit gate fusion.
+///
+/// Runs remain unchanged when numerical decomposition fails.
+[[nodiscard]] std::unique_ptr<Pass> createFuseTwoQubitGates();
+
+/// Fuse before placement only when both IR and native two-qubit counts shrink.
+/// Native support is checked without assigning physical sites.
+[[nodiscard]] std::unique_ptr<Pass>
+createFuseTwoQubitGates(const CompilerTarget& target);
+
+/// Create multi-controlled decomposition for one compiler target.
+///
+/// Supported operations remain native on all-to-all targets and on static
+/// programs. Other operations use the target-independent decomposition.
+[[nodiscard]] std::unique_ptr<Pass>
+createDecomposeMultiControlled(const CompilerTarget& target,
+                               uint64_t minQubits = 3);
+
+/// Normalize placed QCO, synthesize native gates, and verify target support.
+/// Requires a valid target environment and placed qubits.
+void populateTargetNativeSynthesisPipeline(OpPassManager& pm);
+
+} // namespace mlir::qco

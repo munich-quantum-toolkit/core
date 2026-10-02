@@ -8,26 +8,88 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
 
-#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/Utils/Matrix.h"
+#include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/QCO/IR/QCODialect.h"
+#include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/Utils/Matrix.h"
 
-#include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/TypeSwitch.h>
-#include <mlir/Dialect/QCO/IR/QCODialect.h>
-#include <mlir/IR/Block.h>
-#include <mlir/IR/Operation.h>
-#include <mlir/IR/Value.h>
-#include <mlir/Support/LLVM.h>
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/IR/Block.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Diagnostics.h"
+#include "mlir/IR/Operation.h"
+#include "mlir/IR/Value.h"
+#include "mlir/IR/Visitors.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/WalkResult.h"
+
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <optional>
 
 namespace mlir::qco {
+
+[[nodiscard]] static LogicalResult verifyLinearValue(Value value) {
+  if (!isLinearQubitType(value.getType()) || value.hasOneUse()) {
+    return success();
+  }
+  return emitError(value.getLoc())
+         << "expected linear QCO value to have exactly one use, but found "
+         << value.getNumUses();
+}
+
+LogicalResult verifyLinearity(Operation* root) {
+  func::FuncOp entryPoint;
+  if (auto moduleOp = dyn_cast<ModuleOp>(root)) {
+    entryPoint = mqt::getEntryPoint(moduleOp);
+  }
+
+  DenseSet<uint64_t> staticIndices;
+  const auto walkResult = root->walk([&](Operation* op) {
+    if (auto staticOp = dyn_cast<StaticOp>(op)) {
+      if (entryPoint &&
+          (entryPoint.isDeclaration() ||
+           staticOp->getBlock() != &entryPoint.getBody().front())) {
+        staticOp.emitError()
+            << "expected static qubits in the entry block of program entry "
+               "function @"
+            << entryPoint.getSymName();
+        return WalkResult::interrupt();
+      }
+      if (!staticIndices.insert(staticOp.getIndex()).second) {
+        staticOp.emitError()
+            << "expected each static qubit index to identify one linear "
+               "value, but found duplicate index "
+            << staticOp.getIndex();
+        return WalkResult::interrupt();
+      }
+    }
+    for (auto result : op->getResults()) {
+      if (failed(verifyLinearValue(result))) {
+        return WalkResult::interrupt();
+      }
+    }
+    for (Region& region : op->getRegions()) {
+      for (Block& block : region) {
+        for (auto argument : block.getArguments()) {
+          if (failed(verifyLinearValue(argument))) {
+            return WalkResult::interrupt();
+          }
+        }
+      }
+    }
+    return WalkResult::advance();
+  });
+  return walkResult.wasInterrupted() ? failure() : success();
+}
 
 /// Returns the wire index for @p wire in @p wireIds, or `std::nullopt` if
 /// untracked.
@@ -50,50 +112,77 @@ static void propagateWireIds(UnitaryOpInterface unitary,
   }
 }
 
-/// Returns the @p unitary embedded on @p numTargets modifier wires using @p
-/// wireIds.
-[[nodiscard]] static std::optional<DynamicMatrix>
-embedUnitaryInBody(UnitaryOpInterface unitary, size_t numTargets,
-                   const DenseMap<Value, size_t>& wireIds) {
+/// Embed the first unitary, then premultiply subsequent gates in place.
+[[nodiscard]] static bool
+premultiplyUnitaryInBody(UnitaryOpInterface unitary, size_t numTargets,
+                         const DenseMap<Value, size_t>& wireIds,
+                         std::optional<DynamicMatrix>& acc) {
   const auto numOpQubits = unitary.getNumQubits();
   if (numOpQubits == 0 || numOpQubits > 2) {
-    return std::nullopt;
+    if (numOpQubits != numTargets ||
+        !llvm::all_of(
+            llvm::enumerate(unitary.getInputQubits()), [&](auto entry) {
+              return lookupWireId(wireIds, entry.value()) == entry.index();
+            })) {
+      return false;
+    }
+    auto matrix = unitary.getUnitaryMatrix<DynamicMatrix>();
+    if (!matrix) {
+      return false;
+    }
+    if (acc) {
+      acc->premultiplyBy(*matrix);
+    } else {
+      acc.swap(matrix);
+    }
+    return true;
   }
 
   if (numOpQubits == 1) {
     const auto wire = lookupWireId(wireIds, unitary.getInputQubit(0));
     if (!wire.has_value()) {
-      return std::nullopt;
+      return false;
     }
     const auto matrix = unitary.getUnitaryMatrix<Matrix2x2>();
     if (!matrix) {
-      return std::nullopt;
+      return false;
     }
-    return matrix->embedInNqubit(numTargets, *wire);
+    if (acc) {
+      acc->premultiplyByEmbedded1Q(*matrix, numTargets, *wire);
+    } else {
+      acc = matrix->embedInNqubit(numTargets, *wire);
+    }
+    return true;
   }
 
   const auto q0 = lookupWireId(wireIds, unitary.getInputQubit(0));
   const auto q1 = lookupWireId(wireIds, unitary.getInputQubit(1));
   if (!q0.has_value() || !q1.has_value()) {
-    return std::nullopt;
+    return false;
   }
   const auto matrix = unitary.getUnitaryMatrix<Matrix4x4>();
   if (!matrix) {
-    return std::nullopt;
+    return false;
   }
-  return matrix->embedInNqubit(numTargets, *q0, *q1);
+  if (!acc) {
+    acc = matrix->embedInNqubit(numTargets, *q0, *q1);
+  } else if (numTargets == 2) {
+    acc->premultiplyByEmbedded2Q(matrix->reorderForQubits(*q0, *q1), 2, 0, 1);
+  } else {
+    acc->premultiplyByEmbedded2Q(*matrix, numTargets, *q0, *q1);
+  }
+  return true;
 }
 
 std::optional<DynamicMatrix> composeBodyMatrix(Block& block,
                                                size_t numTargets) {
-  if (numTargets == 0 || numTargets > kMaxModifierTargetQubits ||
+  if (numTargets > kMaxModifierTargetQubits ||
       block.getNumArguments() != numTargets) {
     return std::nullopt;
   }
 
   std::optional<DynamicMatrix> acc;
   Complex global{1.0, 0.0};
-  bool found = false;
 
   DenseMap<Value, size_t> wireIds;
   for (size_t i = 0; i < numTargets; ++i) {
@@ -103,30 +192,23 @@ std::optional<DynamicMatrix> composeBodyMatrix(Block& block,
   for (Operation& op : block.without_terminator()) {
     const bool handled =
         TypeSwitch<Operation*, bool>(&op)
-            .Case<BarrierOp>([&](BarrierOp barrier) {
+            .Case([&](BarrierOp barrier) {
               propagateWireIds(barrier, wireIds);
               return true;
             })
-            .Case<GPhaseOp>([&](GPhaseOp gphase) {
+            .Case([&](GPhaseOp gphase) {
               const auto matrix = gphase.getUnitaryMatrix();
               if (!matrix) {
                 return false;
               }
               global *= matrix->value;
-              found = true;
               return true;
             })
-            .Case<UnitaryOpInterface>([&](UnitaryOpInterface unitary) {
-              auto embedded = embedUnitaryInBody(unitary, numTargets, wireIds);
-              if (!embedded.has_value()) {
+            .Case([&](UnitaryOpInterface unitary) {
+              if (!premultiplyUnitaryInBody(unitary, numTargets, wireIds,
+                                            acc)) {
                 return false;
               }
-              if (!acc.has_value()) {
-                acc.swap(embedded);
-              } else {
-                acc->premultiplyBy(*embedded);
-              }
-              found = true;
               propagateWireIds(unitary, wireIds);
               return true;
             })
@@ -143,7 +225,11 @@ std::optional<DynamicMatrix> composeBodyMatrix(Block& block,
     }
   }
 
-  if (!found) {
+  auto yield = dyn_cast<YieldOp>(block.getTerminator());
+  if (!yield || yield.getTargets().size() != numTargets ||
+      !llvm::all_of(llvm::enumerate(yield.getTargets()), [&](auto entry) {
+        return lookupWireId(wireIds, entry.value()) == entry.index();
+      })) {
     return std::nullopt;
   }
   if (!acc.has_value()) {

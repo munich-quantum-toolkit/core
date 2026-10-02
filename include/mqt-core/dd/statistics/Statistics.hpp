@@ -8,9 +8,8 @@
  * Licensed under the MIT License
  */
 
-/** @file Statistics.hpp
- * @brief Base interface for decision-diagram statistics.
- */
+/// @file Statistics.hpp
+/// Base interface for decision-diagram statistics.
 
 #pragma once
 
@@ -33,12 +32,10 @@ struct Statistics {
   /// Get a JSON-formatted string representation of the statistics
   [[nodiscard]] virtual std::string toString() const;
 
-  /**
-   * @brief Write a string representation to an output stream
-   * @param os The output stream
-   * @param stats The statistics
-   * @return The output stream
-   */
+  /// Write a string representation to an output stream
+  /// @param os The output stream
+  /// @param stats The statistics
+  /// @return The output stream
   friend std::ostream& operator<<(std::ostream& os, const Statistics& stats) {
     return os << stats.toString();
   }

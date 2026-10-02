@@ -8,13 +8,14 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/Utils/Matrix.h"
+#include "mqt/Dialect/QCO/Utils/Matrix.h"
 
-#include <llvm/ADT/ArrayRef.h>
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/ErrorHandling.h>
-#include <mlir/Support/LLVM.h>
+#include "mlir/Support/LLVM.h"
+
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/ErrorHandling.h"
 
 #include <algorithm>
 #include <array>
@@ -230,26 +231,22 @@ static void copyBottomRightCorner(const int64_t matrixDim,
   }
 }
 
-/**
- * @brief Returns the @p qubitIndex bit of a computational-basis label.
- *
- * Qubit 0 is the MSB of @p stateIndex, matching @ref Matrix4x4::kron and
- * @ref Matrix2x2::embedInNqubit.
- */
+/// Returns the @p qubitIndex bit of a computational-basis label.
+///
+/// Qubit 0 is the MSB of @p stateIndex, matching @ref Matrix4x4::kron and
+/// @ref Matrix2x2::embedInNqubit.
 [[nodiscard]] static size_t qubitBitAt(const size_t stateIndex,
                                        const size_t numQubits,
                                        const size_t qubitIndex) {
   return (stateIndex >> (numQubits - 1 - qubitIndex)) & 1U;
 }
 
-/**
- * @brief True when row and col agree on every wire except @p skipA and @p
- * skipB.
- *
- * Used when embedding a gate: untouched qubits must match or the matrix entry
- * is zero. For a single-qubit embed, pass @p skipB = @p numQubits so only @p
- * skipA is skipped.
- */
+/// True when row and col agree on every wire except @p skipA and @p
+/// skipB.
+///
+/// Used when embedding a gate: untouched qubits must match or the matrix entry
+/// is zero. For a single-qubit embed, pass @p skipB = @p numQubits so only @p
+/// skipA is skipped.
 [[nodiscard]] static bool
 otherQubitBitsMatch(const size_t row, const size_t col, const size_t numQubits,
                     const size_t skipA, const size_t skipB) {
@@ -469,8 +466,12 @@ Matrix4x4 Matrix4x4::kron(const Matrix2x2& lhs, const Matrix2x2& rhs) {
 std::array<Complex, Matrix4x4::K_ROWS>
 Matrix4x4::column(const size_t col) const {
   assert(col < K_COLS && "matrix index out of bounds");
-  return {data[col], data[K_COLS + col], data[(2 * K_COLS) + col],
-          data[(3 * K_COLS) + col]};
+  return {
+      data[col],
+      data[K_COLS + col],
+      data[(2 * K_COLS) + col],
+      data[(3 * K_COLS) + col],
+  };
 }
 
 void Matrix4x4::setColumn(const size_t col, const ArrayRef<Complex> values) {
@@ -500,18 +501,22 @@ void Matrix4x4::setRow(const size_t row, const ArrayRef<Complex> values) {
 
 std::array<double, Matrix4x4::K_SIZE_AT_COMPILE_TIME>
 Matrix4x4::realPart() const {
-  return {data[0].real(),  data[1].real(),  data[2].real(),  data[3].real(),
-          data[4].real(),  data[5].real(),  data[6].real(),  data[7].real(),
-          data[8].real(),  data[9].real(),  data[10].real(), data[11].real(),
-          data[12].real(), data[13].real(), data[14].real(), data[15].real()};
+  return {
+      data[0].real(),  data[1].real(),  data[2].real(),  data[3].real(),
+      data[4].real(),  data[5].real(),  data[6].real(),  data[7].real(),
+      data[8].real(),  data[9].real(),  data[10].real(), data[11].real(),
+      data[12].real(), data[13].real(), data[14].real(), data[15].real(),
+  };
 }
 
 std::array<double, Matrix4x4::K_SIZE_AT_COMPILE_TIME>
 Matrix4x4::imagPart() const {
-  return {data[0].imag(),  data[1].imag(),  data[2].imag(),  data[3].imag(),
-          data[4].imag(),  data[5].imag(),  data[6].imag(),  data[7].imag(),
-          data[8].imag(),  data[9].imag(),  data[10].imag(), data[11].imag(),
-          data[12].imag(), data[13].imag(), data[14].imag(), data[15].imag()};
+  return {
+      data[0].imag(),  data[1].imag(),  data[2].imag(),  data[3].imag(),
+      data[4].imag(),  data[5].imag(),  data[6].imag(),  data[7].imag(),
+      data[8].imag(),  data[9].imag(),  data[10].imag(), data[11].imag(),
+      data[12].imag(), data[13].imag(), data[14].imag(), data[15].imag(),
+  };
 }
 
 bool Matrix4x4::isApprox(const Matrix4x4& other, const double tol) const {
@@ -538,9 +543,9 @@ DynamicMatrix Matrix4x4::embedInNqubit(const size_t numQubits,
       if (!otherQubitBitsMatch(row, col, numQubits, q0Index, q1Index)) {
         continue;
       }
-      const size_t rowPair = (qubitBitAt(row, numQubits, q0Index) << 1) |
+      const size_t rowPair = (qubitBitAt(row, numQubits, q0Index) << 1U) |
                              qubitBitAt(row, numQubits, q1Index);
-      const size_t colPair = (qubitBitAt(col, numQubits, q0Index) << 1) |
+      const size_t colPair = (qubitBitAt(col, numQubits, q0Index) << 1U) |
                              qubitBitAt(col, numQubits, q1Index);
       out(static_cast<int64_t>(row), static_cast<int64_t>(col)) =
           (*this)(rowPair, colPair);
@@ -555,8 +560,8 @@ Matrix4x4 Matrix4x4::reorderForQubits(const size_t q0Index,
     return *this;
   }
   if (q0Index == 1 && q1Index == 0) {
-    // Conjugate by SWAP: out[i, j] = matrix[pi(i), pi(j)] with pi swapping |01>
-    // and |10> (basis indices 1 and 2).
+    // Conjugate by SWAP: out[i, j] = matrix[pi(i), pi(j)] with pi swapping |01⟩
+    // and |10⟩ (basis indices 1 and 2).
     const auto& m = data;
     return fromElements(m[0], m[2], m[1], m[3], m[8], m[10], m[9], m[11], m[4],
                         m[6], m[5], m[7], m[12], m[14], m[13], m[15]);
@@ -799,24 +804,22 @@ static void symmetricTql24(std::array<double, 4>& diag,
   }
 }
 
-/**
- * @brief Computes the eigendecomposition of a real symmetric `4x4` matrix.
- *
- * Uses Householder tridiagonalization (EISPACK `tred2`) followed by implicit
- * QL iteration (`tql2`) on the tridiagonal form. Adapted from John Burkardt's
- * MIT-licensed EISPACK C port (`tred2`, `tql2`):
- * https://people.sc.fsu.edu/~jburkardt/c_src/eispack/eispack.c
- * Original Fortran: https://netlib.org/eispack/tred2.f,
- * https://netlib.org/eispack/tql2.f
- *
- * @pre @p symmetric has length `16` and forms a real symmetric matrix in
- * row-major order: `symmetric[(i * 4) + j] == symmetric[(j * 4) + i]` for all
- * `i, j`. Only the lower triangle (including the diagonal) is read, but
- * supplying a non-symmetric matrix yields undefined numerical results.
- *
- * @param symmetric Row-major real symmetric `4x4` matrix (`16` entries).
- * @return Ascending eigenvalues and matching eigenvectors (as columns).
- */
+/// Computes the eigendecomposition of a real symmetric `4x4` matrix.
+///
+/// Uses Householder tridiagonalization (EISPACK `tred2`) followed by implicit
+/// QL iteration (`tql2`) on the tridiagonal form. Adapted from John Burkardt's
+/// MIT-licensed EISPACK C port (`tred2`, `tql2`):
+/// https://people.sc.fsu.edu/~jburkardt/c_src/eispack/eispack.c
+/// Original Fortran: https://netlib.org/eispack/tred2.f,
+/// https://netlib.org/eispack/tql2.f
+///
+/// @pre @p symmetric has length `16` and forms a real symmetric matrix in
+/// row-major order: `symmetric[(i * 4) + j] == symmetric[(j * 4) + i]` for all
+/// `i, j`. Only the lower triangle (including the diagonal) is read, but
+/// supplying a non-symmetric matrix yields undefined numerical results.
+///
+/// @param symmetric Row-major real symmetric `4x4` matrix (`16` entries).
+/// @return Ascending eigenvalues and matching eigenvectors (as columns).
 [[nodiscard]] static SymmetricEigenDecomposition4x4
 symmetricEigenDecomposition4x4(const ArrayRef<double> symmetric) {
   if (symmetric.size() != 16) {
@@ -1565,14 +1568,12 @@ static void splitMatrix4x4ToRealImag(
   }
 }
 
-/**
- * @brief Computes the eigendecomposition of a `4x4` complex matrix.
- *
- * Stack-specialized variant of the dynamic-matrix EISPACK solver for `n = 4`.
- *
- * @param matrix Source matrix.
- * @return Eigenpairs, or `std::nullopt` if the solver does not converge.
- */
+/// Computes the eigendecomposition of a `4x4` complex matrix.
+///
+/// Stack-specialized variant of the dynamic-matrix EISPACK solver for `n = 4`.
+///
+/// @param matrix Source matrix.
+/// @return Eigenpairs, or `std::nullopt` if the solver does not converge.
 [[nodiscard]] static std::optional<EigenDecomposition4x4>
 eigenDecomposition4x4(const Matrix4x4& matrix) {
   constexpr int order = K_COMPLEX_EIGEN4_SIZE;
@@ -1605,12 +1606,10 @@ eigenDecomposition4x4(const Matrix4x4& matrix) {
                                        eigenvectorReal, eigenvectorImag);
 }
 
-/**
- * @brief Closed-form eigendecomposition of a `1x1` matrix.
- *
- * @param matrix Source matrix.
- * @return The single eigenpair.
- */
+/// Closed-form eigendecomposition of a `1x1` matrix.
+///
+/// @param matrix Source matrix.
+/// @return The single eigenpair.
 [[nodiscard]] static EigenDecomposition
 eigenDecomposition1x1(const Matrix1x1& matrix) {
   EigenDecomposition result;
@@ -1620,14 +1619,12 @@ eigenDecomposition1x1(const Matrix1x1& matrix) {
   return result;
 }
 
-/**
- * @brief Computes the eigendecomposition of a `2x2` complex matrix using a
- * closed-form formula.
- *
- * @param matrix Source matrix.
- * @return Eigenpairs, or `std::nullopt` if the closed-form solver produces
- * non-finite eigenvalues.
- */
+/// Computes the eigendecomposition of a `2x2` complex matrix using a
+/// closed-form formula.
+///
+/// @param matrix Source matrix.
+/// @return Eigenpairs, or `std::nullopt` if the closed-form solver produces
+/// non-finite eigenvalues.
 [[nodiscard]] static std::optional<EigenDecomposition2x2>
 eigenDecomposition2x2(const Matrix2x2& matrix) {
   const Complex a = matrix(0, 0);
@@ -1678,24 +1675,22 @@ eigenDecomposition2x2(const Matrix2x2& matrix) {
   return result;
 }
 
-/**
- * @brief EISPACK eigendecomposition for square dynamic matrices.
- *
- * For dimensions other than `1`, `2`, and `4`, which have specialized paths in
- * @ref DynamicMatrix::eigenDecomposition. Uses EISPACK `corth` followed by
- * `comqr2` (complex Hessenberg reduction and QR eigenanalysis). `pythag` and
- * `csroot` follow John Burkardt's MIT-licensed EISPACK C port; `cdiv`,
- * `corth`, and `comqr2` follow NETLIB EISPACK Fortran
- * (https://netlib.org/eispack/cdiv.f, https://netlib.org/eispack/corth.f,
- * https://netlib.org/eispack/comqr2.f). See also
- * https://people.sc.fsu.edu/~jburkardt/c_src/eispack/eispack.c
- *
- * @pre @p matrix has dimension at least `3` and not equal to `4`.
- *
- * @param matrix Square source matrix.
- * @return Eigenpairs, or `std::nullopt` if the matrix is not square, its
- * dimension exceeds `INT_MAX`, or the solver does not converge.
- */
+/// EISPACK eigendecomposition for square dynamic matrices.
+///
+/// For dimensions other than `1`, `2`, and `4`, which have specialized paths in
+/// @ref DynamicMatrix::eigenDecomposition. Uses EISPACK `corth` followed by
+/// `comqr2` (complex Hessenberg reduction and QR eigenanalysis). `pythag` and
+/// `csroot` follow John Burkardt's MIT-licensed EISPACK C port; `cdiv`,
+/// `corth`, and `comqr2` follow NETLIB EISPACK Fortran
+/// (https://netlib.org/eispack/cdiv.f, https://netlib.org/eispack/corth.f,
+/// https://netlib.org/eispack/comqr2.f). See also
+/// https://people.sc.fsu.edu/~jburkardt/c_src/eispack/eispack.c
+///
+/// @pre @p matrix has dimension at least `3` and not equal to `4`.
+///
+/// @param matrix Square source matrix.
+/// @return Eigenpairs, or `std::nullopt` if the matrix is not square, its
+/// dimension exceeds `INT_MAX`, or the solver does not converge.
 [[nodiscard]] static std::optional<EigenDecomposition>
 eigenDecompositionDynamic(const DynamicMatrix& matrix) {
   const int64_t dim = matrix.rows();
@@ -1788,6 +1783,28 @@ SymmetricEigenDecomposition4x4 Matrix4x4::symmetricEigenDecomposition() const {
   return symmetricEigenDecomposition4x4(realPart());
 }
 
+Complex& Matrix8x8::operator()(size_t row, size_t col) {
+  return data[checkedFlatIndex(row, col, K_COLS)];
+}
+
+Complex Matrix8x8::operator()(size_t row, size_t col) const {
+  return data[checkedFlatIndex(row, col, K_COLS)];
+}
+
+Matrix8x8 Matrix8x8::adjoint() const {
+  Matrix8x8 out;
+  adjointInto(data, out.data, K_ROWS);
+  return out;
+}
+
+bool Matrix8x8::isApprox(const Matrix8x8& other, double tol) const {
+  return entriesAreApprox(data, other.data, tol);
+}
+
+bool Matrix8x8::assignFrom(const DynamicMatrix& src) {
+  return assignFromDynamicImpl<K_ROWS, K_SIZE_AT_COMPILE_TIME>(src, data);
+}
+
 struct DynamicMatrix::Impl {
   int64_t dim = 0;
   SmallVector<Complex> data;
@@ -1807,6 +1824,11 @@ DynamicMatrix::DynamicMatrix(const Matrix2x2& src)
 }
 
 DynamicMatrix::DynamicMatrix(const Matrix4x4& src)
+    : impl_(std::make_unique<Impl>()) {
+  assignFrom(src);
+}
+
+DynamicMatrix::DynamicMatrix(const Matrix8x8& src)
     : impl_(std::make_unique<Impl>()) {
   assignFrom(src);
 }
@@ -1855,6 +1877,10 @@ Complex DynamicMatrix::operator()(const int64_t row, const int64_t col) const {
       ->data[static_cast<size_t>(checkedFlatIndex(row, col, impl_->dim))];
 }
 
+std::span<const Complex> DynamicMatrix::entries() const noexcept {
+  return {impl_->data.data(), impl_->data.size()};
+}
+
 void DynamicMatrix::setBottomRightCorner(const Matrix2x2& block) {
   copyBottomRightCorner(impl_->dim, impl_->data,
                         static_cast<int64_t>(Matrix2x2::K_ROWS), block.data);
@@ -1888,6 +1914,11 @@ void DynamicMatrix::assignFrom(const Matrix2x2& src) {
 
 void DynamicMatrix::assignFrom(const Matrix4x4& src) {
   assignFixedImpl<Matrix4x4::K_ROWS, Matrix4x4::K_SIZE_AT_COMPILE_TIME>(
+      impl_->dim, impl_->data, src.data);
+}
+
+void DynamicMatrix::assignFrom(const Matrix8x8& src) {
+  assignFixedImpl<Matrix8x8::K_ROWS, Matrix8x8::K_SIZE_AT_COMPILE_TIME>(
       impl_->dim, impl_->data, src.data);
 }
 
@@ -1975,7 +2006,7 @@ void DynamicMatrix::premultiplyByEmbedded1Q(const Matrix2x2& gate,
   }
   const auto udim = checkedDim(impl_->dim);
   const size_t mask = size_t{1} << (numQubits - 1 - qubitIndex);
-  const size_t step = mask << 1;
+  const size_t step = mask << 1U;
   auto& data = impl_->data;
   for (size_t chunk = 0; chunk < udim; chunk += step) {
     for (size_t inner = 0; inner < mask; ++inner) {
@@ -2008,7 +2039,7 @@ void DynamicMatrix::premultiplyByEmbedded2Q(const Matrix4x4& gate,
   const size_t mask0 = size_t{1} << (numQubits - 1 - q0Index);
   const size_t mask1 = size_t{1} << (numQubits - 1 - q1Index);
   auto& data = impl_->data;
-  for (size_t block = 0; block < (udim >> 2); ++block) {
+  for (size_t block = 0; block < (udim >> 2U); ++block) {
     size_t base = 0;
     size_t rest = block;
     for (size_t q = 0; q < numQubits; ++q) {
@@ -2021,7 +2052,11 @@ void DynamicMatrix::premultiplyByEmbedded2Q(const Matrix4x4& gate,
       rest >>= 1U;
     }
     const std::array<size_t, Matrix4x4::K_ROWS> rowIdx = {
-        base, base | mask1, base | mask0, base | mask0 | mask1};
+        base,
+        base | mask1,
+        base | mask0,
+        base | mask0 | mask1,
+    };
     for (size_t col = 0; col < udim; ++col) {
       apply4x4LeftToColumn(gate.data, data[(rowIdx[0] * udim) + col],
                            data[(rowIdx[1] * udim) + col],

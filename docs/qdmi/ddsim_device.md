@@ -1,70 +1,125 @@
+---
+file_format: mystnb
+kernelspec:
+  name: python3
+mystnb:
+  number_source_lines: true
+---
+
 # MQT Core DD-based Simulator QDMI Device
 
-## Objective
-
-MQT Core provides a QDMI device that is powered by a classical quantum circuit
-simulator based on decision diagrams (see
-[the documentation of the DD Package](../dd_package.md)). This functionality is
-exposed through the QDMI interface as a device, which can be used to classically
-simulate quantum programs.
+DDSIM executes quantum programs locally through QDMI using
+[decision diagrams](../dd_package.md).
 
 ## Capabilities
 
-The simulator device supports all operations that our
-[MQT Core IR](../mqt_core_ir.md) supports. It accepts OpenQASM 2, OpenQASM 3,
-and textual or binary QIR programs using the Base or Adaptive Profile. See
-[QIR Support in the MQT](../qir/index.md) for the exact QDMI program formats and
-payload contracts.
+The simulator device accepts OpenQASM 2, OpenQASM 3, and textual or binary QIR
+programs using the Base or Adaptive Profile. See the
+{doc}`OpenQASM support table <../mlir/OpenQASM>` and
+[QIR Support in the MQT](../qir/index.md) for the supported operations, exact
+QDMI program formats, and payload contracts.
 
 The device can perform weak simulation for every supported format, i.e., sample
 from the distribution produced by the program. It can also perform strong
-simulation for OpenQASM and QIR Base Profile programs, i.e., compute a
-representation of the full state vector. Set the
-`QDMI_DEVICE_JOB_PARAMETER_SHOTSNUM` parameter to the desired number of shots
-for weak simulation or to `0` for strong simulation. QIR Adaptive Profile
-programs require at least one shot because their measurement-dependent control
-flow cannot be represented by state extraction.
+simulation for OpenQASM and eligible QIR Base or Adaptive Profile programs,
+i.e., compute a representation of the full state vector. Set the
+`QDMI_DEVICE_JOB_PARAMETER_SHOTSNUM` parameter to the desired number of shots,
+or to `0` to request only the state. In Python, use `num_shots`.
 
-For reproducible sampling, set `QDMI_DEVICE_JOB_PARAMETER_CUSTOM1` to a positive
-`int` seed. The Python API exposes the same parameter as `custom1`. If `custom1`
-is absent, the device seeds the random-number generator from the system. The
-seed applies to OpenQASM and QIR sampling jobs. State extraction does not use
-it.
+Sampling jobs also retain an uncollapsed state when the existing terminal
+sampling path prepares one state for all shots. Such jobs provide statevector
+and probability results alongside shots and counts. Dense and sparse vectors are
+materialized only when queried; queries do not rerun simulation or change the
+samples. Jobs that execute separately for each shot do not expose their last
+trajectory as a statevector and return `QDMI_ERROR_NOTSUPPORTED` for state
+queries. Zero-shot extraction remains useful for eligible programs outside the
+terminal-sampling fast path.
 
-Under the hood, the QDMI device uses the MQT Core OpenQASM parser (see
-{cpp-api:func}`qasm3::Importer::imports`) to parse the program into a
-{cpp-api:class}`qc::QuantumComputation` object. That circuit is then passed
-either to the {cpp-api:func}`dd::sample` or {cpp-api:func}`dd::simulate`
-function, depending on the mode. Consult the respective documentation for more
-details and limitations.
+State extraction defers terminal measurements without collapsing the returned
+state. Measurement-dependent computation, resets and subsequent operations on
+measured wires are unsupported. Adaptive QIR may still execute classical loops,
+branches, dynamic allocations and direct helpers; see the
+[QIR extraction contract](../qir/index.md) for result-use and lifetime rules.
 
-The device implements the full QDMI job interface (except for the
-`QDMI_JOB_RESULT_SHOTS` result format not supported by the simulator).
+For reproducible stochastic execution, set `QDMI_DEVICE_JOB_PARAMETER_CUSTOM1`
+to a positive `int` seed. The Python API exposes the same parameter as
+`custom1`. If `custom1` is absent, the device seeds the random-number generator
+from the system. The seed controls OpenQASM and QIR sampling. State extraction
+does not use this seed.
 
-## Compile and execute QIR
+Under the hood, the QDMI device imports OpenQASM into the compiler's QC
+representation, lowers it to QCO, and executes it with the QCO DD utilities.
+This is the same compiler-backed simulation path exposed by
+{py:class}`~mqt.core.mlir.QCOProgram`.
 
-The compiler can snapshot the DDSIM device as an all-to-all target, compile a
-program to QIR, and submit the resulting bitcode to the same device:
+OpenQASM 3 output bits are undefined until written, so direct QDMI jobs with a
+partially initialized output register fail during import. The Qiskit backend
+preserves Qiskit's zero-initialized classical-bit semantics by writing every
+classical bit before submitting its generated OpenQASM 3 program.
 
-```python
-from mqt.core.mlir import CompilerTarget, OutputFormat, compile_program
+Sampling returns ordered bitstrings through `QDMI_JOB_RESULT_SHOTS` and their
+histogram through `QDMI_JOB_RESULT_HIST_KEYS` and `QDMI_JOB_RESULT_HIST_VALUES`.
+Both results come from the same samples, including mid-circuit measurements. QIR
+Base or Adaptive programs with a static terminal measurement region can sample
+one prepared DD; other QIR programs run once per shot. See the
+[QIR execution contract](../qir/index.md) for eligibility and resource limits.
+OpenQASM classical registers use reverse declaration order, with each register
+most-significant-bit first. QIR records define increasing output-bit indices;
+the device reverses each recorded bitstring before returning shots and counts.
+Equivalent OpenQASM and QIR programs therefore use the same bitstring order.
+Adaptive QIR shots can record different numbers of bits; their histogram retains
+these variable-length outcomes.
+
+Sparse statevector and probability results use ascending numerical basis-index
+order. Their keys and values share that order. Sparse exports require at most 64
+qubits on a 64-bit platform; wider states return `QDMI_ERROR_NOTSUPPORTED`
+because their basis indices do not fit the sparse representation.
+
+## QIR output capture
+
+Set `QDMI_DEVICE_JOB_PARAMETER_CUSTOM2` to a `bool` value of `true` before
+submission to capture textual QIR output. In Python, pass `custom2=True` to
+`submit_job` or `submit_program`. This option requires a QIR Base or Adaptive
+program and a positive shot count; other jobs reject it with
+`QDMI_ERROR_NOTSUPPORTED`.
+
+After successful execution, `QDMI_JOB_RESULT_CUSTOM1` returns the complete,
+null-terminated output stream. Its reported size includes the terminator. The
+Python equivalent is `job.get_custom_result(CustomProperty.CUSTOM1, str)`; C++
+clients use `job.getCustomResult<std::string>(qdmi::CustomProperty::Custom1)`.
+Without capture, that result is unsupported (`None` in Python).
+
+Capture retains the QIR header, per-shot metadata, typed output records, and
+exit codes in memory. It executes the program once per shot, so capture jobs
+provide counts and shots but no uncollapsed statevector. Default sampling keeps
+its optimized path. See the
+[executable QIR example](../qir/index.md#retrieve-the-qir-output-stream-through-qdmi).
+
+## Compile and execute
+
+Compile a Bell circuit, sample its measurements, and inspect its statevector.
+DDSIM retains the state before terminal measurements, so state extraction does
+not require a separate job or zero shots. Circuits with mid-circuit measurements
+or resets do not support state extraction.
+
+```{code-cell} ipython3
+from mqt.core.mlir import compile_program, submit_program
 from mqt.core.qdmi import ProgramFormat
 from mqt.core.qdmi.driver import open_device
 
-device = open_device("mqt.ddsim.default")
-target = CompilerTarget.from_device(device)
-program = compile_program(
-    "bell.qasm",
-    target=target,
-    output=OutputFormat.QIR_BASE,
-)
+bell_qasm = """OPENQASM 3.1;
+include "stdgates.inc";
+qubit[2] q;
+bit[2] result;
+h q[0];
+cx q[0], q[1];
+result = measure q;
+"""
 
-job = device.submit_job(
-    program.to_bitcode(),
-    ProgramFormat.QIR_BASE_MODULE,
-    num_shots=1024,
-    custom1=7,
-)
+device = open_device("mqt.ddsim.default")
+program = compile_program(bell_qasm, target=device, program_format=ProgramFormat.QASM3)
+job = submit_program(program, target=device)
 job.wait()
 print(job.get_counts())
+print(job.get_dense_statevector())
 ```

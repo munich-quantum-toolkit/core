@@ -8,30 +8,32 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
-#include "mlir/Dialect/MQT/Transforms/Passes.h"
-#include "mlir/Dialect/MQT/Utils/Angles.h"
-#include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
-#include "mlir/Dialect/MQT/Utils/GatePowering.h"
-#include "mlir/Dialect/MQT/Utils/Parameters.h"
-#include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
+#include "mqt/Dialect/MQT/Transforms/Passes.h"
+#include "mqt/Dialect/MQT/Utils/Angles.h"
+#include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mqt/Dialect/MQT/Utils/GatePowering.h"
+#include "mqt/Dialect/MQT/Utils/Modifiers.h"
+#include "mqt/Dialect/MQT/Utils/Parameters.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
 
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/STLFunctionalExtras.h>
-#include <llvm/ADT/SmallVector.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/IR/Block.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/Location.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/Operation.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/Region.h>
-#include <mlir/IR/Value.h>
-#include <mlir/Interfaces/SideEffectInterfaces.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/IR/Block.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Location.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/Operation.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/Region.h"
+#include "mlir/IR/Value.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
+
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/ADT/SmallVector.h"
 
 #include <cassert>
 #include <cstdint>
@@ -43,7 +45,7 @@
 namespace mlir::mqt {
 
 #define GEN_PASS_DEF_NORMALIZEGLOBALPHASES
-#include "mlir/Dialect/MQT/Transforms/Passes.h.inc"
+#include "mqt/Dialect/MQT/Transforms/Passes.h.inc"
 
 namespace {
 
@@ -124,7 +126,7 @@ public:
   }
 
   void forEachValue(const llvm::function_ref<void(Value)> callback) const {
-    for (const auto value : leaves) {
+    for (auto value : leaves) {
       callback(value);
     }
   }
@@ -143,24 +145,24 @@ public:
       }
       if (std::holds_alternative<Add>(instruction)) {
         assert(stack.size() >= 2);
-        const auto rhs = stack.pop_back_val();
-        const auto lhs = stack.pop_back_val();
+        auto rhs = stack.pop_back_val();
+        auto lhs = stack.pop_back_val();
         stack.push_back(rewriter.createOrFold<arith::AddFOp>(loc, lhs, rhs));
         continue;
       }
       assert(!stack.empty());
-      const auto operand = stack.pop_back_val();
+      auto operand = stack.pop_back_val();
       if (std::holds_alternative<Negate>(instruction)) {
         stack.push_back(rewriter.createOrFold<arith::NegFOp>(loc, operand));
         continue;
       }
       const auto factor = std::get<Scale>(instruction).factor;
-      const auto factorValue = constantFromScalar(rewriter, loc, factor);
+      auto factorValue = constantFromScalar(rewriter, loc, factor);
       stack.push_back(
           rewriter.createOrFold<arith::MulFOp>(loc, factorValue, operand));
     }
     assert(stack.size() == 1);
-    const Value result = stack.front();
+    Value result = stack.front();
     // Fold pure constant arith trees back to a single normalized angle so
     // merged exit phases stay within the GPhase verifier contract.
     if (const auto constant = valueToConstantDouble(result)) {
@@ -199,12 +201,13 @@ struct PhaseContribution final {
 
 } // namespace
 
-/// Collect a pure, body-local dependency slice in topological order.
+/// Collect a memory-effect-free, body-local dependency slice in order.
+/// Extraction crosses only eager quantum modifiers, never classical branches.
 static bool collectHoistableSlice(Value value, Block& body,
                                   SmallPtrSetImpl<Operation*>& visiting,
                                   SmallPtrSetImpl<Operation*>& collected,
                                   SmallVectorImpl<Operation*>& ordered) {
-  if (const auto blockArg = dyn_cast<BlockArgument>(value)) {
+  if (auto blockArg = dyn_cast<BlockArgument>(value)) {
     return blockArg.getOwner() != &body;
   }
 
@@ -216,10 +219,10 @@ static bool collectHoistableSlice(Value value, Block& body,
     return true;
   }
   if (!visiting.insert(definingOp).second || definingOp->getNumRegions() != 0 ||
-      !isPure(definingOp) || !isSpeculatable(definingOp)) {
+      !isMemoryEffectFree(definingOp)) {
     return false;
   }
-  for (const auto operand : definingOp->getOperands()) {
+  for (auto operand : definingOp->getOperands()) {
     if (!collectHoistableSlice(operand, body, visiting, collected, ordered)) {
       return false;
     }
@@ -238,7 +241,7 @@ static bool hoistExpressionBefore(const PhaseExpression& expression,
   SmallPtrSet<Operation*, 8> collected;
   SmallVector<Operation*, 8> ordered;
   bool hoistable = true;
-  expression.forEachValue([&](const Value value) {
+  expression.forEachValue([&](Value value) {
     if (hoistable &&
         !collectHoistableSlice(value, body, visiting, collected, ordered)) {
       hoistable = false;
@@ -263,22 +266,22 @@ public:
 private:
   [[nodiscard]] std::optional<PhaseContribution>
   normalizeOperation(Operation* op) {
-    if (const auto inv = dyn_cast<qc::InvOp>(op)) {
+    if (auto inv = dyn_cast<qc::InvOp>(op)) {
       return factorInverse(inv);
     }
-    if (const auto inv = dyn_cast<qco::InvOp>(op)) {
+    if (auto inv = dyn_cast<qco::InvOp>(op)) {
       return factorInverse(inv);
     }
-    if (const auto pow = dyn_cast<qc::PowOp>(op)) {
+    if (auto pow = dyn_cast<qc::PowOp>(op)) {
       return factorPower(pow);
     }
-    if (const auto pow = dyn_cast<qco::PowOp>(op)) {
+    if (auto pow = dyn_cast<qco::PowOp>(op)) {
       return factorPower(pow);
     }
-    if (const auto ctrl = dyn_cast<qc::CtrlOp>(op)) {
+    if (auto ctrl = dyn_cast<qc::CtrlOp>(op)) {
       return factorControl(ctrl);
     }
-    if (const auto ctrl = dyn_cast<qco::CtrlOp>(op)) {
+    if (auto ctrl = dyn_cast<qco::CtrlOp>(op)) {
       return factorControl(ctrl);
     }
     for (auto& nested : op->getRegions()) {
@@ -310,66 +313,87 @@ private:
     return phase;
   }
 
+  void eraseDeadBodyOps(Block& body) {
+    for (auto* op = body.getTerminator()->getPrevNode(); op != nullptr;) {
+      auto* previous = op->getPrevNode();
+      if (!isa<qc::UnitaryOpInterface, qco::UnitaryOpInterface>(op) &&
+          isOpTriviallyDead(op)) {
+        rewriter.eraseOp(op);
+      }
+      op = previous;
+    }
+  }
+
   [[nodiscard]] std::optional<PhaseContribution> factorControl(qc::CtrlOp op) {
     auto phase = normalizeBlock(*op.getBody(), op);
-    if (!phase || op.getNumControls() == 0) {
-      return phase;
+    const bool releasePhase = phase.has_value() && op.getNumControls() == 0;
+    if (phase && !releasePhase && !phase->expression.isZero()) {
+      rewriter.setInsertionPoint(op);
+      auto angle = phase->expression.materialize(rewriter, phase->loc);
+      rewriter.setInsertionPointAfter(op);
+      if (op.getNumControls() == 1) {
+        qc::POp::create(rewriter, phase->loc, op.getControl(0), angle);
+      } else {
+        auto controls = op.getControls();
+        qc::CtrlOp::create(rewriter, phase->loc, controls.drop_back(),
+                           controls.back(), [&](Value target) {
+                             qc::POp::create(rewriter, phase->loc, target,
+                                             angle);
+                           });
+      }
     }
-    if (phase->expression.isZero()) {
-      return std::nullopt;
+    if (phase) {
+      eraseDeadBodyOps(*op.getBody());
     }
-
-    rewriter.setInsertionPoint(op);
-    const auto angle = phase->expression.materialize(rewriter, phase->loc);
-    rewriter.setInsertionPointAfter(op);
-    if (op.getNumControls() == 1) {
-      qc::POp::create(rewriter, phase->loc, op.getControl(0), angle);
-      return std::nullopt;
+    if (llvm::hasSingleElement(*op.getBody())) {
+      rewriter.eraseOp(op);
     }
-    const auto controls = op.getControls();
-    qc::CtrlOp::create(rewriter, phase->loc, controls.drop_back(),
-                       controls.back(), [&](Value target) {
-                         qc::POp::create(rewriter, phase->loc, target, angle);
-                       });
-    return std::nullopt;
+    return releasePhase ? phase : std::nullopt;
   }
 
   [[nodiscard]] std::optional<PhaseContribution> factorControl(qco::CtrlOp op) {
     auto phase = normalizeBlock(*op.getBody(), op);
-    if (!phase || op.getNumControls() == 0) {
-      return phase;
-    }
-    if (phase->expression.isZero()) {
-      return std::nullopt;
-    }
+    const bool releasePhase = phase.has_value() && op.getNumControls() == 0;
+    if (phase && !releasePhase && !phase->expression.isZero()) {
+      rewriter.setInsertionPoint(op);
+      auto angle = phase->expression.materialize(rewriter, phase->loc);
+      rewriter.setInsertionPointAfter(op);
+      SmallVector<Value> oldControls(op.getOutputControls());
+      SmallVector<Value> newControls;
+      Operation* relativePhase = nullptr;
+      if (op.getNumControls() == 1) {
+        auto p =
+            qco::POp::create(rewriter, phase->loc, oldControls.front(), angle);
+        newControls.push_back(p.getOutputTarget(0));
+        relativePhase = p;
+      } else {
+        auto relative = qco::CtrlOp::create(
+            rewriter, phase->loc, ValueRange(oldControls).drop_back(),
+            oldControls.back(), [&](Value target) {
+              return qco::POp::create(rewriter, phase->loc, target, angle)
+                  .getOutputTarget(0);
+            });
+        llvm::append_range(newControls, relative.getOutputQubits());
+        relativePhase = relative;
+      }
 
-    rewriter.setInsertionPoint(op);
-    const auto angle = phase->expression.materialize(rewriter, phase->loc);
-    rewriter.setInsertionPointAfter(op);
-    SmallVector<Value> oldControls(op.getOutputControls());
-    SmallVector<Value> newControls;
-    Operation* relativePhase = nullptr;
-    if (op.getNumControls() == 1) {
-      auto p =
-          qco::POp::create(rewriter, phase->loc, oldControls.front(), angle);
-      newControls.push_back(p.getOutputTarget(0));
-      relativePhase = p;
-    } else {
-      auto relative = qco::CtrlOp::create(
-          rewriter, phase->loc, ValueRange(oldControls).drop_back(),
-          oldControls.back(), [&](Value target) {
-            return qco::POp::create(rewriter, phase->loc, target, angle)
-                .getOutputTarget(0);
-          });
-      llvm::append_range(newControls, relative.getOutputQubits());
-      relativePhase = relative;
+      for (auto [oldControl, newControl] :
+           llvm::zip_equal(oldControls, newControls)) {
+        rewriter.replaceAllUsesExcept(oldControl, newControl, relativePhase);
+      }
     }
-
-    for (auto [oldControl, newControl] :
-         llvm::zip_equal(oldControls, newControls)) {
-      rewriter.replaceAllUsesExcept(oldControl, newControl, relativePhase);
+    if (phase) {
+      eraseDeadBodyOps(*op.getBody());
     }
-    return std::nullopt;
+    if (llvm::hasSingleElement(*op.getBody())) {
+      SmallVector<Value> replacements(op.getInputControls());
+      for (auto yielded : op.getBody()->getTerminator()->getOperands()) {
+        replacements.push_back(
+            getValueFromBlockArgument(yielded, op.getInputTargets()));
+      }
+      rewriter.replaceOp(op, replacements);
+    }
+    return releasePhase ? phase : std::nullopt;
   }
 
   void normalizeRegion(Region& region) {
@@ -424,10 +448,9 @@ private:
     if (extractionBoundary == nullptr && !hasNestedContribution &&
         directPhases.size() == 1 &&
         directPhases.front()->getNextNode() == block.getTerminator()) {
-      const auto angle =
-          dyn_cast<qc::GPhaseOp>(directPhases.front())
-              ? cast<qc::GPhaseOp>(directPhases.front()).getTheta()
-              : cast<qco::GPhaseOp>(directPhases.front()).getTheta();
+      auto angle = dyn_cast<qc::GPhaseOp>(directPhases.front())
+                       ? cast<qc::GPhaseOp>(directPhases.front()).getTheta()
+                       : cast<qco::GPhaseOp>(directPhases.front()).getTheta();
       const auto constant = valueToConstantDouble(angle);
       if (!constant ||
           (normalizeAngle(*constant) == *constant && *constant != 0.0)) {
@@ -442,8 +465,7 @@ private:
       return std::nullopt;
     }
     rewriter.setInsertionPoint(block.getTerminator());
-    const auto angle =
-        aggregate->expression.materialize(rewriter, aggregate->loc);
+    auto angle = aggregate->expression.materialize(rewriter, aggregate->loc);
     if (aggregate->dialect == PhaseDialect::QC) {
       qc::GPhaseOp::create(rewriter, aggregate->loc, angle);
     } else {

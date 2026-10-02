@@ -10,50 +10,56 @@
 
 #include "ModifierUtils.h"
 
-#include "mlir/Dialect/CBit/IR/CBitOps.h"
-#include "mlir/Dialect/MQT/Utils/Modifiers.h"
-#include "mlir/Dialect/QC/IR/QCDialect.h"
-#include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mqt/Dialect/MQT/Utils/Modifiers.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
 
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallVectorExtras.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
-#include <mlir/IR/Block.h>
-#include <mlir/IR/Operation.h>
-#include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
-#include <mlir/Support/WalkResult.h>
-#include <mlir/Transforms/RegionUtils.h>
+#include "mlir/IR/Block.h"
+#include "mlir/IR/Operation.h"
+#include "mlir/IR/Value.h"
+#include "mlir/IR/ValueRange.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
+#include "mlir/Transforms/RegionUtils.h"
+
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVectorExtras.h"
 
 #include <cstddef>
 
 namespace mlir::qc::detail {
 
 LogicalResult verifyModifierBody(Operation* modifierOp, Block& body) {
-  const auto hasNonUnitaryOperation =
-      body.walk([](Operation* operation) {
-            return isa<cbit::AllocOp, cbit::LoadOp, cbit::StoreOp, AllocOp,
-                       DeallocOp, StaticOp, MeasureOp, ResetOp, memref::LoadOp,
-                       memref::StoreOp>(operation)
-                       ? WalkResult::interrupt()
-                       : WalkResult::advance();
-          })
-          .wasInterrupted();
-  if (hasNonUnitaryOperation) {
-    return modifierOp->emitOpError(
-        "body must not contain non-unitary operations or access registers");
+  auto unitary = cast<UnitaryOpInterface>(modifierOp);
+  if (!llvm::equal(body.getArgumentTypes(), unitary.getTargets().getTypes())) {
+    return modifierOp->emitOpError("body argument types must match targets");
   }
 
   SetVector<Value> captures;
   getUsedValuesDefinedAbove(modifierOp->getRegions(), captures);
-  if (llvm::any_of(captures, [](const Value value) {
+  if (llvm::any_of(captures, [](Value value) {
         return isa<QubitType>(value.getType());
       })) {
     return modifierOp->emitOpError(
         "body must not capture qubits from above; use only its aliased block "
         "arguments");
+  }
+
+  const auto hasNonUnitaryOperation =
+      llvm::any_of(body.without_terminator(), [](Operation& operation) {
+        if (isa<UnitaryOpInterface>(operation)) {
+          return false;
+        }
+        const auto isQubit = [](Type type) { return isa<QubitType>(type); };
+        return operation.getNumRegions() != 0 ||
+               !isMemoryEffectFree(&operation) ||
+               llvm::any_of(operation.getOperandTypes(), isQubit) ||
+               llvm::any_of(operation.getResultTypes(), isQubit);
+      });
+  if (hasNonUnitaryOperation) {
+    return modifierOp->emitOpError("body must contain only unitary operations "
+                                   "and memory-effect-free classical "
+                                   "operations without regions");
   }
 
   return success();

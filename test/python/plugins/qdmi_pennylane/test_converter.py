@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import re
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -46,9 +47,9 @@ def test_qasm3_prefers_and_resolves_braket_spellings(monkeypatch: pytest.MonkeyP
         result_factory=lambda _program, shots: ["10"] * shots,
     )
     patch_open_device(monkeypatch, qdmi)
-    device = QDMIDevice("fake.qdmi", wires=["left", "right"], shots=10)
+    device = QDMIDevice("fake.qdmi", wires=["left", "right"])
 
-    @qp.qnode(device)
+    @qp.qnode(device, shots=10)
     def circuit():
         qp.Hadamard("left")
         qp.CNOT(wires=["left", "right"])
@@ -96,9 +97,9 @@ def test_qasm3_resolves_ddsim_aliases_and_inverse_gates(monkeypatch: pytest.Monk
         [ProgramFormat.QASM3],
     )
     patch_open_device(monkeypatch, qdmi)
-    device = QDMIDevice("fake.qdmi", wires=2, shots=5)
+    device = QDMIDevice("fake.qdmi", wires=2)
 
-    @qp.qnode(device)
+    @qp.qnode(device, shots=5)
     def circuit():
         qp.CNOT(wires=[0, 1])
         qp.PhaseShift(-0.125, wires=1)
@@ -131,7 +132,7 @@ def test_qasm3_failure_does_not_fall_back_to_qasm2(monkeypatch: pytest.MonkeyPat
     # OpenQASM 3 operation table has no U3 row, so the QASM3 path must fail.
     qdmi = StubDevice([operation("u3", 1, 3)], [ProgramFormat.QASM3, ProgramFormat.QASM2])
     patch_open_device(monkeypatch, qdmi)
-    device = QDMIDevice("fake.qdmi", wires=1, shots=4)
+    device = QDMIDevice("fake.qdmi", wires=1)
     tape = qp.tape.QuantumScript([qp.U3(0.1, 0.2, 0.3, wires=0)], [qp.sample(wires=0)], shots=4)
     qasm2_called = False
 
@@ -142,7 +143,7 @@ def test_qasm3_failure_does_not_fall_back_to_qasm2(monkeypatch: pytest.MonkeyPat
 
     monkeypatch.setattr(qp, "to_openqasm", fail_if_called)
 
-    @qp.qnode(device)
+    @qp.qnode(device, shots=4)
     def circuit():
         qp.U3(0.1, 0.2, 0.3, wires=0)
         return qp.sample(wires=0)
@@ -164,9 +165,9 @@ def test_qasm2_fallback_uses_pennylane_serializer(monkeypatch: pytest.MonkeyPatc
         [ProgramFormat.QASM2],
     )
     patch_open_device(monkeypatch, qdmi)
-    device = QDMIDevice("fake.qdmi", wires=2, shots=10)
+    device = QDMIDevice("fake.qdmi", wires=2)
 
-    @qp.qnode(device)
+    @qp.qnode(device, shots=10)
     def circuit():
         qp.Hadamard(0)
         qp.CNOT(wires=[0, 1])
@@ -194,10 +195,10 @@ def test_qasm2_rejects_non_intersection_operation(monkeypatch: pytest.MonkeyPatc
     """Reject an operation the serializer knows when the QDMI device does not."""
     qdmi = StubDevice([operation("h", 1)], [ProgramFormat.QASM2])
     patch_open_device(monkeypatch, qdmi)
-    device = QDMIDevice("fake.qdmi", wires=2, shots=2)
+    device = QDMIDevice("fake.qdmi", wires=2)
     tape = qp.tape.QuantumScript([qp.CNOT(wires=[0, 1])], [qp.sample(wires=[0, 1])], shots=2)
 
-    @qp.qnode(device)
+    @qp.qnode(device, shots=2)
     def circuit():
         qp.CNOT(wires=[0, 1])
         return qp.sample(wires=[0, 1])
@@ -216,7 +217,7 @@ def test_qasm2_wraps_serializer_errors(monkeypatch: pytest.MonkeyPatch) -> None:
     """Expose serializer failures as focused translation errors."""
     qdmi = StubDevice([operation("h", 1)], [ProgramFormat.QASM2])
     patch_open_device(monkeypatch, qdmi)
-    device = QDMIDevice("fake.qdmi", wires=1, shots=2)
+    device = QDMIDevice("fake.qdmi", wires=1)
 
     def fail(*_args: object, **_kwargs: object) -> str:
         msg = "serializer failed"
@@ -224,7 +225,7 @@ def test_qasm2_wraps_serializer_errors(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(qp, "to_openqasm", fail)
 
-    @qp.qnode(device)
+    @qp.qnode(device, shots=2)
     def circuit():
         qp.Hadamard(0)
         return qp.sample(wires=0)
@@ -234,13 +235,16 @@ def test_qasm2_wraps_serializer_errors(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.parametrize("parameter", [np.nan, np.inf, -np.inf])
-def test_rejects_non_finite_parameters(monkeypatch: pytest.MonkeyPatch, parameter: float) -> None:
+@pytest.mark.parametrize("program_format", [ProgramFormat.QASM2, ProgramFormat.QASM3])
+def test_rejects_non_finite_parameters(
+    monkeypatch: pytest.MonkeyPatch, program_format: ProgramFormat, parameter: float
+) -> None:
     """Reject non-finite bound parameters before submission."""
-    qdmi = StubDevice([operation("rx", 1, 1)], [ProgramFormat.QASM3])
+    qdmi = StubDevice([operation("rx", 1, 1)], [program_format])
     patch_open_device(monkeypatch, qdmi)
-    device = QDMIDevice("fake.qdmi", wires=1, shots=2)
+    device = QDMIDevice("fake.qdmi", wires=1)
 
-    @qp.qnode(device)
+    @qp.qnode(device, shots=2)
     def circuit():
         qp.RX(parameter, 0)
         return qp.sample(wires=0)
@@ -250,17 +254,18 @@ def test_rejects_non_finite_parameters(monkeypatch: pytest.MonkeyPatch, paramete
     assert not qdmi.submissions
 
 
-def test_validates_operation_topology(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("program_format", [ProgramFormat.QASM2, ProgramFormat.QASM3])
+def test_validates_operation_topology(monkeypatch: pytest.MonkeyPatch, program_format: ProgramFormat) -> None:
     """Honor operation-specific QDMI site pairs."""
     qdmi = StubDevice(
         [operation("cx", 2, site_pairs=[(0, 1)])],
-        [ProgramFormat.QASM3],
+        [program_format],
         qubits=3,
     )
     patch_open_device(monkeypatch, qdmi)
-    device = QDMIDevice("fake.qdmi", wires=3, shots=2)
+    device = QDMIDevice("fake.qdmi", wires=3)
 
-    @qp.qnode(device)
+    @qp.qnode(device, shots=2)
     def circuit():
         qp.CNOT(wires=[1, 0])
         return qp.sample(wires=[0, 1])
@@ -270,13 +275,49 @@ def test_validates_operation_topology(monkeypatch: pytest.MonkeyPatch) -> None:
     assert not qdmi.submissions
 
 
-def test_rejects_operation_on_an_unadvertised_site(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Honor the single-qubit sites a QDMI operation advertises."""
-    qdmi = StubDevice([operation("h", 1, sites=[0])], [ProgramFormat.QASM3])
+@pytest.mark.parametrize("program_format", [ProgramFormat.QASM2, ProgramFormat.QASM3])
+def test_reuses_session_contract_checks_without_skipping_input_validation(
+    monkeypatch: pytest.MonkeyPatch, program_format: ProgramFormat
+) -> None:
+    """Reuse valid gate locations across tapes, not inputs or other sessions."""
+    rx = operation("rx", 1, 1, sites=[0])
+    qdmi = StubDevice([rx], [program_format])
     patch_open_device(monkeypatch, qdmi)
-    device = QDMIDevice("fake.qdmi", wires=2, shots=2)
+    device = QDMIDevice("fake.qdmi", wires=2)
+    query_name = Mock(wraps=rx.name)
+    monkeypatch.setattr(rx, "name", query_name)
+    query_sites = Mock(wraps=rx.sites)
+    monkeypatch.setattr(rx, "sites", query_sites)
 
-    @qp.qnode(device)
+    def tape(angle: float, wire: int = 0):
+        return qp.tape.QuantumScript([qp.RX(angle, wires=wire)], [qp.sample(wires=[0, 1])], shots=2)
+
+    device.execute((tape(0.1), tape(0.2)))
+    device.execute(tape(0.3))
+    query_sites.assert_called_once()
+    query_name.assert_not_called()
+    assert len({program for program, *_ in qdmi.submissions}) == 3
+    with pytest.raises(PennyLaneValidationError, match="non-finite"):
+        device.execute(tape(float("nan")))
+    with pytest.raises(PennyLaneValidationError, match="not advertised on device wire 1"):
+        device.execute(tape(0.4, wire=1))
+    assert len(qdmi.submissions) == 3
+
+    query_sites.reset_mock()
+    QDMIDevice("fake.qdmi", wires=2).execute(tape(0.5))
+    query_sites.assert_called_once()
+
+
+@pytest.mark.parametrize("program_format", [ProgramFormat.QASM2, ProgramFormat.QASM3])
+def test_rejects_operation_on_an_unadvertised_site(
+    monkeypatch: pytest.MonkeyPatch, program_format: ProgramFormat
+) -> None:
+    """Honor the single-qubit sites a QDMI operation advertises."""
+    qdmi = StubDevice([operation("h", 1, sites=[0])], [program_format])
+    patch_open_device(monkeypatch, qdmi)
+    device = QDMIDevice("fake.qdmi", wires=2)
+
+    @qp.qnode(device, shots=2)
     def circuit():
         qp.Hadamard(0)
         qp.Hadamard(1)
@@ -287,24 +328,25 @@ def test_rejects_operation_on_an_unadvertised_site(monkeypatch: pytest.MonkeyPat
     assert not qdmi.submissions
 
 
-def test_falls_back_to_the_device_coupling_map(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("program_format", [ProgramFormat.QASM2, ProgramFormat.QASM3])
+def test_falls_back_to_the_device_coupling_map(monkeypatch: pytest.MonkeyPatch, program_format: ProgramFormat) -> None:
     """Use the device topology when an operation advertises no site pairs."""
     qdmi = StubDevice(
         [operation("h", 1), operation("cx", 2)],
-        [ProgramFormat.QASM3],
+        [program_format],
         qubits=3,
         coupling_map=[(0, 1)],
         result_factory=lambda _program, shots: ["000"] * shots,
     )
     patch_open_device(monkeypatch, qdmi)
-    device = QDMIDevice("fake.qdmi", wires=3, shots=2)
+    device = QDMIDevice("fake.qdmi", wires=3)
 
-    @qp.qnode(device)
+    @qp.qnode(device, shots=2)
     def connected():
         qp.CNOT(wires=[1, 0])
         return qp.sample(wires=[0, 1])
 
-    @qp.qnode(device)
+    @qp.qnode(device, shots=2)
     def disconnected():
         qp.CNOT(wires=[0, 2])
         return qp.sample(wires=[0, 2])
@@ -312,23 +354,26 @@ def test_falls_back_to_the_device_coupling_map(monkeypatch: pytest.MonkeyPatch) 
     # The coupling map is undirected, so the reversed edge is connected too.
     connected()
     assert len(qdmi.submissions) == 1
-    with pytest.raises(PennyLaneValidationError, match=r"does not connect wires \(0, 2\)"):
+    with pytest.raises(PennyLaneValidationError, match=r"not advertised on device wires \(0, 2\)"):
         disconnected()
     assert len(qdmi.submissions) == 1
 
 
-def test_accepts_advertised_site_pairs_and_wider_operations(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Accept an advertised site pair, and skip loci checks above two wires."""
+@pytest.mark.parametrize("program_format", [ProgramFormat.QASM2, ProgramFormat.QASM3])
+def test_accepts_advertised_site_pairs_and_wider_operations(
+    monkeypatch: pytest.MonkeyPatch, program_format: ProgramFormat
+) -> None:
+    """Accept advertised pairs and three-qubit placements."""
     qdmi = StubDevice(
-        [operation("h", 1), operation("cx", 2, site_pairs=[(0, 1)]), operation("ccx", 3)],
-        [ProgramFormat.QASM3],
+        [operation("h", 1), operation("cx", 2, site_pairs=[(0, 1)]), operation("ccx", 3, sites=[0, 1, 2])],
+        [program_format],
         qubits=3,
         result_factory=lambda _program, shots: ["000"] * shots,
     )
     patch_open_device(monkeypatch, qdmi)
-    device = QDMIDevice("fake.qdmi", wires=3, shots=2)
+    device = QDMIDevice("fake.qdmi", wires=3)
 
-    @qp.qnode(device)
+    @qp.qnode(device, shots=2)
     def circuit():
         qp.CNOT(wires=[0, 1])
         qp.Toffoli(wires=[0, 1, 2])
@@ -348,15 +393,16 @@ def test_accepts_advertised_site_pairs_and_wider_operations(monkeypatch: pytest.
         (operation("rx", 1, 0), "advertises 0 parameters"),
     ],
 )
+@pytest.mark.parametrize("program_format", [ProgramFormat.QASM2, ProgramFormat.QASM3])
 def test_rejects_contradictory_qdmi_metadata(
-    monkeypatch: pytest.MonkeyPatch, advertised: object, expected: str
+    monkeypatch: pytest.MonkeyPatch, program_format: ProgramFormat, advertised: object, expected: str
 ) -> None:
     """Reject a QDMI operation whose arity contradicts the operation table."""
-    qdmi = StubDevice([advertised], [ProgramFormat.QASM3])  # ty: ignore[invalid-argument-type]
+    qdmi = StubDevice([advertised], [program_format])  # ty: ignore[invalid-argument-type]
     patch_open_device(monkeypatch, qdmi)
-    device = QDMIDevice("fake.qdmi", wires=1, shots=2)
+    device = QDMIDevice("fake.qdmi", wires=1)
 
-    @qp.qnode(device)
+    @qp.qnode(device, shots=2)
     def circuit():
         qp.RX(0.5, 0)
         return qp.sample(wires=0)
@@ -374,9 +420,9 @@ def test_measurement_without_wires_samples_every_device_wire(monkeypatch: pytest
         result_factory=lambda _program, shots: ["10"] * shots,
     )
     patch_open_device(monkeypatch, qdmi)
-    device = QDMIDevice("fake.qdmi", wires=2, shots=4)
+    device = QDMIDevice("fake.qdmi", wires=2)
 
-    @qp.qnode(device)
+    @qp.qnode(device, shots=4)
     def circuit():
         qp.PauliX(1)
         return qp.sample()
@@ -395,7 +441,7 @@ def test_converts_an_unpreprocessed_tape(monkeypatch: pytest.MonkeyPatch) -> Non
         result_factory=lambda _program, shots: ["00"] * shots,
     )
     patch_open_device(monkeypatch, qdmi)
-    device = QDMIDevice("fake.qdmi", wires=2, shots=2)
+    device = QDMIDevice("fake.qdmi", wires=2)
 
     # Preprocessing always names the measured wires. A tape that skips it may
     # carry no measurement, or one that names none; both sample every wire.
@@ -405,3 +451,62 @@ def test_converts_an_unpreprocessed_tape(monkeypatch: pytest.MonkeyPatch) -> Non
 
     with pytest.raises(PennyLaneValidationError, match="not a device wire"):
         device.execute(qp.tape.QuantumScript([qp.Hadamard(5)], [qp.sample(wires=0)], shots=2))
+
+
+@pytest.mark.parametrize("program_format", [ProgramFormat.QASM2, ProgramFormat.QASM3])
+@pytest.mark.parametrize("sites", [[0, 1, 2], [0, 1]])
+def test_rejects_unsupported_or_incomplete_three_qubit_placements(
+    program_format: ProgramFormat,
+    sites: list[int],
+) -> None:
+    """Reject invalid fixed-arity metadata and placements before submitting."""
+    qdmi = StubDevice([operation("ccx", 3, sites=sites)], [program_format], qubits=4)
+    device = QDMIDevice(device=qdmi, wires=4)  # ty: ignore[invalid-argument-type] Device boundary double.
+
+    @qp.qnode(device, shots=2)
+    def circuit():
+        qp.Toffoli(wires=[1, 2, 3])
+        return qp.sample(wires=range(4))
+
+    with pytest.raises(PennyLaneValidationError, match=r"not advertised|incomplete"):
+        circuit()
+    assert not qdmi.submissions
+
+
+@pytest.mark.parametrize("program_format", [ProgramFormat.QASM2, ProgramFormat.QASM3])
+def test_reads_placement_metadata_once_for_distinct_loci(
+    monkeypatch: pytest.MonkeyPatch,
+    program_format: ProgramFormat,
+) -> None:
+    """Read the complete site set once, even when every gate uses a new locus."""
+    x = operation("x", 1, sites=list(range(8)))
+    query_sites = Mock(wraps=x.sites)
+    monkeypatch.setattr(x, "sites", query_sites)
+    qdmi = StubDevice([x], [program_format], qubits=8, result_factory=lambda _program, shots: ["0" * 8] * shots)
+    device = QDMIDevice(device=qdmi, wires=8)  # ty: ignore[invalid-argument-type] Device boundary double.
+    tape = qp.tape.QuantumScript([qp.PauliX(i) for i in range(8)], [qp.sample(wires=range(8))], shots=2)
+    device.execute(tape)
+    query_sites.assert_called_once()
+
+
+@pytest.mark.parametrize("program_format", [ProgramFormat.QASM2, ProgramFormat.QASM3])
+def test_graph_decomposition_targets_advertised_gates(
+    monkeypatch: pytest.MonkeyPatch, program_format: ProgramFormat
+) -> None:
+    """Use registered graph decompositions to reach the advertised serializer gates."""
+    qdmi = StubDevice([operation("h", 1), operation("cz", 2)], [program_format])
+    patch_open_device(monkeypatch, qdmi)
+    device = QDMIDevice("fake.qdmi", wires=2)
+    tape = qp.tape.QuantumScript([qp.CNOT(wires=[0, 1])], [qp.sample(wires=[0, 1])], shots=5)
+
+    with qp.decomposition.toggle_graph_ctx(new_state=True):
+        (decomposed,), _ = device.preprocess_transforms()((tape,))
+
+    assert qp.math.allclose(
+        qp.matrix(qp.prod(*reversed(decomposed.operations)), wire_order=[0, 1]),
+        qp.matrix(qp.CNOT([0, 1])),
+        atol=1e-14,
+    )
+    device.execute((decomposed,))
+    payload = qdmi.submissions[0][0]
+    assert "cz " in payload

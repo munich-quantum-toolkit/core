@@ -8,9 +8,8 @@
  * Licensed under the MIT License
  */
 
-/** @file SessionConfig.hpp
- * @brief Construction helpers for QDMI device session configuration.
- */
+/// @file SessionConfig.hpp
+/// Construction helpers for QDMI device session configuration.
 
 #pragma once
 
@@ -24,11 +23,39 @@
 
 namespace qdmi {
 
-/**
- * @brief Construct a device session configuration from individual parameters.
- * @throws std::invalid_argument If both an inline device configuration and a
- * device configuration file are set.
- */
+namespace detail {
+template <class T>
+inline void applyOverride(std::optional<T>& value,
+                          const std::optional<T>& overrideValue) {
+  if (overrideValue) {
+    value = overrideValue;
+  }
+}
+
+/// Apply present overrides, including explicitly empty values.
+[[nodiscard]] inline auto
+mergeSessionConfig(DeviceSessionConfig merged,
+                   const DeviceSessionConfig& overrides)
+    -> DeviceSessionConfig {
+  applyOverride(merged.baseUrl, overrides.baseUrl);
+  applyOverride(merged.token, overrides.token);
+  applyOverride(merged.authFile, overrides.authFile);
+  applyOverride(merged.authUrl, overrides.authUrl);
+  applyOverride(merged.username, overrides.username);
+  applyOverride(merged.password, overrides.password);
+  applyOverride(merged.deviceConfiguration, overrides.deviceConfiguration);
+  applyOverride(merged.custom1, overrides.custom1);
+  applyOverride(merged.custom2, overrides.custom2);
+  applyOverride(merged.custom3, overrides.custom3);
+  applyOverride(merged.custom4, overrides.custom4);
+  applyOverride(merged.custom5, overrides.custom5);
+  return merged;
+}
+} // namespace detail
+
+/// Construct a device session configuration from individual parameters.
+/// @throws std::invalid_argument If both an inline device configuration and a
+/// device configuration file are set.
 [[nodiscard]] inline auto makeDeviceSessionConfig(
     std::optional<std::string> baseUrl, std::optional<std::string> token,
     std::optional<std::filesystem::path> authFile,
@@ -50,18 +77,20 @@ namespace qdmi {
     configuration =
         FileDeviceConfiguration{.path = std::move(*deviceConfigFile)};
   }
-  return {.baseUrl = std::move(baseUrl),
-          .token = std::move(token),
-          .authFile = std::move(authFile),
-          .authUrl = std::move(authUrl),
-          .username = std::move(username),
-          .password = std::move(password),
-          .deviceConfiguration = std::move(configuration),
-          .custom1 = std::move(custom1),
-          .custom2 = std::move(custom2),
-          .custom3 = std::move(custom3),
-          .custom4 = std::move(custom4),
-          .custom5 = std::move(custom5)};
+  return {
+      .baseUrl = std::move(baseUrl),
+      .token = std::move(token),
+      .authFile = std::move(authFile),
+      .authUrl = std::move(authUrl),
+      .username = std::move(username),
+      .password = std::move(password),
+      .deviceConfiguration = std::move(configuration),
+      .custom1 = std::move(custom1),
+      .custom2 = std::move(custom2),
+      .custom3 = std::move(custom3),
+      .custom4 = std::move(custom4),
+      .custom5 = std::move(custom5),
+  };
 }
 
 } // namespace qdmi

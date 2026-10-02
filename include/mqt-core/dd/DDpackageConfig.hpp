@@ -8,9 +8,8 @@
  * Licensed under the MIT License
  */
 
-/** @file DDpackageConfig.hpp
- * @brief Configuration of decision-diagram packages.
- */
+/// @file DDpackageConfig.hpp
+/// Configuration of decision-diagram packages.
 
 #pragma once
 
@@ -18,9 +17,9 @@
 
 namespace dd {
 struct DDPackageConfig {
-  std::size_t utVecNumBucket = 32768U;
+  std::size_t utVecNumBucket = 64U;
   std::size_t utVecInitialAllocationSize = 2048U;
-  std::size_t utMatNumBucket = 32768U;
+  std::size_t utMatNumBucket = 64U;
   std::size_t utMatInitialAllocationSize = 2048U;
   std::size_t ctVecAddNumBucket = 16384U;
   std::size_t ctMatAddNumBucket = 16384U;
@@ -28,15 +27,18 @@ struct DDPackageConfig {
   std::size_t ctMatAddMagNumBucket = 16384U;
   std::size_t ctVecConjNumBucket = 4096U;
   std::size_t ctMatConjTransNumBucket = 4096U;
+  /// Initial matrix-vector cache capacity; grows with reusable vector work.
   std::size_t ctMatVecMultNumBucket = 16384U;
   std::size_t ctMatMatMultNumBucket = 16384U;
   std::size_t ctVecKronNumBucket = 4096U;
   std::size_t ctMatKronNumBucket = 4096U;
   std::size_t ctMatTraceNumBucket = 4096U;
   std::size_t ctVecInnerProdNumBucket = 4096U;
+  /// Per-level unique-table bucket ceiling; must cover both initial capacities.
+  size_t utMaxNumBucket = 1048576U;
 };
 
-constexpr auto UNITARY_SIMULATOR_DD_PACKAGE_CONFIG = []() {
+constexpr auto UNITARY_SIMULATOR_DD_PACKAGE_CONFIG = [] {
   DDPackageConfig config{};
   config.utMatNumBucket = 65'536U;
   config.ctMatAddNumBucket = 65'536U;

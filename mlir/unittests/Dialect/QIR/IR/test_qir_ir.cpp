@@ -8,47 +8,61 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Dialect/QIR/Builder/QIRProgramBuilder.h"
+#include "mqt/Dialect/QIR/Transforms/Passes.h"
+#include "mqt/Dialect/QIR/Utils/QIRUtils.h"
+#include "mqt/Support/Passes.h"
+
 #include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
-#include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
-#include "mlir/Dialect/QIR/Transforms/Passes.h"
-#include "mlir/Dialect/QIR/Utils/QIRUtils.h"
-#include "mlir/Support/Passes.h"
 #include "qir_programs.h"
 
-#include <gtest/gtest.h>
-#include <llvm/ADT/APInt.h>
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/IR/Constants.h>
-#include <llvm/IR/LLVMContext.h>
-#include <llvm/IR/Metadata.h>
-#include <llvm/IR/Module.h>
-#include <llvm/Support/Casting.h>
-#include <mlir/Dialect/LLVMIR/LLVMAttrs.h>
-#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
-#include <mlir/Dialect/LLVMIR/LLVMTypes.h>
-#include <mlir/IR/Block.h>
-#include <mlir/IR/BlockSupport.h>
-#include <mlir/IR/Builders.h>
-#include <mlir/IR/BuiltinAttributes.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/DialectRegistry.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/Verifier.h>
-#include <mlir/Pass/PassManager.h>
-#include <mlir/Support/LLVM.h>
+#include "gtest/gtest.h"
 
+#include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/LLVMIR/LLVMTypes.h"
+#include "mlir/IR/Block.h"
+#include "mlir/IR/BlockSupport.h"
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/DialectRegistry.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/OperationSupport.h"
+#include "mlir/IR/Verifier.h"
+#include "mlir/Parser/Parser.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
+#include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
+#include "mlir/Target/LLVMIR/Export.h"
+
+#include "llvm/ADT/APInt.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Metadata.h"
+#include "llvm/IR/Module.h"
+#include "llvm/Support/Casting.h"
+
+#include <algorithm>
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <iosfwd>
 #include <memory>
 #include <ostream>
 #include <string>
 #include <tuple>
+#include <variant>
 
 using namespace mlir;
 using namespace qir;
 
-static LLVM::ModuleFlagAttr findModuleFlag(const ModuleOp moduleOp,
+static LLVM::ModuleFlagAttr findModuleFlag(ModuleOp moduleOp,
                                            const StringRef name) {
   LLVM::ModuleFlagAttr result;
   moduleOp->walk([&](LLVM::ModuleFlagsOp flagsOp) {
@@ -60,6 +74,13 @@ static LLVM::ModuleFlagAttr findModuleFlag(const ModuleOp moduleOp,
     }
   });
   return result;
+}
+
+static LogicalResult attachQIRMetadata(ModuleOp module,
+                                       bool useAdaptive = false) {
+  PassManager manager(module.getContext());
+  manager.addPass(qir::createQIRSetAttributesAndMetadata({useAdaptive}));
+  return manager.run(module);
 }
 
 namespace {
@@ -84,6 +105,8 @@ class QIRTest : public testing::TestWithParam<QIRTestCase> {
 protected:
   std::unique_ptr<MLIRContext> context;
 
+  // GoogleTest requires this override name.
+  // NOLINTNEXTLINE(readability-identifier-naming)
   void SetUp() override {
     DialectRegistry registry;
     registry.insert<LLVM::LLVMDialect>();
@@ -120,6 +143,7 @@ TEST_P(QIRTest, ProgramEquivalence) {
   printer.record(reference.get(), "Canonicalized Reference QIR IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
+  /// Builder references may order module symbols differently.
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
@@ -142,12 +166,180 @@ TEST_F(QIRTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
       "Cannot mix dynamic and static qubit allocation modes");
 }
 
+TEST_F(QIRTest, BuilderRecordsRegistersInAllocationOrder) {
+  QIRProgramBuilder builder(context.get());
+  builder.initialize();
+  SmallVector<Value> arrays;
+  for (size_t i = 0; i < 12; ++i) {
+    arrays.push_back(builder.allocClassicalBitRegister(1).array);
+  }
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  SmallVector<Value> recorded;
+  module->walk([&](LLVM::CallOp call) {
+    if (call.getCallee() == QIR_RESULT_ARRAY_RECORD_OUTPUT) {
+      recorded.push_back(call.getOperand(1));
+    }
+  });
+  EXPECT_EQ(recorded, arrays);
+}
+
+TEST_F(QIRTest, AdaptiveBuilderOwnsScalarAndRegisterResults) {
+  QIRProgramBuilder builder(context.get());
+  builder.initialize();
+  auto q = builder.allocQubit();
+  auto scalar = builder.measure(q, 0);
+  auto reg = builder.allocClassicalBitRegister(1);
+  builder.measure(q, reg, 0);
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  auto allocation = scalar.getDefiningOp<LLVM::CallOp>();
+  ASSERT_TRUE(allocation);
+  EXPECT_EQ(allocation.getCallee(), QIR_RESULT_ALLOC);
+  size_t scalarReleases = 0;
+  size_t arrayReleases = 0;
+  module->walk([&](LLVM::CallOp call) {
+    if (call.getCallee() == QIR_RESULT_RELEASE) {
+      ++scalarReleases;
+      EXPECT_EQ(call.getOperand(0), scalar);
+    }
+    if (call.getCallee() == QIR_RESULT_ARRAY_RELEASE) {
+      ++arrayReleases;
+    }
+  });
+  EXPECT_EQ(scalarReleases, 1);
+  EXPECT_EQ(arrayReleases, 1);
+}
+
+TEST_F(QIRTest, AdaptiveBuilderReleasesEachResourceKindInAllocationOrder) {
+  QIRProgramBuilder builder(context.get());
+  builder.initialize();
+  std::array<SmallVector<Value>, 4> allocated;
+  for (int64_t i = 0; i < 12; ++i) {
+    auto qubit = builder.allocQubit();
+    allocated[0].push_back(qubit);
+    auto qubits = builder.allocQubitRegister(1);
+    allocated[1].push_back(qubits.value);
+    auto result = builder.measure(qubit, i, false);
+    allocated[2].push_back(result);
+    auto results = builder.allocClassicalBitRegister(1);
+    allocated[3].push_back(results.array);
+  }
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  std::array<SmallVector<Value>, 4> released;
+  moduleOp->walk([&](LLVM::CallOp call) {
+    if (call.getCallee() == QIR_QUBIT_RELEASE) {
+      released[0].push_back(call.getOperand(0));
+    } else if (call.getCallee() == QIR_QUBIT_ARRAY_RELEASE) {
+      released[1].push_back(call.getOperand(1));
+    } else if (call.getCallee() == QIR_RESULT_RELEASE) {
+      released[2].push_back(call.getOperand(0));
+    } else if (call.getCallee() == QIR_RESULT_ARRAY_RELEASE) {
+      released[3].push_back(call.getOperand(1));
+    }
+  });
+  EXPECT_EQ(released, allocated);
+}
+
+TEST_F(QIRTest, AdaptiveBuilderUsesAnArrayForWideClassicalRegisters) {
+  QIRProgramBuilder builder(context.get());
+  builder.initialize();
+  auto reg = builder.allocClassicalBitRegister(1000000);
+  EXPECT_TRUE(reg.results.empty());
+  EXPECT_TRUE(reg.array);
+  EXPECT_EQ(std::get<int64_t>(reg.size), 1000000);
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+}
+
+TEST_F(QIRTest, OutputRecordingReusesLabelsAcrossBatches) {
+  ClassicalRegister reg;
+  auto moduleOp = QIRProgramBuilder::build(
+      context.get(),
+      [&](QIRProgramBuilder& builder) {
+        reg = builder.allocClassicalBitRegister(2);
+        return builder.intConstant(0);
+      },
+      QIRProgramBuilder::Profile::Base);
+  ASSERT_TRUE(moduleOp);
+  auto main = getMainFunction(*moduleOp);
+  ASSERT_TRUE(main);
+  OpBuilder builder(main.getBody().back().getTerminator());
+  auto existing = createResultLabel(builder, main, "c0_0");
+  const DenseMap<int64_t, StaticResult> staticResults;
+  emitOutputRecording(builder, main, {reg}, staticResults);
+  EXPECT_EQ(existing.getGlobalName(), "qir.result_label_c0_0");
+  SmallVector<StringRef> labels;
+  for (auto global : moduleOp->getOps<LLVM::GlobalOp>()) {
+    labels.push_back(global.getSymName());
+  }
+  llvm::sort(labels);
+  EXPECT_EQ(labels, (SmallVector<StringRef>{"qir.result_label_c0",
+                                            "qir.result_label_c0_0",
+                                            "qir.result_label_c0_1"}));
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+}
+
+TEST_F(QIRTest, ResultLabelsAvoidExistingFunctionSymbols) {
+  auto moduleOp =
+      QIRProgramBuilder::build(context.get(), [](QIRProgramBuilder& builder) {
+        return builder.intConstant(0);
+      });
+  ASSERT_TRUE(moduleOp);
+  OpBuilder builder(context.get());
+  builder.setInsertionPointToEnd(moduleOp->getBody());
+  auto function = LLVM::LLVMFuncOp::create(
+      builder, moduleOp->getLoc(), "qir.result_label_collision",
+      LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(context.get()), {}));
+  auto address = createResultLabel(builder, *moduleOp, "collision");
+  auto global = moduleOp->lookupSymbol<LLVM::GlobalOp>(address.getGlobalName());
+  ASSERT_TRUE(global);
+  EXPECT_NE(global.getSymName(), function.getSymName());
+  EXPECT_EQ(global.getValueAttr(),
+            builder.getStringAttr(StringRef("collision\0", 10)));
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+}
+
+TEST_F(QIRTest, AdaptiveBuilderDoesNotReleaseExplicitStaticResults) {
+  QIRProgramBuilder builder(context.get());
+  builder.initialize();
+  builder.staticResult(0);
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  EXPECT_FALSE(module->lookupSymbol<LLVM::LLVMFuncOp>(QIR_RESULT_RELEASE));
+}
+
+TEST_F(QIRTest, BuilderRejectsMixedResultAllocationModes) {
+  EXPECT_DEATH(
+      {
+        QIRProgramBuilder builder(context.get());
+        builder.initialize();
+        builder.staticResult(0);
+        builder.allocClassicalBitRegister(1);
+      },
+      "Cannot mix static and dynamic result allocation modes");
+  EXPECT_DEATH(
+      {
+        QIRProgramBuilder builder(context.get());
+        builder.initialize();
+        builder.allocClassicalBitRegister(1);
+        builder.staticResult(0);
+      },
+      "Cannot mix static and dynamic result allocation modes");
+}
+
 TEST_F(QIRTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
   EXPECT_DEATH(
       {
         QIRProgramBuilder builder(context.get());
         builder.initialize();
-        const auto q = builder.allocQubit();
+        auto q = builder.allocQubit();
         const auto c = builder.allocClassicalBitRegister(1);
         builder.measure(q, c, -1);
       },
@@ -157,7 +349,7 @@ TEST_F(QIRTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
       {
         QIRProgramBuilder builder(context.get());
         builder.initialize();
-        const auto q = builder.allocQubit();
+        auto q = builder.allocQubit();
         const auto c = builder.allocClassicalBitRegister(1);
         builder.measure(q, c, 1);
       },
@@ -180,14 +372,397 @@ TEST_F(QIRTest, BuilderReturnsCompleteClassicalRegister) {
   EXPECT_FALSE(returnedRegister.array);
 }
 
+TEST_F(QIRTest, ReusedIrreversibleDeclarationsPreservePassthroughIdempotently) {
+  OpBuilder builder(context.get());
+  const auto location = builder.getUnknownLoc();
+  auto moduleOp = ModuleOp::create(location);
+  builder.setInsertionPointToStart(moduleOp.getBody());
+  const auto ptrType = LLVM::LLVMPointerType::get(context.get());
+  const auto voidType = LLVM::LLVMVoidType::get(context.get());
+  const auto nounwind = builder.getStringAttr("nounwind");
+  const auto targetCPU = builder.getStrArrayAttr({"target-cpu", "generic"});
+
+  for (const StringRef name : {StringRef(QIR_MEASURE), StringRef(QIR_RESET)}) {
+    const SmallVector<Type> parameters(name == QIR_MEASURE ? 2 : 1, ptrType);
+    const auto functionType = LLVM::LLVMFunctionType::get(voidType, parameters);
+    auto declaration =
+        LLVM::LLVMFuncOp::create(builder, location, name, functionType);
+    declaration->setAttr("passthrough",
+                         builder.getArrayAttr({nounwind, targetCPU}));
+
+    EXPECT_EQ(
+        getOrCreateFunctionDeclaration(builder, moduleOp, name, functionType),
+        declaration);
+    EXPECT_EQ(
+        getOrCreateFunctionDeclaration(builder, moduleOp, name, functionType),
+        declaration);
+
+    const auto passthrough =
+        declaration->getAttrOfType<ArrayAttr>("passthrough");
+    ASSERT_TRUE(passthrough);
+    ASSERT_EQ(passthrough.size(), 3U);
+    EXPECT_EQ(passthrough[0], nounwind);
+    EXPECT_EQ(passthrough[1], targetCPU);
+    EXPECT_EQ(llvm::count(passthrough, builder.getStringAttr("irreversible")),
+              1);
+  }
+}
+
+TEST_F(QIRTest, MetadataPassRequiresExactlyOneEntryPointAtomically) {
+  for (const size_t numEntryPoints : {0U, 2U}) {
+    SCOPED_TRACE(testing::Message() << "numEntryPoints=" << numEntryPoints);
+    OpBuilder builder(context.get());
+    const auto location = builder.getUnknownLoc();
+    auto module = ModuleOp::create(location);
+    builder.setInsertionPointToStart(module.getBody());
+    const auto functionType =
+        LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(context.get()), {});
+    for (size_t i = 0; i < std::max<size_t>(numEntryPoints, 1); ++i) {
+      auto function = LLVM::LLVMFuncOp::create(
+          builder, location, "function" + std::to_string(i), functionType);
+      if (i < numEntryPoints) {
+        function->setAttr("passthrough",
+                          builder.getStrArrayAttr({"entry_point"}));
+      }
+      auto* block = function.addEntryBlock(builder);
+      builder.setInsertionPointToEnd(block);
+      LLVM::ReturnOp::create(builder, location, ValueRange{});
+      builder.setInsertionPointToEnd(module.getBody());
+    }
+    ASSERT_TRUE(succeeded(verify(module)));
+
+    OwningOpRef<ModuleOp> before = cast<ModuleOp>(module->clone());
+    EXPECT_TRUE(failed(attachQIRMetadata(module)));
+    EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+        module, before->getOperation(), OperationEquivalence::Flags::None));
+  }
+}
+
+TEST_F(QIRTest, PreservesUnrelatedMetadataIdempotently) {
+  OpBuilder builder(context.get());
+  const auto location = builder.getUnknownLoc();
+  auto module = ModuleOp::create(location);
+  builder.setInsertionPointToStart(module.getBody());
+  const auto unrelated =
+      LLVM::ModuleFlagAttr::get(context.get(), LLVM::ModFlagBehavior::Warning,
+                                builder.getStringAttr("Debug Info Version"),
+                                builder.getI32IntegerAttr(3));
+  const auto staleQIR = LLVM::ModuleFlagAttr::get(
+      context.get(), LLVM::ModFlagBehavior::Error,
+      builder.getStringAttr("qir_major_version"), builder.getI32IntegerAttr(1));
+  LLVM::ModuleFlagsOp::create(builder, location,
+                              builder.getArrayAttr({unrelated, staleQIR}));
+  const auto functionType =
+      LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(context.get()), {});
+  auto main = LLVM::LLVMFuncOp::create(builder, location, "main", functionType);
+  const auto nounwind = builder.getStringAttr("nounwind");
+  const auto target = builder.getStrArrayAttr({"target-cpu", "generic"});
+  const auto staleProfile =
+      builder.getStrArrayAttr({"qir_profiles", "stale_profile"});
+  main.setPassthroughAttr(builder.getArrayAttr(
+      {builder.getStringAttr("entry_point"), nounwind, target, staleProfile}));
+  auto* block = main.addEntryBlock(builder);
+  builder.setInsertionPointToEnd(block);
+  LLVM::ReturnOp::create(builder, location, ValueRange{});
+  ASSERT_TRUE(succeeded(verify(module)));
+
+  ASSERT_TRUE(succeeded(attachQIRMetadata(module)));
+  const auto preserved = findModuleFlag(module, "Debug Info Version");
+  ASSERT_TRUE(preserved);
+  EXPECT_EQ(preserved.getBehavior(), LLVM::ModFlagBehavior::Warning);
+  EXPECT_EQ(cast<IntegerAttr>(preserved.getValue()).getInt(), 3);
+  const auto qirMajor = findModuleFlag(module, "qir_major_version");
+  ASSERT_TRUE(qirMajor);
+  EXPECT_EQ(cast<IntegerAttr>(qirMajor.getValue()).getInt(), 2);
+
+  const auto passthrough = main.getPassthroughAttr();
+  ASSERT_TRUE(passthrough);
+  EXPECT_TRUE(llvm::is_contained(passthrough, nounwind));
+  EXPECT_TRUE(llvm::is_contained(passthrough, target));
+  const auto baseProfile =
+      builder.getStrArrayAttr({"qir_profiles", "base_profile"});
+  EXPECT_EQ(llvm::count(passthrough, baseProfile), 1U);
+  EXPECT_FALSE(llvm::is_contained(passthrough, staleProfile));
+
+  OwningOpRef<ModuleOp> afterFirstRun = cast<ModuleOp>(module->clone());
+  ASSERT_TRUE(succeeded(attachQIRMetadata(module)));
+  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+      module, afterFirstRun->getOperation(),
+      OperationEquivalence::Flags::None));
+}
+
+TEST_F(QIRTest, MetadataDeclaresResourceCapacities) {
+  struct CapacityCase {
+    SmallVector<int64_t> indices;
+    StringRef requiredCapacity;
+  };
+  const std::array cases{
+      CapacityCase{.indices = {}, .requiredCapacity = "0"},
+      CapacityCase{.indices = {0}, .requiredCapacity = "1"},
+      CapacityCase{.indices = {0, 1, 0}, .requiredCapacity = "2"},
+      CapacityCase{.indices = {7, 2, 7}, .requiredCapacity = "8"},
+  };
+
+  for (const auto profile : {
+           QIRProgramBuilder::Profile::Base,
+           QIRProgramBuilder::Profile::Adaptive,
+       }) {
+    for (const auto& testCase : cases) {
+      SCOPED_TRACE(testing::Message()
+                   << "profile=" << static_cast<int>(profile)
+                   << ", requiredCapacity=" << testCase.requiredCapacity.str());
+      auto moduleOp = QIRProgramBuilder::build(
+          context.get(),
+          [&](QIRProgramBuilder& builder) {
+            for (const auto index : testCase.indices) {
+              auto qubit = builder.staticQubit(index);
+              builder.x(qubit);
+              builder.measure(qubit, index);
+            }
+            return builder.intConstant(0);
+          },
+          profile);
+
+      ASSERT_TRUE(moduleOp);
+      ASSERT_TRUE(succeeded(verify(*moduleOp)));
+      auto main = getMainFunction(moduleOp.get());
+      ASSERT_TRUE(main);
+      const auto passthrough = main.getPassthroughAttr();
+      ASSERT_TRUE(passthrough);
+      OpBuilder builder(context.get());
+      for (const StringRef attribute :
+           {"required_num_qubits", "required_num_results"}) {
+        EXPECT_TRUE(llvm::is_contained(
+            passthrough,
+            builder.getStrArrayAttr(
+                {attribute,
+                 attribute == "required_num_results" &&
+                         profile == QIRProgramBuilder::Profile::Adaptive
+                     ? StringRef("0")
+                     : testCase.requiredCapacity})));
+      }
+    }
+  }
+}
+
+TEST_F(QIRTest, MetadataCountsEveryStaticPointerUse) {
+  auto module = parseSourceString<ModuleOp>(R"mlir(
+module {
+  llvm.func @__quantum__qis__mz__body(!llvm.ptr, !llvm.ptr)
+  llvm.func @__quantum__rt__result_record_output(!llvm.ptr, !llvm.ptr)
+  llvm.func @main() attributes {passthrough = ["entry_point"]} {
+    %id = llvm.mlir.constant(7 : i64) : i64
+    %qubit = llvm.inttoptr %id : i64 to !llvm.ptr
+    %result = llvm.inttoptr %id : i64 to !llvm.ptr
+    %label = llvm.mlir.zero : !llvm.ptr
+    llvm.call @__quantum__qis__mz__body(%qubit, %result)
+        : (!llvm.ptr, !llvm.ptr) -> ()
+    llvm.call @__quantum__rt__result_record_output(%result, %label)
+        : (!llvm.ptr, !llvm.ptr) -> ()
+    llvm.return
+  }
+}
+  )mlir",
+                                            context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(attachQIRMetadata(*module)));
+  auto main = getMainFunction(*module);
+  OpBuilder builder(context.get());
+  EXPECT_TRUE(llvm::is_contained(
+      main.getPassthroughAttr(),
+      builder.getStrArrayAttr({"required_num_qubits", "8"})));
+}
+
+TEST_F(QIRTest, MetadataCountsCnotAliasQubits) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    llvm.func @__quantum__qis__cnot__body(!llvm.ptr, !llvm.ptr)
+    llvm.func @main() attributes {passthrough = ["entry_point"]} {
+      %id = llvm.mlir.constant(7 : i64) : i64
+      %control = llvm.inttoptr %id : i64 to !llvm.ptr
+      %target = llvm.mlir.zero : !llvm.ptr
+      llvm.call @__quantum__qis__cnot__body(%control, %target)
+          : (!llvm.ptr, !llvm.ptr) -> ()
+      llvm.return
+    }
+  )mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(attachQIRMetadata(*moduleOp)));
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  OpBuilder builder(context.get());
+  EXPECT_TRUE(llvm::is_contained(
+      getMainFunction(*moduleOp).getPassthroughAttr(),
+      builder.getStrArrayAttr({"required_num_qubits", "8"})));
+}
+
+TEST_F(QIRTest, MetadataDoesNotCountResultReadsAsQubits) {
+  auto module = parseSourceString<ModuleOp>(R"mlir(
+module {
+  llvm.func @__quantum__qis__mz__body(!llvm.ptr, !llvm.ptr)
+  llvm.func @__quantum__qis__read_result__body(!llvm.ptr) -> i1
+  llvm.func @main() attributes {passthrough = ["entry_point"]} {
+    %qubit_id = llvm.mlir.constant(0 : i64) : i64
+    %result_id = llvm.mlir.constant(7 : i64) : i64
+    %qubit = llvm.inttoptr %qubit_id : i64 to !llvm.ptr
+    %result = llvm.inttoptr %result_id : i64 to !llvm.ptr
+    llvm.call @__quantum__qis__mz__body(%qubit, %result)
+        : (!llvm.ptr, !llvm.ptr) -> ()
+    %bit = llvm.call @__quantum__qis__read_result__body(%result)
+        : (!llvm.ptr) -> i1
+    llvm.return
+  }
+}
+  )mlir",
+                                            context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(attachQIRMetadata(*module)));
+  auto main = getMainFunction(*module);
+  OpBuilder builder(context.get());
+  EXPECT_TRUE(llvm::is_contained(
+      main.getPassthroughAttr(),
+      builder.getStrArrayAttr({"required_num_qubits", "1"})));
+}
+
+TEST_F(QIRTest, MetadataAcceptsDynamicPointerArguments) {
+  auto module = parseSourceString<ModuleOp>(R"mlir(
+module {
+  llvm.func @__quantum__qis__mz__body(!llvm.ptr, !llvm.ptr)
+  llvm.func @main(%q: !llvm.ptr, %r: !llvm.ptr)
+      attributes {passthrough = ["entry_point"]} {
+    llvm.call @__quantum__qis__mz__body(%q, %r) : (!llvm.ptr, !llvm.ptr) -> ()
+    llvm.return
+  }
+}
+  )mlir",
+                                            context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(attachQIRMetadata(*module)));
+  auto main = getMainFunction(*module);
+  OpBuilder builder(context.get());
+  EXPECT_TRUE(llvm::is_contained(
+      main.getPassthroughAttr(),
+      builder.getStrArrayAttr({"required_num_qubits", "0"})));
+}
+
+TEST_F(QIRTest, MetadataIncludesMeasurementLatch) {
+  auto module = parseSourceString<ModuleOp>(R"mlir(
+module {
+  llvm.func @__quantum__qis__mz__body(!llvm.ptr, !llvm.ptr)
+  llvm.func @__quantum__rt__read_result(!llvm.ptr) -> i1
+  llvm.func @main() attributes {passthrough = ["entry_point"]} {
+    %zero = llvm.mlir.constant(0 : i64) : i64
+    %result = llvm.inttoptr %zero : i64 to !llvm.ptr
+    llvm.br ^header
+  ^header:
+    llvm.br ^latch
+  ^latch:
+    llvm.call @__quantum__qis__mz__body(%result, %result)
+        : (!llvm.ptr, !llvm.ptr) -> ()
+    %again = llvm.call @__quantum__rt__read_result(%result)
+        : (!llvm.ptr) -> i1
+    llvm.cond_br %again, ^header, ^exit
+  ^exit:
+    llvm.return
+  }
+}
+  )mlir",
+                                            context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(attachQIRMetadata(*module, true)));
+  auto flag = findModuleFlag(*module, "backwards_branching");
+  ASSERT_TRUE(flag);
+  EXPECT_EQ(cast<IntegerAttr>(flag.getValue()).getInt(), 2);
+}
+
+TEST_F(QIRTest, MetadataRejectsUnrepresentableStaticResourceCapacity) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    llvm.func @__quantum__qis__x__body(!llvm.ptr)
+    llvm.func @main() attributes {passthrough = ["entry_point"]} {
+      %index = llvm.mlir.constant(-1 : i64) : i64
+      %qubit = llvm.inttoptr %index : i64 to !llvm.ptr
+      llvm.call @__quantum__qis__x__body(%qubit) : (!llvm.ptr) -> ()
+      llvm.return
+    }
+  })mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  OwningOpRef<ModuleOp> before = moduleOp->clone();
+
+  EXPECT_TRUE(failed(attachQIRMetadata(moduleOp.get())));
+  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+      moduleOp.get(), before->getOperation(),
+      OperationEquivalence::Flags::None));
+}
+
+TEST_F(QIRTest, MetadataCountsNullStaticResourceIds) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    llvm.func @__quantum__qis__mz__body(!llvm.ptr, !llvm.ptr)
+    llvm.func @main() attributes {passthrough = ["entry_point"]} {
+      %zero = llvm.mlir.zero : !llvm.ptr
+      llvm.call @__quantum__qis__mz__body(%zero, %zero)
+          : (!llvm.ptr, !llvm.ptr) -> ()
+      llvm.return
+    }
+  })mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(attachQIRMetadata(*moduleOp)));
+  OpBuilder builder(context.get());
+  for (const auto* resource : {"required_num_qubits", "required_num_results"}) {
+    EXPECT_TRUE(
+        llvm::is_contained(getMainFunction(*moduleOp).getPassthroughAttr(),
+                           builder.getStrArrayAttr({resource, "1"})));
+  }
+}
+
+TEST_F(QIRTest, MetadataIncludesStaticQubitsLoadedFromRegisters) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    llvm.func @__quantum__qis__x__body(!llvm.ptr)
+    llvm.func @main(%index: i64) attributes {passthrough = ["entry_point"]} {
+      %two = llvm.mlir.constant(2 : i64) : i64
+      %seven = llvm.mlir.constant(7 : i64) : i64
+      %other_id = llvm.mlir.constant(99 : i64) : i64
+      %zero = llvm.mlir.zero : !llvm.ptr
+      %qubit = llvm.inttoptr %seven : i64 to !llvm.ptr
+      %other = llvm.inttoptr %other_id : i64 to !llvm.ptr
+      %qubits = llvm.alloca %two x !llvm.ptr : (i64) -> !llvm.ptr
+      %unrelated = llvm.alloca %two x !llvm.ptr : (i64) -> !llvm.ptr
+      llvm.store %zero, %qubits {qir.qubit_store} : !llvm.ptr, !llvm.ptr
+      %second = llvm.getelementptr %qubits[1] : (!llvm.ptr) -> !llvm.ptr, !llvm.ptr
+      llvm.store %qubit, %second {qir.qubit_store} : !llvm.ptr, !llvm.ptr
+      llvm.store %other, %unrelated : !llvm.ptr, !llvm.ptr
+      %slot = llvm.getelementptr %qubits[%index] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.ptr
+      %selected = llvm.load %slot : !llvm.ptr -> !llvm.ptr
+      llvm.call @__quantum__qis__x__body(%selected) : (!llvm.ptr) -> ()
+      llvm.return
+    }
+  })mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(attachQIRMetadata(moduleOp.get())));
+  auto main = getMainFunction(moduleOp.get());
+  OpBuilder builder(context.get());
+  EXPECT_TRUE(llvm::is_contained(
+      main.getPassthroughAttr(),
+      builder.getStrArrayAttr({"required_num_qubits", "8"})));
+}
+
 TEST_F(QIRTest, AdaptiveBuilderSelectsControlledSpecializationsByArity) {
   auto module = QIRProgramBuilder::build(
       context.get(),
       [](QIRProgramBuilder& builder) {
-        const auto control0 = builder.allocQubit();
-        const auto control1 = builder.allocQubit();
-        const auto control2 = builder.allocQubit();
-        const auto target = builder.allocQubit();
+        auto control0 = builder.allocQubit();
+        auto control1 = builder.allocQubit();
+        auto control2 = builder.allocQubit();
+        auto target = builder.allocQubit();
         builder.crx(0.25, control0, target);
         builder.mcrx(0.5, {control0, control1}, target);
         builder.mcrx(0.75, {control0, control1, control2}, target);
@@ -207,7 +782,7 @@ TEST_F(QIRTest, AdaptiveBuilderSelectsControlledSpecializationsByArity) {
   EXPECT_EQ(argumentTypes[1], LLVM::LLVMPointerType::get(context.get()));
   EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(QIR_ARRAY_CREATE));
   EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(QIR_TUPLE_CREATE));
-  const auto main = getMainFunction(module.get());
+  auto main = getMainFunction(module.get());
   ASSERT_TRUE(main);
   const auto passthrough = main->getAttrOfType<ArrayAttr>("passthrough");
   ASSERT_TRUE(passthrough);
@@ -227,18 +802,19 @@ TEST_F(QIRTest, BaseBuilderUsesGenericSpecializationForThreeControls) {
   auto module = QIRProgramBuilder::build(
       context.get(),
       [](QIRProgramBuilder& builder) {
-        const auto control0 = builder.staticQubit(0);
-        const auto control1 = builder.staticQubit(1);
-        const auto control2 = builder.staticQubit(2);
-        const auto target = builder.staticQubit(3);
+        auto control0 = builder.staticQubit(0);
+        auto control1 = builder.staticQubit(1);
+        auto control2 = builder.staticQubit(2);
+        auto target = builder.staticQubit(7);
         builder.mcrx(0.25, {control0, control1, control2}, target);
         return builder.intConstant(0);
       },
       QIRProgramBuilder::Profile::Base);
 
   ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
   EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(QIR_RX_CTL));
-  const auto main = getMainFunction(module.get());
+  auto main = getMainFunction(module.get());
   ASSERT_TRUE(main);
   const auto passthrough = main->getAttrOfType<ArrayAttr>("passthrough");
   ASSERT_TRUE(passthrough);
@@ -247,9 +823,14 @@ TEST_F(QIRTest, BaseBuilderUsesGenericSpecializationForThreeControls) {
       ArrayAttr::get(context.get(),
                      {StringAttr::get(context.get(), "qir_profiles"),
                       StringAttr::get(context.get(), "base_profile")})));
+  EXPECT_TRUE(llvm::is_contained(
+      passthrough,
+      ArrayAttr::get(context.get(),
+                     {StringAttr::get(context.get(), "required_num_qubits"),
+                      StringAttr::get(context.get(), "8")})));
 }
 
-TEST_F(QIRTest, UsesQIR21ModuleFlagWidths) {
+TEST_F(QIRTest, UsesTranslationCompatibleModuleFlagWidths) {
   const auto build = [&](const QIRProgramBuilder::Profile profile) {
     return QIRProgramBuilder::build(
         context.get(),
@@ -261,7 +842,11 @@ TEST_F(QIRTest, UsesQIR21ModuleFlagWidths) {
   const auto baseDynamicQubits =
       findModuleFlag(base.get(), "dynamic_qubit_management");
   ASSERT_TRUE(baseDynamicQubits);
-  EXPECT_TRUE(isa<BoolAttr>(baseDynamicQubits.getValue()));
+  const auto baseDynamicQubitsValue =
+      dyn_cast<IntegerAttr>(baseDynamicQubits.getValue());
+  ASSERT_TRUE(baseDynamicQubitsValue);
+  EXPECT_EQ(baseDynamicQubitsValue.getType(),
+            IntegerType::get(context.get(), 32));
   EXPECT_FALSE(findModuleFlag(base.get(), "backwards_branching"));
 
   auto adaptive = build(QIRProgramBuilder::Profile::Adaptive);
@@ -272,10 +857,13 @@ TEST_F(QIRTest, UsesQIR21ModuleFlagWidths) {
   const auto backwardsBranchingValue =
       dyn_cast<IntegerAttr>(backwardsBranching.getValue());
   ASSERT_TRUE(backwardsBranchingValue);
-  EXPECT_EQ(backwardsBranchingValue.getType().getIntOrFloatBitWidth(), 2U);
+  EXPECT_EQ(backwardsBranchingValue.getType(),
+            IntegerType::get(context.get(), 32));
   const auto arrays = findModuleFlag(adaptive.get(), "arrays");
   ASSERT_TRUE(arrays);
-  EXPECT_TRUE(isa<BoolAttr>(arrays.getValue()));
+  const auto arraysValue = dyn_cast<IntegerAttr>(arrays.getValue());
+  ASSERT_TRUE(arraysValue);
+  EXPECT_EQ(arraysValue.getType(), IntegerType::get(context.get(), 32));
 }
 
 TEST_F(QIRTest, DerivesAdaptiveClassicalCapabilities) {
@@ -289,7 +877,7 @@ TEST_F(QIRTest, DerivesAdaptiveClassicalCapabilities) {
   main->setAttr("passthrough", builder.getStrArrayAttr({"entry_point"}));
   auto* mainBlock = main.addEntryBlock(builder);
   builder.setInsertionPointToEnd(mainBlock);
-  const Value exitCode =
+  Value exitCode =
       LLVM::ConstantOp::create(builder, location, builder.getI64IntegerAttr(0))
           .getResult();
   LLVM::ReturnOp::create(builder, location, exitCode);
@@ -303,19 +891,19 @@ TEST_F(QIRTest, DerivesAdaptiveClassicalCapabilities) {
   auto* defaultBlock = helper.addBlock();
   auto* caseBlock = helper.addBlock();
   builder.setInsertionPointToEnd(helperEntry);
-  const Value left =
+  Value left =
       LLVM::ConstantOp::create(builder, location, builder.getI32IntegerAttr(1))
           .getResult();
-  const Value right =
+  Value right =
       LLVM::ConstantOp::create(builder, location, builder.getI32IntegerAttr(2))
           .getResult();
   std::ignore = LLVM::ICmpOp::create(builder, location,
                                      LLVM::ICmpPredicate::slt, left, right);
-  const Value floating =
+  Value floating =
       LLVM::FPExtOp::create(builder, location, builder.getF64Type(),
                             helperEntry->getArgument(1))
           .getResult();
-  const Value doubled =
+  Value doubled =
       LLVM::FAddOp::create(builder, location, floating, floating).getResult();
   const std::array<APInt, 1> caseValues{APInt(8, 0)};
   const std::array<Block*, 1> caseDestinations{caseBlock};
@@ -328,39 +916,37 @@ TEST_F(QIRTest, DerivesAdaptiveClassicalCapabilities) {
   builder.setInsertionPointToEnd(caseBlock);
   LLVM::ReturnOp::create(builder, location, doubled);
 
-  const auto attachAttributes = [&](const bool useAdaptive) {
-    return runWithPassManager(
-        moduleOp,
-        [&](OpPassManager& manager) {
-          manager.addPass(
-              qir::createQIRSetAttributesAndMetadata({useAdaptive}));
-        },
-        "Failed to attach QIR attributes.");
-  };
-  ASSERT_TRUE(attachAttributes(true).succeeded());
-  const auto integerTypes =
-      moduleOp->getAttrOfType<ArrayAttr>("qir.int_computations");
+  ASSERT_TRUE(attachQIRMetadata(moduleOp, true).succeeded());
+  const auto integerFlag = findModuleFlag(moduleOp, "int_computations");
+  ASSERT_TRUE(integerFlag);
+  EXPECT_EQ(integerFlag.getBehavior(), LLVM::ModFlagBehavior::Append);
+  const auto integerTypes = cast<ArrayAttr>(integerFlag.getValue());
   ASSERT_TRUE(integerTypes);
   ASSERT_EQ(integerTypes.size(), 2U);
   EXPECT_EQ(cast<StringAttr>(integerTypes[0]).getValue(), "i32");
   EXPECT_EQ(cast<StringAttr>(integerTypes[1]).getValue(), "i8");
-  const auto floatingTypes =
-      moduleOp->getAttrOfType<ArrayAttr>("qir.float_computations");
+  const auto floatingFlag = findModuleFlag(moduleOp, "float_computations");
+  ASSERT_TRUE(floatingFlag);
+  EXPECT_EQ(floatingFlag.getBehavior(), LLVM::ModFlagBehavior::Append);
+  const auto floatingTypes = cast<ArrayAttr>(floatingFlag.getValue());
   ASSERT_TRUE(floatingTypes);
   ASSERT_EQ(floatingTypes.size(), 2U);
   EXPECT_EQ(cast<StringAttr>(floatingTypes[0]).getValue(), "double");
   EXPECT_EQ(cast<StringAttr>(floatingTypes[1]).getValue(), "float");
 
-  for (const auto* const flag : {"ir_functions", "multiple_target_branching",
-                                 "multiple_return_points"}) {
+  for (const auto* const flag : {
+           "ir_functions",
+           "multiple_target_branching",
+           "multiple_return_points",
+       }) {
     const auto moduleFlag = findModuleFlag(moduleOp, flag);
     ASSERT_TRUE(moduleFlag) << flag;
-    EXPECT_EQ(moduleFlag.getValue(), builder.getBoolAttr(true)) << flag;
+    EXPECT_EQ(moduleFlag.getValue(), builder.getI32IntegerAttr(1)) << flag;
   }
 
-  ASSERT_TRUE(attachAttributes(false).succeeded());
-  EXPECT_FALSE(moduleOp->hasAttr("qir.int_computations"));
-  EXPECT_FALSE(moduleOp->hasAttr("qir.float_computations"));
+  ASSERT_TRUE(attachQIRMetadata(moduleOp).succeeded());
+  EXPECT_FALSE(findModuleFlag(moduleOp, "int_computations"));
+  EXPECT_FALSE(findModuleFlag(moduleOp, "float_computations"));
   EXPECT_FALSE(findModuleFlag(moduleOp, "ir_functions"));
   EXPECT_FALSE(findModuleFlag(moduleOp, "multiple_target_branching"));
   EXPECT_FALSE(findModuleFlag(moduleOp, "multiple_return_points"));
@@ -368,19 +954,27 @@ TEST_F(QIRTest, DerivesAdaptiveClassicalCapabilities) {
 
 TEST(QIRModuleFlagsTest, RecordsAdaptiveClassicalCapabilities) {
   MLIRContext mlirContext;
-  OpBuilder builder(&mlirContext);
-  auto sourceModule = ModuleOp::create(builder.getUnknownLoc());
-  sourceModule->setAttr("qir.int_computations",
-                        builder.getStrArrayAttr({"i8"}));
-  sourceModule->setAttr("qir.float_computations",
-                        builder.getStrArrayAttr({"double"}));
-
+  mlirContext.loadDialect<LLVM::LLVMDialect>();
+  registerBuiltinDialectTranslation(mlirContext);
+  registerLLVMDialectTranslation(mlirContext);
+  auto sourceModule = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      llvm.module_flags [
+        #llvm.mlir.module_flag<append, "int_computations", ["i8"]>,
+        #llvm.mlir.module_flag<append, "float_computations", ["double"]>,
+        #llvm.mlir.module_flag<error, "ir_functions", 1 : i32>,
+        #llvm.mlir.module_flag<error, "multiple_target_branching", 1 : i32>,
+        #llvm.mlir.module_flag<error, "multiple_return_points", 1 : i32>
+      ]
+    }
+  )mlir",
+                                                  &mlirContext);
+  ASSERT_TRUE(sourceModule);
   llvm::LLVMContext llvmContext;
-  llvm::Module moduleOp("adaptive", llvmContext);
-  moduleOp.addModuleFlag(llvm::Module::Error, "ir_functions", 1U);
-  moduleOp.addModuleFlag(llvm::Module::Error, "multiple_target_branching", 1U);
-  moduleOp.addModuleFlag(llvm::Module::Error, "multiple_return_points", 1U);
-  normalizeQIRModuleFlags(moduleOp, sourceModule);
+  auto translated = translateModuleToLLVMIR(*sourceModule, llvmContext);
+  ASSERT_NE(translated, nullptr);
+  auto& moduleOp = *translated;
+  normalizeQIRModuleFlags(moduleOp);
 
   const auto* integerTypes =
       llvm::dyn_cast<llvm::MDNode>(moduleOp.getModuleFlag("int_computations"));
@@ -396,8 +990,11 @@ TEST(QIRModuleFlagsTest, RecordsAdaptiveClassicalCapabilities) {
   EXPECT_EQ(
       llvm::cast<llvm::MDString>(floatingTypes->getOperand(0))->getString(),
       "double");
-  for (const auto* const flag : {"ir_functions", "multiple_target_branching",
-                                 "multiple_return_points"}) {
+  for (const auto* const flag : {
+           "ir_functions",
+           "multiple_target_branching",
+           "multiple_return_points",
+       }) {
     const auto* metadata =
         llvm::dyn_cast<llvm::ConstantAsMetadata>(moduleOp.getModuleFlag(flag));
     ASSERT_NE(metadata, nullptr) << flag;
@@ -894,3 +1491,57 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(staticQubitsWithDuplicates),
                     MQT_NAMED_BUILDER(staticQubitsCanonical)}));
 /// @}
+
+TEST_F(QIRTest, MetadataIncludesUnrecordedMeasuredAndReadResults) {
+  for (const auto* call : {
+           "llvm.call @__quantum__qis__mz__body(%qubit, %result) : (!llvm.ptr, "
+           "!llvm.ptr) -> ()",
+           "%value = llvm.call @__quantum__rt__read_result(%result) : "
+           "(!llvm.ptr) "
+           "-> i1",
+       }) {
+    SCOPED_TRACE(call);
+    const std::string ir = std::string(R"mlir(module {
+      llvm.func @__quantum__qis__mz__body(!llvm.ptr, !llvm.ptr)
+      llvm.func @__quantum__rt__read_result(!llvm.ptr) -> i1
+      llvm.func @main() attributes {passthrough = ["entry_point"]} {
+        %zero = llvm.mlir.constant(0 : i64) : i64
+        %seven = llvm.mlir.constant(7 : i64) : i64
+        %qubit = llvm.inttoptr %zero : i64 to !llvm.ptr
+        %result = llvm.inttoptr %seven : i64 to !llvm.ptr
+    )mlir") + call + R"mlir(
+        llvm.return
+      }
+    })mlir";
+    auto moduleOp = parseSourceString<ModuleOp>(ir, context.get());
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    ASSERT_TRUE(succeeded(attachQIRMetadata(*moduleOp)));
+    auto main = getMainFunction(*moduleOp);
+    OpBuilder builder(context.get());
+    EXPECT_TRUE(llvm::is_contained(
+        main.getPassthroughAttr(),
+        builder.getStrArrayAttr({"required_num_results", "8"})));
+  }
+}
+
+TEST_F(QIRTest, ClassifiesUnconditionalBackEdge) {
+  OpBuilder builder(context.get());
+  const auto location = builder.getUnknownLoc();
+  auto moduleOp = ModuleOp::create(location);
+  builder.setInsertionPointToStart(moduleOp.getBody());
+  auto main = LLVM::LLVMFuncOp::create(
+      builder, location, "main",
+      LLVM::LLVMFunctionType::get(builder.getI64Type(), {}));
+  main->setAttr("passthrough", builder.getStrArrayAttr({"entry_point"}));
+  auto* entry = main.addEntryBlock(builder);
+  auto* loop = main.addBlock();
+  builder.setInsertionPointToEnd(entry);
+  LLVM::BrOp::create(builder, location, ValueRange{}, loop);
+  builder.setInsertionPointToEnd(loop);
+  LLVM::BrOp::create(builder, location, ValueRange{}, loop);
+  ASSERT_TRUE(attachQIRMetadata(moduleOp, true).succeeded());
+  const auto flag = findModuleFlag(moduleOp, "backwards_branching");
+  ASSERT_TRUE(flag);
+  EXPECT_EQ(cast<IntegerAttr>(flag.getValue()).getInt(), 1);
+}

@@ -18,9 +18,17 @@
 
 # MQT Core - The Backbone of the Munich Quantum Toolkit (MQT)
 
-MQT Core is an open-source C++20 and Python library for quantum computing that
-forms the backbone of the quantum software tools developed as part of the
+MQT Core provides reusable C++20 and Python libraries for quantum computing: the
+**MQT Compiler Collection**, built on **MLIR and LLVM**, together with decision
+diagrams, QIR execution, QDMI device access, SDK and HPC integrations, and
+structured benchmarks. It forms the backbone of the
 [_Munich Quantum Toolkit (MQT)_](https://mqt.readthedocs.io).
+
+**MQT Core 4 is a major architectural release.** Structured compiler
+representations replace the classic circuit APIs and connect quantum-classical
+programs to optimization, hardware mapping, and execution. For the release
+highlights, see the [v4 overview](CHANGELOG.md#400---2026-09-11). Existing users
+should start with the [v3-to-v4 migration guide](UPGRADING.md#400).
 
 <p align="center">
   <a href="https://mqt.readthedocs.io/projects/core">
@@ -28,22 +36,85 @@ forms the backbone of the quantum software tools developed as part of the
   </a>
 </p>
 
-## Key Features
+## Start with your task
 
-- Fully fledged intermediate representation (IR) for quantum computations.
-- A state-of-the-art decision diagram (DD) package for quantum computing.
-- A QIR runtime based on the decision diagram package.
+Install [mqt.core](https://pypi.org/project/mqt.core/) in a Python 3.11 or newer
+virtual environment:
 
-If you have any questions, feel free to create a
+```console
+uv pip install mqt.core
+```
+
+For other installation options, follow the
+[source-build instructions](https://mqt.readthedocs.io/projects/core/en/stable/installation.html).
+Then choose a starting point:
+
+| Task                                 | Start here                                                                                                                                                                                                                                                                    |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Compile and execute a program**    | Factor 21 with [Shor's algorithm](https://mqt.readthedocs.io/projects/core/en/stable/getting_started.html); explore [compilation and execution](https://mqt.readthedocs.io/projects/core/en/stable/compilation/index.html).                                                   |
+| **Connect or implement a device**    | [Discover devices](https://mqt.readthedocs.io/projects/core/en/stable/qdmi/driver.html#python-bindings), [integrate SDKs, or implement an interface](https://mqt.readthedocs.io/projects/core/en/stable/qdmi/index.html).                                                     |
+| **Use decision diagrams**            | Represent states and operations in C++ or Python: [DD quickstart](https://mqt.readthedocs.io/projects/core/en/stable/dd_package.html#quickstart).                                                                                                                             |
+| **Generate and evaluate benchmarks** | [Configure quantum programs](https://mqt.readthedocs.io/projects/core/en/stable/benchmarks.html#configure-a-typed-instance) and compare results with references.                                                                                                              |
+| **Exchange quantum programs**        | [Qiskit to QIR](https://mqt.readthedocs.io/projects/core/en/stable/qir/index.html#from-a-qiskit-circuit-to-qir), [OpenQASM](https://mqt.readthedocs.io/projects/core/en/stable/mlir/OpenQASM.html), and [jeff](https://mqt.readthedocs.io/projects/core/en/stable/jeff.html). |
+| **Embed or extend MQT Core**         | [Use the C++ libraries](https://mqt.readthedocs.io/projects/core/en/stable/cpp_api.html#use-the-dd-library) or [extend the MLIR compiler](https://mqt.readthedocs.io/projects/core/en/stable/development.html#mlir).                                                          |
+
+## Getting Started
+
+Factor 21 with **Shor's algorithm**, using modular arithmetic, a reused query
+qubit, and measurement feedback. The callback compiles each circuit for the
+bundled DDSIM device and submits 64 shots through each payload format:
+
+```python
+from mqt.core.bench import shor
+from mqt.core.mlir import compile_program, submit_program
+from mqt.core.qdmi import ProgramFormat
+from mqt.core.qdmi.driver import open_device
+
+device = open_device("mqt.ddsim.default")
+
+
+def run(benchmark: shor.Shor) -> dict[str, int]:
+    compiled = compile_program(benchmark.generate(), target=device, program_format=program_format)
+    job = submit_program(compiled, target=device, num_shots=64, custom1=17)
+    job.wait()
+    return job.get_counts()
+
+
+for program_format in (ProgramFormat.QIR_ADAPTIVE_MODULE, ProgramFormat.QASM3):
+    result = shor.factor(21, run)
+    assert result.status == shor.FactorStatus.SUCCESS
+    assert result.factors == (3, 7)
+    print(f"{program_format.name}: {result.factors}")
+```
+
+```text
+QIR_ADAPTIVE_MODULE: (3, 7)
+QASM3: (3, 7)
+```
+
+The
+[factoring walkthrough](https://mqt.readthedocs.io/projects/core/en/stable/getting_started.html)
+explains the measured phase, continued fractions, and verified factor recovery.
+
+## Development
+
+Source builds require a C++20 compiler and CMake 3.28 or newer. Building the
+compiler collection also requires
+[LLVM/MLIR 23.1 or newer](https://mqt.readthedocs.io/projects/core/en/stable/installation.html#setting-up-mlir).
+Prebuilt Python wheels include the compiler and simulator. Graphviz is optional
+for exporting DD visualizations.
+
+See the
+[contribution guide](https://mqt.readthedocs.io/projects/core/en/stable/contributing.html)
+for development setup and checks. For questions and suggestions, open a
 [discussion](https://github.com/munich-quantum-toolkit/core/discussions) or an
-[issue](https://github.com/munich-quantum-toolkit/core/issues) on
-[GitHub](https://github.com/munich-quantum-toolkit/core).
+[issue](https://github.com/munich-quantum-toolkit/core/issues).
 
 ## Contributors and Supporters
 
-MQT Core is developed by the
+MQT Core is developed by [MQSC](https://mq.sc) and the
 [Chair for Design Automation](https://www.cda.cit.tum.de/) at the
-[Technical University of Munich](https://www.tum.de/) and [MQSC](https://mq.sc).
+[Technical University of Munich](https://www.tum.de/).
 Among others, it is part of the
 [Munich Quantum Software Stack (MQSS)](https://www.munich-quantum-valley.de/research/research-areas/mqss)
 ecosystem, which is being developed as part of the
@@ -85,56 +156,6 @@ To support this endeavor, please consider:
   <img width=20% src="https://img.shields.io/badge/Sponsor-white?style=for-the-badge&logo=githubsponsors&labelColor=black&color=blue" alt="Sponsor the MQT" />
   </a>
 </p>
-
-## Getting Started
-
-`mqt.core` is available via [PyPI](https://pypi.org/project/mqt.core/).
-
-```console
-uv pip install mqt.core
-```
-
-The following code gives an example on the usage:
-
-```python3
-from mqt.core.ir import QuantumComputation
-
-qc = QuantumComputation(2, 2)
-qc.h(0)
-qc.cx(0, 1)
-qc.measure(range(2), range(2))
-
-print(qc)
-```
-
-**Detailed documentation and examples are available at
-[ReadTheDocs](https://mqt.readthedocs.io/projects/core).**
-
-## System Requirements
-
-Building the project requires a C++ compiler with support for C++20 and CMake
-3.24 or newer. For details on how to build the project, please refer to the
-[documentation](https://mqt.readthedocs.io/projects/core). Building (and
-running) is continuously tested under Linux, macOS, and Windows using the
-[latest available system versions for GitHub Actions](https://github.com/actions/runner-images).
-MQT Core is compatible with all
-[officially supported Python versions](https://devguide.python.org/versions/).
-
-The project relies on some external dependencies:
-
-- [nlohmann/json](https://github.com/nlohmann/json):
-  A JSON library for modern C++.
-- [google/googletest](https://github.com/google/googletest):
-  A testing framework for C++ (only used in tests).
-
-CMake will automatically look for installed versions of these libraries. If it
-does not find them, they will be fetched automatically at configure time via the
-[FetchContent](https://cmake.org/cmake/help/latest/module/FetchContent.html)
-module (check out the documentation for more information on how to customize
-this behavior).
-
-It is recommended (although not required) to have
-[GraphViz](https://www.graphviz.org) installed for visualization purposes.
 
 ## Cite This
 

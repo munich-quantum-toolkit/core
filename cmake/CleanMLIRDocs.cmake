@@ -12,16 +12,14 @@ endif()
 
 file(GLOB_RECURSE MD_FILES "${DOCS_DIR}/*.md")
 foreach(MD_FILE ${MD_FILES})
-  # Read the entire file content into a single variable.
   file(READ ${MD_FILE} CONTENT)
 
-  # Replace lines that only contain [TOC], allowing for whitespace.
+  # Sphinx supplies navigation for the generated reference pages.
   string(REGEX REPLACE "\n\\[TOC\\]\n" "" CONTENT "${CONTENT}")
 
-  # Replace lines that only contain an llvm-project source link, allowing for whitespace.
+  # TableGen links local definitions to llvm-project, where those files do not exist.
   string(REGEX REPLACE "\n\\[source\\]\\(https://github.com/llvm/llvm-project/blob/main.*\.td\\)\n"
                        "" CONTENT "${CONTENT}")
 
-  # Write the processed content back to the file.
   file(WRITE ${MD_FILE} "${CONTENT}")
 endforeach()

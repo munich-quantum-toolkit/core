@@ -10,47 +10,52 @@
 
 #include "OpenQASMToQCEmitter.h"
 
-#include "mlir/Dialect/CBit/IR/CBitAttributes.h"
-#include "mlir/Dialect/CBit/IR/CBitOps.h"
-#include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
-#include "mlir/Dialect/QC/IR/QCDialect.h"
-#include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Dialect/QC/Translation/StandardGate.h"
-#include "mlir/Target/OpenQASM/Frontend.h"
-#include "mlir/Target/OpenQASM/GateCatalog.h"
+#include "mqt/Dialect/CBit/IR/CBitAttributes.h"
+#include "mqt/Dialect/CBit/IR/CBitOps.h"
+#include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
+#include "mqt/Dialect/QC/IR/QCDialect.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
+#include "mqt/Dialect/QC/Translation/StandardGate.h"
+#include "mqt/Support/IntegerExpressions.h"
+#include "mqt/Target/OpenQASM/Frontend.h"
+#include "mqt/Target/OpenQASM/GateCatalog.h"
 
-#include <llvm/ADT/APInt.h>
-#include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/DenseSet.h>
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/STLFunctionalExtras.h>
-#include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/StringMap.h>
-#include <llvm/Support/ErrorHandling.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
-#include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
-#include <mlir/Dialect/Math/IR/Math.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/Dialect/UB/IR/UBOps.h>
-#include <mlir/IR/Builders.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/BuiltinTypes.h>
-#include <mlir/IR/Diagnostics.h>
-#include <mlir/IR/Location.h>
-#include <mlir/IR/OperationSupport.h>
-#include <mlir/IR/OwningOpRef.h>
-#include <mlir/Support/LLVM.h>
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/Math/IR/Math.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/UB/IR/UBOps.h"
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/Diagnostics.h"
+#include "mlir/IR/Location.h"
+#include "mlir/IR/OperationSupport.h"
+#include "mlir/IR/OwningOpRef.h"
+#include "mlir/Support/LLVM.h"
 
+#include "llvm/ADT/APInt.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringMap.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/SaveAndRestore.h"
+
+#include <array>
 #include <bit>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <string>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -60,20 +65,19 @@
 namespace mlir::qc::detail {
 namespace {
 
-namespace frontend = oq3::frontend;
-using oq3::frontend::GateCatalogEntry;
-using oq3::frontend::GateLowering;
+namespace frontend = openqasm::frontend;
+using openqasm::frontend::GateCatalogEntry;
 
 class OpenQASMToQCEmitter {
   class EmissionBudget final : public OpBuilder::Listener {
   public:
-    explicit EmissionBudget(MLIRContext& mlirContext)
-        : location(UnknownLoc::get(&mlirContext)) {}
+    explicit EmissionBudget(MLIRContext& mlirContext, size_t limit)
+        : operationLimit(limit), location(UnknownLoc::get(&mlirContext)) {}
 
     void setLocation(const Location newLocation) { location = newLocation; }
 
     [[nodiscard]] bool canConstruct(const size_t amount) {
-      if (exhausted || amount > OPERATION_LIMIT - operationCount) {
+      if (exhausted || amount > operationLimit - operationCount) {
         report();
         return false;
       }
@@ -88,15 +92,14 @@ class OpenQASMToQCEmitter {
         return;
       }
       ++operationCount;
-      if (operationCount > OPERATION_LIMIT) {
+      if (operationCount > operationLimit) {
         report();
       }
     }
 
-    static constexpr size_t OPERATION_LIMIT = 10'000'000;
-
   private:
     size_t operationCount = 0;
+    size_t operationLimit;
     Location location;
     bool exhausted = false;
 
@@ -107,36 +110,53 @@ class OpenQASMToQCEmitter {
       exhausted = true;
       emitError(location)
           << "OpenQASM QC emission error: emitted operation count exceeds the "
-             "safe lowering limit";
+             "safe emission limit";
     }
   };
 
 public:
-  OpenQASMToQCEmitter(const oq3::frontend::TypedProgram& typedProgram,
-                      MLIRContext& mlirContext)
-      : program(typedProgram), context(mlirContext), emissionBudget(context),
-        builder(&context), qubitValues(program.registers.size()),
+  OpenQASMToQCEmitter(const openqasm::frontend::TypedProgram& typedProgram,
+                      MLIRContext& mlirContext, size_t operationLimit)
+      : program(typedProgram), context(mlirContext),
+        emissionBudget(context, operationLimit), builder(&context),
+        qubitValues(program.registers.size()),
         classicalRegisters(program.registers.size()),
-        scalarValues(program.scalars.size()),
-        expressionEmissionCosts(program.expressions.size()),
-        bitVectorExpressionEmissionCosts(program.bitVectorExpressions.size()) {
+        scalarValues(program.scalars.size()) {
     context
         .loadDialect<qc::QCDialect, arith::ArithDialect, cf::ControlFlowDialect,
                      func::FuncDialect, LLVM::LLVMDialect, math::MathDialect,
                      memref::MemRefDialect, scf::SCFDialect, ub::UBDialect>();
     builder.setListener(&emissionBudget);
-    builder.initialize();
+    builder.initialize(TypeRange{});
     for (const auto& gate : program.gates) {
       customGateIndex.try_emplace(gate.name, &gate);
+      structuredGateCapabilities.try_emplace(
+          &gate, statementsRequireStructuredControlFlow(gate.body));
+    }
+    if (customGateIndex.contains("main")) {
+      std::string entryName = "_mqt_entry";
+      for (size_t suffix = 0; customGateIndex.contains(entryName); ++suffix) {
+        entryName = (Twine("_mqt_entry") + Twine(suffix)).str();
+      }
+      cast<func::FuncOp>(builder.getInsertionBlock()->getParentOp())
+          .setName(entryName);
     }
   }
 
   OwningOpRef<ModuleOp> emit() {
-    if (!preflight()) {
+    if (emissionBudget.isExhausted() || !preflight()) {
       return nullptr;
+    }
+    for (const auto& gate : program.gates) {
+      emitGateDefinition(gate);
+      scalarUpdates_.clear();
+      if (emissionFailed || emissionBudget.isExhausted()) {
+        return nullptr;
+      }
     }
     for (const auto statement : program.body) {
       emitStatement(statement, {}, {});
+      scalarUpdates_.clear();
       if (emissionFailed || emissionBudget.isExhausted()) {
         return nullptr;
       }
@@ -167,13 +187,8 @@ public:
       }
       results.push_back(reg);
     }
-    OwningOpRef<ModuleOp> moduleOp;
-    if (results.empty()) {
-      moduleOp = builder.finalize();
-    } else {
-      builder.retype(ValueRange(results).getTypes());
-      moduleOp = builder.finalize(results);
-    }
+    builder.retype(ValueRange(results).getTypes());
+    auto moduleOp = builder.finalize(results);
     if (emissionBudget.isExhausted()) {
       return nullptr;
     }
@@ -182,32 +197,33 @@ public:
 
 private:
   // The engine cannot exist without the program and context that outlive it.
-  const oq3::frontend::TypedProgram&
-      program; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
-  MLIRContext&
-      context; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
+  const openqasm::frontend::TypedProgram& program;
+  MLIRContext& context;
   EmissionBudget emissionBudget;
   qc::QCProgramBuilder builder;
   std::vector<Value> qubitValues;
   std::vector<Value> classicalRegisters;
   std::vector<Value> scalarValues;
   llvm::DenseMap<frontend::ScalarId, Value> provenInductionValues;
-  mutable std::vector<std::optional<size_t>> expressionEmissionCosts;
-  mutable std::vector<std::optional<size_t>> bitVectorExpressionEmissionCosts;
-  DenseMap<const oq3::frontend::GateDefinition*, bool>
+  DenseMap<const openqasm::frontend::GateDefinition*, bool>
       structuredGateCapabilities;
-  llvm::StringMap<const oq3::frontend::GateDefinition*> customGateIndex;
+  llvm::StringMap<const openqasm::frontend::GateDefinition*> customGateIndex;
+  DenseMap<const openqasm::frontend::GateDefinition*, func::FuncOp>
+      customGateFunctions_;
   bool emissionFailed = false;
+  QCProgramBuilder::LoopBuilder* activeLoop = nullptr;
+  SmallVector<frontend::ScalarId> breakSlots;
+  SmallVector<Value> breakPrefix;
+  bool flowReachable = true;
 
   using StateSlot = frontend::ScalarId;
+  /// Undo only writes since a branch/loop checkpoint, including new locals.
+  SmallVector<std::pair<StateSlot, Value>> scalarUpdates_;
 
   [[nodiscard]] Location
   getLocation(const frontend::SourceLocation& source) const {
     return getOpenQASMLocation(source, context);
   }
-
-  static constexpr size_t PROJECTED_EMISSION_LIMIT =
-      EmissionBudget::OPERATION_LIMIT;
 
   [[nodiscard]] static bool
   isExactlyRepresentableAsDouble(const uint64_t magnitude) {
@@ -239,23 +255,21 @@ private:
     return isExactlyRepresentableAsDouble(magnitude);
   }
 
-  [[nodiscard]] const oq3::frontend::GateDefinition*
+  [[nodiscard]] const openqasm::frontend::GateDefinition*
   findCustomGate(const StringRef name) const {
     return customGateIndex.lookup(name);
   }
 
   [[nodiscard]] bool statementsRequireStructuredControlFlow(
-      const ArrayRef<oq3::frontend::StatementId> statements) {
+      const ArrayRef<openqasm::frontend::StatementId> statements) const {
     return llvm::any_of(statements, [&](const auto id) {
       const auto& data = program.statements.at(id).data;
-      if (std::holds_alternative<oq3::frontend::ForStatement>(data) ||
-          std::holds_alternative<oq3::frontend::WhileStatement>(data) ||
-          std::holds_alternative<oq3::frontend::IfStatement>(data) ||
-          std::holds_alternative<oq3::frontend::SwitchStatement>(data)) {
+      if (std::holds_alternative<openqasm::frontend::ForStatement>(data) ||
+          std::holds_alternative<openqasm::frontend::WhileStatement>(data)) {
         return true;
       }
       const auto* application =
-          std::get_if<oq3::frontend::GateApplication>(&data);
+          std::get_if<openqasm::frontend::GateApplication>(&data);
       const auto* callee = application == nullptr
                                ? nullptr
                                : findCustomGate(application->callee);
@@ -263,142 +277,16 @@ private:
     });
   }
 
-  [[nodiscard]] bool
-  gateRequiresStructuredControlFlow(const oq3::frontend::GateDefinition& gate) {
-    if (const auto it = structuredGateCapabilities.find(&gate);
-        it != structuredGateCapabilities.end()) {
-      return it->second;
-    }
-    const bool requiresStructuredControlFlow =
-        statementsRequireStructuredControlFlow(gate.body);
-    structuredGateCapabilities[&gate] = requiresStructuredControlFlow;
-    return requiresStructuredControlFlow;
-  }
-
-  [[nodiscard]] std::optional<bool>
-  staticCondition(const frontend::ConditionId id) const {
-    const auto& condition = program.conditions.at(id);
-    if (condition.kind == frontend::ConditionKind::Literal) {
-      return condition.literal;
-    }
-    return std::nullopt;
-  }
-
-  [[nodiscard]] bool reportProjectedEmissionLimit(
-      const oq3::frontend::SourceLocation& source) const {
-    emitError(getLocation(source))
-        << "OpenQASM QC emission error: projected emitted operation count "
-           "exceeds the safe lowering limit";
-    return false;
-  }
-
-  [[nodiscard]] bool
-  chargeProjectedEmission(const size_t amount, size_t& projectedEmission,
-                          const oq3::frontend::SourceLocation& source) const {
-    if (amount > PROJECTED_EMISSION_LIMIT - projectedEmission) {
-      return reportProjectedEmissionLimit(source);
-    }
-    projectedEmission += amount;
-    return true;
-  }
-
-  [[nodiscard]] bool
-  chargeScaledEmission(const size_t amount, const size_t multiplicity,
-                       size_t& projectedEmission,
-                       const oq3::frontend::SourceLocation& source) const {
-    if (multiplicity != 0 && amount > PROJECTED_EMISSION_LIMIT / multiplicity) {
-      return reportProjectedEmissionLimit(source);
-    }
-    return chargeProjectedEmission(amount * multiplicity, projectedEmission,
-                                   source);
-  }
-
-  [[nodiscard]] size_t
-  expressionEmissionCost(const frontend::ExpressionId id) const {
-    if (expressionEmissionCosts[id]) {
-      return *expressionEmissionCosts[id];
-    }
-    const auto& expression = program.expressions.at(id);
-    const auto add = [](const size_t lhs, const size_t rhs) {
-      return lhs > PROJECTED_EMISSION_LIMIT || rhs > PROJECTED_EMISSION_LIMIT ||
-                     lhs > PROJECTED_EMISSION_LIMIT - rhs
-                 ? PROJECTED_EMISSION_LIMIT + 1
-                 : lhs + rhs;
-    };
-    const auto remember = [&](const size_t cost) {
-      expressionEmissionCosts[id] = cost;
-      return cost;
-    };
-    const auto unary = [&](const size_t local) {
-      return add(expressionEmissionCost(expression.lhs), local);
-    };
-    const auto binary = [&](const size_t local) {
-      return add(add(expressionEmissionCost(expression.lhs),
-                     expressionEmissionCost(expression.rhs)),
-                 local);
-    };
-    switch (expression.kind) {
-    case frontend::ExpressionKind::Constant:
-      return remember(1);
-    case frontend::ExpressionKind::GateParameter:
-    case frontend::ExpressionKind::Variable:
-      return remember(0);
-    case frontend::ExpressionKind::Cast:
-      return remember(unary(1));
-    case frontend::ExpressionKind::Negate:
-      if (expression.type == frontend::ScalarType::Float ||
-          expression.type == frontend::ScalarType::Angle) {
-        return remember(unary(1));
-      }
-      return remember(
-          unary(expression.type == frontend::ScalarType::Uint ? 2 : 10));
-    case frontend::ExpressionKind::ArcCos:
-    case frontend::ExpressionKind::ArcSin:
-    case frontend::ExpressionKind::ArcTan:
-    case frontend::ExpressionKind::Ceiling:
-    case frontend::ExpressionKind::Sin:
-    case frontend::ExpressionKind::Cos:
-    case frontend::ExpressionKind::Floor:
-    case frontend::ExpressionKind::Tan:
-    case frontend::ExpressionKind::Exp:
-    case frontend::ExpressionKind::Log:
-    case frontend::ExpressionKind::Sqrt:
-      return remember(unary(2));
-    case frontend::ExpressionKind::PopCount: {
-      const auto& bitVector =
-          program.bitVectorExpressions.at(expression.bitVector);
-      return remember(add(bitVectorExpressionEmissionCost(expression.bitVector),
-                          (4 * static_cast<size_t>(bitVector.width)) + 2));
-    }
-    case frontend::ExpressionKind::Add:
-    case frontend::ExpressionKind::Subtract:
-    case frontend::ExpressionKind::Multiply:
-      if (expression.type == frontend::ScalarType::Float ||
-          expression.type == frontend::ScalarType::Angle) {
-        return remember(binary(3));
-      }
-      return remember(
-          binary(expression.type == frontend::ScalarType::Uint ? 2 : 11));
-    case frontend::ExpressionKind::Divide:
-    case frontend::ExpressionKind::Modulo:
-      if (expression.type == frontend::ScalarType::Float ||
-          expression.type == frontend::ScalarType::Angle) {
-        return remember(binary(3));
-      }
-      return remember(
-          binary(expression.type == frontend::ScalarType::Uint ? 5 : 13));
-    case frontend::ExpressionKind::Power:
-      if (expression.type == frontend::ScalarType::Float) {
-        return remember(binary(3));
-      }
-      return remember(
-          binary(expression.type == frontend::ScalarType::Uint ? 16 : 42));
-    }
-    llvm_unreachable("unknown scalar expression kind");
+  [[nodiscard]] bool gateRequiresStructuredControlFlow(
+      const openqasm::frontend::GateDefinition& gate) const {
+    return structuredGateCapabilities.lookup(&gate);
   }
 
   Value emitProvenIndexExpression(OpBuilder& opBuilder,
                                   const frontend::ExpressionId id) {
+    if (emissionBudget.isExhausted()) {
+      return {};
+    }
     const auto& expression = program.expressions.at(id);
     auto loc = opBuilder.getInsertionPoint() == opBuilder.getBlock()->end()
                    ? opBuilder.getUnknownLoc()
@@ -423,13 +311,22 @@ private:
     case frontend::ExpressionKind::Negate: {
       auto zero = arith::ConstantIndexOp::create(opBuilder, loc, 0);
       auto operand = emitProvenIndexExpression(opBuilder, expression.lhs);
+      if (!operand) {
+        return {};
+      }
       return arith::SubIOp::create(opBuilder, loc, zero, operand);
     }
     case frontend::ExpressionKind::Add:
     case frontend::ExpressionKind::Subtract:
     case frontend::ExpressionKind::Multiply: {
       auto lhs = emitProvenIndexExpression(opBuilder, expression.lhs);
+      if (!lhs) {
+        return {};
+      }
       auto rhs = emitProvenIndexExpression(opBuilder, expression.rhs);
+      if (!rhs) {
+        return {};
+      }
       switch (expression.kind) {
       case frontend::ExpressionKind::Add:
         return arith::AddIOp::create(opBuilder, loc, lhs, rhs);
@@ -446,443 +343,6 @@ private:
     }
   }
 
-  [[nodiscard]] size_t bitVectorExpressionEmissionCost(
-      const frontend::BitVectorExpressionId id) const {
-    if (bitVectorExpressionEmissionCosts[id]) {
-      return *bitVectorExpressionEmissionCosts[id];
-    }
-    const auto& expression = program.bitVectorExpressions.at(id);
-    const auto remember = [&](const size_t cost) {
-      bitVectorExpressionEmissionCosts[id] = cost;
-      return cost;
-    };
-    if (expression.kind == frontend::BitVectorExpressionKind::Register) {
-      const auto width = static_cast<size_t>(expression.width);
-      return remember(width > PROJECTED_EMISSION_LIMIT / 2
-                          ? PROJECTED_EMISSION_LIMIT + 1
-                          : 2 * width);
-    }
-    const auto operand = bitVectorExpressionEmissionCost(expression.operand);
-    if (program.expressions.at(expression.distance).kind ==
-        frontend::ExpressionKind::Constant) {
-      return remember(operand > PROJECTED_EMISSION_LIMIT - 2
-                          ? PROJECTED_EMISSION_LIMIT + 1
-                          : operand + 2);
-    }
-    const auto width = static_cast<size_t>(expression.width);
-    const auto local = (8 * width) + 8;
-    const auto distance = expressionEmissionCost(expression.distance);
-    if (operand > PROJECTED_EMISSION_LIMIT ||
-        distance > PROJECTED_EMISSION_LIMIT ||
-        operand > PROJECTED_EMISSION_LIMIT - distance ||
-        operand + distance > PROJECTED_EMISSION_LIMIT - local) {
-      return remember(PROJECTED_EMISSION_LIMIT + 1);
-    }
-    return remember(operand + distance + local);
-  }
-
-  [[nodiscard]] bool
-  chargeExpressionEmission(const frontend::ExpressionId id,
-                           const size_t multiplicity, size_t& projectedEmission,
-                           const frontend::SourceLocation& source) const {
-    return chargeScaledEmission(expressionEmissionCost(id), multiplicity,
-                                projectedEmission, source);
-  }
-
-  [[nodiscard]] bool
-  chargeDynamicBitRead(const frontend::BitReference& reference,
-                       const size_t multiplicity, size_t& projectedEmission,
-                       const frontend::SourceLocation& source) const {
-    if (!reference.dynamicIndex) {
-      return chargeScaledEmission(2, multiplicity, projectedEmission, source);
-    }
-    return chargeExpressionEmission(*reference.dynamicIndex, multiplicity,
-                                    projectedEmission, source) &&
-           chargeScaledEmission(11, multiplicity, projectedEmission, source);
-  }
-
-  [[nodiscard]] bool
-  chargeQubitAccesses(const ArrayRef<frontend::QubitReference> references,
-                      const size_t multiplicity, size_t& projectedEmission,
-                      const oq3::frontend::SourceLocation& source) const {
-    for (const auto& reference : references) {
-      if (reference.kind != frontend::QubitReferenceKind::Register ||
-          program.registers.at(reference.symbol).isScalar) {
-        continue;
-      }
-
-      if (reference.provenIndex &&
-          !chargeExpressionEmission(*reference.provenIndex, multiplicity,
-                                    projectedEmission, source)) {
-        return false;
-      }
-      /// Each access emits an index value and a load. Semantic analysis has
-      /// already proved a nonconstant index's bounds and uniqueness.
-      if (!chargeScaledEmission(2, multiplicity, projectedEmission, source)) {
-        return false;
-      }
-    }
-    return true;
-  }
-
-  [[nodiscard]] size_t
-  modifierEmissionCost(const frontend::GateApplication& application) const {
-    auto cost = application.modifiers.size();
-    for (const auto& modifier : application.modifiers) {
-      if (modifier.kind == frontend::ModifierKind::Pow) {
-        const auto& expression = program.expressions.at(*modifier.operand);
-        if (expression.kind != frontend::ExpressionKind::Constant &&
-            (expression.type == frontend::ScalarType::Int ||
-             expression.type == frontend::ScalarType::Uint)) {
-          cost += expression.type == frontend::ScalarType::Int ? 17 : 14;
-        }
-        continue;
-      }
-      if (modifier.kind != frontend::ModifierKind::NegCtrl) {
-        continue;
-      }
-      uint64_t controls = 1;
-      if (modifier.operand) {
-        const auto& expression = program.expressions.at(*modifier.operand);
-        controls =
-            expression.type == frontend::ScalarType::Uint
-                ? std::get<uint64_t>(expression.constant)
-                : static_cast<uint64_t>(std::get<int64_t>(expression.constant));
-      }
-      if (controls > PROJECTED_EMISSION_LIMIT / 2) {
-        return PROJECTED_EMISSION_LIMIT + 1;
-      }
-      cost += static_cast<size_t>(2 * controls);
-    }
-    return cost;
-  }
-
-  [[nodiscard]] bool
-  chargeConditionEmission(const frontend::ConditionId id,
-                          const size_t multiplicity, size_t& projectedEmission,
-                          const oq3::frontend::SourceLocation& source) const {
-    const auto& condition = program.conditions.at(id);
-    if (condition.kind == frontend::ConditionKind::Measurement) {
-      return chargeQubitAccesses({condition.measurement}, multiplicity,
-                                 projectedEmission, source) &&
-             chargeScaledEmission(1, multiplicity, projectedEmission, source);
-    }
-    if (condition.kind == frontend::ConditionKind::Literal) {
-      return chargeScaledEmission(1, multiplicity, projectedEmission, source);
-    }
-    if (condition.kind == frontend::ConditionKind::Bit) {
-      return chargeDynamicBitRead(condition.bit, multiplicity,
-                                  projectedEmission, source);
-    }
-    if (condition.kind == frontend::ConditionKind::Comparison) {
-      return chargeExpressionEmission(condition.comparisonLhs, multiplicity,
-                                      projectedEmission, source) &&
-             chargeExpressionEmission(condition.comparisonRhs, multiplicity,
-                                      projectedEmission, source) &&
-             chargeScaledEmission(3, multiplicity, projectedEmission, source);
-    }
-    if (condition.kind == frontend::ConditionKind::Not) {
-      return chargeConditionEmission(condition.lhs, multiplicity,
-                                     projectedEmission, source) &&
-             chargeScaledEmission(2, multiplicity, projectedEmission, source);
-    }
-    if (condition.kind == frontend::ConditionKind::And ||
-        condition.kind == frontend::ConditionKind::Or) {
-      return chargeConditionEmission(condition.lhs, multiplicity,
-                                     projectedEmission, source) &&
-             chargeConditionEmission(condition.rhs, multiplicity,
-                                     projectedEmission, source) &&
-             chargeScaledEmission(5, multiplicity, projectedEmission, source);
-    }
-    return true;
-  }
-
-  [[nodiscard]] bool
-  preflightStatements(const ArrayRef<oq3::frontend::StatementId> statements,
-                      size_t& projectedEmission,
-                      const size_t multiplicity = 1) {
-    for (const auto id : statements) {
-      const auto& statement = program.statements.at(id);
-      const auto* application =
-          std::get_if<oq3::frontend::GateApplication>(&statement.data);
-      if (application == nullptr) {
-        if (const auto* conditional =
-                std::get_if<oq3::frontend::IfStatement>(&statement.data)) {
-          if (!chargeConditionEmission(conditional->condition, multiplicity,
-                                       projectedEmission, statement.location)) {
-            return false;
-          }
-          if (const auto selected = staticCondition(conditional->condition)) {
-            const auto& selectedStatements = *selected
-                                                 ? conditional->thenStatements
-                                                 : conditional->elseStatements;
-            if (!preflightStatements(selectedStatements, projectedEmission,
-                                     multiplicity)) {
-              return false;
-            }
-            continue;
-          }
-          if (!preflightStatements(conditional->thenStatements,
-                                   projectedEmission, multiplicity) ||
-              !preflightStatements(conditional->elseStatements,
-                                   projectedEmission, multiplicity) ||
-              !chargeScaledEmission(5, multiplicity, projectedEmission,
-                                    statement.location)) {
-            return false;
-          }
-        } else if (const auto* loop = std::get_if<oq3::frontend::ForStatement>(
-                       &statement.data)) {
-          const size_t localCost = loop->provenPositiveRange ? 7 : 16;
-          if (!chargeScaledEmission(localCost, multiplicity, projectedEmission,
-                                    statement.location) ||
-              !chargeExpressionEmission(loop->start, multiplicity,
-                                        projectedEmission,
-                                        statement.location) ||
-              !chargeExpressionEmission(loop->step, multiplicity,
-                                        projectedEmission,
-                                        statement.location) ||
-              !chargeExpressionEmission(loop->stop, multiplicity,
-                                        projectedEmission,
-                                        statement.location) ||
-              !preflightStatements(loop->body, projectedEmission,
-                                   multiplicity)) {
-            return false;
-          }
-        } else if (const auto* loop =
-                       std::get_if<oq3::frontend::WhileStatement>(
-                           &statement.data)) {
-          if (!chargeConditionEmission(loop->condition, multiplicity,
-                                       projectedEmission, statement.location) ||
-              !chargeScaledEmission(10, multiplicity, projectedEmission,
-                                    statement.location)) {
-            return false;
-          }
-          if (!preflightStatements(loop->body, projectedEmission,
-                                   multiplicity)) {
-            return false;
-          }
-        } else if (const auto* switchStatement =
-                       std::get_if<oq3::frontend::SwitchStatement>(
-                           &statement.data)) {
-          if (!chargeExpressionEmission(switchStatement->control, multiplicity,
-                                        projectedEmission,
-                                        statement.location) ||
-              !chargeScaledEmission(3, multiplicity, projectedEmission,
-                                    statement.location)) {
-            return false;
-          }
-          for (const auto& switchCase : switchStatement->cases) {
-            const auto labelCount = switchCase.labels.size();
-            if (!chargeScaledEmission(labelCount, multiplicity,
-                                      projectedEmission, statement.location)) {
-              return false;
-            }
-            if (labelCount != 0 &&
-                multiplicity > PROJECTED_EMISSION_LIMIT / labelCount) {
-              return reportProjectedEmissionLimit(statement.location);
-            }
-            const auto caseMultiplicity = multiplicity * labelCount;
-            if (!preflightStatements(switchCase.body, projectedEmission,
-                                     caseMultiplicity)) {
-              return false;
-            }
-          }
-          if (!preflightStatements(switchStatement->defaultStatements,
-                                   projectedEmission, multiplicity)) {
-            return false;
-          }
-        } else if (const auto* declaration =
-                       std::get_if<frontend::ScalarDeclarationStatement>(
-                           &statement.data)) {
-          if (!chargeScaledEmission(2, multiplicity, projectedEmission,
-                                    statement.location) ||
-              (declaration->initializer &&
-               !chargeExpressionEmission(*declaration->initializer,
-                                         multiplicity, projectedEmission,
-                                         statement.location)) ||
-              (declaration->conditionInitializer &&
-               !chargeConditionEmission(*declaration->conditionInitializer,
-                                        multiplicity, projectedEmission,
-                                        statement.location))) {
-            return false;
-          }
-        } else if (const auto* assignment =
-                       std::get_if<frontend::ScalarAssignmentStatement>(
-                           &statement.data)) {
-          if ((assignment->value &&
-               !chargeExpressionEmission(*assignment->value, multiplicity,
-                                         projectedEmission,
-                                         statement.location)) ||
-              (assignment->condition &&
-               !chargeConditionEmission(*assignment->condition, multiplicity,
-                                        projectedEmission,
-                                        statement.location)) ||
-              !chargeScaledEmission(1, multiplicity, projectedEmission,
-                                    statement.location)) {
-            return false;
-          }
-        } else if (const auto* assignment =
-                       std::get_if<frontend::BitAssignmentStatement>(
-                           &statement.data)) {
-          if (!chargeConditionEmission(assignment->value, multiplicity,
-                                       projectedEmission, statement.location) ||
-              (!assignment->target.dynamicIndex &&
-               !chargeScaledEmission(2, multiplicity, projectedEmission,
-                                     statement.location))) {
-            return false;
-          }
-          if (assignment->target.dynamicIndex) {
-            const auto width = static_cast<size_t>(
-                program.registers.at(assignment->target.reg).width);
-            if (!chargeExpressionEmission(*assignment->target.dynamicIndex,
-                                          multiplicity, projectedEmission,
-                                          statement.location) ||
-                !chargeScaledEmission(9 + (3 * width), multiplicity,
-                                      projectedEmission, statement.location)) {
-              return false;
-            }
-          }
-        } else if (const auto* assignment =
-                       std::get_if<frontend::BitVectorAssignmentStatement>(
-                           &statement.data)) {
-          if (!chargeScaledEmission(
-                  bitVectorExpressionEmissionCost(assignment->value),
-                  multiplicity, projectedEmission, statement.location) ||
-              !chargeScaledEmission(
-                  2 * static_cast<size_t>(
-                          program.registers.at(assignment->target).width),
-                  multiplicity, projectedEmission, statement.location)) {
-            return false;
-          }
-        } else if (const auto* declaration =
-                       std::get_if<frontend::DeclarationStatement>(
-                           &statement.data)) {
-          if (!chargeScaledEmission(1, multiplicity, projectedEmission,
-                                    statement.location)) {
-            return false;
-          }
-        } else if (const auto* measurement =
-                       std::get_if<frontend::MeasurementStatement>(
-                           &statement.data)) {
-          for (const auto& qubit : measurement->qubits) {
-            if (!chargeQubitAccesses({qubit}, multiplicity, projectedEmission,
-                                     statement.location) ||
-                !chargeScaledEmission(1, multiplicity, projectedEmission,
-                                      statement.location)) {
-              return false;
-            }
-          }
-          for (const auto& target : measurement->targets) {
-            if (!target.dynamicIndex &&
-                !chargeScaledEmission(2, multiplicity, projectedEmission,
-                                      statement.location)) {
-              return false;
-            }
-            if (!target.dynamicIndex) {
-              continue;
-            }
-            const auto width =
-                static_cast<size_t>(program.registers.at(target.reg).width);
-            if (!chargeExpressionEmission(*target.dynamicIndex, multiplicity,
-                                          projectedEmission,
-                                          statement.location) ||
-                !chargeScaledEmission(9 + (3 * width), multiplicity,
-                                      projectedEmission, statement.location)) {
-              return false;
-            }
-          }
-        } else if (const auto* reset =
-                       std::get_if<frontend::ResetStatement>(&statement.data)) {
-          for (const auto& qubit : reset->qubits) {
-            if (!chargeQubitAccesses({qubit}, multiplicity, projectedEmission,
-                                     statement.location) ||
-                !chargeScaledEmission(1, multiplicity, projectedEmission,
-                                      statement.location)) {
-              return false;
-            }
-          }
-        } else if (const auto* barrier =
-                       std::get_if<frontend::BarrierStatement>(
-                           &statement.data)) {
-          if (!chargeQubitAccesses(barrier->qubits, multiplicity,
-                                   projectedEmission, statement.location) ||
-              !chargeScaledEmission(1, multiplicity, projectedEmission,
-                                    statement.location)) {
-            return false;
-          }
-        }
-        continue;
-      }
-      for (const auto& modifier : application->modifiers) {
-        if (modifier.kind == oq3::frontend::ModifierKind::Pow &&
-            !isExactlyRepresentableAsDouble(
-                program.expressions.at(*modifier.operand))) {
-          emitError(getLocation(statement.location))
-              << "OpenQASM QC emission error: power modifier exponent cannot "
-                 "be represented exactly as an f64";
-          return false;
-        }
-      }
-      for (const auto parameter : application->parameters) {
-        if (!chargeExpressionEmission(parameter, multiplicity,
-                                      projectedEmission, statement.location)) {
-          return false;
-        }
-      }
-      for (const auto& modifier : application->modifiers) {
-        if (modifier.operand &&
-            !chargeExpressionEmission(*modifier.operand, multiplicity,
-                                      projectedEmission, statement.location)) {
-          return false;
-        }
-      }
-      if (!chargeQubitAccesses(application->qubits, multiplicity,
-                               projectedEmission, statement.location)) {
-        return false;
-      }
-      const auto* gate = findCustomGate(application->callee);
-      if (gate == nullptr) {
-        auto leafCost = modifierEmissionCost(*application) + 1;
-        if (const auto* catalog =
-                oq3::frontend::lookupGate(application->callee)) {
-          if (catalog->controlCount != 0 || catalog->variadicControls) {
-            ++leafCost;
-          }
-          if (catalog->lowering == GateLowering::CU ||
-              catalog->lowering == GateLowering::U2 ||
-              catalog->lowering == GateLowering::U3 ||
-              (catalog->lowering == GateLowering::BuiltinU &&
-               program.openQASM2)) {
-            leafCost += 4;
-          } else if (catalog->lowering == GateLowering::BuiltinU) {
-            leafCost += 3;
-          }
-        }
-        if (!chargeScaledEmission(leafCost, multiplicity, projectedEmission,
-                                  statement.location)) {
-          return false;
-        }
-        continue;
-      }
-      if (!chargeScaledEmission(modifierEmissionCost(*application),
-                                multiplicity, projectedEmission,
-                                statement.location)) {
-        return false;
-      }
-      if (!application->modifiers.empty() &&
-          gateRequiresStructuredControlFlow(*gate)) {
-        emitError(getLocation(statement.location))
-            << "OpenQASM QC emission error: modifiers on custom gates with "
-               "structured control flow are not supported by the QC dialect";
-        return false;
-      }
-      if (!preflightStatements(gate->body, projectedEmission, multiplicity)) {
-        return false;
-      }
-    }
-    return true;
-  }
-
   [[nodiscard]] bool preflight() {
     const bool hasDeclaredQubits =
         llvm::any_of(program.registers, [](const auto& declaration) {
@@ -895,7 +355,7 @@ private:
                 frontend::QubitReferenceKind::Hardware) {
           emitError(getLocation(condition.location))
               << "OpenQASM QC emission error: mixing physical and declared "
-                 "qubits is not supported by the QC target";
+                 "qubits is not supported by the QC translation";
           return false;
         }
       }
@@ -917,80 +377,19 @@ private:
         if (containsHardwareQubit) {
           emitError(getLocation(statement.location))
               << "OpenQASM QC emission error: mixing physical and declared "
-                 "qubits is not supported by the QC target";
+                 "qubits is not supported by the QC translation";
           return false;
         }
       }
     }
-    size_t projectedEmission = program.registers.size() + 4;
-    return preflightStatements(program.body, projectedEmission);
-  }
-
-  [[nodiscard]] static Value checkedSignedResult(OpBuilder& opBuilder,
-                                                 Location loc, Value wide,
-                                                 const StringRef message) {
-    auto i128 = opBuilder.getIntegerType(128);
-    auto minimum = arith::ConstantIntOp::create(
-        opBuilder, loc, i128, std::numeric_limits<int64_t>::min());
-    auto maximum = arith::ConstantIntOp::create(
-        opBuilder, loc, i128, std::numeric_limits<int64_t>::max());
-    auto aboveMinimum = arith::CmpIOp::create(
-        opBuilder, loc, arith::CmpIPredicate::sge, wide, minimum);
-    auto belowMaximum = arith::CmpIOp::create(
-        opBuilder, loc, arith::CmpIPredicate::sle, wide, maximum);
-    auto fits =
-        arith::AndIOp::create(opBuilder, loc, aboveMinimum, belowMaximum);
-    cf::AssertOp::create(opBuilder, loc, fits, message);
-    return arith::TruncIOp::create(opBuilder, loc, opBuilder.getI64Type(),
-                                   wide);
-  }
-
-  [[nodiscard]] static Value conditionalIntegerMultiply(OpBuilder& opBuilder,
-                                                        Location loc,
-                                                        Value condition,
-                                                        Value lhs, Value rhs,
-                                                        const bool isUnsigned) {
-    if (isUnsigned) {
-      auto product = arith::MulIOp::create(opBuilder, loc, lhs, rhs);
-      return arith::SelectOp::create(opBuilder, loc, condition, product, lhs);
-    }
-    auto i128 = opBuilder.getIntegerType(128);
-    auto lhsWide = arith::ExtSIOp::create(opBuilder, loc, i128, lhs);
-    auto rhsWide = arith::ExtSIOp::create(opBuilder, loc, i128, rhs);
-    auto productWide = arith::MulIOp::create(opBuilder, loc, lhsWide, rhsWide);
-    auto minimum = arith::ConstantIntOp::create(
-        opBuilder, loc, i128, std::numeric_limits<int64_t>::min());
-    auto maximum = arith::ConstantIntOp::create(
-        opBuilder, loc, i128, std::numeric_limits<int64_t>::max());
-    auto aboveMinimum = arith::CmpIOp::create(
-        opBuilder, loc, arith::CmpIPredicate::sge, productWide, minimum);
-    auto belowMaximum = arith::CmpIOp::create(
-        opBuilder, loc, arith::CmpIPredicate::sle, productWide, maximum);
-    auto fits =
-        arith::AndIOp::create(opBuilder, loc, aboveMinimum, belowMaximum);
-    auto notRequired = arith::XOrIOp::create(
-        opBuilder, loc, condition,
-        arith::ConstantIntOp::create(opBuilder, loc, 1, 1));
-    auto valid = arith::OrIOp::create(opBuilder, loc, notRequired, fits);
-    cf::AssertOp::create(opBuilder, loc, valid, "integer power overflows i64");
-    auto product = arith::TruncIOp::create(opBuilder, loc,
-                                           opBuilder.getI64Type(), productWide);
-    return arith::SelectOp::create(opBuilder, loc, condition, product, lhs);
+    return true;
   }
 
   [[nodiscard]] static Value emitIntegerPower(OpBuilder& opBuilder,
                                               Location loc, Value base,
-                                              Value exponent,
-                                              const bool resultIsUnsigned,
-                                              const bool exponentIsUnsigned) {
+                                              Value exponent) {
     auto zero = arith::ConstantIntOp::create(opBuilder, loc, 0, 64);
     auto one = arith::ConstantIntOp::create(opBuilder, loc, 1, 64);
-    if (!exponentIsUnsigned) {
-      auto nonnegative = arith::CmpIOp::create(
-          opBuilder, loc, arith::CmpIPredicate::sge, exponent, zero);
-      cf::AssertOp::create(opBuilder, loc, nonnegative,
-                           "integer power requires a nonnegative exponent");
-    }
     auto power = scf::WhileOp::create(
         opBuilder, loc,
         TypeRange{base.getType(), base.getType(), exponent.getType()},
@@ -1005,157 +404,114 @@ private:
               arith::AndIOp::create(nested, nestedLoc, arguments[2], one);
           auto odd = arith::CmpIOp::create(
               nested, nestedLoc, arith::CmpIPredicate::ne, lowBit, zero);
-          auto nextResult =
-              conditionalIntegerMultiply(nested, nestedLoc, odd, arguments[0],
-                                         arguments[1], resultIsUnsigned);
+          auto product = arith::MulIOp::create(nested, nestedLoc, arguments[0],
+                                               arguments[1]);
+          auto nextResult = arith::SelectOp::create(nested, nestedLoc, odd,
+                                                    product, arguments[0]);
           auto nextExponent =
               arith::ShRUIOp::create(nested, nestedLoc, arguments[2], one);
-          auto squareBase = arith::CmpIOp::create(
-              nested, nestedLoc, arith::CmpIPredicate::ne, nextExponent, zero);
-          auto nextBase = conditionalIntegerMultiply(
-              nested, nestedLoc, squareBase, arguments[1], arguments[1],
-              resultIsUnsigned);
+          auto nextBase = arith::MulIOp::create(nested, nestedLoc, arguments[1],
+                                                arguments[1]);
           scf::YieldOp::create(nested, nestedLoc,
                                ValueRange{nextResult, nextBase, nextExponent});
         });
     return power.getResult(0);
   }
 
-  [[nodiscard]] static Value
-  emitExactlyRepresentableIntegerAsF64(OpBuilder& opBuilder, Location loc,
-                                       Value integer, const bool isUnsigned) {
-    auto zero = arith::ConstantIntOp::create(opBuilder, loc, 0, 64);
-    Value magnitude = integer;
-    if (!isUnsigned) {
-      auto negative = arith::CmpIOp::create(
-          opBuilder, loc, arith::CmpIPredicate::slt, integer, zero);
-      auto negated = arith::SubIOp::create(opBuilder, loc, zero, integer);
-      magnitude =
-          arith::SelectOp::create(opBuilder, loc, negative, negated, integer);
-    }
-
-    auto one = arith::ConstantIntOp::create(opBuilder, loc, 1, 64);
-    auto reduced = scf::WhileOp::create(
-        opBuilder, loc, TypeRange{integer.getType()}, ValueRange{magnitude},
-        [&](OpBuilder& nested, Location nestedLoc, ValueRange arguments) {
-          auto lowBit =
-              arith::AndIOp::create(nested, nestedLoc, arguments[0], one);
-          auto even = arith::CmpIOp::create(
-              nested, nestedLoc, arith::CmpIPredicate::eq, lowBit, zero);
-          auto nonzero = arith::CmpIOp::create(
-              nested, nestedLoc, arith::CmpIPredicate::ne, arguments[0], zero);
-          auto hasTrailingZero =
-              arith::AndIOp::create(nested, nestedLoc, even, nonzero);
-          scf::ConditionOp::create(nested, nestedLoc, hasTrailingZero,
-                                   arguments);
-        },
-        [&](OpBuilder& nested, Location nestedLoc, ValueRange arguments) {
-          auto shifted =
-              arith::ShRUIOp::create(nested, nestedLoc, arguments[0], one);
-          scf::YieldOp::create(nested, nestedLoc, ValueRange{shifted});
-        });
-    auto maximumSignificand = arith::ConstantOp::create(
-        opBuilder, loc,
-        IntegerAttr::get(opBuilder.getI64Type(),
-                         APInt(64, (uint64_t{1} << 53U) - 1U)));
-    auto exact =
-        arith::CmpIOp::create(opBuilder, loc, arith::CmpIPredicate::ule,
-                              reduced.getResult(0), maximumSignificand);
-    cf::AssertOp::create(
-        opBuilder, loc, exact,
-        "integer power modifier exponent cannot be represented exactly as an "
-        "f64");
-    return isUnsigned ? arith::UIToFPOp::create(opBuilder, loc,
-                                                opBuilder.getF64Type(), integer)
-                            .getResult()
-                      : arith::SIToFPOp::create(opBuilder, loc,
-                                                opBuilder.getF64Type(), integer)
-                            .getResult();
-  }
-
-  [[nodiscard]] static Value packBits(OpBuilder& opBuilder,
-                                      ArrayRef<Value> bits) {
-    assert(!bits.empty());
-    const auto width = static_cast<unsigned>(bits.size());
-    auto packedType = opBuilder.getIntegerType(width);
-    auto loc = UnknownLoc::get(opBuilder.getContext());
-    Value packed =
-        width == 1
-            ? bits.front()
-            : arith::ExtUIOp::create(opBuilder, loc, packedType, bits.front());
-    for (unsigned bit = 1; bit < width; ++bit) {
-      auto extended =
-          arith::ExtUIOp::create(opBuilder, loc, packedType, bits[bit]);
-      auto shift = arith::ConstantIntOp::create(opBuilder, loc, bit, width);
-      auto shifted = arith::ShLIOp::create(opBuilder, loc, extended, shift);
-      packed = arith::OrIOp::create(opBuilder, loc, packed, shifted);
-    }
-    return packed;
-  }
-
-  [[nodiscard]] static SmallVector<Value>
-  unpackBits(OpBuilder& opBuilder, Value packed, const uint64_t width) {
-    SmallVector<Value> bits;
-    bits.reserve(width);
-    if (width == 1) {
-      bits.push_back(packed);
-      return bits;
-    }
-    auto loc = UnknownLoc::get(opBuilder.getContext());
-    for (uint64_t bit = 0; bit < width; ++bit) {
-      Value selected = packed;
-      if (bit != 0) {
-        auto shift = arith::ConstantIntOp::create(opBuilder, loc,
-                                                  static_cast<int64_t>(bit),
-                                                  static_cast<unsigned>(width));
-        selected = arith::ShRUIOp::create(opBuilder, loc, packed, shift);
-      }
-      bits.push_back(arith::TruncIOp::create(opBuilder, loc,
-                                             opBuilder.getI1Type(), selected));
-    }
-    return bits;
-  }
-
-  struct EmittedBitVector {
-    uint64_t width = 0;
-    SmallVector<Value> bits;
-    Value packed;
-  };
-
-  static Value ensurePacked(OpBuilder& opBuilder, EmittedBitVector& value) {
-    if (!value.packed) {
-      value.packed = packBits(opBuilder, value.bits);
-    }
-    return value.packed;
-  }
-
-  static ArrayRef<Value> ensureBits(OpBuilder& opBuilder,
-                                    EmittedBitVector& value) {
-    if (value.bits.empty()) {
-      value.bits = unpackBits(opBuilder, value.packed, value.width);
-    }
-    return value.bits;
-  }
-
-  [[nodiscard]] EmittedBitVector
+  [[nodiscard]] Value
   emitBitVectorExpression(OpBuilder& opBuilder,
                           const frontend::BitVectorExpressionId id) {
+    if (emissionBudget.isExhausted()) {
+      return {};
+    }
     const auto& expression = program.bitVectorExpressions.at(id);
     auto loc = UnknownLoc::get(opBuilder.getContext());
-    if (expression.kind == frontend::BitVectorExpressionKind::Register) {
-      SmallVector<Value> bits;
-      bits.reserve(expression.width);
-      const auto reg = classicalRegisters.at(expression.reg);
+    const auto type =
+        opBuilder.getIntegerType(static_cast<unsigned>(expression.width));
+    switch (expression.kind) {
+    case frontend::BitVectorExpressionKind::ScalarCast:
+      return emitExpression(opBuilder, expression.scalar, {});
+    case frontend::BitVectorExpressionKind::Constant:
+      return arith::ConstantOp::create(
+          opBuilder, loc, IntegerAttr::get(type, expression.constant));
+    case frontend::BitVectorExpressionKind::Register: {
+      auto reg = classicalRegisters.at(expression.reg);
       assert(reg && "semantic analysis must declare bit registers before use");
-      for (uint64_t bit = 0; bit < expression.width; ++bit) {
-        auto index = arith::ConstantIndexOp::create(opBuilder, loc,
-                                                    static_cast<int64_t>(bit));
-        bits.push_back(cbit::LoadOp::create(opBuilder, loc,
-                                            opBuilder.getI1Type(), reg, index));
+      if (expression.selection.empty()) {
+        return cbit::ReadOp::create(opBuilder, loc, type, reg).getResult();
       }
-      return {.width = expression.width, .bits = std::move(bits)};
+      Value packed = arith::ConstantIntOp::create(opBuilder, loc, type, 0);
+      for (const auto& [ordinal, reference] :
+           llvm::enumerate(expression.selection)) {
+        if (emissionBudget.isExhausted()) {
+          return {};
+        }
+        auto bit = readBit(reference);
+        if (!bit) {
+          return {};
+        }
+        auto extended =
+            emitScalarCast(opBuilder, loc, bit, frontend::ScalarType::Bool,
+                           frontend::ScalarType::Uint, type.getWidth());
+        auto shift = arith::ConstantIntOp::create(
+            opBuilder, loc, type, static_cast<int64_t>(ordinal));
+        auto shifted = arith::ShLIOp::create(opBuilder, loc, extended, shift);
+        packed = arith::OrIOp::create(opBuilder, loc, packed, shifted);
+      }
+      return packed;
     }
+    case frontend::BitVectorExpressionKind::Not: {
+      auto operand = emitBitVectorExpression(opBuilder, expression.operand);
+      if (!operand) {
+        return {};
+      }
+      auto ones = arith::ConstantOp::create(
+          opBuilder, loc,
+          IntegerAttr::get(type, APInt::getAllOnes(expression.width)));
+      return arith::XOrIOp::create(opBuilder, loc, operand, ones);
+    }
+    case frontend::BitVectorExpressionKind::And:
+    case frontend::BitVectorExpressionKind::Or:
+    case frontend::BitVectorExpressionKind::Xor: {
+      auto lhs = emitBitVectorExpression(opBuilder, expression.operand);
+      if (!lhs) {
+        return {};
+      }
+      auto rhs = emitBitVectorExpression(opBuilder, expression.rhs);
+      if (!rhs) {
+        return {};
+      }
+      if (expression.kind == frontend::BitVectorExpressionKind::And) {
+        return arith::AndIOp::create(opBuilder, loc, lhs, rhs);
+      }
+      if (expression.kind == frontend::BitVectorExpressionKind::Or) {
+        return arith::OrIOp::create(opBuilder, loc, lhs, rhs);
+      }
+      return arith::XOrIOp::create(opBuilder, loc, lhs, rhs);
+    }
+    case frontend::BitVectorExpressionKind::ShiftLeft:
+    case frontend::BitVectorExpressionKind::ShiftRight: {
+      auto operand = emitBitVectorExpression(opBuilder, expression.operand);
+      if (!operand) {
+        return {};
+      }
+      auto distance = emitExpression(opBuilder, expression.distance, {});
+      if (!distance) {
+        return {};
+      }
+      return mqt::buildZeroFillingShift(
+          opBuilder, loc, operand, distance,
+          expression.kind == frontend::BitVectorExpressionKind::ShiftLeft);
+    }
+    case frontend::BitVectorExpressionKind::RotateLeft:
+    case frontend::BitVectorExpressionKind::RotateRight:
+      break;
+    }
+
     auto operand = emitBitVectorExpression(opBuilder, expression.operand);
+    if (!operand) {
+      return {};
+    }
     const auto& distanceExpression =
         program.expressions.at(expression.distance);
     if (distanceExpression.kind == frontend::ExpressionKind::Constant) {
@@ -1165,37 +521,25 @@ private:
       if (normalized < 0) {
         normalized += width;
       }
-      if (operand.bits.empty()) {
-        if (normalized == 0) {
-          return operand;
-        }
-        auto shift = arith::ConstantIntOp::create(
-            opBuilder, loc, normalized,
-            static_cast<unsigned>(expression.width));
-        Value rotated =
-            expression.kind == frontend::BitVectorExpressionKind::RotateLeft
-                ? LLVM::FshlOp::create(opBuilder, loc, operand.packed,
-                                       operand.packed, shift)
-                      .getResult()
-                : LLVM::FshrOp::create(opBuilder, loc, operand.packed,
-                                       operand.packed, shift)
-                      .getResult();
-        return {.width = expression.width, .packed = rotated};
+      if (normalized == 0) {
+        return operand;
       }
-      const auto bits = ensureBits(opBuilder, operand);
-      SmallVector<Value> rotated(expression.width);
-      for (uint64_t bit = 0; bit < expression.width; ++bit) {
-        const auto source =
-            expression.kind == frontend::BitVectorExpressionKind::RotateLeft
-                ? (bit + expression.width - static_cast<uint64_t>(normalized)) %
-                      expression.width
-                : (bit + static_cast<uint64_t>(normalized)) % expression.width;
-        rotated[bit] = bits[source];
-      }
-      return {.width = expression.width, .bits = std::move(rotated)};
+      auto shift = arith::ConstantIntOp::create(
+          opBuilder, loc, normalized, static_cast<unsigned>(expression.width));
+      return expression.kind == frontend::BitVectorExpressionKind::RotateLeft
+                 ? LLVM::FshlOp::create(opBuilder, loc, operand, operand, shift)
+                       .getResult()
+                 : LLVM::FshrOp::create(opBuilder, loc, operand, operand, shift)
+                       .getResult();
     }
 
     auto distance = emitExpression(opBuilder, expression.distance, {});
+    if (!distance) {
+      return {};
+    }
+    distance =
+        emitScalarCast(opBuilder, loc, distance, frontend::ScalarType::Int,
+                       frontend::ScalarType::Int);
     auto widthConstant = arith::ConstantIntOp::create(
         opBuilder, loc, static_cast<int64_t>(expression.width), 64);
     auto remainder =
@@ -1204,9 +548,7 @@ private:
         arith::AddIOp::create(opBuilder, loc, remainder, widthConstant);
     auto normalized =
         arith::RemSIOp::create(opBuilder, loc, positive, widthConstant);
-    auto packed = ensurePacked(opBuilder, operand);
-    auto packedType =
-        opBuilder.getIntegerType(static_cast<unsigned>(expression.width));
+    auto packedType = type;
     Value shift = normalized;
     if (expression.width < 64) {
       shift = arith::TruncIOp::create(opBuilder, loc, packedType, normalized);
@@ -1215,15 +557,18 @@ private:
     }
     Value rotated =
         expression.kind == frontend::BitVectorExpressionKind::RotateLeft
-            ? LLVM::FshlOp::create(opBuilder, loc, packed, packed, shift)
+            ? LLVM::FshlOp::create(opBuilder, loc, operand, operand, shift)
                   .getResult()
-            : LLVM::FshrOp::create(opBuilder, loc, packed, packed, shift)
+            : LLVM::FshrOp::create(opBuilder, loc, operand, operand, shift)
                   .getResult();
-    return {.width = expression.width, .packed = rotated};
+    return rotated;
   }
 
   Value emitExpression(OpBuilder& opBuilder, const frontend::ExpressionId id,
                        ValueRange gateParameters) {
+    if (emissionBudget.isExhausted()) {
+      return {};
+    }
     const auto& expression = program.expressions.at(id);
     auto loc = opBuilder.getInsertionPoint() == opBuilder.getBlock()->end()
                    ? opBuilder.getUnknownLoc()
@@ -1237,13 +582,19 @@ private:
             static_cast<int64_t>(std::get<bool>(expression.constant)), 1);
       case frontend::ScalarType::Int:
         return arith::ConstantIntOp::create(
-            opBuilder, loc, std::get<int64_t>(expression.constant), 64);
+            opBuilder, loc, std::get<int64_t>(expression.constant),
+            expression.integerWidth != 0 ? expression.integerWidth : 64);
       case frontend::ScalarType::Uint:
         return arith::ConstantOp::create(
             opBuilder, loc,
-            IntegerAttr::get(opBuilder.getI64Type(),
-                             APInt(64, std::get<uint64_t>(expression.constant),
-                                   /*isSigned=*/false)));
+            IntegerAttr::get(
+                opBuilder.getIntegerType(expression.integerWidth != 0
+                                             ? expression.integerWidth
+                                             : 64),
+                APInt(expression.integerWidth != 0 ? expression.integerWidth
+                                                   : 64,
+                      std::get<uint64_t>(expression.constant),
+                      /*isSigned=*/false)));
       case frontend::ScalarType::Float:
       case frontend::ScalarType::Angle:
         return arith::ConstantFloatOp::create(
@@ -1257,25 +608,64 @@ private:
       return scalarValues.at(expression.variable);
     case frontend::ExpressionKind::Cast: {
       auto operand = emitExpression(opBuilder, expression.lhs, gateParameters);
+      if (!operand) {
+        return {};
+      }
       return emitScalarCast(opBuilder, loc, operand,
                             program.expressions.at(expression.lhs).type,
-                            expression.type);
+                            expression.type, expression.integerWidth);
+    }
+    case frontend::ExpressionKind::BitVectorCast: {
+      return emitBitVectorExpression(opBuilder, expression.bitVector);
+    }
+    case frontend::ExpressionKind::Condition:
+      return emitCondition(expression.condition, gateParameters, {});
+    case frontend::ExpressionKind::BitNot: {
+      auto operand = emitExpression(opBuilder, expression.lhs, gateParameters);
+      if (!operand) {
+        return {};
+      }
+      auto ones =
+          arith::ConstantIntOp::create(opBuilder, loc, operand.getType(), -1);
+      return arith::XOrIOp::create(opBuilder, loc, operand, ones);
+    }
+    case frontend::ExpressionKind::BitAnd:
+    case frontend::ExpressionKind::BitOr:
+    case frontend::ExpressionKind::BitXor:
+    case frontend::ExpressionKind::ShiftLeft:
+    case frontend::ExpressionKind::ShiftRight: {
+      auto lhs = emitExpression(opBuilder, expression.lhs, gateParameters);
+      if (!lhs) {
+        return {};
+      }
+      auto rhs = emitExpression(opBuilder, expression.rhs, gateParameters);
+      if (!rhs) {
+        return {};
+      }
+      switch (expression.kind) {
+      case frontend::ExpressionKind::BitAnd:
+        return arith::AndIOp::create(opBuilder, loc, lhs, rhs);
+      case frontend::ExpressionKind::BitOr:
+        return arith::OrIOp::create(opBuilder, loc, lhs, rhs);
+      case frontend::ExpressionKind::BitXor:
+        return arith::XOrIOp::create(opBuilder, loc, lhs, rhs);
+      default:
+        return mqt::buildZeroFillingShift(
+            opBuilder, loc, lhs, rhs,
+            expression.kind == frontend::ExpressionKind::ShiftLeft);
+      }
     }
     case frontend::ExpressionKind::Negate: {
       auto operand = emitExpression(opBuilder, expression.lhs, gateParameters);
+      if (!operand) {
+        return {};
+      }
       if (isa<FloatType>(operand.getType())) {
         return arith::NegFOp::create(opBuilder, loc, operand);
       }
-      if (expression.type == frontend::ScalarType::Uint) {
-        auto zero = arith::ConstantIntOp::create(opBuilder, loc, 0, 64);
-        return arith::SubIOp::create(opBuilder, loc, zero, operand);
-      }
-      auto i128 = opBuilder.getIntegerType(128);
-      auto zero = arith::ConstantIntOp::create(opBuilder, loc, 0, 128);
-      auto operandWide = arith::ExtSIOp::create(opBuilder, loc, i128, operand);
-      auto negated = arith::SubIOp::create(opBuilder, loc, zero, operandWide);
-      return checkedSignedResult(opBuilder, loc, negated,
-                                 "integer negation overflows i64");
+      auto zero =
+          arith::ConstantIntOp::create(opBuilder, loc, operand.getType(), 0);
+      return arith::SubIOp::create(opBuilder, loc, zero, operand);
     }
     case frontend::ExpressionKind::ArcCos:
     case frontend::ExpressionKind::ArcSin:
@@ -1289,6 +679,9 @@ private:
     case frontend::ExpressionKind::Log:
     case frontend::ExpressionKind::Sqrt: {
       Value operand = emitExpression(opBuilder, expression.lhs, gateParameters);
+      if (!operand) {
+        return {};
+      }
       assert(isa<FloatType>(operand.getType()) &&
              "semantic analysis must normalize math operands");
       switch (expression.kind) {
@@ -1321,8 +714,10 @@ private:
     case frontend::ExpressionKind::PopCount: {
       const auto& bitVector =
           program.bitVectorExpressions.at(expression.bitVector);
-      auto value = emitBitVectorExpression(opBuilder, expression.bitVector);
-      auto packed = ensurePacked(opBuilder, value);
+      auto packed = emitBitVectorExpression(opBuilder, expression.bitVector);
+      if (!packed) {
+        return {};
+      }
       auto count = math::CtPopOp::create(opBuilder, loc, packed);
       if (bitVector.width < 64) {
         return arith::ExtUIOp::create(opBuilder, loc, opBuilder.getI64Type(),
@@ -1341,37 +736,18 @@ private:
     case frontend::ExpressionKind::Modulo:
     case frontend::ExpressionKind::Power: {
       auto lhs = emitExpression(opBuilder, expression.lhs, gateParameters);
+      if (!lhs) {
+        return {};
+      }
       auto rhs = emitExpression(opBuilder, expression.rhs, gateParameters);
+      if (!rhs) {
+        return {};
+      }
       if (expression.type != frontend::ScalarType::Float &&
           expression.type != frontend::ScalarType::Angle) {
         const bool isUnsigned = expression.type == frontend::ScalarType::Uint;
-        auto zero = arith::ConstantIntOp::create(opBuilder, loc, 0, 64);
         if (expression.kind == frontend::ExpressionKind::Divide ||
             expression.kind == frontend::ExpressionKind::Modulo) {
-          auto nonzero = arith::CmpIOp::create(
-              opBuilder, loc, arith::CmpIPredicate::ne, rhs, zero);
-          cf::AssertOp::create(opBuilder, loc, nonzero,
-                               expression.kind ==
-                                       frontend::ExpressionKind::Divide
-                                   ? "division by zero"
-                                   : "modulo by zero");
-          if (!isUnsigned) {
-            auto minimum = arith::ConstantIntOp::create(
-                opBuilder, loc, std::numeric_limits<int64_t>::min(), 64);
-            auto minusOne =
-                arith::ConstantIntOp::create(opBuilder, loc, -1, 64);
-            auto lhsIsMinimum = arith::CmpIOp::create(
-                opBuilder, loc, arith::CmpIPredicate::eq, lhs, minimum);
-            auto rhsIsMinusOne = arith::CmpIOp::create(
-                opBuilder, loc, arith::CmpIPredicate::eq, rhs, minusOne);
-            auto overflows = arith::AndIOp::create(opBuilder, loc, lhsIsMinimum,
-                                                   rhsIsMinusOne);
-            auto valid = arith::XOrIOp::create(
-                opBuilder, loc, overflows,
-                arith::ConstantIntOp::create(opBuilder, loc, 1, 1));
-            cf::AssertOp::create(opBuilder, loc, valid,
-                                 "integer division overflows i64");
-          }
           if (expression.kind == frontend::ExpressionKind::Divide) {
             return isUnsigned ? arith::DivUIOp::create(opBuilder, loc, lhs, rhs)
                                     .getResult()
@@ -1384,41 +760,20 @@ private:
                                   .getResult();
         }
         if (expression.kind == frontend::ExpressionKind::Power) {
-          return emitIntegerPower(opBuilder, loc, lhs, rhs, isUnsigned,
-                                  program.expressions.at(expression.rhs).type ==
-                                      frontend::ScalarType::Uint);
+          return emitIntegerPower(opBuilder, loc, lhs, rhs);
         }
-        if (isUnsigned) {
-          switch (expression.kind) {
-          case frontend::ExpressionKind::Add:
-            return arith::AddIOp::create(opBuilder, loc, lhs, rhs);
-          case frontend::ExpressionKind::Subtract:
-            return arith::SubIOp::create(opBuilder, loc, lhs, rhs);
-          case frontend::ExpressionKind::Multiply:
-            return arith::MulIOp::create(opBuilder, loc, lhs, rhs);
-          default:
-            llvm_unreachable("not an unsigned integer binary expression");
-          }
-        }
-        auto i128 = opBuilder.getIntegerType(128);
-        auto lhsWide = arith::ExtSIOp::create(opBuilder, loc, i128, lhs);
-        auto rhsWide = arith::ExtSIOp::create(opBuilder, loc, i128, rhs);
-        Value result;
+        /// Like explicit integer casts, runtime integer arithmetic wraps at its
+        /// width.
         switch (expression.kind) {
         case frontend::ExpressionKind::Add:
-          result = arith::AddIOp::create(opBuilder, loc, lhsWide, rhsWide);
-          break;
+          return arith::AddIOp::create(opBuilder, loc, lhs, rhs);
         case frontend::ExpressionKind::Subtract:
-          result = arith::SubIOp::create(opBuilder, loc, lhsWide, rhsWide);
-          break;
+          return arith::SubIOp::create(opBuilder, loc, lhs, rhs);
         case frontend::ExpressionKind::Multiply:
-          result = arith::MulIOp::create(opBuilder, loc, lhsWide, rhsWide);
-          break;
+          return arith::MulIOp::create(opBuilder, loc, lhs, rhs);
         default:
-          llvm_unreachable("not a signed integer binary expression");
+          llvm_unreachable("not an integer binary expression");
         }
-        return checkedSignedResult(opBuilder, loc, result,
-                                   "integer arithmetic overflows i64");
       }
       switch (expression.kind) {
       case frontend::ExpressionKind::Add:
@@ -1441,33 +796,27 @@ private:
     llvm_unreachable("unknown scalar expression kind");
   }
 
-  [[nodiscard]] Value emitCheckedIndex(const frontend::ExpressionId expression,
-                                       const int64_t width,
-                                       const llvm::StringRef message) {
+  [[nodiscard]] Value
+  emitClassicalIndex(const frontend::ExpressionId expression,
+                     const int64_t width) {
     auto index = emitExpression(builder, expression, {});
-    auto zero = builder.intConstant(0);
-    auto upper = builder.intConstant(width);
-    Value inBounds;
-    if (program.expressions.at(expression).type == frontend::ScalarType::Uint) {
-      inBounds = arith::CmpIOp::create(builder, arith::CmpIPredicate::ult,
-                                       index, upper);
-    } else {
-      auto negative = arith::CmpIOp::create(builder, arith::CmpIPredicate::slt,
-                                            index, zero);
-      auto wrapped = arith::AddIOp::create(builder, index, upper);
-      index = arith::SelectOp::create(builder, negative, wrapped, index);
-      auto nonnegative = arith::CmpIOp::create(
-          builder, arith::CmpIPredicate::sge, index, zero);
-      auto belowWidth = arith::CmpIOp::create(
-          builder, arith::CmpIPredicate::slt, index, upper);
-      inBounds = arith::AndIOp::create(builder, nonnegative, belowWidth);
+    if (!index) {
+      return {};
     }
-    cf::AssertOp::create(builder, inBounds, message);
+    const auto type = program.expressions.at(expression).type;
+    index = emitScalarCast(builder, builder.getLoc(), index, type, type);
+    if (type == frontend::ScalarType::Int) {
+      auto negative = arith::CmpIOp::create(builder, arith::CmpIPredicate::slt,
+                                            index, builder.intConstant(0));
+      auto wrapped =
+          arith::AddIOp::create(builder, index, builder.intConstant(width));
+      index = arith::SelectOp::create(builder, negative, wrapped, index);
+    }
     return index;
   }
 
   Value resolveQubit(const frontend::QubitReference& reference,
-                     ValueRange gateQubits, const Value index = {}) {
+                     ValueRange gateQubits, Value index = {}) {
     switch (reference.kind) {
     case frontend::QubitReferenceKind::Register: {
       const auto& declaration = program.registers.at(reference.symbol);
@@ -1489,6 +838,9 @@ private:
   emitQubitIndices(ArrayRef<frontend::QubitReference> references) {
     SmallVector<Value> indices(references.size());
     for (const auto [position, reference] : llvm::enumerate(references)) {
+      if (emissionBudget.isExhausted()) {
+        return {};
+      }
       if (reference.kind != frontend::QubitReferenceKind::Register ||
           program.registers.at(reference.symbol).isScalar) {
         continue;
@@ -1500,6 +852,9 @@ private:
       }
       indices[position] =
           emitProvenIndexExpression(builder, *reference.provenIndex);
+      if (!indices[position]) {
+        return {};
+      }
     }
     return indices;
   }
@@ -1510,6 +865,9 @@ private:
     SmallVector<Value> resolved;
     resolved.reserve(references.size());
     for (const auto [position, reference] : llvm::enumerate(references)) {
+      if (emissionBudget.isExhausted()) {
+        return {};
+      }
       resolved.push_back(
           resolveQubit(reference, gateQubits, indices[position]));
     }
@@ -1521,20 +879,16 @@ private:
                      ValueRange gateQubits,
                      llvm::function_ref<Value(Value)> emitResolvedOperation) {
     const auto indices = emitQubitIndices({reference});
+    if (indices.empty()) {
+      return {};
+    }
     return emitResolvedOperation(
         resolveQubit(reference, gateQubits, indices.front()));
   }
 
-  static LogicalResult emitPrimitive(OpBuilder& opBuilder, const Location loc,
-                                     const GateLowering lowering,
-                                     const ValueRange parameters,
-                                     const ValueRange qubits) {
-    return qc::emitStandardGate(opBuilder, loc, lowering, parameters, qubits);
-  }
-
   static Value
   emitOpenQASM3Phase(OpBuilder& opBuilder, const Location loc,
-                     const ValueRange uParameters,
+                     ValueRange uParameters,
                      const std::optional<Value> extraPhase = std::nullopt) {
     assert(uParameters.size() == 3);
     auto half = arith::ConstantFloatOp::create(
@@ -1547,7 +901,7 @@ private:
   }
 
   static Value emitOpenQASM2UPhase(OpBuilder& opBuilder, const Location loc,
-                                   const ValueRange uParameters) {
+                                   ValueRange uParameters) {
     assert(uParameters.size() >= 2);
     const auto phiIndex = uParameters.size() == 2 ? 0U : 1U;
     const auto lambdaIndex = uParameters.size() == 2 ? 1U : 2U;
@@ -1556,6 +910,35 @@ private:
     auto negativeHalf = arith::ConstantFloatOp::create(
         opBuilder, loc, opBuilder.getF64Type(), APFloat(-0.5));
     return arith::MulFOp::create(opBuilder, loc, sum, negativeHalf);
+  }
+
+  void emitGateDefinition(const frontend::GateDefinition& gate) {
+    SmallVector<Type> argumentTypes(gate.parameterCount, builder.getF64Type());
+    argumentTypes.append(gate.qubitCount, qc::QubitType::get(&context));
+    const auto emitBody = [&](ValueRange arguments) {
+      auto parameters = arguments.take_front(gate.parameterCount);
+      auto qubits = arguments.drop_front(gate.parameterCount);
+      for (const auto statement : gate.body) {
+        emitStatement(statement, parameters, qubits);
+        if (emissionFailed || emissionBudget.isExhausted()) {
+          return;
+        }
+      }
+    };
+
+    builder.setLoc(getLocation(gate.location));
+    func::FuncOp function;
+    if (gateRequiresStructuredControlFlow(gate)) {
+      function = builder.createFunction(gate.name, argumentTypes,
+                                        [&](ValueRange arguments) {
+                                          emitBody(arguments);
+                                          return SmallVector<Value>{};
+                                        });
+    } else {
+      function =
+          builder.createUnitaryFunction(gate.name, argumentTypes, emitBody);
+    }
+    customGateFunctions_.try_emplace(&gate, function);
   }
 
   LogicalResult emitResolvedGate(OpBuilder& opBuilder,
@@ -1570,20 +953,21 @@ private:
                "its verified declaration";
         return failure();
       }
+      auto function = customGateFunctions_.lookup(custom);
+      if (function == nullptr) {
+        return failure();
+      }
+      SmallVector<Value> operands(parameters);
+      llvm::append_range(operands, qubits);
       OpBuilder::InsertionGuard guard(builder);
       builder.setInsertionPoint(opBuilder.getInsertionBlock(),
                                 opBuilder.getInsertionPoint());
-      for (const auto statement : custom->body) {
-        emitStatement(statement, parameters, qubits);
-        if (emissionFailed || emissionBudget.isExhausted()) {
-          return failure();
-        }
-      }
+      std::ignore = builder.call(function, operands);
       return success();
     }
 
     const GateCatalogEntry* catalog =
-        oq3::frontend::lookupGate(application.callee);
+        openqasm::frontend::lookupGate(application.callee);
     if (catalog == nullptr || qubits.size() < catalog->targetCount) {
       return failure();
     }
@@ -1595,7 +979,7 @@ private:
     }
     auto controlValues = qubits.take_front(controls);
     auto targets = qubits.drop_front(controls);
-    if (catalog->lowering == GateLowering::CU) {
+    if (catalog->gate == qc::StandardGate::CU) {
       if (controls != 1 || parameters.size() != 4 || targets.size() != 1) {
         return failure();
       }
@@ -1605,33 +989,33 @@ private:
       LogicalResult result = success();
       qc::CtrlOp::create(
           opBuilder, loc, controlValues, targets, [&](ValueRange aliases) {
-            result = emitPrimitive(opBuilder, loc, GateLowering::U3,
-                                   parameters.take_front(3), aliases);
+            result = qc::emitStandardGate(opBuilder, loc, qc::StandardGate::U3,
+                                          parameters.take_front(3), aliases);
           });
       return result;
     }
 
     const auto emitCatalogLowering = [&](ValueRange primitiveQubits) {
       const auto emitBody = [&](ValueRange bodyQubits) {
-        if (catalog->lowering == GateLowering::BuiltinU ||
-            catalog->lowering == GateLowering::U2 ||
-            catalog->lowering == GateLowering::U3) {
+        if (catalog->gate == qc::StandardGate::BuiltinU ||
+            catalog->gate == qc::StandardGate::U2 ||
+            catalog->gate == qc::StandardGate::U3) {
           Value phase;
-          if (catalog->lowering == GateLowering::BuiltinU &&
+          if (catalog->gate == qc::StandardGate::BuiltinU &&
               !program.openQASM2) {
             phase = emitOpenQASM3Phase(opBuilder, loc, parameters);
           } else {
             phase = emitOpenQASM2UPhase(opBuilder, loc, parameters);
           }
           qc::GPhaseOp::create(opBuilder, loc, phase);
-          const auto primitive = catalog->lowering == GateLowering::U2
-                                     ? GateLowering::U2
-                                     : GateLowering::U3;
-          return emitPrimitive(opBuilder, loc, primitive, parameters,
-                               bodyQubits);
+          const auto primitive = catalog->gate == qc::StandardGate::U2
+                                     ? qc::StandardGate::U2
+                                     : qc::StandardGate::U3;
+          return qc::emitStandardGate(opBuilder, loc, primitive, parameters,
+                                      bodyQubits);
         }
-        return emitPrimitive(opBuilder, loc, catalog->lowering, parameters,
-                             bodyQubits);
+        return qc::emitStandardGate(opBuilder, loc, catalog->gate, parameters,
+                                    bodyQubits);
       };
       if (!catalog->inverse) {
         return emitBody(primitiveQubits);
@@ -1699,10 +1083,32 @@ private:
                            const frontend::GateApplication& application,
                            const Location loc, ValueRange gateParameters,
                            ValueRange gateQubits) {
+    for (const auto& modifier : application.modifiers) {
+      if (modifier.kind == frontend::ModifierKind::Pow &&
+          !isExactlyRepresentableAsDouble(
+              program.expressions.at(*modifier.operand))) {
+        emissionFailed = true;
+        emitError(loc) << "OpenQASM QC emission error: power modifier exponent "
+                          "cannot be represented exactly as an f64";
+        return;
+      }
+    }
+    if (const auto* gate = findCustomGate(application.callee);
+        gate != nullptr && !application.modifiers.empty() &&
+        gateRequiresStructuredControlFlow(*gate)) {
+      emissionFailed = true;
+      emitError(loc)
+          << "OpenQASM QC emission error: modifiers on custom gates with "
+             "structured control flow are not supported by the QC dialect";
+      return;
+    }
     SmallVector<Value> parameters;
     parameters.reserve(application.parameters.size());
     for (const auto expression : application.parameters) {
       Value parameter = emitExpression(opBuilder, expression, gateParameters);
+      if (!parameter) {
+        return;
+      }
       if (isa<IntegerType>(parameter.getType())) {
         if (program.expressions.at(expression).type ==
             frontend::ScalarType::Uint) {
@@ -1716,6 +1122,9 @@ private:
       parameters.push_back(parameter);
     }
     const auto qubitIndices = emitQubitIndices(application.qubits);
+    if (emissionBudget.isExhausted()) {
+      return;
+    }
     SmallVector<int64_t> controlCounts(application.modifiers.size(), 0);
     SmallVector<std::variant<double, Value>> modifierOperands(
         application.modifiers.size());
@@ -1745,10 +1154,12 @@ private:
         }
         auto exponent =
             emitExpression(opBuilder, *modifier.operand, gateParameters);
+        if (!exponent) {
+          return;
+        }
         if (isa<IntegerType>(exponent.getType())) {
-          exponent = emitExactlyRepresentableIntegerAsF64(
-              opBuilder, loc, exponent,
-              expression.type == frontend::ScalarType::Uint);
+          exponent = emitScalarCast(opBuilder, loc, exponent, expression.type,
+                                    frontend::ScalarType::Float);
         }
         modifierOperands[position] = exponent;
         continue;
@@ -1761,6 +1172,9 @@ private:
       if (modifier.operand) {
         auto countValue =
             emitExpression(opBuilder, *modifier.operand, gateParameters);
+        if (!countValue) {
+          return;
+        }
         auto constant = countValue.getDefiningOp<arith::ConstantIntOp>();
         if (!constant || constant.value() <= 0) {
           emissionFailed = true;
@@ -1775,6 +1189,9 @@ private:
 
     const auto qubits =
         resolveQubits(application.qubits, gateQubits, qubitIndices);
+    if (emissionBudget.isExhausted()) {
+      return;
+    }
     size_t negativeOffset = 0;
     for (const auto [position, modifier] :
          llvm::enumerate(application.modifiers)) {
@@ -1783,6 +1200,9 @@ private:
         if (modifier.kind == frontend::ModifierKind::NegCtrl) {
           for (auto control : ValueRange(qubits).slice(
                    negativeOffset, controlCounts[position])) {
+            if (!emissionBudget.canConstruct(1)) {
+              return;
+            }
             qc::XOp::create(opBuilder, loc, control);
           }
         }
@@ -1800,6 +1220,9 @@ private:
         if (modifier.kind == frontend::ModifierKind::NegCtrl) {
           for (auto control : ValueRange(qubits).slice(
                    negativeOffset, controlCounts[position])) {
+            if (!emissionBudget.canConstruct(1)) {
+              return;
+            }
             qc::XOp::create(opBuilder, loc, control);
           }
         }
@@ -1810,14 +1233,33 @@ private:
       emissionFailed = true;
       emitError(loc) << "OpenQASM QC emission error: gate '"
                      << application.callee
-                     << "' has no lowering to the QC dialect";
+                     << "' cannot be translated to the QC dialect";
     }
   }
 
   [[nodiscard]] static Value emitScalarCast(OpBuilder& opBuilder,
                                             const Location loc, Value value,
                                             const frontend::ScalarType source,
-                                            const frontend::ScalarType target) {
+                                            const frontend::ScalarType target,
+                                            const unsigned integerWidth = 0) {
+    if (isa<IntegerType>(value.getType()) &&
+        (target == frontend::ScalarType::Int ||
+         target == frontend::ScalarType::Uint)) {
+      auto resultType =
+          opBuilder.getIntegerType(integerWidth != 0 ? integerWidth : 64);
+      auto width = cast<IntegerType>(value.getType()).getWidth();
+      if (width == resultType.getWidth()) {
+        return value;
+      }
+      if (width > resultType.getWidth()) {
+        return arith::TruncIOp::create(opBuilder, loc, resultType, value);
+      }
+      return source == frontend::ScalarType::Int
+                 ? arith::ExtSIOp::create(opBuilder, loc, resultType, value)
+                       .getResult()
+                 : arith::ExtUIOp::create(opBuilder, loc, resultType, value)
+                       .getResult();
+    }
     if (source == target ||
         (source == frontend::ScalarType::Int &&
          target == frontend::ScalarType::Uint) ||
@@ -1846,39 +1288,76 @@ private:
     if ((source == frontend::ScalarType::Float ||
          source == frontend::ScalarType::Angle) &&
         target == frontend::ScalarType::Uint) {
-      return arith::FPToUIOp::create(opBuilder, loc, opBuilder.getI64Type(),
-                                     value);
+      return arith::FPToUIOp::create(
+          opBuilder, loc,
+          opBuilder.getIntegerType(integerWidth != 0 ? integerWidth : 64),
+          value);
     }
     if (source == frontend::ScalarType::Float ||
         source == frontend::ScalarType::Angle) {
-      return arith::FPToSIOp::create(opBuilder, loc, opBuilder.getI64Type(),
-                                     value);
+      return arith::FPToSIOp::create(
+          opBuilder, loc,
+          opBuilder.getIntegerType(integerWidth != 0 ? integerWidth : 64),
+          value);
     }
     llvm_unreachable("unsupported standard scalar conversion");
   }
 
-  [[nodiscard]] Value readBit(const frontend::BitReference& reference) {
-    const auto reg = classicalRegisters.at(reference.reg);
-    assert(reg && "semantic analysis must declare bit registers before use");
+  [[nodiscard]] Value emitBitIndex(const frontend::BitReference& reference) {
     if (!reference.dynamicIndex) {
-      return builder.loadClassicalBit(reg,
-                                      static_cast<int64_t>(reference.index));
+      return arith::ConstantIndexOp::create(
+          builder, static_cast<int64_t>(reference.index));
     }
+    if (reference.provenInBounds) {
+      return emitProvenIndexExpression(builder, *reference.dynamicIndex);
+    }
+    auto index = emitClassicalIndex(
+        *reference.dynamicIndex,
+        static_cast<int64_t>(program.registers.at(reference.reg).width));
+    return index ? arith::IndexCastOp::create(builder, builder.getIndexType(),
+                                              index)
+                       .getResult()
+                 : Value{};
+  }
 
-    const auto width =
-        static_cast<int64_t>(program.registers.at(reference.reg).width);
-    auto index = emitCheckedIndex(*reference.dynamicIndex, width,
-                                  "dynamic classical index out of bounds");
-    auto registerIndex =
-        arith::IndexCastOp::create(builder, builder.getIndexType(), index);
-    return builder.loadClassicalBit(reg, registerIndex.getResult());
+  [[nodiscard]] Value readBit(const frontend::BitReference& reference) {
+    auto reg = classicalRegisters.at(reference.reg);
+    assert(reg && "semantic analysis must declare bit registers before use");
+    auto index = emitBitIndex(reference);
+    return index ? builder.loadClassicalBit(reg, index) : Value{};
+  }
+
+  [[nodiscard]] static arith::CmpIPredicate
+  integerPredicate(const frontend::ComparisonKind comparison,
+                   const bool isUnsigned) {
+    switch (comparison) {
+    case frontend::ComparisonKind::Equal:
+      return arith::CmpIPredicate::eq;
+    case frontend::ComparisonKind::NotEqual:
+      return arith::CmpIPredicate::ne;
+    case frontend::ComparisonKind::Less:
+      return isUnsigned ? arith::CmpIPredicate::ult : arith::CmpIPredicate::slt;
+    case frontend::ComparisonKind::LessEqual:
+      return isUnsigned ? arith::CmpIPredicate::ule : arith::CmpIPredicate::sle;
+    case frontend::ComparisonKind::Greater:
+      return isUnsigned ? arith::CmpIPredicate::ugt : arith::CmpIPredicate::sgt;
+    case frontend::ComparisonKind::GreaterEqual:
+      return isUnsigned ? arith::CmpIPredicate::uge : arith::CmpIPredicate::sge;
+    }
+    llvm_unreachable("unknown integer comparison");
   }
 
   [[nodiscard]] Value
   emitComparison(const frontend::ConditionExpression& condition,
                  ValueRange gateParameters) {
     auto lhs = emitExpression(builder, condition.comparisonLhs, gateParameters);
+    if (!lhs) {
+      return {};
+    }
     auto rhs = emitExpression(builder, condition.comparisonRhs, gateParameters);
+    if (!rhs) {
+      return {};
+    }
     const auto lhsType = program.expressions.at(condition.comparisonLhs).type;
     const auto rhsType = program.expressions.at(condition.comparisonRhs).type;
     assert(lhsType == rhsType &&
@@ -1905,34 +1384,17 @@ private:
       return arith::CmpFOp::create(builder, predicate, lhs, rhs);
     }
 
-    const bool isUnsigned = lhsType == frontend::ScalarType::Uint;
-    const auto predicate = [&] {
-      switch (condition.comparison) {
-      case frontend::ComparisonKind::Equal:
-        return arith::CmpIPredicate::eq;
-      case frontend::ComparisonKind::NotEqual:
-        return arith::CmpIPredicate::ne;
-      case frontend::ComparisonKind::Less:
-        return isUnsigned ? arith::CmpIPredicate::ult
-                          : arith::CmpIPredicate::slt;
-      case frontend::ComparisonKind::LessEqual:
-        return isUnsigned ? arith::CmpIPredicate::ule
-                          : arith::CmpIPredicate::sle;
-      case frontend::ComparisonKind::Greater:
-        return isUnsigned ? arith::CmpIPredicate::ugt
-                          : arith::CmpIPredicate::sgt;
-      case frontend::ComparisonKind::GreaterEqual:
-        return isUnsigned ? arith::CmpIPredicate::uge
-                          : arith::CmpIPredicate::sge;
-      }
-      llvm_unreachable("unknown integer comparison");
-    }();
+    const auto predicate = integerPredicate(
+        condition.comparison, lhsType == frontend::ScalarType::Uint);
     return arith::CmpIOp::create(builder, predicate, lhs, rhs);
   }
 
   [[nodiscard]] Value emitCondition(const frontend::ConditionId id,
                                     ValueRange gateParameters,
                                     ValueRange gateQubits) {
+    if (emissionBudget.isExhausted()) {
+      return {};
+    }
     const auto& condition = program.conditions.at(id);
     switch (condition.kind) {
     case frontend::ConditionKind::Literal:
@@ -1945,12 +1407,35 @@ private:
       return emitQubitOperation(
           condition.measurement, gateQubits,
           [&](Value qubit) { return builder.measure(qubit); });
-    case frontend::ConditionKind::Not:
-      return arith::XOrIOp::create(
-          builder, emitCondition(condition.lhs, gateParameters, gateQubits),
-          builder.boolConstant(true));
+
+    case frontend::ConditionKind::BitVectorComparison: {
+      auto lhs =
+          emitBitVectorExpression(builder, condition.bitVectorComparisonLhs);
+      if (!lhs) {
+        return {};
+      }
+      auto rhs =
+          emitBitVectorExpression(builder, condition.bitVectorComparisonRhs);
+      if (!rhs) {
+        return {};
+      }
+      return arith::CmpIOp::create(
+          builder, integerPredicate(condition.comparison, /*isUnsigned=*/true),
+          lhs, rhs);
+    }
+    case frontend::ConditionKind::Not: {
+      auto operand = emitCondition(condition.lhs, gateParameters, gateQubits);
+      if (!operand) {
+        return {};
+      }
+      return arith::XOrIOp::create(builder, operand,
+                                   builder.boolConstant(true));
+    }
     case frontend::ConditionKind::And: {
       auto lhs = emitCondition(condition.lhs, gateParameters, gateQubits);
+      if (!lhs) {
+        return {};
+      }
       auto ifOp = scf::IfOp::create(builder, builder.getI1Type(), lhs, true);
       OpBuilder::InsertionGuard guard(builder);
       auto& thenBlock = ifOp.getThenRegion().front();
@@ -1958,8 +1443,11 @@ private:
         thenBlock.back().erase();
       }
       builder.setInsertionPointToEnd(&thenBlock);
-      scf::YieldOp::create(
-          builder, emitCondition(condition.rhs, gateParameters, gateQubits));
+      auto rhs = emitCondition(condition.rhs, gateParameters, gateQubits);
+      if (!rhs) {
+        return {};
+      }
+      scf::YieldOp::create(builder, rhs);
       auto& elseBlock = ifOp.getElseRegion().front();
       if (!elseBlock.empty()) {
         elseBlock.back().erase();
@@ -1970,6 +1458,9 @@ private:
     }
     case frontend::ConditionKind::Or: {
       auto lhs = emitCondition(condition.lhs, gateParameters, gateQubits);
+      if (!lhs) {
+        return {};
+      }
       auto ifOp = scf::IfOp::create(builder, builder.getI1Type(), lhs, true);
       OpBuilder::InsertionGuard guard(builder);
       auto& thenBlock = ifOp.getThenRegion().front();
@@ -1983,8 +1474,11 @@ private:
         elseBlock.back().erase();
       }
       builder.setInsertionPointToEnd(&elseBlock);
-      scf::YieldOp::create(
-          builder, emitCondition(condition.rhs, gateParameters, gateQubits));
+      auto rhs = emitCondition(condition.rhs, gateParameters, gateQubits);
+      if (!rhs) {
+        return {};
+      }
+      scf::YieldOp::create(builder, rhs);
       return ifOp.getResult(0);
     }
     case frontend::ConditionKind::Comparison:
@@ -2050,7 +1544,7 @@ private:
     SmallVector<StateSlot> slots;
     slots.reserve(mutations.size());
     for (const auto slot : mutations) {
-      const auto value = scalarValues.at(slot);
+      auto value = scalarValues.at(slot);
       if (value) {
         slots.push_back(slot);
       }
@@ -2068,15 +1562,27 @@ private:
     return values;
   }
 
-  void assignState(ArrayRef<StateSlot> slots, ValueRange values) {
-    for (const auto [slot, value] : llvm::zip_equal(slots, values)) {
+  void setScalarValue(StateSlot slot, Value value) {
+    scalarUpdates_.emplace_back(slot,
+                                std::exchange(scalarValues.at(slot), value));
+  }
+
+  void restoreScalars(size_t checkpoint) {
+    while (scalarUpdates_.size() > checkpoint) {
+      auto [slot, value] = scalarUpdates_.pop_back_val();
       scalarValues.at(slot) = value;
+    }
+  }
+
+  void assignState(ArrayRef<StateSlot> slots, ValueRange values) {
+    for (auto [slot, value] : llvm::zip_equal(slots, values)) {
+      setScalarValue(slot, value);
     }
   }
 
   void emitStatement(const frontend::StatementId id, ValueRange gateParameters,
                      ValueRange gateQubits) {
-    if (emissionFailed || emissionBudget.isExhausted()) {
+    if (emissionFailed || emissionBudget.isExhausted() || !flowReachable) {
       return;
     }
     const auto& statement = program.statements.at(id);
@@ -2108,17 +1614,34 @@ private:
           } else if constexpr (std::is_same_v<T, frontend::ResetStatement>) {
             for (const auto& qubit : data.qubits) {
               const auto indices = emitQubitIndices({qubit});
+              if (emissionBudget.isExhausted()) {
+                return;
+              }
               builder.reset(resolveQubit(qubit, gateQubits, indices.front()));
             }
           } else if constexpr (std::is_same_v<T, frontend::BarrierStatement>) {
             const auto indices = emitQubitIndices(data.qubits);
-            builder.barrier(resolveQubits(data.qubits, gateQubits, indices));
+            if (emissionBudget.isExhausted()) {
+              return;
+            }
+            const auto qubits = resolveQubits(data.qubits, gateQubits, indices);
+            if (emissionBudget.isExhausted()) {
+              return;
+            }
+            builder.barrier(qubits);
           } else if constexpr (std::is_same_v<T, frontend::IfStatement>) {
             emitIf(data, gateParameters, gateQubits);
           } else if constexpr (std::is_same_v<T, frontend::ForStatement>) {
             emitFor(data, gateParameters, gateQubits);
           } else if constexpr (std::is_same_v<T, frontend::WhileStatement>) {
             emitWhile(data, gateParameters, gateQubits);
+          } else if constexpr (std::is_same_v<T, frontend::BreakStatement> ||
+                               std::is_same_v<T, frontend::ContinueStatement>) {
+            auto state = breakPrefix;
+            llvm::append_range(state, stateValues(breakSlots));
+            activeLoop->branch(std::is_same_v<T, frontend::ContinueStatement>,
+                               state);
+            flowReachable = false;
           } else if constexpr (std::is_same_v<T, frontend::SwitchStatement>) {
             emitSwitch(data, gateParameters, gateQubits);
           }
@@ -2126,13 +1649,14 @@ private:
         statement.data);
   }
 
-  [[nodiscard]] Type scalarType(const frontend::ScalarType type) {
+  [[nodiscard]] Type scalarType(const frontend::ScalarType type,
+                                const unsigned integerWidth = 0) {
     switch (type) {
     case frontend::ScalarType::Bool:
       return builder.getI1Type();
     case frontend::ScalarType::Int:
     case frontend::ScalarType::Uint:
-      return builder.getI64Type();
+      return builder.getIntegerType(integerWidth != 0 ? integerWidth : 64);
     case frontend::ScalarType::Float:
     case frontend::ScalarType::Angle:
       return builder.getF64Type();
@@ -2143,26 +1667,33 @@ private:
   void
   emitScalarDeclaration(const frontend::ScalarDeclarationStatement& statement,
                         ValueRange gateQubits) {
-    const auto type = program.scalars.at(statement.scalar).type;
-    Value value = ub::PoisonOp::create(builder, scalarType(type)).getResult();
+    Value value;
     if (statement.initializer) {
       value = emitExpression(builder, *statement.initializer, {});
     } else if (statement.conditionInitializer) {
       value = emitCondition(*statement.conditionInitializer, {}, gateQubits);
+    } else {
+      /// Definite initialization rejects reads until an assignment; a loop may
+      /// carry this unobservable placeholder before its first assignment.
+      const auto& scalar = program.scalars.at(statement.scalar);
+      auto type = scalarType(scalar.type, scalar.integerWidth);
+      value =
+          arith::ConstantOp::create(builder, type, builder.getZeroAttr(type));
     }
-    scalarValues.at(statement.scalar) = value;
+    if (value) {
+      setScalarValue(statement.scalar, value);
+    }
   }
 
   void
   emitScalarAssignment(const frontend::ScalarAssignmentStatement& statement,
                        ValueRange gateQubits) {
-    if (statement.value) {
-      scalarValues.at(statement.scalar) =
-          emitExpression(builder, *statement.value, {});
-      return;
+    auto value = statement.value
+                     ? emitExpression(builder, *statement.value, {})
+                     : emitCondition(*statement.condition, {}, gateQubits);
+    if (value) {
+      setScalarValue(statement.scalar, value);
     }
-    scalarValues.at(statement.scalar) =
-        emitCondition(*statement.condition, {}, gateQubits);
   }
 
   void emitDeclaration(const frontend::DeclarationStatement& statement) {
@@ -2187,41 +1718,58 @@ private:
       return;
     }
     classicalRegisters[statement.reg] = builder.allocClassicalBitRegister(
-        static_cast<int64_t>(declaration.width), declaration.name,
+        static_cast<int64_t>(declaration.width),
+        isa<func::FuncOp>(builder.getInsertionBlock()->getParentOp())
+            ? StringRef(declaration.name)
+            : StringRef{},
         program.openQASM2 ? cbit::Initialization::Zero
                           : cbit::Initialization::Undefined);
   }
 
   void assignBit(const frontend::BitReference& target, Value value) {
-    const auto reg = classicalRegisters[target.reg];
+    auto reg = classicalRegisters[target.reg];
     assert(reg && "semantic analysis must declare bit registers before use");
-    if (!target.dynamicIndex) {
-      builder.storeClassicalBit(value, reg, static_cast<int64_t>(target.index));
-      return;
+    if (auto index = emitBitIndex(target)) {
+      builder.storeClassicalBit(value, reg, index);
     }
-    const auto width =
-        static_cast<int64_t>(program.registers.at(target.reg).width);
-    auto index = emitCheckedIndex(*target.dynamicIndex, width,
-                                  "dynamic classical index out of bounds");
-    auto registerIndex =
-        arith::IndexCastOp::create(builder, builder.getIndexType(), index);
-    builder.storeClassicalBit(value, reg, registerIndex.getResult());
   }
 
   void emitBitAssignment(const frontend::BitAssignmentStatement& assignment,
                          ValueRange gateQubits) {
-    assignBit(assignment.target,
-              emitCondition(assignment.value, {}, gateQubits));
+    auto value = emitCondition(assignment.value, {}, gateQubits);
+    if (!value) {
+      return;
+    }
+    assignBit(assignment.target, value);
   }
 
   void emitBitVectorAssignment(
       const frontend::BitVectorAssignmentStatement& assignment) {
     auto value = emitBitVectorExpression(builder, assignment.value);
-    const auto bits = ensureBits(builder, value);
-    const auto reg = classicalRegisters[assignment.target];
-    assert(reg && "semantic analysis must declare bit registers before use");
-    for (const auto [index, bit] : llvm::enumerate(bits)) {
-      builder.storeClassicalBit(bit, reg, static_cast<int64_t>(index));
+    if (!value) {
+      return;
+    }
+    if (assignment.selection.empty()) {
+      auto reg = classicalRegisters[assignment.target];
+      assert(reg && "semantic analysis must declare bit registers before use");
+      cbit::WriteOp::create(builder, builder.getUnknownLoc(), value, reg);
+      return;
+    }
+    /// Read the complete RHS before storing any bit, including overlapping
+    /// slices.
+    auto type = cast<IntegerType>(value.getType());
+    for (const auto& [ordinal, target] :
+         llvm::enumerate(assignment.selection)) {
+      if (emissionBudget.isExhausted()) {
+        return;
+      }
+      auto shift = arith::ConstantIntOp::create(builder, type,
+                                                static_cast<int64_t>(ordinal));
+      auto shifted = arith::ShRUIOp::create(builder, value, shift);
+      auto bit = emitScalarCast(builder, value.getLoc(), shifted,
+                                frontend::ScalarType::Uint,
+                                frontend::ScalarType::Uint, 1);
+      assignBit(target, bit);
     }
   }
 
@@ -2230,6 +1778,9 @@ private:
     if (measurement.targets.empty()) {
       for (const auto& qubit : measurement.qubits) {
         const auto indices = emitQubitIndices({qubit});
+        if (emissionBudget.isExhausted()) {
+          return;
+        }
         std::ignore =
             builder.measure(resolveQubit(qubit, gateQubits, indices.front()));
       }
@@ -2248,6 +1799,67 @@ private:
     }
   }
 
+  [[nodiscard]] bool
+  hasLoopJump(ArrayRef<frontend::StatementId> statements) const {
+    return llvm::any_of(statements, [&](auto id) {
+      return std::visit(
+          [&](const auto& data) -> bool {
+            using T = std::decay_t<decltype(data)>;
+            if constexpr (std::is_same_v<T, frontend::BreakStatement> ||
+                          std::is_same_v<T, frontend::ContinueStatement>) {
+              return true;
+            } else if constexpr (std::is_same_v<T, frontend::IfStatement>) {
+              return hasLoopJump(data.thenStatements) ||
+                     hasLoopJump(data.elseStatements);
+            } else if constexpr (std::is_same_v<T, frontend::SwitchStatement>) {
+              return hasLoopJump(data.defaultStatements) ||
+                     llvm::any_of(data.cases, [&](const auto& branch) {
+                       return hasLoopJump(branch.body);
+                     });
+            }
+            return false;
+          },
+          program.statements.at(id).data);
+    });
+  }
+
+  void emitCFGIf(Value condition, ArrayRef<StateSlot> slots,
+                 function_ref<void()> thenBody, function_ref<void()> elseBody) {
+    const auto scalarCheckpoint = scalarUpdates_.size();
+    auto values = stateValues(slots);
+    auto* entry = builder.getInsertionBlock();
+    auto* region = entry->getParent();
+    auto* thenBlock = builder.createBlock(region);
+    auto* elseBlock = builder.createBlock(region);
+    auto* join = builder.createBlock(
+        region, {}, ValueRange(values).getTypes(),
+        SmallVector<Location>(values.size(), builder.getLoc()));
+    builder.setInsertionPointToEnd(entry);
+    cf::CondBranchOp::create(builder, condition, thenBlock, elseBlock);
+    const auto emitBranch = [&](Block* block, function_ref<void()> body) {
+      restoreScalars(scalarCheckpoint);
+      flowReachable = true;
+      builder.setInsertionPointToEnd(block);
+      body();
+      if (flowReachable) {
+        cf::BranchOp::create(builder, join, stateValues(slots));
+      }
+      return flowReachable;
+    };
+    const bool thenReachable = emitBranch(thenBlock, thenBody);
+    const bool elseReachable = emitBranch(elseBlock, elseBody);
+    flowReachable = thenReachable || elseReachable;
+    restoreScalars(scalarCheckpoint);
+    assignState(slots, join->getArguments());
+    builder.setInsertionPointToEnd(join);
+    if (!flowReachable) {
+      /// Unreachable joins still need a terminator before CFG normalization.
+      auto state = breakPrefix;
+      llvm::append_range(state, stateValues(breakSlots));
+      activeLoop->branch(false, state);
+    }
+  }
+
   void emitIf(const frontend::IfStatement& conditional,
               ValueRange gateParameters, ValueRange gateQubits) {
     const auto& typedCondition = program.conditions.at(conditional.condition);
@@ -2257,18 +1869,45 @@ private:
                                  : conditional.elseStatements;
       for (const auto statement : selected) {
         emitStatement(statement, gateParameters, gateQubits);
+        if (emissionFailed || emissionBudget.isExhausted()) {
+          return;
+        }
       }
       return;
     }
     auto condition =
         emitCondition(conditional.condition, gateParameters, gateQubits);
+    if (!condition) {
+      return;
+    }
     SmallVector<frontend::StatementId> nestedStatements(
         conditional.thenStatements.begin(), conditional.thenStatements.end());
     nestedStatements.append(conditional.elseStatements.begin(),
                             conditional.elseStatements.end());
     const auto slots = mutatedState(nestedStatements);
+    if (activeLoop != nullptr && hasLoopJump(nestedStatements)) {
+      emitCFGIf(
+          condition, slots,
+          [&] {
+            for (auto statement : conditional.thenStatements) {
+              emitStatement(statement, gateParameters, gateQubits);
+              if (emissionFailed || emissionBudget.isExhausted()) {
+                return;
+              }
+            }
+          },
+          [&] {
+            for (auto statement : conditional.elseStatements) {
+              emitStatement(statement, gateParameters, gateQubits);
+              if (emissionFailed || emissionBudget.isExhausted()) {
+                return;
+              }
+            }
+          });
+      return;
+    }
     const auto initialValues = stateValues(slots);
-    const auto savedScalars = scalarValues;
+    const auto scalarCheckpoint = scalarUpdates_.size();
     const auto* thenStatements = &conditional.thenStatements;
     const auto* elseStatements = &conditional.elseStatements;
     if (slots.empty() && thenStatements->empty() && !elseStatements->empty()) {
@@ -2282,13 +1921,16 @@ private:
     OpBuilder::InsertionGuard guard(builder);
     const auto emitBranch = [&](Block& block,
                                 ArrayRef<frontend::StatementId> statements) {
-      scalarValues = savedScalars;
+      restoreScalars(scalarCheckpoint);
       if (!block.empty()) {
         block.back().erase();
       }
       builder.setInsertionPointToEnd(&block);
       for (const auto statement : statements) {
         emitStatement(statement, gateParameters, gateQubits);
+        if (emissionFailed || emissionBudget.isExhausted()) {
+          return;
+        }
       }
       scf::YieldOp::create(builder, stateValues(slots));
     };
@@ -2296,16 +1938,8 @@ private:
     if (withElseRegion) {
       emitBranch(ifOp.getElseRegion().front(), *elseStatements);
     }
-    scalarValues = savedScalars;
+    restoreScalars(scalarCheckpoint);
     assignState(slots, ifOp.getResults());
-  }
-
-  [[nodiscard]] Value extendRangeValue(Value value, Type targetType,
-                                       const bool isUnsigned) {
-    if (isUnsigned) {
-      return arith::ExtUIOp::create(builder, targetType, value);
-    }
-    return arith::ExtSIOp::create(builder, targetType, value);
   }
 
   [[nodiscard]] std::optional<int64_t>
@@ -2321,19 +1955,17 @@ private:
     const bool unsignedEndpoints =
         startExpression.type == frontend::ScalarType::Uint ||
         stopExpression.type == frontend::ScalarType::Uint;
-    const auto extendConstant = [](const frontend::ScalarExpression& expression,
-                                   const bool asUnsigned) {
+    const auto constantBits = [](const frontend::ScalarExpression& expression) {
       const auto bits =
           expression.type == frontend::ScalarType::Uint
               ? std::get<uint64_t>(expression.constant)
               : static_cast<uint64_t>(std::get<int64_t>(expression.constant));
-      const APInt value(64, bits);
-      return asUnsigned ? value.zext(128) : value.sext(128);
+      return APInt(64, bits);
     };
-    const auto start = extendConstant(startExpression, unsignedEndpoints);
-    const auto stop = extendConstant(stopExpression, unsignedEndpoints);
+    const auto start = constantBits(startExpression);
+    const auto stop = constantBits(stopExpression);
     const bool unsignedStep = stepExpression.type == frontend::ScalarType::Uint;
-    const auto step = extendConstant(stepExpression, unsignedStep);
+    const auto step = constantBits(stepExpression);
     if (step.isZero()) {
       return std::nullopt;
     }
@@ -2349,27 +1981,91 @@ private:
     }
     const auto distance = positive ? stop - start : start - stop;
     const auto absoluteStep = positive ? step : -step;
-    const auto count = distance.udiv(absoluteStep) + 1;
-    const APInt maximum(
-        128, static_cast<uint64_t>(std::numeric_limits<int64_t>::max()));
-    if (count.ugt(maximum)) {
+    const auto quotient = distance.udiv(absoluteStep);
+    if (quotient.uge(APInt::getSignedMaxValue(64))) {
       return std::nullopt;
     }
-    return static_cast<int64_t>(count.getZExtValue());
+    return static_cast<int64_t>(quotient.getZExtValue()) + 1;
+  }
+
+  [[nodiscard]] std::array<Value, 3>
+  emitRange(const frontend::ForStatement& loop) {
+    auto start = emitExpression(builder, loop.start, {});
+    auto step = emitExpression(builder, loop.step, {});
+    auto stop = emitExpression(builder, loop.stop, {});
+    return {start, step, stop};
+  }
+
+  [[nodiscard]] Value rangeIsAscending(const frontend::ForStatement& loop,
+                                       Value step) {
+    if (program.expressions.at(loop.step).type == frontend::ScalarType::Uint) {
+      return builder.boolConstant(true);
+    }
+    return arith::CmpIOp::create(builder, arith::CmpIPredicate::sgt, step,
+                                 builder.intConstant(0));
+  }
+
+  [[nodiscard]] Value rangeIsNonempty(const frontend::ForStatement& loop,
+                                      Value start, Value stop,
+                                      Value ascending) {
+    const bool isUnsigned =
+        program.expressions.at(loop.start).type == frontend::ScalarType::Uint ||
+        program.expressions.at(loop.stop).type == frontend::ScalarType::Uint;
+    auto forward = arith::CmpIOp::create(builder,
+                                         isUnsigned ? arith::CmpIPredicate::ule
+                                                    : arith::CmpIPredicate::sle,
+                                         start, stop);
+    auto backward = arith::CmpIOp::create(
+        builder,
+        isUnsigned ? arith::CmpIPredicate::uge : arith::CmpIPredicate::sge,
+        start, stop);
+    return arith::SelectOp::create(builder, ascending, forward, backward);
+  }
+
+  /// The unsigned distance fits in 64 bits even across zero. A wrapping final
+  /// increment is unused when the remaining distance is smaller than the step.
+  [[nodiscard]] std::array<Value, 2> advanceRange(Value current, Value step,
+                                                  Value stop, Value ascending) {
+    auto forward = arith::SubIOp::create(builder, stop, current);
+    auto backward = arith::SubIOp::create(builder, current, stop);
+    auto remaining =
+        arith::SelectOp::create(builder, ascending, forward, backward);
+    auto negativeStep =
+        arith::SubIOp::create(builder, builder.intConstant(0), step);
+    auto magnitude =
+        arith::SelectOp::create(builder, ascending, step, negativeStep);
+    return {
+        arith::AddIOp::create(builder, current, step),
+        arith::CmpIOp::create(builder, arith::CmpIPredicate::uge, remaining,
+                              magnitude),
+    };
   }
 
   void emitFor(const frontend::ForStatement& loop, ValueRange gateParameters,
                ValueRange gateQubits) {
+    if (hasLoopJump(loop.body)) {
+      emitLoopWithJumps(loop, gateParameters, gateQubits);
+      return;
+    }
     const auto slots = mutatedState(loop.body);
     const auto initialValues = stateValues(slots);
-    const auto savedScalars = scalarValues;
+    const auto scalarCheckpoint = scalarUpdates_.size();
 
     if (loop.provenPositiveRange) {
       auto start = emitProvenIndexExpression(builder, loop.start);
+      if (!start) {
+        return;
+      }
       auto step = emitProvenIndexExpression(builder, loop.step);
+      if (!step) {
+        return;
+      }
       auto stop = emitProvenIndexExpression(builder, loop.stop);
-      auto exclusiveStop = arith::AddIOp::create(
-          builder, stop, arith::ConstantIndexOp::create(builder, 1));
+      if (!stop) {
+        return;
+      }
+      auto exclusiveStop = builder.createOrFold<arith::AddIOp>(
+          stop, arith::ConstantIndexOp::create(builder, 1));
       auto forOp = scf::ForOp::create(builder, start, exclusiveStop, step,
                                       initialValues);
       {
@@ -2379,35 +2075,30 @@ private:
           body->back().erase();
         }
         builder.setInsertionPointToEnd(body);
-        scalarValues = savedScalars;
+        restoreScalars(scalarCheckpoint);
         assignState(slots, forOp.getRegionIterArgs());
         provenInductionValues[loop.inductionVariable] = forOp.getInductionVar();
-        scalarValues.at(loop.inductionVariable) = arith::IndexCastOp::create(
-            builder, builder.getI64Type(), forOp.getInductionVar());
+        setScalarValue(loop.inductionVariable,
+                       arith::IndexCastOp::create(builder, builder.getI64Type(),
+                                                  forOp.getInductionVar()));
         for (const auto statement : loop.body) {
           emitStatement(statement, gateParameters, gateQubits);
+          if (emissionFailed || emissionBudget.isExhausted()) {
+            return;
+          }
         }
         scf::YieldOp::create(builder, stateValues(slots));
       }
-      scalarValues = savedScalars;
+      restoreScalars(scalarCheckpoint);
       provenInductionValues.erase(loop.inductionVariable);
       assignState(slots, forOp.getResults());
       return;
     }
 
-    auto start = emitExpression(builder, loop.start, {});
-    auto step = emitExpression(builder, loop.step, {});
-    auto stop = emitExpression(builder, loop.stop, {});
-    auto i128 = IntegerType::get(&context, 128);
-    const bool unsignedEndpoints =
-        program.expressions.at(loop.start).type == frontend::ScalarType::Uint ||
-        program.expressions.at(loop.stop).type == frontend::ScalarType::Uint;
-    auto startWide = extendRangeValue(start, i128, unsignedEndpoints);
-    auto stepWide = extendRangeValue(step, i128,
-                                     program.expressions.at(loop.step).type ==
-                                         frontend::ScalarType::Uint);
-    auto stopWide = extendRangeValue(stop, i128, unsignedEndpoints);
-    auto zero = arith::ConstantIntOp::create(builder, 0, 128);
+    auto [startValue, stepValue, stopValue] = emitRange(loop);
+    if (!startValue || !stepValue || !stopValue) {
+      return;
+    }
     if (const auto tripCount = constantRangeTripCount(loop)) {
       auto lowerBound = arith::ConstantIndexOp::create(builder, 0);
       auto upperBound = arith::ConstantIndexOp::create(builder, *tripCount);
@@ -2421,100 +2112,176 @@ private:
           body->back().erase();
         }
         builder.setInsertionPointToEnd(body);
-        scalarValues = savedScalars;
+        restoreScalars(scalarCheckpoint);
         assignState(slots, forOp.getRegionIterArgs());
         auto counter = arith::IndexCastOp::create(builder, builder.getI64Type(),
                                                   forOp.getInductionVar());
-        auto counterWide = arith::ExtUIOp::create(builder, i128, counter);
-        auto offset = arith::MulIOp::create(builder, counterWide, stepWide);
-        auto inductionWide = arith::AddIOp::create(builder, startWide, offset);
-        scalarValues.at(loop.inductionVariable) = arith::TruncIOp::create(
-            builder, builder.getI64Type(), inductionWide);
+        auto offset = arith::MulIOp::create(builder, counter, stepValue);
+        setScalarValue(loop.inductionVariable,
+                       arith::AddIOp::create(builder, startValue, offset));
         for (const auto statement : loop.body) {
           emitStatement(statement, gateParameters, gateQubits);
+          if (emissionFailed || emissionBudget.isExhausted()) {
+            return;
+          }
         }
         scf::YieldOp::create(builder, stateValues(slots));
       }
-      scalarValues = savedScalars;
+      restoreScalars(scalarCheckpoint);
       assignState(slots, forOp.getResults());
       return;
     }
 
-    if (program.expressions.at(loop.step).kind !=
-        frontend::ExpressionKind::Constant) {
-      auto nonzero = arith::CmpIOp::create(builder, arith::CmpIPredicate::ne,
-                                           stepWide, zero);
-      cf::AssertOp::create(builder, nonzero,
-                           "for-loop range step must not be zero");
-    }
-    SmallVector<Type> resultTypes{i128};
-    llvm::append_range(resultTypes, ValueRange(initialValues).getTypes());
-    SmallVector<Value> operands{startWide};
+    auto ascending = rangeIsAscending(loop, stepValue);
+    SmallVector<Value> operands{
+        startValue,
+        rangeIsNonempty(loop, startValue, stopValue, ascending),
+    };
     llvm::append_range(operands, initialValues);
     auto whileOp = scf::WhileOp::create(
-        builder, resultTypes, operands,
+        builder, ValueRange(operands).getTypes(), operands,
         [&](OpBuilder& nested, Location loc, ValueRange arguments) {
-          auto positive = arith::CmpIOp::create(
-              nested, loc, arith::CmpIPredicate::sgt, stepWide, zero);
-          auto ascending =
-              arith::CmpIOp::create(nested, loc, arith::CmpIPredicate::sle,
-                                    arguments.front(), stopWide);
-          auto descending =
-              arith::CmpIOp::create(nested, loc, arith::CmpIPredicate::sge,
-                                    arguments.front(), stopWide);
-          auto active = arith::SelectOp::create(nested, loc, positive,
-                                                ascending, descending);
-          scf::ConditionOp::create(nested, loc, active, arguments);
+          scf::ConditionOp::create(nested, loc, arguments[1], arguments);
         },
         [&](OpBuilder& nested, Location, ValueRange arguments) {
           OpBuilder::InsertionGuard guard(builder);
           builder.setInsertionPoint(nested.getInsertionBlock(),
                                     nested.getInsertionPoint());
-          scalarValues = savedScalars;
-          assignState(slots, arguments.drop_front());
-          scalarValues.at(loop.inductionVariable) = arith::TruncIOp::create(
-              builder, builder.getI64Type(), arguments.front());
+          restoreScalars(scalarCheckpoint);
+          assignState(slots, arguments.drop_front(2));
+          setScalarValue(loop.inductionVariable, arguments.front());
           for (const auto statement : loop.body) {
             emitStatement(statement, gateParameters, gateQubits);
+            if (emissionFailed || emissionBudget.isExhausted()) {
+              return;
+            }
           }
-          SmallVector<Value> yielded{
-              arith::AddIOp::create(builder, arguments.front(), stepWide)};
+          const auto next =
+              advanceRange(arguments.front(), stepValue, stopValue, ascending);
+          SmallVector<Value> yielded(next.begin(), next.end());
           llvm::append_range(yielded, stateValues(slots));
           scf::YieldOp::create(builder, yielded);
         });
-    scalarValues = savedScalars;
-    assignState(slots, whileOp.getResults().drop_front());
+    restoreScalars(scalarCheckpoint);
+    assignState(slots, whileOp.getResults().drop_front(2));
+  }
+
+  template <typename Loop>
+  void emitLoopWithJumps(const Loop& loop, ValueRange gateParameters,
+                         ValueRange gateQubits) {
+    const auto slots = mutatedState(loop.body);
+    const auto scalarCheckpoint = scalarUpdates_.size();
+    SmallVector<Value> initial;
+    Value step, stop, ascending;
+    if constexpr (std::is_same_v<Loop, frontend::ForStatement>) {
+      auto range = emitRange(loop);
+      auto start = range[0];
+      step = range[1];
+      stop = range[2];
+      if (!start || !step || !stop) {
+        return;
+      }
+      ascending = rangeIsAscending(loop, step);
+      initial.push_back(start);
+      initial.push_back(rangeIsNonempty(loop, start, stop, ascending));
+    }
+    llvm::append_range(initial, stateValues(slots));
+    QCProgramBuilder::LoopBuilder cfg(builder, initial);
+    llvm::SaveAndRestore loopScope(activeLoop, &cfg);
+    llvm::SaveAndRestore slotsScope(breakSlots, SmallVector<StateSlot>(slots));
+    llvm::SaveAndRestore prefixScope(breakPrefix, SmallVector<Value>{});
+    auto arguments = cfg.arguments();
+    Value condition;
+    if constexpr (std::is_same_v<Loop, frontend::ForStatement>) {
+      auto induction = arguments.front();
+      assignState(slots, arguments.drop_front(2));
+      if (loop.provenPositiveRange) {
+        provenInductionValues[loop.inductionVariable] =
+            arith::IndexCastOp::create(builder, builder.getIndexType(),
+                                       induction);
+      }
+      setScalarValue(loop.inductionVariable, induction);
+      condition = arguments[1];
+    } else {
+      assignState(slots, arguments);
+      condition = emitCondition(loop.condition, gateParameters, gateQubits);
+    }
+    if (!condition || emissionBudget.isExhausted()) {
+      return;
+    }
+    cfg.enterBody(condition, arguments);
+    if constexpr (std::is_same_v<Loop, frontend::ForStatement>) {
+      const auto next = advanceRange(arguments.front(), step, stop, ascending);
+      breakPrefix.assign(next.begin(), next.end());
+    }
+    for (auto statement : loop.body) {
+      emitStatement(statement, gateParameters, gateQubits);
+      if (emissionFailed || emissionBudget.isExhausted()) {
+        return;
+      }
+    }
+    if (flowReachable) {
+      auto state = breakPrefix;
+      llvm::append_range(state, stateValues(slots));
+      cfg.branch(true, state);
+    }
+    if (emissionFailed || emissionBudget.isExhausted()) {
+      return;
+    }
+    auto results = cfg.finish();
+    flowReachable = true;
+    restoreScalars(scalarCheckpoint);
+    if (failed(results)) {
+      emissionFailed = true;
+      return;
+    }
+    if constexpr (std::is_same_v<Loop, frontend::ForStatement>) {
+      provenInductionValues.erase(loop.inductionVariable);
+      assignState(slots, ValueRange(*results).drop_front(2));
+    } else {
+      assignState(slots, *results);
+    }
   }
 
   void emitWhile(const frontend::WhileStatement& loop,
                  ValueRange gateParameters, ValueRange gateQubits) {
+    if (hasLoopJump(loop.body)) {
+      emitLoopWithJumps(loop, gateParameters, gateQubits);
+      return;
+    }
     const auto slots = mutatedState(loop.body);
     const auto initialValues = stateValues(slots);
-    const auto savedScalars = scalarValues;
+    const auto scalarCheckpoint = scalarUpdates_.size();
     auto whileOp = scf::WhileOp::create(
         builder, ValueRange(initialValues).getTypes(), initialValues,
         [&](OpBuilder& nested, Location, ValueRange arguments) {
           OpBuilder::InsertionGuard guard(builder);
           builder.setInsertionPoint(nested.getInsertionBlock(),
                                     nested.getInsertionPoint());
-          scalarValues = savedScalars;
+          restoreScalars(scalarCheckpoint);
           assignState(slots, arguments);
           auto condition =
               emitCondition(loop.condition, gateParameters, gateQubits);
+          if (!condition) {
+            return;
+          }
           scf::ConditionOp::create(builder, condition, stateValues(slots));
         },
         [&](OpBuilder& nested, Location, ValueRange arguments) {
           OpBuilder::InsertionGuard guard(builder);
           builder.setInsertionPoint(nested.getInsertionBlock(),
                                     nested.getInsertionPoint());
-          scalarValues = savedScalars;
+          restoreScalars(scalarCheckpoint);
           assignState(slots, arguments);
           for (const auto statement : loop.body) {
             emitStatement(statement, gateParameters, gateQubits);
+            if (emissionFailed || emissionBudget.isExhausted()) {
+              return;
+            }
           }
           scf::YieldOp::create(builder, stateValues(slots));
         });
-    scalarValues = savedScalars;
+    restoreScalars(scalarCheckpoint);
     assignState(slots, whileOp.getResults());
   }
 
@@ -2529,9 +2296,54 @@ private:
     llvm::append_range(nestedStatements, switchStatement.defaultStatements);
     const auto slots = mutatedState(nestedStatements);
     const auto initialValues = stateValues(slots);
-    const auto savedScalars = scalarValues;
+    const auto scalarCheckpoint = scalarUpdates_.size();
 
     auto control = emitExpression(builder, switchStatement.control, {});
+    if (!control) {
+      return;
+    }
+    const auto type = program.expressions.at(switchStatement.control).type;
+    control = emitScalarCast(builder, builder.getLoc(), control, type, type);
+    if (activeLoop != nullptr && hasLoopJump(nestedStatements)) {
+      const auto emitCases = [&](auto&& self, size_t index) -> void {
+        if (emissionFailed || emissionBudget.isExhausted()) {
+          return;
+        }
+        if (index == switchStatement.cases.size()) {
+          for (auto statement : switchStatement.defaultStatements) {
+            emitStatement(statement, gateParameters, gateQubits);
+            if (emissionFailed || emissionBudget.isExhausted()) {
+              return;
+            }
+          }
+          return;
+        }
+        const auto& branch = switchStatement.cases[index];
+        Value match = builder.boolConstant(false);
+        for (const auto label : branch.labels) {
+          if (emissionBudget.isExhausted()) {
+            return;
+          }
+          auto equal = arith::CmpIOp::create(
+              builder, arith::CmpIPredicate::eq, control,
+              arith::ConstantIntOp::create(builder, control.getType(), label));
+          match = arith::OrIOp::create(builder, match, equal);
+        }
+        emitCFGIf(
+            match, slots,
+            [&] {
+              for (auto statement : branch.body) {
+                emitStatement(statement, gateParameters, gateQubits);
+                if (emissionFailed || emissionBudget.isExhausted()) {
+                  return;
+                }
+              }
+            },
+            [&] { self(self, index + 1); });
+      };
+      emitCases(emitCases, 0);
+      return;
+    }
     auto selector =
         arith::IndexCastOp::create(builder, builder.getIndexType(), control);
     auto switchOp = scf::IndexSwitchOp::create(
@@ -2542,9 +2354,12 @@ private:
         [&](Region& region, const ArrayRef<frontend::StatementId> statements) {
           auto& block = region.emplaceBlock();
           builder.setInsertionPointToEnd(&block);
-          scalarValues = savedScalars;
+          restoreScalars(scalarCheckpoint);
           for (const auto statement : statements) {
             emitStatement(statement, gateParameters, gateQubits);
+            if (emissionFailed || emissionBudget.isExhausted()) {
+              return;
+            }
           }
           scf::YieldOp::create(builder, stateValues(slots));
         };
@@ -2552,10 +2367,13 @@ private:
     for (const auto& switchCase : switchStatement.cases) {
       for ([[maybe_unused]] const auto label : switchCase.labels) {
         emitBranch(switchOp.getCaseRegions()[region++], switchCase.body);
+        if (emissionFailed || emissionBudget.isExhausted()) {
+          return;
+        }
       }
     }
     emitBranch(switchOp.getDefaultRegion(), switchStatement.defaultStatements);
-    scalarValues = savedScalars;
+    restoreScalars(scalarCheckpoint);
     assignState(slots, switchOp.getResults());
   }
 };
@@ -2575,8 +2393,9 @@ Location getOpenQASMLocation(const frontend::SourceLocation& source,
 }
 
 OwningOpRef<ModuleOp> emitOpenQASMToQC(const frontend::TypedProgram& program,
-                                       MLIRContext& context) {
-  return OpenQASMToQCEmitter(program, context).emit();
+                                       MLIRContext& context,
+                                       size_t operationLimit) {
+  return OpenQASMToQCEmitter(program, context, operationLimit).emit();
 }
 
 } // namespace mlir::qc::detail

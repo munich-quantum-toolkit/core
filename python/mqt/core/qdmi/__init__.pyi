@@ -18,7 +18,7 @@ from mqt.core.qdmi import slurm as slurm
 class Job:
     """A job represents a submitted quantum program execution."""
 
-    def check(self) -> Status:
+    def check(self) -> Job.Status:
         """Returns the current status of the job."""
 
     def wait(self, timeout: int = 0) -> bool:
@@ -153,8 +153,6 @@ class ProgramFormat(enum.Enum):
 
     QIR_ADAPTIVE_MODULE = 5
 
-    CALIBRATION = 6
-
     QPY = 7
 
     IQM_JSON = 8
@@ -223,7 +221,7 @@ class Device:
     def version(self) -> str:
         """Returns the version of the device."""
 
-    def status(self) -> Status:
+    def status(self) -> Device.Status:
         """Returns the current status of the device."""
 
     def library_version(self) -> str:
@@ -232,23 +230,20 @@ class Device:
     def qubits_num(self) -> int:
         """Returns the number of qubits available on the device."""
 
-    def sites(self) -> list[Site]:
+    def sites(self) -> list[Device.Site]:
         """Returns the list of all sites (zone and regular sites) available on the device."""
 
-    def regular_sites(self) -> list[Site]:
+    def regular_sites(self) -> list[Device.Site]:
         """Returns the list of regular sites (without zone sites) available on the device."""
 
-    def zones(self) -> list[Site]:
+    def zones(self) -> list[Device.Site]:
         """Returns the list of zone sites (without regular sites) available on the device."""
 
-    def operations(self) -> list[Operation]:
+    def operations(self) -> list[Device.Operation]:
         """Returns the list of operations supported by the device."""
 
-    def coupling_map(self) -> list[tuple[Site, Site]] | None:
+    def coupling_map(self) -> list[tuple[Device.Site, Device.Site]] | None:
         """Returns the coupling map of the device as a list of site pairs."""
-
-    def needs_calibration(self) -> int | None:
-        """Returns whether the device needs calibration."""
 
     def queue_length(self) -> int | None:
         """Returns the current queue length, or None if unavailable."""
@@ -274,7 +269,7 @@ class Device:
     def child_devices(self) -> list[Device]:
         """Returns the direct child devices managed by this device."""
 
-    def query_custom_operations(self, custom_property: CustomProperty) -> list[Operation] | None:
+    def query_custom_operations(self, custom_property: CustomProperty) -> list[Device.Operation] | None:
         """Query a custom device property that contains operation handles.
 
         Returns normal :class:`Device.Operation` objects, or ``None`` when the custom
@@ -309,11 +304,11 @@ class Device:
         program_format: ProgramFormat,
         num_shots: int | None = None,
         *,
-        custom1: str | bool | float | None = None,
-        custom2: str | bool | float | None = None,
-        custom3: str | bool | float | None = None,
-        custom4: str | bool | float | None = None,
-        custom5: str | bool | float | None = None,
+        custom1: str | bool | float | bytes | None = None,
+        custom2: str | bool | float | bytes | None = None,
+        custom3: str | bool | float | bytes | None = None,
+        custom4: str | bool | float | bytes | None = None,
+        custom5: str | bool | float | bytes | None = None,
     ) -> Job:
         """Submits a text job to the device."""
 
@@ -324,31 +319,13 @@ class Device:
         program_format: ProgramFormat,
         num_shots: int | None = None,
         *,
-        custom1: str | bool | float | None = None,
-        custom2: str | bool | float | None = None,
-        custom3: str | bool | float | None = None,
-        custom4: str | bool | float | None = None,
-        custom5: str | bool | float | None = None,
+        custom1: str | bool | float | bytes | None = None,
+        custom2: str | bool | float | bytes | None = None,
+        custom3: str | bool | float | bytes | None = None,
+        custom4: str | bool | float | bytes | None = None,
+        custom5: str | bool | float | bytes | None = None,
     ) -> Job:
         """Submits an exact byte payload to the device."""
-
-    def submit_calibration_job(
-        self,
-        program: str | bytes | None = None,
-        *,
-        custom1: str | bool | float | None = None,
-        custom2: str | bool | float | None = None,
-        custom3: str | bool | float | None = None,
-        custom4: str | bool | float | None = None,
-        custom5: str | bool | float | None = None,
-    ) -> Job:
-        """Triggers a calibration run on the device.
-
-        QDMI does not require a program for a calibration run, so ``program`` is
-        optional and may be a string or bytes. When it is given, the device defines
-        what it means, which is usually a configuration for the run. A calibration run
-        executes no circuit, so it takes no shot count.
-        """
 
     def retrieve_job_by_id(self, job_id: str) -> Job:
         """Retrieves an existing job by its device-provided ID."""

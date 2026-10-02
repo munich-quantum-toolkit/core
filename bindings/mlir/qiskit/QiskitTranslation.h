@@ -10,9 +10,14 @@
 
 #pragma once
 
-#include "mlir/Dialect/QC/Translation/StandardGate.h"
+#include "mqt/Compiler/Target.h"
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
+#include "mqt/Dialect/QC/Translation/StandardGate.h"
 
-#include <nanobind/nanobind.h>
+#include "nanobind/nanobind.h"
+
+#include "llvm/ADT/APInt.h"
+#include "llvm/ADT/StringMap.h"
 
 #include <complex>
 #include <cstddef>
@@ -36,6 +41,7 @@ enum class OperationKind : uint8_t {
   Measure,
   Reset,
   Unitary,
+  Store,
   ControlFlow,
   Unknown,
 };
@@ -45,13 +51,33 @@ struct Register {
   std::vector<uint32_t> bits;
 };
 
-/** Validate canonical register membership and return the leading loose bits. */
+/// Validate canonical register membership and return the leading loose bits.
 [[nodiscard]] uint32_t
 validateRegisterLayout(const std::vector<Register>& registers, uint32_t total,
                        std::string_view kind);
 
 inline constexpr size_t MAX_PARAMETER_EXPRESSION_DEPTH = 64U;
 inline constexpr size_t MAX_PARAMETER_EXPRESSION_NODES = 4096U;
+inline constexpr uint64_t MAX_PARAMETER_GROUP_SIZE = 65'536U;
+
+/// Source-level vector metadata for one scalar parameter.
+struct ParameterGroup {
+  std::string identity;
+  std::string name;
+  uint64_t index = 0U;
+  uint64_t size = 0U;
+
+  [[nodiscard]] bool operator==(const ParameterGroup&) const = default;
+};
+
+class ParameterGroupRegistry {
+public:
+  void add(const ParameterGroup& group);
+
+private:
+  llvm::StringMap<ParameterGroup> groups;
+  uint64_t totalSize = 0U;
+};
 
 enum class UnaryParameterKind : uint8_t {
   Negate,
@@ -75,7 +101,7 @@ enum class BinaryParameterKind : uint8_t {
   Power,
 };
 
-/** One normalized scalar parameter-expression tree. */
+/// One normalized scalar parameter-expression tree.
 class Parameter {
 public:
   struct Number {
@@ -84,6 +110,9 @@ public:
 
   struct Symbol {
     std::string name;
+    std::optional<ParameterGroup> group;
+    /// Hexadecimal input ID. String storage keeps expression moves noexcept.
+    std::optional<std::string> identity;
   };
 
   struct Unary {
@@ -103,47 +132,55 @@ public:
     return Parameter(Number{value});
   }
 
-  [[nodiscard]] static Parameter symbol(std::string name) {
-    return Parameter(Symbol{std::move(name)});
+  [[nodiscard]] static Parameter
+  symbol(std::string name, std::optional<ParameterGroup> group = std::nullopt,
+         std::optional<std::string> identity = std::nullopt) {
+    return Parameter(Symbol{
+        .name = std::move(name),
+        .group = std::move(group),
+        .identity = std::move(identity),
+    });
   }
 
   [[nodiscard]] static Parameter unary(const UnaryParameterKind operation,
                                        Parameter operand) {
     return Parameter(Unary{
         .operation = operation,
-        .operand = std::make_shared<const Parameter>(std::move(operand))});
+        .operand = std::make_shared<const Parameter>(std::move(operand)),
+    });
   }
 
   [[nodiscard]] static Parameter binary(const BinaryParameterKind operation,
                                         Parameter left, Parameter right) {
-    return Parameter(
-        Binary{.operation = operation,
-               .left = std::make_shared<const Parameter>(std::move(left)),
-               .right = std::make_shared<const Parameter>(std::move(right))});
+    return Parameter(Binary{
+        .operation = operation,
+        .left = std::make_shared<const Parameter>(std::move(left)),
+        .right = std::make_shared<const Parameter>(std::move(right)),
+    });
   }
 
   [[nodiscard]] const Number* getNumber() const {
-    return std::get_if<Number>(&storage);
+    return std::get_if<Number>(&storage_);
   }
 
   [[nodiscard]] const Symbol* getSymbol() const {
-    return std::get_if<Symbol>(&storage);
+    return std::get_if<Symbol>(&storage_);
   }
 
   [[nodiscard]] const Unary* getUnary() const {
-    return std::get_if<Unary>(&storage);
+    return std::get_if<Unary>(&storage_);
   }
 
   [[nodiscard]] const Binary* getBinary() const {
-    return std::get_if<Binary>(&storage);
+    return std::get_if<Binary>(&storage_);
   }
 
 private:
   using Value = std::variant<Number, Symbol, Unary, Binary>;
 
-  explicit Parameter(Value value) : storage(std::move(value)) {}
+  explicit Parameter(Value value) : storage_(std::move(value)) {}
 
-  Value storage = Number{0.0};
+  Value storage_ = Number{0.0};
 };
 
 enum class GateModifierKind : uint8_t {
@@ -178,6 +215,8 @@ struct Instruction {
   std::vector<Parameter> parameters;
   std::vector<GateModifier> modifiers;
   std::optional<StandardGateMapping> standardGate;
+  /// Output position i carries input position permutation[i].
+  std::optional<std::vector<uint32_t>> permutation = std::nullopt;
 };
 
 enum class ClassicalType : uint8_t {
@@ -193,6 +232,7 @@ enum class ExpressionKind : uint8_t {
   Index,
   ClassicalBit,
   ClassicalRegister,
+  Variable,
 };
 enum class BinaryOperation : uint8_t {
   BitAnd,
@@ -219,7 +259,16 @@ enum class UnaryOperation : uint8_t {
   Negate,
 };
 
-/** One normalized Qiskit classical-expression tree. */
+struct ClassicalVariable {
+  std::string identity;
+  std::string name;
+  ClassicalType type = ClassicalType::Bool;
+  uint32_t width = 1;
+  bool captured = false;
+  bool input = false;
+};
+
+/// One normalized Qiskit classical-expression tree.
 struct Expression {
   ExpressionKind kind = ExpressionKind::Value;
   ClassicalType type = ClassicalType::Bool;
@@ -227,10 +276,11 @@ struct Expression {
   BinaryOperation binaryOperation = BinaryOperation::Equal;
   UnaryOperation unaryOperation = UnaryOperation::LogicNot;
   bool boolValue = false;
-  uint64_t uintValue = 0;
+  llvm::APInt uintValue;
   double floatValue = 0.0;
   uint32_t bit = 0;
   Register reg;
+  std::string variable;
   std::unique_ptr<Expression> left;
   std::unique_ptr<Expression> right;
 };
@@ -253,11 +303,14 @@ enum class ClassicalTargetKind : uint8_t {
 struct ClassicalTarget {
   ClassicalTargetKind kind = ClassicalTargetKind::ClassicalBit;
   uint32_t bit = 0;
-  bool expectedBit = false;
   Register reg;
-  uint64_t expectedRegister = 0;
   uint32_t width = 1;
   std::unique_ptr<Expression> expression;
+};
+
+struct ClassicalAssignment {
+  ClassicalTarget target;
+  std::unique_ptr<Expression> value;
 };
 
 struct Loop {
@@ -288,15 +341,20 @@ public:
   [[nodiscard]] virtual uint32_t numQubits() const = 0;
   [[nodiscard]] virtual uint32_t numClbits() const = 0;
   [[nodiscard]] virtual size_t numInstructions() const = 0;
+  /// Classify native primitives without decoding their parameters.
+  [[nodiscard]] virtual OperationKind instructionKind(size_t index) const = 0;
   [[nodiscard]] virtual size_t numQuantumRegisters() const = 0;
   [[nodiscard]] virtual size_t numClassicalRegisters() const = 0;
-  [[nodiscard]] virtual bool hasClassicalVariables() const = 0;
+  [[nodiscard]] virtual std::vector<ClassicalVariable> variables() const = 0;
   [[nodiscard]] virtual Register quantumRegister(size_t index) const = 0;
   [[nodiscard]] virtual Register classicalRegister(size_t index) const = 0;
-  /** Return the circuit's free scalar parameters in a stable order. */
+  /// Return the circuit's free scalar parameters in a stable order.
   [[nodiscard]] virtual std::vector<Parameter> parameters() const = 0;
   [[nodiscard]] virtual Parameter globalPhase() const = 0;
+  [[nodiscard]] virtual std::optional<mlir::mqt::QubitLayout>
+  layout() const = 0;
   [[nodiscard]] virtual Instruction instruction(size_t index) const = 0;
+  [[nodiscard]] virtual ClassicalAssignment store(size_t index) const = 0;
   [[nodiscard]] virtual std::vector<std::complex<double>>
   unitary(size_t index) const = 0;
   [[nodiscard]] virtual std::unique_ptr<ControlFlowReader>
@@ -338,13 +396,21 @@ public:
 
   virtual void addQuantumRegister(std::string_view name, uint32_t size) = 0;
   virtual void addClassicalRegister(std::string_view name, uint32_t size) = 0;
+  virtual void declareVariable(ClassicalVariable variable) = 0;
   virtual void setGlobalPhase(const Parameter& phase) = 0;
+  virtual void setLayout(const mlir::mqt::QubitLayout& layout) = 0;
   virtual void addGate(StandardGateMapping gate,
                        const std::vector<uint32_t>& qubits,
                        const std::vector<Parameter>& parameters) = 0;
+  virtual void addCustomGate(std::string_view name,
+                             const std::vector<uint32_t>& qubits,
+                             const std::vector<Parameter>& parameters,
+                             const std::vector<GateModifier>& modifiers) = 0;
   virtual void addMeasure(uint32_t qubit, uint32_t clbit) = 0;
   virtual void addReset(uint32_t qubit) = 0;
   virtual void addBarrier(const std::vector<uint32_t>& qubits) = 0;
+  virtual void addStore(ClassicalTarget target,
+                        std::unique_ptr<Expression> value) = 0;
   virtual void addUnitary(const std::vector<std::complex<double>>& matrix,
                           const std::vector<uint32_t>& qubits,
                           uint32_t numControls) = 0;
@@ -352,7 +418,9 @@ public:
   addControlFlow(ControlFlowKind kind, ClassicalTarget target, Loop loop,
                  std::vector<SwitchCase> switchCases,
                  std::vector<std::unique_ptr<CircuitWriter>> blocks) = 0;
-  /** Transfer the native circuit to a new owned Python QuantumCircuit. */
+  /// Create a block sharing this circuit's resources and lexical scope.
+  [[nodiscard]] virtual std::unique_ptr<CircuitWriter> createBlock() const = 0;
+  /// Return the completed, owned Python QuantumCircuit.
   [[nodiscard]] virtual nb::object finish() = 0;
 };
 
@@ -368,8 +436,16 @@ public:
   [[nodiscard]] virtual std::unique_ptr<CircuitReader>
   openCircuit(nb::handle circuit) const = 0;
   [[nodiscard]] virtual bool supportsGate(StandardGateMapping gate) const = 0;
+  [[nodiscard]] virtual mlir::CompilerTarget
+  importTarget(nb::handle target, nb::handle operationNames,
+               const std::optional<std::string>& name) const = 0;
   [[nodiscard]] virtual std::unique_ptr<CircuitWriter>
-  createCircuit(uint32_t looseQubits, uint32_t looseClbits) const = 0;
+  createCircuit(uint32_t looseQubits, uint32_t looseClbits,
+                const mlir::CompilerTarget* target = nullptr) const = 0;
+  virtual void
+  registerCustomGate(std::string_view symbol, std::string_view name,
+                     const std::vector<std::string>& formalParameters,
+                     std::unique_ptr<CircuitWriter> definition) = 0;
 };
 
 #define MQT_QISKIT_DECLARE_VERSION_IMPL(suffix)                                \

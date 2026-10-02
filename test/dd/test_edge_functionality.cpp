@@ -14,11 +14,16 @@
 #include "dd/RealNumber.hpp"
 #include "dd/StateGeneration.hpp"
 
-#include <gtest/gtest.h>
+#include "gtest/gtest.h"
 
 #include <cmath>
+#include <complex>
 #include <cstddef>
+#include <limits>
 #include <memory>
+#include <stdexcept>
+#include <string>
+#include <vector>
 
 namespace dd {
 
@@ -38,12 +43,78 @@ TEST(VectorFunctionality, GetValueByIndexTerminal) {
 
 TEST(VectorFunctionality, GetValueByIndexEndianness) {
   auto dd = std::make_unique<Package>(2);
-  const CVec state = {std::sqrt(0.1), std::sqrt(0.2), std::sqrt(0.3),
-                      std::sqrt(0.4)};
+  const CVec state = {
+      std::sqrt(0.1),
+      std::sqrt(0.2),
+      std::sqrt(0.3),
+      std::sqrt(0.4),
+  };
   const auto stateDD = makeStateFromVector(state, *dd);
 
   for (std::size_t i = 0U; i < state.size(); ++i) {
     EXPECT_EQ(state[i], stateDD.getValueByIndex(i));
+  }
+}
+
+TEST(VectorFunctionality, WideIndices) {
+  constexpr auto digits = std::numeric_limits<size_t>::digits;
+  auto dd = std::make_unique<Package>(digits + 1U);
+  const auto ones =
+      makeBasisState(digits, std::vector<bool>(digits, true), *dd);
+  EXPECT_EQ(ones.getValueByIndex(std::numeric_limits<size_t>::max()), 1.);
+  const auto zero = makeZeroState(digits + 1U, *dd);
+  EXPECT_EQ(zero.getValueByIndex(0), 1.);
+  EXPECT_EQ(zero.getValueByIndex(std::numeric_limits<size_t>::max()), 0.);
+  EXPECT_THROW(vEdge::one().getValueByIndex(1), std::out_of_range);
+  EXPECT_THROW(makeZeroState(3, *dd).getValueByIndex(8), std::out_of_range);
+}
+
+TEST(VectorFunctionality, InvalidPaths) {
+  auto dd = std::make_unique<Package>(2);
+  const auto zero = makeZeroState(2, *dd);
+  EXPECT_THROW(zero.getValueByPath(2, "2"), std::out_of_range);
+  for (const auto* path : {"20", "91", "/0", "x0"}) {
+    EXPECT_THROW(zero.getValueByPath(2, path), std::invalid_argument);
+  }
+  EXPECT_EQ(zero.getValueByPath(2, "00ignored"), 1.);
+}
+
+TEST(MatrixFunctionality, WideIndices) {
+  constexpr auto digits = std::numeric_limits<size_t>::digits;
+  auto dd = std::make_unique<Package>(digits + 1U);
+  const auto gate = dd->makeGateDD(GateMatrix{0., {0., -1.}, {0., 1.}, 0.}, 0);
+  EXPECT_EQ(gate.getValueByIndex(digits + 1U, 0, 1), std::complex<fp>(0, -1));
+  EXPECT_EQ(gate.getValueByIndex(digits + 1U, 1, 0), std::complex<fp>(0, 1));
+  EXPECT_EQ(gate.getValueByIndex(digits + 1U, 2, 1), 0.);
+  const auto highGate =
+      dd->makeGateDD(GateMatrix{0., {0., -1.}, {0., 1.}, 0.}, digits);
+  EXPECT_EQ(highGate.getValueByIndex(digits + 1U, 0, 0), 0.);
+  EXPECT_EQ(mEdge::one().getValueByIndex(digits,
+                                         std::numeric_limits<size_t>::max(),
+                                         std::numeric_limits<size_t>::max()),
+            1.);
+  EXPECT_THROW(gate.getValueByIndex(1, 2, 0), std::out_of_range);
+  EXPECT_THROW(mEdge::one().getValueByIndex(1, 0, 2), std::out_of_range);
+}
+
+TEST(MatrixFunctionality, InvalidPaths) {
+  EXPECT_THROW(mEdge::one().getValueByPath(1, ""), std::out_of_range);
+  for (const auto* path : {"4", "9", "/", "x"}) {
+    EXPECT_THROW(mEdge::one().getValueByPath(1, path), std::invalid_argument);
+  }
+  EXPECT_EQ(mEdge::one().getValueByPath(1, "3ignored"), 1.);
+}
+
+TEST(EdgeFunctionality, NonpositiveExportThresholds) {
+  auto dd = std::make_unique<Package>(1);
+  const auto vector = makeStateFromVector(CVec{0.6, {0., 0.8}}, *dd);
+  const auto matrix =
+      dd->makeGateDD(GateMatrix{0., {0., -1.}, {0., 1.}, 0.}, 0);
+  for (const auto threshold : {0., -1., std::numeric_limits<fp>::quiet_NaN()}) {
+    EXPECT_EQ(vector.getVector(threshold), vector.getVector());
+    EXPECT_EQ(vector.getSparseVector(threshold), vector.getSparseVector());
+    EXPECT_EQ(matrix.getMatrix(1, threshold), matrix.getMatrix(1));
+    EXPECT_EQ(matrix.getSparseMatrix(1, threshold), matrix.getSparseMatrix(1));
   }
 }
 
@@ -54,8 +125,12 @@ TEST(VectorFunctionality, GetVectorTerminal) {
 
 TEST(VectorFunctionality, GetVectorRoundtrip) {
   auto dd = std::make_unique<Package>(2);
-  const CVec state = {std::sqrt(0.1), std::sqrt(0.2), std::sqrt(0.3),
-                      std::sqrt(0.4)};
+  const CVec state = {
+      std::sqrt(0.1),
+      std::sqrt(0.2),
+      std::sqrt(0.3),
+      std::sqrt(0.4),
+  };
   const auto stateDD = makeStateFromVector(state, *dd);
   const auto stateVec = stateDD.getVector();
   EXPECT_EQ(stateVec, state);
@@ -63,8 +138,12 @@ TEST(VectorFunctionality, GetVectorRoundtrip) {
 
 TEST(VectorFunctionality, GetVectorTolerance) {
   auto dd = std::make_unique<Package>(2);
-  const CVec state = {std::sqrt(0.1), std::sqrt(0.2), std::sqrt(0.3),
-                      std::sqrt(0.4)};
+  const CVec state = {
+      std::sqrt(0.1),
+      std::sqrt(0.2),
+      std::sqrt(0.3),
+      std::sqrt(0.4),
+  };
   const auto stateDD = makeStateFromVector(state, *dd);
   const auto stateVec = stateDD.getVector(std::sqrt(0.1));
   EXPECT_EQ(stateVec, state);
@@ -82,8 +161,12 @@ TEST(VectorFunctionality, GetSparseVectorTerminal) {
 
 TEST(VectorFunctionality, GetSparseVectorConsistency) {
   auto dd = std::make_unique<Package>(2);
-  const CVec state = {std::sqrt(0.1), std::sqrt(0.2), std::sqrt(0.3),
-                      std::sqrt(0.4)};
+  const CVec state = {
+      std::sqrt(0.1),
+      std::sqrt(0.2),
+      std::sqrt(0.3),
+      std::sqrt(0.4),
+  };
   const auto stateDD = makeStateFromVector(state, *dd);
   const auto stateSparseVec = stateDD.getSparseVector();
   const auto stateVec = stateDD.getVector();
@@ -94,8 +177,12 @@ TEST(VectorFunctionality, GetSparseVectorConsistency) {
 
 TEST(VectorFunctionality, GetSparseVectorTolerance) {
   auto dd = std::make_unique<Package>(2);
-  const CVec state = {std::sqrt(0.1), std::sqrt(0.2), std::sqrt(0.3),
-                      std::sqrt(0.4)};
+  const CVec state = {
+      std::sqrt(0.1),
+      std::sqrt(0.2),
+      std::sqrt(0.3),
+      std::sqrt(0.4),
+  };
   const auto stateDD = makeStateFromVector(state, *dd);
   const auto stateSparseVec = stateDD.getSparseVector(std::sqrt(0.1));
   for (const auto& [index, value] : stateSparseVec) {
@@ -120,8 +207,12 @@ TEST(VectorFunctionality, PrintVectorTerminal) {
 
 TEST(VectorFunctionality, PrintVector) {
   auto dd = std::make_unique<Package>(2);
-  const CVec state = {std::sqrt(0.1), std::sqrt(0.2), std::sqrt(0.3),
-                      std::sqrt(0.4)};
+  const CVec state = {
+      std::sqrt(0.1),
+      std::sqrt(0.2),
+      std::sqrt(0.3),
+      std::sqrt(0.4),
+  };
   const auto stateDD = makeStateFromVector(state, *dd);
   testing::internal::CaptureStdout();
   stateDD.printVector();
@@ -140,8 +231,12 @@ TEST(VectorFunctionality, AddToVector) {
   CVec vec = {0., 0., 0., 0.};
 
   auto dd = std::make_unique<Package>(2);
-  const CVec state = {std::sqrt(0.1), std::sqrt(0.2), std::sqrt(0.3),
-                      std::sqrt(0.4)};
+  const CVec state = {
+      std::sqrt(0.1),
+      std::sqrt(0.2),
+      std::sqrt(0.3),
+      std::sqrt(0.4),
+  };
   const auto stateDD = makeStateFromVector(state, *dd);
   stateDD.addToVector(vec);
   EXPECT_EQ(vec, state);
@@ -173,6 +268,27 @@ TEST(MatrixFunctionality, GetValueByIndexTerminal) {
   EXPECT_EQ(mEdge::one().getValueByIndex(0, 0, 0), 1.);
 }
 
+TEST(MatrixFunctionality, ScalarAccessPreservesImplicitIdentities) {
+  Package package(3);
+  const auto phase = package.cn.lookup(0.5, -0.5);
+  auto gate = package.makeGateDD(GateMatrix{0., 1., 1., 0.}, 1);
+  gate.w = phase;
+  for (const auto& matrix : {mEdge::zero(), mEdge::terminal(phase), gate}) {
+    const auto dense = matrix.getMatrix(3);
+    for (size_t row = 0; row < dense.size(); ++row) {
+      for (size_t col = 0; col < dense.size(); ++col) {
+        std::string path(3, '0');
+        for (size_t bit = 0; bit < path.size(); ++bit) {
+          path[bit] = static_cast<char>('0' + (2 * ((row >> bit) & 1U)) +
+                                        ((col >> bit) & 1U));
+        }
+        EXPECT_EQ(matrix.getValueByIndex(3, row, col), dense[row][col]);
+        EXPECT_EQ(matrix.getValueByPath(3, path), dense[row][col]);
+      }
+    }
+  }
+}
+
 TEST(MatrixFunctionality, GetValueByIndexEndianness) {
   auto dd = std::make_unique<Package>(2);
   // clang-format off
@@ -180,7 +296,7 @@ TEST(MatrixFunctionality, GetValueByIndexEndianness) {
     {std::sqrt(0.1),  std::sqrt(0.2),  std::sqrt(0.3),  std::sqrt(0.4)},
     {-std::sqrt(0.2), -std::sqrt(0.3), std::sqrt(0.4),  std::sqrt(0.1)},
     {-std::sqrt(0.3), -std::sqrt(0.4), std::sqrt(0.1),  std::sqrt(0.2)},
-    {-std::sqrt(0.4), -std::sqrt(0.1), -std::sqrt(0.2), std::sqrt(0.3)}};
+    {-std::sqrt(0.4), -std::sqrt(0.1), -std::sqrt(0.2), std::sqrt(0.3)},};
   // clang-format on
 
   const auto matDD = dd->makeDDFromMatrix(mat);
@@ -207,7 +323,7 @@ TEST(MatrixFunctionality, GetMatrixRoundtrip) {
     {std::sqrt(0.1),  std::sqrt(0.2),  std::sqrt(0.3),  std::sqrt(0.4)},
     {-std::sqrt(0.2), -std::sqrt(0.3), std::sqrt(0.4),  std::sqrt(0.1)},
     {-std::sqrt(0.3), -std::sqrt(0.4), std::sqrt(0.1),  std::sqrt(0.2)},
-    {-std::sqrt(0.4), -std::sqrt(0.1), -std::sqrt(0.2), std::sqrt(0.3)}};
+    {-std::sqrt(0.4), -std::sqrt(0.1), -std::sqrt(0.2), std::sqrt(0.3)},};
   // clang-format on
 
   const auto matDD = dd->makeDDFromMatrix(mat);
@@ -229,7 +345,7 @@ TEST(MatrixFunctionality, GetMatrixTolerance) {
     {std::sqrt(0.1),  std::sqrt(0.2),  std::sqrt(0.3),  std::sqrt(0.4)},
     {-std::sqrt(0.2), -std::sqrt(0.3), std::sqrt(0.4),  std::sqrt(0.1)},
     {-std::sqrt(0.3), -std::sqrt(0.4), std::sqrt(0.1),  std::sqrt(0.2)},
-    {-std::sqrt(0.4), -std::sqrt(0.1), -std::sqrt(0.2), std::sqrt(0.3)}};
+    {-std::sqrt(0.4), -std::sqrt(0.1), -std::sqrt(0.2), std::sqrt(0.3)},};
   // clang-format on
 
   const auto matDD = dd->makeDDFromMatrix(mat);
@@ -265,7 +381,7 @@ TEST(MatrixFunctionality, GetSparseMatrixConsistency) {
     {std::sqrt(0.1),  std::sqrt(0.2),  std::sqrt(0.3),  std::sqrt(0.4)},
     {-std::sqrt(0.2), -std::sqrt(0.3), std::sqrt(0.4),  std::sqrt(0.1)},
     {-std::sqrt(0.3), -std::sqrt(0.4), std::sqrt(0.1),  std::sqrt(0.2)},
-    {-std::sqrt(0.4), -std::sqrt(0.1), -std::sqrt(0.2), std::sqrt(0.3)}};
+    {-std::sqrt(0.4), -std::sqrt(0.1), -std::sqrt(0.2), std::sqrt(0.3)},};
   // clang-format on
 
   const auto matDD = dd->makeDDFromMatrix(mat);
@@ -285,7 +401,7 @@ TEST(MatrixFunctionality, GetSparseMatrixTolerance) {
     {std::sqrt(0.1),  std::sqrt(0.2),  std::sqrt(0.3),  std::sqrt(0.4)},
     {-std::sqrt(0.2), -std::sqrt(0.3), std::sqrt(0.4),  std::sqrt(0.1)},
     {-std::sqrt(0.3), -std::sqrt(0.4), std::sqrt(0.1),  std::sqrt(0.2)},
-    {-std::sqrt(0.4), -std::sqrt(0.1), -std::sqrt(0.2), std::sqrt(0.3)}};
+    {-std::sqrt(0.4), -std::sqrt(0.1), -std::sqrt(0.2), std::sqrt(0.3)},};
   // clang-format on
 
   const auto matDD = dd->makeDDFromMatrix(mat);
@@ -323,7 +439,7 @@ TEST(MatrixFunctionality, PrintMatrix) {
     {std::sqrt(0.1),  std::sqrt(0.2),  std::sqrt(0.3),  std::sqrt(0.4)},
     {-std::sqrt(0.2), -std::sqrt(0.3), std::sqrt(0.4),  std::sqrt(0.1)},
     {-std::sqrt(0.3), -std::sqrt(0.4), std::sqrt(0.1),  std::sqrt(0.2)},
-    {-std::sqrt(0.4), -std::sqrt(0.1), -std::sqrt(0.2), std::sqrt(0.3)}};
+    {-std::sqrt(0.4), -std::sqrt(0.1), -std::sqrt(0.2), std::sqrt(0.3)},};
   // clang-format on
 
   const auto matDD = dd->makeDDFromMatrix(mat);
@@ -334,6 +450,22 @@ TEST(MatrixFunctionality, PrintMatrix) {
                     "(-0.447,0) (-0.548,0) (0.632,0) (0.316,0) \n"
                     "(-0.548,0) (-0.632,0) (0.316,0) (0.447,0) \n"
                     "(-0.632,0) (-0.316,0) (-0.447,0) (0.548,0) \n");
+}
+
+TEST(MatrixFunctionality, TraversalUsesOneCallbackAcrossIdentityLevels) {
+  size_t visited = 0;
+  mEdge::one().traverseMatrix(
+      {0., 1.}, 0, 0,
+      [&visited,
+       ordinal = size_t{0}](const size_t i, const size_t j,
+                            const std::complex<fp>& amplitude) mutable {
+        EXPECT_EQ(i, j);
+        EXPECT_EQ(i, ordinal++);
+        EXPECT_EQ(amplitude, (std::complex<fp>{0., 1.}));
+        ++visited;
+      },
+      4);
+  EXPECT_EQ(visited, 16U);
 }
 
 TEST(MatrixFunctionality, SizeTerminal) {
@@ -348,7 +480,7 @@ TEST(MatrixFunctionality, SizeBellState) {
     {SQRT2_2, 0., 0., SQRT2_2},
     {0., SQRT2_2, SQRT2_2, 0.},
     {0., SQRT2_2, -SQRT2_2, 0.},
-    {SQRT2_2, 0., 0., -SQRT2_2}};
+    {SQRT2_2, 0., 0., -SQRT2_2},};
   // clang-format on
 
   const auto bell = dd->makeDDFromMatrix(mat);

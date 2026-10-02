@@ -1,13 +1,8 @@
 # Make the superconducting QDMI device runtime configurable and calibrated
 
-This ExecPlan is a living document. The sections `Progress`,
-`Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` must
-be kept up to date as work proceeds.
+Status: historical implementation record.
 
-This ExecPlan must be maintained in accordance with `.agent/PLANS.md` from the
-repository root.
-
-## Purpose / Big Picture
+## Goal and scope
 
 After this change, every fresh superconducting QDMI session owns a strict
 runtime model selected from inline JSON, a JSON file, environment variables, or
@@ -18,209 +13,110 @@ T1/T2 defaults or qubit overrides. The bundled calibration is explicitly
 synthetic. These operation and calibration semantics directly address
 [issue #1331](https://github.com/munich-quantum-toolkit/core/issues/1331).
 
-## Progress
+## Constraints
 
-- [x] (2026-07-30 00:00Z) Audited the SC generator, singleton provider,
-  generated-header CMake path, default JSON, and tests.
-- [x] (2026-07-30 08:00Z) Implemented the strict schema-version-1 value model
-  and validation.
-- [x] (2026-07-30 08:00Z) Added source selection and session-owned topology and
-  handles.
-- [x] (2026-07-30 08:00Z) Implemented duration, fidelity, and T1/T2 fallback
-  semantics.
-- [x] (2026-07-30 08:00Z) Removed generation APIs, commands, headers, and custom
-  build targets.
-- [x] (2026-07-30 08:00Z) Added direct ABI, Driver, calibration, ownership, and
-  relocation tests.
-- [x] (2026-07-30 08:00Z) Updated SC and index documentation, migration notes,
-  and validation evidence.
-- [x] (2026-07-30 02:10 CEST) Restacked the SC-only commit onto the completed NA
-      change and passed final combined build, C++, Python, runtime-copy, and
-      lint validation.
-- [x] (2026-07-31 06:40 CEST) Verified that PRs #1972 and #1974 are merged and
-      replayed only the SC commit onto merge commit `9e1c4db5a`.
-- [x] (2026-07-31 06:45 CEST) Removed unnecessary trailing return types while
-      retaining the one lambda return annotation required for its braced
-      `Calibration` result.
-- [x] (2026-07-31 06:50 CEST) Repeated the complete 423-step release build,
-      repository lint, focused Python tests, and warning-as-error documentation
-      build on the rebased branch.
-- [x] (2026-07-31 07:20 CEST) Independently reviewed exact head `0bf1f1b828`,
-      identifying MF-01 (explicit two-qubit tuples could contradict the ordered
-      coupling map) and NIT-01 (ambiguous source-precedence documentation).
-- [x] (2026-07-31 07:30 CEST) Enforced exact ordered coupling membership for
-      explicit two-qubit tuples, added parser and ABI regressions, and clarified
-      explicit versus environment source precedence.
-- [x] (2026-07-31 07:45 CEST) Repeated the complete SC and Driver binaries,
-      runtime-file/imported-device CTest coverage, focused Python tests, full
-      repository lint, release build, diff checks, and warning-as-error
-      documentation build after remediation.
-- [x] (2026-07-31 08:10 CEST) Independently verified MF-01 and NIT-01, finding
-      MF-02: the Windows SC test copied only the provider DLL and omitted its
-      adjacent runtime JSON.
-- [x] (2026-07-31 08:15 CEST) Replaced the Windows-only DLL copy with the shared
-      runtime-copy helper and deferred GoogleTest discovery until the provider,
-      manifest, and JSON are colocated.
-- [x] (2026-07-31 08:45 CEST) Reconfigured and rebuilt the SC target, repeated
-      all 40 SC tests and six runtime-copy/import tests, and passed full
-      repository lint and diff checks after MF-02.
-- [x] (2026-07-31 09:00 CEST) Independently verified MF-02 at exact head
-      `9f6853a3a`; no further actionable issue was found.
-- [x] (2026-07-31 09:10 CEST) Published draft PR #1980 from the verified head
-      and added its required changelog reference in a signed follow-up.
-- [x] (2026-07-31 10:25 CEST) Diagnosed the first PR CI run at exact published
-      head `9f6853a3a`: Linux exposed a platform-dependent integer type in four
-      coupling assertions, and clang-tidy 22.1.8 reported 105 diagnostics
-      confined to the new SC implementation and tests.
-- [x] (2026-07-31 10:25 CEST) Replaced the platform-dependent assertions with
-      the schema's `uint64_t` type, addressed the changed-surface clang-tidy
-      findings with direct includes, spans, standard arrays, qualified pointer
-      declarations, and established QDMI ABI suppressions, then passed the
-      release build, all SC tests, exact clang-tidy, repository hooks, and diff
-      checks.
-- [x] (2026-07-31 10:35 CEST) An independent exact-head review found one
-      remaining transitive provider for the generated session and job handle
-      aliases; added the direct device-interface include and normalized the job
-      status parameter name.
-- [x] (2026-07-31 12:15 CEST) Addressed the four human review threads locally:
-      corrected the SC documentation title, added Doxygen file metadata to all
-      SC production files, renamed the misleading `override` variable, and
-      consolidated the three duplicated scoped environment helpers.
-- [x] (2026-07-31 12:25 CEST) Rebuilt all four affected test targets, passed
-      their complete 212-test execution with the two existing expected skips,
-      passed exact clang-tidy 22.1.8 on the changed C++ surfaces, full
-      repository lint, diff checks, and the warning-as-error documentation
-      build.
+- current SC two-site support normalizes pairs by handle address, which erases
+  configured orientation. Evidence: `MQT_SC_QDMI_Operation_impl_d::sortSites`
+  swaps each pair according to `std::less` before sorting.
 
-## Surprises & Discoveries
+- tuple overrides must be checked against the effective support expansion during
+  parsing, not deferred to handle materialization. Evidence: the parser now
+  validates explicit tuples, one-site expansion, and ordered coupling expansion
+  before a session commits state.
 
-- Observation: current SC two-site support normalizes pairs by handle address,
-  which erases configured orientation. Evidence:
-  `MQT_SC_QDMI_Operation_impl_d::sortSites` swaps each pair according to
-  `std::less` before sorting.
-- Observation: tuple overrides must be checked against the effective support
-  expansion during parsing, not deferred to handle materialization. Evidence:
-  the parser now validates explicit tuples, one-site expansion, and ordered
-  coupling expansion before a session commits state.
-- Observation: generic Driver tests previously used CUSTOM1 and CUSTOM2 as
-  arbitrary provider properties, which conflicts with their standardized
-  configuration-source meaning. Evidence: the full Driver suite passed after
-  reserving CUSTOM1/CUSTOM2 and moving generic property tests to CUSTOM3/4.
-- Observation: the repository install command reports an unrelated inability to
-  create `/usr/local/bin/capnpc`, but still installs the SC provider, JSON,
-  manifest, and CMake runtime-file metadata into the selected prefix.
-- Observation: the documentation host needed the nox environment's explicit
-  certificate-authority bundle to fetch the QDMI tag; the subsequent
-  documentation build completed successfully.
-- Observation: the temporary parallel-development helper rejected simultaneous
-  raw CUSTOM1/CUSTOM2 values, while PR B's authoritative helper correctly gives
-  inline JSON precedence as required by the design. Evidence: the first
-  final-stack SC run exposed the mismatched test expectation; the corrected test
-  now verifies inline precedence and retry on a fresh session.
-- Observation: PR #1328's human review identifies the concrete gaps behind #1331
-  as a useful SC operation set and location-specific fidelity data. The rebased
-  default retains `r`, `cz`, and `measure`, while direct and Driver tests
-  exercise ordered operation support, tuple overrides, defaults, and site
-  calibration.
-- Observation: the first exact-head independent review found that explicit
-  two-qubit tuples were checked for arity, range, and uniqueness but not against
-  the ordered coupling map. QDMI requires every advertised two-site operation
-  tuple to be a coupling edge, so the parser now enforces that invariant before
-  materialization.
-- Observation: the second exact-head review found that the SC Windows test
-  retained a DLL-only copy even though provider initialization now loads an
-  adjacent JSON file. The merged NA provider already established the required
-  pattern: copy all target-declared runtime files and discover GoogleTests only
-  after that copy has run.
-- Observation: macOS defines `uint64_t` as `unsigned long long`, while the Linux
-  CI target defines it as `unsigned long`; coupling assertions constructed with
-  `ULL` therefore compiled locally but failed on every Linux C++ job. Explicitly
-  constructing `std::pair<uint64_t, uint64_t>` tests the actual configuration
-  contract on both data models.
-- Observation: local include-cleaner analysis did not report the generated
-  session and job handle providers because `Device.hpp` exported them
-  transitively. Independent review against the original CI diagnostics exposed
-  the difference, so `Device.cpp` now includes the device interface directly.
-- Observation: the same scoped environment-variable helper had been copied into
-  the NA, SC, and registry tests. A shared test-only utility removes that
-  duplication without adding test infrastructure to the installed QDMI API.
+- generic Driver tests previously used CUSTOM1 and CUSTOM2 as arbitrary provider
+  properties, which conflicts with their standardized configuration-source
+  meaning. Evidence: the full Driver suite passed after reserving
+  CUSTOM1/CUSTOM2 and moving generic property tests to CUSTOM3/4.
 
-## Decision Log
+- Inline JSON takes precedence over a configuration file when both raw
+  configuration slots are supplied. Test the shared configuration-source
+  contract rather than copying an intermediate helper behavior.
 
-- Decision: Store supported site tuples as ordered vectors of site identifiers
-  and compare identifiers in configured order. Rationale: provider pointer
-  addresses are allocation details and oriented operations require explicit
-  tuple order. Date/Author: 2026-07-29 / Codex.
-- Decision: Resolve calibration in the order site override, operation or qubit
-  default, then `QDMI_ERROR_NOTSUPPORTED`. Rationale: this is deterministic and
-  represents missing calibration without inventing zero values. Date/Author:
-  2026-07-29 / Codex.
-- Decision: Keep the shared configuration-source helper and generic CUSTOM3/4
-  test transition exclusively in PR B. Rationale: PR C consumes those interfaces
-  and should contain only SC-specific behavior after restacking. Date/Author:
-  2026-07-30 / Codex.
-- Decision: Do not retain the prototype's unified validation and
-  default-printing CLI. Rationale: PR C only needs a strict parser linked into
-  the provider, and removing the old generator surface avoids introducing a new
-  public command outside the agreed PR split. Date/Author: 2026-07-30 / Codex.
-- Decision: Treat #1331 as completed by the SC refactor rather than adding a
-  separate compatibility layer. Rationale: operations are now materialized from
-  strict runtime configuration with ordered site support and per-tuple
+- PR #1328's human review identifies the concrete gaps behind #1331 as a useful
+  SC operation set and location-specific fidelity data. The bundled default
+  retains `r`, `cz`, and `measure`, while direct and Driver tests exercise
+  ordered operation support, tuple overrides, defaults, and site calibration.
+
+- Every advertised two-site operation tuple must also be an ordered coupling
+  edge. Validate this before materializing session state, in addition to arity,
+  range, and uniqueness.
+
+- Copy all provider-declared runtime files before GoogleTest discovery. Copying
+  only the Windows DLL misses the adjacent JSON model required at
+  initialization.
+
+- Use explicit `std::pair<uint64_t, uint64_t>` values in coupling tests.
+  `uint64_t` can alias different unsigned types across platforms; a ULL literal
+  does not define that contract.
+
+- Include the device interface that declares generated session and job handles
+  directly; do not rely on transitive inclusion through `Device.hpp`.
+
+- the same scoped environment-variable helper had been copied into the NA, SC,
+  and registry tests. A shared test-only utility removes that duplication
+  without adding test infrastructure to the installed QDMI API.
+
+## Decisions
+
+- Store supported site tuples as ordered vectors of site identifiers and compare
+  identifiers in configured order. Rationale: provider pointer addresses are
+  allocation details and oriented operations require explicit tuple order.
+
+- Resolve calibration in the order site override, operation or qubit default,
+  then `QDMI_ERROR_NOTSUPPORTED`. Rationale: this is deterministic and
+  represents missing calibration without inventing zero values.
+
+- Keep the shared configuration-source helper and generic CUSTOM3/4 test
+  transition exclusively in PR B. Rationale: PR C consumes those interfaces and
+  should contain only SC-specific behavior after restacking.
+
+- Do not retain the prototype's unified validation and default-printing CLI.
+  Rationale: PR C only needs a strict parser linked into the provider, and
+  removing the old generator surface avoids introducing a new public command
+  outside the agreed PR split.
+
+- Treat #1331 as completed by the SC refactor rather than adding a separate
+  compatibility layer. Rationale: operations are now materialized from strict
+  runtime configuration with ordered site support and per-tuple
   duration/fidelity, while site T1/T2 values have defaults and overrides; this
   resolves the issue's two explicit requirements without expanding the QDMI
-  abstraction. Date/Author: 2026-07-31 / Codex.
-- Decision: Require explicit two-qubit operation tuples to match an exact
-  ordered coupling edge. Rationale: QDMI conformance requires every advertised
-  supported pair to belong to the coupling map, and preserving orientation is
-  part of the runtime schema contract. Date/Author: 2026-07-31 / Codex.
-- Decision: Use `mqt_copy_qdmi_runtime` for the Windows SC test target and
-  `PRE_TEST` discovery. Rationale: the shared helper follows target metadata and
-  keeps the provider, manifest, and JSON together without duplicating asset
-  lists or platform-specific copy commands. Date/Author: 2026-07-31 / Codex.
-- Decision: Preserve the QDMI job methods as instance methods and suppress only
-  the corresponding static-method diagnostics, matching the NA provider.
-  Rationale: these methods implement opaque-handle ABI behavior that may gain
-  per-job state, while changing them to static functions would only satisfy a
-  local implementation detail. Date/Author: 2026-07-31 / Codex.
-- Decision: Place `ScopedEnvironmentVariable` in `test/qdmi/TestUtils.hpp`
-  rather than a production QDMI utility. Rationale: it is test scaffolding used
-  by three test binaries, so a test include path provides one implementation
-  without expanding the runtime or public API. Date/Author: 2026-07-31 / Codex.
+  abstraction.
 
-## Outcomes & Retrospective
+- Require explicit two-qubit operation tuples to match an exact ordered coupling
+  edge. Rationale: QDMI conformance requires every advertised supported pair to
+  belong to the coupling map, and preserving orientation is part of the runtime
+  schema contract.
 
-The SC provider now owns topology, operations, ordered support tuples, and
-calibration per session. Strict parsing validates version, required and unknown
-fields, topology, uniqueness, numeric domains, support, and overrides.
-Calibration queries implement tuple override then operation default, and qubit
-override then qubit default, returning NOTSUPPORTED for absent values. Before
-the final 2026-07-31 verification, the rebased SC suite reports 38 passed with
-one expected unsupported-job-property skip, the full Driver suite reports 114
-passed, the focused Python runtime-configuration selection reports two passed,
-and the imported/runtime-file CTest selection reports six passed. The complete
-423-step release build, warning-as-error documentation build, repository lint,
-and diff checks also pass. Earlier stacked validation additionally covered
-installation and wheel relocation. After MF-01 and NIT-01, the SC suite reports
-39 passed with the same one expected skip; the Driver, Python, CTest, lint,
-release-build, documentation, and diff checks remain green.
+- Use `mqt_copy_qdmi_runtime` for the Windows SC test target and `PRE_TEST`
+  discovery. Rationale: the shared helper follows target metadata and keeps the
+  provider, manifest, and JSON together without duplicating asset lists or
+  platform-specific copy commands.
 
-MF-02 uses the same Windows runtime-copy and deferred-discovery pattern already
-validated for the merged NA provider. Local macOS validation confirms CMake
-configuration, the SC target, all SC tests, and the shared runtime-copy/import
-tests; the Windows CI jobs remain the platform-specific oracle.
+- Preserve the QDMI job methods as instance methods and suppress only the
+  corresponding static-method diagnostics, matching the NA provider. Rationale:
+  these methods implement opaque-handle ABI behavior that may gain per-job
+  state, while changing them to static functions would only satisfy a local
+  implementation detail.
 
-The first published CI run additionally established Linux portability and exact
-clang-tidy coverage. The remediation release-builds the SC provider and test,
-runs all 40 SC cases with one expected unsupported-job-property skip, produces
-no project diagnostics under clang-tidy 22.1.8, and passes the affected-file
-repository hooks and diff checks.
+- Place `ScopedEnvironmentVariable` in `test/qdmi/TestUtils.hpp` rather than a
+  production QDMI utility. Rationale: it is test scaffolding used by three test
+  binaries, so a test include path provides one implementation without expanding
+  the runtime or public API.
 
-The review follow-up keeps the runtime behavior unchanged. The complete SC, NA,
-Driver, and registry binaries report 210 passed and the two existing unsupported
-job-ID skips. Exact changed-surface clang-tidy 22.1.8, full repository lint, and
-the warning-as-error documentation build also pass.
+## Outcome and validation
 
-## Context and Orientation
+The provider owns topology, ordered support tuples, and calibration per session.
+Parsing validates topology, numeric domains, support, and overrides before
+materialization. Queries use tuple/operation and qubit/default precedence;
+absent calibration returns NOTSUPPORTED.
+
+Recorded validation covered native and Python tests, packaging and relocation,
+release builds, documentation, and lint. The final shared
+provider/driver/registry suites passed with two expected job-ID skips. Windows
+runtime-file ordering remained a platform CI check.
+
+## Code and ownership
 
 `include/mqt-core/qdmi/devices/sc/Generator.hpp` and
 `src/qdmi/devices/sc/Generator.cpp` define and parse the current minimal JSON
@@ -233,45 +129,7 @@ An operation site override is a calibration value attached to one exact ordered
 tuple supported by that operation. A qubit override changes T1 or T2 for one
 site while inheriting any other default.
 
-## Plan of Work
-
-Replace the generator schema with explicit configuration types containing schema
-version, duration unit, qubit calibration defaults and overrides, couplings,
-operations, optional supported tuples, default duration/fidelity, and tuple
-overrides. Reject unknown or missing keys and validate every numeric, topology,
-uniqueness, arity, support, and calibration constraint.
-
-Use the same configuration-source selection and QDMI parameter semantics as NA,
-with SC-specific environment variables and adjacent default filename.
-Materialize sites, ordered coupling handles, operations, and calibration in an
-immutable session model. Associate each handle with its owner and reject foreign
-handles and supplied site tuples.
-
-Remove the singleton and generated-header pipeline, retaining a parser library
-linked directly into the provider. Stage the default JSON as a runtime file and
-document all source and calibration semantics. Add direct ABI and Driver
-integration tests, including two distinct models at once.
-
-## Concrete Steps
-
-From the repository root:
-
-    MLIR_DIR=/Users/burgholzer/CLionProjects/llvm-22.1.3/lib/cmake/mlir \
-      ./.agent/run.sh cmake --preset release
-    ./.agent/run.sh cmake --build --preset release
-    ./build/release/test/qdmi/devices/sc/mqt-core-qdmi-sc-device-test
-    ./build/release/test/qdmi/driver/mqt-core-qdmi-driver-test
-    ./.agent/run.sh uvx nox -s tests-3.14 -- \
-      -k 'device_configuration_arguments or sc_open_device_accepts_runtime_configuration'
-    SSL_CERT_FILE=.nox/docs/lib/python3.14/site-packages/certifi/cacert.pem \
-      ./.agent/run.sh uvx nox -s docs
-    ./.agent/run.sh uvx nox -s lint
-
-Run selected CTest coverage for `qdmi-sc-device`, `qdmi-driver`, and imported
-runtime copying. Inspect build, install, and copied directories for
-`mqt-core-qdmi-sc-device.json`.
-
-## Validation and Acceptance
+## Acceptance
 
 The 100-qubit bundled device retains the existing `r`, `cz`, and `measure`
 topology while reporting its new synthetic duration, fidelity, and T1/T2 data. A
@@ -281,25 +139,7 @@ expand when omitted; higher arity requires explicit tuples. Ordered tuples,
 foreign handles, malformed assignments, source precedence, retry after failure,
 and post-init immutability are covered by automated tests.
 
-## Idempotence and Recovery
-
-The provider commits a model only after parsing, validation, and materialization
-finish, so initialization can be retried. Test environment changes are scoped
-and restored. Build, install, copy, documentation, and lint commands are
-repeatable. Draft publication occurs only after independent exact-head
-verification; the PR-numbered changelog is then added as a signed follow-up.
-
-## Artifacts and Notes
-
-The SC test binary exercises strict parsing, source precedence, retry,
-per-session ownership, ordered tuples, and calibration fallback. The install
-prefix contains both `mqt-core-qdmi-sc-device.qdmi.json` and
-`mqt-core-qdmi-sc-device.json`; its exported CMake target records the JSON in
-`QDMI_RUNTIME_FILES`. The wheel contains both files, and
-`open_device("mqt.sc.default")` from `/private/tmp` reports the bundled
-100-qubit device without relying on the source tree.
-
-## Interfaces and Dependencies
+## Interfaces
 
 The provider accepts CUSTOM1/CUSTOM2 and
 `MQT_CORE_QDMI_SC_CONFIG_JSON`/`MQT_CORE_QDMI_SC_CONFIG_FILE`.
@@ -307,8 +147,3 @@ The provider accepts CUSTOM1/CUSTOM2 and
 parsing uses nlohmann JSON and diagnostics use spdlog. QDMI duration, fidelity,
 site T1/T2, duration-unit, and scale-factor properties are returned through the
 existing QDMI v1 ABI.
-
-Revision note: completed on 2026-07-30 after runtime, calibration, integration,
-packaging, relocation, Python, documentation, and lint validation. The plan was
-updated with exact test counts, prerequisite ownership, and environment-boundary
-observations.

@@ -1,52 +1,394 @@
+---
+file_format: mystnb
+kernelspec:
+  name: python3
+mystnb:
+  number_source_lines: true
+---
+
 # Compile for a QDMI device
 
-An MLIR {code}`mlir::CompilerTarget` is an immutable snapshot of a circuit-model
-device. It contains the device sites, topology, native operations, and available
-calibration data. Compilation decomposes supported multi-qubit operations,
-optimizes and maps the program, synthesizes native gates, and verifies that the
-result conforms to the target.
+`compile_program` maps a program to a device's topology and native operations.
+The resulting {py:class}`~mqt.core.mlir.CompiledProgram` can be submitted with
+`submit_program` in the MLIR submodule.
 
-The snapshot is independent of its originating QDMI session. It can therefore be
-stored, copied cheaply, and reused for multiple compilations.
+For a hands-on comparison of connectivity, native gates, and logical outputs,
+see the
+{doc}`hardware-compilation tutorial <../tutorials/hardware_compilation>`.
 
 ## Python
 
-Open a configured QDMI device and snapshot it as a compiler target:
+Compile and submit a Bell circuit to the bundled DDSIM device:
+
+```{code-cell} ipython3
+from mqt.core.mlir import compile_program, submit_program
+from mqt.core.qdmi.driver import open_device
+
+bell_qasm = """OPENQASM 3.1;
+include "stdgates.inc";
+qubit[2] q;
+bit[2] result;
+h q[0];
+cx q[0], q[1];
+result = measure q;
+"""
+
+device = open_device("mqt.ddsim.default")
+compiled = compile_program(bell_qasm, target=device)
+job = submit_program(compiled, target=device)
+job.wait()
+print(job.get_counts())
+```
+
+`target` accepts an open device or a registered device ID. To compile and submit
+in one call:
+
+```{code-cell} ipython3
+job = submit_program(bell_qasm, target=device)
+job.wait()
+print(job.get_counts())
+```
+
+Or use a device ID directly:
+
+```{code-cell} ipython3
+job = submit_program(bell_qasm, target="mqt.ddsim.default")
+job.wait()
+print(job.get_counts())
+```
+
+Pass `num_shots` to `submit_program` to choose the number of samples. For
+simulator statevectors and probabilities, see {doc}`../qdmi/ddsim_device`. A
+compiled program can be submitted again without recompilation. Submission checks
+that the device still has matching sites, topology, operations, timing units,
+and program capabilities. Names and calibration-only changes do not require
+recompilation. Use `device.submit_job` to submit raw payloads.
+
+### Compilation options
 
 ```python
-from mqt.core.mlir import CompilerTarget, OutputFormat, compile_program
+from mqt.core.mlir import CompilationOptions, MappingOptions
 
-target = CompilerTarget.from_device_id("mqt.sc.iqm.garnet")
-compiled = compile_program(
-    "bell.qasm",
-    target=target,
-    output=OutputFormat.QCO_OPTIMIZED,
+options = CompilationOptions(
+    seed=7,
+    mapping=MappingOptions(trials=4, iterations=2, lookahead=10, search_memory_limit=8 * 1024 * 1024),
 )
+compiled = compile_program(bell_qasm, target=device, options=options)
 ```
 
-Target compilation accepts optimized QCO, QC, or QIR output and uses the
-canonical QCO pipeline; it cannot be combined with a custom `qco_pipeline`.
+The same `options` argument is available on typed compilation methods and source
+submission. Set `enable_timing` and `enable_statistics` on this object; compiler
+entry points accept these controls only through `options`. An explicit seed
+overrides compiler randomness, including custom pass seeds; `None` preserves
+existing pass settings. Execution sampling has a separate seed. For the CLI:
 
-The target can also be constructed directly. Omitting `couplings` selects
-all-to-all connectivity; omitting `operations` means that every operation is
-native:
-
-```python
-target = CompilerTarget(3, couplings=[(0, 1), (1, 2)])
+```console
+mqt-cc input.qasm --qdmi-device mqt.sc.iqm.garnet \
+  '--payload-spec=#mqt.payload_spec<format = <id = "qir", version = "2.1.0", profile = "base", encoding = text>, capabilities = [], optional_capabilities_known = false>' \
+  --seed 7 --mapping-trials 4 --mapping-iterations 2 --mapping-lookahead 10 \
+  --mapping-search-memory-limit 8388608
 ```
 
-Use {py:meth}`~mqt.core.mlir.QCOProgram.compile_for_target` to apply target
-compilation to an existing QCO program. Compilation runs in place. If a pass
-fails, earlier passes may already have changed the program. Copy the program
-before compilation if the caller must preserve the input. For pass-level
-benchmarking, the C++ API exposes separate factories for pre-routing
-optimization, mapping, native synthesis, and conformance verification.
+Add `--emit=qco-optimized -o mapped.mlir` to write the mapped QCO program with
+layout metadata. The payload specification still defines the target's execution
+capabilities.
 
-Target compilation preserves quantum operations even when their final qubit
-values are not measured or returned. This supports measurement-free programs,
-such as state preparation or larger building blocks compiled to a target-native
-instruction set. Dead gates are removed only by the explicit `remove-dead-gates`
-pass and by pipelines that include it, such as `mqt-qubit-reuse`.
+Trials must be positive. Omitted trials use the logical CPU count; iterations
+default to one forward/backward refinement round. Zero iterations score each
+initial layout directly. Lookahead is the number of additional two-qubit gates
+considered during routing. It defaults to 20; zero considers only the current
+gate. All-to-all placement ignores valid mapping controls. Repeatable mapping
+requires the same build, input, target, seed, and mapping controls, including an
+explicit trial count. Layouts may change between releases.
+
+For explicit native gate sets with a usable entangler basis, routing ranks its
+candidates by estimated native two-qubit gate count, using qubit-dependency
+depth to break ties. A lower gate count can therefore win even when depth
+increases. Read-only analysis shares synthesis decisions without cloning IR or
+running passes for each candidate. Final synthesis determines the emitted count.
+Counts are static for structured programs; depth is the maximum within a block
+and does not model classical scheduling or runtime control flow. The
+`place-and-route` pass in the {doc}`QCO reference <QCO>` describes the search
+and fallback behavior.
+
+### Choose a format
+
+The compiler selects the first supported format in this order: Adaptive QIR
+(binary, then text), OpenQASM 3.1, then Base QIR (binary, then text). To select
+a format explicitly:
+
+```{code-cell} ipython3
+from mqt.core.qdmi import ProgramFormat
+
+compiled = compile_program(bell_qasm, target=device, program_format=ProgramFormat.QASM3)
+```
+
+### Define a target
+
+Use `CompilerTarget` to describe a device for compilation without opening a
+connection. Bundled SC devices such as `mqt.sc.iqm.garnet` provide ready-made
+hardware models; they do not execute programs.
+
+An explicit target requires `output` for a typed compiler program, or
+`program_format` for a `CompiledProgram` ready for submission. To define a
+target with three sites and nearest-neighbor connectivity:
+
+```{code-cell} ipython3
+from mqt.core.mlir import CompilerTarget, OutputFormat
+
+target = CompilerTarget(
+    3,
+    connectivity=CompilerTarget.Connectivity([(0, 1), (1, 2)]),
+    native_operations=CompilerTarget.NativeOperations([
+        CompilerTarget.OperationCapability(
+            "gphase",
+            arity=CompilerTarget.OperationArity.fixed(0),
+            num_parameters=1,
+        ),
+        CompilerTarget.OperationCapability("u", arity=1, num_parameters=3),
+        CompilerTarget.OperationCapability(
+            "cx",
+            arity=2,
+            num_parameters=0,
+            site_tuples=[(1, 0), (1, 2)],
+        ),
+        CompilerTarget.OperationCapability("measure", arity=1, num_parameters=0),
+        CompilerTarget.OperationCapability("reset", arity=1, num_parameters=0),
+    ]),
+)
+mapped = compile_program(
+    bell_qasm, target=target, output=OutputFormat.QIR_BASE
+)
+print(mapped.ir)
+```
+
+Use `CompilerTarget.Connectivity.all_to_all()` for an all-to-all target. An
+empty `CompilerTarget.NativeOperations([])` reports that no quantum operation is
+native. It can be used with passes that need only topology, but target
+compilation cannot lower quantum operations without a synthesis basis. Use
+`CompilerTarget.NativeOperations.unrestricted()` only when the target accepts
+every operation. Creating a target from a QDMI device fails if the device does
+not provide a complete connectivity model and a representable native-operation
+set. An explicit operation arity is either fixed or variadic with a positive,
+inclusive minimum. Fixed zero represents a global-phase operation. A variadic
+capability accepts every total width from its minimum through the target's site
+count; site tuples are therefore available only for fixed, positive arities. An
+empty `site_tuples` list makes an operation available on every valid placement.
+A nonempty list contains all supported ordered placements. Each tuple may carry
+calibration values; omitted values inherit the operation-wide defaults. Retain
+placements without calibration in this list, and omit operations that are not
+available anywhere. Structural and program-format constructs are not
+compiler-target operations.
+
+Use plain tuples for placements without calibration. Use
+`CompilerTarget.SiteTuple([1, 0], duration=40, fidelity=0.99)` to attach
+calibration to a placement; both forms can appear in the same list.
+
+Routing uses undirected adjacency; native synthesis repairs unsupported operand
+directions. Target compilation requires a known static physical site for each
+qubit. Structured branch exits must agree on sites, and loop backedges must
+preserve the entry sites. Unsupported or inconsistent site transfers are
+diagnosed, including after all-to-all placement. A synthesis basis must provide
+the same one-qubit gate family on every site. Its entangler is optional:
+one-qubit synthesis does not need one. Two-qubit synthesis requires an entangler
+on every routing edge in at least one direction. A native operation does not
+need a synthesis basis.
+
+Mapping explores one initial-layout trial per available logical CPU by default,
+using LLVM's affinity-aware CPU count with a minimum of one. An explicit
+`ntrials` value overrides this default. Set both `ntrials` and `seed` on the
+`place-and-route` pass for reproducible results across machines. Disabling
+multithreading runs the same trials sequentially. The trial budget includes a
+greedy layout when available, followed by identity if a slot remains and random
+layouts for the remaining slots. Every trial uses the same refinement count.
+
+Each routing search limits its estimated node and layout storage to 256 MiB by
+default. When the budget is exhausted, it checks queued states before falling
+back to SWAPs that reduce the leading interaction's distance. Set
+`MappingOptions.search_memory_limit` in bytes, or use the CLI's
+`--mapping-search-memory-limit`, to trade memory for routing quality; zero
+disables node expansion. The equivalent `place-and-route` pass option is
+`search-memory-limit`. Each concurrent trial reuses its bounded node and layout
+storage across searches and releases it when the trial finishes. For example, 20
+active trials with 512 MiB each allow about 10 GiB of estimated search storage.
+Container overhead, target distance caches, and IR storage are additional; this
+setting does not cap total process memory. Changing the budget can change
+layouts and gate counts; more memory does not guarantee fewer gates.
+
+When routing is needed, mapping prepares a read-only table of at most 1024
+numerical native counts from original gates and constant two-qubit runs, in both
+operand orders and with adjacent SWAPs. Preparation stops when the table is
+full. Already-adjacent greedy layouts skip preparation and cost tracking. Trials
+share this table. Each live region's cost tracker retains up to 64 additional
+counts for routing-dependent matrices. The numerical payload is about 264 KiB
+for the shared table and 17 KiB per local cache, plus indexing, allocator, and
+per-site tracking overhead. Backward refinement also retains one pending
+single-qubit matrix per site to preserve circuit order. Each traversal resets
+accounting while retaining numerical caches. These allocations are separate from
+the search budget. Native synthesis caches up to 64 full decompositions per
+analysis (about 55 KiB including single-qubit factors). Caches are local to one
+pass invocation or traversal and retain no IR handles. Exact matrix and
+entangler matches preserve numerical decisions for the same compilation seed;
+failed decompositions remain unavailable. Target support and operand direction
+are checked before lookup. Cache misses use normal synthesis analysis, so
+precomputation need not predict every routed run.
+
+Native synthesis collects constant runs on the same two qubits, including
+interleaved single-qubit gates, and resynthesizes them in the target's selected
+basis. It replaces a run only when the result uses fewer native two-qubit gates
+than preserving supported operations and lowering the others individually. For
+example, a non-native RZZ followed by RXX can require two CZ gates together,
+compared with four when lowered separately. Already-native operations are
+preserved unless block synthesis reduces their native gate count.
+
+Before placement, both target pipelines also fuse runs when this reduces the
+number of two-qubit operations in the IR and their native gate count. This
+removes cancelled interactions before routing. Native support at this stage is
+checked without physical sites; the later synthesis pass checks assigned sites.
+
+Native support includes physical sites and operand direction. Barriers,
+non-unitary operations, and unavailable matrices stop a run. If block
+decomposition fails numerically, synthesis falls back to individual lowering.
+The selected basis uses one entangler family; it does not optimize arbitrary
+mixtures of all target operations or use calibration costs.
+
+Target synthesis preserves a native `gphase`. If the target does not support
+`gphase`, target synthesis preserves relative phase effects and removes only the
+unobservable global phase of the entry point, including its classical branches
+and loops. Global phases in helper functions and those that remain inside QCO
+modifiers are retained.
+
+Single-controlled phase gates with runtime angles are lowered to phase gates and
+two CX gates, then synthesized in the target basis. Other non-native two-qubit
+gates require a compile-time unitary matrix.
+
+Use {py:meth}`~mqt.core.mlir.QCOProgram.compile_for_target` with the target
+environment to apply target compilation to an existing QCO program. Compilation
+runs in place. If a pass fails, the environment and earlier pass changes remain
+on the program. In Python, `compile_for_target` raises `RuntimeError` with the
+emitted MLIR diagnostics, including operation and source-location details when
+available. Copy the program before compilation if the caller must preserve the
+input. The pipeline takes one `TargetEnvironment`, replaces any existing
+`mqt.target_env` module attribute, and shares the prepared target with all
+target passes without rebuilding its connectivity tables. The selected
+environment must remain unchanged during pipeline execution. Standalone passes
+decode the typed module attribute once through a cached analysis. The mapping,
+native-synthesis, and conformance factories also work in textual MLIR pass
+pipelines. Target compilation keeps deterministic placement on all-to-all
+targets and uses mapping only for explicit topology. The high-level program API
+registers the required inliner extensions; callers that populate the low-level
+target pipeline directly must register inliner extensions for every callable
+dialect in their context.
+
+### Synthesis without routing
+
+Use {py:meth}`~mqt.core.mlir.QCOProgram.synthesize_for_target` to translate a
+QCO program to a target's native gate set without routing. Dynamic qubits
+require all-to-all connectivity and receive an initial layout. Static qubits
+keep their device site IDs and may use an explicit topology. The pipeline
+inlines calls, decomposes non-native controlled gates, places dynamic qubits,
+performs native synthesis, and checks target support and topology. It accepts
+structured QCO/SCF input and uses the same target environment and global-phase
+policy as target compilation.
+
+Both target pipelines decompose controlled composite gates, including inverse
+bodies and constant integer powers of operations on disjoint wires. Other
+composite powers require native target support or a synthesis rule for that
+operation. Gates acting on three or more qubits need a target-independent
+decomposition before native synthesis and routing, unless the target supports
+them natively. Explicit-topology routing handles only one- and two-qubit gates;
+static circuits may keep native wider gates at supported device sites.
+
+Synthesis runs in place and raises `RuntimeError` with MLIR diagnostics on
+failure. Earlier pass changes may remain on the program, so copy it first when
+the input must be preserved. The C++ counterpart is
+`QCOProgram::synthesizeForTarget`; low-level clients can populate a pass manager
+with `populateTargetSynthesisPipeline`.
+
+### Payload control flow
+
+For explicit restrictions, use the constants on
+{py:class}`~mqt.core.mlir.ProgramCapability` and
+{py:class}`~mqt.core.mlir.ProgramConstraint`. Custom identifiers are also
+accepted.
+
+Target compilation requires structured QCO/SCF input. Producers of raw CFG
+branches must normalize them before target compilation. The pipeline removes
+unused symbols, propagates constants, and runs QCO cleanup before deciding which
+loops need expansion. It then specializes loops required by the selected payload
+or by placement, cleans up the resulting IR, and checks the remaining control
+flow with `legalize-control-flow`:
+
+| Capability           | Residual operations                                 |
+| -------------------- | --------------------------------------------------- |
+| `forward-branching`  | `qco.if` and classical `scf.if`                     |
+| `counted-iteration`  | `scf.for`                                           |
+| `conditional-loop`   | `scf.while`                                         |
+| `multiway-branching` | `qco.index_switch` and classical `scf.index_switch` |
+
+A finite `scf.for` that exceeds the selected counted-iteration contract is fully
+unrolled when this clones at most one billion body operations by default. The
+`unroll-loops-for-payload` pass exposes this limit as `max-operations`. The same
+bound applies to loops unrolled for qubit placement. Cleanup runs again because
+unrolling can make nested bounds and conditions constant. An unsupported index
+switch is lowered to a linear chain of nested forward branches when that form
+fits the selected contract. Before expansion, the compiler checks the selected
+forward-branching nesting limit and a compiler safety limit of 256 total
+control-flow levels, including enclosing control flow. This compiler limit is
+not a QDMI requirement and does not apply to switches retained under multiway
+branching.
+
+Generic SCF branches cannot capture or return QCO qubits or quantum tensors; use
+the corresponding QCO branch operation for linear quantum state. SCF loops must
+carry linear quantum state through their iteration arguments instead of
+capturing it. Both control-flow passes validate this loop input restriction
+before transforming loops or lowering switches. It is separate from QCO's
+exactly-one-SSA-use check.
+
+Cleanup shares constant-slot scalarization across `qco.if`, `scf.for`, and
+`scf.while`. Each region must extract distinct constant indices, reinsert every
+extracted qubit, and pass the tensor to its terminator. The loop body must
+return each tensor to its original iteration argument; a while condition may
+reorder the before-region results. Untouched slots remain outside the control
+flow. Runtime indices and incomplete or nested tensor updates do not match this
+scalarization.
+
+For Adaptive QIR on an all-to-all target whose operations have empty
+`site_tuples`, placement assigns physical sites to the allocation's slots and
+retains indexed registers. Loop bodies do not grow with their iteration counts.
+The site list requires space proportional to the register width. Capacity,
+physical site IDs, qubit origins, native operations, and payload limits are
+still checked. This path uses target metadata and does not depend on a device
+name.
+
+Other payloads, explicit topology, and site-specific operations require exact
+quantum addresses. Bounded specialization exposes those addresses before
+placement or routing. Residual unsupported tensor control flow produces a
+diagnostic before allocation changes. Mapped OpenQASM uses static physical
+qubits; indexed tensor loops must fit the default one-billion-operation
+unrolling budget. Runtime-dependent indices that cannot be specialized are
+unsupported. Logical qubit indices can remain dynamic in targetless OpenQASM
+export. Constant rank-one `f64` table reads use switches that group equal
+entries and require unrestricted multiway branching from the selected payload.
+Their size grows with the table data and number of reads.
+
+The supported constraints are `max-control-flow-nesting-depth` on all four
+capabilities, `max-iteration-count` on both iteration capabilities, and
+`max-case-count` on multiway branching, counting explicit cases without the
+default region. One explicit case plus a default is a supported index switch and
+does not require forward branching. Limits are inclusive. The compiler must
+prove a constrained loop's trip count. It currently proves constant `scf.for`
+bounds and rejects a constrained `scf.while` because no general termination
+bound is available. The proof requires literal loop bounds and a literal step;
+it does not infer a trip count from symbolic bounds. MLIR computes static trip
+counts; full unrolling additionally requires bounds and scaled steps that fit
+its signed arithmetic. The scaled step must also fit the loop induction-variable
+type. A zero, unknown, or misapplied constraint makes that capability group
+unusable. A capability absent from the selected specification is unsupported.
+
+This stage checks structural control flow only. Later lowering stages remain
+responsible for scalar types and operations, measurement provenance, function
+features, allocation, and final payload-profile conformance.
 
 ## Command line from a source build
 
@@ -59,69 +401,128 @@ mqt-cc --qdmi-list-devices
 Select a device when compiling:
 
 ```console
-mqt-cc --qdmi-device=mqt.sc.iqm.garnet \
-  --emit=qco-optimized input.qasm
+mqt-cc --qdmi-device=mqt.ddsim.default \
+  --payload-spec='#mqt.payload_spec<format = <id = "qir", version = "2.1", profile = "base", encoding = binary>, capabilities = [], optional_capabilities_known = false>' \
+  -o output.bc input.qasm
 ```
 
 An explicit registry file can be selected before device discovery:
 
 ```console
 mqt-cc --qdmi-config=/path/to/qdmi.json \
-  --qdmi-device=example.device input.qasm
+  --qdmi-device=example.device \
+  --payload-spec='#mqt.payload_spec<format = <id = "qir", version = "2.1", profile = "base", encoding = binary>, capabilities = [], optional_capabilities_known = false>' \
+  input.qasm
 ```
 
-Target compilation produces optimized QCO, QC, or QIR. It cannot be combined
-with a custom `--passes` pipeline because the canonical target pipeline owns the
-required pass ordering.
+The payload specification selects the emitted format and encoding. For targeted
+QIR, the selected encoding takes precedence over the output filename extension.
+Target compilation rejects `--emit` and custom `--pass-pipeline` pipelines
+because the target contract owns the output and required pass ordering.
 
 ## C++ source-tree API
 
-The source build provides a narrow, non-throwing QDMI bridge between a stable
-device ID and the compiler-owned target:
+Compile a file and submit it to DDSIM:
 
 ```cpp
-#include "mlir/Compiler/QDMIAdapter.h"
-#include "mlir/Compiler/Programs.h"
-#include <llvm/Support/Error.h>
-#include <llvm/Support/raw_ostream.h>
+#include "mqt/Compiler/QDMIAdapter.h"
+#include "qdmi/Client.hpp"
+#include "llvm/Support/Error.h"
+#include "llvm/Support/raw_ostream.h"
 
-auto target = mlir::compilerTargetFromDeviceId("mqt.sc.iqm.garnet");
-if (!target) {
-  llvm::errs() << "Failed to create compiler target: "
-               << llvm::toString(target.takeError()) << '\n';
+auto device = qdmi::Session::openDevice("mqt.ddsim.default");
+auto input = mlir::QCProgram::fromOpenQASMFile("input.qasm");
+if (!input) {
   return 1;
 }
-
-auto qc = mlir::QCProgram::fromQASMFile("input.qasm");
-if (!qc) {
+auto compiled = mlir::compileProgram(std::move(*input), device);
+if (!compiled) {
+  llvm::errs() << llvm::toString(compiled.takeError()) << '\n';
   return 1;
 }
-auto qco = std::move(*qc).intoQCO();
-if (!qco || !qco->compileForTarget(*target)) {
+auto job = mlir::submitProgram(device, *compiled);
+if (!job) {
+  llvm::errs() << llvm::toString(job.takeError()) << '\n';
+  return 1;
+}
+if (!job->wait()) {
   return 1;
 }
 ```
 
-The adapter accepts circuit-model devices whose operations are available
-throughout the topology in both operand orientations. Operand-symmetric gates,
-such as CZ, may report each edge once. Neutral-atom zone models require a
+`compilerTargetFromDevice` and `compilerTargetFromDeviceId` also remain
+available for hardware snapshots and staged compilation with a
+`TargetEnvironment`.
+
+### Payload support
+
+The adapter assumes all compiler-supported capabilities for the selected format
+(OpenQASM 3.1 or QIR 2.1). Use `TargetEnvironment` and `PayloadSpecification`
+for staged compilation with explicit restrictions.
+
+QIR submission requires a parameterless entry point returning an `i64` status;
+the compiler adds status 0 to programs with no return value. Keep classical
+temporaries local, or select OpenQASM 3 for global scalar outputs.
+
+The adapter accepts circuit-model devices whose two-qubit operations cover every
+topology edge in at least one operand orientation and preserves the exact
+ordered tuples reported by the device. Operations with arity above two must
+report every ordered tuple of distinct sites. Neutral-atom zone models require a
 different compilation model and are rejected with a diagnostic.
+
+QDMI 1.3 cannot report an operation-arity range. The bundled DDSIM device uses
+an exact, versioned custom-operation marker to state that each canonical
+standard gate with one or more targets accepts arbitrary positive controls. The
+adapter turns such a base gate into a variadic capability whose minimum is the
+base gate's target count. For example, DDSIM reports `h` with minimum one, `rxx`
+with minimum two, and `rccx` with minimum three; each also accepts any
+additional number of controls up to the simulator's site count. Controlled
+aliases such as `mcx` and `mcp` are not enumerated as compiler capabilities.
+This private bridge can be removed when QDMI standardizes equivalent metadata.
 
 The bundled Garnet and Emerald snapshots contain available T1, T2, and fidelity
 data. Operation durations are absent because they were unavailable. See
 {doc}`../qdmi/sc_device` for their stable IDs and {doc}`../qdmi/configuration`
 for registry configuration.
 
-If the program should use fewer physical qubits, run the {code}`mqt-qubit-reuse`
+If the program should use fewer device qubits, run the {code}`mqt-qubit-reuse`
 pipeline before target compilation.
 
 ## Qiskit export
 
 When exporting a program that has already been mapped to a
 {py:class}`~mqt.core.mlir.CompilerTarget`, pass the same target to
+{py:meth}`~mqt.core.mlir.QCOProgram.to_qiskit` or
 {py:meth}`~mqt.core.mlir.QCProgram.to_qiskit`. The exporter maps each static
 target site ID to its index in {py:attr}`~mqt.core.mlir.CompilerTarget.sites`
-and creates a canonical physical Qiskit circuit. The circuit has one register
-named {code}`q` with {py:attr}`~mqt.core.mlir.CompilerTarget.num_qubits` qubits.
-This option does not run target compilation or emit Qiskit layout metadata.
-Target-aware export requires static qubits whose site IDs belong to that target.
+and creates a device circuit using applicable standard gate names from the
+target. The circuit has one register named {code}`q` with
+{py:attr}`~mqt.core.mlir.CompilerTarget.num_sites` qubits. Target-aware export
+requires static qubits whose site IDs belong to that target. Target compilation
+attaches layout metadata when possible.
+
+## Layout metadata
+
+For dynamic qubits, `compile_for_target` assigns program qubits to device qubits
+and attaches the resulting layout to the QCO program.
+
+```python
+program = QCProgram.from_openqasm_str(bell_qasm).to_qco()
+program.compile_for_target(environment)
+circuit = program.to_qiskit(target=environment.target)
+print(circuit.layout.final_index_layout())
+```
+
+The attached layout records placement and routing through unused device qubits.
+The Qiskit exporter attaches it only when given a target with the recorded site
+order. Otherwise, it exports the circuit without a layout. Target compilation
+rejects a program with an attached layout. See
+[transpiler layouts](qiskit.md#transpiler-layouts).
+
+Static qubits name device sites directly. A program must use either static or
+dynamic qubits. Static circuits must fit the target topology; compilation and
+synthesis preserve their site IDs and do not attach a layout. For dynamic
+qubits, layout metadata requires fixed-size allocations in the entry block. If a
+program declares more qubits than the device but shrinks to fit during
+compilation, it compiles without an attached layout. Later transformations clear
+layout metadata.

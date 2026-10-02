@@ -8,15 +8,16 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Target/OpenQASM/Detail/OpenQASMLexer.h"
+#include "mqt/Target/OpenQASM/Detail/OpenQASMLexer.h"
 
-#include "mlir/Target/OpenQASM/Detail/OpenQASMUnicode.h"
+#include "mqt/Target/OpenQASM/Detail/OpenQASMUnicode.h"
 
-#include <llvm/ADT/SmallString.h>
-#include <llvm/ADT/StringRef.h>
-#include <llvm/ADT/StringSwitch.h>
-#include <llvm/Support/ConvertUTF.h>
-#include <mlir/Support/LLVM.h>
+#include "mlir/Support/LLVM.h"
+
+#include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/StringSwitch.h"
+#include "llvm/Support/ConvertUTF.h"
 
 #include <cctype>
 #include <cmath>
@@ -25,8 +26,7 @@
 #include <optional>
 #include <utility>
 
-// NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-namespace mlir::oq3::frontend::detail {
+namespace mlir::openqasm::frontend::detail {
 
 [[nodiscard]] static bool canStartIdentifier(char c) {
   return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
@@ -83,8 +83,10 @@ decodeCodePoint(const char* position, const char* end) {
                                 llvm::strictConversion) != llvm::conversionOK) {
     return std::nullopt;
   }
-  return DecodedCodePoint{.value = codePoint,
-                          .width = static_cast<size_t>(source - begin)};
+  return DecodedCodePoint{
+      .value = codePoint,
+      .width = static_cast<size_t>(source - begin),
+  };
 }
 
 [[nodiscard]] static TokenKind keywordKind(StringRef text) {
@@ -106,6 +108,8 @@ decodeCodePoint(const char* position, const char* end) {
       .Case("else", TokenKind::Else)
       .Case("for", TokenKind::For)
       .Case("while", TokenKind::While)
+      .Case("break", TokenKind::Break)
+      .Case("continue", TokenKind::Continue)
       .Case("switch", TokenKind::Switch)
       .Case("case", TokenKind::Case)
       .Case("default", TokenKind::Default)
@@ -123,16 +127,16 @@ decodeCodePoint(const char* position, const char* end) {
       .Case("duration", TokenKind::Duration)
       .Case("true", TokenKind::True)
       .Case("false", TokenKind::False)
-      .Cases("defcalgrammar", "def", "cal", "defcal",
+      .Cases({"defcalgrammar", "def", "cal", "defcal"},
              TokenKind::UnsupportedKeyword)
-      .Cases("extern", "box", "let", "break", "continue",
+      .Cases({"extern", "box", "let"}, TokenKind::UnsupportedKeyword)
+      .Cases({"end", "return"}, TokenKind::UnsupportedKeyword)
+      .Cases({"pragma", "input", "readonly", "mutable"},
              TokenKind::UnsupportedKeyword)
-      .Cases("end", "return", TokenKind::UnsupportedKeyword)
-      .Cases("pragma", "input", "readonly", "mutable",
+      .Cases({"complex", "array", "void", "stretch"},
              TokenKind::UnsupportedKeyword)
-      .Cases("complex", "array", "void", "stretch",
+      .Cases({"durationof", "delay", "im", "sizeof"},
              TokenKind::UnsupportedKeyword)
-      .Cases("durationof", "delay", "im", TokenKind::UnsupportedKeyword)
       .Default(TokenKind::Identifier);
 }
 
@@ -265,9 +269,16 @@ Token Lexer::lexNumber(const char* start) {
     }
     const StringRef text(start, static_cast<size_t>(cur - start));
     const StringRef digitText(digits, static_cast<size_t>(cur - digits));
-    Token token{.kind = TokenKind::IntegerLiteral,
-                .loc = SMLoc::getFromPointer(start),
-                .spelling = text};
+    Token token{
+        .kind = TokenKind::IntegerLiteral,
+        .loc = SMLoc::getFromPointer(start),
+        .identifier = {},
+        .stringValue = {},
+        .spelling = text,
+        .intValue = 0,
+        .floatValue = 0.0,
+        .wideInteger = false,
+    };
     llvm::SmallString<32> normalized;
     for (const char value : digitText) {
       if (!isSeparator(value)) {
@@ -563,5 +574,4 @@ Token Lexer::next() {
   return single(TokenKind::Error);
 }
 
-} // namespace mlir::oq3::frontend::detail
-// NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+} // namespace mlir::openqasm::frontend::detail

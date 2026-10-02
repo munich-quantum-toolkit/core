@@ -8,25 +8,25 @@
  * Licensed under the MIT License
  */
 
-#include "RegionBranchCompat.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
 
-#include <llvm/ADT/DenseSet.h>
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/Support/Casting.h>
-#include <llvm/Support/ErrorHandling.h>
-#include <mlir/IR/Attributes.h>
-#include <mlir/IR/Builders.h>
-#include <mlir/IR/Location.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/Matchers.h>
-#include <mlir/IR/OperationSupport.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
-#include <mlir/Interfaces/ControlFlowInterfaces.h>
-#include <mlir/Support/LLVM.h>
+#include "mlir/IR/Attributes.h"
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/Location.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/Matchers.h"
+#include "mlir/IR/OperationSupport.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/Value.h"
+#include "mlir/IR/ValueRange.h"
+#include "mlir/Interfaces/ControlFlowInterfaces.h"
+#include "mlir/Support/LLVM.h"
+
+#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/Support/Casting.h"
+#include "llvm/Support/ErrorHandling.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -53,8 +53,7 @@ void IndexSwitchOp::build(OpBuilder& odsBuilder, OperationState& odsState,
   const auto buildRegion = [&](Region& region,
                                function_ref<Value(Value)> bodyBuilder) {
     auto& block = region.emplaceBlock();
-    const auto blockArgument =
-        block.addArgument(target.getType(), odsState.location);
+    auto blockArgument = block.addArgument(target.getType(), odsState.location);
     odsBuilder.setInsertionPointToStart(&block);
     YieldOp::create(odsBuilder, odsState.location, bodyBuilder(blockArgument));
   };
@@ -66,19 +65,17 @@ void IndexSwitchOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 }
 
 // Adapted from
-// https://github.com/llvm/llvm-project/blob/llvmorg-22.1.1/mlir/lib/Dialect/SCF/IR/SCF.cpp
+// https://github.com/llvm/llvm-project/blob/llvmorg-23.1.0/mlir/lib/Dialect/SCF/IR/SCF.cpp
 
 void IndexSwitchOp::getSuccessorRegions(
     RegionBranchPoint point, SmallVectorImpl<RegionSuccessor>& regions) {
   if (!point.isParent()) {
-    regions.push_back(
-        detail::makeRegionSuccessor(getOperation(), getResults()));
+    regions.push_back(RegionSuccessor(getOperation()));
     return;
   }
 
   for (Region* region : getRegions()) {
-    regions.push_back(
-        detail::makeRegionSuccessor(region, region->getArguments()));
+    regions.push_back(RegionSuccessor(region));
   }
 }
 
@@ -118,8 +115,7 @@ void IndexSwitchOp::getEntrySuccessorRegions(
   auto arg = dyn_cast_or_null<IntegerAttr>(adaptor.getArg());
   if (!arg) {
     for (Region* region : getRegions()) {
-      regions.push_back(
-          detail::makeRegionSuccessor(region, region->getArguments()));
+      regions.push_back(RegionSuccessor(region));
     }
     return;
   }
@@ -129,19 +125,17 @@ void IndexSwitchOp::getEntrySuccessorRegions(
 
   const auto* it = llvm::find(getCases(), arg.getInt());
   if (it == getCases().end()) {
-    regions.push_back(detail::makeRegionSuccessor(
-        &getDefaultRegion(), getDefaultRegion().getArguments()));
+    regions.push_back(RegionSuccessor(&getDefaultRegion()));
     return;
   }
 
   const auto caseIndex = std::distance(getCases().begin(), it);
   auto& caseRegion = getCaseRegions()[caseIndex];
-  regions.push_back(
-      detail::makeRegionSuccessor(&caseRegion, caseRegion.getArguments()));
+  regions.push_back(RegionSuccessor(&caseRegion));
 }
 
 ValueRange IndexSwitchOp::getSuccessorInputs(RegionSuccessor successor) {
-  if (detail::isOperationSuccessor(successor)) {
+  if (successor.isOperation()) {
     return getResults();
   }
   return successor.getSuccessor()->getArguments();
@@ -153,7 +147,7 @@ IndexSwitchOp::getEntrySuccessorOperands(RegionSuccessor /*successor*/) {
 }
 
 namespace {
-/** Inline the selected region when the switch argument is constant. */
+/// Inline the selected region when the switch argument is constant.
 struct RemoveStaticSelector final : OpRewritePattern<IndexSwitchOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -201,9 +195,9 @@ LogicalResult IndexSwitchOp::verify() {
     }
   }
 
-  const auto targets = getTargets();
+  auto targets = getTargets();
   const auto ntargets = targets.size();
-  const auto results = getLinearResults();
+  auto results = getLinearResults();
   const auto nresults = results.size();
 
   for (Region* region : getRegions()) {
@@ -224,7 +218,7 @@ LogicalResult IndexSwitchOp::verify() {
   }
 
   SmallPtrSet<Value, 4> visited;
-  for (const auto target : targets) {
+  for (auto target : targets) {
     if (!visited.insert(target).second) {
       return emitOpError("The operation requires unique values as targets.");
     }
@@ -309,7 +303,7 @@ IndexSwitchOp::replaceWithAdditionalTargets(RewriterBase& rewriter,
     return *this;
   }
 
-  const auto targets = getTargets();
+  auto targets = getTargets();
   const auto nregions = getNumRegions();
 
   SmallVector<Value> newTargets;

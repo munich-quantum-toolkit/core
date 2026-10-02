@@ -200,7 +200,6 @@ function(version_from_package)
 endfunction()
 
 function(get_mqt_core_version)
-  # Initialize as not found
   set(MQT_CORE_VERSION_FOUND
       FALSE
       CACHE INTERNAL "MQT_CORE_VERSION_FOUND")

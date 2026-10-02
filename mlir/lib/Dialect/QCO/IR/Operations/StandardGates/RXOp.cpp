@@ -8,17 +8,17 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
-#include "mlir/Dialect/MQT/Utils/Parameters.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/QCOUtils.h"
-#include "mlir/Dialect/QCO/Utils/Matrix.h"
+#include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mqt/Dialect/MQT/Utils/Parameters.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QCO/Utils/Matrix.h"
 
-#include <mlir/IR/Builders.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OperationSupport.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/Support/LogicalResult.h>
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/OperationSupport.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/Support/LogicalResult.h"
 
 #include <cmath>
 #include <complex>
@@ -29,27 +29,9 @@ using namespace mlir;
 using namespace mlir::qco;
 using namespace mlir::mqt;
 
-namespace {
-
-/**
- * @brief Merge subsequent RX operations on the same qubit by adding their
- * angles.
- */
-struct MergeSubsequentRX final : OpRewritePattern<RXOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(RXOp op,
-                                PatternRewriter& rewriter) const override {
-    return mergeOneTargetOneParameter(op, rewriter);
-  }
-};
-
-} // namespace
-
 void RXOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
                  const std::variant<double, Value>& theta) {
-  const auto thetaOperand =
-      variantToValue(odsBuilder, odsState.location, theta);
+  auto thetaOperand = variantToValue(odsBuilder, odsState.location, theta);
   build(odsBuilder, odsState, qubitIn, thetaOperand);
 }
 
@@ -62,8 +44,8 @@ OpFoldResult RXOp::fold(FoldAdaptor /*adaptor*/) {
 }
 
 void RXOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                       MLIRContext* context) {
-  results.add<MergeSubsequentRX>(context);
+                                       MLIRContext* /*context*/) {
+  results.add(&mergeOneTargetOneParameter<RXOp>);
 }
 
 Matrix2x2 RXOp::unitaryMatrix(const double theta) {

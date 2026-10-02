@@ -8,14 +8,14 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/QCOUtils.h"
-#include "mlir/Dialect/QCO/Utils/Matrix.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QCO/Utils/Matrix.h"
 
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OperationSupport.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/Support/LogicalResult.h>
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/OperationSupport.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/Support/LogicalResult.h"
 
 #include <complex>
 #include <numbers>
@@ -23,25 +23,11 @@
 using namespace mlir;
 using namespace mlir::qco;
 
-namespace {
-
-/**
- * @brief Remove subsequent ECR operations on the same qubits.
- */
-struct RemoveSubsequentECR final : OpRewritePattern<ECROp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(ECROp op,
-                                PatternRewriter& rewriter) const override {
-    return removeInversePairTwoTargetZeroParameter<ECROp>(op, rewriter);
-  }
-};
-
-} // namespace
-
 void ECROp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                        MLIRContext* context) {
-  results.add<RemoveSubsequentECR>(context);
+                                        MLIRContext* /*context*/) {
+  results.add(+[](ECROp op, PatternRewriter& rewriter) {
+    return removeInversePairTwoTargetZeroParameter<ECROp>(op, rewriter);
+  });
 }
 
 Matrix4x4 ECROp::getUnitaryMatrix() {

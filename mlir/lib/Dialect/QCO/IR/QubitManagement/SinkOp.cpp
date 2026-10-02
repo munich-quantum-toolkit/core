@@ -8,23 +8,21 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
 
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/Value.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/Value.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
 
 using namespace mlir;
 using namespace mlir::qco;
 
 namespace {
 
-/**
- * @brief Remove matching alloc/static and sink pairs without operations
- * between them.
- */
+/// Remove matching alloc/static and sink pairs without operations
+/// between them.
 struct RemoveAllocSinkPair final : OpRewritePattern<SinkOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -36,7 +34,10 @@ struct RemoveAllocSinkPair final : OpRewritePattern<SinkOp> {
     }
 
     rewriter.eraseOp(op);
-    rewriter.eraseOp(defOp);
+    /// SCF may forward a result before removing its unused loop argument.
+    if (defOp->use_empty()) {
+      rewriter.eraseOp(defOp);
+    }
     return success();
   }
 };

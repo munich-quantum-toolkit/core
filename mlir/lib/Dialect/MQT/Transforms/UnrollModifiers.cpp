@@ -8,67 +8,59 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQT/Transforms/Passes.h"
-#include "mlir/Dialect/MQT/Utils/GatePowering.h"
-#include "mlir/Dialect/MQT/Utils/Modifiers.h"
-#include "mlir/Dialect/QC/IR/QCInterfaces.h"
-#include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/MQT/Transforms/UnrollModifiers.h"
 
-#include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/SmallVectorExtras.h>
-#include <llvm/ADT/TypeSwitch.h>
-#include <llvm/Support/Debug.h>
-#include <mlir/IR/Block.h>
-#include <mlir/IR/IRMapping.h>
-#include <mlir/IR/OpDefinition.h>
-#include <mlir/IR/Operation.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
-#include <mlir/Interfaces/SideEffectInterfaces.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
+#include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
+#include "mqt/Dialect/MQT/Transforms/Passes.h"
+#include "mqt/Dialect/MQT/Utils/GatePowering.h"
+#include "mqt/Dialect/MQT/Utils/Modifiers.h"
+#include "mqt/Dialect/QC/IR/QCInterfaces.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
+#include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+
+#include "mlir/Dialect/Func/Extensions/InlinerExtension.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/LLVMIR/Transforms/InlinerInterfaceImpl.h"
+#include "mlir/IR/Block.h"
+#include "mlir/IR/IRMapping.h"
+#include "mlir/IR/OpDefinition.h"
+#include "mlir/IR/Operation.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/SymbolTable.h"
+#include "mlir/IR/Value.h"
+#include "mlir/IR/ValueRange.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
+#include "mlir/Transforms/Inliner.h"
+
+#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/SmallVectorExtras.h"
+#include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/Debug.h"
 
 #include <cstddef>
+#include <utility>
 
 #define DEBUG_TYPE "unroll-modifiers"
 
 namespace mlir::mqt {
 
 #define GEN_PASS_DEF_UNROLLMODIFIERS
-#include "mlir/Dialect/MQT/Transforms/Passes.h.inc"
+#include "mqt/Dialect/MQT/Transforms/Passes.h.inc"
 
-/**
- *@brief Move the classical operations of @p body in front of @p modifier.
- *
- * @details Fails if a classical operation is impure or depends on values
- * defined in @p body.
- */
+/// Hoist eager parameter computation from a verified modifier in dependency
+/// order.
 template <typename UnitaryOpInterface>
-static LogicalResult hoistClassicalOps(Block& body, Operation* modifier,
-                                       RewriterBase& rewriter) {
-  const auto isClassical = [](Operation& op) {
-    return !isa<UnitaryOpInterface>(op) &&
-           !op.hasTrait<OpTrait::IsTerminator>();
-  };
-  for (auto& op : body) {
-    if (isClassical(op) &&
-        (!isPure(&op) || llvm::any_of(op.getOperands(), [&](Value operand) {
-          return operand.getParentBlock() == &body;
-        }))) {
-      return failure();
-    }
-  }
+static void hoistClassicalOps(Block& body, Operation* modifier,
+                              RewriterBase& rewriter) {
   for (auto& op : llvm::make_early_inc_range(body)) {
-    if (isClassical(op)) {
+    if (!isa<UnitaryOpInterface>(op) && !op.hasTrait<OpTrait::IsTerminator>()) {
       rewriter.moveOpBefore(&op, modifier);
     }
   }
-  return success();
 }
 
 /// Check whether the exponent of @p op is a compile-time known integer.
@@ -97,9 +89,7 @@ static LogicalResult unrollModifier(qc::CtrlOp op, RewriterBase& rewriter) {
     return success();
   }
   auto* body = op.getBody();
-  if (failed(hoistClassicalOps<qc::UnitaryOpInterface>(*body, op, rewriter))) {
-    return failure();
-  }
+  hoistClassicalOps<qc::UnitaryOpInterface>(*body, op, rewriter);
 
   rewriter.setInsertionPoint(op);
   for (auto unitary : body->getOps<qc::UnitaryOpInterface>()) {
@@ -121,9 +111,7 @@ static LogicalResult unrollModifier(qc::InvOp op, RewriterBase& rewriter) {
     return success();
   }
   auto* body = op.getBody();
-  if (failed(hoistClassicalOps<qc::UnitaryOpInterface>(*body, op, rewriter))) {
-    return failure();
-  }
+  hoistClassicalOps<qc::UnitaryOpInterface>(*body, op, rewriter);
 
   rewriter.setInsertionPoint(op);
   // (a b)^-1 = b^-1 a^-1, so the operations are inverted in reverse order.
@@ -162,9 +150,7 @@ static LogicalResult unrollModifier(qc::PowOp op, RewriterBase& rewriter) {
   if (!hasIntegerExponent(op) || !hasDisjointBodyQubits(*body)) {
     return failure();
   }
-  if (failed(hoistClassicalOps<qc::UnitaryOpInterface>(*body, op, rewriter))) {
-    return failure();
-  }
+  hoistClassicalOps<qc::UnitaryOpInterface>(*body, op, rewriter);
 
   rewriter.setInsertionPoint(op);
   for (auto unitary : body->getOps<qc::UnitaryOpInterface>()) {
@@ -198,14 +184,12 @@ static SmallVector<Value> cloneIntoBody(qco::UnitaryOpInterface unitary,
 
 /// Unroll a `qco.ctrl` modifier with more than one body unitary,
 /// or fail if it cannot be unrolled.
-static LogicalResult unrollModifier(qco::CtrlOp op, RewriterBase& rewriter) {
+LogicalResult unrollModifier(qco::CtrlOp op, RewriterBase& rewriter) {
   auto* body = op.getBody();
   if (op.getNumBodyUnitaries() < 2) {
-    return success();
-  }
-  if (failed(hoistClassicalOps<qco::UnitaryOpInterface>(*body, op, rewriter))) {
     return failure();
   }
+  hoistClassicalOps<qco::UnitaryOpInterface>(*body, op, rewriter);
 
   // Thread the body's linear qubit values through the new modifiers.
   IRMapping qubits;
@@ -236,14 +220,12 @@ static LogicalResult unrollModifier(qco::CtrlOp op, RewriterBase& rewriter) {
 
 /// Unroll a `qco.inv` modifier with more than one body unitary,
 /// or fail if it cannot be unrolled.
-static LogicalResult unrollModifier(qco::InvOp op, RewriterBase& rewriter) {
+LogicalResult unrollModifier(qco::InvOp op, RewriterBase& rewriter) {
   auto* body = op.getBody();
   if (op.getNumBodyUnitaries() < 2) {
-    return success();
-  }
-  if (failed(hoistClassicalOps<qco::UnitaryOpInterface>(*body, op, rewriter))) {
     return failure();
   }
+  hoistClassicalOps<qco::UnitaryOpInterface>(*body, op, rewriter);
 
   // Inverting the body reverses its data flow: the modifier inputs enter at the
   // yielded values and leave at the block arguments.
@@ -251,8 +233,7 @@ static LogicalResult unrollModifier(qco::InvOp op, RewriterBase& rewriter) {
   qubits.map(body->getTerminator()->getOperands(), op.getQubitsIn());
 
   rewriter.setInsertionPoint(op);
-  auto unitaries = llvm::to_vector(body->getOps<qco::UnitaryOpInterface>());
-  for (auto unitary : llvm::reverse(unitaries)) {
+  for (auto unitary : llvm::reverse(body->getOps<qco::UnitaryOpInterface>())) {
     const auto inputs = llvm::map_to_vector(
         unitary.getOutputQubits(), [&](Value q) { return qubits.lookup(q); });
     auto invOp =
@@ -271,42 +252,27 @@ static LogicalResult unrollModifier(qco::InvOp op, RewriterBase& rewriter) {
 
 /// Check that the unitary operations in @p body act on disjoint wires.
 static bool hasDisjointBodyWires(Block& body) {
-  DenseMap<Value, size_t> wires;
-  for (auto [index, arg] : llvm::enumerate(body.getArguments())) {
-    wires.try_emplace(arg, index);
-  }
-
-  DenseSet<size_t> used;
-  for (auto unitary : body.getOps<qco::UnitaryOpInterface>()) {
-    for (auto [qubit, result] :
-         llvm::zip_equal(unitary.getInputQubits(), unitary.getOutputQubits())) {
-      const auto it = wires.find(qubit);
-      if (it == wires.end()) {
-        return false;
-      }
-      const auto wire = it->second;
-      if (!used.insert(wire).second) {
-        return false;
-      }
-      wires.try_emplace(result, wire);
-    }
-  }
-  return true;
+  /// In linear QCO, a unitary result used by another unitary reuses its wire.
+  return llvm::all_of(
+      body.getOps<qco::UnitaryOpInterface>(), [&](auto unitary) {
+        return llvm::all_of(unitary.getInputQubits(), [&](Value qubit) {
+          auto argument = dyn_cast<BlockArgument>(qubit);
+          return argument && argument.getOwner() == &body;
+        });
+      });
 }
 
 /// Unroll a `qco.pow` modifier with more than one body unitary,
 /// or fail if it cannot be unrolled.
-static LogicalResult unrollModifier(qco::PowOp op, RewriterBase& rewriter) {
+LogicalResult unrollModifier(qco::PowOp op, RewriterBase& rewriter) {
   if (op.getNumBodyUnitaries() < 2) {
-    return success();
+    return failure();
   }
   auto* body = op.getBody();
   if (!hasIntegerExponent(op) || !hasDisjointBodyWires(*body)) {
     return failure();
   }
-  if (failed(hoistClassicalOps<qco::UnitaryOpInterface>(*body, op, rewriter))) {
-    return failure();
-  }
+  hoistClassicalOps<qco::UnitaryOpInterface>(*body, op, rewriter);
 
   IRMapping qubits;
   qubits.map(body->getArguments(), op.getQubitsIn());
@@ -333,9 +299,67 @@ static LogicalResult unrollModifier(qco::PowOp op, RewriterBase& rewriter) {
 
 namespace {
 
+struct ModifierInliner final : InlinerInterface {
+  using InlinerInterface::InlinerInterface;
+
+  SmallVector<CallOpInterface> calls;
+
+  void processInlinedBlocks(iterator_range<Region::iterator> blocks) override {
+    for (auto& block : blocks) {
+      block.walk([&](CallOpInterface call) {
+        if (isa<qc::CallOp, qco::CallOp>(call.getOperation())) {
+          calls.push_back(call);
+        }
+      });
+    }
+  }
+};
+
 struct UnrollModifiers final : impl::UnrollModifiersBase<UnrollModifiers> {
+  void getDependentDialects(DialectRegistry& registry) const override {
+    UnrollModifiersBase::getDependentDialects(registry);
+    func::registerInlinerExtension(registry);
+    LLVM::registerInlinerInterface(registry);
+  }
+
 protected:
   void runOnOperation() override {
+    SmallVector<CallOpInterface> calls;
+    getOperation()->walk([&](CallOpInterface call) {
+      if (!isa<qc::CallOp, qco::CallOp>(call.getOperation())) {
+        return;
+      }
+      for (auto* parent = call->getParentOp(); parent != nullptr;
+           parent = parent->getParentOp()) {
+        if (isa<qc::CtrlOp, qc::InvOp, qc::PowOp, qco::CtrlOp, qco::InvOp,
+                qco::PowOp>(parent)) {
+          calls.push_back(call);
+          return;
+        }
+      }
+    });
+    if (!calls.empty()) {
+      ModifierInliner inliner(&getContext());
+      inliner.calls = std::move(calls);
+      const InlinerConfig config;
+      SymbolTableCollection symbols;
+      bool changed = false;
+      while (!inliner.calls.empty()) {
+        auto call = inliner.calls.pop_back_val();
+        auto callee = dyn_cast_or_null<func::FuncOp>(
+            call.resolveCallableInTable(&symbols));
+        if (callee && succeeded(inlineCall(inliner, config.getCloneCallback(),
+                                           call, callee, &callee.getBody()))) {
+          call->erase();
+          changed = true;
+        }
+      }
+      if (changed && failed(normalizeGlobalPhases(getOperation()))) {
+        signalPassFailure();
+        return;
+      }
+    }
+
     SmallVector<Operation*> modifiers;
     getOperation()->walk([&](Operation* op) {
       if (isa<qc::CtrlOp, qc::InvOp, qc::PowOp, qco::CtrlOp, qco::InvOp,

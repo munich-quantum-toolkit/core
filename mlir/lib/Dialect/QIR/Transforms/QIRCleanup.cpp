@@ -8,62 +8,37 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QIR/Transforms/Passes.h"
-#include "mlir/Dialect/QIR/Utils/QIRUtils.h"
+#include "mqt/Dialect/QIR/Transforms/Passes.h"
+#include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/StringRef.h>
-#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
-#include <mlir/IR/Attributes.h>
-#include <mlir/IR/Builders.h>
-#include <mlir/IR/BuiltinAttributes.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/SymbolTable.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/IR/Attributes.h"
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/SymbolTable.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringRef.h"
 
 #include <utility>
 
 namespace mlir::qir {
 
 #define GEN_PASS_DEF_QIRCLEANUPPASS
-#include "mlir/Dialect/QIR/Transforms/Passes.h.inc"
-
-[[nodiscard]] static StringAttr getMetadataKey(const Attribute attr) {
-  auto pair = dyn_cast<ArrayAttr>(attr);
-  if (!pair || pair.size() != 2) {
-    return {};
-  }
-  auto key = dyn_cast<StringAttr>(pair[0]);
-  if (!key || !isa<StringAttr>(pair[1])) {
-    return {};
-  }
-  return key;
-}
+#include "mqt/Dialect/QIR/Transforms/Passes.h.inc"
 
 [[nodiscard]] static StringRef getCalleeName(LLVM::CallOp callOp) {
   auto calleeAttr = callOp.getCalleeAttr();
-  auto flatRef = dyn_cast_or_null<FlatSymbolRefAttr>(calleeAttr);
+  auto flatRef = calleeAttr;
   if (!flatRef) {
     return {};
   }
   return flatRef.getValue();
-}
-
-[[nodiscard]] static bool moduleHasDynamicQubitRuntimeCalls(ModuleOp module) {
-  return llvm::any_of(module.getOps<LLVM::CallOp>(), [](LLVM::CallOp callOp) {
-    const auto callee = getCalleeName(callOp);
-    return callee == QIR_QUBIT_ALLOC || callee == QIR_QUBIT_ARRAY_ALLOC;
-  });
-}
-
-[[nodiscard]] static bool moduleHasDynamicResultRuntimeCalls(ModuleOp module) {
-  return llvm::any_of(module.getOps<LLVM::CallOp>(), [](LLVM::CallOp callOp) {
-    const auto callee = getCalleeName(callOp);
-    return callee == QIR_RESULT_ALLOC || callee == QIR_RESULT_ARRAY_ALLOC;
-  });
 }
 
 static void dropUnusedExternalDeclarations(ModuleOp module) {
@@ -79,75 +54,13 @@ static void dropUnusedExternalDeclarations(ModuleOp module) {
   }
 }
 
-static void normalizeQIRMetadata(ModuleOp module) {
-  auto main = getMainFunction(module);
-  if (!main) {
-    return;
-  }
-
-  auto passthroughAttr = main->getAttrOfType<ArrayAttr>("passthrough");
-  if (!passthroughAttr) {
-    return;
-  }
-
-  const bool hasDynamicQubit = moduleHasDynamicQubitRuntimeCalls(module);
-  const bool hasDynamicResult = moduleHasDynamicResultRuntimeCalls(module);
-  if (hasDynamicQubit && hasDynamicResult) {
-    return;
-  }
-
-  ArrayAttr requiredNumQubitsAttr = nullptr;
-  ArrayAttr requiredNumResultsAttr = nullptr;
-  for (const auto attr : passthroughAttr) {
-    const auto key = getMetadataKey(attr);
-    if (!key) {
-      continue;
-    }
-    if (key.getValue() == "required_num_qubits") {
-      requiredNumQubitsAttr = cast<ArrayAttr>(attr);
-    } else if (key.getValue() == "required_num_results") {
-      requiredNumResultsAttr = cast<ArrayAttr>(attr);
-    }
-  }
-
-  OpBuilder builder(module.getContext());
-  SmallVector<Attribute> updatedMetadata;
-  updatedMetadata.reserve(passthroughAttr.size() + 2);
-
-  for (const auto attr : passthroughAttr) {
-    const auto key = getMetadataKey(attr);
-    if (!key) {
-      updatedMetadata.push_back(attr);
-      continue;
-    }
-
-    if (key.getValue() == "dynamic_qubit_management" && !hasDynamicQubit) {
-      if (requiredNumQubitsAttr) {
-        updatedMetadata.push_back(requiredNumQubitsAttr);
-      }
-      continue;
-    }
-    if (key.getValue() == "dynamic_result_management" && !hasDynamicResult) {
-      if (requiredNumResultsAttr) {
-        updatedMetadata.push_back(requiredNumResultsAttr);
-      }
-      continue;
-    }
-
-    updatedMetadata.push_back(attr);
-  }
-
-  main->setAttr("passthrough", builder.getArrayAttr(updatedMetadata));
-}
-
 namespace {
 
-/**
- * @brief Remove matching allocation-release pairs of qubit arrays.
- * @details Matches an unused
- * `__quantum__rt__qubit_array_allocate`-`__quantum__rt__qubit_array_release`
- * pair on the same stack slot.
- */
+/// Remove matching allocation-release pairs of qubit arrays.
+///
+/// Matches an unused
+/// `__quantum__rt__qubit_array_allocate`-`__quantum__rt__qubit_array_release`
+/// pair on the same stack slot.
 struct RemoveDeadQubitArrayPair final : OpRewritePattern<LLVM::CallOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -198,11 +111,10 @@ struct RemoveDeadQubitArrayPair final : OpRewritePattern<LLVM::CallOp> {
   }
 };
 
-/**
- * @brief Clean up QIR.
- * @details Removes dead allocation-release pairs of qubit arrays, drops unused
- * external declarations, and normalizes QIR metadata.
- */
+/// Clean up QIR.
+///
+/// Removes dead allocation-release pairs of qubit arrays, drops unused
+/// external declarations.
 struct QIRCleanupPass final : impl::QIRCleanupPassBase<QIRCleanupPass> {
 protected:
   void runOnOperation() override {
@@ -216,7 +128,6 @@ protected:
     }
 
     dropUnusedExternalDeclarations(module);
-    normalizeQIRMetadata(module);
   }
 };
 

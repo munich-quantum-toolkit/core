@@ -8,22 +8,23 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
-#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
-#include "mlir/Dialect/QCO/Transforms/Passes.h"
-#include "mlir/Dialect/QCO/Utils/Matrix.h"
-#include "mlir/Dialect/QCO/Utils/WireIterator.h"
+#include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
+#include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/Transforms/Decomposition/Euler.h"
+#include "mqt/Dialect/QCO/Transforms/Passes.h"
+#include "mqt/Dialect/QCO/Utils/Matrix.h"
+#include "mqt/Dialect/QCO/Utils/WireIterator.h"
+#include "mqt/Dialect/QTensor/IR/QTensorDialect.h" // IWYU pragma: keep (Passes.h.inc)
 
-#include <llvm/ADT/TypeSwitch.h>
-#include <mlir/Dialect/Arith/IR/Arith.h> // IWYU pragma: keep (Passes.h.inc)
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/Operation.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/Value.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
+#include "mlir/Dialect/Arith/IR/Arith.h" // IWYU pragma: keep (Passes.h.inc)
+#include "mlir/Dialect/Math/IR/Math.h"   // IWYU pragma: keep (Passes.h.inc)
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/Operation.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/Value.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 #include <cstddef>
 #include <optional>
@@ -32,11 +33,11 @@
 namespace mlir::qco {
 
 #define GEN_PASS_DEF_FUSESINGLEQUBITUNITARYRUNS
-#include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
+#include "mqt/Dialect/QCO/Transforms/Passes.h.inc"
 
 namespace {
 
-/** Composed unitary and metadata for a fusable run. */
+/// Composed unitary and metadata for a fusable run.
 struct FusableRunScan {
   Matrix2x2 composed = Matrix2x2::identity();
   std::size_t gateCount = 0;
@@ -46,17 +47,13 @@ struct FusableRunScan {
 
 } // namespace
 
-/**
- * @brief Whether `gate` has the structural shape of a fusable run member.
- */
+/// Whether `gate` has the structural shape of a fusable run member.
 static bool isRunMemberCandidate(UnitaryOpInterface gate) {
   return gate && gate.isSingleQubit() && !isa<BarrierOp>(gate.getOperation());
 }
 
-/**
- * @brief Returns the matrix when `gate` can take part in a fusable
- * single-qubit run.
- */
+/// Returns the matrix when `gate` can take part in a fusable
+/// single-qubit run.
 static std::optional<Matrix2x2> getRunMemberMatrix(UnitaryOpInterface gate) {
   if (!isRunMemberCandidate(gate)) {
     return std::nullopt;
@@ -64,49 +61,18 @@ static std::optional<Matrix2x2> getRunMemberMatrix(UnitaryOpInterface gate) {
   return gate.getUnitaryMatrix<Matrix2x2>();
 }
 
-/**
- * @brief Whether `op` is a gate that Euler synthesis emits for `basis`.
- *
- * @param op The operation to classify.
- * @param basis The single-qubit synthesis basis.
- * @return Whether `op` is in the gate set for `basis`.
- */
-static bool isTargetBasisGate(Operation* op,
-                              const decomposition::SingleQubitBasis basis) {
-  using decomposition::SingleQubitBasis;
-  return TypeSwitch<Operation*, bool>(op)
-      .Case<RZOp>([&](auto) {
-        return basis == SingleQubitBasis::ZYZ ||
-               basis == SingleQubitBasis::ZXZ ||
-               basis == SingleQubitBasis::XZX ||
-               basis == SingleQubitBasis::ZSXX;
-      })
-      .Case<RYOp>([&](auto) {
-        return basis == SingleQubitBasis::ZYZ || basis == SingleQubitBasis::XYX;
-      })
-      .Case<RXOp>([&](auto) {
-        return basis == SingleQubitBasis::ZXZ ||
-               basis == SingleQubitBasis::XZX || basis == SingleQubitBasis::XYX;
-      })
-      .Case<UOp>([&](auto) { return basis == SingleQubitBasis::U; })
-      .Case<SXOp, XOp>([&](auto) { return basis == SingleQubitBasis::ZSXX; })
-      .Case<ROp>([&](auto) { return basis == SingleQubitBasis::R; })
-      .Default([](auto) { return false; });
-}
-
-/**
- * @brief Walks the wire from @p head, composing the run's matrix and metadata.
- *
- * @param head First gate of the run.
- * @param headMatrix Matrix already obtained while identifying the run head.
- * @param basis Single-qubit synthesis basis.
- * @return Composed matrix, gate count, and run tail.
- */
+/// Walks the wire from @p head, composing the run's matrix and metadata.
+///
+/// @param head First gate of the run.
+/// @param headMatrix Matrix already obtained while identifying the run head.
+/// @param basis Single-qubit synthesis basis.
+/// @return Composed matrix, gate count, and run tail.
 static FusableRunScan
 scanFusableRun(UnitaryOpInterface head, const Matrix2x2& headMatrix,
-               const decomposition::SingleQubitBasis basis) {
+               const decomposition::SingleQubitBasis basis,
+               const CompilerTarget* target) {
   FusableRunScan scan;
-  for (auto* op : WireRange(head.getOutputTarget(0))) {
+  for (auto* op : WireRange(head.getOutputQubit(0))) {
     auto member = dyn_cast_or_null<UnitaryOpInterface>(op);
     if (!member) {
       break;
@@ -118,24 +84,24 @@ scanFusableRun(UnitaryOpInterface head, const Matrix2x2& headMatrix,
       break;
     }
     scan.composed.premultiplyBy(*matrix);
-    scan.hasNonBasisGate |= !isTargetBasisGate(op, basis);
+    scan.hasNonBasisGate |=
+        target != nullptr ? !target->supports(op)
+                          : !decomposition::isSingleQubitBasisGate(op, basis);
     scan.tail = member;
     ++scan.gateCount;
   }
   return scan;
 }
 
-/**
- * @brief Erases a contiguous run from @p tail back to @p head.
- *
- * @param rewriter The pattern rewriter.
- * @param head First gate of the run.
- * @param tail Last gate of the run.
- */
+/// Erases a contiguous run from @p tail back to @p head.
+///
+/// @param rewriter The pattern rewriter.
+/// @param head First gate of the run.
+/// @param tail Last gate of the run.
 static void eraseFusableRun(PatternRewriter& rewriter, UnitaryOpInterface head,
                             UnitaryOpInterface tail) {
   // Tail-first: each erased op is dead once its successor is gone.
-  auto it = WireIterator(tail.getOutputTarget(0));
+  auto it = WireIterator(tail.getOutputQubit(0));
   auto* target = head.getOperation();
   while (*it != target) {
     auto* current = *it;
@@ -147,30 +113,28 @@ static void eraseFusableRun(PatternRewriter& rewriter, UnitaryOpInterface head,
 
 namespace {
 
-/**
- * @brief Fuses maximal single-qubit unitary runs via Euler resynthesis.
- */
+/// Fuses maximal single-qubit unitary runs via Euler resynthesis.
 struct FuseSingleQubitUnitaryRunsPattern final
     : OpInterfaceRewritePattern<UnitaryOpInterface> {
   FuseSingleQubitUnitaryRunsPattern(MLIRContext* context,
                                     const decomposition::SingleQubitBasis basis,
-                                    const bool skipControlledBodies)
+                                    const bool skipControlledBodies,
+                                    const CompilerTarget* target)
       : OpInterfaceRewritePattern(context), basis(basis),
-        skipControlledBodies(skipControlledBodies) {}
+        skipControlledBodies(skipControlledBodies), target(target) {}
 
   decomposition::SingleQubitBasis basis;
   bool skipControlledBodies;
+  const CompilerTarget* target;
 
-  /**
-   * @brief Fuses the run anchored at `op` when beneficial.
-   *
-   * Fuses if the run contains a non-basis gate or Euler resynthesis would
-   * shorten it (@ref synthesizeUnitary1QEuler).
-   *
-   * @param op The matched unitary operation.
-   * @param rewriter The pattern rewriter.
-   * @return `success()` if a run was fused, `failure()` otherwise.
-   */
+  /// Fuses the run anchored at `op` when beneficial.
+  ///
+  /// Fuses if the run contains a non-basis gate or Euler resynthesis would
+  /// shorten it (@ref synthesizeUnitary1QEuler).
+  ///
+  /// @param op The matched unitary operation.
+  /// @param rewriter The pattern rewriter.
+  /// @return `success()` if a run was fused, `failure()` otherwise.
   LogicalResult matchAndRewrite(UnitaryOpInterface op,
                                 PatternRewriter& rewriter) const override {
     if (skipControlledBodies &&
@@ -180,8 +144,8 @@ struct FuseSingleQubitUnitaryRunsPattern final
     if (!isRunMemberCandidate(op)) {
       return failure();
     }
-    const auto predecessor = dyn_cast_or_null<UnitaryOpInterface>(
-        op.getInputTarget(0).getDefiningOp());
+    auto predecessor = dyn_cast_or_null<UnitaryOpInterface>(
+        op.getInputQubit(0).getDefiningOp());
     if (getRunMemberMatrix(predecessor)) {
       return failure();
     }
@@ -190,26 +154,23 @@ struct FuseSingleQubitUnitaryRunsPattern final
       return failure();
     }
 
-    FusableRunScan run = scanFusableRun(op, *headMatrix, basis);
+    FusableRunScan run = scanFusableRun(op, *headMatrix, basis, target);
     const auto synthesized = decomposition::synthesizeUnitary1QEuler(
-        rewriter, op.getLoc(), op.getInputTarget(0), run.composed,
-        run.gateCount, run.hasNonBasisGate, basis);
+        rewriter, op.getLoc(), op.getInputQubit(0), run.composed, run.gateCount,
+        run.hasNonBasisGate, basis);
     if (!synthesized) {
       return failure();
     }
     decomposition::emitGPhaseIfNeeded(rewriter, op.getLoc(),
                                       synthesized->globalPhase);
 
-    rewriter.replaceAllUsesWith(run.tail.getOutputTarget(0),
-                                synthesized->qubit);
+    rewriter.replaceAllUsesWith(run.tail.getOutputQubit(0), synthesized->qubit);
     eraseFusableRun(rewriter, op, run.tail);
     return success();
   }
 };
 
-/**
- * @brief Pass that fuses single-qubit unitary runs via Euler resynthesis.
- */
+/// Pass that fuses single-qubit unitary runs via Euler resynthesis.
 struct FuseSingleQubitUnitaryRunsPass final
     : impl::FuseSingleQubitUnitaryRunsBase<FuseSingleQubitUnitaryRunsPass> {
   using Base::Base;
@@ -231,12 +192,19 @@ protected:
       return;
     }
 
+    RewritePatternSet compositionPatterns(&getContext());
+    decomposition::populateParameterizedSingleQubitRunCompositionPatterns(
+        compositionPatterns, *parsed);
+
     RewritePatternSet patterns(&getContext());
     decomposition::populateFuseSingleQubitUnitaryRunsPatterns(
         patterns, *parsed, /*skipControlledBodies=*/false);
 
-    if (failed(applyPatternsGreedily(moduleOp, std::move(patterns))) ||
+    if (failed(
+            applyPatternsGreedily(moduleOp, std::move(compositionPatterns))) ||
+        failed(applyPatternsGreedily(moduleOp, std::move(patterns))) ||
         failed(mlir::mqt::normalizeGlobalPhases(moduleOp))) {
+      moduleOp.emitError("fusion pipeline failed"); // LCOV_EXCL_LINE
       signalPassFailure();
     }
   }
@@ -248,11 +216,12 @@ protected:
 
 namespace mlir::qco::decomposition {
 
-void populateFuseSingleQubitUnitaryRunsPatterns(
-    RewritePatternSet& patterns, const SingleQubitBasis basis,
-    const bool skipControlledBodies) {
+void populateFuseSingleQubitUnitaryRunsPatterns(RewritePatternSet& patterns,
+                                                const SingleQubitBasis basis,
+                                                const bool skipControlledBodies,
+                                                const CompilerTarget* target) {
   patterns.add<FuseSingleQubitUnitaryRunsPattern>(patterns.getContext(), basis,
-                                                  skipControlledBodies);
+                                                  skipControlledBodies, target);
 }
 
 } // namespace mlir::qco::decomposition

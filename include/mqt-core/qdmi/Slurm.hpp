@@ -8,10 +8,9 @@
  * Licensed under the MIT License
  */
 
-/** @file Slurm.hpp
- * @brief QDMI adapter for selecting a QDMI device from a Slurm license
- * environment value.
- */
+/// @file Slurm.hpp
+/// QDMI adapter for selecting a QDMI device from a Slurm license
+/// environment value.
 
 #pragma once
 
@@ -19,21 +18,20 @@
 
 namespace qdmi::slurm {
 
-/**
- * @brief Opens the QDMI device named by the Slurm license environment.
- * @return A fresh device session using the registered device definition.
- * @details The @c SLURM_JOB_LICENSES value must contain exactly one local
- * license. Its name must equal a registered QDMI device ID. The optional
- * license count must be one. The device must report @c QDMI_DEVICE_STATUS_IDLE
- * or @c QDMI_DEVICE_STATUS_BUSY.
- * @warning This function uses process-mutable environment data for device
- * selection. It does not verify a Slurm allocation, authenticate the caller,
- * or authorize access to the device. The provider or operating system must
- * enforce access independently.
- * @throws std::runtime_error If the license value is missing, malformed,
- * compound, remote, has a non-unit count, names an unknown device, or names a
- * device in another state.
- */
+/// Opens the QDMI device named by the Slurm license environment.
+/// @return A fresh device session using the registered device definition.
+///
+/// The @c SLURM_JOB_LICENSES value must contain exactly one local
+/// license. Its name must equal a registered QDMI device ID. The optional
+/// license count must be one. The device must report @c QDMI_DEVICE_STATUS_IDLE
+/// or @c QDMI_DEVICE_STATUS_BUSY.
+/// @warning This function uses process-mutable environment data for device
+/// selection. It does not verify a Slurm allocation, authenticate the caller,
+/// or authorize access to the device. The provider or operating system must
+/// enforce access independently.
+/// @throws std::runtime_error If the license value is missing, malformed,
+/// compound, remote, has a non-unit count, names an unknown device, or names a
+/// device in another state.
 [[nodiscard]] Device openDeviceFromLicense();
 
 } // namespace qdmi::slurm

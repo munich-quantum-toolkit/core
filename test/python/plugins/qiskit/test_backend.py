@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, get_type_hints
@@ -17,7 +18,7 @@ from typing import TYPE_CHECKING, Protocol, get_type_hints
 import numpy as np
 import pytest
 from qiskit import QuantumCircuit
-from qiskit.circuit import Parameter
+from qiskit.circuit import ClassicalRegister, Clbit, Parameter
 from qiskit.circuit.library import UnitaryGate
 from qiskit.providers import JobStatus
 
@@ -25,7 +26,9 @@ from mqt.core.plugins.qiskit import (
     CircuitValidationError,
     QDMIBackend,
     UnsupportedOperationError,
+    program_serializer,
 )
+from mqt.core.qdmi import ProgramFormat
 from mqt.core.qdmi.driver import open_device
 from mqt.core.typing import QDMISessionParameters
 
@@ -229,10 +232,7 @@ def test_backend_runs_multiple_circuits(ddsim_backend: QDMIBackend) -> None:
     for idx, expected_name in enumerate(["bell_state", "x_then_measure", "hadamard_all"]):
         exp_result = result.results[idx]
         assert exp_result.success is True
-        # Support both dict-style (Qiskit 2.x) and object-style (Qiskit 1.x) header access
-        header = exp_result.header
-        circuit_name = header["name"] if isinstance(header, dict) else header.name
-        assert circuit_name == expected_name
+        assert exp_result.header["name"] == expected_name
         assert exp_result.shots == 500
 
         # Check counts for this circuit
@@ -350,7 +350,6 @@ def test_backend_circuit_with_parameters(ddsim_backend: QDMIBackend) -> None:
     qc.ry(theta, 0)
     qc.measure_all()
 
-    # Unbound parameters should raise an error
     with pytest.raises(CircuitValidationError, match=r"Circuit contains unbound parameters"):
         ddsim_backend.run(qc)
 
@@ -362,7 +361,6 @@ def test_backend_circuit_with_bound_parameters(ddsim_backend: QDMIBackend) -> No
     qc.ry(theta, 0)
     qc.measure_all()
 
-    # Bound parameters should work
     qc_bound = qc.assign_parameters({theta: 1.5708})
 
     job = ddsim_backend.run(qc_bound, shots=100)
@@ -540,10 +538,7 @@ def test_backend_named_circuit_results_queryable_by_name(ddsim_backend: QDMIBack
 
     # Circuit name should be preserved in metadata
     assert result.results is not None
-    header = result.results[0].header
-    # Support both dict-style (pre-Qiskit 2.0) and object-style (post-Qiskit 2.0) access
-    circuit_name = header["name"] if isinstance(header, dict) else header.name
-    assert circuit_name == "my_circuit"
+    assert result.results[0].header["name"] == "my_circuit"
 
     # Should be able to query results by circuit name
     counts = result.get_counts("my_circuit")
@@ -562,13 +557,8 @@ def test_backend_unnamed_circuit_results_queryable_by_generated_name(ddsim_backe
     # Should have a generated name
     assert result.results is not None
     header = result.results[0].header
-    # Support both dict-style (pre-Qiskit 2.0) and object-style (post-Qiskit 2.0) access
-    if isinstance(header, dict):
-        assert "name" in header
-        circuit_name = header["name"]
-    else:
-        assert hasattr(header, "name")
-        circuit_name = header.name
+    assert header["name"] == qc.name
+    circuit_name = header["name"]
 
     # Should be able to query results by the generated name
     counts = result.get_counts(circuit_name)
@@ -614,15 +604,17 @@ def test_job_get_counts_default(ddsim_backend: QDMIBackend) -> None:
     assert sum(counts.values()) == 100
 
 
-def test_job_submit_raises_error(ddsim_backend: QDMIBackend) -> None:
-    """Calling submit() on a job should raise NotImplementedError."""
+def test_job_submit_preserves_existing_job(ddsim_backend: QDMIBackend) -> None:
+    """Calling submit() with no untouched entries must preserve the native execution."""
     qc = QuantumCircuit(2)
     qc.cz(0, 1)
     qc.measure_all()
 
     job = ddsim_backend.run(qc, shots=100)
-    with pytest.raises(NotImplementedError, match="You should never have to submit jobs"):
-        job.submit()
+    entries = job.entries
+    job.submit()
+    assert job.entries == entries
+    assert job.result().success
 
 
 def test_backend_supports_rccx_gate(ddsim_backend: QDMIBackend) -> None:
@@ -663,14 +655,29 @@ def test_backend_supports_multicontrolled_gates(ddsim_backend: QDMIBackend) -> N
     assert sum(counts.values()) == 100
 
 
-def test_backend_openqasm3_translation_works_for_native_gates(ddsim_backend: QDMIBackend) -> None:
-    """Ensures the backend can run circuits with gates that are not natively supported by OpenQASM 3.
+def test_backend_qasm3_zero_initializes_classical_bits(ddsim_backend: QDMIBackend) -> None:
+    """Initialize nonempty registers once and loose bits individually before measurement."""
+    qc = QuantumCircuit(1)
+    qc.add_bits([Clbit()])
+    qc.add_register(ClassicalRegister(0, "empty"), ClassicalRegister(1, "a"), ClassicalRegister(3, "b"))
+    qc.measure(0, 3)
+    original = qc.copy()
 
-    The DDSIM backend defines support for `mcx` gates, which are not native to OpenQASM3.
-    Qiskit's OpenQASM3 exporter has problems providing proper definitions for such gates,
-    which we work around by declaring the device's basis gates in the export call.
-    This test ensures that this workaround is effective and that the backend can successfully run such circuits.
-    """
+    serializer = program_serializer(ProgramFormat.QASM3)
+    assert serializer is not None
+    program = serializer(qc, ddsim_backend)
+
+    assert isinstance(program, str)
+    for assignment in ("a = 0;", "b = 0;", "_bit0 = false;"):
+        assert program.count(assignment) == 1
+        assert program.index(assignment) < program.index("b[1] = measure q[0];")
+    assert "empty =" not in program
+    assert program.count("= false;") == 1
+    assert qc == original
+
+
+def test_backend_openqasm3_translation_works_for_native_gates(ddsim_backend: QDMIBackend) -> None:
+    """Backend executes a six-qubit MCX circuit through its selected serializer."""
     qc = QuantumCircuit(6)
     qc.mcx([0, 1, 2, 3, 4], 5)
     qc.measure_all()
@@ -678,3 +685,32 @@ def test_backend_openqasm3_translation_works_for_native_gates(ddsim_backend: QDM
     job = ddsim_backend.run(qc, shots=100)
     counts = job.result().get_counts()
     assert sum(counts.values()) == 100
+
+
+@pytest.mark.parametrize(("unit", "seconds"), [("s", 1.0), ("ms", 1e-3), ("us", 1e-6), ("ns", 1e-9)])
+def test_sc_target_preserves_placements_and_physical_calibration(unit: str, seconds: float) -> None:
+    """SC metadata retains ordered placements and converts raw durations to seconds."""
+    config = {
+        "schema-version": 1,
+        "name": "Target calibration test",
+        "numQubits": 4,
+        "durationUnit": {"unit": unit, "scaleFactor": 0.5},
+        "qubitProperties": {"defaults": {}, "overrides": []},
+        "couplings": [[0, 1]],
+        "operations": [
+            {"name": "x", "numParameters": 0, "numQubits": 1, "duration": 20, "fidelity": 0.99},
+            {"name": "cx", "numParameters": 0, "numQubits": 2, "sites": [[0, 1]], "duration": 40},
+            {"name": "ccx", "numParameters": 0, "numQubits": 3, "sites": [[0, 1, 2]], "duration": 60, "fidelity": 0.95},
+            {"name": "measure", "numParameters": 0, "numQubits": 1},
+        ],
+    }
+    backend = QDMIBackend(open_device("mqt.sc.default", device_config=json.dumps(config)))
+    target = backend.target
+    assert target["x"][0,].duration == pytest.approx(10 * seconds)
+    assert target["x"][0,].error == pytest.approx(0.01)
+    assert target["cx"][0, 1].duration == pytest.approx(20 * seconds)
+    assert set(target["ccx"]) == {(0, 1, 2)}
+    assert target["ccx"][0, 1, 2].duration == pytest.approx(30 * seconds)
+    assert target["ccx"][0, 1, 2].error == pytest.approx(0.05)
+    assert not target.instruction_supported(operation_name="ccx", qargs=(1, 2, 3))
+    assert target["measure"][0,] is None

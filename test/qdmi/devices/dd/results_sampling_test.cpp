@@ -11,20 +11,24 @@
 /*
  * DDSIM QDMI Device - Results: sampling (histogram keys/values)
  */
-#include "helpers/circuits.hpp"
-#include "helpers/test_utils.hpp"
 #include "mqt_ddsim_qdmi/constants.h"
 #include "mqt_ddsim_qdmi/device.h"
 
-#include <gtest/gtest.h>
-#include <llvm/AsmParser/Parser.h>
-#include <llvm/Bitcode/BitcodeWriter.h>
-#include <llvm/IR/LLVMContext.h>
-#include <llvm/Support/SourceMgr.h>
-#include <llvm/Support/raw_ostream.h>
+#include "helpers/circuits.hpp"
+#include "helpers/test_utils.hpp"
+
+#include "gtest/gtest.h"
+
+#include "llvm/AsmParser/Parser.h"
+#include "llvm/Bitcode/BitcodeWriter.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/Support/SourceMgr.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
+#include <map>
 #include <memory>
 #include <numeric>
 #include <optional>
@@ -36,6 +40,20 @@
 
 namespace {
 
+std::vector<std::string> getShots(MQT_DDSIM_QDMI_Device_Job job) {
+  const size_t size = qdmi_test::querySize(job, QDMI_JOB_RESULT_SHOTS);
+  std::string result(size, '\0');
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(job, QDMI_JOB_RESULT_SHOTS,
+                                                  size, result.data(), nullptr),
+            QDMI_SUCCESS);
+  EXPECT_FALSE(result.empty());
+  if (!result.empty()) {
+    EXPECT_EQ(result.back(), '\0');
+    result.pop_back();
+  }
+  return qdmi_test::splitCSV(result);
+}
+
 class HistogramTest : public ::testing::Test {
 protected:
   using Histogram = std::pair<std::vector<std::string>, std::vector<size_t>>;
@@ -44,7 +62,8 @@ protected:
 
   static Histogram runProgram(const QDMI_Program_Format format,
                               const std::string_view program,
-                              const std::optional<int> seed = std::nullopt) {
+                              const std::optional<int> seed = std::nullopt,
+                              std::vector<std::string>* samples = nullptr) {
     const qdmi_test::SessionGuard s{};
     const qdmi_test::JobGuard j{s.session};
     EXPECT_EQ(qdmi_test::setProgram(j.job, format, program), QDMI_SUCCESS);
@@ -53,7 +72,24 @@ protected:
       EXPECT_EQ(qdmi_test::setSeed(j.job, *seed), QDMI_SUCCESS);
     }
     EXPECT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
-    return qdmi_test::getHistogram(j.job);
+    auto shots = getShots(j.job);
+    EXPECT_EQ(shots.size(), NUM_SHOTS);
+    EXPECT_EQ(shots, getShots(j.job));
+    std::map<std::string, size_t> counts;
+    for (const auto& shot : shots) {
+      ++counts[shot];
+    }
+    const auto histogram = qdmi_test::getHistogram(j.job);
+    const auto& [keys, values] = histogram;
+    EXPECT_EQ(keys.size(), counts.size());
+    EXPECT_EQ(keys.size(), values.size());
+    for (size_t i = 0; i < keys.size(); ++i) {
+      EXPECT_EQ(counts.at(keys[i]), values.at(i));
+    }
+    if (samples != nullptr) {
+      *samples = std::move(shots);
+    }
+    return histogram;
   }
 
   static void checkHistogram(const Histogram& hist) {
@@ -71,8 +107,7 @@ protected:
         keys, [](const auto& k) { return k == "00" || k == "11"; }));
   }
 
-  /// Smoke check used for circuits whose distribution we do not know precisely.
-  /// For example, multi-output adaptive programs.
+  /// AdaptiveRecordOutputs records each bit as both a Result and a Boolean.
   static void checkSmokeHistogram(const Histogram& hist) {
     const auto& [keys, vals] = hist;
     // Both vectors have the same size.
@@ -80,11 +115,12 @@ protected:
     // Values sum up to NUM_SHOTS.
     const auto sum = std::accumulate(vals.cbegin(), vals.cend(), size_t{0});
     EXPECT_EQ(sum, NUM_SHOTS);
-    // Every key is a NUM_QUBITS long bit string.
+    /// Each output group contains the same measurement bits.
     EXPECT_TRUE(std::ranges::all_of(keys, [](const auto& k) {
-      return k.size() == NUM_QUBITS && std::ranges::all_of(k, [](char c) {
-               return c == '0' || c == '1';
-             });
+      return k.size() == 2 * NUM_QUBITS &&
+             k.substr(0, NUM_QUBITS) == k.substr(NUM_QUBITS) &&
+             std::ranges::all_of(k,
+                                 [](char c) { return c == '0' || c == '1'; });
     }));
   }
 };
@@ -95,7 +131,7 @@ protected:
     const std::string text = qdmi_test::getQIRProgram(file);
     llvm::LLVMContext context;
     llvm::SMDiagnostic err;
-    auto llvmModule = llvm::parseAssemblyString(text, err, context);
+    auto const llvmModule = llvm::parseAssemblyString(text, err, context);
     EXPECT_NE(llvmModule, nullptr)
         << "parseAssemblyString failed: " << err.getMessage().str();
     if (llvmModule == nullptr) {
@@ -117,6 +153,40 @@ TEST_F(HistogramTest, QASM3Program) {
   constexpr QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_QASM3;
   constexpr std::string_view program = qdmi_test::QASM3_BELL_SAMPLING;
   checkHistogram(runProgram(format, program));
+}
+
+TEST_F(HistogramTest, QASM3ProgramWithoutMeasurements) {
+  constexpr QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_QASM3;
+  constexpr std::string_view program = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+h q[0];
+cx q[0], q[1];
+)qasm";
+  checkHistogram(runProgram(format, program));
+}
+
+TEST_F(HistogramTest, QASM2Program) {
+  constexpr QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_QASM2;
+  constexpr std::string_view program = qdmi_test::QASM2_BELL_SAMPLING;
+  checkHistogram(runProgram(format, program));
+}
+
+TEST_F(HistogramTest, QASM3MultipleRegistersFollowQiskitOrder) {
+  constexpr std::string_view program = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+bit[2] c0;
+bit c1;
+qubit[3] q;
+x q[0];
+x q[2];
+c0[0] = measure q[0];
+c0[1] = measure q[1];
+c1 = measure q[2];
+)qasm";
+  const auto [keys, values] = runProgram(QDMI_PROGRAM_FORMAT_QASM3, program);
+  EXPECT_EQ(keys, std::vector<std::string>{"101"});
+  EXPECT_EQ(values, std::vector<size_t>{NUM_SHOTS});
 }
 
 TEST_F(QIRHistogramTestModule, BaseStatic) {
@@ -167,13 +237,130 @@ TEST_F(QIRHistogramTestString, AdaptiveRecordOutputs) {
 TEST_F(HistogramTest, SeedReproducesQASMSampling) {
   constexpr auto format = QDMI_PROGRAM_FORMAT_QASM3;
   constexpr std::string_view program = qdmi_test::QASM3_BELL_SAMPLING;
-  EXPECT_EQ(runProgram(format, program, 7), runProgram(format, program, 7));
+  std::vector<std::string> first;
+  std::vector<std::string> second;
+  EXPECT_EQ(runProgram(format, program, 7, &first),
+            runProgram(format, program, 7, &second));
+  EXPECT_EQ(first, second);
+  EXPECT_FALSE(std::ranges::is_sorted(first));
 }
 
 TEST_F(QIRHistogramTestString, SeedReproducesQIRSampling) {
   constexpr auto format = QDMI_PROGRAM_FORMAT_QIRBASESTRING;
   const auto program = qdmi_test::getQIRProgram("BellPairStatic.ll");
-  EXPECT_EQ(runProgram(format, program, 7), runProgram(format, program, 7));
+  std::vector<std::string> first;
+  std::vector<std::string> second;
+  EXPECT_EQ(runProgram(format, program, 7, &first),
+            runProgram(format, program, 7, &second));
+  EXPECT_EQ(first, second);
+  EXPECT_FALSE(std::ranges::is_sorted(first));
+}
+
+TEST_F(HistogramTest, QASM3DynamicShotsPreserveClassicalMapping) {
+  constexpr std::string_view program = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+bit[2] a;
+bit[2] b;
+a[0] = false;
+a[1] = false;
+b[0] = false;
+b[1] = false;
+h q[0];
+a[1] = measure q[0];
+if (a[1]) { x q[1]; }
+b[0] = measure q[1];
+)qasm";
+  const auto [keys, values] = runProgram(QDMI_PROGRAM_FORMAT_QASM3, program, 7);
+  EXPECT_EQ(keys, (std::vector<std::string>{"0000", "0110"}));
+  EXPECT_EQ(std::accumulate(values.begin(), values.end(), size_t{0}),
+            NUM_SHOTS);
+}
+
+TEST(ResultsSampling, EmptyQASM3YieldsEmptyHistogram) {
+  const qdmi_test::SessionGuard s{};
+  const qdmi_test::JobGuard j{s.session};
+  ASSERT_EQ(
+      qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3, "OPENQASM 3.0;"),
+      QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::setShots(j.job, 4), QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
+
+  constexpr std::array results{
+      QDMI_JOB_RESULT_HIST_KEYS,
+      QDMI_JOB_RESULT_HIST_VALUES,
+  };
+  char dummy{};
+  for (const auto result : results) {
+    size_t size = 1;
+    EXPECT_EQ(
+        MQT_DDSIM_QDMI_device_job_get_results(j.job, result, 0, nullptr, &size),
+        QDMI_SUCCESS);
+    EXPECT_EQ(size, 0U);
+    EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(j.job, result, 0, &dummy,
+                                                    nullptr),
+              QDMI_SUCCESS);
+  }
+}
+
+TEST(ResultsSampling, AdaptiveHistogramUsesActualKeyLengths) {
+  constexpr std::string_view program = R"(
+define i64 @main() #0 {
+entry:
+  call void @__quantum__rt__initialize(ptr null)
+  call void @__quantum__qis__mz__body(ptr inttoptr (i64 1 to ptr), ptr inttoptr (i64 1 to ptr))
+  call void @__quantum__rt__result_record_output(ptr inttoptr (i64 1 to ptr), ptr null)
+  call void @__quantum__qis__h__body(ptr null)
+  call void @__quantum__qis__mz__body(ptr null, ptr null)
+  call void @__quantum__rt__result_record_output(ptr null, ptr null)
+  %bit = call i1 @__quantum__rt__read_result(ptr null)
+  br i1 %bit, label %extra, label %done
+extra:
+  call void @__quantum__rt__result_record_output(ptr null, ptr null)
+  br label %done
+done:
+  ret i64 0
+}
+declare void @__quantum__rt__initialize(ptr)
+declare void @__quantum__qis__h__body(ptr)
+declare void @__quantum__qis__mz__body(ptr, ptr) #1
+declare void @__quantum__rt__result_record_output(ptr, ptr)
+declare i1 @__quantum__rt__read_result(ptr)
+attributes #0 = { "entry_point" "qir_profiles"="adaptive_profile" "required_num_qubits"="2" "required_num_results"="2" }
+attributes #1 = { "irreversible" }
+)";
+  const qdmi_test::SessionGuard session{};
+  const qdmi_test::JobGuard job{session.session};
+  ASSERT_EQ(qdmi_test::setProgram(
+                job.job, QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING, program),
+            QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::setShots(job.job, 64), QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::setSeed(job.job, 42), QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::submitAndWait(job.job, 0), QDMI_SUCCESS);
+
+  const auto size = qdmi_test::querySize(job.job, QDMI_JOB_RESULT_HIST_KEYS);
+  ASSERT_EQ(size, 7U);
+  std::array<char, 8> buffer{};
+  buffer.fill('?');
+  EXPECT_EQ(
+      MQT_DDSIM_QDMI_device_job_get_results(job.job, QDMI_JOB_RESULT_HIST_KEYS,
+                                            size - 1, buffer.data(), nullptr),
+      QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(std::string_view(buffer.data(), buffer.size()), "????????");
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_get_results(job.job,
+                                                  QDMI_JOB_RESULT_HIST_KEYS,
+                                                  size, buffer.data(), nullptr),
+            QDMI_SUCCESS);
+  EXPECT_STREQ(buffer.data(), "00,110");
+  EXPECT_EQ(buffer.back(), '?');
+
+  std::map<std::string, size_t> counts;
+  for (const auto& shot : getShots(job.job)) {
+    ++counts[shot];
+  }
+  const auto [keys, values] = qdmi_test::getHistogram(job.job);
+  EXPECT_EQ(keys, (std::vector<std::string>{"00", "110"}));
+  EXPECT_EQ(values, (std::vector<size_t>{counts["00"], counts["110"]}));
 }
 
 TEST(ResultsSampling, BufferTooSmallErrors) {
@@ -184,6 +371,14 @@ TEST(ResultsSampling, BufferTooSmallErrors) {
             QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(j.job, 512), QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
+
+  const size_t shotsSize = qdmi_test::querySize(j.job, QDMI_JOB_RESULT_SHOTS);
+  ASSERT_EQ(shotsSize, 512U * 3U);
+  std::vector<char> shotsTooSmall(shotsSize - 1);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                j.job, QDMI_JOB_RESULT_SHOTS, shotsTooSmall.size(),
+                shotsTooSmall.data(), nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
 
   if (const size_t ks = qdmi_test::querySize(j.job, QDMI_JOB_RESULT_HIST_KEYS);
       ks > 0) {
@@ -205,36 +400,104 @@ TEST(ResultsSampling, BufferTooSmallErrors) {
   }
 }
 
-TEST(ResultsSampling, StateAndProbRequestsAreInvalidWhenShotsPositive) {
+TEST(ResultsSampling, RepeatedShotProgramsDoNotExposeATrajectory) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
-  ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                  qdmi_test::QASM3_BELL_SAMPLING),
+  ASSERT_EQ(qdmi_test::setProgram(
+                j.job, QDMI_PROGRAM_FORMAT_QASM3,
+                "OPENQASM 3; qubit q; bit c; reset q; c = measure q;"),
             QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(j.job, 32), QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
 
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
                 j.job, QDMI_JOB_RESULT_STATEVECTOR_DENSE, 0, nullptr, nullptr),
-            QDMI_ERROR_INVALIDARGUMENT);
+            QDMI_ERROR_NOTSUPPORTED);
   EXPECT_EQ(
       MQT_DDSIM_QDMI_device_job_get_results(
           j.job, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS, 0, nullptr, nullptr),
-      QDMI_ERROR_INVALIDARGUMENT);
+      QDMI_ERROR_NOTSUPPORTED);
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
                 j.job, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES, 0, nullptr,
                 nullptr),
-            QDMI_ERROR_INVALIDARGUMENT);
+            QDMI_ERROR_NOTSUPPORTED);
   EXPECT_EQ(
       MQT_DDSIM_QDMI_device_job_get_results(
           j.job, QDMI_JOB_RESULT_PROBABILITIES_DENSE, 0, nullptr, nullptr),
-      QDMI_ERROR_INVALIDARGUMENT);
+      QDMI_ERROR_NOTSUPPORTED);
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
                 j.job, QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS, 0, nullptr,
                 nullptr),
-            QDMI_ERROR_INVALIDARGUMENT);
+            QDMI_ERROR_NOTSUPPORTED);
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
                 j.job, QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES, 0, nullptr,
                 nullptr),
+            QDMI_ERROR_NOTSUPPORTED);
+}
+
+TEST_F(QIRHistogramTestString, StaticSamplingPreservesRepeatedOutputOrder) {
+  constexpr std::string_view program = R"(
+define i64 @main() #0 {
+  call void @__quantum__qis__x__body(ptr null)
+  call void @__quantum__qis__swap__body(ptr null, ptr inttoptr (i64 2 to ptr))
+  call void @__quantum__qis__mz__body(ptr null, ptr null)
+  call void @__quantum__qis__mz__body(ptr inttoptr (i64 2 to ptr), ptr inttoptr (i64 1 to ptr))
+  call void @__quantum__rt__result_record_output(ptr inttoptr (i64 1 to ptr), ptr null)
+  call void @__quantum__rt__result_record_output(ptr null, ptr null)
+  call void @__quantum__rt__result_record_output(ptr inttoptr (i64 1 to ptr), ptr null)
+  call void @__quantum__rt__result_record_output(ptr null, ptr null)
+  ret i64 0
+}
+declare void @__quantum__qis__x__body(ptr)
+declare void @__quantum__qis__swap__body(ptr, ptr)
+declare void @__quantum__qis__mz__body(ptr, ptr)
+declare void @__quantum__rt__result_record_output(ptr, ptr)
+attributes #0 = { "entry_point" "qir_profiles"="base_profile" "required_num_qubits"="3" "required_num_results"="2" }
+)";
+  const auto [keys, values] =
+      runProgram(QDMI_PROGRAM_FORMAT_QIRBASESTRING, program);
+  EXPECT_EQ(keys, std::vector<std::string>{"0101"});
+  EXPECT_EQ(values, std::vector<size_t>{NUM_SHOTS});
+}
+
+TEST(QIROutput, CapturesTypedRecordsAndValidatesBuffers) {
+  const qdmi_test::SessionGuard session{};
+  const qdmi_test::JobGuard job{session.session};
+  const bool capture = true;
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                job.job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM2, sizeof(bool) + 1,
+                &capture),
             QDMI_ERROR_INVALIDARGUMENT);
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                job.job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM2, sizeof(capture),
+                &capture),
+            QDMI_SUCCESS);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                job.job, QDMI_JOB_RESULT_CUSTOM1, 0, nullptr, nullptr),
+            QDMI_ERROR_BADSTATE);
+  ASSERT_EQ(qdmi_test::setProgram(
+                job.job, QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
+                qdmi_test::getQIRProgram("AdaptiveRecordOutputs.ll")),
+            QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::setShots(job.job, 2), QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::submitAndWait(job.job, 0), QDMI_SUCCESS);
+  const auto size = qdmi_test::querySize(job.job, QDMI_JOB_RESULT_CUSTOM1);
+  ASSERT_GT(size, 1U);
+  std::string output(size, '\0');
+  EXPECT_EQ(
+      MQT_DDSIM_QDMI_device_job_get_results(job.job, QDMI_JOB_RESULT_CUSTOM1,
+                                            size - 1, output.data(), nullptr),
+      QDMI_ERROR_INVALIDARGUMENT);
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                job.job, QDMI_JOB_RESULT_CUSTOM1, size, output.data(), nullptr),
+            QDMI_SUCCESS);
+  EXPECT_EQ(output.back(), '\0');
+  EXPECT_TRUE(output.starts_with("HEADER\tschema_id\t"));
+  EXPECT_TRUE(output.ends_with(std::string("END\t0\n\0", 7)));
+  for (const auto* type :
+       {"RESULT", "BOOL", "INT", "DOUBLE", "TUPLE", "ARRAY"}) {
+    EXPECT_NE(output.find(std::string("OUTPUT\t") + type + "\t"),
+              std::string::npos);
+  }
+  EXPECT_NE(output.find("\t  hamming_weight\n"), std::string::npos);
 }

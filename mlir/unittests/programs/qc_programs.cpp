@@ -10,13 +10,14 @@
 
 #include "qc_programs.h"
 
-#include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
+#include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
 
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallVector.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/IR/Value.h>
-#include <mlir/Support/LLVM.h>
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/IR/Value.h"
+#include "mlir/Support/LLVM.h"
+
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
 
 #include <cstdint>
 #include <numbers>
@@ -43,6 +44,26 @@ static Value measureAndReturn(QCProgramBuilder& b, ValueRange qubits) {
 }
 
 Value emptyQC(QCProgramBuilder& b) { return b.intConstant(0); }
+
+Value reusableUnitaryFunction(QCProgramBuilder& b) {
+  auto qubit = b.allocQubit();
+  auto rotate = b.createUnitaryFunction(
+      "rotate", TypeRange{b.getF64Type(), qubit.getType()},
+      [&](ValueRange arguments) { b.rx(arguments[0], arguments[1]); });
+  b.call(rotate, {b.floatConstant(0.5), qubit});
+  return b.measure(qubit);
+}
+
+Value reusableResetFunction(QCProgramBuilder& b) {
+  auto qubit = b.allocQubit();
+  auto reset = b.createFunction("reset", TypeRange{qubit.getType()},
+                                [&](ValueRange arguments) {
+                                  b.reset(arguments[0]);
+                                  return SmallVector<Value>{};
+                                });
+  b.call(reset, qubit);
+  return b.measure(qubit);
+}
 
 Value allocQubit(QCProgramBuilder& b) {
   auto q = b.allocQubit();
@@ -140,10 +161,10 @@ Value staticQubitsWithInv(QCProgramBuilder& b) {
 }
 
 Value staticQubitsWithDuplicates(QCProgramBuilder& b) {
-  const auto q0a = b.staticQubit(0);
-  const auto q1a = b.staticQubit(1);
-  const auto q0b = b.staticQubit(0);
-  const auto q1b = b.staticQubit(1);
+  auto q0a = b.staticQubit(0);
+  auto q1a = b.staticQubit(1);
+  auto q0b = b.staticQubit(0);
+  auto q1b = b.staticQubit(1);
 
   b.rx(std::numbers::pi / 4., q0a);
   b.p(std::numbers::pi / 2., q1a);
@@ -154,8 +175,8 @@ Value staticQubitsWithDuplicates(QCProgramBuilder& b) {
 }
 
 Value staticQubitsCanonical(QCProgramBuilder& b) {
-  const auto q0 = b.staticQubit(0);
-  const auto q1 = b.staticQubit(1);
+  auto q0 = b.staticQubit(0);
+  auto q1 = b.staticQubit(1);
 
   b.rx(std::numbers::pi / 4., q0);
   b.p(std::numbers::pi / 2., q1);
@@ -1396,22 +1417,6 @@ Value trivialControlledU2(QCProgramBuilder& b) {
   return measureToRegister(b, q[0]);
 }
 
-Value inverseU2(QCProgramBuilder& b) {
-  constexpr double pi = std::numbers::pi;
-  auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](Value qubit) { b.u2(-0.567 + pi, -0.234 - pi, qubit); });
-  return measureToRegister(b, q[0]);
-}
-
-Value inverseMultipleControlledU2(QCProgramBuilder& b) {
-  constexpr double pi = std::numbers::pi;
-  auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
-    b.mcu2(-0.567 + pi, -0.234 - pi, {qubits[0], qubits[1]}, qubits[2]);
-  });
-  return measureAndReturn(b, q.qubits);
-}
-
 Value u(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.u(0.1, 0.2, 0.3, q[0]);
@@ -2648,20 +2653,22 @@ Value indexSwitchMultiCase(QCProgramBuilder& b) {
           .getResult();
   for (int64_t i = 0; i < size; ++i) {
     b.h(reg[i]);
-    const auto bit = b.measure(reg[i]);
-    const auto index =
+    auto bit = b.measure(reg[i]);
+    auto index =
         arith::IndexCastUIOp::create(b, b.getIndexType(), bit).getOut();
     condition = arith::OrIOp::create(b, {condition, index}).getResult();
     condition = arith::ShLIOp::create(b, {condition, c1});
   }
 
   b.scfIndexSwitch(condition, SmallVector<int64_t>{1, 2, 3},
-                   SmallVector<function_ref<void()>>{[&] { b.x(reg[1]); },
-                                                     [&] { b.x(reg[0]); },
-                                                     [&] {
-                                                       b.x(reg[0]);
-                                                       b.x(reg[1]);
-                                                     }},
+                   SmallVector<function_ref<void()>>{
+                       [&] { b.x(reg[1]); },
+                       [&] { b.x(reg[0]); },
+                       [&] {
+                         b.x(reg[0]);
+                         b.x(reg[1]);
+                       },
+                   },
                    [&] { /* no-op */ });
 
   return measureAndReturn(b, reg.qubits);
@@ -2691,13 +2698,24 @@ Value simpleDoWhileReset(QCProgramBuilder& b) {
   return measureToRegister(b, q);
 }
 
+/// Load each reference where the converted program consumes it.
+static Value measureRegisterAtUse(QCProgramBuilder& b, Value reg,
+                                  int64_t size) {
+  auto result = b.allocClassicalBitRegister(size);
+  for (int64_t i = 0; i < size; ++i) {
+    auto q = b.loadQubit(reg, b.indexConstant(i));
+    b.measure(q, result, i);
+  }
+  return result;
+}
+
 Value simpleForLoop(QCProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(2);
+  auto reg = b.allocQubitRegisterStorage(2);
   b.scfFor(0, 2, 1, [&](Value iv) {
-    auto q = b.loadQubit(reg.value, iv);
+    auto q = b.loadQubit(reg, iv);
     b.h(q);
   });
-  return measureAndReturn(b, reg.qubits);
+  return measureRegisterAtUse(b, reg, 2);
 };
 
 Value nestedForLoopIfOp(QCProgramBuilder& b) {
@@ -2715,13 +2733,13 @@ Value nestedForLoopIfOp(QCProgramBuilder& b) {
 }
 
 Value nestedForLoopWhileOp(QCProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(2);
+  auto reg = b.allocQubitRegisterStorage(2);
   b.scfFor(0, 2, 1, [&](Value iv) {
-    auto q = b.loadQubit(reg.value, iv);
+    auto q = b.loadQubit(reg, iv);
     b.h(q);
   });
   b.scfFor(0, 2, 1, [&](Value iv) {
-    auto q = b.loadQubit(reg.value, iv);
+    auto q = b.loadQubit(reg, iv);
     b.scfWhile(
         [&] {
           auto measureResult = b.measure(q);
@@ -2729,26 +2747,28 @@ Value nestedForLoopWhileOp(QCProgramBuilder& b) {
         },
         [&] { b.h(q); });
   });
-  return measureAndReturn(b, reg.qubits);
+  return measureRegisterAtUse(b, reg, 2);
 }
 
 Value nestedForLoopSwitchOp(QCProgramBuilder& b) {
   constexpr int64_t n = 3;
-  auto reg = b.allocQubitRegister(n);
+  auto reg = b.allocQubitRegisterStorage(n);
   auto c3 = arith::ConstantOp::create(b, b.getIndexAttr(3));
   b.scfFor(0, n, 1, [&](Value iv) {
     auto rem = arith::RemUIOp::create(b, {iv, c3}).getResult();
-    auto q = b.loadQubit(reg.value, iv);
+    auto q = b.loadQubit(reg, iv);
     b.scfIndexSwitch(rem, SmallVector<int64_t>{0, 1, 2},
-                     SmallVector<function_ref<void()>>{[&] { b.x(q); },
-                                                       [&] { b.y(q); },
-                                                       [&] {
-                                                         b.x(q);
-                                                         b.y(q);
-                                                       }},
+                     SmallVector<function_ref<void()>>{
+                         [&] { b.x(q); },
+                         [&] { b.y(q); },
+                         [&] {
+                           b.x(q);
+                           b.y(q);
+                         },
+                     },
                      [&] { /* error */ });
   });
-  return measureAndReturn(b, reg.qubits);
+  return measureRegisterAtUse(b, reg, n);
 }
 
 Value nestedForLoopCtrlOpWithSeparateQubit(QCProgramBuilder& b) {

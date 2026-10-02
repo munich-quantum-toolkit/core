@@ -9,19 +9,26 @@
  */
 
 /// @file Common.hpp
-/// @brief Common definitions and utilities for working with QDMI in C++.
-/// @note This header will be upstreamed to the QDMI core library in the future.
+/// Common definitions and utilities for working with QDMI in C++.
 
 #pragma once
 
-#include <qdmi/client.h>
+#include "qdmi/client.h"
 
+#include <cstddef>
+#include <span>
 #include <string>
+#include <variant>
 
 namespace qdmi {
+/// Custom scalars use their native C++ representation. Byte spans borrow an
+/// exact, nonempty payload until the synchronous submission call returns.
+using CustomJobParameter =
+    std::variant<std::string, bool, int, double, std::span<const std::byte>>;
+
 template <class Concrete> class Singleton {
 protected:
-  /// @brief Protected constructor to enforce the singleton pattern.
+  /// Protected constructor to enforce the singleton pattern.
   Singleton() = default;
 
 public:
@@ -37,7 +44,7 @@ public:
   Singleton(const Singleton&) = delete;
   Singleton& operator=(const Singleton&) = delete;
 
-  /// @brief Virtual destructor for the Singleton base class.
+  /// Virtual destructor for the Singleton base class.
   virtual ~Singleton() = default;
 
   /// @returns the singleton instance of the derived class.
@@ -50,12 +57,11 @@ public:
   }
 };
 
-/**
- * @brief Function used to mark unreachable code
- * @details Uses compiler-specific extensions if possible. Even if no extension
- * is used, undefined behavior is still raised by an empty function body and the
- * noreturn attribute.
- */
+/// Function used to mark unreachable code
+///
+/// Uses compiler-specific extensions if possible. Even if no extension
+/// is used, undefined behavior is still raised by an empty function body and
+/// the noreturn attribute.
 [[noreturn]] inline void unreachable() {
 #ifdef __GNUC__ // GCC, Clang, ICC
   __builtin_unreachable();
@@ -169,15 +175,13 @@ constexpr auto toString(const QDMI_STATUS result) -> const char* {
   unreachable();
 }
 
-/**
- * @brief Throws an exception if the result indicates an error.
- * @param result The result of a QDMI operation
- * @param msg The error message to include in the exception
- * @throws std::bad_alloc if the result is QDMI_ERROR_OUTOFMEM
- * @throws std::out_of_range if the result is QDMI_ERROR_OUTOFRANGE
- * @throws std::invalid_argument if the result is QDMI_ERROR_INVALIDARGUMENT
- * @throws std::runtime_error for all other error results
- */
+/// Throws an exception if the result indicates an error.
+/// @param result The result of a QDMI operation
+/// @param msg The error message to include in the exception
+/// @throws std::bad_alloc if the result is QDMI_ERROR_OUTOFMEM
+/// @throws std::out_of_range if the result is QDMI_ERROR_OUTOFRANGE
+/// @throws std::invalid_argument if the result is QDMI_ERROR_INVALIDARGUMENT
+/// @throws std::runtime_error for all other error results
 auto throwIfError(int result, const std::string& msg) -> void;
 
 /// Returns the string representation of the given session parameter @p param.
@@ -372,8 +376,6 @@ constexpr auto toString(const QDMI_Device_Property prop) -> const char* {
     return "OPERATIONS";
   case QDMI_DEVICE_PROPERTY_COUPLINGMAP:
     return "COUPLING MAP";
-  case QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION:
-    return "NEEDS CALIBRATION";
   case QDMI_DEVICE_PROPERTY_LENGTHUNIT:
     return "LENGTH UNIT";
   case QDMI_DEVICE_PROPERTY_LENGTHSCALEFACTOR:
@@ -384,8 +386,6 @@ constexpr auto toString(const QDMI_Device_Property prop) -> const char* {
     return "DURATION SCALE FACTOR";
   case QDMI_DEVICE_PROPERTY_MINATOMDISTANCE:
     return "MIN ATOM DISTANCE";
-  case QDMI_DEVICE_PROPERTY_PULSESUPPORT:
-    return "PULSE SUPPORT";
   case QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS:
     return "SUPPORTED PROGRAM FORMATS";
   case QDMI_DEVICE_PROPERTY_CHILDDEVICES:

@@ -33,7 +33,6 @@ if(NOT TARGET ${TARGET_NAME})
     targetparser
     transformutils)
 
-  # Add link libraries
   target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQIRRuntime MQT::ProjectWarnings
                                                MQT::ProjectOptions ${llvm_native_libs})
 endif()

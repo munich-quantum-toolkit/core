@@ -10,52 +10,50 @@
 
 #include "QiskitVersion.h"
 
+#include "Qiskit.h"
+
 // Keep the translation interface visible where the factory is instantiated.
 #include "QiskitTranslation.h" // IWYU pragma: keep
 
-#include <nanobind/nanobind.h>
-#include <nanobind/stl/string.h> // NOLINT(misc-include-cleaner): enables the std::string caster.
+#include "nanobind/nanobind.h"
+#include "nanobind/stl/string.h"
 
+#include <charconv>
 #include <cstddef>
 #include <exception>
-#include <limits>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
 
 namespace mqt::bindings::qiskit {
 namespace nb = nanobind;
-namespace {
 
+namespace {
 struct InstalledVersion {
   unsigned int major = 0;
   unsigned int minor = 0;
   unsigned int patch = 0;
   std::string text;
 };
+} // namespace
 
-[[nodiscard]] unsigned int parseComponent(std::string_view text,
-                                          size_t& offset) {
-  const auto start = offset;
+[[nodiscard]] static unsigned int parseComponent(std::string_view text,
+                                                 size_t& offset) {
   unsigned int value = 0;
-  while (offset < text.size() && text[offset] >= '0' && text[offset] <= '9') {
-    const auto digit = static_cast<unsigned int>(text[offset] - '0');
-    if (value > (std::numeric_limits<unsigned int>::max() - digit) / 10U) {
-      throw std::runtime_error("invalid Qiskit version '" + std::string(text) +
-                               "'");
-    }
-    value = (value * 10U) + digit;
-    ++offset;
-  }
-  if (offset == start) {
+  const auto [end, error] =
+      std::from_chars(text.data() + offset, text.data() + text.size(), value);
+  if (error != std::errc{}) {
     throw std::runtime_error("invalid Qiskit version '" + std::string(text) +
                              "'");
   }
+  offset = static_cast<size_t>(end - text.data());
   return value;
 }
 
-void requireSeparator(const std::string_view text, size_t& offset) {
+static void requireSeparator(const std::string_view text, size_t& offset) {
   if (offset >= text.size() || text[offset] != '.') {
     throw std::runtime_error("invalid Qiskit version '" + std::string(text) +
                              "'");
@@ -63,7 +61,7 @@ void requireSeparator(const std::string_view text, size_t& offset) {
   ++offset;
 }
 
-[[nodiscard]] std::string supportedVersionRanges() {
+[[nodiscard]] static std::string supportedVersionRanges() {
   std::string ranges;
 #define MQT_QISKIT_VERSION(major, minor, suffix, minimumPatch, minimum, range) \
   ranges += ranges.empty() ? (range) : ", " range;
@@ -72,17 +70,16 @@ void requireSeparator(const std::string_view text, size_t& offset) {
   return ranges;
 }
 
-[[nodiscard]] constexpr bool matchesVersion(const InstalledVersion& version,
-                                            const unsigned int expectedMajor,
-                                            const unsigned int expectedMinor,
-                                            const unsigned int minimumPatch) {
+[[nodiscard]] static constexpr bool matchesVersion(
+    const InstalledVersion& version, const unsigned int expectedMajor,
+    const unsigned int expectedMinor, const unsigned int minimumPatch) {
   return version.major == expectedMajor && version.minor == expectedMinor &&
          version.patch >= minimumPatch;
 }
 
 using TranslationFactory = std::unique_ptr<VersionedTranslation> (*)();
 
-[[nodiscard]] TranslationFactory
+[[nodiscard]] static TranslationFactory
 translationFactory(const InstalledVersion& version) {
 #ifdef MQT_QISKIT_CAPI_CANDIDATE_VERSION
   if (version.text == MQT_QISKIT_CAPI_CANDIDATE_VERSION) {
@@ -102,7 +99,7 @@ translationFactory(const InstalledVersion& version) {
   return nullptr;
 }
 
-[[nodiscard]] InstalledVersion inspectInstalledVersion() {
+[[nodiscard]] static InstalledVersion inspectInstalledVersion() {
   std::string text;
   try {
     text = nb::cast<std::string>(
@@ -130,11 +127,13 @@ translationFactory(const InstalledVersion& version) {
         "'; supported versions: " + supportedVersionRanges());
   }
   const InstalledVersion result{
-      .major = major, .minor = minor, .patch = patch, .text = text};
+      .major = major,
+      .minor = minor,
+      .patch = patch,
+      .text = text,
+  };
   return result;
 }
-
-} // namespace
 
 std::unique_ptr<VersionedTranslation> selectTranslation() {
   const auto version = inspectInstalledVersion();
@@ -144,6 +143,11 @@ std::unique_ptr<VersionedTranslation> selectTranslation() {
   throw std::runtime_error(
       "Qiskit circuit translation does not support installed version '" +
       version.text + "'; supported versions: " + supportedVersionRanges());
+}
+
+mlir::CompilerTarget importTarget(nb::handle target, nb::handle operationNames,
+                                  const std::optional<std::string>& name) {
+  return selectTranslation()->importTarget(target, operationNames, name);
 }
 
 } // namespace mqt::bindings::qiskit

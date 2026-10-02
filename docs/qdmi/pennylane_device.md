@@ -17,9 +17,9 @@ reconstructed from finite-shot QDMI results.
 Any registered gate-based QDMI device can use this integration if it advertises
 OpenQASM 3 or OpenQASM 2, accepts finite-shot jobs, and returns
 computational-basis samples. Specialized neutral-atom interfaces, pulse-level
-control, and analytic execution are out of scope for now. The examples below use
-the local [DD-based simulator device](ddsim_device.md) included with MQT Core
-and require no credentials or remote resources.
+control, and analytic execution are unsupported. The examples below use the
+local [DD-based simulator device](ddsim_device.md) included with MQT Core and
+require no credentials or remote resources.
 
 Install MQT Core with the optional PennyLane dependency into the active
 environment:
@@ -36,10 +36,10 @@ conversion, execution, and finite-shot result reconstruction.
 ```{code-cell} ipython3
 import pennylane as qp
 
-bell_device = qp.device("mqt.ddsim.default", wires=2, shots=1000)
+bell_device = qp.device("mqt.ddsim.default", wires=2, job_parameters={"custom1": 7})
 
 
-@qp.qnode(bell_device)
+@qp.qnode(bell_device, shots=1000)
 def bell_state():
     qp.Hadamard(0)
     qp.CNOT(wires=[0, 1])
@@ -47,7 +47,9 @@ def bell_state():
 
 
 bell_counts = bell_state()
-bell_counts
+assert sum(bell_counts.values()) == 1000
+assert set(bell_counts) <= {"00", "11"}
+print({str(key): int(value) for key, value in sorted(bell_counts.items())})
 ```
 
 Only the computational-basis states $00$ and $11$ have nonzero probability, up
@@ -71,6 +73,14 @@ device and validates the program against its topology. If conversion fails, MQT
 Core reports the OpenQASM 3 error rather than retrying with OpenQASM 2. A device
 that advertises only OpenQASM 2 uses PennyLane's `qp.to_openqasm` serializer
 after device preprocessing.
+
+The converter reuses successful capability checks for each gate and wire
+location within its device session. Every circuit still validates its own
+parameters and wire arguments. Open a new device session to use changed
+capabilities or topology.
+
+QDMI waits and sample/count retrieval release the Python GIL, allowing unrelated
+Python threads to run while a provider waits or downloads results.
 
 ## End-to-end use case: finite-shot MaxCut QAOA
 
@@ -105,6 +115,9 @@ plt.rcParams.update(
 ```
 
 ```{code-cell} ipython3
+:tags: [hide-input]
+:mystnb: {image: {alt: "Four-node MaxCut graph with edges 01, 02, 12, and 23."}}
+
 graph = nx.Graph([(0, 1), (0, 2), (1, 2), (2, 3)])
 positions = {
     0: (-1.0, 0.75),
@@ -144,16 +157,16 @@ def ansatz(parameters):
     qp.qaoa.mixer_layer(parameters[1], mixer_hamiltonian)
 
 
-qaoa_device = qp.device("mqt.ddsim.default", wires=4, shots=1000)
+qaoa_device = qp.device("mqt.ddsim.default", wires=4, job_parameters={"custom1": 7})
 
 
-@qp.qnode(qaoa_device, diff_method="parameter-shift")
+@qp.qnode(qaoa_device, shots=1000, diff_method="parameter-shift")
 def cost(parameters):
     ansatz(parameters)
     return qp.expval(cost_hamiltonian)
 
 
-@qp.qnode(qaoa_device)
+@qp.qnode(qaoa_device, shots=1000)
 def sample(parameters):
     ansatz(parameters)
     return qp.sample(wires=range(4))
@@ -188,8 +201,9 @@ print(f"Elapsed time: {elapsed:.3f} s")
 ```
 
 Parameter-shift expands one gradient evaluation into several shifted tapes. Each
-executable tape is submitted as a distinct QDMI job. Jobs are submitted
-sequentially; parallel QDMI submission is not supported.
+executable tape is submitted as a distinct QDMI job. The device submits all jobs
+in one PennyLane batch before it waits for their ordered results, which lets
+asynchronous QDMI implementations execute them concurrently.
 
 The sampled bit strings determine candidate bipartitions. The cut value is the
 number of graph edges whose endpoints have different bit values.
@@ -221,7 +235,10 @@ bit-string distribution, and the highest-cut partition observed in the final
 sample. Orange edges cross that partition.
 
 ```{code-cell} ipython3
-figure, axes = plt.subplots(1, 3, figsize=(14, 3.8))
+:tags: [hide-input]
+:mystnb: {image: {alt: "QAOA objective estimates, final counts, and best sampled graph partition."}}
+
+figure, axes = plt.subplots(3, 1, figsize=(7, 10))
 
 axes[0].plot(
     range(len(objective_values)),
@@ -297,7 +314,6 @@ device_id = "stable ID returned by the QDMI device registration"
 device = QDMIDevice(
     device_id=device_id,
     wires=["a", "b", "c", "d"],
-    shots=[(100, 2), 500],
     session_parameters={
         "base_url": "device endpoint or selector",
         "token": "...",
@@ -307,6 +323,17 @@ device = QDMIDevice(
     },
 )
 ```
+
+Automatic retries are disabled (`max_retries=0`). To retry confirmed failed jobs
+up to three times, set the option when creating the device:
+
+```python
+device = qp.device("mqt.ddsim.default", wires=2, max_retries=3)
+```
+
+Retries create additional executions and can incur charges. Successful jobs are
+reused; errors that do not confirm job failure require
+[explicit recovery](#recovering-results-after-a-failure).
 
 An integration can return an already-open device. Pass that handle directly to
 the generic class. Do not repeat session parameters because the session already
@@ -318,15 +345,30 @@ from mqt.core.qdmi import slurm
 
 device = QDMIDevice(
     device=slurm.open_device_from_license(),
-    shots=1000,
 )
 ```
 
 Arbitrary PennyLane wire labels map deterministically to contiguous QASM
-indices. The converter validates the one- and two-qubit loci advertised through
-QDMI but does not route circuits. A topology-incompatible program therefore
-fails before submission. Shot vectors, batches, and parameter-shift tapes are
-executed in order, and every execution requires finite shots.
+indices. The converter validates fixed-arity loci and finite parameters for both
+OpenQASM formats against the QDMI capabilities but does not route circuits. A
+topology-incompatible program therefore fails before submission. Shot vectors,
+batches, and parameter-shift tapes are submitted in order before their results
+are collected in the same order. The PennyLane call remains synchronous, and
+every execution requires finite shots. Set shots on the QNode or use
+`qp.set_shots` to override them. Devices do not accept a `shots` argument or
+provide a default shot count. Omitting finite shots fails before submission.
+
+Use `with qp.Tracker(device) as tracker:` to record submitted jobs
+(`executions`), requested shots, batches, and the number of tapes in each batch
+(`batch_len`). Shot-vector copies count as separate jobs. Tracking records
+accepted submissions, including jobs whose execution subsequently fails.
+
+Mid-circuit measurements use PennyLane's deferred-measurement transform. Reset
+and feedback may require unused device wires; custom wire labels are supported.
+The plugin rejects programs requiring more wires than are available and rejects
+postselection. Explicit `one-shot` and `tree-traversal` requests are
+unsupported; the plugin does not infer native dynamic-circuit support from gate
+names.
 
 ## Supported gate-level scope
 
@@ -334,7 +376,53 @@ The OpenQASM 3 path covers identity and Pauli gates; H, S, T, SX and supported
 adjoints; RX, RY, RZ, and phase shift; controlled Pauli and phase gates;
 Toffoli, SWAP, and CSWAP; ISWAP, PSWAP, and ECR; and Ising XX, XY, YY, and ZZ
 rotations. PennyLane decomposes higher-level operations when their
-decompositions reach operations advertised by the QDMI device.
+decompositions reach operations advertised by the QDMI device. Enabling
+`qp.decomposition.enable_graph()` also lets PennyLane choose registered graph
+decompositions targeting those operations. The target set reflects the selected
+OpenQASM serializer and advertised operation names; it does not imply native
+hardware gates or provide routing.
 
 The interface does not implement pulse programming, device-specific non-gate
-properties, routing, analytic execution, or parallel job submission.
+properties, routing, analytic execution, or QDMI batch jobs.
+
+## Recovering results after a failure
+
+If execution fails, the device keeps accepted jobs and successful results.
+Retrieve the batch handle from `error.job` on a
+{py:class}`~mqt.core.plugins.pennylane.exceptions.PennyLaneExecutionError`, or
+from `device.last_job` after an interruption inside `device.execute()`. Each
+`execute()` call clears this attribute until its batch is prepared. QNode
+preprocessing happens before `execute()` and does not update it.
+
+To recover a QNode's measurement values, save its executable tapes and
+postprocessor **before execution**. For the Bell-state QNode above, use
+PennyLane's
+[`construct_batch`](https://docs.pennylane.ai/en/stable/code/api/pennylane.workflow.construct_batch.html):
+
+```{code-cell} ipython3
+tapes, postprocess = qp.workflow.construct_batch(bell_state, level="device")()
+samples = bell_device.execute(tapes)
+counts = postprocess(samples)[0]
+```
+
+If this execution stops, keep the same Python session. After resolving a
+connection or result-read problem, recover the measurement values from the
+retained jobs:
+
+```{code-cell} ipython3
+job = bell_device.last_job
+assert job is not None  # A batch was prepared by execute().
+entries = job.collect()
+counts = postprocess(job.result())[0]
+```
+
+`collect()` reads accepted work without starting new executions; its entries
+retain attempts, results, and errors. If needed, use `job.submit()` for
+untouched inputs or `job.resubmit([i])` to replace a failed or cancelled
+attempt, then retrieve the result again. Successful results are reused. See
+{py:class}`~mqt.core.plugins.pennylane.job.PennyLaneJob` for uncertain
+submissions and explicit cancellation.
+
+This workflow recovers forward measurements, including broadcasts and shot
+vectors. It does not restore arbitrary QNode return containers or resume an
+interrupted gradient or optimizer.

@@ -15,16 +15,21 @@ import secrets
 import string
 import warnings
 from typing import TYPE_CHECKING, ClassVar, NoReturn
+from unittest.mock import Mock
 
 import pytest
 from qiskit import qasm2, qasm3
-from qiskit.circuit import Gate, Parameter, QuantumCircuit
+from qiskit.circuit import Gate, IfElseOp, Parameter, QuantumCircuit
+from qiskit.quantum_info import SparsePauliOp
+from qiskit.transpiler import Target
 
 from mqt.core.plugins.qiskit import (
+    CircuitValidationError,
     QDMIBackend,
     QDMIProvider,
     TranslationError,
     UnsupportedFormatError,
+    UnsupportedOperationError,
     program_serializer,
     register_program_serializer,
     unregister_program_serializer,
@@ -33,9 +38,12 @@ from mqt.core.qdmi import Job as QDMIJobHandle
 from mqt.core.qdmi import ProgramFormat
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator, Sequence
+    from collections.abc import Callable, Iterator, Mapping, Sequence
 
     from qiskit.circuit import Instruction
+    from qiskit.providers import Options
+
+    from mqt.core.typing import QDMIJobParameters
 
 
 class MockQDMIDevice:
@@ -143,7 +151,7 @@ class MockQDMIDevice:
 
         def __init__(self, num_clbits: int, shots: int) -> None:
             """Initialize mock job with number of classical bits and shots."""
-            self._num_clbits = num_clbits
+            self.num_clbits = num_clbits
             self._shots = shots
             alphabet = string.ascii_lowercase + string.digits
             self._id = "mock-job-" + "".join(secrets.choice(alphabet) for _ in range(8))
@@ -173,13 +181,13 @@ class MockQDMIDevice:
             Returns:
                 Dictionary mapping measurement outcomes to counts.
             """
-            if self._num_clbits == 0:
+            if self.num_clbits == 0:
                 return {"": self._shots}
 
             if self._counts is None:
                 # Generate random counts with uniform distribution
-                num_outcomes = 2**self._num_clbits
-                outcomes = [format(i, f"0{self._num_clbits}b") for i in range(num_outcomes)]
+                num_outcomes = 2**self.num_clbits
+                outcomes = [format(i, f"0{self.num_clbits}b") for i in range(num_outcomes)]
 
                 # Distribute shots randomly among outcomes
                 counts_list = [0] * num_outcomes
@@ -195,6 +203,14 @@ class MockQDMIDevice:
 
         def cancel(self) -> None:
             """Cancel job (no-op for mock)."""
+
+        def get_shots(self) -> list[str]:
+            """Raise unless the test device implements ordered shots.
+
+            Raises:
+                NotImplementedError: This device only supports counts.
+            """
+            raise NotImplementedError
 
     def __init__(
         self,
@@ -297,28 +313,6 @@ class MockQDMIDevice:
         return self.MockJob(num_clbits=num_clbits, shots=num_shots)
 
 
-@pytest.fixture
-def mock_qdmi_device_factory() -> type[MockQDMIDevice]:
-    """Factory fixture for creating custom MockQDMIDevice instances.
-
-    Returns:
-        The MockQDMIDevice class that can be called to create instances.
-
-    Note:
-        Use this fixture when you need to create custom mock device instances
-        with specific configurations (operations, coupling maps, etc.) for testing.
-
-    Example:
-        def test_custom_device(mock_qdmi_device_factory):
-            device = mock_qdmi_device_factory(
-                name="Custom Device",
-                num_qubits=2,
-                operations=["h", "cx"]
-            )
-    """
-    return MockQDMIDevice
-
-
 def _patch_registered_devices(monkeypatch: pytest.MonkeyPatch, devices: list[MockQDMIDevice]) -> None:
     """Make the driver functions expose the given mock devices."""
     device_ids = [f"test.device.{index}" for index in range(len(devices))]
@@ -331,11 +325,11 @@ def _patch_registered_devices(monkeypatch: pytest.MonkeyPatch, devices: list[Moc
 
 
 def test_backend_warns_on_unmappable_operation(
-    monkeypatch: pytest.MonkeyPatch, mock_qdmi_device_factory: type[MockQDMIDevice]
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Backend should warn when device operation cannot be mapped to a Qiskit gate."""
     # Create mock device with an unmappable operation
-    mock_device = mock_qdmi_device_factory(
+    mock_device = MockQDMIDevice(
         name="Test Device",
         num_qubits=2,
         operations=["cz", "custom_unmappable_gate", "measure"],
@@ -360,11 +354,11 @@ def test_backend_warns_on_unmappable_operation(
 
 
 def test_backend_warns_on_missing_measurement_operation(
-    monkeypatch: pytest.MonkeyPatch, mock_qdmi_device_factory: type[MockQDMIDevice]
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Backend should warn when device does not define a measurement operation."""
     # Create mock device without measure operation
-    mock_device = mock_qdmi_device_factory(
+    mock_device = MockQDMIDevice(
         name="Test Device",
         num_qubits=2,
         operations=["cz"],  # No measure operation
@@ -388,9 +382,9 @@ def test_backend_warns_on_missing_measurement_operation(
         )
 
 
-def test_backend_warns_on_device_native_operation(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
+def test_backend_warns_on_device_native_operation() -> None:
     """Backend skips a device operation that no Qiskit gate represents."""
-    mock_device = mock_qdmi_device_factory(
+    mock_device = MockQDMIDevice(
         name="Test Device with a device-native operation",
         num_qubits=2,
         operations=["hop", "cz", "measure"],
@@ -402,7 +396,7 @@ def test_backend_warns_on_device_native_operation(mock_qdmi_device_factory: type
     assert "hop" not in backend.target.operation_names
 
 
-def test_subclass_extra_gates_appear_in_target(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
+def test_subclass_extra_gates_appear_in_target() -> None:
     """A subclass represents a device-native operation through _EXTRA_GATES."""
 
     class HopGate(Gate):
@@ -416,7 +410,7 @@ def test_subclass_extra_gates_appear_in_target(mock_qdmi_device_factory: type[Mo
 
         _EXTRA_GATES: ClassVar[dict[str, Instruction | type[Instruction]]] = {"hop": HopGate()}
 
-    mock_device = mock_qdmi_device_factory(
+    mock_device = MockQDMIDevice(
         name="Test Device with a device-native operation",
         num_qubits=2,
         operations=["hop", "cz", "measure"],
@@ -452,27 +446,27 @@ def _record_submissions(device: MockQDMIDevice) -> list[tuple[str | bytes, Progr
     return submissions
 
 
-def test_backend_serialization_without_supported_formats(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
+def test_backend_serialization_without_supported_formats() -> None:
     """Backend should raise UnsupportedFormatError when the device reports no program format."""
     qc = QuantumCircuit(2)
     qc.cz(0, 1)
     qc.measure_all()
 
-    device = mock_qdmi_device_factory(num_qubits=2, operations=["cz", "measure"])
+    device = MockQDMIDevice(num_qubits=2, operations=["cz", "measure"])
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(UnsupportedFormatError, match="reports no supported program formats"):
         backend._serialize_circuit(qc, [])  # ruff:ignore[private-member-access]
 
 
-def test_backend_qasm3_serialization_success(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
+def test_backend_qasm3_serialization_success() -> None:
     """Backend should successfully serialize a circuit into OpenQASM 3."""
     qc = QuantumCircuit(2)
     qc.h(0)
     qc.cx(0, 1)
     qc.measure_all()
 
-    device = mock_qdmi_device_factory(num_qubits=2, operations=["h", "cx", "measure"])
+    device = MockQDMIDevice(num_qubits=2, operations=["h", "cx", "measure"])
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
     program, fmt = backend._serialize_circuit(qc, [ProgramFormat.QASM3])  # ruff:ignore[private-member-access]
@@ -484,14 +478,14 @@ def test_backend_qasm3_serialization_success(mock_qdmi_device_factory: type[Mock
     assert "cx q[0], q[1]" in program
 
 
-def test_backend_qasm2_serialization_success(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
+def test_backend_qasm2_serialization_success() -> None:
     """Backend should successfully serialize a circuit into OpenQASM 2."""
     qc = QuantumCircuit(2)
     qc.h(0)
     qc.cx(0, 1)
     qc.measure_all()
 
-    device = mock_qdmi_device_factory(num_qubits=2, operations=["h", "cx", "measure"])
+    device = MockQDMIDevice(num_qubits=2, operations=["h", "cx", "measure"])
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
     program, fmt = backend._serialize_circuit(qc, [ProgramFormat.QASM2])  # ruff:ignore[private-member-access]
@@ -503,13 +497,13 @@ def test_backend_qasm2_serialization_success(mock_qdmi_device_factory: type[Mock
     assert "cx q[0],q[1]" in program
 
 
-def test_backend_respects_format_preference(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
+def test_backend_respects_format_preference() -> None:
     """The preference order decides the format, not the order the device reports."""
     qc = QuantumCircuit(2)
     qc.h(0)
     qc.measure_all()
 
-    device = mock_qdmi_device_factory(num_qubits=2, operations=["h", "measure"])
+    device = MockQDMIDevice(num_qubits=2, operations=["h", "measure"])
     # The device reports OpenQASM 2 first, but OpenQASM 3 outranks it.
     device.supported_program_formats = lambda: [ProgramFormat.QASM2, ProgramFormat.QASM3]  # ty: ignore[invalid-assignment]
     submissions = _record_submissions(device)
@@ -540,11 +534,9 @@ def registered_serializer() -> Iterator[ProgramFormat]:
     unregister_program_serializer(ProgramFormat.CUSTOM1)
 
 
-def test_backend_uses_registered_serializer(
-    mock_qdmi_device_factory: type[MockQDMIDevice], registered_serializer: ProgramFormat
-) -> None:
+def test_backend_uses_registered_serializer(registered_serializer: ProgramFormat) -> None:
     """Backend serializes through a registered serializer when the device supports its format."""
-    device = mock_qdmi_device_factory(num_qubits=2, operations=["r", "cz", "measure"])
+    device = MockQDMIDevice(num_qubits=2, operations=["r", "cz", "measure"])
     device.supported_program_formats = lambda: [registered_serializer, ProgramFormat.QASM3]  # ty: ignore[invalid-assignment]
     submissions = _record_submissions(device)
 
@@ -558,11 +550,9 @@ def test_backend_uses_registered_serializer(
     assert submissions == [("CUSTOM1 program for bell", registered_serializer)]
 
 
-def test_backend_prefers_registered_serializer_over_qasm(
-    mock_qdmi_device_factory: type[MockQDMIDevice], registered_serializer: ProgramFormat
-) -> None:
+def test_backend_prefers_registered_serializer_over_qasm(registered_serializer: ProgramFormat) -> None:
     """A registered serializer takes priority over the built-in OpenQASM serializers."""
-    device = mock_qdmi_device_factory(num_qubits=2, operations=["r", "cz", "measure"])
+    device = MockQDMIDevice(num_qubits=2, operations=["r", "cz", "measure"])
     device.supported_program_formats = lambda: [ProgramFormat.QASM2, ProgramFormat.QASM3, registered_serializer]  # ty: ignore[invalid-assignment]
     submissions = _record_submissions(device)
 
@@ -595,12 +585,10 @@ def registered_binary_serializer() -> Iterator[tuple[ProgramFormat, bytes]]:
     unregister_program_serializer(ProgramFormat.QPY)
 
 
-def test_backend_submits_binary_payload(
-    mock_qdmi_device_factory: type[MockQDMIDevice], registered_binary_serializer: tuple[ProgramFormat, bytes]
-) -> None:
+def test_backend_submits_binary_payload(registered_binary_serializer: tuple[ProgramFormat, bytes]) -> None:
     """A binary format reaches the device as the exact bytes the serializer returned."""
     fmt, payload = registered_binary_serializer
-    device = mock_qdmi_device_factory(num_qubits=2, operations=["h", "cz", "measure"])
+    device = MockQDMIDevice(num_qubits=2, operations=["h", "cz", "measure"])
     device.supported_program_formats = lambda: [fmt, ProgramFormat.QASM3]  # ty: ignore[invalid-assignment]
     submissions = _record_submissions(device)
 
@@ -631,15 +619,13 @@ def mistyped_serializer() -> Iterator[ProgramFormat]:
     unregister_program_serializer(ProgramFormat.CUSTOM2)
 
 
-def test_backend_rejects_wrong_payload_type(
-    mock_qdmi_device_factory: type[MockQDMIDevice], mistyped_serializer: ProgramFormat
-) -> None:
+def test_backend_rejects_wrong_payload_type(mistyped_serializer: ProgramFormat) -> None:
     """A serializer that returns the wrong payload type for its format fails."""
     qc = QuantumCircuit(2)
     qc.h(0)
     qc.measure_all()
 
-    device = mock_qdmi_device_factory(num_qubits=2, operations=["h", "measure"])
+    device = MockQDMIDevice(num_qubits=2, operations=["h", "measure"])
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(TranslationError, match="returned bytes, but CUSTOM2 requires str"):
@@ -665,11 +651,9 @@ def replaced_qasm3_serializer() -> Iterator[str]:
     register_program_serializer(ProgramFormat.QASM3, original, replace=True)
 
 
-def test_backend_uses_replaced_qasm3_serializer(
-    mock_qdmi_device_factory: type[MockQDMIDevice], replaced_qasm3_serializer: str
-) -> None:
-    """Replacing the built-in OpenQASM 3 serializer changes what the backend submits."""
-    device = mock_qdmi_device_factory(num_qubits=2, operations=["h", "measure"])
+def test_backend_uses_replaced_qasm3_serializer(replaced_qasm3_serializer: str) -> None:
+    """A custom serializer retains control over compilation to native width."""
+    device = MockQDMIDevice(num_qubits=1, operations=["h", "measure"])
     submissions = _record_submissions(device)
 
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
@@ -682,17 +666,110 @@ def test_backend_uses_replaced_qasm3_serializer(
     assert submissions == [(replaced_qasm3_serializer, ProgramFormat.QASM3)]
 
 
-def test_backend_rejects_device_without_program_payload(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
-    """A device that only accepts CALIBRATION has no format a circuit can go into."""
+@pytest.mark.parametrize("program_format", [ProgramFormat.QASM2, ProgramFormat.QASM3])
+def test_qasm_rejects_invalid_native_placements_before_submitting_batch(
+    monkeypatch: pytest.MonkeyPatch, program_format: ProgramFormat
+) -> None:
+    """Validate the whole batch against ordered native pairs before submission."""
+    device = MockQDMIDevice(num_qubits=2, operations=["cx", "measure"])
+    operation = device.operations()[0]
+    monkeypatch.setattr(operation, "site_pairs", lambda: [(device.sites()[0], device.sites()[1])])
+    monkeypatch.setattr(device, "supported_program_formats", lambda: [program_format])
+    submissions = _record_submissions(device)
+    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type] Device boundary double.
+    valid = QuantumCircuit(2)
+    valid.cx(0, 1)
+    valid.measure_all()
+    invalid = QuantumCircuit(2)
+    invalid.cx(1, 0)
+    invalid.measure_all()
+
+    with pytest.raises(UnsupportedOperationError, match=r"native device qubits \(1, 0\)"):
+        backend.run([valid, invalid], shots=2)
+    assert not submissions
+    backend.run(valid, shots=2)
+    assert len(submissions) == 1
+
+
+@pytest.mark.parametrize("program_format", [ProgramFormat.QASM2, ProgramFormat.QASM3])
+def test_qasm_rejects_excess_native_width(monkeypatch: pytest.MonkeyPatch, program_format: ProgramFormat) -> None:
+    """A QASM program cannot address qubits beyond the native device width."""
+    device = MockQDMIDevice(num_qubits=2, operations=["measure"])
+    monkeypatch.setattr(device, "supported_program_formats", lambda: [program_format])
+    submissions = _record_submissions(device)
+    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type] Device boundary double.
+    circuit = QuantumCircuit(3)
+    circuit.measure_all()
+    with pytest.raises(CircuitValidationError, match="native device has 2"):
+        backend.run(circuit, shots=2)
+    assert not submissions
+
+
+def test_qasm_preflight_uses_native_sites_after_preprocessing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Preprocessing may widen a logical circuit to a site hidden from the Target."""
+
+    class WideningBackend(QDMIBackend):
+        """Expose a logical pair and lower it onto three native sites."""
+
+        def _build_target(self) -> Target:
+            return Target.from_configuration(basis_gates=["cx", "measure"], num_qubits=self.device.qubits_num() - 1)
+
+        def _preprocess_circuit(self, circuit: QuantumCircuit) -> QuantumCircuit:
+            widened = QuantumCircuit(self.device.qubits_num(), circuit.num_clbits)
+            widened.compose(circuit, qubits=[0, 2], inplace=True)
+            return widened
+
+    device = MockQDMIDevice(num_qubits=3, operations=["cx", "measure"])
+    monkeypatch.setattr(device.operations()[0], "site_pairs", lambda: [(device.sites()[0], device.sites()[2])])
+    submissions = _record_submissions(device)
+    backend = WideningBackend(device)  # ty: ignore[invalid-argument-type] Device boundary double.
+    circuit = QuantumCircuit(2)
+    circuit.cx(0, 1)
+    circuit.measure_all()
+    backend.run(circuit, shots=2)
+    assert backend.target.num_qubits == 2
+    assert len(submissions) == 1
+    program, _ = submissions[0]
+    assert isinstance(program, str)
+    assert "cx q[0], q[2];" in program
+
+
+def test_qasm_preflight_maps_control_flow_operands(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Validate block-local operands against their enclosing native qubits."""
+    device = MockQDMIDevice(num_qubits=3, operations=["cx", "measure"])
+    monkeypatch.setattr(device.operations()[0], "site_pairs", lambda: [(device.sites()[2], device.sites()[0])])
+    submissions = _record_submissions(device)
+    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type] Device boundary double.
+    body = QuantumCircuit(2)
+    body.cx(0, 1)
+    circuit = QuantumCircuit(3, 1)
+    circuit.if_else((circuit.clbits[0], True), body, QuantumCircuit(2), [2, 0], [])
+    with pytest.raises(UnsupportedOperationError, match="Unsupported control flow"):
+        backend.run(circuit, shots=2)
+    assert not submissions
+
+    backend.target.add_instruction(IfElseOp, name="if_else")
+    backend.run(circuit, shots=2)
+    assert len(submissions) == 1
+
+    invalid = QuantumCircuit(3, 1)
+    invalid.if_else((invalid.clbits[0], True), body, QuantumCircuit(2), [0, 2], [])
+    with pytest.raises(UnsupportedOperationError, match=r"native device qubits \(0, 2\)"):
+        backend.run(invalid, shots=2)
+    assert len(submissions) == 1
+
+
+def test_backend_rejects_device_without_program_payload() -> None:
+    """A device that only accepts BATCH_JOB has no format a circuit can go into."""
     qc = QuantumCircuit(2)
     qc.h(0)
     qc.measure_all()
 
-    device = mock_qdmi_device_factory(num_qubits=2, operations=["h", "measure"])
+    device = MockQDMIDevice(num_qubits=2, operations=["h", "measure"])
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(UnsupportedFormatError, match="No program serializer for any format the device supports"):
-        backend._serialize_circuit(qc, [ProgramFormat.CALIBRATION])  # ruff:ignore[private-member-access]
+        backend._serialize_circuit(qc, [ProgramFormat.BATCH_JOB])  # ruff:ignore[private-member-access]
 
 
 @pytest.mark.parametrize(
@@ -706,7 +783,6 @@ def test_backend_qasm_serialization_failure(
     monkeypatch: pytest.MonkeyPatch,
     qasm_module_name: str,
     program_format: ProgramFormat,
-    mock_qdmi_device_factory: type[MockQDMIDevice],
 ) -> None:
     """Backend should raise TranslationError when OpenQASM serialization fails."""
     qasm_module = qasm3 if qasm_module_name == "qasm3" else qasm2
@@ -722,20 +798,20 @@ def test_backend_qasm_serialization_failure(
     qc.cz(0, 1)
     qc.measure_all()
 
-    device = mock_qdmi_device_factory(num_qubits=2, operations=["cz", "measure"])
+    device = MockQDMIDevice(num_qubits=2, operations=["cz", "measure"])
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(TranslationError, match=f"Failed to serialize the circuit to {qasm_module_name.upper()}"):
         backend._serialize_circuit(qc, [program_format])  # ruff:ignore[private-member-access]
 
 
-def test_backend_unsupported_format_error(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
+def test_backend_unsupported_format_error() -> None:
     """Backend should raise UnsupportedFormatError when no supported format has a serializer."""
     qc = QuantumCircuit(2)
     qc.cz(0, 1)
     qc.measure_all()
 
-    device = mock_qdmi_device_factory(num_qubits=2, operations=["cz", "measure"])
+    device = MockQDMIDevice(num_qubits=2, operations=["cz", "measure"])
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
     # MQT Core ships no QPY serializer, and no package registered one
@@ -789,11 +865,11 @@ def test_map_qiskit_gate_to_operation_names() -> None:
 
 
 def test_backend_validation_uses_inverse_mapping(
-    monkeypatch: pytest.MonkeyPatch, mock_qdmi_device_factory: type[MockQDMIDevice]
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Backend validation correctly uses inverse mapping to handle device-specific naming."""
     # Create a mock device that uses 'prx' instead of 'r' (like IQM devices)
-    mock_device = mock_qdmi_device_factory(
+    mock_device = MockQDMIDevice(
         name="Test Device with PRX",
         num_qubits=2,
         operations=["prx", "cz", "measure"],  # Uses 'prx' instead of 'r'
@@ -820,3 +896,190 @@ def test_backend_validation_uses_inverse_mapping(
     # knows that Qiskit's 'r' can map to device's 'prx'
     job = backend.run(qc_bound, shots=100)
     assert job is not None
+
+
+@pytest.mark.parametrize(
+    ("unit", "scale", "duration", "expected"),
+    [
+        ("ns", None, 20, 20e-9),
+        ("us", 0.5, 20, 10e-6),
+        (None, None, None, None),
+        ("ns", 1.0, 0, 0.0),
+    ],
+)
+def test_global_target_duration(
+    monkeypatch: pytest.MonkeyPatch,
+    unit: str | None,
+    scale: float | None,
+    duration: int | None,
+    expected: float | None,
+) -> None:
+    """Global calibrations use device units; absent durations need no unit."""
+    device = MockQDMIDevice(operations=["x", "measure"])
+    monkeypatch.setattr(device.operations()[0], "duration", lambda: duration)
+    monkeypatch.setattr(device, "duration_unit", lambda: unit, raising=False)
+    monkeypatch.setattr(device, "duration_scale_factor", lambda: scale, raising=False)
+    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type] Intentional device double.
+    properties = backend.target["x"][None]
+    if expected is None:
+        assert properties is None
+    else:
+        assert properties.duration == pytest.approx(expected)
+
+
+@pytest.mark.parametrize(("unit", "scale"), [(None, 1.0), ("dt", 1.0), ("ns", 0.0), ("ns", float("nan"))])
+def test_target_rejects_invalid_duration_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+    unit: str | None,
+    scale: float,
+) -> None:
+    """A reported duration must have units that can be converted to seconds."""
+    device = MockQDMIDevice(operations=["x", "measure"])
+    monkeypatch.setattr(device.operations()[0], "duration", lambda: 20)
+    monkeypatch.setattr(device, "duration_unit", lambda: unit, raising=False)
+    monkeypatch.setattr(device, "duration_scale_factor", lambda: scale, raising=False)
+    with pytest.raises(UnsupportedOperationError, match="duration"):
+        QDMIBackend(device)  # ty: ignore[invalid-argument-type] Intentional device double.
+
+
+def test_target_rejects_incomplete_site_tuple(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Malformed fixed-arity metadata cannot become global gate support."""
+    device = MockQDMIDevice(num_qubits=4, operations=["ccx", "measure"])
+    operation = device.operations()[0]
+    monkeypatch.setattr(operation, "qubits_num", lambda: 3)
+    monkeypatch.setattr(operation, "sites", device.sites)
+    with pytest.raises(UnsupportedOperationError, match="incomplete 3-qubit site tuple"):
+        QDMIBackend(device)  # ty: ignore[invalid-argument-type] Intentional device double.
+
+
+@pytest.mark.parametrize("duration", [None, 0, 20])
+def test_target_snapshots_duration_conversion_once(monkeypatch: pytest.MonkeyPatch, duration: int | None) -> None:
+    """Read units lazily once across placements, and refresh them for a new target."""
+    device = MockQDMIDevice(num_qubits=3, operations=["x", "h", "measure"])
+    unit = Mock(return_value="us")
+    scale = Mock(return_value=0.5)
+    monkeypatch.setattr(device, "duration_unit", unit, raising=False)
+    monkeypatch.setattr(device, "duration_scale_factor", scale, raising=False)
+    for operation in device.operations()[:2]:
+        monkeypatch.setattr(operation, "sites", device.sites)
+        monkeypatch.setattr(operation, "duration", lambda **_kwargs: duration)
+    for factor in [0.5, 2.0]:
+        scale.return_value = factor
+        unit.reset_mock()
+        scale.reset_mock()
+        backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type] Intentional device double.
+        if duration is None:
+            unit.assert_not_called()
+            scale.assert_not_called()
+        else:
+            unit.assert_called_once()
+            scale.assert_called_once()
+        for name in ["x", "h"]:
+            for site in range(3):
+                properties = backend.target[name][site,]
+                if duration is None:
+                    assert properties is None
+                else:
+                    assert properties.duration == pytest.approx(duration * factor * 1e-6)
+
+
+class ExecutionOptionsBackend(QDMIBackend):
+    """Test device-specific option encoding without vendor dependencies."""
+
+    @classmethod
+    def _default_options(cls) -> Options:
+        options = super()._default_options()
+        options.update_options(execution_mode="default")
+        return options
+
+    def _job_parameters(self, options: Mapping[str, object]) -> QDMIJobParameters:  # ruff:ignore[no-self-use]
+        mode = options["execution_mode"]
+        assert options == {"execution_mode": mode}
+        if mode not in {"default", "selected"}:
+            msg = "Invalid execution_mode"
+            raise CircuitValidationError(msg)
+        return {"custom1": str(mode)}
+
+
+def test_execution_options_defaults_overrides_and_validation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Encode resolved options for each circuit without mutating defaults."""
+    device = MockQDMIDevice(num_qubits=1)
+    backend = ExecutionOptionsBackend(device)  # ty: ignore[invalid-argument-type]
+    submit = Mock(return_value=device.MockJob(num_clbits=1, shots=3))
+    monkeypatch.setattr(device, "submit_job", submit)
+    circuit = QuantumCircuit(1, 1)
+    circuit.measure(0, 0)
+    backend.set_options(execution_mode="selected")
+    backend.run([circuit, circuit], shots=3)
+    assert submit.call_count == 2
+    assert all(call.kwargs["custom1"] == "selected" for call in submit.call_args_list)
+    backend.run(circuit, execution_mode="default")
+    assert submit.call_args.kwargs["custom1"] == "default"
+    assert backend.options.execution_mode == "selected"
+    submit.reset_mock()
+    with pytest.raises(CircuitValidationError, match="Invalid execution_mode"):
+        backend.run([circuit, circuit], execution_mode="invalid")
+    with pytest.raises(CircuitValidationError, match="Unsupported execution options: typo"):
+        backend.run(circuit, typo=True)
+    submit.assert_not_called()
+
+
+def test_execution_options_forward_exact_bytes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Forward custom bytes unchanged through the backend submission hook."""
+    device = MockQDMIDevice(num_qubits=1)
+    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
+    submit = Mock(return_value=device.MockJob(num_clbits=1, shots=1))
+    monkeypatch.setattr(device, "submit_job", submit)
+    monkeypatch.setattr(QDMIBackend, "_job_parameters", lambda _self, _options: {"custom1": b"\x00\xff"})
+    backend.run(QuantumCircuit(1), shots=1)
+    assert submit.call_args.kwargs["custom1"] == b"\x00\xff"
+
+
+def test_execution_options_survive_retry(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A replacement job keeps the options resolved for the original run."""
+    device = MockQDMIDevice(num_qubits=1)
+    backend = ExecutionOptionsBackend(device)  # ty: ignore[invalid-argument-type]
+    failed = device.MockJob(num_clbits=1, shots=3)
+    failed._status = QDMIJobHandle.Status.FAILED  # ruff:ignore[private-member-access] Simulate a failed job.
+    submit = Mock(side_effect=[failed, device.MockJob(num_clbits=1, shots=3)])
+    monkeypatch.setattr(device, "submit_job", submit)
+    circuit = QuantumCircuit(1, 1)
+    circuit.measure(0, 0)
+    backend.set_options(execution_mode="selected")
+    job = backend.run(circuit, shots=3, max_retries=1)
+    backend.set_options(execution_mode="default")
+    job.result()
+    assert [call.kwargs["custom1"] for call in submit.call_args_list] == ["selected", "selected"]
+
+
+@pytest.mark.parametrize("primitive", ["sampler", "estimator"])
+def test_primitives_forward_backend_execution_options(monkeypatch: pytest.MonkeyPatch, primitive: str) -> None:
+    """Native primitives preserve backend defaults; sampler accepts run overrides."""
+    device = MockQDMIDevice(num_qubits=1)
+    backend = ExecutionOptionsBackend(device)  # ty: ignore[invalid-argument-type]
+    backend.set_options(execution_mode="selected")
+    job = device.MockJob(num_clbits=1, shots=4)
+    monkeypatch.setattr(job, "get_shots", lambda: ["0"] * 4)
+    submit = Mock(return_value=job)
+    monkeypatch.setattr(device, "submit_job", submit)
+    circuit = QuantumCircuit(1)
+    if primitive == "sampler":
+        circuit.measure_all()
+        backend.sampler().run([circuit], shots=4).result()
+        assert submit.call_args.kwargs["custom1"] == "selected"
+        sampler = backend.sampler(run_options={"execution_mode": "default"})
+        sampler.run([circuit], shots=4).result()
+        expected = "default"
+    else:
+        backend.estimator().run([(circuit, SparsePauliOp("Z"))], precision=0.5).result()
+        expected = "selected"
+    assert submit.call_args.kwargs["custom1"] == expected
+
+
+def test_declared_options_without_encoding_are_rejected() -> None:
+    """A subclass must implement encoding for every additional declared option."""
+    device = MockQDMIDevice(num_qubits=1)
+    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
+    backend.options.update_options(unmapped=True)
+    with pytest.raises(CircuitValidationError, match="Unsupported execution options: unmapped"):
+        backend.run(QuantumCircuit(1))

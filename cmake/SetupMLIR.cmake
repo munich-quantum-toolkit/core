@@ -10,7 +10,7 @@
 set(MQT_MLIR_SOURCE_INCLUDE_DIR "${PROJECT_SOURCE_DIR}/mlir/include")
 set(MQT_MLIR_BUILD_INCLUDE_DIR "${PROJECT_BINARY_DIR}/mlir/include")
 set(MQT_MLIR_MIN_VERSION
-    "22.1"
+    "23.1"
     CACHE STRING "Minimum required MLIR version")
 
 # Attempt to load MLIR_DIR from a local .env file for developer convenience.
@@ -41,11 +41,9 @@ endif()
 message(STATUS "Using MLIRConfig.cmake in: ${MLIR_DIR}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 
-# Add the paths to the MLIR and LLVM CMake modules.
 list(APPEND CMAKE_MODULE_PATH "${MLIR_CMAKE_DIR}")
 list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
 
-# Include the TableGen, LLVM and MLIR CMake modules.
 include(TableGen)
 include(AddLLVM)
 include(AddMLIR)

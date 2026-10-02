@@ -8,27 +8,28 @@
  * Licensed under the MIT License
  */
 
-#include "ModifierUtils.h"
-#include "mlir/Dialect/MQT/Utils/Modifiers.h"
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/QCOUtils.h"
-#include "mlir/Dialect/QCO/Utils/Matrix.h"
+#include "mqt/Dialect/MQT/Utils/Modifiers.h"
+#include "mqt/Dialect/QCO/IR/QCODialect.h"
+#include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QCO/Utils/Matrix.h"
 
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/STLFunctionalExtras.h>
-#include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/SmallVectorExtras.h>
-#include <llvm/Support/ErrorHandling.h>
-#include <mlir/IR/Block.h>
-#include <mlir/IR/Builders.h>
-#include <mlir/IR/BuiltinAttributes.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OperationSupport.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/Value.h>
-#include <mlir/Support/LLVM.h>
+#include "ModifierUtils.h"
+
+#include "mlir/IR/Block.h"
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/OperationSupport.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/Value.h"
+#include "mlir/Support/LLVM.h"
+
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/SmallVectorExtras.h"
+#include "llvm/Support/ErrorHandling.h"
 
 #include <cassert>
 #include <cstddef>
@@ -40,9 +41,7 @@ using namespace mlir::qco;
 
 namespace {
 
-/**
- * @brief Merge nested control modifiers into a single one.
- */
+/// Merge nested control modifiers into a single one.
 struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -51,11 +50,6 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
     // Require at least one control
     // Trivial case is handled by ReduceCtrl
     if (op.getNumControls() == 0) {
-      return failure();
-    }
-
-    // Only proceed if body contains only one operation besides terminator
-    if (op.getBody()->getOperations().size() != 2) {
       return failure();
     }
 
@@ -91,6 +85,8 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
       return mqt::getValueFromBlockArgument(t, outerTargets);
     });
 
+    mqt::hoistSupportingOpsBefore(*op.getBody(), innerCtrlOp, op, rewriter);
+
     auto merged =
         CtrlOp::create(rewriter, op.getLoc(), controls, targets,
                        [&](ValueRange mergedTargets) -> SmallVector<Value> {
@@ -108,15 +104,19 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
   }
 };
 
-/**
- * @brief Reduce controls for well-known gates.
- * @details Removes empty control ops and handles controlled IdOp, GPhaseOp and
- * BarrierOp.
- */
+/// Reduce controls for well-known gates.
+///
+/// Removes empty control ops and handles controlled IdOp, GPhaseOp and
+/// BarrierOp.
 struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
+    if (op.getNumControls() == 0) {
+      mqt::inlineModifierBody(op, *op.getBody(), op.getTargetsIn(), rewriter);
+      return success();
+    }
+
     auto inner = mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
     if (!inner) {
       return failure();
@@ -128,8 +128,8 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
       return failure();
     }
 
-    // Inline ops from empty control modifiers, IdOp and BarrierOp
-    if (op.getNumControls() == 0 || isa<IdOp, BarrierOp>(innerOp)) {
+    // Control does not change an identity gate or barrier.
+    if (isa<IdOp, BarrierOp>(innerOp)) {
       auto* body = op.getBody();
       auto* terminator = body->getTerminator();
       // Controls are pass-through results outside the body yield, so the
@@ -148,10 +148,7 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
       return failure();
     }
 
-    // Only proceed if the GPhaseOp is the only operation besides the terminator
-    if (op.getBody()->getOperations().size() != 2) {
-      return failure();
-    }
+    mqt::hoistSupportingOpsBefore(*op.getBody(), gPhaseOp, op, rewriter);
 
     // Special case for single control: replace with a single POp
     if (op.getNumControls() == 1) {
@@ -164,41 +161,20 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
       return success();
     }
 
-    // Reinterpret the last control as a target qubit and apply a phase gate to
-    // it inside the (smaller) controlled region
-    const auto opSegmentsAttrName = CtrlOp::getOperandSegmentSizeAttr();
-    auto segmentsAttr =
-        op->getAttrOfType<DenseI32ArrayAttr>(opSegmentsAttrName);
-    auto newSegments = DenseI32ArrayAttr::get(
-        rewriter.getContext(), {segmentsAttr[0] - 1, segmentsAttr[1] + 1});
-    op->setAttr(opSegmentsAttrName, newSegments);
-    const auto opResultSegmentsAttrName = CtrlOp::getResultSegmentSizeAttr();
-    op->setAttr(opResultSegmentsAttrName, newSegments);
-
-    // Add a block argument for the target qubit
-    auto arg = op.getBody()->addArgument(QubitType::get(rewriter.getContext()),
-                                         op.getLoc());
-
-    // Replace the current GPhaseOp with a PhaseOp
-    const OpBuilder::InsertionGuard guard(rewriter);
-    rewriter.setInsertionPoint(gPhaseOp);
-    auto pOp =
-        POp::create(rewriter, gPhaseOp.getLoc(), arg, gPhaseOp.getTheta());
-
-    // Add the results of the POp to the yield operation
-    auto yieldOp = cast<YieldOp>(op.getBody()->back());
-    yieldOp->setOperands(pOp->getResults());
-
-    // Erase the GPhaseOp
-    rewriter.eraseOp(gPhaseOp);
+    // The last control becomes the phase target, retaining its result position.
+    rewriter.replaceOpWithNewOp<CtrlOp>(
+        op, op.getControlsIn().drop_back(), op.getControlsIn().back(),
+        [&](Value target) -> Value {
+          return POp::create(rewriter, gPhaseOp.getLoc(), target,
+                             gPhaseOp.getTheta())
+              .getResult();
+        });
 
     return success();
   }
 };
 
-/**
- * @brief Erase control modifiers that do not have any body unitaries.
- */
+/// Erase control modifiers that do not have any body unitaries.
 struct EraseEmptyCtrl final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(CtrlOp op,
@@ -212,9 +188,7 @@ struct EraseEmptyCtrl final : OpRewritePattern<CtrlOp> {
   }
 };
 
-/**
- * @brief Drop the target qubits that the body does not use.
- */
+/// Drop the target qubits that the body does not use.
 struct DropUnusedTargets final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -255,7 +229,7 @@ UnitaryOpInterface CtrlOp::getBodyUnitary(const size_t i) {
 }
 
 Value CtrlOp::getInputForOutput(Value output) {
-  if (const auto result = dyn_cast<OpResult>(output);
+  if (auto result = dyn_cast<OpResult>(output);
       result && result.getOwner() == getOperation()) {
     return getInputQubit(result.getResultNumber());
   }
@@ -301,52 +275,11 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
   build(odsBuilder, odsState, ValueRange{control}, target, bodyBuilder);
 }
 
-LogicalResult CtrlOp::verify() {
-  auto& block = *getBody();
-  if (failed(detail::verifyModifierBody(getOperation(), block))) {
-    return failure();
+LogicalResult CtrlOp::verifyRegions() {
+  if (getControlsIn().size() != getControlsOut().size()) {
+    return emitOpError("number of output controls must match input controls");
   }
-
-  const auto numTargets = getNumTargets();
-  if (block.getArguments().size() != numTargets) {
-    return emitOpError(
-        "number of block arguments must match the number of targets");
-  }
-  auto qubitType = QubitType::get(getContext());
-  for (size_t i = 0; i < numTargets; ++i) {
-    if (block.getArgument(i).getType() != qubitType) {
-      return emitOpError("block argument type at index ")
-             << i << " does not match target type";
-    }
-  }
-  auto* blockTerminator = block.getTerminator();
-  if (const auto numYieldOperands = blockTerminator->getNumOperands();
-      numYieldOperands != numTargets) {
-    return emitOpError("yield operation must yield ")
-           << numTargets << " values, but found " << numYieldOperands;
-  }
-
-  SmallPtrSet<Value, 4> uniqueQubitsIn;
-  for (const auto& control : getInputQubits()) {
-    if (!uniqueQubitsIn.insert(control).second) {
-      return emitOpError("duplicate qubit found");
-    }
-  }
-
-  SmallPtrSet<Value, 4> uniqueQubitsOut;
-  for (const auto& control : getControlsOut()) {
-    if (!uniqueQubitsOut.insert(control).second) {
-      return emitOpError("duplicate control qubit found");
-    }
-  }
-
-  for (size_t i = 0; i < numTargets; i++) {
-    if (!uniqueQubitsOut.insert(blockTerminator->getOperand(i)).second) {
-      return emitOpError("duplicate qubit found");
-    }
-  }
-
-  return success();
+  return detail::verifyModifierBody(getOperation(), *getBody());
 }
 
 void CtrlOp::getCanonicalizationPatterns(RewritePatternSet& results,
@@ -363,10 +296,8 @@ bool CtrlOp::hasCompileTimeKnownUnitaryMatrix() {
 }
 
 std::optional<DynamicMatrix> CtrlOp::getUnitaryMatrix() {
-  if (getNumControls() >= 32) {
-    llvm::reportFatalUsageError(
-        "Creating the unitary matrix for a CtrlOp with more than 31 controls "
-        "is not supported due to memory constraints.");
+  if (getNumQubits() > kMaxModifierTargetQubits) {
+    return std::nullopt;
   }
 
   const auto numControls = getNumControls();
@@ -382,18 +313,6 @@ std::optional<DynamicMatrix> CtrlOp::getUnitaryMatrix() {
     return matrix;
   };
 
-  // Single inner unitary (e.g. `ctrl { h }`, `ctrl { cx }`).
-  if (auto bodyUnitary =
-          mqt::getSoleBodyUnitary<UnitaryOpInterface>(*getBody())) {
-    if (const auto targetMatrix =
-            bodyUnitary.getUnitaryMatrix<DynamicMatrix>()) {
-      assert(targetMatrix->cols() == targetMatrix->rows());
-      return controlledMatrix(targetMatrix->cols(), *targetMatrix);
-    }
-    return std::nullopt;
-  }
-
-  // Composed body (e.g., `ctrl { h; x }` or `ctrl { swap; ry }`)
   if (const auto composed = composeBodyMatrix(*getBody(), getNumTargets())) {
     return controlledMatrix(composed->rows(), *composed);
   }

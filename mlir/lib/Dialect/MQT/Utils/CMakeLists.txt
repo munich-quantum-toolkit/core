@@ -15,7 +15,7 @@ add_mlir_library(
   Modifiers.cpp
   Parameters.cpp
   ADDITIONAL_HEADER_DIRS
-  ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/MQT/Utils
+  ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/MQT/Utils
   LINK_LIBS
   PUBLIC
   MLIRArithDialect
@@ -24,6 +24,6 @@ add_mlir_library(
 
 mqt_mlir_target_use_project_options(MLIRMQTUtils)
 
-file(GLOB UTILS_HEADERS_SOURCE "${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/MQT/Utils/*.h")
+file(GLOB UTILS_HEADERS_SOURCE "${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/MQT/Utils/*.h")
 target_sources(MLIRMQTUtils PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR} FILES
                                    ${UTILS_HEADERS_SOURCE})

@@ -8,37 +8,44 @@
  * Licensed under the MIT License
  */
 
-#include "ExactUnitaryTest.h"
-#include "mlir/Conversion/QCToQCO/QCToQCO.h"
-#include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
-#include "mlir/Dialect/MQT/Utils/Angles.h"
-#include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
-#include "mlir/Dialect/MQT/Utils/Parameters.h"
-#include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
-#include "mlir/Dialect/QC/IR/QCDialect.h"
-#include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Conversion/QCToQCO/QCToQCO.h"
+#include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
+#include "mqt/Dialect/MQT/Transforms/Passes.h"
+#include "mqt/Dialect/MQT/Utils/Angles.h"
+#include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mqt/Dialect/MQT/Utils/Parameters.h"
+#include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
+#include "mqt/Dialect/QC/IR/QCDialect.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
+#include "mqt/Dialect/QCO/IR/QCODialect.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
 
-#include <gtest/gtest.h>
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallVector.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/IR/BuiltinAttributes.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/DialectRegistry.h>
-#include <mlir/IR/Location.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OwningOpRef.h>
-#include <mlir/IR/Value.h>
-#include <mlir/IR/Verifier.h>
-#include <mlir/Parser/Parser.h>
-#include <mlir/Pass/PassManager.h>
-#include <mlir/Support/LLVM.h>
+#include "ExactUnitaryTest.h"
+
+#include "gtest/gtest.h"
+
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/DialectRegistry.h"
+#include "mlir/IR/Location.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/OwningOpRef.h"
+#include "mlir/IR/Value.h"
+#include "mlir/IR/Verifier.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "mlir/Parser/Parser.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Transforms/Passes.h"
+
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
 
 #include <cmath>
 #include <cstddef>
@@ -58,9 +65,10 @@ protected:
 
   void SetUp() override {
     DialectRegistry registry;
-    registry.insert<arith::ArithDialect, cf::ControlFlowDialect,
-                    func::FuncDialect, memref::MemRefDialect,
-                    mlir::qc::QCDialect, qco::QCODialect, scf::SCFDialect>();
+    registry
+        .insert<arith::ArithDialect, cf::ControlFlowDialect, func::FuncDialect,
+                memref::MemRefDialect, mlir::mqt::MQTDialect,
+                mlir::qc::QCDialect, qco::QCODialect, scf::SCFDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -81,7 +89,7 @@ protected:
 
   static void expectNormalizedUnitary(OwningOpRef<ModuleOp>& moduleOp,
                                       const std::size_t numQubits) {
-    const auto cloned = cast<ModuleOp>((*moduleOp)->clone());
+    auto cloned = cast<ModuleOp>((*moduleOp)->clone());
     OwningOpRef<ModuleOp> expected(cloned);
     ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
     ASSERT_TRUE(verify(*moduleOp).succeeded());
@@ -90,7 +98,7 @@ protected:
 
   static void expectNormalizedQCUnitary(OwningOpRef<ModuleOp>& moduleOp,
                                         const std::size_t numQubits) {
-    const auto cloned = cast<ModuleOp>((*moduleOp)->clone());
+    auto cloned = cast<ModuleOp>((*moduleOp)->clone());
     OwningOpRef<ModuleOp> expected(cloned);
     ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
 
@@ -105,6 +113,165 @@ protected:
 };
 
 } // namespace
+
+TEST_F(GlobalPhaseNormalizationTest,
+       UnrollsEagerParameterChainsWithoutCrossingClassicalControl) {
+  for (bool convertToQCO : {false, true}) {
+    for (StringRef modifier :
+         {"qc.inv", "qc.ctrl(%c) targets", "qc.pow(%two)"}) {
+      SCOPED_TRACE(modifier.str());
+      SCOPED_TRACE(convertToQCO);
+      const auto source = std::string(R"mlir(
+        func.func @test(%cond: i1, %theta: f64, %q: !qc.qubit,
+                        %r: !qc.qubit, %c: !qc.qubit) {
+          %two = arith.constant 2.0 : f64
+          scf.if %cond {
+      )mlir") + modifier.str() +
+                          R"mlir( (%a = %q, %b = %r) {
+            %n = arith.fptosi %theta : f64 to i64
+            %one = arith.constant 1 : i64
+            %d = arith.divsi %one, %n : i64
+            %angle = arith.sitofp %d : i64 to f64
+            qc.rx(%angle) %a : !qc.qubit
+            qc.ry(%angle) %b : !qc.qubit
+            qc.yield
+          } : )mlir" +
+                          (modifier.starts_with("qc.ctrl")
+                               ? "{!qc.qubit}, {!qc.qubit, !qc.qubit}"
+                               : "!qc.qubit, !qc.qubit") +
+                          R"mlir(
+          }
+          return
+        }
+      )mlir";
+      auto moduleOp = parse(source);
+      ASSERT_TRUE(moduleOp);
+      PassManager pm(context.get());
+      if (convertToQCO) {
+        pm.addPass(createQCToQCO());
+      }
+      pm.addPass(mlir::mqt::createUnrollModifiers());
+      ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
+      ASSERT_TRUE(succeeded(verify(*moduleOp)));
+      size_t divisions = 0;
+      size_t modifiers = 0;
+      moduleOp->walk([&](arith::DivSIOp div) {
+        ++divisions;
+        EXPECT_TRUE((isa<scf::IfOp, qco::IfOp>(div->getParentOp())));
+        EXPECT_FALSE(isSpeculatable(div));
+      });
+      moduleOp->walk([&](Operation* op) {
+        if (isa<qc::InvOp, qc::CtrlOp, qc::PowOp, qco::InvOp, qco::CtrlOp,
+                qco::PowOp>(op)) {
+          ++modifiers;
+          EXPECT_EQ(op->getRegion(0).front().getOperations().size(), 2);
+        }
+      });
+      EXPECT_EQ(divisions, 1);
+      EXPECT_EQ(modifiers, 2);
+    }
+  }
+}
+
+TEST_F(GlobalPhaseNormalizationTest,
+       ExtractsEagerPhaseParameterWithoutCrossingClassicalControl) {
+  for (bool convertToQCO : {false, true}) {
+    auto moduleOp = parse(R"mlir(
+      func.func @test(%cond: i1, %theta: f64, %q: !qc.qubit) {
+        scf.if %cond {
+          qc.inv (%a = %q) {
+            %n = arith.fptosi %theta : f64 to i64
+            %one = arith.constant 1 : i64
+            %d = arith.divsi %one, %n : i64
+            %angle = arith.sitofp %d : i64 to f64
+            qc.gphase(%angle)
+            qc.x %a : !qc.qubit
+            qc.yield
+          } : !qc.qubit
+        }
+        return
+      }
+    )mlir");
+    ASSERT_TRUE(moduleOp);
+    if (convertToQCO) {
+      PassManager pm(context.get());
+      pm.addPass(createQCToQCO());
+      ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
+    }
+    ASSERT_TRUE(succeeded(mlir::mqt::normalizeGlobalPhases(*moduleOp)));
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    size_t phases = 0;
+    size_t divisions = 0;
+    moduleOp->walk([&](arith::DivSIOp div) {
+      ++divisions;
+      EXPECT_TRUE((isa<scf::IfOp, qco::IfOp>(div->getParentOp())));
+    });
+    moduleOp->walk([&](Operation* op) {
+      if (isa<qc::GPhaseOp, qco::GPhaseOp>(op)) {
+        ++phases;
+        EXPECT_TRUE((isa<scf::IfOp, qco::IfOp>(op->getParentOp())));
+        EXPECT_TRUE(op->getOperand(0).getDefiningOp<arith::NegFOp>());
+      }
+    });
+    EXPECT_EQ(phases, 1);
+    EXPECT_EQ(divisions, 1);
+  }
+}
+
+TEST_F(GlobalPhaseNormalizationTest,
+       NestedModifierRewritesPreserveParameterProducers) {
+  for (bool convertToQCO : {false, true}) {
+    for (int variant : {0, 1, 2}) {
+      SCOPED_TRACE(convertToQCO);
+      SCOPED_TRACE(variant);
+      const auto* const outer = variant == 2 ? "qc.pow(%power)" : "qc.inv";
+      const auto* const inner = variant == 0 ? "qc.inv" : "qc.ctrl(%a) targets";
+      const auto* const innerTypes =
+          variant == 0 ? "!qc.qubit" : "{!qc.qubit}, {!qc.qubit}";
+      const auto source = std::string(R"mlir(
+        func.func private @rotate(%angle: f64, %q: !qc.qubit)
+            attributes {mqt.unitary, no_inline} {
+          qc.rx(%angle) %q : !qc.qubit
+          return
+        }
+        func.func @test(%cond: i1, %theta: f64, %power: f64,
+                        %q: !qc.qubit, %r: !qc.qubit) {
+          scf.if %cond {
+      )mlir") + outer + R"mlir( (%a = %q, %b = %r) {
+            %n = arith.fptosi %theta : f64 to i64
+            %one = arith.constant 1 : i64
+            %d = arith.divsi %one, %n : i64
+            %angle = arith.sitofp %d : i64 to f64
+      )mlir" + inner + R"mlir( (%t = %b) {
+              qc.call @rotate(%angle, %t) : f64, !qc.qubit
+              qc.yield
+            } : )mlir" + innerTypes +
+                          R"mlir(
+            qc.yield
+          } : !qc.qubit, !qc.qubit
+          }
+          return
+        }
+      )mlir";
+      auto moduleOp = parse(source);
+      ASSERT_TRUE(moduleOp);
+      PassManager pm(context.get());
+      if (convertToQCO) {
+        pm.addPass(createQCToQCO());
+      }
+      pm.addPass(createCanonicalizerPass());
+      ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
+      ASSERT_TRUE(succeeded(verify(*moduleOp)));
+      size_t divisions = 0;
+      moduleOp->walk([&](arith::DivSIOp div) {
+        ++divisions;
+        EXPECT_TRUE((isa<scf::IfOp, qco::IfOp>(div->getParentOp())));
+        EXPECT_FALSE(div->use_empty());
+      });
+      EXPECT_EQ(divisions, 1);
+    }
+  }
+}
 
 TEST_F(GlobalPhaseNormalizationTest, CombinesQCOConstantsAtBlockExit) {
   auto moduleOp = parse(R"mlir(
@@ -132,9 +299,8 @@ TEST_F(GlobalPhaseNormalizationTest, CombinesQCOConstantsAtBlockExit) {
 
 TEST_F(GlobalPhaseNormalizationTest,
        FoldsMulDerivedPhasesWithinPracticalAngleLimit) {
-  // Many arith.mulf-derived gphase angles used to be treated as dynamic and
-  // merged into an addf chain whose later constant-fold exceeded the 1e4 rad
-  // GPhase verifier contract (seen on QASMBench vqe_uccsd_n28 / QV_n100).
+  /// Fold and normalize each constant phase contribution before accumulation
+  /// so the merged angle stays within the GPhase verifier's 1e4-radian bound.
   OwningOpRef moduleOp = ModuleOp::create(UnknownLoc::get(context.get()));
   OpBuilder builder(context.get());
   builder.setInsertionPointToStart(moduleOp->getBody());
@@ -217,9 +383,9 @@ TEST_F(GlobalPhaseNormalizationTest,
        QCControlledExtractionPreservesFullUnitaryUnderOuterControl) {
   auto moduleOp = mlir::qc::QCProgramBuilder::build(
       context.get(), [](mlir::qc::QCProgramBuilder& builder) {
-        const auto outer = builder.staticQubit(0);
-        const auto inner = builder.staticQubit(1);
-        const auto target = builder.staticQubit(2);
+        auto outer = builder.staticQubit(0);
+        auto inner = builder.staticQubit(1);
+        auto target = builder.staticQubit(2);
         builder.ctrl(outer, {inner, target}, [&](ValueRange outerTargets) {
           builder.ctrl(outerTargets[0], outerTargets[1],
                        [&](Value innerTarget) {
@@ -233,12 +399,39 @@ TEST_F(GlobalPhaseNormalizationTest,
   expectNormalizedQCUnitary(moduleOp, 3);
 }
 
+TEST_F(GlobalPhaseNormalizationTest, RemovesQCControlEmptiedByPhaseExtraction) {
+  auto moduleOp = mlir::qc::QCProgramBuilder::build(
+      context.get(), [](mlir::qc::QCProgramBuilder& builder) {
+        builder.cgphase(0.25, builder.staticQubit(0));
+        return builder.intConstant(0);
+      });
+  ASSERT_TRUE(moduleOp);
+  auto cloned = cast<ModuleOp>((*moduleOp)->clone());
+  OwningOpRef<ModuleOp> expected(cloned);
+  auto function = *moduleOp->getOps<func::FuncOp>().begin();
+  ASSERT_EQ(llvm::range_size(function.getBody().getOps<mlir::qc::CtrlOp>()),
+            1U);
+
+  ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
+  ASSERT_TRUE(verify(*moduleOp).succeeded());
+  EXPECT_TRUE(function.getBody().getOps<mlir::qc::CtrlOp>().empty());
+  EXPECT_EQ(llvm::range_size(function.getBody().getOps<mlir::qc::POp>()), 1U);
+
+  for (ModuleOp candidate : {expected.get(), moduleOp.get()}) {
+    PassManager pm(candidate.getContext());
+    pm.addPass(createQCToQCO());
+    ASSERT_TRUE(pm.run(candidate).succeeded());
+    ASSERT_TRUE(verify(candidate).succeeded());
+  }
+  ::mqt::test::expectFullUnitaryEqual(*expected, *moduleOp, 1);
+}
+
 TEST_F(GlobalPhaseNormalizationTest,
        QCInverseAndIntegralPowerPreserveFullUnitary) {
   auto moduleOp = mlir::qc::QCProgramBuilder::build(
       context.get(), [](mlir::qc::QCProgramBuilder& builder) {
-        const auto q0 = builder.staticQubit(0);
-        const auto q1 = builder.staticQubit(1);
+        auto q0 = builder.staticQubit(0);
+        auto q1 = builder.staticQubit(1);
         builder.inv(q0, [&](Value target) {
           builder.h(target);
           builder.gphase(0.371);
@@ -271,10 +464,10 @@ TEST_F(GlobalPhaseNormalizationTest,
   auto func = cast<func::FuncOp>(moduleOp->getBody()->front());
   auto phases = llvm::to_vector(func.getBody().getOps<mlir::qc::GPhaseOp>());
   ASSERT_EQ(phases.size(), 1);
-  const auto dependsOn = [](Value value, const Value input) {
+  const auto dependsOn = [](Value value, Value input) {
     llvm::SmallVector<Value> worklist{value};
     while (!worklist.empty()) {
-      const auto current = worklist.pop_back_val();
+      auto current = worklist.pop_back_val();
       if (current == input) {
         return true;
       }
@@ -287,7 +480,7 @@ TEST_F(GlobalPhaseNormalizationTest,
   EXPECT_TRUE(dependsOn(phases.front().getTheta(), func.getArgument(1)));
   EXPECT_TRUE(dependsOn(phases.front().getTheta(), func.getArgument(2)));
 
-  const auto countOperations = [&moduleOp]() {
+  const auto countOperations = [&moduleOp] {
     size_t count = 0;
     moduleOp->walk([&count](Operation*) { ++count; });
     return count;
@@ -442,6 +635,42 @@ TEST_F(GlobalPhaseNormalizationTest, FactorsControlledPhaseOntoControl) {
 }
 
 TEST_F(GlobalPhaseNormalizationTest,
+       RemovesQCOControlEmptiedByPhaseExtraction) {
+  auto moduleOp = parse(R"mlir(
+    module {
+      func.func @test(%control: !qco.qubit, %lhs: !qco.qubit,
+                      %rhs: !qco.qubit)
+          -> (!qco.qubit, !qco.qubit, !qco.qubit) {
+        %control_out, %lhs_out, %rhs_out = qco.ctrl(%control)
+            targets(%lhs_arg = %lhs, %rhs_arg = %rhs) {
+          %phase = arith.constant 0.25 : f64
+          qco.gphase(%phase)
+          qco.yield %lhs_arg, %rhs_arg : !qco.qubit, !qco.qubit
+        } : ({!qco.qubit}, {!qco.qubit, !qco.qubit})
+          -> ({!qco.qubit}, {!qco.qubit, !qco.qubit})
+        return %control_out, %lhs_out, %rhs_out
+            : !qco.qubit, !qco.qubit, !qco.qubit
+      }
+    }
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(verify(*moduleOp).succeeded());
+  auto function = *moduleOp->getOps<func::FuncOp>().begin();
+  ASSERT_EQ(llvm::range_size(function.getBody().getOps<qco::CtrlOp>()), 1U);
+
+  ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
+  ASSERT_TRUE(verify(*moduleOp).succeeded());
+  EXPECT_TRUE(function.getBody().getOps<qco::CtrlOp>().empty());
+  EXPECT_EQ(llvm::range_size(function.getBody().getOps<qco::POp>()), 1U);
+  auto returnOp =
+      cast<func::ReturnOp>(function.getBody().front().getTerminator());
+  auto p = *function.getBody().getOps<qco::POp>().begin();
+  EXPECT_EQ(returnOp.getOperand(0), p.getOutputTarget(0));
+  EXPECT_EQ(returnOp.getOperand(1), function.getArgument(1));
+  EXPECT_EQ(returnOp.getOperand(2), function.getArgument(2));
+}
+
+TEST_F(GlobalPhaseNormalizationTest,
        ControlledExtractionPreservesFullUnitaryUnderOuterControl) {
   auto moduleOp = parse(R"mlir(
     module {
@@ -521,7 +750,7 @@ TEST_F(GlobalPhaseNormalizationTest, ReorderedQCOControlsThreadCorrectResults) {
     }
   )mlir");
   ASSERT_TRUE(moduleOp);
-  const auto cloned = cast<ModuleOp>((*moduleOp)->clone());
+  auto cloned = cast<ModuleOp>((*moduleOp)->clone());
   OwningOpRef<ModuleOp> expected(cloned);
   ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
   ASSERT_TRUE(verify(*moduleOp).succeeded());
@@ -635,10 +864,10 @@ TEST_F(GlobalPhaseNormalizationTest, ZeroControlsReleaseAnUnchangedPhase) {
       builder, loc, "test", builder.getFunctionType({qubitType}, {qubitType}));
   auto* entry = function.addEntryBlock();
   builder.setInsertionPointToStart(entry);
-  const auto phase = mlir::mqt::constantFromScalar(builder, loc, 0.417);
+  auto phase = mlir::mqt::constantFromScalar(builder, loc, 0.417);
   auto ctrl = qco::CtrlOp::create(
       builder, loc, ValueRange{}, entry->getArgument(0), [&](Value target) {
-        const auto out = qco::XOp::create(builder, loc, target).getQubitOut();
+        auto out = qco::XOp::create(builder, loc, target).getQubitOut();
         qco::GPhaseOp::create(builder, loc, phase);
         return out;
       });
@@ -650,14 +879,14 @@ TEST_F(GlobalPhaseNormalizationTest, ZeroControlsReleaseAnUnchangedPhase) {
 }
 
 TEST_F(GlobalPhaseNormalizationTest,
-       MemoryDependentAngleRemainsInsideModifier) {
+       MemoryDependentAngleCapturedByModifierMovesOutsideModifier) {
   auto moduleOp = parse(R"mlir(
     module {
       func.func @test(%q: !qco.qubit, %angles: memref<1xf64>)
           -> !qco.qubit {
         %c0 = arith.constant 0 : index
+        %phase = memref.load %angles[%c0] : memref<1xf64>
         %out = qco.inv (%arg = %q) {
-          %phase = memref.load %angles[%c0] : memref<1xf64>
           %x = qco.x %arg : !qco.qubit -> !qco.qubit
           qco.gphase(%phase)
           qco.yield %x : !qco.qubit
@@ -672,8 +901,8 @@ TEST_F(GlobalPhaseNormalizationTest,
 
   auto func = *moduleOp->getOps<func::FuncOp>().begin();
   auto inv = *func.getBody().getOps<qco::InvOp>().begin();
-  EXPECT_EQ(llvm::range_size(inv.getBody()->getOps<qco::GPhaseOp>()), 1);
-  EXPECT_TRUE(func.getBody().getOps<qco::GPhaseOp>().empty());
+  EXPECT_TRUE(inv.getBody()->getOps<qco::GPhaseOp>().empty());
+  EXPECT_EQ(llvm::range_size(func.getBody().getOps<qco::GPhaseOp>()), 1);
 }
 
 TEST_F(GlobalPhaseNormalizationTest, CFGBlocksRemainIndependentScopes) {
@@ -811,8 +1040,13 @@ TEST_F(GlobalPhaseNormalizationTest,
                                        builder.getFunctionType({}, {}));
   auto* entry = function.addEntryBlock();
   builder.setInsertionPointToStart(entry);
-  for (const double angle : {0.0, std::numbers::pi, -std::numbers::pi,
-                             2.0 * std::numbers::pi, -2.0 * std::numbers::pi}) {
+  for (const double angle : {
+           0.0,
+           std::numbers::pi,
+           -std::numbers::pi,
+           2.0 * std::numbers::pi,
+           -2.0 * std::numbers::pi,
+       }) {
     qco::GPhaseOp::create(builder, loc,
                           mlir::mqt::constantFromScalar(builder, loc, angle));
   }
@@ -858,7 +1092,7 @@ TEST_F(GlobalPhaseNormalizationTest, VerifiesPracticalConstantAngleRange) {
                                          builder.getFunctionType({}, {}));
     auto* entry = function.addEntryBlock();
     builder.setInsertionPointToStart(entry);
-    const auto value = mlir::mqt::constantFromScalar(builder, loc, angle);
+    auto value = mlir::mqt::constantFromScalar(builder, loc, angle);
     if (useQCO) {
       qco::GPhaseOp::create(builder, loc, value);
     } else {
@@ -872,13 +1106,14 @@ TEST_F(GlobalPhaseNormalizationTest, VerifiesPracticalConstantAngleRange) {
     SCOPED_TRACE(useQCO ? "QCO" : "QC");
     EXPECT_TRUE(
         succeeded(verifyAngle(mlir::mqt::MAX_GLOBAL_PHASE_ANGLE, useQCO)));
-    for (const double angle :
-         {std::nextafter(mlir::mqt::MAX_GLOBAL_PHASE_ANGLE,
-                         std::numeric_limits<double>::infinity()),
-          -std::nextafter(mlir::mqt::MAX_GLOBAL_PHASE_ANGLE,
-                          std::numeric_limits<double>::infinity()),
-          std::numeric_limits<double>::quiet_NaN(),
-          std::numeric_limits<double>::infinity()}) {
+    for (const double angle : {
+             std::nextafter(mlir::mqt::MAX_GLOBAL_PHASE_ANGLE,
+                            std::numeric_limits<double>::infinity()),
+             -std::nextafter(mlir::mqt::MAX_GLOBAL_PHASE_ANGLE,
+                             std::numeric_limits<double>::infinity()),
+             std::numeric_limits<double>::quiet_NaN(),
+             std::numeric_limits<double>::infinity(),
+         }) {
       EXPECT_TRUE(failed(verifyAngle(angle, useQCO)));
     }
   }

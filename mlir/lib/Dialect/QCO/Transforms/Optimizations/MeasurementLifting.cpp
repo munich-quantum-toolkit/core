@@ -8,38 +8,35 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQT/Utils/Modifiers.h"
-#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mqt/Dialect/MQT/Utils/Modifiers.h"
+#include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/Transforms/Passes.h"
 
-#include <llvm/ADT/STLExtras.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/Value.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/Value.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+
+#include "llvm/ADT/STLExtras.h"
 
 #include <utility>
 
 namespace mlir::qco {
 
 #define GEN_PASS_DEF_MEASUREMENTLIFTING
-#include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
+#include "mqt/Dialect/QCO/Transforms/Passes.h.inc"
 
-/**
- * @brief Checks if the given operation is an inverting gate.
- * @param op The operation to check.
- * @return True if the operation is an inverting gate, false otherwise.
- */
+/// Checks if the given operation is an inverting gate.
+/// @param op The operation to check.
+/// @return True if the operation is an inverting gate, false otherwise.
 static bool isInverting(Operation* op) { return isa<XOp, YOp>(op); }
 
-/**
- * @brief Checks if the given operation is a diagonal gate.
- * @param op The operation to check.
- * @return True if the operation is a diagonal gate, false otherwise.
- */
+/// Checks if the given operation is a diagonal gate.
+/// @param op The operation to check.
+/// @return True if the operation is a diagonal gate, false otherwise.
 static bool isDiagonal(Operation* op) {
   if (op == nullptr) {
     return false;
@@ -51,12 +48,10 @@ static bool isDiagonal(Operation* op) {
   return isa<ZOp, SOp, TOp, POp, RZOp, SdgOp, TdgOp, IdOp>(op);
 }
 
-/**
- * @brief This method swaps a gate with a measurement.
- * @param gate The gate to swap.
- * @param measurement The measurement to swap.
- * @param rewriter The used rewriter.
- */
+/// This method swaps a gate with a measurement.
+/// @param gate The gate to swap.
+/// @param measurement The measurement to swap.
+/// @param rewriter The used rewriter.
 static void swapGateWithMeasurement(UnitaryOpInterface gate,
                                     MeasureOp measurement,
                                     mlir::PatternRewriter& rewriter) {
@@ -84,10 +79,8 @@ static void swapGateWithMeasurement(UnitaryOpInterface gate,
 }
 
 namespace {
-/**
- * @brief This pattern is responsible for lifting measurements above any phase
- * gates.
- */
+/// This pattern is responsible for lifting measurements above any phase
+/// gates.
 struct LiftMeasurementsAbovePhaseGatesPattern final
     : mlir::OpRewritePattern<MeasureOp> {
 
@@ -97,10 +90,10 @@ struct LiftMeasurementsAbovePhaseGatesPattern final
   mlir::LogicalResult
   matchAndRewrite(MeasureOp op,
                   mlir::PatternRewriter& rewriter) const override {
-    const auto qubitVariable = op.getQubitIn();
+    auto qubitVariable = op.getQubitIn();
     auto* predecessor = qubitVariable.getDefiningOp();
 
-    auto predecessorUnitary = mlir::dyn_cast<UnitaryOpInterface>(predecessor);
+    auto predecessorUnitary = qubitVariable.getDefiningOp<UnitaryOpInterface>();
 
     if (!predecessorUnitary) {
       return mlir::failure();
@@ -120,10 +113,8 @@ struct LiftMeasurementsAbovePhaseGatesPattern final
   }
 };
 
-/**
- * @brief This pattern is responsible for lifting measurements above any
- * anti-diagonal gates.
- */
+/// This pattern is responsible for lifting measurements above any
+/// anti-diagonal gates.
 struct LiftMeasurementsAboveInvertingGatesPattern final
     : mlir::OpRewritePattern<MeasureOp> {
 
@@ -134,10 +125,10 @@ struct LiftMeasurementsAboveInvertingGatesPattern final
   mlir::LogicalResult
   matchAndRewrite(MeasureOp op,
                   mlir::PatternRewriter& rewriter) const override {
-    const auto qubitVariable = op.getQubitIn();
+    auto qubitVariable = op.getQubitIn();
     auto* predecessor = qubitVariable.getDefiningOp();
 
-    auto predecessorUnitary = mlir::dyn_cast<UnitaryOpInterface>(predecessor);
+    auto predecessorUnitary = qubitVariable.getDefiningOp<UnitaryOpInterface>();
 
     if (!predecessorUnitary) {
       return mlir::failure();
@@ -146,7 +137,7 @@ struct LiftMeasurementsAboveInvertingGatesPattern final
     if (isInverting(predecessor)) {
       swapGateWithMeasurement(predecessorUnitary, op, rewriter);
       rewriter.setInsertionPointAfter(op);
-      const mlir::Value trueConstant = mlir::arith::ConstantOp::create(
+      mlir::Value trueConstant = mlir::arith::ConstantOp::create(
           rewriter, op.getLoc(), rewriter.getBoolAttr(true));
       auto inversion = mlir::arith::XOrIOp::create(
           rewriter, op.getLoc(), op.getResult(), trueConstant);
@@ -163,10 +154,8 @@ struct LiftMeasurementsAboveInvertingGatesPattern final
   }
 };
 
-/**
- * @brief This pattern is responsible for applying the "deferred measurement
- * principle", lifting measurements above controls.
- */
+/// This pattern is responsible for applying the "deferred measurement
+/// principle", lifting measurements above controls.
 struct LiftMeasurementsAboveControlsPattern final
     : mlir::OpRewritePattern<MeasureOp> {
 
@@ -176,9 +165,8 @@ struct LiftMeasurementsAboveControlsPattern final
   mlir::LogicalResult
   matchAndRewrite(MeasureOp op,
                   mlir::PatternRewriter& rewriter) const override {
-    const auto qubitVariable = op.getQubitIn();
-    auto* predecessor = qubitVariable.getDefiningOp();
-    auto predecessorCtrl = mlir::dyn_cast<CtrlOp>(predecessor);
+    auto qubitVariable = op.getQubitIn();
+    auto predecessorCtrl = qubitVariable.getDefiningOp<CtrlOp>();
 
     if (!predecessorCtrl) {
       return mlir::failure();
@@ -196,16 +184,14 @@ struct LiftMeasurementsAboveControlsPattern final
   }
 };
 
-/**
- * @brief Pass raises Measurements above controlled and uncontrolled gates.
- */
+/// Pass raises Measurements above controlled and uncontrolled gates.
 struct MeasurementLifting final
     : impl::MeasurementLiftingBase<MeasurementLifting> {
   using MeasurementLiftingBase::MeasurementLiftingBase;
 
 protected:
   void runOnOperation() override {
-    const auto op = getOperation();
+    auto op = getOperation();
     auto* ctx = &getContext();
 
     // Define the set of patterns to use.

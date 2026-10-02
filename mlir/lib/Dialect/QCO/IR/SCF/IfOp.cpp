@@ -8,31 +8,34 @@
  * Licensed under the MIT License
  */
 
-#include "RegionBranchCompat.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
 
-#include <llvm/ADT/BitVector.h>
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/STLFunctionalExtras.h>
-#include <llvm/ADT/Sequence.h>
-#include <llvm/ADT/SmallVector.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/IR/Attributes.h>
-#include <mlir/IR/Builders.h>
-#include <mlir/IR/BuiltinTypes.h>
-#include <mlir/IR/Location.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/Matchers.h>
-#include <mlir/IR/OperationSupport.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
-#include <mlir/Interfaces/ControlFlowInterfaces.h>
-#include <mlir/Support/LLVM.h>
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/IR/Attributes.h"
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/Location.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/Matchers.h"
+#include "mlir/IR/OperationSupport.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/Value.h"
+#include "mlir/IR/ValueRange.h"
+#include "mlir/Interfaces/ControlFlowInterfaces.h"
+#include "mlir/Support/LLVM.h"
+
+#include "llvm/ADT/BitVector.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/SmallVector.h"
 
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
+#include <utility>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -90,30 +93,20 @@ void IfOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 }
 
 // Adjusted from
-// https://github.com/llvm/llvm-project/blob/llvmorg-22.1.1/mlir/lib/Dialect/SCF/IR/SCF.cpp
+// https://github.com/llvm/llvm-project/blob/llvmorg-23.1.0/mlir/lib/Dialect/SCF/IR/SCF.cpp
 
 void IfOp::getSuccessorRegions(RegionBranchPoint point,
                                SmallVectorImpl<RegionSuccessor>& regions) {
   // The `then` and the `else` region branch back to the parent operation or
   // one of the recursive parent operations (early exit case).
   if (!point.isParent()) {
-    regions.push_back(
-        detail::makeRegionSuccessor(getOperation(), getResults()));
+    regions.push_back(RegionSuccessor(getOperation()));
     return;
   }
 
-  regions.push_back(detail::makeRegionSuccessor(
-      &getThenRegion(), getThenRegion().getArguments()));
+  regions.push_back(RegionSuccessor(&getThenRegion()));
 
-  // If the else region is empty, execution continues after the parent op.
-  Region* elseRegion = &getElseRegion();
-  if (elseRegion->empty()) {
-    regions.push_back(detail::makeRegionSuccessor(
-        getOperation(), getOperation()->getResults()));
-  } else {
-    regions.push_back(
-        detail::makeRegionSuccessor(elseRegion, elseRegion->getArguments()));
-  }
+  regions.push_back(RegionSuccessor(&getElseRegion()));
 }
 
 void IfOp::getEntrySuccessorRegions(ArrayRef<Attribute> operands,
@@ -121,24 +114,16 @@ void IfOp::getEntrySuccessorRegions(ArrayRef<Attribute> operands,
   FoldAdaptor adaptor(operands, *this);
   auto boolAttr = dyn_cast_or_null<BoolAttr>(adaptor.getCondition());
   if (!boolAttr || boolAttr.getValue()) {
-    regions.push_back(detail::makeRegionSuccessor(
-        &getThenRegion(), getThenRegion().getArguments()));
+    regions.push_back(RegionSuccessor(&getThenRegion()));
   }
 
-  // If the else region is empty, execution continues after the parent op.
   if (!boolAttr || !boolAttr.getValue()) {
-    if (!getElseRegion().empty()) {
-      regions.push_back(detail::makeRegionSuccessor(
-          &getElseRegion(), getElseRegion().getArguments()));
-    } else {
-      regions.push_back(
-          detail::makeRegionSuccessor(getOperation(), getResults()));
-    }
+    regions.push_back(RegionSuccessor(&getElseRegion()));
   }
 }
 
 ValueRange IfOp::getSuccessorInputs(RegionSuccessor successor) {
-  if (detail::isOperationSuccessor(successor)) {
+  if (successor.isOperation()) {
     return getResults();
   }
   return successor.getSuccessor()->getArguments();
@@ -147,7 +132,6 @@ ValueRange IfOp::getSuccessorInputs(RegionSuccessor successor) {
 OperandRange IfOp::getEntrySuccessorOperands(RegionSuccessor /*successor*/) {
   return getQubits();
 }
-// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 void IfOp::getRegionInvocationBounds(
     ArrayRef<Attribute> operands,
     SmallVectorImpl<InvocationBounds>& invocationBounds) {
@@ -162,25 +146,15 @@ void IfOp::getRegionInvocationBounds(
   }
 }
 
-/**
- * @brief Replace operation with the contents of a region
- *
- * @details
- * Replaces the given op with the contents of the given single-block region,
- * using the operands of the block terminator to replace operation results.
- *
- * @param rewriter The used rewriter
- * @param op The operation that is replcaed
- * @param region The region with the replacement content
- * @param blockArgs The block arguments of the region
- *
- */
+/// Replace an operation with the contents of a single-block region.
+///
+/// Use the block terminator operands to replace the operation results.
 static void replaceOpWithRegion(PatternRewriter& rewriter, Operation* op,
                                 Region& region, ValueRange blockArgs = {}) {
   assert(llvm::hasSingleElement(region) && "expected single-region block");
   Block* block = &region.front();
   Operation* terminator = block->getTerminator();
-  const auto results = terminator->getOperands();
+  auto results = terminator->getOperands();
   rewriter.inlineBlockBefore(block, op, blockArgs);
   rewriter.replaceOp(op, results);
   rewriter.eraseOp(terminator);
@@ -188,14 +162,7 @@ static void replaceOpWithRegion(PatternRewriter& rewriter, Operation* op,
 
 namespace {
 
-/**
- * @brief Remove static conditions
- *
- * @details
- * Removes a qco.if operation with a static condition and replace it with the
- * contents of the selected branch.
- *
- */
+/// Replace an if with a static condition by its selected branch.
 struct RemoveStaticCondition : public OpRewritePattern<IfOp> {
   using OpRewritePattern<IfOp>::OpRewritePattern;
 
@@ -216,22 +183,7 @@ struct RemoveStaticCondition : public OpRewritePattern<IfOp> {
   }
 };
 
-/**
- * @brief Propagate the condition into the branches
- *
- * @details
- * Allow the true region of an if to assume the condition is true
- * and vice versa. For example:
- *
- *   qco.if %cmp args(%arg0 = %q0) -> (!qco.qubit) {
- *      print(true)
- *      ...
- *   } else args(%arg = %q0) {
- *      print(false)
- *      ...
- *   }
- *
- */
+/// Let each branch use the condition value known inside that branch.
 struct ConditionPropagation : public OpRewritePattern<IfOp> {
   using OpRewritePattern<IfOp>::OpRewritePattern;
 
@@ -261,7 +213,7 @@ struct ConditionPropagation : public OpRewritePattern<IfOp> {
         }
 
         rewriter.modifyOpInPlace(use.getOwner(),
-                                 [&]() { use.set(constantTrue); });
+                                 [&] { use.set(constantTrue); });
       } else if (op.getElseRegion().isAncestor(
                      use.getOwner()->getParentRegion())) {
         changed = true;
@@ -272,7 +224,7 @@ struct ConditionPropagation : public OpRewritePattern<IfOp> {
         }
 
         rewriter.modifyOpInPlace(use.getOwner(),
-                                 [&]() { use.set(constantFalse); });
+                                 [&] { use.set(constantFalse); });
       }
     }
 
@@ -280,43 +232,37 @@ struct ConditionPropagation : public OpRewritePattern<IfOp> {
   }
 };
 
-/**
- * @brief Forward redundant classical results
- *
- * @details
- * Replaces a classical result with a value yielded by both branches or with an
- * earlier classical result whose pair of yielded values is identical. A
- * separate pattern removes the result and its yield operands once they become
- * unused. Linear results are intentionally excluded because their explicit
- * branch threading is part of QCO's quantum dataflow.
- */
+/// Forward redundant classical results.
+///
+/// Replace a result with a value yielded by both branches or with an earlier
+/// result whose pair of yielded values is identical. A separate pattern removes
+/// unused results. Linear results retain their explicit quantum dataflow.
 struct ForwardClassicalResults : public OpRewritePattern<IfOp> {
   using OpRewritePattern<IfOp>::OpRewritePattern;
 
   LogicalResult matchAndRewrite(IfOp op,
                                 PatternRewriter& rewriter) const override {
-    const auto classicalResults = op.getClassicalResults();
+    auto classicalResults = op.getClassicalResults();
     if (classicalResults.empty()) {
       return failure();
     }
 
-    const auto thenValues =
+    auto thenValues =
         op.thenYield().getTargets().take_front(classicalResults.size());
-    const auto elseValues =
+    auto elseValues =
         op.elseYield().getTargets().take_front(classicalResults.size());
 
+    DenseMap<std::pair<Value, Value>, Value> representatives;
     bool changed = false;
-    for (const auto [index, result] : llvm::enumerate(classicalResults)) {
+    for (auto [index, result] : llvm::enumerate(classicalResults)) {
       Value replacement;
       if (thenValues[index] == elseValues[index]) {
         replacement = thenValues[index];
       } else {
-        for (const auto candidate : llvm::seq(index)) {
-          if (thenValues[candidate] == thenValues[index] &&
-              elseValues[candidate] == elseValues[index]) {
-            replacement = classicalResults[candidate];
-            break;
-          }
+        auto [representative, inserted] = representatives.try_emplace(
+            std::pair{thenValues[index], elseValues[index]}, result);
+        if (!inserted) {
+          replacement = representative->second;
         }
       }
 
@@ -329,21 +275,16 @@ struct ForwardClassicalResults : public OpRewritePattern<IfOp> {
   }
 };
 
-/**
- * @brief Remove unused classical results
- *
- * @details
- * Removes unused classical results and the corresponding operands from both
- * branch terminators. The result segment property is updated on the replacement
- * operation. The linear result suffix and all quantum dataflow remain intact.
- */
+/// Remove unused classical results and their branch yield operands.
+///
+/// Update the result segments while preserving the linear result suffix.
 struct RemoveUnusedClassicalResults : public OpRewritePattern<IfOp> {
   using OpRewritePattern<IfOp>::OpRewritePattern;
 
   LogicalResult matchAndRewrite(IfOp op,
                                 PatternRewriter& rewriter) const override {
     llvm::BitVector resultsToErase(op.getNumResults());
-    for (const OpResult result : op.getClassicalResults()) {
+    for (OpResult result : op.getClassicalResults()) {
       if (result.use_empty()) {
         resultsToErase.set(result.getResultNumber());
       }
@@ -356,28 +297,22 @@ struct RemoveUnusedClassicalResults : public OpRewritePattern<IfOp> {
     const auto numClassicalResults =
         op.getClassicalResults().size() - resultsToErase.count();
 
-    llvm::BitVector yieldOperandsToErase(op.thenYield().getNumOperands());
-    for (const auto result : op.getClassicalResults()) {
-      if (resultsToErase.test(result.getResultNumber())) {
-        yieldOperandsToErase.set(result.getResultNumber());
-      }
-    }
-    rewriter.modifyOpInPlace(op.thenYield(), [&]() {
-      op.thenYield()->eraseOperands(yieldOperandsToErase);
-    });
-    rewriter.modifyOpInPlace(op.elseYield(), [&]() {
-      op.elseYield()->eraseOperands(yieldOperandsToErase);
-    });
+    rewriter.modifyOpInPlace(
+        op.thenYield(), [&] { op.thenYield()->eraseOperands(resultsToErase); });
+    rewriter.modifyOpInPlace(
+        op.elseYield(), [&] { op.elseYield()->eraseOperands(resultsToErase); });
 
     auto replacement = cast<IfOp>(rewriter.eraseOpResults(op, resultsToErase));
-    rewriter.modifyOpInPlace(replacement, [&]() {
-      replacement.getProperties().setResultSegmentSizes(
-          ArrayRef<int32_t>({static_cast<int32_t>(numClassicalResults),
-                             static_cast<int32_t>(numLinearResults)}));
+    rewriter.modifyOpInPlace(replacement, [&] {
+      replacement.getProperties().setResultSegmentSizes(ArrayRef<int32_t>({
+          static_cast<int32_t>(numClassicalResults),
+          static_cast<int32_t>(numLinearResults),
+      }));
     });
     return success();
   }
 };
+
 } // namespace
 
 void IfOp::getCanonicalizationPatterns(RewritePatternSet& results,
@@ -387,9 +322,9 @@ void IfOp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 LogicalResult IfOp::verify() {
-  const auto& inputQubits = getQubits();
+  auto inputQubits = getQubits();
   const auto numInputQubits = inputQubits.size();
-  const auto& outputQubits = getLinearResults();
+  auto outputQubits = getLinearResults();
   const auto numOutputQubits = outputQubits.size();
 
   const auto numThenArgs = thenBlock()->getNumArguments();
@@ -494,7 +429,7 @@ IfOp IfOp::replaceWithAdditionalQubits(RewriterBase& rewriter,
     return *this;
   }
 
-  const auto qubits = getQubits();
+  auto qubits = getQubits();
 
   SmallVector<Value> newQubits;
   newQubits.reserve(qubits.size() + addons.size());

@@ -10,37 +10,33 @@
 
 #pragma once
 
-#include "mlir/Dialect/CBit/IR/CBitAttributes.h"
-#include "mlir/Dialect/CBit/IR/CBitDialect.h"
-#include "mlir/Dialect/CBit/IR/CBitOps.h"
-#include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
+#include "mqt/Dialect/CBit/IR/CBitAttributes.h"
+#include "mqt/Dialect/CBit/IR/CBitDialect.h"
+#include "mqt/Dialect/CBit/IR/CBitOps.h"
+#include "mqt/Dialect/QC/Translation/TranslateOpenQASMToQC.h"
 
-#include <gtest/gtest.h>
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/StringRef.h>
-#include <llvm/Support/raw_ostream.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
-#include <mlir/Dialect/Math/IR/Math.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/BuiltinTypes.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/Matchers.h>
-#include <mlir/IR/Value.h>
-#include <mlir/IR/Verifier.h>
-#include <mlir/Pass/PassManager.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Transforms/Passes.h>
+#include "gtest/gtest.h"
 
-#include <array>
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/Math/IR/Math.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/Matchers.h"
+#include "mlir/IR/Value.h"
+#include "mlir/IR/Verifier.h"
+#include "mlir/Support/LLVM.h"
+
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/StringRef.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <optional>
-#include <string>
-#include <vector>
 
-namespace mlir::oq3::test {
+namespace mlir::openqasm::test {
 
 inline constexpr llvm::StringLiteral BROADCAST_PROGRAM = R"qasm(
 OPENQASM 3.0;
@@ -50,7 +46,7 @@ h q;
 bit[2] c = measure q;
 )qasm";
 
-inline std::optional<APInt> evaluateConstantInteger(const Value value) {
+inline std::optional<APInt> evaluateConstantInteger(Value value) {
   APInt constant;
   if (matchPattern(value, m_ConstantInt(&constant))) {
     return constant;
@@ -140,7 +136,7 @@ inline SmallVector<std::optional<Value>> returnedBitValues(ModuleOp moduleOp) {
   }
 
   SmallVector<std::optional<Value>> values;
-  for (const auto operand : result.getOperands()) {
+  for (auto operand : result.getOperands()) {
     const auto registerType = dyn_cast<cbit::RegisterType>(operand.getType());
     auto allocation = operand.getDefiningOp<cbit::AllocOp>();
     if (!registerType || !allocation) {
@@ -173,62 +169,4 @@ inline SmallVector<std::optional<Value>> returnedBitValues(ModuleOp moduleOp) {
   return values;
 }
 
-inline std::vector<bool> canonicalizedBitOutputs(const StringRef source) {
-  MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
-  if (!moduleOp) {
-    ADD_FAILURE() // NOLINT(readability-implicit-bool-conversion)
-        << "translation failed";
-    return {};
-  }
-  if (failed(verify(*moduleOp))) {
-    ADD_FAILURE() // NOLINT(readability-implicit-bool-conversion)
-        << "translation produced an invalid module";
-    return {};
-  }
-  PassManager canonicalizer(&context);
-  canonicalizer.addPass(createCanonicalizerPass());
-  if (failed(canonicalizer.run(*moduleOp))) {
-    ADD_FAILURE() // NOLINT(readability-implicit-bool-conversion)
-        << "canonicalization failed";
-    return {};
-  }
-
-  const auto returned = returnedBitValues(*moduleOp);
-  std::vector<bool> outputs;
-  outputs.reserve(returned.size());
-  for (const auto operand : returned) {
-    if (!operand) {
-      outputs.push_back(false);
-      continue;
-    }
-    const auto value = evaluateConstantInteger(*operand);
-    if (!value) {
-      std::string description;
-      llvm::raw_string_ostream stream(description);
-      operand->print(stream);
-      ADD_FAILURE() << "canonicalized output is not constant: " << description;
-      return {};
-    }
-    outputs.push_back(!value->isZero());
-  }
-  return outputs;
-}
-
-inline std::vector<bool> rotateBits(const std::array<bool, 5>& bits,
-                                    const int64_t distance, const bool left) {
-  constexpr int64_t width = 5;
-  auto normalized = distance % width;
-  if (normalized < 0) {
-    normalized += width;
-  }
-  std::vector<bool> result(width);
-  for (int64_t bit = 0; bit < width; ++bit) {
-    const auto source =
-        left ? (bit + width - normalized) % width : (bit + normalized) % width;
-    result[bit] = bits[static_cast<size_t>(source)];
-  }
-  return result;
-}
-
-} // namespace mlir::oq3::test
+} // namespace mlir::openqasm::test

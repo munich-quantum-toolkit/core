@@ -8,24 +8,30 @@
  * Licensed under the MIT License
  */
 
-#include "Support/IRVerification.h"
-#include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
-#include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
+#include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
+#include "mqt/Dialect/QCO/IR/QCODialect.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QCO/Transforms/Passes.h"
 
-#include <gtest/gtest.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/DialectRegistry.h>
-#include <mlir/IR/OwningOpRef.h>
-#include <mlir/IR/Value.h>
-#include <mlir/Pass/PassManager.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
-#include <mlir/Transforms/Passes.h>
+#include "Support/IRVerification.h"
+
+#include "gtest/gtest.h"
+
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/DialectRegistry.h"
+#include "mlir/IR/OwningOpRef.h"
+#include "mlir/IR/Value.h"
+#include "mlir/IR/Verifier.h"
+#include "mlir/Parser/Parser.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
+#include "mlir/Transforms/Passes.h"
 
 #include <numbers>
 
@@ -57,18 +63,14 @@ protected:
     referenceBuilder.initialize();
   }
 
-  /**
-   * @brief Adds the hadamardLiftingPass to the current context and runs it.
-   */
+  /// Adds the hadamardLiftingPass to the current context and runs it.
   static LogicalResult runHadamardLiftingPass(ModuleOp moduleOp) {
     PassManager pm(moduleOp.getContext());
     pm.addPass(createHadamardLifting());
     return pm.run(moduleOp);
   }
 
-  /**
-   * @brief Adds the canonicalizerPass to the current context and runs it.
-   */
+  /// Adds the canonicalizerPass to the current context and runs it.
   static LogicalResult runCanonicalizerPass(ModuleOp moduleOp) {
     PassManager pm(moduleOp.getContext());
     pm.addPass(createCanonicalizerPass());
@@ -81,14 +83,82 @@ protected:
 
 } // namespace
 
+TEST_F(QCOHadamardLiftingTest, MeasuresBlockArguments) {
+  auto parsed = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @direct(%q: !qco.qubit) -> (!qco.qubit, i1) {
+        %out, %bit = qco.measure %q : !qco.qubit
+        return %out, %bit : !qco.qubit, i1
+      }
+      func.func @hadamard(%q: !qco.qubit) -> (!qco.qubit, i1) {
+        %h = qco.h %q : !qco.qubit -> !qco.qubit
+        %out, %bit = qco.measure %h : !qco.qubit
+        return %out, %bit : !qco.qubit, i1
+      }
+    }
+  )mlir",
+                                            &context);
+  ASSERT_TRUE(parsed);
+  ASSERT_TRUE(succeeded(verify(*parsed)));
+  ASSERT_TRUE(succeeded(verifyLinearity(*parsed)));
+  PassManager pm(&context);
+  pm.addPass(createHadamardLifting());
+  ASSERT_TRUE(succeeded(pm.run(*parsed)));
+  EXPECT_TRUE(succeeded(verify(*parsed)));
+  EXPECT_TRUE(succeeded(verifyLinearity(*parsed)));
+  auto direct = parsed->lookupSymbol<func::FuncOp>("direct");
+  auto measurement = *direct.getOps<MeasureOp>().begin();
+  EXPECT_EQ(measurement.getQubitIn(), direct.getArgument(0));
+  auto hadamard = parsed->lookupSymbol<func::FuncOp>("hadamard");
+  auto h = *hadamard.getOps<HOp>().begin();
+  EXPECT_EQ(h.getQubitIn(), hadamard.getArgument(0));
+}
+
+TEST_F(QCOHadamardLiftingTest, LeavesUnsupportedControlShapesUnchanged) {
+  for (const auto* source : {
+           R"mlir(
+        func.func @test(%control: !qco.qubit, %unused: !qco.qubit, %target: !qco.qubit)
+            -> (!qco.qubit, !qco.qubit, !qco.qubit, i1) {
+          %c, %u, %t = qco.ctrl(%control) targets(%a = %unused, %b = %target) {
+            %x = qco.x %b : !qco.qubit -> !qco.qubit
+            qco.yield %a, %x : !qco.qubit, !qco.qubit
+          } : ({!qco.qubit}, {!qco.qubit, !qco.qubit}) -> ({!qco.qubit}, {!qco.qubit, !qco.qubit})
+          %h = qco.h %u : !qco.qubit -> !qco.qubit
+          %out, %bit = qco.measure %h : !qco.qubit
+          return %c, %out, %t, %bit : !qco.qubit, !qco.qubit, !qco.qubit, i1
+        }
+      )mlir",
+           R"mlir(
+        func.func @test(%q: !qco.qubit) -> (!qco.qubit, i1) {
+          %t = "qco.ctrl"(%q) <{operandSegmentSizes = array<i32: 0, 1>, resultSegmentSizes = array<i32: 0, 1>}> ({
+          ^bb0(%a: !qco.qubit):
+            %x = qco.x %a : !qco.qubit -> !qco.qubit
+            qco.yield %x : !qco.qubit
+          }) : (!qco.qubit) -> !qco.qubit
+          %h = qco.h %t : !qco.qubit -> !qco.qubit
+          %out, %bit = qco.measure %h : !qco.qubit
+          return %out, %bit : !qco.qubit, i1
+        }
+      )mlir",
+       }) {
+    auto parsed = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(parsed);
+    ASSERT_TRUE(succeeded(verify(*parsed)));
+    ASSERT_TRUE(succeeded(verifyLinearity(*parsed)));
+    OwningOpRef<ModuleOp> before = parsed->clone();
+    ASSERT_TRUE(succeeded(runHadamardLiftingPass(*parsed)));
+    EXPECT_TRUE(succeeded(verify(*parsed)));
+    EXPECT_TRUE(succeeded(verifyLinearity(*parsed)));
+    EXPECT_TRUE(areModulesEquivalentWithPermutations(*parsed, *before));
+  }
+}
+
 // ##################################################
 // # Raise Hadamard over uncontrolled Pauli gate Tests
 // ##################################################
 
-/**
- * @brief Test: Hadamard gates should be lifted over one Pauli gate. A global
- * phase should be added for the Pauli-Y gate.
- */
+/// Test: Hadamard gates should be lifted over one Pauli gate. A global
+/// phase should be added for the Pauli-Y gate.
 TEST_F(QCOHadamardLiftingTest, liftHadamardOverPauliGate) {
   auto q = programBuilder.allocQubitRegister(3);
   q[0] = programBuilder.x(q[0]);
@@ -116,9 +186,7 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverPauliGate) {
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
 }
 
-/**
- * @brief Test: Pauli gates should not be lifted over Hadamard gates.
- */
+/// Test: Pauli gates should not be lifted over Hadamard gates.
 TEST_F(QCOHadamardLiftingTest, doNotLiftPauliOverHadamardGate) {
   auto q = programBuilder.allocQubitRegister(3);
   q[0] = programBuilder.h(q[0]);
@@ -145,9 +213,7 @@ TEST_F(QCOHadamardLiftingTest, doNotLiftPauliOverHadamardGate) {
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
 }
 
-/**
- * @brief Test: Checks if Hadamard gates can be lifted over multiple Pauli gate.
- */
+/// Test: Checks if Hadamard gates can be lifted over multiple Pauli gate.
 TEST_F(QCOHadamardLiftingTest, liftHadamardOverMultiplePauliGate) {
   auto q = programBuilder.allocQubitRegister(3);
   q[0] = programBuilder.x(q[0]);
@@ -188,10 +254,8 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverMultiplePauliGate) {
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
 }
 
-/**
- * @brief Test: Checks if Hadamard gates are lifted over preceding and not over
- * succeeding Pauli gates.
- */
+/// Test: Checks if Hadamard gates are lifted over preceding and not over
+/// succeeding Pauli gates.
 TEST_F(QCOHadamardLiftingTest, liftHadamardOnlyOverPrecedingPauliGate) {
   auto q = programBuilder.allocQubitRegister(2);
   q[0] = programBuilder.x(q[0]);
@@ -224,10 +288,8 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOnlyOverPrecedingPauliGate) {
 // # Do not raise Hadamard over controlled Pauli gate Tests
 // #############################################################
 
-/**
- * @brief Test: Checks if Hadamard gates are not lifted if they are controlled
- * by the same qubit as the lifted gate is.
- */
+/// Test: Checks if Hadamard gates are not lifted if they are controlled
+/// by the same qubit as the lifted gate is.
 TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardOverPauliGateIfControlled) {
   auto q = programBuilder.allocQubitRegister(2);
   q[0] = programBuilder.x(q[0]);
@@ -250,10 +312,8 @@ TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardOverPauliGateIfControlled) {
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
 }
 
-/**
- * @brief Test: Checks that a Hadamard gate is not lifted if they are controlled
- * by a different qubit than the one lifted gate is.
- */
+/// Test: Checks that a Hadamard gate is not lifted if they are controlled
+/// by a different qubit than the one lifted gate is.
 TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardIfDifferentControls) {
   auto q = programBuilder.allocQubitRegister(3);
   auto qubitPair = programBuilder.cx(q[1], q[0]);
@@ -280,10 +340,8 @@ TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardIfDifferentControls) {
 // # Raise Hadamard over CNOT gates Tests
 // ##################################################
 
-/**
- * @brief Test: Checks that a Hadamard gate is lifted over a CNOT gate target if
- * a measurement is following directly after it.
- */
+/// Test: Checks that a Hadamard gate is lifted over a CNOT gate target if
+/// a measurement is following directly after it.
 TEST_F(QCOHadamardLiftingTest, liftHadamardOverCNOTGate) {
   auto q = programBuilder.allocQubitRegister(2);
   auto b = programBuilder.allocClassicalBitRegister(1);
@@ -312,10 +370,8 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverCNOTGate) {
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
 }
 
-/**
- * @brief Test: Checks that a Hadamard gate is lifted over the target of a
- * multiple controlled x gate if a measurement is following directly after it.
- */
+/// Test: Checks that a Hadamard gate is lifted over the target of a
+/// multiple controlled x gate if a measurement is following directly after it.
 TEST_F(QCOHadamardLiftingTest, liftHadamardOverMultipleControlledXGate) {
   auto q = programBuilder.allocQubitRegister(3);
   auto b = programBuilder.allocClassicalBitRegister(1);
@@ -347,10 +403,8 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverMultipleControlledXGate) {
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
 }
 
-/**
- * @brief Test: Checks that a Hadamard gate is not lifted over a CNOT gate
- * target if a measurement is not following directly after it.
- */
+/// Test: Checks that a Hadamard gate is not lifted over a CNOT gate
+/// target if a measurement is not following directly after it.
 TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardOverCNOTGate) {
   auto q = programBuilder.allocQubitRegister(6);
   auto b = programBuilder.allocClassicalBitRegister(3);
@@ -387,10 +441,8 @@ TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardOverCNOTGate) {
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
 }
 
-/**
- * @brief Test: Checks that a Hadamard gate is not lifted over a CNOT gate
- * target if a measurement is following directly after the controls.
- */
+/// Test: Checks that a Hadamard gate is not lifted over a CNOT gate
+/// target if a measurement is following directly after the controls.
 TEST_F(QCOHadamardLiftingTest,
        doNotLiftHadamardOverCNOTIfMeasurementsAfterControlsGate) {
   auto q = programBuilder.allocQubitRegister(5);

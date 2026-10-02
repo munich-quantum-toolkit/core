@@ -78,9 +78,9 @@ state-of-the-art data structures for quantum computing, such as decision
 diagrams [@willeDecisionDiagramsQuantum2023] and the ZX-calculus
 [@vandeweteringZXcalculusWorkingQuantum2020; @duncanGraphtheoreticSimplificationQuantum2020],
 that power the MQT's software packages for classical quantum circuit simulation
-([MQT DDSIM](https://github.com/cda-tum/mqt-ddsim)), compilation
-([MQT QMAP](https://github.com/cda-tum/mqt-qmap)), verification
-([MQT QCEC](https://github.com/cda-tum/mqt-qcec)), and more. As such, MQT Core
+([MQT DDSIM](https://github.com/munich-quantum-toolkit/ddsim)), compilation
+([MQT QMAP](https://github.com/munich-quantum-toolkit/qmap)), verification
+([MQT QCEC](https://github.com/munich-quantum-toolkit/qcec)), and more. As such, MQT Core
 has enabled more than 30 research papers over its first five years of
 development
 [@willeDecisionDiagramsQuantum2023; @hillmichJustRealThing2020; @hillmichApproximatingDecisionDiagrams2022; @grurlStochasticQuantumCircuit2021; @grurlConsideringDecoherenceErrors2020; @grurlNoiseawareQuantumCircuit2023; @grurlAutomaticImplementationEvaluation2023; @burgholzerHybridSchrodingerFeynmanSimulation2021; @burgholzerExploitingArbitraryPaths2022; @burgholzerSimulationPathsQuantum2022; @burgholzerEfficientConstructionFunctional2021; @hillmichAccurateNeededEfficient2020; @hillmichConcurrencyDDbasedQuantum2020; @hillmichExploitingQuantumTeleportation2021; @burgholzerLimitingSearchSpace2022; @pehamDepthoptimalSynthesisClifford2023; @pehamOptimalSubarchitecturesQuantum2023; @schmidComputationalCapabilitiesCompiler2024; @schmidHybridCircuitMapping2024; @burgholzerAdvancedEquivalenceChecking2021; @burgholzerImprovedDDbasedEquivalence2020; @burgholzerPowerSimulationEquivalence2020; @burgholzerRandomStimuliGeneration2021; @burgholzerVerifyingResultsIBM2020; @pehamEquivalenceCheckingParadigms2022; @pehamEquivalenceCheckingParameterized2023; @pehamEquivalenceCheckingQuantum2022; @willeVerificationQuantumCircuits2022; @sanderHamiltonianSimulationDecision2023; @willeToolsQuantumComputing2022; @willeVisualizingDecisionDiagrams2021; @willeEfficientCorrectCompilation2020]. <!-- rumdl-disable-line MD013 -->

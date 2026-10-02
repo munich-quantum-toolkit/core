@@ -8,9 +8,8 @@
  * Licensed under the MIT License
  */
 
-/** @file Configuration.hpp
- * @brief Superconducting QDMI device configuration.
- */
+/// @file Configuration.hpp
+/// Superconducting QDMI device configuration.
 
 #pragma once
 

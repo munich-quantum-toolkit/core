@@ -8,20 +8,20 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQT/Utils/DenseUnitary.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/Utils/Matrix.h"
+#include "mqt/Dialect/MQT/Utils/DenseUnitary.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/Utils/Matrix.h"
 
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/Support/ErrorHandling.h>
-#include <mlir/IR/Builders.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OperationSupport.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/OperationSupport.h"
+#include "mlir/IR/Value.h"
+#include "mlir/IR/ValueRange.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
+
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/ErrorHandling.h"
 
 #include <complex>
 #include <cstdint>
@@ -29,25 +29,8 @@
 using namespace mlir;
 using namespace mlir::qco;
 
-namespace {
-
-struct FoldIdentityUnitary final : OpRewritePattern<UnitaryOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(UnitaryOp op,
-                                PatternRewriter& rewriter) const override {
-    if (!mqt::isExactIdentityMatrix(op.getMatrix())) {
-      return failure();
-    }
-    rewriter.replaceOp(op, op.getQubitsIn());
-    return success();
-  }
-};
-
-} // namespace
-
 void UnitaryOp::build(OpBuilder& /*builder*/, OperationState& state,
-                      const ValueRange qubits, const ElementsAttr matrix) {
+                      ValueRange qubits, ElementsAttr matrix) {
   state.addOperands(qubits);
   state.addTypes(qubits.getTypes());
   state.addAttribute(getMatrixAttrName(state.name), matrix);
@@ -61,8 +44,8 @@ LogicalResult UnitaryOp::verify() {
                                        getQubitsIn());
 }
 
-Value UnitaryOp::getInputForOutput(const Value output) {
-  for (const auto [input, candidate] :
+Value UnitaryOp::getInputForOutput(Value output) {
+  for (auto [input, candidate] :
        llvm::zip_equal(getQubitsIn(), getQubitsOut())) {
     if (candidate == output) {
       return input;
@@ -71,8 +54,8 @@ Value UnitaryOp::getInputForOutput(const Value output) {
   llvm::reportFatalUsageError("Given qubit is not an output of UnitaryOp");
 }
 
-Value UnitaryOp::getOutputForInput(const Value input) {
-  for (const auto [candidate, output] :
+Value UnitaryOp::getOutputForInput(Value input) {
+  for (auto [candidate, output] :
        llvm::zip_equal(getQubitsIn(), getQubitsOut())) {
     if (candidate == input) {
       return output;
@@ -96,7 +79,11 @@ DynamicMatrix UnitaryOp::getUnitaryMatrix() {
   return result;
 }
 
-void UnitaryOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                            MLIRContext* context) {
-  results.add<FoldIdentityUnitary>(context);
+LogicalResult UnitaryOp::fold(FoldAdaptor /*adaptor*/,
+                              SmallVectorImpl<OpFoldResult>& results) {
+  if (!mqt::isExactIdentityMatrix(getMatrix())) {
+    return failure();
+  }
+  llvm::append_range(results, getQubitsIn());
+  return success();
 }

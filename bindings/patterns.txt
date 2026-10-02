@@ -92,20 +92,20 @@ mqt\.core\.mlir\.CompilerTarget\.__init__$:
     @overload
     def __init__(
         self,
-        num_qubits: int,
+        num_sites: int,
         *,
-        couplings: Sequence[tuple[int, int]] | None = None,
-        operations: Sequence[CompilerTarget.Operation] | None = None,
+        connectivity: CompilerTarget.Connectivity,
+        native_operations: CompilerTarget.NativeOperations,
         duration_unit: CompilerTarget.DurationUnit | None = None,
     ) -> None: ...
     @overload
     def __init__(
         self,
         name: str,
-        num_qubits: int,
+        num_sites: int,
         *,
-        couplings: Sequence[tuple[int, int]] | None = None,
-        operations: Sequence[CompilerTarget.Operation] | None = None,
+        connectivity: CompilerTarget.Connectivity,
+        native_operations: CompilerTarget.NativeOperations,
         duration_unit: CompilerTarget.DurationUnit | None = None,
     ) -> None: ...
     @overload
@@ -113,8 +113,8 @@ mqt\.core\.mlir\.CompilerTarget\.__init__$:
         self,
         sites: Sequence[CompilerTarget.Site],
         *,
-        couplings: Sequence[tuple[int, int]] | None = None,
-        operations: Sequence[CompilerTarget.Operation] | None = None,
+        connectivity: CompilerTarget.Connectivity,
+        native_operations: CompilerTarget.NativeOperations,
         duration_unit: CompilerTarget.DurationUnit | None = None,
     ) -> None: ...
     @overload
@@ -123,10 +123,23 @@ mqt\.core\.mlir\.CompilerTarget\.__init__$:
         name: str,
         sites: Sequence[CompilerTarget.Site],
         *,
-        couplings: Sequence[tuple[int, int]] | None = None,
-        operations: Sequence[CompilerTarget.Operation] | None = None,
+        connectivity: CompilerTarget.Connectivity,
+        native_operations: CompilerTarget.NativeOperations,
         duration_unit: CompilerTarget.DurationUnit | None = None,
     ) -> None: ...
+
+mqt\.core\.mlir\.CompilerTarget\.OperationCapability\.__init__$:
+    \from collections.abc import Sequence
+    def __init__(
+        self,
+        name: str,
+        arity: int | CompilerTarget.OperationArity,
+        num_parameters: int,
+        site_tuples: Sequence[CompilerTarget.SiteTuple | Sequence[int]] | None = None,
+        duration: int | None = None,
+        fidelity: float | None = None,
+    ) -> None:
+        \doc
 
 mqt\.core\.mlir\.CompilerTarget\.from_device$:
     \from mqt.core.qdmi import Device
@@ -155,10 +168,8 @@ mqt.core.mlir.compile_program:
         *,
         output: Literal[OutputFormat.QC, OutputFormat.QC_IMPORT] = ...,
         inplace: bool = False,
-        target: CompilerTarget | None = None,
         qco_pipeline: str = "mqt-qco-default",
-        enable_timing: bool = False,
-        enable_statistics: bool = False,
+        options: CompilationOptions = ...,
     ) -> QCProgram: ...
     @overload
     def compile_program(
@@ -172,10 +183,8 @@ mqt.core.mlir.compile_program:
         *,
         output: Literal[OutputFormat.QCO, OutputFormat.QCO_OPTIMIZED],
         inplace: bool = False,
-        target: CompilerTarget | None = None,
         qco_pipeline: str = "mqt-qco-default",
-        enable_timing: bool = False,
-        enable_statistics: bool = False,
+        options: CompilationOptions = ...,
     ) -> QCOProgram: ...
     @overload
     def compile_program(
@@ -190,8 +199,7 @@ mqt.core.mlir.compile_program:
         output: Literal[OutputFormat.OPENQASM3],
         inplace: bool = False,
         qco_pipeline: str = "mqt-qco-default",
-        enable_timing: bool = False,
-        enable_statistics: bool = False,
+        options: CompilationOptions = ...,
     ) -> OpenQASMProgram: ...
     @overload
     def compile_program(
@@ -205,10 +213,8 @@ mqt.core.mlir.compile_program:
         *,
         output: Literal[OutputFormat.JEFF],
         inplace: bool = False,
-        target: CompilerTarget | None = None,
         qco_pipeline: str = "mqt-qco-default",
-        enable_timing: bool = False,
-        enable_statistics: bool = False,
+        options: CompilationOptions = ...,
     ) -> JeffProgram: ...
     @overload
     def compile_program(
@@ -222,10 +228,8 @@ mqt.core.mlir.compile_program:
         *,
         output: Literal[OutputFormat.QIR_BASE, OutputFormat.QIR_ADAPTIVE],
         inplace: bool = False,
-        target: CompilerTarget | None = None,
         qco_pipeline: str = "mqt-qco-default",
-        enable_timing: bool = False,
-        enable_statistics: bool = False,
+        options: CompilationOptions = ...,
     ) -> QIRProgram: ...
     @overload
     def compile_program(
@@ -239,9 +243,61 @@ mqt.core.mlir.compile_program:
         *,
         output: OutputFormat,
         inplace: bool = False,
-        target: CompilerTarget | None = None,
         qco_pipeline: str = "mqt-qco-default",
-        enable_timing: bool = False,
-        enable_statistics: bool = False,
+        options: CompilationOptions = ...,
     ) -> QCProgram | QCOProgram | OpenQASMProgram | JeffProgram | QIRProgram:
+        \doc
+    @overload
+    def compile_program(
+        program: str | os.PathLike[str] | qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | JeffProgram | OpenQASMProgram,
+        *,
+        target: str | mqt.core.qdmi.Device,
+        program_format: mqt.core.qdmi.ProgramFormat | None = None,
+        inplace: bool = False,
+        options: CompilationOptions = ...,
+    ) -> CompiledProgram:
+        \doc
+    @overload
+    def compile_program(
+        program: str | os.PathLike[str] | qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | JeffProgram | OpenQASMProgram,
+        *,
+        target: CompilerTarget,
+        program_format: mqt.core.qdmi.ProgramFormat,
+        inplace: bool = False,
+        options: CompilationOptions = ...,
+    ) -> CompiledProgram: ...
+    @overload
+    def compile_program(
+        program: str | os.PathLike[str] | qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | JeffProgram | OpenQASMProgram,
+        *,
+        target: CompilerTarget,
+        output: Literal[OutputFormat.OPENQASM3],
+        inplace: bool = False,
+        options: CompilationOptions = ...,
+    ) -> OpenQASMProgram: ...
+    @overload
+    def compile_program(
+        program: str | os.PathLike[str] | qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | JeffProgram | OpenQASMProgram,
+        *,
+        target: CompilerTarget,
+        output: Literal[OutputFormat.QIR_BASE, OutputFormat.QIR_ADAPTIVE],
+        inplace: bool = False,
+        options: CompilationOptions = ...,
+    ) -> QIRProgram: ...
+
+
+mqt\.core\.mlir\.submit_program$:
+    def submit_program(
+        program: str | os.PathLike[str] | qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | JeffProgram | OpenQASMProgram | CompiledProgram,
+        *,
+        target: str | mqt.core.qdmi.Device,
+        num_shots: int = 1024,
+        program_format: mqt.core.qdmi.ProgramFormat | None = None,
+        custom1: str | bool | float | bytes | None = None,
+        custom2: str | bool | float | bytes | None = None,
+        custom3: str | bool | float | bytes | None = None,
+        custom4: str | bool | float | bytes | None = None,
+        custom5: str | bool | float | bytes | None = None,
+        options: CompilationOptions | None = None,
+    ) -> mqt.core.qdmi.Job:
         \doc

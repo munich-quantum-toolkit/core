@@ -8,37 +8,23 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/QCOUtils.h"
-#include "mlir/Dialect/QCO/Utils/Matrix.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QCO/Utils/Matrix.h"
 
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OperationSupport.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/Support/LogicalResult.h>
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/OperationSupport.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/Support/LogicalResult.h"
 
 using namespace mlir;
 using namespace mlir::qco;
 
-namespace {
-
-/**
- * @brief Remove subsequent SWAP operations on the same qubits.
- */
-struct RemoveSubsequentSWAP final : OpRewritePattern<SWAPOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(SWAPOp op,
-                                PatternRewriter& rewriter) const override {
-    return removeInversePairTwoTargetZeroParameter<SWAPOp>(op, rewriter, true);
-  }
-};
-
-} // namespace
-
 void SWAPOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                         MLIRContext* context) {
-  results.add<RemoveSubsequentSWAP>(context);
+                                         MLIRContext* /*context*/) {
+  results.add(+[](SWAPOp op, PatternRewriter& rewriter) {
+    return removeInversePairTwoTargetZeroParameter<SWAPOp>(op, rewriter, true);
+  });
 }
 
 Matrix4x4 SWAPOp::getUnitaryMatrix() {

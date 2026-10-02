@@ -10,13 +10,21 @@
 
 import enum
 import os
-from collections.abc import Sequence
-from typing import Literal, Unpack, overload
+from collections.abc import Iterable, Sequence
+from typing import Annotated, Literal, Unpack, overload
 
+import numpy as np
 import qiskit.circuit
+import qiskit.providers
+import qiskit.transpiler
 
+import mqt.core.dd
+import mqt.core.qdmi
 from mqt.core.qdmi import Device
 from mqt.core.typing import QDMISessionParameters
+
+def _generate_benchmark(instance_specification_json: str) -> QCProgram:
+    """Generate the QC program described by an instance specification."""
 
 class QIRProfile(enum.Enum):
     """QIR target profiles."""
@@ -54,30 +62,125 @@ class OutputFormat(enum.Enum):
     QIR_ADAPTIVE = 7
     """QIR for the Adaptive Profile."""
 
-class CompilerTarget:
-    """Immutable MLIR compiler target.
+class PayloadEncoding(enum.Enum):
+    """Payload representation encoding."""
 
-    An absent topology means all-to-all connectivity. An absent operation set
-    means every operation is native.
+    TEXT = 0
+
+    BINARY = 1
+
+class PayloadFormat:
+    """Exact payload identity."""
+
+    def __init__(
+        self, format_id: str, version: str, profile: str = "", encoding: PayloadEncoding = PayloadEncoding.TEXT
+    ) -> None: ...
+    @property
+    def format_id(self) -> str: ...
+    @format_id.setter
+    def format_id(self, arg: str, /) -> None: ...
+    @property
+    def version(self) -> str: ...
+    @version.setter
+    def version(self, arg: str, /) -> None: ...
+    @property
+    def profile(self) -> str: ...
+    @profile.setter
+    def profile(self, arg: str, /) -> None: ...
+    @property
+    def encoding(self) -> PayloadEncoding: ...
+    @encoding.setter
+    def encoding(self, arg: PayloadEncoding, /) -> None: ...
+
+class ProgramConstraint:
+    """One payload capability constraint."""
+
+    def __init__(self, constraint_id: str, value: int) -> None: ...
+    @property
+    def constraint_id(self) -> str: ...
+    @constraint_id.setter
+    def constraint_id(self, arg: str, /) -> None: ...
+    @property
+    def value(self) -> int: ...
+    @value.setter
+    def value(self, arg: int, /) -> None: ...
+
+    MAX_NESTING_DEPTH: str = "max-control-flow-nesting-depth"
+
+    MAX_ITERATION_COUNT: str = "max-iteration-count"
+
+    MAX_CASE_COUNT: str = "max-case-count"
+
+class ProgramCapability:
+    """One payload execution capability."""
+
+    def __init__(self, capability_id: str, value: int = 0, constraints: Sequence[ProgramConstraint] = []) -> None: ...
+    @property
+    def capability_id(self) -> str: ...
+    @capability_id.setter
+    def capability_id(self, arg: str, /) -> None: ...
+    @property
+    def value(self) -> int: ...
+    @value.setter
+    def value(self, arg: int, /) -> None: ...
+    @property
+    def constraints(self) -> list[ProgramConstraint]: ...
+    @constraints.setter
+    def constraints(self, arg: Sequence[ProgramConstraint], /) -> None: ...
+
+    FORWARD_BRANCHING: str = "forward-branching"
+
+    COUNTED_ITERATION: str = "counted-iteration"
+
+    CONDITIONAL_LOOP: str = "conditional-loop"
+
+    MULTIWAY_BRANCHING: str = "multiway-branching"
+
+class PayloadSpecification:
+    """Selected payload execution contract."""
+
+    def __init__(
+        self,
+        payload_format: PayloadFormat,
+        capabilities: Sequence[ProgramCapability] = [],
+        optional_capabilities_known: bool = False,
+    ) -> None: ...
+    @property
+    def format(self) -> PayloadFormat:
+        """The exact selected payload format."""
+
+    @property
+    def capabilities(self) -> list[ProgramCapability]:
+        """The effective payload capabilities."""
+
+    @property
+    def optional_capabilities_known(self) -> bool:
+        """Whether optional capability metadata is complete."""
+
+class CompilerTarget:
+    """Immutable MQT compiler target.
+
+    Every target has either all-to-all or explicitly enumerated connectivity and
+    either unrestricted or explicitly enumerated native-operation support.
     """
 
     @overload
     def __init__(
         self,
-        num_qubits: int,
+        num_sites: int,
         *,
-        couplings: Sequence[tuple[int, int]] | None = None,
-        operations: Sequence[CompilerTarget.Operation] | None = None,
+        connectivity: CompilerTarget.Connectivity,
+        native_operations: CompilerTarget.NativeOperations,
         duration_unit: CompilerTarget.DurationUnit | None = None,
     ) -> None: ...
     @overload
     def __init__(
         self,
         name: str,
-        num_qubits: int,
+        num_sites: int,
         *,
-        couplings: Sequence[tuple[int, int]] | None = None,
-        operations: Sequence[CompilerTarget.Operation] | None = None,
+        connectivity: CompilerTarget.Connectivity,
+        native_operations: CompilerTarget.NativeOperations,
         duration_unit: CompilerTarget.DurationUnit | None = None,
     ) -> None: ...
     @overload
@@ -85,8 +188,8 @@ class CompilerTarget:
         self,
         sites: Sequence[CompilerTarget.Site],
         *,
-        couplings: Sequence[tuple[int, int]] | None = None,
-        operations: Sequence[CompilerTarget.Operation] | None = None,
+        connectivity: CompilerTarget.Connectivity,
+        native_operations: CompilerTarget.NativeOperations,
         duration_unit: CompilerTarget.DurationUnit | None = None,
     ) -> None: ...
     @overload
@@ -95,8 +198,8 @@ class CompilerTarget:
         name: str,
         sites: Sequence[CompilerTarget.Site],
         *,
-        couplings: Sequence[tuple[int, int]] | None = None,
-        operations: Sequence[CompilerTarget.Operation] | None = None,
+        connectivity: CompilerTarget.Connectivity,
+        native_operations: CompilerTarget.NativeOperations,
         duration_unit: CompilerTarget.DurationUnit | None = None,
     ) -> None: ...
 
@@ -135,7 +238,7 @@ class CompilerTarget:
             """The raw T2 coherence time, if available."""
 
     class SiteTuple:
-        """Calibration data for an ordered tuple of target sites."""
+        """A supported ordered placement with optional calibration."""
 
         def __init__(
             self, sites: Sequence[int], duration: int | None = None, fidelity: float | None = None
@@ -152,15 +255,44 @@ class CompilerTarget:
         def fidelity(self) -> float | None:
             """The operation fidelity, if available."""
 
-    class Operation:
-        """A homogeneous target-wide operation capability and its calibration."""
+    class OperationArityKind(enum.Enum):
+        """How an operation capability accepts qubit widths."""
+
+        FIXED = 0
+
+        VARIADIC = 1
+
+    class OperationArity:
+        """Accepted operation qubit widths."""
+
+        @staticmethod
+        def fixed(value: int) -> CompilerTarget.OperationArity:
+            """Create an exact operation arity."""
+
+        @staticmethod
+        def variadic(minimum: int) -> CompilerTarget.OperationArity:
+            """Create an operation arity with an inclusive minimum. Capability construction requires a positive minimum."""
+
+        @property
+        def kind(self) -> CompilerTarget.OperationArityKind:
+            """The arity kind."""
+
+        @property
+        def value(self) -> int:
+            """The exact arity or inclusive variadic minimum."""
+
+        def accepts(self, width: int) -> bool:
+            """Whether this arity accepts a concrete width."""
+
+    class OperationCapability:
+        """A target operation capability, calibration, and ordered applicability."""
 
         def __init__(
             self,
             name: str,
-            num_qubits: int,
+            arity: int | CompilerTarget.OperationArity,
             num_parameters: int,
-            site_tuples: Sequence[CompilerTarget.SiteTuple] | None = None,
+            site_tuples: Sequence[CompilerTarget.SiteTuple | Sequence[int]] | None = None,
             duration: int | None = None,
             fidelity: float | None = None,
         ) -> None: ...
@@ -173,8 +305,8 @@ class CompilerTarget:
             """The normalized compiler operation name."""
 
         @property
-        def num_qubits(self) -> int:
-            """The fixed operation arity."""
+        def arity(self) -> CompilerTarget.OperationArity:
+            """The accepted operation arity."""
 
         @property
         def num_parameters(self) -> int:
@@ -182,7 +314,7 @@ class CompilerTarget:
 
         @property
         def site_tuples(self) -> list[CompilerTarget.SiteTuple]:
-            """Ordered site-specific calibration data."""
+            """Supported ordered placements with optional calibration; empty means general applicability."""
 
         @property
         def duration(self) -> int | None:
@@ -225,6 +357,8 @@ class CompilerTarget:
 
         ECR = 14
 
+        SQRTISWAP = 15
+
     class SingleQubitBasis(enum.Enum):
         """Recognized target-wide single-qubit synthesis basis."""
 
@@ -250,12 +384,89 @@ class CompilerTarget:
             """The single-qubit synthesis basis."""
 
         @property
-        def entangler(self) -> CompilerTarget.GateKind:
-            """The two-qubit entangler."""
+        def entangler(self) -> CompilerTarget.GateKind | None:
+            """The two-qubit entangler, or None when none is usable."""
+
+    class ConnectivityKind(enum.Enum):
+        """The target connectivity model."""
+
+        ALL_TO_ALL = 0
+
+        EXPLICIT = 1
+
+    class Connectivity:
+        """A target connectivity model."""
+
+        def __init__(self, couplings: Sequence[tuple[int, int]]) -> None:
+            """Create an explicit connectivity model."""
+
+        @staticmethod
+        def all_to_all() -> CompilerTarget.Connectivity:
+            """Create an all-to-all connectivity model."""
+
+        @property
+        def kind(self) -> CompilerTarget.ConnectivityKind:
+            """The connectivity model."""
+
+        @property
+        def couplings(self) -> list[tuple[int, int]]:
+            """The explicit couplings, if present."""
+
+    class NativeOperationsKind(enum.Enum):
+        """The native-operation support model."""
+
+        UNRESTRICTED = 0
+
+        EXPLICIT = 1
+
+    class NativeOperations:
+        """Native-operation support."""
+
+        def __init__(self, operations: Sequence[CompilerTarget.OperationCapability]) -> None:
+            """Create explicit native-operation support."""
+
+        @staticmethod
+        def unrestricted() -> CompilerTarget.NativeOperations:
+            """Create unrestricted native-operation support."""
+
+        @property
+        def kind(self) -> CompilerTarget.NativeOperationsKind:
+            """The native-operation support model."""
+
+        @property
+        def operations(self) -> list[CompilerTarget.OperationCapability]:
+            """The explicit operations, if present."""
 
     @staticmethod
     def from_device(device: Device) -> CompilerTarget:
         """Snapshot a circuit-model QDMI device."""
+
+    @staticmethod
+    def from_qiskit(
+        source: qiskit.transpiler.Target | qiskit.providers.BackendV2,
+        *,
+        operation_names: Iterable[str] | None = None,
+        name: str | None = None,
+    ) -> CompilerTarget:
+        """Snapshot native operations and connectivity from Qiskit.
+
+        Args:
+            source: Qiskit Target or BackendV2 with a known positive qubit count.
+            operation_names: Qiskit Target operation names to retain. By default,
+                include every representable operation. Explicit selections must all be
+                representable.
+            name: Override the target name. By default, use the backend name when
+                source is a BackendV2; a Target produces an unnamed snapshot.
+
+        Returns:
+            An independent compiler target. Unrepresentable gates are omitted with
+            warnings when operation_names is not set. Calibration and scheduling data
+            are not included.
+
+        Raises:
+            TypeError: If source is neither a Target nor a BackendV2.
+            ValueError: If the selected operations or connectivity cannot be represented.
+        """
 
     @staticmethod
     def from_device_id(device_id: str, **session_parameters: Unpack[QDMISessionParameters]) -> CompilerTarget:
@@ -270,7 +481,7 @@ class CompilerTarget:
         """The target timing unit, if available."""
 
     @property
-    def num_qubits(self) -> int:
+    def num_sites(self) -> int:
         """The number of target sites."""
 
     @property
@@ -278,19 +489,19 @@ class CompilerTarget:
         """Detailed sites in compiler-vertex order."""
 
     @property
-    def has_explicit_topology(self) -> bool:
-        """Whether the target defines a coupling topology."""
+    def connectivity_kind(self) -> CompilerTarget.ConnectivityKind:
+        """The target connectivity model."""
 
     @property
     def couplings(self) -> list[tuple[int, int]]:
         """Canonical undirected couplings in target site IDs."""
 
     @property
-    def has_explicit_operations(self) -> bool:
-        """Whether the target defines an operation set."""
+    def native_operations_kind(self) -> CompilerTarget.NativeOperationsKind:
+        """The target native-operation support model."""
 
     @property
-    def operations(self) -> list[CompilerTarget.Operation]:
+    def operations(self) -> list[CompilerTarget.OperationCapability]:
         """Operation capabilities in reported order."""
 
     @property
@@ -299,10 +510,31 @@ class CompilerTarget:
 
     @property
     def synthesis_basis(self) -> CompilerTarget.SynthesisBasis | None:
-        """A complete target-wide synthesis basis, if available."""
+        """A target-wide single-qubit basis with an optional entangler, or None when no single-qubit basis is usable."""
 
-    def supports_operation(self, name: str, num_qubits: int, num_parameters: int | None = None) -> bool:
-        """Whether the target supports an operation capability."""
+    def supports_operation(
+        self, name: str, arity: int, num_parameters: int | None = None, sites: Sequence[int] | None = None
+    ) -> bool:
+        """Check whether the target supports an operation.
+
+        Args:
+            name: Operation name. Recognized aliases are normalized.
+            arity: Number of qubits used by the operation.
+            num_parameters: Number of real-valued parameters. None accepts any count.
+            sites: Ordered target site IDs. None checks support on any placement.
+        """
+
+class TargetEnvironment:
+    """A compiler target and its selected payload specification."""
+
+    def __init__(self, target: CompilerTarget, payload_specification: PayloadSpecification) -> None: ...
+    @property
+    def target(self) -> CompilerTarget:
+        """The compiler target."""
+
+    @property
+    def payload_specification(self) -> PayloadSpecification:
+        """The selected payload specification."""
 
 class Program:
     """Base class for a typed MLIR compiler program.
@@ -319,12 +551,94 @@ class Program:
     def ir(self) -> str:
         """The textual MLIR representation of this program."""
 
+class MappingOptions:
+    """Native mapping controls."""
+
+    def __init__(
+        self,
+        *,
+        trials: int | None = None,
+        iterations: int = 1,
+        lookahead: int = 20,
+        search_memory_limit: int = 268435456,
+    ) -> None: ...
+    @property
+    def trials(self) -> int | None:
+        """Positive trial count; None uses the available logical CPU count."""
+
+    @trials.setter
+    def trials(self, arg: int | None, /) -> None: ...
+    @property
+    def iterations(self) -> int:
+        """Forward/backward refinement rounds; zero scores each start directly."""
+
+    @iterations.setter
+    def iterations(self, arg: int, /) -> None: ...
+    @property
+    def lookahead(self) -> int:
+        """Additional two-qubit gates considered during routing; zero disables lookahead."""
+
+    @lookahead.setter
+    def lookahead(self, arg: int, /) -> None: ...
+    @property
+    def search_memory_limit(self) -> int:
+        """Estimated node and layout bytes per routing search, per concurrent trial. Zero disables node expansion. Container overhead, caches, and IR are extra."""
+
+    @search_memory_limit.setter
+    def search_memory_limit(self, arg: int, /) -> None: ...
+
+class CompilationOptions:
+    """Shared compiler controls. An explicit seed overrides all compiler randomness; None preserves pass defaults and custom pipeline seeds."""
+
+    def __init__(
+        self,
+        *,
+        seed: int | None = None,
+        enable_timing: bool = False,
+        enable_statistics: bool = False,
+        mapping: MappingOptions = ...,
+    ) -> None: ...
+    @property
+    def seed(self) -> int | None: ...
+    @seed.setter
+    def seed(self, arg: int | None, /) -> None: ...
+    @property
+    def enable_timing(self) -> bool: ...
+    @enable_timing.setter
+    def enable_timing(self, arg: bool, /) -> None: ...
+    @property
+    def enable_statistics(self) -> bool: ...
+    @enable_statistics.setter
+    def enable_statistics(self, arg: bool, /) -> None: ...
+    @property
+    def mapping(self) -> MappingOptions: ...
+    @mapping.setter
+    def mapping(self, arg: MappingOptions, /) -> None: ...
+
+class QuantumProgramInfo:
+    """Structural quantum resources and control flow, without executing the IR."""
+
+    @property
+    def num_qubits(self) -> int | None:
+        """Allocated qubit count, or number of distinct static site IDs. None for unknown width. Not peak live width or original layout width."""
+
+    @property
+    def static_qubits(self) -> list[int]:
+        """Sorted distinct physical site IDs declared in the module."""
+
+    @property
+    def has_control_flow(self) -> bool:
+        """Whether the module contains branching or region-based control flow."""
+
 class QCProgram(Program):
     """A compiler program in the QC dialect.
 
     QC programs use reference semantics and represent frontend quantum programs
     before conversion to QCO.
     """
+
+    def inspect(self) -> QuantumProgramInfo:
+        """Return declared quantum resources and structural control flow throughout the module."""
 
     @staticmethod
     def from_mlir_str(source: str) -> QCProgram:
@@ -335,16 +649,21 @@ class QCProgram(Program):
         """Parse QC MLIR from a file."""
 
     @staticmethod
-    def from_qasm_str(source: str) -> QCProgram:
-        """Translate an OpenQASM 3 source string to QC MLIR."""
+    def from_openqasm_str(source: str) -> QCProgram:
+        """Translate supported OpenQASM to QC MLIR. Accepts versionless input and versions 2.0, 3.0, and 3.1."""
 
     @staticmethod
-    def from_qasm_file(path: str | os.PathLike) -> QCProgram:
-        """Translate an OpenQASM 3 file to QC MLIR."""
+    def from_openqasm_file(path: str | os.PathLike) -> QCProgram:
+        """Translate a supported OpenQASM file to QC MLIR. Accepts versionless input and versions 2.0, 3.0, and 3.1."""
 
     @staticmethod
     def from_qiskit(circuit: qiskit.circuit.QuantumCircuit) -> QCProgram:
-        """Translate a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` to QC MLIR."""
+        """Translate a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` to QC MLIR.
+
+        Args:
+            circuit: Circuit to import. A complete transpiler layout is retained as
+                metadata.
+        """
 
     def copy(self) -> QCProgram:
         """Return an independent copy of this program."""
@@ -361,10 +680,14 @@ class QCProgram(Program):
     def to_qiskit(self, *, target: CompilerTarget | None = None) -> qiskit.circuit.QuantumCircuit:
         """Translate this QC program to a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` without consuming it.
 
+        The exporter restores attached layout metadata when it is compatible with the
+        selected target.
+
         Args:
-            target: The optional compiler target used for mapping. When provided, emit
-                a canonical physical circuit. All qubits must be static, and their site
-                IDs must belong to the target.
+            target: Map static site IDs to qubit indices in target site order. All
+                qubits must be static sites of the target. Select applicable standard
+                gate names without checking device execution support. None applies no
+                target site mapping.
         """
 
     def to_qco(self, *, copy: bool = False) -> QCOProgram:
@@ -380,27 +703,27 @@ class QCProgram(Program):
         """
 
     def num_gates(self) -> int:
-        """Count the gates in the program.
+        """Return the static gate count of the entry-point IR.
 
-        Any operation that implements the ``UnitaryOpInterface`` is counted. Operations
+        Any entry-point operation that implements the ``UnitaryOpInterface`` is counted. Operations
         in every structured control-flow region are counted once, regardless of how
         often the region executes. Operations within modifiers are not counted
         recursively, and barriers are skipped.
         """
 
     def num_single_qubit_gates(self) -> int:
-        """Count the single-qubit gates in the program.
+        """Return the static single-qubit gate count of the entry-point IR.
 
-        Any operation that implements the ``UnitaryOpInterface`` and acts on one qubit
+        Any entry-point operation that implements the ``UnitaryOpInterface`` and acts on one qubit
         is counted. Operations in every structured control-flow region are counted
         once, regardless of how often the region executes. Operations within modifiers
         are not counted recursively, and barriers are skipped.
         """
 
     def num_two_qubit_gates(self) -> int:
-        """Count the two-qubit gates in the program.
+        """Return the static two-qubit gate count of the entry-point IR.
 
-        Any operation that implements the ``UnitaryOpInterface`` and acts on two qubits
+        Any entry-point operation that implements the ``UnitaryOpInterface`` and acts on two qubits
         is counted. Operations in every structured control-flow region are counted
         once, regardless of how often the region executes. Operations within modifiers
         are not counted recursively, and barriers are skipped.
@@ -414,14 +737,17 @@ class QCProgram(Program):
         not counted recursively, and barriers are skipped.
         """
 
-    def static_depth(self) -> int:
+    def static_depth(self) -> int | None:
         """Calculate the static gate depth of the program.
 
         The depth describes the entry-point IR rather than runtime execution. Mutually
         exclusive structured control-flow branches contribute their maximum depth.
         Each loop region contributes once, regardless of its runtime iteration count.
         Modifier operations contribute one layer, but their bodies do not contribute
-        again. Barriers and zero-qubit operations do not contribute.
+        again. Barriers, zero-qubit operations, and classical dependencies are ignored.
+        Dynamic register indices conservatively alias all elements of their register.
+        Return None for a missing entry point or unsupported quantum references or
+        control flow. Function calls are not expanded.
         """
 
 class QCOProgram(Program):
@@ -430,6 +756,9 @@ class QCOProgram(Program):
     QCO programs use value semantics and expose optimization and transformation
     operations.
     """
+
+    def inspect(self) -> QuantumProgramInfo:
+        """Return declared quantum resources and structural control flow throughout the module."""
 
     @staticmethod
     def from_mlir_str(source: str) -> QCOProgram:
@@ -448,7 +777,7 @@ class QCOProgram(Program):
     def normalize_global_phases(self) -> None:
         """Normalize scoped global phases in place."""
 
-    def run_pass_pipeline(self, pipeline: str, *, enable_timing: bool = False, enable_statistics: bool = False) -> None:
+    def run_pass_pipeline(self, pipeline: str, *, options: CompilationOptions = ...) -> None:
         """Run a textual MLIR pass pipeline in place."""
 
     def merge_single_qubit_rotation_gates(self) -> None:
@@ -470,12 +799,28 @@ class QCOProgram(Program):
         """Prepare the program for qubit reuse and reuse eligible qubits."""
 
     def decompose_multi_controlled(self, *, min_qubits: int = 3) -> None:
-        """Decompose controlled X/Z/SWAP gates, qco.rccx, and constant-angle phase gates that act on at least min_qubits qubits (min_qubits must be at least 3; default 3 means wider than two-qubit)."""
+        """Decompose controlled X/Y/Z/SWAP and RX/RY/RZ gates, qco.rccx, and constant-angle phase gates that act on at least min_qubits qubits (min_qubits must be at least 3; default 3 means wider than two-qubit)."""
 
-    def compile_for_target(
-        self, target: CompilerTarget, *, enable_timing: bool = False, enable_statistics: bool = False
+    def compile_for_target(self, target_environment: TargetEnvironment, *, options: CompilationOptions = ...) -> None:
+        """Compile for the target and attach layout metadata when possible. Reject existing layout metadata. Do not rely on program contents if compilation fails. Failures raise RuntimeError with MLIR diagnostics."""
+
+    def synthesize_for_target(
+        self, target_environment: TargetEnvironment, *, options: CompilationOptions = ...
     ) -> None:
-        """Compile this QCO program for the target in place. Do not rely on its contents if compilation fails."""
+        """Synthesize native operations without routing. Dynamic qubits require all-to-all connectivity and receive layout metadata when possible. Static qubits keep their device site IDs and must fit the target topology. Do not rely on the program contents if synthesis fails. Failures raise RuntimeError with the emitted MLIR diagnostics."""
+
+    def to_qiskit(self, *, target: CompilerTarget | None = None) -> qiskit.circuit.QuantumCircuit:
+        """Export a Qiskit circuit without consuming or modifying this program.
+
+        The exporter restores attached layout metadata when it is compatible with the
+        selected target.
+
+        Args:
+            target: Map static site IDs to qubit indices in target site order. All
+                qubits must be static sites of the target. Select applicable standard
+                gate names without checking device execution support. None applies no
+                target site mapping.
+        """
 
     def to_qc(self, *, copy: bool = False) -> QCProgram:
         """Convert this program to QC.
@@ -484,13 +829,64 @@ class QCOProgram(Program):
         """
 
     def to_jeff(self, *, copy: bool = False) -> JeffProgram:
-        """Serialize this program as ``jeff``.
+        """Convert this program to ``jeff`` MLIR.
 
         Set ``copy=True`` to preserve it.
         """
 
+    def build_functionality(self, dd_package: mqt.core.dd.DDPackage) -> mqt.core.dd.MatrixDD:
+        """Build a matrix DD for a static unitary QCO program.
+
+        Args:
+            dd_package: DD package with enough qubits for the program.
+
+        Returns:
+            Matrix DD of the program functionality.
+
+        Raises:
+            ValueError: When the program is unsupported for functionality construction.
+        """
+
+    def simulate(
+        self, initial_state: mqt.core.dd.VectorDD, dd_package: mqt.core.dd.DDPackage, seed: int = 0
+    ) -> mqt.core.dd.VectorDD:
+        """Simulate a QCO program on a DD state.
+
+        Args:
+            initial_state: Input state DD that spans at least the program's qubits and
+                has a live reference in ``dd_package``. Higher wires are preserved. A
+                valid input reference is consumed.
+            dd_package: DD package with enough qubits for the program.
+            seed: RNG seed. ``0`` (default) selects nondeterministic seeding. Any other
+                value produces reproducible measurement and reset results.
+
+        Returns:
+            Output state DD.
+
+        Raises:
+            ValueError: When ``initial_state`` has no live reference in ``dd_package``,
+                has too few qubits, or the program is unsupported for simulation.
+        """
+
+    def sample(self, shots: int = 1024, seed: int = 0) -> dict[str, int]:
+        """Sample the declared outputs of a QCO program.
+
+        Args:
+            shots: Number of shots (default 1024).
+            seed: RNG seed. ``0`` (default) selects nondeterministic seeding. Any other
+                value produces reproducible results.
+
+        Returns:
+            Histogram keys use conventional count-string order. The last returned
+            register comes first, and each register is MSB-first. If no CBit result
+            exists, final ``measureAll`` bitstrings are used instead.
+
+        Raises:
+            ValueError: When the program is unsupported for sampling.
+        """
+
 class JeffProgram(Program):
-    """A serialized ``jeff`` compiler program.
+    """A serializable compiler program in the ``jeff`` dialect.
 
     ``jeff`` programs can be stored as bytes or files and converted back to QCO for
     further compilation.
@@ -517,7 +913,7 @@ class JeffProgram(Program):
         """Write this program to a ``jeff`` file."""
 
     def to_qco(self, *, copy: bool = False) -> QCOProgram:
-        """Deserialize this program to QCO.
+        """Convert this program to QCO.
 
         Set ``copy=True`` to preserve it.
         """
@@ -559,6 +955,74 @@ class QIRProgram(Program):
     def write_bitcode(self, path: str | os.PathLike) -> None:
         """Write this program as LLVM bitcode."""
 
+def build_functionality(
+    program: str
+    | os.PathLike[str]
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram
+    | OpenQASMProgram,
+) -> Annotated[np.typing.NDArray[np.complex128], {"shape": (None, None)}]:
+    """Build the full unitary matrix of a supported compiler input.
+
+    The DD package is managed internally. The matrix is materialized directly into
+    the returned NumPy array without an additional copy. The full matrix grows
+    exponentially, and the caller is responsible for requesting a result that fits
+    in memory.
+
+    Raises:
+        MemoryError: When the dense matrix does not fit in memory.
+        ValueError: When the program is unsupported or the matrix dimensions exceed
+            addressable memory.
+    """
+
+def simulate(
+    program: str
+    | os.PathLike[str]
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram
+    | OpenQASMProgram,
+) -> Annotated[np.typing.NDArray[np.complex128], {"shape": (None,)}]:
+    """Simulate a closed compiler input from the all-zero state.
+
+    The DD package is managed internally. Terminal measurements that only assemble
+    returned classical registers do not collapse the state. Mid-circuit measurement
+    feedback and resets are unsupported; use {py:meth}`QCOProgram.simulate` with an
+    explicit DD package for those workflows or for a custom initial state.
+
+    Args:
+        program: Compiler input to lower directly to QCO.
+
+    Returns:
+        Full statevector, materialized directly into the returned NumPy array.
+
+    Raises:
+        MemoryError: When the dense statevector does not fit in memory.
+        ValueError: When the program is not closed, is unsupported for statevector
+            simulation, or the statevector dimensions exceed addressable memory.
+    """
+
+def sample(
+    program: str
+    | os.PathLike[str]
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram
+    | OpenQASMProgram,
+    shots: int = 1024,
+    seed: int = 0,
+) -> dict[str, int]:
+    """Sample a supported input after translating or converting it to QCO.
+
+    An existing QCO program is used without copying. See
+    {py:meth}`QCOProgram.sample` for the shot, seed, histogram, and error
+    contracts.
+    """
+
 @overload
 def compile_program(
     program: str
@@ -571,10 +1035,8 @@ def compile_program(
     *,
     output: Literal[OutputFormat.QC, OutputFormat.QC_IMPORT] = ...,
     inplace: bool = False,
-    target: CompilerTarget | None = None,
     qco_pipeline: str = "mqt-qco-default",
-    enable_timing: bool = False,
-    enable_statistics: bool = False,
+    options: CompilationOptions = ...,
 ) -> QCProgram: ...
 @overload
 def compile_program(
@@ -588,10 +1050,8 @@ def compile_program(
     *,
     output: Literal[OutputFormat.QCO, OutputFormat.QCO_OPTIMIZED],
     inplace: bool = False,
-    target: CompilerTarget | None = None,
     qco_pipeline: str = "mqt-qco-default",
-    enable_timing: bool = False,
-    enable_statistics: bool = False,
+    options: CompilationOptions = ...,
 ) -> QCOProgram: ...
 @overload
 def compile_program(
@@ -606,8 +1066,7 @@ def compile_program(
     output: Literal[OutputFormat.OPENQASM3],
     inplace: bool = False,
     qco_pipeline: str = "mqt-qco-default",
-    enable_timing: bool = False,
-    enable_statistics: bool = False,
+    options: CompilationOptions = ...,
 ) -> OpenQASMProgram: ...
 @overload
 def compile_program(
@@ -621,10 +1080,8 @@ def compile_program(
     *,
     output: Literal[OutputFormat.JEFF],
     inplace: bool = False,
-    target: CompilerTarget | None = None,
     qco_pipeline: str = "mqt-qco-default",
-    enable_timing: bool = False,
-    enable_statistics: bool = False,
+    options: CompilationOptions = ...,
 ) -> JeffProgram: ...
 @overload
 def compile_program(
@@ -638,10 +1095,8 @@ def compile_program(
     *,
     output: Literal[OutputFormat.QIR_BASE, OutputFormat.QIR_ADAPTIVE],
     inplace: bool = False,
-    target: CompilerTarget | None = None,
     qco_pipeline: str = "mqt-qco-default",
-    enable_timing: bool = False,
-    enable_statistics: bool = False,
+    options: CompilationOptions = ...,
 ) -> QIRProgram: ...
 @overload
 def compile_program(
@@ -655,10 +1110,8 @@ def compile_program(
     *,
     output: OutputFormat,
     inplace: bool = False,
-    target: CompilerTarget | None = None,
     qco_pipeline: str = "mqt-qco-default",
-    enable_timing: bool = False,
-    enable_statistics: bool = False,
+    options: CompilationOptions = ...,
 ) -> QCProgram | QCOProgram | OpenQASMProgram | JeffProgram | QIRProgram:
     """Run the coordinated default MQT compiler pipeline.
 
@@ -672,13 +1125,126 @@ def compile_program(
         program: Source text, a file path, a Qiskit circuit, or a typed compiler program.
         output: The requested output stage of the compiler pipeline.
         inplace: Whether a typed input program may be consumed.
-        target: An optional compiler target for decomposition, mapping, and native
-            synthesis. A target requires optimized QCO, QC, or QIR output.
         qco_pipeline: The QCO optimization pipeline to run. A custom pipeline
-            cannot be combined with a target.
-        enable_timing: Whether to collect pass timing information.
-        enable_statistics: Whether to collect pass statistics.
+            cannot be combined with target compilation.
+        options: Shared compilation controls.
 
     Returns:
         A typed compiler program for the requested output format.
+    """
+
+@overload
+def compile_program(
+    program: str
+    | os.PathLike[str]
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram
+    | OpenQASMProgram,
+    *,
+    target: str | mqt.core.qdmi.Device,
+    program_format: mqt.core.qdmi.ProgramFormat | None = None,
+    inplace: bool = False,
+    options: CompilationOptions = ...,
+) -> CompiledProgram:
+    """Compile for a device ID, open device, or explicit compiler target.
+
+    Device targets select Adaptive QIR (binary, text), OpenQASM 3, then Base QIR
+    (binary, text). Use ``program_format`` to select a format explicitly.
+    Submit the returned :class:`CompiledProgram` with :func:`submit_program`.
+
+    An explicit :class:`CompilerTarget` requires ``output`` to return a typed
+    program, or ``program_format`` to return a :class:`CompiledProgram`.
+    Typed inputs are copied unless ``inplace=True``.
+    """
+
+@overload
+def compile_program(
+    program: str
+    | os.PathLike[str]
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram
+    | OpenQASMProgram,
+    *,
+    target: CompilerTarget,
+    program_format: mqt.core.qdmi.ProgramFormat,
+    inplace: bool = False,
+    options: CompilationOptions = ...,
+) -> CompiledProgram: ...
+@overload
+def compile_program(
+    program: str
+    | os.PathLike[str]
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram
+    | OpenQASMProgram,
+    *,
+    target: CompilerTarget,
+    output: Literal[OutputFormat.OPENQASM3],
+    inplace: bool = False,
+    options: CompilationOptions = ...,
+) -> OpenQASMProgram: ...
+@overload
+def compile_program(
+    program: str
+    | os.PathLike[str]
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram
+    | OpenQASMProgram,
+    *,
+    target: CompilerTarget,
+    output: Literal[OutputFormat.QIR_BASE, OutputFormat.QIR_ADAPTIVE],
+    inplace: bool = False,
+    options: CompilationOptions = ...,
+) -> QIRProgram: ...
+
+class CompiledProgram:
+    """A compiled program ready for QDMI submission."""
+
+    @property
+    def program_format(self) -> mqt.core.qdmi.ProgramFormat:
+        """The exact QDMI program format."""
+
+    @property
+    def payload(self) -> str | bytes:
+        """The serialized program."""
+
+    @property
+    def target(self) -> CompilerTarget:
+        """The hardware snapshot used for compilation."""
+
+    @property
+    def payload_specification(self) -> PayloadSpecification:
+        """The payload format and capabilities used for compilation."""
+
+def submit_program(
+    program: str
+    | os.PathLike[str]
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram
+    | OpenQASMProgram
+    | CompiledProgram,
+    *,
+    target: str | mqt.core.qdmi.Device,
+    num_shots: int = 1024,
+    program_format: mqt.core.qdmi.ProgramFormat | None = None,
+    custom1: str | bool | float | bytes | None = None,
+    custom2: str | bool | float | bytes | None = None,
+    custom3: str | bool | float | bytes | None = None,
+    custom4: str | bool | float | bytes | None = None,
+    custom5: str | bool | float | bytes | None = None,
+    options: CompilationOptions | None = None,
+) -> mqt.core.qdmi.Job:
+    """Compile source or submit a compiled program to a device.
+
+    ``target`` accepts a registered device ID or an open device.
     """

@@ -8,19 +8,19 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
 
-#include <llvm/ADT/SmallVector.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/IR/Attributes.h>
-#include <mlir/IR/BuiltinAttributes.h>
-#include <mlir/IR/Matchers.h>
-#include <mlir/IR/OpDefinition.h>
-#include <mlir/IR/Operation.h>
-#include <mlir/IR/Value.h>
-#include <mlir/Interfaces/SideEffectInterfaces.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
+#include "mlir/IR/Attributes.h"
+#include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/Matchers.h"
+#include "mlir/IR/OpDefinition.h"
+#include "mlir/IR/Operation.h"
+#include "mlir/IR/Value.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
+
+#include "llvm/ADT/SmallVector.h"
 
 #include <optional>
 
@@ -41,11 +41,11 @@ std::optional<double> attributeToDouble(Attribute attr) {
 }
 
 std::optional<double> valueToDouble(Value value) {
-  auto constantOp = value.getDefiningOp<arith::ConstantOp>();
-  if (!constantOp) {
+  Attribute attr;
+  if (!matchPattern(value, m_Constant(&attr))) {
     return std::nullopt;
   }
-  return attributeToDouble(constantOp.getValue());
+  return attributeToDouble(attr);
 }
 
 std::optional<Attribute>
@@ -91,6 +91,10 @@ valueToConstantAttr(Value value,
 }
 
 std::optional<Attribute> valueToConstantAttr(Value value) {
+  Attribute literal;
+  if (matchPattern(value, m_Constant(&literal))) {
+    return literal;
+  }
   DenseMap<Value, std::optional<Attribute>> cache;
   return valueToConstantAttr(value, cache);
 }

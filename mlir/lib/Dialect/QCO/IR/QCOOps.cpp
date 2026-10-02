@@ -8,33 +8,59 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
 
-#include "mlir/Dialect/MQT/Utils/Modifiers.h"
-#include "mlir/Dialect/MQT/Utils/Parameters.h"
-#include "mlir/Dialect/QCO/IR/QCODialect.h" // IWYU pragma: associated
+#include "mqt/Dialect/MQT/Utils/Modifiers.h"
+#include "mqt/Dialect/MQT/Utils/Parameters.h"
+#include "mqt/Dialect/QCO/IR/QCODialect.h" // IWYU pragma: associated
 
-#include <llvm/ADT/STLExtras.h>
-#include <mlir/IR/Block.h>
-#include <mlir/IR/BuiltinAttributes.h>
-#include <mlir/IR/OpImplementation.h>
-#include <mlir/IR/Operation.h>
-#include <mlir/IR/OperationSupport.h>
-#include <mlir/IR/Region.h>
-#include <mlir/IR/ValueRange.h>
-#include <mlir/Support/LLVM.h>
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/IR/Block.h"
+#include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/DialectImplementation.h" // IWYU pragma: keep (template instantiations)
+#include "mlir/IR/OpImplementation.h"
+#include "mlir/IR/Operation.h"
+#include "mlir/IR/OperationSupport.h"
+#include "mlir/IR/Region.h"
+#include "mlir/IR/ValueRange.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Transforms/InliningUtils.h"
+
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/TypeSwitch.h" // IWYU pragma: keep (template instantiations)
 
 #include <cstddef>
 #include <cstdint>
 
-// The following headers are needed for some template instantiations.
-// IWYU pragma: begin_keep
-#include <llvm/ADT/TypeSwitch.h>
-#include <mlir/IR/DialectImplementation.h>
-// IWYU pragma: end_keep
-
 using namespace mlir;
 using namespace mlir::qco;
+
+namespace {
+
+struct QCOInlinerInterface final : DialectInlinerInterface {
+  using DialectInlinerInterface::DialectInlinerInterface;
+
+  bool isLegalToInline(Operation* call, Operation* callable,
+                       bool /*wouldBeCloned*/) const final {
+    auto callee = dyn_cast<func::FuncOp>(callable);
+    return isa<CallOp>(call) && callee && !callee.getNoInline();
+  }
+
+  bool isLegalToInline(Region* destination, Region* source,
+                       bool /*wouldBeCloned*/,
+                       IRMapping& /*valueMapping*/) const final {
+    return destination->hasOneBlock() && source->hasOneBlock();
+  }
+
+  bool isLegalToInline(Operation* /*operation*/, Region* /*destination*/,
+                       bool /*wouldBeCloned*/,
+                       IRMapping& /*valueMapping*/) const final {
+    return true;
+  }
+};
+
+} // namespace
 
 static bool isQCOLinearType(Type type) {
   if (isa<QubitType>(type)) {
@@ -168,8 +194,10 @@ ParseResult IfOp::parse(::mlir::OpAsmParser& parser,
   }
 
   llvm::copy(
-      ArrayRef<int32_t>({static_cast<int32_t>(numClassicalResults),
-                         static_cast<int32_t>(numLinearResults)}),
+      ArrayRef<int32_t>({
+          static_cast<int32_t>(numClassicalResults),
+          static_cast<int32_t>(numLinearResults),
+      }),
       result.getOrAddProperties<IfOp::Properties>().resultSegmentSizes.begin());
 
   return success();
@@ -216,7 +244,7 @@ LogicalResult YieldOp::verify() {
       .Case<IfOp, IndexSwitchOp, InvOp, PowOp>([&](auto parent) {
         llvm::append_range(expectedTypes, parent.getResultTypes());
       })
-      .Case<CtrlOp>([&](CtrlOp parent) {
+      .Case([&](CtrlOp parent) {
         llvm::append_range(expectedTypes, parent.getTargetsOut().getTypes());
       })
       .Default([&](Operation*) { validParent = false; });
@@ -412,8 +440,10 @@ ParseResult IndexSwitchOp::parse(::mlir::OpAsmParser& parser,
 
   const auto numLinearResults = linearResultTypes.size();
   const auto numClassicalResults = result.types.size() - numLinearResults;
-  llvm::copy(ArrayRef<int32_t>({static_cast<int32_t>(numClassicalResults),
-                                static_cast<int32_t>(numLinearResults)}),
+  llvm::copy(ArrayRef<int32_t>({
+                 static_cast<int32_t>(numClassicalResults),
+                 static_cast<int32_t>(numLinearResults),
+             }),
              result.getOrAddProperties<IndexSwitchOp::Properties>()
                  .resultSegmentSizes.begin());
 
@@ -427,9 +457,8 @@ void IndexSwitchOp::print(OpAsmPrinter& p) {
   p.printOptionalArrowTypeList(getResultTypes());
 
   // Print attributes (excluding cases which we handle specially)
-  p.printOptionalAttrDictWithKeyword(
-      getOperation()->getAttrs(),
-      /*elidedAttrs=*/{"cases", "resultSegmentSizes"});
+  p.printOptionalAttrDict(getOperation()->getAttrs(),
+                          /*elidedAttrs=*/{"cases", "resultSegmentSizes"});
 
   // Print case regions
   const auto cases = getCases();
@@ -479,21 +508,23 @@ void IndexSwitchOp::print(OpAsmPrinter& p) {
 // Dialect
 //===----------------------------------------------------------------------===//
 
-#include "mlir/Dialect/QCO/IR/QCOOpsDialect.cpp.inc"
+#include "mqt/Dialect/QCO/IR/QCOOpsDialect.cpp.inc"
 
 void QCODialect::initialize() {
   // NOLINTNEXTLINE(clang-analyzer-core.StackAddressEscape)
   addTypes<
 #define GET_TYPEDEF_LIST
-#include "mlir/Dialect/QCO/IR/QCOOpsTypes.cpp.inc"
+#include "mqt/Dialect/QCO/IR/QCOOpsTypes.cpp.inc"
 
       >();
 
   addOperations<
 #define GET_OP_LIST
-#include "mlir/Dialect/QCO/IR/QCOOps.cpp.inc"
+#include "mqt/Dialect/QCO/IR/QCOOps.cpp.inc"
 
       >();
+
+  addInterfaces<QCOInlinerInterface>();
 }
 
 //===----------------------------------------------------------------------===//
@@ -501,7 +532,7 @@ void QCODialect::initialize() {
 //===----------------------------------------------------------------------===//
 
 #define GET_TYPEDEF_CLASSES
-#include "mlir/Dialect/QCO/IR/QCOOpsTypes.cpp.inc"
+#include "mqt/Dialect/QCO/IR/QCOOpsTypes.cpp.inc"
 
 //===----------------------------------------------------------------------===//
 // Interfaces
@@ -512,11 +543,11 @@ LogicalResult mlir::qco::verifyUnitaryOpInterface(Operation* op) {
       op, cast<UnitaryOpInterface>(op).getParameters());
 }
 
-#include "mlir/Dialect/QCO/IR/QCOInterfaces.cpp.inc"
+#include "mqt/Dialect/QCO/IR/QCOInterfaces.cpp.inc"
 
 //===----------------------------------------------------------------------===//
 // Operations
 //===----------------------------------------------------------------------===//
 
 #define GET_OP_CLASSES
-#include "mlir/Dialect/QCO/IR/QCOOps.cpp.inc"
+#include "mqt/Dialect/QCO/IR/QCOOps.cpp.inc"

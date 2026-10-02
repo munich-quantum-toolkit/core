@@ -10,19 +10,29 @@
 
 #pragma once
 
-#include "mlir/Compiler/Programs.h"
-#include "mlir/Compiler/Target.h"
+#include "mqt/Compiler/Programs.h"
+#include "mqt/Compiler/Target.h"
 
-#include <nanobind/nanobind.h>
+#include "nanobind/nanobind.h"
+
+#include <optional>
+#include <string>
 
 namespace mqt::bindings::qiskit {
 
 namespace nb = nanobind;
 
-/** Import a Qiskit QuantumCircuit into a newly owned QC program. */
+/// Import a Qiskit QuantumCircuit into a newly owned QC program.
 [[nodiscard]] mlir::QCProgram importCircuit(nb::handle circuit);
 
-/** Return a new Qiskit QuantumCircuit, optionally for a compiler target. */
+/// Snapshot a Qiskit Target or BackendV2 into an owned compiler target.
+/// Unrepresentable gates warn by default and fail when selected explicitly.
+/// Instructions without gate applicability are skipped by default.
+[[nodiscard]] mlir::CompilerTarget
+importTarget(nb::handle target, nb::handle operationNames,
+             const std::optional<std::string>& name);
+
+/// Return a new Qiskit QuantumCircuit, optionally for a compiler target.
 [[nodiscard]] nb::object
 exportCircuit(const mlir::QCProgram& program,
               const mlir::CompilerTarget* target = nullptr);

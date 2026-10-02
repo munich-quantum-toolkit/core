@@ -8,22 +8,28 @@
  * Licensed under the MIT License
  */
 
-#include "Support/IRVerification.h"
-#include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
+#include "mqt/Dialect/QCO/IR/QCODialect.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QCO/Transforms/Passes.h"
 
-#include <gtest/gtest.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/DialectRegistry.h>
-#include <mlir/IR/OwningOpRef.h>
-#include <mlir/IR/Value.h>
-#include <mlir/Pass/PassManager.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
-#include <mlir/Transforms/Passes.h>
+#include "Support/IRVerification.h"
+
+#include "gtest/gtest.h"
+
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/DialectRegistry.h"
+#include "mlir/IR/OwningOpRef.h"
+#include "mlir/IR/Value.h"
+#include "mlir/IR/Verifier.h"
+#include "mlir/Parser/Parser.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
+#include "mlir/Transforms/Passes.h"
 
 #include <numbers>
 #include <tuple>
@@ -53,9 +59,7 @@ protected:
     context.loadAllAvailableDialects();
   }
 
-  /**
-   * @brief Adds the measurementLiftingPass to the current context and runs it.
-   */
+  /// Adds the measurementLiftingPass to the current context and runs it.
   static LogicalResult runMeasurementLiftingPass(ModuleOp program) {
     PassManager pm(program.getContext());
     pm.addPass(createMeasurementLifting());
@@ -64,9 +68,7 @@ protected:
     return pm.run(program);
   }
 
-  /**
-   * @brief Removes dead gates, canonicalizes the program, and runs the passes.
-   */
+  /// Removes dead gates, canonicalizes the program, and runs the passes.
   static LogicalResult runCanonicalizerPass(ModuleOp program) {
     PassManager pm(program.getContext());
     pm.addPass(createRemoveDeadGates());
@@ -77,10 +79,39 @@ protected:
 
 } // namespace
 
-/**
- * @brief Test: Measurements on control bits can be lifted over the controlled
- * gates.
- */
+TEST_F(QCOMeasurementLiftingTest, MeasuresBlockArguments) {
+  auto parsed = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @direct(%q: !qco.qubit) -> (!qco.qubit, i1) {
+        %out, %bit = qco.measure %q : !qco.qubit
+        return %out, %bit : !qco.qubit, i1
+      }
+      func.func @hadamard(%q: !qco.qubit) -> (!qco.qubit, i1) {
+        %h = qco.h %q : !qco.qubit -> !qco.qubit
+        %out, %bit = qco.measure %h : !qco.qubit
+        return %out, %bit : !qco.qubit, i1
+      }
+    }
+  )mlir",
+                                            &context);
+  ASSERT_TRUE(parsed);
+  ASSERT_TRUE(succeeded(verify(*parsed)));
+  ASSERT_TRUE(succeeded(verifyLinearity(*parsed)));
+  PassManager pm(&context);
+  pm.addPass(createMeasurementLifting());
+  ASSERT_TRUE(succeeded(pm.run(*parsed)));
+  EXPECT_TRUE(succeeded(verify(*parsed)));
+  EXPECT_TRUE(succeeded(verifyLinearity(*parsed)));
+  auto direct = parsed->lookupSymbol<func::FuncOp>("direct");
+  auto measurement = *direct.getOps<MeasureOp>().begin();
+  EXPECT_EQ(measurement.getQubitIn(), direct.getArgument(0));
+  auto hadamard = parsed->lookupSymbol<func::FuncOp>("hadamard");
+  auto h = *hadamard.getOps<HOp>().begin();
+  EXPECT_EQ(h.getQubitIn(), hadamard.getArgument(0));
+}
+
+/// Test: Measurements on control bits can be lifted over the controlled
+/// gates.
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverPositiveControl) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
@@ -125,21 +156,19 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverPositiveControl) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/**
- * @brief Test: Tests that lifting also works if there are multiple controls in
- * a controlled gate.
- */
+/// Test: Tests that lifting also works if there are multiple controls in
+/// a controlled gate.
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverOneOfMultipleControls) {
-  programBuilder.initialize({programBuilder.getI1Type(),
-                             programBuilder.getI1Type(),
-                             programBuilder.getI1Type()});
+  programBuilder.initialize({
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+  });
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
   auto q2 = programBuilder.allocQubit();
 
-  SmallVector<Value> q12;
-  SmallVector<Value> q0Vec;
-  std::tie(q12, q0Vec) =
+  auto [q12, q0Vec] =
       programBuilder.ctrl({q1, q2}, {q0}, [&](ValueRange target) {
         return SmallVector<Value>{programBuilder.x(target[0])};
       });
@@ -169,9 +198,11 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverOneOfMultipleControls) {
 
   program = programBuilder.finalize({c0, c1, c2});
 
-  referenceBuilder.initialize({referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type()});
+  referenceBuilder.initialize({
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+  });
   auto r0 = referenceBuilder.allocQubit();
   auto r1 = referenceBuilder.allocQubit();
   auto r2 = referenceBuilder.allocQubit();
@@ -179,9 +210,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverOneOfMultipleControls) {
   Value cr1;
   std::tie(r1, cr1) = referenceBuilder.measure(r1);
 
-  SmallVector<Value> r12;
-  SmallVector<Value> r0Vec;
-  std::tie(r12, r0Vec) =
+  auto [r12, r0Vec] =
       referenceBuilder.ctrl({r1, r2}, {r0}, [&](ValueRange target) {
         return SmallVector<Value>{referenceBuilder.x(target[0])};
       });
@@ -215,10 +244,8 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverOneOfMultipleControls) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/**
- * @brief Test: Tests that multiple measurements that each target a control
- * qubit of a controlled gate can be lifted over the controlled gate.
- */
+/// Test: Tests that multiple measurements that each target a control
+/// qubit of a controlled gate can be lifted over the controlled gate.
 TEST_F(QCOMeasurementLiftingTest,
        liftMeasurementMultipleOverOneControlledGate) {
 
@@ -228,9 +255,7 @@ TEST_F(QCOMeasurementLiftingTest,
   auto q1 = programBuilder.allocQubit();
   auto q2 = programBuilder.allocQubit();
 
-  SmallVector<Value> q12;
-  SmallVector<Value> q0Vec;
-  std::tie(q12, q0Vec) =
+  auto [q12, q0Vec] =
       programBuilder.ctrl({q1, q2}, {q0}, [&](ValueRange target) {
         return SmallVector<Value>{programBuilder.x(target[0])};
       });
@@ -256,9 +281,7 @@ TEST_F(QCOMeasurementLiftingTest,
   std::tie(r1, cr1) = referenceBuilder.measure(r1);
   std::tie(r2, cr2) = referenceBuilder.measure(r2);
 
-  SmallVector<Value> r12;
-  SmallVector<Value> r0Vec;
-  std::tie(r12, r0Vec) =
+  auto [r12, r0Vec] =
       referenceBuilder.ctrl({r1, r2}, {r0}, [&](ValueRange target) {
         return SmallVector<Value>{referenceBuilder.x(target[0])};
       });
@@ -275,18 +298,15 @@ TEST_F(QCOMeasurementLiftingTest,
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/**
- * @brief Test: Tests that a measurement can also be lifted over the control of
- * a parametrized gate.
- */
+/// Test: Tests that a measurement can also be lifted over the control of
+/// a parametrized gate.
 TEST_F(QCOMeasurementLiftingTest,
        liftMeasurementOverControlledParametrizedGate) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
-  auto q0 = programBuilder.allocQubit();
-  auto q1 = programBuilder.allocQubit();
-
-  std::tie(q0, q1) = programBuilder.crx(std::numbers::pi / 2, q0, q1);
+  const auto q0Input = programBuilder.allocQubit();
+  const auto q1Input = programBuilder.allocQubit();
+  auto [q0, q1] = programBuilder.crx(std::numbers::pi / 2, q0Input, q1Input);
 
   Value c0;
   Value c1;
@@ -321,10 +341,8 @@ TEST_F(QCOMeasurementLiftingTest,
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/**
- * @brief Test: Tests lifting a measurement over a single X (anti-diagonal)
- * gate.
- */
+/// Test: Tests lifting a measurement over a single X (anti-diagonal)
+/// gate.
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverSingleX) {
 
   programBuilder.initialize({programBuilder.getI1Type()});
@@ -355,10 +373,8 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverSingleX) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/**
- * @brief Test: Tests lifting a measurement over a single Y (anti-diagonal)
- * gate.
- */
+/// Test: Tests lifting a measurement over a single Y (anti-diagonal)
+/// gate.
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverSingleY) {
   programBuilder.initialize({programBuilder.getI1Type()});
   auto q = programBuilder.allocQubit();
@@ -385,9 +401,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverSingleY) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/**
- * @brief Test: Tests lifting a measurement over different diagonal phase-gates.
- */
+/// Test: Tests lifting a measurement over different diagonal phase-gates.
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverPhaseGates) {
   programBuilder.initialize({programBuilder.getI1Type()});
   auto q = programBuilder.allocQubit();
@@ -405,9 +419,8 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverPhaseGates) {
   program = programBuilder.finalize({c});
 
   referenceBuilder.initialize({referenceBuilder.getI1Type()});
-  auto r = referenceBuilder.allocQubit();
-  Value cr;
-  std::tie(r, cr) = referenceBuilder.measure(r);
+  const auto rInput = referenceBuilder.allocQubit();
+  auto [r, cr] = referenceBuilder.measure(rInput);
   referenceBuilder.sink(r);
   reference = referenceBuilder.finalize({cr});
 
@@ -418,10 +431,8 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverPhaseGates) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/**
- * @brief Test: An RZ immediately before a measurement is removed even when the
- * measured qubit remains observable afterward.
- */
+/// Test: An RZ immediately before a measurement is removed even when the
+/// measured qubit remains observable afterward.
 TEST_F(QCOMeasurementLiftingTest, removeRZBeforeObservedMeasurement) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
@@ -437,9 +448,8 @@ TEST_F(QCOMeasurementLiftingTest, removeRZBeforeObservedMeasurement) {
 
   referenceBuilder.initialize(
       {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
-  auto r = referenceBuilder.h(referenceBuilder.allocQubit());
-  Value referenceFirstOutcome;
-  std::tie(r, referenceFirstOutcome) = referenceBuilder.measure(r);
+  const auto rInput = referenceBuilder.h(referenceBuilder.allocQubit());
+  auto [r, referenceFirstOutcome] = referenceBuilder.measure(rInput);
   r = referenceBuilder.h(r);
   Value referenceSecondOutcome;
   std::tie(r, referenceSecondOutcome) = referenceBuilder.measure(r);
@@ -453,9 +463,7 @@ TEST_F(QCOMeasurementLiftingTest, removeRZBeforeObservedMeasurement) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/**
- * @brief Test: Tests lifting a measurement over multiple anti-diagonal gates.
- */
+/// Test: Tests lifting a measurement over multiple anti-diagonal gates.
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverMultipleXY) {
   programBuilder.initialize({programBuilder.getI1Type()});
   auto q = programBuilder.allocQubit();
@@ -467,9 +475,8 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverMultipleXY) {
   program = programBuilder.finalize({c});
 
   referenceBuilder.initialize({referenceBuilder.getI1Type()});
-  auto r = referenceBuilder.allocQubit();
-  Value cr;
-  std::tie(r, cr) = referenceBuilder.measure(r);
+  const auto rInput = referenceBuilder.allocQubit();
+  auto [r, cr] = referenceBuilder.measure(rInput);
   referenceBuilder.sink(r);
   reference = referenceBuilder.finalize({cr});
 
@@ -480,16 +487,13 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverMultipleXY) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/**
- * @brief Test: Tests lifting a measurement over multiple anti-diagonal and
- * controlled gates.
- */
+/// Test: Tests lifting a measurement over multiple anti-diagonal and
+/// controlled gates.
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverXAndControlledGates) {
   programBuilder.initialize({programBuilder.getI1Type()});
-  auto q0 = programBuilder.allocQubit();
-  auto q1 = programBuilder.allocQubit();
-
-  std::tie(q0, q1) = programBuilder.cy(q0, q1);
+  const auto q0Input = programBuilder.allocQubit();
+  const auto q1Input = programBuilder.allocQubit();
+  auto [q0, q1] = programBuilder.cy(q0Input, q1Input);
   q0 = programBuilder.x(q0);
   std::tie(q0, q1) = programBuilder.cy(q0, q1);
   q0 = programBuilder.x(q0);
@@ -523,16 +527,13 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverXAndControlledGates) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/**
- * @brief Test: Tests lifting a measurement over a controlled diagonal gate.
- */
+/// Test: Tests lifting a measurement over a controlled diagonal gate.
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverDiagonalGateInControl) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
-  auto q0 = programBuilder.allocQubit();
-  auto q1 = programBuilder.allocQubit();
-
-  std::tie(q0, q1) = programBuilder.cz(q0, q1);
+  const auto q0Input = programBuilder.allocQubit();
+  const auto q1Input = programBuilder.allocQubit();
+  auto [q0, q1] = programBuilder.cz(q0Input, q1Input);
 
   Value c0;
   Value c1;
@@ -564,16 +565,14 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverDiagonalGateInControl) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/**
- * @brief Test: A controlled diagonal gate is preserved when lifting a target
- * measurement because it can kick phase back to the control.
- */
+/// Test: A controlled diagonal gate is preserved when lifting a target
+/// measurement because it can kick phase back to the control.
 TEST_F(QCOMeasurementLiftingTest, preserveControlledPhaseKickback) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
-  auto control = programBuilder.h(programBuilder.allocQubit());
-  auto target = programBuilder.x(programBuilder.allocQubit());
-  std::tie(control, target) = programBuilder.cz(control, target);
+  const auto controlInput = programBuilder.h(programBuilder.allocQubit());
+  const auto targetInput = programBuilder.x(programBuilder.allocQubit());
+  auto [control, target] = programBuilder.cz(controlInput, targetInput);
 
   Value targetOutcome;
   std::tie(target, targetOutcome) = programBuilder.measure(target);
@@ -587,10 +586,9 @@ TEST_F(QCOMeasurementLiftingTest, preserveControlledPhaseKickback) {
   referenceBuilder.initialize(
       {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
   auto referenceControl = referenceBuilder.h(referenceBuilder.allocQubit());
-  auto referenceTarget = referenceBuilder.allocQubit();
-  Value rawTargetOutcome;
-  std::tie(referenceTarget, rawTargetOutcome) =
-      referenceBuilder.measure(referenceTarget);
+  const auto referenceTargetInput = referenceBuilder.allocQubit();
+  auto [referenceTarget, rawTargetOutcome] =
+      referenceBuilder.measure(referenceTargetInput);
   referenceTarget = referenceBuilder.x(referenceTarget);
   std::tie(referenceControl, referenceTarget) =
       referenceBuilder.cz(referenceControl, referenceTarget);
@@ -598,7 +596,7 @@ TEST_F(QCOMeasurementLiftingTest, preserveControlledPhaseKickback) {
   Value referenceControlOutcome;
   std::tie(referenceControl, referenceControlOutcome) =
       referenceBuilder.measure(referenceControl);
-  const auto trueConstant = referenceBuilder.boolConstant(true);
+  auto trueConstant = referenceBuilder.boolConstant(true);
   auto referenceTargetOutcome =
       arith::XOrIOp::create(referenceBuilder, referenceBuilder.getLoc(),
                             rawTargetOutcome, trueConstant);
@@ -613,10 +611,8 @@ TEST_F(QCOMeasurementLiftingTest, preserveControlledPhaseKickback) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/**
- * @brief Test: Tests that a measurement is not lifted over a controlled
- * sequence gate if there are multiple gates inside the control block.
- */
+/// Test: Tests that a measurement is not lifted over a controlled
+/// sequence gate if there are multiple gates inside the control block.
 TEST_F(QCOMeasurementLiftingTest, dontLiftMeasurementMultipleGatesInControl) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), referenceBuilder.getI1Type()});
@@ -660,9 +656,7 @@ TEST_F(QCOMeasurementLiftingTest, dontLiftMeasurementMultipleGatesInControl) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/**
- * @brief Test: Tests lifting a measurement over an inverted phase gate.
- */
+/// Test: Tests lifting a measurement over an inverted phase gate.
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverInvertedPhaseGates) {
   programBuilder.initialize({programBuilder.getI1Type()});
   auto q = programBuilder.allocQubit();
@@ -676,9 +670,8 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverInvertedPhaseGates) {
   program = programBuilder.finalize({c});
 
   referenceBuilder.initialize({referenceBuilder.getI1Type()});
-  auto r = referenceBuilder.allocQubit();
-  Value cr;
-  std::tie(r, cr) = referenceBuilder.measure(r);
+  const auto rInput = referenceBuilder.allocQubit();
+  auto [r, cr] = referenceBuilder.measure(rInput);
   referenceBuilder.sink(r);
   reference = referenceBuilder.finalize({cr});
 

@@ -8,9 +8,8 @@
  * Licensed under the MIT License
  */
 
-/** @file MemoryManagerStatistics.hpp
- * @brief Memory-manager statistics for decision-diagram packages.
- */
+/// @file MemoryManagerStatistics.hpp
+/// Memory-manager statistics for decision-diagram packages.
 
 #pragma once
 
@@ -21,15 +20,11 @@
 
 namespace dd {
 
-/**
- * @brief A utility class for storing statistics of a memory manager
- */
+/// A utility class for storing statistics of a memory manager
 struct MemoryManagerStatistics final : Statistics {
 
-  /**
-   * @brief Construct a new Memory Manager Statistics object
-   * @param entrySize The size of a single entry
-   */
+  /// Construct a new Memory Manager Statistics object
+  /// @param entrySize The size of a single entry
   explicit MemoryManagerStatistics(const std::size_t entrySize)
       : entrySize_(entrySize) {}
 

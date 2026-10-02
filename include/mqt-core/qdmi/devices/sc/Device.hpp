@@ -8,9 +8,8 @@
  * Licensed under the MIT License
  */
 
-/** @file Device.hpp
- * @brief The MQT QDMI device implementation for superconducting devices.
- */
+/// @file Device.hpp
+/// The MQT QDMI device implementation for superconducting devices.
 
 #pragma once
 
@@ -20,6 +19,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -48,9 +48,12 @@ struct MQT_SC_QDMI_Operation_impl_d {
   std::string name;
   size_t numParameters = 0;
   size_t numQubits = 0;
+  /// Sorted lexicographically by site ID for lookup.
   std::vector<std::vector<MQT_SC_QDMI_Site>> supportedSites;
+  /// Supported tuples in their configured order for QDMI queries.
   std::vector<MQT_SC_QDMI_Site> flattenedSites;
   Calibration defaults;
+  /// Sorted by the same tuple order as supportedSites.
   std::vector<std::pair<std::vector<MQT_SC_QDMI_Site>, Calibration>> overrides;
 
   int queryProperty(size_t numSites, const MQT_SC_QDMI_Site* sites,
@@ -93,6 +96,7 @@ struct MQT_SC_QDMI_Device_Session_impl_d {
   std::vector<std::pair<MQT_SC_QDMI_Site, MQT_SC_QDMI_Site>> couplingMap;
   std::vector<std::unique_ptr<MQT_SC_QDMI_Operation_impl_d>> operationStorage;
   std::vector<MQT_SC_QDMI_Operation> operations;
+  std::mutex jobsMutex;
   std::unordered_map<MQT_SC_QDMI_Device_Job,
                      std::unique_ptr<MQT_SC_QDMI_Device_Job_impl_d>>
       jobs;

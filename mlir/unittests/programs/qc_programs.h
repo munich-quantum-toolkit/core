@@ -10,14 +10,20 @@
 
 #pragma once
 
-#include <mlir/IR/Value.h>
-#include <mlir/Support/LLVM.h>
+#include "mlir/IR/Value.h"
+#include "mlir/Support/LLVM.h"
 
 namespace mlir::qc {
 class QCProgramBuilder;
 
 /// Creates an empty QC Program.
 Value emptyQC(QCProgramBuilder& b);
+
+/// Calls a reusable unitary rotation.
+Value reusableUnitaryFunction(QCProgramBuilder& b);
+
+/// Calls a reusable reset function.
+Value reusableResetFunction(QCProgramBuilder& b);
 
 // --- Qubit Management ----------------------------------------------------- //
 
@@ -187,7 +193,7 @@ Value threeQubitsOneIdentity(QCProgramBuilder& b);
 /// Creates a multi-controlled identity gate with multiple control qubits.
 Value multipleControlledIdentity(QCProgramBuilder& b);
 
-/// Creates an barrier gate on a single qubit in a two-qubit register.
+/// Creates a barrier operation on a single qubit in a two-qubit register.
 Value twoQubitsOneBarrier(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled identity gate.
@@ -302,8 +308,8 @@ Value inverseMultipleControlledZ(QCProgramBuilder& b);
 /// Creates a circuit with pow(0.5) wrapping a Z gate (folds to P(π/2) = S).
 Value powHalfZ(QCProgramBuilder& b);
 
-/// Creates a circuit with pow(1.5) wrapping a Z gate.
-/// Exercises normalizeAngle theta -= twoPi (1.5π normalises to -π/2 → sdg).
+/// Creates a circuit with pow(1.5) wrapping a Z gate. Exercises normalizeAngle
+/// `theta -= twoPi` (1.5π normalises to -π/2 → sdg).
 Value powThreeHalvesZ(QCProgramBuilder& b);
 
 /// Creates a circuit with pow(1/3) wrapping a Z gate (falls through to P gate).
@@ -699,12 +705,6 @@ Value nestedControlledU2(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled U2 gate.
 Value trivialControlledU2(QCProgramBuilder& b);
-
-/// Creates a circuit with an inverse modifier applied to a U2 gate.
-Value inverseU2(QCProgramBuilder& b);
-
-/// Creates a circuit with an inverse modifier applied to a controlled U2 gate.
-Value inverseMultipleControlledU2(QCProgramBuilder& b);
 
 // --- UOp ------------------------------------------------------------------ //
 
@@ -1216,11 +1216,11 @@ Value negPowInvIswapRef(QCProgramBuilder& b);
 /// expands pow(p){SX} to gphase+rx inside ctrl.
 Value ctrlPowSx(QCProgramBuilder& b);
 
-/// Creates the reference for ctrlPowSx: controlled gphase(pi/12) and RX(pi/6).
+/// Creates the reference for ctrlPowSx: controlled gphase(π/12) and RX(π/6).
 Value ctrlPowSxRef(QCProgramBuilder& b);
 
 /// pow(2) with a two-unitary body (x; rxx). The optimizer leaves multi-unitary
-/// pow bodies untouched; checks verification and the QC↔QCO round-trip.
+/// pow bodies untouched; checks verification and the QC ↔ QCO round-trip.
 Value powTwo(QCProgramBuilder& b);
 
 /// Creates a circuit with a power modifier applied to two gates that act on

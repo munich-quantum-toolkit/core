@@ -8,37 +8,43 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
+#include "mqt/Dialect/CBit/IR/CBitDialect.h"
+#include "mqt/Dialect/CBit/IR/CBitOps.h"
+#include "mqt/Dialect/MQT/Transforms/Passes.h"
+#include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
+#include "mqt/Dialect/QC/IR/QCDialect.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
+#include "mqt/Dialect/QIR/Builder/QIRProgramBuilder.h"
+#include "mqt/Dialect/QIR/Utils/QIRUtils.h"
+#include "mqt/Support/Passes.h"
+
 #include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
-#include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
-#include "mlir/Dialect/MQT/Transforms/Passes.h"
-#include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
-#include "mlir/Dialect/QC/IR/QCDialect.h"
-#include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
-#include "mlir/Dialect/QIR/Utils/QIRUtils.h"
-#include "mlir/Support/Passes.h"
 #include "qc_programs.h"
 #include "qir_programs.h"
 
-#include <gtest/gtest.h>
-#include <llvm/Support/raw_ostream.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
-#include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
-#include <mlir/Dialect/LLVMIR/LLVMTypes.h>
-#include <mlir/Dialect/Math/IR/Math.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/IR/BuiltinTypes.h>
-#include <mlir/IR/Diagnostics.h>
-#include <mlir/IR/DialectRegistry.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/Verifier.h>
-#include <mlir/Pass/PassManager.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
+#include "gtest/gtest.h"
+
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/LLVMIR/LLVMTypes.h"
+#include "mlir/Dialect/Math/IR/Math.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/Diagnostics.h"
+#include "mlir/IR/DialectRegistry.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/Verifier.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
+
+#include "llvm/Support/raw_ostream.h"
 
 #include <cstddef>
 #include <iosfwd>
@@ -84,11 +90,11 @@ protected:
 
 } // namespace
 
-static LogicalResult runQCToQIRBaseConversion(ModuleOp module) {
-  PassManager pm(module.getContext());
+static LogicalResult runQCToQIRBaseConversion(ModuleOp moduleOp) {
+  PassManager pm(moduleOp.getContext());
   pm.addPass(mlir::mqt::createUnrollModifiers());
   pm.addPass(createQCToQIRBase());
-  return pm.run(module);
+  return pm.run(moduleOp);
 }
 
 static void expectFollowingXIsUncontrolled(
@@ -99,8 +105,8 @@ static void expectFollowingXIsUncontrolled(
                       LLVM::LLVMDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  const auto control = builder.allocQubit();
-  const auto target = builder.allocQubit();
+  auto control = builder.allocQubit();
+  auto target = builder.allocQubit();
   buildModifier(builder, control, target);
   builder.x(target);
   auto moduleOp = builder.finalize();
@@ -119,49 +125,294 @@ static void expectFollowingXIsUncontrolled(
   EXPECT_EQ(controlledXCalls, 0);
 }
 
+TEST(QCToQIRBaseNativeTest, RejectsExplicitRuntimeAssertions) {
+  MLIRContext context;
+  context.loadDialect<arith::ArithDialect, func::FuncDialect,
+                      cf::ControlFlowDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  cf::AssertOp::create(builder, builder.getUnknownLoc(),
+                       builder.boolConstant(false),
+                       "unsupported runtime precondition");
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  bool diagnosed = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    diagnosed |= diagnostic.str().find("cf.assert") != std::string::npos;
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQIRBaseConversion(*moduleOp)));
+  EXPECT_TRUE(diagnosed);
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsMeasurementFeedbackDuringConversion) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, scf::SCFDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto control = builder.allocQubit();
+  auto target = builder.allocQubit();
+  builder.h(control);
+  auto result = builder.measure(control);
+  builder.scfIf(result, [&] { builder.x(target); });
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(failed(runQCToQIRBaseConversion(*moduleOp)));
+}
+
 TEST(QCToQIRBaseNativeTest, EmptyCtrlDoesNotControlFollowingGate) {
   expectFollowingXIsUncontrolled(
-      [](qc::QCProgramBuilder& builder, const Value control,
-         const Value target) { builder.ctrl(control, target, [](Value) {}); });
+      [](qc::QCProgramBuilder& builder, Value control, Value target) {
+        builder.ctrl(control, target, [](Value) {});
+      });
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsReorderedOverlappingOutputStores) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto q0 = builder.allocQubit();
+  auto q1 = builder.allocQubit();
+  auto reg = builder.allocClassicalBitRegister(1);
+  builder.x(q1);
+  auto zero = builder.measure(q0);
+  auto one = builder.measure(q1);
+  builder.storeClassicalBit(one, reg, 0);
+  builder.storeClassicalBit(zero, reg, 0);
+  builder.retype(reg.getType());
+  auto module = builder.finalize(reg);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  bool diagnosed = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    diagnosed |=
+        diagnostic.str().find("cannot fuse this measurement/store pair") !=
+        std::string::npos;
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQIRBaseConversion(*module)));
+  EXPECT_TRUE(diagnosed);
+  EXPECT_TRUE(succeeded(verify(*module)));
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsMultiBlockEntryFunctionWithoutMutation) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(moduleOp);
+  auto entryPoint = moduleOp->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(entryPoint);
+  auto* extraBlock = &entryPoint.getBody().emplaceBlock();
+  builder.setInsertionPointToEnd(extraBlock);
+  auto status =
+      arith::ConstantIntOp::create(builder, builder.getUnknownLoc(), 0, 64);
+  func::ReturnOp::create(builder, builder.getUnknownLoc(), status.getResult());
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    std::string message;
+    llvm::raw_string_ostream stream(message);
+    diagnostic.print(stream);
+    sawExpectedDiagnostic |= StringRef(message).contains(
+        "QIR Base Profile requires a single-block entry function");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQIRBaseConversion(*moduleOp)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+  EXPECT_EQ(entryPoint.getBlocks().size(), 2);
+}
+
+static void expectMeasurementOrderRejected(
+    function_ref<Value(qc::QCProgramBuilder&)> buildProgram,
+    StringRef expectedDiagnostic =
+        "QIR Base Profile forbids using a qubit after measurement") {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, memref::MemRefDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto result = buildProgram(builder);
+  builder.retype(result.getType());
+  auto moduleOp = builder.finalize(result);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    std::string message;
+    llvm::raw_string_ostream stream(message);
+    diagnostic.print(stream);
+    sawExpectedDiagnostic |= StringRef(message).contains(expectedDiagnostic);
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQIRBaseConversion(*moduleOp)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsGateAfterMeasurementOnSameQubit) {
+  expectMeasurementOrderRejected([](qc::QCProgramBuilder& builder) {
+    auto qubit = builder.allocQubit();
+    auto result = builder.measure(qubit);
+    builder.x(qubit);
+    return result;
+  });
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsGateWithMeasuredControl) {
+  expectMeasurementOrderRejected([](qc::QCProgramBuilder& builder) {
+    auto control = builder.allocQubit();
+    auto target = builder.allocQubit();
+    auto result = builder.measure(control);
+    builder.cx(control, target);
+    return result;
+  });
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsGateOnMeasuredStaticAlias) {
+  expectMeasurementOrderRejected([](qc::QCProgramBuilder& builder) {
+    auto qubit = builder.staticQubit(0);
+    auto result = builder.measure(qubit);
+    auto alias = qc::StaticOp::create(builder, 0).getQubit();
+    builder.x(alias);
+    return result;
+  });
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsGateOnMeasuredRegisterElement) {
+  expectMeasurementOrderRejected([](qc::QCProgramBuilder& builder) {
+    auto qubits = builder.allocQubitRegister(2);
+    auto result = builder.measure(qubits[0]);
+    auto alias = builder.loadQubit(qubits.value, builder.indexConstant(0));
+    builder.x(alias);
+    return result;
+  });
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsRepeatedMeasurement) {
+  expectMeasurementOrderRejected([](qc::QCProgramBuilder& builder) {
+    auto qubit = builder.allocQubit();
+    builder.measure(qubit);
+    return builder.measure(qubit);
+  });
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsRepeatedMeasurementToSameBit) {
+  expectMeasurementOrderRejected(qc::repeatedMeasurementToSameBit);
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsRepeatedMeasurementToDifferentBits) {
+  expectMeasurementOrderRejected([](qc::QCProgramBuilder& builder) {
+    return qc::repeatedMeasurementToDifferentBits(builder).front();
+  });
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsRuntimeQubitRegisterIndex) {
+  expectMeasurementOrderRejected(
+      [](qc::QCProgramBuilder& builder) {
+        auto qubits = builder.allocQubitRegister(2);
+        auto unknown = LLVM::UndefOp::create(builder, builder.getI64Type());
+        auto index = arith::IndexCastOp::create(builder, builder.getIndexType(),
+                                                unknown);
+        return builder.measure(builder.loadQubit(qubits.value, index));
+      },
+      "QIR Base Profile requires constant indices");
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsOutOfBoundsQubitRegisterIndex) {
+  for (const auto index : {-1, 2}) {
+    SCOPED_TRACE(index);
+    expectMeasurementOrderRejected(
+        [index](qc::QCProgramBuilder& builder) {
+          auto qubits = builder.allocQubitRegister(2);
+          return builder.measure(
+              builder.loadQubit(qubits.value, builder.indexConstant(index)));
+        },
+        "qubit-register index is out of bounds");
+  }
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsRepeatedMeasurementThroughRegisterAlias) {
+  expectMeasurementOrderRejected([](qc::QCProgramBuilder& builder) {
+    auto qubits = builder.allocQubitRegister(1);
+    builder.measure(qubits[0]);
+    return builder.measure(
+        builder.loadQubit(qubits.value, builder.indexConstant(0)));
+  });
+}
+
+TEST(QCToQIRBaseNativeTest, RegisterLoadsPreserveQubitIdentity) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, memref::MemRefDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto qubits = builder.allocQubitRegister(1);
+  builder.x(qubits[0]);
+  auto result = builder.measure(
+      builder.loadQubit(qubits.value, builder.indexConstant(0)));
+  builder.retype(result.getType());
+  auto moduleOp = builder.finalize(result);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQIRBaseConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  Value gateQubit;
+  Value measuredQubit;
+  moduleOp->walk([&](LLVM::CallOp call) {
+    if (call.getCallee() == qir::QIR_X) {
+      gateQubit = call.getOperand(0);
+    } else if (call.getCallee() == qir::QIR_MEASURE) {
+      measuredQubit = call.getOperand(0);
+    }
+  });
+  ASSERT_TRUE(gateQubit);
+  EXPECT_EQ(gateQubit, measuredQubit);
+}
+
+TEST(QCToQIRBaseNativeTest, AllowsGateAfterMeasurementOnIndependentQubit) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, memref::MemRefDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto qubits = builder.allocQubitRegister(2);
+  auto result = builder.measure(qubits[0]);
+  builder.x(qubits[1]);
+  builder.retype(result.getType());
+  auto moduleOp = builder.finalize(result);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQIRBaseConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  SmallVector<LLVM::CallOp> quantumCalls;
+  moduleOp->walk([&](LLVM::CallOp call) {
+    if (call.getCallee() == qir::QIR_X ||
+        call.getCallee() == qir::QIR_MEASURE) {
+      quantumCalls.push_back(call);
+    }
+  });
+  ASSERT_EQ(quantumCalls.size(), 2);
+  EXPECT_EQ(quantumCalls[0].getCallee(), qir::QIR_X);
+  EXPECT_EQ(quantumCalls[1].getCallee(), qir::QIR_MEASURE);
+  EXPECT_NE(quantumCalls[0].getOperand(0), quantumCalls[1].getOperand(0));
 }
 
 TEST(QCToQIRBaseNativeTest, ControlledBarrierDoesNotControlFollowingGate) {
-  expectFollowingXIsUncontrolled([](qc::QCProgramBuilder& builder,
-                                    const Value control, const Value target) {
-    builder.ctrl(control, target,
-                 [&](const Value bodyTarget) { builder.barrier(bodyTarget); });
-  });
-}
-
-TEST(QCToQIRBaseNativeTest, LowersControlFlowAssertions) {
-  MLIRContext context;
-  context
-      .loadDialect<qc::QCDialect, arith::ArithDialect, cf::ControlFlowDialect,
-                   func::FuncDialect, LLVM::LLVMDialect>();
-  qc::QCProgramBuilder builder(&context);
-  builder.initialize();
-  auto condition = LLVM::UndefOp::create(builder, builder.getI1Type());
-  cf::AssertOp::create(builder, condition, "runtime precondition");
-  auto module = builder.finalize();
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  ASSERT_TRUE(succeeded(runQCToQIRBaseConversion(*module)));
-  EXPECT_TRUE(succeeded(verify(*module)));
-
-  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>("abort"));
-  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>("puts"));
-  EXPECT_TRUE(module->lookupSymbol<LLVM::GlobalOp>("assert_msg"));
-  bool retainsAssertion = false;
-  bool hasConditionalBranch = false;
-  bool hasUnreachableFailure = false;
-  module->walk([&](Operation* operation) {
-    retainsAssertion |= isa<cf::AssertOp>(operation);
-    hasConditionalBranch |= isa<LLVM::CondBrOp>(operation);
-    hasUnreachableFailure |= isa<LLVM::UnreachableOp>(operation);
-  });
-  EXPECT_FALSE(retainsAssertion);
-  EXPECT_TRUE(hasConditionalBranch);
-  EXPECT_TRUE(hasUnreachableFailure);
+  expectFollowingXIsUncontrolled(
+      [](qc::QCProgramBuilder& builder, Value control, Value target) {
+        builder.ctrl(control, target,
+                     [&](Value bodyTarget) { builder.barrier(bodyTarget); });
+      });
 }
 
 TEST(QCToQIRBaseNativeTest, LowersPopulationCountThroughMathToLLVM) {
@@ -194,10 +445,10 @@ TEST(QCToQIRBaseNativeTest, SelectsControlledSpecializationsByArity) {
                       LLVM::LLVMDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  const auto control0 = builder.allocQubit();
-  const auto control1 = builder.allocQubit();
-  const auto control2 = builder.allocQubit();
-  const auto target = builder.allocQubit();
+  auto control0 = builder.allocQubit();
+  auto control1 = builder.allocQubit();
+  auto control2 = builder.allocQubit();
+  auto target = builder.allocQubit();
   builder.crx(0.25, control0, target);
   builder.mcrx(0.5, {control0, control1}, target);
   builder.mcrx(0.75, {control0, control1, control2}, target);
@@ -219,7 +470,7 @@ TEST(QCToQIRBaseNativeTest, RecordsReturnedRegisterMeasurement) {
                       LLVM::LLVMDialect, memref::MemRefDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  const auto q = builder.allocQubit();
+  auto q = builder.allocQubit();
   auto c = builder.allocClassicalBitRegister(1, "named_result");
   builder.measure(q, c, 0);
   builder.retype(c.getType());
@@ -239,12 +490,10 @@ TEST(QCToQIRBaseNativeTest, RecordsReturnedRegistersInResultOrder) {
                       LLVM::LLVMDialect, memref::MemRefDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  const auto firstQubit = builder.allocQubit();
-  const auto secondQubit = builder.allocQubit();
-  const auto firstRegister =
-      builder.allocClassicalBitRegister(1, "first_result");
-  const auto secondRegister =
-      builder.allocClassicalBitRegister(1, "second_result");
+  auto firstQubit = builder.allocQubit();
+  auto secondQubit = builder.allocQubit();
+  auto firstRegister = builder.allocClassicalBitRegister(1, "first_result");
+  auto secondRegister = builder.allocClassicalBitRegister(1, "second_result");
   builder.measure(firstQubit, firstRegister, 0);
   builder.measure(secondQubit, secondRegister, 0);
   builder.retype({secondRegister.getType(), firstRegister.getType()});
@@ -313,7 +562,7 @@ TEST(QCToQIRBaseNativeTest, RejectsNonMeasurementStoreAfterMeasurement) {
                       LLVM::LLVMDialect, memref::MemRefDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  const auto q = builder.allocQubit();
+  auto q = builder.allocQubit();
   auto c = builder.allocClassicalBitRegister(1);
   builder.measure(q, c, 0);
   builder.storeClassicalBit(builder.boolConstant(false), c, 0);
@@ -341,7 +590,7 @@ TEST(QCToQIRBaseNativeTest, RejectsUnsupportedIntegerMemref) {
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
   const auto type = MemRefType::get({1}, builder.getI8Type());
-  const auto memref = memref::AllocOp::create(builder, type).getResult();
+  auto memref = memref::AllocOp::create(builder, type).getResult();
   builder.retype(type);
   auto module = builder.finalize(memref);
   ASSERT_TRUE(module);
@@ -365,7 +614,7 @@ TEST(QCToQIRBaseNativeTest, RejectsDynamicClassicalRegisterIndex) {
                       LLVM::LLVMDialect, memref::MemRefDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  const auto q = builder.allocQubit();
+  auto q = builder.allocQubit();
   auto c = builder.allocClassicalBitRegister(1);
   auto unknown = LLVM::UndefOp::create(builder, builder.getI64Type());
   auto index = arith::IndexCastOp::create(builder, builder.getIndexType(),
@@ -915,14 +1164,6 @@ INSTANTIATE_TEST_SUITE_P(
             "SingleMeasurementToSingleBit",
             MQT_NAMED_BUILDER(qc::singleMeasurementToSingleBit),
             MQT_NAMED_BUILDER(qir::singleMeasurementToSingleBit)},
-        QCToQIRBaseTestCase{
-            "RepeatedMeasurementToSameBit",
-            MQT_NAMED_BUILDER(qc::repeatedMeasurementToSameBit),
-            MQT_NAMED_BUILDER(qir::repeatedMeasurementToSameBit)},
-        QCToQIRBaseTestCase{
-            "RepeatedMeasurementToDifferentBits",
-            MQT_NAMED_BUILDER(qc::repeatedMeasurementToDifferentBits),
-            MQT_NAMED_BUILDER(qir::repeatedMeasurementToDifferentBits)},
         QCToQIRBaseTestCase{
             "MultipleClassicalRegistersAndMeasurements",
             MQT_NAMED_BUILDER(qc::multipleClassicalRegistersAndMeasurements),

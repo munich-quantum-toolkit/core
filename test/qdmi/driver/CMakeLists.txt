@@ -40,12 +40,42 @@ if(TARGET MQT::CoreQDMIDriver)
 
   package_add_test(${TARGET_NAME} MQT::CoreQDMIDriver test_driver.cpp)
   target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMI)
+
+  set(DIAGNOSTIC_TARGET_NAME mqt-core-qdmi-driver-diagnostic-test)
+  set(diagnostic_config_file
+      "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/diagnostic-configured-device.json")
+  file(
+    GENERATE
+    OUTPUT "${diagnostic_config_file}"
+    CONTENT
+      "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n      {\"id\": \"broken.diagnostic\", \"library\": \"${CMAKE_CURRENT_BINARY_DIR}/missing-diagnostic-device-library\", \"prefix\": \"BROKEN\"}\n    ]\n  }\n}\n"
+  )
+  package_add_test(${DIAGNOSTIC_TARGET_NAME} MQT::CoreQDMIDriver test_driver_diagnostics.cpp)
+  target_compile_definitions(
+    ${DIAGNOSTIC_TARGET_NAME}
+    PRIVATE "MQT_CORE_QDMI_DIAGNOSTIC_CONFIG_FILE=\"${diagnostic_config_file}\"")
+
+  set(configured_devices
+      "      {\"id\": \"mqt.sc.default\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"prefix\": \"MQT_SC\"}"
+  )
+  set(test_device_libraries "std::pair{\"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"MQT_SC\"}")
+  if(TARGET MQT::CoreQDMI_DDSIM_Device)
+    string(
+      APPEND
+      configured_devices
+      ",\n      {\"id\": \"mqt.ddsim.default\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMI_DDSIM_Device>\", \"prefix\": \"MQT_DDSIM\"}"
+    )
+    string(APPEND test_device_libraries
+           ", std::pair{\"$<TARGET_FILE:MQT::CoreQDMI_DDSIM_Device>\", \"MQT_DDSIM\"}")
+    target_compile_definitions(${TARGET_NAME} PRIVATE MQT_CORE_QDMI_HAS_DDSIM_DEVICE)
+  endif()
+
   set(config_file "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/configured-devices.json")
   file(
     GENERATE
     OUTPUT "${config_file}"
     CONTENT
-      "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n      {\"id\": \"mqt.sc.default\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"prefix\": \"MQT_SC\"},\n      {\"id\": \"mqt.ddsim.default\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMI_DDSIM_Device>\", \"prefix\": \"MQT_DDSIM\"},\n      {\"id\": \"test.disabled\", \"enabled\": false},\n      {\"id\": \"broken.example\", \"library\": \"missing-device-library\", \"prefix\": \"BROKEN\"}\n    ]\n  }\n}\n"
+      "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n${configured_devices},\n      {\"id\": \"test.disabled\", \"enabled\": false},\n      {\"id\": \"broken.example\", \"library\": \"missing-device-library\", \"prefix\": \"BROKEN\"}\n    ]\n  }\n}\n"
   )
   file(READ "${PROJECT_SOURCE_DIR}/json/sc/mqt-core-qdmi-sc-device.json" custom_sc_json)
   string(REPLACE "MQT SC Default QDMI Device" "Custom SC Driver Device" custom_sc_json
@@ -61,16 +91,20 @@ if(TARGET MQT::CoreQDMIDriver)
     PRIVATE
       "MQT_CORE_QDMI_TEST_CONFIG_FILE=\"${config_file}\""
       "MQT_CORE_QDMI_METADATA_MANIFEST=\"${metadata_manifest_file}\""
-      "MQT_CORE_QDMI_SESSION_DEVICE=\"$<TARGET_FILE:mqt-core-qdmi-session-device>\""
+      "MQT_CORE_QDMI_SESSION_DEVICE=\"$<TARGET_FILE_DIR:${TARGET_NAME}>/$<TARGET_FILE_NAME:mqt-core-qdmi-session-device>\""
       "MQT_CORE_QDMI_CUSTOM_SC_FILE=\"${custom_sc_file}\""
       "MQT_CORE_QDMI_DEFAULT_SC_FILE=\"${PROJECT_SOURCE_DIR}/json/sc/mqt-core-qdmi-sc-device.json\""
       "MQT_CORE_QDMI_SC_LIBRARY=\"$<TARGET_FILE:MQT::CoreQDMIScDevice>\""
-      "TEST_DEVICE_LIBRARIES=std::array{ std::pair{\"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"MQT_SC\"}, std::pair{\"$<TARGET_FILE:MQT::CoreQDMI_DDSIM_Device>\", \"MQT_DDSIM\"} }"
-  )
+      "TEST_DEVICE_LIBRARIES=std::array{ ${test_device_libraries} }")
 
   mqt_copy_qdmi_runtime(${TARGET_NAME})
   mqt_copy_qdmi_runtime(${TARGET_NAME} mqt-core-qdmi-metadata-device)
   add_dependencies(${TARGET_NAME} mqt-core-qdmi-session-device)
+  add_custom_command(
+    TARGET ${TARGET_NAME}
+    POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:mqt-core-qdmi-session-device>"
+            "$<TARGET_FILE_DIR:${TARGET_NAME}>")
 
   set(imported_device_build_dir "${CMAKE_CURRENT_BINARY_DIR}/imported-device-consumer")
   set(imported_device_configure_command

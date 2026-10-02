@@ -1,8 +1,6 @@
-# This file has been generated from an external template. Please do not modify it directly.
-# Changes should be contributed to https://github.com/munich-quantum-toolkit/templates.
-
 name-template: "MQT Core $RESOLVED_VERSION Release"
 tag-template: "v$RESOLVED_VERSION"
+filter-by-commitish: true
 categories:
   - title: "⚛️ MQT Core IR"
     when:
@@ -24,10 +22,6 @@ categories:
     when:
       labels:
         - "QDMI"
-  - title: "🏼 MQT Core NA Package"
-    when:
-      labels:
-        - "NA"
   - title: "🚀 Features and Enhancements"
     when:
       labels:
@@ -85,7 +79,7 @@ categories:
       label: "patch"
   - type: "version-resolver"
     semver-increment: "patch"
-change-template: "- $TITLE ([#$NUMBER]($URL)) (**@$AUTHOR**)"
+change-template: "- $TITLE (#$NUMBER) (@$AUTHOR)"
 change-title-escapes: '\<*_&'
 
 template: |

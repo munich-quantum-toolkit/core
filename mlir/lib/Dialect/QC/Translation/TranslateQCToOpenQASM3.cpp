@@ -8,45 +8,58 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
+#include "mqt/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
 
-#include "mlir/Dialect/CBit/IR/CBitAttributes.h"
-#include "mlir/Dialect/CBit/IR/CBitDialect.h"
-#include "mlir/Dialect/CBit/IR/CBitOps.h"
-#include "mlir/Dialect/MQT/IR/MQTDialect.h"
-#include "mlir/Dialect/QC/IR/QCDialect.h"
-#include "mlir/Dialect/QC/IR/QCInterfaces.h"
-#include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Target/OpenQASM/GateCatalog.h"
+#include "mqt/Compiler/TargetEnvironment.h"
+#include "mqt/Dialect/CBit/IR/CBitAttributes.h"
+#include "mqt/Dialect/CBit/IR/CBitDialect.h"
+#include "mqt/Dialect/CBit/IR/CBitOps.h"
+#include "mqt/Dialect/MQT/IR/MQTAttributes.h"
+#include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/QC/IR/QCDialect.h"
+#include "mqt/Dialect/QC/IR/QCInterfaces.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
+#include "mqt/Dialect/QC/Translation/MeasurementStores.h"
+#include "mqt/Support/IntegerExpressions.h"
+#include "mqt/Target/OpenQASM/Frontend.h"
+#include "mqt/Target/OpenQASM/GateCatalog.h"
 
-#include <llvm/ADT/APInt.h>
-#include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallString.h>
-#include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/StringExtras.h>
-#include <llvm/ADT/StringSet.h>
-#include <llvm/ADT/StringSwitch.h>
-#include <llvm/Support/raw_ostream.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/Dialect/UB/IR/UBOps.h>
-#include <mlir/Dialect/Utils/StaticValueUtils.h>
-#include <mlir/IR/BuiltinAttributes.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/BuiltinTypes.h>
-#include <mlir/IR/Diagnostics.h>
-#include <mlir/IR/Operation.h>
-#include <mlir/IR/Value.h>
-#include <mlir/IR/Verifier.h>
-#include <mlir/IR/Visitors.h>
-#include <mlir/Interfaces/SideEffectInterfaces.h>
-#include <mlir/Support/IndentedOstream.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/WalkResult.h>
+#include "mlir/Analysis/CallGraph.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "mlir/Dialect/UB/IR/UBOps.h"
+#include "mlir/Dialect/Utils/StaticValueUtils.h"
+#include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/Diagnostics.h"
+#include "mlir/IR/Operation.h"
+#include "mlir/IR/SymbolTable.h"
+#include "mlir/IR/Value.h"
+#include "mlir/IR/Verifier.h"
+#include "mlir/IR/Visitors.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "mlir/Support/IndentedOstream.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/WalkResult.h"
+
+#include "llvm/ADT/APInt.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/MapVector.h"
+#include "llvm/ADT/SCCIterator.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringExtras.h"
+#include "llvm/ADT/StringSet.h"
+#include "llvm/ADT/StringSwitch.h"
+#include "llvm/Support/SaveAndRestore.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
 #include <array>
@@ -75,7 +88,7 @@ struct Resource {
   cbit::Initialization initialization = cbit::Initialization::Undefined;
 };
 
-struct ScalarOutput {
+struct ProgramOutput {
   Value value;
   std::string name;
   std::string kind;
@@ -90,41 +103,13 @@ struct GateCall {
 
 } // namespace
 
-[[nodiscard]] static bool isOpenQASMIdentifier(const StringRef value) {
-  if (value.empty() ||
-      (!llvm::isAlpha(value.front()) && value.front() != '_')) {
-    return false;
-  }
-  return llvm::all_of(value.drop_front(), [](const char character) {
-    return llvm::isAlnum(character) || character == '_';
-  });
-}
-
-[[nodiscard]] static bool isReservedOpenQASMIdentifier(const StringRef value) {
-  return llvm::StringSwitch<bool>(value)
-      .Cases("OPENQASM", "include", "input", "output", "const", true)
-      .Cases("let", "fixed", "gate", "def", "extern", true)
-      .Cases("defcalgrammar", "defcal", "cal", "opaque", "box", true)
-      .Cases("delay", "reset", "measure", "barrier", true)
-      .Cases("ctrl", "negctrl", "inv", "pow", true)
-      .Cases("if", "else", "while", "for", "in", true)
-      .Cases("break", "continue", "end", "return", true)
-      .Cases("switch", "case", "default", true)
-      .Cases("qubit", "qreg", "creg", "bit", "bool", true)
-      .Cases("int", "uint", "float", "angle", "complex", true)
-      .Cases("array", "duration", "stretch", "readonly", "mutable", true)
-      .Cases("sizeof", "durationof", "true", "false", true)
-      .Default(false);
-}
-
 [[nodiscard]] static bool isValidOutputName(const StringRef value) {
-  return isOpenQASMIdentifier(value) && !value.starts_with("_mqt_") &&
-         !isReservedOpenQASMIdentifier(value) &&
-         oq3::frontend::lookupGate(value) == nullptr;
+  return openqasm::frontend::isValidIdentifier(value) &&
+         !value.starts_with("_mqt_") &&
+         openqasm::frontend::lookupGate(value) == nullptr;
 }
 
-[[nodiscard]] static std::optional<int64_t>
-getConstantInteger(const Value value) {
+[[nodiscard]] static std::optional<int64_t> getConstantInteger(Value value) {
   return getConstantIntValue(value);
 }
 
@@ -132,12 +117,18 @@ namespace {
 
 class OpenQASMEmitter {
 public:
-  explicit OpenQASMEmitter(const ModuleOp moduleOp) : moduleOp(moduleOp) {}
+  explicit OpenQASMEmitter(ModuleOp moduleOp) : moduleOp(moduleOp) {}
 
   [[nodiscard]] FailureOr<std::string> emit() {
     if (failed(verify(moduleOp)) || failed(preflight()) ||
         failed(collectProgramShape())) {
       return failure();
+    }
+    measurementStores = findMeasurementStores(function);
+    for (auto gate : gateFunctions_) {
+      if (failed(emitGateDefinition(gate))) {
+        return failure();
+      }
     }
 
     std::string body;
@@ -149,6 +140,10 @@ public:
         failed(emitBlock(function.getBody().front()))) {
       return failure();
     }
+    if (outputs.empty()) {
+      bodyOutput.unindent();
+      bodyOutput << "}\n";
+    }
     bodyOutput.flush();
 
     std::string source;
@@ -156,14 +151,15 @@ public:
     sourceStream << "OPENQASM 3.1;\n"
                     "include \"stdgates.inc\";\n\n";
     emitFixedHelpers(sourceStream);
-    for (const auto& helper : compositeHelpers) {
-      sourceStream << helper << "\n";
+    for (const auto& definition : gateDefinitions_) {
+      sourceStream << definition << "\n";
     }
     sourceStream << body;
     return source;
   }
 
 private:
+  DenseMap<Operation*, cbit::StoreOp> measurementStores;
   ModuleOp moduleOp;
   func::FuncOp function;
   raw_indented_ostream* output = nullptr;
@@ -171,25 +167,39 @@ private:
   SmallVector<Value> resourceOrder;
   DenseMap<Value, std::string> valueNames;
   DenseSet<Value> returnedRegisters;
-  SmallVector<ScalarOutput> scalarOutputs;
+  SmallVector<ProgramOutput> outputs;
+  SmallVector<func::FuncOp> gateFunctions_;
+  DenseMap<Operation*, std::string> gateNames_;
+  SymbolTableCollection symbolTables_;
   llvm::StringSet<> usedNames;
   llvm::StringSet<> fixedHelpers;
-  SmallVector<std::string> compositeHelpers;
+  SmallVector<std::string> gateDefinitions_;
+  Operation* expressionConsumer = nullptr;
   size_t nextQubit = 0;
   size_t nextBit = 0;
   size_t nextScalar = 0;
   size_t nextLoop = 0;
   size_t nextHelper = 0;
+  size_t expressionNesting = 0;
+  size_t expressionWork = 0;
+  size_t numClassicalBits = 0;
+  bool supportsDispatch = true;
+
+  static constexpr size_t MAX_EXPRESSION_NESTING = 256;
+  static constexpr size_t MAX_EXPRESSION_WORK = 4096;
+  static constexpr size_t MAX_CLASSICAL_BITS = 1U << 20U;
 
   [[nodiscard]] static LogicalResult fail(Operation* operation,
                                           const Twine& message) {
-    operation->emitError() << "OpenQASM emission error: " << message;
+    operation->emitError() << "OpenQASM emission error: " << message
+                           << " (operation " << operation->getName() << ")";
     return failure();
   }
 
   [[nodiscard]] static FailureOr<std::string>
-  failExpression(const Value value, const Twine& message) {
-    emitError(value.getLoc()) << "OpenQASM emission error: " << message;
+  failExpression(Value value, const Twine& message) {
+    emitError(value.getLoc()) << "OpenQASM emission error: " << message
+                              << " (value type " << value.getType() << ")";
     return failure();
   }
 
@@ -217,12 +227,65 @@ private:
     return uniqueName("q", nextQubit);
   }
 
-  [[nodiscard]] LogicalResult preflight() {
-    SmallVector<func::FuncOp> functions(moduleOp.getOps<func::FuncOp>());
-    if (functions.size() != 1) {
-      return fail(moduleOp, "expected exactly one function");
+  [[nodiscard]] func::FuncOp resolveGateCallee(Operation* operation) {
+    FlatSymbolRefAttr callee;
+    if (auto call = dyn_cast<qc::CallOp>(operation)) {
+      callee = call.getCalleeAttr();
+    } else if (auto call = dyn_cast<func::CallOp>(operation)) {
+      callee = call.getCalleeAttr();
+    } else {
+      return nullptr;
     }
-    function = functions.front();
+    auto target =
+        symbolTables_.lookupNearestSymbolFrom<func::FuncOp>(operation, callee);
+    return target != nullptr && gateNames_.contains(target) ? target : nullptr;
+  }
+
+  [[nodiscard]] LogicalResult orderGateFunctions() {
+    const CallGraph callGraph(moduleOp);
+    for (auto component =
+             llvm::scc_iterator<CallGraphNode*,
+                                llvm::GraphTraits<const CallGraphNode*>>::
+                 begin(callGraph.lookupNode(&function.getBody()));
+         !component.isAtEnd(); ++component) {
+      auto* node = component->front();
+      if (node->isExternal()) {
+        continue;
+      }
+      auto* current = node->getCallableRegion()->getParentOp();
+      if (component.hasCycle()) {
+        return fail(current, "recursive gate function calls are not supported");
+      }
+      if (current != function) {
+        auto gate = dyn_cast<func::FuncOp>(current);
+        if (!gate) {
+          return fail(current, "gate calls must target func.func definitions");
+        }
+        gateFunctions_.push_back(gate);
+      }
+    }
+    return success();
+  }
+
+  [[nodiscard]] LogicalResult preflight() {
+    if (moduleOp->hasAttr(mqt::TargetEnvAttr::name)) {
+      const TargetEnvironmentAnalysis environment(moduleOp);
+      if (!environment) {
+        return fail(moduleOp, environment.error());
+      }
+      supportsDispatch = environment.environment()
+                             .payloadSpecification()
+                             .supportsUnrestrictedMultiwayBranching();
+    }
+    SmallVector<func::FuncOp> functions(moduleOp.getOps<func::FuncOp>());
+    function = mqt::getEntryPoint(moduleOp);
+    if (function == nullptr) {
+      if (functions.size() != 1) {
+        return fail(moduleOp,
+                    "expected one mqt.entry_point in a multi-function module");
+      }
+      function = functions.front();
+    }
     if (function.isExternal() || function.getBody().getBlocks().size() != 1) {
       return fail(function,
                   "expected one defined function with one entry block");
@@ -231,27 +294,75 @@ private:
       return fail(function, "function arguments and OpenQASM inputs are not "
                             "supported");
     }
-    const auto walkResult = function.walk([&](Operation* operation) {
-      if (isa<func::CallOp>(operation)) {
-        std::ignore = fail(operation, "function calls are not supported");
-        return WalkResult::interrupt();
-      }
-      for (Region& region : operation->getRegions()) {
-        if (!region.empty() && region.getBlocks().size() != 1) {
-          std::ignore =
-              fail(operation, "multi-block regions are not supported");
-          return WalkResult::interrupt();
+    const auto checkRegions = [&](func::FuncOp current) {
+      return current.walk([&](Operation* operation) {
+        for (Region& region : operation->getRegions()) {
+          if (!region.empty() && region.getBlocks().size() != 1) {
+            std::ignore =
+                fail(operation, "multi-block regions are not supported");
+            return WalkResult::interrupt();
+          }
         }
+        return WalkResult::advance();
+      });
+    };
+    if (checkRegions(function).wasInterrupted()) {
+      return failure();
+    }
+
+    if (failed(orderGateFunctions())) {
+      return failure();
+    }
+    for (auto current : gateFunctions_) {
+      if (!current.isPrivate() || current.isExternal() ||
+          !current.getBody().hasOneBlock() || current.getNumResults() != 0) {
+        return fail(current, "gate functions must be private, defined, "
+                             "single-block, and return no values");
       }
-      return WalkResult::advance();
-    });
-    if (walkResult.wasInterrupted()) {
+      bool sawQubit = false;
+      for (Type type : current.getArgumentTypes()) {
+        if (!sawQubit && type.isF64()) {
+          continue;
+        }
+        if (!isa<qc::QubitType>(type)) {
+          return fail(current, "gate function arguments must be leading f64 "
+                               "parameters followed by scalar qubits");
+        }
+        sawQubit = true;
+      }
+      if (!sawQubit) {
+        return fail(current, "gate functions require a qubit argument");
+      }
+      if (checkRegions(current).wasInterrupted()) {
+        return failure();
+      }
+      const auto requested = current.getName();
+      gateNames_.try_emplace(current, isValidOutputName(requested) &&
+                                              usedNames.insert(requested).second
+                                          ? requested.str()
+                                          : uniqueName("gate", nextHelper));
+    }
+    const auto hasInvalidCall = [&](func::FuncOp current) {
+      return current
+          .walk([&](Operation* operation) {
+            if (isa<func::CallOp, qc::CallOp>(operation) &&
+                resolveGateCallee(operation) == nullptr) {
+              std::ignore =
+                  fail(operation,
+                       "call does not target an exportable gate function");
+              return WalkResult::interrupt();
+            }
+            return WalkResult::advance();
+          })
+          .wasInterrupted();
+    };
+    if (hasInvalidCall(function) ||
+        llvm::any_of(gateFunctions_, hasInvalidCall)) {
       return failure();
     }
     for (Operation& operation : moduleOp.getBody()->getOperations()) {
-      if (&operation != function.getOperation()) {
-        return fail(&operation, "only the entry function may appear at module "
-                                "scope");
+      if (!isa<func::FuncOp>(operation)) {
+        return fail(&operation, "only functions may appear at module scope");
       }
     }
     return success();
@@ -263,31 +374,22 @@ private:
     if (!returnOp) {
       return fail(function, "entry block must end in func.return");
     }
-    for (const auto [index, value] : llvm::enumerate(returnOp.getOperands())) {
-      if (returnOp.getNumOperands() == 1 && isCanonicalStatus(value, index)) {
-        continue;
+    for (auto value : returnOp.getOperands()) {
+      if (isa<cbit::RegisterType>(value.getType()) &&
+          !returnedRegisters.insert(value).second) {
+        return fail(returnOp, "repeated register results are not supported");
       }
-      if (isa<cbit::RegisterType>(value.getType())) {
-        returnedRegisters.insert(value);
-        continue;
-      }
-      auto kind = inferScalarKind(value);
-      if (kind.empty()) {
-        return fail(returnOp, "unsupported scalar output type for function "
-                              "result " +
-                                  Twine(index));
-      }
-      scalarOutputs.push_back(
-          {.value = value, .name = outputName({}), .kind = std::move(kind)});
     }
 
     for (Operation& operation : function.getBody().front().getOperations()) {
       if (auto alloc = dyn_cast<qc::AllocOp>(&operation)) {
         const auto name = uniqueName("q", nextQubit);
-        Resource resource{.kind = ResourceKind::Qubit,
-                          .name = name,
-                          .width = 1,
-                          .scalar = true};
+        Resource resource{
+            .kind = ResourceKind::Qubit,
+            .name = name,
+            .width = 1,
+            .scalar = true,
+        };
         resources.try_emplace(alloc.getResult(), resource);
         resourceOrder.push_back(alloc.getResult());
         valueNames.try_emplace(alloc.getResult(), name);
@@ -295,16 +397,25 @@ private:
       }
       if (auto alloc = dyn_cast<cbit::AllocOp>(&operation)) {
         const auto type = alloc.getResult().getType();
+        const auto width = type.getWidth();
+        if (width <= 0 ||
+            std::cmp_greater(width, MAX_CLASSICAL_BITS - numClassicalBits)) {
+          return fail(alloc, "total classical register width exceeds the "
+                             "supported limit of " +
+                                 Twine(MAX_CLASSICAL_BITS) + " bits");
+        }
+        numClassicalBits += static_cast<size_t>(width);
         const bool isOutput = returnedRegisters.contains(alloc.getResult());
         const auto name = alloc->getAttrOfType<StringAttr>(
             mqt::MQTDialect::RegisterNameAttrHelper::getNameStr());
         const auto requested = name ? name.getValue() : StringRef{};
-        Resource resource{.kind = ResourceKind::Bit,
-                          .name = isOutput ? outputName(requested)
-                                           : uniqueName("c", nextBit),
-                          .width = type.getWidth(),
-                          .output = isOutput,
-                          .initialization = alloc.getInitialization()};
+        Resource resource{
+            .kind = ResourceKind::Bit,
+            .name = isOutput ? outputName(requested) : uniqueName("c", nextBit),
+            .width = width,
+            .output = isOutput,
+            .initialization = alloc.getInitialization(),
+        };
         resources.try_emplace(alloc.getResult(), std::move(resource));
         resourceOrder.push_back(alloc.getResult());
         continue;
@@ -313,7 +424,7 @@ private:
       if (!alloc) {
         continue;
       }
-      const auto type = dyn_cast<MemRefType>(alloc.getType());
+      const auto type = alloc.getType();
       if (!type || !type.hasStaticShape() || type.getRank() != 1 ||
           type.getDimSize(0) <= 0) {
         return fail(alloc, "only non-empty static rank-one memrefs are "
@@ -327,40 +438,53 @@ private:
               mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())) {
         requested = attr.getValue();
       }
-      Resource resource{.kind = ResourceKind::Qubit,
-                        .name = qubitRegisterName(requested),
-                        .width = type.getDimSize(0)};
+      Resource resource{
+          .kind = ResourceKind::Qubit,
+          .name = qubitRegisterName(requested),
+          .width = type.getDimSize(0),
+      };
       resources.try_emplace(alloc.getResult(), resource);
       resourceOrder.push_back(alloc.getResult());
     }
 
-    for (const auto value : returnedRegisters) {
-      if (!resources.contains(value)) {
-        return fail(returnOp, "returned CBit registers must be entry-block "
-                              "allocations");
+    for (const auto [index, value] : llvm::enumerate(returnOp.getOperands())) {
+      if (isa<cbit::RegisterType>(value.getType())) {
+        const auto found = resources.find(value);
+        if (found == resources.end()) {
+          return fail(
+              returnOp,
+              "returned CBit registers must be entry-block allocations");
+        }
+        outputs.push_back({
+            .value = value,
+            .name = found->second.name,
+            .kind = (Twine("bit[") + Twine(found->second.width) + "]").str(),
+        });
+      } else {
+        auto kind = inferScalarKind(value);
+        if (kind.empty()) {
+          return fail(returnOp,
+                      "unsupported scalar output type for function result " +
+                          Twine(index));
+        }
+        outputs.push_back(
+            {.value = value, .name = outputName({}), .kind = std::move(kind)});
       }
     }
     return success();
   }
 
-  [[nodiscard]] static bool isCanonicalStatus(const Value value,
-                                              const size_t resultIndex) {
-    if (resultIndex != 0 || !value.getType().isInteger(64)) {
-      return false;
-    }
-    auto constant = value.getDefiningOp<arith::ConstantOp>();
-    auto integer =
-        constant ? dyn_cast<IntegerAttr>(constant.getValue()) : IntegerAttr{};
-    return integer && integer.getValue().isZero();
-  }
-
-  [[nodiscard]] static std::string inferScalarKind(const Value value) {
+  [[nodiscard]] static std::string inferScalarKind(Value value) {
     const auto type = value.getType();
     if (type.isInteger(1)) {
       return value.getDefiningOp<qc::MeasureOp>() ? "bit" : "bool";
     }
     if (type.isInteger(64) || type.isIndex()) {
       return "int";
+    }
+    if (auto integer = dyn_cast<IntegerType>(type);
+        integer && integer.getWidth() <= 64) {
+      return (Twine("uint[") + Twine(integer.getWidth()) + "]").str();
     }
     if (type.isF64()) {
       return "float";
@@ -369,35 +493,89 @@ private:
   }
 
   [[nodiscard]] LogicalResult emitDeclarations() {
-    for (const auto value : resourceOrder) {
+    for (const auto& result : outputs) {
+      *output << "output " << result.kind << ' ' << result.name << ";\n";
+    }
+    for (auto value : resourceOrder) {
       const auto& resource = resources.at(value);
-      if (resource.output) {
-        *output << "output ";
+      if (resource.kind != ResourceKind::Qubit) {
+        continue;
       }
-      *output << (resource.kind == ResourceKind::Qubit ? "qubit" : "bit");
+      *output << "qubit";
       if (!resource.scalar) {
         *output << '[' << resource.width << ']';
       }
       *output << ' ' << resource.name << ";\n";
-      if (resource.kind == ResourceKind::Bit &&
-          resource.initialization == cbit::Initialization::Zero) {
-        for (int64_t bit = 0; bit < resource.width; ++bit) {
-          *output << resource.name << '[' << bit << "] = false;\n";
-        }
+    }
+    if (outputs.empty()) {
+      /// Global classical declarations become implicit outputs on import.
+      *output << "if (true) {\n";
+      output->indent();
+    }
+    for (auto value : resourceOrder) {
+      const auto& resource = resources.at(value);
+      if (resource.kind != ResourceKind::Bit) {
+        continue;
+      }
+      if (!resource.output) {
+        *output << "bit[" << resource.width << "] " << resource.name << ";\n";
+      }
+      if (resource.initialization == cbit::Initialization::Zero) {
+        *output << resource.name << " = \"" << std::string(resource.width, '0')
+                << "\";\n";
       }
     }
-    for (const auto& scalar : scalarOutputs) {
-      *output << "output " << scalar.kind << ' ' << scalar.name << ";\n";
+    *output << '\n';
+    return success();
+  }
+
+  [[nodiscard]] LogicalResult emitGateDefinition(func::FuncOp gate) {
+    std::string definition;
+    llvm::raw_string_ostream definitionStream(definition);
+    raw_indented_ostream definitionOutput(definitionStream);
+    definitionOutput << "gate " << gateNames_.at(gate);
+
+    SmallVector<std::string> parameters;
+    SmallVector<std::string> qubits;
+    for (Value argument : gate.getArguments()) {
+      std::string name;
+      if (argument.getType().isF64()) {
+        name = (Twine("p") + Twine(parameters.size())).str();
+        parameters.push_back(name);
+      } else {
+        name = (Twine("q") + Twine(qubits.size())).str();
+        qubits.push_back(name);
+      }
+      valueNames[argument] = std::move(name);
     }
-    if (!resourceOrder.empty() || !scalarOutputs.empty()) {
-      *output << '\n';
+    auto argumentGuard = llvm::scope_exit([&] {
+      for (Value argument : gate.getArguments()) {
+        valueNames.erase(argument);
+      }
+    });
+
+    if (!parameters.empty()) {
+      definitionOutput << '(' << llvm::join(parameters, ", ") << ')';
     }
+    definitionOutput << ' ' << llvm::join(qubits, ", ") << " {\n";
+    definitionOutput.indent();
+
+    llvm::SaveAndRestore outputGuard(output, &definitionOutput);
+    llvm::SaveAndRestore functionGuard(function, gate);
+    if (failed(emitBlock(gate.getBody().front()))) {
+      return failure();
+    }
+    definitionOutput.unindent();
+    definitionOutput << "}\n";
+    definitionOutput.flush();
+
+    gateDefinitions_.push_back(std::move(definition));
     return success();
   }
 
   [[nodiscard]] LogicalResult emitBlock(Block& block) {
     for (Operation& operation : block.getOperations()) {
-      if (isa<scf::YieldOp>(&operation)) {
+      if (isa<scf::YieldOp, scf::ConditionOp>(&operation)) {
         return success();
       }
       if (failed(emitOperation(operation))) {
@@ -408,22 +586,54 @@ private:
   }
 
   [[nodiscard]] LogicalResult emitOperation(Operation& operation) {
-    if (isa<arith::SelectOp>(&operation)) {
-      return fail(&operation, "arith.select is not supported");
+    llvm::SaveAndRestore consumerGuard(expressionConsumer, &operation);
+    if (gateNames_.contains(function) &&
+        (operation.getName().getDialectNamespace() ==
+             cbit::CBitDialect::getDialectNamespace() ||
+         isa<memref::LoadOp, memref::AllocOp, memref::AllocaOp, memref::StoreOp,
+             tensor::ExtractOp, memref::DeallocOp, qc::AllocOp, qc::DeallocOp,
+             qc::StaticOp, qc::MeasureOp, qc::ResetOp, qc::BarrierOp, scf::IfOp,
+             scf::IndexSwitchOp, ub::PoisonOp>(&operation))) {
+      return fail(&operation,
+                  "operation is not supported in an OpenQASM gate function");
     }
-    if (isa<arith::ConstantOp, cbit::LoadOp, cbit::AllocOp, memref::LoadOp,
-            memref::AllocOp, memref::DeallocOp, qc::AllocOp, qc::DeallocOp,
-            qc::StaticOp>(&operation)) {
+    if (gateNames_.contains(function) && isa<arith::SelectOp>(&operation)) {
+      return fail(&operation,
+                  "arith.select is not supported in an OpenQASM gate function");
+    }
+    const auto resultType =
+        operation.getNumResults() == 1
+            ? dyn_cast<IntegerType>(operation.getResult(0).getType())
+            : IntegerType{};
+    const bool wideBridge =
+        resultType && resultType.getWidth() > 64 &&
+        (isa<arith::ExtUIOp>(&operation) ||
+         operation.getName().getStringRef() == "math.ctpop");
+    if (!gateNames_.contains(function) &&
+        isInlineExpressionOperation(operation) &&
+        !isa<arith::ConstantOp>(&operation) && operation.getNumResults() == 1 &&
+        !wideBridge && !operation.getResult(0).use_empty()) {
+      return materialize(operation.getResult(0));
+    }
+    if (isa<qc::AllocOp, memref::AllocOp, cbit::AllocOp>(&operation) &&
+        operation.getBlock() != &function.getBody().front()) {
+      return fail(&operation, "resource allocation inside control flow is not "
+                              "supported; allocate resources before the loop");
+    }
+    if (auto extract = dyn_cast<tensor::ExtractOp>(&operation)) {
+      return emitTableLookup(extract);
+    }
+    if (isa<arith::ConstantOp, cbit::LoadOp, cbit::ReadOp, cbit::AllocOp,
+            memref::LoadOp, memref::AllocOp, memref::DeallocOp, qc::AllocOp,
+            qc::DeallocOp, qc::StaticOp>(&operation)) {
       return success();
     }
     if (isInlineExpressionOperation(operation)) {
-      return validateInlineExpressionOperation(operation);
+      return success();
     }
-    if (isa<cf::AssertOp>(&operation) ||
-        (isa<ub::PoisonOp>(&operation) &&
-         llvm::any_of(operation.getResults(), [](const Value result) {
-           return !result.use_empty();
-         }))) {
+    if (isa<ub::PoisonOp>(&operation) &&
+        llvm::any_of(operation.getResults(),
+                     [](Value result) { return !result.use_empty(); })) {
       return fail(&operation, "runtime safety machinery is not supported");
     }
     if (isa<ub::PoisonOp>(&operation)) {
@@ -431,6 +641,26 @@ private:
     }
     if (auto store = dyn_cast<cbit::StoreOp>(&operation)) {
       return emitStore(store);
+    }
+    if (auto write = dyn_cast<cbit::WriteOp>(&operation)) {
+      const auto resource = resources.find(write.getReg());
+      if (resource == resources.end() ||
+          resource->second.kind != ResourceKind::Bit) {
+        return fail(write, "register write refers to unsupported storage");
+      }
+      auto value =
+          emitExpression(write.getValue(), ExpressionContext::BitVector);
+      if (succeeded(value) && resource->second.width <= 64) {
+        value = (Twine("bit[") + Twine(resource->second.width) + "](uint[" +
+                 Twine(resource->second.width) + "](" + *value + "))")
+                    .str();
+      }
+      if (failed(value)) {
+        return failure();
+      }
+      *output << resource->second.name;
+      *output << " = " << *value << ";\n";
+      return success();
     }
     if (auto measurement = dyn_cast<qc::MeasureOp>(&operation)) {
       return emitMeasurement(measurement);
@@ -458,15 +688,24 @@ private:
     if (auto returnOp = dyn_cast<func::ReturnOp>(&operation)) {
       return emitReturn(returnOp);
     }
+    if (auto call = dyn_cast<func::CallOp>(&operation)) {
+      auto emitted = emitFunctionCall(call, call.getOperands());
+      if (failed(emitted)) {
+        return failure();
+      }
+      return emitGateStatement(*emitted, call, *output);
+    }
     if (auto unitary = dyn_cast<UnitaryOpInterface>(&operation)) {
       if (auto barrier = dyn_cast<BarrierOp>(&operation)) {
         SmallVector<std::string> qubits;
-        for (const auto value : barrier.getTargets()) {
+        for (auto value : barrier.getTargets()) {
           auto qubit = emitQubit(value);
           if (failed(qubit)) {
             return failure();
           }
-          qubits.push_back(std::move(*qubit));
+          if (!llvm::is_contained(qubits, *qubit)) {
+            qubits.push_back(std::move(*qubit));
+          }
         }
         *output << "barrier " << llvm::join(qubits, ", ") << ";\n";
         return success();
@@ -475,37 +714,95 @@ private:
       if (failed(call)) {
         return failure();
       }
-      emitGateStatement(*call, *output);
-      return success();
+      return emitGateStatement(*call, &operation, *output);
     }
     return fail(&operation, "unsupported operation '" +
                                 operation.getName().getStringRef() + "'");
   }
 
-  [[nodiscard]] static bool isInlineExpressionOperation(Operation& operation) {
-    const auto name = operation.getName().getStringRef();
-    return isa<arith::ConstantOp, arith::CmpIOp, arith::CmpFOp>(&operation) ||
-           !binaryOperator(name).empty() || name == "arith.negf" ||
-           name == "arith.remf" || isScalarCast(name) ||
-           !mathFunction(name).empty();
-  }
-
-  [[nodiscard]] LogicalResult
-  validateInlineExpressionOperation(Operation& operation) {
-    for (const auto result : operation.getResults()) {
-      const auto type = result.getType();
-      if (!type.isInteger(1) && !type.isInteger(64) && !type.isIndex() &&
-          !type.isF64()) {
-        return fail(&operation, "unsupported scalar expression result type");
-      }
-      if (failed(emitExpression(result))) {
+  [[nodiscard]] LogicalResult emitTableLookup(tensor::ExtractOp extract) {
+    auto constant = extract.getTensor().getDefiningOp<arith::ConstantOp>();
+    auto type = extract.getTensor().getType();
+    auto table = constant ? dyn_cast<DenseElementsAttr>(constant.getValue())
+                          : DenseElementsAttr{};
+    if (!table || type.getRank() != 1 || !type.getElementType().isF64() ||
+        table.empty()) {
+      return fail(
+          extract,
+          "table lookup requires a non-empty constant rank-one f64 tensor");
+    }
+    const auto index = getConstantInteger(extract.getIndices().front());
+    if (index && (*index < 0 || *index >= type.getDimSize(0))) {
+      return fail(extract, "constant table index is out of bounds");
+    }
+    if (failed(declareLocals(extract->getResults()))) {
+      return failure();
+    }
+    const auto& name = valueNames.at(extract.getResult());
+    if (index || table.isSplat()) {
+      auto value = emitConstant(table.getValues<Attribute>()[index.value_or(0)],
+                                extract.getLoc());
+      if (failed(value)) {
         return failure();
       }
+      *output << name << " = " << *value << ";\n";
+      return success();
     }
+
+    llvm::MapVector<Attribute, SmallVector<int64_t>> cases;
+    for (auto [slot, value] : llvm::enumerate(table.getValues<Attribute>())) {
+      cases[value].push_back(static_cast<int64_t>(slot));
+    }
+    const auto* mostCommon =
+        llvm::max_element(cases, [](const auto& left, const auto& right) {
+          return left.second.size() < right.second.size();
+        });
+    if (!supportsDispatch) {
+      return fail(extract,
+                  "indexed export requires unrestricted multiway branching");
+    }
+    auto argument = emitExpression(extract.getIndices().front());
+    if (failed(argument)) {
+      return failure();
+    }
+    *output << "switch (" << *argument << ") {\n";
+    output->indent();
+    for (const auto& [attribute, slots] : cases) {
+      auto value = emitConstant(attribute, extract.getLoc());
+      if (failed(value)) {
+        return failure();
+      }
+      if (attribute == mostCommon->first) {
+        continue;
+      }
+      *output << "case ";
+      llvm::interleaveComma(slots, *output);
+      *output << " { " << name << " = " << *value << "; }\n";
+    }
+    auto defaultValue = emitConstant(mostCommon->first, extract.getLoc());
+    if (failed(defaultValue)) {
+      return failure();
+    }
+    /// tensor.extract requires an in-bounds index; remaining valid slots share
+    /// this value.
+    *output << "default { " << name << " = " << *defaultValue << "; }\n";
+    output->unindent();
+    *output << "}\n";
     return success();
   }
 
-  [[nodiscard]] FailureOr<std::string> emitQubit(const Value value) {
+  [[nodiscard]] static bool isInlineExpressionOperation(Operation& operation) {
+    const auto name = operation.getName().getStringRef();
+    return isa<arith::ConstantOp, arith::CmpIOp, arith::CmpFOp, cbit::LoadOp,
+               cbit::ReadOp, arith::SelectOp, arith::ExtSIOp, arith::ExtUIOp,
+               arith::TruncIOp, arith::ShRSIOp>(&operation) ||
+           !binaryOperator(name).empty() || name == "arith.negf" ||
+           name == "arith.remf" || name == "llvm.intr.fshl" ||
+           name == "llvm.intr.fshr" || isScalarCast(name) ||
+           !mathFunction(name).empty();
+  }
+
+  [[nodiscard]] FailureOr<std::string> emitQubit(Value value) {
     if (const auto found = valueNames.find(value); found != valueNames.end()) {
       return found->second;
     }
@@ -517,21 +814,24 @@ private:
       return failExpression(value, "expected a logical or physical qubit "
                                    "reference");
     }
+    auto index = getConstantInteger(load.getIndices().front());
     const auto resource = resources.find(load.getMemRef());
     if (resource == resources.end() ||
         resource->second.kind != ResourceKind::Qubit) {
       return failExpression(value, "qubit load refers to unsupported storage");
     }
-    const auto index = getConstantInteger(load.getIndices().front());
-    if (!index || *index < 0 || *index >= resource->second.width) {
-      return failExpression(value,
-                            "qubit indices must be constant and in bounds");
+    if (index && (*index < 0 || *index >= resource->second.width)) {
+      return failExpression(value, "constant qubit index is out of bounds");
     }
-    return (Twine(resource->second.name) + "[" + Twine(*index) + "]").str();
+    auto emittedIndex = emitExpression(load.getIndices().front());
+    if (failed(emittedIndex)) {
+      return failure();
+    }
+    return (Twine(resource->second.name) + "[" + *emittedIndex + "]").str();
   }
 
-  [[nodiscard]] FailureOr<std::string>
-  emitBitReference(const Value reg, const Value indexValue) {
+  [[nodiscard]] FailureOr<std::string> emitBitReference(Value reg,
+                                                        Value indexValue) {
     const auto resource = resources.find(reg);
     if (resource == resources.end() ||
         resource->second.kind != ResourceKind::Bit) {
@@ -551,29 +851,191 @@ private:
     return (Twine(resource->second.name) + "[" + *dynamicIndex + "]").str();
   }
 
-  [[nodiscard]] FailureOr<std::string> emitExpression(const Value value) {
+  enum class ExpressionContext : uint8_t { Scalar, BitVector };
+
+  [[nodiscard]] FailureOr<std::string>
+  emitExpression(Value value,
+                 const ExpressionContext context = ExpressionContext::Scalar) {
+    if (expressionNesting == 0) {
+      expressionWork = 0;
+    }
+    llvm::SaveAndRestore depthGuard(expressionNesting, expressionNesting + 1);
+    ++expressionWork;
+    if (expressionNesting > MAX_EXPRESSION_NESTING) {
+      return failExpression(value, "expression nesting exceeds the supported "
+                                   "maximum of " +
+                                       Twine(MAX_EXPRESSION_NESTING));
+    }
+    if (expressionWork > MAX_EXPRESSION_WORK) {
+      return failExpression(value, "expression expansion exceeds the supported "
+                                   "maximum of " +
+                                       Twine(MAX_EXPRESSION_WORK) + " values");
+    }
+    const auto type = value.getType();
     if (const auto found = valueNames.find(value); found != valueNames.end()) {
       return found->second;
     }
     if (auto load = value.getDefiningOp<cbit::LoadOp>()) {
+      if (load.getOperation() != expressionConsumer) {
+        return failExpression(value,
+                              "bit load requires a snapshot at its definition");
+      }
       return emitBitReference(load.getReg(), load.getIndex());
+    }
+    if (auto read = value.getDefiningOp<cbit::ReadOp>()) {
+      if (read.getOperation() != expressionConsumer) {
+        return failExpression(
+            value, "register read requires a snapshot at its definition");
+      }
+      const auto resource = resources.find(read.getReg());
+      if (resource == resources.end() ||
+          resource->second.kind != ResourceKind::Bit) {
+        return failExpression(value,
+                              "register read refers to unsupported storage");
+      }
+      return context == ExpressionContext::Scalar && type.isInteger(1)
+                 ? resource->second.name + "[0]"
+                 : resource->second.name;
     }
     auto* operation = value.getDefiningOp();
     if (operation == nullptr) {
       return failExpression(value, "unmapped block argument");
     }
     if (auto constant = dyn_cast<arith::ConstantOp>(operation)) {
-      return emitConstant(constant);
+      return emitConstant(constant.getValue(), constant.getLoc(),
+                          context != ExpressionContext::Scalar);
     }
     if (isa<ub::PoisonOp>(operation)) {
       return failExpression(value, "poison values are not supported");
     }
-    if (auto cmp = dyn_cast<arith::CmpIOp>(operation)) {
-      auto predicate = integerPredicate(cmp.getPredicate());
-      if (predicate.empty()) {
-        return failExpression(value, "unsupported integer comparison");
+    const auto integer = [&](Value operand,
+                             bool isSigned = false) -> FailureOr<std::string> {
+      auto text = emitExpression(operand, ExpressionContext::BitVector);
+      if (failed(text)) {
+        return failure();
       }
-      return emitBinary(cmp.getLhs(), predicate, cmp.getRhs());
+      const auto operandType = dyn_cast<IntegerType>(operand.getType());
+      if (!operandType && !operand.getType().isIndex()) {
+        return text;
+      }
+      const auto width = operandType ? operandType.getWidth() : 64U;
+      if (width > 64) {
+        return isSigned
+                   ? failExpression(operand,
+                                    "signed integers support at most 64 bits")
+                   : text;
+      }
+      return (Twine(isSigned ? "int[" : "uint[") + Twine(width) + "](" + *text +
+              ")")
+          .str();
+    };
+    if (auto cmp = dyn_cast<arith::CmpIOp>(operation)) {
+      const bool isSigned =
+          mqt::unsignedPredicate(cmp.getPredicate()) != cmp.getPredicate();
+      auto lhs = integer(cmp.getLhs(), isSigned);
+      auto rhs = integer(cmp.getRhs(), isSigned);
+      if (failed(lhs) || failed(rhs)) {
+        return failure();
+      }
+      return (Twine("(") + *lhs + " " + integerPredicate(cmp.getPredicate()) +
+              " " + *rhs + ")")
+          .str();
+    }
+    if (auto selection = dyn_cast<arith::SelectOp>(operation)) {
+      auto condition = emitExpression(selection.getCondition());
+      auto lhs = integer(selection.getTrueValue());
+      auto rhs = integer(selection.getFalseValue());
+      if (failed(condition) || failed(lhs) || failed(rhs)) {
+        return failure();
+      }
+      const auto integerType = dyn_cast<IntegerType>(type);
+      if (!integerType || integerType.getWidth() > 64) {
+        return failExpression(
+            value, "selection requires an integer of at most 64 bits");
+      }
+      const auto width = Twine(integerType.getWidth()).str();
+      const auto mask =
+          "uint[" + width + "](0 - uint[" + width + "](" + *condition + "))";
+      const auto selected =
+          "(" + *rhs + " ^ ((" + *lhs + " ^ " + *rhs + ") & " + mask + "))";
+      return type.isInteger(1) ? "bool(" + selected + ")" : selected;
+    }
+    if (isa<arith::ExtUIOp, arith::ExtSIOp, arith::TruncIOp>(operation)) {
+      auto input = operation->getOperand(0);
+      if (cast<IntegerType>(type).getWidth() > 64 ||
+          (cast<IntegerType>(input.getType()).getWidth() > 64 &&
+           (input.getDefiningOp() == nullptr ||
+            input.getDefiningOp()->getName().getStringRef() != "math.ctpop"))) {
+        return failExpression(value, "integer casts support at most 64 bits");
+      }
+      auto operand = integer(input, isa<arith::ExtSIOp>(operation));
+      if (failed(operand)) {
+        return failure();
+      }
+      const auto width = cast<IntegerType>(type).getWidth();
+      if (width == 1) {
+        return (Twine("((") + *operand + " & uint[" +
+                Twine(std::min(cast<IntegerType>(input.getType()).getWidth(),
+                               64U)) +
+                "](1)) != 0)")
+            .str();
+      }
+      return (Twine("uint[") + Twine(width) + "](" + *operand + ")").str();
+    }
+    if (isa<arith::AddIOp, arith::SubIOp, arith::MulIOp, arith::DivUIOp,
+            arith::DivSIOp, arith::RemUIOp, arith::RemSIOp, arith::AndIOp,
+            arith::OrIOp, arith::XOrIOp, arith::ShLIOp, arith::ShRUIOp,
+            arith::ShRSIOp>(operation) &&
+        (isa<IntegerType>(type) || type.isIndex())) {
+      const auto width =
+          type.isIndex() ? 64U : cast<IntegerType>(type).getWidth();
+      if (width > 64 &&
+          !isa<arith::AndIOp, arith::OrIOp, arith::XOrIOp>(operation)) {
+        return failExpression(value,
+                              "integer arithmetic supports at most 64 bits");
+      }
+      const bool isSigned =
+          isa<arith::DivSIOp, arith::RemSIOp, arith::ShRSIOp>(operation);
+      auto lhs = integer(operation->getOperand(0), isSigned);
+      auto rhs = integer(operation->getOperand(1),
+                         isSigned && !isa<arith::ShRSIOp>(operation));
+      if (failed(lhs) || failed(rhs)) {
+        return failure();
+      }
+      if (isa<arith::AddIOp, arith::SubIOp, arith::MulIOp>(operation)) {
+        /// Unsigned machine arithmetic preserves every narrower modular result.
+        *lhs = "uint[64](" + *lhs + ")";
+        *rhs = "uint[64](" + *rhs + ")";
+      }
+      if (isa<arith::ShRSIOp>(operation)) {
+        /// OpenQASM only has a zero-filling shift. Bias the sign bit around it.
+        auto source = integer(operation->getOperand(0));
+        if (failed(source)) {
+          return failExpression(value,
+                                "signed right shifts support at most 64 bits");
+        }
+        const auto sign = (Twine("uint[") + Twine(width) + "](" +
+                           Twine(uint64_t{1} << (width - 1)) + ")")
+                              .str();
+        return (Twine("uint[") + Twine(width) + "](uint[64](((" + *source +
+                " ^ " + sign + ") >> " + *rhs + ")) - uint[64](" + sign +
+                " >> " + *rhs + "))")
+            .str();
+      }
+      const auto name = operation->getName().getStringRef();
+      const auto op = isa<arith::AndIOp>(operation)   ? StringRef("&")
+                      : isa<arith::OrIOp>(operation)  ? StringRef("|")
+                      : isa<arith::XOrIOp>(operation) ? StringRef("^")
+                                                      : binaryOperator(name);
+      const auto expression =
+          (Twine("(") + *lhs + " " + op + " " + *rhs + ")").str();
+      if (width == 1) {
+        return (Twine("(uint[1](") + expression + ") != 0)").str();
+      }
+      return width > 64
+                 ? expression
+                 : (Twine("uint[") + Twine(width) + "](" + expression + ")")
+                       .str();
     }
     if (auto cmp = dyn_cast<arith::CmpFOp>(operation)) {
       auto predicate = floatPredicate(cmp.getPredicate());
@@ -583,10 +1045,55 @@ private:
       return emitBinary(cmp.getLhs(), predicate, cmp.getRhs());
     }
     const auto name = operation->getName().getStringRef();
+    if (name == "llvm.intr.fshl" || name == "llvm.intr.fshr") {
+      if (operation->getNumOperands() != 3 ||
+          operation->getOperand(0) != operation->getOperand(1)) {
+        return failExpression(
+            value, "only rotations with identical data operands are supported");
+      }
+      auto operand = emitExpression(operation->getOperand(0),
+                                    ExpressionContext::BitVector);
+      const auto width = cast<IntegerType>(type).getWidth();
+      auto count = operation->getOperand(2);
+      if (auto extension = count.getDefiningOp<arith::ExtUIOp>()) {
+        count = extension.getIn();
+      }
+      FailureOr<std::string> distance = failure();
+      if (auto constant = count.getDefiningOp<arith::ConstantOp>()) {
+        const auto bits = cast<IntegerAttr>(constant.getValue()).getValue();
+        distance = std::to_string(bits.urem(width));
+      } else if (cast<IntegerType>(count.getType()).getWidth() <= 64) {
+        distance = integer(count);
+        if (succeeded(distance)) {
+          /// OpenQASM rotations take signed counts; reduce before interpreting.
+          *distance = (Twine("int[64](uint[64](") + *distance +
+                       ") % uint[64](" + Twine(width) + "))")
+                          .str();
+        }
+      }
+      if (failed(operand) || failed(distance)) {
+        return failExpression(value, "rotation counts support at most 64 bits");
+      }
+      if (width <= 64) {
+        *operand = (Twine("bit[") + Twine(width) + "](uint[" + Twine(width) +
+                    "](" + *operand + "))")
+                       .str();
+      }
+      auto rotation = (Twine(name == "llvm.intr.fshl" ? "rotl(" : "rotr(") +
+                       *operand + ", " + *distance + ")")
+                          .str();
+      return width > 64
+                 ? rotation
+                 : (Twine("uint[") + Twine(width) + "](" + rotation + ")")
+                       .str();
+    }
     if (name == "arith.remf") {
       auto lhs = emitExpression(operation->getOperand(0));
+      if (failed(lhs)) {
+        return failure();
+      }
       auto rhs = emitExpression(operation->getOperand(1));
-      if (failed(lhs) || failed(rhs)) {
+      if (failed(rhs)) {
         return failure();
       }
       return (Twine("mod(") + *lhs + ", " + *rhs + ")").str();
@@ -594,13 +1101,6 @@ private:
     if (const auto binary = binaryOperator(name); !binary.empty()) {
       if (operation->getNumOperands() != 2) {
         return failExpression(value, "malformed binary expression");
-      }
-      if ((name == "arith.andi" || name == "arith.ori" ||
-           name == "arith.xori") &&
-          !value.getType().isInteger(1)) {
-        return failExpression(value,
-                              "packed integer bitwise operations are not "
-                              "supported");
       }
       return emitBinary(operation->getOperand(0), binary,
                         operation->getOperand(1));
@@ -613,9 +1113,19 @@ private:
       return (Twine("(-") + *operand + ")").str();
     }
     if (isScalarCast(name)) {
-      auto operand = emitExpression(operation->getOperand(0));
+      auto input = operation->getOperand(0);
+      auto operand = isa<IntegerType>(input.getType())
+                         ? integer(input, name != "arith.uitofp")
+                         : emitExpression(input);
       if (failed(operand)) {
         return failure();
+      }
+      if (gateNames_.contains(function) && name == "arith.sitofp") {
+        if (input.getType().isInteger(1)) {
+          return failExpression(value, "signed i1-to-float conversion is not "
+                                       "supported in gate functions");
+        }
+        return (Twine("(1.0 * ") + *operand + ")").str();
       }
       if (name == "arith.index_cast" &&
           (operation->getOperand(0).getType().isInteger(64) ||
@@ -629,9 +1139,22 @@ private:
       }
       return (Twine(type) + "(" + *operand + ")").str();
     }
+    if (name == "math.ctpop") {
+      auto operand = integer(operation->getOperand(0));
+      if (failed(operand)) {
+        return failure();
+      }
+      const auto width = cast<IntegerType>(type).getWidth();
+      if (width > 64) {
+        return (Twine("popcount(") + *operand + ")").str();
+      }
+      return (Twine("uint[") + Twine(width) + "](popcount(bit[" + Twine(width) +
+              "](" + *operand + ")))")
+          .str();
+    }
     if (const auto functionName = mathFunction(name); !functionName.empty()) {
       SmallVector<std::string> arguments;
-      for (const auto operand : operation->getOperands()) {
+      for (auto operand : operation->getOperands()) {
         auto argument = emitExpression(operand);
         if (failed(argument)) {
           return failure();
@@ -646,20 +1169,21 @@ private:
   }
 
   [[nodiscard]] static FailureOr<std::string>
-  emitConstant(arith::ConstantOp constant) {
-    if (auto integer = dyn_cast<IntegerAttr>(constant.getValue())) {
-      if (integer.getType().isInteger(1)) {
+  emitConstant(Attribute attribute, Location location,
+               const bool bitVectorContext = false) {
+    if (auto integer = dyn_cast<IntegerAttr>(attribute)) {
+      if (integer.getType().isInteger(1) && !bitVectorContext) {
         return integer.getValue().isZero() ? std::string("false")
                                            : std::string("true");
       }
       llvm::SmallString<32> text;
-      integer.getValue().toString(text, 10, true);
+      integer.getValue().toString(text, 10, !bitVectorContext);
       return text.str().str();
     }
-    if (auto floating = dyn_cast<FloatAttr>(constant.getValue())) {
+    if (auto floating = dyn_cast<FloatAttr>(attribute)) {
       const auto& value = floating.getValue();
       if (!value.isFinite()) {
-        emitError(constant.getLoc())
+        emitError(location)
             << "OpenQASM emission error: non-finite floating-point "
                "constants are not supported";
         return failure();
@@ -673,17 +1197,19 @@ private:
       }
       return text.str().str();
     }
-    emitError(constant.getLoc())
+    emitError(location)
         << "OpenQASM emission error: unsupported constant attribute";
     return failure();
   }
 
-  [[nodiscard]] FailureOr<std::string> emitBinary(const Value lhsValue,
-                                                  const StringRef operation,
-                                                  const Value rhsValue) {
+  [[nodiscard]] FailureOr<std::string>
+  emitBinary(Value lhsValue, const StringRef operation, Value rhsValue) {
     auto lhs = emitExpression(lhsValue);
+    if (failed(lhs)) {
+      return failure();
+    }
     auto rhs = emitExpression(rhsValue);
-    if (failed(lhs) || failed(rhs)) {
+    if (failed(rhs)) {
       return failure();
     }
     return (Twine("(") + *lhs + " " + operation + " " + *rhs + ")").str();
@@ -691,14 +1217,16 @@ private:
 
   [[nodiscard]] static StringRef binaryOperator(const StringRef name) {
     return llvm::StringSwitch<StringRef>(name)
-        .Cases("arith.addi", "arith.addf", "+")
-        .Cases("arith.subi", "arith.subf", "-")
-        .Cases("arith.muli", "arith.mulf", "*")
-        .Cases("arith.divsi", "arith.divf", "/")
-        .Case("arith.remsi", "%")
+        .Cases({"arith.addi", "arith.addf"}, "+")
+        .Cases({"arith.subi", "arith.subf"}, "-")
+        .Cases({"arith.muli", "arith.mulf"}, "*")
+        .Cases({"arith.divsi", "arith.divui", "arith.divf"}, "/")
+        .Cases({"arith.remsi", "arith.remui"}, "%")
         .Case("arith.andi", "&&")
         .Case("arith.ori", "||")
         .Case("arith.xori", "!=")
+        .Case("arith.shli", "<<")
+        .Case("arith.shrui", ">>")
         .Default({});
   }
 
@@ -710,18 +1238,17 @@ private:
     case arith::CmpIPredicate::ne:
       return "!=";
     case arith::CmpIPredicate::slt:
+    case arith::CmpIPredicate::ult:
       return "<";
     case arith::CmpIPredicate::sle:
+    case arith::CmpIPredicate::ule:
       return "<=";
     case arith::CmpIPredicate::sgt:
+    case arith::CmpIPredicate::ugt:
       return ">";
     case arith::CmpIPredicate::sge:
-      return ">=";
-    case arith::CmpIPredicate::ult:
-    case arith::CmpIPredicate::ule:
-    case arith::CmpIPredicate::ugt:
     case arith::CmpIPredicate::uge:
-      return {};
+      return ">=";
     }
     return {};
   }
@@ -731,7 +1258,7 @@ private:
     switch (predicate) {
     case arith::CmpFPredicate::OEQ:
       return "==";
-    case arith::CmpFPredicate::ONE:
+    case arith::CmpFPredicate::UNE:
       return "!=";
     case arith::CmpFPredicate::OLT:
       return "<";
@@ -749,21 +1276,27 @@ private:
   [[nodiscard]] static bool isScalarCast(const StringRef name) {
     return llvm::StringSwitch<bool>(name)
         .Case("arith.index_cast", true)
-        .Case("arith.sitofp", true)
-        .Case("arith.fptosi", true)
+        .Cases({"arith.sitofp", "arith.uitofp"}, true)
+        .Cases({"arith.fptosi", "arith.fptoui"}, true)
         .Default(false);
   }
 
-  [[nodiscard]] static StringRef castTarget(const StringRef name,
-                                            const Type resultType) {
-    if (name == "arith.sitofp" || resultType.isF64()) {
+  [[nodiscard]] static std::string castTarget(const StringRef name,
+                                              const Type resultType) {
+    if (resultType.isF64()) {
       return "float";
     }
     if (resultType.isInteger(1)) {
       return "bool";
     }
-    if (resultType.isInteger(64) || resultType.isIndex()) {
+    if (resultType.isIndex()) {
       return "int";
+    }
+    if (auto type = dyn_cast<IntegerType>(resultType);
+        type && type.getWidth() <= 64) {
+      return (Twine(name == "arith.fptoui" ? "uint[" : "int[") +
+              Twine(type.getWidth()) + "]")
+          .str();
     }
     return {};
   }
@@ -779,6 +1312,7 @@ private:
         .Case("math.floor", "floor")
         .Case("math.log", "log")
         .Case("math.powf", "pow")
+        .Case("math.ctpop", "popcount")
         .Case("math.sin", "sin")
         .Case("math.sqrt", "sqrt")
         .Case("math.tan", "tan")
@@ -791,13 +1325,7 @@ private:
       return failure();
     }
     if (auto measurement = store.getValue().getDefiningOp<qc::MeasureOp>();
-        measurement && measurement.getResult().hasOneUse() &&
-        measurement->getNextNode() == store.getOperation()) {
-      auto qubit = emitQubit(measurement.getQubit());
-      if (failed(qubit)) {
-        return failure();
-      }
-      *output << *target << " = measure " << *qubit << ";\n";
+        measurement && measurementStores.contains(measurement)) {
       return success();
     }
     auto value = emitExpression(store.getValue());
@@ -809,26 +1337,131 @@ private:
   }
 
   [[nodiscard]] LogicalResult emitMeasurement(qc::MeasureOp measurement) {
-    if (measurement.getResult().hasOneUse()) {
-      if (auto store = dyn_cast<cbit::StoreOp>(
-              *measurement.getResult().getUsers().begin());
-          store && measurement->getNextNode() == store.getOperation()) {
-        return success();
-      }
-    }
     auto qubit = emitQubit(measurement.getQubit());
     if (failed(qubit)) {
       return failure();
     }
-    const auto name = uniqueName("b", nextBit);
-    valueNames.try_emplace(measurement.getResult(), name);
-    *output << "bit " << name << " = measure " << *qubit << ";\n";
+    if (const auto destination = measurementStores.find(measurement);
+        destination != measurementStores.end()) {
+      auto store = destination->second;
+      auto target = emitBitReference(store.getReg(), store.getIndex());
+      if (failed(target)) {
+        return failure();
+      }
+      *output << *target << " = measure " << *qubit << ";\n";
+      return success();
+    }
+    if (measurement.getResult().use_empty()) {
+      *output << "measure " << *qubit << ";\n";
+      return success();
+    }
+    if (!valueNames.contains(measurement.getResult())) {
+      const auto name = uniqueName("b", nextBit);
+      valueNames.try_emplace(measurement.getResult(), name);
+      *output << "bit " << name << ";\n";
+    }
+    *output << valueNames.at(measurement.getResult()) << " = measure " << *qubit
+            << ";\n";
     return success();
   }
 
+  [[nodiscard]] FailureOr<std::string> localType(Value value) {
+    auto kind = inferScalarKind(value);
+    if (kind == "bit") {
+      kind = "bool";
+    }
+    if (kind.empty()) {
+      auto* operation = value.getDefiningOp();
+      if (auto argument = dyn_cast<BlockArgument>(value)) {
+        operation = argument.getOwner()->getParentOp();
+      }
+      std::string type;
+      llvm::raw_string_ostream stream(type);
+      stream << value.getType();
+      static_cast<void>(
+          fail(operation, "unsupported carried scalar type " + type +
+                              "; OpenQASM locals support bool, integers of "
+                              "width 1-64, index, and f64"));
+      return failure();
+    }
+    return kind;
+  }
+
+  [[nodiscard]] LogicalResult declareLocals(ValueRange values) {
+    for (auto value : values) {
+      auto type = localType(value);
+      if (failed(type)) {
+        return failure();
+      }
+      auto name = uniqueName("v", nextScalar);
+      valueNames[value] = name;
+      *output << *type << ' ' << name << ";\n";
+    }
+    return success();
+  }
+
+  [[nodiscard]] LogicalResult materialize(Value value) {
+    const auto integer = dyn_cast<IntegerType>(value.getType());
+    const bool wide = integer && integer.getWidth() > 64;
+    if (wide) {
+      if (integer.getWidth() > MAX_CLASSICAL_BITS - numClassicalBits) {
+        return fail(value.getDefiningOp(),
+                    "classical snapshots exceed the supported bit limit");
+      }
+      numClassicalBits += integer.getWidth();
+    }
+    auto type =
+        wide ? FailureOr<std::string>(
+                   (Twine("bit[") + Twine(integer.getWidth()) + "]").str())
+             : localType(value);
+    auto expression = emitExpression(value, wide ? ExpressionContext::BitVector
+                                                 : ExpressionContext::Scalar);
+    if (failed(type) || failed(expression)) {
+      return failure();
+    }
+    if (integer && integer.getWidth() > 1 && !wide) {
+      *expression = *type + "(" + *expression + ")";
+    }
+    auto name = uniqueName("v", nextScalar);
+    *output << *type << ' ' << name << " = " << *expression << ";\n";
+    valueNames[value] = std::move(name);
+    return success();
+  }
+
+  [[nodiscard]] LogicalResult assignEdge(ValueRange destinations,
+                                         ValueRange values,
+                                         Operation* terminator) {
+    llvm::SaveAndRestore guard(expressionConsumer, terminator);
+    SmallVector<std::string> temporaries;
+    for (auto value : values) {
+      auto type = localType(value);
+      auto expression = emitExpression(value);
+      if (failed(type) || failed(expression)) {
+        return failure();
+      }
+      auto name = uniqueName("tmp", nextScalar);
+      *output << *type << ' ' << name << " = " << *expression << ";\n";
+      temporaries.push_back(std::move(name));
+    }
+    for (auto [destination, temporary] :
+         llvm::zip_equal(destinations, temporaries)) {
+      *output << valueNames.at(destination) << " = " << temporary << ";\n";
+    }
+    return success();
+  }
+
+  [[nodiscard]] LogicalResult emitResultBlock(Block& block,
+                                              ValueRange results) {
+    if (failed(emitBlock(block))) {
+      return failure();
+    }
+    return assignEdge(results, block.getTerminator()->getOperands(),
+                      block.getTerminator());
+  }
+
   [[nodiscard]] LogicalResult emitIf(scf::IfOp ifOp) {
-    if (ifOp.getNumResults() != 0) {
-      return fail(ifOp, "scf.if results are not supported");
+    if (failed(declareLocals(ifOp.getResults()))) {
+      return failure();
     }
     auto condition = emitExpression(ifOp.getCondition());
     if (failed(condition)) {
@@ -836,14 +1469,16 @@ private:
     }
     *output << "if (" << *condition << ") {\n";
     output->indent();
-    if (failed(emitBlock(ifOp.getThenRegion().front()))) {
+    if (failed(
+            emitResultBlock(ifOp.getThenRegion().front(), ifOp.getResults()))) {
       return failure();
     }
     output->unindent();
     if (!ifOp.getElseRegion().empty()) {
       *output << "} else {\n";
       output->indent();
-      if (failed(emitBlock(ifOp.getElseRegion().front()))) {
+      if (failed(emitResultBlock(ifOp.getElseRegion().front(),
+                                 ifOp.getResults()))) {
         return failure();
       }
       output->unindent();
@@ -853,40 +1488,82 @@ private:
   }
 
   [[nodiscard]] LogicalResult emitFor(scf::ForOp forOp) {
-    if (!forOp.getInitArgs().empty() || forOp.getNumResults() != 0) {
-      return fail(forOp, "scf.for loop-carried values are not supported");
+    const auto boundType =
+        castTarget("arith.index_cast", forOp.getLowerBound().getType());
+    if (boundType.empty()) {
+      return fail(forOp, "scf.for bounds support index and integers of at "
+                         "most 64 bits");
+    }
+    if (failed(declareLocals(forOp.getResults())) ||
+        failed(assignEdge(forOp.getResults(), forOp.getInitArgs(), forOp))) {
+      return failure();
+    }
+    for (auto [argument, result] :
+         llvm::zip_equal(forOp.getRegionIterArgs(), forOp.getResults())) {
+      /// Copy before inserting a key can invalidate the stored name.
+      valueNames[argument] = std::string(valueNames.at(result));
     }
     const auto lower = getConstantInteger(forOp.getLowerBound());
     const auto upper = getConstantInteger(forOp.getUpperBound());
     const auto step = getConstantInteger(forOp.getStep());
-    if (!lower || !upper || !step || *step <= 0) {
-      return fail(forOp, "scf.for requires constant bounds and a positive "
+    if (!step || *step <= 0 || forOp.getUnsignedCmp()) {
+      return fail(forOp, "scf.for requires signed comparisons and a positive "
                          "constant step");
     }
-    if (*lower >= *upper) {
+    if (lower && upper && *lower >= *upper) {
       return success();
     }
-    const APInt lowerWide(65, static_cast<uint64_t>(*lower), true);
-    const APInt upperWide(65, static_cast<uint64_t>(*upper), true);
-    const APInt stepWide(65, static_cast<uint64_t>(*step), true);
-    const auto lastWide =
-        lowerWide + ((upperWide - 1 - lowerWide).sdiv(stepWide) * stepWide);
-    const auto last = lastWide.getSExtValue();
+    const bool dynamicBounds = !lower || !upper;
+    if (dynamicBounds && gateNames_.contains(function)) {
+      return fail(forOp, "dynamic scf.for bounds require the entry function");
+    }
+    std::string first;
+    std::string last;
+    if (dynamicBounds) {
+      auto lowerExpression = emitExpression(forOp.getLowerBound());
+      auto upperExpression = emitExpression(forOp.getUpperBound());
+      if (failed(lowerExpression) || failed(upperExpression)) {
+        return failure();
+      }
+      first = uniqueName("lower", nextScalar);
+      const auto end = uniqueName("upper", nextScalar);
+      /// Snapshot bounds before the body can change their source storage.
+      *output << "int[64] " << first << " = " << boundType << '('
+              << *lowerExpression << ");\n";
+      *output << "int[64] " << end << " = " << boundType << '('
+              << *upperExpression << ");\n";
+      /// A nonempty signed range has an upper bound greater than INT64_MIN.
+      *output << "if (" << first << " < " << end << ") {\n";
+      output->indent();
+      last = "(" + end + " - 1)";
+    } else {
+      const APInt lowerWide(65, static_cast<uint64_t>(*lower), true);
+      const APInt upperWide(65, static_cast<uint64_t>(*upper), true);
+      const APInt stepWide(65, static_cast<uint64_t>(*step), true);
+      const auto lastWide =
+          lowerWide + ((upperWide - 1 - lowerWide).sdiv(stepWide) * stepWide);
+      first = std::to_string(*lower);
+      last = std::to_string(lastWide.getSExtValue());
+    }
 
     const auto induction = uniqueName("i", nextLoop);
     valueNames.try_emplace(forOp.getInductionVar(), induction);
 
-    *output << "for int " << induction << " in [" << *lower;
+    *output << "for int " << induction << " in [" << first;
     if (*step != 1) {
       *output << ':' << *step;
     }
     *output << ':' << last << "] {\n";
     output->indent();
-    if (failed(emitBlock(*forOp.getBody()))) {
+    if (failed(emitResultBlock(*forOp.getBody(), forOp.getResults()))) {
       return failure();
     }
     output->unindent();
     *output << "}\n";
+    if (dynamicBounds) {
+      output->unindent();
+      *output << "}\n";
+    }
     return success();
   }
 
@@ -895,34 +1572,65 @@ private:
     auto& after = whileOp.getAfter().front();
     auto conditionOp = cast<scf::ConditionOp>(before.getTerminator());
     auto yieldOp = cast<scf::YieldOp>(after.getTerminator());
-    if (!whileOp.getInits().empty() || whileOp.getNumResults() != 0 ||
-        before.getNumArguments() != 0 || after.getNumArguments() != 0 ||
-        !conditionOp.getArgs().empty() || yieldOp.getNumOperands() != 0) {
-      return fail(whileOp, "scf.while loop-carried values are not supported");
-    }
-    for (Operation& operation : before.without_terminator()) {
-      if (auto load = dyn_cast<cbit::LoadOp>(operation)) {
-        if (failed(emitExpression(load.getResult()))) {
-          return failure();
-        }
-        continue;
+    if (gateNames_.contains(function)) {
+      if (!whileOp.getInits().empty() || whileOp.getNumResults() != 0 ||
+          !llvm::all_of(before.without_terminator(), [](Operation& operation) {
+            return isInlineExpressionOperation(operation) &&
+                   isMemoryEffectFree(&operation);
+          })) {
+        return fail(
+            whileOp,
+            "gate while loops require a pure condition and no carried values");
       }
-      if (!isInlineExpressionOperation(operation) ||
-          !isMemoryEffectFree(&operation)) {
-        return fail(&operation,
-                    "scf.while condition region must be side-effect free");
-      }
-      if (failed(validateInlineExpressionOperation(operation))) {
+      auto condition = emitExpression(conditionOp.getCondition());
+      if (failed(condition)) {
         return failure();
       }
+      *output << "while (" << *condition << ") {\n";
+      output->indent();
+      if (failed(emitBlock(after))) {
+        return failure();
+      }
+      output->unindent();
+      *output << "}\n";
+      return success();
     }
+    if (failed(declareLocals(before.getArguments())) ||
+        failed(declareLocals(whileOp.getResults())) ||
+        failed(
+            assignEdge(before.getArguments(), whileOp.getInits(), whileOp))) {
+      return failure();
+    }
+    for (auto [argument, result] :
+         llvm::zip_equal(after.getArguments(), whileOp.getResults())) {
+      /// Copy before inserting a key can invalidate the stored name.
+      valueNames[argument] = std::string(valueNames.at(result));
+    }
+    *output << "while (true) {\n";
+    output->indent();
+    if (failed(emitBlock(before))) {
+      return failure();
+    }
+    llvm::SaveAndRestore consumerGuard(expressionConsumer,
+                                       conditionOp.getOperation());
     auto condition = emitExpression(conditionOp.getCondition());
     if (failed(condition)) {
       return failure();
     }
-    *output << "while (" << *condition << ") {\n";
+    const auto conditionName = uniqueName("cond", nextScalar);
+    *output << "bool " << conditionName << " = " << *condition << ";\n";
+    if (failed(assignEdge(whileOp.getResults(), conditionOp.getArgs(),
+                          conditionOp))) {
+      return failure();
+    }
+    *output << "if (!" << conditionName << ") {\n";
     output->indent();
-    if (failed(emitBlock(after))) {
+    *output << "break;\n";
+    output->unindent();
+    *output << "}\n";
+    if (failed(emitBlock(after)) ||
+        failed(
+            assignEdge(before.getArguments(), yieldOp.getResults(), yieldOp))) {
       return failure();
     }
     output->unindent();
@@ -931,8 +1639,8 @@ private:
   }
 
   [[nodiscard]] LogicalResult emitIndexSwitch(scf::IndexSwitchOp switchOp) {
-    if (switchOp.getNumResults() != 0) {
-      return fail(switchOp, "scf.index_switch results are not supported");
+    if (failed(declareLocals(switchOp.getResults()))) {
+      return failure();
     }
     auto argument = emitExpression(switchOp.getArg());
     if (failed(argument)) {
@@ -941,15 +1649,16 @@ private:
 
     const auto cases = switchOp.getCases();
     if (cases.empty()) {
-      return emitBlock(switchOp.getDefaultBlock());
+      return emitResultBlock(switchOp.getDefaultBlock(), switchOp.getResults());
     }
     *output << "switch (" << *argument << ") {\n";
     output->indent();
     for (const auto [index, caseValue] : llvm::enumerate(cases)) {
       *output << "case " << caseValue << " {\n";
       output->indent();
-      if (failed(
-              emitBlock(switchOp.getCaseBlock(static_cast<unsigned>(index))))) {
+      if (failed(emitResultBlock(
+              switchOp.getCaseBlock(static_cast<unsigned>(index)),
+              switchOp.getResults()))) {
         return failure();
       }
       output->unindent();
@@ -957,7 +1666,8 @@ private:
     }
     *output << "default {\n";
     output->indent();
-    if (failed(emitBlock(switchOp.getDefaultBlock()))) {
+    if (failed(emitResultBlock(switchOp.getDefaultBlock(),
+                               switchOp.getResults()))) {
       return failure();
     }
     output->unindent();
@@ -968,11 +1678,7 @@ private:
   }
 
   [[nodiscard]] LogicalResult emitReturn(func::ReturnOp returnOp) {
-    size_t scalarIndex = 0;
     for (const auto [index, value] : llvm::enumerate(returnOp.getOperands())) {
-      if (returnOp.getNumOperands() == 1 && isCanonicalStatus(value, index)) {
-        continue;
-      }
       if (isa<cbit::RegisterType>(value.getType())) {
         continue;
       }
@@ -980,14 +1686,48 @@ private:
       if (failed(expression)) {
         return failure();
       }
-      *output << scalarOutputs[scalarIndex].name << " = " << *expression
-              << ";\n";
-      ++scalarIndex;
+      if (auto integer = dyn_cast<IntegerType>(value.getType());
+          integer && integer.getWidth() > 1) {
+        *expression = outputs[index].kind + "(" + *expression + ")";
+      }
+      *output << outputs[index].name << " = " << *expression << ";\n";
     }
     return success();
   }
 
+  [[nodiscard]] FailureOr<GateCall> emitFunctionCall(Operation* operation,
+                                                     ValueRange operands) {
+    auto callee = resolveGateCallee(operation);
+    if (callee == nullptr) {
+      fail(operation, "call does not match an exportable gate function");
+      return failure();
+    }
+
+    GateCall call;
+    call.symbol = gateNames_.at(callee);
+    for (const auto [operand, type] :
+         llvm::zip_equal(operands, callee.getArgumentTypes())) {
+      if (type.isF64()) {
+        auto parameter = emitExpression(operand);
+        if (failed(parameter)) {
+          return failure();
+        }
+        call.parameters.push_back(std::move(*parameter));
+      } else {
+        auto qubit = emitQubit(operand);
+        if (failed(qubit)) {
+          return failure();
+        }
+        call.qubits.push_back(std::move(*qubit));
+      }
+    }
+    return call;
+  }
+
   [[nodiscard]] FailureOr<GateCall> emitGateCall(UnitaryOpInterface unitary) {
+    if (isa<qc::CallOp>(unitary.getOperation())) {
+      return emitFunctionCall(unitary.getOperation(), unitary->getOperands());
+    }
     if (auto ctrl = dyn_cast<CtrlOp>(unitary.getOperation())) {
       return emitModifier(ctrl);
     }
@@ -1008,14 +1748,17 @@ private:
     if (baseSymbol == "sxdg") {
       call.modifiers = "inv @ ";
     }
-    for (const auto parameter : unitary.getParameters()) {
+    for (auto parameter : unitary.getParameters()) {
       auto expression = emitExpression(parameter);
       if (failed(expression)) {
         return failure();
       }
       call.parameters.push_back(std::move(*expression));
     }
-    for (const auto qubitValue : unitary.getTargets()) {
+    if (baseSymbol == "u2") {
+      call.parameters.insert(call.parameters.begin(), "pi / 2");
+    }
+    for (auto qubitValue : unitary.getTargets()) {
       auto qubit = emitQubit(qubitValue);
       if (failed(qubit)) {
         return failure();
@@ -1032,21 +1775,20 @@ private:
     for (Operation& operation : body.without_terminator()) {
       if (!isa<UnitaryOpInterface>(&operation) &&
           !isInlineExpressionOperation(operation)) {
-        fail(&operation, "modifier bodies may only contain unitary operations "
-                         "and scalar expressions");
-        return failure();
+        return fail(&operation,
+                    "modifier bodies may only contain unitary operations "
+                    "and scalar expressions");
       }
       if (isa<UnitaryOpInterface>(&operation)) {
         unitaries.push_back(&operation);
       }
     }
     if (unitaries.empty()) {
-      fail(modifier, "modifier body contains no unitary operation");
-      return failure();
+      return fail(modifier, "modifier body contains no unitary operation");
     }
 
     SmallVector<std::string> targets;
-    for (const auto target : modifier.getTargets()) {
+    for (auto target : modifier.getTargets()) {
       auto qubit = emitQubit(target);
       if (failed(qubit)) {
         return failure();
@@ -1054,13 +1796,17 @@ private:
       targets.push_back(std::move(*qubit));
     }
     if (body.getNumArguments() != targets.size()) {
-      fail(modifier, "modifier target and body argument counts differ");
-      return failure();
+      return fail(modifier, "modifier target and body argument counts differ");
     }
     for (const auto [argument, target] :
          llvm::zip_equal(body.getArguments(), targets)) {
-      valueNames.try_emplace(argument, target);
+      valueNames[argument] = target;
     }
+    const auto argumentGuard = llvm::scope_exit([&] {
+      for (Value argument : body.getArguments()) {
+        valueNames.erase(argument);
+      }
+    });
 
     GateCall call;
     if (unitaries.size() == 1) {
@@ -1080,7 +1826,7 @@ private:
 
     if constexpr (std::is_same_v<ModifierOp, CtrlOp>) {
       SmallVector<std::string> controls;
-      for (const auto control : modifier.getControls()) {
+      for (auto control : modifier.getControls()) {
         auto qubit = emitQubit(control);
         if (failed(qubit)) {
           return failure();
@@ -1113,8 +1859,7 @@ private:
                         const ArrayRef<Operation*> unitaries) {
     auto& body = modifier.getRegion().front();
     if (body.getNumArguments() == 0) {
-      fail(modifier, "multi-operation modifiers require a target qubit");
-      return failure();
+      return fail(modifier, "multi-operation modifiers require a target qubit");
     }
     const auto helperName = uniqueName("gate", nextHelper);
 
@@ -1134,14 +1879,14 @@ private:
       }
     });
     if (capturedQubit) {
-      fail(modifier,
-           "multi-operation modifier bodies cannot capture extra qubits");
-      return failure();
+      return fail(
+          modifier,
+          "multi-operation modifier bodies cannot capture extra qubits");
     }
 
     GateCall helperCall;
     helperCall.symbol = helperName;
-    for (const auto capture : captures) {
+    for (auto capture : captures) {
       auto expression = emitExpression(capture);
       if (failed(expression)) {
         return failure();
@@ -1150,7 +1895,7 @@ private:
     }
 
     DenseMap<Value, std::string> savedNames;
-    auto saveAndMap = [&](const Value value, std::string name) {
+    auto saveAndMap = [&](Value value, std::string name) {
       if (const auto found = valueNames.find(value);
           found != valueNames.end()) {
         savedNames.try_emplace(value, found->second);
@@ -1180,23 +1925,22 @@ private:
     }
     definitionOutput << ' ' << llvm::join(qubitNames, ", ") << " {\n";
     definitionOutput.indent();
-    auto* savedOutput = output;
-    output = &definitionOutput;
-    for (const auto* operation : unitaries) {
+    llvm::SaveAndRestore outputGuard(output, &definitionOutput);
+    for (auto* operation : unitaries) {
       auto call = emitGateCall(cast<UnitaryOpInterface>(operation));
       if (failed(call)) {
-        output = savedOutput;
         return failure();
       }
-      emitGateStatement(*call, definitionOutput);
+      if (failed(emitGateStatement(*call, operation, definitionOutput))) {
+        return failure();
+      }
     }
-    output = savedOutput;
     definitionOutput.unindent();
     definitionOutput << "}\n";
     definitionOutput.flush();
-    compositeHelpers.push_back(std::move(definition));
+    gateDefinitions_.push_back(std::move(definition));
 
-    for (const auto value : captures) {
+    for (auto value : captures) {
       if (const auto found = savedNames.find(value);
           found != savedNames.end()) {
         valueNames[value] = found->second;
@@ -1204,7 +1948,7 @@ private:
         valueNames.erase(value);
       }
     }
-    for (const auto argument : body.getArguments()) {
+    for (auto argument : body.getArguments()) {
       if (const auto found = savedNames.find(argument);
           found != savedNames.end()) {
         valueNames[argument] = found->second;
@@ -1215,8 +1959,17 @@ private:
     return helperCall;
   }
 
-  static void emitGateStatement(const GateCall& call,
-                                raw_indented_ostream& stream) {
+  [[nodiscard]] LogicalResult emitGateStatement(const GateCall& call,
+                                                Operation* operation,
+                                                raw_indented_ostream& stream) {
+    StringSet<> qubits;
+    for (const auto& qubit : call.qubits) {
+      if (!qubits.insert(qubit).second) {
+        return fail(operation,
+                    "cannot prove that gate operands reference distinct "
+                    "qubits");
+      }
+    }
     stream << call.modifiers << call.symbol;
     if (!call.parameters.empty()) {
       stream << '(' << llvm::join(call.parameters, ", ") << ')';
@@ -1225,6 +1978,7 @@ private:
       stream << ' ' << llvm::join(call.qubits, ", ");
     }
     stream << ";\n";
+    return success();
   }
 
   [[nodiscard]] FailureOr<std::string>
@@ -1232,18 +1986,20 @@ private:
     if (symbol == "sxdg") {
       return std::string("sx");
     }
-    if (symbol == "u") {
-      return std::string("U");
+    if (symbol == "u" || symbol == "u2") {
+      fixedHelpers.insert("_mqt_u");
+      return std::string("_mqt_u");
     }
-    const auto* gate = oq3::frontend::lookupGate(symbol);
+    const auto* gate = openqasm::frontend::lookupGate(symbol);
     if (gate == nullptr ||
-        gate->availability == oq3::frontend::GateAvailability::QELib1) {
+        gate->availability == openqasm::frontend::GateAvailability::QELib1) {
       emitError(function.getLoc())
           << "OpenQASM emission error: unsupported quantum gate '" << symbol
           << "'";
       return failure();
     }
-    if (gate->availability == oq3::frontend::GateAvailability::Compatibility) {
+    if (gate->availability ==
+        openqasm::frontend::GateAvailability::Compatibility) {
       fixedHelpers.insert(symbol);
     }
     return symbol.str();
@@ -1252,6 +2008,10 @@ private:
   void emitFixedHelpers(llvm::raw_ostream& stream) const {
     using HelperDefinition = std::pair<StringLiteral, StringLiteral>;
     constexpr std::array helpers{
+        HelperDefinition{"_mqt_u", "gate _mqt_u(p0, p1, p2) q {\n"
+                                   "  gphase(-p0 / 2);\n"
+                                   "  U(p0, p1, p2) q;\n"
+                                   "}\n"},
         HelperDefinition{"r", "gate r(p0, p1) q {\n"
                               "  rz(-p1) q;\n"
                               "  rx(p0) q;\n"
@@ -1360,7 +2120,7 @@ private:
 
 } // namespace
 
-LogicalResult translateQCToOpenQASM3(const ModuleOp moduleOp,
+LogicalResult translateQCToOpenQASM3(ModuleOp moduleOp,
                                      llvm::raw_ostream& output) {
   auto source = translateQCToOpenQASM3(moduleOp);
   if (failed(source)) {
@@ -1370,7 +2130,7 @@ LogicalResult translateQCToOpenQASM3(const ModuleOp moduleOp,
   return success();
 }
 
-FailureOr<std::string> translateQCToOpenQASM3(const ModuleOp moduleOp) {
+FailureOr<std::string> translateQCToOpenQASM3(ModuleOp moduleOp) {
   return OpenQASMEmitter(moduleOp).emit();
 }
 

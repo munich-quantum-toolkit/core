@@ -172,6 +172,13 @@ The same open handle works with application adapters. Pass it to
 {py:class}`mqt.core.plugins.pennylane.device.QDMIDevice`. See the
 {doc}`pennylane_device` guide for the PennyLane constructor.
 
+Open the selected device once per application process and reuse its handle for
+subsequent quantum jobs. The adapter validates the license locally, opens only
+the selected device, and queries its status once. Device selection uses the
+ordinary QDMI driver lookup and needs no controller RPC. Provider initialization
+and network requests can still dominate opening time; use provider-supported
+timeout settings for network requests.
+
 ## Check concurrent jobs
 
 For a scheduling test, add a sufficiently long classical post-processing step
@@ -222,3 +229,41 @@ license expression for device selection because the environment does not
 identify a single selected device in that case.
 
 [Slurm GRES configuration]: https://slurm.schedmd.com/gres.conf.html
+
+## Run the integration tests
+
+From a source checkout on a Linux Docker host with cgroup v2, build one wheel
+and run the fixture:
+
+```console
+uv build --wheel --out-dir test/slurm/dist
+uv run --no-project --python 3.14 test/slurm/run_integration.py
+```
+
+Keep exactly one wheel in `test/slurm/dist`. The fixture installs that wheel in
+one controller and two compute containers. It checks admission, license
+contention, independent SC execution, Bell results, and terminal job states and
+exit codes. It uses privileged containers to exercise real Slurm cgroups; it is
+an isolated test cluster, not a production deployment template.
+
+Each invocation uses its own Docker project, Munge key, and directory below
+`test/slurm/runtime`. Successful runs remove their containers, images, and
+artifacts; failures retain artifacts and print the project and runtime path.
+Docker's build cache remains available to later runs. Commands have 30-second
+deadlines, image build/startup has a ten-minute deadline, and diagnostics and
+cleanup have separate short deadlines. Batch jobs request a five-minute time
+limit. An interrupted command terminates its process group, including a Docker
+Compose child.
+
+The runner prints setup, execution, and total durations. Its inexpensive
+failure-path tests can run before building a wheel:
+
+```console
+uv run --no-project --with 'pytest>=9.0.1' --python 3.14 pytest -o addopts= -q test/python/test_slurm_integration.py
+```
+
+CI enables the existing sccache compiler integration and reports cache counters.
+Compare compiler requests, hits, and wall time before attributing a build-time
+change to caching. The fixture's bounded polling targets its private controller;
+do not copy these loops into production monitoring. See the
+[Slurm RPC performance guidance](https://slurm.schedmd.com/squeue.html#SECTION_PERFORMANCE).

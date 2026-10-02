@@ -8,9 +8,8 @@
  * Licensed under the MIT License
  */
 
-/** @file UniqueTableStatistics.hpp
- * @brief Statistics for decision-diagram unique tables.
- */
+/// @file UniqueTableStatistics.hpp
+/// Statistics for decision-diagram unique tables.
 
 #pragma once
 
@@ -20,7 +19,7 @@
 #include <string>
 
 namespace dd {
-/// \brief A class for storing statistics of a unique table
+/// A class for storing statistics of a unique table
 struct UniqueTableStatistics : TableStatistics {
   /// The number of garbage collection runs
   std::size_t gcRuns = 0U;

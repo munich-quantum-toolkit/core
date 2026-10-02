@@ -17,7 +17,7 @@ if(MQT_CORE_INSTALL)
   set(MQT_CORE_CMAKE_VERSION_CONFIG_FILE
       "${MQT_CORE_CMAKE_CONFIG_DIR}/mqt-core-config-version.cmake")
   set(MQT_CORE_CMAKE_PROJECT_CONFIG_FILE "${MQT_CORE_CMAKE_CONFIG_DIR}/mqt-core-config.cmake")
-  set(MQT_CORE_CMAKE_PROJECT_TARGETS_FILE "${MQT_CORE_CMAKE_CONFIG_DIR}/mqt-core-targets.cmake")
+  set(MQT_CORE_CMAKE_PROJECT_TARGETS_FILE "mqt-core-targets.cmake")
 endif()
 
 if(NOT TARGET MQT::ProjectWarnings)
@@ -28,11 +28,9 @@ if(NOT TARGET MQT::ProjectWarnings)
   include(${PROJECT_SOURCE_DIR}/cmake/CompilerWarnings.cmake)
   set_project_warnings(project_warnings)
 
-  # add MQT alias
   add_library(MQT::ProjectWarnings ALIAS project_warnings)
   set_target_properties(project_warnings PROPERTIES EXPORT_NAME ProjectWarnings)
 
-  # add to list of MQT core targets
   list(APPEND MQT_CORE_TARGETS project_warnings)
 endif()
 
@@ -48,27 +46,16 @@ if(NOT TARGET MQT::ProjectOptions)
   include(${PROJECT_SOURCE_DIR}/cmake/Sanitizers.cmake)
   enable_sanitizers(project_options)
 
-  # add MQT alias
   add_library(MQT::ProjectOptions ALIAS project_options)
   set_target_properties(project_options PROPERTIES EXPORT_NAME ProjectOptions)
 
-  # add to list of MQT core targets
   list(APPEND MQT_CORE_TARGETS project_options)
 endif()
 
-# add the IR package
-add_subdirectory(ir)
+add_subdirectory(bench)
 
-# add the QASM package
-add_subdirectory(qasm3)
-
-# add the circuit_optimizer package
-add_subdirectory(circuit_optimizer)
-
-# add DD package library
 add_subdirectory(dd)
 
-# add QDMI libraries
 add_subdirectory(qdmi)
 
 # Installation instructions for the main library
@@ -106,7 +93,7 @@ if(MQT_CORE_INSTALL)
 
   install(
     EXPORT ${MQT_CORE_TARGETS_EXPORT_NAME}
-    FILE ${MQT_CORE_PROJECT_TARGETS_FILE}
+    FILE ${MQT_CORE_CMAKE_PROJECT_TARGETS_FILE}
     NAMESPACE MQT::
     DESTINATION ${MQT_CORE_CONFIG_INSTALL_DIR}
     COMPONENT ${MQT_CORE_TARGET_NAME}_Development)

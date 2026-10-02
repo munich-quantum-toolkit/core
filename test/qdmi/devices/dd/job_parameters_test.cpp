@@ -11,12 +11,13 @@
 /*
  * DDSIM QDMI Device - Job parameters and properties
  */
-#include "helpers/circuits.hpp"
-#include "helpers/test_utils.hpp"
 #include "mqt_ddsim_qdmi/constants.h"
 #include "mqt_ddsim_qdmi/device.h"
 
-#include <gtest/gtest.h>
+#include "helpers/circuits.hpp"
+#include "helpers/test_utils.hpp"
+
+#include "gtest/gtest.h"
 
 #include <array>
 #include <cstddef>
@@ -146,7 +147,6 @@ TEST(JobParameters, ProgramFormatSupport) {
 
   // Unsupported → NOTSUPPORTED
   for (QDMI_Program_Format fmt : {
-           QDMI_PROGRAM_FORMAT_CALIBRATION,
            QDMI_PROGRAM_FORMAT_QPY,
            QDMI_PROGRAM_FORMAT_IQMJSON,
            QDMI_PROGRAM_FORMAT_CUSTOM1,

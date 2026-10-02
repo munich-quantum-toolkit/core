@@ -8,42 +8,57 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
+#include "mqt/Conversion/QCToQIR/QIRCommon/QIRCommon.h"
+#include "mqt/Dialect/CBit/IR/CBitOps.h"
+#include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/Transforms/Passes.h"
+#include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
+#include "mqt/Dialect/QC/IR/QCDialect.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
+#include "mqt/Dialect/QIR/Builder/QIRProgramBuilder.h"
+#include "mqt/Dialect/QIR/Utils/QIRUtils.h"
+#include "mqt/Support/Passes.h"
+
 #include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
-#include "mlir/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
-#include "mlir/Dialect/MQT/Transforms/Passes.h"
-#include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
-#include "mlir/Dialect/QC/IR/QCDialect.h"
-#include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
-#include "mlir/Dialect/QIR/Utils/QIRUtils.h"
-#include "mlir/Support/Passes.h"
 #include "qc_programs.h"
 #include "qir_programs.h"
 
-#include <gtest/gtest.h>
-#include <llvm/Support/raw_ostream.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
-#include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
-#include <mlir/Dialect/Math/IR/Math.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/IR/BuiltinTypes.h>
-#include <mlir/IR/Diagnostics.h>
-#include <mlir/IR/DialectRegistry.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/Verifier.h>
-#include <mlir/Pass/PassManager.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
+#include "gtest/gtest.h"
+
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/LLVMIR/LLVMTypes.h"
+#include "mlir/Dialect/Math/IR/Math.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/Diagnostics.h"
+#include "mlir/IR/DialectRegistry.h"
+#include "mlir/IR/Dominance.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/OwningOpRef.h"
+#include "mlir/IR/TypeRange.h"
+#include "mlir/IR/Verifier.h"
+#include "mlir/Parser/Parser.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
+
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <cstddef>
 #include <iosfwd>
 #include <memory>
 #include <ostream>
 #include <string>
+#include <utility>
 
 using namespace mlir;
 
@@ -98,6 +113,551 @@ static LogicalResult runQCToQIRAdaptiveConversionSimple(ModuleOp moduleOp) {
   return pm.run(moduleOp);
 }
 
+TEST(QCToQIRAdaptiveNativeTest, LowersConstantTensorWithRuntimeIndex) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      scf::SCFDialect, tensor::TensorDialect>();
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main() attributes {mqt.entry_point} {
+      %angles = arith.constant dense<[0.25, 0.5]> : tensor<2xf64>
+      %zero = arith.constant 0 : index
+      %one = arith.constant 1 : index
+      %two = arith.constant 2 : index
+      %q = qc.alloc : !qc.qubit
+      scf.for %index = %zero to %two step %one {
+        %angle = tensor.extract %angles[%index] : tensor<2xf64>
+        qc.rz(%angle) %q : !qc.qubit
+      }
+      qc.dealloc %q : !qc.qubit
+      return
+    }
+  })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  size_t constantTables = 0;
+  moduleOp->walk([&](LLVM::GlobalOp global) {
+    if (global.getConstant() &&
+        isa<LLVM::LLVMArrayType>(global.getGlobalType())) {
+      ++constantTables;
+    }
+  });
+  EXPECT_EQ(constantTables, 1);
+  bool readsFloat = false;
+  moduleOp->walk(
+      [&](LLVM::LoadOp load) { readsFloat |= load.getType().isF64(); });
+  EXPECT_TRUE(readsFloat);
+  moduleOp->walk([&](Operation* operation) {
+    EXPECT_NE(operation->getName().getDialectNamespace(), "tensor");
+    EXPECT_NE(operation->getName().getDialectNamespace(), "memref");
+    EXPECT_NE(operation->getName().getDialectNamespace(), "bufferization");
+  });
+}
+
+TEST(QCToQIRAdaptiveNativeTest, UsesSharedAllocationVerifierForStandalonePass) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      scf::SCFDialect>();
+  auto module = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main() attributes {mqt.entry_point} {
+      %condition = arith.constant false
+      scf.if %condition {
+        %q = qc.alloc : !qc.qubit
+        qc.dealloc %q : !qc.qubit
+      }
+      return
+    }
+  })mlir",
+                                            &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_EQ(context.getLoadedDialect<mlir::mqt::MQTDialect>(), nullptr);
+  bool diagnosed = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    diagnosed |= diagnostic.str().find("dynamic quantum allocations must be") !=
+                 std::string::npos;
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*module)));
+  EXPECT_TRUE(diagnosed);
+  EXPECT_TRUE(module->lookupSymbol<func::FuncOp>("main"));
+}
+
+TEST(QCToQIRAdaptiveNativeTest, RejectsExplicitRuntimeAssertions) {
+  MLIRContext context;
+  context.loadDialect<arith::ArithDialect, func::FuncDialect,
+                      cf::ControlFlowDialect>();
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main() attributes {mqt.entry_point} {
+      %condition = arith.constant false
+      cf.assert %condition, "unsupported runtime precondition"
+      return
+    }
+  })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  bool diagnosed = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    diagnosed |= diagnostic.str().find("cf.assert") != std::string::npos;
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*moduleOp)));
+  EXPECT_TRUE(diagnosed);
+}
+
+TEST(QCToQIRAdaptiveNativeTest, RejectsMultipleReturnsBeforeOutputPreparation) {
+  MLIRContext context;
+  context
+      .loadDialect<qc::QCDialect, func::FuncDialect, cf::ControlFlowDialect>();
+  auto module = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main() -> i1 attributes {mqt.entry_point} {
+      %q = qc.alloc : !qc.qubit
+      %bit = qc.measure %q : !qc.qubit -> i1
+      cf.cond_br %bit, ^left, ^right
+    ^left:
+      qc.dealloc %q : !qc.qubit
+      return %bit : i1
+    ^right:
+      qc.dealloc %q : !qc.qubit
+      return %bit : i1
+    }
+  })mlir",
+                                            &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  bool diagnosed = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    diagnosed |= diagnostic.str().find("single return") != std::string::npos;
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*module)));
+  EXPECT_TRUE(diagnosed);
+  size_t returns = 0;
+  module->walk([&](func::ReturnOp op) {
+    ++returns;
+    EXPECT_EQ(op.getNumOperands(), 1);
+  });
+  EXPECT_EQ(returns, 2);
+  EXPECT_TRUE(succeeded(verify(*module)));
+}
+
+TEST(QCToQIRAdaptiveNativeTest, PreservesConditionalReleases) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, func::FuncDialect, scf::SCFDialect,
+                      memref::MemRefDialect>();
+  auto module = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func private @condition() -> i1
+    func.func @main() attributes {mqt.entry_point} {
+      %q = qc.alloc : !qc.qubit
+      %reg = memref.alloc() : memref<1x!qc.qubit>
+      %condition = func.call @condition() : () -> i1
+      scf.if %condition {
+        qc.dealloc %q : !qc.qubit
+        memref.dealloc %reg : memref<1x!qc.qubit>
+      } else {
+        qc.dealloc %q : !qc.qubit
+        memref.dealloc %reg : memref<1x!qc.qubit>
+      }
+      return
+    }
+  })mlir",
+                                            &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+  SmallVector<LLVM::CallOp> releases;
+  module->walk([&](LLVM::CallOp call) {
+    if (call.getCallee() == qir::QIR_QUBIT_RELEASE ||
+        call.getCallee() == qir::QIR_QUBIT_ARRAY_RELEASE) {
+      releases.push_back(call);
+    }
+  });
+  ASSERT_EQ(releases.size(), 4);
+  EXPECT_EQ(releases[0]->getBlock(), releases[1]->getBlock());
+  EXPECT_EQ(releases[2]->getBlock(), releases[3]->getBlock());
+  EXPECT_NE(releases[0]->getBlock(), releases[2]->getBlock());
+  for (auto release : releases) {
+    EXPECT_TRUE(isa<LLVM::BrOp>(release->getBlock()->getTerminator()));
+  }
+}
+
+TEST(QCToQIRAdaptiveNativeTest,
+     LowersPureOutputIndicesComputedAfterMeasurement) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, cbit::CBitDialect, arith::ArithDialect,
+                      func::FuncDialect, scf::SCFDialect>();
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main() -> !cbit.reg<4> attributes {mqt.entry_point} {
+      %q = qc.alloc : !qc.qubit
+      %r = cbit.alloc(#cbit.init<zero>) : !cbit.reg<4>
+      %zero = arith.constant 0 : index
+      %one = arith.constant 1 : index
+      %four = arith.constant 4 : index
+      %three = arith.constant 3 : i32
+      scf.for %i = %zero to %four step %one {
+        %bit = qc.measure %q : !qc.qubit -> i1
+        %i32 = arith.index_cast %i : index to i32
+        %reversed = arith.subi %three, %i32 : i32
+        %index = arith.index_cast %reversed : i32 to index
+        %condition = arith.cmpi slt, %i, %four : index
+        %selected = scf.if %condition -> index {
+          scf.yield %index : index
+        } else {
+          scf.yield %zero : index
+        }
+        cbit.store %bit, %r[%selected] : !cbit.reg<4>
+      }
+      qc.dealloc %q : !qc.qubit
+      return %r : !cbit.reg<4>
+    }
+  })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  OwningOpRef<ModuleOp> converted = moduleOp->clone();
+  qc::MeasureOp measure;
+  cbit::StoreOp store;
+  scf::ForOp loop;
+  moduleOp->walk([&](qc::MeasureOp op) { measure = op; });
+  moduleOp->walk([&](cbit::StoreOp op) { store = op; });
+  moduleOp->walk([&](scf::ForOp op) { loop = op; });
+  ASSERT_TRUE(measure);
+  ASSERT_TRUE(store);
+  ASSERT_TRUE(loop);
+  auto index = store.getIndex();
+  auto* producer = index.getDefiningOp();
+  ASSERT_TRUE(producer);
+  EXPECT_TRUE(measure->isBeforeInBlock(producer));
+
+  LoweringState state;
+  ASSERT_TRUE(succeeded(prepareClassicalResults(*moduleOp, state, true)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_EQ(state.cregMeasurements.at(measure),
+            (std::pair<size_t, Value>{0, index}));
+  EXPECT_EQ(measure->getParentOp(), loop.getOperation());
+  EXPECT_TRUE(DominanceInfo(*moduleOp).dominates(index, measure));
+  EXPECT_TRUE(loop.getBody()->getOps<cbit::StoreOp>().empty());
+
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*converted)));
+  EXPECT_TRUE(succeeded(verify(*converted)));
+  LLVM::CallOp measurementCall;
+  converted->walk([&](LLVM::CallOp call) {
+    if (call.getCallee() == qir::QIR_MEASURE) {
+      measurementCall = call;
+    }
+  });
+  ASSERT_TRUE(measurementCall);
+  auto resultLoad =
+      measurementCall.getArgOperands()[1].getDefiningOp<LLVM::LoadOp>();
+  ASSERT_TRUE(resultLoad);
+  auto resultSlot = resultLoad.getAddr().getDefiningOp<LLVM::GEPOp>();
+  ASSERT_TRUE(resultSlot);
+  ASSERT_EQ(resultSlot.getDynamicIndices().size(), 1U);
+  EXPECT_TRUE(isa<BlockArgument>(resultSlot.getDynamicIndices().front()));
+  EXPECT_TRUE(converted->lookupSymbol<LLVM::LLVMFuncOp>(
+      qir::QIR_RESULT_ARRAY_RECORD_OUTPUT));
+  EXPECT_FALSE(
+      converted->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_BOOL_RECORD_OUTPUT));
+}
+
+TEST(QCToQIRAdaptiveNativeTest, RejectsUnsafeOutputIndexDefinitions) {
+  for (const auto* definition : {
+           "%index = arith.index_cast %bit : i1 to index\n",
+           "%old = cbit.load %scratch[%zero] : !cbit.reg<2>\n"
+           "%index = arith.index_cast %old : i1 to index\n",
+           "%index = func.call @index() : () -> index\n",
+           "%index = arith.divui %one, %divisor : index\n",
+           "%index = scf.if %condition -> index {\n"
+           "  qc.x %q : !qc.qubit\n"
+           "  scf.yield %zero : index\n"
+           "} else { scf.yield %one : index }\n",
+       }) {
+    SCOPED_TRACE(definition);
+    MLIRContext context;
+    context.loadDialect<qc::QCDialect, cbit::CBitDialect, arith::ArithDialect,
+                        func::FuncDialect, scf::SCFDialect>();
+    auto source = std::string(R"mlir(module {
+      func.func private @index() -> index
+      func.func @main() -> !cbit.reg<2> attributes {mqt.entry_point} {
+        %q = qc.alloc : !qc.qubit
+        %r = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+        %scratch = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+        %zero = arith.constant 0 : index
+        %zero_i32 = arith.constant 0 : i32
+        %one = arith.constant 1 : index
+        %condition = arith.constant false
+        %divisor = func.call @index() : () -> index
+        %first = qc.measure %q : !qc.qubit -> i1
+        %first_index = arith.index_cast %zero_i32 : i32 to index
+        cbit.store %first, %r[%first_index] : !cbit.reg<2>
+        %bit = qc.measure %q : !qc.qubit -> i1
+    )mlir") + definition +
+                  R"mlir(
+        cbit.store %bit, %r[%index] : !cbit.reg<2>
+        qc.dealloc %q : !qc.qubit
+        return %r : !cbit.reg<2>
+      }
+    })mlir";
+    auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    bool diagnosed = false;
+    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+      diagnosed |=
+          diagnostic.str().find("cannot fuse this measurement/store pair") !=
+          std::string::npos;
+      return success();
+    });
+    LoweringState state;
+    EXPECT_TRUE(failed(prepareClassicalResults(*moduleOp, state, true)));
+    EXPECT_TRUE(diagnosed);
+  }
+}
+
+TEST(QCToQIRAdaptiveNativeTest, RejectsUnsafeOutputStores) {
+  for (const auto* body : {
+           "%a = qc.measure %q : !qc.qubit -> i1\n"
+           "qc.x %q : !qc.qubit\n"
+           "%b = qc.measure %q : !qc.qubit -> i1\n"
+           "cbit.store %b, %r[%i] : !cbit.reg<1>\n"
+           "cbit.store %a, %r[%i] : !cbit.reg<1>\n",
+           "%a = qc.measure %q : !qc.qubit -> i1\n"
+           "scf.if %condition { cbit.store %a, %r[%i] : !cbit.reg<1> }\n",
+           "%a = qc.measure %q : !qc.qubit -> i1\n"
+           "func.call @observe() : () -> ()\n"
+           "cbit.store %a, %r[%i] : !cbit.reg<1>\n",
+           "%a = qc.measure %q : !qc.qubit -> i1\n"
+           "%old = cbit.load %r[%i] : !cbit.reg<1>\n"
+           "cbit.store %a, %r[%i] : !cbit.reg<1>\n",
+       }) {
+    SCOPED_TRACE(body);
+    MLIRContext context;
+    context.loadDialect<cbit::CBitDialect, qc::QCDialect, arith::ArithDialect,
+                        func::FuncDialect, scf::SCFDialect>();
+    auto source = std::string(R"mlir(module {
+      func.func private @observe()
+      func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
+        %q = qc.alloc : !qc.qubit
+        %r = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+        %i = arith.constant 0 : index
+        %condition = arith.constant false
+    )mlir") + body +
+                  R"mlir(
+        qc.dealloc %q : !qc.qubit
+        return %r : !cbit.reg<1>
+      }
+    })mlir";
+    auto module = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(module);
+    ASSERT_TRUE(succeeded(verify(*module)));
+    bool diagnosed = false;
+    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+      diagnosed |=
+          diagnostic.str().find("cannot fuse this measurement/store pair") !=
+          std::string::npos;
+      return success();
+    });
+    EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*module)));
+    EXPECT_TRUE(diagnosed);
+    auto main = module->lookupSymbol<func::FuncOp>("main");
+    ASSERT_TRUE(main);
+    EXPECT_TRUE(isa<cbit::RegisterType>(main.getResultTypes().front()));
+    size_t stores = 0;
+    main.walk([&](cbit::StoreOp) { ++stores; });
+    EXPECT_GT(stores, 0);
+    EXPECT_TRUE(succeeded(verify(*module)));
+  }
+}
+
+TEST(QCToQIRAdaptiveNativeTest, FusesStoresAcrossDisjointConstantIndices) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, cbit::CBitDialect, arith::ArithDialect,
+                      func::FuncDialect>();
+  auto module = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main() -> !cbit.reg<2> attributes {mqt.entry_point} {
+      %q = qc.alloc : !qc.qubit
+      %r = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+      %zero = arith.constant 0 : index
+      %one = arith.constant 1 : index
+      %a = qc.measure %q : !qc.qubit -> i1
+      qc.x %q : !qc.qubit
+      %b = qc.measure %q : !qc.qubit -> i1
+      cbit.store %b, %r[%one] : !cbit.reg<2>
+      cbit.store %a, %r[%zero] : !cbit.reg<2>
+      qc.dealloc %q : !qc.qubit
+      return %r : !cbit.reg<2>
+    }
+  })mlir",
+                                            &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  EXPECT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+}
+
+TEST(QCToQIRAdaptiveNativeTest, PreservesClassicalStoreFusionBarriers) {
+  for (const auto& [intervening, accepted] : {
+           std::pair{"", true},
+           {
+               "%extra = qc.alloc : !qc.qubit\n"
+               "qc.dealloc %extra : !qc.qubit\n",
+               true,
+           },
+           {"cbit.store %b, %r[%one] : !cbit.reg<2>\n", true},
+           {"cbit.store %b, %r[%zero] : !cbit.reg<2>\n", false},
+           {"cbit.store %b, %scratch[%one] : !cbit.reg<2>\n", false},
+           {
+               "cbit.store %b, %scratch[%one] : !cbit.reg<2>\n"
+               "cbit.store %b, %r[%one] : !cbit.reg<2>\n",
+               false,
+           },
+           {
+               "cbit.store %b, %r[%one] : !cbit.reg<2>\n"
+               "cbit.store %b, %scratch[%one] : !cbit.reg<2>\n",
+               false,
+           },
+           {"cbit.store %b, %r[%dynamic] : !cbit.reg<2>\n", false},
+           {"scf.if %condition { func.call @observe() : () -> () }\n", false},
+       }) {
+    SCOPED_TRACE(intervening);
+    MLIRContext context;
+    context
+        .loadDialect<qc::QCDialect, cbit::CBitDialect, mlir::mqt::MQTDialect,
+                     arith::ArithDialect, func::FuncDialect, scf::SCFDialect>();
+    auto source = std::string(R"mlir(module {
+      func.func private @observe()
+      func.func private @index() -> index
+      func.func @main() -> !cbit.reg<2> attributes {mqt.entry_point} {
+        %q = qc.alloc : !qc.qubit
+        %r = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+        %scratch = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+        %zero = arith.constant 0 : index
+        %one = arith.constant 1 : index
+        %condition = arith.constant false
+        %dynamic = func.call @index() : () -> index
+        %b = qc.measure %q : !qc.qubit -> i1
+        %a = qc.measure %q : !qc.qubit -> i1
+    )mlir") + intervening +
+                  R"mlir(
+        cbit.store %a, %r[%zero] : !cbit.reg<2>
+        qc.dealloc %q : !qc.qubit
+        return %r : !cbit.reg<2>
+      }
+    })mlir";
+    auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    bool diagnosed = false;
+    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+      diagnosed |=
+          diagnostic.str().find("cannot fuse this measurement/store pair") !=
+          std::string::npos;
+      return success();
+    });
+    LoweringState state;
+    EXPECT_EQ(succeeded(prepareClassicalResults(*moduleOp, state)), accepted);
+    EXPECT_EQ(diagnosed, !accepted);
+    if (accepted) {
+      EXPECT_TRUE(succeeded(verify(*moduleOp)));
+    }
+  }
+}
+
+TEST(QCToQIRAdaptiveNativeTest, ReleasesResultArraysInAllocationOrder) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  SmallVector<Value> registers;
+  for (size_t i = 0; i < 12; ++i) {
+    registers.push_back(builder.allocClassicalBitRegister(1));
+  }
+  builder.retype(TypeRange(registers));
+  auto moduleOp = builder.finalize(registers);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  SmallVector<Value> allocated;
+  SmallVector<Value> released;
+  moduleOp->walk([&](LLVM::CallOp call) {
+    if (call.getCallee() == qir::QIR_RESULT_ARRAY_ALLOC) {
+      allocated.push_back(call.getOperand(1));
+    } else if (call.getCallee() == qir::QIR_RESULT_ARRAY_RELEASE) {
+      released.push_back(call.getOperand(1));
+    }
+  });
+  ASSERT_EQ(allocated.size(), 12);
+  EXPECT_EQ(released, allocated);
+}
+
+TEST(QCToQIRAdaptiveNativeTest, DynamicallyAllocatesScalarAndRegisterResults) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, memref::MemRefDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto q = builder.allocQubit();
+  auto reg = builder.allocClassicalBitRegister(1);
+  auto scalar = builder.measure(q);
+  builder.measure(q, reg, 0);
+  builder.retype(TypeRange{scalar.getType(), reg.getType()});
+  auto module = builder.finalize(ValueRange{scalar, reg});
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+  LLVM::CallOp allocation;
+  LLVM::CallOp release;
+  size_t arrays = 0;
+  module->walk([&](LLVM::CallOp call) {
+    if (call.getCallee() == qir::QIR_RESULT_ALLOC) {
+      allocation = call;
+    }
+    if (call.getCallee() == qir::QIR_RESULT_RELEASE) {
+      release = call;
+    }
+    if (call.getCallee() == qir::QIR_RESULT_ARRAY_ALLOC) {
+      ++arrays;
+    }
+  });
+  ASSERT_TRUE(allocation);
+  ASSERT_TRUE(release);
+  EXPECT_EQ(release.getOperand(0), allocation.getResult());
+  EXPECT_EQ(arrays, 1);
+}
+
+TEST(QCToQIRAdaptiveNativeTest, PreservesEntryBlockQubitAllocations) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      cf::ControlFlowDialect, scf::SCFDialect,
+                      memref::MemRefDialect, LLVM::LLVMDialect>();
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func private @condition() -> i1
+    func.func @main() attributes {mqt.entry_point} {
+      %q = qc.alloc : !qc.qubit
+      %c = func.call @condition() : () -> i1
+      scf.if %c {
+        qc.x %q : !qc.qubit
+      }
+      %reg = memref.alloc() : memref<1x!qc.qubit>
+      qc.dealloc %q : !qc.qubit
+      memref.dealloc %reg : memref<1x!qc.qubit>
+      return
+    }
+  })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*moduleOp)));
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+}
+
 TEST(QCToQIRAdaptiveNativeTest,
      NormalizesFactorableControlledGlobalPhaseBeforeLowering) {
   MLIRContext context;
@@ -105,8 +665,8 @@ TEST(QCToQIRAdaptiveNativeTest,
                       LLVM::LLVMDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  const auto control = builder.allocQubit();
-  const auto target = builder.allocQubit();
+  auto control = builder.allocQubit();
+  auto target = builder.allocQubit();
   builder.ctrl(control, target, [&](Value targetArg) {
     builder.x(targetArg);
     builder.gphase(0.317);
@@ -116,73 +676,6 @@ TEST(QCToQIRAdaptiveNativeTest,
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   EXPECT_TRUE(succeeded(runQCToQIRAdaptiveConversion(*moduleOp)));
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
-}
-
-TEST(QCToQIRAdaptiveNativeTest, RejectsControlledPhaseWithNonHoistableAngle) {
-  MLIRContext context;
-  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
-                      LLVM::LLVMDialect>();
-  qc::QCProgramBuilder builder(&context);
-  builder.initialize();
-  const auto control = builder.allocQubit();
-  const auto target = builder.allocQubit();
-  builder.ctrl(control, target, [&](Value /*targetArg*/) {
-    auto angle = func::CallOp::create(builder, builder.getLoc(), "angle",
-                                      builder.getF64Type(), ValueRange{});
-    builder.gphase(angle.getResult(0));
-  });
-  auto moduleOp = builder.finalize();
-  ASSERT_TRUE(moduleOp);
-  OpBuilder moduleBuilder(&context);
-  moduleBuilder.setInsertionPointToStart(moduleOp->getBody());
-  auto angleFunction = func::FuncOp::create(
-      moduleBuilder, moduleOp->getLoc(), "angle",
-      moduleBuilder.getFunctionType({}, {moduleBuilder.getF64Type()}));
-  angleFunction.setPrivate();
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-
-  bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    std::string message;
-    llvm::raw_string_ostream stream(message);
-    diagnostic.print(stream);
-    sawExpectedDiagnostic |= StringRef(message).contains(
-        "Controlled GPhaseOps cannot be converted to QIR");
-    return success();
-  });
-  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversion(*moduleOp)));
-  EXPECT_TRUE(sawExpectedDiagnostic);
-}
-
-TEST(QCToQIRAdaptiveNativeTest, LowersControlFlowAssertions) {
-  MLIRContext context;
-  context
-      .loadDialect<qc::QCDialect, arith::ArithDialect, cf::ControlFlowDialect,
-                   func::FuncDialect, LLVM::LLVMDialect>();
-  qc::QCProgramBuilder builder(&context);
-  builder.initialize();
-  auto condition = LLVM::UndefOp::create(builder, builder.getI1Type());
-  cf::AssertOp::create(builder, condition, "runtime precondition");
-  auto module = builder.finalize();
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversion(*module)));
-  EXPECT_TRUE(succeeded(verify(*module)));
-
-  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>("abort"));
-  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>("puts"));
-  EXPECT_TRUE(module->lookupSymbol<LLVM::GlobalOp>("assert_msg"));
-  bool retainsAssertion = false;
-  bool hasConditionalBranch = false;
-  bool hasUnreachableFailure = false;
-  module->walk([&](Operation* operation) {
-    retainsAssertion |= isa<cf::AssertOp>(operation);
-    hasConditionalBranch |= isa<LLVM::CondBrOp>(operation);
-    hasUnreachableFailure |= isa<LLVM::UnreachableOp>(operation);
-  });
-  EXPECT_FALSE(retainsAssertion);
-  EXPECT_TRUE(hasConditionalBranch);
-  EXPECT_TRUE(hasUnreachableFailure);
 }
 
 TEST(QCToQIRAdaptiveNativeTest, LowersPopulationCountThroughMathToLLVM) {
@@ -217,7 +710,7 @@ TEST(QCToQIRAdaptiveNativeTest, LowersUnreturnedClassicalControlRegister) {
                    scf::SCFDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  const auto q = builder.allocQubit();
+  auto q = builder.allocQubit();
   auto c = builder.allocClassicalBitRegister(1);
   builder.measure(q, c, 0);
   builder.scfIf(c, 0, [&] { builder.x(q); });
@@ -242,7 +735,7 @@ TEST(QCToQIRAdaptiveNativeTest, LowersZeroInitializedClassicalControlRegister) {
                    scf::SCFDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  const auto q = builder.allocQubit();
+  auto q = builder.allocQubit();
   auto c = builder.allocClassicalBitRegister(1);
   builder.scfIf(c, 0, [&] { builder.x(q); });
   auto module = builder.finalize();
@@ -256,6 +749,233 @@ TEST(QCToQIRAdaptiveNativeTest, LowersZeroInitializedClassicalControlRegister) {
   EXPECT_FALSE(module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_READ_RESULT));
 }
 
+TEST(QCToQIRAdaptiveNativeTest, LowersClassicalRegisterComparison) {
+  MLIRContext context;
+  context
+      .loadDialect<cbit::CBitDialect, qc::QCDialect, arith::ArithDialect,
+                   cf::ControlFlowDialect, func::FuncDialect, LLVM::LLVMDialect,
+                   memref::MemRefDialect, scf::SCFDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto q = builder.allocQubit();
+  auto c = builder.allocClassicalBitRegister(3);
+  builder.measure(q, c, 0);
+  auto rhs = builder.getIntegerAttr(builder.getIntegerType(3), 2);
+  auto comparison =
+      arith::CmpIOp::create(builder, arith::CmpIPredicate::ult,
+                            cbit::ReadOp::create(builder, rhs.getType(), c),
+                            arith::ConstantOp::create(builder, rhs));
+  builder.scfIf(comparison, [&] { builder.x(q); });
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversion(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+  bool retainsComparison = false;
+  module->walk([&](arith::CmpIOp) { retainsComparison = true; });
+  EXPECT_FALSE(retainsComparison);
+}
+
+TEST(QCToQIRAdaptiveNativeTest, RejectsRegisterCallsAtTheSharedBoundary) {
+  const auto sources = {
+      R"mlir(module {
+        func.func private @callee(!cbit.reg<1>)
+        func.func @main() attributes {mqt.entry_point} {
+          %c = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+          func.call @callee(%c) : (!cbit.reg<1>) -> ()
+          return
+        }
+      })mlir",
+      R"mlir(module {
+        func.func private @callee() -> !cbit.reg<1>
+        func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
+          %c = func.call @callee() : () -> !cbit.reg<1>
+          return %c : !cbit.reg<1>
+        }
+      })mlir",
+      R"mlir(module {
+        func.func private @callee(!cbit.reg<1>)
+        func.func @main() attributes {mqt.entry_point} {
+          %callee = func.constant @callee : (!cbit.reg<1>) -> ()
+          %c = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+          func.call_indirect %callee(%c) : (!cbit.reg<1>) -> ()
+          return
+        }
+      })mlir",
+      R"mlir(module {
+        func.func private @callee() -> !cbit.reg<1>
+        func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
+          %callee = func.constant @callee : () -> !cbit.reg<1>
+          %c = func.call_indirect %callee() : () -> !cbit.reg<1>
+          return %c : !cbit.reg<1>
+        }
+      })mlir",
+  };
+  for (const auto* source : sources) {
+    SCOPED_TRACE(source);
+    MLIRContext context;
+    context.loadDialect<cbit::CBitDialect, func::FuncDialect>();
+    auto module = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(module);
+    bool diagnosed = false;
+    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+      std::string message;
+      llvm::raw_string_ostream stream(message);
+      diagnostic.print(stream);
+      diagnosed |= StringRef(message).contains(
+          "does not support CBit registers in calls");
+      return success();
+    });
+    EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*module)));
+    EXPECT_TRUE(diagnosed);
+  }
+}
+
+TEST(QCToQIRAdaptiveNativeTest, PreservesScalarCalls) {
+  MLIRContext context;
+  context.loadDialect<arith::ArithDialect, func::FuncDialect>();
+  auto module = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func private @callee(i64) -> i64
+    func.func @main() attributes {mqt.entry_point} {
+      %zero = arith.constant 0 : i64
+      %callee = func.constant @callee : (i64) -> i64
+      %direct = func.call @callee(%zero) : (i64) -> i64
+      %indirect = func.call_indirect %callee(%direct) : (i64) -> i64
+      return
+    }
+  })mlir",
+                                            &context);
+  ASSERT_TRUE(module);
+  EXPECT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+}
+
+TEST(QCToQIRAdaptiveNativeTest, RejectsMixedClassicalRegisterRepresentations) {
+  MLIRContext context;
+  context.loadDialect<cbit::CBitDialect, arith::ArithDialect,
+                      cf::ControlFlowDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, scf::SCFDialect>();
+  auto module = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() -> (i1, i1, i1, !cbit.reg<1>)
+          attributes {mqt.entry_point} {
+        %true = arith.constant true
+        %c0 = arith.constant 0 : index
+        %returned = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+        %local = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+        %selected = scf.if %true -> (!cbit.reg<1>) {
+          scf.yield %returned : !cbit.reg<1>
+        } else {
+          scf.yield %local : !cbit.reg<1>
+        }
+        %bit = cbit.load %selected[%c0] : !cbit.reg<1>
+        %whole = cbit.read %selected : !cbit.reg<1> -> i1
+        %matches_read = cbit.read %selected : !cbit.reg<1> -> i1
+        %matches_rhs = arith.constant 0 : i1
+        %matches = arith.cmpi eq, %matches_read, %matches_rhs : i1
+        cbit.write %true, %selected : i1, !cbit.reg<1>
+        return %bit, %whole, %matches, %returned
+            : i1, i1, i1, !cbit.reg<1>
+      }
+    }
+  )mlir",
+                                            &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  size_t mixedRepresentationDiagnostics = 0;
+  const ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    std::string message;
+    llvm::raw_string_ostream stream(message);
+    diagnostic.print(stream);
+    mixedRepresentationDiagnostics += StringRef(message).contains(
+        "adaptive QIR conversion cannot merge returned and local CBit "
+        "registers");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*module)));
+  EXPECT_EQ(mixedRepresentationDiagnostics, 4);
+}
+
+TEST(QCToQIRAdaptiveNativeTest, LowersReturnedRegisterMerge) {
+  MLIRContext context;
+  context.loadDialect<cbit::CBitDialect, arith::ArithDialect,
+                      cf::ControlFlowDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, scf::SCFDialect>();
+  auto module = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() -> (i1, i1, i1, !cbit.reg<1>, !cbit.reg<1>)
+          attributes {mqt.entry_point} {
+        %true = arith.constant true
+        %c0 = arith.constant 0 : index
+        %first = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+        %second = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+        %selected = scf.if %true -> (!cbit.reg<1>) {
+          scf.yield %first : !cbit.reg<1>
+        } else {
+          scf.yield %second : !cbit.reg<1>
+        }
+        %bit = cbit.load %selected[%c0] : !cbit.reg<1>
+        %whole = cbit.read %selected : !cbit.reg<1> -> i1
+        %matches_read = cbit.read %selected : !cbit.reg<1> -> i1
+        %matches_rhs = arith.constant 0 : i1
+        %matches = arith.cmpi eq, %matches_read, %matches_rhs : i1
+        return %bit, %whole, %matches, %first, %second
+            : i1, i1, i1, !cbit.reg<1>, !cbit.reg<1>
+      }
+    }
+  )mlir",
+                                            &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  EXPECT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+  size_t resultReads = 0;
+  module->walk([&](LLVM::CallOp call) {
+    resultReads += call.getCallee() == qir::QIR_READ_RESULT;
+  });
+  EXPECT_EQ(resultReads, 3);
+}
+
+TEST(QCToQIRAdaptiveNativeTest, RejectsWriteThroughReturnedRegisterMerge) {
+  MLIRContext context;
+  context.loadDialect<cbit::CBitDialect, arith::ArithDialect,
+                      cf::ControlFlowDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, scf::SCFDialect>();
+  auto module = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() -> (!cbit.reg<1>, !cbit.reg<1>)
+          attributes {mqt.entry_point} {
+        %true = arith.constant true
+        %first = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+        %second = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+        %selected = scf.if %true -> (!cbit.reg<1>) {
+          scf.yield %first : !cbit.reg<1>
+        } else {
+          scf.yield %second : !cbit.reg<1>
+        }
+        cbit.write %true, %selected : i1, !cbit.reg<1>
+        return %first, %second : !cbit.reg<1>, !cbit.reg<1>
+      }
+    }
+  )mlir",
+                                            &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  bool sawExpectedDiagnostic = false;
+  const ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    std::string message;
+    llvm::raw_string_ostream stream(message);
+    diagnostic.print(stream);
+    sawExpectedDiagnostic |= StringRef(message).contains(
+        "does not support non-measurement writes to returned CBit registers");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*module)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
 TEST(QCToQIRAdaptiveNativeTest, RejectsMultipleRegisterDestinations) {
   MLIRContext context;
   context
@@ -264,9 +984,9 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsMultipleRegisterDestinations) {
                    scf::SCFDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  const auto q = builder.allocQubit();
+  auto q = builder.allocQubit();
   auto c = builder.allocClassicalBitRegister(2);
-  const auto result = builder.measure(q, c, 0);
+  auto result = builder.measure(q, c, 0);
   builder.storeClassicalBit(result, c, 1);
   builder.retype(c.getType());
   auto module = builder.finalize(c);
@@ -281,7 +1001,7 @@ TEST(QCToQIRAdaptiveNativeTest, RecordsReturnedRegisterMeasurement) {
                       LLVM::LLVMDialect, memref::MemRefDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  const auto q = builder.allocQubit();
+  auto q = builder.allocQubit();
   auto c = builder.allocClassicalBitRegister(1, "named_result");
   builder.measure(q, c, 0);
   builder.retype(c.getType());
@@ -295,29 +1015,42 @@ TEST(QCToQIRAdaptiveNativeTest, RecordsReturnedRegisterMeasurement) {
       module->lookupSymbol<LLVM::GlobalOp>("qir.result_label_named_result"));
 }
 
-TEST(QCToQIRAdaptiveNativeTest, RejectsNonMeasurementClassicalStore) {
-  MLIRContext context;
-  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
-                      LLVM::LLVMDialect, memref::MemRefDialect>();
-  qc::QCProgramBuilder builder(&context);
-  builder.initialize();
-  auto c = builder.allocClassicalBitRegister(1);
-  builder.storeClassicalBit(builder.boolConstant(true), c, 0);
-  builder.retype(c.getType());
-  auto module = builder.finalize(c);
-  ASSERT_TRUE(module);
+TEST(QCToQIRAdaptiveNativeTest, RecordsComputedClassicalWrites) {
+  for (const auto& [wholeRegister, measured] : {
+           std::pair{false, false},
+           {true, false},
+           {true, true},
+       }) {
+    SCOPED_TRACE(wholeRegister);
+    SCOPED_TRACE(measured);
+    MLIRContext context;
+    context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                        LLVM::LLVMDialect, memref::MemRefDialect>();
+    qc::QCProgramBuilder builder(&context);
+    builder.initialize();
+    auto reg = builder.allocClassicalBitRegister(wholeRegister ? 2 : 1);
+    if (measured) {
+      builder.measure(builder.allocQubit(), reg, 0);
+    }
+    if (wholeRegister) {
+      auto value =
+          arith::ConstantIntOp::create(builder, builder.getUnknownLoc(), 3, 2);
+      cbit::WriteOp::create(builder, builder.getUnknownLoc(), value, reg);
+    } else {
+      builder.storeClassicalBit(builder.boolConstant(true), reg, 0);
+    }
+    builder.retype(reg.getType());
+    auto moduleOp = builder.finalize(reg);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
-  bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    std::string message;
-    llvm::raw_string_ostream stream(message);
-    diagnostic.print(stream);
-    sawExpectedDiagnostic |= StringRef(message).contains(
-        "does not support non-measurement stores to returned CBit registers");
-    return success();
-  });
-  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*module)));
-  EXPECT_TRUE(sawExpectedDiagnostic);
+    ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*moduleOp)));
+    EXPECT_TRUE(succeeded(verify(*moduleOp)));
+    EXPECT_TRUE(
+        moduleOp->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_BOOL_RECORD_OUTPUT));
+    EXPECT_FALSE(moduleOp->lookupSymbol<LLVM::LLVMFuncOp>(
+        qir::QIR_RESULT_ARRAY_RECORD_OUTPUT));
+  }
 }
 
 TEST(QCToQIRAdaptiveNativeTest, AcceptsZeroInitializedClassicalRegister) {
@@ -341,8 +1074,8 @@ TEST(QCToQIRAdaptiveNativeTest, LowersInternalZeroInitializedRegisterStorage) {
                       LLVM::LLVMDialect, memref::MemRefDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  auto c = builder.allocClassicalBitRegister(2);
-  const auto first = builder.loadClassicalBit(c, 0);
+  auto c = builder.allocClassicalBitRegister(8192);
+  auto first = builder.loadClassicalBit(c, 0);
   builder.storeClassicalBit(first, c, 1);
   auto module = builder.finalize();
   ASSERT_TRUE(module);
@@ -358,7 +1091,58 @@ TEST(QCToQIRAdaptiveNativeTest, LowersInternalZeroInitializedRegisterStorage) {
   module->walk([&](LLVM::StoreOp) { ++stores; });
   EXPECT_EQ(allocs, 1);
   EXPECT_EQ(loads, 1);
-  EXPECT_EQ(stores, 3);
+  EXPECT_EQ(stores, 1);
+  size_t zeroFills = 0;
+  module->walk([&](LLVM::MemsetOp fill) {
+    ++zeroFills;
+    auto value = fill.getVal().getDefiningOp<LLVM::ConstantOp>();
+    ASSERT_TRUE(value);
+    EXPECT_TRUE(cast<IntegerAttr>(value.getValue()).getValue().isZero());
+  });
+  EXPECT_EQ(zeroFills, 1);
+}
+
+TEST(QCToQIRAdaptiveNativeTest, InitializesLocalRegisterInsideLoop) {
+  MLIRContext context;
+  context.loadDialect<cbit::CBitDialect, qc::QCDialect, arith::ArithDialect,
+                      cf::ControlFlowDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, scf::SCFDialect>();
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() -> i64 attributes {mqt.entry_point} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c2 = arith.constant 2 : index
+        %false = arith.constant false
+        %true = arith.constant true
+        %answer = scf.for %i = %c0 to %c2 step %c1
+            iter_args(%last = %false) -> i1 {
+          %r = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+          %v = cbit.load %r[%c0] : !cbit.reg<1>
+          cbit.store %true, %r[%c0] : !cbit.reg<1>
+          scf.yield %v : i1
+        }
+        %exit = arith.extui %answer : i1 to i64
+        return %exit : i64
+      }
+    }
+  )mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  LLVM::MemsetOp fill;
+  LLVM::LoadOp load;
+  moduleOp->walk([&](LLVM::MemsetOp op) { fill = op; });
+  moduleOp->walk([&](LLVM::LoadOp op) { load = op; });
+  ASSERT_TRUE(fill);
+  ASSERT_TRUE(load);
+  ASSERT_EQ(fill->getBlock(), load->getBlock());
+  EXPECT_TRUE(fill->isBeforeInBlock(load));
+  auto main = moduleOp->lookupSymbol<LLVM::LLVMFuncOp>("main");
+  ASSERT_TRUE(main);
+  EXPECT_NE(fill->getBlock(), &main.getBody().front());
 }
 
 TEST(QCToQIRAdaptiveNativeTest, SupportsDynamicInternalRegisterIndices) {
@@ -372,7 +1156,7 @@ TEST(QCToQIRAdaptiveNativeTest, SupportsDynamicInternalRegisterIndices) {
   auto index = arith::IndexCastOp::create(builder, builder.getIndexType(),
                                           unknown.getResult());
   builder.storeClassicalBit(builder.boolConstant(true), c, index.getResult());
-  const auto value = builder.loadClassicalBit(c, index.getResult());
+  auto value = builder.loadClassicalBit(c, index.getResult());
   builder.storeClassicalBit(value, c, 0);
   auto module = builder.finalize();
   ASSERT_TRUE(module);
@@ -381,13 +1165,13 @@ TEST(QCToQIRAdaptiveNativeTest, SupportsDynamicInternalRegisterIndices) {
   EXPECT_TRUE(succeeded(verify(*module)));
 }
 
-TEST(QCToQIRAdaptiveNativeTest, RejectsNonMeasurementStoreAfterMeasurement) {
+TEST(QCToQIRAdaptiveNativeTest, RecordsComputedStoreAfterMeasurement) {
   MLIRContext context;
   context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
                       LLVM::LLVMDialect, memref::MemRefDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  const auto q = builder.allocQubit();
+  auto q = builder.allocQubit();
   auto c = builder.allocClassicalBitRegister(1);
   builder.measure(q, c, 0);
   builder.storeClassicalBit(builder.boolConstant(false), c, 0);
@@ -395,17 +1179,10 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsNonMeasurementStoreAfterMeasurement) {
   auto module = builder.finalize(c);
   ASSERT_TRUE(module);
 
-  bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    std::string message;
-    llvm::raw_string_ostream stream(message);
-    diagnostic.print(stream);
-    sawExpectedDiagnostic |= StringRef(message).contains(
-        "does not support non-measurement stores to returned CBit registers");
-    return success();
-  });
-  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*module)));
-  EXPECT_TRUE(sawExpectedDiagnostic);
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+  EXPECT_TRUE(
+      module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_BOOL_RECORD_OUTPUT));
 }
 
 TEST(QCToQIRAdaptiveNativeTest, RejectsUnsupportedIntegerMemref) {
@@ -415,7 +1192,7 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsUnsupportedIntegerMemref) {
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
   const auto type = MemRefType::get({1}, builder.getI8Type());
-  const auto memref = memref::AllocOp::create(builder, type).getResult();
+  auto memref = memref::AllocOp::create(builder, type).getResult();
   builder.retype(type);
   auto module = builder.finalize(memref);
   ASSERT_TRUE(module);

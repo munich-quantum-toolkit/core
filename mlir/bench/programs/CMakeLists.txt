@@ -1,0 +1,31 @@
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
+#
+# Licensed under the MIT License
+
+add_library(
+  MQTBenchmarkPrograms STATIC
+  BV.cpp
+  GHZ.cpp
+  Grover.cpp
+  GroverUtils.cpp
+  MagicStateDistillation.cpp
+  ModularArithmetic.cpp
+  ModularMultiplier.cpp
+  Multiplexer.cpp
+  QFT.cpp
+  QFTAdder.cpp
+  QFTUtils.cpp
+  QPE.cpp
+  RepeatUntilSuccess.cpp
+  Shor.cpp
+  Teleportation.cpp
+  WeakMeasurementGrover.cpp
+  WState.cpp)
+target_link_libraries(
+  MQTBenchmarkPrograms PUBLIC MQT::CoreBench MLIRQCProgramBuilder MLIRArithDialect MLIRMathDialect
+                              MLIRTensorDialect)
+mqt_mlir_target_use_project_options(MQTBenchmarkPrograms)

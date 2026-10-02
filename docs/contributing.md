@@ -1,6 +1,3 @@
-<!--- This file has been generated from an external template. Please do not modify it directly. -->
-<!--- Changes should be contributed to https://github.com/munich-quantum-toolkit/templates. -->
-
 # Contributing
 
 Thank you for your interest in contributing to MQT Core! This document outlines
@@ -72,8 +69,8 @@ Contributions that do not comply with these guidelines or violate our
 - Focus on a single feature or bug at a time and only touch relevant files.
   Split multiple features into separate contributions.
 - Add tests for new features to ensure they work as intended.
-- Document new features. For user-facing changes, add a changelog entry; for
-  breaking changes, update the upgrade guide. For details, see
+- Document new features. Describe user-facing changes and required migrations in
+  the PR description. For details, see
   {ref}`maintaining-changelog-upgrade-guide`.
 - Add tests for bug fixes to demonstrate the fix.
 - Document your code thoroughly and ensure it is readable.
@@ -194,16 +191,15 @@ instructions on how to set up your development environment.
 
 Building the project requires a C++20-capable
 [C++ compiler](https://en.wikipedia.org/wiki/List_of_compilers#C++_compilers)
-and [CMake](https://cmake.org/) 3.24 or newer. As of August 2025, our CI
+and [CMake](https://cmake.org/) 3.28 or newer. As of September 2026, our CI
 pipeline on GitHub continuously tests the library across the following matrix of
 systems and compilers:
 
-- {code}`ubuntu-24.04`: {code}`Release` and {code}`Debug` builds using
+- {code}`ubuntu-26.04`: {code}`Release` and {code}`Debug` builds using
   {code}`gcc`
-- {code}`ubuntu-24.04-arm`: {code}`Release` build using {code}`gcc`
+- {code}`ubuntu-26.04-arm`: {code}`Release` build using {code}`gcc`
 - {code}`macos-26`: {code}`Release` and {code}`Debug` builds using
   {code}`AppleClang`
-- {code}`macos-26-intel`: {code}`Release` build using {code}`AppleClang`
 - {code}`windows-2025`: {code}`Release` and {code}`Debug` builds using
   {code}`msvc`
 - {code}`windows-11-arm`: {code}`Release` build using {code}`msvc`
@@ -235,10 +231,11 @@ cmake --preset release
 ```
 
 Under the hood, this effectively calls
-`cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release` and configures a
-{code}`Release` build. A {code}`Debug` build can be requested by using the
-{code}`debug` preset. If you are on Windows, use the `release-windows` and
-`debug-windows` presets.
+`cmake -S . -B build/release -G Ninja -DCMAKE_BUILD_TYPE=Release` and configures
+a {code}`Release` build. A {code}`Debug` build can be requested by using the
+{code}`debug` preset. Both presets use Ninja on all platforms, including
+Windows. Make sure {code}`ninja` is installed and available on {code}`PATH`. On
+Windows with MSVC, run these commands from a Visual Studio developer shell.
 
 After configuring CMake, the project can be _built_ by calling:
 
@@ -246,9 +243,8 @@ After configuring CMake, the project can be _built_ by calling:
 cmake --build --preset release
 ```
 
-This command is equivalent to `cmake --build build/release --config Release`.
-The flag {code}`--parallel <NUMBER_OF_THREADS>` may be added to trigger a
-parallel build.
+This command is equivalent to `cmake --build build/release`. The flag
+{code}`--parallel <NUMBER_OF_THREADS>` may be added to trigger a parallel build.
 
 Building the project this way generates
 
@@ -394,10 +390,9 @@ refactor.
 For some tips on how to write good Doxygen comments, see the
 [Doxygen Manual](https://www.doxygen.nl/manual/docblocks.html).
 
-The C++ API documentation is integrated into the overall documentation that we
-host on ReadTheDocs using the
-[breathe](https://breathe.readthedocs.io/en/latest/) extension for Sphinx. See
-{ref}`working-on-documentation` for more information on how to build the
+The C++ API reference uses native Doxygen HTML linked from Sphinx.
+
+See {ref}`working-on-documentation` for more information on how to build the
 documentation.
 
 ## Working on the Python Package
@@ -558,38 +553,35 @@ The documentation is written in
 Markdown) and built using [Sphinx](https://www.sphinx-doc.org/en/master/). The
 documentation source files can be found in the {code}`docs/` directory.
 
-On top of the API documentation, we provide a set of tutorials and examples that
-demonstrate how to use the library. These are written in Markdown using
-[myst-nb](https://myst-nb.readthedocs.io/en/latest/), which allows executing
-Python code blocks in the documentation. The code blocks are executed during the
-documentation build process, and the output is included in the documentation.
-This allows us to provide up-to-date examples and tutorials that are guaranteed
-to work with the latest version of the library.
+Tutorials use [MyST-NB](https://myst-nb.readthedocs.io/) Markdown notebooks.
+Only `{code-cell}` blocks in notebook pages execute; ordinary code fences are
+illustrative. Keep required setup visible, show useful output, and assert the
+behavior that each example demonstrates. Use local simulation for executable
+examples; leave credentials and remote-device deployment as configuration
+recipes.
 
-You can build the documentation using the {code}`nox` session {code}`docs`.
-
-```console
-nox -s docs
-```
-
-This will install all dependencies for building the documentation in an isolated
-environment, build the Python package, and then build the documentation. It will
-then host the documentation on a local web server for you to view.
-
-:::{note}
-
-If you do not want to use {code}`nox`, you can also build the documentation
-directly using {code}`sphinx-build`. This requires that you have the project and
-its documentation dependencies installed in your virtual environment (e.g., by
-running {code}`uv sync`).
+Use the documentation session to install Python dependencies, build the package
+and generated references, and render the examples:
 
 ```console
-sphinx-build -b html docs/ docs/_build
+uvx nox --non-interactive -s docs
 ```
 
-The docs can then be found in the {code}`docs/_build` directory.
+Install the project's native build requirements first. C++ API generation needs
+Doxygen; DD visualizations also need the Graphviz `dot` executable. The session
+manages Python packages, not these system tools.
 
-:::
+LLVM/MLIR must also be installed as described in {ref}`setting-up-mlir`.
+
+See {doc}`development` for Core's documentation validation and local-device
+execution contract.
+
+Omit `--non-interactive` to serve the documentation while editing. To check
+external links, run:
+
+```console
+uvx nox --non-interactive -s docs -- -b linkcheck
+```
 
 ## Tips for Development
 
@@ -633,43 +625,24 @@ releases may include breaking changes. To inform users about changes to the
 project, we maintain a {doc}`changelog <CHANGELOG>` and an
 {doc}`upgrade guide <UPGRADING>`.
 
-If your PR includes noteworthy changes, please update the changelog. The format
-is based on a mixture of [Keep a Changelog] and [Common Changelog]. There are
-the following categories:
+These documents are maintained during
+{ref}`release preparation <releasing-new-version>`. You do not need to update
+them manually in feature or fix PRs. Include user-facing effects, limitations,
+and migration instructions in your PR description so maintainers can collect
+that information during release preparation. Apply the relevant labels for
+Release Drafter.
 
-- {code}`Added` for new features.
-- {code}`Changed` for changes in existing functionality.
-- {code}`Deprecated` for soon-to-be removed features.
-- {code}`Removed` for now removed features.
-- {code}`Fixed` for any bug fixes.
-- {code}`Security` in case of vulnerabilities.
-
-When updating the changelog, follow these guidelines:
-
-- Add a changelog entry for every user-facing change in your PR.
-- Write entries in the imperative mood (e.g., "Add support for X" or "Fix bug in
-  Y").
-- A single PR may result in multiple changelog entries.
-- Entries in each category are sorted by merge time, with the latest PR
-  appearing first.
-- Each entry links to the PR and all contributing authors. The links are defined
-  at the bottom of the file. If this is your first contribution to this project,
-  do not forget to add a link to your GitHub profile.
-
-If your PR introduces major or breaking changes, or if you think additional
-context would help users, please also add a section to the upgrade guide. The
-upgrade guide is intended to provide a general overview of significant changes
-in a more descriptive and prose-oriented form than the changelog. Use it to
-explain how users may need to adapt their usage of MQT Core, highlight new
-workflows, or clarify the impact of important updates. Feel free to write in a
-style that is helpful and accessible for users seeking to understand the broader
-implications of recent changes.
+(releasing-new-version)=
 
 ## Releasing a New Version
 
 When it is time to release a new version of MQT Core, create a PR that prepares
 the release. This PR should:
 
+- prepare the changelog and upgrade guide from the Git history, merged PR
+  descriptions, the Release Drafter draft, and any existing Unreleased notes.
+  Use the commits included in the release, accounting for backports and changes
+  already published on maintenance branches,
 - add new version titles in both the changelog and the upgrade guide,
 - add the release date to the changelog entry for the new version,
 - update the version links at the bottom of both files,
@@ -682,6 +655,36 @@ the release. This PR should:
   provides helpful context, and
 - if the upgrade guide contains a section relevant to the release, add a
   reference to it in the changelog.
+
+The changelog format is based on a mixture of [Keep a Changelog] and
+[Common Changelog]. There are the following categories:
+
+- {code}`Added` for new features.
+- {code}`Changed` for changes in existing functionality.
+- {code}`Deprecated` for soon-to-be removed features.
+- {code}`Removed` for now removed features.
+- {code}`Fixed` for any bug fixes.
+- {code}`Security` in case of vulnerabilities.
+
+During release preparation, follow these guidelines:
+
+- Cover the user-facing changes included in the release.
+- Write entries in the imperative mood (e.g., "Add support for X" or "Fix bug in
+  Y").
+- A single PR may result in multiple changelog entries.
+- Group related changes so users can find the workflows and subsystems they use.
+- Each entry links to the PR and all contributing authors. The links are defined
+  in the PR and contributor link sections at the bottom of the file.
+
+AI tools may help draft release documentation from the release diff and merged
+PRs. A maintainer must verify the draft against those sources, including its
+claims, PR links, and contributor attribution, before accepting it.
+
+Collect migration instructions from PR descriptions in the upgrade guide.
+Explain how users must adapt their usage of MQT Core, including replacements for
+changed or removed APIs and any changes in semantics. Add context for
+significant new workflows where it helps users. Verify migration examples
+against the released and proposed APIs.
 
 Before merging the PR preparing the release, check the GitHub release draft
 generated by the Release Drafter for unlabelled PRs. Unlabelled PRs would appear

@@ -10,9 +10,8 @@
 
 #include "QiskitTranslation.h"
 
-#include <llvm/ADT/StringSet.h>
+#include "llvm/ADT/StringSet.h"
 
-#include <algorithm>
 #include <cstdint>
 #include <stdexcept>
 #include <string>
@@ -21,10 +20,27 @@
 
 namespace mqt::bindings::qiskit {
 
+void ParameterGroupRegistry::add(const ParameterGroup& group) {
+  const auto [known, inserted] = groups.try_emplace(group.identity, group);
+  if (inserted) {
+    if (group.size > MAX_PARAMETER_GROUP_SIZE - totalSize) {
+      throw std::runtime_error(
+          "Qiskit circuit translation supports at most " +
+          std::to_string(MAX_PARAMETER_GROUP_SIZE) +
+          " elements across all distinct parameter vectors");
+    }
+    totalSize += group.size;
+    return;
+  }
+  if (known->second.name != group.name || known->second.size != group.size) {
+    throw std::runtime_error(
+        "one Qiskit parameter group has conflicting metadata");
+  }
+}
+
 uint32_t validateRegisterLayout(const std::vector<Register>& registers,
                                 const uint32_t total,
                                 const std::string_view kind) {
-  std::vector<bool> inRegister(total, false);
   llvm::StringSet<> names;
   for (const auto& reg : registers) {
     if (reg.name.empty() || !names.insert(reg.name).second) {
@@ -35,22 +51,12 @@ uint32_t validateRegisterLayout(const std::vector<Register>& registers,
       throw std::runtime_error("Qiskit does not support empty " +
                                std::string(kind) + " registers");
     }
-    for (const auto bit : reg.bits) {
-      if (bit >= total || inRegister[bit]) {
-        throw std::runtime_error(
-            "Qiskit circuit translation requires disjoint " +
-            std::string(kind) + " register membership");
-      }
-      inRegister[bit] = true;
-    }
   }
-  const auto firstRegistered = std::ranges::find(inRegister, true);
-  const auto loose =
-      static_cast<uint32_t>(firstRegistered - inRegister.begin());
+  const auto loose = registers.empty() ? total : registers.front().bits.front();
   uint32_t expected = loose;
   for (const auto& reg : registers) {
     for (const auto bit : reg.bits) {
-      if (bit != expected) {
+      if (bit >= total || bit != expected) {
         throw std::runtime_error("Qiskit circuit translation requires loose " +
                                  std::string(kind) +
                                  " bits before contiguous registers");

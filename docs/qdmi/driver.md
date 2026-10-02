@@ -23,6 +23,12 @@ via {cpp-api:func}`qdmi::Driver::registerDevice` and
 registered through
 [versioned QDMI device configuration](configuration.md).
 
+The driver shares a loaded provider across path aliases with the same symbol
+prefix and retains it for the process lifetime. Closing a device session frees
+that session without finalizing the provider while another session may use it.
+Initialization is serialized within each loaded module. A slow provider
+initializer does not hold the driver cache lock while other modules are opened.
+
 ## Building the Bundled Devices
 
 Standalone MQT Core builds include the DDSIM and superconducting QDMI device
@@ -34,14 +40,18 @@ use. They can be selected independently before making MQT Core available:
 - {code}`BUILD_MQT_CORE_QDMI_DDSIM_DEVICE`
 - {code}`BUILD_MQT_CORE_QDMI_SC_DEVICE`
 
+The DDSIM device uses the MLIR compiler infrastructure for both OpenQASM and QIR
+programs. Its target is skipped when {code}`BUILD_MQT_CORE_MLIR` is {code}`OFF`,
+while the QDMI driver and superconducting device remain available.
+
 For example, an embedded simulator consumer can enable only the DDSIM device,
 while CUDA-Q can enable the DDSIM and superconducting devices used by its
 integration tests.
 
 The QDMI driver and QDMI libraries are available independently. Device-free
 builds can register external device libraries through
-[QDMI device configuration](configuration.md). Building MQT Core's C++ tests
-requires both bundled devices so that the complete device integration is tested.
+[QDMI device configuration](configuration.md). C++ test builds require every
+bundled device available in the selected build configuration.
 
 ## Python Bindings
 
@@ -51,6 +61,30 @@ interface. The C++ QDMI library adds owning wrappers for QDMI devices, sites,
 operations, and jobs. The Python module exposes these QDMI entities through
 {py:mod}`mqt.core.qdmi`. Its {py:mod}`mqt.core.qdmi.driver` submodule provides
 device discovery, registration, and opening.
+
+Native device opening, property queries, job calls, and compiler-target
+snapshots release Python's GIL. Other Python threads can run while a provider
+waits for a remote response. Python argument and result conversion still holds
+the GIL. Concurrent calls into a shared device or job must satisfy the
+provider's thread safety contract; releasing the GIL does not serialize provider
+access.
+
+### Custom job parameter types
+
+The `custom1` through `custom5` arguments of
+{py:meth}`mqt.core.qdmi.Device.submit_job` and
+{py:func}`mqt.core.mlir.submit_program` use the device's documented types.
+Strings include a null terminator; `bool`, `int`, and `float` use C++ `bool`,
+`int`, and `double`. For a device-defined binary payload, pass nonempty `bytes`:
+
+```python
+job = device.submit_job(program, program_format, custom1=b"\x01\x00\xff")
+```
+
+QDMI copies raw bytes without a terminator; empty payloads raise `ValueError`.
+The device defines their meaning and size. In C++, pass a
+`std::span<const std::byte>` whose buffer stays valid until submission returns.
+The bytes describe a local QDMI ABI value, not a network encoding.
 
 ## Usage
 

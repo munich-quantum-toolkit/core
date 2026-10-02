@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include <mlir/IR/Value.h>
+#include "mlir/IR/Value.h"
 
 namespace mlir::qir {
 class QIRProgramBuilder;
