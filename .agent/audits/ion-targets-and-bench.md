@@ -74,9 +74,12 @@ Remove MS-specific operations, matrices, placement reversal, runtime macros,
 export definitions, and tests. Delete the GPI2-only basis and public callback
 emission helper. Bench deletes recursive unit conversion, output restoration,
 and Rigetti pulse subclasses. Standard RX target aliases plus two ordinary named
-gates in the U equivalence work on Qiskit 2.5. Bench requires that version:
-Qiskit 2.1 still inserts a broken post-layout pass at optimization level 3
-despite an explicit layout method. No compatibility pass surgery, provider SDK,
+gates in the U equivalence work on Qiskit 2.1.2 and later. Bench's default
+compiler supports that minimum; its optional Core compiler and QIR export
+require Qiskit 2.5.x for Core's existing native C API bridge. Qiskit 2.1.0 and
+2.1.1 have a post-layout failure at optimization level 3. Bench's uv minimums
+group selects 2.1.2 separately from the Core extra. The full base suite passes
+on Qiskit 2.1.2, 2.2, 2.3, and 2.4. No compatibility pass surgery, provider SDK,
 backend framework, or general angle solver is needed.
 
 SDK support alone does not establish a current hardware requirement. Qiskit,
