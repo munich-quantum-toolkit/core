@@ -84,9 +84,8 @@ scanFusableRun(UnitaryOpInterface head, const Matrix2x2& headMatrix,
       break;
     }
     scan.composed.premultiplyBy(*matrix);
-    scan.hasNonBasisGate |=
-        target != nullptr ? !target->supports(op)
-                          : !decomposition::isSingleQubitBasisGate(op, basis);
+    scan.hasNonBasisGate |= !decomposition::isSingleQubitBasisGate(op, basis) &&
+                            (target == nullptr || !target->supports(op));
     scan.tail = member;
     ++scan.gateCount;
   }
@@ -160,7 +159,9 @@ struct FuseSingleQubitUnitaryRunsPattern final
                                   : nullptr;
     const auto synthesized = decomposition::synthesizeUnitary1QEuler(
         rewriter, op.getLoc(), op.getInputQubit(0), run.composed, run.gateCount,
-        run.hasNonBasisGate, basis, targetBasis);
+        run.hasNonBasisGate, basis, targetBasis == nullptr || targetBasis->hasX,
+        targetBasis != nullptr && targetBasis->rxPulses &&
+            targetBasis->rxPulses->quarterTurnAngle < 0.);
     if (!synthesized) {
       return failure();
     }

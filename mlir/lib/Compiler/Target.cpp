@@ -867,10 +867,14 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
           .quarterTurnAngle = quarter,
           .halfTurnAngle = std::nullopt,
       };
-      for (double half : {std::numbers::pi, -std::numbers::pi}) {
-        if (supportsPulse(half)) {
-          rxPulses->halfTurnAngle = half;
-          break;
+      hasX = supportsOnEverySite(GateKind::X);
+      if (!hasX) {
+        for (double half : {std::numbers::pi, -std::numbers::pi}) {
+          if (supportsPulse(half)) {
+            rxPulses->halfTurnAngle = half;
+            hasX = true;
+            break;
+          }
         }
       }
       singleQubit = SingleQubitBasis::ZSXX;

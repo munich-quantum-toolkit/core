@@ -804,11 +804,11 @@ static void emitParameterizedGPhaseIfNeeded(RewriterBase& rewriter,
   }
 }
 
-static Value emitRuntimeEulerAngles(
-    RewriterBase& rewriter, Location loc, Value qubit,
-    RuntimeEulerAngles angles, decomposition::SingleQubitBasis basis,
-    const ScalarConsts<Value>& consts,
-    const CompilerTarget::SynthesisBasis* targetBasis = nullptr) {
+static Value emitRuntimeEulerAngles(RewriterBase& rewriter, Location loc,
+                                    Value qubit, RuntimeEulerAngles angles,
+                                    decomposition::SingleQubitBasis basis,
+                                    const ScalarConsts<Value>& consts,
+                                    bool useX = true, bool useSXdg = false) {
   auto [theta, phi, lambda, phase] = angles;
 
   const bool usesZYZAngles = basis == decomposition::SingleQubitBasis::ZYZ ||
@@ -860,20 +860,14 @@ static Value emitRuntimeEulerAngles(
   case decomposition::SingleQubitBasis::ZSXX: {
     constexpr double pi = std::numbers::pi;
     constexpr double halfPi = pi / 2.;
-    const auto* pulses = targetBasis != nullptr && targetBasis->rxPulses
-                             ? &*targetBasis->rxPulses
-                             : nullptr;
-    const double offset =
-        pulses != nullptr && pulses->quarterTurnAngle < 0. ? pi : 0.;
-    const double pulsePhase = pulses != nullptr ? 0. : pi / 4.;
+    const double offset = useSXdg ? pi : 0.;
+    const double quarterPhase = useSXdg ? -pi / 4. : pi / 4.;
+    const auto quarterTurn = [&] {
+      qubit = useSXdg ? SXdgOp::create(rewriter, loc, qubit).getQubitOut()
+                      : SXOp::create(rewriter, loc, qubit).getQubitOut();
+    };
     const auto constant = [&](double value) {
       return Val<Value>::constant(rewriter, loc, value);
-    };
-    const auto quarterTurn = [&] {
-      qubit = pulses
-                  ? RXOp::create(rewriter, loc, qubit, pulses->quarterTurnAngle)
-                        .getQubitOut()
-                  : SXOp::create(rewriter, loc, qubit).getQubitOut();
     };
     if (isConstantAngle(theta, halfPi)) {
       qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit,
@@ -881,22 +875,13 @@ static Value emitRuntimeEulerAngles(
       quarterTurn();
       qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit,
                                          phi + constant(halfPi - offset));
-      phase = phase - constant(pulsePhase);
+      phase = phase - constant(quarterPhase);
       break;
     }
-    const bool hasHalfTurn = pulses != nullptr
-                                 ? pulses->halfTurnAngle.has_value()
-                                 : targetBasis == nullptr || targetBasis->hasX;
-    if (hasHalfTurn && isConstantAngle(theta, pi)) {
+    if (useX && isConstantAngle(theta, pi)) {
       qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit, lambda);
-      if (pulses != nullptr) {
-        qubit = RXOp::create(rewriter, loc, qubit, *pulses->halfTurnAngle)
-                    .getQubitOut();
-        phase = phase + constant(*pulses->halfTurnAngle < 0. ? pi : 0.);
-      } else {
-        qubit = XOp::create(rewriter, loc, qubit).getQubitOut();
-        phase = phase - constant(halfPi);
-      }
+      qubit = XOp::create(rewriter, loc, qubit).getQubitOut();
+      phase = phase - constant(halfPi);
       qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit, phi + consts.pi);
       break;
     }
@@ -907,7 +892,7 @@ static Value emitRuntimeEulerAngles(
     quarterTurn();
     qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit,
                                        phi + constant(pi - offset));
-    phase = phase + constant(pi - 2. * pulsePhase);
+    phase = phase + constant(pi - 2. * quarterPhase);
     break;
   }
   case decomposition::SingleQubitBasis::R:
@@ -1411,9 +1396,10 @@ bool decomposition::canSynthesizeParameterizedUnitary1Q(Operation* op) {
          isa<RXOp, RYOp, RZOp, POp, ROp, U2Op, UOp, GPIOp, GPI2Op>(op);
 }
 
-void decomposition::synthesizeParameterizedUnitary1Q(
-    RewriterBase& rewriter, Operation* op, SingleQubitBasis basis,
-    const CompilerTarget::SynthesisBasis* targetBasis) {
+void decomposition::synthesizeParameterizedUnitary1Q(RewriterBase& rewriter,
+                                                     Operation* op,
+                                                     SingleQubitBasis basis,
+                                                     bool useX, bool useSXdg) {
   assert(canSynthesizeParameterizedUnitary1Q(op) &&
          "operation must support parameterized one-qubit synthesis");
   if (isSingleQubitBasisGate(op, basis)) {
@@ -1441,7 +1427,7 @@ void decomposition::synthesizeParameterizedUnitary1Q(
       const auto angles = directZYZAnglesFromGate(unitary, rewriter, consts);
       qubit = unitary.getInputQubit(0);
       qubit = emitRuntimeEulerAngles(rewriter, op->getLoc(), qubit, angles,
-                                     basis, consts, targetBasis);
+                                     basis, consts, useX, useSXdg);
     }
     rewriter.replaceOp(op, qubit);
     return;

@@ -1072,6 +1072,13 @@ static LogicalResult synthesizeTargetOperation(
   if (!basis) {
     return unsupported("the target has no usable synthesis basis");
   }
+  /// Logical ZSXX gates are lowered to physical pulses after synthesis.
+  if (basis->rxPulses &&
+      ((basis->rxPulses->quarterTurnAngle < 0. ? isa<SXdgOp>(operation)
+                                               : isa<SXOp>(operation)) ||
+       (basis->hasX && isa<XOp>(operation)))) {
+    return success();
+  }
   if (auto u2 = singleControlledGate<U2Op>(operation);
       u2 && basis->singleQubit == CompilerTarget::SingleQubitBasis::U) {
     /// Canonicalization may shorten a native controlled U(pi/2, phi, lambda)
@@ -1092,12 +1099,14 @@ static LogicalResult synthesizeTargetOperation(
             "its unitary matrix is not available at compile time");
       }
       decomposition::synthesizeParameterizedUnitary1Q(
-          rewriter, operation, basis->singleQubit, &*basis);
+          rewriter, operation, basis->singleQubit, basis->hasX,
+          basis->rxPulses && basis->rxPulses->quarterTurnAngle < 0.);
       return success();
     }
     const auto synthesized = decomposition::synthesizeUnitary1QEuler(
         rewriter, operation->getLoc(), op.getInputQubit(0), matrix,
-        /*runSize=*/1, /*hasNonBasisGate=*/true, basis->singleQubit, &*basis);
+        /*runSize=*/1, /*hasNonBasisGate=*/true, basis->singleQubit,
+        basis->hasX, basis->rxPulses && basis->rxPulses->quarterTurnAngle < 0.);
     if (!synthesized) {
       llvm::reportFatalInternalError(
           "target single-qubit basis failed to synthesize a unitary matrix");
@@ -1246,6 +1255,28 @@ static bool fuseTwoQubitGates(IRRewriter& rewriter, ModuleOp moduleOp,
         }
       });
   return changed;
+}
+
+/// Lower the logical ZSXX gates after numeric and symbolic synthesis finish.
+static void lowerRXPulses(IRRewriter& rewriter, ModuleOp moduleOp,
+                          const CompilerTarget::RXPulses& pulses) {
+  moduleOp->walk<WalkOrder::PostOrder, ReverseIterator>([&](Operation* op) {
+    const bool quarterTurn =
+        pulses.quarterTurnAngle < 0. ? isa<SXdgOp>(op) : isa<SXOp>(op);
+    if (isExcludedFromTopLevelUnitaryWalk(op) ||
+        (!quarterTurn && !(isa<XOp>(op) && pulses.halfTurnAngle))) {
+      return;
+    }
+    auto unitary = cast<UnitaryOpInterface>(op);
+    auto loc = op->getLoc();
+    rewriter.setInsertionPoint(op);
+    auto qubit = unitary.getInputQubit(0);
+    const double angle =
+        quarterTurn ? pulses.quarterTurnAngle : *pulses.halfTurnAngle;
+    qubit = RXOp::create(rewriter, loc, qubit, angle).getQubitOut();
+    decomposition::emitGPhaseIfNeeded(rewriter, loc, angle / 2.);
+    rewriter.replaceOp(op, qubit);
+  });
 }
 
 namespace {
@@ -1425,6 +1456,10 @@ protected:
     if (result.wasInterrupted()) {
       signalPassFailure();
       return;
+    }
+    if (targetBasis && targetBasis->rxPulses) {
+      lowerRXPulses(rewriter, moduleOp, *targetBasis->rxPulses);
+      listener.foldPending();
     }
     if (targetBasis &&
         targetBasis->singleQubit == CompilerTarget::SingleQubitBasis::ZSXX) {

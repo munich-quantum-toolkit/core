@@ -204,11 +204,12 @@ The reported name remains available to exporters.
 Target compilation requires a single-qubit synthesis basis available on every
 site. The `ZSXX` basis uses unrestricted RZ and either SX or fixed RX(π/2) or
 RX(-π/2). X or fixed RX(±π) provides an optional shorter half-turn sequence. The
-compiler selects supported pulses from the capabilities and preserves the
-global-phase difference between named X/SX gates and RX rotations. Additional
-fixed angles remain valid capabilities without changing the synthesis recipe.
-Targets without a usable basis support capability queries and conformance
-checks, but cannot be passed to target compilation or target synthesis.
+Euler synthesizers select standard SX or SXdg gates to match the quarter-turn
+direction, with an optional X shortcut. The native-target stage lowers these
+gates to RX pulses with their exact phase corrections. Additional fixed angles
+remain valid capabilities without changing the synthesis recipe. Targets without
+a usable basis support capability queries and conformance checks, but cannot be
+passed to target compilation or target synthesis.
 
 ### Native trapped-ion gates
 

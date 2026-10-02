@@ -516,6 +516,98 @@ TEST_F(TargetSynthesisTest, ZSXXSynthesisPreservesFullUnitary) {
   }
 }
 
+TEST_F(TargetSynthesisTest, FixedPulsesReuseNativeXShortcut) {
+  for (double angle : {std::numbers::pi / 2., -std::numbers::pi / 2.}) {
+    const auto target = valid(Target::create(
+        1, Connectivity::allToAll(),
+        NativeOperations::fromOperations({
+            valid(OperationCapability::create("rx", 1, 1, {}, std::nullopt,
+                                              std::nullopt, {angle})),
+            valid(OperationCapability::create("rz", 1, 1)),
+            valid(OperationCapability::create("x", 1, 0)),
+            valid(OperationCapability::create("gphase", 0, 1)),
+        })));
+    const auto circuit = [](QCOProgramBuilder& builder) {
+      builder.sink(
+          builder.u(std::numbers::pi, .37, -.29, builder.staticQubit(0)));
+      return builder.intConstant(0);
+    };
+    auto expected = build(circuit);
+    auto actual = build(circuit);
+    ASSERT_TRUE(mlir::succeeded(runTargetPass(
+        *actual, target, mlir::qco::createTargetNativeSynthesis())));
+    ASSERT_TRUE(mlir::succeeded(
+        runPass(*actual, mlir::qco::createVerifyTargetConformance())));
+    expectEquivalent(expected, actual);
+    EXPECT_EQ(countOps<mlir::qco::XOp>(*actual), 1);
+    EXPECT_EQ(countOps<mlir::qco::RXOp>(*actual), 0);
+  }
+}
+
+TEST_F(TargetSynthesisTest, NegativePulseFusionShortensNativeRuns) {
+  const auto target = valid(Target::create(
+      1, Connectivity::allToAll(),
+      NativeOperations::fromOperations({
+          valid(OperationCapability::create("rx", 1, 1, {}, std::nullopt,
+                                            std::nullopt,
+                                            {-std::numbers::pi / 2.})),
+          valid(OperationCapability::create("rx", 1, 1, {}, std::nullopt,
+                                            std::nullopt, {-std::numbers::pi})),
+          valid(OperationCapability::create("rz", 1, 1)),
+          valid(OperationCapability::create("gphase", 0, 1)),
+      })));
+  for (const bool rzLast : {false, true}) {
+    SCOPED_TRACE(rzLast);
+    const auto circuit = [&](QCOProgramBuilder& builder) {
+      auto qubit = builder.rx(-std::numbers::pi, builder.staticQubit(0));
+      if (!rzLast) {
+        qubit = builder.rz(std::numbers::pi, qubit);
+      }
+      qubit = builder.rx(-std::numbers::pi / 2., qubit);
+      if (rzLast) {
+        qubit = builder.rz(std::numbers::pi, qubit);
+      }
+      builder.sink(qubit);
+      return builder.intConstant(0);
+    };
+    auto expected = build(circuit);
+    auto actual = build(circuit);
+    ASSERT_TRUE(mlir::succeeded(runTargetPass(
+        *actual, target, mlir::qco::createTargetNativeSynthesis())));
+    ASSERT_TRUE(mlir::succeeded(
+        runPass(*actual, mlir::qco::createVerifyTargetConformance())));
+    expectEquivalent(expected, actual);
+    EXPECT_EQ(countOps<mlir::qco::RXOp>(*actual), 1);
+    EXPECT_EQ(countOps<mlir::qco::RZOp>(*actual), 1);
+  }
+}
+
+TEST_F(TargetSynthesisTest, FixedPulseLoweringPreservesNativeSXdg) {
+  const auto target = valid(Target::create(
+      1, Connectivity::allToAll(),
+      NativeOperations::fromOperations({
+          valid(OperationCapability::create("rx", 1, 1, {}, std::nullopt,
+                                            std::nullopt,
+                                            {std::numbers::pi / 2.})),
+          valid(OperationCapability::create("rz", 1, 1)),
+          valid(OperationCapability::create("sxdg", 1, 0)),
+          valid(OperationCapability::create("gphase", 0, 1)),
+      })));
+  const auto circuit = [](QCOProgramBuilder& builder) {
+    builder.sink(builder.sxdg(builder.staticQubit(0)));
+    return builder.intConstant(0);
+  };
+  auto expected = build(circuit);
+  auto actual = build(circuit);
+  ASSERT_TRUE(mlir::succeeded(runTargetPass(
+      *actual, target, mlir::qco::createTargetNativeSynthesis())));
+  ASSERT_TRUE(mlir::succeeded(
+      runPass(*actual, mlir::qco::createVerifyTargetConformance())));
+  expectEquivalent(expected, actual);
+  EXPECT_EQ(countOps<mlir::qco::SXdgOp>(*actual), 1);
+  EXPECT_EQ(countOps<mlir::qco::RXOp>(*actual), 0);
+}
+
 TEST_F(TargetSynthesisTest, FixedPulseFusionPreservesNativeAngles) {
   for (const auto angle : {std::numbers::pi / 2, -std::numbers::pi / 2}) {
     SCOPED_TRACE(angle);

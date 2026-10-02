@@ -84,12 +84,15 @@ struct SynthesizedUnitary1Q {
 /// @param runSize Number of gates in the run.
 /// @param hasNonBasisGate Whether the run contains a gate outside @p basis.
 /// @param basis The single-qubit synthesis basis.
+/// @param useX Whether ZSXX synthesis may emit X instead of two quarter turns.
+/// @param useSXdg Whether ZSXX synthesis uses SXdg instead of SX.
 /// @return The synthesized qubit and correction, or `std::nullopt` if synthesis
 /// is skipped.
-[[nodiscard]] std::optional<SynthesizedUnitary1Q> synthesizeUnitary1QEuler(
-    OpBuilder& builder, Location loc, Value qubit, const Matrix2x2& composed,
-    std::size_t runSize, bool hasNonBasisGate, SingleQubitBasis basis,
-    const CompilerTarget::SynthesisBasis* targetBasis = nullptr);
+[[nodiscard]] std::optional<SynthesizedUnitary1Q>
+synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
+                         const Matrix2x2& composed, std::size_t runSize,
+                         bool hasNonBasisGate, SingleQubitBasis basis,
+                         bool useX = true, bool useSXdg = false);
 
 /// Materializes one accumulated phase correction when needed.
 ///
@@ -104,12 +107,13 @@ void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase);
 /// Synthesizes one supported runtime-parameterized operation in @p basis.
 ///
 /// Leaves operations that already belong to @p basis unchanged.
-/// The optional target basis selects native pulse forms and shortcuts.
+/// @p useX enables the optional X shortcut in the ZSXX basis.
+/// @p useSXdg selects SXdg instead of SX for its quarter turns.
 ///
 /// @pre `canSynthesizeParameterizedUnitary1Q(op)` is true.
-void synthesizeParameterizedUnitary1Q(
-    RewriterBase& rewriter, Operation* op, SingleQubitBasis basis,
-    const CompilerTarget::SynthesisBasis* targetBasis = nullptr);
+void synthesizeParameterizedUnitary1Q(RewriterBase& rewriter, Operation* op,
+                                      SingleQubitBasis basis, bool useX = true,
+                                      bool useSXdg = false);
 
 /// Populates @p patterns with the single-qubit run fusion rewrite for
 /// @p basis (the reusable core of `fuse-single-qubit-unitary-runs`).

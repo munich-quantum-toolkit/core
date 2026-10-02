@@ -331,7 +331,7 @@ public:
     SingleQubitBasis singleQubit;
     std::optional<GateKind> entangler;
     std::optional<RXPulses> rxPulses;
-    /// Whether the named X shortcut is available when using native SX gates.
+    /// Whether X has a native implementation as a named gate or an RX pulse.
     bool hasX = true;
 
     friend bool operator==(const SynthesisBasis&,
