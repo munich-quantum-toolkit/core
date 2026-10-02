@@ -10,7 +10,7 @@
 
 import enum
 import os
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Annotated, Literal, Unpack, overload
 
 import numpy as np
@@ -711,6 +711,19 @@ class QCProgram(Program):
         are not counted recursively, and barriers are skipped.
         """
 
+    @property
+    def parameters(self) -> list[str]:
+        """Named f64 entry-point inputs in function argument order."""
+
+    def bind_parameters(self, values: Mapping[str, float]) -> None:
+        """Bind named f64 parameters in place without folding expressions.
+
+        Partial binding preserves unbound parameters and their source identities.
+        Unknown names, non-finite values, and references to the entry point raise
+        ValueError without changing the program. Call ``copy()`` first to preserve
+        the input, and ``cleanup()`` afterwards if constant folding is needed.
+        """
+
 class QCOProgram(Program):
     """A compiler program in the QCO dialect.
 
@@ -790,6 +803,19 @@ class QCOProgram(Program):
         """Convert this program to ``jeff`` MLIR.
 
         Set ``copy=True`` to preserve it.
+        """
+
+    @property
+    def parameters(self) -> list[str]:
+        """Named f64 entry-point inputs in function argument order."""
+
+    def bind_parameters(self, values: Mapping[str, float]) -> None:
+        """Bind named f64 parameters in place without folding expressions.
+
+        Partial binding preserves unbound parameters and their source identities.
+        Unknown names, non-finite values, and references to the entry point raise
+        ValueError without changing the program. Call ``copy()`` first to preserve
+        the input, and ``cleanup()`` afterwards if constant folding is needed.
         """
 
     def build_functionality(self, dd_package: mqt.core.dd.DDPackage) -> mqt.core.dd.MatrixDD:

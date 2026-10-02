@@ -87,6 +87,30 @@ iteration count. Barriers do not count, and operations inside gate modifiers do
 not count again. The counts do not expand function calls or estimate the gates
 executed at runtime.
 
+## Bind program parameters
+
+QC and QCO programs expose named f64 entry-point inputs through `parameters`.
+Use `bind_parameters` to bind all or some inputs in place:
+
+```{code-cell} ipython3
+from qiskit import QuantumCircuit
+from qiskit.circuit import Parameter
+
+circuit = QuantumCircuit(1)
+circuit.ry(Parameter("theta"), 0)
+parameterized = QCProgram.from_qiskit(circuit)
+assert parameterized.parameters == ["theta"]
+bound = parameterized.copy()
+bound.bind_parameters({"theta": 0.5})
+assert bound.parameters == []
+assert parameterized.parameters == ["theta"]
+```
+
+Partial binding preserves unbound inputs and their source identities. Unknown
+names, non-finite values, and references to the entry point fail without
+changing the program. Binding does not fold expressions; call `cleanup()` when
+needed.
+
 ## Select an output format
 
 Select an output format to stop the pipeline at a particular representation:

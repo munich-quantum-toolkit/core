@@ -237,6 +237,33 @@ static auto withDiagnostics(mlir::MLIRContext* context, const char* message,
   }
 }
 
+template <class T>
+static void registerParameterBinding(nb::class_<T, mlir::Program>& binding) {
+  binding
+      .def_prop_ro(
+          "parameters",
+          [](const T& program) {
+            requireValid(program);
+            return program.parameters();
+          },
+          "Named f64 entry-point inputs in function argument order.")
+      .def(
+          "bind_parameters",
+          [](T& program, const std::map<std::string, double>& values) {
+            requireValid(program);
+            withDiagnostics(
+                program.module().getContext(), "cannot bind parameters",
+                [&] { return mlir::success(program.bindParameters(values)); });
+          },
+          "values"_a,
+          R"pb(Bind named f64 parameters in place without folding expressions.
+
+Partial binding preserves unbound parameters and their source identities.
+Unknown names, non-finite values, and references to the entry point raise
+ValueError without changing the program. Call ``copy()`` first to preserve
+the input, and ``cleanup()`` afterwards if constant folding is needed.)pb");
+}
+
 template <class ProgramType>
 [[nodiscard]] static ProgramType copiedOrConsumed(ProgramType& program,
                                                   const bool copy) {
@@ -1588,6 +1615,9 @@ Set ``copy=True`` to preserve it.)pb")
           R"pb(Convert this program to ``jeff`` MLIR.
 
 Set ``copy=True`` to preserve it.)pb");
+
+  registerParameterBinding(qcProgram);
+  registerParameterBinding(qcoProgram);
 
   auto jeffProgram = nb::class_<mlir::JeffProgram, mlir::Program>(
       m, "JeffProgram",
