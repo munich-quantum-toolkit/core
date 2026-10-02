@@ -682,7 +682,7 @@ private:
       for (const auto& progs : window) {
         const auto [prog0, prog1] = progs;
         const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
-        const auto nswaps = target.distanceBetween(hw0, hw1) - 1;
+        const size_t nswaps = target.distanceBetween(hw0, hw1) - 1;
         costs += decay * static_cast<float>(nswaps);
         decay *= params.lambda;
       }
@@ -1129,8 +1129,8 @@ private:
                        true};
     }
 
-    const auto nprogram = wires.size();
-    const auto nhardware = env.target.numSites();
+    const size_t nprogram = wires.size();
+    const size_t nhardware = env.target.numSites();
     SmallVector<SmallVector<std::pair<size_t, size_t>>> neighbours(nprogram);
     SmallVector<size_t> degree(nprogram, 0);
     SmallVector<size_t> attached(nprogram, 0);
@@ -1154,11 +1154,11 @@ private:
         if (neighbours[start].size() > 1 || visited[start]) {
           continue;
         }
-        auto current = start;
+        size_t current = start;
         while (current != nprogram) {
           order.push_back(current);
           visited[current] = true;
-          auto next = nprogram;
+          size_t next = nprogram;
           for (const auto& [partner, weight] : neighbours[current]) {
             if (!visited[partner]) {
               next = partner;
@@ -1183,7 +1183,7 @@ private:
           usedHardware[current] = true;
           env.target.forEachNeighbour(
               current, [&](size_t neighbour) { --remaining[neighbour]; });
-          auto next = nhardware;
+          size_t next = nhardware;
           env.target.forEachNeighbour(current, [&](size_t neighbour) {
             if (!usedHardware[neighbour] &&
                 (remaining[neighbour] != 0 || placed + 1 == nprogram) &&
@@ -1220,7 +1220,7 @@ private:
                                     static_cast<QubitIndex>(nhardware));
     SmallVector<bool> used(nhardware, false);
     for (size_t placed = 0; placed < nprogram; ++placed) {
-      auto prog = nprogram;
+      size_t prog = nprogram;
       for (size_t candidate = 0; candidate < nprogram; ++candidate) {
         if (mapping[candidate] == nhardware &&
             (prog == nprogram ||
@@ -1230,7 +1230,7 @@ private:
         }
       }
 
-      auto best = nhardware;
+      size_t best = nhardware;
       size_t bestCost = 0;
       for (size_t hw = 0; hw < nhardware; ++hw) {
         if (used[hw]) {
@@ -1258,7 +1258,7 @@ private:
     }
 
     // Complete the permutation with unused sites for routing workspace.
-    auto prog = nprogram;
+    size_t prog = nprogram;
     for (size_t hw = 0; hw < nhardware; ++hw) {
       if (!used[hw]) {
         mapping[prog++] = static_cast<QubitIndex>(hw);
@@ -1908,8 +1908,8 @@ private:
 
   static void permuteWires(Wires& wires, ArrayRef<QubitIndex> permutation) {
     Wires reordered(wires.size());
-    for (auto [wire, site] : llvm::zip_equal(wires, permutation)) {
-      reordered[site] = wire;
+    for (size_t site = 0; site < wires.size(); ++site) {
+      reordered[permutation[site]] = wires[site];
     }
     wires = std::move(reordered);
   }
@@ -1953,7 +1953,7 @@ private:
     }
 
     SmallVector<QubitIndex> resultSites(op->getNumResults());
-    for (const auto site : indices) {
+    for (size_t site : indices) {
       resultSites[cast<OpResult>(parent.wires[site].qubit())
                       .getResultNumber()] = site;
     }

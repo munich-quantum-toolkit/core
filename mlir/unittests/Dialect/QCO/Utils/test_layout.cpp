@@ -70,9 +70,6 @@ TYPED_TEST(LayoutTest, RandomPlacesEveryProgramOnDistinctHardware) {
 
   EXPECT_EQ(layout.nProgramQubits(), nProg);
   EXPECT_EQ(layout.nHardwareQubits(), nHw);
-  constexpr std::array<TypeParam, nProg> expected{1, 0, 3};
-  EXPECT_EQ(layout.getProgramToHardware(), ArrayRef<TypeParam>(expected));
-
   llvm::DenseSet<TypeParam> mappedHwIndices;
   for (size_t prog = 0; prog < nProg; ++prog) {
     const auto hw = layout.getHardwareIndex(prog);

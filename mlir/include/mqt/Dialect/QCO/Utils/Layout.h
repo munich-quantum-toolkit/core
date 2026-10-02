@@ -14,14 +14,13 @@
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/Sequence.h"
-#include "llvm/ADT/SmallBitVector.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/ErrorHandling.h"
 
 #include <cassert>
 #include <cstddef>
 #include <limits>
+#include <numeric>
 #include <random>
 #include <tuple>
 #include <type_traits>
@@ -60,7 +59,12 @@ public:
     if (nqubits > UNMAPPED) {
       llvm::reportFatalUsageError("layout exceeds qubit index capacity");
     }
-    return fromMapping(to_vector(llvm::seq<T>(static_cast<T>(nqubits))));
+    Layout<T> layout(nqubits, nqubits);
+    std::iota(layout.programToHardware_.begin(),
+              layout.programToHardware_.end(), T{0});
+    std::iota(layout.hardwareToProgram_.begin(),
+              layout.hardwareToProgram_.end(), T{0});
+    return layout;
   }
 
   /// Construct and return a random layout that maps every program qubit
@@ -75,11 +79,12 @@ public:
     if (nHardwareQubits > UNMAPPED) {
       llvm::reportFatalUsageError("layout exceeds qubit index capacity");
     }
-    auto hwIndices = to_vector(llvm::seq<T>(static_cast<T>(nHardwareQubits)));
+    SmallVector<T> hwIndices(nHardwareQubits);
+    std::iota(hwIndices.begin(), hwIndices.end(), T{0});
     llvm::shuffle(hwIndices.begin(), hwIndices.end(), std::mt19937_64{seed});
 
     Layout<T> layout(nProgramQubits, nHardwareQubits);
-    for (const auto prog : llvm::seq(static_cast<T>(nProgramQubits))) {
+    for (size_t prog = 0; prog < nProgramQubits; ++prog) {
       layout.add(prog, hwIndices[prog]);
     }
     return layout;
@@ -92,16 +97,11 @@ public:
     if (mapping.size() > UNMAPPED) {
       llvm::reportFatalUsageError("layout exceeds qubit index capacity");
     }
-    llvm::SmallBitVector seen(mapping.size());
-    for (const T hw : mapping) {
-      if (hw >= mapping.size() || seen.test(hw)) {
-        llvm::reportFatalUsageError("mapping must be a permutation");
-      }
-      seen.set(hw);
-    }
-
     Layout<T> layout(mapping.size(), mapping.size());
     for (const auto [prog, hw] : enumerate(mapping)) {
+      if (hw >= mapping.size() || layout.hardwareToProgram_[hw] != UNMAPPED) {
+        llvm::reportFatalUsageError("mapping must be a permutation");
+      }
       layout.add(prog, hw);
     }
     return layout;
