@@ -637,12 +637,13 @@ if (int[2](value) == -1) {}
   ASSERT_TRUE(parsed) << parsed.diagnostics.front().message;
 }
 
-TEST(OpenQASMFrontendTest, RejectsUnsupportedReservedWordsAsIdentifiers) {
+TEST(OpenQASMFrontendTest, RejectsReservedWordsAsIdentifiers) {
   constexpr auto reservedWords = std::to_array<llvm::StringLiteral>({
-      "defcalgrammar", "def",     "cal",    "defcal",  "extern",  "box",
-      "let",           "end",     "return", "pragma",  "input",   "readonly",
-      "mutable",       "complex", "array",  "void",    "stretch", "durationof",
-      "delay",         "im",      "#dim",   "#pragma",
+      "defcalgrammar", "def",        "cal",     "defcal", "extern",
+      "box",           "let",        "end",     "return", "pragma",
+      "readonly",      "mutable",    "complex", "array",  "void",
+      "stretch",       "durationof", "delay",   "im",     "#dim",
+      "#pragma",
   });
   for (const auto keyword : reservedWords) {
     SCOPED_TRACE(keyword.str());
@@ -653,11 +654,17 @@ TEST(OpenQASMFrontendTest, RejectsUnsupportedReservedWordsAsIdentifiers) {
     EXPECT_NE(parsed.diagnostics.front().message.find("reserved keyword"),
               std::string::npos);
   }
+
+  auto input =
+      openqasm::frontend::parseOpenQASM("OPENQASM 3.1; int input = 0;");
+  ASSERT_FALSE(input);
+  ASSERT_FALSE(input.diagnostics.empty());
+  EXPECT_NE(input.diagnostics.front().message.find("expected identifier"),
+            std::string::npos);
 }
 
 TEST(OpenQASMFrontendTest, DiagnosesUnsupportedReservedFeatureSyntax) {
   constexpr auto sources = std::to_array<llvm::StringLiteral>({
-      "OPENQASM 3.1; input int value;",
       "OPENQASM 3.1; const complex value = 0;",
       "OPENQASM 3.1; output array[int, 2] values;",
       "OPENQASM 3.1; for complex value in [0:1] {}",
@@ -671,6 +678,13 @@ TEST(OpenQASMFrontendTest, DiagnosesUnsupportedReservedFeatureSyntax) {
     EXPECT_NE(parsed.diagnostics.front().message.find("reserved keyword"),
               std::string::npos);
   }
+
+  auto input =
+      openqasm::frontend::parseOpenQASM("OPENQASM 3.1; input int value;");
+  ASSERT_FALSE(input);
+  ASSERT_FALSE(input.diagnostics.empty());
+  EXPECT_NE(input.diagnostics.front().message.find("only float input"),
+            std::string::npos);
 }
 
 TEST(OpenQASMFrontendTest, EnforcesNumericSeparatorPlacement) {
