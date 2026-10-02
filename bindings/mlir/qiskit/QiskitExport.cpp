@@ -2939,12 +2939,11 @@ static void defineNativeGates(mlir::ModuleOp moduleOp) {
     const auto name = gate.getBaseSymbol();
     auto function = definitions.lookup(name);
     if (!function) {
-      const auto count = gate.getNumParams();
-      SmallVector<Type> types(count, builder.getF64Type());
-      types.append(gate.getNumTargets(),
-                   qc::QubitType::get(builder.getContext()));
-      function = func::FuncOp::create(gate.getLoc(), name,
-                                      builder.getFunctionType(types, {}));
+      function = func::FuncOp::create(
+          gate.getLoc(), name,
+          builder.getFunctionType(
+              {builder.getF64Type(), qc::QubitType::get(builder.getContext())},
+              {}));
       function.setPrivate();
       mlir::mqt::setUnitaryFunction(function);
       function->setAttr(
@@ -2955,12 +2954,10 @@ static void defineNativeGates(mlir::ModuleOp moduleOp) {
       auto* block = function.addEntryBlock();
       builder.setInsertionPointToStart(block);
       const auto loc = gate.getLoc();
-      auto angles = block->getArguments().take_front(count);
-      auto qubits = block->getArguments().drop_front(count);
       const bool piPulse = isa<qc::GPIOp>(gate.getOperation());
-      qc::ROp::create(builder, loc, qubits[0],
+      qc::ROp::create(builder, loc, block->getArgument(1),
                       piPulse ? std::numbers::pi : std::numbers::pi / 2.,
-                      angles[0]);
+                      block->getArgument(0));
       if (piPulse) {
         qc::GPhaseOp::create(builder, loc, std::numbers::pi / 2.);
       }
