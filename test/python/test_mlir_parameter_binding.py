@@ -12,13 +12,16 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+import qiskit
 from qiskit import QuantumCircuit
 from qiskit.circuit import Parameter
 from qiskit.quantum_info import Operator
+from qiskit_support import supports_qiskit_translation
 
 from mqt.core.mlir import QCProgram
 
 
+@pytest.mark.skipif(not supports_qiskit_translation(), reason=f"No registered Qiskit adapter for {qiskit.__version__}")
 @pytest.mark.parametrize("qco", [False, True])
 def test_partial_binding_preserves_identity_and_expression(*, qco: bool) -> None:
     """Binding stays native while preserving remaining Qiskit parameter identity."""
@@ -48,9 +51,16 @@ def test_partial_binding_preserves_identity_and_expression(*, qco: bool) -> None
 @pytest.mark.parametrize("values", [{"a": 1.0, "unknown": 2.0}, {"a": np.inf}, {"a": np.nan}])
 def test_invalid_binding_is_atomic(values: dict[str, float]) -> None:
     """Invalid assignments leave the input reusable."""
-    circuit = QuantumCircuit(1)
-    circuit.rx(Parameter("a"), 0)
-    program = QCProgram.from_qiskit(circuit)
+    program = QCProgram.from_mlir_str("""
+    module {
+      func.func @main(%a: f64 {mqt.input_name = "a"}) attributes {mqt.entry_point} {
+        %q = qc.alloc : !qc.qubit
+        qc.rx(%a) %q : !qc.qubit
+        qc.dealloc %q : !qc.qubit
+        return
+      }
+    }
+    """)
     before = program.ir
     with pytest.raises(ValueError, match=r"unknown f64 parameter|must be finite"):
         program.bind_parameters(values)
