@@ -922,7 +922,7 @@ emitUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0, Value qubit1,
     const auto synthesized = synthesizeUnitary1QEuler(
         builder, loc, wire, factors[index], /*runSize=*/0,
         /*hasNonBasisGate=*/true, basis.singleQubit, basis.hasX,
-        basis.rxPulses && basis.rxPulses->quarterTurnAngle < 0.);
+        basis.fixedRXGates && basis.fixedRXGates->quarterTurnAngle < 0.);
     wire = synthesized->qubit;
     globalPhase += synthesized->globalPhase;
   };

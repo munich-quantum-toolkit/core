@@ -26,7 +26,7 @@ include four beyond the live 86-edge snapshot. Aquila is an analog device and is
 outside this gate compiler.
 
 IonQ describes arbitrary virtual Z as phase propagation. Bench advertises RZ for
-that capability; the submission layer absorbs it into pulse phases. This
+that capability; the submission layer absorbs it into GPI/GPI2 gate phases. This
 compiler abstraction does not claim RZ is in Braket's literal IonQ whitelist.
 
 Aria is retired; its IonQ MS gate has no remaining catalogue consumer. AQT's
@@ -61,9 +61,9 @@ Sources: [IonQ Aria](https://www.ionq.com/quantum-systems/aria),
 - **Consumer coverage:** GPI/GPI2 now round-trip through jeff's custom gates as
   well as Qiskit and OpenQASM. Local QIR Base/Adaptive and direct DD probes
   verify their runtime semantics.
-- **Pulse count:** Numeric RX(pi/2), RX(pi), and RZ use one, one, and two native
-  pulses where admitted. Fixed-phase and large symbolic inverses keep the safe
-  fallback. No general pulse search or arbitrary fixed-angle synthesis is added.
+- **Gate count:** Numeric RX(pi/2), RX(pi), and RZ use one, one, and two native
+  gates where admitted. Fixed-phase and large symbolic inverses keep the safe
+  fallback. No general gate search or arbitrary fixed-angle synthesis is added.
 - **Catalogue:** Remove obsolete models, add current Cepheus and AQT snapshots,
   preserve arbitrary virtual RZ, and remove unsupported hardware feedback.
   Device docs distinguish real snapshots from ideal architecture models.
@@ -73,14 +73,14 @@ Sources: [IonQ Aria](https://www.ionq.com/quantum-systems/aria),
 Remove MS-specific operations, matrices, placement reversal, runtime macros,
 export definitions, and tests. Delete the GPI2-only basis and public callback
 emission helper. Bench deletes recursive unit conversion, output restoration,
-and Rigetti pulse subclasses. Standard RX target aliases plus two ordinary named
-gates in the U equivalence work on Qiskit 2.1.2 and later. Bench's default
-compiler supports that minimum; its optional Core compiler and QIR export
-require Qiskit 2.5.x for Core's existing native C API bridge. Qiskit 2.1.0 and
-2.1.1 have a post-layout failure at optimization level 3. Bench's uv minimums
-group selects 2.1.2 separately from the Core extra. The full base suite passes
-on Qiskit 2.1.2, 2.2, 2.3, and 2.4. No compatibility pass surgery, provider SDK,
-backend framework, or general angle solver is needed.
+and Rigetti gate subclasses. Standard RX target aliases work on Qiskit 2.1.2 and
+later through a private standard-gate target and local lowering equivalences.
+Bench's default compiler supports that minimum; its optional Core compiler and
+QIR export require Qiskit 2.5.x for Core's existing native C API bridge. Qiskit
+2.1.0 and 2.1.1 have a post-layout failure at optimization level 3. Bench's uv
+minimums group selects 2.1.2 separately from the Core extra. The full base suite
+passes on Qiskit 2.1.2, 2.2, 2.3, and 2.4. No compatibility pass surgery,
+provider SDK, backend framework, or general angle solver is needed.
 
 SDK support alone does not establish a current hardware requirement. Qiskit,
 PennyLane, CUDA-Q, and Azure contain provider-specific or legacy MS interfaces;

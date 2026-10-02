@@ -832,7 +832,7 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
     });
   };
   std::optional<SingleQubitBasis> singleQubit;
-  std::optional<RXPulses> rxPulses;
+  std::optional<FixedRXGates> fixedRXGates;
   bool hasX = true;
   if (supportsOnEverySite(GateKind::U)) {
     singleQubit = SingleQubitBasis::U;
@@ -852,7 +852,7 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
              supportsOnEverySite(GateKind::RZ)) {
     singleQubit = SingleQubitBasis::ZYZ;
   } else if (supportsOnEverySite(GateKind::RZ)) {
-    const auto supportsPulse = [&](double angle) {
+    const auto supportsRX = [&](double angle) {
       return llvm::all_of(siteIds, [&](SiteId site) {
         return supportsOperation(
             "rx", 1, 1, ArrayRef<SiteId>(&site, 1), false,
@@ -860,18 +860,18 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
       });
     };
     for (double quarter : {std::numbers::pi / 2., -std::numbers::pi / 2.}) {
-      if (!supportsPulse(quarter)) {
+      if (!supportsRX(quarter)) {
         continue;
       }
-      rxPulses = {
+      fixedRXGates = {
           .quarterTurnAngle = quarter,
           .halfTurnAngle = std::nullopt,
       };
       hasX = supportsOnEverySite(GateKind::X);
       if (!hasX) {
         for (double half : {std::numbers::pi, -std::numbers::pi}) {
-          if (supportsPulse(half)) {
-            rxPulses->halfTurnAngle = half;
+          if (supportsRX(half)) {
+            fixedRXGates->halfTurnAngle = half;
             hasX = true;
             break;
           }
@@ -940,7 +940,7 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
       .entangler = entangler == entanglerPreference.end()
                        ? std::nullopt
                        : std::optional{*entangler},
-      .rxPulses = rxPulses,
+      .fixedRXGates = fixedRXGates,
       .hasX = hasX,
   };
 }

@@ -76,7 +76,7 @@ using Site = Target::Site;
 using SiteId = Target::SiteId;
 using SiteTuple = Target::SiteTuple;
 
-TEST(CompilerTargetTest, NativeIonBasisRequiresBothPulsesWithUsablePhases) {
+TEST(CompilerTargetTest, NativeIonBasisRequiresBothGatesWithUsablePhases) {
   for (const bool includeGpi : {false, true}) {
     for (const double angle : {std::numbers::pi / 4., std::numbers::pi / 2.}) {
       for (const bool fixedPhase : {false, true}) {
@@ -1027,7 +1027,7 @@ TEST(CompilerTargetTest, ChecksFixedValuesInsideNativeControls) {
   }
 }
 
-TEST(CompilerTargetTest, ResolvesFixedPulseBasisOnlyOnEverySite) {
+TEST(CompilerTargetTest, ResolvesFixedRXGateBasisOnlyOnEverySite) {
   auto operations = std::vector{
       valid(OperationCapability::create("rz", 1, 1)),
       valid(OperationCapability::create(
@@ -1052,7 +1052,7 @@ TEST(CompilerTargetTest, ResolvesFixedPulseBasisOnlyOnEverySite) {
   EXPECT_FALSE(target.synthesisBasis()->entangler);
 }
 
-TEST(CompilerTargetTest, KeepsUnsupportedPulseAnglesNativeWithoutSynthesis) {
+TEST(CompilerTargetTest, KeepsUnsupportedRXAnglesNativeWithoutSynthesis) {
   for (double angle : {
            0.,
            .37,
@@ -1074,15 +1074,15 @@ TEST(CompilerTargetTest, KeepsUnsupportedPulseAnglesNativeWithoutSynthesis) {
   }
 }
 
-TEST(CompilerTargetTest, FixedPulseSynthesisRequiresRZAndRX) {
-  for (const auto& [free, pulse] :
+TEST(CompilerTargetTest, FixedRXGateSynthesisRequiresRZAndRX) {
+  for (const auto& [free, gate] :
        {std::pair{"rx", "ry"}, std::pair{"rz", "ry"}}) {
     const auto target = valid(Target::create(
         1, Connectivity::allToAll(),
         NativeOperations::fromOperations({
             valid(OperationCapability::create(free, 1, 1)),
             valid(OperationCapability::create("gphase", 0, 1)),
-            valid(OperationCapability::create(pulse, 1, 1, {}, std::nullopt,
+            valid(OperationCapability::create(gate, 1, 1, {}, std::nullopt,
                                               std::nullopt,
                                               {std::numbers::pi / 2.})),
         })));

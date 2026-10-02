@@ -2954,11 +2954,11 @@ static void defineNativeGates(mlir::ModuleOp moduleOp) {
       auto* block = function.addEntryBlock();
       builder.setInsertionPointToStart(block);
       const auto loc = gate.getLoc();
-      const bool piPulse = isa<qc::GPIOp>(gate.getOperation());
+      const bool isGPI = isa<qc::GPIOp>(gate.getOperation());
       qc::ROp::create(builder, loc, block->getArgument(1),
-                      piPulse ? std::numbers::pi : std::numbers::pi / 2.,
+                      isGPI ? std::numbers::pi : std::numbers::pi / 2.,
                       block->getArgument(0));
-      if (piPulse) {
+      if (isGPI) {
         qc::GPhaseOp::create(builder, loc, std::numbers::pi / 2.);
       }
       func::ReturnOp::create(builder, loc);

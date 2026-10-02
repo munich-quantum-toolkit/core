@@ -318,20 +318,20 @@ public:
     GPI,  ///< GPI2 / GPI / GPI2, with phases in radians.
   };
 
-  /// Native RX pulses implementing the X rotations of the ZSXX basis.
-  struct RXPulses {
+  /// Fixed-angle RX gates implementing the X rotations of the ZSXX basis.
+  struct FixedRXGates {
     double quarterTurnAngle;
     std::optional<double> halfTurnAngle;
 
-    friend bool operator==(const RXPulses&, const RXPulses&) = default;
+    friend bool operator==(const FixedRXGates&, const FixedRXGates&) = default;
   };
 
   /// One single-qubit basis and optional entangler usable across the target.
   struct SynthesisBasis {
     SingleQubitBasis singleQubit;
     std::optional<GateKind> entangler;
-    std::optional<RXPulses> rxPulses;
-    /// Whether X has a native implementation as a named gate or an RX pulse.
+    std::optional<FixedRXGates> fixedRXGates;
+    /// Whether X is native or can be implemented by a fixed RX(±π) gate.
     bool hasX = true;
 
     friend bool operator==(const SynthesisBasis&,

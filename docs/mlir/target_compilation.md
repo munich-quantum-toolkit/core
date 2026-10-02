@@ -189,7 +189,7 @@ and placements. For example, these capabilities accept four RX angles:
 ```python
 from math import pi
 
-rx_pulses = [
+rx_gates = [
     CompilerTarget.OperationCapability("rx", 1, 1, fixed_parameters=[angle]) for angle in (pi / 2, -pi / 2, pi, -pi)
 ]
 ```
@@ -206,15 +206,16 @@ site. The `ZSXX` basis uses unrestricted RZ and either SX or fixed RX(π/2) or
 RX(-π/2). X or fixed RX(±π) provides an optional shorter half-turn sequence. The
 Euler synthesizers select standard SX or SXdg gates to match the quarter-turn
 direction, with an optional X shortcut. The native-target stage lowers these
-gates to RX pulses with their exact phase corrections. Additional fixed angles
-remain valid capabilities without changing the synthesis recipe. Targets without
-a usable basis support capability queries and conformance checks, but cannot be
-passed to target compilation or target synthesis.
+gates to native RX gates with their exact phase corrections. Additional fixed
+angles remain valid capabilities without changing the synthesis recipe. Targets
+without a usable basis support capability queries and conformance checks, but
+cannot be passed to target compilation or target synthesis.
 
 ### Native trapped-ion gates
 
-Core supports Forte-style targets with `gpi(phi)`, `gpi2(phi)`, and the existing
-`rzz(theta)` operation. All parameters use **radians**. GPI equals
+Core models native gates; device providers translate them into physical control
+pulses. It supports Forte-style targets with `gpi(phi)`, `gpi2(phi)`, and the
+existing `rzz(theta)` operation. All parameters use **radians**. GPI equals
 `i R(pi, phi)`; its global phase differs from a π rotation. GPI2 equals
 `R(pi/2, phi)`. Provider adapters convert to and from the
 [IonQ API's turns](https://docs.ionq.com/features/getting-started-with-native-gates)
@@ -236,19 +237,19 @@ forte_target = CompilerTarget(
 ```
 
 Arbitrary GPI and GPI2 phases on every site provide a single-qubit synthesis
-basis. A general unitary uses at most three pulses; common π and π/2 rotations
-use one pulse and RZ uses two. A target can also advertise arbitrary RZ when its
-provider supports virtual Z. Such an adapter must propagate RZ into pulse phases
-before submitting to a device that accepts only GPI/GPI2/ZZ. Two-qubit synthesis
-uses RZZ(π/2) on a supported orientation of each coupling. Fixed parameter
-restrictions must admit this value.
+basis. A general unitary uses at most three gates; common π and π/2 rotations
+use one gate and RZ uses two. A target can also advertise arbitrary RZ when its
+provider supports virtual Z. Such an adapter must propagate RZ into GPI/GPI2
+gate phases before submitting to a device that accepts only GPI/GPI2/ZZ.
+Two-qubit synthesis uses RZZ(π/2) on a supported orientation of each coupling.
+Fixed parameter restrictions must admit this value.
 
 Single-qubit synthesis accepts symbolic input angles; two-qubit synthesis
 requires a constant matrix unless the input gate is already native. Native
 inverses also work with symbolic parameters when the target admits the resulting
-parameters. GPI2 inversion initially uses three unchanged pulses and a global
+parameters. GPI2 inversion initially uses three unchanged gates and a global
 phase correction, preserving fixed phases and large symbolic values. Numeric
-fusion reduces this to one pulse when the target admits arbitrary phases.
+fusion reduces this to one gate when the target admits arbitrary phases.
 
 Exports retain the native names and radian parameters. OpenQASM and Python
 circuit exports provide equivalent definitions for GPI and GPI2. Python circuit

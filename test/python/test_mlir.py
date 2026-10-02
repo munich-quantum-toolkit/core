@@ -657,13 +657,13 @@ def test_target_compiles_single_qubit_gates_without_entangler(num_sites: int) ->
 @pytest.mark.parametrize("arity", [1, CompilerTarget.OperationArity.fixed(1)])
 def test_fixed_parameter_target_capability(arity: int | CompilerTarget.OperationArity) -> None:
     """Fixed target values survive bindings and restrict support queries."""
-    pulse = CompilerTarget.OperationCapability("rx", arity, 1, fixed_parameters=[np.pi / 2])
-    assert pulse.fixed_parameters == [np.pi / 2]
+    gate = CompilerTarget.OperationCapability("rx", arity, 1, fixed_parameters=[np.pi / 2])
+    assert gate.fixed_parameters == [np.pi / 2]
     target = CompilerTarget(
         1,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations([
-            pulse,
+            gate,
             CompilerTarget.OperationCapability("rz", 1, 1),
         ]),
     )
@@ -683,14 +683,14 @@ def test_fixed_parameter_target_capability(arity: int | CompilerTarget.Operation
 @requires_qiskit_translation
 @pytest.mark.parametrize("theta", [0.0, np.pi / 2, np.pi, 0.47, "symbolic"])
 @pytest.mark.parametrize("gate", ["u", "rx", "p"])
-@pytest.mark.parametrize("pulse_angle", [np.pi / 2, -np.pi / 2])
-def test_fixed_pulse_compilation_preserves_phase(theta: float | str, gate: str, pulse_angle: float) -> None:
+@pytest.mark.parametrize("quarter_turn_angle", [np.pi / 2, -np.pi / 2])
+def test_fixed_rx_gate_compilation_preserves_phase(theta: float | str, gate: str, quarter_turn_angle: float) -> None:
     """Compile into RZ and fixed RX quarter turns, preserving phase."""
     target = CompilerTarget(
         1,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations([
-            CompilerTarget.OperationCapability("rx", 1, 1, fixed_parameters=[pulse_angle]),
+            CompilerTarget.OperationCapability("rx", 1, 1, fixed_parameters=[quarter_turn_angle]),
             CompilerTarget.OperationCapability("rz", 1, 1),
             CompilerTarget.OperationCapability("gphase", 0, 1),
         ]),
@@ -705,7 +705,7 @@ def test_fixed_pulse_compilation_preserves_phase(theta: float | str, gate: str, 
     program.compile_for_target(_test_target_environment(target))
     result = program.to_qiskit(target=target)
     assert set(result.count_ops()) <= {"rx", "rz"}
-    assert all(item.operation.params == [pulse_angle] for item in result.data if item.operation.name == "rx")
+    assert all(item.operation.params == [quarter_turn_angle] for item in result.data if item.operation.name == "rx")
     for value in [-0.6, 0.0, np.pi / 2, np.pi]:
         bindings = {parameter: value} if isinstance(parameter, qiskit.circuit.Parameter) else {}
         assert np.allclose(
@@ -716,8 +716,8 @@ def test_fixed_pulse_compilation_preserves_phase(theta: float | str, gate: str, 
 
 @requires_qiskit_translation
 @pytest.mark.parametrize("shape", ["sum", "cancel", "after_synthesis"])
-def test_fixed_pulse_merges_symbolic_rz(shape: str) -> None:
-    """Merge the unrestricted axis without changing fixed RX pulses or phase."""
+def test_fixed_rx_gate_merges_symbolic_rz(shape: str) -> None:
+    """Merge the unrestricted axis without changing fixed RX gates or phase."""
     num_qubits = 2 if shape == "cancel" else 1
     target = CompilerTarget(
         num_qubits,
@@ -883,7 +883,7 @@ def test_symbolic_fusion_normalizes_gate_operands_after_scalar_expressions() -> 
 @pytest.mark.parametrize("gate", ["u", "rx", "p"])
 @pytest.mark.parametrize("symbolic", [False, True])
 def test_native_ion_target_single_qubit_phase(gate: str, *, symbolic: bool) -> None:
-    """Native pulses preserve phase and symbolic input parameters."""
+    """Native gates preserve phase and symbolic input parameters."""
     operations = [
         CompilerTarget.OperationCapability("gpi2", 1, 1),
         CompilerTarget.OperationCapability("gphase", 0, 1),
@@ -914,7 +914,7 @@ def test_native_ion_target_single_qubit_phase(gate: str, *, symbolic: bool) -> N
 
 @requires_qiskit_translation
 def test_forte_target_compilation_preserves_full_unitary() -> None:
-    """Compile an entangled circuit using a fixed RZZ pulse and radian phases."""
+    """Compile an entangled circuit using a fixed RZZ gate and radian phases."""
     source = QuantumCircuit(2)
     source.u(0.37, -0.42, 0.19, 0)
     source.cx(0, 1)
@@ -1733,10 +1733,10 @@ def test_compilation_timing_and_statistics(capfd: pytest.CaptureFixture[str]) ->
 @requires_qiskit_translation
 @pytest.mark.parametrize("with_rz", [False, True])
 @pytest.mark.parametrize(
-    ("gate", "angle", "pulses"),
+    ("gate", "angle", "gate_count"),
     [("rx", np.pi / 2, 1), ("rx", -np.pi / 2, 1), ("rx", np.pi, 1), ("rz", 0.3, 2), ("gpi2_inverse", 0.13, 1)],
 )
-def test_native_ion_short_pulses(gate: str, angle: float, pulses: int, *, with_rz: bool) -> None:
+def test_native_ion_short_gate_sequences(gate: str, angle: float, gate_count: int, *, with_rz: bool) -> None:
     """Common rotations use short native forms with their complete global phase."""
     source = QuantumCircuit(1)
     if gate == "gpi2_inverse":
@@ -1765,14 +1765,14 @@ def test_native_ion_short_pulses(gate: str, angle: float, pulses: int, *, with_r
     program = QCProgram.from_qiskit(source).to_qco()
     program.compile_for_target(_test_target_environment(target))
     result = program.to_qiskit(target=target)
-    assert len(result.data) == (1 if gate == "rz" and with_rz else pulses)
+    assert len(result.data) == (1 if gate == "rz" and with_rz else gate_count)
     assert np.allclose(Operator(result).data, Operator(source).data)
 
 
 @requires_qiskit_translation
 @pytest.mark.parametrize("name", ["gpi", "gpi2"])
 def test_native_ion_jeff_round_trip_preserves_phase_and_modifiers(name: str) -> None:
-    """Serialized native pulses retain complete matrices under gate modifiers."""
+    """Serialized native gates retain complete matrices under gate modifiers."""
     phi = qiskit.circuit.Parameter("phi")
     definition = QuantumCircuit(1)
     definition.r(np.pi if name == "gpi" else np.pi / 2, phi, 0)

@@ -1,10 +1,10 @@
-# Native pulse lowering
+# Native gate lowering
 
 ## Scope and ownership
 
 Keep fixed RX capabilities in the public target. Numeric and symbolic Euler
 synthesis use the standard ZSXX basis. Select SX or SXdg to match the available
-quarter-turn direction; enable X when a native gate or half-turn pulse supports
+quarter-turn direction; enable X when a native gate or half-turn gate supports
 it. Target-native synthesis converts these gates to RX and preserves their exact
 global phase. Native gates remain valid inputs. Arbitrary fixed-angle synthesis
 remains unsupported.
@@ -20,7 +20,7 @@ compilation and mirror results.
 - Reuse ZSXX, native capability matching, and Qiskit's BasisTranslator. No new
   basis enum, public compiler pass, or provider dependency is needed.
 - Select the quarter-turn direction before fusion counts gates. Each logical
-  quarter turn then maps to one native pulse without additional RZ operations.
+  quarter turn then maps to one native gate without additional RZ operations.
 - Keep phase corrections exact, including under control and recompilation.
   Rigetti compilation does not mutate Qiskit's session equivalence library.
 - Keep native parameter validation separate from logical synthesis. Preserve
@@ -30,7 +30,7 @@ compilation and mirror results.
 
 Core's native synthesis, decomposition, optimization, compiler, and mapping
 suites pass 992 tests. Python MLIR/Qiskit and C API adoption pass 867 tests.
-Regression tests cover negative-pulse shortening, mixed named/fixed native
+Regression tests cover negative-RX shortening, mixed named/fixed native
 operations, and the optional named-X shortcut.
 
 An eight-case local comparison against Core `574b4fc7` used six-qubit circuits

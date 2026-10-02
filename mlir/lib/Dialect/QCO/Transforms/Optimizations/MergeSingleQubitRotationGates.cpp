@@ -755,7 +755,7 @@ static Val<Value> sumAngles(Val<Value> lhs, Val<Value> rhs) {
   return lhs + rhs;
 }
 
-/// Merge the unrestricted RZ axis without changing a target's X pulses.
+/// Merge the unrestricted RZ axis without changing a target's fixed RX gates.
 static LogicalResult mergeParameterizedRZ(RZOp op, PatternRewriter& rewriter) {
   auto next = dyn_cast<RZOp>(*op.getQubitOut().user_begin());
   if (!next || next->getBlock() != op->getBlock() ||
@@ -941,12 +941,12 @@ directZYZAnglesFromGate(UnitaryOpInterface op, RewriterBase& rewriter,
 
   if (isa<GPIOp, GPI2Op>(op.getOperation())) {
     const auto phi = parameter(0);
-    const bool piPulse = isa<GPIOp>(op.getOperation());
+    const bool isGPI = isa<GPIOp>(op.getOperation());
     return {
-        .theta = piPulse ? consts.pi : halfPi,
+        .theta = isGPI ? consts.pi : halfPi,
         .phi = phi - halfPi,
         .lambda = halfPi - phi,
-        .phase = piPulse ? halfPi : consts.zero,
+        .phase = isGPI ? halfPi : consts.zero,
     };
   }
   if (isa<ROp>(op.getOperation())) {

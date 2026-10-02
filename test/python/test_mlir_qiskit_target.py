@@ -443,11 +443,11 @@ def test_native_ion_capabilities_share_circuit_recognition(name: str, *, symboli
     gate = Gate(name, 1, [phi])
     gate.definition = definition
     source = Target(num_qubits=1)
-    source.add_instruction(gate, name="native_pulse")
+    source.add_instruction(gate, name="native_gate")
     unrestricted = UGate(*map(Parameter, ("theta", "lambda", "beta")))
     source.add_instruction(unrestricted)
-    converted = CompilerTarget.from_qiskit(source, operation_names=["native_pulse", "u"])
-    operation = next(operation for operation in converted.operations if operation.name == "native_pulse")
+    converted = CompilerTarget.from_qiskit(source, operation_names=["native_gate", "u"])
+    operation = next(operation for operation in converted.operations if operation.name == "native_gate")
     assert operation.canonical_name == name
     assert operation.fixed_parameters == ([] if symbolic else [phi])
     circuit = QuantumCircuit(1)
@@ -457,12 +457,12 @@ def test_native_ion_capabilities_share_circuit_recognition(name: str, *, symboli
     imported.compile_for_target(TargetEnvironment(converted, PayloadSpecification(PayloadFormat("openqasm", "3.0"))))
     exported = imported.to_qiskit(target=converted)
     for _ in range(2):
-        assert exported.data[0].operation.name == "native_pulse"
+        assert exported.data[0].operation.name == "native_gate"
         assert exported.data[0].operation.params == [phi]
         rebound = Target(num_qubits=1)
         rebound.add_instruction(exported.data[0].operation)
         rebound.add_instruction(unrestricted)
-        target = CompilerTarget.from_qiskit(rebound, operation_names=["native_pulse", "u"])
+        target = CompilerTarget.from_qiskit(rebound, operation_names=["native_gate", "u"])
         unmapped = QuantumCircuit(1)
         unmapped.compose(exported, inplace=True)
         program = QCProgram.from_qiskit(unmapped).to_qco()
@@ -475,7 +475,7 @@ def test_native_ion_capabilities_share_circuit_recognition(name: str, *, symboli
         assert np.allclose(Operator(actual).data, Operator(expected).data)
     gate.definition.global_phase += 0.37
     with pytest.raises(ValueError, match="custom"):
-        CompilerTarget.from_qiskit(source, operation_names=["native_pulse"])
+        CompilerTarget.from_qiskit(source, operation_names=["native_gate"])
 
 
 @pytest.mark.parametrize("name", ["cy", "controlled_y"])

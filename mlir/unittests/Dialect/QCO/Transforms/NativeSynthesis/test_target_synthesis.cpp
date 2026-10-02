@@ -426,7 +426,7 @@ TEST_F(TargetSynthesisTest, RuntimeNativeIonSynthesisPreservesFullUnitary) {
 }
 
 TEST_F(TargetSynthesisTest, ZSXXSynthesisPreservesFullUnitary) {
-  for (const std::optional<double> pulseAngle : {
+  for (const std::optional<double> quarterTurnAngle : {
            std::optional<double>{},
            std::optional{std::numbers::pi / 2.},
            std::optional{-std::numbers::pi / 2.},
@@ -436,24 +436,24 @@ TEST_F(TargetSynthesisTest, ZSXXSynthesisPreservesFullUnitary) {
              std::optional{std::numbers::pi},
              std::optional{-std::numbers::pi},
          }) {
-      if (!pulseAngle && halfTurn && *halfTurn < 0.) {
+      if (!quarterTurnAngle && halfTurn && *halfTurn < 0.) {
         continue;
       }
-      SCOPED_TRACE(testing::Message()
-                   << pulseAngle.value_or(0.) << " " << halfTurn.value_or(0.));
+      SCOPED_TRACE(testing::Message() << quarterTurnAngle.value_or(0.) << " "
+                                      << halfTurn.value_or(0.));
       std::vector operations{
           valid(OperationCapability::create("rz", 1, 1)),
           valid(OperationCapability::create("cz", 2, 0)),
           valid(OperationCapability::create("gphase", 0, 1)),
       };
       operations.push_back(
-          pulseAngle
-              ? valid(OperationCapability::create("rx", 1, 1, {}, std::nullopt,
-                                                  std::nullopt, {pulseAngle}))
-              : valid(OperationCapability::create("sx", 1, 0)));
+          quarterTurnAngle ? valid(OperationCapability::create(
+                                 "rx", 1, 1, {}, std::nullopt, std::nullopt,
+                                 {quarterTurnAngle}))
+                           : valid(OperationCapability::create("sx", 1, 0)));
       if (halfTurn) {
         operations.push_back(
-            pulseAngle
+            quarterTurnAngle
                 ? valid(OperationCapability::create(
                       "rx", 1, 1, {}, std::nullopt, std::nullopt, {halfTurn}))
                 : valid(OperationCapability::create("x", 1, 0)));
@@ -516,7 +516,7 @@ TEST_F(TargetSynthesisTest, ZSXXSynthesisPreservesFullUnitary) {
   }
 }
 
-TEST_F(TargetSynthesisTest, FixedPulsesReuseNativeXShortcut) {
+TEST_F(TargetSynthesisTest, FixedRXGatesReuseNativeXShortcut) {
   for (double angle : {std::numbers::pi / 2., -std::numbers::pi / 2.}) {
     const auto target = valid(Target::create(
         1, Connectivity::allToAll(),
@@ -544,7 +544,7 @@ TEST_F(TargetSynthesisTest, FixedPulsesReuseNativeXShortcut) {
   }
 }
 
-TEST_F(TargetSynthesisTest, NegativePulseFusionShortensNativeRuns) {
+TEST_F(TargetSynthesisTest, NegativeRXGateFusionShortensNativeRuns) {
   const auto target = valid(Target::create(
       1, Connectivity::allToAll(),
       NativeOperations::fromOperations({
@@ -582,7 +582,7 @@ TEST_F(TargetSynthesisTest, NegativePulseFusionShortensNativeRuns) {
   }
 }
 
-TEST_F(TargetSynthesisTest, FixedPulseLoweringPreservesNativeSXdg) {
+TEST_F(TargetSynthesisTest, FixedRXGateLoweringPreservesNativeSXdg) {
   const auto target = valid(Target::create(
       1, Connectivity::allToAll(),
       NativeOperations::fromOperations({
@@ -608,7 +608,7 @@ TEST_F(TargetSynthesisTest, FixedPulseLoweringPreservesNativeSXdg) {
   EXPECT_EQ(countOps<mlir::qco::RXOp>(*actual), 0);
 }
 
-TEST_F(TargetSynthesisTest, FixedPulseFusionPreservesNativeAngles) {
+TEST_F(TargetSynthesisTest, FixedRXGateFusionPreservesNativeAngles) {
   for (const auto angle : {std::numbers::pi / 2, -std::numbers::pi / 2}) {
     SCOPED_TRACE(angle);
     const auto target = valid(Target::create(
@@ -646,7 +646,7 @@ TEST_F(TargetSynthesisTest, FixedPulseFusionPreservesNativeAngles) {
   }
 }
 
-TEST_F(TargetSynthesisTest, FixedPulseRZMergingPreservesParameterDominance) {
+TEST_F(TargetSynthesisTest, FixedRXGateRZMergingPreservesParameterDominance) {
   const auto target =
       valid(Target::create(1, Connectivity::allToAll(),
                            NativeOperations::fromOperations({
@@ -676,7 +676,7 @@ TEST_F(TargetSynthesisTest, FixedPulseRZMergingPreservesParameterDominance) {
   EXPECT_EQ(countOps<RZOp>(*program), 1);
 }
 
-TEST_F(TargetSynthesisTest, FixedHalfTurnUsesOnePulse) {
+TEST_F(TargetSynthesisTest, FixedHalfTurnUsesOneGate) {
   for (double half : {std::numbers::pi, -std::numbers::pi}) {
     const auto target = valid(Target::create(
         1, Connectivity::allToAll(),
@@ -904,7 +904,7 @@ TEST_F(TargetSynthesisTest, ReadOnlyNativeCostMatchesSynthesis) {
   }
 }
 
-TEST_F(TargetSynthesisTest, NativeCostMatchesFixedPulseSynthesis) {
+TEST_F(TargetSynthesisTest, NativeCostMatchesFixedRXGateSynthesis) {
   const auto target = valid(Target::create(
       2, Connectivity::allToAll(),
       NativeOperations::fromOperations({

@@ -1072,10 +1072,10 @@ static LogicalResult synthesizeTargetOperation(
   if (!basis) {
     return unsupported("the target has no usable synthesis basis");
   }
-  /// Logical ZSXX gates are lowered to physical pulses after synthesis.
-  if (basis->rxPulses &&
-      ((basis->rxPulses->quarterTurnAngle < 0. ? isa<SXdgOp>(operation)
-                                               : isa<SXOp>(operation)) ||
+  /// Logical ZSXX gates are lowered to native RX gates after synthesis.
+  if (basis->fixedRXGates &&
+      ((basis->fixedRXGates->quarterTurnAngle < 0. ? isa<SXdgOp>(operation)
+                                                   : isa<SXOp>(operation)) ||
        (basis->hasX && isa<XOp>(operation)))) {
     return success();
   }
@@ -1100,13 +1100,14 @@ static LogicalResult synthesizeTargetOperation(
       }
       decomposition::synthesizeParameterizedUnitary1Q(
           rewriter, operation, basis->singleQubit, basis->hasX,
-          basis->rxPulses && basis->rxPulses->quarterTurnAngle < 0.);
+          basis->fixedRXGates && basis->fixedRXGates->quarterTurnAngle < 0.);
       return success();
     }
     const auto synthesized = decomposition::synthesizeUnitary1QEuler(
         rewriter, operation->getLoc(), op.getInputQubit(0), matrix,
         /*runSize=*/1, /*hasNonBasisGate=*/true, basis->singleQubit,
-        basis->hasX, basis->rxPulses && basis->rxPulses->quarterTurnAngle < 0.);
+        basis->hasX,
+        basis->fixedRXGates && basis->fixedRXGates->quarterTurnAngle < 0.);
     if (!synthesized) {
       llvm::reportFatalInternalError(
           "target single-qubit basis failed to synthesize a unitary matrix");
@@ -1258,13 +1259,13 @@ static bool fuseTwoQubitGates(IRRewriter& rewriter, ModuleOp moduleOp,
 }
 
 /// Lower the logical ZSXX gates after numeric and symbolic synthesis finish.
-static void lowerRXPulses(IRRewriter& rewriter, ModuleOp moduleOp,
-                          const CompilerTarget::RXPulses& pulses) {
+static void lowerToRXGates(IRRewriter& rewriter, ModuleOp moduleOp,
+                           const CompilerTarget::FixedRXGates& gates) {
   moduleOp->walk<WalkOrder::PostOrder, ReverseIterator>([&](Operation* op) {
     const bool quarterTurn =
-        pulses.quarterTurnAngle < 0. ? isa<SXdgOp>(op) : isa<SXOp>(op);
+        gates.quarterTurnAngle < 0. ? isa<SXdgOp>(op) : isa<SXOp>(op);
     if (isExcludedFromTopLevelUnitaryWalk(op) ||
-        (!quarterTurn && !(isa<XOp>(op) && pulses.halfTurnAngle))) {
+        (!quarterTurn && !(isa<XOp>(op) && gates.halfTurnAngle))) {
       return;
     }
     auto unitary = cast<UnitaryOpInterface>(op);
@@ -1272,7 +1273,7 @@ static void lowerRXPulses(IRRewriter& rewriter, ModuleOp moduleOp,
     rewriter.setInsertionPoint(op);
     auto qubit = unitary.getInputQubit(0);
     const double angle =
-        quarterTurn ? pulses.quarterTurnAngle : *pulses.halfTurnAngle;
+        quarterTurn ? gates.quarterTurnAngle : *gates.halfTurnAngle;
     qubit = RXOp::create(rewriter, loc, qubit, angle).getQubitOut();
     decomposition::emitGPhaseIfNeeded(rewriter, loc, angle / 2.);
     rewriter.replaceOp(op, qubit);
@@ -1457,8 +1458,8 @@ protected:
       signalPassFailure();
       return;
     }
-    if (targetBasis && targetBasis->rxPulses) {
-      lowerRXPulses(rewriter, moduleOp, *targetBasis->rxPulses);
+    if (targetBasis && targetBasis->fixedRXGates) {
+      lowerToRXGates(rewriter, moduleOp, *targetBasis->fixedRXGates);
       listener.foldPending();
     }
     if (targetBasis &&
