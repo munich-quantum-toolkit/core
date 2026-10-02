@@ -325,16 +325,22 @@ public:
                            const XRotationGates&) = default;
   };
 
+  /// A native entangler with either its fixed synthesis angle or any angle.
+  struct Entangler {
+    GateKind gate;
+    bool parameterized = false;
+
+    friend bool operator==(const Entangler&, const Entangler&) = default;
+  };
+
   /// One single-qubit basis and optional entangler usable across the target.
   struct SynthesisBasis {
     SingleQubitBasis singleQubit;
-    std::optional<GateKind> entangler;
+    std::optional<Entangler> entangler;
     std::optional<XRotationGates> xRotationGates;
     /// Whether X is native or can be implemented by a fixed RX(±π) or R(±π, 0)
     /// gate.
     bool hasX = true;
-    /// Whether the selected RXX/RYY/RZX/RZZ entangler admits any angle.
-    bool parameterizedEntangler = false;
 
     friend bool operator==(const SynthesisBasis&,
                            const SynthesisBasis&) = default;

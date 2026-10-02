@@ -1000,6 +1000,14 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
       .value("ZYZ", mlir::CompilerTarget::SingleQubitBasis::ZYZ)
       .value("ZXZ", mlir::CompilerTarget::SingleQubitBasis::ZXZ);
 
+  nb::class_<mlir::CompilerTarget::Entangler>(
+      compilerTarget, "Entangler",
+      "A native synthesis entangler and its angle support.")
+      .def_ro("gate", &mlir::CompilerTarget::Entangler::gate,
+              "The native gate kind.")
+      .def_ro("parameterized", &mlir::CompilerTarget::Entangler::parameterized,
+              "Whether the entangler accepts arbitrary angles.");
+
   auto synthesisBasis = nb::class_<mlir::CompilerTarget::SynthesisBasis>(
       compilerTarget, "SynthesisBasis",
       "One synthesis basis usable across the complete target.");

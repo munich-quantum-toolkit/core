@@ -354,7 +354,7 @@ TEST_F(TargetSynthesisTest, FixedRSynthesisPreservesFullUnitary) {
     ASSERT_TRUE(target.synthesisBasis());
     EXPECT_EQ(target.synthesisBasis()->singleQubit,
               Target::SingleQubitBasis::ZSXX);
-    EXPECT_EQ(target.synthesisBasis()->entangler, Target::GateKind::RZZ);
+    EXPECT_EQ(target.synthesisBasis()->entangler->gate, Target::GateKind::RZZ);
     for (double theta : {0., .37, std::numbers::pi / 2., std::numbers::pi}) {
       const auto circuit = [&](QCOProgramBuilder& builder) {
         auto q0 = builder.u(theta, .42, -.31, builder.staticQubit(0));
@@ -875,7 +875,7 @@ TEST_F(TargetSynthesisTest, NativeCostMatchesFixedRXGateSynthesis) {
   });
   OwningOpRef<ModuleOp> expected = program->clone();
   const auto shared = mlir::qco::NativeCostTable::precompute(
-      *program, Target::GateKind::CZ, 2023);
+      *program, {.gate = Target::GateKind::CZ}, 2023);
   mlir::qco::NativeCostTracker tracker(target, 2023, shared.get());
   for (auto gate :
        mainFunction(*program).getOps<mlir::qco::UnitaryOpInterface>()) {
@@ -1065,8 +1065,8 @@ TEST_F(TargetSynthesisTest, NativeCachesPreserveDecompositionsAfterEviction) {
       std::tie(a, b) = builder.swap(a, b);
       return builder.intConstant(0);
     });
-    const auto shared =
-        NativeCostTable::precompute(*moduleOp, Target::GateKind::CX, seed);
+    const auto shared = NativeCostTable::precompute(
+        *moduleOp, {.gate = Target::GateKind::CX}, seed);
     moduleOp = {};
     NativeCostAnalysis analysis(seed, shared.get());
     NativeCostAnalysis otherSeed(seed + 1, shared.get());
@@ -1079,7 +1079,7 @@ TEST_F(TargetSynthesisTest, NativeCachesPreserveDecompositionsAfterEviction) {
         matrix(0, 3) = 4e-11;
       }
       const auto expectedCount =
-          decomposeUnitary2QWeyl(matrix, Target::GateKind::CX, seed);
+          decomposeUnitary2QWeyl(matrix, {.gate = Target::GateKind::CX}, seed);
       EXPECT_EQ(analysis.matrixCost(matrix, target, sites),
                 expectedCount
                     ? std::optional<size_t>(expectedCount->numBasisUses)
@@ -1090,8 +1090,9 @@ TEST_F(TargetSynthesisTest, NativeCachesPreserveDecompositionsAfterEviction) {
                Target::GateKind::ISWAP,
                Target::GateKind::SQRTISWAP,
            }) {
-        const auto expected = decomposeUnitary2QWeyl(matrix, basis, seed);
-        const auto actual = analysis.decompose(matrix, basis);
+        const auto expected =
+            decomposeUnitary2QWeyl(matrix, {.gate = basis}, seed);
+        const auto actual = analysis.decompose(matrix, {.gate = basis});
         ASSERT_EQ(actual.has_value(), expected.has_value());
         if (!expected) {
           continue;
@@ -1105,8 +1106,8 @@ TEST_F(TargetSynthesisTest, NativeCachesPreserveDecompositionsAfterEviction) {
                     expected->singleQubitFactors[j].data);
         }
       }
-      const auto expectedOther =
-          decomposeUnitary2QWeyl(matrix, Target::GateKind::CX, seed + 1);
+      const auto expectedOther = decomposeUnitary2QWeyl(
+          matrix, {.gate = Target::GateKind::CX}, seed + 1);
       EXPECT_EQ(otherSeed.matrixCost(matrix, target, sites),
                 expectedOther
                     ? std::optional<size_t>(expectedOther->numBasisUses)
@@ -1122,10 +1123,10 @@ TEST_F(TargetSynthesisTest, NativeCacheCopiesAndMovesOwnTheirEntries) {
   auto matrix = Matrix4x4::identity();
   matrix(3, 3) = std::polar(1.0, 0.371);
   const auto basis = Target::GateKind::CX;
-  const auto expected = decomposeUnitary2QWeyl(matrix, basis, 7);
+  const auto expected = decomposeUnitary2QWeyl(matrix, {.gate = basis}, 7);
   ASSERT_TRUE(expected);
   const auto check = [&](NativeCostAnalysis& analysis) {
-    const auto& actual = analysis.decompose(matrix, basis);
+    const auto& actual = analysis.decompose(matrix, {.gate = basis});
     ASSERT_TRUE(actual);
     EXPECT_EQ(actual->numBasisUses, expected->numBasisUses);
     EXPECT_EQ(actual->globalPhase, expected->globalPhase);
@@ -1170,7 +1171,7 @@ module {
   mlir::qco::NativeCostAnalysis analysis(2023);
   const std::array<Target::SiteId, 2> sites{0, 1};
   EXPECT_EQ(analysis.operationCost(gate, makeOneWayRxxTarget(), sites), 1U);
-  EXPECT_FALSE(analysis.operationCost(gate, makeUCxTarget(), sites));
+  EXPECT_EQ(analysis.operationCost(gate, makeUCxTarget(), sites), 2U);
   EXPECT_FALSE(analysis.matrixCost(SWAPOp::getUnitaryMatrix(),
                                    makeOneWayUCxTarget(),
                                    std::array<Target::SiteId, 2>{0, 2}));
@@ -1184,7 +1185,14 @@ module {
       tracker.appendSwap(0, 1);
       tracker.append(gate, std::array<size_t, 2>{0, 1});
       EXPECT_EQ(tracker.swapCostAdjustment(0, 1, 3), 0);
-      EXPECT_EQ(tracker.score().has_value(), target.supports(gate, sites));
+      const auto score = tracker.score();
+      const auto gateCost = analysis.operationCost(gate, target, sites);
+      const auto swapCost = analysis.swapCost(target, sites);
+      ASSERT_TRUE(gateCost);
+      EXPECT_EQ(score.has_value(), swapCost.has_value());
+      if (score && swapCost) {
+        EXPECT_EQ(score->first, *gateCost + *swapCost);
+      }
     }
   }
 }
@@ -1511,7 +1519,7 @@ TEST_F(TargetSynthesisTest,
     const auto before = printModule(*moduleOp);
 
     const auto shared = mlir::qco::NativeCostTable::precompute(
-        *moduleOp, Target::GateKind::CX, 2023);
+        *moduleOp, {.gate = Target::GateKind::CX}, 2023);
     mlir::qco::NativeCostAnalysis analysis(2023, shared.get());
     auto gate = *mainFunction(*moduleOp)
                      .getOps<mlir::qco::UnitaryOpInterface>()
@@ -2496,7 +2504,7 @@ TEST_F(TargetSynthesisTest, ParameterizedEntanglersUseCartanAngles) {
         valid(Target::create(2, Connectivity::fromCouplings({{0, 1}}),
                              NativeOperations::fromOperations(operations)));
     ASSERT_TRUE(target.synthesisBasis());
-    ASSERT_TRUE(target.synthesisBasis()->parameterizedEntangler);
+    ASSERT_TRUE(target.synthesisBasis()->entangler->parameterized);
     for (size_t count = 0; count <= 3; ++count) {
       SCOPED_TRACE(count);
       const auto matrix = Matrix4x4::kron(UOp::unitaryMatrix(0.3, -0.7, 1.1),
@@ -2516,10 +2524,10 @@ TEST_F(TargetSynthesisTest, ParameterizedEntanglersUseCartanAngles) {
         return builder.intConstant(0);
       });
       const auto shared = mlir::qco::NativeCostTable::precompute(
-          *original, *target.synthesisBasis()->entangler, 2023, true);
+          *original, *target.synthesisBasis()->entangler, 2023);
       mlir::qco::NativeCostAnalysis analysis(2023, shared.get());
       const auto& native =
-          analysis.decompose(matrix, *target.synthesisBasis()->entangler, true);
+          analysis.decompose(matrix, *target.synthesisBasis()->entangler);
       ASSERT_TRUE(native);
       EXPECT_TRUE(
           mlir::qco::decomposition::unitaryMatrix(*native, primitive)
@@ -2546,35 +2554,42 @@ TEST_F(TargetSynthesisTest, ParameterizedEntanglersUseCartanAngles) {
   const auto matrix = mlir::qco::RZZOp::unitaryMatrix(0.371);
   for (const bool parameterized : {false, true, false, true}) {
     const auto& native =
-        cache.decompose(matrix, Target::GateKind::RZZ, parameterized);
+        cache.decompose(matrix, {
+                                    .gate = Target::GateKind::RZZ,
+                                    .parameterized = parameterized,
+                                });
     ASSERT_TRUE(native);
     EXPECT_EQ(native->numBasisUses, parameterized ? 1U : 2U);
   }
 }
 
-TEST_F(TargetSynthesisTest, RuntimeRZZAndControlledPhaseUseNativeEntanglers) {
-  for (const bool controlledPhase : {false, true}) {
-    SCOPED_TRACE(controlledPhase);
-    const auto* source = controlledPhase ? R"mlir(
+TEST_F(TargetSynthesisTest, RuntimePauliRotationsShareNativeSynthesisAndCosts) {
+  for (const std::string gate :
+       {"rxx", "ryy", "rzx", "rzz", "p", "rx", "ry", "rz"}) {
+    SCOPED_TRACE(gate);
+    const bool controlled = gate.size() < 3;
+    std::string source = R"mlir(
       module {
         func.func @main(%theta: f64) -> (!qco.qubit, !qco.qubit) {
           %c = qco.static 0 : !qco.qubit
           %q = qco.static 1 : !qco.qubit
+    )mlir";
+    if (controlled) {
+      source += R"mlir(
           %c1, %q1 = qco.ctrl(%c) targets(%arg = %q) {
             %angle = arith.negf %theta : f64
-            %p = qco.p(%angle) %arg : !qco.qubit -> !qco.qubit
+            %p = qco.)mlir" +
+                gate + R"mlir((%angle) %arg : !qco.qubit -> !qco.qubit
             qco.yield %p : !qco.qubit
           } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
-          return %c1, %q1 : !qco.qubit, !qco.qubit
-        }
-      }
-    )mlir"
-                                         : R"mlir(
-      module {
-        func.func @main(%theta: f64) -> (!qco.qubit, !qco.qubit) {
-          %c = qco.static 0 : !qco.qubit
-          %q = qco.static 1 : !qco.qubit
-          %c1, %q1 = qco.rzz(%theta) %c, %q : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+      )mlir";
+    } else {
+      source +=
+          "%c1, %q1 = qco." + gate +
+          R"mlir((%theta) %c, %q : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+      )mlir";
+    }
+    source += R"mlir(
           return %c1, %q1 : !qco.qubit, !qco.qubit
         }
       }
@@ -2583,7 +2598,17 @@ TEST_F(TargetSynthesisTest, RuntimeRZZAndControlledPhaseUseNativeEntanglers) {
     ASSERT_TRUE(original);
     for (const auto& [entangler, parameters, fixed] : {
              std::tuple{"cx", 0U, false},
+             std::tuple{"cz", 0U, false},
+             std::tuple{"ecr", 0U, false},
+             std::tuple{"iswap", 0U, false},
+             std::tuple{"sqrt_iswap", 0U, false},
+             std::tuple{"rxx", 1U, false},
+             std::tuple{"ryy", 1U, false},
+             std::tuple{"rzx", 1U, false},
              std::tuple{"rzz", 1U, false},
+             std::tuple{"rxx", 1U, true},
+             std::tuple{"ryy", 1U, true},
+             std::tuple{"rzx", 1U, true},
              std::tuple{"rzz", 1U, true},
          }) {
       SCOPED_TRACE(entangler);
@@ -2605,8 +2630,14 @@ TEST_F(TargetSynthesisTest, RuntimeRZZAndControlledPhaseUseNativeEntanglers) {
                             .getOps<mlir::qco::UnitaryOpInterface>()
                             .begin();
       const size_t expectedEntanglers =
-          std::string(entangler) == "rzz" && !fixed ? 1 : 2;
-      mlir::qco::NativeCostAnalysis costs(2023);
+          parameters == 1 && !fixed ? 1
+          : std::string(entangler) == "iswap" ||
+                  std::string(entangler) == "sqrt_iswap"
+              ? 4
+              : 2;
+      const auto shared = mlir::qco::NativeCostTable::precompute(
+          *original, *target.synthesisBasis()->entangler, 2023);
+      mlir::qco::NativeCostAnalysis costs(2023, shared.get());
       EXPECT_EQ(costs.operationCost(operation, target,
                                     std::array<Target::SiteId, 2>{0, 1}),
                 expectedEntanglers);
@@ -2616,9 +2647,12 @@ TEST_F(TargetSynthesisTest, RuntimeRZZAndControlledPhaseUseNativeEntanglers) {
       ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*synthesized)));
       ASSERT_TRUE(mlir::succeeded(runTargetPass(
           *synthesized, target, mlir::qco::createVerifyTargetConformance())));
-      EXPECT_EQ(countOps<CtrlOp>(*synthesized) +
-                    countOps<mlir::qco::RZZOp>(*synthesized),
-                expectedEntanglers);
+      size_t entanglerCount = 0;
+      for (auto operation :
+           mainFunction(*synthesized).getOps<mlir::qco::UnitaryOpInterface>()) {
+        entanglerCount += static_cast<size_t>(operation.isTwoQubit());
+      }
+      EXPECT_EQ(entanglerCount, expectedEntanglers);
       for (const double angle :
            {0.0, 0.371, -1.23, std::numbers::pi, 2.0 * std::numbers::pi, 7.1}) {
         SCOPED_TRACE(angle);
@@ -2684,7 +2718,7 @@ TEST_F(TargetSynthesisTest, UnsupportedRuntimeControlledBodyStaysUntouched) {
         %q = qco.static 1 : !qco.qubit
         %c1, %q1 = qco.ctrl(%c) targets(%arg = %q) {
           %angle = arith.negf %theta : f64
-          %r = qco.rx(%angle) %arg : !qco.qubit -> !qco.qubit
+          %r = qco.r(%angle, %angle) %arg : !qco.qubit -> !qco.qubit
           qco.yield %r : !qco.qubit
         } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
         return %c1, %q1 : !qco.qubit, !qco.qubit
@@ -3129,7 +3163,7 @@ TEST_F(TargetSynthesisTest, TargetNativeSynthesisUsesHomogeneousCapability) {
                          valid(OperationCapability::create("gphase", 0, 1)),
                      })));
   ASSERT_TRUE(target.synthesisBasis());
-  ASSERT_EQ(target.synthesisBasis()->entangler, Target::GateKind::CZ);
+  ASSERT_EQ(target.synthesisBasis()->entangler->gate, Target::GateKind::CZ);
 
   ASSERT_TRUE(mlir::succeeded(runTargetPass(
       *synthesized, target, mlir::qco::createTargetNativeSynthesis())));
@@ -3335,7 +3369,7 @@ TEST_F(TargetSynthesisTest,
       func.func @main(%theta: f64) -> (!qco.qubit, !qco.qubit) {
         %q0 = qco.static 0 : !qco.qubit
         %q1 = qco.static 1 : !qco.qubit
-        %q2, %q3 = qco.rxx(%theta) %q0, %q1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+        %q2, %q3 = qco.xx_plus_yy(%theta, %theta) %q0, %q1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
         return %q2, %q3 : !qco.qubit, !qco.qubit
       }
     }
@@ -3346,7 +3380,7 @@ TEST_F(TargetSynthesisTest,
   const auto diagnostics = expectTargetFailure(
       *module, target, mlir::qco::createTargetNativeSynthesis());
   EXPECT_NE(diagnostics.find("target-native synthesis cannot lower operation "
-                             "'qco.rxx'"),
+                             "'qco.xx_plus_yy'"),
             std::string::npos)
       << diagnostics;
   EXPECT_NE(diagnostics.find("unitary matrix is not available at compile time"),
@@ -3364,7 +3398,7 @@ TEST_F(TargetSynthesisTest,
         %phase = arith.constant 0.25 : f64
         qco.gphase(%phase)
         %q2 = qco.rz(%theta) %q0 : !qco.qubit -> !qco.qubit
-        %q3, %q4 = qco.rxx(%theta) %q2, %q1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+        %q3, %q4 = qco.xx_plus_yy(%theta, %theta) %q2, %q1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
         return %q3, %q4 : !qco.qubit, !qco.qubit
       }
     }

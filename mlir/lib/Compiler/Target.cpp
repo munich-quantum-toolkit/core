@@ -939,21 +939,28 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
       GateKind::RZZ, GateKind::ISWAP, GateKind::CZ,
       GateKind::CX,  GateKind::ECR,   GateKind::SQRTISWAP,
   };
-  /// NOLINTNEXTLINE(readability-qualified-auto): portable iterator type.
-  const auto entangler =
-      std::ranges::find_if(entanglerPreference, supportsOnEveryCoupling);
+  std::optional<Entangler> entangler;
+  /// An arbitrary-angle Pauli entangler realizes each Cartan rotation directly.
+  for (const auto gate :
+       {GateKind::RXX, GateKind::RYY, GateKind::RZX, GateKind::RZZ}) {
+    if (supportsOnEveryCoupling(gate, true)) {
+      entangler = {.gate = gate, .parameterized = true};
+      break;
+    }
+  }
+  if (!entangler) {
+    for (const auto gate : entanglerPreference) {
+      if (supportsOnEveryCoupling(gate)) {
+        entangler = {.gate = gate};
+        break;
+      }
+    }
+  }
   return SynthesisBasis{
       .singleQubit = *singleQubit,
-      .entangler = entangler == entanglerPreference.end()
-                       ? std::nullopt
-                       : std::optional{*entangler},
+      .entangler = entangler,
       .xRotationGates = xRotationGates,
       .hasX = hasX,
-      .parameterizedEntangler =
-          entangler != entanglerPreference.end() &&
-          (*entangler == GateKind::RXX || *entangler == GateKind::RYY ||
-           *entangler == GateKind::RZX || *entangler == GateKind::RZZ) &&
-          supportsOnEveryCoupling(*entangler, true),
   };
 }
 

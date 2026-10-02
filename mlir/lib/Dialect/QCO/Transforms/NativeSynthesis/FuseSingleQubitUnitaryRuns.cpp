@@ -159,9 +159,10 @@ struct FuseSingleQubitUnitaryRunsPattern final
                                   : nullptr;
     const auto synthesized = decomposition::synthesizeUnitary1QEuler(
         rewriter, op.getLoc(), op.getInputQubit(0), run.composed, run.gateCount,
-        run.hasNonBasisGate, basis, targetBasis == nullptr || targetBasis->hasX,
-        targetBasis != nullptr && targetBasis->xRotationGates &&
-            targetBasis->xRotationGates->quarterTurnAngle < 0.);
+        run.hasNonBasisGate,
+        targetBasis != nullptr
+            ? *targetBasis
+            : CompilerTarget::SynthesisBasis{.singleQubit = basis});
     if (!synthesized) {
       return failure();
     }

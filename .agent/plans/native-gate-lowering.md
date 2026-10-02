@@ -1,11 +1,15 @@
 # Native gate lowering
 
+Status: superseded for Core synthesis by
+[native target synthesis](native-ion-gate-targets.md). The Bench lowering design
+below remains current.
+
 ## Scope and ownership
 
 Keep fixed RX and R capabilities in the public target. Numeric and symbolic
 Euler synthesis use the standard ZSXX basis. Select SX or SXdg to match the
 available quarter-turn direction; enable X when a native gate or half-turn gate
-supports it. Target-native synthesis converts these gates to RX or R and
+supports it. The Euler emitter produces the selected RX or R gates directly and
 preserves their exact global phase. Native gates remain valid inputs. Arbitrary
 fixed-angle synthesis remains unsupported.
 

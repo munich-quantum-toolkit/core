@@ -771,7 +771,7 @@ TEST(CompilerTargetTest, PreservesCalibrationAndResolvesHomogeneousBasis) {
   EXPECT_FALSE(target.supports(GateKind::CZ, {2, 1}));
   ASSERT_TRUE(target.synthesisBasis());
   EXPECT_EQ(target.synthesisBasis()->singleQubit, Target::SingleQubitBasis::U);
-  EXPECT_EQ(target.synthesisBasis()->entangler, GateKind::CZ);
+  EXPECT_EQ(target.synthesisBasis()->entangler->gate, GateKind::CZ);
 }
 
 TEST(CompilerTargetTest, RoundTripsTypedCompilationTargetAttribute) {
@@ -1135,8 +1135,24 @@ TEST(CompilerTargetTest, ClassifiesEveryEntangler) {
     EXPECT_TRUE(llvm::is_contained(target.supportedGates(), gate));
     EXPECT_EQ(target.supports(gate), true);
     ASSERT_TRUE(target.synthesisBasis());
-    EXPECT_EQ(target.synthesisBasis()->entangler, gate);
+    EXPECT_EQ(target.synthesisBasis()->entangler->gate, gate);
   }
+}
+
+TEST(CompilerTargetTest, PrefersParameterizedEntanglerOverFixedAlternative) {
+  const auto target =
+      valid(Target::create(2, Connectivity::allToAll(),
+                           NativeOperations::fromOperations({
+                               valid(OperationCapability::create("u", 1, 3)),
+                               valid(OperationCapability::create(
+                                   "rxx", 2, 1, {}, std::nullopt, std::nullopt,
+                                   {std::numbers::pi / 2.})),
+                               valid(OperationCapability::create("rzz", 2, 1)),
+                           })));
+  ASSERT_TRUE(target.synthesisBasis());
+  ASSERT_TRUE(target.synthesisBasis()->entangler);
+  EXPECT_EQ(target.synthesisBasis()->entangler->gate, GateKind::RZZ);
+  EXPECT_TRUE(target.synthesisBasis()->entangler->parameterized);
 }
 
 TEST(CompilerTargetTest, DerivesControlledEntanglersFromVariadicBases) {
@@ -1159,7 +1175,7 @@ TEST(CompilerTargetTest, DerivesControlledEntanglersFromVariadicBases) {
     ASSERT_TRUE(target.synthesisBasis());
     EXPECT_EQ(target.synthesisBasis()->singleQubit,
               Target::SingleQubitBasis::U);
-    EXPECT_EQ(target.synthesisBasis()->entangler, entangler);
+    EXPECT_EQ(target.synthesisBasis()->entangler->gate, entangler);
   }
 }
 
@@ -1174,7 +1190,7 @@ TEST(CompilerTargetTest, ResolvesLargeAllToAllVariadicBasis) {
 
   ASSERT_TRUE(target.synthesisBasis());
   EXPECT_EQ(target.synthesisBasis()->singleQubit, Target::SingleQubitBasis::U);
-  EXPECT_EQ(target.synthesisBasis()->entangler, GateKind::CX);
+  EXPECT_EQ(target.synthesisBasis()->entangler->gate, GateKind::CX);
 }
 
 TEST(CompilerTargetTest, SupportsRealQCOOperationsAndStructuralOps) {

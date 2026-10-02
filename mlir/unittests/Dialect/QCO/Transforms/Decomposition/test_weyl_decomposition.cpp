@@ -293,7 +293,7 @@ TEST(WeylDecompositionStandalone, SeededNumericalRetriesReconstructUnitary) {
     EXPECT_EQ(result->k1l().data, repeated->k1l().data);
     for (auto gate :
          {CompilerTarget::GateKind::CZ, CompilerTarget::GateKind::SQRTISWAP}) {
-      const auto native = decomposeUnitary2QWeyl(unitary, gate, seed);
+      const auto native = decomposeUnitary2QWeyl(unitary, {.gate = gate}, seed);
       ASSERT_TRUE(native);
       const auto entangler =
           gate == CompilerTarget::GateKind::CZ
@@ -326,9 +326,10 @@ TEST(WeylDecompositionStandalone, NearUnitaryNonconvergenceReturnsFailure) {
   EXPECT_FALSE(
       TwoQubitWeylDecomposition::create(target, WEYL_DEFAULT_FIDELITY));
   EXPECT_FALSE(decomposeTwoQubitWithBasis(target, TWO_QUBIT_CONTROLLED_X01));
-  EXPECT_FALSE(decomposeUnitary2QWeyl(target, CompilerTarget::GateKind::CX));
   EXPECT_FALSE(
-      decomposeUnitary2QWeyl(target, CompilerTarget::GateKind::SQRTISWAP));
+      decomposeUnitary2QWeyl(target, {.gate = CompilerTarget::GateKind::CX}));
+  EXPECT_FALSE(decomposeUnitary2QWeyl(
+      target, {.gate = CompilerTarget::GateKind::SQRTISWAP}));
 }
 
 TEST(WeylDecompositionStandalone,
@@ -340,9 +341,10 @@ TEST(WeylDecompositionStandalone,
   // Its real symmetric M2 can be diagonalized, but the normalized local
   // factors cannot reconstruct the input within the Weyl tolerance.
   EXPECT_FALSE(TwoQubitWeylDecomposition::create(target, std::nullopt));
-  EXPECT_FALSE(decomposeUnitary2QWeyl(target, CompilerTarget::GateKind::CX));
   EXPECT_FALSE(
-      decomposeUnitary2QWeyl(target, CompilerTarget::GateKind::SQRTISWAP));
+      decomposeUnitary2QWeyl(target, {.gate = CompilerTarget::GateKind::CX}));
+  EXPECT_FALSE(decomposeUnitary2QWeyl(
+      target, {.gate = CompilerTarget::GateKind::SQRTISWAP}));
 }
 
 INSTANTIATE_TEST_SUITE_P(ProductTwoQubitMatrices, WeylDecompositionTest,
@@ -653,57 +655,63 @@ INSTANTIATE_TEST_SUITE_P(
     testing::Values(
         WeylSynthesisCase{
             "CxGeneric",
-            {CompilerTarget::SingleQubitBasis::U, CompilerTarget::GateKind::CX},
+            {CompilerTarget::SingleQubitBasis::U,
+             CompilerTarget::Entangler{.gate = CompilerTarget::GateKind::CX}},
             [] { return TWO_QUBIT_CONTROLLED_X01; }},
         WeylSynthesisCase{
             "ProductGeneric",
-            {CompilerTarget::SingleQubitBasis::U, CompilerTarget::GateKind::CX},
+            {CompilerTarget::SingleQubitBasis::U,
+             CompilerTarget::Entangler{.gate = CompilerTarget::GateKind::CX}},
             [] {
               return Matrix4x4::kron(RZOp::unitaryMatrix(1.0),
                                      RYOp::unitaryMatrix(0.3));
             }},
-        WeylSynthesisCase{"IbmBasic",
-                          {CompilerTarget::SingleQubitBasis::ZSXX,
-                           CompilerTarget::GateKind::CX},
-                          [] {
-                            return Matrix4x4::kron(HOp::getUnitaryMatrix(),
-                                                   Matrix2x2::identity()) *
-                                   TWO_QUBIT_CONTROLLED_X01 *
-                                   Matrix4x4::kron(RZOp::unitaryMatrix(0.2),
-                                                   RYOp::unitaryMatrix(0.1));
-                          }},
+        WeylSynthesisCase{
+            "IbmBasic",
+            {CompilerTarget::SingleQubitBasis::ZSXX,
+             CompilerTarget::Entangler{.gate = CompilerTarget::GateKind::CX}},
+            [] {
+              return Matrix4x4::kron(HOp::getUnitaryMatrix(),
+                                     Matrix2x2::identity()) *
+                     TWO_QUBIT_CONTROLLED_X01 *
+                     Matrix4x4::kron(RZOp::unitaryMatrix(0.2),
+                                     RYOp::unitaryMatrix(0.1));
+            }},
         WeylSynthesisCase{
             "RxxGeneric",
             {CompilerTarget::SingleQubitBasis::U,
-             CompilerTarget::GateKind::RXX},
+             CompilerTarget::Entangler{.gate = CompilerTarget::GateKind::RXX}},
             [] { return RXXOp::unitaryMatrix(std::numbers::pi / 2.0); }},
         WeylSynthesisCase{
             "RyyGeneric",
             {CompilerTarget::SingleQubitBasis::U,
-             CompilerTarget::GateKind::RYY},
+             CompilerTarget::Entangler{.gate = CompilerTarget::GateKind::RYY}},
             [] { return RYYOp::unitaryMatrix(std::numbers::pi / 2.0); }},
         WeylSynthesisCase{
             "RzxGeneric",
             {CompilerTarget::SingleQubitBasis::U,
-             CompilerTarget::GateKind::RZX},
+             CompilerTarget::Entangler{.gate = CompilerTarget::GateKind::RZX}},
             [] { return RZXOp::unitaryMatrix(std::numbers::pi / 2.0); }},
         WeylSynthesisCase{
             "RzzGeneric",
             {CompilerTarget::SingleQubitBasis::U,
-             CompilerTarget::GateKind::RZZ},
+             CompilerTarget::Entangler{.gate = CompilerTarget::GateKind::RZZ}},
             [] { return RZZOp::unitaryMatrix(std::numbers::pi / 2.0); }},
         WeylSynthesisCase{"IswapGeneric",
                           {CompilerTarget::SingleQubitBasis::U,
-                           CompilerTarget::GateKind::ISWAP},
+                           CompilerTarget::Entangler{
+                               .gate = CompilerTarget::GateKind::ISWAP}},
                           [] { return iSWAPOp::getUnitaryMatrix(); }},
         WeylSynthesisCase{
             "CzGeneric",
-            {CompilerTarget::SingleQubitBasis::U, CompilerTarget::GateKind::CZ},
+            {CompilerTarget::SingleQubitBasis::U,
+             CompilerTarget::Entangler{.gate = CompilerTarget::GateKind::CZ}},
             [] { return TWO_QUBIT_CONTROLLED_Z; }},
-        WeylSynthesisCase{"EcrGeneric",
-                          {CompilerTarget::SingleQubitBasis::U,
-                           CompilerTarget::GateKind::ECR},
-                          [] { return ECROp::getUnitaryMatrix(); }}),
+        WeylSynthesisCase{
+            "EcrGeneric",
+            {CompilerTarget::SingleQubitBasis::U,
+             CompilerTarget::Entangler{.gate = CompilerTarget::GateKind::ECR}},
+            [] { return ECROp::getUnitaryMatrix(); }}),
     [](const testing::TestParamInfo<WeylSynthesisCase>& info) {
       return info.param.name;
     });
@@ -720,7 +728,7 @@ TEST(WeylSynthesisTest, IdentityRequiresNoEntanglers) {
            CompilerTarget::GateKind::ECR,
        }) {
     const auto native =
-        decomposeUnitary2QWeyl(Matrix4x4::identity(), entangler);
+        decomposeUnitary2QWeyl(Matrix4x4::identity(), {.gate = entangler});
     ASSERT_TRUE(native.has_value());
     EXPECT_EQ(native->numBasisUses, 0U);
   }
@@ -767,8 +775,8 @@ TEST(SqrtISwap, ChamberGridWithLocalFactorsAndPhase) {
                             TwoQubitWeylDecomposition::getCanonicalMatrix(
                                 a * step, b * step, c * step) *
                             right;
-        const auto result =
-            decomposeUnitary2QWeyl(target, CompilerTarget::GateKind::SQRTISWAP);
+        const auto result = decomposeUnitary2QWeyl(
+            target, {.gate = CompilerTarget::GateKind::SQRTISWAP});
         SCOPED_TRACE(::testing::Message() << a << "," << b << "," << c);
         ASSERT_TRUE(result.has_value());
         const int expected = a == 0                                         ? 0
@@ -796,8 +804,8 @@ TEST(SqrtISwap, NearChamberBoundaries) {
          }) {
       const auto target = TwoQubitWeylDecomposition::getCanonicalMatrix(
           coordinates[0], coordinates[1], coordinates[2]);
-      const auto result =
-          decomposeUnitary2QWeyl(target, CompilerTarget::GateKind::SQRTISWAP);
+      const auto result = decomposeUnitary2QWeyl(
+          target, {.gate = CompilerTarget::GateKind::SQRTISWAP});
       SCOPED_TRACE(::testing::Message()
                    << coordinates[0] << "," << coordinates[1] << ","
                    << coordinates[2] << " eps=" << epsilon);
@@ -833,8 +841,8 @@ TEST(SqrtISwap, RandomInteractionsAndLocalFactors) {
                         TwoQubitWeylDecomposition::getCanonicalMatrix(
                             coordinates[0], coordinates[1], coordinates[2]) *
                         right;
-    const auto result =
-        decomposeUnitary2QWeyl(target, CompilerTarget::GateKind::SQRTISWAP);
+    const auto result = decomposeUnitary2QWeyl(
+        target, {.gate = CompilerTarget::GateKind::SQRTISWAP});
     SCOPED_TRACE(i);
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->numBasisUses,
@@ -853,8 +861,8 @@ TEST(SqrtISwap, PreservesSmallInteractions) {
          }) {
       const auto target = TwoQubitWeylDecomposition::getCanonicalMatrix(
           coordinates[0], coordinates[1], coordinates[2]);
-      const auto result =
-          decomposeUnitary2QWeyl(target, CompilerTarget::GateKind::SQRTISWAP);
+      const auto result = decomposeUnitary2QWeyl(
+          target, {.gate = CompilerTarget::GateKind::SQRTISWAP});
       SCOPED_TRACE(::testing::Message()
                    << coordinates[0] << "," << coordinates[1] << ","
                    << coordinates[2]);

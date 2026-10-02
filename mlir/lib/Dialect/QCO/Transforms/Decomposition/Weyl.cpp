@@ -13,6 +13,7 @@
 #include "mqt/Compiler/Target.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Euler.h"
+#include "mqt/Dialect/QCO/Transforms/Decomposition/Pauli.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 #include "mqt/Support/RandomSeed.h"
 
@@ -911,39 +912,22 @@ decomposePauliRotations(const Matrix4x4& target,
     return std::nullopt;
   }
   const auto identity = Matrix2x2::identity();
-  const auto h = HOp::getUnitaryMatrix();
-  const auto rx = RXOp::unitaryMatrix(WEYL_PI / 2.);
-  /// Map each native Pauli axis to Z, then Z to the requested Cartan axis.
-  auto nativeLeft = identity;
-  auto nativeRight = identity;
-  switch (entangler) {
-  case CompilerTarget::GateKind::RXX:
-    nativeLeft = nativeRight = h;
-    break;
-  case CompilerTarget::GateKind::RYY:
-    nativeLeft = nativeRight = rx;
-    break;
-  case CompilerTarget::GateKind::RZX:
-    nativeRight = h;
-    break;
-  case CompilerTarget::GateKind::RZZ:
-    break;
-  default:
-    llvm_unreachable("parameterized synthesis requires a Pauli rotation");
-  }
+  const auto axes = pauliAxes(entangler);
+  const auto nativeLeft = pauliFrame(axes[0]).adjoint();
+  const auto nativeRight = pauliFrame(axes[1]).adjoint();
   TwoQubitNativeDecomposition result{
       .singleQubitFactors = {identity, identity},
   };
   for (const auto& [coordinate, axis] : {
-           std::pair{kak->a(), h},
-           std::pair{kak->b(), rx},
-           std::pair{kak->c(), identity},
+           std::pair{kak->a(), PauliAxis::X},
+           std::pair{kak->b(), PauliAxis::Y},
+           std::pair{kak->c(), PauliAxis::Z},
        }) {
     if (std::abs(coordinate) <= WEYL_TOLERANCE) {
       continue;
     }
-    const auto left = axis * nativeLeft;
-    const auto right = axis * nativeRight;
+    const auto left = pauliFrame(axis) * nativeLeft;
+    const auto right = pauliFrame(axis) * nativeRight;
     auto& factors = result.singleQubitFactors;
     factors[factors.size() - 2] = right.adjoint() * factors[factors.size() - 2];
     factors.back() = left.adjoint() * factors.back();
@@ -958,16 +942,15 @@ decomposePauliRotations(const Matrix4x4& target,
 
 std::optional<TwoQubitNativeDecomposition>
 decomposeUnitary2QWeyl(const Matrix4x4& target,
-                       CompilerTarget::GateKind entangler, uint64_t seed,
-                       bool parameterizedEntangler) {
-  if (parameterizedEntangler) {
-    return decomposePauliRotations(target, entangler, seed);
+                       CompilerTarget::Entangler entangler, uint64_t seed) {
+  if (entangler.parameterized) {
+    return decomposePauliRotations(target, entangler.gate, seed);
   }
-  if (entangler == CompilerTarget::GateKind::SQRTISWAP) {
+  if (entangler.gate == CompilerTarget::GateKind::SQRTISWAP) {
     return decomposeSqrtISwap(target, seed);
   }
-  return cachedNativeBasisDecomposer(entangler).decomposeTarget(
-      target, std::nullopt, seed);
+  return cachedNativeBasisDecomposer(entangler.gate)
+      .decomposeTarget(target, std::nullopt, seed);
 }
 
 SynthesizedUnitary2Q
@@ -994,8 +977,7 @@ emitUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0, Value qubit1,
   const auto emitFactor = [&](Value& wire, std::size_t index) {
     const auto synthesized = synthesizeUnitary1QEuler(
         builder, loc, wire, factors[index], /*runSize=*/0,
-        /*hasNonBasisGate=*/true, basis.singleQubit, basis.hasX,
-        basis.xRotationGates && basis.xRotationGates->quarterTurnAngle < 0.);
+        /*hasNonBasisGate=*/true, basis);
     wire = synthesized->qubit;
     globalPhase += synthesized->globalPhase;
   };
@@ -1003,15 +985,13 @@ emitUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0, Value qubit1,
     const double angle = decomposition.entanglerParameters.empty()
                              ? WEYL_PI / 2.
                              : decomposition.entanglerParameters[layer];
-    switch (*basis.entangler) {
+    switch (basis.entangler->gate) {
     case CompilerTarget::GateKind::RXX:
-      return RXXOp::create(builder, loc, wire0, wire1, angle);
     case CompilerTarget::GateKind::RYY:
-      return RYYOp::create(builder, loc, wire0, wire1, angle);
     case CompilerTarget::GateKind::RZX:
-      return RZXOp::create(builder, loc, wire0, wire1, angle);
     case CompilerTarget::GateKind::RZZ:
-      return RZZOp::create(builder, loc, wire0, wire1, angle);
+      return emitPauliRotation2Q(builder, loc, wire0, wire1,
+                                 basis.entangler->gate, angle);
     case CompilerTarget::GateKind::SQRTISWAP:
       return XXPlusYYOp::create(builder, loc, wire0, wire1, -WEYL_PI / 2., 0.);
     case CompilerTarget::GateKind::ISWAP:
@@ -1019,7 +999,7 @@ emitUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0, Value qubit1,
     case CompilerTarget::GateKind::CZ:
     case CompilerTarget::GateKind::CX:
       return CtrlOp::create(builder, loc, wire0, wire1, [&](Value targetQubit) {
-        if (basis.entangler == CompilerTarget::GateKind::CZ) {
+        if (basis.entangler->gate == CompilerTarget::GateKind::CZ) {
           return ZOp::create(builder, loc, targetQubit).getOutputQubit(0);
         }
         return XOp::create(builder, loc, targetQubit).getOutputQubit(0);

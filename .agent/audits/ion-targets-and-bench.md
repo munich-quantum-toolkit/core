@@ -53,11 +53,11 @@ GPI's global phase. Arbitrary renamed custom aliases and provider-specific angle
 units are not inferred. CY follows the existing controlled-Pauli target
 contract.
 
-RZ plus fixed RX or R quarter turns use ordinary ZSXX synthesis and final native
-lowering. Native parameter constraints remain explicit. Parameterized entangler
-synthesis reuses Weyl factors and native cost analysis; constrained entanglers
-retain the fixed-angle path. Runtime CP and RZZ use direct algebraic
-decompositions with explicit global phase.
+RZ plus fixed RX or R quarter turns use ordinary ZSXX synthesis with direct
+native emission. Native parameter constraints remain explicit. Parameterized
+entangler synthesis reuses Weyl factors and native cost analysis; constrained
+entanglers retain the fixed-angle path. Runtime Pauli rotations and controlled
+phase use the shared Pauli decomposition routines with explicit global phase.
 
 Bench delegates target import to Core and uses a private standard-gate target
 for both IonQ and Rigetti Qiskit compilation. Final local equivalences preserve

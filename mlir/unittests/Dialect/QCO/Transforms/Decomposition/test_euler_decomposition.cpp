@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Compiler/Target.h"
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
@@ -15,6 +16,7 @@
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Euler.h"
+#include "mqt/Dialect/QCO/Transforms/Decomposition/Pauli.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 
@@ -312,8 +314,9 @@ synthesizeMatrix(MLIRContext* ctx, const Matrix2x2& matrix,
 
   builder.setInsertionPointToStart(entry);
   Value q = entry->getArgument(0);
-  const auto synthesized =
-      synthesizeUnitary1QEuler(builder, loc, q, matrix, 0, true, basis);
+  const auto synthesized = synthesizeUnitary1QEuler(
+      builder, loc, q, matrix, 0, true,
+      CompilerTarget::SynthesisBasis{.singleQubit = basis});
   if (!synthesized) {
     llvm::report_fatal_error(
         "synthesizeUnitary1QEuler failed during test synthesis");
@@ -1245,8 +1248,9 @@ TEST(FuseSingleQubitUnitaryRunsTest,
 
       OwningOpRef<ModuleOp> original = cast<ModuleOp>(mlirModule->clone());
       IRRewriter rewriter(fx.ctx());
-      synthesizeParameterizedUnitary1Q(rewriter,
-                                       parameterizedGate.getOperation(), basis);
+      synthesizeParameterizedUnitary1Q(
+          rewriter, parameterizedGate.getOperation(),
+          CompilerTarget::SynthesisBasis{.singleQubit = basis});
       ASSERT_TRUE(succeeded(verify(mlirModule)));
       expectDirectSynthesisCounts(
           funcOp, expectedDirectSynthesisCounts(gateCase.name, basis));
@@ -1294,7 +1298,9 @@ TEST(FuseSingleQubitUnitaryRunsTest, DirectlySynthesizesCardinalAxesInRBasis) {
     gate.getParameter(0).replaceAllUsesWith(funcOp.getArgument(0));
     ASSERT_TRUE(succeeded(verify(*owned)));
     IRRewriter rewriter(fx.ctx());
-    synthesizeParameterizedUnitary1Q(rewriter, gate.getOperation(), R);
+    synthesizeParameterizedUnitary1Q(
+        rewriter, gate.getOperation(),
+        CompilerTarget::SynthesisBasis{.singleQubit = R});
     ASSERT_TRUE(succeeded(verify(*owned)));
     ASSERT_EQ(countOps<ROp>(funcOp), 1U);
     EXPECT_EQ(countOps<GPhaseOp>(funcOp), 0U);
@@ -1631,4 +1637,82 @@ TEST(FuseSingleQubitUnitaryRunsTest, FusesRunInScfForBody) {
         EXPECT_EQ((countInParent<TOp, scf::ForOp>(funcOp)), 0U);
         EXPECT_EQ((countInParent<RZOp, scf::ForOp>(funcOp)), 0U);
       });
+}
+
+TEST(EulerSynthesisTest, PauliRotationsPreserveRuntimeAnglesAndFullPhase) {
+  TestFixture fx;
+  fx.setUp();
+  SmallVector<CompilerTarget::SynthesisBasis> bases;
+  for (const auto basis : {ZYZ, ZXZ, XZX, XYX, U, ZSXX, R}) {
+    bases.push_back({.singleQubit = basis});
+  }
+  for (const auto gate :
+       {CompilerTarget::GateKind::RX, CompilerTarget::GateKind::R}) {
+    for (const double sign : {-1., 1.}) {
+      bases.push_back({
+          .singleQubit = ZSXX,
+          .xRotationGates =
+              CompilerTarget::XRotationGates{
+                  .gate = gate,
+                  .quarterTurnAngle = sign * std::numbers::pi / 2.,
+                  .halfTurnAngle = std::nullopt,
+              },
+          .hasX = false,
+      });
+    }
+  }
+  for (const auto& basis : bases) {
+    SCOPED_TRACE(static_cast<unsigned>(basis.singleQubit));
+    for (const auto axis : {PauliAxis::X, PauliAxis::Y, PauliAxis::Z}) {
+      SCOPED_TRACE(static_cast<unsigned>(axis));
+      OwningOpRef moduleOp = ModuleOp::create(UnknownLoc::get(fx.ctx()));
+      OpBuilder builder(fx.ctx());
+      builder.setInsertionPointToStart(moduleOp->getBody());
+      auto qubitType = QubitType::get(fx.ctx());
+      auto functionType = builder.getFunctionType(
+          {builder.getF64Type(), qubitType}, {qubitType});
+      auto function = func::FuncOp::create(builder, moduleOp->getLoc(), "main",
+                                           functionType);
+      auto* entry = function.addEntryBlock();
+      builder.setInsertionPointToStart(entry);
+      auto output = synthesizePauliRotation1Q(builder, function.getLoc(),
+                                              entry->getArgument(1), axis,
+                                              entry->getArgument(0), basis);
+      func::ReturnOp::create(builder, function.getLoc(), output);
+      ASSERT_TRUE(succeeded(verify(*moduleOp)));
+      bool preservesAngle = false;
+      function.walk([&](Operation* operation) {
+        EXPECT_NE(operation->getName().getDialectNamespace(), "math");
+        if (auto gate = dyn_cast<UnitaryOpInterface>(operation)) {
+          for (auto parameter : gate.getParameters()) {
+            preservesAngle |= parameter == entry->getArgument(0);
+          }
+        }
+      });
+      EXPECT_TRUE(preservesAngle);
+      /// Bound phases must remain within the gphase verifier's 1e4 limit.
+      for (const double angle : {
+               0.,
+               1.e-8,
+               -0.37,
+               std::numbers::pi,
+               -std::numbers::pi,
+               2. * std::numbers::pi,
+               1000.,
+               -1000.,
+           }) {
+        SCOPED_TRACE(angle);
+        OwningOpRef bound = moduleOp->clone();
+        auto boundFunction = bound->lookupSymbol<func::FuncOp>("main");
+        bindLeadingArguments(boundFunction, {angle});
+        ASSERT_TRUE(succeeded(canonicalizeBoundValues(*bound)));
+        ASSERT_TRUE(succeeded(verify(*bound)));
+        const auto expected = axis == PauliAxis::X ? RXOp::unitaryMatrix(angle)
+                              : axis == PauliAxis::Y
+                                  ? RYOp::unitaryMatrix(angle)
+                                  : RZOp::unitaryMatrix(angle);
+        expectMatrixPreserved(boundFunction, expected, "Pauli rotation");
+      }
+    }
+  }
 }

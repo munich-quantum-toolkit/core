@@ -88,7 +88,8 @@ TEST(CompilerQDMIAdapterTest, SnapshotsIQMCalibrationAndLifetime) {
   ASSERT_TRUE(target.synthesisBasis());
   EXPECT_EQ(target.synthesisBasis()->singleQubit,
             CompilerTarget::SingleQubitBasis::R);
-  EXPECT_EQ(target.synthesisBasis()->entangler, CompilerTarget::GateKind::CZ);
+  EXPECT_EQ(target.synthesisBasis()->entangler->gate,
+            CompilerTarget::GateKind::CZ);
 }
 
 TEST(CompilerQDMIAdapterTest, QueriesNamesAndSiteIndicesOncePerSnapshot) {
@@ -237,7 +238,8 @@ TEST(CompilerQDMIAdapterTest, PreservesOneWayDirectionalOperationSupport) {
   EXPECT_TRUE(target.supportsOperation("cx", 2, 0, {0, 1}));
   EXPECT_FALSE(target.supportsOperation("cx", 2, 0, {1, 0}));
   ASSERT_TRUE(target.synthesisBasis());
-  EXPECT_EQ(target.synthesisBasis()->entangler, CompilerTarget::GateKind::CX);
+  EXPECT_EQ(target.synthesisBasis()->entangler->gate,
+            CompilerTarget::GateKind::CX);
 }
 
 TEST(CompilerQDMIAdapterTest, OmitsOperationsWithNoSupportedPlacements) {

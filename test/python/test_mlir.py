@@ -610,7 +610,9 @@ def test_qco_program_compiles_for_direct_sparse_target() -> None:
     assert target.couplings == [(10, 20)]
     assert target.synthesis_basis is not None
     assert target.synthesis_basis.single_qubit == CompilerTarget.SingleQubitBasis.U
-    assert target.synthesis_basis.entangler == CompilerTarget.GateKind.CZ
+    assert target.synthesis_basis.entangler is not None
+    assert target.synthesis_basis.entangler.gate == CompilerTarget.GateKind.CZ
+    assert not target.synthesis_basis.entangler.parameterized
 
     qco = compile_program(QASM_STRING, output=OutputFormat.QCO)
     assert isinstance(qco, QCOProgram)
@@ -762,6 +764,43 @@ def test_fixed_rx_gate_merges_symbolic_rz(shape: str) -> None:
             atol=1e-10,
             rtol=0,
         )
+
+
+@requires_qiskit_translation
+@pytest.mark.parametrize("gate", ["rx", "ry", "rz", "rxx", "ryy", "rzx", "rzz", "cp", "crx", "cry", "crz"])
+@pytest.mark.parametrize("native_entangler", ["cz", "rxx", "ryy", "rzx", "rzz"])
+def test_runtime_pauli_rotations_compile_and_export(gate: str, native_entangler: str) -> None:
+    """Keep structural rotation synthesis bindable across target lowering and export."""
+    theta = qiskit.circuit.Parameter("theta")
+    source = QuantumCircuit(2, global_phase=0.19)
+    getattr(source, gate)(theta, *([0] if gate in {"rx", "ry", "rz"} else [0, 1]))
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity([(0, 1)]),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("rz", 1, 1),
+            CompilerTarget.OperationCapability("rx", 1, 1, fixed_parameters=[-np.pi / 2]),
+            CompilerTarget.OperationCapability(
+                native_entangler,
+                2,
+                0 if native_entangler == "cz" else 1,
+                site_tuples=[CompilerTarget.SiteTuple([1, 0])],
+            ),
+            CompilerTarget.OperationCapability("gphase", 0, 1),
+        ]),
+    )
+    program = QCProgram.from_qiskit(source).to_qco()
+    program.compile_for_target(_test_target_environment(target))
+    assert all(f"math.{operation}" not in program.ir for operation in ["sin", "cos", "atan2", "sqrt", "floor"])
+    result = program.to_qiskit(target=target)
+    assert set(result.count_ops()) <= {"rx", "rz", native_entangler}
+    assert result.parameters == source.parameters
+    expected_count = 0 if gate in {"rx", "ry", "rz"} else 2 if native_entangler == "cz" else 1
+    assert result.count_ops().get(native_entangler, 0) == expected_count
+    for value in [-1.2, 0.0, np.pi, 2 * np.pi, 7.1]:
+        actual = Operator.from_circuit(result.assign_parameters({theta: value})).data
+        expected = Operator(source.assign_parameters({theta: value})).data
+        assert np.allclose(actual, expected, atol=1e-10, rtol=0)
 
 
 @requires_qiskit_translation
@@ -1304,7 +1343,9 @@ def test_compiler_target_snapshots_qdmi_device(garnet_target: CompilerTarget) ->
     assert not target.supports_operation("rx", 1, 1)
     assert target.synthesis_basis is not None
     assert target.synthesis_basis.single_qubit == CompilerTarget.SingleQubitBasis.R
-    assert target.synthesis_basis.entangler == CompilerTarget.GateKind.CZ
+    assert target.synthesis_basis.entangler is not None
+    assert target.synthesis_basis.entangler.gate == CompilerTarget.GateKind.CZ
+    assert not target.synthesis_basis.entangler.parameterized
     assert [operation.name for operation in target.operations] == ["r", "cz", "measure"]
     assert [len(operation.site_tuples) for operation in target.operations] == [20, 30, 20]
     assert all(
@@ -1339,7 +1380,14 @@ def _compiler_target_metadata(target: CompilerTarget) -> dict[str, object]:
         ],
         "supported_gates": target.supported_gates,
         "synthesis_basis": (
-            None if synthesis_basis is None else (synthesis_basis.single_qubit, synthesis_basis.entangler)
+            None
+            if synthesis_basis is None
+            else (
+                synthesis_basis.single_qubit,
+                None
+                if synthesis_basis.entangler is None
+                else (synthesis_basis.entangler.gate, synthesis_basis.entangler.parameterized),
+            )
         ),
     }
 

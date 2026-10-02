@@ -383,6 +383,17 @@ class CompilerTarget:
 
         ZXZ = 6
 
+    class Entangler:
+        """A native synthesis entangler and its angle support."""
+
+        @property
+        def gate(self) -> CompilerTarget.GateKind:
+            """The native gate kind."""
+
+        @property
+        def parameterized(self) -> bool:
+            """Whether the entangler accepts arbitrary angles."""
+
     class SynthesisBasis:
         """One synthesis basis usable across the complete target."""
 
@@ -391,7 +402,7 @@ class CompilerTarget:
             """The single-qubit synthesis basis."""
 
         @property
-        def entangler(self) -> CompilerTarget.GateKind | None:
+        def entangler(self) -> CompilerTarget.Entangler | None:
             """The two-qubit entangler, or None when none is usable."""
 
     class ConnectivityKind(enum.Enum):

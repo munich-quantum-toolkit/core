@@ -347,8 +347,8 @@ struct SynthesizedUnitary2Q {
 /// Unrestricted RXX/RYY/RZX/RZZ use one rotation per nonzero Cartan coordinate.
 [[nodiscard]] std::optional<TwoQubitNativeDecomposition>
 decomposeUnitary2QWeyl(const Matrix4x4& target,
-                       CompilerTarget::GateKind entangler, uint64_t seed = 2023,
-                       bool parameterizedEntangler = false);
+                       CompilerTarget::Entangler entangler,
+                       uint64_t seed = 2023);
 
 /// Emits a prepared two-qubit decomposition in the selected target basis.
 /// The basis must contain an entangler.

@@ -1,50 +1,49 @@
 # Native target synthesis
 
-Status: complete; implementation, independent review, and local checks passed.
+Status: complete.
 
 ## Scope and ownership
 
-Represent native ion operations with existing R and RZZ gates. RZ plus fixed R
-quarter turns reuse ZSXX synthesis and final native-gate lowering. Native half
-turns provide the existing X shortcut. GPI/GPI2 are Qiskit target aliases, not
-new IR operations: target import checks their exact radian definitions, and
-export projects the phase parameter and corrects GPI's global phase. Circuit
-import uses ordinary custom gate definitions. QIR, OpenQASM, and jeff continue
-to use existing R operations and need no ion-specific support.
+Native ion operations use existing R and RZZ gates. GPI/GPI2 remain Qiskit
+target aliases with exact radian definitions and explicit global-phase
+correction. Virtual RZ is an advertised capability. Providers own units, angle
+ranges, frame tracking, and hardware serialization. MS is unnecessary for the
+supported Bench catalogue.
 
-Virtual RZ is an explicit target capability. A provider accepting only
-GPI/GPI2/ZZ must absorb it into gate phases before submission. Providers own
-units, angle ranges, and hardware serialization. MS remains unnecessary for the
-current Bench catalogue; AQT uses RXX, and retired Aria models are omitted.
+The decomposition layer owns numeric and runtime synthesis. Target synthesis
+owns placement and replacement; native cost analysis reads the same synthesis
+choices without creating IR. Single-qubit fusion is an optional optimization,
+not a prerequisite for lowering a parameterized gate.
 
-## Synthesis
+## Decisions
 
-Use the existing Euler machinery for numeric and symbolic single-qubit gates.
-For unrestricted parameterized entanglers, emit the existing Cartan factors with
-native angles. Keep fixed-angle entangler synthesis for constrained targets.
-Runtime RZZ uses a CX/RZ/CX decomposition when it is not native; runtime CP uses
-one arbitrary native RZZ where supported. Native cost analysis must use the same
-capabilities and gate counts as emission.
+Represent an elementary rotation by its Pauli axes and original scalar angle.
+Constant Clifford frames change axes without runtime trigonometry. An arbitrary
+native Pauli entangler realizes each two-qubit rotation in one instruction; a
+fixed entangler uses two cached native CX decompositions around a single-qubit
+rotation. P and CP are exact compositions of these rotations and a global phase.
+Numerical KAK remains the specialization for constant gates and fused runs.
 
-Bench uses a private standard-gate target and local equivalences for final
-native alias lowering in both IonQ and Rigetti compilation. It preserves the
-public target, phase, layout, and the Qiskit session equivalence library.
+Reuse the existing scalar-or-SSA gate builder parameters and synthesis-basis
+capabilities. Do not add symbolic dense matrices or a general algebra system.
+Emit selected native RX/R quarter turns directly from the Euler emitter,
+removing its deferred target-specific lowering walk. Prefer unrestricted Pauli
+entanglers over fixed alternatives when both are globally available.
+
+Bench's private standard-gate target and local equivalences continue to lower
+native aliases without changing public targets or Qiskit's session library.
 
 ## Validation
 
-Full matrices, symbolic binding, fixed and unrestricted entanglers, reversed
-placements, native counts, cache separation, and Qiskit/compiled-jeff exchange
-are regression-tested. Local suites passed 999 C++ compiler/synthesis tests and
-871 Python MLIR/Qiskit tests. Bench passed 507 tests with the implementation and
-358 on its minimum Qiskit 2.1.2 environment. Generated stubs, whole-file C++
-lint, repository lint, executable docs, and generated-page links passed.
+The compiler, decomposition, optimization, native-synthesis, and mapping suites
+pass all 1001 C++ tests; Python MLIR/Qiskit suites pass all 926 tests. Coverage
+includes runtime binding, full global phase, reversed placements, native gate
+counts, fixed-angle constraints, aliases, and large-angle normalization.
+Generated stubs, repository and whole-file C++ lint, executable docs with
+warnings as errors, and generated documentation links pass. Independent
+quantum-synthesis, symbolic-computation, and correctness/complexity reviews have
+no outstanding code findings. Bench records its exact-pin integration and
+minimum-version results in its companion PR.
 
-A fresh correctness and complexity review found no outstanding issues after
-fixing unrestricted operand placement, capability-based Bench lowering, and
-variable-angle matrix reconstruction. Phase-sensitive 2/4/6-qubit QFT probes
-reduced RZZ counts from 2/12/30 to 1/6/15 against the preceding PR revision.
-These counts describe compiler output, not hardware execution time.
-
-Runtime lowering covers CP and RZZ; other symbolic two-qubit gates must already
-be native. Provider submission and general fixed-angle synthesis remain outside
-scope. Hosted CI results are recorded separately from local validation.
+Fixed-entangler synthesis through CX can require four square-root-iSWAP gates; a
+specialized symbolic optimizer for that basis remains outside scope.
