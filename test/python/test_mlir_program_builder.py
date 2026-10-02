@@ -15,11 +15,11 @@ import pytest
 from qiskit import QuantumCircuit
 from qiskit.quantum_info import Operator, random_unitary
 
-from mqt.core.mlir import QCProgramBuilder
+from mqt.core.mlir import QCProgramBuilder, build_functionality
 
 
 def test_native_builder_symbolic_controls_and_phase() -> None:
-    """Construct, bind, and export without importing a circuit."""
+    """Construct and bind a circuit without using a frontend."""
     builder = QCProgramBuilder(3)
     builder.gate("h", [0]).gate("ry", [1], ["theta"])
     builder.gate("x", [2], controls=[0, 1]).gate("gphase", [], [0.3])
@@ -31,7 +31,7 @@ def test_native_builder_symbolic_controls_and_phase() -> None:
     expected.ry(0.4, 1)
     expected.ccx(0, 1, 2)
     expected.global_phase = 0.3
-    np.testing.assert_allclose(Operator(program.to_qiskit()).data, Operator(expected).data, rtol=0, atol=1e-12)
+    np.testing.assert_allclose(build_functionality(program), Operator(expected).data, rtol=0, atol=1e-12)
     with pytest.raises(ValueError, match="finished"):
         builder.gate("x", [0])
     with pytest.raises(ValueError, match="finished"):
@@ -46,7 +46,7 @@ def test_native_builder_matrix_order_and_measurement() -> None:
     program = builder.finish()
     expected = QuantumCircuit(3)
     expected.unitary(matrix, [2, 0])
-    np.testing.assert_allclose(Operator(program.to_qiskit()).data, Operator(expected).data, rtol=0, atol=1e-12)
+    np.testing.assert_allclose(build_functionality(program), Operator(expected).data, rtol=0, atol=1e-12)
 
     measured = QCProgramBuilder(1, 1).gate("x", [0]).measure(0, 0).reset(0).finish()
     assert measured.to_qco().sample(shots=8, seed=7) == {"1": 8}
