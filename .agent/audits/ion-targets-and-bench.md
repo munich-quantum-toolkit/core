@@ -74,8 +74,10 @@ Remove MS-specific operations, matrices, placement reversal, runtime macros,
 export definitions, and tests. Delete the GPI2-only basis and public callback
 emission helper. Bench deletes recursive unit conversion, output restoration,
 and Rigetti pulse subclasses. Standard RX target aliases plus two ordinary named
-gates in the U equivalence work on Qiskit 2.1 and 2.5. No provider SDK, backend
-framework, or general angle solver is needed.
+gates in the U equivalence work on Qiskit 2.5. Bench requires that version:
+Qiskit 2.1 still inserts a broken post-layout pass at optimization level 3
+despite an explicit layout method. No compatibility pass surgery, provider SDK,
+backend framework, or general angle solver is needed.
 
 SDK support alone does not establish a current hardware requirement. Qiskit,
 PennyLane, CUDA-Q, and Azure contain provider-specific or legacy MS interfaces;
