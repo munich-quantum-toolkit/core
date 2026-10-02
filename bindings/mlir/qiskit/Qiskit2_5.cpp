@@ -2934,7 +2934,7 @@ public:
       const auto arity = nb::cast<size_t>(instruction.attr("num_qubits"));
       auto capability = takeResult(Target::OperationCapability::create(
           operationName, arity, numParameters, std::move(placements),
-          std::nullopt, std::nullopt, std::move(fixedParameters), *nativeName));
+          std::nullopt, std::nullopt, std::move(fixedParameters), nativeName));
       if (arity == 2) {
         if (qargs.is_none()) {
           allToAll = true;
