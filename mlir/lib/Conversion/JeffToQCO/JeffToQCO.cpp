@@ -377,6 +377,9 @@ struct ConvertJeffArrayCreate final : OpConversionPattern<CreateOp> {
                                        cast<MemRefType>(type));
     }
     for (auto [index, value] : llvm::enumerate(adaptor.getInArray())) {
+      if (isa<cbit::RegisterType>(type) && getConstantIntValue(value) == 0) {
+        continue;
+      }
       auto offset =
           arith::ConstantIndexOp::create(rewriter, op.getLoc(), index);
       if (isa<cbit::RegisterType>(type)) {

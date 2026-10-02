@@ -813,6 +813,7 @@ TEST(JeffRoundTripRegressionTest, ConvertsBitArrayCreationAndLength) {
     }
   }
   EXPECT_TRUE(hasLength);
+  EXPECT_EQ(llvm::range_size(main.getOps<cbit::StoreOp>()), 2);
   auto histogram = qco::sample(main, 1, 1);
   ASSERT_TRUE(succeeded(histogram));
   EXPECT_EQ(histogram->at("101"), 1);
@@ -1240,6 +1241,44 @@ TEST(JeffRoundTripRegressionTest, AcceptsArrayLengthAfterSwitchUpdate) {
   });
   EXPECT_EQ(allocations, 1);
   EXPECT_EQ(snapshots, 0);
+}
+
+TEST(JeffRoundTripRegressionTest, AcceptsFloatArrayLengthAfterSwitchUpdate) {
+  MLIRContext context;
+  context
+      .loadDialect<arith::ArithDialect, func::FuncDialect,
+                   memref::MemRefDialect, qco::QCODialect, jeff::JeffDialect>();
+  auto program = parseSourceString<ModuleOp>(R"mlir(
+    module attributes {jeff.entrypoint = 0 : ui16, jeff.strings = ["main"]} {
+      func.func @main(%select: i1) -> i32 {
+        %index = jeff.int_const32(0) : i32
+        %value = jeff.float_const64(1.0) : f64
+        %old = jeff.float_array_const64([0.0]) : tensor<1xf64>
+        %result = jeff.switch (%select, %old, %index, %value)
+            : (i1, tensor<1xf64>, i32, f64) -> (tensor<1xf64>)
+        case 0 args(%array, %idx, %element) {
+          jeff.yield %array : tensor<1xf64>
+        }
+        case 1 args(%array, %idx, %element) {
+          %new = jeff.float_array_set_index(%idx) %array %element
+              : i32, tensor<1xf64>, f64 -> tensor<1xf64>
+          jeff.yield %new : tensor<1xf64>
+        }
+        default args(%array, %idx, %element) {
+          jeff.yield %array : tensor<1xf64>
+        }
+        %length = jeff.float_array_length %old : tensor<1xf64> -> i32
+        return %length : i32
+      }
+    })mlir",
+                                             &context);
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(succeeded(verify(*program)));
+  ASSERT_TRUE(succeeded(convertJeffToQCO(*program)));
+  EXPECT_TRUE(succeeded(verify(*program)));
+  auto main = program->lookupSymbol<func::FuncOp>("main");
+  EXPECT_EQ(llvm::range_size(main.getOps<memref::AllocaOp>()), 1);
+  EXPECT_TRUE(main.getOps<memref::CopyOp>().empty());
 }
 
 TEST(JeffRoundTripRegressionTest, PreservesClassicalIfResults) {
