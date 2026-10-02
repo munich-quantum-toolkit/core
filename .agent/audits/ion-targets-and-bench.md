@@ -1,7 +1,7 @@
 # Audit: native ion gates and the Bench compiler
 
-Status: complete; findings addressed and local consumer checks passed. Scope:
-Core #2578 and Bench #1027. Hardware snapshot: 2026-10-02.
+Status: complete; fresh review findings addressed and local validation passed.
+Scope: Core #2578 and Bench #1027. Hardware snapshot: 2026-10-02.
 
 ## Hardware scope
 
@@ -44,56 +44,39 @@ Sources: [IonQ Aria](https://www.ionq.com/quantum-systems/aria),
 [IQM Spark](https://iqm.tech/products/iqm-spark/), and
 [Quantinuum availability](https://docs.quantinuum.com/systems/support/system_reference.html).
 
-## Findings and disposition
+## Implementation boundaries
 
-- **Target semantics:** Bench's duplicate importer lost open controls and angle
-  bounds. It now delegates identity, fixed values, aliases, and placements to
-  Core's strict importer. Native compilation removes physical topology before
-  import; mapped compilation retains it. Bound predicates are checked before
-  copying native capabilities. Structural global-phase entries are omitted.
-- **Incorrect equivalences:** IonQ's CX recipe and Rigetti's RX recipe were
-  incorrect; both are deleted. Corrected U recipes preserve complete matrices,
-  including global phase. Ordinary RZZ uses Qiskit's existing CX decomposition.
-- **Canonical native gates:** Core now recognizes exact radian GPI/GPI2
-  definitions in circuit and target import, including aliases. Same-named
-  foreign definitions retain their semantics. Target-aware export preserves
-  capability names. CY completes the existing controlled-Pauli capability set.
-- **Consumer coverage:** GPI/GPI2 now round-trip through jeff's custom gates as
-  well as Qiskit and OpenQASM. Local QIR Base/Adaptive and direct DD probes
-  verify their runtime semantics.
-- **Gate count:** Numeric RX(pi/2), RX(pi), and RZ use one, one, and two native
-  gates where admitted. Fixed-phase and large symbolic inverses keep the safe
-  fallback. No general gate search or arbitrary fixed-angle synthesis is added.
-- **Catalogue:** Remove obsolete models, add current Cepheus and AQT snapshots,
-  preserve arbitrary virtual RZ, and remove unsupported hardware feedback.
-  Device docs distinguish real snapshots from ideal architecture models.
+Core uses existing R and RZZ operations throughout synthesis, IR, and runtime
+consumers. Qiskit targets expose GPI/GPI2 through exact fixed-R definitions;
+only that import/export boundary projects their phase parameter and accounts for
+GPI's global phase. Arbitrary renamed custom aliases and provider-specific angle
+units are not inferred. CY follows the existing controlled-Pauli target
+contract.
 
-## Complexity review
+RZ plus fixed RX or R quarter turns use ordinary ZSXX synthesis and final native
+lowering. Native parameter constraints remain explicit. Parameterized entangler
+synthesis reuses Weyl factors and native cost analysis; constrained entanglers
+retain the fixed-angle path. Runtime CP and RZZ use direct algebraic
+decompositions with explicit global phase.
 
-Remove MS-specific operations, matrices, placement reversal, runtime macros,
-export definitions, and tests. Delete the GPI2-only basis and public callback
-emission helper. Bench deletes recursive unit conversion, output restoration,
-and Rigetti gate subclasses. Standard RX target aliases work on Qiskit 2.1.2 and
-later through a private standard-gate target and local lowering equivalences.
-Bench's default compiler supports that minimum; its optional Core compiler and
-QIR export require Qiskit 2.5.x for Core's existing native C API bridge. Qiskit
-2.1.0 and 2.1.1 have a post-layout failure at optimization level 3. Bench's uv
-minimums group selects 2.1.2 separately from the Core extra. The full base suite
-passes on Qiskit 2.1.2, 2.2, 2.3, and 2.4. No compatibility pass surgery,
-provider SDK, backend framework, or general angle solver is needed.
+Bench delegates target import to Core and uses a private standard-gate target
+for both IonQ and Rigetti Qiskit compilation. Final local equivalences preserve
+native aliases without modifying the session library. Native compilation drops
+physical topology; mapped compilation retains it. Layout and mirror semantics
+remain consumer contracts.
 
-SDK support alone does not establish a current hardware requirement. Qiskit,
-PennyLane, CUDA-Q, and Azure contain provider-specific or legacy MS interfaces;
-current Braket metadata and provider retirement notices determine this scope.
-First-class GPI/GPI2 remain justified by their signature and phase across
-controls, import/export, and runtime consumers.
+Bench's base compiler requires Qiskit 2.1.2 or newer; Core and QIR integration
+require Qiskit 2.5.x for the native C API bridge. The uv minimums group and Core
+extra select these environments independently. No provider SDK, new native IR
+gates, arbitrary fixed-angle solver, or MS support is required.
 
 ## Verification
 
-Regressions compare full matrices and emitted capability names/parameters,
-including numeric and symbolic inputs, inverses, controls, multiple fixed RX
-angles, placement, mirrors, and measurement wiring. Independent audit probes
-covered phases up to 1e16, DD functionality, local QIR execution, and the exact
-Cepheus graph. A fresh review found the native-topology, explicit-global-phase,
-and jeff gaps above; focused regressions now cover all three. The final local
-suite and documentation results are reported with publication.
+Regressions cover phase-sensitive matrices, symbolic binding, fixed and
+unrestricted target conformance, native gate counts, aliases, compiled jeff
+exchange, placement, and mirrors. The fresh audit identified unrestricted
+entangler placement, description-based Bench target selection, and matrix
+reconstruction issues; all are fixed and covered. Its final correctness and
+complexity passes found no outstanding issues. See the
+[native target decision record](../plans/native-ion-gate-targets.md) for local
+validation. Publication reports hosted CI separately.

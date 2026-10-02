@@ -176,7 +176,7 @@ struct InlineSelfAdjoint final : OpRewritePattern<InvOp> {
       return failure();
     }
 
-    if (!isa<IdOp, HOp, XOp, YOp, ZOp, GPIOp, ECROp, RCCXOp, SWAPOp, BarrierOp>(
+    if (!isa<IdOp, HOp, XOp, YOp, ZOp, ECROp, RCCXOp, SWAPOp, BarrierOp>(
             inner.getOperation())) {
       return failure();
     }
@@ -248,17 +248,6 @@ struct ReplaceWithKnownGates final : OpRewritePattern<InvOp> {
             .Case([&](ROp g) {
               rewriter.replaceOpWithNewOp<ROp>(g, g.getInputTarget(0),
                                                negTheta(g), g.getPhi());
-              return success();
-            })
-            .Case([&](GPI2Op g) {
-              // GPI2^4 = -I. Do not shift an unbounded phase by pi:
-              // floating-point addition can lose that shift entirely.
-              Value qubit = g.getInputTarget(0);
-              for (unsigned i = 0; i < 3; ++i) {
-                qubit = GPI2Op::create(rewriter, loc, qubit, g.getPhi());
-              }
-              GPhaseOp::create(rewriter, loc, std::numbers::pi);
-              rewriter.replaceOp(g, qubit);
               return success();
             })
             .Case([&](RXOp g) {

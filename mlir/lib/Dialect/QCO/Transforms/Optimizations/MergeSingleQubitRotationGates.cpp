@@ -509,21 +509,6 @@ static std::optional<Quat<T>> quaternionFromGate(UnitaryOpInterface op,
       .Case([&](IdOp) -> std::optional<Quat<T>> {
         return Quat<T>{.w = c.one, .x = c.zero, .y = c.zero, .z = c.zero};
       })
-      .template Case<GPIOp, GPI2Op>([&](auto gate) -> std::optional<Quat<T>> {
-        const auto phi = param(0);
-        if (!phi) {
-          return std::nullopt;
-        }
-        const auto halfTheta =
-            isa<GPIOp>(gate) ? c.pi / c.two : c.pi / (c.two * c.two);
-        const auto sinHalf = halfTheta.sin();
-        return Quat<T>{
-            .w = halfTheta.cos(),
-            .x = sinHalf * phi->cos(),
-            .y = sinHalf * phi->sin(),
-            .z = c.zero,
-        };
-      })
       .Case([&](ROp) -> std::optional<Quat<T>> {
         const auto theta = param(0);
         const auto phi = param(1);
@@ -585,9 +570,9 @@ static FailureOr<Val<T>> globalPhaseOf(UnitaryOpInterface op,
   auto param = [&](unsigned i) { return gateParam<T>(op, i, rewriter, loc); };
 
   return TypeSwitch<Operation*, FailureOr<Val<T>>>(op.getOperation())
-      .template Case<RXOp, RYOp, RZOp, ROp, GPI2Op>(
+      .template Case<RXOp, RYOp, RZOp, ROp>(
           [&](auto) -> FailureOr<Val<T>> { return c.zero; })
-      .template Case<XOp, YOp, ZOp, HOp, GPIOp>(
+      .template Case<XOp, YOp, ZOp, HOp>(
           [&](auto) -> FailureOr<Val<T>> { return c.pi / c.two; })
       .template Case<SOp, SXOp>([&](auto) -> FailureOr<Val<T>> {
         return Val<T>::constant(rewriter, loc, std::numbers::pi / 4.0);
@@ -849,14 +834,6 @@ static Value emitRuntimeEulerAngles(RewriterBase& rewriter, Location loc,
     qubit = UOp::create(rewriter, loc, qubit, theta.v, phi.v, lambda.v)
                 .getQubitOut();
     break;
-  case decomposition::SingleQubitBasis::GPI: {
-    const auto middle = (phi - lambda - theta) / consts.two;
-    qubit = GPI2Op::create(rewriter, loc, qubit, (-lambda).v).getQubitOut();
-    qubit = GPIOp::create(rewriter, loc, qubit, middle.v).getQubitOut();
-    qubit = GPI2Op::create(rewriter, loc, qubit, phi.v).getQubitOut();
-    phase = phase + consts.pi / consts.two;
-    break;
-  }
   case decomposition::SingleQubitBasis::ZSXX: {
     constexpr double pi = std::numbers::pi;
     constexpr double halfPi = pi / 2.;
@@ -939,16 +916,6 @@ directZYZAnglesFromGate(UnitaryOpInterface op, RewriterBase& rewriter,
     }
   }
 
-  if (isa<GPIOp, GPI2Op>(op.getOperation())) {
-    const auto phi = parameter(0);
-    const bool isGPI = isa<GPIOp>(op.getOperation());
-    return {
-        .theta = isGPI ? consts.pi : halfPi,
-        .phi = phi - halfPi,
-        .lambda = halfPi - phi,
-        .phase = isGPI ? halfPi : consts.zero,
-    };
-  }
   if (isa<ROp>(op.getOperation())) {
     const auto theta = parameter(0);
     const auto phi = parameter(1);
@@ -1104,7 +1071,6 @@ struct MergeSingleQubitRotationGatesPattern final
       return 1;
     case decomposition::SingleQubitBasis::ZSXX:
       return 5;
-    case decomposition::SingleQubitBasis::GPI:
     case decomposition::SingleQubitBasis::ZYZ:
     case decomposition::SingleQubitBasis::ZXZ:
     case decomposition::SingleQubitBasis::XZX:
@@ -1392,8 +1358,7 @@ protected:
 } // namespace
 
 bool decomposition::canSynthesizeParameterizedUnitary1Q(Operation* op) {
-  return op != nullptr &&
-         isa<RXOp, RYOp, RZOp, POp, ROp, U2Op, UOp, GPIOp, GPI2Op>(op);
+  return op != nullptr && isa<RXOp, RYOp, RZOp, POp, ROp, U2Op, UOp>(op);
 }
 
 void decomposition::synthesizeParameterizedUnitary1Q(RewriterBase& rewriter,
@@ -1415,13 +1380,13 @@ void decomposition::synthesizeParameterizedUnitary1Q(RewriterBase& rewriter,
                                      unitary.getParameter(0), axis);
     return;
   }
-  const bool usesDirectZYZAngles =
-      basis == SingleQubitBasis::ZYZ || basis == SingleQubitBasis::ZXZ ||
-      basis == SingleQubitBasis::ZSXX || basis == SingleQubitBasis::GPI;
+  const bool usesDirectZYZAngles = basis == SingleQubitBasis::ZYZ ||
+                                   basis == SingleQubitBasis::ZXZ ||
+                                   basis == SingleQubitBasis::ZSXX;
   if (basis == SingleQubitBasis::U || usesDirectZYZAngles) {
     const auto consts = makeConsts<Value>(rewriter, op->getLoc());
     Value qubit;
-    if (basis == SingleQubitBasis::U && !isa<GPIOp, GPI2Op>(op)) {
+    if (basis == SingleQubitBasis::U) {
       qubit = emitDirectU(rewriter, unitary, consts);
     } else {
       const auto angles = directZYZAnglesFromGate(unitary, rewriter, consts);

@@ -224,12 +224,6 @@ operation capability
   `CompilerTarget.OperationCapability` in Python. An MLIR operation is an IR
   instance, not this capability description.
 
-Native trapped-ion gates
-  **Preferred terms:** GPI, GPI2, and RZZ. **Accepted aliases:** none.
-  Core uses radians for all parameters and the existing RZZ operation for
-  Forte-style targets. Provider adapters convert units and gate names.
-  See {doc}`mlir/target_compilation` for synthesis and export support.
-
 conversion target
   **Preferred term:** conversion target. **Accepted aliases:** none. The MLIR
   legality rules used by a dialect conversion. It is distinct from an MQT

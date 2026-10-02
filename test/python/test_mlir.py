@@ -684,19 +684,28 @@ def test_fixed_parameter_target_capability(arity: int | CompilerTarget.Operation
 @pytest.mark.parametrize("theta", [0.0, np.pi / 2, np.pi, 0.47, "symbolic"])
 @pytest.mark.parametrize("gate", ["u", "rx", "p"])
 @pytest.mark.parametrize("quarter_turn_angle", [np.pi / 2, -np.pi / 2])
-def test_fixed_rx_gate_compilation_preserves_phase(theta: float | str, gate: str, quarter_turn_angle: float) -> None:
-    """Compile into RZ and fixed RX quarter turns, preserving phase."""
+@pytest.mark.parametrize("rotation", ["rx", "r"])
+def test_fixed_rotation_compilation_preserves_phase(
+    theta: float | str, gate: str, quarter_turn_angle: float, rotation: str
+) -> None:
+    """Use the same synthesis for fixed RX and R quarter turns, preserving phase."""
     target = CompilerTarget(
-        1,
+        2,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations([
-            CompilerTarget.OperationCapability("rx", 1, 1, fixed_parameters=[quarter_turn_angle]),
+            CompilerTarget.OperationCapability(
+                rotation,
+                1,
+                1 if rotation == "rx" else 2,
+                fixed_parameters=[quarter_turn_angle] if rotation == "rx" else [quarter_turn_angle, None],
+            ),
+            CompilerTarget.OperationCapability("cz", 2, 0),
             CompilerTarget.OperationCapability("rz", 1, 1),
             CompilerTarget.OperationCapability("gphase", 0, 1),
         ]),
     )
     parameter = qiskit.circuit.Parameter("theta") if isinstance(theta, str) else theta
-    source = QuantumCircuit(1, global_phase=0.19)
+    source = QuantumCircuit(2, global_phase=0.19)
     if gate == "u":
         source.u(parameter, 0.32, -0.17, 0)
     else:
@@ -704,8 +713,10 @@ def test_fixed_rx_gate_compilation_preserves_phase(theta: float | str, gate: str
     program = QCProgram.from_qiskit(source).to_qco()
     program.compile_for_target(_test_target_environment(target))
     result = program.to_qiskit(target=target)
-    assert set(result.count_ops()) <= {"rx", "rz"}
-    assert all(item.operation.params == [quarter_turn_angle] for item in result.data if item.operation.name == "rx")
+    assert set(result.count_ops()) <= {rotation, "rz"}
+    assert all(
+        item.operation.params[0] == quarter_turn_angle for item in result.data if item.operation.name == rotation
+    )
     for value in [-0.6, 0.0, np.pi / 2, np.pi]:
         bindings = {parameter: value} if isinstance(parameter, qiskit.circuit.Parameter) else {}
         assert np.allclose(
@@ -880,40 +891,7 @@ def test_symbolic_fusion_normalizes_gate_operands_after_scalar_expressions() -> 
 
 
 @requires_qiskit_translation
-@pytest.mark.parametrize("gate", ["u", "rx", "p"])
-@pytest.mark.parametrize("symbolic", [False, True])
-def test_native_ion_target_single_qubit_phase(gate: str, *, symbolic: bool) -> None:
-    """Native gates preserve phase and symbolic input parameters."""
-    operations = [
-        CompilerTarget.OperationCapability("gpi2", 1, 1),
-        CompilerTarget.OperationCapability("gphase", 0, 1),
-    ]
-    operations.append(CompilerTarget.OperationCapability("gpi", 1, 1))
-    target = CompilerTarget(
-        1,
-        connectivity=CompilerTarget.Connectivity.all_to_all(),
-        native_operations=CompilerTarget.NativeOperations(operations),
-    )
-    theta = qiskit.circuit.Parameter("theta") if symbolic else 0.47
-    source = QuantumCircuit(1, global_phase=0.19)
-    if gate == "u":
-        source.u(theta, 0.32, -0.17, 0)
-    else:
-        getattr(source, gate)(theta, 0)
-    program = QCProgram.from_qiskit(source).to_qco()
-    program.compile_for_target(_test_target_environment(target))
-    result = program.to_qiskit(target=target)
-    assert set(result.count_ops()) <= {"gpi", "gpi2"}
-    assert result.parameters == source.parameters
-    for value in [-0.6, 0.0, np.pi / 2, np.pi]:
-        bindings = {theta: value} if symbolic else {}
-        assert np.allclose(
-            Operator(result.assign_parameters(bindings)).data, Operator(source.assign_parameters(bindings)).data
-        )
-
-
-@requires_qiskit_translation
-def test_forte_target_compilation_preserves_full_unitary() -> None:
+def test_fixed_r_and_rzz_compilation_preserves_full_unitary() -> None:
     """Compile an entangled circuit using a fixed RZZ gate and radian phases."""
     source = QuantumCircuit(2)
     source.u(0.37, -0.42, 0.19, 0)
@@ -923,8 +901,9 @@ def test_forte_target_compilation_preserves_full_unitary() -> None:
         2,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations([
-            CompilerTarget.OperationCapability("gpi", 1, 1),
-            CompilerTarget.OperationCapability("gpi2", 1, 1),
+            CompilerTarget.OperationCapability("rz", 1, 1),
+            CompilerTarget.OperationCapability("r", 1, 2, fixed_parameters=[np.pi, None]),
+            CompilerTarget.OperationCapability("r", 1, 2, fixed_parameters=[np.pi / 2, None]),
             CompilerTarget.OperationCapability("rzz", 2, 1, fixed_parameters=[np.pi / 2]),
             CompilerTarget.OperationCapability("gphase", 0, 1),
         ]),
@@ -932,127 +911,12 @@ def test_forte_target_compilation_preserves_full_unitary() -> None:
     program = QCProgram.from_qiskit(source).to_qco()
     program.compile_for_target(_test_target_environment(target))
     result = program.to_qiskit(target=target)
-    assert set(result.count_ops()) <= {"gpi", "gpi2", "rzz"}
+    assert set(result.count_ops()) <= {"r", "rz", "rzz"}
     assert result.count_ops().get("rzz", 0) > 0
     for instruction in result.data:
         if instruction.operation.name == "rzz":
             assert instruction.operation.params == [np.pi / 2]
     assert np.allclose(Operator.from_circuit(result).data, Operator(source).data)
-
-
-@requires_qiskit_translation
-@pytest.mark.parametrize(("gate", "params"), [("gpi", [0.13]), ("gpi2", [-0.21]), ("rzz", [0.17])])
-def test_native_ion_gate_exports(gate: str, params: list[float]) -> None:
-    """Export native names and definitions through all supported representations."""
-    width = 2 if gate == "rzz" else 1
-    arguments = ", ".join(map(str, params))
-    qubits = ", ".join(f"q[{i}]" for i in range(width))
-    source = f'OPENQASM 3.0; include "stdgates.inc"; qubit[{width}] q; {gate}({arguments}) {qubits};'
-    program = QCProgram.from_openqasm_str(source)
-    result = program.to_qiskit()
-    assert result.data[0].operation.name == gate
-    assert result.data[0].operation.params == params
-    expected = QuantumCircuit(width)
-    if gate in {"gpi", "gpi2"}:
-        expected.r(np.pi if gate == "gpi" else np.pi / 2, params[0], 0)
-        if gate == "gpi":
-            expected.global_phase = np.pi / 2
-    else:
-        expected.rzz(params[0], 0, 1)
-    assert np.allclose(Operator(result).data, Operator(expected).data)
-    exported = program.to_openqasm3()
-    round_trip = QCProgram.from_openqasm_str(exported.source).to_qiskit()
-    assert np.allclose(Operator(round_trip).data, Operator(expected).data)
-    assert f"__quantum__qis__{gate}__body" in program.to_qir(QIRProfile.BASE).ir
-
-
-@requires_qiskit_translation
-@pytest.mark.parametrize("gate", ["gpi", "gpi2", "rzz"])
-@pytest.mark.parametrize("symbolic", [False, True])
-@pytest.mark.parametrize("inverse", [False, True])
-def test_native_ion_gate_circuit_round_trip(gate: str, *, symbolic: bool, inverse: bool) -> None:
-    """Target compilation preserves native parameters and inverse semantics."""
-    width = 2 if gate == "rzz" else 1
-    arguments = "%theta"
-    signature = '%theta: f64 {mqt.input_name = "theta"}' if symbolic else ""
-    constant = "" if symbolic else "%theta = arith.constant 0.13 : f64"
-    operands = ", ".join(f"%q{index}" for index in range(width))
-    types = ", ".join(["!qc.qubit"] * width)
-    source = QCProgram.from_mlir_str(f"""module {{
-      func.func @main({signature}) attributes {{mqt.entry_point}} {{
-        %q0 = qc.alloc : !qc.qubit
-        {"%q1 = qc.alloc : !qc.qubit" if width == 2 else ""}
-        {constant}
-        qc.{gate}({arguments}) {operands} : {types}
-        qc.dealloc %q0 : !qc.qubit
-        {"qc.dealloc %q1 : !qc.qubit" if width == 2 else ""}
-        return
-      }}
-    }}""").to_qiskit()
-    if inverse:
-        operation = source.data[0].operation.inverse(annotated=True)
-        source = QuantumCircuit(width)
-        source.append(operation, range(width))
-    target = CompilerTarget(
-        width,
-        connectivity=CompilerTarget.Connectivity.all_to_all(),
-        native_operations=CompilerTarget.NativeOperations([
-            CompilerTarget.OperationCapability(
-                gate,
-                width,
-                1,
-                fixed_parameters=[0.13] if gate == "gpi2" and not symbolic else [],
-            ),
-            CompilerTarget.OperationCapability("rz", 1, 1),
-            CompilerTarget.OperationCapability("sx", 1, 0),
-            CompilerTarget.OperationCapability("gphase", 0, 1),
-        ]),
-    )
-    program = QCProgram.from_qiskit(source).to_qco()
-    program.compile_for_target(_test_target_environment(target))
-    result = program.to_qiskit(target=target)
-    assert result.count_ops() == {gate: 3 if inverse and gate == "gpi2" else 1}
-    assert result.parameters == source.parameters
-    for value in [-0.37, 0.0, 0.25, 1e16]:
-        bindings = dict.fromkeys(source.parameters, value)
-        assert np.allclose(
-            Operator(result.assign_parameters(bindings)).data,
-            Operator(source.assign_parameters(bindings)).data,
-        )
-
-
-@requires_qiskit_translation
-@pytest.mark.parametrize("gate", ["gpi", "gpi2"])
-@pytest.mark.parametrize("change", ["phase", "angle", "definition", "turns"])
-def test_native_ion_gate_names_do_not_override_definitions(gate: str, change: str) -> None:
-    """Different custom definitions retain their phase, angles, and operations."""
-    width = 2 if gate == "rzz" else 1
-    arguments = "0.13"
-    operands = ", ".join(f"q[{index}]" for index in range(width))
-    source = QCProgram.from_openqasm_str(
-        f'OPENQASM 3.0; include "stdgates.inc"; qubit[{width}] q; {gate}({arguments}) {operands};'
-    ).to_qiskit()
-    operation = source.data[0].operation
-    if change == "phase":
-        operation.definition.global_phase += 0.37
-    elif change == "angle":
-        operation.params[0] = 0.41
-    elif change == "turns":
-        # A same-named gate using provider turns must keep its own definition.
-        operation.definition = (
-            QCProgram
-            .from_openqasm_str(
-                f'OPENQASM 3.0; include "stdgates.inc"; qubit[{width}] q; '
-                f"{gate}({', '.join(str(2 * np.pi * p) for p in operation.params)}) {operands};"
-            )
-            .to_qiskit()
-            .data[0]
-            .operation.definition
-        )
-    else:
-        operation.definition.x(0)
-    result = QCProgram.from_qiskit(source).to_qco().to_qiskit()
-    assert np.allclose(Operator(result).data, Operator(source).data)
 
 
 @requires_qiskit_translation
@@ -1731,48 +1595,33 @@ def test_compilation_timing_and_statistics(capfd: pytest.CaptureFixture[str]) ->
 
 
 @requires_qiskit_translation
-@pytest.mark.parametrize("with_rz", [False, True])
-@pytest.mark.parametrize(
-    ("gate", "angle", "gate_count"),
-    [("rx", np.pi / 2, 1), ("rx", -np.pi / 2, 1), ("rx", np.pi, 1), ("rz", 0.3, 2), ("gpi2_inverse", 0.13, 1)],
-)
-def test_native_ion_short_gate_sequences(gate: str, angle: float, gate_count: int, *, with_rz: bool) -> None:
-    """Common rotations use short native forms with their complete global phase."""
-    source = QuantumCircuit(1)
-    if gate == "gpi2_inverse":
-        native = (
-            QCProgram
-            .from_openqasm_str(f'OPENQASM 3.0; include "stdgates.inc"; qubit q; gpi2({angle}) q;')
-            .to_qiskit()
-            .data[0]
-            .operation
-        )
-        source.append(native.inverse(annotated=True), [0])
-    else:
-        getattr(source, gate)(angle, 0)
-    operations = [
-        CompilerTarget.OperationCapability("gpi", 1, 1),
-        CompilerTarget.OperationCapability("gpi2", 1, 1),
-        CompilerTarget.OperationCapability("gphase", 0, 1),
-    ]
-    if with_rz:
-        operations.append(CompilerTarget.OperationCapability("rz", 1, 1))
+@pytest.mark.parametrize("angle", [np.pi / 2, -np.pi / 2, np.pi])
+def test_fixed_r_short_gate_sequences(angle: float) -> None:
+    """Quarter and half turns need one fixed R gate plus virtual Z rotations."""
+    source = QuantumCircuit(2)
+    source.rx(angle, 0)
     target = CompilerTarget(
-        1,
+        2,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
-        native_operations=CompilerTarget.NativeOperations(operations),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("r", 1, 2, fixed_parameters=[np.pi, None]),
+            CompilerTarget.OperationCapability("r", 1, 2, fixed_parameters=[np.pi / 2, None]),
+            CompilerTarget.OperationCapability("rz", 1, 1),
+            CompilerTarget.OperationCapability("rzz", 2, 1),
+            CompilerTarget.OperationCapability("gphase", 0, 1),
+        ]),
     )
     program = QCProgram.from_qiskit(source).to_qco()
     program.compile_for_target(_test_target_environment(target))
     result = program.to_qiskit(target=target)
-    assert len(result.data) == (1 if gate == "rz" and with_rz else gate_count)
+    assert result.count_ops().get("r") == 1
     assert np.allclose(Operator(result).data, Operator(source).data)
 
 
 @requires_qiskit_translation
 @pytest.mark.parametrize("name", ["gpi", "gpi2"])
-def test_native_ion_jeff_round_trip_preserves_phase_and_modifiers(name: str) -> None:
-    """Serialized native gates retain complete matrices under gate modifiers."""
+def test_compiled_native_r_jeff_round_trip(name: str) -> None:
+    """Compiled native targets serialize through existing R and RZZ operations."""
     phi = qiskit.circuit.Parameter("phi")
     definition = QuantumCircuit(1)
     definition.r(np.pi if name == "gpi" else np.pi / 2, phi, 0)
@@ -1783,9 +1632,22 @@ def test_native_ion_jeff_round_trip_preserves_phase_and_modifiers(name: str) -> 
     source = QuantumCircuit(2, global_phase=0.19)
     source.h(0)
     source.append(gate, [1])
-    source.append(gate.control(1, annotated=True).inverse(annotated=True), [0, 1])
-    for value in [-0.37, 0.0, 0.13, 1e16]:
+    source.cx(0, 1)
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("r", 1, 2, fixed_parameters=[np.pi, None]),
+            CompilerTarget.OperationCapability("r", 1, 2, fixed_parameters=[np.pi / 2, None]),
+            CompilerTarget.OperationCapability("rz", 1, 1),
+            CompilerTarget.OperationCapability("rzz", 2, 1),
+            CompilerTarget.OperationCapability("gphase", 0, 1),
+        ]),
+    )
+    for value in [-0.37, 0.0, 0.13, 4 * np.pi]:
         bound = source.assign_parameters({"phi": value})
-        serialized = QCProgram.from_qiskit(bound).to_qco().to_jeff().to_bytes()
+        program = QCProgram.from_qiskit(bound).to_qco()
+        program.compile_for_target(_test_target_environment(target))
+        serialized = program.to_jeff().to_bytes()
         result = JeffProgram.from_bytes(serialized).to_qco().to_qiskit()
         assert np.allclose(Operator(result).data, Operator(bound).data)

@@ -2196,10 +2196,6 @@ protected:
         patterns, typeConverter, context, state);
     addQCOToJeffGatePattern<JK::WellKnown, 1, 1, POp, jeff::R1Op, false>(
         patterns, typeConverter, context, state);
-    addQCOToJeffGatePattern<JK::Custom, 1, 1, GPIOp, void, false>(
-        patterns, typeConverter, context, state, "gpi");
-    addQCOToJeffGatePattern<JK::Custom, 1, 1, GPI2Op, void, false>(
-        patterns, typeConverter, context, state, "gpi2");
     addQCOToJeffGatePattern<JK::Custom, 1, 2, ROp, void, false>(
         patterns, typeConverter, context, state, "r");
     addQCOToJeffGatePattern<JK::SpecialU2ToU, 1, 2, U2Op, jeff::UOp, false>(

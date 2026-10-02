@@ -1,65 +1,50 @@
-# Native trapped-ion gate targets
+# Native target synthesis
 
-Status: complete; implementation and local validation passed.
+Status: complete; implementation, independent review, and local checks passed.
 
-## Goal and scope
+## Scope and ownership
 
-Support current Forte-style targets with radian GPI/GPI2 and existing RZZ. Core
-owns matrices, phase, synthesis, and target conformance. Provider adapters own
-unit conversion, serialization, physical labels, and parameter domains. Bench's
-catalogue and compiler adapter are maintained in Bench #1027.
+Represent native ion operations with existing R and RZZ gates. RZ plus fixed R
+quarter turns reuse ZSXX synthesis and final native-gate lowering. Native half
+turns provide the existing X shortcut. GPI/GPI2 are Qiskit target aliases, not
+new IR operations: target import checks their exact radian definitions, and
+export projects the phase parameter and corrects GPI's global phase. Circuit
+import uses ordinary custom gate definitions. QIR, OpenQASM, and jeff continue
+to use existing R operations and need no ion-specific support.
 
-## Decisions
+Virtual RZ is an explicit target capability. A provider accepting only
+GPI/GPI2/ZZ must absorb it into gate phases before submission. Providers own
+units, angle ranges, and hardware serialization. MS remains unnecessary for the
+current Bench catalogue; AQT uses RXX, and retired Aria models are omitted.
 
-Retain first-class GPI/GPI2 through the existing QC/QCO operation traits and
-central gate registry. Their one-parameter signatures and GPI's phase,
-`GPI(phi) = i R(pi, phi)`, belong to the gate semantics. A fixed-parameter R
-capability alone would require parameter projection and phase handling in each
-consumer. No provider SDK is required.
+## Synthesis
 
-Require both GPI and GPI2 for single-qubit synthesis. Every current consumer has
-both. Numeric synthesis uses at most three gates and shorter forms for common
-rotations; symbolic synthesis uses GPI2/GPI/GPI2. The general GPI2 inverse uses
-unchanged gates and a phase correction, preserving fixed phases and large
-symbolic inputs. Numeric fusion can shorten it when phases are free. Arbitrary
-RZ remains native when a target advertises virtual Z. Two-qubit synthesis reuses
-RZZ(pi/2), subject to target parameter restrictions.
+Use the existing Euler machinery for numeric and symbolic single-qubit gates.
+For unrestricted parameterized entanglers, emit the existing Cartan factors with
+native angles. Keep fixed-angle entangler synthesis for constrained targets.
+Runtime RZZ uses a CX/RZ/CX decomposition when it is not native; runtime CP uses
+one arbitrary native RZZ where supported. Native cost analysis must use the same
+capabilities and gate counts as emission.
 
-MS has no current consumer in this catalogue. Retired Aria required IonQ's
-three-parameter MS; AQT's interaction is already represented by RXX. Omit MS, a
-GPI2-only basis, and general gate search.
-
-Qiskit circuit and target import share exact canonical-definition recognition,
-including phase. Aliases retain target names, fixed parameters, and placements.
-Other definitions retain their semantics, including same-named gates using
-turns. Standard fixed RX aliases work in both compilers. Qiskit optimizes a
-private standard-gate target and lowers the result through local equivalences.
-CY is a supported native controlled Pauli capability, without a new entangling
-synthesis basis.
-
-OpenQASM and Qiskit exports define the gates with ordinary rotations. jeff uses
-its existing custom-gate representation. QIR uses the existing one-qubit,
-one-parameter runtime extension path. Controls, inverses, and symbolic values
-retain their full phase through these consumers.
+Bench uses a private standard-gate target and local equivalences for final
+native alias lowering in both IonQ and Rigetti compilation. It preserves the
+public target, phase, layout, and the Qiskit session equivalence library.
 
 ## Validation
 
-The compiler, native synthesis, QCO IR, decomposition, optimization, mapping,
-QIR runtime, and QC translation tests check matrices, native conformance, short
-gate forms, and large/symbolic parameters. Python MLIR, Qiskit target, and
-translation suites check import/export aliases and jeff round trips. Bench tests
-cover both compilers, current target families, native and mapped compilation,
-exact U recipes, mirrors, control flow, and QIR execution.
+Full matrices, symbolic binding, fixed and unrestricted entanglers, reversed
+placements, native counts, cache separation, and Qiskit/compiled-jeff exchange
+are regression-tested. Local suites passed 999 C++ compiler/synthesis tests and
+871 Python MLIR/Qiskit tests. Bench passed 507 tests with the implementation and
+358 on its minimum Qiskit 2.1.2 environment. Generated stubs, whole-file C++
+lint, repository lint, executable docs, and generated-page links passed.
 
-Final local check results are recorded in the PR descriptions. Hosted CI is a
-separate publication check. See the
-[joint audit](../audits/ion-targets-and-bench.md) for catalogue evidence and the
-resolved boundary findings.
+A fresh correctness and complexity review found no outstanding issues after
+fixing unrestricted operand placement, capability-based Bench lowering, and
+variable-angle matrix reconstruction. Phase-sensitive 2/4/6-qubit QFT probes
+reduced RZZ counts from 2/12/30 to 1/6/15 against the preceding PR revision.
+These counts describe compiler output, not hardware execution time.
 
-## Limitations
-
-Target compilation requires a single-qubit synthesis basis at every site.
-General symbolic two-qubit synthesis remains unsupported. Virtual RZ must be
-absorbed into GPI/GPI2 gate phases by a submission layer for providers that
-require GPI/GPI2/ZZ. IQM experimental feedforward and cloud submission are
-separate work.
+Runtime lowering covers CP and RZZ; other symbolic two-qubit gates must already
+be native. Provider submission and general fixed-angle synthesis remain outside
+scope. Hosted CI results are recorded separately from local validation.

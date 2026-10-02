@@ -2026,16 +2026,6 @@ private:
                                    "  gphase(-p0 / 2);\n"
                                    "  U(p0, p1, p2) q;\n"
                                    "}\n"},
-        HelperDefinition{"gpi", "gate gpi(p0) q {\n"
-                                "  rz(-p0) q;\n"
-                                "  x q;\n"
-                                "  rz(p0) q;\n"
-                                "}\n"},
-        HelperDefinition{"gpi2", "gate gpi2(p0) q {\n"
-                                 "  rz(-p0) q;\n"
-                                 "  rx(pi / 2) q;\n"
-                                 "  rz(p0) q;\n"
-                                 "}\n"},
         HelperDefinition{"r", "gate r(p0, p1) q {\n"
                               "  rz(-p1) q;\n"
                               "  rx(p0) q;\n"

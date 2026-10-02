@@ -302,8 +302,6 @@ public:
     CX,
     ECR,
     SQRTISWAP,
-    GPI,
-    GPI2,
   };
 
   /// Recognized globally usable single-qubit synthesis basis.
@@ -315,24 +313,28 @@ public:
     XYX,  ///< `RX(φ) * RY(θ) * RX(λ)`.
     ZYZ,  ///< `RZ(φ) * RY(θ) * RZ(λ)`.
     ZXZ,  ///< `RZ(φ) * RX(θ) * RZ(λ)`.
-    GPI,  ///< GPI2 / GPI / GPI2, with phases in radians.
   };
 
-  /// Fixed-angle RX gates implementing the X rotations of the ZSXX basis.
-  struct FixedRXGates {
+  /// RX(theta) or R(theta, 0) implementing the X rotations of the ZSXX basis.
+  struct XRotationGates {
+    GateKind gate = GateKind::RX;
     double quarterTurnAngle;
     std::optional<double> halfTurnAngle;
 
-    friend bool operator==(const FixedRXGates&, const FixedRXGates&) = default;
+    friend bool operator==(const XRotationGates&,
+                           const XRotationGates&) = default;
   };
 
   /// One single-qubit basis and optional entangler usable across the target.
   struct SynthesisBasis {
     SingleQubitBasis singleQubit;
     std::optional<GateKind> entangler;
-    std::optional<FixedRXGates> fixedRXGates;
-    /// Whether X is native or can be implemented by a fixed RX(±π) gate.
+    std::optional<XRotationGates> xRotationGates;
+    /// Whether X is native or can be implemented by a fixed RX(±π) or R(±π, 0)
+    /// gate.
     bool hasX = true;
+    /// Whether the selected RXX/RYY/RZX/RZZ entangler admits any angle.
+    bool parameterizedEntangler = false;
 
     friend bool operator==(const SynthesisBasis&,
                            const SynthesisBasis&) = default;
@@ -454,7 +456,7 @@ public:
                               llvm::ArrayRef<SiteId> sites) const;
 
   /// Return whether a recognized gate is supported by the target.
-  /// RZZ queries the synthesis primitive RZZ(pi/2).
+  /// Pauli rotations query the fixed synthesis primitive at angle pi/2.
   [[nodiscard]] bool supports(GateKind gate) const;
 
   /// Return whether a recognized gate is supported on ordered target sites.

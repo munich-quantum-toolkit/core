@@ -531,39 +531,6 @@ def ROp : QCOp<"r", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
       "const std::variant<double, Value>&":$phi)>];
 }
 
-def GPIOp : QCOp<"gpi", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
-  let summary = "Apply a GPI gate";
-  let description = [{
-    GPI(φ) = i R(π, φ). Parameters are measured in radians.
-  }];
-  let arguments =
-      (ins Arg<QubitType, "target qubit", [MemRead, MemWrite]>:$qubit_in,
-          Arg<F64, "phi in radians">:$phi);
-  let assemblyFormat = "`(` $phi `)` $qubit_in attr-dict `:` type($qubit_in)";
-  let extraClassDeclaration = [{
-    [[nodiscard]] static StringRef getBaseSymbol() { return "gpi"; }
-  }];
-  let builders = [OpBuilder<(ins "Value":$qubit_in,
-      "const std::variant<double, Value>&":$phi)>];
-}
-
-def GPI2Op
-    : QCOp<"gpi2", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
-  let summary = "Apply a GPI2 gate";
-  let description = [{
-    GPI2(φ) = R(π/2, φ). Parameters are measured in radians.
-  }];
-  let arguments =
-      (ins Arg<QubitType, "target qubit", [MemRead, MemWrite]>:$qubit_in,
-          Arg<F64, "phi in radians">:$phi);
-  let assemblyFormat = "`(` $phi `)` $qubit_in attr-dict `:` type($qubit_in)";
-  let extraClassDeclaration = [{
-    [[nodiscard]] static StringRef getBaseSymbol() { return "gpi2"; }
-  }];
-  let builders = [OpBuilder<(ins "Value":$qubit_in,
-      "const std::variant<double, Value>&":$phi)>];
-}
-
 def U2Op : QCOp<"u2", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
   let summary = "Apply a U2 gate to a qubit";
   let description = [{

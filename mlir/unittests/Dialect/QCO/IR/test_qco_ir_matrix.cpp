@@ -11,7 +11,6 @@
 #include "mqt/Dialect/MQT/Utils/GatePowering.h"
 #include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
-#include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
@@ -26,7 +25,6 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
-#include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
@@ -41,7 +39,6 @@
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/StringRef.h"
 
 #include <array>
 #include <cmath>
@@ -58,21 +55,6 @@
 
 using namespace mlir;
 using namespace qco;
-
-TEST(NativeIonGateMatrix, MatchesRadianConventionsAndTargetOrder) {
-  using namespace std::complex_literals;
-  for (double phi : {-.37, 0., .125, .5, 1.2}) {
-    const auto axis = std::polar(1., phi);
-    const auto pauli = Matrix2x2::fromElements(0., std::conj(axis), axis, 0.);
-    EXPECT_TRUE(GPIOp::unitaryMatrix(phi).isApprox(pauli));
-    EXPECT_TRUE(GPI2Op::unitaryMatrix(phi).isApprox(
-        (1. / std::numbers::sqrt2) *
-        Matrix2x2::fromElements(1., -1i * std::conj(axis), -1i * axis, 1.)));
-    const auto zzPhase = std::polar(1., -phi / 2.);
-    EXPECT_TRUE(RZZOp::unitaryMatrix(phi).isApprox(Matrix4x4::fromDiagonal(
-        zzPhase, std::conj(zzPhase), std::conj(zzPhase), zzPhase)));
-  }
-}
 
 [[nodiscard]] static DynamicMatrix controlledMatrix(const Matrix2x2& body) {
   DynamicMatrix result = DynamicMatrix::identity(4);
@@ -193,53 +175,6 @@ protected:
 };
 
 } // namespace
-
-TEST_F(QCOMatrixTest,
-       NativeIonBuildersPreserveParametersAndRejectSymbolicMatrices) {
-  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
-    module {
-      func.func @main(%theta: f64) -> (!qco.qubit, !qco.qubit) {
-        %q0 = qco.static 0 : !qco.qubit
-        %q1 = qco.static 1 : !qco.qubit
-        return %q0, %q1 : !qco.qubit, !qco.qubit
-      }
-    }
-  )mlir",
-                                              context.get());
-  ASSERT_TRUE(moduleOp);
-  auto function = *moduleOp->getOps<func::FuncOp>().begin();
-  auto returned =
-      cast<func::ReturnOp>(function.getBody().front().getTerminator());
-  OpBuilder builder(returned);
-  auto q0 = returned.getOperand(0);
-  auto q1 = returned.getOperand(1);
-  const auto loc = function.getLoc();
-  auto gpi = GPIOp::create(builder, loc, q0, .13);
-  auto gpi2 = GPI2Op::create(builder, loc, gpi.getQubitOut(), -.21);
-  auto zz = RZZOp::create(builder, loc, gpi2.getQubitOut(), q1, .37);
-  returned->setOperands({zz.getQubit0Out(), zz.getQubit1Out()});
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  ASSERT_TRUE(gpi.getUnitaryMatrix());
-  ASSERT_TRUE(gpi2.getUnitaryMatrix());
-  ASSERT_TRUE(zz.getUnitaryMatrix());
-  EXPECT_TRUE(gpi.getUnitaryMatrix()->isApprox(GPIOp::unitaryMatrix(.13)));
-  EXPECT_TRUE(gpi2.getUnitaryMatrix()->isApprox(GPI2Op::unitaryMatrix(-.21)));
-  EXPECT_TRUE(zz.getUnitaryMatrix()->isApprox(RZZOp::unitaryMatrix(.37)));
-
-  for (Operation* gate : {
-           gpi.getOperation(),
-           gpi2.getOperation(),
-           zz.getOperation(),
-       }) {
-    auto unitary = cast<UnitaryOpInterface>(gate);
-    for (auto parameter : unitary.getParameters()) {
-      unitary->replaceUsesOfWith(parameter, function.getArgument(0));
-      EXPECT_FALSE(unitary.getUnitaryMatrix<DynamicMatrix>());
-      unitary->replaceUsesOfWith(function.getArgument(0), parameter);
-    }
-  }
-  EXPECT_TRUE(succeeded(verify(*moduleOp)));
-}
 
 /// \name QCO/Operations/UnitaryOp.cpp
 /// @{
@@ -1158,72 +1093,6 @@ TEST_F(QCOMatrixTest, InverseDynamicRzXOpMatrix) {
   auto moduleOp = parseSourceString<ModuleOp>(mlirCode, context.get());
   ASSERT_TRUE(moduleOp);
   EXPECT_FALSE(invMatrix(*moduleOp).has_value());
-}
-
-TEST_F(QCOMatrixTest, NativeIonInversesPreserveSymbolicParametersAndPhase) {
-  for (const StringRef gateName : {"gpi", "gpi2", "rzz"}) {
-    SCOPED_TRACE(gateName.str());
-    auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
-      module {
-        func.func @test(%phi0: f64, %phi1: f64, %theta: f64,
-                       %q0: !qco.qubit, %q1: !qco.qubit)
-            -> (!qco.qubit, !qco.qubit) {
-          %r0, %r1 = qco.inv(%a = %q0, %b = %q1) {
-            qco.yield %a, %b : !qco.qubit, !qco.qubit
-          } : {!qco.qubit, !qco.qubit} -> {!qco.qubit, !qco.qubit}
-          return %r0, %r1 : !qco.qubit, !qco.qubit
-        }
-      }
-    )mlir",
-                                                context.get());
-    ASSERT_TRUE(moduleOp);
-    auto function = *moduleOp->getOps<func::FuncOp>().begin();
-    auto inverse = firstInvOp(*moduleOp);
-    auto* yielded = inverse.getBody()->getTerminator();
-    OpBuilder builder(yielded);
-    const auto loc = inverse.getLoc();
-    auto q0 = inverse.getBody()->getArgument(0);
-    auto q1 = inverse.getBody()->getArgument(1);
-    auto phi0 = function.getArgument(0);
-    if (gateName == "gpi" || gateName == "gpi2") {
-      Value output = gateName == "gpi"
-                         ? GPIOp::create(builder, loc, q0, phi0).getResult()
-                         : GPI2Op::create(builder, loc, q0, phi0).getResult();
-      yielded->setOperands({output, q1});
-    } else {
-      yielded->setOperands(
-          RZZOp::create(builder, loc, q0, q1, function.getArgument(2))
-              .getResults());
-    }
-    ASSERT_TRUE(succeeded(verify(*moduleOp)));
-    ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
-    OwningOpRef<ModuleOp> original = moduleOp->clone();
-    ASSERT_TRUE(succeeded(runQCOCleanupPipeline(*moduleOp)));
-    EXPECT_TRUE(function.getBody().getOps<InvOp>().empty());
-    ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
-    for (const auto values : {
-             std::array{.13, -.21, .17},
-             std::array{0., 0., 0.},
-             std::array{1.0e16, -.21, -.37},
-         }) {
-      SCOPED_TRACE(testing::PrintToString(values));
-      OwningOpRef<ModuleOp> expected = original->clone();
-      OwningOpRef<ModuleOp> actual = moduleOp->clone();
-      for (auto bound : {*expected, *actual}) {
-        auto func = *bound.getOps<func::FuncOp>().begin();
-        OpBuilder binder(&func.getBody().front(),
-                         func.getBody().front().begin());
-        for (const auto [index, value] : llvm::enumerate(values)) {
-          auto constant = arith::ConstantOp::create(
-              binder, func.getLoc(), binder.getF64FloatAttr(value));
-          func.getArgument(index).replaceAllUsesWith(constant.getResult());
-        }
-      }
-      ASSERT_TRUE(succeeded(runQCOCleanupPipeline(*actual)));
-      ASSERT_TRUE(succeeded(verifyLinearity(*actual)));
-      ::mqt::test::expectFullUnitaryEqual(*expected, *actual, 2);
-    }
-  }
 }
 /// @}
 

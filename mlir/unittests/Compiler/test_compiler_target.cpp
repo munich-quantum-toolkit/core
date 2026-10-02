@@ -76,30 +76,31 @@ using Site = Target::Site;
 using SiteId = Target::SiteId;
 using SiteTuple = Target::SiteTuple;
 
-TEST(CompilerTargetTest, NativeIonBasisRequiresBothGatesWithUsablePhases) {
-  for (const bool includeGpi : {false, true}) {
-    for (const double angle : {std::numbers::pi / 4., std::numbers::pi / 2.}) {
-      for (const bool fixedPhase : {false, true}) {
+TEST(CompilerTargetTest, FixedRBasisRequiresRZAndUsableQuarterTurns) {
+  for (const bool includeRZ : {false, true}) {
+    for (const double theta : {std::numbers::pi / 4., std::numbers::pi / 2.}) {
+      for (const std::optional<double> phi :
+           {std::optional<double>{}, {0.}, {.1}}) {
         std::vector operations{
-            valid(OperationCapability::create(
-                "gpi2", 1, 1, {}, std::nullopt, std::nullopt,
-                fixedPhase ? std::vector<std::optional<double>>{0.}
-                           : std::vector<std::optional<double>>{})),
-            valid(OperationCapability::create("rzz", 2, 1, {}, std::nullopt,
-                                              std::nullopt, {angle})),
+            valid(OperationCapability::create("r", 1, 2, {}, std::nullopt,
+                                              std::nullopt, {theta, phi})),
+            valid(OperationCapability::create("rzz", 2, 1)),
         };
-        if (includeGpi) {
-          operations.push_back(valid(OperationCapability::create("gpi", 1, 1)));
+        if (includeRZ) {
+          operations.push_back(valid(OperationCapability::create("rz", 1, 1)));
         }
         const auto target =
             valid(Target::create(2, Connectivity::allToAll(),
                                  NativeOperations::fromOperations(operations)));
-        if (fixedPhase || !includeGpi) {
-          EXPECT_FALSE(target.synthesisBasis());
-        } else {
-          ASSERT_TRUE(target.synthesisBasis());
-          EXPECT_EQ(target.synthesisBasis()->entangler.has_value(),
-                    angle == std::numbers::pi / 2.);
+        const bool usable =
+            includeRZ && theta == std::numbers::pi / 2. && (!phi || *phi == 0.);
+        ASSERT_EQ(target.synthesisBasis().has_value(), usable);
+        if (usable) {
+          EXPECT_EQ(target.synthesisBasis()->singleQubit,
+                    Target::SingleQubitBasis::ZSXX);
+          ASSERT_TRUE(target.synthesisBasis()->xRotationGates);
+          EXPECT_EQ(target.synthesisBasis()->xRotationGates->gate,
+                    Target::GateKind::R);
         }
       }
     }

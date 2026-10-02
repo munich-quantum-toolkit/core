@@ -26,6 +26,7 @@ from qiskit.circuit.library import (
     CYGate,
     GlobalPhaseGate,
     PhaseGate,
+    RGate,
     RXGate,
     RZGate,
     SXGate,
@@ -433,8 +434,8 @@ def test_unknown_width_and_disconnected_topology() -> None:
 
 @pytest.mark.parametrize("name", ["gpi", "gpi2"])
 @pytest.mark.parametrize("symbolic", [False, True])
-def test_native_ion_capabilities_share_circuit_recognition(name: str, *, symbolic: bool) -> None:
-    """Canonical radian definitions have the same identity in both importers."""
+def test_native_r_capabilities(name: str, *, symbolic: bool) -> None:
+    """Native names project fixed-angle R gates without changing circuit phase."""
     phi = Parameter("phi") if symbolic else 0.13
     definition = QuantumCircuit(1)
     definition.r(pi if name == "gpi" else pi / 2, phi, 0)
@@ -442,40 +443,81 @@ def test_native_ion_capabilities_share_circuit_recognition(name: str, *, symboli
         definition.global_phase = pi / 2
     gate = Gate(name, 1, [phi])
     gate.definition = definition
-    source = Target(num_qubits=1)
-    source.add_instruction(gate, name="native_gate")
+    source = Target(num_qubits=2)
+    source.add_instruction(gate)
     unrestricted = UGate(*map(Parameter, ("theta", "lambda", "beta")))
     source.add_instruction(unrestricted)
-    converted = CompilerTarget.from_qiskit(source, operation_names=["native_gate", "u"])
-    operation = next(operation for operation in converted.operations if operation.name == "native_gate")
-    assert operation.canonical_name == name
-    assert operation.fixed_parameters == ([] if symbolic else [phi])
-    circuit = QuantumCircuit(1)
+    source.add_instruction(CXGate())
+    converted = CompilerTarget.from_qiskit(source)
+    operation = next(operation for operation in converted.operations if operation.name == name)
+    assert operation.canonical_name == "r"
+    assert operation.num_parameters == 2
+    assert operation.fixed_parameters == [pi if name == "gpi" else pi / 2, None if symbolic else phi]
+    circuit = QuantumCircuit(2, global_phase=0.29)
     circuit.append(gate, [0])
     imported = QCProgram.from_qiskit(circuit).to_qco()
-    assert f"qco.{name}" in imported.ir
     imported.compile_for_target(TargetEnvironment(converted, PayloadSpecification(PayloadFormat("openqasm", "3.0"))))
+    assert "qco.r(" in imported.ir
     exported = imported.to_qiskit(target=converted)
     for _ in range(2):
-        assert exported.data[0].operation.name == "native_gate"
+        assert exported.data[0].operation.name == name
         assert exported.data[0].operation.params == [phi]
-        rebound = Target(num_qubits=1)
+        assert source.instruction_supported(name, (0,), parameters=exported.data[0].operation.params)
+        rebound = Target(num_qubits=2)
         rebound.add_instruction(exported.data[0].operation)
         rebound.add_instruction(unrestricted)
-        target = CompilerTarget.from_qiskit(rebound, operation_names=["native_gate", "u"])
-        unmapped = QuantumCircuit(1)
+        rebound.add_instruction(CXGate())
+        target = CompilerTarget.from_qiskit(rebound)
+        unmapped = QuantumCircuit(2)
         unmapped.compose(exported, inplace=True)
         program = QCProgram.from_qiskit(unmapped).to_qco()
-        assert f"qco.{name}" in program.ir
         environment = TargetEnvironment(target, PayloadSpecification(PayloadFormat("openqasm", "3.0")))
         program.compile_for_target(environment)
         exported = program.to_qiskit(target=target)
         actual = exported.assign_parameters({phi: 0.37}) if symbolic else exported
         expected = circuit.assign_parameters({phi: 0.37}) if symbolic else circuit
         assert np.allclose(Operator(actual).data, Operator(expected).data)
+        assert np.allclose(Operator(actual.to_gate().control()).data, Operator(expected.to_gate().control()).data)
     gate.definition.global_phase += 0.37
     with pytest.raises(ValueError, match="custom"):
-        CompilerTarget.from_qiskit(source, operation_names=["native_gate"])
+        CompilerTarget.from_qiskit(source, operation_names=[name])
+
+
+@pytest.mark.parametrize("name", ["gpi", "gpi2"])
+def test_native_r_names_require_exact_definitions(name: str) -> None:
+    """Reserved native names cannot relabel another gate or change its arity."""
+    phi = Parameter("phi")
+    source = Target(num_qubits=1)
+    source.add_instruction(RGate(pi if name == "gpi" else pi / 2, phi), name=name)
+    with pytest.raises(ValueError, match="custom"):
+        CompilerTarget.from_qiskit(source, operation_names=[name])
+
+    definition = QuantumCircuit(1, global_phase=pi / 2 if name == "gpi" else 0)
+    definition.r(pi if name == "gpi" else pi / 2, phi, 0)
+    gate = Gate(name, 1, [phi])
+    gate.definition = definition
+    source = Target(num_qubits=1)
+    source.add_instruction(gate, name="renamed")
+    with pytest.raises(ValueError, match="custom"):
+        CompilerTarget.from_qiskit(source, operation_names=["renamed"])
+
+
+@pytest.mark.parametrize("angle", [0.3, Parameter("theta")])
+def test_native_r_export_rejects_incompatible_target(angle: float | Parameter) -> None:
+    """Direct target construction must not bypass native alias semantics."""
+    target = CompilerTarget(
+        1,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("gpi", 1, 2, canonical_name="r"),
+        ]),
+    )
+    circuit = QuantumCircuit(1)
+    circuit.r(angle, 0.2, 0)
+    program = QCProgram.from_qiskit(circuit).to_qco()
+    program.compile_for_target(TargetEnvironment(target, PayloadSpecification(PayloadFormat("openqasm", "3.0"))))
+    with pytest.raises(RuntimeError, match="fixed-angle R definition"):
+        program.to_qiskit(target=target)
 
 
 @pytest.mark.parametrize("name", ["cy", "controlled_y"])

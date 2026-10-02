@@ -39,19 +39,15 @@
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/Attributes.h"
-#include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
-#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/Region.h"
-#include "mlir/IR/SymbolTable.h"
 #include "mlir/IR/Value.h"
 #include "mlir/IR/ValueRange.h"
 #include "mlir/Support/WalkResult.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
-#include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
@@ -60,7 +56,6 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringExtras.h"
-#include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/Support/Casting.h"
 
@@ -73,7 +68,6 @@
 #include <functional>
 #include <limits>
 #include <memory>
-#include <numbers>
 #include <numeric>
 #include <optional>
 #include <stdexcept>
@@ -2926,52 +2920,6 @@ collectGateDefinition(mlir::func::FuncOp function) {
   };
 }
 
-/// Reuse custom-gate export so native gates retain their names and definitions.
-static void defineNativeGates(mlir::ModuleOp moduleOp) {
-  using namespace mlir;
-  SymbolTable symbols(moduleOp);
-  llvm::StringMap<func::FuncOp> definitions;
-  OpBuilder builder(moduleOp.getContext());
-  moduleOp.walk([&](qc::UnitaryOpInterface gate) {
-    if (!isa<qc::GPIOp, qc::GPI2Op>(gate.getOperation())) {
-      return;
-    }
-    const auto name = gate.getBaseSymbol();
-    auto function = definitions.lookup(name);
-    if (!function) {
-      function = func::FuncOp::create(
-          gate.getLoc(), name,
-          builder.getFunctionType(
-              {builder.getF64Type(), qc::QubitType::get(builder.getContext())},
-              {}));
-      function.setPrivate();
-      mlir::mqt::setUnitaryFunction(function);
-      function->setAttr(
-          mlir::mqt::MQTDialect::SourceNameAttrHelper::getNameStr(),
-          builder.getStringAttr(name));
-      symbols.insert(function);
-      definitions.try_emplace(name, function);
-      auto* block = function.addEntryBlock();
-      builder.setInsertionPointToStart(block);
-      const auto loc = gate.getLoc();
-      const bool isGPI = isa<qc::GPIOp>(gate.getOperation());
-      qc::ROp::create(builder, loc, block->getArgument(1),
-                      isGPI ? std::numbers::pi : std::numbers::pi / 2.,
-                      block->getArgument(0));
-      if (isGPI) {
-        qc::GPhaseOp::create(builder, loc, std::numbers::pi / 2.);
-      }
-      func::ReturnOp::create(builder, loc);
-    }
-    builder.setInsertionPoint(gate);
-    SmallVector<Value> operands(gate.getParameters());
-    llvm::append_range(operands, gate.getTargets());
-    qc::CallOp::create(builder, gate.getLoc(), FlatSymbolRefAttr::get(function),
-                       operands);
-    gate.erase();
-  });
-}
-
 nb::object exportCircuit(const mlir::QCProgram& program,
                          const mlir::CompilerTarget* const target) {
   mlir::OwningOpRef<mlir::ModuleOp> expanded = program.module().clone();
@@ -2990,7 +2938,6 @@ nb::object exportCircuit(const mlir::QCProgram& program,
     }
     layout = std::move(*parsed);
   }
-  defineNativeGates(moduleOp);
   mlir::RewritePatternSet patterns(moduleOp.getContext());
   mlir::mqt::populateIntegerExpansionPatterns(patterns);
   /// Fold scalar expressions without applying resource or snapshot rewrites.

@@ -157,25 +157,15 @@ constexpr std::array GATE_SPECIFICATIONS{
         .arity = 2,
         .numParameters = 0,
     },
-    GateSpecification{
-        .kind = GateKind::GPI,
-        .name = "gpi",
-        .arity = 1,
-        .numParameters = 1,
-    },
-    GateSpecification{
-        .kind = GateKind::GPI2,
-        .name = "gpi2",
-        .arity = 1,
-        .numParameters = 1,
-    },
+
 };
 
 } // namespace
 
 /// Fixed parameters must admit the entangler used by native synthesis.
 static std::optional<double> synthesisParameter(GateKind gate) {
-  if (gate == GateKind::RZZ) {
+  if (gate == GateKind::RXX || gate == GateKind::RYY || gate == GateKind::RZX ||
+      gate == GateKind::RZZ) {
     return std::numbers::pi / 2.;
   }
   return std::nullopt;
@@ -832,7 +822,7 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
     });
   };
   std::optional<SingleQubitBasis> singleQubit;
-  std::optional<FixedRXGates> fixedRXGates;
+  std::optional<XRotationGates> xRotationGates;
   bool hasX = true;
   if (supportsOnEverySite(GateKind::U)) {
     singleQubit = SingleQubitBasis::U;
@@ -852,45 +842,51 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
              supportsOnEverySite(GateKind::RZ)) {
     singleQubit = SingleQubitBasis::ZYZ;
   } else if (supportsOnEverySite(GateKind::RZ)) {
-    const auto supportsRX = [&](double angle) {
-      return llvm::all_of(siteIds, [&](SiteId site) {
-        return supportsOperation(
-            "rx", 1, 1, ArrayRef<SiteId>(&site, 1), false,
-            [angle](size_t) { return std::optional{angle}; });
-      });
-    };
-    for (double quarter : {std::numbers::pi / 2., -std::numbers::pi / 2.}) {
-      if (!supportsRX(quarter)) {
-        continue;
-      }
-      fixedRXGates = {
-          .quarterTurnAngle = quarter,
-          .halfTurnAngle = std::nullopt,
+    for (const auto gate : {GateKind::RX, GateKind::R}) {
+      const auto supportsRotation = [&](double angle) {
+        return llvm::all_of(siteIds, [&](SiteId site) {
+          return supportsOperation(
+              gate == GateKind::RX ? "rx" : "r", 1,
+              gate == GateKind::RX ? 1 : 2, ArrayRef<SiteId>(&site, 1), false,
+              [angle](size_t parameter) {
+                return std::optional{parameter == 0 ? angle : 0.};
+              });
+        });
       };
-      hasX = supportsOnEverySite(GateKind::X);
-      if (!hasX) {
-        for (double half : {std::numbers::pi, -std::numbers::pi}) {
-          if (supportsRX(half)) {
-            fixedRXGates->halfTurnAngle = half;
-            hasX = true;
-            break;
+      for (double quarter : {std::numbers::pi / 2., -std::numbers::pi / 2.}) {
+        if (!supportsRotation(quarter)) {
+          continue;
+        }
+        xRotationGates = {
+            .gate = gate,
+            .quarterTurnAngle = quarter,
+            .halfTurnAngle = std::nullopt,
+        };
+        hasX = supportsOnEverySite(GateKind::X);
+        if (!hasX) {
+          for (double half : {std::numbers::pi, -std::numbers::pi}) {
+            if (supportsRotation(half)) {
+              xRotationGates->halfTurnAngle = half;
+              hasX = true;
+              break;
+            }
           }
         }
+        singleQubit = SingleQubitBasis::ZSXX;
+        break;
       }
-      singleQubit = SingleQubitBasis::ZSXX;
-      break;
+      if (singleQubit) {
+        break;
+      }
     }
-  }
-  if (!singleQubit && supportsOnEverySite(GateKind::GPI) &&
-      supportsOnEverySite(GateKind::GPI2)) {
-    singleQubit = SingleQubitBasis::GPI;
   }
 
   if (!singleQubit) {
     return std::nullopt;
   }
 
-  const auto supportsOnEveryCoupling = [&](GateKind gate) {
+  const auto supportsOnEveryCoupling = [&](GateKind gate,
+                                           bool unrestricted = false) {
     if (sites.size() < 2) {
       return false;
     }
@@ -904,13 +900,24 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
     assert(specification != GATE_SPECIFICATIONS.end() &&
            "unknown compiler target gate");
     if (supportsEveryPlacement(specification->name, specification->arity,
-                               specification->numParameters, false, gate)) {
+                               specification->numParameters, false,
+                               unrestricted ? std::nullopt
+                                            : std::optional{gate})) {
       return true;
     }
     const auto supportsPair = [&](SiteId source, SiteId target) {
       const std::array forward{source, target};
       const std::array reverse{target, source};
-      return supportsGate(gate, forward) || supportsGate(gate, reverse);
+      if (!unrestricted) {
+        return supportsGate(gate, forward) || supportsGate(gate, reverse);
+      }
+      const auto supports = [&](ArrayRef<SiteId> pair) {
+        return supportsOperation(
+            specification->name, specification->arity,
+            specification->numParameters, pair, false,
+            [](size_t) { return std::optional<double>{}; });
+      };
+      return supports(forward) || supports(reverse);
     };
     if (connectivityKind == Connectivity::Kind::Explicit) {
       return llvm::all_of(couplings, [&](const auto& coupling) {
@@ -940,8 +947,13 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
       .entangler = entangler == entanglerPreference.end()
                        ? std::nullopt
                        : std::optional{*entangler},
-      .fixedRXGates = fixedRXGates,
+      .xRotationGates = xRotationGates,
       .hasX = hasX,
+      .parameterizedEntangler =
+          entangler != entanglerPreference.end() &&
+          (*entangler == GateKind::RXX || *entangler == GateKind::RYY ||
+           *entangler == GateKind::RZX || *entangler == GateKind::RZZ) &&
+          supportsOnEveryCoupling(*entangler, true),
   };
 }
 

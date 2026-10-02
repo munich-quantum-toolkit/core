@@ -328,14 +328,19 @@ TEST_F(TargetSynthesisTest, TargetPassesRequireTypedEnvironment) {
       << diagnostics;
 }
 
-TEST_F(TargetSynthesisTest, NativeIonSynthesisPreservesFullUnitary) {
+TEST_F(TargetSynthesisTest, FixedRSynthesisPreservesFullUnitary) {
   for (const bool reverse : {false, true}) {
     SCOPED_TRACE(reverse);
     const auto target = valid(Target::create(
         2, Connectivity::allToAll(),
         NativeOperations::fromOperations({
-            valid(OperationCapability::create("gpi", 1, 1)),
-            valid(OperationCapability::create("gpi2", 1, 1)),
+            valid(OperationCapability::create("rz", 1, 1)),
+            valid(OperationCapability::create(
+                "r", 1, 2, {}, std::nullopt, std::nullopt,
+                {std::numbers::pi, std::nullopt})),
+            valid(OperationCapability::create(
+                "r", 1, 2, {}, std::nullopt, std::nullopt,
+                {std::numbers::pi / 2., std::nullopt})),
             valid(OperationCapability::create("gphase", 0, 1)),
             valid(OperationCapability::create(
                 "rzz", 2, 1,
@@ -348,7 +353,7 @@ TEST_F(TargetSynthesisTest, NativeIonSynthesisPreservesFullUnitary) {
         })));
     ASSERT_TRUE(target.synthesisBasis());
     EXPECT_EQ(target.synthesisBasis()->singleQubit,
-              Target::SingleQubitBasis::GPI);
+              Target::SingleQubitBasis::ZSXX);
     EXPECT_EQ(target.synthesisBasis()->entangler, Target::GateKind::RZZ);
     for (double theta : {0., .37, std::numbers::pi / 2., std::numbers::pi}) {
       const auto circuit = [&](QCOProgramBuilder& builder) {
@@ -366,60 +371,6 @@ TEST_F(TargetSynthesisTest, NativeIonSynthesisPreservesFullUnitary) {
       ASSERT_TRUE(mlir::succeeded(
           runPass(*actual, mlir::qco::createVerifyTargetConformance())));
       EXPECT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*actual)));
-      expectEquivalent(expected, actual);
-    }
-  }
-}
-
-TEST_F(TargetSynthesisTest, RuntimeNativeIonSynthesisPreservesFullUnitary) {
-  for (const auto* basis : {"u", "gpi"}) {
-    SCOPED_TRACE(basis);
-    std::vector operations{
-        valid(OperationCapability::create("gphase", 0, 1)),
-        valid(OperationCapability::create(
-            basis, 1, llvm::StringRef(basis) == "u" ? 3 : 1)),
-    };
-    if (llvm::StringRef(basis) == "gpi") {
-      operations.push_back(valid(OperationCapability::create("gpi2", 1, 1)));
-    }
-    const auto target =
-        valid(Target::create(1, Connectivity::allToAll(),
-                             NativeOperations::fromOperations(operations)));
-    auto source = mlir::parseSourceString<ModuleOp>(R"mlir(
-      module {
-        func.func @main(%theta: f64) -> !qco.qubit {
-          %phi = arith.constant 0.42 : f64
-          %lambda = arith.constant -0.31 : f64
-          %q0 = qco.static 0 : !qco.qubit
-          %q1 = qco.u(%theta, %phi, %lambda) %q0 : !qco.qubit -> !qco.qubit
-          %q2 = qco.gpi(%theta) %q1 : !qco.qubit -> !qco.qubit
-          %q3 = qco.gpi2(%theta) %q2 : !qco.qubit -> !qco.qubit
-          return %q3 : !qco.qubit
-        }
-      }
-    )mlir",
-                                                    context.get());
-    ASSERT_TRUE(source);
-    OwningOpRef<ModuleOp> synthesized = source->clone();
-    ASSERT_TRUE(mlir::succeeded(runTargetPass(
-        *synthesized, target, mlir::qco::createTargetNativeSynthesis())));
-    ASSERT_TRUE(mlir::succeeded(
-        runPass(*synthesized, mlir::qco::createVerifyTargetConformance())));
-    ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*synthesized)));
-    for (double theta : {-.6, 0., std::numbers::pi / 2., std::numbers::pi}) {
-      SCOPED_TRACE(theta);
-      OwningOpRef<ModuleOp> expected = source->clone();
-      OwningOpRef<ModuleOp> actual = synthesized->clone();
-      for (auto moduleOp : {*expected, *actual}) {
-        auto function = mainFunction(moduleOp);
-        mlir::OpBuilder builder(context.get());
-        builder.setInsertionPointToStart(&function.getBody().front());
-        auto constant = mlir::arith::ConstantOp::create(
-            builder, function.getLoc(), builder.getF64FloatAttr(theta));
-        function.getArgument(0).replaceAllUsesWith(constant.getResult());
-        ASSERT_TRUE(mlir::succeeded(
-            runPass(moduleOp, mlir::createCanonicalizerPass())));
-      }
       expectEquivalent(expected, actual);
     }
   }
@@ -2516,6 +2467,175 @@ TEST_F(TargetSynthesisTest,
             runPass(moduleOp, mlir::createCanonicalizerPass())));
       }
       expectEquivalent(expected, actual);
+    }
+  }
+}
+
+TEST_F(TargetSynthesisTest, ParameterizedEntanglersUseCartanAngles) {
+  using mlir::qco::Matrix4x4;
+  using mlir::qco::decomposition::TwoQubitWeylDecomposition;
+  for (const auto* name : {"rxx", "ryy", "rzx", "rzz"}) {
+    SCOPED_TRACE(name);
+    const double angle = std::numbers::pi / 2.;
+    const auto primitive =
+        std::string(name) == "rxx"   ? RXXOp::unitaryMatrix(angle)
+        : std::string(name) == "ryy" ? mlir::qco::RYYOp::unitaryMatrix(angle)
+        : std::string(name) == "rzx" ? mlir::qco::RZXOp::unitaryMatrix(angle)
+                                     : mlir::qco::RZZOp::unitaryMatrix(angle);
+    std::vector operations{
+        valid(OperationCapability::create("u", 1, 3)),
+        valid(OperationCapability::create("gphase", 0, 1)),
+        valid(OperationCapability::create(name, 2, 1,
+                                          {valid(SiteTuple::create({1, 0}))})),
+    };
+    /// A fixed forward tuple must not hide unrestricted reverse support.
+    operations.push_back(valid(OperationCapability::create(
+        std::string(name) + "_fixed", 2, 1, {valid(SiteTuple::create({0, 1}))},
+        std::nullopt, std::nullopt, {std::numbers::pi / 2.}, name)));
+    const auto target =
+        valid(Target::create(2, Connectivity::fromCouplings({{0, 1}}),
+                             NativeOperations::fromOperations(operations)));
+    ASSERT_TRUE(target.synthesisBasis());
+    ASSERT_TRUE(target.synthesisBasis()->parameterizedEntangler);
+    for (size_t count = 0; count <= 3; ++count) {
+      SCOPED_TRACE(count);
+      const auto matrix = Matrix4x4::kron(UOp::unitaryMatrix(0.3, -0.7, 1.1),
+                                          UOp::unitaryMatrix(-0.5, 0.2, 0.9)) *
+                          TwoQubitWeylDecomposition::getCanonicalMatrix(
+                              count >= 1 ? 0.31 : 0., count >= 2 ? 0.19 : 0.,
+                              count >= 3 ? -0.09 : 0.) *
+                          Matrix4x4::kron(UOp::unitaryMatrix(-0.2, 0.4, 0.3),
+                                          UOp::unitaryMatrix(0.8, -0.6, 0.1)) *
+                          std::polar(1., 0.73);
+      auto original = build([&](QCOProgramBuilder& builder) {
+        auto values = builder.unitary(
+            ValueRange{builder.staticQubit(0), builder.staticQubit(1)},
+            denseMatrix(builder, 4, matrix.data));
+        builder.sink(values[0]);
+        builder.sink(values[1]);
+        return builder.intConstant(0);
+      });
+      const auto shared = mlir::qco::NativeCostTable::precompute(
+          *original, *target.synthesisBasis()->entangler, 2023, true);
+      mlir::qco::NativeCostAnalysis analysis(2023, shared.get());
+      const auto& native =
+          analysis.decompose(matrix, *target.synthesisBasis()->entangler, true);
+      ASSERT_TRUE(native);
+      EXPECT_TRUE(
+          mlir::qco::decomposition::unitaryMatrix(*native, primitive)
+              .isApprox(matrix, mlir::qco::decomposition::WEYL_TOLERANCE));
+      EXPECT_EQ(analysis.matrixCost(matrix, target,
+                                    std::array<Target::SiteId, 2>{0, 1}),
+                count);
+      auto synthesized = OwningOpRef<ModuleOp>(original->clone());
+      ASSERT_TRUE(mlir::succeeded(runTargetPass(
+          *synthesized, target, mlir::qco::createTargetNativeSynthesis())));
+      ASSERT_TRUE(mlir::succeeded(mlir::verify(*synthesized)));
+      ASSERT_TRUE(mlir::succeeded(runTargetPass(
+          *synthesized, target, mlir::qco::createVerifyTargetConformance())));
+      size_t emitted = 0;
+      synthesized->walk([&](mlir::qco::UnitaryOpInterface operation) {
+        emitted += static_cast<size_t>(operation.isTwoQubit());
+      });
+      EXPECT_EQ(emitted, count);
+      expectEquivalent(original, synthesized);
+    }
+  }
+  /// Fixed and unrestricted decompositions of the same matrix cannot alias.
+  mlir::qco::NativeCostAnalysis cache(2023);
+  const auto matrix = mlir::qco::RZZOp::unitaryMatrix(0.371);
+  for (const bool parameterized : {false, true, false, true}) {
+    const auto& native =
+        cache.decompose(matrix, Target::GateKind::RZZ, parameterized);
+    ASSERT_TRUE(native);
+    EXPECT_EQ(native->numBasisUses, parameterized ? 1U : 2U);
+  }
+}
+
+TEST_F(TargetSynthesisTest, RuntimeRZZAndControlledPhaseUseNativeEntanglers) {
+  for (const bool controlledPhase : {false, true}) {
+    SCOPED_TRACE(controlledPhase);
+    const auto* source = controlledPhase ? R"mlir(
+      module {
+        func.func @main(%theta: f64) -> (!qco.qubit, !qco.qubit) {
+          %c = qco.static 0 : !qco.qubit
+          %q = qco.static 1 : !qco.qubit
+          %c1, %q1 = qco.ctrl(%c) targets(%arg = %q) {
+            %angle = arith.negf %theta : f64
+            %p = qco.p(%angle) %arg : !qco.qubit -> !qco.qubit
+            qco.yield %p : !qco.qubit
+          } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
+          return %c1, %q1 : !qco.qubit, !qco.qubit
+        }
+      }
+    )mlir"
+                                         : R"mlir(
+      module {
+        func.func @main(%theta: f64) -> (!qco.qubit, !qco.qubit) {
+          %c = qco.static 0 : !qco.qubit
+          %q = qco.static 1 : !qco.qubit
+          %c1, %q1 = qco.rzz(%theta) %c, %q : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+          return %c1, %q1 : !qco.qubit, !qco.qubit
+        }
+      }
+    )mlir";
+    auto original = mlir::parseSourceString<ModuleOp>(source, context.get());
+    ASSERT_TRUE(original);
+    for (const auto& [entangler, parameters, fixed] : {
+             std::tuple{"cx", 0U, false},
+             std::tuple{"rzz", 1U, false},
+             std::tuple{"rzz", 1U, true},
+         }) {
+      SCOPED_TRACE(entangler);
+      SCOPED_TRACE(fixed);
+      const auto target = valid(Target::create(
+          2, Connectivity::fromCouplings({{0, 1}}),
+          NativeOperations::fromOperations({
+              valid(OperationCapability::create("u", 1, 3)),
+              valid(OperationCapability::create(
+                  entangler, 2, parameters, {valid(SiteTuple::create({1, 0}))},
+                  std::nullopt, std::nullopt,
+                  fixed ? std::vector<std::optional<double>>{std::numbers::pi /
+                                                             2.,}
+                        : std::vector<std::optional<double>>{})),
+              valid(OperationCapability::create("gphase", 0, 1)),
+          })));
+      auto synthesized = OwningOpRef<ModuleOp>(original->clone());
+      auto operation = *mainFunction(*original)
+                            .getOps<mlir::qco::UnitaryOpInterface>()
+                            .begin();
+      const size_t expectedEntanglers =
+          std::string(entangler) == "rzz" && !fixed ? 1 : 2;
+      mlir::qco::NativeCostAnalysis costs(2023);
+      EXPECT_EQ(costs.operationCost(operation, target,
+                                    std::array<Target::SiteId, 2>{0, 1}),
+                expectedEntanglers);
+      ASSERT_TRUE(mlir::succeeded(runTargetPass(
+          *synthesized, target, mlir::qco::createTargetNativeSynthesis())));
+      ASSERT_TRUE(mlir::succeeded(mlir::verify(*synthesized)));
+      ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*synthesized)));
+      ASSERT_TRUE(mlir::succeeded(runTargetPass(
+          *synthesized, target, mlir::qco::createVerifyTargetConformance())));
+      EXPECT_EQ(countOps<CtrlOp>(*synthesized) +
+                    countOps<mlir::qco::RZZOp>(*synthesized),
+                expectedEntanglers);
+      for (const double angle :
+           {0.0, 0.371, -1.23, std::numbers::pi, 2.0 * std::numbers::pi, 7.1}) {
+        SCOPED_TRACE(angle);
+        auto expected = OwningOpRef<ModuleOp>(original->clone());
+        auto actual = OwningOpRef<ModuleOp>(synthesized->clone());
+        for (auto moduleOp : {*expected, *actual}) {
+          auto function = mainFunction(moduleOp);
+          mlir::OpBuilder builder(context.get());
+          builder.setInsertionPointToStart(&function.getBody().front());
+          auto constant = mlir::arith::ConstantOp::create(
+              builder, function.getLoc(), builder.getF64FloatAttr(angle));
+          function.getArgument(0).replaceAllUsesWith(constant);
+          ASSERT_TRUE(mlir::succeeded(
+              runPass(moduleOp, mlir::createCanonicalizerPass())));
+        }
+        expectEquivalent(expected, actual);
+      }
     }
   }
 }

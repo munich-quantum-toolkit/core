@@ -34,20 +34,21 @@ class UnitaryOpInterface;
 class NativeCostTable {
 public:
   static std::unique_ptr<const NativeCostTable>
-  precompute(Operation* root, CompilerTarget::GateKind entangler,
-             uint64_t seed);
+  precompute(Operation* root, CompilerTarget::GateKind entangler, uint64_t seed,
+             bool parameterizedEntangler = false);
 
 private:
   friend class NativeCostAnalysis;
   struct Entry {
     Matrix4x4 matrix;
     CompilerTarget::GateKind entangler;
+    bool parameterizedEntangler;
     std::optional<uint8_t> count;
   };
 
   [[nodiscard]] const std::optional<uint8_t>*
   lookup(const Matrix4x4& matrix, CompilerTarget::GateKind entangler,
-         uint64_t hash) const;
+         uint64_t hash, bool parameterizedEntangler) const;
 
   uint64_t seed_ = 0;
   std::vector<Entry> entries_;
@@ -78,11 +79,13 @@ public:
   /// Operand direction for a synthesis entangler, or unavailable placement.
   static std::optional<bool>
   entanglerOrientation(const CompilerTarget& target,
-                       CompilerTarget::GateKind entangler, Sites sites);
+                       CompilerTarget::GateKind entangler, Sites sites,
+                       bool parameterizedEntangler = false);
 
   /// The returned reference is invalidated by the next decomposition query.
   const std::optional<decomposition::TwoQubitNativeDecomposition>&
-  decompose(const Matrix4x4& matrix, CompilerTarget::GateKind entangler);
+  decompose(const Matrix4x4& matrix, CompilerTarget::GateKind entangler,
+            bool parameterizedEntangler = false);
 
   /// Native two-qubit count. Unavailable lowering is never a zero-cost gate.
   std::optional<size_t> operationCost(UnitaryOpInterface operation,
@@ -99,11 +102,13 @@ public:
 
 private:
   std::optional<uint8_t> count(const Matrix4x4& matrix,
-                               CompilerTarget::GateKind entangler);
+                               CompilerTarget::GateKind entangler,
+                               bool parameterizedEntangler);
 
   struct DecompositionEntry {
     Matrix4x4 matrix;
     CompilerTarget::GateKind entangler;
+    bool parameterizedEntangler;
     std::optional<decomposition::TwoQubitNativeDecomposition> native;
   };
   static constexpr size_t CACHE_SIZE = 64;

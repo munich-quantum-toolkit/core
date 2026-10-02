@@ -202,63 +202,23 @@ operation with `canonical_name`, for example
 The reported name remains available to exporters.
 
 Target compilation requires a single-qubit synthesis basis available on every
-site. The `ZSXX` basis uses unrestricted RZ and either SX or fixed RX(π/2) or
-RX(-π/2). X or fixed RX(±π) provides an optional shorter half-turn sequence. The
-Euler synthesizers select standard SX or SXdg gates to match the quarter-turn
-direction, with an optional X shortcut. The native-target stage lowers these
-gates to native RX gates with their exact phase corrections. Additional fixed
-angles remain valid capabilities without changing the synthesis recipe. Targets
-without a usable basis support capability queries and conformance checks, but
-cannot be passed to target compilation or target synthesis.
+site. `ZSXX` accepts unrestricted RZ and SX, RX(±π/2), or R(±π/2, 0). Native X,
+RX(±π), or R(±π, 0) can shorten half turns. Fixed-angle capabilities use the
+standard Euler synthesis and are lowered to native gates afterward, including
+their global-phase corrections. Other fixed angles remain valid native
+capabilities but do not provide a synthesis basis.
 
-### Native trapped-ion gates
+Qiskit target import recognizes `gpi(phi)` and `gpi2(phi)` defined as
+`i R(pi, phi)` and `R(pi/2, phi)`, respectively, with **radian** parameters.
+These are fixed-parameter R capabilities inside Core; Qiskit export with the
+target restores their native names and phase. Such targets must advertise
+virtual RZ explicitly. Providers that accept only GPI/GPI2 instructions must
+absorb virtual Z rotations into gate phases before device submission.
 
-Core models native gates; device providers translate them into physical control
-pulses. It supports Forte-style targets with `gpi(phi)`, `gpi2(phi)`, and the
-existing `rzz(theta)` operation. All parameters use **radians**. GPI equals
-`i R(pi, phi)`; its global phase differs from a π rotation. GPI2 equals
-`R(pi/2, phi)`. Provider adapters convert to and from the
-[IonQ API's turns](https://docs.ionq.com/features/getting-started-with-native-gates)
-using `radians = 2*pi*turns`, and map its ZZ gate to Core's RZZ.
-
-```python
-from math import pi
-
-forte_target = CompilerTarget(
-    2,
-    connectivity=CompilerTarget.Connectivity.all_to_all(),
-    native_operations=CompilerTarget.NativeOperations([
-        CompilerTarget.OperationCapability("gpi", 1, 1),
-        CompilerTarget.OperationCapability("gpi2", 1, 1),
-        CompilerTarget.OperationCapability("rzz", 2, 1, fixed_parameters=[pi / 2]),
-        CompilerTarget.OperationCapability("gphase", 0, 1),
-    ]),
-)
-```
-
-Arbitrary GPI and GPI2 phases on every site provide a single-qubit synthesis
-basis. A general unitary uses at most three gates; common π and π/2 rotations
-use one gate and RZ uses two. A target can also advertise arbitrary RZ when its
-provider supports virtual Z. Such an adapter must propagate RZ into GPI/GPI2
-gate phases before submitting to a device that accepts only GPI/GPI2/ZZ.
-Two-qubit synthesis uses RZZ(π/2) on a supported orientation of each coupling.
-Fixed parameter restrictions must admit this value.
-
-Single-qubit synthesis accepts symbolic input angles; two-qubit synthesis
-requires a constant matrix unless the input gate is already native. Native
-inverses also work with symbolic parameters when the target admits the resulting
-parameters. GPI2 inversion initially uses three unchanged gates and a global
-phase correction, preserving fixed phases and large symbolic values. Numeric
-fusion reduces this to one gate when the target admits arbitrary phases.
-
-Exports retain the native names and radian parameters. OpenQASM and Python
-circuit exports provide equivalent definitions for GPI and GPI2. Python circuit
-and target import recognize these canonical definitions, including symbolic
-parameters. Other custom definitions keep their semantics even when their names
-match. QIR uses the existing RZZ instruction and MQT runtime extensions
-`__quantum__qis__gpi__body` and `__quantum__qis__gpi2__body`; other QIR runtimes
-must implement these extensions. No provider SDK is required. Provider adapters
-own serialization, physical labels, parameter ranges, and calibration limits.
+Unrestricted RXX, RYY, RZX, and RZZ entanglers use up to three native rotations
+for numeric two-qubit synthesis. Fixed π/2 entanglers use the fixed-gate path.
+Runtime RZZ lowers through CX and RZ when needed; controlled phase uses a single
+RZZ when the target admits arbitrary RZZ angles.
 
 ### Placements and calibration
 

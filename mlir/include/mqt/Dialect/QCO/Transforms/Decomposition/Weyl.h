@@ -175,13 +175,16 @@ struct TwoQubitNativeDecomposition {
   std::uint8_t numBasisUses = 0;
   SmallVector<Matrix2x2> singleQubitFactors;
   double globalPhase = 0.0;
+  /// Per-use rotation angles; empty means the fixed synthesis gate.
+  SmallVector<double, 3> entanglerParameters;
 };
 
 /// Reconstructs the target unitary from a native basis decomposition.
 ///
 /// Applies `singleQubitFactors` and `numBasisUses` copies of @p basisGate in
 /// the emission order documented on @ref TwoQubitNativeDecomposition, then the
-/// global phase.
+/// global phase. For a parameterized decomposition, @p basisGate must be the
+/// corresponding Pauli rotation at pi/2; each use takes its stored angle.
 [[nodiscard]] Matrix4x4
 unitaryMatrix(const TwoQubitNativeDecomposition& decomposition,
               const Matrix4x4& basisGate);
@@ -341,10 +344,11 @@ struct SynthesizedUnitary2Q {
 ///
 /// SQRTISWAP uses the minimum number of square-root iSWAP gates (0--3),
 /// up to WEYL_TOLERANCE in the interaction coefficients.
+/// Unrestricted RXX/RYY/RZX/RZZ use one rotation per nonzero Cartan coordinate.
 [[nodiscard]] std::optional<TwoQubitNativeDecomposition>
 decomposeUnitary2QWeyl(const Matrix4x4& target,
-                       CompilerTarget::GateKind entangler,
-                       uint64_t seed = 2023);
+                       CompilerTarget::GateKind entangler, uint64_t seed = 2023,
+                       bool parameterizedEntangler = false);
 
 /// Emits a prepared two-qubit decomposition in the selected target basis.
 /// The basis must contain an entangler.

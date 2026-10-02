@@ -160,8 +160,8 @@ struct FuseSingleQubitUnitaryRunsPattern final
     const auto synthesized = decomposition::synthesizeUnitary1QEuler(
         rewriter, op.getLoc(), op.getInputQubit(0), run.composed, run.gateCount,
         run.hasNonBasisGate, basis, targetBasis == nullptr || targetBasis->hasX,
-        targetBasis != nullptr && targetBasis->fixedRXGates &&
-            targetBasis->fixedRXGates->quarterTurnAngle < 0.);
+        targetBasis != nullptr && targetBasis->xRotationGates &&
+            targetBasis->xRotationGates->quarterTurnAngle < 0.);
     if (!synthesized) {
       return failure();
     }
@@ -191,7 +191,7 @@ protected:
     if (!parsed) {
       moduleOp.emitError()
           << "Invalid single-qubit synthesis basis '" << basis
-          << "'. Expected one of: zyz, zxz, xzx, xyx, u, zsxx, r, gpi.";
+          << "'. Expected one of: zyz, zxz, xzx, xyx, u, zsxx, r.";
       signalPassFailure();
       return;
     }

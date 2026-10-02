@@ -83,15 +83,12 @@ general fixed-angle solver or a common schema across all SDKs.
   framework without a concrete device need. Rewrite user documentation around
   the supported contract and examples.
 
-[Core #2578](https://github.com/munich-quantum-toolkit/core/pull/2578) is
-already stacked on #2575 and owns GPI/GPI2 coverage. On rebase, reassess its
-unreleased turn-based gates: prefer radians and existing RZZ, prioritizing Forte
-over retired Aria MS while preserving GPi's phase relative to `R(π, φ)`. Its GPI
-gate recipe is independent of fixed RX synthesis. Existing R/PRX covers IQM and
-AQT unitary representations. Provider serialization and IQM
-[experimental feedforward][dynamic] remain separate work, including feedback
-groups and result semantics. Follow [verbatim rules][verbatim] at the adapter
-boundary; fixed parameters do not provide complete execution support.
+The follow-up [native target plan](native-ion-gate-targets.md) extends the same
+lowering to fixed R capabilities and keeps GPI/GPI2 as target aliases. Existing
+R/PRX also covers IQM and AQT. Provider serialization and IQM
+[experimental feedforward][dynamic] remain separate work. Follow
+[verbatim rules][verbatim] at the adapter boundary; fixed parameters do not
+provide complete execution support.
 
 ## Validation
 

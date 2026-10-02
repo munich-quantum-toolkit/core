@@ -622,46 +622,6 @@ def ROp
   let hasCanonicalizer = 1;
 }
 
-def GPIOp
-    : QCOOp<"gpi", traits = [UnitaryOpInterface, OneTargetOneParameter, Pure]> {
-  let summary = "Apply a GPI gate";
-  let description = [{
-    GPI(φ) = i R(π, φ). Parameters are measured in radians.
-  }];
-  let arguments = (ins Arg<QubitType, "target qubit">:$qubit_in,
-      Arg<F64, "phi in radians">:$phi);
-  let results = (outs QubitType:$qubit_out);
-  let assemblyFormat = "`(` $phi `)` $qubit_in attr-dict `:` type($qubit_in) "
-                       "`->` type($qubit_out)";
-  let extraClassDeclaration = [{
-    [[nodiscard]] static StringRef getBaseSymbol() { return "gpi"; }
-    [[nodiscard]] static Matrix2x2 unitaryMatrix(double phi);
-    [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
-  }];
-  let builders = [OpBuilder<(ins "Value":$qubit_in,
-      "const std::variant<double, Value>&":$phi)>];
-}
-
-def GPI2Op : QCOOp<"gpi2",
-                   traits = [UnitaryOpInterface, OneTargetOneParameter, Pure]> {
-  let summary = "Apply a GPI2 gate";
-  let description = [{
-    GPI2(φ) = R(π/2, φ). Parameters are measured in radians.
-  }];
-  let arguments = (ins Arg<QubitType, "target qubit">:$qubit_in,
-      Arg<F64, "phi in radians">:$phi);
-  let results = (outs QubitType:$qubit_out);
-  let assemblyFormat = "`(` $phi `)` $qubit_in attr-dict `:` type($qubit_in) "
-                       "`->` type($qubit_out)";
-  let extraClassDeclaration = [{
-    [[nodiscard]] static StringRef getBaseSymbol() { return "gpi2"; }
-    [[nodiscard]] static Matrix2x2 unitaryMatrix(double phi);
-    [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
-  }];
-  let builders = [OpBuilder<(ins "Value":$qubit_in,
-      "const std::variant<double, Value>&":$phi)>];
-}
-
 def U2Op
     : QCOOp<"u2", traits = [UnitaryOpInterface, OneTargetTwoParameter, Pure]> {
   let summary = "Apply a U2 gate to a qubit";
