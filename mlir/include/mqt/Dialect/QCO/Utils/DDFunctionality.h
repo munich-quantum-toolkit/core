@@ -51,9 +51,10 @@ struct DDSamplingState {
 /// Build a matrix DD for a unitary QCO function.
 ///
 /// The function must have one block. The interpreter supports concrete QCO and
-/// SCF structured control, non-recursive calls, common
-/// scalar math, one-dimensional memrefs, dense rank-one f64 tensor constants
-/// and element extraction, and QTensor bookkeeping. `qco.static` values, or
+/// SCF structured control, non-recursive calls, common scalar math,
+/// scalar or one-dimensional heap or stack memrefs, dense rank-one f64 tensor
+/// constants and element
+/// extraction, and QTensor bookkeeping. `qco.static` values, or
 /// qubit arguments when no static values exist, set the wire map. Entry-block
 /// `qco.alloc` and statically sized `qtensor.alloc` operations add subsequent
 /// wires in instruction order. Measurements, resets, symbolic control, and

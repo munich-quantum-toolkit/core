@@ -44,6 +44,7 @@
 #include "mlir/Transforms/DialectConversion.h"
 
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/STLExtras.h"
 
 #include <cassert>
 #include <cstddef>
@@ -114,6 +115,45 @@ static LogicalResult moveTerminalMeasurements(Block& body,
     call->moveBefore(measurements.getTerminator());
   }
   return success();
+}
+
+static bool isBaseConstant(Value value) {
+  auto* op = value.getDefiningOp();
+  if (op == nullptr) {
+    return false;
+  }
+  if (isa<LLVM::ConstantOp, LLVM::ZeroOp, LLVM::AddressOfOp>(op)) {
+    return true;
+  }
+  return isa<LLVM::IntToPtrOp, LLVM::GEPOp>(op) &&
+         llvm::all_of(op->getOperands(), isBaseConstant);
+}
+
+/// Base has no classical memory or runtime computation, even for gate angles.
+static LogicalResult verifyBaseInstructions(LLVM::LLVMFuncOp function) {
+  const auto result = function.getBody().walk([](Operation* op) {
+    const auto constantOperands =
+        llvm::all_of(op->getOperands(), isBaseConstant);
+    if (isa<LLVM::ConstantOp, LLVM::ZeroOp, LLVM::AddressOfOp>(op) ||
+        (isa<LLVM::IntToPtrOp, LLVM::GEPOp, LLVM::ReturnOp>(op) &&
+         constantOperands) ||
+        (isa<LLVM::BrOp>(op) && op->getNumOperands() == 0)) {
+      return WalkResult::advance();
+    }
+    if (auto call = dyn_cast<LLVM::CallOp>(op); call && call.getCallee() &&
+                                                call.getNumResults() == 0 &&
+                                                constantOperands) {
+      const auto name = *call.getCallee();
+      if (name.starts_with("__quantum__qis__") || name == QIR_INITIALIZE ||
+          name == "__quantum__rt__tuple_record_output" ||
+          name == QIR_ARRAY_RECORD_OUTPUT || name == QIR_RECORD_OUTPUT) {
+        return WalkResult::advance();
+      }
+    }
+    op->emitError("operation requires capabilities beyond QIR Base Profile");
+    return WalkResult::interrupt();
+  });
+  return failure(result.wasInterrupted());
 }
 
 namespace {
@@ -517,8 +557,16 @@ protected:
     // Stage 4: Convert QC dialect to LLVM (QIR calls)
     {
       RewritePatternSet patterns(ctx);
-      target.addIllegalDialect<cbit::CBitDialect, QCDialect,
-                               memref::MemRefDialect, scf::SCFDialect>();
+      target.addIllegalDialect<cbit::CBitDialect, QCDialect, scf::SCFDialect>();
+      // Classical storage is lowered by the upstream MemRef-to-LLVM patterns.
+      target.addDynamicallyLegalDialect<memref::MemRefDialect>(
+          [&](Operation* op) {
+            return llvm::all_of(
+                llvm::concat<Type>(op->getOperandTypes(), op->getResultTypes()),
+                [&](Type type) {
+                  return !isa<MemRefType>(type) || typeConverter.isLegal(type);
+                });
+          });
 
       populateQCToQIRBasePatterns(patterns, typeConverter, ctx, state);
 
@@ -536,7 +584,8 @@ protected:
       addOutputRecording(main, ctx, state);
     }
 
-    if (failed(finalizeQIRConversion(moduleOp, target, typeConverter))) {
+    if (failed(finalizeQIRConversion(moduleOp, target, typeConverter)) ||
+        failed(verifyBaseInstructions(main))) {
       signalPassFailure();
     }
   }

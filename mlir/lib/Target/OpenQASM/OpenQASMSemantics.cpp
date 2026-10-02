@@ -94,6 +94,7 @@ struct GateSignature {
 
 enum class SymbolKind : uint8_t {
   Scalar,
+  Array,
   GateLocalScalar,
   Constant,
   Register,
@@ -426,6 +427,7 @@ private:
     llvm::DynamicAPInt constant{0};
   };
 
+  // One bit per initialized bit-register or classical-array element.
   using BitInitialization = llvm::BitVector;
   struct InitializationState {
     std::vector<std::shared_ptr<BitInitialization>> bits;
@@ -480,6 +482,7 @@ private:
   /// exit.
   std::vector<size_t> registerStateSlots_;
   std::vector<size_t> scalarStateSlots_;
+  std::vector<size_t> arrayStateSlots_;
   llvm::DenseMap<ScalarId, unsigned> activeInductions;
   llvm::DenseSet<ScalarId> loopVariantScalars;
   presburger::IntegerPolyhedron affineDomain{
@@ -1284,8 +1287,11 @@ private:
               (symbol->kind == SymbolKind::Register &&
                program.registers[symbol->id].kind == RegisterKind::Bit));
     }
-    case Expr::Kind::Index:
-      return true;
+    case Expr::Kind::Index: {
+      const auto* symbol = lookup(expression.identifier);
+      return symbol == nullptr || symbol->kind != SymbolKind::Array ||
+             symbol->type == ScalarType::Bool;
+    }
     default:
       return false;
     }
@@ -1328,8 +1334,10 @@ private:
     MQT_OQ3_TRY_ASSIGN(value, analyzeExpression(syntaxId));
     const auto type = program.expressions[value].type;
     auto zeroValue = Constant{.type = ScalarType::Int, .value = int64_t{0}};
-    if (type == ScalarType::Float || type == ScalarType::Angle) {
-      zeroValue = Constant{.type = ScalarType::Float, .value = 0.0};
+    if (type == ScalarType::Float) {
+      zeroValue = Constant{.type = type, .value = 0.0};
+    } else if (type == ScalarType::Angle) {
+      zeroValue = Constant{.type = type, .value = FixedAngle{}};
     } else if (type == ScalarType::Uint) {
       zeroValue = Constant{.type = ScalarType::Uint, .value = uint64_t{0}};
     }
@@ -2616,6 +2624,12 @@ private:
       MQT_OQ3_TRY_ASSIGN(constant, evaluateConstant(syntaxId));
       return addConstant(constant);
     }
+    if (expression.kind == Expr::Kind::Index) {
+      const auto* symbol = lookup(expression.identifier);
+      if (symbol != nullptr && symbol->kind == SymbolKind::Array) {
+        return analyzeArrayLoad(symbol->id, expression);
+      }
+    }
     if (expression.kind == Expr::Kind::FloatCast) {
       MQT_OQ3_TRY_ASSIGN(
           width, bitVectorCastWidth(expression.lhs, expression.location));
@@ -2668,6 +2682,11 @@ private:
         });
       }
       MQT_OQ3_TRY_ASSIGN(operand, analyzeExpression(*expression.rhs));
+      if (isAngleArrayElement(operand)) {
+        return fail(
+            expression.location,
+            "cast angle array entries to float before integer conversion");
+      }
       return addExpression({
           .kind = ExpressionKind::Cast,
           .type = target,
@@ -2943,6 +2962,11 @@ private:
       return addExpression(
           {.kind = kind, .type = ScalarType::Float, .lhs = lhs});
     }
+    if (isAngleArrayElement(lhs) || (rhs && isAngleArrayElement(*rhs))) {
+      return fail(expression.location,
+                  "runtime fixed-width angle arithmetic is not supported; "
+                  "cast array entries to float first");
+    }
     if (!rhs) {
       return addExpression({.kind = kind, .type = lhsType, .lhs = lhs});
     }
@@ -3045,29 +3069,33 @@ private:
   }
 
   [[nodiscard]] FailureOr<uint64_t>
-  constantWidth(const std::optional<SyntaxExpressionId> size,
-                SMLoc location) const {
+  constantWidth(const std::optional<SyntaxExpressionId> size, SMLoc location,
+                StringRef description = "register width",
+                bool allowEmpty = false) const {
     if (!size) {
       return 1;
     }
     if (!isConstantExpression(*size)) {
       return fail(location,
-                  "register width must be a constant integer expression");
+                  description + " must be a constant integer expression");
     }
     MQT_OQ3_TRY_ASSIGN(constant, evaluateConstant(*size));
     if (!isInteger(constant.type)) {
-      return fail(location, "register width must be an integer expression");
+      return fail(location, description + " must be an integer expression");
     }
     const auto value =
         constant.type == ScalarType::Uint
             ? std::get<uint64_t>(constant.value)
             : static_cast<uint64_t>(std::get<int64_t>(constant.value));
-    if (value == 0 || (constant.type == ScalarType::Int &&
-                       std::get<int64_t>(constant.value) < 0)) {
-      return fail(location, "register width must be greater than zero");
+    if ((!allowEmpty && value == 0) ||
+        (constant.type == ScalarType::Int &&
+         std::get<int64_t>(constant.value) < 0)) {
+      return fail(location,
+                  description + (allowEmpty ? " must be non-negative"
+                                            : " must be greater than zero"));
     }
     if (value > REGISTER_WIDTH_LIMIT) {
-      return fail(location, Twine("register width exceeds the limit of ") +
+      return fail(location, description + " exceeds the limit of " +
                                 Twine(REGISTER_WIDTH_LIMIT));
     }
     return value;
@@ -3293,6 +3321,9 @@ private:
           } else if constexpr (std::is_same_v<T, SyntaxScalarDeclaration>) {
             return analyzeScalarDeclaration(statement.location, data,
                                             destination, global);
+          } else if constexpr (std::is_same_v<T, SyntaxArrayDeclaration>) {
+            return analyzeArrayDeclaration(statement.location, data,
+                                           destination, global);
           } else if constexpr (std::is_same_v<T, SyntaxAssignment>) {
             return analyzeAssignment(statement.location, data, destination);
           } else if constexpr (std::is_same_v<T, SyntaxQubitDeclaration> ||
@@ -3533,6 +3564,163 @@ private:
     return success();
   }
 
+  [[nodiscard]] FailureOr<ExpressionId>
+  analyzeArrayValue(ArrayId array, SyntaxExpressionId value) {
+    const auto& declaration = program.arrays[array];
+    const auto location = syntax.expressions[value].location;
+    if (declaration.type == ScalarType::Angle) {
+      if (!isConstantExpression(value)) {
+        return fail(location,
+                    "angle array entries require compile-time values");
+      }
+      MQT_OQ3_TRY_ASSIGN(constant, evaluateConstant(value));
+      MQT_OQ3_TRY_ASSIGN(
+          converted,
+          convertToFixedAngle(constant, declaration.elementWidth, location));
+      return addConstant(converted);
+    }
+    if (declaration.type == ScalarType::Bool) {
+      MQT_OQ3_TRY_ASSIGN(condition, analyzeBoolValue(value));
+      return addExpression({
+          .kind = ExpressionKind::Condition,
+          .type = ScalarType::Bool,
+          .condition = condition,
+      });
+    }
+    MQT_OQ3_TRY_ASSIGN(expression, analyzeExpression(value));
+    return castExpression(expression, declaration.type, location,
+                          declaration.elementWidth);
+  }
+
+  [[nodiscard]] bool isAngleArrayElement(ExpressionId value) const {
+    const auto& expression = program.expressions[value];
+    return expression.kind == ExpressionKind::ArrayLoad &&
+           expression.type == ScalarType::Angle;
+  }
+
+  [[nodiscard]] LogicalResult
+  analyzeArrayDeclaration(SMLoc location,
+                          const SyntaxArrayDeclaration& declaration,
+                          std::vector<StatementId>& destination, bool global) {
+    if (program.openQASM2) {
+      return fail(location, "array declarations require OpenQASM 3");
+    }
+    if (!global) {
+      return fail(location, "arrays must be declared at global scope");
+    }
+    MQT_OQ3_TRY_ASSIGN(length, constantWidth(declaration.length, location,
+                                             "array length",
+                                             /*allowEmpty=*/true));
+    if (length > TOTAL_REGISTER_ELEMENT_LIMIT - totalRegisterElements) {
+      return fail(location,
+                  "total register and array elements exceed the limit of " +
+                      Twine(TOTAL_REGISTER_ELEMENT_LIMIT));
+    }
+    totalRegisterElements += length;
+    const auto type = scalarType(declaration.kind);
+    unsigned width = 0;
+    if (type == ScalarType::Angle) {
+      MQT_OQ3_TRY_ASSIGN(bits, angleWidth(declaration.elementWidth, location));
+      width = bits;
+    } else if (declaration.elementWidth) {
+      if (type == ScalarType::Bool) {
+        return fail(location, "bool array elements do not have a width");
+      }
+      MQT_OQ3_TRY_ASSIGN(
+          bits, bitVectorCastWidth(declaration.elementWidth, location));
+      if (type == ScalarType::Float && bits != 64) {
+        return fail(location, "float array elements support only width 64");
+      }
+      width = static_cast<unsigned>(bits);
+    }
+    if (declaration.initializer && declaration.initializer->size() != length) {
+      return fail(location,
+                  "array initializer length must match the declaration");
+    }
+    const auto id = static_cast<ArrayId>(program.arrays.size());
+    program.arrays.push_back({
+        .type = type,
+        .elementWidth = width,
+        .length = length,
+        .name = declaration.identifier.str(),
+        .location = getSourceLocation(location),
+    });
+    arrayStateSlots_.push_back(initializedBits.size());
+    initializedBits.push_back(
+        std::make_shared<BitInitialization>(length, false));
+    if (failed(declare(location, declaration.identifier,
+                       {
+                           .kind = SymbolKind::Array,
+                           .type = type,
+                           .id = id,
+                           .constant = std::nullopt,
+                       }))) {
+      return failure();
+    }
+    ArrayDeclarationStatement typed{.array = id, .initializer = {}};
+    if (declaration.initializer) {
+      for (const auto value : *declaration.initializer) {
+        MQT_OQ3_TRY_ASSIGN(converted, analyzeArrayValue(id, value));
+        typed.initializer.push_back(converted);
+      }
+      mutableBitInitialization(arrayStateSlots_[id]).set();
+    }
+    MQT_OQ3_TRY_ASSIGN(statement, addStatement(location, std::move(typed)));
+    destination.push_back(statement);
+    return success();
+  }
+
+  [[nodiscard]] FailureOr<ExpressionId>
+  analyzeArrayIndex(ArrayId array, std::optional<SyntaxExpressionId> index,
+                    SMLoc location) {
+    if (!index) {
+      return fail(location, "array access requires an element index");
+    }
+    const auto length = program.arrays[array].length;
+    MQT_OQ3_TRY_ASSIGN(constant, constantIndex(*index, length, location));
+    if (constant) {
+      if (*constant >= length) {
+        return fail(location, "array index is out of bounds");
+      }
+      return addConstant(
+          {.type = ScalarType::Int, .value = static_cast<int64_t>(*constant)});
+    }
+    MQT_OQ3_TRY_ASSIGN(dynamic, analyzeExpression(*index));
+    if (!isInteger(program.expressions[dynamic].type)) {
+      return fail(location, "array index must be an integer expression");
+    }
+    return dynamic;
+  }
+
+  [[nodiscard]] FailureOr<ExpressionId>
+  analyzeArrayLoad(ArrayId array, const SyntaxExpression& expression) {
+    if (!activeGate_.empty()) {
+      return fail(expression.location,
+                  "gate definitions cannot capture array entries");
+    }
+    MQT_OQ3_TRY_ASSIGN(
+        index, analyzeArrayIndex(array, expression.lhs, expression.location));
+    const auto& initialized = *initializedBits[arrayStateSlots_[array]];
+    const auto& typedIndex = program.expressions[index];
+    if (typedIndex.kind == ExpressionKind::Constant) {
+      if (!initialized[std::get<int64_t>(typedIndex.constant)]) {
+        return fail(expression.location, "array element is uninitialized");
+      }
+    } else if (!initialized.all()) {
+      return fail(expression.location,
+                  "dynamic array index may read an uninitialized element");
+    }
+    const auto& declaration = program.arrays[array];
+    return addExpression({
+        .kind = ExpressionKind::ArrayLoad,
+        .type = declaration.type,
+        .array = array,
+        .lhs = index,
+        .integerWidth =
+            isInteger(declaration.type) ? declaration.elementWidth : 0,
+    });
+  }
+
   void markBitInitialized(const frontend::BitReference& target) {
     if (!target.dynamicIndex) {
       mutableBitInitialization(registerStateSlots_[target.reg])[target.index] =
@@ -3545,6 +3733,25 @@ private:
   analyzeAssignment(SMLoc location, const SyntaxAssignment& assignment,
                     std::vector<StatementId>& destination) {
     const auto* symbol = lookup(assignment.target.identifier);
+    if (symbol != nullptr && symbol->kind == SymbolKind::Array) {
+      const auto array = symbol->id;
+      MQT_OQ3_TRY_ASSIGN(
+          index, analyzeArrayIndex(array, assignment.target.index, location));
+      MQT_OQ3_TRY_ASSIGN(value, analyzeArrayValue(array, assignment.value));
+      const auto& typedIndex = program.expressions[index];
+      if (typedIndex.kind == ExpressionKind::Constant) {
+        mutableBitInitialization(
+            arrayStateSlots_[array])[std::get<int64_t>(typedIndex.constant)] =
+            true;
+      }
+      MQT_OQ3_TRY_ASSIGN(
+          statement,
+          addStatement(location, ArrayAssignmentStatement{.array = array,
+                                                          .index = index,
+                                                          .value = value}));
+      destination.push_back(statement);
+      return success();
+    }
     if (symbol != nullptr && symbol->kind == SymbolKind::Scalar) {
       if (assignment.target.index || assignment.target.slice) {
         return fail(location, "scalar assignments cannot have an index");
@@ -4521,6 +4728,18 @@ private:
       break;
     }
     case Expr::Kind::Index: {
+      const auto* symbol = lookup(condition.identifier);
+      if (symbol != nullptr && symbol->kind == SymbolKind::Array) {
+        if (symbol->type != ScalarType::Bool) {
+          return fail(condition.location, "condition must have bool type");
+        }
+        MQT_OQ3_TRY_ASSIGN(value, analyzeArrayLoad(symbol->id, condition));
+        typed.kind = ConditionKind::Comparison;
+        typed.comparisonLhs = value;
+        typed.comparisonRhs =
+            addConstant({.type = ScalarType::Bool, .value = true});
+        break;
+      }
       MQT_OQ3_TRY_ASSIGN(bits, resolveBits({.location = condition.location,
                                             .identifier = condition.identifier,
                                             .index = condition.lhs}));
@@ -4701,6 +4920,14 @@ private:
       typed.comparisonRhs = comparisonRhs;
       const auto lhsType = program.expressions[typed.comparisonLhs].type;
       const auto rhsType = program.expressions[typed.comparisonRhs].type;
+      if ((isAngleArrayElement(comparisonLhs) &&
+           rhsType != ScalarType::Angle) ||
+          (isAngleArrayElement(comparisonRhs) &&
+           lhsType != ScalarType::Angle)) {
+        return fail(
+            condition.location,
+            "cast angle array entries to float for mixed-type comparisons");
+      }
       const bool boolComparison =
           lhsType == ScalarType::Bool || rhsType == ScalarType::Bool;
       if (boolComparison &&
