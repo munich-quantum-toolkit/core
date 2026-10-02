@@ -16,6 +16,7 @@
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/Support/LLVM.h"
@@ -379,24 +380,32 @@ CompilerTarget::OperationCapability::Arity::Arity(Kind kind,
     : kind_(kind), value_(value) {}
 
 llvm::Expected<CompilerTarget::OperationCapability>
-CompilerTarget::OperationCapability::create(std::string name, size_t arity,
-                                            size_t numParameters,
-                                            std::vector<SiteTuple> siteTuples,
-                                            std::optional<uint64_t> duration,
-                                            std::optional<double> fidelity) {
+CompilerTarget::OperationCapability::create(
+    std::string name, size_t arity, size_t numParameters,
+    std::vector<SiteTuple> siteTuples, std::optional<uint64_t> duration,
+    std::optional<double> fidelity,
+    std::vector<std::optional<double>> fixedParameters,
+    std::optional<std::string> canonicalName) {
   return create(std::move(name), Arity::fixed(arity), numParameters,
-                std::move(siteTuples), duration, fidelity);
+                std::move(siteTuples), duration, fidelity,
+                std::move(fixedParameters), std::move(canonicalName));
 }
 
 llvm::Expected<CompilerTarget::OperationCapability>
-CompilerTarget::OperationCapability::create(std::string name, Arity arity,
-                                            size_t numParameters,
-                                            std::vector<SiteTuple> siteTuples,
-                                            std::optional<uint64_t> duration,
-                                            std::optional<double> fidelity) {
-  auto canonicalName = canonicalOperationName(name);
-  if (canonicalName.empty()) {
+CompilerTarget::OperationCapability::create(
+    std::string name, Arity arity, size_t numParameters,
+    std::vector<SiteTuple> siteTuples, std::optional<uint64_t> duration,
+    std::optional<double> fidelity,
+    std::vector<std::optional<double>> fixedParameters,
+    std::optional<std::string> canonicalName) {
+  if (canonicalOperationName(name).empty()) {
     return invalidTarget("Compiler target operation name must not be empty");
+  }
+  auto canonical =
+      canonicalOperationName(std::move(canonicalName).value_or(name));
+  if (canonical.empty()) {
+    return invalidTarget(
+        "Compiler target canonical operation name must not be empty");
   }
   if (auto error =
           validateFidelity(fidelity, "Compiler target operation fidelity")) {
@@ -416,6 +425,20 @@ CompilerTarget::OperationCapability::create(std::string name, Arity arity,
         "Compiler target zero-arity operation cannot contain site tuples");
   }
 
+  if (!fixedParameters.empty() && fixedParameters.size() != numParameters) {
+    return invalidTarget(
+        "Compiler target fixed parameters must match its parameter count");
+  }
+  if (llvm::any_of(fixedParameters, [](const auto value) {
+        return value && !std::isfinite(*value);
+      })) {
+    return invalidTarget("Compiler target fixed parameters must be finite");
+  }
+  if (llvm::none_of(fixedParameters,
+                    [](const auto value) { return value.has_value(); })) {
+    fixedParameters.clear();
+  }
+
   llvm::SmallDenseSet<ArrayRef<SiteId>> uniqueSiteCombinations;
   for (const auto& siteTuple : siteTuples) {
     if (!arity.accepts(siteTuple.sites().size())) {
@@ -428,17 +451,19 @@ CompilerTarget::OperationCapability::create(std::string name, Arity arity,
     }
   }
 
-  return OperationCapability(std::move(name), std::move(canonicalName), arity,
+  return OperationCapability(std::move(name), std::move(canonical), arity,
                              numParameters, std::move(siteTuples), duration,
-                             fidelity);
+                             fidelity, std::move(fixedParameters));
 }
 
 CompilerTarget::OperationCapability::OperationCapability(
     std::string name, std::string canonicalName, Arity arity,
     size_t numParameters, std::vector<SiteTuple> siteTuples,
-    std::optional<uint64_t> duration, std::optional<double> fidelity)
+    std::optional<uint64_t> duration, std::optional<double> fidelity,
+    std::vector<std::optional<double>> fixedParameters)
     : name_(std::move(name)), canonicalName_(std::move(canonicalName)),
       arity_(arity), numParameters_(numParameters),
+      fixedParameters_(std::move(fixedParameters)),
       siteTuples_(std::move(siteTuples)), duration_(duration),
       fidelity_(fidelity) {}
 
@@ -457,6 +482,11 @@ CompilerTarget::OperationCapability::arity() const noexcept {
 
 size_t CompilerTarget::OperationCapability::numParameters() const noexcept {
   return numParameters_;
+}
+
+ArrayRef<std::optional<double>>
+CompilerTarget::OperationCapability::fixedParameters() const noexcept {
+  return fixedParameters_;
 }
 
 ArrayRef<CompilerTarget::SiteTuple>
@@ -510,11 +540,11 @@ struct CompilerTarget::Storage {
   [[nodiscard]] llvm::Error initialize();
   void computeDistances(size_t source, MutableArrayRef<size_t> row) const;
 
-  [[nodiscard]] bool
-  supportsOperation(StringRef name, size_t arity,
-                    std::optional<size_t> numParameters,
-                    std::optional<ArrayRef<SiteId>> orderedSites = std::nullopt,
-                    bool variadicOnly = false) const;
+  [[nodiscard]] bool supportsOperation(
+      StringRef name, size_t arity, std::optional<size_t> numParameters,
+      std::optional<ArrayRef<SiteId>> orderedSites = std::nullopt,
+      bool variadicOnly = false,
+      function_ref<std::optional<double>(size_t)> parameterAt = nullptr) const;
   [[nodiscard]] bool supportsGate(
       GateKind gate,
       std::optional<ArrayRef<SiteId>> orderedSites = std::nullopt) const;
@@ -683,7 +713,8 @@ llvm::Error CompilerTarget::Storage::initialize() {
 
 bool CompilerTarget::Storage::supportsOperation(
     StringRef operationName, size_t arity, std::optional<size_t> numParameters,
-    std::optional<ArrayRef<SiteId>> orderedSites, bool variadicOnly) const {
+    std::optional<ArrayRef<SiteId>> orderedSites, bool variadicOnly,
+    function_ref<std::optional<double>(size_t)> parameterAt) const {
   const auto canonical = canonicalOperationName(operationName);
   if (canonical.empty() || arity > sites.size() ||
       (orderedSites && orderedSites->size() != arity)) {
@@ -711,7 +742,20 @@ bool CompilerTarget::Storage::supportsOperation(
            operation.arity().accepts(arity) &&
            (!numParameters || operation.numParameters() == *numParameters) &&
            (!orderedSites || operation.siteTuples().empty() ||
-            operationSites[index].contains(*orderedSites));
+            operationSites[index].contains(*orderedSites)) &&
+           llvm::all_of(llvm::enumerate(operation.fixedParameters()),
+                        [&](const auto entry) {
+                          const auto expected = entry.value();
+                          if (!expected) {
+                            return true;
+                          }
+                          const auto actual = parameterAt
+                                                  ? parameterAt(entry.index())
+                                                  : std::nullopt;
+                          return actual &&
+                                 std::abs(*actual - *expected) <=
+                                     mqt::PARAMETER_COMPARISON_TOLERANCE;
+                        });
   });
 }
 
@@ -751,6 +795,7 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
                   OperationCapability::Arity::Kind::Variadic) &&
              operation.arity().accepts(arity) &&
              operation.numParameters() == numParameters &&
+             operation.fixedParameters().empty() &&
              operation.siteTuples().empty();
     });
   };
@@ -760,12 +805,14 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
     });
   };
   std::optional<SingleQubitBasis> singleQubit;
+  std::optional<RXPulses> rxPulses;
+  bool hasX = true;
   if (supportsOnEverySite(GateKind::U)) {
     singleQubit = SingleQubitBasis::U;
-  } else if (supportsOnEverySite(GateKind::X) &&
-             supportsOnEverySite(GateKind::SX) &&
+  } else if (supportsOnEverySite(GateKind::SX) &&
              supportsOnEverySite(GateKind::RZ)) {
     singleQubit = SingleQubitBasis::ZSXX;
+    hasX = supportsOnEverySite(GateKind::X);
   } else if (supportsOnEverySite(GateKind::R)) {
     singleQubit = SingleQubitBasis::R;
   } else if (supportsOnEverySite(GateKind::RX) &&
@@ -777,6 +824,35 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
   } else if (supportsOnEverySite(GateKind::RY) &&
              supportsOnEverySite(GateKind::RZ)) {
     singleQubit = SingleQubitBasis::ZYZ;
+  } else if (supportsOnEverySite(GateKind::RZ)) {
+    const auto supportsPulse = [&](double angle) {
+      return llvm::all_of(siteIds, [&](SiteId site) {
+        return supportsOperation(
+            "rx", 1, 1, ArrayRef<SiteId>(&site, 1), false,
+            [angle](size_t) { return std::optional{angle}; });
+      });
+    };
+    for (double quarter : {std::numbers::pi / 2., -std::numbers::pi / 2.}) {
+      if (!supportsPulse(quarter)) {
+        continue;
+      }
+      rxPulses = {
+          .quarterTurnAngle = quarter,
+          .halfTurnAngle = std::nullopt,
+      };
+      for (double half : {std::numbers::pi, -std::numbers::pi}) {
+        if (supportsPulse(half)) {
+          rxPulses->halfTurnAngle = half;
+          break;
+        }
+      }
+      singleQubit = SingleQubitBasis::ZSXX;
+      break;
+    }
+  }
+
+  if (!singleQubit) {
+    return std::nullopt;
   }
 
   const auto supportsOnEveryCoupling = [&](GateKind gate) {
@@ -824,14 +900,13 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
   /// NOLINTNEXTLINE(readability-qualified-auto): portable iterator type.
   const auto entangler =
       std::ranges::find_if(entanglerPreference, supportsOnEveryCoupling);
-  if (!singleQubit) {
-    return std::nullopt;
-  }
   return SynthesisBasis{
       .singleQubit = *singleQubit,
       .entangler = entangler == entanglerPreference.end()
                        ? std::nullopt
                        : std::optional{*entangler},
+      .rxPulses = rxPulses,
+      .hasX = hasX,
   };
 }
 
@@ -977,10 +1052,27 @@ CompilerTarget::create(const mqt::CompilationTargetAttr attribute) {
                     static_cast<size_t>(operationAttr.getArity().getValue()))
               : OperationCapability::Arity::variadic(
                     static_cast<size_t>(operationAttr.getArity().getValue()));
+      std::vector<std::optional<double>> fixedParameters;
+      if (auto parameters = operationAttr.getFixedParameters()) {
+        for (Attribute parameter : parameters) {
+          auto value = dyn_cast<FloatAttr>(parameter);
+          if ((!value && !isa<UnitAttr>(parameter)) ||
+              (value && !value.getType().isF64())) {
+            return invalidTarget("Compiler target fixed parameters must be "
+                                 "finite f64 values or unit");
+          }
+          fixedParameters.emplace_back(
+              value ? std::optional{value.getValueAsDouble()} : std::nullopt);
+        }
+      }
       auto operation = OperationCapability::create(
           operationAttr.getName().getValue().str(), arity,
           static_cast<size_t>(operationAttr.getNumParameters()),
-          std::move(siteTuples), operationAttr.getDuration(), fidelity);
+          std::move(siteTuples), operationAttr.getDuration(), fidelity,
+          std::move(fixedParameters),
+          operationAttr.getCanonicalName()
+              ? std::optional{operationAttr.getCanonicalName().getValue().str()}
+              : std::nullopt);
       if (!operation) {
         return operation.takeError();
       }
@@ -1148,6 +1240,22 @@ bool CompilerTarget::supportsOperation(StringRef operationName, size_t arity,
                                      sites);
 }
 
+bool CompilerTarget::supportsOperation(
+    StringRef operationName, size_t arity, std::optional<size_t> numParameters,
+    std::optional<ArrayRef<SiteId>> sites,
+    ArrayRef<std::optional<double>> parameters) const {
+  if (!parameters.empty()) {
+    if (numParameters && *numParameters != parameters.size()) {
+      return false;
+    }
+    numParameters = parameters.size();
+  }
+  return storage_->supportsOperation(
+      operationName, arity, numParameters, sites, false, [&](size_t index) {
+        return parameters.empty() ? std::nullopt : parameters[index];
+      });
+}
+
 bool CompilerTarget::supports(::mlir::Operation* operation) const {
   return supportsImpl(operation, std::nullopt);
 }
@@ -1176,10 +1284,12 @@ bool CompilerTarget::supportsImpl(::mlir::Operation* operation,
       if (body.getNumQubits() != controlled.getNumTargets()) {
         return false;
       }
-      if (storage_->supportsOperation(body.getBaseSymbol(),
-                                      controlled.getNumQubits(),
-                                      body.getNumParams(), sites,
-                                      /*variadicOnly=*/true)) {
+      if (storage_->supportsOperation(
+              body.getBaseSymbol(), controlled.getNumQubits(),
+              body.getNumParams(), sites,
+              /*variadicOnly=*/true, [&](size_t index) {
+                return mqt::valueToDouble(body.getParameter(index));
+              })) {
         return true;
       }
       if (controlled.getNumControls() != 1 || controlled.getNumTargets() != 1) {
@@ -1204,9 +1314,11 @@ bool CompilerTarget::supportsImpl(::mlir::Operation* operation,
         return true;
       }
     }
-    return storage_->supportsOperation(unitary.getBaseSymbol(),
-                                       unitary.getNumQubits(),
-                                       unitary.getNumParams(), sites);
+    return storage_->supportsOperation(
+        unitary.getBaseSymbol(), unitary.getNumQubits(), unitary.getNumParams(),
+        sites, false, [&](size_t index) {
+          return mqt::valueToDouble(unitary.getParameter(index));
+        });
   }
   if (isa<qco::MeasureOp>(operation)) {
     return storage_->supportsOperation("measure", 1, 0, sites);
@@ -1229,7 +1341,7 @@ ArrayRef<GateKind> CompilerTarget::supportedGates() const noexcept {
   return storage_->supportedGates;
 }
 
-std::optional<CompilerTarget::SynthesisBasis>
+const std::optional<CompilerTarget::SynthesisBasis>&
 CompilerTarget::synthesisBasis() const noexcept {
   return storage_->basis;
 }
@@ -1292,10 +1404,23 @@ CompilerTarget::materialize(MLIRContext& context) const {
             : mqt::OperationArityKind::Variadic;
     const auto arityAttr = mqt::OperationArityAttr::get(
         &context, arityKind, operation.arity().value());
+    ArrayAttr fixedParameters;
+    if (!operation.fixedParameters().empty()) {
+      SmallVector<Attribute> values;
+      for (const auto parameter : operation.fixedParameters()) {
+        values.push_back(parameter
+                             ? Attribute(builder.getF64FloatAttr(*parameter))
+                             : Attribute(builder.getUnitAttr()));
+      }
+      fixedParameters = builder.getArrayAttr(values);
+    }
     operationAttrs.emplace_back(mqt::NativeOperationAttr::get(
         &context, builder.getStringAttr(operation.name()), arityAttr,
         operation.numParameters(), siteTupleAttrs, operation.duration(),
-        fidelityAttr));
+        fidelityAttr, fixedParameters,
+        operation.canonicalName() != canonicalOperationName(operation.name())
+            ? builder.getStringAttr(operation.canonicalName())
+            : StringAttr{}));
   }
 
   const auto connectivity = connectivityKind() == Connectivity::Kind::AllToAll

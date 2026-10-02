@@ -861,7 +861,9 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
              std::optional<std::vector<mlir::CompilerTarget::SiteTuple>>
                  siteTuples,
              const std::optional<uint64_t> duration,
-             const std::optional<double> fidelity) {
+             const std::optional<double> fidelity,
+             std::vector<std::optional<double>> fixedParameters,
+             std::optional<std::string> canonicalName) {
             constructFromExpected(
                 self,
                 mlir::CompilerTarget::OperationCapability::create(
@@ -869,10 +871,13 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
                     std::move(siteTuples)
                         .value_or(
                             std::vector<mlir::CompilerTarget::SiteTuple>{}),
-                    duration, fidelity));
+                    duration, fidelity, std::move(fixedParameters),
+                    std::move(canonicalName)));
           },
           "name"_a, "arity"_a, "num_parameters"_a, "site_tuples"_a = nb::none(),
-          "duration"_a = nb::none(), "fidelity"_a = nb::none())
+          "duration"_a = nb::none(), "fidelity"_a = nb::none(), nb::kw_only(),
+          "fixed_parameters"_a = std::vector<std::optional<double>>{},
+          "canonical_name"_a = nb::none())
       .def(
           "__init__",
           [](mlir::CompilerTarget::OperationCapability& self, std::string name,
@@ -880,7 +885,9 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
              std::optional<std::vector<mlir::CompilerTarget::SiteTuple>>
                  siteTuples,
              const std::optional<uint64_t> duration,
-             const std::optional<double> fidelity) {
+             const std::optional<double> fidelity,
+             std::vector<std::optional<double>> fixedParameters,
+             std::optional<std::string> canonicalName) {
             constructFromExpected(
                 self,
                 mlir::CompilerTarget::OperationCapability::create(
@@ -888,10 +895,13 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
                     std::move(siteTuples)
                         .value_or(
                             std::vector<mlir::CompilerTarget::SiteTuple>{}),
-                    duration, fidelity));
+                    duration, fidelity, std::move(fixedParameters),
+                    std::move(canonicalName)));
           },
           "name"_a, "arity"_a, "num_parameters"_a, "site_tuples"_a = nb::none(),
-          "duration"_a = nb::none(), "fidelity"_a = nb::none())
+          "duration"_a = nb::none(), "fidelity"_a = nb::none(), nb::kw_only(),
+          "fixed_parameters"_a = std::vector<std::optional<double>>{},
+          "canonical_name"_a = nb::none())
       .def_prop_ro(
           "name",
           [](const mlir::CompilerTarget::OperationCapability& operation) {
@@ -917,6 +927,15 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
           },
           "Supported ordered placements with optional calibration; empty means "
           "general applicability.")
+      .def_prop_ro(
+          "fixed_parameters",
+          [](const mlir::CompilerTarget::OperationCapability& operation) {
+            return std::vector<std::optional<double>>(
+                operation.fixedParameters().begin(),
+                operation.fixedParameters().end());
+          },
+          "Fixed values or None per parameter; empty means unrestricted. "
+          "Constants use absolute tolerance 1e-15 without angle wrapping.")
       .def_prop_ro("duration",
                    &mlir::CompilerTarget::OperationCapability::duration,
                    "The raw default duration, if available.")
@@ -1210,6 +1229,7 @@ Raises:
           },
           "Recognized native gates supported by the target.")
       .def_prop_ro("synthesis_basis", &mlir::CompilerTarget::synthesisBasis,
+                   nb::rv_policy::copy,
                    "A target-wide single-qubit basis with an optional "
                    "entangler, or None when no single-qubit basis is usable.")
       .def(
@@ -1217,22 +1237,27 @@ Raises:
           [](const mlir::CompilerTarget& target, const std::string_view name,
              const size_t arity, const std::optional<size_t> numParameters,
              const std::optional<std::vector<mlir::CompilerTarget::SiteId>>&
-                 sites) {
+                 sites,
+             const std::vector<std::optional<double>>& parameters) {
             if (sites) {
               return target.supportsOperation(name, arity, numParameters,
-                                              *sites);
+                                              *sites, parameters);
             }
-            return target.supportsOperation(name, arity, numParameters);
+            return target.supportsOperation(name, arity, numParameters,
+                                            std::nullopt, parameters);
           },
           "name"_a, "arity"_a, "num_parameters"_a = nb::none(),
-          "sites"_a = nb::none(),
+          "sites"_a = nb::none(), nb::kw_only(),
+          "parameters"_a.sig("()") = std::vector<std::optional<double>>{},
           R"pb(Check whether the target supports an operation.
 
 Args:
     name: Operation name. Recognized aliases are normalized.
     arity: Number of qubits used by the operation.
     num_parameters: Number of real-valued parameters. None accepts any count.
-    sites: Ordered target site IDs. None checks support on any placement.)pb");
+    sites: Ordered target site IDs. None checks support on any placement.
+    parameters: Known parameter values. Omitted or None values require
+        unrestricted support.)pb");
 
   nb::class_<mlir::TargetEnvironment>(
       m, "TargetEnvironment",

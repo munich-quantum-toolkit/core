@@ -155,9 +155,12 @@ struct FuseSingleQubitUnitaryRunsPattern final
     }
 
     FusableRunScan run = scanFusableRun(op, *headMatrix, basis, target);
+    const auto* targetBasis = target != nullptr && target->synthesisBasis()
+                                  ? &*target->synthesisBasis()
+                                  : nullptr;
     const auto synthesized = decomposition::synthesizeUnitary1QEuler(
         rewriter, op.getLoc(), op.getInputQubit(0), run.composed, run.gateCount,
-        run.hasNonBasisGate, basis);
+        run.hasNonBasisGate, basis, targetBasis);
     if (!synthesized) {
       return failure();
     }

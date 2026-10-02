@@ -180,6 +180,36 @@ placements without calibration in this list, and omit operations that are not
 available anywhere. Structural and program-format constructs are not
 compiler-target operations.
 
+`fixed_parameters` constrains individual parameters to finite constants. A
+nonempty list has one entry per parameter; `None` leaves a parameter
+unrestricted. An omitted or empty list leaves every parameter unrestricted.
+Multiple capabilities for the same operation form a union of supported values
+and placements. For example, these capabilities accept four RX angles:
+
+```python
+from math import pi
+
+rx_pulses = [
+    CompilerTarget.OperationCapability("rx", 1, 1, fixed_parameters=[angle]) for angle in (pi / 2, -pi / 2, pi, -pi)
+]
+```
+
+Constants match with absolute tolerance `1e-15`, without angle wrapping. Unbound
+symbolic values cannot satisfy fixed parameters. Parameter ranges and relations
+are not represented. A device-specific instruction name can specify its compiler
+operation with `canonical_name`, for example
+`OperationCapability("rx_90", 1, 1, fixed_parameters=[pi / 2], canonical_name="rx")`.
+The reported name remains available to exporters.
+
+Target compilation requires a single-qubit synthesis basis available on every
+site. The `ZSXX` basis uses unrestricted RZ and either SX or fixed RX(π/2) or
+RX(-π/2). X or fixed RX(±π) provides an optional shorter half-turn sequence. The
+compiler selects supported pulses from the capabilities and preserves the
+global-phase difference between named X/SX gates and RX rotations. Additional
+fixed angles remain valid capabilities without changing the synthesis recipe.
+Targets without a usable basis support capability queries and conformance
+checks, but cannot be passed to target compilation or target synthesis.
+
 Use plain tuples for placements without calibration. Use
 `CompilerTarget.SiteTuple([1, 0], duration=40, fidelity=0.99)` to attach
 calibration to a placement; both forms can appear in the same list.
@@ -191,8 +221,7 @@ preserve the entry sites. Unsupported or inconsistent site transfers are
 diagnosed, including after all-to-all placement. A synthesis basis must provide
 the same one-qubit gate family on every site. Its entangler is optional:
 one-qubit synthesis does not need one. Two-qubit synthesis requires an entangler
-on every routing edge in at least one direction. A native operation does not
-need a synthesis basis.
+on every routing edge in at least one direction.
 
 Mapping explores one initial-layout trial per available logical CPU by default,
 using LLVM's affinity-aware CPU count with a minimum of one. An explicit

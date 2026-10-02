@@ -744,7 +744,7 @@ NativeCostAnalysis::operationCost(UnitaryOpInterface operation,
 std::optional<size_t>
 NativeCostAnalysis::matrixCost(const Matrix4x4& matrix,
                                const CompilerTarget& target, Sites sites) {
-  const auto basis = target.synthesisBasis();
+  const auto& basis = target.synthesisBasis();
   if (!basis || !basis->entangler) {
     return std::nullopt;
   }
@@ -1091,13 +1091,13 @@ static LogicalResult synthesizeTargetOperation(
         return unsupported(
             "its unitary matrix is not available at compile time");
       }
-      decomposition::synthesizeParameterizedUnitary1Q(rewriter, operation,
-                                                      basis->singleQubit);
+      decomposition::synthesizeParameterizedUnitary1Q(
+          rewriter, operation, basis->singleQubit, &*basis);
       return success();
     }
     const auto synthesized = decomposition::synthesizeUnitary1QEuler(
         rewriter, operation->getLoc(), op.getInputQubit(0), matrix,
-        /*runSize=*/1, /*hasNonBasisGate=*/true, basis->singleQubit);
+        /*runSize=*/1, /*hasNonBasisGate=*/true, basis->singleQubit, &*basis);
     if (!synthesized) {
       llvm::reportFatalInternalError(
           "target single-qubit basis failed to synthesize a unitary matrix");
@@ -1182,7 +1182,7 @@ static bool reducesNativeCost(const FusableTwoQubitRun& run, size_t fusedCost,
 /// Without a target, the original operation count is a conservative bound.
 static bool fuseTwoQubitGateRun(IRRewriter& rewriter, UnitaryOpInterface head,
                                 const Matrix4x4& headMatrix,
-                                CompilerTarget::SynthesisBasis basis,
+                                const CompilerTarget::SynthesisBasis& basis,
                                 const CompilerTarget* target,
                                 const SiteMap* sites,
                                 NativeCostAnalysis& analysis, bool shrinkOnly) {
@@ -1229,7 +1229,7 @@ static bool fuseTwoQubitGateRun(IRRewriter& rewriter, UnitaryOpInterface head,
 }
 
 static bool fuseTwoQubitGates(IRRewriter& rewriter, ModuleOp moduleOp,
-                              CompilerTarget::SynthesisBasis basis,
+                              const CompilerTarget::SynthesisBasis& basis,
                               NativeCostAnalysis& analysis,
                               const CompilerTarget* target = nullptr,
                               const SiteMap* sites = nullptr,
@@ -1265,12 +1265,11 @@ struct FuseTwoQubitGatesPass final
 protected:
   void runOnOperation() override {
     ModuleOp moduleOp = getOperation();
-    const auto basis =
-        target_ ? target_->synthesisBasis()
-                : std::optional{CompilerTarget::SynthesisBasis{
-                      .singleQubit = CompilerTarget::SingleQubitBasis::U,
-                      .entangler = CompilerTarget::GateKind::CZ,
-                  }};
+    const std::optional defaultBasis{CompilerTarget::SynthesisBasis{
+        .singleQubit = CompilerTarget::SingleQubitBasis::U,
+        .entangler = CompilerTarget::GateKind::CZ,
+    }};
+    const auto& basis = target_ ? target_->synthesisBasis() : defaultBasis;
     if (!basis || !basis->entangler) {
       return;
     }
@@ -1342,7 +1341,7 @@ protected:
       return;
     }
     const CompilerTarget& target = environment.environment().target();
-    const auto targetBasis = target.synthesisBasis();
+    const auto& targetBasis = target.synthesisBasis();
     if (failed(prepareGlobalPhases(moduleOp, target))) {
       signalPassFailure();
       return;
@@ -1426,6 +1425,16 @@ protected:
     if (result.wasInterrupted()) {
       signalPassFailure();
       return;
+    }
+    if (targetBasis &&
+        targetBasis->singleQubit == CompilerTarget::SingleQubitBasis::ZSXX) {
+      RewritePatternSet patterns(&getContext());
+      decomposition::populateParameterizedSingleQubitRunCompositionPatterns(
+          patterns, targetBasis->singleQubit, &target);
+      if (failed(applyPatternsGreedily(moduleOp, std::move(patterns)))) {
+        signalPassFailure();
+        return;
+      }
     }
     if (failed(prepareGlobalPhases(moduleOp, target))) {
       signalPassFailure();

@@ -129,6 +129,15 @@ protected:
       signalPassFailure();
       return;
     }
+    const auto& target = environment_.target();
+    if (target.nativeOperationsKind() ==
+            CompilerTarget::NativeOperations::Kind::Explicit &&
+        !target.synthesisBasis()) {
+      getOperation().emitError(
+          "target compilation requires a single-qubit synthesis basis");
+      signalPassFailure();
+      return;
+    }
     if (failed(mqt::verifyQuantumAllocations(getOperation()))) {
       signalPassFailure();
       return;

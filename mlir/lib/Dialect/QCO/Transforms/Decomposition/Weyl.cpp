@@ -900,7 +900,7 @@ decomposeUnitary2QWeyl(const Matrix4x4& target,
 SynthesizedUnitary2Q
 emitUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0, Value qubit1,
                   const TwoQubitNativeDecomposition& decomposition,
-                  const CompilerTarget::SynthesisBasis basis) {
+                  const CompilerTarget::SynthesisBasis& basis) {
   if (!basis.entangler) {
     llvm::reportFatalInternalError(
         "two-qubit emission requires a synthesis-basis entangler");
@@ -921,7 +921,7 @@ emitUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0, Value qubit1,
   const auto emitFactor = [&](Value& wire, std::size_t index) {
     const auto synthesized = synthesizeUnitary1QEuler(
         builder, loc, wire, factors[index], /*runSize=*/0,
-        /*hasNonBasisGate=*/true, basis.singleQubit);
+        /*hasNonBasisGate=*/true, basis.singleQubit, &basis);
     wire = synthesized->qubit;
     globalPhase += synthesized->globalPhase;
   };

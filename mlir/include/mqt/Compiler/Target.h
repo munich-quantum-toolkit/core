@@ -154,8 +154,9 @@ public:
 
   /// An operation capability described by a target.
   ///
-  /// The reported name is retained verbatim while
-  /// @ref canonicalName contains its normalized compiler spelling. Operations
+  /// The reported name is retained verbatim while @ref canonicalName identifies
+  /// its compiler operation. By default it is derived from the reported name;
+  /// an explicit override describes named instances such as rx_90. Operations
   /// with no site tuples are generally applicable. A nonempty list gives all
   /// supported ordered placements. Missing tuple calibration values inherit
   /// the operation defaults.
@@ -196,19 +197,23 @@ public:
     create(std::string name, size_t arity, size_t numParameters,
            std::vector<SiteTuple> siteTuples = {},
            std::optional<uint64_t> duration = std::nullopt,
-           std::optional<double> fidelity = std::nullopt);
+           std::optional<double> fidelity = std::nullopt,
+           std::vector<std::optional<double>> fixedParameters = {},
+           std::optional<std::string> canonicalName = std::nullopt);
 
     /// Create a validated operation capability.
     [[nodiscard]] static llvm::Expected<OperationCapability>
     create(std::string name, Arity arity, size_t numParameters,
            std::vector<SiteTuple> siteTuples = {},
            std::optional<uint64_t> duration = std::nullopt,
-           std::optional<double> fidelity = std::nullopt);
+           std::optional<double> fidelity = std::nullopt,
+           std::vector<std::optional<double>> fixedParameters = {},
+           std::optional<std::string> canonicalName = std::nullopt);
 
     /// Return the exact reported operation name.
     [[nodiscard]] llvm::StringRef name() const noexcept;
 
-    /// Return the canonical lower-case compiler operation name.
+    /// Return the compiler operation name, independently of its reported name.
     [[nodiscard]] llvm::StringRef canonicalName() const noexcept;
 
     /// Return the accepted operation arity.
@@ -216,6 +221,13 @@ public:
 
     /// Return the number of real-valued operation parameters.
     [[nodiscard]] size_t numParameters() const noexcept;
+
+    /// Fixed parameter values; nullopt accepts any value. Empty is
+    /// unrestricted. Nonempty lists contain numParameters() entries. Constants
+    /// match with absolute tolerance 1e-15, without reducing angles modulo a
+    /// period.
+    [[nodiscard]] llvm::ArrayRef<std::optional<double>>
+    fixedParameters() const noexcept;
 
     /// Return all supported ordered placements, or empty for general support.
     [[nodiscard]] llvm::ArrayRef<SiteTuple> siteTuples() const noexcept;
@@ -231,12 +243,14 @@ public:
                         Arity arity, size_t numParameters,
                         std::vector<SiteTuple> siteTuples,
                         std::optional<uint64_t> duration,
-                        std::optional<double> fidelity);
+                        std::optional<double> fidelity,
+                        std::vector<std::optional<double>> fixedParameters);
 
     std::string name_;
     std::string canonicalName_;
     Arity arity_;
     size_t numParameters_;
+    std::vector<std::optional<double>> fixedParameters_;
     std::vector<SiteTuple> siteTuples_;
     std::optional<uint64_t> duration_;
     std::optional<double> fidelity_;
@@ -293,7 +307,7 @@ public:
   /// Recognized globally usable single-qubit synthesis basis.
   enum class SingleQubitBasis : uint8_t {
     U,    ///< `U(θ, φ, λ)`.
-    ZSXX, ///< `RZ` / `SX` / `X` synthesis via a ZYZ decomposition.
+    ZSXX, ///< RZ and X quarter turns, with optional X half turns.
     R,    ///< XYX synthesis expressed with `R(θ, φ)`.
     XZX,  ///< `RX(φ) * RZ(θ) * RX(λ)`.
     XYX,  ///< `RX(φ) * RY(θ) * RX(λ)`.
@@ -301,10 +315,21 @@ public:
     ZXZ,  ///< `RZ(φ) * RX(θ) * RZ(λ)`.
   };
 
+  /// Native RX pulses implementing the X rotations of the ZSXX basis.
+  struct RXPulses {
+    double quarterTurnAngle;
+    std::optional<double> halfTurnAngle;
+
+    friend bool operator==(const RXPulses&, const RXPulses&) = default;
+  };
+
   /// One single-qubit basis and optional entangler usable across the target.
   struct SynthesisBasis {
     SingleQubitBasis singleQubit;
     std::optional<GateKind> entangler;
+    std::optional<RXPulses> rxPulses;
+    /// Whether the named X shortcut is available when using native SX gates.
+    bool hasX = true;
 
     friend bool operator==(const SynthesisBasis&,
                            const SynthesisBasis&) = default;
@@ -400,15 +425,23 @@ public:
   /// Return operation capabilities in reported order.
   [[nodiscard]] llvm::ArrayRef<OperationCapability> operations() const noexcept;
 
-  /// Return whether an operation capability is supported by the target.
+  /// Return whether an operation supports unrestricted parameter values.
   [[nodiscard]] bool
   supportsOperation(llvm::StringRef name, size_t arity,
                     std::optional<size_t> numParameters = std::nullopt) const;
 
-  /// Return whether an operation capability is supported on ordered sites.
+  /// Return whether an operation supports unrestricted values on ordered sites.
   [[nodiscard]] bool supportsOperation(llvm::StringRef name, size_t arity,
                                        std::optional<size_t> numParameters,
                                        llvm::ArrayRef<SiteId> sites) const;
+
+  /// Check parameter values, optionally on ordered sites.
+  /// Unknown values require unrestricted support.
+  [[nodiscard]] bool
+  supportsOperation(llvm::StringRef name, size_t arity,
+                    std::optional<size_t> numParameters,
+                    std::optional<llvm::ArrayRef<SiteId>> sites,
+                    llvm::ArrayRef<std::optional<double>> parameters) const;
 
   /// Return whether a QCO operation is supported.
   [[nodiscard]] bool supports(::mlir::Operation* operation) const;
@@ -428,7 +461,9 @@ public:
   [[nodiscard]] llvm::ArrayRef<GateKind> supportedGates() const noexcept;
 
   /// Return a globally usable single-qubit basis with an optional entangler.
-  [[nodiscard]] std::optional<SynthesisBasis> synthesisBasis() const noexcept;
+  /// The cached basis remains valid while this target or a copy exists.
+  [[nodiscard]] const std::optional<SynthesisBasis>&
+  synthesisBasis() const noexcept;
 
   /// Materialize the source target facts as a typed MLIR attribute.
   [[nodiscard]] mqt::CompilationTargetAttr

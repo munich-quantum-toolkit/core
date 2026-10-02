@@ -2823,7 +2823,11 @@ TEST_F(CompilerPipelineTest, StaticNativeThreeQubitGateSurvives) {
           {llvm::cantFail(CompilerTarget::SiteTuple::create({0, 1, 2}))}));
   const auto target = llvm::cantFail(CompilerTarget::create(
       3, CompilerTarget::Connectivity::fromCouplings({{0, 1}, {1, 2}}),
-      CompilerTarget::NativeOperations::fromOperations({native})));
+      CompilerTarget::NativeOperations::fromOperations({
+          native,
+          llvm::cantFail(
+              CompilerTarget::OperationCapability::create("u", 1, 3)),
+      })));
   auto program = QCOProgram::fromMLIRString(R"mlir(module {
     func.func @main() attributes {mqt.entry_point} {
       %a = qco.static 0 : !qco.qubit
@@ -2924,11 +2928,12 @@ TEST_F(CompilerPipelineTest, IndexedPlacementRetainsTargetAndPayloadChecks) {
                           "for int i in [0:1] { x q[i]; } c = measure q;";
   using OperationCapability = CompilerTarget::OperationCapability;
   using Native = CompilerTarget::NativeOperations;
-  const auto x = llvm::cantFail(OperationCapability::create("x", 1, 0));
+  const auto u = llvm::cantFail(OperationCapability::create("u", 1, 3));
   const auto measure =
       llvm::cantFail(OperationCapability::create("measure", 1, 0));
-  const auto localX = llvm::cantFail(OperationCapability::create(
-      "x", 1, 0, {llvm::cantFail(CompilerTarget::SiteTuple::create({0}))}));
+  const auto localMeasure = llvm::cantFail(OperationCapability::create(
+      "measure", 1, 0,
+      {llvm::cantFail(CompilerTarget::SiteTuple::create({0}))}));
   const auto targetWith =
       [](size_t capacity, const std::vector<OperationCapability>& operations) {
         return llvm::cantFail(CompilerTarget::create(
@@ -2938,10 +2943,10 @@ TEST_F(CompilerPipelineTest, IndexedPlacementRetainsTargetAndPayloadChecks) {
   const auto payload = llvm::cantFail(payloadSpecificationForProgramFormat(
       QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE));
   for (const auto& [target, expected] : {
-           std::pair{targetWith(1, {x, measure}), "target site count"},
-           std::pair{targetWith(2, {localX, measure}),
-                     "cannot lower operation"},
-           std::pair{targetWith(2, {measure}), "cannot lower operation"},
+           std::pair{targetWith(1, {u, measure}), "target site count"},
+           std::pair{targetWith(2, {u, localMeasure}),
+                     "target does not support operation"},
+           std::pair{targetWith(2, {u}), "target does not support operation"},
        }) {
     auto qc = QCProgram::fromOpenQASMString(source);
     ASSERT_TRUE(qc);
@@ -2956,7 +2961,7 @@ TEST_F(CompilerPipelineTest, IndexedPlacementRetainsTargetAndPayloadChecks) {
     EXPECT_FALSE(program->compileForTarget(TargetEnvironment(target, payload)));
     EXPECT_TRUE(StringRef(diagnostics).contains(expected)) << diagnostics;
   }
-  const auto target = targetWith(2, {x, measure});
+  const auto target = targetWith(2, {u, measure});
   for (const auto format :
        {QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE, QDMI_PROGRAM_FORMAT_QASM3}) {
     auto result = runDefaultPipeline(
@@ -4015,6 +4020,32 @@ TEST_F(CompilerPipelineTest, TargetSynthesisResynthesizesTwoQubitBlocks) {
       makeSparseUCZTarget(true), makePayloadSpecification())));
 }
 
+TEST_F(CompilerPipelineTest, TargetPipelinesRequireSynthesisBasis) {
+  using Capability = CompilerTarget::OperationCapability;
+  for (const auto& native : {
+           llvm::cantFail(Capability::create("s", 1, 0)),
+           llvm::cantFail(Capability::create("rx", 1, 1, {}, std::nullopt,
+                                             std::nullopt, {0.37})),
+       }) {
+    const auto target = llvm::cantFail(CompilerTarget::create(
+        1, CompilerTarget::Connectivity::allToAll(),
+        CompilerTarget::NativeOperations::fromOperations({native})));
+    EXPECT_FALSE(target.synthesisBasis());
+    for (const bool synthesisOnly : {false, true}) {
+      auto input = QCProgram::fromOpenQASMString(
+          "OPENQASM 3.0; include \"stdgates.inc\"; qubit q; s q;");
+      ASSERT_TRUE(input);
+      auto program = std::move(*input).intoQCO();
+      ASSERT_TRUE(program);
+      const auto before = program->str();
+      const TargetEnvironment environment(target, makePayloadSpecification());
+      EXPECT_FALSE(synthesisOnly ? program->synthesizeForTarget(environment)
+                                 : program->compileForTarget(environment));
+      EXPECT_EQ(program->str(), before);
+    }
+  }
+}
+
 TEST_F(CompilerPipelineTest, TargetCompilationFusesOnlyWithUsableNativeBasis) {
   using NativeOperations = CompilerTarget::NativeOperations;
   using OperationCapability = CompilerTarget::OperationCapability;
@@ -4093,6 +4124,10 @@ TEST_F(CompilerPipelineTest, TargetCompilationFusesOnlyWithUsableNativeBasis) {
     auto program = QCOProgram::fromModule(ownedContext, std::move(moduleOp));
     ASSERT_TRUE(program);
 
+    if (!testCase.target.synthesisBasis()) {
+      EXPECT_FALSE(program->compileForTarget(environment));
+      continue;
+    }
     ASSERT_TRUE(program->compileForTarget(environment));
     ASSERT_TRUE(verify(program->module()).succeeded());
     ASSERT_TRUE(qco::verifyLinearity(program->module()).succeeded());

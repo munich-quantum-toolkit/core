@@ -86,10 +86,10 @@ struct SynthesizedUnitary1Q {
 /// @param basis The single-qubit synthesis basis.
 /// @return The synthesized qubit and correction, or `std::nullopt` if synthesis
 /// is skipped.
-[[nodiscard]] std::optional<SynthesizedUnitary1Q>
-synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
-                         const Matrix2x2& composed, std::size_t runSize,
-                         bool hasNonBasisGate, SingleQubitBasis basis);
+[[nodiscard]] std::optional<SynthesizedUnitary1Q> synthesizeUnitary1QEuler(
+    OpBuilder& builder, Location loc, Value qubit, const Matrix2x2& composed,
+    std::size_t runSize, bool hasNonBasisGate, SingleQubitBasis basis,
+    const CompilerTarget::SynthesisBasis* targetBasis = nullptr);
 
 /// Materializes one accumulated phase correction when needed.
 ///
@@ -104,10 +104,12 @@ void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase);
 /// Synthesizes one supported runtime-parameterized operation in @p basis.
 ///
 /// Leaves operations that already belong to @p basis unchanged.
+/// The optional target basis selects native pulse forms and shortcuts.
 ///
 /// @pre `canSynthesizeParameterizedUnitary1Q(op)` is true.
-void synthesizeParameterizedUnitary1Q(RewriterBase& rewriter, Operation* op,
-                                      SingleQubitBasis basis);
+void synthesizeParameterizedUnitary1Q(
+    RewriterBase& rewriter, Operation* op, SingleQubitBasis basis,
+    const CompilerTarget::SynthesisBasis* targetBasis = nullptr);
 
 /// Populates @p patterns with the single-qubit run fusion rewrite for
 /// @p basis (the reusable core of `fuse-single-qubit-unitary-runs`).
@@ -124,6 +126,7 @@ void populateFuseSingleQubitUnitaryRunsPatterns(
 ///
 /// The patterns emit @p basis directly. With @p target, preserve native runs
 /// and only use direct Euler identities, keeping optional fusion exportable.
+/// ZSXX targets only merge adjacent RZ operations symbolically.
 void populateParameterizedSingleQubitRunCompositionPatterns(
     RewritePatternSet& patterns, SingleQubitBasis basis,
     const CompilerTarget* target = nullptr);

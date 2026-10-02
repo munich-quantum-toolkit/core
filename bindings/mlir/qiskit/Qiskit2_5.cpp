@@ -10,6 +10,7 @@
 
 #include "mqt/Compiler/Target.h"
 #include "mqt/Dialect/MQT/IR/QubitLayout.h"
+#include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QC/Translation/StandardGate.h"
 
 #include "QiskitTranslation.h"
@@ -40,6 +41,7 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <ranges>
 #include <set>
 #include <span>
 #include <stdexcept>
@@ -2221,16 +2223,28 @@ public:
                const std::vector<uint32_t>& qubits,
                const std::vector<Parameter>& parameters) override {
     const auto* gate = versionGate(mapping);
-    /// Only P and U3 have alternative names in this Qiskit gate table.
-    if (target_ != nullptr && gate != nullptr &&
-        (mapping.gate == mlir::qc::StandardGate::P ||
-         mapping.gate == mlir::qc::StandardGate::U3)) {
+    std::string nativeName;
+    if (target_ != nullptr && gate != nullptr) {
       for (const auto& operation : target_->operations()) {
-        const auto* candidate = versionGate(operation.name());
+        const auto* candidate = versionGate(operation.canonicalName());
         if (candidate == nullptr || candidate->translation != mapping ||
             !operation.arity().accepts(qubits.size()) ||
-            operation.numParameters() != parameters.size()) {
+            operation.numParameters() != parameters.size() ||
+            !std::ranges::all_of(
+                std::views::iota(size_t{0}, operation.fixedParameters().size()),
+                [&](size_t index) {
+                  const auto expected = operation.fixedParameters()[index];
+                  const auto* actual = parameters[index].getNumber();
+                  return !expected ||
+                         (actual != nullptr &&
+                          std::abs(actual->value - *expected) <=
+                              mlir::mqt::PARAMETER_COMPARISON_TOLERANCE);
+                })) {
           continue;
+        }
+        if (const auto* named = versionGate(operation.name());
+            named != nullptr && named->translation == mapping) {
+          candidate = named;
         }
         if (operation.siteTuples().empty() ||
             std::ranges::any_of(operation.siteTuples(), [&](const auto& tuple) {
@@ -2240,6 +2254,7 @@ public:
                                         });
             })) {
           gate = candidate;
+          nativeName = operation.name().str();
           break;
         }
       }
@@ -2256,6 +2271,23 @@ public:
         qk_gate_num_params(gate->native) != parameters.size()) {
       throw std::runtime_error("Qiskit gate '" + std::string(gate->name) +
                                "' has incompatible arity");
+    }
+    if (!nativeName.empty() && nativeName != gate->name) {
+      if (!standardGates_.is_valid()) {
+        standardGates_ = nb::module_::import_("qiskit.circuit.library")
+                             .attr("get_standard_gate_name_mapping")();
+      }
+      auto operation =
+          standardGates_[nb::str(gate->name.data(), gate->name.size())].attr(
+              "to_mutable")();
+      nb::list values;
+      for (const auto& parameter : parameters) {
+        values.append(pythonParameter(parameter));
+      }
+      operation.attr("params") = values;
+      operation.attr("name") = nb::str(nativeName.data(), nativeName.size());
+      pythonCircuit_.attr("append")(operation, pythonQubits(qubits));
+      return;
     }
     if (std::ranges::all_of(parameters, [](const Parameter& parameter) {
           return parameter.getNumber() != nullptr;
@@ -2279,7 +2311,7 @@ public:
     for (const auto& parameter : parameters) {
       values.append(pythonParameter(parameter));
     }
-    if (!standardGates_.is_valid()) {
+    if (!standardInstruction_.is_valid()) {
       standardGates_ = nb::module_::import_("qiskit.circuit.library")
                            .attr("get_standard_gate_name_mapping")();
       standardInstruction_ = nb::module_::import_("qiskit.circuit")
@@ -2785,7 +2817,6 @@ public:
         circuit.attr("Barrier"), circuit.attr("Delay"),
         circuit.attr("ControlFlowOp"), controlFlow.attr("BreakLoopOp"),
         controlFlow.attr("ContinueLoopOp"), circuit.attr("Store"));
-    const auto parameter = circuit.attr("Parameter")("_mqt_target_parameter");
     const auto available = target.attr("operation_names");
     std::set<std::string> names;
     for (auto item : nb::borrow<nb::iterable>(operationNames.is_none()
@@ -2828,6 +2859,7 @@ public:
 
       std::string reason;
       size_t numParameters = 0;
+      std::vector<std::optional<double>> fixedParameters;
       if (nb::isinstance(instruction, circuit.attr("ControlledGate")) &&
           nb::cast<uint64_t>(instruction.attr("ctrl_state")) !=
               closedControlState(
@@ -2835,14 +2867,26 @@ public:
         reason = "open controls";
       } else if (!nativeName) {
         reason = "custom or unsupported operation";
-      } else if (operationName != *nativeName) {
+      } else if (operationName != *nativeName &&
+                 (*nativeName == "measure" || *nativeName == "reset")) {
         reason = "custom operation name";
       } else {
         const nb::object parameters = instruction.attr("params");
         numParameters = nb::len(parameters);
-        const auto slots = std::vector<nb::object>(numParameters, parameter);
-        bool supported = nb::cast<bool>(target.attr("instruction_supported")(
-            operationName, nb::arg("parameters") = slots));
+        bool supported = true;
+        for (auto value : nb::borrow<nb::iterable>(parameters)) {
+          if (nb::isinstance(value, circuit.attr("ParameterExpression")) &&
+              nb::len(nb::borrow<nb::object>(value.attr("parameters"))) != 0) {
+            fixedParameters.emplace_back(std::nullopt);
+          } else {
+            double number = 0.0;
+            if (!nb::try_cast(value, number) || !std::isfinite(number)) {
+              supported = false;
+              break;
+            }
+            fixedParameters.emplace_back(number);
+          }
+        }
         if (supported && nb::cast<bool>(target.attr("gate_has_angle_bounds")(
                              operationName))) {
           for (const auto bound : {
@@ -2889,7 +2933,8 @@ public:
       }
       const auto arity = nb::cast<size_t>(instruction.attr("num_qubits"));
       auto capability = takeResult(Target::OperationCapability::create(
-          operationName, arity, numParameters, std::move(placements)));
+          operationName, arity, numParameters, std::move(placements),
+          std::nullopt, std::nullopt, std::move(fixedParameters), nativeName));
       if (arity == 2) {
         if (qargs.is_none()) {
           allToAll = true;
