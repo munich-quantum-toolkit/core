@@ -89,6 +89,10 @@ namespace {
 
 using Wires = SmallVector<WireIterator>;
 
+/// Widen this alias when targets need more than 65,535 sites.
+using QubitIndex = uint16_t;
+using QubitIndexPair = std::pair<QubitIndex, QubitIndex>;
+
 struct TensorAllocation {
   qtensor::AllocOp allocation;
   SmallVector<Operation*> operations;
@@ -286,9 +290,15 @@ static FailureOr<Computation> discoverComputation(func::FuncOp func) {
 static LogicalResult checkCapacity(func::FuncOp func,
                                    const CompilerTarget& target,
                                    const Computation& computation) {
+  if (target.numSites() > std::numeric_limits<QubitIndex>::max()) {
+    return func.emitError()
+           << "target site count exceeds mapping index capacity ("
+           << +std::numeric_limits<QubitIndex>::max() << ")";
+  }
   if (computation.wires.size() <= target.numSites()) {
     return success();
   }
+
   return func.emitError() << "requires " << computation.wires.size()
                           << " program qubits, but the target site count is "
                           << target.numSites();
@@ -299,15 +309,18 @@ static LogicalResult checkCapacity(func::FuncOp func,
 /// Analogously to `discoverComputation`, the i-th extract operation defines
 /// the i-th program qubit. The function assumes that discovery and capacity
 /// checks succeeded.
-static FailureOr<Wires>
-applyPlacement(Region& body, const CompilerTarget& target, const Layout& layout,
-               Computation& computation, IRRewriter& rewriter) {
+static FailureOr<Wires> applyPlacement(Region& body,
+                                       const CompilerTarget& target,
+                                       const Layout<QubitIndex>& layout,
+                                       Computation& computation,
+                                       IRRewriter& rewriter) {
   LayoutRecorder recorder(cast<func::FuncOp>(body.getParentOp()), target);
   SmallVector<Value> staticQubits;
-  staticQubits.reserve(layout.nHardwareQubits());
+  const auto nhardware = layout.nHardwareQubits();
+  staticQubits.reserve(nhardware);
 
   rewriter.setInsertionPointToStart(&body.front());
-  for (size_t hw = 0; hw < layout.nHardwareQubits(); ++hw) {
+  for (size_t hw = 0; hw < nhardware; ++hw) {
     auto op =
         StaticOp::create(rewriter, body.getLoc(), target.siteForVertex(hw));
     staticQubits.emplace_back(op.getQubit());
@@ -351,7 +364,7 @@ applyPlacement(Region& body, const CompilerTarget& target, const Layout& layout,
   }
 
   rewriter.setInsertionPoint(body.back().getTerminator());
-  for (; prog < layout.nHardwareQubits(); ++prog) {
+  for (; prog < nhardware; ++prog) {
     const auto hw = layout.getHardwareIndex(prog);
     auto qubit = staticQubits[hw];
 
@@ -482,7 +495,7 @@ protected:
       return;
     }
 
-    const auto layout = Layout::identity(computation->wires.size());
+    const auto layout = Layout<QubitIndex>::identity(computation->wires.size());
     IRRewriter rewriter(&getContext());
     if (failed(applyPlacement(func.getFunctionBody(), target, layout,
                               *computation, rewriter))) {
@@ -496,8 +509,7 @@ private:
 
 struct MappingPass : impl::MappingPassBase<MappingPass> {
 private:
-  using IndexPairType = std::pair<size_t, size_t>;
-  using Window = SmallVector<IndexPairType>;
+  using Window = SmallVector<QubitIndexPair>;
   using Score = std::pair<size_t, size_t>;
 
   /// Invocation data is prepared before trials, then borrowed read-only.
@@ -557,7 +569,8 @@ private:
   /// Wire slots are physical sites; layout alone tracks logical qubits.
   struct RoutingState {
     /// Create state from layout, enforcing wire[i] = i-th site.
-    static RoutingState fromLayout(const Wires& roots, const Layout& layout,
+    static RoutingState fromLayout(const Wires& roots,
+                                   const Layout<QubitIndex>& layout,
                                    const Environment& env) {
       RoutingState state(Wires(layout.nHardwareQubits()), layout, env);
       for (auto [program, wire] : enumerate(roots)) {
@@ -567,7 +580,7 @@ private:
     }
 
     /// Construct a routing state from a vector of wires and a layout.
-    RoutingState(Wires wires, Layout layout, const Environment& env)
+    RoutingState(Wires wires, Layout<QubitIndex> layout, const Environment& env)
         : wires(std::move(wires)), layout(std::move(layout)) {
       if (env.nativeCosts) {
         costs.emplace(env.target, env.seed, env.nativeCosts.get());
@@ -575,14 +588,14 @@ private:
     }
 
     Wires wires;
-    Layout layout;
+    Layout<QubitIndex> layout;
     std::optional<NativeCostTracker> costs;
   };
 
   /// Describes a SWAP and its associated costs.
   struct SwapCandidate {
     /// The hardware indices on which the SWAP acts.
-    IndexPairType indices;
+    QubitIndexPair indices;
     /// The local (uniform) costs of a SWAP.
     size_t standalone;
     /// Signed first-step prefix adjustment.
@@ -597,15 +610,15 @@ private:
       }
     };
 
-    Layout layout;
-    IndexPairType swap;
+    Layout<QubitIndex> layout;
+    QubitIndexPair swap;
     Node* parent = nullptr;
     int64_t cost = 0;
     size_t depth = 0;
     float f = 0;
 
     /// Reuse layout capacity when starting a new search.
-    void initializeRoot(const Layout& initialLayout) {
+    void initializeRoot(const Layout<QubitIndex>& initialLayout) {
       layout = initialLayout;
       swap = {};
       parent = nullptr;
@@ -633,7 +646,7 @@ private:
 
     /// Return true, if the current SWAP sequence makes all gates in the front
     /// executable.
-    [[nodiscard]] bool isGoal(const IndexPairType& front,
+    [[nodiscard]] bool isGoal(const QubitIndexPair& front,
                               const CompilerTarget& target) const {
       const auto [hw0, hw1] =
           layout.getHardwareIndices(front.first, front.second);
@@ -644,8 +657,8 @@ private:
     [[nodiscard]] bool isRoot() const { return parent == nullptr; }
 
     /// Return the sequence of SWAPs from the root to this node.
-    [[nodiscard]] SmallVector<IndexPairType> swaps() const {
-      SmallVector<IndexPairType> seq(depth);
+    [[nodiscard]] SmallVector<QubitIndexPair> swaps() const {
+      SmallVector<QubitIndexPair> seq(depth);
       auto it = seq.rbegin();
       for (const Node* n = this; n->parent != nullptr; n = n->parent, ++it) {
         *it = n->swap;
@@ -712,7 +725,7 @@ private:
     /// Priority queue of node pointers managed by the caller.
     llvm::PriorityQueue<Node*, std::vector<Node*>, Node::ComparePointer> queue;
     /// Maps a layout to the node that reached it using the lowest cost.
-    DenseMap<ArrayRef<size_t>, Node*> best;
+    DenseMap<ArrayRef<QubitIndex>, Node*> best;
   };
 
   /// Memory arena for A* search nodes, enabling reuse across searches to reduce
@@ -722,13 +735,14 @@ private:
     /// Constructs an arena with a limited memory budget.
     /// The budget of nodes is derived as
     ///
-    ///    `searchMemoryLimit / (sizeof(Node) + 2 * nsites * sizeof(size_t))`
+    ///    `searchMemoryLimit / (sizeof(Node) + 2 * nsites *
+    ///    sizeof(QubitIndex))`
     ///
     /// where the final summand accounts for the Node's layout member.
     explicit Arena(size_t nsites, size_t searchMemoryLimit)
         : budget(std::max<size_t>(
               1, searchMemoryLimit /
-                     (sizeof(Node) + 2 * nsites * sizeof(size_t)))) {}
+                     (sizeof(Node) + 2 * nsites * sizeof(QubitIndex)))) {}
 
     /// Return a node slot to initialize, or nullptr when the arena is full.
     Node* allocate() {
@@ -764,7 +778,8 @@ private:
     /// Build F-graph: Add edges to F for each edge in the coupling graph.
     /// Note that this assumes that the coupling graph is directed, but
     /// symmetric (essentially: undirected).
-    void construct(const Layout& from, const Layout& to) {
+    void construct(const Layout<QubitIndex>& from,
+                   const Layout<QubitIndex>& to) {
       for (size_t u = 0; u < target_->numSites(); ++u) {
         target_->forEachNeighbour(u, [&](const auto v) {
           if (shouldAddEdge(u, v, from, to)) {
@@ -779,7 +794,7 @@ private:
     /// does not include the final back edge closing the cycle because the
     /// first SWAP changes the token (the qubit) on the target, invalidating
     /// the edge in F.
-    [[nodiscard]] std::optional<SmallVector<IndexPairType>>
+    [[nodiscard]] std::optional<SmallVector<QubitIndexPair>>
     findHappySWAPChain() const {
       const auto optCycle = f_.findCycle();
       if (!optCycle) {
@@ -787,7 +802,7 @@ private:
       }
       const auto& cycle = *optCycle;
 
-      SmallVector<IndexPairType> swaps;
+      SmallVector<QubitIndexPair> swaps;
       for (size_t i = cycle.size() - 1; i > 0; --i) {
         swaps.emplace_back(cycle[i], cycle[i - 1]);
       }
@@ -797,7 +812,7 @@ private:
     /// Find an unhappy SWAP. That is, find an edge (u, v), where exchanging u
     /// and v, reduces u's distance to its target location (by one) and
     /// increases v's distance from 0 (already at the correct location) to one.
-    [[nodiscard]] std::optional<IndexPairType> findUnhappySWAP() const {
+    [[nodiscard]] std::optional<QubitIndexPair> findUnhappySWAP() const {
       for (const auto u : f_.getNodes()) {
         for (const auto v : f_.getNeighbours(u)) {
           if (f_.getDegree(v) == 0) {
@@ -815,9 +830,9 @@ private:
   private:
     /// Return true, if moving the program qubit on hardware qubit u to hardware
     /// qubit v brings it closer to its destination hardware qubit.
-    [[nodiscard]] bool shouldAddEdge(const size_t u, const size_t v,
-                                     const Layout& from,
-                                     const Layout& to) const {
+    [[nodiscard]] bool shouldAddEdge(const QubitIndex u, const QubitIndex v,
+                                     const Layout<QubitIndex>& from,
+                                     const Layout<QubitIndex>& to) const {
       const auto dest = to.getHardwareIndex(from.getProgramIndex(u));
       return target_->distanceBetween(v, dest) <
              target_->distanceBetween(u, dest);
@@ -1083,9 +1098,9 @@ private:
   /// Otherwise, place frequently interacting qubits near each other. Nested
   /// control flow has no single interaction frequency, so leave those programs
   /// to the identity and random starts.
-  [[nodiscard]] std::optional<std::pair<Layout, bool>>
+  [[nodiscard]] std::optional<std::pair<Layout<QubitIndex>, bool>>
   generateGreedyLayout(Wires wires, const Environment& env) const {
-    DenseMap<IndexPairType, size_t> weights;
+    DenseMap<QubitIndexPair, size_t> weights;
     bool supported = true;
     walkProgramGraph<WireDirection::Forward>(
         MutableArrayRef(wires.data(), wires.size()),
@@ -1110,12 +1125,13 @@ private:
           const auto [a, b] = interaction.first;
           return env.target.areAdjacent(a, b);
         })) {
-      return std::pair{Layout::identity(env.target.numSites()), true};
+      return std::pair{Layout<QubitIndex>::identity(env.target.numSites()),
+                       true};
     }
 
     const size_t nprogram = wires.size();
     const size_t nhardware = env.target.numSites();
-    SmallVector<SmallVector<IndexPairType>> neighbours(nprogram);
+    SmallVector<SmallVector<std::pair<size_t, size_t>>> neighbours(nprogram);
     SmallVector<size_t> degree(nprogram, 0);
     SmallVector<size_t> attached(nprogram, 0);
     for (const auto& [pair, weight] : weights) {
@@ -1159,10 +1175,11 @@ private:
         }
         auto current = static_cast<size_t>(
             std::distance(remaining.begin(), llvm::min_element(remaining)));
-        SmallVector<size_t> mapping(nhardware, nhardware);
+        SmallVector<QubitIndex> mapping(nhardware,
+                                        static_cast<QubitIndex>(nhardware));
         size_t placed = 0;
         while (current != nhardware && placed < nprogram) {
-          mapping[order[placed++]] = current;
+          mapping[order[placed++]] = static_cast<QubitIndex>(current);
           usedHardware[current] = true;
           env.target.forEachNeighbour(
               current, [&](size_t neighbour) { --remaining[neighbour]; });
@@ -1181,10 +1198,10 @@ private:
         if (placed == nprogram) {
           for (size_t hw = 0; hw < nhardware; ++hw) {
             if (!usedHardware[hw]) {
-              mapping[placed++] = hw;
+              mapping[placed++] = static_cast<QubitIndex>(hw);
             }
           }
-          return std::pair{Layout::fromMapping(mapping), false};
+          return std::pair{Layout<QubitIndex>::fromMapping(mapping), false};
         }
       }
     }
@@ -1199,7 +1216,8 @@ private:
     }
 
     // The out-of-range hardware index marks an unplaced program qubit.
-    SmallVector<size_t> mapping(nhardware, nhardware);
+    SmallVector<QubitIndex> mapping(nhardware,
+                                    static_cast<QubitIndex>(nhardware));
     SmallVector<bool> used(nhardware, false);
     for (size_t placed = 0; placed < nprogram; ++placed) {
       size_t prog = nprogram;
@@ -1232,7 +1250,7 @@ private:
           bestCost = cost;
         }
       }
-      mapping[prog] = best;
+      mapping[prog] = static_cast<QubitIndex>(best);
       used[best] = true;
       for (const auto& [partner, weight] : neighbours[prog]) {
         attached[partner] += weight;
@@ -1243,16 +1261,16 @@ private:
     size_t prog = nprogram;
     for (size_t hw = 0; hw < nhardware; ++hw) {
       if (!used[hw]) {
-        mapping[prog++] = hw;
+        mapping[prog++] = static_cast<QubitIndex>(hw);
       }
     }
-    return std::pair{Layout::fromMapping(mapping), false};
+    return std::pair{Layout<QubitIndex>::fromMapping(mapping), false};
   }
 
   /// Refine greedy, identity, and random starts with forward/backward routing.
   /// Score each candidate with a forward traversal, preserving its start
   /// layout.
-  std::pair<Layout, std::optional<Score>>
+  std::pair<Layout<QubitIndex>, std::optional<Score>>
   generateLayout(const Wires& wires, func::FuncOp func, Environment& env) {
     const auto greedy = generateGreedyLayout(wires, env);
     if (greedy && greedy->second) {
@@ -1262,7 +1280,7 @@ private:
     env.prepareNativeCosts(func);
 
     struct Trial {
-      Layout layout;
+      Layout<QubitIndex> layout;
       /// Synthesis available: (native-count, depth). Otherwise, (max(), swaps).
       Score score;
     };
@@ -1275,12 +1293,12 @@ private:
     }
 
     if (trials.size() < ntrials) {
-      trials.emplace_back(Layout::identity(env.target.numSites()));
+      trials.emplace_back(Layout<QubitIndex>::identity(env.target.numSites()));
 
       auto rng = makeMt19937(env.seed);
       for (size_t i = trials.size(); i < ntrials; ++i) {
-        trials.emplace_back(Layout::random(env.target.numSites(),
-                                           env.target.numSites(), rng()));
+        trials.emplace_back(Layout<QubitIndex>::random(
+            env.target.numSites(), env.target.numSites(), rng()));
       }
     }
 
@@ -1317,7 +1335,7 @@ private:
 
   /// Route the leading interaction with bounded A* node storage.
   /// Drain queued states at the limit, then use distance-reducing SWAPs.
-  [[nodiscard]] SmallVector<IndexPairType>
+  [[nodiscard]] SmallVector<QubitIndexPair>
   search(const Window& window, RoutingState& state, Arena& arena,
          const Environment& env) const {
     const Parameters params{.alpha = alpha, .lambda = lambda};
@@ -1328,7 +1346,7 @@ private:
 
     root->initializeRoot(state.layout);
     if (root->isGoal(window.front(), env.target)) {
-      return SmallVector<IndexPairType>{};
+      return SmallVector<QubitIndexPair>{};
     }
 
     SearchFrontier frontier;
@@ -1347,11 +1365,11 @@ private:
       // Given a layout, create child-nodes for each possible SWAP
       // between two neighboring hardware qubits.
 
-      llvm::SmallDenseSet<IndexPairType, 8> seen;
+      llvm::SmallDenseSet<QubitIndexPair, 8> seen;
       for (const auto& [q0, q1] = window.front(); const auto prog : {q0, q1}) {
         const auto hw0 = curr->layout.getHardwareIndex(prog);
-        env.target.forEachNeighbour(hw0, [&](const auto hw1) {
-          const IndexPairType indices(std::minmax(hw0, hw1));
+        env.target.forEachNeighbour(hw0, [&](const QubitIndex hw1) {
+          const QubitIndexPair indices(std::minmax(hw0, hw1));
           if (seen.contains(indices)) {
             return;
           }
@@ -1386,7 +1404,7 @@ private:
     const auto [hw0, hw1] = state.layout.getHardwareIndices(prog0, prog1);
     const auto path = env.target.shortestPathBetween(hw0, hw1);
 
-    SmallVector<IndexPairType> swaps;
+    SmallVector<QubitIndexPair> swaps;
     for (size_t i = 0; i < path.size() - 2; ++i) {
       swaps.emplace_back(path[i], path[i + 1]);
     }
@@ -1396,14 +1414,15 @@ private:
 
   /// Return the SWAP sequence to move from one layout to another.
   /// Implements the 4-Approximation algorithm described in arXiv:1602.05150v3.
-  [[nodiscard]] SmallVector<IndexPairType>
-  restore(const Layout& from, const Layout& to, const Environment& env) const {
+  [[nodiscard]] SmallVector<QubitIndexPair>
+  restore(const Layout<QubitIndex>& from, const Layout<QubitIndex>& to,
+          const Environment& env) const {
     if (from == to) {
       return {};
     }
     Layout curr(from);
     TokenSwapGraph f(env.target);
-    SmallVector<IndexPairType> swaps;
+    SmallVector<QubitIndexPair> swaps;
 
     while (true) {
       f.reset();
@@ -1437,9 +1456,10 @@ private:
   /// Return a pair of SWAP sequences to transform two layouts into each other.
   /// Inspired by the 4-Approximation algorithm described in arXiv:1602.05150v3,
   /// with the key difference that the goal permutation is not static.
-  [[nodiscard]] std::tuple<Layout, SmallVector<IndexPairType>,
-                           SmallVector<IndexPairType>>
-  converge(const Layout& lhs, const Layout& rhs, const Environment& env) {
+  [[nodiscard]] std::tuple<Layout<QubitIndex>, SmallVector<QubitIndexPair>,
+                           SmallVector<QubitIndexPair>>
+  converge(const Layout<QubitIndex>& lhs, const Layout<QubitIndex>& rhs,
+           const Environment& env) {
     if (lhs == rhs) {
       return {lhs, {}, {}};
     }
@@ -1449,7 +1469,7 @@ private:
         TokenSwapGraph(env.target),
         TokenSwapGraph(env.target),
     };
-    std::array<SmallVector<IndexPairType>, 2> swaps{};
+    std::array<SmallVector<QubitIndexPair>, 2> swaps{};
 
     auto gen = makeMt19937(env.seed);
     std::uniform_int_distribution coin(0, 1);
@@ -1502,15 +1522,15 @@ private:
   /// Inspired by SABRE and to reduce ordering bias, the function performs an
   /// additional backward pass.
   template <typename Range>
-  Layout driveby(Range layouts, const Environment& env,
-                 const size_t niterations = 1) {
+  Layout<QubitIndex> driveby(Range layouts, const Environment& env,
+                             const size_t niterations = 1) {
     assert(!layouts.empty() && "expected at least one layout");
 
     TokenSwapGraph f(env.target);
     Layout curr(*layouts.begin());
 
     // Nudge curr towards target by applying a happy SWAP chain.
-    const auto merge = [&](const Layout& target) {
+    const auto merge = [&](const Layout<QubitIndex>& target) {
       f.reset();
       f.construct(curr, target);
       if (const auto happy = f.findHappySWAPChain()) {
@@ -1540,11 +1560,12 @@ private:
   /// Collect a routing lookahead window of up to `1 + nlookahead` ready
   /// two-qubit gates, while skipping qubit-pair blocks.
   template <WireDirection Direction>
-  Window getWindow(Wires wires, const Layout& layout, Operation* boundary) {
+  Window getWindow(Wires wires, const Layout<QubitIndex>& layout,
+                   Operation* boundary) {
     Window window;
 
-    SmallVector<IndexPairType> prev;
-    SmallVector<IndexPairType> next;
+    SmallVector<QubitIndexPair> prev;
+    SmallVector<QubitIndexPair> next;
 
     walkProgramGraph<Direction>(
         MutableArrayRef(wires.data(), wires.size()),
@@ -1566,7 +1587,7 @@ private:
                 const auto i1 = indices[1];
                 const auto prog0 = layout.getProgramIndex(i0);
                 const auto prog1 = layout.getProgramIndex(i1);
-                const IndexPairType gate = std::minmax(prog0, prog1);
+                const QubitIndexPair gate = std::minmax(prog0, prog1);
 
                 if (!is_contained(prev, gate)) {
                   window.emplace_back(gate);
@@ -1592,7 +1613,7 @@ private:
 
   /// Both modes leave cursors at the next operation on each physical wire.
   template <RoutingMode Mode>
-  static void insertSWAPs(ArrayRef<IndexPairType> swaps, RoutingState& state,
+  static void insertSWAPs(ArrayRef<QubitIndexPair> swaps, RoutingState& state,
                           Statistics& stats, IRRewriter* rewriter) {
     for (const auto& [a, b] : swaps) {
       if (state.costs) {
@@ -1862,7 +1883,7 @@ private:
   /// Return `values` with only the qubit entries realigned according to the
   /// given permutation of hardware indices.
   static SmallVector<Value> realignQubitValues(ValueRange values,
-                                               ArrayRef<size_t> perm,
+                                               ArrayRef<QubitIndex> perm,
                                                const RoutingState& bundle) {
     SmallVector<Value> realigned(values);
     size_t qubitIndex = 0;
@@ -1876,16 +1897,16 @@ private:
   }
 
   /// Destination of each physical slot after a layout change.
-  static SmallVector<size_t> sitePermutation(const Layout& from,
-                                             const Layout& to) {
-    SmallVector<size_t> permutation(from.nHardwareQubits());
+  static SmallVector<QubitIndex> sitePermutation(const Layout<QubitIndex>& from,
+                                                 const Layout<QubitIndex>& to) {
+    SmallVector<QubitIndex> permutation(from.nHardwareQubits());
     for (size_t site = 0; site < permutation.size(); ++site) {
       permutation[site] = to.getHardwareIndex(from.getProgramIndex(site));
     }
     return permutation;
   }
 
-  static void permuteWires(Wires& wires, ArrayRef<size_t> permutation) {
+  static void permuteWires(Wires& wires, ArrayRef<QubitIndex> permutation) {
     Wires reordered(wires.size());
     for (size_t site = 0; site < wires.size(); ++site) {
       reordered[permutation[site]] = wires[site];
@@ -1894,8 +1915,8 @@ private:
   }
 
   /// Capture uses before rebinding so permutation cycles are safe.
-  static void realignQubitUses(ValueRange values, ArrayRef<size_t> sites,
-                               ArrayRef<size_t> permutation,
+  static void realignQubitUses(ValueRange values, ArrayRef<QubitIndex> sites,
+                               ArrayRef<QubitIndex> permutation,
                                IRRewriter& rewriter) {
     auto qubits = getQubitValues(values);
     SmallVector<Value> atSite(permutation.size());
@@ -1931,13 +1952,13 @@ private:
       parent.costs->flush();
     }
 
-    SmallVector<size_t> resultSites(op->getNumResults());
+    SmallVector<QubitIndex> resultSites(op->getNumResults());
     for (size_t site : indices) {
       resultSites[cast<OpResult>(parent.wires[site].qubit())
                       .getResultNumber()] = site;
     }
 
-    SmallVector<size_t> sites;
+    SmallVector<QubitIndex> sites;
     for (auto result : op->getResults()) {
       if (isa<QubitType>(result.getType())) {
         sites.push_back(resultSites[result.getResultNumber()]);
@@ -1976,8 +1997,8 @@ private:
       totalStats.merge(route<Direction, Mode>(child, arena, env, rewriter));
     }
 
-    Layout exit =
-        TypeSwitch<Operation*, Layout>(op)
+    Layout<QubitIndex> exit =
+        TypeSwitch<Operation*, Layout<QubitIndex>>(op)
             .Case([&](scf::ForOp) {
               insertSWAPs<Mode>(restore(children[0].layout, parent.layout, env),
                                 children[0], totalStats, rewriter);
@@ -1996,12 +2017,12 @@ private:
               return layout;
             })
             .Case([&](IndexSwitchOp) {
-              auto layout = driveby(
-                  map_range(children,
-                            [](const RoutingState& child) -> const Layout& {
-                              return child.layout;
-                            }),
-                  env);
+              auto layout = driveby(map_range(children,
+                                              [](const RoutingState& child)
+                                                  -> const Layout<QubitIndex>& {
+                                                return child.layout;
+                                              }),
+                                    env);
               for (auto& child : children) {
                 insertSWAPs<Mode>(restore(child.layout, layout, env), child,
                                   totalStats, rewriter);
