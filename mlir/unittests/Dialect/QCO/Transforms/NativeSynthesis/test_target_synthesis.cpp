@@ -350,7 +350,7 @@ TEST_F(TargetSynthesisTest, NativeIonSynthesisPreservesFullUnitary) {
             std::nullopt, std::nullopt,
             useMS
                 ? std::vector<std::optional<double>>{0., 0.,
-                                                     std::numbers::pi / 2.}
+                                                     std::numbers::pi / 2.,}
                 : std::vector<std::optional<double>>{std::numbers::pi / 2.})));
         const auto target =
             valid(Target::create(2, Connectivity::allToAll(),
