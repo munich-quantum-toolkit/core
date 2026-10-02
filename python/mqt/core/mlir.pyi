@@ -869,6 +869,40 @@ class QCOProgram(Program):
             ValueError: When the program is unsupported for sampling.
         """
 
+class QCProgramBuilder:
+    """Build a straight-line QC program without a frontend dependency.
+
+    Qubits are zero-based logical positions. Parameters are finite floats or names
+    of f64 inputs, reused when the same name occurs. ``finish()`` transfers the
+    program to a QCProgram and makes the builder unusable.
+    """
+
+    def __init__(self, num_qubits: int, num_clbits: int = 0) -> None: ...
+    def gate(
+        self, name: str, qubits: Sequence[int], parameters: Sequence[float | str] = [], *, controls: Sequence[int] = []
+    ) -> QCProgramBuilder:
+        """Append a primitive QC gate with optional positive controls.
+
+        Use QC operation names, for example ``h``, ``x``, ``ry``, ``rzz``, or ``u``.
+        For CX use ``gate("x", [target], controls=[control])``. The first qubit is
+        the most-significant tensor factor. Arity, distinct operands, and parameters
+        are checked before changing the builder.
+        """
+
+    def unitary(
+        self, matrix: Annotated[np.typing.NDArray[np.complex128], {"shape": (None, None)}], qubits: Sequence[int]
+    ) -> QCProgramBuilder:
+        """Append a dense unitary; first target is the most-significant basis bit."""
+
+    def measure(self, qubit: int, bit: int) -> QCProgramBuilder:
+        """Measure into a classical bit."""
+
+    def reset(self, qubit: int) -> QCProgramBuilder:
+        """Reset a qubit to zero."""
+
+    def finish(self) -> QCProgram:
+        """Return the verified QC program and invalidate this builder."""
+
 class JeffProgram(Program):
     """A serializable compiler program in the ``jeff`` dialect.
 

@@ -23,6 +23,7 @@
 #include "qdmi/Client.hpp"
 #include "qdmi/driver/SessionConfig.hpp"
 
+#include "ProgramBuilder.h"
 #include "qiskit/Qiskit.h"
 
 #include "nanobind/nanobind.h"
@@ -1618,6 +1619,7 @@ Set ``copy=True`` to preserve it.)pb");
 
   registerParameterBinding(qcProgram);
   registerParameterBinding(qcoProgram);
+  registerProgramBuilder(m);
 
   auto jeffProgram = nb::class_<mlir::JeffProgram, mlir::Program>(
       m, "JeffProgram",

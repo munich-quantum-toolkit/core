@@ -111,6 +111,32 @@ names, non-finite values, and references to the entry point fail without
 changing the program. Binding does not fold expressions; call `cleanup()` when
 needed.
 
+## Construct a program directly
+
+{py:class}`~mqt.core.mlir.QCProgramBuilder` builds straight-line programs
+without a frontend dependency. Use primitive QC gate names and integer qubit
+positions. Pass `controls` for controlled gates. Parameters are finite numbers
+or names of f64 inputs; repeated names refer to the same input.
+
+```{code-cell} ipython3
+from mqt.core.mlir import QCProgramBuilder
+
+builder = QCProgramBuilder(2)
+builder.gate("ry", [0], ["theta"])
+builder.gate("x", [1], controls=[0])
+built = builder.finish()
+assert built.parameters == ["theta"]
+built.bind_parameters({"theta": 0.5})
+assert built.to_qco().is_valid
+```
+
+`finish()` transfers ownership and invalidates the builder. Dense unitaries use
+`unitary(matrix, qubits)`, with the first target as the most-significant basis
+bit. Allocate classical bits with `QCProgramBuilder(num_qubits, num_clbits)` and
+use `measure(qubit, bit)` to record results; `reset(qubit)` resets a qubit. The
+builder does not expose classical control flow or a symbolic expression
+language; use the frontends for these.
+
 ## Select an output format
 
 Select an output format to stop the pipeline at a particular representation:

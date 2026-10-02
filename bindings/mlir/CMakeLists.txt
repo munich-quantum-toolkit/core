@@ -84,6 +84,7 @@ if(NOT TARGET ${TARGET_NAME})
     MLIRAnalysis
     MLIRMQTDialect
     MLIRMQTUtils
+    MLIRQCProgramBuilder
     MLIRQCTranslationSupport
     MLIRQCODDFunctionality)
 
