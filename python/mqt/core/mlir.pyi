@@ -366,6 +366,14 @@ class CompilerTarget:
 
         SQRTISWAP = 15
 
+        GPI = 16
+
+        GPI2 = 17
+
+        MS = 18
+
+        ZZ = 19
+
     class SingleQubitBasis(enum.Enum):
         """Recognized target-wide single-qubit synthesis basis."""
 
@@ -382,6 +390,10 @@ class CompilerTarget:
         ZYZ = 5
 
         ZXZ = 6
+
+        GPI = 7
+
+        GPI2 = 8
 
     class SynthesisBasis:
         """One synthesis basis usable across the complete target."""

@@ -35,13 +35,18 @@ native matching checks the reordered fixed values before emission. Broader
 angle-domain restrictions and calibration-aware pulse optimization are outside
 this change.
 
+Target compilation requires a single-qubit synthesis basis on every site,
+including for native inputs. The IonQ recipe is independent of the ZSXX RX-pulse
+configuration in the fixed-parameter target base.
+
 ## Validation
 
-The compiler suite passed 245 tests; native synthesis passed 82; QCO IR passed
-577; mapping passed 125. All 533 Python MLIR tests passed. These cover numeric
-and symbolic native round trips and inverses, large phases, fixed GPI2 phases,
-and reversed MS placements with unequal phases and fixed-parameter checks. Stub
-generation left the public API unchanged.
+The rebased stack passed 1,870 native tests across compiler, native synthesis,
+QCO IR, decomposition, optimization, mapping, QIR runtime, and QC translation.
+All 675 Python MLIR and translation tests passed. These cover numeric and
+symbolic native round trips and inverses, large phases, fixed GPI2 phases, and
+reversed MS placements with unequal phases and fixed-parameter checks. Stubs
+were regenerated for the synthesis enums in the updated base.
 
 ## Follow-up
 

@@ -1442,8 +1442,8 @@ void decomposition::synthesizeParameterizedUnitary1Q(
   }
   const bool usesDirectZYZAngles =
       basis == SingleQubitBasis::ZYZ || basis == SingleQubitBasis::ZXZ ||
-      basis == SingleQubitBasis::ZSXX ||
-      basis == SingleQubitBasis::GPI || basis == SingleQubitBasis::GPI2;
+      basis == SingleQubitBasis::ZSXX || basis == SingleQubitBasis::GPI ||
+      basis == SingleQubitBasis::GPI2;
   if (basis == SingleQubitBasis::U || usesDirectZYZAngles) {
     const auto consts = makeConsts<Value>(rewriter, op->getLoc());
     Value qubit;

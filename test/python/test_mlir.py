@@ -953,7 +953,7 @@ def test_native_ion_gate_exports(gate: str, params: list[float]) -> None:
 @pytest.mark.parametrize("symbolic", [False, True])
 @pytest.mark.parametrize("inverse", [False, True])
 def test_native_ion_gate_circuit_round_trip(gate: str, *, symbolic: bool, inverse: bool) -> None:
-    """Compile native gates and their inverses without a fallback synthesis basis."""
+    """Target compilation preserves native parameters and inverse semantics."""
     width = 2 if gate in {"ms", "zz"} else 1
     arguments = "%theta, %phi, %angle" if gate == "ms" else "%theta"
     signature = '%theta: f64 {mqt.input_name = "theta"}' if symbolic else ""
@@ -987,6 +987,8 @@ def test_native_ion_gate_circuit_round_trip(gate: str, *, symbolic: bool, invers
                 3 if gate == "ms" else 1,
                 fixed_parameters=[0.13] if gate == "gpi2" and not symbolic else [],
             ),
+            CompilerTarget.OperationCapability("rz", 1, 1),
+            CompilerTarget.OperationCapability("sx", 1, 0),
             CompilerTarget.OperationCapability("gphase", 0, 1),
         ]),
     )
