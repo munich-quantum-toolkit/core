@@ -248,57 +248,72 @@ private:
     if (failed(expect(TokenKind::LBracket))) {
       return failure();
     }
-    std::optional<SyntaxExpressionId> first;
-    if (current().kind != TokenKind::Colon) {
-      auto expression = parseExpression();
-      if (failed(expression)) {
+    auto first = parseArrayIndex(&slice);
+    if (failed(first)) {
+      return failure();
+    }
+    if (!slice || additional != nullptr) {
+      index = *first;
+    }
+    while (additional != nullptr && current().kind == TokenKind::Comma) {
+      advance();
+      if (current().kind == TokenKind::RBracket) {
+        break;
+      }
+      if (additional->size() + 1 >= ARRAY_RANK_LIMIT) {
+        return sink.error(current().loc, "arrays support at most 7 indices");
+      }
+      auto next = parseArrayIndex();
+      if (failed(next)) {
         return failure();
       }
-      first = expression;
+      additional->push_back(*next);
     }
+    return expect(TokenKind::RBracket);
+  }
+
+  [[nodiscard]] FailureOr<SyntaxExpressionId>
+  parseArrayIndex(std::optional<Slice>* slice = nullptr) {
+    SyntaxExpression range;
+    range.kind = Expr::Kind::Range;
+    range.location = current().loc;
     if (current().kind != TokenKind::Colon) {
-      index = first;
-      while (additional != nullptr && current().kind == TokenKind::Comma) {
-        advance();
-        if (current().kind == TokenKind::RBracket) {
-          break;
-        }
-        if (additional->size() + 1 >= ARRAY_RANK_LIMIT) {
-          return sink.error(current().loc, "arrays support at most 7 indices");
-        }
-        auto next = parseExpression();
-        if (failed(next)) {
-          return failure();
-        }
-        additional->push_back(*next);
+      auto first = parseExpression();
+      if (failed(first)) {
+        return failure();
       }
-      return expect(TokenKind::RBracket);
+      if (current().kind != TokenKind::Colon) {
+        return *first;
+      }
+      range.lhs = *first;
     }
     advance();
-    Slice range{.start = first};
-    if (current().kind != TokenKind::RBracket) {
-      if (current().kind != TokenKind::Colon) {
-        auto expression = parseExpression();
-        if (failed(expression)) {
+    if (current().kind != TokenKind::Colon &&
+        current().kind != TokenKind::Comma &&
+        current().kind != TokenKind::RBracket) {
+      auto stop = parseExpression();
+      if (failed(stop)) {
+        return failure();
+      }
+      range.rhs = *stop;
+    }
+    if (current().kind == TokenKind::Colon) {
+      range.step = range.rhs;
+      range.rhs.reset();
+      advance();
+      if (current().kind != TokenKind::Comma &&
+          current().kind != TokenKind::RBracket) {
+        auto stop = parseExpression();
+        if (failed(stop)) {
           return failure();
         }
-        range.stop = expression;
-      }
-      if (current().kind == TokenKind::Colon) {
-        advance();
-        range.step = range.stop;
-        range.stop.reset();
-        if (current().kind != TokenKind::RBracket) {
-          auto stop = parseExpression();
-          if (failed(stop)) {
-            return failure();
-          }
-          range.stop = stop;
-        }
+        range.rhs = *stop;
       }
     }
-    slice = range;
-    return expect(TokenKind::RBracket);
+    if (slice != nullptr) {
+      *slice = Slice{.start = range.lhs, .step = range.step, .stop = range.rhs};
+    }
+    return sink.addExpression(range);
   }
 
   //===--- Version ------------------------------------------------------===//
