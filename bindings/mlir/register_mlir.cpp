@@ -1302,12 +1302,34 @@ Programs own their MLIR module. Conversions can consume a program; use
       .def_rw("enable_statistics", &mlir::CompilationOptions::enableStatistics)
       .def_rw("mapping", &mlir::CompilationOptions::mapping);
 
+  nb::class_<mlir::QuantumProgramInfo>(
+      m, "QuantumProgramInfo",
+      "Structural quantum resources and control flow, without executing the "
+      "IR.")
+      .def_ro("num_qubits", &mlir::QuantumProgramInfo::numQubits,
+              "Allocated qubit count, or number of distinct static site IDs. "
+              "None for unknown width. Not peak live width or original layout "
+              "width.")
+      .def_ro("static_qubits", &mlir::QuantumProgramInfo::staticQubits,
+              "Sorted distinct physical site IDs declared in the module.")
+      .def_ro("has_control_flow", &mlir::QuantumProgramInfo::hasControlFlow,
+              "Whether the module contains branching or region-based control "
+              "flow.");
+
   auto qcProgram = nb::class_<mlir::QCProgram, mlir::Program>(
       m, "QCProgram", R"pb(A compiler program in the QC dialect.
 
 QC programs use reference semantics and represent frontend quantum programs
 before conversion to QCO.)pb");
   qcProgram
+      .def(
+          "inspect",
+          [](const mlir::QCProgram& program) {
+            requireValid(program);
+            return program.inspect();
+          },
+          "Return declared quantum resources and structural control flow "
+          "throughout the module.")
       .def_static(
           "from_mlir_str",
           &OptionalFunctionAdapter<&mlir::QCProgram::fromMLIRString>::call,
@@ -1441,7 +1463,34 @@ are not counted recursively, and barriers are skipped.)pb")
 Any entry-point operation that implements the ``UnitaryOpInterface`` and acts on two qubits
 is counted. Operations in every structured control-flow region are counted
 once, regardless of how often the region executes. Operations within modifiers
-are not counted recursively, and barriers are skipped.)pb");
+are not counted recursively, and barriers are skipped.)pb")
+      .def(
+          "gate_counts",
+          [](const mlir::QCProgram& program) {
+            requireValid(program);
+            return program.gateCounts();
+          },
+          R"pb(Count gates by operation mnemonic.
+
+The counts use the same static-IR semantics as :meth:`num_gates`. Modifier
+operations use the ``ctrl``, ``inv``, and ``pow`` mnemonics. Their bodies are
+not counted recursively, and barriers are skipped.)pb")
+      .def(
+          "static_depth",
+          [](const mlir::QCProgram& program) {
+            requireValid(program);
+            return program.staticDepth();
+          },
+          R"pb(Calculate the static gate depth of the program.
+
+The depth describes the entry-point IR rather than runtime execution. Mutually
+exclusive structured control-flow branches contribute their maximum depth.
+Each loop region contributes once, regardless of its runtime iteration count.
+Modifier operations contribute one layer, but their bodies do not contribute
+again. Barriers, zero-qubit operations, and classical dependencies are ignored.
+Dynamic register indices conservatively alias all elements of their register.
+Return None for a missing entry point or unsupported quantum references or
+control flow. Function calls are not expanded.)pb");
 
   auto qcoProgram = nb::class_<mlir::QCOProgram, mlir::Program>(
       m, "QCOProgram", R"pb(A compiler program in the QCO dialect.
@@ -1449,6 +1498,14 @@ are not counted recursively, and barriers are skipped.)pb");
 QCO programs use value semantics and expose optimization and transformation
 operations.)pb");
   qcoProgram
+      .def(
+          "inspect",
+          [](const mlir::QCOProgram& program) {
+            requireValid(program);
+            return program.inspect();
+          },
+          "Return declared quantum resources and structural control flow "
+          "throughout the module.")
       .def_static(
           "from_mlir_str",
           &OptionalFunctionAdapter<&mlir::QCOProgram::fromMLIRString>::call,

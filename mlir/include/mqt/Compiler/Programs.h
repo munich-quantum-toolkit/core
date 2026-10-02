@@ -19,6 +19,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <map>
 #include <memory>
 #include <optional>
 #include <span>
@@ -36,6 +37,18 @@ class JeffProgram;
 class OpenQASMProgram;
 class QIRProgram;
 class TargetEnvironment;
+
+/// Structural quantum resources and control flow, without executing the IR.
+struct QuantumProgramInfo {
+  /// Total allocated qubits, or the number of distinct static site IDs.
+  /// Unknown for runtime-sized allocations, quantum inputs, or no entry point.
+  /// This is not peak live width or the original width from layout metadata.
+  std::optional<uint64_t> numQubits;
+  /// Sorted, distinct physical site IDs declared in the module.
+  std::vector<uint64_t> staticQubits;
+  /// Whether the module contains branching or region-based control flow.
+  bool hasControlFlow = false;
+};
 
 /// The QIR profile represented by a QIR program.
 enum class QIRProfile : uint8_t {
@@ -167,6 +180,9 @@ public:
   /// Create an independent QC program copy.
   [[nodiscard]] QCProgram copy() const;
 
+  /// Inspect declared quantum resources and control flow throughout the module.
+  [[nodiscard]] QuantumProgramInfo inspect() const;
+
   /// Run the standard QC cleanup passes in place.
   [[nodiscard]] bool cleanup();
 
@@ -207,6 +223,20 @@ public:
   /// executes. Operations within modifiers are not counted recursively, and
   /// barriers are skipped.
   [[nodiscard]] size_t numTwoQubitGates() const;
+
+  /// Count entry-point gates by operation mnemonic, as in numGates().
+  /// Modifiers use `ctrl`, `inv`, and `pow`; their bodies are not counted
+  /// recursively. Barriers are skipped. Function calls are not expanded.
+  [[nodiscard]] std::map<std::string, size_t> gateCounts() const;
+
+  /// Calculate static gate depth, not executed depth or critical-path latency.
+  /// Alternative SCF branches contribute their maximum depth, each loop region
+  /// contributes once, and modifiers contribute one layer without their bodies.
+  /// Barriers, zero-qubit operations, and classical dependencies are ignored.
+  /// Dynamic indices conservatively alias all elements of their register.
+  /// Return no value when there is no entry point or quantum references or
+  /// control flow cannot be resolved. Function calls are not expanded.
+  [[nodiscard]] std::optional<size_t> staticDepth() const;
 };
 
 /// A QCO program with value semantics.
@@ -233,6 +263,9 @@ public:
 
   /// Create an independent QCO program copy.
   [[nodiscard]] QCOProgram copy() const;
+
+  /// Inspect declared quantum resources and control flow throughout the module.
+  [[nodiscard]] QuantumProgramInfo inspect() const;
 
   /// Run the standard QCO cleanup passes in place.
   [[nodiscard]] bool cleanup();

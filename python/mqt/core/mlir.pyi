@@ -615,12 +615,30 @@ class CompilationOptions:
     @mapping.setter
     def mapping(self, arg: MappingOptions, /) -> None: ...
 
+class QuantumProgramInfo:
+    """Structural quantum resources and control flow, without executing the IR."""
+
+    @property
+    def num_qubits(self) -> int | None:
+        """Allocated qubit count, or number of distinct static site IDs. None for unknown width. Not peak live width or original layout width."""
+
+    @property
+    def static_qubits(self) -> list[int]:
+        """Sorted distinct physical site IDs declared in the module."""
+
+    @property
+    def has_control_flow(self) -> bool:
+        """Whether the module contains branching or region-based control flow."""
+
 class QCProgram(Program):
     """A compiler program in the QC dialect.
 
     QC programs use reference semantics and represent frontend quantum programs
     before conversion to QCO.
     """
+
+    def inspect(self) -> QuantumProgramInfo:
+        """Return declared quantum resources and structural control flow throughout the module."""
 
     @staticmethod
     def from_mlir_str(source: str) -> QCProgram:
@@ -711,12 +729,36 @@ class QCProgram(Program):
         are not counted recursively, and barriers are skipped.
         """
 
+    def gate_counts(self) -> dict[str, int]:
+        """Count gates by operation mnemonic.
+
+        The counts use the same static-IR semantics as :meth:`num_gates`. Modifier
+        operations use the ``ctrl``, ``inv``, and ``pow`` mnemonics. Their bodies are
+        not counted recursively, and barriers are skipped.
+        """
+
+    def static_depth(self) -> int | None:
+        """Calculate the static gate depth of the program.
+
+        The depth describes the entry-point IR rather than runtime execution. Mutually
+        exclusive structured control-flow branches contribute their maximum depth.
+        Each loop region contributes once, regardless of its runtime iteration count.
+        Modifier operations contribute one layer, but their bodies do not contribute
+        again. Barriers, zero-qubit operations, and classical dependencies are ignored.
+        Dynamic register indices conservatively alias all elements of their register.
+        Return None for a missing entry point or unsupported quantum references or
+        control flow. Function calls are not expanded.
+        """
+
 class QCOProgram(Program):
     """A compiler program in the QCO dialect.
 
     QCO programs use value semantics and expose optimization and transformation
     operations.
     """
+
+    def inspect(self) -> QuantumProgramInfo:
+        """Return declared quantum resources and structural control flow throughout the module."""
 
     @staticmethod
     def from_mlir_str(source: str) -> QCOProgram:

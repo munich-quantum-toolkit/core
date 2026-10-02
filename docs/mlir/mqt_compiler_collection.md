@@ -79,6 +79,8 @@ gates without parsing the textual IR:
 print("Gates:", compiled.num_gates())
 print("Single-qubit gates:", compiled.num_single_qubit_gates())
 print("Two-qubit gates:", compiled.num_two_qubit_gates())
+print("Gates by operation:", compiled.gate_counts())
+print("Static gate depth:", compiled.static_depth())
 ```
 
 These are static gate counts of the entry-point IR. A gate in each structured
@@ -86,6 +88,30 @@ control-flow region counts once, regardless of the runtime path or loop
 iteration count. Barriers do not count, and operations inside gate modifiers do
 not count again. The counts do not expand function calls or estimate the gates
 executed at runtime.
+
+Static gate depth takes the maximum across alternative SCF branches and visits
+each loop region once. Dynamic register indices conservatively alias all
+elements of their register. Barriers, global phases, and classical dependencies
+do not add depth. This metric is not executed circuit depth or latency. It
+returns `None` without an entry point, for unresolved quantum references (such
+as stored references or register views), or unsupported control flow, including
+nesting of 128 regions or more.
+
+Both QC and QCO provide structural resource information:
+
+```{code-cell} ipython3
+info = compiled.inspect()
+assert info.num_qubits == 2
+assert not info.has_control_flow
+print("Static device sites:", info.static_qubits)
+```
+
+`num_qubits` counts allocated qubits, or distinct static device site IDs. It is
+`None` for an unknown width, including runtime-sized allocations and quantum
+entry-point inputs. Site IDs need not be contiguous: a program using only site 5
+has one qubit and `static_qubits == [5]`. Inspection includes declarations and
+control flow in helper functions, but excludes nested modules. It does not
+execute loops, compute peak live width, or recover width from layout metadata.
 
 ## Select an output format
 

@@ -1360,6 +1360,30 @@ def test_qc_program_num_gates() -> None:
     assert program.num_gates() == 2
     assert program.num_single_qubit_gates() == 1
     assert program.num_two_qubit_gates() == 1
+    assert program.gate_counts() == {"ctrl": 1, "h": 1}
+    assert program.static_depth() == 2
+
+
+@pytest.mark.parametrize("qco", [False, True])
+def test_quantum_program_inspection(*, qco: bool) -> None:
+    """QC and QCO expose typed structural information."""
+    qc = QCProgram.from_openqasm_str(QASM_STRING)
+    program = qc.to_qco() if qco else qc
+    info = program.inspect()
+    assert info.num_qubits == 2
+    assert info.static_qubits == []
+    assert not info.has_control_flow
+    static = QCProgram.from_openqasm_str('OPENQASM 3.0; include "stdgates.inc"; x $5;')
+    assert static.inspect().static_qubits == [5]
+    assert static.inspect().num_qubits == 1
+    unknown = QCProgram.from_mlir_str("module {}")
+    assert unknown.inspect().num_qubits is None
+    assert unknown.gate_counts() == {}
+    assert unknown.static_depth() is None
+    consumed = QCProgram.from_openqasm_str(QASM_STRING)
+    consumed.to_qco()
+    with pytest.raises(RuntimeError, match="consumed"):
+        consumed.inspect()
 
 
 @pytest.mark.parametrize("mode", ["targetless", "target_output", "target_payload", "source", "path"])
