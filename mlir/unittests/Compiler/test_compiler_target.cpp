@@ -76,8 +76,8 @@ using Site = Target::Site;
 using SiteId = Target::SiteId;
 using SiteTuple = Target::SiteTuple;
 
-TEST(CompilerTargetTest, NativeIonBasisRequiresUsablePhasesAndEntanglingAngle) {
-  for (const bool useMS : {false, true}) {
+TEST(CompilerTargetTest, NativeIonBasisRequiresBothPulsesWithUsablePhases) {
+  for (const bool includeGpi : {false, true}) {
     for (const double angle : {std::numbers::pi / 4., std::numbers::pi / 2.}) {
       for (const bool fixedPhase : {false, true}) {
         std::vector operations{
@@ -85,17 +85,16 @@ TEST(CompilerTargetTest, NativeIonBasisRequiresUsablePhasesAndEntanglingAngle) {
                 "gpi2", 1, 1, {}, std::nullopt, std::nullopt,
                 fixedPhase ? std::vector<std::optional<double>>{0.}
                            : std::vector<std::optional<double>>{})),
-            valid(OperationCapability::create(
-                useMS ? "ms" : "rzz", 2, useMS ? 3 : 1, {}, std::nullopt,
-                std::nullopt,
-                useMS ? std::vector<std::optional<double>>{std::nullopt,
-                                                           std::nullopt, angle,}
-                      : std::vector<std::optional<double>>{angle})),
+            valid(OperationCapability::create("rzz", 2, 1, {}, std::nullopt,
+                                              std::nullopt, {angle})),
         };
+        if (includeGpi) {
+          operations.push_back(valid(OperationCapability::create("gpi", 1, 1)));
+        }
         const auto target =
             valid(Target::create(2, Connectivity::allToAll(),
                                  NativeOperations::fromOperations(operations)));
-        if (fixedPhase) {
+        if (fixedPhase || !includeGpi) {
           EXPECT_FALSE(target.synthesisBasis());
         } else {
           ASSERT_TRUE(target.synthesisBasis());

@@ -18,7 +18,6 @@
 #include "mlir/Support/LLVM.h"
 
 #include <cstddef>
-#include <numbers>
 #include <optional>
 
 namespace mlir {
@@ -131,27 +130,5 @@ void populateFuseSingleQubitUnitaryRunsPatterns(
 void populateParameterizedSingleQubitRunCompositionPatterns(
     RewritePatternSet& patterns, SingleQubitBasis basis,
     const CompilerTarget* target = nullptr);
-
-namespace detail {
-
-/// Emit GPI2/GPI/GPI2, or four GPI2 pulses, and return the phase correction.
-/// The emitter takes a GPI/GPI2 selector and an angle in radians.
-template <typename Angle>
-double emitGPISequence(Angle theta, Angle phi, Angle lambda, bool useGPI,
-                       auto constant, auto emit) {
-  constexpr double pi = std::numbers::pi;
-  const auto middle = (phi - lambda - theta) / constant(2.);
-  emit(false, -lambda);
-  if (useGPI) {
-    emit(true, middle);
-  } else {
-    emit(false, middle);
-    emit(false, middle);
-  }
-  emit(false, phi);
-  return useGPI ? pi / 2. : pi;
-}
-
-} // namespace detail
 
 } // namespace mlir::qco::decomposition

@@ -989,8 +989,6 @@ TEST_F(OpenQASMTranslationTest, EmitsNativeIonGatesWithOrderedParameters) {
       qc::emitStandardGate(builder, loc, qc::StandardGate::GPI, phi0, q0)));
   ASSERT_TRUE(succeeded(
       qc::emitStandardGate(builder, loc, qc::StandardGate::GPI2, phi1, q1)));
-  ASSERT_TRUE(succeeded(qc::emitStandardGate(builder, loc, qc::StandardGate::MS,
-                                             {phi0, phi1, theta}, {q1, q0})));
   ASSERT_TRUE(succeeded(qc::emitStandardGate(
       builder, loc, qc::StandardGate::RZZ, theta, {q0, q1})));
   auto actual = builder.finalize();
@@ -1002,7 +1000,6 @@ TEST_F(OpenQASMTranslationTest, EmitsNativeIonGatesWithOrderedParameters) {
   q1 = reference.staticQubit(1);
   qc::GPIOp::create(reference, loc, q0, .13);
   qc::GPI2Op::create(reference, loc, q1, -.21);
-  qc::MSOp::create(reference, loc, q1, q0, .13, -.21, .17);
   qc::RZZOp::create(reference, loc, q0, q1, .17);
   auto expected = reference.finalize();
   ASSERT_TRUE(expected);

@@ -722,6 +722,14 @@ struct ConvertJeffCustomOpToQCO final : OpConversionPattern<jeff::CustomOp> {
       createBarrierOp(op, adaptor, rewriter);
       return success();
     }
+    if (name == "gpi") {
+      return createGateFromJeffArity<GPIOp, jeff::CustomOp, 1, 1>(
+          op, rewriter, controls, targets, params);
+    }
+    if (name == "gpi2") {
+      return createGateFromJeffArity<GPI2Op, jeff::CustomOp, 1, 1>(
+          op, rewriter, controls, targets, params);
+    }
     if (name == "r") {
       if (targets.size() != 1 || params.size() != 2) {
         return rewriter.notifyMatchFailure(

@@ -61,7 +61,6 @@ enum class StandardGate : uint8_t {
   XXMinusYY,
   GPI,
   GPI2,
-  MS,
 };
 
 struct StandardGateDescriptor {

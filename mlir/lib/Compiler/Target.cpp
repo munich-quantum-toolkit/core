@@ -169,21 +169,12 @@ constexpr std::array GATE_SPECIFICATIONS{
         .arity = 1,
         .numParameters = 1,
     },
-    GateSpecification{
-        .kind = GateKind::MS,
-        .name = "ms",
-        .arity = 2,
-        .numParameters = 3,
-    },
 };
 
 } // namespace
 
-// Fixed parameters must admit the entangler used by native synthesis.
-static std::optional<double> synthesisParameter(GateKind gate, size_t index) {
-  if (gate == GateKind::MS) {
-    return index == 2 ? std::numbers::pi / 2. : 0.;
-  }
+/// Fixed parameters must admit the entangler used by native synthesis.
+static std::optional<double> synthesisParameter(GateKind gate) {
   if (gate == GateKind::RZZ) {
     return std::numbers::pi / 2.;
   }
@@ -803,10 +794,9 @@ bool CompilerTarget::Storage::supportsGate(
       std::ranges::find(GATE_SPECIFICATIONS, gate, &GateSpecification::kind);
   assert(specification != GATE_SPECIFICATIONS.end() &&
          "unknown compiler target gate");
-  return supportsOperation(
-      specification->name, specification->arity, specification->numParameters,
-      orderedSites, false,
-      [gate](size_t index) { return synthesisParameter(gate, index); });
+  return supportsOperation(specification->name, specification->arity,
+                           specification->numParameters, orderedSites, false,
+                           [gate](size_t) { return synthesisParameter(gate); });
 }
 
 std::optional<CompilerTarget::SynthesisBasis>
@@ -831,8 +821,8 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
              operation.arity().accepts(arity) &&
              operation.numParameters() == numParameters &&
              operation.siteTuples().empty() &&
-             matchesFixedParameters(operation.fixedParameters(), [&](size_t i) {
-               return gate ? synthesisParameter(*gate, i) : std::nullopt;
+             matchesFixedParameters(operation.fixedParameters(), [&](size_t) {
+               return gate ? synthesisParameter(*gate) : std::nullopt;
              });
     });
   };
@@ -887,9 +877,9 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
       break;
     }
   }
-  if (!singleQubit && supportsOnEverySite(GateKind::GPI2)) {
-    singleQubit = supportsOnEverySite(GateKind::GPI) ? SingleQubitBasis::GPI
-                                                     : SingleQubitBasis::GPI2;
+  if (!singleQubit && supportsOnEverySite(GateKind::GPI) &&
+      supportsOnEverySite(GateKind::GPI2)) {
+    singleQubit = SingleQubitBasis::GPI;
   }
 
   if (!singleQubit) {
@@ -934,9 +924,9 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
   };
 
   constexpr std::array entanglerPreference{
-      GateKind::RXX,       GateKind::RYY, GateKind::RZX, GateKind::RZZ,
-      GateKind::ISWAP,     GateKind::CZ,  GateKind::CX,  GateKind::ECR,
-      GateKind::SQRTISWAP, GateKind::MS,
+      GateKind::RXX, GateKind::RYY,   GateKind::RZX,
+      GateKind::RZZ, GateKind::ISWAP, GateKind::CZ,
+      GateKind::CX,  GateKind::ECR,   GateKind::SQRTISWAP,
   };
   /// NOLINTNEXTLINE(readability-qualified-auto): portable iterator type.
   const auto entangler =
@@ -1338,6 +1328,9 @@ bool CompilerTarget::supportsImpl(::mlir::Operation* operation,
       }
       if (isa<qco::XOp>(body.getOperation())) {
         return storage_->supportsOperation("cx", 2, 0, sites);
+      }
+      if (isa<qco::YOp>(body.getOperation())) {
+        return storage_->supportsOperation("cy", 2, 0, sites);
       }
       if (isa<qco::ZOp>(body.getOperation())) {
         return storage_->supportsOperation("cz", 2, 0, sites);

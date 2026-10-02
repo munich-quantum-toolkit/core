@@ -61,30 +61,3 @@ std::optional<Matrix2x2> GPI2Op::getUnitaryMatrix() {
   }
   return unitaryMatrix(*phi);
 }
-
-void MSOp::build(OpBuilder& builder, OperationState& state, Value qubit0In,
-                 Value qubit1In, const std::variant<double, Value>& phi0,
-                 const std::variant<double, Value>& phi1,
-                 const std::variant<double, Value>& theta) {
-  Value phi0Value = variantToValue(builder, state.location, phi0);
-  Value phi1Value = variantToValue(builder, state.location, phi1);
-  Value thetaValue = variantToValue(builder, state.location, theta);
-  build(builder, state, qubit0In, qubit1In, phi0Value, phi1Value, thetaValue);
-}
-
-Matrix4x4 MSOp::unitaryMatrix(double phi0, double phi1, double theta) {
-  const auto phase0 = RZOp::unitaryMatrix(phi0).embedInTwoQubit(0);
-  const auto phase1 = RZOp::unitaryMatrix(phi1).embedInTwoQubit(1);
-  const auto phase = phase0 * phase1;
-  return phase * RXXOp::unitaryMatrix(theta) * phase.adjoint();
-}
-
-std::optional<Matrix4x4> MSOp::getUnitaryMatrix() {
-  const auto phi0 = valueToDouble(getPhi0());
-  const auto phi1 = valueToDouble(getPhi1());
-  const auto theta = valueToDouble(getTheta());
-  if (!phi0 || !phi1 || !theta) {
-    return std::nullopt;
-  }
-  return unitaryMatrix(*phi0, *phi1, *theta);
-}

@@ -416,6 +416,45 @@ TEST_F(JeffRoundTripTest, RejectsNonNormalizedModifiersBeforeMutation) {
   }
 }
 
+TEST_F(JeffRoundTripTest, NativeIonGatesPreserveSymbolicPhasesAndModifiers) {
+  auto program = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main(%phi: f64) attributes {mqt.entry_point} {
+      %a = qco.alloc : !qco.qubit
+      %b = qco.alloc : !qco.qubit
+      %first = qco.gpi(%phi) %a : !qco.qubit -> !qco.qubit
+      %c, %q = qco.ctrl(%first) targets(%arg = %b) {
+        %pi = qco.gpi(%phi) %arg : !qco.qubit -> !qco.qubit
+        qco.yield %pi : !qco.qubit
+      } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
+      %out = qco.inv(%arg = %q) {
+        %half = qco.gpi2(%phi) %arg : !qco.qubit -> !qco.qubit
+        qco.yield %half : !qco.qubit
+      } : {!qco.qubit} -> {!qco.qubit}
+      qco.sink %c : !qco.qubit
+      qco.sink %out : !qco.qubit
+      return
+    }
+  })mlir",
+                                             context.get());
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(succeeded(verify(*program)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*program)));
+  ASSERT_TRUE(succeeded(convertQCOToJeff(*program)));
+  auto custom = llvm::to_vector(
+      program->lookupSymbol<func::FuncOp>("main").getOps<jeff::CustomOp>());
+  ASSERT_EQ(custom.size(), 3U);
+  EXPECT_EQ(custom[0].getName(), "gpi");
+  EXPECT_EQ(custom[1].getName(), "gpi");
+  EXPECT_EQ(custom[1].getNumCtrls(), 1);
+  EXPECT_EQ(custom[2].getName(), "gpi2");
+  EXPECT_TRUE(custom[2].getIsAdjoint());
+  program = deserialize(context.get(), serialize(*program).asPtr());
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(succeeded(convertJeffToQCO(*program)));
+  ASSERT_TRUE(succeeded(verify(*program)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*program)));
+}
+
 TEST(JeffRoundTripRegressionTest, PreservesPhaseOfControlledFunctionCall) {
   DialectRegistry registry;
   registry.insert<mlir::mqt::MQTDialect, arith::ArithDialect, func::FuncDialect,

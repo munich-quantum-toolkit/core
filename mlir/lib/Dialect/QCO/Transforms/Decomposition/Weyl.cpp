@@ -80,7 +80,6 @@ static const TwoQubitBasisDecomposer&
 cachedNativeBasisDecomposer(const CompilerTarget::GateKind entangler) {
   using GateKind = CompilerTarget::GateKind;
   switch (entangler) {
-  case GateKind::MS:
   case GateKind::RXX: {
     static const TwoQubitBasisDecomposer DECOMPOSER =
         TwoQubitBasisDecomposer::create(
@@ -928,8 +927,6 @@ emitUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0, Value qubit1,
   };
   const auto emitEntangler = [&]() -> Operation* {
     switch (*basis.entangler) {
-    case CompilerTarget::GateKind::MS:
-      return MSOp::create(builder, loc, wire0, wire1, 0., 0., WEYL_PI / 2.0);
     case CompilerTarget::GateKind::RXX:
       return RXXOp::create(builder, loc, wire0, wire1, WEYL_PI / 2.0);
     case CompilerTarget::GateKind::RYY:

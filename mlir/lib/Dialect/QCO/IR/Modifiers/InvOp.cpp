@@ -261,12 +261,6 @@ struct ReplaceWithKnownGates final : OpRewritePattern<InvOp> {
               rewriter.replaceOp(g, qubit);
               return success();
             })
-            .Case([&](MSOp g) {
-              rewriter.replaceOpWithNewOp<MSOp>(
-                  g, g.getInputTarget(0), g.getInputTarget(1), g.getPhi0(),
-                  g.getPhi1(), negTheta(g));
-              return success();
-            })
             .Case([&](RXOp g) {
               rewriter.replaceOpWithNewOp<RXOp>(g, g.getInputTarget(0),
                                                 negTheta(g));

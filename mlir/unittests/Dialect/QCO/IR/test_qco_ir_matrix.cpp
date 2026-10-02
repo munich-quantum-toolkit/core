@@ -72,20 +72,6 @@ TEST(NativeIonGateMatrix, MatchesRadianConventionsAndTargetOrder) {
     EXPECT_TRUE(RZZOp::unitaryMatrix(phi).isApprox(Matrix4x4::fromDiagonal(
         zzPhase, std::conj(zzPhase), std::conj(zzPhase), zzPhase)));
   }
-  constexpr double phi0 = .13;
-  constexpr double phi1 = -.21;
-  constexpr double theta = .17;
-  const auto cos = std::cos(theta / 2.);
-  const auto sin = -1i * std::sin(theta / 2.);
-  const auto sum = std::polar(1., phi0 + phi1);
-  const auto difference = std::polar(1., phi0 - phi1);
-  const auto expected = Matrix4x4::fromElements(
-      cos, 0., 0., sin * std::conj(sum), 0., cos, sin * std::conj(difference),
-      0., 0., sin * difference, cos, 0., sin * sum, 0., 0., cos);
-  EXPECT_TRUE(MSOp::unitaryMatrix(phi0, phi1, theta).isApprox(expected));
-  // Swapped phases must change MS.
-  // NOLINTNEXTLINE(readability-suspicious-call-argument)
-  EXPECT_FALSE(MSOp::unitaryMatrix(phi1, phi0, theta).isApprox(expected));
 }
 
 [[nodiscard]] static DynamicMatrix controlledMatrix(const Matrix2x2& body) {
@@ -230,25 +216,19 @@ TEST_F(QCOMatrixTest,
   const auto loc = function.getLoc();
   auto gpi = GPIOp::create(builder, loc, q0, .13);
   auto gpi2 = GPI2Op::create(builder, loc, gpi.getQubitOut(), -.21);
-  auto ms = MSOp::create(builder, loc, gpi2.getQubitOut(), q1, .13, -.21, .17);
-  auto zz =
-      RZZOp::create(builder, loc, ms.getQubit0Out(), ms.getQubit1Out(), .37);
+  auto zz = RZZOp::create(builder, loc, gpi2.getQubitOut(), q1, .37);
   returned->setOperands({zz.getQubit0Out(), zz.getQubit1Out()});
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   ASSERT_TRUE(gpi.getUnitaryMatrix());
   ASSERT_TRUE(gpi2.getUnitaryMatrix());
-  ASSERT_TRUE(ms.getUnitaryMatrix());
   ASSERT_TRUE(zz.getUnitaryMatrix());
   EXPECT_TRUE(gpi.getUnitaryMatrix()->isApprox(GPIOp::unitaryMatrix(.13)));
   EXPECT_TRUE(gpi2.getUnitaryMatrix()->isApprox(GPI2Op::unitaryMatrix(-.21)));
-  EXPECT_TRUE(
-      ms.getUnitaryMatrix()->isApprox(MSOp::unitaryMatrix(.13, -.21, .17)));
   EXPECT_TRUE(zz.getUnitaryMatrix()->isApprox(RZZOp::unitaryMatrix(.37)));
 
   for (Operation* gate : {
            gpi.getOperation(),
            gpi2.getOperation(),
-           ms.getOperation(),
            zz.getOperation(),
        }) {
     auto unitary = cast<UnitaryOpInterface>(gate);
@@ -1181,7 +1161,7 @@ TEST_F(QCOMatrixTest, InverseDynamicRzXOpMatrix) {
 }
 
 TEST_F(QCOMatrixTest, NativeIonInversesPreserveSymbolicParametersAndPhase) {
-  for (const StringRef gateName : {"gpi", "gpi2", "ms", "rzz"}) {
+  for (const StringRef gateName : {"gpi", "gpi2", "rzz"}) {
     SCOPED_TRACE(gateName.str());
     auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
       module {
@@ -1210,11 +1190,6 @@ TEST_F(QCOMatrixTest, NativeIonInversesPreserveSymbolicParametersAndPhase) {
                          ? GPIOp::create(builder, loc, q0, phi0).getResult()
                          : GPI2Op::create(builder, loc, q0, phi0).getResult();
       yielded->setOperands({output, q1});
-    } else if (gateName == "ms") {
-      yielded->setOperands(MSOp::create(builder, loc, q0, q1, phi0,
-                                        function.getArgument(1),
-                                        function.getArgument(2))
-                               .getResults());
     } else {
       yielded->setOperands(
           RZZOp::create(builder, loc, q0, q1, function.getArgument(2))

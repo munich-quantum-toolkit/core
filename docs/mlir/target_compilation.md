@@ -234,37 +234,29 @@ forte_target = CompilerTarget(
 )
 ```
 
-Arbitrary GPI2 phases on every site provide a single-qubit synthesis basis; GPI
-reduces a general decomposition from four pulses to three. Two-qubit synthesis
+Arbitrary GPI and GPI2 phases on every site provide a single-qubit synthesis
+basis. A general unitary uses at most three pulses; common π and π/2 rotations
+use one pulse and RZ uses two. A target can also advertise arbitrary RZ when its
+provider supports virtual Z. Such an adapter must propagate RZ into pulse phases
+before submitting to a device that accepts only GPI/GPI2/ZZ. Two-qubit synthesis
 uses RZZ(π/2) on a supported orientation of each coupling. Fixed parameter
 restrictions must admit this value.
-
-MS remains available for targets that use it. `ms(phi0, phi1, theta)` conjugates
-`RXX(theta)` by `RZ(phi0)` and `RZ(phi1)` on its first and second targets, with
-all three parameters in radians. Its synthesis primitive is MS(0, 0, π/2). For
-example, replace the RZZ capability above with:
-
-```python
-CompilerTarget.OperationCapability("ms", 2, 3, fixed_parameters=[None, None, pi / 2])
-```
-
-Reversing an MS placement exchanges its two phase parameters.
 
 Single-qubit synthesis accepts symbolic input angles; two-qubit synthesis
 requires a constant matrix unless the input gate is already native. Native
 inverses also work with symbolic parameters when the target admits the resulting
-parameters. GPI2 inversion uses three unchanged pulses and a global phase
-correction to avoid losing a π shift at large phases.
+parameters. GPI2 inversion initially uses three unchanged pulses and a global
+phase correction, preserving fixed phases and large symbolic values. Numeric
+fusion reduces this to one pulse when the target admits arbitrary phases.
 
 Exports retain the native names and radian parameters. OpenQASM and Python
-circuit exports provide equivalent definitions for GPI, GPI2, and MS. Python
-import preserves these canonical definitions, including symbolic parameters.
-Other custom definitions keep their semantics even when their names match. QIR
-uses the existing RZZ instruction and MQT runtime extensions
-`__quantum__qis__gpi__body`, `__quantum__qis__gpi2__body`, and
-`__quantum__qis__ms__body`; other QIR runtimes must implement these extensions.
-No provider SDK is required. Provider adapters own serialization, physical
-labels, parameter ranges, and calibration limits.
+circuit exports provide equivalent definitions for GPI and GPI2. Python circuit
+and target import recognize these canonical definitions, including symbolic
+parameters. Other custom definitions keep their semantics even when their names
+match. QIR uses the existing RZZ instruction and MQT runtime extensions
+`__quantum__qis__gpi__body` and `__quantum__qis__gpi2__body`; other QIR runtimes
+must implement these extensions. No provider SDK is required. Provider adapters
+own serialization, physical labels, parameter ranges, and calibration limits.
 
 ### Placements and calibration
 

@@ -2926,14 +2926,14 @@ collectGateDefinition(mlir::func::FuncOp function) {
   };
 }
 
-// Reuse custom-gate export so native gates retain their names and definitions.
+/// Reuse custom-gate export so native gates retain their names and definitions.
 static void defineNativeGates(mlir::ModuleOp moduleOp) {
   using namespace mlir;
   SymbolTable symbols(moduleOp);
   llvm::StringMap<func::FuncOp> definitions;
   OpBuilder builder(moduleOp.getContext());
   moduleOp.walk([&](qc::UnitaryOpInterface gate) {
-    if (!isa<qc::GPIOp, qc::GPI2Op, qc::MSOp>(gate.getOperation())) {
+    if (!isa<qc::GPIOp, qc::GPI2Op>(gate.getOperation())) {
       return;
     }
     const auto name = gate.getBaseSymbol();
@@ -2957,23 +2957,12 @@ static void defineNativeGates(mlir::ModuleOp moduleOp) {
       const auto loc = gate.getLoc();
       auto angles = block->getArguments().take_front(count);
       auto qubits = block->getArguments().drop_front(count);
-      if (isa<qc::GPIOp, qc::GPI2Op>(gate.getOperation())) {
-        const bool piPulse = isa<qc::GPIOp>(gate.getOperation());
-        qc::ROp::create(builder, loc, qubits[0],
-                        piPulse ? std::numbers::pi : std::numbers::pi / 2.,
-                        angles[0]);
-        if (piPulse) {
-          qc::GPhaseOp::create(builder, loc, std::numbers::pi / 2.);
-        }
-      } else {
-        for (size_t index = 0; index < 2; ++index) {
-          Value negative = arith::NegFOp::create(builder, loc, angles[index]);
-          qc::RZOp::create(builder, loc, qubits[index], negative);
-        }
-        qc::RXXOp::create(builder, loc, qubits[0], qubits[1], angles[2]);
-        for (size_t index = 0; index < 2; ++index) {
-          qc::RZOp::create(builder, loc, qubits[index], angles[index]);
-        }
+      const bool piPulse = isa<qc::GPIOp>(gate.getOperation());
+      qc::ROp::create(builder, loc, qubits[0],
+                      piPulse ? std::numbers::pi : std::numbers::pi / 2.,
+                      angles[0]);
+      if (piPulse) {
+        qc::GPhaseOp::create(builder, loc, std::numbers::pi / 2.);
       }
       func::ReturnOp::create(builder, loc);
     }

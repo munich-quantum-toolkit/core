@@ -23,6 +23,7 @@ from qiskit.circuit.library import (
     CPhaseGate,
     CUGate,
     CXGate,
+    CYGate,
     GlobalPhaseGate,
     PhaseGate,
     RXGate,
@@ -428,3 +429,72 @@ def test_unknown_width_and_disconnected_topology() -> None:
     source.add_instruction(Gate("custom_bridge", 2, []), {(1, 2): None})
     with pytest.warns(UserWarning, match="custom_bridge"), pytest.raises(ValueError, match="connected"):
         CompilerTarget.from_qiskit(source)
+
+
+@pytest.mark.parametrize("name", ["gpi", "gpi2"])
+@pytest.mark.parametrize("symbolic", [False, True])
+def test_native_ion_capabilities_share_circuit_recognition(name: str, *, symbolic: bool) -> None:
+    """Canonical radian definitions have the same identity in both importers."""
+    phi = Parameter("phi") if symbolic else 0.13
+    definition = QuantumCircuit(1)
+    definition.r(pi if name == "gpi" else pi / 2, phi, 0)
+    if name == "gpi":
+        definition.global_phase = pi / 2
+    gate = Gate(name, 1, [phi])
+    gate.definition = definition
+    source = Target(num_qubits=1)
+    source.add_instruction(gate, name="native_pulse")
+    unrestricted = UGate(*map(Parameter, ("theta", "lambda", "beta")))
+    source.add_instruction(unrestricted)
+    converted = CompilerTarget.from_qiskit(source, operation_names=["native_pulse", "u"])
+    operation = next(operation for operation in converted.operations if operation.name == "native_pulse")
+    assert operation.canonical_name == name
+    assert operation.fixed_parameters == ([] if symbolic else [phi])
+    circuit = QuantumCircuit(1)
+    circuit.append(gate, [0])
+    imported = QCProgram.from_qiskit(circuit).to_qco()
+    assert f"qco.{name}" in imported.ir
+    imported.compile_for_target(TargetEnvironment(converted, PayloadSpecification(PayloadFormat("openqasm", "3.0"))))
+    exported = imported.to_qiskit(target=converted)
+    for _ in range(2):
+        assert exported.data[0].operation.name == "native_pulse"
+        assert exported.data[0].operation.params == [phi]
+        rebound = Target(num_qubits=1)
+        rebound.add_instruction(exported.data[0].operation)
+        rebound.add_instruction(unrestricted)
+        target = CompilerTarget.from_qiskit(rebound, operation_names=["native_pulse", "u"])
+        unmapped = QuantumCircuit(1)
+        unmapped.compose(exported, inplace=True)
+        program = QCProgram.from_qiskit(unmapped).to_qco()
+        assert f"qco.{name}" in program.ir
+        environment = TargetEnvironment(target, PayloadSpecification(PayloadFormat("openqasm", "3.0")))
+        program.compile_for_target(environment)
+        exported = program.to_qiskit(target=target)
+        actual = exported.assign_parameters({phi: 0.37}) if symbolic else exported
+        expected = circuit.assign_parameters({phi: 0.37}) if symbolic else circuit
+        assert np.allclose(Operator(actual).data, Operator(expected).data)
+    gate.definition.global_phase += 0.37
+    with pytest.raises(ValueError, match="custom"):
+        CompilerTarget.from_qiskit(source, operation_names=["native_pulse"])
+
+
+@pytest.mark.parametrize("name", ["cy", "controlled_y"])
+def test_native_cy_preserves_capability_without_synthesis_entangler(name: str) -> None:
+    """Native CY remains available without claiming a general two-qubit basis."""
+    source = Target(num_qubits=2)
+    source.add_instruction(UGate(*map(Parameter, ("theta", "phi", "lambda"))))
+    source.add_instruction(CYGate(), {(0, 1): None}, name=name)
+    target = CompilerTarget.from_qiskit(source, operation_names=["u", name])
+    assert target.supports_operation("cy", 2, 0, [0, 1])
+    assert not target.supports_operation("cy", 2, 0, [1, 0])
+    assert target.synthesis_basis is not None
+    assert target.synthesis_basis.entangler is None
+    circuit = QuantumCircuit(2)
+    circuit.cy(0, 1)
+    program = QCProgram.from_qiskit(circuit).to_qco()
+    program.compile_for_target(TargetEnvironment(target, PayloadSpecification(PayloadFormat("openqasm", "3.0"))))
+    exported = program.to_qiskit(target=target)
+    assert [item.operation.name for item in exported.data] == [name]
+    restored = QCProgram.from_qiskit(exported).to_qiskit()
+    assert np.allclose(Operator(exported).data, Operator(circuit).data)
+    assert np.allclose(Operator(restored).data, Operator(circuit).data)

@@ -789,23 +789,13 @@ standardGateMapping(const std::string_view name) {
   return gate == nullptr ? std::nullopt : std::optional{gate->translation};
 }
 
-// Recognize only complete native definitions, including their global phase.
+/// Recognize only complete native definitions, including their global phase.
 [[nodiscard]] static std::optional<StandardGateMapping>
-nativeIonGate(nb::handle operation, std::string_view name) {
+nativeIonGate(nb::handle operation) {
   using Gate = mlir::qc::StandardGate;
-  const auto gate = llvm::StringSwitch<std::optional<Gate>>(name)
-                        .Case("gpi", Gate::GPI)
-                        .Case("gpi2", Gate::GPI2)
-                        .Case("ms", Gate::MS)
-                        .Default(std::nullopt);
-  if (!gate) {
-    return std::nullopt;
-  }
-  const auto& descriptor = mlir::qc::getStandardGateDescriptor(*gate);
   const nb::object parameters = operation.attr("params");
-  if (nb::len(parameters) != descriptor.parameterCount ||
-      nb::cast<size_t>(operation.attr("num_qubits")) !=
-          descriptor.targetCount) {
+  if (nb::len(parameters) != 1 ||
+      nb::cast<size_t>(operation.attr("num_qubits")) != 1) {
     return std::nullopt;
   }
   const nb::object definition = operation.attr("definition");
@@ -813,33 +803,20 @@ nativeIonGate(nb::handle operation, std::string_view name) {
     return std::nullopt;
   }
   try {
-    auto expected = nb::module_::import_("qiskit").attr("QuantumCircuit")(
-        descriptor.targetCount);
-    std::vector<nb::object> angles;
-    for (nb::handle parameter : nb::iter(parameters)) {
-      angles.push_back(nb::borrow<nb::object>(parameter));
-    }
-    if (*gate == Gate::GPI || *gate == Gate::GPI2) {
-      expected.attr("r")(*gate == Gate::GPI ? std::numbers::pi
-                                            : std::numbers::pi / 2.,
-                         angles[0], 0);
-      if (*gate == Gate::GPI) {
+    for (const auto gate : {Gate::GPI, Gate::GPI2}) {
+      auto expected = nb::module_::import_("qiskit").attr("QuantumCircuit")(1);
+      expected.attr("r")(gate == Gate::GPI ? std::numbers::pi
+                                           : std::numbers::pi / 2.,
+                         parameters[nb::int_(0)], 0);
+      if (gate == Gate::GPI) {
         expected.attr("global_phase") = std::numbers::pi / 2.;
       }
-    } else {
-      for (size_t index = 0; index < 2; ++index) {
-        expected.attr("rz")(-angles[index], index);
+      if (definition.equal(expected)) {
+        return StandardGateMapping{gate, 0};
       }
-      expected.attr("rxx")(angles[2], 0, 1);
-      for (size_t index = 0; index < 2; ++index) {
-        expected.attr("rz")(angles[index], index);
-      }
-    }
-    if (definition.equal(expected)) {
-      return StandardGateMapping{*gate, 0};
     }
   } catch (const nb::python_error&) {
-    // Non-scalar parameters and other custom definitions use normal import.
+    /// Non-scalar parameters and other custom definitions use normal import.
     return std::nullopt;
   }
   return std::nullopt;
@@ -1101,7 +1078,7 @@ public:
           if (const auto entry = nativeGates_.find(index);
               entry != nativeGates_.end()) {
             result.standardGate = entry->second;
-          } else if (auto mapping = nativeIonGate(terminal, result.name)) {
+          } else if (auto mapping = nativeIonGate(terminal)) {
             nativeGates_.emplace(index, *mapping);
             result.standardGate = mapping;
           }
@@ -2294,39 +2271,14 @@ public:
                const std::vector<Parameter>& parameters) override {
     const auto* gate = versionGate(mapping);
     std::string nativeName;
-    if (target_ != nullptr && gate != nullptr) {
-      for (const auto& operation : target_->operations()) {
-        const auto* candidate = versionGate(operation.canonicalName());
-        if (candidate == nullptr || candidate->translation != mapping ||
-            !operation.arity().accepts(qubits.size()) ||
-            operation.numParameters() != parameters.size() ||
-            !std::ranges::all_of(
-                std::views::iota(size_t{0}, operation.fixedParameters().size()),
-                [&](size_t index) {
-                  const auto expected = operation.fixedParameters()[index];
-                  const auto* actual = parameters[index].getNumber();
-                  return !expected ||
-                         (actual != nullptr &&
-                          std::abs(actual->value - *expected) <=
-                              mlir::mqt::PARAMETER_COMPARISON_TOLERANCE);
-                })) {
-          continue;
-        }
-        if (const auto* named = versionGate(operation.name());
-            named != nullptr && named->translation == mapping) {
-          candidate = named;
-        }
-        if (operation.siteTuples().empty() ||
-            std::ranges::any_of(operation.siteTuples(), [&](const auto& tuple) {
-              return std::ranges::equal(tuple.sites(), qubits, {}, {},
-                                        [&](uint32_t qubit) {
-                                          return target_->siteForVertex(qubit);
-                                        });
-            })) {
-          gate = candidate;
-          nativeName = operation.name().str();
-          break;
-        }
+    if (gate != nullptr) {
+      if (const auto* operation =
+              targetOperation(mapping, qubits, parameters)) {
+        const auto* named = versionGate(operation->name());
+        gate = named != nullptr && named->translation == mapping
+                   ? named
+                   : versionGate(operation->canonicalName());
+        nativeName = operation->name().str();
       }
     }
     if (gate == nullptr) {
@@ -2422,6 +2374,14 @@ public:
           pythonAttribute(operation.attr("definition"), "to_gate",
                           "Qiskit custom definition cannot become a Gate")(
               nb::arg("parameter_map") = parameterMap);
+    }
+    if (target_ != nullptr && gateModifiers.empty()) {
+      if (const auto mapping = nativeIonGate(operation)) {
+        if (const auto* capability =
+                targetOperation(*mapping, qubits, parameters)) {
+          operation.attr("name") = nb::str(capability->name().str().c_str());
+        }
+      }
     }
     if (!gateModifiers.empty()) {
       nb::list modifiers;
@@ -2574,6 +2534,47 @@ public:
   }
 
 private:
+  [[nodiscard]] const mlir::CompilerTarget::OperationCapability*
+  targetOperation(const StandardGateMapping mapping,
+                  const std::vector<uint32_t>& qubits,
+                  const std::vector<Parameter>& parameters) const {
+    if (target_ == nullptr) {
+      return nullptr;
+    }
+    const auto& descriptor = mlir::qc::getStandardGateDescriptor(mapping.gate);
+    for (const auto& operation : target_->operations()) {
+      const auto* candidate = versionGate(operation.canonicalName());
+      const bool sameGate =
+          candidate != nullptr
+              ? candidate->translation == mapping
+              : mapping.controls == 0 &&
+                    operation.canonicalName() == descriptor.operationSymbol;
+      if (!sameGate || !operation.arity().accepts(qubits.size()) ||
+          operation.numParameters() != parameters.size() ||
+          !std::ranges::all_of(
+              std::views::iota(size_t{0}, operation.fixedParameters().size()),
+              [&](size_t index) {
+                const auto expected = operation.fixedParameters()[index];
+                const auto* actual = parameters[index].getNumber();
+                return !expected ||
+                       (actual != nullptr &&
+                        std::abs(actual->value - *expected) <=
+                            mlir::mqt::PARAMETER_COMPARISON_TOLERANCE);
+              })) {
+        continue;
+      }
+      if (operation.siteTuples().empty() ||
+          std::ranges::any_of(operation.siteTuples(), [&](const auto& tuple) {
+            return std::ranges::equal(
+                tuple.sites(), qubits, {}, {},
+                [&](uint32_t qubit) { return target_->siteForVertex(qubit); });
+          })) {
+        return &operation;
+      }
+    }
+    return nullptr;
+  }
+
   [[nodiscard]] QkCircuit* nativeCircuit() const {
     /// Reborrow after Python calls; no native pointer outlives its data owner.
     auto data = pythonCircuit_.attr("_data");
@@ -3092,7 +3093,11 @@ private:
     }
     const auto identity = pythonStandardGateIdentity(operation);
     if (identity.is_none()) {
-      return std::nullopt;
+      const auto native = nativeIonGate(operation);
+      return native ? std::optional{mlir::qc::getStandardGateDescriptor(
+                                        native->gate)
+                                        .operationSymbol.str()}
+                    : std::nullopt;
     }
     const auto name = pythonStringAttribute(
         identity, "name", "Qiskit standard gate has an invalid name");
@@ -3100,11 +3105,11 @@ private:
       return "gphase";
     }
     const auto* gate = versionGate(name);
-    /// The compiler treats only CX and CZ as native controlled gates.
+    /// The compiler recognizes controlled Pauli gates as native operations.
     if (gate != nullptr &&
         (gate->translation.controls != 0 ||
          gate->translation.gate == mlir::qc::StandardGate::CU) &&
-        gate->name != "cx" && gate->name != "cz") {
+        gate->name != "cx" && gate->name != "cy" && gate->name != "cz") {
       return std::nullopt;
     }
     return gate == nullptr ? std::nullopt

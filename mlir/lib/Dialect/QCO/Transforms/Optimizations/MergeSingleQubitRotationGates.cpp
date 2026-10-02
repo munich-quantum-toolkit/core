@@ -849,20 +849,12 @@ static Value emitRuntimeEulerAngles(
     qubit = UOp::create(rewriter, loc, qubit, theta.v, phi.v, lambda.v)
                 .getQubitOut();
     break;
-  case decomposition::SingleQubitBasis::GPI:
-  case decomposition::SingleQubitBasis::GPI2: {
-    const auto constant = [&](double value) {
-      return Val<Value>::constant(rewriter, loc, value);
-    };
-    const double correction = decomposition::detail::emitGPISequence(
-        theta, phi, lambda, basis == decomposition::SingleQubitBasis::GPI,
-        constant, [&](bool piPulse, Val<Value> angle) {
-          qubit =
-              piPulse
-                  ? GPIOp::create(rewriter, loc, qubit, angle.v).getQubitOut()
-                  : GPI2Op::create(rewriter, loc, qubit, angle.v).getQubitOut();
-        });
-    phase = phase + constant(correction);
+  case decomposition::SingleQubitBasis::GPI: {
+    const auto middle = (phi - lambda - theta) / consts.two;
+    qubit = GPI2Op::create(rewriter, loc, qubit, (-lambda).v).getQubitOut();
+    qubit = GPIOp::create(rewriter, loc, qubit, middle.v).getQubitOut();
+    qubit = GPI2Op::create(rewriter, loc, qubit, phi.v).getQubitOut();
+    phase = phase + consts.pi / consts.two;
     break;
   }
   case decomposition::SingleQubitBasis::ZSXX: {
@@ -1127,8 +1119,6 @@ struct MergeSingleQubitRotationGatesPattern final
       return 1;
     case decomposition::SingleQubitBasis::ZSXX:
       return 5;
-    case decomposition::SingleQubitBasis::GPI2:
-      return 4;
     case decomposition::SingleQubitBasis::GPI:
     case decomposition::SingleQubitBasis::ZYZ:
     case decomposition::SingleQubitBasis::ZXZ:
@@ -1441,8 +1431,7 @@ void decomposition::synthesizeParameterizedUnitary1Q(
   }
   const bool usesDirectZYZAngles =
       basis == SingleQubitBasis::ZYZ || basis == SingleQubitBasis::ZXZ ||
-      basis == SingleQubitBasis::ZSXX || basis == SingleQubitBasis::GPI ||
-      basis == SingleQubitBasis::GPI2;
+      basis == SingleQubitBasis::ZSXX || basis == SingleQubitBasis::GPI;
   if (basis == SingleQubitBasis::U || usesDirectZYZAngles) {
     const auto consts = makeConsts<Value>(rewriter, op->getLoc());
     Value qubit;

@@ -153,7 +153,6 @@ def OneTargetThreeParameter : TargetAndParameterArityTrait<1, 3>;
 def TwoTargetZeroParameter : TargetAndParameterArityTrait<2, 0>;
 def TwoTargetOneParameter : TargetAndParameterArityTrait<2, 1>;
 def TwoTargetTwoParameter : TargetAndParameterArityTrait<2, 2>;
-def TwoTargetThreeParameter : TargetAndParameterArityTrait<2, 3>;
 def ThreeTargetZeroParameter : TargetAndParameterArityTrait<3, 0>;
 
 //===----------------------------------------------------------------------===//
@@ -563,28 +562,6 @@ def GPI2Op
   }];
   let builders = [OpBuilder<(ins "Value":$qubit_in,
       "const std::variant<double, Value>&":$phi)>];
-}
-
-def MSOp : QCOp<"ms", traits = [UnitaryOpInterface, TwoTargetThreeParameter]> {
-  let summary = "Apply a MS gate";
-  let description = [{
-    MS(φ₀, φ₁, θ) conjugates RXX(θ) by RZ(φ₀) and RZ(φ₁) on its first and second targets. Parameters are measured in radians.
-  }];
-  let arguments =
-      (ins Arg<QubitType, "target qubit", [MemRead, MemWrite]>:$qubit0_in,
-          Arg<QubitType, "target qubit", [MemRead, MemWrite]>:$qubit1_in,
-          Arg<F64, "phi0 in radians">:$phi0, Arg<F64, "phi1 in radians">:$phi1,
-          Arg<F64, "theta in radians">:$theta);
-  let assemblyFormat =
-      "`(` $phi0 `,` $phi1 `,` $theta `)` $qubit0_in `,` $qubit1_in attr-dict "
-      "`:` type($qubit0_in) `,` type($qubit1_in)";
-  let extraClassDeclaration = [{
-    [[nodiscard]] static StringRef getBaseSymbol() { return "ms"; }
-  }];
-  let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
-      "const std::variant<double, Value>&":$phi0,
-      "const std::variant<double, Value>&":$phi1,
-      "const std::variant<double, Value>&":$theta)>];
 }
 
 def U2Op : QCOp<"u2", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {

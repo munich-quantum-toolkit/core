@@ -47,7 +47,6 @@ const std::array CATALOG{
     GateCatalogEntry{"r", qc::StandardGate::R, 0, COMPAT},
     GateCatalogEntry{"gpi", qc::StandardGate::GPI, 0, COMPAT},
     GateCatalogEntry{"gpi2", qc::StandardGate::GPI2, 0, COMPAT},
-    GateCatalogEntry{"ms", qc::StandardGate::MS, 0, COMPAT},
     GateCatalogEntry{"swap", qc::StandardGate::SWAP, 0, STD},
     GateCatalogEntry{"cx", qc::StandardGate::X, 1, BOTH},
     GateCatalogEntry{"cy", qc::StandardGate::Y, 1, BOTH},

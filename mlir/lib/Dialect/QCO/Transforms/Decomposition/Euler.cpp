@@ -50,11 +50,7 @@ bool isSingleQubitBasisGate(Operation* op, SingleQubitBasis basis) {
       .Case([&](UOp) { return basis == SingleQubitBasis::U; })
       .Case<SXOp, XOp>([&](auto) { return basis == SingleQubitBasis::ZSXX; })
       .Case([&](ROp) { return basis == SingleQubitBasis::R; })
-      .Case([&](GPIOp) { return basis == SingleQubitBasis::GPI; })
-      .Case([&](GPI2Op) {
-        return basis == SingleQubitBasis::GPI ||
-               basis == SingleQubitBasis::GPI2;
-      })
+      .Case<GPIOp, GPI2Op>([&](auto) { return basis == SingleQubitBasis::GPI; })
       .Default([](auto) { return false; });
 }
 
@@ -199,7 +195,6 @@ EulerAngles anglesFromUnitary(const Matrix2x2& matrix,
   case SingleQubitBasis::ZYZ:
   case SingleQubitBasis::ZSXX:
   case SingleQubitBasis::GPI:
-  case SingleQubitBasis::GPI2:
     return paramsZYZ(matrix);
   case SingleQubitBasis::ZXZ:
     return paramsZXZ(matrix);
@@ -277,24 +272,34 @@ struct Unitary1QEulerPlan {
       return;
     }
 
-    if (basis == SingleQubitBasis::GPI || basis == SingleQubitBasis::GPI2) {
-      phase = angles.phase +
-              detail::emitGPISequence(
-                  angles.theta, angles.phi, angles.lambda,
-                  basis == SingleQubitBasis::GPI,
-                  [](double value) { return value; },
-                  [&](bool piPulse, double angle) {
-                    steps.emplace_back(piPulse ? SynthesisStep::Kind::GPI
-                                               : SynthesisStep::Kind::GPI2,
-                                       angle);
-                  });
+    if (basis == SingleQubitBasis::GPI) {
+      constexpr double halfPi = std::numbers::pi / 2.;
+      const double zAngle = angles.phi + angles.lambda;
+      phase = angles.phase;
+      if (isNearZeroRotationAngle(angles.theta)) {
+        steps.emplace_back(SynthesisStep::Kind::GPI, 0.);
+        steps.emplace_back(SynthesisStep::Kind::GPI, zAngle / 2.);
+      } else if (isNearZeroRotationAngle(angles.theta - std::numbers::pi)) {
+        steps.emplace_back(SynthesisStep::Kind::GPI,
+                           (angles.phi - angles.lambda) / 2. + halfPi);
+        phase -= halfPi;
+      } else if (isNearZeroRotationAngle(angles.theta - halfPi) &&
+                 isNearZeroRotationAngle(mod2pi(zAngle))) {
+        steps.emplace_back(SynthesisStep::Kind::GPI2, angles.phi + halfPi);
+        phase += zAngle / 2.;
+      } else {
+        steps.emplace_back(SynthesisStep::Kind::GPI2, -angles.lambda);
+        steps.emplace_back(SynthesisStep::Kind::GPI,
+                           (angles.phi - angles.lambda - angles.theta) / 2.);
+        steps.emplace_back(SynthesisStep::Kind::GPI2, angles.phi);
+        phase += halfPi;
+      }
       return;
     }
 
     if (isNearZeroRotationAngle(angles.theta)) {
       switch (basis) {
       case SingleQubitBasis::GPI:
-      case SingleQubitBasis::GPI2:
         llvm_unreachable("native ion basis handled above");
       case SingleQubitBasis::ZYZ:
       case SingleQubitBasis::ZXZ:
@@ -320,7 +325,6 @@ struct Unitary1QEulerPlan {
 
     switch (basis) {
     case SingleQubitBasis::GPI:
-    case SingleQubitBasis::GPI2:
       llvm_unreachable("native ion basis handled above");
     case SingleQubitBasis::ZYZ:
       appendRotation(SynthesisStep::Kind::RZ, angles.lambda);
@@ -488,7 +492,6 @@ std::optional<SingleQubitBasis> parseSingleQubitBasis(StringRef basis) {
       .Case("zsxx", SingleQubitBasis::ZSXX)
       .Case("r", SingleQubitBasis::R)
       .Case("gpi", SingleQubitBasis::GPI)
-      .Case("gpi2", SingleQubitBasis::GPI2)
       .Default(std::nullopt);
 }
 
