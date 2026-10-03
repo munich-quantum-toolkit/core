@@ -10,6 +10,7 @@
 
 #include "mqt_sc_qdmi/device.h"
 #include "qdmi/TestUtils.hpp"
+#include "qdmi/devices/sc/Device.hpp"
 
 #include "gmock/gmock-matchers.h"
 #include "gtest/gtest.h"
@@ -24,6 +25,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -122,6 +124,13 @@ constexpr auto CUSTOM_SC = R"({
 })";
 
 using mqt::test::ScopedEnvironmentVariable;
+
+static_assert(noexcept(std::declval<MQT_SC_QDMI_Device_Session_impl_d&>()
+                           .setParameter(QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1,
+                                         0, nullptr)));
+
+static_assert(noexcept(std::declval<MQT_SC_QDMI_Device_Session_impl_d&>()
+                           .createDeviceJob(nullptr)));
 
 [[nodiscard]] MQT_SC_QDMI_Device_Session
 initializedSession(const std::string_view configuration = CUSTOM_SC) {
@@ -765,4 +774,18 @@ TEST_F(ScQDMISpecificationTest, QueryDeviceQubitNum) {
                 session, QDMI_DEVICE_PROPERTY_QUBITSNUM, sizeof(size_t),
                 &numQubits, nullptr),
             QDMI_SUCCESS);
+}
+
+TEST(ScRuntimeConfiguration, FailedJobCreationClearsOutputHandle) {
+  MQT_SC_QDMI_Device_Session session = nullptr;
+  ASSERT_EQ(MQT_SC_QDMI_device_session_alloc(&session), QDMI_SUCCESS);
+
+  MQT_SC_QDMI_Device_Job_impl_d sentinel(session);
+  MQT_SC_QDMI_Device_Job job = &sentinel;
+
+  EXPECT_EQ(MQT_SC_QDMI_device_session_create_device_job(session, &job),
+            QDMI_ERROR_BADSTATE);
+  EXPECT_EQ(job, nullptr);
+
+  MQT_SC_QDMI_device_session_free(session);
 }

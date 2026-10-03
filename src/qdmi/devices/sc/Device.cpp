@@ -26,6 +26,7 @@
 #include <cstdint>
 #include <cstring>
 #include <exception>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <new>
@@ -38,6 +39,25 @@
 #include <vector>
 
 namespace {
+
+/// Maps exceptions from an allocation-capable device call to QDMI status codes.
+template <class Callable>
+[[nodiscard]] auto guardDeviceCall(const std::string_view action,
+                                   Callable&& callable) noexcept -> int {
+  try {
+    return std::invoke(std::forward<Callable>(callable));
+  } catch (const std::bad_alloc&) {
+    qdmi::diagnostics::error("Out of memory while {}", action);
+    return QDMI_ERROR_OUTOFMEM;
+  } catch (const std::exception& error) {
+    qdmi::diagnostics::error("Failed while {}: {}", action, error.what());
+    return QDMI_ERROR_FATAL;
+  } catch (...) {
+    qdmi::diagnostics::error("Failed while {}: unknown exception", action);
+    return QDMI_ERROR_FATAL;
+  }
+}
+
 [[nodiscard]] bool
 siteTupleLess(const std::span<const MQT_SC_QDMI_Site> first,
               const std::span<const MQT_SC_QDMI_Site> second) {
@@ -203,7 +223,7 @@ int MQT_SC_QDMI_Device_Session_impl_d::init() {
 
 int MQT_SC_QDMI_Device_Session_impl_d::setParameter(
     const QDMI_Device_Session_Parameter parameter, const size_t size,
-    const void* value) {
+    const void* value) noexcept {
   if (parameter == QDMI_DEVICE_SESSION_PARAMETER_MAX ||
       IS_INVALID_ARGUMENT(parameter, QDMI_DEVICE_SESSION_PARAMETER)) {
     return QDMI_ERROR_INVALIDARGUMENT;
@@ -211,23 +231,31 @@ int MQT_SC_QDMI_Device_Session_impl_d::setParameter(
   if (status != Status::ALLOCATED) {
     return QDMI_ERROR_BADSTATE;
   }
-  return qdmi::detail::setDeviceConfigurationParameter(
-      parameter, size, value, inlineConfiguration, fileConfiguration);
+
+  return guardDeviceCall("setting an SC device session parameter", [&] {
+    return qdmi::detail::setDeviceConfigurationParameter(
+        parameter, size, value, inlineConfiguration, fileConfiguration);
+  });
 }
 
 int MQT_SC_QDMI_Device_Session_impl_d::createDeviceJob(
-    MQT_SC_QDMI_Device_Job* job) {
+    MQT_SC_QDMI_Device_Job* job) noexcept {
   if (job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
+
+  *job = nullptr;
+
   if (status != Status::INITIALIZED) {
     return QDMI_ERROR_BADSTATE;
   }
-  auto value = std::make_unique<MQT_SC_QDMI_Device_Job_impl_d>(this);
-  *job = value.get();
-  const std::scoped_lock lock(jobsMutex);
-  jobs.emplace(*job, std::move(value));
-  return QDMI_SUCCESS;
+
+  return guardDeviceCall("creating an SC device job", [&] {
+    auto value = std::make_unique<MQT_SC_QDMI_Device_Job_impl_d>(this);
+    const std::scoped_lock lock(jobsMutex);
+    *job = jobs.emplace(value.get(), std::move(value)).first->first;
+    return QDMI_SUCCESS;
+  });
 }
 
 void MQT_SC_QDMI_Device_Session_impl_d::freeDeviceJob(

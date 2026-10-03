@@ -103,8 +103,8 @@ struct MQT_SC_QDMI_Device_Session_impl_d {
 
   int init();
   int setParameter(QDMI_Device_Session_Parameter parameter, size_t size,
-                   const void* value);
-  int createDeviceJob(MQT_SC_QDMI_Device_Job* job);
+                   const void* value) noexcept;
+  int createDeviceJob(MQT_SC_QDMI_Device_Job* job) noexcept;
   void freeDeviceJob(MQT_SC_QDMI_Device_Job job);
   int queryDeviceProperty(QDMI_Device_Property property, size_t size,
                           void* value, size_t* sizeRet) const;
