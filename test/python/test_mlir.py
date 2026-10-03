@@ -804,7 +804,7 @@ def test_runtime_pauli_rotations_compile_and_export(gate: str, native_entangler:
 
 
 @requires_qiskit_translation
-@pytest.mark.parametrize(("num_qubits", "basis"), [(2, "zsxx"), (20, "u")])
+@pytest.mark.parametrize(("num_qubits", "basis"), [(2, "zsxx"), (20, "u"), (100, "u")])
 @pytest.mark.parametrize("method", ["compile_for_target", "synthesize_for_target"])
 def test_symbolic_su2_compiles_and_binds_after_export(num_qubits: int, basis: str, method: str) -> None:
     """Compile symbolic SU2 circuits with bindable parameters and exact phase."""
@@ -836,6 +836,9 @@ def test_symbolic_su2_compiles_and_binds_after_export(num_qubits: int, basis: st
     bound = result.assign_parameters(values)
     assert bound.num_parameters == 0
     assert program.to_jeff(copy=True).is_valid
+    reimported = QCProgram.from_qiskit(result).to_qiskit()
+    assert reimported.parameters == source.parameters
+    assert reimported.assign_parameters(values).global_phase == pytest.approx(bound.global_phase)
     if num_qubits == 2:
         assert np.allclose(Operator(bound).data, Operator(source.assign_parameters(values)).data, atol=1e-10, rtol=0)
 

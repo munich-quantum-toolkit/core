@@ -114,7 +114,12 @@ boundary. Findings are addressed:
 - Balance global-phase sums in the shared normalizer. Sequential accumulation
   made symbolic U-target exports exceed the parameter-depth limit at 20 qubits.
   QC/QCO depth and value checks plus Qiskit/jeff export regressions cover the
-  correction; exporter resource limits remain intact.
+  correction. The 100-qubit U workload also exceeds the old 4,096-node budget;
+  align it with the existing 16,384-node classical-expression budget and retain
+  depth, size, and failure-without-mutation regression checks.
+- Emit signed sums incrementally in the Qiskit adapter to avoid Qiskit 2.5
+  repeatedly expanding balanced additions. Balance additive replay chains on
+  import so exported circuits round-trip and remain bindable.
 
 Core #2649 is subsumed by this implementation; #2578 owns resolution of #2614.
 No additional dependencies or unresolved complexity findings remain.

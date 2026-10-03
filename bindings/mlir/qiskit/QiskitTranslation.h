@@ -57,7 +57,9 @@ validateRegisterLayout(const std::vector<Register>& registers, uint32_t total,
                        std::string_view kind);
 
 inline constexpr size_t MAX_PARAMETER_EXPRESSION_DEPTH = 64U;
-inline constexpr size_t MAX_PARAMETER_EXPRESSION_NODES = 4096U;
+/// Match the classical-expression budget; synthesized phases can span many
+/// gates.
+inline constexpr size_t MAX_PARAMETER_EXPRESSION_NODES = 16384U;
 inline constexpr uint64_t MAX_PARAMETER_GROUP_SIZE = 65'536U;
 
 /// Source-level vector metadata for one scalar parameter.

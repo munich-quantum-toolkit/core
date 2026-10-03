@@ -58,7 +58,7 @@ native aliases without changing public targets or Qiskit's session library.
 
 The compiler, decomposition, optimization, native-synthesis, mapping, and
 global-phase suites pass all 1040 C++ tests; Python MLIR/Qiskit suites pass all
-967 tests. Coverage includes runtime binding, full global phase, reversed
+970 tests. Coverage includes runtime binding, full global phase, reversed
 placements, native gate counts, fixed RX/RY/R constraints, aliases, and
 large-angle normalization.
 
@@ -76,17 +76,26 @@ cancellations. All jointly exportable cases have identical gate counts and
 depths. Qiskit and jeff export retain symbolic parameters; small cases agree in
 full matrix and phase with maximum error `8.2e-15`. The two previously failing
 20-qubit symbolic U exports now succeed: global-phase normalization balances
-sums so expression depth grows logarithmically. The exporters retain their input
-depth and size limits. Python coverage is retained; compiler semantics and
-fusion regressions are checked in their C++ owners.
+sums so expression depth grows logarithmically. The 100-qubit U workload needs
+4,805 expression-tree nodes; both APIs now export it, bringing the probe to 60
+successful cases. Parameter expressions share the existing 16,384-node
+classical-expression budget. Depth remains bounded at 64 levels; oversized
+import/export regressions cover both SSA and expanded-tree limits. Qiskit 2.5
+recursively reoptimizes balanced symbolic sums. The adapter emits their terms
+incrementally and balances additive replay chains on import. The 100-qubit
+regression covers export, re-import, and late binding, including phase. Python
+coverage is retained; compiler semantics and fusion regressions are checked in
+their C++ owners.
 
 A focused timing comparison against `7790b88c2` used DGX Spark arm64, LLVM/MLIR
 23.1, release builds without IPO, seed 42, two warmups, and separate persistent
 processes. In 21 alternating pairs across eight U-target cases, median-time
 geometric ratios were 1.002 for compilation and 1.005 for synthesis. The earlier
-short-case timing outlier did not persist. Import, copying, export, and
-validation were outside the timed interval; these measurements do not establish
-a general speedup.
+short-case timing outlier did not persist. Seven pairs of the 100-qubit symbolic
+ZSXX case measured 749/768 ms for compilation and 607/608 ms for synthesis
+(before/after). Thus compilation was 2.5% slower on that workload; no universal
+timing non-regression is claimed. Import, copying, export, and validation were
+outside the timed interval.
 
 Repository and whole-file C++ lint, executable docs with warnings as errors, and
 generated documentation links pass. No binding signatures changed in this

@@ -48,6 +48,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -298,6 +299,7 @@ namespace {
 struct ParsedParameter {
   Parameter value;
   size_t depth = 1U;
+  std::vector<std::tuple<Parameter, size_t, bool>> sumTerms;
 };
 } // namespace
 
@@ -318,6 +320,33 @@ static void countParameterExpressionNode(size_t& nodeCount) {
     throwParameterExpressionSizeError();
   }
   ++nodeCount;
+}
+
+/// Balance additive replay chains before constructing nested expressions.
+static void finishParameterSum(ParsedParameter& parameter) {
+  auto& terms = parameter.sumTerms;
+  if (terms.empty()) {
+    return;
+  }
+  for (size_t stride = 1U; stride < terms.size(); stride *= 2U) {
+    for (size_t index = 0U; index + stride < terms.size();
+         index += 2U * stride) {
+      auto& [left, depth, leftNegative] = terms[index];
+      auto& [right, rightDepth, rightNegative] = terms[index + stride];
+      depth = std::max(depth, rightDepth) + 1U;
+      if (depth > MAX_PARAMETER_EXPRESSION_DEPTH) {
+        throwParameterExpressionDepthError();
+      }
+      left = Parameter::binary(leftNegative == rightNegative
+                                   ? BinaryParameterKind::Add
+                                   : BinaryParameterKind::Subtract,
+                               std::move(left), std::move(right));
+    }
+  }
+  /// The first term is positive; subtractions only negate right-hand terms.
+  parameter.value = std::move(std::get<0>(terms.front()));
+  parameter.depth = std::get<1>(terms.front());
+  terms.clear();
 }
 
 [[nodiscard]] static ParsedParameter
@@ -476,6 +505,7 @@ normalizePythonParameter(const nb::handle parameter) {
               "Qiskit unary parameter replay entry has a right operand");
         }
         auto operand = takeParameterExpressionOperand(lhs, stack, nodeCount);
+        finishParameterSum(operand);
         countParameterExpressionNode(nodeCount);
         ++operand.depth;
         if (operand.depth > MAX_PARAMETER_EXPRESSION_DEPTH) {
@@ -496,6 +526,25 @@ normalizePythonParameter(const nb::handle parameter) {
         std::swap(left, right);
       }
       countParameterExpressionNode(nodeCount);
+      if (opcode == "ADD" || opcode == "SUB" || opcode == "RSUB") {
+        const auto subtract = opcode != "ADD";
+        if (left.sumTerms.empty()) {
+          left.sumTerms.emplace_back(std::move(left.value), left.depth, false);
+        }
+        if (right.sumTerms.empty()) {
+          left.sumTerms.emplace_back(std::move(right.value), right.depth,
+                                     subtract);
+        } else {
+          for (auto& [value, depth, negative] : right.sumTerms) {
+            left.sumTerms.emplace_back(std::move(value), depth,
+                                       negative != subtract);
+          }
+        }
+        stack.push_back(std::move(left));
+        continue;
+      }
+      finishParameterSum(left);
+      finishParameterSum(right);
       const auto depth = std::max(left.depth, right.depth) + 1U;
       if (depth > MAX_PARAMETER_EXPRESSION_DEPTH) {
         throwParameterExpressionDepthError();
@@ -515,6 +564,7 @@ normalizePythonParameter(const nb::handle parameter) {
     throw std::runtime_error(
         "Qiskit parameter expression replay leaves multiple results");
   }
+  finishParameterSum(stack.back());
   return std::move(stack.back().value);
 }
 
@@ -2717,6 +2767,45 @@ private:
       }
     }
     if (const auto* binary = parameter.getBinary()) {
+      if (binary->operation == BinaryParameterKind::Add ||
+          binary->operation == BinaryParameterKind::Subtract) {
+        /// Qiskit 2.5 recursively reoptimizes balanced sums. Append their terms
+        /// incrementally until upstream handles balanced additions efficiently.
+        std::vector<std::tuple<const Parameter*, size_t, bool>> pending{
+            {
+                binary->right.get(),
+                depth + 1U,
+                binary->operation == BinaryParameterKind::Subtract,
+            },
+            {binary->left.get(), depth + 1U, false},
+        };
+        nb::object sum;
+        while (!pending.empty()) {
+          const auto [term, termDepth, negative] = pending.back();
+          pending.pop_back();
+          if (const auto* add = term->getBinary();
+              add != nullptr &&
+              (add->operation == BinaryParameterKind::Add ||
+               add->operation == BinaryParameterKind::Subtract)) {
+            countParameterExpressionNode(nodeCount);
+            if (termDepth > MAX_PARAMETER_EXPRESSION_DEPTH) {
+              throwParameterExpressionDepthError();
+            }
+            pending.emplace_back(
+                add->right.get(), termDepth + 1U,
+                negative != (add->operation == BinaryParameterKind::Subtract));
+            pending.emplace_back(add->left.get(), termDepth + 1U, negative);
+          } else {
+            auto value = pythonParameter(*term, symbols, nodeCount, termDepth);
+            if (!sum.is_valid()) {
+              sum = std::move(value);
+            } else {
+              sum = negative ? sum - value : sum + value;
+            }
+          }
+        }
+        return sum;
+      }
       auto left =
           pythonParameter(*binary->left, symbols, nodeCount, depth + 1U);
       auto right =

@@ -1999,6 +1999,21 @@ def test_complex_parameter_expression_fails_closed_without_mutation() -> None:
     assert circuit.parameters == {theta}
 
 
+def test_long_parameter_sum_round_trips() -> None:
+    """Balance Qiskit addition chains without changing parameter identities or values."""
+    angles = ParameterVector("angles", 100)
+    total = sum((-1 if index % 2 else 1) * angle.sin() for index, angle in enumerate(angles))
+    circuit = QuantumCircuit(1)
+    circuit.rz(total.cos(), 0)
+    circuit.global_phase = total / 3
+    result = QCProgram.from_qiskit(circuit).to_qiskit()
+    assert result.parameters == circuit.parameters
+    values = dict(zip(angles, np.linspace(-3, 3, len(angles)), strict=True))
+    assert np.allclose(
+        Operator(result.assign_parameters(values)).data, Operator(circuit.assign_parameters(values)).data
+    )
+
+
 def test_excessively_nested_parameter_expression_fails_closed_without_mutation() -> None:
     """Bound parameter-expression traversal before changing the source circuit."""
     theta = Parameter("theta")
@@ -2020,7 +2035,7 @@ def test_oversized_parameter_expression_fails_closed_without_mutation() -> None:
     """Bound a wide parameter expression before changing the source circuit."""
     theta = Parameter("theta")
     level: list[ParameterExpression] = [theta]
-    level.extend(theta + float(index) for index in range(1, 2049))
+    level.extend(theta + float(index) for index in range(1, 8193))
     while len(level) > 1:
         level = [
             level[index] + level[index + 1] if index + 1 < len(level) else level[index]
@@ -2030,7 +2045,7 @@ def test_oversized_parameter_expression_fails_closed_without_mutation() -> None:
     circuit.rz(level[0], 0)
     source_data = list(circuit.data)
 
-    with pytest.raises(RuntimeError, match="exceeds the supported 4096-node size"):
+    with pytest.raises(RuntimeError, match="exceeds the supported 16384-node size"):
         QCProgram.from_qiskit(circuit)
 
     assert list(circuit.data) == source_data
@@ -4147,7 +4162,7 @@ def _wide_parameter_expression_program(term_count: int) -> QCProgram:
 
 @pytest.mark.parametrize(
     "term_count",
-    [1366, 2049],
+    [5462, 8193],
     ids=["expanded-tree", "unique-ssa-graph"],
 )
 def test_oversized_export_parameter_expression_fails_without_mutation(term_count: int) -> None:
@@ -4155,7 +4170,7 @@ def test_oversized_export_parameter_expression_fails_without_mutation(term_count
     program = _wide_parameter_expression_program(term_count)
     source_ir = program.ir
 
-    with pytest.raises(RuntimeError, match="exceeds the supported 4096-node size"):
+    with pytest.raises(RuntimeError, match="exceeds the supported 16384-node size"):
         program.to_qiskit()
 
     assert program.ir == source_ir

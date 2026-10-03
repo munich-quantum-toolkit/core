@@ -112,7 +112,8 @@ across a round trip; similarly named standalone parameters remain standalone.
 Elements used in different structured-control blocks are restored into one
 shared vector for the complete circuit tree. Free parameter vectors and their
 combined declared size in one translated circuit are each limited to 65,536
-elements. Parameter-expression trees support at most 64 levels and 4,096 nodes.
+elements. Parameter-expression trees support at most 64 levels and 16,384 nodes.
+Import balances addition and subtraction chains before applying the depth limit.
 Import and export support real addition, subtraction, multiplication, division,
 power, negation, trigonometric and inverse trigonometric functions, exponential,
 logarithm, absolute value, and real conjugation. Export also folds signed and
@@ -165,27 +166,27 @@ the target width.
 Nested blocks may capture existing qubits, classical bits, and local variables
 but may not allocate or release circuit resources. Control flow and classical
 expressions may nest up to 64 levels, and classical expression trees may contain
-at most 16,384 nodes (parameter-expression limits are unchanged). Integer values
-use exact widths from 1 through 64. The only wider form is a direct unsigned
-comparison between one complete `ClassicalRegister` and one same-width literal;
-computed, packed, and signed wide values remain rejected. Both expression
-conditions and tuple conditions such as `if_test((register, value))` support
-this form. Tuple equalities with a value outside the register range become
-false. Standard `arith.cmpi` handles every comparison: signed ordering is
-encoded by XOR-biasing both operands' sign bits, including computed operands.
-Casts preserve truncation and sign/zero extension. Bitwise operations, modular
-arithmetic, integer selection, and shifts share these typed rules. Import guards
-runtime shifts so overshifts produce zero; export preserves the guards.
-Rotations and population count are expanded through the same bounded integer
-lowering used by jeff. Unsupported operations, invalid widths, non-finite
-constants, unsupported index uses, and dynamic for-loop bounds fail during
-validation. Programs without classical outputs have a void entry function.
-Qiskit export also accepts a lone constant-zero `i64` return. Whole-register
-reads map to Qiskit `ClassicalRegister` expressions, and writes map to atomic
-Qiskit `Store` operations. Indexed stores assume that their runtime index is in
-bounds. Internal entry-block CBit storage becomes additional Qiskit registers,
-ordered before returned registers; Qiskit exposes all circuit storage. OpenQASM
-remains the source interchange path for arbitrary register widths.
+at most 16,384 nodes. Integer values use exact widths from 1 through 64. The
+only wider form is a direct unsigned comparison between one complete
+`ClassicalRegister` and one same-width literal; computed, packed, and signed
+wide values remain rejected. Both expression conditions and tuple conditions
+such as `if_test((register, value))` support this form. Tuple equalities with a
+value outside the register range become false. Standard `arith.cmpi` handles
+every comparison: signed ordering is encoded by XOR-biasing both operands' sign
+bits, including computed operands. Casts preserve truncation and sign/zero
+extension. Bitwise operations, modular arithmetic, integer selection, and shifts
+share these typed rules. Import guards runtime shifts so overshifts produce
+zero; export preserves the guards. Rotations and population count are expanded
+through the same bounded integer lowering used by jeff. Unsupported operations,
+invalid widths, non-finite constants, unsupported index uses, and dynamic
+for-loop bounds fail during validation. Programs without classical outputs have
+a void entry function. Qiskit export also accepts a lone constant-zero `i64`
+return. Whole-register reads map to Qiskit `ClassicalRegister` expressions, and
+writes map to atomic Qiskit `Store` operations. Indexed stores assume that their
+runtime index is in bounds. Internal entry-block CBit storage becomes additional
+Qiskit registers, ordered before returned registers; Qiskit exposes all circuit
+storage. OpenQASM remains the source interchange path for arbitrary register
+widths.
 
 Every public CBit output is exported as a Qiskit `ClassicalRegister`; an unnamed
 allocation receives a collision-free `_mqt_cN` name. This preserves the CBit
