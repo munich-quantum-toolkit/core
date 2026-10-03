@@ -15,6 +15,7 @@
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
+#include "mqt/Dialect/QCO/Utils/Matrix.h"
 #include "mqt/Dialect/QCO/Utils/WireIterator.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -41,9 +42,7 @@
 #include <iterator>
 #include <numbers>
 #include <optional>
-#include <type_traits>
 #include <utility>
-#include <variant>
 
 namespace mlir::qco {
 
@@ -52,224 +51,154 @@ namespace mlir::qco {
 
 namespace {
 
-/// Dual-backend scalar for the merge algorithm: `double` uses STL; `Value`
-/// emits `arith` / `math` ops. One implementation serves both static-angle and
-/// dynamic-angle chains.
-template <typename T> struct Val {
-  static_assert(std::is_same_v<T, double> || std::is_same_v<T, Value>,
-                "Val supports double and Value only");
-
-  T v{};
+/// Scalar arithmetic for runtime quaternion composition.
+struct Val {
+  Value v;
   RewriterBase* rewriter = nullptr;
   Location loc;
 
-  using Pred = std::conditional_t<std::is_same_v<T, double>, bool, Value>;
-
   static Val constant(RewriterBase& rewriter, Location loc, double x) {
-    if constexpr (std::is_same_v<T, double>) {
-      return {x, &rewriter, loc};
-    } else {
-      return {mqt::constantFromScalar(rewriter, loc, x), &rewriter, loc};
-    }
+    return {
+        .v = mqt::constantFromScalar(rewriter, loc, x),
+        .rewriter = &rewriter,
+        .loc = loc,
+    };
   }
 
   [[nodiscard]] Val operator+(Val o) const {
-    if constexpr (std::is_same_v<T, double>) {
-      return {v + o.v, rewriter, loc};
-    } else {
-      return {
-          arith::AddFOp::create(*rewriter, loc, v, o.v).getResult(),
-          rewriter,
-          loc,
-      };
-    }
+    return {
+        .v = arith::AddFOp::create(*rewriter, loc, v, o.v).getResult(),
+        .rewriter = rewriter,
+        .loc = loc,
+    };
   }
   [[nodiscard]] Val operator-(Val o) const {
-    if constexpr (std::is_same_v<T, double>) {
-      return {v - o.v, rewriter, loc};
-    } else {
-      return {
-          arith::SubFOp::create(*rewriter, loc, v, o.v).getResult(),
-          rewriter,
-          loc,
-      };
-    }
+    return {
+        .v = arith::SubFOp::create(*rewriter, loc, v, o.v).getResult(),
+        .rewriter = rewriter,
+        .loc = loc,
+    };
   }
   [[nodiscard]] Val operator*(Val o) const {
-    if constexpr (std::is_same_v<T, double>) {
-      return {v * o.v, rewriter, loc};
-    } else {
-      return {
-          arith::MulFOp::create(*rewriter, loc, v, o.v).getResult(),
-          rewriter,
-          loc,
-      };
-    }
+    return {
+        .v = arith::MulFOp::create(*rewriter, loc, v, o.v).getResult(),
+        .rewriter = rewriter,
+        .loc = loc,
+    };
   }
   [[nodiscard]] Val operator/(Val o) const {
-    if constexpr (std::is_same_v<T, double>) {
-      return {v / o.v, rewriter, loc};
-    } else {
-      return {
-          arith::DivFOp::create(*rewriter, loc, v, o.v).getResult(),
-          rewriter,
-          loc,
-      };
-    }
+    return {
+        .v = arith::DivFOp::create(*rewriter, loc, v, o.v).getResult(),
+        .rewriter = rewriter,
+        .loc = loc,
+    };
   }
   [[nodiscard]] Val operator-() const {
-    if constexpr (std::is_same_v<T, double>) {
-      return {-v, rewriter, loc};
-    } else {
-      return {
-          arith::NegFOp::create(*rewriter, loc, v).getResult(),
-          rewriter,
-          loc,
-      };
-    }
+    return {
+        .v = arith::NegFOp::create(*rewriter, loc, v).getResult(),
+        .rewriter = rewriter,
+        .loc = loc,
+    };
   }
 
   [[nodiscard]] Val sin() const {
-    if constexpr (std::is_same_v<T, double>) {
-      return {std::sin(v), rewriter, loc};
-    } else {
-      return {
-          math::SinOp::create(*rewriter, loc, v).getResult(),
-          rewriter,
-          loc,
-      };
-    }
+    return {
+        .v = math::SinOp::create(*rewriter, loc, v).getResult(),
+        .rewriter = rewriter,
+        .loc = loc,
+    };
   }
   [[nodiscard]] Val cos() const {
-    if constexpr (std::is_same_v<T, double>) {
-      return {std::cos(v), rewriter, loc};
-    } else {
-      return {
-          math::CosOp::create(*rewriter, loc, v).getResult(),
-          rewriter,
-          loc,
-      };
-    }
+    return {
+        .v = math::CosOp::create(*rewriter, loc, v).getResult(),
+        .rewriter = rewriter,
+        .loc = loc,
+    };
   }
   [[nodiscard]] Val abs() const {
-    if constexpr (std::is_same_v<T, double>) {
-      return {std::abs(v), rewriter, loc};
-    } else {
-      return {
-          math::AbsFOp::create(*rewriter, loc, v).getResult(),
-          rewriter,
-          loc,
-      };
-    }
+    return {
+        .v = math::AbsFOp::create(*rewriter, loc, v).getResult(),
+        .rewriter = rewriter,
+        .loc = loc,
+    };
   }
   [[nodiscard]] Val floor() const {
-    if constexpr (std::is_same_v<T, double>) {
-      return {std::floor(v), rewriter, loc};
-    } else {
-      return {
-          math::FloorOp::create(*rewriter, loc, v).getResult(),
-          rewriter,
-          loc,
-      };
-    }
+    return {
+        .v = math::FloorOp::create(*rewriter, loc, v).getResult(),
+        .rewriter = rewriter,
+        .loc = loc,
+    };
   }
   [[nodiscard]] Val sqrt() const {
-    if constexpr (std::is_same_v<T, double>) {
-      return {std::sqrt(v), rewriter, loc};
-    } else {
-      return {
-          math::SqrtOp::create(*rewriter, loc, v).getResult(),
-          rewriter,
-          loc,
-      };
-    }
+    return {
+        .v = math::SqrtOp::create(*rewriter, loc, v).getResult(),
+        .rewriter = rewriter,
+        .loc = loc,
+    };
   }
   [[nodiscard]] Val atan2(Val x) const {
-    // `*this` is y, `x` is x — same order as std::atan2 / math.atan2.
-    if constexpr (std::is_same_v<T, double>) {
-      return {std::atan2(v, x.v), rewriter, loc};
-    } else {
-      return {
-          math::Atan2Op::create(*rewriter, loc, v, x.v).getResult(),
-          rewriter,
-          loc,
-      };
-    }
+    /// `*this` is y, `x` is x — same order as std::atan2 / math.atan2.
+    return {
+        .v = math::Atan2Op::create(*rewriter, loc, v, x.v).getResult(),
+        .rewriter = rewriter,
+        .loc = loc,
+    };
   }
-  [[nodiscard]] Pred oge(Val o) const {
-    if constexpr (std::is_same_v<T, double>) {
-      return v >= o.v;
-    } else {
-      return arith::CmpFOp::create(*rewriter, loc, arith::CmpFPredicate::OGE, v,
-                                   o.v)
-          .getResult();
-    }
+  [[nodiscard]] Value oge(Val o) const {
+    return arith::CmpFOp::create(*rewriter, loc, arith::CmpFPredicate::OGE, v,
+                                 o.v)
+        .getResult();
   }
-  [[nodiscard]] Pred olt(Val o) const {
-    if constexpr (std::is_same_v<T, double>) {
-      return v < o.v;
-    } else {
-      return arith::CmpFOp::create(*rewriter, loc, arith::CmpFPredicate::OLT, v,
-                                   o.v)
-          .getResult();
-    }
+  [[nodiscard]] Value olt(Val o) const {
+    return arith::CmpFOp::create(*rewriter, loc, arith::CmpFPredicate::OLT, v,
+                                 o.v)
+        .getResult();
   }
 
-  static Pred land(Pred a, Pred b, RewriterBase& rewriter, Location loc) {
-    if constexpr (std::is_same_v<T, double>) {
-      return a && b;
-    } else {
-      return arith::AndIOp::create(rewriter, loc, a, b).getResult();
-    }
+  static Value land(Value a, Value b, RewriterBase& rewriter, Location loc) {
+    return arith::AndIOp::create(rewriter, loc, a, b).getResult();
   }
-  static Pred lnot(Pred a, RewriterBase& rewriter, Location loc) {
-    if constexpr (std::is_same_v<T, double>) {
-      return !a;
-    } else {
-      auto falseV =
-          arith::ConstantOp::create(rewriter, loc, rewriter.getBoolAttr(false));
-      return arith::CmpIOp::create(rewriter, loc, arith::CmpIPredicate::eq, a,
-                                   falseV)
-          .getResult();
-    }
+  static Value lnot(Value a, RewriterBase& rewriter, Location loc) {
+    auto falseV =
+        arith::ConstantOp::create(rewriter, loc, rewriter.getBoolAttr(false));
+    return arith::CmpIOp::create(rewriter, loc, arith::CmpIPredicate::eq, a,
+                                 falseV)
+        .getResult();
   }
-  static Val select(Pred c, Val t, Val f) {
-    if constexpr (std::is_same_v<T, double>) {
-      return c ? t : f;
-    } else {
-      return {
-          arith::SelectOp::create(*t.rewriter, t.loc, c, t.v, f.v).getResult(),
-          t.rewriter,
-          t.loc,
-      };
-    }
+  static Val select(Value c, Val t, Val f) {
+    return {
+        .v = arith::SelectOp::create(*t.rewriter, t.loc, c, t.v, f.v)
+                 .getResult(),
+        .rewriter = t.rewriter,
+        .loc = t.loc,
+    };
   }
 };
 
 enum class RotationAxis : uint8_t { X, Y, Z };
 
-/// Unit quaternion w + x i + y j + z k over the dual-backend scalar type.
-template <typename T> struct Quat {
-  Val<T> w;
-  Val<T> x;
-  Val<T> y;
-  Val<T> z;
+/// Unit quaternion w + x i + y j + z k over runtime scalars.
+struct Quat {
+  Val w;
+  Val x;
+  Val y;
+  Val z;
 };
 
 /// Shared numeric constants used by quaternion construction and Euler extract.
-template <typename T> struct ScalarConsts {
-  Val<T> zero;
-  Val<T> one;
-  Val<T> two;
-  Val<T> eps;
-  Val<T> pi;
+struct ScalarConsts {
+  Val zero;
+  Val one;
+  Val two;
+  Val eps;
+  Val pi;
 };
 
 struct RuntimeEulerAngles {
-  Val<Value> theta;
-  Val<Value> phi;
-  Val<Value> lambda;
-  Val<Value> phase;
+  Val theta;
+  Val phi;
+  Val lambda;
+  Val phase;
 };
 
 } // namespace
@@ -279,9 +208,8 @@ struct RuntimeEulerAngles {
 /// `eps` (1e-12) is the gimbal-lock tolerance from the reference
 /// implementation:
 /// https://github.com/evbernardes/quaternion_to_euler/blob/main/euler_from_quat.py
-template <typename T>
-static ScalarConsts<T> makeConsts(RewriterBase& rewriter, Location loc) {
-  auto c = [&](double x) { return Val<T>::constant(rewriter, loc, x); };
+static ScalarConsts makeConsts(RewriterBase& rewriter, Location loc) {
+  auto c = [&](double x) { return Val::constant(rewriter, loc, x); };
   return {
       .zero = c(0.0),
       .one = c(1.0),
@@ -295,8 +223,7 @@ static ScalarConsts<T> makeConsts(RewriterBase& rewriter, Location loc) {
 ///
 /// Uses floor-based modular arithmetic:
 ///   normalize(a) = a - floor((a + π) / 2π) * 2π
-template <typename T>
-static Val<T> wrapToPi(Val<T> angle, const ScalarConsts<T>& c) {
+static Val wrapToPi(Val angle, const ScalarConsts& c) {
   const auto twoPi = c.two * c.pi;
   const auto shifted = angle + c.pi;
   const auto turns = shifted / twoPi;
@@ -314,8 +241,7 @@ static Val<T> wrapToPi(Val<T> angle, const ScalarConsts<T>& c) {
 ///         + (w1z2 + x1y2 - y1x2 + z1w2) * k
 ///
 /// @see https://en.wikipedia.org/wiki/Quaternion#Hamilton_product
-template <typename T>
-static Quat<T> hamiltonProduct(const Quat<T>& q1, const Quat<T>& q2) {
+static Quat hamiltonProduct(const Quat& q1, const Quat& q2) {
   return {
       .w = q1.w * q2.w - q1.x * q2.x - q1.y * q2.y - q1.z * q2.z,
       .x = q1.w * q2.x + q1.x * q2.w + q1.y * q2.z - q1.z * q2.y,
@@ -333,9 +259,8 @@ static Quat<T> hamiltonProduct(const Quat<T>& q1, const Quat<T>& q2) {
 ///
 /// @see
 /// https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
-template <typename T>
-static Quat<T> axisQuaternion(Val<T> angle, RotationAxis axis,
-                              const ScalarConsts<T>& c) {
+static Quat axisQuaternion(Val angle, RotationAxis axis,
+                           const ScalarConsts& c) {
   const auto half = angle / c.two;
   const auto cos = half.cos();
   const auto sin = half.sin();
@@ -364,13 +289,12 @@ static Quat<T> axisQuaternion(Val<T> angle, RotationAxis axis,
 /// RZ(φ)*RY(θ)*RZ(λ). Since quaternions represent SU(2), this pass works with
 /// the SU(2) part RZ(φ)*RY(θ)*RZ(λ) and tracks the factored-out global phase
 /// (φ+λ)/2 separately via globalPhaseOf.
-template <typename T>
-static Quat<T> quaternionFromZYZ(Val<T> theta, Val<T> phi, Val<T> lambda,
-                                 const ScalarConsts<T>& c) {
+static Quat quaternionFromZYZ(Val theta, Val phi, Val lambda,
+                              const ScalarConsts& c) {
   const auto qTheta = axisQuaternion(theta, RotationAxis::Y, c);
   const auto qPhi = axisQuaternion(phi, RotationAxis::Z, c);
   const auto qLambda = axisQuaternion(lambda, RotationAxis::Z, c);
-  // Expand the sparse axis products without combining the input angles.
+  /// Expand the sparse axis products without combining the input angles.
   const auto w = qPhi.w * qTheta.w;
   const auto yz = qPhi.z * qTheta.y;
   const auto x = -yz;
@@ -395,37 +319,20 @@ static std::optional<RotationAxis> getRotationAxis(Operation* op) {
 
 /// Share the synthesis angle contract while keeping quaternion arithmetic
 /// local.
-template <typename T> static Val<T> normalizeGateAngle(Val<T> angle) {
+static Val normalizeGateAngle(Val angle) {
   const auto normalized = decomposition::normalizeRotationParameter(
       *angle.rewriter, angle.loc, angle.v);
-  if constexpr (std::is_same_v<T, double>) {
-    return {
-        std::get<double>(normalized),
-        angle.rewriter,
-        angle.loc,
-    };
-  } else {
-    return {
-        mqt::variantToValue(*angle.rewriter, angle.loc, normalized),
-        angle.rewriter,
-        angle.loc,
-    };
-  }
+  return {
+      .v = mqt::variantToValue(*angle.rewriter, angle.loc, normalized),
+      .rewriter = angle.rewriter,
+      .loc = angle.loc,
+  };
 }
 
-template <typename T>
-static std::optional<Val<T>> gateParam(UnitaryOpInterface op, unsigned i,
-                                       RewriterBase& rewriter, Location loc) {
+static Val gateParam(UnitaryOpInterface op, unsigned i, RewriterBase& rewriter,
+                     Location loc) {
   Value p = op.getParameter(i);
-  if constexpr (std::is_same_v<T, double>) {
-    const auto folded = mlir::mqt::valueToConstantDouble(p);
-    if (!folded) {
-      return std::nullopt;
-    }
-    return normalizeGateAngle(Val<T>::constant(rewriter, loc, *folded));
-  } else {
-    return normalizeGateAngle(Val<T>{p, &rewriter, loc});
-  }
+  return normalizeGateAngle(Val{.v = p, .rewriter = &rewriter, .loc = loc});
 }
 
 /// Converts a supported single-qubit gate to quaternion representation.
@@ -439,30 +346,24 @@ static std::optional<Val<T>> gateParam(UnitaryOpInterface op, unsigned i,
 /// - U(θ, φ, λ): ZYZ via quaternionFromZYZ.
 ///
 /// @note Global phase is discarded; see quaternionFromZYZ for details.
-/// @return nullopt if a required parameter cannot be represented as `T` (static
-/// path: unfoldable SSA value).
-template <typename T>
-static std::optional<Quat<T>> quaternionFromGate(UnitaryOpInterface op,
-                                                 const ScalarConsts<T>& c,
-                                                 RewriterBase& rewriter) {
+/// The caller accepts only the gates recognized by isMergeable.
+static Quat quaternionFromGate(UnitaryOpInterface op, const ScalarConsts& c,
+                               RewriterBase& rewriter) {
   const Location loc = op->getLoc();
-  auto param = [&](unsigned i) { return gateParam<T>(op, i, rewriter, loc); };
+  auto param = [&](unsigned i) { return gateParam(op, i, rewriter, loc); };
 
-  // Single-axis rotations (RX, RY, RZ, P) share the same conversion pattern
+  /// Single-axis rotations (RX, RY, RZ, P) share the same conversion pattern
   if (const auto axis = getRotationAxis(op.getOperation())) {
     const auto angle = param(0);
-    if (!angle) {
-      return std::nullopt;
-    }
-    return axisQuaternion(*angle, *axis, c);
+    return axisQuaternion(angle, *axis, c);
   }
 
   const auto fixedAxisRotation = [&](RotationAxis axis, double angle) {
-    return axisQuaternion(Val<T>::constant(rewriter, loc, angle), axis, c);
+    return axisQuaternion(Val::constant(rewriter, loc, angle), axis, c);
   };
 
-  // Fixed and multi-parameter gates each need their own conversion.
-  return TypeSwitch<Operation*, std::optional<Quat<T>>>(op.getOperation())
+  /// Fixed and multi-parameter gates each need their own conversion.
+  return TypeSwitch<Operation*, Quat>(op.getOperation())
       .Case([&](XOp) {
         return fixedAxisRotation(RotationAxis::X, std::numbers::pi);
       })
@@ -490,52 +391,45 @@ static std::optional<Quat<T>> quaternionFromGate(UnitaryOpInterface op,
       .Case([&](SXdgOp) {
         return fixedAxisRotation(RotationAxis::X, -std::numbers::pi / 2.0);
       })
-      .Case([&](HOp) -> std::optional<Quat<T>> {
+      .Case([&](HOp) -> Quat {
         const auto invSqrtTwo =
-            Val<T>::constant(rewriter, loc, 1.0 / std::numbers::sqrt2);
-        return Quat<T>{
+            Val::constant(rewriter, loc, 1.0 / std::numbers::sqrt2);
+        return Quat{
             .w = c.zero,
             .x = invSqrtTwo,
             .y = c.zero,
             .z = invSqrtTwo,
         };
       })
-      .Case([&](IdOp) -> std::optional<Quat<T>> {
-        return Quat<T>{.w = c.one, .x = c.zero, .y = c.zero, .z = c.zero};
+      .Case([&](IdOp) -> Quat {
+        return Quat{.w = c.one, .x = c.zero, .y = c.zero, .z = c.zero};
       })
-      .Case([&](ROp) -> std::optional<Quat<T>> {
+      .Case([&](ROp) -> Quat {
         const auto theta = param(0);
         const auto phi = param(1);
-        if (!theta || !phi) {
-          return std::nullopt;
-        }
-        const auto halfTheta = *theta / c.two;
+        const auto halfTheta = theta / c.two;
         const auto sinHalf = halfTheta.sin();
-        return Quat<T>{
+        return Quat{
             .w = halfTheta.cos(),
-            .x = sinHalf * phi->cos(),
-            .y = sinHalf * phi->sin(),
+            .x = sinHalf * phi.cos(),
+            .y = sinHalf * phi.sin(),
             .z = c.zero,
         };
       })
-      .Case([&](U2Op) -> std::optional<Quat<T>> {
+      .Case([&](U2Op) -> Quat {
         const auto phi = param(0);
         const auto lambda = param(1);
-        if (!phi || !lambda) {
-          return std::nullopt;
-        }
-        return quaternionFromZYZ(c.pi / c.two, *phi, *lambda, c);
+        return quaternionFromZYZ(c.pi / c.two, phi, lambda, c);
       })
-      .Case([&](UOp) -> std::optional<Quat<T>> {
+      .Case([&](UOp) -> Quat {
         const auto theta = param(0);
         const auto phi = param(1);
         const auto lambda = param(2);
-        if (!theta || !phi || !lambda) {
-          return std::nullopt;
-        }
-        return quaternionFromZYZ(*theta, *phi, *lambda, c);
+        return quaternionFromZYZ(theta, phi, lambda, c);
       })
-      .Default([](auto) -> std::optional<Quat<T>> { return std::nullopt; });
+      .Default([](auto) -> Quat {
+        llvm_unreachable("unsupported quaternion gate");
+      });
 }
 
 /// Returns the global phase contribution of a supported gate.
@@ -553,52 +447,41 @@ static std::optional<Quat<T>> quaternionFromGate(UnitaryOpInterface op,
 /// - T / Tdg → ±π / 8
 /// - Id → 0
 ///
-/// @return Success with the phase contribution, including an explicit zero for
-/// SU(2) gates. Failure if a required parameter does not fold on the static
-/// (`double`) path, or if @p op is not a mergeable rotation.
-template <typename T>
-static FailureOr<Val<T>> globalPhaseOf(UnitaryOpInterface op,
-                                       const ScalarConsts<T>& c,
-                                       RewriterBase& rewriter) {
+/// The caller accepts only the gates recognized by isMergeable.
+static Val globalPhaseOf(UnitaryOpInterface op, const ScalarConsts& c,
+                         RewriterBase& rewriter) {
   const Location loc = op->getLoc();
-  auto param = [&](unsigned i) { return gateParam<T>(op, i, rewriter, loc); };
+  auto param = [&](unsigned i) { return gateParam(op, i, rewriter, loc); };
 
-  return TypeSwitch<Operation*, FailureOr<Val<T>>>(op.getOperation())
-      .template Case<RXOp, RYOp, RZOp, ROp>(
-          [&](auto) -> FailureOr<Val<T>> { return c.zero; })
-      .template Case<XOp, YOp, ZOp, HOp>(
-          [&](auto) -> FailureOr<Val<T>> { return c.pi / c.two; })
-      .template Case<SOp, SXOp>([&](auto) -> FailureOr<Val<T>> {
-        return Val<T>::constant(rewriter, loc, std::numbers::pi / 4.0);
+  return TypeSwitch<Operation*, Val>(op.getOperation())
+      .Case<RXOp, RYOp, RZOp, ROp>([&](auto) -> Val { return c.zero; })
+      .Case<XOp, YOp, ZOp, HOp>([&](auto) -> Val { return c.pi / c.two; })
+      .Case<SOp, SXOp>([&](auto) -> Val {
+        return Val::constant(rewriter, loc, std::numbers::pi / 4.0);
       })
-      .template Case<SdgOp, SXdgOp>([&](auto) -> FailureOr<Val<T>> {
-        return Val<T>::constant(rewriter, loc, -std::numbers::pi / 4.0);
+      .Case<SdgOp, SXdgOp>([&](auto) -> Val {
+        return Val::constant(rewriter, loc, -std::numbers::pi / 4.0);
       })
-      .Case([&](TOp) -> FailureOr<Val<T>> {
-        return Val<T>::constant(rewriter, loc, std::numbers::pi / 8.0);
+      .Case([&](TOp) -> Val {
+        return Val::constant(rewriter, loc, std::numbers::pi / 8.0);
       })
-      .Case([&](TdgOp) -> FailureOr<Val<T>> {
-        return Val<T>::constant(rewriter, loc, -std::numbers::pi / 8.0);
+      .Case([&](TdgOp) -> Val {
+        return Val::constant(rewriter, loc, -std::numbers::pi / 8.0);
       })
-      .Case([&](IdOp) -> FailureOr<Val<T>> { return c.zero; })
-      .Case([&](POp) -> FailureOr<Val<T>> {
+      .Case([&](IdOp) -> Val { return c.zero; })
+      .Case([&](POp) -> Val {
         const auto theta = param(0);
-        if (!theta) {
-          return failure();
-        }
-        return *theta / c.two;
+        return theta / c.two;
       })
-      .template Case<UOp, U2Op>([&](auto) -> FailureOr<Val<T>> {
-        // phi is at different indexes for UOp and U2Op
+      .Case<UOp, U2Op>([&](auto) -> Val {
+        /// phi is at different indexes for UOp and U2Op
         const auto phiIdx = isa<UOp>(op.getOperation()) ? 1U : 0U;
         const auto phi = param(phiIdx);
         const auto lambda = param(phiIdx + 1);
-        if (!phi || !lambda) {
-          return failure();
-        }
-        return (*phi + *lambda) / c.two;
+        return (phi + lambda) / c.two;
       })
-      .Default([](auto) -> FailureOr<Val<T>> { return failure(); });
+      .Default(
+          [](auto) -> Val { llvm_unreachable("unsupported quaternion gate"); });
 }
 
 /// Extracts ZYZ Euler angles from a unit quaternion.
@@ -629,85 +512,71 @@ static FailureOr<Val<T>> globalPhaseOf(UnitaryOpInterface op,
 /// sign. The returned phase correction accounts for those flips.
 ///
 /// @return `{theta, phi, lambda, phaseCorrection}` suitable for UOp
-template <typename T>
-static std::array<Val<T>, 4> anglesFromQuaternion(const Quat<T>& q,
-                                                  const ScalarConsts<T>& c) {
+static std::array<Val, 4> anglesFromQuaternion(const Quat& q,
+                                               const ScalarConsts& c) {
   RewriterBase& rewriter = *q.w.rewriter;
   const Location loc = q.w.loc;
 
   const auto xyNearZero =
-      Val<T>::land(q.x.abs().olt(c.eps), q.y.abs().olt(c.eps), rewriter, loc);
+      Val::land(q.x.abs().olt(c.eps), q.y.abs().olt(c.eps), rewriter, loc);
 
-  // Host path can take the pure-Z shortcut without building the full tree.
-  if constexpr (std::is_same_v<T, double>) {
-    if (xyNearZero) {
-      const auto alpha = q.z.atan2(q.w) * c.two;
-      const auto phi = wrapToPi(alpha, c);
-      // Wrapping `alpha` by 2*π flips the SU(2) representative, which is
-      // compensated by half the removed angle as a global phase.
-      const auto removedAngle = alpha - phi;
-      return {c.zero, phi, c.zero, removedAngle / c.two};
-    }
-  }
-
-  // The half-angle norms retain small rotations when cos(beta) rounds to one.
-  // Force beta=0 when (x,y)≈0, matching the host path's pure-Z shortcut.
+  /// The half-angle norms retain small rotations when cos(beta) rounds to one.
+  /// Force beta=0 when (x,y)≈0, retaining the pure-Z shortcut.
   const auto sinHalfBetaSquared = q.x * q.x + q.y * q.y;
   const auto cosHalfBetaSquared = q.w * q.w + q.z * q.z;
   const auto sinHalfBeta = sinHalfBetaSquared.sqrt();
   const auto cosHalfBeta = cosHalfBetaSquared.sqrt();
   const auto betaRaw = sinHalfBeta.atan2(cosHalfBeta) * c.two;
-  const auto beta = Val<T>::select(xyNearZero, c.zero, betaRaw);
+  const auto beta = Val::select(xyNearZero, c.zero, betaRaw);
 
-  // safe1 = |beta| >= eps; safe2 = |beta - π| >= eps
+  /// safe1 = |beta| >= eps; safe2 = |beta - π| >= eps
   const auto safe1 = beta.abs().oge(c.eps);
   const auto betaMinusPi = beta - c.pi;
   const auto safe2 = betaMinusPi.abs().oge(c.eps);
-  const auto notXy = Val<T>::lnot(xyNearZero, rewriter, loc);
-  const auto safe = Val<T>::land(Val<T>::land(safe1, safe2, rewriter, loc),
-                                 notXy, rewriter, loc);
-  const auto usePiGimbal = Val<T>::land(safe1, notXy, rewriter, loc);
+  const auto notXy = Val::lnot(xyNearZero, rewriter, loc);
+  const auto safe =
+      Val::land(Val::land(safe1, safe2, rewriter, loc), notXy, rewriter, loc);
+  const auto usePiGimbal = Val::land(safe1, notXy, rewriter, loc);
 
-  // theta+ = atan2(z, w); theta- = atan2(-x, y)
-  // Sanitize y when (x,y)≈0 for the Value backend's constant folder.
-  const auto yForAtan2 = Val<T>::select(xyNearZero, c.one, q.y);
+  /// theta+ = atan2(z, w); theta- = atan2(-x, y)
+  /// Sanitize y when (x,y)≈0 for the constant folder.
+  const auto yForAtan2 = Val::select(xyNearZero, c.one, q.y);
   const auto thetaPlus = q.z.atan2(q.w);
   const auto minusX = -q.x;
   const auto thetaMinus = minusX.atan2(yForAtan2);
   const auto twoThetaPlus = thetaPlus * c.two;
   const auto twoThetaMinus = thetaMinus * c.two;
 
-  // Safe: alpha = theta+ + theta-, gamma = theta+ - theta-
-  // Gimbal: beta≈0 → alpha = 2*theta+; beta≈π → alpha = 2*theta-; gamma = 0
+  /// Safe: alpha = theta+ + theta-, gamma = theta+ - theta-
+  /// Gimbal: beta≈0 → alpha = 2*theta+; beta≈π → alpha = 2*theta-; gamma = 0
   const auto alphaSafe = thetaPlus + thetaMinus;
   const auto gammaSafe = thetaPlus - thetaMinus;
   const auto alphaUnsafe =
-      Val<T>::select(usePiGimbal, twoThetaMinus, twoThetaPlus);
-  const auto alpha = Val<T>::select(safe, alphaSafe, alphaUnsafe);
-  const auto gamma = Val<T>::select(safe, gammaSafe, c.zero);
+      Val::select(usePiGimbal, twoThetaMinus, twoThetaPlus);
+  const auto alpha = Val::select(safe, alphaSafe, alphaUnsafe);
+  const auto gamma = Val::select(safe, gammaSafe, c.zero);
 
   const auto phi = wrapToPi(alpha, c);
   const auto lambda = wrapToPi(gamma, c);
-  // Each removed 2*π Z rotation flips the SU(2) representative. Half of the
-  // total removed angle restores the original matrix as a global phase.
+  /// Each removed 2*π Z rotation flips the SU(2) representative. Half of the
+  /// total removed angle restores the original matrix as a global phase.
   const auto removedAlpha = alpha - phi;
   const auto removedGamma = gamma - lambda;
   const auto removedAngle = removedAlpha + removedGamma;
   return {beta, phi, lambda, removedAngle / c.two};
 }
 
-// Conjugates q by Hadamard, mapping X to Z, Y to -Y, and Z to X.
-template <typename T> static Quat<T> hadamardConjugate(const Quat<T>& q) {
+/// Conjugates q by Hadamard, mapping X to Z, Y to -Y, and Z to X.
+static Quat hadamardConjugate(const Quat& q) {
   return {.w = q.w, .x = q.z, .y = -q.y, .z = q.x};
 }
 
-static bool isConstantAngle(Val<Value> angle, double expected = 0.0) {
+static bool isConstantAngle(Val angle) {
   const auto value = mqt::valueToConstantDouble(angle.v);
-  return value &&
-         std::abs(*value - expected) <= mqt::PARAMETER_COMPARISON_TOLERANCE;
+  return value && std::abs(*value) <= mqt::PARAMETER_COMPARISON_TOLERANCE;
 }
 
-static Val<Value> sumAngles(Val<Value> lhs, Val<Value> rhs) {
+static Val sumAngles(Val lhs, Val rhs) {
   if (isConstantAngle(lhs)) {
     return rhs;
   }
@@ -717,7 +586,8 @@ static Val<Value> sumAngles(Val<Value> lhs, Val<Value> rhs) {
   return lhs + rhs;
 }
 
-/// Merge the unrestricted RZ axis without changing a target's fixed RX gates.
+/// Merge the unrestricted RZ axis without changing a target's fixed quarter
+/// turns.
 static LogicalResult mergeParameterizedRZ(RZOp op, PatternRewriter& rewriter) {
   auto next = dyn_cast<RZOp>(*op.getQubitOut().user_begin());
   if (!next || next->getBlock() != op->getBlock() ||
@@ -743,12 +613,12 @@ static LogicalResult mergeParameterizedRZ(RZOp op, PatternRewriter& rewriter) {
   } else {
     rewriter.setInsertionPoint(next);
     const auto loc = next.getLoc();
-    const auto angle = sumAngles(normalizeGateAngle(Val<Value>{
+    const auto angle = sumAngles(normalizeGateAngle(Val{
                                      .v = op.getTheta(),
                                      .rewriter = &rewriter,
                                      .loc = loc,
                                  }),
-                                 normalizeGateAngle(Val<Value>{
+                                 normalizeGateAngle(Val{
                                      .v = next.getTheta(),
                                      .rewriter = &rewriter,
                                      .loc = loc,
@@ -763,7 +633,7 @@ static LogicalResult mergeParameterizedRZ(RZOp op, PatternRewriter& rewriter) {
 static Value emitRuntimeEulerAngles(RewriterBase& rewriter, Location loc,
                                     Value qubit, RuntimeEulerAngles angles,
                                     const CompilerTarget::SynthesisBasis& basis,
-                                    const ScalarConsts<Value>& consts) {
+                                    const ScalarConsts& consts) {
   auto [theta, phi, lambda, phase] = angles;
   if (basis.singleQubit == decomposition::SingleQubitBasis::ZXZ) {
     phi = phi + consts.pi / consts.two;
@@ -869,48 +739,28 @@ struct MergeSingleQubitRotationGatesPattern final
            chain.size() > parameterizedSynthesisGateCount(basis);
   }
 
-  /// Merge a chain whose angles are all compile-time constants.
-  ///
-  /// Runs the shared algorithm on `Val<double>` (STL math) and emits constant
-  /// `U` / `gphase` values. Returns failure if any parameter is dynamic.
+  /// Reuse numerical Euler synthesis for constant chains.
   static LogicalResult
   tryMergeStaticChain(MutableArrayRef<UnitaryOpInterface> chain,
                       RewriterBase& rewriter) {
-    const Location loc = chain.front()->getLoc();
-    const auto consts = makeConsts<double>(rewriter, loc);
-
-    std::optional<Quat<double>> qAccum;
-    Val<double> phaseAccum = consts.zero;
-    for (UnitaryOpInterface chainOp : chain) {
-      auto qi = quaternionFromGate<double>(chainOp, consts, rewriter);
-      if (!qi) {
+    auto matrix = Matrix2x2::identity();
+    for (auto gate : chain) {
+      const auto factor = gate.getUnitaryMatrix<Matrix2x2>();
+      if (!factor) {
         return failure();
       }
-      const auto phase = globalPhaseOf<double>(chainOp, consts, rewriter);
-      if (failed(phase)) {
-        return failure();
-      }
-      phaseAccum = normalizeGateAngle(phaseAccum + *phase);
-      qAccum = qAccum ? hamiltonProduct(*qi, *qAccum) : *qi;
+      matrix.premultiplyBy(*factor);
     }
-
-    const auto [theta, phi, lambda, eulerPhase] =
-        anglesFromQuaternion(*qAccum, consts);
-    const auto phaseAngle = phi + lambda;
-    const auto correction = phaseAccum - phaseAngle / consts.two + eulerPhase;
-
-    for (auto chainOp : llvm::drop_begin(chain)) {
-      rewriter.replaceOp(chainOp, chainOp.getInputQubit(0));
+    const auto result = decomposition::synthesizeUnitary1QEuler(
+        rewriter, chain.front()->getLoc(), chain.front().getInputQubit(0),
+        matrix, chain.size(), true,
+        {.singleQubit = decomposition::SingleQubitBasis::U});
+    decomposition::emitGPhaseIfNeeded(rewriter, chain.front()->getLoc(),
+                                      result->globalPhase);
+    for (auto gate : llvm::drop_begin(chain)) {
+      rewriter.replaceOp(gate, gate.getInputQubit(0));
     }
-    if (std::abs(correction.v) > mqt::PARAMETER_COMPARISON_TOLERANCE) {
-      GPhaseOp::create(rewriter, loc,
-                       mqt::constantFromScalar(rewriter, loc, correction.v));
-    }
-    rewriter.replaceOpWithNewOp<UOp>(
-        chain.front(), chain.front().getInputQubit(0),
-        mqt::constantFromScalar(rewriter, loc, theta.v),
-        mqt::constantFromScalar(rewriter, loc, phi.v),
-        mqt::constantFromScalar(rewriter, loc, lambda.v));
+    rewriter.replaceOp(chain.front(), result->qubit);
     return success();
   }
 
@@ -946,9 +796,9 @@ struct MergeSingleQubitRotationGatesPattern final
 
     /// Check the complete run before creating or replacing any operations.
     const Location loc = chain.front()->getLoc();
-    const auto consts = makeConsts<Value>(rewriter, loc);
+    const auto consts = makeConsts(rewriter, loc);
     const auto angle = [&](UnitaryOpInterface op) {
-      return *gateParam<Value>(op, 0, rewriter, loc);
+      return gateParam(op, 0, rewriter, loc);
     };
     RuntimeEulerAngles angles{
         .theta = consts.zero,
@@ -961,10 +811,10 @@ struct MergeSingleQubitRotationGatesPattern final
           HOp::getUnitaryMatrix(),
           outerX ? basis : decomposition::SingleQubitBasis::ZYZ);
       angles = {
-          .theta = Val<Value>::constant(rewriter, loc, fixed.theta),
-          .phi = Val<Value>::constant(rewriter, loc, fixed.phi),
-          .lambda = Val<Value>::constant(rewriter, loc, fixed.lambda),
-          .phase = Val<Value>::constant(rewriter, loc, fixed.phase),
+          .theta = Val::constant(rewriter, loc, fixed.theta),
+          .phi = Val::constant(rewriter, loc, fixed.phi),
+          .lambda = Val::constant(rewriter, loc, fixed.lambda),
+          .phase = Val::constant(rewriter, loc, fixed.phase),
       };
       const bool rotationFirst = isa<RZOp>(chain.front());
       auto& outer = rotationFirst != outerX ? angles.lambda : angles.phi;
@@ -1008,14 +858,12 @@ struct MergeSingleQubitRotationGatesPattern final
     return success();
   }
 
-  // Merges a dynamic or mixed-angle chain through `Val<Value>` SSA.
+  /// Merges a dynamic or mixed-angle chain through scalar SSA operations.
   //
-  // Fusion mode emits the requested basis directly. Regular merge mode emits
-  // U and applies its intrinsic global-phase correction:
-  //   correction = totalInputPhase - (phi + lambda) / 2
-  // Pass-level global-phase normalization combines and normalizes the result.
-  // Converting every gate before rewriting prevents a missing conversion case
-  // from leaving partially rewired operations.
+  /// Fusion mode emits the requested basis directly. Regular merge mode emits
+  /// U and applies its intrinsic global-phase correction:
+  ///   correction = totalInputPhase - (phi + lambda) / 2
+  /// Pass-level global-phase normalization combines and normalizes the result.
   static LogicalResult
   mergeDynamicChain(MutableArrayRef<UnitaryOpInterface> chain,
                     RewriterBase& rewriter,
@@ -1025,21 +873,15 @@ struct MergeSingleQubitRotationGatesPattern final
       return success();
     }
     const Location loc = chain.front()->getLoc();
-    const auto consts = makeConsts<Value>(rewriter, loc);
+    const auto consts = makeConsts(rewriter, loc);
 
-    std::optional<Quat<Value>> qAccum;
-    Val<Value> phaseAccum = consts.zero;
+    std::optional<Quat> qAccum;
+    Val phaseAccum = consts.zero;
     for (UnitaryOpInterface chainOp : chain) {
-      auto qi = quaternionFromGate<Value>(chainOp, consts, rewriter);
-      if (!qi) {
-        return failure();
-      }
-      const auto phase = globalPhaseOf<Value>(chainOp, consts, rewriter);
-      if (failed(phase)) {
-        return failure();
-      }
-      qAccum = qAccum ? hamiltonProduct(*qi, *qAccum) : *qi;
-      phaseAccum = normalizeGateAngle(phaseAccum + *phase);
+      auto qi = quaternionFromGate(chainOp, consts, rewriter);
+      const auto phase = globalPhaseOf(chainOp, consts, rewriter);
+      qAccum = qAccum ? hamiltonProduct(qi, *qAccum) : qi;
+      phaseAccum = normalizeGateAngle(phaseAccum + phase);
     }
 
     for (auto chainOp : llvm::drop_begin(chain)) {
@@ -1074,9 +916,9 @@ struct MergeSingleQubitRotationGatesPattern final
     return success();
   }
 
-  // Matches the full chain, folds its quaternions with Hamilton products, and
-  // emits one U operation or the requested fusion basis. Static chains use
-  // host arithmetic. Other chains use the SSA `arith` and `math` path.
+  /// Matches the full chain, folds its quaternions with Hamilton products, and
+  /// emits one U operation or the requested fusion basis. Constant chains use
+  /// numerical Euler synthesis; runtime chains use quaternion composition.
   LogicalResult matchAndRewrite(UnitaryOpInterface op,
                                 PatternRewriter& rewriter) const override {
     if (target != nullptr && op->getParentOfType<CtrlOp>()) {
@@ -1087,7 +929,7 @@ struct MergeSingleQubitRotationGatesPattern final
     }
 
     auto chain = collectChain(op);
-    // Emit helper operations at the chain tail next to the merged output.
+    /// Emit helper operations at the chain tail next to the merged output.
     OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPointAfter(chain.back().getOperation());
 

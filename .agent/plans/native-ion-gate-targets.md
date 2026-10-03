@@ -20,9 +20,12 @@ not a prerequisite for lowering a parameterized gate.
 Represent an elementary rotation by its Pauli axes and original scalar angle.
 Constant Clifford frames change axes without runtime trigonometry. An arbitrary
 native Pauli entangler realizes each two-qubit rotation in one instruction; a
-fixed entangler uses two cached native CX decompositions around a single-qubit
-rotation. P and CP are exact compositions of these rotations and a global phase.
-Numerical KAK remains the specialization for constant gates and fused runs.
+fixed Clifford entangler conjugates a single-qubit rotation into a two-qubit
+Pauli rotation. Constant local corrections implement its inverse. SQRTISWAP uses
+a cached CZ sandwich with four native gates. P and CP are exact compositions of
+these rotations and a global phase. Numerical KAK remains the specialization for
+constant gates and fused runs. Constant single-qubit fusion reuses numerical
+Euler synthesis; quaternion arithmetic is confined to runtime fusion.
 
 Each recognized two-qubit Pauli sequence has exactly one entangling term.
 CompilerTarget owns fixed and unrestricted entangler queries; fusion receives
@@ -31,9 +34,10 @@ in one place.
 
 Reuse the existing scalar-or-SSA gate builder parameters and synthesis-basis
 capabilities. Do not add symbolic dense matrices or a general algebra system.
-Emit selected native RX/R quarter turns directly from the Euler emitter,
-removing its deferred target-specific lowering walk. Prefer unrestricted Pauli
-entanglers over fixed alternatives when both are globally available.
+Emit selected native RX/RY/R quarter turns directly from the Euler emitter, with
+RY implemented by constant Euler-frame offsets. Keep arbitrary RZ as the free
+axis; arbitrary fixed-angle synthesis is outside scope. Prefer unrestricted
+Pauli entanglers over fixed alternatives when both are globally available.
 
 Bench's private standard-gate target and local equivalences continue to lower
 native aliases without changing public targets or Qiskit's session library.
@@ -41,14 +45,22 @@ native aliases without changing public targets or Qiskit's session library.
 ## Validation
 
 The compiler, decomposition, optimization, native-synthesis, and mapping suites
-pass all 1002 C++ tests; Python MLIR/Qiskit suites pass all 926 tests. Coverage
+pass all 1002 C++ tests; Python MLIR/Qiskit suites pass all 956 tests. Coverage
 includes runtime binding, full global phase, reversed placements, native gate
-counts, fixed-angle constraints, aliases, and large-angle normalization.
-Generated stubs, repository and whole-file C++ lint, executable docs with
-warnings as errors, and generated documentation links pass. Independent
-quantum-synthesis, symbolic-computation, and correctness/complexity reviews have
-no outstanding code findings. Bench records its exact-pin integration and
-minimum-version results in its companion PR.
+counts, fixed RX/RY/R constraints, aliases, and large-angle normalization.
 
-Fixed-entangler synthesis through CX can require four square-root-iSWAP gates; a
+A 20-case comparison against the preceding PR head found no gate-count
+regressions. With native U available, CZ-based runtime RZZ needs three local
+gates instead of five; iSWAP needs two entanglers instead of four. Regression
+checks constrain these counts and exclude runtime trigonometry from Pauli
+lowering. Constant fusion shares numerical Euler synthesis while full-unitary
+checks permit equivalent Euler coordinates.
+
+Repository and whole-file C++ lint, executable docs with warnings as errors, and
+generated documentation links pass. No binding signatures changed in this
+iteration. The synthesis-wide Ponytail audit has no outstanding findings. Bench
+records its exact-pin integration and minimum-version results in its companion
+PR.
+
+Fixed-entangler synthesis can require four square-root-iSWAP gates; a
 specialized symbolic optimizer for that basis remains outside scope.

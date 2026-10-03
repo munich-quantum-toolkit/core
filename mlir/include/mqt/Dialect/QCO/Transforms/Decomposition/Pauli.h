@@ -17,6 +17,7 @@
 #include "mlir/Support/LLVM.h"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <variant>
@@ -64,16 +65,17 @@ struct PauliRotationSequence {
 [[nodiscard]] std::optional<PauliRotationSequence>
 getPauliRotations(Operation* operation);
 
-struct TwoQubitNativeDecomposition;
+/// Native entangler count for one two-qubit Pauli rotation with a runtime
+/// angle.
+[[nodiscard]] size_t
+pauliRotationEntanglerCount(CompilerTarget::Entangler entangler);
 
 /// Emits a recognized sequence directly in the target's synthesis basis.
-/// For fixed entanglers, cx must implement CX in the selected operand order.
 /// Hoists supporting scalar operations from a recognized control body; the
 /// caller replaces the original operation with the returned qubits.
 [[nodiscard]] SmallVector<Value, 2>
 emitPauliRotations(RewriterBase& rewriter, Operation* operation,
                    const PauliRotationSequence& sequence,
-                   const CompilerTarget::SynthesisBasis& basis, bool reverse,
-                   const TwoQubitNativeDecomposition* cx = nullptr);
+                   const CompilerTarget::SynthesisBasis& basis, bool reverse);
 
 } // namespace mlir::qco::decomposition

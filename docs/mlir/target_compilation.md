@@ -202,9 +202,9 @@ operation with `canonical_name`, for example
 The reported name remains available to exporters.
 
 Target compilation requires a single-qubit synthesis basis available on every
-site. `ZSXX` accepts unrestricted RZ and SX, RX(±π/2), or R(±π/2, 0). Native X,
-RX(±π), or R(±π, 0) can shorten half turns. Euler synthesis emits these native
-gates directly, including their global-phase corrections. Other fixed angles
+site. `ZSXX` accepts unrestricted RZ and SX, RX(±π/2), RY(±π/2), or R(±π/2, 0).
+Matching native half turns can shorten the decomposition. Euler synthesis emits
+these gates directly, including global-phase corrections. Other fixed angles
 remain valid native capabilities but do not provide a synthesis basis.
 
 Qiskit target import recognizes `gpi(phi)` and `gpi2(phi)` defined as
@@ -217,9 +217,9 @@ absorb virtual Z rotations into gate phases before device submission.
 Unrestricted RXX, RYY, RZX, and RZZ entanglers take precedence over fixed
 alternatives and use up to three native rotations for numeric two-qubit
 synthesis. Runtime two-qubit Pauli rotations use constant basis changes: one
-arbitrary-angle native entangler, or two synthesized CX gates for a
-fixed-entangler target. Single-controlled Pauli rotations and phase gates use
-the same decomposition.
+arbitrary-angle native entangler, or two fixed native entanglers (four for
+square-root iSWAP). Fixed entanglers use Pauli conjugation. Single-controlled
+Pauli rotations and phase gates use the same decomposition.
 
 ### Placements and calibration
 

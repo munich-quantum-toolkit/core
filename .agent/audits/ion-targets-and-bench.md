@@ -53,7 +53,7 @@ GPI's global phase. Arbitrary renamed custom aliases and provider-specific angle
 units are not inferred. CY follows the existing controlled-Pauli target
 contract.
 
-RZ plus fixed RX or R quarter turns use ordinary ZSXX synthesis with direct
+RZ plus fixed RX, RY, or R quarter turns use ordinary ZSXX synthesis with direct
 native emission. Native parameter constraints remain explicit. Parameterized
 entangler synthesis reuses Weyl factors and native cost analysis; constrained
 entanglers retain the fixed-angle path. Runtime Pauli rotations and controlled
@@ -80,3 +80,26 @@ reconstruction issues; all are fixed and covered. Its final correctness and
 complexity passes found no outstanding issues. See the
 [native target decision record](../plans/native-ion-gate-targets.md) for local
 validation. Publication reports hosted CI separately.
+
+## Synthesis complexity audit
+
+The 2026-10-03 audit covers Euler and Weyl decomposition, Pauli lowering,
+one-qubit fusion, target capability resolution, native costing, and the Qiskit
+boundary. Findings are addressed:
+
+- Use Pauli conjugation for runtime rotations on fixed Clifford bases. Remove
+  the CX lowering prerequisite and numerical cost queries; iSWAP now needs two
+  native gates. With native U available, CZ-based RZZ needs three local gates
+  instead of five. Arbitrary-angle entanglers remain the one-gate path.
+  SQRTISWAP retains an explicit four-gate fallback.
+- Reuse numerical Euler synthesis for constant one-qubit fusion. Remove the
+  duplicate numeric quaternion backend, scalar templates, and unreachable
+  parameter-conversion failures. Runtime fusion retains scalar SSA arithmetic.
+- Keep the CX matrix private to its numerical decomposer. Generalize fixed
+  quarter-turn capabilities to RY through constant Euler-frame offsets; no
+  fixed-angle solver or additional basis enum is needed.
+- Compare equivalent U matrices in numerical merge tests instead of selecting
+  one set of Euler coordinates. Full-circuit matrix checks retain phase
+  coverage; identity cancellation requires no remaining gate.
+
+No additional dependencies or unresolved complexity findings remain.

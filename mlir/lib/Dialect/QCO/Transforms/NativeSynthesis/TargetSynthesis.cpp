@@ -746,12 +746,7 @@ NativeCostAnalysis::operationCost(UnitaryOpInterface operation,
         !entanglerOrientation(target, *basis.entangler, sites)) {
       return std::nullopt;
     }
-    if (basis.entangler->parameterized) {
-      return 1;
-    }
-    const auto cxCount =
-        count(decomposition::CANONICAL_CONTROLLED_X, *basis.entangler);
-    return cxCount ? std::optional<size_t>{2 * *cxCount} : std::nullopt;
+    return decomposition::pauliRotationEntanglerCount(*basis.entangler);
   }
   return matrixCost(matrix, target, sites);
 }
@@ -1105,18 +1100,9 @@ static LogicalResult synthesizeTargetOperation(
     if (!sequence) {
       return unsupported("its unitary matrix is not available at compile time");
     }
-    const decomposition::TwoQubitNativeDecomposition* cx = nullptr;
-    if (!basis->entangler->parameterized) {
-      const auto& native = analysis.decompose(
-          decomposition::CANONICAL_CONTROLLED_X, *basis->entangler);
-      if (!native) {
-        return unsupported("its CX decomposition could not be computed");
-      }
-      cx = &*native;
-    }
     rewriter.replaceOp(operation, decomposition::emitPauliRotations(
                                       rewriter, operation, *sequence, *basis,
-                                      reverseEntangler, cx));
+                                      reverseEntangler));
     return success();
   }
   Value input0 = op.getInputQubit(0);

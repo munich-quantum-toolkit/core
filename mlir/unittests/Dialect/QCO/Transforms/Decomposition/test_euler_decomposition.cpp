@@ -1646,18 +1646,21 @@ TEST(EulerSynthesisTest, PauliRotationsPreserveRuntimeAnglesAndFullPhase) {
   for (const auto basis : {ZYZ, ZXZ, XZX, XYX, U, ZSXX, R}) {
     bases.push_back({.singleQubit = basis});
   }
-  for (const auto gate :
-       {CompilerTarget::GateKind::RX, CompilerTarget::GateKind::R}) {
+  for (const auto gate : {
+           CompilerTarget::GateKind::RX,
+           CompilerTarget::GateKind::RY,
+           CompilerTarget::GateKind::R,
+       }) {
     for (const double sign : {-1., 1.}) {
       bases.push_back({
           .singleQubit = ZSXX,
-          .xRotationGates =
-              CompilerTarget::XRotationGates{
+          .quarterTurnGates =
+              CompilerTarget::QuarterTurnGates{
                   .gate = gate,
                   .quarterTurnAngle = sign * std::numbers::pi / 2.,
                   .halfTurnAngle = std::nullopt,
               },
-          .hasX = false,
+          .hasHalfTurn = false,
       });
     }
   }

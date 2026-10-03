@@ -358,8 +358,14 @@ planEulerAngles(OpBuilder& builder, Location loc,
     constexpr double pi = std::numbers::pi;
     constexpr double halfPi = pi / 2.;
     const bool inverse =
-        basis.xRotationGates && basis.xRotationGates->quarterTurnAngle < 0.;
-    const double offset = inverse ? pi : 0.;
+        basis.quarterTurnGates && basis.quarterTurnGates->quarterTurnAngle < 0.;
+    /// RY(t) = RZ(pi/2) RX(t) RZ(-pi/2); absorb this frame in the outer RZs.
+    const double azimuth =
+        basis.quarterTurnGates &&
+                basis.quarterTurnGates->gate == CompilerTarget::GateKind::RY
+            ? halfPi
+            : 0.;
+    const double offset = (inverse ? pi : 0.) + azimuth;
     const double quarterPhase = inverse ? -pi / 4. : pi / 4.;
     const auto quarterTurn = inverse ? Kind::SXdg : Kind::SX;
     if (isConstantParameter(theta, halfPi)) {
@@ -369,10 +375,10 @@ planEulerAngles(OpBuilder& builder, Location loc,
       plan.phase = add(phase, -quarterPhase);
       break;
     }
-    if (basis.hasX && isConstantParameter(theta, pi)) {
-      rotation(Kind::RZ, lambda);
+    if (basis.hasHalfTurn && isConstantParameter(theta, pi)) {
+      rotation(Kind::RZ, add(lambda, azimuth));
       plan.steps.push_back({.kind = Kind::X});
-      rotation(Kind::RZ, add(phi, pi));
+      rotation(Kind::RZ, add(phi, pi - azimuth));
       plan.phase = add(phase, -halfPi);
       break;
     }
@@ -399,19 +405,22 @@ emitEulerPlan(OpBuilder& builder, Location loc, Value qubit,
   };
   for (const auto& [kind, theta, phi, lambda] : plan.steps) {
     using Kind = SynthesisStep::Kind;
-    std::optional<double> nativeX;
-    if (basis.xRotationGates) {
+    std::optional<double> nativeAngle;
+    if (basis.quarterTurnGates) {
       if (kind == Kind::SX || kind == Kind::SXdg) {
-        nativeX = basis.xRotationGates->quarterTurnAngle;
+        nativeAngle = basis.quarterTurnGates->quarterTurnAngle;
       } else if (kind == Kind::X) {
-        nativeX = basis.xRotationGates->halfTurnAngle;
+        nativeAngle = basis.quarterTurnGates->halfTurnAngle;
       }
     }
-    if (nativeX) {
-      qubit = basis.xRotationGates->gate == CompilerTarget::GateKind::R
-                  ? ROp::create(builder, loc, qubit, *nativeX, 0.).getQubitOut()
-                  : RXOp::create(builder, loc, qubit, *nativeX).getQubitOut();
-      phase = addParameters(builder, loc, phase, *nativeX / 2.);
+    if (nativeAngle) {
+      qubit =
+          basis.quarterTurnGates->gate == CompilerTarget::GateKind::R
+              ? ROp::create(builder, loc, qubit, *nativeAngle, 0.).getQubitOut()
+          : basis.quarterTurnGates->gate == CompilerTarget::GateKind::RY
+              ? RYOp::create(builder, loc, qubit, *nativeAngle).getQubitOut()
+              : RXOp::create(builder, loc, qubit, *nativeAngle).getQubitOut();
+      phase = addParameters(builder, loc, phase, *nativeAngle / 2.);
       continue;
     }
     switch (kind) {

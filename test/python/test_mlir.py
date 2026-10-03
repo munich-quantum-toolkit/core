@@ -686,11 +686,11 @@ def test_fixed_parameter_target_capability(arity: int | CompilerTarget.Operation
 @pytest.mark.parametrize("theta", [0.0, np.pi / 2, np.pi, 0.47, "symbolic"])
 @pytest.mark.parametrize("gate", ["u", "rx", "p"])
 @pytest.mark.parametrize("quarter_turn_angle", [np.pi / 2, -np.pi / 2])
-@pytest.mark.parametrize("rotation", ["rx", "r"])
+@pytest.mark.parametrize("rotation", ["rx", "ry", "r"])
 def test_fixed_rotation_compilation_preserves_phase(
     theta: float | str, gate: str, quarter_turn_angle: float, rotation: str
 ) -> None:
-    """Use the same synthesis for fixed RX and R quarter turns, preserving phase."""
+    """Use fixed RX, RY, and R quarter turns with exact phase."""
     target = CompilerTarget(
         2,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
@@ -698,8 +698,8 @@ def test_fixed_rotation_compilation_preserves_phase(
             CompilerTarget.OperationCapability(
                 rotation,
                 1,
-                1 if rotation == "rx" else 2,
-                fixed_parameters=[quarter_turn_angle] if rotation == "rx" else [quarter_turn_angle, None],
+                2 if rotation == "r" else 1,
+                fixed_parameters=[quarter_turn_angle, None] if rotation == "r" else [quarter_turn_angle],
             ),
             CompilerTarget.OperationCapability("cz", 2, 0),
             CompilerTarget.OperationCapability("rz", 1, 1),

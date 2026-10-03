@@ -307,7 +307,7 @@ public:
   /// Recognized globally usable single-qubit synthesis basis.
   enum class SingleQubitBasis : uint8_t {
     U,    ///< `U(θ, φ, λ)`.
-    ZSXX, ///< RZ and X quarter turns, with optional X half turns.
+    ZSXX, ///< RZ and fixed quarter turns, with optional half turns.
     R,    ///< XYX synthesis expressed with `R(θ, φ)`.
     XZX,  ///< `RX(φ) * RZ(θ) * RX(λ)`.
     XYX,  ///< `RX(φ) * RY(θ) * RX(λ)`.
@@ -315,14 +315,14 @@ public:
     ZXZ,  ///< `RZ(φ) * RX(θ) * RZ(λ)`.
   };
 
-  /// RX(theta) or R(theta, 0) implementing the X rotations of the ZSXX basis.
-  struct XRotationGates {
+  /// Native RX, RY, or R(theta, 0) quarter turns for the ZSXX Euler recipe.
+  struct QuarterTurnGates {
     GateKind gate = GateKind::RX;
     double quarterTurnAngle;
     std::optional<double> halfTurnAngle;
 
-    friend bool operator==(const XRotationGates&,
-                           const XRotationGates&) = default;
+    friend bool operator==(const QuarterTurnGates&,
+                           const QuarterTurnGates&) = default;
   };
 
   /// A native entangler with either its fixed synthesis angle or any angle.
@@ -337,10 +337,9 @@ public:
   struct SynthesisBasis {
     SingleQubitBasis singleQubit;
     std::optional<Entangler> entangler;
-    std::optional<XRotationGates> xRotationGates;
-    /// Whether X is native or can be implemented by a fixed RX(±π) or R(±π, 0)
-    /// gate.
-    bool hasX = true;
+    std::optional<QuarterTurnGates> quarterTurnGates;
+    /// Whether the Euler recipe can emit a half turn in one native gate.
+    bool hasHalfTurn = true;
 
     friend bool operator==(const SynthesisBasis&,
                            const SynthesisBasis&) = default;

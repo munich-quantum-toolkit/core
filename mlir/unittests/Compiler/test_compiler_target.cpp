@@ -98,8 +98,8 @@ TEST(CompilerTargetTest, FixedRBasisRequiresRZAndUsableQuarterTurns) {
         if (usable) {
           EXPECT_EQ(target.synthesisBasis()->singleQubit,
                     Target::SingleQubitBasis::ZSXX);
-          ASSERT_TRUE(target.synthesisBasis()->xRotationGates);
-          EXPECT_EQ(target.synthesisBasis()->xRotationGates->gate,
+          ASSERT_TRUE(target.synthesisBasis()->quarterTurnGates);
+          EXPECT_EQ(target.synthesisBasis()->quarterTurnGates->gate,
                     Target::GateKind::R);
         }
       }
@@ -1075,7 +1075,7 @@ TEST(CompilerTargetTest, KeepsUnsupportedRXAnglesNativeWithoutSynthesis) {
   }
 }
 
-TEST(CompilerTargetTest, FixedRXGateSynthesisRequiresRZAndRX) {
+TEST(CompilerTargetTest, FixedPauliSynthesisRequiresFreeRZ) {
   for (const auto& [free, gate] :
        {std::pair{"rx", "ry"}, std::pair{"rz", "ry"}}) {
     const auto target = valid(Target::create(
@@ -1087,7 +1087,8 @@ TEST(CompilerTargetTest, FixedRXGateSynthesisRequiresRZAndRX) {
                                               std::nullopt,
                                               {std::numbers::pi / 2.})),
         })));
-    EXPECT_FALSE(target.synthesisBasis());
+    EXPECT_EQ(target.synthesisBasis().has_value(),
+              std::string_view(free) == "rz");
   }
 }
 
