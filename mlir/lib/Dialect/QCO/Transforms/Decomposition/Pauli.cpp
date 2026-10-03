@@ -25,6 +25,7 @@
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/PatternMatch.h"
 
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVectorExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -33,8 +34,10 @@
 #include <cassert>
 #include <cmath>
 #include <cstddef>
+#include <iterator>
 #include <numbers>
 #include <optional>
+#include <utility>
 #include <variant>
 
 namespace mlir::qco::decomposition {
@@ -174,47 +177,112 @@ std::optional<PauliRotationSequence> getPauliRotations(Operation* operation) {
   return result;
 }
 
-/// For each fixed Clifford E, E^dagger (I tensor Q) E = A tensor B.
-/// The first two axes are A, B; the third is the local rotation axis Q.
-static std::array<PauliAxis, 3>
-conjugatedPauliAxes(CompilerTarget::GateKind gate) {
+namespace {
+
+/// E^dagger maps one local rotation on each wire to these commuting products.
+struct CliffordPaulis {
+  std::array<PauliAxis, 2> first;
+  std::array<PauliAxis, 2> second;
+  std::array<PauliAxis, 2> local;
+  double firstSign = 1.;
+};
+
+} // namespace
+
+static CliffordPaulis conjugatedPaulis(CompilerTarget::GateKind gate) {
   using enum PauliAxis;
   using Gate = CompilerTarget::GateKind;
   switch (gate) {
   case Gate::CX:
-    return {Z, Z, Z};
+    return {.first = {X, X}, .second = {Z, Z}, .local = {X, Z}};
   case Gate::CZ:
-    return {Z, X, X};
+    return {.first = {X, Z}, .second = {Z, X}, .local = {X, X}};
   case Gate::ECR:
+    return {
+        .first = {X, X},
+        .second = {Z, Y},
+        .local = {Y, Z},
+        .firstSign = -1.,
+    };
   case Gate::RZX:
-    return {Z, Y, Z};
+    return {.first = {X, X}, .second = {Z, Y}, .local = {Y, Z}};
   case Gate::ISWAP:
-    return {X, Z, Y};
+    return {.first = {Z, X}, .second = {X, Z}, .local = {Y, Y}};
   case Gate::RXX:
-    return {X, Y, Z};
+    return {.first = {Y, X}, .second = {X, Y}, .local = {Z, Z}};
   case Gate::RYY:
-    return {Y, Z, X};
+    return {.first = {Z, Y}, .second = {Y, Z}, .local = {X, X}};
   case Gate::RZZ:
-    return {Z, X, Y};
+    return {.first = {X, Z}, .second = {Z, X}, .local = {Y, Y}};
   default:
     llvm_unreachable("unsupported fixed synthesis entangler");
   }
 }
 
-SmallVector<Value, 2>
-emitPauliRotations(RewriterBase& rewriter, Operation* operation,
-                   const PauliRotationSequence& sequence,
-                   const CompilerTarget::SynthesisBasis& basis, bool reverse) {
-  auto unitary = cast<UnitaryOpInterface>(operation);
-  if (auto controlled = dyn_cast<CtrlOp>(operation)) {
-    auto body =
-        mqt::getSoleBodyUnitary<UnitaryOpInterface>(*controlled.getBody());
-    mqt::hoistSupportingOpsBefore(*controlled.getBody(), body.getOperation(),
-                                  controlled, rewriter);
+/// Emit C E^dagger (R_A(a) tensor R_B(b)) E C^dagger. Either angle
+/// may be absent. The same sandwich handles one or two commuting generators.
+static SmallVector<Value, 2>
+emitCliffordSandwich(RewriterBase& rewriter, Location loc, Value wire0,
+                     Value wire1, std::array<Matrix2x2, 2> frames,
+                     std::array<Value, 2> angles,
+                     const CompilerTarget::SynthesisBasis& basis) {
+  auto fixedBasis = basis;
+  fixedBasis.entangler->angles = CompilerTarget::AngleSupport::Fixed;
+  const auto identity = Matrix2x2::identity();
+  const auto axes = conjugatedPaulis(basis.entangler->gate);
+  const TwoQubitNativeDecomposition before{
+      .numBasisUses = 1,
+      .singleQubitFactors =
+          {
+              frames[1].adjoint(),
+              frames[0].adjoint(),
+              identity,
+              identity,
+          },
+  };
+  double phase = 0.;
+  /// E^dagger = D E. D is identity for CX/CZ/ECR, ZZ for iSWAP,
+  /// and i times the generator for a fixed Pauli rotation at pi/2.
+  if (basis.entangler->gate == CompilerTarget::GateKind::ISWAP) {
+    frames[0] = frames[0] * ZOp::getUnitaryMatrix();
+    frames[1] = frames[1] * ZOp::getUnitaryMatrix();
+  } else if (basis.entangler->gate == CompilerTarget::GateKind::RXX ||
+             basis.entangler->gate == CompilerTarget::GateKind::RYY ||
+             basis.entangler->gate == CompilerTarget::GateKind::RZX ||
+             basis.entangler->gate == CompilerTarget::GateKind::RZZ) {
+    const auto nativeAxes = pauliAxes(basis.entangler->gate);
+    frames[0] = frames[0] * pauliMatrix(nativeAxes[0]);
+    frames[1] = frames[1] * pauliMatrix(nativeAxes[1]);
+    phase += std::numbers::pi / 2.;
   }
-  rewriter.setInsertionPoint(operation);
-  auto loc = operation->getLoc();
-  auto wires = llvm::to_vector<2>(unitary.getInputQubits());
+  const TwoQubitNativeDecomposition after{
+      .numBasisUses = 1,
+      .singleQubitFactors = {identity, identity, frames[1], frames[0]},
+  };
+  const auto first =
+      emitUnitary2QWeyl(rewriter, loc, wire0, wire1, before, fixedBasis);
+  std::array wires{first.qubit0, first.qubit1};
+  if (angles[0] && axes.firstSign < 0.) {
+    angles[0] = rewriter.createOrFold<arith::NegFOp>(loc, angles[0]);
+  }
+  for (size_t i = 0; i < wires.size(); ++i) {
+    if (angles[i]) {
+      wires[i] = synthesizePauliRotation1Q(rewriter, loc, wires[i],
+                                           axes.local[i], angles[i], basis);
+    }
+  }
+  const auto second =
+      emitUnitary2QWeyl(rewriter, loc, wires[0], wires[1], after, fixedBasis);
+  emitGPhaseIfNeeded(rewriter, loc,
+                     phase + first.globalPhase + second.globalPhase);
+  return {second.qubit0, second.qubit1};
+}
+
+static SmallVector<Value, 2>
+emitPauliSequence(RewriterBase& rewriter, Location loc, ValueRange inputs,
+                  const PauliRotationSequence& sequence,
+                  const CompilerTarget::SynthesisBasis& basis, bool reverse) {
+  auto wires = llvm::to_vector<2>(inputs);
   double globalPhase = 0.;
   const auto scaledAngle = [&](double scale) -> Value {
     if (scale == 1.) {
@@ -335,58 +403,40 @@ emitPauliRotations(RewriterBase& rewriter, Operation* operation,
                        rewriter.createOrFold<arith::MulFOp>(loc, turns, half));
       continue;
     }
-    /// Bounded native rotations include pi/2, which supplies the fixed
-    /// Clifford primitive for angles that cannot be checked at compile time.
-    auto fixedBasis = basis;
-    fixedBasis.entangler->angles = CompilerTarget::AngleSupport::Fixed;
-    const auto identity = Matrix2x2::identity();
-    const auto axes = conjugatedPauliAxes(basis.entangler->gate);
-    auto frame0 = pauliFrame(axis0, axes[0]);
-    auto frame1 = pauliFrame(axis1, axes[1]);
-    const TwoQubitNativeDecomposition before{
-        .numBasisUses = 1,
-        .singleQubitFactors =
-            {
-                frame1.adjoint(),
-                frame0.adjoint(),
-                identity,
-                identity,
-            },
-    };
-    /// E^dagger = D E. D is identity for CX/CZ/ECR, ZZ for iSWAP,
-    /// and i times the generator for a fixed Pauli rotation at pi/2.
-    if (basis.entangler->gate == CompilerTarget::GateKind::ISWAP) {
-      frame0 = frame0 * ZOp::getUnitaryMatrix();
-      frame1 = frame1 * ZOp::getUnitaryMatrix();
-    } else if (basis.entangler->gate == CompilerTarget::GateKind::RXX ||
-               basis.entangler->gate == CompilerTarget::GateKind::RYY ||
-               basis.entangler->gate == CompilerTarget::GateKind::RZX ||
-               basis.entangler->gate == CompilerTarget::GateKind::RZZ) {
-      const auto nativeAxes = pauliAxes(basis.entangler->gate);
-      frame0 = frame0 * pauliMatrix(nativeAxes[0]);
-      frame1 = frame1 * pauliMatrix(nativeAxes[1]);
-      globalPhase += std::numbers::pi / 2.;
-    }
-    const TwoQubitNativeDecomposition after{
-        .numBasisUses = 1,
-        .singleQubitFactors = {identity, identity, frame1, frame0},
-    };
-    const auto first =
-        emitUnitary2QWeyl(rewriter, loc, wire0, wire1, before, fixedBasis);
-    wire0 = first.qubit0;
-    wire1 = synthesizePauliRotation1Q(rewriter, loc, first.qubit1, axes[2],
-                                      angle, basis);
-    const auto second =
-        emitUnitary2QWeyl(rewriter, loc, wire0, wire1, after, fixedBasis);
-    wire0 = second.qubit0;
-    wire1 = second.qubit1;
-    globalPhase += first.globalPhase + second.globalPhase;
+    /// Bounded rotations supply the fixed Clifford endpoint at pi/2.
+    const auto axes = conjugatedPaulis(basis.entangler->gate);
+    const auto outputs = emitCliffordSandwich(
+        rewriter, loc, wire0, wire1,
+        {pauliFrame(axis0, axes.second[0]), pauliFrame(axis1, axes.second[1])},
+        {Value{}, angle}, basis);
+    wire0 = outputs[0];
+    wire1 = outputs[1];
   }
   if (sequence.globalPhaseScale != 0.) {
-    GPhaseOp::create(rewriter, loc, scaledAngle(sequence.globalPhaseScale));
+    emitGPhaseIfNeeded(rewriter, loc, scaledAngle(sequence.globalPhaseScale));
   }
   emitGPhaseIfNeeded(rewriter, loc, globalPhase);
   return wires;
+}
+
+static void hoistPauliAngle(RewriterBase& rewriter, Operation* operation) {
+  if (auto controlled = dyn_cast<CtrlOp>(operation)) {
+    auto body =
+        mqt::getSoleBodyUnitary<UnitaryOpInterface>(*controlled.getBody());
+    mqt::hoistSupportingOpsBefore(*controlled.getBody(), body.getOperation(),
+                                  controlled, rewriter);
+  }
+}
+
+SmallVector<Value, 2>
+emitPauliRotations(RewriterBase& rewriter, Operation* operation,
+                   const PauliRotationSequence& sequence,
+                   const CompilerTarget::SynthesisBasis& basis, bool reverse) {
+  hoistPauliAngle(rewriter, operation);
+  rewriter.setInsertionPoint(operation);
+  return emitPauliSequence(rewriter, operation->getLoc(),
+                           cast<UnitaryOpInterface>(operation).getInputQubits(),
+                           sequence, basis, reverse);
 }
 
 std::optional<size_t>
@@ -409,6 +459,208 @@ pauliRotationEntanglerCount(const PauliRotationSequence& sequence,
     return 1;
   }
   return 2;
+}
+
+namespace {
+
+struct PauliGroup {
+  std::array<PauliAxis, 2> axes;
+  SmallVector<RotationAngleTerm> angle;
+
+  [[nodiscard]] bool entangling() const {
+    return axes[0] != PauliAxis::I && axes[1] != PauliAxis::I;
+  }
+};
+
+} // namespace
+
+static bool commute(std::array<PauliAxis, 2> first,
+                    std::array<PauliAxis, 2> second) {
+  const auto anticommute = [](PauliAxis a, PauliAxis b) {
+    return a != PauliAxis::I && b != PauliAxis::I && a != b;
+  };
+  return anticommute(first[0], second[0]) == anticommute(first[1], second[1]);
+}
+
+/// Match two Pauli axes with a single Clifford frame; no Euler extraction.
+static Matrix2x2 pauliPairFrame(PauliAxis first, PauliAxis second,
+                                PauliAxis fromFirst, PauliAxis fromSecond) {
+  auto frame = pauliFrame(first, fromFirst);
+  const auto axis = pauliFrame(first);
+  const auto quarter =
+      axis * RZOp::unitaryMatrix(std::numbers::pi / 2.) * axis.adjoint();
+  const auto wanted = pauliMatrix(second);
+  for (size_t turn = 0; turn < 4; ++turn) {
+    if ((frame * pauliMatrix(fromSecond) * frame.adjoint()).isApprox(wanted)) {
+      return frame;
+    }
+    frame = quarter * frame;
+  }
+  llvm_unreachable("distinct Pauli axes admit a Clifford frame");
+}
+
+LogicalResult
+fusePauliRotationRun(PatternRewriter& rewriter, Operation* head,
+                     const CompilerTarget::SynthesisBasis& basis, bool reverse,
+                     const CompilerTarget& target,
+                     std::optional<ArrayRef<CompilerTarget::SiteId>> sites) {
+  auto first = dyn_cast<UnitaryOpInterface>(head);
+  if (!first || !first.isTwoQubit() || !basis.entangler) {
+    return failure();
+  }
+  SmallVector<Operation*> operations;
+  SmallVector<PauliGroup, 4> groups;
+  SmallVector<RotationAngleTerm> phase;
+  std::array wires{first.getInputQubit(0), first.getInputQubit(1)};
+  size_t separateCost = 0;
+  for (auto current = first;
+       current && current->getBlock() == head->getBlock();) {
+    auto sequence = getPauliRotations(current);
+    if (!sequence) {
+      break;
+    }
+    /// Numerical fusion owns constant heads; runtime runs may absorb constants.
+    if (operations.empty() && mqt::valueToConstantDouble(sequence->angle)) {
+      return failure();
+    }
+    const bool reversed = current.getInputQubit(0) != wires[0];
+    if (reversed) {
+      for (auto& term : sequence->rotations) {
+        std::swap(term.axes[0], term.axes[1]);
+      }
+    }
+    auto operationSites = sites ? llvm::to_vector<2>(*sites)
+                                : SmallVector<CompilerTarget::SiteId, 2>{};
+    if (reversed && sites) {
+      std::swap(operationSites[0], operationSites[1]);
+    }
+    const auto cost =
+        (sites ? target.supports(current, operationSites)
+               : target.supports(current))
+            ? std::optional<size_t>{1}
+            : pauliRotationEntanglerCount(*sequence, *basis.entangler);
+    if (!cost) {
+      break;
+    }
+    const auto entangling = llvm::count_if(
+        groups, [](const auto& group) { return group.entangling(); });
+    if (llvm::any_of(sequence->rotations, [&](const auto& term) {
+          return llvm::any_of(groups,
+                              [&](const auto& group) {
+                                return !commute(term.axes, group.axes);
+                              }) ||
+                 (entangling == 2 && term.axes[0] != PauliAxis::I &&
+                  term.axes[1] != PauliAxis::I &&
+                  llvm::none_of(groups, [&](const auto& group) {
+                    return group.axes == term.axes;
+                  }));
+        })) {
+      break;
+    }
+    for (const auto& term : sequence->rotations) {
+      auto* found = llvm::find_if(
+          groups, [&](const auto& group) { return group.axes == term.axes; });
+      if (found == groups.end()) {
+        groups.push_back({.axes = term.axes});
+        found = std::prev(groups.end());
+      }
+      found->angle.push_back(
+          {.value = sequence->angle, .scale = term.angleScale});
+    }
+    if (sequence->globalPhaseScale != 0.) {
+      phase.push_back(
+          {.value = sequence->angle, .scale = sequence->globalPhaseScale});
+    }
+    operations.push_back(current);
+    separateCost += *cost;
+    wires = {
+        current.getOutputForInput(wires[0]),
+        current.getOutputForInput(wires[1]),
+    };
+    auto next = dyn_cast<UnitaryOpInterface>(*wires[0].user_begin());
+    current = next && next.isTwoQubit() &&
+                      next.getOperation() == *wires[1].user_begin()
+                  ? next
+                  : UnitaryOpInterface{};
+  }
+  if (operations.size() < 2) {
+    return failure();
+  }
+  SmallVector<const PauliGroup*, 2> entangling;
+  size_t combinedCost = 0;
+  for (auto& group : groups) {
+    simplifyRotationAngles(group.angle);
+    if (group.entangling() && !group.angle.empty()) {
+      entangling.push_back(&group);
+      combinedCost +=
+          basis.entangler->parameterized() &&
+                  (basis.entangler->angles ==
+                       CompilerTarget::AngleSupport::Unrestricted ||
+                   llvm::all_of(group.angle,
+                                [](const auto& term) {
+                                  return mqt::valueToConstantDouble(term.value)
+                                      .has_value();
+                                }))
+              ? 1
+              : 2;
+    }
+  }
+  const bool shared =
+      entangling.size() == 2 && combinedCost > 2 &&
+      basis.entangler->gate != CompilerTarget::GateKind::SQRTISWAP;
+  if ((shared ? 2 : combinedCost) >= separateCost) {
+    return failure();
+  }
+  for (auto* operation : operations) {
+    hoistPauliAngle(rewriter, operation);
+  }
+  rewriter.setInsertionPoint(operations.back());
+  auto loc = head->getLoc();
+  auto outputs = llvm::to_vector<2>(first.getInputQubits());
+  if (shared) {
+    const auto axes = conjugatedPaulis(basis.entangler->gate);
+    const size_t index0 = reverse ? 1 : 0;
+    const size_t index1 = reverse ? 0 : 1;
+    const auto result = emitCliffordSandwich(
+        rewriter, loc, outputs[index0], outputs[index1],
+        {
+            pauliPairFrame(entangling[0]->axes[index0],
+                           entangling[1]->axes[index0], axes.first[0],
+                           axes.second[0]),
+            pauliPairFrame(entangling[0]->axes[index1],
+                           entangling[1]->axes[index1], axes.first[1],
+                           axes.second[1]),
+        },
+        {
+            emitRotationAngleSum(rewriter, loc, entangling[0]->angle),
+            emitRotationAngleSum(rewriter, loc, entangling[1]->angle),
+        },
+        basis);
+    outputs[index0] = result[0];
+    outputs[index1] = result[1];
+  }
+  for (const auto& group : groups) {
+    if (!group.angle.empty() && !(shared && group.entangling())) {
+      outputs = emitPauliSequence(
+          rewriter, loc, outputs,
+          {
+              .angle = emitRotationAngleSum(rewriter, loc, group.angle),
+              .rotations = {{.axes = group.axes}},
+          },
+          basis, reverse);
+    }
+  }
+  simplifyRotationAngles(phase);
+  if (!phase.empty()) {
+    emitGPhaseIfNeeded(rewriter, loc,
+                       emitRotationAngleSum(rewriter, loc, phase));
+  }
+  rewriter.replaceAllUsesWith(wires[0], outputs[0]);
+  rewriter.replaceAllUsesWith(wires[1], outputs[1]);
+  for (auto* operation : llvm::reverse(operations)) {
+    rewriter.eraseOp(operation);
+  }
+  return success();
 }
 
 } // namespace mlir::qco::decomposition

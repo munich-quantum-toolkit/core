@@ -878,24 +878,14 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
           bool variadicOnly = false,
           std::optional<GateKind> gate = std::nullopt,
           AngleSupport angles = AngleSupport::Fixed) {
-        if (nativeOperationsKind == NativeOperations::Kind::Unrestricted) {
-          return true;
-        }
-        const auto found = capabilities.find(operationName);
-        if (found == capabilities.end()) {
-          return false;
-        }
-        return llvm::any_of(found->second, [&](const auto index) {
-          const auto& operation = operations[index];
-          return (!variadicOnly ||
-                  operation.arity().kind() ==
-                      OperationCapability::Arity::Kind::Variadic) &&
-                 operation.arity().accepts(arity) &&
-                 operation.numParameters() == numParameters &&
-                 operation.siteTuples().empty() &&
-                 (gate ? matchesSynthesisParameters(operation, *gate, angles)
-                       : matchesParameters(operation, nullptr));
-        });
+        return supportsOperation(
+            operationName, arity, numParameters, std::nullopt, variadicOnly,
+            nullptr, [&](const auto& operation) {
+              return operation.siteTuples().empty() &&
+                     (gate
+                          ? matchesSynthesisParameters(operation, *gate, angles)
+                          : matchesParameters(operation, nullptr));
+            });
       };
   const auto supportsOnEverySite = [&](GateKind gate) {
     return llvm::all_of(siteIds, [&](SiteId site) {

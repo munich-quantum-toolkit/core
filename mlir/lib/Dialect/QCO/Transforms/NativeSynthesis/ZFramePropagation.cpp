@@ -18,6 +18,7 @@
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Dominance.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Visitors.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
@@ -100,6 +101,7 @@ LogicalResult synthesizeEquatorialGates(RewriterBase& rewriter,
   const bool nativeRZ = llvm::all_of(target.siteIds(), [&](auto site) {
     return target.supports(CompilerTarget::GateKind::RZ, ArrayRef(&site, 1));
   });
+  DominanceInfo dominance;
   const WalkResult result =
       moduleOp->walk<WalkOrder::PreOrder>([&](Operation* parent) {
         /// Modifier bodies and their phases belong to the enclosing unitary.
@@ -124,19 +126,47 @@ LogicalResult synthesizeEquatorialGates(RewriterBase& rewriter,
               if (found == frames.end()) {
                 return;
               }
+              OpBuilder::InsertionGuard guard(rewriter);
+              ROp last;
+              if (!nativeRZ) {
+                auto anchor = wire;
+                auto gate = anchor.getDefiningOp<UnitaryOpInterface>();
+                while (gate && gate->getBlock() == &block &&
+                       commutesWithZFrames(gate)) {
+                  anchor = gate.getInputForOutput(anchor);
+                  gate = anchor.getDefiningOp<UnitaryOpInterface>();
+                }
+                last = anchor.getDefiningOp<ROp>();
+                if (last && last->getBlock() == &block && wire == anchor) {
+                  /// The adjacent R can be replaced at the current boundary.
+                } else if (last && last->getBlock() == &block &&
+                           llvm::all_of(found->second.sums, [&](Value angle) {
+                             return !angle ||
+                                    dominance.properlyDominates(angle, last) ||
+                                    mqt::valueToConstantDouble(angle);
+                           })) {
+                  /// Absorb before a diagonal segment when its scalar inputs
+                  /// are already available at the preceding equatorial gate.
+                  wire = anchor;
+                  rewriter.setInsertionPoint(last);
+                  for (auto& partial : found->second.sums) {
+                    if (partial &&
+                        !dominance.properlyDominates(partial, last)) {
+                      partial = mqt::constantFromScalar(
+                          rewriter, loc, *mqt::valueToConstantDouble(partial));
+                    }
+                  }
+                } else {
+                  last = {};
+                }
+              }
               Value angle = found->second.value(rewriter, loc);
               if (!isZero(angle)) {
                 auto& use = *wire.use_begin();
                 Value output;
-                ROp last;
                 if (nativeRZ) {
                   output = RZOp::create(rewriter, loc, wire, angle);
                 } else {
-                  last = wire.getDefiningOp<ROp>();
-                  if (last &&
-                      last->getBlock() != rewriter.getInsertionBlock()) {
-                    last = {};
-                  }
                   auto zero = mqt::constantFromScalar(rewriter, loc, 0.);
                   auto pi =
                       mqt::constantFromScalar(rewriter, loc, std::numbers::pi);
@@ -168,6 +198,12 @@ LogicalResult synthesizeEquatorialGates(RewriterBase& rewriter,
             for (auto& operation : llvm::make_early_inc_range(block)) {
               rewriter.setInsertionPoint(&operation);
               auto loc = operation.getLoc();
+              if (isa<MeasureOp, ResetOp>(operation)) {
+                /// A Z frame changes only the phase of each measurement
+                /// branch; reset discards the previous state altogether.
+                frames.erase(operation.getOperand(0));
+                continue;
+              }
               const auto normalized = [&](Value angle) {
                 return mqt::variantToValue(
                     rewriter, loc,

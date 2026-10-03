@@ -26,12 +26,14 @@
 #include "mlir/IR/Value.h"
 #include "mlir/Support/LLVM.h"
 
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/ErrorHandling.h"
 
 #include <array>
+#include <bit>
 #include <cassert>
 #include <cmath>
 #include <complex>
@@ -264,6 +266,110 @@ RotationParameter normalizeRotationParameter(OpBuilder& builder, Location loc,
   return builder.createOrFold<arith::MulFOp>(loc, principal, four);
 }
 
+void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, Value phase) {
+  const auto normalized = normalizeRotationParameter(builder, loc, phase);
+  if (const auto constant = constantParameter(normalized)) {
+    emitGPhaseIfNeeded(builder, loc, *constant);
+  } else {
+    GPhaseOp::create(builder, loc, std::get<Value>(normalized));
+  }
+}
+
+void simplifyRotationAngles(SmallVectorImpl<RotationAngleTerm>& angles) {
+  const auto dyadic = [](double scale) {
+    int exponent = 0;
+    return std::abs(scale) <= 1. &&
+           std::frexp(std::abs(scale), &exponent) == 0.5;
+  };
+  DenseMap<std::pair<Value, uint64_t>, SmallVector<size_t, 1>> unmatched;
+  for (auto [index, term] : llvm::enumerate(angles)) {
+    if (term.scale == 0.) {
+      continue;
+    }
+    while (true) {
+      Value operand;
+      double scale = 0.;
+      if (auto negative = term.value.getDefiningOp<arith::NegFOp>()) {
+        operand = negative.getOperand();
+        scale = -1.;
+      } else if (auto product = term.value.getDefiningOp<arith::MulFOp>()) {
+        if (auto factor = mqt::valueToConstantDouble(product.getRhs())) {
+          operand = product.getLhs();
+          scale = *factor;
+        } else if (auto factor = mqt::valueToConstantDouble(product.getLhs())) {
+          operand = product.getRhs();
+          scale = *factor;
+        }
+      } else if (auto quotient = term.value.getDefiningOp<arith::DivFOp>()) {
+        if (auto divisor = mqt::valueToConstantDouble(quotient.getRhs())) {
+          operand = quotient.getLhs();
+          scale = 1. / *divisor;
+        }
+      }
+      if (!operand || !dyadic(scale) || term.scale * scale == 0.) {
+        break;
+      }
+      term.value = operand;
+      term.scale *= scale;
+    }
+    if (mqt::valueToConstantDouble(term.value) == 0.) {
+      term.scale = 0.;
+    }
+    if (term.scale == 0.) {
+      continue;
+    }
+    auto& indices =
+        unmatched[{term.value, std::bit_cast<uint64_t>(std::abs(term.scale))}];
+    if (!indices.empty() && std::signbit(angles[indices.back()].scale) !=
+                                std::signbit(term.scale)) {
+      angles[indices.pop_back_val()].scale = 0.;
+      term.scale = 0.;
+    } else {
+      indices.push_back(index);
+    }
+  }
+  llvm::erase_if(angles, [](const auto& term) { return term.scale == 0.; });
+}
+
+Value emitRotationAngleSum(OpBuilder& builder, Location loc,
+                           ArrayRef<RotationAngleTerm> terms) {
+  if (terms.empty()) {
+    return mqt::constantFromScalar(builder, loc, 0.);
+  }
+  SmallVector<Value> angles;
+  angles.reserve(terms.size());
+  for (const auto& term : terms) {
+    Value angle = term.scale == 1.
+                      ? term.value
+                      : builder.createOrFold<arith::MulFOp>(
+                            loc, term.value,
+                            mqt::constantFromScalar(builder, loc, term.scale));
+    angles.push_back(terms.size() == 1
+                         ? angle
+                         : mqt::variantToValue(builder, loc,
+                                               normalizeRotationParameter(
+                                                   builder, loc, angle)));
+  }
+  for (size_t stride = 1; stride < angles.size(); stride *= 2) {
+    for (size_t i = 0; i + stride < angles.size(); i += 2 * stride) {
+      angles[i] = builder.createOrFold<arith::AddFOp>(loc, angles[i],
+                                                      angles[i + stride]);
+    }
+  }
+  return angles.front();
+}
+
+Value sumRotationAngles(OpBuilder& builder, Location loc,
+                        ArrayRef<Value> inputs) {
+  SmallVector<RotationAngleTerm> angles;
+  angles.reserve(inputs.size());
+  for (auto input : inputs) {
+    angles.push_back({.value = input});
+  }
+  simplifyRotationAngles(angles);
+  return emitRotationAngleSum(builder, loc, angles);
+}
+
 static bool isConstantParameter(const RotationParameter& value,
                                 double expected = 0.) {
   const auto scalar = constantParameter(value);
@@ -415,9 +521,11 @@ planEulerAngles(OpBuilder& builder, Location loc,
       break;
     }
     if (basis.hasHalfTurn && isConstantParameter(theta, pi)) {
-      rotation(Kind::RZ, add(lambda, azimuth));
+      /// A half turn reverses the Z axis, so the outer rotations combine.
       plan.steps.push_back({.kind = Kind::X});
-      rotation(Kind::RZ, add(phi, pi - azimuth));
+      rotation(Kind::RZ,
+               add(add(phi, scaleParameter(builder, loc, lambda, -1.)),
+                   pi - 2. * azimuth));
       plan.phase = add(plan.phase, -halfPi);
       break;
     }
@@ -596,7 +704,7 @@ Value synthesizePauliRotation1Q(OpBuilder& builder, Location loc, Value qubit,
           .getQubitOut();
     }
     auto half = mqt::constantFromScalar(builder, loc, -0.5);
-    GPhaseOp::create(
+    emitGPhaseIfNeeded(
         builder, loc,
         builder.createOrFold<arith::MulFOp>(loc, rotationAngle, half));
     return UOp::create(builder, loc, qubit, zero, zero, rotationAngle)
@@ -742,8 +850,8 @@ void synthesizeParameterizedUnitary1Q(
   };
   const auto phaseHalf = [&](Value angle) {
     auto half = mqt::constantFromScalar(rewriter, loc, 0.5);
-    GPhaseOp::create(rewriter, loc,
-                     rewriter.createOrFold<arith::MulFOp>(loc, angle, half));
+    emitGPhaseIfNeeded(rewriter, loc,
+                       rewriter.createOrFold<arith::MulFOp>(loc, angle, half));
   };
   if (basis.singleQubit == SingleQubitBasis::U ||
       basis.singleQubit == SingleQubitBasis::ZYZ ||

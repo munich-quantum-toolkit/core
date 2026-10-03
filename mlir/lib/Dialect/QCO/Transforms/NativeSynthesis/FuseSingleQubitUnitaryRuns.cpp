@@ -219,11 +219,16 @@ protected:
     }
 
     const auto* target = target_ ? &*target_ : nullptr;
-    if (failed(decomposition::fuseSingleQubitUnitaryRuns(
-            moduleOp,
-            target_ ? *target_->synthesisBasis()
-                    : CompilerTarget::SynthesisBasis{.singleQubit = *parsed},
-            target, GreedyRewriteConfig{})) ||
+    decomposition::SingleQubitRunFusion fusion(
+        target_ ? *target_->synthesisBasis()
+                : CompilerTarget::SynthesisBasis{.singleQubit = *parsed},
+        target);
+    const auto result = moduleOp->walk<WalkOrder::PostOrder, ReverseIterator>(
+        [&](Operation* operation) {
+          return failed(fusion.apply(operation)) ? WalkResult::interrupt()
+                                                 : WalkResult::advance();
+        });
+    if (result.wasInterrupted() ||
         failed(mlir::mqt::normalizeGlobalPhases(moduleOp))) {
       moduleOp.emitError("fusion pipeline failed"); // LCOV_EXCL_LINE
       signalPassFailure();
@@ -244,20 +249,6 @@ createFuseSingleQubitUnitaryRuns(const CompilerTarget& target) {
 } // namespace mlir::qco
 
 namespace mlir::qco::decomposition {
-
-LogicalResult fuseSingleQubitUnitaryRuns(
-    ModuleOp moduleOp, const CompilerTarget::SynthesisBasis& basis,
-    const CompilerTarget* target, const GreedyRewriteConfig& config) {
-  SingleQubitRunFusion fusion(basis, target, config);
-  return failure(moduleOp
-                     ->walk<WalkOrder::PostOrder, ReverseIterator>(
-                         [&](Operation* operation) {
-                           return failed(fusion.apply(operation))
-                                      ? WalkResult::interrupt()
-                                      : WalkResult::advance();
-                         })
-                     .wasInterrupted());
-}
 
 SingleQubitRunFusion::SingleQubitRunFusion(
     const CompilerTarget::SynthesisBasis& basis, const CompilerTarget* target,

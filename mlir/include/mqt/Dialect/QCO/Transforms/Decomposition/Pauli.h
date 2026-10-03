@@ -15,6 +15,7 @@
 
 #include "mlir/IR/Value.h"
 #include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
 
 #include <array>
 #include <cstddef>
@@ -27,6 +28,7 @@ class Operation;
 class OpBuilder;
 class Location;
 class RewriterBase;
+class PatternRewriter;
 } // namespace mlir
 
 namespace mlir::qco::decomposition {
@@ -90,5 +92,14 @@ pauliRotationEntanglerCount(const PauliRotationSequence& sequence,
 emitPauliRotations(RewriterBase& rewriter, Operation* operation,
                    const PauliRotationSequence& sequence,
                    const CompilerTarget::SynthesisBasis& basis, bool reverse);
+
+/// Compose adjacent commuting Pauli operations with runtime parameters when
+/// their native two-qubit count decreases. A successful rewrite erases the
+/// complete matched run.
+LogicalResult
+fusePauliRotationRun(PatternRewriter& rewriter, Operation* head,
+                     const CompilerTarget::SynthesisBasis& basis, bool reverse,
+                     const CompilerTarget& target,
+                     std::optional<ArrayRef<CompilerTarget::SiteId>> sites);
 
 } // namespace mlir::qco::decomposition

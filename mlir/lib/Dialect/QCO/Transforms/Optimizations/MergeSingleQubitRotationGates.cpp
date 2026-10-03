@@ -13,6 +13,7 @@
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mqt/Dialect/QCO/Transforms/NativeSynthesis/SingleQubitFusion.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
@@ -30,7 +31,6 @@
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
-#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -45,6 +45,7 @@
 #include <iterator>
 #include <numbers>
 #include <optional>
+#include <type_traits>
 #include <utility>
 
 namespace mlir::qco {
@@ -445,83 +446,77 @@ static Val sumAngles(Val lhs, Val rhs) {
   return lhs + rhs;
 }
 
-/// Merge the unrestricted RZ axis without changing a target's fixed quarter
-/// turns.
-static LogicalResult mergeParameterizedRZ(RZOp op, PatternRewriter& rewriter) {
-  if (auto previous = op.getQubitIn().getDefiningOp<RZOp>();
-      previous && previous->getBlock() == op->getBlock()) {
+/// Compose a maximal run without introducing quaternion expressions.
+template <typename RotationOp>
+static LogicalResult mergeParameterizedRotations(RotationOp op,
+                                                 PatternRewriter& rewriter) {
+  const auto matches = [&](RotationOp other) {
+    if (!other || other->getBlock() != op->getBlock()) {
+      return false;
+    }
+    if constexpr (std::is_same_v<RotationOp, ROp>) {
+      return valuesMatchWithinTolerance(op.getPhi(), other.getPhi());
+    }
+    return true;
+  };
+  if (matches(op.getQubitIn().template getDefiningOp<RotationOp>())) {
     return failure();
   }
-  SmallVector<RZOp> chain;
-  for (auto next = op; next && next->getBlock() == op->getBlock();
-       next = dyn_cast<RZOp>(*next.getQubitOut().user_begin())) {
+  SmallVector<RotationOp> chain;
+  SmallVector<Value> angles;
+  for (auto next = op; matches(next);
+       next = dyn_cast<RotationOp>(*next.getQubitOut().user_begin())) {
     chain.push_back(next);
+    angles.push_back(next.getTheta());
   }
-  if (chain.size() < 2 || llvm::all_of(chain, [](RZOp gate) {
-        return mqt::valueToConstantDouble(gate.getTheta()).has_value();
+  if (chain.size() < 2 || llvm::all_of(angles, [](Value angle) {
+        return mqt::valueToConstantDouble(angle).has_value();
       })) {
     return failure();
   }
-  const auto negatedOperand = [](Value angle) -> Value {
-    if (auto negation = angle.getDefiningOp<arith::NegFOp>()) {
-      return negation.getOperand();
-    }
-    if (auto product = angle.getDefiningOp<arith::MulFOp>()) {
-      if (mqt::valueToConstantDouble(product.getRhs()) == -1.) {
-        return product.getLhs();
-      }
-      if (mqt::valueToConstantDouble(product.getLhs()) == -1.) {
-        return product.getRhs();
-      }
-    }
-    return {};
-  };
-  /// RZ gates commute, so inverse pairs can cancel anywhere in the run.
-  /// Keep the surviving angles in circuit order and normalize only afterwards.
-  DenseMap<Value, SmallVector<std::pair<size_t, bool>, 1>> unmatched;
-  SmallVector<Value> angles;
-  for (auto gate : chain) {
-    auto angle = gate.getTheta();
-    Value atom = angle;
-    bool negative = false;
-    while (auto operand = negatedOperand(atom)) {
-      atom = operand;
-      negative = !negative;
-    }
-    auto& occurrences = unmatched[atom];
-    if (!occurrences.empty() && occurrences.back().second != negative) {
-      angles[occurrences.pop_back_val().first] = {};
-    } else {
-      occurrences.emplace_back(angles.size(), negative);
-      angles.push_back(angle);
-    }
-  }
-  llvm::erase_if(angles, [](Value angle) { return !angle; });
   auto last = chain.back();
   rewriter.setInsertionPoint(last);
-  if (angles.size() > 1) {
-    /// Normalize each input once, then add in a balanced tree. Repeatedly
-    /// normalizing partial sums creates deeply nested nonlinear expressions.
-    for (auto& angle : angles) {
-      angle = normalizeGateAngle(
-                  {.v = angle, .rewriter = &rewriter, .loc = last.getLoc()})
-                  .v;
-    }
-    for (size_t stride = 1; stride < angles.size(); stride *= 2) {
-      for (size_t i = 0; i + stride < angles.size(); i += 2 * stride) {
-        angles[i] = rewriter.createOrFold<arith::AddFOp>(
-            last.getLoc(), angles[i], angles[i + stride]);
-      }
-    }
-  }
-  if (angles.empty()) {
+  auto sum = decomposition::sumRotationAngles(rewriter, last.getLoc(), angles);
+  if (mqt::valueToConstantDouble(sum) == 0.) {
     rewriter.replaceOp(last, op.getQubitIn());
   } else {
-    rewriter.replaceOpWithNewOp<RZOp>(last, op.getQubitIn(), angles.front());
+    /// Reuse the first gate so the common equatorial axis is unchanged.
+    rewriter.moveOpBefore(op, last);
+    rewriter.modifyOpInPlace(op, [&] { op.getThetaMutable().assign(sum); });
+    rewriter.replaceOp(last, op.getQubitOut());
   }
   for (auto gate : llvm::reverse(llvm::drop_end(chain))) {
-    rewriter.eraseOp(gate);
+    if (gate != op || op->use_empty()) {
+      rewriter.eraseOp(gate);
+    }
   }
+  return success();
+}
+
+/// Two positive equatorial half-turns are a Z rotation and phase pi.
+static LogicalResult mergeEquatorialHalfTurns(ROp op,
+                                              PatternRewriter& rewriter) {
+  auto next = dyn_cast<ROp>(*op.getQubitOut().user_begin());
+  if (!next || next->getBlock() != op->getBlock() ||
+      op->getParentOfType<CtrlOp>() ||
+      mqt::valueToConstantDouble(op.getTheta()) != std::numbers::pi ||
+      mqt::valueToConstantDouble(next.getTheta()) != std::numbers::pi) {
+    return failure();
+  }
+  rewriter.setInsertionPoint(next);
+  const auto normalized = [&](Value angle) {
+    return mqt::variantToValue(rewriter, next.getLoc(),
+                               decomposition::normalizeRotationParameter(
+                                   rewriter, next.getLoc(), angle));
+  };
+  auto difference = rewriter.createOrFold<arith::SubFOp>(
+      next.getLoc(), normalized(next.getPhi()), normalized(op.getPhi()));
+  auto angle = rewriter.createOrFold<arith::MulFOp>(
+      next.getLoc(), difference,
+      mqt::constantFromScalar(rewriter, next.getLoc(), 2.));
+  decomposition::emitGPhaseIfNeeded(rewriter, next.getLoc(), std::numbers::pi);
+  rewriter.replaceOpWithNewOp<RZOp>(next, op.getQubitIn(), angle);
+  rewriter.eraseOp(op);
   return success();
 }
 
@@ -897,12 +892,35 @@ protected:
 
 namespace mlir::qco::decomposition {
 
+void populateRotationCompositionPatterns(RewritePatternSet& patterns,
+                                         const CompilerTarget* target) {
+  const auto unrestricted = [&](StringRef name, size_t parameters) {
+    return target == nullptr || llvm::all_of(target->siteIds(), [&](auto site) {
+             return target->supportsOperation(name, 1, parameters,
+                                              ArrayRef(&site, 1));
+           });
+  };
+  if (unrestricted("rx", 1)) {
+    patterns.add(mergeParameterizedRotations<RXOp>);
+  }
+  if (unrestricted("ry", 1)) {
+    patterns.add(mergeParameterizedRotations<RYOp>);
+  }
+  if (unrestricted("rz", 1)) {
+    patterns.add(mergeParameterizedRotations<RZOp>);
+    patterns.add(mergeEquatorialHalfTurns);
+  }
+  if (unrestricted("r", 2)) {
+    patterns.add(mergeParameterizedRotations<ROp>);
+  }
+}
+
 void populateParameterizedSingleQubitRunCompositionPatterns(
     RewritePatternSet& patterns, const CompilerTarget::SynthesisBasis& basis,
     const CompilerTarget* target) {
+  populateRotationCompositionPatterns(patterns, target);
   RZOp::getCanonicalizationPatterns(patterns, patterns.getContext());
   if (basis.singleQubit == SingleQubitBasis::ZSXX && target != nullptr) {
-    patterns.add(mergeParameterizedRZ);
     return;
   }
   RXOp::getCanonicalizationPatterns(patterns, patterns.getContext());

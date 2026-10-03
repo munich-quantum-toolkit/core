@@ -27,6 +27,11 @@ class RewriterBase;
 
 namespace mlir::qco::decomposition {
 
+/// Combine rotations with a common generator before native lowering.
+/// With a target, only produce rotations whose angles are unrestricted.
+void populateRotationCompositionPatterns(
+    RewritePatternSet& patterns, const CompilerTarget* target = nullptr);
+
 /// Fuse one wire at a time during an existing reverse-order traversal.
 /// Reuse within one MLIR context.
 /// The caller must visit users before producers: fusion can erase successors.
@@ -47,11 +52,6 @@ private:
   std::optional<FrozenRewritePatternSet> runtimePatterns_;
   std::optional<FrozenRewritePatternSet> matrixPatterns_;
 };
-
-/// Standalone driver; target synthesis reuses its existing traversal instead.
-LogicalResult fuseSingleQubitUnitaryRuns(
-    ModuleOp moduleOp, const CompilerTarget::SynthesisBasis& basis,
-    const CompilerTarget* target, const GreedyRewriteConfig& config);
 
 /// Populates @p patterns with the single-qubit run fusion rewrite for
 /// @p basis (the reusable core of `fuse-single-qubit-unitary-runs`).

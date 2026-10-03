@@ -1,7 +1,7 @@
 # Audit: native ion gates and the Bench compiler
 
-Status: complete; fresh review findings addressed and local validation passed.
-Scope: Core #2578 and Bench #1027. Hardware snapshot: 2026-10-02.
+Status: historical hardware and scope assessment for Core #2578 and Bench #1027.
+Hardware snapshot: 2026-10-02.
 
 ## Hardware scope
 
@@ -44,7 +44,7 @@ Sources: [IonQ Aria](https://www.ionq.com/quantum-systems/aria),
 [IQM Spark](https://iqm.tech/products/iqm-spark/), and
 [Quantinuum availability](https://docs.quantinuum.com/systems/support/system_reference.html).
 
-## Implementation boundaries
+### Implementation boundaries
 
 Core uses existing R and RZZ operations throughout synthesis, IR, and runtime
 consumers. Qiskit targets expose GPI/GPI2 through exact fixed-R definitions;
@@ -70,56 +70,8 @@ require Qiskit 2.5.x for the native C API bridge. The uv minimums group and Core
 extra select these environments independently. No provider SDK, new native IR
 gates, arbitrary fixed-angle solver, or MS support is required.
 
-## Verification
+### Implementation record
 
-Regressions cover phase-sensitive matrices, symbolic binding, fixed and
-unrestricted target conformance, native gate counts, aliases, compiled jeff
-exchange, placement, and mirrors. The fresh audit identified unrestricted
-entangler placement, description-based Bench target selection, and matrix
-reconstruction issues; all are fixed and covered. Its final correctness and
-complexity passes found no outstanding issues. See the
-[native target decision record](../plans/native-ion-gate-targets.md) for local
-validation. Publication reports hosted CI separately.
-
-## Synthesis complexity audit
-
-The 2026-10-03 audit covers Euler and Weyl decomposition, Pauli lowering,
-one-qubit fusion, target capability resolution, native costing, and the Qiskit
-boundary. Findings are addressed:
-
-- Use Pauli conjugation for runtime rotations on fixed Clifford bases. Remove
-  the CX lowering prerequisite and numerical cost queries; iSWAP now needs two
-  native gates. With native U available, CZ-based RZZ needs three local gates
-  instead of five. Arbitrary-angle entanglers remain the one-gate path.
-  SQRTISWAP retains an explicit four-gate fallback.
-- Reuse numerical Euler synthesis for constant one-qubit fusion. Remove the
-  duplicate numeric quaternion backend, scalar templates, and unreachable
-  parameter-conversion failures. Runtime fusion retains scalar SSA arithmetic.
-- Keep the CX matrix private to its numerical decomposer. Generalize fixed
-  quarter-turn capabilities to RY through constant Euler-frame offsets; no
-  fixed-angle solver or additional basis enum is needed.
-- Compare equivalent U matrices in numerical merge tests instead of selecting
-  one set of Euler coordinates. Full-circuit matrix checks retain phase
-  coverage; identity cancellation requires no remaining gate.
-- Incorporate #2649's explicit fusion policy, operation-scoped greedy rewrites,
-  and shared traversal. Preserve controlled-body phase wires through the
-  synthesis listener. Keep fusion policy out of the Euler header and retain the
-  complete native basis at emission. The U-specific optimizer is no longer
-  needed in target compilation.
-- Omit phase-only U gates and redundant full turns with exact phase accounting.
-  Select shorter equivalent Euler representatives without changing tolerances.
-  Import regression coverage for independent wires, symbolic run boundaries,
-  controlled U2 restoration, and phase-generated control wires. Retain Python
-  integration coverage rather than making unrelated test reductions.
-- Balance global-phase sums in the shared normalizer. Sequential accumulation
-  made symbolic U-target exports exceed the parameter-depth limit at 20 qubits.
-  QC/QCO depth and value checks plus Qiskit/jeff export regressions cover the
-  correction. The 100-qubit U workload also exceeds the old 4,096-node budget;
-  align it with the existing 16,384-node classical-expression budget and retain
-  depth, size, and failure-without-mutation regression checks.
-- Emit signed sums incrementally in the Qiskit adapter to avoid Qiskit 2.5
-  repeatedly expanding balanced additions. Balance additive replay chains on
-  import so exported circuits round-trip and remain bindable.
-
-Core #2649 is subsumed by this implementation; #2578 owns resolution of #2614.
-No additional dependencies or unresolved complexity findings remain.
+The [native target plan](../plans/native-ion-gate-targets.md) owns current
+synthesis decisions and validation. This audit retains the dated hardware
+snapshot and the Core/Bench/provider ownership boundaries.

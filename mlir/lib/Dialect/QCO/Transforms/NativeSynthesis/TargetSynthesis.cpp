@@ -348,9 +348,7 @@ static LogicalResult propagateSites(ValueRange inputs, ValueRange outputs,
 
 /// Visit each region once. Branches must agree and loop backedges must retain
 /// the entry sites; neither rule is implied by all-to-all placement.
-static FailureOr<SiteMap>
-collectStaticSites(Operation* root, bool indexed,
-                   SmallVectorImpl<Operation*>* unitaries = nullptr) {
+static FailureOr<SiteMap> collectStaticSites(Operation* root, bool indexed) {
   SiteMap sites;
   auto result = root->walk([&](Operation* operation, const WalkStage& stage) {
     const auto propagate = [&](ValueRange inputs, ValueRange outputs) {
@@ -398,11 +396,6 @@ collectStaticSites(Operation* root, bool indexed,
         sites.try_emplace(output, std::nullopt);
       }
     } else if (isa<UnitaryOpInterface, ResetOp, MeasureOp>(operation)) {
-      if (unitaries != nullptr) {
-        operation->walk<WalkOrder::PreOrder>([&](UnitaryOpInterface unitary) {
-          unitaries->push_back(unitary.getOperation());
-        });
-      }
       if (propagate(operation->getOperands(), operation->getResults())
               .wasInterrupted()) {
         return WalkResult::interrupt();
@@ -1228,13 +1221,15 @@ static bool fuseTwoQubitGateRun(IRRewriter& rewriter, UnitaryOpInterface head,
   return true;
 }
 
-static FailureOr<bool> fuseTwoQubitGates(
-    IRRewriter& rewriter, ModuleOp moduleOp,
-    const CompilerTarget::SynthesisBasis& basis, NativeCostAnalysis& analysis,
-    const CompilerTarget* target = nullptr, const SiteMap* sites = nullptr,
-    bool shrinkOnly = false,
-    decomposition::SingleQubitRunFusion* oneQubitFusion = nullptr) {
-  bool changed = false;
+/// Returns whether two-qubit fusion changed the IR.
+static FailureOr<bool>
+fuseGateRuns(IRRewriter& rewriter, ModuleOp moduleOp,
+             const CompilerTarget::SynthesisBasis& basis,
+             NativeCostAnalysis& analysis,
+             const CompilerTarget* target = nullptr,
+             const SiteMap* sites = nullptr, bool shrinkOnly = false,
+             decomposition::SingleQubitRunFusion* oneQubitFusion = nullptr) {
+  bool twoQubitChanged = false;
   /// A run's successors have already been visited when its head erases them.
   const auto result = moduleOp->walk<WalkOrder::PostOrder, ReverseIterator>(
       [&](Operation* operation) {
@@ -1244,17 +1239,21 @@ static FailureOr<bool> fuseTwoQubitGates(
                      ? WalkResult::interrupt()
                      : WalkResult::advance();
         }
+        if (!basis.entangler) {
+          return WalkResult::advance();
+        }
         const auto matrix = twoQubitRunMemberMatrix(unitary);
         if (matrix && !feedsFromSameTwoQubitRun(unitary)) {
-          changed |= fuseTwoQubitGateRun(rewriter, unitary, *matrix, basis,
-                                         target, sites, analysis, shrinkOnly);
+          twoQubitChanged |=
+              fuseTwoQubitGateRun(rewriter, unitary, *matrix, basis, target,
+                                  sites, analysis, shrinkOnly);
         }
         return WalkResult::advance();
       });
   if (result.wasInterrupted()) {
     return failure();
   }
-  return changed;
+  return twoQubitChanged;
 }
 
 namespace {
@@ -1286,8 +1285,8 @@ protected:
     IRRewriter rewriter(&getContext());
     NativeCostAnalysis analysis(compilationSeed(moduleOp, 2023));
     const auto changed =
-        fuseTwoQubitGates(rewriter, moduleOp, *basis, analysis,
-                          target_ ? &*target_ : nullptr, nullptr, true);
+        fuseGateRuns(rewriter, moduleOp, *basis, analysis,
+                     target_ ? &*target_ : nullptr, nullptr, true);
     if (failed(changed) ||
         (*changed && failed(mlir::mqt::normalizeGlobalPhases(moduleOp)))) {
       signalPassFailure();
@@ -1344,6 +1343,38 @@ private:
   SmallVector<arith::ConstantOp> pending_;
 };
 
+struct ComposePauliRotations final
+    : OpInterfaceRewritePattern<UnitaryOpInterface> {
+  ComposePauliRotations(MLIRContext* context,
+                        const CompilerTarget::SynthesisBasis& basis,
+                        const CompilerTarget& target,
+                        NativeCostAnalysis& analysis, const SiteMap* sites)
+      : OpInterfaceRewritePattern(context), basis(basis), target(target),
+        analysis(analysis), sites(sites) {}
+
+  CompilerTarget::SynthesisBasis basis;
+  const CompilerTarget& target;
+  NativeCostAnalysis& analysis;
+  const SiteMap* sites;
+
+  LogicalResult matchAndRewrite(UnitaryOpInterface op,
+                                PatternRewriter& rewriter) const override {
+    if (!op.isTwoQubit() || !isWalkableUnitaryShell(op.getOperation())) {
+      return failure();
+    }
+    auto placement = sites != nullptr ? getOperationSites(op, *sites)
+                                      : SmallVector<SiteId, 2>{};
+    const auto operationSites = sites != nullptr
+                                    ? std::optional<ArrayRef<SiteId>>(placement)
+                                    : std::nullopt;
+    const auto reverse =
+        analysis.entanglerOrientation(target, *basis.entangler, operationSites);
+    return reverse ? decomposition::fusePauliRotationRun(
+                         rewriter, op, basis, *reverse, target, operationSites)
+                   : failure();
+  }
+};
+
 struct TargetNativeSynthesisPass final
     : impl::TargetNativeSynthesisBase<TargetNativeSynthesisPass> {
   using TargetNativeSynthesisBase::TargetNativeSynthesisBase;
@@ -1369,15 +1400,17 @@ protected:
       /// Keep local factors compact until their Z frames can be propagated.
       emissionBasis->singleQubit = CompilerTarget::SingleQubitBasis::ZYZ;
     }
+    /// Preserve native operations outside the explicit composition patterns.
+    const auto compositionConfig = GreedyRewriteConfig{}
+                                       .setUseTopDownTraversal()
+                                       .enableFolding(false)
+                                       .enableConstantCSE(false);
     if (failed(prepareGlobalPhases(moduleOp, target))) {
       signalPassFailure();
       return;
     }
     const bool indexed = environment.environment().supportsIndexedQubits();
-    SmallVector<Operation*> unitaries;
-    auto sites = collectStaticSites(
-        moduleOp, indexed,
-        targetBasis && !targetBasis->entangler ? &unitaries : nullptr);
+    auto sites = collectStaticSites(moduleOp, indexed);
     if (failed(sites)) {
       signalPassFailure();
       return;
@@ -1391,20 +1424,27 @@ protected:
     IRRewriter rewriter(&getContext(), &listener);
     NativeCostAnalysis analysis(compilationSeed(moduleOp, seed));
     if (targetBasis) {
+      RewritePatternSet patterns(&getContext());
+      decomposition::populateRotationCompositionPatterns(patterns);
+      if (targetBasis->entangler) {
+        patterns.add<ComposePauliRotations>(&getContext(), *emissionBasis,
+                                            target, analysis,
+                                            indexed ? nullptr : &*sites);
+      }
+      auto config = compositionConfig;
+      if (failed(applyPatternsGreedily(moduleOp, std::move(patterns),
+                                       config.setListener(&listener)))) {
+        signalPassFailure();
+        return;
+      }
+      listener.foldPending();
+    }
+    if (targetBasis) {
       decomposition::SingleQubitRunFusion fusion(
           *targetBasis, &target, GreedyRewriteConfig{}.setListener(&listener));
-      /// Without a 2Q sweep, reuse the operations visited during site
-      /// collection.
-      for (auto* operation : llvm::reverse(unitaries)) {
-        if (failed(fusion.apply(operation))) {
-          signalPassFailure();
-          return;
-        }
-      }
-      if (targetBasis->entangler &&
-          failed(fuseTwoQubitGates(rewriter, moduleOp, *emissionBasis, analysis,
-                                   &target, indexed ? nullptr : &*sites, false,
-                                   equatorial ? nullptr : &fusion))) {
+      if (failed(fuseGateRuns(rewriter, moduleOp, *emissionBasis, analysis,
+                              &target, indexed ? nullptr : &*sites, false,
+                              equatorial ? nullptr : &fusion))) {
         signalPassFailure();
         return;
       }
@@ -1449,12 +1489,13 @@ protected:
       }
       listener.foldPending();
     }
-    if (targetBasis &&
-        targetBasis->singleQubit == CompilerTarget::SingleQubitBasis::ZSXX) {
+    if (targetBasis && !equatorial) {
       RewritePatternSet patterns(&getContext());
-      decomposition::populateParameterizedSingleQubitRunCompositionPatterns(
+      decomposition::populateRotationCompositionPatterns(patterns, &target);
+      decomposition::populateFuseSingleQubitUnitaryRunsPatterns(
           patterns, *targetBasis, &target);
-      if (failed(applyPatternsGreedily(moduleOp, std::move(patterns)))) {
+      if (failed(applyPatternsGreedily(moduleOp, std::move(patterns),
+                                       compositionConfig))) {
         signalPassFailure();
         return;
       }

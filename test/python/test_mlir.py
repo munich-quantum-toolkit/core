@@ -23,7 +23,7 @@ import qiskit
 from packaging import version
 from qiskit import QuantumCircuit
 from qiskit.circuit import Gate, library
-from qiskit.quantum_info import Operator
+from qiskit.quantum_info import DensityMatrix, Operator
 
 from mqt.core.mlir import (
     CompilationOptions,
@@ -749,7 +749,6 @@ def test_fixed_rx_gate_merges_symbolic_rz(shape: str) -> None:
         source.rz(a, 0)
     source.rz(-a if shape == "cancel" else b, 0)
     if shape == "cancel":
-        # Keep the named input in use: Qiskit export rejects unused inputs.
         source.rz(a, 1)
     elif shape == "partial_cancel":
         source.rz(-b, 0)
@@ -931,7 +930,137 @@ def test_runtime_pauli_rotations_compile_and_export(gate: str, native_entangler:
 
 
 @requires_qiskit_translation
-@pytest.mark.parametrize(("num_qubits", "basis"), [(2, "zsxx"), (20, "u"), (100, "u")])
+@pytest.mark.parametrize(
+    ("shape", "entangler", "expected_entanglers"),
+    [
+        ("inverse", "cz", 0),
+        ("sum", "rzz", 1),
+        ("diagonal", "cz", 2),
+        ("diagonal_reversed", "bounded_rzz", 2),
+        ("cartan", "cz", 2),
+        ("cartan", "ecr", 2),
+        ("cartan", "iswap", 2),
+        ("cartan", "bounded_rzz", 2),
+        ("cartan", "rzz", 2),
+        ("reversed_axes", "cz", 2),
+        ("noncommuting", "cz", 4),
+        ("barrier", "cz", 4),
+    ],
+)
+def test_symbolic_pauli_composition_preserves_phase_and_native_cost(
+    shape: str, entangler: str, expected_entanglers: int
+) -> None:
+    """Compose commuting generators while retaining boundaries and ordered axes."""
+    a, b, c = qiskit.circuit.ParameterVector("angle", 3)
+    source = QuantumCircuit(2, global_phase=0.19)
+    if shape.startswith("diagonal"):
+        source.cp(a, 0, 1)
+        source.crz(-b, 1 if shape.endswith("reversed") else 0, 0 if shape.endswith("reversed") else 1)
+        source.rzz(c, 0, 1)
+    elif shape == "reversed_axes":
+        source.rzx(a, 0, 1)
+        source.rzx(b, 1, 0)
+    elif shape == "barrier":
+        source.rzz(a, 0, 1)
+        source.barrier()
+        source.rzz(b, 0, 1)
+    else:
+        source.rxx(a, 0, 1)
+        if shape in {"inverse", "sum"}:
+            source.rxx(-a if shape == "inverse" else b, 0, 1)
+        else:
+            getattr(source, "ryy" if shape == "cartan" else "rzx")(b, 0, 1)
+    native = "rzz" if entangler == "bounded_rzz" else entangler
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("rx", 1, 1),
+            CompilerTarget.OperationCapability("rz", 1, 1),
+            CompilerTarget.OperationCapability(
+                native,
+                2,
+                0 if native in {"cz", "ecr", "iswap"} else 1,
+                parameter_bounds=[(0, np.pi / 2)] if entangler == "bounded_rzz" else [],
+            ),
+            CompilerTarget.OperationCapability("gphase", 0, 1),
+        ]),
+    )
+    program = QCProgram.from_qiskit(source).to_qco()
+    program.synthesize_for_target(_test_target_environment(target))
+    result = program.to_qiskit(target=target)
+    assert result.count_ops().get(native, 0) == expected_entanglers
+    if shape == "cartan" and entangler == "rzz":
+        assert sum(result.count_ops().get(gate, 0) for gate in ["rx", "rz"]) <= 12
+    if entangler == "bounded_rzz":
+        assert all(0 <= item.operation.params[0] <= np.pi / 2 for item in result.data if item.operation.name == native)
+    for values in [(0.37, -1.2, 0.7), (np.pi, 0.0, 4 * np.pi), (1e300, -1e300, 1e20)]:
+        bindings = dict(zip([a, b, c], values, strict=True))
+        assert np.allclose(
+            Operator.from_circuit(result.assign_parameters(bindings, strict=False)).data,
+            Operator(source.assign_parameters(bindings, strict=False)).data,
+            atol=1e-10,
+            rtol=0,
+        )
+
+
+@requires_qiskit_translation
+@pytest.mark.parametrize("shape", ["sum", "inverse", "half_turns", "measure", "reset"])
+def test_equatorial_composition_and_discarded_frames(shape: str) -> None:
+    """Reduce IQM gates without losing phase or observable measurement behavior."""
+    a, b, axis = qiskit.circuit.ParameterVector("angle", 3)
+    source = QuantumCircuit(2, 2 if shape in {"measure", "reset"} else 0)
+    source.h(1)
+    source.cz(0, 1)
+    if shape in {"sum", "inverse"}:
+        source.r(a, axis, 0)
+        source.r(-a if shape == "inverse" else b, axis, 0)
+    elif shape == "half_turns":
+        source.r(np.pi, a, 0)
+        source.r(np.pi, b, 0)
+        source.r(0.3, 0.4, 0)
+    else:
+        source.ry(0.31, 0)
+        source.rz(a, 0)
+        if shape == "reset":
+            source.reset(0)
+            source.ry(0.42, 0)
+        source.measure([0, 1], [0, 1])
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("r", 1, 2),
+            CompilerTarget.OperationCapability("cz", 2, 0),
+            CompilerTarget.OperationCapability("gphase", 0, 1),
+            CompilerTarget.OperationCapability("measure", 1, 0),
+            CompilerTarget.OperationCapability("reset", 1, 0),
+        ]),
+    )
+    program = QCProgram.from_qiskit(source).to_qco()
+    program.synthesize_for_target(_test_target_environment(target))
+    result = program.to_qiskit(target=target)
+    if shape in {"inverse", "measure", "reset"}:
+        assert not result.parameters
+    if shape in {"sum", "inverse", "half_turns"}:
+        assert result.count_ops().get("r", 0) == {"sum": 3, "inverse": 2, "half_turns": 4}[shape]
+    for values in [(0.37, -1.2, 0.7), (np.pi, 0.0, 4 * np.pi), (1e300, -1e300, 1e20)]:
+        bindings = dict(zip([a, b, axis], values, strict=True))
+        actual = result.assign_parameters(bindings, strict=False)
+        expected = source.assign_parameters(bindings, strict=False)
+        if shape in {"measure", "reset"}:
+            actual.remove_final_measurements()
+            expected.remove_final_measurements()
+            actual_state = DensityMatrix.from_instruction(actual)
+            expected_state = DensityMatrix.from_instruction(expected)
+            order = result.layout.final_index_layout() if result.layout is not None else None
+            assert np.allclose(actual_state.probabilities(order), expected_state.probabilities(), atol=1e-10, rtol=0)
+        else:
+            assert np.allclose(Operator.from_circuit(actual).data, Operator(expected).data, atol=1e-10, rtol=0)
+
+
+@requires_qiskit_translation
+@pytest.mark.parametrize(("num_qubits", "basis"), [(2, "zsxx"), (100, "u")])
 @pytest.mark.parametrize("method", ["compile_for_target", "synthesize_for_target"])
 def test_symbolic_su2_compiles_and_binds_after_export(num_qubits: int, basis: str, method: str) -> None:
     """Compile symbolic SU2 circuits with bindable parameters and exact phase."""

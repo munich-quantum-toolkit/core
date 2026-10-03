@@ -4332,24 +4332,28 @@ def test_named_symbolic_input_exports_to_qiskit() -> None:
     assert restored.data[0].operation.params[0] == next(iter(restored.parameters))
 
 
-def test_unused_named_symbolic_input_fails_export_without_mutation() -> None:
-    """Reject a compiler input that would disappear from the Qiskit circuit."""
+def test_unused_named_symbolic_input_is_omitted_without_mutation() -> None:
+    """Omit dead entry inputs while preserving live parameter identity."""
+    live = Parameter("live")
     program = QCProgram.from_mlir_str(
         """module {
-  func.func @main(%theta: f64 {mqt.input_name = "theta"}) attributes {mqt.entry_point} {
+  func.func @main(%theta: f64 {mqt.input_name = "theta"},
+                  %live: f64 {mqt.input_name = "live", mqt.input_id = IDENTITY : i128})
+      attributes {mqt.entry_point} {
     %q = qc.alloc : !qc.qubit
-    qc.x %q : !qc.qubit
+    qc.rx(%live) %q : !qc.qubit
     qc.dealloc %q : !qc.qubit
     return
   }
 }
-"""
+""".replace("IDENTITY", str(live.uuid.int))
     )
     source_ir = program.ir
+    restored = program.to_qiskit()
 
-    with pytest.raises(RuntimeError, match="cannot preserve unused named f64 program input 'theta'"):
-        program.to_qiskit()
-
+    assert list(restored.parameters) == [live]
+    bound = restored.assign_parameters({live: 0.37, Parameter("theta"): 0.2}, strict=False)
+    assert bound.data[0].operation.params == [0.37]
     assert program.ir == source_ir
 
 

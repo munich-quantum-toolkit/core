@@ -1070,7 +1070,7 @@ TEST(FuseSingleQubitUnitaryRunsTest, IgnoresDynamicPowerExponent) {
   EXPECT_EQ(countOps<PowOp>(funcOp), 1U);
 }
 
-TEST(FuseSingleQubitUnitaryRunsTest, PreservesUnboundedShortSameAxisRun) {
+TEST(FuseSingleQubitUnitaryRunsTest, MergesUnboundedShortSameAxisRun) {
   TestFixture fx;
   fx.setUp();
   auto owned = QCOProgramBuilder::build(fx.ctx(), [](QCOProgramBuilder& b) {
@@ -1098,17 +1098,14 @@ TEST(FuseSingleQubitUnitaryRunsTest, PreservesUnboundedShortSameAxisRun) {
   ASSERT_TRUE(succeeded(verifyLinearity(*owned)));
   rotations.clear();
   funcOp.walk([&](RZOp op) { rotations.push_back(op); });
-  // A short run already in the basis needs no resynthesis. Canonicalization
-  // cannot safely add its unbounded dynamic angles.
-  ASSERT_EQ(rotations.size(), 2U);
-  EXPECT_EQ(rotations[0].getTheta(), funcOp.getArgument(0));
-  EXPECT_EQ(rotations[1].getTheta(), funcOp.getArgument(1));
-  EXPECT_EQ(rotations[1].getInputTarget(0), rotations[0].getOutputTarget(0));
+  /// Normalize the evaluated inputs before adding, including finite values
+  /// whose direct sum would overflow.
+  ASSERT_EQ(rotations.size(), 1U);
 
-  for (auto [firstAngle, secondAngle, expectedRotations] : std::array{
-           std::tuple{0.3, 0.4, 1U},
-           std::tuple{1e16, 1.0, 2U},
-           std::tuple{1e308, 1e308, 2U},
+  for (auto [firstAngle, secondAngle] : std::array{
+           std::pair{0.3, 0.4},
+           std::pair{1e16, 1.0},
+           std::pair{1e308, 1e308},
        }) {
     SCOPED_TRACE(testing::Message()
                  << "angles=" << firstAngle << ", " << secondAngle);
@@ -1118,7 +1115,7 @@ TEST(FuseSingleQubitUnitaryRunsTest, PreservesUnboundedShortSameAxisRun) {
     ASSERT_TRUE(succeeded(canonicalizeBoundValues(*bound)));
     ASSERT_TRUE(succeeded(verify(*bound)));
     ASSERT_TRUE(succeeded(verifyLinearity(*bound)));
-    EXPECT_EQ(countOps<RZOp>(boundFunc), expectedRotations);
+    EXPECT_EQ(countOps<RZOp>(boundFunc), 1U);
     expectMatrixPreserved(boundFunc,
                           RZOp::unitaryMatrix(secondAngle) *
                               RZOp::unitaryMatrix(firstAngle),
@@ -1702,7 +1699,6 @@ TEST(EulerSynthesisTest, PauliRotationsPreserveRuntimeAnglesAndFullPhase) {
       ASSERT_TRUE(succeeded(verify(*moduleOp)));
       bool preservesAngle = false;
       function.walk([&](Operation* operation) {
-        EXPECT_NE(operation->getName().getDialectNamespace(), "math");
         if (auto gate = dyn_cast<UnitaryOpInterface>(operation)) {
           for (auto parameter : gate.getParameters()) {
             preservesAngle |= parameter == entry->getArgument(0);
@@ -1720,6 +1716,7 @@ TEST(EulerSynthesisTest, PauliRotationsPreserveRuntimeAnglesAndFullPhase) {
                2. * std::numbers::pi,
                1000.,
                -1000.,
+               1e300,
            }) {
         SCOPED_TRACE(angle);
         OwningOpRef bound = moduleOp->clone();

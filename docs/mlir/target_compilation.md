@@ -223,17 +223,19 @@ Unrestricted RXX, RYY, RZX, and RZZ entanglers take precedence over fixed
 alternatives and use up to three native rotations for numeric two-qubit
 synthesis. Runtime two-qubit Pauli rotations need one arbitrary-angle native
 entangler or two fixed native entanglers, including square-root iSWAP. Fixed
-Clifford entanglers use Pauli conjugation. Single-controlled Pauli rotations and
-phase gates use the same decomposition. Bounded Pauli entanglers that include
-`[0, pi/2]` use the same numeric synthesis with local Pauli corrections. Unknown
-runtime angles use two native `pi/2` rotations. Bind parameters before
-compilation to use fractional entanglers directly. Qiskit import conservatively
-recognizes this interval through its public bound predicates.
+Clifford entanglers use Pauli conjugation; commuting symbolic rotations can
+share their entanglers. Single-controlled Pauli rotations and phase gates use
+the same decomposition. Bounded Pauli entanglers that include `[0, pi/2]` use
+the same numeric synthesis with local Pauli corrections. Unknown runtime angles
+use two native `pi/2` rotations. Bind parameters before compilation to use
+fractional entanglers directly. Qiskit import conservatively recognizes this
+interval through its public bound predicates.
 
 Equatorial R targets use at most two R gates per single-qubit unitary. Synthesis
-carries Z rotations through diagonal entanglers and absorbs them into R axes,
-retaining the terminal frame and global phase. RX/RZ targets prefer ZXZ to
-minimize physical RX rotations.
+carries Z rotations through diagonal entanglers and absorbs them into R axes.
+Measurement and reset discard their incoming Z frames; other boundaries retain
+the frame and global phase. RX/RZ targets prefer ZXZ to minimize physical RX
+rotations.
 
 ### Placements and calibration
 

@@ -45,6 +45,24 @@ using RotationParameter = std::variant<double, Value>;
 normalizeRotationParameter(OpBuilder& builder, Location loc,
                            RotationParameter angle);
 
+struct RotationAngleTerm {
+  Value value;
+  double scale = 1.;
+};
+
+/// Cancel opposite SSA terms without creating IR. Dyadic input scaling is
+/// recognized; different surviving coefficients remain separate for accuracy.
+void simplifyRotationAngles(SmallVectorImpl<RotationAngleTerm>& angles);
+
+/// Emit a simplified angle sum, normalizing before balanced addition.
+[[nodiscard]] Value emitRotationAngleSum(OpBuilder& builder, Location loc,
+                                         ArrayRef<RotationAngleTerm> angles);
+
+/// Sum commuting rotation angles, cancelling inverse SSA terms before reducing
+/// each surviving angle modulo 4*pi. The expression depth is logarithmic.
+[[nodiscard]] Value sumRotationAngles(OpBuilder& builder, Location loc,
+                                      ArrayRef<Value> angles);
+
 /// Parses a basis name (e.g. `zyz`, `zsxx`; case-insensitive).
 ///
 /// @param basis The basis name.
@@ -127,6 +145,9 @@ synthesizePauliRotation1Q(OpBuilder& builder, Location loc, Value qubit,
 /// @param loc Location of the operation.
 /// @param phase Global phase in radians.
 void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase);
+
+/// Reduce a generated runtime phase before later phase offsets are added.
+void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, Value phase);
 
 /// Returns whether @p op supports runtime one-qubit synthesis.
 [[nodiscard]] bool canSynthesizeParameterizedUnitary1Q(Operation* op);
