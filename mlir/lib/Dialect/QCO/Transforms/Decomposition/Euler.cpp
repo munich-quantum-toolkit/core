@@ -627,8 +627,13 @@ static std::array<RotationParameter, 4>
 directEulerAngles(OpBuilder& builder, Location loc,
                   UnitaryOpInterface operation, SingleQubitBasis basis) {
   const auto parameter = [&](unsigned index) -> RotationParameter {
-    return normalizeRotationParameter(builder, loc,
-                                      operation.getParameter(index));
+    auto angle = operation.getParameter(index);
+    if (index == 0 && basis != SingleQubitBasis::ZSXX &&
+        isa<RXOp, RYOp, ROp, UOp>(operation.getOperation()) &&
+        !mqt::valueToConstantDouble(angle)) {
+      return angle;
+    }
+    return normalizeRotationParameter(builder, loc, angle);
   };
   const auto add = [&](const RotationParameter& a, const RotationParameter& b) {
     return addParameters(builder, loc, a, b);

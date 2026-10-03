@@ -590,10 +590,18 @@ static Val sumAngles(Val lhs, Val rhs) {
 /// Merge the unrestricted RZ axis without changing a target's fixed quarter
 /// turns.
 static LogicalResult mergeParameterizedRZ(RZOp op, PatternRewriter& rewriter) {
-  auto next = dyn_cast<RZOp>(*op.getQubitOut().user_begin());
-  if (!next || next->getBlock() != op->getBlock() ||
-      (mqt::valueToConstantDouble(op.getTheta()) &&
-       mqt::valueToConstantDouble(next.getTheta()))) {
+  if (auto previous = op.getQubitIn().getDefiningOp<RZOp>();
+      previous && previous->getBlock() == op->getBlock()) {
+    return failure();
+  }
+  SmallVector<RZOp> chain;
+  for (auto next = op; next && next->getBlock() == op->getBlock();
+       next = dyn_cast<RZOp>(*next.getQubitOut().user_begin())) {
+    chain.push_back(next);
+  }
+  if (chain.size() < 2 || llvm::all_of(chain, [](RZOp gate) {
+        return mqt::valueToConstantDouble(gate.getTheta()).has_value();
+      })) {
     return failure();
   }
   const auto negates = [](Value lhs, Value rhs) {
@@ -608,25 +616,41 @@ static LogicalResult mergeParameterizedRZ(RZOp op, PatternRewriter& rewriter) {
     }
     return false;
   };
-  if (negates(op.getTheta(), next.getTheta()) ||
-      negates(next.getTheta(), op.getTheta())) {
-    rewriter.replaceOp(next, op.getQubitIn());
-  } else {
-    rewriter.setInsertionPoint(next);
-    const auto loc = next.getLoc();
-    const auto angle = sumAngles(normalizeGateAngle(Val{
-                                     .v = op.getTheta(),
-                                     .rewriter = &rewriter,
-                                     .loc = loc,
-                                 }),
-                                 normalizeGateAngle(Val{
-                                     .v = next.getTheta(),
-                                     .rewriter = &rewriter,
-                                     .loc = loc,
-                                 }));
-    rewriter.replaceOpWithNewOp<RZOp>(next, op.getQubitIn(), angle.v);
+  SmallVector<Value> angles;
+  for (auto gate : chain) {
+    auto angle = gate.getTheta();
+    if (!angles.empty() &&
+        (negates(angles.back(), angle) || negates(angle, angles.back()))) {
+      angles.pop_back();
+    } else {
+      angles.push_back(angle);
+    }
   }
-  rewriter.eraseOp(op);
+  auto last = chain.back();
+  rewriter.setInsertionPoint(last);
+  if (angles.size() > 1) {
+    /// Normalize each input once, then add in a balanced tree. Repeatedly
+    /// normalizing partial sums creates deeply nested nonlinear expressions.
+    for (auto& angle : angles) {
+      angle = normalizeGateAngle(
+                  {.v = angle, .rewriter = &rewriter, .loc = last.getLoc()})
+                  .v;
+    }
+    for (size_t stride = 1; stride < angles.size(); stride *= 2) {
+      for (size_t i = 0; i + stride < angles.size(); i += 2 * stride) {
+        angles[i] = rewriter.createOrFold<arith::AddFOp>(
+            last.getLoc(), angles[i], angles[i + stride]);
+      }
+    }
+  }
+  if (angles.empty()) {
+    rewriter.replaceOp(last, op.getQubitIn());
+  } else {
+    rewriter.replaceOpWithNewOp<RZOp>(last, op.getQubitIn(), angles.front());
+  }
+  for (auto gate : llvm::reverse(llvm::drop_end(chain))) {
+    rewriter.eraseOp(gate);
+  }
   return success();
 }
 
@@ -824,7 +848,16 @@ struct MergeSingleQubitRotationGatesPattern final
       outer =
           sumAngles(outer, angle(rotationFirst ? chain.front() : chain.back()));
     } else {
-      angles.theta = angle(chain[middle]);
+      angles.theta = {
+          .v = chain[middle].getParameter(0),
+          .rewriter = &rewriter,
+          .loc = loc,
+      };
+      if (basis == decomposition::SingleQubitBasis::ZSXX ||
+          isOuter(chain[middle]) ||
+          mqt::valueToConstantDouble(angles.theta.v)) {
+        angles.theta = normalizeGateAngle(angles.theta);
+      }
       if (!outerX) {
         if (isa<RXOp>(chain[middle])) {
           angles.phi = -consts.pi / consts.two;

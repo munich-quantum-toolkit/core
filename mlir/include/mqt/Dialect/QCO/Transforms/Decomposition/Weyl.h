@@ -55,9 +55,8 @@ inline constexpr double WEYL_SUPER_CONTROLLED_MAX_RELATIVE = 1e-9;
 ///
 /// @note Adapted from Qiskit's `trace_to_fid`.
 [[nodiscard]] inline double traceToFidelity(const Complex& trace) {
-  const auto traceAbs = std::abs(trace);
   const auto dimension = 4.0;
-  return (dimension + (traceAbs * traceAbs)) / (dimension * (dimension + 1));
+  return (dimension + std::norm(trace)) / (dimension * (dimension + 1));
 }
 
 /// Euclidean remainder mapping `a` into `[0, |b|)` for `b != 0`.

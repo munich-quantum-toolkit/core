@@ -728,10 +728,10 @@ def test_fixed_rotation_compilation_preserves_phase(
 
 
 @requires_qiskit_translation
-@pytest.mark.parametrize("shape", ["sum", "cancel", "after_synthesis"])
+@pytest.mark.parametrize("shape", ["sum", "cancel", "partial_cancel", "after_synthesis"])
 def test_fixed_rx_gate_merges_symbolic_rz(shape: str) -> None:
     """Merge the unrestricted axis without changing fixed RX gates or phase."""
-    num_qubits = 2 if shape == "cancel" else 1
+    num_qubits = 2 if shape in {"cancel", "partial_cancel"} else 1
     target = CompilerTarget(
         num_qubits,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
@@ -751,16 +751,124 @@ def test_fixed_rx_gate_merges_symbolic_rz(shape: str) -> None:
     if shape == "cancel":
         # Keep the named input in use: Qiskit export rejects unused inputs.
         source.rz(a, 1)
+    elif shape == "partial_cancel":
+        source.rz(-b, 0)
+        source.rz(b, 1)
     program = QCProgram.from_qiskit(source).to_qco()
     program.compile_for_target(_test_target_environment(target))
     result = program.to_qiskit(target=target)
-    assert result.count_ops().get("rz", 0) == {"sum": 1, "cancel": 1, "after_synthesis": 3}[shape]
+    assert result.count_ops().get("rz", 0) == {"sum": 1, "cancel": 1, "partial_cancel": 2, "after_synthesis": 3}[shape]
     assert all(item.operation.params == [np.pi / 2] for item in result.data if item.operation.name == "rx")
     for lhs, rhs in [(0.4, -0.1), (1e20, 1.0), (1e300, -1e300)]:
         values = {a: lhs, b: rhs}
         assert np.allclose(
             Operator(result.assign_parameters(values, strict=False)).data,
             Operator(source.assign_parameters(values, strict=False)).data,
+            atol=1e-10,
+            rtol=0,
+        )
+
+
+@requires_qiskit_translation
+@pytest.mark.parametrize("length", [16, 1024])
+@pytest.mark.parametrize("method", ["compile_for_target", "synthesize_for_target"])
+def test_long_symbolic_rz_run_exports_and_binds(length: int, method: str) -> None:
+    """Fused rotations stay exportable, including for large input angles."""
+    angles = qiskit.circuit.ParameterVector("angle", length)
+    source = QuantumCircuit(2, global_phase=0.19)
+    for angle in angles:
+        source.rz(angle, 0)
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("sx", 1, 0),
+            CompilerTarget.OperationCapability("rz", 1, 1),
+            CompilerTarget.OperationCapability("cz", 2, 0),
+            CompilerTarget.OperationCapability("gphase", 0, 1),
+        ]),
+    )
+    program = QCProgram.from_qiskit(source).to_qco()
+    getattr(program, method)(_test_target_environment(target))
+    result = program.to_qiskit(target=target)
+    assert result.count_ops() == {"rz": 1}
+    assert result.parameters == source.parameters
+    reimported = QCProgram.from_qiskit(result).to_qiskit()
+    assert program.to_jeff(copy=True).is_valid
+    for scale in [1.0, 1e20, 1e300]:
+        values = dict(zip(angles, scale * np.linspace(-2.7, 3.1, length), strict=True))
+        expected = Operator(source.assign_parameters(values)).data
+        for circuit in [result, reimported]:
+            # Bulk numeric evaluation avoids Qiskit's repeated symbolic substitution.
+            bound = QuantumCircuit(2, global_phase=circuit.global_phase)
+            bound.rz(circuit.data[0].operation.params[0].bind_all(values), 0)
+            assert np.allclose(Operator(bound).data, expected, atol=1e-10, rtol=0)
+
+
+@requires_qiskit_translation
+@pytest.mark.parametrize("gate", ["rx", "ry"])
+@pytest.mark.parametrize("basis", ["u", "zyz", "zxz"])
+@pytest.mark.parametrize("sandwich", [False, True])
+def test_direct_pauli_lowering_preserves_runtime_angle(gate: str, basis: str, *, sandwich: bool) -> None:
+    """Unrestricted rotations need no arithmetic on an unchanged angle."""
+    theta = qiskit.circuit.Parameter("theta")
+    source = QuantumCircuit(2, global_phase=0.19)
+    if sandwich:
+        source.rz(0.31, 0)
+    getattr(source, gate)(theta, 0)
+    if sandwich:
+        source.rz(-0.17, 0)
+    native = {"u": [("u", 3)], "zyz": [("rz", 1), ("ry", 1)], "zxz": [("rz", 1), ("rx", 1)]}[basis]
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            *(CompilerTarget.OperationCapability(name, 1, count) for name, count in native),
+            CompilerTarget.OperationCapability("cz", 2, 0),
+            CompilerTarget.OperationCapability("gphase", 0, 1),
+        ]),
+    )
+    program = QCProgram.from_qiskit(source).to_qco()
+    program.synthesize_for_target(_test_target_environment(target))
+    result = program.to_qiskit(target=target)
+    assert any(item.operation.params[0] == theta for item in result.data)
+    for value in [-1.2, 0.0, np.pi, 7.1, 1e20, 1e300]:
+        assert np.allclose(
+            Operator(result.assign_parameters({theta: value})).data,
+            Operator(source.assign_parameters({theta: value})).data,
+            atol=1e-10,
+            rtol=0,
+        )
+
+
+@requires_qiskit_translation
+@pytest.mark.parametrize("fuse", [False, True])
+def test_symbolic_euler_preserves_large_constant_middle_angle(*, fuse: bool) -> None:
+    """Constant Euler angles still need accurate reduction before phase folding."""
+    phi = qiskit.circuit.Parameter("phi")
+    source = QuantumCircuit(2)
+    if fuse:
+        source.rx(1e300, 0)
+        source.rz(phi, 0)
+    else:
+        source.u(1e300, phi, -0.17, 0)
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("u", 1, 3) if fuse else CompilerTarget.OperationCapability("ry", 1, 1),
+            CompilerTarget.OperationCapability("rz", 1, 1),
+            CompilerTarget.OperationCapability("cz", 2, 0),
+            CompilerTarget.OperationCapability("gphase", 0, 1),
+        ]),
+    )
+    program = QCProgram.from_qiskit(source).to_qco()
+    program.synthesize_for_target(_test_target_environment(target))
+    result = program.to_qiskit(target=target)
+    for value in [-1.2, 0.0, np.pi]:
+        assert np.allclose(
+            Operator(result.assign_parameters({phi: value})).data,
+            Operator(source.assign_parameters({phi: value})).data,
             atol=1e-10,
             rtol=0,
         )

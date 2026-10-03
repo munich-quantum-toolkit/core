@@ -582,12 +582,6 @@ LogicalResult MQTDialect::verifyRegionArgAttribute(
             argIndex, InputNameAttrHelper::getNameStr())) {
       return operation->emitError("input identity requires an input name");
     }
-    for (unsigned index = 0; index < function.getNumArguments(); ++index) {
-      if (index != argIndex &&
-          function.getArgAttr(index, attributeName) == id) {
-        return operation->emitError("duplicate input identity");
-      }
-    }
     return success();
   }
   if (attributeName == ParameterGroupAttrHelper::getNameStr()) {
@@ -598,24 +592,24 @@ LogicalResult MQTDialect::verifyRegionArgAttribute(
     return failure();
   }
 
-  const auto name = cast<StringAttr>(attribute.getValue());
-  for (unsigned index = 0; index < function.getNumArguments(); ++index) {
-    if (index == argIndex) {
-      continue;
+  /// The first named input owns cross-argument checks. Register-name
+  /// verification owns collisions between inputs and registers.
+  for (unsigned index = 0; index < argIndex; ++index) {
+    if (function.getArgAttr(index, attributeName)) {
+      return success();
     }
-    if (function.getArgAttrOfType<StringAttr>(index, attribute.getName()) ==
-        name) {
+  }
+  DenseSet<Attribute> names;
+  DenseSet<Attribute> identities;
+  for (unsigned index = argIndex; index < function.getNumArguments(); ++index) {
+    if (auto name = function.getArgAttrOfType<StringAttr>(index, attributeName);
+        name && !names.insert(name).second) {
       return operation->emitError()
              << "duplicate program name '" << name.getValue() << "'";
     }
-  }
-  if (!function.getFunctionBody().empty()) {
-    for (Operation& candidate : function.getFunctionBody().front()) {
-      if (candidate.getAttrOfType<StringAttr>(
-              RegisterNameAttrHelper::getNameStr()) == name) {
-        return operation->emitError()
-               << "duplicate program name '" << name.getValue() << "'";
-      }
+    if (auto id = function.getArgAttr(index, InputIdAttrHelper::getNameStr());
+        id && !identities.insert(id).second) {
+      return operation->emitError("duplicate input identity");
     }
   }
   return success();
