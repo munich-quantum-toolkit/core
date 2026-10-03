@@ -673,6 +673,31 @@ def test_iqm_z_frames_across_cz(*, symbolic: bool) -> None:
     assert np.allclose(Operator(exported).data, Operator(circuit).data)
 
 
+def test_iqm_symbolic_frame_absorption() -> None:
+    """Absorb Z rotations without redundant symbolic phase or angle wrapping."""
+    source = Target(num_qubits=2)
+    source.add_instruction(RGate(Parameter("theta"), Parameter("phi")))
+    source.add_instruction(CZGate())
+    target = CompilerTarget.from_qiskit(source)
+    a, b, theta, phi = [Parameter(name) for name in ("a", "b", "theta", "phi")]
+    circuit = QuantumCircuit(2)
+    circuit.rz(a, 0)
+    circuit.r(theta, phi, 0)
+    circuit.rz(b, 0)
+    circuit.rz(a, 1)
+    program = QCProgram.from_qiskit(circuit).to_qco()
+    program.synthesize_for_target(TargetEnvironment(target, PayloadSpecification(PayloadFormat("openqasm", "3.0"))))
+    exported = program.to_qiskit(target=target)
+    assert exported.count_ops() == {"r": 4}
+    assert exported.global_phase == 0
+    for values in [(0.0, 0.0, 0.0, 0.0), (0.4, -0.2, 0.37, 1.3), (1e300, -1e300, 1e300, -1e300)]:
+        bindings = dict(zip((a, b, theta, phi), values, strict=True))
+        assert np.allclose(
+            Operator(exported.assign_parameters(bindings)).data,
+            Operator(circuit.assign_parameters(bindings)).data,
+        )
+
+
 @pytest.mark.parametrize("width", [None, 3])
 def test_native_import_preserves_bounds_without_placement(width: int | None) -> None:
     """Native import can ignore disconnected topology and unspecified width."""

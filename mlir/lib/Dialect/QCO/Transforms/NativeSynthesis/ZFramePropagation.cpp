@@ -20,6 +20,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Visitors.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
@@ -89,17 +90,17 @@ LogicalResult synthesizeEquatorialGates(RewriterBase& rewriter,
                                         ModuleOp moduleOp,
                                         const CompilerTarget& target,
                                         const GreedyRewriteConfig& config) {
-  if (failed(fuseSingleQubitUnitaryRuns(
-          moduleOp, {.singleQubit = SingleQubitBasis::U}, &target, config))) {
+  /// Fuse constant local factors; retain symbolic rotations for frame updates.
+  RewritePatternSet patterns(rewriter.getContext());
+  populateFuseSingleQubitUnitaryRunsPatterns(
+      patterns, {.singleQubit = SingleQubitBasis::U}, &target);
+  if (failed(applyPatternsGreedily(moduleOp, std::move(patterns), config))) {
     return failure();
   }
   const bool nativeRZ = llvm::all_of(target.siteIds(), [&](auto site) {
     return target.supports(CompilerTarget::GateKind::RZ, ArrayRef(&site, 1));
   });
-  const CompilerTarget::SynthesisBasis basis{
-      .singleQubit = SingleQubitBasis::R,
-  };
-  const auto result =
+  const WalkResult result =
       moduleOp->walk<WalkOrder::PreOrder>([&](Operation* parent) {
         /// Modifier bodies and their phases belong to the enclosing unitary.
         if (isa<UnitaryOpInterface>(parent)) {
@@ -127,28 +128,40 @@ LogicalResult synthesizeEquatorialGates(RewriterBase& rewriter,
               if (!isZero(angle)) {
                 auto& use = *wire.use_begin();
                 Value output;
+                ROp last;
                 if (nativeRZ) {
                   output = RZOp::create(rewriter, loc, wire, angle);
-                } else if (auto last = wire.getDefiningOp<ROp>();
-                           last &&
-                           last->getBlock() == rewriter.getInsertionBlock()) {
-                  auto angles = *zyzAnglesFromOperation(rewriter, loc, last);
-                  angles[1] = rewriter.createOrFold<arith::AddFOp>(
-                      loc, mqt::variantToValue(rewriter, loc, angles[1]),
-                      angle);
-                  output = emitParameterizedEulerAngles(
-                      rewriter, loc, last.getQubitIn(), angles, basis);
-                  rewriter.modifyOpInPlace(use.getOwner(),
-                                           [&] { use.set(output); });
-                  rewriter.eraseOp(last);
-                  frames.erase(found);
-                  return;
                 } else {
-                  output = emitParameterizedEulerAngles(
-                      rewriter, loc, wire, {0., 0., angle, 0.}, basis);
+                  last = wire.getDefiningOp<ROp>();
+                  if (last &&
+                      last->getBlock() != rewriter.getInsertionBlock()) {
+                    last = {};
+                  }
+                  auto zero = mqt::constantFromScalar(rewriter, loc, 0.);
+                  auto pi =
+                      mqt::constantFromScalar(rewriter, loc, std::numbers::pi);
+                  auto axis = last ? last.getPhi() : zero;
+                  auto theta = last ? mqt::variantToValue(
+                                          rewriter, loc,
+                                          normalizeRotationParameter(
+                                              rewriter, loc, last.getTheta()))
+                                    : zero;
+                  /// RZ(a) R(t,p) = R(pi,p+a/2) R(t-pi,p), including its phase.
+                  auto first = ROp::create(
+                      rewriter, loc, last ? last.getQubitIn() : wire,
+                      rewriter.createOrFold<arith::SubFOp>(loc, theta, pi),
+                      axis);
+                  auto half = rewriter.createOrFold<arith::MulFOp>(
+                      loc, angle, mqt::constantFromScalar(rewriter, loc, 0.5));
+                  output = ROp::create(
+                      rewriter, loc, first, pi,
+                      rewriter.createOrFold<arith::AddFOp>(loc, axis, half));
                 }
                 rewriter.modifyOpInPlace(use.getOwner(),
                                          [&] { use.set(output); });
+                if (last) {
+                  rewriter.eraseOp(last);
+                }
               }
               frames.erase(found);
             };

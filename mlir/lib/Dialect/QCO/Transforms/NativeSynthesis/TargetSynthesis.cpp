@@ -1333,6 +1333,7 @@ public:
 
   void notifyOperationErased(Operation* operation) override {
     if (auto constant = dyn_cast<arith::ConstantOp>(operation)) {
+      folder_.notifyRemoval(constant);
       llvm::erase(pending_, constant);
     }
   }

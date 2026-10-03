@@ -728,10 +728,10 @@ def test_fixed_rotation_compilation_preserves_phase(
 
 
 @requires_qiskit_translation
-@pytest.mark.parametrize("shape", ["sum", "cancel", "partial_cancel", "after_synthesis"])
+@pytest.mark.parametrize("shape", ["sum", "cancel", "partial_cancel", "cross_cancel", "after_synthesis"])
 def test_fixed_rx_gate_merges_symbolic_rz(shape: str) -> None:
     """Merge the unrestricted axis without changing fixed RX gates or phase."""
-    num_qubits = 2 if shape in {"cancel", "partial_cancel"} else 1
+    num_qubits = 2 if shape in {"cancel", "partial_cancel", "cross_cancel"} else 1
     target = CompilerTarget(
         num_qubits,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
@@ -754,10 +754,18 @@ def test_fixed_rx_gate_merges_symbolic_rz(shape: str) -> None:
     elif shape == "partial_cancel":
         source.rz(-b, 0)
         source.rz(b, 1)
+    elif shape == "cross_cancel":
+        source.rz(-a, 0)
+        source.rz(a, 1)
     program = QCProgram.from_qiskit(source).to_qco()
     program.compile_for_target(_test_target_environment(target))
     result = program.to_qiskit(target=target)
-    assert result.count_ops().get("rz", 0) == {"sum": 1, "cancel": 1, "partial_cancel": 2, "after_synthesis": 3}[shape]
+    if shape == "cross_cancel":
+        assert result.data[0].operation.params == [b]
+    assert (
+        result.count_ops().get("rz", 0)
+        == {"sum": 1, "cancel": 1, "partial_cancel": 2, "cross_cancel": 2, "after_synthesis": 3}[shape]
+    )
     assert all(item.operation.params == [np.pi / 2] for item in result.data if item.operation.name == "rx")
     for lhs, rhs in [(0.4, -0.1), (1e20, 1.0), (1e300, -1e300)]:
         values = {a: lhs, b: rhs}

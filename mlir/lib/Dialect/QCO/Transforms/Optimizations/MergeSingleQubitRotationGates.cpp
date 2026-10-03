@@ -30,6 +30,7 @@
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -461,28 +462,41 @@ static LogicalResult mergeParameterizedRZ(RZOp op, PatternRewriter& rewriter) {
       })) {
     return failure();
   }
-  const auto negates = [](Value lhs, Value rhs) {
-    if (auto negation = lhs.getDefiningOp<arith::NegFOp>()) {
-      return negation.getOperand() == rhs;
+  const auto negatedOperand = [](Value angle) -> Value {
+    if (auto negation = angle.getDefiningOp<arith::NegFOp>()) {
+      return negation.getOperand();
     }
-    if (auto product = lhs.getDefiningOp<arith::MulFOp>()) {
-      return (product.getLhs() == rhs &&
-              mqt::valueToConstantDouble(product.getRhs()) == -1.) ||
-             (product.getRhs() == rhs &&
-              mqt::valueToConstantDouble(product.getLhs()) == -1.);
+    if (auto product = angle.getDefiningOp<arith::MulFOp>()) {
+      if (mqt::valueToConstantDouble(product.getRhs()) == -1.) {
+        return product.getLhs();
+      }
+      if (mqt::valueToConstantDouble(product.getLhs()) == -1.) {
+        return product.getRhs();
+      }
     }
-    return false;
+    return {};
   };
+  /// RZ gates commute, so inverse pairs can cancel anywhere in the run.
+  /// Keep the surviving angles in circuit order and normalize only afterwards.
+  DenseMap<Value, SmallVector<std::pair<size_t, bool>, 1>> unmatched;
   SmallVector<Value> angles;
   for (auto gate : chain) {
     auto angle = gate.getTheta();
-    if (!angles.empty() &&
-        (negates(angles.back(), angle) || negates(angle, angles.back()))) {
-      angles.pop_back();
+    Value atom = angle;
+    bool negative = false;
+    while (auto operand = negatedOperand(atom)) {
+      atom = operand;
+      negative = !negative;
+    }
+    auto& occurrences = unmatched[atom];
+    if (!occurrences.empty() && occurrences.back().second != negative) {
+      angles[occurrences.pop_back_val().first] = {};
     } else {
+      occurrences.emplace_back(angles.size(), negative);
       angles.push_back(angle);
     }
   }
+  llvm::erase_if(angles, [](Value angle) { return !angle; });
   auto last = chain.back();
   rewriter.setInsertionPoint(last);
   if (angles.size() > 1) {

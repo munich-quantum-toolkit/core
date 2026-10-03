@@ -36,11 +36,14 @@ synthesis. The standalone pass uses the same driver. U targets can shrink runs
 before routing without invoking a separate optimizer. A rewrite listener carries
 phase-generated wires into site analysis. Fusion declarations live in
 `NativeSynthesis/SingleQubitFusion.h`; the Euler emitter remains independent of
-traversal. Equatorial frame propagation lives in native synthesis and shares
-Euler parameter extraction and emission. Bounded Pauli entanglers use their
-supported pi/2 endpoint for unknown angles; numeric angles retain local
-corrections. NativeOperations imports Qiskit capabilities without placement, so
-Bench uses the ordinary target constructor for native compilation.
+traversal. Equatorial frame propagation lives in native synthesis, shares Euler
+parameter extraction, and absorbs final Z frames directly into R gates. It fuses
+constant local factors without converting symbolic runs through U. The synthesis
+listener invalidates MLIR folder entries when constants are erased by other
+rewrites. Bounded Pauli entanglers use their supported pi/2 endpoint for unknown
+angles; numeric angles retain local corrections. NativeOperations imports Qiskit
+capabilities without placement, so Bench uses the ordinary target constructor
+for native compilation.
 
 Normalize constant full turns with their phase correction, omit phase-only U
 gates, and choose an equivalent Euler representative only when it removes gates.
@@ -62,53 +65,36 @@ native aliases without changing public targets or Qiskit's session library.
 
 ## Validation
 
-The compiler, decomposition, optimization, native-synthesis, mapping, and
-global-phase suites pass all 1040 C++ tests; Python MLIR/Qiskit suites pass all
-970 tests. Coverage includes runtime binding, full global phase, reversed
-placements, native gate counts, fixed RX/RY/R constraints, aliases, and
-large-angle normalization.
+Current local checks: 95 native-synthesis, 204 optimization, and 317
+decomposition C++ tests; 773 Python MLIR/Qiskit tests. These cover native gate
+counts, parameter identity and resource limits, global phase, large finite
+angles, barriers, and control flow. Repository lint, regenerated stubs, and
+whole-file C++ lint pass. After rebasing onto the MQT attribute implementation
+split, 217 focused C++ checks and all 773 Python tests pass again; whole-file
+lint also covers the relocated bound verifier. Bench validates the exact
+compiler pin in its companion PR. Executable docs and documentation links passed
+before these internal expression changes; product documentation and public
+signatures are unchanged.
 
-A 20-case comparison against the preceding PR head found no gate-count
-regressions. With native U available, CZ-based runtime RZZ needs three local
-gates instead of five; iSWAP needs two entanglers instead of four. Regression
-checks constrain these counts and exclude runtime trigonometry from Clifford
-Pauli lowering; square-root iSWAP requires nonlinear single-qubit angles.
-Constant fusion shares numerical Euler synthesis while full-unitary checks
-permit equivalent Euler coordinates.
+Against `5004c418c`, a two-qubit R/CZ workload repeats `RZ(a_i); R(0.3,0); CZ`
+256 times. It retains 258 R and 256 CZ gates while reducing scalar operations
+from 5,125 to 2,048. On DGX Spark arm64 with LLVM/MLIR 23.1, release builds, and
+Qiskit 2.5.2, median-of-three synthesis times fell from 34.9 to 24.6 ms and
+export times from 758 to 142 ms. A 20-qubit symbolic SU2 circuit retains 220 R
+and 60 CZ gates, with export falling from 10.7 to 4.6 ms. Repeating the same
+symbolic RY angle 1,024 times on a ZSXX/CZ target reduces export from 25.8 to
+22.1 ms. Long RZ runs and other Euler bases show no comparable speedup; these
+are workload-specific results, not a universal performance claim.
 
-Against published head `7790b88c2`, 58 compilation/synthesis cases cover six
-automatically selected bases, numeric and symbolic SU2 circuits (2/20 qubits),
-the 100-qubit symbolic ZSXX workload from #2614, and 1,000/10,000 rotations and
-cancellations. All jointly exportable cases have identical gate counts and
-depths. Qiskit and jeff export retain symbolic parameters; small cases agree in
-full matrix and phase with maximum error `8.2e-15`. The two previously failing
-20-qubit symbolic U exports now succeed: global-phase normalization balances
-sums so expression depth grows logarithmically. The 100-qubit U workload needs
-4,805 expression-tree nodes; both APIs now export it, bringing the probe to 60
-successful cases. Parameter expressions share the existing 16,384-node
-classical-expression budget. Depth remains bounded at 64 levels; oversized
-import/export regressions cover both SSA and expanded-tree limits. Qiskit 2.5
-recursively reoptimizes balanced symbolic sums. The adapter emits their terms
-incrementally and balances additive replay chains on import. The 100-qubit
-regression covers export, re-import, and late binding, including phase. Python
-coverage is retained; compiler semantics and fusion regressions are checked in
-their C++ owners.
+Qiskit still expands shared expressions at its boundary. For long accumulated
+frames, bind in Core before export when executable numeric output is needed. No
+algebra dependency, new binding API, or floating-point reassociation flag is
+required.
 
-A focused timing comparison against `7790b88c2` used DGX Spark arm64, LLVM/MLIR
-23.1, release builds without IPO, seed 42, two warmups, and separate persistent
-processes. In 21 alternating pairs across eight U-target cases, median-time
-geometric ratios were 1.002 for compilation and 1.005 for synthesis. The earlier
-short-case timing outlier did not persist. Seven pairs of the 100-qubit symbolic
-ZSXX case measured 749/768 ms for compilation and 607/608 ms for synthesis
-(before/after). Thus compilation was 2.5% slower on that workload; no universal
-timing non-regression is claimed. Import, copying, export, and validation were
-outside the timed interval.
-
-Repository and whole-file C++ lint, executable docs with warnings as errors, and
-generated documentation links pass. No binding signatures changed in this
-iteration. The synthesis-wide Ponytail audit has no outstanding findings. Bench
-records its exact-pin integration and minimum-version results in its companion
-PR.
-
-Fixed-entangler synthesis can require four square-root-iSWAP gates; a
-specialized symbolic optimizer for that basis remains outside scope.
+Expression simplification uses MLIR folding and CSE, plus quantum identities
+before scalar emission. Integer affine simplification does not apply to these
+floating-point rotations. Commuting RZ runs cancel inverse SSA terms before
+normalization, retaining survivor order. Qiskit conversion caches shared
+expression children by owning identity within each circuit writer. Export
+preflight validates expanded node/depth budgets before memoized conversion;
+numbers and symbols retain their existing conversion paths.

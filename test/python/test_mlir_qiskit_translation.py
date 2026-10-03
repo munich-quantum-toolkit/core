@@ -4108,6 +4108,8 @@ def test_manual_arith_and_math_parameter_expression_exports_to_qiskit() -> None:
     %sum = arith.addf %theta, %offset : f64
     %angle = math.sin %sum : f64
     qc.rz(%angle) %q : !qc.qubit
+    qc.rx(%sum) %q : !qc.qubit
+    qc.ry(%angle) %q : !qc.qubit
     qc.dealloc %q : !qc.qubit
     return
   }
@@ -4119,7 +4121,7 @@ def test_manual_arith_and_math_parameter_expression_exports_to_qiskit() -> None:
 
     theta = next(iter(restored.parameters))
     bound = restored.assign_parameters({theta: 0.25})
-    assert bound.data[0].operation.params[0] == pytest.approx(np.sin(0.75))
+    assert [item.operation.params[0] for item in bound.data] == pytest.approx([np.sin(0.75), 0.75, np.sin(0.75)])
 
 
 def _wide_parameter_expression_program(term_count: int) -> QCProgram:

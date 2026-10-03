@@ -2630,13 +2630,25 @@ private:
     return result;
   }
 
-  [[nodiscard]] nb::object pythonParameter(const Parameter& parameter,
-                                           PythonSymbols& symbols,
-                                           size_t& nodeCount, size_t depth) {
-    countParameterExpressionNode(nodeCount);
-    if (depth > MAX_PARAMETER_EXPRESSION_DEPTH) {
-      throwParameterExpressionDepthError();
+  /// Export preflight checks the expanded node/depth budgets before conversion.
+  /// Retain shared children so cached identities remain valid across gates.
+  [[nodiscard]] nb::object
+  pythonParameter(const std::shared_ptr<const Parameter>& parameter) {
+    if (parameter->getNumber() != nullptr ||
+        parameter->getSymbol() != nullptr) {
+      return pythonParameter(*parameter);
     }
+    if (const auto found = expressions_.find(parameter);
+        found != expressions_.end()) {
+      return found->second;
+    }
+    auto value = pythonParameter(*parameter);
+    expressions_.emplace(parameter, value);
+    return value;
+  }
+
+  [[nodiscard]] nb::object pythonParameter(const Parameter& parameter) {
+    auto& symbols = parameters_->symbols;
     if (const auto* number = parameter.getNumber()) {
       if (!std::isfinite(number->value)) {
         throw std::runtime_error(
@@ -2695,8 +2707,7 @@ private:
       return nb::borrow<nb::object>(pythonSymbol->second);
     }
     if (const auto* unary = parameter.getUnary()) {
-      auto operand =
-          pythonParameter(*unary->operand, symbols, nodeCount, depth + 1U);
+      auto operand = pythonParameter(unary->operand);
       if (nb::isinstance<nb::float_>(operand)) {
         auto numeric = nb::cast<double>(operand);
         switch (unary->operation) {
@@ -2769,32 +2780,27 @@ private:
           binary->operation == BinaryParameterKind::Subtract) {
         /// Qiskit 2.5 recursively reoptimizes balanced sums. Append their terms
         /// incrementally until upstream handles balanced additions efficiently.
-        std::vector<std::tuple<const Parameter*, size_t, bool>> pending{
+        std::vector<std::pair<std::shared_ptr<const Parameter>, bool>> pending{
             {
-                binary->right.get(),
-                depth + 1U,
+                binary->right,
                 binary->operation == BinaryParameterKind::Subtract,
             },
-            {binary->left.get(), depth + 1U, false},
+            {binary->left, false},
         };
         nb::object sum;
         while (!pending.empty()) {
-          const auto [term, termDepth, negative] = pending.back();
+          const auto [term, negative] = pending.back();
           pending.pop_back();
           if (const auto* add = term->getBinary();
               add != nullptr &&
               (add->operation == BinaryParameterKind::Add ||
                add->operation == BinaryParameterKind::Subtract)) {
-            countParameterExpressionNode(nodeCount);
-            if (termDepth > MAX_PARAMETER_EXPRESSION_DEPTH) {
-              throwParameterExpressionDepthError();
-            }
             pending.emplace_back(
-                add->right.get(), termDepth + 1U,
+                add->right,
                 negative != (add->operation == BinaryParameterKind::Subtract));
-            pending.emplace_back(add->left.get(), termDepth + 1U, negative);
+            pending.emplace_back(add->left, negative);
           } else {
-            auto value = pythonParameter(*term, symbols, nodeCount, termDepth);
+            auto value = pythonParameter(term);
             if (!sum.is_valid()) {
               sum = std::move(value);
             } else {
@@ -2804,10 +2810,8 @@ private:
         }
         return sum;
       }
-      auto left =
-          pythonParameter(*binary->left, symbols, nodeCount, depth + 1U);
-      auto right =
-          pythonParameter(*binary->right, symbols, nodeCount, depth + 1U);
+      auto left = pythonParameter(binary->left);
+      auto right = pythonParameter(binary->right);
       switch (binary->operation) {
       case BinaryParameterKind::Add:
         return left + right;
@@ -2822,11 +2826,6 @@ private:
       }
     }
     throw std::runtime_error("unknown normalized parameter expression");
-  }
-
-  [[nodiscard]] nb::object pythonParameter(const Parameter& parameter) {
-    size_t nodeCount = 0U;
-    return pythonParameter(parameter, parameters_->symbols, nodeCount, 1U);
   }
 
   [[nodiscard]] static nb::object loopIndexSet(const Loop& loop) {
@@ -2909,6 +2908,7 @@ private:
   nb::object standardGates_;
   nb::object standardInstruction_;
   PythonVariables variables_;
+  std::unordered_map<std::shared_ptr<const Parameter>, nb::object> expressions_;
   std::shared_ptr<OutputParameters> parameters_;
   std::shared_ptr<NativeGateRegistry> gates_;
   const mlir::CompilerTarget* target_;
