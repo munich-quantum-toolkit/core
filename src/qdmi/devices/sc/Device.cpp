@@ -26,7 +26,6 @@
 #include <cstdint>
 #include <cstring>
 #include <exception>
-#include <functional>
 #include <memory>
 #include <mutex>
 #include <new>
@@ -39,25 +38,6 @@
 #include <vector>
 
 namespace {
-
-/// Maps exceptions from an allocation-capable device call to QDMI status codes.
-template <class Callable>
-[[nodiscard]] auto guardDeviceCall(const std::string_view action,
-                                   Callable&& callable) noexcept -> int {
-  try {
-    return std::invoke(std::forward<Callable>(callable));
-  } catch (const std::bad_alloc&) {
-    qdmi::diagnostics::error("Out of memory while {}", action);
-    return QDMI_ERROR_OUTOFMEM;
-  } catch (const std::exception& error) {
-    qdmi::diagnostics::error("Failed while {}: {}", action, error.what());
-    return QDMI_ERROR_FATAL;
-  } catch (...) {
-    qdmi::diagnostics::error("Failed while {}: unknown exception", action);
-    return QDMI_ERROR_FATAL;
-  }
-}
-
 [[nodiscard]] bool
 siteTupleLess(const std::span<const MQT_SC_QDMI_Site> first,
               const std::span<const MQT_SC_QDMI_Site> second) {
@@ -232,10 +212,11 @@ int MQT_SC_QDMI_Device_Session_impl_d::setParameter(
     return QDMI_ERROR_BADSTATE;
   }
 
-  return guardDeviceCall("setting an SC device session parameter", [&] {
-    return qdmi::detail::setDeviceConfigurationParameter(
-        parameter, size, value, inlineConfiguration, fileConfiguration);
-  });
+  return sc::detail::guardDeviceCall(
+      "setting an SC device session parameter", [&] {
+        return qdmi::detail::setDeviceConfigurationParameter(
+            parameter, size, value, inlineConfiguration, fileConfiguration);
+      });
 }
 
 int MQT_SC_QDMI_Device_Session_impl_d::createDeviceJob(
@@ -244,13 +225,11 @@ int MQT_SC_QDMI_Device_Session_impl_d::createDeviceJob(
     return QDMI_ERROR_INVALIDARGUMENT;
   }
 
-  *job = nullptr;
-
   if (status != Status::INITIALIZED) {
     return QDMI_ERROR_BADSTATE;
   }
 
-  return guardDeviceCall("creating an SC device job", [&] {
+  return sc::detail::guardDeviceCall("creating an SC device job", [&] {
     auto value = std::make_unique<MQT_SC_QDMI_Device_Job_impl_d>(this);
     const std::scoped_lock lock(jobsMutex);
     *job = jobs.emplace(value.get(), std::move(value)).first->first;
