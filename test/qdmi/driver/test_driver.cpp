@@ -1014,9 +1014,8 @@ TEST(ConfiguredDriverTest, ExposesWorkingDefinitionsAndIsolatesFailures) {
   std::vector<std::string> names;
   std::ranges::transform(devices, std::back_inserter(names), queryName);
   std::vector<std::string> expectedNames{
-      "IQM Emerald",
-      "IQM Garnet",
-      "MQT SC Default QDMI Device",
+      "IBM Heron 156 (mock)", "IBM Nighthawk 120 (mock)",   "IQM Emerald",
+      "IQM Garnet",           "MQT SC Default QDMI Device",
   };
 #ifdef MQT_CORE_QDMI_HAS_DDSIM_DEVICE
   expectedNames.emplace_back("MQT Core DDSIM QDMI Device");
