@@ -10,15 +10,10 @@
 
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 
-#include "mqt/Dialect/MQT/IR/MQTDialect.h"
-
 #include "mlir/IR/Attributes.h"
-#include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
-#include "mlir/IR/DialectImplementation.h" // IWYU pragma: keep
-#include "mlir/IR/OpImplementation.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 
@@ -27,7 +22,6 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/ADT/TypeSwitch.h" // IWYU pragma: keep
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/VersionTuple.h"
 
@@ -38,19 +32,6 @@
 
 using namespace mlir;
 using namespace mlir::mqt;
-
-#include "mqt/Dialect/MQT/IR/MQTEnums.cpp.inc"
-
-#define GET_ATTRDEF_CLASSES
-#include "mqt/Dialect/MQT/IR/MQTAttributes.cpp.inc"
-
-// Attribute registration requires the generated storage definitions above.
-void MQTDialect::registerAttributes() {
-  addAttributes<
-#define GET_ATTRDEF_LIST
-#include "mqt/Dialect/MQT/IR/MQTAttributes.cpp.inc"
-      >();
-}
 
 [[nodiscard]] static bool isCanonicalPayloadVersion(const StringRef version) {
   llvm::VersionTuple parsed;

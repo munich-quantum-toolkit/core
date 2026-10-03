@@ -97,11 +97,6 @@ def MQTDialect : Dialect {
   let hasOperationAttrVerify = 1;
   let hasRegionArgAttrVerify = 1;
   let hasRegionResultAttrVerify = 1;
-
-  let extraClassDeclaration = [{
-  private:
-    void registerAttributes();
-  }];
 }
 
 class MQTAttr<string name, string attrMnemonic, list<Trait> traits = []>

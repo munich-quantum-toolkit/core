@@ -27,10 +27,13 @@
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/Attributes.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
+#include "mlir/IR/DialectImplementation.h" // IWYU pragma: keep
+#include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/IR/Verifier.h"
@@ -45,6 +48,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/TypeSwitch.h" // IWYU pragma: keep
 #include "llvm/Support/Casting.h"
 
 #include <cstdint>
@@ -54,8 +58,17 @@ using namespace mlir;
 using namespace mlir::mqt;
 
 #include "mqt/Dialect/MQT/IR/MQTDialect.cpp.inc"
+#include "mqt/Dialect/MQT/IR/MQTEnums.cpp.inc"
 
-void MQTDialect::initialize() { registerAttributes(); }
+void MQTDialect::initialize() {
+  addAttributes<
+#define GET_ATTRDEF_LIST
+#include "mqt/Dialect/MQT/IR/MQTAttributes.cpp.inc"
+      >();
+}
+
+#define GET_ATTRDEF_CLASSES
+#include "mqt/Dialect/MQT/IR/MQTAttributes.cpp.inc"
 
 LogicalResult mlir::mqt::verifyQuantumAllocations(ModuleOp moduleOp) {
   auto entryPoint = getEntryPoint(moduleOp);
