@@ -10,6 +10,7 @@
 
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Pauli.h"
 
+#include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mqt/Dialect/MQT/Utils/Modifiers.h"
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
@@ -29,6 +30,7 @@
 
 #include <array>
 #include <cassert>
+#include <cmath>
 #include <cstddef>
 #include <numbers>
 #include <optional>
@@ -36,10 +38,20 @@
 
 namespace mlir::qco::decomposition {
 
-Matrix2x2 pauliFrame(PauliAxis axis) {
+Matrix2x2 pauliFrame(PauliAxis axis, PauliAxis from) {
+  if (axis == from || axis == PauliAxis::I) {
+    return Matrix2x2::identity();
+  }
+  if (from != PauliAxis::Z) {
+    if (axis == PauliAxis::Z) {
+      return pauliFrame(from).adjoint();
+    }
+    return RZOp::unitaryMatrix(axis == PauliAxis::Y ? std::numbers::pi / 2.
+                                                    : -std::numbers::pi / 2.);
+  }
   switch (axis) {
   case PauliAxis::X:
-    return HOp::getUnitaryMatrix();
+    return RYOp::unitaryMatrix(std::numbers::pi / 2.);
   case PauliAxis::Y:
     return RXOp::unitaryMatrix(-std::numbers::pi / 2.);
   case PauliAxis::I:
@@ -47,6 +59,27 @@ Matrix2x2 pauliFrame(PauliAxis axis) {
     return Matrix2x2::identity();
   }
   llvm_unreachable("unknown Pauli axis");
+}
+
+FoldedPauliAngle foldPauliAngle(double angle) {
+  /// Reduce with trigonometry before subtracting pi, including large angles.
+  const double principal = std::abs(angle) <= 2. * std::numbers::pi
+                               ? angle
+                               : 4. * std::atan(std::tan(angle / 4.));
+  const double folded = std::remainder(principal, std::numbers::pi);
+  const auto turns =
+      static_cast<int>(std::round((principal - folded) / std::numbers::pi));
+  return {
+      .angle = std::abs(folded),
+      .phase = -turns * std::numbers::pi / 2.,
+      .product = turns % 2 != 0,
+      .negate = folded < 0.,
+  };
+}
+
+static Matrix2x2 pauliMatrix(PauliAxis axis) {
+  const auto frame = pauliFrame(axis);
+  return frame * ZOp::getUnitaryMatrix() * frame.adjoint();
 }
 
 std::array<PauliAxis, 2> pauliAxes(CompilerTarget::GateKind gate) {
@@ -228,14 +261,34 @@ emitPauliRotations(RewriterBase& rewriter, Operation* operation,
     assert(basis.entangler && "two-qubit synthesis requires an entangler");
     Value& wire0 = wires[reverse ? 1 : 0];
     Value& wire1 = wires[reverse ? 0 : 1];
-    auto frame0 = pauliFrame(term.axes[reverse ? 1 : 0]);
-    auto frame1 = pauliFrame(term.axes[reverse ? 0 : 1]);
-    if (basis.entangler->parameterized) {
+    const auto axis0 = term.axes[reverse ? 1 : 0];
+    const auto axis1 = term.axes[reverse ? 0 : 1];
+    if (basis.entangler->parameterized()) {
       const auto nativeAxes = pauliAxes(basis.entangler->gate);
-      frame0 = frame0 * pauliFrame(nativeAxes[0]).adjoint();
-      frame1 = frame1 * pauliFrame(nativeAxes[1]).adjoint();
-      emitFactor(wire0, frame0.adjoint());
-      emitFactor(wire1, frame1.adjoint());
+      auto frame0 = pauliFrame(axis0, nativeAxes[0]);
+      auto frame1 = pauliFrame(axis1, nativeAxes[1]);
+      auto before0 = frame0.adjoint();
+      auto before1 = frame1.adjoint();
+      if (basis.entangler->angles ==
+          CompilerTarget::AngleSupport::ZeroToHalfPi) {
+        const auto constant = mqt::valueToConstantDouble(sequence.angle);
+        assert(constant && "bounded synthesis requires a known angle");
+        const auto folded = foldPauliAngle(*constant * term.angleScale);
+        angle = mqt::constantFromScalar(rewriter, loc, folded.angle);
+        globalPhase += folded.phase;
+        if (folded.product) {
+          frame0 = frame0 * pauliMatrix(nativeAxes[0]);
+          frame1 = frame1 * pauliMatrix(nativeAxes[1]);
+        }
+        if (folded.negate) {
+          const auto flip = pauliMatrix(
+              nativeAxes[0] == PauliAxis::Z ? PauliAxis::X : PauliAxis::Z);
+          before0 = flip * before0;
+          frame0 = frame0 * flip;
+        }
+      }
+      emitFactor(wire0, before0);
+      emitFactor(wire1, before1);
       auto* native = emitPauliRotation2Q(rewriter, loc, wire0, wire1,
                                          basis.entangler->gate, angle);
       wire0 = native->getResult(0);
@@ -247,8 +300,8 @@ emitPauliRotations(RewriterBase& rewriter, Operation* operation,
     auto before = fixedPauliEntangler(basis.entangler->gate);
     auto after = before;
     const auto axes = conjugatedPauliAxes(basis.entangler->gate);
-    frame0 = frame0 * pauliFrame(axes[0]).adjoint();
-    frame1 = frame1 * pauliFrame(axes[1]).adjoint();
+    auto frame0 = pauliFrame(axis0, axes[0]);
+    auto frame1 = pauliFrame(axis1, axes[1]);
     before.singleQubitFactors[0] =
         before.singleQubitFactors[0] * frame1.adjoint();
     before.singleQubitFactors[1] =
@@ -263,12 +316,8 @@ emitPauliRotations(RewriterBase& rewriter, Operation* operation,
                basis.entangler->gate == CompilerTarget::GateKind::RZX ||
                basis.entangler->gate == CompilerTarget::GateKind::RZZ) {
       const auto nativeAxes = pauliAxes(basis.entangler->gate);
-      const auto pauli = [](PauliAxis axis) {
-        const auto frame = pauliFrame(axis);
-        return frame * ZOp::getUnitaryMatrix() * frame.adjoint();
-      };
-      frame0 = frame0 * pauli(nativeAxes[0]);
-      frame1 = frame1 * pauli(nativeAxes[1]);
+      frame0 = frame0 * pauliMatrix(nativeAxes[0]);
+      frame1 = frame1 * pauliMatrix(nativeAxes[1]);
       globalPhase += std::numbers::pi / 2.;
     }
     auto& factors = after.singleQubitFactors;
@@ -292,8 +341,21 @@ emitPauliRotations(RewriterBase& rewriter, Operation* operation,
   return wires;
 }
 
-size_t pauliRotationEntanglerCount(CompilerTarget::Entangler entangler) {
-  if (entangler.parameterized) {
+std::optional<size_t>
+pauliRotationEntanglerCount(const PauliRotationSequence& sequence,
+                            CompilerTarget::Entangler entangler) {
+  if (const auto angle = mqt::valueToConstantDouble(sequence.angle)) {
+    for (const auto& term : sequence.rotations) {
+      if (term.axes[0] != PauliAxis::I && term.axes[1] != PauliAxis::I) {
+        const double value = *angle * term.angleScale;
+        if (std::abs(std::sin(value)) <= MATRIX_TOLERANCE ||
+            std::abs(std::cos(value)) <= MATRIX_TOLERANCE) {
+          return std::nullopt;
+        }
+      }
+    }
+  }
+  if (entangler.parameterized()) {
     return 1;
   }
   return entangler.gate == CompilerTarget::GateKind::SQRTISWAP ? 4 : 2;

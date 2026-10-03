@@ -298,6 +298,7 @@ class CompilerTarget:
             *,
             fixed_parameters: Sequence[float | None] = (),
             canonical_name: str | None = None,
+            parameter_bounds: Sequence[tuple[float, float] | None] = (),
         ) -> None: ...
         @property
         def name(self) -> str:
@@ -318,6 +319,10 @@ class CompilerTarget:
         @property
         def site_tuples(self) -> list[CompilerTarget.SiteTuple]:
             """Supported ordered placements with optional calibration; empty means general applicability."""
+
+        @property
+        def parameter_bounds(self) -> list[tuple[float, float] | None]:
+            """Inclusive parameter intervals; None leaves a parameter unbounded."""
 
         @property
         def fixed_parameters(self) -> list[float | None]:
@@ -383,6 +388,15 @@ class CompilerTarget:
 
         ZXZ = 6
 
+    class AngleSupport(enum.Enum):
+        """Angle domain used by native entangler synthesis."""
+
+        FIXED = 0
+
+        UNRESTRICTED = 1
+
+        ZERO_TO_HALF_PI = 2
+
     class Entangler:
         """A native synthesis entangler and its angle support."""
 
@@ -392,7 +406,11 @@ class CompilerTarget:
 
         @property
         def parameterized(self) -> bool:
-            """Whether the entangler accepts arbitrary angles."""
+            """Whether synthesis can vary the entangler angle."""
+
+        @property
+        def angles(self) -> CompilerTarget.AngleSupport:
+            """The angle domain used by synthesis."""
 
     class SynthesisBasis:
         """One synthesis basis usable across the complete target."""
@@ -404,6 +422,10 @@ class CompilerTarget:
         @property
         def entangler(self) -> CompilerTarget.Entangler | None:
             """The two-qubit entangler, or None when none is usable."""
+
+        @property
+        def runtime_entangler(self) -> CompilerTarget.Entangler | None:
+            """Fixed fallback for unbounded runtime parameters, if needed."""
 
     class ConnectivityKind(enum.Enum):
         """The target connectivity model."""
@@ -465,11 +487,14 @@ class CompilerTarget:
         *,
         operation_names: Iterable[str] | None = None,
         name: str | None = None,
+        native_num_qubits: int | None = None,
     ) -> CompilerTarget:
         """Snapshot native operations and connectivity from Qiskit.
 
         Args:
-            source: Qiskit Target or BackendV2 with a known positive qubit count.
+            source: Qiskit Target or BackendV2. Physical import requires a known positive qubit count.
+            native_num_qubits: Import a placement-independent gate set for this width.
+                Preserve parameter constraints; omit gates wider than the circuit.
             operation_names: Qiskit Target operation names to retain. By default,
                 include every representable operation. Explicit selections must all be
                 representable.

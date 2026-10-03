@@ -162,6 +162,7 @@ public:
   /// the operation defaults.
   class OperationCapability {
   public:
+    using ParameterBounds = std::pair<double, double>;
     /// The accepted number of qubits for an operation capability.
     class Arity {
     public:
@@ -199,7 +200,8 @@ public:
            std::optional<uint64_t> duration = std::nullopt,
            std::optional<double> fidelity = std::nullopt,
            std::vector<std::optional<double>> fixedParameters = {},
-           std::optional<std::string> canonicalName = std::nullopt);
+           std::optional<std::string> canonicalName = std::nullopt,
+           std::vector<std::optional<ParameterBounds>> parameterBounds = {});
 
     /// Create a validated operation capability.
     [[nodiscard]] static llvm::Expected<OperationCapability>
@@ -208,7 +210,8 @@ public:
            std::optional<uint64_t> duration = std::nullopt,
            std::optional<double> fidelity = std::nullopt,
            std::vector<std::optional<double>> fixedParameters = {},
-           std::optional<std::string> canonicalName = std::nullopt);
+           std::optional<std::string> canonicalName = std::nullopt,
+           std::vector<std::optional<ParameterBounds>> parameterBounds = {});
 
     /// Return the exact reported operation name.
     [[nodiscard]] llvm::StringRef name() const noexcept;
@@ -229,6 +232,15 @@ public:
     [[nodiscard]] llvm::ArrayRef<std::optional<double>>
     fixedParameters() const noexcept;
 
+    /// Inclusive parameter intervals; empty entries impose no bound.
+    /// Unknown values do not satisfy a bounded or fixed parameter constraint.
+    [[nodiscard]] llvm::ArrayRef<std::optional<ParameterBounds>>
+    parameterBounds() const noexcept;
+
+    /// Check one concrete or unknown parameter against both constraints.
+    [[nodiscard]] bool acceptsParameter(size_t index,
+                                        std::optional<double> value) const;
+
     /// Return all supported ordered placements, or empty for general support.
     [[nodiscard]] llvm::ArrayRef<SiteTuple> siteTuples() const noexcept;
 
@@ -239,18 +251,19 @@ public:
     [[nodiscard]] std::optional<double> fidelity() const noexcept;
 
   private:
-    OperationCapability(std::string name, std::string canonicalName,
-                        Arity arity, size_t numParameters,
-                        std::vector<SiteTuple> siteTuples,
-                        std::optional<uint64_t> duration,
-                        std::optional<double> fidelity,
-                        std::vector<std::optional<double>> fixedParameters);
+    OperationCapability(
+        std::string name, std::string canonicalName, Arity arity,
+        size_t numParameters, std::vector<SiteTuple> siteTuples,
+        std::optional<uint64_t> duration, std::optional<double> fidelity,
+        std::vector<std::optional<double>> fixedParameters,
+        std::vector<std::optional<ParameterBounds>> parameterBounds);
 
     std::string name_;
     std::string canonicalName_;
     Arity arity_;
     size_t numParameters_;
     std::vector<std::optional<double>> fixedParameters_;
+    std::vector<std::optional<ParameterBounds>> parameterBounds_;
     std::vector<SiteTuple> siteTuples_;
     std::optional<uint64_t> duration_;
     std::optional<double> fidelity_;
@@ -308,7 +321,7 @@ public:
   enum class SingleQubitBasis : uint8_t {
     U,    ///< `U(θ, φ, λ)`.
     ZSXX, ///< RZ and fixed quarter turns, with optional half turns.
-    R,    ///< XYX synthesis expressed with `R(θ, φ)`.
+    R,    ///< At most two equatorial rotations `R(θ, φ)`.
     XZX,  ///< `RX(φ) * RZ(θ) * RX(λ)`.
     XYX,  ///< `RX(φ) * RY(θ) * RX(λ)`.
     ZYZ,  ///< `RZ(φ) * RY(θ) * RZ(λ)`.
@@ -325,10 +338,17 @@ public:
                            const QuarterTurnGates&) = default;
   };
 
-  /// A native entangler with either its fixed synthesis angle or any angle.
+  /// Synthesis domains for a native entangler's rotation parameter.
+  enum class AngleSupport : uint8_t { Fixed, Unrestricted, ZeroToHalfPi };
+
+  /// A native entangler and its supported synthesis domain.
   struct Entangler {
     GateKind gate;
-    bool parameterized = false;
+    AngleSupport angles = AngleSupport::Fixed;
+
+    [[nodiscard]] bool parameterized() const noexcept {
+      return angles != AngleSupport::Fixed;
+    }
 
     friend bool operator==(const Entangler&, const Entangler&) = default;
   };
@@ -337,6 +357,8 @@ public:
   struct SynthesisBasis {
     SingleQubitBasis singleQubit;
     std::optional<Entangler> entangler;
+    /// Fixed fallback when a runtime angle has no known bounds.
+    std::optional<Entangler> runtimeEntangler;
     std::optional<QuarterTurnGates> quarterTurnGates;
     /// Whether the Euler recipe can emit a half turn in one native gate.
     bool hasHalfTurn = true;

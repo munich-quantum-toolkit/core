@@ -963,6 +963,25 @@ TEST(CompilerTargetTest, MatchesFixedParametersAndPreservesPlacements) {
       restored.supportsOperation("r", 1, 2, site, {std::numbers::pi / 2., 1.}));
 }
 
+TEST(CompilerTargetTest, PreservesParameterBounds) {
+  const auto rotation = valid(OperationCapability::create(
+      "rzz", 2, 1, {}, std::nullopt, std::nullopt, {}, std::nullopt,
+      {OperationCapability::ParameterBounds{0., std::numbers::pi / 2.}}));
+  const auto target =
+      valid(Target::create(2, Connectivity::allToAll(),
+                           NativeOperations::fromOperations({rotation})));
+  mlir::MLIRContext context;
+  context.loadDialect<mlir::mqt::MQTDialect>();
+  const auto attribute = target.materialize(context);
+  const auto restored = valid(Target::create(attribute));
+  EXPECT_EQ(restored.materialize(context), attribute);
+  EXPECT_EQ(restored.operations()[0].parameterBounds(),
+            rotation.parameterBounds());
+  EXPECT_TRUE(restored.supportsOperation("rzz", 2, 1, std::nullopt, {0.3}));
+  EXPECT_FALSE(restored.supportsOperation("rzz", 2, 1, std::nullopt, {-0.3}));
+  EXPECT_FALSE(restored.supportsOperation("rzz", 2, 1));
+}
+
 TEST(CompilerTargetTest, RejectsInvalidFixedParameters) {
   expectInvalid(
       OperationCapability::create("rx", 1, 1, {}, std::nullopt, std::nullopt,
@@ -1153,7 +1172,7 @@ TEST(CompilerTargetTest, PrefersParameterizedEntanglerOverFixedAlternative) {
   ASSERT_TRUE(target.synthesisBasis());
   ASSERT_TRUE(target.synthesisBasis()->entangler);
   EXPECT_EQ(target.synthesisBasis()->entangler->gate, GateKind::RZZ);
-  EXPECT_TRUE(target.synthesisBasis()->entangler->parameterized);
+  EXPECT_TRUE(target.synthesisBasis()->entangler->parameterized());
 }
 
 TEST(CompilerTargetTest, EntanglerCapabilitiesRespectAnglesAndOperandOrder) {
@@ -1177,7 +1196,10 @@ TEST(CompilerTargetTest, EntanglerCapabilitiesRespectAnglesAndOperandOrder) {
                                  fixed,
                                  arbitrary,
                              })));
-    const Target::Entangler unrestricted{.gate = gate, .parameterized = true};
+    const Target::Entangler unrestricted{
+        .gate = gate,
+        .angles = Target::AngleSupport::Unrestricted,
+    };
     EXPECT_TRUE(target.supports(Target::Entangler{.gate = gate}, {0, 1}));
     EXPECT_FALSE(target.supports(unrestricted, {0, 1}));
     EXPECT_TRUE(target.supports(unrestricted, {1, 0}));

@@ -18,6 +18,8 @@
 #include "mlir/IR/Location.h"
 #include "mlir/Support/LLVM.h"
 
+#include "llvm/Support/LogicalResult.h"
+
 #include <array>
 #include <cstddef>
 #include <optional>
@@ -133,5 +135,10 @@ void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase);
 void synthesizeParameterizedUnitary1Q(
     RewriterBase& rewriter, Operation* op,
     const CompilerTarget::SynthesisBasis& basis);
+
+/// Emit equatorial gates while carrying Z rotations through diagonal gates.
+/// Flush frames at region boundaries and other operations; preserve all phases.
+LogicalResult synthesizeEquatorialGates(RewriterBase& rewriter, Operation* root,
+                                        bool nativeRZ);
 
 } // namespace mlir::qco::decomposition

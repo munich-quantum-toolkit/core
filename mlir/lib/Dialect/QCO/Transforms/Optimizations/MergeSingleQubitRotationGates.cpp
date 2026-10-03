@@ -747,8 +747,9 @@ struct MergeSingleQubitRotationGatesPattern final
     case decomposition::SingleQubitBasis::ZXZ:
     case decomposition::SingleQubitBasis::XZX:
     case decomposition::SingleQubitBasis::XYX:
-    case decomposition::SingleQubitBasis::R:
       return 3;
+    case decomposition::SingleQubitBasis::R:
+      return 2;
     }
     llvm_unreachable("invalid single-qubit synthesis basis"); // LCOV_EXCL_LINE
   }
@@ -801,8 +802,7 @@ struct MergeSingleQubitRotationGatesPattern final
                       const CompilerTarget::SynthesisBasis& synthesisBasis) {
     const auto basis = synthesisBasis.singleQubit;
     const bool outerX = basis == decomposition::SingleQubitBasis::XZX ||
-                        basis == decomposition::SingleQubitBasis::XYX ||
-                        basis == decomposition::SingleQubitBasis::R;
+                        basis == decomposition::SingleQubitBasis::XYX;
     const auto isOuter = [outerX](UnitaryOpInterface op) {
       return outerX ? isa<RXOp>(op.getOperation())
                     : isa<RZOp>(op.getOperation());
@@ -925,16 +925,14 @@ struct MergeSingleQubitRotationGatesPattern final
     }
 
     const bool transformed = basis == decomposition::SingleQubitBasis::XZX ||
-                             basis == decomposition::SingleQubitBasis::XYX ||
-                             basis == decomposition::SingleQubitBasis::R;
+                             basis == decomposition::SingleQubitBasis::XYX;
     auto [theta, phi, lambda, eulerPhase] =
         transformed ? anglesFromQuaternion(hadamardConjugate(*qAccum), consts)
                     : anglesFromQuaternion(*qAccum, consts);
     if (basis == decomposition::SingleQubitBasis::XZX) {
       phi = phi + consts.pi / consts.two;
       lambda = lambda - consts.pi / consts.two;
-    } else if (basis == decomposition::SingleQubitBasis::XYX ||
-               basis == decomposition::SingleQubitBasis::R) {
+    } else if (basis == decomposition::SingleQubitBasis::XYX) {
       phi = phi + consts.pi;
       lambda = lambda + consts.pi;
       eulerPhase = eulerPhase + consts.pi;

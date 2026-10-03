@@ -910,16 +910,14 @@ decomposeSqrtISwap(const Matrix4x4& target, uint64_t seed) {
 /// Realize the three commuting Cartan rotations using one native axis pair.
 static std::optional<TwoQubitNativeDecomposition>
 decomposePauliRotations(const Matrix4x4& target,
-                        CompilerTarget::GateKind entangler, uint64_t seed) {
+                        CompilerTarget::Entangler entangler, uint64_t seed) {
   const auto kak =
       TwoQubitWeylDecomposition::create(target, std::nullopt, seed);
   if (!kak) {
     return std::nullopt;
   }
   const auto identity = Matrix2x2::identity();
-  const auto axes = pauliAxes(entangler);
-  const auto nativeLeft = pauliFrame(axes[0]).adjoint();
-  const auto nativeRight = pauliFrame(axes[1]).adjoint();
+  const auto axes = pauliAxes(entangler.gate);
   TwoQubitNativeDecomposition result{
       .singleQubitFactors = {identity, identity},
   };
@@ -931,14 +929,24 @@ decomposePauliRotations(const Matrix4x4& target,
     if (std::abs(coordinate) <= WEYL_TOLERANCE) {
       continue;
     }
-    const auto left = pauliFrame(axis) * nativeLeft;
-    const auto right = pauliFrame(axis) * nativeRight;
+    auto left = pauliFrame(axis, axes[0]);
+    double angle = -2. * coordinate;
+    if (entangler.angles == CompilerTarget::AngleSupport::ZeroToHalfPi &&
+        angle < 0.) {
+      /// Cartan angles already lie in [-pi/2, pi/2]. A Pauli conjugation
+      /// changes the sign without changing the native interaction count.
+      const auto flip = axes[0] == PauliAxis::Z ? XOp::getUnitaryMatrix()
+                                                : ZOp::getUnitaryMatrix();
+      left = left * flip;
+      angle = -angle;
+    }
+    const auto right = pauliFrame(axis, axes[1]);
     auto& factors = result.singleQubitFactors;
     factors[factors.size() - 2] = right.adjoint() * factors[factors.size() - 2];
     factors.back() = left.adjoint() * factors.back();
     factors.push_back(right);
     factors.push_back(left);
-    result.entanglerParameters.push_back(-2. * coordinate);
+    result.entanglerParameters.push_back(angle);
     ++result.numBasisUses;
   }
   attachLocalFactors(result, *kak);
@@ -948,8 +956,8 @@ decomposePauliRotations(const Matrix4x4& target,
 std::optional<TwoQubitNativeDecomposition>
 decomposeUnitary2QWeyl(const Matrix4x4& target,
                        CompilerTarget::Entangler entangler, uint64_t seed) {
-  if (entangler.parameterized) {
-    return decomposePauliRotations(target, entangler.gate, seed);
+  if (entangler.parameterized()) {
+    return decomposePauliRotations(target, entangler, seed);
   }
   if (entangler.gate == CompilerTarget::GateKind::SQRTISWAP) {
     return decomposeSqrtISwap(target, seed);

@@ -4553,7 +4553,7 @@ TEST_F(CompilerPipelineTest, QCOProgramCompilesDynamicRunForSupportedTargets) {
       Case{
           .name = "rx-rz",
           .nativeGates = {{"rx", 1}, {"rz", 1}},
-          .resolvedBasis = CompilerTarget::SingleQubitBasis::XZX,
+          .resolvedBasis = CompilerTarget::SingleQubitBasis::ZXZ,
       },
       Case{
           .name = "rx-ry",

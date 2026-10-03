@@ -1083,8 +1083,7 @@ TEST_F(MergeSingleQubitRotationGatesTest,
     FuseSingleQubitUnitaryRunsOptions options;
     options.basis = basisName;
     const bool outerX = basis == decomposition::SingleQubitBasis::XZX ||
-                        basis == decomposition::SingleQubitBasis::XYX ||
-                        basis == decomposition::SingleQubitBasis::R;
+                        basis == decomposition::SingleQubitBasis::XYX;
     for (const StringRef middleGate : {"rx", "ry", "rz", "h"}) {
       SCOPED_TRACE(middleGate.str());
       const bool hadamard = middleGate == "h";

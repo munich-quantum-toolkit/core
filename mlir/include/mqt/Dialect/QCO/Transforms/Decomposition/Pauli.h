@@ -33,9 +33,10 @@ namespace mlir::qco::decomposition {
 
 enum class PauliAxis : uint8_t { I, X, Y, Z };
 
-/// A constant Clifford C such that C Z C^dagger is the requested axis.
+/// A quarter-turn Clifford C that maps from to the requested Pauli axis.
 /// The identity axis returns the identity matrix.
-[[nodiscard]] Matrix2x2 pauliFrame(PauliAxis axis);
+[[nodiscard]] Matrix2x2 pauliFrame(PauliAxis axis,
+                                   PauliAxis from = PauliAxis::Z);
 
 /// Generator axes of a recognized one- or two-qubit Pauli rotation.
 /// A one-qubit rotation has I as its second axis.
@@ -46,6 +47,17 @@ enum class PauliAxis : uint8_t { I, X, Y, Z };
                                              Value qubit0, Value qubit1,
                                              CompilerTarget::GateKind gate,
                                              std::variant<double, Value> angle);
+
+/// R_P(theta) = exp(i*phase) P^product C R_P(angle) C, where C
+/// anticommutes with P when negate is true. The angle lies in [0, pi/2].
+struct FoldedPauliAngle {
+  double angle;
+  double phase;
+  bool product;
+  bool negate;
+};
+
+[[nodiscard]] FoldedPauliAngle foldPauliAngle(double angle);
 
 struct PauliRotation {
   std::array<PauliAxis, 2> axes;
@@ -65,10 +77,11 @@ struct PauliRotationSequence {
 [[nodiscard]] std::optional<PauliRotationSequence>
 getPauliRotations(Operation* operation);
 
-/// Native entangler count for one two-qubit Pauli rotation with a runtime
-/// angle.
-[[nodiscard]] size_t
-pauliRotationEntanglerCount(CompilerTarget::Entangler entangler);
+/// Cost of direct Pauli synthesis. Constant Clifford angles use the matrix
+/// planner, which can remove or shorten their entangling part.
+[[nodiscard]] std::optional<size_t>
+pauliRotationEntanglerCount(const PauliRotationSequence& sequence,
+                            CompilerTarget::Entangler entangler);
 
 /// Emits a recognized sequence directly in the target's synthesis basis.
 /// Hoists supporting scalar operations from a recognized control body; the

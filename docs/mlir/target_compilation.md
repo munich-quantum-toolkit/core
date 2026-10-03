@@ -195,11 +195,14 @@ rx_gates = [
 ```
 
 Constants match with absolute tolerance `1e-15`, without angle wrapping. Unbound
-symbolic values cannot satisfy fixed parameters. Parameter ranges and relations
-are not represented. A device-specific instruction name can specify its compiler
-operation with `canonical_name`, for example
+symbolic values cannot satisfy fixed parameters or `parameter_bounds`. Bounds
+are inclusive `(lower, upper)` pairs, with `None` for unbounded parameters;
+relations between parameters are not represented. A device-specific instruction
+name can specify its compiler operation with `canonical_name`, for example
 `OperationCapability("rx_90", 1, 1, fixed_parameters=[pi / 2], canonical_name="rx")`.
 The reported name remains available to exporters.
+`CompilerTarget.from_qiskit(source, native_num_qubits=n)` imports a gate set for
+an `n`-qubit circuit, retaining angle constraints and ignoring placement.
 
 Target compilation requires a single-qubit synthesis basis available on every
 site. `ZSXX` accepts unrestricted RZ and SX, RX(±π/2), RY(±π/2), or R(±π/2, 0).
@@ -219,7 +222,17 @@ alternatives and use up to three native rotations for numeric two-qubit
 synthesis. Runtime two-qubit Pauli rotations use constant basis changes: one
 arbitrary-angle native entangler, or two fixed native entanglers (four for
 square-root iSWAP). Fixed entanglers use Pauli conjugation. Single-controlled
-Pauli rotations and phase gates use the same decomposition.
+Pauli rotations and phase gates use the same decomposition. Bounded Pauli
+entanglers that include `[0, pi/2]` use the same numeric synthesis with local
+Pauli corrections. Unknown runtime angles fall back to CZ, when available, or a
+native `pi/2` rotation. Bind parameters before compilation to use fractional
+entanglers directly. Qiskit import conservatively recognizes this interval
+through its public bound predicates.
+
+Equatorial R targets use at most two R gates per single-qubit unitary. Synthesis
+carries Z rotations through diagonal entanglers and absorbs them into R axes,
+retaining the terminal frame and global phase. RX/RZ targets prefer ZXZ to
+minimize physical RX rotations.
 
 ### Placements and calibration
 

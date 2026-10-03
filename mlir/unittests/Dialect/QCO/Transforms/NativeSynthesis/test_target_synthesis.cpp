@@ -2612,7 +2612,7 @@ TEST_F(TargetSynthesisTest, ParameterizedEntanglersUseCartanAngles) {
         valid(Target::create(2, Connectivity::fromCouplings({{0, 1}}),
                              NativeOperations::fromOperations(operations)));
     ASSERT_TRUE(target.synthesisBasis());
-    ASSERT_TRUE(target.synthesisBasis()->entangler->parameterized);
+    ASSERT_TRUE(target.synthesisBasis()->entangler->parameterized());
     for (size_t count = 0; count <= 3; ++count) {
       SCOPED_TRACE(count);
       const auto matrix = Matrix4x4::kron(UOp::unitaryMatrix(0.3, -0.7, 1.1),
@@ -2661,11 +2661,12 @@ TEST_F(TargetSynthesisTest, ParameterizedEntanglersUseCartanAngles) {
   mlir::qco::NativeCostAnalysis cache(2023);
   const auto matrix = mlir::qco::RZZOp::unitaryMatrix(0.371);
   for (const bool parameterized : {false, true, false, true}) {
-    const auto& native =
-        cache.decompose(matrix, {
-                                    .gate = Target::GateKind::RZZ,
-                                    .parameterized = parameterized,
-                                });
+    const auto& native = cache.decompose(
+        matrix, {
+                    .gate = Target::GateKind::RZZ,
+                    .angles = parameterized ? Target::AngleSupport::Unrestricted
+                                            : Target::AngleSupport::Fixed,
+                });
     ASSERT_TRUE(native);
     EXPECT_EQ(native->numBasisUses, parameterized ? 1U : 2U);
   }

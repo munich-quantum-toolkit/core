@@ -2312,14 +2312,12 @@ public:
             !operation.arity().accepts(qubits.size()) ||
             operation.numParameters() != parameters.size() ||
             !std::ranges::all_of(
-                std::views::iota(size_t{0}, operation.fixedParameters().size()),
+                std::views::iota(size_t{0}, operation.numParameters()),
                 [&](size_t index) {
-                  const auto expected = operation.fixedParameters()[index];
                   const auto* actual = parameters[index].getNumber();
-                  return !expected ||
-                         (actual != nullptr &&
-                          std::abs(actual->value - *expected) <=
-                              mlir::mqt::PARAMETER_COMPARISON_TOLERANCE);
+                  return operation.acceptsParameter(
+                      index, actual != nullptr ? std::optional{actual->value}
+                                               : std::nullopt);
                 })) {
           continue;
         }
@@ -2930,7 +2928,8 @@ public:
 
   [[nodiscard]] mlir::CompilerTarget
   importTarget(nb::handle source, nb::handle operationNames,
-               const std::optional<std::string>& name) const override {
+               const std::optional<std::string>& name,
+               std::optional<size_t> nativeNumQubits) const override {
     using Target = mlir::CompilerTarget;
     const auto takeResult = []<class T>(llvm::Expected<T> result) {
       if (!result) {
@@ -2952,8 +2951,10 @@ public:
             target, nb::module_::import_("qiskit.transpiler").attr("Target"))) {
       throw nb::type_error("Expected a Qiskit Target or BackendV2");
     }
-    size_t numQubits = 0;
-    if (!nb::try_cast(target.attr("num_qubits"), numQubits) || numQubits == 0) {
+    size_t numQubits = nativeNumQubits.value_or(0);
+    if ((!nativeNumQubits &&
+         !nb::try_cast(target.attr("num_qubits"), numQubits)) ||
+        numQubits == 0) {
       throw nb::value_error(
           "Qiskit target must have a known positive qubit count");
     }
@@ -2984,7 +2985,7 @@ public:
       }
       const auto instruction =
           target.attr("operation_from_name")(operationName);
-      const auto qargs = target.attr("qargs_for_operation_name")(operationName);
+      auto qargs = target.attr("qargs_for_operation_name")(operationName);
       const auto instructionType =
           instruction.is_type() ? nb::handle(instruction) : instruction.type();
       const auto rAngle = nativeRAngle(instruction, operationName);
@@ -3009,6 +3010,8 @@ public:
       std::string reason;
       size_t numParameters = 0;
       std::vector<std::optional<double>> fixedParameters;
+      std::vector<std::optional<Target::OperationCapability::ParameterBounds>>
+          parameterBounds;
       if (nb::isinstance(instruction, circuit.attr("ControlledGate")) &&
           nb::cast<uint64_t>(instruction.attr("ctrl_state")) !=
               closedControlState(
@@ -3052,6 +3055,19 @@ public:
             }
           }
         }
+        if (!supported && numParameters == 1 && fixedParameters.size() == 1 &&
+            !fixedParameters[0] &&
+            (*nativeName == "rxx" || *nativeName == "ryy" ||
+             *nativeName == "rzx" || *nativeName == "rzz") &&
+            nb::cast<bool>(target.attr("supported_angle_bound")(
+                operationName, std::vector<double>{0.})) &&
+            nb::cast<bool>(target.attr("supported_angle_bound")(
+                operationName, std::vector<double>{std::numbers::pi / 2.}))) {
+          /// Public predicates prove that this useful interval is contained in
+          /// the target's interval; other bounded domains remain unsupported.
+          parameterBounds.emplace_back(std::pair{0., std::numbers::pi / 2.});
+          supported = true;
+        }
         if (!supported) {
           reason = "parameter constraints";
         }
@@ -3075,6 +3091,13 @@ public:
         ++numParameters;
       }
 
+      const auto arity = nb::cast<size_t>(instruction.attr("num_qubits"));
+      if (nativeNumQubits) {
+        if (arity > *nativeNumQubits) {
+          continue;
+        }
+        qargs = nb::none();
+      }
       std::vector<Target::SiteTuple> placements;
       if (!qargs.is_none()) {
         std::vector<std::vector<Target::SiteId>> sites;
@@ -3087,10 +3110,10 @@ public:
               takeResult(Target::SiteTuple::create(std::move(tuple))));
         }
       }
-      const auto arity = nb::cast<size_t>(instruction.attr("num_qubits"));
       auto capability = takeResult(Target::OperationCapability::create(
           operationName, arity, numParameters, std::move(placements),
-          std::nullopt, std::nullopt, std::move(fixedParameters), nativeName));
+          std::nullopt, std::nullopt, std::move(fixedParameters), nativeName,
+          std::move(parameterBounds)));
       if (arity == 2) {
         if (qargs.is_none()) {
           allToAll = true;
