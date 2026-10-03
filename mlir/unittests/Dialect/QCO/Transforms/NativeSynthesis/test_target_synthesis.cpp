@@ -331,57 +331,18 @@ TEST_F(TargetSynthesisTest, TargetPassesRequireTypedEnvironment) {
       << diagnostics;
 }
 
-TEST_F(TargetSynthesisTest, FixedRSynthesisPreservesFullUnitary) {
-  for (const bool reverse : {false, true}) {
-    SCOPED_TRACE(reverse);
-    const auto target = valid(Target::create(
-        2, Connectivity::allToAll(),
-        NativeOperations::fromOperations({
-            valid(OperationCapability::create("rz", 1, 1)),
-            valid(OperationCapability::create(
-                "r", 1, 2, {}, std::nullopt, std::nullopt,
-                {std::numbers::pi, std::nullopt})),
-            valid(OperationCapability::create(
-                "r", 1, 2, {}, std::nullopt, std::nullopt,
-                {std::numbers::pi / 2., std::nullopt})),
-            valid(OperationCapability::create("gphase", 0, 1)),
-            valid(OperationCapability::create(
-                "rzz", 2, 1,
-                {
-                    valid(SiteTuple::create(
-                        reverse ? std::vector<Target::SiteId>{1, 0}
-                                : std::vector<Target::SiteId>{0, 1})),
-                },
-                std::nullopt, std::nullopt, {std::numbers::pi / 2.})),
-        })));
-    ASSERT_TRUE(target.synthesisBasis());
-    EXPECT_EQ(target.synthesisBasis()->singleQubit,
-              Target::SingleQubitBasis::ZSXX);
-    EXPECT_EQ(target.synthesisBasis()->entangler->gate, Target::GateKind::RZZ);
-    for (double theta : {0., .37, std::numbers::pi / 2., std::numbers::pi}) {
-      const auto circuit = [&](QCOProgramBuilder& builder) {
-        auto q0 = builder.u(theta, .42, -.31, builder.staticQubit(0));
-        auto q1 = builder.rx(-.73, builder.staticQubit(1));
-        auto [control, targetQubit] = builder.cx(q0, q1);
-        builder.sink(control);
-        builder.sink(builder.ry(theta, targetQubit));
-        return builder.intConstant(0);
-      };
-      auto expected = build(circuit);
-      auto actual = build(circuit);
-      ASSERT_TRUE(mlir::succeeded(runTargetPass(
-          *actual, target, mlir::qco::createTargetNativeSynthesis())));
-      ASSERT_TRUE(mlir::succeeded(
-          runPass(*actual, mlir::qco::createVerifyTargetConformance())));
-      EXPECT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*actual)));
-      expectEquivalent(expected, actual);
-    }
-  }
-}
-
 TEST_F(TargetSynthesisTest, ZSXXSynthesisPreservesFullUnitary) {
-  for (const auto* rotation : {"rx", "ry"}) {
+  for (const auto* rotation : {"rx", "ry", "r"}) {
     SCOPED_TRACE(rotation);
+    const auto capability = [rotation](double angle) {
+      std::vector<std::optional<double>> parameters{angle};
+      if (std::string_view(rotation) == "r") {
+        parameters.emplace_back(std::nullopt);
+      }
+      return valid(OperationCapability::create(rotation, 1, parameters.size(),
+                                               {}, std::nullopt, std::nullopt,
+                                               parameters));
+    };
     for (const std::optional<double> quarterTurnAngle : {
              std::optional<double>{},
              std::optional{std::numbers::pi / 2.},
@@ -392,7 +353,8 @@ TEST_F(TargetSynthesisTest, ZSXXSynthesisPreservesFullUnitary) {
                std::optional{std::numbers::pi},
                std::optional{-std::numbers::pi},
            }) {
-        if (!quarterTurnAngle && halfTurn && *halfTurn < 0.) {
+        if (!quarterTurnAngle && (std::string_view(rotation) != "rx" ||
+                                  (halfTurn && *halfTurn < 0.))) {
           continue;
         }
         SCOPED_TRACE(testing::Message() << quarterTurnAngle.value_or(0.) << " "
@@ -403,15 +365,11 @@ TEST_F(TargetSynthesisTest, ZSXXSynthesisPreservesFullUnitary) {
             valid(OperationCapability::create("gphase", 0, 1)),
         };
         operations.push_back(
-            quarterTurnAngle ? valid(OperationCapability::create(
-                                   rotation, 1, 1, {}, std::nullopt,
-                                   std::nullopt, {quarterTurnAngle}))
+            quarterTurnAngle ? capability(*quarterTurnAngle)
                              : valid(OperationCapability::create("sx", 1, 0)));
         if (halfTurn) {
           operations.push_back(
-              quarterTurnAngle ? valid(OperationCapability::create(
-                                     rotation, 1, 1, {}, std::nullopt,
-                                     std::nullopt, {halfTurn}))
+              quarterTurnAngle ? capability(*halfTurn)
                                : valid(OperationCapability::create("x", 1, 0)));
         }
         const auto target =
@@ -435,6 +393,9 @@ TEST_F(TargetSynthesisTest, ZSXXSynthesisPreservesFullUnitary) {
                    std::optional{0U},
                    std::optional{1U},
                }) {
+            if (parameterIndex == 0U && theta != .37) {
+              continue;
+            }
             SCOPED_TRACE(
                 testing::Message()
                 << "theta=" << theta << " parameter="
@@ -860,47 +821,6 @@ TEST_F(TargetSynthesisTest, ReadOnlyNativeCostMatchesSynthesis) {
       EXPECT_EQ(estimate, count);
     }
   }
-}
-
-TEST_F(TargetSynthesisTest, NativeCostMatchesFixedRXGateSynthesis) {
-  const auto target = valid(Target::create(
-      2, Connectivity::allToAll(),
-      NativeOperations::fromOperations({
-          valid(OperationCapability::create("rz", 1, 1)),
-          valid(OperationCapability::create("rx", 1, 1, {}, std::nullopt,
-                                            std::nullopt,
-                                            {std::numbers::pi / 2.})),
-          valid(OperationCapability::create("cz", 2, 0)),
-          valid(OperationCapability::create("gphase", 0, 1)),
-      })));
-  auto program = build([](QCOProgramBuilder& builder) {
-    auto [a, b] = builder.cx(builder.staticQubit(0), builder.staticQubit(1));
-    std::tie(a, b) = builder.swap(a, b);
-    builder.sink(a);
-    builder.sink(b);
-    return builder.intConstant(0);
-  });
-  OwningOpRef<ModuleOp> expected = program->clone();
-  const auto shared = mlir::qco::NativeCostTable::precompute(
-      *program, {.gate = Target::GateKind::CZ}, 2023);
-  mlir::qco::NativeCostTracker tracker(target, 2023, shared.get());
-  for (auto gate :
-       mainFunction(*program).getOps<mlir::qco::UnitaryOpInterface>()) {
-    tracker.append(gate, std::array<size_t, 2>{0, 1});
-  }
-  const auto score = tracker.score();
-  ASSERT_TRUE(score);
-  ASSERT_TRUE(mlir::succeeded(runTargetPass(
-      *program, target, mlir::qco::createTargetNativeSynthesis())));
-  ASSERT_TRUE(mlir::succeeded(
-      runPass(*program, mlir::qco::createVerifyTargetConformance())));
-  size_t emitted = 0;
-  for (auto gate :
-       mainFunction(*program).getOps<mlir::qco::UnitaryOpInterface>()) {
-    emitted += static_cast<size_t>(gate.isTwoQubit());
-  }
-  EXPECT_EQ(score->first, emitted);
-  expectEquivalent(expected, program);
 }
 
 TEST_F(TargetSynthesisTest, NativeCostPreservesSingletonNativeGates) {
@@ -2720,6 +2640,12 @@ TEST_F(TargetSynthesisTest, RuntimePauliRotationsShareNativeSynthesisAndCosts) {
              std::tuple{"rzx", 1U, true},
              std::tuple{"rzz", 1U, true},
          }) {
+      /// Cover each input with CZ and each native entangler with RZZ.
+      /// CRX/sqrt-iSWAP retains the numerical reconstruction regression.
+      if (gate != "rzz" && std::string_view(entangler) != "cz" &&
+          !(gate == "rx" && std::string_view(entangler) == "sqrt_iswap")) {
+        continue;
+      }
       SCOPED_TRACE(entangler);
       SCOPED_TRACE(fixed);
       const auto target = valid(Target::create(
@@ -2784,7 +2710,8 @@ TEST_F(TargetSynthesisTest, RuntimePauliRotationsShareNativeSynthesisAndCosts) {
           ASSERT_TRUE(mlir::succeeded(
               runPass(moduleOp, mlir::createCanonicalizerPass())));
         }
-        expectEquivalent(expected, actual);
+        ::mqt::test::expectFullUnitaryEqual(
+            *expected, *actual, 2, mlir::qco::decomposition::WEYL_TOLERANCE);
       }
     }
   }

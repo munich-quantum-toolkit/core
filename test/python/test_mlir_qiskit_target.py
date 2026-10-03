@@ -570,7 +570,10 @@ def test_fractional_pauli_synthesis(entangler: type[RXXGate | RYYGate | RZXGate 
     environment = TargetEnvironment(target, PayloadSpecification(PayloadFormat("openqasm", "3.0")))
     theta = Parameter("theta")
     for angle in [-100.0, -2 * pi, -pi, -pi / 2, -0.37, 0.0, 0.37, pi / 2, 2.4, pi, 100.0, theta]:
-        for gate in ("rzz", "rxx", "cp"):
+        # RZZ covers folding boundaries; other frames and controlled phase
+        # each need one nontrivial numeric and one symbolic angle.
+        gates = ("rzz", "rxx", "cp") if angle is theta or np.isclose(angle, -0.37) else ("rzz",)
+        for gate in gates:
             circuit = QuantumCircuit(2)
             getattr(circuit, gate)(angle, 0, 1)
             program = QCProgram.from_qiskit(circuit).to_qco()

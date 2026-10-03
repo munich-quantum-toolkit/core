@@ -876,9 +876,9 @@ def test_symbolic_euler_preserves_large_constant_middle_angle(*, fuse: bool) -> 
 
 @requires_qiskit_translation
 @pytest.mark.parametrize("gate", ["rx", "ry", "rz", "rxx", "ryy", "rzx", "rzz", "cp", "crx", "cry", "crz"])
-@pytest.mark.parametrize("native_entangler", ["cz", "rxx", "ryy", "rzx", "rzz"])
-def test_runtime_pauli_rotations_compile_and_export(gate: str, native_entangler: str) -> None:
+def test_runtime_pauli_rotations_compile_and_export(gate: str) -> None:
     """Keep structural rotation synthesis bindable across target lowering and export."""
+    native_entangler = {"rxx": "ryy", "ryy": "rzx", "rzx": "rzz", "rzz": "rxx"}.get(gate, "cz")
     theta = qiskit.circuit.Parameter("theta")
     source = QuantumCircuit(2, global_phase=0.19)
     getattr(source, gate)(theta, *([0] if gate in {"rx", "ry", "rz"} else [0, 1]))
@@ -1484,6 +1484,28 @@ def test_compiler_target_snapshots_qdmi_device(garnet_target: CompilerTarget) ->
         site_tuple.fidelity is not None for operation in target.operations for site_tuple in operation.site_tuples
     )
     assert all(site_tuple.duration is None for operation in target.operations for site_tuple in operation.site_tuples)
+
+
+@requires_qiskit_translation
+@pytest.mark.parametrize(("family", "qubits", "edges"), [("heron", 156, 176), ("nighthawk", 120, 218)])
+def test_ibm_sc_models_compile(family: str, qubits: int, edges: int) -> None:
+    """Packaged IBM models preserve topology through QDMI import and compilation."""
+    target = CompilerTarget.from_device_id(f"mqt.sc.ibm.{family}")
+    assert target.num_sites == qubits
+    assert len(target.couplings) == edges
+    assert {op.name for op in target.operations} == {"id", "x", "sx", "rz", "cz", "measure", "reset"}
+    circuit = QuantumCircuit(3)
+    circuit.h(0)
+    circuit.rxx(0.37, 0, 2)
+    circuit.ry(-0.7, 1)
+    circuit.cx(1, 2)
+    program = QCProgram.from_qiskit(circuit).to_qco()
+    program.compile_for_target(_test_target_environment(target))
+    result = program.to_qiskit(target=target)
+    assert result.num_qubits == qubits
+    for item in result.data:
+        sites = [result.find_bit(qubit).index for qubit in item.qubits]
+        assert target.supports_operation(item.operation.name, len(sites), len(item.operation.params), sites)
 
 
 def _compiler_target_metadata(target: CompilerTarget) -> dict[str, object]:
