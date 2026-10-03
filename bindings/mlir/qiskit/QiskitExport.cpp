@@ -516,10 +516,8 @@ static void collectParameters(mlir::func::FuncOp function, ExportState& state,
             index, mlir::mqt::MQTDialect::InputIdAttrHelper::getNameStr())) {
       identity = llvm::toString(id.getValue(), 16, false);
     }
-    auto parameter =
+    state.parameters[argument] =
         Parameter::symbol(name.str(), std::move(group), std::move(identity));
-    state.parameters[argument] = parameter;
-    state.inputParameters.push_back(std::move(parameter));
   }
 }
 
@@ -2977,7 +2975,8 @@ nb::object exportCircuit(const mlir::QCProgram& program,
           "QC to Qiskit export cannot return undefined classical bits");
     }
   }
-  validateExportParameters(circuit, state.inputParameters);
+  llvm::StringSet<> usedNames;
+  validateExportParameters(circuit, usedNames);
   if (target != nullptr) {
     Register reg{.name = "q"};
     reg.bits.resize(state.numQubits);

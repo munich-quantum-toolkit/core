@@ -580,6 +580,7 @@ static bool sameOperation(const CompilerTarget::OperationCapability& lhs,
       lhs.arity() != rhs.arity() ||
       lhs.numParameters() != rhs.numParameters() ||
       lhs.fixedParameters() != rhs.fixedParameters() ||
+      lhs.parameterBounds() != rhs.parameterBounds() ||
       lhs.siteTuples().size() != rhs.siteTuples().size()) {
     return false;
   }

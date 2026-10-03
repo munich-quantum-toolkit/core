@@ -890,7 +890,10 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
              const std::optional<uint64_t> duration,
              const std::optional<double> fidelity,
              std::vector<std::optional<double>> fixedParameters,
-             std::optional<std::string> canonicalName) {
+             std::optional<std::string> canonicalName,
+             std::vector<std::optional<
+                 mlir::CompilerTarget::OperationCapability::ParameterBounds>>
+                 parameterBounds) {
             constructFromExpected(
                 self,
                 mlir::CompilerTarget::OperationCapability::create(
@@ -899,12 +902,14 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
                         .value_or(
                             std::vector<mlir::CompilerTarget::SiteTuple>{}),
                     duration, fidelity, std::move(fixedParameters),
-                    std::move(canonicalName)));
+                    std::move(canonicalName), std::move(parameterBounds)));
           },
           "name"_a, "arity"_a, "num_parameters"_a, "site_tuples"_a = nb::none(),
           "duration"_a = nb::none(), "fidelity"_a = nb::none(), nb::kw_only(),
           "fixed_parameters"_a = std::vector<std::optional<double>>{},
-          "canonical_name"_a = nb::none())
+          "canonical_name"_a = nb::none(),
+          "parameter_bounds"_a = std::vector<std::optional<
+              mlir::CompilerTarget::OperationCapability::ParameterBounds>>{})
       .def(
           "__init__",
           [](mlir::CompilerTarget::OperationCapability& self, std::string name,
@@ -914,7 +919,10 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
              const std::optional<uint64_t> duration,
              const std::optional<double> fidelity,
              std::vector<std::optional<double>> fixedParameters,
-             std::optional<std::string> canonicalName) {
+             std::optional<std::string> canonicalName,
+             std::vector<std::optional<
+                 mlir::CompilerTarget::OperationCapability::ParameterBounds>>
+                 parameterBounds) {
             constructFromExpected(
                 self,
                 mlir::CompilerTarget::OperationCapability::create(
@@ -923,12 +931,14 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
                         .value_or(
                             std::vector<mlir::CompilerTarget::SiteTuple>{}),
                     duration, fidelity, std::move(fixedParameters),
-                    std::move(canonicalName)));
+                    std::move(canonicalName), std::move(parameterBounds)));
           },
           "name"_a, "arity"_a, "num_parameters"_a, "site_tuples"_a = nb::none(),
           "duration"_a = nb::none(), "fidelity"_a = nb::none(), nb::kw_only(),
           "fixed_parameters"_a = std::vector<std::optional<double>>{},
-          "canonical_name"_a = nb::none())
+          "canonical_name"_a = nb::none(),
+          "parameter_bounds"_a = std::vector<std::optional<
+              mlir::CompilerTarget::OperationCapability::ParameterBounds>>{})
       .def_prop_ro(
           "name",
           [](const mlir::CompilerTarget::OperationCapability& operation) {
@@ -954,6 +964,13 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
           },
           "Supported ordered placements with optional calibration; empty means "
           "general applicability.")
+      .def_prop_ro(
+          "parameter_bounds",
+          [](const mlir::CompilerTarget::OperationCapability& operation) {
+            return std::vector(operation.parameterBounds().begin(),
+                               operation.parameterBounds().end());
+          },
+          "Inclusive parameter intervals; None leaves a parameter unbounded.")
       .def_prop_ro(
           "fixed_parameters",
           [](const mlir::CompilerTarget::OperationCapability& operation) {
@@ -999,6 +1016,25 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
       .value("XYX", mlir::CompilerTarget::SingleQubitBasis::XYX)
       .value("ZYZ", mlir::CompilerTarget::SingleQubitBasis::ZYZ)
       .value("ZXZ", mlir::CompilerTarget::SingleQubitBasis::ZXZ);
+
+  nb::enum_<mlir::CompilerTarget::AngleSupport>(
+      compilerTarget, "AngleSupport",
+      "Angle domain used by native entangler synthesis.")
+      .value("FIXED", mlir::CompilerTarget::AngleSupport::Fixed)
+      .value("UNRESTRICTED", mlir::CompilerTarget::AngleSupport::Unrestricted)
+      .value("ZERO_TO_HALF_PI",
+             mlir::CompilerTarget::AngleSupport::ZeroToHalfPi);
+
+  nb::class_<mlir::CompilerTarget::Entangler>(
+      compilerTarget, "Entangler",
+      "A native synthesis entangler and its angle support.")
+      .def_ro("gate", &mlir::CompilerTarget::Entangler::gate,
+              "The native gate kind.")
+      .def_prop_ro("parameterized",
+                   &mlir::CompilerTarget::Entangler::parameterized,
+                   "Whether synthesis can vary the entangler angle.")
+      .def_ro("angles", &mlir::CompilerTarget::Entangler::angles,
+              "The angle domain used by synthesis.");
 
   auto synthesisBasis = nb::class_<mlir::CompilerTarget::SynthesisBasis>(
       compilerTarget, "SynthesisBasis",
@@ -1059,6 +1095,16 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
                     operations));
           },
           "operations"_a, "Create explicit native-operation support.")
+      .def_static("from_qiskit", &bindings::qiskit::importNativeOperations,
+                  "source"_a, nb::kw_only(), "operation_names"_a = nb::none(),
+                  nb::sig("def from_qiskit(source: qiskit.transpiler.Target | "
+                          "qiskit.providers.BackendV2, *, operation_names: "
+                          "collections.abc.Iterable[str] | None = None) -> "
+                          "mqt.core.mlir.CompilerTarget.NativeOperations"),
+                  "Import gate capabilities and parameter constraints, "
+                  "ignoring physical placement. "
+                  "Unsupported explicit selections raise ValueError; otherwise "
+                  "they warn and are omitted.")
       .def_static("unrestricted",
                   &mlir::CompilerTarget::NativeOperations::unrestricted,
                   "Create unrestricted native-operation support.")
@@ -1151,7 +1197,7 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
                   R"pb(Snapshot native operations and connectivity from Qiskit.
 
 Args:
-    source: Qiskit Target or BackendV2 with a known positive qubit count.
+    source: Qiskit Target or BackendV2. Physical import requires a known positive qubit count.
     operation_names: Qiskit Target operation names to retain. By default,
         include every representable operation. Explicit selections must all be
         representable.

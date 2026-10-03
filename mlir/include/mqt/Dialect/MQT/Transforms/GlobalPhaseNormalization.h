@@ -14,11 +14,16 @@
 
 namespace mlir {
 class ModuleOp;
+class RewriterBase;
 } // namespace mlir
 
 namespace mlir::mqt {
 
 /// Normalize QC and QCO global phases in @p moduleOp.
 [[nodiscard]] LogicalResult normalizeGlobalPhases(ModuleOp moduleOp);
+
+/// Use the caller's rewriter so its listener observes new wires and erasures.
+[[nodiscard]] LogicalResult normalizeGlobalPhases(ModuleOp moduleOp,
+                                                  RewriterBase& rewriter);
 
 } // namespace mlir::mqt

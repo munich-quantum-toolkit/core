@@ -189,26 +189,55 @@ and placements. For example, these capabilities accept four RX angles:
 ```python
 from math import pi
 
-rx_pulses = [
+rx_gates = [
     CompilerTarget.OperationCapability("rx", 1, 1, fixed_parameters=[angle]) for angle in (pi / 2, -pi / 2, pi, -pi)
 ]
 ```
 
 Constants match with absolute tolerance `1e-15`, without angle wrapping. Unbound
-symbolic values cannot satisfy fixed parameters. Parameter ranges and relations
-are not represented. A device-specific instruction name can specify its compiler
-operation with `canonical_name`, for example
+symbolic values cannot satisfy fixed parameters or `parameter_bounds`. Bounds
+are inclusive `(lower, upper)` pairs, with `None` for unbounded parameters;
+relations between parameters are not represented. A device-specific instruction
+name can specify its compiler operation with `canonical_name`, for example
 `OperationCapability("rx_90", 1, 1, fixed_parameters=[pi / 2], canonical_name="rx")`.
 The reported name remains available to exporters.
+`CompilerTarget.NativeOperations.from_qiskit(source)` imports gate capabilities
+and parameter constraints independently of device width and placement. Combine
+them with connectivity and a circuit width using the `CompilerTarget`
+constructor.
 
 Target compilation requires a single-qubit synthesis basis available on every
-site. The `ZSXX` basis uses unrestricted RZ and either SX or fixed RX(π/2) or
-RX(-π/2). X or fixed RX(±π) provides an optional shorter half-turn sequence. The
-compiler selects supported pulses from the capabilities and preserves the
-global-phase difference between named X/SX gates and RX rotations. Additional
-fixed angles remain valid capabilities without changing the synthesis recipe.
-Targets without a usable basis support capability queries and conformance
-checks, but cannot be passed to target compilation or target synthesis.
+site. `ZSXX` accepts unrestricted RZ and SX, RX(±π/2), RY(±π/2), or R(±π/2, 0).
+Matching native half turns can shorten the decomposition. Euler synthesis emits
+these gates directly, including global-phase corrections. Other fixed angles
+remain valid native capabilities but do not provide a synthesis basis.
+
+Qiskit target import recognizes `gpi(phi)` and `gpi2(phi)` defined as
+`i R(pi, phi)` and `R(pi/2, phi)`, respectively, with **radian** parameters.
+These are fixed-parameter R capabilities inside Core; Qiskit export with the
+target restores their native names and phase. Such targets must advertise
+virtual RZ explicitly. Providers that accept only GPI/GPI2 instructions must
+absorb virtual Z rotations into gate phases before device submission.
+
+Unrestricted RXX, RYY, RZX, and RZZ entanglers take precedence over fixed
+alternatives and use up to three native rotations for numeric two-qubit
+synthesis. Runtime two-qubit Pauli rotations need one arbitrary-angle native
+entangler or two fixed native entanglers, including square-root iSWAP. Fixed
+Clifford entanglers use Pauli conjugation; commuting symbolic rotations can
+share their entanglers. Single-controlled Pauli rotations and phase gates use
+the same decomposition. Bounded Pauli entanglers that include `[0, pi/2]` use
+the same numeric synthesis with local Pauli corrections. Unknown runtime angles
+use two native `pi/2` rotations. Bind parameters before compilation to use
+fractional entanglers directly. Qiskit import conservatively recognizes this
+interval through its public bound predicates.
+
+Equatorial R targets use at most two R gates per single-qubit unitary. Synthesis
+carries Z rotations through diagonal entanglers and absorbs them into R axes.
+Measurement and reset discard their incoming Z frames; other boundaries retain
+the frame and global phase. RX/RZ targets prefer ZXZ to minimize physical RX
+rotations.
+
+### Placements and calibration
 
 Use plain tuples for placements without calibration. Use
 `CompilerTarget.SiteTuple([1, 0], duration=40, fidelity=0.99)` to attach
@@ -287,9 +316,8 @@ unobservable global phase of the entry point, including its classical branches
 and loops. Global phases in helper functions and those that remain inside QCO
 modifiers are retained.
 
-Single-controlled phase gates with runtime angles are lowered to phase gates and
-two CX gates, then synthesized in the target basis. Other non-native two-qubit
-gates require a compile-time unitary matrix.
+Non-native two-qubit operations outside these rotation decompositions require a
+compile-time unitary matrix.
 
 Use {py:meth}`~mqt.core.mlir.QCOProgram.compile_for_target` with the target
 environment to apply target compilation to an existing QCO program. Compilation

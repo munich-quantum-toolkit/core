@@ -141,6 +141,7 @@ mqt\.core\.mlir\.CompilerTarget\.OperationCapability\.__init__$:
         *,
         fixed_parameters: Sequence[float | None] = (),
         canonical_name: str | None = None,
+        parameter_bounds: Sequence[tuple[float, float] | None] = (),
     ) -> None:
         \doc
 

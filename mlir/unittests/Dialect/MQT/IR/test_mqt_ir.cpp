@@ -860,6 +860,27 @@ TEST_F(MQTIRTest, RejectsInvalidInputIdentities) {
   }
 }
 
+TEST_F(MQTIRTest, RechecksSparseInputMetadata) {
+  auto moduleOp = parse(R"mlir(
+    module {
+      func.func private @helper(f64,
+          f64 {mqt.input_name = "a", mqt.input_id = 1 : i128}, i1,
+          f64 {mqt.input_name = "b", mqt.input_id = 2 : i128})
+    }
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+  auto function = moduleOp->lookupSymbol<func::FuncOp>("helper");
+  const auto name = mqt::MQTDialect::InputNameAttrHelper::getNameStr();
+  const auto identity = mqt::MQTDialect::InputIdAttrHelper::getNameStr();
+  for (const auto attribute : {name, identity}) {
+    const auto original = function.getArgAttr(3, attribute);
+    function.setArgAttr(3, attribute, function.getArgAttr(1, attribute));
+    EXPECT_TRUE(failed(verify(*moduleOp)));
+    function.setArgAttr(3, attribute, original);
+    EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  }
+}
+
 TEST_F(MQTIRTest, RejectsInvalidInputGroups) {
   EXPECT_FALSE(parse(R"mlir(
     module {

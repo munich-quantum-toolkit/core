@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Compiler/Target.h"
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
@@ -15,6 +16,7 @@
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Euler.h"
+#include "mqt/Dialect/QCO/Transforms/Decomposition/Pauli.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 
@@ -312,8 +314,9 @@ synthesizeMatrix(MLIRContext* ctx, const Matrix2x2& matrix,
 
   builder.setInsertionPointToStart(entry);
   Value q = entry->getArgument(0);
-  const auto synthesized =
-      synthesizeUnitary1QEuler(builder, loc, q, matrix, 0, true, basis);
+  const auto synthesized = synthesizeUnitary1QEuler(
+      builder, loc, q, matrix, 0, true,
+      CompilerTarget::SynthesisBasis{.singleQubit = basis});
   if (!synthesized) {
     llvm::report_fatal_error(
         "synthesizeUnitary1QEuler failed during test synthesis");
@@ -490,7 +493,7 @@ TEST(EulerAnglesCoverageTest, UBasisNonzeroThetaEmitsSingleUGate) {
                           });
 }
 
-TEST(EulerAnglesCoverageTest, RBasisNonzeroThetaEmitsThreeRGates) {
+TEST(EulerAnglesCoverageTest, HadamardNeedsOnlyTwoRGates) {
   TestFixture fx;
   fx.setUp();
   const Matrix2x2 matrix = HOp::getUnitaryMatrix();
@@ -498,7 +501,7 @@ TEST(EulerAnglesCoverageTest, RBasisNonzeroThetaEmitsThreeRGates) {
   ASSERT_GT(std::abs(angles.theta), mlir::mqt::PARAMETER_COMPARISON_TOLERANCE);
   expectSynthesizedMatrix(fx.ctx(), matrix, R,
                           [](func::FuncOp funcOp, const Matrix2x2& /*matrix*/) {
-                            EXPECT_EQ(countOps<ROp>(funcOp), 3U);
+                            EXPECT_EQ(countOps<ROp>(funcOp), 2U);
                           });
 }
 
@@ -508,11 +511,28 @@ TEST(EulerAnglesCoverageTest, Mod2PiMapsPiBoundaryThroughSynthesis) {
   constexpr double eps = 0.5 * mlir::mqt::PARAMETER_COMPARISON_TOLERANCE;
   const qco::Complex global = std::polar(1.0, std::numbers::pi - eps);
   const Matrix2x2 matrix = Matrix2x2::fromElements(global, 0, 0, global);
-  expectSynthesizedMatrix(fx.ctx(), matrix, U,
-                          [](func::FuncOp funcOp, const Matrix2x2& /*matrix*/) {
-                            EXPECT_EQ(countOps<UOp>(funcOp), 1U);
-                            EXPECT_EQ(countOps<GPhaseOp>(funcOp), 1U);
-                          });
+  forEachBasis([&](StringRef basis) {
+    const auto parsed = *parseSingleQubitBasis(basis);
+    expectSynthesizedMatrix(fx.ctx(), matrix, parsed,
+                            [parsed](func::FuncOp funcOp, const Matrix2x2&) {
+                              EXPECT_EQ(countBasisGates(funcOp, parsed), 0U);
+                              EXPECT_EQ(countOps<GPhaseOp>(funcOp), 1U);
+                            });
+  });
+}
+
+TEST(EulerSynthesisTest, NegativePauliRotationsDoNotGainOuterGates) {
+  TestFixture fx;
+  fx.setUp();
+  for (const auto basis : {ZYZ, ZXZ, XZX, XYX, R}) {
+    const auto matrix = basis == ZXZ   ? RXOp::unitaryMatrix(-0.37)
+                        : basis == XZX ? RZOp::unitaryMatrix(-0.37)
+                                       : RYOp::unitaryMatrix(-0.37);
+    expectSynthesizedMatrix(fx.ctx(), matrix, basis,
+                            [basis](func::FuncOp funcOp, const Matrix2x2&) {
+                              EXPECT_EQ(countBasisGates(funcOp, basis), 1U);
+                            });
+  }
 }
 
 TEST(EulerAnglesCoverageTest, Mod2PiPreservesNonFinitePhase) {
@@ -1050,7 +1070,7 @@ TEST(FuseSingleQubitUnitaryRunsTest, IgnoresDynamicPowerExponent) {
   EXPECT_EQ(countOps<PowOp>(funcOp), 1U);
 }
 
-TEST(FuseSingleQubitUnitaryRunsTest, PreservesUnboundedShortSameAxisRun) {
+TEST(FuseSingleQubitUnitaryRunsTest, MergesUnboundedShortSameAxisRun) {
   TestFixture fx;
   fx.setUp();
   auto owned = QCOProgramBuilder::build(fx.ctx(), [](QCOProgramBuilder& b) {
@@ -1078,17 +1098,14 @@ TEST(FuseSingleQubitUnitaryRunsTest, PreservesUnboundedShortSameAxisRun) {
   ASSERT_TRUE(succeeded(verifyLinearity(*owned)));
   rotations.clear();
   funcOp.walk([&](RZOp op) { rotations.push_back(op); });
-  // A short run already in the basis needs no resynthesis. Canonicalization
-  // cannot safely add its unbounded dynamic angles.
-  ASSERT_EQ(rotations.size(), 2U);
-  EXPECT_EQ(rotations[0].getTheta(), funcOp.getArgument(0));
-  EXPECT_EQ(rotations[1].getTheta(), funcOp.getArgument(1));
-  EXPECT_EQ(rotations[1].getInputTarget(0), rotations[0].getOutputTarget(0));
+  /// Normalize the evaluated inputs before adding, including finite values
+  /// whose direct sum would overflow.
+  ASSERT_EQ(rotations.size(), 1U);
 
-  for (auto [firstAngle, secondAngle, expectedRotations] : std::array{
-           std::tuple{0.3, 0.4, 1U},
-           std::tuple{1e16, 1.0, 2U},
-           std::tuple{1e308, 1e308, 2U},
+  for (auto [firstAngle, secondAngle] : std::array{
+           std::pair{0.3, 0.4},
+           std::pair{1e16, 1.0},
+           std::pair{1e308, 1e308},
        }) {
     SCOPED_TRACE(testing::Message()
                  << "angles=" << firstAngle << ", " << secondAngle);
@@ -1098,7 +1115,7 @@ TEST(FuseSingleQubitUnitaryRunsTest, PreservesUnboundedShortSameAxisRun) {
     ASSERT_TRUE(succeeded(canonicalizeBoundValues(*bound)));
     ASSERT_TRUE(succeeded(verify(*bound)));
     ASSERT_TRUE(succeeded(verifyLinearity(*bound)));
-    EXPECT_EQ(countOps<RZOp>(boundFunc), expectedRotations);
+    EXPECT_EQ(countOps<RZOp>(boundFunc), 1U);
     expectMatrixPreserved(boundFunc,
                           RZOp::unitaryMatrix(secondAngle) *
                               RZOp::unitaryMatrix(firstAngle),
@@ -1245,8 +1262,9 @@ TEST(FuseSingleQubitUnitaryRunsTest,
 
       OwningOpRef<ModuleOp> original = cast<ModuleOp>(mlirModule->clone());
       IRRewriter rewriter(fx.ctx());
-      synthesizeParameterizedUnitary1Q(rewriter,
-                                       parameterizedGate.getOperation(), basis);
+      synthesizeParameterizedUnitary1Q(
+          rewriter, parameterizedGate.getOperation(),
+          CompilerTarget::SynthesisBasis{.singleQubit = basis});
       ASSERT_TRUE(succeeded(verify(mlirModule)));
       expectDirectSynthesisCounts(
           funcOp, expectedDirectSynthesisCounts(gateCase.name, basis));
@@ -1294,7 +1312,9 @@ TEST(FuseSingleQubitUnitaryRunsTest, DirectlySynthesizesCardinalAxesInRBasis) {
     gate.getParameter(0).replaceAllUsesWith(funcOp.getArgument(0));
     ASSERT_TRUE(succeeded(verify(*owned)));
     IRRewriter rewriter(fx.ctx());
-    synthesizeParameterizedUnitary1Q(rewriter, gate.getOperation(), R);
+    synthesizeParameterizedUnitary1Q(
+        rewriter, gate.getOperation(),
+        CompilerTarget::SynthesisBasis{.singleQubit = R});
     ASSERT_TRUE(succeeded(verify(*owned)));
     ASSERT_EQ(countOps<ROp>(funcOp), 1U);
     EXPECT_EQ(countOps<GPhaseOp>(funcOp), 0U);
@@ -1631,4 +1651,85 @@ TEST(FuseSingleQubitUnitaryRunsTest, FusesRunInScfForBody) {
         EXPECT_EQ((countInParent<TOp, scf::ForOp>(funcOp)), 0U);
         EXPECT_EQ((countInParent<RZOp, scf::ForOp>(funcOp)), 0U);
       });
+}
+
+TEST(EulerSynthesisTest, PauliRotationsPreserveRuntimeAnglesAndFullPhase) {
+  TestFixture fx;
+  fx.setUp();
+  SmallVector<CompilerTarget::SynthesisBasis> bases;
+  for (const auto basis : {ZYZ, ZXZ, XZX, XYX, U, ZSXX, R}) {
+    bases.push_back({.singleQubit = basis});
+  }
+  for (const auto gate : {
+           CompilerTarget::GateKind::RX,
+           CompilerTarget::GateKind::RY,
+           CompilerTarget::GateKind::R,
+       }) {
+    for (const double sign : {-1., 1.}) {
+      bases.push_back({
+          .singleQubit = ZSXX,
+          .quarterTurnGates =
+              CompilerTarget::QuarterTurnGates{
+                  .gate = gate,
+                  .quarterTurnAngle = sign * std::numbers::pi / 2.,
+                  .halfTurnAngle = std::nullopt,
+              },
+          .hasHalfTurn = false,
+      });
+    }
+  }
+  for (const auto& basis : bases) {
+    SCOPED_TRACE(static_cast<unsigned>(basis.singleQubit));
+    for (const auto axis : {PauliAxis::X, PauliAxis::Y, PauliAxis::Z}) {
+      SCOPED_TRACE(static_cast<unsigned>(axis));
+      OwningOpRef moduleOp = ModuleOp::create(UnknownLoc::get(fx.ctx()));
+      OpBuilder builder(fx.ctx());
+      builder.setInsertionPointToStart(moduleOp->getBody());
+      auto qubitType = QubitType::get(fx.ctx());
+      auto functionType = builder.getFunctionType(
+          {builder.getF64Type(), qubitType}, {qubitType});
+      auto function = func::FuncOp::create(builder, moduleOp->getLoc(), "main",
+                                           functionType);
+      auto* entry = function.addEntryBlock();
+      builder.setInsertionPointToStart(entry);
+      auto output = synthesizePauliRotation1Q(builder, function.getLoc(),
+                                              entry->getArgument(1), axis,
+                                              entry->getArgument(0), basis);
+      func::ReturnOp::create(builder, function.getLoc(), output);
+      ASSERT_TRUE(succeeded(verify(*moduleOp)));
+      bool preservesAngle = false;
+      function.walk([&](Operation* operation) {
+        if (auto gate = dyn_cast<UnitaryOpInterface>(operation)) {
+          for (auto parameter : gate.getParameters()) {
+            preservesAngle |= parameter == entry->getArgument(0);
+          }
+        }
+      });
+      EXPECT_TRUE(preservesAngle);
+      /// Bound phases must remain within the gphase verifier's 1e4 limit.
+      for (const double angle : {
+               0.,
+               1.e-8,
+               -0.37,
+               std::numbers::pi,
+               -std::numbers::pi,
+               2. * std::numbers::pi,
+               1000.,
+               -1000.,
+               1e300,
+           }) {
+        SCOPED_TRACE(angle);
+        OwningOpRef bound = moduleOp->clone();
+        auto boundFunction = bound->lookupSymbol<func::FuncOp>("main");
+        bindLeadingArguments(boundFunction, {angle});
+        ASSERT_TRUE(succeeded(canonicalizeBoundValues(*bound)));
+        ASSERT_TRUE(succeeded(verify(*bound)));
+        const auto expected = axis == PauliAxis::X ? RXOp::unitaryMatrix(angle)
+                              : axis == PauliAxis::Y
+                                  ? RYOp::unitaryMatrix(angle)
+                                  : RZOp::unitaryMatrix(angle);
+        expectMatrixPreserved(boundFunction, expected, "Pauli rotation");
+      }
+    }
+  }
 }
