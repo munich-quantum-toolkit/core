@@ -2703,6 +2703,94 @@ TEST_F(TargetSynthesisTest, RuntimePauliRotationsShareNativeSynthesisAndCosts) {
   }
 }
 
+TEST_F(TargetSynthesisTest, CommutingPauliRunsPreservePhaseAndNativeBounds) {
+  for (const auto& body : {
+           R"mlir(
+             %u0, %u1 = qco.rzx(%a) %q0, %q1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+             %v1, %v0 = qco.ryy(%b) %u1, %u0 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+             %out0, %out1 = qco.rzx(%offset) %v0, %v1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+           )mlir",
+           R"mlir(
+             %negative = arith.negf %a : f64
+             %u0, %u1 = qco.rzz(%a) %q0, %q1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+             %v1, %v0 = qco.rzz(%negative) %u1, %u0 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+             %out0, %out1 = qco.rzz(%offset) %v0, %v1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+           )mlir",
+           R"mlir(
+             %u0, %u1 = qco.ctrl(%q0) targets(%arg = %q1) {
+               %p = qco.p(%a) %arg : !qco.qubit -> !qco.qubit
+               qco.yield %p : !qco.qubit
+             } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
+             %out1, %out0 = qco.ctrl(%u1) targets(%arg = %u0) {
+               %p = qco.p(%b) %arg : !qco.qubit -> !qco.qubit
+               qco.yield %p : !qco.qubit
+             } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
+           )mlir",
+       }) {
+    SCOPED_TRACE(body);
+    const std::string source = std::string(R"mlir(
+      module {
+        func.func @main(%a: f64, %b: f64) -> (!qco.qubit, !qco.qubit) {
+          %q0 = qco.static 0 : !qco.qubit
+          %q1 = qco.static 1 : !qco.qubit
+          %offset = arith.constant -4.2 : f64
+    )mlir") + body + R"mlir(
+          return %out0, %out1 : !qco.qubit, !qco.qubit
+        }
+      }
+    )mlir";
+    auto original = mlir::parseSourceString<ModuleOp>(source, context.get());
+    ASSERT_TRUE(original);
+    for (const std::string entangler : {"cz", "ecr", "iswap", "rzz"}) {
+      SCOPED_TRACE(entangler);
+      const bool bounded = entangler == "rzz";
+      std::vector<std::optional<OperationCapability::ParameterBounds>> bounds;
+      if (bounded) {
+        bounds.emplace_back(std::pair{0., std::numbers::pi / 2.});
+      }
+      const auto target = valid(Target::create(
+          2, Connectivity::fromCouplings({{0, 1}}),
+          NativeOperations::fromOperations({
+              valid(OperationCapability::create("u", 1, 3)),
+              valid(OperationCapability::create("gphase", 0, 1)),
+              valid(OperationCapability::create(
+                  entangler, 2, bounded ? 1 : 0,
+                  {valid(SiteTuple::create({1, 0}))}, std::nullopt,
+                  std::nullopt, {}, std::nullopt, std::move(bounds))),
+          })));
+      auto synthesized = OwningOpRef<ModuleOp>(original->clone());
+      ASSERT_TRUE(mlir::succeeded(runTargetPass(
+          *synthesized, target, mlir::qco::createTargetNativeSynthesis())));
+      ASSERT_TRUE(mlir::succeeded(runTargetPass(
+          *synthesized, target, mlir::qco::createVerifyTargetConformance())));
+      size_t entanglers = 0;
+      synthesized->walk([&](mlir::qco::UnitaryOpInterface op) {
+        entanglers += static_cast<size_t>(op.isTwoQubit());
+      });
+      EXPECT_LE(entanglers, 2U);
+      for (const auto& angles : {
+               std::array{0., 0.},
+               std::array{.37, -1.23},
+               std::array{-7.1, 2.4},
+           }) {
+        auto expected = OwningOpRef<ModuleOp>(original->clone());
+        auto actual = OwningOpRef<ModuleOp>(synthesized->clone());
+        for (auto moduleOp : {*expected, *actual}) {
+          auto function = mainFunction(moduleOp);
+          mlir::OpBuilder builder(context.get());
+          builder.setInsertionPointToStart(&function.front());
+          for (size_t i = 0; i < angles.size(); ++i) {
+            auto constant = mlir::arith::ConstantOp::create(
+                builder, function.getLoc(), builder.getF64FloatAttr(angles[i]));
+            function.getArgument(i).replaceAllUsesWith(constant);
+          }
+        }
+        expectEquivalent(expected, actual);
+      }
+    }
+  }
+}
+
 TEST_F(TargetSynthesisTest, NativeRuntimeControlledPhaseStaysUntouched) {
   auto moduleOp = mlir::parseSourceString<ModuleOp>(R"mlir(
     module {
