@@ -18,6 +18,8 @@
     ".proto": "SLASH_STYLE"
   },
   "exclude": [
+    "^spank/",
+    "^test/slurm/Dockerfile$",
     "^\\.[^/]+",
     "/\\.[^/]+",
     ".*\\.qasm",

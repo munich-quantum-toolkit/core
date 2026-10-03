@@ -29,9 +29,36 @@ Core an access-control boundary because a program can also call
 
 ## Install the software
 
-Install the same MQT Core package on each compute node. The package contains the
-MQT Core QDMI interface and the bundled QDMI devices. You can use a shared
-software environment or install the same wheel on each node.
+Deploy the components according to each node's role:
+
+- **Submission/login nodes:** Slurm clients and, when injection is enabled, the
+  shared SPANK module and matching `plugstack.conf` configuration.
+- **Compute nodes:** `slurmd`, cgroup v2, the selected workload environment, and
+  the SPANK module when enabled. Use consistent numeric user and group IDs
+  across nodes.
+- **Controller:** `slurmctld` owns scheduling and cluster-wide license counts.
+  Provider SDKs are unnecessary here. Persistent accounting can use `slurmdbd`;
+  local static licenses do not require it.
+
+Make the same MQT Core package available on each compute node through a shared
+software environment or identical per-node installations. Provider credentials
+belong to the job user's context.
+
+Choose one provider installation for each workload:
+
+- **Wheel catalogue:** install Core and the provider's Python package in the
+  workload environment. Use the provider's installed library when constructing
+  its catalogue. A separate native provider installation is unnecessary.
+- **Native catalogue:** install the provider's native runtime and catalogue on
+  each node or a shared filesystem. Set `MQT_CORE_QDMI_CONFIG_FILE` to that
+  catalogue. Python workloads still use Core from their Python environment.
+
+Catalogue paths and referenced libraries must be readable by the job user on
+every participating node. With `MQT_CORE_QDMI_CONFIG_FILE` set, definitions are
+merged from packaged catalogues, then that file, then
+`MQT_CORE_QDMI_CONFIG_JSON`, in increasing precedence. The explicit file
+replaces system, user, and project discovery. See
+[configuration precedence](configuration.md#discovery-and-precedence).
 
 Install Slurm, Munge, and systemd. Start Munge before Slurm. Use the same Munge
 key on all nodes. Keep this key outside the QDMI device configuration.
@@ -43,11 +70,14 @@ ProctrackType=proctrack/cgroup
 TaskPlugin=task/cgroup,task/affinity
 JobAcctGatherType=jobacct_gather/cgroup
 SelectType=select/cons_tres
-SelectTypeParameters=CR_CPU
+SelectTypeParameters=CR_CPU_Memory
+DefMemPerCPU=256
 ```
 
-Use the cgroup plugin to constrain processors and memory. For example, use this
-`cgroup.conf`:
+The fixture allocates 256 MiB per CPU by default on its two 512 MiB nodes. Set
+the memory defaults and node capacities for your cluster. The memory-aware
+selection setting makes allocated memory available to cgroup enforcement. Use
+this `cgroup.conf`:
 
 ```ini
 CgroupPlugin=autodetect
@@ -114,6 +144,80 @@ LicenseName=mqt.ddsim.default Total=2 Used=0 Free=2 Remote=no
 LicenseName=mqt.sc.default Total=1 Used=0 Free=1 Remote=no
 ```
 
+## Optionally inject configuration references
+
+Static license selection works without SPANK. Set catalogue and provider
+configuration in an environment module or batch script, then call
+`slurm.open_device_from_license()` in the workload. Authentication and the
+IDLE/BUSY status check happen when that call opens the selected device.
+
+Administrators can instead install Core's shared SPANK component to supply
+defaults and explicit job options. Build it from a Core source checkout:
+
+```console
+cmake -S spank -B build/spank -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local
+cmake --build build/spank
+cmake --install build/spank --component mqt-core-qdmi-spank
+```
+
+This build requires Linux, Slurm 25.11 or newer development headers, CMake, and
+a C++20 compiler. It does not configure Core, LLVM, or provider SDKs. Build
+against the cluster's Slurm headers and rebuild when changing Slurm major
+versions. `MQT_CORE_SPANK_INSTALL_DIR` overrides the default `lib/slurm`
+installation directory. The component retains its GPL-3.0-or-later license and
+is distributed through Core's source checkout, separately from the MIT runtime,
+wheels, and sdists.
+
+Install the module and matching `plugstack.conf` on submission/login and compute
+nodes. The submission-side plugin registers the `--qdmi-*` command options; the
+compute-side plugin applies them at task launch. Load the module **once** per
+plugstack. Declare concrete catalogue IDs and non-secret references permitted
+for each ID. For example, after registering `amazon.braket.sv1` and
+`iqm.site.qc1`:
+
+```ini
+required /usr/local/lib/slurm/mqt-core-qdmi-spank.so licenses=amazon.braket.sv1,iqm.site.qc1 qdmi_config_file=/etc/mqt-core/qdmi.json reference=AWS_PROFILE:amazon.braket.sv1:quantum reference=IQM_TOKENS_FILE:iqm.site.qc1:
+```
+
+The plugstack arguments are:
+
+| Argument                      | Meaning                                                                                                                                               |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `licenses=ID,ID`              | Concrete device IDs for which injection applies.                                                                                                      |
+| `qdmi_config_file=PATH`       | Default `MQT_CORE_QDMI_CONFIG_FILE` for those IDs.                                                                                                    |
+| `reference=ENV:ID,ID:DEFAULT` | A permitted reference and its applicable IDs; repeat for different environment names. An empty default permits an override without supplying a value. |
+
+Each reference creates a distinct `--qdmi-ref-ENV` option. For example:
+
+```console
+srun --licenses=amazon.braket.sv1 --qdmi-ref-AWS_PROFILE=research python workload.py
+srun --licenses=iqm.site.qc1 --qdmi-config-file=/shared/qdmi.json --qdmi-ref-IQM_TOKENS_FILE=/shared/iqm-tokens.json python workload.py
+```
+
+For each reference, an explicit option overrides the submitted job environment,
+which overrides the administrator default. The same rule applies to
+`--qdmi-config-file`. Distinct options preserve several overrides in one job;
+Slurm forwards only the last value of a repeated option.
+
+The module transports values literally through the job environment. It never
+reads the referenced files, resolves credentials, or loads a provider. Declare
+only file paths, profile names, and resource references; inline access tokens
+and executable credential commands do not belong in this configuration. Provider
+credential chains remain inside the job process. The plugin does not read
+credentials from the Slurm daemon's environment.
+
+Injection applies only when the complete license expression is one configured
+`ID` or `ID:1`. Compound expressions, remote licenses, and other counts receive
+no defaults. Explicit QDMI options without an exact match fail. Invalid
+configuration, empty or overlong reference values, and references scoped to
+another device also fail. Failures prevent task launch without draining nodes.
+Successful injection does not verify a catalogue or guarantee provider access;
+the application still opens the device normally.
+
+Provider-specific installation and credentials remain in the
+[Braket guide](https://github.com/munich-quantum-software/amazon-braket-qdmi-device)
+and [IQM guide](https://github.com/iqm-finland/QDMI-on-IQM).
+
 ## Submit a DDSIM job
 
 Save this program as `bell.py` in a location that all compute nodes can read:
@@ -167,10 +271,25 @@ Submit the job with this command:
 sbatch bell.sbatch
 ```
 
-The same open handle works with application adapters. Pass it to
+Install Core's `qiskit` and `pennylane` extras in the job's Python environment
+to use application adapters. Pass the same open handle to
 {py:class}`mqt.core.plugins.qiskit.backend.QDMIBackend` or to the PennyLane
-{py:class}`mqt.core.plugins.pennylane.device.QDMIDevice`. See the
-{doc}`pennylane_device` guide for the PennyLane constructor.
+{py:class}`mqt.core.plugins.pennylane.device.QDMIDevice`:
+
+```python
+from mqt.core.plugins.pennylane import QDMIDevice
+from mqt.core.plugins.qiskit import QDMIBackend
+from mqt.core.qdmi import slurm
+
+selected = slurm.open_device_from_license()
+qiskit_backend = QDMIBackend(device=selected)
+pennylane_device = QDMIDevice(device=selected, wires=selected.qubits_num())
+```
+
+The selected device must support the adapter's program formats. Provider
+wrappers may also supply required serialization or native gates; use the
+provider guide for its constructor. See {doc}`pennylane_device` for PennyLane
+execution examples.
 
 Open the selected device once per application process and reuse its handle for
 subsequent quantum jobs. The adapter validates the license locally, opens only
@@ -228,12 +347,21 @@ match exactly. Do not add a generic device license. Do not use a Slurm OR
 license expression for device selection because the environment does not
 identify a single selected device in that case.
 
+For failures after selection, inspect the stage that failed:
+
+| Stage          | What to check inside the job                                                                                                                                                                                                 |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Loading        | Confirm the effective catalogue path, including any `MQT_CORE_QDMI_CONFIG_JSON` override. Check that the catalogue and its library exist and are readable by the job user, and that the library matches the node's platform. |
+| Authentication | Check the provider's configured profile or credential-file path and its permissions as the job user. Keep credential contents out of logs.                                                                                   |
+| Status         | The open check accepts `IDLE` and `BUSY`. Other statuses fail; inspect the provider's reported status and operational guidance.                                                                                              |
+| Submission     | Inspect the failed quantum job through the adapter or QDMI job API. A successful device open does not guarantee that the provider accepts a later circuit or executes it immediately.                                        |
+
 [Slurm GRES configuration]: https://slurm.schedmd.com/gres.conf.html
 
 ## Run the integration tests
 
-From a source checkout on a Linux Docker host with cgroup v2, build one wheel
-and run the fixture:
+Use rootful Docker on a disposable Linux host with cgroup v2. From a source
+checkout, build one wheel and run the fixture:
 
 ```console
 uv build --wheel --out-dir test/slurm/dist
@@ -250,7 +378,7 @@ Each invocation uses its own Docker project, Munge key, and directory below
 `test/slurm/runtime`. Successful runs remove their containers, images, and
 artifacts; failures retain artifacts and print the project and runtime path.
 Docker's build cache remains available to later runs. Commands have 30-second
-deadlines, image build/startup has a ten-minute deadline, and diagnostics and
+deadlines, image build/startup has a thirty-minute deadline, and diagnostics and
 cleanup have separate short deadlines. Batch jobs request a five-minute time
 limit. An interrupted command terminates its process group, including a Docker
 Compose child.
