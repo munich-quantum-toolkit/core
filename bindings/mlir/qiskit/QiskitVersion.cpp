@@ -146,10 +146,13 @@ std::unique_ptr<VersionedTranslation> selectTranslation() {
 }
 
 mlir::CompilerTarget importTarget(nb::handle target, nb::handle operationNames,
-                                  const std::optional<std::string>& name,
-                                  std::optional<size_t> nativeNumQubits) {
-  return selectTranslation()->importTarget(target, operationNames, name,
-                                           nativeNumQubits);
+                                  const std::optional<std::string>& name) {
+  return selectTranslation()->importTarget(target, operationNames, name);
+}
+
+mlir::CompilerTarget::NativeOperations
+importNativeOperations(nb::handle target, nb::handle operationNames) {
+  return selectTranslation()->importNativeOperations(target, operationNames);
 }
 
 } // namespace mqt::bindings::qiskit

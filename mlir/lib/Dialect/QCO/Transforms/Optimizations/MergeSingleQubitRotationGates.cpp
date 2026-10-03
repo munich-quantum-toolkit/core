@@ -38,6 +38,7 @@
 #include <array>
 #include <cassert>
 #include <cmath>
+#include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
@@ -66,84 +67,42 @@ struct Val {
     };
   }
 
-  [[nodiscard]] Val operator+(Val o) const {
-    return {
-        .v = arith::AddFOp::create(*rewriter, loc, v, o.v).getResult(),
-        .rewriter = rewriter,
-        .loc = loc,
-    };
-  }
-  [[nodiscard]] Val operator-(Val o) const {
-    return {
-        .v = arith::SubFOp::create(*rewriter, loc, v, o.v).getResult(),
-        .rewriter = rewriter,
-        .loc = loc,
-    };
-  }
-  [[nodiscard]] Val operator*(Val o) const {
-    return {
-        .v = arith::MulFOp::create(*rewriter, loc, v, o.v).getResult(),
-        .rewriter = rewriter,
-        .loc = loc,
-    };
-  }
-  [[nodiscard]] Val operator/(Val o) const {
-    return {
-        .v = arith::DivFOp::create(*rewriter, loc, v, o.v).getResult(),
-        .rewriter = rewriter,
-        .loc = loc,
-    };
-  }
-  [[nodiscard]] Val operator-() const {
-    return {
-        .v = arith::NegFOp::create(*rewriter, loc, v).getResult(),
-        .rewriter = rewriter,
-        .loc = loc,
-    };
+  [[nodiscard]] Val withValue(Value value) const {
+    return {.v = value, .rewriter = rewriter, .loc = loc};
   }
 
+  [[nodiscard]] Val operator+(Val o) const {
+    return withValue(rewriter->createOrFold<arith::AddFOp>(loc, v, o.v));
+  }
+  [[nodiscard]] Val operator-(Val o) const {
+    return withValue(rewriter->createOrFold<arith::SubFOp>(loc, v, o.v));
+  }
+  [[nodiscard]] Val operator*(Val o) const {
+    return withValue(rewriter->createOrFold<arith::MulFOp>(loc, v, o.v));
+  }
+  [[nodiscard]] Val operator/(Val o) const {
+    return withValue(rewriter->createOrFold<arith::DivFOp>(loc, v, o.v));
+  }
+  [[nodiscard]] Val operator-() const {
+    return withValue(rewriter->createOrFold<arith::NegFOp>(loc, v));
+  }
   [[nodiscard]] Val sin() const {
-    return {
-        .v = math::SinOp::create(*rewriter, loc, v).getResult(),
-        .rewriter = rewriter,
-        .loc = loc,
-    };
+    return withValue(rewriter->createOrFold<math::SinOp>(loc, v));
   }
   [[nodiscard]] Val cos() const {
-    return {
-        .v = math::CosOp::create(*rewriter, loc, v).getResult(),
-        .rewriter = rewriter,
-        .loc = loc,
-    };
+    return withValue(rewriter->createOrFold<math::CosOp>(loc, v));
   }
   [[nodiscard]] Val abs() const {
-    return {
-        .v = math::AbsFOp::create(*rewriter, loc, v).getResult(),
-        .rewriter = rewriter,
-        .loc = loc,
-    };
+    return withValue(rewriter->createOrFold<math::AbsFOp>(loc, v));
   }
   [[nodiscard]] Val floor() const {
-    return {
-        .v = math::FloorOp::create(*rewriter, loc, v).getResult(),
-        .rewriter = rewriter,
-        .loc = loc,
-    };
+    return withValue(rewriter->createOrFold<math::FloorOp>(loc, v));
   }
   [[nodiscard]] Val sqrt() const {
-    return {
-        .v = math::SqrtOp::create(*rewriter, loc, v).getResult(),
-        .rewriter = rewriter,
-        .loc = loc,
-    };
+    return withValue(rewriter->createOrFold<math::SqrtOp>(loc, v));
   }
   [[nodiscard]] Val atan2(Val x) const {
-    /// `*this` is y, `x` is x — same order as std::atan2 / math.atan2.
-    return {
-        .v = math::Atan2Op::create(*rewriter, loc, v, x.v).getResult(),
-        .rewriter = rewriter,
-        .loc = loc,
-    };
+    return withValue(rewriter->createOrFold<math::Atan2Op>(loc, v, x.v));
   }
   [[nodiscard]] Value oge(Val o) const {
     return arith::CmpFOp::create(*rewriter, loc, arith::CmpFPredicate::OGE, v,
@@ -289,7 +248,7 @@ static Quat axisQuaternion(Val angle, RotationAxis axis,
 /// @note U is defined as P(φ)*RY(θ)*P(λ), which equals e^{i*(φ+λ)/2} *
 /// RZ(φ)*RY(θ)*RZ(λ). Since quaternions represent SU(2), this pass works with
 /// the SU(2) part RZ(φ)*RY(θ)*RZ(λ) and tracks the factored-out global phase
-/// (φ+λ)/2 separately via globalPhaseOf.
+/// (φ+λ)/2 separately.
 static Quat quaternionFromZYZ(Val theta, Val phi, Val lambda,
                               const ScalarConsts& c) {
   const auto qTheta = axisQuaternion(theta, RotationAxis::Y, c);
@@ -336,153 +295,53 @@ static Val gateParam(UnitaryOpInterface op, unsigned i, RewriterBase& rewriter,
   return normalizeGateAngle(Val{.v = p, .rewriter = &rewriter, .loc = loc});
 }
 
-/// Converts a supported single-qubit gate to quaternion representation.
-///
-/// - RX, RY, RZ, P: single-axis half-angle formulas.
-/// - X, Y, Z, S, Sdg, T, Tdg, SX, SXdg: fixed-axis rotations.
-/// - H: a π rotation around the (X + Z) / sqrt(2) axis.
-/// - Id: the identity quaternion.
-/// - R(θ, φ): Q(cos(θ/2), sin(θ/2)cos(φ), sin(θ/2)sin(φ), 0).
-/// - U2(φ, λ) = U(π/2, φ, λ).
-/// - U(θ, φ, λ): ZYZ via quaternionFromZYZ.
-///
-/// @note Global phase is discarded; see quaternionFromZYZ for details.
-/// The caller accepts only the gates recognized by isMergeable.
-static Quat quaternionFromGate(UnitaryOpInterface op, const ScalarConsts& c,
-                               RewriterBase& rewriter) {
+/// Constant gates share the matrix contract. Only runtime gates need symbolic
+/// formulas; return their phase with the quaternion so each parameter is read
+/// once.
+static std::pair<Quat, Val> quaternionFromGate(UnitaryOpInterface op,
+                                               const ScalarConsts& c,
+                                               RewriterBase& rewriter) {
   const Location loc = op->getLoc();
-  auto param = [&](unsigned i) { return gateParam(op, i, rewriter, loc); };
-
-  /// Single-axis rotations (RX, RY, RZ, P) share the same conversion pattern
+  const auto constant = [&](double value) {
+    return Val::constant(rewriter, loc, value);
+  };
+  if (const auto matrix = op.getUnitaryMatrix<Matrix2x2>()) {
+    const double phase = std::arg(matrix->determinant()) / 2.;
+    const auto su = *matrix * std::polar(1., -phase);
+    return {{
+                .w = constant(su(0, 0).real()),
+                .x = constant(-su(1, 0).imag()),
+                .y = constant(su(1, 0).real()),
+                .z = constant(-su(0, 0).imag()),
+            },
+            constant(phase)};
+  }
+  const auto param = [&](unsigned i) {
+    return gateParam(op, i, rewriter, loc);
+  };
   if (const auto axis = getRotationAxis(op.getOperation())) {
     const auto angle = param(0);
-    return axisQuaternion(angle, *axis, c);
+    return {axisQuaternion(angle, *axis, c),
+            isa<POp>(op) ? angle / c.two : c.zero};
   }
-
-  const auto fixedAxisRotation = [&](RotationAxis axis, double angle) {
-    return axisQuaternion(Val::constant(rewriter, loc, angle), axis, c);
-  };
-
-  /// Fixed and multi-parameter gates each need their own conversion.
-  return TypeSwitch<Operation*, Quat>(op.getOperation())
-      .Case([&](XOp) {
-        return fixedAxisRotation(RotationAxis::X, std::numbers::pi);
-      })
-      .Case([&](YOp) {
-        return fixedAxisRotation(RotationAxis::Y, std::numbers::pi);
-      })
-      .Case([&](ZOp) {
-        return fixedAxisRotation(RotationAxis::Z, std::numbers::pi);
-      })
-      .Case([&](SOp) {
-        return fixedAxisRotation(RotationAxis::Z, std::numbers::pi / 2.0);
-      })
-      .Case([&](SdgOp) {
-        return fixedAxisRotation(RotationAxis::Z, -std::numbers::pi / 2.0);
-      })
-      .Case([&](TOp) {
-        return fixedAxisRotation(RotationAxis::Z, std::numbers::pi / 4.0);
-      })
-      .Case([&](TdgOp) {
-        return fixedAxisRotation(RotationAxis::Z, -std::numbers::pi / 4.0);
-      })
-      .Case([&](SXOp) {
-        return fixedAxisRotation(RotationAxis::X, std::numbers::pi / 2.0);
-      })
-      .Case([&](SXdgOp) {
-        return fixedAxisRotation(RotationAxis::X, -std::numbers::pi / 2.0);
-      })
-      .Case([&](HOp) -> Quat {
-        const auto invSqrtTwo =
-            Val::constant(rewriter, loc, 1.0 / std::numbers::sqrt2);
-        return Quat{
-            .w = c.zero,
-            .x = invSqrtTwo,
-            .y = c.zero,
-            .z = invSqrtTwo,
-        };
-      })
-      .Case([&](IdOp) -> Quat {
-        return Quat{.w = c.one, .x = c.zero, .y = c.zero, .z = c.zero};
-      })
-      .Case([&](ROp) -> Quat {
-        const auto theta = param(0);
-        const auto phi = param(1);
-        const auto halfTheta = theta / c.two;
-        const auto sinHalf = halfTheta.sin();
-        return Quat{
-            .w = halfTheta.cos(),
-            .x = sinHalf * phi.cos(),
-            .y = sinHalf * phi.sin(),
-            .z = c.zero,
-        };
-      })
-      .Case([&](U2Op) -> Quat {
-        const auto phi = param(0);
-        const auto lambda = param(1);
-        return quaternionFromZYZ(c.pi / c.two, phi, lambda, c);
-      })
-      .Case([&](UOp) -> Quat {
-        const auto theta = param(0);
-        const auto phi = param(1);
-        const auto lambda = param(2);
-        return quaternionFromZYZ(theta, phi, lambda, c);
-      })
-      .Default([](auto) -> Quat {
-        llvm_unreachable("unsupported quaternion gate");
-      });
-}
-
-/// Returns the global phase contribution of a supported gate.
-///
-/// Rotation gates can be factored as U = e^{i * phase} * SU(2), where SU(2)
-/// is the quaternion-representable part and phase is the global phase:
-///
-/// - RX, RY, RZ, R → 0 (already SU(2))
-/// - P(θ) → θ / 2 (P = e^{i * θ / 2} * RZ(θ))
-/// - U(θ, φ, λ) → (φ + λ) / 2
-/// - U2(φ, λ) → (φ + λ) / 2
-/// - X, Y, Z, H → π / 2
-/// - S, SX → π / 4
-/// - Sdg, SXdg → -π / 4
-/// - T / Tdg → ±π / 8
-/// - Id → 0
-///
-/// The caller accepts only the gates recognized by isMergeable.
-static Val globalPhaseOf(UnitaryOpInterface op, const ScalarConsts& c,
-                         RewriterBase& rewriter) {
-  const Location loc = op->getLoc();
-  auto param = [&](unsigned i) { return gateParam(op, i, rewriter, loc); };
-
-  return TypeSwitch<Operation*, Val>(op.getOperation())
-      .Case<RXOp, RYOp, RZOp, ROp>([&](auto) -> Val { return c.zero; })
-      .Case<XOp, YOp, ZOp, HOp>([&](auto) -> Val { return c.pi / c.two; })
-      .Case<SOp, SXOp>([&](auto) -> Val {
-        return Val::constant(rewriter, loc, std::numbers::pi / 4.0);
-      })
-      .Case<SdgOp, SXdgOp>([&](auto) -> Val {
-        return Val::constant(rewriter, loc, -std::numbers::pi / 4.0);
-      })
-      .Case([&](TOp) -> Val {
-        return Val::constant(rewriter, loc, std::numbers::pi / 8.0);
-      })
-      .Case([&](TdgOp) -> Val {
-        return Val::constant(rewriter, loc, -std::numbers::pi / 8.0);
-      })
-      .Case([&](IdOp) -> Val { return c.zero; })
-      .Case([&](POp) -> Val {
-        const auto theta = param(0);
-        return theta / c.two;
-      })
-      .Case<UOp, U2Op>([&](auto) -> Val {
-        /// phi is at different indexes for UOp and U2Op
-        const auto phiIdx = isa<UOp>(op.getOperation()) ? 1U : 0U;
-        const auto phi = param(phiIdx);
-        const auto lambda = param(phiIdx + 1);
-        return (phi + lambda) / c.two;
-      })
-      .Default(
-          [](auto) -> Val { llvm_unreachable("unsupported quaternion gate"); });
+  if (isa<ROp>(op)) {
+    const auto theta = param(0) / c.two;
+    const auto phi = param(1);
+    const auto sine = theta.sin();
+    return {{
+                .w = theta.cos(),
+                .x = sine * phi.cos(),
+                .y = sine * phi.sin(),
+                .z = c.zero,
+            },
+            c.zero};
+  }
+  assert((isa<UOp, U2Op>(op)) && "unsupported quaternion gate");
+  const bool u2 = isa<U2Op>(op);
+  const auto theta = u2 ? c.pi / c.two : param(0);
+  const auto phi = param(u2 ? 0 : 1);
+  const auto lambda = param(u2 ? 1 : 2);
+  return {quaternionFromZYZ(theta, phi, lambda, c), (phi + lambda) / c.two};
 }
 
 /// Extracts ZYZ Euler angles from a unit quaternion.
@@ -503,10 +362,8 @@ static Val globalPhaseOf(UnitaryOpInterface op, const ScalarConsts& c,
 /// https://docs.sympy.org/latest/modules/algebras.html#sympy.algebras.Quaternion.to_euler
 ///
 /// Pure-Z / XY-aligned quaternions (|x|,|y| < eps) take the β≈0 gimbal form so
-/// tiny β drift cannot split the Z angle across φ/λ. The host path
-/// short-circuits to `{0, 2*atan2(z,w), 0}`; the `Value` path selects `beta=0`
-/// under the same predicate and sanitizes the atan2 y-operand when (x,y)≈0 so
-/// MLIR's constant folder never sees atan2(0,0) → NaN on a dead select input.
+/// tiny β drift cannot split the Z angle across φ/λ. Sanitize the atan2
+/// operand at the pole so folding never evaluates atan2(0,0).
 ///
 /// @note Floating-point errors may accumulate when merging many gates.
 /// Normalizing either Z angle by 2*π flips the corresponding SU(2) quaternion
@@ -572,16 +429,16 @@ static Quat hadamardConjugate(const Quat& q) {
   return {.w = q.w, .x = q.z, .y = -q.y, .z = q.x};
 }
 
-static bool isConstantAngle(Val angle) {
+static bool isZeroAngle(Val angle) {
   const auto value = mqt::valueToConstantDouble(angle.v);
   return value && std::abs(*value) <= mqt::PARAMETER_COMPARISON_TOLERANCE;
 }
 
 static Val sumAngles(Val lhs, Val rhs) {
-  if (isConstantAngle(lhs)) {
+  if (isZeroAngle(lhs)) {
     return rhs;
   }
-  if (isConstantAngle(rhs)) {
+  if (isZeroAngle(rhs)) {
     return lhs;
   }
   return lhs + rhs;
@@ -685,13 +542,11 @@ struct MergeSingleQubitRotationGatesPattern final
   explicit MergeSingleQubitRotationGatesPattern(
       MLIRContext* context,
       std::optional<CompilerTarget::SynthesisBasis> fusionBasis = std::nullopt,
-      decomposition::SingleQubitFusionPolicy policy = {},
       const CompilerTarget* target = nullptr)
       : OpInterfaceRewritePattern(context), fusionBasis(fusionBasis),
-        policy(policy), target(target) {}
+        target(target) {}
 
   std::optional<CompilerTarget::SynthesisBasis> fusionBasis;
-  decomposition::SingleQubitFusionPolicy policy;
   const CompilerTarget* target;
 
   /// Checks if this op is the start of a mergeable chain.
@@ -914,8 +769,7 @@ struct MergeSingleQubitRotationGatesPattern final
     std::optional<Quat> qAccum;
     Val phaseAccum = consts.zero;
     for (UnitaryOpInterface chainOp : chain) {
-      auto qi = quaternionFromGate(chainOp, consts, rewriter);
-      const auto phase = globalPhaseOf(chainOp, consts, rewriter);
+      const auto [qi, phase] = quaternionFromGate(chainOp, consts, rewriter);
       qAccum = qAccum ? hamiltonProduct(qi, *qAccum) : qi;
       phaseAccum = normalizeGateAngle(phaseAccum + phase);
     }
@@ -956,7 +810,9 @@ struct MergeSingleQubitRotationGatesPattern final
   LogicalResult matchAndRewrite(UnitaryOpInterface op,
                                 PatternRewriter& rewriter) const override {
     auto control = op->getParentOfType<CtrlOp>();
-    if (policy.skipControlledBodies && control) {
+    if (((target != nullptr) && target->synthesisBasis()->singleQubit !=
+                                    decomposition::SingleQubitBasis::U) &&
+        control) {
       return failure();
     }
     if (!isChainStart(op)) {
@@ -964,7 +820,7 @@ struct MergeSingleQubitRotationGatesPattern final
     }
 
     auto chain = collectChain(op);
-    if (policy.preserveSingletons && chain.size() == 1) {
+    if (target != nullptr && chain.size() == 1) {
       return failure();
     }
     /// Emit helper operations at the chain tail next to the merged output.
@@ -976,20 +832,13 @@ struct MergeSingleQubitRotationGatesPattern final
         return failure();
       }
       /// A multi-gate control body is not itself a native operation.
-      if (policy.preserveNativeParameterizedRuns && !control &&
+      if (target != nullptr && !control &&
           llvm::all_of(chain, [&](auto member) {
-            return target != nullptr
-                       ? target->supports(member.getOperation())
-                       : decomposition::isSingleQubitBasisGate(
-                             member.getOperation(), fusionBasis->singleQubit);
+            return target->supports(member.getOperation());
           })) {
         return failure();
       }
-      using RuntimeExpressions =
-          decomposition::SingleQubitFusionPolicy::RuntimeExpressions;
-      if (policy.runtimeExpressions == RuntimeExpressions::DirectOnly ||
-          (policy.runtimeExpressions == RuntimeExpressions::ControlledBodies &&
-           !control)) {
+      if (target != nullptr && !control) {
         return tryMergeDirectChain(chain, rewriter, *fusionBasis);
       }
       return mergeDynamicChain(chain, rewriter, *fusionBasis);
@@ -1036,11 +885,9 @@ namespace mlir::qco::decomposition {
 
 void populateParameterizedSingleQubitRunCompositionPatterns(
     RewritePatternSet& patterns, const CompilerTarget::SynthesisBasis& basis,
-    SingleQubitFusionPolicy policy, const CompilerTarget* target) {
+    const CompilerTarget* target) {
   RZOp::getCanonicalizationPatterns(patterns, patterns.getContext());
-  if (basis.singleQubit == SingleQubitBasis::ZSXX &&
-      policy.runtimeExpressions ==
-          SingleQubitFusionPolicy::RuntimeExpressions::DirectOnly) {
+  if (basis.singleQubit == SingleQubitBasis::ZSXX && target != nullptr) {
     patterns.add(mergeParameterizedRZ);
     return;
   }
@@ -1048,7 +895,7 @@ void populateParameterizedSingleQubitRunCompositionPatterns(
   RYOp::getCanonicalizationPatterns(patterns, patterns.getContext());
   POp::getCanonicalizationPatterns(patterns, patterns.getContext());
   patterns.add<MergeSingleQubitRotationGatesPattern>(patterns.getContext(),
-                                                     basis, policy, target);
+                                                     basis, target);
 }
 
 } // namespace mlir::qco::decomposition

@@ -440,8 +440,10 @@ public:
   [[nodiscard]] virtual bool supportsGate(StandardGateMapping gate) const = 0;
   [[nodiscard]] virtual mlir::CompilerTarget
   importTarget(nb::handle target, nb::handle operationNames,
-               const std::optional<std::string>& name,
-               std::optional<size_t> nativeNumQubits) const = 0;
+               const std::optional<std::string>& name) const = 0;
+  [[nodiscard]] virtual mlir::CompilerTarget::NativeOperations
+  importNativeOperations(nb::handle target,
+                         nb::handle operationNames) const = 0;
   [[nodiscard]] virtual std::unique_ptr<CircuitWriter>
   createCircuit(uint32_t looseQubits, uint32_t looseClbits,
                 const mlir::CompilerTarget* target = nullptr) const = 0;

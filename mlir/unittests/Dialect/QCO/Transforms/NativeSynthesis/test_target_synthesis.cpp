@@ -2286,11 +2286,8 @@ TEST_F(TargetSynthesisTest, SingleQubitFusionTouchesOnlySelectedWire) {
   ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*moduleOp)));
   OwningOpRef<ModuleOp> original = moduleOp->clone();
   const auto target = makeUCxTarget();
-  const auto policy =
-      mlir::qco::decomposition::SingleQubitFusionPolicy::forTarget(
-          Target::SingleQubitBasis::U);
   mlir::qco::decomposition::SingleQubitRunFusion fusion(
-      *target.synthesisBasis(), policy, &target);
+      *target.synthesisBasis(), &target);
   auto head = *mainFunction(*moduleOp).getOps<HOp>().begin();
   ASSERT_TRUE(mlir::succeeded(fusion.apply(head)));
   ASSERT_TRUE(mlir::succeeded(mlir::verify(*moduleOp)));
@@ -2316,12 +2313,9 @@ TEST_F(TargetSynthesisTest, SingleQubitFusionResumesAfterSymbolicGate) {
                                                     context.get());
   ASSERT_TRUE(moduleOp);
   const auto target = makeUCxTarget();
-  const auto policy =
-      mlir::qco::decomposition::SingleQubitFusionPolicy::forTarget(
-          Target::SingleQubitBasis::U);
   ASSERT_TRUE(
       mlir::succeeded(mlir::qco::decomposition::fuseSingleQubitUnitaryRuns(
-          *moduleOp, *target.synthesisBasis(), policy, &target,
+          *moduleOp, *target.synthesisBasis(), &target,
           mlir::GreedyRewriteConfig{})));
   ASSERT_TRUE(mlir::succeeded(mlir::verify(*moduleOp)));
   ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*moduleOp)));
@@ -2352,23 +2346,16 @@ TEST_F(TargetSynthesisTest, SingleQubitFusionPreservesNativeSymbolicRuns) {
   const auto target = makeUCxTarget();
   for (const bool useTarget : {false, true}) {
     SCOPED_TRACE(useTarget);
-    for (const bool preserve : {false, true}) {
-      SCOPED_TRACE(preserve);
-      OwningOpRef<ModuleOp> moduleOp = original->clone();
-      const mlir::qco::decomposition::SingleQubitFusionPolicy policy{
-          .preserveNativeParameterizedRuns = preserve,
-      };
-      ASSERT_TRUE(
-          mlir::succeeded(mlir::qco::decomposition::fuseSingleQubitUnitaryRuns(
-              *moduleOp, *target.synthesisBasis(), policy,
-              useTarget ? &target : nullptr,
-              mlir::GreedyRewriteConfig{}.enableConstantCSE(false))));
-      ASSERT_TRUE(mlir::succeeded(mlir::verify(*moduleOp)));
-      ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*moduleOp)));
-      EXPECT_EQ(countOps<UOp>(*moduleOp), preserve ? 2U : 1U);
-      if (preserve) {
-        EXPECT_EQ(printModule(*moduleOp), printModule(*original));
-      }
+    OwningOpRef<ModuleOp> moduleOp = original->clone();
+    ASSERT_TRUE(
+        mlir::succeeded(mlir::qco::decomposition::fuseSingleQubitUnitaryRuns(
+            *moduleOp, *target.synthesisBasis(), useTarget ? &target : nullptr,
+            mlir::GreedyRewriteConfig{}.enableConstantCSE(false))));
+    ASSERT_TRUE(mlir::succeeded(mlir::verify(*moduleOp)));
+    ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*moduleOp)));
+    EXPECT_EQ(countOps<UOp>(*moduleOp), useTarget ? 2U : 1U);
+    if (useTarget) {
+      EXPECT_EQ(printModule(*moduleOp), printModule(*original));
     }
   }
 }
@@ -2487,8 +2474,16 @@ TEST_F(TargetSynthesisTest,
         *synthesized, target, mlir::qco::createVerifyTargetConformance())));
 
     /// Bind only after synthesis so every case exercises the symbolic path.
-    for (const double angle :
-         {0.0, 0.371, -1.23, std::numbers::pi, 2.0 * std::numbers::pi, 7.1}) {
+    for (const double angle : {
+             0.0,
+             0.371,
+             -1.23,
+             -std::numbers::pi / 2.,
+             std::numbers::pi / 2.,
+             std::numbers::pi,
+             2.0 * std::numbers::pi,
+             7.1,
+         }) {
       SCOPED_TRACE(angle);
       auto expected = OwningOpRef<ModuleOp>(original->clone());
       auto actual = OwningOpRef<ModuleOp>(synthesized->clone());
@@ -2664,10 +2659,7 @@ TEST_F(TargetSynthesisTest, RuntimePauliRotationsShareNativeSynthesisAndCosts) {
       auto operation = *mainFunction(*original)
                             .getOps<mlir::qco::UnitaryOpInterface>()
                             .begin();
-      const size_t expectedEntanglers = parameters == 1 && !fixed ? 1
-                                        : std::string(entangler) == "sqrt_iswap"
-                                            ? 4
-                                            : 2;
+      const size_t expectedEntanglers = parameters == 1 && !fixed ? 1 : 2;
       const auto shared = mlir::qco::NativeCostTable::precompute(
           *original, *target.synthesisBasis()->entangler, 2023);
       mlir::qco::NativeCostAnalysis costs(2023, shared.get());
@@ -2692,11 +2684,21 @@ TEST_F(TargetSynthesisTest, RuntimePauliRotationsShareNativeSynthesisAndCosts) {
                             std::string_view(entangler) == "cz")) {
         EXPECT_LE(localCount, std::string_view(entangler) == "cx" ? 1U : 3U);
       }
-      synthesized->walk([](mlir::Operation* operation) {
-        EXPECT_NE(operation->getName().getDialectNamespace(), "math");
-      });
-      for (const double angle :
-           {0.0, 0.371, -1.23, std::numbers::pi, 2.0 * std::numbers::pi, 7.1}) {
+      if (std::string_view(entangler) != "sqrt_iswap") {
+        synthesized->walk([](mlir::Operation* operation) {
+          EXPECT_NE(operation->getName().getDialectNamespace(), "math");
+        });
+      }
+      for (const double angle : {
+               0.0,
+               0.371,
+               -1.23,
+               -std::numbers::pi / 2.,
+               std::numbers::pi / 2.,
+               std::numbers::pi,
+               2.0 * std::numbers::pi,
+               7.1,
+           }) {
         SCOPED_TRACE(angle);
         auto expected = OwningOpRef<ModuleOp>(original->clone());
         auto actual = OwningOpRef<ModuleOp>(synthesized->clone());

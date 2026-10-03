@@ -30,6 +30,10 @@ class Operation;
 class RewriterBase;
 } // namespace mlir
 
+namespace mlir::qco {
+class UnitaryOpInterface;
+} // namespace mlir::qco
+
 namespace mlir::qco::decomposition {
 
 using SingleQubitBasis = CompilerTarget::SingleQubitBasis;
@@ -136,9 +140,10 @@ void synthesizeParameterizedUnitary1Q(
     RewriterBase& rewriter, Operation* op,
     const CompilerTarget::SynthesisBasis& basis);
 
-/// Emit equatorial gates while carrying Z rotations through diagonal gates.
-/// Flush frames at region boundaries and other operations; preserve all phases.
-LogicalResult synthesizeEquatorialGates(RewriterBase& rewriter, Operation* root,
-                                        bool nativeRZ);
+/// Extract known Euler parameters without reconstructing a symbolic matrix.
+/// Constant operations use their matrix; unknown operations return nullopt.
+[[nodiscard]] std::optional<std::array<RotationParameter, 4>>
+zyzAnglesFromOperation(OpBuilder& builder, Location loc,
+                       UnitaryOpInterface operation);
 
 } // namespace mlir::qco::decomposition

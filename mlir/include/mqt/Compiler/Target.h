@@ -357,8 +357,6 @@ public:
   struct SynthesisBasis {
     SingleQubitBasis singleQubit;
     std::optional<Entangler> entangler;
-    /// Fixed fallback when a runtime angle has no known bounds.
-    std::optional<Entangler> runtimeEntangler;
     std::optional<QuarterTurnGates> quarterTurnGates;
     /// Whether the Euler recipe can emit a half turn in one native gate.
     bool hasHalfTurn = true;

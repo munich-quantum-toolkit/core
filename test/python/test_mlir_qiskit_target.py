@@ -680,7 +680,11 @@ def test_native_import_preserves_bounds_without_placement(width: int | None) -> 
     source.add_instruction(RXGate(Parameter("rx")))
     source.add_instruction(RZGate(Parameter("rz")))
     source.add_instruction(RZZGate(Parameter("rzz")), {(0, 1): None} if width else None, angle_bounds=[(0, pi / 2)])
-    target = CompilerTarget.from_qiskit(source, native_num_qubits=2)
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations.from_qiskit(source),
+    )
     assert target.num_sites == 2
     assert target.connectivity_kind == CompilerTarget.ConnectivityKind.ALL_TO_ALL
     assert all(not op.site_tuples for op in target.operations)

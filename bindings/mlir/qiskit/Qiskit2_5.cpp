@@ -2926,39 +2926,32 @@ public:
     return versionGate(gate) != nullptr;
   }
 
-  [[nodiscard]] mlir::CompilerTarget
-  importTarget(nb::handle source, nb::handle operationNames,
-               const std::optional<std::string>& name,
-               std::optional<size_t> nativeNumQubits) const override {
-    using Target = mlir::CompilerTarget;
-    const auto takeResult = []<class T>(llvm::Expected<T> result) {
-      if (!result) {
-        throw nb::value_error(llvm::toString(result.takeError()).c_str());
-      }
-      return std::move(*result);
-    };
+  template <class T> static T takeTargetResult(llvm::Expected<T> result) {
+    if (!result) {
+      throw nb::value_error(llvm::toString(result.takeError()).c_str());
+    }
+    return std::move(*result);
+  }
+
+  static nb::object targetObject(nb::handle source) {
     auto target = nb::borrow<nb::object>(source);
-    auto targetName = name;
     if (nb::isinstance(
             target,
             nb::module_::import_("qiskit.providers").attr("BackendV2"))) {
-      if (!targetName) {
-        targetName = nb::cast<std::string>(target.attr("name"));
-      }
       target = target.attr("target");
     }
     if (!nb::isinstance(
             target, nb::module_::import_("qiskit.transpiler").attr("Target"))) {
       throw nb::type_error("Expected a Qiskit Target or BackendV2");
     }
-    size_t numQubits = nativeNumQubits.value_or(0);
-    if ((!nativeNumQubits &&
-         !nb::try_cast(target.attr("num_qubits"), numQubits)) ||
-        numQubits == 0) {
-      throw nb::value_error(
-          "Qiskit target must have a known positive qubit count");
-    }
+    return target;
+  }
 
+  static mlir::CompilerTarget::NativeOperations
+  readOperations(nb::handle source, nb::handle operationNames,
+                 bool placements) {
+    using Target = mlir::CompilerTarget;
+    auto target = targetObject(source);
     const auto circuit = nb::module_::import_("qiskit.circuit");
     const auto controlFlow = nb::module_::import_("qiskit.circuit.controlflow");
     const auto ignoredTypes = nb::make_tuple(
@@ -2974,8 +2967,6 @@ public:
     }
 
     std::vector<Target::OperationCapability> operations;
-    std::set<Target::Coupling> couplings;
-    bool allToAll = numQubits == 1;
     for (const auto& operationName : names) {
       const auto quotedName =
           nb::cast<std::string>(nb::repr(nb::cast(operationName)));
@@ -3092,47 +3083,69 @@ public:
       }
 
       const auto arity = nb::cast<size_t>(instruction.attr("num_qubits"));
-      if (nativeNumQubits) {
-        if (arity > *nativeNumQubits) {
-          continue;
-        }
-        qargs = nb::none();
-      }
-      std::vector<Target::SiteTuple> placements;
-      if (!qargs.is_none()) {
+      std::vector<Target::SiteTuple> siteTuples;
+      if (placements && !qargs.is_none()) {
         std::vector<std::vector<Target::SiteId>> sites;
         for (auto tuple : nb::borrow<nb::iterable>(qargs)) {
           sites.push_back(nb::cast<std::vector<Target::SiteId>>(tuple));
         }
         std::ranges::sort(sites);
         for (auto& tuple : sites) {
-          placements.push_back(
-              takeResult(Target::SiteTuple::create(std::move(tuple))));
+          siteTuples.push_back(
+              takeTargetResult(Target::SiteTuple::create(std::move(tuple))));
         }
       }
-      auto capability = takeResult(Target::OperationCapability::create(
-          operationName, arity, numParameters, std::move(placements),
+      auto capability = takeTargetResult(Target::OperationCapability::create(
+          operationName, arity, numParameters, std::move(siteTuples),
           std::nullopt, std::nullopt, std::move(fixedParameters), nativeName,
           std::move(parameterBounds)));
-      if (arity == 2) {
-        if (qargs.is_none()) {
-          allToAll = true;
-        } else {
-          for (const auto& placement : capability.siteTuples()) {
-            const auto sites = placement.sites();
-            couplings.emplace(std::min(sites[0], sites[1]),
-                              std::max(sites[0], sites[1]));
-          }
-        }
-      }
       operations.push_back(std::move(capability));
     }
     if (operations.empty()) {
       throw nb::value_error(
           "Qiskit target has no representable native operations");
     }
-    operations.push_back(takeResult(Target::OperationCapability::create(
+    operations.push_back(takeTargetResult(Target::OperationCapability::create(
         "gphase", Target::OperationCapability::Arity::fixed(0), 1)));
+    return Target::NativeOperations::fromOperations(operations);
+  }
+
+  [[nodiscard]] mlir::CompilerTarget::NativeOperations
+  importNativeOperations(nb::handle source,
+                         nb::handle operationNames) const override {
+    return readOperations(source, operationNames, false);
+  }
+
+  [[nodiscard]] mlir::CompilerTarget
+  importTarget(nb::handle source, nb::handle operationNames,
+               const std::optional<std::string>& name) const override {
+    using Target = mlir::CompilerTarget;
+    auto target = targetObject(source);
+    auto targetName = name;
+    if (!targetName && !source.is(target)) {
+      targetName = nb::cast<std::string>(source.attr("name"));
+    }
+    size_t numQubits = 0;
+    if (!nb::try_cast(target.attr("num_qubits"), numQubits) || numQubits == 0) {
+      throw nb::value_error(
+          "Qiskit target must have a known positive qubit count");
+    }
+    const auto nativeOperations = readOperations(target, operationNames, true);
+    std::set<Target::Coupling> couplings;
+    bool allToAll = numQubits == 1;
+    for (const auto& capability : nativeOperations.operations()) {
+      if (capability.arity().value() != 2) {
+        continue;
+      }
+      if (capability.siteTuples().empty()) {
+        allToAll = true;
+      }
+      for (const auto& placement : capability.siteTuples()) {
+        const auto sites = placement.sites();
+        couplings.emplace(std::min(sites[0], sites[1]),
+                          std::max(sites[0], sites[1]));
+      }
+    }
     if (numQubits - 1 <= std::numeric_limits<size_t>::max() / numQubits &&
         couplings.size() == numQubits * (numQubits - 1) / 2) {
       allToAll = true;
@@ -3142,9 +3155,7 @@ public:
             ? Target::Connectivity::allToAll()
             : Target::Connectivity::fromCouplings(std::vector<Target::Coupling>(
                   couplings.begin(), couplings.end()));
-    const auto nativeOperations =
-        Target::NativeOperations::fromOperations(operations);
-    return takeResult(
+    return takeTargetResult(
         targetName ? Target::create(*targetName, numQubits, connectivity,
                                     nativeOperations)
                    : Target::create(numQubits, connectivity, nativeOperations));

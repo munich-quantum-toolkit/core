@@ -730,17 +730,6 @@ NativeCostAnalysis::count(const Matrix4x4& matrix,
   return lastCount_->count;
 }
 
-static CompilerTarget::SynthesisBasis
-basisForOperation(Operation* operation, CompilerTarget::SynthesisBasis basis) {
-  if (basis.runtimeEntangler) {
-    if (const auto sequence = decomposition::getPauliRotations(operation);
-        sequence && !mqt::valueToConstantDouble(sequence->angle)) {
-      basis.entangler = basis.runtimeEntangler;
-    }
-  }
-  return basis;
-}
-
 std::optional<size_t>
 NativeCostAnalysis::operationCost(UnitaryOpInterface operation,
                                   const CompilerTarget& target, Sites sites) {
@@ -761,7 +750,7 @@ NativeCostAnalysis::operationCost(UnitaryOpInterface operation,
     }
     return std::nullopt;
   }
-  const auto basis = basisForOperation(operation, *target.synthesisBasis());
+  const auto basis = *target.synthesisBasis();
   if (!basis.entangler ||
       !entanglerOrientation(target, *basis.entangler, sites)) {
     return std::nullopt;
@@ -1075,7 +1064,6 @@ static LogicalResult synthesizeTargetOperation(
   if (!basis) {
     return unsupported("the target has no usable synthesis basis");
   }
-  basis = basisForOperation(operation, *basis);
   if (auto u2 = singleControlledGate<U2Op>(operation);
       u2 && basis->singleQubit == CompilerTarget::SingleQubitBasis::U) {
     /// Canonicalization may shorten a native controlled U(pi/2, phi, lambda)
@@ -1402,11 +1390,8 @@ protected:
     IRRewriter rewriter(&getContext(), &listener);
     NativeCostAnalysis analysis(compilationSeed(moduleOp, seed));
     if (targetBasis) {
-      const auto policy = decomposition::SingleQubitFusionPolicy::forTarget(
-          targetBasis->singleQubit);
       decomposition::SingleQubitRunFusion fusion(
-          *targetBasis, policy, &target,
-          GreedyRewriteConfig{}.setListener(&listener));
+          *targetBasis, &target, GreedyRewriteConfig{}.setListener(&listener));
       /// Without a 2Q sweep, reuse the operations visited during site
       /// collection.
       for (auto* operation : llvm::reverse(unitaries)) {
@@ -1455,22 +1440,9 @@ protected:
       return;
     }
     if (equatorial) {
-      auto fusionBasis = *emissionBasis;
-      fusionBasis.singleQubit = CompilerTarget::SingleQubitBasis::U;
-      if (failed(decomposition::fuseSingleQubitUnitaryRuns(
-              moduleOp, fusionBasis,
-              decomposition::SingleQubitFusionPolicy::forTarget(
-                  targetBasis->singleQubit),
-              nullptr, GreedyRewriteConfig{}.setListener(&listener)))) {
-        signalPassFailure();
-        return;
-      }
-      const bool nativeRZ = llvm::all_of(target.siteIds(), [&](SiteId site) {
-        return target.supports(CompilerTarget::GateKind::RZ,
-                               ArrayRef<SiteId>(&site, 1));
-      });
-      if (failed(decomposition::synthesizeEquatorialGates(rewriter, moduleOp,
-                                                          nativeRZ))) {
+      if (failed(decomposition::synthesizeEquatorialGates(
+              rewriter, moduleOp, target,
+              GreedyRewriteConfig{}.setListener(&listener)))) {
         signalPassFailure();
         return;
       }
@@ -1480,10 +1452,7 @@ protected:
         targetBasis->singleQubit == CompilerTarget::SingleQubitBasis::ZSXX) {
       RewritePatternSet patterns(&getContext());
       decomposition::populateParameterizedSingleQubitRunCompositionPatterns(
-          patterns, *targetBasis,
-          decomposition::SingleQubitFusionPolicy::forTarget(
-              targetBasis->singleQubit),
-          &target);
+          patterns, *targetBasis, &target);
       if (failed(applyPatternsGreedily(moduleOp, std::move(patterns)))) {
         signalPassFailure();
         return;

@@ -423,10 +423,6 @@ class CompilerTarget:
         def entangler(self) -> CompilerTarget.Entangler | None:
             """The two-qubit entangler, or None when none is usable."""
 
-        @property
-        def runtime_entangler(self) -> CompilerTarget.Entangler | None:
-            """Fixed fallback for unbounded runtime parameters, if needed."""
-
     class ConnectivityKind(enum.Enum):
         """The target connectivity model."""
 
@@ -466,6 +462,14 @@ class CompilerTarget:
             """Create explicit native-operation support."""
 
         @staticmethod
+        def from_qiskit(
+            source: qiskit.transpiler.Target | qiskit.providers.BackendV2,
+            *,
+            operation_names: Iterable[str] | None = None,
+        ) -> CompilerTarget.NativeOperations:
+            """Import gate capabilities and parameter constraints, ignoring physical placement. Unsupported explicit selections raise ValueError; otherwise they warn and are omitted."""
+
+        @staticmethod
         def unrestricted() -> CompilerTarget.NativeOperations:
             """Create unrestricted native-operation support."""
 
@@ -487,14 +491,11 @@ class CompilerTarget:
         *,
         operation_names: Iterable[str] | None = None,
         name: str | None = None,
-        native_num_qubits: int | None = None,
     ) -> CompilerTarget:
         """Snapshot native operations and connectivity from Qiskit.
 
         Args:
             source: Qiskit Target or BackendV2. Physical import requires a known positive qubit count.
-            native_num_qubits: Import a placement-independent gate set for this width.
-                Preserve parameter constraints; omit gates wider than the circuit.
             operation_names: Qiskit Target operation names to retain. By default,
                 include every representable operation. Explicit selections must all be
                 representable.

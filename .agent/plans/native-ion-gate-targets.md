@@ -22,19 +22,25 @@ Constant Clifford frames change axes without runtime trigonometry. An arbitrary
 native Pauli entangler realizes each two-qubit rotation in one instruction; a
 fixed Clifford entangler conjugates a single-qubit rotation into a two-qubit
 Pauli rotation. Constant local corrections implement its inverse. SQRTISWAP uses
-a cached CZ sandwich with four native gates. P and CP are exact compositions of
-these rotations and a global phase. Numerical KAK remains the specialization for
-constant gates and fused runs. Constant single-qubit fusion reuses numerical
-Euler synthesis; quaternion arithmetic is confined to runtime fusion.
+two native gates and symbolic single-qubit corrections. P and CP are exact
+compositions of these rotations and a global phase. Numerical KAK remains the
+specialization for constant gates and fused runs. Constant single-qubit fusion
+reuses numerical Euler synthesis; quaternion arithmetic is confined to runtime
+fusion.
 
-The fusion contracts from Core #2649 are integrated here. An explicit policy
-owns singleton preservation, controlled-body ownership, native symbolic runs,
-and permitted runtime expressions. Native synthesis fuses one wire at a time
-while traversing the program for synthesis. The standalone pass uses the same
-driver. U targets can shrink runs before routing without invoking a separate
-optimizer. A rewrite listener carries phase-generated wires into site analysis.
-Fusion declarations live in `NativeSynthesis/SingleQubitFusion.h`; the Euler
-emitter remains independent of traversal policy.
+A supplied target determines singleton preservation, controlled-body ownership,
+and native symbolic runs. Native fusion uses direct Euler identities; general
+quaternion composition is confined to standalone fusion and controlled U bodies.
+Native synthesis fuses one wire at a time while traversing the program for
+synthesis. The standalone pass uses the same driver. U targets can shrink runs
+before routing without invoking a separate optimizer. A rewrite listener carries
+phase-generated wires into site analysis. Fusion declarations live in
+`NativeSynthesis/SingleQubitFusion.h`; the Euler emitter remains independent of
+traversal. Equatorial frame propagation lives in native synthesis and shares
+Euler parameter extraction and emission. Bounded Pauli entanglers use their
+supported pi/2 endpoint for unknown angles; numeric angles retain local
+corrections. NativeOperations imports Qiskit capabilities without placement, so
+Bench uses the ordinary target constructor for native compilation.
 
 Normalize constant full turns with their phase correction, omit phase-only U
 gates, and choose an equivalent Euler representative only when it removes gates.
@@ -65,9 +71,10 @@ large-angle normalization.
 A 20-case comparison against the preceding PR head found no gate-count
 regressions. With native U available, CZ-based runtime RZZ needs three local
 gates instead of five; iSWAP needs two entanglers instead of four. Regression
-checks constrain these counts and exclude runtime trigonometry from Pauli
-lowering. Constant fusion shares numerical Euler synthesis while full-unitary
-checks permit equivalent Euler coordinates.
+checks constrain these counts and exclude runtime trigonometry from Clifford
+Pauli lowering; square-root iSWAP requires nonlinear single-qubit angles.
+Constant fusion shares numerical Euler synthesis while full-unitary checks
+permit equivalent Euler coordinates.
 
 Against published head `7790b88c2`, 58 compilation/synthesis cases cover six
 automatically selected bases, numeric and symbolic SU2 circuits (2/20 qubits),

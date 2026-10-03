@@ -22,42 +22,18 @@ namespace mlir {
 class ModuleOp;
 class Operation;
 class RewritePatternSet;
+class RewriterBase;
 } // namespace mlir
 
 namespace mlir::qco::decomposition {
 
-/// Run-rewrite choices resolved by the calling pass, independently of native
-/// target capabilities. Individual lowering owns site-specific support.
-struct SingleQubitFusionPolicy {
-  enum class RuntimeExpressions { DirectOnly, ControlledBodies, General };
-
-  bool preserveSingletons = false;
-  bool skipControlledBodies = false;
-  bool preserveNativeParameterizedRuns = false;
-  RuntimeExpressions runtimeExpressions = RuntimeExpressions::General;
-
-  /// Keep optional fusion exportable; general expressions remain available
-  /// when a controlled body must be merged into a native U operation.
-  static SingleQubitFusionPolicy
-  forTarget(CompilerTarget::SingleQubitBasis basis) {
-    const bool usesU = basis == CompilerTarget::SingleQubitBasis::U;
-    return {
-        .preserveSingletons = true,
-        .skipControlledBodies = !usesU,
-        .preserveNativeParameterizedRuns = true,
-        .runtimeExpressions = usesU ? RuntimeExpressions::ControlledBodies
-                                    : RuntimeExpressions::DirectOnly,
-    };
-  }
-};
-
 /// Fuse one wire at a time during an existing reverse-order traversal.
 /// Reuse within one MLIR context.
 /// The caller must visit users before producers: fusion can erase successors.
+/// A supplied target must have a synthesis basis.
 class SingleQubitRunFusion {
 public:
   SingleQubitRunFusion(const CompilerTarget::SynthesisBasis& basis,
-                       SingleQubitFusionPolicy policy,
                        const CompilerTarget* target,
                        GreedyRewriteConfig config = {});
 
@@ -66,7 +42,6 @@ public:
 
 private:
   CompilerTarget::SynthesisBasis basis_;
-  SingleQubitFusionPolicy policy_;
   const CompilerTarget* target_;
   GreedyRewriteConfig config_;
   std::optional<FrozenRewritePatternSet> runtimePatterns_;
@@ -76,8 +51,7 @@ private:
 /// Standalone driver; target synthesis reuses its existing traversal instead.
 LogicalResult fuseSingleQubitUnitaryRuns(
     ModuleOp moduleOp, const CompilerTarget::SynthesisBasis& basis,
-    SingleQubitFusionPolicy policy, const CompilerTarget* target,
-    const GreedyRewriteConfig& config);
+    const CompilerTarget* target, const GreedyRewriteConfig& config);
 
 /// Populates @p patterns with the single-qubit run fusion rewrite for
 /// @p basis (the reusable core of `fuse-single-qubit-unitary-runs`).
@@ -86,17 +60,23 @@ LogicalResult fuseSingleQubitUnitaryRuns(
 /// @p basis when no target is supplied.
 void populateFuseSingleQubitUnitaryRunsPatterns(
     RewritePatternSet& patterns, const CompilerTarget::SynthesisBasis& basis,
-    SingleQubitFusionPolicy policy = {},
     const CompilerTarget* target = nullptr);
 
 /// Populates patterns that compose profitable parameterized single-qubit runs.
 ///
-/// The patterns emit @p basis directly. @p target supplies native gate support;
-/// @p policy selects controlled-body ownership, native-run preservation, and
-/// whether fusion may emit general runtime expressions.
+/// The patterns emit @p basis directly. @p target supplies native gate support.
+/// Native fusion preserves supported parameterized runs and uses direct Euler
+/// identities. General quaternion composition is reserved for controlled U
+/// bodies and standalone fusion without a target.
 void populateParameterizedSingleQubitRunCompositionPatterns(
     RewritePatternSet& patterns, const CompilerTarget::SynthesisBasis& basis,
-    SingleQubitFusionPolicy policy = {},
     const CompilerTarget* target = nullptr);
+
+/// Synthesize an equatorial target, carrying Z frames through diagonal gates.
+/// Runs only when the native single-qubit basis is R.
+LogicalResult synthesizeEquatorialGates(RewriterBase& rewriter,
+                                        ModuleOp moduleOp,
+                                        const CompilerTarget& target,
+                                        const GreedyRewriteConfig& config);
 
 } // namespace mlir::qco::decomposition

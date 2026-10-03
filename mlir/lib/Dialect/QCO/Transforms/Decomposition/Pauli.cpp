@@ -19,6 +19,7 @@
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Weyl.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Location.h"
 #include "mlir/IR/Operation.h"
@@ -175,7 +176,6 @@ std::optional<PauliRotationSequence> getPauliRotations(Operation* operation) {
 
 /// For each fixed Clifford E, E^dagger (I tensor Q) E = A tensor B.
 /// The first two axes are A, B; the third is the local rotation axis Q.
-/// SQRTISWAP uses its constant CZ realization.
 static std::array<PauliAxis, 3>
 conjugatedPauliAxes(CompilerTarget::GateKind gate) {
   using enum PauliAxis;
@@ -184,7 +184,6 @@ conjugatedPauliAxes(CompilerTarget::GateKind gate) {
   case Gate::CX:
     return {Z, Z, Z};
   case Gate::CZ:
-  case Gate::SQRTISWAP:
     return {Z, X, X};
   case Gate::ECR:
   case Gate::RZX:
@@ -200,26 +199,6 @@ conjugatedPauliAxes(CompilerTarget::GateKind gate) {
   default:
     llvm_unreachable("unsupported fixed synthesis entangler");
   }
-}
-
-/// SQRTISWAP is not Clifford; its constant CZ realization supplies the frame.
-static TwoQubitNativeDecomposition
-fixedPauliEntangler(CompilerTarget::GateKind gate) {
-  if (gate == CompilerTarget::GateKind::SQRTISWAP) {
-    /// ponytail: four native gates per runtime rotation; specialize if a
-    /// SQRTISWAP target needs a two-gate symbolic decomposition.
-    static const auto CZ = decomposeUnitary2QWeyl(
-        Matrix4x4::fromDiagonal(1., 1., 1., -1.), {.gate = gate});
-    if (!CZ) {
-      llvm::reportFatalInternalError("constant CZ decomposition failed");
-    }
-    return *CZ;
-  }
-  const auto identity = Matrix2x2::identity();
-  return {
-      .numBasisUses = 1,
-      .singleQubitFactors = {identity, identity, identity, identity},
-  };
 }
 
 SmallVector<Value, 2>
@@ -263,7 +242,11 @@ emitPauliRotations(RewriterBase& rewriter, Operation* operation,
     Value& wire1 = wires[reverse ? 0 : 1];
     const auto axis0 = term.axes[reverse ? 1 : 0];
     const auto axis1 = term.axes[reverse ? 0 : 1];
-    if (basis.entangler->parameterized()) {
+    const bool direct = basis.entangler->parameterized() &&
+                        (basis.entangler->angles ==
+                             CompilerTarget::AngleSupport::Unrestricted ||
+                         mqt::valueToConstantDouble(sequence.angle));
+    if (direct) {
       const auto nativeAxes = pauliAxes(basis.entangler->gate);
       auto frame0 = pauliFrame(axis0, nativeAxes[0]);
       auto frame1 = pauliFrame(axis1, nativeAxes[1]);
@@ -297,15 +280,79 @@ emitPauliRotations(RewriterBase& rewriter, Operation* operation,
       emitFactor(wire1, frame1);
       continue;
     }
-    auto before = fixedPauliEntangler(basis.entangler->gate);
-    auto after = before;
+    if (basis.entangler->gate == CompilerTarget::GateKind::SQRTISWAP) {
+      /// S^dagger (I X) S = (I X - Y Z)/sqrt(2). Symmetric RX
+      /// corrections cancel the local X component, leaving R_YZ(theta).
+      /// Reduce modulo pi; the removed turns are local Pauli rotations.
+      auto normalized = mqt::variantToValue(
+          rewriter, loc, normalizeRotationParameter(rewriter, loc, angle));
+      auto reduced = rewriter.createOrFold<math::AtanOp>(
+          loc, rewriter.createOrFold<math::TanOp>(loc, normalized));
+      auto half = mqt::constantFromScalar(rewriter, loc, 0.5);
+      auto sine = rewriter.createOrFold<math::SinOp>(
+          loc, rewriter.createOrFold<arith::MulFOp>(loc, reduced, half));
+      auto cosine = rewriter.createOrFold<math::CosOp>(loc, reduced);
+      auto root = rewriter.createOrFold<math::PowFOp>(loc, cosine, half);
+      auto ratio = rewriter.createOrFold<arith::DivFOp>(loc, sine, root);
+      auto alpha = rewriter.createOrFold<math::AtanOp>(loc, ratio);
+      auto beta = rewriter.createOrFold<arith::MulFOp>(
+          loc, mqt::constantFromScalar(rewriter, loc, -2.),
+          rewriter.createOrFold<math::AtanOp>(
+              loc, rewriter.createOrFold<arith::MulFOp>(
+                       loc, ratio,
+                       mqt::constantFromScalar(rewriter, loc,
+                                               std::numbers::sqrt2))));
+      auto turns =
+          rewriter.createOrFold<arith::SubFOp>(loc, normalized, reduced);
+      const auto frame0 = pauliFrame(axis0, PauliAxis::Y);
+      const auto frame1 = pauliFrame(axis1, PauliAxis::Z);
+      emitFactor(wire0, frame0.adjoint());
+      emitFactor(wire1, frame1.adjoint());
+      const auto rotate = [&](Value& wire, PauliAxis axis, Value value) {
+        wire =
+            synthesizePauliRotation1Q(rewriter, loc, wire, axis, value, basis);
+      };
+      const auto entangle = [&] {
+        auto native = XXPlusYYOp::create(
+            rewriter, loc, wire0, wire1,
+            mqt::constantFromScalar(rewriter, loc, -std::numbers::pi / 2.),
+            mqt::constantFromScalar(rewriter, loc, 0.));
+        wire0 = native.getResult(0);
+        wire1 = native.getResult(1);
+      };
+      rotate(wire1, PauliAxis::X, alpha);
+      entangle();
+      rotate(wire1, PauliAxis::X, beta);
+      emitFactor(wire0, ZOp::getUnitaryMatrix());
+      entangle();
+      emitFactor(wire0, ZOp::getUnitaryMatrix());
+      rotate(wire1, PauliAxis::X, alpha);
+      rotate(wire0, PauliAxis::Y, turns);
+      rotate(wire1, PauliAxis::Z, turns);
+      emitFactor(wire0, frame0);
+      emitFactor(wire1, frame1);
+      GPhaseOp::create(rewriter, loc,
+                       rewriter.createOrFold<arith::MulFOp>(loc, turns, half));
+      continue;
+    }
+    /// Bounded native rotations include pi/2, which supplies the fixed
+    /// Clifford primitive for angles that cannot be checked at compile time.
+    auto fixedBasis = basis;
+    fixedBasis.entangler->angles = CompilerTarget::AngleSupport::Fixed;
+    const auto identity = Matrix2x2::identity();
     const auto axes = conjugatedPauliAxes(basis.entangler->gate);
     auto frame0 = pauliFrame(axis0, axes[0]);
     auto frame1 = pauliFrame(axis1, axes[1]);
-    before.singleQubitFactors[0] =
-        before.singleQubitFactors[0] * frame1.adjoint();
-    before.singleQubitFactors[1] =
-        before.singleQubitFactors[1] * frame0.adjoint();
+    const TwoQubitNativeDecomposition before{
+        .numBasisUses = 1,
+        .singleQubitFactors =
+            {
+                frame1.adjoint(),
+                frame0.adjoint(),
+                identity,
+                identity,
+            },
+    };
     /// E^dagger = D E. D is identity for CX/CZ/ECR, ZZ for iSWAP,
     /// and i times the generator for a fixed Pauli rotation at pi/2.
     if (basis.entangler->gate == CompilerTarget::GateKind::ISWAP) {
@@ -320,16 +367,17 @@ emitPauliRotations(RewriterBase& rewriter, Operation* operation,
       frame1 = frame1 * pauliMatrix(nativeAxes[1]);
       globalPhase += std::numbers::pi / 2.;
     }
-    auto& factors = after.singleQubitFactors;
-    factors[factors.size() - 2] = frame1 * factors[factors.size() - 2];
-    factors.back() = frame0 * factors.back();
+    const TwoQubitNativeDecomposition after{
+        .numBasisUses = 1,
+        .singleQubitFactors = {identity, identity, frame1, frame0},
+    };
     const auto first =
-        emitUnitary2QWeyl(rewriter, loc, wire0, wire1, before, basis);
+        emitUnitary2QWeyl(rewriter, loc, wire0, wire1, before, fixedBasis);
     wire0 = first.qubit0;
     wire1 = synthesizePauliRotation1Q(rewriter, loc, first.qubit1, axes[2],
                                       angle, basis);
     const auto second =
-        emitUnitary2QWeyl(rewriter, loc, wire0, wire1, after, basis);
+        emitUnitary2QWeyl(rewriter, loc, wire0, wire1, after, fixedBasis);
     wire0 = second.qubit0;
     wire1 = second.qubit1;
     globalPhase += first.globalPhase + second.globalPhase;
@@ -355,10 +403,12 @@ pauliRotationEntanglerCount(const PauliRotationSequence& sequence,
       }
     }
   }
-  if (entangler.parameterized()) {
+  if (entangler.parameterized() &&
+      (entangler.angles == CompilerTarget::AngleSupport::Unrestricted ||
+       mqt::valueToConstantDouble(sequence.angle))) {
     return 1;
   }
-  return entangler.gate == CompilerTarget::GateKind::SQRTISWAP ? 4 : 2;
+  return 2;
 }
 
 } // namespace mlir::qco::decomposition

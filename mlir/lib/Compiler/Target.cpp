@@ -1025,15 +1025,11 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
       break;
     }
   }
-  std::optional<Entangler> runtimeEntangler;
   if (!entangler) {
     for (const auto gate :
          {GateKind::RZZ, GateKind::RXX, GateKind::RYY, GateKind::RZX}) {
       if (supportsOnEveryCoupling(gate, AngleSupport::ZeroToHalfPi)) {
         entangler = {.gate = gate, .angles = AngleSupport::ZeroToHalfPi};
-        runtimeEntangler = {
-            .gate = supportsOnEveryCoupling(GateKind::CZ) ? GateKind::CZ : gate,
-        };
         break;
       }
     }
@@ -1049,7 +1045,6 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
   return SynthesisBasis{
       .singleQubit = *singleQubit,
       .entangler = entangler,
-      .runtimeEntangler = runtimeEntangler,
       .quarterTurnGates = quarterTurnGates,
       .hasHalfTurn = hasHalfTurn,
   };

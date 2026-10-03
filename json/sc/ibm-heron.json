@@ -1,6 +1,6 @@
 {
   "schema-version": 1,
-  "name": "IBM Heron 156 (mock)",
+  "name": "IBM Heron 156",
   "numQubits": 156,
   "couplings": [
     [0, 1],

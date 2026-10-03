@@ -201,8 +201,10 @@ relations between parameters are not represented. A device-specific instruction
 name can specify its compiler operation with `canonical_name`, for example
 `OperationCapability("rx_90", 1, 1, fixed_parameters=[pi / 2], canonical_name="rx")`.
 The reported name remains available to exporters.
-`CompilerTarget.from_qiskit(source, native_num_qubits=n)` imports a gate set for
-an `n`-qubit circuit, retaining angle constraints and ignoring placement.
+`CompilerTarget.NativeOperations.from_qiskit(source)` imports gate capabilities
+and parameter constraints independently of device width and placement. Combine
+them with connectivity and a circuit width using the `CompilerTarget`
+constructor.
 
 Target compilation requires a single-qubit synthesis basis available on every
 site. `ZSXX` accepts unrestricted RZ and SX, RX(±π/2), RY(±π/2), or R(±π/2, 0).
@@ -219,15 +221,14 @@ absorb virtual Z rotations into gate phases before device submission.
 
 Unrestricted RXX, RYY, RZX, and RZZ entanglers take precedence over fixed
 alternatives and use up to three native rotations for numeric two-qubit
-synthesis. Runtime two-qubit Pauli rotations use constant basis changes: one
-arbitrary-angle native entangler, or two fixed native entanglers (four for
-square-root iSWAP). Fixed entanglers use Pauli conjugation. Single-controlled
-Pauli rotations and phase gates use the same decomposition. Bounded Pauli
-entanglers that include `[0, pi/2]` use the same numeric synthesis with local
-Pauli corrections. Unknown runtime angles fall back to CZ, when available, or a
-native `pi/2` rotation. Bind parameters before compilation to use fractional
-entanglers directly. Qiskit import conservatively recognizes this interval
-through its public bound predicates.
+synthesis. Runtime two-qubit Pauli rotations need one arbitrary-angle native
+entangler or two fixed native entanglers, including square-root iSWAP. Fixed
+Clifford entanglers use Pauli conjugation. Single-controlled Pauli rotations and
+phase gates use the same decomposition. Bounded Pauli entanglers that include
+`[0, pi/2]` use the same numeric synthesis with local Pauli corrections. Unknown
+runtime angles use two native `pi/2` rotations. Bind parameters before
+compilation to use fractional entanglers directly. Qiskit import conservatively
+recognizes this interval through its public bound predicates.
 
 Equatorial R targets use at most two R gates per single-qubit unitary. Synthesis
 carries Z rotations through diagonal entanglers and absorbs them into R axes,

@@ -1,6 +1,6 @@
 {
   "schema-version": 1,
-  "name": "IBM Nighthawk 120 (mock)",
+  "name": "IBM Nighthawk 120",
   "numQubits": 120,
   "couplings": [
     [0, 1],

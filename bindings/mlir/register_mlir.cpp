@@ -1044,10 +1044,7 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
               &mlir::CompilerTarget::SynthesisBasis::singleQubit,
               "The single-qubit synthesis basis.")
       .def_ro("entangler", &mlir::CompilerTarget::SynthesisBasis::entangler,
-              "The two-qubit entangler, or None when none is usable.")
-      .def_ro("runtime_entangler",
-              &mlir::CompilerTarget::SynthesisBasis::runtimeEntangler,
-              "Fixed fallback for unbounded runtime parameters, if needed.");
+              "The two-qubit entangler, or None when none is usable.");
 
   nb::enum_<mlir::CompilerTarget::Connectivity::Kind>(
       compilerTarget, "ConnectivityKind", "The target connectivity model.")
@@ -1098,6 +1095,16 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
                     operations));
           },
           "operations"_a, "Create explicit native-operation support.")
+      .def_static("from_qiskit", &bindings::qiskit::importNativeOperations,
+                  "source"_a, nb::kw_only(), "operation_names"_a = nb::none(),
+                  nb::sig("def from_qiskit(source: qiskit.transpiler.Target | "
+                          "qiskit.providers.BackendV2, *, operation_names: "
+                          "collections.abc.Iterable[str] | None = None) -> "
+                          "mqt.core.mlir.CompilerTarget.NativeOperations"),
+                  "Import gate capabilities and parameter constraints, "
+                  "ignoring physical placement. "
+                  "Unsupported explicit selections raise ValueError; otherwise "
+                  "they warn and are omitted.")
       .def_static("unrestricted",
                   &mlir::CompilerTarget::NativeOperations::unrestricted,
                   "Create unrestricted native-operation support.")
@@ -1182,18 +1189,15 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
           "device"_a, "Snapshot a circuit-model QDMI device.")
       .def_static("from_qiskit", &bindings::qiskit::importTarget, "source"_a,
                   nb::kw_only(), "operation_names"_a = nb::none(),
-                  "name"_a = nb::none(), "native_num_qubits"_a = nb::none(),
+                  "name"_a = nb::none(),
                   nb::sig("def from_qiskit(source: qiskit.transpiler.Target | "
                           "qiskit.providers.BackendV2, *, operation_names: "
                           "collections.abc.Iterable[str] | None = None, "
-                          "name: str | None = None, native_num_qubits: int | "
-                          "None = None) -> CompilerTarget"),
+                          "name: str | None = None) -> CompilerTarget"),
                   R"pb(Snapshot native operations and connectivity from Qiskit.
 
 Args:
     source: Qiskit Target or BackendV2. Physical import requires a known positive qubit count.
-    native_num_qubits: Import a placement-independent gate set for this width.
-        Preserve parameter constraints; omit gates wider than the circuit.
     operation_names: Qiskit Target operation names to retain. By default,
         include every representable operation. Explicit selections must all be
         representable.
