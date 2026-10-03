@@ -804,30 +804,40 @@ def test_runtime_pauli_rotations_compile_and_export(gate: str, native_entangler:
 
 
 @requires_qiskit_translation
-def test_symbolic_su2_compiles_and_binds_after_export() -> None:
+@pytest.mark.parametrize(("num_qubits", "basis"), [(2, "zsxx"), (20, "u")])
+@pytest.mark.parametrize("method", ["compile_for_target", "synthesize_for_target"])
+def test_symbolic_su2_compiles_and_binds_after_export(num_qubits: int, basis: str, method: str) -> None:
     """Compile symbolic SU2 circuits with bindable parameters and exact phase."""
-    source = library.efficient_su2(2, reps=1, entanglement="circular")
+    source = library.efficient_su2(num_qubits, reps=3, entanglement="circular")
     source.global_phase = source.parameters[0] / 5 - 0.3
     program = QCProgram.from_qiskit(source).to_qco()
     target = CompilerTarget(
-        2,
+        num_qubits,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations([
-            CompilerTarget.OperationCapability("sx", 1, 0),
-            CompilerTarget.OperationCapability("x", 1, 0),
-            CompilerTarget.OperationCapability("rz", 1, 1),
+            *(
+                [CompilerTarget.OperationCapability("u", 1, 3)]
+                if basis == "u"
+                else [
+                    CompilerTarget.OperationCapability("sx", 1, 0),
+                    CompilerTarget.OperationCapability("x", 1, 0),
+                    CompilerTarget.OperationCapability("rz", 1, 1),
+                ]
+            ),
             CompilerTarget.OperationCapability("cz", 2, 0),
             CompilerTarget.OperationCapability("gphase", 0, 1),
         ]),
     )
-    program.compile_for_target(_test_target_environment(target))
+    getattr(program, method)(_test_target_environment(target))
     result = program.to_qiskit(target=target)
-    assert set(result.count_ops()) <= {"sx", "x", "rz", "cz"}
+    assert set(result.count_ops()) <= ({"u", "cz"} if basis == "u" else {"sx", "x", "rz", "cz"})
     assert result.parameters == source.parameters
     values = dict(zip(source.parameters, np.linspace(-3 * np.pi, 3 * np.pi, source.num_parameters), strict=True))
     bound = result.assign_parameters(values)
     assert bound.num_parameters == 0
-    assert np.allclose(Operator(bound).data, Operator(source.assign_parameters(values)).data, atol=1e-10, rtol=0)
+    assert program.to_jeff(copy=True).is_valid
+    if num_qubits == 2:
+        assert np.allclose(Operator(bound).data, Operator(source.assign_parameters(values)).data, atol=1e-10, rtol=0)
 
 
 @requires_qiskit_translation
@@ -862,13 +872,24 @@ def test_symbolic_x_euler_chain_exports_for_target() -> None:
 
 
 @requires_qiskit_translation
-@pytest.mark.parametrize("shape", ["native_xyx", "non_native_xyx", "long_zsxx", "h_rz"])
-def test_target_fusion_preserves_native_gates_and_symbolic_exports(shape: str) -> None:
+@pytest.mark.parametrize("shape", ["native_xyx", "non_native_xyx", "long_zsxx", "h_rz", "native_u", "long_u"])
+@pytest.mark.parametrize("method", ["compile_for_target", "synthesize_for_target"])
+def test_target_fusion_preserves_native_gates_and_symbolic_exports(shape: str, method: str) -> None:
     """Optional fusion preserves native gates and bindable Qiskit/jeff output."""
     angles = qiskit.circuit.ParameterVector("theta", 3)
     source = QuantumCircuit(1)
     native = {"x": 0, "sx": 0, "rz": 1, "gphase": 1}
-    if shape == "h_rz":
+    if shape == "native_u":
+        source.u(angles[0], 0.1, 0.2, 0)
+        source.u(0.3, angles[0], 0.4, 0)
+        native = {"u": 3, "gphase": 1}
+    elif shape == "long_u":
+        source.rx(angles[0], 0)
+        source.ry(0.3, 0)
+        source.rx(0.7, 0)
+        source.ry(angles[0], 0)
+        native = {"u": 3, "gphase": 1}
+    elif shape == "h_rz":
         source.h(0)
         source.rz(angles[0], 0)
         native = {"u": 3, "gphase": 1}
@@ -891,10 +912,10 @@ def test_target_fusion_preserves_native_gates_and_symbolic_exports(shape: str) -
         ]),
     )
     program = QCProgram.from_qiskit(source).to_qco()
-    program.compile_for_target(_test_target_environment(target))
+    getattr(program, method)(_test_target_environment(target))
     result = program.to_qiskit(target=target)
     assert result.parameters == source.parameters
-    if shape in {"native_xyx", "long_zsxx"}:
+    if shape in {"native_xyx", "long_zsxx", "native_u"}:
         assert result.count_ops() == source.count_ops()
     values = dict(zip(source.parameters, [0.31, -1.2, 2.7], strict=False))
     assert np.allclose(

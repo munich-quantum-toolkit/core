@@ -9,9 +9,11 @@
  */
 
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
+#include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Euler.h"
+#include "mqt/Dialect/QCO/Transforms/NativeSynthesis/SingleQubitFusion.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 #include "mqt/Dialect/QCO/Utils/WireIterator.h"
@@ -19,14 +21,21 @@
 
 #include "mlir/Dialect/Arith/IR/Arith.h" // IWYU pragma: keep (Passes.h.inc)
 #include "mlir/Dialect/Math/IR/Math.h"   // IWYU pragma: keep (Passes.h.inc)
+#include "mlir/IR/Iterators.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Value.h"
+#include "mlir/IR/Visitors.h"
 #include "mlir/Support/LLVM.h"
+#include "mlir/Support/WalkResult.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
+
 #include <cstddef>
+#include <memory>
 #include <optional>
 #include <utility>
 
@@ -84,8 +93,10 @@ scanFusableRun(UnitaryOpInterface head, const Matrix2x2& headMatrix,
       break;
     }
     scan.composed.premultiplyBy(*matrix);
-    scan.hasNonBasisGate |= !decomposition::isSingleQubitBasisGate(op, basis) &&
-                            (target == nullptr || !target->supports(op));
+    scan.hasNonBasisGate =
+        scan.hasNonBasisGate ||
+        (target != nullptr ? !target->supports(op)
+                           : !decomposition::isSingleQubitBasisGate(op, basis));
     scan.tail = member;
     ++scan.gateCount;
   }
@@ -115,15 +126,15 @@ namespace {
 /// Fuses maximal single-qubit unitary runs via Euler resynthesis.
 struct FuseSingleQubitUnitaryRunsPattern final
     : OpInterfaceRewritePattern<UnitaryOpInterface> {
-  FuseSingleQubitUnitaryRunsPattern(MLIRContext* context,
-                                    const CompilerTarget::SynthesisBasis& basis,
-                                    const bool skipControlledBodies,
-                                    const CompilerTarget* target)
-      : OpInterfaceRewritePattern(context), basis(basis),
-        skipControlledBodies(skipControlledBodies), target(target) {}
+  FuseSingleQubitUnitaryRunsPattern(
+      MLIRContext* context, const CompilerTarget::SynthesisBasis& basis,
+      decomposition::SingleQubitFusionPolicy policy,
+      const CompilerTarget* target)
+      : OpInterfaceRewritePattern(context), basis(basis), policy(policy),
+        target(target) {}
 
   CompilerTarget::SynthesisBasis basis;
-  bool skipControlledBodies;
+  decomposition::SingleQubitFusionPolicy policy;
   const CompilerTarget* target;
 
   /// Fuses the run anchored at `op` when beneficial.
@@ -136,11 +147,16 @@ struct FuseSingleQubitUnitaryRunsPattern final
   /// @return `success()` if a run was fused, `failure()` otherwise.
   LogicalResult matchAndRewrite(UnitaryOpInterface op,
                                 PatternRewriter& rewriter) const override {
-    if (skipControlledBodies &&
+    if (policy.skipControlledBodies &&
         (op.getOperation()->getParentOfType<CtrlOp>() != nullptr)) {
       return failure();
     }
     if (!isRunMemberCandidate(op)) {
+      return failure();
+    }
+    if (policy.preserveSingletons &&
+        !isRunMemberCandidate(
+            dyn_cast<UnitaryOpInterface>(*op.getOutputQubit(0).user_begin()))) {
       return failure();
     }
     auto predecessor = dyn_cast_or_null<UnitaryOpInterface>(
@@ -155,6 +171,9 @@ struct FuseSingleQubitUnitaryRunsPattern final
 
     FusableRunScan run =
         scanFusableRun(op, *headMatrix, basis.singleQubit, target);
+    if (policy.preserveSingletons && run.gateCount == 1) {
+      return failure();
+    }
     const auto synthesized = decomposition::synthesizeUnitary1QEuler(
         rewriter, op.getLoc(), op.getInputQubit(0), run.composed, run.gateCount,
         run.hasNonBasisGate, basis);
@@ -179,11 +198,23 @@ struct FuseSingleQubitUnitaryRunsPass final
       FuseSingleQubitUnitaryRunsOptions options)
       : Base(std::move(options)) {}
 
+  explicit FuseSingleQubitUnitaryRunsPass(const CompilerTarget& target)
+      : target_(target) {}
+
 protected:
   void runOnOperation() override {
     auto moduleOp = getOperation();
 
-    const auto parsed = decomposition::parseSingleQubitBasis(basis);
+    auto parsed = decomposition::parseSingleQubitBasis(basis);
+    decomposition::SingleQubitFusionPolicy policy;
+    if (target_) {
+      const auto nativeBasis = target_->synthesisBasis();
+      if (!nativeBasis) {
+        return;
+      }
+      parsed = nativeBasis->singleQubit;
+      policy = decomposition::SingleQubitFusionPolicy::forTarget(*parsed);
+    }
     if (!parsed) {
       moduleOp.emitError()
           << "Invalid single-qubit synthesis basis '" << basis
@@ -192,36 +223,136 @@ protected:
       return;
     }
 
-    const CompilerTarget::SynthesisBasis synthesisBasis{.singleQubit = *parsed};
-    RewritePatternSet compositionPatterns(&getContext());
-    decomposition::populateParameterizedSingleQubitRunCompositionPatterns(
-        compositionPatterns, synthesisBasis);
-
-    RewritePatternSet patterns(&getContext());
-    decomposition::populateFuseSingleQubitUnitaryRunsPatterns(
-        patterns, synthesisBasis, /*skipControlledBodies=*/false);
-
-    if (failed(
-            applyPatternsGreedily(moduleOp, std::move(compositionPatterns))) ||
-        failed(applyPatternsGreedily(moduleOp, std::move(patterns))) ||
+    const auto* target = target_ ? &*target_ : nullptr;
+    if (failed(decomposition::fuseSingleQubitUnitaryRuns(
+            moduleOp,
+            target_ ? *target_->synthesisBasis()
+                    : CompilerTarget::SynthesisBasis{.singleQubit = *parsed},
+            policy, target, GreedyRewriteConfig{})) ||
         failed(mlir::mqt::normalizeGlobalPhases(moduleOp))) {
       moduleOp.emitError("fusion pipeline failed"); // LCOV_EXCL_LINE
       signalPassFailure();
     }
   }
+
+private:
+  std::optional<CompilerTarget> target_;
 };
 
 } // namespace
+
+std::unique_ptr<Pass>
+createFuseSingleQubitUnitaryRuns(const CompilerTarget& target) {
+  return std::make_unique<FuseSingleQubitUnitaryRunsPass>(target);
+}
 
 } // namespace mlir::qco
 
 namespace mlir::qco::decomposition {
 
+LogicalResult fuseSingleQubitUnitaryRuns(
+    ModuleOp moduleOp, const CompilerTarget::SynthesisBasis& basis,
+    SingleQubitFusionPolicy policy, const CompilerTarget* target,
+    const GreedyRewriteConfig& config) {
+  SingleQubitRunFusion fusion(basis, policy, target, config);
+  return failure(moduleOp
+                     ->walk<WalkOrder::PostOrder, ReverseIterator>(
+                         [&](Operation* operation) {
+                           return failed(fusion.apply(operation))
+                                      ? WalkResult::interrupt()
+                                      : WalkResult::advance();
+                         })
+                     .wasInterrupted());
+}
+
+SingleQubitRunFusion::SingleQubitRunFusion(
+    const CompilerTarget::SynthesisBasis& basis, SingleQubitFusionPolicy policy,
+    const CompilerTarget* target, GreedyRewriteConfig config)
+    : basis_(basis), policy_(policy), target_(target), config_(config) {
+  /// Do not rewrite producers or unrelated runs during the caller's walk.
+  config_.setStrictness(GreedyRewriteStrictness::ExistingAndNewOps);
+}
+
+LogicalResult SingleQubitRunFusion::apply(Operation* operation) {
+  auto head = dyn_cast<UnitaryOpInterface>(operation);
+  if (!isRunMemberCandidate(head) ||
+      (policy_.skipControlledBodies && operation->getParentOfType<CtrlOp>())) {
+    return success();
+  }
+  Value input = head.getInputQubit(0);
+  if (isRunMemberCandidate(
+          dyn_cast_or_null<UnitaryOpInterface>(input.getDefiningOp())) ||
+      (policy_.preserveSingletons &&
+       !isRunMemberCandidate(dyn_cast<UnitaryOpInterface>(
+           *head.getOutputQubit(0).user_begin())))) {
+    return success();
+  }
+  bool hasRuntimeParameters = false;
+  SmallVector<Operation*> members;
+  SmallVector<Operation*> candidates;
+  const auto collectCandidates = [&] {
+    candidates.clear();
+    auto start = dyn_cast<UnitaryOpInterface>(*input.user_begin());
+    if (!isRunMemberCandidate(start)) {
+      return;
+    }
+    bool predecessorHasMatrix = false;
+    for (auto* current : WireRange(start.getOutputQubit(0))) {
+      auto op = dyn_cast<UnitaryOpInterface>(current);
+      if (!isRunMemberCandidate(op)) {
+        break;
+      }
+      members.push_back(current);
+      hasRuntimeParameters =
+          hasRuntimeParameters ||
+          (canSynthesizeParameterizedUnitary1Q(op.getOperation()) &&
+           llvm::any_of(op.getParameters(), [](Value parameter) {
+             return !mqt::valueToConstantDouble(parameter);
+           }));
+      if ((!policy_.preserveSingletons ||
+           isRunMemberCandidate(dyn_cast<UnitaryOpInterface>(
+               *op.getOutputQubit(0).user_begin()))) &&
+          !predecessorHasMatrix) {
+        candidates.push_back(current);
+      }
+      predecessorHasMatrix = getRunMemberMatrix(op).has_value();
+    }
+  };
+  collectCandidates();
+  if (candidates.empty()) {
+    return success();
+  }
+  if (hasRuntimeParameters) {
+    if (!runtimePatterns_) {
+      RewritePatternSet patterns(operation->getContext());
+      populateParameterizedSingleQubitRunCompositionPatterns(patterns, basis_,
+                                                             policy_, target_);
+      runtimePatterns_.emplace(std::move(patterns));
+    }
+    if (failed(applyOpPatternsGreedily(members, *runtimePatterns_, config_))) {
+      return failure();
+    }
+    /// Runtime rewrites can replace the collected operations.
+    members.clear();
+    collectCandidates();
+  }
+  if (candidates.empty()) {
+    return success();
+  }
+  if (!matrixPatterns_) {
+    RewritePatternSet patterns(input.getContext());
+    populateFuseSingleQubitUnitaryRunsPatterns(patterns, basis_, policy_,
+                                               target_);
+    matrixPatterns_.emplace(std::move(patterns));
+  }
+  return applyOpPatternsGreedily(candidates, *matrixPatterns_, config_);
+}
+
 void populateFuseSingleQubitUnitaryRunsPatterns(
     RewritePatternSet& patterns, const CompilerTarget::SynthesisBasis& basis,
-    const bool skipControlledBodies, const CompilerTarget* target) {
+    SingleQubitFusionPolicy policy, const CompilerTarget* target) {
   patterns.add<FuseSingleQubitUnitaryRunsPattern>(patterns.getContext(), basis,
-                                                  skipControlledBodies, target);
+                                                  policy, target);
 }
 
 } // namespace mlir::qco::decomposition

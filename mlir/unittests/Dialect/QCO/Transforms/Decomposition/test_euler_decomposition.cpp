@@ -493,7 +493,7 @@ TEST(EulerAnglesCoverageTest, UBasisNonzeroThetaEmitsSingleUGate) {
                           });
 }
 
-TEST(EulerAnglesCoverageTest, RBasisNonzeroThetaEmitsThreeRGates) {
+TEST(EulerAnglesCoverageTest, HadamardNeedsOnlyTwoRGates) {
   TestFixture fx;
   fx.setUp();
   const Matrix2x2 matrix = HOp::getUnitaryMatrix();
@@ -501,7 +501,7 @@ TEST(EulerAnglesCoverageTest, RBasisNonzeroThetaEmitsThreeRGates) {
   ASSERT_GT(std::abs(angles.theta), mlir::mqt::PARAMETER_COMPARISON_TOLERANCE);
   expectSynthesizedMatrix(fx.ctx(), matrix, R,
                           [](func::FuncOp funcOp, const Matrix2x2& /*matrix*/) {
-                            EXPECT_EQ(countOps<ROp>(funcOp), 3U);
+                            EXPECT_EQ(countOps<ROp>(funcOp), 2U);
                           });
 }
 
@@ -511,11 +511,28 @@ TEST(EulerAnglesCoverageTest, Mod2PiMapsPiBoundaryThroughSynthesis) {
   constexpr double eps = 0.5 * mlir::mqt::PARAMETER_COMPARISON_TOLERANCE;
   const qco::Complex global = std::polar(1.0, std::numbers::pi - eps);
   const Matrix2x2 matrix = Matrix2x2::fromElements(global, 0, 0, global);
-  expectSynthesizedMatrix(fx.ctx(), matrix, U,
-                          [](func::FuncOp funcOp, const Matrix2x2& /*matrix*/) {
-                            EXPECT_EQ(countOps<UOp>(funcOp), 1U);
-                            EXPECT_EQ(countOps<GPhaseOp>(funcOp), 1U);
-                          });
+  forEachBasis([&](StringRef basis) {
+    const auto parsed = *parseSingleQubitBasis(basis);
+    expectSynthesizedMatrix(fx.ctx(), matrix, parsed,
+                            [parsed](func::FuncOp funcOp, const Matrix2x2&) {
+                              EXPECT_EQ(countBasisGates(funcOp, parsed), 0U);
+                              EXPECT_EQ(countOps<GPhaseOp>(funcOp), 1U);
+                            });
+  });
+}
+
+TEST(EulerSynthesisTest, NegativePauliRotationsDoNotGainOuterGates) {
+  TestFixture fx;
+  fx.setUp();
+  for (const auto basis : {ZYZ, ZXZ, XZX, XYX, R}) {
+    const auto matrix = basis == ZXZ   ? RXOp::unitaryMatrix(-0.37)
+                        : basis == XZX ? RZOp::unitaryMatrix(-0.37)
+                                       : RYOp::unitaryMatrix(-0.37);
+    expectSynthesizedMatrix(fx.ctx(), matrix, basis,
+                            [basis](func::FuncOp funcOp, const Matrix2x2&) {
+                              EXPECT_EQ(countBasisGates(funcOp, basis), 1U);
+                            });
+  }
 }
 
 TEST(EulerAnglesCoverageTest, Mod2PiPreservesNonFinitePhase) {

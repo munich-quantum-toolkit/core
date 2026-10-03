@@ -14,6 +14,7 @@
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Euler.h"
+#include "mqt/Dialect/QCO/Transforms/NativeSynthesis/SingleQubitFusion.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 #include "mqt/Dialect/QCO/Utils/WireIterator.h"
@@ -660,11 +661,13 @@ struct MergeSingleQubitRotationGatesPattern final
   explicit MergeSingleQubitRotationGatesPattern(
       MLIRContext* context,
       std::optional<CompilerTarget::SynthesisBasis> fusionBasis = std::nullopt,
+      decomposition::SingleQubitFusionPolicy policy = {},
       const CompilerTarget* target = nullptr)
       : OpInterfaceRewritePattern(context), fusionBasis(fusionBasis),
-        target(target) {}
+        policy(policy), target(target) {}
 
   std::optional<CompilerTarget::SynthesisBasis> fusionBasis;
+  decomposition::SingleQubitFusionPolicy policy;
   const CompilerTarget* target;
 
   /// Checks if this op is the start of a mergeable chain.
@@ -921,7 +924,8 @@ struct MergeSingleQubitRotationGatesPattern final
   /// numerical Euler synthesis; runtime chains use quaternion composition.
   LogicalResult matchAndRewrite(UnitaryOpInterface op,
                                 PatternRewriter& rewriter) const override {
-    if (target != nullptr && op->getParentOfType<CtrlOp>()) {
+    auto control = op->getParentOfType<CtrlOp>();
+    if (policy.skipControlledBodies && control) {
       return failure();
     }
     if (!isChainStart(op)) {
@@ -929,6 +933,9 @@ struct MergeSingleQubitRotationGatesPattern final
     }
 
     auto chain = collectChain(op);
+    if (policy.preserveSingletons && chain.size() == 1) {
+      return failure();
+    }
     /// Emit helper operations at the chain tail next to the merged output.
     OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPointAfter(chain.back().getOperation());
@@ -937,12 +944,21 @@ struct MergeSingleQubitRotationGatesPattern final
       if (!shouldComposeForFusion(chain, fusionBasis->singleQubit)) {
         return failure();
       }
-      if (target != nullptr) {
-        if (llvm::all_of(chain, [&](auto member) {
-              return target->supports(member.getOperation());
-            })) {
-          return failure();
-        }
+      /// A multi-gate control body is not itself a native operation.
+      if (policy.preserveNativeParameterizedRuns && !control &&
+          llvm::all_of(chain, [&](auto member) {
+            return target != nullptr
+                       ? target->supports(member.getOperation())
+                       : decomposition::isSingleQubitBasisGate(
+                             member.getOperation(), fusionBasis->singleQubit);
+          })) {
+        return failure();
+      }
+      using RuntimeExpressions =
+          decomposition::SingleQubitFusionPolicy::RuntimeExpressions;
+      if (policy.runtimeExpressions == RuntimeExpressions::DirectOnly ||
+          (policy.runtimeExpressions == RuntimeExpressions::ControlledBodies &&
+           !control)) {
         return tryMergeDirectChain(chain, rewriter, *fusionBasis);
       }
       return mergeDynamicChain(chain, rewriter, *fusionBasis);
@@ -989,9 +1005,11 @@ namespace mlir::qco::decomposition {
 
 void populateParameterizedSingleQubitRunCompositionPatterns(
     RewritePatternSet& patterns, const CompilerTarget::SynthesisBasis& basis,
-    const CompilerTarget* target) {
+    SingleQubitFusionPolicy policy, const CompilerTarget* target) {
   RZOp::getCanonicalizationPatterns(patterns, patterns.getContext());
-  if (basis.singleQubit == SingleQubitBasis::ZSXX && target != nullptr) {
+  if (basis.singleQubit == SingleQubitBasis::ZSXX &&
+      policy.runtimeExpressions ==
+          SingleQubitFusionPolicy::RuntimeExpressions::DirectOnly) {
     patterns.add(mergeParameterizedRZ);
     return;
   }
@@ -999,7 +1017,7 @@ void populateParameterizedSingleQubitRunCompositionPatterns(
   RYOp::getCanonicalizationPatterns(patterns, patterns.getContext());
   POp::getCanonicalizationPatterns(patterns, patterns.getContext());
   patterns.add<MergeSingleQubitRotationGatesPattern>(patterns.getContext(),
-                                                     basis, target);
+                                                     basis, policy, target);
 }
 
 } // namespace mlir::qco::decomposition

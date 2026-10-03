@@ -101,5 +101,20 @@ boundary. Findings are addressed:
 - Compare equivalent U matrices in numerical merge tests instead of selecting
   one set of Euler coordinates. Full-circuit matrix checks retain phase
   coverage; identity cancellation requires no remaining gate.
+- Incorporate #2649's explicit fusion policy, operation-scoped greedy rewrites,
+  and shared traversal. Preserve controlled-body phase wires through the
+  synthesis listener. Keep fusion policy out of the Euler header and retain the
+  complete native basis at emission. The U-specific optimizer is no longer
+  needed in target compilation.
+- Omit phase-only U gates and redundant full turns with exact phase accounting.
+  Select shorter equivalent Euler representatives without changing tolerances.
+  Import regression coverage for independent wires, symbolic run boundaries,
+  controlled U2 restoration, and phase-generated control wires. Retain Python
+  integration coverage rather than making unrelated test reductions.
+- Balance global-phase sums in the shared normalizer. Sequential accumulation
+  made symbolic U-target exports exceed the parameter-depth limit at 20 qubits.
+  QC/QCO depth and value checks plus Qiskit/jeff export regressions cover the
+  correction; exporter resource limits remain intact.
 
+Core #2649 is subsumed by this implementation; #2578 owns resolution of #2614.
 No additional dependencies or unresolved complexity findings remain.

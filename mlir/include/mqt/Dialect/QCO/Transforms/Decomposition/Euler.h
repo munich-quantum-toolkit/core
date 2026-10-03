@@ -26,7 +26,6 @@
 namespace mlir {
 class Operation;
 class RewriterBase;
-class RewritePatternSet;
 } // namespace mlir
 
 namespace mlir::qco::decomposition {
@@ -134,25 +133,5 @@ void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase);
 void synthesizeParameterizedUnitary1Q(
     RewriterBase& rewriter, Operation* op,
     const CompilerTarget::SynthesisBasis& basis);
-
-/// Populates @p patterns with the single-qubit run fusion rewrite for
-/// @p basis (the reusable core of `fuse-single-qubit-unitary-runs`).
-///
-/// @param skipControlledBodies When set, single-qubit gates nested in
-/// `qco.ctrl` bodies are left untouched.
-/// @param target When set, require a shorter run if every gate is supported.
-/// Individual lowering owns site-specific native support.
-void populateFuseSingleQubitUnitaryRunsPatterns(
-    RewritePatternSet& patterns, const CompilerTarget::SynthesisBasis& basis,
-    bool skipControlledBodies = false, const CompilerTarget* target = nullptr);
-
-/// Populates patterns that compose profitable parameterized single-qubit runs.
-///
-/// The patterns emit @p basis directly. With @p target, preserve native runs
-/// and only use direct Euler identities, keeping optional fusion exportable.
-/// ZSXX targets only merge adjacent RZ operations symbolically.
-void populateParameterizedSingleQubitRunCompositionPatterns(
-    RewritePatternSet& patterns, const CompilerTarget::SynthesisBasis& basis,
-    const CompilerTarget* target = nullptr);
 
 } // namespace mlir::qco::decomposition

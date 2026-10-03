@@ -302,8 +302,15 @@ planEulerAngles(OpBuilder& builder, Location loc,
   const auto rotation = [&](SynthesisStep::Kind kind,
                             const RotationParameter& angle,
                             const RotationParameter& axis = 0.) {
-    if (!isConstantParameter(angle)) {
-      plan.steps.push_back({.kind = kind, .theta = angle, .phi = axis});
+    RotationParameter normalized = angle;
+    if (const auto value = constantParameter(angle)) {
+      const double wrapped = mod2pi(*value);
+      /// Removing a full Pauli turn contributes a minus sign.
+      plan.phase = add(plan.phase, 0.5 * (*value - wrapped));
+      normalized = wrapped;
+    }
+    if (!isConstantParameter(normalized)) {
+      plan.steps.push_back({.kind = kind, .theta = normalized, .phi = axis});
     }
   };
   using Kind = SynthesisStep::Kind;
@@ -322,7 +329,8 @@ planEulerAngles(OpBuilder& builder, Location loc,
       rotation(Kind::R, add(phi, lambda));
       break;
     case SingleQubitBasis::U:
-      if (!isConstantParameter(phi) || !isConstantParameter(lambda)) {
+      if (const auto p = constantParameter(phi), l = constantParameter(lambda);
+          !p || !l || !isNearZeroRotationAngle(mod2pi(*p + *l))) {
         plan.steps.push_back(
             {.kind = Kind::U, .theta = 0., .phi = phi, .lambda = lambda});
       }
@@ -372,14 +380,14 @@ planEulerAngles(OpBuilder& builder, Location loc,
       rotation(Kind::RZ, add(lambda, offset - halfPi));
       plan.steps.push_back({.kind = quarterTurn});
       rotation(Kind::RZ, add(phi, halfPi - offset));
-      plan.phase = add(phase, -quarterPhase);
+      plan.phase = add(plan.phase, -quarterPhase);
       break;
     }
     if (basis.hasHalfTurn && isConstantParameter(theta, pi)) {
       rotation(Kind::RZ, add(lambda, azimuth));
       plan.steps.push_back({.kind = Kind::X});
       rotation(Kind::RZ, add(phi, pi - azimuth));
-      plan.phase = add(phase, -halfPi);
+      plan.phase = add(plan.phase, -halfPi);
       break;
     }
     rotation(Kind::RZ, add(lambda, offset));
@@ -387,7 +395,7 @@ planEulerAngles(OpBuilder& builder, Location loc,
     rotation(Kind::RZ, add(theta, pi));
     plan.steps.push_back({.kind = quarterTurn});
     rotation(Kind::RZ, add(phi, pi - offset));
-    plan.phase = add(phase, pi - 2. * quarterPhase);
+    plan.phase = add(plan.phase, pi - 2. * quarterPhase);
     break;
   }
   }
@@ -491,6 +499,20 @@ synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
                                angles.phase,
                            },
                            basis);
+    /// K(phi) A(theta) K(lambda) = K(phi+pi) A(-theta) K(lambda-pi).
+    /// Keep the alternate Euler representative only when it removes gates.
+    constexpr double pi = std::numbers::pi;
+    if (basis.singleQubit != SingleQubitBasis::U && plan.steps.size() > 1 &&
+        (isNearZeroRotationAngle(mod2pi(angles.phi + pi)) ||
+         isNearZeroRotationAngle(mod2pi(angles.lambda + pi)))) {
+      auto alternate = planEulerAngles(
+          builder, loc,
+          {-angles.theta, angles.phi + pi, angles.lambda - pi, angles.phase},
+          basis);
+      if (alternate.steps.size() < plan.steps.size()) {
+        plan = std::move(alternate);
+      }
+    }
   }
   if (!hasNonBasisGate && runSize <= plan.steps.size()) {
     return std::nullopt;

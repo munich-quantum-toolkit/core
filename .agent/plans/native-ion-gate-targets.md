@@ -27,6 +27,18 @@ these rotations and a global phase. Numerical KAK remains the specialization for
 constant gates and fused runs. Constant single-qubit fusion reuses numerical
 Euler synthesis; quaternion arithmetic is confined to runtime fusion.
 
+The fusion contracts from Core #2649 are integrated here. An explicit policy
+owns singleton preservation, controlled-body ownership, native symbolic runs,
+and permitted runtime expressions. Native synthesis fuses one wire at a time
+while traversing the program for synthesis. The standalone pass uses the same
+driver. U targets can shrink runs before routing without invoking a separate
+optimizer. A rewrite listener carries phase-generated wires into site analysis.
+Fusion declarations live in `NativeSynthesis/SingleQubitFusion.h`; the Euler
+emitter remains independent of traversal policy.
+
+Normalize constant full turns with their phase correction, omit phase-only U
+gates, and choose an equivalent Euler representative only when it removes gates.
+
 Each recognized two-qubit Pauli sequence has exactly one entangling term.
 CompilerTarget owns fixed and unrestricted entangler queries; fusion receives
 the complete synthesis basis. Native cost analysis selects its numerical cache
@@ -44,10 +56,11 @@ native aliases without changing public targets or Qiskit's session library.
 
 ## Validation
 
-The compiler, decomposition, optimization, native-synthesis, and mapping suites
-pass all 1002 C++ tests; Python MLIR/Qiskit suites pass all 956 tests. Coverage
-includes runtime binding, full global phase, reversed placements, native gate
-counts, fixed RX/RY/R constraints, aliases, and large-angle normalization.
+The compiler, decomposition, optimization, native-synthesis, mapping, and
+global-phase suites pass all 1040 C++ tests; Python MLIR/Qiskit suites pass all
+967 tests. Coverage includes runtime binding, full global phase, reversed
+placements, native gate counts, fixed RX/RY/R constraints, aliases, and
+large-angle normalization.
 
 A 20-case comparison against the preceding PR head found no gate-count
 regressions. With native U available, CZ-based runtime RZZ needs three local
@@ -55,6 +68,25 @@ gates instead of five; iSWAP needs two entanglers instead of four. Regression
 checks constrain these counts and exclude runtime trigonometry from Pauli
 lowering. Constant fusion shares numerical Euler synthesis while full-unitary
 checks permit equivalent Euler coordinates.
+
+Against published head `7790b88c2`, 58 compilation/synthesis cases cover six
+automatically selected bases, numeric and symbolic SU2 circuits (2/20 qubits),
+the 100-qubit symbolic ZSXX workload from #2614, and 1,000/10,000 rotations and
+cancellations. All jointly exportable cases have identical gate counts and
+depths. Qiskit and jeff export retain symbolic parameters; small cases agree in
+full matrix and phase with maximum error `8.2e-15`. The two previously failing
+20-qubit symbolic U exports now succeed: global-phase normalization balances
+sums so expression depth grows logarithmically. The exporters retain their input
+depth and size limits. Python coverage is retained; compiler semantics and
+fusion regressions are checked in their C++ owners.
+
+A focused timing comparison against `7790b88c2` used DGX Spark arm64, LLVM/MLIR
+23.1, release builds without IPO, seed 42, two warmups, and separate persistent
+processes. In 21 alternating pairs across eight U-target cases, median-time
+geometric ratios were 1.002 for compilation and 1.005 for synthesis. The earlier
+short-case timing outlier did not persist. Import, copying, export, and
+validation were outside the timed interval; these measurements do not establish
+a general speedup.
 
 Repository and whole-file C++ lint, executable docs with warnings as errors, and
 generated documentation links pass. No binding signatures changed in this
