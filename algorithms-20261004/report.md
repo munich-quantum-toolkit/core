@@ -31,14 +31,18 @@ Relative to the previous PR head, the symbolic three-axis Cartan witness drops f
 | large / RX/RZ/RZZ | 63 | 0.684 | 23 / 40 / 0 |
 | large / Rigetti RX/CZ | 39 | 0.811 | 0 / 39 / 0 |
 
-No common case increases two-qubit count, two-qubit depth, or physical single-qubit count. Six smaller and sixteen large cases increase depth excluding RZ; the largest is 17.3% for 156-qubit QPE on IBM CZ (14,083 to 16,513). This tradeoff predates this round: all 398 large-case gate counts and depth metrics match the previous PR evaluation. No paired synthesis-runtime median regresses by more than 10%.
+No common case increases two-qubit count, two-qubit depth, or single-qubit count excluding RZ. Six smaller and sixteen large cases increase depth excluding RZ; the largest is 17.3% for 156-qubit QPE on IBM CZ (14,083 to 16,513). This tradeoff predates this round: all 398 large-case gate counts and depth metrics match the previous PR evaluation. No paired synthesis-runtime median regresses by more than 10%.
 
 The canonicalization stress tests reduce the 4,000-load chain from 227 ms to 3.27 ms, distinct-index loads from 553 ms to 12.6 ms, repeated-condition branches from 115 ms to 20.2 ms, and scalarization of 256 tensor registers from 31.6 ms to 2.02 ms. These are cleanup microbenchmarks, not end-to-end synthesis speedups.
 
 Ratios below one are improvements. Ratios exclude unsupported or unvalidated cases and zero baseline denominators. Workload distributions are not confidence intervals. See `plots/summary.json` for every gate-count and runtime regression, and `plots/raw_results.csv` for all rows.
 
+The additional plots including RZ count each one-qubit gate once, including every RZ. Depth includes all quantum gates with unit weight, including RZ, and excludes measurement, reset, barrier, and delay. It is a structural metric, not a scheduled device duration. These plots reuse the same measurements. Including RZ, total one-qubit count never increases across the 538 common cases. Total native gate depth never increases in the large suite; one small Rigetti RX/iSWAP case (`pauli_merge_numeric`) increases from 10 to 12.
+
 ![Runtime](plots/runtime_comparison.png)
 ![Gate quality](plots/quality_comparison.png)
 ![Large-width gate counts](plots/representative_gate_counts.png)
+![Gate counts and depth including RZ](plots/quality_including_rz.png)
+![Large-width gate counts including RZ](plots/representative_gate_counts_including_rz.png)
 ![Scaling](plots/large_scaling.png)
 ![Canonicalization](plots/canonicalization_scaling.png)
