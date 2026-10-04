@@ -97,15 +97,16 @@ struct CommuteInsertExtractChains final : OpRewritePattern<InsertOp> {
     SmallVector<InsertOp> inserts{firstInsert};
     SmallVector<ExtractOp> extracts;
     DenseMap<int64_t, size_t> pending{
-        {*getConstantIntValue(firstInsert.getIndex()), 0}};
+        {*getConstantIntValue(firstInsert.getIndex()), 0},
+    };
     size_t numInsertsToMove = 0;
     auto input = firstInsert.getDest();
     tensor = firstInsert.getResult();
     Operation* previous = firstInsert;
     while (true) {
       auto* user = *tensor.user_begin();
-      if (user->getBlock() != block ||
-          (checkOrder && previous && !previous->isBeforeInBlock(user))) {
+      if (user->getBlock() != block || (checkOrder && previous != nullptr &&
+                                        !previous->isBeforeInBlock(user))) {
         break;
       }
       if (auto nextInsert = dyn_cast<InsertOp>(user)) {
