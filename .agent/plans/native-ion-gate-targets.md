@@ -66,13 +66,13 @@ library.
 
 ## Validation
 
-The selected synthesis, decomposition, optimization, and compiler C++ suites
-pass all 510 tests. Python MLIR/Qiskit tests pass all 791 cases. The frozen
-smaller benchmark suite produces 400 validated exports. Oracles cover full
-phase, native constraints, ordered wires, scalar dominance, barriers, large
-finite angles, and exporter parameter identity. Repository lint and whole-file
-C++ lint pass. Regression checks preserve physical rotation counts when Z frames
-move across diagonal entanglers.
+The complete C++ suite passes 3922 tests, with one existing job-ID test skipped.
+Python MLIR/Qiskit tests pass all 791 cases. The frozen smaller benchmark suite
+produces 400 validated exports. Oracles cover full phase, native constraints,
+ordered wires, scalar dominance, barriers, large finite angles, and exporter
+parameter identity. Repository lint and whole-file C++ lint pass. Regression
+checks preserve physical rotation counts when Z frames move across diagonal
+entanglers.
 
 Large-circuit evaluation uses 68 frozen inputs at 24, 36, 54, 104, and 156
 qubits across seven native contracts. Release builds use LLVM/MLIR 23.1 and

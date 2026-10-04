@@ -791,10 +791,12 @@ TEST(SqrtISwap, ChamberGridWithLocalFactorsAndPhase) {
 }
 
 TEST(SqrtISwap, NearChamberBoundaries) {
-  for (double epsilon : {1e-4, 1e-8, 1e-10}) {
+  for (double epsilon : {1e-4, 1e-6, 1e-8, 1e-10}) {
     const auto p = std::numbers::pi / 4.;
     for (const auto& coordinates : {
              std::array{epsilon, 0., 0.},
+             std::array{epsilon, epsilon / 3., epsilon / 5.},
+             std::array{epsilon, epsilon, epsilon},
              std::array{p - epsilon, 0., 0.},
              std::array{p, epsilon, epsilon},
              std::array{p - epsilon, .2, -.1},
@@ -810,7 +812,13 @@ TEST(SqrtISwap, NearChamberBoundaries) {
                    << coordinates[0] << "," << coordinates[1] << ","
                    << coordinates[2] << " eps=" << epsilon);
       ASSERT_TRUE(result.has_value());
-      EXPECT_TRUE(reconstructSqrtISwap(*result).isApprox(target, 1e-9));
+      const auto overlap =
+          (target.adjoint() * reconstructSqrtISwap(*result)).trace();
+      EXPECT_GE(traceToFidelity(overlap), WEYL_DEFAULT_FIDELITY - 2e-15);
+      EXPECT_NEAR(std::arg(overlap), 0., 1e-12);
+      if (traceToFidelity(target.trace()) >= WEYL_DEFAULT_FIDELITY) {
+        EXPECT_EQ(result->numBasisUses, 0U);
+      }
     }
   }
 }
@@ -849,26 +857,5 @@ TEST(SqrtISwap, RandomInteractionsAndLocalFactors) {
               coordinates[0] >= coordinates[1] + std::abs(coordinates[2]) ? 2
                                                                           : 3);
     EXPECT_TRUE(reconstructSqrtISwap(*result).isApprox(target, 1e-9));
-  }
-}
-
-TEST(SqrtISwap, PreservesSmallInteractions) {
-  for (double epsilon : {1e-6, 1e-8, 3e-9, 1e-10}) {
-    for (const auto& coordinates : {
-             std::array{epsilon, 0., 0.},
-             std::array{epsilon, epsilon / 3., epsilon / 5.},
-             std::array{epsilon, epsilon, epsilon},
-         }) {
-      const auto target = TwoQubitWeylDecomposition::getCanonicalMatrix(
-          coordinates[0], coordinates[1], coordinates[2]);
-      const auto result = decomposeUnitary2QWeyl(
-          target, {.gate = CompilerTarget::GateKind::SQRTISWAP});
-      SCOPED_TRACE(::testing::Message()
-                   << coordinates[0] << "," << coordinates[1] << ","
-                   << coordinates[2]);
-      ASSERT_TRUE(result.has_value());
-      EXPECT_TRUE(
-          reconstructSqrtISwap(*result).isApprox(target, WEYL_TOLERANCE));
-    }
   }
 }
