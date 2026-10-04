@@ -1,0 +1,15 @@
+{
+  "before": {
+    "binary_sha256": "a490a8568c1850a1cb683eb9bff9b7f531e50385a1d140863088a745263f72d5",
+    "source_commit": "cdf609911d4813a4e0c401a9d2baa0e9b8ece871"
+  },
+  "after": {
+    "binary_sha256": "3f2fb64790b89d31a8ec31a3b8ef52339b8d3b46b0d96bae0164a09e74e5ac09",
+    "source_commit": "02103652062415d71c8428d91e8bd927ad1993b2"
+  },
+  "rebuilt_previous": {
+    "binary_sha256": "1ca5ed94976a01e4b30e73f05dda2dfcfac6e70401a180c219e0071e4c06eff3",
+    "source_commit": "a00a2d8c0eb7fde8e36b8372bfd5acfc912bc78d"
+  },
+  "note": "before uses the preserved binary from the preceding published evaluation. Rebuilt previous restores the pre-refinement production sources for narrow count isolation; no timing claims use it. Version metadata may predate commit creation; binary hashes identify all worker binaries."
+}

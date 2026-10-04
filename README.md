@@ -2,7 +2,9 @@
 
 # Core PR #2578: synthesis evaluations
 
-Latest: [unified approximation, Z-frame merging, and cleanup evaluation](refined-20261004/report.md), with 24–156-qubit results, pass profiles, and reproduction data.
+Latest: [cleanup and numerical regression audit](cleanup-20261004/report.md), with fresh paired timings, 398 native-contract checks, pass profiles, and reproduction data.
+
+Previous: [unified approximation and Z-frame evaluation](refined-20261004/report.md).
 
 Previous: [large-circuit evaluation](large-20261004/report.md).
 
