@@ -1,0 +1,1976 @@
+diff --git a/.agent/audits/dialect-canonicalization-probes.md b/.agent/audits/dialect-canonicalization-probes.md
+index e24fd2cfb..a786f49d9 100644
+--- a/.agent/audits/dialect-canonicalization-probes.md
++++ b/.agent/audits/dialect-canonicalization-probes.md
+@@ -94,7 +94,7 @@ uncertain-alias barrier.
+ The baseline live-snapshot CBit probe stored true, read the whole register into
+ a live result, then loaded the stored bit. It retained one unnecessary Load
+ (exit 1). The permanent
+-[CBit tests](../../mlir/unittests/Dialect/CBit/IR/test_cbit_canonicalization.cpp)
++[CBit tests](../../mlir/unittests/Dialect/MQT/Transforms/test_classical_simplification.cpp)
+ retain `ForwardsStoredBitAcrossReadOnlySnapshot` and
+ `DoesNotForwardAcrossWholeRegisterWrite`. Their fixture loads Arith explicitly;
+ runtime dialect dependencies are covered by the extracted change.
+diff --git a/.agent/plans/native-ion-gate-targets.md b/.agent/plans/native-ion-gate-targets.md
+index 3c7373fd1..303e59bb1 100644
+--- a/.agent/plans/native-ion-gate-targets.md
++++ b/.agent/plans/native-ion-gate-targets.md
+@@ -1,7 +1,8 @@
+ # Native target synthesis
+ 
+-Status: implemented and validated. Performance measurements, frozen inputs, and
+-plots are maintained separately from the source PR.
++Status: implemented and validated locally. Symbolic Cartan synthesis, cross-pair
++diagonal merging, and canonicalization scheduling are complete. The full frozen
++comparison against main is recorded outside the PR.
+ 
+ ## Scope and ownership
+ 
+@@ -23,9 +24,12 @@ Pauli axes and scalar angles describe elementary rotations. Constant Clifford
+ frames change axes without runtime trigonometry. An unrestricted native Pauli
+ entangler realizes each two-qubit rotation in one instruction. A fixed Clifford
+ entangler sandwiches local rotations to realize one or two commuting Pauli
+-products with two native gates. SQRTISWAP retains its separate, numerically
+-stable two-gate identity. P and CP carry explicit global phase. Numerical KAK
+-owns constant-led runs; symbolic composition requires a reduction in native
++products with two native gates. Three independent products reuse the existing
++three-entangler analytic template. Equal RZZ, controlled-P, and controlled-RZ
++rotations combine across diagonal gates before pairwise synthesis; controlled RZ
++keeps its ordered operands. SQRTISWAP retains its separate, numerically stable
++two-gate identity. P and CP carry explicit global phase. Numerical KAK owns
++constant-led runs; symbolic composition requires a reduction in native
+ entanglers. Single- and two-qubit composition share a traversal, with generated
+ wire sites tracked by the synthesis listener.
+ 
+@@ -55,7 +59,16 @@ listener so erased constants cannot remain cached.
+ The module cleanup owns canonicalization and dead symbols after inlining; the
+ inliner needs no separate callable-optimization pipeline. Defer dead-value
+ cleanup until after placement, which can change structured-control-flow results.
+-Generic QCO cleanup retains its liveness pass.
++Generic QCO cleanup retains its liveness pass. Classical load forwarding and
++branch facts use one scoped walk before cleanup and after unrolling. Generic
++canonicalization keeps adjacent load folds. Definitions are visited before users
++so forwarded values do not trigger repeated bottom-up arithmetic scans. Payload
++branch folding registers only the QCO static-condition rewrite.
++
++Scalarize all eligible tensor registers in a control-flow signature together.
++Keep distinct constant indices, complete reinsertion, and ordered wire mappings;
++while loops may permute the before/after signatures. Modifier rewrites build one
++input/output map and stop body searches after the first unitary.
+ 
+ Normalize each constant-index tensor chain in one rewrite, forwarding repeated
+ slot accesses before moving the remaining inserts. Stop at dynamic indices and
+@@ -72,13 +85,19 @@ library.
+ 
+ ## Validation
+ 
+-The complete C++ suite passes 3922 tests, with one existing job-ID test skipped.
+-Python MLIR/Qiskit tests pass all 791 cases. The frozen smaller benchmark suite
+-produces 400 validated exports. Oracles cover full phase, native constraints,
+-ordered wires, scalar dominance, barriers, large finite angles, and exporter
+-parameter identity. Repository lint and whole-file C++ lint pass. Regression
+-checks preserve physical rotation counts when Z frames move across diagonal
+-entanglers.
++The complete C++ suite completes 3925 entries without failures; one existing
++job-ID test is skipped. All 985 Python MLIR/Qiskit tests pass. Repository lint
++and whole-file C++ lint pass. Regression oracles cover phase, native
++constraints, wire order, classical-memory invalidation, scoped branch facts,
++tensor-loop signatures, scalar dominance, barriers, and exporter parameter
++identity.
++
++The complete frozen comparison reruns 400 smaller and 398 larger cases on each
++revision. All 798 PR cases export and validate. Main has 271 validated smaller
++exports and 267 larger exports. Smaller-circuit checks use phase-sensitive
++matrices, sampled states, or reference output distributions. Separate stress
++inputs check load forwarding, shared branch conditions, and batched tensor
++scalarization without timing assertions in the unit suite.
+ 
+ Large-circuit evaluation uses 68 frozen inputs at 24, 36, 54, 104, and 156
+ qubits across seven native contracts. Release builds use LLVM/MLIR 23.1 and
+diff --git a/mlir/include/mqt/Dialect/MQT/Transforms/Passes.h b/mlir/include/mqt/Dialect/MQT/Transforms/Passes.h
+index 260baced7..afd6f8426 100644
+--- a/mlir/include/mqt/Dialect/MQT/Transforms/Passes.h
++++ b/mlir/include/mqt/Dialect/MQT/Transforms/Passes.h
+@@ -15,6 +15,9 @@
+ 
+ namespace mlir::mqt {
+ 
++/// Forward block-local classical memory and propagate scoped QCO conditions.
++void simplifyClassicalControl(Operation* operation);
++
+ #define GEN_PASS_DECL
+ #include "mqt/Dialect/MQT/Transforms/Passes.h.inc" // IWYU pragma: export
+ 
+diff --git a/mlir/include/mqt/Dialect/MQT/Transforms/Passes.td b/mlir/include/mqt/Dialect/MQT/Transforms/Passes.td
+index fe0a5bfd2..3e846ff08 100644
+--- a/mlir/include/mqt/Dialect/MQT/Transforms/Passes.td
++++ b/mlir/include/mqt/Dialect/MQT/Transforms/Passes.td
+@@ -11,6 +11,21 @@
+ 
+ include "mlir/Pass/PassBase.td"
+ 
++def SimplifyClassicalControl
++    : Pass<"simplify-classical-control", "mlir::ModuleOp"> {
++  let dependentDialects = ["mlir::arith::ArithDialect"];
++  let summary = "Forward classical bits and propagate known branch conditions";
++  let description = [{
++    Visits each block once to forward classical-bit loads from known stores,
++    previous loads, or zero initialization. Ambiguous writes invalidate memory
++    facts; memory facts do not cross region or block boundaries.
++
++    Within each QCO if branch, replaces uses of its condition with the known
++    boolean value. A following canonicalizer folds the exposed expressions and
++    static branches. Run after inlining and again after static loop unrolling.
++  }];
++}
++
+ def NormalizeGlobalPhases : Pass<"normalize-global-phases", "mlir::ModuleOp"> {
+   let dependentDialects = ["mlir::arith::ArithDialect", "mlir::qc::QCDialect",
+                            "mlir::qco::QCODialect"];
+diff --git a/mlir/include/mqt/Dialect/QCO/QCOUtils.h b/mlir/include/mqt/Dialect/QCO/QCOUtils.h
+index 42c17c1d6..7489d088e 100644
+--- a/mlir/include/mqt/Dialect/QCO/QCOUtils.h
++++ b/mlir/include/mqt/Dialect/QCO/QCOUtils.h
+@@ -28,6 +28,9 @@
+ 
+ namespace mlir::qco {
+ 
++/// Fold QCO if operations with literal conditions, without changing signatures.
++void populateFoldStaticIfPatterns(RewritePatternSet& patterns);
++
+ /// Check if given quantum operation is unused (i.e., only used by sinks
+ /// or resets and has no memory effects).
+ ///
+diff --git a/mlir/include/mqt/Dialect/QCO/Transforms/Decomposition/Pauli.h b/mlir/include/mqt/Dialect/QCO/Transforms/Decomposition/Pauli.h
+index 9aaf43fe9..6b263832a 100644
+--- a/mlir/include/mqt/Dialect/QCO/Transforms/Decomposition/Pauli.h
++++ b/mlir/include/mqt/Dialect/QCO/Transforms/Decomposition/Pauli.h
+@@ -25,6 +25,7 @@
+ 
+ namespace mlir {
+ class Operation;
++class ModuleOp;
+ class OpBuilder;
+ class Location;
+ class RewriterBase;
+@@ -33,6 +34,9 @@ class PatternRewriter;
+ 
+ namespace mlir::qco::decomposition {
+ 
++/// Merge equal diagonal rotations across diagonal gates on other pairs.
++void mergeDiagonalRotations(RewriterBase& rewriter, ModuleOp moduleOp);
++
+ enum class PauliAxis : uint8_t { I, X, Y, Z };
+ 
+ /// A quarter-turn Clifford C that maps from to the requested Pauli axis.
+diff --git a/mlir/include/mqt/Dialect/QCO/Transforms/Decomposition/Weyl.h b/mlir/include/mqt/Dialect/QCO/Transforms/Decomposition/Weyl.h
+index 1e8d3db9d..332ef7e1a 100644
+--- a/mlir/include/mqt/Dialect/QCO/Transforms/Decomposition/Weyl.h
++++ b/mlir/include/mqt/Dialect/QCO/Transforms/Decomposition/Weyl.h
+@@ -28,6 +28,10 @@
+ #include <cstdint>
+ #include <optional>
+ 
++namespace mlir {
++class RewriterBase;
++}
++
+ namespace mlir::qco::decomposition {
+ 
+ /// Tolerance for complex symmetric `M2` diagonalization.
+@@ -231,6 +235,15 @@ public:
+                   std::optional<std::uint8_t> numBasisGateUses = std::nullopt,
+                   uint64_t seed = 2023) const;
+ 
++  /// Emit RXX(x) RYY(y) RZZ(z), conjugated by local Clifford frames,
++  /// with three applications of a super-controlled fixed basis gate.
++  /// Pauli rotation bases use their pi/2 interaction.
++  [[nodiscard]] SmallVector<Value, 2>
++  emitCartan(RewriterBase& rewriter, Location loc, Value qubit0, Value qubit1,
++             std::array<Value, 3> angles,
++             const std::array<Matrix2x2, 2>& frames,
++             const CompilerTarget::SynthesisBasis& basis) const;
++
+ private:
+   /// Precomputed single-qubit templates for super-controlled basis
+   /// synthesis.
+@@ -315,6 +328,10 @@ private:
+   SmbPrecomputed smb{};
+ };
+ 
++/// Cached templates for a native fixed gate or a Pauli rotation at pi/2.
++[[nodiscard]] const TwoQubitBasisDecomposer&
++cachedNativeBasisDecomposer(CompilerTarget::GateKind entangler);
++
+ /// Convenience wrapper that builds a fresh basis decomposer per call.
+ ///
+ /// For a fixed basis gate decomposed many times, prefer caching
+diff --git a/mlir/lib/Compiler/TargetCompilation.cpp b/mlir/lib/Compiler/TargetCompilation.cpp
+index 520c62f16..5b5322d16 100644
+--- a/mlir/lib/Compiler/TargetCompilation.cpp
++++ b/mlir/lib/Compiler/TargetCompilation.cpp
+@@ -14,6 +14,7 @@
+ #include "mqt/Compiler/TargetEnvironment.h"
+ #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+ #include "mqt/Dialect/MQT/IR/QubitLayout.h"
++#include "mqt/Dialect/MQT/Transforms/Passes.h"
+ #include "mqt/Dialect/QCO/IR/QCOOps.h"
+ #include "mqt/Dialect/QCO/QCOUtils.h"
+ #include "mqt/Dialect/QCO/Transforms/Mapping/Mapping.h"
+@@ -211,8 +212,10 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
+   pm.addPass(qco::createUnrollLoopsForPayload());
+   pm.addPass(createSCCPPass());
+   /// Unrolling exposes static tensor slots and unreachable callees.
++  pm.addPass(mqt::createSimplifyClassicalControl());
+   pm.addPass(createCanonicalizerPass(
+-      GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit)));
++      GreedyRewriteConfig{}.setUseTopDownTraversal().setMaxIterations(
++          GreedyRewriteConfig::kNoLimit)));
+   pm.addPass(createCSEPass());
+   pm.addPass(qtensor::createShrinkQTensorToFitPass());
+   pm.addPass(createSymbolDCEPass());
+diff --git a/mlir/lib/Dialect/CBit/IR/CBitOps.cpp b/mlir/lib/Dialect/CBit/IR/CBitOps.cpp
+index f7fb72446..43d4871ed 100644
+--- a/mlir/lib/Dialect/CBit/IR/CBitOps.cpp
++++ b/mlir/lib/Dialect/CBit/IR/CBitOps.cpp
+@@ -121,36 +121,15 @@ static std::optional<Value> findKnownLoadValue(LoadOp load) {
+       previousLoad.getIndex() == load.getIndex()) {
+     return previousLoad.getResult();
+   }
+-  const auto loadIndex = getConstantIntValue(load.getIndex());
+-  for (auto* candidate = load->getPrevNode(); candidate != nullptr;
+-       candidate = candidate->getPrevNode()) {
+-    if (auto store = dyn_cast<StoreOp>(candidate);
+-        store && store.getReg() == load.getReg()) {
+-      if (store.getIndex() == load.getIndex()) {
+-        return store.getValue();
+-      }
+-      const auto storeIndex = getConstantIntValue(store.getIndex());
+-      if (loadIndex && storeIndex && *loadIndex != *storeIndex) {
+-        continue;
+-      }
+-      return std::nullopt;
+-    }
+-
+-    if (auto alloc = dyn_cast<AllocOp>(candidate);
+-        alloc && alloc.getResult() == load.getReg()) {
+-      if (alloc.getInitialization() == Initialization::Zero) {
+-        return Value{};
+-      }
+-      return std::nullopt;
+-    }
+-
+-    if (isa<LoadOp, ReadOp>(candidate)) {
+-      continue;
+-    }
+-    if (candidate->getNumRegions() != 0 ||
+-        llvm::is_contained(candidate->getOperands(), load.getReg())) {
+-      return std::nullopt;
+-    }
++  if (auto store = dyn_cast_if_present<StoreOp>(load->getPrevNode());
++      store && store.getReg() == load.getReg() &&
++      store.getIndex() == load.getIndex()) {
++    return store.getValue();
++  }
++  if (auto alloc = dyn_cast_if_present<AllocOp>(load->getPrevNode());
++      alloc && alloc.getResult() == load.getReg() &&
++      alloc.getInitialization() == Initialization::Zero) {
++    return Value{};
+   }
+   return std::nullopt;
+ }
+diff --git a/mlir/lib/Dialect/MQT/Transforms/CMakeLists.txt b/mlir/lib/Dialect/MQT/Transforms/CMakeLists.txt
+index 83ef3f701..af0c31bdb 100644
+--- a/mlir/lib/Dialect/MQT/Transforms/CMakeLists.txt
++++ b/mlir/lib/Dialect/MQT/Transforms/CMakeLists.txt
+@@ -9,12 +9,14 @@
+ add_mlir_library(
+   MLIRMQTTransforms
+   NormalizeGlobalPhases.cpp
++  SimplifyClassicalControl.cpp
+   UnrollModifiers.cpp
+   ADDITIONAL_HEADER_DIRS
+   ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/MQT/Transforms
+   LINK_LIBS
+   PRIVATE
+   MLIRArithDialect
++  MLIRCBitDialect
+   MLIRFuncInlinerExtension
+   MLIRIR
+   MLIRLLVMIRTransforms
+diff --git a/mlir/lib/Dialect/MQT/Transforms/SimplifyClassicalControl.cpp b/mlir/lib/Dialect/MQT/Transforms/SimplifyClassicalControl.cpp
+new file mode 100644
+index 000000000..3743b9f42
+--- /dev/null
++++ b/mlir/lib/Dialect/MQT/Transforms/SimplifyClassicalControl.cpp
+@@ -0,0 +1,158 @@
++/*
++ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
++ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
++ * All rights reserved.
++ *
++ * SPDX-License-Identifier: MIT
++ *
++ * Licensed under the MIT License
++ */
++
++#include "mqt/Dialect/CBit/IR/CBitAttributes.h"
++#include "mqt/Dialect/CBit/IR/CBitOps.h"
++#include "mqt/Dialect/MQT/Transforms/Passes.h"
++#include "mqt/Dialect/QCO/IR/QCOOps.h"
++
++#include "mlir/Dialect/Arith/IR/Arith.h"
++#include "mlir/Dialect/Utils/StaticValueUtils.h"
++#include "mlir/IR/Block.h"
++#include "mlir/IR/BuiltinOps.h"
++#include "mlir/IR/PatternMatch.h"
++#include "mlir/IR/Region.h"
++#include "mlir/IR/Value.h"
++
++#include "llvm/ADT/DenseMap.h"
++#include "llvm/ADT/STLExtras.h"
++#include "llvm/ADT/ScopedHashTable.h"
++
++#include <cstdint>
++
++namespace mlir::mqt {
++
++#define GEN_PASS_DEF_SIMPLIFYCLASSICALCONTROL
++#include "mqt/Dialect/MQT/Transforms/Passes.h.inc"
++
++namespace {
++
++struct RegisterValues {
++  DenseMap<int64_t, Value> constants;
++  DenseMap<Value, Value> dynamic;
++  bool zeroInitialized = false;
++};
++
++struct Condition {
++  bool truth;
++  Block* block;
++  Value constant;
++};
++
++/// Each operand and operation is visited once. Memory facts stay block-local;
++/// branch facts are scoped to the region in which the condition is known.
++class ClassicalSimplifier {
++  IRRewriter rewriter;
++  llvm::ScopedHashTable<Value, Condition*> conditions;
++
++public:
++  explicit ClassicalSimplifier(MLIRContext* context) : rewriter(context) {}
++
++  void run(Region& region) {
++    for (Block& block : region) {
++      DenseMap<Value, RegisterValues> registers;
++      for (Operation& operation : llvm::make_early_inc_range(block)) {
++        for (OpOperand& operand : operation.getOpOperands()) {
++          if (auto* condition = conditions.lookup(operand.get())) {
++            if (!condition->constant) {
++              rewriter.setInsertionPointToStart(condition->block);
++              condition->constant = arith::ConstantIntOp::create(
++                  rewriter, operation.getLoc(),
++                  static_cast<int64_t>(condition->truth), 1);
++            }
++            rewriter.modifyOpInPlace(&operation,
++                                     [&] { operand.set(condition->constant); });
++          }
++        }
++        if (auto alloc = dyn_cast<cbit::AllocOp>(operation)) {
++          registers[alloc.getResult()].zeroInitialized =
++              alloc.getInitialization() == cbit::Initialization::Zero;
++          continue;
++        }
++        if (auto store = dyn_cast<cbit::StoreOp>(operation)) {
++          auto& values = registers[store.getReg()];
++          values.dynamic = decltype(values.dynamic){};
++          if (const auto index = getConstantIntValue(store.getIndex())) {
++            values.constants[*index] = store.getValue();
++          } else {
++            values.constants = decltype(values.constants){};
++            values.zeroInitialized = false;
++            values.dynamic[store.getIndex()] = store.getValue();
++          }
++          continue;
++        }
++        if (auto load = dyn_cast<cbit::LoadOp>(operation)) {
++          auto& values = registers[load.getReg()];
++          const auto index = getConstantIntValue(load.getIndex());
++          Value known = index ? values.constants.lookup(*index)
++                              : values.dynamic.lookup(load.getIndex());
++          rewriter.setInsertionPoint(load);
++          if (!known && values.zeroInitialized &&
++              (index || values.constants.empty())) {
++            known = arith::ConstantIntOp::create(rewriter, load.getLoc(), 0, 1);
++          }
++          if (index) {
++            values.constants[*index] = known ? known : load.getResult();
++          } else {
++            values.dynamic[load.getIndex()] = known ? known : load.getResult();
++          }
++          if (known) {
++            rewriter.replaceOp(load, known);
++          }
++          continue;
++        }
++        if (isa<cbit::ReadOp>(operation)) {
++          continue;
++        }
++        if (operation.getNumRegions() != 0) {
++          registers = decltype(registers){};
++        } else {
++          for (Value operand : operation.getOperands()) {
++            if (isa<cbit::RegisterType>(operand.getType())) {
++              registers.erase(operand);
++            }
++          }
++        }
++        for (auto [index, nested] : llvm::enumerate(operation.getRegions())) {
++          llvm::ScopedHashTableScope<Value, Condition*> scope(conditions);
++          Condition condition{
++              .truth = index == 0,
++              .block = nested.empty() ? nullptr : &nested.front(),
++              .constant = {},
++          };
++          if (auto branch = dyn_cast<qco::IfOp>(operation);
++              branch && !nested.empty()) {
++            conditions.insert(branch.getCondition(), &condition);
++          }
++          run(nested);
++        }
++      }
++    }
++  }
++};
++
++struct SimplifyClassicalControl final
++    : impl::SimplifyClassicalControlBase<SimplifyClassicalControl> {
++  using SimplifyClassicalControlBase::SimplifyClassicalControlBase;
++
++protected:
++  void runOnOperation() override { simplifyClassicalControl(getOperation()); }
++};
++
++} /* namespace */
++
++void simplifyClassicalControl(Operation* operation) {
++  ClassicalSimplifier simplifier(operation->getContext());
++  for (Region& region : operation->getRegions()) {
++    simplifier.run(region);
++  }
++}
++
++} /* namespace mlir::mqt */
+diff --git a/mlir/lib/Dialect/QC/IR/Modifiers/CtrlOp.cpp b/mlir/lib/Dialect/QC/IR/Modifiers/CtrlOp.cpp
+index 29e2f95ca..cc80a8806 100644
+--- a/mlir/lib/Dialect/QC/IR/Modifiers/CtrlOp.cpp
++++ b/mlir/lib/Dialect/QC/IR/Modifiers/CtrlOp.cpp
+@@ -138,7 +138,7 @@ struct EraseEmptyCtrl final : OpRewritePattern<CtrlOp> {
+   using OpRewritePattern::OpRewritePattern;
+   LogicalResult matchAndRewrite(CtrlOp op,
+                                 PatternRewriter& rewriter) const override {
+-    if (op.getNumBodyUnitaries() != 0) {
++    if (!op.getBody()->getOps<UnitaryOpInterface>().empty()) {
+       return failure();
+     }
+ 
+diff --git a/mlir/lib/Dialect/QC/IR/Modifiers/InvOp.cpp b/mlir/lib/Dialect/QC/IR/Modifiers/InvOp.cpp
+index dde4cd63e..23dc77b74 100644
+--- a/mlir/lib/Dialect/QC/IR/Modifiers/InvOp.cpp
++++ b/mlir/lib/Dialect/QC/IR/Modifiers/InvOp.cpp
+@@ -314,7 +314,7 @@ struct EraseEmptyInv final : OpRewritePattern<InvOp> {
+   using OpRewritePattern::OpRewritePattern;
+   LogicalResult matchAndRewrite(InvOp op,
+                                 PatternRewriter& rewriter) const override {
+-    if (op.getNumBodyUnitaries() != 0) {
++    if (!op.getBody()->getOps<UnitaryOpInterface>().empty()) {
+       return failure();
+     }
+ 
+diff --git a/mlir/lib/Dialect/QC/IR/Modifiers/PowOp.cpp b/mlir/lib/Dialect/QC/IR/Modifiers/PowOp.cpp
+index 85c667510..479036eda 100644
+--- a/mlir/lib/Dialect/QC/IR/Modifiers/PowOp.cpp
++++ b/mlir/lib/Dialect/QC/IR/Modifiers/PowOp.cpp
+@@ -507,7 +507,7 @@ struct EraseEmptyPow final : OpRewritePattern<PowOp> {
+   using OpRewritePattern::OpRewritePattern;
+   LogicalResult matchAndRewrite(PowOp op,
+                                 PatternRewriter& rewriter) const override {
+-    if (op.getNumBodyUnitaries() != 0) {
++    if (!op.getBody()->getOps<UnitaryOpInterface>().empty()) {
+       return failure();
+     }
+ 
+diff --git a/mlir/lib/Dialect/QCO/IR/Modifiers/CtrlOp.cpp b/mlir/lib/Dialect/QCO/IR/Modifiers/CtrlOp.cpp
+index 9c45a6d59..50a357aad 100644
+--- a/mlir/lib/Dialect/QCO/IR/Modifiers/CtrlOp.cpp
++++ b/mlir/lib/Dialect/QCO/IR/Modifiers/CtrlOp.cpp
+@@ -96,10 +96,7 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
+ 
+     // Every qubit output of the original control follows its input qubit to the
+     // corresponding output of the merged control.
+-    rewriter.replaceOp(op,
+-                       llvm::map_to_vector(op.getInputQubits(), [&](Value in) {
+-                         return merged.getOutputForInput(in);
+-                       }));
++    qco::detail::replacePermutedModifier(op, merged, rewriter);
+     return success();
+   }
+ };
+@@ -179,7 +176,7 @@ struct EraseEmptyCtrl final : OpRewritePattern<CtrlOp> {
+   using OpRewritePattern::OpRewritePattern;
+   LogicalResult matchAndRewrite(CtrlOp op,
+                                 PatternRewriter& rewriter) const override {
+-    if (op.getNumBodyUnitaries() != 0) {
++    if (!op.getBody()->getOps<UnitaryOpInterface>().empty()) {
+       return failure();
+     }
+ 
+diff --git a/mlir/lib/Dialect/QCO/IR/Modifiers/InvOp.cpp b/mlir/lib/Dialect/QCO/IR/Modifiers/InvOp.cpp
+index 841041430..15bf6a9d2 100644
+--- a/mlir/lib/Dialect/QCO/IR/Modifiers/InvOp.cpp
++++ b/mlir/lib/Dialect/QCO/IR/Modifiers/InvOp.cpp
+@@ -96,10 +96,7 @@ struct MoveCtrlOutsideInv final : OpRewritePattern<InvOp> {
+ 
+     // Each qubit output of the inverse modifier follows its input qubit to the
+     // corresponding output of the new control modifier.
+-    rewriter.replaceOp(op,
+-                       llvm::map_to_vector(op.getInputQubits(), [&](Value in) {
+-                         return newCtrl.getOutputForInput(in);
+-                       }));
++    qco::detail::replacePermutedModifier(op, newCtrl, rewriter);
+     return success();
+   }
+ };
+@@ -155,10 +152,7 @@ struct InvPowToNegPow final : OpRewritePattern<InvOp> {
+     // The new pow's operands may be a permutation of the inv's, so map each
+     // original qubit output to the new pow's output for the same input rather
+     // than replacing positionally.
+-    rewriter.replaceOp(
+-        invOp, llvm::map_to_vector(invOp.getInputQubits(), [&](Value in) {
+-          return newPow.getOutputForInput(in);
+-        }));
++    qco::detail::replacePermutedModifier(invOp, newPow, rewriter);
+     return success();
+   }
+ };
+@@ -357,7 +351,7 @@ struct EraseEmptyInv final : OpRewritePattern<InvOp> {
+   using OpRewritePattern::OpRewritePattern;
+   LogicalResult matchAndRewrite(InvOp op,
+                                 PatternRewriter& rewriter) const override {
+-    if (op.getNumBodyUnitaries() != 0) {
++    if (!op.getBody()->getOps<UnitaryOpInterface>().empty()) {
+       return failure();
+     }
+ 
+diff --git a/mlir/lib/Dialect/QCO/IR/Modifiers/ModifierUtils.cpp b/mlir/lib/Dialect/QCO/IR/Modifiers/ModifierUtils.cpp
+index c1bd71c83..96dfd153d 100644
+--- a/mlir/lib/Dialect/QCO/IR/Modifiers/ModifierUtils.cpp
++++ b/mlir/lib/Dialect/QCO/IR/Modifiers/ModifierUtils.cpp
+@@ -23,6 +23,7 @@
+ #include "mlir/Support/LogicalResult.h"
+ #include "mlir/Transforms/RegionUtils.h"
+ 
++#include "llvm/ADT/DenseMap.h"
+ #include "llvm/ADT/STLExtras.h"
+ #include "llvm/ADT/SmallPtrSet.h"
+ #include "llvm/ADT/SmallVectorExtras.h"
+@@ -162,3 +163,17 @@ SmallVector<Value> inlineNarrowedBody(Block& body, ValueRange qubits,
+ }
+ 
+ } // namespace mlir::qco::detail
++
++void mlir::qco::detail::replacePermutedModifier(UnitaryOpInterface original,
++                                                UnitaryOpInterface replacement,
++                                                RewriterBase& rewriter) {
++  DenseMap<Value, Value> outputs;
++  for (auto [input, output] : llvm::zip_equal(replacement.getInputQubits(),
++                                              replacement.getOutputQubits())) {
++    outputs.try_emplace(input, output);
++  }
++  rewriter.replaceOp(original, llvm::map_to_vector(original.getInputQubits(),
++                                                   [&](Value input) {
++                                                     return outputs.at(input);
++                                                   }));
++}
+diff --git a/mlir/lib/Dialect/QCO/IR/Modifiers/ModifierUtils.h b/mlir/lib/Dialect/QCO/IR/Modifiers/ModifierUtils.h
+index 393dddbe6..78ffe68f5 100644
+--- a/mlir/lib/Dialect/QCO/IR/Modifiers/ModifierUtils.h
++++ b/mlir/lib/Dialect/QCO/IR/Modifiers/ModifierUtils.h
+@@ -23,8 +23,17 @@ namespace mlir {
+ class Block;
+ class Operation;
+ 
++namespace qco {
++class UnitaryOpInterface;
++} /* namespace qco */
++
+ namespace qco::detail {
+ 
++/// Replace a modifier while retaining the correspondence of its input wires.
++void replacePermutedModifier(UnitaryOpInterface original,
++                             UnitaryOpInterface replacement,
++                             RewriterBase& rewriter);
++
+ /// Verify a QCO modifier body after nested operations have been verified.
+ [[nodiscard]] LogicalResult verifyModifierBody(Operation* modifierOp,
+                                                Block& body);
+diff --git a/mlir/lib/Dialect/QCO/IR/Modifiers/PowOp.cpp b/mlir/lib/Dialect/QCO/IR/Modifiers/PowOp.cpp
+index eec36094e..04c291527 100644
+--- a/mlir/lib/Dialect/QCO/IR/Modifiers/PowOp.cpp
++++ b/mlir/lib/Dialect/QCO/IR/Modifiers/PowOp.cpp
+@@ -296,10 +296,7 @@ struct MergeNestedPow final : OpRewritePattern<PowOp> {
+     // The merged pow's operands may be a permutation of the outer pow's, so map
+     // each original qubit output to the merged pow's output for the same input
+     // rather than replacing positionally.
+-    rewriter.replaceOp(op,
+-                       llvm::map_to_vector(op.getInputQubits(), [&](Value in) {
+-                         return newPow.getOutputForInput(in);
+-                       }));
++    qco::detail::replacePermutedModifier(op, newPow, rewriter);
+     return success();
+   }
+ };
+@@ -356,10 +353,7 @@ struct MoveCtrlOutsidePow final : OpRewritePattern<PowOp> {
+ 
+     // Each qubit output of the power modifier follows its input qubit to the
+     // corresponding output of the new control modifier.
+-    rewriter.replaceOp(op,
+-                       llvm::map_to_vector(op.getInputQubits(), [&](Value in) {
+-                         return newCtrl.getOutputForInput(in);
+-                       }));
++    qco::detail::replacePermutedModifier(op, newCtrl, rewriter);
+     return success();
+   }
+ };
+@@ -581,7 +575,7 @@ struct EraseEmptyPow final : OpRewritePattern<PowOp> {
+   using OpRewritePattern::OpRewritePattern;
+   LogicalResult matchAndRewrite(PowOp op,
+                                 PatternRewriter& rewriter) const override {
+-    if (op.getNumBodyUnitaries() != 0) {
++    if (!op.getBody()->getOps<UnitaryOpInterface>().empty()) {
+       return failure();
+     }
+ 
+diff --git a/mlir/lib/Dialect/QCO/IR/SCF/IfOp.cpp b/mlir/lib/Dialect/QCO/IR/SCF/IfOp.cpp
+index 0254b0236..7dc0c1883 100644
+--- a/mlir/lib/Dialect/QCO/IR/SCF/IfOp.cpp
++++ b/mlir/lib/Dialect/QCO/IR/SCF/IfOp.cpp
+@@ -183,55 +183,6 @@ struct RemoveStaticCondition : public OpRewritePattern<IfOp> {
+   }
+ };
+ 
+-/// Let each branch use the condition value known inside that branch.
+-struct ConditionPropagation : public OpRewritePattern<IfOp> {
+-  using OpRewritePattern<IfOp>::OpRewritePattern;
+-
+-  LogicalResult matchAndRewrite(IfOp op,
+-                                PatternRewriter& rewriter) const override {
+-    // Early exit if the condition is constant since replacing a constant
+-    // in the body with another constant isn't a simplification.
+-    if (matchPattern(op.getCondition(), m_Constant())) {
+-      return failure();
+-    }
+-
+-    bool changed = false;
+-    Type i1Ty = rewriter.getI1Type();
+-
+-    // These variables serve to prevent creating duplicate constants
+-    // and hold constant true or false values.
+-    Value constantTrue = nullptr;
+-    Value constantFalse = nullptr;
+-
+-    for (auto& use : llvm::make_early_inc_range(op.getCondition().getUses())) {
+-      if (op.getThenRegion().isAncestor(use.getOwner()->getParentRegion())) {
+-        changed = true;
+-
+-        if (!constantTrue) {
+-          constantTrue = arith::ConstantOp::create(
+-              rewriter, op.getLoc(), i1Ty, rewriter.getIntegerAttr(i1Ty, 1));
+-        }
+-
+-        rewriter.modifyOpInPlace(use.getOwner(),
+-                                 [&] { use.set(constantTrue); });
+-      } else if (op.getElseRegion().isAncestor(
+-                     use.getOwner()->getParentRegion())) {
+-        changed = true;
+-
+-        if (!constantFalse) {
+-          constantFalse = arith::ConstantOp::create(
+-              rewriter, op.getLoc(), i1Ty, rewriter.getIntegerAttr(i1Ty, 0));
+-        }
+-
+-        rewriter.modifyOpInPlace(use.getOwner(),
+-                                 [&] { use.set(constantFalse); });
+-      }
+-    }
+-
+-    return success(changed);
+-  }
+-};
+-
+ /// Forward redundant classical results.
+ ///
+ /// Replace a result with a value yielded by both branches or with an earlier
+@@ -317,8 +268,12 @@ struct RemoveUnusedClassicalResults : public OpRewritePattern<IfOp> {
+ 
+ void IfOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                        MLIRContext* context) {
+-  results.add<RemoveStaticCondition, ConditionPropagation,
+-              ForwardClassicalResults, RemoveUnusedClassicalResults>(context);
++  populateFoldStaticIfPatterns(results);
++  results.add<ForwardClassicalResults, RemoveUnusedClassicalResults>(context);
++}
++
++void mlir::qco::populateFoldStaticIfPatterns(RewritePatternSet& patterns) {
++  patterns.add<RemoveStaticCondition>(patterns.getContext());
+ }
+ 
+ LogicalResult IfOp::verify() {
+diff --git a/mlir/lib/Dialect/QCO/Transforms/Decomposition/BasisDecomposer.cpp b/mlir/lib/Dialect/QCO/Transforms/Decomposition/BasisDecomposer.cpp
+index 5cc2d5ad8..928a88a8c 100644
+--- a/mlir/lib/Dialect/QCO/Transforms/Decomposition/BasisDecomposer.cpp
++++ b/mlir/lib/Dialect/QCO/Transforms/Decomposition/BasisDecomposer.cpp
+@@ -9,9 +9,13 @@
+  */
+ 
+ #include "mqt/Dialect/QCO/IR/QCOOps.h"
++#include "mqt/Dialect/QCO/Transforms/Decomposition/Euler.h"
++#include "mqt/Dialect/QCO/Transforms/Decomposition/Pauli.h"
+ #include "mqt/Dialect/QCO/Transforms/Decomposition/Weyl.h"
+ #include "mqt/Dialect/QCO/Utils/Matrix.h"
+ 
++#include "mlir/Dialect/Arith/IR/Arith.h"
++#include "mlir/IR/PatternMatch.h"
+ #include "mlir/Support/LLVM.h"
+ 
+ #include "llvm/Support/ErrorHandling.h"
+@@ -271,6 +275,61 @@ void TwoQubitBasisDecomposer::decomp3Supercontrolled(
+   out.emplace_back(target.k1l() * smb.u0l);
+ }
+ 
++SmallVector<Value, 2> TwoQubitBasisDecomposer::emitCartan(
++    RewriterBase& rewriter, Location loc, Value qubit0, Value qubit1,
++    std::array<Value, 3> angles, const std::array<Matrix2x2, 2>& frames,
++    const CompilerTarget::SynthesisBasis& basis) const {
++  /// Split the same three-gate template at its parameterized RZ factors.
++  const std::array<TwoQubitNativeDecomposition, 3> stages{
++      {
++          {
++              .numBasisUses = 1,
++              .singleQubitFactors =
++                  {
++                      smb.u3r * frames[1].adjoint(),
++                      smb.u3l * frames[0].adjoint(),
++                      smb.u2rb,
++                      smb.u2lb,
++                  },
++          },
++          {
++              .numBasisUses = 1,
++              .singleQubitFactors = {smb.u2ra, smb.u2la, smb.u1rb, smb.u1l},
++          },
++          {
++              .numBasisUses = 1,
++              .singleQubitFactors =
++                  {
++                      smb.u1ra,
++                      Matrix2x2::identity(),
++                      frames[1] * smb.u0r,
++                      frames[0] * smb.u0l,
++                  },
++          },
++      },
++  };
++  double phase = -3. * basisWeyl.globalPhase();
++  std::array wires{qubit0, qubit1};
++  for (size_t i = 0; i < stages.size(); ++i) {
++    const auto result =
++        emitUnitary2QWeyl(rewriter, loc, wires[0], wires[1], stages[i], basis);
++    wires = {result.qubit0, result.qubit1};
++    phase += result.globalPhase;
++    if (i == 0) {
++      wires[0] = synthesizePauliRotation1Q(rewriter, loc, wires[0],
++                                           PauliAxis::Z, angles[0], basis);
++      wires[1] = synthesizePauliRotation1Q(
++          rewriter, loc, wires[1], PauliAxis::Z,
++          rewriter.createOrFold<arith::NegFOp>(loc, angles[1]), basis);
++    } else if (i == 1) {
++      wires[1] = synthesizePauliRotation1Q(rewriter, loc, wires[1],
++                                           PauliAxis::Z, angles[2], basis);
++    }
++  }
++  emitGPhaseIfNeeded(rewriter, loc, phase);
++  return {wires[0], wires[1]};
++}
++
+ std::array<std::complex<double>, 4>
+ TwoQubitBasisDecomposer::traces(const TwoQubitWeylDecomposition& target) const {
+   return {
+diff --git a/mlir/lib/Dialect/QCO/Transforms/Decomposition/Pauli.cpp b/mlir/lib/Dialect/QCO/Transforms/Decomposition/Pauli.cpp
+index 773dac7c2..67d41df73 100644
+--- a/mlir/lib/Dialect/QCO/Transforms/Decomposition/Pauli.cpp
++++ b/mlir/lib/Dialect/QCO/Transforms/Decomposition/Pauli.cpp
+@@ -21,10 +21,14 @@
+ #include "mlir/Dialect/Arith/IR/Arith.h"
+ #include "mlir/Dialect/Math/IR/Math.h"
+ #include "mlir/IR/Builders.h"
++#include "mlir/IR/BuiltinOps.h"
+ #include "mlir/IR/Location.h"
+ #include "mlir/IR/Operation.h"
+ #include "mlir/IR/PatternMatch.h"
++#include "mlir/IR/Visitors.h"
++#include "mlir/Interfaces/SideEffectInterfaces.h"
+ 
++#include "llvm/ADT/DenseMap.h"
+ #include "llvm/ADT/STLExtras.h"
+ #include "llvm/ADT/SmallVectorExtras.h"
+ #include "llvm/ADT/TypeSwitch.h"
+@@ -37,6 +41,7 @@
+ #include <iterator>
+ #include <numbers>
+ #include <optional>
++#include <tuple>
+ #include <utility>
+ #include <variant>
+ 
+@@ -428,6 +433,121 @@ static void hoistPauliAngle(RewriterBase& rewriter, Operation* operation) {
+   }
+ }
+ 
++void mergeDiagonalRotations(RewriterBase& rewriter, ModuleOp moduleOp) {
++  moduleOp->walk<WalkOrder::PreOrder>([&](Operation* parent) {
++    if (isa<UnitaryOpInterface>(parent)) {
++      return WalkResult::skip();
++    }
++    for (Region& region : parent->getRegions()) {
++      for (Block& block : region) {
++        struct Group {
++          SmallVector<Operation*> operations;
++          SmallVector<RotationAngleTerm> angles;
++        };
++        DenseMap<Value, size_t> wires;
++        DenseMap<std::tuple<size_t, size_t, unsigned>, size_t> indices;
++        SmallVector<Group, 4> groups;
++        size_t nextWire = 0;
++        const auto flush = [&] {
++          for (auto& group : groups) {
++            if (group.operations.size() < 2) {
++              continue;
++            }
++            for (auto* operation : group.operations) {
++              hoistPauliAngle(rewriter, operation);
++            }
++            simplifyRotationAngles(group.angles);
++            auto* last = group.operations.back();
++            if (!group.angles.empty()) {
++              rewriter.setInsertionPoint(last);
++              Value angle =
++                  emitRotationAngleSum(rewriter, last->getLoc(), group.angles);
++              auto gate = cast<UnitaryOpInterface>(last);
++              if (auto controlled = dyn_cast<CtrlOp>(last)) {
++                gate = mqt::getSoleBodyUnitary<UnitaryOpInterface>(
++                    *controlled.getBody());
++              }
++              rewriter.modifyOpInPlace(gate, [&] {
++                TypeSwitch<Operation*>(gate).Case<RZZOp, RZOp, POp>(
++                    [&](auto rotation) {
++                      rotation.getThetaMutable().assign(angle);
++                    });
++              });
++              group.operations.pop_back();
++            }
++            for (auto* operation : llvm::reverse(group.operations)) {
++              rewriter.replaceOp(
++                  operation,
++                  cast<UnitaryOpInterface>(operation).getInputQubits());
++            }
++          }
++          groups.clear();
++          indices = decltype(indices){};
++          wires = decltype(wires){};
++        };
++        for (Operation& operation : llvm::make_early_inc_range(block)) {
++          auto gate = dyn_cast<UnitaryOpInterface>(operation);
++          if (!gate) {
++            if (!isMemoryEffectFree(&operation) ||
++                operation.getNumRegions() != 0) {
++              flush();
++            }
++            continue;
++          }
++          auto body = gate;
++          if (auto controlled = dyn_cast<CtrlOp>(operation)) {
++            body = controlled.getNumControls() == 1 &&
++                           controlled.getNumTargets() == 1
++                       ? mqt::getSoleBodyUnitary<UnitaryOpInterface>(
++                             *controlled.getBody())
++                       : UnitaryOpInterface{};
++          }
++          if (!body || !isa<IdOp, ZOp, SOp, SdgOp, TOp, TdgOp, RZOp, POp, RZZOp,
++                            GPhaseOp>(body.getOperation())) {
++            flush();
++            continue;
++          }
++          SmallVector<size_t, 2> operands;
++          for (Value input : gate.getInputQubits()) {
++            auto [position, inserted] = wires.try_emplace(input, nextWire);
++            if (inserted) {
++              ++nextWire;
++            }
++            operands.push_back(position->second);
++            wires.erase(position);
++          }
++          for (auto [output, wire] :
++               llvm::zip_equal(gate.getOutputQubits(), operands)) {
++            wires.try_emplace(output, wire);
++          }
++          if (operands.size() != 2 ||
++              !isa<RZZOp, RZOp, POp>(body.getOperation())) {
++            continue;
++          }
++          /// Controlled RZ is directional; controlled P and RZZ are symmetric.
++          const unsigned kind = isa<RZZOp>(body.getOperation())  ? 0
++                                : isa<RZOp>(body.getOperation()) ? 1
++                                                                 : 2;
++          if (kind != 1 && operands[0] > operands[1]) {
++            std::swap(operands[0], operands[1]);
++          }
++          auto [found, inserted] = indices.try_emplace(
++              std::tuple{operands[0], operands[1], kind}, groups.size());
++          if (inserted) {
++            groups.emplace_back();
++          }
++          auto& group = groups[found->second];
++          group.operations.push_back(&operation);
++          group.angles.push_back(
++              {.value = getPauliRotations(&operation)->angle});
++        }
++        flush();
++      }
++    }
++    return WalkResult::advance();
++  });
++}
++
+ SmallVector<Value, 2>
+ emitPauliRotations(RewriterBase& rewriter, Operation* operation,
+                    const PauliRotationSequence& sequence,
+@@ -545,18 +665,10 @@ fusePauliRotationRun(PatternRewriter& rewriter, Operation* head,
+     if (!cost) {
+       break;
+     }
+-    const auto entangling = llvm::count_if(
+-        groups, [](const auto& group) { return group.entangling(); });
+     if (llvm::any_of(sequence->rotations, [&](const auto& term) {
+-          return llvm::any_of(groups,
+-                              [&](const auto& group) {
+-                                return !commute(term.axes, group.axes);
+-                              }) ||
+-                 (entangling == 2 && term.axes[0] != PauliAxis::I &&
+-                  term.axes[1] != PauliAxis::I &&
+-                  llvm::none_of(groups, [&](const auto& group) {
+-                    return group.axes == term.axes;
+-                  }));
++          return llvm::any_of(groups, [&](const auto& group) {
++            return !commute(term.axes, group.axes);
++          });
+         })) {
+       break;
+     }
+@@ -589,7 +701,7 @@ fusePauliRotationRun(PatternRewriter& rewriter, Operation* head,
+   if (operations.size() < 2) {
+     return failure();
+   }
+-  SmallVector<const PauliGroup*, 2> entangling;
++  SmallVector<const PauliGroup*, 3> entangling;
+   size_t combinedCost = 0;
+   for (auto& group : groups) {
+     simplifyRotationAngles(group.angle);
+@@ -609,9 +721,9 @@ fusePauliRotationRun(PatternRewriter& rewriter, Operation* head,
+     }
+   }
+   const bool shared =
+-      entangling.size() == 2 && combinedCost > 2 &&
++      entangling.size() >= 2 && combinedCost > entangling.size() &&
+       basis.entangler->gate != CompilerTarget::GateKind::SQRTISWAP;
+-  if ((shared ? 2 : combinedCost) >= separateCost) {
++  if ((shared ? entangling.size() : combinedCost) >= separateCost) {
+     return failure();
+   }
+   for (auto* operation : operations) {
+@@ -620,7 +732,36 @@ fusePauliRotationRun(PatternRewriter& rewriter, Operation* head,
+   rewriter.setInsertionPoint(operations.back());
+   auto loc = head->getLoc();
+   auto outputs = llvm::to_vector<2>(first.getInputQubits());
+-  if (shared) {
++  if (shared && entangling.size() == 3) {
++    const size_t index0 = reverse ? 1 : 0;
++    const size_t index1 = reverse ? 0 : 1;
++    const std::array frames{
++        pauliPairFrame(entangling[0]->axes[index0], entangling[1]->axes[index0],
++                       PauliAxis::X, PauliAxis::Y),
++        pauliPairFrame(entangling[0]->axes[index1], entangling[1]->axes[index1],
++                       PauliAxis::X, PauliAxis::Y),
++    };
++    std::array angles{
++        emitRotationAngleSum(rewriter, loc, entangling[0]->angle),
++        emitRotationAngleSum(rewriter, loc, entangling[1]->angle),
++        emitRotationAngleSum(rewriter, loc, entangling[2]->angle),
++    };
++    const auto z = ZOp::getUnitaryMatrix();
++    const bool firstPositive =
++        (frames[0] * z * frames[0].adjoint())
++            .isApprox(pauliMatrix(entangling[2]->axes[index0]));
++    const bool secondPositive =
++        (frames[1] * z * frames[1].adjoint())
++            .isApprox(pauliMatrix(entangling[2]->axes[index1]));
++    if (firstPositive != secondPositive) {
++      angles[2] = rewriter.createOrFold<arith::NegFOp>(loc, angles[2]);
++    }
++    const auto result = cachedNativeBasisDecomposer(basis.entangler->gate)
++                            .emitCartan(rewriter, loc, outputs[index0],
++                                        outputs[index1], angles, frames, basis);
++    outputs[index0] = result[0];
++    outputs[index1] = result[1];
++  } else if (shared) {
+     const auto axes = conjugatedPaulis(basis.entangler->gate);
+     const size_t index0 = reverse ? 1 : 0;
+     const size_t index1 = reverse ? 0 : 1;
+diff --git a/mlir/lib/Dialect/QCO/Transforms/Decomposition/Weyl.cpp b/mlir/lib/Dialect/QCO/Transforms/Decomposition/Weyl.cpp
+index 8b4890bb5..02e23c69b 100644
+--- a/mlir/lib/Dialect/QCO/Transforms/Decomposition/Weyl.cpp
++++ b/mlir/lib/Dialect/QCO/Transforms/Decomposition/Weyl.cpp
+@@ -82,7 +82,7 @@ static constexpr Matrix4x4 CANONICAL_CONTROLLED_X =
+ static constexpr Matrix4x4 CANONICAL_CONTROLLED_Z =
+     Matrix4x4::fromDiagonal(1., 1., 1., -1.);
+ 
+-static const TwoQubitBasisDecomposer&
++const TwoQubitBasisDecomposer&
+ cachedNativeBasisDecomposer(const CompilerTarget::GateKind entangler) {
+   using GateKind = CompilerTarget::GateKind;
+   switch (entangler) {
+diff --git a/mlir/lib/Dialect/QCO/Transforms/LegalizePayloadControlFlow.cpp b/mlir/lib/Dialect/QCO/Transforms/LegalizePayloadControlFlow.cpp
+index f3b683dfa..f3b6db657 100644
+--- a/mlir/lib/Dialect/QCO/Transforms/LegalizePayloadControlFlow.cpp
++++ b/mlir/lib/Dialect/QCO/Transforms/LegalizePayloadControlFlow.cpp
+@@ -9,6 +9,7 @@
+  */
+ 
+ #include "mqt/Compiler/TargetEnvironment.h"
++#include "mqt/Dialect/MQT/Transforms/Passes.h"
+ #include "mqt/Dialect/QCO/IR/QCOOps.h"
+ #include "mqt/Dialect/QCO/QCOUtils.h"
+ #include "mqt/Dialect/QCO/Transforms/Passes.h"
+@@ -270,17 +271,19 @@ getExactConstantTripCount(scf::ForOp loop) {
+ }
+ 
+ static LogicalResult foldStaticBranches(ModuleOp moduleOp) {
++  mqt::simplifyClassicalControl(moduleOp);
+   /// Fold branches without transforming loops before the capture and unroll
+   /// safety checks below.
+   RewritePatternSet patterns(moduleOp.getContext());
+-  IfOp::getCanonicalizationPatterns(patterns, moduleOp.getContext());
++  populateFoldStaticIfPatterns(patterns);
+   IndexSwitchOp::getCanonicalizationPatterns(patterns, moduleOp.getContext());
+   scf::IfOp::getCanonicalizationPatterns(patterns, moduleOp.getContext());
+   scf::IndexSwitchOp::getCanonicalizationPatterns(patterns,
+                                                   moduleOp.getContext());
+   return applyPatternsGreedily(
+       moduleOp, std::move(patterns),
+-      GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit));
++      GreedyRewriteConfig{}.setUseTopDownTraversal().setMaxIterations(
++          GreedyRewriteConfig::kNoLimit));
+ }
+ 
+ [[nodiscard]] static bool isLegal(IfOp operation,
+diff --git a/mlir/lib/Dialect/QCO/Transforms/NativeSynthesis/TargetSynthesis.cpp b/mlir/lib/Dialect/QCO/Transforms/NativeSynthesis/TargetSynthesis.cpp
+index 3c1205cd7..19ecaa458 100644
+--- a/mlir/lib/Dialect/QCO/Transforms/NativeSynthesis/TargetSynthesis.cpp
++++ b/mlir/lib/Dialect/QCO/Transforms/NativeSynthesis/TargetSynthesis.cpp
+@@ -1283,6 +1283,7 @@ protected:
+       return;
+     }
+     IRRewriter rewriter(&getContext());
++    decomposition::mergeDiagonalRotations(rewriter, moduleOp);
+     NativeCostAnalysis analysis(compilationSeed(moduleOp, 2023));
+     const auto changed =
+         fuseGateRuns(rewriter, moduleOp, *basis, analysis,
+diff --git a/mlir/lib/Dialect/QTensor/IR/QTensorCanonicalization.cpp b/mlir/lib/Dialect/QTensor/IR/QTensorCanonicalization.cpp
+index 41a690b54..1714d4ff0 100644
+--- a/mlir/lib/Dialect/QTensor/IR/QTensorCanonicalization.cpp
++++ b/mlir/lib/Dialect/QTensor/IR/QTensorCanonicalization.cpp
+@@ -119,59 +119,6 @@ analyzeQTensorBranch(Block* block, size_t qTensorArgumentIndex,
+   }
+ }
+ 
+-/// Move a branch while replacing QTensor accesses with scalar qubits.
+-static void moveScalarizedQTensorBranch(Value originalQTensor, Block* oldBlock,
+-                                        Block* newBlock,
+-                                        size_t qTensorArgumentIndex,
+-                                        BranchQTensorAccesses& accesses,
+-                                        ArrayRef<int64_t> indices,
+-                                        PatternRewriter& rewriter) {
+-  Operation* oldYield = oldBlock->getTerminator();
+-  auto scalarArguments = newBlock->getArguments().take_back(indices.size());
+-  auto carriedArguments = newBlock->getArguments().drop_back(indices.size());
+-
+-  SmallVector<Value> argumentReplacements;
+-  argumentReplacements.reserve(oldBlock->getNumArguments());
+-  size_t carriedIndex = 0;
+-  for (size_t oldIndex : llvm::seq(oldBlock->getNumArguments())) {
+-    argumentReplacements.push_back(oldIndex == qTensorArgumentIndex
+-                                       ? originalQTensor
+-                                       : carriedArguments[carriedIndex++]);
+-  }
+-  assert(carriedIndex == carriedArguments.size());
+-  rewriter.mergeBlocks(oldBlock, newBlock, argumentReplacements);
+-
+-  SmallVector<Value> scalarYields;
+-  scalarYields.reserve(indices.size());
+-  for (auto [indexPosition, index] : llvm::enumerate(indices)) {
+-    auto access = accesses.accesses.find(index);
+-    if (access == accesses.accesses.end()) {
+-      scalarYields.push_back(scalarArguments[indexPosition]);
+-    } else {
+-      rewriter.replaceAllUsesWith(access->second.extract.getResult(),
+-                                  scalarArguments[indexPosition]);
+-      scalarYields.push_back(access->second.insert.getScalar());
+-    }
+-  }
+-
+-  auto oldTargets = oldYield->getOperands();
+-  SmallVector<Value> newYieldValues;
+-  newYieldValues.reserve(oldTargets.size() - 1 + scalarYields.size());
+-  for (auto [oldIndex, value] : llvm::enumerate(oldTargets)) {
+-    if (oldIndex != accesses.yieldedOperand) {
+-      newYieldValues.push_back(value);
+-    }
+-  }
+-  llvm::append_range(newYieldValues, scalarYields);
+-
+-  rewriter.modifyOpInPlace(oldYield,
+-                           [&] { oldYield->setOperands(newYieldValues); });
+-
+-  for (Operation* operation : llvm::reverse(accesses.qTensorOperations)) {
+-    rewriter.eraseOp(operation);
+-  }
+-}
+-
+ /// Extract the selected tensor slots before structured control flow.
+ static std::pair<Value, SmallVector<Value>>
+ extractQTensorScalars(Value tensor, ArrayRef<int64_t> indices, Location loc,
+@@ -201,201 +148,290 @@ static Value insertQTensorScalars(Value tensor, ValueRange scalars,
+ 
+ namespace {
+ 
+-/// Replace constant-index QTensor updates in an if with scalar threading.
+-///
+-/// A QTensor carried through an if hides its qubits from target mapping. This
+-/// pattern extracts the union of constant indices accessed by either branch,
+-/// threads those qubits through both branches, and reinserts the results.
+-/// Untouched elements remain in the QTensor outside the if.
++struct TensorSlots {
++  Value original;
++  Value remaining;
++  SmallVector<Value> inputs;
++  SmallVector<int64_t> indices;
++  SmallVector<BranchQTensorAccesses, 2> branches;
++};
++
++using SlotLayout = SmallVector<TensorSlots*>;
++
++} /* namespace */
++
++static bool isStaticQTensor(Value value) {
++  auto type = dyn_cast<RankedTensorType>(value.getType());
++  return type && type.hasStaticShape() &&
++         isa<qco::QubitType>(type.getElementType());
++}
++
++static void prepareSlots(TensorSlots& slots, Location loc,
++                         PatternRewriter& rewriter) {
++  for (auto& branch : slots.branches) {
++    llvm::append_range(slots.indices, branch.accesses.keys());
++  }
++  llvm::sort(slots.indices);
++  slots.indices.erase(llvm::unique(slots.indices), slots.indices.end());
++  auto [remaining, inputs] =
++      extractQTensorScalars(slots.original, slots.indices, loc, rewriter);
++  slots.remaining = remaining;
++  slots.inputs = std::move(inputs);
++}
++
++static SmallVector<Value> expandInputs(ValueRange values,
++                                       ArrayRef<TensorSlots*> layout) {
++  SmallVector<Value> result;
++  for (auto [value, slots] : llvm::zip_equal(values, layout)) {
++    if (slots != nullptr) {
++      llvm::append_range(result, slots->inputs);
++    } else {
++      result.push_back(value);
++    }
++  }
++  return result;
++}
++
++static SmallVector<Type> expandTypes(TypeRange types,
++                                     ArrayRef<TensorSlots*> layout) {
++  SmallVector<Type> result;
++  for (auto [type, slots] : llvm::zip_equal(types, layout)) {
++    if (slots != nullptr) {
++      llvm::append_range(result, ValueRange(slots->inputs).getTypes());
++    } else {
++      result.push_back(type);
++    }
++  }
++  return result;
++}
++
++/// Rebuild a branch once, replacing every eligible tensor in its signature.
++static void moveScalarizedBranch(Block* oldBlock, Block* newBlock,
++                                 ArrayRef<TensorSlots*> arguments,
++                                 ArrayRef<TensorSlots*> yields, size_t branch,
++                                 PatternRewriter& rewriter) {
++  auto* oldYield = oldBlock->getTerminator();
++  SmallVector<Value> replacements;
++  DenseMap<TensorSlots*, ValueRange> scalarArguments;
++  size_t nextArgument = 0;
++  for (auto* slots : arguments) {
++    if (slots == nullptr) {
++      replacements.push_back(newBlock->getArgument(nextArgument++));
++      continue;
++    }
++    auto scalars =
++        newBlock->getArguments().slice(nextArgument, slots->indices.size());
++    scalarArguments.try_emplace(slots, scalars);
++    nextArgument += slots->indices.size();
++    replacements.push_back(slots->original);
++    for (auto [index, scalar] : llvm::zip_equal(slots->indices, scalars)) {
++      auto found = slots->branches[branch].accesses.find(index);
++      if (found != slots->branches[branch].accesses.end()) {
++        rewriter.replaceAllUsesWith(found->second.extract.getResult(), scalar);
++      }
++    }
++  }
++  rewriter.mergeBlocks(oldBlock, newBlock, replacements);
++  SmallVector<Value> values;
++  for (auto [value, slots] : llvm::zip_equal(oldYield->getOperands(), yields)) {
++    if (slots == nullptr) {
++      values.push_back(value);
++      continue;
++    }
++    for (auto [index, scalar] :
++         llvm::zip_equal(slots->indices, scalarArguments.at(slots))) {
++      auto found = slots->branches[branch].accesses.find(index);
++      values.push_back(found == slots->branches[branch].accesses.end()
++                           ? scalar
++                           : found->second.insert.getScalar());
++    }
++  }
++  rewriter.modifyOpInPlace(oldYield, [&] { oldYield->setOperands(values); });
++  for (auto* slots : arguments) {
++    if (slots != nullptr) {
++      for (Operation* operation :
++           llvm::reverse(slots->branches[branch].qTensorOperations)) {
++        rewriter.eraseOp(operation);
++      }
++    }
++  }
++}
++
++static SmallVector<Value> restoreResults(ValueRange results,
++                                         ArrayRef<TensorSlots*> layout,
++                                         Location loc,
++                                         PatternRewriter& rewriter) {
++  SmallVector<Value> replacements;
++  size_t nextResult = 0;
++  for (auto* slots : layout) {
++    if (slots == nullptr) {
++      replacements.push_back(results[nextResult++]);
++      continue;
++    }
++    replacements.push_back(insertQTensorScalars(
++        slots->remaining, results.slice(nextResult, slots->indices.size()),
++        slots->indices, loc, rewriter));
++    nextResult += slots->indices.size();
++  }
++  return replacements;
++}
++
++namespace {
++
++/// Expose constant tensor slots to mapping without expanding control flow.
+ struct ScalarizeQTensorInputs final : OpRewritePattern<qco::IfOp> {
+   using OpRewritePattern::OpRewritePattern;
+ 
+   LogicalResult matchAndRewrite(qco::IfOp op,
+                                 PatternRewriter& rewriter) const override {
+-    size_t classicalResultCount = op.getClassicalResults().size();
+-    auto oldQubits = op.getQubits();
+-
+-    for (auto [qTensorIndex, qTensor] : llvm::enumerate(oldQubits)) {
+-      auto qTensorType = dyn_cast<RankedTensorType>(qTensor.getType());
+-      if (!qTensorType || !qTensorType.hasStaticShape()) {
++    const size_t classical = op.getClassicalResults().size();
++    SmallVector<TensorSlots, 1> slots;
++    slots.reserve(op.getQubits().size());
++    SlotLayout arguments(op.getQubits().size(), nullptr);
++    SlotLayout results(op.getNumResults(), nullptr);
++    for (auto [index, tensor] : llvm::enumerate(op.getQubits())) {
++      if (!isStaticQTensor(tensor)) {
+         continue;
+       }
+-
+-      auto thenAccesses = analyzeQTensorBranch(
+-          op.thenBlock(), qTensorIndex, classicalResultCount + qTensorIndex);
+-      auto elseAccesses = analyzeQTensorBranch(
+-          op.elseBlock(), qTensorIndex, classicalResultCount + qTensorIndex);
++      auto thenAccesses =
++          analyzeQTensorBranch(op.thenBlock(), index, classical + index);
++      auto elseAccesses =
++          analyzeQTensorBranch(op.elseBlock(), index, classical + index);
+       if (!thenAccesses || !elseAccesses) {
+         continue;
+       }
+-
+-      SmallVector<int64_t> accessedIndices(thenAccesses->accesses.keys());
+-      llvm::append_range(accessedIndices, elseAccesses->accesses.keys());
+-      llvm::sort(accessedIndices);
+-      accessedIndices.erase(llvm::unique(accessedIndices),
+-                            accessedIndices.end());
+-      ArrayRef<int64_t> indices(accessedIndices);
+-
+-      rewriter.setInsertionPoint(op);
+-      auto [qTensorWithoutScalars, scalarInputs] =
+-          extractQTensorScalars(qTensor, indices, op.getLoc(), rewriter);
+-
+-      SmallVector<Value> newQubits(oldQubits);
+-      newQubits.erase(newQubits.begin() + qTensorIndex);
+-      llvm::append_range(newQubits, scalarInputs);
+-
+-      auto newIf = qco::IfOp::create(
+-          rewriter, op.getLoc(), op.getClassicalResults().getTypes(),
+-          ValueRange(newQubits).getTypes(), op.getCondition(), newQubits);
+-      newIf->setDiscardableAttrs(op->getDiscardableAttrDictionary());
+-
+-      SmallVector<Location> locations(newQubits.size(), op.getLoc());
+-      Block* oldThenBlock = op.thenBlock();
+-      Block* oldElseBlock = op.elseBlock();
+-      Block* newThenBlock =
+-          rewriter.createBlock(&newIf.getThenRegion(), {},
+-                               ValueRange(newQubits).getTypes(), locations);
+-      Block* newElseBlock =
+-          rewriter.createBlock(&newIf.getElseRegion(), {},
+-                               ValueRange(newQubits).getTypes(), locations);
+-      moveScalarizedQTensorBranch(qTensor, oldThenBlock, newThenBlock,
+-                                  qTensorIndex, *thenAccesses, indices,
+-                                  rewriter);
+-      moveScalarizedQTensorBranch(qTensor, oldElseBlock, newElseBlock,
+-                                  qTensorIndex, *elseAccesses, indices,
+-                                  rewriter);
+-
+-      rewriter.setInsertionPointAfter(newIf);
+-      Value updatedQTensor = insertQTensorScalars(
+-          qTensorWithoutScalars,
+-          newIf.getLinearResults().take_back(indices.size()), indices,
+-          op.getLoc(), rewriter);
+-
+-      SmallVector<Value> replacements(
+-          newIf.getLinearResults().drop_back(indices.size()));
+-      replacements.insert(replacements.begin() + qTensorIndex, updatedQTensor);
+-      replacements.insert(replacements.begin(),
+-                          newIf.getClassicalResults().begin(),
+-                          newIf.getClassicalResults().end());
+-      rewriter.replaceOp(op, replacements);
+-      return success();
++      slots.push_back({
++          .original = tensor,
++          .branches = {std::move(*thenAccesses), std::move(*elseAccesses)},
++      });
++      arguments[index] = &slots.back();
++      results[classical + index] = &slots.back();
++    }
++    if (slots.empty()) {
++      return failure();
++    }
++    for (auto& tensor : slots) {
++      prepareSlots(tensor, op.getLoc(), rewriter);
++    }
++    auto inputs = expandInputs(op.getQubits(), arguments);
++    auto newIf = qco::IfOp::create(
++        rewriter, op.getLoc(), op.getClassicalResults().getTypes(),
++        ValueRange(inputs).getTypes(), op.getCondition(), inputs);
++    newIf->setDiscardableAttrs(op->getDiscardableAttrDictionary());
++    for (size_t branch = 0; branch < 2; ++branch) {
++      auto* block = rewriter.createBlock(
++          &newIf->getRegion(branch), {}, ValueRange(inputs).getTypes(),
++          SmallVector<Location>(inputs.size(), op.getLoc()));
++      moveScalarizedBranch(&op->getRegion(branch).front(), block, arguments,
++                           results, branch, rewriter);
+     }
+-    return failure();
++    rewriter.setInsertionPointAfter(newIf);
++    rewriter.replaceOp(
++        op, restoreResults(newIf.getResults(), results, op.getLoc(), rewriter));
++    return success();
+   }
+ };
+-/// Keep constant-index QTensor accesses outside a while loop and carry scalars.
+-/// The before region may reorder results, but the after region must return
+-/// each tensor to its original iteration argument.
++
++/// Before/after signatures may differ and reorder tensor results.
+ struct ScalarizeWhileQTensorInputs final : OpRewritePattern<scf::WhileOp> {
+   using OpRewritePattern::OpRewritePattern;
+ 
+   LogicalResult matchAndRewrite(scf::WhileOp op,
+                                 PatternRewriter& rewriter) const override {
+-    for (auto [inputIndex, qTensor] : llvm::enumerate(op.getInits())) {
+-      auto type = dyn_cast<RankedTensorType>(qTensor.getType());
+-      if (!type || !type.hasStaticShape() ||
+-          !isa<qco::QubitType>(type.getElementType())) {
++    SmallVector<TensorSlots, 1> slots;
++    slots.reserve(op.getInits().size());
++    SlotLayout inputs(op.getInits().size(), nullptr);
++    SlotLayout outputs(op.getNumResults(), nullptr);
++    for (auto [index, tensor] : llvm::enumerate(op.getInits())) {
++      if (!isStaticQTensor(tensor)) {
+         continue;
+       }
+-      auto beforeAccesses =
+-          analyzeQTensorBranch(op.getBeforeBody(), inputIndex);
+-      if (!beforeAccesses) {
++      auto before = analyzeQTensorBranch(op.getBeforeBody(), index);
++      if (!before) {
+         continue;
+       }
+-      /// The condition is operand zero of scf.condition.
+-      const auto resultIndex = beforeAccesses->yieldedOperand - 1;
+-      auto afterAccesses =
+-          analyzeQTensorBranch(op.getAfterBody(), resultIndex, inputIndex);
+-      if (!afterAccesses) {
++      const auto resultIndex = before->yieldedOperand - 1;
++      auto after = analyzeQTensorBranch(op.getAfterBody(), resultIndex, index);
++      if (!after) {
+         continue;
+       }
+-      SmallVector<int64_t> indices(beforeAccesses->accesses.keys());
+-      llvm::append_range(indices, afterAccesses->accesses.keys());
+-      llvm::sort(indices);
+-      indices.erase(llvm::unique(indices), indices.end());
+-
+-      rewriter.setInsertionPoint(op);
+-      auto [remainingTensor, scalarInputs] =
+-          extractQTensorScalars(qTensor, indices, op.getLoc(), rewriter);
+-
+-      SmallVector<Value> newInputs(op.getInits());
+-      newInputs.erase(newInputs.begin() + inputIndex);
+-      llvm::append_range(newInputs, scalarInputs);
+-      SmallVector<Type> newTypes(op.getResultTypes());
+-      newTypes.erase(newTypes.begin() + resultIndex);
+-      llvm::append_range(newTypes, ValueRange(scalarInputs).getTypes());
+-      auto newWhile =
+-          scf::WhileOp::create(rewriter, op.getLoc(), newTypes, newInputs);
+-      newWhile->setDiscardableAttrs(op->getDiscardableAttrDictionary());
+-      Block* newBefore = rewriter.createBlock(
+-          &newWhile.getBefore(), {}, ValueRange(newInputs).getTypes(),
+-          SmallVector<Location>(newInputs.size(), op.getLoc()));
+-      Block* newAfter = rewriter.createBlock(
+-          &newWhile.getAfter(), {}, newTypes,
+-          SmallVector<Location>(newTypes.size(), op.getLoc()));
+-      moveScalarizedQTensorBranch(qTensor, op.getBeforeBody(), newBefore,
+-                                  inputIndex, *beforeAccesses, indices,
+-                                  rewriter);
+-      moveScalarizedQTensorBranch(qTensor, op.getAfterBody(), newAfter,
+-                                  resultIndex, *afterAccesses, indices,
+-                                  rewriter);
+-
+-      rewriter.setInsertionPointAfter(newWhile);
+-      remainingTensor = insertQTensorScalars(
+-          remainingTensor, newWhile.getResults().take_back(indices.size()),
+-          indices, op.getLoc(), rewriter);
+-      SmallVector<Value> replacements(
+-          newWhile.getResults().drop_back(indices.size()));
+-      replacements.insert(replacements.begin() + resultIndex, remainingTensor);
+-      rewriter.replaceOp(op, replacements);
+-      return success();
++      slots.push_back({
++          .original = tensor,
++          .branches = {std::move(*before), std::move(*after)},
++      });
++      inputs[index] = &slots.back();
++      outputs[resultIndex] = &slots.back();
++    }
++    if (slots.empty()) {
++      return failure();
+     }
+-    return failure();
++    for (auto& tensor : slots) {
++      prepareSlots(tensor, op.getLoc(), rewriter);
++    }
++    auto newInputs = expandInputs(op.getInits(), inputs);
++    auto newTypes = expandTypes(op.getResultTypes(), outputs);
++    auto loop =
++        scf::WhileOp::create(rewriter, op.getLoc(), newTypes, newInputs);
++    loop->setDiscardableAttrs(op->getDiscardableAttrDictionary());
++    auto* before = rewriter.createBlock(
++        &loop.getBefore(), {}, ValueRange(newInputs).getTypes(),
++        SmallVector<Location>(newInputs.size(), op.getLoc()));
++    auto* after = rewriter.createBlock(
++        &loop.getAfter(), {}, newTypes,
++        SmallVector<Location>(newTypes.size(), op.getLoc()));
++    SlotLayout conditionYields{nullptr};
++    llvm::append_range(conditionYields, outputs);
++    moveScalarizedBranch(op.getBeforeBody(), before, inputs, conditionYields, 0,
++                         rewriter);
++    moveScalarizedBranch(op.getAfterBody(), after, outputs, inputs, 1,
++                         rewriter);
++    rewriter.setInsertionPointAfter(loop);
++    rewriter.replaceOp(
++        op, restoreResults(loop.getResults(), outputs, op.getLoc(), rewriter));
++    return success();
+   }
+ };
+-/// Carry constant slots through a for loop without expanding its iterations.
++
+ struct ScalarizeForQTensorInputs final : OpRewritePattern<scf::ForOp> {
+   using OpRewritePattern::OpRewritePattern;
+ 
+   LogicalResult matchAndRewrite(scf::ForOp op,
+                                 PatternRewriter& rewriter) const override {
+-    for (auto [inputIndex, tensor] : llvm::enumerate(op.getInitArgs())) {
+-      auto type = dyn_cast<RankedTensorType>(tensor.getType());
+-      if (!type || !type.hasStaticShape() ||
+-          !isa<qco::QubitType>(type.getElementType())) {
++    SmallVector<TensorSlots, 1> slots;
++    slots.reserve(op.getInitArgs().size());
++    SlotLayout inputs(op.getInitArgs().size(), nullptr);
++    for (auto [index, tensor] : llvm::enumerate(op.getInitArgs())) {
++      if (!isStaticQTensor(tensor)) {
+         continue;
+       }
+-      auto accesses =
+-          analyzeQTensorBranch(op.getBody(), inputIndex + 1, inputIndex);
++      auto accesses = analyzeQTensorBranch(op.getBody(), index + 1, index);
+       if (!accesses) {
+         continue;
+       }
+-      SmallVector<int64_t> indices(accesses->accesses.keys());
+-      llvm::sort(indices);
+-      auto [remainingTensor, scalars] =
+-          extractQTensorScalars(tensor, indices, op.getLoc(), rewriter);
+-      SmallVector<Value> inputs(op.getInitArgs());
+-      inputs.erase(inputs.begin() + inputIndex);
+-      llvm::append_range(inputs, scalars);
+-      auto loop = scf::ForOp::create(rewriter, op.getLoc(), op.getLowerBound(),
+-                                     op.getUpperBound(), op.getStep(), inputs);
+-      loop->setDiscardableAttrs(op->getDiscardableAttrDictionary());
+-      if (!loop.getBody()->empty()) {
+-        rewriter.eraseOp(loop.getBody()->getTerminator());
+-      }
+-      moveScalarizedQTensorBranch(tensor, op.getBody(), loop.getBody(),
+-                                  inputIndex + 1, *accesses, indices, rewriter);
+-      rewriter.setInsertionPointAfter(loop);
+-      remainingTensor = insertQTensorScalars(
+-          remainingTensor, loop.getResults().take_back(indices.size()), indices,
+-          op.getLoc(), rewriter);
+-      SmallVector<Value> replacements(
+-          loop.getResults().drop_back(indices.size()));
+-      replacements.insert(replacements.begin() + inputIndex, remainingTensor);
+-      rewriter.replaceOp(op, replacements);
+-      return success();
++      slots.push_back({.original = tensor, .branches = {std::move(*accesses)}});
++      inputs[index] = &slots.back();
++    }
++    if (slots.empty()) {
++      return failure();
++    }
++    for (auto& tensor : slots) {
++      prepareSlots(tensor, op.getLoc(), rewriter);
++    }
++    auto newInputs = expandInputs(op.getInitArgs(), inputs);
++    auto loop = scf::ForOp::create(rewriter, op.getLoc(), op.getLowerBound(),
++                                   op.getUpperBound(), op.getStep(), newInputs);
++    loop->setDiscardableAttrs(op->getDiscardableAttrDictionary());
++    if (!loop.getBody()->empty()) {
++      rewriter.eraseOp(loop.getBody()->getTerminator());
+     }
+-    return failure();
++    SlotLayout arguments{nullptr};
++    llvm::append_range(arguments, inputs);
++    moveScalarizedBranch(op.getBody(), loop.getBody(), arguments, inputs, 0,
++                         rewriter);
++    rewriter.setInsertionPointAfter(loop);
++    rewriter.replaceOp(
++        op, restoreResults(loop.getResults(), inputs, op.getLoc(), rewriter));
++    return success();
+   }
+ };
+ } // namespace
+diff --git a/mlir/lib/Support/Passes.cpp b/mlir/lib/Support/Passes.cpp
+index d0420c7ab..54ec286d8 100644
+--- a/mlir/lib/Support/Passes.cpp
++++ b/mlir/lib/Support/Passes.cpp
+@@ -73,6 +73,7 @@ void registerMQTCompilerPasses() {
+     qco::registerUnrollLoopsForPayload();
+     qco::registerVerifyTargetConformance();
+     mqt::registerNormalizeGlobalPhases();
++    mqt::registerSimplifyClassicalControl();
+     mqt::registerUnrollModifiers();
+     qc::registerShrinkQubitRegistersPass();
+     qtensor::registerShrinkQTensorToFitPass();
+@@ -159,7 +160,9 @@ LogicalResult runWithCompilationOptions(PassManager& pm, ModuleOp moduleOp,
+ }
+ 
+ void populateQCExportPipeline(OpPassManager& pm) {
+-  pm.addPass(createCanonicalizerPass());
++  pm.addPass(mlir::mqt::createSimplifyClassicalControl());
++  pm.addPass(
++      createCanonicalizerPass(GreedyRewriteConfig{}.setUseTopDownTraversal()));
+   pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
+   pm.addPass(createCSEPass());
+   pm.addPass(qc::createShrinkQubitRegistersPass());
+@@ -172,8 +175,10 @@ void populateQCCleanupPipeline(OpPassManager& pm) {
+ }
+ 
+ void populateQCOCleanupPipeline(OpPassManager& pm, bool removeDeadValues) {
++  pm.addPass(mlir::mqt::createSimplifyClassicalControl());
+   pm.addPass(createCanonicalizerPass(
+-      GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit)));
++      GreedyRewriteConfig{}.setUseTopDownTraversal().setMaxIterations(
++          GreedyRewriteConfig::kNoLimit)));
+   pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
+   pm.addPass(createCSEPass());
+   pm.addPass(qtensor::createShrinkQTensorToFitPass());
+diff --git a/mlir/unittests/Dialect/CBit/IR/CMakeLists.txt b/mlir/unittests/Dialect/CBit/IR/CMakeLists.txt
+index c0f91bd52..d6066563f 100644
+--- a/mlir/unittests/Dialect/CBit/IR/CMakeLists.txt
++++ b/mlir/unittests/Dialect/CBit/IR/CMakeLists.txt
+@@ -7,7 +7,7 @@
+ # Licensed under the MIT License
+ 
+ set(cbit_ir_target mqt-core-mlir-unittest-cbit-ir)
+-add_executable(${cbit_ir_target} test_cbit_canonicalization.cpp test_cbit_ir.cpp)
++add_executable(${cbit_ir_target} test_cbit_ir.cpp)
+ target_link_libraries(
+   ${cbit_ir_target}
+   PRIVATE GTest::gtest_main
+diff --git a/mlir/unittests/Dialect/MQT/Transforms/CMakeLists.txt b/mlir/unittests/Dialect/MQT/Transforms/CMakeLists.txt
+index 2a6a400f3..c37461aeb 100644
+--- a/mlir/unittests/Dialect/MQT/Transforms/CMakeLists.txt
++++ b/mlir/unittests/Dialect/MQT/Transforms/CMakeLists.txt
+@@ -7,12 +7,14 @@
+ # Licensed under the MIT License
+ 
+ set(mqt_transforms_target mqt-core-mlir-unittests-mqt-transforms)
+-add_executable(${mqt_transforms_target} test_global_phase_normalization.cpp)
++add_executable(${mqt_transforms_target} test_classical_simplification.cpp
++                                        test_global_phase_normalization.cpp)
+ 
+ target_link_libraries(
+   ${mqt_transforms_target}
+   PRIVATE GTest::gtest_main
+           MLIRArithDialect
++          MLIRCBitDialect
+           MLIRControlFlowDialect
+           MLIRFuncDialect
+           MLIRIR
+diff --git a/mlir/unittests/Dialect/CBit/IR/test_cbit_canonicalization.cpp b/mlir/unittests/Dialect/MQT/Transforms/test_classical_simplification.cpp
+similarity index 73%
+rename from mlir/unittests/Dialect/CBit/IR/test_cbit_canonicalization.cpp
+rename to mlir/unittests/Dialect/MQT/Transforms/test_classical_simplification.cpp
+index 3ca070c0c..db07e5970 100644
+--- a/mlir/unittests/Dialect/CBit/IR/test_cbit_canonicalization.cpp
++++ b/mlir/unittests/Dialect/MQT/Transforms/test_classical_simplification.cpp
+@@ -9,10 +9,12 @@
+  */
+ 
+ /// @file
+-/// Tests for classical-bit register canonicalization.
++/// Tests for block-local memory and scoped condition simplification.
+ 
+ #include "mqt/Dialect/CBit/IR/CBitDialect.h"
+ #include "mqt/Dialect/CBit/IR/CBitOps.h"
++#include "mqt/Dialect/MQT/Transforms/Passes.h"
++#include "mqt/Dialect/QCO/IR/QCOOps.h"
+ 
+ #include "gtest/gtest.h"
+ 
+@@ -37,23 +39,24 @@ using namespace mlir;
+ 
+ namespace {
+ 
+-class CBitCanonicalizationTest : public testing::Test {
++class ClassicalSimplificationTest : public testing::Test {
+ protected:
+   MLIRContext context_;
+ 
+   void SetUp() override {
+     context_.loadDialect<cbit::CBitDialect, arith::ArithDialect,
+-                         func::FuncDialect>();
++                         func::FuncDialect, qco::QCODialect>();
+   }
+ 
+   LogicalResult canonicalize(ModuleOp moduleOp) {
+     PassManager manager(&context_);
++    manager.addPass(mlir::mqt::createSimplifyClassicalControl());
+     manager.addPass(createCanonicalizerPass());
+     return manager.run(moduleOp);
+   }
+ };
+ 
+-TEST_F(CBitCanonicalizationTest, ForwardsStoredBitAcrossReadOnlySnapshot) {
++TEST_F(ClassicalSimplificationTest, ForwardsStoredBitAcrossReadOnlySnapshot) {
+   auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+     module {
+       func.func @test() -> (i1, i2) {
+@@ -82,7 +85,7 @@ TEST_F(CBitCanonicalizationTest, ForwardsStoredBitAcrossReadOnlySnapshot) {
+   EXPECT_TRUE(returned.getOperand(1).getDefiningOp<cbit::ReadOp>());
+ }
+ 
+-TEST_F(CBitCanonicalizationTest, DoesNotForwardAcrossWholeRegisterWrite) {
++TEST_F(ClassicalSimplificationTest, DoesNotForwardAcrossWholeRegisterWrite) {
+   auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+     module {
+       func.func @test(%value: i2) -> (i1, i2) {
+@@ -110,7 +113,7 @@ TEST_F(CBitCanonicalizationTest, DoesNotForwardAcrossWholeRegisterWrite) {
+   EXPECT_TRUE(returned.getOperand(1).getDefiningOp<cbit::ReadOp>());
+ }
+ 
+-TEST_F(CBitCanonicalizationTest,
++TEST_F(ClassicalSimplificationTest,
+        RepeatedLoadsPreserveRegistersIndicesAndInterveningStores) {
+   auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+     module {
+@@ -153,4 +156,39 @@ TEST_F(CBitCanonicalizationTest,
+   EXPECT_EQ(returned.getOperand(4), function.getArgument(4));
+ }
+ 
++TEST_F(ClassicalSimplificationTest, ConditionsRemainScopedToTheirBranches) {
++  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
++    module {
++      func.func @test(%condition: i1, %other: i1) -> (i1, i1) {
++        %result = qco.if %condition args() -> i1 {
++          %nested = qco.if %condition args() -> i1 {
++            qco.yield %other : i1
++          } else args() {
++            qco.yield %condition : i1
++          }
++          qco.yield %nested : i1
++        } else args() {
++          qco.yield %condition : i1
++        }
++        return %result, %condition : i1, i1
++      }
++    }
++  )mlir",
++                                              &context_);
++  ASSERT_TRUE(moduleOp);
++  ASSERT_TRUE(succeeded(canonicalize(*moduleOp)));
++  ASSERT_TRUE(succeeded(verify(*moduleOp)));
++  auto function = moduleOp->lookupSymbol<func::FuncOp>("test");
++  auto returned = cast<func::ReturnOp>(function.front().getTerminator());
++  auto branch = returned.getOperand(0).getDefiningOp<qco::IfOp>();
++  ASSERT_TRUE(branch);
++  EXPECT_EQ(branch.getCondition(), function.getArgument(0));
++  EXPECT_EQ(branch.thenYield().getOperand(0), function.getArgument(1));
++  APInt falseValue;
++  ASSERT_TRUE(matchPattern(branch.elseYield().getOperand(0),
++                           m_ConstantInt(&falseValue)));
++  EXPECT_TRUE(falseValue.isZero());
++  EXPECT_EQ(returned.getOperand(1), function.getArgument(0));
++}
++
+ } // namespace
+diff --git a/mlir/unittests/Dialect/QCO/Transforms/NativeSynthesis/test_target_synthesis.cpp b/mlir/unittests/Dialect/QCO/Transforms/NativeSynthesis/test_target_synthesis.cpp
+index 6ee5ecc5f..5f603c4d7 100644
+--- a/mlir/unittests/Dialect/QCO/Transforms/NativeSynthesis/test_target_synthesis.cpp
++++ b/mlir/unittests/Dialect/QCO/Transforms/NativeSynthesis/test_target_synthesis.cpp
+@@ -2704,19 +2704,21 @@ TEST_F(TargetSynthesisTest, RuntimePauliRotationsShareNativeSynthesisAndCosts) {
+ }
+ 
+ TEST_F(TargetSynthesisTest, CommutingPauliRunsPreservePhaseAndNativeBounds) {
+-  for (const auto& body : {
+-           R"mlir(
++  for (const auto& [body, expectedEntanglers] : {
++           std::pair{R"mlir(
+              %u0, %u1 = qco.rzx(%a) %q0, %q1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+              %v1, %v0 = qco.ryy(%b) %u1, %u0 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+              %out0, %out1 = qco.rzx(%offset) %v0, %v1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+            )mlir",
+-           R"mlir(
++                     2U},
++           std::pair{R"mlir(
+              %negative = arith.negf %a : f64
+              %u0, %u1 = qco.rzz(%a) %q0, %q1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+              %v1, %v0 = qco.rzz(%negative) %u1, %u0 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+              %out0, %out1 = qco.rzz(%offset) %v0, %v1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+            )mlir",
+-           R"mlir(
++                     2U},
++           std::pair{R"mlir(
+              %u0, %u1 = qco.ctrl(%q0) targets(%arg = %q1) {
+                %p = qco.p(%a) %arg : !qco.qubit -> !qco.qubit
+                qco.yield %p : !qco.qubit
+@@ -2726,6 +2728,19 @@ TEST_F(TargetSynthesisTest, CommutingPauliRunsPreservePhaseAndNativeBounds) {
+                qco.yield %p : !qco.qubit
+              } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
+            )mlir",
++                     2U},
++           std::pair{R"mlir(
++             %u0, %u1 = qco.rxx(%a) %q0, %q1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
++             %v1, %v0 = qco.ryy(%b) %u1, %u0 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
++             %out0, %out1 = qco.rzz(%offset) %v0, %v1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
++           )mlir",
++                     3U},
++           std::pair{R"mlir(
++             %u0, %u1 = qco.rzx(%a) %q0, %q1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
++             %v0, %v1 = qco.ryy(%b) %u0, %u1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
++             %out1, %out0 = qco.rzx(%offset) %v1, %v0 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
++           )mlir",
++                     3U},
+        }) {
+     SCOPED_TRACE(body);
+     const std::string source = std::string(R"mlir(
+@@ -2767,7 +2782,7 @@ TEST_F(TargetSynthesisTest, CommutingPauliRunsPreservePhaseAndNativeBounds) {
+       synthesized->walk([&](mlir::qco::UnitaryOpInterface op) {
+         entanglers += static_cast<size_t>(op.isTwoQubit());
+       });
+-      EXPECT_LE(entanglers, 2U);
++      EXPECT_LE(entanglers, expectedEntanglers);
+       for (const auto& angles : {
+                std::array{0., 0.},
+                std::array{.37, -1.23},
+@@ -2791,6 +2806,57 @@ TEST_F(TargetSynthesisTest, CommutingPauliRunsPreservePhaseAndNativeBounds) {
+   }
+ }
+ 
++TEST_F(TargetSynthesisTest, MergesDiagonalPairsWithoutCrossingBarriers) {
++  for (bool barrier : {false, true}) {
++    SCOPED_TRACE(barrier);
++    const std::string source = std::string(R"mlir(
++      module {
++        func.func @main(%a: f64, %b: f64) -> (!qco.qubit, !qco.qubit, !qco.qubit) {
++          %q0 = qco.static 0 : !qco.qubit
++          %q1 = qco.static 1 : !qco.qubit
++          %q2 = qco.static 2 : !qco.qubit
++          %negative = arith.negf %a : f64
++          %u0, %u1 = qco.rzz(%a) %q0, %q1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
++          %v1, %v2 = qco.rzz(%b) %u1, %q2 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
++    )mlir") +
++                               (barrier ? R"mlir(
++          %v0 = qco.barrier %u0 : !qco.qubit -> !qco.qubit
++    )mlir"
++                                        : R"mlir(
++          %v0 = qco.rz(%b) %u0 : !qco.qubit -> !qco.qubit
++    )mlir") + R"mlir(
++          %out0, %out1 = qco.rzz(%negative) %v0, %v1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
++          return %out0, %out1, %v2 : !qco.qubit, !qco.qubit, !qco.qubit
++        }
++      }
++    )mlir";
++    auto original = mlir::parseSourceString<ModuleOp>(source, context.get());
++    ASSERT_TRUE(original);
++    auto fused = OwningOpRef<ModuleOp>(original->clone());
++    mlir::PassManager manager(context.get());
++    manager.addPass(mlir::qco::createFuseTwoQubitGates());
++    ASSERT_TRUE(mlir::succeeded(manager.run(*fused)));
++    ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*fused)));
++    EXPECT_EQ(countOps<mlir::qco::RZZOp>(*fused), barrier ? 3U : 1U);
++    for (const auto& angles : {std::array{.31, -.43}, std::array{-7.1, 2.4}}) {
++      auto expected = OwningOpRef<ModuleOp>(original->clone());
++      auto actual = OwningOpRef<ModuleOp>(fused->clone());
++      for (auto moduleOp : {*expected, *actual}) {
++        auto function = mainFunction(moduleOp);
++        mlir::OpBuilder builder(context.get());
++        builder.setInsertionPointToStart(&function.front());
++        for (size_t index = 0; index < angles.size(); ++index) {
++          auto value = mlir::arith::ConstantOp::create(
++              builder, function.getLoc(),
++              builder.getF64FloatAttr(angles[index]));
++          function.getArgument(index).replaceAllUsesWith(value);
++        }
++      }
++      expectEquivalent(expected, actual);
++    }
++  }
++}
++
+ TEST_F(TargetSynthesisTest, NativeRuntimeControlledPhaseStaysUntouched) {
+   auto moduleOp = mlir::parseSourceString<ModuleOp>(R"mlir(
+     module {
+diff --git a/mlir/unittests/Dialect/QTensor/IR/test_qtensor_canonicalization.cpp b/mlir/unittests/Dialect/QTensor/IR/test_qtensor_canonicalization.cpp
+index d2691b07e..9cbd9d1d8 100644
+--- a/mlir/unittests/Dialect/QTensor/IR/test_qtensor_canonicalization.cpp
++++ b/mlir/unittests/Dialect/QTensor/IR/test_qtensor_canonicalization.cpp
+@@ -63,21 +63,29 @@ TEST_F(QTensorCanonicalizationTest, ScalarizesWhileOnlyWithConstantIndices) {
+         %zero = arith.constant 0 : i32
+         %one = arith.constant 1 : i32
+         %tensor = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+-        %count, %result = scf.while (%t = %tensor, %i = %zero)
+-            : (tensor<2x!qco.qubit>, i32) -> (i32, tensor<2x!qco.qubit>) {
++        %other = qtensor.alloc(%c1) : tensor<1x!qco.qubit>
++        %count, %second, %result = scf.while (%t = %tensor, %i = %zero, %s = %other)
++            : (tensor<2x!qco.qubit>, i32, tensor<1x!qco.qubit>) -> (i32, tensor<1x!qco.qubit>, tensor<2x!qco.qubit>) {
+           %rest, %q = qtensor.extract %t[%c0] : tensor<2x!qco.qubit>
+           %h = qco.h %q : !qco.qubit -> !qco.qubit
+           %out, %condition = qco.measure %h : !qco.qubit
+           %updated = qtensor.insert %out into %rest[%c0] : tensor<2x!qco.qubit>
+-          scf.condition(%condition) %i, %updated : i32, tensor<2x!qco.qubit>
++          %srest, %sq = qtensor.extract %s[%c0] : tensor<1x!qco.qubit>
++          %sx = qco.x %sq : !qco.qubit -> !qco.qubit
++          %supdated = qtensor.insert %sx into %srest[%c0] : tensor<1x!qco.qubit>
++          scf.condition(%condition) %i, %supdated, %updated : i32, tensor<1x!qco.qubit>, tensor<2x!qco.qubit>
+         } do {
+-        ^bb0(%i: i32, %t: tensor<2x!qco.qubit>):
++        ^bb0(%i: i32, %s: tensor<1x!qco.qubit>, %t: tensor<2x!qco.qubit>):
+           %rest, %q = qtensor.extract %t[%c1] : tensor<2x!qco.qubit>
+           %out = qco.x %q : !qco.qubit -> !qco.qubit
+           %updated = qtensor.insert %out into %rest[%c1] : tensor<2x!qco.qubit>
+           %next = arith.addi %i, %one : i32
+-          scf.yield %updated, %next : tensor<2x!qco.qubit>, i32
++          %srest, %sq = qtensor.extract %s[%c0] : tensor<1x!qco.qubit>
++          %sy = qco.y %sq : !qco.qubit -> !qco.qubit
++          %supdated = qtensor.insert %sy into %srest[%c0] : tensor<1x!qco.qubit>
++          scf.yield %updated, %next, %supdated : tensor<2x!qco.qubit>, i32, tensor<1x!qco.qubit>
+         }
++        qtensor.dealloc %second : tensor<1x!qco.qubit>
+         qtensor.dealloc %result : tensor<2x!qco.qubit>
+         return %count : i32
+       }
+@@ -103,11 +111,11 @@ TEST_F(QTensorCanonicalizationTest, ScalarizesWhileOnlyWithConstantIndices) {
+     scf::WhileOp loop;
+     moduleOp->walk([&](scf::WhileOp candidate) { loop = candidate; });
+     ASSERT_TRUE(loop);
+-    EXPECT_EQ(loop.getNumOperands(), dynamicIndex ? 2U : 3U);
++    EXPECT_EQ(loop.getNumOperands(), dynamicIndex ? 3U : 4U);
+     EXPECT_TRUE(loop.getResult(0).getType().isInteger(32));
+     size_t nestedExtracts = 0;
+     loop.walk([&](qtensor::ExtractOp) { ++nestedExtracts; });
+-    EXPECT_EQ(nestedExtracts, dynamicIndex ? 2U : 0U);
++    EXPECT_EQ(nestedExtracts, dynamicIndex ? 4U : 0U);
+   }
+ }
+ 
+@@ -469,16 +477,16 @@ TEST_F(QTensorCanonicalizationTest,
+   EXPECT_EQ(cast<UnitaryOpInterface>(postMiddle.getOperation())
+                 .getInputQubits()
+                 .front(),
+-            ifOp.getLinearResults()[0]);
++            ifOp.getLinearResults()[1]);
+ 
+   ASSERT_EQ(insertedScalars.size(), 2);
+-  EXPECT_TRUE(llvm::is_contained(insertedScalars, ifOp.getLinearResults()[1]));
++  EXPECT_TRUE(llvm::is_contained(insertedScalars, ifOp.getLinearResults()[0]));
+   EXPECT_TRUE(llvm::is_contained(insertedScalars, ifOp.getLinearResults()[2]));
+ 
+   auto thenValues = ifOp.thenYield().getTargets();
+   ASSERT_EQ(thenValues.size(), 3);
+-  EXPECT_TRUE(isa<YOp>(thenValues[0].getDefiningOp()));
+-  EXPECT_TRUE(isa<XOp>(thenValues[1].getDefiningOp()));
++  EXPECT_TRUE(isa<YOp>(thenValues[1].getDefiningOp()));
++  EXPECT_TRUE(isa<XOp>(thenValues[0].getDefiningOp()));
+   EXPECT_TRUE(isa<ZOp>(thenValues[2].getDefiningOp()));
+ }
+ 

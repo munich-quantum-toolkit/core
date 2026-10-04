@@ -1,0 +1,1028 @@
+{
+  "coverage": {
+    "small": {
+      "main": {
+        "exported": 271,
+        "target_unsupported": 50,
+        "synthesis_failed": 78,
+        "synthesized": 1
+      },
+      "pr2578": {
+        "exported": 400
+      }
+    },
+    "large": {
+      "main": {
+        "target_unsupported": 68,
+        "exported": 267,
+        "synthesis_failed": 63
+      },
+      "pr2578": {
+        "exported": 398
+      }
+    }
+  },
+  "targets": [
+    {
+      "suite": "small",
+      "target": "iqm_r_cz",
+      "pairs": 45,
+      "synthesis_ms": {
+        "median_ratio": 0.8341305927815782,
+        "q25": 0.791990841398941,
+        "q75": 0.8643956143227289,
+        "sum_ratio": 0.7495516942479934,
+        "lower": 40,
+        "equal": 0,
+        "higher": 5
+      },
+      "export_ms": {
+        "median_ratio": 0.6766977436484872,
+        "q25": 0.5180332113472489,
+        "q75": 0.8570524081488611,
+        "sum_ratio": 0.5021436400752071,
+        "lower": 43,
+        "equal": 0,
+        "higher": 2
+      },
+      "native_2q": {
+        "median_ratio": 1.0,
+        "q25": 1.0,
+        "q75": 1.0,
+        "sum_ratio": 1.0,
+        "lower": 0,
+        "equal": 45,
+        "higher": 0
+      },
+      "two_qubit_depth": {
+        "median_ratio": 1.0,
+        "q25": 1.0,
+        "q75": 1.0,
+        "sum_ratio": 1.0,
+        "lower": 0,
+        "equal": 45,
+        "higher": 0
+      },
+      "native_1q": {
+        "median_ratio": 0.3333333333333333,
+        "q25": 0.15173917668333156,
+        "q75": 0.40488922841864017,
+        "sum_ratio": 0.18215180287761404,
+        "lower": 42,
+        "equal": 3,
+        "higher": 0
+      },
+      "native_1q_non_rz": {
+        "median_ratio": 0.3333333333333333,
+        "q25": 0.15173917668333156,
+        "q75": 0.40488922841864017,
+        "sum_ratio": 0.18215180287761404,
+        "lower": 42,
+        "equal": 3,
+        "higher": 0
+      },
+      "non_rz_depth": {
+        "median_ratio": 0.4944107313957202,
+        "q25": 0.3554852320675106,
+        "q75": 0.5991429953694105,
+        "sum_ratio": 0.36372453928225024,
+        "lower": 42,
+        "equal": 3,
+        "higher": 0
+      }
+    },
+    {
+      "suite": "small",
+      "target": "ibm_sxz_cx",
+      "pairs": 45,
+      "synthesis_ms": {
+        "median_ratio": 0.7928932336781274,
+        "q25": 0.7080034791509328,
+        "q75": 0.8189495949302639,
+        "sum_ratio": 0.6780139721436257,
+        "lower": 45,
+        "equal": 0,
+        "higher": 0
+      },
+      "export_ms": {
+        "median_ratio": 0.8517283278140183,
+        "q25": 0.6218597992300625,
+        "q75": 0.9232434029271802,
+        "sum_ratio": 0.6588950386942615,
+        "lower": 43,
+        "equal": 0,
+        "higher": 2
+      },
+      "native_2q": {
+        "median_ratio": 1.0,
+        "q25": 1.0,
+        "q75": 1.0,
+        "sum_ratio": 1.0,
+        "lower": 0,
+        "equal": 45,
+        "higher": 0
+      },
+      "two_qubit_depth": {
+        "median_ratio": 1.0,
+        "q25": 1.0,
+        "q75": 1.0,
+        "sum_ratio": 1.0,
+        "lower": 0,
+        "equal": 45,
+        "higher": 0
+      },
+      "native_1q": {
+        "median_ratio": 0.7979390761999458,
+        "q25": 0.3173611111111111,
+        "q75": 1.0,
+        "sum_ratio": 0.46931810266768825,
+        "lower": 32,
+        "equal": 13,
+        "higher": 0
+      },
+      "native_1q_non_rz": {
+        "median_ratio": 0.8058106676086189,
+        "q25": 0.2178030303030303,
+        "q75": 1.0,
+        "sum_ratio": 0.35807314897413023,
+        "lower": 27,
+        "equal": 18,
+        "higher": 0
+      },
+      "native_rz": {
+        "median_ratio": 0.7950617283950617,
+        "q25": 0.3692411924119241,
+        "q75": 1.0,
+        "sum_ratio": 0.5405621572212066,
+        "lower": 32,
+        "equal": 13,
+        "higher": 0
+      },
+      "non_rz_depth": {
+        "median_ratio": 0.8864583333333333,
+        "q25": 0.4,
+        "q75": 1.0,
+        "sum_ratio": 0.64500366479355,
+        "lower": 27,
+        "equal": 18,
+        "higher": 0
+      }
+    },
+    {
+      "suite": "small",
+      "target": "ibm_sxz_cz",
+      "pairs": 45,
+      "synthesis_ms": {
+        "median_ratio": 0.8404269386700166,
+        "q25": 0.8095980319924886,
+        "q75": 0.8816091807627773,
+        "sum_ratio": 0.7839873097446874,
+        "lower": 43,
+        "equal": 0,
+        "higher": 2
+      },
+      "export_ms": {
+        "median_ratio": 0.764886529881875,
+        "q25": 0.6715022359678933,
+        "q75": 0.9118489909776677,
+        "sum_ratio": 0.7066014516288986,
+        "lower": 40,
+        "equal": 0,
+        "higher": 5
+      },
+      "native_2q": {
+        "median_ratio": 1.0,
+        "q25": 1.0,
+        "q75": 1.0,
+        "sum_ratio": 1.0,
+        "lower": 0,
+        "equal": 45,
+        "higher": 0
+      },
+      "two_qubit_depth": {
+        "median_ratio": 1.0,
+        "q25": 1.0,
+        "q75": 1.0,
+        "sum_ratio": 1.0,
+        "lower": 0,
+        "equal": 45,
+        "higher": 0
+      },
+      "native_1q": {
+        "median_ratio": 0.6733553467106934,
+        "q25": 0.4978813559322034,
+        "q75": 0.8415384615384616,
+        "sum_ratio": 0.5720354866924903,
+        "lower": 42,
+        "equal": 3,
+        "higher": 0
+      },
+      "native_1q_non_rz": {
+        "median_ratio": 0.8846153846153846,
+        "q25": 0.6963483146067415,
+        "q75": 1.0,
+        "sum_ratio": 0.7958477508650519,
+        "lower": 28,
+        "equal": 17,
+        "higher": 0
+      },
+      "native_rz": {
+        "median_ratio": 0.5100330200660401,
+        "q25": 0.3498083475298126,
+        "q75": 0.75,
+        "sum_ratio": 0.42454394693200664,
+        "lower": 42,
+        "equal": 3,
+        "higher": 0
+      },
+      "non_rz_depth": {
+        "median_ratio": 0.9931972789115646,
+        "q25": 0.9195804195804196,
+        "q75": 1.0,
+        "sum_ratio": 0.9771453212591634,
+        "lower": 22,
+        "equal": 20,
+        "higher": 3
+      }
+    },
+    {
+      "suite": "small",
+      "target": "rxrz_rzz_unbounded",
+      "pairs": 46,
+      "synthesis_ms": {
+        "median_ratio": 0.817244331766277,
+        "q25": 0.7407090877077285,
+        "q75": 0.872841395005092,
+        "sum_ratio": 0.683933208210185,
+        "lower": 46,
+        "equal": 0,
+        "higher": 0
+      },
+      "export_ms": {
+        "median_ratio": 0.6651398016740429,
+        "q25": 0.41618796766660104,
+        "q75": 0.8125209963531776,
+        "sum_ratio": 0.4047112231203011,
+        "lower": 40,
+        "equal": 0,
+        "higher": 6
+      },
+      "native_2q": {
+        "median_ratio": 1.0,
+        "q25": 0.5136605415860734,
+        "q75": 1.0,
+        "sum_ratio": 0.6811116344795102,
+        "lower": 17,
+        "equal": 29,
+        "higher": 0
+      },
+      "two_qubit_depth": {
+        "median_ratio": 1.0,
+        "q25": 0.5104939703153989,
+        "q75": 1.0,
+        "sum_ratio": 0.7254901960784313,
+        "lower": 17,
+        "equal": 29,
+        "higher": 0
+      },
+      "native_1q": {
+        "median_ratio": 0.4883720930232558,
+        "q25": 0.16446782605535265,
+        "q75": 0.5988095238095238,
+        "sum_ratio": 0.22268950661606318,
+        "lower": 39,
+        "equal": 7,
+        "higher": 0
+      },
+      "native_1q_non_rz": {
+        "median_ratio": 0.34846938775510206,
+        "q25": 0.1320968271933988,
+        "q75": 0.47747382436603525,
+        "sum_ratio": 0.17381323276215463,
+        "lower": 42,
+        "equal": 4,
+        "higher": 0
+      },
+      "native_rz": {
+        "median_ratio": 0.6603349673202614,
+        "q25": 0.2148078529657477,
+        "q75": 0.809375,
+        "sum_ratio": 0.30434187097657855,
+        "lower": 35,
+        "equal": 4,
+        "higher": 7
+      },
+      "non_rz_depth": {
+        "median_ratio": 0.5051546391752577,
+        "q25": 0.25,
+        "q75": 0.6458333333333334,
+        "sum_ratio": 0.350288656576689,
+        "lower": 44,
+        "equal": 2,
+        "higher": 0
+      }
+    },
+    {
+      "suite": "small",
+      "target": "rigetti_rx_cz",
+      "pairs": 45,
+      "synthesis_ms": {
+        "median_ratio": 0.8350063673107802,
+        "q25": 0.8100191811749158,
+        "q75": 0.8890346957024859,
+        "sum_ratio": 0.8070347679775464,
+        "lower": 43,
+        "equal": 0,
+        "higher": 2
+      },
+      "export_ms": {
+        "median_ratio": 0.8036734128290822,
+        "q25": 0.7330960169889985,
+        "q75": 0.9379574032567671,
+        "sum_ratio": 0.7525352135988099,
+        "lower": 41,
+        "equal": 0,
+        "higher": 4
+      },
+      "native_2q": {
+        "median_ratio": 1.0,
+        "q25": 1.0,
+        "q75": 1.0,
+        "sum_ratio": 1.0,
+        "lower": 0,
+        "equal": 45,
+        "higher": 0
+      },
+      "two_qubit_depth": {
+        "median_ratio": 1.0,
+        "q25": 1.0,
+        "q75": 1.0,
+        "sum_ratio": 1.0,
+        "lower": 0,
+        "equal": 45,
+        "higher": 0
+      },
+      "native_1q": {
+        "median_ratio": 0.6733553467106934,
+        "q25": 0.4978813559322034,
+        "q75": 0.8415384615384616,
+        "sum_ratio": 0.5770696657294595,
+        "lower": 42,
+        "equal": 3,
+        "higher": 0
+      },
+      "native_1q_non_rz": {
+        "median_ratio": 0.9132928475033739,
+        "q25": 0.6963483146067415,
+        "q75": 1.0,
+        "sum_ratio": 0.7978288231592197,
+        "lower": 28,
+        "equal": 17,
+        "higher": 0
+      },
+      "native_rz": {
+        "median_ratio": 0.5100330200660401,
+        "q25": 0.3533281514980215,
+        "q75": 0.75,
+        "sum_ratio": 0.43165094828479633,
+        "lower": 42,
+        "equal": 3,
+        "higher": 0
+      },
+      "non_rz_depth": {
+        "median_ratio": 0.9864405221548078,
+        "q25": 0.9195804195804196,
+        "q75": 1.0,
+        "sum_ratio": 0.9779887785930081,
+        "lower": 23,
+        "equal": 19,
+        "higher": 3
+      }
+    },
+    {
+      "suite": "small",
+      "target": "rigetti_rx_iswap",
+      "pairs": 45,
+      "synthesis_ms": {
+        "median_ratio": 0.8321020331700744,
+        "q25": 0.7952612627823494,
+        "q75": 0.904714370503904,
+        "sum_ratio": 0.768916096475233,
+        "lower": 45,
+        "equal": 0,
+        "higher": 0
+      },
+      "export_ms": {
+        "median_ratio": 0.748138962120161,
+        "q25": 0.7134455681364905,
+        "q75": 0.8376911211601006,
+        "sum_ratio": 0.729323892476302,
+        "lower": 43,
+        "equal": 0,
+        "higher": 2
+      },
+      "native_2q": {
+        "median_ratio": 1.0,
+        "q25": 1.0,
+        "q75": 1.0,
+        "sum_ratio": 1.0,
+        "lower": 0,
+        "equal": 45,
+        "higher": 0
+      },
+      "two_qubit_depth": {
+        "median_ratio": 1.0,
+        "q25": 1.0,
+        "q75": 1.0,
+        "sum_ratio": 1.0,
+        "lower": 0,
+        "equal": 45,
+        "higher": 0
+      },
+      "native_1q": {
+        "median_ratio": 0.687308282208589,
+        "q25": 0.6642534740077659,
+        "q75": 0.7701894474800111,
+        "sum_ratio": 0.7039053782637804,
+        "lower": 42,
+        "equal": 3,
+        "higher": 0
+      },
+      "native_1q_non_rz": {
+        "median_ratio": 0.7197681704260652,
+        "q25": 0.6528846153846154,
+        "q75": 0.8571428571428571,
+        "sum_ratio": 0.724258486523063,
+        "lower": 40,
+        "equal": 5,
+        "higher": 0
+      },
+      "native_rz": {
+        "median_ratio": 0.6887863196125907,
+        "q25": 0.6505974823947174,
+        "q75": 0.7428571428571429,
+        "sum_ratio": 0.6905746786822278,
+        "lower": 42,
+        "equal": 3,
+        "higher": 0
+      },
+      "non_rz_depth": {
+        "median_ratio": 0.8138528138528138,
+        "q25": 0.6880933544303798,
+        "q75": 0.911422220409495,
+        "sum_ratio": 0.7907834101382488,
+        "lower": 39,
+        "equal": 6,
+        "higher": 0
+      }
+    },
+    {
+      "suite": "large",
+      "target": "iqm_r_cz",
+      "pairs": 39,
+      "synthesis_ms": {
+        "median_ratio": 0.7918951559277364,
+        "q25": 0.7289989101382042,
+        "q75": 0.8517720420161112,
+        "sum_ratio": 0.8742481616160986,
+        "lower": 33,
+        "equal": 0,
+        "higher": 6
+      },
+      "export_ms": {
+        "median_ratio": 0.548292023860608,
+        "q25": 0.41275859749664673,
+        "q75": 0.6941381500020769,
+        "sum_ratio": 0.4630737373957279,
+        "lower": 39,
+        "equal": 0,
+        "higher": 0
+      },
+      "native_2q": {
+        "median_ratio": 1.0,
+        "q25": 1.0,
+        "q75": 1.0,
+        "sum_ratio": 1.0,
+        "lower": 0,
+        "equal": 39,
+        "higher": 0
+      },
+      "two_qubit_depth": {
+        "median_ratio": 1.0,
+        "q25": 1.0,
+        "q75": 1.0,
+        "sum_ratio": 1.0,
+        "lower": 0,
+        "equal": 39,
+        "higher": 0
+      },
+      "native_1q": {
+        "median_ratio": 0.3333333333333333,
+        "q25": 0.13317604292844112,
+        "q75": 0.3746821968528232,
+        "sum_ratio": 0.13889723722157757,
+        "lower": 39,
+        "equal": 0,
+        "higher": 0
+      },
+      "native_1q_non_rz": {
+        "median_ratio": 0.3333333333333333,
+        "q25": 0.13317604292844112,
+        "q75": 0.3746821968528232,
+        "sum_ratio": 0.13889723722157757,
+        "lower": 39,
+        "equal": 0,
+        "higher": 0
+      },
+      "non_rz_depth": {
+        "median_ratio": 0.49469964664310956,
+        "q25": 0.340952498646935,
+        "q75": 0.6406828594740476,
+        "sum_ratio": 0.2742320483925201,
+        "lower": 39,
+        "equal": 0,
+        "higher": 0
+      }
+    },
+    {
+      "suite": "large",
+      "target": "ibm_sxz_cx",
+      "pairs": 63,
+      "synthesis_ms": {
+        "median_ratio": 0.6519369739757793,
+        "q25": 0.564899610957223,
+        "q75": 0.7590769889338965,
+        "sum_ratio": 0.5133258734121771,
+        "lower": 63,
+        "equal": 0,
+        "higher": 0
+      },
+      "export_ms": {
+        "median_ratio": 0.755964680533298,
+        "q25": 0.45067121170686286,
+        "q75": 0.9118277234289189,
+        "sum_ratio": 0.6042440755751535,
+        "lower": 62,
+        "equal": 0,
+        "higher": 1
+      },
+      "native_2q": {
+        "median_ratio": 1.0,
+        "q25": 1.0,
+        "q75": 1.0,
+        "sum_ratio": 1.0,
+        "lower": 0,
+        "equal": 63,
+        "higher": 0
+      },
+      "two_qubit_depth": {
+        "median_ratio": 1.0,
+        "q25": 1.0,
+        "q75": 1.0,
+        "sum_ratio": 1.0,
+        "lower": 0,
+        "equal": 63,
+        "higher": 0
+      },
+      "native_1q": {
+        "median_ratio": 0.8220338983050848,
+        "q25": 0.25834165834165834,
+        "q75": 0.9303368145208912,
+        "sum_ratio": 0.389410666336843,
+        "lower": 48,
+        "equal": 15,
+        "higher": 0
+      },
+      "native_1q_non_rz": {
+        "median_ratio": 0.8277404921700223,
+        "q25": 0.15509259259259262,
+        "q75": 1.0,
+        "sum_ratio": 0.20754162638020096,
+        "lower": 43,
+        "equal": 20,
+        "higher": 0
+      },
+      "native_rz": {
+        "median_ratio": 0.8177777777777778,
+        "q25": 0.32664227413453417,
+        "q75": 0.9544041006035675,
+        "sum_ratio": 0.49781104633577117,
+        "lower": 48,
+        "equal": 15,
+        "higher": 0
+      },
+      "non_rz_depth": {
+        "median_ratio": 0.9236641221374046,
+        "q25": 0.3409426607229362,
+        "q75": 1.0,
+        "sum_ratio": 0.668427954035831,
+        "lower": 43,
+        "equal": 20,
+        "higher": 0
+      }
+    },
+    {
+      "suite": "large",
+      "target": "ibm_sxz_cz",
+      "pairs": 63,
+      "synthesis_ms": {
+        "median_ratio": 0.7794732882131545,
+        "q25": 0.6660758074403974,
+        "q75": 0.8332959252165054,
+        "sum_ratio": 0.6423584491144652,
+        "lower": 60,
+        "equal": 0,
+        "higher": 3
+      },
+      "export_ms": {
+        "median_ratio": 0.7459199993515702,
+        "q25": 0.6238944015531507,
+        "q75": 0.836001769337013,
+        "sum_ratio": 0.6877774312629668,
+        "lower": 62,
+        "equal": 0,
+        "higher": 1
+      },
+      "native_2q": {
+        "median_ratio": 1.0,
+        "q25": 1.0,
+        "q75": 1.0,
+        "sum_ratio": 1.0,
+        "lower": 0,
+        "equal": 63,
+        "higher": 0
+      },
+      "two_qubit_depth": {
+        "median_ratio": 1.0,
+        "q25": 1.0,
+        "q75": 1.0,
+        "sum_ratio": 1.0,
+        "lower": 0,
+        "equal": 63,
+        "higher": 0
+      },
+      "native_1q": {
+        "median_ratio": 0.6713615023474179,
+        "q25": 0.4608182745463988,
+        "q75": 0.8352394118386326,
+        "sum_ratio": 0.4910948155752732,
+        "lower": 63,
+        "equal": 0,
+        "higher": 0
+      },
+      "native_1q_non_rz": {
+        "median_ratio": 0.9225,
+        "q25": 0.6717136614286424,
+        "q75": 1.0,
+        "sum_ratio": 0.7395304734991868,
+        "lower": 43,
+        "equal": 20,
+        "higher": 0
+      },
+      "native_rz": {
+        "median_ratio": 0.5106382978723404,
+        "q25": 0.3215527034462033,
+        "q75": 0.75,
+        "sum_ratio": 0.33137523251443274,
+        "lower": 63,
+        "equal": 0,
+        "higher": 0
+      },
+      "non_rz_depth": {
+        "median_ratio": 0.9989333333333333,
+        "q25": 0.927375104139734,
+        "q75": 1.0,
+        "sum_ratio": 0.9882616497696906,
+        "lower": 33,
+        "equal": 20,
+        "higher": 10
+      }
+    },
+    {
+      "suite": "large",
+      "target": "rxrz_rzz_unbounded",
+      "pairs": 63,
+      "synthesis_ms": {
+        "median_ratio": 0.6836898142068211,
+        "q25": 0.600932707840486,
+        "q75": 0.7883554840636934,
+        "sum_ratio": 0.5317917997699972,
+        "lower": 63,
+        "equal": 0,
+        "higher": 0
+      },
+      "export_ms": {
+        "median_ratio": 0.5842714217569729,
+        "q25": 0.2112353569166655,
+        "q75": 0.7034195216479151,
+        "sum_ratio": 0.2341536024861999,
+        "lower": 62,
+        "equal": 0,
+        "higher": 1
+      },
+      "native_2q": {
+        "median_ratio": 1.0,
+        "q25": 0.5029914234599466,
+        "q75": 1.0,
+        "sum_ratio": 0.709593759497518,
+        "lower": 23,
+        "equal": 40,
+        "higher": 0
+      },
+      "two_qubit_depth": {
+        "median_ratio": 1.0,
+        "q25": 0.5004426832846208,
+        "q75": 1.0,
+        "sum_ratio": 0.7832626070266461,
+        "lower": 23,
+        "equal": 40,
+        "higher": 0
+      },
+      "native_1q": {
+        "median_ratio": 0.4523809523809524,
+        "q25": 0.13633028830447613,
+        "q75": 0.5747354497354498,
+        "sum_ratio": 0.1327513504844533,
+        "lower": 63,
+        "equal": 0,
+        "higher": 0
+      },
+      "native_1q_non_rz": {
+        "median_ratio": 0.3347547974413646,
+        "q25": 0.10422795533307663,
+        "q75": 0.43586372489209757,
+        "sum_ratio": 0.10767587450482391,
+        "lower": 63,
+        "equal": 0,
+        "higher": 0
+      },
+      "native_rz": {
+        "median_ratio": 0.6673789173789174,
+        "q25": 0.1923896562625663,
+        "q75": 0.7540064102564102,
+        "sum_ratio": 0.17459555244704145,
+        "lower": 58,
+        "equal": 0,
+        "higher": 5
+      },
+      "non_rz_depth": {
+        "median_ratio": 0.5583482944344704,
+        "q25": 0.15982492428775485,
+        "q75": 0.6643201719888836,
+        "sum_ratio": 0.28848207278949195,
+        "lower": 63,
+        "equal": 0,
+        "higher": 0
+      }
+    },
+    {
+      "suite": "large",
+      "target": "rigetti_rx_cz",
+      "pairs": 39,
+      "synthesis_ms": {
+        "median_ratio": 0.8114446485185438,
+        "q25": 0.7572715517011983,
+        "q75": 0.8725105471303769,
+        "sum_ratio": 0.9496405388076545,
+        "lower": 36,
+        "equal": 0,
+        "higher": 3
+      },
+      "export_ms": {
+        "median_ratio": 0.7686554663667372,
+        "q25": 0.6421060697759284,
+        "q75": 0.8843782889979162,
+        "sum_ratio": 0.7396600319950828,
+        "lower": 38,
+        "equal": 0,
+        "higher": 1
+      },
+      "native_2q": {
+        "median_ratio": 1.0,
+        "q25": 1.0,
+        "q75": 1.0,
+        "sum_ratio": 1.0,
+        "lower": 0,
+        "equal": 39,
+        "higher": 0
+      },
+      "two_qubit_depth": {
+        "median_ratio": 1.0,
+        "q25": 1.0,
+        "q75": 1.0,
+        "sum_ratio": 1.0,
+        "lower": 0,
+        "equal": 39,
+        "higher": 0
+      },
+      "native_1q": {
+        "median_ratio": 0.6737588652482269,
+        "q25": 0.4639969452532099,
+        "q75": 0.8352394118386326,
+        "sum_ratio": 0.49044555345400775,
+        "lower": 39,
+        "equal": 0,
+        "higher": 0
+      },
+      "native_1q_non_rz": {
+        "median_ratio": 0.9134045077105575,
+        "q25": 0.6721244627931373,
+        "q75": 1.0,
+        "sum_ratio": 0.7580427951518779,
+        "lower": 27,
+        "equal": 12,
+        "higher": 0
+      },
+      "native_rz": {
+        "median_ratio": 0.5106382978723404,
+        "q25": 0.3395362155564944,
+        "q75": 0.75,
+        "sum_ratio": 0.3199413027798274,
+        "lower": 39,
+        "equal": 0,
+        "higher": 0
+      },
+      "non_rz_depth": {
+        "median_ratio": 0.9984615384615385,
+        "q25": 0.9249929913092234,
+        "q75": 1.0,
+        "sum_ratio": 0.94064039408867,
+        "lower": 20,
+        "equal": 13,
+        "higher": 6
+      }
+    }
+  ],
+  "regressions": {
+    "small": {
+      "native_2q": [],
+      "two_qubit_depth": [],
+      "native_1q_non_rz": [],
+      "non_rz_depth": [
+        {
+          "case": "core_qpe_16",
+          "target": "ibm_sxz_cz",
+          "main": 553,
+          "branch": 618,
+          "ratio": 1.1175406871609403
+        },
+        {
+          "case": "core_qpe_16",
+          "target": "rigetti_rx_cz",
+          "main": 553,
+          "branch": 618,
+          "ratio": 1.1175406871609403
+        },
+        {
+          "case": "core_qft_adder_16",
+          "target": "ibm_sxz_cz",
+          "main": 265,
+          "branch": 272,
+          "ratio": 1.0264150943396226
+        },
+        {
+          "case": "core_qft_adder_16",
+          "target": "rigetti_rx_cz",
+          "main": 265,
+          "branch": 272,
+          "ratio": 1.0264150943396226
+        },
+        {
+          "case": "core_qpe_8",
+          "target": "ibm_sxz_cz",
+          "main": 117,
+          "branch": 122,
+          "ratio": 1.0427350427350428
+        },
+        {
+          "case": "core_qpe_8",
+          "target": "rigetti_rx_cz",
+          "main": 117,
+          "branch": 122,
+          "ratio": 1.0427350427350428
+        }
+      ],
+      "synthesis_ms": []
+    },
+    "large": {
+      "native_2q": [],
+      "two_qubit_depth": [],
+      "native_1q_non_rz": [],
+      "non_rz_depth": [
+        {
+          "case": "core_qpe_156",
+          "target": "ibm_sxz_cz",
+          "main": 14083,
+          "branch": 16513,
+          "ratio": 1.1725484626855074
+        },
+        {
+          "case": "core_qpe_104",
+          "target": "ibm_sxz_cz",
+          "main": 9039,
+          "branch": 10585,
+          "ratio": 1.1710366190950325
+        },
+        {
+          "case": "core_qft_adder_156",
+          "target": "ibm_sxz_cz",
+          "main": 7555,
+          "branch": 8616,
+          "ratio": 1.1404367968232958
+        },
+        {
+          "case": "core_qpe_54",
+          "target": "ibm_sxz_cz",
+          "main": 4189,
+          "branch": 4885,
+          "ratio": 1.166149439006923
+        },
+        {
+          "case": "core_qpe_54",
+          "target": "rigetti_rx_cz",
+          "main": 4189,
+          "branch": 4885,
+          "ratio": 1.166149439006923
+        },
+        {
+          "case": "core_qft_adder_104",
+          "target": "ibm_sxz_cz",
+          "main": 4747,
+          "branch": 5392,
+          "ratio": 1.1358752896566253
+        },
+        {
+          "case": "core_qpe_36",
+          "target": "ibm_sxz_cz",
+          "main": 2443,
+          "branch": 2833,
+          "ratio": 1.1596397871469504
+        },
+        {
+          "case": "core_qpe_36",
+          "target": "rigetti_rx_cz",
+          "main": 2443,
+          "branch": 2833,
+          "ratio": 1.1596397871469504
+        },
+        {
+          "case": "core_qft_adder_54",
+          "target": "ibm_sxz_cz",
+          "main": 2047,
+          "branch": 2292,
+          "ratio": 1.1196873473375673
+        },
+        {
+          "case": "core_qft_adder_54",
+          "target": "rigetti_rx_cz",
+          "main": 2047,
+          "branch": 2292,
+          "ratio": 1.1196873473375673
+        },
+        {
+          "case": "core_qpe_24",
+          "target": "ibm_sxz_cz",
+          "main": 1279,
+          "branch": 1465,
+          "ratio": 1.145426114151681
+        },
+        {
+          "case": "core_qpe_24",
+          "target": "rigetti_rx_cz",
+          "main": 1279,
+          "branch": 1465,
+          "ratio": 1.145426114151681
+        },
+        {
+          "case": "core_qft_adder_36",
+          "target": "ibm_sxz_cz",
+          "main": 1070,
+          "branch": 1172,
+          "ratio": 1.0953271028037384
+        },
+        {
+          "case": "core_qft_adder_36",
+          "target": "rigetti_rx_cz",
+          "main": 1070,
+          "branch": 1172,
+          "ratio": 1.0953271028037384
+        },
+        {
+          "case": "core_qft_adder_24",
+          "target": "ibm_sxz_cz",
+          "main": 527,
+          "branch": 560,
+          "ratio": 1.0626185958254268
+        },
+        {
+          "case": "core_qft_adder_24",
+          "target": "rigetti_rx_cz",
+          "main": 527,
+          "branch": 560,
+          "ratio": 1.0626185958254268
+        }
+      ],
+      "synthesis_ms": []
+    }
+  }
+}

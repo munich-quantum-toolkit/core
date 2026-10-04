@@ -1,0 +1,11 @@
+{
+  "branch_head": "2949012238d2b3f2d425d02d97e62456f50a1d87",
+  "main": "32f1b331430ce4d580e2780f6fa63e60f6b9a0a3",
+  "patch_sha256": "f6f0cdfc1e77c9cea80ec35e9d4df0aff56128d42cc033a3f0a9a443119f4561",
+  "samples": 5,
+  "warmups": 1,
+  "cpu": 5,
+  "final_commit": "c9123b11eb3aa3c12e585744d49b7f6e9377df99",
+  "final_patch_sha256": "e2f220685f5ea5342f204a7184635b88a1440b9633ca9ee0272740ecdbca3730",
+  "final_source_difference": "Only lint fixes (explicit null checks, static helper namespace placement, initializer commas and comments) and validation documentation differ from the measured source patch. The final code was rebuilt and passed the full C++ and selected Python suites."
+}
