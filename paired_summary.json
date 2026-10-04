@@ -1,0 +1,194 @@
+[
+  {
+    "target": "ibm_sxz_cx",
+    "metric": "synthesis_ms",
+    "paired_cases": 39,
+    "median_ratio": 0.87564710898764,
+    "min_ratio": 0.3204728602430227,
+    "max_ratio": 1.038399332978897
+  },
+  {
+    "target": "ibm_sxz_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 39,
+    "median_ratio": 0.9726565336694573,
+    "min_ratio": 0.33018008022086237,
+    "max_ratio": 1.0324735252952812
+  },
+  {
+    "target": "iqm_r_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 39,
+    "median_ratio": 0.9467363826939692,
+    "min_ratio": 0.32125415356295645,
+    "max_ratio": 1.199075106905545
+  },
+  {
+    "target": "rigetti_rx_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 39,
+    "median_ratio": 0.9642325503706789,
+    "min_ratio": 0.36002299047052794,
+    "max_ratio": 1.0778022798684341
+  },
+  {
+    "target": "rigetti_rx_iswap",
+    "metric": "synthesis_ms",
+    "paired_cases": 39,
+    "median_ratio": 0.9727435782961932,
+    "min_ratio": 0.34253466649762093,
+    "max_ratio": 1.072350743897679
+  },
+  {
+    "target": "rxrz_rzz_unbounded",
+    "metric": "synthesis_ms",
+    "paired_cases": 39,
+    "median_ratio": 0.956580021813489,
+    "min_ratio": 0.37191901867830707,
+    "max_ratio": 1.071766433062796
+  },
+  {
+    "target": "ibm_sxz_cx",
+    "metric": "native_1q",
+    "paired_cases": 39,
+    "median_ratio": 0.8181818181818182,
+    "min_ratio": 0.18977055449330785,
+    "max_ratio": 1.0
+  },
+  {
+    "target": "ibm_sxz_cz",
+    "metric": "native_1q",
+    "paired_cases": 39,
+    "median_ratio": 0.8828581243558914,
+    "min_ratio": 0.6494845360824743,
+    "max_ratio": 1.0
+  },
+  {
+    "target": "iqm_r_cz",
+    "metric": "native_1q",
+    "paired_cases": 39,
+    "median_ratio": 0.3333333333333333,
+    "min_ratio": 0.11749873928391326,
+    "max_ratio": 0.6666666666666666
+  },
+  {
+    "target": "rigetti_rx_cz",
+    "metric": "native_1q",
+    "paired_cases": 39,
+    "median_ratio": 0.8807947019867549,
+    "min_ratio": 0.6494845360824743,
+    "max_ratio": 1.0
+  },
+  {
+    "target": "rigetti_rx_iswap",
+    "metric": "native_1q",
+    "paired_cases": 39,
+    "median_ratio": 0.6871165644171779,
+    "min_ratio": 0.47107438016528924,
+    "max_ratio": 0.9622641509433962
+  },
+  {
+    "target": "rxrz_rzz_unbounded",
+    "metric": "native_1q",
+    "paired_cases": 39,
+    "median_ratio": 0.5319767441860465,
+    "min_ratio": 0.14472309299895506,
+    "max_ratio": 0.9932432432432432
+  },
+  {
+    "target": "ibm_sxz_cx",
+    "metric": "native_2q",
+    "paired_cases": 39,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "target": "ibm_sxz_cz",
+    "metric": "native_2q",
+    "paired_cases": 39,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "target": "iqm_r_cz",
+    "metric": "native_2q",
+    "paired_cases": 39,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "target": "rigetti_rx_cz",
+    "metric": "native_2q",
+    "paired_cases": 39,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "target": "rigetti_rx_iswap",
+    "metric": "native_2q",
+    "paired_cases": 39,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "target": "rxrz_rzz_unbounded",
+    "metric": "native_2q",
+    "paired_cases": 39,
+    "median_ratio": 1.0,
+    "min_ratio": 0.5,
+    "max_ratio": 1.0
+  },
+  {
+    "target": "ibm_sxz_cx",
+    "metric": "depth",
+    "paired_cases": 39,
+    "median_ratio": 0.7731958762886598,
+    "min_ratio": 0.29411764705882354,
+    "max_ratio": 1.0
+  },
+  {
+    "target": "ibm_sxz_cz",
+    "metric": "depth",
+    "paired_cases": 39,
+    "median_ratio": 0.98,
+    "min_ratio": 0.8417350527549824,
+    "max_ratio": 1.092057761732852
+  },
+  {
+    "target": "iqm_r_cz",
+    "metric": "depth",
+    "paired_cases": 39,
+    "median_ratio": 0.47540983606557374,
+    "min_ratio": 0.25142423091530575,
+    "max_ratio": 0.9230769230769231
+  },
+  {
+    "target": "rigetti_rx_cz",
+    "metric": "depth",
+    "paired_cases": 39,
+    "median_ratio": 0.9756944444444444,
+    "min_ratio": 0.8417350527549824,
+    "max_ratio": 1.092057761732852
+  },
+  {
+    "target": "rigetti_rx_iswap",
+    "metric": "depth",
+    "paired_cases": 39,
+    "median_ratio": 0.7823529411764706,
+    "min_ratio": 0.573170731707317,
+    "max_ratio": 0.9428571428571428
+  },
+  {
+    "target": "rxrz_rzz_unbounded",
+    "metric": "depth",
+    "paired_cases": 39,
+    "median_ratio": 0.6782608695652174,
+    "min_ratio": 0.21694915254237288,
+    "max_ratio": 1.0
+  }
+]

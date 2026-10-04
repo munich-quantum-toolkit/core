@@ -1,0 +1,2342 @@
+[
+  {
+    "family": "bv",
+    "mode": "numeric",
+    "target": "ibm_sxz_cx",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.943127280440898,
+    "min_ratio": 0.9255408330625539,
+    "max_ratio": 0.9725005266028982
+  },
+  {
+    "family": "bv",
+    "mode": "numeric",
+    "target": "ibm_sxz_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.951985486057159,
+    "min_ratio": 0.9384455268345896,
+    "max_ratio": 0.9614357150730068
+  },
+  {
+    "family": "bv",
+    "mode": "numeric",
+    "target": "iqm_r_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.9097671467966577,
+    "min_ratio": 0.9056842925258185,
+    "max_ratio": 0.9314297940104321
+  },
+  {
+    "family": "bv",
+    "mode": "numeric",
+    "target": "rigetti_rx_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.943769940145086,
+    "min_ratio": 0.9412781437621525,
+    "max_ratio": 0.9547977772848523
+  },
+  {
+    "family": "bv",
+    "mode": "numeric",
+    "target": "rigetti_rx_iswap",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.9693764964332436,
+    "min_ratio": 0.9690549694194052,
+    "max_ratio": 0.9727435782961932
+  },
+  {
+    "family": "bv",
+    "mode": "numeric",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.9825356149082041,
+    "min_ratio": 0.9760692113749438,
+    "max_ratio": 0.9914697941749315
+  },
+  {
+    "family": "efficient_su2",
+    "mode": "numeric",
+    "target": "ibm_sxz_cx",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.9729235139569882,
+    "min_ratio": 0.9670005669605275,
+    "max_ratio": 0.9779487135357532
+  },
+  {
+    "family": "efficient_su2",
+    "mode": "numeric",
+    "target": "ibm_sxz_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 1.0003696954105596,
+    "min_ratio": 0.9945737799211802,
+    "max_ratio": 1.0008793573975225
+  },
+  {
+    "family": "efficient_su2",
+    "mode": "numeric",
+    "target": "iqm_r_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.9848390191247387,
+    "min_ratio": 0.9803669596376471,
+    "max_ratio": 0.9852292830594975
+  },
+  {
+    "family": "efficient_su2",
+    "mode": "numeric",
+    "target": "rigetti_rx_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 1.017354458695461,
+    "min_ratio": 1.0164319434554423,
+    "max_ratio": 1.024244495803458
+  },
+  {
+    "family": "efficient_su2",
+    "mode": "numeric",
+    "target": "rigetti_rx_iswap",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.9784957652942092,
+    "min_ratio": 0.9758580014108555,
+    "max_ratio": 0.9804244839308817
+  },
+  {
+    "family": "efficient_su2",
+    "mode": "numeric",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.9919928794784885,
+    "min_ratio": 0.9828526374616349,
+    "max_ratio": 0.9941359095384766
+  },
+  {
+    "family": "equatorial_frames",
+    "mode": "numeric",
+    "target": "ibm_sxz_cx",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 1.0355791422009053,
+    "min_ratio": 1.0173803593624744,
+    "max_ratio": 1.038399332978897
+  },
+  {
+    "family": "equatorial_frames",
+    "mode": "numeric",
+    "target": "ibm_sxz_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.9791367021778631,
+    "min_ratio": 0.9767507385475317,
+    "max_ratio": 0.9849251343029086
+  },
+  {
+    "family": "equatorial_frames",
+    "mode": "numeric",
+    "target": "iqm_r_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.981431230101754,
+    "min_ratio": 0.9735784761268701,
+    "max_ratio": 0.9864767715119085
+  },
+  {
+    "family": "equatorial_frames",
+    "mode": "numeric",
+    "target": "rigetti_rx_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.9749553776549749,
+    "min_ratio": 0.9608273424188377,
+    "max_ratio": 0.9809478463762656
+  },
+  {
+    "family": "equatorial_frames",
+    "mode": "numeric",
+    "target": "rigetti_rx_iswap",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 1.015898133027446,
+    "min_ratio": 1.007801877641961,
+    "max_ratio": 1.0195556413742513
+  },
+  {
+    "family": "equatorial_frames",
+    "mode": "numeric",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 1.0589141703084963,
+    "min_ratio": 1.051239644951643,
+    "max_ratio": 1.0598793390963765
+  },
+  {
+    "family": "ghz",
+    "mode": "numeric",
+    "target": "ibm_sxz_cx",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.9728192342489411,
+    "min_ratio": 0.9717416185291976,
+    "max_ratio": 0.9827746214615389
+  },
+  {
+    "family": "ghz",
+    "mode": "numeric",
+    "target": "ibm_sxz_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.9800014602839517,
+    "min_ratio": 0.9747655209708275,
+    "max_ratio": 0.982162100283484
+  },
+  {
+    "family": "ghz",
+    "mode": "numeric",
+    "target": "iqm_r_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.9925380388282176,
+    "min_ratio": 0.9584389751127594,
+    "max_ratio": 0.9972698785253249
+  },
+  {
+    "family": "ghz",
+    "mode": "numeric",
+    "target": "rigetti_rx_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.978486390560646,
+    "min_ratio": 0.9643702447173831,
+    "max_ratio": 0.987264540909961
+  },
+  {
+    "family": "ghz",
+    "mode": "numeric",
+    "target": "rigetti_rx_iswap",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.9600142461887552,
+    "min_ratio": 0.9446487347308676,
+    "max_ratio": 0.9621856346145142
+  },
+  {
+    "family": "ghz",
+    "mode": "numeric",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.959587695381201,
+    "min_ratio": 0.956580021813489,
+    "max_ratio": 0.9724579116639929
+  },
+  {
+    "family": "grover",
+    "mode": "numeric",
+    "target": "ibm_sxz_cx",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.8542058516389753,
+    "min_ratio": 0.845921772708929,
+    "max_ratio": 0.9470661955810241
+  },
+  {
+    "family": "grover",
+    "mode": "numeric",
+    "target": "ibm_sxz_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 1.0323853354715007,
+    "min_ratio": 0.9877899266998647,
+    "max_ratio": 1.0324735252952812
+  },
+  {
+    "family": "grover",
+    "mode": "numeric",
+    "target": "iqm_r_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.8155901108949838,
+    "min_ratio": 0.7913783783530877,
+    "max_ratio": 0.8646761366838277
+  },
+  {
+    "family": "grover",
+    "mode": "numeric",
+    "target": "rigetti_rx_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 1.05915971386428,
+    "min_ratio": 1.0160728352358972,
+    "max_ratio": 1.0778022798684341
+  },
+  {
+    "family": "grover",
+    "mode": "numeric",
+    "target": "rigetti_rx_iswap",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 1.0067926922203487,
+    "min_ratio": 0.9529412584610291,
+    "max_ratio": 1.0084477453523613
+  },
+  {
+    "family": "grover",
+    "mode": "numeric",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.8603120820401307,
+    "min_ratio": 0.7726342019879455,
+    "max_ratio": 0.8623420533082236
+  },
+  {
+    "family": "multiplexer",
+    "mode": "numeric",
+    "target": "ibm_sxz_cx",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.8491105090071257,
+    "min_ratio": 0.8047370201787915,
+    "max_ratio": 0.87564710898764
+  },
+  {
+    "family": "multiplexer",
+    "mode": "numeric",
+    "target": "ibm_sxz_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.9397003040191894,
+    "min_ratio": 0.9249799913525847,
+    "max_ratio": 0.9810058754542356
+  },
+  {
+    "family": "multiplexer",
+    "mode": "numeric",
+    "target": "iqm_r_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.9082337087518868,
+    "min_ratio": 0.8980180053181198,
+    "max_ratio": 0.9419802804384875
+  },
+  {
+    "family": "multiplexer",
+    "mode": "numeric",
+    "target": "rigetti_rx_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.9612984875414076,
+    "min_ratio": 0.9409627095930531,
+    "max_ratio": 0.9642325503706789
+  },
+  {
+    "family": "multiplexer",
+    "mode": "numeric",
+    "target": "rigetti_rx_iswap",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.9090072710812231,
+    "min_ratio": 0.8984595832180428,
+    "max_ratio": 0.9368685053174133
+  },
+  {
+    "family": "multiplexer",
+    "mode": "numeric",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.8706517174004346,
+    "min_ratio": 0.8667963958260109,
+    "max_ratio": 0.9146913340361044
+  },
+  {
+    "family": "pauli_layers",
+    "mode": "numeric",
+    "target": "ibm_sxz_cx",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.9417120856633474,
+    "min_ratio": 0.9241632801633259,
+    "max_ratio": 0.9464636123247324
+  },
+  {
+    "family": "pauli_layers",
+    "mode": "numeric",
+    "target": "ibm_sxz_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.9565779995883927,
+    "min_ratio": 0.9164889688161859,
+    "max_ratio": 0.9566502026178213
+  },
+  {
+    "family": "pauli_layers",
+    "mode": "numeric",
+    "target": "iqm_r_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 1.1743960660348485,
+    "min_ratio": 1.1509604447501431,
+    "max_ratio": 1.199075106905545
+  },
+  {
+    "family": "pauli_layers",
+    "mode": "numeric",
+    "target": "rigetti_rx_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.9710296466768797,
+    "min_ratio": 0.9545021565575795,
+    "max_ratio": 0.976654916523717
+  },
+  {
+    "family": "pauli_layers",
+    "mode": "numeric",
+    "target": "rigetti_rx_iswap",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.937534751968297,
+    "min_ratio": 0.9214265202015178,
+    "max_ratio": 0.9471191489198645
+  },
+  {
+    "family": "pauli_layers",
+    "mode": "numeric",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.9994306570122032,
+    "min_ratio": 0.9895300650516098,
+    "max_ratio": 1.0045485154054916
+  },
+  {
+    "family": "qft",
+    "mode": "numeric",
+    "target": "ibm_sxz_cx",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.7580213674984478,
+    "min_ratio": 0.7374061872208723,
+    "max_ratio": 0.8336667691609668
+  },
+  {
+    "family": "qft",
+    "mode": "numeric",
+    "target": "ibm_sxz_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 1.0081479577653174,
+    "min_ratio": 0.9899785236996635,
+    "max_ratio": 1.0276330311216222
+  },
+  {
+    "family": "qft",
+    "mode": "numeric",
+    "target": "iqm_r_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.9372858927714705,
+    "min_ratio": 0.9223548142341059,
+    "max_ratio": 0.9591987264737056
+  },
+  {
+    "family": "qft",
+    "mode": "numeric",
+    "target": "rigetti_rx_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 1.0143401184858627,
+    "min_ratio": 0.972993701225299,
+    "max_ratio": 1.0423499692164742
+  },
+  {
+    "family": "qft",
+    "mode": "numeric",
+    "target": "rigetti_rx_iswap",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 1.02881850667224,
+    "min_ratio": 1.0135879045853893,
+    "max_ratio": 1.072350743897679
+  },
+  {
+    "family": "qft",
+    "mode": "numeric",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.8105523079564743,
+    "min_ratio": 0.7658905694676348,
+    "max_ratio": 0.8670266866428814
+  },
+  {
+    "family": "qft_adder",
+    "mode": "numeric",
+    "target": "ibm_sxz_cx",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.785168235849171,
+    "min_ratio": 0.7427883126021478,
+    "max_ratio": 0.8476117557393033
+  },
+  {
+    "family": "qft_adder",
+    "mode": "numeric",
+    "target": "ibm_sxz_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.9726565336694573,
+    "min_ratio": 0.9485589718479597,
+    "max_ratio": 1.0026552439460532
+  },
+  {
+    "family": "qft_adder",
+    "mode": "numeric",
+    "target": "iqm_r_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.9481543470797092,
+    "min_ratio": 0.9467363826939692,
+    "max_ratio": 0.963358377715974
+  },
+  {
+    "family": "qft_adder",
+    "mode": "numeric",
+    "target": "rigetti_rx_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.986912057895456,
+    "min_ratio": 0.9574770073269575,
+    "max_ratio": 1.016147767638165
+  },
+  {
+    "family": "qft_adder",
+    "mode": "numeric",
+    "target": "rigetti_rx_iswap",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 1.021298299346326,
+    "min_ratio": 0.9794600286161909,
+    "max_ratio": 1.0585596797998902
+  },
+  {
+    "family": "qft_adder",
+    "mode": "numeric",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.8661800813745223,
+    "min_ratio": 0.7962392336780504,
+    "max_ratio": 0.9362443335071331
+  },
+  {
+    "family": "qpe",
+    "mode": "numeric",
+    "target": "ibm_sxz_cx",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.7495479072638032,
+    "min_ratio": 0.7166369918235949,
+    "max_ratio": 0.8243697191269843
+  },
+  {
+    "family": "qpe",
+    "mode": "numeric",
+    "target": "ibm_sxz_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.9754416658359589,
+    "min_ratio": 0.918641637746966,
+    "max_ratio": 0.9969488699174986
+  },
+  {
+    "family": "qpe",
+    "mode": "numeric",
+    "target": "iqm_r_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.9311544175528002,
+    "min_ratio": 0.9281047317167942,
+    "max_ratio": 0.9658833789100263
+  },
+  {
+    "family": "qpe",
+    "mode": "numeric",
+    "target": "rigetti_rx_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.9619718439028391,
+    "min_ratio": 0.942994241405907,
+    "max_ratio": 1.0049294347496478
+  },
+  {
+    "family": "qpe",
+    "mode": "numeric",
+    "target": "rigetti_rx_iswap",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 1.0213370705488278,
+    "min_ratio": 0.955299734756213,
+    "max_ratio": 1.0575082581030995
+  },
+  {
+    "family": "qpe",
+    "mode": "numeric",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.8223597285823229,
+    "min_ratio": 0.7807684391068053,
+    "max_ratio": 0.8966389494595405
+  },
+  {
+    "family": "w_state",
+    "mode": "numeric",
+    "target": "ibm_sxz_cx",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.9369177297772795,
+    "min_ratio": 0.9299434197480542,
+    "max_ratio": 0.9586636910102724
+  },
+  {
+    "family": "w_state",
+    "mode": "numeric",
+    "target": "ibm_sxz_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.946264289746933,
+    "min_ratio": 0.9454321852081258,
+    "max_ratio": 0.9478157740572578
+  },
+  {
+    "family": "w_state",
+    "mode": "numeric",
+    "target": "iqm_r_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 1.1531134927297797,
+    "min_ratio": 1.1126392124309843,
+    "max_ratio": 1.1767135261800152
+  },
+  {
+    "family": "w_state",
+    "mode": "numeric",
+    "target": "rigetti_rx_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.9502211553175915,
+    "min_ratio": 0.9448499209088688,
+    "max_ratio": 0.958076234551433
+  },
+  {
+    "family": "w_state",
+    "mode": "numeric",
+    "target": "rigetti_rx_iswap",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.9862736570451663,
+    "min_ratio": 0.9803288035731257,
+    "max_ratio": 1.0026338597818243
+  },
+  {
+    "family": "w_state",
+    "mode": "numeric",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.9998661445354219,
+    "min_ratio": 0.9946473255831129,
+    "max_ratio": 1.0035591570296742
+  },
+  {
+    "family": "efficient_su2",
+    "mode": "symbolic",
+    "target": "ibm_sxz_cx",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.4781193411566755,
+    "min_ratio": 0.3204728602430227,
+    "max_ratio": 0.6535501803504413
+  },
+  {
+    "family": "efficient_su2",
+    "mode": "symbolic",
+    "target": "ibm_sxz_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.4847981079839831,
+    "min_ratio": 0.33018008022086237,
+    "max_ratio": 0.6620928665063873
+  },
+  {
+    "family": "efficient_su2",
+    "mode": "symbolic",
+    "target": "iqm_r_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.47686681186737984,
+    "min_ratio": 0.32125415356295645,
+    "max_ratio": 0.670471865720903
+  },
+  {
+    "family": "efficient_su2",
+    "mode": "symbolic",
+    "target": "rigetti_rx_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.5265723156550567,
+    "min_ratio": 0.36002299047052794,
+    "max_ratio": 0.7133296982350729
+  },
+  {
+    "family": "efficient_su2",
+    "mode": "symbolic",
+    "target": "rigetti_rx_iswap",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.49838695107275277,
+    "min_ratio": 0.34253466649762093,
+    "max_ratio": 0.6657374875775384
+  },
+  {
+    "family": "efficient_su2",
+    "mode": "symbolic",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.5620102054274988,
+    "min_ratio": 0.37191901867830707,
+    "max_ratio": 0.7809719158633147
+  },
+  {
+    "family": "equatorial_frames",
+    "mode": "symbolic",
+    "target": "ibm_sxz_cx",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.7636409183428943,
+    "min_ratio": 0.6567823817024524,
+    "max_ratio": 0.845571350988723
+  },
+  {
+    "family": "equatorial_frames",
+    "mode": "symbolic",
+    "target": "ibm_sxz_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.7709736692973655,
+    "min_ratio": 0.6467954754928166,
+    "max_ratio": 0.8635839754284962
+  },
+  {
+    "family": "equatorial_frames",
+    "mode": "symbolic",
+    "target": "iqm_r_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.7677156527819565,
+    "min_ratio": 0.6296240592627571,
+    "max_ratio": 0.8630596351923802
+  },
+  {
+    "family": "equatorial_frames",
+    "mode": "symbolic",
+    "target": "rigetti_rx_cz",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.7654650506537121,
+    "min_ratio": 0.6403636655017809,
+    "max_ratio": 0.84749338727547
+  },
+  {
+    "family": "equatorial_frames",
+    "mode": "symbolic",
+    "target": "rigetti_rx_iswap",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.7603583349174344,
+    "min_ratio": 0.6531930910111154,
+    "max_ratio": 0.8378572030833586
+  },
+  {
+    "family": "equatorial_frames",
+    "mode": "symbolic",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "synthesis_ms",
+    "paired_cases": 3,
+    "median_ratio": 0.9702603098874886,
+    "min_ratio": 0.807775168148242,
+    "max_ratio": 1.071766433062796
+  },
+  {
+    "family": "bv",
+    "mode": "numeric",
+    "target": "ibm_sxz_cx",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "bv",
+    "mode": "numeric",
+    "target": "ibm_sxz_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "bv",
+    "mode": "numeric",
+    "target": "iqm_r_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "bv",
+    "mode": "numeric",
+    "target": "rigetti_rx_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "bv",
+    "mode": "numeric",
+    "target": "rigetti_rx_iswap",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "bv",
+    "mode": "numeric",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "efficient_su2",
+    "mode": "numeric",
+    "target": "ibm_sxz_cx",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "efficient_su2",
+    "mode": "numeric",
+    "target": "ibm_sxz_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "efficient_su2",
+    "mode": "numeric",
+    "target": "iqm_r_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "efficient_su2",
+    "mode": "numeric",
+    "target": "rigetti_rx_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "efficient_su2",
+    "mode": "numeric",
+    "target": "rigetti_rx_iswap",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "efficient_su2",
+    "mode": "numeric",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "equatorial_frames",
+    "mode": "numeric",
+    "target": "ibm_sxz_cx",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "equatorial_frames",
+    "mode": "numeric",
+    "target": "ibm_sxz_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "equatorial_frames",
+    "mode": "numeric",
+    "target": "iqm_r_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "equatorial_frames",
+    "mode": "numeric",
+    "target": "rigetti_rx_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "equatorial_frames",
+    "mode": "numeric",
+    "target": "rigetti_rx_iswap",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "equatorial_frames",
+    "mode": "numeric",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "ghz",
+    "mode": "numeric",
+    "target": "ibm_sxz_cx",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "ghz",
+    "mode": "numeric",
+    "target": "ibm_sxz_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "ghz",
+    "mode": "numeric",
+    "target": "iqm_r_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "ghz",
+    "mode": "numeric",
+    "target": "rigetti_rx_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "ghz",
+    "mode": "numeric",
+    "target": "rigetti_rx_iswap",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "ghz",
+    "mode": "numeric",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "grover",
+    "mode": "numeric",
+    "target": "ibm_sxz_cx",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "grover",
+    "mode": "numeric",
+    "target": "ibm_sxz_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "grover",
+    "mode": "numeric",
+    "target": "iqm_r_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "grover",
+    "mode": "numeric",
+    "target": "rigetti_rx_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "grover",
+    "mode": "numeric",
+    "target": "rigetti_rx_iswap",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "grover",
+    "mode": "numeric",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 0.7941176470588235,
+    "min_ratio": 0.5083333333333333,
+    "max_ratio": 0.8333333333333334
+  },
+  {
+    "family": "multiplexer",
+    "mode": "numeric",
+    "target": "ibm_sxz_cx",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "multiplexer",
+    "mode": "numeric",
+    "target": "ibm_sxz_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "multiplexer",
+    "mode": "numeric",
+    "target": "iqm_r_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "multiplexer",
+    "mode": "numeric",
+    "target": "rigetti_rx_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "multiplexer",
+    "mode": "numeric",
+    "target": "rigetti_rx_iswap",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "multiplexer",
+    "mode": "numeric",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 0.5,
+    "min_ratio": 0.5,
+    "max_ratio": 0.5
+  },
+  {
+    "family": "pauli_layers",
+    "mode": "numeric",
+    "target": "ibm_sxz_cx",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "pauli_layers",
+    "mode": "numeric",
+    "target": "ibm_sxz_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "pauli_layers",
+    "mode": "numeric",
+    "target": "iqm_r_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "pauli_layers",
+    "mode": "numeric",
+    "target": "rigetti_rx_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "pauli_layers",
+    "mode": "numeric",
+    "target": "rigetti_rx_iswap",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "pauli_layers",
+    "mode": "numeric",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "qft",
+    "mode": "numeric",
+    "target": "ibm_sxz_cx",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "qft",
+    "mode": "numeric",
+    "target": "ibm_sxz_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "qft",
+    "mode": "numeric",
+    "target": "iqm_r_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "qft",
+    "mode": "numeric",
+    "target": "rigetti_rx_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "qft",
+    "mode": "numeric",
+    "target": "rigetti_rx_iswap",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "qft",
+    "mode": "numeric",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 0.5,
+    "min_ratio": 0.5,
+    "max_ratio": 0.5
+  },
+  {
+    "family": "qft_adder",
+    "mode": "numeric",
+    "target": "ibm_sxz_cx",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "qft_adder",
+    "mode": "numeric",
+    "target": "ibm_sxz_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "qft_adder",
+    "mode": "numeric",
+    "target": "iqm_r_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "qft_adder",
+    "mode": "numeric",
+    "target": "rigetti_rx_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "qft_adder",
+    "mode": "numeric",
+    "target": "rigetti_rx_iswap",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "qft_adder",
+    "mode": "numeric",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 0.55,
+    "min_ratio": 0.5227272727272727,
+    "max_ratio": 0.625
+  },
+  {
+    "family": "qpe",
+    "mode": "numeric",
+    "target": "ibm_sxz_cx",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "qpe",
+    "mode": "numeric",
+    "target": "ibm_sxz_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "qpe",
+    "mode": "numeric",
+    "target": "iqm_r_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "qpe",
+    "mode": "numeric",
+    "target": "rigetti_rx_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "qpe",
+    "mode": "numeric",
+    "target": "rigetti_rx_iswap",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "qpe",
+    "mode": "numeric",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 0.5106382978723404,
+    "min_ratio": 0.5023255813953489,
+    "max_ratio": 0.5454545454545454
+  },
+  {
+    "family": "w_state",
+    "mode": "numeric",
+    "target": "ibm_sxz_cx",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "w_state",
+    "mode": "numeric",
+    "target": "ibm_sxz_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "w_state",
+    "mode": "numeric",
+    "target": "iqm_r_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "w_state",
+    "mode": "numeric",
+    "target": "rigetti_rx_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "w_state",
+    "mode": "numeric",
+    "target": "rigetti_rx_iswap",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "w_state",
+    "mode": "numeric",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "efficient_su2",
+    "mode": "symbolic",
+    "target": "ibm_sxz_cx",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "efficient_su2",
+    "mode": "symbolic",
+    "target": "ibm_sxz_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "efficient_su2",
+    "mode": "symbolic",
+    "target": "iqm_r_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "efficient_su2",
+    "mode": "symbolic",
+    "target": "rigetti_rx_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "efficient_su2",
+    "mode": "symbolic",
+    "target": "rigetti_rx_iswap",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "efficient_su2",
+    "mode": "symbolic",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "equatorial_frames",
+    "mode": "symbolic",
+    "target": "ibm_sxz_cx",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "equatorial_frames",
+    "mode": "symbolic",
+    "target": "ibm_sxz_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "equatorial_frames",
+    "mode": "symbolic",
+    "target": "iqm_r_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "equatorial_frames",
+    "mode": "symbolic",
+    "target": "rigetti_rx_cz",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "equatorial_frames",
+    "mode": "symbolic",
+    "target": "rigetti_rx_iswap",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "equatorial_frames",
+    "mode": "symbolic",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "native_2q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "bv",
+    "mode": "numeric",
+    "target": "ibm_sxz_cx",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.6521739130434783,
+    "min_ratio": 0.6,
+    "max_ratio": 0.75
+  },
+  {
+    "family": "bv",
+    "mode": "numeric",
+    "target": "ibm_sxz_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "bv",
+    "mode": "numeric",
+    "target": "iqm_r_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.5882352941176471,
+    "min_ratio": 0.5454545454545454,
+    "max_ratio": 0.6666666666666666
+  },
+  {
+    "family": "bv",
+    "mode": "numeric",
+    "target": "rigetti_rx_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "bv",
+    "mode": "numeric",
+    "target": "rigetti_rx_iswap",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.6794871794871795,
+    "min_ratio": 0.675,
+    "max_ratio": 0.6818181818181818
+  },
+  {
+    "family": "bv",
+    "mode": "numeric",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.6585365853658537,
+    "min_ratio": 0.6296296296296297,
+    "max_ratio": 0.7142857142857143
+  },
+  {
+    "family": "efficient_su2",
+    "mode": "numeric",
+    "target": "ibm_sxz_cx",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.8982456140350877,
+    "min_ratio": 0.8827586206896552,
+    "max_ratio": 0.9142857142857143
+  },
+  {
+    "family": "efficient_su2",
+    "mode": "numeric",
+    "target": "ibm_sxz_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.8277153558052435,
+    "min_ratio": 0.8257575757575758,
+    "max_ratio": 0.8460076045627376
+  },
+  {
+    "family": "efficient_su2",
+    "mode": "numeric",
+    "target": "iqm_r_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.2962962962962963,
+    "min_ratio": 0.2962962962962963,
+    "max_ratio": 0.2962962962962963
+  },
+  {
+    "family": "efficient_su2",
+    "mode": "numeric",
+    "target": "rigetti_rx_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.8333333333333334,
+    "min_ratio": 0.8277153558052435,
+    "max_ratio": 0.8479087452471483
+  },
+  {
+    "family": "efficient_su2",
+    "mode": "numeric",
+    "target": "rigetti_rx_iswap",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.6552462526766595,
+    "min_ratio": 0.650319829424307,
+    "max_ratio": 0.6623931623931624
+  },
+  {
+    "family": "efficient_su2",
+    "mode": "numeric",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.42948717948717946,
+    "min_ratio": 0.4230769230769231,
+    "max_ratio": 0.4326923076923077
+  },
+  {
+    "family": "equatorial_frames",
+    "mode": "numeric",
+    "target": "ibm_sxz_cx",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.8091286307053942,
+    "min_ratio": 0.8045738045738046,
+    "max_ratio": 0.8181818181818182
+  },
+  {
+    "family": "equatorial_frames",
+    "mode": "numeric",
+    "target": "ibm_sxz_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "equatorial_frames",
+    "mode": "numeric",
+    "target": "iqm_r_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.4444444444444444,
+    "min_ratio": 0.4444444444444444,
+    "max_ratio": 0.4444444444444444
+  },
+  {
+    "family": "equatorial_frames",
+    "mode": "numeric",
+    "target": "rigetti_rx_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "equatorial_frames",
+    "mode": "numeric",
+    "target": "rigetti_rx_iswap",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.7318181818181818,
+    "min_ratio": 0.7295454545454545,
+    "max_ratio": 0.7363636363636363
+  },
+  {
+    "family": "equatorial_frames",
+    "mode": "numeric",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.7321428571428571,
+    "min_ratio": 0.7232142857142857,
+    "max_ratio": 0.75
+  },
+  {
+    "family": "ghz",
+    "mode": "numeric",
+    "target": "ibm_sxz_cx",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "ghz",
+    "mode": "numeric",
+    "target": "ibm_sxz_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "ghz",
+    "mode": "numeric",
+    "target": "iqm_r_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.4025974025974026,
+    "min_ratio": 0.40063091482649843,
+    "max_ratio": 0.4117647058823529
+  },
+  {
+    "family": "ghz",
+    "mode": "numeric",
+    "target": "rigetti_rx_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "ghz",
+    "mode": "numeric",
+    "target": "rigetti_rx_iswap",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.6710526315789473,
+    "min_ratio": 0.6677215189873418,
+    "max_ratio": 0.6875
+  },
+  {
+    "family": "ghz",
+    "mode": "numeric",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.6739130434782609,
+    "min_ratio": 0.6684210526315789,
+    "max_ratio": 0.7
+  },
+  {
+    "family": "grover",
+    "mode": "numeric",
+    "target": "ibm_sxz_cx",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.5489130434782609,
+    "min_ratio": 0.41040462427745666,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "grover",
+    "mode": "numeric",
+    "target": "ibm_sxz_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.8198757763975155,
+    "min_ratio": 0.780564263322884,
+    "max_ratio": 0.8828581243558914
+  },
+  {
+    "family": "grover",
+    "mode": "numeric",
+    "target": "iqm_r_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.14058577405857742,
+    "min_ratio": 0.12954768928220256,
+    "max_ratio": 0.14537444933920704
+  },
+  {
+    "family": "grover",
+    "mode": "numeric",
+    "target": "rigetti_rx_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.8198757763975155,
+    "min_ratio": 0.780564263322884,
+    "max_ratio": 0.8804385063377869
+  },
+  {
+    "family": "grover",
+    "mode": "numeric",
+    "target": "rigetti_rx_iswap",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.6784565916398714,
+    "min_ratio": 0.660229330114665,
+    "max_ratio": 0.8306270297277042
+  },
+  {
+    "family": "grover",
+    "mode": "numeric",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.261516654854713,
+    "min_ratio": 0.24391645909178003,
+    "max_ratio": 0.28802588996763756
+  },
+  {
+    "family": "multiplexer",
+    "mode": "numeric",
+    "target": "ibm_sxz_cx",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.26373626373626374,
+    "min_ratio": 0.24817518248175183,
+    "max_ratio": 0.3111111111111111
+  },
+  {
+    "family": "multiplexer",
+    "mode": "numeric",
+    "target": "ibm_sxz_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.6582278481012658,
+    "min_ratio": 0.6554621848739496,
+    "max_ratio": 0.6666666666666666
+  },
+  {
+    "family": "multiplexer",
+    "mode": "numeric",
+    "target": "iqm_r_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.1518987341772152,
+    "min_ratio": 0.15126050420168066,
+    "max_ratio": 0.15384615384615385
+  },
+  {
+    "family": "multiplexer",
+    "mode": "numeric",
+    "target": "rigetti_rx_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.6582278481012658,
+    "min_ratio": 0.6554621848739496,
+    "max_ratio": 0.6666666666666666
+  },
+  {
+    "family": "multiplexer",
+    "mode": "numeric",
+    "target": "rigetti_rx_iswap",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.48148148148148145,
+    "min_ratio": 0.47107438016528924,
+    "max_ratio": 0.5121951219512195
+  },
+  {
+    "family": "multiplexer",
+    "mode": "numeric",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.23376623376623376,
+    "min_ratio": 0.22608695652173913,
+    "max_ratio": 0.2564102564102564
+  },
+  {
+    "family": "pauli_layers",
+    "mode": "numeric",
+    "target": "ibm_sxz_cx",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.9298469387755102,
+    "min_ratio": 0.9139240506329114,
+    "max_ratio": 0.9411764705882353
+  },
+  {
+    "family": "pauli_layers",
+    "mode": "numeric",
+    "target": "ibm_sxz_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.9473684210526315,
+    "min_ratio": 0.922077922077922,
+    "max_ratio": 0.9631635969664138
+  },
+  {
+    "family": "pauli_layers",
+    "mode": "numeric",
+    "target": "iqm_r_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.3519736842105263,
+    "min_ratio": 0.34210526315789475,
+    "max_ratio": 0.3543046357615894
+  },
+  {
+    "family": "pauli_layers",
+    "mode": "numeric",
+    "target": "rigetti_rx_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.9654427645788337,
+    "min_ratio": 0.9626865671641791,
+    "max_ratio": 0.9781659388646288
+  },
+  {
+    "family": "pauli_layers",
+    "mode": "numeric",
+    "target": "rigetti_rx_iswap",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.8364485981308412,
+    "min_ratio": 0.827313769751693,
+    "max_ratio": 0.8812785388127854
+  },
+  {
+    "family": "pauli_layers",
+    "mode": "numeric",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.9586092715231788,
+    "min_ratio": 0.9448051948051948,
+    "max_ratio": 0.9932432432432432
+  },
+  {
+    "family": "qft",
+    "mode": "numeric",
+    "target": "ibm_sxz_cx",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.202,
+    "min_ratio": 0.18977055449330785,
+    "max_ratio": 0.22321428571428573
+  },
+  {
+    "family": "qft",
+    "mode": "numeric",
+    "target": "ibm_sxz_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.7477477477477478,
+    "min_ratio": 0.7408207343412527,
+    "max_ratio": 0.76
+  },
+  {
+    "family": "qft",
+    "mode": "numeric",
+    "target": "iqm_r_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.12786259541984732,
+    "min_ratio": 0.11932849364791288,
+    "max_ratio": 0.14655172413793102
+  },
+  {
+    "family": "qft",
+    "mode": "numeric",
+    "target": "rigetti_rx_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.7477477477477478,
+    "min_ratio": 0.7408207343412527,
+    "max_ratio": 0.76
+  },
+  {
+    "family": "qft",
+    "mode": "numeric",
+    "target": "rigetti_rx_iswap",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.6883720930232559,
+    "min_ratio": 0.6871165644171779,
+    "max_ratio": 0.6938775510204082
+  },
+  {
+    "family": "qft",
+    "mode": "numeric",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.15835140997830802,
+    "min_ratio": 0.14472309299895506,
+    "max_ratio": 0.18095238095238095
+  },
+  {
+    "family": "qft_adder",
+    "mode": "numeric",
+    "target": "ibm_sxz_cx",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.25,
+    "min_ratio": 0.211139896373057,
+    "max_ratio": 0.3194444444444444
+  },
+  {
+    "family": "qft_adder",
+    "mode": "numeric",
+    "target": "ibm_sxz_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.708927231807952,
+    "min_ratio": 0.7009966777408638,
+    "max_ratio": 0.711864406779661
+  },
+  {
+    "family": "qft_adder",
+    "mode": "numeric",
+    "target": "iqm_r_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.13953488372093023,
+    "min_ratio": 0.12371134020618557,
+    "max_ratio": 0.1875
+  },
+  {
+    "family": "qft_adder",
+    "mode": "numeric",
+    "target": "rigetti_rx_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.708927231807952,
+    "min_ratio": 0.7009966777408638,
+    "max_ratio": 0.711864406779661
+  },
+  {
+    "family": "qft_adder",
+    "mode": "numeric",
+    "target": "rigetti_rx_iswap",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.6695402298850575,
+    "min_ratio": 0.6551724137931034,
+    "max_ratio": 0.6779053084648493
+  },
+  {
+    "family": "qft_adder",
+    "mode": "numeric",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.2345679012345679,
+    "min_ratio": 0.18234442836468887,
+    "max_ratio": 0.3380281690140845
+  },
+  {
+    "family": "qpe",
+    "mode": "numeric",
+    "target": "ibm_sxz_cx",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.23413566739606126,
+    "min_ratio": 0.19821162444113263,
+    "max_ratio": 0.34234234234234234
+  },
+  {
+    "family": "qpe",
+    "mode": "numeric",
+    "target": "ibm_sxz_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.6532663316582915,
+    "min_ratio": 0.6494845360824743,
+    "max_ratio": 0.6765039727582293
+  },
+  {
+    "family": "qpe",
+    "mode": "numeric",
+    "target": "iqm_r_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.12984054669703873,
+    "min_ratio": 0.11749873928391326,
+    "max_ratio": 0.17475728155339806
+  },
+  {
+    "family": "qpe",
+    "mode": "numeric",
+    "target": "rigetti_rx_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.6532663316582915,
+    "min_ratio": 0.6494845360824743,
+    "max_ratio": 0.6765039727582293
+  },
+  {
+    "family": "qpe",
+    "mode": "numeric",
+    "target": "rigetti_rx_iswap",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.6358974358974359,
+    "min_ratio": 0.5865384615384616,
+    "max_ratio": 0.6497939964685109
+  },
+  {
+    "family": "qpe",
+    "mode": "numeric",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.2128205128205128,
+    "min_ratio": 0.16869565217391305,
+    "max_ratio": 0.32323232323232326
+  },
+  {
+    "family": "w_state",
+    "mode": "numeric",
+    "target": "ibm_sxz_cx",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.84,
+    "min_ratio": 0.8347826086956521,
+    "max_ratio": 0.8669527896995708
+  },
+  {
+    "family": "w_state",
+    "mode": "numeric",
+    "target": "ibm_sxz_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.8819444444444444,
+    "min_ratio": 0.8064516129032258,
+    "max_ratio": 0.8921568627450981
+  },
+  {
+    "family": "w_state",
+    "mode": "numeric",
+    "target": "iqm_r_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.3402061855670103,
+    "min_ratio": 0.29545454545454547,
+    "max_ratio": 0.36633663366336633
+  },
+  {
+    "family": "w_state",
+    "mode": "numeric",
+    "target": "rigetti_rx_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.8807947019867549,
+    "min_ratio": 0.8064516129032258,
+    "max_ratio": 0.9202898550724637
+  },
+  {
+    "family": "w_state",
+    "mode": "numeric",
+    "target": "rigetti_rx_iswap",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.9368029739776952,
+    "min_ratio": 0.921875,
+    "max_ratio": 0.9622641509433962
+  },
+  {
+    "family": "w_state",
+    "mode": "numeric",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.6731707317073171,
+    "min_ratio": 0.6407766990291263,
+    "max_ratio": 0.6976744186046512
+  },
+  {
+    "family": "efficient_su2",
+    "mode": "symbolic",
+    "target": "ibm_sxz_cx",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "efficient_su2",
+    "mode": "symbolic",
+    "target": "ibm_sxz_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.9641434262948207,
+    "min_ratio": 0.9291338582677166,
+    "max_ratio": 0.9819639278557114
+  },
+  {
+    "family": "efficient_su2",
+    "mode": "symbolic",
+    "target": "iqm_r_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.3548387096774194,
+    "min_ratio": 0.3548387096774194,
+    "max_ratio": 0.3548387096774194
+  },
+  {
+    "family": "efficient_su2",
+    "mode": "symbolic",
+    "target": "rigetti_rx_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.9641434262948207,
+    "min_ratio": 0.9291338582677166,
+    "max_ratio": 0.9819639278557114
+  },
+  {
+    "family": "efficient_su2",
+    "mode": "symbolic",
+    "target": "rigetti_rx_iswap",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.7478448275862069,
+    "min_ratio": 0.7446120689655172,
+    "max_ratio": 0.7543103448275862
+  },
+  {
+    "family": "efficient_su2",
+    "mode": "symbolic",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.5319767441860465,
+    "min_ratio": 0.5058139534883721,
+    "max_ratio": 0.5450581395348837
+  },
+  {
+    "family": "equatorial_frames",
+    "mode": "symbolic",
+    "target": "ibm_sxz_cx",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "equatorial_frames",
+    "mode": "symbolic",
+    "target": "ibm_sxz_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "equatorial_frames",
+    "mode": "symbolic",
+    "target": "iqm_r_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.3333333333333333,
+    "min_ratio": 0.3333333333333333,
+    "max_ratio": 0.3333333333333333
+  },
+  {
+    "family": "equatorial_frames",
+    "mode": "symbolic",
+    "target": "rigetti_rx_cz",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0
+  },
+  {
+    "family": "equatorial_frames",
+    "mode": "symbolic",
+    "target": "rigetti_rx_iswap",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.8363636363636363,
+    "min_ratio": 0.8363636363636363,
+    "max_ratio": 0.8363636363636363
+  },
+  {
+    "family": "equatorial_frames",
+    "mode": "symbolic",
+    "target": "rxrz_rzz_unbounded",
+    "metric": "native_1q",
+    "paired_cases": 3,
+    "median_ratio": 0.8802083333333334,
+    "min_ratio": 0.8776041666666666,
+    "max_ratio": 0.8854166666666666
+  }
+]

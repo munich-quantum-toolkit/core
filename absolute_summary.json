@@ -1,0 +1,1052 @@
+[
+  {
+    "case": "core_qft_16",
+    "target": "ibm_sxz_cx",
+    "revision": "Upstream main",
+    "metric": "native_2q",
+    "value": 240
+  },
+  {
+    "case": "core_qft_16",
+    "target": "ibm_sxz_cz",
+    "revision": "Upstream main",
+    "metric": "native_2q",
+    "value": 240
+  },
+  {
+    "case": "core_qft_16",
+    "target": "iqm_r_cz",
+    "revision": "Upstream main",
+    "metric": "native_2q",
+    "value": 240
+  },
+  {
+    "case": "core_qft_16",
+    "target": "rigetti_rx_cz",
+    "revision": "Upstream main",
+    "metric": "native_2q",
+    "value": 240
+  },
+  {
+    "case": "core_qft_16",
+    "target": "rigetti_rx_iswap",
+    "revision": "Upstream main",
+    "metric": "native_2q",
+    "value": 240
+  },
+  {
+    "case": "core_qft_16",
+    "target": "rxrz_rzz_unbounded",
+    "revision": "Upstream main",
+    "metric": "native_2q",
+    "value": 240
+  },
+  {
+    "case": "core_qft_16",
+    "target": "ibm_fractional_bounded",
+    "revision": "PR 2578",
+    "metric": "native_2q",
+    "value": 120
+  },
+  {
+    "case": "core_qft_16",
+    "target": "ibm_sxz_cx",
+    "revision": "PR 2578",
+    "metric": "native_2q",
+    "value": 240
+  },
+  {
+    "case": "core_qft_16",
+    "target": "ibm_sxz_cz",
+    "revision": "PR 2578",
+    "metric": "native_2q",
+    "value": 240
+  },
+  {
+    "case": "core_qft_16",
+    "target": "ionq_fixed_r_zz",
+    "revision": "PR 2578",
+    "metric": "native_2q",
+    "value": 120
+  },
+  {
+    "case": "core_qft_16",
+    "target": "iqm_r_cz",
+    "revision": "PR 2578",
+    "metric": "native_2q",
+    "value": 240
+  },
+  {
+    "case": "core_qft_16",
+    "target": "rigetti_rx_cz",
+    "revision": "PR 2578",
+    "metric": "native_2q",
+    "value": 240
+  },
+  {
+    "case": "core_qft_16",
+    "target": "rigetti_rx_iswap",
+    "revision": "PR 2578",
+    "metric": "native_2q",
+    "value": 240
+  },
+  {
+    "case": "core_qft_16",
+    "target": "rxrz_rzz_unbounded",
+    "revision": "PR 2578",
+    "metric": "native_2q",
+    "value": 120
+  },
+  {
+    "case": "core_qft_16",
+    "target": "ibm_sxz_cx",
+    "revision": "Upstream main",
+    "metric": "native_1q_non_rz",
+    "value": 862
+  },
+  {
+    "case": "core_qft_16",
+    "target": "ibm_sxz_cz",
+    "revision": "Upstream main",
+    "metric": "native_1q_non_rz",
+    "value": 742
+  },
+  {
+    "case": "core_qft_16",
+    "target": "iqm_r_cz",
+    "revision": "Upstream main",
+    "metric": "native_1q_non_rz",
+    "value": 2204
+  },
+  {
+    "case": "core_qft_16",
+    "target": "rigetti_rx_cz",
+    "revision": "Upstream main",
+    "metric": "native_1q_non_rz",
+    "value": 742
+  },
+  {
+    "case": "core_qft_16",
+    "target": "rigetti_rx_iswap",
+    "revision": "Upstream main",
+    "metric": "native_1q_non_rz",
+    "value": 742
+  },
+  {
+    "case": "core_qft_16",
+    "target": "rxrz_rzz_unbounded",
+    "revision": "Upstream main",
+    "metric": "native_1q_non_rz",
+    "value": 1172
+  },
+  {
+    "case": "core_qft_16",
+    "target": "ibm_fractional_bounded",
+    "revision": "PR 2578",
+    "metric": "native_1q_non_rz",
+    "value": 30
+  },
+  {
+    "case": "core_qft_16",
+    "target": "ibm_sxz_cx",
+    "revision": "PR 2578",
+    "metric": "native_1q_non_rz",
+    "value": 22
+  },
+  {
+    "case": "core_qft_16",
+    "target": "ibm_sxz_cz",
+    "revision": "PR 2578",
+    "metric": "native_1q_non_rz",
+    "value": 502
+  },
+  {
+    "case": "core_qft_16",
+    "target": "ionq_fixed_r_zz",
+    "revision": "PR 2578",
+    "metric": "native_1q_non_rz",
+    "value": 22
+  },
+  {
+    "case": "core_qft_16",
+    "target": "iqm_r_cz",
+    "revision": "PR 2578",
+    "metric": "native_1q_non_rz",
+    "value": 263
+  },
+  {
+    "case": "core_qft_16",
+    "target": "rigetti_rx_cz",
+    "revision": "PR 2578",
+    "metric": "native_1q_non_rz",
+    "value": 502
+  },
+  {
+    "case": "core_qft_16",
+    "target": "rigetti_rx_iswap",
+    "revision": "PR 2578",
+    "metric": "native_1q_non_rz",
+    "value": 495
+  },
+  {
+    "case": "core_qft_16",
+    "target": "rxrz_rzz_unbounded",
+    "revision": "PR 2578",
+    "metric": "native_1q_non_rz",
+    "value": 22
+  },
+  {
+    "case": "core_qft_16",
+    "target": "ibm_sxz_cx",
+    "revision": "Upstream main",
+    "metric": "synthesis_ms",
+    "value": 14.346926
+  },
+  {
+    "case": "core_qft_16",
+    "target": "ibm_sxz_cz",
+    "revision": "Upstream main",
+    "metric": "synthesis_ms",
+    "value": 13.950044
+  },
+  {
+    "case": "core_qft_16",
+    "target": "iqm_r_cz",
+    "revision": "Upstream main",
+    "metric": "synthesis_ms",
+    "value": 14.133981
+  },
+  {
+    "case": "core_qft_16",
+    "target": "rigetti_rx_cz",
+    "revision": "Upstream main",
+    "metric": "synthesis_ms",
+    "value": 14.554863
+  },
+  {
+    "case": "core_qft_16",
+    "target": "rigetti_rx_iswap",
+    "revision": "Upstream main",
+    "metric": "synthesis_ms",
+    "value": 13.21956
+  },
+  {
+    "case": "core_qft_16",
+    "target": "rxrz_rzz_unbounded",
+    "revision": "Upstream main",
+    "metric": "synthesis_ms",
+    "value": 11.724863
+  },
+  {
+    "case": "core_qft_16",
+    "target": "ibm_fractional_bounded",
+    "revision": "PR 2578",
+    "metric": "synthesis_ms",
+    "value": 10.105668
+  },
+  {
+    "case": "core_qft_16",
+    "target": "ibm_sxz_cx",
+    "revision": "PR 2578",
+    "metric": "synthesis_ms",
+    "value": 10.579512
+  },
+  {
+    "case": "core_qft_16",
+    "target": "ibm_sxz_cz",
+    "revision": "PR 2578",
+    "metric": "synthesis_ms",
+    "value": 14.335526
+  },
+  {
+    "case": "core_qft_16",
+    "target": "ionq_fixed_r_zz",
+    "revision": "PR 2578",
+    "metric": "synthesis_ms",
+    "value": 9.075787
+  },
+  {
+    "case": "core_qft_16",
+    "target": "iqm_r_cz",
+    "revision": "PR 2578",
+    "metric": "synthesis_ms",
+    "value": 13.247581
+  },
+  {
+    "case": "core_qft_16",
+    "target": "rigetti_rx_cz",
+    "revision": "PR 2578",
+    "metric": "synthesis_ms",
+    "value": 15.171261
+  },
+  {
+    "case": "core_qft_16",
+    "target": "rigetti_rx_iswap",
+    "revision": "PR 2578",
+    "metric": "synthesis_ms",
+    "value": 14.176005
+  },
+  {
+    "case": "core_qft_16",
+    "target": "rxrz_rzz_unbounded",
+    "revision": "PR 2578",
+    "metric": "synthesis_ms",
+    "value": 8.979962
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "ibm_sxz_cx",
+    "revision": "Upstream main",
+    "metric": "native_2q",
+    "value": 48
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "ibm_sxz_cz",
+    "revision": "Upstream main",
+    "metric": "native_2q",
+    "value": 48
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "iqm_r_cz",
+    "revision": "Upstream main",
+    "metric": "native_2q",
+    "value": 48
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "rigetti_rx_cz",
+    "revision": "Upstream main",
+    "metric": "native_2q",
+    "value": 48
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "rigetti_rx_iswap",
+    "revision": "Upstream main",
+    "metric": "native_2q",
+    "value": 96
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "rxrz_rzz_unbounded",
+    "revision": "Upstream main",
+    "metric": "native_2q",
+    "value": 48
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "ibm_fractional_bounded",
+    "revision": "PR 2578",
+    "metric": "native_2q",
+    "value": 48
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "ibm_sxz_cx",
+    "revision": "PR 2578",
+    "metric": "native_2q",
+    "value": 48
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "ibm_sxz_cz",
+    "revision": "PR 2578",
+    "metric": "native_2q",
+    "value": 48
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "ionq_fixed_r_zz",
+    "revision": "PR 2578",
+    "metric": "native_2q",
+    "value": 48
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "iqm_r_cz",
+    "revision": "PR 2578",
+    "metric": "native_2q",
+    "value": 48
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "rigetti_rx_cz",
+    "revision": "PR 2578",
+    "metric": "native_2q",
+    "value": 48
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "rigetti_rx_iswap",
+    "revision": "PR 2578",
+    "metric": "native_2q",
+    "value": 96
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "rxrz_rzz_unbounded",
+    "revision": "PR 2578",
+    "metric": "native_2q",
+    "value": 48
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "ibm_sxz_cx",
+    "revision": "Upstream main",
+    "metric": "native_1q_non_rz",
+    "value": 128
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "ibm_sxz_cz",
+    "revision": "Upstream main",
+    "metric": "native_1q_non_rz",
+    "value": 224
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "iqm_r_cz",
+    "revision": "Upstream main",
+    "metric": "native_1q_non_rz",
+    "value": 432
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "rigetti_rx_cz",
+    "revision": "Upstream main",
+    "metric": "native_1q_non_rz",
+    "value": 224
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "rigetti_rx_iswap",
+    "revision": "Upstream main",
+    "metric": "native_1q_non_rz",
+    "value": 368
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "rxrz_rzz_unbounded",
+    "revision": "Upstream main",
+    "metric": "native_1q_non_rz",
+    "value": 416
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "ibm_fractional_bounded",
+    "revision": "PR 2578",
+    "metric": "native_1q_non_rz",
+    "value": 112
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "ibm_sxz_cx",
+    "revision": "PR 2578",
+    "metric": "native_1q_non_rz",
+    "value": 128
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "ibm_sxz_cz",
+    "revision": "PR 2578",
+    "metric": "native_1q_non_rz",
+    "value": 176
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "ionq_fixed_r_zz",
+    "revision": "PR 2578",
+    "metric": "native_1q_non_rz",
+    "value": 176
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "iqm_r_cz",
+    "revision": "PR 2578",
+    "metric": "native_1q_non_rz",
+    "value": 128
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "rigetti_rx_cz",
+    "revision": "PR 2578",
+    "metric": "native_1q_non_rz",
+    "value": 176
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "rigetti_rx_iswap",
+    "revision": "PR 2578",
+    "metric": "native_1q_non_rz",
+    "value": 227
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "rxrz_rzz_unbounded",
+    "revision": "PR 2578",
+    "metric": "native_1q_non_rz",
+    "value": 112
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "ibm_sxz_cx",
+    "revision": "Upstream main",
+    "metric": "synthesis_ms",
+    "value": 7.619194
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "ibm_sxz_cz",
+    "revision": "Upstream main",
+    "metric": "synthesis_ms",
+    "value": 8.561934
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "iqm_r_cz",
+    "revision": "Upstream main",
+    "metric": "synthesis_ms",
+    "value": 8.262429
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "rigetti_rx_cz",
+    "revision": "Upstream main",
+    "metric": "synthesis_ms",
+    "value": 8.724207
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "rigetti_rx_iswap",
+    "revision": "Upstream main",
+    "metric": "synthesis_ms",
+    "value": 9.971254
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "rxrz_rzz_unbounded",
+    "revision": "Upstream main",
+    "metric": "synthesis_ms",
+    "value": 8.07806
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "ibm_fractional_bounded",
+    "revision": "PR 2578",
+    "metric": "synthesis_ms",
+    "value": 8.394117
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "ibm_sxz_cx",
+    "revision": "PR 2578",
+    "metric": "synthesis_ms",
+    "value": 7.412893
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "ibm_sxz_cz",
+    "revision": "PR 2578",
+    "metric": "synthesis_ms",
+    "value": 8.569463
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "ionq_fixed_r_zz",
+    "revision": "PR 2578",
+    "metric": "synthesis_ms",
+    "value": 9.108554
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "iqm_r_cz",
+    "revision": "PR 2578",
+    "metric": "synthesis_ms",
+    "value": 8.140387
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "rigetti_rx_cz",
+    "revision": "PR 2578",
+    "metric": "synthesis_ms",
+    "value": 8.935721
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "rigetti_rx_iswap",
+    "revision": "PR 2578",
+    "metric": "synthesis_ms",
+    "value": 9.730528
+  },
+  {
+    "case": "efficient_su2_16_numeric",
+    "target": "rxrz_rzz_unbounded",
+    "revision": "PR 2578",
+    "metric": "synthesis_ms",
+    "value": 8.013378
+  },
+  {
+    "case": "pauli_layers_16_symbolic",
+    "target": "ibm_fractional_bounded",
+    "revision": "PR 2578",
+    "metric": "native_2q",
+    "value": 96
+  },
+  {
+    "case": "pauli_layers_16_symbolic",
+    "target": "ibm_sxz_cx",
+    "revision": "PR 2578",
+    "metric": "native_2q",
+    "value": 96
+  },
+  {
+    "case": "pauli_layers_16_symbolic",
+    "target": "ibm_sxz_cz",
+    "revision": "PR 2578",
+    "metric": "native_2q",
+    "value": 96
+  },
+  {
+    "case": "pauli_layers_16_symbolic",
+    "target": "ionq_fixed_r_zz",
+    "revision": "PR 2578",
+    "metric": "native_2q",
+    "value": 96
+  },
+  {
+    "case": "pauli_layers_16_symbolic",
+    "target": "iqm_r_cz",
+    "revision": "PR 2578",
+    "metric": "native_2q",
+    "value": 96
+  },
+  {
+    "case": "pauli_layers_16_symbolic",
+    "target": "rigetti_rx_cz",
+    "revision": "PR 2578",
+    "metric": "native_2q",
+    "value": 96
+  },
+  {
+    "case": "pauli_layers_16_symbolic",
+    "target": "rigetti_rx_iswap",
+    "revision": "PR 2578",
+    "metric": "native_2q",
+    "value": 96
+  },
+  {
+    "case": "pauli_layers_16_symbolic",
+    "target": "rxrz_rzz_unbounded",
+    "revision": "PR 2578",
+    "metric": "native_2q",
+    "value": 96
+  },
+  {
+    "case": "pauli_layers_16_symbolic",
+    "target": "ibm_fractional_bounded",
+    "revision": "PR 2578",
+    "metric": "native_1q_non_rz",
+    "value": 192
+  },
+  {
+    "case": "pauli_layers_16_symbolic",
+    "target": "ibm_sxz_cx",
+    "revision": "PR 2578",
+    "metric": "native_1q_non_rz",
+    "value": 223
+  },
+  {
+    "case": "pauli_layers_16_symbolic",
+    "target": "ibm_sxz_cz",
+    "revision": "PR 2578",
+    "metric": "native_1q_non_rz",
+    "value": 336
+  },
+  {
+    "case": "pauli_layers_16_symbolic",
+    "target": "ionq_fixed_r_zz",
+    "revision": "PR 2578",
+    "metric": "native_1q_non_rz",
+    "value": 241
+  },
+  {
+    "case": "pauli_layers_16_symbolic",
+    "target": "iqm_r_cz",
+    "revision": "PR 2578",
+    "metric": "native_1q_non_rz",
+    "value": 256
+  },
+  {
+    "case": "pauli_layers_16_symbolic",
+    "target": "rigetti_rx_cz",
+    "revision": "PR 2578",
+    "metric": "native_1q_non_rz",
+    "value": 336
+  },
+  {
+    "case": "pauli_layers_16_symbolic",
+    "target": "rigetti_rx_iswap",
+    "revision": "PR 2578",
+    "metric": "native_1q_non_rz",
+    "value": 337
+  },
+  {
+    "case": "pauli_layers_16_symbolic",
+    "target": "rxrz_rzz_unbounded",
+    "revision": "PR 2578",
+    "metric": "native_1q_non_rz",
+    "value": 193
+  },
+  {
+    "case": "pauli_layers_16_symbolic",
+    "target": "ibm_fractional_bounded",
+    "revision": "PR 2578",
+    "metric": "synthesis_ms",
+    "value": 9.783952
+  },
+  {
+    "case": "pauli_layers_16_symbolic",
+    "target": "ibm_sxz_cx",
+    "revision": "PR 2578",
+    "metric": "synthesis_ms",
+    "value": 13.194924
+  },
+  {
+    "case": "pauli_layers_16_symbolic",
+    "target": "ibm_sxz_cz",
+    "revision": "PR 2578",
+    "metric": "synthesis_ms",
+    "value": 13.687728
+  },
+  {
+    "case": "pauli_layers_16_symbolic",
+    "target": "ionq_fixed_r_zz",
+    "revision": "PR 2578",
+    "metric": "synthesis_ms",
+    "value": 8.842873
+  },
+  {
+    "case": "pauli_layers_16_symbolic",
+    "target": "iqm_r_cz",
+    "revision": "PR 2578",
+    "metric": "synthesis_ms",
+    "value": 9.465582
+  },
+  {
+    "case": "pauli_layers_16_symbolic",
+    "target": "rigetti_rx_cz",
+    "revision": "PR 2578",
+    "metric": "synthesis_ms",
+    "value": 14.168292
+  },
+  {
+    "case": "pauli_layers_16_symbolic",
+    "target": "rigetti_rx_iswap",
+    "revision": "PR 2578",
+    "metric": "synthesis_ms",
+    "value": 12.881641
+  },
+  {
+    "case": "pauli_layers_16_symbolic",
+    "target": "rxrz_rzz_unbounded",
+    "revision": "PR 2578",
+    "metric": "synthesis_ms",
+    "value": 7.430861
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "ibm_sxz_cx",
+    "revision": "Upstream main",
+    "metric": "native_2q",
+    "value": 48
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "ibm_sxz_cz",
+    "revision": "Upstream main",
+    "metric": "native_2q",
+    "value": 48
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "iqm_r_cz",
+    "revision": "Upstream main",
+    "metric": "native_2q",
+    "value": 48
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "rigetti_rx_cz",
+    "revision": "Upstream main",
+    "metric": "native_2q",
+    "value": 48
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "rigetti_rx_iswap",
+    "revision": "Upstream main",
+    "metric": "native_2q",
+    "value": 96
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "rxrz_rzz_unbounded",
+    "revision": "Upstream main",
+    "metric": "native_2q",
+    "value": 48
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "ibm_fractional_bounded",
+    "revision": "PR 2578",
+    "metric": "native_2q",
+    "value": 48
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "ibm_sxz_cx",
+    "revision": "PR 2578",
+    "metric": "native_2q",
+    "value": 48
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "ibm_sxz_cz",
+    "revision": "PR 2578",
+    "metric": "native_2q",
+    "value": 48
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "ionq_fixed_r_zz",
+    "revision": "PR 2578",
+    "metric": "native_2q",
+    "value": 48
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "iqm_r_cz",
+    "revision": "PR 2578",
+    "metric": "native_2q",
+    "value": 48
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "rigetti_rx_cz",
+    "revision": "PR 2578",
+    "metric": "native_2q",
+    "value": 48
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "rigetti_rx_iswap",
+    "revision": "PR 2578",
+    "metric": "native_2q",
+    "value": 96
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "rxrz_rzz_unbounded",
+    "revision": "PR 2578",
+    "metric": "native_2q",
+    "value": 48
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "ibm_sxz_cx",
+    "revision": "Upstream main",
+    "metric": "native_1q_non_rz",
+    "value": 192
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "ibm_sxz_cz",
+    "revision": "Upstream main",
+    "metric": "native_1q_non_rz",
+    "value": 96
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "iqm_r_cz",
+    "revision": "Upstream main",
+    "metric": "native_1q_non_rz",
+    "value": 192
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "rigetti_rx_cz",
+    "revision": "Upstream main",
+    "metric": "native_1q_non_rz",
+    "value": 96
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "rigetti_rx_iswap",
+    "revision": "Upstream main",
+    "metric": "native_1q_non_rz",
+    "value": 336
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "rxrz_rzz_unbounded",
+    "revision": "Upstream main",
+    "metric": "native_1q_non_rz",
+    "value": 192
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "ibm_fractional_bounded",
+    "revision": "PR 2578",
+    "metric": "native_1q_non_rz",
+    "value": 48
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "ibm_sxz_cx",
+    "revision": "PR 2578",
+    "metric": "native_1q_non_rz",
+    "value": 192
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "ibm_sxz_cz",
+    "revision": "PR 2578",
+    "metric": "native_1q_non_rz",
+    "value": 96
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "ionq_fixed_r_zz",
+    "revision": "PR 2578",
+    "metric": "native_1q_non_rz",
+    "value": 192
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "iqm_r_cz",
+    "revision": "PR 2578",
+    "metric": "native_1q_non_rz",
+    "value": 64
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "rigetti_rx_cz",
+    "revision": "PR 2578",
+    "metric": "native_1q_non_rz",
+    "value": 96
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "rigetti_rx_iswap",
+    "revision": "PR 2578",
+    "metric": "native_1q_non_rz",
+    "value": 288
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "rxrz_rzz_unbounded",
+    "revision": "PR 2578",
+    "metric": "native_1q_non_rz",
+    "value": 144
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "ibm_sxz_cx",
+    "revision": "Upstream main",
+    "metric": "synthesis_ms",
+    "value": 10.880234
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "ibm_sxz_cz",
+    "revision": "Upstream main",
+    "metric": "synthesis_ms",
+    "value": 9.459859
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "iqm_r_cz",
+    "revision": "Upstream main",
+    "metric": "synthesis_ms",
+    "value": 8.47075
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "rigetti_rx_cz",
+    "revision": "Upstream main",
+    "metric": "synthesis_ms",
+    "value": 9.659316
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "rigetti_rx_iswap",
+    "revision": "Upstream main",
+    "metric": "synthesis_ms",
+    "value": 13.201816
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "rxrz_rzz_unbounded",
+    "revision": "Upstream main",
+    "metric": "synthesis_ms",
+    "value": 8.523134
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "ibm_fractional_bounded",
+    "revision": "PR 2578",
+    "metric": "synthesis_ms",
+    "value": 5.912944
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "ibm_sxz_cx",
+    "revision": "PR 2578",
+    "metric": "synthesis_ms",
+    "value": 7.145946
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "ibm_sxz_cz",
+    "revision": "PR 2578",
+    "metric": "synthesis_ms",
+    "value": 6.118594
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "ionq_fixed_r_zz",
+    "revision": "PR 2578",
+    "metric": "synthesis_ms",
+    "value": 7.451101
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "iqm_r_cz",
+    "revision": "PR 2578",
+    "metric": "synthesis_ms",
+    "value": 5.333388
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "rigetti_rx_cz",
+    "revision": "PR 2578",
+    "metric": "synthesis_ms",
+    "value": 6.185475
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "rigetti_rx_iswap",
+    "revision": "PR 2578",
+    "metric": "synthesis_ms",
+    "value": 8.623335
+  },
+  {
+    "case": "equatorial_frames_16_symbolic",
+    "target": "rxrz_rzz_unbounded",
+    "revision": "PR 2578",
+    "metric": "synthesis_ms",
+    "value": 6.884776
+  }
+]
