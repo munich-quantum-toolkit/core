@@ -125,7 +125,7 @@ def test_ddsim_and_qirrunner_record_equivalent_outputs(flipped: int) -> None:
         shots=3,
     )
     device = open_device("mqt.ddsim.default")
-    job = device.submit_job(qir.to_bitcode(), ProgramFormat.QIR_BASE_MODULE, 3, custom2=True)
+    job = device.submit_programs([qir.to_bitcode()], ProgramFormat.QIR_BASE_MODULE, 3, custom2=True)
     assert job.wait()
     output = job.get_custom_result(CustomProperty.CUSTOM1, str)
     assert isinstance(output, str)

@@ -47,7 +47,7 @@ manifest_path.write_text(json.dumps(manifest))
 builtin_driver.add_manifest(manifest_path)
 device = builtin_driver.open_device("test.relocated")
 program = 'OPENQASM 3.0; include "stdgates.inc"; qubit q; x q; bit c = measure q;'
-failed = device.submit_job(program, ProgramFormat.QASM3, num_shots=4)
+failed = device.submit_programs([program], ProgramFormat.QASM3, num_shots=4)
 assert failed.wait(30)
 assert failed.check() == Job.Status.FAILED
 with pytest.raises(RuntimeError):
@@ -58,7 +58,7 @@ with pytest.raises(RuntimeError):
 worker = Path(sys.argv[2])
 shutil.copy2(worker, relocated / worker.name)
 for _ in range(2):
-    valid = device.submit_job(program, ProgramFormat.QASM3, num_shots=4, custom1=7)
+    valid = device.submit_programs([program], ProgramFormat.QASM3, num_shots=4, custom1=7)
     assert valid.wait(30)
     assert valid.check() == Job.Status.DONE
     assert valid.get_counts() == {"1": 4}

@@ -75,16 +75,14 @@ TEST(JobParameters, SetAndQueryBasics) {
                 j.job, QDMI_DEVICE_JOB_PROPERTY_ID, size, id.data(), nullptr),
             QDMI_SUCCESS);
 
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_query_property(
-                j.job, QDMI_DEVICE_JOB_PROPERTY_PROGRAM, 0, nullptr, &size),
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_program(j.job, 0, 0, nullptr, &size),
             QDMI_SUCCESS);
   EXPECT_EQ(size, strlen(qdmi_test::QASM3_BELL_SAMPLING) + 1);
-  std::string program(size - 1, '\0');
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_query_property(
-                j.job, QDMI_DEVICE_JOB_PROPERTY_PROGRAM, size, program.data(),
-                nullptr),
+  std::string program(size, '\0');
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_program(j.job, 0, size,
+                                                  program.data(), nullptr),
             QDMI_SUCCESS);
-  EXPECT_EQ(program, qdmi_test::QASM3_BELL_SAMPLING);
+  EXPECT_EQ(program, std::string(qdmi_test::QASM3_BELL_SAMPLING, size));
 
   size_t programsNum = 0U;
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_query_property(
@@ -102,9 +100,9 @@ TEST(JobParameters, RequiresACompleteProgramBeforeSubmission) {
       MQT_DDSIM_QDMI_device_job_query_property(
           job.job, QDMI_DEVICE_JOB_PROPERTY_PROGRAMFORMAT, 0, nullptr, nullptr),
       QDMI_ERROR_BADSTATE);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_query_property(
-                job.job, QDMI_DEVICE_JOB_PROPERTY_PROGRAM, 0, nullptr, nullptr),
-            QDMI_ERROR_BADSTATE);
+  EXPECT_EQ(
+      MQT_DDSIM_QDMI_device_job_get_program(job.job, 0, 0, nullptr, nullptr),
+      QDMI_ERROR_BADSTATE);
   EXPECT_EQ(
       MQT_DDSIM_QDMI_device_job_query_property(
           job.job, QDMI_DEVICE_JOB_PROPERTY_PROGRAMSNUM, 0, nullptr, nullptr),
@@ -118,9 +116,9 @@ TEST(JobParameters, RequiresACompleteProgramBeforeSubmission) {
                 job.job, QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT,
                 sizeof(QDMI_Program_Format), &QASM2_FORMAT),
             QDMI_SUCCESS);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_query_property(
-                job.job, QDMI_DEVICE_JOB_PROPERTY_PROGRAM, 0, nullptr, nullptr),
-            QDMI_ERROR_BADSTATE);
+  EXPECT_EQ(
+      MQT_DDSIM_QDMI_device_job_get_program(job.job, 0, 0, nullptr, nullptr),
+      QDMI_ERROR_BADSTATE);
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_submit(job.job), QDMI_ERROR_BADSTATE);
 }
 
@@ -138,18 +136,11 @@ TEST(JobParameters, BinaryProgramRoundTripsExactly) {
 
   program.fill(std::byte{0});
   size_t resultSize = 0U;
-  ASSERT_EQ(
-      MQT_DDSIM_QDMI_device_job_query_property(
-          job.job, QDMI_DEVICE_JOB_PROPERTY_PROGRAM, 0, nullptr, &resultSize),
-      QDMI_SUCCESS);
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_get_program(job.job, 0, 0, nullptr,
+                                                  &resultSize),
+            QDMI_SUCCESS);
   ASSERT_EQ(resultSize, program.size());
   std::array<std::byte, program.size()> result{};
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_query_property(
-                job.job, QDMI_DEVICE_JOB_PROPERTY_PROGRAM, result.size(),
-                result.data(), nullptr),
-            QDMI_SUCCESS);
-  EXPECT_EQ(result, expected);
-  result.fill(std::byte{0});
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_program(job.job, 0U, result.size(),
                                                   result.data(), nullptr),
             QDMI_SUCCESS);

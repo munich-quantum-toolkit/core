@@ -592,12 +592,6 @@ extern "C" int TEST_SESSION_QDMI_device_job_query_property(
   if (prop == QDMI_DEVICE_JOB_PROPERTY_PROGRAMFORMAT) {
     return queryValue(job->format, size, value, sizeRet);
   }
-  if (prop == QDMI_DEVICE_JOB_PROPERTY_PROGRAM) {
-    if (job->programs.size() != 1U) {
-      return QDMI_ERROR_NOTSUPPORTED;
-    }
-    return queryBytes(job->programs.front(), size, value, sizeRet);
-  }
   return QDMI_ERROR_NOTSUPPORTED;
 }
 

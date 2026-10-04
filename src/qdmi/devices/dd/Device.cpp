@@ -675,8 +675,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::queryProperty(
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   const std::scoped_lock lock(execution_->mutex);
-  if (programs_.empty() && (prop == QDMI_DEVICE_JOB_PROPERTY_PROGRAM ||
-                            prop == QDMI_DEVICE_JOB_PROPERTY_PROGRAMSNUM)) {
+  if (programs_.empty() && prop == QDMI_DEVICE_JOB_PROPERTY_PROGRAMSNUM) {
     return QDMI_ERROR_BADSTATE;
   }
   if (prop == QDMI_DEVICE_JOB_PROPERTY_PROGRAMFORMAT &&
@@ -693,17 +692,6 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::queryProperty(
                             numShots_, prop, size, value, sizeRet)
   ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_JOB_PROPERTY_PROGRAMSNUM, size_t,
                             programs_.size(), prop, size, value, sizeRet)
-  if (programs_.size() == 1) {
-    const auto& program = programs_.front();
-    if (format_ != QDMI_PROGRAM_FORMAT_QIRBASEMODULE &&
-        format_ != QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE) {
-      ADD_STRING_PROPERTY(QDMI_DEVICE_JOB_PROPERTY_PROGRAM, program.c_str(),
-                          prop, size, value, sizeRet)
-    } else {
-      ADD_LIST_PROPERTY(QDMI_DEVICE_JOB_PROPERTY_PROGRAM, char, program, prop,
-                        size, value, sizeRet)
-    }
-  }
   return QDMI_ERROR_NOTSUPPORTED;
 }
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {

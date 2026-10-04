@@ -25,12 +25,11 @@ from qiskit.result.models import ExperimentResult
 
 from mqt.core.qdmi import Job as QDMIJobHandle
 
-from ..qdmi_batch import Batch, BatchEntry, JobAttempt
+from ..qdmi_batch import Batch, BatchEntry
 from .exceptions import JobExecutionError, JobSubmissionError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from typing import Self
 
     from qiskit.circuit import QuantumCircuit
 
@@ -65,13 +64,11 @@ class QDMIJob(JobV1):
     """Qiskit job wrapping one or more QDMI jobs.
 
     This class handles both single-circuit and multi-circuit execution,
-    using native program lists where supported and independent jobs otherwise. Use
-    :meth:`from_circuits` to prepare an unsubmitted batch. Wrapping already
-    submitted jobs supports collection and cancellation, without replacements.
+    using native program lists where supported and independent jobs otherwise.
+    Construction prepares an unsubmitted batch.
 
     Args:
         backend: The backend this job runs on.
-        jobs: Submitted QDMI jobs in circuit order, or None to prepare a new batch.
         circuits: The executed circuits, used to snapshot result headers.
         shots: Requested shots per circuit.
         memory: Whether to collect genuine ordered shots.
@@ -83,7 +80,6 @@ class QDMIJob(JobV1):
     def __init__(
         self,
         backend: QDMIBackend,
-        jobs: Sequence[QDMIJobHandle] | None,
         circuits: Sequence[QuantumCircuit],
         *,
         shots: int,
@@ -91,13 +87,13 @@ class QDMIJob(JobV1):
         max_retries: int = 0,
         job_parameters: QDMIJobParameters | None = None,
     ) -> None:
-        """Initialize without querying remote job IDs.
+        """Prepare all circuits without submitting or querying remote jobs.
 
         Raises:
-            ValueError: If circuits are empty or the supplied jobs differ in length.
+            ValueError: If circuits are empty.
         """
-        if not circuits or (jobs is not None and len(jobs) != len(circuits)):
-            msg = "QDMIJob requires at least one circuit and one submitted job per circuit when jobs are supplied."
+        if not circuits:
+            msg = "QDMIJob requires at least one circuit."
             raise ValueError(msg)
         super().__init__(backend=backend, job_id="")
         self._backend: QDMIBackend = backend
@@ -114,51 +110,22 @@ class QDMIJob(JobV1):
         self._memory = memory
         self._job_parameters = job_parameters or {}
         self._result: Result | None = None
-        self._programs: tuple[tuple[str | bytes, ProgramFormat], ...] | None = None
-        if jobs is None:
-            formats = backend.device.supported_program_formats()
-            self._programs = tuple(
-                backend._serialize_circuit(circuit, formats)  # ruff:ignore[private-member-access] Use the backend's serializer selection.
-                for circuit in circuits
-            )
+        formats = backend.device.supported_program_formats()
+        self._programs: tuple[tuple[str | bytes, ProgramFormat], ...] = tuple(
+            backend._serialize_circuit(circuit, formats)  # ruff:ignore[private-member-access] Use the backend's serializer selection.
+            for circuit in circuits
+        )
         self._batch: Batch[ExperimentResult] = Batch(
-            [
-                BatchEntry(i, attempts=(JobAttempt(handle=jobs[i]),) if jobs is not None else ())
-                for i in range(len(circuits))
-            ],
-            submit=self._submit_entry if self._programs is not None else None,
+            [BatchEntry(i) for i in range(len(circuits))],
+            submit=self._submit_entry,
             decode=lambda index, handle, program_index: self._collect_result(
                 handle, self._headers[index], program_index
             ),
             submit_programs=self._submit_programs,
-            group_by=[program_format for _, program_format in self._programs] if self._programs is not None else None,
+            group_by=[program_format for _, program_format in self._programs],
             submission_error=lambda msg: JobSubmissionError(msg, job=self),
             execution_error=lambda msg: JobExecutionError(msg, job=self),
             max_retries=max_retries,
-        )
-
-    @classmethod
-    def from_circuits(
-        cls,
-        backend: QDMIBackend,
-        circuits: Sequence[QuantumCircuit],
-        *,
-        shots: int,
-        memory: bool,
-        max_retries: int = 0,
-        job_parameters: QDMIJobParameters | None = None,
-    ) -> Self:
-        """Prepare an unsubmitted batch from bound, backend-ready circuits.
-
-        All circuits are serialized before this method returns. Use
-        :meth:`~mqt.core.plugins.qiskit.backend.QDMIBackend.run` for normal execution, including circuit validation
-        and parameter binding.
-
-        Returns:
-            A batch ready for :meth:`submit`, with programs retained for recovery.
-        """
-        return cls(
-            backend, None, circuits, shots=shots, memory=memory, max_retries=max_retries, job_parameters=job_parameters
         )
 
     @property
@@ -167,14 +134,15 @@ class QDMIJob(JobV1):
         return self._batch.entries
 
     def _submit_entry(self, index: int) -> QDMIJobHandle:
-        assert self._programs is not None
         program, program_format = self._programs[index]
-        return self._backend.device.submit_job(
-            program=program, program_format=program_format, num_shots=self._shots, **self._job_parameters
+        return self._backend.device.submit_programs(
+            programs=cast("Sequence[str] | Sequence[bytes]", [program]),
+            program_format=program_format,
+            num_shots=self._shots,
+            **self._job_parameters,
         )
 
     def _submit_programs(self, indices: Sequence[int]) -> QDMIJobHandle | None:
-        assert self._programs is not None
         return self._backend.device.try_submit_programs(
             # A format fixes the payload type for the whole group.
             cast("Sequence[str] | Sequence[bytes]", [self._programs[index][0] for index in indices]),

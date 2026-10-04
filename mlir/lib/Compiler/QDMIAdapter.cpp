@@ -908,14 +908,17 @@ submitPayload(const qdmi::Device& device, const CompiledProgram& program,
               const std::optional<qdmi::CustomJobParameter>& custom5) {
   try {
     if (qdmi::isBinaryProgramFormat(program.programFormat())) {
-      return device.submitJob(std::as_bytes(std::span(program.payload())),
-                              program.programFormat(),
-                              static_cast<size_t>(numShots), custom1, custom2,
-                              custom3, custom4, custom5);
+      const auto payload = std::as_bytes(std::span(program.payload()));
+      return device.submitPrograms(std::span{&payload, 1},
+                                   program.programFormat(),
+                                   static_cast<size_t>(numShots), custom1,
+                                   custom2, custom3, custom4, custom5);
     }
-    return device.submitJob(program.payload(), program.programFormat(),
-                            static_cast<size_t>(numShots), custom1, custom2,
-                            custom3, custom4, custom5);
+    const auto& payload = program.payload();
+    return device.submitPrograms(std::span{&payload, 1},
+                                 program.programFormat(),
+                                 static_cast<size_t>(numShots), custom1,
+                                 custom2, custom3, custom4, custom5);
   } catch (...) {
     return qdmiError("Failed to submit compiled program",
                      std::current_exception());

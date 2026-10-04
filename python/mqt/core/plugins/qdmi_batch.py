@@ -207,13 +207,12 @@ class Batch(Generic[_Result]):
                         raise TimeoutError(msg)  # ruff:ignore[raise-within-try] Record timeouts with other wait failures.
                     stage = "status"
                     aggregate = handle.check()
-                    outcomes = (
-                        handle.program_statuses if aggregate in {Job.Status.FAILED, Job.Status.CANCELED} else None
-                    )
                     # Resolve individual outcomes before attributing an aggregate failure.
                     for index in pending:
                         attempt = self._entries[index].attempts[-1]
-                        status = aggregate if outcomes is None else outcomes[attempt.program_index]
+                        status = aggregate
+                        if aggregate in {Job.Status.FAILED, Job.Status.CANCELED}:
+                            status = handle.get_program_status(attempt.program_index) or aggregate
                         self._set_attempt(index, replace(attempt, status=status))
                 except BaseException as exc:
                     for index in pending:

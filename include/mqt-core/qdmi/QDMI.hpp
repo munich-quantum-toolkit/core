@@ -327,7 +327,7 @@ toJobResult(const CustomProperty property) {
 /// `QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE`, and `QDMI_PROGRAM_FORMAT_QPY` hold
 /// bitcode or another serialized object. Such a payload can contain a null byte
 /// and is not text, so it must be submitted as exact bytes. The string overload
-/// of `Device::submitJob` rejects these formats.
+/// of `Device::submitPrograms` rejects these formats.
 /// @param format The program format to classify.
 /// @return True if the format requires exact-byte submission.
 [[nodiscard]] constexpr bool
@@ -738,61 +738,8 @@ public:
   [[nodiscard]] std::optional<std::vector<Operation>>
   queryCustomOperations(CustomProperty property) const;
 
-  /// Submits a textual program.
-  ///
-  /// The terminating null byte required by QDMI text formats is
-  /// included in the submitted payload.
-  /// @throws std::invalid_argument If the format requires binary submission,
-  /// or names a batch job.
-  /// @see QDMI_job_submit
-  [[nodiscard]] Job submitJob(
-      const std::string& program, QDMI_Program_Format format, size_t numShots,
-      const std::optional<CustomJobParameter>& custom1 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom2 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom3 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom4 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
-
-  /// Submits a textual program without setting a shot count.
-  ///
-  /// Repetition semantics are left to the submitted program and device.
-  /// @see QDMI_job_submit
-  [[nodiscard]] Job submitJob(
-      const std::string& program, QDMI_Program_Format format,
-      const std::optional<CustomJobParameter>& custom1 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom2 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom3 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom4 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
-
-  /// Submits a binary program.
-  ///
-  /// The bytes are submitted exactly as provided without appending a
-  /// null byte.
-  /// @throws std::invalid_argument If the format names a batch job.
-  /// @see QDMI_job_submit
-  [[nodiscard]] Job submitJob(
-      std::span<const std::byte> program, QDMI_Program_Format format,
-      size_t numShots,
-      const std::optional<CustomJobParameter>& custom1 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom2 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom3 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom4 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
-
-  /// Submits a binary program without setting a shot count.
-  ///
-  /// Repetition semantics are left to the submitted program and device.
-  /// @see QDMI_job_submit
-  [[nodiscard]] Job submitJob(
-      std::span<const std::byte> program, QDMI_Program_Format format,
-      const std::optional<CustomJobParameter>& custom1 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom2 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom3 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom4 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
-
-  /// Submits an ordered list of programs with common job parameters.
+  /// Submits an ordered list of text programs with common job parameters.
+  /// The required text terminator is included exactly once per payload.
   [[nodiscard]] Job submitPrograms(
       std::span<const std::string> programs, QDMI_Program_Format format,
       std::optional<size_t> numShots = std::nullopt,
@@ -812,7 +759,7 @@ public:
       const std::optional<CustomJobParameter>& custom4 = std::nullopt,
       const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
 
-  /// Submits an ordered list of programs with common job parameters.
+  /// Submits an ordered list of exact-byte programs with common job parameters.
   [[nodiscard]] Job submitPrograms(
       std::span<const std::span<const std::byte>> programs,
       QDMI_Program_Format format, std::optional<size_t> numShots = std::nullopt,
@@ -945,11 +892,7 @@ public:
 
   /// Returns one program outcome, or no value when unsupported.
   [[nodiscard]] std::optional<QDMI_Job_Status>
-  getProgramStatus(size_t programIndex) const;
-
-  /// Returns individual outcomes, or no value when unsupported.
-  [[nodiscard]] std::optional<std::vector<QDMI_Job_Status>>
-  getProgramStatuses() const;
+  getProgramStatus(size_t programIndex = 0) const;
 
   /// Returns a result without interpreting its bytes.
   [[nodiscard]] std::vector<std::byte>

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
 from typing import TYPE_CHECKING, cast
-from unittest.mock import Mock, PropertyMock
+from unittest.mock import Mock
 
 import pytest
 
@@ -65,7 +65,7 @@ class BatchFixture:
 
     def _job(self, indices: Sequence[int]) -> Job:
         job = Mock()
-        job.program_statuses = None
+        job.get_program_status.return_value = None
         job.check.return_value = self.status
         job.wait.return_value = True
         job.get_shots.side_effect = lambda program_index=0: [str(indices[program_index])]
@@ -342,8 +342,8 @@ def test_native_partial_failure_retries_only_failed_programs() -> None:
     fixture.batch.submit()
     shared = fixture.jobs[0]
     shared.check.return_value = Job.Status.FAILED
-    outcomes = PropertyMock(return_value=[Job.Status.FAILED, Job.Status.DONE, Job.Status.FAILED])
-    type(shared).program_statuses = outcomes
+    outcomes = shared.get_program_status
+    outcomes.side_effect = [Job.Status.FAILED, Job.Status.DONE, Job.Status.FAILED]
     fixture.batch.complete()
     assert fixture.native_calls == [[0, 1, 2], [0, 2]]
     assert fixture.submitted == [0, 1, 2, 0, 2]
@@ -353,7 +353,7 @@ def test_native_partial_failure_retries_only_failed_programs() -> None:
     shared.get_shots.assert_called_once_with(1)
     shared.check.assert_called_once()
     shared.wait.assert_called_once()
-    outcomes.assert_called_once()
+    assert outcomes.call_count == 3
     assert fixture.batch.statuses() == (Job.Status.DONE,) * 3
     shared.check.assert_called_once()
 
@@ -367,7 +367,7 @@ def test_native_read_failure_never_replaces_execution(stage: str) -> None:
     cause = RuntimeError("download unavailable")
     if stage == "outcomes":
         shared.check.return_value = Job.Status.FAILED
-        type(shared).program_statuses = PropertyMock(side_effect=[cause, [Job.Status.DONE] * 3])
+        shared.get_program_status.side_effect = [cause, Job.Status.DONE, Job.Status.DONE, Job.Status.DONE]
     else:
         shared.get_shots.side_effect = [cause, ["1"], ["2"], ["0"]]
     with pytest.raises(RuntimeError, match="download unavailable"):
@@ -409,7 +409,9 @@ def test_shared_cancel_and_individual_status_before_manual_replacement() -> None
     shared.cancel.assert_called_once()
     assert all(entry.attempts[0].failures[-1].cause is cause for entry in fixture.batch.entries)
     shared.check.return_value = Job.Status.FAILED
-    shared.program_statuses = [Job.Status.DONE, Job.Status.CANCELED, Job.Status.FAILED]
+    shared.get_program_status.side_effect = lambda index: [Job.Status.DONE, Job.Status.CANCELED, Job.Status.FAILED][
+        index
+    ]
     with pytest.raises(ValueError, match="Cannot replace"):
         fixture.batch.resubmit([0, 2])
     fixture.batch.resubmit([1, 2])
@@ -423,8 +425,8 @@ def test_running_native_job_does_not_require_final_outcomes() -> None:
     fixture.batch.submit()
     shared = fixture.jobs[0]
     shared.check.return_value = Job.Status.RUNNING
-    outcomes = PropertyMock(side_effect=RuntimeError("outcomes not ready"))
-    type(shared).program_statuses = outcomes
+    outcomes = shared.get_program_status
+    outcomes.side_effect = RuntimeError("outcomes not ready")
     assert fixture.batch.statuses() == (Job.Status.RUNNING,) * 3
     with pytest.raises(ValueError, match="Cannot replace"):
         fixture.batch.resubmit([0, 1], allow_unknown=True)

@@ -41,7 +41,7 @@ def test_native_programs_preserve_successful_siblings() -> None:
     assert job.wait()
     assert job.num_programs == 3
     assert job.check() == Job.Status.FAILED
-    assert job.program_statuses == [Job.Status.DONE, Job.Status.FAILED, Job.Status.DONE]
+    assert [job.get_program_status(i) for i in range(3)] == [Job.Status.DONE, Job.Status.FAILED, Job.Status.DONE]
     assert job.get_program_status(1) == Job.Status.FAILED
     with pytest.raises(IndexError):
         job.get_program_status(3)

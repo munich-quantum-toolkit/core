@@ -714,62 +714,6 @@ std::vector<Device> Device::getChildDevices() const {
   return devices;
 }
 
-Job Device::submitJob(const std::string& program,
-                      const QDMI_Program_Format format, const size_t numShots,
-                      const std::optional<CustomJobParameter>& custom1,
-                      const std::optional<CustomJobParameter>& custom2,
-                      const std::optional<CustomJobParameter>& custom3,
-                      const std::optional<CustomJobParameter>& custom4,
-                      const std::optional<CustomJobParameter>& custom5) const {
-  if (isBinaryProgramFormat(format)) {
-    throw std::invalid_argument(
-        "Binary program formats require exact-byte submission");
-  }
-
-  return submitPrograms({&program, 1}, format, numShots, custom1, custom2,
-                        custom3, custom4, custom5);
-}
-
-Job Device::submitJob(const std::string& program,
-                      const QDMI_Program_Format format,
-                      const std::optional<CustomJobParameter>& custom1,
-                      const std::optional<CustomJobParameter>& custom2,
-                      const std::optional<CustomJobParameter>& custom3,
-                      const std::optional<CustomJobParameter>& custom4,
-                      const std::optional<CustomJobParameter>& custom5) const {
-  if (isBinaryProgramFormat(format)) {
-    throw std::invalid_argument(
-        "Binary program formats require exact-byte submission");
-  }
-
-  return submitPrograms({&program, 1}, format, std::nullopt, custom1, custom2,
-                        custom3, custom4, custom5);
-}
-
-Job Device::submitJob(const std::span<const std::byte> program,
-                      const QDMI_Program_Format format, const size_t numShots,
-                      const std::optional<CustomJobParameter>& custom1,
-                      const std::optional<CustomJobParameter>& custom2,
-                      const std::optional<CustomJobParameter>& custom3,
-                      const std::optional<CustomJobParameter>& custom4,
-                      const std::optional<CustomJobParameter>& custom5) const {
-
-  return submitPrograms({&program, 1}, format, numShots, custom1, custom2,
-                        custom3, custom4, custom5);
-}
-
-Job Device::submitJob(const std::span<const std::byte> program,
-                      const QDMI_Program_Format format,
-                      const std::optional<CustomJobParameter>& custom1,
-                      const std::optional<CustomJobParameter>& custom2,
-                      const std::optional<CustomJobParameter>& custom3,
-                      const std::optional<CustomJobParameter>& custom4,
-                      const std::optional<CustomJobParameter>& custom5) const {
-
-  return submitPrograms({&program, 1}, format, std::nullopt, custom1, custom2,
-                        custom3, custom4, custom5);
-}
-
 Job Device::submitPrograms(
     const std::span<const std::string> programs,
     const QDMI_Program_Format format, const std::optional<size_t> numShots,
@@ -1031,20 +975,6 @@ Job::getProgramStatus(const size_t programIndex) const {
   }
   qdmi::throwIfError(result, "Querying program status");
   return status;
-}
-
-std::optional<std::vector<QDMI_Job_Status>> Job::getProgramStatuses() const {
-  std::vector<QDMI_Job_Status> statuses;
-  const auto count = getNumPrograms();
-  statuses.reserve(count);
-  for (size_t i = 0; i < count; ++i) {
-    const auto status = getProgramStatus(i);
-    if (!status) {
-      return std::nullopt;
-    }
-    statuses.push_back(*status);
-  }
-  return statuses;
 }
 
 std::vector<std::byte> Job::getResults(const QDMI_Job_Result result,

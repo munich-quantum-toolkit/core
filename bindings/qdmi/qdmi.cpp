@@ -366,24 +366,9 @@ when the custom slot is unsupported.)pb");
                   nb::call_guard<nb::gil_scoped_release>(),
                   "The format of the submitted program.");
 
-  job.def_prop_ro(
-      "program", [](const qdmi::Job& self) { return self.getProgram(); },
-      nb::call_guard<nb::gil_scoped_release>(), "The submitted program.");
-
   job.def("get_program", &qdmi::Job::getProgram, "program_index"_a = 0,
           nb::call_guard<nb::gil_scoped_release>(),
           "Return one submitted text program by input index.");
-
-  job.def_prop_ro(
-      "program_bytes",
-      [](const qdmi::Job& self) {
-        const auto program = [&self] {
-          const nb::gil_scoped_release release;
-          return self.getProgramBytes();
-        }();
-        return nb::bytes(program.data(), program.size());
-      },
-      "The exact bytes of the submitted program.");
 
   job.def(
       "get_program_bytes",
@@ -400,12 +385,9 @@ when the custom slot is unsupported.)pb");
   job.def_prop_ro("num_programs", &qdmi::Job::getNumPrograms,
                   nb::call_guard<nb::gil_scoped_release>(),
                   "The number of programs in input order.");
-  job.def("get_program_status", &qdmi::Job::getProgramStatus, "program_index"_a,
-          nb::call_guard<nb::gil_scoped_release>(),
+  job.def("get_program_status", &qdmi::Job::getProgramStatus,
+          "program_index"_a = 0, nb::call_guard<nb::gil_scoped_release>(),
           "Return one program outcome, or None when unsupported.");
-  job.def_prop_ro("program_statuses", &qdmi::Job::getProgramStatuses,
-                  nb::call_guard<nb::gil_scoped_release>(),
-                  "Individual outcomes, or None when unsupported.");
   job.def(
       "get_results",
       [](const qdmi::Job& self, const int result, const size_t programIndex) {
@@ -468,7 +450,7 @@ when the custom slot is unsupported.)pb");
 ``QIR_BASE_MODULE``, ``QIR_ADAPTIVE_MODULE``, and ``QPY`` hold bitcode or
 another serialized object. Such a payload may contain a null byte and is not
 text, so the device must receive it as exact bytes. Pass ``bytes`` to
-:meth:`Device.submit_job` for these formats and ``str`` for the others.
+:meth:`Device.submit_programs` for these formats and ``str`` for the others.
 
 Args:
     program_format: The program format to classify.
@@ -608,64 +590,6 @@ slot is unsupported. A supported empty list is returned as an empty list.)pb");
 The caller must provide the type documented by the device implementation.
 Use ``bytes`` to retrieve the value without interpretation. Returns ``None``
 when the custom slot is unsupported.)pb");
-
-  device.def(
-      "submit_job",
-      [](const qdmi::Device& self, const std::string& program,
-         const QDMI_Program_Format format, const std::optional<size_t> numShots,
-         const std::optional<PythonCustomJobParameter>& custom1,
-         const std::optional<PythonCustomJobParameter>& custom2,
-         const std::optional<PythonCustomJobParameter>& custom3,
-         const std::optional<PythonCustomJobParameter>& custom4,
-         const std::optional<PythonCustomJobParameter>& custom5) {
-        const auto params = std::array{
-            toCustomJobParameter(custom1), toCustomJobParameter(custom2),
-            toCustomJobParameter(custom3), toCustomJobParameter(custom4),
-            toCustomJobParameter(custom5),
-        };
-        const nb::gil_scoped_release release;
-        if (numShots.has_value()) {
-          return self.submitJob(program, format, *numShots, params[0],
-                                params[1], params[2], params[3], params[4]);
-        }
-        return self.submitJob(program, format, params[0], params[1], params[2],
-                              params[3], params[4]);
-      },
-      "program"_a, "program_format"_a, "num_shots"_a = nb::none(),
-      nb::kw_only(), "custom1"_a = nb::none(), "custom2"_a = nb::none(),
-      "custom3"_a = nb::none(), "custom4"_a = nb::none(),
-      "custom5"_a = nb::none(), nb::rv_policy::reference_internal,
-      "Submits a text job to the device.");
-
-  device.def(
-      "submit_job",
-      [](const qdmi::Device& self, const nb::bytes& program,
-         const QDMI_Program_Format format, const std::optional<size_t> numShots,
-         const std::optional<PythonCustomJobParameter>& custom1,
-         const std::optional<PythonCustomJobParameter>& custom2,
-         const std::optional<PythonCustomJobParameter>& custom3,
-         const std::optional<PythonCustomJobParameter>& custom4,
-         const std::optional<PythonCustomJobParameter>& custom5) {
-        const auto params = std::array{
-            toCustomJobParameter(custom1), toCustomJobParameter(custom2),
-            toCustomJobParameter(custom3), toCustomJobParameter(custom4),
-            toCustomJobParameter(custom5),
-        };
-        const auto bytes = std::span{
-            static_cast<const std::byte*>(program.data()), program.size()};
-        const nb::gil_scoped_release release;
-        if (numShots.has_value()) {
-          return self.submitJob(bytes, format, *numShots, params[0], params[1],
-                                params[2], params[3], params[4]);
-        }
-        return self.submitJob(bytes, format, params[0], params[1], params[2],
-                              params[3], params[4]);
-      },
-      "program"_a, "program_format"_a, "num_shots"_a = nb::none(),
-      nb::kw_only(), "custom1"_a = nb::none(), "custom2"_a = nb::none(),
-      "custom3"_a = nb::none(), "custom4"_a = nb::none(),
-      "custom5"_a = nb::none(), nb::rv_policy::reference_internal,
-      "Submits an exact byte payload to the device.");
 
   device.def(
       "submit_programs",

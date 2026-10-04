@@ -78,8 +78,8 @@ class PennyLaneJob:
 
     def _submit(self, index: int) -> Job:
         converted, shots = self._prepared[index]
-        return self._device.qdmi_device.submit_job(
-            converted.payload, converted.program_format, shots, **self._parameters
+        return self._device.qdmi_device.submit_programs(
+            [converted.payload], converted.program_format, shots, **self._parameters
         )
 
     def _submit_programs(self, indices: Sequence[int]) -> Job | None:

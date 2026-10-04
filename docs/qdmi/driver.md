@@ -92,9 +92,9 @@ Use `job.num_programs` and the optional `program_index` argument on result
 methods to retrieve results in input order. Use `job.get_program(index)` or
 `job.get_program_bytes(index)` to read an input payload; a retrieved historical
 job may not expose it. `job.get_program_status(index)` reports one outcome when
-supported, or `None` otherwise. `job.program_statuses` collects the outcomes in
-input order. A successful program's results remain available if another program
-fails or is cancelled. Cancelling uses the shared native job handle.
+supported, or `None` otherwise. A successful program's results remain available
+if another program fails or is cancelled. Cancelling uses the shared native job
+handle.
 
 ## Building the Bundled Devices
 
@@ -139,13 +139,13 @@ device access.
 ### Custom job parameter types
 
 The `custom1` through `custom5` arguments of
-{py:meth}`mqt.core.qdmi.Device.submit_job` and
+{py:meth}`mqt.core.qdmi.Device.submit_programs` and
 {py:func}`mqt.core.mlir.submit_program` use the device's documented types.
 Strings include a null terminator; `bool`, `int`, and `float` use C++ `bool`,
 `int`, and `double`. For a device-defined binary payload, pass nonempty `bytes`:
 
 ```python
-job = device.submit_job(program, program_format, custom1=b"\x01\x00\xff")
+job = device.submit_programs([program], program_format, custom1=b"\x01\x00\xff")
 ```
 
 QDMI copies raw bytes without a terminator; empty payloads raise `ValueError`.

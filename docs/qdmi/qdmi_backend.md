@@ -455,7 +455,7 @@ When you run a circuit, the backend:
    valid options)
 2. Serializes the circuit into one of the program formats supported by the
    target device, through the program serializer registered for that format
-3. Submits the program to the QDMI device via `device.submit_job()`
+3. Submits the program to the QDMI device via `device.submit_programs()`
 4. Returns a {py:class}`~mqt.core.plugins.qiskit.job.QDMIJob`
 
 The built-in OpenQASM serializers validate circuit width and ordered operation
@@ -544,10 +544,10 @@ implement `_job_parameters(options)` to validate and encode them as QDMI
 subclass's defaults merged with per-run overrides, excluding the base options
 `shots`, `memory`, and `max_retries`. It runs before any circuit is submitted.
 Custom values can be strings, scalars, or exact bytes, as accepted by
-`Device.submit_job`. Unknown option names are rejected. The base hook rejects
-declared options it cannot encode, so a subclass that adds options must override
-it and handle each one. The generic backend defines no vendor-specific option
-names or values.
+`Device.submit_programs`. Unknown option names are rejected. The base hook
+rejects declared options it cannot encode, so a subclass that adds options must
+override it and handle each one. The generic backend defines no vendor-specific
+option names or values.
 
 Use `backend.set_options(...)` to configure defaults for direct runs, native
 samplers, and native estimators. A direct `backend.run(..., **options)` call can

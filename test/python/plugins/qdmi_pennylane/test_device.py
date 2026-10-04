@@ -162,24 +162,24 @@ def test_batches_execute_in_input_order(monkeypatch: pytest.MonkeyPatch) -> None
 def test_execution_failure_preserves_submitted_jobs(monkeypatch: pytest.MonkeyPatch) -> None:
     """Collect later jobs and retain successful samples without any cancellation."""
     qdmi = stub_device()
-    submit_job = qdmi.submit_job
+    submit_programs = qdmi.submit_programs
 
     def fail_wait() -> bool:
         msg = "wait failed"
         raise RuntimeError(msg)
 
     def submit(
-        program: str,
+        programs: list[str],
         program_format: ProgramFormat,
         num_shots: int,
         **parameters: object,
     ) -> QDMIJobHandle:
-        job = submit_job(program, program_format, num_shots, **parameters)
+        job = submit_programs(programs, program_format, num_shots, **parameters)
         if job.id == "2":
             monkeypatch.setattr(job, "wait", fail_wait)
         return job
 
-    monkeypatch.setattr(qdmi, "submit_job", submit)
+    monkeypatch.setattr(qdmi, "submit_programs", submit)
     patch_open_device(monkeypatch, qdmi)
     device = QDMIDevice("fake.qdmi", wires=2)
     tape = qp.tape.QuantumScript([], [qp.sample(wires=[0, 1])], shots=[2, 3, 4])
@@ -404,18 +404,20 @@ def test_retry_shot_copies_preserves_order_and_tracking(
 ) -> None:
     """Replace one failed shot copy without repeating successful copies or losing their mapping."""
     qdmi = stub_device()
-    original = qdmi.submit_job
+    original = qdmi.submit_programs
     handles = []
 
-    def submit(program: str, program_format: ProgramFormat, num_shots: int, **parameters: object) -> QDMIJobHandle:
-        handle = original(program, program_format, num_shots, **parameters)
+    def submit(
+        programs: list[str], program_format: ProgramFormat, num_shots: int, **parameters: object
+    ) -> QDMIJobHandle:
+        handle = original(programs, program_format, num_shots, **parameters)
         handle = cast("Mock", handle)
         handle.check.side_effect = None
         handle.check.return_value = QDMIJobHandle.Status.FAILED if not handles else QDMIJobHandle.Status.DONE
         handles.append(handle)
         return handle
 
-    monkeypatch.setattr(qdmi, "submit_job", submit)
+    monkeypatch.setattr(qdmi, "submit_programs", submit)
     patch_open_device(monkeypatch, qdmi)
     if max_retries is None:
         device = QDMIDevice("fake.qdmi", wires=2, job_parameters={"custom1": 9})
@@ -462,15 +464,17 @@ def test_invalid_retry_configuration(monkeypatch: pytest.MonkeyPatch, value: obj
 def test_partial_submission_retains_pennylane_batch(monkeypatch: pytest.MonkeyPatch, *, interrupted: bool) -> None:
     """Submission exceptions and interruptions retain handles for accepted shot copies."""
     qdmi = stub_device()
-    original = qdmi.submit_job
+    original = qdmi.submit_programs
     cause = KeyboardInterrupt() if interrupted else RuntimeError("submission failed")
 
-    def submit(program: str, program_format: ProgramFormat, num_shots: int, **parameters: object) -> QDMIJobHandle:
+    def submit(
+        programs: list[str], program_format: ProgramFormat, num_shots: int, **parameters: object
+    ) -> QDMIJobHandle:
         if len(qdmi.submissions) == 1:
             raise cause
-        return original(program, program_format, num_shots, **parameters)
+        return original(programs, program_format, num_shots, **parameters)
 
-    monkeypatch.setattr(qdmi, "submit_job", submit)
+    monkeypatch.setattr(qdmi, "submit_programs", submit)
     patch_open_device(monkeypatch, qdmi)
     device = QDMIDevice("fake.qdmi", wires=2)
     tape = qp.tape.QuantumScript([], [qp.sample(wires=[0, 1])], shots=[2, 3, 4])
@@ -481,7 +485,7 @@ def test_partial_submission_retains_pennylane_batch(monkeypatch: pytest.MonkeyPa
     if isinstance(caught.value, PennyLaneExecutionError):
         assert caught.value.job is batch
     batch.collect()
-    monkeypatch.setattr(qdmi, "submit_job", original)
+    monkeypatch.setattr(qdmi, "submit_programs", original)
     batch.resubmit([1], allow_unknown=True)
     batch.submit()
     assert [samples.shape for samples in batch.result()] == [(2, 2), (3, 2), (4, 2)]
@@ -513,11 +517,13 @@ def test_preparation_interruption_clears_last_job(monkeypatch: pytest.MonkeyPatc
 def test_result_read_failures_retain_both_causes(monkeypatch: pytest.MonkeyPatch) -> None:
     """An unavailable shots result and failing counts fallback keep both diagnostics."""
     qdmi = stub_device()
-    original = qdmi.submit_job
+    original = qdmi.submit_programs
     errors = (RuntimeError("shots unavailable"), RuntimeError("counts unavailable"))
 
-    def submit(program: str, program_format: ProgramFormat, num_shots: int, **parameters: object) -> QDMIJobHandle:
-        handle = original(program, program_format, num_shots, **parameters)
+    def submit(
+        programs: list[str], program_format: ProgramFormat, num_shots: int, **parameters: object
+    ) -> QDMIJobHandle:
+        handle = original(programs, program_format, num_shots, **parameters)
         handle = cast("Mock", handle)
         handle.check.side_effect = None
         handle.check.return_value = QDMIJobHandle.Status.DONE
@@ -525,7 +531,7 @@ def test_result_read_failures_retain_both_causes(monkeypatch: pytest.MonkeyPatch
         handle.get_counts.side_effect = errors[1]
         return handle
 
-    monkeypatch.setattr(qdmi, "submit_job", submit)
+    monkeypatch.setattr(qdmi, "submit_programs", submit)
     patch_open_device(monkeypatch, qdmi)
     device = QDMIDevice("fake.qdmi", wires=2)
     tape = qp.tape.QuantumScript([], [qp.sample(wires=[0, 1])], shots=2)
@@ -571,7 +577,7 @@ def test_native_groups_preserve_heterogeneous_shot_partitions(monkeypatch: pytes
         handle = Mock()
         handle.wait.return_value = True
         handle.check.return_value = QDMIJobHandle.Status.DONE
-        handle.program_statuses = None
+        handle.get_program_status.return_value = None
         handle.get_shots.side_effect = lambda program_index: [str(program_index) * 2] * shots
         groups.append((programs, program_format, shots, parameters, handle))
         return handle

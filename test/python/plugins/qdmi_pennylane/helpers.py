@@ -141,9 +141,9 @@ class StubDevice:
     def try_submit_programs(self, *_args: object, **_kwargs: object) -> None:
         """Reject native groups before submission to exercise independent jobs."""
 
-    def submit_job(
+    def submit_programs(
         self,
-        program: str,
+        programs: list[str],
         program_format: ProgramFormat,
         num_shots: int,
         **parameters: object,
@@ -153,10 +153,11 @@ class StubDevice:
         Returns:
             The completed job mock.
         """
+        program = programs[0]
         self.submissions.append((program, program_format, num_shots, parameters))
         shots = list(self._result_factory(program, num_shots))
         job = Mock()
-        job.program_statuses = None
+        job.get_program_status.return_value = None
         job_id = str(len(self.submissions))
         job.id = job_id
         self.events.append(f"submit:{job_id}")

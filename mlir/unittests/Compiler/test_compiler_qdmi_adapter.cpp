@@ -571,7 +571,8 @@ TEST(CompilerQDMIAdapterTest, ExecutesStableRegisterHelpers) {
   auto ir = qir->llvmIR();
   ASSERT_TRUE(ir);
   const auto device = qdmi::Session::openDevice("mqt.ddsim.default");
-  auto job = device.submitJob(*ir, QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING, 8);
+  auto job = device.submitPrograms(std::array<std::string, 1>{*ir},
+                                   QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING, 8);
   ASSERT_TRUE(job.wait());
   EXPECT_EQ(job.getCounts().at("10"), 8);
 }

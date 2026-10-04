@@ -154,16 +154,8 @@ class Job:
     def program_format(self) -> ProgramFormat:
         """The format of the submitted program."""
 
-    @property
-    def program(self) -> str:
-        """The submitted program."""
-
     def get_program(self, program_index: int = 0) -> str:
         """Return one submitted text program by input index."""
-
-    @property
-    def program_bytes(self) -> bytes:
-        """The exact bytes of the submitted program."""
 
     def get_program_bytes(self, program_index: int = 0) -> bytes:
         """Return one submitted program's exact bytes by input index."""
@@ -172,12 +164,8 @@ class Job:
     def num_programs(self) -> int:
         """The number of programs in input order."""
 
-    def get_program_status(self, program_index: int) -> Job.Status | None:
+    def get_program_status(self, program_index: int = 0) -> Job.Status | None:
         """Return one program outcome, or None when unsupported."""
-
-    @property
-    def program_statuses(self) -> list[Job.Status] | None:
-        """Individual outcomes, or None when unsupported."""
 
     def get_results(self, result: int, program_index: int = 0) -> bytes:
         """Returns an indexed result as exact bytes."""
@@ -245,7 +233,7 @@ def is_binary_program_format(program_format: ProgramFormat) -> bool:
     ``QIR_BASE_MODULE``, ``QIR_ADAPTIVE_MODULE``, and ``QPY`` hold bitcode or
     another serialized object. Such a payload may contain a null byte and is not
     text, so the device must receive it as exact bytes. Pass ``bytes`` to
-    :meth:`Device.submit_job` for these formats and ``str`` for the others.
+    :meth:`Device.submit_programs` for these formats and ``str`` for the others.
 
     Args:
         program_format: The program format to classify.
@@ -370,36 +358,6 @@ class Device:
         Use ``bytes`` to retrieve the value without interpretation. Returns ``None``
         when the custom slot is unsupported.
         """
-
-    @overload
-    def submit_job(
-        self,
-        program: str,
-        program_format: ProgramFormat,
-        num_shots: int | None = None,
-        *,
-        custom1: str | bool | float | bytes | None = None,
-        custom2: str | bool | float | bytes | None = None,
-        custom3: str | bool | float | bytes | None = None,
-        custom4: str | bool | float | bytes | None = None,
-        custom5: str | bool | float | bytes | None = None,
-    ) -> Job:
-        """Submits a text job to the device."""
-
-    @overload
-    def submit_job(
-        self,
-        program: bytes,
-        program_format: ProgramFormat,
-        num_shots: int | None = None,
-        *,
-        custom1: str | bool | float | bytes | None = None,
-        custom2: str | bool | float | bytes | None = None,
-        custom3: str | bool | float | bytes | None = None,
-        custom4: str | bool | float | bytes | None = None,
-        custom5: str | bool | float | bytes | None = None,
-    ) -> Job:
-        """Submits an exact byte payload to the device."""
 
     @overload
     def submit_programs(
