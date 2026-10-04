@@ -25,7 +25,6 @@
 
 namespace {
 constexpr auto QASM3_FORMAT = QDMI_PROGRAM_FORMAT_QASM3;
-constexpr auto QASM2_FORMAT = QDMI_PROGRAM_FORMAT_QASM2;
 constexpr auto QIR_BINARY_FORMAT = QDMI_PROGRAM_FORMAT_QIRBASEMODULE;
 } // namespace
 
@@ -106,18 +105,6 @@ TEST(JobParameters, RequiresACompleteProgramBeforeSubmission) {
   EXPECT_EQ(
       MQT_DDSIM_QDMI_device_job_query_property(
           job.job, QDMI_DEVICE_JOB_PROPERTY_PROGRAMSNUM, 0, nullptr, nullptr),
-      QDMI_ERROR_BADSTATE);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_submit(job.job), QDMI_ERROR_BADSTATE);
-
-  ASSERT_EQ(qdmi_test::setProgram(job.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                  qdmi_test::QASM3_BELL_SAMPLING),
-            QDMI_SUCCESS);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
-                job.job, QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT,
-                sizeof(QDMI_Program_Format), &QASM2_FORMAT),
-            QDMI_SUCCESS);
-  EXPECT_EQ(
-      MQT_DDSIM_QDMI_device_job_get_program(job.job, 0, 0, nullptr, nullptr),
       QDMI_ERROR_BADSTATE);
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_submit(job.job), QDMI_ERROR_BADSTATE);
 }
@@ -213,7 +200,7 @@ TEST(JobParameters, ProgramFormatSupport) {
   const qdmi_test::JobGuard j{s.session};
 
   /// Supported program formats.
-  for (QDMI_Program_Format fmt : {
+  for (const QDMI_Program_Format fmt : {
            QDMI_PROGRAM_FORMAT_QASM2,
            QDMI_PROGRAM_FORMAT_QASM3,
            QDMI_PROGRAM_FORMAT_QIRBASESTRING,
@@ -221,23 +208,20 @@ TEST(JobParameters, ProgramFormatSupport) {
            QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
            QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE,
        }) {
-    EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
-                  j.job, QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT,
-                  sizeof(QDMI_Program_Format), &fmt),
+    EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_programs(j.job, fmt, 1U, nullptr,
+                                                     nullptr),
               QDMI_SUCCESS);
   }
 
   /// A valid but unsupported format is rejected.
   constexpr QDMI_Program_Format unsupported = QDMI_PROGRAM_FORMAT_QPY;
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
-                j.job, QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT,
-                sizeof(QDMI_Program_Format), &unsupported),
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_programs(j.job, unsupported, 1U,
+                                                   nullptr, nullptr),
             QDMI_ERROR_NOTSUPPORTED);
 
   constexpr auto invalid = QDMI_PROGRAM_FORMAT_MAX;
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
-                j.job, QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT,
-                sizeof(QDMI_Program_Format), &invalid),
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_programs(j.job, invalid, 1U, nullptr,
+                                                   nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
 }
 

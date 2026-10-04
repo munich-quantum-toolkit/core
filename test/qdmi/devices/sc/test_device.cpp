@@ -571,11 +571,9 @@ TEST_F(ScQDMISpecificationTest, JobSetParameter) {
 }
 
 TEST_F(ScQDMIJobSpecificationTest, JobSetParameter) {
-  constexpr QDMI_Program_Format value = QDMI_PROGRAM_FORMAT_QASM2;
-  EXPECT_THAT(MQT_SC_QDMI_device_job_set_parameter(
-                  job, QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT,
-                  sizeof(QDMI_Program_Format), &value),
-              testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+  EXPECT_EQ(MQT_SC_QDMI_device_job_set_parameter(
+                job, static_cast<QDMI_Device_Job_Parameter>(0), 0, nullptr),
+            QDMI_ERROR_NOTSUPPORTED);
   EXPECT_EQ(MQT_SC_QDMI_device_job_set_parameter(
                 job, QDMI_DEVICE_JOB_PARAMETER_MAX, 0, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);

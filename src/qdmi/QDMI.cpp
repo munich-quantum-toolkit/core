@@ -807,10 +807,6 @@ std::optional<Job> Device::submitProgramsImpl(
   QDMI_Job job = nullptr;
   qdmi::throwIfError(api().device_create_job(device_, &job), "Creating job");
   Job jobWrapper{job, session_};
-  qdmi::throwIfError(api().job_set_parameter(jobWrapper,
-                                             QDMI_JOB_PARAMETER_PROGRAMFORMAT,
-                                             sizeof(format), &format),
-                     "Setting program format");
   if (numShots.has_value()) {
     qdmi::throwIfError(api().job_set_parameter(jobWrapper,
                                                QDMI_JOB_PARAMETER_SHOTSNUM,

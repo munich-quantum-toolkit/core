@@ -566,10 +566,9 @@ TEST_P(DriverTest, JobSetPrograms) {
 }
 
 TEST_P(DriverJobTest, JobSetParameter) {
-  const QDMI_Program_Format value = QDMI_PROGRAM_FORMAT_QASM2;
-  EXPECT_THAT(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_PROGRAMFORMAT,
-                                     sizeof(QDMI_Program_Format), &value),
-              testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+  EXPECT_EQ(QDMI_job_set_parameter(job, static_cast<QDMI_Job_Parameter>(0), 0,
+                                   nullptr),
+            QDMI_ERROR_NOTSUPPORTED);
   const size_t numShots = 1;
   EXPECT_THAT(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_SHOTSNUM,
                                      sizeof(size_t), &numShots),
@@ -603,17 +602,20 @@ TEST_P(DriverJobTest, JobQueryProperty) {
       QDMI_job_query_property(job, QDMI_JOB_PROPERTY_ID, 0, nullptr, nullptr),
       testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
 
-  QDMI_Program_Format value = QDMI_PROGRAM_FORMAT_QASM2;
-  auto result = QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_PROGRAMFORMAT,
-                                       sizeof(QDMI_Program_Format), &value);
+  constexpr auto format = QDMI_PROGRAM_FORMAT_QASM2;
+  constexpr char program = '\0';
+  constexpr size_t programSize = 1U;
+  const void* programData = &program;
+  auto result =
+      QDMI_job_set_programs(job, format, 1U, &programSize, &programData);
   EXPECT_THAT(result, testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
   if (result == QDMI_SUCCESS) {
-    value = {};
+    QDMI_Program_Format value{};
     EXPECT_EQ(QDMI_job_query_property(job, QDMI_JOB_PROPERTY_PROGRAMFORMAT,
                                       sizeof(QDMI_Program_Format), &value,
                                       nullptr),
               QDMI_SUCCESS);
-    EXPECT_TRUE(value == QDMI_PROGRAM_FORMAT_QASM2);
+    EXPECT_EQ(value, format);
   }
   size_t numShots = 1;
   result = QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_SHOTSNUM,

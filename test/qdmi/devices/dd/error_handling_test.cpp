@@ -118,10 +118,8 @@ TEST_F(ErrorHandling, MaxEnums) {
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_query_property(
                 j.job, QDMI_DEVICE_JOB_PROPERTY_MAX, 0, nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
-  constexpr QDMI_Program_Format maxFmt = QDMI_PROGRAM_FORMAT_MAX;
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
-                j.job, QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT,
-                sizeof(QDMI_Program_Format), &maxFmt),
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_programs(
+                j.job, QDMI_PROGRAM_FORMAT_MAX, 1U, nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
 
   ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,

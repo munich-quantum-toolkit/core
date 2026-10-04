@@ -522,26 +522,6 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::setParameter(
     return QDMI_ERROR_BADSTATE;
   }
   switch (param) {
-  case QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT:
-    if (value != nullptr) {
-      if (size != sizeof(QDMI_Program_Format)) {
-        return QDMI_ERROR_INVALIDARGUMENT;
-      }
-      const auto format = *static_cast<const QDMI_Program_Format*>(value);
-      if (QDMI_IS_INVALID_ENUM_VALUE(format, QDMI_PROGRAM_FORMAT)) {
-        return QDMI_ERROR_INVALIDARGUMENT;
-      }
-      if (std::ranges::find(SUPPORTED_PROGRAM_FORMATS, format) ==
-          SUPPORTED_PROGRAM_FORMATS.end()) {
-        return QDMI_ERROR_NOTSUPPORTED;
-      }
-      if (format_ != format) {
-        programs_.clear();
-        execution_->programs.clear();
-      }
-      format_ = format;
-    }
-    return QDMI_SUCCESS;
   case QDMI_DEVICE_JOB_PARAMETER_SHOTSNUM:
     if (value != nullptr) {
       if (size != sizeof(size_t)) {

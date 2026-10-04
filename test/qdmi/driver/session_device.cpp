@@ -495,13 +495,6 @@ extern "C" int TEST_SESSION_QDMI_device_job_set_parameter(
         bytes.begin(), bytes.end());
     return QDMI_SUCCESS;
   }
-  if (parameter == QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT) {
-    if (value == nullptr || size != sizeof(QDMI_Program_Format)) {
-      return QDMI_ERROR_INVALIDARGUMENT;
-    }
-    job->format = *static_cast<const QDMI_Program_Format*>(value);
-    return QDMI_SUCCESS;
-  }
   if (parameter == QDMI_DEVICE_JOB_PARAMETER_SHOTSNUM &&
       job->format == QDMI_PROGRAM_FORMAT_CUSTOM1) {
     return QDMI_ERROR_NOTSUPPORTED;

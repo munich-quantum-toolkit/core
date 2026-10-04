@@ -481,8 +481,6 @@ namespace {
 [[nodiscard]] auto toDeviceJobParameter(const QDMI_Job_Parameter& param)
     -> QDMI_Device_Job_Parameter {
   switch (param) {
-  case QDMI_JOB_PARAMETER_PROGRAMFORMAT:
-    return QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT;
   case QDMI_JOB_PARAMETER_SHOTSNUM:
     return QDMI_DEVICE_JOB_PARAMETER_SHOTSNUM;
   case QDMI_JOB_PARAMETER_CUSTOM1:
@@ -518,7 +516,7 @@ auto QDMI_Job_impl_d::setParameter(QDMI_Job_Parameter param, const size_t size,
       QDMI_IS_INVALID_ENUM_VALUE(param, QDMI_JOB_PARAMETER)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  if (param == 1) {
+  if (param == 0 || param == 1) {
     return QDMI_ERROR_NOTSUPPORTED;
   }
   return device_->api().device_job_set_parameter(
