@@ -856,7 +856,7 @@ twoGates(const TwoQubitWeylDecomposition& target, uint64_t seed) {
 static std::optional<TwoQubitNativeDecomposition>
 decomposeSqrtISwap(const Matrix4x4& target, uint64_t seed) {
   const auto targetDecomposition =
-      TwoQubitWeylDecomposition::create(target, std::nullopt, seed);
+      TwoQubitWeylDecomposition::create(target, WEYL_DEFAULT_FIDELITY, seed);
   if (!targetDecomposition) {
     return std::nullopt;
   }
@@ -912,7 +912,7 @@ static std::optional<TwoQubitNativeDecomposition>
 decomposePauliRotations(const Matrix4x4& target,
                         CompilerTarget::Entangler entangler, uint64_t seed) {
   const auto kak =
-      TwoQubitWeylDecomposition::create(target, std::nullopt, seed);
+      TwoQubitWeylDecomposition::create(target, WEYL_DEFAULT_FIDELITY, seed);
   if (!kak) {
     return std::nullopt;
   }

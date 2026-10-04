@@ -203,8 +203,8 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   pm.addPass(std::make_unique<PrepareTargetCompilationPass>(environment, false,
                                                             mapping));
   const auto& target = environment.target();
-  pm.addPass(createInlinerPass());
-  pm.addPass(createSymbolDCEPass());
+  /// The module cleanup below owns canonicalization and dead symbols.
+  pm.addPass(createInlinerPass({}, [](OpPassManager&) {}));
   pm.addPass(createSCCPPass());
   populateQCOCleanupPipeline(pm);
   pm.addPass(qco::createUnrollLoopsForPayload());
@@ -249,8 +249,8 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
   pm.addPass(std::make_unique<PrepareTargetCompilationPass>(environment, true,
                                                             mapping));
   const auto& target = environment.target();
-  pm.addPass(createInlinerPass());
-  pm.addPass(createSymbolDCEPass());
+  /// The module cleanup below owns canonicalization and dead symbols.
+  pm.addPass(createInlinerPass({}, [](OpPassManager&) {}));
   populateQCOCleanupPipeline(pm);
   pm.addPass(qco::createLegalizeControlFlow());
   pm.addPass(qco::createDecomposeMultiControlled(target));

@@ -72,11 +72,11 @@ void populateParameterizedSingleQubitRunCompositionPatterns(
     RewritePatternSet& patterns, const CompilerTarget::SynthesisBasis& basis,
     const CompilerTarget* target = nullptr);
 
-/// Synthesize an equatorial target, carrying Z frames through diagonal gates.
-/// Runs only when the native single-qubit basis is R.
-LogicalResult synthesizeEquatorialGates(RewriterBase& rewriter,
-                                        ModuleOp moduleOp,
-                                        const CompilerTarget& target,
-                                        const GreedyRewriteConfig& config);
+/// Merge Z rotations through diagonal gates on native RZ or equatorial targets.
+/// Equatorial targets also lower single-qubit factors and absorb Z frames into
+/// R.
+LogicalResult propagateZFrames(RewriterBase& rewriter, ModuleOp moduleOp,
+                               const CompilerTarget& target,
+                               const GreedyRewriteConfig& config);
 
 } // namespace mlir::qco::decomposition

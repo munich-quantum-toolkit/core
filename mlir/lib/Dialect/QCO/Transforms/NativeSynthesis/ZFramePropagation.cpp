@@ -87,20 +87,27 @@ static bool commutesWithZFrames(UnitaryOpInterface gate) {
   return isa<RZZOp>(gate.getOperation());
 }
 
-LogicalResult synthesizeEquatorialGates(RewriterBase& rewriter,
-                                        ModuleOp moduleOp,
-                                        const CompilerTarget& target,
-                                        const GreedyRewriteConfig& config) {
-  /// Fuse constant local factors; retain symbolic rotations for frame updates.
-  RewritePatternSet patterns(rewriter.getContext());
-  populateFuseSingleQubitUnitaryRunsPatterns(
-      patterns, {.singleQubit = SingleQubitBasis::U}, &target);
-  if (failed(applyPatternsGreedily(moduleOp, std::move(patterns), config))) {
-    return failure();
-  }
+LogicalResult propagateZFrames(RewriterBase& rewriter, ModuleOp moduleOp,
+                               const CompilerTarget& target,
+                               const GreedyRewriteConfig& config) {
+  const bool equatorial =
+      target.synthesisBasis() &&
+      target.synthesisBasis()->singleQubit == SingleQubitBasis::R;
   const bool nativeRZ = llvm::all_of(target.siteIds(), [&](auto site) {
     return target.supports(CompilerTarget::GateKind::RZ, ArrayRef(&site, 1));
   });
+  if (!equatorial && !nativeRZ) {
+    return success();
+  }
+  if (equatorial) {
+    /// Fuse local factors before converting them to equatorial gates.
+    RewritePatternSet patterns(rewriter.getContext());
+    populateFuseSingleQubitUnitaryRunsPatterns(
+        patterns, {.singleQubit = SingleQubitBasis::U}, &target);
+    if (failed(applyPatternsGreedily(moduleOp, std::move(patterns), config))) {
+      return failure();
+    }
+  }
   DominanceInfo dominance;
   const WalkResult result =
       moduleOp->walk<WalkOrder::PreOrder>([&](Operation* parent) {
@@ -219,8 +226,17 @@ LogicalResult synthesizeEquatorialGates(RewriterBase& rewriter,
                 }
                 continue;
               }
-              if (gate && gate.isSingleQubit() && !isa<BarrierOp>(operation)) {
+              if (gate && gate.isSingleQubit() && !isa<BarrierOp>(operation) &&
+                  (equatorial || isa<RZOp>(operation))) {
                 auto wire = gate.getInputQubit(0);
+                if (!equatorial && !frames.contains(wire)) {
+                  auto next = dyn_cast<UnitaryOpInterface>(
+                      *gate.getOutputQubit(0).user_begin());
+                  /// Leave isolated native rotations and their angles intact.
+                  if (!next || !commutesWithZFrames(next)) {
+                    continue;
+                  }
+                }
                 if (isa<ROp>(operation) && !frames.contains(wire)) {
                   continue;
                 }

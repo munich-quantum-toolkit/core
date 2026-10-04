@@ -446,8 +446,11 @@ pauliRotationEntanglerCount(const PauliRotationSequence& sequence,
     for (const auto& term : sequence.rotations) {
       if (term.axes[0] != PauliAxis::I && term.axes[1] != PauliAxis::I) {
         const double value = *angle * term.angleScale;
-        if (std::abs(std::sin(value)) <= MATRIX_TOLERANCE ||
-            std::abs(std::cos(value)) <= MATRIX_TOLERANCE) {
+        /// Let the Weyl planner shorten near-Clifford rotations using its
+        /// fidelity policy, including negligible entangling angles.
+        const double delta = std::remainder(value, std::numbers::pi / 2.);
+        if (traceToFidelity(4. * std::cos(delta / 2.)) >=
+            WEYL_DEFAULT_FIDELITY) {
           return std::nullopt;
         }
       }

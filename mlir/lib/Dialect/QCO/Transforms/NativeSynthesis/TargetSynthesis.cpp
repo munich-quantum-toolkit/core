@@ -1480,25 +1480,29 @@ protected:
       signalPassFailure();
       return;
     }
-    if (equatorial) {
-      if (failed(decomposition::synthesizeEquatorialGates(
+    if (targetBasis && !equatorial) {
+      RewritePatternSet patterns(&getContext());
+      decomposition::populateRotationCompositionPatterns(patterns, &target);
+      decomposition::populateFuseSingleQubitUnitaryRunsPatterns(
+          patterns, *targetBasis, &target);
+      auto config = compositionConfig;
+      if (failed(applyPatternsGreedily(moduleOp, std::move(patterns),
+                                       config.setListener(&listener)))) {
+        signalPassFailure();
+        return;
+      }
+      listener.foldPending();
+    }
+    /// Propagate frames after local fusion: resynthesizing the shifted runs
+    /// can trade virtual Z gates for additional physical rotations.
+    if (targetBasis) {
+      if (failed(decomposition::propagateZFrames(
               rewriter, moduleOp, target,
               GreedyRewriteConfig{}.setListener(&listener)))) {
         signalPassFailure();
         return;
       }
       listener.foldPending();
-    }
-    if (targetBasis && !equatorial) {
-      RewritePatternSet patterns(&getContext());
-      decomposition::populateRotationCompositionPatterns(patterns, &target);
-      decomposition::populateFuseSingleQubitUnitaryRunsPatterns(
-          patterns, *targetBasis, &target);
-      if (failed(applyPatternsGreedily(moduleOp, std::move(patterns),
-                                       compositionConfig))) {
-        signalPassFailure();
-        return;
-      }
     }
     if (failed(prepareGlobalPhases(moduleOp, target))) {
       signalPassFailure();

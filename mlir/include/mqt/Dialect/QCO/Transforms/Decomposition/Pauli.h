@@ -79,8 +79,8 @@ struct PauliRotationSequence {
 [[nodiscard]] std::optional<PauliRotationSequence>
 getPauliRotations(Operation* operation);
 
-/// Cost of direct Pauli synthesis. Constant Clifford angles use the matrix
-/// planner, which can remove or shorten their entangling part.
+/// Cost of direct Pauli synthesis. Constants within the Weyl fidelity bound
+/// of a Clifford angle use the matrix planner to shorten their entangling part.
 [[nodiscard]] std::optional<size_t>
 pauliRotationEntanglerCount(const PauliRotationSequence& sequence,
                             CompilerTarget::Entangler entangler);

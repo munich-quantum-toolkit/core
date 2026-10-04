@@ -334,7 +334,8 @@ struct SynthesizedUnitary2Q {
 };
 
 /// Decomposes a two-qubit unitary using @p entangler, returning `std::nullopt`
-/// if the numerical decomposition fails.
+/// if the numerical decomposition fails. All entanglers use
+/// @ref WEYL_DEFAULT_FIDELITY for the target's Weyl specialization.
 ///
 /// SQRTISWAP uses the minimum number of square-root iSWAP gates (0--3),
 /// up to WEYL_TOLERANCE in the interaction coefficients.

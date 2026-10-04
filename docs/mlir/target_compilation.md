@@ -231,11 +231,16 @@ use two native `pi/2` rotations. Bind parameters before compilation to use
 fractional entanglers directly. Qiskit import conservatively recognizes this
 interval through its public bound predicates.
 
-Equatorial R targets use at most two R gates per single-qubit unitary. Synthesis
-carries Z rotations through diagonal entanglers and absorbs them into R axes.
-Measurement and reset discard their incoming Z frames; other boundaries retain
-the frame and global phase. RX/RZ targets prefer ZXZ to minimize physical RX
-rotations.
+Resynthesis of constant two-qubit gates uses an average gate fidelity floor of
+`1 - 1e-12` per decomposition, including direct Pauli lowering. It may remove
+small entangling angles or shorten near-Clifford rotations. This is a local
+bound, not a whole-circuit error budget; unbound angles are not approximated.
+
+Synthesis merges Z rotations through diagonal entanglers on native RZ targets.
+Equatorial R targets use at most two R gates per single-qubit unitary and absorb
+Z rotations into R axes. Measurement and reset discard their incoming Z frames;
+other boundaries retain the frame and global phase. RX/RZ targets prefer ZXZ to
+minimize physical RX rotations.
 
 ### Placements and calibration
 
