@@ -1,0 +1,242 @@
+[
+  {
+    "target": "ibm_sxz_cx",
+    "metric": "synthesis_ms",
+    "pairs": 63,
+    "median_ratio": 0.946821272537164,
+    "min_ratio": 0.07233093846389689,
+    "max_ratio": 1.0554333802878062
+  },
+  {
+    "target": "ibm_sxz_cx",
+    "metric": "export_ms",
+    "pairs": 63,
+    "median_ratio": 0.8940456185253719,
+    "min_ratio": 0.19359046567577004,
+    "max_ratio": 1.1415608997115037
+  },
+  {
+    "target": "ibm_sxz_cx",
+    "metric": "native_1q",
+    "pairs": 63,
+    "median_ratio": 0.8797931925894011,
+    "min_ratio": 0.18552088113813675,
+    "max_ratio": 1.0
+  },
+  {
+    "target": "ibm_sxz_cx",
+    "metric": "native_2q",
+    "pairs": 63,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 2.473684210526316
+  },
+  {
+    "target": "ibm_sxz_cx",
+    "metric": "depth",
+    "pairs": 63,
+    "median_ratio": 0.9214226633581473,
+    "min_ratio": 0.18046709129511676,
+    "max_ratio": 1.0
+  },
+  {
+    "target": "ibm_sxz_cx",
+    "metric": "peak_rss_mib",
+    "pairs": 63,
+    "median_ratio": 0.9763151174668029,
+    "min_ratio": 0.7616823114209147,
+    "max_ratio": 1.0037295705055111
+  },
+  {
+    "target": "ibm_sxz_cz",
+    "metric": "synthesis_ms",
+    "pairs": 63,
+    "median_ratio": 0.9935365535083285,
+    "min_ratio": 0.0733563135604733,
+    "max_ratio": 1.4302264257283743
+  },
+  {
+    "target": "ibm_sxz_cz",
+    "metric": "export_ms",
+    "pairs": 63,
+    "median_ratio": 0.953601553513633,
+    "min_ratio": 0.1885715761703565,
+    "max_ratio": 1.9630719039208226
+  },
+  {
+    "target": "ibm_sxz_cz",
+    "metric": "native_1q",
+    "pairs": 63,
+    "median_ratio": 0.9972110319181903,
+    "min_ratio": 0.6885083147182924,
+    "max_ratio": 1.600184672206833
+  },
+  {
+    "target": "ibm_sxz_cz",
+    "metric": "native_2q",
+    "pairs": 63,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 2.473684210526316
+  },
+  {
+    "target": "ibm_sxz_cz",
+    "metric": "depth",
+    "pairs": 63,
+    "median_ratio": 1.0,
+    "min_ratio": 0.9128289713760236,
+    "max_ratio": 2.3943481965350752
+  },
+  {
+    "target": "ibm_sxz_cz",
+    "metric": "peak_rss_mib",
+    "pairs": 63,
+    "median_ratio": 0.978246539222149,
+    "min_ratio": 0.8994902627107567,
+    "max_ratio": 1.3069602563228577
+  },
+  {
+    "target": "iqm_r_cz",
+    "metric": "synthesis_ms",
+    "pairs": 39,
+    "median_ratio": 0.9852895475698014,
+    "min_ratio": 0.13951773806063406,
+    "max_ratio": 1.2169720247114377
+  },
+  {
+    "target": "iqm_r_cz",
+    "metric": "export_ms",
+    "pairs": 39,
+    "median_ratio": 0.623634132911014,
+    "min_ratio": 0.2986303005307314,
+    "max_ratio": 0.8679416329852111
+  },
+  {
+    "target": "iqm_r_cz",
+    "metric": "native_1q",
+    "pairs": 39,
+    "median_ratio": 0.3333333333333333,
+    "min_ratio": 0.10621624483744573,
+    "max_ratio": 0.5306122448979592
+  },
+  {
+    "target": "iqm_r_cz",
+    "metric": "native_2q",
+    "pairs": 39,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 2.473684210526316
+  },
+  {
+    "target": "iqm_r_cz",
+    "metric": "depth",
+    "pairs": 39,
+    "median_ratio": 0.5,
+    "min_ratio": 0.23091296681316947,
+    "max_ratio": 0.96875
+  },
+  {
+    "target": "iqm_r_cz",
+    "metric": "peak_rss_mib",
+    "pairs": 39,
+    "median_ratio": 0.9690968235744355,
+    "min_ratio": 0.6938720867965822,
+    "max_ratio": 0.9992372906216082
+  },
+  {
+    "target": "rigetti_rx_cz",
+    "metric": "synthesis_ms",
+    "pairs": 39,
+    "median_ratio": 0.9873431722337468,
+    "min_ratio": 0.16136251317828293,
+    "max_ratio": 1.3085356763925449
+  },
+  {
+    "target": "rigetti_rx_cz",
+    "metric": "export_ms",
+    "pairs": 39,
+    "median_ratio": 0.9154207788872536,
+    "min_ratio": 0.44030285189796886,
+    "max_ratio": 1.3819342249324038
+  },
+  {
+    "target": "rigetti_rx_cz",
+    "metric": "native_1q",
+    "pairs": 39,
+    "median_ratio": 0.9559659090909091,
+    "min_ratio": 0.6885083147182924,
+    "max_ratio": 1.2240771220315072
+  },
+  {
+    "target": "rigetti_rx_cz",
+    "metric": "native_2q",
+    "pairs": 39,
+    "median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 2.473684210526316
+  },
+  {
+    "target": "rigetti_rx_cz",
+    "metric": "depth",
+    "pairs": 39,
+    "median_ratio": 1.0,
+    "min_ratio": 0.9128581646207068,
+    "max_ratio": 1.7024539877300613
+  },
+  {
+    "target": "rigetti_rx_cz",
+    "metric": "peak_rss_mib",
+    "pairs": 39,
+    "median_ratio": 0.9748092791530437,
+    "min_ratio": 0.8070572428667397,
+    "max_ratio": 1.11754382163673
+  },
+  {
+    "target": "rxrz_rzz_unbounded",
+    "metric": "synthesis_ms",
+    "pairs": 63,
+    "median_ratio": 0.9616542521862802,
+    "min_ratio": 0.07666683569869637,
+    "max_ratio": 1.0643931296443316
+  },
+  {
+    "target": "rxrz_rzz_unbounded",
+    "metric": "export_ms",
+    "pairs": 63,
+    "median_ratio": 0.7045211310073848,
+    "min_ratio": 0.2237662178636403,
+    "max_ratio": 1.134159985734914
+  },
+  {
+    "target": "rxrz_rzz_unbounded",
+    "metric": "native_1q",
+    "pairs": 63,
+    "median_ratio": 0.5567978533094812,
+    "min_ratio": 0.14359820796981843,
+    "max_ratio": 0.9671256454388985
+  },
+  {
+    "target": "rxrz_rzz_unbounded",
+    "metric": "native_2q",
+    "pairs": 63,
+    "median_ratio": 1.0,
+    "min_ratio": 0.5096153846153846,
+    "max_ratio": 1.236842105263158
+  },
+  {
+    "target": "rxrz_rzz_unbounded",
+    "metric": "depth",
+    "pairs": 63,
+    "median_ratio": 0.7317073170731707,
+    "min_ratio": 0.20161550888529886,
+    "max_ratio": 0.9992
+  },
+  {
+    "target": "rxrz_rzz_unbounded",
+    "metric": "peak_rss_mib",
+    "pairs": 63,
+    "median_ratio": 0.9684737229862476,
+    "min_ratio": 0.6711108448393459,
+    "max_ratio": 1.0544386103327257
+  }
+]

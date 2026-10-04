@@ -1,6 +1,8 @@
 🤖 *AI text below* 🤖
 
-# Core PR #2578: synthesis evaluation, 2026-10-03
+# Core PR #2578: synthesis evaluations
+
+Latest: [large-circuit evaluation, 24–156 qubits, 2026-10-04](large-20261004/report.md), including scaling curves and bottleneck diagnostics.
 
 Results for [Core PR #2578](https://github.com/munich-quantum-toolkit/core/pull/2578), comparing upstream main `32f1b331430ce4d580e2780f6fa63e60f6b9a0a3` with the synthesis implementation published in `a5c0292727ecf3e34dc713ba966327e0a33067f2`.
 

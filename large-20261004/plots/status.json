@@ -1,0 +1,10 @@
+{
+  "main": {
+    "target_unsupported": 68,
+    "exported": 267,
+    "synthesis_failed": 63
+  },
+  "pr2578": {
+    "exported": 398
+  }
+}
