@@ -314,7 +314,7 @@ struct EraseEmptyInv final : OpRewritePattern<InvOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(InvOp op,
                                 PatternRewriter& rewriter) const override {
-    if (op.getNumBodyUnitaries() != 0) {
+    if (!op.getBody()->getOps<UnitaryOpInterface>().empty()) {
       return failure();
     }
 

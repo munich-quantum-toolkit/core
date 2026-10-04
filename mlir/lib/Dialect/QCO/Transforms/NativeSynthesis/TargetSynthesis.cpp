@@ -1283,6 +1283,7 @@ protected:
       return;
     }
     IRRewriter rewriter(&getContext());
+    decomposition::mergeDiagonalRotations(rewriter, moduleOp);
     NativeCostAnalysis analysis(compilationSeed(moduleOp, 2023));
     const auto changed =
         fuseGateRuns(rewriter, moduleOp, *basis, analysis,

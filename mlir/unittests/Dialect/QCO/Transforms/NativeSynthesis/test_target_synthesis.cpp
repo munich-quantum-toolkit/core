@@ -2704,19 +2704,21 @@ TEST_F(TargetSynthesisTest, RuntimePauliRotationsShareNativeSynthesisAndCosts) {
 }
 
 TEST_F(TargetSynthesisTest, CommutingPauliRunsPreservePhaseAndNativeBounds) {
-  for (const auto& body : {
-           R"mlir(
+  for (const auto& [body, expectedEntanglers] : {
+           std::pair{R"mlir(
              %u0, %u1 = qco.rzx(%a) %q0, %q1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
              %v1, %v0 = qco.ryy(%b) %u1, %u0 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
              %out0, %out1 = qco.rzx(%offset) %v0, %v1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
            )mlir",
-           R"mlir(
+                     2U},
+           std::pair{R"mlir(
              %negative = arith.negf %a : f64
              %u0, %u1 = qco.rzz(%a) %q0, %q1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
              %v1, %v0 = qco.rzz(%negative) %u1, %u0 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
              %out0, %out1 = qco.rzz(%offset) %v0, %v1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
            )mlir",
-           R"mlir(
+                     2U},
+           std::pair{R"mlir(
              %u0, %u1 = qco.ctrl(%q0) targets(%arg = %q1) {
                %p = qco.p(%a) %arg : !qco.qubit -> !qco.qubit
                qco.yield %p : !qco.qubit
@@ -2726,6 +2728,19 @@ TEST_F(TargetSynthesisTest, CommutingPauliRunsPreservePhaseAndNativeBounds) {
                qco.yield %p : !qco.qubit
              } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
            )mlir",
+                     2U},
+           std::pair{R"mlir(
+             %u0, %u1 = qco.rxx(%a) %q0, %q1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+             %v1, %v0 = qco.ryy(%b) %u1, %u0 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+             %out0, %out1 = qco.rzz(%offset) %v0, %v1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+           )mlir",
+                     3U},
+           std::pair{R"mlir(
+             %u0, %u1 = qco.rzx(%a) %q0, %q1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+             %v0, %v1 = qco.ryy(%b) %u0, %u1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+             %out1, %out0 = qco.rzx(%offset) %v1, %v0 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+           )mlir",
+                     3U},
        }) {
     SCOPED_TRACE(body);
     const std::string source = std::string(R"mlir(
@@ -2767,7 +2782,7 @@ TEST_F(TargetSynthesisTest, CommutingPauliRunsPreservePhaseAndNativeBounds) {
       synthesized->walk([&](mlir::qco::UnitaryOpInterface op) {
         entanglers += static_cast<size_t>(op.isTwoQubit());
       });
-      EXPECT_LE(entanglers, 2U);
+      EXPECT_LE(entanglers, expectedEntanglers);
       for (const auto& angles : {
                std::array{0., 0.},
                std::array{.37, -1.23},
@@ -2787,6 +2802,57 @@ TEST_F(TargetSynthesisTest, CommutingPauliRunsPreservePhaseAndNativeBounds) {
         }
         expectEquivalent(expected, actual);
       }
+    }
+  }
+}
+
+TEST_F(TargetSynthesisTest, MergesDiagonalPairsWithoutCrossingBarriers) {
+  for (bool barrier : {false, true}) {
+    SCOPED_TRACE(barrier);
+    const std::string source = std::string(R"mlir(
+      module {
+        func.func @main(%a: f64, %b: f64) -> (!qco.qubit, !qco.qubit, !qco.qubit) {
+          %q0 = qco.static 0 : !qco.qubit
+          %q1 = qco.static 1 : !qco.qubit
+          %q2 = qco.static 2 : !qco.qubit
+          %negative = arith.negf %a : f64
+          %u0, %u1 = qco.rzz(%a) %q0, %q1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+          %v1, %v2 = qco.rzz(%b) %u1, %q2 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+    )mlir") +
+                               (barrier ? R"mlir(
+          %v0 = qco.barrier %u0 : !qco.qubit -> !qco.qubit
+    )mlir"
+                                        : R"mlir(
+          %v0 = qco.rz(%b) %u0 : !qco.qubit -> !qco.qubit
+    )mlir") + R"mlir(
+          %out0, %out1 = qco.rzz(%negative) %v0, %v1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+          return %out0, %out1, %v2 : !qco.qubit, !qco.qubit, !qco.qubit
+        }
+      }
+    )mlir";
+    auto original = mlir::parseSourceString<ModuleOp>(source, context.get());
+    ASSERT_TRUE(original);
+    auto fused = OwningOpRef<ModuleOp>(original->clone());
+    mlir::PassManager manager(context.get());
+    manager.addPass(mlir::qco::createFuseTwoQubitGates());
+    ASSERT_TRUE(mlir::succeeded(manager.run(*fused)));
+    ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*fused)));
+    EXPECT_EQ(countOps<mlir::qco::RZZOp>(*fused), barrier ? 3U : 1U);
+    for (const auto& angles : {std::array{.31, -.43}, std::array{-7.1, 2.4}}) {
+      auto expected = OwningOpRef<ModuleOp>(original->clone());
+      auto actual = OwningOpRef<ModuleOp>(fused->clone());
+      for (auto moduleOp : {*expected, *actual}) {
+        auto function = mainFunction(moduleOp);
+        mlir::OpBuilder builder(context.get());
+        builder.setInsertionPointToStart(&function.front());
+        for (size_t index = 0; index < angles.size(); ++index) {
+          auto value = mlir::arith::ConstantOp::create(
+              builder, function.getLoc(),
+              builder.getF64FloatAttr(angles[index]));
+          function.getArgument(index).replaceAllUsesWith(value);
+        }
+      }
+      expectEquivalent(expected, actual);
     }
   }
 }

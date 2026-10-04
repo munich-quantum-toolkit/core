@@ -25,6 +25,7 @@
 
 namespace mlir {
 class Operation;
+class ModuleOp;
 class OpBuilder;
 class Location;
 class RewriterBase;
@@ -32,6 +33,9 @@ class PatternRewriter;
 } // namespace mlir
 
 namespace mlir::qco::decomposition {
+
+/// Merge equal diagonal rotations across diagonal gates on other pairs.
+void mergeDiagonalRotations(RewriterBase& rewriter, ModuleOp moduleOp);
 
 enum class PauliAxis : uint8_t { I, X, Y, Z };
 

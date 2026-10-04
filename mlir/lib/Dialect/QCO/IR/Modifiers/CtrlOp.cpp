@@ -96,10 +96,7 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
 
     // Every qubit output of the original control follows its input qubit to the
     // corresponding output of the merged control.
-    rewriter.replaceOp(op,
-                       llvm::map_to_vector(op.getInputQubits(), [&](Value in) {
-                         return merged.getOutputForInput(in);
-                       }));
+    qco::detail::replacePermutedModifier(op, merged, rewriter);
     return success();
   }
 };
@@ -179,7 +176,7 @@ struct EraseEmptyCtrl final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
-    if (op.getNumBodyUnitaries() != 0) {
+    if (!op.getBody()->getOps<UnitaryOpInterface>().empty()) {
       return failure();
     }
 

@@ -183,55 +183,6 @@ struct RemoveStaticCondition : public OpRewritePattern<IfOp> {
   }
 };
 
-/// Let each branch use the condition value known inside that branch.
-struct ConditionPropagation : public OpRewritePattern<IfOp> {
-  using OpRewritePattern<IfOp>::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(IfOp op,
-                                PatternRewriter& rewriter) const override {
-    // Early exit if the condition is constant since replacing a constant
-    // in the body with another constant isn't a simplification.
-    if (matchPattern(op.getCondition(), m_Constant())) {
-      return failure();
-    }
-
-    bool changed = false;
-    Type i1Ty = rewriter.getI1Type();
-
-    // These variables serve to prevent creating duplicate constants
-    // and hold constant true or false values.
-    Value constantTrue = nullptr;
-    Value constantFalse = nullptr;
-
-    for (auto& use : llvm::make_early_inc_range(op.getCondition().getUses())) {
-      if (op.getThenRegion().isAncestor(use.getOwner()->getParentRegion())) {
-        changed = true;
-
-        if (!constantTrue) {
-          constantTrue = arith::ConstantOp::create(
-              rewriter, op.getLoc(), i1Ty, rewriter.getIntegerAttr(i1Ty, 1));
-        }
-
-        rewriter.modifyOpInPlace(use.getOwner(),
-                                 [&] { use.set(constantTrue); });
-      } else if (op.getElseRegion().isAncestor(
-                     use.getOwner()->getParentRegion())) {
-        changed = true;
-
-        if (!constantFalse) {
-          constantFalse = arith::ConstantOp::create(
-              rewriter, op.getLoc(), i1Ty, rewriter.getIntegerAttr(i1Ty, 0));
-        }
-
-        rewriter.modifyOpInPlace(use.getOwner(),
-                                 [&] { use.set(constantFalse); });
-      }
-    }
-
-    return success(changed);
-  }
-};
-
 /// Forward redundant classical results.
 ///
 /// Replace a result with a value yielded by both branches or with an earlier
@@ -317,8 +268,12 @@ struct RemoveUnusedClassicalResults : public OpRewritePattern<IfOp> {
 
 void IfOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                        MLIRContext* context) {
-  results.add<RemoveStaticCondition, ConditionPropagation,
-              ForwardClassicalResults, RemoveUnusedClassicalResults>(context);
+  populateFoldStaticIfPatterns(results);
+  results.add<ForwardClassicalResults, RemoveUnusedClassicalResults>(context);
+}
+
+void mlir::qco::populateFoldStaticIfPatterns(RewritePatternSet& patterns) {
+  patterns.add<RemoveStaticCondition>(patterns.getContext());
 }
 
 LogicalResult IfOp::verify() {

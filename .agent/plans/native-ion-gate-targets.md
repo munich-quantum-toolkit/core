@@ -1,7 +1,8 @@
 # Native target synthesis
 
-Status: implemented and validated. Performance measurements, frozen inputs, and
-plots are maintained separately from the source PR.
+Status: implemented and validated locally. Symbolic Cartan synthesis, cross-pair
+diagonal merging, and canonicalization scheduling are complete. The full frozen
+comparison against main is recorded outside the PR.
 
 ## Scope and ownership
 
@@ -23,9 +24,12 @@ Pauli axes and scalar angles describe elementary rotations. Constant Clifford
 frames change axes without runtime trigonometry. An unrestricted native Pauli
 entangler realizes each two-qubit rotation in one instruction. A fixed Clifford
 entangler sandwiches local rotations to realize one or two commuting Pauli
-products with two native gates. SQRTISWAP retains its separate, numerically
-stable two-gate identity. P and CP carry explicit global phase. Numerical KAK
-owns constant-led runs; symbolic composition requires a reduction in native
+products with two native gates. Three independent products reuse the existing
+three-entangler analytic template. Equal RZZ, controlled-P, and controlled-RZ
+rotations combine across diagonal gates before pairwise synthesis; controlled RZ
+keeps its ordered operands. SQRTISWAP retains its separate, numerically stable
+two-gate identity. P and CP carry explicit global phase. Numerical KAK owns
+constant-led runs; symbolic composition requires a reduction in native
 entanglers. Single- and two-qubit composition share a traversal, with generated
 wire sites tracked by the synthesis listener.
 
@@ -55,7 +59,16 @@ listener so erased constants cannot remain cached.
 The module cleanup owns canonicalization and dead symbols after inlining; the
 inliner needs no separate callable-optimization pipeline. Defer dead-value
 cleanup until after placement, which can change structured-control-flow results.
-Generic QCO cleanup retains its liveness pass.
+Generic QCO cleanup retains its liveness pass. Classical load forwarding and
+branch facts use one scoped walk before cleanup and after unrolling. Generic
+canonicalization keeps adjacent load folds. Definitions are visited before users
+so forwarded values do not trigger repeated bottom-up arithmetic scans. Payload
+branch folding registers only the QCO static-condition rewrite.
+
+Scalarize all eligible tensor registers in a control-flow signature together.
+Keep distinct constant indices, complete reinsertion, and ordered wire mappings;
+while loops may permute the before/after signatures. Modifier rewrites build one
+input/output map and stop body searches after the first unitary.
 
 Normalize each constant-index tensor chain in one rewrite, forwarding repeated
 slot accesses before moving the remaining inserts. Stop at dynamic indices and
@@ -72,13 +85,19 @@ library.
 
 ## Validation
 
-The complete C++ suite passes 3922 tests, with one existing job-ID test skipped.
-Python MLIR/Qiskit tests pass all 791 cases. The frozen smaller benchmark suite
-produces 400 validated exports. Oracles cover full phase, native constraints,
-ordered wires, scalar dominance, barriers, large finite angles, and exporter
-parameter identity. Repository lint and whole-file C++ lint pass. Regression
-checks preserve physical rotation counts when Z frames move across diagonal
-entanglers.
+The complete C++ suite completes 3925 entries without failures; one existing
+job-ID test is skipped. All 985 Python MLIR/Qiskit tests pass. Repository lint
+and whole-file C++ lint pass. Regression oracles cover phase, native
+constraints, wire order, classical-memory invalidation, scoped branch facts,
+tensor-loop signatures, scalar dominance, barriers, and exporter parameter
+identity.
+
+The complete frozen comparison reruns 400 smaller and 398 larger cases on each
+revision. All 798 PR cases export and validate. Main has 271 validated smaller
+exports and 267 larger exports. Smaller-circuit checks use phase-sensitive
+matrices, sampled states, or reference output distributions. Separate stress
+inputs check load forwarding, shared branch conditions, and batched tensor
+scalarization without timing assertions in the unit suite.
 
 Large-circuit evaluation uses 68 frozen inputs at 24, 36, 54, 104, and 156
 qubits across seven native contracts. Release builds use LLVM/MLIR 23.1 and

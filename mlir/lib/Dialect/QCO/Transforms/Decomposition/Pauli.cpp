@@ -21,10 +21,14 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Location.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/Visitors.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
 
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVectorExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -37,6 +41,7 @@
 #include <iterator>
 #include <numbers>
 #include <optional>
+#include <tuple>
 #include <utility>
 #include <variant>
 
@@ -428,6 +433,121 @@ static void hoistPauliAngle(RewriterBase& rewriter, Operation* operation) {
   }
 }
 
+void mergeDiagonalRotations(RewriterBase& rewriter, ModuleOp moduleOp) {
+  moduleOp->walk<WalkOrder::PreOrder>([&](Operation* parent) {
+    if (isa<UnitaryOpInterface>(parent)) {
+      return WalkResult::skip();
+    }
+    for (Region& region : parent->getRegions()) {
+      for (Block& block : region) {
+        struct Group {
+          SmallVector<Operation*> operations;
+          SmallVector<RotationAngleTerm> angles;
+        };
+        DenseMap<Value, size_t> wires;
+        DenseMap<std::tuple<size_t, size_t, unsigned>, size_t> indices;
+        SmallVector<Group, 4> groups;
+        size_t nextWire = 0;
+        const auto flush = [&] {
+          for (auto& group : groups) {
+            if (group.operations.size() < 2) {
+              continue;
+            }
+            for (auto* operation : group.operations) {
+              hoistPauliAngle(rewriter, operation);
+            }
+            simplifyRotationAngles(group.angles);
+            auto* last = group.operations.back();
+            if (!group.angles.empty()) {
+              rewriter.setInsertionPoint(last);
+              Value angle =
+                  emitRotationAngleSum(rewriter, last->getLoc(), group.angles);
+              auto gate = cast<UnitaryOpInterface>(last);
+              if (auto controlled = dyn_cast<CtrlOp>(last)) {
+                gate = mqt::getSoleBodyUnitary<UnitaryOpInterface>(
+                    *controlled.getBody());
+              }
+              rewriter.modifyOpInPlace(gate, [&] {
+                TypeSwitch<Operation*>(gate).Case<RZZOp, RZOp, POp>(
+                    [&](auto rotation) {
+                      rotation.getThetaMutable().assign(angle);
+                    });
+              });
+              group.operations.pop_back();
+            }
+            for (auto* operation : llvm::reverse(group.operations)) {
+              rewriter.replaceOp(
+                  operation,
+                  cast<UnitaryOpInterface>(operation).getInputQubits());
+            }
+          }
+          groups.clear();
+          indices = decltype(indices){};
+          wires = decltype(wires){};
+        };
+        for (Operation& operation : llvm::make_early_inc_range(block)) {
+          auto gate = dyn_cast<UnitaryOpInterface>(operation);
+          if (!gate) {
+            if (!isMemoryEffectFree(&operation) ||
+                operation.getNumRegions() != 0) {
+              flush();
+            }
+            continue;
+          }
+          auto body = gate;
+          if (auto controlled = dyn_cast<CtrlOp>(operation)) {
+            body = controlled.getNumControls() == 1 &&
+                           controlled.getNumTargets() == 1
+                       ? mqt::getSoleBodyUnitary<UnitaryOpInterface>(
+                             *controlled.getBody())
+                       : UnitaryOpInterface{};
+          }
+          if (!body || !isa<IdOp, ZOp, SOp, SdgOp, TOp, TdgOp, RZOp, POp, RZZOp,
+                            GPhaseOp>(body.getOperation())) {
+            flush();
+            continue;
+          }
+          SmallVector<size_t, 2> operands;
+          for (Value input : gate.getInputQubits()) {
+            auto [position, inserted] = wires.try_emplace(input, nextWire);
+            if (inserted) {
+              ++nextWire;
+            }
+            operands.push_back(position->second);
+            wires.erase(position);
+          }
+          for (auto [output, wire] :
+               llvm::zip_equal(gate.getOutputQubits(), operands)) {
+            wires.try_emplace(output, wire);
+          }
+          if (operands.size() != 2 ||
+              !isa<RZZOp, RZOp, POp>(body.getOperation())) {
+            continue;
+          }
+          /// Controlled RZ is directional; controlled P and RZZ are symmetric.
+          const unsigned kind = isa<RZZOp>(body.getOperation())  ? 0
+                                : isa<RZOp>(body.getOperation()) ? 1
+                                                                 : 2;
+          if (kind != 1 && operands[0] > operands[1]) {
+            std::swap(operands[0], operands[1]);
+          }
+          auto [found, inserted] = indices.try_emplace(
+              std::tuple{operands[0], operands[1], kind}, groups.size());
+          if (inserted) {
+            groups.emplace_back();
+          }
+          auto& group = groups[found->second];
+          group.operations.push_back(&operation);
+          group.angles.push_back(
+              {.value = getPauliRotations(&operation)->angle});
+        }
+        flush();
+      }
+    }
+    return WalkResult::advance();
+  });
+}
+
 SmallVector<Value, 2>
 emitPauliRotations(RewriterBase& rewriter, Operation* operation,
                    const PauliRotationSequence& sequence,
@@ -545,18 +665,10 @@ fusePauliRotationRun(PatternRewriter& rewriter, Operation* head,
     if (!cost) {
       break;
     }
-    const auto entangling = llvm::count_if(
-        groups, [](const auto& group) { return group.entangling(); });
     if (llvm::any_of(sequence->rotations, [&](const auto& term) {
-          return llvm::any_of(groups,
-                              [&](const auto& group) {
-                                return !commute(term.axes, group.axes);
-                              }) ||
-                 (entangling == 2 && term.axes[0] != PauliAxis::I &&
-                  term.axes[1] != PauliAxis::I &&
-                  llvm::none_of(groups, [&](const auto& group) {
-                    return group.axes == term.axes;
-                  }));
+          return llvm::any_of(groups, [&](const auto& group) {
+            return !commute(term.axes, group.axes);
+          });
         })) {
       break;
     }
@@ -589,7 +701,7 @@ fusePauliRotationRun(PatternRewriter& rewriter, Operation* head,
   if (operations.size() < 2) {
     return failure();
   }
-  SmallVector<const PauliGroup*, 2> entangling;
+  SmallVector<const PauliGroup*, 3> entangling;
   size_t combinedCost = 0;
   for (auto& group : groups) {
     simplifyRotationAngles(group.angle);
@@ -609,9 +721,9 @@ fusePauliRotationRun(PatternRewriter& rewriter, Operation* head,
     }
   }
   const bool shared =
-      entangling.size() == 2 && combinedCost > 2 &&
+      entangling.size() >= 2 && combinedCost > entangling.size() &&
       basis.entangler->gate != CompilerTarget::GateKind::SQRTISWAP;
-  if ((shared ? 2 : combinedCost) >= separateCost) {
+  if ((shared ? entangling.size() : combinedCost) >= separateCost) {
     return failure();
   }
   for (auto* operation : operations) {
@@ -620,7 +732,36 @@ fusePauliRotationRun(PatternRewriter& rewriter, Operation* head,
   rewriter.setInsertionPoint(operations.back());
   auto loc = head->getLoc();
   auto outputs = llvm::to_vector<2>(first.getInputQubits());
-  if (shared) {
+  if (shared && entangling.size() == 3) {
+    const size_t index0 = reverse ? 1 : 0;
+    const size_t index1 = reverse ? 0 : 1;
+    const std::array frames{
+        pauliPairFrame(entangling[0]->axes[index0], entangling[1]->axes[index0],
+                       PauliAxis::X, PauliAxis::Y),
+        pauliPairFrame(entangling[0]->axes[index1], entangling[1]->axes[index1],
+                       PauliAxis::X, PauliAxis::Y),
+    };
+    std::array angles{
+        emitRotationAngleSum(rewriter, loc, entangling[0]->angle),
+        emitRotationAngleSum(rewriter, loc, entangling[1]->angle),
+        emitRotationAngleSum(rewriter, loc, entangling[2]->angle),
+    };
+    const auto z = ZOp::getUnitaryMatrix();
+    const bool firstPositive =
+        (frames[0] * z * frames[0].adjoint())
+            .isApprox(pauliMatrix(entangling[2]->axes[index0]));
+    const bool secondPositive =
+        (frames[1] * z * frames[1].adjoint())
+            .isApprox(pauliMatrix(entangling[2]->axes[index1]));
+    if (firstPositive != secondPositive) {
+      angles[2] = rewriter.createOrFold<arith::NegFOp>(loc, angles[2]);
+    }
+    const auto result = cachedNativeBasisDecomposer(basis.entangler->gate)
+                            .emitCartan(rewriter, loc, outputs[index0],
+                                        outputs[index1], angles, frames, basis);
+    outputs[index0] = result[0];
+    outputs[index1] = result[1];
+  } else if (shared) {
     const auto axes = conjugatedPaulis(basis.entangler->gate);
     const size_t index0 = reverse ? 1 : 0;
     const size_t index1 = reverse ? 0 : 1;

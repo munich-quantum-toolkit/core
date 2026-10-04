@@ -507,7 +507,7 @@ struct EraseEmptyPow final : OpRewritePattern<PowOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
-    if (op.getNumBodyUnitaries() != 0) {
+    if (!op.getBody()->getOps<UnitaryOpInterface>().empty()) {
       return failure();
     }
 

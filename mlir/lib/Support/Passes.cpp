@@ -73,6 +73,7 @@ void registerMQTCompilerPasses() {
     qco::registerUnrollLoopsForPayload();
     qco::registerVerifyTargetConformance();
     mqt::registerNormalizeGlobalPhases();
+    mqt::registerSimplifyClassicalControl();
     mqt::registerUnrollModifiers();
     qc::registerShrinkQubitRegistersPass();
     qtensor::registerShrinkQTensorToFitPass();
@@ -159,7 +160,9 @@ LogicalResult runWithCompilationOptions(PassManager& pm, ModuleOp moduleOp,
 }
 
 void populateQCExportPipeline(OpPassManager& pm) {
-  pm.addPass(createCanonicalizerPass());
+  pm.addPass(mlir::mqt::createSimplifyClassicalControl());
+  pm.addPass(
+      createCanonicalizerPass(GreedyRewriteConfig{}.setUseTopDownTraversal()));
   pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
   pm.addPass(createCSEPass());
   pm.addPass(qc::createShrinkQubitRegistersPass());
@@ -172,8 +175,10 @@ void populateQCCleanupPipeline(OpPassManager& pm) {
 }
 
 void populateQCOCleanupPipeline(OpPassManager& pm, bool removeDeadValues) {
+  pm.addPass(mlir::mqt::createSimplifyClassicalControl());
   pm.addPass(createCanonicalizerPass(
-      GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit)));
+      GreedyRewriteConfig{}.setUseTopDownTraversal().setMaxIterations(
+          GreedyRewriteConfig::kNoLimit)));
   pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
   pm.addPass(createCSEPass());
   pm.addPass(qtensor::createShrinkQTensorToFitPass());

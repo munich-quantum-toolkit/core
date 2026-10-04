@@ -15,6 +15,9 @@
 
 namespace mlir::mqt {
 
+/// Forward block-local classical memory and propagate scoped QCO conditions.
+void simplifyClassicalControl(Operation* operation);
+
 #define GEN_PASS_DECL
 #include "mqt/Dialect/MQT/Transforms/Passes.h.inc" // IWYU pragma: export
 

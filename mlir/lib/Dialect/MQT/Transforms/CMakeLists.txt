@@ -9,12 +9,14 @@
 add_mlir_library(
   MLIRMQTTransforms
   NormalizeGlobalPhases.cpp
+  SimplifyClassicalControl.cpp
   UnrollModifiers.cpp
   ADDITIONAL_HEADER_DIRS
   ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/MQT/Transforms
   LINK_LIBS
   PRIVATE
   MLIRArithDialect
+  MLIRCBitDialect
   MLIRFuncInlinerExtension
   MLIRIR
   MLIRLLVMIRTransforms

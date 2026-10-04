@@ -23,6 +23,7 @@
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Transforms/RegionUtils.h"
 
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVectorExtras.h"
@@ -162,3 +163,17 @@ SmallVector<Value> inlineNarrowedBody(Block& body, ValueRange qubits,
 }
 
 } // namespace mlir::qco::detail
+
+void mlir::qco::detail::replacePermutedModifier(UnitaryOpInterface original,
+                                                UnitaryOpInterface replacement,
+                                                RewriterBase& rewriter) {
+  DenseMap<Value, Value> outputs;
+  for (auto [input, output] : llvm::zip_equal(replacement.getInputQubits(),
+                                              replacement.getOutputQubits())) {
+    outputs.try_emplace(input, output);
+  }
+  rewriter.replaceOp(original, llvm::map_to_vector(original.getInputQubits(),
+                                                   [&](Value input) {
+                                                     return outputs.at(input);
+                                                   }));
+}

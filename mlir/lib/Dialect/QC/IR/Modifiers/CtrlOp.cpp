@@ -138,7 +138,7 @@ struct EraseEmptyCtrl final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
-    if (op.getNumBodyUnitaries() != 0) {
+    if (!op.getBody()->getOps<UnitaryOpInterface>().empty()) {
       return failure();
     }
 

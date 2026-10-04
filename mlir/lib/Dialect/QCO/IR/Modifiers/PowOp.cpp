@@ -296,10 +296,7 @@ struct MergeNestedPow final : OpRewritePattern<PowOp> {
     // The merged pow's operands may be a permutation of the outer pow's, so map
     // each original qubit output to the merged pow's output for the same input
     // rather than replacing positionally.
-    rewriter.replaceOp(op,
-                       llvm::map_to_vector(op.getInputQubits(), [&](Value in) {
-                         return newPow.getOutputForInput(in);
-                       }));
+    qco::detail::replacePermutedModifier(op, newPow, rewriter);
     return success();
   }
 };
@@ -356,10 +353,7 @@ struct MoveCtrlOutsidePow final : OpRewritePattern<PowOp> {
 
     // Each qubit output of the power modifier follows its input qubit to the
     // corresponding output of the new control modifier.
-    rewriter.replaceOp(op,
-                       llvm::map_to_vector(op.getInputQubits(), [&](Value in) {
-                         return newCtrl.getOutputForInput(in);
-                       }));
+    qco::detail::replacePermutedModifier(op, newCtrl, rewriter);
     return success();
   }
 };
@@ -581,7 +575,7 @@ struct EraseEmptyPow final : OpRewritePattern<PowOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
-    if (op.getNumBodyUnitaries() != 0) {
+    if (!op.getBody()->getOps<UnitaryOpInterface>().empty()) {
       return failure();
     }
 

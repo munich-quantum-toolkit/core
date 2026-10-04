@@ -82,7 +82,7 @@ static constexpr Matrix4x4 CANONICAL_CONTROLLED_X =
 static constexpr Matrix4x4 CANONICAL_CONTROLLED_Z =
     Matrix4x4::fromDiagonal(1., 1., 1., -1.);
 
-static const TwoQubitBasisDecomposer&
+const TwoQubitBasisDecomposer&
 cachedNativeBasisDecomposer(const CompilerTarget::GateKind entangler) {
   using GateKind = CompilerTarget::GateKind;
   switch (entangler) {

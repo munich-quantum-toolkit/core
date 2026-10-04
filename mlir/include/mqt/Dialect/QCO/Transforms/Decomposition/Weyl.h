@@ -28,6 +28,10 @@
 #include <cstdint>
 #include <optional>
 
+namespace mlir {
+class RewriterBase;
+}
+
 namespace mlir::qco::decomposition {
 
 /// Tolerance for complex symmetric `M2` diagonalization.
@@ -231,6 +235,15 @@ public:
                   std::optional<std::uint8_t> numBasisGateUses = std::nullopt,
                   uint64_t seed = 2023) const;
 
+  /// Emit RXX(x) RYY(y) RZZ(z), conjugated by local Clifford frames,
+  /// with three applications of a super-controlled fixed basis gate.
+  /// Pauli rotation bases use their pi/2 interaction.
+  [[nodiscard]] SmallVector<Value, 2>
+  emitCartan(RewriterBase& rewriter, Location loc, Value qubit0, Value qubit1,
+             std::array<Value, 3> angles,
+             const std::array<Matrix2x2, 2>& frames,
+             const CompilerTarget::SynthesisBasis& basis) const;
+
 private:
   /// Precomputed single-qubit templates for super-controlled basis
   /// synthesis.
@@ -314,6 +327,10 @@ private:
   bool isSuperControlled{};
   SmbPrecomputed smb{};
 };
+
+/// Cached templates for a native fixed gate or a Pauli rotation at pi/2.
+[[nodiscard]] const TwoQubitBasisDecomposer&
+cachedNativeBasisDecomposer(CompilerTarget::GateKind entangler);
 
 /// Convenience wrapper that builds a fresh basis decomposer per call.
 ///
