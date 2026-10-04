@@ -1,0 +1,972 @@
+[
+  {
+    "profile": "passes_core_grover_54__iqm_r_cz__previous",
+    "seconds": {
+      "mlir::{anonymous}::PrepareTargetCompilationPass": 0.0011,
+      "InlinerPass": 0.0091,
+      "SymbolDCEPass": 0.0004,
+      "CanonicalizerPass": 0.1461,
+      "NormalizeGlobalPhases": 0.0002,
+      "CSEPass": 0.1706,
+      "ShrinkQTensorToFitPass": 0.0004,
+      "RemoveDeadValuesPass": 0.33020000000000005,
+      "LegalizeControlFlow": 0.0002,
+      "DecomposeMultiControlled": 0.1962,
+      "mlir::qco::{anonymous}::FuseTwoQubitGatesPass": 0.0722,
+      "mlir::qco::{anonymous}::PlacementPass": 0.0434,
+      "TargetNativeSynthesis": 1.2088,
+      "VerifyTargetConformance": 0.0837,
+      "Total": 2.2727
+    },
+    "samples": {
+      "mlir::{anonymous}::PrepareTargetCompilationPass": [
+        0.0008,
+        0.0011,
+        0.0011
+      ],
+      "InlinerPass": [
+        0.0086,
+        0.0091,
+        0.0092
+      ],
+      "SymbolDCEPass": [
+        0.0004,
+        0.0004,
+        0.0004
+      ],
+      "CanonicalizerPass": [
+        0.1373,
+        0.1461,
+        0.14650000000000002
+      ],
+      "NormalizeGlobalPhases": [
+        0.0002,
+        0.0002,
+        0.0002
+      ],
+      "CSEPass": [
+        0.16620000000000001,
+        0.17470000000000002,
+        0.1706
+      ],
+      "ShrinkQTensorToFitPass": [
+        0.0004,
+        0.0004,
+        0.0004
+      ],
+      "RemoveDeadValuesPass": [
+        0.4047,
+        0.3206,
+        0.33020000000000005
+      ],
+      "LegalizeControlFlow": [
+        0.0002,
+        0.0002,
+        0.0002
+      ],
+      "DecomposeMultiControlled": [
+        0.1928,
+        0.1962,
+        0.2009
+      ],
+      "mlir::qco::{anonymous}::FuseTwoQubitGatesPass": [
+        0.0682,
+        0.0722,
+        0.0728
+      ],
+      "mlir::qco::{anonymous}::PlacementPass": [
+        0.0395,
+        0.0434,
+        0.044
+      ],
+      "TargetNativeSynthesis": [
+        1.1971,
+        1.2088,
+        1.2122
+      ],
+      "VerifyTargetConformance": [
+        0.0788,
+        0.0844,
+        0.0837
+      ],
+      "Total": [
+        2.2957,
+        2.2583,
+        2.2727
+      ]
+    }
+  },
+  {
+    "profile": "passes_core_grover_54__iqm_r_cz__updated",
+    "seconds": {
+      "mlir::{anonymous}::PrepareTargetCompilationPass": 0.0012,
+      "InlinerPass": 0.0011,
+      "CanonicalizerPass": 0.1481,
+      "NormalizeGlobalPhases": 0.0002,
+      "CSEPass": 0.1684,
+      "ShrinkQTensorToFitPass": 0.0004,
+      "SymbolDCEPass": 0.0002,
+      "RemoveDeadValuesPass": 0.31930000000000003,
+      "LegalizeControlFlow": 0.0002,
+      "DecomposeMultiControlled": 0.195,
+      "mlir::qco::{anonymous}::FuseTwoQubitGatesPass": 0.0649,
+      "mlir::qco::{anonymous}::PlacementPass": 0.0416,
+      "TargetNativeSynthesis": 1.2005,
+      "VerifyTargetConformance": 0.0811,
+      "Total": 2.232
+    },
+    "samples": {
+      "mlir::{anonymous}::PrepareTargetCompilationPass": [
+        0.0008,
+        0.0012,
+        0.0012
+      ],
+      "InlinerPass": [
+        0.0011,
+        0.0011,
+        0.0011
+      ],
+      "CanonicalizerPass": [
+        0.1424,
+        0.1481,
+        0.1485
+      ],
+      "NormalizeGlobalPhases": [
+        0.0002,
+        0.0002,
+        0.0002
+      ],
+      "CSEPass": [
+        0.1648,
+        0.1684,
+        0.1698
+      ],
+      "ShrinkQTensorToFitPass": [
+        0.0004,
+        0.0004,
+        0.0004
+      ],
+      "SymbolDCEPass": [
+        0.0002,
+        0.0002,
+        0.0002
+      ],
+      "RemoveDeadValuesPass": [
+        0.40359999999999996,
+        0.31930000000000003,
+        0.31520000000000004
+      ],
+      "LegalizeControlFlow": [
+        0.0002,
+        0.0002,
+        0.0002
+      ],
+      "DecomposeMultiControlled": [
+        0.1877,
+        0.195,
+        0.1955
+      ],
+      "mlir::qco::{anonymous}::FuseTwoQubitGatesPass": [
+        0.0649,
+        0.0647,
+        0.0649
+      ],
+      "mlir::qco::{anonymous}::PlacementPass": [
+        0.0403,
+        0.0416,
+        0.0419
+      ],
+      "TargetNativeSynthesis": [
+        1.1872,
+        1.2005,
+        1.2103
+      ],
+      "VerifyTargetConformance": [
+        0.0783,
+        0.0811,
+        0.0822
+      ],
+      "Total": [
+        2.2724,
+        2.2223,
+        2.232
+      ]
+    }
+  },
+  {
+    "profile": "passes_core_qft_156__ibm_fractional_bounded__previous",
+    "seconds": {
+      "mlir::{anonymous}::PrepareTargetCompilationPass": 0.058,
+      "InlinerPass": 0.4964,
+      "SymbolDCEPass": 0.0256,
+      "CanonicalizerPass": 0.049600000000000005,
+      "NormalizeGlobalPhases": 0.0098,
+      "CSEPass": 0.0336,
+      "ShrinkQTensorToFitPass": 0.0182,
+      "RemoveDeadValuesPass": 0.1639,
+      "LegalizeControlFlow": 0.0117,
+      "DecomposeMultiControlled": 0.02,
+      "mlir::qco::{anonymous}::FuseTwoQubitGatesPass": 0.0162,
+      "mlir::qco::{anonymous}::PlacementPass": 0.0103,
+      "TargetNativeSynthesis": 0.1955,
+      "VerifyTargetConformance": 0.012,
+      "Total": 1.1203
+    },
+    "samples": {
+      "mlir::{anonymous}::PrepareTargetCompilationPass": [
+        0.0579,
+        0.058,
+        0.0593
+      ],
+      "InlinerPass": [
+        0.4854,
+        0.4964,
+        0.4981
+      ],
+      "SymbolDCEPass": [
+        0.0251,
+        0.0256,
+        0.0257
+      ],
+      "CanonicalizerPass": [
+        0.048299999999999996,
+        0.049600000000000005,
+        0.0503
+      ],
+      "NormalizeGlobalPhases": [
+        0.0094,
+        0.0098,
+        0.0098
+      ],
+      "CSEPass": [
+        0.033299999999999996,
+        0.033600000000000005,
+        0.0336
+      ],
+      "ShrinkQTensorToFitPass": [
+        0.0176,
+        0.0182,
+        0.0182
+      ],
+      "RemoveDeadValuesPass": [
+        0.1639,
+        0.16299999999999998,
+        0.16999999999999998
+      ],
+      "LegalizeControlFlow": [
+        0.0113,
+        0.0117,
+        0.0132
+      ],
+      "DecomposeMultiControlled": [
+        0.0195,
+        0.02,
+        0.0209
+      ],
+      "mlir::qco::{anonymous}::FuseTwoQubitGatesPass": [
+        0.016,
+        0.0162,
+        0.0165
+      ],
+      "mlir::qco::{anonymous}::PlacementPass": [
+        0.0099,
+        0.0103,
+        0.0104
+      ],
+      "TargetNativeSynthesis": [
+        0.1908,
+        0.1955,
+        0.1958
+      ],
+      "VerifyTargetConformance": [
+        0.012,
+        0.0121,
+        0.012
+      ],
+      "Total": [
+        1.1007,
+        1.1203,
+        1.134
+      ]
+    }
+  },
+  {
+    "profile": "passes_core_qft_156__ibm_fractional_bounded__updated",
+    "seconds": {
+      "mlir::{anonymous}::PrepareTargetCompilationPass": 0.0557,
+      "InlinerPass": 0.0735,
+      "CanonicalizerPass": 0.3406,
+      "NormalizeGlobalPhases": 0.0095,
+      "CSEPass": 0.018099999999999998,
+      "ShrinkQTensorToFitPass": 0.0176,
+      "SymbolDCEPass": 0.0125,
+      "RemoveDeadValuesPass": 0.1493,
+      "LegalizeControlFlow": 0.0112,
+      "DecomposeMultiControlled": 0.0195,
+      "mlir::qco::{anonymous}::FuseTwoQubitGatesPass": 0.0156,
+      "mlir::qco::{anonymous}::PlacementPass": 0.0098,
+      "TargetNativeSynthesis": 0.1234,
+      "VerifyTargetConformance": 0.0024,
+      "Total": 0.8633
+    },
+    "samples": {
+      "mlir::{anonymous}::PrepareTargetCompilationPass": [
+        0.0598,
+        0.0556,
+        0.0557
+      ],
+      "InlinerPass": [
+        0.0714,
+        0.078,
+        0.0735
+      ],
+      "CanonicalizerPass": [
+        0.34380000000000005,
+        0.3406,
+        0.3406
+      ],
+      "NormalizeGlobalPhases": [
+        0.0095,
+        0.0094,
+        0.0096
+      ],
+      "CSEPass": [
+        0.018099999999999998,
+        0.018099999999999998,
+        0.018099999999999998
+      ],
+      "ShrinkQTensorToFitPass": [
+        0.0176,
+        0.0176,
+        0.0176
+      ],
+      "SymbolDCEPass": [
+        0.0125,
+        0.0126,
+        0.0125
+      ],
+      "RemoveDeadValuesPass": [
+        0.1607,
+        0.1493,
+        0.1435
+      ],
+      "LegalizeControlFlow": [
+        0.0111,
+        0.0112,
+        0.0112
+      ],
+      "DecomposeMultiControlled": [
+        0.0194,
+        0.0195,
+        0.0196
+      ],
+      "mlir::qco::{anonymous}::FuseTwoQubitGatesPass": [
+        0.0156,
+        0.0156,
+        0.0156
+      ],
+      "mlir::qco::{anonymous}::PlacementPass": [
+        0.0098,
+        0.0098,
+        0.0098
+      ],
+      "TargetNativeSynthesis": [
+        0.1244,
+        0.1234,
+        0.1233
+      ],
+      "VerifyTargetConformance": [
+        0.0024,
+        0.0024,
+        0.0024
+      ],
+      "Total": [
+        0.8762,
+        0.8633,
+        0.8532
+      ]
+    }
+  },
+  {
+    "profile": "passes_core_qft_156__ibm_sxz_cz__previous",
+    "seconds": {
+      "mlir::{anonymous}::PrepareTargetCompilationPass": 0.0592,
+      "InlinerPass": 0.4839,
+      "SymbolDCEPass": 0.0253,
+      "CanonicalizerPass": 0.0482,
+      "NormalizeGlobalPhases": 0.0095,
+      "CSEPass": 0.151,
+      "ShrinkQTensorToFitPass": 0.0177,
+      "RemoveDeadValuesPass": 0.1562,
+      "LegalizeControlFlow": 0.0114,
+      "DecomposeMultiControlled": 0.0194,
+      "mlir::qco::{anonymous}::FuseTwoQubitGatesPass": 0.0159,
+      "mlir::qco::{anonymous}::PlacementPass": 0.0099,
+      "TargetNativeSynthesis": 0.4878,
+      "VerifyTargetConformance": 0.0946,
+      "Total": 1.5797
+    },
+    "samples": {
+      "mlir::{anonymous}::PrepareTargetCompilationPass": [
+        0.0592,
+        0.0557,
+        0.063
+      ],
+      "InlinerPass": [
+        0.4825,
+        0.4839,
+        0.4924
+      ],
+      "SymbolDCEPass": [
+        0.0258,
+        0.0242,
+        0.0253
+      ],
+      "CanonicalizerPass": [
+        0.048600000000000004,
+        0.046299999999999994,
+        0.0482
+      ],
+      "NormalizeGlobalPhases": [
+        0.0095,
+        0.0091,
+        0.0095
+      ],
+      "CSEPass": [
+        0.13979999999999998,
+        0.151,
+        0.1529
+      ],
+      "ShrinkQTensorToFitPass": [
+        0.0178,
+        0.0168,
+        0.0177
+      ],
+      "RemoveDeadValuesPass": [
+        0.1696,
+        0.1562,
+        0.1542
+      ],
+      "LegalizeControlFlow": [
+        0.0115,
+        0.0108,
+        0.0114
+      ],
+      "DecomposeMultiControlled": [
+        0.0196,
+        0.0186,
+        0.0194
+      ],
+      "mlir::qco::{anonymous}::FuseTwoQubitGatesPass": [
+        0.0163,
+        0.0151,
+        0.0159
+      ],
+      "mlir::qco::{anonymous}::PlacementPass": [
+        0.0103,
+        0.0094,
+        0.0099
+      ],
+      "TargetNativeSynthesis": [
+        0.4439,
+        0.4878,
+        0.4883
+      ],
+      "VerifyTargetConformance": [
+        0.0828,
+        0.0946,
+        0.0964
+      ],
+      "Total": [
+        1.5377,
+        1.5797,
+        1.6051
+      ]
+    }
+  },
+  {
+    "profile": "passes_core_qft_156__ibm_sxz_cz__updated",
+    "seconds": {
+      "mlir::{anonymous}::PrepareTargetCompilationPass": 0.058,
+      "InlinerPass": 0.0698,
+      "CanonicalizerPass": 0.3412,
+      "NormalizeGlobalPhases": 0.0092,
+      "CSEPass": 0.0469,
+      "ShrinkQTensorToFitPass": 0.0173,
+      "SymbolDCEPass": 0.0122,
+      "RemoveDeadValuesPass": 0.1555,
+      "LegalizeControlFlow": 0.0112,
+      "DecomposeMultiControlled": 0.0192,
+      "mlir::qco::{anonymous}::FuseTwoQubitGatesPass": 0.016,
+      "mlir::qco::{anonymous}::PlacementPass": 0.0097,
+      "TargetNativeSynthesis": 0.249,
+      "VerifyTargetConformance": 0.0234,
+      "Total": 1.0447
+    },
+    "samples": {
+      "mlir::{anonymous}::PrepareTargetCompilationPass": [
+        0.0588,
+        0.0572,
+        0.058
+      ],
+      "InlinerPass": [
+        0.07,
+        0.0682,
+        0.0698
+      ],
+      "CanonicalizerPass": [
+        0.3426,
+        0.341,
+        0.3412
+      ],
+      "NormalizeGlobalPhases": [
+        0.0093,
+        0.009,
+        0.0092
+      ],
+      "CSEPass": [
+        0.0468,
+        0.0469,
+        0.0473
+      ],
+      "ShrinkQTensorToFitPass": [
+        0.0176,
+        0.017,
+        0.0173
+      ],
+      "SymbolDCEPass": [
+        0.0124,
+        0.0121,
+        0.0122
+      ],
+      "RemoveDeadValuesPass": [
+        0.1664,
+        0.15410000000000001,
+        0.1555
+      ],
+      "LegalizeControlFlow": [
+        0.0112,
+        0.0107,
+        0.0113
+      ],
+      "DecomposeMultiControlled": [
+        0.0201,
+        0.0188,
+        0.0192
+      ],
+      "mlir::qco::{anonymous}::FuseTwoQubitGatesPass": [
+        0.0161,
+        0.0151,
+        0.016
+      ],
+      "mlir::qco::{anonymous}::PlacementPass": [
+        0.0099,
+        0.0095,
+        0.0097
+      ],
+      "TargetNativeSynthesis": [
+        0.249,
+        0.2489,
+        0.2544
+      ],
+      "VerifyTargetConformance": [
+        0.0234,
+        0.023,
+        0.0234
+      ],
+      "Total": [
+        1.0538,
+        1.0318,
+        1.0447
+      ]
+    }
+  },
+  {
+    "profile": "passes_efficient_su2_156_symbolic__ibm_sxz_cz__previous",
+    "seconds": {
+      "mlir::{anonymous}::PrepareTargetCompilationPass": 0.003,
+      "InlinerPass": 0.0613,
+      "SymbolDCEPass": 0.0038,
+      "CanonicalizerPass": 0.0052,
+      "NormalizeGlobalPhases": 0.0013,
+      "CSEPass": 0.012,
+      "ShrinkQTensorToFitPass": 0.0021,
+      "RemoveDeadValuesPass": 0.013600000000000001,
+      "LegalizeControlFlow": 0.0015,
+      "DecomposeMultiControlled": 0.0022,
+      "mlir::qco::{anonymous}::FuseTwoQubitGatesPass": 0.0015,
+      "mlir::qco::{anonymous}::PlacementPass": 0.0013,
+      "TargetNativeSynthesis": 0.0282,
+      "VerifyTargetConformance": 0.0054,
+      "Total": 0.1428
+    },
+    "samples": {
+      "mlir::{anonymous}::PrepareTargetCompilationPass": [
+        0.003,
+        0.003,
+        0.0031
+      ],
+      "InlinerPass": [
+        0.0619,
+        0.061,
+        0.0613
+      ],
+      "SymbolDCEPass": [
+        0.004,
+        0.0038,
+        0.0038
+      ],
+      "CanonicalizerPass": [
+        0.0052,
+        0.0052,
+        0.0053
+      ],
+      "NormalizeGlobalPhases": [
+        0.0013,
+        0.0013,
+        0.0013
+      ],
+      "CSEPass": [
+        0.011800000000000001,
+        0.012,
+        0.012
+      ],
+      "ShrinkQTensorToFitPass": [
+        0.0021,
+        0.0021,
+        0.0021
+      ],
+      "RemoveDeadValuesPass": [
+        0.0156,
+        0.0134,
+        0.013600000000000001
+      ],
+      "LegalizeControlFlow": [
+        0.0015,
+        0.0014,
+        0.0015
+      ],
+      "DecomposeMultiControlled": [
+        0.0022,
+        0.0022,
+        0.0022
+      ],
+      "mlir::qco::{anonymous}::FuseTwoQubitGatesPass": [
+        0.0015,
+        0.0015,
+        0.0016
+      ],
+      "mlir::qco::{anonymous}::PlacementPass": [
+        0.0013,
+        0.0013,
+        0.0013
+      ],
+      "TargetNativeSynthesis": [
+        0.0278,
+        0.0282,
+        0.0282
+      ],
+      "VerifyTargetConformance": [
+        0.0052,
+        0.0054,
+        0.0055
+      ],
+      "Total": [
+        0.1448,
+        0.1419,
+        0.1428
+      ]
+    }
+  },
+  {
+    "profile": "passes_efficient_su2_156_symbolic__ibm_sxz_cz__updated",
+    "seconds": {
+      "mlir::{anonymous}::PrepareTargetCompilationPass": 0.0031,
+      "InlinerPass": 0.0047,
+      "CanonicalizerPass": 0.0332,
+      "NormalizeGlobalPhases": 0.0013,
+      "CSEPass": 0.0112,
+      "ShrinkQTensorToFitPass": 0.0021,
+      "SymbolDCEPass": 0.0019,
+      "RemoveDeadValuesPass": 0.0131,
+      "LegalizeControlFlow": 0.0015,
+      "DecomposeMultiControlled": 0.0022,
+      "mlir::qco::{anonymous}::FuseTwoQubitGatesPass": 0.0015,
+      "mlir::qco::{anonymous}::PlacementPass": 0.0013,
+      "TargetNativeSynthesis": 0.0297,
+      "VerifyTargetConformance": 0.0051,
+      "Total": 0.1127
+    },
+    "samples": {
+      "mlir::{anonymous}::PrepareTargetCompilationPass": [
+        0.0031,
+        0.0031,
+        0.0032
+      ],
+      "InlinerPass": [
+        0.0056,
+        0.0046,
+        0.0047
+      ],
+      "CanonicalizerPass": [
+        0.033,
+        0.0332,
+        0.0334
+      ],
+      "NormalizeGlobalPhases": [
+        0.0013,
+        0.0013,
+        0.0013
+      ],
+      "CSEPass": [
+        0.0111,
+        0.0112,
+        0.0112
+      ],
+      "ShrinkQTensorToFitPass": [
+        0.0021,
+        0.0021,
+        0.0021
+      ],
+      "SymbolDCEPass": [
+        0.0021,
+        0.0019,
+        0.0019
+      ],
+      "RemoveDeadValuesPass": [
+        0.0157,
+        0.0131,
+        0.0131
+      ],
+      "LegalizeControlFlow": [
+        0.0015,
+        0.0015,
+        0.0015
+      ],
+      "DecomposeMultiControlled": [
+        0.0022,
+        0.0022,
+        0.0023
+      ],
+      "mlir::qco::{anonymous}::FuseTwoQubitGatesPass": [
+        0.0015,
+        0.0015,
+        0.0016
+      ],
+      "mlir::qco::{anonymous}::PlacementPass": [
+        0.0013,
+        0.0013,
+        0.0013
+      ],
+      "TargetNativeSynthesis": [
+        0.0292,
+        0.0298,
+        0.0297
+      ],
+      "VerifyTargetConformance": [
+        0.005,
+        0.0051,
+        0.0051
+      ],
+      "Total": [
+        0.1148,
+        0.1123,
+        0.1127
+      ]
+    }
+  },
+  {
+    "profile": "passes_pauli_layers_54_numeric__iqm_r_cz__previous",
+    "seconds": {
+      "mlir::{anonymous}::PrepareTargetCompilationPass": 0.0008,
+      "InlinerPass": 0.005,
+      "SymbolDCEPass": 0.0008,
+      "CanonicalizerPass": 0.0015999999999999999,
+      "NormalizeGlobalPhases": 0.0003,
+      "CSEPass": 0.0023,
+      "ShrinkQTensorToFitPass": 0.0006,
+      "RemoveDeadValuesPass": 0.0034000000000000002,
+      "LegalizeControlFlow": 0.0003,
+      "DecomposeMultiControlled": 0.0006,
+      "mlir::qco::{anonymous}::FuseTwoQubitGatesPass": 0.0007,
+      "mlir::qco::{anonymous}::PlacementPass": 0.0003,
+      "TargetNativeSynthesis": 0.0152,
+      "VerifyTargetConformance": 0.001,
+      "Total": 0.033
+    },
+    "samples": {
+      "mlir::{anonymous}::PrepareTargetCompilationPass": [
+        0.0008,
+        0.0008,
+        0.0008
+      ],
+      "InlinerPass": [
+        0.0051,
+        0.005,
+        0.005
+      ],
+      "SymbolDCEPass": [
+        0.0008,
+        0.0008,
+        0.0008
+      ],
+      "CanonicalizerPass": [
+        0.0015999999999999999,
+        0.0015999999999999999,
+        0.0015999999999999999
+      ],
+      "NormalizeGlobalPhases": [
+        0.0003,
+        0.0003,
+        0.0003
+      ],
+      "CSEPass": [
+        0.0023,
+        0.0023,
+        0.0023
+      ],
+      "ShrinkQTensorToFitPass": [
+        0.0006,
+        0.0006,
+        0.0006
+      ],
+      "RemoveDeadValuesPass": [
+        0.0039,
+        0.0034000000000000002,
+        0.0033
+      ],
+      "LegalizeControlFlow": [
+        0.0003,
+        0.0003,
+        0.0003
+      ],
+      "DecomposeMultiControlled": [
+        0.0006,
+        0.0006,
+        0.0006
+      ],
+      "mlir::qco::{anonymous}::FuseTwoQubitGatesPass": [
+        0.0008,
+        0.0007,
+        0.0007
+      ],
+      "mlir::qco::{anonymous}::PlacementPass": [
+        0.0003,
+        0.0003,
+        0.0003
+      ],
+      "TargetNativeSynthesis": [
+        0.0156,
+        0.0152,
+        0.0151
+      ],
+      "VerifyTargetConformance": [
+        0.001,
+        0.001,
+        0.001
+      ],
+      "Total": [
+        0.0341,
+        0.033,
+        0.0328
+      ]
+    }
+  },
+  {
+    "profile": "passes_pauli_layers_54_numeric__iqm_r_cz__updated",
+    "seconds": {
+      "mlir::{anonymous}::PrepareTargetCompilationPass": 0.0008,
+      "InlinerPass": 0.0012,
+      "CanonicalizerPass": 0.0041,
+      "NormalizeGlobalPhases": 0.0003,
+      "CSEPass": 0.0023,
+      "ShrinkQTensorToFitPass": 0.0006,
+      "SymbolDCEPass": 0.0004,
+      "RemoveDeadValuesPass": 0.0034000000000000002,
+      "LegalizeControlFlow": 0.0003,
+      "DecomposeMultiControlled": 0.0006,
+      "mlir::qco::{anonymous}::FuseTwoQubitGatesPass": 0.0007,
+      "mlir::qco::{anonymous}::PlacementPass": 0.0003,
+      "TargetNativeSynthesis": 0.0151,
+      "VerifyTargetConformance": 0.001,
+      "Total": 0.0313
+    },
+    "samples": {
+      "mlir::{anonymous}::PrepareTargetCompilationPass": [
+        0.0008,
+        0.0008,
+        0.0008
+      ],
+      "InlinerPass": [
+        0.0013,
+        0.0012,
+        0.0012
+      ],
+      "CanonicalizerPass": [
+        0.0041,
+        0.0041,
+        0.0042
+      ],
+      "NormalizeGlobalPhases": [
+        0.0003,
+        0.0003,
+        0.0003
+      ],
+      "CSEPass": [
+        0.0023,
+        0.0023,
+        0.0023
+      ],
+      "ShrinkQTensorToFitPass": [
+        0.0006,
+        0.0006,
+        0.0006
+      ],
+      "SymbolDCEPass": [
+        0.0004,
+        0.0004,
+        0.0004
+      ],
+      "RemoveDeadValuesPass": [
+        0.004,
+        0.0034000000000000002,
+        0.0033
+      ],
+      "LegalizeControlFlow": [
+        0.0003,
+        0.0003,
+        0.0003
+      ],
+      "DecomposeMultiControlled": [
+        0.0006,
+        0.0006,
+        0.0006
+      ],
+      "mlir::qco::{anonymous}::FuseTwoQubitGatesPass": [
+        0.0008,
+        0.0007,
+        0.0007
+      ],
+      "mlir::qco::{anonymous}::PlacementPass": [
+        0.0003,
+        0.0003,
+        0.0003
+      ],
+      "TargetNativeSynthesis": [
+        0.0156,
+        0.0151,
+        0.0151
+      ],
+      "VerifyTargetConformance": [
+        0.001,
+        0.001,
+        0.001
+      ],
+      "Total": [
+        0.0326,
+        0.0313,
+        0.0313
+      ]
+    }
+  }
+]
