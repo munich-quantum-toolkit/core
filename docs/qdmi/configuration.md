@@ -5,6 +5,10 @@ Discovery only parses definitions. When the QDMI driver initializes a client
 session, it opens the configured native libraries. `builtin_driver.open_device`
 opens only the requested device.
 
+This lets applications list installed devices without loading provider libraries
+or contacting services. They can then open one device by stable ID. Distinct IDs
+can select independently configured instances of the same library.
+
 :::{warning}
 QDMI configuration is a native-code loading trust boundary. Use configuration
 files and device libraries only from trusted sources. Project discovery starts
@@ -249,18 +253,11 @@ Inside a Core build, omitting the device list copies all devices registered
 through `mqt_configure_qdmi_device`. An installed consumer selects the exported
 targets it needs, as above.
 
-An external device implementation needs no Core build dependency. It can export
-its stable ID and prefix as target metadata:
+An external device implementation needs no Core build dependency. QDMI's CMake
+helper exports the stable ID and symbol prefix as target metadata:
 
 ```cmake
-set_target_properties(
-  example-device
-  PROPERTIES QDMI_DEVICE_ID "example.device"
-             QDMI_DEVICE_PREFIX "EXAMPLE")
-set_property(
-  TARGET example-device
-  APPEND
-  PROPERTY EXPORT_PROPERTIES QDMI_DEVICE_ID QDMI_DEVICE_PREFIX)
+configure_qdmi_device_target(TARGET example-device ID example.device PREFIX EXAMPLE)
 ```
 
 For such a target, `mqt_copy_qdmi_runtime` generates the manifest. Targets with

@@ -58,10 +58,10 @@ The Qiskit `QDMIBackend.from_device_id` factory and PennyLane's
 `QDMISessionParameters` describes the supported overrides. To use another driver
 with these SDKs, pass an already-open `Device` to the backend constructor.
 
-The MQT Core QDMI driver provides two optional private functions for manifest
-registration and targeted session allocation. Standard-interface drivers need
-neither function. The generic `Session` and `open_device` APIs use only the
-standard Client Interface.
+The MQT Core QDMI driver provides optional private functions for manifest
+registration, metadata-only ID enumeration, and targeted session allocation.
+Standard-interface drivers need none of them. The generic `Session` and
+`open_device` APIs use only the standard Client Interface.
 
 ## Building the Bundled Devices
 
