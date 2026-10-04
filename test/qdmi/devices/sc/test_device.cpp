@@ -571,6 +571,7 @@ TEST_F(ScQDMISpecificationTest, JobSetParameter) {
 }
 
 TEST_F(ScQDMIJobSpecificationTest, JobSetParameter) {
+  /// NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
   EXPECT_EQ(MQT_SC_QDMI_device_job_set_parameter(
                 job, static_cast<QDMI_Device_Job_Parameter>(0), 0, nullptr),
             QDMI_ERROR_NOTSUPPORTED);

@@ -566,6 +566,7 @@ TEST_P(DriverTest, JobSetPrograms) {
 }
 
 TEST_P(DriverJobTest, JobSetParameter) {
+  /// NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
   EXPECT_EQ(QDMI_job_set_parameter(job, static_cast<QDMI_Job_Parameter>(0), 0,
                                    nullptr),
             QDMI_ERROR_NOTSUPPORTED);

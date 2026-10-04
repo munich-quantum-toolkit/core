@@ -807,13 +807,6 @@ std::optional<Job> Device::submitProgramsImpl(
   QDMI_Job job = nullptr;
   qdmi::throwIfError(api().device_create_job(device_, &job), "Creating job");
   Job jobWrapper{job, session_};
-  if (numShots.has_value()) {
-    qdmi::throwIfError(api().job_set_parameter(jobWrapper,
-                                               QDMI_JOB_PARAMETER_SHOTSNUM,
-                                               sizeof(*numShots), &*numShots),
-                       "Setting number of shots");
-  }
-
   if (custom1.has_value()) {
     setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM1, *custom1);
   }
@@ -836,6 +829,13 @@ std::optional<Job> Device::submitProgramsImpl(
     return std::nullopt;
   }
   qdmi::throwIfError(result, "Setting programs");
+  /// The program format determines whether this device accepts shot counts.
+  if (numShots.has_value()) {
+    qdmi::throwIfError(api().job_set_parameter(jobWrapper,
+                                               QDMI_JOB_PARAMETER_SHOTSNUM,
+                                               sizeof(*numShots), &*numShots),
+                       "Setting number of shots");
+  }
   qdmi::throwIfError(api().job_submit(jobWrapper), "Submitting job");
   return jobWrapper;
 }
