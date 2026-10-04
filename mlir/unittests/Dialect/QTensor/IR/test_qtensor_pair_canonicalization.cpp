@@ -36,6 +36,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <utility>
 
 using namespace mlir;
@@ -198,7 +199,7 @@ TEST_F(QTensorPairCanonicalizationTest,
 }
 
 TEST_F(QTensorPairCanonicalizationTest,
-       CommutesOnlyAfterAnEarlierWriteToTheSameSlot) {
+       ForwardsRepeatedSlotsWhileCommutingChain) {
   auto moduleOp = makeChain();
   ASSERT_TRUE(moduleOp);
   auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
@@ -209,11 +210,18 @@ TEST_F(QTensorPairCanonicalizationTest,
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
 
+  auto firstGate = inserts[0].getScalar().getDefiningOp<qco::HOp>();
+  auto secondGate = inserts[1].getScalar().getDefiningOp<qco::HOp>();
   ASSERT_TRUE(succeeded(applyInsertPattern(inserts[2])));
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
-  EXPECT_EQ(extracts[1].getTensor(), inserts[0].getResult());
-  EXPECT_TRUE(inserts[0]->isBeforeInBlock(extracts[1]));
+  EXPECT_EQ(secondGate.getQubitIn(), firstGate.getQubitOut());
+  EXPECT_EQ(std::distance(function.getOps<ExtractOp>().begin(),
+                          function.getOps<ExtractOp>().end()),
+            3);
+  EXPECT_EQ(std::distance(function.getOps<InsertOp>().begin(),
+                          function.getOps<InsertOp>().end()),
+            3);
   EXPECT_TRUE(extracts[3]->isBeforeInBlock(inserts[1]));
 }
 

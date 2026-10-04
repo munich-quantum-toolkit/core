@@ -206,7 +206,8 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   /// The module cleanup below owns canonicalization and dead symbols.
   pm.addPass(createInlinerPass({}, [](OpPassManager&) {}));
   pm.addPass(createSCCPPass());
-  populateQCOCleanupPipeline(pm);
+  /// Placement changes region results; run liveness once afterwards.
+  populateQCOCleanupPipeline(pm, /*removeDeadValues=*/false);
   pm.addPass(qco::createUnrollLoopsForPayload());
   pm.addPass(createSCCPPass());
   /// Unrolling exposes static tensor slots and unreachable callees.
@@ -251,7 +252,8 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
   const auto& target = environment.target();
   /// The module cleanup below owns canonicalization and dead symbols.
   pm.addPass(createInlinerPass({}, [](OpPassManager&) {}));
-  populateQCOCleanupPipeline(pm);
+  /// Placement changes region results; run liveness once afterwards.
+  populateQCOCleanupPipeline(pm, /*removeDeadValues=*/false);
   pm.addPass(qco::createLegalizeControlFlow());
   pm.addPass(qco::createDecomposeMultiControlled(target));
   pm.addPass(qco::createFuseTwoQubitGates(target));

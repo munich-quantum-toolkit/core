@@ -379,29 +379,23 @@ INSTANTIATE_TEST_SUITE_P(
         ZSXXShortcutCase{"PureZ",
                          RZOp::unitaryMatrix(0.3) * RZOp::unitaryMatrix(0.7), 1,
                          0, 0},
-        ZSXXShortcutCase{
-            "ZYZNearZeroTheta",
-            RZOp::unitaryMatrix(0.4) *
-                RYOp::unitaryMatrix(0.5 *
-                                    mlir::mqt::PARAMETER_COMPARISON_TOLERANCE) *
-                RZOp::unitaryMatrix(0.3),
-            1, 0, 0},
+        ZSXXShortcutCase{"ZYZNearZeroTheta",
+                         RZOp::unitaryMatrix(0.4) *
+                             RYOp::unitaryMatrix(0.5 * MATRIX_TOLERANCE) *
+                             RZOp::unitaryMatrix(0.3),
+                         1, 0, 0},
         ZSXXShortcutCase{"RYHalfPi",
                          RYOp::unitaryMatrix(std::numbers::pi / 2.0), 2, 1, 0},
         ZSXXShortcutCase{"RYNearHalfPi",
-                         RYOp::unitaryMatrix(
-                             (std::numbers::pi / 2.0) +
-                             (0.5 * mlir::mqt::PARAMETER_COMPARISON_TOLERANCE)),
+                         RYOp::unitaryMatrix((std::numbers::pi / 2.0) +
+                                             (0.5 * MATRIX_TOLERANCE)),
                          2, 1, 0},
         ZSXXShortcutCase{"RYNearZero",
-                         RYOp::unitaryMatrix(
-                             0.5 * mlir::mqt::PARAMETER_COMPARISON_TOLERANCE),
-                         0, 0, 0},
-        ZSXXShortcutCase{"RYNearPi",
-                         RYOp::unitaryMatrix(
-                             std::numbers::pi -
-                             (0.5 * mlir::mqt::PARAMETER_COMPARISON_TOLERANCE)),
-                         1, 0, 1}),
+                         RYOp::unitaryMatrix(0.5 * MATRIX_TOLERANCE), 0, 0, 0},
+        ZSXXShortcutCase{
+            "RYNearPi",
+            RYOp::unitaryMatrix(std::numbers::pi - (0.5 * MATRIX_TOLERANCE)), 1,
+            0, 1}),
     [](const testing::TestParamInfo<ZSXXShortcutCase>& info) {
       return std::string(info.param.label);
     });

@@ -171,14 +171,16 @@ void populateQCCleanupPipeline(OpPassManager& pm) {
   pm.addPass(createRemoveDeadValuesPass());
 }
 
-void populateQCOCleanupPipeline(OpPassManager& pm) {
+void populateQCOCleanupPipeline(OpPassManager& pm, bool removeDeadValues) {
   pm.addPass(createCanonicalizerPass(
       GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit)));
   pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
   pm.addPass(createCSEPass());
   pm.addPass(qtensor::createShrinkQTensorToFitPass());
   pm.addPass(createSymbolDCEPass());
-  pm.addPass(createRemoveDeadValuesPass());
+  if (removeDeadValues) {
+    pm.addPass(createRemoveDeadValuesPass());
+  }
 }
 
 void populateQIRCleanupPipeline(OpPassManager& pm, bool useAdaptive) {
@@ -199,8 +201,9 @@ void populateJeffCleanupPipeline(OpPassManager& pm) {
 }
 
 [[nodiscard]] LogicalResult runQCOCleanupPipeline(ModuleOp mod) {
-  return runWithPassManager(mod, populateQCOCleanupPipeline,
-                            "Failed to run the QCO cleanup pipeline.");
+  return runWithPassManager(
+      mod, [](OpPassManager& pm) { populateQCOCleanupPipeline(pm); },
+      "Failed to run the QCO cleanup pipeline.");
 }
 
 [[nodiscard]] LogicalResult runQIRCleanupPipeline(ModuleOp mod,

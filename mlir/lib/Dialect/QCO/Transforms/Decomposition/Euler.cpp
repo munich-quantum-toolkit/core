@@ -109,11 +109,12 @@ bool isSingleQubitBasisGate(Operation* op, SingleQubitBasis basis) {
 }
 
 /// Whether `angle` is numerically zero for gate-emission purposes.
+/// Use matrix precision here; fixed target capabilities remain exact.
 ///
 /// @param angle Rotation angle in radians.
 /// @return `true` when no rotation gate should be emitted.
 [[nodiscard]] static bool isNearZeroRotationAngle(const double angle) {
-  return std::abs(angle) <= mqt::PARAMETER_COMPARISON_TOLERANCE;
+  return std::abs(angle) <= MATRIX_TOLERANCE;
 }
 
 void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, const double phase) {
@@ -439,8 +440,7 @@ planEulerAngles(OpBuilder& builder, Location loc,
   if (basis.singleQubit == SingleQubitBasis::R) {
     constexpr double pi = std::numbers::pi;
     const auto sum = constantParameter(add(phi, lambda));
-    if (sum &&
-        std::abs(std::sin(*sum / 2.)) < mqt::PARAMETER_COMPARISON_TOLERANCE) {
+    if (sum && std::abs(std::sin(*sum / 2.)) < MATRIX_TOLERANCE) {
       plan.phase = add(plan.phase, *sum / 2.);
       rotation(Kind::R, theta, add(phi, pi / 2.));
     } else {

@@ -53,8 +53,14 @@ stay untouched. Every rewrite while the constant folder is live shares its
 listener so erased constants cannot remain cached.
 
 The module cleanup owns canonicalization and dead symbols after inlining; the
-inliner needs no separate callable-optimization pipeline. Keep dead-value
-cleanup after placement, which can change structured-control-flow results.
+inliner needs no separate callable-optimization pipeline. Defer dead-value
+cleanup until after placement, which can change structured-control-flow results.
+Generic QCO cleanup retains its liveness pass.
+
+Normalize each constant-index tensor chain in one rewrite, forwarding repeated
+slot accesses before moving the remaining inserts. Stop at dynamic indices and
+region boundaries. Euler emission uses matrix precision for numerical shortcuts;
+capability matching keeps its stricter parameter tolerance.
 
 Prefer unrestricted Pauli entanglers when available. Bounded entanglers use
 local corrections for numeric angles and their supported pi/2 endpoint for

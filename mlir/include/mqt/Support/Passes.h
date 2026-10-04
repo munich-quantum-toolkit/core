@@ -75,8 +75,10 @@ void populateQCExportPipeline(mlir::OpPassManager& pm);
 
 /// Populate a QCO-oriented cleanup pipeline on the given pass manager.
 ///
-/// Adds generic cleanup, qtensor shrink-to-fit, and dead-value removal.
-void populateQCOCleanupPipeline(mlir::OpPassManager& pm);
+/// Adds generic cleanup and qtensor shrink-to-fit. Dead-value removal may be
+/// deferred when a later pipeline stage changes region or function signatures.
+void populateQCOCleanupPipeline(mlir::OpPassManager& pm,
+                                bool removeDeadValues = true);
 
 /// Populate a QIR-oriented cleanup pipeline on the given pass manager.
 ///
