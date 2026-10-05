@@ -133,6 +133,9 @@ public:
       customGateIndex.try_emplace(gate.name, &gate);
       structuredGateCapabilities.try_emplace(
           &gate, statementsRequireStructuredControlFlow(gate.body));
+      if (statementsAreUnitary(gate.body)) {
+        unitaryGates_.insert(&gate);
+      }
     }
     if (customGateIndex.contains("main")) {
       // A dot cannot occur in a source gate identifier.
@@ -223,6 +226,7 @@ private:
   llvm::DenseMap<frontend::ScalarId, Value> provenInductionValues;
   DenseMap<const openqasm::frontend::GateDefinition*, bool>
       structuredGateCapabilities;
+  DenseSet<const frontend::GateDefinition*> unitaryGates_;
   llvm::StringMap<const openqasm::frontend::GateDefinition*> customGateIndex;
   DenseMap<const openqasm::frontend::GateDefinition*, func::FuncOp>
       customGateFunctions_;
@@ -296,6 +300,25 @@ private:
   [[nodiscard]] bool gateRequiresStructuredControlFlow(
       const openqasm::frontend::GateDefinition& gate) const {
     return structuredGateCapabilities.lookup(&gate);
+  }
+
+  [[nodiscard]] bool
+  statementsAreUnitary(ArrayRef<frontend::StatementId> statements) const {
+    return llvm::all_of(statements, [&](const auto id) {
+      const auto& data = program.statements.at(id).data;
+      if (const auto* loop = std::get_if<frontend::ForStatement>(&data)) {
+        return constantRangeTripCount(*loop).has_value() &&
+               statementsAreUnitary(loop->body);
+      }
+      const auto* application = std::get_if<frontend::GateApplication>(&data);
+      if (application == nullptr) {
+        return false;
+      }
+      if (const auto* callee = findCustomGate(application->callee)) {
+        return unitaryGates_.contains(callee);
+      }
+      return openqasm::frontend::lookupGate(application->callee) != nullptr;
+    });
   }
 
   Value emitProvenIndexExpression(OpBuilder& opBuilder,
@@ -944,7 +967,7 @@ private:
 
     builder.setLoc(getLocation(gate.location));
     func::FuncOp function;
-    if (gateRequiresStructuredControlFlow(gate)) {
+    if (!unitaryGates_.contains(&gate)) {
       function = builder.createFunction(gate.name, argumentTypes,
                                         [&](ValueRange arguments) {
                                           emitBody(arguments);

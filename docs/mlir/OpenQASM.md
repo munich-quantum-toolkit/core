@@ -69,6 +69,12 @@ QCO, and `jeff` dialects, so each output checkpoint names its dialect.
 | Dynamic indexing           | Classical bit indices can be dynamic and must remain in bounds. A nonconstant qubit index must be a proven affine expression as described below.                                                                                                                                          |
 | Unsupported language areas | Subroutines, `extern`, calibration and timing constructs, and arbitrary arrays are diagnosed.                                                                                                                                                                                             |
 
+Custom gates with constant-range `for` loops over unitary gates are recognized
+as unitary, including nested loops and callers. Other loop forms remain
+unclassified; this does not imply that their quantum action is nonunitary.
+Modifiers on custom gates with loops, or callers of such gates, are still
+unsupported. These are compiler restrictions, not OpenQASM language rules.
+
 Inputs share the parameter API with Qiskit programs. They remain symbolic until
 bound, so a program can be inspected and transformed before choosing values:
 
@@ -283,7 +289,7 @@ bypasses that QCO optimization round trip.
 | Qubits and classical bits | Logical and physical qubits, scalar qubit allocations, static rank-one qubit memrefs, and CBit registers. Logical qubit and CBit indices can be dynamic. Mapped programs require static physical qubits; indexed tensor loops must be specialized before export.    |
 | Quantum operations        | Measurement, reset, barrier, deallocation, global phase, and QC unitary operations. The exporter uses standard gates where available; for example, `sxdg` becomes `inv @ sx` and `u` and `u2` use a shared helper that compensates the OpenQASM 3 `U` global phase. |
 | Program parameters        | Named `f64` entry-point arguments become `input float[64]` declarations in argument order. Names must be unique, valid OpenQASM identifiers that do not conflict with standard gates or use the reserved `_mqt_` prefix.                                            |
-| Reusable gates            | Private functions with leading `f64` parameters followed by scalar qubit arguments and no results. Straight-line `mqt.unitary` functions use `qc.call`; loop-containing gate functions use `func.call`.                                                             |
+| Reusable gates            | Private functions with leading `f64` parameters followed by scalar qubit arguments and no results. Unitary functions, including statically bounded `for` loops over unitary gates, use `qc.call`. Other structured gate functions use `func.call`.                  |
 | Gate modifiers            | Nested `ctrl`, `inv`, and `pow`. A multi-operation modifier body with target qubits becomes a private generated gate.                                                                                                                                               |
 | Scalar values             | Integers of widths 1–64, `f64`, and internal `index` values, including arithmetic, comparisons, Boolean operations, value-preserving casts, and supported math functions.                                                                                           |
 | Constant tables           | Reads from non-empty constant rank-one `f64` tensors. Constant indices and splats become scalar values; other reads use switches with shared cases for equal values.                                                                                                |
