@@ -1102,7 +1102,7 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
                           "collections.abc.Iterable[str] | None = None) -> "
                           "mqt.core.mlir.CompilerTarget.NativeOperations"),
                   "Import gate capabilities and parameter constraints, "
-                  "ignoring physical placement. "
+                  "ignoring physical placement.\n\n"
                   "Unsupported explicit selections raise ValueError; otherwise "
                   "they warn and are omitted.")
       .def_static("unrestricted",

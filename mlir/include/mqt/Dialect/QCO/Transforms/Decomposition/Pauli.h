@@ -91,7 +91,7 @@ pauliRotationEntanglerCount(const PauliRotationSequence& sequence,
 
 /// Emits a recognized sequence directly in the target's synthesis basis.
 /// Hoists supporting scalar operations from a recognized control body; the
-/// caller replaces the original operation with the returned qubits.
+/// caller replaces the original operation with the one or two returned qubits.
 [[nodiscard]] SmallVector<Value, 2>
 emitPauliRotations(RewriterBase& rewriter, Operation* operation,
                    const PauliRotationSequence& sequence,

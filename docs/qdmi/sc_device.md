@@ -113,6 +113,6 @@ and
 snapshots. Nighthawk's programmable qubit count is 120; Heron's is 156.
 
 For fractional Heron gates, import a Qiskit `Target` using
-{py:meth}`~mqt.core.mlir.CompilerTarget.from_qiskit`. QDMI v1 does not expose
-parameter bounds, so these SC models omit fractional gates rather than advertise
-unrestricted RZZ support.
+{py:meth}`~mqt.core.mlir.CompilerTarget.from_qiskit`. QDMI currently does not
+expose parameter bounds, so these SC models omit fractional gates rather than
+advertise unrestricted RZZ support.

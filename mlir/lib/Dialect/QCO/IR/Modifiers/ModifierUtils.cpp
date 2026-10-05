@@ -162,11 +162,9 @@ SmallVector<Value> inlineNarrowedBody(Block& body, ValueRange qubits,
       used, [&](const size_t index) { return yielded[index]; });
 }
 
-} // namespace mlir::qco::detail
-
-void mlir::qco::detail::replacePermutedModifier(UnitaryOpInterface original,
-                                                UnitaryOpInterface replacement,
-                                                RewriterBase& rewriter) {
+void replacePermutedModifier(UnitaryOpInterface original,
+                             UnitaryOpInterface replacement,
+                             RewriterBase& rewriter) {
   DenseMap<Value, Value> outputs;
   for (auto [input, output] : llvm::zip_equal(replacement.getInputQubits(),
                                               replacement.getOutputQubits())) {
@@ -177,3 +175,5 @@ void mlir::qco::detail::replacePermutedModifier(UnitaryOpInterface original,
                                                      return outputs.at(input);
                                                    }));
 }
+
+} // namespace mlir::qco::detail

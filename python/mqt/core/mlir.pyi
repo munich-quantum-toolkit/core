@@ -467,7 +467,10 @@ class CompilerTarget:
             *,
             operation_names: Iterable[str] | None = None,
         ) -> CompilerTarget.NativeOperations:
-            """Import gate capabilities and parameter constraints, ignoring physical placement. Unsupported explicit selections raise ValueError; otherwise they warn and are omitted."""
+            """Import gate capabilities and parameter constraints, ignoring physical placement.
+
+            Unsupported explicit selections raise ValueError; otherwise they warn and are omitted.
+            """
 
         @staticmethod
         def unrestricted() -> CompilerTarget.NativeOperations:

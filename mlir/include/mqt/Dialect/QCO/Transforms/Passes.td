@@ -32,10 +32,10 @@ def MergeSingleQubitRotationGates
     composition and emit `arith` / `math` expressions for runtime Euler angles.
 
     Before symbolic angle arithmetic, each evaluated gate operand is normalized
-    modulo `4*pi`, preserving its full unitary under control. Constants fold
-    immediately; symbolic operands use `4*atan(tan(angle/4))`, which remains
+    modulo $4\pi$, preserving its full unitary under control. Constants fold
+    immediately; symbolic operands use $4\arctan(\tan(\theta/4))$, which remains
     bindable after Qiskit and jeff export. This bounds each gate operand to
-    `[-2*pi, 2*pi]` without restricting shared scalar inputs or expressions.
+    $[-2\pi, 2\pi]$ without restricting shared scalar inputs or expressions.
 
     A `gphase` correction preserves exact matrix equality, including inside
     controlled bodies. The pass combines, normalizes, and removes trivial
@@ -71,7 +71,7 @@ def FuseSingleQubitUnitaryRuns
     Symbolic ZXZ/ZYZ chains reuse their angles directly in the `u`, `zyz`,
     `zxz`, and `zsxx` bases; XZX/XYX chains do so in `xzx`, `xyx`, and `r`.
     Either outer rotation may be absent. Gate operands are normalized modulo
-    `4*pi` before angle arithmetic, as in `merge-single-qubit-rotation-gates`.
+    $4\pi$ before angle arithmetic, as in `merge-single-qubit-rotation-gates`.
     H/RZ pairs in either order use direct angles in every basis, requiring at
     most three gates (one in the `u` basis).
     These conversions need no quaternion extraction or conditional expressions.

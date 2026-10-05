@@ -48,12 +48,13 @@ struct Condition {
 
 /// Each operand and operation is visited once. Memory facts stay block-local;
 /// branch facts are scoped to the region in which the condition is known.
-class ClassicalSimplifier {
+class ClassicalControlSimplifier {
   IRRewriter rewriter;
   llvm::ScopedHashTable<Value, Condition*> conditions;
 
 public:
-  explicit ClassicalSimplifier(MLIRContext* context) : rewriter(context) {}
+  explicit ClassicalControlSimplifier(MLIRContext* context)
+      : rewriter(context) {}
 
   void run(Region& region) {
     for (Block& block : region) {
@@ -146,13 +147,13 @@ protected:
   void runOnOperation() override { simplifyClassicalControl(getOperation()); }
 };
 
-} /* namespace */
+} // namespace
 
 void simplifyClassicalControl(Operation* operation) {
-  ClassicalSimplifier simplifier(operation->getContext());
+  ClassicalControlSimplifier simplifier(operation->getContext());
   for (Region& region : operation->getRegions()) {
     simplifier.run(region);
   }
 }
 
-} /* namespace mlir::mqt */
+} // namespace mlir::mqt

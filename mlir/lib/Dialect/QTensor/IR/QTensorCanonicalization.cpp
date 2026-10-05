@@ -158,7 +158,7 @@ struct TensorSlots {
 
 using SlotLayout = SmallVector<TensorSlots*>;
 
-} /* namespace */
+} // namespace
 
 static bool isStaticQTensor(Value value) {
   auto type = dyn_cast<RankedTensorType>(value.getType());
