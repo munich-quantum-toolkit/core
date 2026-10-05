@@ -61,30 +61,30 @@ static Value distillMagicStates(qc::QCProgramBuilder& builder,
         support.push_back(qubits[i]);
       }
     }
-    auto target = support.pop_back_val();
+    auto parityQubit = support.pop_back_val();
     for (auto control : support) {
-      builder.cx(control, target);
+      builder.cx(control, parityQubit);
     }
     // Computing parity, applying T, and uncomputing implements exp(-iπP/8)
     // up to a global phase. Higher levels consume a distilled state instead.
     if (!precedingLevel) {
-      builder.t(target);
+      builder.t(parityQubit);
     } else {
       auto resourceWorkspace = workspace.drop_front(5);
       auto childRejected =
           builder.call(precedingLevel, resourceWorkspace).front();
       rejected = arith::OrIOp::create(builder, rejected, childRejected);
       auto resource = resourceWorkspace.front();
-      builder.cx(target, resource);
+      builder.cx(parityQubit, resource);
       auto outcome = builder.measure(resource);
       // The resource is T†|+⟩, so outcome 0 needs S to turn T† into T;
       // outcome 1 already applies T (up to a global phase).
       auto needsCorrection =
           arith::XOrIOp::create(builder, outcome, builder.boolConstant(true));
-      builder.scfIf(needsCorrection, [&] { builder.s(target); });
+      builder.scfIf(needsCorrection, [&] { builder.s(parityQubit); });
     }
     for (auto control : llvm::reverse(support)) {
-      builder.cx(control, target);
+      builder.cx(control, parityQubit);
     }
   }
   for (auto qubit : qubits.drop_front()) {
