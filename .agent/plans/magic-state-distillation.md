@@ -1,7 +1,7 @@
 # Concatenated magic-state distillation benchmark
 
 Status: superseded by [Litinski 15-to-1 distillation](litinski-distillation.md).
-The outcome and validation below describe the original version-1 circuit.
+The outcome and validation below describe the original decoder-based circuit.
 
 ## Outcome and scope
 

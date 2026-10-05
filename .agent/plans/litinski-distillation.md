@@ -15,8 +15,8 @@ Preserve levels 1–4 with real quantum-state consumption: higher levels inject
 each rotation from a preceding-level output. Reuse five workspace qubits per
 level. A private function per level keeps generation compact. Each block runs
 once, even if a preceding block rejects; there is no retry or noise model and no
-surface-code layout. Increment the definition version because the circuit and
-resource contract change.
+surface-code layout. Keep definition version 1 because the benchmark has not
+been released.
 
 ## Validation
 
@@ -27,8 +27,8 @@ With LLVM/MLIR 23.1.0, the Release build and these checks passed:
   undetected logical-error triples, and lower-level rejection and quantum-state
   propagation. Levels 1–4 retain the documented workspace bound and compact QCO,
   and round-trip through `jeff`.
-- `build/release/test/bench/mqt-core-bench-test`: 138 tests pass, including
-  rejection of manifests for the previous circuit definition.
+- `build/release/test/bench/mqt-core-bench-test` covers the benchmark
+  references, JSON contracts, and registry.
 - The focused Python distillation suite passes all 11 tests against the rebuilt
   bindings, including direct sampling and both DDSIM payload paths.
 - `uvx nox -s stubs` regenerates the binding documentation.

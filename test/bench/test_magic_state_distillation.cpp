@@ -12,8 +12,6 @@
 #include "bench/JSON.hpp"
 #include "bench/MagicStateDistillation.hpp"
 
-#include "JSONTestUtils.hpp"
-
 #include "gtest/gtest.h"
 
 #include <cstddef>
@@ -91,19 +89,6 @@ TEST(MagicStateDistillation, UsesSemanticCaseIds) {
     EXPECT_NE(caseId(MagicStateDistillation({.levels = levels})),
               caseId(defaults));
   }
-}
-
-TEST(MagicStateDistillation, RejectsPreviousCircuitDefinition) {
-  auto manifest = toManifestJSON(MagicStateDistillation{});
-  const auto version = manifest.find(R"("definition_version":2)");
-  ASSERT_NE(version, std::string::npos);
-  manifest.replace(version, std::string(R"("definition_version":2)").size(),
-                   R"("definition_version":1)");
-  test::expectInvalidJSON(
-      [&] {
-        static_cast<void>(magicStateDistillationFromManifestJSON(manifest));
-      },
-      "$/definition_version must be 2");
 }
 
 TEST(MagicStateDistillation, DescribesJSONSchema) {

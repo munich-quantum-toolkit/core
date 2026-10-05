@@ -29,7 +29,7 @@ MQT_BENCHMARK_FAMILY(Grover, grover, "grover", 1)
 MQT_BENCHMARK_FAMILY(WeakMeasurementGrover, weakMeasurementGrover,
                      "grover-weak-measurement", 1)
 MQT_BENCHMARK_FAMILY(MagicStateDistillation, magicStateDistillation,
-                     "magic-state-distillation", 2)
+                     "magic-state-distillation", 1)
 MQT_BENCHMARK_FAMILY(ModularMultiplier, modularMultiplier, "modular-multiplier",
                      1)
 MQT_BENCHMARK_FAMILY(Multiplexer, multiplexer, "multiplexer", 1)

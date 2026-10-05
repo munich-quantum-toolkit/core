@@ -76,6 +76,16 @@ TEST(BenchmarkJSON, RejectsAlteredOrUnresolvedManifests) {
   EXPECT_NE(manifest.find("\"case_id\":\"" + caseId(ghz) + "\""),
             std::string::npos);
 
+  auto changedDefinition = manifest;
+  const auto version = changedDefinition.find(R"("definition_version":1)");
+  ASSERT_NE(version, std::string::npos);
+  changedDefinition.replace(version,
+                            std::string(R"("definition_version":1)").size(),
+                            R"("definition_version":0)");
+  expectInvalidJSON(
+      [&] { static_cast<void>(ghzFromManifestJSON(changedDefinition)); },
+      "$/definition_version must be 1");
+
   auto changedOutput = manifest;
   const auto width = changedOutput.find("\"width\":3");
   ASSERT_NE(width, std::string::npos);
@@ -112,7 +122,7 @@ TEST(BenchmarkJSON, RejectsAlteredOrUnresolvedManifests) {
 TEST(BenchmarkJSON, ListsBenchmarksAndRejectsUnknownSchemas) {
   EXPECT_EQ(
       listBenchmarksJSON(),
-      R"({"benchmarks":[{"definition_version":1,"id":"bv"},{"definition_version":1,"id":"ghz"},{"definition_version":1,"id":"grover"},{"definition_version":1,"id":"grover-weak-measurement"},{"definition_version":2,"id":"magic-state-distillation"},{"definition_version":1,"id":"modular-multiplier"},{"definition_version":1,"id":"multiplexer"},{"definition_version":1,"id":"qft"},{"definition_version":1,"id":"qft-adder"},{"definition_version":1,"id":"qpe"},{"definition_version":1,"id":"repeat-until-success"},{"definition_version":1,"id":"shor"},{"definition_version":1,"id":"teleportation"},{"definition_version":1,"id":"w-state"}],"schema_version":1})");
+      R"({"benchmarks":[{"definition_version":1,"id":"bv"},{"definition_version":1,"id":"ghz"},{"definition_version":1,"id":"grover"},{"definition_version":1,"id":"grover-weak-measurement"},{"definition_version":1,"id":"magic-state-distillation"},{"definition_version":1,"id":"modular-multiplier"},{"definition_version":1,"id":"multiplexer"},{"definition_version":1,"id":"qft"},{"definition_version":1,"id":"qft-adder"},{"definition_version":1,"id":"qpe"},{"definition_version":1,"id":"repeat-until-success"},{"definition_version":1,"id":"shor"},{"definition_version":1,"id":"teleportation"},{"definition_version":1,"id":"w-state"}],"schema_version":1})");
   EXPECT_THROW(static_cast<void>(describeBenchmarkJSON("unknown")),
                std::invalid_argument);
 }
