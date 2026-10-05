@@ -38,15 +38,18 @@ namespace mqt::bench {
 
 using test::expectInvalidJSON;
 
+namespace {
+
 template <class Action>
-static void expectInvalid(const Action& operation,
-                          const std::string_view diagnostic) {
+void expectInvalid(const Action& operation, const std::string_view diagnostic) {
   const auto error = ::mqt::test::diagnostic(operation);
   ASSERT_TRUE(error);
   EXPECT_EQ(error->category, ::mqt::ErrorCategory::InvalidArgument);
   EXPECT_NE(error->message.find(diagnostic), std::string::npos)
       << error->message;
 }
+
+} // namespace
 
 TEST(BenchmarkJSON, ReturnsNormalizedInstancesAndInputDiagnostics) {
   const auto benchmark = ::mqt::test::value(GHZ::create({.qubits = 3}));

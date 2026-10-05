@@ -450,7 +450,7 @@ parseWeakMeasurementGroverParameters(const Json& parameters,
   WeakMeasurementGroverOptions options{.markedBitstring = std::move(*marked)};
   if (const auto strength = parameters.find("measurement_strength");
       strength != parameters.end()) {
-    auto value =
+    const auto value =
         numberValue(*strength, source, "$/parameters/measurement_strength");
     if (mlir::failed(value)) {
       return mlir::failure();
