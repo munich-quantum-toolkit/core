@@ -6,7 +6,7 @@ Status: implementation and local validation complete on main `bb0bf98dc`.
 
 [Core #2575](https://github.com/munich-quantum-toolkit/core/pull/2575) supports
 fixed operation parameters, multiple native alternatives, Qiskit target
-exchange, and RX pulse synthesis with RZ and an existing entangler such as CZ.
+exchange, and RX gate synthesis with RZ and an existing entangler such as CZ.
 Current Braket devices guide coverage. Existing Core `R`, `RXX`, `RZZ`, and `CZ`
 represent the corresponding PRX, XX, ZZ, and CZ operations; representing an
 operation does not establish a complete synthesis basis or provider execution
@@ -66,8 +66,8 @@ general fixed-angle solver or a common schema across all SDKs.
   repeated capabilities form a union across values and placements. Unbound
   parameters cannot satisfy fixed constraints. Preserve absolute matching
   tolerance and phase; do not wrap parameters during capability matching.
-- Reuse the existing `ZSXX` decomposition for IBM SX/X and fixed RX pulses with
-  unrestricted RZ. Replace `FixedRotation` with optional pulse choices in the
+- Reuse the existing `ZSXX` decomposition for IBM SX/X and fixed RX gates with
+  unrestricted RZ. Replace `FixedRotation` with optional gate choices in the
   synthesis configuration. Account for the phase between SX/X and RX exactly.
   Both quarter-turn signs and optional half turns are valid choices; emission
   and routing costs must use the selected capabilities.
@@ -79,19 +79,16 @@ general fixed-angle solver or a common schema across all SDKs.
   import and export. Multiple RX variants must survive together, including
   different placements. Do not infer operation semantics from an arbitrary name.
 - Keep general Euler helpers independent of target policy. Do not introduce an
-  arbitrary-angle solver, rational angle representation, or six-axis pulse
+  arbitrary-angle solver, rational angle representation, or six-axis gate
   framework without a concrete device need. Rewrite user documentation around
   the supported contract and examples.
 
-[Core #2578](https://github.com/munich-quantum-toolkit/core/pull/2578) is
-already stacked on #2575 and owns GPI/GPI2 coverage. On rebase, reassess its
-unreleased turn-based gates: prefer radians and existing RZZ, prioritizing Forte
-over retired Aria MS while preserving GPi's phase relative to `R(π, φ)`. Its GPI
-pulse recipe is independent of fixed RX synthesis. Existing R/PRX covers IQM and
-AQT unitary representations. Provider serialization and IQM
-[experimental feedforward][dynamic] remain separate work, including feedback
-groups and result semantics. Follow [verbatim rules][verbatim] at the adapter
-boundary; fixed parameters do not provide complete execution support.
+The follow-up [native target plan](native-ion-gate-targets.md) extends the same
+lowering to fixed R capabilities and keeps GPI/GPI2 as target aliases. Existing
+R/PRX also covers IQM and AQT. Provider serialization and IQM
+[experimental feedforward][dynamic] remain separate work. Follow
+[verbatim rules][verbatim] at the adapter boundary; fixed parameters do not
+provide complete execution support.
 
 ## Validation
 

@@ -76,6 +76,37 @@ using Site = Target::Site;
 using SiteId = Target::SiteId;
 using SiteTuple = Target::SiteTuple;
 
+TEST(CompilerTargetTest, FixedRBasisRequiresRZAndUsableQuarterTurns) {
+  for (const bool includeRZ : {false, true}) {
+    for (const double theta : {std::numbers::pi / 4., std::numbers::pi / 2.}) {
+      for (const std::optional<double> phi :
+           {std::optional<double>{}, {0.}, {.1}}) {
+        std::vector operations{
+            valid(OperationCapability::create("r", 1, 2, {}, std::nullopt,
+                                              std::nullopt, {theta, phi})),
+            valid(OperationCapability::create("rzz", 2, 1)),
+        };
+        if (includeRZ) {
+          operations.push_back(valid(OperationCapability::create("rz", 1, 1)));
+        }
+        const auto target =
+            valid(Target::create(2, Connectivity::allToAll(),
+                                 NativeOperations::fromOperations(operations)));
+        const bool usable =
+            includeRZ && theta == std::numbers::pi / 2. && (!phi || *phi == 0.);
+        ASSERT_EQ(target.synthesisBasis().has_value(), usable);
+        if (usable) {
+          EXPECT_EQ(target.synthesisBasis()->singleQubit,
+                    Target::SingleQubitBasis::ZSXX);
+          ASSERT_TRUE(target.synthesisBasis()->quarterTurnGates);
+          EXPECT_EQ(target.synthesisBasis()->quarterTurnGates->gate,
+                    Target::GateKind::R);
+        }
+      }
+    }
+  }
+}
+
 TEST(PayloadSpecificationTest, ValidatesAndRoundTripsTypedAttribute) {
   mlir::MLIRContext context;
   context.loadDialect<mlir::mqt::MQTDialect>();
@@ -740,7 +771,7 @@ TEST(CompilerTargetTest, PreservesCalibrationAndResolvesHomogeneousBasis) {
   EXPECT_FALSE(target.supports(GateKind::CZ, {2, 1}));
   ASSERT_TRUE(target.synthesisBasis());
   EXPECT_EQ(target.synthesisBasis()->singleQubit, Target::SingleQubitBasis::U);
-  EXPECT_EQ(target.synthesisBasis()->entangler, GateKind::CZ);
+  EXPECT_EQ(target.synthesisBasis()->entangler->gate, GateKind::CZ);
 }
 
 TEST(CompilerTargetTest, RoundTripsTypedCompilationTargetAttribute) {
@@ -932,6 +963,25 @@ TEST(CompilerTargetTest, MatchesFixedParametersAndPreservesPlacements) {
       restored.supportsOperation("r", 1, 2, site, {std::numbers::pi / 2., 1.}));
 }
 
+TEST(CompilerTargetTest, PreservesParameterBounds) {
+  const auto rotation = valid(OperationCapability::create(
+      "rzz", 2, 1, {}, std::nullopt, std::nullopt, {}, std::nullopt,
+      {OperationCapability::ParameterBounds{0., std::numbers::pi / 2.}}));
+  const auto target =
+      valid(Target::create(2, Connectivity::allToAll(),
+                           NativeOperations::fromOperations({rotation})));
+  mlir::MLIRContext context;
+  context.loadDialect<mlir::mqt::MQTDialect>();
+  const auto attribute = target.materialize(context);
+  const auto restored = valid(Target::create(attribute));
+  EXPECT_EQ(restored.materialize(context), attribute);
+  EXPECT_EQ(restored.operations()[0].parameterBounds(),
+            rotation.parameterBounds());
+  EXPECT_TRUE(restored.supportsOperation("rzz", 2, 1, std::nullopt, {0.3}));
+  EXPECT_FALSE(restored.supportsOperation("rzz", 2, 1, std::nullopt, {-0.3}));
+  EXPECT_FALSE(restored.supportsOperation("rzz", 2, 1));
+}
+
 TEST(CompilerTargetTest, RejectsInvalidFixedParameters) {
   expectInvalid(
       OperationCapability::create("rx", 1, 1, {}, std::nullopt, std::nullopt,
@@ -997,7 +1047,7 @@ TEST(CompilerTargetTest, ChecksFixedValuesInsideNativeControls) {
   }
 }
 
-TEST(CompilerTargetTest, ResolvesFixedPulseBasisOnlyOnEverySite) {
+TEST(CompilerTargetTest, ResolvesFixedRXGateBasisOnlyOnEverySite) {
   auto operations = std::vector{
       valid(OperationCapability::create("rz", 1, 1)),
       valid(OperationCapability::create(
@@ -1022,7 +1072,7 @@ TEST(CompilerTargetTest, ResolvesFixedPulseBasisOnlyOnEverySite) {
   EXPECT_FALSE(target.synthesisBasis()->entangler);
 }
 
-TEST(CompilerTargetTest, KeepsUnsupportedPulseAnglesNativeWithoutSynthesis) {
+TEST(CompilerTargetTest, KeepsUnsupportedRXAnglesNativeWithoutSynthesis) {
   for (double angle : {
            0.,
            .37,
@@ -1044,19 +1094,20 @@ TEST(CompilerTargetTest, KeepsUnsupportedPulseAnglesNativeWithoutSynthesis) {
   }
 }
 
-TEST(CompilerTargetTest, FixedPulseSynthesisRequiresRZAndRX) {
-  for (const auto& [free, pulse] :
+TEST(CompilerTargetTest, FixedPauliSynthesisRequiresFreeRZ) {
+  for (const auto& [free, gate] :
        {std::pair{"rx", "ry"}, std::pair{"rz", "ry"}}) {
     const auto target = valid(Target::create(
         1, Connectivity::allToAll(),
         NativeOperations::fromOperations({
             valid(OperationCapability::create(free, 1, 1)),
             valid(OperationCapability::create("gphase", 0, 1)),
-            valid(OperationCapability::create(pulse, 1, 1, {}, std::nullopt,
+            valid(OperationCapability::create(gate, 1, 1, {}, std::nullopt,
                                               std::nullopt,
                                               {std::numbers::pi / 2.})),
         })));
-    EXPECT_FALSE(target.synthesisBasis());
+    EXPECT_EQ(target.synthesisBasis().has_value(),
+              std::string_view(free) == "rz");
   }
 }
 
@@ -1104,7 +1155,58 @@ TEST(CompilerTargetTest, ClassifiesEveryEntangler) {
     EXPECT_TRUE(llvm::is_contained(target.supportedGates(), gate));
     EXPECT_EQ(target.supports(gate), true);
     ASSERT_TRUE(target.synthesisBasis());
-    EXPECT_EQ(target.synthesisBasis()->entangler, gate);
+    EXPECT_EQ(target.synthesisBasis()->entangler->gate, gate);
+  }
+}
+
+TEST(CompilerTargetTest, PrefersParameterizedEntanglerOverFixedAlternative) {
+  const auto target =
+      valid(Target::create(2, Connectivity::allToAll(),
+                           NativeOperations::fromOperations({
+                               valid(OperationCapability::create("u", 1, 3)),
+                               valid(OperationCapability::create(
+                                   "rxx", 2, 1, {}, std::nullopt, std::nullopt,
+                                   {std::numbers::pi / 2.})),
+                               valid(OperationCapability::create("rzz", 2, 1)),
+                           })));
+  ASSERT_TRUE(target.synthesisBasis());
+  ASSERT_TRUE(target.synthesisBasis()->entangler);
+  EXPECT_EQ(target.synthesisBasis()->entangler->gate, GateKind::RZZ);
+  EXPECT_TRUE(target.synthesisBasis()->entangler->parameterized());
+}
+
+TEST(CompilerTargetTest, EntanglerCapabilitiesRespectAnglesAndOperandOrder) {
+  for (const auto& [gate, name] : {
+           std::pair{GateKind::RXX, "rxx"},
+           std::pair{GateKind::RYY, "ryy"},
+           std::pair{GateKind::RZX, "rzx"},
+           std::pair{GateKind::RZZ, "rzz"},
+       }) {
+    SCOPED_TRACE(name);
+    const auto fixed = valid(OperationCapability::create(
+        name, 2, 1, {valid(SiteTuple::create({0, 1}))}, std::nullopt,
+        std::nullopt, {std::numbers::pi / 2.}));
+    const auto arbitrary = valid(OperationCapability::create(
+        name, 2, 1,
+        {valid(SiteTuple::create({1, 0})), valid(SiteTuple::create({1, 2}))}));
+    const auto target =
+        valid(Target::create(3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
+                             NativeOperations::fromOperations({
+                                 valid(OperationCapability::create("u", 1, 3)),
+                                 fixed,
+                                 arbitrary,
+                             })));
+    const Target::Entangler unrestricted{
+        .gate = gate,
+        .angles = Target::AngleSupport::Unrestricted,
+    };
+    EXPECT_TRUE(target.supports(Target::Entangler{.gate = gate}, {0, 1}));
+    EXPECT_FALSE(target.supports(unrestricted, {0, 1}));
+    EXPECT_TRUE(target.supports(unrestricted, {1, 0}));
+    EXPECT_TRUE(target.supports(unrestricted, {1, 2}));
+    EXPECT_FALSE(target.supports(unrestricted, {2, 1}));
+    ASSERT_TRUE(target.synthesisBasis());
+    EXPECT_EQ(target.synthesisBasis()->entangler, unrestricted);
   }
 }
 
@@ -1128,7 +1230,7 @@ TEST(CompilerTargetTest, DerivesControlledEntanglersFromVariadicBases) {
     ASSERT_TRUE(target.synthesisBasis());
     EXPECT_EQ(target.synthesisBasis()->singleQubit,
               Target::SingleQubitBasis::U);
-    EXPECT_EQ(target.synthesisBasis()->entangler, entangler);
+    EXPECT_EQ(target.synthesisBasis()->entangler->gate, entangler);
   }
 }
 
@@ -1143,7 +1245,7 @@ TEST(CompilerTargetTest, ResolvesLargeAllToAllVariadicBasis) {
 
   ASSERT_TRUE(target.synthesisBasis());
   EXPECT_EQ(target.synthesisBasis()->singleQubit, Target::SingleQubitBasis::U);
-  EXPECT_EQ(target.synthesisBasis()->entangler, GateKind::CX);
+  EXPECT_EQ(target.synthesisBasis()->entangler->gate, GateKind::CX);
 }
 
 TEST(CompilerTargetTest, SupportsRealQCOOperationsAndStructuralOps) {

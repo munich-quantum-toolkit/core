@@ -1,0 +1,77 @@
+# Audit: native ion gates and the Bench compiler
+
+Status: historical hardware and scope assessment for Core #2578 and Bench #1027.
+Hardware snapshot: 2026-10-02.
+
+## Hardware scope
+
+A read-only Braket census across its five device regions returned 29 distinct
+ARNs. Metadata for all 26 QPUs identified six online gate QPUs, one online
+analog QPU, and 19 retired QPUs. No quantum tasks were submitted.
+
+| Online gate QPU               | Active qubits | Native metadata                |
+| ----------------------------- | ------------: | ------------------------------ |
+| IonQ Forte / Forte Enterprise |       36 each | GPI, GPI2, ZZ                  |
+| Rigetti Cepheus               |           107 | RX, RZ, CZ                     |
+| AQT IBEX                      |            12 | PRX, XX, RZ                    |
+| IQM Garnet / Emerald          |       20 / 54 | PRX, CZ, experimental feedback |
+
+The live gate devices support verbatim programs. Provider adapters must enforce
+units, numeric domains, physical labels, measurement restrictions, and feature
+flags. Numeric domains are not fully specified by the native-name whitelist.
+Rigetti uses RX at +/-pi/2 and +/-pi. Cepheus physical labels are 0..107 except
+8; Bench keeps an explicit dense-to-physical map and all 386 directed CZ edges.
+IQM's ideal architecture models are labeled as such; Emerald's 90 model edges
+include four beyond the live 86-edge snapshot. Aquila is an analog device and is
+outside this gate compiler.
+
+IonQ describes arbitrary virtual Z as phase propagation. Bench advertises RZ for
+that capability; the submission layer absorbs it into GPI/GPI2 gate phases. This
+compiler abstraction does not claim RZ is in Braket's literal IonQ whitelist.
+
+Aria is retired; its IonQ MS gate has no remaining catalogue consumer. AQT's
+physically named MS interaction is already RXX. Remove Aria and MS. Replace the
+Braket Ankaa model with Cepheus; this does not claim Ankaa is unavailable on all
+other services. Remove retired Falcon/Eagle and the obsolete Heron-133 model;
+keep Heron-156, IQM architecture models, Quantinuum H2, and artificial logical
+gate sets. Add AQT IBEX. Benchmark creation performs no cloud queries.
+
+Sources: [IonQ Aria](https://www.ionq.com/quantum-systems/aria),
+[IonQ native gates](https://docs.ionq.com/features/getting-started-with-native-gates),
+[Braket gate submission](https://docs.aws.amazon.com/braket/latest/developerguide/braket-submit-tasks.html),
+[Braket experimental capabilities](https://docs.aws.amazon.com/braket/latest/developerguide/braket-experimental-capabilities.html),
+[IBM retirements](https://quantum.cloud.ibm.com/docs/en/guides/retired-qpus),
+[IQM Spark](https://iqm.tech/products/iqm-spark/), and
+[Quantinuum availability](https://docs.quantinuum.com/systems/support/system_reference.html).
+
+### Implementation boundaries
+
+Core uses existing R and RZZ operations throughout synthesis, IR, and runtime
+consumers. Qiskit targets expose GPI/GPI2 through exact fixed-R definitions;
+only that import/export boundary projects their phase parameter and accounts for
+GPI's global phase. Arbitrary renamed custom aliases and provider-specific angle
+units are not inferred. CY follows the existing controlled-Pauli target
+contract.
+
+RZ plus fixed RX, RY, or R quarter turns use ordinary ZSXX synthesis with direct
+native emission. Native parameter constraints remain explicit. Parameterized
+entangler synthesis reuses Weyl factors and native cost analysis; constrained
+entanglers retain the fixed-angle path. Runtime Pauli rotations and controlled
+phase use the shared Pauli decomposition routines with explicit global phase.
+
+Bench delegates target import to Core and uses a private standard-gate target
+for both IonQ and Rigetti Qiskit compilation. Final local equivalences preserve
+native aliases without modifying the session library. Native compilation drops
+physical topology; mapped compilation retains it. Layout and mirror semantics
+remain consumer contracts.
+
+Bench's base compiler requires Qiskit 2.1.2 or newer; Core and QIR integration
+require Qiskit 2.5.x for the native C API bridge. The uv minimums group and Core
+extra select these environments independently. No provider SDK, new native IR
+gates, arbitrary fixed-angle solver, or MS support is required.
+
+### Implementation record
+
+The [native target plan](../plans/native-ion-gate-targets.md) owns current
+synthesis decisions and validation. This audit retains the dated hardware
+snapshot and the Core/Bench/provider ownership boundaries.

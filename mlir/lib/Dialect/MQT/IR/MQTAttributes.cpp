@@ -216,7 +216,8 @@ LogicalResult NativeOperationAttr::verify(
     const OperationArityAttr arity, const uint64_t numParameters,
     const ArrayRef<SiteTupleAttr> siteTuples,
     const std::optional<uint64_t> /*duration*/, const FloatAttr fidelity,
-    const ArrayAttr fixedParameters, const StringAttr canonicalName) {
+    const ArrayAttr fixedParameters, const StringAttr canonicalName,
+    ArrayAttr parameterBounds) {
   if (name.getValue().trim().empty()) {
     return emitError() << "compiler target operation name must not be empty";
   }
@@ -242,6 +243,32 @@ LogicalResult NativeOperationAttr::verify(
       if (!value || !value.getType().isF64() || !value.getValue().isFinite()) {
         return emitError() << "compiler target fixed parameters must be finite "
                               "f64 values or unit";
+      }
+    }
+  }
+
+  if (parameterBounds) {
+    if (parameterBounds.size() != numParameters) {
+      return emitError() << "compiler target parameter bounds must match its "
+                            "parameter count";
+    }
+    for (const auto [index, bound] : llvm::enumerate(parameterBounds)) {
+      if (isa<UnitAttr>(bound)) {
+        continue;
+      }
+      auto values = dyn_cast<DenseF64ArrayAttr>(bound);
+      if (!values || values.size() != 2 || std::isnan(values[0]) ||
+          std::isnan(values[1]) || values[0] > values[1]) {
+        return emitError() << "compiler target parameter bounds must contain "
+                              "two ordered f64 endpoints or unit";
+      }
+      if (fixedParameters) {
+        if (auto value = dyn_cast<FloatAttr>(fixedParameters[index]);
+            value && (value.getValueAsDouble() < values[0] ||
+                      value.getValueAsDouble() > values[1])) {
+          return emitError()
+                 << "compiler target fixed parameter lies outside its bounds";
+        }
       }
     }
   }

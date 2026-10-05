@@ -121,36 +121,15 @@ static std::optional<Value> findKnownLoadValue(LoadOp load) {
       previousLoad.getIndex() == load.getIndex()) {
     return previousLoad.getResult();
   }
-  const auto loadIndex = getConstantIntValue(load.getIndex());
-  for (auto* candidate = load->getPrevNode(); candidate != nullptr;
-       candidate = candidate->getPrevNode()) {
-    if (auto store = dyn_cast<StoreOp>(candidate);
-        store && store.getReg() == load.getReg()) {
-      if (store.getIndex() == load.getIndex()) {
-        return store.getValue();
-      }
-      const auto storeIndex = getConstantIntValue(store.getIndex());
-      if (loadIndex && storeIndex && *loadIndex != *storeIndex) {
-        continue;
-      }
-      return std::nullopt;
-    }
-
-    if (auto alloc = dyn_cast<AllocOp>(candidate);
-        alloc && alloc.getResult() == load.getReg()) {
-      if (alloc.getInitialization() == Initialization::Zero) {
-        return Value{};
-      }
-      return std::nullopt;
-    }
-
-    if (isa<LoadOp, ReadOp>(candidate)) {
-      continue;
-    }
-    if (candidate->getNumRegions() != 0 ||
-        llvm::is_contained(candidate->getOperands(), load.getReg())) {
-      return std::nullopt;
-    }
+  if (auto store = dyn_cast_if_present<StoreOp>(load->getPrevNode());
+      store && store.getReg() == load.getReg() &&
+      store.getIndex() == load.getIndex()) {
+    return store.getValue();
+  }
+  if (auto alloc = dyn_cast_if_present<AllocOp>(load->getPrevNode());
+      alloc && alloc.getResult() == load.getReg() &&
+      alloc.getInitialization() == Initialization::Zero) {
+    return Value{};
   }
   return std::nullopt;
 }

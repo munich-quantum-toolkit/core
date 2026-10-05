@@ -28,12 +28,11 @@
 #include <cstdint>
 #include <optional>
 
-namespace mlir::qco::decomposition {
+namespace mlir {
+class RewriterBase;
+}
 
-/// CX with the control on the first (high-bit) qubit.
-inline constexpr Matrix4x4 CANONICAL_CONTROLLED_X =
-    Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
-                            0.0, 1.0, 0.0, 0.0, 1.0, 0.0);
+namespace mlir::qco::decomposition {
 
 /// Tolerance for complex symmetric `M2` diagonalization.
 inline constexpr double WEYL_DIAGONALIZATION_TOLERANCE = 1e-13;
@@ -60,9 +59,8 @@ inline constexpr double WEYL_SUPER_CONTROLLED_MAX_RELATIVE = 1e-9;
 ///
 /// @note Adapted from Qiskit's `trace_to_fid`.
 [[nodiscard]] inline double traceToFidelity(const Complex& trace) {
-  const auto traceAbs = std::abs(trace);
   const auto dimension = 4.0;
-  return (dimension + (traceAbs * traceAbs)) / (dimension * (dimension + 1));
+  return (dimension + std::norm(trace)) / (dimension * (dimension + 1));
 }
 
 /// Euclidean remainder mapping `a` into `[0, |b|)` for `b != 0`.
@@ -175,13 +173,16 @@ struct TwoQubitNativeDecomposition {
   std::uint8_t numBasisUses = 0;
   SmallVector<Matrix2x2> singleQubitFactors;
   double globalPhase = 0.0;
+  /// Per-use rotation angles; empty means the fixed synthesis gate.
+  SmallVector<double, 3> entanglerParameters;
 };
 
 /// Reconstructs the target unitary from a native basis decomposition.
 ///
 /// Applies `singleQubitFactors` and `numBasisUses` copies of @p basisGate in
 /// the emission order documented on @ref TwoQubitNativeDecomposition, then the
-/// global phase.
+/// global phase. For a parameterized decomposition, @p basisGate must be the
+/// corresponding Pauli rotation at pi/2; each use takes its stored angle.
 [[nodiscard]] Matrix4x4
 unitaryMatrix(const TwoQubitNativeDecomposition& decomposition,
               const Matrix4x4& basisGate);
@@ -233,6 +234,15 @@ public:
   decomposeTarget(const Matrix4x4& targetUnitary,
                   std::optional<std::uint8_t> numBasisGateUses = std::nullopt,
                   uint64_t seed = 2023) const;
+
+  /// Emit RXX(x) RYY(y) RZZ(z), conjugated by local Clifford frames,
+  /// with three applications of a super-controlled fixed basis gate.
+  /// Pauli rotation bases use their pi/2 interaction.
+  [[nodiscard]] SmallVector<Value, 2>
+  emitCartan(RewriterBase& rewriter, Location loc, Value qubit0, Value qubit1,
+             std::array<Value, 3> angles,
+             const std::array<Matrix2x2, 2>& frames,
+             const CompilerTarget::SynthesisBasis& basis) const;
 
 private:
   /// Precomputed single-qubit templates for super-controlled basis
@@ -318,6 +328,10 @@ private:
   SmbPrecomputed smb{};
 };
 
+/// Cached templates for a native fixed gate or a Pauli rotation at pi/2.
+[[nodiscard]] const TwoQubitBasisDecomposer&
+cachedNativeBasisDecomposer(CompilerTarget::GateKind entangler);
+
 /// Convenience wrapper that builds a fresh basis decomposer per call.
 ///
 /// For a fixed basis gate decomposed many times, prefer caching
@@ -337,13 +351,15 @@ struct SynthesizedUnitary2Q {
 };
 
 /// Decomposes a two-qubit unitary using @p entangler, returning `std::nullopt`
-/// if the numerical decomposition fails.
+/// if the numerical decomposition fails. All entanglers use
+/// @ref WEYL_DEFAULT_FIDELITY for the target's Weyl specialization.
 ///
 /// SQRTISWAP uses the minimum number of square-root iSWAP gates (0--3),
 /// up to WEYL_TOLERANCE in the interaction coefficients.
+/// Unrestricted RXX/RYY/RZX/RZZ use one rotation per nonzero Cartan coordinate.
 [[nodiscard]] std::optional<TwoQubitNativeDecomposition>
 decomposeUnitary2QWeyl(const Matrix4x4& target,
-                       CompilerTarget::GateKind entangler,
+                       CompilerTarget::Entangler entangler,
                        uint64_t seed = 2023);
 
 /// Emits a prepared two-qubit decomposition in the selected target basis.

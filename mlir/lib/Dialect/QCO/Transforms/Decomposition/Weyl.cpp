@@ -13,11 +13,13 @@
 #include "mqt/Compiler/Target.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Euler.h"
+#include "mqt/Dialect/QCO/Transforms/Decomposition/Pauli.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 #include "mqt/Support/RandomSeed.h"
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Location.h"
+#include "mlir/IR/Operation.h"
 #include "mlir/IR/Value.h"
 #include "mlir/Support/LLVM.h"
 
@@ -72,10 +74,15 @@ struct ChamberState {
 
 static constexpr double WEYL_PI = std::numbers::pi;
 static constexpr double WEYL_PI_OVER_4 = WEYL_PI / 4.0;
+/// CX with the control on the first (high-bit) qubit.
+static constexpr Matrix4x4 CANONICAL_CONTROLLED_X =
+    Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
+                            0.0, 1.0, 0.0, 0.0, 1.0, 0.0);
+
 static constexpr Matrix4x4 CANONICAL_CONTROLLED_Z =
     Matrix4x4::fromDiagonal(1., 1., 1., -1.);
 
-static const TwoQubitBasisDecomposer&
+const TwoQubitBasisDecomposer&
 cachedNativeBasisDecomposer(const CompilerTarget::GateKind entangler) {
   using GateKind = CompilerTarget::GateKind;
   switch (entangler) {
@@ -124,8 +131,7 @@ cachedNativeBasisDecomposer(const CompilerTarget::GateKind entangler) {
     return DECOMPOSER;
   }
   default:
-    llvm_unreachable(
-        "only RXX/RYY/RZX/RZZ/ISWAP/CZ/CX/ECR are valid entanglers");
+    llvm_unreachable("unsupported native synthesis entangler");
   }
 }
 
@@ -560,8 +566,22 @@ Matrix4x4 unitaryMatrix(const TwoQubitNativeDecomposition& decomposition,
     return Matrix4x4::kron(factors[(2 * i) + 1], factors[2 * i]);
   };
   Matrix4x4 matrix = layer(0);
+  assert((decomposition.entanglerParameters.empty() ||
+          decomposition.entanglerParameters.size() ==
+              decomposition.numBasisUses) &&
+         "one parameter is required per entangler");
   for (std::uint8_t i = 0; i < decomposition.numBasisUses; ++i) {
-    matrix = basisGate * matrix;
+    auto gate = basisGate;
+    if (!decomposition.entanglerParameters.empty()) {
+      /// For a Pauli product P, R_P(theta) = I cos(theta/2) - i P sin(theta/2).
+      const auto halfAngle = decomposition.entanglerParameters[i] / 2.;
+      const auto sine = std::sin(halfAngle);
+      gate = basisGate * (std::numbers::sqrt2 * sine);
+      for (size_t diagonal = 0; diagonal < 4; ++diagonal) {
+        gate(diagonal, diagonal) += std::cos(halfAngle) - sine;
+      }
+    }
+    matrix = gate * matrix;
     matrix = layer(static_cast<std::size_t>(i) + 1) * matrix;
   }
   return matrix * std::polar(1.0, decomposition.globalPhase);
@@ -836,7 +856,7 @@ twoGates(const TwoQubitWeylDecomposition& target, uint64_t seed) {
 static std::optional<TwoQubitNativeDecomposition>
 decomposeSqrtISwap(const Matrix4x4& target, uint64_t seed) {
   const auto targetDecomposition =
-      TwoQubitWeylDecomposition::create(target, std::nullopt, seed);
+      TwoQubitWeylDecomposition::create(target, WEYL_DEFAULT_FIDELITY, seed);
   if (!targetDecomposition) {
     return std::nullopt;
   }
@@ -887,14 +907,63 @@ decomposeSqrtISwap(const Matrix4x4& target, uint64_t seed) {
   return before;
 }
 
+/// Realize the three commuting Cartan rotations using one native axis pair.
+static std::optional<TwoQubitNativeDecomposition>
+decomposePauliRotations(const Matrix4x4& target,
+                        CompilerTarget::Entangler entangler, uint64_t seed) {
+  const auto kak =
+      TwoQubitWeylDecomposition::create(target, WEYL_DEFAULT_FIDELITY, seed);
+  if (!kak) {
+    return std::nullopt;
+  }
+  const auto identity = Matrix2x2::identity();
+  const auto axes = pauliAxes(entangler.gate);
+  TwoQubitNativeDecomposition result{
+      .singleQubitFactors = {identity, identity},
+  };
+  for (const auto& [coordinate, axis] : {
+           std::pair{kak->a(), PauliAxis::X},
+           std::pair{kak->b(), PauliAxis::Y},
+           std::pair{kak->c(), PauliAxis::Z},
+       }) {
+    if (std::abs(coordinate) <= WEYL_TOLERANCE) {
+      continue;
+    }
+    auto left = pauliFrame(axis, axes[0]);
+    double angle = -2. * coordinate;
+    if (entangler.angles == CompilerTarget::AngleSupport::ZeroToHalfPi &&
+        angle < 0.) {
+      /// Cartan angles already lie in [-pi/2, pi/2]. A Pauli conjugation
+      /// changes the sign without changing the native interaction count.
+      const auto flip = axes[0] == PauliAxis::Z ? XOp::getUnitaryMatrix()
+                                                : ZOp::getUnitaryMatrix();
+      left = left * flip;
+      angle = -angle;
+    }
+    const auto right = pauliFrame(axis, axes[1]);
+    auto& factors = result.singleQubitFactors;
+    factors[factors.size() - 2] = right.adjoint() * factors[factors.size() - 2];
+    factors.back() = left.adjoint() * factors.back();
+    factors.push_back(right);
+    factors.push_back(left);
+    result.entanglerParameters.push_back(angle);
+    ++result.numBasisUses;
+  }
+  attachLocalFactors(result, *kak);
+  return result;
+}
+
 std::optional<TwoQubitNativeDecomposition>
 decomposeUnitary2QWeyl(const Matrix4x4& target,
-                       CompilerTarget::GateKind entangler, uint64_t seed) {
-  if (entangler == CompilerTarget::GateKind::SQRTISWAP) {
+                       CompilerTarget::Entangler entangler, uint64_t seed) {
+  if (entangler.parameterized()) {
+    return decomposePauliRotations(target, entangler, seed);
+  }
+  if (entangler.gate == CompilerTarget::GateKind::SQRTISWAP) {
     return decomposeSqrtISwap(target, seed);
   }
-  return cachedNativeBasisDecomposer(entangler).decomposeTarget(
-      target, std::nullopt, seed);
+  return cachedNativeBasisDecomposer(entangler.gate)
+      .decomposeTarget(target, std::nullopt, seed);
 }
 
 SynthesizedUnitary2Q
@@ -921,74 +990,47 @@ emitUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0, Value qubit1,
   const auto emitFactor = [&](Value& wire, std::size_t index) {
     const auto synthesized = synthesizeUnitary1QEuler(
         builder, loc, wire, factors[index], /*runSize=*/0,
-        /*hasNonBasisGate=*/true, basis.singleQubit, &basis);
+        /*hasNonBasisGate=*/true, basis);
     wire = synthesized->qubit;
     globalPhase += synthesized->globalPhase;
   };
-  const auto emitEntangler = [&] {
-    if (basis.entangler == CompilerTarget::GateKind::RXX) {
-      auto rxxOp = RXXOp::create(builder, loc, wire0, wire1, WEYL_PI / 2.0);
-      wire0 = rxxOp.getOutputQubit(0);
-      wire1 = rxxOp.getOutputQubit(1);
-      return;
+  const auto emitEntangler = [&](uint8_t layer) -> Operation* {
+    const double angle = decomposition.entanglerParameters.empty()
+                             ? WEYL_PI / 2.
+                             : decomposition.entanglerParameters[layer];
+    switch (basis.entangler->gate) {
+    case CompilerTarget::GateKind::RXX:
+    case CompilerTarget::GateKind::RYY:
+    case CompilerTarget::GateKind::RZX:
+    case CompilerTarget::GateKind::RZZ:
+      return emitPauliRotation2Q(builder, loc, wire0, wire1,
+                                 basis.entangler->gate, angle);
+    case CompilerTarget::GateKind::SQRTISWAP:
+      return XXPlusYYOp::create(builder, loc, wire0, wire1, -WEYL_PI / 2., 0.);
+    case CompilerTarget::GateKind::ISWAP:
+      return iSWAPOp::create(builder, loc, wire0, wire1);
+    case CompilerTarget::GateKind::CZ:
+    case CompilerTarget::GateKind::CX:
+      return CtrlOp::create(builder, loc, wire0, wire1, [&](Value targetQubit) {
+        if (basis.entangler->gate == CompilerTarget::GateKind::CZ) {
+          return ZOp::create(builder, loc, targetQubit).getOutputQubit(0);
+        }
+        return XOp::create(builder, loc, targetQubit).getOutputQubit(0);
+      });
+    case CompilerTarget::GateKind::ECR:
+      return ECROp::create(builder, loc, wire0, wire1);
+    default:
+      llvm_unreachable("unsupported native synthesis entangler");
     }
-    if (basis.entangler == CompilerTarget::GateKind::RYY) {
-      auto ryyOp = RYYOp::create(builder, loc, wire0, wire1, WEYL_PI / 2.0);
-      wire0 = ryyOp.getOutputQubit(0);
-      wire1 = ryyOp.getOutputQubit(1);
-      return;
-    }
-    if (basis.entangler == CompilerTarget::GateKind::RZX) {
-      auto rzxOp = RZXOp::create(builder, loc, wire0, wire1, WEYL_PI / 2.0);
-      wire0 = rzxOp.getOutputQubit(0);
-      wire1 = rzxOp.getOutputQubit(1);
-      return;
-    }
-    if (basis.entangler == CompilerTarget::GateKind::RZZ) {
-      auto rzzOp = RZZOp::create(builder, loc, wire0, wire1, WEYL_PI / 2.0);
-      wire0 = rzzOp.getOutputQubit(0);
-      wire1 = rzzOp.getOutputQubit(1);
-      return;
-    }
-    if (basis.entangler == CompilerTarget::GateKind::SQRTISWAP) {
-      auto exchange =
-          XXPlusYYOp::create(builder, loc, wire0, wire1, -WEYL_PI / 2., 0.);
-      wire0 = exchange.getOutputQubit(0);
-      wire1 = exchange.getOutputQubit(1);
-      return;
-    }
-    if (basis.entangler == CompilerTarget::GateKind::ISWAP) {
-      auto iswapOp = iSWAPOp::create(builder, loc, wire0, wire1);
-      wire0 = iswapOp.getOutputQubit(0);
-      wire1 = iswapOp.getOutputQubit(1);
-      return;
-    }
-    if (basis.entangler == CompilerTarget::GateKind::CZ ||
-        basis.entangler == CompilerTarget::GateKind::CX) {
-      const bool emitCz = basis.entangler == CompilerTarget::GateKind::CZ;
-      auto ctrlOp =
-          CtrlOp::create(builder, loc, wire0, wire1, [&](Value targetQubit) {
-            if (emitCz) {
-              return ZOp::create(builder, loc, targetQubit).getOutputQubit(0);
-            }
-            return XOp::create(builder, loc, targetQubit).getOutputQubit(0);
-          });
-      wire0 = ctrlOp.getOutputControl(0);
-      wire1 = ctrlOp.getOutputTarget(0);
-      return;
-    }
-    assert(basis.entangler == CompilerTarget::GateKind::ECR &&
-           "emitEntangler: unexpected compiler target gate");
-    auto ecrOp = ECROp::create(builder, loc, wire0, wire1);
-    wire0 = ecrOp.getOutputQubit(0);
-    wire1 = ecrOp.getOutputQubit(1);
   };
 
   for (std::uint8_t layer = 0; layer <= numBasisUses; ++layer) {
     emitFactor(wire1, static_cast<std::size_t>(2 * layer));
     emitFactor(wire0, static_cast<std::size_t>((2 * layer) + 1));
     if (layer < numBasisUses) {
-      emitEntangler();
+      auto* entangler = emitEntangler(layer);
+      wire0 = entangler->getResult(0);
+      wire1 = entangler->getResult(1);
     }
   }
 

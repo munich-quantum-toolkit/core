@@ -11,24 +11,57 @@
 #pragma once
 
 #include "mqt/Compiler/Target.h"
+#include "mqt/Dialect/QCO/Transforms/Decomposition/Pauli.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Location.h"
 #include "mlir/Support/LLVM.h"
 
+#include "llvm/Support/LogicalResult.h"
+
+#include <array>
 #include <cstddef>
 #include <optional>
+#include <variant>
 
 namespace mlir {
 class Operation;
 class RewriterBase;
-class RewritePatternSet;
 } // namespace mlir
+
+namespace mlir::qco {
+class UnitaryOpInterface;
+} // namespace mlir::qco
 
 namespace mlir::qco::decomposition {
 
 using SingleQubitBasis = CompilerTarget::SingleQubitBasis;
+using RotationParameter = std::variant<double, Value>;
+
+/// Reduce a gate angle modulo 4*pi before adding fixed Euler offsets.
+/// This preserves SU(2) phase and avoids losing offsets for large angles.
+[[nodiscard]] RotationParameter
+normalizeRotationParameter(OpBuilder& builder, Location loc,
+                           RotationParameter angle);
+
+struct RotationAngleTerm {
+  Value value;
+  double scale = 1.;
+};
+
+/// Cancel opposite SSA terms without creating IR. Dyadic input scaling is
+/// recognized; different surviving coefficients remain separate for accuracy.
+void simplifyRotationAngles(SmallVectorImpl<RotationAngleTerm>& angles);
+
+/// Emit a simplified angle sum, normalizing before balanced addition.
+[[nodiscard]] Value emitRotationAngleSum(OpBuilder& builder, Location loc,
+                                         ArrayRef<RotationAngleTerm> angles);
+
+/// Sum commuting rotation angles, cancelling inverse SSA terms before reducing
+/// each surviving angle modulo 4*pi. The expression depth is logarithmic.
+[[nodiscard]] Value sumRotationAngles(OpBuilder& builder, Location loc,
+                                      ArrayRef<Value> angles);
 
 /// Parses a basis name (e.g. `zyz`, `zsxx`; case-insensitive).
 ///
@@ -86,10 +119,25 @@ struct SynthesizedUnitary1Q {
 /// @param basis The single-qubit synthesis basis.
 /// @return The synthesized qubit and correction, or `std::nullopt` if synthesis
 /// is skipped.
-[[nodiscard]] std::optional<SynthesizedUnitary1Q> synthesizeUnitary1QEuler(
-    OpBuilder& builder, Location loc, Value qubit, const Matrix2x2& composed,
-    std::size_t runSize, bool hasNonBasisGate, SingleQubitBasis basis,
-    const CompilerTarget::SynthesisBasis* targetBasis = nullptr);
+[[nodiscard]] std::optional<SynthesizedUnitary1Q>
+synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
+                         const Matrix2x2& composed, std::size_t runSize,
+                         bool hasNonBasisGate,
+                         const CompilerTarget::SynthesisBasis& basis);
+
+/// Emit basis Euler angles `(theta, phi, lambda, phase)`. For the U basis,
+/// phase is the correction multiplying U(theta, phi, lambda).
+[[nodiscard]] Value
+emitParameterizedEulerAngles(OpBuilder& builder, Location loc, Value qubit,
+                             const std::array<RotationParameter, 4>& angles,
+                             const CompilerTarget::SynthesisBasis& basis);
+
+/// Synthesize an elementary Pauli rotation without evaluating its angle.
+/// Constant frame changes and their phases use the ordinary Euler emitter.
+[[nodiscard]] Value
+synthesizePauliRotation1Q(OpBuilder& builder, Location loc, Value qubit,
+                          PauliAxis axis, RotationParameter angle,
+                          const CompilerTarget::SynthesisBasis& basis);
 
 /// Materializes one accumulated phase correction when needed.
 ///
@@ -98,37 +146,25 @@ struct SynthesizedUnitary1Q {
 /// @param phase Global phase in radians.
 void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase);
 
+/// Reduce a generated runtime phase before later phase offsets are added.
+void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, Value phase);
+
 /// Returns whether @p op supports runtime one-qubit synthesis.
 [[nodiscard]] bool canSynthesizeParameterizedUnitary1Q(Operation* op);
 
 /// Synthesizes one supported runtime-parameterized operation in @p basis.
 ///
 /// Leaves operations that already belong to @p basis unchanged.
-/// The optional target basis selects native pulse forms and shortcuts.
 ///
 /// @pre `canSynthesizeParameterizedUnitary1Q(op)` is true.
 void synthesizeParameterizedUnitary1Q(
-    RewriterBase& rewriter, Operation* op, SingleQubitBasis basis,
-    const CompilerTarget::SynthesisBasis* targetBasis = nullptr);
+    RewriterBase& rewriter, Operation* op,
+    const CompilerTarget::SynthesisBasis& basis);
 
-/// Populates @p patterns with the single-qubit run fusion rewrite for
-/// @p basis (the reusable core of `fuse-single-qubit-unitary-runs`).
-///
-/// @param skipControlledBodies When set, single-qubit gates nested in
-/// `qco.ctrl` bodies are left untouched.
-/// @param target When set, require a shorter run if every gate is supported.
-/// Individual lowering owns site-specific native support.
-void populateFuseSingleQubitUnitaryRunsPatterns(
-    RewritePatternSet& patterns, SingleQubitBasis basis,
-    bool skipControlledBodies = false, const CompilerTarget* target = nullptr);
-
-/// Populates patterns that compose profitable parameterized single-qubit runs.
-///
-/// The patterns emit @p basis directly. With @p target, preserve native runs
-/// and only use direct Euler identities, keeping optional fusion exportable.
-/// ZSXX targets only merge adjacent RZ operations symbolically.
-void populateParameterizedSingleQubitRunCompositionPatterns(
-    RewritePatternSet& patterns, SingleQubitBasis basis,
-    const CompilerTarget* target = nullptr);
+/// Extract known Euler parameters without reconstructing a symbolic matrix.
+/// Constant operations use their matrix; unknown operations return nullopt.
+[[nodiscard]] std::optional<std::array<RotationParameter, 4>>
+zyzAnglesFromOperation(OpBuilder& builder, Location loc,
+                       UnitaryOpInterface operation);
 
 } // namespace mlir::qco::decomposition

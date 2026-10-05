@@ -23,7 +23,16 @@ namespace mlir {
 class Block;
 class Operation;
 
+namespace qco {
+class UnitaryOpInterface;
+} /* namespace qco */
+
 namespace qco::detail {
+
+/// Replace a modifier while retaining the correspondence of its input wires.
+void replacePermutedModifier(UnitaryOpInterface original,
+                             UnitaryOpInterface replacement,
+                             RewriterBase& rewriter);
 
 /// Verify a QCO modifier body after nested operations have been verified.
 [[nodiscard]] LogicalResult verifyModifierBody(Operation* modifierOp,

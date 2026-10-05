@@ -16,57 +16,31 @@ def MergeSingleQubitRotationGates
   let dependentDialects = ["mlir::qco::QCODialect",
                            "::mlir::arith::ArithDialect",
                            "::mlir::math::MathDialect"];
-  let summary = "Merge single-qubit gates using quaternion-based fusion";
+  let summary = "Merge consecutive named single-qubit gates into U gates";
   let description = [{
-    Merges consecutive mergeable single-qubit gates acting on the same qubit
-    into a single equivalent U gate, reducing circuit depth and gate count.
+    Merges maximal runs of at least two supported gates on the same qubit into
+    at most one U gate. Isolated gates remain unchanged.
 
     Supported gate types: `rx`, `ry`, `rz`, `p`, `r`, `u2`, `u`, `x`, `y`,
     `z`, `h`, `s`, `sdg`, `t`, `tdg`, `sx`, `sxdg`, and `id`.
 
-    The pass greedily collects the longest possible chain of consecutive mergeable gates.
-    Each gate is converted to a unit quaternion:
-
-    - `rx`, `ry`, `rz`, `p`: single-axis rotations via half-angle formulas.
-    - `x`, `y`, `z`: fixed-axis `pi` rotations (`rx`/`ry`/`rz`).
-    - `s` / `sdg`: `rz(+/- pi / 2)`; `t` / `tdg`: `rz(+/- pi / 4)`.
-    - `sx` / `sxdg`: `rx(+/- pi / 2)`.
-    - `h`: a `pi` rotation around the `(x + z) / sqrt(2)` axis.
-    - `id`: the identity quaternion.
-    - `r(theta, phi)`: rotation by `theta` around axis `(cos(phi), sin(phi), 0)`.
-    - `u2(phi, lambda) = u(pi / 2, phi, lambda)`.
-    - `u(theta, phi, lambda)`: ZYZ decomposition `rz(phi) * ry(theta) * rz(lambda)`, each factor converted to a quaternion and merged via the Hamilton product.
-
-    The gates are then folded one by one via the Hamilton product into a single quaternion, which is decomposed back into ZYZ Euler angles and emitted as a single `UOp`, representing the same unitary as the input chain.
-    The global phase of each gate is tracked alongside and combined together
-    (`x`/`y`/`z`/`h`: `pi / 2`; `s`/`sx`: `pi / 4`; `sdg`/`sxdg`: `-pi / 4`;
-    `t`/`tdg`: `+/- pi / 8`; `id` and pure `SU(2)` rotations: `0`;
-    `p(theta)`: `theta / 2`; `u`/`u2`: `(phi + lambda) / 2`).
-
-    When every angle in the chain is a compile-time constant, the same algorithm
-    runs on host scalars and emits constant `U` / `gphase` results directly.
+    Constant runs use the matrix composition and Euler synthesis shared with
+    native-target synthesis. Identity runs need no gate.
     Symbolic RZ-RX-RZ and RZ-RY-RZ chains reuse their Euler angles directly;
     either outer RZ may be absent. H/RZ pairs in either order also use direct
-    angles via Hadamard conjugation. Gate operands are normalized modulo `4*pi`
-    before angle arithmetic, preserving the full unitary under control.
-    Constants fold immediately; symbolic operands use `4*atan(tan(angle/4))`,
-    which remains bindable after Qiskit and jeff export. This bounds each input
-    to `[-2*pi, 2*pi]` without restricting shared scalar inputs or expressions.
-    Other dynamic chains emit
-    `arith` / `math` operations that compute the merged parameters at run time.
+    angles via Hadamard conjugation. Other dynamic chains use quaternion
+    composition and emit `arith` / `math` expressions for runtime Euler angles.
 
-    The emitted `UOp` is defined by $U = \exp [i (\phi + \lambda) / 2] R_z (\phi) R_y (\theta) R_z (\lambda)$.
-    Normalizing either extracted Z angle into $[-\pi, \pi)$ by $\pm 2\pi$ flips
-    the $\mathrm{SU}(2)$ representative; half of each removed angle is returned
-    as an Euler-wrap phase correction. Each merge therefore computes
-    $\mathrm{inputPhase} - (\phi + \lambda) / 2 + \mathrm{eulerPhase}$, which
-    restores exact matrix equality (including global phase). This applies even
-    to chains of purely $\mathrm{SU}(2)$ gates (`rx`, `ry`, `rz`, `r`).
-    On the host (static) path, a near-zero correction may be omitted; on the
-    SSA (dynamic) path a `GPhaseOp` carries any remaining correction. After greedy merging,
-    the implementation directly invokes the shared global-phase normalization
-    utility to combine, normalize, and remove trivial corrections in their
-    respective scopes.
+    Before symbolic angle arithmetic, each evaluated gate operand is normalized
+    modulo $4\pi$, preserving its full unitary under control. Constants fold
+    immediately; symbolic operands use $4\arctan(\tan(\theta/4))$, which remains
+    bindable after Qiskit and jeff export. This bounds each gate operand to
+    $[-2\pi, 2\pi]$ without restricting shared scalar inputs or expressions.
+
+    A `gphase` correction preserves exact matrix equality, including inside
+    controlled bodies. The pass combines, normalizes, and removes trivial
+    corrections in their respective scopes. Euler angles are not unique;
+    their particular representative is not part of the pass contract.
   }];
 }
 
@@ -97,7 +71,7 @@ def FuseSingleQubitUnitaryRuns
     Symbolic ZXZ/ZYZ chains reuse their angles directly in the `u`, `zyz`,
     `zxz`, and `zsxx` bases; XZX/XYX chains do so in `xzx`, `xyx`, and `r`.
     Either outer rotation may be absent. Gate operands are normalized modulo
-    `4*pi` before angle arithmetic, as in `merge-single-qubit-rotation-gates`.
+    $4\pi$ before angle arithmetic, as in `merge-single-qubit-rotation-gates`.
     H/RZ pairs in either order use direct angles in every basis, requiring at
     most three gates (one in the `u` basis).
     These conversions need no quaternion extraction or conditional expressions.
