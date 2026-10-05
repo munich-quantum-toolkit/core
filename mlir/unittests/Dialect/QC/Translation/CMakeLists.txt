@@ -18,6 +18,7 @@ target_link_libraries(
           MLIRFuncInlinerExtension
           MLIRLLVMIRTransforms
           MLIRSupportMQT
+          MLIRQCOToQC
           MLIRQCToQCO
           MLIRQCODDFunctionality
           MLIRQCProgramBuilder

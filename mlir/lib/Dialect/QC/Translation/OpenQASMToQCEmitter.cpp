@@ -163,6 +163,7 @@ public:
       }
       scalarValues[id] = entry.getArgument(index);
     }
+    /// Semantic analysis requires gate definitions to precede their callers.
     for (const auto& gate : program.gates) {
       emitGateDefinition(gate);
       scalarUpdates_.clear();
@@ -296,6 +297,25 @@ private:
   [[nodiscard]] bool gateRequiresStructuredControlFlow(
       const openqasm::frontend::GateDefinition& gate) const {
     return structuredGateCapabilities.lookup(&gate);
+  }
+
+  [[nodiscard]] bool
+  statementsAreUnitary(ArrayRef<frontend::StatementId> statements) const {
+    return llvm::all_of(statements, [&](const auto id) {
+      const auto& data = program.statements.at(id).data;
+      if (const auto* loop = std::get_if<frontend::ForStatement>(&data)) {
+        return constantRangeTripCount(*loop).has_value() &&
+               statementsAreUnitary(loop->body);
+      }
+      const auto* application = std::get_if<frontend::GateApplication>(&data);
+      if (application == nullptr) {
+        return false;
+      }
+      if (const auto* callee = findCustomGate(application->callee)) {
+        return mqt::isUnitaryFunction(customGateFunctions_.lookup(callee));
+      }
+      return openqasm::frontend::lookupGate(application->callee) != nullptr;
+    });
   }
 
   Value emitProvenIndexExpression(OpBuilder& opBuilder,
@@ -944,7 +964,7 @@ private:
 
     builder.setLoc(getLocation(gate.location));
     func::FuncOp function;
-    if (gateRequiresStructuredControlFlow(gate)) {
+    if (!statementsAreUnitary(gate.body)) {
       function = builder.createFunction(gate.name, argumentTypes,
                                         [&](ValueRange arguments) {
                                           emitBody(arguments);

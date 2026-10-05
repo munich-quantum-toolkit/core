@@ -36,6 +36,7 @@
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/SymbolTable.h"
+#include "mlir/IR/ValueRange.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/IR/Visitors.h"
 #include "mlir/Interfaces/FunctionInterfaces.h"
@@ -177,7 +178,12 @@ verifyNoUnitaryRecursion(func::FuncOp function) {
     if (isa<func::ReturnOp>(nested)) {
       return;
     }
-    if (isa<qc::UnitaryOpInterface, qc::YieldOp>(nested)) {
+    if (isa<qc::UnitaryOpInterface, qc::YieldOp>(nested) ||
+        (isa<scf::YieldOp>(nested) && isa<scf::ForOp>(nested->getParentOp()))) {
+      return;
+    }
+    if (auto loop = dyn_cast<scf::ForOp>(nested)) {
+      valid = loop.getStaticTripCount().has_value();
       return;
     }
     valid =
@@ -188,10 +194,49 @@ verifyNoUnitaryRecursion(func::FuncOp function) {
   });
   if (!valid) {
     return function.emitError()
-           << "unitary QC function body contains a non-unitary operation";
+           << "unitary QC function body contains an unsupported operation";
   }
 
   return verifyNoUnitaryRecursion<qc::CallOp>(function);
+}
+
+[[nodiscard]] static LogicalResult
+verifyQCOUnitaryQubitFlow(Operation* owner, ValueRange inputs,
+                          ValueRange outputs) {
+  for (auto [resultIndex, returned] : llvm::enumerate(outputs)) {
+    if (!isa<qco::QubitType>(returned.getType())) {
+      continue;
+    }
+    Value current = returned;
+    llvm::SmallDenseSet<Value> visited;
+    while (auto result = dyn_cast<OpResult>(current)) {
+      if (!visited.insert(current).second) {
+        return owner->emitError("unitary QCO result has cyclic qubit flow");
+      }
+      if (auto loop = dyn_cast<scf::ForOp>(result.getOwner())) {
+        current = loop.getInitArgs()[result.getResultNumber()];
+        continue;
+      }
+      auto unitary = dyn_cast<qco::UnitaryOpInterface>(result.getOwner());
+      if (!unitary) {
+        return owner->emitError()
+               << "unitary QCO result does not originate from a qubit "
+                  "argument";
+      }
+      current = unitary.getInputForOutput(current);
+      if (!current) {
+        return owner->emitError()
+               << "unitary QCO operation has no input corresponding to its "
+                  "returned qubit";
+      }
+    }
+    if (current != inputs[resultIndex]) {
+      return owner->emitError()
+             << "unitary QCO results must continue qubit arguments "
+                "positionally";
+    }
+  }
+  return success();
 }
 
 [[nodiscard]] static LogicalResult verifyQCOUnitaryBody(func::FuncOp function,
@@ -201,7 +246,16 @@ verifyNoUnitaryRecursion(func::FuncOp function) {
     if (!valid || nested == function.getOperation()) {
       return;
     }
-    if (isa<func::ReturnOp, qco::UnitaryOpInterface, qco::YieldOp>(nested)) {
+    if (isa<func::ReturnOp, qco::UnitaryOpInterface, qco::YieldOp>(nested) ||
+        (isa<scf::YieldOp>(nested) && isa<scf::ForOp>(nested->getParentOp()))) {
+      return;
+    }
+    if (auto loop = dyn_cast<scf::ForOp>(nested)) {
+      valid = loop.getStaticTripCount().has_value() &&
+              succeeded(verifyQCOUnitaryQubitFlow(
+                  loop, loop.getRegionIterArgs(),
+                  cast<scf::YieldOp>(loop.getBody()->getTerminator())
+                      .getOperands()));
       return;
     }
     valid =
@@ -212,37 +266,14 @@ verifyNoUnitaryRecursion(func::FuncOp function) {
   });
   if (!valid) {
     return function.emitError()
-           << "unitary QCO function body contains a non-unitary operation";
+           << "unitary QCO function body contains an unsupported operation";
   }
 
   auto returnOp = cast<func::ReturnOp>(function.getBody().front().back());
-  for (auto [resultIndex, returned] : llvm::enumerate(returnOp.getOperands())) {
-    Value current = returned;
-    llvm::SmallDenseSet<Value> visited;
-    while (auto result = dyn_cast<OpResult>(current)) {
-      if (!visited.insert(current).second) {
-        return function.emitError("unitary QCO result has cyclic qubit flow");
-      }
-      auto unitary = dyn_cast<qco::UnitaryOpInterface>(result.getOwner());
-      if (!unitary) {
-        return function.emitError()
-               << "unitary QCO result does not originate from a qubit "
-                  "argument";
-      }
-      current = unitary.getInputForOutput(current);
-      if (!current) {
-        return function.emitError()
-               << "unitary QCO operation has no input corresponding to its "
-                  "returned qubit";
-      }
-    }
-    auto argument = dyn_cast<BlockArgument>(current);
-    if (!argument || argument.getOwner() != &function.getBody().front() ||
-        argument.getArgNumber() != firstQubit + resultIndex) {
-      return function.emitError()
-             << "unitary QCO results must continue qubit arguments "
-                "positionally";
-    }
+  if (failed(verifyQCOUnitaryQubitFlow(
+          function, function.getArguments().drop_front(firstQubit),
+          returnOp.getOperands()))) {
+    return failure();
   }
   return verifyNoUnitaryRecursion<qco::CallOp>(function);
 }
