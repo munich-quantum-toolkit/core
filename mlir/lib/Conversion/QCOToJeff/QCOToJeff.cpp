@@ -2130,6 +2130,13 @@ protected:
         return;
       }
       function->removeAttr(mqt::MQTDialect::UnitaryAttrHelper::getNameStr());
+      for (unsigned index = 0; index < function.getNumArguments(); ++index) {
+        if (auto name = function.getArgAttrOfType<StringAttr>(
+                index, mqt::MQTDialect::InputNameAttrHelper::getNameStr())) {
+          // Input identities and parameter groups still need the MQT name.
+          function.setArgAttr(index, "jeff.input_name", name);
+        }
+      }
     }
     state.cbitState.recordRegisterUses(moduleOp);
 

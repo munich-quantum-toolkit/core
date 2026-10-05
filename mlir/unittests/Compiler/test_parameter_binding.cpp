@@ -13,6 +13,8 @@
 
 #include "gtest/gtest.h"
 
+#include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Verifier.h"
 
 #include <limits>
@@ -93,6 +95,54 @@ rz(alpha + beta) q;
   ASSERT_TRUE(qco->bindParameters({{"alpha", -0.5}}));
   EXPECT_TRUE(qco->parameters().empty());
   EXPECT_TRUE(mlir::succeeded(mlir::verify(qco->module())));
+}
+
+TEST(ParameterBinding, NamedInputsSurviveJeffSerialization) {
+  auto qc = mlir::QCProgram::fromOpenQASMString(R"(OPENQASM 3.1;
+include "stdgates.inc";
+input float theta;
+input float phi;
+qubit q;
+rx(theta) q;
+rz(phi) q;
+)");
+  ASSERT_TRUE(qc);
+  auto entry = mlir::mqt::getEntryPoint(qc->module());
+  entry.setArgAttr(
+      0, "mqt.input_id",
+      mlir::IntegerAttr::get(
+          mlir::IntegerType::get(qc->module().getContext(), 128), 7));
+  auto qco = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qco);
+  auto jeff = std::move(*qco).intoJeff();
+  ASSERT_TRUE(jeff);
+  auto decoded = mlir::JeffProgram::fromBytes(jeff->toBytes());
+  ASSERT_TRUE(decoded);
+  auto restoredQCO = std::move(*decoded).intoQCO();
+  ASSERT_TRUE(restoredQCO);
+  auto restoredQC = restoredQCO->copy().intoQC();
+  ASSERT_TRUE(restoredQC);
+  EXPECT_EQ(restoredQCO->parameters(),
+            (std::vector<std::string>{"theta", "phi"}));
+  EXPECT_EQ(restoredQC->parameters(),
+            (std::vector<std::string>{"theta", "phi"}));
+  auto exported = restoredQC->toOpenQASM3();
+  ASSERT_TRUE(exported);
+  EXPECT_NE(exported->source().find("input float[64] theta;"),
+            std::string::npos);
+  EXPECT_NE(exported->source().find("input float[64] phi;"), std::string::npos);
+
+  ASSERT_TRUE(restoredQCO->bindParameters({{"theta", 0.25}}));
+  ASSERT_TRUE(restoredQC->bindParameters({{"theta", 0.25}}));
+  EXPECT_EQ(restoredQCO->parameters(), (std::vector<std::string>{"phi"}));
+  EXPECT_EQ(restoredQC->parameters(), (std::vector<std::string>{"phi"}));
+  EXPECT_TRUE(mlir::succeeded(mlir::verify(restoredQCO->module())));
+  EXPECT_TRUE(mlir::succeeded(mlir::verify(restoredQC->module())));
+  exported = restoredQC->toOpenQASM3();
+  ASSERT_TRUE(exported);
+  EXPECT_EQ(exported->source().find("input float[64] theta;"),
+            std::string::npos);
+  EXPECT_NE(exported->source().find("input float[64] phi;"), std::string::npos);
 }
 
 TEST(ParameterBinding, InvalidBindingDoesNotChangeProgram) {
