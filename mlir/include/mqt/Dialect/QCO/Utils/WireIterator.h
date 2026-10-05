@@ -107,7 +107,7 @@ private:
 };
 
 /// Categorizes the current traversal direction.
-enum class WireDirection : bool { Forward, Backward };
+enum class WireDirection : uint8_t { Forward, Backward };
 
 template <WireDirection Direction> struct WireTraversalTraits {
   /// Return the increment stride size.
