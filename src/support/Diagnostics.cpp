@@ -81,8 +81,10 @@ void emitDiagnostic(const Diagnostic& diagnostic) {
 
 mlir::LogicalResult emitError(std::string message, ErrorCategory category,
                               std::optional<int> status) {
-  emitDiagnostic(
-      {std::move(message), category, DiagnosticSeverity::Error, status});
+  emitDiagnostic({.message = std::move(message),
+                  .category = category,
+                  .severity = DiagnosticSeverity::Error,
+                  .status = status});
   return mlir::failure();
 }
 } // namespace mqt

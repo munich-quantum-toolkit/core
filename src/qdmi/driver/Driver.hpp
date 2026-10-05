@@ -491,6 +491,7 @@ public:
   ///
   /// @param definition The definition to validate and store.
   /// @param replace Whether an existing unopened definition may be replaced.
+  /// @param error Optional output for the first failure; unchanged on success.
   /// Returns QDMI_ERROR_INVALIDARGUMENT If the definition is incomplete or its
   /// ID is already registered. Returns an error If replacing an already opened
   /// definition.
@@ -501,6 +502,7 @@ public:
   /// Registers a device definition unless its ID is already present.
   ///
   /// @param definition The definition to validate and store.
+  /// @param error Optional output for the first failure; unchanged on success.
   /// @returns Whether the definition was inserted.
   /// Returns QDMI_ERROR_INVALIDARGUMENT If the definition is incomplete.
   ///
