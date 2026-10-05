@@ -18,17 +18,19 @@
 
 namespace mqt::bench {
 
-/// Parameters for concatenated 15-to-1 Reed--Muller distillation.
+/// Parameters for concatenated 15-to-1 magic-state distillation.
 struct MagicStateDistillationOptions {
-  /// Concatenated levels in [1, 4], using exactly \f$15^{\mathrm{levels}}\f$
-  /// qubits.
+  /// Positive number of concatenated levels. The qubit count (five per level)
+  /// must fit signed 64-bit circuit dimensions.
   size_t levels = 1;
 };
 
-/// A validated concatenated magic-state distillation benchmark.
+/// A concatenated 15-to-1 magic-state distillation benchmark.
 ///
-/// Each level consumes the preceding level's retained quantum states.
-/// Bit 1 flags any rejected block; bit 0 checks the root output in the T basis.
+/// Each block uses Litinski's five-qubit circuit. Higher levels consume the
+/// preceding level's retained quantum states. Bit 1 flags any rejected block;
+/// bit 0 checks the root output against T†|+⟩.
+/// Each shot executes 15^levels leaf rotations with five qubits per level.
 class MQT_CORE_BENCH_EXPORT MagicStateDistillation final {
 public:
   explicit MagicStateDistillation(MagicStateDistillationOptions options = {});

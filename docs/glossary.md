@@ -334,8 +334,8 @@ manifest
 magic state
   **Preferred term:** magic state. **Accepted aliases:** none. A non-stabilizer
   quantum state consumed by protocols that implement non-Clifford operations
-  using Clifford operations and measurements. The distillation benchmark uses
-  $|T\rangle = T|+\rangle$.
+  using Clifford operations and measurements. The distillation benchmark retains
+  $T^\dagger|+\rangle$ states, which are Clifford-equivalent to $T|+\rangle$.
 
 magic-state distillation
   **Preferred term:** magic-state distillation. **Accepted aliases:** none. A
