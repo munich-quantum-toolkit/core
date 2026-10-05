@@ -59,9 +59,10 @@ def test_distillation_reference() -> None:
     assert evaluation.squared_hellinger_fidelity == pytest.approx(0.625)
 
 
-def test_distillation_direct_sampling() -> None:
-    """Sample the 15-qubit program with the public DD interface."""
-    benchmark = magic_state_distillation.MagicStateDistillation()
+@pytest.mark.parametrize("levels", [1, 2])
+def test_distillation_direct_sampling(levels: int) -> None:
+    """Sample both direct rotations and injected lower-level magic states."""
+    benchmark = magic_state_distillation.MagicStateDistillation(magic_state_distillation.Options(levels=levels))
     assert sample(benchmark.generate(), shots=16, seed=17) == {"00": 16}
 
 

@@ -22,12 +22,13 @@
 #include "mlir/Support/LLVM.h"
 
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
 
 #include <array>
-#include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <utility>
+#include <string>
+#include <string_view>
 
 namespace mqt::bench {
 
@@ -35,56 +36,60 @@ using namespace mlir;
 
 namespace {
 
-// CNOT network exposing the 10 Z-check syndromes on qubits 5–14.
-constexpr std::array<std::pair<size_t, size_t>, 52> DECODER{
-    {
-        {0, 1},  {0, 2},  {0, 3},  {0, 4},  {0, 5},  {0, 6},  {0, 7}, {0, 8},
-        {0, 9},  {0, 10}, {0, 11}, {0, 12}, {0, 13}, {0, 14}, {1, 0}, {1, 3},
-        {1, 5},  {1, 7},  {1, 9},  {1, 11}, {1, 13}, {2, 0},  {2, 1}, {2, 3},
-        {2, 6},  {2, 7},  {2, 10}, {2, 11}, {2, 14}, {3, 4},  {3, 5}, {3, 6},
-        {3, 11}, {3, 12}, {3, 13}, {3, 14}, {4, 7},  {7, 4},  {4, 7}, {4, 8},
-        {4, 9},  {4, 10}, {4, 11}, {4, 12}, {4, 13}, {4, 14}, {5, 7}, {7, 5},
-        {5, 7},  {6, 7},  {7, 6},  {6, 7},
-    },
-};
-constexpr std::array<size_t, 10> CORRECTION_QUBITS{
-    4, 5, 6, 8, 9, 10, 11, 12, 13, 14,
+// Litinski, arXiv:1905.06903v3, Fig. 3, in circuit order. Each word lists
+// qubits from top to bottom; qubit 0 retains the distilled T†|+⟩ state.
+constexpr std::array<std::string_view, 15> ROTATIONS{
+    "IZIII", "IIZII", "IIIZI", "IIIIZ", "IZZZI", "ZZZII", "ZZIZI", "ZIZZI",
+    "ZIIZZ", "ZZIIZ", "ZIZIZ", "ZZZZZ", "IIZZZ", "IZIZZ", "IZZIZ",
 };
 
 } // namespace
 
 static Value distillMagicStates(qc::QCProgramBuilder& builder,
-                                ValueRange qubits) {
-  assert(qubits.size() == 15);
-  // One 15-to-1 distillation block (Bravyi--Haah, Appendix A).
-  for (const auto& [control, target] : DECODER) {
-    builder.cx(qubits[control], qubits[target]);
-  }
-  SmallVector<Value> syndrome;
-  for (size_t i = 5; i < 15; ++i) {
-    syndrome.push_back(builder.measure(qubits[i]));
-  }
-  for (const auto& [control, target] : llvm::reverse(DECODER)) {
-    builder.cx(qubits[control], qubits[target]);
-  }
-  for (size_t i = 0; i < syndrome.size(); ++i) {
-    builder.scfIf(syndrome[i], [&] {
-      auto qubit = qubits[CORRECTION_QUBITS[i]];
-      builder.x(qubit);
-      builder.s(qubit);
-    });
-  }
+                                ValueRange workspace,
+                                func::FuncOp precedingLevel) {
+  auto qubits = workspace.take_front(5);
   for (auto qubit : qubits) {
-    builder.sdg(qubit);
-  }
-  for (const auto& [control, target] : DECODER) {
-    builder.cx(qubits[control], qubits[target]);
+    builder.reset(qubit);
+    builder.h(qubit);
   }
   auto rejected = builder.boolConstant(false);
-  for (size_t i = 1; i < 5; ++i) {
-    builder.h(qubits[i]);
-    rejected =
-        arith::OrIOp::create(builder, rejected, builder.measure(qubits[i]));
+  for (const auto pauli : ROTATIONS) {
+    SmallVector<Value> support;
+    for (size_t i = 0; i < pauli.size(); ++i) {
+      if (pauli[i] == 'Z') {
+        support.push_back(qubits[i]);
+      }
+    }
+    auto target = support.pop_back_val();
+    for (auto control : support) {
+      builder.cx(control, target);
+    }
+    // Computing parity, applying T, and uncomputing implements exp(-iπP/8)
+    // up to a global phase. Higher levels consume a distilled state instead.
+    if (!precedingLevel) {
+      builder.t(target);
+    } else {
+      auto resourceWorkspace = workspace.drop_front(5);
+      auto childRejected =
+          builder.call(precedingLevel, resourceWorkspace).front();
+      rejected = arith::OrIOp::create(builder, rejected, childRejected);
+      auto resource = resourceWorkspace.front();
+      builder.cx(target, resource);
+      auto outcome = builder.measure(resource);
+      // The resource is T†|+⟩, so outcome 0 needs S to turn T† into T;
+      // outcome 1 already applies T (up to a global phase).
+      auto needsCorrection =
+          arith::XOrIOp::create(builder, outcome, builder.boolConstant(true));
+      builder.scfIf(needsCorrection, [&] { builder.s(target); });
+    }
+    for (auto control : llvm::reverse(support)) {
+      builder.cx(control, target);
+    }
+  }
+  for (auto qubit : qubits.drop_front()) {
+    builder.h(qubit);
+    rejected = arith::OrIOp::create(builder, rejected, builder.measure(qubit));
   }
   return rejected;
 }
@@ -92,47 +97,27 @@ static Value distillMagicStates(qc::QCProgramBuilder& builder,
 SmallVector<Value>
 magicStateDistillation(qc::QCProgramBuilder& builder,
                        const MagicStateDistillation& benchmark) {
-  int64_t size = 1;
-  for (size_t level = 0; level < benchmark.options().levels; ++level) {
-    size *= 15;
-  }
-  auto data = builder.allocQubitRegisterStorage(size, "magic");
+  const auto levels = benchmark.options().levels;
+  auto data =
+      builder.allocQubitRegister(static_cast<int64_t>(5 * levels), "magic");
   auto result = builder.allocClassicalBitRegister(2, benchmark.output().name);
-  auto rejection = builder.allocClassicalBitRegister(1);
-  builder.storeClassicalBit(builder.boolConstant(false), rejection, 0);
-  auto block = builder.createFunction(
-      "distill_15_to_1",
-      SmallVector<Type>(15, qc::QubitType::get(builder.getContext())),
-      [&](ValueRange qubits) -> SmallVector<Value> {
-        return {distillMagicStates(builder, qubits)};
-      });
-  builder.scfFor(0, size, 1, [&](Value index) {
-    auto qubit = builder.loadQubit(data, index);
-    builder.h(qubit);
-    builder.t(qubit);
-  });
-  for (int64_t stride = 1; stride < size; stride *= 15) {
-    builder.scfFor(0, size, stride * 15, [&](Value first) {
-      SmallVector<Value> qubits;
-      for (int64_t i = 0; i < 15; ++i) {
-        auto index = arith::AddIOp::create(builder, first,
-                                           builder.indexConstant(i * stride));
-        qubits.push_back(builder.loadQubit(data, index));
-      }
-      auto rejected = builder.call(block, qubits).front();
-      auto sticky = arith::OrIOp::create(
-          builder, builder.loadClassicalBit(rejection, 0), rejected);
-      builder.storeClassicalBit(sticky, rejection, 0);
-    });
+  func::FuncOp block;
+  for (size_t level = 1; level <= levels; ++level) {
+    block = builder.createFunction(
+        "distill_15_to_1_level_" + std::to_string(level),
+        SmallVector<Type>(5 * level, qc::QubitType::get(builder.getContext())),
+        [&](ValueRange workspace) -> SmallVector<Value> {
+          return {distillMagicStates(builder, workspace, block)};
+        });
   }
-  auto root = builder.loadQubit(data, builder.indexConstant(0));
-  builder.tdg(root);
+  auto rejected = builder.call(block, data.qubits).front();
+  auto root = data[0];
+  builder.t(root);
   builder.h(root);
   builder.measure(root, result, 0);
   // Reuse the measured root to expose rejection without another qubit.
   builder.reset(root);
-  builder.scfIf(builder.loadClassicalBit(rejection, 0),
-                [&] { builder.x(root); });
+  builder.scfIf(rejected, [&] { builder.x(root); });
   builder.measure(root, result, 1);
   return {result};
 }

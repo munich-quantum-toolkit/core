@@ -31,15 +31,20 @@ void registerMagicStateDistillation(const nb::module_& m) {
       .def(nb::init<size_t>(), nb::kw_only(), "levels"_a = 1)
       .def_ro(
           "levels", &bench::MagicStateDistillationOptions::levels,
-          R"pb(Concatenated levels in [1, 4], using :math:`15^{\mathrm{levels}}` qubits.)pb");
+          R"pb(Concatenated levels in [1, 4], using :math:`5\,\mathrm{levels}` qubits.)pb");
   auto magicStateDistillation = nb::class_<bench::MagicStateDistillation>(
       m, "MagicStateDistillation",
       R"pb(A validated concatenated magic-state distillation benchmark.
 
-Inputs are ideal :math:`|T\rangle = T|+\rangle` states.
-Bit 1 flags any rejected block; bit 0 checks the retained root state in the T
-basis. Ideal output is ``00``. Each level consumes the preceding level's
-retained quantum outputs, using exactly :math:`15^{\mathrm{levels}}` qubits.)pb");
+Each block uses Litinski's five-qubit 15-to-1 circuit. The first level uses
+ideal :math:`\pi/8` Pauli rotations; later levels implement these rotations
+with the preceding level's retained :math:`T^\dagger|+\rangle` states.
+The circuit resets and reuses work qubits, using exactly
+:math:`5\,\mathrm{levels}` qubits.
+
+Bit 1 flags any rejected block; bit 0 checks the retained root state against
+:math:`T^\dagger|+\rangle`. Ideal output is ``00``. There is no input noise,
+physical error correction, or retry on rejection.)pb");
   magicStateDistillation
       .def(nb::init<bench::MagicStateDistillationOptions>(),
            "options"_a = bench::MagicStateDistillationOptions{})

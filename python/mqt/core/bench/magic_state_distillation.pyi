@@ -19,15 +19,20 @@ class Options:
     def __init__(self, *, levels: int = 1) -> None: ...
     @property
     def levels(self) -> int:
-        """Concatenated levels in [1, 4], using :math:`15^{\\mathrm{levels}}` qubits."""
+        """Concatenated levels in [1, 4], using :math:`5\\,\\mathrm{levels}` qubits."""
 
 class MagicStateDistillation:
     """A validated concatenated magic-state distillation benchmark.
 
-    Inputs are ideal :math:`|T\\rangle = T|+\\rangle` states.
-    Bit 1 flags any rejected block; bit 0 checks the retained root state in the T
-    basis. Ideal output is ``00``. Each level consumes the preceding level's
-    retained quantum outputs, using exactly :math:`15^{\\mathrm{levels}}` qubits.
+    Each block uses Litinski's five-qubit 15-to-1 circuit. The first level uses
+    ideal :math:`\\pi/8` Pauli rotations; later levels implement these rotations
+    with the preceding level's retained :math:`T^\\dagger|+\\rangle` states.
+    The circuit resets and reuses work qubits, using exactly
+    :math:`5\\,\\mathrm{levels}` qubits.
+
+    Bit 1 flags any rejected block; bit 0 checks the retained root state against
+    :math:`T^\\dagger|+\\rangle`. Ideal output is ``00``. There is no input noise,
+    physical error correction, or retry on rejection.
     """
 
     def __init__(self, options: Options = ...) -> None: ...

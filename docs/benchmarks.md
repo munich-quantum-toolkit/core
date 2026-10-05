@@ -303,28 +303,30 @@ assert mlir.sample(benchmark.generate(), shots=128, seed=17) == {"101": 128}
 ### Magic-state distillation
 
 The `magic-state-distillation` family implements concatenated 15-to-1
-Reed–Muller distillation of $|T\rangle = T|+\rangle$ states. It follows the
-direct input-state protocol in
-[Bravyi and Haah, Appendix A](https://arxiv.org/pdf/1209.2426), using the
-15-qubit code of [Bravyi and Kitaev](https://arxiv.org/abs/quant-ph/0403025).
-Each block measures Z checks, applies conditional Clifford corrections, measures
-X checks, and decodes one retained state.
+distillation with the five-qubit circuit in
+[Litinski, Figure 3](https://arxiv.org/html/1905.06903v3#S0.F3).
+Each block starts in $|+\rangle^{\otimes 5}$ and applies the figure's 15 Pauli
+rotations $P_{\pi/8}=e^{-i\pi P/8}$ in order. It measures the last four qubits
+in the X basis and accepts only when all four outcomes are $+1$. The first qubit
+retains $T^\dagger|+\rangle$ in the ideal case.
 
-Set `levels` to 1–4 (default 1). A level consumes the actual retained quantum
-outputs of the preceding level. The circuit allocates exactly
-$15^{\mathrm{levels}}$ qubits: 15, 225, 3,375, or 50,625.
+Set `levels` to 1–4 (default 1). The first level uses ideal rotations. Later
+levels implement each rotation by consuming an actual retained state from the
+preceding level with Clifford gates and measurement feedback. Work qubits are
+reset and reused between blocks. The circuit allocates exactly
+$5\,\mathrm{levels}$ qubits: 5, 10, 15, or 20.
 
 The two-bit `result` combines a sticky rejection flag in bit 1 with a root-state
-check in bit 0. Ideal input states give `00` with probability one. Every block
-runs once, including blocks whose inputs come from a rejected subtree. The
-benchmark does not model input noise, physical error correction, or retries, so
-this example does not measure fidelity improvement from noisy inputs.
+check in bit 0. The root check applies $T$ then $H$ before measurement, so the
+ideal retained state gives `00` with probability one. Every block runs once,
+including blocks whose inputs come from a rejected subtree. The benchmark does
+not model input noise, physical error correction, or retries, so this example
+does not measure fidelity improvement from noisy inputs.
 
-#### Sample the 15-qubit circuit directly
+#### Sample the five-qubit circuit directly
 
-This example uses 16 shots to keep execution short. The circuit runs once per
-shot because later gates depend on intermediate measurements. Increase the shot
-count when collecting statistics; the ideal output here is deterministic.
+This example uses 16 shots to keep execution short. Increase the shot count when
+collecting statistics; the ideal output here is deterministic.
 
 ```{code-cell} ipython3
 from mqt.core.bench import magic_state_distillation

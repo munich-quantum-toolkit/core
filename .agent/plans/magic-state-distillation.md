@@ -1,7 +1,7 @@
 # Concatenated magic-state distillation benchmark
 
-Status: complete; implementation, required execution paths, tests, generated
-stubs, and executable documentation are validated.
+Status: superseded by [Litinski 15-to-1 distillation](litinski-distillation.md).
+The outcome and validation below describe the original version-1 circuit.
 
 ## Outcome and scope
 
