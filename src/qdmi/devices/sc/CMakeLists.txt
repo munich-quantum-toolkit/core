@@ -52,6 +52,14 @@ if(NOT TARGET ${TARGET_NAME})
 
   target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMICommon MQT::CoreQDMIScDeviceConfig)
 
+  # Keep embedded configuration and diagnostic code private to the provider.
+  if(APPLE)
+    target_link_options(${TARGET_NAME} PRIVATE "LINKER:-exported_symbol,_${QDMI_PREFIX}_QDMI_*")
+  elseif(UNIX)
+    target_link_options(${TARGET_NAME} PRIVATE "LINKER:--exclude-libs,ALL")
+  endif()
+  set_target_properties(${TARGET_NAME} PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS OFF)
+
   mqt_configure_qdmi_device(
     ${TARGET_NAME}
     ID

@@ -140,6 +140,27 @@ not throw. Success consumes a diagnostic; failure forwards it to the previous
 handler. Unhandled diagnostics go to stderr. Install handlers on each worker
 thread. Diagnostics emitted inside a handler start at the previous handler.
 
+Standalone QDMI driver and device libraries embed their own diagnostic runtime.
+A handler in the caller does not capture diagnostics from another runtime.
+Direct C++ driver methods accept an optional `mqt::Diagnostic*` output for this
+boundary. It receives the first error and is unchanged on success:
+
+```cpp
+mqt::Diagnostic error;
+auto device = qdmi::Driver::get().open("my.device", &error);
+if (mlir::failed(device)) {
+  std::cerr << error.message << '\n';
+  return 1;
+}
+```
+
+Without an output, the driver handles diagnostics locally. Warnings retain local
+handler or stderr behavior even when an error output is supplied. Direct C++
+consumers must use a compatible C++ ABI. The QDMI C interfaces transfer status
+codes only; provider messages remain in local logging. Client-side wrappers
+translate statuses to diagnostics and Python exceptions. Builds that explicitly
+enable shared Core libraries retain their shared dependencies.
+
 Allocation exhaustion and unexpected dependency exceptions are not recoverable
 native API errors. See [QIR runtime failures](qir/index.md#runtime-failures) for
 the direct-execution contract.

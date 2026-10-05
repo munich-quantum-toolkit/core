@@ -92,3 +92,33 @@ TEST(Diagnostics, ReemissionStartsAtPreviousHandler) {
   std::ignore = mqt::emitError("detail");
   EXPECT_EQ(message, "source: detail");
 }
+
+TEST(Diagnostics, CallerOwnedErrorKeepsFirstFailureAndForwardsWarnings) {
+  std::vector<mqt::Diagnostic> forwarded;
+  const mqt::ScopedDiagnosticHandler outer(
+      [&](const mqt::Diagnostic& diagnostic) {
+        forwarded.push_back(diagnostic);
+        return mlir::success();
+      });
+  mqt::Diagnostic error{.message = "unchanged"};
+  {
+    const mqt::ScopedDiagnosticHandler capture(&error);
+    EXPECT_EQ(error.message, "unchanged");
+    mqt::emitDiagnostic(
+        {.message = "warning", .severity = mqt::DiagnosticSeverity::Warning});
+    std::ignore =
+        mqt::emitError("first", mqt::ErrorCategory::InvalidArgument, -42);
+    std::ignore = mqt::emitError("second");
+  }
+  EXPECT_EQ(error.message, "first");
+  EXPECT_EQ(error.category, mqt::ErrorCategory::InvalidArgument);
+  EXPECT_EQ(error.status, -42);
+  ASSERT_EQ(forwarded.size(), 1);
+  EXPECT_EQ(forwarded.front().message, "warning");
+  {
+    const mqt::ScopedDiagnosticHandler capture(nullptr);
+    std::ignore = mqt::emitError("forwarded");
+  }
+  ASSERT_EQ(forwarded.size(), 2);
+  EXPECT_EQ(forwarded.back().message, "forwarded");
+}

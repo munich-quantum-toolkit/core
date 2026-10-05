@@ -13,6 +13,7 @@
 
 #include "Driver.hpp"
 #include "SessionConfig.hpp"
+#include "support/Diagnostics.hpp"
 #include "support/TestSupport.hpp"
 
 #include "gmock/gmock-matchers.h"
@@ -481,14 +482,16 @@ TEST(ChildDeviceTest, AcceptsWarningsDuringSessionSetup) {
 TEST(ChildDeviceTest, RejectsNullProviderHandles) {
   const auto library = std::make_shared<ChildDeviceAPI>();
   library->nullSession = true;
-  EXPECT_TRUE(::mqt::test::errorStatus([&] {
-                return QDMI_Device_impl_d::create(library);
+  EXPECT_TRUE(::mqt::test::errorStatus([&](mqt::Diagnostic* error) {
+                return QDMI_Device_impl_d::create(library, {}, nullptr, {},
+                                                  false, error);
               }).has_value());
   EXPECT_EQ(library->allocatedSessions, 0);
   library->nullSession = false;
   library->nullChild = true;
-  EXPECT_TRUE(::mqt::test::errorStatus([&] {
-                return QDMI_Device_impl_d::create(library);
+  EXPECT_TRUE(::mqt::test::errorStatus([&](mqt::Diagnostic* error) {
+                return QDMI_Device_impl_d::create(library, {}, nullptr, {},
+                                                  false, error);
               }).has_value());
   EXPECT_EQ(library->allocatedSessions, 2);
   EXPECT_EQ(library->freedSessions, 2);
@@ -497,8 +500,9 @@ TEST(ChildDeviceTest, RejectsNullProviderHandles) {
 TEST(ChildDeviceTest, CleansUpWhenSelectingAChildFails) {
   const auto library = std::make_shared<ChildDeviceAPI>();
   library->rejectChildSelection = true;
-  EXPECT_TRUE(::mqt::test::errorStatus([&] {
-                return QDMI_Device_impl_d::create(library);
+  EXPECT_TRUE(::mqt::test::errorStatus([&](mqt::Diagnostic* error) {
+                return QDMI_Device_impl_d::create(library, {}, nullptr, {},
+                                                  false, error);
               }).has_value());
   EXPECT_EQ(library->allocatedSessions, 2);
   EXPECT_EQ(library->freedSessions, 2);
@@ -507,8 +511,9 @@ TEST(ChildDeviceTest, CleansUpWhenSelectingAChildFails) {
 TEST(ChildDeviceTest, RejectsMalformedChildLists) {
   const auto library = std::make_shared<ChildDeviceAPI>();
   library->malformedChildList = true;
-  EXPECT_TRUE(::mqt::test::errorStatus([&] {
-                return QDMI_Device_impl_d::create(library);
+  EXPECT_TRUE(::mqt::test::errorStatus([&](mqt::Diagnostic* error) {
+                return QDMI_Device_impl_d::create(library, {}, nullptr, {},
+                                                  false, error);
               }).has_value());
   EXPECT_EQ(library->allocatedSessions, 1);
   EXPECT_EQ(library->freedSessions, 1);
@@ -533,8 +538,9 @@ TEST(ChildDeviceTest, SupportsDevicesWithoutChildDevices) {
 TEST(ChildDeviceTest, CleansUpWhenQueryingChildDevicesFails) {
   const auto library = std::make_shared<ChildDeviceAPI>();
   library->childDeviceQueryFails = true;
-  EXPECT_TRUE(::mqt::test::errorStatus([&] {
-                return QDMI_Device_impl_d::create(library);
+  EXPECT_TRUE(::mqt::test::errorStatus([&](mqt::Diagnostic* error) {
+                return QDMI_Device_impl_d::create(library, {}, nullptr, {},
+                                                  false, error);
               }).has_value());
   EXPECT_EQ(library->allocatedSessions, 1);
   EXPECT_EQ(library->freedSessions, 1);
@@ -1107,13 +1113,35 @@ TEST(ConfiguredDriverTest,
   EXPECT_EQ(session, nullptr);
 }
 
+TEST(DeviceRegistrationTest, CopiesFailureAcrossLibraryBoundary) {
+  auto& driver = qdmi::Driver::get();
+  bool observedByCaller = false;
+  const mqt::ScopedDiagnosticHandler caller([&](const mqt::Diagnostic&) {
+    observedByCaller = true;
+    return mlir::success();
+  });
+  mqt::Diagnostic error;
+  EXPECT_TRUE(
+      mlir::failed(driver.open("test.missing-diagnostic-output", &error)));
+  EXPECT_FALSE(observedByCaller);
+  EXPECT_EQ(error.category, mqt::ErrorCategory::Runtime);
+  EXPECT_EQ(error.status, QDMI_ERROR_NOTFOUND);
+  EXPECT_THAT(error.message,
+              testing::HasSubstr("test.missing-diagnostic-output"));
+  EXPECT_TRUE(mlir::succeeded(driver.registeredDeviceIds(&error)));
+  EXPECT_EQ(error.status, QDMI_ERROR_NOTFOUND);
+}
+
 TEST(DeviceRegistrationTest, ValidatesDuplicatesAndReplacement) {
   auto& driver = qdmi::Driver::get();
-  EXPECT_EQ(::mqt::test::errorStatus([&] { return driver.registerDevice({}); }),
+  EXPECT_EQ(::mqt::test::errorStatus([&](mqt::Diagnostic* error) {
+              return driver.registerDevice({}, false, error);
+            }),
             QDMI_ERROR_INVALIDARGUMENT);
-  EXPECT_EQ(
-      ::mqt::test::errorStatus([&] { return driver.open("test.unknown"); }),
-      QDMI_ERROR_NOTFOUND);
+  EXPECT_EQ(::mqt::test::errorStatus([&](mqt::Diagnostic* error) {
+              return driver.open("test.unknown", error);
+            }),
+            QDMI_ERROR_NOTFOUND);
 
   const auto [library, prefix] = TEST_DEVICE_LIBRARIES.front();
   const qdmi::DeviceDefinition original{
@@ -1123,23 +1151,26 @@ TEST(DeviceRegistrationTest, ValidatesDuplicatesAndReplacement) {
   };
   auto invalidId = original;
   invalidId.id = std::string{"test.alias\0hidden", 17};
-  EXPECT_TRUE(::mqt::test::errorStatus([&] {
-                return driver.registerDevice(std::move(invalidId));
+  EXPECT_TRUE(::mqt::test::errorStatus([&](mqt::Diagnostic* error) {
+                return driver.registerDevice(std::move(invalidId), false,
+                                             error);
               }).has_value());
   auto invalidLibrary = original;
   invalidLibrary.library =
       std::filesystem::path{std::string{"device\0alias", 12}};
-  EXPECT_TRUE(::mqt::test::errorStatus([&] {
-                return driver.registerDevice(std::move(invalidLibrary));
+  EXPECT_TRUE(::mqt::test::errorStatus([&](mqt::Diagnostic* error) {
+                return driver.registerDevice(std::move(invalidLibrary), false,
+                                             error);
               }).has_value());
   auto invalidPrefix = original;
   invalidPrefix.prefix.clear();
-  EXPECT_TRUE(::mqt::test::errorStatus([&] {
-                return driver.registerDevice(std::move(invalidPrefix));
+  EXPECT_TRUE(::mqt::test::errorStatus([&](mqt::Diagnostic* error) {
+                return driver.registerDevice(std::move(invalidPrefix), false,
+                                             error);
               }).has_value());
   driver.registerDevice(original);
-  EXPECT_TRUE(::mqt::test::errorStatus([&] {
-                return driver.registerDevice(original);
+  EXPECT_TRUE(::mqt::test::errorStatus([&](mqt::Diagnostic* error) {
+                return driver.registerDevice(original, false, error);
               }).has_value());
 
   auto replacement = original;
@@ -1148,8 +1179,8 @@ TEST(DeviceRegistrationTest, ValidatesDuplicatesAndReplacement) {
   auto* const opened = ::mqt::test::value(driver.open(original.id));
   ASSERT_NE(opened, nullptr);
   EXPECT_EQ(::mqt::test::value(driver.open(original.id)), opened);
-  EXPECT_TRUE(::mqt::test::errorStatus([&] {
-                return driver.registerDevice(original, true);
+  EXPECT_TRUE(::mqt::test::errorStatus([&](mqt::Diagnostic* error) {
+                return driver.registerDevice(original, true, error);
               }).has_value());
   EXPECT_NO_THROW(::mqt::test::value(driver.registerDevice(
       {.id = "test.upserted", .library = library, .prefix = prefix}, true)));
@@ -1169,8 +1200,9 @@ TEST(DeviceRegistrationTest, RegistersOnlyWhenIdIsAbsent) {
 
   auto invalidDuplicate = definition;
   invalidDuplicate.library.clear();
-  EXPECT_EQ(::mqt::test::errorStatus([&] {
-              return driver.registerDeviceIfAbsent(std::move(invalidDuplicate));
+  EXPECT_EQ(::mqt::test::errorStatus([&](mqt::Diagnostic* error) {
+              return driver.registerDeviceIfAbsent(std::move(invalidDuplicate),
+                                                   error);
             }),
             QDMI_ERROR_INVALIDARGUMENT);
 
@@ -1180,12 +1212,13 @@ TEST(DeviceRegistrationTest, RegistersOnlyWhenIdIsAbsent) {
       .prefix = prefix,
   };
   EXPECT_FALSE(::mqt::test::value(driver.registerDeviceIfAbsent(disabled)));
-  EXPECT_TRUE(::mqt::test::errorStatus([&] {
-                return driver.open(disabled.id);
+  EXPECT_TRUE(::mqt::test::errorStatus([&](mqt::Diagnostic* error) {
+                return driver.open(disabled.id, error);
               }).has_value());
-  EXPECT_EQ(
-      ::mqt::test::errorStatus([&] { return driver.registerDevice(disabled); }),
-      QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(::mqt::test::errorStatus([&](mqt::Diagnostic* error) {
+              return driver.registerDevice(disabled, false, error);
+            }),
+            QDMI_ERROR_INVALIDARGUMENT);
 }
 
 TEST(DeviceRegistrationTest, ConcurrentRegistrationInsertsOnce) {
@@ -1256,8 +1289,8 @@ TEST(DeviceRegistrationTest, RegistrationDoesNotLoadLibraries) {
       .library = "/nonexistent/device-library",
       .prefix = "MISSING",
   }));
-  EXPECT_TRUE(::mqt::test::errorStatus([&] {
-                return driver.open("test.missing-library");
+  EXPECT_TRUE(::mqt::test::errorStatus([&](mqt::Diagnostic* error) {
+                return driver.open("test.missing-library", error);
               }).has_value());
 }
 
@@ -1285,8 +1318,8 @@ TEST(DeviceRegistrationTest,
   EXPECT_EQ(idsAfter[idsBefore.size() + 1], "test.enumeration.second");
   EXPECT_THAT(idsAfter, testing::Not(testing::Contains("test.disabled")));
 
-  EXPECT_TRUE(::mqt::test::errorStatus([&] {
-                return driver.open("test.enumeration.first");
+  EXPECT_TRUE(::mqt::test::errorStatus([&](mqt::Diagnostic* error) {
+                return driver.open("test.enumeration.first", error);
               }).has_value());
 }
 
@@ -1335,8 +1368,8 @@ TEST(DeviceRegistrationTest, TypedConfigurationRejectsRawAdapterSlotConflict) {
               .custom1 = "raw",
           },
   };
-  EXPECT_TRUE(::mqt::test::errorStatus([&] {
-                return driver.registerDevice(definition);
+  EXPECT_TRUE(::mqt::test::errorStatus([&](mqt::Diagnostic* error) {
+                return driver.registerDevice(definition, false, error);
               }).has_value());
 }
 

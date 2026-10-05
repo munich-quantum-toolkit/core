@@ -6,8 +6,14 @@
 #
 # Licensed under the MIT License
 
-# Diagnostic handlers must share one thread-local stack across library boundaries.
-add_mqt_core_library(${MQT_CORE_TARGET_NAME}-support ALIAS_NAME Support FORCE_SHARED)
+add_mqt_core_library(${MQT_CORE_TARGET_NAME}-support ALIAS_NAME Support)
+get_target_property(support_library_type ${MQT_CORE_TARGET_NAME}-support TYPE)
+if(support_library_type STREQUAL "STATIC_LIBRARY")
+  # Each standalone library owns its diagnostic handlers.
+  target_compile_definitions(${MQT_CORE_TARGET_NAME}-support PUBLIC MQT_CORE_SUPPORT_STATIC_DEFINE)
+  set_target_properties(${MQT_CORE_TARGET_NAME}-support PROPERTIES CXX_VISIBILITY_PRESET hidden
+                                                                   VISIBILITY_INLINES_HIDDEN ON)
+endif()
 target_link_libraries(${MQT_CORE_TARGET_NAME}-support PUBLIC LLVMSupport)
 target_include_directories(
   ${MQT_CORE_TARGET_NAME}-support SYSTEM PUBLIC "$<BUILD_INTERFACE:${LLVM_INCLUDE_DIRS}>"

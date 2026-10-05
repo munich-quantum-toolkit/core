@@ -15,6 +15,8 @@
 
 #include "qdmi/common/Common.hpp"
 
+#include "support/Diagnostics.hpp"
+
 #include "qdmi/client.h"
 #include "qdmi/device.h"
 
@@ -178,8 +180,11 @@ class LoadedDeviceAPI final : public DeviceAPI {
 
 public:
   /// Load and initialize a provider, releasing partial resources on failure.
+  /// If supplied, error receives the first failure diagnostic from this
+  /// library.
   [[nodiscard]] static mlir::FailureOr<std::shared_ptr<LoadedDeviceAPI>>
-  create(const std::string& libName, const std::string& prefix);
+  create(const std::string& libName, const std::string& prefix,
+         mqt::Diagnostic* error = nullptr);
 
   /// Destructor for the LoadedDeviceAPI.
   ///
@@ -225,11 +230,13 @@ public:
   /// Open a device session and its children.
   ///
   /// Failure releases partial sessions.
+  /// If supplied, error receives the first failure diagnostic from this
+  /// library.
   [[nodiscard]] static mlir::FailureOr<std::unique_ptr<QDMI_Device_impl_d>>
   create(std::shared_ptr<qdmi::DeviceAPI> library,
          const qdmi::DeviceSessionConfig& config = {},
          QDMI_Child_Device childDevice = nullptr, std::string id = {},
-         bool strict = false);
+         bool strict = false, mqt::Diagnostic* error = nullptr);
 
   /// Destructor for the QDMI device.
   ///
@@ -417,6 +424,10 @@ namespace qdmi {
 /// @note This class is a singleton that manages the QDMI libraries and
 /// sessions. It is responsible for loading the libraries, allocating sessions,
 /// and providing access to the devices.
+/// Fallible C++ methods can copy their first error into caller-owned storage.
+/// Pass an error output to capture diagnostics across library boundaries;
+/// without one, errors use this library's handlers or stderr. Success leaves
+/// the output unchanged. The QDMI C API returns status codes only.
 class Driver final : public Singleton<Driver> {
   friend class Singleton;
   friend class Session;
@@ -483,8 +494,9 @@ public:
   /// Returns QDMI_ERROR_INVALIDARGUMENT If the definition is incomplete or its
   /// ID is already registered. Returns an error If replacing an already opened
   /// definition.
-  [[nodiscard]] mlir::LogicalResult registerDevice(DeviceDefinition definition,
-                                                   bool replace = false);
+  [[nodiscard]] mlir::LogicalResult
+  registerDevice(DeviceDefinition definition, bool replace = false,
+                 mqt::Diagnostic* error = nullptr);
 
   /// Registers a device definition unless its ID is already present.
   ///
@@ -492,9 +504,10 @@ public:
   /// @returns Whether the definition was inserted.
   /// Returns QDMI_ERROR_INVALIDARGUMENT If the definition is incomplete.
   ///
-  /// Existing and explicitly disabled IDs are not inserted. The complete
-  /// definition is validated before checking for either condition.
-  auto registerDeviceIfAbsent(DeviceDefinition definition)
+  /// Existing and explicitly disabled IDs are not inserted. The
+  /// complete definition is validated before checking for either condition.
+  auto registerDeviceIfAbsent(DeviceDefinition definition,
+                              mqt::Diagnostic* error = nullptr)
       -> mlir::FailureOr<bool>;
 
   /// Lists the stable IDs of all registered devices.
@@ -503,7 +516,7 @@ public:
   ///
   /// This query includes runtime registrations and does not load device
   /// libraries or expose their definitions.
-  [[nodiscard]] auto registeredDeviceIds()
+  [[nodiscard]] auto registeredDeviceIds(mqt::Diagnostic* error = nullptr)
       -> mlir::FailureOr<std::vector<std::string>>;
 
   /// Opens the registered device with the given stable ID.
@@ -511,7 +524,8 @@ public:
   /// @returns The existing device handle when the ID is already open.
   /// Returns QDMI_ERROR_NOTFOUND If the ID is unknown.
   /// Returns an error If loading or session initialization fails.
-  auto open(std::string_view id) -> mlir::FailureOr<QDMI_Device>;
+  auto open(std::string_view id, mqt::Diagnostic* error = nullptr)
+      -> mlir::FailureOr<QDMI_Device>;
 
   /// Allocates a new session.
   ///

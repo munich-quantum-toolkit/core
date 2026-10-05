@@ -14,8 +14,9 @@ function(mqt_copy_runtime_dlls target)
     add_custom_command(
       TARGET ${target}
       POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_RUNTIME_DLLS:${target}>
-              $<TARGET_FILE_DIR:${target}>
+      COMMAND
+        ${CMAKE_COMMAND} -E $<IF:$<BOOL:$<TARGET_RUNTIME_DLLS:${target}>>,copy_if_different,true>
+        $<TARGET_RUNTIME_DLLS:${target}> $<TARGET_FILE_DIR:${target}>
       COMMAND_EXPAND_LISTS)
   endif()
 endfunction()
@@ -84,10 +85,8 @@ function(add_mqt_core_library name)
     endif()
   endif()
 
-  # Always compile with position-independent code to enable usage in shared libraries Each shared
-  # library needs its own build RPATH for transitive dependencies on ELF platforms.
-  set_target_properties(${name} PROPERTIES POSITION_INDEPENDENT_CODE ON BUILD_WITH_INSTALL_RPATH
-                                                                        FALSE)
+  # Always compile with position-independent code to enable usage in shared libraries
+  set_target_properties(${name} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
   set_target_properties(${name} PROPERTIES EXPORT_NAME Core${ARG_ALIAS_NAME})
   # Wheels materialize version symlinks as duplicate libraries.

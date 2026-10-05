@@ -12,6 +12,8 @@
 
 #include "Driver.hpp"
 
+#include "support/Diagnostics.hpp"
+
 #include "mlir/Support/LogicalResult.h"
 
 #include <cstddef>
@@ -42,7 +44,10 @@ auto parseDeviceSessionJson(const char* data, size_t size,
 /// Discovers configured QDMI devices without loading their libraries.
 class DeviceRegistry {
 public:
-  [[nodiscard]] static mlir::FailureOr<DeviceRegistry> discover();
+  /// If supplied, error receives the first failure diagnostic from this
+  /// library.
+  [[nodiscard]] static mlir::FailureOr<DeviceRegistry>
+  discover(mqt::Diagnostic* error = nullptr);
 
   [[nodiscard]] const std::vector<qdmi::DeviceDefinition>& definitions() const {
     return definitions_;

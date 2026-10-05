@@ -86,7 +86,9 @@ namespace {
 #endif
 
 mlir::FailureOr<std::shared_ptr<LoadedDeviceAPI>>
-LoadedDeviceAPI::create(const std::string& libName, const std::string& prefix) {
+LoadedDeviceAPI::create(const std::string& libName, const std::string& prefix,
+                        mqt::Diagnostic* error) {
+  const mqt::ScopedDiagnosticHandler capture(error);
   auto library = std::shared_ptr<LoadedDeviceAPI>(
       new LoadedDeviceAPI(DL_OPEN(libName.c_str())));
   if (library->libHandle_ == nullptr) {
@@ -232,7 +234,8 @@ mlir::FailureOr<std::unique_ptr<QDMI_Device_impl_d>>
 QDMI_Device_impl_d::create(std::shared_ptr<qdmi::DeviceAPI> library,
                            const qdmi::DeviceSessionConfig& config,
                            QDMI_Child_Device childDevice, std::string id,
-                           const bool strict) {
+                           const bool strict, mqt::Diagnostic* error) {
+  const mqt::ScopedDiagnosticHandler capture(error);
   if (!library) {
     return qdmi::emitError(QDMI_ERROR_INVALIDARGUMENT,
                            "Missing device library");
@@ -796,7 +799,9 @@ mlir::LogicalResult Driver::initialize() {
 }
 
 mlir::LogicalResult Driver::registerDevice(DeviceDefinition definition,
-                                           const bool replace) {
+                                           const bool replace,
+                                           mqt::Diagnostic* error) {
+  const mqt::ScopedDiagnosticHandler capture(error);
   if (mlir::failed(validateDefinition(definition))) {
     return mlir::failure();
   }
@@ -837,8 +842,10 @@ mlir::LogicalResult Driver::registerDevice(DeviceDefinition definition,
   return mlir::success();
 }
 
-auto Driver::registerDeviceIfAbsent(DeviceDefinition definition)
+auto Driver::registerDeviceIfAbsent(DeviceDefinition definition,
+                                    mqt::Diagnostic* error)
     -> mlir::FailureOr<bool> {
+  const mqt::ScopedDiagnosticHandler capture(error);
   if (mlir::failed(validateDefinition(definition))) {
     return mlir::failure();
   }
@@ -855,8 +862,9 @@ auto Driver::registerDeviceIfAbsent(DeviceDefinition definition)
   return true;
 }
 
-auto Driver::registeredDeviceIds()
+auto Driver::registeredDeviceIds(mqt::Diagnostic* error)
     -> mlir::FailureOr<std::vector<std::string>> {
+  const mqt::ScopedDiagnosticHandler capture(error);
   const std::scoped_lock lock(stateMutex_);
   if (mlir::failed(initialize())) {
     return mlir::failure();
@@ -868,7 +876,9 @@ auto Driver::registeredDeviceIds()
   return ids;
 }
 
-auto Driver::open(const std::string_view id) -> mlir::FailureOr<QDMI_Device> {
+auto Driver::open(const std::string_view id, mqt::Diagnostic* error)
+    -> mlir::FailureOr<QDMI_Device> {
+  const mqt::ScopedDiagnosticHandler capture(error);
   const std::string deviceId{id};
   DeviceDefinition definition;
   {

@@ -16,6 +16,8 @@
 #include <cstdio>
 #include <functional>
 #include <mutex>
+#include <optional>
+#include <string>
 #include <utility>
 
 namespace mqt {
@@ -30,6 +32,20 @@ ScopedDiagnosticHandler::ScopedDiagnosticHandler(
     : previous_(currentHandler), handler_(std::move(handler)) {
   currentHandler = this;
 }
+ScopedDiagnosticHandler::ScopedDiagnosticHandler(Diagnostic* error)
+    : ScopedDiagnosticHandler(
+          [error, captured = false](const Diagnostic& diagnostic) mutable {
+            if (error == nullptr ||
+                diagnostic.severity != DiagnosticSeverity::Error) {
+              return mlir::failure();
+            }
+            if (!captured) {
+              *error = diagnostic;
+              captured = true;
+            }
+            return mlir::success();
+          }) {}
+
 ScopedDiagnosticHandler::~ScopedDiagnosticHandler() {
   assert(currentHandler == this &&
          "diagnostic handlers must leave in stack order");
@@ -61,5 +77,12 @@ void emitDiagnostic(const Diagnostic& diagnostic) {
   std::fwrite(diagnostic.message.data(), 1, diagnostic.message.size(), stderr);
   std::fputc('\n', stderr);
   std::fflush(stderr);
+}
+
+mlir::LogicalResult emitError(std::string message, ErrorCategory category,
+                              std::optional<int> status) {
+  emitDiagnostic(
+      {std::move(message), category, DiagnosticSeverity::Error, status});
+  return mlir::failure();
 }
 } // namespace mqt
