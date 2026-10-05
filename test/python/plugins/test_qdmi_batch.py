@@ -381,6 +381,31 @@ def test_native_read_failure_never_replaces_execution(stage: str) -> None:
     assert fixture.native_calls == [[0, 1, 2]]
 
 
+def test_later_native_status_read_failure_keeps_confirmed_siblings() -> None:
+    """A failed status download cannot erase earlier or later successful programs."""
+    fixture = BatchFixture(native=True)
+    fixture.batch.submit()
+    shared = fixture.jobs[0]
+    shared.check.return_value = Job.Status.FAILED
+    cause = RuntimeError("status unavailable")
+    shared.get_program_status.side_effect = [Job.Status.DONE, cause, Job.Status.DONE, Job.Status.DONE]
+
+    with pytest.raises(RuntimeError, match="status unavailable") as caught:
+        fixture.batch.complete()
+    assert caught.value.__cause__ is cause
+    assert [entry.result for entry in fixture.batch.entries] == ["0", None, "2"]
+    assert [entry.attempts[-1].status for entry in fixture.batch.entries] == [
+        Job.Status.DONE,
+        None,
+        Job.Status.DONE,
+    ]
+    assert fixture.submitted == [0, 1, 2]
+
+    fixture.batch.complete()
+    assert [entry.result for entry in fixture.batch.entries] == ["0", "1", "2"]
+    assert fixture.submitted == [0, 1, 2]
+
+
 def test_uncertain_native_admission_has_no_single_fallback() -> None:
     """A native submission error marks all selected programs uncertain without replay."""
     fixture = BatchFixture(native=True)

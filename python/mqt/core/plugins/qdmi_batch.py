@@ -197,30 +197,40 @@ class Batch(Generic[_Result]):
                 groups.setdefault(id(handle), []).append(index)
         for group in groups.values():
             pending = [i for i in group if self._entries[i].attempts[-1].status not in _TERMINAL]
-            if pending:
-                handle = self._entries[pending[0]].attempts[-1].handle
-                assert handle is not None
-                stage = "wait" if wait else "status"
-                try:  # ruff:ignore[too-many-statements-in-try-clause] Keep shared query failures on every affected entry.
-                    if wait and not handle.wait():
-                        msg = "Timed out waiting for the QDMI job."
-                        raise TimeoutError(msg)  # ruff:ignore[raise-within-try] Record timeouts with other wait failures.
-                    stage = "status"
-                    aggregate = handle.check()
-                    # Resolve individual outcomes before attributing an aggregate failure.
-                    for index in pending:
-                        attempt = self._entries[index].attempts[-1]
+            if not pending:
+                yield group
+                continue
+            handle = self._entries[pending[0]].attempts[-1].handle
+            assert handle is not None
+            stage = "wait" if wait else "status"
+            try:
+                if wait and not handle.wait():
+                    msg = "Timed out waiting for the QDMI job."
+                    raise TimeoutError(msg)  # ruff:ignore[raise-within-try] Record timeouts with other wait failures.
+                stage = "status"
+                aggregate = handle.check()
+            except BaseException as exc:
+                for index in pending:
+                    attempt = self._entries[index].attempts[-1]
+                    self._set_attempt(index, replace(attempt, status=None))
+                    self.record_failure(index, stage, exc)
+                if not isinstance(exc, Exception):
+                    raise
+            else:
+                # Resolve individual outcomes before attributing an aggregate failure.
+                for index in pending:
+                    attempt = self._entries[index].attempts[-1]
+                    try:
                         status = aggregate
                         if aggregate in {Job.Status.FAILED, Job.Status.CANCELED}:
                             status = handle.get_program_status(attempt.program_index) or aggregate
-                        self._set_attempt(index, replace(attempt, status=status))
-                except BaseException as exc:
-                    for index in pending:
-                        attempt = self._entries[index].attempts[-1]
+                    except BaseException as exc:
                         self._set_attempt(index, replace(attempt, status=None))
-                        self.record_failure(index, stage, exc)
-                    if not isinstance(exc, Exception):
-                        raise
+                        self.record_failure(index, "status", exc)
+                        if not isinstance(exc, Exception):
+                            raise
+                    else:
+                        self._set_attempt(index, replace(attempt, status=status))
             yield group
 
     def statuses(self) -> tuple[Job.Status | None, ...]:

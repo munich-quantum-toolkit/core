@@ -350,7 +350,3 @@ records are suppressed, and unsupported operations produce a failed QDMI job.
 Both profiles preserve global phase and logical wire order, including SWAPs.
 LLVM target triples must match the host architecture and operating system
 because the JIT executes in process.
-
-The generic submission APIs reject the QDMI batch-job format. Batch jobs contain
-job handles rather than serialized program bytes and require a separate typed
-API.
