@@ -183,6 +183,15 @@ public:
   /// Inspect declared quantum resources and control flow throughout the module.
   [[nodiscard]] QuantumProgramInfo inspect() const;
 
+  /// Return named f64 entry-point inputs in function argument order.
+  [[nodiscard]] std::vector<std::string> parameters() const;
+
+  /// Bind named f64 inputs in place, preserving unbound inputs and metadata.
+  /// Reject unknown names, non-finite values, or references to the entry point
+  /// without changing the program. Does not run cleanup or fold expressions.
+  [[nodiscard]] bool
+  bindParameters(const std::map<std::string, double>& values);
+
   /// Run the standard QC cleanup passes in place.
   [[nodiscard]] bool cleanup();
 
@@ -224,19 +233,11 @@ public:
   /// barriers are skipped.
   [[nodiscard]] size_t numTwoQubitGates() const;
 
-  /// Count entry-point gates by operation mnemonic, as in numGates().
-  /// Modifiers use `ctrl`, `inv`, and `pow`; their bodies are not counted
-  /// recursively. Barriers are skipped. Function calls are not expanded.
+  /// Count entry-point gates by base symbol, as in numGates().
+  /// Modifiers use `ctrl`, `inv`, and `pow`; unitary calls use the callee name.
+  /// Neither is expanded. Barriers, measurements, and resets are excluded.
+  /// Explicit global-phase operations count under `gphase`.
   [[nodiscard]] std::map<std::string, size_t> gateCounts() const;
-
-  /// Calculate static gate depth, not executed depth or critical-path latency.
-  /// Alternative SCF branches contribute their maximum depth, each loop region
-  /// contributes once, and modifiers contribute one layer without their bodies.
-  /// Barriers, zero-qubit operations, and classical dependencies are ignored.
-  /// Dynamic indices conservatively alias all elements of their register.
-  /// Return no value when there is no entry point or quantum references or
-  /// control flow cannot be resolved. Function calls are not expanded.
-  [[nodiscard]] std::optional<size_t> staticDepth() const;
 };
 
 /// A QCO program with value semantics.
@@ -266,6 +267,13 @@ public:
 
   /// Inspect declared quantum resources and control flow throughout the module.
   [[nodiscard]] QuantumProgramInfo inspect() const;
+
+  /// Return named f64 entry-point inputs in function argument order.
+  [[nodiscard]] std::vector<std::string> parameters() const;
+
+  /// Bind named f64 inputs in place under the same contract as QCProgram.
+  [[nodiscard]] bool
+  bindParameters(const std::map<std::string, double>& values);
 
   /// Run the standard QCO cleanup passes in place.
   [[nodiscard]] bool cleanup();

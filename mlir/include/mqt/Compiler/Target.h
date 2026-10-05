@@ -154,13 +154,15 @@ public:
 
   /// An operation capability described by a target.
   ///
-  /// The reported name is retained verbatim while
-  /// @ref canonicalName contains its normalized compiler spelling. Operations
+  /// The reported name is retained verbatim while @ref canonicalName identifies
+  /// its compiler operation. By default it is derived from the reported name;
+  /// an explicit override describes named instances such as rx_90. Operations
   /// with no site tuples are generally applicable. A nonempty list gives all
   /// supported ordered placements. Missing tuple calibration values inherit
   /// the operation defaults.
   class OperationCapability {
   public:
+    using ParameterBounds = std::pair<double, double>;
     /// The accepted number of qubits for an operation capability.
     class Arity {
     public:
@@ -196,19 +198,25 @@ public:
     create(std::string name, size_t arity, size_t numParameters,
            std::vector<SiteTuple> siteTuples = {},
            std::optional<uint64_t> duration = std::nullopt,
-           std::optional<double> fidelity = std::nullopt);
+           std::optional<double> fidelity = std::nullopt,
+           std::vector<std::optional<double>> fixedParameters = {},
+           std::optional<std::string> canonicalName = std::nullopt,
+           std::vector<std::optional<ParameterBounds>> parameterBounds = {});
 
     /// Create a validated operation capability.
     [[nodiscard]] static llvm::Expected<OperationCapability>
     create(std::string name, Arity arity, size_t numParameters,
            std::vector<SiteTuple> siteTuples = {},
            std::optional<uint64_t> duration = std::nullopt,
-           std::optional<double> fidelity = std::nullopt);
+           std::optional<double> fidelity = std::nullopt,
+           std::vector<std::optional<double>> fixedParameters = {},
+           std::optional<std::string> canonicalName = std::nullopt,
+           std::vector<std::optional<ParameterBounds>> parameterBounds = {});
 
     /// Return the exact reported operation name.
     [[nodiscard]] llvm::StringRef name() const noexcept;
 
-    /// Return the canonical lower-case compiler operation name.
+    /// Return the compiler operation name, independently of its reported name.
     [[nodiscard]] llvm::StringRef canonicalName() const noexcept;
 
     /// Return the accepted operation arity.
@@ -216,6 +224,22 @@ public:
 
     /// Return the number of real-valued operation parameters.
     [[nodiscard]] size_t numParameters() const noexcept;
+
+    /// Fixed parameter values; nullopt accepts any value. Empty is
+    /// unrestricted. Nonempty lists contain numParameters() entries. Constants
+    /// match with absolute tolerance 1e-15, without reducing angles modulo a
+    /// period.
+    [[nodiscard]] llvm::ArrayRef<std::optional<double>>
+    fixedParameters() const noexcept;
+
+    /// Inclusive parameter intervals; empty entries impose no bound.
+    /// Unknown values do not satisfy a bounded or fixed parameter constraint.
+    [[nodiscard]] llvm::ArrayRef<std::optional<ParameterBounds>>
+    parameterBounds() const noexcept;
+
+    /// Check one concrete or unknown parameter against both constraints.
+    [[nodiscard]] bool acceptsParameter(size_t index,
+                                        std::optional<double> value) const;
 
     /// Return all supported ordered placements, or empty for general support.
     [[nodiscard]] llvm::ArrayRef<SiteTuple> siteTuples() const noexcept;
@@ -227,16 +251,19 @@ public:
     [[nodiscard]] std::optional<double> fidelity() const noexcept;
 
   private:
-    OperationCapability(std::string name, std::string canonicalName,
-                        Arity arity, size_t numParameters,
-                        std::vector<SiteTuple> siteTuples,
-                        std::optional<uint64_t> duration,
-                        std::optional<double> fidelity);
+    OperationCapability(
+        std::string name, std::string canonicalName, Arity arity,
+        size_t numParameters, std::vector<SiteTuple> siteTuples,
+        std::optional<uint64_t> duration, std::optional<double> fidelity,
+        std::vector<std::optional<double>> fixedParameters,
+        std::vector<std::optional<ParameterBounds>> parameterBounds);
 
     std::string name_;
     std::string canonicalName_;
     Arity arity_;
     size_t numParameters_;
+    std::vector<std::optional<double>> fixedParameters_;
+    std::vector<std::optional<ParameterBounds>> parameterBounds_;
     std::vector<SiteTuple> siteTuples_;
     std::optional<uint64_t> duration_;
     std::optional<double> fidelity_;
@@ -293,18 +320,46 @@ public:
   /// Recognized globally usable single-qubit synthesis basis.
   enum class SingleQubitBasis : uint8_t {
     U,    ///< `U(θ, φ, λ)`.
-    ZSXX, ///< `RZ` / `SX` / `X` synthesis via a ZYZ decomposition.
-    R,    ///< XYX synthesis expressed with `R(θ, φ)`.
+    ZSXX, ///< RZ and fixed quarter turns, with optional half turns.
+    R,    ///< At most two equatorial rotations `R(θ, φ)`.
     XZX,  ///< `RX(φ) * RZ(θ) * RX(λ)`.
     XYX,  ///< `RX(φ) * RY(θ) * RX(λ)`.
     ZYZ,  ///< `RZ(φ) * RY(θ) * RZ(λ)`.
     ZXZ,  ///< `RZ(φ) * RX(θ) * RZ(λ)`.
   };
 
+  /// Native RX, RY, or R(theta, 0) quarter turns for the ZSXX Euler recipe.
+  struct QuarterTurnGates {
+    GateKind gate = GateKind::RX;
+    double quarterTurnAngle;
+    std::optional<double> halfTurnAngle;
+
+    friend bool operator==(const QuarterTurnGates&,
+                           const QuarterTurnGates&) = default;
+  };
+
+  /// Synthesis domains for a native entangler's rotation parameter.
+  enum class AngleSupport : uint8_t { Fixed, Unrestricted, ZeroToHalfPi };
+
+  /// A native entangler and its supported synthesis domain.
+  struct Entangler {
+    GateKind gate;
+    AngleSupport angles = AngleSupport::Fixed;
+
+    [[nodiscard]] bool parameterized() const noexcept {
+      return angles != AngleSupport::Fixed;
+    }
+
+    friend bool operator==(const Entangler&, const Entangler&) = default;
+  };
+
   /// One single-qubit basis and optional entangler usable across the target.
   struct SynthesisBasis {
     SingleQubitBasis singleQubit;
-    std::optional<GateKind> entangler;
+    std::optional<Entangler> entangler;
+    std::optional<QuarterTurnGates> quarterTurnGates;
+    /// Whether the Euler recipe can emit a half turn in one native gate.
+    bool hasHalfTurn = true;
 
     friend bool operator==(const SynthesisBasis&,
                            const SynthesisBasis&) = default;
@@ -400,15 +455,23 @@ public:
   /// Return operation capabilities in reported order.
   [[nodiscard]] llvm::ArrayRef<OperationCapability> operations() const noexcept;
 
-  /// Return whether an operation capability is supported by the target.
+  /// Return whether an operation supports unrestricted parameter values.
   [[nodiscard]] bool
   supportsOperation(llvm::StringRef name, size_t arity,
                     std::optional<size_t> numParameters = std::nullopt) const;
 
-  /// Return whether an operation capability is supported on ordered sites.
+  /// Return whether an operation supports unrestricted values on ordered sites.
   [[nodiscard]] bool supportsOperation(llvm::StringRef name, size_t arity,
                                        std::optional<size_t> numParameters,
                                        llvm::ArrayRef<SiteId> sites) const;
+
+  /// Check parameter values, optionally on ordered sites.
+  /// Unknown values require unrestricted support.
+  [[nodiscard]] bool
+  supportsOperation(llvm::StringRef name, size_t arity,
+                    std::optional<size_t> numParameters,
+                    std::optional<llvm::ArrayRef<SiteId>> sites,
+                    llvm::ArrayRef<std::optional<double>> parameters) const;
 
   /// Return whether a QCO operation is supported.
   [[nodiscard]] bool supports(::mlir::Operation* operation) const;
@@ -418,17 +481,24 @@ public:
                               llvm::ArrayRef<SiteId> sites) const;
 
   /// Return whether a recognized gate is supported by the target.
+  /// Pauli rotations query the fixed synthesis primitive at angle pi/2.
   [[nodiscard]] bool supports(GateKind gate) const;
 
   /// Return whether a recognized gate is supported on ordered target sites.
   [[nodiscard]] bool supports(GateKind gate,
                               llvm::ArrayRef<SiteId> sites) const;
 
+  /// Check the fixed or unrestricted entangler capability on ordered sites.
+  [[nodiscard]] bool supports(Entangler entangler,
+                              llvm::ArrayRef<SiteId> sites) const;
+
   /// Return the recognized gates supported by the target.
   [[nodiscard]] llvm::ArrayRef<GateKind> supportedGates() const noexcept;
 
   /// Return a globally usable single-qubit basis with an optional entangler.
-  [[nodiscard]] std::optional<SynthesisBasis> synthesisBasis() const noexcept;
+  /// The cached basis remains valid while this target or a copy exists.
+  [[nodiscard]] const std::optional<SynthesisBasis>&
+  synthesisBasis() const noexcept;
 
   /// Materialize the source target facts as a typed MLIR attribute.
   [[nodiscard]] mqt::CompilationTargetAttr

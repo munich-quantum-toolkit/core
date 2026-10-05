@@ -9,9 +9,13 @@
  */
 
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/Transforms/Decomposition/Euler.h"
+#include "mqt/Dialect/QCO/Transforms/Decomposition/Pauli.h"
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Weyl.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/IR/PatternMatch.h"
 #include "mlir/Support/LLVM.h"
 
 #include "llvm/Support/ErrorHandling.h"
@@ -269,6 +273,61 @@ void TwoQubitBasisDecomposer::decomp3Supercontrolled(
   out.emplace_back(smb.u1l);
   out.emplace_back(target.k1r() * smb.u0r);
   out.emplace_back(target.k1l() * smb.u0l);
+}
+
+SmallVector<Value, 2> TwoQubitBasisDecomposer::emitCartan(
+    RewriterBase& rewriter, Location loc, Value qubit0, Value qubit1,
+    std::array<Value, 3> angles, const std::array<Matrix2x2, 2>& frames,
+    const CompilerTarget::SynthesisBasis& basis) const {
+  /// Split the same three-gate template at its parameterized RZ factors.
+  const std::array<TwoQubitNativeDecomposition, 3> stages{
+      {
+          {
+              .numBasisUses = 1,
+              .singleQubitFactors =
+                  {
+                      smb.u3r * frames[1].adjoint(),
+                      smb.u3l * frames[0].adjoint(),
+                      smb.u2rb,
+                      smb.u2lb,
+                  },
+          },
+          {
+              .numBasisUses = 1,
+              .singleQubitFactors = {smb.u2ra, smb.u2la, smb.u1rb, smb.u1l},
+          },
+          {
+              .numBasisUses = 1,
+              .singleQubitFactors =
+                  {
+                      smb.u1ra,
+                      Matrix2x2::identity(),
+                      frames[1] * smb.u0r,
+                      frames[0] * smb.u0l,
+                  },
+          },
+      },
+  };
+  double phase = -3. * basisWeyl.globalPhase();
+  std::array wires{qubit0, qubit1};
+  for (size_t i = 0; i < stages.size(); ++i) {
+    const auto result =
+        emitUnitary2QWeyl(rewriter, loc, wires[0], wires[1], stages[i], basis);
+    wires = {result.qubit0, result.qubit1};
+    phase += result.globalPhase;
+    if (i == 0) {
+      wires[0] = synthesizePauliRotation1Q(rewriter, loc, wires[0],
+                                           PauliAxis::Z, angles[0], basis);
+      wires[1] = synthesizePauliRotation1Q(
+          rewriter, loc, wires[1], PauliAxis::Z,
+          rewriter.createOrFold<arith::NegFOp>(loc, angles[1]), basis);
+    } else if (i == 1) {
+      wires[1] = synthesizePauliRotation1Q(rewriter, loc, wires[1],
+                                           PauliAxis::Z, angles[2], basis);
+    }
+  }
+  emitGPhaseIfNeeded(rewriter, loc, phase);
+  return {wires[0], wires[1]};
 }
 
 std::array<std::complex<double>, 4>

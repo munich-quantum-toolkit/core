@@ -119,59 +119,6 @@ analyzeQTensorBranch(Block* block, size_t qTensorArgumentIndex,
   }
 }
 
-/// Move a branch while replacing QTensor accesses with scalar qubits.
-static void moveScalarizedQTensorBranch(Value originalQTensor, Block* oldBlock,
-                                        Block* newBlock,
-                                        size_t qTensorArgumentIndex,
-                                        BranchQTensorAccesses& accesses,
-                                        ArrayRef<int64_t> indices,
-                                        PatternRewriter& rewriter) {
-  Operation* oldYield = oldBlock->getTerminator();
-  auto scalarArguments = newBlock->getArguments().take_back(indices.size());
-  auto carriedArguments = newBlock->getArguments().drop_back(indices.size());
-
-  SmallVector<Value> argumentReplacements;
-  argumentReplacements.reserve(oldBlock->getNumArguments());
-  size_t carriedIndex = 0;
-  for (size_t oldIndex : llvm::seq(oldBlock->getNumArguments())) {
-    argumentReplacements.push_back(oldIndex == qTensorArgumentIndex
-                                       ? originalQTensor
-                                       : carriedArguments[carriedIndex++]);
-  }
-  assert(carriedIndex == carriedArguments.size());
-  rewriter.mergeBlocks(oldBlock, newBlock, argumentReplacements);
-
-  SmallVector<Value> scalarYields;
-  scalarYields.reserve(indices.size());
-  for (auto [indexPosition, index] : llvm::enumerate(indices)) {
-    auto access = accesses.accesses.find(index);
-    if (access == accesses.accesses.end()) {
-      scalarYields.push_back(scalarArguments[indexPosition]);
-    } else {
-      rewriter.replaceAllUsesWith(access->second.extract.getResult(),
-                                  scalarArguments[indexPosition]);
-      scalarYields.push_back(access->second.insert.getScalar());
-    }
-  }
-
-  auto oldTargets = oldYield->getOperands();
-  SmallVector<Value> newYieldValues;
-  newYieldValues.reserve(oldTargets.size() - 1 + scalarYields.size());
-  for (auto [oldIndex, value] : llvm::enumerate(oldTargets)) {
-    if (oldIndex != accesses.yieldedOperand) {
-      newYieldValues.push_back(value);
-    }
-  }
-  llvm::append_range(newYieldValues, scalarYields);
-
-  rewriter.modifyOpInPlace(oldYield,
-                           [&] { oldYield->setOperands(newYieldValues); });
-
-  for (Operation* operation : llvm::reverse(accesses.qTensorOperations)) {
-    rewriter.eraseOp(operation);
-  }
-}
-
 /// Extract the selected tensor slots before structured control flow.
 static std::pair<Value, SmallVector<Value>>
 extractQTensorScalars(Value tensor, ArrayRef<int64_t> indices, Location loc,
@@ -201,201 +148,290 @@ static Value insertQTensorScalars(Value tensor, ValueRange scalars,
 
 namespace {
 
-/// Replace constant-index QTensor updates in an if with scalar threading.
-///
-/// A QTensor carried through an if hides its qubits from target mapping. This
-/// pattern extracts the union of constant indices accessed by either branch,
-/// threads those qubits through both branches, and reinserts the results.
-/// Untouched elements remain in the QTensor outside the if.
+struct TensorSlots {
+  Value original;
+  Value remaining;
+  SmallVector<Value> inputs;
+  SmallVector<int64_t> indices;
+  SmallVector<BranchQTensorAccesses, 2> branches;
+};
+
+using SlotLayout = SmallVector<TensorSlots*>;
+
+} // namespace
+
+static bool isStaticQTensor(Value value) {
+  auto type = dyn_cast<RankedTensorType>(value.getType());
+  return type && type.hasStaticShape() &&
+         isa<qco::QubitType>(type.getElementType());
+}
+
+static void prepareSlots(TensorSlots& slots, Location loc,
+                         PatternRewriter& rewriter) {
+  for (auto& branch : slots.branches) {
+    llvm::append_range(slots.indices, branch.accesses.keys());
+  }
+  llvm::sort(slots.indices);
+  slots.indices.erase(llvm::unique(slots.indices), slots.indices.end());
+  auto [remaining, inputs] =
+      extractQTensorScalars(slots.original, slots.indices, loc, rewriter);
+  slots.remaining = remaining;
+  slots.inputs = std::move(inputs);
+}
+
+static SmallVector<Value> expandInputs(ValueRange values,
+                                       ArrayRef<TensorSlots*> layout) {
+  SmallVector<Value> result;
+  for (auto [value, slots] : llvm::zip_equal(values, layout)) {
+    if (slots != nullptr) {
+      llvm::append_range(result, slots->inputs);
+    } else {
+      result.push_back(value);
+    }
+  }
+  return result;
+}
+
+static SmallVector<Type> expandTypes(TypeRange types,
+                                     ArrayRef<TensorSlots*> layout) {
+  SmallVector<Type> result;
+  for (auto [type, slots] : llvm::zip_equal(types, layout)) {
+    if (slots != nullptr) {
+      llvm::append_range(result, ValueRange(slots->inputs).getTypes());
+    } else {
+      result.push_back(type);
+    }
+  }
+  return result;
+}
+
+/// Rebuild a branch once, replacing every eligible tensor in its signature.
+static void moveScalarizedBranch(Block* oldBlock, Block* newBlock,
+                                 ArrayRef<TensorSlots*> arguments,
+                                 ArrayRef<TensorSlots*> yields, size_t branch,
+                                 PatternRewriter& rewriter) {
+  auto* oldYield = oldBlock->getTerminator();
+  SmallVector<Value> replacements;
+  DenseMap<TensorSlots*, ValueRange> scalarArguments;
+  size_t nextArgument = 0;
+  for (auto* slots : arguments) {
+    if (slots == nullptr) {
+      replacements.push_back(newBlock->getArgument(nextArgument++));
+      continue;
+    }
+    auto scalars =
+        newBlock->getArguments().slice(nextArgument, slots->indices.size());
+    scalarArguments.try_emplace(slots, scalars);
+    nextArgument += slots->indices.size();
+    replacements.push_back(slots->original);
+    for (auto [index, scalar] : llvm::zip_equal(slots->indices, scalars)) {
+      auto found = slots->branches[branch].accesses.find(index);
+      if (found != slots->branches[branch].accesses.end()) {
+        rewriter.replaceAllUsesWith(found->second.extract.getResult(), scalar);
+      }
+    }
+  }
+  rewriter.mergeBlocks(oldBlock, newBlock, replacements);
+  SmallVector<Value> values;
+  for (auto [value, slots] : llvm::zip_equal(oldYield->getOperands(), yields)) {
+    if (slots == nullptr) {
+      values.push_back(value);
+      continue;
+    }
+    for (auto [index, scalar] :
+         llvm::zip_equal(slots->indices, scalarArguments.at(slots))) {
+      auto found = slots->branches[branch].accesses.find(index);
+      values.push_back(found == slots->branches[branch].accesses.end()
+                           ? scalar
+                           : found->second.insert.getScalar());
+    }
+  }
+  rewriter.modifyOpInPlace(oldYield, [&] { oldYield->setOperands(values); });
+  for (auto* slots : arguments) {
+    if (slots != nullptr) {
+      for (Operation* operation :
+           llvm::reverse(slots->branches[branch].qTensorOperations)) {
+        rewriter.eraseOp(operation);
+      }
+    }
+  }
+}
+
+static SmallVector<Value> restoreResults(ValueRange results,
+                                         ArrayRef<TensorSlots*> layout,
+                                         Location loc,
+                                         PatternRewriter& rewriter) {
+  SmallVector<Value> replacements;
+  size_t nextResult = 0;
+  for (auto* slots : layout) {
+    if (slots == nullptr) {
+      replacements.push_back(results[nextResult++]);
+      continue;
+    }
+    replacements.push_back(insertQTensorScalars(
+        slots->remaining, results.slice(nextResult, slots->indices.size()),
+        slots->indices, loc, rewriter));
+    nextResult += slots->indices.size();
+  }
+  return replacements;
+}
+
+namespace {
+
+/// Expose constant tensor slots to mapping without expanding control flow.
 struct ScalarizeQTensorInputs final : OpRewritePattern<qco::IfOp> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(qco::IfOp op,
                                 PatternRewriter& rewriter) const override {
-    size_t classicalResultCount = op.getClassicalResults().size();
-    auto oldQubits = op.getQubits();
-
-    for (auto [qTensorIndex, qTensor] : llvm::enumerate(oldQubits)) {
-      auto qTensorType = dyn_cast<RankedTensorType>(qTensor.getType());
-      if (!qTensorType || !qTensorType.hasStaticShape()) {
+    const size_t classical = op.getClassicalResults().size();
+    SmallVector<TensorSlots, 1> slots;
+    slots.reserve(op.getQubits().size());
+    SlotLayout arguments(op.getQubits().size(), nullptr);
+    SlotLayout results(op.getNumResults(), nullptr);
+    for (auto [index, tensor] : llvm::enumerate(op.getQubits())) {
+      if (!isStaticQTensor(tensor)) {
         continue;
       }
-
-      auto thenAccesses = analyzeQTensorBranch(
-          op.thenBlock(), qTensorIndex, classicalResultCount + qTensorIndex);
-      auto elseAccesses = analyzeQTensorBranch(
-          op.elseBlock(), qTensorIndex, classicalResultCount + qTensorIndex);
+      auto thenAccesses =
+          analyzeQTensorBranch(op.thenBlock(), index, classical + index);
+      auto elseAccesses =
+          analyzeQTensorBranch(op.elseBlock(), index, classical + index);
       if (!thenAccesses || !elseAccesses) {
         continue;
       }
-
-      SmallVector<int64_t> accessedIndices(thenAccesses->accesses.keys());
-      llvm::append_range(accessedIndices, elseAccesses->accesses.keys());
-      llvm::sort(accessedIndices);
-      accessedIndices.erase(llvm::unique(accessedIndices),
-                            accessedIndices.end());
-      ArrayRef<int64_t> indices(accessedIndices);
-
-      rewriter.setInsertionPoint(op);
-      auto [qTensorWithoutScalars, scalarInputs] =
-          extractQTensorScalars(qTensor, indices, op.getLoc(), rewriter);
-
-      SmallVector<Value> newQubits(oldQubits);
-      newQubits.erase(newQubits.begin() + qTensorIndex);
-      llvm::append_range(newQubits, scalarInputs);
-
-      auto newIf = qco::IfOp::create(
-          rewriter, op.getLoc(), op.getClassicalResults().getTypes(),
-          ValueRange(newQubits).getTypes(), op.getCondition(), newQubits);
-      newIf->setDiscardableAttrs(op->getDiscardableAttrDictionary());
-
-      SmallVector<Location> locations(newQubits.size(), op.getLoc());
-      Block* oldThenBlock = op.thenBlock();
-      Block* oldElseBlock = op.elseBlock();
-      Block* newThenBlock =
-          rewriter.createBlock(&newIf.getThenRegion(), {},
-                               ValueRange(newQubits).getTypes(), locations);
-      Block* newElseBlock =
-          rewriter.createBlock(&newIf.getElseRegion(), {},
-                               ValueRange(newQubits).getTypes(), locations);
-      moveScalarizedQTensorBranch(qTensor, oldThenBlock, newThenBlock,
-                                  qTensorIndex, *thenAccesses, indices,
-                                  rewriter);
-      moveScalarizedQTensorBranch(qTensor, oldElseBlock, newElseBlock,
-                                  qTensorIndex, *elseAccesses, indices,
-                                  rewriter);
-
-      rewriter.setInsertionPointAfter(newIf);
-      Value updatedQTensor = insertQTensorScalars(
-          qTensorWithoutScalars,
-          newIf.getLinearResults().take_back(indices.size()), indices,
-          op.getLoc(), rewriter);
-
-      SmallVector<Value> replacements(
-          newIf.getLinearResults().drop_back(indices.size()));
-      replacements.insert(replacements.begin() + qTensorIndex, updatedQTensor);
-      replacements.insert(replacements.begin(),
-                          newIf.getClassicalResults().begin(),
-                          newIf.getClassicalResults().end());
-      rewriter.replaceOp(op, replacements);
-      return success();
+      slots.push_back({
+          .original = tensor,
+          .branches = {std::move(*thenAccesses), std::move(*elseAccesses)},
+      });
+      arguments[index] = &slots.back();
+      results[classical + index] = &slots.back();
     }
-    return failure();
+    if (slots.empty()) {
+      return failure();
+    }
+    for (auto& tensor : slots) {
+      prepareSlots(tensor, op.getLoc(), rewriter);
+    }
+    auto inputs = expandInputs(op.getQubits(), arguments);
+    auto newIf = qco::IfOp::create(
+        rewriter, op.getLoc(), op.getClassicalResults().getTypes(),
+        ValueRange(inputs).getTypes(), op.getCondition(), inputs);
+    newIf->setDiscardableAttrs(op->getDiscardableAttrDictionary());
+    for (size_t branch = 0; branch < 2; ++branch) {
+      auto* block = rewriter.createBlock(
+          &newIf->getRegion(branch), {}, ValueRange(inputs).getTypes(),
+          SmallVector<Location>(inputs.size(), op.getLoc()));
+      moveScalarizedBranch(&op->getRegion(branch).front(), block, arguments,
+                           results, branch, rewriter);
+    }
+    rewriter.setInsertionPointAfter(newIf);
+    rewriter.replaceOp(
+        op, restoreResults(newIf.getResults(), results, op.getLoc(), rewriter));
+    return success();
   }
 };
-/// Keep constant-index QTensor accesses outside a while loop and carry scalars.
-/// The before region may reorder results, but the after region must return
-/// each tensor to its original iteration argument.
+
+/// Before/after signatures may differ and reorder tensor results.
 struct ScalarizeWhileQTensorInputs final : OpRewritePattern<scf::WhileOp> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(scf::WhileOp op,
                                 PatternRewriter& rewriter) const override {
-    for (auto [inputIndex, qTensor] : llvm::enumerate(op.getInits())) {
-      auto type = dyn_cast<RankedTensorType>(qTensor.getType());
-      if (!type || !type.hasStaticShape() ||
-          !isa<qco::QubitType>(type.getElementType())) {
+    SmallVector<TensorSlots, 1> slots;
+    slots.reserve(op.getInits().size());
+    SlotLayout inputs(op.getInits().size(), nullptr);
+    SlotLayout outputs(op.getNumResults(), nullptr);
+    for (auto [index, tensor] : llvm::enumerate(op.getInits())) {
+      if (!isStaticQTensor(tensor)) {
         continue;
       }
-      auto beforeAccesses =
-          analyzeQTensorBranch(op.getBeforeBody(), inputIndex);
-      if (!beforeAccesses) {
+      auto before = analyzeQTensorBranch(op.getBeforeBody(), index);
+      if (!before) {
         continue;
       }
-      /// The condition is operand zero of scf.condition.
-      const auto resultIndex = beforeAccesses->yieldedOperand - 1;
-      auto afterAccesses =
-          analyzeQTensorBranch(op.getAfterBody(), resultIndex, inputIndex);
-      if (!afterAccesses) {
+      const auto resultIndex = before->yieldedOperand - 1;
+      auto after = analyzeQTensorBranch(op.getAfterBody(), resultIndex, index);
+      if (!after) {
         continue;
       }
-      SmallVector<int64_t> indices(beforeAccesses->accesses.keys());
-      llvm::append_range(indices, afterAccesses->accesses.keys());
-      llvm::sort(indices);
-      indices.erase(llvm::unique(indices), indices.end());
-
-      rewriter.setInsertionPoint(op);
-      auto [remainingTensor, scalarInputs] =
-          extractQTensorScalars(qTensor, indices, op.getLoc(), rewriter);
-
-      SmallVector<Value> newInputs(op.getInits());
-      newInputs.erase(newInputs.begin() + inputIndex);
-      llvm::append_range(newInputs, scalarInputs);
-      SmallVector<Type> newTypes(op.getResultTypes());
-      newTypes.erase(newTypes.begin() + resultIndex);
-      llvm::append_range(newTypes, ValueRange(scalarInputs).getTypes());
-      auto newWhile =
-          scf::WhileOp::create(rewriter, op.getLoc(), newTypes, newInputs);
-      newWhile->setDiscardableAttrs(op->getDiscardableAttrDictionary());
-      Block* newBefore = rewriter.createBlock(
-          &newWhile.getBefore(), {}, ValueRange(newInputs).getTypes(),
-          SmallVector<Location>(newInputs.size(), op.getLoc()));
-      Block* newAfter = rewriter.createBlock(
-          &newWhile.getAfter(), {}, newTypes,
-          SmallVector<Location>(newTypes.size(), op.getLoc()));
-      moveScalarizedQTensorBranch(qTensor, op.getBeforeBody(), newBefore,
-                                  inputIndex, *beforeAccesses, indices,
-                                  rewriter);
-      moveScalarizedQTensorBranch(qTensor, op.getAfterBody(), newAfter,
-                                  resultIndex, *afterAccesses, indices,
-                                  rewriter);
-
-      rewriter.setInsertionPointAfter(newWhile);
-      remainingTensor = insertQTensorScalars(
-          remainingTensor, newWhile.getResults().take_back(indices.size()),
-          indices, op.getLoc(), rewriter);
-      SmallVector<Value> replacements(
-          newWhile.getResults().drop_back(indices.size()));
-      replacements.insert(replacements.begin() + resultIndex, remainingTensor);
-      rewriter.replaceOp(op, replacements);
-      return success();
+      slots.push_back({
+          .original = tensor,
+          .branches = {std::move(*before), std::move(*after)},
+      });
+      inputs[index] = &slots.back();
+      outputs[resultIndex] = &slots.back();
     }
-    return failure();
+    if (slots.empty()) {
+      return failure();
+    }
+    for (auto& tensor : slots) {
+      prepareSlots(tensor, op.getLoc(), rewriter);
+    }
+    auto newInputs = expandInputs(op.getInits(), inputs);
+    auto newTypes = expandTypes(op.getResultTypes(), outputs);
+    auto loop =
+        scf::WhileOp::create(rewriter, op.getLoc(), newTypes, newInputs);
+    loop->setDiscardableAttrs(op->getDiscardableAttrDictionary());
+    auto* before = rewriter.createBlock(
+        &loop.getBefore(), {}, ValueRange(newInputs).getTypes(),
+        SmallVector<Location>(newInputs.size(), op.getLoc()));
+    auto* after = rewriter.createBlock(
+        &loop.getAfter(), {}, newTypes,
+        SmallVector<Location>(newTypes.size(), op.getLoc()));
+    SlotLayout conditionYields{nullptr};
+    llvm::append_range(conditionYields, outputs);
+    moveScalarizedBranch(op.getBeforeBody(), before, inputs, conditionYields, 0,
+                         rewriter);
+    moveScalarizedBranch(op.getAfterBody(), after, outputs, inputs, 1,
+                         rewriter);
+    rewriter.setInsertionPointAfter(loop);
+    rewriter.replaceOp(
+        op, restoreResults(loop.getResults(), outputs, op.getLoc(), rewriter));
+    return success();
   }
 };
-/// Carry constant slots through a for loop without expanding its iterations.
+
 struct ScalarizeForQTensorInputs final : OpRewritePattern<scf::ForOp> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(scf::ForOp op,
                                 PatternRewriter& rewriter) const override {
-    for (auto [inputIndex, tensor] : llvm::enumerate(op.getInitArgs())) {
-      auto type = dyn_cast<RankedTensorType>(tensor.getType());
-      if (!type || !type.hasStaticShape() ||
-          !isa<qco::QubitType>(type.getElementType())) {
+    SmallVector<TensorSlots, 1> slots;
+    slots.reserve(op.getInitArgs().size());
+    SlotLayout inputs(op.getInitArgs().size(), nullptr);
+    for (auto [index, tensor] : llvm::enumerate(op.getInitArgs())) {
+      if (!isStaticQTensor(tensor)) {
         continue;
       }
-      auto accesses =
-          analyzeQTensorBranch(op.getBody(), inputIndex + 1, inputIndex);
+      auto accesses = analyzeQTensorBranch(op.getBody(), index + 1, index);
       if (!accesses) {
         continue;
       }
-      SmallVector<int64_t> indices(accesses->accesses.keys());
-      llvm::sort(indices);
-      auto [remainingTensor, scalars] =
-          extractQTensorScalars(tensor, indices, op.getLoc(), rewriter);
-      SmallVector<Value> inputs(op.getInitArgs());
-      inputs.erase(inputs.begin() + inputIndex);
-      llvm::append_range(inputs, scalars);
-      auto loop = scf::ForOp::create(rewriter, op.getLoc(), op.getLowerBound(),
-                                     op.getUpperBound(), op.getStep(), inputs);
-      loop->setDiscardableAttrs(op->getDiscardableAttrDictionary());
-      if (!loop.getBody()->empty()) {
-        rewriter.eraseOp(loop.getBody()->getTerminator());
-      }
-      moveScalarizedQTensorBranch(tensor, op.getBody(), loop.getBody(),
-                                  inputIndex + 1, *accesses, indices, rewriter);
-      rewriter.setInsertionPointAfter(loop);
-      remainingTensor = insertQTensorScalars(
-          remainingTensor, loop.getResults().take_back(indices.size()), indices,
-          op.getLoc(), rewriter);
-      SmallVector<Value> replacements(
-          loop.getResults().drop_back(indices.size()));
-      replacements.insert(replacements.begin() + inputIndex, remainingTensor);
-      rewriter.replaceOp(op, replacements);
-      return success();
+      slots.push_back({.original = tensor, .branches = {std::move(*accesses)}});
+      inputs[index] = &slots.back();
     }
-    return failure();
+    if (slots.empty()) {
+      return failure();
+    }
+    for (auto& tensor : slots) {
+      prepareSlots(tensor, op.getLoc(), rewriter);
+    }
+    auto newInputs = expandInputs(op.getInitArgs(), inputs);
+    auto loop = scf::ForOp::create(rewriter, op.getLoc(), op.getLowerBound(),
+                                   op.getUpperBound(), op.getStep(), newInputs);
+    loop->setDiscardableAttrs(op->getDiscardableAttrDictionary());
+    if (!loop.getBody()->empty()) {
+      rewriter.eraseOp(loop.getBody()->getTerminator());
+    }
+    SlotLayout arguments{nullptr};
+    llvm::append_range(arguments, inputs);
+    moveScalarizedBranch(op.getBody(), loop.getBody(), arguments, inputs, 0,
+                         rewriter);
+    rewriter.setInsertionPointAfter(loop);
+    rewriter.replaceOp(
+        op, restoreResults(loop.getResults(), inputs, op.getLoc(), rewriter));
+    return success();
   }
 };
 } // namespace

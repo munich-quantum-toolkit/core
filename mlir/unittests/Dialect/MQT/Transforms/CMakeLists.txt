@@ -7,12 +7,14 @@
 # Licensed under the MIT License
 
 set(mqt_transforms_target mqt-core-mlir-unittests-mqt-transforms)
-add_executable(${mqt_transforms_target} test_global_phase_normalization.cpp)
+add_executable(${mqt_transforms_target} test_classical_simplification.cpp
+                                        test_global_phase_normalization.cpp)
 
 target_link_libraries(
   ${mqt_transforms_target}
   PRIVATE GTest::gtest_main
           MLIRArithDialect
+          MLIRCBitDialect
           MLIRControlFlowDialect
           MLIRFuncDialect
           MLIRIR

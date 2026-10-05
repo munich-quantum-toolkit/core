@@ -212,7 +212,13 @@ def NativeOperationAttr : MQTAttr<"NativeOperation", "native_operation"> {
     The operation records its spelling, arity, parameter count, and optional
     global or site-specific calibration data. An empty site-tuple list means
     general applicability; a nonempty list gives all supported ordered
-    placements. The following example records a directional controlled-X operation:
+    placements. Optional `fixed_parameters` contains one entry per parameter:
+    a finite f64 value for a fixed parameter, or `unit` for an unrestricted one.
+    Optional `canonical_name` identifies the compiler operation when the
+    reported name is a device-specific instruction name.
+    Optional `parameter_bounds` contains one inclusive two-element f64 array
+    per parameter, or `unit` for an unbounded parameter.
+    The following example records a directional controlled-X operation:
 
     ```mlir
     #mqt.native_operation<name = "cx",
@@ -224,7 +230,10 @@ def NativeOperationAttr : MQTAttr<"NativeOperation", "native_operation"> {
       "uint64_t":$num_parameters,
       MQTArrayRefParameter<"SiteTupleAttr">:$site_tuples,
       MQTOptionalUInt64Parameter<>:$duration,
-      OptionalParameter<"FloatAttr">:$fidelity);
+      OptionalParameter<"FloatAttr">:$fidelity,
+      OptionalParameter<"ArrayAttr">:$fixed_parameters,
+      OptionalParameter<"StringAttr">:$canonical_name,
+      OptionalParameter<"ArrayAttr">:$parameter_bounds);
   let assemblyFormat = "`<` struct(params) `>`";
   let genVerifyDecl = 1;
 }

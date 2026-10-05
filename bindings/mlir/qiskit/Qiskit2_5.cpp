@@ -10,6 +10,7 @@
 
 #include "mqt/Compiler/Target.h"
 #include "mqt/Dialect/MQT/IR/QubitLayout.h"
+#include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QC/Translation/StandardGate.h"
 
 #include "QiskitTranslation.h"
@@ -39,12 +40,15 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <numbers>
 #include <optional>
+#include <ranges>
 #include <set>
 #include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -295,6 +299,7 @@ namespace {
 struct ParsedParameter {
   Parameter value;
   size_t depth = 1U;
+  std::vector<std::tuple<Parameter, size_t, bool>> sumTerms;
 };
 } // namespace
 
@@ -315,6 +320,33 @@ static void countParameterExpressionNode(size_t& nodeCount) {
     throwParameterExpressionSizeError();
   }
   ++nodeCount;
+}
+
+/// Balance additive replay chains before constructing nested expressions.
+static void finishParameterSum(ParsedParameter& parameter) {
+  auto& terms = parameter.sumTerms;
+  if (terms.empty()) {
+    return;
+  }
+  for (size_t stride = 1U; stride < terms.size(); stride *= 2U) {
+    for (size_t index = 0U; index + stride < terms.size();
+         index += 2U * stride) {
+      auto& [left, depth, leftNegative] = terms[index];
+      auto& [right, rightDepth, rightNegative] = terms[index + stride];
+      depth = std::max(depth, rightDepth) + 1U;
+      if (depth > MAX_PARAMETER_EXPRESSION_DEPTH) {
+        throwParameterExpressionDepthError();
+      }
+      left = Parameter::binary(leftNegative == rightNegative
+                                   ? BinaryParameterKind::Add
+                                   : BinaryParameterKind::Subtract,
+                               std::move(left), std::move(right));
+    }
+  }
+  /// The first term is positive; subtractions only negate right-hand terms.
+  parameter.value = std::move(std::get<0>(terms.front()));
+  parameter.depth = std::get<1>(terms.front());
+  terms.clear();
 }
 
 [[nodiscard]] static ParsedParameter
@@ -473,6 +505,7 @@ normalizePythonParameter(const nb::handle parameter) {
               "Qiskit unary parameter replay entry has a right operand");
         }
         auto operand = takeParameterExpressionOperand(lhs, stack, nodeCount);
+        finishParameterSum(operand);
         countParameterExpressionNode(nodeCount);
         ++operand.depth;
         if (operand.depth > MAX_PARAMETER_EXPRESSION_DEPTH) {
@@ -493,6 +526,25 @@ normalizePythonParameter(const nb::handle parameter) {
         std::swap(left, right);
       }
       countParameterExpressionNode(nodeCount);
+      if (opcode == "ADD" || opcode == "SUB" || opcode == "RSUB") {
+        const auto subtract = opcode != "ADD";
+        if (left.sumTerms.empty()) {
+          left.sumTerms.emplace_back(std::move(left.value), left.depth, false);
+        }
+        if (right.sumTerms.empty()) {
+          left.sumTerms.emplace_back(std::move(right.value), right.depth,
+                                     subtract);
+        } else {
+          for (auto& [value, depth, negative] : right.sumTerms) {
+            left.sumTerms.emplace_back(std::move(value), depth,
+                                       negative != subtract);
+          }
+        }
+        stack.push_back(std::move(left));
+        continue;
+      }
+      finishParameterSum(left);
+      finishParameterSum(right);
       const auto depth = std::max(left.depth, right.depth) + 1U;
       if (depth > MAX_PARAMETER_EXPRESSION_DEPTH) {
         throwParameterExpressionDepthError();
@@ -512,6 +564,7 @@ normalizePythonParameter(const nb::handle parameter) {
     throw std::runtime_error(
         "Qiskit parameter expression replay leaves multiple results");
   }
+  finishParameterSum(stack.back());
   return std::move(stack.back().value);
 }
 
@@ -784,6 +837,36 @@ versionGate(const StandardGateMapping mapping) {
 standardGateMapping(const std::string_view name) {
   const auto* gate = versionGate(name);
   return gate == nullptr ? std::nullopt : std::optional{gate->translation};
+}
+
+/// GPI and GPI2 are target names for fixed-angle R gates with one phase.
+[[nodiscard]] static std::optional<double>
+nativeRAngle(nb::handle operation, const std::string_view name) {
+  if ((name != "gpi" && name != "gpi2") ||
+      !nb::isinstance(operation,
+                      nb::module_::import_("qiskit.circuit").attr("Gate"))) {
+    return std::nullopt;
+  }
+  const nb::object parameters = operation.attr("params");
+  if (nb::len(parameters) != 1 ||
+      nb::cast<size_t>(operation.attr("num_qubits")) != 1) {
+    return std::nullopt;
+  }
+  const auto angle = name == "gpi" ? std::numbers::pi : std::numbers::pi / 2.;
+  try {
+    auto expected = nb::module_::import_("qiskit").attr("QuantumCircuit")(1);
+    expected.attr("r")(angle, parameters[nb::int_(0)], 0);
+    if (name == "gpi") {
+      expected.attr("global_phase") = std::numbers::pi / 2.;
+    }
+    if (operation.attr("definition").equal(expected)) {
+      return angle;
+    }
+  } catch (const nb::python_error&) {
+    /// Other custom definitions use normal circuit import.
+    return std::nullopt;
+  }
+  return std::nullopt;
 }
 
 namespace {
@@ -2221,16 +2304,26 @@ public:
                const std::vector<uint32_t>& qubits,
                const std::vector<Parameter>& parameters) override {
     const auto* gate = versionGate(mapping);
-    /// Only P and U3 have alternative names in this Qiskit gate table.
-    if (target_ != nullptr && gate != nullptr &&
-        (mapping.gate == mlir::qc::StandardGate::P ||
-         mapping.gate == mlir::qc::StandardGate::U3)) {
+    std::string nativeName;
+    if (target_ != nullptr && gate != nullptr) {
       for (const auto& operation : target_->operations()) {
-        const auto* candidate = versionGate(operation.name());
+        const auto* candidate = versionGate(operation.canonicalName());
         if (candidate == nullptr || candidate->translation != mapping ||
             !operation.arity().accepts(qubits.size()) ||
-            operation.numParameters() != parameters.size()) {
+            operation.numParameters() != parameters.size() ||
+            !std::ranges::all_of(
+                std::views::iota(size_t{0}, operation.numParameters()),
+                [&](size_t index) {
+                  const auto* actual = parameters[index].getNumber();
+                  return operation.acceptsParameter(
+                      index, actual != nullptr ? std::optional{actual->value}
+                                               : std::nullopt);
+                })) {
           continue;
+        }
+        if (const auto* named = versionGate(operation.name());
+            named != nullptr && named->translation == mapping) {
+          candidate = named;
         }
         if (operation.siteTuples().empty() ||
             std::ranges::any_of(operation.siteTuples(), [&](const auto& tuple) {
@@ -2240,6 +2333,7 @@ public:
                                         });
             })) {
           gate = candidate;
+          nativeName = operation.name().str();
           break;
         }
       }
@@ -2256,6 +2350,50 @@ public:
         qk_gate_num_params(gate->native) != parameters.size()) {
       throw std::runtime_error("Qiskit gate '" + std::string(gate->name) +
                                "' has incompatible arity");
+    }
+    if (nativeName == "gpi" || nativeName == "gpi2") {
+      const auto angle =
+          nativeName == "gpi" ? std::numbers::pi : std::numbers::pi / 2.;
+      if (mapping != StandardGateMapping{mlir::qc::StandardGate::R, 0} ||
+          parameters[0].getNumber() == nullptr ||
+          !(std::abs(parameters[0].getNumber()->value - angle) <=
+            mlir::mqt::PARAMETER_COMPARISON_TOLERANCE)) {
+        throw std::runtime_error("Qiskit native gate '" + nativeName +
+                                 "' requires its fixed-angle R definition");
+      }
+      nb::list values;
+      values.append(pythonParameter(parameters[1]));
+      auto operation = nb::module_::import_("qiskit.circuit")
+                           .attr("Gate")(nativeName, 1, values);
+      auto definition =
+          nb::module_::import_("qiskit").attr("QuantumCircuit")(1);
+      definition.attr("r")(angle, values[0], 0);
+      if (nativeName == "gpi") {
+        definition.attr("global_phase") = std::numbers::pi / 2.;
+        pythonCircuit_.attr("global_phase") =
+            pythonCircuit_.attr("global_phase")
+                .attr("__sub__")(std::numbers::pi / 2.);
+      }
+      operation.attr("definition") = definition;
+      pythonCircuit_.attr("append")(operation, pythonQubits(qubits));
+      return;
+    }
+    if (!nativeName.empty() && nativeName != gate->name) {
+      if (!standardGates_.is_valid()) {
+        standardGates_ = nb::module_::import_("qiskit.circuit.library")
+                             .attr("get_standard_gate_name_mapping")();
+      }
+      auto operation =
+          standardGates_[nb::str(gate->name.data(), gate->name.size())].attr(
+              "to_mutable")();
+      nb::list values;
+      for (const auto& parameter : parameters) {
+        values.append(pythonParameter(parameter));
+      }
+      operation.attr("params") = values;
+      operation.attr("name") = nb::str(nativeName.data(), nativeName.size());
+      pythonCircuit_.attr("append")(operation, pythonQubits(qubits));
+      return;
     }
     if (std::ranges::all_of(parameters, [](const Parameter& parameter) {
           return parameter.getNumber() != nullptr;
@@ -2279,7 +2417,7 @@ public:
     for (const auto& parameter : parameters) {
       values.append(pythonParameter(parameter));
     }
-    if (!standardGates_.is_valid()) {
+    if (!standardInstruction_.is_valid()) {
       standardGates_ = nb::module_::import_("qiskit.circuit.library")
                            .attr("get_standard_gate_name_mapping")();
       standardInstruction_ = nb::module_::import_("qiskit.circuit")
@@ -2492,13 +2630,25 @@ private:
     return result;
   }
 
-  [[nodiscard]] nb::object pythonParameter(const Parameter& parameter,
-                                           PythonSymbols& symbols,
-                                           size_t& nodeCount, size_t depth) {
-    countParameterExpressionNode(nodeCount);
-    if (depth > MAX_PARAMETER_EXPRESSION_DEPTH) {
-      throwParameterExpressionDepthError();
+  /// Export preflight checks the expanded node/depth budgets before conversion.
+  /// Retain shared children so cached identities remain valid across gates.
+  [[nodiscard]] nb::object
+  pythonParameter(const std::shared_ptr<const Parameter>& parameter) {
+    if (parameter->getNumber() != nullptr ||
+        parameter->getSymbol() != nullptr) {
+      return pythonParameter(*parameter);
     }
+    if (const auto found = expressions_.find(parameter);
+        found != expressions_.end()) {
+      return found->second;
+    }
+    auto value = pythonParameter(*parameter);
+    expressions_.emplace(parameter, value);
+    return value;
+  }
+
+  [[nodiscard]] nb::object pythonParameter(const Parameter& parameter) {
+    auto& symbols = parameters_->symbols;
     if (const auto* number = parameter.getNumber()) {
       if (!std::isfinite(number->value)) {
         throw std::runtime_error(
@@ -2557,8 +2707,7 @@ private:
       return nb::borrow<nb::object>(pythonSymbol->second);
     }
     if (const auto* unary = parameter.getUnary()) {
-      auto operand =
-          pythonParameter(*unary->operand, symbols, nodeCount, depth + 1U);
+      auto operand = pythonParameter(unary->operand);
       if (nb::isinstance<nb::float_>(operand)) {
         auto numeric = nb::cast<double>(operand);
         switch (unary->operation) {
@@ -2627,10 +2776,42 @@ private:
       }
     }
     if (const auto* binary = parameter.getBinary()) {
-      auto left =
-          pythonParameter(*binary->left, symbols, nodeCount, depth + 1U);
-      auto right =
-          pythonParameter(*binary->right, symbols, nodeCount, depth + 1U);
+      if (binary->operation == BinaryParameterKind::Add ||
+          binary->operation == BinaryParameterKind::Subtract) {
+        /// Qiskit 2.5 recursively reoptimizes balanced sums. Append their terms
+        /// incrementally until upstream handles balanced additions efficiently.
+        std::vector<std::pair<std::shared_ptr<const Parameter>, bool>> pending{
+            {
+                binary->right,
+                binary->operation == BinaryParameterKind::Subtract,
+            },
+            {binary->left, false},
+        };
+        nb::object sum;
+        while (!pending.empty()) {
+          const auto [term, negative] = pending.back();
+          pending.pop_back();
+          if (const auto* add = term->getBinary();
+              add != nullptr &&
+              (add->operation == BinaryParameterKind::Add ||
+               add->operation == BinaryParameterKind::Subtract)) {
+            pending.emplace_back(
+                add->right,
+                negative != (add->operation == BinaryParameterKind::Subtract));
+            pending.emplace_back(add->left, negative);
+          } else {
+            auto value = pythonParameter(term);
+            if (!sum.is_valid()) {
+              sum = std::move(value);
+            } else {
+              sum = negative ? sum - value : sum + value;
+            }
+          }
+        }
+        return sum;
+      }
+      auto left = pythonParameter(binary->left);
+      auto right = pythonParameter(binary->right);
       switch (binary->operation) {
       case BinaryParameterKind::Add:
         return left + right;
@@ -2645,11 +2826,6 @@ private:
       }
     }
     throw std::runtime_error("unknown normalized parameter expression");
-  }
-
-  [[nodiscard]] nb::object pythonParameter(const Parameter& parameter) {
-    size_t nodeCount = 0U;
-    return pythonParameter(parameter, parameters_->symbols, nodeCount, 1U);
   }
 
   [[nodiscard]] static nb::object loopIndexSet(const Loop& loop) {
@@ -2732,6 +2908,7 @@ private:
   nb::object standardGates_;
   nb::object standardInstruction_;
   PythonVariables variables_;
+  std::unordered_map<std::shared_ptr<const Parameter>, nb::object> expressions_;
   std::shared_ptr<OutputParameters> parameters_;
   std::shared_ptr<NativeGateRegistry> gates_;
   const mlir::CompilerTarget* target_;
@@ -2749,43 +2926,38 @@ public:
     return versionGate(gate) != nullptr;
   }
 
-  [[nodiscard]] mlir::CompilerTarget
-  importTarget(nb::handle source, nb::handle operationNames,
-               const std::optional<std::string>& name) const override {
-    using Target = mlir::CompilerTarget;
-    const auto takeResult = []<class T>(llvm::Expected<T> result) {
-      if (!result) {
-        throw nb::value_error(llvm::toString(result.takeError()).c_str());
-      }
-      return std::move(*result);
-    };
+  template <class T> static T takeTargetResult(llvm::Expected<T> result) {
+    if (!result) {
+      throw nb::value_error(llvm::toString(result.takeError()).c_str());
+    }
+    return std::move(*result);
+  }
+
+  static nb::object targetObject(nb::handle source) {
     auto target = nb::borrow<nb::object>(source);
-    auto targetName = name;
     if (nb::isinstance(
             target,
             nb::module_::import_("qiskit.providers").attr("BackendV2"))) {
-      if (!targetName) {
-        targetName = nb::cast<std::string>(target.attr("name"));
-      }
       target = target.attr("target");
     }
     if (!nb::isinstance(
             target, nb::module_::import_("qiskit.transpiler").attr("Target"))) {
       throw nb::type_error("Expected a Qiskit Target or BackendV2");
     }
-    size_t numQubits = 0;
-    if (!nb::try_cast(target.attr("num_qubits"), numQubits) || numQubits == 0) {
-      throw nb::value_error(
-          "Qiskit target must have a known positive qubit count");
-    }
+    return target;
+  }
 
+  static mlir::CompilerTarget::NativeOperations
+  readOperations(nb::handle source, nb::handle operationNames,
+                 bool placements) {
+    using Target = mlir::CompilerTarget;
+    auto target = targetObject(source);
     const auto circuit = nb::module_::import_("qiskit.circuit");
     const auto controlFlow = nb::module_::import_("qiskit.circuit.controlflow");
     const auto ignoredTypes = nb::make_tuple(
         circuit.attr("Barrier"), circuit.attr("Delay"),
         circuit.attr("ControlFlowOp"), controlFlow.attr("BreakLoopOp"),
         controlFlow.attr("ContinueLoopOp"), circuit.attr("Store"));
-    const auto parameter = circuit.attr("Parameter")("_mqt_target_parameter");
     const auto available = target.attr("operation_names");
     std::set<std::string> names;
     for (auto item : nb::borrow<nb::iterable>(operationNames.is_none()
@@ -2795,8 +2967,6 @@ public:
     }
 
     std::vector<Target::OperationCapability> operations;
-    std::set<Target::Coupling> couplings;
-    bool allToAll = numQubits == 1;
     for (const auto& operationName : names) {
       const auto quotedName =
           nb::cast<std::string>(nb::repr(nb::cast(operationName)));
@@ -2806,11 +2976,13 @@ public:
       }
       const auto instruction =
           target.attr("operation_from_name")(operationName);
-      const auto qargs = target.attr("qargs_for_operation_name")(operationName);
+      auto qargs = target.attr("qargs_for_operation_name")(operationName);
       const auto instructionType =
           instruction.is_type() ? nb::handle(instruction) : instruction.type();
+      const auto rAngle = nativeRAngle(instruction, operationName);
       const auto nativeName =
-          nb::isinstance(instruction, circuit.attr("Measure"))
+          rAngle ? std::optional<std::string>("r")
+          : nb::isinstance(instruction, circuit.attr("Measure"))
               ? std::optional<std::string>("measure")
           : nb::isinstance(instruction, circuit.attr("Reset"))
               ? std::optional<std::string>("reset")
@@ -2828,21 +3000,38 @@ public:
 
       std::string reason;
       size_t numParameters = 0;
+      std::vector<std::optional<double>> fixedParameters;
+      std::vector<std::optional<Target::OperationCapability::ParameterBounds>>
+          parameterBounds;
       if (nb::isinstance(instruction, circuit.attr("ControlledGate")) &&
           nb::cast<uint64_t>(instruction.attr("ctrl_state")) !=
               closedControlState(
                   nb::cast<uint64_t>(instruction.attr("num_ctrl_qubits")))) {
         reason = "open controls";
-      } else if (!nativeName) {
+      } else if (!nativeName ||
+                 ((operationName == "gpi" || operationName == "gpi2") &&
+                  !rAngle)) {
         reason = "custom or unsupported operation";
-      } else if (operationName != *nativeName) {
+      } else if (operationName != *nativeName &&
+                 (*nativeName == "measure" || *nativeName == "reset")) {
         reason = "custom operation name";
       } else {
         const nb::object parameters = instruction.attr("params");
         numParameters = nb::len(parameters);
-        const auto slots = std::vector<nb::object>(numParameters, parameter);
-        bool supported = nb::cast<bool>(target.attr("instruction_supported")(
-            operationName, nb::arg("parameters") = slots));
+        bool supported = true;
+        for (auto value : nb::borrow<nb::iterable>(parameters)) {
+          if (nb::isinstance(value, circuit.attr("ParameterExpression")) &&
+              nb::len(nb::borrow<nb::object>(value.attr("parameters"))) != 0) {
+            fixedParameters.emplace_back(std::nullopt);
+          } else {
+            double number = 0.0;
+            if (!nb::try_cast(value, number) || !std::isfinite(number)) {
+              supported = false;
+              break;
+            }
+            fixedParameters.emplace_back(number);
+          }
+        }
         if (supported && nb::cast<bool>(target.attr("gate_has_angle_bounds")(
                              operationName))) {
           for (const auto bound : {
@@ -2856,6 +3045,19 @@ public:
               break;
             }
           }
+        }
+        if (!supported && numParameters == 1 && fixedParameters.size() == 1 &&
+            !fixedParameters[0] &&
+            (*nativeName == "rxx" || *nativeName == "ryy" ||
+             *nativeName == "rzx" || *nativeName == "rzz") &&
+            nb::cast<bool>(target.attr("supported_angle_bound")(
+                operationName, std::vector<double>{0.})) &&
+            nb::cast<bool>(target.attr("supported_angle_bound")(
+                operationName, std::vector<double>{std::numbers::pi / 2.}))) {
+          /// Public predicates prove that this useful interval is contained in
+          /// the target's interval; other bounded domains remain unsupported.
+          parameterBounds.emplace_back(std::pair{0., std::numbers::pi / 2.});
+          supported = true;
         }
         if (!supported) {
           reason = "parameter constraints";
@@ -2875,40 +3077,75 @@ public:
         continue;
       }
 
-      std::vector<Target::SiteTuple> placements;
-      if (!qargs.is_none()) {
+      if (rAngle) {
+        fixedParameters.insert(fixedParameters.begin(), rAngle);
+        ++numParameters;
+      }
+
+      const auto arity = nb::cast<size_t>(instruction.attr("num_qubits"));
+      std::vector<Target::SiteTuple> siteTuples;
+      if (placements && !qargs.is_none()) {
         std::vector<std::vector<Target::SiteId>> sites;
         for (auto tuple : nb::borrow<nb::iterable>(qargs)) {
           sites.push_back(nb::cast<std::vector<Target::SiteId>>(tuple));
         }
         std::ranges::sort(sites);
         for (auto& tuple : sites) {
-          placements.push_back(
-              takeResult(Target::SiteTuple::create(std::move(tuple))));
+          siteTuples.push_back(
+              takeTargetResult(Target::SiteTuple::create(std::move(tuple))));
         }
       }
-      const auto arity = nb::cast<size_t>(instruction.attr("num_qubits"));
-      auto capability = takeResult(Target::OperationCapability::create(
-          operationName, arity, numParameters, std::move(placements)));
-      if (arity == 2) {
-        if (qargs.is_none()) {
-          allToAll = true;
-        } else {
-          for (const auto& placement : capability.siteTuples()) {
-            const auto sites = placement.sites();
-            couplings.emplace(std::min(sites[0], sites[1]),
-                              std::max(sites[0], sites[1]));
-          }
-        }
-      }
+      auto capability = takeTargetResult(Target::OperationCapability::create(
+          operationName, arity, numParameters, std::move(siteTuples),
+          std::nullopt, std::nullopt, std::move(fixedParameters), nativeName,
+          std::move(parameterBounds)));
       operations.push_back(std::move(capability));
     }
     if (operations.empty()) {
       throw nb::value_error(
           "Qiskit target has no representable native operations");
     }
-    operations.push_back(takeResult(Target::OperationCapability::create(
+    operations.push_back(takeTargetResult(Target::OperationCapability::create(
         "gphase", Target::OperationCapability::Arity::fixed(0), 1)));
+    return Target::NativeOperations::fromOperations(operations);
+  }
+
+  [[nodiscard]] mlir::CompilerTarget::NativeOperations
+  importNativeOperations(nb::handle source,
+                         nb::handle operationNames) const override {
+    return readOperations(source, operationNames, false);
+  }
+
+  [[nodiscard]] mlir::CompilerTarget
+  importTarget(nb::handle source, nb::handle operationNames,
+               const std::optional<std::string>& name) const override {
+    using Target = mlir::CompilerTarget;
+    auto target = targetObject(source);
+    auto targetName = name;
+    if (!targetName && !source.is(target)) {
+      targetName = nb::cast<std::string>(source.attr("name"));
+    }
+    size_t numQubits = 0;
+    if (!nb::try_cast(target.attr("num_qubits"), numQubits) || numQubits == 0) {
+      throw nb::value_error(
+          "Qiskit target must have a known positive qubit count");
+    }
+    const auto nativeOperations = readOperations(target, operationNames, true);
+    std::set<Target::Coupling> couplings;
+    bool allToAll = numQubits == 1;
+    for (const auto& capability : nativeOperations.operations()) {
+      if (capability.arity().value() != 2) {
+        continue;
+      }
+      if (capability.siteTuples().empty()) {
+        allToAll = true;
+      }
+      for (const auto& placement : capability.siteTuples()) {
+        const auto sites = placement.sites();
+        couplings.emplace(std::min(sites[0], sites[1]),
+                          std::max(sites[0], sites[1]));
+      }
+    }
     if (numQubits - 1 <= std::numeric_limits<size_t>::max() / numQubits &&
         couplings.size() == numQubits * (numQubits - 1) / 2) {
       allToAll = true;
@@ -2918,9 +3155,7 @@ public:
             ? Target::Connectivity::allToAll()
             : Target::Connectivity::fromCouplings(std::vector<Target::Coupling>(
                   couplings.begin(), couplings.end()));
-    const auto nativeOperations =
-        Target::NativeOperations::fromOperations(operations);
-    return takeResult(
+    return takeTargetResult(
         targetName ? Target::create(*targetName, numQubits, connectivity,
                                     nativeOperations)
                    : Target::create(numQubits, connectivity, nativeOperations));
@@ -2985,11 +3220,11 @@ private:
       return "gphase";
     }
     const auto* gate = versionGate(name);
-    /// The compiler treats only CX and CZ as native controlled gates.
+    /// The compiler recognizes controlled Pauli gates as native operations.
     if (gate != nullptr &&
         (gate->translation.controls != 0 ||
          gate->translation.gate == mlir::qc::StandardGate::CU) &&
-        gate->name != "cx" && gate->name != "cz") {
+        gate->name != "cx" && gate->name != "cy" && gate->name != "cz") {
       return std::nullopt;
     }
     return gate == nullptr ? std::nullopt

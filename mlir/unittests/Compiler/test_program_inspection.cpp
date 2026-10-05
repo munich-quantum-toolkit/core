@@ -14,12 +14,40 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <optional>
+#include <map>
 #include <string>
 #include <utility>
 #include <vector>
 
 namespace {
+TEST(ProgramInspection, CountCallsAndNestedModifiersOnce) {
+  auto qc = mlir::QCProgram::fromOpenQASMString(R"(
+    OPENQASM 3.0; include "stdgates.inc";
+    gate foo a { h a; x a; }
+    qubit[2] q;
+    bit c;
+    foo q[0];
+    ctrl @ inv @ x q[0], q[1];
+    pow(2) @ h q[1];
+    gphase(0.3);
+    barrier q;
+    c = measure q[0];
+    reset q[1];
+  )");
+  ASSERT_TRUE(qc);
+  const std::map<std::string, size_t> expected{
+      {"foo", 1},
+      {"ctrl", 1},
+      {"pow", 1},
+      {"gphase", 1},
+  };
+  EXPECT_EQ(qc->gateCounts(), expected);
+  EXPECT_EQ(qc->numGates(), 4);
+  EXPECT_EQ(qc->numSingleQubitGates(), 2);
+  EXPECT_EQ(qc->numTwoQubitGates(), 1);
+  EXPECT_FALSE(qc->inspect().hasControlFlow);
+}
+
 TEST(ProgramInspection, InspectAllocatedRegistersAndControlFlow) {
   auto qc = mlir::QCProgram::fromOpenQASMString(R"(
     OPENQASM 3.0;
@@ -73,43 +101,15 @@ TEST(ProgramInspection, UnknownAndEmptyWidthsDiffer) {
   ASSERT_TRUE(dynamic);
   EXPECT_EQ(empty->inspect().numQubits, 0);
   EXPECT_TRUE(empty->gateCounts().empty());
-  EXPECT_EQ(empty->staticDepth(), 0);
   EXPECT_FALSE(library->inspect().numQubits);
   EXPECT_TRUE(library->gateCounts().empty());
-  EXPECT_FALSE(library->staticDepth());
   EXPECT_FALSE(dynamic->inspect().numQubits);
   auto qco = std::move(*dynamic).intoQCO();
   ASSERT_TRUE(qco);
   EXPECT_FALSE(qco->inspect().numQubits);
 }
 
-TEST(ProgramInspection, StaticDepthTracksPhysicalAliases) {
-  auto qc = mlir::QCProgram::fromOpenQASMString(R"(
-    OPENQASM 3.0; include "stdgates.inc";
-    h $5; z $5; x $2; gphase(0.3);
-  )");
-  ASSERT_TRUE(qc);
-  EXPECT_EQ(qc->staticDepth(), 2);
-  EXPECT_EQ(qc->gateCounts().at("gphase"), 1);
-}
-
-TEST(ProgramInspection, StaticDepthTracksScalarAllocations) {
-  auto qc = mlir::QCProgram::fromMLIRString(R"(
-    module {
-      func.func @main() attributes {mqt.entry_point} {
-        %q = qc.alloc : !qc.qubit
-        qc.h %q : !qc.qubit
-        qc.x %q : !qc.qubit
-        qc.dealloc %q : !qc.qubit
-        return
-      }
-    }
-  )");
-  ASSERT_TRUE(qc);
-  EXPECT_EQ(qc->staticDepth(), 2);
-}
-
-TEST(ProgramInspection, StoredReferencesHaveUnknownDepthNotExtraWidth) {
+TEST(ProgramInspection, StoredReferencesDoNotAddWidth) {
   auto qc = mlir::QCProgram::fromMLIRString(R"(
     module {
       func.func @main() attributes {mqt.entry_point} {
@@ -127,31 +127,25 @@ TEST(ProgramInspection, StoredReferencesHaveUnknownDepthNotExtraWidth) {
   )");
   ASSERT_TRUE(qc);
   EXPECT_EQ(qc->inspect().numQubits, 1);
-  EXPECT_FALSE(qc->staticDepth());
 }
 
-TEST(ProgramInspection, RegisterViewsHaveUnknownDepth) {
+TEST(ProgramInspection, AllocationWidthOverflowIsUnknown) {
   auto qc = mlir::QCProgram::fromMLIRString(R"(
     module {
       func.func @main() attributes {mqt.entry_point} {
-        %i = arith.constant 0 : index
-        %q = memref.alloc() : memref<1x!qc.qubit>
-        %view = memref.cast %q : memref<1x!qc.qubit> to memref<?x!qc.qubit>
-        %a = memref.load %q[%i] : memref<1x!qc.qubit>
-        qc.h %a : !qc.qubit
-        %b = memref.load %view[%i] : memref<?x!qc.qubit>
-        qc.x %b : !qc.qubit
-        memref.dealloc %q : memref<1x!qc.qubit>
+        %a = memref.alloc() : memref<9223372036854775807x!qc.qubit>
+        %b = memref.alloc() : memref<9223372036854775807x!qc.qubit>
+        %c = memref.alloc() : memref<2x!qc.qubit>
+        %q = qc.alloc : !qc.qubit
         return
       }
     }
   )");
   ASSERT_TRUE(qc);
-  EXPECT_EQ(qc->inspect().numQubits, 1);
-  EXPECT_FALSE(qc->staticDepth());
+  EXPECT_FALSE(qc->inspect().numQubits);
 }
 
-TEST(ProgramInspection, QuantumInputsAndUnstructuredControlFlowAreUnknown) {
+TEST(ProgramInspection, QuantumInputsHaveUnknownWidthAndBranchesAreDetected) {
   auto input = mlir::QCProgram::fromMLIRString(R"(
     module {
       func.func @main(%q: !qc.qubit) attributes {mqt.entry_point} {
@@ -162,7 +156,6 @@ TEST(ProgramInspection, QuantumInputsAndUnstructuredControlFlowAreUnknown) {
   )");
   ASSERT_TRUE(input);
   EXPECT_FALSE(input->inspect().numQubits);
-  EXPECT_FALSE(input->staticDepth());
   auto branches = mlir::QCProgram::fromMLIRString(R"(
     module {
       func.func @main() attributes {mqt.entry_point} {
@@ -174,7 +167,6 @@ TEST(ProgramInspection, QuantumInputsAndUnstructuredControlFlowAreUnknown) {
   )");
   ASSERT_TRUE(branches);
   EXPECT_TRUE(branches->inspect().hasControlFlow);
-  EXPECT_FALSE(branches->staticDepth());
 }
 
 TEST(ProgramInspection, InspectionIncludesHelpersButNotNestedModules) {
@@ -200,25 +192,6 @@ TEST(ProgramInspection, InspectionIncludesHelpersButNotNestedModules) {
   EXPECT_EQ(qc->inspect().numQubits, 1);
   EXPECT_TRUE(qc->inspect().hasControlFlow);
   EXPECT_TRUE(qc->gateCounts().empty());
-  EXPECT_EQ(qc->staticDepth(), 0);
 }
 
-TEST(ProgramInspection, DepthHasBoundedNesting) {
-  for (const auto nesting : {127, 128}) {
-    std::string source = R"(module {
-      func.func @main(%flag: i1) attributes {mqt.entry_point} {
-        %q = qc.static 0 : !qc.qubit
-    )";
-    for (int i = 0; i < nesting; ++i) {
-      source += "scf.if %flag {\n";
-    }
-    source += "qc.h %q : !qc.qubit\n";
-    source.append(static_cast<size_t>(nesting), '}');
-    source += "return } }";
-    auto qc = mlir::QCProgram::fromMLIRString(source);
-    ASSERT_TRUE(qc);
-    EXPECT_EQ(qc->staticDepth(),
-              nesting == 127 ? std::optional<size_t>{1} : std::nullopt);
-  }
-}
 } // namespace

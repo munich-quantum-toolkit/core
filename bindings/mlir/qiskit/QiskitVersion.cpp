@@ -150,4 +150,9 @@ mlir::CompilerTarget importTarget(nb::handle target, nb::handle operationNames,
   return selectTranslation()->importTarget(target, operationNames, name);
 }
 
+mlir::CompilerTarget::NativeOperations
+importNativeOperations(nb::handle target, nb::handle operationNames) {
+  return selectTranslation()->importNativeOperations(target, operationNames);
+}
+
 } // namespace mqt::bindings::qiskit

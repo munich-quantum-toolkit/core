@@ -8,6 +8,7 @@
 
 add_mlir_dialect_library(
   MLIRMQTDialect
+  MQTAttributes.cpp
   MQTDialect.cpp
   QubitLayout.cpp
   ADDITIONAL_HEADER_DIRS

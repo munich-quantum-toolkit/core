@@ -3852,6 +3852,18 @@ TEST_F(QCODDFunctionalityTest,
            std::array{"math.cos", "f64", "0.0", "0.0", "1.0", ""},
            std::array{"math.sin", "f64", "-0.0", "0.0", "-0.0", ""},
            std::array{"math.tan", "f64", "-0.0", "0.0", "-0.0", ""},
+           std::array{"math.acos", "f64", "1.0", "0.0", "0.0", ""},
+           std::array{"math.asin", "f64", "-0.0", "0.0", "-0.0", ""},
+           std::array{"math.atan", "f64", "-0.0", "0.0", "-0.0", ""},
+           std::array{"math.atan2", "f64", "-0.0", "1.0", "-0.0", ""},
+           std::array{
+               "math.atan2",
+               "f64",
+               "0.0",
+               "-1.0",
+               "3.141592653589793",
+               "",
+           },
            std::array{"math.exp", "f64", "0.0", "0.0", "1.0", ""},
            std::array{"math.log", "f64", "1.0", "0.0", "0.0", ""},
            std::array{"math.sqrt", "f64", "4.0", "0.0", "2.0", ""},
@@ -3970,7 +3982,8 @@ TEST_F(QCODDFunctionalityTest,
     const bool comparison = name.starts_with("arith.cmpf");
     const bool cast = name == "arith.sitofp" || name == "arith.uitofp";
     const bool unary = cast || name == "arith.negf" ||
-                       (name.starts_with("math.") && name != "math.powf");
+                       (name.starts_with("math.") && name != "math.powf" &&
+                        name != "math.atan2");
     const auto* const operands = unary ? "%lhs" : "%lhs, %rhs";
     const auto signature =
         cast ? llvm::formatv("{0} to f64", type).str() : std::string(type);

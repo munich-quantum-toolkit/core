@@ -80,7 +80,6 @@ print("Gates:", compiled.num_gates())
 print("Single-qubit gates:", compiled.num_single_qubit_gates())
 print("Two-qubit gates:", compiled.num_two_qubit_gates())
 print("Gates by operation:", compiled.gate_counts())
-print("Static gate depth:", compiled.static_depth())
 ```
 
 These are static gate counts of the entry-point IR. A gate in each structured
@@ -89,13 +88,14 @@ iteration count. Barriers do not count, and operations inside gate modifiers do
 not count again. The counts do not expand function calls or estimate the gates
 executed at runtime.
 
-Static gate depth takes the maximum across alternative SCF branches and visits
-each loop region once. Dynamic register indices conservatively alias all
-elements of their register. Barriers, global phases, and classical dependencies
-do not add depth. This metric is not executed circuit depth or latency. It
-returns `None` without an entry point, for unresolved quantum references (such
-as stored references or register views), or unsupported control flow, including
-nesting of 128 regions or more.
+Unlike Qiskit's `count_ops()`, these methods count only unitary gates, not
+measurements, resets, barriers, or control-flow instructions. `gate_counts()`
+uses Core's gate names: controlled gates count under `ctrl`, inverse and power
+modifiers under `inv` and `pow`, and unitary calls under the callee name.
+Explicit global-phase operations count under `gphase`; Qiskit's circuit-level
+`global_phase` is not an instruction. For straight-line circuits with matching
+gate representations, the totals match Qiskit's gate-only counts. These queries
+do not calculate circuit depth.
 
 Both QC and QCO provide structural resource information:
 
@@ -112,6 +112,32 @@ entry-point inputs. Site IDs need not be contiguous: a program using only site 5
 has one qubit and `static_qubits == [5]`. Inspection includes declarations and
 control flow in helper functions, but excludes nested modules. It does not
 execute loops, compute peak live width, or recover width from layout metadata.
+
+## Bind program parameters
+
+QC and QCO programs expose named f64 entry-point inputs through `parameters`.
+Use `bind_parameters` to bind all or some inputs in place:
+
+```{code-cell} ipython3
+from qiskit import QuantumCircuit
+from qiskit.circuit import Parameter
+
+circuit = QuantumCircuit(1)
+circuit.ry(Parameter("theta"), 0)
+parameterized = QCProgram.from_qiskit(circuit)
+assert parameterized.parameters == ["theta"]
+bound = parameterized.copy()
+bound.bind_parameters({"theta": 0.5})
+assert bound.parameters == []
+assert parameterized.parameters == ["theta"]
+```
+
+OpenQASM 3 `input float` and `input float[64]` declarations use the same named
+input API. Both frontends can retain symbolic `f64` parameters through QC and
+QCO transformations. Partial binding preserves unbound inputs and their source
+identities. Unknown names, non-finite values, and references to the entry point
+fail without changing the program. Binding does not fold expressions; call
+`cleanup()` when needed.
 
 ## Select an output format
 

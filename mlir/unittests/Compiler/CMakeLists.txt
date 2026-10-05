@@ -7,8 +7,9 @@
 # Licensed under the MIT License
 
 add_executable(
-  mqt-core-mlir-unittests-compiler test_compiler_pipeline.cpp test_compiler_qdmi_adapter.cpp
-                                   test_compiler_target.cpp test_program_inspection.cpp)
+  mqt-core-mlir-unittests-compiler
+  test_compiler_pipeline.cpp test_compiler_qdmi_adapter.cpp test_compiler_target.cpp
+  test_parameter_binding.cpp test_program_inspection.cpp)
 set_target_properties(mqt-core-mlir-unittests-compiler PROPERTIES UNITY_BUILD OFF)
 
 target_link_libraries(

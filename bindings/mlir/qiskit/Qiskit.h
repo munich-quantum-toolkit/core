@@ -15,6 +15,7 @@
 
 #include "nanobind/nanobind.h"
 
+#include <cstddef>
 #include <optional>
 #include <string>
 
@@ -31,6 +32,10 @@ namespace nb = nanobind;
 [[nodiscard]] mlir::CompilerTarget
 importTarget(nb::handle target, nb::handle operationNames,
              const std::optional<std::string>& name);
+
+/// Import gate capabilities independently of physical width and placement.
+[[nodiscard]] mlir::CompilerTarget::NativeOperations
+importNativeOperations(nb::handle target, nb::handle operationNames);
 
 /// Return a new Qiskit QuantumCircuit, optionally for a compiler target.
 [[nodiscard]] nb::object

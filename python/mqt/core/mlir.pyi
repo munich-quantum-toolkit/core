@@ -10,7 +10,7 @@
 
 import enum
 import os
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Annotated, Literal, Unpack, overload
 
 import numpy as np
@@ -295,6 +295,10 @@ class CompilerTarget:
             site_tuples: Sequence[CompilerTarget.SiteTuple | Sequence[int]] | None = None,
             duration: int | None = None,
             fidelity: float | None = None,
+            *,
+            fixed_parameters: Sequence[float | None] = (),
+            canonical_name: str | None = None,
+            parameter_bounds: Sequence[tuple[float, float] | None] = (),
         ) -> None: ...
         @property
         def name(self) -> str:
@@ -315,6 +319,14 @@ class CompilerTarget:
         @property
         def site_tuples(self) -> list[CompilerTarget.SiteTuple]:
             """Supported ordered placements with optional calibration; empty means general applicability."""
+
+        @property
+        def parameter_bounds(self) -> list[tuple[float, float] | None]:
+            """Inclusive parameter intervals; None leaves a parameter unbounded."""
+
+        @property
+        def fixed_parameters(self) -> list[float | None]:
+            """Fixed values or None per parameter; empty means unrestricted. Constants use absolute tolerance 1e-15 without angle wrapping."""
 
         @property
         def duration(self) -> int | None:
@@ -376,6 +388,30 @@ class CompilerTarget:
 
         ZXZ = 6
 
+    class AngleSupport(enum.Enum):
+        """Angle domain used by native entangler synthesis."""
+
+        FIXED = 0
+
+        UNRESTRICTED = 1
+
+        ZERO_TO_HALF_PI = 2
+
+    class Entangler:
+        """A native synthesis entangler and its angle support."""
+
+        @property
+        def gate(self) -> CompilerTarget.GateKind:
+            """The native gate kind."""
+
+        @property
+        def parameterized(self) -> bool:
+            """Whether synthesis can vary the entangler angle."""
+
+        @property
+        def angles(self) -> CompilerTarget.AngleSupport:
+            """The angle domain used by synthesis."""
+
     class SynthesisBasis:
         """One synthesis basis usable across the complete target."""
 
@@ -384,7 +420,7 @@ class CompilerTarget:
             """The single-qubit synthesis basis."""
 
         @property
-        def entangler(self) -> CompilerTarget.GateKind | None:
+        def entangler(self) -> CompilerTarget.Entangler | None:
             """The two-qubit entangler, or None when none is usable."""
 
     class ConnectivityKind(enum.Enum):
@@ -426,6 +462,17 @@ class CompilerTarget:
             """Create explicit native-operation support."""
 
         @staticmethod
+        def from_qiskit(
+            source: qiskit.transpiler.Target | qiskit.providers.BackendV2,
+            *,
+            operation_names: Iterable[str] | None = None,
+        ) -> CompilerTarget.NativeOperations:
+            """Import gate capabilities and parameter constraints, ignoring physical placement.
+
+            Unsupported explicit selections raise ValueError; otherwise they warn and are omitted.
+            """
+
+        @staticmethod
         def unrestricted() -> CompilerTarget.NativeOperations:
             """Create unrestricted native-operation support."""
 
@@ -451,7 +498,7 @@ class CompilerTarget:
         """Snapshot native operations and connectivity from Qiskit.
 
         Args:
-            source: Qiskit Target or BackendV2 with a known positive qubit count.
+            source: Qiskit Target or BackendV2. Physical import requires a known positive qubit count.
             operation_names: Qiskit Target operation names to retain. By default,
                 include every representable operation. Explicit selections must all be
                 representable.
@@ -513,7 +560,13 @@ class CompilerTarget:
         """A target-wide single-qubit basis with an optional entangler, or None when no single-qubit basis is usable."""
 
     def supports_operation(
-        self, name: str, arity: int, num_parameters: int | None = None, sites: Sequence[int] | None = None
+        self,
+        name: str,
+        arity: int,
+        num_parameters: int | None = None,
+        sites: Sequence[int] | None = None,
+        *,
+        parameters: Sequence[float | None] = (),
     ) -> bool:
         """Check whether the target supports an operation.
 
@@ -522,6 +575,8 @@ class CompilerTarget:
             arity: Number of qubits used by the operation.
             num_parameters: Number of real-valued parameters. None accepts any count.
             sites: Ordered target site IDs. None checks support on any placement.
+            parameters: Known parameter values. Omitted or None values require
+                unrestricted support.
         """
 
 class TargetEnvironment:
@@ -730,24 +785,25 @@ class QCProgram(Program):
         """
 
     def gate_counts(self) -> dict[str, int]:
-        """Count gates by operation mnemonic.
+        """Count entry-point gates by base symbol.
 
-        The counts use the same static-IR semantics as :meth:`num_gates`. Modifier
-        operations use the ``ctrl``, ``inv``, and ``pow`` mnemonics. Their bodies are
-        not counted recursively, and barriers are skipped.
+        The counts use the same static-IR semantics as :meth:`num_gates`. Modifiers
+        use ``ctrl``, ``inv``, and ``pow``; unitary calls use the callee name. Neither
+        is expanded. Barriers, measurements, and resets are excluded. Explicit
+        global-phase operations count under ``gphase``.
         """
 
-    def static_depth(self) -> int | None:
-        """Calculate the static gate depth of the program.
+    @property
+    def parameters(self) -> list[str]:
+        """Named f64 entry-point inputs in function argument order."""
 
-        The depth describes the entry-point IR rather than runtime execution. Mutually
-        exclusive structured control-flow branches contribute their maximum depth.
-        Each loop region contributes once, regardless of its runtime iteration count.
-        Modifier operations contribute one layer, but their bodies do not contribute
-        again. Barriers, zero-qubit operations, and classical dependencies are ignored.
-        Dynamic register indices conservatively alias all elements of their register.
-        Return None for a missing entry point or unsupported quantum references or
-        control flow. Function calls are not expanded.
+    def bind_parameters(self, values: Mapping[str, float]) -> None:
+        """Bind named f64 parameters in place without folding expressions.
+
+        Partial binding preserves unbound parameters and their source identities.
+        Unknown names, non-finite values, and references to the entry point raise
+        ValueError without changing the program. Call ``copy()`` first to preserve
+        the input, and ``cleanup()`` afterwards if constant folding is needed.
         """
 
 class QCOProgram(Program):
@@ -832,6 +888,19 @@ class QCOProgram(Program):
         """Convert this program to ``jeff`` MLIR.
 
         Set ``copy=True`` to preserve it.
+        """
+
+    @property
+    def parameters(self) -> list[str]:
+        """Named f64 entry-point inputs in function argument order."""
+
+    def bind_parameters(self, values: Mapping[str, float]) -> None:
+        """Bind named f64 parameters in place without folding expressions.
+
+        Partial binding preserves unbound parameters and their source identities.
+        Unknown names, non-finite values, and references to the entry point raise
+        ValueError without changing the program. Call ``copy()`` first to preserve
+        the input, and ``cleanup()`` afterwards if constant folding is needed.
         """
 
     def build_functionality(self, dd_package: mqt.core.dd.DDPackage) -> mqt.core.dd.MatrixDD:

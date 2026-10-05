@@ -10,25 +10,39 @@
 
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Euler.h"
 
+#include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
+#include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/Transforms/Decomposition/Pauli.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Location.h"
 #include "mlir/IR/Operation.h"
+#include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Value.h"
 #include "mlir/Support/LLVM.h"
 
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/ErrorHandling.h"
 
+#include <array>
+#include <bit>
+#include <cassert>
 #include <cmath>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <numbers>
 #include <optional>
+#include <utility>
+#include <variant>
 
 namespace mlir::qco::decomposition {
 
@@ -48,7 +62,8 @@ bool isSingleQubitBasisGate(Operation* op, SingleQubitBasis basis) {
                basis == SingleQubitBasis::XZX || basis == SingleQubitBasis::XYX;
       })
       .Case([&](UOp) { return basis == SingleQubitBasis::U; })
-      .Case<SXOp, XOp>([&](auto) { return basis == SingleQubitBasis::ZSXX; })
+      .Case<SXOp, SXdgOp, XOp>(
+          [&](auto) { return basis == SingleQubitBasis::ZSXX; })
       .Case([&](ROp) { return basis == SingleQubitBasis::R; })
       .Default([](auto) { return false; });
 }
@@ -94,11 +109,12 @@ bool isSingleQubitBasisGate(Operation* op, SingleQubitBasis basis) {
 }
 
 /// Whether `angle` is numerically zero for gate-emission purposes.
+/// Use matrix precision here; fixed target capabilities remain exact.
 ///
 /// @param angle Rotation angle in radians.
 /// @return `true` when no rotation gate should be emitted.
 [[nodiscard]] static bool isNearZeroRotationAngle(const double angle) {
-  return std::abs(angle) <= mqt::PARAMETER_COMPARISON_TOLERANCE;
+  return std::abs(angle) <= MATRIX_TOLERANCE;
 }
 
 void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, const double phase) {
@@ -193,13 +209,13 @@ EulerAngles anglesFromUnitary(const Matrix2x2& matrix,
   switch (basis) {
   case SingleQubitBasis::ZYZ:
   case SingleQubitBasis::ZSXX:
+  case SingleQubitBasis::R:
     return paramsZYZ(matrix);
   case SingleQubitBasis::ZXZ:
     return paramsZXZ(matrix);
   case SingleQubitBasis::XZX:
     return paramsXZX(matrix);
   case SingleQubitBasis::XYX:
-  case SingleQubitBasis::R:
     return paramsXYX(matrix);
   case SingleQubitBasis::U:
     return paramsU(matrix);
@@ -214,210 +230,384 @@ EulerAngles anglesFromUnitary(const Matrix2x2& matrix,
 
 namespace {
 
-/// One gate in a planned single-qubit synthesis sequence.
-///
-/// `RZ`/`RY`/`RX` use @p theta as the rotation angle; `U` uses all three
-/// angles.
 struct SynthesisStep {
-  enum class Kind : std::uint8_t { RZ, RY, RX, SX, X, U, R };
-
-  Kind kind = Kind::RZ;
-  double theta = 0.0;
-  double phi = 0.0;
-  double lambda = 0.0;
+  enum class Kind : uint8_t { RZ, RY, RX, SX, SXdg, X, U, R };
+  Kind kind;
+  RotationParameter theta = 0.;
+  RotationParameter phi = 0.;
+  RotationParameter lambda = 0.;
 };
 
-/// Planned single-qubit Euler synthesis (gate list + optional `gphase`).
 struct Unitary1QEulerPlan {
   SmallVector<SynthesisStep, 5> steps;
-  double phase = 0.0;
-
-  /// Number of native gates in the planned sequence (excludes `gphase`).
-  [[nodiscard]] std::size_t gateCount() const { return steps.size(); }
-
-  /// Appends a rotation step for non-negligible angles.
-  ///
-  /// @param kind The rotation axis (RZ/RY/RX)
-  /// @param angle The rotation angle in radians.
-  void appendRotation(const SynthesisStep::Kind kind, const double angle) {
-    if (!isNearZeroRotationAngle(angle)) {
-      steps.emplace_back(kind, angle);
-    }
-  }
-
-  /// Appends a native `R(angle, axis)` step for non-negligible angles.
-  ///
-  /// @param angle The rotation angle in radians.
-  /// @param axis The rotation axis in the XY-plane (`0` for `Rx`, `π/2` for
-  /// `Ry`).
-  void appendRStep(const double angle, const double axis) {
-    if (!isNearZeroRotationAngle(angle)) {
-      steps.emplace_back(SynthesisStep::Kind::R, angle, axis);
-    }
-  }
-
-  /// Appends the decomposition for @p basis based on @p angles.
-  ///
-  /// @param angles The angles to use for the decomposition.
-  /// @param basis The basis to use for the decomposition.
-  void appendDecomposition(const EulerAngles& angles,
-                           const SingleQubitBasis basis) {
-    if (isNearZeroRotationAngle(angles.theta) &&
-        isNearZeroRotationAngle(angles.phi) &&
-        isNearZeroRotationAngle(angles.lambda)) {
-      phase = angles.phase;
-      return;
-    }
-
-    if (isNearZeroRotationAngle(angles.theta)) {
-      switch (basis) {
-      case SingleQubitBasis::ZYZ:
-      case SingleQubitBasis::ZXZ:
-      case SingleQubitBasis::ZSXX:
-        appendRotation(SynthesisStep::Kind::RZ, angles.phi + angles.lambda);
-        break;
-
-      case SingleQubitBasis::XZX:
-      case SingleQubitBasis::XYX:
-        appendRotation(SynthesisStep::Kind::RX, angles.phi + angles.lambda);
-        break;
-      case SingleQubitBasis::R:
-        appendRStep(angles.phi + angles.lambda, 0.0);
-        break;
-      case SingleQubitBasis::U:
-        steps.emplace_back(SynthesisStep::Kind::U, 0.0, angles.phi,
-                           angles.lambda);
-        break;
-      }
-      phase = angles.phase;
-      return;
-    }
-
-    switch (basis) {
-    case SingleQubitBasis::ZYZ:
-      appendRotation(SynthesisStep::Kind::RZ, angles.lambda);
-      steps.emplace_back(SynthesisStep::Kind::RY, angles.theta);
-      appendRotation(SynthesisStep::Kind::RZ, angles.phi);
-      phase = angles.phase;
-      break;
-    case SingleQubitBasis::ZXZ:
-      appendRotation(SynthesisStep::Kind::RZ, angles.lambda);
-      steps.emplace_back(SynthesisStep::Kind::RX, angles.theta);
-      appendRotation(SynthesisStep::Kind::RZ, angles.phi);
-      phase = angles.phase;
-      break;
-    case SingleQubitBasis::XZX:
-      appendRotation(SynthesisStep::Kind::RX, angles.lambda);
-      steps.emplace_back(SynthesisStep::Kind::RZ, angles.theta);
-      appendRotation(SynthesisStep::Kind::RX, angles.phi);
-      phase = angles.phase;
-      break;
-    case SingleQubitBasis::XYX:
-      appendRotation(SynthesisStep::Kind::RX, angles.lambda);
-      steps.emplace_back(SynthesisStep::Kind::RY, angles.theta);
-      appendRotation(SynthesisStep::Kind::RX, angles.phi);
-      phase = angles.phase;
-      break;
-    case SingleQubitBasis::R:
-      appendRStep(angles.lambda, 0.0);
-      steps.emplace_back(SynthesisStep::Kind::R, angles.theta,
-                         std::numbers::pi / 2.0);
-      appendRStep(angles.phi, 0.0);
-      phase = angles.phase;
-      break;
-    case SingleQubitBasis::U:
-      steps.emplace_back(SynthesisStep::Kind::U, angles.theta, angles.phi,
-                         angles.lambda);
-      phase = angles.phase;
-      break;
-    case SingleQubitBasis::ZSXX: {
-      constexpr double pi = std::numbers::pi;
-      constexpr double halfPi = std::numbers::pi / 2.0;
-      constexpr double quarterPi = std::numbers::pi / 4.0;
-
-      if (isNearZeroRotationAngle(angles.theta - halfPi)) {
-        appendRotation(SynthesisStep::Kind::RZ, angles.lambda - halfPi);
-        steps.emplace_back(SynthesisStep::Kind::SX);
-        appendRotation(SynthesisStep::Kind::RZ, angles.phi + halfPi);
-        phase = angles.phase - quarterPi;
-        return;
-      }
-
-      appendRotation(SynthesisStep::Kind::RZ, angles.lambda);
-      if (isNearZeroRotationAngle(angles.theta - pi)) {
-        steps.emplace_back(SynthesisStep::Kind::X);
-        phase = angles.phase - halfPi;
-      } else {
-        steps.emplace_back(SynthesisStep::Kind::SX);
-        appendRotation(SynthesisStep::Kind::RZ, angles.theta + pi);
-        steps.emplace_back(SynthesisStep::Kind::SX);
-        phase = angles.phase + halfPi;
-      }
-      appendRotation(SynthesisStep::Kind::RZ, angles.phi + pi);
-      break;
-    }
-    }
-  }
+  RotationParameter phase = 0.;
 };
+
 } // namespace
 
-/// Builds a gate plan for @p targetMatrix in @p basis without emitting
-/// IR.
-///
-/// @param targetMatrix Single-qubit unitary to synthesize.
-/// @param basis Native gate basis.
-/// @return Planned gate sequence and optional global phase.
-[[nodiscard]] static Unitary1QEulerPlan
-planUnitary1QEuler(const Matrix2x2& targetMatrix,
-                   const SingleQubitBasis basis) {
-  Unitary1QEulerPlan plan;
-  if (targetMatrix.isApprox(Matrix2x2::identity())) {
+static std::optional<double> constantParameter(const RotationParameter& value) {
+  if (const auto* scalar = std::get_if<double>(&value)) {
+    return *scalar;
+  }
+  return mqt::valueToConstantDouble(std::get<Value>(value));
+}
+
+RotationParameter normalizeRotationParameter(OpBuilder& builder, Location loc,
+                                             RotationParameter angle) {
+  if (const auto value = constantParameter(angle)) {
+    return std::abs(*value) <= 2. * std::numbers::pi
+               ? *value
+               : 4. * std::atan(std::tan(*value / 4.));
+  }
+  auto four = mqt::constantFromScalar(builder, loc, 4.);
+  auto scaled =
+      builder.createOrFold<arith::DivFOp>(loc, std::get<Value>(angle), four);
+  auto tangent = math::TanOp::create(builder, loc, scaled);
+  auto principal = math::AtanOp::create(builder, loc, tangent);
+  return builder.createOrFold<arith::MulFOp>(loc, principal, four);
+}
+
+void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, Value phase) {
+  const auto normalized = normalizeRotationParameter(builder, loc, phase);
+  if (const auto constant = constantParameter(normalized)) {
+    emitGPhaseIfNeeded(builder, loc, *constant);
+  } else {
+    GPhaseOp::create(builder, loc, std::get<Value>(normalized));
+  }
+}
+
+void simplifyRotationAngles(SmallVectorImpl<RotationAngleTerm>& angles) {
+  const auto dyadic = [](double scale) {
+    int exponent = 0;
+    return std::abs(scale) <= 1. &&
+           std::frexp(std::abs(scale), &exponent) == 0.5;
+  };
+  DenseMap<std::pair<Value, uint64_t>, SmallVector<size_t, 1>> unmatched;
+  for (auto [index, term] : llvm::enumerate(angles)) {
+    if (term.scale == 0.) {
+      continue;
+    }
+    while (true) {
+      Value operand;
+      double scale = 0.;
+      if (auto negative = term.value.getDefiningOp<arith::NegFOp>()) {
+        operand = negative.getOperand();
+        scale = -1.;
+      } else if (auto product = term.value.getDefiningOp<arith::MulFOp>()) {
+        if (auto factor = mqt::valueToConstantDouble(product.getRhs())) {
+          operand = product.getLhs();
+          scale = *factor;
+        } else if (auto factor = mqt::valueToConstantDouble(product.getLhs())) {
+          operand = product.getRhs();
+          scale = *factor;
+        }
+      } else if (auto quotient = term.value.getDefiningOp<arith::DivFOp>()) {
+        if (auto divisor = mqt::valueToConstantDouble(quotient.getRhs())) {
+          operand = quotient.getLhs();
+          scale = 1. / *divisor;
+        }
+      }
+      if (!operand || !dyadic(scale) || term.scale * scale == 0.) {
+        break;
+      }
+      term.value = operand;
+      term.scale *= scale;
+    }
+    if (mqt::valueToConstantDouble(term.value) == 0.) {
+      term.scale = 0.;
+    }
+    if (term.scale == 0.) {
+      continue;
+    }
+    auto& indices =
+        unmatched[{term.value, std::bit_cast<uint64_t>(std::abs(term.scale))}];
+    if (!indices.empty() && std::signbit(angles[indices.back()].scale) !=
+                                std::signbit(term.scale)) {
+      angles[indices.pop_back_val()].scale = 0.;
+      term.scale = 0.;
+    } else {
+      indices.push_back(index);
+    }
+  }
+  llvm::erase_if(angles, [](const auto& term) { return term.scale == 0.; });
+}
+
+Value emitRotationAngleSum(OpBuilder& builder, Location loc,
+                           ArrayRef<RotationAngleTerm> terms) {
+  if (terms.empty()) {
+    return mqt::constantFromScalar(builder, loc, 0.);
+  }
+  SmallVector<Value> angles;
+  angles.reserve(terms.size());
+  for (const auto& term : terms) {
+    Value angle = term.scale == 1.
+                      ? term.value
+                      : builder.createOrFold<arith::MulFOp>(
+                            loc, term.value,
+                            mqt::constantFromScalar(builder, loc, term.scale));
+    angles.push_back(terms.size() == 1
+                         ? angle
+                         : mqt::variantToValue(builder, loc,
+                                               normalizeRotationParameter(
+                                                   builder, loc, angle)));
+  }
+  for (size_t stride = 1; stride < angles.size(); stride *= 2) {
+    for (size_t i = 0; i + stride < angles.size(); i += 2 * stride) {
+      angles[i] = builder.createOrFold<arith::AddFOp>(loc, angles[i],
+                                                      angles[i + stride]);
+    }
+  }
+  return angles.front();
+}
+
+Value sumRotationAngles(OpBuilder& builder, Location loc,
+                        ArrayRef<Value> inputs) {
+  SmallVector<RotationAngleTerm> angles;
+  angles.reserve(inputs.size());
+  for (auto input : inputs) {
+    angles.push_back({.value = input});
+  }
+  simplifyRotationAngles(angles);
+  return emitRotationAngleSum(builder, loc, angles);
+}
+
+static bool isConstantParameter(const RotationParameter& value,
+                                double expected = 0.) {
+  const auto scalar = constantParameter(value);
+  return scalar && isNearZeroRotationAngle(*scalar - expected);
+}
+
+/// Constants stay in host arithmetic; SSA expressions use the dialect folder.
+static RotationParameter addParameters(OpBuilder& builder, Location loc,
+                                       const RotationParameter& lhs,
+                                       const RotationParameter& rhs) {
+  const auto a = constantParameter(lhs);
+  const auto b = constantParameter(rhs);
+  if (a && b) {
+    return *a + *b;
+  }
+  if (a == 0.) {
+    return rhs;
+  }
+  if (b == 0.) {
+    return lhs;
+  }
+  return builder.createOrFold<arith::AddFOp>(
+      loc, mqt::variantToValue(builder, loc, lhs),
+      mqt::variantToValue(builder, loc, rhs));
+}
+
+static RotationParameter scaleParameter(OpBuilder& builder, Location loc,
+                                        const RotationParameter& angle,
+                                        double scale) {
+  if (const auto value = constantParameter(angle)) {
+    return *value * scale;
+  }
+  return builder.createOrFold<arith::MulFOp>(
+      loc, std::get<Value>(angle),
+      mqt::constantFromScalar(builder, loc, scale));
+}
+
+/// One emission recipe serves extracted numeric angles and known SSA angles.
+static Unitary1QEulerPlan
+planEulerAngles(OpBuilder& builder, Location loc,
+                const std::array<RotationParameter, 4>& angles,
+                const CompilerTarget::SynthesisBasis& basis) {
+  const auto& [theta, phi, lambda, phase] = angles;
+  Unitary1QEulerPlan plan{.phase = phase};
+  const auto add = [&](const RotationParameter& a, const RotationParameter& b) {
+    return addParameters(builder, loc, a, b);
+  };
+  const auto rotation = [&](SynthesisStep::Kind kind,
+                            const RotationParameter& angle,
+                            const RotationParameter& axis = 0.) {
+    RotationParameter normalized = angle;
+    if (const auto value = constantParameter(angle)) {
+      const double wrapped = mod2pi(*value);
+      /// Removing a full Pauli turn contributes a minus sign.
+      plan.phase = add(plan.phase, 0.5 * (*value - wrapped));
+      normalized = wrapped;
+    }
+    if (!isConstantParameter(normalized)) {
+      plan.steps.push_back({
+          .kind = kind,
+          .theta = normalized,
+          .phi = axis,
+      });
+    }
+  };
+  using Kind = SynthesisStep::Kind;
+  if (basis.singleQubit == SingleQubitBasis::R) {
+    constexpr double pi = std::numbers::pi;
+    const auto sum = constantParameter(add(phi, lambda));
+    if (sum && std::abs(std::sin(*sum / 2.)) < MATRIX_TOLERANCE) {
+      plan.phase = add(plan.phase, *sum / 2.);
+      rotation(Kind::R, theta, add(phi, pi / 2.));
+    } else {
+      /// RZ(phi) RY(theta) RZ(lambda) is a product of two equatorial rotations.
+      const auto negativeLambda = scaleParameter(builder, loc, lambda, -1.);
+      const auto axis =
+          scaleParameter(builder, loc, add(add(phi, negativeLambda), pi), 0.5);
+      rotation(Kind::R,
+               add(normalizeRotationParameter(builder, loc, theta), -pi),
+               add(negativeLambda, pi / 2.));
+      rotation(Kind::R, pi, axis);
+    }
     return plan;
   }
-
-  const EulerAngles angles = anglesFromUnitary(targetMatrix, basis);
-  plan.appendDecomposition(angles, basis);
+  if (isConstantParameter(theta)) {
+    switch (basis.singleQubit) {
+    case SingleQubitBasis::ZYZ:
+    case SingleQubitBasis::ZXZ:
+    case SingleQubitBasis::ZSXX:
+      rotation(Kind::RZ, add(phi, lambda));
+      break;
+    case SingleQubitBasis::XZX:
+    case SingleQubitBasis::XYX:
+      rotation(Kind::RX, add(phi, lambda));
+      break;
+    case SingleQubitBasis::R:
+      llvm_unreachable("R synthesis handled above");
+    case SingleQubitBasis::U:
+      if (const auto p = constantParameter(phi), l = constantParameter(lambda);
+          !p || !l || !isNearZeroRotationAngle(mod2pi(*p + *l))) {
+        plan.steps.push_back(
+            {.kind = Kind::U, .theta = 0., .phi = phi, .lambda = lambda});
+      }
+      break;
+    }
+    return plan;
+  }
+  switch (basis.singleQubit) {
+  case SingleQubitBasis::ZYZ:
+  case SingleQubitBasis::ZXZ:
+    rotation(Kind::RZ, lambda);
+    rotation(basis.singleQubit == SingleQubitBasis::ZYZ ? Kind::RY : Kind::RX,
+             theta);
+    rotation(Kind::RZ, phi);
+    break;
+  case SingleQubitBasis::XZX:
+  case SingleQubitBasis::XYX:
+    rotation(Kind::RX, lambda);
+    rotation(basis.singleQubit == SingleQubitBasis::XZX ? Kind::RZ : Kind::RY,
+             theta);
+    rotation(Kind::RX, phi);
+    break;
+  case SingleQubitBasis::R:
+    llvm_unreachable("R synthesis handled above");
+  case SingleQubitBasis::U:
+    plan.steps.push_back(
+        {.kind = Kind::U, .theta = theta, .phi = phi, .lambda = lambda});
+    break;
+  case SingleQubitBasis::ZSXX: {
+    constexpr double pi = std::numbers::pi;
+    constexpr double halfPi = pi / 2.;
+    const bool inverse =
+        basis.quarterTurnGates && basis.quarterTurnGates->quarterTurnAngle < 0.;
+    /// RY(t) = RZ(pi/2) RX(t) RZ(-pi/2); absorb this frame in the outer RZs.
+    const double azimuth =
+        basis.quarterTurnGates &&
+                basis.quarterTurnGates->gate == CompilerTarget::GateKind::RY
+            ? halfPi
+            : 0.;
+    const double offset = (inverse ? pi : 0.) + azimuth;
+    const double quarterPhase = inverse ? -pi / 4. : pi / 4.;
+    const auto quarterTurn = inverse ? Kind::SXdg : Kind::SX;
+    if (isConstantParameter(theta, halfPi)) {
+      rotation(Kind::RZ, add(lambda, offset - halfPi));
+      plan.steps.push_back({.kind = quarterTurn});
+      rotation(Kind::RZ, add(phi, halfPi - offset));
+      plan.phase = add(plan.phase, -quarterPhase);
+      break;
+    }
+    if (basis.hasHalfTurn && isConstantParameter(theta, pi)) {
+      /// A half turn reverses the Z axis, so the outer rotations combine.
+      plan.steps.push_back({.kind = Kind::X});
+      rotation(Kind::RZ,
+               add(add(phi, scaleParameter(builder, loc, lambda, -1.)),
+                   pi - 2. * azimuth));
+      plan.phase = add(plan.phase, -halfPi);
+      break;
+    }
+    rotation(Kind::RZ, add(lambda, offset));
+    plan.steps.push_back({.kind = quarterTurn});
+    rotation(Kind::RZ, add(theta, pi));
+    plan.steps.push_back({.kind = quarterTurn});
+    rotation(Kind::RZ, add(phi, pi - offset));
+    plan.phase = add(plan.phase, pi - 2. * quarterPhase);
+    break;
+  }
+  }
   return plan;
 }
 
-/// Emits the gates described by @p plan and returns the output plus
-/// phase.
-///
-/// @param builder Builder for the emitted operations.
-/// @param loc Location for the emitted operations.
-/// @param qubit Input qubit value.
-/// @param plan Precomputed synthesis plan.
-/// @return Qubit value after all planned gates and the unmaterialized phase.
-[[nodiscard]] static SynthesizedUnitary1Q
-emitUnitary1QEulerPlan(OpBuilder& builder, Location loc, Value qubit,
-                       const Unitary1QEulerPlan& plan) {
+/// Materialize the selected target operations while retaining the phase.
+static std::pair<Value, RotationParameter>
+emitEulerPlan(OpBuilder& builder, Location loc, Value qubit,
+              const Unitary1QEulerPlan& plan,
+              const CompilerTarget::SynthesisBasis& basis) {
+  auto phase = plan.phase;
+  const auto parameter = [&](const RotationParameter& value) {
+    return mqt::variantToValue(builder, loc, value);
+  };
   for (const auto& [kind, theta, phi, lambda] : plan.steps) {
+    using Kind = SynthesisStep::Kind;
+    std::optional<double> nativeAngle;
+    if (basis.quarterTurnGates) {
+      if (kind == Kind::SX || kind == Kind::SXdg) {
+        nativeAngle = basis.quarterTurnGates->quarterTurnAngle;
+      } else if (kind == Kind::X) {
+        nativeAngle = basis.quarterTurnGates->halfTurnAngle;
+      }
+    }
+    if (nativeAngle) {
+      qubit =
+          basis.quarterTurnGates->gate == CompilerTarget::GateKind::R
+              ? ROp::create(builder, loc, qubit, *nativeAngle, 0.).getQubitOut()
+          : basis.quarterTurnGates->gate == CompilerTarget::GateKind::RY
+              ? RYOp::create(builder, loc, qubit, *nativeAngle).getQubitOut()
+              : RXOp::create(builder, loc, qubit, *nativeAngle).getQubitOut();
+      phase = addParameters(builder, loc, phase, *nativeAngle / 2.);
+      continue;
+    }
     switch (kind) {
-    case SynthesisStep::Kind::RZ:
-      qubit = RZOp::create(builder, loc, qubit, theta).getQubitOut();
+    case Kind::RZ:
+      qubit = RZOp::create(builder, loc, qubit, parameter(theta)).getQubitOut();
       break;
-    case SynthesisStep::Kind::RY:
-      qubit = RYOp::create(builder, loc, qubit, theta).getQubitOut();
+    case Kind::RY:
+      qubit = RYOp::create(builder, loc, qubit, parameter(theta)).getQubitOut();
       break;
-    case SynthesisStep::Kind::RX:
-      qubit = RXOp::create(builder, loc, qubit, theta).getQubitOut();
+    case Kind::RX:
+      qubit = RXOp::create(builder, loc, qubit, parameter(theta)).getQubitOut();
       break;
-    case SynthesisStep::Kind::SX:
+    case Kind::SX:
       qubit = SXOp::create(builder, loc, qubit).getQubitOut();
       break;
-    case SynthesisStep::Kind::X:
+    case Kind::SXdg:
+      qubit = SXdgOp::create(builder, loc, qubit).getQubitOut();
+      break;
+    case Kind::X:
       qubit = XOp::create(builder, loc, qubit).getQubitOut();
       break;
-    case SynthesisStep::Kind::U:
-      qubit =
-          UOp::create(builder, loc, qubit, theta, phi, lambda).getQubitOut();
+    case Kind::U:
+      qubit = UOp::create(builder, loc, qubit, parameter(theta), parameter(phi),
+                          parameter(lambda))
+                  .getQubitOut();
       break;
-    case SynthesisStep::Kind::R:
-      qubit = ROp::create(builder, loc, qubit, theta, phi).getQubitOut();
+    case Kind::R:
+      qubit = ROp::create(builder, loc, qubit, parameter(theta), parameter(phi))
+                  .getQubitOut();
       break;
     }
   }
-  return {.qubit = qubit, .globalPhase = plan.phase};
+  return {qubit, phase};
+}
+
+static void emitParameterPhase(OpBuilder& builder, Location loc,
+                               const RotationParameter& phase) {
+  if (!isConstantParameter(phase)) {
+    GPhaseOp::create(builder, loc, mqt::variantToValue(builder, loc, phase));
+  }
 }
 
 std::optional<SingleQubitBasis> parseSingleQubitBasis(StringRef basis) {
@@ -434,14 +624,264 @@ std::optional<SingleQubitBasis> parseSingleQubitBasis(StringRef basis) {
 
 std::optional<SynthesizedUnitary1Q>
 synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
-                         const Matrix2x2& composed, const std::size_t runSize,
-                         const bool hasNonBasisGate,
-                         const SingleQubitBasis basis) {
-  const Unitary1QEulerPlan plan = planUnitary1QEuler(composed, basis);
-  if (!hasNonBasisGate && runSize <= plan.gateCount()) {
+                         const Matrix2x2& composed, size_t runSize,
+                         bool hasNonBasisGate,
+                         const CompilerTarget::SynthesisBasis& basis) {
+  Unitary1QEulerPlan plan;
+  if (!composed.isApprox(Matrix2x2::identity())) {
+    const auto angles = anglesFromUnitary(composed, basis.singleQubit);
+    plan = planEulerAngles(builder, loc,
+                           {
+                               angles.theta,
+                               angles.phi,
+                               angles.lambda,
+                               angles.phase,
+                           },
+                           basis);
+    /// K(phi) A(theta) K(lambda) = K(phi+pi) A(-theta) K(lambda-pi).
+    /// Keep the alternate Euler representative only when it removes gates.
+    constexpr double pi = std::numbers::pi;
+    if (basis.singleQubit != SingleQubitBasis::U && plan.steps.size() > 1 &&
+        (isNearZeroRotationAngle(mod2pi(angles.phi + pi)) ||
+         isNearZeroRotationAngle(mod2pi(angles.lambda + pi)))) {
+      auto alternate = planEulerAngles(
+          builder, loc,
+          {-angles.theta, angles.phi + pi, angles.lambda - pi, angles.phase},
+          basis);
+      if (alternate.steps.size() < plan.steps.size()) {
+        plan = std::move(alternate);
+      }
+    }
+  }
+  if (!hasNonBasisGate && runSize <= plan.steps.size()) {
     return std::nullopt;
   }
-  return emitUnitary1QEulerPlan(builder, loc, qubit, plan);
+  auto [output, phase] = emitEulerPlan(builder, loc, qubit, plan, basis);
+  return SynthesizedUnitary1Q{
+      .qubit = output,
+      .globalPhase = std::get<double>(phase),
+  };
+}
+
+Value emitParameterizedEulerAngles(
+    OpBuilder& builder, Location loc, Value qubit,
+    const std::array<RotationParameter, 4>& angles,
+    const CompilerTarget::SynthesisBasis& basis) {
+  const auto plan = planEulerAngles(builder, loc, angles, basis);
+  auto [output, phase] = emitEulerPlan(builder, loc, qubit, plan, basis);
+  emitParameterPhase(builder, loc, phase);
+  return output;
+}
+
+Value synthesizePauliRotation1Q(OpBuilder& builder, Location loc, Value qubit,
+                                PauliAxis axis, RotationParameter angle,
+                                const CompilerTarget::SynthesisBasis& basis) {
+  if (axis == PauliAxis::I) {
+    llvm_unreachable("single-qubit synthesis requires a nonidentity Pauli");
+  }
+  if (const auto constant = constantParameter(angle)) {
+    const auto frame = pauliFrame(axis);
+    const auto matrix =
+        frame * RZOp::unitaryMatrix(*constant) * frame.adjoint();
+    const auto result =
+        synthesizeUnitary1QEuler(builder, loc, qubit, matrix, 0, true, basis);
+    emitGPhaseIfNeeded(builder, loc, result->globalPhase);
+    return result->qubit;
+  }
+  Value rotationAngle = std::get<Value>(angle);
+  if (basis.singleQubit == SingleQubitBasis::U) {
+    auto zero = mqt::constantFromScalar(builder, loc, 0.);
+    auto halfPi = mqt::constantFromScalar(builder, loc, std::numbers::pi / 2.);
+    auto negativeHalfPi =
+        mqt::constantFromScalar(builder, loc, -std::numbers::pi / 2.);
+    if (axis == PauliAxis::X) {
+      return UOp::create(builder, loc, qubit, rotationAngle, negativeHalfPi,
+                         halfPi)
+          .getQubitOut();
+    }
+    if (axis == PauliAxis::Y) {
+      return UOp::create(builder, loc, qubit, rotationAngle, zero, zero)
+          .getQubitOut();
+    }
+    auto half = mqt::constantFromScalar(builder, loc, -0.5);
+    emitGPhaseIfNeeded(
+        builder, loc,
+        builder.createOrFold<arith::MulFOp>(loc, rotationAngle, half));
+    return UOp::create(builder, loc, qubit, zero, zero, rotationAngle)
+        .getQubitOut();
+  }
+  if (basis.singleQubit == SingleQubitBasis::R && axis != PauliAxis::Z) {
+    return ROp::create(builder, loc, qubit, rotationAngle,
+                       mqt::constantFromScalar(
+                           builder, loc,
+                           axis == PauliAxis::X ? 0. : std::numbers::pi / 2.))
+        .getQubitOut();
+  }
+  const bool supportsX = basis.singleQubit == SingleQubitBasis::ZXZ ||
+                         basis.singleQubit == SingleQubitBasis::XZX ||
+                         basis.singleQubit == SingleQubitBasis::XYX;
+  const bool supportsY = basis.singleQubit == SingleQubitBasis::ZYZ ||
+                         basis.singleQubit == SingleQubitBasis::XYX;
+  const bool supportsZ = basis.singleQubit == SingleQubitBasis::ZYZ ||
+                         basis.singleQubit == SingleQubitBasis::ZXZ ||
+                         basis.singleQubit == SingleQubitBasis::XZX ||
+                         basis.singleQubit == SingleQubitBasis::ZSXX;
+  if (axis == PauliAxis::X && supportsX) {
+    return RXOp::create(builder, loc, qubit, rotationAngle).getQubitOut();
+  }
+  if (axis == PauliAxis::Y && supportsY) {
+    return RYOp::create(builder, loc, qubit, rotationAngle).getQubitOut();
+  }
+  if (axis == PauliAxis::Z && supportsZ) {
+    return RZOp::create(builder, loc, qubit, rotationAngle).getQubitOut();
+  }
+  /// Pick a native rotation and a constant frame; rotationAngle remains
+  /// untouched.
+  const auto nativeAxis = supportsY || basis.singleQubit == SingleQubitBasis::R
+                              ? PauliAxis::Y
+                          : supportsX ? PauliAxis::X
+                                      : PauliAxis::Z;
+  const auto frame = pauliFrame(axis, nativeAxis);
+  const auto before = synthesizeUnitary1QEuler(builder, loc, qubit,
+                                               frame.adjoint(), 0, true, basis);
+  emitGPhaseIfNeeded(builder, loc, before->globalPhase);
+  qubit = synthesizePauliRotation1Q(builder, loc, before->qubit, nativeAxis,
+                                    rotationAngle, basis);
+  const auto after =
+      synthesizeUnitary1QEuler(builder, loc, qubit, frame, 0, true, basis);
+  emitGPhaseIfNeeded(builder, loc, after->globalPhase);
+  return after->qubit;
+}
+
+/// Known ZYZ parameters need only affine arithmetic after angle normalization.
+static std::array<RotationParameter, 4>
+directEulerAngles(OpBuilder& builder, Location loc,
+                  UnitaryOpInterface operation, SingleQubitBasis basis) {
+  const auto parameter = [&](unsigned index) -> RotationParameter {
+    auto angle = operation.getParameter(index);
+    if (index == 0 && basis != SingleQubitBasis::ZSXX &&
+        isa<RXOp, RYOp, ROp, UOp>(operation.getOperation()) &&
+        !mqt::valueToConstantDouble(angle)) {
+      return angle;
+    }
+    return normalizeRotationParameter(builder, loc, angle);
+  };
+  const auto add = [&](const RotationParameter& a, const RotationParameter& b) {
+    return addParameters(builder, loc, a, b);
+  };
+  const auto scale = [&](const RotationParameter& value,
+                         double factor) -> RotationParameter {
+    return scaleParameter(builder, loc, value, factor);
+  };
+  constexpr double halfPi = std::numbers::pi / 2.;
+  std::array<RotationParameter, 4> result{0., 0., 0., 0.};
+  auto& [theta, phi, lambda, phase] = result;
+  Operation* op = operation.getOperation();
+  if (isa<RXOp>(op)) {
+    theta = parameter(0);
+    phi = -halfPi;
+    lambda = halfPi;
+  } else if (isa<RYOp>(op)) {
+    theta = parameter(0);
+  } else if (isa<RZOp, POp>(op)) {
+    lambda = parameter(0);
+    if (isa<POp>(op) && basis != SingleQubitBasis::U) {
+      phase = scale(lambda, 0.5);
+    }
+  } else if (isa<ROp>(op)) {
+    theta = parameter(0);
+    phi = add(parameter(1), -halfPi);
+    lambda = scale(phi, -1.);
+  } else {
+    const bool u2 = isa<U2Op>(op);
+    theta = u2 ? RotationParameter{halfPi} : parameter(0);
+    phi = parameter(u2 ? 0 : 1);
+    lambda = parameter(u2 ? 1 : 2);
+    if (basis != SingleQubitBasis::U) {
+      phase = scale(add(phi, lambda), 0.5);
+    }
+  }
+  if (basis == SingleQubitBasis::ZXZ) {
+    phi = add(phi, halfPi);
+    lambda = add(lambda, -halfPi);
+  } else if (basis == SingleQubitBasis::U) {
+    /// P/U2 already have U's phase; R/RX/RY have cancelling outer angles.
+    phase = isa<RZOp>(op) ? scale(lambda, -0.5) : RotationParameter{0.};
+  }
+  return result;
+}
+
+std::optional<std::array<RotationParameter, 4>>
+zyzAnglesFromOperation(OpBuilder& builder, Location loc,
+                       UnitaryOpInterface operation) {
+  if (canSynthesizeParameterizedUnitary1Q(operation.getOperation())) {
+    return directEulerAngles(builder, loc, operation, SingleQubitBasis::ZYZ);
+  }
+  if (const auto matrix = operation.getUnitaryMatrix<Matrix2x2>()) {
+    const auto angles = anglesFromUnitary(*matrix, SingleQubitBasis::ZYZ);
+    return std::array<RotationParameter, 4>{
+        angles.theta,
+        angles.phi,
+        angles.lambda,
+        angles.phase,
+    };
+  }
+  return std::nullopt;
+}
+
+bool canSynthesizeParameterizedUnitary1Q(Operation* op) {
+  return op != nullptr && isa<RXOp, RYOp, RZOp, POp, ROp, U2Op, UOp>(op);
+}
+
+void synthesizeParameterizedUnitary1Q(
+    RewriterBase& rewriter, Operation* op,
+    const CompilerTarget::SynthesisBasis& basis) {
+  assert(canSynthesizeParameterizedUnitary1Q(op));
+  if (isSingleQubitBasisGate(op, basis.singleQubit)) {
+    return;
+  }
+  auto unitary = cast<UnitaryOpInterface>(op);
+  OpBuilder::InsertionGuard guard(rewriter);
+  rewriter.setInsertionPoint(op);
+  auto loc = op->getLoc();
+  Value qubit = unitary.getInputQubit(0);
+  const auto rotate = [&](PauliAxis axis, RotationParameter angle) {
+    qubit = synthesizePauliRotation1Q(rewriter, loc, qubit, axis, angle, basis);
+  };
+  const auto phaseHalf = [&](Value angle) {
+    auto half = mqt::constantFromScalar(rewriter, loc, 0.5);
+    emitGPhaseIfNeeded(rewriter, loc,
+                       rewriter.createOrFold<arith::MulFOp>(loc, angle, half));
+  };
+  if (basis.singleQubit == SingleQubitBasis::U ||
+      basis.singleQubit == SingleQubitBasis::ZYZ ||
+      basis.singleQubit == SingleQubitBasis::ZXZ ||
+      basis.singleQubit == SingleQubitBasis::R ||
+      basis.singleQubit == SingleQubitBasis::ZSXX) {
+    qubit = emitParameterizedEulerAngles(
+        rewriter, loc, qubit,
+        directEulerAngles(rewriter, loc, unitary, basis.singleQubit), basis);
+  } else if (const auto rotations = getPauliRotations(op)) {
+    auto outputs = emitPauliRotations(rewriter, op, *rotations, basis, false);
+    qubit = outputs.front();
+  } else if (auto rotation = dyn_cast<ROp>(op)) {
+    auto negative =
+        rewriter.createOrFold<arith::NegFOp>(loc, rotation.getPhi());
+    rotate(PauliAxis::Z, negative);
+    rotate(PauliAxis::X, rotation.getTheta());
+    rotate(PauliAxis::Z, rotation.getPhi());
+  } else {
+    const bool u2 = isa<U2Op>(op);
+    auto phi = unitary.getParameter(u2 ? 0 : 1);
+    auto lambda = unitary.getParameter(u2 ? 1 : 2);
+    rotate(PauliAxis::Z, lambda);
+    rotate(PauliAxis::Y, u2 ? RotationParameter{std::numbers::pi / 2.}
+                            : RotationParameter{unitary.getParameter(0)});
+    rotate(PauliAxis::Z, phi);
+    phaseHalf(phi);
+    phaseHalf(lambda);
+  }
+  rewriter.replaceOp(op, qubit);
 }
 
 } // namespace mlir::qco::decomposition

@@ -2824,7 +2824,11 @@ TEST_F(CompilerPipelineTest, StaticNativeThreeQubitGateSurvives) {
           {llvm::cantFail(CompilerTarget::SiteTuple::create({0, 1, 2}))}));
   const auto target = llvm::cantFail(CompilerTarget::create(
       3, CompilerTarget::Connectivity::fromCouplings({{0, 1}, {1, 2}}),
-      CompilerTarget::NativeOperations::fromOperations({native})));
+      CompilerTarget::NativeOperations::fromOperations({
+          native,
+          llvm::cantFail(
+              CompilerTarget::OperationCapability::create("u", 1, 3)),
+      })));
   auto program = QCOProgram::fromMLIRString(R"mlir(module {
     func.func @main() attributes {mqt.entry_point} {
       %a = qco.static 0 : !qco.qubit
@@ -2925,11 +2929,12 @@ TEST_F(CompilerPipelineTest, IndexedPlacementRetainsTargetAndPayloadChecks) {
                           "for int i in [0:1] { x q[i]; } c = measure q;";
   using OperationCapability = CompilerTarget::OperationCapability;
   using Native = CompilerTarget::NativeOperations;
-  const auto x = llvm::cantFail(OperationCapability::create("x", 1, 0));
+  const auto u = llvm::cantFail(OperationCapability::create("u", 1, 3));
   const auto measure =
       llvm::cantFail(OperationCapability::create("measure", 1, 0));
-  const auto localX = llvm::cantFail(OperationCapability::create(
-      "x", 1, 0, {llvm::cantFail(CompilerTarget::SiteTuple::create({0}))}));
+  const auto localMeasure = llvm::cantFail(OperationCapability::create(
+      "measure", 1, 0,
+      {llvm::cantFail(CompilerTarget::SiteTuple::create({0}))}));
   const auto targetWith =
       [](size_t capacity, const std::vector<OperationCapability>& operations) {
         return llvm::cantFail(CompilerTarget::create(
@@ -2939,10 +2944,10 @@ TEST_F(CompilerPipelineTest, IndexedPlacementRetainsTargetAndPayloadChecks) {
   const auto payload = llvm::cantFail(payloadSpecificationForProgramFormat(
       QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE));
   for (const auto& [target, expected] : {
-           std::pair{targetWith(1, {x, measure}), "target site count"},
-           std::pair{targetWith(2, {localX, measure}),
-                     "cannot lower operation"},
-           std::pair{targetWith(2, {measure}), "cannot lower operation"},
+           std::pair{targetWith(1, {u, measure}), "target site count"},
+           std::pair{targetWith(2, {u, localMeasure}),
+                     "target does not support operation"},
+           std::pair{targetWith(2, {u}), "target does not support operation"},
        }) {
     auto qc = QCProgram::fromOpenQASMString(source);
     ASSERT_TRUE(qc);
@@ -2957,7 +2962,7 @@ TEST_F(CompilerPipelineTest, IndexedPlacementRetainsTargetAndPayloadChecks) {
     EXPECT_FALSE(program->compileForTarget(TargetEnvironment(target, payload)));
     EXPECT_TRUE(StringRef(diagnostics).contains(expected)) << diagnostics;
   }
-  const auto target = targetWith(2, {x, measure});
+  const auto target = targetWith(2, {u, measure});
   for (const auto format :
        {QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE, QDMI_PROGRAM_FORMAT_QASM3}) {
     auto result = runDefaultPipeline(
@@ -4001,19 +4006,49 @@ TEST_F(CompilerPipelineTest, TargetSynthesisResynthesizesTwoQubitBlocks) {
       })));
   const TargetEnvironment environment(target, makePayloadSpecification());
 
-  ASSERT_TRUE(program->synthesizeForTarget(environment));
-
-  EXPECT_TRUE(verify(program->module()).succeeded());
-  EXPECT_TRUE(qco::verifyLinearity(program->module()).succeeded());
-  expectFullUnitaryEqual(*reference, program->module(), 2);
-  size_t numTwoQubitGates = 0;
-  program->module().walk([&](qco::UnitaryOpInterface unitary) {
-    numTwoQubitGates += unitary.isTwoQubit();
-  });
-  /// Individual lowering needs four CZ gates; the whole block needs two.
-  EXPECT_EQ(numTwoQubitGates, 2);
+  for (const bool synthesisOnly : {false, true}) {
+    SCOPED_TRACE(synthesisOnly);
+    auto compiled = program->copy();
+    ASSERT_TRUE(synthesisOnly ? compiled.synthesizeForTarget(environment)
+                              : compiled.compileForTarget(environment));
+    EXPECT_TRUE(verify(compiled.module()).succeeded());
+    EXPECT_TRUE(qco::verifyLinearity(compiled.module()).succeeded());
+    expectFullUnitaryEqual(*reference, compiled.module(), 2);
+    size_t numTwoQubitGates = 0;
+    compiled.module().walk([&](qco::UnitaryOpInterface unitary) {
+      numTwoQubitGates += unitary.isTwoQubit();
+    });
+    /// Individual lowering needs four CZ gates; the whole block needs two.
+    EXPECT_EQ(numTwoQubitGates, 2);
+  }
   EXPECT_FALSE(program->synthesizeForTarget(TargetEnvironment(
       makeSparseUCZTarget(true), makePayloadSpecification())));
+}
+
+TEST_F(CompilerPipelineTest, TargetPipelinesRequireSynthesisBasis) {
+  using Capability = CompilerTarget::OperationCapability;
+  for (const auto& native : {
+           llvm::cantFail(Capability::create("s", 1, 0)),
+           llvm::cantFail(Capability::create("rx", 1, 1, {}, std::nullopt,
+                                             std::nullopt, {0.37})),
+       }) {
+    const auto target = llvm::cantFail(CompilerTarget::create(
+        1, CompilerTarget::Connectivity::allToAll(),
+        CompilerTarget::NativeOperations::fromOperations({native})));
+    EXPECT_FALSE(target.synthesisBasis());
+    for (const bool synthesisOnly : {false, true}) {
+      auto input = QCProgram::fromOpenQASMString(
+          "OPENQASM 3.0; include \"stdgates.inc\"; qubit q; s q;");
+      ASSERT_TRUE(input);
+      auto program = std::move(*input).intoQCO();
+      ASSERT_TRUE(program);
+      const auto before = program->str();
+      const TargetEnvironment environment(target, makePayloadSpecification());
+      EXPECT_FALSE(synthesisOnly ? program->synthesizeForTarget(environment)
+                                 : program->compileForTarget(environment));
+      EXPECT_EQ(program->str(), before);
+    }
+  }
 }
 
 TEST_F(CompilerPipelineTest, TargetCompilationFusesOnlyWithUsableNativeBasis) {
@@ -4094,6 +4129,10 @@ TEST_F(CompilerPipelineTest, TargetCompilationFusesOnlyWithUsableNativeBasis) {
     auto program = QCOProgram::fromModule(ownedContext, std::move(moduleOp));
     ASSERT_TRUE(program);
 
+    if (!testCase.target.synthesisBasis()) {
+      EXPECT_FALSE(program->compileForTarget(environment));
+      continue;
+    }
     ASSERT_TRUE(program->compileForTarget(environment));
     ASSERT_TRUE(verify(program->module()).succeeded());
     ASSERT_TRUE(qco::verifyLinearity(program->module()).succeeded());
@@ -4515,7 +4554,7 @@ TEST_F(CompilerPipelineTest, QCOProgramCompilesDynamicRunForSupportedTargets) {
       Case{
           .name = "rx-rz",
           .nativeGates = {{"rx", 1}, {"rz", 1}},
-          .resolvedBasis = CompilerTarget::SingleQubitBasis::XZX,
+          .resolvedBasis = CompilerTarget::SingleQubitBasis::ZXZ,
       },
       Case{
           .name = "rx-ry",
@@ -4596,13 +4635,20 @@ TEST_F(CompilerPipelineTest, QCOProgramCompilesDynamicRunForSupportedTargets) {
 }
 
 TEST_F(CompilerPipelineTest, QCOProgramMergesDynamicRunInNativeCtrlBody) {
-  constexpr llvm::StringLiteral source = R"mlir(module {
+  for (
+      const auto* body : {
+          R"mlir(%h = qco.h %arg : !qco.qubit -> !qco.qubit
+                  %rz = qco.rz(%theta) %h : !qco.qubit -> !qco.qubit)mlir",
+          R"mlir(%u = qco.u(%theta, %theta, %theta) %arg : !qco.qubit -> !qco.qubit
+                  %rz = qco.u(%theta, %theta, %theta) %u : !qco.qubit -> !qco.qubit)mlir",
+      }) {
+    SCOPED_TRACE(body);
+    const auto source = std::string(R"mlir(module {
     func.func @main(%theta: f64 {mqt.input_name = "theta"}) attributes {mqt.entry_point} {
       %q0 = qco.alloc : !qco.qubit
       %q1 = qco.alloc : !qco.qubit
       %control, %target = qco.ctrl(%q0) targets(%arg = %q1) {
-        %h = qco.h %arg : !qco.qubit -> !qco.qubit
-        %rz = qco.rz(%theta) %h : !qco.qubit -> !qco.qubit
+  )mlir") + body + R"mlir(
         qco.yield %rz : !qco.qubit
       } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
       qco.sink %control : !qco.qubit
@@ -4610,41 +4656,42 @@ TEST_F(CompilerPipelineTest, QCOProgramMergesDynamicRunInNativeCtrlBody) {
       return
     }
   })mlir";
-  using OperationCapability = CompilerTarget::OperationCapability;
-  std::vector operations{
-      llvm::cantFail(OperationCapability::create("x", 1, 0)),
-      llvm::cantFail(OperationCapability::create("sx", 1, 0)),
-      llvm::cantFail(OperationCapability::create("rz", 1, 1)),
-      llvm::cantFail(OperationCapability::create("cz", 2, 0)),
-      llvm::cantFail(OperationCapability::create(
-          "u", OperationCapability::Arity::variadic(1), 3)),
-  };
-  const auto target = llvm::cantFail(CompilerTarget::create(
-      2, CompilerTarget::Connectivity::allToAll(),
-      CompilerTarget::NativeOperations::fromOperations(operations)));
-  ASSERT_TRUE(target.synthesisBasis());
-  ASSERT_EQ(target.synthesisBasis()->singleQubit,
-            CompilerTarget::SingleQubitBasis::U);
+    using OperationCapability = CompilerTarget::OperationCapability;
+    std::vector operations{
+        llvm::cantFail(OperationCapability::create("x", 1, 0)),
+        llvm::cantFail(OperationCapability::create("sx", 1, 0)),
+        llvm::cantFail(OperationCapability::create("rz", 1, 1)),
+        llvm::cantFail(OperationCapability::create("cz", 2, 0)),
+        llvm::cantFail(OperationCapability::create(
+            "u", OperationCapability::Arity::variadic(1), 3)),
+    };
+    const auto target = llvm::cantFail(CompilerTarget::create(
+        2, CompilerTarget::Connectivity::allToAll(),
+        CompilerTarget::NativeOperations::fromOperations(operations)));
+    ASSERT_TRUE(target.synthesisBasis());
+    ASSERT_EQ(target.synthesisBasis()->singleQubit,
+              CompilerTarget::SingleQubitBasis::U);
 
-  auto program = QCOProgram::fromMLIRString(source);
-  ASSERT_TRUE(program);
-  ASSERT_TRUE(program->compileForTarget(
-      TargetEnvironment(target, makePayloadSpecification())));
+    auto program = QCOProgram::fromMLIRString(source);
+    ASSERT_TRUE(program);
+    ASSERT_TRUE(program->compileForTarget(
+        TargetEnvironment(target, makePayloadSpecification())));
 
-  auto compiled = parseRecordedModule(program->str());
-  ASSERT_TRUE(compiled);
-  EXPECT_TRUE(verify(*compiled).succeeded());
+    auto compiled = parseRecordedModule(program->str());
+    ASSERT_TRUE(compiled);
+    EXPECT_TRUE(verify(*compiled).succeeded());
 
-  CtrlOp ctrl;
-  compiled->walk([&](CtrlOp op) { ctrl = op; });
-  ASSERT_TRUE(ctrl);
-  ASSERT_EQ(ctrl.getNumBodyUnitaries(), 1U);
-  EXPECT_TRUE(isa<UOp>(ctrl.getBodyUnitary(0).getOperation()));
+    CtrlOp ctrl;
+    compiled->walk([&](CtrlOp op) { ctrl = op; });
+    ASSERT_TRUE(ctrl);
+    ASSERT_EQ(ctrl.getNumBodyUnitaries(), 1U);
+    EXPECT_TRUE(isa<UOp>(ctrl.getBodyUnitary(0).getOperation()));
 
-  auto main = compiled->lookupSymbol<func::FuncOp>("main");
-  ASSERT_TRUE(main);
-  ASSERT_EQ(main.getNumArguments(), 1U);
-  EXPECT_FALSE(main.getArgument(0).use_empty());
+    auto main = compiled->lookupSymbol<func::FuncOp>("main");
+    ASSERT_TRUE(main);
+    ASSERT_EQ(main.getNumArguments(), 1U);
+    EXPECT_FALSE(main.getArgument(0).use_empty());
+  }
 }
 
 TEST_F(CompilerPipelineTest,
@@ -5135,22 +5182,6 @@ barrier q[0], q[1];
   EXPECT_EQ(qc->gateCounts(), expectedCounts);
 }
 
-/// Test: static depth tracks dependencies and skips modifier bodies.
-TEST_F(CompilerPipelineTest, QCProgramStaticDepth) {
-  const std::string qasm = R"(OPENQASM 3.0;
-include "stdgates.inc";
-qubit[3] q;
-h q[0];
-x q[1];
-cx q[0], q[1];
-inv @ x q[2];
-barrier q[0], q[1], q[2];
-)";
-  auto qc = QCProgram::fromOpenQASMString(qasm);
-  ASSERT_TRUE(qc);
-  EXPECT_EQ(qc->staticDepth(), 2);
-}
-
 TEST_F(CompilerPipelineTest, QCProgramCountGatesWithoutEntryPoint) {
   constexpr llvm::StringLiteral source = R"mlir(module {
     func.func @helper(%qubit: !qc.qubit) {
@@ -5204,44 +5235,6 @@ switch (selector) {
       {"z", 1},
   };
   EXPECT_EQ(qc->gateCounts(), expectedCounts);
-  EXPECT_EQ(qc->staticDepth(), 3);
-}
-
-/// Test: static depth takes the maximum SCF branch and one loop body.
-TEST_F(CompilerPipelineTest, QCProgramStaticDepthInStructuredControlFlow) {
-  const std::string qasm = R"(OPENQASM 3.0;
-include "stdgates.inc";
-qubit[3] q;
-bit condition = measure q[0];
-if (condition) {
-  h q[0];
-  x q[0];
-} else {
-  h q[1];
-}
-cx q[0], q[1];
-for int i in [0:999999] {
-  z q[2];
-}
-)";
-  auto qc = QCProgram::fromOpenQASMString(qasm);
-  ASSERT_TRUE(qc);
-  EXPECT_EQ(qc->staticDepth(), 3);
-}
-
-/// Test: dynamic register indices conservatively alias each element.
-TEST_F(CompilerPipelineTest, QCProgramStaticDepthWithDynamicIndex) {
-  const std::string qasm = R"(OPENQASM 3.0;
-include "stdgates.inc";
-qubit[3] q;
-h q[0];
-for int i in [0:2] {
-  x q[i];
-}
-)";
-  auto qc = QCProgram::fromOpenQASMString(qasm);
-  ASSERT_TRUE(qc);
-  EXPECT_EQ(qc->staticDepth(), 2);
 }
 
 } // namespace mqt::test::compiler

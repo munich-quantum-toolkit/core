@@ -1999,6 +1999,21 @@ def test_complex_parameter_expression_fails_closed_without_mutation() -> None:
     assert circuit.parameters == {theta}
 
 
+def test_long_parameter_sum_round_trips() -> None:
+    """Balance Qiskit addition chains without changing parameter identities or values."""
+    angles = ParameterVector("angles", 100)
+    total = sum((-1 if index % 2 else 1) * angle.sin() for index, angle in enumerate(angles))
+    circuit = QuantumCircuit(1)
+    circuit.rz(total.cos(), 0)
+    circuit.global_phase = total / 3
+    result = QCProgram.from_qiskit(circuit).to_qiskit()
+    assert result.parameters == circuit.parameters
+    values = dict(zip(angles, np.linspace(-3, 3, len(angles)), strict=True))
+    assert np.allclose(
+        Operator(result.assign_parameters(values)).data, Operator(circuit.assign_parameters(values)).data
+    )
+
+
 def test_excessively_nested_parameter_expression_fails_closed_without_mutation() -> None:
     """Bound parameter-expression traversal before changing the source circuit."""
     theta = Parameter("theta")
@@ -2020,7 +2035,7 @@ def test_oversized_parameter_expression_fails_closed_without_mutation() -> None:
     """Bound a wide parameter expression before changing the source circuit."""
     theta = Parameter("theta")
     level: list[ParameterExpression] = [theta]
-    level.extend(theta + float(index) for index in range(1, 2049))
+    level.extend(theta + float(index) for index in range(1, 8193))
     while len(level) > 1:
         level = [
             level[index] + level[index + 1] if index + 1 < len(level) else level[index]
@@ -2030,7 +2045,7 @@ def test_oversized_parameter_expression_fails_closed_without_mutation() -> None:
     circuit.rz(level[0], 0)
     source_data = list(circuit.data)
 
-    with pytest.raises(RuntimeError, match="exceeds the supported 4096-node size"):
+    with pytest.raises(RuntimeError, match="exceeds the supported 16384-node size"):
         QCProgram.from_qiskit(circuit)
 
     assert list(circuit.data) == source_data
@@ -4093,6 +4108,8 @@ def test_manual_arith_and_math_parameter_expression_exports_to_qiskit() -> None:
     %sum = arith.addf %theta, %offset : f64
     %angle = math.sin %sum : f64
     qc.rz(%angle) %q : !qc.qubit
+    qc.rx(%sum) %q : !qc.qubit
+    qc.ry(%angle) %q : !qc.qubit
     qc.dealloc %q : !qc.qubit
     return
   }
@@ -4104,7 +4121,7 @@ def test_manual_arith_and_math_parameter_expression_exports_to_qiskit() -> None:
 
     theta = next(iter(restored.parameters))
     bound = restored.assign_parameters({theta: 0.25})
-    assert bound.data[0].operation.params[0] == pytest.approx(np.sin(0.75))
+    assert [item.operation.params[0] for item in bound.data] == pytest.approx([np.sin(0.75), 0.75, np.sin(0.75)])
 
 
 def _wide_parameter_expression_program(term_count: int) -> QCProgram:
@@ -4147,7 +4164,7 @@ def _wide_parameter_expression_program(term_count: int) -> QCProgram:
 
 @pytest.mark.parametrize(
     "term_count",
-    [1366, 2049],
+    [5462, 8193],
     ids=["expanded-tree", "unique-ssa-graph"],
 )
 def test_oversized_export_parameter_expression_fails_without_mutation(term_count: int) -> None:
@@ -4155,7 +4172,7 @@ def test_oversized_export_parameter_expression_fails_without_mutation(term_count
     program = _wide_parameter_expression_program(term_count)
     source_ir = program.ir
 
-    with pytest.raises(RuntimeError, match="exceeds the supported 4096-node size"):
+    with pytest.raises(RuntimeError, match="exceeds the supported 16384-node size"):
         program.to_qiskit()
 
     assert program.ir == source_ir
@@ -4315,24 +4332,28 @@ def test_named_symbolic_input_exports_to_qiskit() -> None:
     assert restored.data[0].operation.params[0] == next(iter(restored.parameters))
 
 
-def test_unused_named_symbolic_input_fails_export_without_mutation() -> None:
-    """Reject a compiler input that would disappear from the Qiskit circuit."""
+def test_unused_named_symbolic_input_is_omitted_without_mutation() -> None:
+    """Omit dead entry inputs while preserving live parameter identity."""
+    live = Parameter("live")
     program = QCProgram.from_mlir_str(
         """module {
-  func.func @main(%theta: f64 {mqt.input_name = "theta"}) attributes {mqt.entry_point} {
+  func.func @main(%theta: f64 {mqt.input_name = "theta"},
+                  %live: f64 {mqt.input_name = "live", mqt.input_id = IDENTITY : i128})
+      attributes {mqt.entry_point} {
     %q = qc.alloc : !qc.qubit
-    qc.x %q : !qc.qubit
+    qc.rx(%live) %q : !qc.qubit
     qc.dealloc %q : !qc.qubit
     return
   }
 }
-"""
+""".replace("IDENTITY", str(live.uuid.int))
     )
     source_ir = program.ir
+    restored = program.to_qiskit()
 
-    with pytest.raises(RuntimeError, match="cannot preserve unused named f64 program input 'theta'"):
-        program.to_qiskit()
-
+    assert list(restored.parameters) == [live]
+    bound = restored.assign_parameters({live: 0.37, Parameter("theta"): 0.2}, strict=False)
+    assert bound.data[0].operation.params == [0.37]
     assert program.ir == source_ir
 
 
@@ -4659,8 +4680,18 @@ def test_transpiler_added_ancillas_and_routing_round_trip() -> None:
 
 
 @pytest.mark.parametrize("routed", [False, True])
-def test_native_mapping_exports_full_qiskit_layout(*, routed: bool) -> None:
+@pytest.mark.parametrize("basis", ["u", "fixed_rx"])
+def test_native_mapping_exports_full_qiskit_layout(*, routed: bool, basis: str) -> None:
     """Qiskit removes initial placement and routing, including workspace swaps."""
+    operations = (
+        [CompilerTarget.OperationCapability("u", 1, 3), CompilerTarget.OperationCapability("cz", 2, 0)]
+        if basis == "u"
+        else [
+            CompilerTarget.OperationCapability("rz", 1, 1),
+            CompilerTarget.OperationCapability("rx", 1, 1, fixed_parameters=[np.pi / 2]),
+            CompilerTarget.OperationCapability("cz", 2, 0),
+        ]
+    )
     target = CompilerTarget(
         "sparse line",
         [CompilerTarget.Site(site) for site in [10, 30, 20, 40]],
@@ -4670,8 +4701,7 @@ def test_native_mapping_exports_full_qiskit_layout(*, routed: bool) -> None:
             else CompilerTarget.Connectivity.all_to_all()
         ),
         native_operations=CompilerTarget.NativeOperations([
-            CompilerTarget.OperationCapability("u", 1, 3),
-            CompilerTarget.OperationCapability("cz", 2, 0),
+            *operations,
             CompilerTarget.OperationCapability("gphase", 0, 1),
         ]),
     )
@@ -4684,6 +4714,9 @@ def test_native_mapping_exports_full_qiskit_layout(*, routed: bool) -> None:
     program = QCProgram.from_qiskit(circuit).to_qco()
     program.compile_for_target(_test_target_environment(target))
     exported = program.to_qiskit(target=target)
+    if basis == "fixed_rx":
+        assert set(exported.count_ops()) <= {"rx", "rz", "cz"}
+        assert all(gate.operation.params == [np.pi / 2] for gate in exported.data if gate.operation.name == "rx")
     layout = exported.layout
     assert layout is not None
     assert sorted(layout.initial_index_layout()) == list(range(4))

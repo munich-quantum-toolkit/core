@@ -14,6 +14,7 @@
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/IR/QubitLayout.h"
+#include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Transforms/Mapping/Mapping.h"
@@ -129,6 +130,15 @@ protected:
       signalPassFailure();
       return;
     }
+    const auto& target = environment_.target();
+    if (target.nativeOperationsKind() ==
+            CompilerTarget::NativeOperations::Kind::Explicit &&
+        !target.synthesisBasis()) {
+      getOperation().emitError(
+          "target compilation requires a single-qubit synthesis basis");
+      signalPassFailure();
+      return;
+    }
     if (failed(mqt::verifyQuantumAllocations(getOperation()))) {
       signalPassFailure();
       return;
@@ -194,29 +204,29 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   pm.addPass(std::make_unique<PrepareTargetCompilationPass>(environment, false,
                                                             mapping));
   const auto& target = environment.target();
-  pm.addPass(createInlinerPass());
-  pm.addPass(createSymbolDCEPass());
+  /// The module cleanup below owns canonicalization and dead symbols.
+  pm.addPass(createInlinerPass({}, [](OpPassManager&) {}));
   pm.addPass(createSCCPPass());
-  populateQCOCleanupPipeline(pm);
+  /// Placement changes region results; run liveness once afterwards.
+  populateQCOCleanupPipeline(pm, /*removeDeadValues=*/false);
   pm.addPass(qco::createUnrollLoopsForPayload());
   pm.addPass(createSCCPPass());
   /// Unrolling exposes static tensor slots and unreachable callees.
+  pm.addPass(mqt::createSimplifyClassicalControl());
   pm.addPass(createCanonicalizerPass(
-      GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit)));
+      GreedyRewriteConfig{}.setUseTopDownTraversal().setMaxIterations(
+          GreedyRewriteConfig::kNoLimit)));
   pm.addPass(createCSEPass());
   pm.addPass(qtensor::createShrinkQTensorToFitPass());
   pm.addPass(createSymbolDCEPass());
   pm.addPass(qco::createLegalizeControlFlow());
   pm.addPass(qco::createDecomposeMultiControlled(target));
   pm.addPass(qco::createFuseTwoQubitGates(target));
-  /// Non-U targets fuse during native synthesis, avoiding an intermediate U
-  /// representation and its symbolic phase correction.
+  /// U fusion shrinks runs before routing. Other bases can expand symbolic
+  /// runs, so emit them once during native synthesis, after cleanup.
   if (const auto basis = target.synthesisBasis();
-      !basis || basis->singleQubit == CompilerTarget::SingleQubitBasis::U) {
-    /// The U optimizer also merges dynamic controlled bodies into native U
-    /// gates and preserves isolated gates. Native synthesis does not yet cover
-    /// both behaviors; keep this path until their synthesis contracts agree.
-    populateDefaultQCOOptimizationPipeline(pm);
+      basis && basis->singleQubit == CompilerTarget::SingleQubitBasis::U) {
+    pm.addPass(qco::createFuseSingleQubitUnitaryRuns(target));
   }
   switch (target.connectivityKind()) {
   case CompilerTarget::Connectivity::Kind::Explicit: {
@@ -243,9 +253,10 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
   pm.addPass(std::make_unique<PrepareTargetCompilationPass>(environment, true,
                                                             mapping));
   const auto& target = environment.target();
-  pm.addPass(createInlinerPass());
-  pm.addPass(createSymbolDCEPass());
-  populateQCOCleanupPipeline(pm);
+  /// The module cleanup below owns canonicalization and dead symbols.
+  pm.addPass(createInlinerPass({}, [](OpPassManager&) {}));
+  /// Placement changes region results; run liveness once afterwards.
+  populateQCOCleanupPipeline(pm, /*removeDeadValues=*/false);
   pm.addPass(qco::createLegalizeControlFlow());
   pm.addPass(qco::createDecomposeMultiControlled(target));
   pm.addPass(qco::createFuseTwoQubitGates(target));
