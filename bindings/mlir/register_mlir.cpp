@@ -264,6 +264,67 @@ ValueError without changing the program. Call ``copy()`` first to preserve
 the input, and ``cleanup()`` afterwards if constant folding is needed.)pb");
 }
 
+template <class T>
+static void registerInspection(nb::class_<T, mlir::Program>& binding) {
+  binding
+      .def(
+          "inspect",
+          [](const T& program) {
+            requireValid(program);
+            return program.inspect();
+          },
+          "Return declared quantum resources and structural control flow "
+          "throughout the module.")
+      .def(
+          "num_gates",
+          [](const T& program) {
+            requireValid(program);
+            return program.numGates();
+          },
+          R"pb(Return the static gate count of the entry-point IR.
+
+Any entry-point operation that implements the ``UnitaryOpInterface`` is counted. Operations
+in every structured control-flow region are counted once, regardless of how
+often the region executes. Operations within modifiers are not counted
+recursively, and barriers are skipped.)pb")
+      .def(
+          "num_single_qubit_gates",
+          [](const T& program) {
+            requireValid(program);
+            return program.numSingleQubitGates();
+          },
+          R"pb(Return the static single-qubit gate count of the entry-point IR.
+
+Any entry-point operation that implements the ``UnitaryOpInterface`` and acts on one qubit
+is counted. Operations in every structured control-flow region are counted
+once, regardless of how often the region executes. Operations within modifiers
+are not counted recursively, and barriers are skipped.)pb")
+      .def(
+          "num_two_qubit_gates",
+          [](const T& program) {
+            requireValid(program);
+            return program.numTwoQubitGates();
+          },
+          R"pb(Return the static two-qubit gate count of the entry-point IR.
+
+Any entry-point operation that implements the ``UnitaryOpInterface`` and acts on two qubits
+is counted. Operations in every structured control-flow region are counted
+once, regardless of how often the region executes. Operations within modifiers
+are not counted recursively, and barriers are skipped.)pb")
+      .def(
+          "gate_counts",
+          [](const T& program) {
+            requireValid(program);
+            return program.gateCounts();
+          },
+          R"pb(Count entry-point gates by base symbol.
+
+The counts use the same static-IR semantics as :meth:`num_gates`. Modifiers
+use ``ctrl``, ``inv``, and ``pow``; unitary calls use the callee name. Neither
+is expanded. Barriers, measurements, and resets are excluded. Explicit
+global-phase operations count under ``gphase``.)pb");
+}
+
 template <class ProgramType>
 [[nodiscard]] static ProgramType copiedOrConsumed(ProgramType& program,
                                                   const bool copy) {
@@ -1420,14 +1481,6 @@ Programs own their MLIR module. Conversions can consume a program; use
 QC programs use reference semantics and represent frontend quantum programs
 before conversion to QCO.)pb");
   qcProgram
-      .def(
-          "inspect",
-          [](const mlir::QCProgram& program) {
-            requireValid(program);
-            return program.inspect();
-          },
-          "Return declared quantum resources and structural control flow "
-          "throughout the module.")
       .def_static(
           "from_mlir_str",
           &OptionalFunctionAdapter<&mlir::QCProgram::fromMLIRString>::call,
@@ -1525,55 +1578,7 @@ Set ``copy=True`` to preserve it.)pb")
           "profile"_a, nb::kw_only(), "copy"_a = false,
           R"pb(Lower this program to QIR for the requested profile.
 
-Set ``copy=True`` to preserve it.)pb")
-      .def(
-          "num_gates",
-          [](const mlir::QCProgram& program) {
-            requireValid(program);
-            return program.numGates();
-          },
-          R"pb(Return the static gate count of the entry-point IR.
-
-Any entry-point operation that implements the ``UnitaryOpInterface`` is counted. Operations
-in every structured control-flow region are counted once, regardless of how
-often the region executes. Operations within modifiers are not counted
-recursively, and barriers are skipped.)pb")
-      .def(
-          "num_single_qubit_gates",
-          [](const mlir::QCProgram& program) {
-            requireValid(program);
-            return program.numSingleQubitGates();
-          },
-          R"pb(Return the static single-qubit gate count of the entry-point IR.
-
-Any entry-point operation that implements the ``UnitaryOpInterface`` and acts on one qubit
-is counted. Operations in every structured control-flow region are counted
-once, regardless of how often the region executes. Operations within modifiers
-are not counted recursively, and barriers are skipped.)pb")
-      .def(
-          "num_two_qubit_gates",
-          [](const mlir::QCProgram& program) {
-            requireValid(program);
-            return program.numTwoQubitGates();
-          },
-          R"pb(Return the static two-qubit gate count of the entry-point IR.
-
-Any entry-point operation that implements the ``UnitaryOpInterface`` and acts on two qubits
-is counted. Operations in every structured control-flow region are counted
-once, regardless of how often the region executes. Operations within modifiers
-are not counted recursively, and barriers are skipped.)pb")
-      .def(
-          "gate_counts",
-          [](const mlir::QCProgram& program) {
-            requireValid(program);
-            return program.gateCounts();
-          },
-          R"pb(Count entry-point gates by base symbol.
-
-The counts use the same static-IR semantics as :meth:`num_gates`. Modifiers
-use ``ctrl``, ``inv``, and ``pow``; unitary calls use the callee name. Neither
-is expanded. Barriers, measurements, and resets are excluded. Explicit
-global-phase operations count under ``gphase``.)pb");
+Set ``copy=True`` to preserve it.)pb");
 
   auto qcoProgram = nb::class_<mlir::QCOProgram, mlir::Program>(
       m, "QCOProgram", R"pb(A compiler program in the QCO dialect.
@@ -1581,14 +1586,6 @@ global-phase operations count under ``gphase``.)pb");
 QCO programs use value semantics and expose optimization and transformation
 operations.)pb");
   qcoProgram
-      .def(
-          "inspect",
-          [](const mlir::QCOProgram& program) {
-            requireValid(program);
-            return program.inspect();
-          },
-          "Return declared quantum resources and structural control flow "
-          "throughout the module.")
       .def_static(
           "from_mlir_str",
           &OptionalFunctionAdapter<&mlir::QCOProgram::fromMLIRString>::call,
@@ -1729,6 +1726,8 @@ Set ``copy=True`` to preserve it.)pb")
 
 Set ``copy=True`` to preserve it.)pb");
 
+  registerInspection(qcProgram);
+  registerInspection(qcoProgram);
   registerParameterBinding(qcProgram);
   registerParameterBinding(qcoProgram);
 

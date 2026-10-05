@@ -329,6 +329,18 @@ public:
   /// Consume this program and convert it to `jeff` MLIR.
   [[nodiscard]] std::optional<JeffProgram> intoJeff() &&;
 
+  /// Return the static entry-point gate count, as in QCProgram::numGates().
+  [[nodiscard]] size_t numGates() const;
+
+  /// Count static single-qubit gates, as in QCProgram::numSingleQubitGates().
+  [[nodiscard]] size_t numSingleQubitGates() const;
+
+  /// Count static two-qubit gates, as in QCProgram::numTwoQubitGates().
+  [[nodiscard]] size_t numTwoQubitGates() const;
+
+  /// Count entry-point gates by base symbol, as in QCProgram::gateCounts().
+  [[nodiscard]] std::map<std::string, size_t> gateCounts() const;
+
 private:
   friend class QCProgram;
   friend class JeffProgram;

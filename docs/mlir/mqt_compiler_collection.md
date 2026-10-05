@@ -70,16 +70,21 @@ For versionless OpenQASM text, use
 detection uses the `OPENQASM` header; see {doc}`OpenQASM` for the import
 contract.
 
-## Inspect a QC program
+## Inspect a quantum program
 
-Use the inspection methods of a {py:class}`~mqt.core.mlir.QCProgram` to count
-gates without parsing the textual IR:
+Use the inspection methods of a {py:class}`~mqt.core.mlir.QCProgram` or
+{py:class}`~mqt.core.mlir.QCOProgram` to count gates without parsing the textual
+IR or converting between dialects:
 
 ```{code-cell} ipython3
 print("Gates:", compiled.num_gates())
 print("Single-qubit gates:", compiled.num_single_qubit_gates())
 print("Two-qubit gates:", compiled.num_two_qubit_gates())
 print("Gates by operation:", compiled.gate_counts())
+
+qco = compiled.to_qco(copy=True)
+assert qco.gate_counts() == compiled.gate_counts()
+print("QCO two-qubit gates:", qco.num_two_qubit_gates())
 ```
 
 These are static gate counts of the entry-point IR. A gate in each structured

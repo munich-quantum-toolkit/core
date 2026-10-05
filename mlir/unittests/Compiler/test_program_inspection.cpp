@@ -28,6 +28,7 @@ TEST(ProgramInspection, CountCallsAndNestedModifiersOnce) {
     bit c;
     foo q[0];
     ctrl @ inv @ x q[0], q[1];
+    inv @ h q[0];
     pow(2) @ h q[1];
     gphase(0.3);
     barrier q;
@@ -36,16 +37,78 @@ TEST(ProgramInspection, CountCallsAndNestedModifiersOnce) {
   )");
   ASSERT_TRUE(qc);
   const std::map<std::string, size_t> expected{
-      {"foo", 1},
-      {"ctrl", 1},
-      {"pow", 1},
-      {"gphase", 1},
+      {"foo", 1}, {"ctrl", 1}, {"inv", 1}, {"pow", 1}, {"gphase", 1},
   };
   EXPECT_EQ(qc->gateCounts(), expected);
-  EXPECT_EQ(qc->numGates(), 4);
-  EXPECT_EQ(qc->numSingleQubitGates(), 2);
+  EXPECT_EQ(qc->numGates(), 5);
+  EXPECT_EQ(qc->numSingleQubitGates(), 3);
   EXPECT_EQ(qc->numTwoQubitGates(), 1);
   EXPECT_FALSE(qc->inspect().hasControlFlow);
+  auto qco = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qco);
+  EXPECT_EQ(qco->gateCounts(), expected);
+  EXPECT_EQ(qco->numGates(), 5);
+  EXPECT_EQ(qco->numSingleQubitGates(), 3);
+  EXPECT_EQ(qco->numTwoQubitGates(), 1);
+}
+
+TEST(ProgramInspection, QCOCountsControlFlowRegionsOnce) {
+  auto qc = mlir::QCProgram::fromOpenQASMString(R"(
+    OPENQASM 3.0; include "stdgates.inc";
+    qubit[2] q;
+    bit condition = measure q[0];
+    if (condition) {
+      for int i in [0:9] { h q[0]; }
+    } else {
+      cx q[0], q[1];
+    }
+    while (condition) { swap q[0], q[1]; }
+    switch (int(condition)) {
+      case 1 { z q[1]; }
+      default { inv @ x q[0]; }
+    }
+  )");
+  ASSERT_TRUE(qc);
+  auto qco = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qco);
+  const std::map<std::string, size_t> expected{
+      {"h", 1}, {"ctrl", 1}, {"swap", 1}, {"z", 1}, {"inv", 1},
+  };
+  EXPECT_EQ(qco->gateCounts(), expected);
+  EXPECT_EQ(qco->numGates(), 5);
+  EXPECT_EQ(qco->numSingleQubitGates(), 3);
+  EXPECT_EQ(qco->numTwoQubitGates(), 2);
+}
+
+TEST(ProgramInspection, QCOCountsNativeThreeQubitGates) {
+  auto qco = mlir::QCOProgram::fromMLIRString(R"(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %a = qco.alloc : !qco.qubit
+        %b = qco.alloc : !qco.qubit
+        %c = qco.alloc : !qco.qubit
+        %x, %y, %z = qco.rccx %a, %b, %c : !qco.qubit, !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit, !qco.qubit
+        qco.sink %x : !qco.qubit
+        qco.sink %y : !qco.qubit
+        qco.sink %z : !qco.qubit
+        return
+      }
+    }
+  )");
+  ASSERT_TRUE(qco);
+  EXPECT_EQ(qco->gateCounts().at("rccx"), 1);
+  EXPECT_EQ(qco->numGates(), 1);
+  EXPECT_EQ(qco->numSingleQubitGates(), 0);
+  EXPECT_EQ(qco->numTwoQubitGates(), 0);
+}
+
+TEST(ProgramInspection, QCOCountsWithoutEntryPointAreEmpty) {
+  auto qco = mlir::QCOProgram::fromMLIRString("module {}");
+  ASSERT_TRUE(qco);
+  EXPECT_TRUE(qco->gateCounts().empty());
+  EXPECT_EQ(qco->numGates(), 0);
+  EXPECT_EQ(qco->numSingleQubitGates(), 0);
+  EXPECT_EQ(qco->numTwoQubitGates(), 0);
 }
 
 TEST(ProgramInspection, InspectAllocatedRegistersAndControlFlow) {

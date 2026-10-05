@@ -1844,13 +1844,22 @@ def test_compile_program_fails_for_missing_file() -> None:
         compile_program("missing_program.qasm")
 
 
-def test_qc_program_num_gates() -> None:
-    """Expose gate counts to Python."""
-    program = QCProgram.from_openqasm_str(QASM_STRING)
+@pytest.mark.parametrize("qco", [False, True])
+def test_program_num_gates(*, qco: bool) -> None:
+    """Expose gate counts to Python for both dialects."""
+    qc = QCProgram.from_openqasm_str(QASM_STRING)
+    program = qc.to_qco() if qco else qc
     assert program.num_gates() == 2
     assert program.num_single_qubit_gates() == 1
     assert program.num_two_qubit_gates() == 1
     assert program.gate_counts() == {"ctrl": 1, "h": 1}
+    if isinstance(program, QCOProgram):
+        program.to_qc()
+    else:
+        program.to_qco()
+    for query in (program.num_gates, program.num_single_qubit_gates, program.num_two_qubit_gates, program.gate_counts):
+        with pytest.raises(RuntimeError, match="consumed"):
+            query()
 
 
 @requires_qiskit_translation
@@ -1873,14 +1882,14 @@ def test_program_inspection_matches_qiskit(frontend: str) -> None:
     )
     gates = [instruction for instruction in circuit.data if isinstance(instruction.operation, Gate)]
     expected = Counter("ctrl" if isinstance(gate.operation, ControlledGate) else gate.operation.name for gate in gates)
-    counts = program.gate_counts()
-    # Qiskit import represents the circuit's global phase as an explicit gate.
-    phases = counts.pop("gphase", 0)
-    assert counts == expected
-    assert program.num_gates() == len(gates) + phases
-    assert program.num_single_qubit_gates() == sum(len(gate.qubits) == 1 for gate in gates)
-    assert program.num_two_qubit_gates() == sum(len(gate.qubits) == 2 for gate in gates)
     for representation in (program, program.to_qco(copy=True)):
+        counts = representation.gate_counts()
+        # Qiskit import represents the circuit's global phase as an explicit gate.
+        phases = counts.pop("gphase", 0)
+        assert counts == expected
+        assert representation.num_gates() == len(gates) + phases
+        assert representation.num_single_qubit_gates() == sum(len(gate.qubits) == 1 for gate in gates)
+        assert representation.num_two_qubit_gates() == sum(len(gate.qubits) == 2 for gate in gates)
         info = representation.inspect()
         assert info.num_qubits == circuit.num_qubits  # Includes the idle qubit.
         assert not info.has_control_flow

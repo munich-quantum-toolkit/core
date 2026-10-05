@@ -692,9 +692,6 @@ class QCProgram(Program):
     before conversion to QCO.
     """
 
-    def inspect(self) -> QuantumProgramInfo:
-        """Return declared quantum resources and structural control flow throughout the module."""
-
     @staticmethod
     def from_mlir_str(source: str) -> QCProgram:
         """Parse a QC MLIR source string."""
@@ -757,6 +754,9 @@ class QCProgram(Program):
         Set ``copy=True`` to preserve it.
         """
 
+    def inspect(self) -> QuantumProgramInfo:
+        """Return declared quantum resources and structural control flow throughout the module."""
+
     def num_gates(self) -> int:
         """Return the static gate count of the entry-point IR.
 
@@ -812,9 +812,6 @@ class QCOProgram(Program):
     QCO programs use value semantics and expose optimization and transformation
     operations.
     """
-
-    def inspect(self) -> QuantumProgramInfo:
-        """Return declared quantum resources and structural control flow throughout the module."""
 
     @staticmethod
     def from_mlir_str(source: str) -> QCOProgram:
@@ -888,6 +885,45 @@ class QCOProgram(Program):
         """Convert this program to ``jeff`` MLIR.
 
         Set ``copy=True`` to preserve it.
+        """
+
+    def inspect(self) -> QuantumProgramInfo:
+        """Return declared quantum resources and structural control flow throughout the module."""
+
+    def num_gates(self) -> int:
+        """Return the static gate count of the entry-point IR.
+
+        Any entry-point operation that implements the ``UnitaryOpInterface`` is counted. Operations
+        in every structured control-flow region are counted once, regardless of how
+        often the region executes. Operations within modifiers are not counted
+        recursively, and barriers are skipped.
+        """
+
+    def num_single_qubit_gates(self) -> int:
+        """Return the static single-qubit gate count of the entry-point IR.
+
+        Any entry-point operation that implements the ``UnitaryOpInterface`` and acts on one qubit
+        is counted. Operations in every structured control-flow region are counted
+        once, regardless of how often the region executes. Operations within modifiers
+        are not counted recursively, and barriers are skipped.
+        """
+
+    def num_two_qubit_gates(self) -> int:
+        """Return the static two-qubit gate count of the entry-point IR.
+
+        Any entry-point operation that implements the ``UnitaryOpInterface`` and acts on two qubits
+        is counted. Operations in every structured control-flow region are counted
+        once, regardless of how often the region executes. Operations within modifiers
+        are not counted recursively, and barriers are skipped.
+        """
+
+    def gate_counts(self) -> dict[str, int]:
+        """Count entry-point gates by base symbol.
+
+        The counts use the same static-IR semantics as :meth:`num_gates`. Modifiers
+        use ``ctrl``, ``inv``, and ``pow``; unitary calls use the callee name. Neither
+        is expanded. Barriers, measurements, and resets are excluded. Explicit
+        global-phase operations count under ``gphase``.
         """
 
     @property

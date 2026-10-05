@@ -12,6 +12,7 @@
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/QC/IR/QCInterfaces.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
+#include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 
@@ -93,46 +94,73 @@ static QuantumProgramInfo inspectProgram(ModuleOp moduleOp) {
 QuantumProgramInfo QCProgram::inspect() const { return inspectProgram(mod()); }
 QuantumProgramInfo QCOProgram::inspect() const { return inspectProgram(mod()); }
 
-static void forEachGate(ModuleOp moduleOp,
-                        function_ref<void(qc::UnitaryOpInterface)> visit) {
+template <class Gate>
+static void forEachGate(ModuleOp moduleOp, function_ref<void(Gate)> visit) {
   auto entryPoint = mqt::getEntryPoint(moduleOp);
   if (!entryPoint) {
     return;
   }
-  entryPoint.walk<WalkOrder::PreOrder>([&](qc::UnitaryOpInterface op) {
-    if (!isa<qc::BarrierOp>(op)) {
+  entryPoint.walk<WalkOrder::PreOrder>([&](Gate op) {
+    if (!isa<qc::BarrierOp, qco::BarrierOp>(op)) {
       visit(op);
     }
-    return isa<qc::CtrlOp, qc::InvOp, qc::PowOp>(op) ? WalkResult::skip()
-                                                     : WalkResult::advance();
+    return isa<qc::CtrlOp, qc::InvOp, qc::PowOp, qco::CtrlOp, qco::InvOp,
+               qco::PowOp>(op)
+               ? WalkResult::skip()
+               : WalkResult::advance();
   });
+}
+
+template <class Gate>
+static size_t countGatesIf(ModuleOp moduleOp,
+                           function_ref<bool(Gate)> predicate) {
+  size_t count = 0;
+  forEachGate<Gate>(moduleOp, [&](Gate op) { count += predicate(op); });
+  return count;
+}
+
+template <class Gate>
+static std::map<std::string, size_t> countGatesByName(ModuleOp moduleOp) {
+  std::map<std::string, size_t> counts;
+  forEachGate<Gate>(moduleOp,
+                    [&](Gate op) { ++counts[op.getBaseSymbol().str()]; });
+  return counts;
 }
 
 size_t QCProgram::numGates() const {
-  size_t count = 0;
-  forEachGate(mod(), [&](qc::UnitaryOpInterface) { ++count; });
-  return count;
+  return countGatesIf<qc::UnitaryOpInterface>(mod(), [](auto) { return true; });
 }
 
 size_t QCProgram::numSingleQubitGates() const {
-  size_t count = 0;
-  forEachGate(mod(),
-              [&](qc::UnitaryOpInterface op) { count += op.isSingleQubit(); });
-  return count;
+  return countGatesIf<qc::UnitaryOpInterface>(
+      mod(), [](auto op) { return op.isSingleQubit(); });
 }
 
 size_t QCProgram::numTwoQubitGates() const {
-  size_t count = 0;
-  forEachGate(mod(),
-              [&](qc::UnitaryOpInterface op) { count += op.isTwoQubit(); });
-  return count;
+  return countGatesIf<qc::UnitaryOpInterface>(
+      mod(), [](auto op) { return op.isTwoQubit(); });
 }
 
 std::map<std::string, size_t> QCProgram::gateCounts() const {
-  std::map<std::string, size_t> counts;
-  forEachGate(mod(), [&](qc::UnitaryOpInterface op) {
-    ++counts[op.getBaseSymbol().str()];
-  });
-  return counts;
+  return countGatesByName<qc::UnitaryOpInterface>(mod());
+}
+
+size_t QCOProgram::numGates() const {
+  return countGatesIf<qco::UnitaryOpInterface>(mod(),
+                                               [](auto) { return true; });
+}
+
+size_t QCOProgram::numSingleQubitGates() const {
+  return countGatesIf<qco::UnitaryOpInterface>(
+      mod(), [](auto op) { return op.isSingleQubit(); });
+}
+
+size_t QCOProgram::numTwoQubitGates() const {
+  return countGatesIf<qco::UnitaryOpInterface>(
+      mod(), [](auto op) { return op.isTwoQubit(); });
+}
+
+std::map<std::string, size_t> QCOProgram::gateCounts() const {
+  return countGatesByName<qco::UnitaryOpInterface>(mod());
 }
 } // namespace mlir
