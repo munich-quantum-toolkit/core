@@ -84,8 +84,10 @@ function(add_mqt_core_library name)
     endif()
   endif()
 
-  # Always compile with position-independent code to enable usage in shared libraries
-  set_target_properties(${name} PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  # Always compile with position-independent code to enable usage in shared libraries Each shared
+  # library needs its own build RPATH for transitive dependencies on ELF platforms.
+  set_target_properties(${name} PROPERTIES POSITION_INDEPENDENT_CODE ON BUILD_WITH_INSTALL_RPATH
+                                                                        FALSE)
 
   set_target_properties(${name} PROPERTIES EXPORT_NAME Core${ARG_ALIAS_NAME})
   # Wheels materialize version symlinks as duplicate libraries.
