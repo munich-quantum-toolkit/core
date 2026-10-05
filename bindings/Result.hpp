@@ -22,6 +22,7 @@
 #include <utility>
 
 namespace mqt::bindings {
+/// Acquire the GIL and raise the Python exception matching the diagnostic.
 [[noreturn]] inline void raiseDiagnostic(const Diagnostic& diagnostic) {
   const nanobind::gil_scoped_acquire acquire;
   auto* type = PyExc_RuntimeError;
@@ -50,8 +51,9 @@ namespace mqt::bindings {
   throw nanobind::python_error();
 }
 
-/// Capture before invocation, including functions that release the GIL.
-/// Warnings retain the surrounding handler or stderr behavior.
+/// Invoke a result-returning function, unwrapping success or raising its error.
+/// Capture diagnostics before invocation, including functions that release the
+/// GIL. Warnings retain the surrounding handler or stderr behavior.
 template <class Function, class... Args>
 auto invoke(Function&& function, Args&&... args) {
   std::optional<Diagnostic> error;
@@ -83,18 +85,21 @@ auto invoke(Function&& function, Args&&... args) {
   }
 }
 
+/// Adapt a mutable member function through invoke() for nanobind.
 template <typename C, typename R, typename... Args>
 auto bindResult(R (C::*method)(Args...)) {
   return [method](C& self, Args... args) {
     return ::mqt::bindings::invoke(method, self, std::forward<Args>(args)...);
   };
 }
+/// Adapt a const member function through invoke() for nanobind.
 template <typename C, typename R, typename... Args>
 auto bindResult(R (C::*method)(Args...) const) {
   return [method](const C& self, Args... args) {
     return ::mqt::bindings::invoke(method, self, std::forward<Args>(args)...);
   };
 }
+/// Adapt a free function through invoke() for nanobind.
 template <typename R, typename... Args>
 auto bindResult(R (*function)(Args...)) {
   return [function](Args... args) {
