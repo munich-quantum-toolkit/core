@@ -20,6 +20,7 @@
 
 #include "gtest/gtest.h"
 
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/Builders.h"
@@ -39,8 +40,22 @@ namespace mqt::bench {
 
 using namespace mlir;
 
+static void expectDistillationCounts(QCProgram program,
+                                     const std::string& expected,
+                                     size_t shots = 4) {
+  auto compiled =
+      runDefaultPipeline(CompilerInput{std::move(program)}, ProgramFormat::QCO);
+  ASSERT_TRUE(compiled);
+  auto& qcoProgram = std::get<QCOProgram>(*compiled);
+  auto counts =
+      qco::sample(mlir::mqt::getEntryPoint(qcoProgram.module()), shots, 17);
+  ASSERT_TRUE(succeeded(counts));
+  EXPECT_EQ(*counts, (Counts{{expected, shots}}));
+}
+
 static void expectDistillationFaults(size_t levels, uint32_t errors,
-                                     const std::string& expected) {
+                                     const std::string& expected,
+                                     size_t shots = 4) {
   auto program = generate(MagicStateDistillation({.levels = levels}));
   ASSERT_TRUE(program);
   auto entryPoint = mlir::mqt::getEntryPoint(program->module());
@@ -55,38 +70,25 @@ static void expectDistillationFaults(size_t levels, uint32_t errors,
     if ((errors & (1U << i)) == 0) {
       continue;
     }
-    // A Z fault between T and parity uncomputation is the P Pauli fault
-    // on the corresponding π/8 rotation in Litinski's error model.
+    /// A Z fault between T and parity uncomputation is the P Pauli fault
+    /// on the corresponding π/8 rotation in Litinski's error model.
     auto op = rotations[i];
     OpBuilder builder(op);
     builder.setInsertionPointAfter(op);
     qc::ZOp::create(builder, op.getLoc(), op.getQubit(0));
   }
-  auto compiled = runDefaultPipeline(CompilerInput{std::move(*program)},
-                                     ProgramFormat::QCO);
-  ASSERT_TRUE(compiled);
-  auto& qcoProgram = std::get<QCOProgram>(*compiled);
-  auto counts =
-      qco::sample(mlir::mqt::getEntryPoint(qcoProgram.module()), 4, 17);
-  ASSERT_TRUE(succeeded(counts));
-  EXPECT_EQ(*counts, (Counts{{expected, 4}}));
+  expectDistillationCounts(std::move(*program), expected, shots);
 }
 
 TEST(GenerateProgramTest, SamplesMagicStateDistillation) {
   for (const size_t levels : {1U, 2U}) {
     SCOPED_TRACE(levels);
-    auto program =
-        test::generateQCO(MagicStateDistillation({.levels = levels}));
-    ASSERT_TRUE(program);
-    auto counts =
-        qco::sample(mlir::mqt::getEntryPoint(program->module()), 16, 17);
-    ASSERT_TRUE(succeeded(counts));
-    EXPECT_EQ(*counts, (Counts{{"00", 16}}));
+    expectDistillationFaults(levels, 0, "00", 16);
   }
 }
 
 TEST(GenerateProgramTest, KeepsConcatenatedMagicStateDistillationCompact) {
-  for (const size_t levels : {1U, 2U, 3U, 4U}) {
+  for (const size_t levels : {1U, 2U, 3U, 4U, 8U}) {
     SCOPED_TRACE(levels);
     auto program = generate(MagicStateDistillation({.levels = levels}));
     ASSERT_TRUE(program);
@@ -100,7 +102,7 @@ TEST(GenerateProgramTest, KeepsConcatenatedMagicStateDistillationCompact) {
                                        ProgramFormat::QCO);
     ASSERT_TRUE(compiled);
     auto& qcoProgram = std::get<QCOProgram>(*compiled);
-    EXPECT_LT(test::countOperations(qcoProgram.module()), 2000U);
+    EXPECT_LT(test::countOperations(qcoProgram.module()), 500U * levels);
 
     auto jeff = std::move(qcoProgram).intoJeff();
     ASSERT_TRUE(jeff);
@@ -114,8 +116,8 @@ TEST(GenerateProgramTest, KeepsConcatenatedMagicStateDistillationCompact) {
 
 TEST(GenerateProgramTest,
      DistillationRejectsRotationErrorsAndDetectsLogicalErrors) {
-  // Columns of Litinski's Fig. 3, encoded with the output qubit as bit 0.
-  // XOR gives the root Z error and the four X-check syndromes independently.
+  /// Columns of Litinski's Fig. 3, encoded with the output qubit as bit 0.
+  /// XOR gives the root Z error and the four X-check syndromes independently.
   constexpr std::array<uint32_t, 15> columns{
       2, 4, 8, 16, 14, 7, 11, 13, 25, 19, 21, 31, 28, 26, 22,
   };
@@ -147,12 +149,25 @@ TEST(GenerateProgramTest,
 }
 
 TEST(GenerateProgramTest, ConcatenatedDistillationConsumesRetainedStates) {
-  // Rotation 1 flips only a lower block's check qubit. Its rejection must
-  // survive even though its output state and the higher-level checks are ideal.
-  expectDistillationFaults(2, 1U, "10");
+  /// Reject only the first child, retaining its ideal output state, as with a
+  /// check-only fault. Subsequent accepting children must not clear rejection.
+  auto program = generate(MagicStateDistillation({.levels = 2}));
+  ASSERT_TRUE(program);
+  auto entryPoint = mlir::mqt::getEntryPoint(program->module());
+  const auto injected = program->module().walk([&](func::CallOp op) {
+    if (op->getParentOfType<func::FuncOp>() == entryPoint) {
+      return WalkResult::advance();
+    }
+    OpBuilder builder(op);
+    auto rejected = arith::ConstantIntOp::create(builder, op.getLoc(), 1, 1);
+    op.getResult(0).replaceAllUsesWith(rejected);
+    return WalkResult::interrupt();
+  });
+  ASSERT_TRUE(injected.wasInterrupted());
+  expectDistillationCounts(std::move(*program), "10");
 
-  // The undetected triple at rotations 5, 11, 14 flips every lower output.
-  // The resulting 15 faulty higher-level rotations also leave a root Z error.
+  /// The undetected triple at rotations 5, 11, 14 flips every lower output.
+  /// The resulting 15 faulty higher-level rotations also leave a root Z error.
   constexpr auto errors = (1U << 4U) | (1U << 10U) | (1U << 13U);
   expectDistillationFaults(2, errors, "01");
 }

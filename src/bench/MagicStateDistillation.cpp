@@ -14,6 +14,9 @@
 
 #include "EvaluationUtils.hpp"
 
+#include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <stdexcept>
 #include <string_view>
 
@@ -22,9 +25,11 @@ namespace mqt::bench {
 MagicStateDistillation::MagicStateDistillation(
     MagicStateDistillationOptions options)
     : options_(options), output_{.name = "result", .width = 2} {
-  if (options_.levels < 1 || options_.levels > 4) {
-    throw std::invalid_argument(
-        "magic-state-distillation levels must be between 1 and 4");
+  if (options_.levels == 0 ||
+      options_.levels >
+          static_cast<size_t>(std::numeric_limits<int64_t>::max()) / 5) {
+    throw std::invalid_argument("magic-state-distillation levels must be "
+                                "positive and fit circuit dimensions");
   }
 }
 

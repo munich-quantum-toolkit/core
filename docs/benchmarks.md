@@ -310,23 +310,23 @@ rotations $P_{\pi/8}=e^{-i\pi P/8}$ in order. It measures the last four qubits
 in the X basis and accepts only when all four outcomes are $+1$. The first qubit
 retains $T^\dagger|+\rangle$ in the ideal case.
 
-Set `levels` to 1–4 (default 1). The first level uses ideal rotations. Later
-levels implement each rotation by consuming an actual retained state from the
-preceding level with Clifford gates and measurement feedback. Work qubits are
-reset and reused between blocks. The circuit uses five qubits per level: 5, 10,
-15, or 20 qubits in total.
+Set `levels` to a positive integer (default 1). The first level uses ideal
+rotations; higher levels consume lower-level output states through Clifford
+gates and measurement feedback. Resetting and reusing workspace requires
+`5 * levels` qubits, while each shot executes `15**levels` leaf rotations. The
+qubit count must fit signed 64-bit circuit dimensions. Generation, compilation,
+and execution remain subject to available resources and backend limits; backends
+that inline function calls can expand the circuit exponentially.
 
-The two-bit `result` combines a sticky rejection flag in bit 1 with a root-state
-check in bit 0. The root check applies $T$ then $H$ before measurement, so the
-ideal retained state gives `00` with probability one. Every block runs once,
-including blocks whose inputs come from a rejected subtree. The benchmark does
-not model input noise, physical error correction, or retries, so this example
-does not measure fidelity improvement from noisy inputs.
+The two-bit `result` reports any rejected block in bit 1 and a failed root-state
+check in bit 0. The root check applies $T$ then $H$ before measurement. Ideal
+execution returns `00`. All blocks execute once, regardless of rejection. The
+benchmark models ideal logical circuits without input noise, physical error
+correction, or retries.
 
 #### Sample the five-qubit circuit directly
 
-This example uses 16 shots to keep execution short. Increase the shot count when
-collecting statistics; the ideal output here is deterministic.
+This example samples the deterministic ideal output with 16 shots.
 
 ```{code-cell} ipython3
 from mqt.core.bench import magic_state_distillation
@@ -338,10 +338,7 @@ assert direct_counts == {"00": 16}
 print(direct_counts)
 ```
 
-Higher levels provide larger structured programs; support for their generation
-does not guarantee a given device's capacity. For device execution, see
-{doc}`qdmi/ddsim_device`; adaptive jobs expose counts, not an uncollapsed
-statevector.
+For device execution, see {doc}`qdmi/ddsim_device`.
 
 ### Modular multiplier
 

@@ -22,7 +22,7 @@ from mqt.core.qdmi.driver import open_device
 from .utils import assert_generates
 
 
-@pytest.mark.parametrize("levels", [1, 2, 3, 4])
+@pytest.mark.parametrize("levels", [1, 2, 3, 4, 8])
 def test_distillation_roundtrip(levels: int) -> None:
     """Preserve the level count and semantic identity through both JSON forms."""
     benchmark = magic_state_distillation.MagicStateDistillation(magic_state_distillation.Options(levels=levels))
@@ -40,10 +40,10 @@ def test_distillation_roundtrip(levels: int) -> None:
     assert_generates(benchmark.generate())
 
 
-@pytest.mark.parametrize("levels", [0, 5])
+@pytest.mark.parametrize("levels", [0, 2**64 - 1])
 def test_distillation_invalid_levels(levels: int) -> None:
     """Reject unsupported concatenation levels."""
-    with pytest.raises(ValueError, match="levels must be between 1 and 4"):
+    with pytest.raises(ValueError, match="levels must be positive and fit circuit dimensions"):
         magic_state_distillation.MagicStateDistillation(magic_state_distillation.Options(levels=levels))
 
 
