@@ -1003,6 +1003,23 @@ protected:
   }
 
 private:
+  /// Return true, if a precedes b (or b precedes a for backwards iteration).
+  template <WireDirection Direction>
+  static bool precedes(Operation* a, Operation* b) {
+    if constexpr (Direction == WireDirection::Forward) {
+      return a->isBeforeInBlock(b);
+    }
+    return b->isBeforeInBlock(a);
+  }
+
+  /// Return values carried by a supported region terminator.
+  static ValueRange yieldedValues(Block& block) {
+    return TypeSwitch<Operation*, ValueRange>(block.getTerminator())
+        .Case([](scf::YieldOp op) { return op.getResults(); })
+        .Case([](scf::ConditionOp op) { return op.getArgs(); })
+        .Case([](YieldOp op) { return op.getTargets(); });
+  }
+
   /// Return the qubit values in `values`, preserving their relative order.
   static SmallVector<Value> getQubitValues(ValueRange values) {
     return llvm::filter_to_vector(
@@ -1599,14 +1616,6 @@ private:
     return curr;
   }
 
-  template <WireDirection Direction>
-  static bool precedes(Operation* a, Operation* b) {
-    if constexpr (Direction == WireDirection::Forward) {
-      return a->isBeforeInBlock(b);
-    }
-    return b->isBeforeInBlock(a);
-  }
-
   /// Collect a routing lookahead window of up to `1 + nlookahead` ready
   /// two-qubit gates, while skipping qubit-pair blocks.
   template <WireDirection Direction>
@@ -1998,14 +2007,6 @@ private:
     for (auto [use, value] : replacements) {
       rewriter.modifyOpInPlace(use->getOwner(), [&] { use->set(value); });
     }
-  }
-
-  /// Values carried by a supported region terminator.
-  static ValueRange yieldedValues(Block& block) {
-    return TypeSwitch<Operation*, ValueRange>(block.getTerminator())
-        .Case([](scf::YieldOp op) { return op.getResults(); })
-        .Case([](scf::ConditionOp op) { return op.getArgs(); })
-        .Case([](YieldOp op) { return op.getTargets(); });
   }
 
   /// Construct child states, route their bodies, reconcile layouts, then
