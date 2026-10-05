@@ -1083,7 +1083,7 @@ wrapper(0.25) q;
     ASSERT_TRUE(succeeded(manager.run(moduleOp)));
     ASSERT_TRUE(succeeded(verify(moduleOp)));
     ASSERT_TRUE(succeeded(qco::verifyLinearity(moduleOp)));
-    for (const auto name : {"repeated", "wrapper"}) {
+    for (const auto* const name : {"repeated", "wrapper"}) {
       auto gate = moduleOp.lookupSymbol<func::FuncOp>(name);
       ASSERT_TRUE(gate);
       EXPECT_TRUE(mlir::mqt::isUnitaryFunction(gate));
