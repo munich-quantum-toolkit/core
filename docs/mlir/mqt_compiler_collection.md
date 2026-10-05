@@ -72,44 +72,35 @@ contract.
 
 ## Inspect a quantum program
 
-Use the inspection methods of a {py:class}`~mqt.core.mlir.QCProgram` or
-{py:class}`~mqt.core.mlir.QCOProgram` to count gates without parsing the textual
-IR or converting between dialects:
-
-```{code-cell} ipython3
-print("Gates:", compiled.num_gates())
-print("Single-qubit gates:", compiled.num_single_qubit_gates())
-print("Two-qubit gates:", compiled.num_two_qubit_gates())
-print("Gates by operation:", compiled.gate_counts())
-
-qco = compiled.to_qco(copy=True)
-assert qco.gate_counts() == compiled.gate_counts()
-print("QCO two-qubit gates:", qco.num_two_qubit_gates())
-```
-
-These are static gate counts of the entry-point IR. A gate in each structured
-control-flow region counts once, regardless of the runtime path or loop
-iteration count. Barriers do not count, and operations inside gate modifiers do
-not count again. The counts do not expand function calls or estimate the gates
-executed at runtime.
-
-Unlike Qiskit's `count_ops()`, these methods count only unitary gates, not
-measurements, resets, barriers, or control-flow instructions. `gate_counts()`
-uses Core's gate names: controlled gates count under `ctrl`, inverse and power
-modifiers under `inv` and `pow`, and unitary calls under the callee name.
-Explicit global-phase operations count under `gphase`; Qiskit's circuit-level
-`global_phase` is not an instruction. For straight-line circuits with matching
-gate representations, the totals match Qiskit's gate-only counts. These queries
-do not calculate circuit depth.
-
-Both QC and QCO provide structural resource information:
+Use `inspect()` on a {py:class}`~mqt.core.mlir.QCProgram` or
+{py:class}`~mqt.core.mlir.QCOProgram` to obtain resource information and gate
+counts without parsing textual IR or converting between dialects:
 
 ```{code-cell} ipython3
 info = compiled.inspect()
-assert info.num_qubits == 2
-assert not info.has_control_flow
+print("Qubits:", info.num_qubits)
+print("Control flow:", info.has_control_flow)
 print("Static device sites:", info.static_qubits)
+print("Gates:", info.num_gates)
+print("Single-qubit gates:", info.num_single_qubit_gates)
+print("Two-qubit gates:", info.num_two_qubit_gates)
+print("Gates by operation:", info.gate_counts)
+
+qco = compiled.to_qco(copy=True)
+print("QCO two-qubit gates:", qco.inspect().num_two_qubit_gates)
 ```
+
+For an individual count, use `num_gates()`, `num_single_qubit_gates()`,
+`num_two_qubit_gates()`, or `gate_counts()` directly on the program. These
+methods compute only the requested count.
+
+Gate counts describe the static entry-point IR. Each gate in a structured
+control-flow region counts once, regardless of runtime paths or loop iterations.
+Measurements, resets, barriers, and control-flow instructions do not count.
+Modifiers count once under `ctrl`, `inv`, or `pow`; their bodies are not counted
+again. Unitary calls count under the callee name without expanding the called
+function. Explicit global-phase operations count under `gphase`. These queries
+do not calculate circuit depth.
 
 `num_qubits` counts allocated qubits, or distinct static device site IDs. It is
 `None` for an unknown width, including runtime-sized allocations and quantum

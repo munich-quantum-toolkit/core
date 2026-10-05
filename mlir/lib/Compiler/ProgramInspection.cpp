@@ -33,6 +33,24 @@
 #include <string>
 
 namespace mlir {
+template <class Gate>
+static void forEachGate(ModuleOp moduleOp, function_ref<void(Gate)> visit) {
+  auto entryPoint = mqt::getEntryPoint(moduleOp);
+  if (!entryPoint) {
+    return;
+  }
+  entryPoint.walk<WalkOrder::PreOrder>([&](Gate op) {
+    if (!isa<qc::BarrierOp, qco::BarrierOp>(op)) {
+      visit(op);
+    }
+    return isa<qc::CtrlOp, qc::InvOp, qc::PowOp, qco::CtrlOp, qco::InvOp,
+               qco::PowOp>(op)
+               ? WalkResult::skip()
+               : WalkResult::advance();
+  });
+}
+
+template <class Gate>
 static QuantumProgramInfo inspectProgram(ModuleOp moduleOp) {
   QuantumProgramInfo info;
   auto entry = mqt::getEntryPoint(moduleOp);
@@ -89,26 +107,19 @@ static QuantumProgramInfo inspectProgram(ModuleOp moduleOp) {
   if (info.numQubits && !info.staticQubits.empty()) {
     info.numQubits = info.staticQubits.size();
   }
+  forEachGate<Gate>(moduleOp, [&](Gate op) {
+    ++info.numGates;
+    info.numSingleQubitGates += op.isSingleQubit();
+    info.numTwoQubitGates += op.isTwoQubit();
+    ++info.gateCounts[op.getBaseSymbol().str()];
+  });
   return info;
 }
-QuantumProgramInfo QCProgram::inspect() const { return inspectProgram(mod()); }
-QuantumProgramInfo QCOProgram::inspect() const { return inspectProgram(mod()); }
-
-template <class Gate>
-static void forEachGate(ModuleOp moduleOp, function_ref<void(Gate)> visit) {
-  auto entryPoint = mqt::getEntryPoint(moduleOp);
-  if (!entryPoint) {
-    return;
-  }
-  entryPoint.walk<WalkOrder::PreOrder>([&](Gate op) {
-    if (!isa<qc::BarrierOp, qco::BarrierOp>(op)) {
-      visit(op);
-    }
-    return isa<qc::CtrlOp, qc::InvOp, qc::PowOp, qco::CtrlOp, qco::InvOp,
-               qco::PowOp>(op)
-               ? WalkResult::skip()
-               : WalkResult::advance();
-  });
+QuantumProgramInfo QCProgram::inspect() const {
+  return inspectProgram<qc::UnitaryOpInterface>(mod());
+}
+QuantumProgramInfo QCOProgram::inspect() const {
+  return inspectProgram<qco::UnitaryOpInterface>(mod());
 }
 
 template <class Gate>

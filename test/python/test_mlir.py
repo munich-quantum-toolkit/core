@@ -1891,6 +1891,10 @@ def test_program_inspection_matches_qiskit(frontend: str) -> None:
         assert representation.num_single_qubit_gates() == sum(len(gate.qubits) == 1 for gate in gates)
         assert representation.num_two_qubit_gates() == sum(len(gate.qubits) == 2 for gate in gates)
         info = representation.inspect()
+        assert info.num_gates == len(gates) + phases
+        assert info.num_single_qubit_gates == sum(len(gate.qubits) == 1 for gate in gates)
+        assert info.num_two_qubit_gates == sum(len(gate.qubits) == 2 for gate in gates)
+        assert info.gate_counts == representation.gate_counts()
         assert info.num_qubits == circuit.num_qubits  # Includes the idle qubit.
         assert not info.has_control_flow
         assert info.static_qubits == []
@@ -1903,6 +1907,10 @@ def test_quantum_program_inspection(*, qco: bool) -> None:
     program = qc.to_qco() if qco else qc
     info = program.inspect()
     assert info.num_qubits == 2
+    assert info.num_gates == 2
+    assert info.num_single_qubit_gates == 1
+    assert info.num_two_qubit_gates == 1
+    assert info.gate_counts == {"ctrl": 1, "h": 1}
     assert info.static_qubits == []
     assert not info.has_control_flow
     static = QCProgram.from_openqasm_str('OPENQASM 3.0; include "stdgates.inc"; x $5;')
@@ -1910,6 +1918,8 @@ def test_quantum_program_inspection(*, qco: bool) -> None:
     assert static.inspect().num_qubits == 1
     unknown = QCProgram.from_mlir_str("module {}")
     assert unknown.inspect().num_qubits is None
+    assert unknown.inspect().num_gates == 0
+    assert unknown.inspect().gate_counts == {}
     assert unknown.gate_counts() == {}
     consumed = QCProgram.from_openqasm_str(QASM_STRING)
     consumed.to_qco()

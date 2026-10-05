@@ -671,7 +671,7 @@ class CompilationOptions:
     def mapping(self, arg: MappingOptions, /) -> None: ...
 
 class QuantumProgramInfo:
-    """Structural quantum resources and control flow, without executing the IR."""
+    """Quantum resources, control flow, and static gate counts."""
 
     @property
     def num_qubits(self) -> int | None:
@@ -684,6 +684,22 @@ class QuantumProgramInfo:
     @property
     def has_control_flow(self) -> bool:
         """Whether the module contains branching or region-based control flow."""
+
+    @property
+    def num_gates(self) -> int:
+        """Static entry-point gate count. See QCProgram.num_gates."""
+
+    @property
+    def num_single_qubit_gates(self) -> int:
+        """Static single-qubit gate count in the entry point."""
+
+    @property
+    def num_two_qubit_gates(self) -> int:
+        """Static two-qubit gate count in the entry point."""
+
+    @property
+    def gate_counts(self) -> dict[str, int]:
+        """Entry-point gates grouped by base symbol, without expanding calls. See QCProgram.gate_counts."""
 
 class QCProgram(Program):
     """A compiler program in the QC dialect.
@@ -755,7 +771,7 @@ class QCProgram(Program):
         """
 
     def inspect(self) -> QuantumProgramInfo:
-        """Return declared quantum resources and structural control flow throughout the module."""
+        """Return module resources and control flow, and entry-point gate counts."""
 
     def num_gates(self) -> int:
         """Return the static gate count of the entry-point IR.
@@ -888,7 +904,7 @@ class QCOProgram(Program):
         """
 
     def inspect(self) -> QuantumProgramInfo:
-        """Return declared quantum resources and structural control flow throughout the module."""
+        """Return module resources and control flow, and entry-point gate counts."""
 
     def num_gates(self) -> int:
         """Return the static gate count of the entry-point IR.

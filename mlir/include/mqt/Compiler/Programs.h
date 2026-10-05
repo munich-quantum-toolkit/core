@@ -38,7 +38,7 @@ class OpenQASMProgram;
 class QIRProgram;
 class TargetEnvironment;
 
-/// Structural quantum resources and control flow, without executing the IR.
+/// Quantum resources, control flow, and static gate counts.
 struct QuantumProgramInfo {
   /// Total allocated qubits, or the number of distinct static site IDs.
   /// Unknown for runtime-sized allocations, quantum inputs, or no entry point.
@@ -48,6 +48,12 @@ struct QuantumProgramInfo {
   std::vector<uint64_t> staticQubits;
   /// Whether the module contains branching or region-based control flow.
   bool hasControlFlow = false;
+  /// Entry-point gate counts with the same semantics as QCProgram::numGates.
+  size_t numGates = 0;
+  size_t numSingleQubitGates = 0;
+  size_t numTwoQubitGates = 0;
+  /// Entry-point gates grouped by base symbol, without expanding calls.
+  std::map<std::string, size_t> gateCounts;
 };
 
 /// The QIR profile represented by a QIR program.
@@ -180,7 +186,7 @@ public:
   /// Create an independent QC program copy.
   [[nodiscard]] QCProgram copy() const;
 
-  /// Inspect declared quantum resources and control flow throughout the module.
+  /// Inspect module resources and control flow, and entry-point gate counts.
   [[nodiscard]] QuantumProgramInfo inspect() const;
 
   /// Return named f64 entry-point inputs in function argument order.
@@ -265,7 +271,7 @@ public:
   /// Create an independent QCO program copy.
   [[nodiscard]] QCOProgram copy() const;
 
-  /// Inspect declared quantum resources and control flow throughout the module.
+  /// Inspect module resources and control flow, and entry-point gate counts.
   [[nodiscard]] QuantumProgramInfo inspect() const;
 
   /// Return named f64 entry-point inputs in function argument order.

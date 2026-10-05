@@ -273,8 +273,8 @@ static void registerInspection(nb::class_<T, mlir::Program>& binding) {
             requireValid(program);
             return program.inspect();
           },
-          "Return declared quantum resources and structural control flow "
-          "throughout the module.")
+          "Return module resources and control flow, and entry-point gate "
+          "counts.")
       .def(
           "num_gates",
           [](const T& program) {
@@ -1463,8 +1463,7 @@ Programs own their MLIR module. Conversions can consume a program; use
 
   nb::class_<mlir::QuantumProgramInfo>(
       m, "QuantumProgramInfo",
-      "Structural quantum resources and control flow, without executing the "
-      "IR.")
+      "Quantum resources, control flow, and static gate counts.")
       .def_ro("num_qubits", &mlir::QuantumProgramInfo::numQubits,
               "Allocated qubit count, or number of distinct static site IDs. "
               "None for unknown width. Not peak live width or original layout "
@@ -1473,7 +1472,18 @@ Programs own their MLIR module. Conversions can consume a program; use
               "Sorted distinct physical site IDs declared in the module.")
       .def_ro("has_control_flow", &mlir::QuantumProgramInfo::hasControlFlow,
               "Whether the module contains branching or region-based control "
-              "flow.");
+              "flow.")
+      .def_ro("num_gates", &mlir::QuantumProgramInfo::numGates,
+              "Static entry-point gate count. See QCProgram.num_gates.")
+      .def_ro("num_single_qubit_gates",
+              &mlir::QuantumProgramInfo::numSingleQubitGates,
+              "Static single-qubit gate count in the entry point.")
+      .def_ro("num_two_qubit_gates",
+              &mlir::QuantumProgramInfo::numTwoQubitGates,
+              "Static two-qubit gate count in the entry point.")
+      .def_ro("gate_counts", &mlir::QuantumProgramInfo::gateCounts,
+              "Entry-point gates grouped by base symbol, without expanding "
+              "calls. See QCProgram.gate_counts.");
 
   auto qcProgram = nb::class_<mlir::QCProgram, mlir::Program>(
       m, "QCProgram", R"pb(A compiler program in the QC dialect.
