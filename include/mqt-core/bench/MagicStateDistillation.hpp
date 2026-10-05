@@ -20,8 +20,7 @@ namespace mqt::bench {
 
 /// Parameters for concatenated 15-to-1 magic-state distillation.
 struct MagicStateDistillationOptions {
-  /// Concatenated levels in [1, 4], using exactly \f$5\,\mathrm{levels}\f$
-  /// qubits.
+  /// Number of concatenated levels (1 to 4), using five qubits per level.
   size_t levels = 1;
 };
 

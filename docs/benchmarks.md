@@ -313,8 +313,8 @@ retains $T^\dagger|+\rangle$ in the ideal case.
 Set `levels` to 1–4 (default 1). The first level uses ideal rotations. Later
 levels implement each rotation by consuming an actual retained state from the
 preceding level with Clifford gates and measurement feedback. Work qubits are
-reset and reused between blocks. The circuit allocates exactly
-$5\,\mathrm{levels}$ qubits: 5, 10, 15, or 20.
+reset and reused between blocks. The circuit uses five qubits per level: 5, 10,
+15, or 20 qubits in total.
 
 The two-bit `result` combines a sticky rejection flag in bit 1 with a root-state
 check in bit 0. The root check applies $T$ then $H$ before measurement, so the

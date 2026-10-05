@@ -19,7 +19,7 @@ class Options:
     def __init__(self, *, levels: int = 1) -> None: ...
     @property
     def levels(self) -> int:
-        """Concatenated levels in [1, 4], using :math:`5\\,\\mathrm{levels}` qubits."""
+        """Number of concatenated levels (1 to 4), using five qubits per level."""
 
 class MagicStateDistillation:
     """A validated concatenated magic-state distillation benchmark.
@@ -27,8 +27,7 @@ class MagicStateDistillation:
     Each block uses Litinski's five-qubit 15-to-1 circuit. The first level uses
     ideal :math:`\\pi/8` Pauli rotations; later levels implement these rotations
     with the preceding level's retained :math:`T^\\dagger|+\\rangle` states.
-    The circuit resets and reuses work qubits, using exactly
-    :math:`5\\,\\mathrm{levels}` qubits.
+    The circuit resets and reuses work qubits, using five qubits per level.
 
     Bit 1 flags any rejected block; bit 0 checks the retained root state against
     :math:`T^\\dagger|+\\rangle`. Ideal output is ``00``. There is no input noise,
