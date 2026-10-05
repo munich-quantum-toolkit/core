@@ -73,8 +73,8 @@ contract.
 ## Inspect a quantum program
 
 Use `inspect()` on a {py:class}`~mqt.core.mlir.QCProgram` or
-{py:class}`~mqt.core.mlir.QCOProgram` to obtain resource information and gate
-counts without parsing textual IR or converting between dialects:
+{py:class}`~mqt.core.mlir.QCOProgram` to obtain a snapshot of resource
+information and static gate counts:
 
 ```{code-cell} ipython3
 info = compiled.inspect()
@@ -96,18 +96,18 @@ methods compute only the requested count.
 
 Gate counts describe the static entry-point IR. Each gate in a structured
 control-flow region counts once, regardless of runtime paths or loop iterations.
-Measurements, resets, barriers, and control-flow instructions do not count.
-Modifiers count once under `ctrl`, `inv`, or `pow`; their bodies are not counted
-again. Unitary calls count under the callee name without expanding the called
-function. Explicit global-phase operations count under `gphase`. These queries
-do not calculate circuit depth.
+Measurements, resets, barriers, and control-flow instructions do not count. Each
+modifier or unitary call counts as one gate. Modifiers use the names `ctrl`,
+`inv`, and `pow`; calls use the callee name. Explicit global-phase operations
+count under `gphase`.
 
 `num_qubits` counts allocated qubits, or distinct static device site IDs. It is
-`None` for an unknown width, including runtime-sized allocations and quantum
-entry-point inputs. Site IDs need not be contiguous: a program using only site 5
-has one qubit and `static_qubits == [5]`. Inspection includes declarations and
-control flow in helper functions, but excludes nested modules. It does not
-execute loops, compute peak live width, or recover width from layout metadata.
+`None` when there is no entry point, the width is unknown, or a size calculation
+overflows. Runtime-sized allocations and quantum entry-point inputs have unknown
+width. Site IDs need not be contiguous: a program using only site 5 has one
+qubit and `static_qubits == [5]`. Resource and control-flow inspection includes
+helper functions and excludes nested modules. These resource counts describe
+declared capacity rather than peak live width or the original layout width.
 
 ## Bind program parameters
 

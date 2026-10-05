@@ -41,7 +41,8 @@ class TargetEnvironment;
 /// Quantum resources, control flow, and static gate counts.
 struct QuantumProgramInfo {
   /// Total allocated qubits, or the number of distinct static site IDs.
-  /// Unknown for runtime-sized allocations, quantum inputs, or no entry point.
+  /// Unknown for runtime-sized allocations, quantum inputs, size overflow,
+  /// or no entry point.
   /// This is not peak live width or the original width from layout metadata.
   std::optional<uint64_t> numQubits;
   /// Sorted, distinct physical site IDs declared in the module.
@@ -186,7 +187,8 @@ public:
   /// Create an independent QC program copy.
   [[nodiscard]] QCProgram copy() const;
 
-  /// Inspect module resources and control flow, and entry-point gate counts.
+  /// Return a snapshot of module resources, control flow, and entry-point
+  /// counts.
   [[nodiscard]] QuantumProgramInfo inspect() const;
 
   /// Return named f64 entry-point inputs in function argument order.
@@ -215,28 +217,16 @@ public:
 
   /// Return the static gate count of the entry-point IR.
   ///
-  /// Any entry-point operation that implements the `UnitaryOpInterface` is
-  /// counted. The count includes operations in every structured control-flow
-  /// region once, regardless of how often the region executes. Operations
-  /// within modifiers are not counted recursively, and barriers are skipped.
+  /// Each unitary operation counts once. Modifier and call bodies are not
+  /// expanded. Gates in every structured control-flow region count once,
+  /// regardless of how often the region executes. Barriers, measurements, and
+  /// resets are excluded.
   [[nodiscard]] size_t numGates() const;
 
-  /// Return the static single-qubit gate count of the entry-point IR.
-  ///
-  /// Any entry-point operation that implements the `UnitaryOpInterface` and
-  /// acts on one qubit is counted. The count includes operations in every
-  /// structured control-flow region once, regardless of how often the region
-  /// executes. Operations within modifiers are not counted recursively, and
-  /// barriers are skipped.
+  /// Count gates acting on exactly one qubit, using the rules of numGates().
   [[nodiscard]] size_t numSingleQubitGates() const;
 
-  /// Return the static two-qubit gate count of the entry-point IR.
-  ///
-  /// Any entry-point operation that implements the `UnitaryOpInterface` and
-  /// acts on two qubits is counted. The count includes operations in every
-  /// structured control-flow region once, regardless of how often the region
-  /// executes. Operations within modifiers are not counted recursively, and
-  /// barriers are skipped.
+  /// Count gates acting on exactly two qubits, using the rules of numGates().
   [[nodiscard]] size_t numTwoQubitGates() const;
 
   /// Count entry-point gates by base symbol, as in numGates().
@@ -271,7 +261,8 @@ public:
   /// Create an independent QCO program copy.
   [[nodiscard]] QCOProgram copy() const;
 
-  /// Inspect module resources and control flow, and entry-point gate counts.
+  /// Return a snapshot of module resources, control flow, and entry-point
+  /// counts.
   [[nodiscard]] QuantumProgramInfo inspect() const;
 
   /// Return named f64 entry-point inputs in function argument order.

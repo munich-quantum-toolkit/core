@@ -44,6 +44,11 @@ mqt-cc program.qasm
 mqt-cc --input-format=openqasm program.txt
 ```
 
+The generated entry function is named `main`, or `mqt.entry` when a source gate
+is named `main`. It is identified by `mqt.entry_point`, not by its name. The dot
+keeps the fallback name outside OpenQASM's identifier syntax. Export preserves
+legal custom gate names, including names beginning `_mqt_`.
+
 The default output checkpoint is `--emit=qc`, which emits QC MLIR after the
 default compiler pipeline. Use `--emit=qc-import` to inspect the imported QC
 before cleanup or QCO optimization. MLIR is the representation shared by the QC,

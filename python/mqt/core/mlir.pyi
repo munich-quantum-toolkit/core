@@ -771,34 +771,21 @@ class QCProgram(Program):
         """
 
     def inspect(self) -> QuantumProgramInfo:
-        """Return module resources and control flow, and entry-point gate counts."""
+        """Return a snapshot of module resources, control flow, and entry-point gate counts."""
 
     def num_gates(self) -> int:
         """Return the static gate count of the entry-point IR.
 
-        Any entry-point operation that implements the ``UnitaryOpInterface`` is counted. Operations
-        in every structured control-flow region are counted once, regardless of how
-        often the region executes. Operations within modifiers are not counted
-        recursively, and barriers are skipped.
+        Each unitary operation counts once. Modifier and call bodies are not expanded.
+        Gates in every structured control-flow region count once, regardless of how
+        often the region executes. Barriers, measurements, and resets are excluded.
         """
 
     def num_single_qubit_gates(self) -> int:
-        """Return the static single-qubit gate count of the entry-point IR.
-
-        Any entry-point operation that implements the ``UnitaryOpInterface`` and acts on one qubit
-        is counted. Operations in every structured control-flow region are counted
-        once, regardless of how often the region executes. Operations within modifiers
-        are not counted recursively, and barriers are skipped.
-        """
+        """Count gates acting on exactly one qubit, using the counting rules of :meth:`num_gates`."""
 
     def num_two_qubit_gates(self) -> int:
-        """Return the static two-qubit gate count of the entry-point IR.
-
-        Any entry-point operation that implements the ``UnitaryOpInterface`` and acts on two qubits
-        is counted. Operations in every structured control-flow region are counted
-        once, regardless of how often the region executes. Operations within modifiers
-        are not counted recursively, and barriers are skipped.
-        """
+        """Count gates acting on exactly two qubits, using the counting rules of :meth:`num_gates`."""
 
     def gate_counts(self) -> dict[str, int]:
         """Count entry-point gates by base symbol.
@@ -904,34 +891,21 @@ class QCOProgram(Program):
         """
 
     def inspect(self) -> QuantumProgramInfo:
-        """Return module resources and control flow, and entry-point gate counts."""
+        """Return a snapshot of module resources, control flow, and entry-point gate counts."""
 
     def num_gates(self) -> int:
         """Return the static gate count of the entry-point IR.
 
-        Any entry-point operation that implements the ``UnitaryOpInterface`` is counted. Operations
-        in every structured control-flow region are counted once, regardless of how
-        often the region executes. Operations within modifiers are not counted
-        recursively, and barriers are skipped.
+        Each unitary operation counts once. Modifier and call bodies are not expanded.
+        Gates in every structured control-flow region count once, regardless of how
+        often the region executes. Barriers, measurements, and resets are excluded.
         """
 
     def num_single_qubit_gates(self) -> int:
-        """Return the static single-qubit gate count of the entry-point IR.
-
-        Any entry-point operation that implements the ``UnitaryOpInterface`` and acts on one qubit
-        is counted. Operations in every structured control-flow region are counted
-        once, regardless of how often the region executes. Operations within modifiers
-        are not counted recursively, and barriers are skipped.
-        """
+        """Count gates acting on exactly one qubit, using the counting rules of :meth:`num_gates`."""
 
     def num_two_qubit_gates(self) -> int:
-        """Return the static two-qubit gate count of the entry-point IR.
-
-        Any entry-point operation that implements the ``UnitaryOpInterface`` and acts on two qubits
-        is counted. Operations in every structured control-flow region are counted
-        once, regardless of how often the region executes. Operations within modifiers
-        are not counted recursively, and barriers are skipped.
-        """
+        """Count gates acting on exactly two qubits, using the counting rules of :meth:`num_gates`."""
 
     def gate_counts(self) -> dict[str, int]:
         """Count entry-point gates by base symbol.

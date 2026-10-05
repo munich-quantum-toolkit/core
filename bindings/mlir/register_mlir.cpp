@@ -273,8 +273,8 @@ static void registerInspection(nb::class_<T, mlir::Program>& binding) {
             requireValid(program);
             return program.inspect();
           },
-          "Return module resources and control flow, and entry-point gate "
-          "counts.")
+          "Return a snapshot of module resources, control flow, and "
+          "entry-point gate counts.")
       .def(
           "num_gates",
           [](const T& program) {
@@ -283,34 +283,23 @@ static void registerInspection(nb::class_<T, mlir::Program>& binding) {
           },
           R"pb(Return the static gate count of the entry-point IR.
 
-Any entry-point operation that implements the ``UnitaryOpInterface`` is counted. Operations
-in every structured control-flow region are counted once, regardless of how
-often the region executes. Operations within modifiers are not counted
-recursively, and barriers are skipped.)pb")
+Each unitary operation counts once. Modifier and call bodies are not expanded.
+Gates in every structured control-flow region count once, regardless of how
+often the region executes. Barriers, measurements, and resets are excluded.)pb")
       .def(
           "num_single_qubit_gates",
           [](const T& program) {
             requireValid(program);
             return program.numSingleQubitGates();
           },
-          R"pb(Return the static single-qubit gate count of the entry-point IR.
-
-Any entry-point operation that implements the ``UnitaryOpInterface`` and acts on one qubit
-is counted. Operations in every structured control-flow region are counted
-once, regardless of how often the region executes. Operations within modifiers
-are not counted recursively, and barriers are skipped.)pb")
+          R"pb(Count gates acting on exactly one qubit, using the counting rules of :meth:`num_gates`.)pb")
       .def(
           "num_two_qubit_gates",
           [](const T& program) {
             requireValid(program);
             return program.numTwoQubitGates();
           },
-          R"pb(Return the static two-qubit gate count of the entry-point IR.
-
-Any entry-point operation that implements the ``UnitaryOpInterface`` and acts on two qubits
-is counted. Operations in every structured control-flow region are counted
-once, regardless of how often the region executes. Operations within modifiers
-are not counted recursively, and barriers are skipped.)pb")
+          R"pb(Count gates acting on exactly two qubits, using the counting rules of :meth:`num_gates`.)pb")
       .def(
           "gate_counts",
           [](const T& program) {

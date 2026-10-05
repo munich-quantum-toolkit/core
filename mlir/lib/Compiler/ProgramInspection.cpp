@@ -30,6 +30,7 @@
 #include <cstdint>
 #include <limits>
 #include <map>
+#include <optional>
 #include <string>
 
 namespace mlir {
@@ -43,10 +44,8 @@ static void forEachGate(ModuleOp moduleOp, function_ref<void(Gate)> visit) {
     if (!isa<qc::BarrierOp, qco::BarrierOp>(op)) {
       visit(op);
     }
-    return isa<qc::CtrlOp, qc::InvOp, qc::PowOp, qco::CtrlOp, qco::InvOp,
-               qco::PowOp>(op)
-               ? WalkResult::skip()
-               : WalkResult::advance();
+    /// Count each unitary operation atomically, including modifiers.
+    return WalkResult::skip();
   });
 }
 
@@ -92,8 +91,9 @@ static QuantumProgramInfo inspectProgram(ModuleOp moduleOp) {
         type = alloc.getType();
       }
       if (type) {
-        if (type.hasStaticShape()) {
-          addAllocation(static_cast<uint64_t>(type.getNumElements()));
+        if (const auto size = type.hasStaticShape() ? type.tryGetNumElements()
+                                                    : std::nullopt) {
+          addAllocation(static_cast<uint64_t>(*size));
         } else {
           info.numQubits.reset();
         }
@@ -109,8 +109,9 @@ static QuantumProgramInfo inspectProgram(ModuleOp moduleOp) {
   }
   forEachGate<Gate>(moduleOp, [&](Gate op) {
     ++info.numGates;
-    info.numSingleQubitGates += op.isSingleQubit();
-    info.numTwoQubitGates += op.isTwoQubit();
+    const auto numQubits = op.getNumQubits();
+    info.numSingleQubitGates += numQubits == 1;
+    info.numTwoQubitGates += numQubits == 2;
     ++info.gateCounts[op.getBaseSymbol().str()];
   });
   return info;
