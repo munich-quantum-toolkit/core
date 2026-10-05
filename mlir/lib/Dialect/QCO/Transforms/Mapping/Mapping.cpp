@@ -583,10 +583,10 @@ private:
   /// Wire slots are physical sites; layout alone tracks logical qubits.
   struct RoutingState {
     /// Create state from layout, enforcing wire[i] = i-th site.
-    static RoutingState fromLayout(const Wires& roots, Region& region,
+    static RoutingState fromLayout(const Wires& roots,
                                    const Layout<QubitIndex>& layout,
                                    const Environment& env) {
-      RoutingState state(Wires(layout.nHardwareQubits()), region, layout, env);
+      RoutingState state(Wires(layout.nHardwareQubits()), layout, env);
       for (auto [program, wire] : enumerate(roots)) {
         state.wires[layout.getHardwareIndex(program)] = wire;
       }
@@ -594,9 +594,8 @@ private:
     }
 
     /// Construct a routing state from a vector of wires and a layout.
-    RoutingState(Wires wires, Region& region, Layout<QubitIndex> layout,
-                 const Environment& env)
-        : wires(std::move(wires)), layout(std::move(layout)), region(region) {
+    RoutingState(Wires wires, Layout<QubitIndex> layout, const Environment& env)
+        : wires(std::move(wires)), layout(std::move(layout)) {
       if (env.nativeCosts) {
         costs.emplace(env.target, env.seed, env.nativeCosts.get());
       }
@@ -605,7 +604,6 @@ private:
     Wires wires;
     Layout<QubitIndex> layout;
     std::optional<NativeCostTracker> costs;
-    Region& region;
   };
 
   /// Describes a SWAP and its associated costs.
@@ -873,8 +871,10 @@ private:
         boundary_ = findNextBoundary(&block.back());
       }
     }
+
     /// Advance to the next routing boundary.
     void setNextBoundary() { boundary_ = findNextBoundary(next(boundary_)); }
+
     /// Return the current boundary operation, or nullptr if exhausted.
     [[nodiscard]] Operation* operation() const { return boundary_; }
 
@@ -891,6 +891,7 @@ private:
       }
       return nullptr;
     }
+
     /// Return the next (or previous) operation in block-order.
     static Operation* next(Operation* op) {
       return Direction == WireDirection::Forward ? op->getNextNode()
@@ -975,9 +976,9 @@ protected:
       return;
     }
 
-    RoutingState state(std::move(*wires), func.getFunctionBody(), layout, env);
+    RoutingState state(std::move(*wires), layout, env);
     const auto stats = route<WireDirection::Forward, RoutingMode::Hot>(
-        state, arena, env, &rewriter);
+        func.getFunctionBody(), state, arena, env, &rewriter);
 
     assert((!expectedScore ||
             (state.costs ? state.costs->score() : std::nullopt)
@@ -1351,25 +1352,25 @@ private:
 
     assert(ntrials == trials.size());
 
+    Region& region = func.getFunctionBody();
     parallelForEach(&getContext(), trials, [&, this](Trial& t) {
       Arena arena(env.target.numSites(), searchMemoryLimit);
 
       {
-        auto state = RoutingState::fromLayout(wires, func.getFunctionBody(),
-                                              t.layout, env);
+        auto state = RoutingState::fromLayout(wires, t.layout, env);
         for (size_t i = 0; i < niterations; ++i) {
-          route<WireDirection::Forward>(state, arena, env);
-          route<WireDirection::Backward>(state, arena, env);
+          route<WireDirection::Forward>(region, state, arena, env);
+          route<WireDirection::Backward>(region, state, arena, env);
         }
         t.layout = std::move(state.layout);
       }
 
       /// Refinement may permute wire cursors. Score from the original roots,
       /// preserving only the initial layout selected for final placement.
-      auto state = RoutingState::fromLayout(wires, func.getFunctionBody(),
-                                            t.layout, env);
+      auto state = RoutingState::fromLayout(wires, t.layout, env);
 
-      const auto score = route<WireDirection::Forward>(state, arena, env);
+      const auto score =
+          route<WireDirection::Forward>(region, state, arena, env);
       const auto quality = state.costs ? state.costs->score() : std::nullopt;
       t.score = quality.value_or(
           std::pair{std::numeric_limits<size_t>::max(), score.nswaps});
@@ -2038,7 +2039,7 @@ private:
     children.reserve(op->getNumRegions());
 
     for (auto [index, region] : enumerate(op->getRegions())) {
-      auto& child = children.emplace_back(Wires(env.target.numSites()), region,
+      auto& child = children.emplace_back(Wires(env.target.numSites()),
                                           parent.layout, env);
 
       auto roots = getQubitValues(Direction == WireDirection::Forward
@@ -2060,7 +2061,8 @@ private:
         }
       }
 
-      totalStats.merge(route<Direction, Mode>(child, arena, env, rewriter));
+      totalStats.merge(
+          route<Direction, Mode>(region, child, arena, env, rewriter));
     }
 
     Layout<QubitIndex> exit =
@@ -2132,21 +2134,21 @@ private:
   /// that release the next interaction. Finish terminal measurements last.
   template <WireDirection Direction, RoutingMode Mode = RoutingMode::Cold>
     requires(Mode != RoutingMode::Hot || Direction == WireDirection::Forward)
-  Statistics route(RoutingState& state, Arena& arena, const Environment& env,
-                   IRRewriter* rewriter = nullptr) {
+  Statistics route(Region& region, RoutingState& state, Arena& arena,
+                   const Environment& env, IRRewriter* rewriter = nullptr) {
     if (state.costs) {
       state.costs->reset(Direction);
     }
 
     Statistics stats;
-    Boundary<Direction> boundary(state.region.front());
+    Boundary<Direction> boundary(region.front());
 
     while (true) {
       auto composite = advance<Direction>(state, boundary, env);
       if (composite) {
         assert(composite->op == boundary.operation());
         boundary.setNextBoundary();
-        
+
         if constexpr (Mode == RoutingMode::Hot) {
           place(*composite, state, *rewriter);
         }
