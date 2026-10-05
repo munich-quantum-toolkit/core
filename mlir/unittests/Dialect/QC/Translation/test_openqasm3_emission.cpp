@@ -962,6 +962,54 @@ inv @ pair(theta) q;
   EXPECT_TRUE(roundTripped->lookupSymbol<func::FuncOp>("pair"));
 }
 
+TEST(OpenQASM3EmissionTest, PreservesGateNamesAcrossInternalCollisions) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+gate main q { x q; }
+gate _mqt_entry q { main q; }
+gate _mqt_entry0 q { _mqt_entry q; }
+gate _mqt_u q { _mqt_entry0 q; }
+gate _mqt_u0 q { _mqt_u q; }
+qubit q;
+_mqt_u0 q;
+U(0.4, -0.2, 0.7) q;
+)qasm";
+  MLIRContext context;
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  ASSERT_TRUE(succeeded(emitted));
+  auto roundTrip = qc::translateOpenQASMToQC(*emitted, &context);
+  ASSERT_TRUE(roundTrip);
+  ASSERT_TRUE(succeeded(verify(*roundTrip)));
+  for (const auto name :
+       {"main", "_mqt_entry", "_mqt_entry0", "_mqt_u", "_mqt_u0"}) {
+    auto gate = roundTrip->lookupSymbol<func::FuncOp>(name);
+    ASSERT_TRUE(gate) << name << "\n" << *emitted;
+    EXPECT_NE(gate, mlir::mqt::getEntryPoint(*roundTrip));
+  }
+  PassManager manager(&context);
+  manager.addPass(createQCToQCO());
+  ASSERT_TRUE(succeeded(manager.run(*moduleOp)));
+  ASSERT_TRUE(succeeded(manager.run(*roundTrip)));
+  dd::Package package(1);
+  auto before =
+      qco::buildFunctionality(mlir::mqt::getEntryPoint(*moduleOp), package);
+  auto after =
+      qco::buildFunctionality(mlir::mqt::getEntryPoint(*roundTrip), package);
+  ASSERT_TRUE(succeeded(before));
+  ASSERT_TRUE(succeeded(after));
+  const auto expected = before->getMatrix(1);
+  const auto actual = after->getMatrix(1);
+  for (size_t row = 0; row < 2; ++row) {
+    for (size_t column = 0; column < 2; ++column) {
+      EXPECT_NEAR(std::abs(actual[row][column] - expected[row][column]), 0.,
+                  1e-12);
+    }
+  }
+}
+
 TEST(OpenQASM3EmissionTest, OrdersNestedGateFunctionsBeforeTheirCallers) {
   constexpr llvm::StringLiteral source = R"mlir(module {
     func.func private @outer(%theta: f64, %qubit: !qc.qubit)

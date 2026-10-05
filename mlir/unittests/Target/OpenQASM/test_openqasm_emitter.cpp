@@ -847,23 +847,29 @@ TEST(OpenQASMTargetTest, PreservesCompactCustomGateGraph) {
   EXPECT_EQ(xGates, 1);
 }
 
-TEST(OpenQASMTargetTest, PreservesCustomGateNamedMain) {
+TEST(OpenQASMTargetTest, KeepsEntryPointDistinctFromSourceGateNames) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
 include "stdgates.inc";
 gate main q { x q; }
+gate _mqt_entry q { main q; }
+gate _mqt_entry0 q { _mqt_entry q; }
 qubit q;
-main q;
+_mqt_entry0 q;
 )qasm";
 
   MLIRContext context;
   auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  auto gate = moduleOp->lookupSymbol<func::FuncOp>("main");
-  ASSERT_TRUE(gate);
-  EXPECT_TRUE(mqt::isUnitaryFunction(gate));
-  EXPECT_NE(mqt::getEntryPoint(*moduleOp), gate);
+  auto entry = mqt::getEntryPoint(*moduleOp);
+  ASSERT_TRUE(entry);
+  for (const auto name : {"main", "_mqt_entry", "_mqt_entry0"}) {
+    auto gate = moduleOp->lookupSymbol<func::FuncOp>(name);
+    ASSERT_TRUE(gate);
+    EXPECT_TRUE(mqt::isUnitaryFunction(gate));
+    EXPECT_NE(entry, gate);
+  }
 }
 
 TEST(OpenQASMTargetTest, DoesNotMultiplyCustomGatesByRegisterWidth) {
