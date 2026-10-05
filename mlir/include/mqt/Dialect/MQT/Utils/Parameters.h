@@ -34,6 +34,10 @@ using FloatParameter = std::variant<double, Value>;
 [[nodiscard]] std::optional<double>
 parameterToConstantDouble(const FloatParameter& parameter);
 
+/// Fold a known constant parameter to a host double, preserving unknown SSA
+/// values. This does not emit IR or apply angle policies.
+[[nodiscard]] FloatParameter foldParameter(const FloatParameter& parameter);
+
 /// Fold scalar arithmetic without angle wrapping or approximate identities.
 /// Known operands stay in host arithmetic; unknown operands use createOrFold.
 /// SSA operands must dominate the builder insertion point.
@@ -49,7 +53,8 @@ parameterToConstantDouble(const FloatParameter& parameter);
 
 /// Build f64 SSA arithmetic with MLIR's local operation folders.
 ///
-/// Operands must dominate the insertion point and use the same builder.
+/// The borrowed builder must outlive the expressions. Operations use its
+/// current insertion point; operands must dominate it and use the same builder.
 /// Load the arith and math dialects before emitting their operations. This
 /// wrapper neither traverses expression DAGs nor applies angle policies.
 class FloatExpression {
@@ -58,9 +63,13 @@ class FloatExpression {
   Location loc_;
 
   [[nodiscard]] FloatExpression withValue(Value value) const;
+  void assertSameBuilder(FloatExpression rhs) const;
 
 public:
   FloatExpression(OpBuilder& builder, Location loc, Value value);
+  /// Materialize a host scalar or preserve an existing f64 SSA value.
+  FloatExpression(OpBuilder& builder, Location loc,
+                  const FloatParameter& parameter);
 
   [[nodiscard]] static FloatExpression constant(OpBuilder& builder,
                                                 Location loc, double value);
@@ -80,6 +89,7 @@ public:
   [[nodiscard]] FloatExpression abs() const;
   [[nodiscard]] FloatExpression floor() const;
   [[nodiscard]] FloatExpression sqrt() const;
+  [[nodiscard]] FloatExpression pow(FloatExpression exponent) const;
   [[nodiscard]] FloatExpression atan2(FloatExpression x) const;
 
   /// Ordered floating-point comparisons, returning i1 SSA values.

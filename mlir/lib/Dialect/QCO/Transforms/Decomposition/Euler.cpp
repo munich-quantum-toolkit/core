@@ -371,15 +371,22 @@ static bool isConstantParameter(const RotationParameter& value,
 static RotationParameter addRotationParameters(OpBuilder& builder, Location loc,
                                                const RotationParameter& lhs,
                                                const RotationParameter& rhs) {
-  const auto a = mqt::parameterToConstantDouble(lhs);
-  const auto b = mqt::parameterToConstantDouble(rhs);
-  if (a == 0. && !b) {
+  const auto foldedLhs = mqt::foldParameter(lhs);
+  const auto foldedRhs = mqt::foldParameter(rhs);
+  const auto* a = std::get_if<double>(&foldedLhs);
+  const auto* b = std::get_if<double>(&foldedRhs);
+  if (a != nullptr && b != nullptr) {
+    return mqt::addParameters(builder, loc, *a, *b);
+  }
+  if (a != nullptr && *a == 0. && b == nullptr) {
     return rhs;
   }
-  if (b == 0. && !a) {
+  if (b != nullptr && *b == 0. && a == nullptr) {
     return lhs;
   }
-  return mqt::addParameters(builder, loc, lhs, rhs);
+  return (mqt::FloatExpression(builder, loc, foldedLhs) +
+          mqt::FloatExpression(builder, loc, foldedRhs))
+      .getValue();
 }
 
 /// One emission recipe serves extracted numeric angles and known SSA angles.

@@ -86,6 +86,33 @@ TEST_F(ParametersTest, KnownParametersStayInHostArithmetic) {
   EXPECT_EQ(function_.getBody().front().getOperations().size(), expressionSize);
 }
 
+TEST_F(ParametersTest, MixedArithmeticReusesKnownConstantExpressions) {
+  auto loc = builder_.getUnknownLoc();
+  auto input = function_.getArgument(0);
+  auto a = mqt::constantFromScalar(builder_, loc, 1.25);
+  auto b = mqt::constantFromScalar(builder_, loc, -0.5);
+  auto constantExpression =
+      arith::AddFOp::create(builder_, loc, a, b).getResult();
+  EXPECT_EQ(std::get<double>(mqt::foldParameter(constantExpression)), 0.75);
+  EXPECT_EQ(std::get<Value>(mqt::foldParameter(input)), input);
+  EXPECT_EQ(mqt::FloatExpression(builder_, loc, mqt::FloatParameter{input})
+                .getValue(),
+            input);
+  for (bool constantFirst : {false, true}) {
+    auto result = std::get<Value>(
+        constantFirst
+            ? mqt::addParameters(builder_, loc, constantExpression, input)
+            : mqt::addParameters(builder_, loc, input, constantExpression));
+    auto addition = result.getDefiningOp<arith::AddFOp>();
+    ASSERT_TRUE(addition);
+    EXPECT_TRUE(addition.getLhs() == input || addition.getRhs() == input);
+    EXPECT_EQ(mqt::valueToDouble(addition.getLhs() == input
+                                     ? addition.getRhs()
+                                     : addition.getLhs()),
+              std::optional{0.75});
+  }
+}
+
 TEST_F(ParametersTest, RuntimeParametersRetainIdentityAndDominance) {
   auto loc = builder_.getUnknownLoc();
   auto lhs = function_.getArgument(0);
@@ -126,7 +153,7 @@ TEST_F(ParametersTest, SSAArithmeticUsesOperationFolders) {
     return mqt::FloatExpression::constant(builder_, loc, value);
   };
   const auto check = [](mqt::FloatExpression expression, double expected) {
-    const auto value = mqt::valueToConstantDouble(expression.getValue());
+    const auto value = mqt::valueToDouble(expression.getValue());
     ASSERT_TRUE(value);
     EXPECT_DOUBLE_EQ(*value, expected);
   };
@@ -136,6 +163,7 @@ TEST_F(ParametersTest, SSAArithmeticUsesOperationFolders) {
   check(a - b, 2.);
   check(a * b, 8.);
   check(a / b, 2.);
+  check(a.pow(b), 16.);
   check(-b, -2.);
   check(a.sqrt(), 2.);
   check((-b).abs(), 2.);

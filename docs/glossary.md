@@ -269,9 +269,10 @@ floating-point parameter
 
 floating-point expression
   **Preferred term:** floating-point expression. **Accepted alias:**
-  `FloatExpression` in C++. An f64 SSA value paired with the builder and
-  insertion location used to emit scalar arithmetic. MLIR operation folders
-  simplify this arithmetic; rotation utilities own angle and phase policies.
+  `FloatExpression` in C++. An f64 SSA value paired with a borrowed builder and
+  source location. It emits scalar arithmetic at the builder's current insertion
+  point. MLIR operation folders simplify this arithmetic; rotation utilities own
+  angle and phase policies.
 
 static gate count
   **Preferred term:** static gate count. **Accepted aliases:** none. The number

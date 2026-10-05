@@ -15,6 +15,7 @@
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/MQT/Utils/DenseUnitary.h"
+#include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/Translation/StandardGate.h"
@@ -75,12 +76,12 @@
 #include <string>
 #include <string_view>
 #include <utility>
-#include <variant>
 #include <vector>
 
 namespace mqt::bindings::qiskit {
 
-using ParameterValue = std::variant<double, mlir::Value>;
+using ParameterValue = mlir::mqt::FloatParameter;
+using mlir::mqt::FloatExpression;
 
 using LocalParameters = llvm::StringMap<mlir::Value>;
 using GlobalParameters = llvm::StringMap<mlir::Value>;
@@ -98,9 +99,6 @@ struct GateImportState {
 constexpr size_t MAX_DEFINITION_DEPTH = 64U;
 constexpr size_t MAX_CONTROL_FLOW_DEPTH = 64U;
 constexpr size_t MAX_EXPANDED_OPERATIONS = 10'000'000U;
-
-[[nodiscard]] static mlir::Value
-floatConstant(mlir::ImplicitLocOpBuilder& builder, double value);
 
 [[nodiscard]] static mlir::DictionaryAttr
 parameterGroupAttribute(mlir::Builder& builder, const ParameterGroup& group) {
@@ -194,14 +192,6 @@ static void validateParameter(const Parameter& parameter,
   validateParameterImpl(parameter, localParameters, freeParameters, 1U, nodes);
 }
 
-[[nodiscard]] static mlir::Value
-materializeParameterValue(mlir::qc::QCProgramBuilder& builder,
-                          const ParameterValue& parameter) {
-  return std::holds_alternative<double>(parameter)
-             ? floatConstant(builder, std::get<double>(parameter))
-             : std::get<mlir::Value>(parameter);
-}
-
 [[nodiscard]] static ParameterValue
 parameterValueImpl(mlir::qc::QCProgramBuilder& builder,
                    const Parameter& parameter,
@@ -236,53 +226,56 @@ parameterValueImpl(mlir::qc::QCProgramBuilder& builder,
       return parameterValueImpl(builder, *unary->operand, localParameters,
                                 globalParameters, depth + 1U, nodes);
     }
-    auto operand = materializeParameterValue(
-        builder, parameterValueImpl(builder, *unary->operand, localParameters,
-                                    globalParameters, depth + 1U, nodes));
+    const FloatExpression operand(
+        builder, builder.getLoc(),
+        parameterValueImpl(builder, *unary->operand, localParameters,
+                           globalParameters, depth + 1U, nodes));
     switch (unary->operation) {
     case UnaryParameterKind::Negate:
-      return mlir::arith::NegFOp::create(builder, operand).getResult();
+      return (-operand).getValue();
     case UnaryParameterKind::Sin:
-      return mlir::math::SinOp::create(builder, operand).getResult();
+      return operand.sin().getValue();
     case UnaryParameterKind::Cos:
-      return mlir::math::CosOp::create(builder, operand).getResult();
+      return operand.cos().getValue();
     case UnaryParameterKind::Tan:
-      return mlir::math::TanOp::create(builder, operand).getResult();
+      return operand.tan().getValue();
     case UnaryParameterKind::ArcSin:
-      return mlir::math::AsinOp::create(builder, operand).getResult();
+      return builder.createOrFold<mlir::math::AsinOp>(operand.getValue());
     case UnaryParameterKind::ArcCos:
-      return mlir::math::AcosOp::create(builder, operand).getResult();
+      return builder.createOrFold<mlir::math::AcosOp>(operand.getValue());
     case UnaryParameterKind::ArcTan:
-      return mlir::math::AtanOp::create(builder, operand).getResult();
+      return operand.atan().getValue();
     case UnaryParameterKind::Exp:
-      return mlir::math::ExpOp::create(builder, operand).getResult();
+      return builder.createOrFold<mlir::math::ExpOp>(operand.getValue());
     case UnaryParameterKind::Log:
-      return mlir::math::LogOp::create(builder, operand).getResult();
+      return builder.createOrFold<mlir::math::LogOp>(operand.getValue());
     case UnaryParameterKind::Abs:
-      return mlir::math::AbsFOp::create(builder, operand).getResult();
+      return operand.abs().getValue();
     case UnaryParameterKind::Conjugate:
       break;
     }
   }
 
   if (const auto* binary = parameter.getBinary()) {
-    auto left = materializeParameterValue(
-        builder, parameterValueImpl(builder, *binary->left, localParameters,
-                                    globalParameters, depth + 1U, nodes));
-    auto right = materializeParameterValue(
-        builder, parameterValueImpl(builder, *binary->right, localParameters,
-                                    globalParameters, depth + 1U, nodes));
+    const FloatExpression left(
+        builder, builder.getLoc(),
+        parameterValueImpl(builder, *binary->left, localParameters,
+                           globalParameters, depth + 1U, nodes));
+    const FloatExpression right(
+        builder, builder.getLoc(),
+        parameterValueImpl(builder, *binary->right, localParameters,
+                           globalParameters, depth + 1U, nodes));
     switch (binary->operation) {
     case BinaryParameterKind::Add:
-      return mlir::arith::AddFOp::create(builder, left, right).getResult();
+      return (left + right).getValue();
     case BinaryParameterKind::Subtract:
-      return mlir::arith::SubFOp::create(builder, left, right).getResult();
+      return (left - right).getValue();
     case BinaryParameterKind::Multiply:
-      return mlir::arith::MulFOp::create(builder, left, right).getResult();
+      return (left * right).getValue();
     case BinaryParameterKind::Divide:
-      return mlir::arith::DivFOp::create(builder, left, right).getResult();
+      return (left / right).getValue();
     case BinaryParameterKind::Power:
-      return mlir::math::PowFOp::create(builder, left, right).getResult();
+      return left.pow(right).getValue();
     }
   }
   throw std::runtime_error("unknown normalized Qiskit parameter expression");
@@ -373,13 +366,6 @@ gateArity(const Instruction& instruction) {
                    descriptor.parameterCount};
 }
 
-[[nodiscard]] mlir::Value floatConstant(mlir::ImplicitLocOpBuilder& builder,
-                                        const double value) {
-  return mlir::arith::ConstantOp::create(builder,
-                                         builder.getF64FloatAttr(value))
-      .getResult();
-}
-
 static void emitBaseGate(mlir::qc::QCProgramBuilder& builder,
                          const mlir::qc::StandardGate gate,
                          mlir::ValueRange qubits,
@@ -393,9 +379,7 @@ static void emitBaseGate(mlir::qc::QCProgramBuilder& builder,
   parameterValues.reserve(parameters.size());
   for (const auto& parameter : parameters) {
     parameterValues.push_back(
-        std::holds_alternative<double>(parameter)
-            ? floatConstant(builder, std::get<double>(parameter))
-            : std::get<mlir::Value>(parameter));
+        mlir::mqt::variantToValue(builder, builder.getLoc(), parameter));
   }
   if (failed(mlir::qc::emitStandardGate(builder, builder.getLoc(), gate,
                                         parameterValues, qubits))) {
@@ -906,7 +890,8 @@ struct ImportedVariables {
     case ClassicalType::Uint:
       return integerConstant(builder, expression.width, expression.uintValue);
     case ClassicalType::Float:
-      return floatConstant(builder, expression.floatValue);
+      return mlir::mqt::constantFromScalar(builder, builder.getLoc(),
+                                           expression.floatValue);
     }
     break;
   case ExpressionKind::ClassicalBit:
@@ -938,9 +923,10 @@ struct ImportedVariables {
             .getResult();
       }
       if (operand.getType().isF64()) {
-        return mlir::arith::CmpFOp::create(builder,
-                                           mlir::arith::CmpFPredicate::UNE,
-                                           operand, floatConstant(builder, 0.0))
+        return mlir::arith::CmpFOp::create(
+                   builder, mlir::arith::CmpFPredicate::UNE, operand,
+                   mlir::mqt::constantFromScalar(builder, builder.getLoc(),
+                                                 0.0))
             .getResult();
       }
     }
@@ -1621,8 +1607,10 @@ static void translateControlFlow(mlir::qc::QCProgramBuilder& builder,
                 if (end - begin == 1U) {
                   requireExactLoopParameter(loop.values[begin]);
                   auto parameters = localParameters;
-                  parameters[loop.parameter->getSymbol()->name] = floatConstant(
-                      builder, static_cast<double>(loop.values[begin]));
+                  parameters[loop.parameter->getSymbol()->name] =
+                      mlir::mqt::constantFromScalar(
+                          builder, builder.getLoc(),
+                          static_cast<double>(loop.values[begin]));
                   translateBlock(*body, parameters);
                   return;
                 }
@@ -1654,8 +1642,8 @@ static void translateControlFlow(mlir::qc::QCProgramBuilder& builder,
             throw std::runtime_error(
                 "Qiskit for-loop parameter is not a symbol");
           }
-          parameters[symbol->name] =
-              floatConstant(builder, static_cast<double>(value));
+          parameters[symbol->name] = mlir::mqt::constantFromScalar(
+              builder, builder.getLoc(), static_cast<double>(value));
         }
         translateBlock(*body, parameters);
       }
@@ -1981,9 +1969,8 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
     for (const auto& parameter : definitionParameters) {
       auto value =
           parameterValue(builder, parameter, localParameters, globalParameters);
-      parameters.push_back(std::holds_alternative<double>(value)
-                               ? floatConstant(builder, std::get<double>(value))
-                               : std::get<mlir::Value>(value));
+      parameters.push_back(
+          mlir::mqt::variantToValue(builder, builder.getLoc(), value));
     }
     emitModifiedOperation(
         builder, instruction, qubits,

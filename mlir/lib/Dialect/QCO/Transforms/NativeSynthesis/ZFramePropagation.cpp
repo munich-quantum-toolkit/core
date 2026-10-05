@@ -36,6 +36,8 @@
 
 namespace mlir::qco::decomposition {
 
+using mqt::FloatExpression;
+
 static bool isZero(Value value) {
   const auto constant = mqt::valueToConstantDouble(value);
   return constant && std::abs(*constant) <= mqt::PARAMETER_COMPARISON_TOLERANCE;
@@ -109,202 +111,195 @@ LogicalResult propagateZFrames(RewriterBase& rewriter, ModuleOp moduleOp,
     }
   }
   DominanceInfo dominance;
-  const WalkResult result =
-      moduleOp->walk<WalkOrder::PreOrder>([&](Operation* parent) {
-        /// Modifier bodies and their phases belong to the enclosing unitary.
-        if (isa<UnitaryOpInterface>(parent)) {
-          return WalkResult::skip();
-        }
-        for (auto& region : parent->getRegions()) {
-          for (auto& block : region) {
-            DenseMap<Value, ZFrame> frames;
-            size_t nextOrder = 0;
-            const auto take = [&](Value wire) {
-              auto found = frames.find(wire);
-              if (found == frames.end()) {
-                return ZFrame{.order = nextOrder++};
-              }
-              auto frame = std::move(found->second);
-              frames.erase(found);
-              return frame;
-            };
-            const auto flush = [&](Value wire, Location loc) {
-              auto found = frames.find(wire);
-              if (found == frames.end()) {
-                return;
-              }
-              OpBuilder::InsertionGuard guard(rewriter);
-              ROp last;
-              if (!nativeRZ) {
-                auto anchor = wire;
-                auto gate = anchor.getDefiningOp<UnitaryOpInterface>();
-                while (gate && gate->getBlock() == &block &&
-                       commutesWithZFrames(gate)) {
-                  anchor = gate.getInputForOutput(anchor);
-                  gate = anchor.getDefiningOp<UnitaryOpInterface>();
-                }
-                last = anchor.getDefiningOp<ROp>();
-                if (last && last->getBlock() == &block && wire == anchor) {
-                  /// The adjacent R can be replaced at the current boundary.
-                } else if (last && last->getBlock() == &block &&
-                           llvm::all_of(found->second.sums, [&](Value angle) {
-                             return !angle ||
-                                    dominance.properlyDominates(angle, last) ||
-                                    mqt::valueToConstantDouble(angle);
-                           })) {
-                  /// Absorb before a diagonal segment when its scalar inputs
-                  /// are already available at the preceding equatorial gate.
-                  wire = anchor;
-                  rewriter.setInsertionPoint(last);
-                  for (auto& partial : found->second.sums) {
-                    if (partial &&
-                        !dominance.properlyDominates(partial, last)) {
-                      partial = mqt::constantFromScalar(
-                          rewriter, loc, *mqt::valueToConstantDouble(partial));
-                    }
-                  }
-                } else {
-                  last = {};
+  const WalkResult result = moduleOp->walk<
+      WalkOrder::PreOrder>([&](Operation* parent) {
+    /// Modifier bodies and their phases belong to the enclosing unitary.
+    if (isa<UnitaryOpInterface>(parent)) {
+      return WalkResult::skip();
+    }
+    for (auto& region : parent->getRegions()) {
+      for (auto& block : region) {
+        DenseMap<Value, ZFrame> frames;
+        size_t nextOrder = 0;
+        const auto take = [&](Value wire) {
+          auto found = frames.find(wire);
+          if (found == frames.end()) {
+            return ZFrame{.order = nextOrder++};
+          }
+          auto frame = std::move(found->second);
+          frames.erase(found);
+          return frame;
+        };
+        const auto flush = [&](Value wire, Location loc) {
+          auto found = frames.find(wire);
+          if (found == frames.end()) {
+            return;
+          }
+          OpBuilder::InsertionGuard guard(rewriter);
+          ROp last;
+          if (!nativeRZ) {
+            auto anchor = wire;
+            auto gate = anchor.getDefiningOp<UnitaryOpInterface>();
+            while (gate && gate->getBlock() == &block &&
+                   commutesWithZFrames(gate)) {
+              anchor = gate.getInputForOutput(anchor);
+              gate = anchor.getDefiningOp<UnitaryOpInterface>();
+            }
+            last = anchor.getDefiningOp<ROp>();
+            if (last && last->getBlock() == &block && wire == anchor) {
+              /// The adjacent R can be replaced at the current boundary.
+            } else if (last && last->getBlock() == &block &&
+                       llvm::all_of(found->second.sums, [&](Value angle) {
+                         return !angle ||
+                                dominance.properlyDominates(angle, last) ||
+                                mqt::valueToConstantDouble(angle);
+                       })) {
+              /// Absorb before a diagonal segment when its scalar inputs
+              /// are already available at the preceding equatorial gate.
+              wire = anchor;
+              rewriter.setInsertionPoint(last);
+              for (auto& partial : found->second.sums) {
+                if (partial && !dominance.properlyDominates(partial, last)) {
+                  partial = mqt::constantFromScalar(
+                      rewriter, loc, *mqt::valueToConstantDouble(partial));
                 }
               }
-              Value angle = found->second.value(rewriter, loc);
-              if (!isZero(angle)) {
-                auto& use = *wire.use_begin();
-                Value output;
-                if (nativeRZ) {
-                  output = RZOp::create(rewriter, loc, wire, angle);
-                } else {
-                  auto zero = mqt::constantFromScalar(rewriter, loc, 0.);
-                  auto pi =
-                      mqt::constantFromScalar(rewriter, loc, std::numbers::pi);
-                  auto axis = last ? last.getPhi() : zero;
-                  auto theta = last ? mqt::variantToValue(
-                                          rewriter, loc,
-                                          normalizeRotationParameter(
-                                              rewriter, loc, last.getTheta()))
-                                    : zero;
-                  /// RZ(a) R(t,p) = R(pi,p+a/2) R(t-pi,p), including its phase.
-                  auto first = ROp::create(
-                      rewriter, loc, last ? last.getQubitIn() : wire,
-                      rewriter.createOrFold<arith::SubFOp>(loc, theta, pi),
-                      axis);
-                  auto half = rewriter.createOrFold<arith::MulFOp>(
-                      loc, angle, mqt::constantFromScalar(rewriter, loc, 0.5));
-                  output = ROp::create(
-                      rewriter, loc, first, pi,
-                      rewriter.createOrFold<arith::AddFOp>(loc, axis, half));
-                }
-                rewriter.modifyOpInPlace(use.getOwner(),
-                                         [&] { use.set(output); });
-                if (last) {
-                  rewriter.eraseOp(last);
-                }
-              }
-              frames.erase(found);
-            };
-            for (auto& operation : llvm::make_early_inc_range(block)) {
-              rewriter.setInsertionPoint(&operation);
-              auto loc = operation.getLoc();
-              if (isa<MeasureOp, ResetOp>(operation)) {
-                /// A Z frame changes only the phase of each measurement
-                /// branch; reset discards the previous state altogether.
-                frames.erase(operation.getOperand(0));
-                continue;
-              }
-              const auto normalized = [&](Value angle) {
-                return mqt::variantToValue(
-                    rewriter, loc,
-                    normalizeRotationParameter(rewriter, loc, angle));
-              };
-              auto gate = dyn_cast<UnitaryOpInterface>(operation);
-              if (gate && commutesWithZFrames(gate)) {
-                for (auto [input, output] : llvm::zip_equal(
-                         gate.getInputQubits(), gate.getOutputQubits())) {
-                  if (frames.contains(input)) {
-                    frames.try_emplace(output, take(input));
-                  }
-                }
-                continue;
-              }
-              if (gate && gate.isSingleQubit() && !isa<BarrierOp>(operation) &&
-                  (equatorial || isa<RZOp>(operation))) {
-                auto wire = gate.getInputQubit(0);
-                if (!equatorial && !frames.contains(wire)) {
-                  auto next = dyn_cast<UnitaryOpInterface>(
-                      *gate.getOutputQubit(0).user_begin());
-                  /// Leave isolated native rotations and their angles intact.
-                  if (!next || !commutesWithZFrames(next)) {
-                    continue;
-                  }
-                }
-                if (isa<ROp>(operation) && !frames.contains(wire)) {
-                  continue;
-                }
-                auto frame = take(wire);
-                if (auto rotation = dyn_cast<RZOp>(operation)) {
-                  frame.append(rewriter, loc, normalized(rotation.getTheta()));
-                } else if (auto rotation = dyn_cast<ROp>(operation)) {
-                  auto phi = rewriter.createOrFold<arith::SubFOp>(
-                      loc, normalized(rotation.getPhi()),
-                      frame.value(rewriter, loc));
-                  wire = ROp::create(rewriter, loc, wire, rotation.getTheta(),
-                                     phi);
-                } else {
-                  auto angles = zyzAnglesFromOperation(rewriter, loc, gate);
-                  if (!angles) {
-                    operation.emitError("equatorial synthesis requires a known "
-                                        "single-qubit unitary");
-                    return WalkResult::interrupt();
-                  }
-                  auto [theta, phi, lambda, phase] = *angles;
-                  Value polar = mqt::variantToValue(rewriter, loc, theta);
-                  Value azimuth = mqt::variantToValue(rewriter, loc, phi);
-                  Value outer = mqt::variantToValue(rewriter, loc, lambda);
-                  if (!isZero(polar)) {
-                    auto axis = rewriter.createOrFold<arith::SubFOp>(
-                        loc,
-                        mqt::constantFromScalar(rewriter, loc,
-                                                std::numbers::pi / 2.),
-                        rewriter.createOrFold<arith::AddFOp>(
-                            loc, outer, frame.value(rewriter, loc)));
-                    wire = ROp::create(rewriter, loc, wire, polar, axis);
-                  }
-                  frame.append(rewriter, loc,
-                               rewriter.createOrFold<arith::AddFOp>(
-                                   loc, azimuth, outer));
-                  auto phaseValue = mqt::variantToValue(rewriter, loc, phase);
-                  if (!isZero(phaseValue)) {
-                    GPhaseOp::create(rewriter, loc, phaseValue);
-                  }
-                }
-                rewriter.replaceOp(&operation, wire);
-                if (!frame.sums.empty()) {
-                  frames.try_emplace(wire, std::move(frame));
-                }
-                continue;
-              }
-              if (operation.getNumRegions() != 0) {
-                SmallVector<std::pair<size_t, Value>> pending;
-                for (const auto& [wire, frame] : frames) {
-                  pending.emplace_back(frame.order, wire);
-                }
-                llvm::sort(pending, [](const auto& a, const auto& b) {
-                  return a.first < b.first;
-                });
-                for (const auto& [order, wire] : pending) {
-                  flush(wire, loc);
-                }
-              } else {
-                for (auto operand : llvm::to_vector(operation.getOperands())) {
-                  flush(operand, loc);
-                }
+            } else {
+              last = {};
+            }
+          }
+          Value angle = found->second.value(rewriter, loc);
+          if (!isZero(angle)) {
+            auto& use = *wire.use_begin();
+            Value output;
+            if (nativeRZ) {
+              output = RZOp::create(rewriter, loc, wire, angle);
+            } else {
+              const auto zero = FloatExpression::constant(rewriter, loc, 0.);
+              const auto pi =
+                  FloatExpression::constant(rewriter, loc, std::numbers::pi);
+              const FloatExpression axis(
+                  rewriter, loc, last ? last.getPhi() : zero.getValue());
+              const FloatExpression theta(
+                  rewriter, loc,
+                  last ? normalizeRotationParameter(rewriter, loc,
+                                                    last.getTheta())
+                       : mqt::FloatParameter{zero.getValue()});
+              /// RZ(a) R(t,p) = R(pi,p+a/2) R(t-pi,p), including its phase.
+              auto first =
+                  ROp::create(rewriter, loc, last ? last.getQubitIn() : wire,
+                              (theta - pi).getValue(), axis.getValue());
+              const auto half = FloatExpression(rewriter, loc, angle) *
+                                FloatExpression::constant(rewriter, loc, 0.5);
+              output = ROp::create(rewriter, loc, first, pi.getValue(),
+                                   (axis + half).getValue());
+            }
+            rewriter.modifyOpInPlace(use.getOwner(), [&] { use.set(output); });
+            if (last) {
+              rewriter.eraseOp(last);
+            }
+          }
+          frames.erase(found);
+        };
+        for (auto& operation : llvm::make_early_inc_range(block)) {
+          rewriter.setInsertionPoint(&operation);
+          auto loc = operation.getLoc();
+          if (isa<MeasureOp, ResetOp>(operation)) {
+            /// A Z frame changes only the phase of each measurement
+            /// branch; reset discards the previous state altogether.
+            frames.erase(operation.getOperand(0));
+            continue;
+          }
+          const auto normalized = [&](Value angle) {
+            return mqt::variantToValue(
+                rewriter, loc,
+                normalizeRotationParameter(rewriter, loc, angle));
+          };
+          auto gate = dyn_cast<UnitaryOpInterface>(operation);
+          if (gate && commutesWithZFrames(gate)) {
+            for (auto [input, output] : llvm::zip_equal(
+                     gate.getInputQubits(), gate.getOutputQubits())) {
+              if (frames.contains(input)) {
+                frames.try_emplace(output, take(input));
               }
             }
-            assert(frames.empty() && "all frames must reach a wire boundary");
+            continue;
+          }
+          if (gate && gate.isSingleQubit() && !isa<BarrierOp>(operation) &&
+              (equatorial || isa<RZOp>(operation))) {
+            auto wire = gate.getInputQubit(0);
+            if (!equatorial && !frames.contains(wire)) {
+              auto next = dyn_cast<UnitaryOpInterface>(
+                  *gate.getOutputQubit(0).user_begin());
+              /// Leave isolated native rotations and their angles intact.
+              if (!next || !commutesWithZFrames(next)) {
+                continue;
+              }
+            }
+            if (isa<ROp>(operation) && !frames.contains(wire)) {
+              continue;
+            }
+            auto frame = take(wire);
+            if (auto rotation = dyn_cast<RZOp>(operation)) {
+              frame.append(rewriter, loc, normalized(rotation.getTheta()));
+            } else if (auto rotation = dyn_cast<ROp>(operation)) {
+              auto phi = rewriter.createOrFold<arith::SubFOp>(
+                  loc, normalized(rotation.getPhi()),
+                  frame.value(rewriter, loc));
+              wire = ROp::create(rewriter, loc, wire, rotation.getTheta(), phi);
+            } else {
+              auto angles = zyzAnglesFromOperation(rewriter, loc, gate);
+              if (!angles) {
+                operation.emitError("equatorial synthesis requires a known "
+                                    "single-qubit unitary");
+                return WalkResult::interrupt();
+              }
+              auto [theta, phi, lambda, phase] = *angles;
+              Value polar = mqt::variantToValue(rewriter, loc, theta);
+              const FloatExpression azimuth(rewriter, loc, phi);
+              const FloatExpression outer(rewriter, loc, lambda);
+              if (!isZero(polar)) {
+                const auto halfPi = FloatExpression::constant(
+                    rewriter, loc, std::numbers::pi / 2.);
+                const FloatExpression frameAngle(rewriter, loc,
+                                                 frame.value(rewriter, loc));
+                const auto axis = halfPi - (outer + frameAngle);
+                wire = ROp::create(rewriter, loc, wire, polar, axis.getValue());
+              }
+              frame.append(rewriter, loc, (azimuth + outer).getValue());
+              auto phaseValue = mqt::variantToValue(rewriter, loc, phase);
+              if (!isZero(phaseValue)) {
+                GPhaseOp::create(rewriter, loc, phaseValue);
+              }
+            }
+            rewriter.replaceOp(&operation, wire);
+            if (!frame.sums.empty()) {
+              frames.try_emplace(wire, std::move(frame));
+            }
+            continue;
+          }
+          if (operation.getNumRegions() != 0) {
+            SmallVector<std::pair<size_t, Value>> pending;
+            for (const auto& [wire, frame] : frames) {
+              pending.emplace_back(frame.order, wire);
+            }
+            llvm::sort(pending, [](const auto& a, const auto& b) {
+              return a.first < b.first;
+            });
+            for (const auto& [order, wire] : pending) {
+              flush(wire, loc);
+            }
+          } else {
+            for (auto operand : llvm::to_vector(operation.getOperands())) {
+              flush(operand, loc);
+            }
           }
         }
-        return WalkResult::advance();
-      });
+        assert(frames.empty() && "all frames must reach a wire boundary");
+      }
+    }
+    return WalkResult::advance();
+  });
   return failure(result.wasInterrupted());
 }
 

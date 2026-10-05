@@ -40,28 +40,40 @@ parameterToConstantDouble(const FloatParameter& parameter) {
   if (const auto* scalar = std::get_if<double>(&parameter)) {
     return *scalar;
   }
-  return valueToConstantDouble(std::get<Value>(parameter));
+  auto value = std::get<Value>(parameter);
+  assert(value && isa<Float64Type>(value.getType()) && "expected an f64 value");
+  return valueToConstantDouble(value);
+}
+
+FloatParameter foldParameter(const FloatParameter& parameter) {
+  if (const auto value = parameterToConstantDouble(parameter)) {
+    return *value;
+  }
+  return parameter;
 }
 
 FloatParameter addParameters(OpBuilder& builder, Location loc,
                              const FloatParameter& lhs,
                              const FloatParameter& rhs) {
-  const auto a = parameterToConstantDouble(lhs);
-  const auto b = parameterToConstantDouble(rhs);
-  if (a && b) {
+  const auto foldedLhs = foldParameter(lhs);
+  const auto foldedRhs = foldParameter(rhs);
+  const auto* a = std::get_if<double>(&foldedLhs);
+  const auto* b = std::get_if<double>(&foldedRhs);
+  if (a != nullptr && b != nullptr) {
     return *a + *b;
   }
-  return (FloatExpression(builder, loc, variantToValue(builder, loc, lhs)) +
-          FloatExpression(builder, loc, variantToValue(builder, loc, rhs)))
+  return (FloatExpression(builder, loc, foldedLhs) +
+          FloatExpression(builder, loc, foldedRhs))
       .getValue();
 }
 
 FloatParameter scaleParameter(OpBuilder& builder, Location loc,
                               const FloatParameter& parameter, double scale) {
-  if (const auto value = parameterToConstantDouble(parameter)) {
+  const auto folded = foldParameter(parameter);
+  if (const auto* value = std::get_if<double>(&folded)) {
     return *value * scale;
   }
-  return (FloatExpression(builder, loc, std::get<Value>(parameter)) *
+  return (FloatExpression(builder, loc, folded) *
           FloatExpression::constant(builder, loc, scale))
       .getValue();
 }
@@ -69,10 +81,21 @@ FloatParameter scaleParameter(OpBuilder& builder, Location loc,
 FloatExpression::FloatExpression(OpBuilder& builder, Location loc, Value value)
     : value_(value), builder_(&builder), loc_(loc) {
   assert(value && isa<Float64Type>(value.getType()) && "expected an f64 value");
+  assert(value.getContext() == builder.getContext() &&
+         "expected a value from the builder's context");
 }
+
+FloatExpression::FloatExpression(OpBuilder& builder, Location loc,
+                                 const FloatParameter& parameter)
+    : FloatExpression(builder, loc, variantToValue(builder, loc, parameter)) {}
 
 FloatExpression FloatExpression::withValue(Value value) const {
   return {*builder_, loc_, value};
+}
+
+void FloatExpression::assertSameBuilder(FloatExpression rhs) const {
+  assert(builder_ == rhs.builder_ &&
+         "expected expressions from the same builder");
 }
 
 FloatExpression FloatExpression::constant(OpBuilder& builder, Location loc,
@@ -81,21 +104,25 @@ FloatExpression FloatExpression::constant(OpBuilder& builder, Location loc,
 }
 
 FloatExpression FloatExpression::operator+(FloatExpression rhs) const {
+  assertSameBuilder(rhs);
   return withValue(
       builder_->createOrFold<arith::AddFOp>(loc_, value_, rhs.value_));
 }
 
 FloatExpression FloatExpression::operator-(FloatExpression rhs) const {
+  assertSameBuilder(rhs);
   return withValue(
       builder_->createOrFold<arith::SubFOp>(loc_, value_, rhs.value_));
 }
 
 FloatExpression FloatExpression::operator*(FloatExpression rhs) const {
+  assertSameBuilder(rhs);
   return withValue(
       builder_->createOrFold<arith::MulFOp>(loc_, value_, rhs.value_));
 }
 
 FloatExpression FloatExpression::operator/(FloatExpression rhs) const {
+  assertSameBuilder(rhs);
   return withValue(
       builder_->createOrFold<arith::DivFOp>(loc_, value_, rhs.value_));
 }
@@ -132,17 +159,26 @@ FloatExpression FloatExpression::sqrt() const {
   return withValue(builder_->createOrFold<math::SqrtOp>(loc_, value_));
 }
 
+FloatExpression FloatExpression::pow(FloatExpression exponent) const {
+  assertSameBuilder(exponent);
+  return withValue(
+      builder_->createOrFold<math::PowFOp>(loc_, value_, exponent.value_));
+}
+
 FloatExpression FloatExpression::atan2(FloatExpression x) const {
+  assertSameBuilder(x);
   return withValue(
       builder_->createOrFold<math::Atan2Op>(loc_, value_, x.value_));
 }
 
 Value FloatExpression::oge(FloatExpression rhs) const {
+  assertSameBuilder(rhs);
   return builder_->createOrFold<arith::CmpFOp>(loc_, arith::CmpFPredicate::OGE,
                                                value_, rhs.value_);
 }
 
 Value FloatExpression::olt(FloatExpression rhs) const {
+  assertSameBuilder(rhs);
   return builder_->createOrFold<arith::CmpFOp>(loc_, arith::CmpFPredicate::OLT,
                                                value_, rhs.value_);
 }
@@ -150,6 +186,11 @@ Value FloatExpression::olt(FloatExpression rhs) const {
 FloatExpression FloatExpression::select(Value condition,
                                         FloatExpression trueValue,
                                         FloatExpression falseValue) {
+  trueValue.assertSameBuilder(falseValue);
+  assert(condition && condition.getType().isInteger(1) &&
+         "expected an i1 value");
+  assert(condition.getContext() == trueValue.builder_->getContext() &&
+         "expected a condition from the builder's context");
   return trueValue.withValue(trueValue.builder_->createOrFold<arith::SelectOp>(
       trueValue.loc_, condition, trueValue.value_, falseValue.value_));
 }

@@ -1,6 +1,6 @@
 # Shared scalar and SSA parameter arithmetic
 
-Status: complete; implementation and local validation are complete.
+Status: implementation and local validation complete; publication pending.
 
 ## Goal and scope
 
@@ -31,7 +31,7 @@ gate angles.
   materializer emits arithmetic constants; QIR supplies its existing LLVM
   constant builder and retains its entry-block insertion policy.
 
-## Validation
+## Initial validation
 
 The release build used LLVM/MLIR 23.1.0. All 2,008 tests passed across the MQT
 utility, QCO optimization, native synthesis, decomposition, QC/QCO/QIR IR, and
@@ -62,3 +62,22 @@ hosted CI result is claimed.
 `scaleParameter` use the same `FloatExpression` operations as runtime rotation
 merging. Euler keeps its `RotationParameter` alias and rotation-specific zero
 identity policy. QIR keeps LLVM constant emission and entry-block placement.
+
+## Follow-up
+
+The follow-up starts from `78ce25a76` with a clean working tree. Reuse shared
+parameter materialization in Qiskit import and `FloatExpression` in Pauli and
+Z-frame synthesis. Fold parameters once before rotation-specific decisions;
+materialize known operands as constants in mixed arithmetic. Keep the wrapper
+limited to f64 operations and retain Pauli synthesis's `math.powf` operation.
+
+The wrapper documents its borrowed builder's lifetime and current insertion
+point and asserts its builder, context, and operand-type contracts. Direct
+literal checks now verify emission-time folding, including `math.powf`; a mixed
+arithmetic regression checks known SSA constants and runtime operand identity.
+
+The final release binaries passed all 2,009 native tests. The rebuilt editable
+package passed the same 791 Python integration tests. `uvx nox -s stubs` passed
+and produced no stub changes. Whole-file `uvx nox -s cpp-lint` passed with no
+findings across all ten translation units changed from `origin/main`, including
+their headers. `uvx nox -s lint` passed. PR #2681 remains a draft.
