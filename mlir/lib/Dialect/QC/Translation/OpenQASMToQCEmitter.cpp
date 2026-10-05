@@ -135,12 +135,9 @@ public:
           &gate, statementsRequireStructuredControlFlow(gate.body));
     }
     if (customGateIndex.contains("main")) {
-      std::string entryName = "_mqt_entry";
-      for (size_t suffix = 0; customGateIndex.contains(entryName); ++suffix) {
-        entryName = (Twine("_mqt_entry") + Twine(suffix)).str();
-      }
+      // A dot cannot occur in a source gate identifier.
       cast<func::FuncOp>(builder.getInsertionBlock()->getParentOp())
-          .setName(entryName);
+          .setName("mqt.entry");
     }
   }
 

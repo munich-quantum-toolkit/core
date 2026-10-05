@@ -173,6 +173,7 @@ private:
   SymbolTableCollection symbolTables_;
   llvm::StringSet<> usedNames;
   llvm::StringSet<> fixedHelpers;
+  std::string uHelperName_;
   SmallVector<std::string> gateDefinitions_;
   Operation* expressionConsumer = nullptr;
   size_t nextQubit = 0;
@@ -348,8 +349,11 @@ private:
         return failure();
       }
       const auto requested = current.getName();
-      gateNames_.try_emplace(current, isValidDeclarationName(requested) &&
-                                              usedNames.insert(requested).second
+      const bool preserveName =
+          openqasm::frontend::isValidIdentifier(requested) &&
+          openqasm::frontend::lookupGate(requested) == nullptr &&
+          usedNames.insert(requested).second;
+      gateNames_.try_emplace(current, preserveName
                                           ? requested.str()
                                           : uniqueName("gate", nextHelper));
     }
@@ -2001,8 +2005,12 @@ private:
       return std::string("sx");
     }
     if (symbol == "u" || symbol == "u2") {
-      fixedHelpers.insert("_mqt_u");
-      return std::string("_mqt_u");
+      if (uHelperName_.empty()) {
+        uHelperName_ = usedNames.insert("_mqt_u").second
+                           ? "_mqt_u"
+                           : uniqueName("u", nextHelper);
+      }
+      return uHelperName_;
     }
     const auto* gate = openqasm::frontend::lookupGate(symbol);
     if (gate == nullptr ||
@@ -2020,12 +2028,15 @@ private:
   }
 
   void emitFixedHelpers(llvm::raw_ostream& stream) const {
+    if (!uHelperName_.empty()) {
+      stream << "gate " << uHelperName_
+             << "(p0, p1, p2) q {\n"
+                "  gphase(-p0 / 2);\n"
+                "  U(p0, p1, p2) q;\n"
+                "}\n";
+    }
     using HelperDefinition = std::pair<StringLiteral, StringLiteral>;
     constexpr std::array helpers{
-        HelperDefinition{"_mqt_u", "gate _mqt_u(p0, p1, p2) q {\n"
-                                   "  gphase(-p0 / 2);\n"
-                                   "  U(p0, p1, p2) q;\n"
-                                   "}\n"},
         HelperDefinition{"r", "gate r(p0, p1) q {\n"
                               "  rz(-p1) q;\n"
                               "  rx(p0) q;\n"
