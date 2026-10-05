@@ -21,7 +21,6 @@
 #include <cstdint>
 #include <limits>
 #include <string_view>
-#include <utility>
 
 namespace mqt::bench {
 
@@ -34,7 +33,7 @@ MagicStateDistillation::create(MagicStateDistillationOptions options) {
                             "and fit circuit dimensions",
                             ::mqt::ErrorCategory::InvalidArgument);
   }
-  return MagicStateDistillation(std::move(options));
+  return MagicStateDistillation(options);
 }
 
 MagicStateDistillation::MagicStateDistillation(

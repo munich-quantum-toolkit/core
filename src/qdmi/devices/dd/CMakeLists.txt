@@ -39,6 +39,7 @@ if(NOT TARGET ${TARGET_NAME})
   endif()
   set(WORKER_TARGET ${MQT_CORE_TARGET_NAME}-ddsim-worker)
   add_executable(${WORKER_TARGET} WorkerMain.cpp WorkerProtocol.cpp)
+  set_property(TARGET ${WORKER_TARGET} PROPERTY BUILD_WITH_INSTALL_RPATH FALSE)
   target_compile_features(${WORKER_TARGET} PRIVATE cxx_std_20)
   mqt_target_disable_exceptions(${WORKER_TARGET})
   target_link_libraries(
@@ -52,6 +53,7 @@ if(NOT TARGET ${TARGET_NAME})
             MQT::CoreQIRRuntime
             MQT::ProjectWarnings
             MQT::ProjectOptions)
+  mqt_copy_runtime_dlls(${WORKER_TARGET})
   mqt_llvm_target_disable_rtti(${WORKER_TARGET})
   if(WIN32)
     target_compile_definitions(${TARGET_NAME} PRIVATE NOMINMAX)

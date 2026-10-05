@@ -181,6 +181,31 @@ def test_measurement_rejects_missing_qubits() -> None:
         package.dec_ref_vec(state)
 
 
+@pytest.mark.parametrize("measure_all", [False, True])
+@pytest.mark.parametrize("released", [False, True])
+def test_collapsing_measurement_requires_root(*, measure_all: bool, released: bool) -> None:
+    """Reject released roots and roots owned by another package before modifying them."""
+    owner = DDPackage(2)
+    state = owner.ghz_state(2)
+    before = state.get_vector().copy()
+    if released:
+        owner.dec_ref_vec(state)
+        package = owner
+    else:
+        package = DDPackage(2)
+
+    if measure_all:
+        with pytest.raises(ValueError, match="Edge is not part of the root set"):
+            package.measure_all(state, collapse=True)
+    else:
+        with pytest.raises(ValueError, match="Edge is not part of the root set"):
+            package.measure_collapsing(state, 0)
+
+    assert np.array_equal(state.get_vector(), before)
+    if not released:
+        owner.dec_ref_vec(state)
+
+
 @pytest.mark.parametrize("width", [0, 1, 3])
 def test_indexing(width: int) -> None:
     """Use logical vector length for positive and negative indices."""

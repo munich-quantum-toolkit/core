@@ -6,7 +6,8 @@
 #
 # Licensed under the MIT License
 
-add_mqt_core_library(${MQT_CORE_TARGET_NAME}-support ALIAS_NAME Support)
+# Diagnostic handlers must share one thread-local stack across library boundaries.
+add_mqt_core_library(${MQT_CORE_TARGET_NAME}-support ALIAS_NAME Support FORCE_SHARED)
 target_link_libraries(${MQT_CORE_TARGET_NAME}-support PUBLIC LLVMSupport)
 target_include_directories(
   ${MQT_CORE_TARGET_NAME}-support SYSTEM PUBLIC "$<BUILD_INTERFACE:${LLVM_INCLUDE_DIRS}>"
@@ -29,9 +30,6 @@ target_sources(
   ${MQT_CORE_TARGET_NAME}-support
   PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/.. FILES
          ${CMAKE_CURRENT_BINARY_DIR}/mqt_core_support_export.h)
-if(NOT BUILD_MQT_CORE_SHARED_LIBS)
-  target_compile_definitions(${MQT_CORE_TARGET_NAME}-support PUBLIC MQT_CORE_SUPPORT_STATIC_DEFINE)
-endif()
 set(MQT_CORE_TARGETS
     ${MQT_CORE_TARGETS} ${MQT_CORE_TARGET_NAME}-support
     PARENT_SCOPE)

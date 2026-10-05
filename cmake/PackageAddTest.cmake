@@ -15,6 +15,7 @@ macro(PACKAGE_ADD_TEST testname linklibs)
     target_link_libraries(
       ${testname} PRIVATE ${linklibs} MQTCoreTestSupport GTest::gmock GTest::gtest_main
                           MQT::ProjectOptions MQT::ProjectWarnings)
+    mqt_copy_runtime_dlls(${testname})
     gtest_discover_tests(
       ${testname} DISCOVERY_MODE PRE_TEST
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
@@ -35,6 +36,7 @@ macro(PACKAGE_ADD_TEST_WITH_WORKING_DIR testname linklibs test_working_directory
     target_link_libraries(
       ${testname} PRIVATE ${linklibs} MQTCoreTestSupport GTest::gmock GTest::gtest_main
                           MQT::ProjectOptions MQT::ProjectWarnings)
+    mqt_copy_runtime_dlls(${testname})
     gtest_discover_tests(
       ${testname} DISCOVERY_MODE PRE_TEST
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}

@@ -17,6 +17,11 @@ endif()
 
 function(mqt_mlir_apply_target_options target_name)
   target_link_libraries(${target_name} PRIVATE MQT::ProjectOptions)
+  get_target_property(target_type ${target_name} TYPE)
+  if(target_type STREQUAL "EXECUTABLE")
+    set_property(TARGET ${target_name} PROPERTY BUILD_WITH_INSTALL_RPATH FALSE)
+    mqt_copy_runtime_dlls(${target_name})
+  endif()
   llvm_update_compile_flags(${target_name})
   if(MSVC)
     # LLVM's helper disables both EH and the normal STL exception ABI. Match Core's /EHsc policy

@@ -21,6 +21,7 @@
 
 #include <optional>
 #include <string>
+#include <utility>
 
 namespace mqt {
 

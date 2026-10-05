@@ -8,9 +8,14 @@
  * Licensed under the MIT License
  */
 
+#include "bench/BV.hpp"
 #include "bench/Evaluation.hpp"
 #include "bench/GHZ.hpp"
 #include "bench/JSON.hpp"
+#include "bench/QFT.hpp"
+#include "bench/QFTAdder.hpp"
+#include "bench/QPE.hpp"
+#include "bench/RepeatUntilSuccess.hpp"
 
 #include "JSONTestUtils.hpp"
 #include "support/Diagnostics.hpp"
@@ -22,7 +27,6 @@
 
 #include "mlir/Support/LogicalResult.h"
 
-#include <cmath>
 #include <limits>
 #include <optional>
 #include <string>
@@ -35,7 +39,8 @@ namespace mqt::bench {
 using test::expectInvalidJSON;
 
 template <class Action>
-void expectInvalid(const Action& operation, const std::string_view diagnostic) {
+static void expectInvalid(const Action& operation,
+                          const std::string_view diagnostic) {
   const auto error = ::mqt::test::diagnostic(operation);
   ASSERT_TRUE(error);
   EXPECT_EQ(error->category, ::mqt::ErrorCategory::InvalidArgument);

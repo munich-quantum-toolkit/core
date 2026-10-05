@@ -8,6 +8,18 @@
 
 include(${CMAKE_CURRENT_LIST_DIR}/CompilerOptions.cmake)
 
+# Windows does not use RPATH to find linked DLLs in the build tree.
+function(mqt_copy_runtime_dlls target)
+  if(WIN32)
+    add_custom_command(
+      TARGET ${target}
+      POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_RUNTIME_DLLS:${target}>
+              $<TARGET_FILE_DIR:${target}>
+      COMMAND_EXPAND_LISTS)
+  endif()
+endfunction()
+
 function(kebab_to_camel output input)
   string(REPLACE "-" ";" parts "${input}")
   set(result "")

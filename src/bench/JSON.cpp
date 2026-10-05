@@ -455,7 +455,7 @@ parseWeakMeasurementGroverParameters(const Json& parameters,
     if (mlir::failed(value)) {
       return mlir::failure();
     }
-    options.measurementStrength = *value;
+    options.measurementStrength = value;
   }
   return constructBenchmark(source, [&] {
     return WeakMeasurementGrover::create(std::move(options));

@@ -17,7 +17,6 @@
 
 #include "gtest/gtest.h"
 
-#include <stdexcept>
 #include <string>
 
 namespace mqt::bench {

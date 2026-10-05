@@ -20,7 +20,6 @@
 
 #include <cstddef>
 #include <new>
-#include <utility>
 
 namespace mqt {
 
@@ -57,7 +56,7 @@ input noise, physical error correction, or retries.)pb");
           [](bench::MagicStateDistillation* self,
              bench::MagicStateDistillationOptions options) {
             new (self) bench::MagicStateDistillation(bindings::invoke([&] {
-              return bench::MagicStateDistillation::create(std::move(options));
+              return bench::MagicStateDistillation::create(options);
             }));
           },
           "options"_a = bench::MagicStateDistillationOptions{})

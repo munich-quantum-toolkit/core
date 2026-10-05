@@ -38,11 +38,16 @@ using namespace nb::literals;
 
 namespace {
 template <class Node>
-void releaseRoot(dd::Package& package, const dd::Edge<Node>& edge) {
+void requireRoot(dd::Package& package, const dd::Edge<Node>& edge) {
   if (dd::Edge<Node>::trackingRequired(edge) &&
       !package.getRootSet<Node>().contains(edge)) {
     throw nb::value_error("Edge is not part of the root set.");
   }
+}
+
+template <class Node>
+void releaseRoot(dd::Package& package, const dd::Edge<Node>& edge) {
+  requireRoot(package, edge);
   package.decRef(edge);
 }
 } // namespace
@@ -241,6 +246,7 @@ Returns:
   dd.def(
       "measure_collapsing",
       [](dd::Package& p, dd::vEdge& v, const dd::Qubit q) {
+        requireRoot(p, v);
         if (v.isTerminal() || q > v.p->v) {
           throw nb::value_error("Measurement qubit is outside the state.");
         }
@@ -264,6 +270,9 @@ Returns:
   dd.def(
       "measure_all",
       [](dd::Package& p, dd::vEdge& v, const bool collapse = false) {
+        if (collapse) {
+          requireRoot(p, v);
+        }
         static thread_local std::mt19937_64 rng(std::random_device{}());
         return ::mqt::bindings::invoke(
             [&] { return p.measureAll(v, collapse, rng); });

@@ -146,10 +146,11 @@ TEST(QPE, RoundTripsJSON) {
       toInstanceSpecificationJSON(parsed),
       R"({"benchmark":"qpe","parameters":{"method":"iterative","phase":{"denominator":4,"numerator":1},"precision":4},"schema_version":1})");
 
-  const auto benchmark = ::mqt::test::value(
-      QPE::create({.precision = 5,
-                   .phase = ::mqt::test::value(Phase::create(1, 3)),
-                   .method = QPEMethod::Iterative}));
+  const auto benchmark = ::mqt::test::value(QPE::create({
+      .precision = 5,
+      .phase = ::mqt::test::value(Phase::create(1, 3)),
+      .method = QPEMethod::Iterative,
+  }));
   const auto manifest = toManifestJSON(benchmark);
   EXPECT_EQ(toManifestJSON(::mqt::test::value(qpeFromManifestJSON(manifest))),
             manifest);
