@@ -262,6 +262,16 @@ dynamic
   A dynamic quantum allocation acquires resources during execution, even when
   its size is a compile-time constant.
 
+floating-point parameter
+  **Preferred term:** floating-point parameter. **Accepted alias:**
+  `FloatParameter` in C++. A host double or an f64 SSA value supplied to a
+  builder or synthesis utility.
+
+floating-point expression
+  **Preferred term:** floating-point expression. **Accepted alias:**
+  `FloatExpression` in C++. An f64 SSA expression built and locally folded with
+  an MLIR builder. Rotation utilities own angle and phase handling.
+
 static gate count
   **Preferred term:** static gate count. **Accepted aliases:** none. The number
   of gate operations in the entry-point IR. Each structured control-flow region

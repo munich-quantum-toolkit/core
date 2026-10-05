@@ -11,6 +11,7 @@
 #pragma once
 
 #include "mqt/Compiler/Target.h"
+#include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Pauli.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 
@@ -23,7 +24,6 @@
 #include <array>
 #include <cstddef>
 #include <optional>
-#include <variant>
 
 namespace mlir {
 class Operation;
@@ -37,7 +37,7 @@ class UnitaryOpInterface;
 namespace mlir::qco::decomposition {
 
 using SingleQubitBasis = CompilerTarget::SingleQubitBasis;
-using RotationParameter = std::variant<double, Value>;
+using RotationParameter = mqt::FloatParameter;
 
 /// Reduce a gate angle modulo 4*pi before adding fixed Euler offsets.
 /// This preserves SU(2) phase and avoids losing offsets for large angles.

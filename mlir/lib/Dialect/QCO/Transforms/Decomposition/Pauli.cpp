@@ -19,7 +19,6 @@
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Weyl.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Location.h"
@@ -357,33 +356,26 @@ emitPauliSequence(RewriterBase& rewriter, Location loc, ValueRange inputs,
       /// S^dagger (I X) S = (I X - Y Z)/sqrt(2). Symmetric RX
       /// corrections cancel the local X component, leaving R_YZ(theta).
       /// Reduce modulo pi; the removed turns are local Pauli rotations.
-      auto normalized = mqt::variantToValue(
+      const mqt::FloatExpression normalized(
           rewriter, loc, normalizeRotationParameter(rewriter, loc, angle));
-      auto reduced = rewriter.createOrFold<math::AtanOp>(
-          loc, rewriter.createOrFold<math::TanOp>(loc, normalized));
-      auto half = mqt::constantFromScalar(rewriter, loc, 0.5);
-      auto sine = rewriter.createOrFold<math::SinOp>(
-          loc, rewriter.createOrFold<arith::MulFOp>(loc, reduced, half));
-      auto cosine = rewriter.createOrFold<math::CosOp>(loc, reduced);
-      auto root = rewriter.createOrFold<math::PowFOp>(loc, cosine, half);
-      auto ratio = rewriter.createOrFold<arith::DivFOp>(loc, sine, root);
-      auto alpha = rewriter.createOrFold<math::AtanOp>(loc, ratio);
-      auto beta = rewriter.createOrFold<arith::MulFOp>(
-          loc, mqt::constantFromScalar(rewriter, loc, -2.),
-          rewriter.createOrFold<math::AtanOp>(
-              loc, rewriter.createOrFold<arith::MulFOp>(
-                       loc, ratio,
-                       mqt::constantFromScalar(rewriter, loc,
-                                               std::numbers::sqrt2))));
-      auto turns =
-          rewriter.createOrFold<arith::SubFOp>(loc, normalized, reduced);
+      const auto scalar = [&](double value) {
+        return mqt::FloatExpression::constant(rewriter, loc, value);
+      };
+      const auto reduced = normalized.tan().atan();
+      const auto half = scalar(0.5);
+      const auto ratio = (reduced * half).sin() / reduced.cos().pow(half);
+      const auto alpha = ratio.atan();
+      const auto beta =
+          scalar(-2.) * (ratio * scalar(std::numbers::sqrt2)).atan();
+      const auto turns = normalized - reduced;
       const auto frame0 = pauliFrame(axis0, PauliAxis::Y);
       const auto frame1 = pauliFrame(axis1, PauliAxis::Z);
       emitFactor(wire0, frame0.adjoint());
       emitFactor(wire1, frame1.adjoint());
-      const auto rotate = [&](Value& wire, PauliAxis axis, Value value) {
-        wire =
-            synthesizePauliRotation1Q(rewriter, loc, wire, axis, value, basis);
+      const auto rotate = [&](Value& wire, PauliAxis axis,
+                              mqt::FloatExpression value) {
+        wire = synthesizePauliRotation1Q(rewriter, loc, wire, axis,
+                                         value.getValue(), basis);
       };
       const auto entangle = [&] {
         auto native = XXPlusYYOp::create(
@@ -404,8 +396,7 @@ emitPauliSequence(RewriterBase& rewriter, Location loc, ValueRange inputs,
       rotate(wire1, PauliAxis::Z, turns);
       emitFactor(wire0, frame0);
       emitFactor(wire1, frame1);
-      GPhaseOp::create(rewriter, loc,
-                       rewriter.createOrFold<arith::MulFOp>(loc, turns, half));
+      GPhaseOp::create(rewriter, loc, (turns * half).getValue());
       continue;
     }
     /// Bounded rotations supply the fixed Clifford endpoint at pi/2.
