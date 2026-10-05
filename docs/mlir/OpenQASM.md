@@ -69,11 +69,11 @@ QCO, and `jeff` dialects, so each output checkpoint names its dialect.
 | Dynamic indexing           | Classical bit indices can be dynamic and must remain in bounds. A nonconstant qubit index must be a proven affine expression as described below.                                                                                                                                          |
 | Unsupported language areas | Subroutines, `extern`, calibration and timing constructs, and arbitrary arrays are diagnosed.                                                                                                                                                                                             |
 
-Custom gates with constant-range `for` loops over unitary gates are recognized
-as unitary, including nested loops and callers. Other loop forms remain
-unclassified; this does not imply that their quantum action is nonunitary.
-Modifiers on custom gates with loops, or callers of such gates, are still
-unsupported. These are compiler restrictions, not OpenQASM language rules.
+The importer recognizes custom gates containing unitary gate calls and
+constant-range `for` loops as unitary, including nested loops and their callers.
+This classification is conservative: an unclassified gate may have a unitary
+quantum action. A modifier on a custom gate requires that the gate and its
+callees contain no loops.
 
 Inputs share the parameter API with Qiskit programs. They remain symbolic until
 bound, so a program can be inspected and transformed before choosing values:

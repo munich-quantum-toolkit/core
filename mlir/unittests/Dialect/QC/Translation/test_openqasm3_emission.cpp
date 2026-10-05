@@ -1062,7 +1062,7 @@ gate repeated(theta) q {
   for int i in [2:-1:0] {
     for int j in [0:1] {
       rx(theta) q;
-      rx((i + j) * 0.5) q;
+      rx(float(i) / float(j + 2)) q;
     }
   }
 }
@@ -1077,28 +1077,37 @@ wrapper(0.25) q;
   ASSERT_TRUE(succeeded(emitted));
   auto restored = qc::translateOpenQASMToQC(*emitted, &context);
   ASSERT_TRUE(restored) << *emitted;
-  for (auto moduleOp : {*original, *restored}) {
-    PassManager manager(&context);
-    manager.addPass(createQCToQCO());
-    ASSERT_TRUE(succeeded(manager.run(moduleOp)));
-    ASSERT_TRUE(succeeded(verify(moduleOp)));
-    ASSERT_TRUE(succeeded(qco::verifyLinearity(moduleOp)));
+  const auto checkGateStructure = [](ModuleOp moduleOp) {
     for (const auto* const name : {"repeated", "wrapper"}) {
       auto gate = moduleOp.lookupSymbol<func::FuncOp>(name);
       ASSERT_TRUE(gate);
       EXPECT_TRUE(mlir::mqt::isUnitaryFunction(gate));
     }
+    size_t loops = 0;
+    moduleOp.walk([&](scf::ForOp) { ++loops; });
+    EXPECT_EQ(loops, 2);
+  };
+  for (auto moduleOp : {*original, *restored}) {
+    checkGateStructure(moduleOp);
+    EXPECT_FALSE(
+        mlir::mqt::getEntryPoint(moduleOp).getOps<qc::CallOp>().empty());
+    PassManager manager(&context);
+    manager.addPass(createQCToQCO());
+    ASSERT_TRUE(succeeded(manager.run(moduleOp)));
+    ASSERT_TRUE(succeeded(verify(moduleOp)));
+    ASSERT_TRUE(succeeded(qco::verifyLinearity(moduleOp)));
+    checkGateStructure(moduleOp);
     dd::Package package(1);
     auto functionality =
         qco::buildFunctionality(mlir::mqt::getEntryPoint(moduleOp), package);
     ASSERT_TRUE(succeeded(functionality));
     const auto matrix = functionality->getMatrix(1);
-    // The six iterations sum to RX(6 * 0.25 + 9 * 0.5).
+    /// The six iterations sum to RX(6 * 0.25 + 3 * (1/2 + 1/3)) = RX(4).
     for (size_t row = 0; row < 2; ++row) {
       for (size_t column = 0; column < 2; ++column) {
         const auto expected = row == column
-                                  ? std::complex<double>{std::cos(3.), 0.}
-                                  : std::complex<double>{0., -std::sin(3.)};
+                                  ? std::complex<double>{std::cos(2.), 0.}
+                                  : std::complex<double>{0., -std::sin(2.)};
         EXPECT_NEAR(std::abs(matrix[row][column] - expected), 0., 1e-12);
       }
     }
@@ -1106,8 +1115,7 @@ wrapper(0.25) q;
     back.addPass(createQCOToQC());
     ASSERT_TRUE(succeeded(back.run(moduleOp)));
     ASSERT_TRUE(succeeded(verify(moduleOp)));
-    EXPECT_TRUE(mlir::mqt::isUnitaryFunction(
-        moduleOp.lookupSymbol<func::FuncOp>("repeated")));
+    checkGateStructure(moduleOp);
     EXPECT_TRUE(succeeded(qc::translateQCToOpenQASM3(moduleOp)));
   }
 }
@@ -1185,54 +1193,6 @@ wrapper(0.5) q;
   ASSERT_TRUE(roundTripped);
   EXPECT_TRUE(roundTripped->lookupSymbol<func::FuncOp>("repeated"));
   EXPECT_TRUE(roundTripped->lookupSymbol<func::FuncOp>("wrapper"));
-}
-
-TEST(OpenQASM3EmissionTest, PreservesFloatingArithmeticOnGateLoopIndices) {
-  constexpr llvm::StringLiteral source = R"mlir(module {
-    func.func private @ratio(%qubit: !qc.qubit) {
-      %one = arith.constant 1 : index
-      %two = arith.constant 2 : index
-      %three = arith.constant 3 : index
-      scf.for %i = %one to %two step %one {
-        scf.for %j = %two to %three step %one {
-          %i64 = arith.index_cast %i : index to i64
-          %j64 = arith.index_cast %j : index to i64
-          %numerator = arith.sitofp %i64 : i64 to f64
-          %denominator = arith.sitofp %j64 : i64 to f64
-          %angle = arith.divf %numerator, %denominator : f64
-          qc.rx(%angle) %qubit : !qc.qubit
-        }
-      }
-      return
-    }
-    func.func @entry() attributes {mqt.entry_point} {
-      %qubit = qc.alloc : !qc.qubit
-      func.call @ratio(%qubit) : (!qc.qubit) -> ()
-      qc.dealloc %qubit : !qc.qubit
-      return
-    }
-  })mlir";
-  DialectRegistry registry = emissionDialects();
-  MLIRContext context(registry);
-  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
-  ASSERT_TRUE(moduleOp);
-
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
-  ASSERT_TRUE(succeeded(emitted));
-  auto roundTripped = qc::translateOpenQASMToQC(*emitted, &context);
-  ASSERT_TRUE(roundTripped) << *emitted;
-  ASSERT_TRUE(succeeded(runQCCleanupPipeline(*roundTripped)));
-  ASSERT_TRUE(succeeded(verify(*roundTripped)));
-  auto gate = roundTripped->lookupSymbol<func::FuncOp>("ratio");
-  ASSERT_TRUE(gate);
-  size_t rotations = 0;
-  gate.walk([&](qc::RXOp rotation) {
-    ++rotations;
-    FloatAttr angle;
-    ASSERT_TRUE(matchPattern(rotation.getTheta(), m_Constant(&angle)));
-    EXPECT_DOUBLE_EQ(angle.getValueAsDouble(), 0.5);
-  });
-  EXPECT_EQ(rotations, 1);
 }
 
 TEST(OpenQASM3EmissionTest, OrdersLongReverseDeclaredGateGraph) {

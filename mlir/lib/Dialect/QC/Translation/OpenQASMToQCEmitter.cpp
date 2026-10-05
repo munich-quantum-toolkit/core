@@ -133,9 +133,6 @@ public:
       customGateIndex.try_emplace(gate.name, &gate);
       structuredGateCapabilities.try_emplace(
           &gate, statementsRequireStructuredControlFlow(gate.body));
-      if (statementsAreUnitary(gate.body)) {
-        unitaryGates_.insert(&gate);
-      }
     }
     if (customGateIndex.contains("main")) {
       // A dot cannot occur in a source gate identifier.
@@ -166,6 +163,7 @@ public:
       }
       scalarValues[id] = entry.getArgument(index);
     }
+    /// Semantic analysis requires gate definitions to precede their callers.
     for (const auto& gate : program.gates) {
       emitGateDefinition(gate);
       scalarUpdates_.clear();
@@ -226,7 +224,6 @@ private:
   llvm::DenseMap<frontend::ScalarId, Value> provenInductionValues;
   DenseMap<const openqasm::frontend::GateDefinition*, bool>
       structuredGateCapabilities;
-  DenseSet<const frontend::GateDefinition*> unitaryGates_;
   llvm::StringMap<const openqasm::frontend::GateDefinition*> customGateIndex;
   DenseMap<const openqasm::frontend::GateDefinition*, func::FuncOp>
       customGateFunctions_;
@@ -315,7 +312,7 @@ private:
         return false;
       }
       if (const auto* callee = findCustomGate(application->callee)) {
-        return unitaryGates_.contains(callee);
+        return mqt::isUnitaryFunction(customGateFunctions_.lookup(callee));
       }
       return openqasm::frontend::lookupGate(application->callee) != nullptr;
     });
@@ -967,7 +964,7 @@ private:
 
     builder.setLoc(getLocation(gate.location));
     func::FuncOp function;
-    if (!unitaryGates_.contains(&gate)) {
+    if (!statementsAreUnitary(gate.body)) {
       function = builder.createFunction(gate.name, argumentTypes,
                                         [&](ValueRange arguments) {
                                           emitBody(arguments);

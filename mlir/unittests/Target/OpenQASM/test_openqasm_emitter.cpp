@@ -900,37 +900,6 @@ TEST(OpenQASMTargetTest, DoesNotMultiplyCustomGatesByRegisterWidth) {
   EXPECT_EQ(xGates, 25);
 }
 
-TEST(OpenQASMTargetTest, RecognizesNestedBoundedUnitaryGatesAndCallers) {
-  constexpr llvm::StringLiteral source = R"qasm(
-OPENQASM 3.1;
-include "stdgates.inc";
-gate repeated(theta) q {
-  for int i in [2:-1:0] {
-    for int j in [0:1] {
-      rx(theta) q;
-      rx((i + j) * 0.5) q;
-    }
-  }
-}
-gate wrapper(theta) q { repeated(theta) q; }
-qubit q;
-wrapper(0.5) q;
-)qasm";
-  MLIRContext context;
-  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  for (const auto* const name : {"repeated", "wrapper"}) {
-    auto gate = moduleOp->lookupSymbol<func::FuncOp>(name);
-    ASSERT_TRUE(gate);
-    EXPECT_TRUE(mqt::isUnitaryFunction(gate));
-  }
-  size_t loops = 0;
-  moduleOp->walk([&](scf::ForOp) { ++loops; });
-  EXPECT_EQ(loops, 2);
-  EXPECT_FALSE(mqt::getEntryPoint(*moduleOp).getOps<qc::CallOp>().empty());
-}
-
 TEST(OpenQASMTargetTest, LowersGateBodyLoopsAndBuiltinConstants) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;

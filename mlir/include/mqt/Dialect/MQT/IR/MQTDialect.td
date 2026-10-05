@@ -75,8 +75,8 @@ def MQTDialect : Dialect {
     Its body admits unitary operations and memory-effect-free, region-free
     classical computation. Statically bounded `scf.for` loops may contain these
     operations and nested bounded loops. QCO loop results must continue their
-    loop-carried qubits positionally. Other control flow remains unsupported;
-    quantum modifier bodies still exclude loops. Parameter computation is
+    loop-carried qubits positionally. Other control flow is unsupported;
+    quantum modifier bodies exclude loops. Parameter computation is
     evaluated eagerly when the invocation is reached; it need not be speculatable.
     The quantum action is unitary on the computation's defined input domain.
     Modifiers transform that action, not the parameter computation:
