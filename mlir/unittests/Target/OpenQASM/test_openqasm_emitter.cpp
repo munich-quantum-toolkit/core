@@ -864,7 +864,7 @@ _mqt_entry0 q;
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   auto entry = mqt::getEntryPoint(*moduleOp);
   ASSERT_TRUE(entry);
-  for (const auto name : {"main", "_mqt_entry", "_mqt_entry0"}) {
+  for (const auto* const name : {"main", "_mqt_entry", "_mqt_entry0"}) {
     auto gate = moduleOp->lookupSymbol<func::FuncOp>(name);
     ASSERT_TRUE(gate);
     EXPECT_TRUE(mqt::isUnitaryFunction(gate));

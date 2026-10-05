@@ -983,7 +983,7 @@ U(0.4, -0.2, 0.7) q;
   auto roundTrip = qc::translateOpenQASMToQC(*emitted, &context);
   ASSERT_TRUE(roundTrip);
   ASSERT_TRUE(succeeded(verify(*roundTrip)));
-  for (const auto name :
+  for (const auto* const name :
        {"main", "_mqt_entry", "_mqt_entry0", "_mqt_u", "_mqt_u0"}) {
     auto gate = roundTrip->lookupSymbol<func::FuncOp>(name);
     ASSERT_TRUE(gate) << name << "\n" << *emitted;
