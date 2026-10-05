@@ -10,10 +10,14 @@
 
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
 
+#include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
+
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Location.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/Operation.h"
@@ -24,9 +28,131 @@
 
 #include "llvm/ADT/STLExtras.h"
 
+#include <cassert>
 #include <cstdint>
+#include <optional>
+#include <variant>
 
 namespace mlir::mqt {
+
+std::optional<double>
+parameterToConstantDouble(const FloatParameter& parameter) {
+  if (const auto* scalar = std::get_if<double>(&parameter)) {
+    return *scalar;
+  }
+  return valueToConstantDouble(std::get<Value>(parameter));
+}
+
+FloatParameter addParameters(OpBuilder& builder, Location loc,
+                             const FloatParameter& lhs,
+                             const FloatParameter& rhs) {
+  const auto a = parameterToConstantDouble(lhs);
+  const auto b = parameterToConstantDouble(rhs);
+  if (a && b) {
+    return *a + *b;
+  }
+  return (FloatExpression(builder, loc, variantToValue(builder, loc, lhs)) +
+          FloatExpression(builder, loc, variantToValue(builder, loc, rhs)))
+      .getValue();
+}
+
+FloatParameter scaleParameter(OpBuilder& builder, Location loc,
+                              const FloatParameter& parameter, double scale) {
+  if (const auto value = parameterToConstantDouble(parameter)) {
+    return *value * scale;
+  }
+  return (FloatExpression(builder, loc, std::get<Value>(parameter)) *
+          FloatExpression::constant(builder, loc, scale))
+      .getValue();
+}
+
+FloatExpression::FloatExpression(OpBuilder& builder, Location loc, Value value)
+    : value_(value), builder_(&builder), loc_(loc) {
+  assert(value && isa<Float64Type>(value.getType()) && "expected an f64 value");
+}
+
+FloatExpression FloatExpression::withValue(Value value) const {
+  return {*builder_, loc_, value};
+}
+
+FloatExpression FloatExpression::constant(OpBuilder& builder, Location loc,
+                                          double value) {
+  return {builder, loc, constantFromScalar(builder, loc, value)};
+}
+
+FloatExpression FloatExpression::operator+(FloatExpression rhs) const {
+  return withValue(
+      builder_->createOrFold<arith::AddFOp>(loc_, value_, rhs.value_));
+}
+
+FloatExpression FloatExpression::operator-(FloatExpression rhs) const {
+  return withValue(
+      builder_->createOrFold<arith::SubFOp>(loc_, value_, rhs.value_));
+}
+
+FloatExpression FloatExpression::operator*(FloatExpression rhs) const {
+  return withValue(
+      builder_->createOrFold<arith::MulFOp>(loc_, value_, rhs.value_));
+}
+
+FloatExpression FloatExpression::operator/(FloatExpression rhs) const {
+  return withValue(
+      builder_->createOrFold<arith::DivFOp>(loc_, value_, rhs.value_));
+}
+
+FloatExpression FloatExpression::operator-() const {
+  return withValue(builder_->createOrFold<arith::NegFOp>(loc_, value_));
+}
+
+FloatExpression FloatExpression::sin() const {
+  return withValue(builder_->createOrFold<math::SinOp>(loc_, value_));
+}
+
+FloatExpression FloatExpression::cos() const {
+  return withValue(builder_->createOrFold<math::CosOp>(loc_, value_));
+}
+
+FloatExpression FloatExpression::tan() const {
+  return withValue(builder_->createOrFold<math::TanOp>(loc_, value_));
+}
+
+FloatExpression FloatExpression::atan() const {
+  return withValue(builder_->createOrFold<math::AtanOp>(loc_, value_));
+}
+
+FloatExpression FloatExpression::abs() const {
+  return withValue(builder_->createOrFold<math::AbsFOp>(loc_, value_));
+}
+
+FloatExpression FloatExpression::floor() const {
+  return withValue(builder_->createOrFold<math::FloorOp>(loc_, value_));
+}
+
+FloatExpression FloatExpression::sqrt() const {
+  return withValue(builder_->createOrFold<math::SqrtOp>(loc_, value_));
+}
+
+FloatExpression FloatExpression::atan2(FloatExpression x) const {
+  return withValue(
+      builder_->createOrFold<math::Atan2Op>(loc_, value_, x.value_));
+}
+
+Value FloatExpression::oge(FloatExpression rhs) const {
+  return builder_->createOrFold<arith::CmpFOp>(loc_, arith::CmpFPredicate::OGE,
+                                               value_, rhs.value_);
+}
+
+Value FloatExpression::olt(FloatExpression rhs) const {
+  return builder_->createOrFold<arith::CmpFOp>(loc_, arith::CmpFPredicate::OLT,
+                                               value_, rhs.value_);
+}
+
+FloatExpression FloatExpression::select(Value condition,
+                                        FloatExpression trueValue,
+                                        FloatExpression falseValue) {
+  return trueValue.withValue(trueValue.builder_->createOrFold<arith::SelectOp>(
+      trueValue.loc_, condition, trueValue.value_, falseValue.value_));
+}
 
 Value constantFromScalar(OpBuilder& builder, Location loc, const double value) {
   return arith::ConstantOp::create(builder, loc,

@@ -55,87 +55,7 @@ namespace mlir::qco {
 
 namespace {
 
-/// Scalar arithmetic for runtime quaternion composition.
-struct Val {
-  Value v;
-  RewriterBase* rewriter = nullptr;
-  Location loc;
-
-  static Val constant(RewriterBase& rewriter, Location loc, double x) {
-    return {
-        .v = mqt::constantFromScalar(rewriter, loc, x),
-        .rewriter = &rewriter,
-        .loc = loc,
-    };
-  }
-
-  [[nodiscard]] Val withValue(Value value) const {
-    return {.v = value, .rewriter = rewriter, .loc = loc};
-  }
-
-  [[nodiscard]] Val operator+(Val o) const {
-    return withValue(rewriter->createOrFold<arith::AddFOp>(loc, v, o.v));
-  }
-  [[nodiscard]] Val operator-(Val o) const {
-    return withValue(rewriter->createOrFold<arith::SubFOp>(loc, v, o.v));
-  }
-  [[nodiscard]] Val operator*(Val o) const {
-    return withValue(rewriter->createOrFold<arith::MulFOp>(loc, v, o.v));
-  }
-  [[nodiscard]] Val operator/(Val o) const {
-    return withValue(rewriter->createOrFold<arith::DivFOp>(loc, v, o.v));
-  }
-  [[nodiscard]] Val operator-() const {
-    return withValue(rewriter->createOrFold<arith::NegFOp>(loc, v));
-  }
-  [[nodiscard]] Val sin() const {
-    return withValue(rewriter->createOrFold<math::SinOp>(loc, v));
-  }
-  [[nodiscard]] Val cos() const {
-    return withValue(rewriter->createOrFold<math::CosOp>(loc, v));
-  }
-  [[nodiscard]] Val abs() const {
-    return withValue(rewriter->createOrFold<math::AbsFOp>(loc, v));
-  }
-  [[nodiscard]] Val floor() const {
-    return withValue(rewriter->createOrFold<math::FloorOp>(loc, v));
-  }
-  [[nodiscard]] Val sqrt() const {
-    return withValue(rewriter->createOrFold<math::SqrtOp>(loc, v));
-  }
-  [[nodiscard]] Val atan2(Val x) const {
-    return withValue(rewriter->createOrFold<math::Atan2Op>(loc, v, x.v));
-  }
-  [[nodiscard]] Value oge(Val o) const {
-    return arith::CmpFOp::create(*rewriter, loc, arith::CmpFPredicate::OGE, v,
-                                 o.v)
-        .getResult();
-  }
-  [[nodiscard]] Value olt(Val o) const {
-    return arith::CmpFOp::create(*rewriter, loc, arith::CmpFPredicate::OLT, v,
-                                 o.v)
-        .getResult();
-  }
-
-  static Value land(Value a, Value b, RewriterBase& rewriter, Location loc) {
-    return arith::AndIOp::create(rewriter, loc, a, b).getResult();
-  }
-  static Value lnot(Value a, RewriterBase& rewriter, Location loc) {
-    auto falseV =
-        arith::ConstantOp::create(rewriter, loc, rewriter.getBoolAttr(false));
-    return arith::CmpIOp::create(rewriter, loc, arith::CmpIPredicate::eq, a,
-                                 falseV)
-        .getResult();
-  }
-  static Val select(Value c, Val t, Val f) {
-    return {
-        .v = arith::SelectOp::create(*t.rewriter, t.loc, c, t.v, f.v)
-                 .getResult(),
-        .rewriter = t.rewriter,
-        .loc = t.loc,
-    };
-  }
-};
+using Val = mqt::FloatExpression;
 
 enum class RotationAxis : uint8_t { X, Y, Z };
 
@@ -279,22 +199,18 @@ static std::optional<RotationAxis> getRotationAxis(Operation* op) {
       .Default([](auto) { return std::nullopt; });
 }
 
-/// Share the synthesis angle contract while keeping quaternion arithmetic
-/// local.
+/// Normalize gate angles with the synthesis SU(2) contract.
 static Val normalizeGateAngle(Val angle) {
   const auto normalized = decomposition::normalizeRotationParameter(
-      *angle.rewriter, angle.loc, angle.v);
-  return {
-      .v = mqt::variantToValue(*angle.rewriter, angle.loc, normalized),
-      .rewriter = angle.rewriter,
-      .loc = angle.loc,
-  };
+      angle.getBuilder(), angle.getLoc(), angle.getValue());
+  return {angle.getBuilder(), angle.getLoc(),
+          mqt::variantToValue(angle.getBuilder(), angle.getLoc(), normalized)};
 }
 
 static Val gateParam(UnitaryOpInterface op, unsigned i, RewriterBase& rewriter,
                      Location loc) {
   Value p = op.getParameter(i);
-  return normalizeGateAngle(Val{.v = p, .rewriter = &rewriter, .loc = loc});
+  return normalizeGateAngle(Val(rewriter, loc, p));
 }
 
 /// Constant gates share the matrix contract. Only runtime gates need symbolic
@@ -374,11 +290,13 @@ static std::pair<Quat, Val> quaternionFromGate(UnitaryOpInterface op,
 /// @return `{theta, phi, lambda, phaseCorrection}` suitable for UOp
 static std::array<Val, 4> anglesFromQuaternion(const Quat& q,
                                                const ScalarConsts& c) {
-  RewriterBase& rewriter = *q.w.rewriter;
-  const Location loc = q.w.loc;
+  OpBuilder& rewriter = q.w.getBuilder();
+  const Location loc = q.w.getLoc();
 
-  const auto xyNearZero =
-      Val::land(q.x.abs().olt(c.eps), q.y.abs().olt(c.eps), rewriter, loc);
+  const auto land = [&](Value a, Value b) {
+    return rewriter.createOrFold<arith::AndIOp>(loc, a, b);
+  };
+  const auto xyNearZero = land(q.x.abs().olt(c.eps), q.y.abs().olt(c.eps));
 
   /// The half-angle norms retain small rotations when cos(beta) rounds to one.
   /// Force beta=0 when (x,y)≈0, retaining the pure-Z shortcut.
@@ -393,10 +311,11 @@ static std::array<Val, 4> anglesFromQuaternion(const Quat& q,
   const auto safe1 = beta.abs().oge(c.eps);
   const auto betaMinusPi = beta - c.pi;
   const auto safe2 = betaMinusPi.abs().oge(c.eps);
-  const auto notXy = Val::lnot(xyNearZero, rewriter, loc);
-  const auto safe =
-      Val::land(Val::land(safe1, safe2, rewriter, loc), notXy, rewriter, loc);
-  const auto usePiGimbal = Val::land(safe1, notXy, rewriter, loc);
+  const auto notXy = rewriter.createOrFold<arith::CmpIOp>(
+      loc, arith::CmpIPredicate::eq, xyNearZero,
+      mqt::constantFromScalar(rewriter, loc, false));
+  const auto safe = land(land(safe1, safe2), notXy);
+  const auto usePiGimbal = land(safe1, notXy);
 
   /// theta+ = atan2(z, w); theta- = atan2(-x, y)
   /// Sanitize y when (x,y)≈0 for the constant folder.
@@ -432,7 +351,7 @@ static Quat hadamardConjugate(const Quat& q) {
 }
 
 static bool isZeroAngle(Val angle) {
-  const auto value = mqt::valueToConstantDouble(angle.v);
+  const auto value = mqt::valueToConstantDouble(angle.getValue());
   return value && std::abs(*value) <= mqt::PARAMETER_COMPARISON_TOLERANCE;
 }
 
@@ -533,7 +452,9 @@ static Value emitRuntimeEulerAngles(RewriterBase& rewriter, Location loc,
     phase = phase - sumAngles(phi, lambda) / consts.two;
   }
   return decomposition::emitParameterizedEulerAngles(
-      rewriter, loc, qubit, {theta.v, phi.v, lambda.v, phase.v}, basis);
+      rewriter, loc, qubit,
+      {theta.getValue(), phi.getValue(), lambda.getValue(), phase.getValue()},
+      basis);
 }
 
 static bool isMergeable(Operation* op) {
@@ -712,14 +633,10 @@ struct MergeSingleQubitRotationGatesPattern final
       outer =
           sumAngles(outer, angle(rotationFirst ? chain.front() : chain.back()));
     } else {
-      angles.theta = {
-          .v = chain[middle].getParameter(0),
-          .rewriter = &rewriter,
-          .loc = loc,
-      };
+      angles.theta = Val(rewriter, loc, chain[middle].getParameter(0));
       if (basis == decomposition::SingleQubitBasis::ZSXX ||
           isOuter(chain[middle]) ||
-          mqt::valueToConstantDouble(angles.theta.v)) {
+          mqt::valueToConstantDouble(angles.theta.getValue())) {
         angles.theta = normalizeGateAngle(angles.theta);
       }
       if (!outerX) {
