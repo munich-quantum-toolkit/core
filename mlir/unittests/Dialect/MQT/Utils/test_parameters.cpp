@@ -64,12 +64,8 @@ protected:
 TEST_F(ParametersTest, KnownParametersStayInHostArithmetic) {
   auto loc = builder_.getUnknownLoc();
   const auto size = function_.getBody().front().getOperations().size();
-  EXPECT_EQ(mqt::parameterToConstantDouble(
-                mqt::addParameters(builder_, loc, 1.25, -0.5)),
-            std::optional{0.75});
-  EXPECT_EQ(mqt::parameterToConstantDouble(
-                mqt::scaleParameter(builder_, loc, 1.25, -2.)),
-            std::optional{-2.5});
+  EXPECT_EQ(std::get<double>(mqt::scaleParameter(builder_, loc, 1.25, -2.)),
+            -2.5);
   EXPECT_EQ(function_.getBody().front().getOperations().size(), size);
 
   auto a = mqt::constantFromScalar(builder_, loc, 1.25);
@@ -77,40 +73,10 @@ TEST_F(ParametersTest, KnownParametersStayInHostArithmetic) {
   auto sum = arith::AddFOp::create(builder_, loc, a, b).getResult();
   const auto expressionSize =
       function_.getBody().front().getOperations().size();
-  auto result = mqt::addParameters(builder_, loc, sum, 2.);
-  ASSERT_TRUE(std::holds_alternative<double>(result));
-  EXPECT_DOUBLE_EQ(std::get<double>(result), 2.75);
-  EXPECT_EQ(mqt::parameterToConstantDouble(
-                mqt::scaleParameter(builder_, loc, sum, -2.)),
-            std::optional{-1.5});
+  EXPECT_EQ(std::get<double>(mqt::foldParameter(sum)), 0.75);
+  EXPECT_EQ(std::get<double>(mqt::scaleParameter(builder_, loc, sum, -2.)),
+            -1.5);
   EXPECT_EQ(function_.getBody().front().getOperations().size(), expressionSize);
-}
-
-TEST_F(ParametersTest, MixedArithmeticReusesKnownConstantExpressions) {
-  auto loc = builder_.getUnknownLoc();
-  auto input = function_.getArgument(0);
-  auto a = mqt::constantFromScalar(builder_, loc, 1.25);
-  auto b = mqt::constantFromScalar(builder_, loc, -0.5);
-  auto constantExpression =
-      arith::AddFOp::create(builder_, loc, a, b).getResult();
-  EXPECT_EQ(std::get<double>(mqt::foldParameter(constantExpression)), 0.75);
-  EXPECT_EQ(std::get<Value>(mqt::foldParameter(input)), input);
-  EXPECT_EQ(mqt::FloatExpression(builder_, loc, mqt::FloatParameter{input})
-                .getValue(),
-            input);
-  for (bool constantFirst : {false, true}) {
-    auto result = std::get<Value>(
-        constantFirst
-            ? mqt::addParameters(builder_, loc, constantExpression, input)
-            : mqt::addParameters(builder_, loc, input, constantExpression));
-    auto addition = result.getDefiningOp<arith::AddFOp>();
-    ASSERT_TRUE(addition);
-    EXPECT_TRUE(addition.getLhs() == input || addition.getRhs() == input);
-    EXPECT_EQ(mqt::valueToDouble(addition.getLhs() == input
-                                     ? addition.getRhs()
-                                     : addition.getLhs()),
-              std::optional{0.75});
-  }
 }
 
 TEST_F(ParametersTest, RuntimeParametersRetainIdentityAndDominance) {
@@ -118,8 +84,11 @@ TEST_F(ParametersTest, RuntimeParametersRetainIdentityAndDominance) {
   auto lhs = function_.getArgument(0);
   auto rhs = function_.getArgument(1);
   EXPECT_EQ(mqt::variantToValue(builder_, loc, mqt::FloatParameter{lhs}), lhs);
+  EXPECT_EQ(std::get<Value>(mqt::foldParameter(lhs)), lhs);
   EXPECT_FALSE(mqt::parameterToConstantDouble(lhs));
-  auto sum = std::get<Value>(mqt::addParameters(builder_, loc, lhs, rhs));
+  auto sum = (mqt::FloatExpression(builder_, loc, mqt::FloatParameter{lhs}) +
+              mqt::FloatExpression(builder_, loc, rhs))
+                 .getValue();
   auto addition = sum.getDefiningOp<arith::AddFOp>();
   ASSERT_TRUE(addition);
   EXPECT_EQ(addition.getLhs(), lhs);
@@ -186,38 +155,26 @@ TEST_F(ParametersTest, SSAArithmeticUsesOperationFolders) {
 TEST_F(ParametersTest,
        ScalarArithmeticPreservesSignedZeroAndNonfiniteOperands) {
   auto loc = builder_.getUnknownLoc();
-  auto zeroSum = mqt::parameterToConstantDouble(
-      mqt::addParameters(builder_, loc, -0., 0.));
-  ASSERT_TRUE(zeroSum);
-  EXPECT_FALSE(std::signbit(*zeroSum));
-  auto negativeZero = mqt::parameterToConstantDouble(
-      mqt::scaleParameter(builder_, loc, 0., -1.));
-  ASSERT_TRUE(negativeZero);
-  EXPECT_TRUE(std::signbit(*negativeZero));
+  EXPECT_TRUE(std::signbit(
+      std::get<double>(mqt::scaleParameter(builder_, loc, 0., -1.))));
   const auto y = mqt::FloatExpression::constant(builder_, loc, -0.);
   const auto x = mqt::FloatExpression::constant(builder_, loc, -1.);
   EXPECT_EQ(mqt::valueToConstantDouble(y.atan2(x).getValue()),
             std::optional{-std::numbers::pi});
 
   auto input = function_.getArgument(0);
-  auto sum = std::get<Value>(mqt::addParameters(builder_, loc, input, 0.));
+  auto sum = (mqt::FloatExpression(builder_, loc, input) +
+              mqt::FloatExpression::constant(builder_, loc, 0.))
+                 .getValue();
   auto product = std::get<Value>(mqt::scaleParameter(builder_, loc, input, 0.));
   builder_.setInsertionPointToStart(&function_.getBody().front());
   auto negativeInput = mqt::constantFromScalar(builder_, loc, -0.);
   input.replaceAllUsesWith(negativeInput);
-  auto runtimeSum = mqt::valueToConstantDouble(sum);
-  auto runtimeProduct = mqt::valueToConstantDouble(product);
-  ASSERT_TRUE(runtimeSum);
-  ASSERT_TRUE(runtimeProduct);
-  EXPECT_FALSE(std::signbit(*runtimeSum));
-  EXPECT_TRUE(std::signbit(*runtimeProduct));
+  EXPECT_FALSE(std::signbit(mqt::valueToConstantDouble(sum).value()));
+  EXPECT_TRUE(std::signbit(mqt::valueToConstantDouble(product).value()));
   auto infinity = mqt::constantFromScalar(
       builder_, loc, std::numeric_limits<double>::infinity());
   negativeInput.replaceAllUsesWith(infinity);
-  auto added = mqt::valueToConstantDouble(sum);
-  auto multiplied = mqt::valueToConstantDouble(product);
-  ASSERT_TRUE(added);
-  ASSERT_TRUE(multiplied);
-  EXPECT_TRUE(std::isinf(*added));
-  EXPECT_TRUE(std::isnan(*multiplied));
+  EXPECT_TRUE(std::isinf(mqt::valueToConstantDouble(sum).value()));
+  EXPECT_TRUE(std::isnan(mqt::valueToConstantDouble(product).value()));
 }

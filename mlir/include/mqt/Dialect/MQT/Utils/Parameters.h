@@ -26,8 +26,7 @@ namespace mlir::mqt {
 /// Absolute tolerance used when comparing static operation parameters.
 inline constexpr double PARAMETER_COMPARISON_TOLERANCE = 1e-15;
 
-/// A host double or an existing f64 SSA value. This alias preserves the
-/// scalar-or-SSA argument type used by program builders.
+/// A host double or an f64 SSA value.
 using FloatParameter = std::variant<double, Value>;
 
 /// Evaluate a host double or a constant SSA expression with the shared folder.
@@ -38,25 +37,19 @@ parameterToConstantDouble(const FloatParameter& parameter);
 /// values. This does not emit IR or apply angle policies.
 [[nodiscard]] FloatParameter foldParameter(const FloatParameter& parameter);
 
-/// Fold scalar arithmetic without angle wrapping or approximate identities.
-/// Known operands stay in host arithmetic; unknown operands use createOrFold.
-/// SSA operands must dominate the builder insertion point.
-[[nodiscard]] FloatParameter addParameters(OpBuilder& builder, Location loc,
-                                           const FloatParameter& lhs,
-                                           const FloatParameter& rhs);
-
-/// Scale a parameter with the same folding and dominance contract as
-/// addParameters. A zero factor does not discard an unknown operand.
+/// Scale known constants in host arithmetic and SSA values with local folding.
+/// SSA operands must dominate the builder's insertion point. A zero factor
+/// preserves unknown operands and their signed-zero and nonfinite behavior.
 [[nodiscard]] FloatParameter scaleParameter(OpBuilder& builder, Location loc,
                                             const FloatParameter& parameter,
                                             double scale);
 
-/// Build f64 SSA arithmetic with MLIR's local operation folders.
+/// Build f64 arithmetic with local MLIR folding.
 ///
-/// The borrowed builder must outlive the expressions. Operations use its
-/// current insertion point; operands must dominate it and use the same builder.
-/// Load the arith and math dialects before emitting their operations. This
-/// wrapper neither traverses expression DAGs nor applies angle policies.
+/// The builder must outlive the expressions. Operands must dominate its current
+/// insertion point; combined expressions must use the same builder.
+/// Load the arith and math dialects before use.
+/// QCO utilities own angle normalization and phase handling.
 class FloatExpression {
   Value value_;
   OpBuilder* builder_;

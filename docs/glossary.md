@@ -264,15 +264,13 @@ dynamic
 
 floating-point parameter
   **Preferred term:** floating-point parameter. **Accepted alias:**
-  `FloatParameter` in C++. A host double or an existing f64 SSA value supplied
-  to a builder or synthesis utility. It carries no angle-normalization policy.
+  `FloatParameter` in C++. A host double or an f64 SSA value supplied to a
+  builder or synthesis utility.
 
 floating-point expression
   **Preferred term:** floating-point expression. **Accepted alias:**
-  `FloatExpression` in C++. An f64 SSA value paired with a borrowed builder and
-  source location. It emits scalar arithmetic at the builder's current insertion
-  point. MLIR operation folders simplify this arithmetic; rotation utilities own
-  angle and phase policies.
+  `FloatExpression` in C++. An f64 SSA expression built and locally folded with
+  an MLIR builder. Rotation utilities own angle and phase handling.
 
 static gate count
   **Preferred term:** static gate count. **Accepted aliases:** none. The number

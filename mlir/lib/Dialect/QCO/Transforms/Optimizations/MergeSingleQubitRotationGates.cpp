@@ -203,8 +203,7 @@ static std::optional<RotationAxis> getRotationAxis(Operation* op) {
 static Val normalizeGateAngle(Val angle) {
   const auto normalized = decomposition::normalizeRotationParameter(
       angle.getBuilder(), angle.getLoc(), angle.getValue());
-  return {angle.getBuilder(), angle.getLoc(),
-          mqt::variantToValue(angle.getBuilder(), angle.getLoc(), normalized)};
+  return {angle.getBuilder(), angle.getLoc(), normalized};
 }
 
 static Val gateParam(UnitaryOpInterface op, unsigned i, RewriterBase& rewriter,

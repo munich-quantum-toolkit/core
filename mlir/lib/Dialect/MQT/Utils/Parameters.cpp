@@ -52,21 +52,6 @@ FloatParameter foldParameter(const FloatParameter& parameter) {
   return parameter;
 }
 
-FloatParameter addParameters(OpBuilder& builder, Location loc,
-                             const FloatParameter& lhs,
-                             const FloatParameter& rhs) {
-  const auto foldedLhs = foldParameter(lhs);
-  const auto foldedRhs = foldParameter(rhs);
-  const auto* a = std::get_if<double>(&foldedLhs);
-  const auto* b = std::get_if<double>(&foldedRhs);
-  if (a != nullptr && b != nullptr) {
-    return *a + *b;
-  }
-  return (FloatExpression(builder, loc, foldedLhs) +
-          FloatExpression(builder, loc, foldedRhs))
-      .getValue();
-}
-
 FloatParameter scaleParameter(OpBuilder& builder, Location loc,
                               const FloatParameter& parameter, double scale) {
   const auto folded = foldParameter(parameter);
