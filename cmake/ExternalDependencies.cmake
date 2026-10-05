@@ -24,7 +24,7 @@ endif()
 fetchcontent_declare(
   jeff-mlir
   GIT_REPOSITORY https://github.com/unitaryfoundation/jeff-mlir.git
-  GIT_TAG ab4d73a590d097c2b67b6c6c489444d9070fe4ab
+  GIT_TAG 50473fefc2ba3f54568b57bc6a413367edffcc00
   EXCLUDE_FROM_ALL)
 block()
   # Cap'n Proto defines a global `check` target when BUILD_TESTING is enabled.

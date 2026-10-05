@@ -1457,6 +1457,14 @@ protected:
     RewritePatternSet patterns(context);
 
     for (auto function : moduleOp.getOps<func::FuncOp>()) {
+      for (unsigned index = 0; index < function.getNumArguments(); ++index) {
+        if (auto name = function.getArgAttrOfType<StringAttr>(
+                index, "jeff.input_name")) {
+          function.setArgAttr(
+              index, mqt::MQTDialect::InputNameAttrHelper::getNameStr(), name);
+          function.removeArgAttr(index, "jeff.input_name");
+        }
+      }
       if (function == *entryPoint) {
         function.setPublic();
         mqt::setEntryPoint(function);
