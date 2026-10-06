@@ -17,6 +17,9 @@
 
 #include "gtest/gtest.h"
 
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/IR/BuiltinAttributes.h"
+
 #include <algorithm>
 #include <cmath>
 #include <complex>
@@ -153,13 +156,12 @@ TEST(GenerateProgramTest, KeepsLargestModularMultiplierFiniteAndStructured) {
   ASSERT_TRUE(program);
   auto moduleOp = program->module();
 
-  const auto table = test::angleTable(moduleOp);
-  ASSERT_TRUE(table);
-  EXPECT_EQ(table.getNumElements(), (bits + 1U) * (bits + 1U));
-  for (const auto angle : table.getValues<double>()) {
-    EXPECT_TRUE(std::isfinite(angle));
-  }
-  EXPECT_LT(test::countOperations(moduleOp), 200U);
+  moduleOp.walk([&](arith::ConstantOp op) {
+    if (auto table = dyn_cast<DenseElementsAttr>(op.getValue())) {
+      EXPECT_FALSE(table.getElementType().isF64());
+    }
+  });
+  EXPECT_LT(test::countOperations(moduleOp), 300U);
 }
 
 TEST(GenerateProgramTest, SamplesModularMultiplierAgainstReference) {

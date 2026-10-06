@@ -1839,6 +1839,36 @@ TEST(OpenQASM3EmissionTest, PreservesControlledGatesAndAngleTables) {
   }
 }
 
+TEST(OpenQASM3EmissionTest, RoundTripsDenseBooleanInputLookups) {
+  MLIRContext context(emissionDialects());
+  context.loadAllAvailableDialects();
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
+      %zero = arith.constant 0 : index
+      %one = arith.constant 1 : index
+      %two = arith.constant 2 : index
+      %bits = arith.constant dense<[false, true]> : tensor<2xi1>
+      %q = qc.alloc : !qc.qubit
+      %result = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+      scf.for %index = %zero to %two step %one {
+        %bit = tensor.extract %bits[%index] : tensor<2xi1>
+        scf.if %bit { qc.x %q : !qc.qubit }
+      }
+      %measured = qc.measure %q : !qc.qubit -> i1
+      cbit.store %measured, %result[%zero] : !cbit.reg<1>
+      qc.dealloc %q : !qc.qubit
+      return %result : !cbit.reg<1>
+    }
+  })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  auto source = qc::translateQCToOpenQASM3(*moduleOp);
+  ASSERT_TRUE(succeeded(source));
+  auto restored = qc::translateOpenQASMToQC(*source, &context);
+  ASSERT_TRUE(restored);
+  expectOneSample(*restored);
+}
+
 TEST(OpenQASM3EmissionTest, EmitsLargeConstantTables) {
   MLIRContext context(emissionDialects());
   context.loadAllAvailableDialects();

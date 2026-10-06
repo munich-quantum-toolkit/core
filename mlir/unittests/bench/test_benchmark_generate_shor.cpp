@@ -18,7 +18,6 @@
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/bench/Generate.h"
 
-#include "ModularArithmetic.h"
 #include "ShorMultiplier.h"
 #include "TestUtils.h"
 
@@ -31,8 +30,6 @@
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Verifier.h"
 
-#include "llvm/ADT/APInt.h"
-#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
 
 #include <bit>
@@ -106,7 +103,6 @@ static std::optional<QCOProgram>
 inPlaceMultiplier(uint64_t number, uint64_t multiplier,
                   bool composeInverse = false) {
   const auto bits = static_cast<int64_t>(std::bit_width(number));
-  const auto width = static_cast<unsigned>(bits + 1);
   uint64_t inverse = 1;
   while ((inverse * multiplier) % number != 1) {
     ++inverse;
@@ -114,16 +110,11 @@ inPlaceMultiplier(uint64_t number, uint64_t multiplier,
   auto context = createCompilerContext();
   auto moduleOp = qc::QCProgramBuilder::build(
       context.get(), [&](qc::QCProgramBuilder& builder) {
-        SmallVector<double> angles;
-        for (auto value : {multiplier, inverse, multiplier}) {
-          detail::appendModularPhaseAngles(angles, llvm::APInt(width, value),
-                                           llvm::APInt(width, number));
-        }
-        auto type = RankedTensorType::get({static_cast<int64_t>(angles.size())},
-                                          builder.getF64Type());
-        auto helper = detail::createInPlaceMultiplier(builder, bits, type);
-        auto table = arith::ConstantOp::create(
-            builder, DenseElementsAttr::get(type, ArrayRef<double>(angles)));
+        auto helper = detail::createInPlaceMultiplier(builder, bits);
+        auto multiplierValue =
+            builder.intConstant(static_cast<int64_t>(multiplier));
+        auto inverseValue = builder.intConstant(static_cast<int64_t>(inverse));
+        auto modulus = builder.intConstant(static_cast<int64_t>(number));
         auto control = builder.allocQubit();
         auto value = builder.allocQubitRegisterStorage(bits);
         auto accumulator = builder.allocQubitRegisterStorage(bits + 1);
@@ -133,19 +124,20 @@ inPlaceMultiplier(uint64_t number, uint64_t multiplier,
                                  value,
                                  accumulator,
                                  work,
-                                 table,
-                                 builder.indexConstant(0),
+                                 multiplierValue,
+                                 inverseValue,
+                                 modulus,
                              });
         if (composeInverse) {
-          builder.call(helper,
-                       {
-                           control,
-                           value,
-                           accumulator,
-                           work,
-                           table,
-                           builder.indexConstant((bits + 1) * (bits + 1)),
-                       });
+          builder.call(helper, {
+                                   control,
+                                   value,
+                                   accumulator,
+                                   work,
+                                   inverseValue,
+                                   multiplierValue,
+                                   modulus,
+                               });
         }
         return SmallVector<Value>{};
       });
@@ -243,9 +235,12 @@ TEST(GenerateProgramTest, KeepsLargestShorStructuredAndCompilable) {
   const Shor benchmark({.number = ShorOptions::MAX_NUMBER});
   auto program = generate(benchmark);
   ASSERT_TRUE(program);
-  auto table = test::angleTable(program->module());
-  ASSERT_TRUE(table);
-  EXPECT_EQ(table.getNumElements(), 4U * 31U * 32U * 32U);
+  program->module().walk([&](arith::ConstantOp op) {
+    if (auto table = dyn_cast<DenseElementsAttr>(op.getValue())) {
+      EXPECT_FALSE(table.getElementType().isF64());
+      EXPECT_LE(table.getNumElements(), 4U * 31U);
+    }
+  });
   EXPECT_LT(test::countOperations(program->module()), 600U);
   EXPECT_EQ(test::countOps<qc::AllocOp>(program->module()), 2U);
   auto qcoProgram = std::move(*program).intoQCO();

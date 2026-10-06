@@ -2596,6 +2596,41 @@ TEST_F(QCODDFunctionalityTest, ReadsDenseFloatTablesInStructuredLoops) {
   }
 }
 
+TEST_F(QCODDFunctionalityTest, ReadsDenseIntegerInputsInStructuredLoops) {
+  for (const unsigned width : {1U, 8U, 64U}) {
+    auto moduleOp = buildModule([&](QCOProgramBuilder& b) {
+      auto type = RankedTensorType::get({2}, b.getIntegerType(width));
+      const std::array values{
+          llvm::APInt(width, 0),
+          llvm::APInt::getAllOnes(width),
+      };
+      auto table = arith::ConstantOp::create(
+          b, DenseElementsAttr::get(type, ArrayRef<llvm::APInt>(values)));
+      auto q = b.h(b.staticQubit(0));
+      auto result = b.scfFor(
+          0, 2, 1, ValueRange{q},
+          [&](Value index, ValueRange args) -> SmallVector<Value> {
+            auto value = tensor::ExtractOp::create(b, table, ValueRange{index});
+            auto bit = arith::AndIOp::create(
+                b, value,
+                arith::ConstantOp::create(
+                    b, b.getIntegerAttr(type.getElementType(), 1)));
+            auto angle = arith::UIToFPOp::create(b, b.getF64Type(), bit);
+            auto phase = arith::MulFOp::create(
+                b, angle, b.floatConstant(std::numbers::pi));
+            return {b.p(phase, args[0])};
+          });
+      b.sink(b.h(result[0]));
+      return b.intConstant(0);
+    });
+    ASSERT_TRUE(moduleOp);
+    expectEqualToReference(mainFunc(*moduleOp), 1, {referenceGate<XOp>({0})});
+    auto counts = sample(mainFunc(*moduleOp), 8, 1);
+    ASSERT_TRUE(succeeded(counts));
+    EXPECT_EQ(*counts, (std::map<std::string, size_t>{{"1", 8}}));
+  }
+}
+
 TEST_F(QCODDFunctionalityTest, RejectsOutOfBoundsFloatTableIndices) {
   auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
     module {

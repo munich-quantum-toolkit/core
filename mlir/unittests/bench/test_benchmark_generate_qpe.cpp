@@ -9,6 +9,7 @@
  */
 
 #include "bench/QPE.hpp"
+#include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/bench/Generate.h"
 
@@ -17,24 +18,91 @@
 #include "gtest/gtest.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
-#include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "mlir/IR/Block.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Value.h"
 #include "mlir/Support/LLVM.h"
 
-#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/APInt.h"
+#include "llvm/ADT/DenseMap.h"
 
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <numbers>
+#include <vector>
 
 namespace mqt::bench {
 
 using namespace mlir;
+
+static void evaluateResidueLoop(scf::ForOp loop,
+                                DenseMap<Value, Attribute>& arguments,
+                                std::vector<uint64_t>& residues,
+                                std::vector<double>& angles) {
+  auto lower = dyn_cast_or_null<IntegerAttr>(
+      test::evaluateArithmetic(loop.getLowerBound(), arguments));
+  auto upper = dyn_cast_or_null<IntegerAttr>(
+      test::evaluateArithmetic(loop.getUpperBound(), arguments));
+  auto step = dyn_cast_or_null<IntegerAttr>(
+      test::evaluateArithmetic(loop.getStep(), arguments));
+  ASSERT_TRUE(lower);
+  ASSERT_TRUE(upper);
+  ASSERT_TRUE(step);
+  ASSERT_GT(step.getInt(), 0);
+  ASSERT_EQ(loop.getInitArgs().size(), 1U);
+  auto carried =
+      test::evaluateArithmetic(loop.getInitArgs().front(), arguments);
+  ASSERT_TRUE(carried);
+  for (auto index = lower.getInt(); index < upper.getInt();
+       index += step.getInt()) {
+    arguments[loop.getInductionVar()] =
+        IntegerAttr::get(loop.getInductionVar().getType(), index);
+    arguments[loop.getRegionIterArg(0)] = carried;
+    for (auto& operation : *loop.getBody()) {
+      if (auto control = dyn_cast<qc::CtrlOp>(operation)) {
+        qc::POp phase;
+        control.walk([&](qc::POp op) { phase = op; });
+        ASSERT_TRUE(phase);
+        auto angle = dyn_cast_or_null<FloatAttr>(
+            test::evaluateArithmetic(phase.getTheta(), arguments));
+        ASSERT_TRUE(angle);
+        residues.push_back(
+            cast<IntegerAttr>(carried).getValue().getZExtValue());
+        angles.push_back(angle.getValueAsDouble());
+      }
+    }
+    carried = test::evaluateArithmetic(
+        loop.getBody()->getTerminator()->getOperand(0), arguments);
+    ASSERT_TRUE(carried);
+  }
+  arguments[loop.getResult(0)] = carried;
+}
+
+TEST(GenerateProgramTest, KeepsQPEPhaseStateScalarAtMaximumPrecision) {
+  for (const auto method : {QPEMethod::Standard, QPEMethod::Iterative}) {
+    SCOPED_TRACE(static_cast<int>(method));
+    const QPE benchmark({
+        .precision = QPEOptions::MAX_PRECISION,
+        .phase = Phase(std::numeric_limits<uint64_t>::max() - 1,
+                       std::numeric_limits<uint64_t>::max()),
+        .method = method,
+    });
+    auto program = generate(benchmark);
+    ASSERT_TRUE(program);
+    auto moduleOp = program->module();
+    moduleOp.walk([&](arith::ConstantOp op) {
+      EXPECT_FALSE(isa<DenseFPElementsAttr>(op.getValue()));
+    });
+    EXPECT_LT(test::countOperations(moduleOp), 150U);
+    test::expectJeffRoundTrip(program->copy());
+  }
+}
 
 TEST(GenerateProgramTest, KeepsStandardQPEPowerAndResultOrderAligned) {
   const QPE benchmark({.precision = 2, .phase = Phase(1, 4)});
@@ -43,19 +111,12 @@ TEST(GenerateProgramTest, KeepsStandardQPEPowerAndResultOrderAligned) {
   auto program = generate(benchmark);
   ASSERT_TRUE(program);
   auto moduleOp = program->module();
-  auto table = test::angleTable(moduleOp);
-  ASSERT_TRUE(table);
-  const auto angles = llvm::to_vector(table.getValues<double>());
-  ASSERT_EQ(angles.size(), 2U);
-  EXPECT_NEAR(angles[0], std::numbers::pi / 2., 1e-15);
-  EXPECT_NEAR(angles[1], std::numbers::pi, 1e-15);
-
-  tensor::ExtractOp extract;
-  moduleOp.walk([&](tensor::ExtractOp op) { extract = op; });
-  ASSERT_TRUE(extract);
-  auto powerLoop = extract->getParentOfType<scf::ForOp>();
+  scf::ForOp powerLoop;
+  moduleOp.walk([&](arith::UIToFPOp op) {
+    EXPECT_FALSE(powerLoop);
+    powerLoop = op->getParentOfType<scf::ForOp>();
+  });
   ASSERT_TRUE(powerLoop);
-  EXPECT_EQ(extract.getIndices().front(), powerLoop.getInductionVar());
 
   qc::CtrlOp controlledPower;
   powerLoop.walk([&](qc::CtrlOp op) { controlledPower = op; });
@@ -85,44 +146,81 @@ TEST(GenerateProgramTest, KeepsLargeQPEFiniteAndStructured) {
     ASSERT_TRUE(program);
     auto moduleOp = program->module();
 
-    auto table = test::angleTable(moduleOp);
-    ASSERT_TRUE(table);
-    EXPECT_EQ(table.getNumElements(), precision);
-    for (const auto angle : table.getValues<double>()) {
-      EXPECT_TRUE(std::isfinite(angle));
-    }
-
+    moduleOp.walk([&](arith::ConstantOp op) {
+      if (auto angle = dyn_cast<FloatAttr>(op.getValue())) {
+        EXPECT_TRUE(std::isfinite(angle.getValueAsDouble()));
+      }
+    });
     EXPECT_LT(test::countOperations(moduleOp), 150U);
   }
 }
 
-TEST(GenerateProgramTest, DoublesQPEPhaseModuloOneWithoutOverflow) {
-  const QPE benchmark({
-      .precision = 4,
-      .phase = Phase(uint64_t{1} << 63U, std::numeric_limits<uint64_t>::max()),
-  });
-  auto program = generate(benchmark);
-  ASSERT_TRUE(program);
-  const auto table = test::angleTable(program->module());
-  ASSERT_TRUE(table);
-  const auto angles = llvm::to_vector(table.getValues<double>());
-  ASSERT_EQ(angles.size(), 4U);
-
-  const auto denominator =
-      static_cast<long double>(std::numeric_limits<uint64_t>::max());
-  const auto turn = 2.L * std::numbers::pi_v<long double> / denominator;
-  EXPECT_DOUBLE_EQ(angles[0], static_cast<double>((uint64_t{1} << 63U) * turn));
-  EXPECT_DOUBLE_EQ(angles[1], static_cast<double>(turn));
-  EXPECT_DOUBLE_EQ(angles[2], static_cast<double>(2.L * turn));
-  EXPECT_DOUBLE_EQ(angles[3], static_cast<double>(4.L * turn));
+TEST(GenerateProgramTest, ComputesExactQPEResiduesAtRuntime) {
+  constexpr auto maximum = std::numeric_limits<uint64_t>::max();
+  for (const auto method : {QPEMethod::Standard, QPEMethod::Iterative}) {
+    for (const auto phase : {
+             Phase(uint64_t{1} << 63U, maximum),
+             Phase(maximum - 2, maximum - 1),
+             Phase((uint64_t{1} << 63U) - 1, uint64_t{1} << 63U),
+             Phase(5, 12),
+             Phase(1, 3),
+         }) {
+      for (const size_t precision : {4U, 65U, 1025U}) {
+        SCOPED_TRACE(static_cast<int>(method));
+        SCOPED_TRACE(phase.numerator());
+        SCOPED_TRACE(phase.denominator());
+        SCOPED_TRACE(precision);
+        auto program = generate(
+            QPE{{.precision = precision, .phase = phase, .method = method}});
+        ASSERT_TRUE(program);
+        DenseMap<Value, Attribute> arguments;
+        std::vector<uint64_t> residues;
+        std::vector<double> angles;
+        for (auto& operation :
+             mlir::mqt::getEntryPoint(program->module()).getBody().front()) {
+          if (auto loop = dyn_cast<scf::ForOp>(operation);
+              loop && loop.getNumResults() == 1 &&
+              loop.getResult(0).getType().isInteger(64)) {
+            evaluateResidueLoop(loop, arguments, residues, angles);
+          }
+        }
+        ASSERT_EQ(residues.size(), precision);
+        ASSERT_EQ(angles.size(), precision);
+        const llvm::APInt denominator(128, phase.denominator());
+        auto remainder = phase.numerator();
+        for (size_t power = 0; power < precision; ++power) {
+          const auto index =
+              method == QPEMethod::Standard ? power : precision - 1 - power;
+          EXPECT_EQ(residues[index], remainder);
+          EXPECT_TRUE(std::isfinite(angles[index]));
+          /// Allow f64 conversion/division/multiplication rounding against the
+          /// long-double reference while keeping phase reduction exact.
+          EXPECT_NEAR(angles[index],
+                      static_cast<double>(
+                          2.L * std::numbers::pi_v<long double> *
+                          static_cast<long double>(remainder) /
+                          static_cast<long double>(phase.denominator())),
+                      3e-15);
+          remainder = llvm::APInt(128, remainder)
+                          .shl(1)
+                          .urem(denominator)
+                          .getZExtValue();
+        }
+      }
+    }
+  }
 }
 
 TEST(GenerateProgramTest, SamplesQPEAgainstReference) {
   for (const auto method : {QPEMethod::Standard, QPEMethod::Iterative}) {
-    for (const auto phase : {Phase(3, 8), Phase(1, 3)}) {
+    for (const auto phase :
+         {Phase(0, 1), Phase(3, 8), Phase(1, 3), Phase(5, 12), Phase(7, 16)}) {
       SCOPED_TRACE(static_cast<int>(method));
-      test::expectSamplingMatchesReference(
-          QPE{{.precision = 3, .phase = phase, .method = method}});
+      for (const size_t precision : {1U, 3U}) {
+        SCOPED_TRACE(precision);
+        test::expectSamplingMatchesReference(
+            QPE{{.precision = precision, .phase = phase, .method = method}});
+      }
     }
   }
 }

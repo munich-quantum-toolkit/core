@@ -24,8 +24,8 @@
 #include "mlir/Support/LLVM.h"
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/SmallVector.h"
 
-#include <cstddef>
 #include <cstdint>
 #include <numbers>
 #include <ranges>
@@ -66,25 +66,20 @@ static void addQuantumRegister(qc::QCProgramBuilder& builder, Value addend,
   }
 }
 
-[[nodiscard]] static Value phaseAngles(qc::QCProgramBuilder& builder,
-                                       std::string_view addend, bool carry) {
-  SmallVector<double> angles;
-  angles.reserve(addend.size() + 1U);
-  long double angle = 0.L;
+[[nodiscard]] static Value addendBits(qc::QCProgramBuilder& builder,
+                                      std::string_view addend, bool carry) {
+  SmallVector<bool> bits;
+  bits.reserve(addend.size() + 1U);
   for (const char bit : addend | std::views::reverse) {
-    angle /= 2.L;
-    if (bit == '1') {
-      angle += std::numbers::pi_v<long double>;
-    }
-    angles.push_back(static_cast<double>(angle));
+    bits.push_back(bit == '1');
   }
   if (carry) {
-    angles.push_back(static_cast<double>(angle / 2.L));
+    bits.push_back(false);
   }
 
-  const auto type = RankedTensorType::get({static_cast<int64_t>(angles.size())},
-                                          builder.getF64Type());
-  const auto value = DenseElementsAttr::get(type, ArrayRef<double>(angles));
+  const auto type = RankedTensorType::get({static_cast<int64_t>(bits.size())},
+                                          builder.getI1Type());
+  const auto value = DenseElementsAttr::get(type, ArrayRef<bool>(bits));
   return arith::ConstantOp::create(builder, value).getResult();
 }
 
@@ -108,12 +103,16 @@ SmallVector<Value> qftAdder(qc::QCProgramBuilder& builder,
   if (addend) {
     addQuantumRegister(builder, addend, sum, qubits, carry);
   } else {
-    auto angles = phaseAngles(builder, options.addend, carry);
-    builder.scfFor(0, sumQubits, 1, [&](Value target) {
-      auto angle =
-          tensor::ExtractOp::create(builder, angles, ValueRange{target});
-      builder.p(angle, builder.loadQubit(sum, target));
-    });
+    auto bits = addendBits(builder, options.addend, carry);
+    detail::phaseAdditionLoop(
+        builder, sumQubits,
+        [&](Value target) {
+          return tensor::ExtractOp::create(builder, bits, ValueRange{target})
+              .getResult();
+        },
+        [&](Value angle, Value target) {
+          builder.p(angle, builder.loadQubit(sum, target));
+        });
   }
   detail::inverseQFT(builder, sum, sumQubits);
 

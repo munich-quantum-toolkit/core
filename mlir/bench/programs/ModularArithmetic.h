@@ -13,8 +13,6 @@
 #include "mlir/IR/Value.h"
 #include "mlir/Support/LLVM.h"
 
-#include "llvm/ADT/APInt.h"
-
 #include <cstdint>
 
 namespace mlir::qc {
@@ -23,18 +21,13 @@ class QCProgramBuilder;
 
 namespace mqt::bench::detail {
 
-/// Fourier phases for multiply-accumulate, followed by a row for the modulus.
-void appendModularPhaseAngles(mlir::SmallVectorImpl<double>& angles,
-                              llvm::APInt multiplier,
-                              const llvm::APInt& modulus);
-
 /// Add or subtract control * multiplier * multiplicand modulo N into
-/// accumulator. The phase table starts at offset. The accumulator must be below
-/// N and its overflow bit and the work qubit must start clean.
+/// accumulator. The unsigned i64 multiplier and modulus are below 2^63.
+/// The accumulator must be below N and its overflow bit and work qubit clean.
 void multiplyAccumulate(mlir::qc::QCProgramBuilder& builder,
                         mlir::Value control, mlir::Value multiplicand,
                         mlir::Value accumulator, mlir::Value work,
-                        mlir::Value angles, mlir::Value offset, int64_t bits,
-                        bool inverse = false);
+                        mlir::Value multiplier, mlir::Value modulus,
+                        int64_t bits, bool inverse = false);
 
 } // namespace mqt::bench::detail

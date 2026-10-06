@@ -128,6 +128,21 @@ Generation returns a {py:class}`~mqt.core.mlir.QCProgram`, the program type used
 by the [MQT Compiler Collection](mlir/mqt_compiler_collection.md). The program
 can enter the normal compiler pipeline.
 
+QPE, constant QFT addition, modular multiplication, and Shor compute phase
+angles with bounded scalar arithmetic. QPE carries exact unsigned residues
+before converting to `f64`; its iterative form also handles even denominators.
+Constant addition keeps the input bits, and Shor keeps exact powers and their
+inverses. These inputs remain compact; generated programs contain no derived
+floating-point phase tables.
+
+The bit-to-angle recurrence is $\theta \gets \theta/2 + \pi b$, with bits
+consumed from least to most significant. Angles stay in $[0, 2\pi]$. Computation
+uses `f64`, so angles may differ by a few units in the last place from earlier
+host-side `long double` precomputation. Numerical regression tests allow an
+absolute angle difference of $3\times 10^{-15}$ radians. Runtime arithmetic adds
+classical work per execution; a smaller serialized program does not imply faster
+sampling.
+
 ```{code-cell} ipython3
 program = benchmark.generate()
 assert program.is_valid
