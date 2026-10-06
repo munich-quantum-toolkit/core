@@ -1730,7 +1730,6 @@ private:
     SmallVector<QubitIndexPair> prev(horizon.front.view());
     SmallVector<QubitIndexPair> next;
 
-    horizon.lookahead.reset();
     walkProgramGraph<Direction>(
         MutableArrayRef(wires.data(), wires.size()),
         [&](const Frontier& frontier, ReleasedOps& released) {
@@ -2282,6 +2281,7 @@ private:
     Boundary<Direction> boundary(region.front());
 
     while (true) {
+      horizon.lookahead.reset();
       auto composite = prepareFront<Direction>(state, horizon, boundary, env);
       if (composite) {
         assert(composite->op == boundary.operation());
