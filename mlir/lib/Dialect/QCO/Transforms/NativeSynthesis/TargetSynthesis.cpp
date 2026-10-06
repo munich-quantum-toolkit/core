@@ -1590,6 +1590,7 @@ public:
     createRemoveDeadValuesPass()->getDependentDialects(registry);
   }
 
+protected:
   void runOnOperation() override {
     auto moduleOp = getOperation();
     const auto needsLiveness =
