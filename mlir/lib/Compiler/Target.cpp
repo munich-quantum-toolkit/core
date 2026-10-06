@@ -630,6 +630,8 @@ struct CompilerTarget::Storage {
   SmallVector<SmallVector<size_t, 4>> adjacency;
   mutable SmallVector<size_t> distances;
   mutable std::once_flag distancesOnce;
+  mutable std::vector<FourCycle> fourCycles;
+  mutable std::once_flag fourCyclesOnce;
   size_t maximumDegree = 0;
   NativeOperations::Kind nativeOperationsKind;
   SmallVector<OperationCapability> operations;
@@ -1294,6 +1296,49 @@ CompilerTarget::connectivityKind() const noexcept {
 
 ArrayRef<CompilerTarget::Coupling> CompilerTarget::couplings() const noexcept {
   return storage_->couplings;
+}
+
+std::optional<ArrayRef<CompilerTarget::FourCycle>>
+CompilerTarget::fourCycles() const {
+  if (connectivityKind() == Connectivity::Kind::AllToAll) {
+    return std::nullopt;
+  }
+  std::call_once(storage_->fourCyclesOnce, [&] {
+    std::vector<FourCycle> cycles;
+    const auto& adjacency = storage_->adjacency;
+    for (size_t a = 0; a < numSites(); ++a) {
+      const auto& neighbours = adjacency[a];
+      for (auto b = std::upper_bound(neighbours.begin(), neighbours.end(), a);
+           b != neighbours.end(); ++b) {
+        if (adjacency[*b].size() < 2) {
+          continue;
+        }
+        for (auto d = b + 1; d != neighbours.end(); ++d) {
+          const auto& left = adjacency[*b];
+          const auto& right = adjacency[*d];
+          if (right.size() < 2) {
+            continue;
+          }
+          // Common neighbours close a-b-c-d-a; a is the smallest vertex.
+          auto l = std::upper_bound(left.begin(), left.end(), a);
+          auto r = std::upper_bound(right.begin(), right.end(), a);
+          while (l != left.end() && r != right.end()) {
+            if (*l < *r) {
+              ++l;
+            } else if (*r < *l) {
+              ++r;
+            } else {
+              cycles.push_back({a, *b, *l, *d});
+              ++l;
+              ++r;
+            }
+          }
+        }
+      }
+    }
+    storage_->fourCycles = std::move(cycles);
+  });
+  return ArrayRef<FourCycle>(storage_->fourCycles);
 }
 
 bool CompilerTarget::areAdjacent(size_t source, size_t target) const {

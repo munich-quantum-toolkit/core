@@ -162,6 +162,14 @@ mapped = compile_program(
 print(mapped.ir)
 ```
 
+The C++ `CompilerTarget::fourCycles()` API exposes reusable, undirected
+four-cycle motifs in dense compiler-vertex indices. Chords are allowed. Explicit
+topologies enumerate them lazily into a thread-safe cache shared by target
+copies; storage grows with the number of cycles. All-to-all targets return
+`std::nullopt`, representing their cycles implicitly rather than enumerating
+them. These motifs describe connectivity only, not native gate availability or
+direction. Placement and mapping do not consume this cache yet.
+
 Use `CompilerTarget.Connectivity.all_to_all()` for an all-to-all target. An
 empty `CompilerTarget.NativeOperations([])` reports that no quantum operation is
 native. It can be used with passes that need only topology, but target

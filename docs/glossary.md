@@ -49,6 +49,12 @@ routing permutation
   **Preferred term:** routing permutation. **Accepted aliases:** none. A map
   from each device position before routing to its final position.
 
+topology motif
+  **Preferred term:** topology motif. **Accepted alias:** motif. A small graph
+  pattern, such as a four-cycle. An occurrence identifies distinct target
+  vertices connected by the pattern's edges; additional edges are allowed.
+  It describes connectivity, not native gate availability or direction.
+
 Pauli string
   **Preferred term:** Pauli string. **Accepted alias:** Pauli product. A tensor
   product of single-qubit identity or Pauli X, Y, and Z operators.

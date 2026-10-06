@@ -524,6 +524,75 @@ TEST(CompilerTargetTest, CanonicalizesConnectedTopologyAndCachesDistances) {
   EXPECT_EQ(neighbours, (std::vector<size_t>{0, 2}));
 }
 
+TEST(CompilerTargetTest, FourCyclesShareCacheAndAllowChords) {
+  const auto target = valid(Target::create(
+      std::vector{valid(Site::create(7)), valid(Site::create(2)),
+                  valid(Site::create(11)), valid(Site::create(4))},
+      Connectivity::fromCouplings(
+          {{7, 2}, {2, 11}, {11, 4}, {4, 7}, {7, 11}, {2, 7}}),
+      NativeOperations::unrestricted()));
+  auto first =
+      std::async(std::launch::async, [target] { return target.fourCycles(); });
+  auto second =
+      std::async(std::launch::async, [target] { return target.fourCycles(); });
+  const auto cycles = first.get();
+  ASSERT_TRUE(cycles.has_value());
+  EXPECT_EQ(*cycles, (llvm::ArrayRef<Target::FourCycle>{{0, 1, 2, 3}}));
+  EXPECT_EQ(cycles->data(), second.get()->data());
+  EXPECT_EQ(cycles->data(), target.fourCycles()->data());
+  EXPECT_FALSE(valid(Target::create(1000, Connectivity::allToAll(),
+                                    NativeOperations::unrestricted()))
+                   .fourCycles()
+                   .has_value());
+  EXPECT_TRUE(valid(Target::create(1, Connectivity::fromCouplings({}),
+                                   NativeOperations::unrestricted()))
+                  .fourCycles()
+                  ->empty());
+}
+
+TEST(CompilerTargetTest, FourCyclesMatchExhaustiveFiveVertexOracle) {
+  constexpr size_t n = 5;
+  size_t connected = 0;
+  for (unsigned mask = 0; mask < (1U << 10U); ++mask) {
+    std::vector<Coupling> edges;
+    unsigned bit = 0;
+    for (size_t a = 0; a < n; ++a) {
+      for (size_t b = a + 1; b < n; ++b, ++bit) {
+        if ((mask & (1U << bit)) != 0) {
+          edges.emplace_back(a, b);
+        }
+      }
+    }
+    auto target = Target::create(n, Connectivity::fromCouplings(edges),
+                                 NativeOperations::unrestricted());
+    if (!target) {
+      // Compiler targets require connected topologies.
+      llvm::consumeError(target.takeError());
+      continue;
+    }
+    ++connected;
+    std::vector<Target::FourCycle> expected;
+    for (size_t a = 0; a < n; ++a) {
+      for (size_t b = a + 1; b < n; ++b) {
+        for (size_t c = a + 1; c < n; ++c) {
+          for (size_t d = b + 1; d < n; ++d) {
+            if (b != c && c != d && target->areAdjacent(a, b) &&
+                target->areAdjacent(b, c) && target->areAdjacent(c, d) &&
+                target->areAdjacent(d, a)) {
+              expected.push_back({a, b, c, d});
+            }
+          }
+        }
+      }
+    }
+    const auto cycles = *target->fourCycles();
+    std::vector<Target::FourCycle> actual(cycles.begin(), cycles.end());
+    llvm::sort(actual);
+    EXPECT_EQ(actual, expected) << "graph mask: " << mask;
+  }
+  EXPECT_EQ(connected, 728);
+}
+
 TEST(CompilerTargetTest, ShortestPathsUseDeterministicMinimumHopRoutes) {
   const auto target = valid(Target::create(
       6,

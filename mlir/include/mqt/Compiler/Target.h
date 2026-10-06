@@ -18,6 +18,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -44,6 +45,7 @@ class CompilerTarget {
 public:
   using SiteId = int64_t;
   using Coupling = std::pair<SiteId, SiteId>;
+  using FourCycle = std::array<size_t, 4>;
 
   /// Target connectivity.
   class Connectivity {
@@ -425,6 +427,18 @@ public:
 
   /// Return sorted canonical undirected couplings in target site IDs.
   [[nodiscard]] llvm::ArrayRef<Coupling> couplings() const noexcept;
+
+  /// Return undirected four-cycles in dense compiler vertices, in deterministic
+  /// order. Each cycle starts at its smallest vertex and its second vertex is
+  /// smaller than its last, eliminating rotations and reversals. Chords are
+  /// allowed; distinct cycles on the same four vertices remain distinct.
+  /// These are topology motifs, not guarantees of native-operation support.
+  ///
+  /// All-to-all connectivity returns nullopt: its cycles are implicit. Explicit
+  /// topologies enumerate lazily, with storage proportional to the number of
+  /// cycles. The thread-safe cache is shared by copies; the returned view stays
+  /// valid while any copy of this target lives.
+  [[nodiscard]] std::optional<llvm::ArrayRef<FourCycle>> fourCycles() const;
 
   /// Return whether two valid dense compiler vertices are adjacent.
   [[nodiscard]] bool areAdjacent(size_t source, size_t target) const;
