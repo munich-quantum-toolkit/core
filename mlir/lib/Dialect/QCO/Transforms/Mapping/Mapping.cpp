@@ -1093,7 +1093,7 @@ private:
     return iterator.qubit();
   }
 
-  /// Return an initial layout and whether identity needs no routing.
+  /// Return an initial layout and whether it is known to need no routing.
   ///
   /// Otherwise, place frequently interacting qubits near each other. Nested
   /// control flow has no single interaction frequency, so leave those programs
@@ -1201,7 +1201,7 @@ private:
               mapping[placed++] = static_cast<QubitIndex>(hw);
             }
           }
-          return std::pair{Layout<QubitIndex>::fromMapping(mapping), false};
+          return std::pair{Layout<QubitIndex>::fromMapping(mapping), true};
         }
       }
     }
