@@ -20,7 +20,9 @@
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Value.h"
@@ -124,7 +126,14 @@ SmallVector<Value> shor(qc::QCProgramBuilder& builder, const Shor& benchmark) {
   auto stride = builder.indexConstant(2);
   auto firstCorrection = builder.floatConstant(-std::numbers::pi / 2.);
   auto half = builder.floatConstant(0.5);
-  builder.scfFor(0, precision, 1, [&](Value round) {
+  auto initialCorrection = builder.floatConstant(0.);
+  auto loop =
+      scf::ForOp::create(builder, zero, builder.indexConstant(precision), one,
+                         ValueRange{initialCorrection});
+  {
+    OpBuilder::InsertionGuard guard(builder);
+    builder.setInsertionPointToStart(loop.getBody());
+    auto round = loop.getInductionVar();
     auto powerIndex = arith::SubIOp::create(builder, last, round);
     auto offset = arith::MulIOp::create(builder, powerIndex, stride);
     auto inverseOffset = arith::AddIOp::create(builder, offset, one);
@@ -142,17 +151,15 @@ SmallVector<Value> shor(qc::QCProgramBuilder& builder, const Shor& benchmark) {
                                inverse,
                                modulus,
                            });
-    auto previous = arith::SubIOp::create(builder, round, one);
-    detail::phaseRotationLoop(
-        builder, zero, round, one, firstCorrection, half,
-        [&](Value angle, Value distance) {
-          auto bit = arith::SubIOp::create(builder, previous, distance);
-          builder.scfIf(result, bit, [&] { builder.p(angle, query); });
-        });
+    auto correction = loop.getRegionIterArg(0);
+    builder.p(correction, query);
     builder.h(query);
-    builder.measure(query, result, round);
+    auto measured = builder.measure(query, result, round);
     builder.reset(query);
-  });
+    auto next = detail::advancePhaseCorrection(builder, correction, measured,
+                                               half, firstCorrection);
+    scf::YieldOp::create(builder, ValueRange{next});
+  }
   return {result};
 }
 

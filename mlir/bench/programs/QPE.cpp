@@ -106,9 +106,10 @@ iterativeQPE(qc::QCProgramBuilder& builder, const QPE& benchmark) {
       static_cast<int64_t>((denominator >> 1U) + (denominator & 1U)));
   auto firstCorrection = builder.floatConstant(-std::numbers::pi / 2.);
   auto half = builder.floatConstant(0.5);
+  auto initialCorrection = builder.floatConstant(0.);
 
   auto loop = scf::ForOp::create(builder, lower, upper, one,
-                                 ValueRange{initialResidue});
+                                 ValueRange{initialResidue, initialCorrection});
   {
     OpBuilder::InsertionGuard guard(builder);
     builder.setInsertionPointToStart(loop.getBody());
@@ -118,16 +119,11 @@ iterativeQPE(qc::QCProgramBuilder& builder, const QPE& benchmark) {
     builder.h(query);
     builder.cp(angle, query, ancilla);
 
-    auto previous = arith::SubIOp::create(builder, index, one);
-    detail::phaseRotationLoop(
-        builder, lower, index, one, firstCorrection, half,
-        [&](Value correction, Value distance) {
-          auto bit = arith::SubIOp::create(builder, previous, distance);
-          builder.scfIf(result, bit, [&] { builder.p(correction, query); });
-        });
+    auto phaseCorrection = loop.getRegionIterArg(1);
+    builder.p(phaseCorrection, query);
 
     builder.h(query);
-    builder.measure(query, result, index);
+    auto measured = builder.measure(query, result, index);
     builder.reset(query);
 
     Value wrap = current;
@@ -152,7 +148,9 @@ iterativeQPE(qc::QCProgramBuilder& builder, const QPE& benchmark) {
         arith::SelectOp::create(builder, carried, halfDenominator, integerZero);
     auto halved = arith::ShRUIOp::create(builder, current, integerOne);
     auto next = arith::AddIOp::create(builder, halved, correction);
-    scf::YieldOp::create(builder, ValueRange{next});
+    auto nextCorrection = detail::advancePhaseCorrection(
+        builder, phaseCorrection, measured, half, firstCorrection);
+    scf::YieldOp::create(builder, ValueRange{next, nextCorrection});
   }
   return {result};
 }

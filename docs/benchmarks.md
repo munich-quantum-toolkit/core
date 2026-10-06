@@ -133,8 +133,10 @@ angles after modular reduction. Constant QFT addition and modular multiplication
 consume bits from least to most significant using
 $\theta \gets \theta/2 \pm \pi b$, with angles in $[-2\pi, 2\pi]$. Constant
 addition stores the input bits; Shor stores modular powers and their inverses.
-This scalar arithmetic executes with the quantum operations, so measure
-compilation and sampling costs separately.
+Iterative QPE, semiclassical QFT, and Shor carry one measurement correction:
+$c \gets c/2 \pm \pi b/2$. The correction stays in $[-\pi, \pi]$ and needs
+constant work per measurement. This scalar arithmetic executes with the quantum
+operations, so measure compilation and sampling costs separately.
 
 ```{code-cell} ipython3
 program = benchmark.generate()

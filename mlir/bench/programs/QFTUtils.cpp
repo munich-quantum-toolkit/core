@@ -88,6 +88,15 @@ void phaseAdditionLoop(
   scf::YieldOp::create(builder, ValueRange{angle});
 }
 
+Value advancePhaseCorrection(qc::QCProgramBuilder& builder, Value correction,
+                             Value measuredBit, Value half, Value firstAngle) {
+  auto scaled = arith::MulFOp::create(builder, correction, half);
+  auto bit =
+      arith::UIToFPOp::create(builder, builder.getF64Type(), measuredBit);
+  auto contribution = arith::MulFOp::create(builder, bit, firstAngle);
+  return arith::AddFOp::create(builder, scaled, contribution);
+}
+
 void forwardQFT(qc::QCProgramBuilder& builder, Value qubitRegister,
                 int64_t qubits) {
   auto zero = builder.indexConstant(0);

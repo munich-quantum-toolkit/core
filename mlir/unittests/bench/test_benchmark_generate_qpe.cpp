@@ -128,7 +128,7 @@ TEST(GenerateProgramTest, ComputesExactQPEResiduesAtRuntime) {
       for (auto& operation :
            mlir::mqt::getEntryPoint(program->module()).getBody().front()) {
         if (auto loop = dyn_cast<scf::ForOp>(operation);
-            loop && loop.getNumResults() == 1 &&
+            loop && loop.getNumResults() >= 1 &&
             loop.getResult(0).getType().isInteger(64)) {
           evaluateResidueLoop(loop, arguments, residues, angles);
         }
@@ -161,7 +161,7 @@ TEST(GenerateProgramTest, SamplesQPEAgainstReference) {
     for (const auto phase : {Phase(3, 8), Phase(1, 3)}) {
       SCOPED_TRACE(static_cast<int>(method));
       test::expectSamplingMatchesReference(
-          QPE{{.precision = 3, .phase = phase, .method = method}});
+          QPE{{.precision = 8, .phase = phase, .method = method}});
     }
   }
 }
