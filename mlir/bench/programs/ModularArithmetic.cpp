@@ -27,30 +27,23 @@ using namespace mlir;
 static void phaseAdd(qc::QCProgramBuilder& builder, Value accumulator,
                      int64_t width, Value addend, ValueRange controls,
                      bool inverse) {
-  auto one = builder.intConstant(1);
-  auto zero = builder.intConstant(0);
   phaseAdditionLoop(
       builder, width,
       [&](Value target) -> Value {
         auto shift =
             arith::IndexCastUIOp::create(builder, builder.getI64Type(), target);
         auto shifted = arith::ShRUIOp::create(builder, addend, shift);
-        auto bit = arith::AndIOp::create(builder, shifted, one);
-        return arith::CmpIOp::create(builder, arith::CmpIPredicate::ne, bit,
-                                     zero);
+        return arith::TruncIOp::create(builder, builder.getI1Type(), shifted);
       },
       [&](Value angle, Value target) {
-        if (inverse) {
-          angle =
-              arith::MulFOp::create(builder, angle, builder.floatConstant(-1.));
-        }
         auto qubit = builder.loadQubit(accumulator, target);
         if (controls.empty()) {
           builder.p(angle, qubit);
         } else {
           builder.mcp(angle, controls, qubit);
         }
-      });
+      },
+      inverse);
 }
 
 static void modularAdd(qc::QCProgramBuilder& builder, Value accumulator,
@@ -58,44 +51,31 @@ static void modularAdd(qc::QCProgramBuilder& builder, Value accumulator,
                        ValueRange controls, Value work, bool inverse) {
   auto overflowIndex = builder.indexConstant(width - 1);
 
-  if (inverse) {
-    /// Reverse the modular-adder operations and every phase rotation.
-    phaseAdd(builder, accumulator, width, addend, controls, true);
-
+  const auto toggleOverflow = [&](bool complement) {
     inverseQFT(builder, accumulator, width);
-    builder.x(builder.loadQubit(accumulator, overflowIndex));
+    if (complement) {
+      builder.x(builder.loadQubit(accumulator, overflowIndex));
+    }
     builder.cx(builder.loadQubit(accumulator, overflowIndex), work);
-    builder.x(builder.loadQubit(accumulator, overflowIndex));
+    if (complement) {
+      builder.x(builder.loadQubit(accumulator, overflowIndex));
+    }
     forwardQFT(builder, accumulator, width);
+  };
 
-    phaseAdd(builder, accumulator, width, addend, controls, false);
-    phaseAdd(builder, accumulator, width, modulus, work, true);
-
-    inverseQFT(builder, accumulator, width);
-    builder.cx(builder.loadQubit(accumulator, overflowIndex), work);
-    forwardQFT(builder, accumulator, width);
-
-    phaseAdd(builder, accumulator, width, modulus, {}, false);
-    phaseAdd(builder, accumulator, width, addend, controls, true);
-    return;
+  phaseAdd(builder, accumulator, width, addend, controls, inverse);
+  if (!inverse) {
+    phaseAdd(builder, accumulator, width, modulus, {}, true);
   }
-  phaseAdd(builder, accumulator, width, addend, controls, false);
-  phaseAdd(builder, accumulator, width, modulus, {}, true);
-
-  inverseQFT(builder, accumulator, width);
-  builder.cx(builder.loadQubit(accumulator, overflowIndex), work);
-  forwardQFT(builder, accumulator, width);
-
-  phaseAdd(builder, accumulator, width, modulus, work, false);
-  phaseAdd(builder, accumulator, width, addend, controls, true);
-
-  inverseQFT(builder, accumulator, width);
-  builder.x(builder.loadQubit(accumulator, overflowIndex));
-  builder.cx(builder.loadQubit(accumulator, overflowIndex), work);
-  builder.x(builder.loadQubit(accumulator, overflowIndex));
-  forwardQFT(builder, accumulator, width);
-
-  phaseAdd(builder, accumulator, width, addend, controls, false);
+  toggleOverflow(inverse);
+  /// These diagonal phase additions commute in the Fourier basis.
+  phaseAdd(builder, accumulator, width, addend, controls, !inverse);
+  phaseAdd(builder, accumulator, width, modulus, work, inverse);
+  toggleOverflow(!inverse);
+  if (inverse) {
+    phaseAdd(builder, accumulator, width, modulus, {}, false);
+  }
+  phaseAdd(builder, accumulator, width, addend, controls, inverse);
 }
 
 void multiplyAccumulate(qc::QCProgramBuilder& builder, Value control,

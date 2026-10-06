@@ -28,7 +28,6 @@
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/StringRef.h"
 
 #include <bit>
 #include <cstddef>
@@ -71,32 +70,19 @@ func::FuncOp createInPlaceMultiplier(qc::QCProgramBuilder& builder,
       qubitType,
       builder.getI64Type(),
       builder.getI64Type(),
+      builder.getI64Type(),
   };
-  const auto createAccumulator = [&](StringRef name, bool inverse) {
-    return builder.createFunction(name, types, [&](ValueRange arguments) {
-      multiplyAccumulate(builder, arguments[0], arguments[1], arguments[2],
-                         arguments[3], arguments[4], arguments[5], bits,
-                         inverse);
-      return SmallVector<Value>{};
-    });
-  };
-  auto accumulate = createAccumulator("shor_accumulate", false);
-  auto subtract = createAccumulator("shor_uncompute", true);
-  /// Append an inverse-multiplier argument before the modulus.
-  types.insert(types.end() - 1, builder.getI64Type());
   return builder.createFunction(
       "shor_multiply", types, [&](ValueRange arguments) {
-        SmallVector<Value> accumulateArguments{
-            arguments[0], arguments[1], arguments[2],
-            arguments[3], arguments[4], arguments[6],
-        };
-        builder.call(accumulate, accumulateArguments);
+        multiplyAccumulate(builder, arguments[0], arguments[1], arguments[2],
+                           arguments[3], arguments[4], arguments[6], bits);
         builder.scfFor(0, bits, 1, [&](Value index) {
           builder.cswap(arguments[0], builder.loadQubit(arguments[1], index),
                         builder.loadQubit(arguments[2], index));
         });
-        accumulateArguments[4] = arguments[5];
-        builder.call(subtract, accumulateArguments);
+        multiplyAccumulate(builder, arguments[0], arguments[1], arguments[2],
+                           arguments[3], arguments[5], arguments[6], bits,
+                           true);
         return SmallVector<Value>{};
       });
 }
@@ -110,11 +96,12 @@ SmallVector<Value> shor(qc::QCProgramBuilder& builder, const Shor& benchmark) {
   SmallVector<int64_t> powers;
   powers.reserve(static_cast<size_t>(2 * precision));
   auto power = options.base;
+  auto inverse = inverseModulo(power, options.number);
   for (int64_t round = 0; round < precision; ++round) {
     powers.push_back(static_cast<int64_t>(power));
-    powers.push_back(
-        static_cast<int64_t>(inverseModulo(power, options.number)));
+    powers.push_back(static_cast<int64_t>(inverse));
     power = (power * power) % options.number;
+    inverse = (inverse * inverse) % options.number;
   }
   auto powersType =
       RankedTensorType::get({2 * precision}, builder.getI64Type());

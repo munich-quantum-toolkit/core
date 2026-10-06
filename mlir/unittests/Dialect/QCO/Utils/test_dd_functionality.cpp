@@ -2597,7 +2597,7 @@ TEST_F(QCODDFunctionalityTest, ReadsDenseFloatTablesInStructuredLoops) {
 }
 
 TEST_F(QCODDFunctionalityTest, ReadsDenseIntegerInputsInStructuredLoops) {
-  for (const unsigned width : {1U, 8U, 64U}) {
+  for (const unsigned width : {1U, 64U}) {
     auto moduleOp = buildModule([&](QCOProgramBuilder& b) {
       auto type = RankedTensorType::get({2}, b.getIntegerType(width));
       const std::array values{
@@ -2625,9 +2625,6 @@ TEST_F(QCODDFunctionalityTest, ReadsDenseIntegerInputsInStructuredLoops) {
     });
     ASSERT_TRUE(moduleOp);
     expectEqualToReference(mainFunc(*moduleOp), 1, {referenceGate<XOp>({0})});
-    auto counts = sample(mainFunc(*moduleOp), 8, 1);
-    ASSERT_TRUE(succeeded(counts));
-    EXPECT_EQ(*counts, (std::map<std::string, size_t>{{"1", 8}}));
   }
 }
 

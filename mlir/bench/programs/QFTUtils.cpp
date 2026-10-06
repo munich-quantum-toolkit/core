@@ -68,10 +68,11 @@ void phaseRotationLoop(
 void phaseAdditionLoop(
     qc::QCProgramBuilder& builder, int64_t width,
     const function_ref<Value(Value target)>& bit,
-    const function_ref<void(Value angle, Value target)>& body) {
+    const function_ref<void(Value angle, Value target)>& body, bool inverse) {
   auto zero = builder.floatConstant(0.);
   auto half = builder.floatConstant(0.5);
-  auto pi = builder.floatConstant(std::numbers::pi);
+  auto pi =
+      builder.floatConstant(inverse ? -std::numbers::pi : std::numbers::pi);
   auto loop = scf::ForOp::create(builder, builder.indexConstant(0),
                                  builder.indexConstant(width),
                                  builder.indexConstant(1), ValueRange{zero});

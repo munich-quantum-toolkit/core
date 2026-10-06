@@ -22,6 +22,8 @@
 #include "mlir/IR/ValueRange.h"
 #include "mlir/Support/LLVM.h"
 
+#include "llvm/ADT/APInt.h"
+
 #include <bit>
 #include <cstdint>
 #include <numbers>
@@ -67,19 +69,21 @@ iterativeQPE(qc::QCProgramBuilder& builder, const QPE& benchmark) {
   auto last = builder.indexConstant(precision - 1);
   const auto& phase = benchmark.options().phase;
   const auto denominator = phase.denominator();
-  auto denominatorValue =
-      builder.intConstant(static_cast<int64_t>(denominator));
-  auto initialResidue =
-      builder.intConstant(static_cast<int64_t>(phase.numerator()));
-  auto initialize =
-      scf::ForOp::create(builder, lower, last, one, ValueRange{initialResidue});
-  {
-    OpBuilder::InsertionGuard guard(builder);
-    builder.setInsertionPointToStart(initialize.getBody());
-    auto next = doubleResidue(builder, initialize.getRegionIterArg(0),
-                              denominatorValue);
-    scf::YieldOp::create(builder, ValueRange{next});
+
+  /// Compute one exact starting residue in O(log precision). Products of
+  /// reduced uint64_t values fit in 128 bits.
+  const llvm::APInt modulus(128, denominator);
+  llvm::APInt initial(128, phase.numerator());
+  llvm::APInt factor(128, 2);
+  for (auto exponent = static_cast<uint64_t>(precision - 1); exponent != 0;
+       exponent >>= 1U) {
+    if ((exponent & 1U) != 0) {
+      initial = (initial * factor).urem(modulus);
+    }
+    factor = (factor * factor).urem(modulus);
   }
+  auto initialResidue =
+      builder.intConstant(static_cast<int64_t>(initial.getZExtValue()));
 
   /// For d=2^s*m with odd m, high powers reverse by halving and adding
   /// ceil(d/2) when (residue>>s) is odd. Pack the lost wrap bits for powers at
@@ -96,8 +100,6 @@ iterativeQPE(qc::QCProgramBuilder& builder, const QPE& benchmark) {
       residue += residue;
     }
   }
-  auto wrapBits = builder.intConstant(static_cast<int64_t>(wraps));
-  auto shiftValue = builder.intConstant(shift);
   auto integerOne = builder.intConstant(1);
   auto integerZero = builder.intConstant(0);
   auto halfDenominator = builder.intConstant(
@@ -105,14 +107,13 @@ iterativeQPE(qc::QCProgramBuilder& builder, const QPE& benchmark) {
   auto firstCorrection = builder.floatConstant(-std::numbers::pi / 2.);
   auto half = builder.floatConstant(0.5);
 
-  auto loop =
-      scf::ForOp::create(builder, lower, upper, one, initialize.getResults());
+  auto loop = scf::ForOp::create(builder, lower, upper, one,
+                                 ValueRange{initialResidue});
   {
     OpBuilder::InsertionGuard guard(builder);
     builder.setInsertionPointToStart(loop.getBody());
     auto index = loop.getInductionVar();
     auto current = loop.getRegionIterArg(0);
-    auto power = arith::SubIOp::create(builder, last, index);
     auto angle = controlledPhaseAngle(builder, current, denominator);
     builder.h(query);
     builder.cp(angle, query, ancilla);
@@ -129,20 +130,24 @@ iterativeQPE(qc::QCProgramBuilder& builder, const QPE& benchmark) {
     builder.measure(query, result, index);
     builder.reset(query);
 
-    auto powerValue =
-        arith::IndexCastOp::create(builder, builder.getI64Type(), power);
-    /// Both select operands execute, so even the unused shift must stay
-    /// below 64.
-    auto isLowPower = arith::CmpIOp::create(builder, arith::CmpIPredicate::ule,
-                                            powerValue, shiftValue);
-    auto boundedPower =
-        arith::SelectOp::create(builder, isLowPower, powerValue, shiftValue);
-    auto lowWrap = arith::ShRUIOp::create(builder, wrapBits, boundedPower);
-    auto highWrap = arith::ShRUIOp::create(builder, current, shiftValue);
-    auto wrap = arith::SelectOp::create(builder, isLowPower, lowWrap, highWrap);
-    auto bit = arith::AndIOp::create(builder, wrap, integerOne);
-    auto carried = arith::CmpIOp::create(builder, arith::CmpIPredicate::ne, bit,
-                                         integerZero);
+    Value wrap = current;
+    if (shift != 0) {
+      auto wrapBits = builder.intConstant(static_cast<int64_t>(wraps));
+      auto shiftValue = builder.intConstant(shift);
+      auto power = arith::SubIOp::create(builder, last, index);
+      auto powerValue =
+          arith::IndexCastOp::create(builder, builder.getI64Type(), power);
+      /// Both select operands execute, so even the unused shift must stay
+      /// below 64.
+      auto isLowPower = arith::CmpIOp::create(
+          builder, arith::CmpIPredicate::ule, powerValue, shiftValue);
+      auto boundedPower =
+          arith::SelectOp::create(builder, isLowPower, powerValue, shiftValue);
+      auto lowWrap = arith::ShRUIOp::create(builder, wrapBits, boundedPower);
+      auto highWrap = arith::ShRUIOp::create(builder, current, shiftValue);
+      wrap = arith::SelectOp::create(builder, isLowPower, lowWrap, highWrap);
+    }
+    auto carried = arith::TruncIOp::create(builder, builder.getI1Type(), wrap);
     auto correction =
         arith::SelectOp::create(builder, carried, halfDenominator, integerZero);
     auto halved = arith::ShRUIOp::create(builder, current, integerOne);
