@@ -616,32 +616,6 @@ private:
     int64_t prefix;
   };
 
-  class Front {
-  public:
-    Front() = default;
-
-    void push(const QubitIndexPair& endpoint) { endpoints_.insert(endpoint); }
-
-    void erase(const QubitIndexPair& endpoint) { endpoints_.remove(endpoint); }
-
-    [[nodiscard]] bool contains(const QubitIndexPair& endpoint) {
-      return endpoints_.contains(endpoint);
-    }
-
-    ArrayRef<QubitIndexPair> view() const { return endpoints_.getArrayRef(); }
-
-    [[nodiscard]] QubitIndexPair front() const { return endpoints_.front(); }
-
-    /// Return the number of elements in the front.
-    [[nodiscard]] size_t size() const { return endpoints_.size(); }
-
-    /// Return true, if the front is empty.
-    [[nodiscard]] bool empty() const { return endpoints_.empty(); }
-
-  private:
-    SetVector<QubitIndexPair> endpoints_;
-  };
-
   /// A fast, flat data structure designed specifically for layer-by-layer
   /// iteration, where the elements are stored sequentially in a single
   /// contiguous buffer.
@@ -687,6 +661,8 @@ private:
     /// defines the start of the layer l and [l + 1] its end.
     SmallVector<size_t, 8> offsets_ = {0};
   };
+
+  using Front = llvm::SmallMapVector<Operation*, QubitIndexPair, 8>;
 
   struct Horizon {
     Front front;
@@ -769,8 +745,9 @@ private:
       float costs{0};
       float decay{1.};
 
-      for (const auto& [prog0, prog1] : horizon.front.view()) {
-        const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
+      for (const auto& [op, progs] : horizon.front.getArrayRef()) {
+        const auto [hw0, hw1] =
+            layout.getHardwareIndices(progs.first, progs.second);
         const size_t nswaps = target.distanceBetween(hw0, hw1) - 1;
         costs += decay * static_cast<float>(nswaps);
         decay *= params.lambda;
@@ -1502,7 +1479,7 @@ private:
     assert(root != nullptr && "expected root allocation to succeed");
 
     root->initializeRoot(state.layout);
-    if (root->isGoal(horizon.front.front(), env.target)) {
+    if (root->isGoal(horizon.front.front().second, env.target)) {
       return SmallVector<QubitIndexPair>{};
     }
 
@@ -1515,7 +1492,7 @@ private:
       // If the currently visited node is a goal node, reconstruct the
       // sequence of SWAPs from this node to the root.
 
-      if (curr->isGoal(horizon.front.front(), env.target)) {
+      if (curr->isGoal(horizon.front.front().second, env.target)) {
         return curr->swaps();
       }
 
@@ -1523,7 +1500,7 @@ private:
       // between two neighboring hardware qubits.
 
       llvm::SmallDenseSet<QubitIndexPair, 8> seen;
-      for (const auto& [q0, q1] = horizon.front.front();
+      for (const auto& [q0, q1] = horizon.front.front().second;
            const auto prog : {q0, q1}) {
         const auto hw0 = curr->layout.getHardwareIndex(prog);
         env.target.forEachNeighbour(hw0, [&](const QubitIndex hw1) {
@@ -1559,8 +1536,9 @@ private:
     /// Greedy completion can cost later gates. Thus, increase the search
     /// budget when routing quality matters more than memory use.
 
-    const auto [prog0, prog1] = horizon.front.front();
-    const auto [hw0, hw1] = state.layout.getHardwareIndices(prog0, prog1);
+    const auto [op, progs] = horizon.front.front();
+    const auto [hw0, hw1] =
+        state.layout.getHardwareIndices(progs.first, progs.second);
     const auto path = env.target.shortestPathBetween(hw0, hw1);
 
     SmallVector<QubitIndexPair> swaps;
@@ -1720,14 +1698,15 @@ private:
     // Advance past the front gates without invoking the driver.
 
     constexpr auto stride = WireTraversalTraits<Direction>::stride();
-    for (const auto [prog0, prog1] : horizon.front.view()) {
-      const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
+    for (const auto [op, progs] : horizon.front.getArrayRef()) {
+      const auto [hw0, hw1] =
+          layout.getHardwareIndices(progs.first, progs.second);
       assert(wires[hw0].operation() == wires[hw1].operation());
       std::ranges::advance(wires[hw0], stride);
       std::ranges::advance(wires[hw1], stride);
     }
 
-    SmallVector<QubitIndexPair> prev(horizon.front.view());
+    SmallVector<QubitIndexPair> prev(horizon.front.values());
     SmallVector<QubitIndexPair> next;
 
     walkProgramGraph<Direction>(
@@ -1971,19 +1950,16 @@ private:
                     return true;
                   }
 
-                  const auto [prog0, prog1] =
-                      state.layout.getProgramIndices(indices[0], indices[1]);
-                  const QubitIndexPair endpoint = std::minmax(prog0, prog1);
-
                   if (env.target.areAdjacent(indices[0], indices[1])) {
-                    horizon.front.erase(endpoint);
+                    horizon.front.erase(op);
                     return true;
                   }
 
                   // If the two-qubit interaction is not executable, try to add
                   // it to the front.
-
-                  horizon.front.push(endpoint);
+                  const auto [prog0, prog1] =
+                      state.layout.getProgramIndices(indices[0], indices[1]);
+                  horizon.front.try_emplace(op, std::make_pair(prog0, prog1));
 
                   // To not revisit the same un-executable two-qubit
                   // interaction again later, mark it as "stale".
@@ -2028,6 +2004,8 @@ private:
             }
             state.costs->append(op, vertices);
           }
+        } else if (horizon.size() >= 1 + nlookahead) {
+          return WalkResult::interrupt();
         }
       }
 
