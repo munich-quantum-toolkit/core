@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 
 #include "mlir/IR/MLIRContext.h"
@@ -47,15 +46,4 @@ struct RemoveAllocDeallocPair final : OpRewritePattern<DeallocOp> {
 void DeallocOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                             MLIRContext* context) {
   results.add<RemoveAllocDeallocPair>(context);
-  results.add(+[](DeallocOp op, PatternRewriter& rewriter) {
-    auto insert = op.getTensor().getDefiningOp<InsertOp>();
-    if (!insert || insert->getBlock() != op->getBlock() ||
-        !insert.getScalar().getDefiningOp<qco::MeasureOp>()) {
-      return failure();
-    }
-    // Expose discarded measurement outputs without changing unmeasured wires.
-    qco::SinkOp::create(rewriter, op.getLoc(), insert.getScalar());
-    rewriter.replaceOp(insert, insert.getDest());
-    return success();
-  });
 }

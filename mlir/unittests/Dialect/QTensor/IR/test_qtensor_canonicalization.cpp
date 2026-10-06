@@ -52,7 +52,7 @@ protected:
   }
 };
 
-TEST_F(QTensorCanonicalizationTest, DiscardsInsertedMeasurementOutput) {
+TEST_F(QTensorCanonicalizationTest, PreservesInsertedMeasurementOutput) {
   auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
     func.func @main(%tensor: tensor<?x!qco.qubit>, %index: index) -> i1 {
       %rest, %q = qtensor.extract %tensor[%index] : tensor<?x!qco.qubit>
@@ -72,14 +72,13 @@ TEST_F(QTensorCanonicalizationTest, DiscardsInsertedMeasurementOutput) {
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
   EXPECT_TRUE(succeeded(verifyLinearity(*moduleOp)));
   auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
-  EXPECT_TRUE(function.getOps<qtensor::InsertOp>().empty());
-  ASSERT_EQ(llvm::range_size(function.getOps<SinkOp>()), 1U);
-  auto sink = *function.getOps<SinkOp>().begin();
+  ASSERT_EQ(llvm::range_size(function.getOps<qtensor::InsertOp>()), 1U);
+  EXPECT_TRUE(function.getOps<SinkOp>().empty());
+  auto insert = *function.getOps<qtensor::InsertOp>().begin();
   auto measurement = *function.getOps<MeasureOp>().begin();
-  EXPECT_EQ(sink.getQubit(), measurement.getQubitOut());
+  EXPECT_EQ(insert.getScalar(), measurement.getQubitOut());
   auto dealloc = *function.getOps<qtensor::DeallocOp>().begin();
-  auto extract = *function.getOps<qtensor::ExtractOp>().begin();
-  EXPECT_EQ(dealloc.getTensor(), extract.getOutTensor());
+  EXPECT_EQ(dealloc.getTensor(), insert.getResult());
 }
 
 TEST_F(QTensorCanonicalizationTest, ScalarizesWhileOnlyWithConstantIndices) {

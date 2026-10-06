@@ -1035,7 +1035,8 @@ TEST_F(CompilerPipelineTest, BaseMeasurementMayBeInsertedIntoFreedQTensor) {
             std::string::npos);
 }
 
-TEST_F(CompilerPipelineTest, BaseProfileLowersCompleteTensorLifetime) {
+TEST_F(CompilerPipelineTest,
+       BaseProfileLowersCompleteTensorLifetimeAfterCleanup) {
   auto program = QCOProgram::fromMLIRString(R"mlir(module {
     func.func @main() -> i1 attributes {mqt.entry_point} {
       %c0 = arith.constant 0 : index
@@ -1049,6 +1050,7 @@ TEST_F(CompilerPipelineTest, BaseProfileLowersCompleteTensorLifetime) {
     }
   })mlir");
   ASSERT_TRUE(program);
+  ASSERT_TRUE(program->cleanup());
   auto qc = std::move(*program).intoQC();
   ASSERT_TRUE(qc);
   auto qir = std::move(*qc).intoQIR(QIRProfile::Base);
