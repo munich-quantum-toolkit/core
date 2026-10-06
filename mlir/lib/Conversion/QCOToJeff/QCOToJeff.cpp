@@ -1432,7 +1432,7 @@ struct ConvertQCOCtrlOpToJeff final : StatefulOpConversionPattern<CtrlOp> {
   LogicalResult
   matchAndRewrite(CtrlOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (op.getNumBodyUnitaries() != 1) {
+    if (!mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody())) {
       return rewriter.notifyMatchFailure(
           op,
           "Control modifiers with multiple body unitaries are not supported.");
@@ -1484,7 +1484,7 @@ struct ConvertQCOInvOpToJeff final : StatefulOpConversionPattern<InvOp> {
   LogicalResult
   matchAndRewrite(InvOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (op.getNumBodyUnitaries() != 1) {
+    if (!mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody())) {
       return rewriter.notifyMatchFailure(op,
                                          "Inversion modifiers with multiple "
                                          "body unitaries are not supported.");
@@ -1529,7 +1529,7 @@ struct ConvertQCOPowOpToJeff final : StatefulOpConversionPattern<PowOp> {
   LogicalResult
   matchAndRewrite(PowOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (op.getNumBodyUnitaries() != 1) {
+    if (!mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody())) {
       return rewriter.notifyMatchFailure(op,
                                          "Power modifiers with multiple body "
                                          "unitaries are not supported.");

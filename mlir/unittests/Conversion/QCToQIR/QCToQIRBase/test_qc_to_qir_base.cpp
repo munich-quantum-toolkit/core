@@ -170,6 +170,54 @@ TEST(QCToQIRBaseNativeTest, EmptyCtrlDoesNotControlFollowingGate) {
       });
 }
 
+TEST(QCToQIRBaseNativeTest, CtrlBodyCardinalityIgnoresClassicalOps) {
+  for (unsigned numUnitaries : {0U, 1U, 2U}) {
+    SCOPED_TRACE(numUnitaries);
+    MLIRContext context;
+    context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                        LLVM::LLVMDialect>();
+    qc::QCProgramBuilder builder(&context);
+    builder.initialize();
+    auto control = builder.allocQubit();
+    auto target = builder.allocQubit();
+    builder.ctrl(control, target, [&](Value argument) {
+      for (unsigned i = 0; i <= numUnitaries; ++i) {
+        arith::ConstantIntOp::create(builder, builder.getUnknownLoc(), i, 64);
+        if (i < numUnitaries) {
+          builder.x(argument);
+        }
+      }
+    });
+    builder.x(target);
+    auto moduleOp = builder.finalize();
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+    bool diagnosed = false;
+    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+      diagnosed |= diagnostic.str().find("qc.ctrl") != std::string::npos;
+      return success();
+    });
+    PassManager pm(&context);
+    pm.addPass(createQCToQIRBase());
+    if (numUnitaries == 2) {
+      EXPECT_TRUE(failed(pm.run(*moduleOp)));
+      EXPECT_TRUE(diagnosed);
+      continue;
+    }
+    ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    size_t xCalls = 0;
+    size_t controlledXCalls = 0;
+    moduleOp->walk([&](LLVM::CallOp call) {
+      xCalls += call.getCallee() == qir::QIR_X;
+      controlledXCalls += call.getCallee() == qir::QIR_CX;
+    });
+    EXPECT_EQ(xCalls, 1U);
+    EXPECT_EQ(controlledXCalls, numUnitaries);
+  }
+}
+
 TEST(QCToQIRBaseNativeTest, RejectsReorderedOverlappingOutputStores) {
   MLIRContext context;
   context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,

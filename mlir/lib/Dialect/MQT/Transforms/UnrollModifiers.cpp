@@ -51,6 +51,14 @@ namespace mlir::mqt {
 #define GEN_PASS_DEF_UNROLLMODIFIERS
 #include "mqt/Dialect/MQT/Transforms/Passes.h.inc"
 
+/// Check for two body unitaries without scanning the rest of the block.
+template <typename UnitaryOpInterface>
+static bool hasMultipleBodyUnitaries(Block& body) {
+  return llvm::hasNItemsOrMore(body.begin(), body.end(), 2, [](Operation& op) {
+    return isa<UnitaryOpInterface>(op);
+  });
+}
+
 /// Hoist eager parameter computation from a verified modifier in dependency
 /// order.
 template <typename UnitaryOpInterface>
@@ -85,10 +93,10 @@ static void cloneIntoBody(qc::UnitaryOpInterface unitary, ValueRange args,
 /// Unroll a `qc.ctrl` modifier with more than one body unitary,
 /// or fail if it cannot be unrolled.
 static LogicalResult unrollModifier(qc::CtrlOp op, RewriterBase& rewriter) {
-  if (op.getNumBodyUnitaries() < 2) {
+  auto* body = op.getBody();
+  if (!hasMultipleBodyUnitaries<qc::UnitaryOpInterface>(*body)) {
     return success();
   }
-  auto* body = op.getBody();
   hoistClassicalOps<qc::UnitaryOpInterface>(*body, op, rewriter);
 
   rewriter.setInsertionPoint(op);
@@ -107,10 +115,10 @@ static LogicalResult unrollModifier(qc::CtrlOp op, RewriterBase& rewriter) {
 /// Unroll a `qc.inv` modifier with more than one body unitary,
 /// or fail if it cannot be unrolled.
 static LogicalResult unrollModifier(qc::InvOp op, RewriterBase& rewriter) {
-  if (op.getNumBodyUnitaries() < 2) {
+  auto* body = op.getBody();
+  if (!hasMultipleBodyUnitaries<qc::UnitaryOpInterface>(*body)) {
     return success();
   }
-  auto* body = op.getBody();
   hoistClassicalOps<qc::UnitaryOpInterface>(*body, op, rewriter);
 
   rewriter.setInsertionPoint(op);
@@ -143,10 +151,10 @@ static bool hasDisjointBodyQubits(Block& body) {
 /// Unroll a `qc.pow` modifier with more than one body unitary,
 /// or fail if it cannot be unrolled.
 static LogicalResult unrollModifier(qc::PowOp op, RewriterBase& rewriter) {
-  if (op.getNumBodyUnitaries() < 2) {
+  auto* body = op.getBody();
+  if (!hasMultipleBodyUnitaries<qc::UnitaryOpInterface>(*body)) {
     return success();
   }
-  auto* body = op.getBody();
   if (!hasIntegerExponent(op) || !hasDisjointBodyQubits(*body)) {
     return failure();
   }
@@ -186,7 +194,7 @@ static SmallVector<Value> cloneIntoBody(qco::UnitaryOpInterface unitary,
 /// or fail if it cannot be unrolled.
 LogicalResult unrollModifier(qco::CtrlOp op, RewriterBase& rewriter) {
   auto* body = op.getBody();
-  if (op.getNumBodyUnitaries() < 2) {
+  if (!hasMultipleBodyUnitaries<qco::UnitaryOpInterface>(*body)) {
     return failure();
   }
   hoistClassicalOps<qco::UnitaryOpInterface>(*body, op, rewriter);
@@ -222,7 +230,7 @@ LogicalResult unrollModifier(qco::CtrlOp op, RewriterBase& rewriter) {
 /// or fail if it cannot be unrolled.
 LogicalResult unrollModifier(qco::InvOp op, RewriterBase& rewriter) {
   auto* body = op.getBody();
-  if (op.getNumBodyUnitaries() < 2) {
+  if (!hasMultipleBodyUnitaries<qco::UnitaryOpInterface>(*body)) {
     return failure();
   }
   hoistClassicalOps<qco::UnitaryOpInterface>(*body, op, rewriter);
@@ -265,10 +273,10 @@ static bool hasDisjointBodyWires(Block& body) {
 /// Unroll a `qco.pow` modifier with more than one body unitary,
 /// or fail if it cannot be unrolled.
 LogicalResult unrollModifier(qco::PowOp op, RewriterBase& rewriter) {
-  if (op.getNumBodyUnitaries() < 2) {
+  auto* body = op.getBody();
+  if (!hasMultipleBodyUnitaries<qco::UnitaryOpInterface>(*body)) {
     return failure();
   }
-  auto* body = op.getBody();
   if (!hasIntegerExponent(op) || !hasDisjointBodyWires(*body)) {
     return failure();
   }

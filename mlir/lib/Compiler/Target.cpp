@@ -11,6 +11,7 @@
 #include "mqt/Compiler/Target.h"
 
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
+#include "mqt/Dialect/MQT/Utils/Modifiers.h"
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
@@ -1424,12 +1425,12 @@ bool CompilerTarget::supportsImpl(::mlir::Operation* operation,
       return true;
     }
     if (auto controlled = dyn_cast<qco::CtrlOp>(operation)) {
-      if (controlled.getNumControls() == 0 ||
-          controlled.getNumBodyUnitaries() != 1) {
+      if (controlled.getNumControls() == 0) {
         return false;
       }
-      auto body = controlled.getBodyUnitary(0);
-      if (body.getNumQubits() != controlled.getNumTargets()) {
+      auto body = mqt::getSoleBodyUnitary<qco::UnitaryOpInterface>(
+          *controlled.getBody());
+      if (!body || body.getNumQubits() != controlled.getNumTargets()) {
         return false;
       }
       if (storage_->supportsOperation(
