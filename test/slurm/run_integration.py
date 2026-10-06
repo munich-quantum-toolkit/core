@@ -622,8 +622,8 @@ def test_spank_validation() -> None:
     def calls() -> list[dict[str, Any]]:
         return [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()] if log.exists() else []
 
-    def configure(checker: str | None = probe) -> None:
-        validation = f" validate={checker} validation_timeout=3" if checker else ""
+    def configure(checker: str | None = probe, timeout: int = 3) -> None:
+        validation = f" validate={checker} validation_timeout={timeout}" if checker else ""
         (RUNTIME / "plugstack.conf").write_text(configuration + validation + "\n", encoding="utf-8")
         log.unlink(missing_ok=True)
         body.unlink(missing_ok=True)
@@ -654,7 +654,7 @@ def test_spank_validation() -> None:
     assert_released()
 
     configure()
-    job(*environment, *allocation, "python3", "-c", program, timeout=60)
+    job(*environment, *allocation, "--mpi=pmi2", "python3", "-c", program, timeout=60)
     records = calls()
     assert body.exists()
     assert len(records) == 2, records
@@ -664,12 +664,6 @@ def test_spank_validation() -> None:
         assert record["reference"] == "job-value", record
         assert record["catalogue"] == catalogue, record
         assert record["arguments"] == ["--device", selected, "--timeout", "3"], record
-    assert_released()
-
-    configure()
-    job(*environment, *allocation, "--mpi=pmi2", "python3", "-c", program, timeout=60)
-    assert body.exists()
-    assert len(calls()) == 2, calls()
     assert_released()
 
     configure()
@@ -726,14 +720,14 @@ def test_spank_validation() -> None:
     job(*environment, "SLURM_JOB_LICENSES=mqt.sc.default", "srun", "--time=1", "--ntasks=1", "/bin/true")
     assert not calls()
 
-    configure()
+    configure(timeout=300)
     submitted = (
         job(
             *environment,
             "MQT_SLURM_CHECKER_MODE=hang",
             "sbatch",
             "--parsable",
-            "--time=1",
+            "--time=5",
             f"--licenses={selected}",
             "--output=/jobs/validator-cancel.out",
             "--wrap",

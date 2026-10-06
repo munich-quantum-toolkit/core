@@ -234,8 +234,8 @@ must name one configured device with an implicit count or `:1`.
 The module runs the checker as the job user with the job environment after
 configuration injection. It does not load a provider in a Slurm daemon. An
 unavailable device, checker failure, or timeout prevents tasks using that check
-from starting and does not drain the node. The checker still accepts both `IDLE`
-and `BUSY`; it does not reserve the device or authorize a later submission.
+from starting and does not drain the node. The checker accepts both `IDLE` and
+`BUSY`; it does not reserve the device or authorize a later submission.
 
 Each node runs one check per job step and shares the result across its tasks.
 Tasks on another node may already have started when a check fails. All tasks
@@ -245,8 +245,9 @@ set these inputs. Task prologs run later and must not change them.
 
 The configured checker must use the workload's provider runtime. It cannot
 validate a virtual environment, module, credentials, or container activated
-later in a batch script. For such jobs, leave automatic validation disabled and
-run the checker inside the chosen environment after setup, for example:
+later in a batch script. For such jobs, administrators must leave automatic
+validation disabled. Job authors can run the checker inside the chosen
+environment after setup, for example:
 
 ```bash
 #!/bin/bash
