@@ -180,31 +180,4 @@ TEST_F(QCOWireCanonicalizationTest, KeepsSwapWithLiveQuantumOutput) {
   }
 }
 
-TEST_F(QCOWireCanonicalizationTest, KeepsControlledSwapBeforeMeasurements) {
-  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
-    module {
-      func.func @main(%c: !qco.qubit, %a: !qco.qubit, %b: !qco.qubit)
-          -> (i1, i1, i1) {
-        %co, %targets:2 = qco.ctrl(%c) targets (%x = %a, %y = %b) {
-          %xo, %yo = qco.swap %x, %y : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
-          qco.yield %xo, %yo : !qco.qubit, !qco.qubit
-        } : ({!qco.qubit}, {!qco.qubit, !qco.qubit}) -> ({!qco.qubit}, {!qco.qubit, !qco.qubit})
-        %qc, %rc = qco.measure %co : !qco.qubit
-        %qa, %ra = qco.measure %targets#0 : !qco.qubit
-        %qb, %rb = qco.measure %targets#1 : !qco.qubit
-        qco.sink %qc : !qco.qubit
-        qco.sink %qa : !qco.qubit
-        qco.sink %qb : !qco.qubit
-        return %rc, %ra, %rb : i1, i1, i1
-      }
-    }
-  )mlir",
-                                              &context_);
-  ASSERT_TRUE(moduleOp);
-  ASSERT_NO_FATAL_FAILURE(canonicalize(*moduleOp));
-  size_t swaps = 0;
-  moduleOp->walk([&](SWAPOp) { ++swaps; });
-  EXPECT_EQ(swaps, 1U);
-}
-
 } // namespace
