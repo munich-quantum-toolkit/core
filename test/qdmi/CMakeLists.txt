@@ -30,5 +30,15 @@ if(TARGET MQT::CoreQDMI)
         "-DSESSION_DEVICE=$<TARGET_FILE:mqt-core-qdmi-session-device>"
         "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/checker" -P
         "${CMAKE_CURRENT_SOURCE_DIR}/test_check_cli.cmake")
+    if(MQT_CORE_INSTALL AND TARGET MQT::CoreQDMIScDevice)
+      add_test(
+        NAME mqt-core-qdmi-check-installed
+        COMMAND
+          ${CMAKE_COMMAND} "-DBUILD_DIR=${CMAKE_BINARY_DIR}" "-DCONFIG=$<CONFIG>"
+          "-DINSTALL_BINDIR=${CMAKE_INSTALL_BINDIR}" "-DINSTALL_LIBDIR=${CMAKE_INSTALL_LIBDIR}"
+          "-DRUNTIME_COMPONENT=${MQT_CORE_TARGET_NAME}_Runtime"
+          "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/installed-checker" -P
+          "${CMAKE_CURRENT_SOURCE_DIR}/test_check_installed.cmake")
+    endif()
   endif()
 endif()

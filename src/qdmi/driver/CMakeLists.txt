@@ -39,10 +39,6 @@ if(NOT TARGET ${TARGET_NAME})
       mqt_copy_qdmi_runtime(${TARGET_NAME} ${QDMI_DEVICE_TARGETS})
     else()
       add_dependencies(${TARGET_NAME} ${QDMI_DEVICE_TARGETS})
-      foreach(device IN LISTS QDMI_DEVICE_TARGETS)
-        target_link_options(${TARGET_NAME} INTERFACE
-                            $<BUILD_INTERFACE:-Wl,-rpath,$<TARGET_FILE_DIR:${device}>>)
-      endforeach()
     endif()
   endif()
 
