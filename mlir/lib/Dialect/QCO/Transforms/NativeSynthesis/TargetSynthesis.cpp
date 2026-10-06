@@ -12,12 +12,15 @@
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
+#include "mqt/Dialect/MQT/Utils/Modifiers.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Euler.h"
+#include "mqt/Dialect/QCO/Transforms/Decomposition/Pauli.h"
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Weyl.h"
 #include "mqt/Dialect/QCO/Transforms/NativeSynthesis/NativeCost.h"
+#include "mqt/Dialect/QCO/Transforms/NativeSynthesis/SingleQubitFusion.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
@@ -51,6 +54,7 @@
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/xxhash.h"
@@ -107,6 +111,18 @@ static bool isWalkableUnitaryShell(Operation* op) {
 static bool assignTwoQubitOpMatrix(UnitaryOpInterface op, Matrix4x4& matrix) {
   return (!isa<CtrlOp>(op) || op.getNumControls() == 1) &&
          op.getUnitaryMatrix4x4(matrix);
+}
+
+template <typename Gate>
+static Gate singleControlledGate(Operation* operation) {
+  auto controlled = dyn_cast<CtrlOp>(operation);
+  if (!controlled || controlled.getNumControls() != 1 ||
+      controlled.getNumTargets() != 1) {
+    return {};
+  }
+  auto body =
+      mqt::getSoleBodyUnitary<UnitaryOpInterface>(*controlled.getBody());
+  return body ? dyn_cast<Gate>(body.getOperation()) : Gate{};
 }
 
 /// Return the constant matrix when `unitary` is a single-qubit run member.
@@ -432,11 +448,39 @@ static SmallVector<SiteId, 2> getOperationSites(Operation* operation,
   return result;
 }
 
+static LogicalResult verifyTopology(Operation* root,
+                                    const CompilerTarget& target,
+                                    const SiteMap& sites) {
+  if (target.connectivityKind() !=
+      CompilerTarget::Connectivity::Kind::Explicit) {
+    return success();
+  }
+  auto result = root->walk([&](Operation* operation) {
+    auto unitary = dyn_cast<UnitaryOpInterface>(operation);
+    if (!unitary || isExcludedFromTopLevelUnitaryWalk(operation) ||
+        unitary.getNumQubits() != 2 || isa<BarrierOp>(operation)) {
+      return WalkResult::advance();
+    }
+    auto siteIds = getOperationSites(operation, sites);
+    auto first = target.vertexForSite(siteIds[0]);
+    auto second = target.vertexForSite(siteIds[1]);
+    if (first && second && target.areAdjacent(*first, *second)) {
+      return WalkResult::advance();
+    }
+    operation->emitError("two-qubit operation does not fit target topology");
+    return WalkResult::interrupt();
+  });
+  return success(!result.wasInterrupted());
+}
+
 /// Normalize relative phase effects and discard only the unobservable global
 /// phase of an entry point when the target cannot represent it.
 static LogicalResult prepareGlobalPhases(ModuleOp moduleOp,
-                                         const CompilerTarget& target) {
-  if (failed(mqt::normalizeGlobalPhases(moduleOp))) {
+                                         const CompilerTarget& target,
+                                         RewriterBase* rewriter = nullptr) {
+  if (failed(rewriter != nullptr
+                 ? mqt::normalizeGlobalPhases(moduleOp, *rewriter)
+                 : mqt::normalizeGlobalPhases(moduleOp))) {
     return failure();
   }
   if (target.supportsOperation("gphase", 0, 1)) {
@@ -446,11 +490,13 @@ static LogicalResult prepareGlobalPhases(ModuleOp moduleOp,
   if (!entryPoint) {
     return success();
   }
-  for (auto& block : entryPoint.getBody()) {
-    for (auto phase : llvm::make_early_inc_range(block.getOps<GPhaseOp>())) {
+  entryPoint.walk([](GPhaseOp phase) {
+    /// Each classical execution path has its own unobservable global phase.
+    /// QCO modifiers must retain phases that normalization cannot extract.
+    if (!isExcludedFromTopLevelUnitaryWalk(phase)) {
       phase.erase();
     }
-  }
+  });
   return success();
 }
 
@@ -462,11 +508,7 @@ static bool isOperandSwapInvariant(UnitaryOpInterface unitary) {
   if (auto exchange = dyn_cast<XXPlusYYOp>(operation)) {
     return matchPattern(exchange.getBeta(), m_AnyZeroFloat());
   }
-  auto controlled = dyn_cast<CtrlOp>(operation);
-  return controlled && controlled.getNumControls() == 1 &&
-         controlled.getNumTargets() == 1 &&
-         controlled.getNumBodyUnitaries() == 1 &&
-         isa<ZOp>(controlled.getBodyUnitary(0).getOperation());
+  return static_cast<bool>(singleControlledGate<ZOp>(operation));
 }
 
 static void reorderTwoQubitOperation(IRRewriter& rewriter,
@@ -498,7 +540,7 @@ std::optional<bool> NativeCostAnalysis::nativeOrientation(
 
 std::optional<bool>
 NativeCostAnalysis::entanglerOrientation(const CompilerTarget& target,
-                                         CompilerTarget::GateKind entangler,
+                                         CompilerTarget::Entangler entangler,
                                          Sites sites) {
   if (!sites || target.supports(entangler, *sites)) {
     return false;
@@ -512,10 +554,11 @@ NativeCostAnalysis::entanglerOrientation(const CompilerTarget& target,
 /// Hashes only accelerate lookup. Bitwise equality below keeps collisions,
 /// signed zeros, and non-finite numerical failures from producing false hits.
 static uint64_t matrixHash(const Matrix4x4& matrix,
-                           CompilerTarget::GateKind entangler) {
+                           CompilerTarget::Entangler entangler) {
   return llvm::xxh3_64bits(reinterpret_cast<const uint8_t*>(matrix.data.data()),
                            sizeof(matrix.data)) ^
-         static_cast<uint64_t>(entangler);
+         static_cast<uint64_t>(entangler.gate) ^
+         (static_cast<uint64_t>(entangler.angles) << 8U);
 }
 
 static bool sameMatrix(const Matrix4x4& a, const Matrix4x4& b) {
@@ -526,7 +569,7 @@ static bool sameMatrix(const Matrix4x4& a, const Matrix4x4& b) {
 
 const std::optional<uint8_t>*
 NativeCostTable::lookup(const Matrix4x4& matrix,
-                        CompilerTarget::GateKind entangler,
+                        CompilerTarget::Entangler entangler,
                         uint64_t hash) const {
   const auto it = index_.find(hash);
   if (it == index_.end()) {
@@ -538,9 +581,8 @@ NativeCostTable::lookup(const Matrix4x4& matrix,
              : nullptr;
 }
 
-std::unique_ptr<const NativeCostTable>
-NativeCostTable::precompute(Operation* root, CompilerTarget::GateKind entangler,
-                            uint64_t seed) {
+std::unique_ptr<const NativeCostTable> NativeCostTable::precompute(
+    Operation* root, CompilerTarget::Entangler entangler, uint64_t seed) {
   constexpr size_t capacity = 1024;
   auto result = std::make_unique<NativeCostTable>();
   result->seed_ = seed;
@@ -592,7 +634,7 @@ NativeCostTable::precompute(Operation* root, CompilerTarget::GateKind entangler,
 
 const std::optional<decomposition::TwoQubitNativeDecomposition>&
 NativeCostAnalysis::decompose(const Matrix4x4& matrix,
-                              CompilerTarget::GateKind entangler) {
+                              CompilerTarget::Entangler entangler) {
   if (!decompositions_.empty()) {
     const auto& entry = decompositions_[lastDecomposition_];
     if (entry.entangler == entangler && entry.matrix.data == matrix.data) {
@@ -632,7 +674,11 @@ NativeCostAnalysis::decompose(const Matrix4x4& matrix,
 
 std::optional<uint8_t>
 NativeCostAnalysis::count(const Matrix4x4& matrix,
-                          CompilerTarget::GateKind entangler) {
+                          CompilerTarget::Entangler entangler) {
+  if (shared_ == nullptr) {
+    const auto& native = decompose(matrix, entangler);
+    return native ? std::optional{native->numBasisUses} : std::nullopt;
+  }
   if (lastCount_ && lastCount_->entangler == entangler &&
       lastCount_->matrix.data == matrix.data) {
     return lastCount_->count;
@@ -640,7 +686,11 @@ NativeCostAnalysis::count(const Matrix4x4& matrix,
   const auto hash = matrixHash(matrix, entangler);
   if (shared_->seed_ == seed_) {
     if (const auto* cached = shared_->lookup(matrix, entangler, hash)) {
-      lastCount_ = {.matrix = matrix, .entangler = entangler, .count = *cached};
+      lastCount_ = {
+          .matrix = matrix,
+          .entangler = entangler,
+          .count = *cached,
+      };
       return *cached;
     }
   }
@@ -693,6 +743,17 @@ NativeCostAnalysis::operationCost(UnitaryOpInterface operation,
     }
     return std::nullopt;
   }
+  const auto basis = *target.synthesisBasis();
+  if (!basis.entangler ||
+      !entanglerOrientation(target, *basis.entangler, sites)) {
+    return std::nullopt;
+  }
+  if (const auto sequence = decomposition::getPauliRotations(operation)) {
+    if (const auto cost = decomposition::pauliRotationEntanglerCount(
+            *sequence, *basis.entangler)) {
+      return cost;
+    }
+  }
   Matrix4x4 matrix;
   if (!assignTwoQubitOpMatrix(operation, matrix)) {
     return std::nullopt;
@@ -703,7 +764,7 @@ NativeCostAnalysis::operationCost(UnitaryOpInterface operation,
 std::optional<size_t>
 NativeCostAnalysis::matrixCost(const Matrix4x4& matrix,
                                const CompilerTarget& target, Sites sites) {
-  const auto basis = target.synthesisBasis();
+  const auto& basis = target.synthesisBasis();
   if (!basis || !basis->entangler) {
     return std::nullopt;
   }
@@ -712,11 +773,7 @@ NativeCostAnalysis::matrixCost(const Matrix4x4& matrix,
     return std::nullopt;
   }
   const auto ordered = *reverse ? matrix.reorderForQubits(1, 0) : matrix;
-  if (shared_ != nullptr) {
-    return count(ordered, *basis->entangler);
-  }
-  const auto& native = decompose(ordered, *basis->entangler);
-  return native ? std::optional<size_t>(native->numBasisUses) : std::nullopt;
+  return count(ordered, *basis->entangler);
 }
 
 size_t NativeCostAnalysis::runCost(const Matrix4x4& matrix, size_t separateCost,
@@ -983,7 +1040,7 @@ int64_t NativeCostTracker::swapCostAdjustment(size_t first, size_t second,
 
 static LogicalResult synthesizeTargetOperation(
     IRRewriter& rewriter, UnitaryOpInterface op, const CompilerTarget& target,
-    const std::optional<CompilerTarget::SynthesisBasis>& basis,
+    std::optional<CompilerTarget::SynthesisBasis> basis,
     std::optional<ArrayRef<SiteId>> sites, NativeCostAnalysis& analysis) {
   Operation* const operation = op.getOperation();
   if (const auto reverse = analysis.nativeOrientation(op, target, sites)) {
@@ -1000,16 +1057,12 @@ static LogicalResult synthesizeTargetOperation(
   if (!basis) {
     return unsupported("the target has no usable synthesis basis");
   }
-  if (auto controlled = dyn_cast<CtrlOp>(operation);
-      controlled && basis->singleQubit == CompilerTarget::SingleQubitBasis::U &&
-      controlled.getNumTargets() == 1 &&
-      controlled.getNumBodyUnitaries() == 1 &&
-      isa<U2Op>(controlled.getBodyUnitary(0).getOperation())) {
+  if (auto u2 = singleControlledGate<U2Op>(operation);
+      u2 && basis->singleQubit == CompilerTarget::SingleQubitBasis::U) {
     /// Canonicalization may shorten a native controlled U(pi/2, phi, lambda)
     /// to U2. Restore its native form before attempting matrix synthesis.
-    decomposition::synthesizeParameterizedUnitary1Q(
-        rewriter, controlled.getBodyUnitary(0).getOperation(),
-        basis->singleQubit);
+    decomposition::synthesizeParameterizedUnitary1Q(rewriter, u2.getOperation(),
+                                                    *basis);
     if (sites ? target.supports(operation, *sites)
               : target.supports(operation)) {
       return success();
@@ -1024,12 +1077,12 @@ static LogicalResult synthesizeTargetOperation(
             "its unitary matrix is not available at compile time");
       }
       decomposition::synthesizeParameterizedUnitary1Q(rewriter, operation,
-                                                      basis->singleQubit);
+                                                      *basis);
       return success();
     }
     const auto synthesized = decomposition::synthesizeUnitary1QEuler(
         rewriter, operation->getLoc(), op.getInputQubit(0), matrix,
-        /*runSize=*/1, /*hasNonBasisGate=*/true, basis->singleQubit);
+        /*runSize=*/1, /*hasNonBasisGate=*/true, *basis);
     if (!synthesized) {
       llvm::reportFatalInternalError(
           "target single-qubit basis failed to synthesize a unitary matrix");
@@ -1043,10 +1096,6 @@ static LogicalResult synthesizeTargetOperation(
   if (!basis->entangler) {
     return unsupported("the target has no usable two-qubit entangler");
   }
-  Matrix4x4 matrix;
-  if (!assignTwoQubitOpMatrix(op, matrix)) {
-    return unsupported("its unitary matrix is not available at compile time");
-  }
   const auto direction =
       analysis.entanglerOrientation(target, *basis->entangler, sites);
   if (!direction) {
@@ -1055,6 +1104,18 @@ static LogicalResult synthesizeTargetOperation(
               "static sites";
   }
   const bool reverseEntangler = *direction;
+  if (const auto sequence = decomposition::getPauliRotations(operation);
+      sequence && decomposition::pauliRotationEntanglerCount(
+                      *sequence, *basis->entangler)) {
+    rewriter.replaceOp(operation, decomposition::emitPauliRotations(
+                                      rewriter, operation, *sequence, *basis,
+                                      reverseEntangler));
+    return success();
+  }
+  Matrix4x4 matrix;
+  if (!assignTwoQubitOpMatrix(op, matrix)) {
+    return unsupported("its unitary matrix is not available at compile time");
+  }
   Value input0 = op.getInputQubit(0);
   Value input1 = op.getInputQubit(1);
 
@@ -1114,7 +1175,7 @@ static bool reducesNativeCost(const FusableTwoQubitRun& run, size_t fusedCost,
 /// Without a target, the original operation count is a conservative bound.
 static bool fuseTwoQubitGateRun(IRRewriter& rewriter, UnitaryOpInterface head,
                                 const Matrix4x4& headMatrix,
-                                CompilerTarget::SynthesisBasis basis,
+                                const CompilerTarget::SynthesisBasis& basis,
                                 const CompilerTarget* target,
                                 const SiteMap* sites,
                                 NativeCostAnalysis& analysis, bool shrinkOnly) {
@@ -1160,24 +1221,39 @@ static bool fuseTwoQubitGateRun(IRRewriter& rewriter, UnitaryOpInterface head,
   return true;
 }
 
-static bool fuseTwoQubitGates(IRRewriter& rewriter, ModuleOp moduleOp,
-                              CompilerTarget::SynthesisBasis basis,
-                              NativeCostAnalysis& analysis,
-                              const CompilerTarget* target = nullptr,
-                              const SiteMap* sites = nullptr,
-                              bool shrinkOnly = false) {
-  bool changed = false;
+/// Returns whether two-qubit fusion changed the IR.
+static FailureOr<bool>
+fuseGateRuns(IRRewriter& rewriter, ModuleOp moduleOp,
+             const CompilerTarget::SynthesisBasis& basis,
+             NativeCostAnalysis& analysis,
+             const CompilerTarget* target = nullptr,
+             const SiteMap* sites = nullptr, bool shrinkOnly = false,
+             decomposition::SingleQubitRunFusion* oneQubitFusion = nullptr) {
+  bool twoQubitChanged = false;
   /// A run's successors have already been visited when its head erases them.
-  moduleOp->walk<WalkOrder::PostOrder, ReverseIterator>(
+  const auto result = moduleOp->walk<WalkOrder::PostOrder, ReverseIterator>(
       [&](Operation* operation) {
         auto unitary = dyn_cast<UnitaryOpInterface>(operation);
+        if (oneQubitFusion != nullptr && unitary && unitary.isSingleQubit()) {
+          return failed(oneQubitFusion->apply(operation))
+                     ? WalkResult::interrupt()
+                     : WalkResult::advance();
+        }
+        if (!basis.entangler) {
+          return WalkResult::advance();
+        }
         const auto matrix = twoQubitRunMemberMatrix(unitary);
         if (matrix && !feedsFromSameTwoQubitRun(unitary)) {
-          changed |= fuseTwoQubitGateRun(rewriter, unitary, *matrix, basis,
-                                         target, sites, analysis, shrinkOnly);
+          twoQubitChanged |=
+              fuseTwoQubitGateRun(rewriter, unitary, *matrix, basis, target,
+                                  sites, analysis, shrinkOnly);
         }
+        return WalkResult::advance();
       });
-  return changed;
+  if (result.wasInterrupted()) {
+    return failure();
+  }
+  return twoQubitChanged;
 }
 
 namespace {
@@ -1197,20 +1273,23 @@ struct FuseTwoQubitGatesPass final
 protected:
   void runOnOperation() override {
     ModuleOp moduleOp = getOperation();
-    const auto basis =
-        target_ ? target_->synthesisBasis()
-                : std::optional{CompilerTarget::SynthesisBasis{
-                      .singleQubit = CompilerTarget::SingleQubitBasis::U,
-                      .entangler = CompilerTarget::GateKind::CZ,
-                  }};
+    const std::optional defaultBasis{CompilerTarget::SynthesisBasis{
+        .singleQubit = CompilerTarget::SingleQubitBasis::U,
+        .entangler =
+            CompilerTarget::Entangler{.gate = CompilerTarget::GateKind::CZ},
+    }};
+    const auto& basis = target_ ? target_->synthesisBasis() : defaultBasis;
     if (!basis || !basis->entangler) {
       return;
     }
     IRRewriter rewriter(&getContext());
+    decomposition::mergeDiagonalRotations(rewriter, moduleOp);
     NativeCostAnalysis analysis(compilationSeed(moduleOp, 2023));
-    if (fuseTwoQubitGates(rewriter, moduleOp, *basis, analysis,
-                          target_ ? &*target_ : nullptr, nullptr, true) &&
-        failed(mlir::mqt::normalizeGlobalPhases(moduleOp))) {
+    const auto changed =
+        fuseGateRuns(rewriter, moduleOp, *basis, analysis,
+                     target_ ? &*target_ : nullptr, nullptr, true);
+    if (failed(changed) ||
+        (*changed && failed(mlir::mqt::normalizeGlobalPhases(moduleOp)))) {
       signalPassFailure();
     }
   }
@@ -1220,7 +1299,7 @@ private:
 };
 
 /// Track generated wire sites and defer folding until builders finish.
-class SynthesisListener final : public OpBuilder::Listener {
+class SynthesisListener final : public RewriterBase::Listener {
 public:
   SynthesisListener(MLIRContext* context, SiteMap& sites)
       : folder_(context), sites_(sites) {}
@@ -1252,10 +1331,49 @@ public:
     pending_.clear();
   }
 
+  void notifyOperationErased(Operation* operation) override {
+    if (auto constant = dyn_cast<arith::ConstantOp>(operation)) {
+      folder_.notifyRemoval(constant);
+      llvm::erase(pending_, constant);
+    }
+  }
+
 private:
   OperationFolder folder_;
   SiteMap& sites_;
   SmallVector<arith::ConstantOp> pending_;
+};
+
+struct ComposePauliRotations final
+    : OpInterfaceRewritePattern<UnitaryOpInterface> {
+  ComposePauliRotations(MLIRContext* context,
+                        const CompilerTarget::SynthesisBasis& basis,
+                        const CompilerTarget& target,
+                        NativeCostAnalysis& analysis, const SiteMap* sites)
+      : OpInterfaceRewritePattern(context), basis(basis), target(target),
+        analysis(analysis), sites(sites) {}
+
+  CompilerTarget::SynthesisBasis basis;
+  const CompilerTarget& target;
+  NativeCostAnalysis& analysis;
+  const SiteMap* sites;
+
+  LogicalResult matchAndRewrite(UnitaryOpInterface op,
+                                PatternRewriter& rewriter) const override {
+    if (!op.isTwoQubit() || !isWalkableUnitaryShell(op.getOperation())) {
+      return failure();
+    }
+    auto placement = sites != nullptr ? getOperationSites(op, *sites)
+                                      : SmallVector<SiteId, 2>{};
+    const auto operationSites = sites != nullptr
+                                    ? std::optional<ArrayRef<SiteId>>(placement)
+                                    : std::nullopt;
+    const auto reverse =
+        analysis.entanglerOrientation(target, *basis.entangler, operationSites);
+    return reverse ? decomposition::fusePauliRotationRun(
+                         rewriter, op, basis, *reverse, target, operationSites)
+                   : failure();
+  }
 };
 
 struct TargetNativeSynthesisPass final
@@ -1274,23 +1392,23 @@ protected:
       return;
     }
     const CompilerTarget& target = environment.environment().target();
-    const auto targetBasis = target.synthesisBasis();
+    const auto& targetBasis = target.synthesisBasis();
+    auto emissionBasis = targetBasis;
+    const bool equatorial =
+        targetBasis &&
+        targetBasis->singleQubit == CompilerTarget::SingleQubitBasis::R;
+    if (equatorial) {
+      /// Keep local factors compact until their Z frames can be propagated.
+      emissionBasis->singleQubit = CompilerTarget::SingleQubitBasis::ZYZ;
+    }
+    /// Preserve native operations outside the explicit composition patterns.
+    const auto compositionConfig = GreedyRewriteConfig{}
+                                       .setUseTopDownTraversal()
+                                       .enableFolding(false)
+                                       .enableConstantCSE(false);
     if (failed(prepareGlobalPhases(moduleOp, target))) {
       signalPassFailure();
       return;
-    }
-    if (targetBasis &&
-        targetBasis->singleQubit != CompilerTarget::SingleQubitBasis::U) {
-      RewritePatternSet patterns(&getContext());
-      decomposition::populateParameterizedSingleQubitRunCompositionPatterns(
-          patterns, targetBasis->singleQubit, &target);
-      decomposition::populateFuseSingleQubitUnitaryRunsPatterns(
-          patterns, targetBasis->singleQubit, /*skipControlledBodies=*/true,
-          &target);
-      if (failed(applyPatternsGreedily(moduleOp, std::move(patterns)))) {
-        signalPassFailure();
-        return;
-      }
     }
     const bool indexed = environment.environment().supportsIndexedQubits();
     auto sites = collectStaticSites(moduleOp, indexed);
@@ -1298,28 +1416,60 @@ protected:
       signalPassFailure();
       return;
     }
+    if (!indexed && failed(verifyTopology(moduleOp, target, *sites))) {
+      signalPassFailure();
+      return;
+    }
 
     SynthesisListener listener(&getContext(), *sites);
     IRRewriter rewriter(&getContext(), &listener);
     NativeCostAnalysis analysis(compilationSeed(moduleOp, seed));
-    if (targetBasis && targetBasis->entangler) {
-      fuseTwoQubitGates(rewriter, moduleOp, *targetBasis, analysis, &target,
-                        indexed ? nullptr : &*sites);
+    if (targetBasis) {
+      RewritePatternSet patterns(&getContext());
+      decomposition::populateRotationCompositionPatterns(patterns);
+      if (targetBasis->entangler) {
+        patterns.add<ComposePauliRotations>(&getContext(), *emissionBasis,
+                                            target, analysis,
+                                            indexed ? nullptr : &*sites);
+      }
+      auto config = compositionConfig;
+      if (failed(applyPatternsGreedily(moduleOp, std::move(patterns),
+                                       config.setListener(&listener)))) {
+        signalPassFailure();
+        return;
+      }
+      listener.foldPending();
+    }
+    if (targetBasis) {
+      decomposition::SingleQubitRunFusion fusion(
+          *targetBasis, &target, GreedyRewriteConfig{}.setListener(&listener));
+      if (failed(fuseGateRuns(rewriter, moduleOp, *emissionBasis, analysis,
+                              &target, indexed ? nullptr : &*sites, false,
+                              equatorial ? nullptr : &fusion))) {
+        signalPassFailure();
+        return;
+      }
     }
     listener.foldPending();
+    if (targetBasis &&
+        failed(prepareGlobalPhases(moduleOp, target, &rewriter))) {
+      signalPassFailure();
+      return;
+    }
     /// Rewrite users before producers so each unvisited operation retains its
     /// original operands and their collected sites.
     const auto result = moduleOp->walk<WalkOrder::PostOrder, ReverseIterator>(
         [&](Operation* operation) {
           auto unitary = dyn_cast<UnitaryOpInterface>(operation);
           if (!unitary || !isWalkableUnitaryShell(operation) ||
-              (!unitary.isSingleQubit() && !unitary.isTwoQubit())) {
+              (!unitary.isSingleQubit() && !unitary.isTwoQubit()) ||
+              (equatorial && unitary.isSingleQubit())) {
             return WalkResult::advance();
           }
           auto operationSites = indexed ? SmallVector<SiteId, 2>{}
                                         : getOperationSites(operation, *sites);
           const auto synthesized = synthesizeTargetOperation(
-              rewriter, unitary, target, targetBasis,
+              rewriter, unitary, target, emissionBasis,
               indexed ? std::nullopt
                       : std::optional<ArrayRef<SiteId>>(operationSites),
               analysis);
@@ -1330,6 +1480,30 @@ protected:
     if (result.wasInterrupted()) {
       signalPassFailure();
       return;
+    }
+    if (targetBasis && !equatorial) {
+      RewritePatternSet patterns(&getContext());
+      decomposition::populateRotationCompositionPatterns(patterns, &target);
+      decomposition::populateFuseSingleQubitUnitaryRunsPatterns(
+          patterns, *targetBasis, &target);
+      auto config = compositionConfig;
+      if (failed(applyPatternsGreedily(moduleOp, std::move(patterns),
+                                       config.setListener(&listener)))) {
+        signalPassFailure();
+        return;
+      }
+      listener.foldPending();
+    }
+    /// Propagate frames after local fusion: resynthesizing the shifted runs
+    /// can trade virtual Z gates for additional physical rotations.
+    if (targetBasis) {
+      if (failed(decomposition::propagateZFrames(
+              rewriter, moduleOp, target,
+              GreedyRewriteConfig{}.setListener(&listener)))) {
+        signalPassFailure();
+        return;
+      }
+      listener.foldPending();
     }
     if (failed(prepareGlobalPhases(moduleOp, target))) {
       signalPassFailure();
@@ -1355,6 +1529,10 @@ protected:
     const bool indexed = environment.environment().supportsIndexedQubits();
     auto sites = collectStaticSites(moduleOp, indexed);
     if (failed(sites)) {
+      signalPassFailure();
+      return;
+    }
+    if (!indexed && failed(verifyTopology(moduleOp, target, *sites))) {
       signalPassFailure();
       return;
     }

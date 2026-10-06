@@ -349,21 +349,19 @@ TEST(DeviceRegistry, DiscoversGeneratedBuildTreeManifests) {
   const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON", "");
 
   const qdmi::detail::DeviceRegistry registry;
+  const std::vector<std::string> expectedIds{
 #ifdef MQT_CORE_QDMI_HAS_DDSIM_DEVICE
-  ASSERT_EQ(registry.definitions().size(), 4);
-  EXPECT_EQ(registry.definitions().at(0).id, "mqt.ddsim.default");
-  EXPECT_EQ(registry.definitions().at(1).id, "mqt.sc.default");
-  EXPECT_EQ(registry.definitions().at(2).id, "mqt.sc.iqm.emerald");
-  EXPECT_EQ(registry.definitions().at(3).id, "mqt.sc.iqm.garnet");
-#else
-  ASSERT_EQ(registry.definitions().size(), 3);
-  EXPECT_EQ(registry.definitions().at(0).id, "mqt.sc.default");
-  EXPECT_EQ(registry.definitions().at(1).id, "mqt.sc.iqm.emerald");
-  EXPECT_EQ(registry.definitions().at(2).id, "mqt.sc.iqm.garnet");
+      "mqt.ddsim.default",
 #endif
+      "mqt.sc.default",     "mqt.sc.ibm.heron",  "mqt.sc.ibm.nighthawk",
+      "mqt.sc.iqm.emerald", "mqt.sc.iqm.garnet",
+  };
+  std::vector<std::string> ids;
   for (const auto& definition : registry.definitions()) {
+    ids.push_back(definition.id);
     EXPECT_TRUE(std::filesystem::is_regular_file(definition.library));
   }
+  EXPECT_EQ(ids, expectedIds);
 
   const auto assertPackagedModel = [&](const std::string_view id,
                                        const std::string_view filename) {
@@ -377,6 +375,8 @@ TEST(DeviceRegistry, DiscoversGeneratedBuildTreeManifests) {
     EXPECT_EQ(file->path.parent_path(), definition->library.parent_path());
     EXPECT_TRUE(std::filesystem::is_regular_file(file->path));
   };
+  assertPackagedModel("mqt.sc.ibm.heron", "ibm-heron.json");
+  assertPackagedModel("mqt.sc.ibm.nighthawk", "ibm-nighthawk.json");
   assertPackagedModel("mqt.sc.iqm.garnet", "iqm-garnet.json");
   assertPackagedModel("mqt.sc.iqm.emerald", "iqm-emerald.json");
 }

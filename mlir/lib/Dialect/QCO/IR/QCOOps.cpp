@@ -50,7 +50,15 @@ struct QCOInlinerInterface final : DialectInlinerInterface {
   bool isLegalToInline(Region* destination, Region* source,
                        bool /*wouldBeCloned*/,
                        IRMapping& /*valueMapping*/) const final {
-    return destination->hasOneBlock() && source->hasOneBlock();
+    if (!destination->hasOneBlock() || !source->hasOneBlock()) {
+      return false;
+    }
+    // Modifier bodies cannot contain structured control flow.
+    return !isa<UnitaryOpInterface>(destination->getParentOp()) ||
+           llvm::all_of(source->front(), [](Operation& operation) {
+             return operation.getNumRegions() == 0 ||
+                    isa<UnitaryOpInterface>(operation);
+           });
   }
 
   bool isLegalToInline(Operation* /*operation*/, Region* /*destination*/,

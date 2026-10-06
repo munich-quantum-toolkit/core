@@ -16,6 +16,7 @@
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/IR/Block.h"
 #include "mlir/IR/DialectImplementation.h" // IWYU pragma: keep (template instantiations)
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/Operation.h"
@@ -25,6 +26,7 @@
 #include "mlir/Support/LLVM.h"
 #include "mlir/Transforms/InliningUtils.h"
 
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/TypeSwitch.h" // IWYU pragma: keep (template instantiations)
 
 using namespace mlir;
@@ -44,7 +46,15 @@ struct QCInlinerInterface final : DialectInlinerInterface {
   bool isLegalToInline(Region* destination, Region* source,
                        bool /*wouldBeCloned*/,
                        IRMapping& /*valueMapping*/) const final {
-    return destination->hasOneBlock() && source->hasOneBlock();
+    if (!destination->hasOneBlock() || !source->hasOneBlock()) {
+      return false;
+    }
+    // Modifier bodies cannot contain structured control flow.
+    return !isa<UnitaryOpInterface>(destination->getParentOp()) ||
+           llvm::all_of(source->front(), [](Operation& operation) {
+             return operation.getNumRegions() == 0 ||
+                    isa<UnitaryOpInterface>(operation);
+           });
   }
 
   bool isLegalToInline(Operation* /*operation*/, Region* /*destination*/,

@@ -25,7 +25,9 @@
 #include <cstring>
 #include <initializer_list>
 #include <memory>
+#include <numbers>
 #include <numeric>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -86,7 +88,8 @@ TEST(CompilerQDMIAdapterTest, SnapshotsIQMCalibrationAndLifetime) {
   ASSERT_TRUE(target.synthesisBasis());
   EXPECT_EQ(target.synthesisBasis()->singleQubit,
             CompilerTarget::SingleQubitBasis::R);
-  EXPECT_EQ(target.synthesisBasis()->entangler, CompilerTarget::GateKind::CZ);
+  EXPECT_EQ(target.synthesisBasis()->entangler->gate,
+            CompilerTarget::GateKind::CZ);
 }
 
 TEST(CompilerQDMIAdapterTest, QueriesNamesAndSiteIndicesOncePerSnapshot) {
@@ -235,7 +238,8 @@ TEST(CompilerQDMIAdapterTest, PreservesOneWayDirectionalOperationSupport) {
   EXPECT_TRUE(target.supportsOperation("cx", 2, 0, {0, 1}));
   EXPECT_FALSE(target.supportsOperation("cx", 2, 0, {1, 0}));
   ASSERT_TRUE(target.synthesisBasis());
-  EXPECT_EQ(target.synthesisBasis()->entangler, CompilerTarget::GateKind::CX);
+  EXPECT_EQ(target.synthesisBasis()->entangler->gate,
+            CompilerTarget::GateKind::CX);
 }
 
 TEST(CompilerQDMIAdapterTest, OmitsOperationsWithNoSupportedPlacements) {
@@ -409,6 +413,47 @@ TEST(CompilerQDMIAdapterTest,
       }));
   EXPECT_TRUE(llvm::errorToBool(mlir::validateTargetCompatibility(
       original, mlir::TargetEnvironment(original.target(), constrained))));
+}
+
+TEST(CompilerQDMIAdapterTest, CompatibilityPreservesFixedParameters) {
+  const auto makeEnvironment =
+      [](std::vector<std::optional<double>> parameters,
+         std::vector<std::optional<
+             CompilerTarget::OperationCapability::ParameterBounds>>
+             bounds = {}) {
+        const auto operation =
+            llvm::cantFail(CompilerTarget::OperationCapability::create(
+                "rx", 1, 1, {}, std::nullopt, std::nullopt,
+                std::move(parameters), std::nullopt, std::move(bounds)));
+        return mlir::TargetEnvironment(
+            llvm::cantFail(CompilerTarget::create(
+                1, CompilerTarget::Connectivity::allToAll(),
+                CompilerTarget::NativeOperations::fromOperations({operation}))),
+            llvm::cantFail(mlir::payloadSpecificationForProgramFormat(
+                QDMI_PROGRAM_FORMAT_QASM3)));
+      };
+  const auto bounded =
+      makeEnvironment({}, {std::pair{0., std::numbers::pi / 2.}});
+  EXPECT_FALSE(llvm::errorToBool(mlir::validateTargetCompatibility(
+      bounded, makeEnvironment({}, {std::pair{0., std::numbers::pi / 2.}}))));
+  EXPECT_TRUE(llvm::errorToBool(
+      mlir::validateTargetCompatibility(bounded, makeEnvironment({}))));
+  EXPECT_TRUE(llvm::errorToBool(
+      mlir::validateTargetCompatibility(makeEnvironment({}), bounded)));
+  const auto fixed = makeEnvironment({std::numbers::pi / 2.});
+  EXPECT_FALSE(llvm::errorToBool(mlir::validateTargetCompatibility(
+      fixed, makeEnvironment({std::numbers::pi / 2.}))));
+  for (const auto& changed : {
+           makeEnvironment({std::numbers::pi / 4.}),
+           makeEnvironment({std::nullopt}),
+       }) {
+    EXPECT_TRUE(
+        llvm::errorToBool(mlir::validateTargetCompatibility(fixed, changed)));
+    EXPECT_TRUE(
+        llvm::errorToBool(mlir::validateTargetCompatibility(changed, fixed)));
+  }
+  EXPECT_FALSE(llvm::errorToBool(mlir::validateTargetCompatibility(
+      makeEnvironment({}), makeEnvironment({std::nullopt}))));
 }
 
 TEST(CompilerQDMIAdapterTest,

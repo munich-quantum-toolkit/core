@@ -36,6 +36,7 @@
 #include "llvm/ADT/SmallVector.h"
 
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
 #include <iterator>
 #include <optional>
@@ -259,7 +260,7 @@ namespace {
 
 class GlobalPhaseNormalizer final {
 public:
-  explicit GlobalPhaseNormalizer(MLIRContext* context) : rewriter(context) {}
+  explicit GlobalPhaseNormalizer(RewriterBase& rewriter) : rewriter(rewriter) {}
 
   void normalize(Region& region) { normalizeRegion(region); }
 
@@ -404,7 +405,7 @@ private:
 
   [[nodiscard]] std::optional<PhaseContribution>
   normalizeBlock(Block& block, Operation* extractionBoundary) {
-    std::optional<PhaseContribution> aggregate;
+    SmallVector<PhaseContribution, 4> contributions;
     SmallVector<Operation*, 4> directPhases;
     bool hasNestedContribution = false;
 
@@ -425,18 +426,21 @@ private:
       if (!phase) {
         continue;
       }
-      if (aggregate) {
-        aggregate->add(std::move(*phase));
-      } else {
-        aggregate = std::move(phase);
-      }
+      contributions.push_back(std::move(*phase));
     }
 
-    if (!aggregate) {
+    if (contributions.empty()) {
       return std::nullopt;
     }
+    /// Keep accumulated phase depth logarithmic for symbolic exporters.
+    for (size_t stride = 1; stride < contributions.size(); stride *= 2) {
+      for (size_t i = 0; i + stride < contributions.size(); i += 2 * stride) {
+        contributions[i].add(std::move(contributions[i + stride]));
+      }
+    }
+    auto aggregate = std::move(contributions.front());
     if (extractionBoundary != nullptr &&
-        hoistExpressionBefore(aggregate->expression, block, extractionBoundary,
+        hoistExpressionBefore(aggregate.expression, block, extractionBoundary,
                               rewriter)) {
       for (auto* phase : directPhases) {
         rewriter.eraseOp(phase);
@@ -461,20 +465,20 @@ private:
     for (auto* phase : directPhases) {
       rewriter.eraseOp(phase);
     }
-    if (aggregate->expression.isZero()) {
+    if (aggregate.expression.isZero()) {
       return std::nullopt;
     }
     rewriter.setInsertionPoint(block.getTerminator());
-    auto angle = aggregate->expression.materialize(rewriter, aggregate->loc);
-    if (aggregate->dialect == PhaseDialect::QC) {
-      qc::GPhaseOp::create(rewriter, aggregate->loc, angle);
+    auto angle = aggregate.expression.materialize(rewriter, aggregate.loc);
+    if (aggregate.dialect == PhaseDialect::QC) {
+      qc::GPhaseOp::create(rewriter, aggregate.loc, angle);
     } else {
-      qco::GPhaseOp::create(rewriter, aggregate->loc, angle);
+      qco::GPhaseOp::create(rewriter, aggregate.loc, angle);
     }
     return std::nullopt;
   }
 
-  IRRewriter rewriter;
+  RewriterBase& rewriter;
 };
 
 struct NormalizeGlobalPhases final
@@ -492,7 +496,12 @@ protected:
 } // namespace
 
 LogicalResult normalizeGlobalPhases(ModuleOp moduleOp) {
-  GlobalPhaseNormalizer normalizer(moduleOp.getContext());
+  IRRewriter rewriter(moduleOp.getContext());
+  return normalizeGlobalPhases(moduleOp, rewriter);
+}
+
+LogicalResult normalizeGlobalPhases(ModuleOp moduleOp, RewriterBase& rewriter) {
+  GlobalPhaseNormalizer normalizer(rewriter);
   normalizer.normalize(moduleOp.getRegion());
   return success();
 }

@@ -15,6 +15,7 @@
 #include "gtest/gtest.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -23,7 +24,10 @@ namespace mqt::bench {
 
 TEST(MagicStateDistillation, ValidatesLevelsAndTwoBitReference) {
   EXPECT_EQ(MagicStateDistillation{}.options().levels, 1U);
-  for (const size_t levels : {1U, 2U, 3U, 4U}) {
+  const auto maxLevels =
+      static_cast<size_t>(std::numeric_limits<int64_t>::max()) / 5;
+  for (const size_t levels :
+       {size_t{1}, size_t{2}, size_t{3}, size_t{4}, size_t{8}, maxLevels}) {
     const MagicStateDistillation benchmark({.levels = levels});
     EXPECT_EQ(benchmark.output(), (Output{"result", 2}));
     EXPECT_DOUBLE_EQ(benchmark.probability("00"), 1.);
@@ -32,7 +36,7 @@ TEST(MagicStateDistillation, ValidatesLevelsAndTwoBitReference) {
     }
   }
   for (const size_t levels :
-       {size_t{0}, size_t{5}, std::numeric_limits<size_t>::max()}) {
+       {size_t{0}, maxLevels + 1, std::numeric_limits<size_t>::max()}) {
     EXPECT_THROW(MagicStateDistillation({.levels = levels}),
                  std::invalid_argument);
   }
@@ -68,7 +72,7 @@ TEST(MagicStateDistillation, RoundTripsJSON) {
   EXPECT_EQ(
       toInstanceSpecificationJSON(defaults),
       R"({"benchmark":"magic-state-distillation","parameters":{"levels":1},"schema_version":1})");
-  for (const size_t levels : {1U, 2U, 3U, 4U}) {
+  for (const size_t levels : {1U, 2U, 3U, 4U, 8U}) {
     const MagicStateDistillation benchmark({.levels = levels});
     const auto instance = toInstanceSpecificationJSON(benchmark);
     EXPECT_EQ(
@@ -85,22 +89,23 @@ TEST(MagicStateDistillation, UsesSemanticCaseIds) {
   const auto defaults = magicStateDistillationFromInstanceSpecificationJSON(
       R"({"schema_version":1,"benchmark":"magic-state-distillation","parameters":{}})");
   EXPECT_EQ(caseId(defaults), caseId(MagicStateDistillation({.levels = 1})));
-  for (const size_t levels : {2U, 3U, 4U}) {
+  for (const size_t levels : {2U, 3U, 4U, 8U}) {
     EXPECT_NE(caseId(MagicStateDistillation({.levels = levels})),
               caseId(defaults));
   }
 }
 
 TEST(MagicStateDistillation, DescribesJSONSchema) {
-  EXPECT_NE(
-      describeBenchmarkJSON("magic-state-distillation").find(R"("maximum":4)"),
-      std::string::npos);
+  EXPECT_NE(describeBenchmarkJSON("magic-state-distillation")
+                .find("\"maximum\":" +
+                      std::to_string(std::numeric_limits<int64_t>::max() / 5)),
+            std::string::npos);
 }
 
 TEST(MagicStateDistillation, RejectsInvalidJSONParameters) {
   for (const auto* parameters : {
            R"({"levels":0})",
-           R"({"levels":5})",
+           R"({"levels":18446744073709551615})",
            R"({"levels":-1})",
            R"({"levels":1.0})",
            R"({"levels":true})",

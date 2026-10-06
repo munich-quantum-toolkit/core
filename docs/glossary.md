@@ -32,6 +32,23 @@ decision diagrams
   for the plural. A graph representation that shares repeated substructures to
   store and manipulate quantum states and operations compactly.
 
+program qubit
+  **Preferred term:** program qubit. **Accepted alias:** virtual qubit. A qubit
+  named by the input program before assignment to a device site.
+
+device qubit
+  **Preferred term:** device qubit. **Accepted alias:** hardware qubit. A
+  target site on which a program qubit can be placed.
+
+layout metadata
+  **Preferred term:** layout metadata. **Accepted aliases:** none. The mapping
+  from program qubits to device qubits, with a routing permutation when
+  applicable. It does not move operations between circuit wires.
+
+routing permutation
+  **Preferred term:** routing permutation. **Accepted aliases:** none. A map
+  from each device position before routing to its final position.
+
 Pauli string
   **Preferred term:** Pauli string. **Accepted alias:** Pauli product. A tensor
   product of single-qubit identity or Pauli X, Y, and Z operators.
@@ -208,7 +225,7 @@ compiler target
 operation capability
   **Preferred term:** operation capability. **Accepted aliases:** none. A
   compiler target's description of a supported operation, including its name,
-  arity, parameters, placements, and optional calibration data. Represented by
+  arity, parameter count and optional fixed values, placements, and optional calibration data. Represented by
   `CompilerTarget::OperationCapability` in C++ and
   `CompilerTarget.OperationCapability` in Python. An MLIR operation is an IR
   instance, not this capability description.
@@ -250,6 +267,16 @@ dynamic
   Known only while executing the compiled program or interacting with a target.
   A dynamic quantum allocation acquires resources during execution, even when
   its size is a compile-time constant.
+
+floating-point parameter
+  **Preferred term:** floating-point parameter. **Accepted alias:**
+  `FloatParameter` in C++. A host double or an f64 SSA value supplied to a
+  builder or synthesis utility.
+
+floating-point expression
+  **Preferred term:** floating-point expression. **Accepted alias:**
+  `FloatExpression` in C++. An f64 SSA expression built and locally folded with
+  an MLIR builder. Rotation utilities own angle and phase handling.
 
 static gate count
   **Preferred term:** static gate count. **Accepted aliases:** none. The number
@@ -323,8 +350,8 @@ manifest
 magic state
   **Preferred term:** magic state. **Accepted aliases:** none. A non-stabilizer
   quantum state consumed by protocols that implement non-Clifford operations
-  using Clifford operations and measurements. The distillation benchmark uses
-  $|T\rangle = T|+\rangle$.
+  using Clifford operations and measurements. The distillation benchmark retains
+  $T^\dagger|+\rangle$ states, which are Clifford-equivalent to $T|+\rangle$.
 
 magic-state distillation
   **Preferred term:** magic-state distillation. **Accepted aliases:** none. A

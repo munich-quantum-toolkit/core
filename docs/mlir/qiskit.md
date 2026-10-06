@@ -10,12 +10,51 @@ MQT Core exposes two distinct Qiskit interfaces:
 Install `mqt-core[qiskit]`. Direct compiler translation requires a version in
 the narrower range above; the adapter checks it before inspecting a circuit.
 
+## Compiler targets
+
+Use {py:meth}`~mqt.core.mlir.CompilerTarget.from_qiskit` to create a compiler
+target from a Qiskit `Target` or `BackendV2`:
+
+```python
+from qiskit.providers.fake_provider import GenericBackendV2
+from mqt.core.mlir import CompilerTarget
+
+backend = GenericBackendV2(3, basis_gates=["sx", "x", "rz", "cx"])
+target = CompilerTarget.from_qiskit(backend)
+```
+
+The result is an independent structural snapshot. A backend supplies the default
+target name; pass `name` to override it. Qiskit standard gates, measurement,
+reset, and their ordered qubit placements become native capabilities. Each
+parameter slot can be unrestricted or fixed to one finite value. Multiple
+instructions of the same gate, such as `RXGate(pi / 2)` and `RXGate(pi)`, retain
+their distinct target names and placements. The compiler uses canonical gate
+names; `to_qiskit(target=target)` selects the target name by gate, parameters,
+and ordered sites. This also preserves legacy spellings such as `u1` and `u3`.
+
+Routing connectivity is undirected and comes from the retained two-qubit gates.
+Gate applicability keeps its original qubit order. The target needs a known,
+positive qubit count and a connected routing graph. Global phase is always
+allowed as circuit metadata.
+
+By default, unrepresentable gates are omitted with a warning. This includes
+custom gates, restricted angle bounds, renamed measurement or reset, open
+controls, and controlled gates other than CX and CZ. Delay, barrier, classical
+control flow, and operations with no applicable qubits are omitted without a
+warning. Pass `operation_names` to retain a subset; every selected name must be
+representable. Calibration, timing, and scheduling data are not copied.
+
+The snapshot does not guarantee that compilation can synthesize the requested
+circuit. Target-native synthesis requires a common single-qubit basis across
+sites and a common entangler across routing edges. After compilation, call
+`program.to_qiskit(target=target)` to check whether the output can be exported
+as a Qiskit circuit. Successful export does not verify that a device can run it.
+
 ## Circuit translation contract
 
-Each output block owns one private Python circuit. Numeric instructions use a
-borrowed C API view; symbolic gates, classical expressions, and control flow use
-Python construction. Blocks share their parent's exact bits and lexical variable
-captures. Parameters and parameter vectors are created once per export.
+The compiler imports circuit operations without changing the source circuit.
+Export creates a new circuit and preserves parameter identities across nested
+control flow.
 
 | Circuit feature                                                         | Import               | Export                             |
 | ----------------------------------------------------------------------- | -------------------- | ---------------------------------- |
@@ -40,7 +79,7 @@ captures. Parameters and parameter vectors are created once per export.
 | Parameter-vector elements                                               | Supported            | Supported                          |
 | Dense numeric unitaries up to eight qubits                              | Supported            | Supported                          |
 | Register aliases or interleaved membership                              | Rejected             | Rejected                           |
-| Transpiler layout metadata                                              | Accepted and ignored | Not emitted                        |
+| Complete transpiler layout metadata                                     | Preserved            | Reconstructed when still valid     |
 
 Classical-expression variables may refer to Clbits or ClassicalRegisters in the
 containing circuit. This includes values used only by the condition or switch
@@ -62,8 +101,13 @@ transformations are wanted.
 
 Imported free parameters and vectors retain their identities through QC/QCO
 conversion, optimization, and MLIR serialization, so exported circuits can be
-bound with the original Qiskit objects. OpenQASM and QIR do not preserve these
-identities; unused named program inputs remain unsupported.
+bound with the original Qiskit objects. OpenQASM 3 export preserves names for
+free parameters that are valid OpenQASM identifiers, but does not preserve
+Qiskit identities or vector grouping. QIR does not preserve those identities.
+Unused entry parameters are omitted from Qiskit output. When binding a
+dictionary that includes removed parameters, use
+`assign_parameters(values, strict=False)`. Custom gate definitions must use
+every formal parameter.
 
 Free symbols become named {code}`f64` program inputs. Parameter-vector elements
 retain their grouping and index, preserving vector order and positional binding
@@ -71,7 +115,8 @@ across a round trip; similarly named standalone parameters remain standalone.
 Elements used in different structured-control blocks are restored into one
 shared vector for the complete circuit tree. Free parameter vectors and their
 combined declared size in one translated circuit are each limited to 65,536
-elements. Parameter-expression trees support at most 64 levels and 4,096 nodes.
+elements. Parameter-expression trees support at most 64 levels and 16,384 nodes.
+Import balances addition and subtraction chains before applying the depth limit.
 Import and export support real addition, subtraction, multiplication, division,
 power, negation, trigonometric and inverse trigonometric functions, exponential,
 logarithm, absolute value, and real conjugation. Export also folds signed and
@@ -124,30 +169,27 @@ the target width.
 Nested blocks may capture existing qubits, classical bits, and local variables
 but may not allocate or release circuit resources. Control flow and classical
 expressions may nest up to 64 levels, and classical expression trees may contain
-at most 16,384 nodes (parameter-expression limits are unchanged). Integer values
-use exact widths from 1 through 64. The only wider form is a direct unsigned
-comparison between one complete `ClassicalRegister` and one same-width literal;
-computed, packed, and signed wide values remain rejected. Both expression
-conditions and tuple conditions such as `if_test((register, value))` support
-this form. Tuple equalities with a value outside the register range become
-false. Standard `arith.cmpi` handles every comparison: signed ordering is
-encoded by XOR-biasing both operands' sign bits, including computed operands.
-Casts preserve truncation and sign/zero extension. Bitwise operations, modular
-arithmetic, integer selection, and shifts share these typed rules. Import guards
-runtime shifts so overshifts produce zero; export preserves the guards.
-Rotations and population count are expanded through the same bounded integer
-lowering used by jeff. Unsupported operations, invalid widths, non-finite
-constants, unsupported index uses, and dynamic for-loop bounds fail during
-validation. Programs without classical outputs have a void entry function. For
-compatibility, Qiskit export also ignores a lone constant-zero `i64` return.
-Whole-register reads map to Qiskit `ClassicalRegister` expressions, and writes
-map to atomic Qiskit `Store` operations. Indexed stores assume that their
-runtime index is in bounds. The Qiskit C API does not expose `Store`, so the
-adapter inspects and constructs that instruction through Qiskit's public Python
-classes, as it already does for structured control flow. Internal entry-block
-CBit storage becomes additional Qiskit registers, ordered before returned
-registers; Qiskit exposes all circuit storage. OpenQASM remains the source
-interchange path for arbitrary register widths.
+at most 16,384 nodes. Integer values use exact widths from 1 through 64. The
+only wider form is a direct unsigned comparison between one complete
+`ClassicalRegister` and one same-width literal; computed, packed, and signed
+wide values remain rejected. Both expression conditions and tuple conditions
+such as `if_test((register, value))` support this form. Tuple equalities with a
+value outside the register range become false. Standard `arith.cmpi` handles
+every comparison: signed ordering is encoded by XOR-biasing both operands' sign
+bits, including computed operands. Casts preserve truncation and sign/zero
+extension. Bitwise operations, modular arithmetic, integer selection, and shifts
+share these typed rules. Import guards runtime shifts so overshifts produce
+zero; export preserves the guards. Rotations and population count are expanded
+through the same bounded integer lowering used by jeff. Unsupported operations,
+invalid widths, non-finite constants, unsupported index uses, and dynamic
+for-loop bounds fail during validation. Programs without classical outputs have
+a void entry function. Qiskit export also accepts a lone constant-zero `i64`
+return. Whole-register reads map to Qiskit `ClassicalRegister` expressions, and
+writes map to atomic Qiskit `Store` operations. Indexed stores assume that their
+runtime index is in bounds. Internal entry-block CBit storage becomes additional
+Qiskit registers, ordered before returned registers; Qiskit exposes all circuit
+storage. OpenQASM remains the source interchange path for arbitrary register
+widths.
 
 Every public CBit output is exported as a Qiskit `ClassicalRegister`; an unnamed
 allocation receives a collision-free `_mqt_cN` name. This preserves the CBit
@@ -158,11 +200,8 @@ Conditions and switch targets may read a zero-initialized CBit register. An
 undefined CBit may be read only after a definite write to that bit, and every
 bit of an undefined returned register must be definitely initialized. Branches
 intersect their initialization facts. A while loop's before region executes at
-least once; its after region may execute zero times. The exporter saves
-supported scalar snapshots in local variables when a later write, control-flow
-edge, or region crossing prevents safe re-evaluation. It bounds expression depth
-by saving intermediate runtime values. This policy does not depend on unused
-control-flow results and remains valid after compiler cleanup. Reads wider than
+least once; its after region may execute zero times. The exporter preserves
+scalar values across later writes and control-flow boundaries. Reads wider than
 64 bits remain subject to the snapshot checks.
 
 Each exported measurement must write to one static public CBit in the same
@@ -183,22 +222,29 @@ Qiskit import preserves inverse, numeric power, and closed-control modifiers on
 dense-unitary operations. Export preserves inverse and closed-control modifiers.
 Other powers require canonicalization or synthesis.
 
-A circuit remains valid when {code}`circ.layout` is present. The importer
-translates the circuit operations and deliberately does not preserve physical or
-virtual layout metadata.
+### Transpiler layouts
+
+A complete Qiskit `TranspileLayout` maps program qubits to device qubits and
+records routing. Import stores those numeric maps as `mqt.layout` on the program
+module; export constructs a Qiskit layout from them. Copies, MLIR serialization,
+and QC/QCO conversions preserve the metadata. Other compiler transformations
+clear it.
+
+```python
+program = QCProgram.from_qiskit(transpiled_circuit)
+restored = program.copy().to_qco().to_qc().to_qiskit()
+```
+
+Target compilation requires a circuit without an attached layout. The numeric
+mapping does not retain Qiskit input register names or input ancilla labels;
+incomplete layouts are unsupported. See {doc}`MQT dialect <MQT>` for the
+metadata schema and {doc}`target compilation <target_compilation>` for
+placement.
 
 Names passed between Qiskit and the compiler must not contain NUL characters.
-The importer checks names before native access. Arithmetic-progression loop
-lists without jumps use range lowering. List loops with jumps and
-variable-bearing switch cases use balanced dispatch. The 64-level nesting limit
-also applies to generated SCF, and expansion limits account for duplicated
-switch bodies.
-
-Input validation finishes before an MLIR module is created. Generic output
-validation finishes before Qiskit construction starts; the version-specific
-adapter validates its constructed blocks before returning the top-level circuit.
-Unsupported programs therefore fail without modifying the source object or
-exposing a partial result.
+Loop lists with jumps and switch cases with variables are supported within the
+64-level nesting and definition-expansion limits. Unsupported programs fail
+without changing the source object or exposing a partial result.
 
 The binding imports Qiskit only when circuit translation is requested. It
 accepts versions in the registered {code}`>=2.5.0,<2.6.0` range and verifies the

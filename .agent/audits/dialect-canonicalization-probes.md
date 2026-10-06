@@ -94,7 +94,7 @@ uncertain-alias barrier.
 The baseline live-snapshot CBit probe stored true, read the whole register into
 a live result, then loaded the stored bit. It retained one unnecessary Load
 (exit 1). The permanent
-[CBit tests](../../mlir/unittests/Dialect/CBit/IR/test_cbit_canonicalization.cpp)
+[CBit tests](../../mlir/unittests/Dialect/MQT/Transforms/test_classical_simplification.cpp)
 retain `ForwardsStoredBitAcrossReadOnlySnapshot` and
 `DoesNotForwardAcrossWholeRegisterWrite`. Their fixture loads Arith explicitly;
 runtime dialect dependencies are covered by the extracted change.

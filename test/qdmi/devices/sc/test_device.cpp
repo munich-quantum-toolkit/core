@@ -10,6 +10,7 @@
 
 #include "mqt_sc_qdmi/device.h"
 #include "qdmi/TestUtils.hpp"
+#include "qdmi/devices/sc/Device.hpp"
 
 #include "gmock/gmock-matchers.h"
 #include "gtest/gtest.h"
@@ -20,6 +21,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <exception>
 #include <future>
 #include <stdexcept>
 #include <string>
@@ -765,4 +767,20 @@ TEST_F(ScQDMISpecificationTest, QueryDeviceQubitNum) {
                 session, QDMI_DEVICE_PROPERTY_QUBITSNUM, sizeof(size_t),
                 &numQubits, nullptr),
             QDMI_SUCCESS);
+}
+
+TEST(ScRuntimeConfiguration, MapsDeviceCallExceptions) {
+  EXPECT_EQ(sc::detail::guardDeviceCall("test", [] { return QDMI_SUCCESS; }),
+            QDMI_SUCCESS);
+  EXPECT_EQ(sc::detail::guardDeviceCall(
+                "test", []() -> int { throw std::bad_alloc{}; }),
+            QDMI_ERROR_OUTOFMEM);
+  EXPECT_EQ(sc::detail::guardDeviceCall(
+                "test", []() -> int { throw std::runtime_error("test"); }),
+            QDMI_ERROR_FATAL);
+  EXPECT_EQ(
+      sc::detail::guardDeviceCall(
+          "test",
+          []() -> int { std::rethrow_exception(std::make_exception_ptr(1)); }),
+      QDMI_ERROR_FATAL);
 }

@@ -1368,9 +1368,12 @@ protected:
       return;
     }
 
+    bool hasStatic = false;
+    getOperation().walk([&](StaticOp) { hasStatic = true; });
     const CompilerTarget* nativeTarget =
-        target_ && target_->connectivityKind() ==
-                       CompilerTarget::Connectivity::Kind::AllToAll
+        target_ && (target_->connectivityKind() ==
+                        CompilerTarget::Connectivity::Kind::AllToAll ||
+                    hasStatic)
             ? &*target_
             : nullptr;
 

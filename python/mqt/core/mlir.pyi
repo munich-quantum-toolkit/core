@@ -10,11 +10,13 @@
 
 import enum
 import os
-from collections.abc import Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Annotated, Literal, Unpack, overload
 
 import numpy as np
 import qiskit.circuit
+import qiskit.providers
+import qiskit.transpiler
 
 import mqt.core.dd
 import mqt.core.qdmi
@@ -293,6 +295,10 @@ class CompilerTarget:
             site_tuples: Sequence[CompilerTarget.SiteTuple | Sequence[int]] | None = None,
             duration: int | None = None,
             fidelity: float | None = None,
+            *,
+            fixed_parameters: Sequence[float | None] = (),
+            canonical_name: str | None = None,
+            parameter_bounds: Sequence[tuple[float, float] | None] = (),
         ) -> None: ...
         @property
         def name(self) -> str:
@@ -313,6 +319,14 @@ class CompilerTarget:
         @property
         def site_tuples(self) -> list[CompilerTarget.SiteTuple]:
             """Supported ordered placements with optional calibration; empty means general applicability."""
+
+        @property
+        def parameter_bounds(self) -> list[tuple[float, float] | None]:
+            """Inclusive parameter intervals; None leaves a parameter unbounded."""
+
+        @property
+        def fixed_parameters(self) -> list[float | None]:
+            """Fixed values or None per parameter; empty means unrestricted. Constants use absolute tolerance 1e-15 without angle wrapping."""
 
         @property
         def duration(self) -> int | None:
@@ -374,6 +388,30 @@ class CompilerTarget:
 
         ZXZ = 6
 
+    class AngleSupport(enum.Enum):
+        """Angle domain used by native entangler synthesis."""
+
+        FIXED = 0
+
+        UNRESTRICTED = 1
+
+        ZERO_TO_HALF_PI = 2
+
+    class Entangler:
+        """A native synthesis entangler and its angle support."""
+
+        @property
+        def gate(self) -> CompilerTarget.GateKind:
+            """The native gate kind."""
+
+        @property
+        def parameterized(self) -> bool:
+            """Whether synthesis can vary the entangler angle."""
+
+        @property
+        def angles(self) -> CompilerTarget.AngleSupport:
+            """The angle domain used by synthesis."""
+
     class SynthesisBasis:
         """One synthesis basis usable across the complete target."""
 
@@ -382,7 +420,7 @@ class CompilerTarget:
             """The single-qubit synthesis basis."""
 
         @property
-        def entangler(self) -> CompilerTarget.GateKind | None:
+        def entangler(self) -> CompilerTarget.Entangler | None:
             """The two-qubit entangler, or None when none is usable."""
 
     class ConnectivityKind(enum.Enum):
@@ -424,6 +462,17 @@ class CompilerTarget:
             """Create explicit native-operation support."""
 
         @staticmethod
+        def from_qiskit(
+            source: qiskit.transpiler.Target | qiskit.providers.BackendV2,
+            *,
+            operation_names: Iterable[str] | None = None,
+        ) -> CompilerTarget.NativeOperations:
+            """Import gate capabilities and parameter constraints, ignoring physical placement.
+
+            Unsupported explicit selections raise ValueError; otherwise they warn and are omitted.
+            """
+
+        @staticmethod
         def unrestricted() -> CompilerTarget.NativeOperations:
             """Create unrestricted native-operation support."""
 
@@ -438,6 +487,33 @@ class CompilerTarget:
     @staticmethod
     def from_device(device: Device) -> CompilerTarget:
         """Snapshot a circuit-model QDMI device."""
+
+    @staticmethod
+    def from_qiskit(
+        source: qiskit.transpiler.Target | qiskit.providers.BackendV2,
+        *,
+        operation_names: Iterable[str] | None = None,
+        name: str | None = None,
+    ) -> CompilerTarget:
+        """Snapshot native operations and connectivity from Qiskit.
+
+        Args:
+            source: Qiskit Target or BackendV2. Physical import requires a known positive qubit count.
+            operation_names: Qiskit Target operation names to retain. By default,
+                include every representable operation. Explicit selections must all be
+                representable.
+            name: Override the target name. By default, use the backend name when
+                source is a BackendV2; a Target produces an unnamed snapshot.
+
+        Returns:
+            An independent compiler target. Unrepresentable gates are omitted with
+            warnings when operation_names is not set. Calibration and scheduling data
+            are not included.
+
+        Raises:
+            TypeError: If source is neither a Target nor a BackendV2.
+            ValueError: If the selected operations or connectivity cannot be represented.
+        """
 
     @staticmethod
     def from_device_id(device_id: str, **session_parameters: Unpack[QDMISessionParameters]) -> CompilerTarget:
@@ -484,9 +560,24 @@ class CompilerTarget:
         """A target-wide single-qubit basis with an optional entangler, or None when no single-qubit basis is usable."""
 
     def supports_operation(
-        self, name: str, arity: int, num_parameters: int | None = None, sites: Sequence[int] | None = None
+        self,
+        name: str,
+        arity: int,
+        num_parameters: int | None = None,
+        sites: Sequence[int] | None = None,
+        *,
+        parameters: Sequence[float | None] = (),
     ) -> bool:
-        """Whether the target supports an operation."""
+        """Check whether the target supports an operation.
+
+        Args:
+            name: Operation name. Recognized aliases are normalized.
+            arity: Number of qubits used by the operation.
+            num_parameters: Number of real-valued parameters. None accepts any count.
+            sites: Ordered target site IDs. None checks support on any placement.
+            parameters: Known parameter values. Omitted or None values require
+                unrestricted support.
+        """
 
 class TargetEnvironment:
     """A compiler target and its selected payload specification."""
@@ -604,7 +695,12 @@ class QCProgram(Program):
 
     @staticmethod
     def from_qiskit(circuit: qiskit.circuit.QuantumCircuit) -> QCProgram:
-        """Translate a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` to QC MLIR."""
+        """Translate a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` to QC MLIR.
+
+        Args:
+            circuit: Circuit to import. A complete transpiler layout is retained as
+                metadata.
+        """
 
     def copy(self) -> QCProgram:
         """Return an independent copy of this program."""
@@ -621,10 +717,14 @@ class QCProgram(Program):
     def to_qiskit(self, *, target: CompilerTarget | None = None) -> qiskit.circuit.QuantumCircuit:
         """Translate this QC program to a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` without consuming it.
 
+        The exporter restores attached layout metadata when it is compatible with the
+        selected target.
+
         Args:
-            target: The optional compiler target used for mapping. When provided, emit
-                a canonical physical circuit. All qubits must be static, and their site
-                IDs must belong to the target.
+            target: Map static site IDs to qubit indices in target site order. All
+                qubits must be static sites of the target. Select applicable standard
+                gate names without checking device execution support. None applies no
+                target site mapping.
         """
 
     def to_qco(self, *, copy: bool = False) -> QCOProgram:
@@ -664,6 +764,19 @@ class QCProgram(Program):
         is counted. Operations in every structured control-flow region are counted
         once, regardless of how often the region executes. Operations within modifiers
         are not counted recursively, and barriers are skipped.
+        """
+
+    @property
+    def parameters(self) -> list[str]:
+        """Named f64 entry-point inputs in function argument order."""
+
+    def bind_parameters(self, values: Mapping[str, float]) -> None:
+        """Bind named f64 parameters in place without folding expressions.
+
+        Partial binding preserves unbound parameters and their source identities.
+        Unknown names, non-finite values, and references to the entry point raise
+        ValueError without changing the program. Call ``copy()`` first to preserve
+        the input, and ``cleanup()`` afterwards if constant folding is needed.
         """
 
 class QCOProgram(Program):
@@ -715,20 +828,24 @@ class QCOProgram(Program):
         """Decompose controlled X/Y/Z/SWAP and RX/RY/RZ gates, qco.rccx, and constant-angle phase gates that act on at least min_qubits qubits (min_qubits must be at least 3; default 3 means wider than two-qubit)."""
 
     def compile_for_target(self, target_environment: TargetEnvironment, *, options: CompilationOptions = ...) -> None:
-        """Compile this QCO program for the target in place. Do not rely on its contents if compilation fails. Failures raise RuntimeError with the emitted MLIR diagnostics."""
+        """Compile for the target and attach layout metadata when possible. Reject existing layout metadata. Do not rely on program contents if compilation fails. Failures raise RuntimeError with MLIR diagnostics."""
 
     def synthesize_for_target(
         self, target_environment: TargetEnvironment, *, options: CompilationOptions = ...
     ) -> None:
-        """Synthesize native operations for an all-to-all target in place. Assigns static sites and resynthesizes constant two-qubit runs in the native basis, without routing. Do not rely on the program contents if synthesis fails. Failures raise RuntimeError with the emitted MLIR diagnostics."""
+        """Synthesize native operations without routing. Dynamic qubits require all-to-all connectivity and receive layout metadata when possible. Static qubits keep their device site IDs and must fit the target topology. Do not rely on the program contents if synthesis fails. Failures raise RuntimeError with the emitted MLIR diagnostics."""
 
     def to_qiskit(self, *, target: CompilerTarget | None = None) -> qiskit.circuit.QuantumCircuit:
         """Export a Qiskit circuit without consuming or modifying this program.
 
+        The exporter restores attached layout metadata when it is compatible with the
+        selected target.
+
         Args:
-            target: The optional compiler target used for mapping. When provided, static
-                site IDs map to dense physical-qubit indices in target site order.
-                Dynamic qubits and static IDs absent from the target are rejected.
+            target: Map static site IDs to qubit indices in target site order. All
+                qubits must be static sites of the target. Select applicable standard
+                gate names without checking device execution support. None applies no
+                target site mapping.
         """
 
     def to_qc(self, *, copy: bool = False) -> QCProgram:
@@ -741,6 +858,19 @@ class QCOProgram(Program):
         """Convert this program to ``jeff`` MLIR.
 
         Set ``copy=True`` to preserve it.
+        """
+
+    @property
+    def parameters(self) -> list[str]:
+        """Named f64 entry-point inputs in function argument order."""
+
+    def bind_parameters(self, values: Mapping[str, float]) -> None:
+        """Bind named f64 parameters in place without folding expressions.
+
+        Partial binding preserves unbound parameters and their source identities.
+        Unknown names, non-finite values, and references to the entry point raise
+        ValueError without changing the program. Call ``copy()`` first to preserve
+        the input, and ``cleanup()`` afterwards if constant folding is needed.
         """
 
     def build_functionality(self, dd_package: mqt.core.dd.DDPackage) -> mqt.core.dd.MatrixDD:

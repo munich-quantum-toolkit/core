@@ -76,6 +76,16 @@ TEST(BenchmarkJSON, RejectsAlteredOrUnresolvedManifests) {
   EXPECT_NE(manifest.find("\"case_id\":\"" + caseId(ghz) + "\""),
             std::string::npos);
 
+  auto changedDefinition = manifest;
+  const auto version = changedDefinition.find(R"("definition_version":1)");
+  ASSERT_NE(version, std::string::npos);
+  changedDefinition.replace(version,
+                            std::string(R"("definition_version":1)").size(),
+                            R"("definition_version":0)");
+  expectInvalidJSON(
+      [&] { static_cast<void>(ghzFromManifestJSON(changedDefinition)); },
+      "$/definition_version must be 1");
+
   auto changedOutput = manifest;
   const auto width = changedOutput.find("\"width\":3");
   ASSERT_NE(width, std::string::npos);

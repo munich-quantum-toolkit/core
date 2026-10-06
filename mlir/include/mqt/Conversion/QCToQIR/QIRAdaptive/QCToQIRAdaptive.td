@@ -21,10 +21,10 @@ def QCToQIRAdaptive : Pass<"qc-to-qir-adaptive", "mlir::ModuleOp"> {
 
     - Input is a valid module in the QC dialect.
     - The entry function must be marked with `mqt.entry_point` and have a single return.
-    - Stores to returned CBit registers must share a block with their measurement,
-      use an index available at measurement (or a constant), and have no
-      intervening effects that can access CBit storage. Stores to provably
-      distinct constant indices of the same register are allowed.
+    - Measurement-only returned CBit registers require stores in the same block
+      as their measurements and indices that are available or safely computable
+      before measurement. Intervening effects must be limited to quantum
+      resources or stores to distinct constant indices of the same register.
 
     Behavior:
 

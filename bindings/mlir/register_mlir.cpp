@@ -237,6 +237,33 @@ static auto withDiagnostics(mlir::MLIRContext* context, const char* message,
   }
 }
 
+template <class T>
+static void registerParameterBinding(nb::class_<T, mlir::Program>& binding) {
+  binding
+      .def_prop_ro(
+          "parameters",
+          [](const T& program) {
+            requireValid(program);
+            return program.parameters();
+          },
+          "Named f64 entry-point inputs in function argument order.")
+      .def(
+          "bind_parameters",
+          [](T& program, const std::map<std::string, double>& values) {
+            requireValid(program);
+            withDiagnostics(
+                program.module().getContext(), "cannot bind parameters",
+                [&] { return mlir::success(program.bindParameters(values)); });
+          },
+          "values"_a,
+          R"pb(Bind named f64 parameters in place without folding expressions.
+
+Partial binding preserves unbound parameters and their source identities.
+Unknown names, non-finite values, and references to the entry point raise
+ValueError without changing the program. Call ``copy()`` first to preserve
+the input, and ``cleanup()`` afterwards if constant folding is needed.)pb");
+}
+
 template <class ProgramType>
 [[nodiscard]] static ProgramType copiedOrConsumed(ProgramType& program,
                                                   const bool copy) {
@@ -861,7 +888,12 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
              std::optional<std::vector<mlir::CompilerTarget::SiteTuple>>
                  siteTuples,
              const std::optional<uint64_t> duration,
-             const std::optional<double> fidelity) {
+             const std::optional<double> fidelity,
+             std::vector<std::optional<double>> fixedParameters,
+             std::optional<std::string> canonicalName,
+             std::vector<std::optional<
+                 mlir::CompilerTarget::OperationCapability::ParameterBounds>>
+                 parameterBounds) {
             constructFromExpected(
                 self,
                 mlir::CompilerTarget::OperationCapability::create(
@@ -869,10 +901,15 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
                     std::move(siteTuples)
                         .value_or(
                             std::vector<mlir::CompilerTarget::SiteTuple>{}),
-                    duration, fidelity));
+                    duration, fidelity, std::move(fixedParameters),
+                    std::move(canonicalName), std::move(parameterBounds)));
           },
           "name"_a, "arity"_a, "num_parameters"_a, "site_tuples"_a = nb::none(),
-          "duration"_a = nb::none(), "fidelity"_a = nb::none())
+          "duration"_a = nb::none(), "fidelity"_a = nb::none(), nb::kw_only(),
+          "fixed_parameters"_a = std::vector<std::optional<double>>{},
+          "canonical_name"_a = nb::none(),
+          "parameter_bounds"_a = std::vector<std::optional<
+              mlir::CompilerTarget::OperationCapability::ParameterBounds>>{})
       .def(
           "__init__",
           [](mlir::CompilerTarget::OperationCapability& self, std::string name,
@@ -880,7 +917,12 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
              std::optional<std::vector<mlir::CompilerTarget::SiteTuple>>
                  siteTuples,
              const std::optional<uint64_t> duration,
-             const std::optional<double> fidelity) {
+             const std::optional<double> fidelity,
+             std::vector<std::optional<double>> fixedParameters,
+             std::optional<std::string> canonicalName,
+             std::vector<std::optional<
+                 mlir::CompilerTarget::OperationCapability::ParameterBounds>>
+                 parameterBounds) {
             constructFromExpected(
                 self,
                 mlir::CompilerTarget::OperationCapability::create(
@@ -888,10 +930,15 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
                     std::move(siteTuples)
                         .value_or(
                             std::vector<mlir::CompilerTarget::SiteTuple>{}),
-                    duration, fidelity));
+                    duration, fidelity, std::move(fixedParameters),
+                    std::move(canonicalName), std::move(parameterBounds)));
           },
           "name"_a, "arity"_a, "num_parameters"_a, "site_tuples"_a = nb::none(),
-          "duration"_a = nb::none(), "fidelity"_a = nb::none())
+          "duration"_a = nb::none(), "fidelity"_a = nb::none(), nb::kw_only(),
+          "fixed_parameters"_a = std::vector<std::optional<double>>{},
+          "canonical_name"_a = nb::none(),
+          "parameter_bounds"_a = std::vector<std::optional<
+              mlir::CompilerTarget::OperationCapability::ParameterBounds>>{})
       .def_prop_ro(
           "name",
           [](const mlir::CompilerTarget::OperationCapability& operation) {
@@ -917,6 +964,22 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
           },
           "Supported ordered placements with optional calibration; empty means "
           "general applicability.")
+      .def_prop_ro(
+          "parameter_bounds",
+          [](const mlir::CompilerTarget::OperationCapability& operation) {
+            return std::vector(operation.parameterBounds().begin(),
+                               operation.parameterBounds().end());
+          },
+          "Inclusive parameter intervals; None leaves a parameter unbounded.")
+      .def_prop_ro(
+          "fixed_parameters",
+          [](const mlir::CompilerTarget::OperationCapability& operation) {
+            return std::vector<std::optional<double>>(
+                operation.fixedParameters().begin(),
+                operation.fixedParameters().end());
+          },
+          "Fixed values or None per parameter; empty means unrestricted. "
+          "Constants use absolute tolerance 1e-15 without angle wrapping.")
       .def_prop_ro("duration",
                    &mlir::CompilerTarget::OperationCapability::duration,
                    "The raw default duration, if available.")
@@ -953,6 +1016,25 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
       .value("XYX", mlir::CompilerTarget::SingleQubitBasis::XYX)
       .value("ZYZ", mlir::CompilerTarget::SingleQubitBasis::ZYZ)
       .value("ZXZ", mlir::CompilerTarget::SingleQubitBasis::ZXZ);
+
+  nb::enum_<mlir::CompilerTarget::AngleSupport>(
+      compilerTarget, "AngleSupport",
+      "Angle domain used by native entangler synthesis.")
+      .value("FIXED", mlir::CompilerTarget::AngleSupport::Fixed)
+      .value("UNRESTRICTED", mlir::CompilerTarget::AngleSupport::Unrestricted)
+      .value("ZERO_TO_HALF_PI",
+             mlir::CompilerTarget::AngleSupport::ZeroToHalfPi);
+
+  nb::class_<mlir::CompilerTarget::Entangler>(
+      compilerTarget, "Entangler",
+      "A native synthesis entangler and its angle support.")
+      .def_ro("gate", &mlir::CompilerTarget::Entangler::gate,
+              "The native gate kind.")
+      .def_prop_ro("parameterized",
+                   &mlir::CompilerTarget::Entangler::parameterized,
+                   "Whether synthesis can vary the entangler angle.")
+      .def_ro("angles", &mlir::CompilerTarget::Entangler::angles,
+              "The angle domain used by synthesis.");
 
   auto synthesisBasis = nb::class_<mlir::CompilerTarget::SynthesisBasis>(
       compilerTarget, "SynthesisBasis",
@@ -1013,6 +1095,16 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
                     operations));
           },
           "operations"_a, "Create explicit native-operation support.")
+      .def_static("from_qiskit", &bindings::qiskit::importNativeOperations,
+                  "source"_a, nb::kw_only(), "operation_names"_a = nb::none(),
+                  nb::sig("def from_qiskit(source: qiskit.transpiler.Target | "
+                          "qiskit.providers.BackendV2, *, operation_names: "
+                          "collections.abc.Iterable[str] | None = None) -> "
+                          "mqt.core.mlir.CompilerTarget.NativeOperations"),
+                  "Import gate capabilities and parameter constraints, "
+                  "ignoring physical placement.\n\n"
+                  "Unsupported explicit selections raise ValueError; otherwise "
+                  "they warn and are omitted.")
       .def_static("unrestricted",
                   &mlir::CompilerTarget::NativeOperations::unrestricted,
                   "Create unrestricted native-operation support.")
@@ -1095,6 +1187,31 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
             return takeResult(std::move(target));
           },
           "device"_a, "Snapshot a circuit-model QDMI device.")
+      .def_static("from_qiskit", &bindings::qiskit::importTarget, "source"_a,
+                  nb::kw_only(), "operation_names"_a = nb::none(),
+                  "name"_a = nb::none(),
+                  nb::sig("def from_qiskit(source: qiskit.transpiler.Target | "
+                          "qiskit.providers.BackendV2, *, operation_names: "
+                          "collections.abc.Iterable[str] | None = None, "
+                          "name: str | None = None) -> CompilerTarget"),
+                  R"pb(Snapshot native operations and connectivity from Qiskit.
+
+Args:
+    source: Qiskit Target or BackendV2. Physical import requires a known positive qubit count.
+    operation_names: Qiskit Target operation names to retain. By default,
+        include every representable operation. Explicit selections must all be
+        representable.
+    name: Override the target name. By default, use the backend name when
+        source is a BackendV2; a Target produces an unnamed snapshot.
+
+Returns:
+    An independent compiler target. Unrepresentable gates are omitted with
+    warnings when operation_names is not set. Calibration and scheduling data
+    are not included.
+
+Raises:
+    TypeError: If source is neither a Target nor a BackendV2.
+    ValueError: If the selected operations or connectivity cannot be represented.)pb")
       .def_static(
           "from_device_id",
           [](const std::string& deviceId, std::optional<std::string> baseUrl,
@@ -1185,6 +1302,7 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
           },
           "Recognized native gates supported by the target.")
       .def_prop_ro("synthesis_basis", &mlir::CompilerTarget::synthesisBasis,
+                   nb::rv_policy::copy,
                    "A target-wide single-qubit basis with an optional "
                    "entangler, or None when no single-qubit basis is usable.")
       .def(
@@ -1192,15 +1310,27 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
           [](const mlir::CompilerTarget& target, const std::string_view name,
              const size_t arity, const std::optional<size_t> numParameters,
              const std::optional<std::vector<mlir::CompilerTarget::SiteId>>&
-                 sites) {
+                 sites,
+             const std::vector<std::optional<double>>& parameters) {
             if (sites) {
               return target.supportsOperation(name, arity, numParameters,
-                                              *sites);
+                                              *sites, parameters);
             }
-            return target.supportsOperation(name, arity, numParameters);
+            return target.supportsOperation(name, arity, numParameters,
+                                            std::nullopt, parameters);
           },
           "name"_a, "arity"_a, "num_parameters"_a = nb::none(),
-          "sites"_a = nb::none(), "Whether the target supports an operation.");
+          "sites"_a = nb::none(), nb::kw_only(),
+          "parameters"_a.sig("()") = std::vector<std::optional<double>>{},
+          R"pb(Check whether the target supports an operation.
+
+Args:
+    name: Operation name. Recognized aliases are normalized.
+    arity: Number of qubits used by the operation.
+    num_parameters: Number of real-valued parameters. None accepts any count.
+    sites: Ordered target site IDs. None checks support on any placement.
+    parameters: Known parameter values. Omitted or None values require
+        unrestricted support.)pb");
 
   nb::class_<mlir::TargetEnvironment>(
       m, "TargetEnvironment",
@@ -1304,7 +1434,11 @@ before conversion to QCO.)pb");
           "circuit"_a,
           nb::sig("def from_qiskit(circuit: qiskit.circuit.QuantumCircuit) "
                   "-> QCProgram"),
-          R"pb(Translate a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` to QC MLIR.)pb")
+          R"pb(Translate a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` to QC MLIR.
+
+Args:
+    circuit: Circuit to import. A complete transpiler layout is retained as
+        metadata.)pb")
       .def("copy", &copyProgram<mlir::QCProgram>,
            "Return an independent copy of this program.")
       .def("cleanup", &BooleanMemberAdapter<&mlir::QCProgram::cleanup>::call,
@@ -1341,10 +1475,14 @@ before conversion to QCO.)pb");
                   "None) -> qiskit.circuit.QuantumCircuit"),
           R"pb(Translate this QC program to a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` without consuming it.
 
+The exporter restores attached layout metadata when it is compatible with the
+selected target.
+
 Args:
-    target: The optional compiler target used for mapping. When provided, emit
-        a canonical physical circuit. All qubits must be static, and their site
-        IDs must belong to the target.)pb")
+    target: Map static site IDs to qubit indices in target site order. All
+        qubits must be static sites of the target. Select applicable standard
+        gate names without checking device execution support. None applies no
+        target site mapping.)pb")
       .def(
           "to_qco",
           [](mlir::QCProgram& value, const bool copy) {
@@ -1475,15 +1613,17 @@ operations.)pb");
             withDiagnostics<nb::exception_type::runtime_error>(
                 program.module().getContext(), "Target compilation failed",
                 [&] {
+                  const nb::gil_scoped_release release;
                   return mlir::success(
                       program.compileForTarget(environment, options));
                 });
           },
           "target_environment"_a, nb::kw_only(),
           "options"_a = mlir::CompilationOptions{},
-          "Compile this QCO program for the target in place. Do not rely on "
-          "its contents if compilation fails. Failures raise RuntimeError "
-          "with the emitted MLIR diagnostics.")
+          "Compile for the target and attach layout metadata when possible. "
+          "Reject existing layout metadata. Do not rely on program contents "
+          "if compilation fails. Failures raise RuntimeError with MLIR "
+          "diagnostics.")
       .def(
           "synthesize_for_target",
           [](mlir::QCOProgram& program,
@@ -1498,9 +1638,11 @@ operations.)pb");
           },
           "target_environment"_a, nb::kw_only(),
           "options"_a = mlir::CompilationOptions{},
-          "Synthesize native operations for an all-to-all target in place. "
-          "Assigns static sites and resynthesizes constant two-qubit runs in "
-          "the native basis, without routing. "
+          "Synthesize native operations without routing. Dynamic qubits "
+          "require "
+          "all-to-all connectivity and receive layout metadata when possible. "
+          "Static qubits keep their device site IDs and must fit the target "
+          "topology. "
           "Do not rely on the program contents if synthesis fails. Failures "
           "raise RuntimeError with the emitted MLIR diagnostics.")
       .def(
@@ -1512,15 +1654,18 @@ operations.)pb");
             return bindings::qiskit::exportCircuit(qc, target);
           },
           nb::kw_only(), "target"_a = nb::none(),
-          nb::sig(
-              "def to_qiskit(self, *, target: CompilerTarget | None = None) "
-              "-> qiskit.circuit.QuantumCircuit"),
+          nb::sig("def to_qiskit(self, *, target: CompilerTarget | None = "
+                  "None) -> qiskit.circuit.QuantumCircuit"),
           R"pb(Export a Qiskit circuit without consuming or modifying this program.
 
+The exporter restores attached layout metadata when it is compatible with the
+selected target.
+
 Args:
-    target: The optional compiler target used for mapping. When provided, static
-        site IDs map to dense physical-qubit indices in target site order.
-        Dynamic qubits and static IDs absent from the target are rejected.)pb")
+    target: Map static site IDs to qubit indices in target site order. All
+        qubits must be static sites of the target. Select applicable standard
+        gate names without checking device execution support. None applies no
+        target site mapping.)pb")
       .def(
           "to_qc",
           [](mlir::QCOProgram& value, const bool copy) {
@@ -1541,6 +1686,9 @@ Set ``copy=True`` to preserve it.)pb")
           R"pb(Convert this program to ``jeff`` MLIR.
 
 Set ``copy=True`` to preserve it.)pb");
+
+  registerParameterBinding(qcProgram);
+  registerParameterBinding(qcoProgram);
 
   auto jeffProgram = nb::class_<mlir::JeffProgram, mlir::Program>(
       m, "JeffProgram",
@@ -1570,6 +1718,9 @@ further compilation.)pb");
           [](const mlir::JeffProgram& value) {
             requireValid(value);
             const auto bytes = value.toBytes();
+            if (bytes.empty()) {
+              throw std::runtime_error("failed to serialize jeff program");
+            }
             return nb::bytes(bytes.data(), bytes.size());
           },
           "Serialize this program to its ``jeff`` byte representation.")

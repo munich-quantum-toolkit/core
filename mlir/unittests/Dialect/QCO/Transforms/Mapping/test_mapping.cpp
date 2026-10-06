@@ -482,6 +482,24 @@ TEST_F(MappingPassFixture, StandalonePassesUseSharedAllocationVerifier) {
   }
 }
 
+TEST_F(MappingPassFixture, EmptyProgramNeedsNoPlacementWorkspace) {
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      4, Connectivity::fromCouplings({{0, 1}, {1, 2}, {2, 3}}),
+      NativeOperations::unrestricted()));
+  for (const bool placement : {false, true}) {
+    auto moduleOp = parseSourceString<ModuleOp>(
+        "module { func.func @main() attributes {mqt.entry_point} { return } }",
+        context.get());
+    ASSERT_TRUE(moduleOp);
+    attachTestEnvironment(*moduleOp, target);
+    const auto before = printModule(*moduleOp);
+    PassManager pm(context.get());
+    pm.addPass(placement ? createPlacementPass(target) : createMappingPass());
+    ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
+    EXPECT_EQ(printModule(*moduleOp), before);
+  }
+}
+
 TEST_F(MappingPassFixture, RequiresTypedTargetEnvironment) {
   QCOProgramBuilder builder(context.get());
   builder.initialize();
@@ -1191,6 +1209,31 @@ TEST_F(MappingPassFixture, RejectOversizedPlacementBeforeMutation) {
       StringRef(diagnostics)
           .contains(
               "requires 2 program qubits, but the target site count is 1"));
+}
+
+TEST_F(MappingPassFixture, RejectIndexCapacityBeforeMutation) {
+  const auto target = getSquareGridTarget(256);
+  for (const bool placement : {false, true}) {
+    SCOPED_TRACE(placement);
+    QCOProgramBuilder builder(context.get());
+    builder.initialize();
+    builder.sink(builder.allocQubit());
+    auto moduleOp = builder.finalize();
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    attachTestEnvironment(*moduleOp, target);
+    const auto before = printModule(*moduleOp);
+
+    std::string diagnostics;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      diagnostics += diagnostic.str();
+      return success();
+    });
+    EXPECT_TRUE(failed(placement
+                           ? runPlacement(*moduleOp, target)
+                           : runPass(*moduleOp, target, MappingPassOptions{})));
+    EXPECT_EQ(printModule(*moduleOp), before);
+    EXPECT_TRUE(StringRef(diagnostics).contains("mapping index capacity"));
+  }
 }
 
 TEST_F(MappingPassFixture, KeepWorkspaceSparseOnLargeTarget) {
@@ -3891,9 +3934,9 @@ module {
     %a = qco.alloc : !qco.qubit
     %b = qco.alloc : !qco.qubit
     %c = qco.alloc : !qco.qubit
-    %a1, %b1 = qco.rzz(%angle) %a, %b : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
-    %b2, %c1 = qco.rzz(%angle) %b1, %c : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
-    %c2, %a2 = qco.rzz(%angle) %c1, %a1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+    %a1, %b1 = qco.xx_plus_yy(%angle, %angle) %a, %b : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+    %b2, %c1 = qco.xx_plus_yy(%angle, %angle) %b1, %c : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+    %c2, %a2 = qco.xx_plus_yy(%angle, %angle) %c1, %a1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
     %a3, %r0 = qco.measure %a2 : !qco.qubit
     %b3, %r1 = qco.measure %b2 : !qco.qubit
     %c3, %r2 = qco.measure %c2 : !qco.qubit

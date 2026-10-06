@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
@@ -1472,53 +1473,26 @@ TEST(DeviceOwnershipTest, SiteFromOperationKeepsFreshSessionAlive) {
 }
 
 namespace {
-// Helper function to get all devices for parameterized tests
 auto getDevices() -> std::vector<Device> {
   Session session;
   return session.getDevices();
 }
+
+/// Device names may contain punctuation or repeat across sessions.
+auto deviceTestName(const testing::TestParamInfo<Device>& info) {
+  auto name = info.param.getName();
+  std::ranges::replace_if(
+      name, [](unsigned char character) { return !std::isalnum(character); },
+      '_');
+  return name + "_" + std::to_string(info.index);
+}
 } // namespace
 
-INSTANTIATE_TEST_SUITE_P(
-    // Custom instantiation name
-    DeviceTest,
-    // Test suite name
-    DeviceTest,
-    // Parameters to test with
-    testing::ValuesIn(getDevices()),
-    [](const testing::TestParamInfo<Device>& paramInfo) {
-      auto name = paramInfo.param.getName();
-      // Replace spaces with underscores for valid test names
-      std::ranges::replace(name, ' ', '_');
-      return name;
-    });
-
-INSTANTIATE_TEST_SUITE_P(
-    // Custom instantiation name
-    SiteTest,
-    // Test suite name
-    SiteTest,
-    // Parameters to test with
-    testing::ValuesIn(getDevices()),
-    [](const testing::TestParamInfo<Device>& paramInfo) {
-      auto name = paramInfo.param.getName();
-      // Replace spaces with underscores for valid test names
-      std::ranges::replace(name, ' ', '_');
-      return name;
-    });
-
-INSTANTIATE_TEST_SUITE_P(
-    // Custom instantiation name
-    OperationTest,
-    // Test suite name
-    OperationTest,
-    // Parameters to test with
-    testing::ValuesIn(getDevices()),
-    [](const testing::TestParamInfo<Device>& paramInfo) {
-      auto name = paramInfo.param.getName();
-      // Replace spaces with underscores for valid test names
-      std::ranges::replace(name, ' ', '_');
-      return name;
-    });
+INSTANTIATE_TEST_SUITE_P(DeviceTest, DeviceTest,
+                         testing::ValuesIn(getDevices()), deviceTestName);
+INSTANTIATE_TEST_SUITE_P(SiteTest, SiteTest, testing::ValuesIn(getDevices()),
+                         deviceTestName);
+INSTANTIATE_TEST_SUITE_P(OperationTest, OperationTest,
+                         testing::ValuesIn(getDevices()), deviceTestName);
 
 } // namespace qdmi

@@ -11,6 +11,21 @@
 
 include "mlir/Pass/PassBase.td"
 
+def SimplifyClassicalControl
+    : Pass<"simplify-classical-control", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::arith::ArithDialect"];
+  let summary = "Forward classical bits and propagate known branch conditions";
+  let description = [{
+    Visits each block once to forward classical-bit loads from known stores,
+    previous loads, or zero initialization. Ambiguous writes invalidate memory
+    facts; memory facts do not cross region or block boundaries.
+
+    Within each QCO if branch, replaces uses of its condition with the known
+    boolean value. A following canonicalizer folds the exposed expressions and
+    static branches. Run after inlining and again after static loop unrolling.
+  }];
+}
+
 def NormalizeGlobalPhases : Pass<"normalize-global-phases", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::arith::ArithDialect", "mlir::qc::QCDialect",
                            "mlir::qco::QCODialect"];

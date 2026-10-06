@@ -63,21 +63,29 @@ TEST_F(QTensorCanonicalizationTest, ScalarizesWhileOnlyWithConstantIndices) {
         %zero = arith.constant 0 : i32
         %one = arith.constant 1 : i32
         %tensor = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
-        %count, %result = scf.while (%t = %tensor, %i = %zero)
-            : (tensor<2x!qco.qubit>, i32) -> (i32, tensor<2x!qco.qubit>) {
+        %other = qtensor.alloc(%c1) : tensor<1x!qco.qubit>
+        %count, %second, %result = scf.while (%t = %tensor, %i = %zero, %s = %other)
+            : (tensor<2x!qco.qubit>, i32, tensor<1x!qco.qubit>) -> (i32, tensor<1x!qco.qubit>, tensor<2x!qco.qubit>) {
           %rest, %q = qtensor.extract %t[%c0] : tensor<2x!qco.qubit>
           %h = qco.h %q : !qco.qubit -> !qco.qubit
           %out, %condition = qco.measure %h : !qco.qubit
           %updated = qtensor.insert %out into %rest[%c0] : tensor<2x!qco.qubit>
-          scf.condition(%condition) %i, %updated : i32, tensor<2x!qco.qubit>
+          %srest, %sq = qtensor.extract %s[%c0] : tensor<1x!qco.qubit>
+          %sx = qco.x %sq : !qco.qubit -> !qco.qubit
+          %supdated = qtensor.insert %sx into %srest[%c0] : tensor<1x!qco.qubit>
+          scf.condition(%condition) %i, %supdated, %updated : i32, tensor<1x!qco.qubit>, tensor<2x!qco.qubit>
         } do {
-        ^bb0(%i: i32, %t: tensor<2x!qco.qubit>):
+        ^bb0(%i: i32, %s: tensor<1x!qco.qubit>, %t: tensor<2x!qco.qubit>):
           %rest, %q = qtensor.extract %t[%c1] : tensor<2x!qco.qubit>
           %out = qco.x %q : !qco.qubit -> !qco.qubit
           %updated = qtensor.insert %out into %rest[%c1] : tensor<2x!qco.qubit>
           %next = arith.addi %i, %one : i32
-          scf.yield %updated, %next : tensor<2x!qco.qubit>, i32
+          %srest, %sq = qtensor.extract %s[%c0] : tensor<1x!qco.qubit>
+          %sy = qco.y %sq : !qco.qubit -> !qco.qubit
+          %supdated = qtensor.insert %sy into %srest[%c0] : tensor<1x!qco.qubit>
+          scf.yield %updated, %next, %supdated : tensor<2x!qco.qubit>, i32, tensor<1x!qco.qubit>
         }
+        qtensor.dealloc %second : tensor<1x!qco.qubit>
         qtensor.dealloc %result : tensor<2x!qco.qubit>
         return %count : i32
       }
@@ -103,11 +111,11 @@ TEST_F(QTensorCanonicalizationTest, ScalarizesWhileOnlyWithConstantIndices) {
     scf::WhileOp loop;
     moduleOp->walk([&](scf::WhileOp candidate) { loop = candidate; });
     ASSERT_TRUE(loop);
-    EXPECT_EQ(loop.getNumOperands(), dynamicIndex ? 2U : 3U);
+    EXPECT_EQ(loop.getNumOperands(), dynamicIndex ? 3U : 4U);
     EXPECT_TRUE(loop.getResult(0).getType().isInteger(32));
     size_t nestedExtracts = 0;
     loop.walk([&](qtensor::ExtractOp) { ++nestedExtracts; });
-    EXPECT_EQ(nestedExtracts, dynamicIndex ? 2U : 0U);
+    EXPECT_EQ(nestedExtracts, dynamicIndex ? 4U : 0U);
   }
 }
 
@@ -469,16 +477,16 @@ TEST_F(QTensorCanonicalizationTest,
   EXPECT_EQ(cast<UnitaryOpInterface>(postMiddle.getOperation())
                 .getInputQubits()
                 .front(),
-            ifOp.getLinearResults()[0]);
+            ifOp.getLinearResults()[1]);
 
   ASSERT_EQ(insertedScalars.size(), 2);
-  EXPECT_TRUE(llvm::is_contained(insertedScalars, ifOp.getLinearResults()[1]));
+  EXPECT_TRUE(llvm::is_contained(insertedScalars, ifOp.getLinearResults()[0]));
   EXPECT_TRUE(llvm::is_contained(insertedScalars, ifOp.getLinearResults()[2]));
 
   auto thenValues = ifOp.thenYield().getTargets();
   ASSERT_EQ(thenValues.size(), 3);
-  EXPECT_TRUE(isa<YOp>(thenValues[0].getDefiningOp()));
-  EXPECT_TRUE(isa<XOp>(thenValues[1].getDefiningOp()));
+  EXPECT_TRUE(isa<YOp>(thenValues[1].getDefiningOp()));
+  EXPECT_TRUE(isa<XOp>(thenValues[0].getDefiningOp()));
   EXPECT_TRUE(isa<ZOp>(thenValues[2].getDefiningOp()));
 }
 

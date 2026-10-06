@@ -197,13 +197,15 @@ struct SyntaxGateCall {
   std::vector<Operand> operands;
 };
 
+enum class IOQualifier : uint8_t { None, Input, Output };
+
 struct SyntaxScalarDeclaration {
   ScalarKind kind = ScalarKind::Int;
   StringRef identifier;
   std::optional<SyntaxExpressionId> size;
   std::optional<SyntaxExpressionId> initializer;
   bool isConst = false;
-  bool output = false;
+  IOQualifier io = IOQualifier::None;
 };
 
 struct SyntaxAssignment {
@@ -339,7 +341,7 @@ public:
   scalarDecl(SMLoc location, ScalarKind kind, StringRef identifier,
              std::optional<SyntaxExpressionId> size,
              std::optional<SyntaxExpressionId> initializer, bool isConst,
-             bool output);
+             IOQualifier io);
   [[nodiscard]] LogicalResult assignment(SMLoc location,
                                          const BitReference& target,
                                          SyntaxExpressionId value);

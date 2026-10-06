@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "mqt/Compiler/Target.h"
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/QC/Translation/StandardGate.h"
 
 #include "nanobind/nanobind.h"
@@ -55,7 +57,9 @@ validateRegisterLayout(const std::vector<Register>& registers, uint32_t total,
                        std::string_view kind);
 
 inline constexpr size_t MAX_PARAMETER_EXPRESSION_DEPTH = 64U;
-inline constexpr size_t MAX_PARAMETER_EXPRESSION_NODES = 4096U;
+/// Match the classical-expression budget; synthesized phases can span many
+/// gates.
+inline constexpr size_t MAX_PARAMETER_EXPRESSION_NODES = 16384U;
 inline constexpr uint64_t MAX_PARAMETER_GROUP_SIZE = 65'536U;
 
 /// Source-level vector metadata for one scalar parameter.
@@ -349,6 +353,8 @@ public:
   /// Return the circuit's free scalar parameters in a stable order.
   [[nodiscard]] virtual std::vector<Parameter> parameters() const = 0;
   [[nodiscard]] virtual Parameter globalPhase() const = 0;
+  [[nodiscard]] virtual std::optional<mlir::mqt::QubitLayout>
+  layout() const = 0;
   [[nodiscard]] virtual Instruction instruction(size_t index) const = 0;
   [[nodiscard]] virtual ClassicalAssignment store(size_t index) const = 0;
   [[nodiscard]] virtual std::vector<std::complex<double>>
@@ -394,6 +400,7 @@ public:
   virtual void addClassicalRegister(std::string_view name, uint32_t size) = 0;
   virtual void declareVariable(ClassicalVariable variable) = 0;
   virtual void setGlobalPhase(const Parameter& phase) = 0;
+  virtual void setLayout(const mlir::mqt::QubitLayout& layout) = 0;
   virtual void addGate(StandardGateMapping gate,
                        const std::vector<uint32_t>& qubits,
                        const std::vector<Parameter>& parameters) = 0;
@@ -431,8 +438,15 @@ public:
   [[nodiscard]] virtual std::unique_ptr<CircuitReader>
   openCircuit(nb::handle circuit) const = 0;
   [[nodiscard]] virtual bool supportsGate(StandardGateMapping gate) const = 0;
+  [[nodiscard]] virtual mlir::CompilerTarget
+  importTarget(nb::handle target, nb::handle operationNames,
+               const std::optional<std::string>& name) const = 0;
+  [[nodiscard]] virtual mlir::CompilerTarget::NativeOperations
+  importNativeOperations(nb::handle target,
+                         nb::handle operationNames) const = 0;
   [[nodiscard]] virtual std::unique_ptr<CircuitWriter>
-  createCircuit(uint32_t looseQubits, uint32_t looseClbits) const = 0;
+  createCircuit(uint32_t looseQubits, uint32_t looseClbits,
+                const mlir::CompilerTarget* target = nullptr) const = 0;
   virtual void
   registerCustomGate(std::string_view symbol, std::string_view name,
                      const std::vector<std::string>& formalParameters,

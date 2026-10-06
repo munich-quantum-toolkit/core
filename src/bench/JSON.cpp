@@ -1057,7 +1057,7 @@ template <class Benchmark>
                   {
                       {"default", 1},
                       {"minimum", 1},
-                      {"maximum", 4},
+                      {"maximum", std::numeric_limits<int64_t>::max() / 5},
                       {"type", "integer"},
                   },
               },
