@@ -69,6 +69,7 @@ void registerMQTCompilerPasses() {
     qco::registerRemoveDeadGates();
     qco::registerReplaceClassicalControls();
     qco::registerReuseQubits();
+    qco::registerContextSensitiveSpecialization();
     qco::registerTargetNativeSynthesis();
     qco::registerUnrollLoopsForPayload();
     qco::registerVerifyTargetConformance();
