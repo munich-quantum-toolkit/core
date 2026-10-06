@@ -206,9 +206,9 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   const auto& target = environment.target();
   /// The module cleanup below owns canonicalization and dead symbols.
   pm.addPass(createInlinerPass({}, [](OpPassManager&) {}));
-  pm.addPass(createSCCPPass());
-  /// Placement changes region results; run liveness once afterwards.
+  // Fold tensor accesses before SCCP; defer liveness until after placement.
   populateQCOCleanupPipeline(pm, /*removeDeadValues=*/false);
+  pm.addPass(createSCCPPass());
   pm.addPass(qco::createUnrollLoopsForPayload());
   pm.addPass(createSCCPPass());
   /// Unrolling exposes static tensor slots and unreachable callees.
