@@ -32,12 +32,6 @@ static void expectCounts(const Program& program, const size_t single,
   EXPECT_EQ(info.numSingleQubitGates, single);
   EXPECT_EQ(info.numTwoQubitGates, two);
   EXPECT_EQ(info.gateCounts, expected);
-  EXPECT_EQ(program.numGates(), total);
-  EXPECT_EQ(program.numSingleQubitGates(), single);
-  EXPECT_EQ(program.numTwoQubitGates(), two);
-  EXPECT_EQ(program.gateCounts(), expected);
-  EXPECT_EQ(program.controlFlowCounts(), info.controlFlowCounts);
-  EXPECT_EQ(program.operationCounts(), info.operationCounts);
 }
 
 namespace {
@@ -70,17 +64,18 @@ TEST(ProgramInspection, CountCallsAndNestedModifiersOnce) {
   )");
   ASSERT_TRUE(qc);
   const std::map<std::string, size_t> expected{
-      {"foo", 1},    {"ctrl(foo)", 1}, {"ctrl(inv(x))", 1},
-      {"inv(h)", 1}, {"pow(h)", 1},    {"ctrl(2,inv(x))", 1},
-      {"gphase", 1}, {"h", 1},         {"swap", 1},
-      {"ccx", 1},    {"cswap", 1},     {"inv(cx)", 1},
-      {"cx", 1},     {"cz", 1},        {"crx", 2},
+      {"foo", 1},     {"ctrl(foo)", 1}, {"ctrl(inv(x))", 1},
+      {"inv(h)", 1},  {"pow(h)", 1},    {"ctrl(2,inv(x))", 1},
+      {"gphase", 1},  {"h", 1},         {"swap", 1},
+      {"ccx", 1},     {"cswap", 1},     {"inv(cx)", 1},
+      {"cx", 1},      {"cz", 1},        {"crx", 2},
+      {"barrier", 2}, {"measure", 1},   {"reset", 1},
   };
-  expectCounts(*qc, 4, 8, expected);
+  expectCounts(*qc, 7, 9, expected);
   EXPECT_FALSE(qc->inspect().hasControlFlow);
   auto qco = std::move(*qc).intoQCO();
   ASSERT_TRUE(qco);
-  expectCounts(*qco, 4, 8, expected);
+  expectCounts(*qco, 7, 9, expected);
 }
 
 TEST(ProgramInspection, CompositeAndUnusedTargetModifiersStayAtomic) {
@@ -148,25 +143,6 @@ TEST(ProgramInspection, QCOCountsNativeThreeQubitGates) {
   expectCounts(*qco, 0, 0, {{"rccx", 1}});
 }
 
-TEST(ProgramInspection, InspectAllocatedRegistersAndControlFlow) {
-  auto qc = mlir::QCProgram::fromOpenQASMString(R"(
-    OPENQASM 3.0;
-    include "stdgates.inc";
-    qubit[2] a;
-    qubit b;
-    bit flag = measure b;
-    if (flag) { x a[0]; }
-  )");
-  ASSERT_TRUE(qc);
-  EXPECT_EQ(qc->inspect().numQubits, 3);
-  EXPECT_TRUE(qc->inspect().staticQubits.empty());
-  EXPECT_TRUE(qc->inspect().hasControlFlow);
-  auto qco = std::move(*qc).intoQCO();
-  ASSERT_TRUE(qco);
-  EXPECT_EQ(qco->inspect().numQubits, 3);
-  EXPECT_TRUE(qco->inspect().hasControlFlow);
-}
-
 TEST(ProgramInspection, InspectSortedDistinctStaticSites) {
   auto qc = mlir::QCProgram::fromOpenQASMString(R"(
     OPENQASM 3.0; include "stdgates.inc";
@@ -177,16 +153,19 @@ TEST(ProgramInspection, InspectSortedDistinctStaticSites) {
   EXPECT_EQ(qc->inspect().numQubits, 2);
   EXPECT_EQ(qc->inspect().staticQubits, sites);
   EXPECT_FALSE(qc->inspect().hasControlFlow);
-  auto qco = std::move(*qc).intoQCO();
-  ASSERT_TRUE(qco);
-  EXPECT_EQ(qco->inspect().numQubits, 2);
-  EXPECT_EQ(qco->inspect().staticQubits, sites);
 }
 
 TEST(ProgramInspection, UnknownAndEmptyWidthsDiffer) {
   auto empty = mlir::QCProgram::fromMLIRString(
       "module { func.func @main() attributes {mqt.entry_point} { return } }");
-  auto library = mlir::QCProgram::fromMLIRString("module {}");
+  auto library = mlir::QCProgram::fromMLIRString(R"(
+    module {
+      func.func @helper(%q: !qc.qubit) {
+        qc.h %q : !qc.qubit
+        return
+      }
+    }
+  )");
   auto dynamic = mlir::QCProgram::fromMLIRString(R"(
     module {
       func.func @main(%n: index) attributes {mqt.entry_point} {
@@ -202,31 +181,33 @@ TEST(ProgramInspection, UnknownAndEmptyWidthsDiffer) {
   EXPECT_EQ(empty->inspect().numQubits, 0);
   EXPECT_TRUE(empty->gateCounts().empty());
   EXPECT_FALSE(library->inspect().numQubits);
-  EXPECT_TRUE(library->gateCounts().empty());
+  expectCounts(*library, 0, 0, {});
   EXPECT_FALSE(dynamic->inspect().numQubits);
   auto qco = std::move(*dynamic).intoQCO();
   ASSERT_TRUE(qco);
   EXPECT_FALSE(qco->inspect().numQubits);
 }
 
-TEST(ProgramInspection, StoredReferencesDoNotAddWidth) {
+TEST(ProgramInspection, AllocationsAddWidthButStoredReferencesDoNot) {
   auto qc = mlir::QCProgram::fromMLIRString(R"(
     module {
       func.func @main() attributes {mqt.entry_point} {
         %i = arith.constant 0 : index
         %q = qc.alloc : !qc.qubit
+        %register = memref.alloc() : memref<2x!qc.qubit>
         %refs = memref.alloca() : memref<1x!qc.qubit>
         memref.store %q, %refs[%i] : memref<1x!qc.qubit>
         qc.h %q : !qc.qubit
         %alias = memref.load %refs[%i] : memref<1x!qc.qubit>
         qc.x %alias : !qc.qubit
         qc.dealloc %q : !qc.qubit
+        memref.dealloc %register : memref<2x!qc.qubit>
         return
       }
     }
   )");
   ASSERT_TRUE(qc);
-  EXPECT_EQ(qc->inspect().numQubits, 1);
+  EXPECT_EQ(qc->inspect().numQubits, 3);
 }
 
 TEST(ProgramInspection, AllocationWidthOverflowIsUnknown) {
@@ -293,14 +274,14 @@ TEST(ProgramInspection, InspectionIncludesHelpersButNotNestedModules) {
     }
   )");
   ASSERT_TRUE(qc);
-  EXPECT_EQ(qc->inspect().staticQubits, (std::vector<uint64_t>{5}));
-  EXPECT_EQ(qc->inspect().numQubits, 1);
-  EXPECT_TRUE(qc->inspect().hasControlFlow);
-  EXPECT_TRUE(qc->gateCounts().empty());
-  EXPECT_EQ(qc->inspect().numGates, 0);
-  EXPECT_TRUE(qc->inspect().gateCounts.empty());
+  const auto info = qc->inspect();
+  EXPECT_EQ(info.staticQubits, (std::vector<uint64_t>{5}));
+  EXPECT_EQ(info.numQubits, 1);
+  EXPECT_TRUE(info.hasControlFlow);
+  expectCounts(*qc, 0, 0, {});
   EXPECT_TRUE(qc->controlFlowCounts().empty());
-  EXPECT_EQ(qc->operationCounts(),
+  EXPECT_EQ(info.operationCounts, qc->operationCounts());
+  EXPECT_EQ(info.operationCounts,
             (std::map<std::string, size_t>{{"builtin.module", 2},
                                            {"func.func", 3},
                                            {"func.return", 3},
@@ -309,20 +290,6 @@ TEST(ProgramInspection, InspectionIncludesHelpersButNotNestedModules) {
                                            {"qc.x", 1},
                                            {"scf.if", 1},
                                            {"scf.yield", 1}}));
-}
-
-TEST(ProgramInspection, CountGatesWithoutEntryPoint) {
-  auto qc = mlir::QCProgram::fromMLIRString(R"mlir(module {
-    func.func @helper(%qubit: !qc.qubit) {
-      qc.h %qubit : !qc.qubit
-      return
-    }
-  })mlir");
-  ASSERT_TRUE(qc);
-  expectCounts(*qc, 0, 0, {});
-  auto qco = std::move(*qc).intoQCO();
-  ASSERT_TRUE(qco);
-  expectCounts(*qco, 0, 0, {});
 }
 
 TEST(ProgramInspection, CountGatesInStructuredControlFlow) {
@@ -353,21 +320,26 @@ switch (selector) {
   auto qc = mlir::QCProgram::fromOpenQASMString(qasm);
   ASSERT_TRUE(qc);
   const std::map<std::string, size_t> expectedCounts{
-      {"cx", 2},
-      {"swap", 1},
-      {"x", 1},
-      {"z", 1},
+      {"cx", 2}, {"measure", 1}, {"swap", 1}, {"x", 1}, {"z", 1},
   };
-  expectCounts(*qc, 2, 3, expectedCounts);
-  EXPECT_EQ(qc->controlFlowCounts(),
+  expectCounts(*qc, 3, 3, expectedCounts);
+  const auto qcInfo = qc->inspect();
+  EXPECT_EQ(qcInfo.numQubits, 3);
+  EXPECT_TRUE(qcInfo.hasControlFlow);
+  EXPECT_EQ(qcInfo.controlFlowCounts, qc->controlFlowCounts());
+  EXPECT_EQ(qcInfo.controlFlowCounts,
             (std::map<std::string, size_t>{{"scf.if", 1},
                                            {"scf.for", 1},
                                            {"scf.while", 1},
                                            {"scf.index_switch", 1}}));
   auto qco = std::move(*qc).intoQCO();
   ASSERT_TRUE(qco);
-  expectCounts(*qco, 2, 3, expectedCounts);
-  EXPECT_EQ(qco->controlFlowCounts(),
+  expectCounts(*qco, 3, 3, expectedCounts);
+  const auto qcoInfo = qco->inspect();
+  EXPECT_EQ(qcoInfo.numQubits, 3);
+  EXPECT_TRUE(qcoInfo.hasControlFlow);
+  EXPECT_EQ(qcoInfo.controlFlowCounts, qco->controlFlowCounts());
+  EXPECT_EQ(qcoInfo.controlFlowCounts,
             (std::map<std::string, size_t>{{"qco.if", 1},
                                            {"scf.for", 1},
                                            {"scf.while", 1},

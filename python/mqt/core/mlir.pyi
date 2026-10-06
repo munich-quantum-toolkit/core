@@ -678,43 +678,76 @@ class CompilationOptions:
     def mapping(self, arg: MappingOptions, /) -> None: ...
 
 class QuantumProgramInfo:
-    """Quantum resources and static IR statistics."""
+    """Quantum resources and static IR statistics.
+
+    Use :meth:`QCProgram.inspect` or :meth:`QCOProgram.inspect` to collect a snapshot.
+    """
 
     @property
     def num_qubits(self) -> int | None:
-        """Allocated qubit count, or number of distinct static site IDs. None for unknown width. Not peak live width or original layout width."""
+        """Declared quantum capacity.
+
+        Counts allocated qubits or distinct static site IDs. ``None`` means the width
+        is unknown. Resource inspection includes helper functions and excludes nested
+        modules; it describes declared capacity rather than peak live width.
+        """
 
     @property
     def static_qubits(self) -> list[int]:
-        """Sorted distinct physical site IDs declared in the module."""
+        """Sorted distinct physical site IDs.
+
+        Includes declarations in helper functions and excludes nested modules.
+        """
 
     @property
     def has_control_flow(self) -> bool:
-        """Whether the module contains branching or region-based control flow."""
+        """Whether the module contains control flow.
+
+        Includes branches and region-control operations in helper functions, but
+        excludes nested modules.
+        """
 
     @property
     def num_gates(self) -> int:
-        """Static entry-point gate count. See QCProgram.num_gates."""
+        """Static entry-point gate count.
+
+        See :meth:`QCProgram.num_gates`.
+        """
 
     @property
     def num_single_qubit_gates(self) -> int:
-        """Static single-qubit gate count in the entry point."""
+        """Static single-qubit gate count.
+
+        See :meth:`QCProgram.num_single_qubit_gates`.
+        """
 
     @property
     def num_two_qubit_gates(self) -> int:
-        """Static two-qubit gate count in the entry point."""
+        """Static two-qubit gate count.
+
+        See :meth:`QCProgram.num_two_qubit_gates`.
+        """
 
     @property
     def gate_counts(self) -> dict[str, int]:
-        """Entry-point gate histogram. See QCProgram.gate_counts."""
+        """Entry-point gate histogram.
+
+        See :meth:`QCProgram.gate_counts`.
+        """
 
     @property
     def control_flow_counts(self) -> dict[str, int]:
-        """Entry-point control-flow histogram. See QCProgram.control_flow_counts."""
+        """Entry-point control-flow histogram.
+
+        See :meth:`QCProgram.control_flow_counts`.
+        """
 
     @property
     def operation_counts(self) -> dict[str, int]:
-        """Full module operation histogram. See Program.operation_counts."""
+        """Full module operation histogram.
+
+        See :meth:`Program.operation_counts`.
+        """
 
 class QCProgram(Program):
     """A compiler program in the QC dialect.
@@ -786,26 +819,38 @@ class QCProgram(Program):
         """
 
     def inspect(self) -> QuantumProgramInfo:
-        """Return a snapshot of module resources and static IR statistics."""
+        """Inspect quantum resources and static IR statistics.
+
+        Returns a :class:`QuantumProgramInfo` snapshot with gate, control-flow, and
+        full operation counts.
+        """
 
     def num_gates(self) -> int:
         """Return the static gate count of the entry-point IR.
 
-        Each unitary operation counts once. Modifier and call bodies are not expanded.
-        Gates in every structured control-flow region count once, regardless of how
-        often the region executes. Barriers, measurements, and resets are excluded.
+        Unitary operations, barriers, measurements, and resets each count once.
+        Modifiers and calls count atomically. Gates in every control-flow region
+        count once, regardless of runtime paths or loop iterations.
         """
 
     def num_single_qubit_gates(self) -> int:
-        """Count gates acting on exactly one qubit, using the counting rules of :meth:`num_gates`."""
+        """Count gates acting on exactly one qubit.
+
+        Uses the counting rules of :meth:`num_gates`, including measurements, resets,
+        and one-qubit barriers.
+        """
 
     def num_two_qubit_gates(self) -> int:
-        """Count gates acting on exactly two qubits, using the counting rules of :meth:`num_gates`."""
+        """Count gates acting on exactly two qubits.
+
+        Uses the counting rules of :meth:`num_gates`, including two-qubit barriers.
+        """
 
     def gate_counts(self) -> dict[str, int]:
-        """Count entry-point gates by name, using the rules of :meth:`num_gates`.
+        """Count entry-point gates by name.
 
-        Controls on a single primitive gate add a ``c`` per control: ``cx``, ``ccx``.
+        Uses the counting rules of :meth:`num_gates`. Controls on a single primitive
+        gate add a ``c`` per control: ``cx``, ``ccx``.
         Other single-gate modifiers use ``inv(h)``, ``pow(rx)``, or ``ctrl(inv(x))``;
         multiple controls use ``ctrl(2,inv(x))``. Parameters do not split buckets.
         Composite bodies or unused modifier targets retain ``ctrl``, ``inv``, or
@@ -813,9 +858,10 @@ class QCProgram(Program):
         """
 
     def control_flow_counts(self) -> dict[str, int]:
-        """Count entry-point branches and region-based control flow by full MLIR name.
+        """Count entry-point control-flow operations.
 
-        Every region is visited once, without expanding calls. Region terminators
+        Keys are full MLIR names such as ``scf.for`` and ``qco.if``. Every region is
+        visited once, without expanding calls. Region terminators
         such as ``scf.yield`` are excluded.
         """
 
@@ -914,26 +960,38 @@ class QCOProgram(Program):
         """
 
     def inspect(self) -> QuantumProgramInfo:
-        """Return a snapshot of module resources and static IR statistics."""
+        """Inspect quantum resources and static IR statistics.
+
+        Returns a :class:`QuantumProgramInfo` snapshot with gate, control-flow, and
+        full operation counts.
+        """
 
     def num_gates(self) -> int:
         """Return the static gate count of the entry-point IR.
 
-        Each unitary operation counts once. Modifier and call bodies are not expanded.
-        Gates in every structured control-flow region count once, regardless of how
-        often the region executes. Barriers, measurements, and resets are excluded.
+        Unitary operations, barriers, measurements, and resets each count once.
+        Modifiers and calls count atomically. Gates in every control-flow region
+        count once, regardless of runtime paths or loop iterations.
         """
 
     def num_single_qubit_gates(self) -> int:
-        """Count gates acting on exactly one qubit, using the counting rules of :meth:`num_gates`."""
+        """Count gates acting on exactly one qubit.
+
+        Uses the counting rules of :meth:`num_gates`, including measurements, resets,
+        and one-qubit barriers.
+        """
 
     def num_two_qubit_gates(self) -> int:
-        """Count gates acting on exactly two qubits, using the counting rules of :meth:`num_gates`."""
+        """Count gates acting on exactly two qubits.
+
+        Uses the counting rules of :meth:`num_gates`, including two-qubit barriers.
+        """
 
     def gate_counts(self) -> dict[str, int]:
-        """Count entry-point gates by name, using the rules of :meth:`num_gates`.
+        """Count entry-point gates by name.
 
-        Controls on a single primitive gate add a ``c`` per control: ``cx``, ``ccx``.
+        Uses the counting rules of :meth:`num_gates`. Controls on a single primitive
+        gate add a ``c`` per control: ``cx``, ``ccx``.
         Other single-gate modifiers use ``inv(h)``, ``pow(rx)``, or ``ctrl(inv(x))``;
         multiple controls use ``ctrl(2,inv(x))``. Parameters do not split buckets.
         Composite bodies or unused modifier targets retain ``ctrl``, ``inv``, or
@@ -941,9 +999,10 @@ class QCOProgram(Program):
         """
 
     def control_flow_counts(self) -> dict[str, int]:
-        """Count entry-point branches and region-based control flow by full MLIR name.
+        """Count entry-point control-flow operations.
 
-        Every region is visited once, without expanding calls. Region terminators
+        Keys are full MLIR names such as ``scf.for`` and ``qco.if``. Every region is
+        visited once, without expanding calls. Region terminators
         such as ``scf.yield`` are excluded.
         """
 

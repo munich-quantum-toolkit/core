@@ -40,10 +40,11 @@ class TargetEnvironment;
 
 /// Quantum resources and static IR statistics.
 struct QuantumProgramInfo {
-  /// Total allocated qubits, or the number of distinct static site IDs.
+  /// Declared quantum capacity.
+  ///
+  /// Counts allocated qubits or distinct static site IDs.
   /// Unknown for runtime-sized allocations, quantum inputs, size overflow,
-  /// or no entry point.
-  /// This is not peak live width or the original width from layout metadata.
+  /// or no entry point. Includes helpers and excludes nested modules.
   std::optional<uint64_t> numQubits;
   /// Sorted, distinct physical site IDs declared in the module.
   std::vector<uint64_t> staticQubits;
@@ -108,8 +109,10 @@ public:
   /// Return the program as textual MLIR.
   [[nodiscard]] std::string str() const;
 
-  /// Count every operation by its full MLIR name, including the root module,
-  /// helper functions, modifier bodies, terminators, and nested modules.
+  /// Count every operation by its full MLIR name.
+  ///
+  /// Includes the root module, helper functions, modifier bodies, terminators,
+  /// and nested modules.
   [[nodiscard]] std::map<std::string, size_t> operationCounts() const;
 
   /// Borrow the owned MLIR module.
@@ -195,7 +198,9 @@ public:
   /// Create an independent QC program copy.
   [[nodiscard]] QCProgram copy() const;
 
-  /// Return a snapshot of module resources and static IR statistics.
+  /// Inspect quantum resources and static IR statistics.
+  ///
+  /// Returns resource information and gate, control-flow, and operation counts.
   [[nodiscard]] QuantumProgramInfo inspect() const;
 
   /// Return named f64 entry-point inputs in function argument order.
@@ -224,28 +229,36 @@ public:
 
   /// Return the static gate count of the entry-point IR.
   ///
-  /// Each unitary operation counts once. Modifier and call bodies are not
-  /// expanded. Gates in every structured control-flow region count once,
-  /// regardless of how often the region executes. Barriers, measurements, and
-  /// resets are excluded.
+  /// Unitary operations, barriers, measurements, and resets each count once.
+  /// Modifiers and calls count atomically. Gates in every control-flow region
+  /// count once, regardless of runtime paths or loop iterations.
   [[nodiscard]] size_t numGates() const;
 
-  /// Count gates acting on exactly one qubit, using the rules of numGates().
+  /// Count gates acting on exactly one qubit.
+  ///
+  /// Uses the rules of numGates(), including measurements, resets, and
+  /// one-qubit barriers.
   [[nodiscard]] size_t numSingleQubitGates() const;
 
-  /// Count gates acting on exactly two qubits, using the rules of numGates().
+  /// Count gates acting on exactly two qubits.
+  ///
+  /// Uses the rules of numGates(), including two-qubit barriers.
   [[nodiscard]] size_t numTwoQubitGates() const;
 
-  /// Count entry-point gates by name, using the rules of numGates().
-  /// Controls on a single primitive gate add a `c` per control: `cx`, `ccx`.
+  /// Count entry-point gates by name.
+  ///
+  /// Uses the rules of numGates(). Controls on a single primitive gate add a
+  /// `c` per control: `cx`, `ccx`.
   /// Other single-gate modifiers use `inv(h)`, `pow(rx)`, or `ctrl(inv(x))`;
   /// multiple controls use `ctrl(2,inv(x))`. Parameters do not split buckets.
   /// Composite bodies or unused modifier targets retain `ctrl`, `inv`, or
   /// `pow`. Unitary calls use the callee name; explicit phases use `gphase`.
   [[nodiscard]] std::map<std::string, size_t> gateCounts() const;
 
-  /// Count entry-point branches and region-based control flow by full MLIR
-  /// operation name. Visit every region once, without expanding calls.
+  /// Count entry-point control-flow operations.
+  ///
+  /// Keys are full MLIR names such as `scf.for` and `qco.if`.
+  /// Visit every region once, without expanding calls.
   /// Region terminators such as `scf.yield` are excluded.
   [[nodiscard]] std::map<std::string, size_t> controlFlowCounts() const;
 };
@@ -275,8 +288,9 @@ public:
   /// Create an independent QCO program copy.
   [[nodiscard]] QCOProgram copy() const;
 
-  /// Return a snapshot of module resources, control flow, and entry-point
-  /// counts.
+  /// Inspect quantum resources and static IR statistics.
+  ///
+  /// Uses the rules of QCProgram::inspect().
   [[nodiscard]] QuantumProgramInfo inspect() const;
 
   /// Return named f64 entry-point inputs in function argument order.
@@ -340,19 +354,29 @@ public:
   /// Consume this program and convert it to `jeff` MLIR.
   [[nodiscard]] std::optional<JeffProgram> intoJeff() &&;
 
-  /// Return the static entry-point gate count, as in QCProgram::numGates().
+  /// Return the static entry-point gate count.
+  ///
+  /// Uses the rules of QCProgram::numGates().
   [[nodiscard]] size_t numGates() const;
 
-  /// Count static single-qubit gates, as in QCProgram::numSingleQubitGates().
+  /// Count static single-qubit gates.
+  ///
+  /// Uses the rules of QCProgram::numSingleQubitGates().
   [[nodiscard]] size_t numSingleQubitGates() const;
 
-  /// Count static two-qubit gates, as in QCProgram::numTwoQubitGates().
+  /// Count static two-qubit gates.
+  ///
+  /// Uses the rules of QCProgram::numTwoQubitGates().
   [[nodiscard]] size_t numTwoQubitGates() const;
 
-  /// Count entry-point gates by name, as in QCProgram::gateCounts().
+  /// Count entry-point gates by name.
+  ///
+  /// Uses the rules of QCProgram::gateCounts().
   [[nodiscard]] std::map<std::string, size_t> gateCounts() const;
 
-  /// Count entry-point control flow, as in QCProgram::controlFlowCounts().
+  /// Count entry-point control-flow operations.
+  ///
+  /// Uses the rules of QCProgram::controlFlowCounts().
   [[nodiscard]] std::map<std::string, size_t> controlFlowCounts() const;
 
 private:

@@ -2206,23 +2206,16 @@ def test_root_register_expression_and_nested_condition_preserve_captures(num_clb
     assert {variable.var for variable in expr.iter_vars(inner.condition)} == {body.cregs[0]}
 
 
-@pytest.mark.parametrize(("phase", "expected_phases"), [(0.0, 0), (0.25, 1), (Parameter("theta"), 1)])
-@pytest.mark.parametrize("scope", ["circuit", "gate", "instruction", "if"])
-def test_import_emits_only_nonzero_or_symbolic_global_phase(
-    phase: float | Parameter, expected_phases: int, scope: str
-) -> None:
-    """Skip zero circuit phases in each recursive import context."""
+@pytest.mark.parametrize(("phase", "expected_phases"), [(0.0, 0), (0.25, 4), (Parameter("theta"), 4)])
+def test_import_global_phase(phase: float | Parameter, expected_phases: int) -> None:
+    """Import nonzero and symbolic phases in root circuits and nested bodies."""
     body = QuantumCircuit(1, global_phase=phase)
     body.x(0)
-    circuit = QuantumCircuit(1, 1)
-    if scope == "circuit":
-        circuit = body
-    elif scope == "gate":
-        circuit.append(body.to_gate(), [0])
-    elif scope == "instruction":
-        circuit.append(body.to_instruction(), [0])
-    else:
-        circuit.if_test((circuit.clbits[0], False), body, circuit.qubits, [])
+    circuit = QuantumCircuit(1, 1, global_phase=phase)
+    circuit.x(0)
+    circuit.append(body.to_gate(), [0])
+    circuit.append(body.to_instruction(), [0])
+    circuit.if_test((circuit.clbits[0], False), body, circuit.qubits, [])
 
     program = QCProgram.from_qiskit(circuit)
 

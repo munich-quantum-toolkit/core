@@ -25,6 +25,7 @@
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -57,6 +58,15 @@ template <class Gate> static std::string gateName(Gate op) {
   return symbol + "(" + name + ")";
 }
 
+static std::string gateName(Operation* op) {
+  return TypeSwitch<Operation*, std::string>(op)
+      .Case<qc::UnitaryOpInterface, qco::UnitaryOpInterface>(
+          [](auto gate) { return gateName(gate); })
+      .Default([](Operation* other) {
+        return other->getName().stripDialect().str();
+      });
+}
+
 static std::map<std::string, size_t>
 countOperationsIf(Operation* root, function_ref<bool(Operation*)> predicate) {
   std::map<std::string, size_t> counts;
@@ -78,22 +88,28 @@ std::map<std::string, size_t> Program::operationCounts() const {
   return countOperationsIf(mod(), [](Operation*) { return true; });
 }
 
-template <class Gate>
-static void forEachGate(ModuleOp moduleOp, function_ref<void(Gate)> visit) {
+static void forEachGate(ModuleOp moduleOp,
+                        function_ref<void(Operation*, size_t)> visit) {
   auto entryPoint = mqt::getEntryPoint(moduleOp);
   if (!entryPoint) {
     return;
   }
-  entryPoint.walk<WalkOrder::PreOrder>([&](Gate op) {
-    if (!isa<qc::BarrierOp, qco::BarrierOp>(op)) {
-      visit(op);
+  entryPoint.walk<WalkOrder::PreOrder>([&](Operation* op) {
+    size_t arity = 1;
+    if (auto gate = dyn_cast<qc::UnitaryOpInterface>(op)) {
+      arity = gate.getNumQubits();
+    } else if (auto gate = dyn_cast<qco::UnitaryOpInterface>(op)) {
+      arity = gate.getNumQubits();
+    } else if (!isa<qc::MeasureOp, qco::MeasureOp, qc::ResetOp, qco::ResetOp>(
+                   op)) {
+      return WalkResult::advance();
     }
-    /// Count each unitary operation atomically, including modifiers.
+    visit(op, arity);
+    /// Count each gate atomically, including modifiers.
     return WalkResult::skip();
   });
 }
 
-template <class Gate>
 static QuantumProgramInfo inspectProgram(ModuleOp moduleOp) {
   QuantumProgramInfo info;
   auto entry = mqt::getEntryPoint(moduleOp);
@@ -154,53 +170,46 @@ static QuantumProgramInfo inspectProgram(ModuleOp moduleOp) {
   if (info.numQubits && !info.staticQubits.empty()) {
     info.numQubits = info.staticQubits.size();
   }
-  forEachGate<Gate>(moduleOp, [&](Gate op) {
+  forEachGate(moduleOp, [&](Operation* op, const size_t numQubits) {
     ++info.numGates;
-    const auto numQubits = op.getNumQubits();
     info.numSingleQubitGates += numQubits == 1;
     info.numTwoQubitGates += numQubits == 2;
     ++info.gateCounts[gateName(op)];
   });
   return info;
 }
-QuantumProgramInfo QCProgram::inspect() const {
-  return inspectProgram<qc::UnitaryOpInterface>(mod());
-}
-QuantumProgramInfo QCOProgram::inspect() const {
-  return inspectProgram<qco::UnitaryOpInterface>(mod());
-}
+QuantumProgramInfo QCProgram::inspect() const { return inspectProgram(mod()); }
+QuantumProgramInfo QCOProgram::inspect() const { return inspectProgram(mod()); }
 
-template <class Gate>
 static size_t countGatesIf(ModuleOp moduleOp,
-                           function_ref<bool(Gate)> predicate) {
+                           function_ref<bool(size_t)> predicate) {
   size_t count = 0;
-  forEachGate<Gate>(moduleOp, [&](Gate op) { count += predicate(op); });
+  forEachGate(moduleOp, [&](Operation*, const size_t arity) {
+    count += predicate(arity);
+  });
   return count;
 }
 
-template <class Gate>
 static std::map<std::string, size_t> countGatesByName(ModuleOp moduleOp) {
   std::map<std::string, size_t> counts;
-  forEachGate<Gate>(moduleOp, [&](Gate op) { ++counts[gateName(op)]; });
+  forEachGate(moduleOp, [&](Operation* op, size_t) { ++counts[gateName(op)]; });
   return counts;
 }
 
 size_t QCProgram::numGates() const {
-  return countGatesIf<qc::UnitaryOpInterface>(mod(), [](auto) { return true; });
+  return countGatesIf(mod(), [](size_t) { return true; });
 }
 
 size_t QCProgram::numSingleQubitGates() const {
-  return countGatesIf<qc::UnitaryOpInterface>(
-      mod(), [](auto op) { return op.isSingleQubit(); });
+  return countGatesIf(mod(), [](const size_t arity) { return arity == 1; });
 }
 
 size_t QCProgram::numTwoQubitGates() const {
-  return countGatesIf<qc::UnitaryOpInterface>(
-      mod(), [](auto op) { return op.isTwoQubit(); });
+  return countGatesIf(mod(), [](const size_t arity) { return arity == 2; });
 }
 
 std::map<std::string, size_t> QCProgram::gateCounts() const {
-  return countGatesByName<qc::UnitaryOpInterface>(mod());
+  return countGatesByName(mod());
 }
 
 std::map<std::string, size_t> QCProgram::controlFlowCounts() const {
@@ -208,22 +217,19 @@ std::map<std::string, size_t> QCProgram::controlFlowCounts() const {
 }
 
 size_t QCOProgram::numGates() const {
-  return countGatesIf<qco::UnitaryOpInterface>(mod(),
-                                               [](auto) { return true; });
+  return countGatesIf(mod(), [](size_t) { return true; });
 }
 
 size_t QCOProgram::numSingleQubitGates() const {
-  return countGatesIf<qco::UnitaryOpInterface>(
-      mod(), [](auto op) { return op.isSingleQubit(); });
+  return countGatesIf(mod(), [](const size_t arity) { return arity == 1; });
 }
 
 size_t QCOProgram::numTwoQubitGates() const {
-  return countGatesIf<qco::UnitaryOpInterface>(
-      mod(), [](auto op) { return op.isTwoQubit(); });
+  return countGatesIf(mod(), [](const size_t arity) { return arity == 2; });
 }
 
 std::map<std::string, size_t> QCOProgram::gateCounts() const {
-  return countGatesByName<qco::UnitaryOpInterface>(mod());
+  return countGatesByName(mod());
 }
 
 std::map<std::string, size_t> QCOProgram::controlFlowCounts() const {

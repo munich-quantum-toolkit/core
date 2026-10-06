@@ -273,7 +273,10 @@ static void registerInspection(nb::class_<T, mlir::Program>& binding) {
             requireValid(program);
             return program.inspect();
           },
-          "Return a snapshot of module resources and static IR statistics.")
+          R"pb(Inspect quantum resources and static IR statistics.
+
+Returns a :class:`QuantumProgramInfo` snapshot with gate, control-flow, and
+full operation counts.)pb")
       .def(
           "num_gates",
           [](const T& program) {
@@ -282,32 +285,38 @@ static void registerInspection(nb::class_<T, mlir::Program>& binding) {
           },
           R"pb(Return the static gate count of the entry-point IR.
 
-Each unitary operation counts once. Modifier and call bodies are not expanded.
-Gates in every structured control-flow region count once, regardless of how
-often the region executes. Barriers, measurements, and resets are excluded.)pb")
+Unitary operations, barriers, measurements, and resets each count once.
+Modifiers and calls count atomically. Gates in every control-flow region
+count once, regardless of runtime paths or loop iterations.)pb")
       .def(
           "num_single_qubit_gates",
           [](const T& program) {
             requireValid(program);
             return program.numSingleQubitGates();
           },
-          R"pb(Count gates acting on exactly one qubit, using the counting rules of :meth:`num_gates`.)pb")
+          R"pb(Count gates acting on exactly one qubit.
+
+Uses the counting rules of :meth:`num_gates`, including measurements, resets,
+and one-qubit barriers.)pb")
       .def(
           "num_two_qubit_gates",
           [](const T& program) {
             requireValid(program);
             return program.numTwoQubitGates();
           },
-          R"pb(Count gates acting on exactly two qubits, using the counting rules of :meth:`num_gates`.)pb")
+          R"pb(Count gates acting on exactly two qubits.
+
+Uses the counting rules of :meth:`num_gates`, including two-qubit barriers.)pb")
       .def(
           "gate_counts",
           [](const T& program) {
             requireValid(program);
             return program.gateCounts();
           },
-          R"pb(Count entry-point gates by name, using the rules of :meth:`num_gates`.
+          R"pb(Count entry-point gates by name.
 
-Controls on a single primitive gate add a ``c`` per control: ``cx``, ``ccx``.
+Uses the counting rules of :meth:`num_gates`. Controls on a single primitive
+gate add a ``c`` per control: ``cx``, ``ccx``.
 Other single-gate modifiers use ``inv(h)``, ``pow(rx)``, or ``ctrl(inv(x))``;
 multiple controls use ``ctrl(2,inv(x))``. Parameters do not split buckets.
 Composite bodies or unused modifier targets retain ``ctrl``, ``inv``, or
@@ -318,9 +327,10 @@ Composite bodies or unused modifier targets retain ``ctrl``, ``inv``, or
             requireValid(program);
             return program.controlFlowCounts();
           },
-          R"pb(Count entry-point branches and region-based control flow by full MLIR name.
+          R"pb(Count entry-point control-flow operations.
 
-Every region is visited once, without expanding calls. Region terminators
+Keys are full MLIR names such as ``scf.for`` and ``qco.if``. Every region is
+visited once, without expanding calls. Region terminators
 such as ``scf.yield`` are excluded.)pb");
 }
 
@@ -1471,32 +1481,45 @@ and nested modules.)pb")
       .def_rw("mapping", &mlir::CompilationOptions::mapping);
 
   nb::class_<mlir::QuantumProgramInfo>(
-      m, "QuantumProgramInfo", "Quantum resources and static IR statistics.")
+      m, "QuantumProgramInfo", R"pb(Quantum resources and static IR statistics.
+
+Use :meth:`QCProgram.inspect` or :meth:`QCOProgram.inspect` to collect a snapshot.)pb")
       .def_ro("num_qubits", &mlir::QuantumProgramInfo::numQubits,
-              "Allocated qubit count, or number of distinct static site IDs. "
-              "None for unknown width. Not peak live width or original layout "
-              "width.")
+              R"pb(Declared quantum capacity.
+
+Counts allocated qubits or distinct static site IDs. ``None`` means the width
+is unknown. Resource inspection includes helper functions and excludes nested
+modules; it describes declared capacity rather than peak live width.)pb")
       .def_ro("static_qubits", &mlir::QuantumProgramInfo::staticQubits,
-              "Sorted distinct physical site IDs declared in the module.")
+              R"pb(Sorted distinct physical site IDs.
+
+Includes declarations in helper functions and excludes nested modules.)pb")
       .def_ro("has_control_flow", &mlir::QuantumProgramInfo::hasControlFlow,
-              "Whether the module contains branching or region-based control "
-              "flow.")
-      .def_ro("num_gates", &mlir::QuantumProgramInfo::numGates,
-              "Static entry-point gate count. See QCProgram.num_gates.")
+              R"pb(Whether the module contains control flow.
+
+Includes branches and region-control operations in helper functions, but
+excludes nested modules.)pb")
+      .def_ro(
+          "num_gates", &mlir::QuantumProgramInfo::numGates,
+          "Static entry-point gate count.\n\nSee :meth:`QCProgram.num_gates`.")
       .def_ro("num_single_qubit_gates",
               &mlir::QuantumProgramInfo::numSingleQubitGates,
-              "Static single-qubit gate count in the entry point.")
+              "Static single-qubit gate count.\n\n"
+              "See :meth:`QCProgram.num_single_qubit_gates`.")
       .def_ro("num_two_qubit_gates",
               &mlir::QuantumProgramInfo::numTwoQubitGates,
-              "Static two-qubit gate count in the entry point.")
-      .def_ro("gate_counts", &mlir::QuantumProgramInfo::gateCounts,
-              "Entry-point gate histogram. See QCProgram.gate_counts.")
+              "Static two-qubit gate count.\n\n"
+              "See :meth:`QCProgram.num_two_qubit_gates`.")
+      .def_ro(
+          "gate_counts", &mlir::QuantumProgramInfo::gateCounts,
+          "Entry-point gate histogram.\n\nSee :meth:`QCProgram.gate_counts`.")
       .def_ro("control_flow_counts",
               &mlir::QuantumProgramInfo::controlFlowCounts,
-              "Entry-point control-flow histogram. See "
-              "QCProgram.control_flow_counts.")
+              "Entry-point control-flow histogram.\n\n"
+              "See :meth:`QCProgram.control_flow_counts`.")
       .def_ro("operation_counts", &mlir::QuantumProgramInfo::operationCounts,
-              "Full module operation histogram. See Program.operation_counts.");
+              "Full module operation histogram.\n\n"
+              "See :meth:`Program.operation_counts`.");
 
   auto qcProgram = nb::class_<mlir::QCProgram, mlir::Program>(
       m, "QCProgram", R"pb(A compiler program in the QC dialect.
