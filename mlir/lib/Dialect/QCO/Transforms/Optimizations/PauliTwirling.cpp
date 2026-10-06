@@ -12,6 +12,7 @@
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
+#include "mqt/Support/Pauli.h"
 #include "mqt/Support/RandomSeed.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h" // IWYU pragma: keep (Passes.h.inc)
@@ -26,7 +27,6 @@
 #include "llvm/Support/ErrorHandling.h"
 
 #include <array>
-#include <cstdint>
 #include <numbers>
 #include <random>
 
@@ -37,7 +37,7 @@ namespace mlir::qco {
 
 namespace {
 
-enum class Pauli : uint8_t { I, X, Y, Z };
+using Pauli = mqt::PauliAxis;
 
 struct Twirl {
   Pauli beforeFirst;
