@@ -69,7 +69,7 @@ jobs:
           pytest -o addopts= -q test/python/test_slurm_integration.py
 
       - name: Set up MLIR
-        uses: munich-quantum-software/setup-mlir@3f32263ce571a8b745068980f30f188b6e800763 # v1.4.2
+        uses: munich-quantum-software/setup-mlir@5f3c4771ebb8d8e4fe284378b34460f428860a66 # zizmor: ignore[stale-action-refs] -- Pin setup-mlir PR #255 until its release.
         with:
           llvm-version: 23.1.2
 

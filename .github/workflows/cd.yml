@@ -28,7 +28,7 @@ jobs:
             windows-2025,
             windows-11-arm,
           ]
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-wheel-cibuildwheel.yml@393a61c1b8b8ab9115b38fd5b4d52d6a4b381c2d # zizmor: ignore[stale-action-refs] -- Pin Phase 1 workflows PR #486 until its release.
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-wheel-cibuildwheel.yml@508412b7c390dc1a04a41f0efc8e062163e94076 # zizmor: ignore[stale-action-refs] -- Pin workflows PR #486 until its release.
     with:
       runs-on: ${{ matrix.runs-on }}
       setup-mlir: true
