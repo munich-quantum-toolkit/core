@@ -10,6 +10,7 @@
 
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/Utils/Modifiers.h"
 #include "mqt/Dialect/QC/IR/QCInterfaces.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
@@ -34,6 +35,49 @@
 #include <string>
 
 namespace mlir {
+template <class Gate> static std::string gateName(Gate op) {
+  auto symbol = op.getBaseSymbol().str();
+  if (!isa<qc::CtrlOp, qco::CtrlOp, qc::InvOp, qco::InvOp, qc::PowOp,
+           qco::PowOp>(op)) {
+    return symbol;
+  }
+  auto inner = mqt::getSoleBodyUnitary<Gate>(op->getRegion(0).front());
+  if (!inner || inner.getNumQubits() != op.getNumTargets()) {
+    return symbol;
+  }
+  const auto name = gateName(inner);
+  if (isa<qc::CtrlOp, qco::CtrlOp>(op)) {
+    if (inner->getNumRegions() == 0 && !isa<qc::CallOp, qco::CallOp>(inner)) {
+      return std::string(op.getNumControls(), 'c') + name;
+    }
+    const auto controls = op.getNumControls();
+    return "ctrl(" + (controls == 1 ? "" : std::to_string(controls) + ",") +
+           name + ")";
+  }
+  return symbol + "(" + name + ")";
+}
+
+static std::map<std::string, size_t>
+countOperationsIf(Operation* root, function_ref<bool(Operation*)> predicate) {
+  std::map<std::string, size_t> counts;
+  if (root != nullptr) {
+    root->walk([&](Operation* op) {
+      if (predicate(op)) {
+        ++counts[op->getName().getStringRef().str()];
+      }
+    });
+  }
+  return counts;
+}
+
+static bool isControlFlow(Operation* op) {
+  return isa<BranchOpInterface, RegionBranchOpInterface>(op);
+}
+
+std::map<std::string, size_t> Program::operationCounts() const {
+  return countOperationsIf(mod(), [](Operation*) { return true; });
+}
+
 template <class Gate>
 static void forEachGate(ModuleOp moduleOp, function_ref<void(Gate)> visit) {
   auto entryPoint = mqt::getEntryPoint(moduleOp);
@@ -53,6 +97,9 @@ template <class Gate>
 static QuantumProgramInfo inspectProgram(ModuleOp moduleOp) {
   QuantumProgramInfo info;
   auto entry = mqt::getEntryPoint(moduleOp);
+  info.operationCounts =
+      countOperationsIf(moduleOp, [](Operation*) { return true; });
+  info.controlFlowCounts = countOperationsIf(entry, isControlFlow);
   if (entry && llvm::none_of(entry.getArgumentTypes(), [](Type type) {
         return isa<qc::QubitType, qco::QubitType>(type) ||
                (isa<ShapedType>(type) &&
@@ -75,7 +122,7 @@ static QuantumProgramInfo inspectProgram(ModuleOp moduleOp) {
     if (isa<ModuleOp>(op) && op != moduleOp) {
       return WalkResult::skip();
     }
-    info.hasControlFlow |= isa<BranchOpInterface, RegionBranchOpInterface>(op);
+    info.hasControlFlow |= isControlFlow(op);
     if (auto qubit = dyn_cast<qc::StaticOp>(op)) {
       info.staticQubits.push_back(qubit.getIndex());
     } else if (auto qubit = dyn_cast<qco::StaticOp>(op)) {
@@ -112,7 +159,7 @@ static QuantumProgramInfo inspectProgram(ModuleOp moduleOp) {
     const auto numQubits = op.getNumQubits();
     info.numSingleQubitGates += numQubits == 1;
     info.numTwoQubitGates += numQubits == 2;
-    ++info.gateCounts[op.getBaseSymbol().str()];
+    ++info.gateCounts[gateName(op)];
   });
   return info;
 }
@@ -134,8 +181,7 @@ static size_t countGatesIf(ModuleOp moduleOp,
 template <class Gate>
 static std::map<std::string, size_t> countGatesByName(ModuleOp moduleOp) {
   std::map<std::string, size_t> counts;
-  forEachGate<Gate>(moduleOp,
-                    [&](Gate op) { ++counts[op.getBaseSymbol().str()]; });
+  forEachGate<Gate>(moduleOp, [&](Gate op) { ++counts[gateName(op)]; });
   return counts;
 }
 
@@ -157,6 +203,10 @@ std::map<std::string, size_t> QCProgram::gateCounts() const {
   return countGatesByName<qc::UnitaryOpInterface>(mod());
 }
 
+std::map<std::string, size_t> QCProgram::controlFlowCounts() const {
+  return countOperationsIf(mqt::getEntryPoint(mod()), isControlFlow);
+}
+
 size_t QCOProgram::numGates() const {
   return countGatesIf<qco::UnitaryOpInterface>(mod(),
                                                [](auto) { return true; });
@@ -174,5 +224,9 @@ size_t QCOProgram::numTwoQubitGates() const {
 
 std::map<std::string, size_t> QCOProgram::gateCounts() const {
   return countGatesByName<qco::UnitaryOpInterface>(mod());
+}
+
+std::map<std::string, size_t> QCOProgram::controlFlowCounts() const {
+  return countOperationsIf(mqt::getEntryPoint(mod()), isControlFlow);
 }
 } // namespace mlir

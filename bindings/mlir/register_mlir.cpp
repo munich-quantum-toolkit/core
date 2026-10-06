@@ -273,8 +273,7 @@ static void registerInspection(nb::class_<T, mlir::Program>& binding) {
             requireValid(program);
             return program.inspect();
           },
-          "Return a snapshot of module resources, control flow, and "
-          "entry-point gate counts.")
+          "Return a snapshot of module resources and static IR statistics.")
       .def(
           "num_gates",
           [](const T& program) {
@@ -306,12 +305,23 @@ often the region executes. Barriers, measurements, and resets are excluded.)pb")
             requireValid(program);
             return program.gateCounts();
           },
-          R"pb(Count entry-point gates by base symbol.
+          R"pb(Count entry-point gates by name, using the rules of :meth:`num_gates`.
 
-The counts use the same static-IR semantics as :meth:`num_gates`. Modifiers
-use ``ctrl``, ``inv``, and ``pow``; unitary calls use the callee name. Neither
-is expanded. Barriers, measurements, and resets are excluded. Explicit
-global-phase operations count under ``gphase``.)pb");
+Controls on a single primitive gate add a ``c`` per control: ``cx``, ``ccx``.
+Other single-gate modifiers use ``inv(h)``, ``pow(rx)``, or ``ctrl(inv(x))``;
+multiple controls use ``ctrl(2,inv(x))``. Parameters do not split buckets.
+Composite bodies or unused modifier targets retain ``ctrl``, ``inv``, or
+``pow``. Calls use the callee name; explicit phases use ``gphase``.)pb")
+      .def(
+          "control_flow_counts",
+          [](const T& program) {
+            requireValid(program);
+            return program.controlFlowCounts();
+          },
+          R"pb(Count entry-point branches and region-based control flow by full MLIR name.
+
+Every region is visited once, without expanding calls. Region terminators
+such as ``scf.yield`` are excluded.)pb");
 }
 
 template <class ProgramType>
@@ -1401,6 +1411,16 @@ Programs own their MLIR module. Conversions can consume a program; use
   program
       .def_prop_ro("is_valid", &mlir::Program::isValid,
                    "Whether this program still owns its module.")
+      .def(
+          "operation_counts",
+          [](const mlir::Program& value) {
+            requireValid(value);
+            return value.operationCounts();
+          },
+          R"pb(Count every operation by its full MLIR name.
+
+Includes the root module, helper functions, modifier bodies, terminators,
+and nested modules.)pb")
       .def_prop_ro(
           "ir",
           [](const mlir::Program& value) {
@@ -1451,8 +1471,7 @@ Programs own their MLIR module. Conversions can consume a program; use
       .def_rw("mapping", &mlir::CompilationOptions::mapping);
 
   nb::class_<mlir::QuantumProgramInfo>(
-      m, "QuantumProgramInfo",
-      "Quantum resources, control flow, and static gate counts.")
+      m, "QuantumProgramInfo", "Quantum resources and static IR statistics.")
       .def_ro("num_qubits", &mlir::QuantumProgramInfo::numQubits,
               "Allocated qubit count, or number of distinct static site IDs. "
               "None for unknown width. Not peak live width or original layout "
@@ -1471,8 +1490,13 @@ Programs own their MLIR module. Conversions can consume a program; use
               &mlir::QuantumProgramInfo::numTwoQubitGates,
               "Static two-qubit gate count in the entry point.")
       .def_ro("gate_counts", &mlir::QuantumProgramInfo::gateCounts,
-              "Entry-point gates grouped by base symbol, without expanding "
-              "calls. See QCProgram.gate_counts.");
+              "Entry-point gate histogram. See QCProgram.gate_counts.")
+      .def_ro("control_flow_counts",
+              &mlir::QuantumProgramInfo::controlFlowCounts,
+              "Entry-point control-flow histogram. See "
+              "QCProgram.control_flow_counts.")
+      .def_ro("operation_counts", &mlir::QuantumProgramInfo::operationCounts,
+              "Full module operation histogram. See Program.operation_counts.");
 
   auto qcProgram = nb::class_<mlir::QCProgram, mlir::Program>(
       m, "QCProgram", R"pb(A compiler program in the QC dialect.

@@ -602,6 +602,13 @@ class Program:
     def is_valid(self) -> bool:
         """Whether this program still owns its module."""
 
+    def operation_counts(self) -> dict[str, int]:
+        """Count every operation by its full MLIR name.
+
+        Includes the root module, helper functions, modifier bodies, terminators,
+        and nested modules.
+        """
+
     @property
     def ir(self) -> str:
         """The textual MLIR representation of this program."""
@@ -671,7 +678,7 @@ class CompilationOptions:
     def mapping(self, arg: MappingOptions, /) -> None: ...
 
 class QuantumProgramInfo:
-    """Quantum resources, control flow, and static gate counts."""
+    """Quantum resources and static IR statistics."""
 
     @property
     def num_qubits(self) -> int | None:
@@ -699,7 +706,15 @@ class QuantumProgramInfo:
 
     @property
     def gate_counts(self) -> dict[str, int]:
-        """Entry-point gates grouped by base symbol, without expanding calls. See QCProgram.gate_counts."""
+        """Entry-point gate histogram. See QCProgram.gate_counts."""
+
+    @property
+    def control_flow_counts(self) -> dict[str, int]:
+        """Entry-point control-flow histogram. See QCProgram.control_flow_counts."""
+
+    @property
+    def operation_counts(self) -> dict[str, int]:
+        """Full module operation histogram. See Program.operation_counts."""
 
 class QCProgram(Program):
     """A compiler program in the QC dialect.
@@ -771,7 +786,7 @@ class QCProgram(Program):
         """
 
     def inspect(self) -> QuantumProgramInfo:
-        """Return a snapshot of module resources, control flow, and entry-point gate counts."""
+        """Return a snapshot of module resources and static IR statistics."""
 
     def num_gates(self) -> int:
         """Return the static gate count of the entry-point IR.
@@ -788,12 +803,20 @@ class QCProgram(Program):
         """Count gates acting on exactly two qubits, using the counting rules of :meth:`num_gates`."""
 
     def gate_counts(self) -> dict[str, int]:
-        """Count entry-point gates by base symbol.
+        """Count entry-point gates by name, using the rules of :meth:`num_gates`.
 
-        The counts use the same static-IR semantics as :meth:`num_gates`. Modifiers
-        use ``ctrl``, ``inv``, and ``pow``; unitary calls use the callee name. Neither
-        is expanded. Barriers, measurements, and resets are excluded. Explicit
-        global-phase operations count under ``gphase``.
+        Controls on a single primitive gate add a ``c`` per control: ``cx``, ``ccx``.
+        Other single-gate modifiers use ``inv(h)``, ``pow(rx)``, or ``ctrl(inv(x))``;
+        multiple controls use ``ctrl(2,inv(x))``. Parameters do not split buckets.
+        Composite bodies or unused modifier targets retain ``ctrl``, ``inv``, or
+        ``pow``. Calls use the callee name; explicit phases use ``gphase``.
+        """
+
+    def control_flow_counts(self) -> dict[str, int]:
+        """Count entry-point branches and region-based control flow by full MLIR name.
+
+        Every region is visited once, without expanding calls. Region terminators
+        such as ``scf.yield`` are excluded.
         """
 
     @property
@@ -891,7 +914,7 @@ class QCOProgram(Program):
         """
 
     def inspect(self) -> QuantumProgramInfo:
-        """Return a snapshot of module resources, control flow, and entry-point gate counts."""
+        """Return a snapshot of module resources and static IR statistics."""
 
     def num_gates(self) -> int:
         """Return the static gate count of the entry-point IR.
@@ -908,12 +931,20 @@ class QCOProgram(Program):
         """Count gates acting on exactly two qubits, using the counting rules of :meth:`num_gates`."""
 
     def gate_counts(self) -> dict[str, int]:
-        """Count entry-point gates by base symbol.
+        """Count entry-point gates by name, using the rules of :meth:`num_gates`.
 
-        The counts use the same static-IR semantics as :meth:`num_gates`. Modifiers
-        use ``ctrl``, ``inv``, and ``pow``; unitary calls use the callee name. Neither
-        is expanded. Barriers, measurements, and resets are excluded. Explicit
-        global-phase operations count under ``gphase``.
+        Controls on a single primitive gate add a ``c`` per control: ``cx``, ``ccx``.
+        Other single-gate modifiers use ``inv(h)``, ``pow(rx)``, or ``ctrl(inv(x))``;
+        multiple controls use ``ctrl(2,inv(x))``. Parameters do not split buckets.
+        Composite bodies or unused modifier targets retain ``ctrl``, ``inv``, or
+        ``pow``. Calls use the callee name; explicit phases use ``gphase``.
+        """
+
+    def control_flow_counts(self) -> dict[str, int]:
+        """Count entry-point branches and region-based control flow by full MLIR name.
+
+        Every region is visited once, without expanding calls. Region terminators
+        such as ``scf.yield`` are excluded.
         """
 
     @property

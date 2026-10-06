@@ -23,7 +23,7 @@ import pytest
 import qiskit
 from packaging import version
 from qiskit import ClassicalRegister, QuantumCircuit, QuantumRegister, qasm3
-from qiskit.circuit import ControlledGate, Gate, library
+from qiskit.circuit import Gate, library
 from qiskit.quantum_info import DensityMatrix, Operator
 
 from mqt.core.mlir import (
@@ -324,6 +324,7 @@ def test_openqasm_program_direct_and_pipeline_output(tmp_path: Path) -> None:
 
     compiled = compile_program(direct, output=OutputFormat.QIR_ADAPTIVE)
     assert isinstance(compiled, QIRProgram)
+    assert compiled.operation_counts()["llvm.func"] >= 1
 
 
 @pytest.mark.parametrize(
@@ -1853,7 +1854,11 @@ def test_program_inspection(*, qco: bool) -> None:
     assert info.num_gates == program.num_gates() == 2
     assert info.num_single_qubit_gates == program.num_single_qubit_gates() == 1
     assert info.num_two_qubit_gates == program.num_two_qubit_gates() == 1
-    assert info.gate_counts == program.gate_counts() == {"ctrl": 1, "h": 1}
+    assert info.gate_counts == program.gate_counts() == {"cx": 1, "h": 1}
+    assert info.control_flow_counts == program.control_flow_counts() == {}
+    assert info.operation_counts == program.operation_counts()
+    assert info.operation_counts["qco.ctrl" if qco else "qc.ctrl"] == 1
+    assert info.operation_counts["qco.x" if qco else "qc.x"] == 1
     assert info.num_qubits == 2
     assert info.static_qubits == []
     assert not info.has_control_flow
@@ -1861,7 +1866,15 @@ def test_program_inspection(*, qco: bool) -> None:
         program.to_qc()
     else:
         program.to_qco()
-    for query in ("inspect", "num_gates", "num_single_qubit_gates", "num_two_qubit_gates", "gate_counts"):
+    for query in (
+        "inspect",
+        "num_gates",
+        "num_single_qubit_gates",
+        "num_two_qubit_gates",
+        "gate_counts",
+        "control_flow_counts",
+        "operation_counts",
+    ):
         with pytest.raises(RuntimeError, match="consumed"):
             getattr(program, query)()
 
@@ -1885,14 +1898,11 @@ def test_program_inspection_matches_qiskit(frontend: str) -> None:
         QCProgram.from_qiskit(circuit) if frontend == "qiskit" else QCProgram.from_openqasm_str(qasm3.dumps(circuit))
     )
     gates = [instruction for instruction in circuit.data if isinstance(instruction.operation, Gate)]
-    expected = Counter("ctrl" if isinstance(gate.operation, ControlledGate) else gate.operation.name for gate in gates)
+    expected = Counter(gate.operation.name for gate in gates)
     for representation in (program, program.to_qco(copy=True)):
         info = representation.inspect()
-        counts = info.gate_counts
-        # Qiskit import represents the circuit's global phase as an explicit gate.
-        phases = counts.pop("gphase", 0)
-        assert counts == expected
-        assert info.num_gates == len(gates) + phases
+        assert info.gate_counts == expected
+        assert info.num_gates == len(gates)
         assert info.num_single_qubit_gates == sum(len(gate.qubits) == 1 for gate in gates)
         assert info.num_two_qubit_gates == sum(len(gate.qubits) == 2 for gate in gates)
         assert info.num_qubits == circuit.num_qubits  # Includes the idle qubit.

@@ -1,17 +1,29 @@
 # Quantum program inspection
 
-Status: complete; QC and QCO share consolidated inspection results.
+Status: implementation complete.
 
 ## Scope and decisions
 
 QC and QCO share gate-count traversal and Python bindings. `inspect()` returns
-resource information and all gate counts in `QuantumProgramInfo`. Individual
-counting methods compute only the requested metric.
+resource information and gate, control-flow, and full operation histograms in
+`QuantumProgramInfo`. Individual counting methods compute only the requested
+metric. Every MLIR `Program` exposes the full operation histogram.
 
 Gate counts visit the entry-point IR once. Each unitary operation counts
 atomically; modifier and call bodies are not expanded. Barriers, measurements,
-and resets are excluded. Histograms use operation base symbols, with `ctrl`,
-`inv`, and `pow` for modifiers and callee names for unitary calls.
+and resets are excluded. Single primitive controls add a `c` per control, while
+other single-gate modifiers retain structural names such as `inv(h)` and
+`ctrl(inv(x))`. Composite modifiers and wrappers with unused targets retain
+their modifier name. Parameters do not split buckets; calls use callee names.
+
+Control-flow counts visit entry-point branches and region-control operations
+once, excluding region terminators. Full operation counts match the scope of
+MLIR's `print-op-stats`: the root module, helpers, modifier bodies, terminators,
+and nested modules. The upstream pass exposes printed text or JSON rather than
+its private count map; the API uses a direct MLIR walk.
+
+Qiskit import omits numeric zero circuit phases in every recursive context and
+preserves nonzero and symbolic phases.
 
 Resource inspection reports declared allocated width, distinct physical site
 IDs, and control-flow presence. It includes helper functions and excludes nested
@@ -29,8 +41,6 @@ Circuit-depth semantics remain tracked in
 
 ## Validation
 
-All 272 compiler tests and the six Python tests selected by
-`pytest test/python/test_mlir.py -k program_inspection` passed. The overflow
-regression reproduced an abort before the checked shape query was applied. Stubs
-were regenerated; repository lint, whole-file C++ lint, and executable
-documentation with local link checks passed.
+Validation covers compiler inspection, Python bindings, recursive Qiskit phase
+import, generated stubs, repository lint, whole-file C++ lint, and executable
+documentation with local link checks.
