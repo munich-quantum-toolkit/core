@@ -30,6 +30,9 @@
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Transforms/Passes.h"
 
+#include "llvm/ADT/STLExtras.h"
+
+#include <array>
 #include <cstddef>
 
 using namespace mlir;
@@ -116,6 +119,92 @@ TEST_F(QCOWireCanonicalizationTest, XXPlusYYDoesNotMergeDifferentAxes) {
 
 TEST_F(QCOWireCanonicalizationTest, XXMinusYYDoesNotMergeDifferentAxes) {
   checkMerge<XXMinusYYOp>(true, 0.789, 2);
+}
+
+TEST_F(QCOWireCanonicalizationTest, ElidesTerminalSwapNetwork) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%a: !qco.qubit, %b: !qco.qubit, %c: !qco.qubit)
+          -> (i1, i1, i1) {
+        %a1, %b1 = qco.swap %a, %b : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+        %b2, %c2 = qco.swap %b1, %c : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+        %a3, %b3 = qco.swap %a1, %b2 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+        %qa, %ra = qco.measure %a3 : !qco.qubit
+        %qb, %rb = qco.measure %b3 : !qco.qubit
+        %qc, %rc = qco.measure %c2 : !qco.qubit
+        qco.sink %qa : !qco.qubit
+        qco.sink %qb : !qco.qubit
+        qco.sink %qc : !qco.qubit
+        return %ra, %rb, %rc : i1, i1, i1
+      }
+    }
+  )mlir",
+                                              &context_);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_NO_FATAL_FAILURE(canonicalize(*moduleOp));
+  auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
+  EXPECT_TRUE(function.getOps<SWAPOp>().empty());
+  auto returned = cast<func::ReturnOp>(function.getBody().front().back());
+  for (auto [bit, source] :
+       llvm::zip_equal(returned.getOperands(), std::array{2U, 1U, 0U})) {
+    auto measurement = bit.getDefiningOp<MeasureOp>();
+    ASSERT_TRUE(measurement);
+    EXPECT_EQ(measurement.getQubitIn(), function.getArgument(source));
+  }
+}
+
+TEST_F(QCOWireCanonicalizationTest, KeepsSwapWithLiveQuantumOutput) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%a: !qco.qubit, %b: !qco.qubit)
+          -> (!qco.qubit, i1, i1) {
+        %a1, %b1 = qco.swap %a, %b : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+        %qa, %ra = qco.measure %a1 : !qco.qubit
+        %qb, %rb = qco.measure %b1 : !qco.qubit
+        qco.sink %qb : !qco.qubit
+        return %qa, %ra, %rb : !qco.qubit, i1, i1
+      }
+      func.func @partial(%a: !qco.qubit, %b: !qco.qubit) -> (!qco.qubit, i1) {
+        %a1, %b1 = qco.swap %a, %b : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+        %qa, %ra = qco.measure %a1 : !qco.qubit
+        qco.sink %qa : !qco.qubit
+        return %b1, %ra : !qco.qubit, i1
+      }
+    }
+  )mlir",
+                                              &context_);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_NO_FATAL_FAILURE(canonicalize(*moduleOp));
+  for (auto function : moduleOp->getOps<func::FuncOp>()) {
+    EXPECT_EQ(llvm::range_size(function.getOps<SWAPOp>()), 1U);
+  }
+}
+
+TEST_F(QCOWireCanonicalizationTest, KeepsControlledSwapBeforeMeasurements) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%c: !qco.qubit, %a: !qco.qubit, %b: !qco.qubit)
+          -> (i1, i1, i1) {
+        %co, %targets:2 = qco.ctrl(%c) targets (%x = %a, %y = %b) {
+          %xo, %yo = qco.swap %x, %y : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+          qco.yield %xo, %yo : !qco.qubit, !qco.qubit
+        } : ({!qco.qubit}, {!qco.qubit, !qco.qubit}) -> ({!qco.qubit}, {!qco.qubit, !qco.qubit})
+        %qc, %rc = qco.measure %co : !qco.qubit
+        %qa, %ra = qco.measure %targets#0 : !qco.qubit
+        %qb, %rb = qco.measure %targets#1 : !qco.qubit
+        qco.sink %qc : !qco.qubit
+        qco.sink %qa : !qco.qubit
+        qco.sink %qb : !qco.qubit
+        return %rc, %ra, %rb : i1, i1, i1
+      }
+    }
+  )mlir",
+                                              &context_);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_NO_FATAL_FAILURE(canonicalize(*moduleOp));
+  size_t swaps = 0;
+  moduleOp->walk([&](SWAPOp) { ++swaps; });
+  EXPECT_EQ(swaps, 1U);
 }
 
 } // namespace

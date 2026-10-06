@@ -52,6 +52,36 @@ protected:
   }
 };
 
+TEST_F(QTensorCanonicalizationTest, DiscardsInsertedMeasurementOutput) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main(%tensor: tensor<?x!qco.qubit>, %index: index) -> i1 {
+      %rest, %q = qtensor.extract %tensor[%index] : tensor<?x!qco.qubit>
+      %out, %bit = qco.measure %q : !qco.qubit
+      %updated = qtensor.insert %out into %rest[%index] : tensor<?x!qco.qubit>
+      qtensor.dealloc %updated : tensor<?x!qco.qubit>
+      return %bit : i1
+    }
+  })mlir",
+                                              &context_);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+  PassManager pm(&context_);
+  pm.addPass(createCanonicalizerPass());
+  ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+  auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
+  EXPECT_TRUE(function.getOps<qtensor::InsertOp>().empty());
+  ASSERT_EQ(llvm::range_size(function.getOps<SinkOp>()), 1U);
+  auto sink = *function.getOps<SinkOp>().begin();
+  auto measurement = *function.getOps<MeasureOp>().begin();
+  EXPECT_EQ(sink.getQubit(), measurement.getQubitOut());
+  auto dealloc = *function.getOps<qtensor::DeallocOp>().begin();
+  auto extract = *function.getOps<qtensor::ExtractOp>().begin();
+  EXPECT_EQ(dealloc.getTensor(), extract.getOutTensor());
+}
+
 TEST_F(QTensorCanonicalizationTest, ScalarizesWhileOnlyWithConstantIndices) {
   for (const bool dynamicIndex : {false, true}) {
     SCOPED_TRACE(dynamicIndex);

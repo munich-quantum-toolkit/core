@@ -4193,6 +4193,37 @@ TEST_F(CompilerPipelineTest,
   EXPECT_EQ(entanglers, 0U);
 }
 
+TEST_F(CompilerPipelineTest, TargetCompilationElidesMeasuredSwapNetwork) {
+  auto qc = QCProgram::fromOpenQASMString(R"qasm(
+    OPENQASM 3.0;
+    include "stdgates.inc";
+    qubit[3] q;
+    bit[3] c;
+    x q[0];
+    swap q[0], q[1];
+    swap q[1], q[2];
+    swap q[0], q[1];
+    c = measure q;
+  )qasm");
+  ASSERT_TRUE(qc);
+  auto program = std::move(*qc).intoQCO();
+  ASSERT_TRUE(program);
+  const auto expected =
+      qco::sample(mlir::mqt::getEntryPoint(program->module()), 1, 42);
+  ASSERT_TRUE(succeeded(expected));
+  ASSERT_TRUE(program->compileForTarget(TargetEnvironment(
+      makeSparseUCZTarget(true), makePayloadSpecification())));
+  ASSERT_TRUE(succeeded(verify(program->module())));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(program->module())));
+  program->module().walk([](qco::UnitaryOpInterface unitary) {
+    EXPECT_FALSE(unitary.isTwoQubit());
+  });
+  const auto actual =
+      qco::sample(mlir::mqt::getEntryPoint(program->module()), 1, 42);
+  ASSERT_TRUE(succeeded(actual));
+  EXPECT_EQ(*actual, *expected);
+}
+
 TEST_F(CompilerPipelineTest, TargetCompilationFusesRoutingSwaps) {
   using Capability = CompilerTarget::OperationCapability;
   const auto target = llvm::cantFail(CompilerTarget::create(
