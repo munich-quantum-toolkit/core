@@ -66,9 +66,13 @@ if(NOT TARGET ${TARGET_NAME})
     ${PROJECT_SOURCE_DIR}/json/sc/mqt-core-qdmi-sc-device.json
     ${PROJECT_SOURCE_DIR}/json/sc/iqm-garnet.json
     ${PROJECT_SOURCE_DIR}/json/sc/iqm-emerald.json
+    ${PROJECT_SOURCE_DIR}/json/sc/ibm-heron.json
+    ${PROJECT_SOURCE_DIR}/json/sc/ibm-nighthawk.json
     CONFIGURATIONS
     "mqt.sc.iqm.garnet|iqm-garnet.json"
-    "mqt.sc.iqm.emerald|iqm-emerald.json")
+    "mqt.sc.iqm.emerald|iqm-emerald.json"
+    "mqt.sc.ibm.heron|ibm-heron.json"
+    "mqt.sc.ibm.nighthawk|ibm-nighthawk.json")
   list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
 endif()
 

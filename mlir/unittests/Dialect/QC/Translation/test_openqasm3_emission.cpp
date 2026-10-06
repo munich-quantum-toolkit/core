@@ -9,6 +9,7 @@
  */
 
 #include "dd/Package.hpp"
+#include "mqt/Conversion/QCOToQC/QCOToQC.h"
 #include "mqt/Conversion/QCToQCO/QCToQCO.h"
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
@@ -17,6 +18,7 @@
 #include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/Dialect/QC/Translation/TranslateOpenQASMToQC.h"
 #include "mqt/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mqt/Support/Passes.h"
 #include "mqt/Target/OpenQASM/Frontend.h"
@@ -47,6 +49,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include <array>
+#include <cmath>
 #include <complex>
 #include <cstddef>
 #include <numeric>
@@ -962,6 +965,54 @@ inv @ pair(theta) q;
   EXPECT_TRUE(roundTripped->lookupSymbol<func::FuncOp>("pair"));
 }
 
+TEST(OpenQASM3EmissionTest, PreservesGateNamesAcrossInternalCollisions) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+gate main q { x q; }
+gate _mqt_entry q { main q; }
+gate _mqt_entry0 q { _mqt_entry q; }
+gate _mqt_u q { _mqt_entry0 q; }
+gate _mqt_u0 q { _mqt_u q; }
+qubit q;
+_mqt_u0 q;
+U(0.4, -0.2, 0.7) q;
+)qasm";
+  MLIRContext context;
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  ASSERT_TRUE(succeeded(emitted));
+  auto roundTrip = qc::translateOpenQASMToQC(*emitted, &context);
+  ASSERT_TRUE(roundTrip);
+  ASSERT_TRUE(succeeded(verify(*roundTrip)));
+  for (const auto* const name :
+       {"main", "_mqt_entry", "_mqt_entry0", "_mqt_u", "_mqt_u0"}) {
+    auto gate = roundTrip->lookupSymbol<func::FuncOp>(name);
+    ASSERT_TRUE(gate) << name << "\n" << *emitted;
+    EXPECT_NE(gate, mlir::mqt::getEntryPoint(*roundTrip));
+  }
+  PassManager manager(&context);
+  manager.addPass(createQCToQCO());
+  ASSERT_TRUE(succeeded(manager.run(*moduleOp)));
+  ASSERT_TRUE(succeeded(manager.run(*roundTrip)));
+  dd::Package package(1);
+  auto before =
+      qco::buildFunctionality(mlir::mqt::getEntryPoint(*moduleOp), package);
+  auto after =
+      qco::buildFunctionality(mlir::mqt::getEntryPoint(*roundTrip), package);
+  ASSERT_TRUE(succeeded(before));
+  ASSERT_TRUE(succeeded(after));
+  const auto expected = before->getMatrix(1);
+  const auto actual = after->getMatrix(1);
+  for (size_t row = 0; row < 2; ++row) {
+    for (size_t column = 0; column < 2; ++column) {
+      EXPECT_NEAR(std::abs(actual[row][column] - expected[row][column]), 0.,
+                  1e-12);
+    }
+  }
+}
+
 TEST(OpenQASM3EmissionTest, OrdersNestedGateFunctionsBeforeTheirCallers) {
   constexpr llvm::StringLiteral source = R"mlir(module {
     func.func private @outer(%theta: f64, %qubit: !qc.qubit)
@@ -1003,6 +1054,113 @@ TEST(OpenQASM3EmissionTest, OrdersNestedGateFunctionsBeforeTheirCallers) {
       << *emitted;
 }
 
+TEST(OpenQASM3EmissionTest, PreservesBoundedUnitaryLoopsThroughQCO) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+gate repeated(theta) q {
+  for int i in [2:-1:0] {
+    for int j in [0:1] {
+      rx(theta) q;
+      rx(float(i) / float(j + 2)) q;
+    }
+  }
+}
+gate wrapper(theta) q { repeated(theta) q; }
+qubit q;
+wrapper(0.25) q;
+)qasm";
+  MLIRContext context;
+  auto original = qc::translateOpenQASMToQC(source, &context);
+  ASSERT_TRUE(original);
+  auto emitted = qc::translateQCToOpenQASM3(*original);
+  ASSERT_TRUE(succeeded(emitted));
+  auto restored = qc::translateOpenQASMToQC(*emitted, &context);
+  ASSERT_TRUE(restored) << *emitted;
+  const auto checkGateStructure = [](ModuleOp moduleOp) {
+    for (const auto* const name : {"repeated", "wrapper"}) {
+      auto gate = moduleOp.lookupSymbol<func::FuncOp>(name);
+      ASSERT_TRUE(gate);
+      EXPECT_TRUE(mlir::mqt::isUnitaryFunction(gate));
+    }
+    size_t loops = 0;
+    moduleOp.walk([&](scf::ForOp) { ++loops; });
+    EXPECT_EQ(loops, 2);
+  };
+  for (auto moduleOp : {*original, *restored}) {
+    checkGateStructure(moduleOp);
+    EXPECT_FALSE(
+        mlir::mqt::getEntryPoint(moduleOp).getOps<qc::CallOp>().empty());
+    PassManager manager(&context);
+    manager.addPass(createQCToQCO());
+    ASSERT_TRUE(succeeded(manager.run(moduleOp)));
+    ASSERT_TRUE(succeeded(verify(moduleOp)));
+    ASSERT_TRUE(succeeded(qco::verifyLinearity(moduleOp)));
+    checkGateStructure(moduleOp);
+    dd::Package package(1);
+    auto functionality =
+        qco::buildFunctionality(mlir::mqt::getEntryPoint(moduleOp), package);
+    ASSERT_TRUE(succeeded(functionality));
+    const auto matrix = functionality->getMatrix(1);
+    /// The six iterations sum to RX(6 * 0.25 + 3 * (1/2 + 1/3)) = RX(4).
+    for (size_t row = 0; row < 2; ++row) {
+      for (size_t column = 0; column < 2; ++column) {
+        const auto expected = row == column
+                                  ? std::complex<double>{std::cos(2.), 0.}
+                                  : std::complex<double>{0., -std::sin(2.)};
+        EXPECT_NEAR(std::abs(matrix[row][column] - expected), 0., 1e-12);
+      }
+    }
+    PassManager back(&context);
+    back.addPass(createQCOToQC());
+    ASSERT_TRUE(succeeded(back.run(moduleOp)));
+    ASSERT_TRUE(succeeded(verify(moduleOp)));
+    checkGateStructure(moduleOp);
+    EXPECT_TRUE(succeeded(qc::translateQCToOpenQASM3(moduleOp)));
+  }
+}
+
+TEST(OpenQASM3EmissionTest, DoesNotInlineLoopBodiesIntoQuantumModifiers) {
+  constexpr llvm::StringLiteral source = R"mlir(module {
+    func.func private @looped(%q: !qc.qubit) attributes {mqt.unitary} {
+      %c0 = arith.constant 0 : index
+      %c1 = arith.constant 1 : index
+      %c2 = arith.constant 2 : index
+      scf.for %i = %c0 to %c2 step %c1 {
+        qc.x %q : !qc.qubit
+      }
+      return
+    }
+    func.func @main() attributes {mqt.entry_point} {
+      %q = qc.alloc : !qc.qubit
+      qc.inv(%a = %q) {
+        qc.call @looped(%a) : !qc.qubit
+        qc.yield
+      } : !qc.qubit
+      qc.dealloc %q : !qc.qubit
+      return
+    }
+  })mlir";
+  for (const bool valueSemantics : {false, true}) {
+    SCOPED_TRACE(valueSemantics);
+    auto registry = emissionDialects();
+    func::registerInlinerExtension(registry);
+    MLIRContext context(registry);
+    auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(moduleOp);
+    if (valueSemantics) {
+      PassManager conversion(&context);
+      conversion.addPass(createQCToQCO());
+      ASSERT_TRUE(succeeded(conversion.run(*moduleOp)));
+    }
+    PassManager manager(&context);
+    manager.addPass(createInlinerPass());
+    ASSERT_TRUE(succeeded(manager.run(*moduleOp)));
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    EXPECT_TRUE(moduleOp->lookupSymbol<func::FuncOp>("looped"));
+  }
+}
+
 TEST(OpenQASM3EmissionTest, PreservesStructuredGateFunctions) {
   constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.1;
 include "stdgates.inc";
@@ -1035,54 +1193,6 @@ wrapper(0.5) q;
   ASSERT_TRUE(roundTripped);
   EXPECT_TRUE(roundTripped->lookupSymbol<func::FuncOp>("repeated"));
   EXPECT_TRUE(roundTripped->lookupSymbol<func::FuncOp>("wrapper"));
-}
-
-TEST(OpenQASM3EmissionTest, PreservesFloatingArithmeticOnGateLoopIndices) {
-  constexpr llvm::StringLiteral source = R"mlir(module {
-    func.func private @ratio(%qubit: !qc.qubit) {
-      %one = arith.constant 1 : index
-      %two = arith.constant 2 : index
-      %three = arith.constant 3 : index
-      scf.for %i = %one to %two step %one {
-        scf.for %j = %two to %three step %one {
-          %i64 = arith.index_cast %i : index to i64
-          %j64 = arith.index_cast %j : index to i64
-          %numerator = arith.sitofp %i64 : i64 to f64
-          %denominator = arith.sitofp %j64 : i64 to f64
-          %angle = arith.divf %numerator, %denominator : f64
-          qc.rx(%angle) %qubit : !qc.qubit
-        }
-      }
-      return
-    }
-    func.func @entry() attributes {mqt.entry_point} {
-      %qubit = qc.alloc : !qc.qubit
-      func.call @ratio(%qubit) : (!qc.qubit) -> ()
-      qc.dealloc %qubit : !qc.qubit
-      return
-    }
-  })mlir";
-  DialectRegistry registry = emissionDialects();
-  MLIRContext context(registry);
-  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
-  ASSERT_TRUE(moduleOp);
-
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
-  ASSERT_TRUE(succeeded(emitted));
-  auto roundTripped = qc::translateOpenQASMToQC(*emitted, &context);
-  ASSERT_TRUE(roundTripped) << *emitted;
-  ASSERT_TRUE(succeeded(runQCCleanupPipeline(*roundTripped)));
-  ASSERT_TRUE(succeeded(verify(*roundTripped)));
-  auto gate = roundTripped->lookupSymbol<func::FuncOp>("ratio");
-  ASSERT_TRUE(gate);
-  size_t rotations = 0;
-  gate.walk([&](qc::RXOp rotation) {
-    ++rotations;
-    FloatAttr angle;
-    ASSERT_TRUE(matchPattern(rotation.getTheta(), m_Constant(&angle)));
-    EXPECT_DOUBLE_EQ(angle.getValueAsDouble(), 0.5);
-  });
-  EXPECT_EQ(rotations, 1);
 }
 
 TEST(OpenQASM3EmissionTest, OrdersLongReverseDeclaredGateGraph) {

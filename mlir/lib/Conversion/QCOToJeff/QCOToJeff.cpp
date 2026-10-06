@@ -513,6 +513,23 @@ static LogicalResult moveRegion(Region& source, Region& dest,
   return success();
 }
 
+/// Collects values used in the region and defined outside of it.
+///
+/// Includes block arguments from blocks detached during type conversion.
+static void getAboveValues(Region& region, SetVector<Value>& values) {
+  getUsedValuesDefinedAbove(region, values);
+  region.walk([&](Operation* nested) {
+    for (Value operand : nested->getOperands()) {
+      if (isa<BlockArgument>(operand)) {
+        auto* definingRegion = operand.getParentRegion();
+        if (!definingRegion || !region.isAncestor(definingRegion)) {
+          values.insert(operand);
+        }
+      }
+    }
+  });
+}
+
 namespace {
 
 /// Converts a CBit allocation to a jeff zero-initialized integer array.
@@ -1621,8 +1638,8 @@ struct ConvertIfOpToJeff final : RegionMovingConversionPattern<IfOpType> {
     auto loc = op.getLoc();
 
     SetVector<Value> aboveValues;
-    getUsedValuesDefinedAbove(op.getElseRegion(), aboveValues);
-    getUsedValuesDefinedAbove(op.getThenRegion(), aboveValues);
+    getAboveValues(op.getElseRegion(), aboveValues);
+    getAboveValues(op.getThenRegion(), aboveValues);
 
     SmallVector<Value> initArgs;
     ValueRange qubits;
@@ -1742,7 +1759,7 @@ struct ConvertSCFForOpToJeff final : RegionMovingConversionPattern<scf::ForOp> {
   matchAndRewrite(scf::ForOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     SetVector<Value> aboveValues;
-    getUsedValuesDefinedAbove(op.getRegion(), aboveValues);
+    getAboveValues(op.getRegion(), aboveValues);
 
     SmallVector<Value> initArgs;
     llvm::append_range(initArgs, adaptor.getInitArgs());
@@ -1826,8 +1843,8 @@ struct ConvertSCFWhileOpToJeff final
   matchAndRewrite(scf::WhileOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     SetVector<Value> aboveValues;
-    getUsedValuesDefinedAbove(op.getBefore(), aboveValues);
-    getUsedValuesDefinedAbove(op.getAfter(), aboveValues);
+    getAboveValues(op.getBefore(), aboveValues);
+    getAboveValues(op.getAfter(), aboveValues);
 
     SmallVector<Value> inits;
     llvm::append_range(inits, adaptor.getInits());

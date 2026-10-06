@@ -96,10 +96,7 @@ struct MoveCtrlOutsideInv final : OpRewritePattern<InvOp> {
 
     // Each qubit output of the inverse modifier follows its input qubit to the
     // corresponding output of the new control modifier.
-    rewriter.replaceOp(op,
-                       llvm::map_to_vector(op.getInputQubits(), [&](Value in) {
-                         return newCtrl.getOutputForInput(in);
-                       }));
+    qco::detail::replacePermutedModifier(op, newCtrl, rewriter);
     return success();
   }
 };
@@ -155,10 +152,7 @@ struct InvPowToNegPow final : OpRewritePattern<InvOp> {
     // The new pow's operands may be a permutation of the inv's, so map each
     // original qubit output to the new pow's output for the same input rather
     // than replacing positionally.
-    rewriter.replaceOp(
-        invOp, llvm::map_to_vector(invOp.getInputQubits(), [&](Value in) {
-          return newPow.getOutputForInput(in);
-        }));
+    qco::detail::replacePermutedModifier(invOp, newPow, rewriter);
     return success();
   }
 };
@@ -357,7 +351,7 @@ struct EraseEmptyInv final : OpRewritePattern<InvOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(InvOp op,
                                 PatternRewriter& rewriter) const override {
-    if (op.getNumBodyUnitaries() != 0) {
+    if (!op.getBody()->getOps<UnitaryOpInterface>().empty()) {
       return failure();
     }
 

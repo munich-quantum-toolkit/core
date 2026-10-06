@@ -103,7 +103,7 @@ struct GateCall {
 
 } // namespace
 
-[[nodiscard]] static bool isValidOutputName(const StringRef value) {
+[[nodiscard]] static bool isValidDeclarationName(const StringRef value) {
   return openqasm::frontend::isValidIdentifier(value) &&
          !value.starts_with("_mqt_") &&
          openqasm::frontend::lookupGate(value) == nullptr;
@@ -173,6 +173,7 @@ private:
   SymbolTableCollection symbolTables_;
   llvm::StringSet<> usedNames;
   llvm::StringSet<> fixedHelpers;
+  std::string uHelperName_;
   SmallVector<std::string> gateDefinitions_;
   Operation* expressionConsumer = nullptr;
   size_t nextQubit = 0;
@@ -214,14 +215,16 @@ private:
   }
 
   [[nodiscard]] std::string outputName(const StringRef requested) {
-    if (isValidOutputName(requested) && usedNames.insert(requested).second) {
+    if (isValidDeclarationName(requested) &&
+        usedNames.insert(requested).second) {
       return requested.str();
     }
     return uniqueName("out", nextScalar);
   }
 
   [[nodiscard]] std::string qubitRegisterName(const StringRef requested) {
-    if (isValidOutputName(requested) && usedNames.insert(requested).second) {
+    if (isValidDeclarationName(requested) &&
+        usedNames.insert(requested).second) {
       return requested.str();
     }
     return uniqueName("q", nextQubit);
@@ -290,9 +293,18 @@ private:
       return fail(function,
                   "expected one defined function with one entry block");
     }
-    if (function.getNumArguments() != 0) {
-      return fail(function, "function arguments and OpenQASM inputs are not "
-                            "supported");
+    for (const auto [index, argument] :
+         llvm::enumerate(function.getArguments())) {
+      const auto name = function.getArgAttrOfType<StringAttr>(
+          index, mqt::MQTDialect::InputNameAttrHelper::getNameStr());
+      if (!argument.getType().isF64() || !name) {
+        return fail(function, "entry-point inputs must be named f64 values");
+      }
+      if (!isValidDeclarationName(name.getValue()) ||
+          !usedNames.insert(name.getValue()).second) {
+        return fail(function, "input name is not a unique OpenQASM identifier");
+      }
+      valueNames.try_emplace(argument, name.str());
     }
     const auto checkRegions = [&](func::FuncOp current) {
       return current.walk([&](Operation* operation) {
@@ -337,8 +349,11 @@ private:
         return failure();
       }
       const auto requested = current.getName();
-      gateNames_.try_emplace(current, isValidOutputName(requested) &&
-                                              usedNames.insert(requested).second
+      const bool preserveName =
+          openqasm::frontend::isValidIdentifier(requested) &&
+          openqasm::frontend::lookupGate(requested) == nullptr &&
+          usedNames.insert(requested).second;
+      gateNames_.try_emplace(current, preserveName
                                           ? requested.str()
                                           : uniqueName("gate", nextHelper));
     }
@@ -493,6 +508,9 @@ private:
   }
 
   [[nodiscard]] LogicalResult emitDeclarations() {
+    for (auto argument : function.getArguments()) {
+      *output << "input float[64] " << valueNames.at(argument) << ";\n";
+    }
     for (const auto& result : outputs) {
       *output << "output " << result.kind << ' ' << result.name << ";\n";
     }
@@ -1987,8 +2005,12 @@ private:
       return std::string("sx");
     }
     if (symbol == "u" || symbol == "u2") {
-      fixedHelpers.insert("_mqt_u");
-      return std::string("_mqt_u");
+      if (uHelperName_.empty()) {
+        uHelperName_ = usedNames.insert("_mqt_u").second
+                           ? "_mqt_u"
+                           : uniqueName("u", nextHelper);
+      }
+      return uHelperName_;
     }
     const auto* gate = openqasm::frontend::lookupGate(symbol);
     if (gate == nullptr ||
@@ -2006,12 +2028,15 @@ private:
   }
 
   void emitFixedHelpers(llvm::raw_ostream& stream) const {
+    if (!uHelperName_.empty()) {
+      stream << "gate " << uHelperName_
+             << "(p0, p1, p2) q {\n"
+                "  gphase(-p0 / 2);\n"
+                "  U(p0, p1, p2) q;\n"
+                "}\n";
+    }
     using HelperDefinition = std::pair<StringLiteral, StringLiteral>;
     constexpr std::array helpers{
-        HelperDefinition{"_mqt_u", "gate _mqt_u(p0, p1, p2) q {\n"
-                                   "  gphase(-p0 / 2);\n"
-                                   "  U(p0, p1, p2) q;\n"
-                                   "}\n"},
         HelperDefinition{"r", "gate r(p0, p1) q {\n"
                               "  rz(-p1) q;\n"
                               "  rx(p0) q;\n"

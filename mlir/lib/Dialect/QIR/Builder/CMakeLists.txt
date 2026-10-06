@@ -13,6 +13,7 @@ add_mlir_library(
   PUBLIC
   MLIRLLVMDialect
   MLIRMemRefDialect
+  MLIRMQTUtils
   MLIRQIRUtils
   MLIRIR
   MLIRSupport)

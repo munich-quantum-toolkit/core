@@ -23,6 +23,32 @@ def MQTDialect : Dialect {
     The MQT dialect owns frontend-neutral metadata that must remain meaningful
     across quantum dialect conversions. It defines no operations or types.
 
+    `mqt.layout` is a dictionary on the program module.
+    The dictionary records layout metadata:
+    - `initial`: a complete dense i64 permutation from program qubits to device
+      positions, including workspace qubits.
+    - `routing` (optional): a complete dense i64 permutation from placed device
+      positions to final positions. Without it, positions do not change.
+    - `input_count`: number of program qubits before workspace qubits.
+    - `sites` (optional): distinct nonnegative target site IDs in device-position
+      order, one per position. Target compilation sets this field. Without it,
+      positions refer to circuit wires, as for imported Qiskit layouts.
+
+    The final position of program qubit `i` is `routing[initial[i]]` when
+    routing is present. Qiskit input register names and partial layouts are not
+    retained.
+    The metadata does not affect gates or store SDK objects. Copies and plain
+    QC/QCO conversions retain it. Compiler pipeline runners clear it before
+    transformations that may change qubit identity. Raw IR editors must preserve,
+    update, or discard the layout when changing qubit identity or order.
+
+    `mqt.source_qubit_count` records the input count during target preparation.
+    Placement consumes it when publishing the completed layout.
+    `mqt.source_qubit_indices` tracks native input slots: a dense i64 array of
+    distinct nonnegative indices, one per `qco.alloc` or fixed-size
+    `qtensor.alloc` slot. Tensor shrinking retains surviving entries; placement consumes them.
+    Removed slots remain in the attached layout.
+
     `mqt.input_name` records the source-level name of a function input.
     `mqt.input_id` optionally records an opaque 128-bit source identity on a
     named function input. It is an `i128` attribute, unique within the function;
@@ -43,13 +69,17 @@ def MQTDialect : Dialect {
     qubit `memref.alloc`, and `qtensor.alloc`) must appear directly in its
     entry block. Other functions receive quantum resources as arguments;
     they cannot allocate them. Classical allocations and static qubit references
-    are not subject to this restriction.
+    are not subject to this restriction. A program cannot mix static and
+    dynamic qubit allocation modes.
     `mqt.unitary` marks a private function that defines a unitary operation.
     Its body admits unitary operations and memory-effect-free, region-free
-    classical computation, matching the quantum modifier-body contract. Parameter
-    computation is evaluated eagerly when the invocation is reached; it need not
-    be speculatable. The quantum action is unitary on the computation's defined
-    input domain. Modifiers transform that action, not the parameter computation:
+    classical computation. Statically bounded `scf.for` loops may contain these
+    operations and nested bounded loops. QCO loop results must continue their
+    loop-carried qubits positionally. Other control flow is unsupported;
+    quantum modifier bodies exclude loops. Parameter computation is
+    evaluated eagerly when the invocation is reached; it need not be speculatable.
+    The quantum action is unitary on the computation's defined input domain.
+    Modifiers transform that action, not the parameter computation:
     inverse does not reverse it, control does not conditionally evaluate it, and
     power does not repeat it, including at exponent zero. Undefined inputs do not
     guarantee traps. Unitary operations may retain effects such as a scoped
@@ -60,7 +90,9 @@ def MQTDialect : Dialect {
   }];
 
   let discardableAttrs = (ins "::mlir::StringAttr":$input_name,
-      "::mlir::IntegerAttr":$input_id, "::mlir::StringAttr":$source_name,
+      "::mlir::IntegerAttr":$input_id, "::mlir::DictionaryAttr":$layout,
+      "::mlir::StringAttr":$source_name,
+      "::mlir::DenseI64ArrayAttr":$source_qubit_indices,
       "::mlir::DictionaryAttr":$parameter_group,
       "::mlir::StringAttr":$register_name, "::mlir::UnitAttr":$entry_point,
       "::mlir::UnitAttr":$unitary);
@@ -183,7 +215,13 @@ def NativeOperationAttr : MQTAttr<"NativeOperation", "native_operation"> {
     The operation records its spelling, arity, parameter count, and optional
     global or site-specific calibration data. An empty site-tuple list means
     general applicability; a nonempty list gives all supported ordered
-    placements. The following example records a directional controlled-X operation:
+    placements. Optional `fixed_parameters` contains one entry per parameter:
+    a finite f64 value for a fixed parameter, or `unit` for an unrestricted one.
+    Optional `canonical_name` identifies the compiler operation when the
+    reported name is a device-specific instruction name.
+    Optional `parameter_bounds` contains one inclusive two-element f64 array
+    per parameter, or `unit` for an unbounded parameter.
+    The following example records a directional controlled-X operation:
 
     ```mlir
     #mqt.native_operation<name = "cx",
@@ -195,7 +233,10 @@ def NativeOperationAttr : MQTAttr<"NativeOperation", "native_operation"> {
       "uint64_t":$num_parameters,
       MQTArrayRefParameter<"SiteTupleAttr">:$site_tuples,
       MQTOptionalUInt64Parameter<>:$duration,
-      OptionalParameter<"FloatAttr">:$fidelity);
+      OptionalParameter<"FloatAttr">:$fidelity,
+      OptionalParameter<"ArrayAttr">:$fixed_parameters,
+      OptionalParameter<"StringAttr">:$canonical_name,
+      OptionalParameter<"ArrayAttr">:$parameter_bounds);
   let assemblyFormat = "`<` struct(params) `>`";
   let genVerifyDecl = 1;
 }

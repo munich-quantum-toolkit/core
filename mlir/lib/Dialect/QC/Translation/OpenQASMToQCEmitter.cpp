@@ -12,6 +12,7 @@
 
 #include "mqt/Dialect/CBit/IR/CBitAttributes.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
+#include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
@@ -134,12 +135,9 @@ public:
           &gate, statementsRequireStructuredControlFlow(gate.body));
     }
     if (customGateIndex.contains("main")) {
-      std::string entryName = "_mqt_entry";
-      for (size_t suffix = 0; customGateIndex.contains(entryName); ++suffix) {
-        entryName = (Twine("_mqt_entry") + Twine(suffix)).str();
-      }
+      // A dot cannot occur in a source gate identifier.
       cast<func::FuncOp>(builder.getInsertionBlock()->getParentOp())
-          .setName(entryName);
+          .setName("mqt.entry");
     }
   }
 
@@ -147,6 +145,25 @@ public:
     if (emissionBudget.isExhausted() || !preflight()) {
       return nullptr;
     }
+    auto entry = cast<func::FuncOp>(builder.getInsertionBlock()->getParentOp());
+    for (const auto id : program.inputs) {
+      const auto& input = program.scalars[id];
+      const auto index = entry.getNumArguments();
+      auto attrs = builder.getDictionaryAttr({
+          builder.getNamedAttr(
+              mqt::MQTDialect::InputNameAttrHelper::getNameStr(),
+              builder.getStringAttr(input.name)),
+      });
+      if (failed(entry.insertArgument(index, builder.getF64Type(), attrs,
+                                      getLocation(input.location)))) {
+        emitError(getLocation(input.location))
+            << "OpenQASM QC emission error: cannot create input '" << input.name
+            << "'";
+        return nullptr;
+      }
+      scalarValues[id] = entry.getArgument(index);
+    }
+    /// Semantic analysis requires gate definitions to precede their callers.
     for (const auto& gate : program.gates) {
       emitGateDefinition(gate);
       scalarUpdates_.clear();
@@ -280,6 +297,25 @@ private:
   [[nodiscard]] bool gateRequiresStructuredControlFlow(
       const openqasm::frontend::GateDefinition& gate) const {
     return structuredGateCapabilities.lookup(&gate);
+  }
+
+  [[nodiscard]] bool
+  statementsAreUnitary(ArrayRef<frontend::StatementId> statements) const {
+    return llvm::all_of(statements, [&](const auto id) {
+      const auto& data = program.statements.at(id).data;
+      if (const auto* loop = std::get_if<frontend::ForStatement>(&data)) {
+        return constantRangeTripCount(*loop).has_value() &&
+               statementsAreUnitary(loop->body);
+      }
+      const auto* application = std::get_if<frontend::GateApplication>(&data);
+      if (application == nullptr) {
+        return false;
+      }
+      if (const auto* callee = findCustomGate(application->callee)) {
+        return mqt::isUnitaryFunction(customGateFunctions_.lookup(callee));
+      }
+      return openqasm::frontend::lookupGate(application->callee) != nullptr;
+    });
   }
 
   Value emitProvenIndexExpression(OpBuilder& opBuilder,
@@ -928,7 +964,7 @@ private:
 
     builder.setLoc(getLocation(gate.location));
     func::FuncOp function;
-    if (gateRequiresStructuredControlFlow(gate)) {
+    if (!statementsAreUnitary(gate.body)) {
       function = builder.createFunction(gate.name, argumentTypes,
                                         [&](ValueRange arguments) {
                                           emitBody(arguments);

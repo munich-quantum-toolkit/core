@@ -43,6 +43,10 @@ namespace mlir::qco {
 /// Runs remain unchanged when numerical decomposition fails.
 [[nodiscard]] std::unique_ptr<Pass> createFuseTwoQubitGates();
 
+/// Fuse single-qubit runs in the native basis without assigning physical sites.
+[[nodiscard]] std::unique_ptr<Pass>
+createFuseSingleQubitUnitaryRuns(const CompilerTarget& target);
+
 /// Fuse before placement only when both IR and native two-qubit counts shrink.
 /// Native support is checked without assigning physical sites.
 [[nodiscard]] std::unique_ptr<Pass>
@@ -50,8 +54,8 @@ createFuseTwoQubitGates(const CompilerTarget& target);
 
 /// Create multi-controlled decomposition for one compiler target.
 ///
-/// Supported operations remain native on all-to-all targets. Targets with
-/// explicit connectivity use the target-independent decomposition.
+/// Supported operations remain native on all-to-all targets and on static
+/// programs. Other operations use the target-independent decomposition.
 [[nodiscard]] std::unique_ptr<Pass>
 createDecomposeMultiControlled(const CompilerTarget& target,
                                uint64_t minQubits = 3);

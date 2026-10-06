@@ -79,12 +79,22 @@ run_command_expect_failure(
   "--qdmi-device=mqt.sc.iqm.garnet" "--payload-spec=#mqt.payload_spec<>")
 run_command_expect_failure(
   "mqt-cc target with explicit output"
-  "--emit cannot be combined with --qdmi-device"
+  "Only --emit=qco-optimized can be combined with --qdmi-device"
   "${MQT_CC}"
   "${INPUT_FILE}"
   "--qdmi-device=mqt.sc.iqm.garnet"
   "--payload-spec=${binary_payload_specification}"
   "--emit=qir-base")
+
+execute_process(
+  COMMAND "${MQT_CC}" "${INPUT_FILE}" "--qdmi-device=mqt.sc.iqm.garnet"
+          "--payload-spec=${binary_payload_specification}" --emit=qco-optimized -o -
+  RESULT_VARIABLE result
+  OUTPUT_VARIABLE mapped_qco
+  ERROR_VARIABLE error)
+if(NOT result EQUAL 0 OR NOT mapped_qco MATCHES "mqt\\.layout =")
+  message(FATAL_ERROR "mqt-cc did not emit mapped QCO with layout metadata: ${error}")
+endif()
 
 set(target_bitcode_file "${OUTPUT_DIR}/target-binary.ll")
 set(target_disassembled_file "${OUTPUT_DIR}/target-binary-disassembled.ll")

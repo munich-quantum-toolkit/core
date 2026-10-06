@@ -251,8 +251,9 @@ examples above handle serialization, runtime setup, and result retrieval.
 
 ### Runtime and QIS compatibility
 
-QIR entry points take no arguments and return an `i64` exit code. Runtime and
-QIS declarations are checked before JIT compilation; a mismatched or unsupported
+QIR entry points take no arguments and return an `i64` exit code. Bind named
+program parameters before lowering to either supported profile. Runtime and QIS
+declarations are checked before JIT compilation; a mismatched or unsupported
 declaration is reported with its actual and accepted LLVM function types.
 
 MQT Core implements the QIR 2.1 Base and Adaptive Profile runtime APIs. The JIT

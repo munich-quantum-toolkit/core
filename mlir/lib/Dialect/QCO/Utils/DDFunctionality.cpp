@@ -1012,8 +1012,10 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
           [&](Operation* floating) {
             return applyFloatOp(*floating, classical);
           })
-      .Case(
-          [&](math::AcosOp acos) { return foldClassicalOp(*acos, classical); })
+      .Case<math::AcosOp, math::AsinOp, math::AtanOp, math::Atan2Op>(
+          [&](Operation* inverse) {
+            return foldClassicalOp(*inverse, classical);
+          })
       .Case<LLVM::FshlOp, LLVM::FshrOp>([&](Operation* shift) -> LogicalResult {
         auto lhs = lookupInteger(shift->getOperand(0), classical, shift);
         auto rhs = lookupInteger(shift->getOperand(1), classical, shift);

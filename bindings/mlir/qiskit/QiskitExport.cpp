@@ -15,6 +15,7 @@
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
@@ -515,10 +516,8 @@ static void collectParameters(mlir::func::FuncOp function, ExportState& state,
             index, mlir::mqt::MQTDialect::InputIdAttrHelper::getNameStr())) {
       identity = llvm::toString(id.getValue(), 16, false);
     }
-    auto parameter =
+    state.parameters[argument] =
         Parameter::symbol(name.str(), std::move(group), std::move(identity));
-    state.parameters[argument] = parameter;
-    state.inputParameters.push_back(std::move(parameter));
   }
 }
 
@@ -2923,17 +2922,26 @@ nb::object exportCircuit(const mlir::QCProgram& program,
                          const mlir::CompilerTarget* const target) {
   mlir::OwningOpRef<mlir::ModuleOp> expanded = program.module().clone();
   auto moduleOp = *expanded;
+  auto function = mlir::mqt::getEntryPoint(moduleOp);
+  if (!function) {
+    throw std::runtime_error(
+        "QC to Qiskit export requires an mqt.entry_point function");
+  }
+  std::optional<mlir::mqt::QubitLayout> layout;
+  if (const auto attr = moduleOp->getAttr("mqt.layout")) {
+    auto parsed = mlir::mqt::QubitLayout::fromAttr(
+        attr, [&] { return moduleOp.emitError(); });
+    if (failed(parsed)) {
+      throw std::runtime_error("invalid qubit layout metadata");
+    }
+    layout = std::move(*parsed);
+  }
   mlir::RewritePatternSet patterns(moduleOp.getContext());
   mlir::mqt::populateIntegerExpansionPatterns(patterns);
   /// Fold scalar expressions without applying resource or snapshot rewrites.
   if (mlir::failed(
           mlir::applyPatternsGreedily(moduleOp, std::move(patterns)))) {
     throw std::runtime_error("failed to normalize arithmetic for Qiskit");
-  }
-  auto function = mlir::mqt::getEntryPoint(moduleOp);
-  if (!function) {
-    throw std::runtime_error(
-        "QC to Qiskit export requires an mqt.entry_point function");
   }
   if (function.getBody().empty() ||
       !llvm::hasSingleElement(function.getBody())) {
@@ -2967,7 +2975,8 @@ nb::object exportCircuit(const mlir::QCProgram& program,
           "QC to Qiskit export cannot return undefined classical bits");
     }
   }
-  validateExportParameters(circuit, state.inputParameters);
+  llvm::StringSet<> usedNames;
+  validateExportParameters(circuit, usedNames);
   if (target != nullptr) {
     Register reg{.name = "q"};
     reg.bits.resize(state.numQubits);
@@ -2992,7 +3001,7 @@ nb::object exportCircuit(const mlir::QCProgram& program,
                                     definition.formalParameters,
                                     std::move(definitionWriter));
   }
-  auto writer = translation->createCircuit(looseQubits, looseClbits);
+  auto writer = translation->createCircuit(looseQubits, looseClbits, target);
   for (const auto& reg : state.quantumRegisters) {
     writer->addQuantumRegister(reg.name,
                                static_cast<uint32_t>(reg.bits.size()));
@@ -3002,6 +3011,13 @@ nb::object exportCircuit(const mlir::QCProgram& program,
                                  static_cast<uint32_t>(reg.bits.size()));
   }
   emitCircuit(circuit, *writer);
+  // Compiler layouts use target positions; imported layouts use circuit wires.
+  if (layout && layout->initial.size() == state.numQubits &&
+      (layout->sites
+           ? target != nullptr && llvm::equal(*layout->sites, target->siteIds())
+           : target == nullptr)) {
+    writer->setLayout(*layout);
+  }
   return writer->finish();
 }
 

@@ -392,6 +392,7 @@ struct TypedProgram {
   std::vector<BitVectorExpression> bitVectorExpressions;
   std::vector<ConditionExpression> conditions;
   std::vector<ScalarDeclaration> scalars;
+  std::vector<ScalarId> inputs;
   std::vector<RegisterDeclaration> registers;
   std::vector<GateDefinition> gates;
   std::vector<Statement> statements;

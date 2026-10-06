@@ -451,17 +451,17 @@ QCProgramBuilder& QCProgramBuilder::reset(Value qubit) {
 
 #define DEFINE_ZERO_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)             \
   QCProgramBuilder& QCProgramBuilder::OP_NAME(                                 \
-      const std::variant<double, Value>&(PARAM)) {                             \
+      const mqt::FloatParameter&(PARAM)) {                                     \
     checkFinalized();                                                          \
     OP_CLASS::create(*this, PARAM);                                            \
     return *this;                                                              \
   }                                                                            \
   QCProgramBuilder& QCProgramBuilder::c##OP_NAME(                              \
-      const std::variant<double, Value>&(PARAM), Value control) {              \
+      const mqt::FloatParameter&(PARAM), Value control) {                      \
     return mc##OP_NAME(PARAM, {control});                                      \
   }                                                                            \
   QCProgramBuilder& QCProgramBuilder::mc##OP_NAME(                             \
-      const std::variant<double, Value>&(PARAM), ValueRange controls) {        \
+      const mqt::FloatParameter&(PARAM), ValueRange controls) {                \
     auto param = variantToValue(*this, getLoc(), PARAM);                       \
     ctrl(controls, ValueRange{},                                               \
          [&](ValueRange /*targets*/) { OP_CLASS::create(*this, param); });     \
@@ -509,19 +509,17 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
 
 #define DEFINE_ONE_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)              \
   QCProgramBuilder& QCProgramBuilder::OP_NAME(                                 \
-      const std::variant<double, Value>&(PARAM), Value qubit) {                \
+      const mqt::FloatParameter&(PARAM), Value qubit) {                        \
     checkFinalized();                                                          \
     OP_CLASS::create(*this, qubit, PARAM);                                     \
     return *this;                                                              \
   }                                                                            \
   QCProgramBuilder& QCProgramBuilder::c##OP_NAME(                              \
-      const std::variant<double, Value>&(PARAM), Value control,                \
-      Value target) {                                                          \
+      const mqt::FloatParameter&(PARAM), Value control, Value target) {        \
     return mc##OP_NAME(PARAM, {control}, target);                              \
   }                                                                            \
   QCProgramBuilder& QCProgramBuilder::mc##OP_NAME(                             \
-      const std::variant<double, Value>&(PARAM), ValueRange controls,          \
-      Value target) {                                                          \
+      const mqt::FloatParameter&(PARAM), ValueRange controls, Value target) {  \
     auto param = variantToValue(*this, getLoc(), PARAM);                       \
     ctrl(controls, target,                                                     \
          [&](Value targetArg) { OP_CLASS::create(*this, targetArg, param); }); \
@@ -539,22 +537,20 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, theta)
 
 #define DEFINE_ONE_TARGET_TWO_PARAMETER(OP_CLASS, OP_NAME, PARAM1, PARAM2)     \
   QCProgramBuilder& QCProgramBuilder::OP_NAME(                                 \
-      const std::variant<double, Value>&(PARAM1),                              \
-      const std::variant<double, Value>&(PARAM2), Value qubit) {               \
+      const mqt::FloatParameter&(PARAM1), const mqt::FloatParameter&(PARAM2),  \
+      Value qubit) {                                                           \
     checkFinalized();                                                          \
     OP_CLASS::create(*this, qubit, PARAM1, PARAM2);                            \
     return *this;                                                              \
   }                                                                            \
   QCProgramBuilder& QCProgramBuilder::c##OP_NAME(                              \
-      const std::variant<double, Value>&(PARAM1),                              \
-      const std::variant<double, Value>&(PARAM2), Value control,               \
-      Value target) {                                                          \
+      const mqt::FloatParameter&(PARAM1), const mqt::FloatParameter&(PARAM2),  \
+      Value control, Value target) {                                           \
     return mc##OP_NAME(PARAM1, PARAM2, {control}, target);                     \
   }                                                                            \
   QCProgramBuilder& QCProgramBuilder::mc##OP_NAME(                             \
-      const std::variant<double, Value>&(PARAM1),                              \
-      const std::variant<double, Value>&(PARAM2), ValueRange controls,         \
-      Value target) {                                                          \
+      const mqt::FloatParameter&(PARAM1), const mqt::FloatParameter&(PARAM2),  \
+      ValueRange controls, Value target) {                                     \
     auto param1 = variantToValue(*this, getLoc(), PARAM1);                     \
     auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
     ctrl(controls, target, [&](Value targetArg) {                              \
@@ -573,25 +569,20 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
 #define DEFINE_ONE_TARGET_THREE_PARAMETER(OP_CLASS, OP_NAME, PARAM1, PARAM2,   \
                                           PARAM3)                              \
   QCProgramBuilder& QCProgramBuilder::OP_NAME(                                 \
-      const std::variant<double, Value>&(PARAM1),                              \
-      const std::variant<double, Value>&(PARAM2),                              \
-      const std::variant<double, Value>&(PARAM3), Value qubit) {               \
+      const mqt::FloatParameter&(PARAM1), const mqt::FloatParameter&(PARAM2),  \
+      const mqt::FloatParameter&(PARAM3), Value qubit) {                       \
     checkFinalized();                                                          \
     OP_CLASS::create(*this, qubit, PARAM1, PARAM2, PARAM3);                    \
     return *this;                                                              \
   }                                                                            \
   QCProgramBuilder& QCProgramBuilder::c##OP_NAME(                              \
-      const std::variant<double, Value>&(PARAM1),                              \
-      const std::variant<double, Value>&(PARAM2),                              \
-      const std::variant<double, Value>&(PARAM3), Value control,               \
-      Value target) {                                                          \
+      const mqt::FloatParameter&(PARAM1), const mqt::FloatParameter&(PARAM2),  \
+      const mqt::FloatParameter&(PARAM3), Value control, Value target) {       \
     return mc##OP_NAME(PARAM1, PARAM2, PARAM3, {control}, target);             \
   }                                                                            \
   QCProgramBuilder& QCProgramBuilder::mc##OP_NAME(                             \
-      const std::variant<double, Value>&(PARAM1),                              \
-      const std::variant<double, Value>&(PARAM2),                              \
-      const std::variant<double, Value>&(PARAM3), ValueRange controls,         \
-      Value target) {                                                          \
+      const mqt::FloatParameter&(PARAM1), const mqt::FloatParameter&(PARAM2),  \
+      const mqt::FloatParameter&(PARAM3), ValueRange controls, Value target) { \
     auto param1 = variantToValue(*this, getLoc(), PARAM1);                     \
     auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
     auto param3 = variantToValue(*this, getLoc(), PARAM3);                     \
@@ -636,19 +627,19 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ecr)
 
 #define DEFINE_TWO_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)              \
   QCProgramBuilder& QCProgramBuilder::OP_NAME(                                 \
-      const std::variant<double, Value>&(PARAM), Value qubit0, Value qubit1) { \
+      const mqt::FloatParameter&(PARAM), Value qubit0, Value qubit1) {         \
     checkFinalized();                                                          \
     OP_CLASS::create(*this, qubit0, qubit1, PARAM);                            \
     return *this;                                                              \
   }                                                                            \
   QCProgramBuilder& QCProgramBuilder::c##OP_NAME(                              \
-      const std::variant<double, Value>&(PARAM), Value control, Value qubit0,  \
+      const mqt::FloatParameter&(PARAM), Value control, Value qubit0,          \
       Value qubit1) {                                                          \
     return mc##OP_NAME(PARAM, {control}, qubit0, qubit1);                      \
   }                                                                            \
   QCProgramBuilder& QCProgramBuilder::mc##OP_NAME(                             \
-      const std::variant<double, Value>&(PARAM), ValueRange controls,          \
-      Value qubit0, Value qubit1) {                                            \
+      const mqt::FloatParameter&(PARAM), ValueRange controls, Value qubit0,    \
+      Value qubit1) {                                                          \
     auto param = variantToValue(*this, getLoc(), PARAM);                       \
     ctrl(controls, ValueRange{qubit0, qubit1}, [&](ValueRange targets) {       \
       OP_CLASS::create(*this, targets[0], targets[1], param);                  \
@@ -667,23 +658,20 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZOp, rzz, theta)
 
 #define DEFINE_TWO_TARGET_TWO_PARAMETER(OP_CLASS, OP_NAME, PARAM1, PARAM2)     \
   QCProgramBuilder& QCProgramBuilder::OP_NAME(                                 \
-      const std::variant<double, Value>&(PARAM1),                              \
-      const std::variant<double, Value>&(PARAM2), Value qubit0,                \
-      Value qubit1) {                                                          \
+      const mqt::FloatParameter&(PARAM1), const mqt::FloatParameter&(PARAM2),  \
+      Value qubit0, Value qubit1) {                                            \
     checkFinalized();                                                          \
     OP_CLASS::create(*this, qubit0, qubit1, PARAM1, PARAM2);                   \
     return *this;                                                              \
   }                                                                            \
   QCProgramBuilder& QCProgramBuilder::c##OP_NAME(                              \
-      const std::variant<double, Value>&(PARAM1),                              \
-      const std::variant<double, Value>&(PARAM2), Value control, Value qubit0, \
-      Value qubit1) {                                                          \
+      const mqt::FloatParameter&(PARAM1), const mqt::FloatParameter&(PARAM2),  \
+      Value control, Value qubit0, Value qubit1) {                             \
     return mc##OP_NAME(PARAM1, PARAM2, {control}, qubit0, qubit1);             \
   }                                                                            \
   QCProgramBuilder& QCProgramBuilder::mc##OP_NAME(                             \
-      const std::variant<double, Value>&(PARAM1),                              \
-      const std::variant<double, Value>&(PARAM2), ValueRange controls,         \
-      Value qubit0, Value qubit1) {                                            \
+      const mqt::FloatParameter&(PARAM1), const mqt::FloatParameter&(PARAM2),  \
+      ValueRange controls, Value qubit0, Value qubit1) {                       \
     auto param1 = variantToValue(*this, getLoc(), PARAM1);                     \
     auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
     ctrl(controls, ValueRange{qubit0, qubit1}, [&](ValueRange targets) {       \
@@ -775,17 +763,16 @@ QCProgramBuilder::inv(ValueRange qubits,
 }
 
 QCProgramBuilder&
-QCProgramBuilder::pow(const std::variant<double, Value>& exponent,
-                      ValueRange qubits,
+QCProgramBuilder::pow(const mqt::FloatParameter& exponent, ValueRange qubits,
                       const function_ref<void(ValueRange)>& body) {
   checkFinalized();
   PowOp::create(*this, exponent, qubits, body);
   return *this;
 }
 
-QCProgramBuilder&
-QCProgramBuilder::pow(const std::variant<double, Value>& exponent, Value qubit,
-                      const function_ref<void(Value)>& body) {
+QCProgramBuilder& QCProgramBuilder::pow(const mqt::FloatParameter& exponent,
+                                        Value qubit,
+                                        const function_ref<void(Value)>& body) {
   checkFinalized();
   PowOp::create(*this, exponent, qubit, body);
   return *this;

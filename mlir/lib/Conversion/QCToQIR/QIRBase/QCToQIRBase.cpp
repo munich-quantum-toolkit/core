@@ -461,6 +461,13 @@ protected:
       signalPassFailure();
       return;
     }
+    if (entryPoint.getNumArguments() != 0) {
+      entryPoint.emitError(
+          "QIR Base entry points do not support arguments; bind program "
+          "parameters before lowering");
+      signalPassFailure();
+      return;
+    }
     if (!entryPoint.getBody().hasOneBlock()) {
       entryPoint.emitError(
           "QIR Base Profile requires a single-block entry function");

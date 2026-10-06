@@ -8,7 +8,9 @@
 
 add_mlir_dialect_library(
   MLIRMQTDialect
+  MQTAttributes.cpp
   MQTDialect.cpp
+  QubitLayout.cpp
   ADDITIONAL_HEADER_DIRS
   ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/MQT
   DEPENDS

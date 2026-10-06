@@ -44,9 +44,12 @@
 #include "mlir/Support/LLVM.h"
 #include "mlir/Transforms/Passes.h"
 
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 
+#include <algorithm>
+#include <bit>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -1116,5 +1119,52 @@ TEST_F(GlobalPhaseNormalizationTest, VerifiesPracticalConstantAngleRange) {
          }) {
       EXPECT_TRUE(failed(verifyAngle(angle, useQCO)));
     }
+  }
+}
+
+TEST_F(GlobalPhaseNormalizationTest, SymbolicPhaseSumHasLogarithmicDepth) {
+  constexpr size_t count = 257;
+  for (const bool useQCO : {false, true}) {
+    SCOPED_TRACE(useQCO);
+    auto moduleOp = parse(R"mlir(
+      module {
+        func.func @test(%theta: f64) { return }
+      }
+    )mlir");
+    ASSERT_TRUE(moduleOp);
+    auto function = moduleOp->lookupSymbol<func::FuncOp>("test");
+    auto theta = function.getArgument(0);
+    OpBuilder builder(function);
+    builder.setInsertionPoint(function.getBody().front().getTerminator());
+    for (size_t i = 0; i < count; ++i) {
+      if (useQCO) {
+        qco::GPhaseOp::create(builder, function.getLoc(), theta);
+      } else {
+        qc::GPhaseOp::create(builder, function.getLoc(), theta);
+      }
+    }
+    ASSERT_TRUE(succeeded(mlir::mqt::normalizeGlobalPhases(*moduleOp)));
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    llvm::DenseMap<Value, size_t> depths;
+    Value phase;
+    size_t phaseCount = 0;
+    moduleOp->walk([&](Operation* operation) {
+      if (auto add = dyn_cast<arith::AddFOp>(operation)) {
+        depths[add.getResult()] = 1 + std::max(depths.lookup(add.getLhs()),
+                                               depths.lookup(add.getRhs()));
+      } else if (isa<qc::GPhaseOp, qco::GPhaseOp>(operation)) {
+        phase = operation->getOperand(0);
+        ++phaseCount;
+      }
+    });
+    ASSERT_EQ(phaseCount, 1U);
+    EXPECT_LE(depths.lookup(phase), std::bit_width(count - 1));
+    builder.setInsertionPointToStart(&function.getBody().front());
+    constexpr double angle = 0.37;
+    theta.replaceAllUsesWith(
+        mlir::mqt::constantFromScalar(builder, function.getLoc(), angle));
+    const auto actual = mlir::mqt::valueToConstantDouble(phase);
+    ASSERT_TRUE(actual);
+    EXPECT_NEAR(*actual, count * angle, 1e-12);
   }
 }
