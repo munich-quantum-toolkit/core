@@ -46,7 +46,7 @@ jobs:
             preset: release
             run-on-draft: false
             setup-mlir: true
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-ubuntu.yml@508412b7c390dc1a04a41f0efc8e062163e94076 # zizmor: ignore[stale-action-refs] -- Pin workflows PR #486 until its release.
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-ubuntu.yml@d8a21c72a2e44293621dd6fe38b77833150d6c97 # zizmor: ignore[stale-action-refs] -- Pin workflows PR #486 until its release.
     with:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
@@ -73,7 +73,7 @@ jobs:
             compiler: clang
             preset: release
             run-on-draft: false
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-macos.yml@508412b7c390dc1a04a41f0efc8e062163e94076 # zizmor: ignore[stale-action-refs] -- Pin workflows PR #486 until its release.
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-macos.yml@d8a21c72a2e44293621dd6fe38b77833150d6c97 # zizmor: ignore[stale-action-refs] -- Pin workflows PR #486 until its release.
     with:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
@@ -100,7 +100,7 @@ jobs:
             compiler: msvc
             preset: release
             run-on-draft: false
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-windows.yml@508412b7c390dc1a04a41f0efc8e062163e94076 # zizmor: ignore[stale-action-refs] -- Pin workflows PR #486 until its release.
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-windows.yml@d8a21c72a2e44293621dd6fe38b77833150d6c97 # zizmor: ignore[stale-action-refs] -- Pin workflows PR #486 until its release.
     with:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
@@ -115,7 +115,7 @@ jobs:
     name: 🇨 Coverage
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-tests)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-coverage.yml@508412b7c390dc1a04a41f0efc8e062163e94076 # zizmor: ignore[stale-action-refs] -- Pin workflows PR #486 until its release.
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-coverage.yml@d8a21c72a2e44293621dd6fe38b77833150d6c97 # zizmor: ignore[stale-action-refs] -- Pin workflows PR #486 until its release.
     with:
       setup-mlir: true
       llvm-version: 23.1.2
@@ -127,7 +127,7 @@ jobs:
     name: 🇨 Lint
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-linter)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-linter.yml@508412b7c390dc1a04a41f0efc8e062163e94076 # zizmor: ignore[stale-action-refs] -- Pin workflows PR #486 until its release.
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-linter.yml@d8a21c72a2e44293621dd6fe38b77833150d6c97 # zizmor: ignore[stale-action-refs] -- Pin workflows PR #486 until its release.
     with:
       clang-version: 23
       build-project: true
@@ -154,7 +154,7 @@ jobs:
       fail-fast: false
       matrix:
         runs-on: [ubuntu-26.04, ubuntu-26.04-arm, macos-26, windows-2025]
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@508412b7c390dc1a04a41f0efc8e062163e94076 # zizmor: ignore[stale-action-refs] -- Pin workflows PR #486 until its release.
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@d8a21c72a2e44293621dd6fe38b77833150d6c97 # zizmor: ignore[stale-action-refs] -- Pin workflows PR #486 until its release.
     with:
       runs-on: ${{ matrix.runs-on }}
       setup-mlir: true
@@ -175,7 +175,7 @@ jobs:
     name: 🐍 Lint
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-python-linter)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-linter.yml@508412b7c390dc1a04a41f0efc8e062163e94076 # zizmor: ignore[stale-action-refs] -- Pin workflows PR #486 until its release.
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-linter.yml@d8a21c72a2e44293621dd6fe38b77833150d6c97 # zizmor: ignore[stale-action-refs] -- Pin workflows PR #486 until its release.
     with:
       check-stubs: true
       enable-ty: true
@@ -211,7 +211,7 @@ jobs:
             windows-2025,
             windows-11-arm,
           ]
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-wheel-cibuildwheel.yml@508412b7c390dc1a04a41f0efc8e062163e94076 # zizmor: ignore[stale-action-refs] -- Pin workflows PR #486 until its release.
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-wheel-cibuildwheel.yml@d8a21c72a2e44293621dd6fe38b77833150d6c97 # zizmor: ignore[stale-action-refs] -- Pin workflows PR #486 until its release.
     with:
       runs-on: ${{ matrix.runs-on }}
       setup-mlir: true

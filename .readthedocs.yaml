@@ -27,9 +27,9 @@ build:
       - asdf global uv latest
       # Install MLIR
       - |
-        setup_mlir_base=https://raw.githubusercontent.com/munich-quantum-software/setup-mlir/5f3c4771ebb8d8e4fe284378b34460f428860a66
-        curl -LsSf "$setup_mlir_base/installation/setup-mlir.sh" -o /tmp/setup-mlir.sh
-        SETUP_MLIR_MANIFEST_URL="$setup_mlir_base/version-manifest.json" bash /tmp/setup-mlir.sh -v 23.1.2 -p $HOME/mlir
+        mkdir -p /tmp/setup-mlir
+        curl -LsSf https://github.com/munich-quantum-software/setup-mlir/archive/a74d2bc79d070925638168c2d4b4aa84c068af51.tar.gz | tar -xz -C /tmp/setup-mlir --strip-components=1
+        bash /tmp/setup-mlir/installation/setup-mlir.sh -v 23.1.2 -p $HOME/mlir
     build:
       html:
         - MLIR_DIR=$HOME/mlir/lib/cmake/mlir uvx nox --non-interactive -s docs
