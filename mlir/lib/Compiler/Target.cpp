@@ -1308,20 +1308,20 @@ CompilerTarget::fourCycles() const {
     const auto& adjacency = storage_->adjacency;
     for (size_t a = 0; a < numSites(); ++a) {
       const auto& neighbours = adjacency[a];
-      for (auto b = std::upper_bound(neighbours.begin(), neighbours.end(), a);
+      for (const auto* b = std::ranges::upper_bound(neighbours, a);
            b != neighbours.end(); ++b) {
         if (adjacency[*b].size() < 2) {
           continue;
         }
-        for (auto d = b + 1; d != neighbours.end(); ++d) {
+        for (const auto* d = b + 1; d != neighbours.end(); ++d) {
           const auto& left = adjacency[*b];
           const auto& right = adjacency[*d];
           if (right.size() < 2) {
             continue;
           }
           // Common neighbours close a-b-c-d-a; a is the smallest vertex.
-          auto l = std::upper_bound(left.begin(), left.end(), a);
-          auto r = std::upper_bound(right.begin(), right.end(), a);
+          const auto* l = std::ranges::upper_bound(left, a);
+          const auto* r = std::ranges::upper_bound(right, a);
           while (l != left.end() && r != right.end()) {
             if (*l < *r) {
               ++l;

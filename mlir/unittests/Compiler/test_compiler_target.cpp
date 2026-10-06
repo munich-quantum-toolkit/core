@@ -526,8 +526,12 @@ TEST(CompilerTargetTest, CanonicalizesConnectedTopologyAndCachesDistances) {
 
 TEST(CompilerTargetTest, FourCyclesShareCacheAndAllowChords) {
   const auto target = valid(Target::create(
-      std::vector{valid(Site::create(7)), valid(Site::create(2)),
-                  valid(Site::create(11)), valid(Site::create(4))},
+      std::vector{
+          valid(Site::create(7)),
+          valid(Site::create(2)),
+          valid(Site::create(11)),
+          valid(Site::create(4)),
+      },
       Connectivity::fromCouplings(
           {{7, 2}, {2, 11}, {11, 4}, {4, 7}, {7, 11}, {2, 7}}),
       NativeOperations::unrestricted()));
