@@ -7,7 +7,7 @@
 # Licensed under the MIT License
 
 set(qtensor_utils_target mqt-core-mlir-unittest-qtensor-utils)
-add_executable(${qtensor_utils_target} test_tensoriterator.cpp)
+add_executable(${qtensor_utils_target} test_calltensormapping.cpp test_tensoriterator.cpp)
 target_link_libraries(
   ${qtensor_utils_target} PRIVATE GTest::gtest_main MLIRQTensorDialect MLIRQTensorUtils
                                   MLIRQCOProgramBuilder MLIRParser)

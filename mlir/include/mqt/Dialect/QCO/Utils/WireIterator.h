@@ -85,15 +85,19 @@ public:
     return pos_ == Position::PastTail || pos_ == Position::BeforeHead;
   }
 
-private:
-  /// Labels the position on the wire.
-  enum class Position : uint8_t { BeforeHead, Head, Between, Tail, PastTail };
-
   /// Return true, if an op doesn't return, but only consumes, a qubit value.
+  ///
+  /// Traversal also ends at an operation that is neither a tail nor known to
+  /// thread the qubit. A client that follows a wire past this iterator uses
+  /// this predicate to tell a genuine end from one it cannot interpret.
   static bool isTail(Operation*);
 
   /// Return true, if an op doesn't consume, but only returns, a qubit value.
   static bool isHead(Operation*);
+
+private:
+  /// Labels the position on the wire.
+  enum class Position : uint8_t { BeforeHead, Head, Between, Tail, PastTail };
 
   // Moves to the next operation on the qubit wire.
   void forward();

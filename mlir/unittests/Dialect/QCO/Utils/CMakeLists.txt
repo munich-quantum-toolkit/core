@@ -7,8 +7,15 @@
 # Licensed under the MIT License
 
 set(qco_utils_target mqt-core-mlir-unittest-qco-utils)
-add_executable(${qco_utils_target} test_dd_functionality.cpp test_drivers.cpp test_layout.cpp
-                                   test_sorting.cpp test_unitary_matrix.cpp test_wireiterator.cpp)
+add_executable(
+  ${qco_utils_target}
+  test_callqubitmapping.cpp
+  test_dd_functionality.cpp
+  test_drivers.cpp
+  test_layout.cpp
+  test_sorting.cpp
+  test_unitary_matrix.cpp
+  test_wireiterator.cpp)
 target_link_libraries(
   ${qco_utils_target}
   PRIVATE GTest::gtest_main

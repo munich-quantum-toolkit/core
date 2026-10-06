@@ -125,8 +125,13 @@ public:
 
   /// Call a function, using `qco.call` for a unitary function.
   ///
-  /// Ordinary results are followed by updated scalar qubits and registers.
+  /// A unitary callee returns its quantum arguments positionally, after its
+  /// ordinary results. Any other callee is called generically, and how its
+  /// linear values correspond is derived from its body.
   SmallVector<Value> call(func::FuncOp callee, ValueRange operands);
+
+  /// Call the function of the given name in the current module.
+  SmallVector<Value> call(StringRef callee, ValueRange operands);
 
   //===--------------------------------------------------------------------===//
   // Constants
@@ -1762,6 +1767,33 @@ public:
                                   ValueRange yieldedValues);
 
   //===--------------------------------------------------------------------===//
+  // Generic functions
+  //===--------------------------------------------------------------------===//
+  //
+  // `createFunction` builds a function that borrows every quantum argument and
+  // hands them all back positionally. The pair below builds a function under
+  // no such contract: it may return its quantum values in any order, keep
+  // them, or create a register and transfer it to the caller. Interprocedural
+  // passes must cope with all of that in arbitrary input.
+
+  /// Starts a private function and returns its entry-block arguments.
+  ///
+  /// Functions must be defined before operations in `main` and cannot nest.
+  SmallVector<Value> startFunction(StringRef name, TypeRange argTypes,
+                                   TypeRange resultTypes);
+
+  /// Ends the active function and restores the surrounding builder scope.
+  ///
+  /// Every linear value in the function must be returned or consumed.
+  void endFunction(ValueRange returnValues);
+
+  /// Returns the `!qco.qubit` type.
+  Type getQubitType();
+
+  /// Returns `tensor<size x !qco.qubit>`.
+  Type getQubitTensorType(int64_t size);
+
+  //===--------------------------------------------------------------------===//
   // Finalization
   //===--------------------------------------------------------------------===//
 
@@ -1915,6 +1947,21 @@ private:
   /// Ensure static and dynamic qubit allocation modes are not mixed.
   /// Dynamic allocation also requires the entry-point entry block.
   void ensureAllocationMode(AllocationMode requestedMode);
+
+  /// Emit a `qco.call` and track its results positionally.
+  SmallVector<Value> callUnitary(func::FuncOp callee, ValueRange operands,
+                                 ValueRange quantumOperands);
+
+  /// Emit a `func.call` and track its results by the derived correspondence.
+  SmallVector<Value> callGeneric(func::FuncOp callee, ValueRange operands,
+                                 ValueRange quantumOperands);
+
+  /// Track call results that continue the quantum operands positionally.
+  void trackPositionalCallResults(ValueRange results,
+                                  ValueRange quantumOperands);
+
+  // Insertion point to restore after finishing a generic function.
+  OpBuilder::InsertPoint savedInsertionPoint;
 };
 } // namespace qco
 } // namespace mlir

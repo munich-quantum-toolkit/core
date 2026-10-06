@@ -18,9 +18,11 @@
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QCO/Utils/CallQubitMapping.h"
 #include "mqt/Dialect/QCO/Utils/FunctionUtils.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
+#include "mqt/Dialect/QTensor/Utils/CallTensorMapping.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -211,22 +213,85 @@ SmallVector<Value> QCOProgramBuilder::call(func::FuncOp callee,
     updatedOperands[argument] = operand;
   }
 
-  SmallVector<Value> results;
+  // A unitary callee borrows its quantum arguments and hands them back in
+  // argument order, so their correspondence is positional. Any other callee
+  // may return them in a different order, keep them, or create a register of
+  // its own, so its correspondence is derived from its body.
   if (mqt::isUnitaryFunction(callee)) {
-    auto call = CallOp::create(
-        *this, FlatSymbolRefAttr::get(getContext(), callee.getName()),
-        updatedOperands);
-    llvm::append_range(results, call.getResults());
-  } else {
-    auto call = func::CallOp::create(*this, callee, updatedOperands);
-    llvm::append_range(results, call.getResults());
+    return callUnitary(callee, updatedOperands, quantumOperands);
+  }
+  return callGeneric(callee, updatedOperands, quantumOperands);
+}
+
+SmallVector<Value> QCOProgramBuilder::call(StringRef callee,
+                                           ValueRange operands) {
+  checkFinalized();
+  auto funcOp = dyn_cast_or_null<func::FuncOp>(
+      SymbolTable::lookupSymbolIn(cast<ModuleOp>(moduleOp_), callee));
+  if (!funcOp) {
+    llvm::reportFatalUsageError("Callee not found in module");
+  }
+  return call(funcOp, operands);
+}
+
+// Returns whether every quantum argument of a callee comes back as the
+// corresponding trailing result. The check traces each result back to its
+// argument instead of assuming the convention holds.
+static bool returnsQuantumArgumentsPositionally(func::FuncOp callee,
+                                                size_t numResults) {
+  if (callee.isDeclaration() || !callee.getBody().hasOneBlock()) {
+    return false;
+  }
+  Block& body = callee.getBody().front();
+  if (!body.mightHaveTerminator()) {
+    return false;
+  }
+  auto returnOp = dyn_cast<func::ReturnOp>(body.getTerminator());
+  if (!returnOp || returnOp.getNumOperands() != numResults) {
+    return false;
+  }
+  auto quantumArguments = getQuantumArgumentIndices(callee.getArgumentTypes());
+  if (numResults < quantumArguments.size()) {
+    return false;
+  }
+  const auto firstQuantumResult = numResults - quantumArguments.size();
+  for (auto [offset, argument] : llvm::enumerate(quantumArguments)) {
+    Value result = returnOp.getOperand(firstQuantumResult + offset);
+    auto origin = traceQubitArgument(callee, result);
+    if (result.getType() != callee.getArgumentTypes()[argument] ||
+        failed(origin) || *origin != argument) {
+      return false;
+    }
+  }
+  return true;
+}
+
+SmallVector<Value> QCOProgramBuilder::callUnitary(func::FuncOp callee,
+                                                  ValueRange operands,
+                                                  ValueRange quantumOperands) {
+  // A unitary function takes parameters followed by scalar qubits, so a
+  // register operand cannot belong to one.
+  if (llvm::any_of(quantumOperands, [](Value operand) {
+        return isQubitTensor(operand.getType());
+      })) {
+    llvm::reportFatalUsageError(
+        "Quantum tensor arguments are not supported for unitary functions");
   }
 
-  if (results.size() < quantumArguments.size()) {
+  auto call = CallOp::create(
+      *this, FlatSymbolRefAttr::get(getContext(), callee.getName()), operands);
+  SmallVector<Value> results(call.getResults());
+  trackPositionalCallResults(results, quantumOperands);
+  return results;
+}
+
+void QCOProgramBuilder::trackPositionalCallResults(ValueRange results,
+                                                   ValueRange quantumOperands) {
+  if (results.size() < quantumOperands.size()) {
     llvm::reportFatalUsageError(
         "Callee does not return its quantum arguments positionally");
   }
-  const auto firstQuantumResult = results.size() - quantumArguments.size();
+  const auto firstQuantumResult = results.size() - quantumOperands.size();
   for (auto [index, result] : llvm::enumerate(results)) {
     if (index >= firstQuantumResult) {
       updateQubitValueTracking(quantumOperands[index - firstQuantumResult],
@@ -236,6 +301,59 @@ SmallVector<Value> QCOProgramBuilder::call(func::FuncOp callee,
     } else if (isQubitTensor(result.getType())) {
       llvm::reportFatalUsageError(
           "Calls cannot transfer ownership of quantum registers");
+    }
+  }
+}
+
+SmallVector<Value> QCOProgramBuilder::callGeneric(func::FuncOp callee,
+                                                  ValueRange operands,
+                                                  ValueRange quantumOperands) {
+  auto call = func::CallOp::create(*this, callee, operands);
+  SmallVector<Value> results(call.getResults());
+
+  // Most callees borrow their quantum arguments and return them in order, so
+  // use that correspondence once the callee is shown to follow it.
+  if (returnsQuantumArgumentsPositionally(callee, results.size())) {
+    trackPositionalCallResults(results, quantumOperands);
+    return results;
+  }
+
+  // Otherwise thread each quantum operand into the result that continues it by
+  // following the callee body, which tracks a callee that reorders or keeps
+  // its arguments the way it actually behaves.
+  CallQubitMapping qubitMapping;
+  qtensor::CallTensorMapping tensorMapping;
+  DenseSet<Value> continuedResults;
+  for (Value operand : quantumOperands) {
+    auto continuation = isa<QubitType>(operand.getType())
+                            ? qubitMapping.getResultForOperand(call, operand)
+                            : tensorMapping.getResultForOperand(call, operand);
+    if (failed(continuation)) {
+      llvm::reportFatalUsageError(
+          "Cannot derive linear-value correspondence for callee");
+    }
+    if (!*continuation) {
+      // The callee keeps this value.
+      if (isa<QubitType>(operand.getType())) {
+        validQubits.erase(operand);
+      } else {
+        validTensors.erase(operand);
+      }
+      continue;
+    }
+    updateQubitValueTracking(operand, *continuation);
+    continuedResults.insert(*continuation);
+  }
+
+  // A result without a corresponding operand was created by the callee.
+  for (Value result : results) {
+    if (continuedResults.contains(result)) {
+      continue;
+    }
+    if (isa<QubitType>(result.getType())) {
+      validQubits.insert(result);
+    } else if (isQubitTensor(result.getType())) {
+      validTensors.insert(Tensor{result, tensorCounter++});
     }
   }
   return results;
@@ -1591,6 +1709,109 @@ QCOProgramBuilder::scfCondition(Value reg,
   checkFinalized();
   auto condition = loadClassicalBit(reg, index);
   return scfCondition(condition, yieldedValues);
+}
+
+//===----------------------------------------------------------------------===//
+// Generic functions
+//===----------------------------------------------------------------------===//
+
+Type QCOProgramBuilder::getQubitType() { return QubitType::get(ctx); }
+
+Type QCOProgramBuilder::getQubitTensorType(int64_t size) {
+  return RankedTensorType::get({size}, getQubitType());
+}
+
+SmallVector<Value> QCOProgramBuilder::startFunction(StringRef name,
+                                                    TypeRange argTypes,
+                                                    TypeRange resultTypes) {
+  checkFinalized();
+
+  if (SymbolTable::lookupSymbolIn(moduleOp_, name) != nullptr) {
+    llvm::reportFatalUsageError("Function with the same name already exists");
+  }
+
+  if (savedInsertionPoint.isSet()) {
+    llvm::reportFatalUsageError(
+        "Cannot start a function while another one is being built");
+  }
+
+  // Defining callees first prevents their bodies from capturing values from
+  // main and removes the need to preserve partially built main state.
+  if (!getInsertionBlock()->empty()) {
+    llvm::reportFatalUsageError(
+        "Functions must be defined before operations in main");
+  }
+  savedInsertionPoint = saveInsertionPoint();
+
+  setInsertionPointToEnd(cast<ModuleOp>(moduleOp_).getBody());
+  auto funcOp =
+      func::FuncOp::create(*this, name, getFunctionType(argTypes, resultTypes));
+  // The interprocedural passes only consider functions that are not externally
+  // visible, so generic functions are private by default.
+  funcOp.setPrivate();
+
+  Block& entryBlock = funcOp.getBody().emplaceBlock();
+  SmallVector<Location> locs(argTypes.size(), getLoc());
+  entryBlock.addArguments(argTypes, locs);
+  setInsertionPointToStart(&entryBlock);
+
+  SmallVector<Value> args;
+  for (BlockArgument arg : entryBlock.getArguments()) {
+    if (isa<QubitType>(arg.getType())) {
+      validQubits.insert(arg);
+    } else if (isQubitTensor(arg.getType())) {
+      // A tensor argument acts like a register the callee owns for the
+      // duration of the call, so give it its own register id.
+      validTensors.insert(Tensor{arg, tensorCounter++});
+    }
+    args.emplace_back(arg);
+  }
+
+  return args;
+}
+
+void QCOProgramBuilder::endFunction(ValueRange returnValues) {
+  checkFinalized();
+
+  if (!savedInsertionPoint.isSet()) {
+    llvm::reportFatalUsageError(
+        "endFunction() called without a matching startFunction()");
+  }
+
+  auto funcOp = cast<func::FuncOp>(getInsertionBlock()->getParentOp());
+  if (!llvm::equal(returnValues.getTypes(), funcOp.getResultTypes())) {
+    llvm::reportFatalUsageError(
+        "Return values do not match the declared function result types");
+  }
+
+  for (Value value : returnValues) {
+    if (isa<QubitType>(value.getType())) {
+      validateQubitValue(value);
+      validQubits.erase(value);
+    } else if (isQubitTensor(value.getType())) {
+      validateTensorValue(value);
+      validTensors.erase(value);
+    }
+  }
+
+  // Only values created inside the function are tracked at this point, so
+  // anything left over has escaped.
+  if (!validQubits.empty()) {
+    llvm::reportFatalUsageError(
+        "Function body has qubit values that are neither returned nor "
+        "consumed");
+  }
+  if (!validTensors.empty()) {
+    llvm::reportFatalUsageError(
+        "Function body has tensor values that are neither returned nor "
+        "deallocated");
+  }
+
+  func::ReturnOp::create(*this, returnValues);
+
+  OpBuilder::InsertPoint insertionPoint = savedInsertionPoint;
+  savedInsertionPoint = {};
+  restoreInsertionPoint(insertionPoint);
 }
 
 //===----------------------------------------------------------------------===//
