@@ -616,17 +616,43 @@ private:
     int64_t prefix;
   };
 
-  /// A fast, flat "wave"-like data structure designed specifically for
-  /// layer-by-layer ("ripple") iteration. All elements are stored sequentially
-  /// in a single contiguous buffer.
-  class Wave {
+  class Front {
   public:
-    Wave() = default;
+    Front() = default;
 
-    /// Add a new, empty ripple to the wave.
-    void addRipple() { offsets_.emplace_back(storage_.size()); }
+    void push(const QubitIndexPair& endpoint) { endpoints_.insert(endpoint); }
 
-    /// Appends a single element to the current active ripple.
+    void erase(const QubitIndexPair& endpoint) { endpoints_.remove(endpoint); }
+
+    [[nodiscard]] bool contains(const QubitIndexPair& endpoint) {
+      return endpoints_.contains(endpoint);
+    }
+
+    ArrayRef<QubitIndexPair> view() const { return endpoints_.getArrayRef(); }
+
+    [[nodiscard]] QubitIndexPair front() const { return endpoints_.front(); }
+
+    /// Return the number of elements in the front.
+    [[nodiscard]] size_t size() const { return endpoints_.size(); }
+
+    /// Return true, if the front is empty.
+    [[nodiscard]] bool empty() const { return endpoints_.empty(); }
+
+  private:
+    SetVector<QubitIndexPair> endpoints_;
+  };
+
+  /// A fast, flat data structure designed specifically for layer-by-layer
+  /// iteration, where the elements are stored sequentially in a single
+  /// contiguous buffer.
+  class Lookahead {
+  public:
+    Lookahead() = default;
+
+    /// Start a new and empty lookahead layer.
+    void next() { offsets_.emplace_back(storage_.size()); }
+
+    /// Append a single element to the current active lookahead layer.
     void push(const QubitIndexPair& gate) {
       assert(offsets_.size() > 1 &&
              "No active layer. Call startNextLayer() first.");
@@ -634,54 +660,42 @@ private:
       offsets_.back() = storage_.size();
     }
 
-    /// Returns a slice view (ArrayRef) of a specific layer.
-    [[nodiscard]] ArrayRef<QubitIndexPair> getRipple(size_t i) const {
-      assert(i < nripples() && "Ripple index out of bounds");
+    /// Returns a slice view of a specific layer.
+    [[nodiscard]] ArrayRef<QubitIndexPair> get(size_t i) const {
+      assert(i < nlayers() && "Lookahead index out of bounds");
       const auto start = offsets_[i];
       const auto end = offsets_[i + 1];
       return {storage_.data() + start, end - start};
     }
 
-    /// Returns the total number of ripples.
-    [[nodiscard]] size_t nripples() const { return offsets_.size() - 1; }
-
-    /// Returns the total number of elements.
+    /// Return the number of elements stored accross all layers.
     [[nodiscard]] size_t size() const { return storage_.size(); }
 
-    /// Return true, if the wave is empty.
-    [[nodiscard]] bool empty() const { return storage_.empty(); }
+    /// Returns the total number of lookahead layers.
+    [[nodiscard]] size_t nlayers() const { return offsets_.size() - 1; }
 
-    [[nodiscard]] auto begin() const { return storage_.begin(); }
-    [[nodiscard]] auto end() const { return storage_.end(); }
-
-    /// Reset the wave to the initial empty state.
+    /// Reset to the initial, empty configuration.
     void reset() {
       storage_.clear();
       offsets_ = {0};
     }
 
   private:
-    /// Flat contiguous array storing all elements across all ripples.
+    /// Flat contiguous array storing all elements across the lookahead layers.
     SmallVector<QubitIndexPair> storage_;
-    /// Offsets marking the start index of each ripple in the storage, where [r]
-    /// defines the start of the ripple r and [r + 1] its end.
+    /// Offsets marking the start index of each lookahead layer, where [l]
+    /// defines the start of the layer l and [l + 1] its end.
     SmallVector<size_t, 8> offsets_ = {0};
   };
 
-  class SerialWave {
-  public:
-    explicit SerialWave(const Wave* wave) : wave_(wave) {}
+  struct Horizon {
+    Front front;
+    Lookahead lookahead;
 
-    [[nodiscard]] QubitIndexPair front() const {
-      assert(!wave_->empty());
-      return *wave_->begin();
+    /// Returns the total number of elements.
+    [[nodiscard]] size_t size() const {
+      return front.size() + lookahead.size();
     }
-
-    [[nodiscard]] auto begin() const { return wave_->begin(); }
-    [[nodiscard]] auto end() const { return wave_->end(); }
-
-  private:
-    const Wave* wave_;
   };
 
   /// Describes a node in the A* search graph.
@@ -705,7 +719,7 @@ private:
 
     /// Initialize a child from its parent while reusing layout capacity.
     void initializeChild(Node* nextParent, const SwapCandidate& candidate,
-                         const SerialWave& wave, const CompilerTarget& target,
+                         const Horizon& horizon, const CompilerTarget& target,
                          const Parameters& params) {
       layout = nextParent->layout;
       layout.swap(candidate.indices.first, candidate.indices.second);
@@ -714,7 +728,7 @@ private:
       cost = nextParent->cost + static_cast<int64_t>(candidate.standalone) +
              candidate.prefix;
       f = params.alpha * static_cast<float>(cost) +
-          static_cast<float>(candidate.standalone) * h(wave, target, params);
+          static_cast<float>(candidate.standalone) * h(horizon, target, params);
 
       swap = candidate.indices;
       parent = nextParent;
@@ -750,16 +764,25 @@ private:
     /// between its hardware qubits. Intuitively, this is the number of SWAPs
     /// that a naive router would insert to route the layers (with a constant
     /// layout).
-    [[nodiscard]] float h(const SerialWave& wave, const CompilerTarget& target,
+    [[nodiscard]] float h(const Horizon& horizon, const CompilerTarget& target,
                           const Parameters& params) const {
       float costs{0};
       float decay{1.};
 
-      for (const auto& [prog0, prog1] : wave) {
+      for (const auto& [prog0, prog1] : horizon.front.view()) {
         const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
         const size_t nswaps = target.distanceBetween(hw0, hw1) - 1;
         costs += decay * static_cast<float>(nswaps);
         decay *= params.lambda;
+      }
+
+      for (size_t i = 0; i < horizon.lookahead.nlayers(); ++i) {
+        for (const auto& [prog0, prog1] : horizon.lookahead.get(i)) {
+          const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
+          const size_t nswaps = target.distanceBetween(hw0, hw1) - 1;
+          costs += decay * static_cast<float>(nswaps);
+          decay *= params.lambda;
+        }
       }
 
       return costs;
@@ -1470,7 +1493,7 @@ private:
   /// Route the leading interaction with bounded A* node storage.
   /// Drain queued states at the limit, then use distance-reducing SWAPs.
   [[nodiscard]] SmallVector<QubitIndexPair>
-  search(const SerialWave& wave, RoutingState& state, Arena& arena,
+  search(const Horizon& horizon, RoutingState& state, Arena& arena,
          const Environment& env) const {
     const Parameters params{.alpha = alpha, .lambda = lambda};
 
@@ -1479,7 +1502,7 @@ private:
     assert(root != nullptr && "expected root allocation to succeed");
 
     root->initializeRoot(state.layout);
-    if (root->isGoal(wave.front(), env.target)) {
+    if (root->isGoal(horizon.front.front(), env.target)) {
       return SmallVector<QubitIndexPair>{};
     }
 
@@ -1492,7 +1515,7 @@ private:
       // If the currently visited node is a goal node, reconstruct the
       // sequence of SWAPs from this node to the root.
 
-      if (curr->isGoal(wave.front(), env.target)) {
+      if (curr->isGoal(horizon.front.front(), env.target)) {
         return curr->swaps();
       }
 
@@ -1500,7 +1523,8 @@ private:
       // between two neighboring hardware qubits.
 
       llvm::SmallDenseSet<QubitIndexPair, 8> seen;
-      for (const auto& [q0, q1] = wave.front(); const auto prog : {q0, q1}) {
+      for (const auto& [q0, q1] = horizon.front.front();
+           const auto prog : {q0, q1}) {
         const auto hw0 = curr->layout.getHardwareIndex(prog);
         env.target.forEachNeighbour(hw0, [&](const QubitIndex hw1) {
           const QubitIndexPair indices(std::minmax(hw0, hw1));
@@ -1522,7 +1546,8 @@ private:
                 .prefix = prefix,
             };
 
-            child->initializeChild(curr, candidate, wave, env.target, params);
+            child->initializeChild(curr, candidate, horizon, env.target,
+                                   params);
             seen.insert(indices);
             frontier.push(child);
           }
@@ -1534,7 +1559,7 @@ private:
     /// Greedy completion can cost later gates. Thus, increase the search
     /// budget when routing quality matters more than memory use.
 
-    const auto [prog0, prog1] = wave.front();
+    const auto [prog0, prog1] = horizon.front.front();
     const auto [hw0, hw1] = state.layout.getHardwareIndices(prog0, prog1);
     const auto path = env.target.shortestPathBetween(hw0, hw1);
 
@@ -1687,23 +1712,25 @@ private:
   /// Collect a routing lookahead window of up to `1 + nlookahead` ready
   /// two-qubit gates, while skipping qubit-pair blocks.
   template <WireDirection Direction>
-  void setLookahead(Wires wires, Wave& wave, const Layout<QubitIndex>& layout,
+  void setLookahead(Wires wires, Horizon& horizon,
+                    const Layout<QubitIndex>& layout,
                     const Boundary<Direction>& boundary) {
-    assert(wave.nripples() == 1 && "expected a 'front' ripple");
+    assert(horizon.front.size() != 0 && "expected a non-empty front");
 
     // Advance past the front gates without invoking the driver.
 
     constexpr auto stride = WireTraversalTraits<Direction>::stride();
-    for (const auto [prog0, prog1] : wave.getRipple(0)) {
+    for (const auto [prog0, prog1] : horizon.front.view()) {
       const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
       assert(wires[hw0].operation() == wires[hw1].operation());
       std::ranges::advance(wires[hw0], stride);
       std::ranges::advance(wires[hw1], stride);
     }
 
-    SmallVector<QubitIndexPair> prev(wave.getRipple(0));
+    SmallVector<QubitIndexPair> prev(horizon.front.view());
     SmallVector<QubitIndexPair> next;
 
+    horizon.lookahead.reset();
     walkProgramGraph<Direction>(
         MutableArrayRef(wires.data(), wires.size()),
         [&](const Frontier& frontier, ReleasedOps& released) {
@@ -1716,12 +1743,13 @@ private:
           }
 
           if (released.empty()) {
-            wave.addRipple();
+            horizon.lookahead.next();
             for (const auto& [op, indices] : frontier) {
               if (boundary.operation() != nullptr &&
                   !precedes<Direction>(op, boundary.operation())) {
                 continue;
               }
+
               if (!isa<BarrierOp>(op) && isa<UnitaryOpInterface>(op)) {
                 const auto i0 = indices[0];
                 const auto i1 = indices[1];
@@ -1730,8 +1758,8 @@ private:
                 const QubitIndexPair gate = std::minmax(prog0, prog1);
 
                 if (!is_contained(prev, gate)) {
-                  wave.push(gate);
-                  if (wave.size() == 1 + nlookahead) {
+                  horizon.lookahead.push(gate);
+                  if (horizon.size() == 1 + nlookahead) {
                     return WalkResult::interrupt();
                   }
                 }
@@ -1883,7 +1911,7 @@ private:
   /// or sink-like operations. Backward traversal can exhaust block arguments.
   template <WireDirection Direction>
   std::optional<CompositeUnitary>
-  prepareFront(RoutingState& state, Wave& wave,
+  prepareFront(RoutingState& state, Horizon& horizon,
                const Boundary<Direction>& boundary, const Environment& env) {
 
     /// Advancement only moves iterators. Discard classifications before routing
@@ -1927,7 +1955,6 @@ private:
     llvm::SmallPtrSet<Operation*, 16> stale;
     std::optional<CompositeUnitary> composite;
 
-    wave.addRipple();
     walkProgramGraph<Direction>(state.wires, [&](const Frontier& frontier,
                                                  ReleasedOps& released) {
       for (const auto& [op, indices] : frontier) {
@@ -1944,24 +1971,31 @@ private:
                   if (indices.size() == 1) {
                     return true;
                   }
-                  const auto adjacent =
-                      env.target.areAdjacent(indices[0], indices[1]);
-                  if (!adjacent) {
-                    const auto [prog0, prog1] =
-                        state.layout.getProgramIndices(indices[0], indices[1]);
 
-                    wave.push(std::make_pair(prog0, prog1));
+                  const auto [prog0, prog1] =
+                      state.layout.getProgramIndices(indices[0], indices[1]);
+                  const QubitIndexPair endpoint = std::minmax(prog0, prog1);
 
-                    // To not revisit the same un-executable two-qubit
-                    // interaction again later, mark it as "stale".
-
-                    stale.insert(op);
+                  if (env.target.areAdjacent(indices[0], indices[1])) {
+                    horizon.front.erase(endpoint);
+                    return true;
                   }
-                  return adjacent;
+
+                  // If the two-qubit interaction is not executable, try to add
+                  // it to the front.
+
+                  horizon.front.push(endpoint);
+
+                  // To not revisit the same un-executable two-qubit
+                  // interaction again later, mark it as "stale".
+
+                  stale.insert(op);
+
+                  return false;
                 })
                 .Case([](ResetOp) { return true; })
                 .Case([&](MeasureOp m) {
-                  if (Direction == WireDirection::Backward) {
+                  if constexpr (Direction == WireDirection::Backward) {
                     return true;
                   }
                   return measurementNeedsRouting(m, measurementRouting);
@@ -2219,7 +2253,17 @@ private:
     } else {
       permuteWires(parent.wires, permutation);
     }
+
+    // Propagate the exit layout to the parent state and advance past the
+    // composite for the parent's wires.
+
     parent.layout = std::move(exit);
+    for (auto& wire : parent.wires) {
+      if (wire != std::default_sentinel && wire.operation() == composite.op) {
+        std::ranges::advance(wire, WireTraversalTraits<Direction>::stride());
+      }
+    }
+
     return totalStats;
   }
 
@@ -2233,13 +2277,12 @@ private:
       state.costs->reset(Direction);
     }
 
+    Horizon horizon;
     Statistics stats;
-    Wave wave;
     Boundary<Direction> boundary(region.front());
 
     while (true) {
-      wave.reset();
-      auto composite = prepareFront<Direction>(state, wave, boundary, env);
+      auto composite = prepareFront<Direction>(state, horizon, boundary, env);
       if (composite) {
         assert(composite->op == boundary.operation());
         boundary.setNextBoundary();
@@ -2248,24 +2291,18 @@ private:
           place(*composite, state, *rewriter);
         }
 
-        stats.merge(routeComposite<Direction, Mode>(*composite, state, arena,
-                                                    env, rewriter));
+        const auto localStats = routeComposite<Direction, Mode>(
+            *composite, state, arena, env, rewriter);
+        stats.merge(localStats);
 
-        for (auto& wire : state.wires) {
-          if (wire != std::default_sentinel &&
-              wire.operation() == composite->op) {
-            std::ranges::advance(wire,
-                                 WireTraversalTraits<Direction>::stride());
-          }
-        }
-      } else if (wave.empty()) {
+      } else if (horizon.front.empty()) {
         break;
       } else {
-        if (wave.size() < 1 + nlookahead) {
-          setLookahead(state.wires, wave, state.layout, boundary);
+        if (horizon.size() < 1 + nlookahead) {
+          setLookahead(state.wires, horizon, state.layout, boundary);
         }
 
-        const auto swaps = search(SerialWave(&wave), state, arena, env);
+        const auto swaps = search(horizon, state, arena, env);
         insertSWAPs<Mode>(swaps, state, stats, rewriter);
       }
     }
