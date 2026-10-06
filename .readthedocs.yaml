@@ -13,7 +13,7 @@ build:
     build:
       html:
         # Presentation-branch override: package captures without native builds.
-        - uv run --no-project presentations/mqsf2026/build.py --output "$READTHEDOCS_OUTPUT/html"
+        - python -m uv run --no-project presentations/mqsf2026/build.py --output "$READTHEDOCS_OUTPUT/html"
       htmlzip:
         - mkdir -p "$READTHEDOCS_OUTPUT/htmlzip"
         - cp "$READTHEDOCS_OUTPUT/html/mqsf-2026.zip" "$READTHEDOCS_OUTPUT/htmlzip/html.zip"
