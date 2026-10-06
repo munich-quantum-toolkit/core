@@ -3579,6 +3579,40 @@ TEST(DDPackageTest, RejectsMalformedSerializationAndRecovers) {
   }
 }
 
+TEST(DDPackageTest, DeserializationRejectsSkippedVectorLevels) {
+  auto package = ::mqt::test::value(Package::create(3));
+  const auto oneQubit = ::mqt::test::value(makeZeroState(1, *package));
+  for (const bool binary : {false, true}) {
+    for (const auto& child : {vEdge::one(), oneQubit}) {
+      SCOPED_TRACE(::testing::Message() << "binary=" << binary
+                                        << ", terminal=" << child.isTerminal());
+      vNode node{};
+      node.v = 2;
+      node.e = {child, vEdge::zero()};
+      std::stringstream stream;
+      serialize(vEdge{&node, Complex::one()}, stream, binary);
+      EXPECT_EQ(::mqt::test::errorKind([&] {
+                  return package->deserialize<vNode>(stream, binary);
+                }),
+                ::mqt::ErrorCategory::InvalidArgument);
+    }
+  }
+}
+
+TEST(DDPackageTest, DeserializationPreservesSkippedMatrixLevels) {
+  auto package = ::mqt::test::value(Package::create(3));
+  const auto high = ::mqt::test::value(package->makeGateDD(X_MAT, 2));
+  const auto low = ::mqt::test::value(package->makeGateDD(X_MAT, 0));
+  for (const auto& matrix : {high, package->multiply(high, low)}) {
+    for (const bool binary : {false, true}) {
+      std::stringstream stream;
+      serialize(matrix, stream, binary);
+      EXPECT_EQ(::mqt::test::value(package->deserialize<mNode>(stream, binary)),
+                matrix);
+    }
+  }
+}
+
 TEST(DDPackageTest, RejectsUnrepresentableMeasurementOutcomes) {
   auto package = ::mqt::test::value(Package::create(65));
   const auto wide = ::mqt::test::value(makeZeroState(65, *package));
