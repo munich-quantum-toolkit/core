@@ -267,9 +267,11 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     For disjoint interaction paths and isolated qubits, it first tries to place
     them along one path through the target sites. The walk prefers neighbors
     with fewer unused edges and accepts only a complete placement; it does not
-    backtrack. Other interaction graphs and failed walks use the weighted
-    greedy layout, which places frequently interacting qubits nearby, starting
-    at a central target site. This layout occupies the first trial slot.
+    backtrack. A complete path placement needs no routing and skips layout
+    trials, as does an executable identity layout. Other interaction graphs and
+    failed walks use the weighted greedy layout, which places frequently
+    interacting qubits nearby, starting at a central target site. This layout
+    occupies the first trial slot.
 
     With an explicit native operation set and a usable entangler basis, each
     candidate is scored by a read-only forward traversal of original gates and
