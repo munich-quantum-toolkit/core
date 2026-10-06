@@ -55,8 +55,24 @@ void setUnitaryFunction(Operation* operation);
   return nullptr;
 }
 
-/// Check that dynamic quantum allocations belong to the program entry block.
-/// Modules without an entry point must not contain dynamic quantum allocations.
-/// Nested modules have separate program scopes.
+/// Check dynamic quantum allocation placement.
+///
+/// An allocation in the entry block of the program entry point may live until
+/// the program ends. Any other allocation must be released in the block that
+/// allocates it. Modules without an entry point must not contain dynamic
+/// quantum allocations. Nested modules have separate program scopes.
 [[nodiscard]] LogicalResult verifyQuantumAllocations(ModuleOp moduleOp);
+
+/// Check that every dynamic quantum allocation is in the entry block of the
+/// program entry point.
+///
+/// This is stricter than `verifyQuantumAllocations` and serves consumers that
+/// need all qubits allocated up front, such as mapping and QIR conversion.
+/// Modules without an entry point must not contain dynamic quantum allocations.
+[[nodiscard]] LogicalResult
+verifyEntryBlockQuantumAllocations(ModuleOp moduleOp);
+
+/// Check that every function returns one trailing value for each QCO qubit or
+/// register argument, continuing those arguments in argument order.
+[[nodiscard]] LogicalResult verifyQuantumArgumentReturns(ModuleOp moduleOp);
 } // namespace mlir::mqt

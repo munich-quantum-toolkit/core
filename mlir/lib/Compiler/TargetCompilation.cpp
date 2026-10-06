@@ -139,7 +139,7 @@ protected:
       signalPassFailure();
       return;
     }
-    if (failed(mqt::verifyQuantumAllocations(getOperation()))) {
+    if (failed(mqt::verifyEntryBlockQuantumAllocations(getOperation()))) {
       signalPassFailure();
       return;
     }

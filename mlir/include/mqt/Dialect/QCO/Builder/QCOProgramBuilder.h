@@ -49,8 +49,9 @@ namespace qco {
 /// allocation
 /// (`allocQubit`, `allocQubitRegister`, or `qtensorAlloc`), never both. The
 /// builder terminates with a usage error if the modes are mixed.
-/// Dynamic allocation is only allowed directly in the entry block of the
-/// `mqt.entry_point` function. Helpers receive allocated qubits as arguments.
+/// Dynamic allocation is only allowed directly in the entry block of a
+/// non-unitary function. Qubits a helper function allocates are released when
+/// the builder completes that function; other qubits are passed as arguments.
 ///
 /// @par Structured control flow:
 /// These rules apply to linear results; `qcoIf` may prepend classical results.
@@ -113,7 +114,7 @@ public:
   ///
   /// The callback must return one trailing value for every scalar qubit or
   /// complete quantum register argument, in argument order.
-  /// The body must not dynamically allocate qubits or qubit tensors.
+  /// Qubits the body allocates and leaves live are released at its end.
   func::FuncOp
   createFunction(StringRef name, TypeRange argumentTypes,
                  function_ref<SmallVector<Value>(ValueRange)> body);
@@ -238,7 +239,8 @@ public:
   };
 
   /// Allocate a single qubit initialized to |0⟩
-  /// Requires an insertion point in the entry block of `mqt.entry_point`.
+  /// Requires an insertion point in the entry block of a non-unitary
+  /// function.
   /// @return A tracked qubit handle (convertible to `Value`)
   ///
   /// @par Example:
@@ -264,7 +266,8 @@ public:
   Qubit staticQubit(uint64_t index);
 
   /// Allocate a qubit tensor and eagerly extract every element
-  /// Requires an insertion point in the entry block of `mqt.entry_point`.
+  /// Requires an insertion point in the entry block of a non-unitary
+  /// function.
   /// @param size Number of qubits (must be positive)
   /// @param name Optional source-level register name
   /// @return A `QubitRegister` containing the residual tensor and one
@@ -322,7 +325,8 @@ public:
   /// `!qco.qubit` values. No elements are extracted. If the size is a constant,
   /// the tensor has static size; otherwise it has dynamic size. Its qubits are
   /// initialized in the |0⟩ state, and the tensor is tracked automatically.
-  /// Requires an insertion point in the entry block of `mqt.entry_point`.
+  /// Requires an insertion point in the entry block of a non-unitary
+  /// function.
   ///
   /// @param size Number of qubits (must be positive)
   /// @return The allocated tensor
@@ -1913,8 +1917,15 @@ private:
   AllocationMode allocationMode = AllocationMode::Unset;
 
   /// Ensure static and dynamic qubit allocation modes are not mixed.
-  /// Dynamic allocation also requires the entry-point entry block.
+  /// Dynamic allocation also requires the entry block of a non-unitary
+  /// function.
   void ensureAllocationMode(AllocationMode requestedMode);
+
+  /// Create a complete private function, marked unitary before its body is
+  /// built when @p unitary is set.
+  func::FuncOp buildFunction(StringRef name, TypeRange argumentTypes,
+                             function_ref<SmallVector<Value>(ValueRange)> body,
+                             bool unitary);
 };
 } // namespace qco
 } // namespace mlir

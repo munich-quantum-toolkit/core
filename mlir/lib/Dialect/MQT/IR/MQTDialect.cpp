@@ -19,6 +19,7 @@
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/Utils/FunctionUtils.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 #include "mqt/Support/RandomSeed.h"
 
@@ -71,7 +72,83 @@ void MQTDialect::initialize() {
 #define GET_ATTRDEF_CLASSES
 #include "mqt/Dialect/MQT/IR/MQTAttributes.cpp.inc"
 
-LogicalResult mlir::mqt::verifyQuantumAllocations(ModuleOp moduleOp) {
+/// Return whether a linear quantum value is released in the block that
+/// creates it.
+///
+/// The value is followed forward to the `qco.sink` or `qtensor.dealloc` that
+/// releases it. Handing it to a register, a terminator, another block, or an
+/// operation that does not continue it lets it escape. Region operations and
+/// calls are crossed by position, so the release is confirmed by tracing the
+/// released value back to @p created, which proves the correspondence the
+/// forward walk assumed. The walk checks linearity itself because the wire and
+/// tensor iterators assume it.
+[[nodiscard]] static bool isReleasedInBlock(Value created) {
+  Block* block = created.getParentBlock();
+  Value value = created;
+  while (value.hasOneUse()) {
+    OpOperand& use = *value.use_begin();
+    Operation* user = use.getOwner();
+    if (user->getBlock() != block) {
+      return false;
+    }
+    if (isa<qco::SinkOp, qtensor::DeallocOp>(user)) {
+      auto origin = qco::traceQuantumOrigin(value);
+      return succeeded(origin) && *origin == created;
+    }
+    value =
+        TypeSwitch<Operation*, Value>(user)
+            .Case([&](qco::UnitaryOpInterface op) {
+              return op.getOutputForInput(value);
+            })
+            .Case([](qco::MeasureOp op) { return op.getQubitOut(); })
+            .Case([](qco::ResetOp op) { return op.getQubitOut(); })
+            .Case([](qtensor::ExtractOp op) { return op.getOutTensor(); })
+            .Case([&](qtensor::InsertOp op) {
+              return value == op.getDest() ? op.getResult() : Value{};
+            })
+            .Case([&](scf::ForOp op) { return op.getTiedLoopResult(&use); })
+            .Case([&](scf::WhileOp op) {
+              const auto index = use.getOperandNumber();
+              return index < op->getNumResults() ? op->getResult(index)
+                                                 : Value{};
+            })
+            .Case([&](qco::IfOp op) { return op.getTiedResult(&use); })
+            .Case([&](qco::IndexSwitchOp op) { return op.getTiedResult(&use); })
+            .Case([&](func::CallOp op) {
+              auto result =
+                  qco::getCallResultForArgument(op, use.getOperandNumber());
+              return succeeded(result) ? op.getResult(*result) : Value{};
+            })
+            .Default([](Operation*) { return Value{}; });
+    if (!value) {
+      return false;
+    }
+  }
+  return false;
+}
+
+/// Return whether a dynamic quantum allocation is released in its own block.
+[[nodiscard]] static bool isReleasedInBlock(Operation* allocation) {
+  if (isa<qco::AllocOp, qtensor::AllocOp>(allocation)) {
+    return isReleasedInBlock(allocation->getResult(0));
+  }
+  // A QC reference stays valid until it is deallocated, so the deallocation
+  // only has to share the block.
+  Value reference = allocation->getResult(0);
+  return llvm::any_of(reference.getUsers(), [&](Operation* user) {
+    return isa<qc::DeallocOp, memref::DeallocOp>(user) &&
+           user->getBlock() == allocation->getBlock();
+  });
+}
+
+/// Check dynamic quantum allocation placement and allocation modes.
+///
+/// An allocation in the entry block of the entry point may live until the
+/// program ends. With @p requireEntryBlock, no other allocation is accepted;
+/// otherwise, any other allocation must be released in its own block. A module
+/// without an entry point is not a program and accepts no allocation.
+[[nodiscard]] static LogicalResult
+verifyAllocationPlacement(ModuleOp moduleOp, bool requireEntryBlock) {
   auto entryPoint = getEntryPoint(moduleOp);
   Block* entryBlock = entryPoint && !entryPoint.isExternal()
                           ? &entryPoint.getBody().front()
@@ -97,16 +174,84 @@ LogicalResult mlir::mqt::verifyQuantumAllocations(ModuleOp moduleOp) {
               "cannot mix static and dynamic qubit allocation modes");
           return WalkResult::interrupt();
         }
-        if (allocatesQubits &&
-            (!entryBlock || operation->getBlock() != entryBlock)) {
+        if (!allocatesQubits ||
+            (entryBlock != nullptr && operation->getBlock() == entryBlock)) {
+          return WalkResult::advance();
+        }
+        if (requireEntryBlock || entryBlock == nullptr) {
           operation->emitOpError(
               "dynamic quantum allocations must be in the entry "
               "block of the 'mqt.entry_point' function");
           return WalkResult::interrupt();
         }
+        if (!operation->getParentOfType<func::FuncOp>()) {
+          operation->emitOpError(
+              "dynamic quantum allocations must be inside a function");
+          return WalkResult::interrupt();
+        }
+        if (!isReleasedInBlock(operation)) {
+          operation->emitOpError(
+              "dynamic quantum allocations outside the entry block of the "
+              "'mqt.entry_point' function must be released in the block that "
+              "allocates them");
+          return WalkResult::interrupt();
+        }
         return WalkResult::advance();
       });
   return success(!result.wasInterrupted());
+}
+
+LogicalResult mlir::mqt::verifyQuantumAllocations(ModuleOp moduleOp) {
+  return verifyAllocationPlacement(moduleOp, /*requireEntryBlock=*/false);
+}
+
+LogicalResult mlir::mqt::verifyEntryBlockQuantumAllocations(ModuleOp moduleOp) {
+  return verifyAllocationPlacement(moduleOp, /*requireEntryBlock=*/true);
+}
+
+LogicalResult mlir::mqt::verifyQuantumArgumentReturns(ModuleOp moduleOp) {
+  for (auto function : moduleOp.getOps<func::FuncOp>()) {
+    auto arguments =
+        qco::getQuantumArgumentIndices(function.getArgumentTypes());
+    if (arguments.empty()) {
+      continue;
+    }
+    const auto numResults = function.getNumResults();
+    if (numResults < arguments.size()) {
+      return function.emitOpError(
+          "must return one trailing quantum value for each quantum argument");
+    }
+    const auto firstQuantumResult = numResults - arguments.size();
+    for (auto [offset, argument] : llvm::enumerate(arguments)) {
+      if (function.getResultTypes()[firstQuantumResult + offset] !=
+          function.getArgumentTypes()[argument]) {
+        return function.emitOpError(
+            "must return one trailing quantum value for each quantum argument");
+      }
+    }
+    if (function.isDeclaration()) {
+      continue;
+    }
+    // Operation verification may not have reached this function yet, so do
+    // not assume a well-formed body.
+    auto& body = function.getBody();
+    auto returnOp = body.hasOneBlock() && !body.front().empty()
+                        ? dyn_cast<func::ReturnOp>(body.front().back())
+                        : nullptr;
+    if (!returnOp || returnOp.getNumOperands() != numResults) {
+      return function.emitOpError()
+             << "must return its quantum arguments in argument order";
+    }
+    for (auto [offset, argument] : llvm::enumerate(arguments)) {
+      auto traced = qco::traceQubitArgument(
+          function, returnOp.getOperand(firstQuantumResult + offset));
+      if (failed(traced) || *traced != argument) {
+        return function.emitOpError()
+               << "must return its quantum arguments in argument order";
+      }
+    }
+  }
+  return success();
 }
 
 [[nodiscard]] static LogicalResult
@@ -132,7 +277,10 @@ verifyEntryPoint(Operation* operation, const NamedAttribute attribute) {
              << "module must contain at most one program entry point";
     }
   }
-  return verifyQuantumAllocations(moduleOp);
+  if (failed(verifyQuantumAllocations(moduleOp))) {
+    return failure();
+  }
+  return verifyQuantumArgumentReturns(moduleOp);
 }
 
 template <typename CallOp>

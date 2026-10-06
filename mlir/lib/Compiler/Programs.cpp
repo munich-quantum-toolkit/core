@@ -360,7 +360,8 @@ QCOProgram::fromModule(std::shared_ptr<MLIRContext> context,
   storage.context->getOrLoadDialect<mqt::MQTDialect>();
   if (failed(verify(*storage.mod)) ||
       (!mqt::getEntryPoint(*storage.mod) &&
-       failed(mqt::verifyQuantumAllocations(*storage.mod)))) {
+       (failed(mqt::verifyQuantumAllocations(*storage.mod)) ||
+        failed(mqt::verifyQuantumArgumentReturns(*storage.mod))))) {
     return std::nullopt;
   }
   if (moduleUsesDialect(*storage.mod, "qc")) {

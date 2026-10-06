@@ -488,10 +488,9 @@ module {
     assert "constant or symbolic" in str(error.value)
 
 
-def test_loop_resource_allocation_is_rejected_at_import(capfd: pytest.CaptureFixture[str]) -> None:
-    """Reject loop-local quantum allocations when constructing the program."""
-    with pytest.raises(RuntimeError, match="Compiler action failed"):
-        QCProgram.from_mlir_str("""
+def test_loop_resource_allocation_is_rejected_at_export() -> None:
+    """Accept a loop-local allocation released in its block, but not in Qiskit."""
+    program = QCProgram.from_mlir_str("""
 module {
   func.func @main() attributes {mqt.entry_point} {
     %true = arith.constant true
@@ -507,9 +506,8 @@ module {
   }
 }
 """)
-    diagnostic = capfd.readouterr().err
-    assert "'qc.alloc' op dynamic quantum allocations must be in the entry block" in diagnostic
-    assert "of the 'mqt.entry_point' function" in diagnostic
+    with pytest.raises(RuntimeError, match="cannot allocate or release circuit resources"):
+        program.to_qiskit()
 
 
 def test_first_measurement_initializes_do_while_output() -> None:

@@ -163,6 +163,68 @@ TEST_F(QCQCORoundTripTest, PreservesReusableFunctions) {
   }
 }
 
+TEST_F(QCQCORoundTripTest, KeepsHelperAllocationsLocal) {
+  constexpr StringLiteral qcSource = R"mlir(
+module {
+  func.func private @helper(%q: !qc.qubit) {
+    %scratch = qc.alloc : !qc.qubit
+    qc.h %scratch : !qc.qubit
+    qc.h %q : !qc.qubit
+    qc.dealloc %scratch : !qc.qubit
+    return
+  }
+  func.func @main() attributes {mqt.entry_point} {
+    %q = qc.alloc : !qc.qubit
+    func.call @helper(%q) : (!qc.qubit) -> ()
+    qc.dealloc %q : !qc.qubit
+    return
+  }
+}
+)mlir";
+  constexpr StringLiteral qcoSource = R"mlir(
+module {
+  func.func private @helper(%q: !qco.qubit) -> !qco.qubit {
+    %scratch = qco.alloc : !qco.qubit
+    %prepared = qco.h %scratch : !qco.qubit -> !qco.qubit
+    qco.sink %prepared : !qco.qubit
+    %out = qco.h %q : !qco.qubit -> !qco.qubit
+    return %out : !qco.qubit
+  }
+  func.func @main() attributes {mqt.entry_point} {
+    %q = qco.alloc : !qco.qubit
+    %out = func.call @helper(%q) : (!qco.qubit) -> !qco.qubit
+    qco.sink %out : !qco.qubit
+    return
+  }
+}
+)mlir";
+
+  for (const auto& [source, reverse] :
+       {std::pair{qcSource, false}, std::pair{qcoSource, true}}) {
+    SCOPED_TRACE(source.str());
+    auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(moduleOp);
+    auto helper = moduleOp->lookupSymbol<func::FuncOp>("helper");
+    ASSERT_TRUE(helper);
+    const auto signature = helper.getFunctionType();
+
+    ASSERT_TRUE(succeeded(reverse ? runReverseRoundTrip(*moduleOp)
+                                  : runRoundTrip(*moduleOp)));
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+    // The scratch qubit stays a local allocation instead of becoming an
+    // argument.
+    helper = moduleOp->lookupSymbol<func::FuncOp>("helper");
+    ASSERT_TRUE(helper);
+    EXPECT_EQ(helper.getFunctionType(), signature);
+    size_t allocations = 0;
+    helper.walk([&](Operation* operation) {
+      allocations += isa<qc::AllocOp, qco::AllocOp>(operation) ? 1 : 0;
+    });
+    EXPECT_EQ(allocations, 1U);
+  }
+}
+
 TEST_F(QCQCORoundTripTest, PreservesClassicalRegistersWithoutConversion) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {

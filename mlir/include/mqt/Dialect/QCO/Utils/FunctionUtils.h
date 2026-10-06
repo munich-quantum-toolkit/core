@@ -26,6 +26,10 @@ namespace mlir::qco {
 [[nodiscard]] FailureOr<unsigned> getCallArgumentForResult(func::CallOp call,
                                                            unsigned result);
 
+/// Synthetic trailing result of an ordinary call that continues an argument.
+[[nodiscard]] FailureOr<unsigned> getCallResultForArgument(func::CallOp call,
+                                                           unsigned argument);
+
 /// Return the quantum argument continued by @p value.
 ///
 /// QCO functions return one trailing value for every scalar qubit or register
@@ -34,7 +38,16 @@ namespace mlir::qco {
 [[nodiscard]] FailureOr<unsigned> traceQubitArgument(func::FuncOp function,
                                                      Value value);
 
-/// Return the quantum block argument continued by @p value.
+/// Return the value that @p value continues: a block argument, or the result
+/// that created it, such as an allocation or an extracted register element.
+///
+/// The trace crosses a region operation only after proving that every region
+/// hands the value back at its own position, so a branch or loop that
+/// exchanges values fails the trace. Values the trace cannot follow fail
+/// rather than abort, which makes this usable on unverified IR.
+[[nodiscard]] FailureOr<Value> traceQuantumOrigin(Value value);
+
+/// Return the quantum block argument of @p block continued by @p value.
 [[nodiscard]] FailureOr<unsigned> traceQubitArgument(Block& block, Value value);
 
 /// Check that extracted tensor slots are restored at calls and region exits.

@@ -182,26 +182,32 @@ TEST_F(QCOTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
       "Cannot mix dynamic and static qubit allocation modes");
 }
 
-TEST_F(QCOTest, BuilderRejectsDynamicAllocationOutsideEntryBlock) {
-  EXPECT_DEATH(
-      {
-        QCOProgramBuilder builder(context.get());
-        builder.initialize();
-        builder.createFunction("dynamic_helper", {}, [&](ValueRange) {
-          builder.allocQubit();
-          return SmallVector<Value>{};
-        });
-      },
-      "Dynamic qubit allocation requires the entry block");
+TEST_F(QCOTest, BuilderReleasesHelperFunctionAllocations) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  auto helper = builder.createFunction("scratch", {}, [&](ValueRange) {
+    builder.h(builder.allocQubit());
+    builder.allocQubitRegister(2);
+    return SmallVector<Value>{};
+  });
+  builder.call(helper, {});
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(moduleOp);
+  // Verification proves every helper allocation is released in its block.
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+}
 
+TEST_F(QCOTest, BuilderRejectsDynamicAllocationOutsideFunctionEntryBlocks) {
   EXPECT_DEATH(
       {
         QCOProgramBuilder builder(context.get());
         builder.initialize();
-        builder.createFunction("dynamic_helper", {}, [&](ValueRange) {
-          builder.allocQubitRegister(1);
-          return SmallVector<Value>{};
-        });
+        builder.createUnitaryFunction(
+            "unitary_helper", {builder.getType<QubitType>()},
+            [&](ValueRange arguments) {
+              builder.allocQubit();
+              return SmallVector<Value>{arguments.front()};
+            });
       },
       "Dynamic qubit allocation requires the entry block");
 

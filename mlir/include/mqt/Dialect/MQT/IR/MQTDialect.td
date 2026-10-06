@@ -65,12 +65,17 @@ def MQTDialect : Dialect {
     conversion. Input and register names share one function-wide
     namespace.
     `mqt.entry_point` marks the single public, defined `func.func` program entry
-    in a module. Dynamic quantum allocations (`qc.alloc`, `qco.alloc`,
-    qubit `memref.alloc`, and `qtensor.alloc`) must appear directly in its
-    entry block. Other functions receive quantum resources as arguments;
-    they cannot allocate them. Classical allocations and static qubit references
-    are not subject to this restriction. A program cannot mix static and
-    dynamic qubit allocation modes.
+    in a module. A dynamic quantum allocation (`qc.alloc`, `qco.alloc`,
+    qubit `memref.alloc`, or `qtensor.alloc`) directly in its entry block may
+    live until the program ends. Any other dynamic quantum allocation must be
+    released in the block that allocates it: by `qc.dealloc` or
+    `memref.dealloc`, or by following the QCO value to `qco.sink` or
+    `qtensor.dealloc`. Mapping and QIR conversion accept only entry-block
+    allocations. Classical allocations and static qubit references are not
+    subject to these restrictions. A program cannot mix static and dynamic
+    qubit allocation modes. Every function returns one trailing value for each
+    QCO qubit or register argument, continuing those arguments in argument
+    order.
     `mqt.unitary` marks a private function that defines a unitary operation.
     Its body admits unitary operations and memory-effect-free, region-free
     classical computation. Statically bounded `scf.for` loops may contain these

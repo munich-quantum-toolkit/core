@@ -1,55 +1,64 @@
-# Quantum allocation scope
+# Quantum allocation scope and function results
 
-Status: complete; validated locally.
+Status: implemented; validated locally except the Python test session.
 
 ## Goal and scope
 
-Dynamic quantum allocations in QC/QCO programs belong in the entry block of the
-function marked `mqt.entry_point`. Helper functions receive quantum resources as
-arguments. This covers `qc.alloc`, `qco.alloc`, qubit `memref.alloc`, and
-`qtensor.alloc`. Classical allocations and static qubit references are
-unchanged.
+A dynamic quantum allocation (`qc.alloc`, `qco.alloc`, qubit `memref.alloc`, or
+`qtensor.alloc`) directly in the entry block of the `mqt.entry_point` function
+may live until the program ends. Any other dynamic allocation, in a helper
+function or in a nested block, must be released in the block that allocates it.
+A module without an entry point accepts no dynamic allocation. Classical
+allocations and static qubit references are unchanged.
+
+Every function returns one trailing value for each QCO qubit or register
+argument, and those values continue the arguments in argument order. Unitary
+functions already had this rule; it now covers every function.
 
 ## Decisions
 
-The MQT entry-point attribute verifier owns the whole-program rule. It already
-checks module-level entry-point uniqueness and can inspect all four allocation
-forms without extending an upstream operation. QC/QCO program construction loads
-the MQT verifier even for caller-supplied contexts and checks modules without an
+The MQT entry-point attribute verifier owns both whole-program rules
+(`mqt::verifyQuantumAllocations` and `mqt::verifyQuantumArgumentReturns` in
+`mlir/lib/Dialect/MQT/IR/MQTDialect.cpp`). QC/QCO program construction loads the
+MQT verifier even for caller-supplied contexts and checks modules without an
 entry marker. Raw unmarked MLIR fragments can be verified independently;
-operation verification alone does not establish this program-wide invariant.
+operation verification alone does not establish these program-wide invariants.
 
-Builders reject invalid allocation placement before creating an operation.
-OpenQASM semantic analysis already rejects non-global qubit declarations, and
-loop emission restores the entry-block insertion point for later declarations.
-The Adaptive conversion no longer scans allocation placement; Mapping discovers
-allocations directly in the entry block.
+"Released in the block" means: a QC reference has a `qc.dealloc` or
+`memref.dealloc` in the same block; a QCO value, followed forward through the
+operations that continue it, reaches `qco.sink` or `qtensor.dealloc` in the same
+block. Handing the value to a register, a terminator, or another block lets it
+escape. The forward walk crosses region operations and calls by position, so the
+verifier confirms the release by tracing the released value back to the
+allocation. This rejects a branch that exchanges a scratch qubit with a borrowed
+one. The rule is per block rather than per function so that inlining a valid
+helper into a loop body keeps the program valid.
 
-Tests cover all four allocation forms, allowed and forbidden placement, missing
-entry markers, caller-supplied contexts, builders, and frontend loop emission.
-Pass tests use valid quantum-resource arguments or static references where the
-behavior under test does not require allocation.
+Both rules trace values backward with `qco::traceQuantumOrigin`
+(`mlir/lib/Dialect/QCO/Utils/FunctionUtils.cpp`). It crosses a region operation
+only after proving that every region yields the value at its own position, and
+it fails instead of aborting on IR it cannot follow, because verifiers see
+unverified IR. The wire and tensor iterators assume linear, well-formed chains
+and abort otherwise, so the verifier does not use them.
+
+Mapping, QIR conversion, and target compilation need every qubit allocated up
+front. They call `mqt::verifyEntryBlockQuantumAllocations`, the former strict
+rule, and diagnose other placements as unsupported. Hoisting callee allocations
+to their callers is the intended way to make such programs lowerable. The
+OpenQASM 3 and Qiskit exporters already reject allocations in control flow, and
+accept only unitary gate functions as callees, which cannot allocate.
+
+The QC and QCO builders accept dynamic allocation in the entry block of any
+non-unitary function. `createFunction` releases what the body leaves live, so
+helper allocations satisfy the release rule. Allocation in nested blocks stays
+rejected by the builders, which is narrower than the IR rule.
 
 ## Validation
 
-With LLVM/MLIR 23.1.0, the full lint-preset build and all 2,358 configured MLIR
-CTest entries passed, including the verifier, compiler, builder, and frontend
-regressions. Commands from the repository root:
+With LLVM/MLIR 23.1.0, all configured MLIR CTest entries pass
+(`ctest -L mqt-mlir-unittests`). clang-tidy reports nothing new in the changed
+C++ files; the remaining compiler diagnostics there predate this change.
+Repository hooks pass on the changed files.
 
-- `uvx nox -s lint`
-- `uvx nox -s cpp-lint -- ec799daa09f855bd0edcbc5592a5fedd90836516`
-- `ctest --test-dir build/cpp-lint -L mqt-mlir-unittests --output-on-failure -j8`
-
-Full changed-file C++ lint passed with local clang-tidy 23.0.0git and the macOS
-SDK headers configured.
-
-With the built package and test environment active,
-`python -m pytest -n4 test/python` passed all 1,131 tests on Python 3.14 with
-Qiskit 2.5.2. The revised fixtures preserve whitespace-prefixed input handling
-and check that loop-local allocations fail during program construction, before
-export.
-
-`uvx nox --non-interactive -s docs` passed with strict reference checking and
-all seven executable notebooks. `uvx nox -s lint` passed after these fixture and
-documentation fixes; C++ sources are unchanged. These results are local; hosted
-CI has not run for this update.
+`test/python/test_mlir_loops.py::test_loop_resource_allocation_is_rejected_at_export`
+has not run locally; it needs the MLIR Python extension built from this change.

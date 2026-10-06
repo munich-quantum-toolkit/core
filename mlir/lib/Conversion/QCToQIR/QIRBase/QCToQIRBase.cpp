@@ -451,7 +451,7 @@ protected:
   void runOnOperation() override {
     MLIRContext* ctx = &getContext();
     auto moduleOp = getOperation();
-    if (failed(mqt::verifyQuantumAllocations(moduleOp))) {
+    if (failed(mqt::verifyEntryBlockQuantumAllocations(moduleOp))) {
       signalPassFailure();
       return;
     }
