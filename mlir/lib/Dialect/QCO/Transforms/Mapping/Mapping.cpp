@@ -523,7 +523,6 @@ protected:
 
 struct MappingPass : impl::MappingPassBase<MappingPass> {
 private:
-  using Window = SmallVector<QubitIndexPair>;
   using Score = std::pair<size_t, size_t>;
 
   enum class RoutingMode : bool { Cold, Hot };
@@ -617,6 +616,74 @@ private:
     int64_t prefix;
   };
 
+  /// A fast, flat "wave"-like data structure designed specifically for
+  /// layer-by-layer ("ripple") iteration. All elements are stored sequentially
+  /// in a single contiguous buffer.
+  class Wave {
+  public:
+    Wave() = default;
+
+    /// Add a new, empty ripple to the wave.
+    void addRipple() { offsets_.emplace_back(storage_.size()); }
+
+    /// Appends a single element to the current active ripple.
+    void push(const QubitIndexPair& gate) {
+      assert(offsets_.size() > 1 &&
+             "No active layer. Call startNextLayer() first.");
+      storage_.emplace_back(gate);
+      offsets_.back() = storage_.size();
+    }
+
+    /// Returns a slice view (ArrayRef) of a specific layer.
+    [[nodiscard]] ArrayRef<QubitIndexPair> getRipple(size_t i) const {
+      assert(i < nripples() && "Ripple index out of bounds");
+      const auto start = offsets_[i];
+      const auto end = offsets_[i + 1];
+      return {storage_.data() + start, end - start};
+    }
+
+    /// Returns the total number of ripples.
+    [[nodiscard]] size_t nripples() const { return offsets_.size() - 1; }
+
+    /// Returns the total number of elements.
+    [[nodiscard]] size_t size() const { return storage_.size(); }
+
+    /// Return true, if the wave is empty.
+    [[nodiscard]] bool empty() const { return storage_.empty(); }
+
+    [[nodiscard]] auto begin() const { return storage_.begin(); }
+    [[nodiscard]] auto end() const { return storage_.end(); }
+
+    /// Reset the wave to the initial empty state.
+    void reset() {
+      storage_.clear();
+      offsets_ = {0};
+    }
+
+  private:
+    /// Flat contiguous array storing all elements across all ripples.
+    SmallVector<QubitIndexPair> storage_;
+    /// Offsets marking the start index of each ripple in the storage, where [r]
+    /// defines the start of the ripple r and [r + 1] its end.
+    SmallVector<size_t, 8> offsets_ = {0};
+  };
+
+  class SerialWave {
+  public:
+    explicit SerialWave(const Wave* wave) : wave_(wave) {}
+
+    [[nodiscard]] QubitIndexPair front() const {
+      assert(!wave_->empty());
+      return *wave_->begin();
+    }
+
+    [[nodiscard]] auto begin() const { return wave_->begin(); }
+    [[nodiscard]] auto end() const { return wave_->end(); }
+
+  private:
+    const Wave* wave_;
+  };
+
   /// Describes a node in the A* search graph.
   struct Node {
     Layout<QubitIndex> layout;
@@ -638,7 +705,7 @@ private:
 
     /// Initialize a child from its parent while reusing layout capacity.
     void initializeChild(Node* nextParent, const SwapCandidate& candidate,
-                         const Window& window, const CompilerTarget& target,
+                         const SerialWave& wave, const CompilerTarget& target,
                          const Parameters& params) {
       layout = nextParent->layout;
       layout.swap(candidate.indices.first, candidate.indices.second);
@@ -647,7 +714,7 @@ private:
       cost = nextParent->cost + static_cast<int64_t>(candidate.standalone) +
              candidate.prefix;
       f = params.alpha * static_cast<float>(cost) +
-          static_cast<float>(candidate.standalone) * h(window, target, params);
+          static_cast<float>(candidate.standalone) * h(wave, target, params);
 
       swap = candidate.indices;
       parent = nextParent;
@@ -683,13 +750,12 @@ private:
     /// between its hardware qubits. Intuitively, this is the number of SWAPs
     /// that a naive router would insert to route the layers (with a constant
     /// layout).
-    [[nodiscard]] float h(const Window& window, const CompilerTarget& target,
+    [[nodiscard]] float h(const SerialWave& wave, const CompilerTarget& target,
                           const Parameters& params) const {
       float costs{0};
       float decay{1.};
 
-      for (const auto& progs : window) {
-        const auto [prog0, prog1] = progs;
+      for (const auto& [prog0, prog1] : wave) {
         const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
         const size_t nswaps = target.distanceBetween(hw0, hw1) - 1;
         costs += decay * static_cast<float>(nswaps);
@@ -1404,7 +1470,7 @@ private:
   /// Route the leading interaction with bounded A* node storage.
   /// Drain queued states at the limit, then use distance-reducing SWAPs.
   [[nodiscard]] SmallVector<QubitIndexPair>
-  search(const Window& window, RoutingState& state, Arena& arena,
+  search(const SerialWave& wave, RoutingState& state, Arena& arena,
          const Environment& env) const {
     const Parameters params{.alpha = alpha, .lambda = lambda};
 
@@ -1413,7 +1479,7 @@ private:
     assert(root != nullptr && "expected root allocation to succeed");
 
     root->initializeRoot(state.layout);
-    if (root->isGoal(window.front(), env.target)) {
+    if (root->isGoal(wave.front(), env.target)) {
       return SmallVector<QubitIndexPair>{};
     }
 
@@ -1426,7 +1492,7 @@ private:
       // If the currently visited node is a goal node, reconstruct the
       // sequence of SWAPs from this node to the root.
 
-      if (curr->isGoal(window.front(), env.target)) {
+      if (curr->isGoal(wave.front(), env.target)) {
         return curr->swaps();
       }
 
@@ -1434,7 +1500,7 @@ private:
       // between two neighboring hardware qubits.
 
       llvm::SmallDenseSet<QubitIndexPair, 8> seen;
-      for (const auto& [q0, q1] = window.front(); const auto prog : {q0, q1}) {
+      for (const auto& [q0, q1] = wave.front(); const auto prog : {q0, q1}) {
         const auto hw0 = curr->layout.getHardwareIndex(prog);
         env.target.forEachNeighbour(hw0, [&](const QubitIndex hw1) {
           const QubitIndexPair indices(std::minmax(hw0, hw1));
@@ -1456,7 +1522,7 @@ private:
                 .prefix = prefix,
             };
 
-            child->initializeChild(curr, candidate, window, env.target, params);
+            child->initializeChild(curr, candidate, wave, env.target, params);
             seen.insert(indices);
             frontier.push(child);
           }
@@ -1468,7 +1534,7 @@ private:
     /// Greedy completion can cost later gates. Thus, increase the search
     /// budget when routing quality matters more than memory use.
 
-    const auto [prog0, prog1] = window.front();
+    const auto [prog0, prog1] = wave.front();
     const auto [hw0, hw1] = state.layout.getHardwareIndices(prog0, prog1);
     const auto path = env.target.shortestPathBetween(hw0, hw1);
 
@@ -1488,6 +1554,7 @@ private:
     if (from == to) {
       return {};
     }
+
     Layout curr(from);
     TokenSwapGraph f(env.target);
     SmallVector<QubitIndexPair> swaps;
@@ -1620,11 +1687,21 @@ private:
   /// Collect a routing lookahead window of up to `1 + nlookahead` ready
   /// two-qubit gates, while skipping qubit-pair blocks.
   template <WireDirection Direction>
-  Window getWindow(Wires wires, const Layout<QubitIndex>& layout,
-                   const Boundary<Direction>& boundary) {
-    Window window;
+  void setLookahead(Wires wires, Wave& wave, const Layout<QubitIndex>& layout,
+                    const Boundary<Direction>& boundary) {
+    assert(wave.nripples() == 1 && "expected a 'front' ripple");
 
-    SmallVector<QubitIndexPair> prev;
+    // Advance past the front gates without invoking the driver.
+
+    constexpr auto stride = WireTraversalTraits<Direction>::stride();
+    for (const auto [prog0, prog1] : wave.getRipple(0)) {
+      const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
+      assert(wires[hw0].operation() == wires[hw1].operation());
+      std::ranges::advance(wires[hw0], stride);
+      std::ranges::advance(wires[hw1], stride);
+    }
+
+    SmallVector<QubitIndexPair> prev(wave.getRipple(0));
     SmallVector<QubitIndexPair> next;
 
     walkProgramGraph<Direction>(
@@ -1639,6 +1716,7 @@ private:
           }
 
           if (released.empty()) {
+            wave.addRipple();
             for (const auto& [op, indices] : frontier) {
               if (boundary.operation() != nullptr &&
                   !precedes<Direction>(op, boundary.operation())) {
@@ -1652,8 +1730,8 @@ private:
                 const QubitIndexPair gate = std::minmax(prog0, prog1);
 
                 if (!is_contained(prev, gate)) {
-                  window.emplace_back(gate);
-                  if (window.size() - 1 == nlookahead) {
+                  wave.push(gate);
+                  if (wave.size() == 1 + nlookahead) {
                     return WalkResult::interrupt();
                   }
                 }
@@ -1669,8 +1747,6 @@ private:
 
           return WalkResult::advance();
         });
-
-    return window;
   }
 
   /// Both modes leave cursors at the next operation on each physical wire.
@@ -1807,7 +1883,7 @@ private:
   /// or sink-like operations. Backward traversal can exhaust block arguments.
   template <WireDirection Direction>
   std::optional<CompositeUnitary>
-  prepareFront(RoutingState& state, SmallVector<QubitIndexPair>& front,
+  prepareFront(RoutingState& state, Wave& wave,
                const Boundary<Direction>& boundary, const Environment& env) {
 
     /// Advancement only moves iterators. Discard classifications before routing
@@ -1851,6 +1927,7 @@ private:
     llvm::SmallPtrSet<Operation*, 16> stale;
     std::optional<CompositeUnitary> composite;
 
+    wave.addRipple();
     walkProgramGraph<Direction>(state.wires, [&](const Frontier& frontier,
                                                  ReleasedOps& released) {
       for (const auto& [op, indices] : frontier) {
@@ -1872,7 +1949,8 @@ private:
                   if (!adjacent) {
                     const auto [prog0, prog1] =
                         state.layout.getProgramIndices(indices[0], indices[1]);
-                    front.emplace_back(std::make_pair(prog0, prog1));
+
+                    wave.push(std::make_pair(prog0, prog1));
 
                     // To not revisit the same un-executable two-qubit
                     // interaction again later, mark it as "stale".
@@ -2156,12 +2234,12 @@ private:
     }
 
     Statistics stats;
+    Wave wave;
     Boundary<Direction> boundary(region.front());
 
-    SmallVector<QubitIndexPair> front;
     while (true) {
-      front.clear();
-      auto composite = prepareFront<Direction>(state, front, boundary, env);
+      wave.reset();
+      auto composite = prepareFront<Direction>(state, wave, boundary, env);
       if (composite) {
         assert(composite->op == boundary.operation());
         boundary.setNextBoundary();
@@ -2180,27 +2258,14 @@ private:
                                  WireTraversalTraits<Direction>::stride());
           }
         }
+      } else if (wave.empty()) {
+        break;
       } else {
-        const auto window =
-            getWindow<Direction>(state.wires, state.layout, boundary);
-        if (window.empty()) {
-          break;
+        if (wave.size() < 1 + nlookahead) {
+          setLookahead(state.wires, wave, state.layout, boundary);
         }
 
-        llvm::dbgs() << "window= ";
-        for (const auto [i0, i1] : window) {
-          llvm::dbgs() << "(" << i0 << ", " << i1 << ") ";
-        }
-        llvm::dbgs() << "\n";
-
-        llvm::dbgs() << "front= ";
-        for (const auto [i0, i1] : front) {
-          llvm::dbgs() << "(" << i0 << ", " << i1 << ") ";
-        }
-        llvm::dbgs() << "\n";
-        llvm::dbgs() << "---------\n";
-
-        const auto swaps = search(window, state, arena, env);
+        const auto swaps = search(SerialWave(&wave), state, arena, env);
         insertSWAPs<Mode>(swaps, state, stats, rewriter);
       }
     }
