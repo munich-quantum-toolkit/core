@@ -650,18 +650,38 @@ private:
     /// Returns true, if there are no elements in the horizon.
     [[nodiscard]] bool empty() const { return storage_.empty(); }
 
-    /// Reset to the initial, empty configuration.
-    void reset() {
-      storage_.clear();
-      offsets_ = {0};
-    }
-
   private:
     /// Flat contiguous array storing all elements across the layers.
     SmallVector<QubitIndexPair> storage_;
     /// Offsets marking the start index of each layer, where [l]
     /// defines the start of the layer l and [l + 1] its end.
     SmallVector<size_t, 8> offsets_ = {0};
+  };
+
+  /// Estimates routing cost by summing distance-based SWAP counts over the
+  /// lookahead horizon with exponential decay.
+  ///
+  /// Computes the minimal number of SWAPs required to route each gate in
+  /// each layer. For each gate, this is determined by the shortest distance
+  /// between its hardware qubits. Intuitively, this is the number of SWAPs
+  /// that a naive router would insert (with a constant layout).
+  struct SerialHeuristic {
+    [[nodiscard]] float operator()(const Horizon& horizon,
+                                   const Layout<QubitIndex>& layout,
+                                   const CompilerTarget& target,
+                                   const Parameters& params) const {
+      float costs{0};
+      float decay{1.};
+      for (size_t i = 0; i < horizon.nlayers(); ++i) {
+        for (const auto& [prog0, prog1] : horizon.get(i)) {
+          const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
+          const size_t nswaps = target.distanceBetween(hw0, hw1) - 1;
+          costs += decay * static_cast<float>(nswaps);
+          decay *= params.lambda;
+        }
+      }
+      return costs;
+    }
   };
 
   /// Describes a node in the A* search graph.
@@ -683,19 +703,23 @@ private:
       f = 0;
     }
 
-    /// Initialize a child from its parent while reusing layout capacity.
+    /// Initialize a child from its parent using a templated heuristic functor.
+    template <typename HeuristicFn>
     void initializeChild(Node* nextParent, const SwapCandidate& candidate,
                          const Horizon& horizon, const CompilerTarget& target,
-                         const Parameters& params) {
+                         const Parameters& params, HeuristicFn heuristic) {
       layout = nextParent->layout;
       layout.swap(candidate.indices.first, candidate.indices.second);
 
       depth = nextParent->depth + 1;
       cost = nextParent->cost + static_cast<int64_t>(candidate.standalone) +
              candidate.prefix;
-      f = params.alpha * static_cast<float>(cost) +
-          static_cast<float>(candidate.standalone) * h(horizon, target, params);
 
+      const float g = params.alpha * static_cast<float>(cost);
+      const float h = static_cast<float>(candidate.standalone) *
+                      heuristic(horizon, layout, target, params);
+
+      f = g + h;
       swap = candidate.indices;
       parent = nextParent;
     }
@@ -720,31 +744,6 @@ private:
         *it = n->swap;
       }
       return seq;
-    }
-
-  private:
-    /// Calculate the heuristic cost for the A* search algorithm.
-    ///
-    /// Computes the minimal number of SWAPs required to route each gate in
-    /// each layer. For each gate, this is determined by the shortest distance
-    /// between its hardware qubits. Intuitively, this is the number of SWAPs
-    /// that a naive router would insert to route the layers (with a constant
-    /// layout).
-    [[nodiscard]] float h(const Horizon& horizon, const CompilerTarget& target,
-                          const Parameters& params) const {
-      float costs{0};
-      float decay{1.};
-
-      for (size_t i = 0; i < horizon.nlayers(); ++i) {
-        for (const auto& [prog0, prog1] : horizon.get(i)) {
-          const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
-          const size_t nswaps = target.distanceBetween(hw0, hw1) - 1;
-          costs += decay * static_cast<float>(nswaps);
-          decay *= params.lambda;
-        }
-      }
-
-      return costs;
     }
   };
 
@@ -1449,11 +1448,13 @@ private:
     return {best->layout, best->score};
   }
 
-  /// Route the leading interaction with bounded A* node storage.
-  /// Drain queued states at the limit, then use distance-reducing SWAPs.
+  /// Route the leading interaction with bounded A* node storage and templated
+  /// heuristic. Drain queued states at the limit, then use distance-reducing
+  /// SWAPs.
+  template <typename HeuristicFn>
   [[nodiscard]] SmallVector<QubitIndexPair>
   search(const Horizon& horizon, RoutingState& state, Arena& arena,
-         const Environment& env) const {
+         const Environment& env, HeuristicFn heuristic) const {
     const Parameters params{.alpha = alpha, .lambda = lambda};
 
     arena.reset();
@@ -1505,8 +1506,8 @@ private:
                 .prefix = prefix,
             };
 
-            child->initializeChild(curr, candidate, horizon, env.target,
-                                   params);
+            child->initializeChild(curr, candidate, horizon, env.target, params,
+                                   heuristic);
             seen.insert(indices);
             frontier.push(child);
           }
@@ -1530,7 +1531,9 @@ private:
     return swaps;
   }
 
-  /// Return the SWAP sequence to move from one layout to another.
+  /// Route the leading interaction with bounded A* node storage and templated
+  /// heuristic. Drain queued states at the limit, then use distance-reducing
+  /// SWAPs. Return the SWAP sequence to move from one layout to another.
   /// Implements the 4-Approximation algorithm described in arXiv:1602.05150v3.
   [[nodiscard]] SmallVector<QubitIndexPair>
   restore(const Layout<QubitIndex>& from, const Layout<QubitIndex>& to,
@@ -1671,12 +1674,12 @@ private:
   /// Collect a routing lookahead window of up to `1 + nlookahead` ready
   /// two-qubit gates, while skipping qubit-pair blocks.
   template <WireDirection Direction>
-  void setLookahead(Wires wires, Horizon& horizon,
-                    const Layout<QubitIndex>& layout,
-                    const Boundary<Direction>& boundary) {
-    SmallVector<QubitIndexPair> prev(horizon.get(0));
+  Horizon getHorizon(Wires wires, const Layout<QubitIndex>& layout,
+                     const Boundary<Direction>& boundary) {
+    SmallVector<QubitIndexPair> prev;
     SmallVector<QubitIndexPair> next;
 
+    Horizon horizon;
     walkProgramGraph<Direction>(
         MutableArrayRef(wires.data(), wires.size()),
         [&](const Frontier& frontier, ReleasedOps& released) {
@@ -1721,6 +1724,8 @@ private:
 
           return WalkResult::advance();
         });
+
+    return horizon;
   }
 
   /// Both modes leave cursors at the next operation on each physical wire.
@@ -1856,9 +1861,14 @@ private:
   /// Leave wires at non-executable gates, composites, terminal measurements,
   /// or sink-like operations. Backward traversal can exhaust block arguments.
   template <WireDirection Direction>
-  std::optional<CompositeUnitary>
-  prepareFront(RoutingState& state, Horizon& horizon,
-               const Boundary<Direction>& boundary, const Environment& env) {
+  std::optional<CompositeUnitary> advance(RoutingState& state,
+                                          const Boundary<Direction>& boundary,
+                                          const Environment& env) {
+
+    // Unexecutable gates are not released and may thus be revisited multiple
+    // times while advancing. Stale gates are immediately skipped to avoid the
+    // overhead of isa-checks and layout lookups.
+    llvm::SmallPtrSet<Operation*, 16> stale;
 
     /// Advancement only moves iterators. Discard classifications before routing
     /// inserts SWAPs or replaces composites.
@@ -1898,9 +1908,7 @@ private:
       });
     };
 
-    llvm::SmallPtrSet<Operation*, 16> stale;
     std::optional<CompositeUnitary> composite;
-
     walkProgramGraph<Direction>(state.wires, [&](const Frontier& frontier,
                                                  ReleasedOps& released) {
       for (const auto& [op, indices] : frontier) {
@@ -1914,25 +1922,12 @@ private:
             TypeSwitch<Operation*, bool>(op)
                 .Case([](BarrierOp) { return true; })
                 .Case([&](UnitaryOpInterface) {
-                  if (indices.size() == 1) {
+                  if (indices.size() == 1 ||
+                      env.target.areAdjacent(indices[0], indices[1])) {
                     return true;
                   }
-
-                  if (!env.target.areAdjacent(indices[0], indices[1])) {
-                    // If the two-qubit interaction is not executable, try to
-                    // add it to the front.
-                    const auto progs =
-                        state.layout.getProgramIndices(indices[0], indices[1]);
-                    horizon.push(progs);
-
-                    // To not revisit the same un-executable two-qubit
-                    // interaction again later, mark it as "stale".
-
-                    stale.insert(op);
-                    return false;
-                  }
-
-                  return true;
+                  stale.insert(op);
+                  return false;
                 })
                 .Case([](ResetOp) { return true; })
                 .Case([&](MeasureOp m) {
@@ -1970,8 +1965,6 @@ private:
             }
             state.costs->append(op, vertices);
           }
-        } else if (horizon.size() == 1 + nlookahead) {
-          return WalkResult::interrupt();
         }
       }
 
@@ -2216,19 +2209,15 @@ private:
     requires(Mode != RoutingMode::Hot || Direction == WireDirection::Forward)
   Statistics route(Region& region, RoutingState& state, Arena& arena,
                    const Environment& env, IRRewriter* rewriter = nullptr) {
+    Statistics stats;
+    Boundary<Direction> boundary(region.front());
+
     if (state.costs) {
       state.costs->reset(Direction);
     }
 
-    Horizon horizon;
-    Statistics stats;
-    Boundary<Direction> boundary(region.front());
-
     while (true) {
-      horizon.reset(); // Reset horizon for new iteration.
-      horizon.next();  // Add empty front.
-
-      auto composite = prepareFront<Direction>(state, horizon, boundary, env);
+      auto composite = advance<Direction>(state, boundary, env);
       if (composite) {
         assert(composite->op == boundary.operation());
         boundary.setNextBoundary();
@@ -2239,14 +2228,15 @@ private:
 
         stats.merge(routeComposite<Direction, Mode>(*composite, state, arena,
                                                     env, rewriter));
-      } else if (horizon.empty()) {
-        break;
       } else {
-        if (horizon.size() < 1 + nlookahead) {
-          setLookahead(state.wires, horizon, state.layout, boundary);
+        const auto horizon =
+            getHorizon<Direction>(state.wires, state.layout, boundary);
+        if (horizon.empty()) {
+          break;
         }
 
-        const auto swaps = search(horizon, state, arena, env);
+        const auto swaps =
+            search(horizon, state, arena, env, SerialHeuristic{});
         insertSWAPs<Mode>(swaps, state, stats, rewriter);
       }
     }
