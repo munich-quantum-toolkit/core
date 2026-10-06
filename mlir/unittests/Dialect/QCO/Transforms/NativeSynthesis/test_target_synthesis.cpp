@@ -1710,6 +1710,62 @@ TEST_F(TargetSynthesisTest, NativeSynthesisSharesRepeatedParameterConstants) {
   expectEquivalent(expected, synthesized);
 }
 
+TEST_F(TargetSynthesisTest, NativePipelineCleansFlatModifiers) {
+  auto expected = build([](QCOProgramBuilder& builder) {
+    auto [control, target] =
+        builder.cx(builder.staticQubit(0), builder.staticQubit(1));
+    builder.sink(builder.h(control));
+    builder.sink(builder.h(target));
+    return builder.intConstant(0);
+  });
+  auto actual = OwningOpRef<ModuleOp>(expected->clone());
+  attachTestEnvironment(*actual, makeUCxTarget());
+  mlir::PassManager manager(context.get());
+  mlir::qco::populateTargetNativeSynthesisPipeline(manager);
+  ASSERT_TRUE(mlir::succeeded(manager.run(*actual)));
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*actual)));
+  ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*actual)));
+  expectEquivalent(expected, actual);
+  const auto before = printModule(*actual);
+  ASSERT_TRUE(
+      mlir::succeeded(runPass(*actual, mlir::createRemoveDeadValuesPass())));
+  EXPECT_EQ(printModule(*actual), before);
+}
+
+TEST_F(TargetSynthesisTest, NativePipelineRemovesDeadLoopCarriedValues) {
+  auto moduleOp = mlir::parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%bound: index) -> index {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %q = qco.static 0 : !qco.qubit
+        %dead = scf.for %i = %c0 to %bound step %c1
+            iter_args(%unused = %c0) -> index {
+          %next = arith.addi %unused, %c1 : index
+          %angle = arith.index_cast %i : index to i64
+          %theta = arith.sitofp %angle : i64 to f64
+          qco.gphase(%theta)
+          scf.yield %next : index
+        }
+        qco.sink %q : !qco.qubit
+        return %c0 : index
+      }
+    }
+  )mlir",
+                                                    context.get());
+  ASSERT_TRUE(moduleOp);
+  attachTestEnvironment(*moduleOp, makeUCxTarget());
+  mlir::PassManager manager(context.get());
+  mlir::qco::populateTargetNativeSynthesisPipeline(manager);
+  ASSERT_TRUE(mlir::succeeded(manager.run(*moduleOp)));
+  auto loops =
+      llvm::to_vector(mainFunction(*moduleOp).getOps<mlir::scf::ForOp>());
+  ASSERT_EQ(loops.size(), 1U);
+  EXPECT_EQ(loops.front().getNumRegionIterArgs(), 0U);
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*moduleOp)));
+  ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*moduleOp)));
+}
+
 TEST_F(TargetSynthesisTest, SqrtISwapCapabilityRequiresFixedParameters) {
   const auto target = valid(Target::create(
       2, Connectivity::allToAll(),

@@ -19,6 +19,8 @@ add_mlir_library(
   MLIRQCOUtils
   MLIRQTensorUtils
   MLIRArithDialect
+  MLIRCallInterfaces
+  MLIRFuncDialect
   MLIRMathDialect
   MLIRMQTDialect
   MLIRMQTTransforms

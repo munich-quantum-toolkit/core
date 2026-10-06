@@ -27,6 +27,7 @@
 #include "mqt/Support/RandomSeed.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h" // IWYU pragma: keep (Passes.h.inc)
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/Builders.h"
@@ -41,6 +42,7 @@
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Value.h"
 #include "mlir/IR/Visitors.h"
+#include "mlir/Interfaces/CallInterfaces.h"
 #include "mlir/Interfaces/FunctionInterfaces.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
@@ -1578,6 +1580,52 @@ protected:
   }
 };
 
+/// Flat public functions are already at a dead-value fixed point after CSE.
+class TargetDeadValueCleanupPass final
+    : public PassWrapper<TargetDeadValueCleanupPass, OperationPass<ModuleOp>> {
+public:
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(TargetDeadValueCleanupPass)
+
+  void getDependentDialects(DialectRegistry& registry) const override {
+    createRemoveDeadValuesPass()->getDependentDialects(registry);
+  }
+
+  void runOnOperation() override {
+    auto moduleOp = getOperation();
+    const auto needsLiveness =
+        moduleOp->walk<WalkOrder::PreOrder>([&](Operation* operation) {
+          if (operation == moduleOp.getOperation()) {
+            return WalkResult::advance();
+          }
+          if (auto function = dyn_cast<func::FuncOp>(operation)) {
+            return function.isPublic() && (function.isExternal() ||
+                                           function.getBody().hasOneBlock())
+                       ? WalkResult::advance()
+                       : WalkResult::interrupt();
+          }
+          // Modifier bodies contain only unitaries and regionless classical
+          // operations; they cannot introduce dead loop-carried values.
+          if (isa<CtrlOp, InvOp, PowOp>(operation)) {
+            return WalkResult::skip();
+          }
+          return operation->getNumRegions() != 0 ||
+                         operation->getNumSuccessors() != 0 ||
+                         isa<CallOpInterface>(operation)
+                     ? WalkResult::interrupt()
+                     : WalkResult::advance();
+        });
+    if (!needsLiveness.wasInterrupted()) {
+      markAllAnalysesPreserved();
+      return;
+    }
+    OpPassManager cleanup(ModuleOp::getOperationName());
+    cleanup.addPass(createRemoveDeadValuesPass());
+    if (failed(runPipeline(cleanup, moduleOp))) {
+      signalPassFailure();
+    }
+  }
+};
+
 } // namespace
 
 std::unique_ptr<Pass> createFuseTwoQubitGates() {
@@ -1594,7 +1642,7 @@ void populateTargetNativeSynthesisPipeline(OpPassManager& pm) {
       GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit)));
   /// Reuse unchanged classical reads before native synthesis splits their uses.
   pm.addPass(createCSEPass());
-  pm.addPass(createRemoveDeadValuesPass());
+  pm.addPass(std::make_unique<TargetDeadValueCleanupPass>());
   pm.addPass(createTargetNativeSynthesis());
   pm.addPass(createCSEPass());
   pm.addPass(createVerifyTargetConformance());
