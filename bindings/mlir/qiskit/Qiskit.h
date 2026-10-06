@@ -15,12 +15,27 @@
 
 #include "nanobind/nanobind.h"
 
+#include <cstddef>
+#include <optional>
+#include <string>
+
 namespace mqt::bindings::qiskit {
 
 namespace nb = nanobind;
 
 /// Import a Qiskit QuantumCircuit into a newly owned QC program.
 [[nodiscard]] mlir::QCProgram importCircuit(nb::handle circuit);
+
+/// Snapshot a Qiskit Target or BackendV2 into an owned compiler target.
+/// Unrepresentable gates warn by default and fail when selected explicitly.
+/// Instructions without gate applicability are skipped by default.
+[[nodiscard]] mlir::CompilerTarget
+importTarget(nb::handle target, nb::handle operationNames,
+             const std::optional<std::string>& name);
+
+/// Import gate capabilities independently of physical width and placement.
+[[nodiscard]] mlir::CompilerTarget::NativeOperations
+importNativeOperations(nb::handle target, nb::handle operationNames);
 
 /// Return a new Qiskit QuantumCircuit, optionally for a compiler target.
 [[nodiscard]] nb::object

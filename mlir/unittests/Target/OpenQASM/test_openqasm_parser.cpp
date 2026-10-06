@@ -637,12 +637,13 @@ if (int[2](value) == -1) {}
   ASSERT_TRUE(parsed) << parsed.diagnostics.front().message;
 }
 
-TEST(OpenQASMFrontendTest, RejectsUnsupportedReservedWordsAsIdentifiers) {
+TEST(OpenQASMFrontendTest, RejectsReservedWordsAsIdentifiers) {
   constexpr auto reservedWords = std::to_array<llvm::StringLiteral>({
-      "defcalgrammar", "def",     "cal",    "defcal",  "extern",  "box",
-      "let",           "end",     "return", "pragma",  "input",   "readonly",
-      "mutable",       "complex", "array",  "void",    "stretch", "durationof",
-      "delay",         "im",      "#dim",   "#pragma",
+      "defcalgrammar", "def",        "cal",     "defcal", "extern",
+      "box",           "let",        "end",     "return", "pragma",
+      "readonly",      "mutable",    "complex", "array",  "void",
+      "stretch",       "durationof", "delay",   "im",     "#dim",
+      "#pragma",
   });
   for (const auto keyword : reservedWords) {
     SCOPED_TRACE(keyword.str());
@@ -653,11 +654,17 @@ TEST(OpenQASMFrontendTest, RejectsUnsupportedReservedWordsAsIdentifiers) {
     EXPECT_NE(parsed.diagnostics.front().message.find("reserved keyword"),
               std::string::npos);
   }
+
+  auto input =
+      openqasm::frontend::parseOpenQASM("OPENQASM 3.1; int input = 0;");
+  ASSERT_FALSE(input);
+  ASSERT_FALSE(input.diagnostics.empty());
+  EXPECT_NE(input.diagnostics.front().message.find("expected identifier"),
+            std::string::npos);
 }
 
 TEST(OpenQASMFrontendTest, DiagnosesUnsupportedReservedFeatureSyntax) {
   constexpr auto sources = std::to_array<llvm::StringLiteral>({
-      "OPENQASM 3.1; input int value;",
       "OPENQASM 3.1; const complex value = 0;",
       "OPENQASM 3.1; output array[int, 2] values;",
       "OPENQASM 3.1; for complex value in [0:1] {}",
@@ -670,6 +677,28 @@ TEST(OpenQASMFrontendTest, DiagnosesUnsupportedReservedFeatureSyntax) {
     ASSERT_FALSE(parsed.diagnostics.empty());
     EXPECT_NE(parsed.diagnostics.front().message.find("reserved keyword"),
               std::string::npos);
+  }
+
+  auto input =
+      openqasm::frontend::parseOpenQASM("OPENQASM 3.1; input int value;");
+  ASSERT_FALSE(input);
+  ASSERT_FALSE(input.diagnostics.empty());
+  EXPECT_NE(input.diagnostics.front().message.find("only float input"),
+            std::string::npos);
+}
+
+TEST(OpenQASMFrontendTest, RejectsInvalidInputDeclarations) {
+  constexpr auto sources = std::to_array<llvm::StringLiteral>({
+      "OPENQASM 3.1; input float[32] theta;",
+      "OPENQASM 3.1; input float theta = 1.0;",
+      "OPENQASM 3.1; if (true) { input float theta; }",
+      "OPENQASM 2.0; input float theta;",
+  });
+  for (const auto source : sources) {
+    SCOPED_TRACE(source.str());
+    auto analyzed = openqasm::frontend::analyzeOpenQASM(source);
+    ASSERT_FALSE(analyzed);
+    ASSERT_FALSE(analyzed.diagnostics.empty());
   }
 }
 

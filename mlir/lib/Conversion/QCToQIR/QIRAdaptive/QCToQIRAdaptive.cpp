@@ -152,6 +152,9 @@ static LogicalResult prepareCBitRegisterAccesses(Operation* moduleOp,
   moduleOp->walk(
       [&](cbit::LoadOp loadOp) { prepareRead(loadOp, loadOp.getReg()); });
   moduleOp->walk([&](cbit::StoreOp storeOp) {
+    if (state.deferredMeasurementStores.contains(storeOp)) {
+      return;
+    }
     const auto representation = representations.lookup(storeOp.getReg());
     if (representation == MIXED_CBIT_REGISTER) {
       storeOp.emitOpError(
@@ -807,6 +810,13 @@ protected:
       signalPassFailure();
       return;
     }
+    if (entryPoint.getNumArguments() != 0) {
+      entryPoint.emitError(
+          "QIR Adaptive lowering does not support entry-point arguments; "
+          "bind program parameters before lowering");
+      signalPassFailure();
+      return;
+    }
     auto entryPointName = entryPoint.getSymNameAttr();
     if (failed(mqt::normalizeGlobalPhases(moduleOp))) {
       signalPassFailure();
@@ -825,7 +835,8 @@ protected:
       walkAndApplyPatterns(moduleOp, frozen);
     }
     if (failed(prepareClassicalResults(moduleOp, state,
-                                       /*allowComputedOutputs=*/true))) {
+                                       /*allowComputedOutputs=*/true,
+                                       /*deferMeasurementStores=*/true))) {
       signalPassFailure();
       return;
     }
@@ -861,6 +872,8 @@ protected:
         return;
       }
     }
+
+    finalizeClassicalResults(state);
 
     auto main = moduleOp.lookupSymbol<LLVM::LLVMFuncOp>(entryPointName);
     if (!main) {

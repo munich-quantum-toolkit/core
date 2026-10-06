@@ -53,6 +53,7 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Transforms/DialectConversion.h"
+#include "mlir/Transforms/RegionUtils.h"
 
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
@@ -458,7 +459,8 @@ static DenseSet<Operation*> findStoreFusionCandidates(Block* block) {
 }
 
 LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
-                                      bool allowComputedOutputs) {
+                                      bool allowComputedOutputs,
+                                      bool deferMeasurementStores) {
   bool hasInvalidMemory = false;
   moduleOp->walk([&](Operation* operation) {
     if (!isa<func::CallOp, func::CallIndirectOp>(operation)) {
@@ -490,6 +492,7 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
   SmallVector<Type> keptReturnTypes;
   SmallVector<cbit::StoreOp> consumedStores;
   DominanceInfo dominance(funcOp);
+  IRRewriter rewriter(moduleOp->getContext());
 
   funcOp.walk([&](memref::AllocOp allocOp) {
     const auto type = allocOp.getType();
@@ -578,11 +581,7 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
       hasInvalidMemory = true;
       return;
     }
-    auto* indexProducer = storeOp.getIndex().getDefiningOp();
-    bool canFuse =
-        measureOp->getBlock() == storeOp->getBlock() &&
-        (dominance.dominates(storeOp.getIndex(), measureOp) ||
-         (indexProducer && indexProducer->hasTrait<OpTrait::ConstantLike>()));
+    bool canFuse = measureOp->getBlock() == storeOp->getBlock();
     if (canFuse && measureOp->getNextNode() != storeOp.getOperation()) {
       const auto [candidates, newBlock] =
           fusionCandidates.try_emplace(storeOp->getBlock());
@@ -591,11 +590,15 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
       }
       canFuse = candidates->second.contains(storeOp.getOperation());
     }
+    if (canFuse && !dominance.dominates(storeOp.getIndex(), measureOp)) {
+      canFuse = succeeded(moveValueDefinitions(rewriter, storeOp.getIndex(),
+                                               measureOp, dominance));
+    }
     if (!canFuse) {
       storeOp.emitError("QIR output cannot fuse this measurement/store pair: "
-                        "require the same "
-                        "block, an index available at measurement, and no "
-                        "intervening classical memory effects");
+                        "require the same block, an index available or safely "
+                        "computable before measurement, and no intervening "
+                        "classical memory effects");
       hasInvalidMemory = true;
       return;
     }
@@ -625,9 +628,23 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
                                            funcOp.getFunctionType().getInputs(),
                                            keptReturnTypes));
   for (auto storeOp : consumedStores) {
-    storeOp.erase();
+    if (deferMeasurementStores) {
+      auto measureOp = storeOp.getValue().getDefiningOp<MeasureOp>();
+      state.deferredMeasurementStores[storeOp] = measureOp;
+    } else {
+      storeOp.erase();
+    }
   }
   return success();
+}
+
+void finalizeClassicalResults(LoweringState& state) {
+  for (auto [store, measurement] : state.deferredMeasurementStores) {
+    auto storeOp = cast<cbit::StoreOp>(store);
+    state.cregMeasurements.at(measurement).second = storeOp.getIndex();
+    storeOp.erase();
+  }
+  state.deferredMeasurementStores.clear();
 }
 
 } // namespace mlir

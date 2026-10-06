@@ -203,7 +203,7 @@ int MQT_SC_QDMI_Device_Session_impl_d::init() {
 
 int MQT_SC_QDMI_Device_Session_impl_d::setParameter(
     const QDMI_Device_Session_Parameter parameter, const size_t size,
-    const void* value) {
+    const void* value) noexcept {
   if (parameter == QDMI_DEVICE_SESSION_PARAMETER_MAX ||
       IS_INVALID_ARGUMENT(parameter, QDMI_DEVICE_SESSION_PARAMETER)) {
     return QDMI_ERROR_INVALIDARGUMENT;
@@ -211,23 +211,30 @@ int MQT_SC_QDMI_Device_Session_impl_d::setParameter(
   if (status != Status::ALLOCATED) {
     return QDMI_ERROR_BADSTATE;
   }
-  return qdmi::detail::setDeviceConfigurationParameter(
-      parameter, size, value, inlineConfiguration, fileConfiguration);
+
+  return sc::detail::guardDeviceCall(
+      "setting an SC device session parameter", [&] {
+        return qdmi::detail::setDeviceConfigurationParameter(
+            parameter, size, value, inlineConfiguration, fileConfiguration);
+      });
 }
 
 int MQT_SC_QDMI_Device_Session_impl_d::createDeviceJob(
-    MQT_SC_QDMI_Device_Job* job) {
+    MQT_SC_QDMI_Device_Job* job) noexcept {
   if (job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
+
   if (status != Status::INITIALIZED) {
     return QDMI_ERROR_BADSTATE;
   }
-  auto value = std::make_unique<MQT_SC_QDMI_Device_Job_impl_d>(this);
-  *job = value.get();
-  const std::scoped_lock lock(jobsMutex);
-  jobs.emplace(*job, std::move(value));
-  return QDMI_SUCCESS;
+
+  return sc::detail::guardDeviceCall("creating an SC device job", [&] {
+    auto value = std::make_unique<MQT_SC_QDMI_Device_Job_impl_d>(this);
+    const std::scoped_lock lock(jobsMutex);
+    *job = jobs.emplace(value.get(), std::move(value)).first->first;
+    return QDMI_SUCCESS;
+  });
 }
 
 void MQT_SC_QDMI_Device_Session_impl_d::freeDeviceJob(

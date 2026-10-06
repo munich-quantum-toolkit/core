@@ -100,3 +100,19 @@ claims about current hardware calibration.
 
 The IQM interface did not report operation durations, so the files intentionally
 omit them.
+
+## Bundled IBM models
+
+`mqt.sc.ibm.heron` and `mqt.sc.ibm.nighthawk` provide compilation-only models of
+the 156-qubit Heron heavy-hex topology and 120-qubit Nighthawk 12-by-10 grid.
+They expose `id`, `x`, `sx`, arbitrary `rz`, `cz`, measurement, and reset,
+without calibration data. Connectivity and gate sets follow IBM Runtime's
+[Heron](https://github.com/Qiskit/qiskit-ibm-runtime/blob/main/qiskit_ibm_runtime/fake_provider/backends/fez/conf_fez.json)
+and
+[Nighthawk](https://github.com/Qiskit/qiskit-ibm-runtime/blob/main/qiskit_ibm_runtime/fake_provider/backends/nighthawk/conf_nighthawk.json)
+snapshots. Nighthawk's programmable qubit count is 120; Heron's is 156.
+
+For fractional Heron gates, import a Qiskit `Target` using
+{py:meth}`~mqt.core.mlir.CompilerTarget.from_qiskit`. QDMI currently does not
+expose parameter bounds, so these SC models omit fractional gates rather than
+advertise unrestricted RZZ support.

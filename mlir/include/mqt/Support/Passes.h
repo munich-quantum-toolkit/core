@@ -23,16 +23,21 @@ class PassManager;
 } // namespace mlir
 
 /// Populate the pass manager and run it on the module.
+/// Clear layout metadata unless the pipeline preserves resource
+/// identity and order and the caller sets preservesLayout.
 mlir::LogicalResult runWithPassManager(
     mlir::ModuleOp moduleOp,
     mlir::function_ref<void(mlir::OpPassManager&)> populatePasses,
-    mlir::StringRef errorMessage, const mlir::CompilationOptions& options = {});
+    mlir::StringRef errorMessage, const mlir::CompilationOptions& options = {},
+    bool preservesLayout = false);
 
-/// Run passes with scoped compilation options; restore input metadata on
-/// completion.
+/// Run passes with scoped compilation options and clear layout metadata.
+/// Set preservesLayout only when the pipeline preserves wire identity and
+/// order.
 mlir::LogicalResult
 runWithCompilationOptions(mlir::PassManager& pm, mlir::ModuleOp moduleOp,
-                          const mlir::CompilationOptions& options);
+                          const mlir::CompilationOptions& options,
+                          bool preservesLayout = false);
 
 /// Register the QCO passes, upstream transforms, and named compiler pipelines.
 void registerMQTCompilerPasses();
@@ -70,8 +75,10 @@ void populateQCExportPipeline(mlir::OpPassManager& pm);
 
 /// Populate a QCO-oriented cleanup pipeline on the given pass manager.
 ///
-/// Adds generic cleanup, qtensor shrink-to-fit, and dead-value removal.
-void populateQCOCleanupPipeline(mlir::OpPassManager& pm);
+/// Adds generic cleanup and qtensor shrink-to-fit. Dead-value removal may be
+/// deferred when a later pipeline stage changes region or function signatures.
+void populateQCOCleanupPipeline(mlir::OpPassManager& pm,
+                                bool removeDeadValues = true);
 
 /// Populate a QIR-oriented cleanup pipeline on the given pass manager.
 ///

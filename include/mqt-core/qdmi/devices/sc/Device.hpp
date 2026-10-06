@@ -14,16 +14,43 @@
 #pragma once
 
 #include "mqt_sc_qdmi/device.h"
+#include "qdmi/common/Diagnostics.hpp"
 
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <filesystem>
 #include <memory>
 #include <mutex>
+#include <new>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
+#include <utility>
 #include <vector>
+
+namespace sc::detail {
+
+/// Maps exceptions from an allocation-capable device call to QDMI status codes.
+template <class Callable>
+[[nodiscard]] auto guardDeviceCall(const std::string_view action,
+                                   Callable&& callable) noexcept -> int {
+  try {
+    return std::forward<Callable>(callable)();
+  } catch (const std::bad_alloc&) {
+    qdmi::diagnostics::error("Out of memory while {}", action);
+    return QDMI_ERROR_OUTOFMEM;
+  } catch (const std::exception& error) {
+    qdmi::diagnostics::error("Failed while {}: {}", action, error.what());
+    return QDMI_ERROR_FATAL;
+  } catch (...) {
+    qdmi::diagnostics::error("Failed while {}: unknown exception", action);
+    return QDMI_ERROR_FATAL;
+  }
+}
+
+} // namespace sc::detail
 
 struct MQT_SC_QDMI_Device_Session_impl_d;
 
@@ -103,8 +130,8 @@ struct MQT_SC_QDMI_Device_Session_impl_d {
 
   int init();
   int setParameter(QDMI_Device_Session_Parameter parameter, size_t size,
-                   const void* value);
-  int createDeviceJob(MQT_SC_QDMI_Device_Job* job);
+                   const void* value) noexcept;
+  int createDeviceJob(MQT_SC_QDMI_Device_Job* job) noexcept;
   void freeDeviceJob(MQT_SC_QDMI_Device_Job job);
   int queryDeviceProperty(QDMI_Device_Property property, size_t size,
                           void* value, size_t* sizeRet) const;

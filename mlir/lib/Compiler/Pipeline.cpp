@@ -67,12 +67,13 @@ namespace mlir {
 
 [[nodiscard]] static LogicalResult runQCOTransformPasses(
     ModuleOp mod, llvm::function_ref<void(OpPassManager&)> populatePasses,
-    StringRef failureMessage, const CompilationOptions& options = {}) {
+    StringRef failureMessage, const CompilationOptions& options = {},
+    bool preservesLayout = false) {
   if (failed(qco::verifyLinearity(mod))) {
     return failure();
   }
-  if (failed(
-          runWithPassManager(mod, populatePasses, failureMessage, options))) {
+  if (failed(runWithPassManager(mod, populatePasses, failureMessage, options,
+                                preservesLayout))) {
     return failure();
   }
   return qco::verifyLinearity(mod);
@@ -130,9 +131,9 @@ std::optional<QIRProgram> QCProgram::intoQIR(QIRProfile profile) && {
 //===----------------------------------------------------------------------===//
 
 bool QCOProgram::cleanup() {
-  return succeeded(
-      runQCOTransformPasses(mod(), populateQCOCleanupPipeline,
-                            "failed to run the QCO cleanup pipeline"));
+  return succeeded(runQCOTransformPasses(
+      mod(), [](OpPassManager& pm) { populateQCOCleanupPipeline(pm); },
+      "failed to run the QCO cleanup pipeline"));
 }
 
 bool QCOProgram::normalizeGlobalPhases() {
@@ -217,7 +218,7 @@ bool QCOProgram::compileForTarget(const TargetEnvironment& environment,
       [&environment, &options](OpPassManager& pm) {
         populateTargetCompilationPipeline(pm, environment, options.mapping);
       },
-      "failed to compile the QCO program for the target", options));
+      "failed to compile the QCO program for the target", options, true));
 }
 
 bool QCOProgram::synthesizeForTarget(const TargetEnvironment& environment,
@@ -227,13 +228,13 @@ bool QCOProgram::synthesizeForTarget(const TargetEnvironment& environment,
       [&environment, &options](OpPassManager& pm) {
         populateTargetSynthesisPipeline(pm, environment, options.mapping);
       },
-      "failed to synthesize the QCO program for the target", options));
+      "failed to synthesize the QCO program for the target", options, true));
 }
 
 std::optional<QCProgram> QCOProgram::intoQC() && {
   if (failed(runQCOTransformPasses(
           mod(), [](OpPassManager& pm) { pm.addPass(createQCOToQC()); },
-          "failed to convert QCO to QC"))) {
+          "failed to convert QCO to QC", {}, true))) {
     return std::nullopt;
   }
   return QCProgram(std::move(*this).releaseStorage());

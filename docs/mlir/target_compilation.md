@@ -89,6 +89,10 @@ mqt-cc input.qasm --qdmi-device mqt.sc.iqm.garnet \
   --mapping-search-memory-limit 8388608
 ```
 
+Add `--emit=qco-optimized -o mapped.mlir` to write the mapped QCO program with
+layout metadata. The payload specification still defines the target's execution
+capabilities.
+
 Trials must be positive. Omitted trials use the logical CPU count; iterations
 default to one forward/backward refinement round. Zero iterations score each
 initial layout directly. Lookahead is the number of additional two-qubit gates
@@ -176,6 +180,70 @@ placements without calibration in this list, and omit operations that are not
 available anywhere. Structural and program-format constructs are not
 compiler-target operations.
 
+`fixed_parameters` constrains individual parameters to finite constants. A
+nonempty list has one entry per parameter; `None` leaves a parameter
+unrestricted. An omitted or empty list leaves every parameter unrestricted.
+Multiple capabilities for the same operation form a union of supported values
+and placements. For example, these capabilities accept four RX angles:
+
+```python
+from math import pi
+
+rx_gates = [
+    CompilerTarget.OperationCapability("rx", 1, 1, fixed_parameters=[angle]) for angle in (pi / 2, -pi / 2, pi, -pi)
+]
+```
+
+Constants match with absolute tolerance `1e-15`, without angle wrapping. Unbound
+symbolic values cannot satisfy fixed parameters or `parameter_bounds`. Bounds
+are inclusive `(lower, upper)` pairs, with `None` for unbounded parameters;
+relations between parameters are not represented. A device-specific instruction
+name can specify its compiler operation with `canonical_name`, for example
+`OperationCapability("rx_90", 1, 1, fixed_parameters=[pi / 2], canonical_name="rx")`.
+The reported name remains available to exporters.
+`CompilerTarget.NativeOperations.from_qiskit(source)` imports gate capabilities
+and parameter constraints independently of device width and placement. Combine
+them with connectivity and a circuit width using the `CompilerTarget`
+constructor.
+
+Target compilation requires a single-qubit synthesis basis available on every
+site. `ZSXX` accepts unrestricted RZ and SX, RX(±π/2), RY(±π/2), or R(±π/2, 0).
+Matching native half turns can shorten the decomposition. Euler synthesis emits
+these gates directly, including global-phase corrections. Other fixed angles
+remain valid native capabilities but do not provide a synthesis basis.
+
+Qiskit target import recognizes `gpi(phi)` and `gpi2(phi)` defined as
+`i R(pi, phi)` and `R(pi/2, phi)`, respectively, with **radian** parameters.
+These are fixed-parameter R capabilities inside Core; Qiskit export with the
+target restores their native names and phase. Such targets must advertise
+virtual RZ explicitly. Providers that accept only GPI/GPI2 instructions must
+absorb virtual Z rotations into gate phases before device submission.
+
+Unrestricted RXX, RYY, RZX, and RZZ entanglers take precedence over fixed
+alternatives and use up to three native rotations for numeric two-qubit
+synthesis. Runtime two-qubit Pauli rotations need one arbitrary-angle native
+entangler or two fixed native entanglers, including square-root iSWAP. Fixed
+Clifford entanglers use Pauli conjugation; commuting symbolic rotations can
+share their entanglers. Single-controlled Pauli rotations and phase gates use
+the same decomposition. Bounded Pauli entanglers that include `[0, pi/2]` use
+the same numeric synthesis with local Pauli corrections. Unknown runtime angles
+use two native `pi/2` rotations. Bind parameters before compilation to use
+fractional entanglers directly. Qiskit import conservatively recognizes this
+interval through its public bound predicates.
+
+Resynthesis of constant two-qubit gates uses an average gate fidelity floor of
+`1 - 1e-12` per decomposition, including direct Pauli lowering. It may remove
+small entangling angles or shorten near-Clifford rotations. This is a local
+bound, not a whole-circuit error budget; unbound angles are not approximated.
+
+Synthesis merges Z rotations through diagonal entanglers on native RZ targets.
+Equatorial R targets use at most two R gates per single-qubit unitary and absorb
+Z rotations into R axes. Measurement and reset discard their incoming Z frames;
+other boundaries retain the frame and global phase. RX/RZ targets prefer ZXZ to
+minimize physical RX rotations.
+
+### Placements and calibration
+
 Use plain tuples for placements without calibration. Use
 `CompilerTarget.SiteTuple([1, 0], duration=40, fidelity=0.99)` to attach
 calibration to a placement; both forms can appear in the same list.
@@ -187,8 +255,7 @@ preserve the entry sites. Unsupported or inconsistent site transfers are
 diagnosed, including after all-to-all placement. A synthesis basis must provide
 the same one-qubit gate family on every site. Its entangler is optional:
 one-qubit synthesis does not need one. Two-qubit synthesis requires an entangler
-on every routing edge in at least one direction. A native operation does not
-need a synthesis basis.
+on every routing edge in at least one direction.
 
 Mapping explores one initial-layout trial per available logical CPU by default,
 using LLVM's affinity-aware CPU count with a minimum of one. An explicit
@@ -250,7 +317,12 @@ mixtures of all target operations or use calibration costs.
 
 Target synthesis preserves a native `gphase`. If the target does not support
 `gphase`, target synthesis preserves relative phase effects and removes only the
-unobservable global phase of the entry point.
+unobservable global phase of the entry point, including its classical branches
+and loops. Global phases in helper functions and those that remain inside QCO
+modifiers are retained.
+
+Non-native two-qubit operations outside these rotation decompositions require a
+compile-time unitary matrix.
 
 Use {py:meth}`~mqt.core.mlir.QCOProgram.compile_for_target` with the target
 environment to apply target compilation to an existing QCO program. Compilation
@@ -272,19 +344,22 @@ dialect in their context.
 
 ### Synthesis without routing
 
-Use {py:meth}`~mqt.core.mlir.QCOProgram.synthesize_for_target` to translate an
-existing QCO program to an all-to-all target's native gate set. It uses the same
-native block synthesis as target compilation, without routing. This pipeline
-inlines calls, decomposes controlled gates, assigns static sites, performs
-native synthesis, and verifies target conformance. It accepts structured QCO/SCF
-input and uses the same target environment and global-phase policy as target
-compilation. Explicit connectivity is rejected; use `compile_for_target` when
-routing is required.
+Use {py:meth}`~mqt.core.mlir.QCOProgram.synthesize_for_target` to translate a
+QCO program to a target's native gate set without routing. Dynamic qubits
+require all-to-all connectivity and receive an initial layout. Static qubits
+keep their device site IDs and may use an explicit topology. The pipeline
+inlines calls, decomposes non-native controlled gates, places dynamic qubits,
+performs native synthesis, and checks target support and topology. It accepts
+structured QCO/SCF input and uses the same target environment and global-phase
+policy as target compilation.
 
 Both target pipelines decompose controlled composite gates, including inverse
 bodies and constant integer powers of operations on disjoint wires. Other
 composite powers require native target support or a synthesis rule for that
-operation.
+operation. Gates acting on three or more qubits need a target-independent
+decomposition before native synthesis and routing, unless the target supports
+them natively. Explicit-topology routing handles only one- and two-qubit gates;
+static circuits may keep native wider gates at supported device sites.
 
 Synthesis runs in place and raises `RuntimeError` with MLIR diagnostics on
 failure. Earlier pass changes may remain on the program, so copy it first when
@@ -472,7 +547,7 @@ data. Operation durations are absent because they were unavailable. See
 {doc}`../qdmi/sc_device` for their stable IDs and {doc}`../qdmi/configuration`
 for registry configuration.
 
-If the program should use fewer physical qubits, run the {code}`mqt-qubit-reuse`
+If the program should use fewer device qubits, run the {code}`mqt-qubit-reuse`
 pipeline before target compilation.
 
 ## Qiskit export
@@ -482,7 +557,34 @@ When exporting a program that has already been mapped to a
 {py:meth}`~mqt.core.mlir.QCOProgram.to_qiskit` or
 {py:meth}`~mqt.core.mlir.QCProgram.to_qiskit`. The exporter maps each static
 target site ID to its index in {py:attr}`~mqt.core.mlir.CompilerTarget.sites`
-and creates a canonical physical Qiskit circuit. The circuit has one register
-named {code}`q` with {py:attr}`~mqt.core.mlir.CompilerTarget.num_sites` qubits.
-This option does not run target compilation or emit Qiskit layout metadata.
-Target-aware export requires static qubits whose site IDs belong to that target.
+and creates a device circuit using applicable standard gate names from the
+target. The circuit has one register named {code}`q` with
+{py:attr}`~mqt.core.mlir.CompilerTarget.num_sites` qubits. Target-aware export
+requires static qubits whose site IDs belong to that target. Target compilation
+attaches layout metadata when possible.
+
+## Layout metadata
+
+For dynamic qubits, `compile_for_target` assigns program qubits to device qubits
+and attaches the resulting layout to the QCO program.
+
+```python
+program = QCProgram.from_openqasm_str(bell_qasm).to_qco()
+program.compile_for_target(environment)
+circuit = program.to_qiskit(target=environment.target)
+print(circuit.layout.final_index_layout())
+```
+
+The attached layout records placement and routing through unused device qubits.
+The Qiskit exporter attaches it only when given a target with the recorded site
+order. Otherwise, it exports the circuit without a layout. Target compilation
+rejects a program with an attached layout. See
+[transpiler layouts](qiskit.md#transpiler-layouts).
+
+Static qubits name device sites directly. A program must use either static or
+dynamic qubits. Static circuits must fit the target topology; compilation and
+synthesis preserve their site IDs and do not attach a layout. For dynamic
+qubits, layout metadata requires fixed-size allocations in the entry block. If a
+program declares more qubits than the device but shrinks to fit during
+compilation, it compiles without an attached layout. Later transformations clear
+layout metadata.

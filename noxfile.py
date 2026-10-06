@@ -333,6 +333,8 @@ def docs(session: nox.Session) -> None:
         "--no-dev",  # do not auto-install dev dependencies
         "--no-build-isolation-package",
         "mqt-core",  # build the project without isolation
+        "--reinstall-package",
+        "mqt-core",  # apply documentation CMake options instead of a cached wheel
         "sphinx-autobuild" if serve else "sphinx-build",
         "-n",  # nitpicky mode
         "-T",  # full tracebacks

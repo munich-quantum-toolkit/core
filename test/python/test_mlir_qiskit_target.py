@@ -1,0 +1,859 @@
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
+#
+# Licensed under the MIT License
+
+"""Contracts for converting Qiskit compiler targets through the native bridge."""
+
+from __future__ import annotations
+
+from math import pi
+from typing import cast
+
+import numpy as np
+import pytest
+from qiskit import QuantumCircuit
+from qiskit.circuit import Gate, Measure, Parameter, Reset
+from qiskit.circuit.controlflow import IfElseOp
+from qiskit.circuit.library import (
+    CCXGate,
+    CPhaseGate,
+    CUGate,
+    CXGate,
+    CYGate,
+    CZGate,
+    GlobalPhaseGate,
+    PhaseGate,
+    RGate,
+    RXGate,
+    RXXGate,
+    RYYGate,
+    RZGate,
+    RZXGate,
+    RZZGate,
+    SXGate,
+    U1Gate,
+    U3Gate,
+    UGate,
+    XGate,
+    efficient_su2,
+)
+from qiskit.providers.fake_provider import GenericBackendV2
+from qiskit.quantum_info import Operator
+from qiskit.transpiler import Target
+from qiskit_support import supports_qiskit_translation
+
+from mqt.core.mlir import (
+    CompilerTarget,
+    PayloadFormat,
+    PayloadSpecification,
+    ProgramCapability,
+    QCProgram,
+    TargetEnvironment,
+)
+
+if not supports_qiskit_translation():
+    pytest.skip("Qiskit version has no compiler translation adapter", allow_module_level=True)
+
+
+def test_directed_sites_and_snapshot() -> None:
+    """Undirected routing edges must not broaden native gate applicability."""
+    source = Target(num_qubits=3)
+    source.add_instruction(RZGate(Parameter("angle")))
+    source.add_instruction(XGate(), {(0,): None})
+    source.add_instruction(CXGate(), {(1, 0): None, (1, 2): None})
+    converted = CompilerTarget.from_qiskit(source, name="directed")
+    source.add_instruction(UGate(Parameter("a"), Parameter("b"), Parameter("c")))
+
+    assert converted.name == "directed"
+    assert converted.couplings == [(0, 1), (1, 2)]
+    operations = {operation.name: operation for operation in converted.operations}
+    assert set(operations) == {"rz", "x", "cx", "gphase"}
+    assert not operations["rz"].site_tuples
+    assert [placement.sites for placement in operations["x"].site_tuples] == [[0]]
+    assert [placement.sites for placement in operations["cx"].site_tuples] == [[1, 0], [1, 2]]
+
+
+def test_backend_and_global_operations() -> None:
+    """A complete graph is all-to-all, without dropping ordered gate sites."""
+    backend = GenericBackendV2(2, basis_gates=["sx", "rz", "cx"], control_flow=True)
+    converted = CompilerTarget.from_qiskit(backend)
+    assert converted.num_sites == 2
+    assert converted.name == backend.name
+    assert CompilerTarget.from_qiskit(backend, name="renamed").name == "renamed"
+    assert converted.connectivity_kind == CompilerTarget.ConnectivityKind.ALL_TO_ALL
+    assert {operation.name for operation in converted.operations} == {"sx", "rz", "cx", "measure", "reset", "gphase"}
+
+    source = Target(num_qubits=3)
+    source.add_instruction(CXGate())
+    source.add_instruction(XGate(), {})
+    source.add_instruction(RZGate(0.5), {})
+    source.add_instruction(IfElseOp, name="if_else")
+    converted = CompilerTarget.from_qiskit(source)
+    assert converted.connectivity_kind == CompilerTarget.ConnectivityKind.ALL_TO_ALL
+    assert {operation.name for operation in converted.operations} == {"cx", "gphase"}
+    for name in ("x", "rz", "if_else"):
+        with pytest.raises(ValueError, match="no native gate applicability"):
+            CompilerTarget.from_qiskit(source, operation_names=["cx", name])
+
+
+def test_fixed_parameter_constraints() -> None:
+    """Named discrete angles remain separate capabilities of one gate."""
+    source = Target(num_qubits=1)
+    source.add_instruction(RXGate(pi / 2), name="rx_90")
+    source.add_instruction(RXGate(pi), name="rx_180")
+    source.add_instruction(RZGate(Parameter("angle")))
+    target = CompilerTarget.from_qiskit(source)
+    operations = {operation.name: operation for operation in target.operations}
+    assert operations["rx_90"].canonical_name == operations["rx_180"].canonical_name == "rx"
+    assert operations["rx_90"].fixed_parameters == [pi / 2]
+    assert operations["rx_180"].fixed_parameters == [pi]
+    assert operations["rz"].fixed_parameters == []
+    for angle in (pi / 2, pi):
+        assert target.supports_operation("rx", 1, 1, parameters=[angle])
+    for angle in (None, -pi / 2, 0.3):
+        assert not target.supports_operation("rx", 1, 1, parameters=[angle])
+
+
+def test_partially_fixed_parameter_slots() -> None:
+    """Bound expressions become fixed values; remaining symbols are wildcards."""
+    angle = Parameter("angle")
+    source = Target(num_qubits=1)
+    source.add_instruction(UGate(angle.bind({angle: pi / 2}), angle / 2, 0.0), name="native_u")
+    target = CompilerTarget.from_qiskit(source)
+    operation = next(operation for operation in target.operations if operation.name == "native_u")
+    assert operation.canonical_name == "u"
+    assert operation.fixed_parameters == [pi / 2, None, 0.0]
+    assert target.supports_operation("u", 1, 3, parameters=[pi / 2, None, 0.0])
+    assert not target.supports_operation("u", 1, 3, parameters=[None, None, 0.0])
+
+
+@pytest.mark.filterwarnings("error:Cannot represent.*:UserWarning")
+def test_target_warning_as_error() -> None:
+    """A native conversion warning respects the caller's warning filters."""
+    source = Target(num_qubits=1)
+    source.add_instruction(RZGate(Parameter("angle")), angle_bounds=[(-1.0, 1.0)])
+    with pytest.raises(UserWarning, match="parameter constraints"):
+        CompilerTarget.from_qiskit(source)
+
+
+def test_target_selection() -> None:
+    """Selection accepts iterables and reports invalid sources."""
+    source = Target(num_qubits=1)
+    source.add_instruction(XGate())
+    converted = CompilerTarget.from_qiskit(source, operation_names=iter(["x", "x"]), name="native")
+    source.add_instruction(RZGate(Parameter("angle")))
+    assert converted.name == "native"
+    assert {operation.name for operation in converted.operations} == {"x", "gphase"}
+    with pytest.raises(ValueError, match="no representable"):
+        CompilerTarget.from_qiskit(source, operation_names=[])
+    with pytest.raises(TypeError, match="Expected a Qiskit Target or BackendV2"):
+        CompilerTarget.from_qiskit(cast("Target", object()))
+
+
+@pytest.mark.parametrize("bounds", [None, [None] * 3, [(-float("inf"), float("inf"))] * 3])
+def test_unrestricted_parameter_slots(bounds: list[tuple[float, float] | None] | None) -> None:
+    """Target symbols are wildcards, not bindings shared between slots."""
+    theta = Parameter("theta")
+    source = Target(num_qubits=1)
+    source.add_instruction(UGate(theta / 2, theta, theta), angle_bounds=bounds)
+    assert source.instruction_supported("u", (0,), parameters=[0.1, 0.2, 0.3])
+    converted = CompilerTarget.from_qiskit(source, operation_names=["u"])
+    assert converted.supports_operation("u", 1, 3)
+    with pytest.raises(ValueError, match=r"does not expose.*rz"):
+        CompilerTarget.from_qiskit(source, operation_names=["rz"])
+
+
+def test_restricted_operation_set() -> None:
+    """An explicit subset can omit an unrepresentable operation."""
+    source = Target(num_qubits=1)
+    source.add_instruction(XGate())
+    source.add_instruction(RZGate(Parameter("angle")), angle_bounds=[(-1.0, 1.0)])
+    converted = CompilerTarget.from_qiskit(source, operation_names=["x"])
+    assert {operation.name for operation in converted.operations} == {"x", "gphase"}
+
+    with pytest.warns(UserWarning, match="parameter constraints") as warnings:
+        converted = CompilerTarget.from_qiskit(source)
+    assert {operation.name for operation in converted.operations} == {"x", "gphase"}
+    assert warnings[0].filename == __file__
+
+
+def test_angle_bounds_and_open_controls() -> None:
+    """Instruction metadata also constrains the accepted gate semantics."""
+    source = Target(num_qubits=2)
+    source.add_instruction(CXGate(ctrl_state=0), name="cx")
+    with pytest.raises(ValueError, match="open controls"):
+        CompilerTarget.from_qiskit(source, operation_names=["cx"])
+    source = Target(num_qubits=1)
+    source.add_instruction(RZGate(Parameter("theta")), angle_bounds=[(-1.0, 1.0)])
+    with pytest.raises(ValueError, match="parameter constraints"):
+        CompilerTarget.from_qiskit(source, operation_names=["rz"])
+
+
+def test_custom_names_and_operations() -> None:
+    """Names do not override gate identity; custom gates remain unsupported."""
+    source = Target(num_qubits=1)
+    source.add_instruction(XGate(), name="native_x")
+    source.add_instruction(Gate("x", 1, []))
+    source.add_instruction(RZGate(Parameter("theta")))
+    source.add_instruction(GlobalPhaseGate(0.5))
+    with pytest.warns(UserWarning, match="custom"):
+        converted = CompilerTarget.from_qiskit(source)
+    assert {operation.name for operation in converted.operations} == {"native_x", "rz", "gphase"}
+    assert converted.supports_operation("x", 1, 0)
+    source.add_instruction(Measure(), name="native_measure")
+    source.add_instruction(Reset(), name="native_reset")
+    for name in ("x", "native_measure", "native_reset"):
+        with pytest.raises(ValueError, match="custom"):
+            CompilerTarget.from_qiskit(source, operation_names=[name])
+    with pytest.raises(ValueError, match="no native gate applicability"):
+        CompilerTarget.from_qiskit(source, operation_names=["global_phase"])
+
+
+@pytest.mark.parametrize("symbolic", [False, True])
+def test_compile_named_fixed_rotations(*, symbolic: bool) -> None:
+    """Compilation exports executable target names with exact gate phases."""
+    source = Target(num_qubits=2)
+    source.add_instruction(RXGate(pi / 2), name="quarter_turn")
+    source.add_instruction(RXGate(pi), name="half_turn")
+    source.add_instruction(RZGate(Parameter("angle")))
+    source.add_instruction(CXGate())
+    target = CompilerTarget.from_qiskit(source)
+    circuit = QuantumCircuit(2)
+    circuit.rx(pi, 0)
+    circuit.ry(Parameter("theta") if symbolic else 0.3, 1)
+    circuit.cx(0, 1)
+    program = QCProgram.from_qiskit(circuit).to_qco()
+    program.compile_for_target(TargetEnvironment(target, PayloadSpecification(PayloadFormat("openqasm", "3.0"))))
+    exported = program.to_qiskit(target=target)
+    assert any(item.operation.name == "quarter_turn" for item in exported.data)
+    assert all(
+        source.instruction_supported(
+            item.operation.name,
+            tuple(exported.find_bit(qubit).index for qubit in item.qubits),
+            parameters=item.operation.params,
+        )
+        for item in exported.data
+    )
+    if symbolic:
+        exported = exported.assign_parameters({"theta": 0.7})
+        circuit = circuit.assign_parameters({"theta": 0.7})
+    assert np.allclose(Operator(exported).data, Operator(circuit).data)
+    restored = QCProgram.from_qiskit(exported).to_qiskit()
+    assert np.allclose(Operator(restored).data, Operator(circuit).data)
+
+
+def test_export_fixed_rotations_by_parameters_and_sites() -> None:
+    """Select aliases by values and placement, including colliding gate names."""
+    source = Target(num_qubits=2)
+    source.add_instruction(RXGate(pi / 2), {(0,): None}, name="a_quarter")
+    source.add_instruction(RXGate(pi), {(0,): None}, name="b_half")
+    source.add_instruction(RXGate(Parameter("angle")), {(0,): None}, name="z_variable")
+    source.add_instruction(RXGate(pi / 2), {(1,): None}, name="ry")
+    source.add_instruction(CXGate())
+    target = CompilerTarget.from_qiskit(source)
+    circuit = QuantumCircuit(2)
+    circuit.rx(pi / 2, 0)
+    circuit.rx(pi, 0)
+    circuit.rx(Parameter("theta"), 0)
+    circuit.rx(pi / 2, 1)
+    program = QCProgram.from_mlir_str("""module {
+  func.func @main(%theta: f64 {mqt.input_name = "theta"}) attributes {mqt.entry_point} {
+    %quarter = arith.constant 1.5707963267948966 : f64
+    %half = arith.constant 3.141592653589793 : f64
+    %a = qc.static 0 : !qc.qubit
+    %b = qc.static 1 : !qc.qubit
+    qc.rx(%quarter) %a : !qc.qubit
+    qc.rx(%half) %a : !qc.qubit
+    qc.rx(%theta) %a : !qc.qubit
+    qc.rx(%quarter) %b : !qc.qubit
+    return
+  }
+}
+""")
+    exported = program.to_qiskit(target=target)
+    assert [item.operation.name for item in exported.data] == ["a_quarter", "b_half", "z_variable", "ry"]
+    assert all(item.operation.base_class is RXGate for item in exported.data)
+    restored = QCProgram.from_qiskit(exported).to_qiskit()
+    assert np.allclose(
+        Operator(restored.assign_parameters({"theta": 0.3})).data,
+        Operator(circuit.assign_parameters({"theta": 0.3})).data,
+    )
+
+
+def test_named_sx_and_x_keep_phase() -> None:
+    """SX and X keep their exact matrices instead of becoming RX aliases."""
+    source = Target(num_qubits=1)
+    source.add_instruction(SXGate(), name="native_sx")
+    source.add_instruction(XGate(), name="native_x")
+    target = CompilerTarget.from_qiskit(source)
+    circuit = QuantumCircuit(1)
+    circuit.sx(0)
+    circuit.x(0)
+    program = QCProgram.from_openqasm_str('OPENQASM 3.0; include "stdgates.inc"; sx $0; x $0;')
+    exported = program.to_qiskit(target=target)
+    assert [item.operation.name for item in exported.data] == ["native_sx", "native_x"]
+    assert np.allclose(Operator(exported).data, Operator(circuit).data)
+
+
+@pytest.mark.parametrize("qco", [False, True])
+@pytest.mark.parametrize("symbolic", [False, True])
+def test_export_standard_aliases_on_ordered_sites(*, qco: bool, symbolic: bool) -> None:
+    """Keep legacy spellings as native Qiskit gates on their applicable sites."""
+    theta = Parameter("theta")
+    source = Target(num_qubits=2)
+    source.add_instruction(PhaseGate(theta), {(0,): None})
+    source.add_instruction(U1Gate(theta), {(1,): None})
+    source.add_instruction(CXGate(), {(0, 1): None})
+    target = CompilerTarget.from_qiskit(source)
+    circuit = QuantumCircuit(2)
+    circuit.p(theta if symbolic else 0.3, 0)
+    circuit.p(theta if symbolic else 0.3, 1)
+    argument = '%theta: f64 {mqt.input_name = "theta"}' if symbolic else ""
+    definition = "" if symbolic else "%theta = arith.constant 0.3 : f64"
+    program = QCProgram.from_mlir_str(f"""module {{
+  func.func @main({argument}) attributes {{mqt.entry_point}} {{
+    {definition}
+    %a = qc.static 0 : !qc.qubit
+    %b = qc.static 1 : !qc.qubit
+    qc.p(%theta) %a : !qc.qubit
+    qc.p(%theta) %b : !qc.qubit
+    return
+  }}
+}}
+""")
+    exported = (program.to_qco() if qco else program).to_qiskit(target=target)
+    assert exported.count_ops() == {"p": 1, "u1": 1}
+    assert exported.data[1].operation.base_class is U1Gate
+    assert all(
+        source.instruction_supported(
+            operation_name=item.operation.name,
+            qargs=tuple(exported.find_bit(qubit).index for qubit in item.qubits),
+            parameters=item.operation.params,
+        )
+        for item in exported.data
+    )
+    if symbolic:
+        exported = exported.assign_parameters({"theta": 0.3})
+        circuit = circuit.assign_parameters({theta: 0.3})
+    assert Operator(exported).equiv(Operator(circuit))
+    restored = QCProgram.from_qiskit(exported).to_qiskit()
+    assert Operator(restored).equiv(Operator(circuit))
+
+    reverse = QCProgram.from_openqasm_str('OPENQASM 3.0; include "stdgates.inc"; cx $1, $0;')
+    assert reverse.to_qiskit(target=target).count_ops() == {"cx": 1}
+
+
+def test_export_aliases_inside_control_flow() -> None:
+    """Select legacy gates using physical sites inside nested blocks."""
+    source = Target(num_qubits=2)
+    source.add_instruction(CXGate())
+    source.add_instruction(U1Gate(Parameter("theta")), {(1,): None})
+    source.add_instruction(Measure())
+    source.add_instruction(Reset())
+    program = QCProgram.from_openqasm_str("""OPENQASM 3.0;
+include "stdgates.inc";
+bit c = measure $1;
+if (c) { reset $1; p(0.3) $1; }
+""")
+    exported = program.to_qiskit(target=CompilerTarget.from_qiskit(source))
+    assert exported.count_ops() == {"measure": 1, "if_else": 1}
+    block = exported.data[-1].operation.blocks[0]
+    assert block.count_ops() == {"reset": 1, "u1": 1}
+    assert block.data[-1].operation.base_class is U1Gate
+
+
+@pytest.mark.parametrize(
+    "basis",
+    [
+        ["sx", "x", "rz", "cx"],
+        ["sx", "x", "rz", "ecr"],
+        ["rx", "rz", "cz"],
+        ["u", "cx"],
+        ["r", "rxx"],
+        ["u1", "u2", "u3", "cx"],
+    ],
+)
+def test_backend_bases_compile(basis: list[str]) -> None:
+    """Keep usable backend bases despite extra provider-specific operations."""
+    backend = GenericBackendV2(2, basis_gates=basis, seed=1)
+    backend.target.add_instruction(Gate("provider_gate", 2, []))
+    with pytest.warns(UserWarning, match="provider_gate"):
+        target = CompilerTarget.from_qiskit(backend)
+    circuit = QuantumCircuit(2)
+    circuit.h(0)
+    circuit.cx(0, 1)
+    circuit.ry(0.3, 1)
+    program = QCProgram.from_qiskit(circuit).to_qco()
+    program.compile_for_target(TargetEnvironment(target, PayloadSpecification(PayloadFormat("openqasm", "3.0"))))
+    restored = program.to_qiskit(target=target)
+    assert restored.data
+    if "u3" in basis:
+        assert any(item.operation.base_class is U3Gate for item in restored.data)
+    assert all(
+        backend.target.instruction_supported(
+            operation_name=item.operation.name,
+            qargs=tuple(restored.find_bit(qubit).index for qubit in item.qubits),
+            parameters=item.operation.params,
+        )
+        for item in restored.data
+    )
+
+
+@pytest.mark.parametrize("gate", [CPhaseGate(Parameter("a")), CCXGate(), CUGate(*[Parameter("a")] * 4)])
+def test_unsupported_controlled_gate_does_not_add_routing_edges(gate: Gate) -> None:
+    """Circuit import support must not create unusable native routing edges."""
+    source = Target(num_qubits=3)
+    theta = Parameter("theta")
+    source.add_instruction(UGate(theta, theta, theta))
+    source.add_instruction(CXGate(), {(0, 1): None, (1, 2): None})
+    source.add_instruction(gate, {(0, 2) if gate.num_qubits == 2 else (0, 1, 2): None})
+    with pytest.warns(UserWarning, match=f"unsupported operation for '{gate.name}'"):
+        target = CompilerTarget.from_qiskit(source)
+    assert target.couplings == [(0, 1), (1, 2)]
+    assert gate.name not in {operation.name for operation in target.operations}
+    with pytest.raises(ValueError, match=f"unsupported operation for '{gate.name}'"):
+        CompilerTarget.from_qiskit(source, operation_names=[gate.name])
+    program = QCProgram.from_openqasm_str('OPENQASM 3.0; include "stdgates.inc"; qubit[3] q; cz q[0], q[1];').to_qco()
+    program.compile_for_target(TargetEnvironment(target, PayloadSpecification(PayloadFormat("openqasm", "3.0"))))
+    assert program.to_qiskit(target=target).count_ops()["cx"] == 1
+
+
+def test_unknown_width_and_disconnected_topology() -> None:
+    """Missing connectivity must not turn into an all-to-all device."""
+    with pytest.raises(ValueError, match="positive qubit count"):
+        CompilerTarget.from_qiskit(Target(num_qubits=None))
+    source = Target(num_qubits=2)
+    source.add_instruction(XGate())
+    source.add_instruction(CXGate(), {})
+    with pytest.raises(ValueError, match="connected"):
+        CompilerTarget.from_qiskit(source)
+
+    source = Target(num_qubits=3)
+    source.add_instruction(CXGate(), {(0, 1): None})
+    source.add_instruction(Gate("custom_bridge", 2, []), {(1, 2): None})
+    with pytest.warns(UserWarning, match="custom_bridge"), pytest.raises(ValueError, match="connected"):
+        CompilerTarget.from_qiskit(source)
+
+
+@pytest.mark.parametrize("name", ["gpi", "gpi2"])
+@pytest.mark.parametrize("symbolic", [False, True])
+def test_native_r_capabilities(name: str, *, symbolic: bool) -> None:
+    """Native names project fixed-angle R gates without changing circuit phase."""
+    phi = Parameter("phi") if symbolic else 0.13
+    definition = QuantumCircuit(1)
+    definition.r(pi if name == "gpi" else pi / 2, phi, 0)
+    if name == "gpi":
+        definition.global_phase = pi / 2
+    gate = Gate(name, 1, [phi])
+    gate.definition = definition
+    source = Target(num_qubits=2)
+    source.add_instruction(gate)
+    unrestricted = UGate(*map(Parameter, ("theta", "lambda", "beta")))
+    source.add_instruction(unrestricted)
+    source.add_instruction(CXGate())
+    converted = CompilerTarget.from_qiskit(source)
+    operation = next(operation for operation in converted.operations if operation.name == name)
+    assert operation.canonical_name == "r"
+    assert operation.num_parameters == 2
+    assert operation.fixed_parameters == [pi if name == "gpi" else pi / 2, None if symbolic else phi]
+    circuit = QuantumCircuit(2, global_phase=0.29)
+    circuit.append(gate, [0])
+    imported = QCProgram.from_qiskit(circuit).to_qco()
+    imported.compile_for_target(TargetEnvironment(converted, PayloadSpecification(PayloadFormat("openqasm", "3.0"))))
+    assert "qco.r(" in imported.ir
+    exported = imported.to_qiskit(target=converted)
+    for _ in range(2):
+        assert exported.data[0].operation.name == name
+        assert exported.data[0].operation.params == [phi]
+        assert source.instruction_supported(name, (0,), parameters=exported.data[0].operation.params)
+        rebound = Target(num_qubits=2)
+        rebound.add_instruction(exported.data[0].operation)
+        rebound.add_instruction(unrestricted)
+        rebound.add_instruction(CXGate())
+        target = CompilerTarget.from_qiskit(rebound)
+        unmapped = QuantumCircuit(2)
+        unmapped.compose(exported, inplace=True)
+        program = QCProgram.from_qiskit(unmapped).to_qco()
+        environment = TargetEnvironment(target, PayloadSpecification(PayloadFormat("openqasm", "3.0")))
+        program.compile_for_target(environment)
+        exported = program.to_qiskit(target=target)
+        actual = exported.assign_parameters({phi: 0.37}) if symbolic else exported
+        expected = circuit.assign_parameters({phi: 0.37}) if symbolic else circuit
+        assert np.allclose(Operator(actual).data, Operator(expected).data)
+    gate.definition.global_phase += 0.37
+    with pytest.raises(ValueError, match="custom"):
+        CompilerTarget.from_qiskit(source, operation_names=[name])
+
+
+@pytest.mark.parametrize("name", ["gpi", "gpi2"])
+def test_native_r_names_require_exact_definitions(name: str) -> None:
+    """Reserved native names cannot relabel another gate or change its arity."""
+    phi = Parameter("phi")
+    source = Target(num_qubits=1)
+    source.add_instruction(RGate(pi if name == "gpi" else pi / 2, phi), name=name)
+    with pytest.raises(ValueError, match="custom"):
+        CompilerTarget.from_qiskit(source, operation_names=[name])
+
+    definition = QuantumCircuit(1, global_phase=pi / 2 if name == "gpi" else 0)
+    definition.r(pi if name == "gpi" else pi / 2, phi, 0)
+    gate = Gate(name, 1, [phi])
+    gate.definition = definition
+    source = Target(num_qubits=1)
+    source.add_instruction(gate, name="renamed")
+    with pytest.raises(ValueError, match="custom"):
+        CompilerTarget.from_qiskit(source, operation_names=["renamed"])
+
+
+@pytest.mark.parametrize("angle", [0.3, Parameter("theta")])
+def test_native_r_export_rejects_incompatible_target(angle: float | Parameter) -> None:
+    """Direct target construction must not bypass native alias semantics."""
+    target = CompilerTarget(
+        1,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("gpi", 1, 2, canonical_name="r"),
+        ]),
+    )
+    circuit = QuantumCircuit(1)
+    circuit.r(angle, 0.2, 0)
+    program = QCProgram.from_qiskit(circuit).to_qco()
+    program.compile_for_target(TargetEnvironment(target, PayloadSpecification(PayloadFormat("openqasm", "3.0"))))
+    with pytest.raises(RuntimeError, match="fixed-angle R definition"):
+        program.to_qiskit(target=target)
+
+
+@pytest.mark.parametrize("name", ["cy", "controlled_y"])
+def test_native_cy_preserves_capability_without_synthesis_entangler(name: str) -> None:
+    """Native CY remains available without claiming a general two-qubit basis."""
+    source = Target(num_qubits=2)
+    source.add_instruction(UGate(*map(Parameter, ("theta", "phi", "lambda"))))
+    source.add_instruction(CYGate(), {(0, 1): None}, name=name)
+    target = CompilerTarget.from_qiskit(source, operation_names=["u", name])
+    assert target.supports_operation("cy", 2, 0, [0, 1])
+    assert not target.supports_operation("cy", 2, 0, [1, 0])
+    assert target.synthesis_basis is not None
+    assert target.synthesis_basis.entangler is None
+    circuit = QuantumCircuit(2)
+    circuit.cy(0, 1)
+    program = QCProgram.from_qiskit(circuit).to_qco()
+    program.compile_for_target(TargetEnvironment(target, PayloadSpecification(PayloadFormat("openqasm", "3.0"))))
+    exported = program.to_qiskit(target=target)
+    assert [item.operation.name for item in exported.data] == [name]
+    restored = QCProgram.from_qiskit(exported).to_qiskit()
+    assert np.allclose(Operator(exported).data, Operator(circuit).data)
+    assert np.allclose(Operator(restored).data, Operator(circuit).data)
+
+
+@pytest.mark.parametrize(
+    ("entangler", "with_cz"),
+    [(RXXGate, False), (RYYGate, False), (RZXGate, False), (RZZGate, False), (RZZGate, True)],
+)
+def test_fractional_pauli_synthesis(entangler: type[RXXGate | RYYGate | RZXGate | RZZGate], *, with_cz: bool) -> None:
+    """Numeric rotations fold into the native interval; runtime values use fixed gates."""
+    source = Target(num_qubits=2)
+    source.add_instruction(RXGate(Parameter("rx")))
+    source.add_instruction(RZGate(Parameter("rz")))
+    source.add_instruction(SXGate())
+    if with_cz:
+        source.add_instruction(CZGate())
+    source.add_instruction(entangler(Parameter("fraction")), angle_bounds=[(0, pi / 2)])
+    target = CompilerTarget.from_qiskit(source, operation_names=list(source.operation_names))
+    operation = next(op for op in target.operations if op.name == entangler(0).name)
+    assert operation.parameter_bounds == [(0, pi / 2)]
+    assert target.synthesis_basis is not None
+    assert target.synthesis_basis.entangler is not None
+    assert target.synthesis_basis.single_qubit == CompilerTarget.SingleQubitBasis.ZXZ
+    assert target.synthesis_basis.entangler.angles == CompilerTarget.AngleSupport.ZERO_TO_HALF_PI
+    environment = TargetEnvironment(target, PayloadSpecification(PayloadFormat("openqasm", "3.0")))
+    theta = Parameter("theta")
+    for angle in [-100.0, -2 * pi, -pi, -pi / 2, -0.37, 0.0, 0.37, pi / 2, 2.4, pi, 100.0, theta]:
+        # RZZ covers folding boundaries; other frames and controlled phase
+        # each need one nontrivial numeric and one symbolic angle.
+        gates = ("rzz", "rxx", "cp") if angle is theta or np.isclose(angle, -0.37) else ("rzz",)
+        for gate in gates:
+            circuit = QuantumCircuit(2)
+            getattr(circuit, gate)(angle, 0, 1)
+            program = QCProgram.from_qiskit(circuit).to_qco()
+            program.synthesize_for_target(environment)
+            exported = program.to_qiskit(target=target)
+            assert all(
+                source.instruction_supported(item.operation.name, parameters=item.operation.params)
+                for item in exported.data
+            )
+            if angle is theta:
+                for value in (-8.2, 0.0, 0.37, 100.0):
+                    assert np.allclose(
+                        Operator(exported.assign_parameters({theta: value})).data,
+                        Operator(circuit.assign_parameters({theta: value})).data,
+                    )
+            else:
+                assert np.allclose(Operator(exported).data, Operator(circuit).data)
+                if gate in {"rzz", "rxx"} and np.isclose(angle, -0.37):
+                    assert exported.count_ops().get(operation.name) == 1
+
+
+def test_parameter_bound_contract() -> None:
+    """Bounds constrain values and cannot be inferred by joining fixed endpoints."""
+    capability = CompilerTarget.OperationCapability
+    operation = capability("rzz", 2, 1, parameter_bounds=[(0, pi / 2)])
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([operation]),
+    )
+    for angle, supported in ((0, True), (pi / 2, True), (-0.1, False), (pi, False), (None, False)):
+        assert target.supports_operation("rzz", 2, 1, parameters=[angle]) is supported
+    for bounds in ([(1, 0)], [(float("nan"), 1)], [(0, 1), None]):
+        with pytest.raises(ValueError, match="parameter bounds"):
+            capability("rzz", 2, 1, parameter_bounds=bounds)
+    with pytest.raises(ValueError, match="outside its bounds"):
+        capability("rzz", 2, 1, fixed_parameters=[pi], parameter_bounds=[(0, pi / 2)])
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            capability("rx", 1, 1),
+            capability("rz", 1, 1),
+            capability("rzz", 2, 1, fixed_parameters=[0]),
+            capability("rzz", 2, 1, fixed_parameters=[pi / 2]),
+        ]),
+    )
+    assert target.synthesis_basis is not None
+    assert target.synthesis_basis.entangler is not None
+    assert not target.synthesis_basis.entangler.parameterized
+
+
+@pytest.mark.parametrize("symbolic", [False, True])
+def test_iqm_pauli_gate_counts(*, symbolic: bool) -> None:
+    """The analytical CZ construction applies to both numeric and runtime angles."""
+    source = Target(num_qubits=2)
+    source.add_instruction(RGate(Parameter("theta"), Parameter("phi")))
+    source.add_instruction(CZGate())
+    target = CompilerTarget.from_qiskit(source)
+    theta = Parameter("rotation")
+    for gate in ("rxx", "ryy", "rzz", "rzx", "cp"):
+        circuit = QuantumCircuit(2)
+        getattr(circuit, gate)(theta if symbolic else 0.37, 0, 1)
+        program = QCProgram.from_qiskit(circuit).to_qco()
+        program.synthesize_for_target(TargetEnvironment(target, PayloadSpecification(PayloadFormat("openqasm", "3.0"))))
+        exported = program.to_qiskit(target=target)
+        assert exported.count_ops()["cz"] == 2
+        if gate in {"rxx", "ryy", "rzz"}:
+            assert exported.count_ops()["r"] <= 3
+        if symbolic:
+            exported = exported.assign_parameters({theta: -8.2})
+            circuit = circuit.assign_parameters({theta: -8.2})
+        assert np.allclose(Operator(exported).data, Operator(circuit).data)
+
+
+@pytest.mark.parametrize("symbolic", [False, True])
+def test_iqm_z_frames_across_cz(*, symbolic: bool) -> None:
+    """Frame propagation preserves phase and produces bindable Qiskit expressions."""
+    source = Target(num_qubits=6)
+    source.add_instruction(RGate(Parameter("theta"), Parameter("phi")))
+    source.add_instruction(CZGate())
+    target = CompilerTarget.from_qiskit(source)
+    circuit = efficient_su2(6, reps=3, entanglement="circular")
+    values = dict(
+        zip(circuit.parameters, np.random.default_rng(42).uniform(-10, 10, circuit.num_parameters), strict=True)
+    )
+    if not symbolic:
+        circuit = circuit.assign_parameters(values)
+    program = QCProgram.from_qiskit(circuit).to_qco()
+    program.synthesize_for_target(TargetEnvironment(target, PayloadSpecification(PayloadFormat("openqasm", "3.0"))))
+    exported = program.to_qiskit(target=target)
+    assert exported.count_ops()["cz"] == 18
+    assert exported.count_ops()["r"] <= (66 if symbolic else 48)
+    if symbolic:
+        circuit = circuit.assign_parameters(values)
+        exported = exported.assign_parameters(values)
+    assert np.allclose(Operator(exported).data, Operator(circuit).data)
+
+
+def test_iqm_symbolic_frame_absorption() -> None:
+    """Absorb Z rotations without redundant symbolic phase or angle wrapping."""
+    source = Target(num_qubits=2)
+    source.add_instruction(RGate(Parameter("theta"), Parameter("phi")))
+    source.add_instruction(CZGate())
+    target = CompilerTarget.from_qiskit(source)
+    a, b, theta, phi = [Parameter(name) for name in ("a", "b", "theta", "phi")]
+    circuit = QuantumCircuit(2)
+    circuit.rz(a, 0)
+    circuit.r(theta, phi, 0)
+    circuit.rz(b, 0)
+    circuit.rz(a, 1)
+    program = QCProgram.from_qiskit(circuit).to_qco()
+    program.synthesize_for_target(TargetEnvironment(target, PayloadSpecification(PayloadFormat("openqasm", "3.0"))))
+    exported = program.to_qiskit(target=target)
+    assert exported.count_ops() == {"r": 4}
+    assert exported.global_phase == 0
+    for values in [(0.0, 0.0, 0.0, 0.0), (0.4, -0.2, 0.37, 1.3), (1e300, -1e300, 1e300, -1e300)]:
+        bindings = dict(zip((a, b, theta, phi), values, strict=True))
+        assert np.allclose(
+            Operator(exported.assign_parameters(bindings)).data,
+            Operator(circuit.assign_parameters(bindings)).data,
+        )
+
+
+@pytest.mark.parametrize("width", [None, 3])
+def test_native_import_preserves_bounds_without_placement(width: int | None) -> None:
+    """Native import can ignore disconnected topology and unspecified width."""
+    source = Target(num_qubits=width)
+    source.add_instruction(RXGate(Parameter("rx")))
+    source.add_instruction(RZGate(Parameter("rz")))
+    source.add_instruction(RZZGate(Parameter("rzz")), {(0, 1): None} if width else None, angle_bounds=[(0, pi / 2)])
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations.from_qiskit(source),
+    )
+    assert target.num_sites == 2
+    assert target.connectivity_kind == CompilerTarget.ConnectivityKind.ALL_TO_ALL
+    assert all(not op.site_tuples for op in target.operations)
+    assert next(op for op in target.operations if op.name == "rzz").parameter_bounds == [(0, pi / 2)]
+
+
+@pytest.mark.parametrize("native_rz", [False, True])
+def test_z_frames_stop_at_control_flow_and_barriers(*, native_rz: bool) -> None:
+    """A pending Z frame must dominate each branch and stay before barriers."""
+    source = Target(num_qubits=2)
+    source.add_instruction(CZGate())
+    if native_rz:
+        source.add_instruction(RZGate(Parameter("rz")))
+        source.add_instruction(SXGate())
+    else:
+        source.add_instruction(RGate(Parameter("theta"), Parameter("phi")))
+    target = CompilerTarget.from_qiskit(source)
+    theta = Parameter("angle")
+    circuit = QuantumCircuit(2, 1)
+    circuit.rz(theta, 0)
+    circuit.cz(0, 1)
+    circuit.barrier(0)
+    with circuit.if_test((circuit.clbits[0], True)) as otherwise:
+        circuit.ry(theta / 2, 0)
+    with otherwise:
+        circuit.rx(theta / 3, 0)
+    circuit.rz(-theta, 0)
+    circuit.cz(0, 1)
+    program = QCProgram.from_qiskit(circuit).to_qco()
+    program.synthesize_for_target(
+        TargetEnvironment(
+            target,
+            PayloadSpecification(
+                PayloadFormat("openqasm", "3.0"), capabilities=[ProgramCapability(ProgramCapability.FORWARD_BRANCHING)]
+            ),
+        )
+    )
+    exported = program.to_qiskit(target=target)
+
+    def branch_unitary(circuit: QuantumCircuit, branch: int) -> Operator:
+        result = QuantumCircuit(2, global_phase=circuit.global_phase)
+        for item in circuit.data:
+            qubits = [circuit.find_bit(qubit).index for qubit in item.qubits]
+            if isinstance(item.operation, IfElseOp):
+                result.compose(item.operation.blocks[branch], qubits=qubits, inplace=True)
+            elif item.operation.name != "barrier":
+                result.append(item.operation, qubits)
+        return Operator(result)
+
+    for value in (-8.2, 0.37, 100.0):
+        for branch in (0, 1):
+            assert np.allclose(
+                branch_unitary(circuit.assign_parameters({theta: value}), branch).data,
+                branch_unitary(exported.assign_parameters({theta: value}), branch).data,
+            )
+
+
+@pytest.mark.parametrize("entangler", [CZGate(), RZZGate(Parameter("zz"))])
+def test_pauli_synthesis_uses_weyl_approximation(entangler: Gate) -> None:
+    """Small nonlocal angles share the matrix planner's fidelity floor."""
+    source = Target(num_qubits=2)
+    source.add_instruction(RXGate(Parameter("x")))
+    source.add_instruction(RZGate(Parameter("z")))
+    source.add_instruction(entangler)
+    target = CompilerTarget.from_qiskit(source)
+    environment = TargetEnvironment(target, PayloadSpecification(PayloadFormat("openqasm", "3.0")))
+    for gate in ("cp", "rxx"):
+        for angle in (1e-6, -1e-6, 1e-5, pi + 1e-6):
+            circuit = QuantumCircuit(2)
+            getattr(circuit, gate)(angle, 0, 1)
+            program = QCProgram.from_qiskit(circuit).to_qco()
+            program.synthesize_for_target(environment)
+            exported = program.to_qiskit(target=target)
+            expected, actual = Operator(circuit).data, Operator(exported).data
+            fidelity = (4 + abs(np.trace(expected.conj().T @ actual)) ** 2) / 20
+            assert fidelity >= 1 - 1e-12 - 2e-15
+            assert np.max(np.abs(expected - actual)) < 2e-6
+            count = exported.count_ops().get(entangler.name, 0)
+            if abs(angle) < 2e-6 or (gate == "rxx" and angle > pi):
+                assert count == 0
+            elif entangler.name == "rzz":
+                assert count == 1
+            else:
+                assert count == 2
+
+
+def test_native_rz_frames_merge_across_diagonal_entanglers() -> None:
+    """Merge independent wire frames without losing small or runtime angles."""
+    source = Target(num_qubits=3)
+    source.add_instruction(RZGate(Parameter("z")))
+    source.add_instruction(SXGate())
+    source.add_instruction(CZGate())
+    source.add_instruction(RZZGate(Parameter("zz")))
+    target = CompilerTarget.from_qiskit(source)
+    a, b = Parameter("a"), Parameter("b")
+    circuit = QuantumCircuit(3)
+    circuit.rz(a, 0)
+    circuit.rz(b, 1)
+    circuit.cz(0, 1)
+    circuit.rz(b, 0)
+    circuit.rzz(0.37, 0, 2)
+    circuit.rz(-a, 0)
+    program = QCProgram.from_qiskit(circuit).to_qco()
+    program.synthesize_for_target(TargetEnvironment(target, PayloadSpecification(PayloadFormat("openqasm", "3.0"))))
+    exported = program.to_qiskit(target=target)
+    assert exported.count_ops() == {"rz": 2, "cz": 1, "rzz": 1}
+    for value in (0.3, -8.2, 1e300):
+        bindings = {a: value, b: 0.19}
+        assert np.allclose(
+            Operator(exported.assign_parameters(bindings)).data,
+            Operator(circuit.assign_parameters(bindings)).data,
+            atol=1e-12,
+            rtol=0,
+        )
+
+
+@pytest.mark.parametrize("fractional", [False, True])
+def test_z_frame_merging_does_not_add_physical_rotations(*, fractional: bool) -> None:
+    """Removing virtual gates must not increase the cost of local synthesis."""
+    source = Target(num_qubits=3)
+    source.add_instruction(RZGate(Parameter("z")))
+    if fractional:
+        source.add_instruction(RXGate(Parameter("x")))
+        source.add_instruction(RZZGate(Parameter("zz")), angle_bounds=[(0, pi / 2)])
+    else:
+        source.add_instruction(SXGate())
+        source.add_instruction(CZGate())
+    target = CompilerTarget.from_qiskit(source)
+    circuit = QuantumCircuit(3)
+    for layer in range(3):
+        for wire in range(3):
+            angle = Parameter(f"a{layer}{wire}")
+            circuit.ry(angle / 3, wire)
+            circuit.rzz(angle, wire, (wire + 1) % 3)
+            circuit.rxx(angle / 2, wire, (wire + 1) % 3)
+    program = QCProgram.from_qiskit(circuit).to_qco()
+    program.synthesize_for_target(TargetEnvironment(target, PayloadSpecification(PayloadFormat("openqasm", "3.0"))))
+    exported = program.to_qiskit(target=target)
+    assert exported.count_ops().get("rx" if fractional else "sx", 0) <= (36 if fractional else 63)
+    bindings = dict.fromkeys(circuit.parameters, 0.37)
+    assert np.allclose(
+        Operator(exported.assign_parameters(bindings)).data,
+        Operator(circuit.assign_parameters(bindings)).data,
+        atol=1e-12,
+        rtol=0,
+    )

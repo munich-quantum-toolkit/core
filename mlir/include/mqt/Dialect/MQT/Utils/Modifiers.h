@@ -87,6 +87,10 @@ void printTargetAliasing(OpAsmPrinter& printer, Region& region,
 [[nodiscard]] Value getValueFromBlockArgument(Value qubit, ValueRange qubits);
 
 /// Return the number of operations implementing @p UnitaryInterface.
+///
+/// This scans the entire block. For existence checks, prefer
+/// `block.getOps<UnitaryInterface>().empty()`; for exactly one unitary, use
+/// getSoleBodyUnitary().
 template <typename UnitaryInterface>
 [[nodiscard]] size_t getNumBodyUnitaries(Block& block) {
   return static_cast<size_t>(llvm::count_if(

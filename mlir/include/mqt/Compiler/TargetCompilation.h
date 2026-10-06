@@ -26,6 +26,8 @@ class OpPassManager;
 /// register inliner extensions for its callable dialects.
 /// Input must use structured QCO/SCF control flow. Normalize CFG branches
 /// before calling this pipeline. Runtime assertions are allowed.
+/// Explicit native-operation targets must provide a single-qubit synthesis
+/// basis so native synthesis can lower the results of standard cleanup.
 /// The supplied environment is authoritative: the pipeline attaches it to the
 /// module and shares its prepared target with every target-dependent pass.
 /// The environment must remain unchanged during pipeline execution.
@@ -37,12 +39,14 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
 
 /// Populate target-native block synthesis without routing.
 ///
-/// Requires an all-to-all target. Inlines calls, decomposes supported
-/// multi-controlled gates, assigns static sites, resynthesizes constant
+/// Dynamic qubits require all-to-all connectivity; static qubits keep their
+/// site IDs and may use an explicit topology. Inlines calls, decomposes
+/// non-native controlled gates, places dynamic qubits, resynthesizes constant
 /// two-qubit runs in the native basis, and verifies target conformance. Input
 /// must use structured QCO/SCF control flow. The supplied environment is
 /// authoritative and must remain unchanged during pipeline execution.
-/// Use runWithCompilationOptions to apply compilation-wide seed and
+/// Explicit native-operation targets must provide a single-qubit synthesis
+/// basis. Use runWithCompilationOptions to apply compilation-wide seed and
 /// instrumentation settings when running this pipeline.
 void populateTargetSynthesisPipeline(OpPassManager& pm,
                                      const TargetEnvironment& environment,

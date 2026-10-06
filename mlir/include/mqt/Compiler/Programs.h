@@ -19,6 +19,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <map>
 #include <memory>
 #include <optional>
 #include <span>
@@ -167,6 +168,15 @@ public:
   /// Create an independent QC program copy.
   [[nodiscard]] QCProgram copy() const;
 
+  /// Return named f64 entry-point inputs in function argument order.
+  [[nodiscard]] std::vector<std::string> parameters() const;
+
+  /// Bind named f64 inputs in place, preserving unbound inputs and metadata.
+  /// Reject unknown names, non-finite values, or references to the entry point
+  /// without changing the program. Does not run cleanup or fold expressions.
+  [[nodiscard]] bool
+  bindParameters(const std::map<std::string, double>& values);
+
   /// Run the standard QC cleanup passes in place.
   [[nodiscard]] bool cleanup();
 
@@ -234,6 +244,13 @@ public:
   /// Create an independent QCO program copy.
   [[nodiscard]] QCOProgram copy() const;
 
+  /// Return named f64 entry-point inputs in function argument order.
+  [[nodiscard]] std::vector<std::string> parameters() const;
+
+  /// Bind named f64 inputs in place under the same contract as QCProgram.
+  [[nodiscard]] bool
+  bindParameters(const std::map<std::string, double>& values);
+
   /// Run the standard QCO cleanup passes in place.
   [[nodiscard]] bool cleanup();
 
@@ -267,17 +284,17 @@ public:
   /// (@p minQubits must be at least 3; default 3 means wider than two-qubit).
   [[nodiscard]] bool decomposeMultiControlled(uint64_t minQubits = 3);
 
-  /// Compile this program for a target in place.
-  ///
+  /// Compile for a target and attach layout metadata when possible.
+  /// Reject a program with attached layout metadata.
   /// Do not rely on the program contents if compilation fails.
   [[nodiscard]] bool compileForTarget(const TargetEnvironment& environment,
                                       const CompilationOptions& options = {});
 
-  /// Synthesize native operations for an all-to-all target in place.
+  /// Synthesize native operations without routing.
   ///
-  /// Assigns static sites and resynthesizes constant two-qubit runs in the
-  /// native basis, without routing.
-  /// Do not rely on the program contents if synthesis fails.
+  /// Dynamic qubits require all-to-all connectivity and receive layout metadata
+  /// when possible. Static qubits keep their device site IDs and must fit the
+  /// target topology. Do not rely on the program contents if synthesis fails.
   [[nodiscard]] bool
   synthesizeForTarget(const TargetEnvironment& environment,
                       const CompilationOptions& options = {});
@@ -316,6 +333,7 @@ public:
   [[nodiscard]] bool cleanup();
 
   /// Serialize this program to a binary `jeff` buffer.
+  /// Return an empty vector and emit a diagnostic if serialization fails.
   [[nodiscard]] std::vector<std::byte> toBytes() const;
 
   /// Serialize this program to a binary `jeff` file.

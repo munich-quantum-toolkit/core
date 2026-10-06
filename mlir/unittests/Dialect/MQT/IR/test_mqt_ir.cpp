@@ -14,8 +14,10 @@
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 
 #include "gtest/gtest.h"
@@ -26,6 +28,8 @@
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/Attributes.h"
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
@@ -40,8 +44,10 @@
 
 #include <array>
 #include <cstdint>
+#include <iterator>
 #include <memory>
 #include <string>
+#include <vector>
 
 using namespace mlir;
 
@@ -94,6 +100,102 @@ TEST_F(MQTIRTest, CompilationSeedHasModuleScopeAnd64Bits) {
   EXPECT_FALSE(parse(R"(module {
     func.func @main() attributes {mqt.compilation_seed = 7 : i64} { return }
   })"));
+}
+
+TEST_F(MQTIRTest, SourceQubitCountIsNonnegativeModuleMetadata) {
+  EXPECT_TRUE(parse("module attributes {mqt.source_qubit_count = 2 : i64} {}"));
+  EXPECT_FALSE(
+      parse("module attributes {mqt.source_qubit_count = -1 : i64} {}"));
+  EXPECT_FALSE(
+      parse("module attributes {mqt.source_qubit_count = 2 : i32} {}"));
+  EXPECT_FALSE(parse(R"(module {
+    func.func @main() attributes {mqt.source_qubit_count = 2 : i64} { return }
+  })"));
+}
+
+TEST_F(MQTIRTest, SourceQubitIndicesMatchAllocationSlots) {
+  const auto source = [](const char* indices) {
+    return std::string(R"mlir(module {
+      func.func @main() attributes {mqt.entry_point} {
+        %c2 = arith.constant 2 : index
+        %q = qtensor.alloc(%c2) {mqt.source_qubit_indices = )mlir") +
+           indices + R"mlir(} : tensor<2x!qco.qubit>
+        qtensor.dealloc %q : tensor<2x!qco.qubit>
+        return
+      }
+    })mlir";
+  };
+  EXPECT_TRUE(parse(source("array<i64: 0, 1>")));
+  for (const auto* indices : {
+           "array<i64: 0>",
+           "array<i32: 0, 1>",
+           "0 : i64",
+           "array<i64: -1, 1>",
+           "array<i64: 0, 0>",
+       }) {
+    SCOPED_TRACE(indices);
+    EXPECT_FALSE(parse(source(indices)));
+  }
+}
+
+TEST_F(MQTIRTest, RoundTripsLayoutMetadata) {
+  const mqt::QubitLayout layout{
+      .initial = {1, 2, 0},
+      .routing = std::vector<int64_t>{2, 0, 1},
+      .inputCount = 3,
+      .sites = std::vector<int64_t>{10, 30, 20},
+  };
+  auto moduleOp = parse(
+      "module { func.func @main() attributes {mqt.entry_point} { return } }");
+  ASSERT_TRUE(moduleOp);
+  const auto attribute = layout.toAttr(context.get());
+  (*moduleOp)->setAttr("mqt.layout", attribute);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  auto restored = roundTrip(*moduleOp);
+  ASSERT_TRUE(restored);
+  const auto decoded =
+      mqt::QubitLayout::fromAttr((*restored)->getAttr("mqt.layout"),
+                                 [&] { return restored->emitError(); });
+  ASSERT_TRUE(succeeded(decoded));
+  EXPECT_EQ(decoded->toAttr(context.get()), attribute);
+}
+
+TEST_F(MQTIRTest, RejectsMalformedLayoutMetadata) {
+  for (
+      const auto* attribute : {
+          "[]",
+          "{}",
+          "{initial = array<i64: 0>, input_count = -1 : i64}",
+          "{initial = array<i64: 0>, input_count = 2 : i64}",
+          "{initial = array<i64: 0>, input_count = 1 : i32}",
+          "{initial = array<i64: 0, 0>, input_count = 2 : i64}",
+          "{initial = array<i64: -1>, input_count = 1 : i64}",
+          "{initial = array<i64: 1>, input_count = 1 : i64}",
+          R"({initial = array<i64: 0>, input_count = 1 : i64, routing = 0 : i64})",
+          R"({initial = array<i64: 0>, input_count = 1 : i64, routing = array<i64: 0, 1>})",
+          R"({initial = array<i64: 0>, input_count = 1 : i64, sites = 0 : i64})",
+          R"({initial = array<i64: 0>, input_count = 1 : i64, sites = array<i64>})",
+          R"({initial = array<i64: 0>, input_count = 1 : i64, sites = array<i64: -1>})",
+          R"({initial = array<i64: 0, 1>, input_count = 2 : i64, sites = array<i64: 10, 10>})",
+          "{initial = array<i64: 0>, input_count = 1 : i64, extra = 0 : i64}",
+      }) {
+    SCOPED_TRACE(attribute);
+    EXPECT_FALSE(parse(std::string("module attributes {mqt.layout = ") +
+                       attribute + "} {}"));
+  }
+}
+
+TEST_F(MQTIRTest, RejectsUnsupportedLayoutOwners) {
+  auto moduleOp = parse(R"mlir(module {
+    func.func @main() attributes {mqt.entry_point} { return }
+    func.func @helper() { return }
+  })mlir");
+  ASSERT_TRUE(moduleOp);
+  auto helper = moduleOp->lookupSymbol<func::FuncOp>("helper");
+  helper->setAttr(
+      "mqt.layout",
+      mqt::QubitLayout{.initial = {0}, .inputCount = 1}.toAttr(context.get()));
+  EXPECT_TRUE(failed(verify(*moduleOp)));
 }
 
 TEST_F(MQTIRTest, AcceptsProgramInputAndRegisterNames) {
@@ -567,6 +669,96 @@ TEST_F(MQTIRTest, UnitaryFunctionsAllowNonSpeculatableParameterComputation) {
   }
 }
 
+TEST_F(MQTIRTest, UnitaryLoopsAllowScalarStateAndSwapGates) {
+  constexpr StringRef source = R"mlir(
+    func.func private @looped(%theta: f64, %q: !qco.qubit, %r: !qco.qubit)
+        -> (!qco.qubit, !qco.qubit) attributes {mqt.unitary} {
+      %c0 = arith.constant 0 : index
+      %c1 = arith.constant 1 : index
+      %c2 = arith.constant 2 : index
+      %out:3 = scf.for %i = %c0 to %c2 step %c1
+          iter_args(%a = %q, %angle = %theta, %b = %r)
+          -> (!qco.qubit, f64, !qco.qubit) {
+        %next = arith.addf %angle, %theta : f64
+        %rotated = qco.rx(%angle) %a : !qco.qubit -> !qco.qubit
+        %x, %y = qco.swap %rotated, %b
+            : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+        scf.yield %x, %next, %y : !qco.qubit, f64, !qco.qubit
+      }
+      return %out#0, %out#2 : !qco.qubit, !qco.qubit
+    }
+  )mlir";
+  auto moduleOp = parse(source);
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+}
+
+TEST_F(MQTIRTest, RejectsNonUnitaryLoopBodiesAndQubitPermutations) {
+  for (StringRef source : {
+           R"mlir(module {
+             func.func private @reset(%q: !qc.qubit) attributes {mqt.unitary} {
+               %c0 = arith.constant 0 : index
+               %c1 = arith.constant 1 : index
+               scf.for %i = %c0 to %c1 step %c1 {
+                 qc.reset %q : !qc.qubit
+               }
+               return
+             }
+           })mlir",
+           R"mlir(module {
+             func.func private @dynamic(%n: f64, %q: !qc.qubit)
+                 attributes {mqt.unitary} {
+               %c0 = arith.constant 0 : i64
+               %c1 = arith.constant 1 : i64
+               %end = arith.fptosi %n : f64 to i64
+               scf.for %i = %c0 to %end step %c1 : i64 {
+                 qc.x %q : !qc.qubit
+               }
+               return
+             }
+           })mlir",
+           R"mlir(module {
+             func.func private @permuted(%q: !qco.qubit, %r: !qco.qubit)
+                 -> (!qco.qubit, !qco.qubit) attributes {mqt.unitary} {
+               %c0 = arith.constant 0 : index
+               %c1 = arith.constant 1 : index
+               %out:2 = scf.for %i = %c0 to %c1 step %c1
+                   iter_args(%a = %q, %b = %r)
+                   -> (!qco.qubit, !qco.qubit) {
+                 scf.yield %b, %a : !qco.qubit, !qco.qubit
+               }
+               return %out#0, %out#1 : !qco.qubit, !qco.qubit
+             }
+           })mlir",
+           R"mlir(module {
+             func.func private @dynamic(%n: f64, %q: !qco.qubit)
+                 -> !qco.qubit attributes {mqt.unitary} {
+               %c0 = arith.constant 0 : index
+               %c1 = arith.constant 1 : index
+               %integer = arith.fptosi %n : f64 to i64
+               %end = arith.index_cast %integer : i64 to index
+               %out = scf.for %i = %c0 to %end step %c1
+                   iter_args(%a = %q) -> (!qco.qubit) {
+                 %b = qco.x %a : !qco.qubit -> !qco.qubit
+                 scf.yield %b : !qco.qubit
+               }
+               return %out : !qco.qubit
+             }
+           })mlir",
+       }) {
+    SCOPED_TRACE(source.str());
+    bool rejectedBody = false;
+    std::string diagnostics;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      diagnostics += diagnostic.str();
+      rejectedBody |= StringRef(diagnostic.str()).contains("unitary QC");
+      return success();
+    });
+    EXPECT_FALSE(parse(source));
+    EXPECT_TRUE(rejectedBody) << diagnostics;
+  }
+}
+
 TEST_F(MQTIRTest, RejectsEmptyUnitaryBodies) {
   for (StringRef source : {
            R"mlir(
@@ -756,6 +948,27 @@ TEST_F(MQTIRTest, RejectsInvalidInputIdentities) {
        }) {
     SCOPED_TRACE(source);
     EXPECT_FALSE(parse(source));
+  }
+}
+
+TEST_F(MQTIRTest, RechecksSparseInputMetadata) {
+  auto moduleOp = parse(R"mlir(
+    module {
+      func.func private @helper(f64,
+          f64 {mqt.input_name = "a", mqt.input_id = 1 : i128}, i1,
+          f64 {mqt.input_name = "b", mqt.input_id = 2 : i128})
+    }
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+  auto function = moduleOp->lookupSymbol<func::FuncOp>("helper");
+  const auto name = mqt::MQTDialect::InputNameAttrHelper::getNameStr();
+  const auto identity = mqt::MQTDialect::InputIdAttrHelper::getNameStr();
+  for (const auto attribute : {name, identity}) {
+    const auto original = function.getArgAttr(3, attribute);
+    function.setArgAttr(3, attribute, function.getArgAttr(1, attribute));
+    EXPECT_TRUE(failed(verify(*moduleOp)));
+    function.setArgAttr(3, attribute, original);
+    EXPECT_TRUE(succeeded(verify(*moduleOp)));
   }
 }
 

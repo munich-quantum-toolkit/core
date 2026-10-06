@@ -9,6 +9,7 @@
  */
 
 #include "mqt/Compiler/TargetEnvironment.h"
+#include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
@@ -270,17 +271,19 @@ getExactConstantTripCount(scf::ForOp loop) {
 }
 
 static LogicalResult foldStaticBranches(ModuleOp moduleOp) {
+  mqt::simplifyClassicalControl(moduleOp);
   /// Fold branches without transforming loops before the capture and unroll
   /// safety checks below.
   RewritePatternSet patterns(moduleOp.getContext());
-  IfOp::getCanonicalizationPatterns(patterns, moduleOp.getContext());
+  populateFoldStaticIfPatterns(patterns);
   IndexSwitchOp::getCanonicalizationPatterns(patterns, moduleOp.getContext());
   scf::IfOp::getCanonicalizationPatterns(patterns, moduleOp.getContext());
   scf::IndexSwitchOp::getCanonicalizationPatterns(patterns,
                                                   moduleOp.getContext());
   return applyPatternsGreedily(
       moduleOp, std::move(patterns),
-      GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit));
+      GreedyRewriteConfig{}.setUseTopDownTraversal().setMaxIterations(
+          GreedyRewriteConfig::kNoLimit));
 }
 
 [[nodiscard]] static bool isLegal(IfOp operation,

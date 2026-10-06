@@ -478,9 +478,10 @@ static int runCompiler(int argc, char** argv) {
           "--qdmi-device and --payload-spec must be provided together.")
           .failed() ||
       reportQDMIErrorIf(
-          !qdmiDevice.empty() && outputFormat.getNumOccurrences() != 0,
-          "--emit cannot be combined with --qdmi-device; --payload-spec "
-          "selects the output.")
+          !qdmiDevice.empty() && outputFormat.getNumOccurrences() != 0 &&
+              outputFormat != "qco-optimized",
+          "Only --emit=qco-optimized can be combined with --qdmi-device; "
+          "--payload-spec selects the executable output.")
           .failed() ||
       reportQDMIErrorIf(
           !qdmiConfig.empty() && !qdmiListDevices && qdmiDevice.empty(),
@@ -590,18 +591,20 @@ static int runCompiler(int argc, char** argv) {
       llvm::errs() << llvm::toString(compilerOutput.takeError()) << '\n';
       return 1;
     }
-    switch (*compilerOutput) {
-    case ProgramFormat::OpenQASM3:
-      parsedOutputFormat = OutputFormat::OpenQASM3;
-      break;
-    case ProgramFormat::QIRBase:
-      parsedOutputFormat = OutputFormat::QIRBase;
-      break;
-    case ProgramFormat::QIRAdaptive:
-      parsedOutputFormat = OutputFormat::QIRAdaptive;
-      break;
-    default:
-      llvm_unreachable("Unsupported target compiler output");
+    if (outputFormat.getNumOccurrences() == 0) {
+      switch (*compilerOutput) {
+      case ProgramFormat::OpenQASM3:
+        parsedOutputFormat = OutputFormat::OpenQASM3;
+        break;
+      case ProgramFormat::QIRBase:
+        parsedOutputFormat = OutputFormat::QIRBase;
+        break;
+      case ProgramFormat::QIRAdaptive:
+        parsedOutputFormat = OutputFormat::QIRAdaptive;
+        break;
+      default:
+        llvm_unreachable("Unsupported target compiler output");
+      }
     }
     targetEnvironment.emplace(std::move(*compilerTarget),
                               std::move(*selectedPayload));
@@ -625,7 +628,6 @@ static int runCompiler(int argc, char** argv) {
   if (!program.mod) {
     return 1;
   }
-
   const auto parseCustomPipeline = [&](OpPassManager& pm) {
     auto [anchor, pipeline] = StringRef(passPipeline).trim().split('(');
     if (anchor.rtrim() != ModuleOp::getOperationName() ||
@@ -638,7 +640,8 @@ static int runCompiler(int argc, char** argv) {
   };
 
   const auto runPasses =
-      [&](const function_ref<LogicalResult(OpPassManager&)> populate) {
+      [&](const function_ref<LogicalResult(OpPassManager&)> populate,
+          bool preservesLayout = false) {
         PassManager pm(&context);
         if (failed(applyPassManagerCLOptions(pm))) {
           return failure();
@@ -646,7 +649,8 @@ static int runCompiler(int argc, char** argv) {
         if (failed(populate(pm))) {
           return failure();
         }
-        return runWithCompilationOptions(pm, *program.mod, options);
+        return runWithCompilationOptions(pm, *program.mod, options,
+                                         preservesLayout);
       };
 
   if (isolated) {
@@ -697,10 +701,12 @@ static int runCompiler(int argc, char** argv) {
 
   if (*parsedOutputFormat != OutputFormat::QCImport &&
       program.dialect == InputDialect::QC &&
-      failed(runPasses([](OpPassManager& pm) {
-        pm.addPass(createQCToQCO());
-        return success();
-      }))) {
+      failed(runPasses(
+          [](OpPassManager& pm) {
+            pm.addPass(createQCToQCO());
+            return success();
+          },
+          true))) {
     return 1;
   }
   if (*parsedOutputFormat != OutputFormat::QCImport &&
@@ -711,32 +717,38 @@ static int runCompiler(int argc, char** argv) {
   const bool requiresPostQcoPasses =
       *parsedOutputFormat != OutputFormat::QCImport &&
       *parsedOutputFormat != OutputFormat::QCO;
-  if (requiresPostQcoPasses && failed(runPasses([&](OpPassManager& pm) {
-        if (!compilerTarget &&
-            (*parsedOutputFormat == OutputFormat::QIRBase ||
-             *parsedOutputFormat == OutputFormat::QIRAdaptive)) {
-          pm.addPass(createInlinerPass());
-        }
-        if (targetEnvironment) {
-          populateTargetCompilationPipeline(pm, *targetEnvironment,
-                                            options.mapping);
-          return success();
-        }
-        populateQCOCleanupPipeline(pm);
-        if (passPipeline.getNumOccurrences() != 0) {
-          if (failed(parseCustomPipeline(pm))) {
-            return failure();
-          }
-        } else {
-          if (enableDecomposeMultiControlled) {
-            populateDecomposeMultiControlledPipeline(
-                pm, decomposeMultiControlledMinQubits.getValue());
-          }
-          populateDefaultQCOOptimizationPipeline(pm);
-        }
-        populateQCOCleanupPipeline(pm);
-        return success();
-      }))) {
+  if (targetEnvironment) {
+    if (failed(qco::verifyLinearity(*program.mod)) ||
+        failed(runPasses(
+            [&](OpPassManager& pm) {
+              populateTargetCompilationPipeline(pm, *targetEnvironment,
+                                                options.mapping);
+              return success();
+            },
+            true)) ||
+        failed(qco::verifyLinearity(*program.mod))) {
+      return 1;
+    }
+  } else if (requiresPostQcoPasses && failed(runPasses([&](OpPassManager& pm) {
+               if (*parsedOutputFormat == OutputFormat::QIRBase ||
+                   *parsedOutputFormat == OutputFormat::QIRAdaptive) {
+                 pm.addPass(createInlinerPass());
+               }
+               populateQCOCleanupPipeline(pm);
+               if (passPipeline.getNumOccurrences() != 0) {
+                 if (failed(parseCustomPipeline(pm))) {
+                   return failure();
+                 }
+               } else {
+                 if (enableDecomposeMultiControlled) {
+                   populateDecomposeMultiControlledPipeline(
+                       pm, decomposeMultiControlledMinQubits.getValue());
+                 }
+                 populateDefaultQCOOptimizationPipeline(pm);
+               }
+               populateQCOCleanupPipeline(pm);
+               return success();
+             }))) {
     return 1;
   }
 

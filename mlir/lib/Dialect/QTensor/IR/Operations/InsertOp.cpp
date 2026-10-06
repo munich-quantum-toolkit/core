@@ -19,7 +19,8 @@
 #include "mlir/IR/Value.h"
 #include "mlir/Support/LLVM.h"
 
-#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 
 #include <cstddef>
@@ -70,23 +71,20 @@ struct CommuteInsertExtractChains final : OpRewritePattern<InsertOp> {
     /// A bottom-up greedy walk may reach the last pair first. Include the
     /// commuting prefix too, rather than normalizing every suffix separately.
     auto firstInsert = insert;
-    llvm::SmallDenseSet<int64_t> extractedIndices{*extractIndex};
+    auto* block = insert->getBlock();
     auto tensor = insert.getDest();
     while (auto* definingOp = tensor.getDefiningOp()) {
-      if (definingOp->getBlock() != insert->getBlock() ||
+      if (definingOp->getBlock() != block ||
           (checkOrder && !definingOp->isBeforeInBlock(firstInsert))) {
         break;
       }
       if (auto previousExtract = dyn_cast<ExtractOp>(definingOp)) {
-        const auto index = getConstantIntValue(previousExtract.getIndex());
-        if (!index) {
+        if (!getConstantIntValue(previousExtract.getIndex())) {
           break;
         }
-        extractedIndices.insert(*index);
         tensor = previousExtract.getTensor();
       } else if (auto previousInsert = dyn_cast<InsertOp>(definingOp)) {
-        const auto index = getConstantIntValue(previousInsert.getIndex());
-        if (!index || extractedIndices.contains(*index)) {
+        if (!getConstantIntValue(previousInsert.getIndex())) {
           break;
         }
         firstInsert = previousInsert;
@@ -98,16 +96,17 @@ struct CommuteInsertExtractChains final : OpRewritePattern<InsertOp> {
 
     SmallVector<InsertOp> inserts{firstInsert};
     SmallVector<ExtractOp> extracts;
-    llvm::SmallDenseSet<int64_t> insertedIndices{
-        *getConstantIntValue(firstInsert.getIndex()),
+    DenseMap<int64_t, size_t> pending{
+        {*getConstantIntValue(firstInsert.getIndex()), 0},
     };
     size_t numInsertsToMove = 0;
+    auto input = firstInsert.getDest();
     tensor = firstInsert.getResult();
     Operation* previous = firstInsert;
     while (true) {
       auto* user = *tensor.user_begin();
-      if (user->getBlock() != insert->getBlock() ||
-          (checkOrder && !previous->isBeforeInBlock(user))) {
+      if (user->getBlock() != block || (checkOrder && previous != nullptr &&
+                                        !previous->isBeforeInBlock(user))) {
         break;
       }
       if (auto nextInsert = dyn_cast<InsertOp>(user)) {
@@ -115,13 +114,26 @@ struct CommuteInsertExtractChains final : OpRewritePattern<InsertOp> {
         if (!index) {
           break;
         }
-        insertedIndices.insert(*index);
+        pending[*index] = inserts.size();
         inserts.push_back(nextInsert);
         tensor = nextInsert.getResult();
       } else if (auto nextExtract = dyn_cast<ExtractOp>(user)) {
         const auto index = getConstantIntValue(nextExtract.getIndex());
-        if (!index || insertedIndices.contains(*index)) {
+        if (!index) {
           break;
+        }
+        if (auto found = pending.find(*index); found != pending.end()) {
+          /// Forward a reused slot directly instead of repeatedly shuffling
+          /// its insert through the entire commuting suffix.
+          auto& stored = inserts[found->second];
+          auto qubit = stored.getScalar();
+          rewriter.replaceOp(stored, stored.getDest());
+          stored = {};
+          tensor = nextExtract.getTensor();
+          previous = tensor.getDefiningOp();
+          rewriter.replaceOp(nextExtract, {tensor, qubit});
+          pending.erase(found);
+          continue;
         }
         extracts.push_back(nextExtract);
         numInsertsToMove = inserts.size();
@@ -131,15 +143,16 @@ struct CommuteInsertExtractChains final : OpRewritePattern<InsertOp> {
       }
       previous = user;
     }
-    if (extracts.empty()) {
-      return failure();
-    }
 
     /// Leave trailing inserts in place: their operands may follow the last
     /// extract. Earlier inserts' operands dominate their new positions.
     inserts.resize(numInsertsToMove);
+    llvm::erase_if(inserts, [](InsertOp op) { return !op; });
+    if (extracts.empty() || inserts.empty()) {
+      return success();
+    }
     auto tail = extracts.back().getOutTensor();
-    tensor = firstInsert.getDest();
+    tensor = input;
     for (auto nextExtract : extracts) {
       rewriter.modifyOpInPlace(
           nextExtract, [&] { nextExtract.getTensorMutable().assign(tensor); });

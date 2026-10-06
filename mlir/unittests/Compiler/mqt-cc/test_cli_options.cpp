@@ -112,3 +112,22 @@ TEST(CompilerCLI, SeedOverridesCustomPassWithoutDevice) {
     }
   }
 }
+
+TEST(CompilerCLI, PreservesLayoutAtImportCheckpoint) {
+  llvm::SmallString<128> outputPath;
+  ASSERT_FALSE(
+      llvm::sys::fs::createTemporaryFile("mqt-cc-layout", "mlir", outputPath));
+  const llvm::FileRemover cleanup(outputPath);
+  llvm::SmallVector<llvm::StringRef> args{
+      MQT_CORE_MQT_CC,
+      MQT_CORE_MQT_CC_LAYOUT_INPUT,
+      "--emit=qc-import",
+  };
+  ASSERT_EQ(llvm::sys::ExecuteAndWait(
+                MQT_CORE_MQT_CC, args, std::nullopt,
+                {std::nullopt, outputPath.str(), std::nullopt}, 10),
+            0);
+  auto output = llvm::MemoryBuffer::getFile(outputPath);
+  ASSERT_TRUE(output);
+  EXPECT_TRUE((*output)->getBuffer().contains("mqt.layout"));
+}

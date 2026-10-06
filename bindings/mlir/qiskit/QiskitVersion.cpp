@@ -10,6 +10,8 @@
 
 #include "QiskitVersion.h"
 
+#include "Qiskit.h"
+
 // Keep the translation interface visible where the factory is instantiated.
 #include "QiskitTranslation.h" // IWYU pragma: keep
 
@@ -20,6 +22,7 @@
 #include <cstddef>
 #include <exception>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -140,6 +143,16 @@ std::unique_ptr<VersionedTranslation> selectTranslation() {
   throw std::runtime_error(
       "Qiskit circuit translation does not support installed version '" +
       version.text + "'; supported versions: " + supportedVersionRanges());
+}
+
+mlir::CompilerTarget importTarget(nb::handle target, nb::handle operationNames,
+                                  const std::optional<std::string>& name) {
+  return selectTranslation()->importTarget(target, operationNames, name);
+}
+
+mlir::CompilerTarget::NativeOperations
+importNativeOperations(nb::handle target, nb::handle operationNames) {
+  return selectTranslation()->importNativeOperations(target, operationNames);
 }
 
 } // namespace mqt::bindings::qiskit

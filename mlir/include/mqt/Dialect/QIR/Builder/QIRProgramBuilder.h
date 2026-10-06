@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 
 #include "mlir/IR/Builders.h"
@@ -294,7 +295,7 @@ public:
   /// ```mlir
   /// llvm.call @__quantum__qis__gphase__body(%theta) : (f64) -> ()
   /// ```
-  QIRProgramBuilder& gphase(const std::variant<double, Value>& theta);
+  QIRProgramBuilder& gphase(const mqt::FloatParameter& theta);
 
   // OneTargetZeroParameter
 
@@ -436,8 +437,7 @@ public:
    * !llvm.ptr) -> ()                                                          \
    * ```                                                                       \
    */                                                                          \
-  QIRProgramBuilder& OP_NAME(const std::variant<double, Value>&(PARAM),        \
-                             Value qubit);                                     \
+  QIRProgramBuilder& OP_NAME(const mqt::FloatParameter&(PARAM), Value qubit);  \
   /**                                                                          \
    * @brief Apply a controlled QIR_NAME operation                              \
    *                                                                           \
@@ -455,7 +455,7 @@ public:
    * (f64, !llvm.ptr, !llvm.ptr) -> ()                                         \
    * ```                                                                       \
    */                                                                          \
-  QIRProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM),     \
+  QIRProgramBuilder& c##OP_NAME(const mqt::FloatParameter&(PARAM),             \
                                 Value control, Value target);                  \
   /**                                                                          \
    * @brief Apply a multi-controlled QIR_NAME operation                        \
@@ -474,7 +474,7 @@ public:
    * (f64, !llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()                              \
    * ```                                                                       \
    */                                                                          \
-  QIRProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM),    \
+  QIRProgramBuilder& mc##OP_NAME(const mqt::FloatParameter&(PARAM),            \
                                  ValueRange controls, Value target);
 
   DECLARE_ONE_TARGET_ONE_PARAMETER(rx, rx, theta)
@@ -504,9 +504,8 @@ public:
    * (f64, f64, !llvm.ptr) -> ()                                               \
    * ```                                                                       \
    */                                                                          \
-  QIRProgramBuilder& OP_NAME(const std::variant<double, Value>&(PARAM1),       \
-                             const std::variant<double, Value>&(PARAM2),       \
-                             Value qubit);                                     \
+  QIRProgramBuilder& OP_NAME(const mqt::FloatParameter&(PARAM1),               \
+                             const mqt::FloatParameter&(PARAM2), Value qubit); \
   /**                                                                          \
    * @brief Apply a controlled QIR_NAME operation                              \
    *                                                                           \
@@ -525,8 +524,8 @@ public:
    * %q1) : (f64, f64, !llvm.ptr, !llvm.ptr) -> ()                             \
    * ```                                                                       \
    */                                                                          \
-  QIRProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM1),    \
-                                const std::variant<double, Value>&(PARAM2),    \
+  QIRProgramBuilder& c##OP_NAME(const mqt::FloatParameter&(PARAM1),            \
+                                const mqt::FloatParameter&(PARAM2),            \
                                 Value control, Value target);                  \
   /**                                                                          \
    * @brief Apply a multi-controlled QIR_NAME operation                        \
@@ -546,8 +545,8 @@ public:
    * %q1, %q2) : (f64, f64, !llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()             \
    * ```                                                                       \
    */                                                                          \
-  QIRProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM1),   \
-                                 const std::variant<double, Value>&(PARAM2),   \
+  QIRProgramBuilder& mc##OP_NAME(const mqt::FloatParameter&(PARAM1),           \
+                                 const mqt::FloatParameter&(PARAM2),           \
                                  ValueRange controls, Value target);
 
   DECLARE_ONE_TARGET_TWO_PARAMETER(r, prx, theta, phi)
@@ -577,10 +576,9 @@ public:
    * %q) : (f64, f64, f64, !llvm.ptr) -> ()                                    \
    * ```                                                                       \
    */                                                                          \
-  QIRProgramBuilder& OP_NAME(const std::variant<double, Value>&(PARAM1),       \
-                             const std::variant<double, Value>&(PARAM2),       \
-                             const std::variant<double, Value>&(PARAM3),       \
-                             Value qubit);                                     \
+  QIRProgramBuilder& OP_NAME(const mqt::FloatParameter&(PARAM1),               \
+                             const mqt::FloatParameter&(PARAM2),               \
+                             const mqt::FloatParameter&(PARAM3), Value qubit); \
   /**                                                                          \
    * @brief Apply a controlled QIR_NAME operation                              \
    *                                                                           \
@@ -600,10 +598,9 @@ public:
    * %q0, %q1) : (f64, f64, f64, !llvm.ptr, !llvm.ptr) -> ()                   \
    * ```                                                                       \
    */                                                                          \
-  QIRProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM1),    \
-                                const std::variant<double, Value>&(PARAM2),    \
-                                const std::variant<double, Value>&(PARAM3),    \
-                                Value control, Value target);                  \
+  QIRProgramBuilder& c##OP_NAME(                                               \
+      const mqt::FloatParameter&(PARAM1), const mqt::FloatParameter&(PARAM2),  \
+      const mqt::FloatParameter&(PARAM3), Value control, Value target);        \
   /**                                                                          \
    * @brief Apply a multi-controlled QIR_NAME operation                        \
    *                                                                           \
@@ -624,10 +621,9 @@ public:
    * (f64, f64, f64, !llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()                    \
    * ```                                                                       \
    */                                                                          \
-  QIRProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM1),   \
-                                 const std::variant<double, Value>&(PARAM2),   \
-                                 const std::variant<double, Value>&(PARAM3),   \
-                                 ValueRange controls, Value target);
+  QIRProgramBuilder& mc##OP_NAME(                                              \
+      const mqt::FloatParameter&(PARAM1), const mqt::FloatParameter&(PARAM2),  \
+      const mqt::FloatParameter&(PARAM3), ValueRange controls, Value target);
 
   DECLARE_ONE_TARGET_THREE_PARAMETER(u, u3, theta, phi, lambda)
 
@@ -718,8 +714,8 @@ public:
    * (f64, !llvm.ptr, !llvm.ptr) -> ()                                         \
    * ```                                                                       \
    */                                                                          \
-  QIRProgramBuilder& OP_NAME(const std::variant<double, Value>&(PARAM),        \
-                             Value qubit0, Value qubit1);                      \
+  QIRProgramBuilder& OP_NAME(const mqt::FloatParameter&(PARAM), Value qubit0,  \
+                             Value qubit1);                                    \
   /**                                                                          \
    * @brief Apply a controlled QIR_NAME operation                              \
    *                                                                           \
@@ -738,7 +734,7 @@ public:
    * (f64, !llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()                              \
    * ```                                                                       \
    */                                                                          \
-  QIRProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM),     \
+  QIRProgramBuilder& c##OP_NAME(const mqt::FloatParameter&(PARAM),             \
                                 Value control, Value target0, Value target1);  \
   /**                                                                          \
    * @brief Apply a multi-controlled QIR_NAME operation                        \
@@ -758,7 +754,7 @@ public:
    * %q3) : (f64, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()            \
    * ```                                                                       \
    */                                                                          \
-  QIRProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM),    \
+  QIRProgramBuilder& mc##OP_NAME(const mqt::FloatParameter&(PARAM),            \
                                  ValueRange controls, Value target0,           \
                                  Value target1);
 
@@ -790,9 +786,9 @@ public:
    * : (f64, f64, !llvm.ptr, !llvm.ptr) -> ()                                  \
    * ```                                                                       \
    */                                                                          \
-  QIRProgramBuilder& OP_NAME(const std::variant<double, Value>&(PARAM1),       \
-                             const std::variant<double, Value>&(PARAM2),       \
-                             Value qubit0, Value qubit1);                      \
+  QIRProgramBuilder& OP_NAME(const mqt::FloatParameter&(PARAM1),               \
+                             const mqt::FloatParameter&(PARAM2), Value qubit0, \
+                             Value qubit1);                                    \
   /**                                                                          \
    * @brief Apply a controlled QIR_NAME operation                              \
    *                                                                           \
@@ -812,8 +808,8 @@ public:
    * %q1, %q2) : (f64, f64, !llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()             \
    * ```                                                                       \
    */                                                                          \
-  QIRProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM1),    \
-                                const std::variant<double, Value>&(PARAM2),    \
+  QIRProgramBuilder& c##OP_NAME(const mqt::FloatParameter&(PARAM1),            \
+                                const mqt::FloatParameter&(PARAM2),            \
                                 Value control, Value target0, Value target1);  \
   /**                                                                          \
    * @brief Apply a multi-controlled QIR_NAME operation                        \
@@ -835,10 +831,9 @@ public:
    * !llvm.ptr) -> ()                                                          \
    * ```                                                                       \
    */                                                                          \
-  QIRProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM1),   \
-                                 const std::variant<double, Value>&(PARAM2),   \
-                                 ValueRange controls, Value target0,           \
-                                 Value target1);
+  QIRProgramBuilder& mc##OP_NAME(                                              \
+      const mqt::FloatParameter&(PARAM1), const mqt::FloatParameter&(PARAM2),  \
+      ValueRange controls, Value target0, Value target1);
 
   DECLARE_TWO_TARGET_TWO_PARAMETER(xx_plus_yy, xx_plus_yy, theta, beta)
   DECLARE_TWO_TARGET_TWO_PARAMETER(xx_minus_yy, xx_minus_yy, theta, beta)
@@ -1127,7 +1122,7 @@ private:
   /// @param controls Control qubits
   /// @param targets Target qubits
   /// @param fnName Name of the QIR function to call
-  void createCallOp(const SmallVector<std::variant<double, Value>>& parameters,
+  void createCallOp(const SmallVector<mqt::FloatParameter>& parameters,
                     ValueRange controls, const SmallVector<Value>& targets,
                     StringRef fnName);
 

@@ -546,7 +546,7 @@ TEST_F(QCTest, UnitaryFunctionMarkerRejectsNonUnitaryBody) {
     sawExpectedDiagnostic |=
         StringRef(diagnostic.str())
             .contains(
-                "unitary QC function body contains a non-unitary operation");
+                "unitary QC function body contains an unsupported operation");
     return success();
   });
   EXPECT_TRUE(failed(verify(*moduleOp)));

@@ -479,8 +479,8 @@ QIRProgramBuilder& QIRProgramBuilder::reset(Value qubit) {
 //===----------------------------------------------------------------------===//
 
 void QIRProgramBuilder::createCallOp(
-    const SmallVector<std::variant<double, Value>>& parameters,
-    ValueRange controls, const SmallVector<Value>& targets, StringRef fnName) {
+    const SmallVector<mqt::FloatParameter>& parameters, ValueRange controls,
+    const SmallVector<Value>& targets, StringRef fnName) {
   checkFinalized();
 
   InsertionGuard guard(*this);
@@ -492,13 +492,8 @@ void QIRProgramBuilder::createCallOp(
   SmallVector<Value> parameterOperands;
   parameterOperands.reserve(parameters.size());
   for (const auto& parameter : parameters) {
-    Value parameterOperand;
-    if (std::holds_alternative<double>(parameter)) {
-      parameterOperand = doubleConstant(std::get<double>(parameter));
-    } else {
-      parameterOperand = std::get<Value>(parameter);
-    }
-    parameterOperands.push_back(parameterOperand);
+    parameterOperands.push_back(mqt::variantToValue(
+        parameter, [this](double value) { return doubleConstant(value); }));
   }
   // Restore insertion point
   restoreInsertionPoint(insertionPoint);
@@ -509,8 +504,7 @@ void QIRProgramBuilder::createCallOp(
 
 // GPhaseOp
 
-QIRProgramBuilder&
-QIRProgramBuilder::gphase(const std::variant<double, Value>& theta) {
+QIRProgramBuilder& QIRProgramBuilder::gphase(const mqt::FloatParameter& theta) {
   createCallOp({theta}, {}, {}, QIR_GPHASE);
   return *this;
 }
@@ -552,19 +546,17 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXDG, sxdg)
 
 #define DEFINE_ONE_TARGET_ONE_PARAMETER(OP_NAME_BIG, OP_NAME_SMALL, PARAM)     \
   QIRProgramBuilder& QIRProgramBuilder::OP_NAME_SMALL(                         \
-      const std::variant<double, Value>&(PARAM), Value qubit) {                \
+      const mqt::FloatParameter&(PARAM), Value qubit) {                        \
     createCallOp({PARAM}, {}, {qubit}, getFnName##OP_NAME_BIG(0));             \
     return *this;                                                              \
   }                                                                            \
   QIRProgramBuilder& QIRProgramBuilder::c##OP_NAME_SMALL(                      \
-      const std::variant<double, Value>&(PARAM), Value control,                \
-      Value target) {                                                          \
+      const mqt::FloatParameter&(PARAM), Value control, Value target) {        \
     createCallOp({PARAM}, {control}, {target}, getFnName##OP_NAME_BIG(1));     \
     return *this;                                                              \
   }                                                                            \
   QIRProgramBuilder& QIRProgramBuilder::mc##OP_NAME_SMALL(                     \
-      const std::variant<double, Value>&(PARAM), ValueRange controls,          \
-      Value target) {                                                          \
+      const mqt::FloatParameter&(PARAM), ValueRange controls, Value target) {  \
     createCallOp({PARAM}, controls, {target},                                  \
                  getFnName##OP_NAME_BIG(controls.size()));                     \
     return *this;                                                              \
@@ -582,23 +574,21 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(P, p, theta)
 #define DEFINE_ONE_TARGET_TWO_PARAMETER(OP_NAME_BIG, OP_NAME_SMALL, PARAM1,    \
                                         PARAM2)                                \
   QIRProgramBuilder& QIRProgramBuilder::OP_NAME_SMALL(                         \
-      const std::variant<double, Value>&(PARAM1),                              \
-      const std::variant<double, Value>&(PARAM2), Value qubit) {               \
+      const mqt::FloatParameter&(PARAM1), const mqt::FloatParameter&(PARAM2),  \
+      Value qubit) {                                                           \
     createCallOp({PARAM1, PARAM2}, {}, {qubit}, getFnName##OP_NAME_BIG(0));    \
     return *this;                                                              \
   }                                                                            \
   QIRProgramBuilder& QIRProgramBuilder::c##OP_NAME_SMALL(                      \
-      const std::variant<double, Value>&(PARAM1),                              \
-      const std::variant<double, Value>&(PARAM2), Value control,               \
-      Value target) {                                                          \
+      const mqt::FloatParameter&(PARAM1), const mqt::FloatParameter&(PARAM2),  \
+      Value control, Value target) {                                           \
     createCallOp({PARAM1, PARAM2}, {control}, {target},                        \
                  getFnName##OP_NAME_BIG(1));                                   \
     return *this;                                                              \
   }                                                                            \
   QIRProgramBuilder& QIRProgramBuilder::mc##OP_NAME_SMALL(                     \
-      const std::variant<double, Value>&(PARAM1),                              \
-      const std::variant<double, Value>&(PARAM2), ValueRange controls,         \
-      Value target) {                                                          \
+      const mqt::FloatParameter&(PARAM1), const mqt::FloatParameter&(PARAM2),  \
+      ValueRange controls, Value target) {                                     \
     createCallOp({PARAM1, PARAM2}, controls, {target},                         \
                  getFnName##OP_NAME_BIG(controls.size()));                     \
     return *this;                                                              \
@@ -614,27 +604,22 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2, u2, phi, lambda)
 #define DEFINE_ONE_TARGET_THREE_PARAMETER(OP_NAME_BIG, OP_NAME_SMALL, PARAM1,  \
                                           PARAM2, PARAM3)                      \
   QIRProgramBuilder& QIRProgramBuilder::OP_NAME_SMALL(                         \
-      const std::variant<double, Value>&(PARAM1),                              \
-      const std::variant<double, Value>&(PARAM2),                              \
-      const std::variant<double, Value>&(PARAM3), Value qubit) {               \
+      const mqt::FloatParameter&(PARAM1), const mqt::FloatParameter&(PARAM2),  \
+      const mqt::FloatParameter&(PARAM3), Value qubit) {                       \
     createCallOp({PARAM1, PARAM2, PARAM3}, {}, {qubit},                        \
                  getFnName##OP_NAME_BIG(0));                                   \
     return *this;                                                              \
   }                                                                            \
   QIRProgramBuilder& QIRProgramBuilder::c##OP_NAME_SMALL(                      \
-      const std::variant<double, Value>&(PARAM1),                              \
-      const std::variant<double, Value>&(PARAM2),                              \
-      const std::variant<double, Value>&(PARAM3), Value control,               \
-      Value target) {                                                          \
+      const mqt::FloatParameter&(PARAM1), const mqt::FloatParameter&(PARAM2),  \
+      const mqt::FloatParameter&(PARAM3), Value control, Value target) {       \
     createCallOp({PARAM1, PARAM2, PARAM3}, {control}, {target},                \
                  getFnName##OP_NAME_BIG(1));                                   \
     return *this;                                                              \
   }                                                                            \
   QIRProgramBuilder& QIRProgramBuilder::mc##OP_NAME_SMALL(                     \
-      const std::variant<double, Value>&(PARAM1),                              \
-      const std::variant<double, Value>&(PARAM2),                              \
-      const std::variant<double, Value>&(PARAM3), ValueRange controls,         \
-      Value target) {                                                          \
+      const mqt::FloatParameter&(PARAM1), const mqt::FloatParameter&(PARAM2),  \
+      const mqt::FloatParameter&(PARAM3), ValueRange controls, Value target) { \
     createCallOp({PARAM1, PARAM2, PARAM3}, controls, {target},                 \
                  getFnName##OP_NAME_BIG(controls.size()));                     \
     return *this;                                                              \
@@ -677,21 +662,20 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECR, ecr)
 
 #define DEFINE_TWO_TARGET_ONE_PARAMETER(OP_NAME_BIG, OP_NAME_SMALL, PARAM)     \
   QIRProgramBuilder& QIRProgramBuilder::OP_NAME_SMALL(                         \
-      const std::variant<double, Value>&(PARAM), Value target0,                \
-      Value target1) {                                                         \
+      const mqt::FloatParameter&(PARAM), Value target0, Value target1) {       \
     createCallOp({PARAM}, {}, {target0, target1}, getFnName##OP_NAME_BIG(0));  \
     return *this;                                                              \
   }                                                                            \
   QIRProgramBuilder& QIRProgramBuilder::c##OP_NAME_SMALL(                      \
-      const std::variant<double, Value>&(PARAM), Value control, Value target0, \
+      const mqt::FloatParameter&(PARAM), Value control, Value target0,         \
       Value target1) {                                                         \
     createCallOp({PARAM}, {control}, {target0, target1},                       \
                  getFnName##OP_NAME_BIG(1));                                   \
     return *this;                                                              \
   }                                                                            \
   QIRProgramBuilder& QIRProgramBuilder::mc##OP_NAME_SMALL(                     \
-      const std::variant<double, Value>&(PARAM), ValueRange controls,          \
-      Value target0, Value target1) {                                          \
+      const mqt::FloatParameter&(PARAM), ValueRange controls, Value target0,   \
+      Value target1) {                                                         \
     createCallOp({PARAM}, controls, {target0, target1},                        \
                  getFnName##OP_NAME_BIG(controls.size()));                     \
     return *this;                                                              \
@@ -709,25 +693,22 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZ, rzz, theta)
 #define DEFINE_TWO_TARGET_TWO_PARAMETER(OP_NAME_BIG, OP_NAME_SMALL, PARAM1,    \
                                         PARAM2)                                \
   QIRProgramBuilder& QIRProgramBuilder::OP_NAME_SMALL(                         \
-      const std::variant<double, Value>&(PARAM1),                              \
-      const std::variant<double, Value>&(PARAM2), Value target0,               \
-      Value target1) {                                                         \
+      const mqt::FloatParameter&(PARAM1), const mqt::FloatParameter&(PARAM2),  \
+      Value target0, Value target1) {                                          \
     createCallOp({PARAM1, PARAM2}, {}, {target0, target1},                     \
                  getFnName##OP_NAME_BIG(0));                                   \
     return *this;                                                              \
   }                                                                            \
   QIRProgramBuilder& QIRProgramBuilder::c##OP_NAME_SMALL(                      \
-      const std::variant<double, Value>&(PARAM1),                              \
-      const std::variant<double, Value>&(PARAM2), Value control,               \
-      Value target0, Value target1) {                                          \
+      const mqt::FloatParameter&(PARAM1), const mqt::FloatParameter&(PARAM2),  \
+      Value control, Value target0, Value target1) {                           \
     createCallOp({PARAM1, PARAM2}, {control}, {target0, target1},              \
                  getFnName##OP_NAME_BIG(1));                                   \
     return *this;                                                              \
   }                                                                            \
   QIRProgramBuilder& QIRProgramBuilder::mc##OP_NAME_SMALL(                     \
-      const std::variant<double, Value>&(PARAM1),                              \
-      const std::variant<double, Value>&(PARAM2), ValueRange controls,         \
-      Value target0, Value target1) {                                          \
+      const mqt::FloatParameter&(PARAM1), const mqt::FloatParameter&(PARAM2),  \
+      ValueRange controls, Value target0, Value target1) {                     \
     createCallOp({PARAM1, PARAM2}, controls, {target0, target1},               \
                  getFnName##OP_NAME_BIG(controls.size()));                     \
     return *this;                                                              \
