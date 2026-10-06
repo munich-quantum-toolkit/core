@@ -3590,7 +3590,7 @@ TEST(DDPackageTest, DeserializationRejectsSkippedVectorLevels) {
       node.v = 2;
       node.e = {child, vEdge::zero()};
       std::stringstream stream;
-      serialize(vEdge{&node, Complex::one()}, stream, binary);
+      serialize(vEdge{.p = &node, .w = Complex::one()}, stream, binary);
       EXPECT_EQ(::mqt::test::errorKind([&] {
                   return package->deserialize<vNode>(stream, binary);
                 }),
