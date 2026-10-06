@@ -3,39 +3,17 @@ version: 2
 formats:
   - htmlzip
 
-sphinx:
-  configuration: docs/conf.py
-
 build:
   os: ubuntu-26.04
   tools:
     python: "3.14"
-  apt_packages:
-    - cmake
-    - doxygen
-    - zstd
   jobs:
-    post_checkout:
-      # Skip docs build if the commit message contains "skip ci"
-      - (git --no-pager log --pretty="tformat:%s -- %b" -1 | grep -viq "skip ci") || exit 183
-      # Unshallow the git clone and fetch tags to get proper version information
-      - git fetch --unshallow --tags
     pre_build:
-      # Set up uv
-      - asdf plugin add uv
-      - asdf install uv latest
-      - asdf global uv latest
-      # Install MLIR
-      - |
-        mkdir -p /tmp/setup-mlir
-        curl -LsSf https://github.com/munich-quantum-software/setup-mlir/archive/8d3eae73d0f0196fd30c787d91ebd2018cb6c709.tar.gz | tar -xz -C /tmp/setup-mlir --strip-components=1
-        bash /tmp/setup-mlir/installation/setup-mlir.sh -v 23.1.2 -p $HOME/mlir
+      - python -m pip install uv
     build:
       html:
-        - MLIR_DIR=$HOME/mlir/lib/cmake/mlir uvx nox --non-interactive -s docs
-        - mkdir -p $READTHEDOCS_OUTPUT/html && cp -R docs/_build/html/. $READTHEDOCS_OUTPUT/html
+        # Presentation-branch override: package captures without native builds.
+        - uv run --no-project presentations/mqsf2026/build.py --output "$READTHEDOCS_OUTPUT/html"
       htmlzip:
-        - |
-          mkdir -p $READTHEDOCS_OUTPUT/htmlzip
-          archive=$(realpath $READTHEDOCS_OUTPUT/htmlzip/html.zip)
-          (cd docs/_build/html && zip -r $archive .)
+        - mkdir -p "$READTHEDOCS_OUTPUT/htmlzip"
+        - cp "$READTHEDOCS_OUTPUT/html/mqsf-2026.zip" "$READTHEDOCS_OUTPUT/htmlzip/html.zip"

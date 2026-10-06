@@ -208,6 +208,7 @@ exclude = [
   "**/meta",
   "**/paper",
   "**/plots",
+  "**/presentations",
   "**/test",
   "**/tests",
 ]
@@ -334,6 +335,7 @@ docstring-code-format = true
 "test/python/**" = [ "INP001", "T20" ]
 "test/slurm/**" = [ "DOC201", "DOC501", "INP001" ]
 "docs/**" = [ "INP001", "T20" ]
+"presentations/**" = [ "INP001", "T20" ]
 "noxfile.py" = [ "PLC0415", "T20", "TID251" ]
 "mlir/unittests/**/*.py" = [ "INP001", "T201" ]
 "*.pyi" = [ "D301", "D418", "E501", "PYI011", "PYI021" ]
@@ -379,6 +381,7 @@ git-only = [
   "docs/*",
   "test/*",
   "mlir/*",
+  "presentations/*",
 ]
 
 

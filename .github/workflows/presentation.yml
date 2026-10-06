@@ -1,0 +1,54 @@
+name: MQSF presentation
+
+on:
+  pull_request:
+    paths:
+      - "presentations/mqsf2026/**"
+      - "test/python/presentation/**"
+      - ".github/workflows/presentation.yml"
+      - ".readthedocs.yaml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  static-presentation:
+    name: Package and test offline presentation
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out presentation sources and captures
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          python-version: "3.14"
+
+      - name: Check the bundle boundary
+        run: >-
+          uv run --no-project --with pygments --with mlir-pygments --with openqasm-pygments --with pytest
+          pytest -o addopts= -q test/python/presentation/test_build.py
+
+      - name: Build static presentation from committed captures
+        run: uv run --no-project presentations/mqsf2026/build.py
+
+      - name: Install browser for offline checks
+        run: uv run --no-project --with playwright playwright install --with-deps chromium
+
+      - name: Check interactive presentation without network access
+        run: uv run --no-project --with playwright presentations/mqsf2026/check_browser.py
+
+      - name: Save portable presentation
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mqsf-2026-presentation
+          path: build/mqsf2026/
+          if-no-files-found: error
