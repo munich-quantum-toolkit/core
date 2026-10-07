@@ -13,7 +13,7 @@ if(TARGET MQT::CoreQDMIDriver)
     # Discover tests after the Driver and device runtime copies finish.
     set(CMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE PRE_TEST)
   endif()
-  package_add_test(${TARGET_NAME} MQT::CoreQDMIDriver test_device_registry.cpp)
+  package_add_test(${TARGET_NAME} mqt-core-qdmi-driver-testing test_device_registry.cpp)
   if(WIN32)
     unset(CMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE)
   endif()

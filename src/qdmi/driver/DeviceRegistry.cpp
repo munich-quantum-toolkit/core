@@ -12,8 +12,9 @@
 
 #include "qdmi/common/Common.hpp"
 #include "qdmi/common/DeviceConfiguration.hpp"
-#include "qdmi/driver/Driver.hpp"
-#include "qdmi/driver/SessionConfig.hpp"
+
+#include "Driver.hpp"
+#include "SessionConfig.hpp"
 
 #include "nlohmann/json.hpp"
 #include "nlohmann/json_fwd.hpp"

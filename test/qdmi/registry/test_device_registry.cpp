@@ -9,9 +9,9 @@
  */
 
 #include "qdmi/TestUtils.hpp"
-#include "qdmi/driver/Driver.hpp"
 
 #include "DeviceRegistry.hpp"
+#include "Driver.hpp"
 
 #include "gtest/gtest.h"
 #include "qdmi/constants.h"

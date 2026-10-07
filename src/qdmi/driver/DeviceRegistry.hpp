@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "qdmi/driver/Driver.hpp"
+#include "Driver.hpp"
 
 #include <cstddef>
 #include <filesystem>

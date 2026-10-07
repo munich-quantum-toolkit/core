@@ -34,8 +34,9 @@ if(TARGET MQT::CoreQDMIDriver)
     PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/device"
                RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/device")
 
-  package_add_test(${TARGET_NAME} MQT::CoreQDMIDriver test_driver.cpp)
+  package_add_test(${TARGET_NAME} mqt-core-qdmi-driver-testing test_driver.cpp)
   target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMI)
+  target_include_directories(${TARGET_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/src/qdmi/driver)
 
   set(DIAGNOSTIC_TARGET_NAME mqt-core-qdmi-driver-diagnostic-test)
   set(diagnostic_config_file
@@ -46,7 +47,10 @@ if(TARGET MQT::CoreQDMIDriver)
     CONTENT
       "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n      {\"id\": \"broken.diagnostic\", \"library\": \"${CMAKE_CURRENT_BINARY_DIR}/missing-diagnostic-device-library\", \"prefix\": \"BROKEN\"}\n    ]\n  }\n}\n"
   )
-  package_add_test(${DIAGNOSTIC_TARGET_NAME} MQT::CoreQDMIDriver test_driver_diagnostics.cpp)
+  package_add_test(${DIAGNOSTIC_TARGET_NAME} mqt-core-qdmi-driver-testing
+                   test_driver_diagnostics.cpp)
+  target_include_directories(${DIAGNOSTIC_TARGET_NAME}
+                             PRIVATE ${PROJECT_SOURCE_DIR}/src/qdmi/driver)
   target_compile_definitions(
     ${DIAGNOSTIC_TARGET_NAME}
     PRIVATE "MQT_CORE_QDMI_DIAGNOSTIC_CONFIG_FILE=\"${diagnostic_config_file}\"")

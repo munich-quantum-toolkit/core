@@ -12,7 +12,8 @@
 #include "mqt/Compiler/QDMIAdapter.h"
 #include "mqt/Compiler/Target.h"
 #include "qdmi/Client.hpp"
-#include "qdmi/driver/Driver.hpp"
+
+#include "Driver.hpp"
 
 #include "gtest/gtest.h"
 #include "nlohmann/json.hpp"

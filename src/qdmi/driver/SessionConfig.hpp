@@ -13,7 +13,7 @@
 
 #pragma once
 
-#include "qdmi/driver/Driver.hpp"
+#include "Driver.hpp"
 
 #include <filesystem>
 #include <optional>

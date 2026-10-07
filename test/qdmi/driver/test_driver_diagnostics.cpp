@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "qdmi/driver/Driver.hpp"
+#include "Driver.hpp"
 
 #include "gmock/gmock-matchers.h"
 #include "gtest/gtest.h"

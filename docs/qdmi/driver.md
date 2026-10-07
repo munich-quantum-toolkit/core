@@ -61,7 +61,9 @@ with these SDKs, pass an already-open `Device` to the backend constructor.
 The MQT Core QDMI driver provides optional private functions for manifest
 registration, metadata-only ID enumeration, and targeted session allocation.
 Standard-interface drivers need none of them. The generic `Session` and
-`open_device` APIs use only the standard Client Interface.
+`open_device` APIs use only the standard Client Interface. The driver's C++
+implementation is internal; only the Client Interface and these three C
+extensions are exported from its shared library.
 
 ## Building the Bundled Devices
 

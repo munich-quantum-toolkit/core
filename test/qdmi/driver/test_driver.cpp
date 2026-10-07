@@ -9,9 +9,10 @@
  */
 
 #include "qdmi/Client.hpp"
-#include "qdmi/driver/Driver.hpp"
 #include "qdmi/driver/DriverExtension.hpp"
-#include "qdmi/driver/SessionConfig.hpp"
+
+#include "Driver.hpp"
+#include "SessionConfig.hpp"
 
 #include "gmock/gmock-matchers.h"
 #include "gtest/gtest.h"
