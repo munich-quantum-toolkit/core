@@ -10,6 +10,96 @@ releases may include breaking changes.
 
 ## [Unreleased]
 
+_If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#unreleased)._
+
+The DD package changes in [#2710] backport the linked `main` PRs without adding
+LLVM or MLIR dependencies.
+
+### Added
+
+- ✨ Add shared C++ vector and matrix constructors for indexed views and flat
+  gate matrices. Accept read-only and strided NumPy inputs in
+  `DDPackage.from_vector` and `DDPackage.from_matrix` ([#2710], [#2455])
+  ([**@burgholzer**])
+
+### Changed
+
+- ⚡ Start DD node tables at 64 buckets per level and grow populated levels
+  independently, up to a configurable ceiling. Initialize only new levels when
+  increasing the qubit capacity ([#2710], [#2466], [#2561], [#2604])
+  ([**@burgholzer**])
+- ⚡ Grow the matrix-vector multiplication cache after garbage collection when
+  prior cache reuse warrants more capacity ([#2710], [#2604])
+  ([**@burgholzer**])
+- ⚡ Reuse compute-table storage when clearing caches and retain Kronecker cache
+  entries while their effective index shift remains unchanged ([#2710], [#2441],
+  [#2453]) ([**@burgholzer**])
+- ⚡ Check DD garbage-collection thresholds in constant time using aggregate
+  node counts ([#2710], [#2474]) ([**@burgholzer**])
+- ⚡ Reduce memory-pool overhead by allocating each initial chunk once, zeroing
+  entries on first use, and reusing consolidated storage during reset ([#2710],
+  [#2479], [#2604]) ([**@burgholzer**])
+- ⚡ Use growing hash tables for real-number lookup, selecting the nearest
+  stored value within the existing absolute tolerance ([#2710], [#2604])
+  ([**@burgholzer**])
+- ⚡ Improve DD hash distribution and use stable node IDs and edge-weight values
+  to avoid address-dependent table placement ([#2710], [#2561], [#2637])
+  ([**@burgholzer**], [**@simon1hofmann**])
+- ⚡ Avoid temporary allocations in small-gate validation and basis-state
+  construction ([#2710], [#2455]) ([**@burgholzer**])
+- ⚡ Reuse measurement probability lookups, collapse states through direct
+  vector traversal, and avoid an extra output-string allocation when sampling
+  ([#2710], [#2441], [#2455]) ([**@burgholzer**])
+- ⚡ Skip shared implicit identity levels during DD multiplication ([#2710],
+  [#2455]) ([**@burgholzer**])
+- ⚡ Read DD elements directly from index bits, reuse extraction callbacks, and
+  skip magnitude checks when exporting without a pruning threshold ([#2710],
+  [#2441], [#2479]) ([**@burgholzer**])
+- ♻️ Share weighted-successor selection and Graphviz edge rendering across DD
+  operations and node types ([#2710], [#2437]) ([**@burgholzer**])
+- 💥 Require `ComplexNumbers::setTolerance` to receive a positive, finite,
+  normal floating-point value. Invalid tolerances now raise
+  `std::invalid_argument` ([#2710], [#2637]) ([**@burgholzer**],
+  [**@simon1hofmann**])
+- 💥 Change DD storage layouts and low-level table APIs. Rebuild native
+  consumers and follow the [DD upgrade notes](UPGRADING.md#dd-package) ([#2710],
+  [#2561], [#2604], [#2617], [#2637]) ([**@burgholzer**], [**@simon1hofmann**])
+
+### Fixed
+
+- 🐛 Preserve matrix root weights below the ordinary numerical tolerance through
+  construction, arithmetic, garbage collection, transfer, and serialization.
+  Avoid spurious zero matrices for wide circuits, including the QCEC GHZ
+  regression ([#2710], [#2617]) ([**@burgholzer**])
+- 🐛 Preserve normalization and relative phase when adding wide states, and
+  reuse addition cache entries for uniformly scaled operands ([#2710], [#2606],
+  [#2637]) ([**@burgholzer**], [**@simon1hofmann**])
+- 🐛 Avoid intermediate overflow and underflow in DD magnitude addition when the
+  result is representable ([#2710], [#2609]) ([**@burgholzer**])
+- 🐛 Correct scalar entries, partial traces, and Kronecker products for
+  compressed matrices with implicit identity levels ([#2710], [#2453])
+  ([**@burgholzer**])
+- 🐛 Invalidate conjugation and magnitude-addition caches when garbage
+  collection reclaims their nodes ([#2710], [#2441]) ([**@burgholzer**])
+- 🐛 Reuse canonical real-number entries at lookup boundaries and preserve
+  collection flags when relinking entries ([#2710], [#2453], [#2518])
+  ([**@burgholzer**])
+- 🐛 Preserve dominant coefficients and compensate for rounded leading weights
+  during DD normalization ([#2710], [#2604]) ([**@burgholzer**])
+- 🐛 Define complex-weight hashing for negative components and keep positive and
+  negative zero hashes consistent, including on MSVC ([#2710], [#2518], [#2636])
+  ([**@burgholzer**], [**@simon1hofmann**])
+- 🐛 Retain ownership of state roots when applying a global phase ([#2710],
+  [#2466]) ([**@burgholzer**])
+- 🐛 Index Python vector DDs by their logical amplitudes, including negative
+  indices and states wider than the native integer index ([#2710], [#2479])
+  ([**@burgholzer**])
+- 🐛 Reject malformed decision paths, ragged matrices, oversized state inputs,
+  conflicting controls, and measurement indices outside the state ([#2710],
+  [#2453], [#2455], [#2479]) ([**@burgholzer**])
+- 🐛 Use deterministic, collision-free node IDs in DD DOT exports ([#2710],
+  [#2518]) ([**@burgholzer**])
+
 ## [3.10.1] - 2026-09-26
 
 _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#3101)._
@@ -845,6 +935,22 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2710]: https://github.com/munich-quantum-toolkit/core/pull/2710
+[#2637]: https://github.com/munich-quantum-toolkit/core/pull/2637
+[#2636]: https://github.com/munich-quantum-toolkit/core/pull/2636
+[#2617]: https://github.com/munich-quantum-toolkit/core/pull/2617
+[#2609]: https://github.com/munich-quantum-toolkit/core/pull/2609
+[#2606]: https://github.com/munich-quantum-toolkit/core/pull/2606
+[#2604]: https://github.com/munich-quantum-toolkit/core/pull/2604
+[#2561]: https://github.com/munich-quantum-toolkit/core/pull/2561
+[#2518]: https://github.com/munich-quantum-toolkit/core/pull/2518
+[#2479]: https://github.com/munich-quantum-toolkit/core/pull/2479
+[#2474]: https://github.com/munich-quantum-toolkit/core/pull/2474
+[#2466]: https://github.com/munich-quantum-toolkit/core/pull/2466
+[#2455]: https://github.com/munich-quantum-toolkit/core/pull/2455
+[#2453]: https://github.com/munich-quantum-toolkit/core/pull/2453
+[#2441]: https://github.com/munich-quantum-toolkit/core/pull/2441
+[#2437]: https://github.com/munich-quantum-toolkit/core/pull/2437
 [#2635]: https://github.com/munich-quantum-toolkit/core/pull/2635
 [#2611]: https://github.com/munich-quantum-toolkit/core/pull/2611
 [#2571]: https://github.com/munich-quantum-toolkit/core/pull/2571

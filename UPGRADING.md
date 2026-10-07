@@ -6,6 +6,31 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### DD package
+
+Rebuild C++ libraries and Python extensions that link to the DD package. Its
+storage layouts have changed; binaries built against the earlier layouts are not
+compatible. The v3 circuit and Python DD entry points remain available, and the
+DD package does not require LLVM or MLIR.
+
+`dd::ComplexNumbers::setTolerance` now throws `std::invalid_argument` for zero,
+negative, subnormal, or non-finite values and is no longer `noexcept`. Use a
+positive normal floating-point value. The default tolerance remains `2^-42`.
+
+Code that uses the low-level storage interfaces needs these changes:
+
+- Call `hash(value)` on a `dd::RealNumberUniqueTable` instance; the method is no
+  longer static and depends on the current table capacity and tolerance.
+- Do not retain real-number bucket iterators across growth or tolerance changes.
+  Entry addresses remain valid until collection or reset.
+- Remove uses of the obsolete `dd::immortals` helper. Obtain canonical numeric
+  entries through `dd::ComplexNumbers::lookup` or
+  `dd::RealNumberUniqueTable::lookup`.
+- Custom unique-table capacities must be nonzero powers of two. Set
+  `DDPackageConfig::utMaxNumBucket` to at least both initial node-table
+  capacities. For fixed sizing, use equal initial and maximum capacities; direct
+  `UniqueTableConfig` users set `maxBuckets` equal to `nBuckets`.
+
 ## [3.10.1]
 
 ### CMake presets on Windows
