@@ -550,13 +550,15 @@ TEST(CompilerTargetTest, FourCyclesShareCacheAndAllowChords) {
   const auto& pairs = (*motifs)[1];
   EXPECT_EQ(pairs.type(), Target::Motifs::Type::QubitPair);
   EXPECT_EQ(pairs.arity(), 2);
-  const std::array<std::array<size_t, 2>, 5> expectedPairs{{
-      {0, 1},
-      {0, 2},
-      {0, 3},
-      {1, 2},
-      {2, 3},
-  }};
+  const std::array<std::array<size_t, 2>, 5> expectedPairs{
+      {
+          {0, 1},
+          {0, 2},
+          {0, 3},
+          {1, 2},
+          {2, 3},
+      },
+  };
   ASSERT_EQ(pairs.size(), expectedPairs.size());
   for (size_t i = 0; i < pairs.size(); ++i) {
     EXPECT_EQ(pairs[i], llvm::ArrayRef<size_t>(expectedPairs[i]));
