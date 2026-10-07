@@ -83,7 +83,7 @@ namespace {
 
 /// Composed unitary and metadata for a fusable two-qubit run.
 struct FusableTwoQubitRun {
-  SmallVector<Operation*, 8> ops; ///< Members in dependency order.
+  SmallVector<Operation*> ops; ///< Members in dependency order.
   Matrix4x4 composed = Matrix4x4::identity();
   size_t numTwoQ = 0; ///< Number of two-qubit members.
   Value tailA;        ///< Current output wires of the run's tail.
@@ -439,6 +439,8 @@ static FailureOr<SiteMap> collectStaticSites(Operation* root, bool indexed) {
 }
 
 /// Collection has validated the inputs of every unitary, reset, and measure.
+/// Keep sites inline for one- and two-qubit operations; larger arities can
+/// grow.
 static SmallVector<SiteId, 2> getOperationSites(Operation* operation,
                                                 const SiteMap& sites) {
   SmallVector<SiteId, 2> result;
@@ -893,6 +895,7 @@ void NativeCostTracker::append(Operation* operation,
   if (!available_ || cancellations_.erase(operation)) {
     return;
   }
+  // Keep the common one- and two-qubit cases inline; arity is not bounded here.
   SmallVector<CompilerTarget::SiteId, 2> sites;
   for (size_t vertex : vertices) {
     sites.push_back(target_.siteForVertex(vertex));

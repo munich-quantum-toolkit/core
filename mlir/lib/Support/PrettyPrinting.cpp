@@ -227,6 +227,7 @@ void printBoxLine(StringRef text, const int indent, raw_ostream& os) {
     return;
   }
 
+  // Keep up to four wrapped lines inline without allocating a separate buffer.
   SmallVector<SmallString<128>, 4> wrappedLines;
   wrapLine(trimmedText, CONTENT_WIDTH, wrappedLines, indent);
 

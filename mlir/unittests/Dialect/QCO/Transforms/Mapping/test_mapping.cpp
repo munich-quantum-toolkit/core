@@ -294,7 +294,7 @@ static CompilerTarget withNativeBasis(const CompilerTarget& topology,
 
 /// Creates an N-qubit GHZ state, where N = `qubits.size()` using
 /// straight-line programming.
-static void flatGHZ(QCOProgramBuilder& builder, SmallVector<Value>& qubits) {
+static void flatGHZ(QCOProgramBuilder& builder, MutableArrayRef<Value> qubits) {
   qubits[0] = builder.h(qubits[0]);
   for (size_t i = 1; i < qubits.size(); ++i) {
     std::tie(qubits[0], qubits[i]) = builder.cx(qubits[0], qubits[i]);
@@ -334,7 +334,7 @@ static void loopGHZ(QCOProgramBuilder& builder, Value& tensor,
 }
 
 /// Creates an N-qubit CX/CZ circuit.
-static void cxcz(QCOProgramBuilder& builder, SmallVector<Value>& qubits) {
+static void cxcz(QCOProgramBuilder& builder, MutableArrayRef<Value> qubits) {
   for (size_t i = 0; i + 1 < qubits.size(); ++i) {
     std::tie(qubits[i], qubits[i + 1]) = builder.cx(qubits[i], qubits[i + 1]);
   }

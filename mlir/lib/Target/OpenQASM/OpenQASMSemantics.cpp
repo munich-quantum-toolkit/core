@@ -422,7 +422,7 @@ public:
 
 private:
   struct AffineForm {
-    SmallVector<llvm::DynamicAPInt, 4> coefficients;
+    SmallVector<llvm::DynamicAPInt> coefficients;
     llvm::DynamicAPInt constant{0};
   };
 
@@ -580,7 +580,7 @@ private:
   [[nodiscard]] AffineForm
   constantAffineForm(const llvm::DynamicAPInt& value) const {
     return {
-        .coefficients = SmallVector<llvm::DynamicAPInt, 4>(
+        .coefficients = SmallVector<llvm::DynamicAPInt>(
             affineDomain.getNumDimVars(), llvm::DynamicAPInt(0)),
         .constant = value,
     };
@@ -621,9 +621,9 @@ private:
     return result;
   }
 
-  [[nodiscard]] static SmallVector<llvm::DynamicAPInt, 4>
+  [[nodiscard]] static SmallVector<llvm::DynamicAPInt>
   affineConstraint(const AffineForm& form) {
-    SmallVector<llvm::DynamicAPInt, 4> result(form.coefficients);
+    SmallVector<llvm::DynamicAPInt> result(form.coefficients);
     result.push_back(form.constant);
     return result;
   }

@@ -50,7 +50,7 @@ static bool isIrreversible(const llvm::CallBase& call) {
 
 static void requireTerminalIrreversibleRegion(llvm::CallInst& boundary) {
   llvm::SmallPtrSet<llvm::BasicBlock*, 8> visited;
-  llvm::SmallVector<llvm::BasicBlock*, 8> pending;
+  llvm::SmallVector<llvm::BasicBlock*> pending;
 
   auto inspect = [&](llvm::BasicBlock& block,
                      llvm::BasicBlock::iterator begin) {
@@ -90,7 +90,7 @@ static void requireTerminalIrreversibleRegion(llvm::CallInst& boundary) {
 
 static void validateAdaptiveStateExtraction(llvm::Function& entryPoint) {
   llvm::SmallPtrSet<llvm::Function*, 8> visited;
-  llvm::SmallVector<llvm::Function*, 8> pending{&entryPoint};
+  llvm::SmallVector<llvm::Function*> pending{&entryPoint};
   while (!pending.empty()) {
     auto* function = pending.pop_back_val();
     if (!visited.insert(function).second) {
@@ -163,7 +163,7 @@ bool prepareForStateExtraction(llvm::Function& entryPoint) {
         "QIR state extraction requires a Base or Adaptive Profile entry point");
   }
 
-  llvm::SmallVector<llvm::CallInst*, 8> irreversibleCalls;
+  llvm::SmallVector<llvm::CallInst*> irreversibleCalls;
   for (auto& block : entryPoint) {
     for (auto& instruction : block) {
       auto* call = llvm::dyn_cast<llvm::CallBase>(&instruction);

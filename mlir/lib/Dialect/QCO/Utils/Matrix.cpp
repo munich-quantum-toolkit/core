@@ -59,7 +59,7 @@ static void adjointInto(ArrayRef<Complex> in, MutableArrayRef<Complex> out,
 }
 
 template <size_t Dim, size_t Size>
-static void assignFixedImpl(int64_t& dim, SmallVector<Complex>& data,
+static void assignFixedImpl(int64_t& dim, SmallVectorImpl<Complex>& data,
                             const std::array<Complex, Size>& src) {
   dim = static_cast<int64_t>(Dim);
   data.assign(src.begin(), src.end());

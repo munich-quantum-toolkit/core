@@ -51,6 +51,7 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/RegionUtils.h"
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
@@ -372,7 +373,7 @@ static void createCustomOp(QCOOpType& op, ConversionPatternRewriter& rewriter,
 template <typename QCOOpType>
 static void createPPROp(QCOOpType& op, ConversionPatternRewriter& rewriter,
                         LoweringState& state, ValueRange targets,
-                        const SmallVector<int32_t>& pauliGates) {
+                        ArrayRef<int32_t> pauliGates) {
   auto pauliGatesAttr =
       DenseI32ArrayAttr::get(rewriter.getContext(), pauliGates);
 

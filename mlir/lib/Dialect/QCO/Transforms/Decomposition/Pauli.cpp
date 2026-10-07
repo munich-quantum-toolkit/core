@@ -437,7 +437,7 @@ void mergeDiagonalRotations(RewriterBase& rewriter, ModuleOp moduleOp) {
         };
         DenseMap<Value, size_t> wires;
         DenseMap<std::tuple<size_t, size_t, unsigned>, size_t> indices;
-        SmallVector<Group, 4> groups;
+        SmallVector<Group> groups;
         size_t nextWire = 0;
         const auto flush = [&] {
           for (auto& group : groups) {

@@ -151,7 +151,7 @@ private:
   auto resolveAddress(const Qubit* qubit) -> dd::Qubit;
   auto translateAddresses(std::span<Qubit* const> qubits,
                           std::span<Qubit* const> additionalQubits = {})
-      -> llvm::SmallVector<dd::Qubit, 5>;
+      -> llvm::SmallVector<dd::Qubit>;
 
   // Helper function to output a type (bool, int...) to @c os, honoring the
   // active @c outputSchema.

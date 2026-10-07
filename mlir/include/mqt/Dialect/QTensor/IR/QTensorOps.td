@@ -86,7 +86,7 @@ def FromElementsOp
           [Pure,
            TypesMatchWith<
                "operand types match result element type", "result", "elements",
-               "SmallVector<Type, 2>("
+               "SmallVector<Type>("
                "cast<RankedTensorType>($_self).getNumElements(), "
                "cast<RankedTensorType>($_self).getElementType())">]> {
   let summary = "Create a tensor from a range of values";
