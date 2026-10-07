@@ -27,7 +27,6 @@
 #include "mqt/Support/RandomSeed.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h" // IWYU pragma: keep (Passes.h.inc)
-#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/Builders.h"
@@ -1580,7 +1579,8 @@ protected:
   }
 };
 
-/// Flat public functions are already at a dead-value fixed point after CSE.
+/// After canonicalization and CSE, skip liveness for flat, call-free
+/// public functions.
 class TargetDeadValueCleanupPass final
     : public PassWrapper<TargetDeadValueCleanupPass, OperationPass<ModuleOp>> {
 public:
@@ -1598,14 +1598,14 @@ protected:
           if (operation == moduleOp.getOperation()) {
             return WalkResult::advance();
           }
-          if (auto function = dyn_cast<func::FuncOp>(operation)) {
-            return function.isPublic() && (function.isExternal() ||
-                                           function.getBody().hasOneBlock())
+          if (auto function = dyn_cast<FunctionOpInterface>(operation)) {
+            return function.isPublic() &&
+                           function.getFunctionBody().hasOneBlock()
                        ? WalkResult::advance()
                        : WalkResult::interrupt();
           }
-          // Modifier bodies contain only unitaries and regionless classical
-          // operations; they cannot introduce dead loop-carried values.
+          /// Modifier bodies contain only unitaries and regionless classical
+          /// operations; they cannot introduce dead loop-carried values.
           if (isa<CtrlOp, InvOp, PowOp>(operation)) {
             return WalkResult::skip();
           }

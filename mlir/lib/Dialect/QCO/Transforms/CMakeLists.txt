@@ -20,7 +20,6 @@ add_mlir_library(
   MLIRQTensorUtils
   MLIRArithDialect
   MLIRCallInterfaces
-  MLIRFuncDialect
   MLIRMathDialect
   MLIRMQTDialect
   MLIRMQTTransforms
