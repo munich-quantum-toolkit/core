@@ -524,7 +524,7 @@ TEST(CompilerTargetTest, CanonicalizesConnectedTopologyAndCachesDistances) {
   EXPECT_EQ(neighbours, (std::vector<size_t>{0, 2}));
 }
 
-TEST(CompilerTargetTest, FourCyclesShareCacheAndAllowChords) {
+TEST(CompilerTargetTest, MotifsShareCacheAndAllowChords) {
   const auto target = valid(Target::create(
       std::vector{
           valid(Site::create(7)),
@@ -541,7 +541,7 @@ TEST(CompilerTargetTest, FourCyclesShareCacheAndAllowChords) {
       std::async(std::launch::async, [target] { return target.motifs(); });
   auto motifs = first.get();
   ASSERT_TRUE(motifs.has_value());
-  ASSERT_EQ(motifs->size(), 2);
+  ASSERT_EQ(motifs->size(), 3);
   const auto& cycles = motifs->front();
   EXPECT_EQ(cycles.type(), Target::Motifs::Type::FourCycle);
   EXPECT_EQ(cycles.arity(), 4);
@@ -563,6 +563,12 @@ TEST(CompilerTargetTest, FourCyclesShareCacheAndAllowChords) {
   for (size_t i = 0; i < pairs.size(); ++i) {
     EXPECT_EQ(pairs[i], llvm::ArrayRef<size_t>(expectedPairs[i]));
   }
+  const auto& stars = (*motifs)[2];
+  EXPECT_EQ(stars.type(), Target::Motifs::Type::Star);
+  EXPECT_EQ(stars.arity(), 4);
+  ASSERT_EQ(stars.size(), 2);
+  EXPECT_EQ(stars[0], (llvm::ArrayRef<size_t>{0, 1, 2, 3}));
+  EXPECT_EQ(stars[1], (llvm::ArrayRef<size_t>{2, 0, 1, 3}));
   auto shared = second.get();
   ASSERT_TRUE(shared.has_value());
   EXPECT_EQ(motifs->data(), shared->data());
@@ -574,12 +580,13 @@ TEST(CompilerTargetTest, FourCyclesShareCacheAndAllowChords) {
                                            NativeOperations::unrestricted()));
   auto empty = single.motifs();
   ASSERT_TRUE(empty.has_value());
-  ASSERT_EQ(empty->size(), 2);
+  ASSERT_EQ(empty->size(), 3);
   EXPECT_EQ(empty->front().size(), 0);
   EXPECT_EQ((*empty)[1].size(), 0);
+  EXPECT_EQ((*empty)[2].size(), 0);
 }
 
-TEST(CompilerTargetTest, FourCyclesMatchExhaustiveFiveVertexOracle) {
+TEST(CompilerTargetTest, MotifsMatchExhaustiveFiveVertexOracle) {
   constexpr size_t n = 5;
   size_t connected = 0;
   for (unsigned mask = 0; mask < (1U << 10U); ++mask) {
@@ -616,7 +623,7 @@ TEST(CompilerTargetTest, FourCyclesMatchExhaustiveFiveVertexOracle) {
     }
     auto motifs = target->motifs();
     ASSERT_TRUE(motifs.has_value());
-    ASSERT_EQ(motifs->size(), 2);
+    ASSERT_EQ(motifs->size(), 3);
     const auto& pairs = (*motifs)[1];
     ASSERT_EQ(pairs.size(), edges.size());
     for (size_t i = 0; i < edges.size(); ++i) {
@@ -632,6 +639,27 @@ TEST(CompilerTargetTest, FourCyclesMatchExhaustiveFiveVertexOracle) {
     }
     llvm::sort(actual);
     EXPECT_EQ(actual, expected) << "graph mask: " << mask;
+    std::vector<std::array<size_t, 4>> expectedStars;
+    for (size_t center = 0; center < 5; ++center) {
+      for (size_t b = 0; b < 5; ++b) {
+        for (size_t c = b + 1; c < 5; ++c) {
+          for (size_t d = c + 1; d < 5; ++d) {
+            if (center != b && center != c && center != d &&
+                target->areAdjacent(center, b) &&
+                target->areAdjacent(center, c) &&
+                target->areAdjacent(center, d)) {
+              expectedStars.push_back({center, b, c, d});
+            }
+          }
+        }
+      }
+    }
+    const auto& stars = (*motifs)[2];
+    ASSERT_EQ(stars.size(), expectedStars.size()) << "graph mask: " << mask;
+    for (size_t i = 0; i < stars.size(); ++i) {
+      EXPECT_EQ(stars[i], llvm::ArrayRef<size_t>(expectedStars[i]))
+          << "graph mask: " << mask;
+    }
   }
   EXPECT_EQ(connected, 728);
 }

@@ -163,18 +163,21 @@ print(mapped.ir)
 ```
 
 The C++ `CompilerTarget::motifs()` API exposes reusable topology motifs grouped
-by `Motifs::Type`: `FourCycle`, then `QubitPair` (M2). Four-cycles allow chords.
-Qubit pairs represent each undirected edge once, smaller vertex first. They
-reuse the normalized adjacency lists; hardware site-ID couplings cannot be
-directly viewed as dense vertex indices. Each group stores packed rows; use
-`group[i]` to access one occurrence. Explicit topologies enumerate lazily into a
-thread-safe cache shared by target copies. Storage grows with the number of
-occurrences, without a separate allocation for each row. For all-to-all targets,
-`motifs()` returns `std::nullopt`. Otherwise it returns an `ArrayRef` of groups.
-An explicit topology retains a group for each selected type even when it has no
-occurrences. These motifs describe connectivity only, not native gate
-availability or direction. No architecture classification is performed.
-Placement and mapping do not consume this cache yet.
+by `Motifs::Type`: `FourCycle`, `QubitPair` (M2), then `Star` (M4-1).
+Four-cycles allow chords. Stars store the center followed by three sorted
+neighbors; edges between the neighbors are allowed. Each neighbor triple
+produces one star, so high-degree vertices can produce many occurrences. Qubit
+pairs represent each undirected edge once, smaller vertex first. They reuse the
+normalized adjacency lists; hardware site-ID couplings cannot be directly viewed
+as dense vertex indices. Each group stores packed rows; use `group[i]` to access
+one occurrence. Explicit topologies enumerate lazily into a thread-safe cache
+shared by target copies. Storage grows with the number of occurrences, without a
+separate allocation for each row. For all-to-all targets, `motifs()` returns
+`std::nullopt`. Otherwise it returns an `ArrayRef` of groups. An explicit
+topology retains a group for each selected type even when it has no occurrences.
+These motifs describe connectivity only, not native gate availability or
+direction. No architecture classification is performed. Placement and mapping do
+not consume this cache yet.
 
 Use `CompilerTarget.Connectivity.all_to_all()` for an all-to-all target. An
 empty `CompilerTarget.NativeOperations([])` reports that no quantum operation is
