@@ -1957,6 +1957,7 @@ TEST_F(CompilerPipelineTest, JeffRejectsMutableClassicalHelperArguments) {
 TEST_F(CompilerPipelineTest, RejectsJeffModuleWithoutFunctions) {
   capnp::MallocMessageBuilder message;
   message.initRoot<::jeff::Module>().setVersionMinor(3);
+  EXPECT_FALSE(JeffProgram::fromMessage(message.getRoot<::jeff::Module>()));
   auto words = capnp::messageToFlatArray(message);
   EXPECT_FALSE(JeffProgram::fromBytes(
       std::as_bytes(std::span(words.begin(), words.size()))));
@@ -2003,6 +2004,40 @@ x q;
   EXPECT_FALSE(
       JeffProgram::fromFile(path.parent_path() / "missing" / "input.jeff"));
   EXPECT_FALSE(jeff.write(path.parent_path() / "missing" / "output.jeff"));
+}
+
+TEST_F(CompilerPipelineTest, JeffProgramsRoundTripThroughSegmentedMessages) {
+  auto qco = QCOProgram::fromMLIRString(R"mlir(module {
+    func.func @main() attributes {mqt.entry_point} {
+      %q = qco.alloc : !qco.qubit
+      %r = qco.h %q : !qco.qubit -> !qco.qubit
+      qco.sink %r : !qco.qubit
+      return
+    }
+  })mlir");
+  ASSERT_TRUE(qco);
+  auto program = std::move(*qco).intoJeff();
+  ASSERT_TRUE(program);
+  const auto bytes = program->toBytes();
+  std::optional<JeffProgram> fromRoot;
+  std::optional<JeffProgram> fromSegments;
+  {
+    capnp::MallocMessageBuilder message(1,
+                                        capnp::AllocationStrategy::FIXED_SIZE);
+    program->toMessage(message);
+    const auto segments = message.getSegmentsForOutput();
+    ASSERT_GT(segments.size(), 1U);
+    fromRoot = JeffProgram::fromMessage(message.getRoot<::jeff::Module>());
+    capnp::SegmentArrayMessageReader reader(segments);
+    fromSegments = JeffProgram::fromMessage(reader.getRoot<::jeff::Module>());
+  }
+  ASSERT_TRUE(fromRoot);
+  ASSERT_TRUE(fromSegments);
+  EXPECT_EQ(fromRoot->toBytes(), bytes);
+  EXPECT_EQ(fromSegments->toBytes(), bytes);
+  auto roundTrip = std::move(*fromSegments).intoQCO();
+  ASSERT_TRUE(roundTrip);
+  EXPECT_TRUE(succeeded(verify(roundTrip->module())));
 }
 
 // Test: QCO and QIR typed programs retain their respective semantics

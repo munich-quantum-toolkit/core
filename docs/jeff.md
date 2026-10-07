@@ -66,7 +66,7 @@ Inspect `program.ir` when debugging the MLIR representation. To control each
 stage explicitly, use `qco.to_jeff(copy=True)` on an existing
 {py:class}`~mqt.core.mlir.QCOProgram`. Omitting `copy=True` consumes it.
 
-## Load a buffer or file
+## Load a buffer, file, or message
 
 Deserialize bytes with `JeffProgram.from_bytes`. The returned program can enter
 the compiler pipeline again:
@@ -96,6 +96,20 @@ with TemporaryDirectory() as directory:
 
 Raw byte buffers go through `from_bytes` before compilation. `compile_program`
 uses strings for source text; a `Path` makes file input explicit.
+
+In C++, use `mlir::JeffProgram::toMessage` and `fromMessage` to exchange an
+existing Cap'n Proto message without flattening it into bytes:
+
+```cpp
+capnp::MallocMessageBuilder message;
+program.toMessage(message);
+capnp::SegmentArrayMessageReader reader(message.getSegmentsForOutput());
+auto received = mlir::JeffProgram::fromMessage(reader.getRoot<::jeff::Module>());
+```
+
+The caller owns the message and must keep its storage alive and unchanged until
+`fromMessage` returns. The returned program can then enter the compiler
+pipeline.
 
 ## Continue to a device or another output format
 

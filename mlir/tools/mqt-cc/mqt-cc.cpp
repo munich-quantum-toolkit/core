@@ -549,7 +549,7 @@ static int runCompiler(int argc, char** argv) {
               func::FuncDialect, LLVM::LLVMDialect, math::MathDialect,
               memref::MemRefDialect, mlir::mqt::MQTDialect, qc::QCDialect,
               qco::QCODialect, qtensor::QTensorDialect, scf::SCFDialect,
-              tensor::TensorDialect, jeff::JeffDialect>();
+              tensor::TensorDialect, mlir::jeff::JeffDialect>();
   registerBuiltinDialectTranslation(registry);
   registerLLVMDialectTranslation(registry);
   func::registerInlinerExtension(registry);

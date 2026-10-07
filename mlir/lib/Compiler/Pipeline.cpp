@@ -258,6 +258,18 @@ std::optional<JeffProgram> QCOProgram::intoJeff() && {
 //===----------------------------------------------------------------------===//
 
 std::optional<JeffProgram>
+JeffProgram::fromMessage(::jeff::Module::Reader module) {
+  auto context = createCompilerContext();
+  auto mod = deserialize(context.get(), module);
+  if (!mod) {
+    emitError(UnknownLoc::get(context.get()),
+              "failed to deserialize jeff message");
+    return std::nullopt;
+  }
+  return JeffProgram({.context = std::move(context), .mod = std::move(mod)});
+}
+
+std::optional<JeffProgram>
 JeffProgram::fromBytes(std::span<const std::byte> bytes) {
   if (bytes.size() % sizeof(capnp::word) != 0U) {
     auto context = createCompilerContext();
@@ -297,6 +309,10 @@ bool JeffProgram::cleanup() {
   return succeeded(
       runWithPassManager(mod(), populateJeffCleanupPipeline,
                          "failed to run the jeff cleanup pipeline"));
+}
+
+void JeffProgram::toMessage(capnp::MessageBuilder& message) const {
+  serialize(mod(), message);
 }
 
 std::vector<std::byte> JeffProgram::toBytes() const {
