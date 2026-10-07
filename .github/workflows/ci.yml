@@ -231,6 +231,7 @@ jobs:
       - cpp-coverage
       - cpp-linter
       - python-tests
+      - python-coverage
       - python-linter
       - build-sdist
       - build-wheel
