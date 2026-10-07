@@ -9,6 +9,7 @@
 set(target_name mqt-core-mlir-unittest-optimizations)
 add_executable(
   ${target_name}
+  test_qco_auxiliary_qubit_hoisting.cpp
   test_qco_context_sensitive_specialization.cpp
   test_qco_hadamard_lifting.cpp
   test_qco_measurement_lifting.cpp

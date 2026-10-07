@@ -650,4 +650,29 @@ def QuantumArgumentPromotion
                            "mlir::qco::QCODialect"];
 }
 
+def AuxiliaryQubitHoisting
+    : Pass<"quantum-auxiliary-qubit-hoisting", "mlir::ModuleOp"> {
+  let summary = "Turn callee-internal qubits into arguments";
+  let description = [{
+        A qubit that a callee allocates in its entry block and releases with
+        `qco.sink` in that same block becomes a new last argument. Its release
+        becomes a `qco.reset` handed back as a new last result, so the callee
+        still returns its quantum arguments in argument order. Each call site
+        allocates the qubit right before the call and releases it right after,
+        in the call's own block. The caller then owns the allocation, can reuse
+        one qubit across several calls, and moves it closer to the entry block
+        of the entry point, where mapping and QIR conversion need it.
+
+        Callees run first, so an allocation can travel up several levels in one
+        run. Externally visible functions, declarations, recursive functions,
+        functions with more than one block, allocations nested inside a region,
+        and functions referenced other than by direct calls are left alone.
+    }];
+
+  let dependentDialects = ["::mlir::func::FuncDialect",
+                           "::mlir::arith::ArithDialect",
+                           "::mlir::qtensor::QTensorDialect",
+                           "mlir::qco::QCODialect"];
+}
+
 #endif // MLIR_DIALECT_QCO_TRANSFORMS_PASSES_TD
