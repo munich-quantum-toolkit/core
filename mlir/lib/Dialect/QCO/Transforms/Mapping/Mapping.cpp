@@ -186,7 +186,7 @@ static LogicalResult validateRoutingOperations(func::FuncOp func) {
   if (!llvm::hasSingleElement(func.getBody())) {
     return func.emitError("mapping requires a single-block entry function");
   }
-  
+
   const auto result =
       func.walk([](Operation* op) {
         if (isa<CallOpInterface>(op) &&
