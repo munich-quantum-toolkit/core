@@ -10,6 +10,42 @@ releases may include breaking changes.
 
 ## [Unreleased]
 
+_If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#unreleased)._
+
+### Added
+
+- ✨ Add DD construction from C++ indexed views and flat gate matrices, and
+  accept read-only NumPy arrays in `DDPackage.from_vector` and
+  `DDPackage.from_matrix` ([#2710], [#2455]) ([**@burgholzer**])
+
+### Changed
+
+- 🔧 Use clang-tidy 23 for C++ linting in CI and the local `cpp-lint` Nox
+  session ([#2710], [#2328]) ([**@burgholzer**], [**@simon1hofmann**])
+- ⚡ Reduce DD allocation, lookup, and cache overhead, with adaptive table sizes
+  that use less memory for compact decision diagrams ([#2710], [#2474], [#2561],
+  [#2604], [#2637]) ([**@burgholzer**], [**@simon1hofmann**])
+- ⚡ Speed up DD construction, matrix multiplication, measurement, sampling, and
+  element access ([#2710], [#2441], [#2455], [#2479]) ([**@burgholzer**])
+- 💥 Update the DD C++ ABI, low-level table interfaces, and numerical tolerance
+  validation. Rebuild native consumers and follow the
+  [DD upgrade notes](UPGRADING.md#dd-package) ([#2710], [#2637])
+  ([**@burgholzer**], [**@simon1hofmann**])
+
+### Fixed
+
+- 🐛 Preserve small amplitudes and matrix scales in wide circuits, and avoid
+  intermediate overflow and underflow during magnitude addition ([#2710],
+  [#2606], [#2609], [#2617]) ([**@burgholzer**])
+- 🐛 Correct DD matrix entries, partial traces, tensor products, and results
+  after garbage collection or global-phase changes ([#2710], [#2441], [#2453],
+  [#2466]) ([**@burgholzer**])
+- 🐛 Correct Python vector DD indexing, including negative indices, and report
+  invalid construction, measurement, and path inputs through exceptions
+  ([#2710], [#2455], [#2479]) ([**@burgholzer**])
+- 🐛 Make DD DOT exports deterministic and prevent node-ID collisions ([#2710],
+  [#2518]) ([**@burgholzer**])
+
 ## [3.10.1] - 2026-09-26
 
 _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#3101)._
@@ -845,6 +881,21 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2710]: https://github.com/munich-quantum-toolkit/core/pull/2710
+[#2637]: https://github.com/munich-quantum-toolkit/core/pull/2637
+[#2617]: https://github.com/munich-quantum-toolkit/core/pull/2617
+[#2609]: https://github.com/munich-quantum-toolkit/core/pull/2609
+[#2606]: https://github.com/munich-quantum-toolkit/core/pull/2606
+[#2604]: https://github.com/munich-quantum-toolkit/core/pull/2604
+[#2561]: https://github.com/munich-quantum-toolkit/core/pull/2561
+[#2518]: https://github.com/munich-quantum-toolkit/core/pull/2518
+[#2479]: https://github.com/munich-quantum-toolkit/core/pull/2479
+[#2474]: https://github.com/munich-quantum-toolkit/core/pull/2474
+[#2466]: https://github.com/munich-quantum-toolkit/core/pull/2466
+[#2455]: https://github.com/munich-quantum-toolkit/core/pull/2455
+[#2453]: https://github.com/munich-quantum-toolkit/core/pull/2453
+[#2441]: https://github.com/munich-quantum-toolkit/core/pull/2441
+[#2328]: https://github.com/munich-quantum-toolkit/core/pull/2328
 [#2635]: https://github.com/munich-quantum-toolkit/core/pull/2635
 [#2611]: https://github.com/munich-quantum-toolkit/core/pull/2611
 [#2571]: https://github.com/munich-quantum-toolkit/core/pull/2571

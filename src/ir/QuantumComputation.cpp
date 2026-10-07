@@ -57,14 +57,14 @@ void consolidateRegister(QuantumRegisterMap& regs) {
       finished = true;
       // check if lower part of register
       if (name.ends_with("_l")) {
-        auto lowidx = qreg.getStartIndex();
-        auto lownum = qreg.getSize();
+        auto const lowidx = qreg.getStartIndex();
+        auto const lownum = qreg.getSize();
         // search for higher part of register
-        auto highname = name.substr(0, name.size() - 1) + 'h';
+        auto const highname = name.substr(0, name.size() - 1) + 'h';
         if (const auto it = regs.find(highname); it != regs.end()) {
           auto& highReg = it->second;
-          auto highidx = highReg.getStartIndex();
-          auto highnum = highReg.getSize();
+          auto const highidx = highReg.getStartIndex();
+          auto const highnum = highReg.getSize();
           // fusion of registers possible
           if (lowidx + lownum == highidx) {
             finished = false;
@@ -607,7 +607,7 @@ std::ostream& QuantumComputation::print(std::ostream& os) const {
 
   os << std::setw(width + 1) << "o:";
   for (const auto& physicalQubit : initialLayout) {
-    auto it = outputPermutation.find(physicalQubit.first);
+    auto const it = outputPermutation.find(physicalQubit.first);
     if (it == outputPermutation.end()) {
       os << "\033[31m" << std::setw(4) << "|" << "\033[0m";
     } else {
@@ -672,10 +672,10 @@ bool QuantumComputation::isIdleQubit(const Qubit physicalQubit) const {
 
 void QuantumComputation::stripIdleQubits(bool force) {
   auto layoutCopy = initialLayout;
-  for (auto& physicalQubitIt : std::ranges::reverse_view(layoutCopy)) {
+  for (auto const& physicalQubitIt : std::ranges::reverse_view(layoutCopy)) {
     if (const auto physicalQubitIndex = physicalQubitIt.first;
         isIdleQubit(physicalQubitIndex)) {
-      if (auto it = outputPermutation.find(physicalQubitIndex);
+      if (auto const it = outputPermutation.find(physicalQubitIndex);
           it != outputPermutation.end() && !force) {
         continue;
       }
@@ -1014,7 +1014,7 @@ void QuantumComputation::reorderOperations() {
       done = false;
 
       // get the current operation on the qubit
-      auto& it = dagIterators.at(static_cast<std::size_t>(q));
+      auto const& it = dagIterators.at(static_cast<std::size_t>(q));
       auto& op = **it;
 
       // check whether the gate can be scheduled, i.e. whether all qubits it
@@ -1051,7 +1051,7 @@ void QuantumComputation::reorderOperations() {
       // now increase all corresponding iterators
       for (std::size_t i = 0; i < dag.size(); ++i) {
         if (actsOn[i]) {
-          ++(dagIterators.at(i));
+          ++dagIterators.at(i);
         }
       }
     }

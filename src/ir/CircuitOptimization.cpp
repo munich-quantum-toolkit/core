@@ -64,7 +64,7 @@ void removeIdentities(QuantumComputation& qc) {
         it = qc.erase(it);
       } else {
         if (compOp.size() == 1) {
-          (*it) = std::move(*(compOp.begin()));
+          (*it) = std::move(*compOp.begin());
         }
         ++it;
       }
@@ -91,7 +91,7 @@ void removeFinalMeasurementsRecursive(DAG& dag,
     return;
   }
 
-  auto& it = dagIterators.at(idx);
+  auto const& it = dagIterators.at(idx);
   while (it != dag.at(idx).rend()) {
     if (until != nullptr && (*dagIterators.at(idx))->get() == until) {
       break;
@@ -203,7 +203,7 @@ void QuantumComputation::flattenOperations(const bool customGatesOnly) {
   auto it = begin();
   while (it != end()) {
     if ((*it)->isCompoundOperation()) {
-      auto& op = dynamic_cast<CompoundOperation&>(**it);
+      auto const& op = dynamic_cast<CompoundOperation&>(**it);
       if (!customGatesOnly || op.isCustomGate()) {
         flattenCompoundOperation(*this, it);
       } else {

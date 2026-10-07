@@ -464,7 +464,7 @@ void Importer::visitGateStatement(
     identifier = parseGateIdentifierCompatMode(identifier).first;
   }
 
-  if (auto prevDeclaration = gates.find(identifier);
+  if (auto const prevDeclaration = gates.find(identifier);
       prevDeclaration != gates.end()) {
     if (std::dynamic_pointer_cast<StandardGate>(prevDeclaration->second)) {
       // we ignore redeclarations of standard gates
@@ -580,7 +580,7 @@ std::unique_ptr<qc::Operation> Importer::evaluateGateCall(
 
   bool invertOperation = false;
   for (const auto& modifier : gateCallStatement->modifiers) {
-    if (auto ctrlModifier =
+    if (auto const ctrlModifier =
             std::dynamic_pointer_cast<CtrlGateModifier>(modifier);
         ctrlModifier != nullptr) {
       size_t const n = evaluatePositiveConstant(ctrlModifier->expression,
@@ -599,7 +599,7 @@ std::unique_ptr<qc::Operation> Importer::evaluateGateCall(
         controls.emplace_back(targets[nControls + i], ctrlModifier->ctrlType);
       }
       nControls += n;
-    } else if (auto invModifier =
+    } else if (auto const invModifier =
                    std::dynamic_pointer_cast<InvGateModifier>(modifier);
                invModifier != nullptr) {
       // if we have an even number of inv modifiers, they cancel each other
@@ -716,10 +716,10 @@ std::unique_ptr<qc::Operation> Importer::evaluateGateCall(
     if (j == broadcastingWidth - 1) {
       break;
     }
-    for (auto index : targetBroadcastingIndices) {
+    for (auto const index : targetBroadcastingIndices) {
       targetBits[index] = qc::Qubit{targetBits[index] + 1};
     }
-    for (auto index : controlBroadcastingIndices) {
+    for (auto const index : controlBroadcastingIndices) {
       controlBits[index].qubit = qc::Qubit{controlBits[index].qubit + 1};
     }
   }
@@ -760,7 +760,8 @@ Importer::getMcGateDefinition(const std::string& identifier, size_t operandSize,
       debugInfo, nestedGateIdentifier,
       std::vector<std::shared_ptr<GateModifier>>{
           std::make_shared<CtrlGateModifier>(
-              true, std::make_shared<Constant>(nControls, false))},
+              true, std::make_shared<Constant>(nControls, false)),
+      },
       nestedParameters, operands);
   const auto inner = std::make_shared<GateCallStatement>(gateCall);
 
@@ -773,7 +774,7 @@ std::unique_ptr<qc::Operation> Importer::applyQuantumOperation(
     const std::vector<qc::Control>& controlBits,
     const std::vector<qc::fp>& evaluatedParameters, const bool invertOperation,
     const std::shared_ptr<DebugInfo>& debugInfo) {
-  if (auto* standardGate = dynamic_cast<StandardGate*>(gate.get())) {
+  if (auto const* standardGate = dynamic_cast<StandardGate*>(gate.get())) {
     auto op = std::make_unique<qc::StandardOperation>(
         qc::Controls{controlBits.begin(), controlBits.end()}, targetBits,
         standardGate->info.type, evaluatedParameters);
@@ -800,7 +801,7 @@ std::unique_ptr<qc::Operation> Importer::applyQuantumOperation(
 
     auto op = std::make_unique<qc::CompoundOperation>(true);
     for (const auto& nestedGate : compoundGate->body) {
-      if (auto barrierStatement =
+      if (auto const barrierStatement =
               std::dynamic_pointer_cast<BarrierStatement>(nestedGate);
           barrierStatement != nullptr) {
         std::vector<qc::Qubit> qubits{};
@@ -809,14 +810,14 @@ std::unique_ptr<qc::Operation> Importer::applyQuantumOperation(
                                barrierStatement->debugInfo);
         }
         op->emplace_back<qc::StandardOperation>(qubits, qc::Barrier);
-      } else if (auto resetStatement =
+      } else if (auto const resetStatement =
                      std::dynamic_pointer_cast<ResetStatement>(nestedGate);
                  resetStatement != nullptr) {
         std::vector<qc::Qubit> qubits{};
         translateGateOperand(resetStatement->gate, qubits, nestedQubits,
                              resetStatement->debugInfo);
         op->emplace_back<qc::NonUnitaryOperation>(qubits, qc::Reset);
-      } else if (auto gateCallStatement =
+      } else if (auto const gateCallStatement =
                      std::dynamic_pointer_cast<GateCallStatement>(nestedGate);
                  gateCallStatement != nullptr) {
         for (const auto& operand : gateCallStatement->operands) {
@@ -957,7 +958,8 @@ std::unique_ptr<qc::Operation> Importer::translateBlockOperations(
     const std::vector<std::shared_ptr<Statement>>& statements) {
   auto blockOps = std::make_unique<qc::CompoundOperation>();
   for (const auto& statement : statements) {
-    auto gateCall = std::dynamic_pointer_cast<GateCallStatement>(statement);
+    auto const gateCall =
+        std::dynamic_pointer_cast<GateCallStatement>(statement);
     if (gateCall == nullptr) {
       throw CompilerError("Only quantum statements are supported in blocks.",
                           statement->debugInfo);

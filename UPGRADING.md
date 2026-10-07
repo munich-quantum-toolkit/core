@@ -6,6 +6,36 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### C++ linting
+
+Install clang-tidy 23 to run `uvx nox -s cpp-lint` locally. The session checks
+files changed against `origin/v3.x`; pass `-- <base>` to select another base or
+`-- --all` to check all C++ files. Use a new `build/cpp-lint` directory if the
+existing one was configured with another compiler version.
+
+### DD package
+
+Rebuild C++ libraries and Python extensions that link to the DD package because
+its C++ ABI has changed.
+
+Use a positive normal floating-point value for
+`dd::ComplexNumbers::setTolerance`. The setter throws `std::invalid_argument`
+for zero, negative, subnormal, or non-finite values and is no longer `noexcept`.
+
+For code that uses the low-level storage interfaces:
+
+- Replace static calls to `dd::RealNumberUniqueTable::hash(value)` with calls on
+  the table instance, such as `table.hash(value)`.
+- Do not retain real-number bucket iterators across growth or tolerance changes.
+  Entry addresses remain valid until collection or reset.
+- Replace uses of the removed `dd::immortals` helper with calls to
+  `dd::ComplexNumbers::lookup` or `dd::RealNumberUniqueTable::lookup` to obtain
+  canonical numeric entries.
+- Custom unique-table capacities must be nonzero powers of two. Set
+  `DDPackageConfig::utMaxNumBucket` to at least both initial node-table
+  capacities. For fixed sizing, use equal initial and maximum capacities; direct
+  `UniqueTableConfig` users set `maxBuckets` equal to `nBuckets`.
+
 ## [3.10.1]
 
 ### CMake presets on Windows

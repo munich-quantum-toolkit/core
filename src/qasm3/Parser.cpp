@@ -296,7 +296,7 @@ void Parser::parseInclude() {
 
 std::shared_ptr<AssignmentStatement> Parser::parseAssignmentStatement() {
   const auto indexedIdentifierToken = current();
-  auto indexedIdentifier = parseIndexedIdentifier();
+  auto const indexedIdentifier = parseIndexedIdentifier();
   AssignmentStatement::Type type{};
   switch (current().kind) {
   case Token::Kind::Equals:
@@ -344,7 +344,7 @@ std::shared_ptr<AssignmentStatement> Parser::parseAssignmentStatement() {
 
   scan();
 
-  auto declarationExpression = parseDeclarationExpression();
+  auto const declarationExpression = parseDeclarationExpression();
 
   auto const tEnd = expect(Token::Kind::Semicolon);
 
@@ -356,11 +356,11 @@ std::shared_ptr<AssignmentStatement> Parser::parseAssignmentStatement() {
 std::shared_ptr<AssignmentStatement> Parser::parseMeasureStatement() {
   auto const tBegin = expect(Token::Kind::Measure);
 
-  auto gateOperand = parseGateOperand();
+  auto const gateOperand = parseGateOperand();
 
   expect(Token::Kind::Arrow);
 
-  auto cbitIdentifier = parseIndexedIdentifier();
+  auto const cbitIdentifier = parseIndexedIdentifier();
 
   auto const tEnd = expect(Token::Kind::Semicolon);
 
@@ -374,7 +374,7 @@ std::shared_ptr<AssignmentStatement> Parser::parseMeasureStatement() {
 std::shared_ptr<ResetStatement> Parser::parseResetStatement() {
   auto const tBegin = expect(Token::Kind::Reset);
 
-  auto operand = parseGateOperand();
+  auto const operand = parseGateOperand();
 
   auto const tEnd = expect(Token::Kind::Semicolon);
 
@@ -401,7 +401,7 @@ std::shared_ptr<BarrierStatement> Parser::parseBarrierStatement() {
 std::shared_ptr<IfStatement> Parser::parseIfStatement() {
   const auto tBegin = expect(Token::Kind::If);
   expect(Token::Kind::LParen, "after if keyword.");
-  auto condition = parseExpression();
+  auto const condition = parseExpression();
   expect(Token::Kind::RParen, "after if condition.");
 
   std::vector<std::shared_ptr<Statement>> const thenStatements =
@@ -416,9 +416,8 @@ std::shared_ptr<IfStatement> Parser::parseIfStatement() {
 
   const auto tEnd = last();
 
-  return std::make_shared<IfStatement>(std::move(condition), thenStatements,
-                                       elseStatements,
-                                       makeDebugInfo(tBegin, tEnd));
+  return std::make_shared<IfStatement>(
+      condition, thenStatements, elseStatements, makeDebugInfo(tBegin, tEnd));
 }
 
 std::vector<std::shared_ptr<Statement>> Parser::parseBlockOrStatement() {

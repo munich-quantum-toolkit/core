@@ -11,13 +11,12 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/Edge.hpp"
 #include "dd/Node.hpp"
+#include "nanobind/nanobind.h"
+#include "nanobind/ndarray.h"
+#include "nanobind/stl/complex.h" // NOLINT(misc-include-cleaner)
+#include "nanobind/stl/string.h"  // NOLINT(misc-include-cleaner)
+#include "nanobind/stl/vector.h"  // NOLINT(misc-include-cleaner)
 #include "register_dd_export.hpp"
-
-#include <nanobind/nanobind.h>
-#include <nanobind/ndarray.h>
-#include <nanobind/stl/complex.h> // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/string.h>  // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/vector.h>  // NOLINT(misc-include-cleaner)
 
 #include <complex>
 #include <cstddef>
@@ -48,17 +47,17 @@ Matrix getMatrix(const dd::mEdge& m, const size_t numQubits,
   }
 
   const auto dim = 1ULL << numQubits;
-  auto dataPtr = std::make_unique<std::complex<dd::fp>[]>(dim * dim);
+  auto dataPtr = std::make_unique<dd::CVec>(dim * dim);
   m.traverseMatrix(
       std::complex<dd::fp>{1., 0.}, 0ULL, 0ULL,
       [&dataPtr, dim](const std::size_t i, const std::size_t j,
                       const std::complex<dd::fp>& c) {
-        dataPtr[(i * dim) + j] = c;
+        (*dataPtr)[(i * dim) + j] = c;
       },
       numQubits, threshold);
-  auto* const data = dataPtr.get();
-  const nb::capsule owner(data, [](void* ptr) noexcept {
-    delete[] static_cast<std::complex<dd::fp>*>(ptr);
+  auto* const data = dataPtr->data();
+  const nb::capsule owner(dataPtr.get(), [](void* ptr) noexcept {
+    delete static_cast<dd::CVec*>(ptr);
   });
   [[maybe_unused]] const auto* const releasedDataPtr = dataPtr.release();
   return Matrix(data, {dim, dim}, owner);

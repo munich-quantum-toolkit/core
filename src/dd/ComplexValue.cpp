@@ -12,17 +12,18 @@
 
 #include "dd/DDDefinitions.hpp"
 #include "dd/RealNumber.hpp"
-#include "ir/Definitions.hpp"
 
 #include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <functional>
 #include <iomanip>
 #include <istream>
 #include <ostream>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <utility>
 
@@ -56,14 +57,26 @@ void ComplexValue::readBinary(std::istream& is) {
 }
 
 void ComplexValue::fromString(const std::string& realStr, std::string imagStr) {
-  r = realStr.empty() ? 0. : std::stod(realStr);
+  const auto parse = [](const std::string& text) {
+    try {
+      return std::stod(text);
+    } catch (const std::out_of_range&) {
+      /// stod may report underflow for a representable subnormal value.
+      const auto value = std::strtod(text.c_str(), nullptr);
+      if (std::fpclassify(value) == FP_SUBNORMAL) {
+        return value;
+      }
+      throw;
+    }
+  };
+  r = realStr.empty() ? 0. : parse(realStr);
 
   std::erase(imagStr, ' ');
   std::erase(imagStr, 'i');
   if (imagStr == "+" || imagStr == "-") {
     imagStr = imagStr + "1";
   }
-  i = imagStr.empty() ? 0. : std::stod(imagStr);
+  i = imagStr.empty() ? 0. : parse(imagStr);
 }
 
 std::pair<std::uint64_t, std::uint64_t>
@@ -76,9 +89,9 @@ ComplexValue::getLowestFraction(const fp x,
 
   while ((lowerBound.second <= maxDenominator) &&
          (upperBound.second <= maxDenominator)) {
-    auto num = lowerBound.first + upperBound.first;
-    auto den = lowerBound.second + upperBound.second;
-    auto median = static_cast<fp>(num) / static_cast<fp>(den);
+    auto const num = lowerBound.first + upperBound.first;
+    auto const den = lowerBound.second + upperBound.second;
+    auto const median = static_cast<fp>(num) / static_cast<fp>(den);
     if (std::abs(x - median) <= RealNumber::eps) {
       if (den <= maxDenominator) {
         return std::pair{num, den};
@@ -183,23 +196,25 @@ void ComplexValue::printFormatted(std::ostream& os, fp num, bool imaginary) {
 std::string ComplexValue::toString(const fp& real, const fp& imag,
                                    bool formatted, int precision) {
   std::ostringstream ss{};
+  const auto zero = [formatted](fp value) {
+    return formatted ? RealNumber::approximatelyZero(value) : value == 0.;
+  };
 
   if (precision >= 0) {
     ss << std::setprecision(precision);
   }
-  if (RealNumber::approximatelyZero(real) &&
-      RealNumber::approximatelyZero(imag)) {
+  if (zero(real) && zero(imag)) {
     return "0";
   }
 
-  if (!RealNumber::approximatelyZero(real)) {
+  if (!zero(real)) {
     if (formatted) {
       printFormatted(ss, real);
     } else {
       ss << real;
     }
   }
-  if (!RealNumber::approximatelyZero(imag)) {
+  if (!zero(imag)) {
     if (formatted) {
       if (RealNumber::approximatelyEquals(real, imag)) {
         ss << "(1+i)";
@@ -211,7 +226,7 @@ std::string ComplexValue::toString(const fp& real, const fp& imag,
       }
       printFormatted(ss, imag, true);
     } else {
-      if (RealNumber::approximatelyZero(real)) {
+      if (zero(real)) {
         ss << imag;
       } else {
         if (imag > 0.) {
@@ -280,6 +295,13 @@ ComplexValue operator/(const ComplexValue& c1, fp r) {
 }
 
 ComplexValue operator/(const ComplexValue& c1, const ComplexValue& c2) {
+  /// Avoid squaring a scalar denominator outside the squared floating range.
+  if (c2.i == 0.) {
+    return c1 / c2.r;
+  }
+  if (c2.r == 0.) {
+    return {c1.i / c2.i, -c1.r / c2.i};
+  }
   // Implements the CompDivT algorithm from
   // https://ens-lyon.hal.science/ensl-00734339v2
 
@@ -291,7 +313,6 @@ ComplexValue operator/(const ComplexValue& c1, const ComplexValue& c2) {
   const auto gr = kahan(c1.r, c1.i, c2.r, c2.i);
   // evaluates c1.i * c2.r - c1.r * c2.i
   const auto gi = kahan(c1.i, -c1.r, c2.r, c2.i);
-  // performs the division
   return {gr / d, gi / d};
 }
 
@@ -302,9 +323,9 @@ std::ostream& operator<<(std::ostream& os, const ComplexValue& c) {
 
 std::size_t std::hash<dd::ComplexValue>::operator()(
     const dd::ComplexValue& c) const noexcept {
-  const auto h1 = dd::murmur64(
-      static_cast<std::size_t>(std::round(c.r / dd::RealNumber::eps)));
-  const auto h2 = dd::murmur64(
-      static_cast<std::size_t>(std::round(c.i / dd::RealNumber::eps)));
-  return qc::combineHash(h1, h2);
+  const auto hashComponent = [](dd::fp value) {
+    const auto rounded = std::round(value / dd::RealNumber::eps);
+    return rounded == 0. ? size_t{0} : std::hash<dd::fp>{}(rounded);
+  };
+  return dd::combineHash(hashComponent(c.r), hashComponent(c.i));
 }

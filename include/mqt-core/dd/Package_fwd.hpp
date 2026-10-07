@@ -8,6 +8,9 @@
  * Licensed under the MIT License
  */
 
+/// @file Package_fwd.hpp
+/// Forward declarations and aliases for decision-diagram types.
+
 #pragma once
 
 #include "dd/Edge.hpp"

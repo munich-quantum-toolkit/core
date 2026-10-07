@@ -143,7 +143,7 @@ TEST(RemoveFinalMeasurements, removeFinalMeasurementsCompoundEmpty) {
   qc.removeFinalMeasurements();
   std::cout << "-----------------------------\n";
   qc.print(std::cout);
-  auto it = qc.begin();
+  auto const it = qc.begin();
   const auto& op = *it;
   EXPECT_TRUE(op->isStandardOperation());
   EXPECT_EQ(op->getType(), qc::H);

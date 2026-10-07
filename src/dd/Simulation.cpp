@@ -53,7 +53,7 @@ sample(const qc::QuantumComputation& qc, const VectorDD& in, Package& dd,
     std::array<std::mt19937_64::result_type, std::mt19937_64::state_size>
         randomData{};
     std::random_device rd;
-    std::ranges::generate(randomData, [&rd]() { return rd(); });
+    std::ranges::generate(randomData, [&rd] { return rd(); });
     std::seed_seq seeds(std::begin(randomData), std::end(randomData));
     mt.seed(seeds);
   }

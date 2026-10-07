@@ -397,7 +397,7 @@ auto QDMI_Device_impl_d::createJob(QDMI_Job* job) -> int {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   QDMI_Device_Job deviceJob = nullptr;
-  auto result =
+  auto const result =
       library_->device_session_create_device_job(deviceSession_, &deviceJob);
   if (result != QDMI_SUCCESS) {
     return result;
