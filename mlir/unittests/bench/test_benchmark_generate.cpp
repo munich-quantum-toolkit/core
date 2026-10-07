@@ -183,11 +183,11 @@ TEST(GenerateProgramTest, ExecutesRuntimePhasesThroughJeffAndAdaptiveQIR) {
 TEST(GenerateProgramTest, RoundTripsRuntimePhasesThroughOpenQASM) {
   for (auto method : {QPEMethod::Standard, QPEMethod::Iterative}) {
     /// Direct import cannot prove nested QFT indices for larger registers.
-    const size_t precision = method == QPEMethod::Standard ? 1U : 3U;
+    const size_t precision = method == QPEMethod::Standard ? 1U : 8U;
     const auto phase =
         method == QPEMethod::Standard
             ? Phase(uint64_t{1} << 63U, std::numeric_limits<uint64_t>::max())
-            : Phase(1, 3);
+            : Phase(3, 8);
     SCOPED_TRACE(static_cast<int>(method));
     SCOPED_TRACE(phase.numerator());
     const QPE benchmark{

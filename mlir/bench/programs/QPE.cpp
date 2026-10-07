@@ -133,12 +133,11 @@ iterativeQPE(qc::QCProgramBuilder& builder, const QPE& benchmark) {
       auto power = arith::SubIOp::create(builder, last, index);
       auto powerValue =
           arith::IndexCastOp::create(builder, builder.getI64Type(), power);
-      /// Both select operands execute, so even the unused shift must stay
-      /// below 64.
+      /// Keep the unused shift operand below 64 for large precisions.
       auto isLowPower = arith::CmpIOp::create(
           builder, arith::CmpIPredicate::ule, powerValue, shiftValue);
       auto boundedPower =
-          arith::SelectOp::create(builder, isLowPower, powerValue, shiftValue);
+          arith::AndIOp::create(builder, powerValue, builder.intConstant(63));
       auto lowWrap = arith::ShRUIOp::create(builder, wrapBits, boundedPower);
       auto highWrap = arith::ShRUIOp::create(builder, current, shiftValue);
       wrap = arith::SelectOp::create(builder, isLowPower, lowWrap, highWrap);
