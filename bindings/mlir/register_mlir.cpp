@@ -25,6 +25,11 @@
 
 #include "qiskit/Qiskit.h"
 
+#include "capnp/common.h"
+#include "capnp/message.h"
+#include "capnp/serialize.h"
+#include "kj/array.h"
+#include "kj/exception.h"
 #include "nanobind/nanobind.h"
 #include "nanobind/ndarray.h"
 #include "nanobind/stl/filesystem.h"
@@ -49,6 +54,7 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <exception>
 #include <filesystem>
 #include <limits>
@@ -91,6 +97,8 @@ static void translateRuntimeError(const std::exception_ptr& error,
 using DenseVector = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<1>,
                                 nb::c_contig, nb::device::cpu>;
 using DenseMatrix = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<2>,
+                                nb::c_contig, nb::device::cpu>;
+using JeffSegment = nb::ndarray<nb::memview, const uint8_t, nb::ndim<1>,
                                 nb::c_contig, nb::device::cpu>;
 
 using PythonCustomJobParameter =
@@ -1783,9 +1791,51 @@ Set ``copy=True`` to preserve it.)pb");
 ``jeff`` programs can be stored as bytes or files and converted back to QCO for
 further compilation.)pb");
   jeffProgram
-      .def_static("from_file",
-                  &OptionalFunctionAdapter<&mlir::JeffProgram::fromFile>::call,
-                  "path"_a, "Read a ``jeff`` program from a file.")
+      .def_static(
+          "from_segments",
+          [](const std::vector<JeffSegment>& segments) {
+            if (segments.empty()) {
+              throw nb::value_error("at least one jeff segment is required");
+            }
+            std::vector<kj::ArrayPtr<const capnp::word>> views;
+            std::vector<kj::Array<capnp::word>> aligned;
+            views.reserve(segments.size());
+            for (const auto& segment : segments) {
+              if (segment.size() % sizeof(capnp::word) != 0U) {
+                throw nb::value_error("jeff segment size must be a multiple of "
+                                      "the Cap'n Proto word size");
+              }
+              const auto size = segment.size() / sizeof(capnp::word);
+              const auto* data =
+                  reinterpret_cast<const capnp::word*>(segment.data());
+              if (reinterpret_cast<uintptr_t>(data) % alignof(capnp::word) !=
+                  0U) {
+                auto words = kj::heapArray<capnp::word>(size);
+                std::memcpy(words.begin(), segment.data(), segment.size());
+                data = words.begin();
+                aligned.push_back(std::move(words));
+              }
+              views.emplace_back(data, size);
+            }
+            std::optional<mlir::JeffProgram> program;
+            auto exception = kj::runCatchingExceptions([&] {
+              capnp::SegmentArrayMessageReader reader(
+                  kj::arrayPtr(views.data(), views.size()));
+              program = mlir::JeffProgram::fromMessage(
+                  reader.getRoot<::jeff::Module>());
+            });
+            KJ_IF_MAYBE (error, exception) {
+              throw std::runtime_error(error->getDescription().cStr());
+            }
+            return takeResult(std::move(program));
+          },
+          "segments"_a.noconvert(),
+          R"pb(Deserialize a ``jeff`` program from Cap'n Proto segments.
+
+Each segment must be a contiguous one-dimensional byte buffer whose size is a
+multiple of eight. Keep the buffers unchanged until this call returns. Aligned
+buffers are borrowed; unaligned buffers are copied into aligned storage. The
+returned program does not retain the buffers.)pb")
       .def_static(
           "from_bytes",
           [](const nb::bytes& bytes) {
@@ -1795,19 +1845,45 @@ further compilation.)pb");
             return takeResult(mlir::JeffProgram::fromBytes(view));
           },
           "data"_a, "Deserialize a ``jeff`` program from bytes.")
+      .def_static("from_file",
+                  &OptionalFunctionAdapter<&mlir::JeffProgram::fromFile>::call,
+                  "path"_a, "Read a ``jeff`` program from a file.")
       .def("copy", &copyProgram<mlir::JeffProgram>,
            "Return an independent copy of this program.")
       .def("cleanup", &BooleanMemberAdapter<&mlir::JeffProgram::cleanup>::call,
            "Run the standard ``jeff`` cleanup pipeline in place.")
       .def(
+          "to_segments",
+          [](const mlir::JeffProgram& value) {
+            requireValid(value);
+            auto message = std::make_unique<capnp::MallocMessageBuilder>();
+            value.toMessage(*message);
+            const nb::capsule owner(message.get(), [](void* pointer) noexcept {
+              delete static_cast<capnp::MallocMessageBuilder*>(pointer);
+            });
+            auto* builder = message.release();
+            std::vector<JeffSegment> result;
+            for (auto segment : builder->getSegmentsForOutput()) {
+              const auto bytes = segment.asBytes();
+              result.push_back(
+                  JeffSegment(reinterpret_cast<const uint8_t*>(bytes.begin()),
+                              {bytes.size()}, owner));
+            }
+            return result;
+          },
+          R"pb(Serialize this program into read-only Cap'n Proto segment views.
+
+The views keep their message storage alive independently of this program. No
+segment data is copied or flattened.)pb")
+      .def(
           "to_bytes",
           [](const mlir::JeffProgram& value) {
             requireValid(value);
-            const auto bytes = value.toBytes();
-            if (bytes.empty()) {
-              throw std::runtime_error("failed to serialize jeff program");
-            }
-            return nb::bytes(bytes.data(), bytes.size());
+            capnp::MallocMessageBuilder message;
+            value.toMessage(message);
+            const auto serialized = capnp::messageToFlatArray(message);
+            const auto bytes = serialized.asBytes();
+            return nb::bytes(bytes.begin(), bytes.size());
           },
           "Serialize this program to its ``jeff`` byte representation.")
       .def("write", &BooleanMemberAdapter<&mlir::JeffProgram::write>::call,

@@ -1076,18 +1076,37 @@ class JeffProgram(Program):
     """
 
     @staticmethod
-    def from_file(path: str | os.PathLike) -> JeffProgram:
-        """Read a ``jeff`` program from a file."""
+    def from_segments(
+        segments: Sequence[bytes | bytearray | memoryview | np.ndarray],
+    ) -> JeffProgram:
+        """Deserialize a ``jeff`` program from Cap'n Proto segments.
+
+        Each segment must be a contiguous one-dimensional byte buffer whose size is a
+        multiple of eight. Keep the buffers unchanged until this call returns. Aligned
+        buffers are borrowed; unaligned buffers are copied into aligned storage. The
+        returned program does not retain the buffers.
+        """
 
     @staticmethod
     def from_bytes(data: bytes) -> JeffProgram:
         """Deserialize a ``jeff`` program from bytes."""
+
+    @staticmethod
+    def from_file(path: str | os.PathLike) -> JeffProgram:
+        """Read a ``jeff`` program from a file."""
 
     def copy(self) -> JeffProgram:
         """Return an independent copy of this program."""
 
     def cleanup(self) -> None:
         """Run the standard ``jeff`` cleanup pipeline in place."""
+
+    def to_segments(self) -> list[memoryview]:
+        """Serialize this program into read-only Cap'n Proto segment views.
+
+        The views keep their message storage alive independently of this program. No
+        segment data is copied or flattened.
+        """
 
     def to_bytes(self) -> bytes:
         """Serialize this program to its ``jeff`` byte representation."""

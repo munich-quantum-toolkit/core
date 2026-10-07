@@ -1,3 +1,15 @@
+mqt\.core\.mlir\.JeffProgram\.from_segments$:
+    \from collections.abc import Sequence
+    @staticmethod
+    def from_segments(
+        segments: Sequence[bytes | bytearray | memoryview | np.ndarray],
+    ) -> JeffProgram:
+        \doc
+
+mqt\.core\.mlir\.JeffProgram\.to_segments$:
+    def to_segments(self) -> list[memoryview]:
+        \doc
+
 mqt\.core\.qdmi\.(?:Job|Device|Device\.Site)\.query_custom_property$:
     \from typing import overload
     @overload
