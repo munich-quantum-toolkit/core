@@ -21,6 +21,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <new>
 #include <numbers>
 #include <optional>
@@ -922,6 +923,28 @@ c = measure q;)";
   EXPECT_EQ(job.getNumShots(), 100);
   EXPECT_TRUE(job.wait());
   EXPECT_EQ(job.check(), QDMI_JOB_STATUS_DONE);
+}
+
+TEST_F(DDSimulatorDeviceTest, IndexedProgramsKeepTheirResults) {
+  const std::array<std::string, 2> programs{
+      "OPENQASM 3.0; qubit[1] q; bit[1] c; c[0] = measure q[0];",
+      "OPENQASM 3.0; include \"stdgates.inc\"; qubit[1] q; bit[1] c; x "
+      "q[0]; c[0] = measure q[0];",
+  };
+  const auto job =
+      device.submitPrograms(programs, QDMI_PROGRAM_FORMAT_QASM3, 4);
+
+  ASSERT_TRUE(job.wait());
+  EXPECT_EQ(job.getNumPrograms(), programs.size());
+  EXPECT_EQ(job.getProgram(0), programs[0]);
+  EXPECT_EQ(job.getProgram(1), programs[1]);
+  EXPECT_EQ(job.getProgramStatus(0), QDMI_JOB_STATUS_DONE);
+  EXPECT_EQ(job.getProgramStatus(1), QDMI_JOB_STATUS_DONE);
+  EXPECT_EQ(job.getCounts(0), (std::map<std::string, size_t>{{"0", 4}}));
+  EXPECT_EQ(job.getCounts(1), (std::map<std::string, size_t>{{"1", 4}}));
+  EXPECT_NE(job.getResults(QDMI_JOB_RESULT_SHOTS, 0),
+            job.getResults(QDMI_JOB_RESULT_SHOTS, 1));
+  EXPECT_THROW(job.getProgramStatus(2), std::out_of_range);
 }
 
 TEST_F(DDSimulatorDeviceTest, SubmitJobRejectsIncompatiblePayloadKinds) {
