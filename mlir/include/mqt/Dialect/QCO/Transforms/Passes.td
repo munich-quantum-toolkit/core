@@ -151,6 +151,25 @@ def LegalizeControlFlow : Pass<"legalize-control-flow", "mlir::ModuleOp"> {
 // Transpilation Passes
 //===----------------------------------------------------------------------===//
 
+def ElidePermutations : Pass<"elide-permutations", "mlir::ModuleOp"> {
+  let summary = "Elide virtual SWAPs in measured circuits before placement";
+  let description = [{
+    Removes unconditional top-level SWAPs from a straight-line entry function
+    by permuting its SSA wires. The function must return classical-bit registers.
+    All qubits must be dynamically allocated in the entry function and end in
+    measurement followed by disposal. Disposal must follow the last quantum
+    operation. Tensor slots must be static, extracted before insertion, and
+    reinserted only for final deallocation. The pass preserves tensor-slot
+    identity and classical results.
+
+    Run after inlining, loop specialization, and cleanup, before fusion and
+    placement.
+    Unitary modifiers are treated as opaque gates; SWAPs inside them remain.
+    Functions with physical qubits, live quantum outputs, structured control
+    flow, or unsupported tensor lifetimes remain unchanged.
+  }];
+}
+
 def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect"];
   let summary = "Place and route a program for an explicit target topology";
