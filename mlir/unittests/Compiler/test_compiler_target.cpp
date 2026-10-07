@@ -524,7 +524,7 @@ TEST(CompilerTargetTest, CanonicalizesConnectedTopologyAndCachesDistances) {
   EXPECT_EQ(neighbours, (std::vector<size_t>{0, 2}));
 }
 
-TEST(CompilerTargetTest, MotifsShareCacheAndAllowChords) {
+TEST(CompilerTargetTest, TopologyPatternsShareCacheAndAllowChords) {
   const auto target = valid(Target::create(
       std::vector{
           valid(Site::create(7)),
@@ -535,20 +535,20 @@ TEST(CompilerTargetTest, MotifsShareCacheAndAllowChords) {
       Connectivity::fromCouplings(
           {{7, 2}, {2, 11}, {11, 4}, {4, 7}, {7, 11}, {2, 7}}),
       NativeOperations::unrestricted()));
-  auto first =
-      std::async(std::launch::async, [target] { return target.motifs(); });
-  auto second =
-      std::async(std::launch::async, [target] { return target.motifs(); });
-  auto motifs = first.get();
-  ASSERT_TRUE(motifs.has_value());
-  ASSERT_EQ(motifs->size(), 3);
-  const auto& cycles = motifs->front();
-  EXPECT_EQ(cycles.type(), Target::Motifs::Type::FourCycle);
+  auto first = std::async(std::launch::async,
+                          [target] { return target.topologyPatterns(); });
+  auto second = std::async(std::launch::async,
+                           [target] { return target.topologyPatterns(); });
+  auto topologyPatterns = first.get();
+  ASSERT_TRUE(topologyPatterns.has_value());
+  ASSERT_EQ(topologyPatterns->size(), 3);
+  const auto& cycles = topologyPatterns->front();
+  EXPECT_EQ(cycles.type(), Target::TopologyPatterns::Type::FourCycle);
   EXPECT_EQ(cycles.arity(), 4);
   ASSERT_EQ(cycles.size(), 1);
   EXPECT_EQ(cycles[0], (llvm::ArrayRef<size_t>{0, 1, 2, 3}));
-  const auto& pairs = (*motifs)[1];
-  EXPECT_EQ(pairs.type(), Target::Motifs::Type::QubitPair);
+  const auto& pairs = (*topologyPatterns)[1];
+  EXPECT_EQ(pairs.type(), Target::TopologyPatterns::Type::QubitPair);
   EXPECT_EQ(pairs.arity(), 2);
   const std::array<std::array<size_t, 2>, 5> expectedPairs{
       {
@@ -563,22 +563,22 @@ TEST(CompilerTargetTest, MotifsShareCacheAndAllowChords) {
   for (size_t i = 0; i < pairs.size(); ++i) {
     EXPECT_EQ(pairs[i], llvm::ArrayRef<size_t>(expectedPairs[i]));
   }
-  const auto& stars = (*motifs)[2];
-  EXPECT_EQ(stars.type(), Target::Motifs::Type::Star);
+  const auto& stars = (*topologyPatterns)[2];
+  EXPECT_EQ(stars.type(), Target::TopologyPatterns::Type::Star);
   EXPECT_EQ(stars.arity(), 4);
   ASSERT_EQ(stars.size(), 2);
   EXPECT_EQ(stars[0], (llvm::ArrayRef<size_t>{0, 1, 2, 3}));
   EXPECT_EQ(stars[1], (llvm::ArrayRef<size_t>{2, 0, 1, 3}));
   auto shared = second.get();
   ASSERT_TRUE(shared.has_value());
-  EXPECT_EQ(motifs->data(), shared->data());
-  EXPECT_EQ(motifs->data(), target.motifs()->data());
+  EXPECT_EQ(topologyPatterns->data(), shared->data());
+  EXPECT_EQ(topologyPatterns->data(), target.topologyPatterns()->data());
   const auto complete = valid(Target::create(1000, Connectivity::allToAll(),
                                              NativeOperations::unrestricted()));
-  EXPECT_FALSE(complete.motifs().has_value());
+  EXPECT_FALSE(complete.topologyPatterns().has_value());
   const auto single = valid(Target::create(1, Connectivity::fromCouplings({}),
                                            NativeOperations::unrestricted()));
-  auto empty = single.motifs();
+  auto empty = single.topologyPatterns();
   ASSERT_TRUE(empty.has_value());
   ASSERT_EQ(empty->size(), 3);
   EXPECT_EQ(empty->front().size(), 0);
@@ -586,7 +586,7 @@ TEST(CompilerTargetTest, MotifsShareCacheAndAllowChords) {
   EXPECT_EQ((*empty)[2].size(), 0);
 }
 
-TEST(CompilerTargetTest, MotifsMatchExhaustiveFiveVertexOracle) {
+TEST(CompilerTargetTest, TopologyPatternsMatchExhaustiveFiveVertexOracle) {
   constexpr size_t n = 5;
   size_t connected = 0;
   for (unsigned mask = 0; mask < (1U << 10U); ++mask) {
@@ -621,17 +621,17 @@ TEST(CompilerTargetTest, MotifsMatchExhaustiveFiveVertexOracle) {
         }
       }
     }
-    auto motifs = target->motifs();
-    ASSERT_TRUE(motifs.has_value());
-    ASSERT_EQ(motifs->size(), 3);
-    const auto& pairs = (*motifs)[1];
+    auto topologyPatterns = target->topologyPatterns();
+    ASSERT_TRUE(topologyPatterns.has_value());
+    ASSERT_EQ(topologyPatterns->size(), 3);
+    const auto& pairs = (*topologyPatterns)[1];
     ASSERT_EQ(pairs.size(), edges.size());
     for (size_t i = 0; i < edges.size(); ++i) {
       EXPECT_EQ(pairs[i],
                 (llvm::ArrayRef<size_t>{static_cast<size_t>(edges[i].first),
                                         static_cast<size_t>(edges[i].second)}));
     }
-    const auto& cycles = motifs->front();
+    const auto& cycles = topologyPatterns->front();
     std::vector<std::array<size_t, 4>> actual;
     for (size_t i = 0; i < cycles.size(); ++i) {
       auto row = cycles[i];
@@ -654,7 +654,7 @@ TEST(CompilerTargetTest, MotifsMatchExhaustiveFiveVertexOracle) {
         }
       }
     }
-    const auto& stars = (*motifs)[2];
+    const auto& stars = (*topologyPatterns)[2];
     ASSERT_EQ(stars.size(), expectedStars.size()) << "graph mask: " << mask;
     for (size_t i = 0; i < stars.size(); ++i) {
       EXPECT_EQ(stars[i], llvm::ArrayRef<size_t>(expectedStars[i]))

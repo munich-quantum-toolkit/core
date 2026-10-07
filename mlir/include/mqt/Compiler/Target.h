@@ -45,8 +45,8 @@ public:
   using SiteId = int64_t;
   using Coupling = std::pair<SiteId, SiteId>;
 
-  /// Topology motifs grouped by type, independent of native gate support.
-  class Motifs {
+  /// Topology patterns grouped by type, independent of native gate support.
+  class TopologyPatterns {
   public:
     enum class Type : uint8_t { FourCycle, QubitPair, Star };
 
@@ -54,7 +54,8 @@ public:
     /// allocation.
     class Group {
     public:
-      /// Return the motif type shared by all occurrences in this group.
+      /// Return the topology pattern type shared by all occurrences in this
+      /// group.
       [[nodiscard]] Type type() const noexcept;
       /// Return the number of vertices per occurrence (four for a four-cycle).
       [[nodiscard]] size_t arity() const noexcept;
@@ -461,12 +462,13 @@ public:
   /// sorted neighbors; edges between those neighbors are allowed.
   /// No architecture classification is performed.
   ///
-  /// All-to-all connectivity returns nullopt, representing motifs implicitly.
-  /// Explicit topologies retain a group for each selected type, even if empty.
-  /// They enumerate lazily, with storage proportional to the number of
-  /// cycles. The thread-safe cache is shared by copies; the returned view stays
-  /// valid while any copy of this target lives.
-  [[nodiscard]] std::optional<llvm::ArrayRef<Motifs::Group>> motifs() const;
+  /// All-to-all connectivity returns nullopt, representing topology patterns
+  /// implicitly. Explicit topologies retain a group for each selected type,
+  /// even if empty. They enumerate lazily, with storage proportional to the
+  /// number of cycles. The thread-safe cache is shared by copies; the returned
+  /// view stays valid while any copy of this target lives.
+  [[nodiscard]] std::optional<llvm::ArrayRef<TopologyPatterns::Group>>
+  topologyPatterns() const;
 
   /// Return whether two valid dense compiler vertices are adjacent.
   [[nodiscard]] bool areAdjacent(size_t source, size_t target) const;

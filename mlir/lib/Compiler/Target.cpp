@@ -630,8 +630,8 @@ struct CompilerTarget::Storage {
   SmallVector<SmallVector<size_t, 4>> adjacency;
   mutable SmallVector<size_t> distances;
   mutable std::once_flag distancesOnce;
-  mutable SmallVector<Motifs::Group, 0> motifs;
-  mutable std::once_flag motifsOnce;
+  mutable SmallVector<TopologyPatterns::Group, 0> topologyPatterns;
+  mutable std::once_flag topologyPatternsOnce;
   size_t maximumDegree = 0;
   NativeOperations::Kind nativeOperationsKind;
   SmallVector<OperationCapability> operations;
@@ -1298,34 +1298,37 @@ ArrayRef<CompilerTarget::Coupling> CompilerTarget::couplings() const noexcept {
   return storage_->couplings;
 }
 
-CompilerTarget::Motifs::Group::Group(Type type, size_t arity)
+CompilerTarget::TopologyPatterns::Group::Group(Type type, size_t arity)
     : type_(type), arity_(arity) {}
 
-CompilerTarget::Motifs::Type
-CompilerTarget::Motifs::Group::type() const noexcept {
+CompilerTarget::TopologyPatterns::Type
+CompilerTarget::TopologyPatterns::Group::type() const noexcept {
   return type_;
 }
 
-size_t CompilerTarget::Motifs::Group::arity() const noexcept { return arity_; }
+size_t CompilerTarget::TopologyPatterns::Group::arity() const noexcept {
+  return arity_;
+}
 
-size_t CompilerTarget::Motifs::Group::size() const noexcept {
+size_t CompilerTarget::TopologyPatterns::Group::size() const noexcept {
   return vertices_.size() / arity_;
 }
 
-ArrayRef<size_t> CompilerTarget::Motifs::Group::operator[](size_t index) const {
-  assert(index < size() && "Motif occurrence index is out of range");
+ArrayRef<size_t>
+CompilerTarget::TopologyPatterns::Group::operator[](size_t index) const {
+  assert(index < size() && "Topology pattern occurrence index is out of range");
   return ArrayRef<size_t>(vertices_).slice(index * arity_, arity_);
 }
 
-std::optional<ArrayRef<CompilerTarget::Motifs::Group>>
-CompilerTarget::motifs() const {
+std::optional<ArrayRef<CompilerTarget::TopologyPatterns::Group>>
+CompilerTarget::topologyPatterns() const {
   if (connectivityKind() == Connectivity::Kind::AllToAll) {
     return std::nullopt;
   }
-  std::call_once(storage_->motifsOnce, [&] {
-    Motifs::Group cycles(Motifs::Type::FourCycle, 4);
-    Motifs::Group pairs(Motifs::Type::QubitPair, 2);
-    Motifs::Group stars(Motifs::Type::Star, 4);
+  std::call_once(storage_->topologyPatternsOnce, [&] {
+    TopologyPatterns::Group cycles(TopologyPatterns::Type::FourCycle, 4);
+    TopologyPatterns::Group pairs(TopologyPatterns::Type::QubitPair, 2);
+    TopologyPatterns::Group stars(TopologyPatterns::Type::Star, 4);
     const auto& adjacency = storage_->adjacency;
     for (size_t a = 0; a < numSites(); ++a) {
       const auto& neighbours = adjacency[a];
@@ -1366,13 +1369,13 @@ CompilerTarget::motifs() const {
         }
       }
     }
-    SmallVector<Motifs::Group, 0> groups;
+    SmallVector<TopologyPatterns::Group, 0> groups;
     groups.push_back(std::move(cycles));
     groups.push_back(std::move(pairs));
     groups.push_back(std::move(stars));
-    storage_->motifs = std::move(groups);
+    storage_->topologyPatterns = std::move(groups);
   });
-  return ArrayRef<Motifs::Group>(storage_->motifs);
+  return ArrayRef<TopologyPatterns::Group>(storage_->topologyPatterns);
 }
 
 bool CompilerTarget::areAdjacent(size_t source, size_t target) const {
