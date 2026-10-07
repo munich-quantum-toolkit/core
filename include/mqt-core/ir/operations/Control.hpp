@@ -52,7 +52,7 @@ struct Control {
   }
 
   // Explicitly allow implicit conversion from `Qubit` to `Control`
-  // NOLINTBEGIN(google-explicit-constructor)
+  // NOLINTBEGIN(misc-explicit-constructor)
   /**
    * @brief Construct a control qubit.
    * @param q The qubit that acts as a control.
@@ -61,7 +61,7 @@ struct Control {
    *       `Qubit` to `Control`.
    */
   Control(const Qubit q = {}, const Type t = Type::Pos) : qubit(q), type(t) {}
-  // NOLINTEND(google-explicit-constructor)
+  // NOLINTEND(misc-explicit-constructor)
 };
 
 /// Defines the order of controls based on their qubit index and type.

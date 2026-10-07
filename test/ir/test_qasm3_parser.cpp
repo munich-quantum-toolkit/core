@@ -618,8 +618,12 @@ TEST_F(Qasm3ParserTest, ImportQasm3EmptyIfElse) {
 }
 
 TEST_F(Qasm3ParserTest, ImportQasm3UnsupportedSingleBitIfStatement) {
-  const auto comparisonKinds = {ComparisonKind::Lt, ComparisonKind::Leq,
-                                ComparisonKind::Gt, ComparisonKind::Geq};
+  const auto comparisonKinds = {
+      ComparisonKind::Lt,
+      ComparisonKind::Leq,
+      ComparisonKind::Gt,
+      ComparisonKind::Geq,
+  };
 
   for (const auto comparisonKind : comparisonKinds) {
     const std::string testfile = "OPENQASM 3.0;\n"
@@ -941,7 +945,7 @@ TEST_F(Qasm3ParserTest, ImportMQTBenchCircuit) {
     measure eval[0] -> meas[0];
     measure q[0] -> meas[1];
   )";
-  auto qc = qasm3::Importer::imports(qasm);
+  auto const qc = qasm3::Importer::imports(qasm);
 
   const std::string out = qc.toQASM();
   const std::string expected = "// i 0 1\n"
@@ -1125,7 +1129,7 @@ TEST_F(Qasm3ParserTest, ImportQasmScanner) {
   qasm3::Scanner scanner(&ss);
 
   for (const auto& expected : tokens) {
-    auto token = scanner.next();
+    auto const token = scanner.next();
     EXPECT_EQ(token.kind, expected);
   }
 }
@@ -2273,6 +2277,20 @@ TEST_F(Qasm3ParserTest, TestConstEval) {
 
       // integer signed
       std::pair{std::make_shared<qasm3::BinaryExpression>(
+                    qasm3::BinaryExpression::Op::LeftShift,
+                    std::make_shared<qasm3::Constant>(-2, true),
+                    std::make_shared<qasm3::Constant>(1, true)),
+                qasm3::const_eval::ConstEvalValue(-4, true)},
+      std::pair{std::make_shared<qasm3::BinaryExpression>(
+                    qasm3::BinaryExpression::Op::RightShift,
+                    std::make_shared<qasm3::Constant>(-4, true),
+                    std::make_shared<qasm3::Constant>(1, true)),
+                qasm3::const_eval::ConstEvalValue(-2, true)},
+      std::pair{std::make_shared<qasm3::UnaryExpression>(
+                    qasm3::UnaryExpression::Op::BitwiseNot,
+                    std::make_shared<qasm3::Constant>(1, true)),
+                qasm3::const_eval::ConstEvalValue(-2, true)},
+      std::pair{std::make_shared<qasm3::BinaryExpression>(
                     qasm3::BinaryExpression::Op::Power,
                     std::make_shared<qasm3::Constant>(2, true),
                     std::make_shared<qasm3::Constant>(2, true)),
@@ -2530,7 +2548,7 @@ TEST_F(Qasm3ParserTest, TestConstEval) {
   };
 
   for (const auto& [expr, expected] : inputs) {
-    auto result = constEvalPass.visit(expr);
+    auto const result = constEvalPass.visit(expr);
     EXPECT_TRUE(result.has_value());
     EXPECT_EQ(result, expected);
   }

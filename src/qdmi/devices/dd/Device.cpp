@@ -70,7 +70,11 @@ constexpr std::array OPERATIONS{
     OperationInfo{.name = "cx", .numSites = 2, .numParams = 0},
     OperationInfo{.name = "ccx", .numSites = 3, .numParams = 0},
     OperationInfo{
-        .name = "mcx", .numSites = 0, .numParams = 0, .isVariadic = true},
+        .name = "mcx",
+        .numSites = 0,
+        .numParams = 0,
+        .isVariadic = true,
+    },
     OperationInfo{.name = "y", .numSites = 1, .numParams = 0},
     OperationInfo{.name = "cy", .numSites = 2, .numParams = 0},
     OperationInfo{.name = "z", .numSites = 1, .numParams = 0},
@@ -97,7 +101,11 @@ constexpr std::array OPERATIONS{
     OperationInfo{.name = "p", .numSites = 1, .numParams = 1},
     OperationInfo{.name = "cp", .numSites = 2, .numParams = 1},
     OperationInfo{
-        .name = "mcp", .numSites = 0, .numParams = 1, .isVariadic = true},
+        .name = "mcp",
+        .numSites = 0,
+        .numParams = 1,
+        .isVariadic = true,
+    },
     OperationInfo{.name = "u1", .numSites = 1, .numParams = 1},
     OperationInfo{.name = "cu1", .numSites = 2, .numParams = 1},
     OperationInfo{.name = "u2", .numSites = 1, .numParams = 2},
@@ -119,9 +127,18 @@ constexpr std::array OPERATIONS{
     OperationInfo{.name = "measure", .numSites = 1, .numParams = 0},
     OperationInfo{.name = "reset", .numSites = 1, .numParams = 0},
     OperationInfo{
-        .name = "barrier", .numSites = 0, .numParams = 0, .isVariadic = true},
+        .name = "barrier",
+        .numSites = 0,
+        .numParams = 0,
+        .isVariadic = true,
+    },
     OperationInfo{
-        .name = "if_else", .numSites = 0, .numParams = 0, .isVariadic = true}};
+        .name = "if_else",
+        .numSites = 0,
+        .numParams = 0,
+        .isVariadic = true,
+    },
+};
 
 template <std::size_t N>
 constexpr std::array<const OperationInfo*, N>
@@ -134,8 +151,10 @@ makeOperationAddresses(const std::array<OperationInfo, N>& ops) {
 }
 constexpr auto OPERATION_ADDRESSES = makeOperationAddresses(OPERATIONS);
 
-constexpr std::array SUPPORTED_PROGRAM_FORMATS = {QDMI_PROGRAM_FORMAT_QASM2,
-                                                  QDMI_PROGRAM_FORMAT_QASM3};
+constexpr std::array SUPPORTED_PROGRAM_FORMATS = {
+    QDMI_PROGRAM_FORMAT_QASM2,
+    QDMI_PROGRAM_FORMAT_QASM3,
+};
 
 [[nodiscard]] auto reportEmptyResult(size_t* sizeRet) -> QDMI_STATUS {
   if (sizeRet != nullptr) {
@@ -313,19 +332,19 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::queryOperationProperty(
       IS_INVALID_ARGUMENT(prop, QDMI_OPERATION_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  const auto& [name_, numSites_, numParams_, isVariadic] =
-      *reinterpret_cast<const OperationInfo*>(operation);
-  ADD_STRING_PROPERTY(QDMI_OPERATION_PROPERTY_NAME, name_, prop, size, value,
-                      sizeRet)
+  const auto& [operationName, operationNumSites, operationNumParams,
+               isVariadic] = *reinterpret_cast<const OperationInfo*>(operation);
+  ADD_STRING_PROPERTY(QDMI_OPERATION_PROPERTY_NAME, operationName, prop, size,
+                      value, sizeRet)
   if (!isVariadic) {
-    if (sites != nullptr && numSites_ != numSites) {
+    if (sites != nullptr && operationNumSites != numSites) {
       return QDMI_ERROR_INVALIDARGUMENT;
     }
     ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_QUBITSNUM, size_t,
-                              numSites_, prop, size, value, sizeRet)
+                              operationNumSites, prop, size, value, sizeRet)
   }
   ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_PARAMETERSNUM, size_t,
-                            numParams_, prop, size, value, sizeRet)
+                            operationNumParams, prop, size, value, sizeRet)
   ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_FIDELITY, double, 1.0, prop,
                             size, value, sizeRet)
   return QDMI_ERROR_NOTSUPPORTED;
@@ -407,7 +426,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::queryProperty(
 }
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitProgramAsync(
     std::function<void()> body) -> QDMI_STATUS {
-  jobHandle_ = std::async(std::launch::async, [this, body = std::move(body)]() {
+  jobHandle_ = std::async(std::launch::async, [this, body = std::move(body)] {
     qdmi::dd::Device::get().increaseRunningJobs();
     status_.store(QDMI_JOB_STATUS_RUNNING);
     try {
@@ -423,14 +442,14 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitProgramAsync(
 }
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQASMProgramSampling()
     -> QDMI_STATUS {
-  return submitProgramAsync([this]() {
+  return submitProgramAsync([this] {
     const auto qc = qasm3::Importer::imports(program_);
     counts_ = dd::sample(qc, numShots_, 0U, &shots_);
   });
 }
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQASMProgramStateExtraction()
     -> QDMI_STATUS {
-  return submitProgramAsync([this]() {
+  return submitProgramAsync([this] {
     auto qc = qasm3::Importer::imports(program_);
     qc.removeFinalMeasurements();
     const auto nQubits = qc.getNqubits();
@@ -562,6 +581,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getHistogram(
       if (size < reqSize) {
         return QDMI_ERROR_INVALIDARGUMENT;
       }
+      // NOLINTNEXTLINE(misc-const-correctness): fills a mutable output buffer.
       auto* dataPtr = static_cast<size_t*>(data);
       for (const auto& count : counts_ | std::views::values) {
         // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
@@ -579,7 +599,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getStateVector(const size_t size,
     return reportEmptyResult(sizeRet);
   }
   std::call_once(stateVecOnce_,
-                 [this]() { stateVec_ = stateVecDD_.getVector(); });
+                 [this] { stateVec_ = stateVecDD_.getVector(); });
   const size_t reqSize = stateVec_.size() * 2 * sizeof(double);
   if (data != nullptr) {
     if (size < reqSize) {
@@ -599,7 +619,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getSparseResults(
     return reportEmptyResult(sizeRet);
   }
   std::call_once(stateVecSparseOnce_,
-                 [this]() { stateVecSparse_ = stateVecDD_.getSparseVector(); });
+                 [this] { stateVecSparse_ = stateVecDD_.getSparseVector(); });
   const size_t numQubits = static_cast<size_t>(stateVecDD_.p->v) + 1U;
   switch (result) {
   case QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS:
@@ -634,6 +654,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getSparseResults(
       if (size < reqSize) {
         return QDMI_ERROR_INVALIDARGUMENT;
       }
+      // NOLINTNEXTLINE(misc-const-correctness): fills a mutable output buffer.
       auto* dataPtr = static_cast<double*>(data);
       for (const auto& c : stateVecSparse_ | std::views::values) {
         // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
@@ -654,6 +675,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getSparseResults(
       if (size < reqSize) {
         return QDMI_ERROR_INVALIDARGUMENT;
       }
+      // NOLINTNEXTLINE(misc-const-correctness): fills a mutable output buffer.
       auto* dataPtr = static_cast<double*>(data);
       for (const auto& c : stateVecSparse_ | std::views::values) {
         // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
@@ -682,6 +704,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getProbabilities(const size_t size,
     if (size < reqSize) {
       return QDMI_ERROR_INVALIDARGUMENT;
     }
+    // NOLINTNEXTLINE(misc-const-correctness): fills a mutable output buffer.
     auto* dataPtr = static_cast<double*>(data);
     for (const auto& c : stateVec_) {
       // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
@@ -783,8 +806,7 @@ int MQT_DDSIM_QDMI_device_session_create_device_job(
 
 int MQT_DDSIM_QDMI_device_session_retrieve_device_job_by_id(
     [[maybe_unused]] MQT_DDSIM_QDMI_Device_Session session,
-    [[maybe_unused]] const char* jobId,
-    [[maybe_unused]] MQT_DDSIM_QDMI_Device_Job* job) {
+    [[maybe_unused]] const char* jobId, MQT_DDSIM_QDMI_Device_Job* /*job*/) {
   return QDMI_ERROR_NOTSUPPORTED;
 }
 

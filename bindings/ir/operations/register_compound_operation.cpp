@@ -37,7 +37,7 @@ using SizeType = std::vector<std::unique_ptr<qc::Operation>>::size_type;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerCompoundOperation(const nb::module_& m) {
-  auto wrap = [](DiffType i, const SizeType size) {
+  auto const wrap = [](DiffType i, const SizeType size) {
     if (i < 0) {
       i += static_cast<DiffType>(size);
     }
@@ -104,8 +104,8 @@ Returns:
             auto ops = std::vector<qc::Operation*>();
             ops.reserve(sliceLength);
             for (std::size_t i = 0; i < sliceLength; ++i) {
-              auto idx = static_cast<DiffType>(start) +
-                         (static_cast<DiffType>(i) * step);
+              auto const idx = static_cast<DiffType>(start) +
+                               (static_cast<DiffType>(i) * step);
               ops.emplace_back(op.at(static_cast<SizeType>(idx)).get());
             }
             return ops;

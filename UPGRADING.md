@@ -6,6 +6,13 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### C++ linting
+
+Install clang-tidy 23 to run `uvx nox -s cpp-lint` locally. The session checks
+files changed against `origin/v3.x`; pass `-- <base>` to select another base or
+`-- --all` to check all C++ files. Use a new `build/cpp-lint` directory if the
+existing one was configured with another compiler version.
+
 ### DD package
 
 Rebuild C++ libraries and Python extensions that link to the DD package because

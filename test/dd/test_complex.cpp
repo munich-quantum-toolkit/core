@@ -206,8 +206,9 @@ TEST_F(CNTest, ToleranceChangesPreserveNearestLookup) {
         expected = &constants::sqrt2over2;
       } else {
         auto distance = tolerance;
-        for (auto* head : ut.getTable()) {
-          for (auto* entry = head; entry != nullptr; entry = entry->next()) {
+        for (auto const* head : ut.getTable()) {
+          for (auto const* entry = head; entry != nullptr;
+               entry = entry->next()) {
             const auto difference = std::abs(entry->value - value);
             if (difference <= distance &&
                 (expected == nullptr || difference < distance ||

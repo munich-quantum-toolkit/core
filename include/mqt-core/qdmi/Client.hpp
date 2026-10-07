@@ -494,7 +494,7 @@ static_assert(std::is_move_assignable<Session>());
  */
 class Device {
 public:
-  // NOLINTNEXTLINE(google-explicit-constructor, *-explicit-conversions)
+  // NOLINTNEXTLINE(misc-explicit-constructor, *-explicit-conversions)
   operator QDMI_Device() const { return device_.get(); }
 
   /// @see QDMI_DEVICE_PROPERTY_NAME
@@ -828,7 +828,7 @@ public:
 
   auto operator=(Job&& other) noexcept -> Job&;
 
-  // NOLINTNEXTLINE(google-explicit-constructor, *-explicit-conversions)
+  // NOLINTNEXTLINE(misc-explicit-constructor, *-explicit-conversions)
   operator QDMI_Job() const { return job_.get(); }
 
   /// @see QDMI_job_check
@@ -998,7 +998,7 @@ static_assert(std::is_move_assignable<Job>());
  */
 class Site {
 public:
-  // NOLINTNEXTLINE(google-explicit-constructor, *-explicit-conversions)
+  // NOLINTNEXTLINE(misc-explicit-constructor, *-explicit-conversions)
   operator QDMI_Site() const { return site_; }
 
   /// @see QDMI_SITE_PROPERTY_INDEX
@@ -1130,7 +1130,7 @@ private:
  */
 class Operation {
 public:
-  // NOLINTNEXTLINE(google-explicit-constructor, *-explicit-conversions)
+  // NOLINTNEXTLINE(misc-explicit-constructor, *-explicit-conversions)
   operator QDMI_Operation() const { return operation_; }
 
   /// @see QDMI_OPERATION_PROPERTY_NAME

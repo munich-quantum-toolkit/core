@@ -49,7 +49,7 @@ protected:
     std::array<std::mt19937_64::result_type, std::mt19937_64::state_size>
         randomData{};
     std::random_device rd;
-    std::ranges::generate(randomData, [&]() { return rd(); });
+    std::ranges::generate(randomData, [&] { return rd(); });
     std::seed_seq seeds(begin(randomData), end(randomData));
     mt.seed(seeds);
     dist = std::uniform_real_distribution<fp>(0.0, 2. * qc::PI);
@@ -93,7 +93,7 @@ TEST_P(DDFunctionality, StandardOpBuildInverseBuild) {
   const auto dd = std::make_unique<Package>(nq);
 
   StandardOperation op;
-  auto gate = static_cast<OpType>(GetParam());
+  auto const gate = static_cast<OpType>(GetParam());
   switch (gate) {
   case GPhase:
     op = StandardOperation(Controls{}, Targets{}, gate, std::vector{dist(mt)});
@@ -152,7 +152,7 @@ TEST_P(DDFunctionality, ControlledStandardOpBuildInverseBuild) {
   const auto dd = std::make_unique<Package>(nq);
 
   StandardOperation op;
-  auto gate = static_cast<OpType>(GetParam());
+  auto const gate = static_cast<OpType>(GetParam());
   switch (gate) {
   case GPhase:
     op = StandardOperation(Controls{0}, Targets{}, gate, std::vector{dist(mt)});
@@ -212,7 +212,7 @@ TEST_P(DDFunctionality, ControlledStandardNegOpBuildInverseBuild) {
   const auto dd = std::make_unique<Package>(nq);
 
   StandardOperation op;
-  auto gate = static_cast<OpType>(GetParam());
+  auto const gate = static_cast<OpType>(GetParam());
   switch (gate) {
   case GPhase:
     op = StandardOperation(Controls{0_nc}, Targets{}, gate,
@@ -374,7 +374,7 @@ TEST_F(DDFunctionality, NonUnitary) {
 
   const QuantumComputation qc{};
   auto dummyMap = Permutation{};
-  auto op = NonUnitaryOperation({0, 1, 2, 3}, {0, 1, 2, 3});
+  auto const op = NonUnitaryOperation({0, 1, 2, 3}, {0, 1, 2, 3});
   EXPECT_FALSE(op.isUnitary());
   EXPECT_THROW(getDD(op, *dd), std::invalid_argument);
   EXPECT_THROW(getInverseDD(op, *dd), std::invalid_argument);
@@ -387,7 +387,7 @@ TEST_F(DDFunctionality, NonUnitary) {
   for (qc::Qubit i = 0; i < nq; ++i) {
     dummyMap[i] = i;
   }
-  auto barrier = StandardOperation({0, 1, 2, 3}, OpType::Barrier);
+  auto const barrier = StandardOperation({0, 1, 2, 3}, OpType::Barrier);
   EXPECT_TRUE(getDD(barrier, *dd).isIdentity());
   EXPECT_TRUE(getInverseDD(barrier, *dd).isIdentity());
   EXPECT_TRUE(getDD(barrier, *dd, dummyMap).isIdentity());

@@ -78,11 +78,12 @@ qdmi::DeviceSessionConfig makeStatusSession(const std::string& status) {
 
 void registerStatusDevice(const std::string& id,
                           const std::string& configuredStatus) {
-  static_cast<void>(qdmi::Driver::get().registerDeviceIfAbsent(
-      {.id = id,
-       .library = MQT_CORE_QDMI_SLURM_TEST_DEVICE,
-       .prefix = "TEST_SESSION",
-       .session = makeStatusSession(configuredStatus)}));
+  static_cast<void>(qdmi::Driver::get().registerDeviceIfAbsent({
+      .id = id,
+      .library = MQT_CORE_QDMI_SLURM_TEST_DEVICE,
+      .prefix = "TEST_SESSION",
+      .session = makeStatusSession(configuredStatus),
+  }));
 }
 
 } // namespace

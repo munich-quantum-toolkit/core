@@ -20,6 +20,8 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#unreleased)._
 
 ### Changed
 
+- 🔧 Use clang-tidy 23 for C++ linting in CI and the local `cpp-lint` Nox
+  session ([#2710], [#2328]) ([**@burgholzer**], [**@simon1hofmann**])
 - ⚡ Reduce DD allocation, lookup, and cache overhead, with adaptive table sizes
   that use less memory for compact decision diagrams ([#2710], [#2474], [#2561],
   [#2604], [#2637]) ([**@burgholzer**], [**@simon1hofmann**])
@@ -893,6 +895,7 @@ for previous changelogs._
 [#2455]: https://github.com/munich-quantum-toolkit/core/pull/2455
 [#2453]: https://github.com/munich-quantum-toolkit/core/pull/2453
 [#2441]: https://github.com/munich-quantum-toolkit/core/pull/2441
+[#2328]: https://github.com/munich-quantum-toolkit/core/pull/2328
 [#2635]: https://github.com/munich-quantum-toolkit/core/pull/2635
 [#2611]: https://github.com/munich-quantum-toolkit/core/pull/2611
 [#2571]: https://github.com/munich-quantum-toolkit/core/pull/2571

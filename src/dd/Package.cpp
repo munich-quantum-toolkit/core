@@ -420,9 +420,11 @@ buildThreeQubitGateDD(Package& dd, const Matrix& mat, const Controls& controls,
   fillTerminalMatrix(em, mat);
 
   std::array<std::pair<Qubit, std::uint8_t>, 3> ordered{
-      {{static_cast<Qubit>(target0), 2},
-       {static_cast<Qubit>(target1), 1},
-       {static_cast<Qubit>(target2), 0}},
+      {
+          {static_cast<Qubit>(target0), 2},
+          {static_cast<Qubit>(target1), 1},
+          {static_cast<Qubit>(target2), 0},
+      },
   };
   std::ranges::sort(ordered, {}, &std::pair<Qubit, std::uint8_t>::first);
   const auto qLow = ordered[0].first;

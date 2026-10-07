@@ -81,12 +81,12 @@ void ConstEvalPass::visitGateCallStatement(
       arg = evaluatedArg->toExpr();
     }
   }
-  for (auto& op : gateCallStatement->operands) {
+  for (auto const& op : gateCallStatement->operands) {
     if (op->isHardwareQubit()) {
       continue;
     }
-    auto id = op->getIdentifier();
-    for (auto& indexOperator : id->indices) {
+    auto const id = op->getIdentifier();
+    for (auto const& indexOperator : id->indices) {
       for (auto& index : indexOperator->indexExpressions) {
         if (auto evaluatedArg = visit(index)) {
           index = evaluatedArg->toExpr();
@@ -94,13 +94,14 @@ void ConstEvalPass::visitGateCallStatement(
       }
     }
   }
-  for (auto& modifier : gateCallStatement->modifiers) {
-    if (auto powModifier = std::dynamic_pointer_cast<PowGateModifier>(modifier);
+  for (auto const& modifier : gateCallStatement->modifiers) {
+    if (auto const powModifier =
+            std::dynamic_pointer_cast<PowGateModifier>(modifier);
         powModifier != nullptr && powModifier->expression != nullptr) {
       if (auto evaluatedArg = visit(powModifier->expression)) {
         powModifier->expression = evaluatedArg->toExpr();
       }
-    } else if (auto ctrlModifier =
+    } else if (auto const ctrlModifier =
                    std::dynamic_pointer_cast<CtrlGateModifier>(modifier);
                ctrlModifier != nullptr && ctrlModifier->expression != nullptr) {
       if (auto evaluatedArg = visit(ctrlModifier->expression)) {
@@ -170,8 +171,8 @@ template <typename T> int64_t castToWidth(const int64_t value) {
 
 ConstEvalValue evalIntExpression(BinaryExpression::Op op, int64_t lhs,
                                  int64_t rhs, size_t width, bool isSigned) {
-  auto lhsU = static_cast<uint64_t>(lhs);
-  auto rhsU = static_cast<uint64_t>(rhs);
+  auto const lhsU = static_cast<uint64_t>(lhs);
+  auto const rhsU = static_cast<uint64_t>(rhs);
   ConstEvalValue result{0, isSigned, width};
 
   // First evaluate the result. For some operations (e.g. division, comparison)
@@ -213,14 +214,12 @@ ConstEvalValue evalIntExpression(BinaryExpression::Op op, int64_t lhs,
     }
     break;
   case BinaryExpression::LeftShift:
-    if (isSigned) {
-      result.value = lhs << rhs;
-    } else {
-      result.value = static_cast<int64_t>(lhsU << rhsU);
-    }
+    result.value = static_cast<int64_t>(lhsU << rhsU);
     break;
   case BinaryExpression::RightShift:
     if (isSigned) {
+      // Preserve sign extension for signed OpenQASM integers.
+      // NOLINTNEXTLINE(bugprone-signed-bitwise)
       result.value = lhs >> rhs;
     } else {
       result.value = static_cast<int64_t>(lhsU >> rhsU);
@@ -482,7 +481,8 @@ std::optional<ConstEvalValue> ConstEvalPass::visitUnaryExpression(
         val->type != ConstEvalValue::Type::ConstUint) {
       return std::nullopt;
     }
-    val->value = ~std::get<0>(val->value);
+    val->value =
+        static_cast<int64_t>(~static_cast<uint64_t>(std::get<0>(val->value)));
     break;
   case UnaryExpression::LogicalNot:
     if (val->type == ConstEvalValue::Type::ConstBool) {

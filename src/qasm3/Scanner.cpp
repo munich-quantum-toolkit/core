@@ -680,7 +680,8 @@ bool Scanner::hasTimingSuffix(const char first, const char second) {
     return true;
   }
   const auto suffixes = std::vector<std::pair<char, char>>{
-      {'m', 's'}, {'u', 's'}, {'n', 's'}, {'p', 's'}, {'d', 't'}};
+      {'m', 's'}, {'u', 's'}, {'n', 's'}, {'p', 's'}, {'d', 't'},
+  };
   return std::ranges::any_of(suffixes, [first, second](const auto& suffix) {
     return suffix.first == first && suffix.second == second;
   });

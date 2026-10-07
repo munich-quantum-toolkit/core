@@ -112,7 +112,7 @@ void TypeCheckPass::visitDeclarationStatement(
   const auto typeExpr = std::get<0>(declarationStatement->type);
   // First, type-check the type itself.
   if (typeExpr->allowsDesignator() && typeExpr->getDesignator() != nullptr) {
-    auto type = visit(typeExpr->getDesignator());
+    auto const type = visit(typeExpr->getDesignator());
     if (type.isError || !type.type->isUint()) {
       error("Designator expression type check failed.",
             declarationStatement->debugInfo);
@@ -120,7 +120,7 @@ void TypeCheckPass::visitDeclarationStatement(
     }
   }
   // Now we know the type is valid, we can evaluate the designator expression.
-  auto resolvedType =
+  auto const resolvedType =
       std::get<0>(declarationStatement->type)->accept(constEvalPass);
   if (!resolvedType) {
     throw TypeCheckError("Expression in types must be const.");
@@ -198,7 +198,7 @@ void TypeCheckPass::visitAssignmentStatement(
 
 void TypeCheckPass::visitBarrierStatement(
     const std::shared_ptr<BarrierStatement> barrierStatement) {
-  for (auto& gate : barrierStatement->gates) {
+  for (auto const& gate : barrierStatement->gates) {
     checkGateOperand(*gate);
   }
 }

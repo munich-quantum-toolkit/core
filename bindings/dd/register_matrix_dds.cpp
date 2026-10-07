@@ -18,7 +18,6 @@
 #include "nanobind/stl/vector.h"  // NOLINT(misc-include-cleaner)
 #include "register_dd_export.hpp"
 
-#include <cmath>
 #include <complex>
 #include <cstddef>
 #include <memory>

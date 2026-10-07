@@ -244,8 +244,10 @@ void SymbolicOperation::setup(const std::vector<SymbolOrNumber>& params) {
 SymbolicOperation::getInstantiation(const SymbolOrNumber& symOrNum,
                                     const VariableAssignment& assignment) {
   return std::visit(
-      Overload{[&](const fp num) { return num; },
-               [&](const Symbolic& sym) { return sym.evaluate(assignment); }},
+      Overload{
+          [&](const fp num) { return num; },
+          [&](const Symbolic& sym) { return sym.evaluate(assignment); },
+      },
       symOrNum);
 }
 

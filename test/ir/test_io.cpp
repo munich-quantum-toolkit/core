@@ -461,14 +461,16 @@ TEST_F(IO, unifyRegisters) {
 }
 
 TEST_F(IO, NativeTwoQubitGateImportAndExport) {
-  const auto gates = std::vector<std::string>{"dcx",
-                                              "ecr",
-                                              "rxx(0.5)",
-                                              "ryy(0.5)",
-                                              "rzz(0.5)",
-                                              "rzx(0.5)",
-                                              "xx_minus_yy(0.5,0.5)",
-                                              "xx_plus_yy(0.5,0.5)"};
+  const auto gates = std::vector<std::string>{
+      "dcx",
+      "ecr",
+      "rxx(0.5)",
+      "ryy(0.5)",
+      "rzz(0.5)",
+      "rzx(0.5)",
+      "xx_minus_yy(0.5,0.5)",
+      "xx_plus_yy(0.5,0.5)",
+  };
 
   const std::string header = "// i 0 1\n"
                              "// o 0 1\n"

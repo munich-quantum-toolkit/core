@@ -66,7 +66,7 @@ protected:
     std::array<std::mt19937_64::result_type, std::mt19937_64::state_size>
         randomData{};
     std::random_device rd;
-    std::ranges::generate(randomData, [&]() { return rd(); });
+    std::ranges::generate(randomData, [&] { return rd(); });
     std::seed_seq seeds(begin(randomData), end(randomData));
     mt.seed(seeds);
     dist = std::uniform_real_distribution<fp>(0.0, 2 * PI);
@@ -113,7 +113,7 @@ TEST_F(QFRFunctionality, ancillaryQubitAtEnd) {
   EXPECT_EQ(qc.getNqubits(), 3);
   qc.x(2);
   printRegisters(qc);
-  auto p = qc.removeQubit(2);
+  auto const p = qc.removeQubit(2);
   EXPECT_EQ(p.first, nqubits);
   EXPECT_EQ(p.second, nqubits);
   EXPECT_EQ(qc.getNancillae(), 0);
@@ -127,7 +127,7 @@ TEST_F(QFRFunctionality, ancillaryQubitAtEnd) {
   EXPECT_EQ(qc.getNqubits(), nqubits + 1);
   EXPECT_FALSE(qc.getAncillaRegisters().empty());
   printRegisters(qc);
-  auto q = qc.removeQubit(2);
+  auto const q = qc.removeQubit(2);
   EXPECT_EQ(q.first, nqubits);
   EXPECT_EQ(q.second, nqubits);
   EXPECT_EQ(qc.getNancillae(), 0);
@@ -135,14 +135,14 @@ TEST_F(QFRFunctionality, ancillaryQubitAtEnd) {
   EXPECT_EQ(qc.getNqubits(), nqubits);
   EXPECT_TRUE(qc.getAncillaRegisters().empty());
   printRegisters(qc);
-  auto rm = qc.removeQubit(1);
+  auto const rm = qc.removeQubit(1);
   EXPECT_EQ(rm.first, 1);
   EXPECT_EQ(rm.second, 1);
   EXPECT_EQ(qc.getNancillae(), 0);
   EXPECT_EQ(qc.getNqubitsWithoutAncillae(), 1);
   EXPECT_EQ(qc.getNqubits(), 1);
   printRegisters(qc);
-  auto empty = qc.removeQubit(0);
+  auto const empty = qc.removeQubit(0);
   EXPECT_EQ(empty.first, 0);
   EXPECT_EQ(empty.second, 0);
   EXPECT_EQ(qc.getNancillae(), 0);
@@ -157,7 +157,7 @@ TEST_F(QFRFunctionality, ancillaryQubitRemoveMiddle) {
   QuantumComputation qc(nqubits);
   qc.x(0);
   qc.addAncillaryRegister(3);
-  auto p = qc.removeQubit(3);
+  auto const p = qc.removeQubit(3);
   EXPECT_EQ(p.first, 3);
   EXPECT_EQ(p.second, 3);
   EXPECT_EQ(qc.getNancillae(), 2);
@@ -170,7 +170,7 @@ TEST_F(QFRFunctionality, splitQreg) {
   const std::size_t nqubits = 3;
   QuantumComputation qc(nqubits);
   qc.x(0);
-  auto p = qc.removeQubit(1);
+  auto const p = qc.removeQubit(1);
   EXPECT_EQ(p.first, 1);
   EXPECT_EQ(p.second, 1);
   EXPECT_EQ(qc.getNancillae(), 0);
@@ -344,7 +344,7 @@ TEST_F(QFRFunctionality, cloningDifferentOperations) {
   comp.barrier(0);
   comp.h(0);
   qc.emplace_back(comp.asOperation());
-  auto creg = qc.getClassicalRegisters().at("c");
+  auto const creg = qc.getClassicalRegisters().at("c");
   qc.if_(X, 0, creg, 1U);
 
   const auto qcCloned = qc;
@@ -639,7 +639,7 @@ TEST_F(QFRFunctionality, RzAndPhaseDifference) {
                            "p(1/8) q[1];\n"
                            "crz(1/8) q[0],q[1];\n"
                            "cp(1/8) q[0],q[1];\n";
-  auto qc = qasm3::Importer::imports(qasm);
+  auto const qc = qasm3::Importer::imports(qasm);
   std::cout << qc << "\n";
   std::stringstream oss;
   qc.dumpOpenQASM(oss, false);
@@ -760,10 +760,10 @@ TEST_F(QFRFunctionality, addControlSymbolicOperation) {
   op.addControl(2);
 
   ASSERT_EQ(op.getNcontrols(), 2);
-  auto expectedControls = Controls{1U, 2U};
+  auto const expectedControls = Controls{1U, 2U};
   EXPECT_EQ(op.getControls(), expectedControls);
   op.removeControl(1);
-  auto expectedControlsAfterRemove = Controls{2U};
+  auto const expectedControlsAfterRemove = Controls{2U};
   EXPECT_EQ(op.getControls(), expectedControlsAfterRemove);
   op.clearControls();
   EXPECT_EQ(op.getNcontrols(), 0);
@@ -788,8 +788,8 @@ TEST_F(QFRFunctionality, addControlNonUnitaryOperation) {
 TEST_F(QFRFunctionality, addControlCompoundOperation) {
   auto op = CompoundOperation();
 
-  auto control0 = 0U;
-  auto control1 = 1U;
+  auto const control0 = 0U;
+  auto const control1 = 1U;
 
   auto xOp = std::make_unique<StandardOperation>(Targets{1}, OpType::X);
   auto cxOp = std::make_unique<StandardOperation>(Targets{3}, OpType::X);
@@ -812,7 +812,7 @@ TEST_F(QFRFunctionality, addControlCompoundOperation) {
 }
 
 TEST_F(QFRFunctionality, addControlTwice) {
-  auto control = 0U;
+  auto const control = 0U;
 
   std::unique_ptr<Operation> op =
       std::make_unique<StandardOperation>(Targets{1}, OpType::X);
@@ -826,7 +826,7 @@ TEST_F(QFRFunctionality, addControlTwice) {
 
 TEST_F(QFRFunctionality, addTargetAsControl) {
   // Adding a control that is already a target
-  auto control = 1U;
+  auto const control = 1U;
 
   std::unique_ptr<Operation> op =
       std::make_unique<StandardOperation>(Targets{1}, OpType::X);
@@ -839,7 +839,7 @@ TEST_F(QFRFunctionality, addTargetAsControl) {
 TEST_F(QFRFunctionality, addControlCompoundOperationInvalid) {
   auto op = CompoundOperation();
 
-  auto control1 = 1U;
+  auto const control1 = 1U;
 
   auto xOp = std::make_unique<StandardOperation>(Targets{1}, OpType::X);
   auto cxOp = std::make_unique<StandardOperation>(Targets{3}, OpType::X);
@@ -863,7 +863,7 @@ TEST_F(QFRFunctionality, invertStandardOpSelfInverting) {
       OpType::I, OpType::X, OpType::Y, OpType::Z, OpType::H, OpType::SWAP,
   };
 
-  for (auto opType : opTypes) {
+  for (auto const opType : opTypes) {
     auto op = StandardOperation(0U, opType);
     op.invert();
     ASSERT_EQ(op.getType(), opType);
@@ -871,7 +871,7 @@ TEST_F(QFRFunctionality, invertStandardOpSelfInverting) {
 }
 
 TEST_F(QFRFunctionality, invertStandardOpInvertClone) {
-  auto op1 = StandardOperation(0U, S);
+  auto const op1 = StandardOperation(0U, S);
   auto op2 = op1.getInverted();
   ASSERT_EQ(op1.getType(), S);
   ASSERT_EQ(op2->getType(), Sdg);
@@ -948,8 +948,8 @@ TEST_F(QFRFunctionality, invertCompoundOperation) {
 }
 
 TEST_F(QFRFunctionality, invertSymbolicOpParamChange) {
-  auto x = sym::Variable("x");
-  auto y = sym::Variable("y");
+  auto const x = sym::Variable("x");
+  auto const y = sym::Variable("y");
   const auto cases = {
       std::tuple{OpType::GPhase, std::vector<SymbolOrNumber>{Symbolic({x})},
                  std::vector<SymbolOrNumber>{-Symbolic({x})}},
