@@ -1932,7 +1932,7 @@ private:
         resultNumbers[site] = composite.op->getNumResults() + addons.size();
 
         /// Thread the value before the next pending operation through the
-        /// region. Particulary, terminal measurements must remain after the
+        /// region. Particularly, terminal measurements must remain after the
         /// region.
 
         --it;
