@@ -18,7 +18,6 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -45,7 +44,41 @@ class CompilerTarget {
 public:
   using SiteId = int64_t;
   using Coupling = std::pair<SiteId, SiteId>;
-  using FourCycle = std::array<size_t, 4>;
+
+  /// Topology motifs grouped by type, independent of native gate support.
+  class Motifs {
+  public:
+    enum class Type : uint8_t { FourCycle };
+
+    /// Packed rows of dense compiler vertices, without per-occurrence
+    /// allocation.
+    class Group {
+    public:
+      [[nodiscard]] Type type() const noexcept;
+      [[nodiscard]] size_t arity() const noexcept;
+      [[nodiscard]] size_t size() const noexcept;
+      /// Return the vertices of a valid occurrence index.
+      [[nodiscard]] llvm::ArrayRef<size_t> operator[](size_t index) const;
+
+    private:
+      friend class CompilerTarget;
+      Group(Type type, size_t arity);
+      Type type_;
+      size_t arity_;
+      llvm::SmallVector<size_t, 0> vertices_;
+    };
+
+    /// All-to-all targets represent motifs implicitly and have no stored
+    /// groups.
+    [[nodiscard]] bool isImplicit() const noexcept;
+    /// Return the selected motif types, including groups with no occurrences.
+    [[nodiscard]] llvm::ArrayRef<Group> groups() const noexcept;
+
+  private:
+    friend class CompilerTarget;
+    bool implicit_ = false;
+    llvm::SmallVector<Group, 0> groups_;
+  };
 
   /// Target connectivity.
   class Connectivity {
@@ -428,17 +461,17 @@ public:
   /// Return sorted canonical undirected couplings in target site IDs.
   [[nodiscard]] llvm::ArrayRef<Coupling> couplings() const noexcept;
 
-  /// Return undirected four-cycles in dense compiler vertices, in deterministic
-  /// order. Each cycle starts at its smallest vertex and its second vertex is
-  /// smaller than its last, eliminating rotations and reversals. Chords are
-  /// allowed; distinct cycles on the same four vertices remain distinct.
-  /// These are topology motifs, not guarantees of native-operation support.
+  /// Return selected topology motifs in deterministic order. Currently selects
+  /// four-cycles: each starts at its smallest vertex and its second vertex is
+  /// smaller than its last. Chords are allowed; distinct cycles on the same
+  /// four vertices remain distinct. No architecture classification is
+  /// performed.
   ///
-  /// All-to-all connectivity returns nullopt: its cycles are implicit. Explicit
+  /// All-to-all connectivity represents motifs implicitly. Explicit
   /// topologies enumerate lazily, with storage proportional to the number of
   /// cycles. The thread-safe cache is shared by copies; the returned view stays
   /// valid while any copy of this target lives.
-  [[nodiscard]] std::optional<llvm::ArrayRef<FourCycle>> fourCycles() const;
+  [[nodiscard]] const Motifs& motifs() const;
 
   /// Return whether two valid dense compiler vertices are adjacent.
   [[nodiscard]] bool areAdjacent(size_t source, size_t target) const;

@@ -536,22 +536,28 @@ TEST(CompilerTargetTest, FourCyclesShareCacheAndAllowChords) {
           {{7, 2}, {2, 11}, {11, 4}, {4, 7}, {7, 11}, {2, 7}}),
       NativeOperations::unrestricted()));
   auto first =
-      std::async(std::launch::async, [target] { return target.fourCycles(); });
+      std::async(std::launch::async, [target] { return &target.motifs(); });
   auto second =
-      std::async(std::launch::async, [target] { return target.fourCycles(); });
-  const auto cycles = first.get();
-  ASSERT_TRUE(cycles.has_value());
-  EXPECT_EQ(*cycles, (llvm::ArrayRef<Target::FourCycle>{{0, 1, 2, 3}}));
-  EXPECT_EQ(cycles->data(), second.get()->data());
-  EXPECT_EQ(cycles->data(), target.fourCycles()->data());
-  EXPECT_FALSE(valid(Target::create(1000, Connectivity::allToAll(),
-                                    NativeOperations::unrestricted()))
-                   .fourCycles()
-                   .has_value());
-  EXPECT_TRUE(valid(Target::create(1, Connectivity::fromCouplings({}),
-                                   NativeOperations::unrestricted()))
-                  .fourCycles()
-                  ->empty());
+      std::async(std::launch::async, [target] { return &target.motifs(); });
+  const auto* motifs = first.get();
+  EXPECT_FALSE(motifs->isImplicit());
+  ASSERT_EQ(motifs->groups().size(), 1);
+  const auto& cycles = motifs->groups().front();
+  EXPECT_EQ(cycles.type(), Target::Motifs::Type::FourCycle);
+  EXPECT_EQ(cycles.arity(), 4);
+  ASSERT_EQ(cycles.size(), 1);
+  EXPECT_EQ(cycles[0], (llvm::ArrayRef<size_t>{0, 1, 2, 3}));
+  EXPECT_EQ(motifs, second.get());
+  EXPECT_EQ(motifs, &target.motifs());
+  const auto complete = valid(Target::create(1000, Connectivity::allToAll(),
+                                             NativeOperations::unrestricted()));
+  EXPECT_TRUE(complete.motifs().isImplicit());
+  EXPECT_TRUE(complete.motifs().groups().empty());
+  const auto single = valid(Target::create(1, Connectivity::fromCouplings({}),
+                                           NativeOperations::unrestricted()));
+  EXPECT_FALSE(single.motifs().isImplicit());
+  ASSERT_EQ(single.motifs().groups().size(), 1);
+  EXPECT_EQ(single.motifs().groups().front().size(), 0);
 }
 
 TEST(CompilerTargetTest, FourCyclesMatchExhaustiveFiveVertexOracle) {
@@ -575,7 +581,7 @@ TEST(CompilerTargetTest, FourCyclesMatchExhaustiveFiveVertexOracle) {
       continue;
     }
     ++connected;
-    std::vector<Target::FourCycle> expected;
+    std::vector<std::array<size_t, 4>> expected;
     for (size_t a = 0; a < n; ++a) {
       for (size_t b = a + 1; b < n; ++b) {
         for (size_t c = a + 1; c < n; ++c) {
@@ -589,8 +595,14 @@ TEST(CompilerTargetTest, FourCyclesMatchExhaustiveFiveVertexOracle) {
         }
       }
     }
-    const auto cycles = *target->fourCycles();
-    std::vector<Target::FourCycle> actual(cycles.begin(), cycles.end());
+    const auto& motifs = target->motifs();
+    ASSERT_EQ(motifs.groups().size(), 1);
+    const auto& cycles = motifs.groups().front();
+    std::vector<std::array<size_t, 4>> actual;
+    for (size_t i = 0; i < cycles.size(); ++i) {
+      auto row = cycles[i];
+      actual.push_back({row[0], row[1], row[2], row[3]});
+    }
     llvm::sort(actual);
     EXPECT_EQ(actual, expected) << "graph mask: " << mask;
   }

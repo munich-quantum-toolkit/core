@@ -630,8 +630,8 @@ struct CompilerTarget::Storage {
   SmallVector<SmallVector<size_t, 4>> adjacency;
   mutable SmallVector<size_t> distances;
   mutable std::once_flag distancesOnce;
-  mutable std::vector<FourCycle> fourCycles;
-  mutable std::once_flag fourCyclesOnce;
+  mutable Motifs motifs;
+  mutable std::once_flag motifsOnce;
   size_t maximumDegree = 0;
   NativeOperations::Kind nativeOperationsKind;
   SmallVector<OperationCapability> operations;
@@ -1298,13 +1298,39 @@ ArrayRef<CompilerTarget::Coupling> CompilerTarget::couplings() const noexcept {
   return storage_->couplings;
 }
 
-std::optional<ArrayRef<CompilerTarget::FourCycle>>
-CompilerTarget::fourCycles() const {
-  if (connectivityKind() == Connectivity::Kind::AllToAll) {
-    return std::nullopt;
-  }
-  std::call_once(storage_->fourCyclesOnce, [&] {
-    std::vector<FourCycle> cycles;
+CompilerTarget::Motifs::Group::Group(Type type, size_t arity)
+    : type_(type), arity_(arity) {}
+
+CompilerTarget::Motifs::Type
+CompilerTarget::Motifs::Group::type() const noexcept {
+  return type_;
+}
+
+size_t CompilerTarget::Motifs::Group::arity() const noexcept { return arity_; }
+
+size_t CompilerTarget::Motifs::Group::size() const noexcept {
+  return vertices_.size() / arity_;
+}
+
+ArrayRef<size_t> CompilerTarget::Motifs::Group::operator[](size_t index) const {
+  assert(index < size() && "Motif occurrence index is out of range");
+  return ArrayRef<size_t>(vertices_).slice(index * arity_, arity_);
+}
+
+bool CompilerTarget::Motifs::isImplicit() const noexcept { return implicit_; }
+
+ArrayRef<CompilerTarget::Motifs::Group>
+CompilerTarget::Motifs::groups() const noexcept {
+  return groups_;
+}
+
+const CompilerTarget::Motifs& CompilerTarget::motifs() const {
+  std::call_once(storage_->motifsOnce, [&] {
+    if (connectivityKind() == Connectivity::Kind::AllToAll) {
+      storage_->motifs.implicit_ = true;
+      return;
+    }
+    Motifs::Group cycles(Motifs::Type::FourCycle, 4);
     const auto& adjacency = storage_->adjacency;
     for (size_t a = 0; a < numSites(); ++a) {
       const auto& neighbours = adjacency[a];
@@ -1328,7 +1354,7 @@ CompilerTarget::fourCycles() const {
             } else if (*r < *l) {
               ++r;
             } else {
-              cycles.push_back({a, *b, *l, *d});
+              cycles.vertices_.append({a, *b, *l, *d});
               ++l;
               ++r;
             }
@@ -1336,9 +1362,9 @@ CompilerTarget::fourCycles() const {
         }
       }
     }
-    storage_->fourCycles = std::move(cycles);
+    storage_->motifs.groups_.push_back(std::move(cycles));
   });
-  return ArrayRef<FourCycle>(storage_->fourCycles);
+  return storage_->motifs;
 }
 
 bool CompilerTarget::areAdjacent(size_t source, size_t target) const {
