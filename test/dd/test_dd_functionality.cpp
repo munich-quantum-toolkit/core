@@ -26,6 +26,8 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
+#include <complex>
 #include <cstddef>
 #include <map>
 #include <memory>
@@ -58,6 +60,20 @@ protected:
 };
 
 } // namespace
+
+TEST(DDFunctionalityTest, GlobalPhasePreservesStateOwnership) {
+  Package package(1);
+  auto state = makeZeroState(1, package);
+  constexpr fp phase = 0.25;
+  applyGlobalPhase(state, phase, package);
+  ASSERT_TRUE(package.getRootSet<vNode>().contains(state));
+  package.garbageCollect(true);
+  EXPECT_NEAR(std::abs(state.getValueByIndex(0) - std::polar(1., phase)), 0.,
+              1e-12);
+  EXPECT_EQ(state.getValueByIndex(1), 0.);
+  EXPECT_NO_THROW(package.decRef(state));
+  EXPECT_TRUE(package.getRootSet<vNode>().empty());
+}
 
 INSTANTIATE_TEST_SUITE_P(
     Parameters, DDFunctionality,

@@ -11,8 +11,7 @@
 #include "dd/statistics/TableStatistics.hpp"
 
 #include "StatisticsJson.hpp"
-
-#include <nlohmann/json.hpp>
+#include "nlohmann/json.hpp"
 
 #include <algorithm>
 #include <string>

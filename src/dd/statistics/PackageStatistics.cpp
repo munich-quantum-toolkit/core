@@ -18,8 +18,7 @@
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
 #include "dd/RealNumber.hpp"
-
-#include <nlohmann/json.hpp>
+#include "nlohmann/json.hpp"
 
 #include <ostream>
 #include <string>

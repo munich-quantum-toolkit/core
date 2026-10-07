@@ -9,21 +9,24 @@
  */
 
 #include "dd/ComplexNumbers.hpp"
+#include "dd/ComplexValue.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/Export.hpp"
 #include "dd/MemoryManager.hpp"
 #include "dd/RealNumber.hpp"
 #include "dd/RealNumberUniqueTable.hpp"
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
 
-#include <gmock/gmock.h>
-#include <gtest/gtest.h>
-
-#include <array>
+#include <cmath>
 #include <cstddef>
+#include <functional>
 #include <iomanip>
 #include <iostream>
 #include <limits>
 #include <sstream>
+#include <stdexcept>
+#include <unordered_set>
 #include <vector>
 
 using namespace dd;
@@ -32,12 +35,29 @@ namespace {
 
 class CNTest : public testing::Test {
 protected:
+  const fp savedTolerance = RealNumber::eps;
+  void TearDown() override { ComplexNumbers::setTolerance(savedTolerance); }
+
   MemoryManager mm{MemoryManager::create<RealNumber>()};
   RealNumberUniqueTable ut{mm};
   ComplexNumbers cn{ut};
 };
 
 } // namespace
+
+TEST_F(CNTest, RejectsInvalidTolerance) {
+  for (const fp tolerance : {
+           0.,
+           -1.,
+           std::numeric_limits<fp>::denorm_min(),
+           std::numeric_limits<fp>::infinity(),
+           std::numeric_limits<fp>::quiet_NaN(),
+       }) {
+    EXPECT_THROW(ComplexNumbers::setTolerance(tolerance),
+                 std::invalid_argument);
+    EXPECT_EQ(RealNumber::eps, savedTolerance);
+  }
+}
 
 TEST_F(CNTest, ComplexNumberCreation) {
   EXPECT_TRUE(cn.lookup(Complex::zero()).exactlyZero());
@@ -65,7 +85,7 @@ TEST_F(CNTest, ComplexNumberCreation) {
   EXPECT_EQ(RealNumber::val(cn.lookup(c).i), -1.);
   std::cout << c << "\n";
 
-  auto e = cn.lookup(1., -1.);
+  auto const e = cn.lookup(1., -1.);
   std::cout << e << "\n";
   std::cout << ComplexValue{1., 1.} << "\n";
   std::cout << ComplexValue{1., -1.} << "\n";
@@ -75,162 +95,137 @@ TEST_F(CNTest, ComplexNumberCreation) {
 }
 
 TEST_F(CNTest, NearZeroLookup) {
-  auto d = cn.lookup(RealNumber::eps / 10., RealNumber::eps / 10.);
+  auto const d = cn.lookup(RealNumber::eps / 10., RealNumber::eps / 10.);
   EXPECT_TRUE(d.exactlyZero());
 }
 
-TEST_F(CNTest, SortedBuckets) {
-  constexpr fp num = 0.25;
+TEST_F(CNTest, NearestEntriesAcrossCellBoundaries) {
+  constexpr fp border = 0.25;
+  const auto tolerance = RealNumber::eps;
+  auto* lower = ut.lookup(border - (0.75 * tolerance));
+  auto* upper = ut.lookup(border + (0.75 * tolerance));
+  ASSERT_NE(lower, upper);
+  EXPECT_EQ(ut.lookup(border), lower);
+  EXPECT_EQ(ut.lookup(border + (tolerance / 4)), upper);
+  EXPECT_EQ(ut.lookup(border - (tolerance / 4)), lower);
+  EXPECT_EQ(ut.lookup(-border), RealNumber::getNegativePointer(lower));
 
-  const std::array<fp, 7> numbers = {
-      num + (2. * RealNumber::eps), num - (2. * RealNumber::eps),
-      num + (4. * RealNumber::eps), num,
-      num - (4. * RealNumber::eps), num + (6. * RealNumber::eps),
-      num + (8. * RealNumber::eps)};
-
-  const auto theBucket =
-      static_cast<std::size_t>(RealNumberUniqueTable::hash(num));
-
-  for (auto const& number : numbers) {
-    ASSERT_EQ(theBucket, ut.hash(number));
-    const auto* entry = ut.lookup(number);
-    ASSERT_NE(entry, nullptr);
-  }
-
-  const RealNumber* p = ut.getTable().at(theBucket);
-  ASSERT_NE(p, nullptr);
-
-  constexpr fp last = std::numeric_limits<fp>::min();
-  std::size_t counter = 0;
-  while (p != nullptr) {
-    ASSERT_LT(last, p->value);
-    p = p->next();
-    ++counter;
-  }
-  std::cout << ut.getStats();
-  EXPECT_EQ(counter, numbers.size());
+  /// Rounded endpoints must not skip a cell containing an existing match.
+  auto* half = ut.lookup(0.5);
+  EXPECT_EQ(ut.lookup(std::nextafter(0.5, 0.)), half);
+  EXPECT_EQ(ut.lookup(std::nextafter(0.5, 1.)), half);
+  EXPECT_EQ(ut.lookup(-0.), &constants::zero);
+  EXPECT_EQ(ut.lookup(1. + (tolerance / 2)), &constants::one);
+  EXPECT_EQ(ut.lookup(SQRT2_2 - (tolerance / 2)), &constants::sqrt2over2);
 }
 
-TEST_F(CNTest, GarbageCollectSomeInBucket) {
-  EXPECT_EQ(ut.garbageCollect(), 0);
-
-  constexpr auto num = 0.25;
-  const auto [r, i] = cn.lookup(num, 0.0);
-  ASSERT_NE(r, nullptr);
-  ASSERT_NE(i, nullptr);
-
-  const fp num2 = num + (2. * RealNumber::eps);
-  auto lookup2 = cn.lookup(num2, 0.0);
-  ASSERT_NE(lookup2.r, nullptr);
-  ASSERT_NE(lookup2.i, nullptr);
-  lookup2.mark();
-
-  // num2 should be placed in same bucket as num
-  auto key = RealNumberUniqueTable::hash(num);
-  auto key2 = RealNumberUniqueTable::hash(num2);
-  ASSERT_EQ(key, key2);
-
-  const auto& table = ut.getTable();
-  const auto* p = table[static_cast<std::size_t>(key)];
-  EXPECT_NEAR(p->value, num, RealNumber::eps);
-
-  ASSERT_NE(p->next(), nullptr);
-  EXPECT_NEAR((p->next())->value, num2, RealNumber::eps);
-
-  ut.garbageCollect(true); // num should be collected
-  lookup2.unmark();
-  const auto* q = table[static_cast<std::size_t>(key)];
-  ASSERT_NE(q, nullptr);
-  EXPECT_NEAR(q->value, num2, RealNumber::eps);
-  EXPECT_EQ(q->next(), nullptr);
+TEST_F(CNTest, ReusesLargeFiniteValues) {
+  for (const fp value : {2., 1e15, std::numeric_limits<fp>::max()}) {
+    const auto* entry = ut.lookup(value);
+    EXPECT_EQ(entry->value, value);
+    EXPECT_EQ(ut.lookup(value), entry);
+    EXPECT_EQ(ut.lookup(-value), RealNumber::getNegativePointer(entry));
+  }
 }
 
-TEST_F(CNTest, LookupInNeighbouringBuckets) {
-  std::clog << "Current rounding mode: " << std::numeric_limits<fp>::round_style
-            << "\n";
-  const auto mask = ut.getTable().size() - 1;
-  const auto fpMask = static_cast<fp>(mask);
-  const std::size_t nbucket = mask + 1U;
-  auto preHash = [fpMask](const fp val) { return val * fpMask; };
+TEST_F(CNTest, GrowthPreservesEntriesAndCollectionFlags) {
+  const auto initialBuckets = ut.getTable().size();
+  auto* half = ut.lookup(0.5);
+  std::vector<RealNumber*> retained;
+  for (size_t i = 0; i <= initialBuckets; ++i) {
+    auto* entry = ut.lookup(2. + (static_cast<fp>(i) / 1024.));
+    if (i % 8192 == 0) {
+      RealNumber::mark(entry);
+      retained.push_back(entry);
+    }
+  }
+  ASSERT_GT(ut.getTable().size(), initialBuckets);
+  EXPECT_TRUE(RealNumber::isImmortal(half));
+  const auto before = ut.getStats().numEntries;
+  for (auto* entry : retained) {
+    EXPECT_TRUE(RealNumber::isMarked(entry));
+    EXPECT_EQ(ut.lookup(entry->value), entry);
+  }
+  EXPECT_EQ(ut.garbageCollect(true), before - retained.size() - 1);
+  EXPECT_EQ(ut.getStats().numEntries, retained.size() + 1);
+  EXPECT_EQ(ut.lookup(0.5), half);
+  for (auto* entry : retained) {
+    EXPECT_EQ(ut.lookup(entry->value), entry);
+    RealNumber::unmark(entry);
+  }
+  EXPECT_EQ(ut.garbageCollect(true), retained.size());
+  EXPECT_EQ(ut.getStats().numEntries, 1U);
+  ut.clear();
+  mm.reset();
+  EXPECT_EQ(ut.getStats().numEntries, 0U);
+  EXPECT_EQ(ut.lookup(0.25)->value, 0.25);
+}
 
-  // lower border of a bucket
-  const fp numBucketBorder = ((0.25 * fpMask) - 0.5) / fpMask;
-  const auto hashBucketBorder = RealNumberUniqueTable::hash(numBucketBorder);
-  std::cout.flush();
-  std::clog << "numBucketBorder          = "
-            << std::setprecision(std::numeric_limits<fp>::max_digits10)
-            << numBucketBorder << "\n";
-  std::clog << "preHash(numBucketBorder) = " << preHash(numBucketBorder)
-            << "\n";
-  std::clog << "hashBucketBorder         = " << hashBucketBorder << "\n"
-            << std::flush;
-  EXPECT_EQ(hashBucketBorder, nbucket / 4);
+TEST_F(CNTest, CollectsSingleEntryWithoutDynamicImmortals) {
+  ut.clear();
+  mm.reset();
+  EXPECT_EQ(ut.getStats().numEntries, 0U);
+  EXPECT_EQ(ut.lookup(4.)->value, 4.);
+  EXPECT_EQ(ut.garbageCollect(true), 1U);
+  EXPECT_EQ(ut.getStats().numEntries, 0U);
+}
 
-  // insert a number slightly away from the border
-  const fp numAbove = numBucketBorder + (2 * RealNumber::eps);
-  const auto lookupAbove = cn.lookup(numAbove, 0.0);
-  ASSERT_NE(lookupAbove.r, nullptr);
-  ASSERT_NE(lookupAbove.i, nullptr);
-  const auto key = RealNumberUniqueTable::hash(numAbove);
-  EXPECT_EQ(key, nbucket / 4);
+TEST_F(CNTest, ToleranceChangesPreserveNearestLookup) {
+  auto* first = ut.lookup(0.25);
+  auto* second = ut.lookup(0.25 + (4 * RealNumber::eps));
+  ASSERT_NE(first, second);
+  RealNumber::mark(first);
+  ComplexNumbers::setTolerance(RealNumber::eps * 16);
+  EXPECT_EQ(ut.lookup(second->value), second);
+  EXPECT_EQ(ut.lookup(first->value), first);
+  EXPECT_TRUE(RealNumber::isMarked(first));
 
-  // insert a number barely in the bucket below
-  const fp numBarelyBelow = numBucketBorder - (RealNumber::eps / 10);
-  const auto lookupBarelyBelow = cn.lookup(numBarelyBelow, 0.0);
-  ASSERT_NE(lookupBarelyBelow.r, nullptr);
-  ASSERT_NE(lookupBarelyBelow.i, nullptr);
-  const auto hashBarelyBelow = RealNumberUniqueTable::hash(numBarelyBelow);
-  std::clog << "numBarelyBelow          = "
-            << std::setprecision(std::numeric_limits<fp>::max_digits10)
-            << numBarelyBelow << "\n";
-  std::clog << "preHash(numBarelyBelow) = " << preHash(numBarelyBelow) << "\n";
-  std::clog << "hashBarelyBelow         = " << hashBarelyBelow << "\n";
-  EXPECT_EQ(hashBarelyBelow, (nbucket / 4) - 1);
-
-  // insert another number in the bucket below a bit farther away from the
-  // border
-  const fp numBelow = numBucketBorder - (2 * RealNumber::eps);
-  const auto lookupBelow = cn.lookup(numBelow, 0.0);
-  ASSERT_NE(lookupBelow.r, nullptr);
-  ASSERT_NE(lookupBelow.i, nullptr);
-  const auto hashBelow = RealNumberUniqueTable::hash(numBelow);
-  std::clog << "numBelow          = "
-            << std::setprecision(std::numeric_limits<fp>::max_digits10)
-            << numBelow << "\n";
-  std::clog << "preHash(numBelow) = " << preHash(numBelow) << "\n";
-  std::clog << "hashBelow         = " << hashBelow << "\n";
-  EXPECT_EQ(hashBelow, (nbucket / 4) - 1);
-
-  // insert border number that is too far away from the number in the bucket,
-  // but is close enough to a number in the bucket below
-  const fp num4 = numBucketBorder;
-  const auto c = cn.lookup(num4, 0.0);
-  const auto key4 = RealNumberUniqueTable::hash(num4 - RealNumber::eps);
-  EXPECT_EQ(hashBarelyBelow, key4);
-  EXPECT_NEAR(c.r->value, numBarelyBelow, RealNumber::eps);
-
-  // insert a number in the higher bucket
-  const fp numNextBorder = numBucketBorder +
-                           (1.0 / static_cast<double>(nbucket - 1)) +
-                           RealNumber::eps;
-  const auto lookupNextBorder = cn.lookup(numNextBorder, 0.0);
-  ASSERT_NE(lookupNextBorder.r, nullptr);
-  ASSERT_NE(lookupNextBorder.i, nullptr);
-  const auto hashNextBorder = RealNumberUniqueTable::hash(numNextBorder);
-  std::clog << "numNextBorder          = "
-            << std::setprecision(std::numeric_limits<fp>::max_digits10)
-            << numNextBorder << "\n";
-  std::clog << "preHash(numNextBorder) = " << preHash(numNextBorder) << "\n";
-  std::clog << "hashNextBorder         = " << hashNextBorder << "\n";
-  EXPECT_EQ(hashNextBorder, (nbucket / 4) + 1);
-
-  // search for a number in the lower bucket that is ultimately close enough to
-  // a number in the upper bucket
-  const fp num6 = numNextBorder - (RealNumber::eps / 10);
-  const auto d = cn.lookup(num6, 0.0);
-  const auto key6 = RealNumberUniqueTable::hash(num6 + RealNumber::eps);
-  EXPECT_EQ(hashNextBorder, key6);
-  EXPECT_NEAR(d.r->value, numNextBorder, RealNumber::eps);
+  /// Compare against every retained entry, independently of index layout.
+  for (const fp tolerance : {
+           1e-12,
+           savedTolerance,
+           1e-6,
+           1e-3,
+       }) {
+    ComplexNumbers::setTolerance(tolerance);
+    for (const fp value : {
+             0.25,
+             std::nextafter(0.25, 0.),
+             std::nextafter(0.25, 1.),
+             0.5,
+             0.75,
+             1.,
+             2.,
+         }) {
+      const RealNumber* expected = nullptr;
+      if (value <= tolerance) {
+        expected = &constants::zero;
+      } else if (std::abs(value - 1.) <= tolerance) {
+        expected = &constants::one;
+      } else if (std::abs(value - SQRT2_2) <= tolerance) {
+        expected = &constants::sqrt2over2;
+      } else {
+        auto distance = tolerance;
+        for (auto* head : ut.getTable()) {
+          for (auto* entry = head; entry != nullptr; entry = entry->next()) {
+            const auto difference = std::abs(entry->value - value);
+            if (difference <= distance &&
+                (expected == nullptr || difference < distance ||
+                 entry->value < expected->value)) {
+              expected = entry;
+              distance = difference;
+            }
+          }
+        }
+      }
+      const auto* actual = ut.lookup(value);
+      if (expected != nullptr) {
+        EXPECT_EQ(actual, expected);
+      } else {
+        EXPECT_EQ(actual->value, value);
+      }
+    }
+  }
 }
 
 TEST(DDComplexTest, LowestFractions) {
@@ -246,19 +241,19 @@ TEST(DDComplexTest, LowestFractions) {
 }
 
 TEST_F(CNTest, NumberPrintingToString) {
-  auto imag = cn.lookup(0., 1.);
-  auto imagStr = imag.toString(false);
+  auto const imag = cn.lookup(0., 1.);
+  auto const imagStr = imag.toString(false);
   EXPECT_STREQ(imagStr.c_str(), "1i");
-  auto imagStrFormatted = imag.toString(true);
+  auto const imagStrFormatted = imag.toString(true);
   EXPECT_STREQ(imagStrFormatted.c_str(), "+i");
 
-  auto superposition = cn.lookup(SQRT2_2, SQRT2_2);
-  auto superpositionStr = superposition.toString(false, 3);
+  auto const superposition = cn.lookup(SQRT2_2, SQRT2_2);
+  auto const superpositionStr = superposition.toString(false, 3);
   EXPECT_STREQ(superpositionStr.c_str(), "0.707+0.707i");
-  auto superpositionStrFormatted = superposition.toString(true, 3);
+  auto const superpositionStrFormatted = superposition.toString(true, 3);
   EXPECT_STREQ(superpositionStrFormatted.c_str(), "1/√2(1+i)");
-  auto negSuperposition = cn.lookup(SQRT2_2, -SQRT2_2);
-  auto negSuperpositionStrFormatted = negSuperposition.toString(true, 3);
+  auto const negSuperposition = cn.lookup(SQRT2_2, -SQRT2_2);
+  auto const negSuperpositionStrFormatted = negSuperposition.toString(true, 3);
   EXPECT_STREQ(negSuperpositionStrFormatted.c_str(), "1/√2(1-i)");
 }
 
@@ -544,4 +539,81 @@ TEST_F(CNTest, ExportConditionalFormat6) {
 
 TEST_F(CNTest, ExportConditionalFormat7) {
   EXPECT_STREQ(conditionalFormat(cn.lookup(-SQRT2_2, 0)).c_str(), "-1/√2");
+}
+
+TEST(DDComplexTest, HashesSignedQuantizedWeights) {
+  const std::hash<ComplexValue> hash;
+  for (const bool imaginary : {false, true}) {
+    std::unordered_set<size_t> hashes;
+    for (const fp value : {-0.125, -0.25, -0.5, -0.75}) {
+      const ComplexValue weight =
+          imaginary ? ComplexValue{0., value} : ComplexValue{value, 0.};
+      hashes.insert(hash(weight));
+      auto nearby = weight;
+      (imaginary ? nearby.i : nearby.r) += RealNumber::eps / 4.;
+      EXPECT_EQ(hash(weight), hash(nearby));
+    }
+    EXPECT_GT(hashes.size(), 1U);
+  }
+  for (const fp zero : {0., -0., RealNumber::eps / 4., -RealNumber::eps / 4.}) {
+    EXPECT_EQ(hash({zero, zero}), hash({0., 0.}));
+    EXPECT_EQ(hash({zero, 0.}), hash({0., 0.}));
+    EXPECT_EQ(hash({0., zero}), hash({0., 0.}));
+    EXPECT_EQ(hash({zero, 0.5}), hash({0., 0.5}));
+    EXPECT_EQ(hash({0.5, zero}), hash({0.5, 0.}));
+  }
+}
+
+TEST(DDComplexTest, PreservesFlagsWhenRelinkingNumbers) {
+  RealNumber entry{};
+  RealNumber neighbor{};
+  RealNumber::immortalize(&entry);
+  RealNumber::mark(&entry);
+  entry.setNext(&neighbor);
+  EXPECT_EQ(entry.next(), &neighbor);
+  EXPECT_TRUE(RealNumber::isImmortal(&entry));
+  EXPECT_TRUE(RealNumber::isMarked(&entry));
+  entry.setNext(nullptr);
+  EXPECT_EQ(entry.next(), nullptr);
+  EXPECT_TRUE(RealNumber::isImmortal(&entry));
+  EXPECT_TRUE(RealNumber::isMarked(&entry));
+  RealNumber::unmark(&entry);
+  EXPECT_FALSE(RealNumber::isMarked(&entry));
+  EXPECT_TRUE(RealNumber::isImmortal(&entry));
+}
+
+TEST_F(CNTest, ClearsFlagsWhenReusingNumbers) {
+  auto* entry = mm.get<RealNumber>();
+  RealNumber::mark(entry);
+  RealNumber::immortalize(entry);
+  mm.returnEntry(*entry);
+  auto* reused = ut.lookup(0.123);
+  ASSERT_EQ(reused, entry);
+  EXPECT_FALSE(RealNumber::isMarked(reused));
+  EXPECT_FALSE(RealNumber::isImmortal(reused));
+
+  ut.clear();
+  mm.reset();
+  reused = ut.lookup(0.321);
+  EXPECT_FALSE(RealNumber::isMarked(reused));
+  EXPECT_FALSE(RealNumber::isImmortal(reused));
+}
+
+TEST(DDComplexTest, ScalarComplexDivisorsPreserveRange) {
+  for (const fp scale : {1e-200, 1e200}) {
+    for (const ComplexValue divisor : {ComplexValue{scale, 0.}, {0., scale}}) {
+      const auto quotient = (divisor * 2.) / divisor;
+      EXPECT_EQ(quotient.r, 2.);
+      EXPECT_EQ(quotient.i, 0.);
+    }
+  }
+  const ComplexValue mixed{1e300, 1e-300};
+  EXPECT_EQ(mixed / ComplexValue{1.}, mixed);
+}
+
+TEST(DDComplexTest, ComplexTextRejectsUnrepresentableValues) {
+  ComplexValue value;
+  EXPECT_THROW(value.fromString("1e-400", ""), std::out_of_range);
+  EXPECT_THROW(value.fromString("", "1e400i"), std::out_of_range);
+  EXPECT_THROW(value.fromString("invalid", ""), std::invalid_argument);
 }

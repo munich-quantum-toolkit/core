@@ -518,6 +518,15 @@ the leftmost one if multiple weights have the same magnitude. It is important to
 note that this ensures that all complex numbers within the decision diagram have
 a magnitude of at most $1$, which is used for optimization purposes.
 
+The matrix root carries the global scale. Its real components use a separate
+exact index, retaining tolerance-based priority for nonzero special constants.
+This preserves roots below the ordinary absolute tolerance, such as the
+$2^{-64}$ root of $H^{\otimes 128}$. Internal normalized coefficients still use
+the ordinary tolerance. Matrix normalization removes a common power-of-two scale
+before squared magnitudes and division, then retains the original root weight.
+Small local matrix entries remain subject to zero tolerance, and intermediate
+and final values must still fit the floating-point representation.
+
 ````{admonition} Example _(Matrix Decision Diagrams)_
 :class: tip
 
