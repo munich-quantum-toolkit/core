@@ -41,6 +41,12 @@ it fails instead of aborting on IR it cannot follow, because verifiers see
 unverified IR. The wire and tensor iterators assume linear, well-formed chains
 and abort otherwise, so the verifier does not use them.
 
+QCO-to-QC conversion reuses the same checks instead of its own forward walk. It
+calls `mqt::verifyQuantumArgumentReturns`, since modules converted outside a
+program have not met the entry-point verifier, and uses the shared trace for its
+QC-only requirements: every region yields its quantum arguments in order, and
+every extracted qubit returns to its own register slot.
+
 Mapping, QIR conversion, and target compilation need every qubit allocated up
 front. They call `mqt::verifyEntryBlockQuantumAllocations`, the former strict
 rule, and diagnose other placements as unsupported. Hoisting callee allocations
