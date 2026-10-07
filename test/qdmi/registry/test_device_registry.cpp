@@ -144,6 +144,15 @@ TEST(DeviceRegistry, PreservesEmbeddedNullInLengthDelimitedSessionValues) {
       QDMI_SUCCESS);
   ASSERT_TRUE(config.custom3.has_value());
   EXPECT_EQ(*config.custom3, std::string("x\0y", 3));
+
+  constexpr std::string_view malformed = "{";
+  EXPECT_EQ(qdmi::detail::parseDeviceSessionJson(malformed.data(),
+                                                 malformed.size(), config),
+            QDMI_ERROR_INVALIDARGUMENT);
+  constexpr std::string_view wrongShape = "[]";
+  EXPECT_EQ(qdmi::detail::parseDeviceSessionJson(wrongShape.data(),
+                                                 wrongShape.size(), config),
+            QDMI_ERROR_INVALIDARGUMENT);
 }
 
 TEST(DeviceRegistry, MergesEnvironmentJsonOverExplicitFile) {
@@ -454,6 +463,7 @@ TEST(DeviceRegistry, ReportsInvalidDocumentsAndDefinitionTypes) {
           R"({"schema-version": 1, "qdmi": {"devices": [{"id": "invalid", "library": "device", "prefix": "P", "enabled": "yes"}]}})",
           R"({"schema-version": 1, "qdmi": {"devices": [{"id": "invalid", "library": "device", "prefix": "P", "session": {"token": 42}}]}})",
           R"({"schema-version": 1, "qdmi": {"devices": [{"id": "missing", "prefix": "P"}]}})",
+          R"({"schema-version": 1, "qdmi": {"devices": [{"id": "missing-prefix", "library": "device"}]}})",
           R"({"schema-version": 1, "qdmi": {"devices": [{"id": "unknown", "library": "device", "prefix": "P", "unexpected": true}]}})",
       }) {
     const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON",

@@ -39,6 +39,12 @@ TEST(ClientRuntimeTest, ValidatesDriversAndRetainsSessions) {
                   testing::HasSubstr("Cannot load QDMI driver")));
   EXPECT_THAT(
       [] {
+        return Session{SessionConfig{.driverPath = std::filesystem::path{}}};
+      },
+      testing::ThrowsMessage<std::invalid_argument>(
+          testing::HasSubstr("QDMI driver path must not be empty")));
+  EXPECT_THAT(
+      [] {
         return Session{
             SessionConfig{.driverPath = MQT_CORE_QDMI_INCOMPLETE_DRIVER}};
       },
@@ -83,6 +89,7 @@ TEST(ClientRuntimeTest, ValidatesDriversAndRetainsSessions) {
 }
 
 TEST(BuiltinDriverExtensionTest, DiscoversThenOpensIndependentSessions) {
+  EXPECT_THROW(builtin_driver::openDevice(""), std::invalid_argument);
   const mqt::test::TemporaryDirectory directory;
   const auto definition = [](const std::string& id) {
     return nlohmann::json::object({
@@ -107,9 +114,19 @@ TEST(BuiltinDriverExtensionTest, DiscoversThenOpensIndependentSessions) {
       std::filesystem::path{u8"device-ünicode.qdmi.json"}, "test.unicode");
   const auto late = manifest("late.qdmi.json", "test.late");
   const auto malformed = directory.write("malformed.qdmi.json", "{");
+  auto missingLibrary = definition("test.missing-library");
+  missingLibrary["library"] = (directory.path() / "missing-device").string();
+  const auto unavailable =
+      directory.write("unavailable.qdmi.json",
+                      nlohmann::json{
+                          {"schema-version", 1},
+                          {"qdmi", {{"devices", {missingLibrary}}}},
+                      }
+                          .dump());
   EXPECT_THROW(builtin_driver::addManifest(directory.path() / "missing"),
                std::runtime_error);
   EXPECT_THROW(builtin_driver::addManifest(malformed), std::invalid_argument);
+  EXPECT_THROW(builtin_driver::addManifest(unavailable), std::runtime_error);
 
   const ScopedEnvironmentVariable driver{"MQT_CORE_QDMI_DRIVER",
                                          MQT_CORE_QDMI_TEST_DRIVER};
