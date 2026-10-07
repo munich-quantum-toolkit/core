@@ -163,8 +163,10 @@ print(mapped.ir)
 ```
 
 The C++ `CompilerTarget::motifs()` API exposes reusable topology motifs grouped
-by `Motifs::Type`. Currently it selects undirected four-cycles, with chords
-allowed. Each group stores packed rows of dense compiler-vertex indices; use
+by `Motifs::Type`: `FourCycle`, then `QubitPair` (M2). Four-cycles allow chords.
+Qubit pairs represent each undirected edge once, smaller vertex first. They
+reuse the normalized adjacency lists; hardware site-ID couplings cannot be
+directly viewed as dense vertex indices. Each group stores packed rows; use
 `group[i]` to access one occurrence. Explicit topologies enumerate lazily into a
 thread-safe cache shared by target copies. Storage grows with the number of
 occurrences, without a separate allocation for each row. For all-to-all targets,

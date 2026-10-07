@@ -1324,11 +1324,13 @@ CompilerTarget::motifs() const {
   }
   std::call_once(storage_->motifsOnce, [&] {
     Motifs::Group cycles(Motifs::Type::FourCycle, 4);
+    Motifs::Group pairs(Motifs::Type::QubitPair, 2);
     const auto& adjacency = storage_->adjacency;
     for (size_t a = 0; a < numSites(); ++a) {
       const auto& neighbours = adjacency[a];
       for (const auto* b = std::ranges::upper_bound(neighbours, a);
            b != neighbours.end(); ++b) {
+        pairs.vertices_.append({a, *b});
         if (adjacency[*b].size() < 2) {
           continue;
         }
@@ -1355,7 +1357,10 @@ CompilerTarget::motifs() const {
         }
       }
     }
-    storage_->motifs.push_back(std::move(cycles));
+    SmallVector<Motifs::Group, 0> groups;
+    groups.push_back(std::move(cycles));
+    groups.push_back(std::move(pairs));
+    storage_->motifs = std::move(groups);
   });
   return ArrayRef<Motifs::Group>(storage_->motifs);
 }

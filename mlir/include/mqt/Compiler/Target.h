@@ -48,7 +48,7 @@ public:
   /// Topology motifs grouped by type, independent of native gate support.
   class Motifs {
   public:
-    enum class Type : uint8_t { FourCycle };
+    enum class Type : uint8_t { FourCycle, QubitPair };
 
     /// Packed rows of dense compiler vertices, without per-occurrence
     /// allocation.
@@ -453,8 +453,9 @@ public:
   /// Return sorted canonical undirected couplings in target site IDs.
   [[nodiscard]] llvm::ArrayRef<Coupling> couplings() const noexcept;
 
-  /// Return selected topology motifs in deterministic order. Currently selects
-  /// four-cycles: each starts at its smallest vertex and its second vertex is
+  /// Return four-cycle and qubit-pair groups in that order, with deterministic
+  /// occurrence order. Pairs store each edge once, smaller vertex first.
+  /// Each four-cycle starts at its smallest vertex and its second vertex is
   /// smaller than its last. Chords are allowed; distinct cycles on the same
   /// four vertices remain distinct. No architecture classification is
   /// performed.

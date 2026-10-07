@@ -541,12 +541,26 @@ TEST(CompilerTargetTest, FourCyclesShareCacheAndAllowChords) {
       std::async(std::launch::async, [target] { return target.motifs(); });
   auto motifs = first.get();
   ASSERT_TRUE(motifs.has_value());
-  ASSERT_EQ(motifs->size(), 1);
+  ASSERT_EQ(motifs->size(), 2);
   const auto& cycles = motifs->front();
   EXPECT_EQ(cycles.type(), Target::Motifs::Type::FourCycle);
   EXPECT_EQ(cycles.arity(), 4);
   ASSERT_EQ(cycles.size(), 1);
   EXPECT_EQ(cycles[0], (llvm::ArrayRef<size_t>{0, 1, 2, 3}));
+  const auto& pairs = (*motifs)[1];
+  EXPECT_EQ(pairs.type(), Target::Motifs::Type::QubitPair);
+  EXPECT_EQ(pairs.arity(), 2);
+  const std::array<std::array<size_t, 2>, 5> expectedPairs{{
+      {0, 1},
+      {0, 2},
+      {0, 3},
+      {1, 2},
+      {2, 3},
+  }};
+  ASSERT_EQ(pairs.size(), expectedPairs.size());
+  for (size_t i = 0; i < pairs.size(); ++i) {
+    EXPECT_EQ(pairs[i], llvm::ArrayRef<size_t>(expectedPairs[i]));
+  }
   auto shared = second.get();
   ASSERT_TRUE(shared.has_value());
   EXPECT_EQ(motifs->data(), shared->data());
@@ -558,8 +572,9 @@ TEST(CompilerTargetTest, FourCyclesShareCacheAndAllowChords) {
                                            NativeOperations::unrestricted()));
   auto empty = single.motifs();
   ASSERT_TRUE(empty.has_value());
-  ASSERT_EQ(empty->size(), 1);
+  ASSERT_EQ(empty->size(), 2);
   EXPECT_EQ(empty->front().size(), 0);
+  EXPECT_EQ((*empty)[1].size(), 0);
 }
 
 TEST(CompilerTargetTest, FourCyclesMatchExhaustiveFiveVertexOracle) {
@@ -599,7 +614,14 @@ TEST(CompilerTargetTest, FourCyclesMatchExhaustiveFiveVertexOracle) {
     }
     auto motifs = target->motifs();
     ASSERT_TRUE(motifs.has_value());
-    ASSERT_EQ(motifs->size(), 1);
+    ASSERT_EQ(motifs->size(), 2);
+    const auto& pairs = (*motifs)[1];
+    ASSERT_EQ(pairs.size(), edges.size());
+    for (size_t i = 0; i < edges.size(); ++i) {
+      EXPECT_EQ(pairs[i],
+                (llvm::ArrayRef<size_t>{static_cast<size_t>(edges[i].first),
+                                        static_cast<size_t>(edges[i].second)}));
+    }
     const auto& cycles = motifs->front();
     std::vector<std::array<size_t, 4>> actual;
     for (size_t i = 0; i < cycles.size(); ++i) {
