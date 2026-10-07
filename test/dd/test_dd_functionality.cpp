@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "dd/DDDefinitions.hpp"
 #include "dd/FunctionalityConstruction.hpp"
 #include "dd/Node.hpp"
 #include "dd/Operations.hpp"
@@ -34,6 +35,7 @@
 #include <random>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace qc;
@@ -73,6 +75,38 @@ TEST(DDFunctionalityTest, GlobalPhasePreservesStateOwnership) {
   EXPECT_EQ(state.getValueByIndex(1), 0.);
   EXPECT_NO_THROW(package.decRef(state));
   EXPECT_TRUE(package.getRootSet<vNode>().empty());
+}
+
+TEST(DDPermutation, RejectsInvalidMappingsBeforeChangingState) {
+  const auto dd = std::make_unique<Package>(2);
+  const Permutation valid{{0, 0}, {1, 1}};
+  for (const auto& [source, target] :
+       std::vector<std::pair<Permutation, Permutation>>{
+           {valid, {{0, 1}, {1, 2}}},
+           {valid, {{0, 1}, {1, 1}}},
+           {valid, {{0, 1}, {2, 0}}},
+           {{{0, 0}, {1, 0}}, {{0, 0}}},
+           {{{0, 0}, {1, 2}}, {{0, 0}}},
+       }) {
+    auto from = source;
+    auto state = Package::makeIdent();
+    EXPECT_THROW(changePermutation(state, from, target, *dd),
+                 std::invalid_argument);
+    EXPECT_EQ(from, source);
+    EXPECT_EQ(state, Package::makeIdent());
+    dd->decRef(state);
+  }
+}
+
+TEST(DDPermutation, AcceptsPartialTargetWithSparsePhysicalQubits) {
+  const auto dd = std::make_unique<Package>(2);
+  Permutation from{{4, 0}, {7, 1}};
+  auto state = makeBasisState(2, std::vector<bool>{true, false}, *dd);
+  dd->incRef(state);
+  changePermutation(state, from, Permutation{{7, 0}}, *dd);
+  EXPECT_EQ(from, (Permutation{{4, 1}, {7, 0}}));
+  EXPECT_EQ(state.getValueByPath(2, "01"), 1.);
+  dd->decRef(state);
 }
 
 INSTANTIATE_TEST_SUITE_P(

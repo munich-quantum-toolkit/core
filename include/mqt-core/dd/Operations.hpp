@@ -18,10 +18,8 @@
 #include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/Operation.hpp"
 
-#include <cassert>
 #include <random>
 #include <stdexcept>
-#include <string>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -192,8 +190,9 @@ VectorDD applyGlobalPhase(VectorDD& in, const fp& phase, Package& dd);
  * @brief Change the permutation of a given DD.
  *
  * @details This function changes the permutation of the given DD @p on from
- * @p from to @p to by applying SWAP gates. The @p from permutation must be at
- * least as large as the @p to permutation.
+ * @p from to @p to by applying SWAP gates. Both mappings must be injective,
+ * and every key and value in @p to must occur in @p from. Values in @p from
+ * must identify qubits in @p dd; physical keys may be sparse.
  *
  * @tparam DDType The type of the DD
  * @param on The DD to change the permutation of
@@ -202,28 +201,42 @@ VectorDD applyGlobalPhase(VectorDD& in, const fp& phase, Package& dd);
  * @param dd The DD package to use
  * @param regular Whether to apply the permutation from the left (true) or from
  * the right (false)
+ * @throws std::invalid_argument If either mapping is invalid. The DD and
+ * @p from remain unchanged in this case.
  */
 template <class DDType>
 void changePermutation(DDType& on, qc::Permutation& from,
                        const qc::Permutation& to, Package& dd,
                        const bool regular = true) {
   constexpr TwoQubitGateMatrix swapMatrix{
-      {{1, 0, 0, 0}, {0, 0, 1, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}}};
-  assert(from.size() >= to.size());
+      {{1, 0, 0, 0}, {0, 0, 1, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}},
+  };
+  std::vector<bool> available(dd.qubits(), false);
+  for (const auto& [physical, logical] : from) {
+    if (logical >= available.size() || available[logical]) {
+      throw std::invalid_argument(
+          "[changePermutation] Source must map to distinct qubits within the "
+          "DD package.");
+    }
+    available[logical] = true;
+  }
+  // Consume each target once to reject duplicate or missing logical qubits.
+  for (const auto& [physical, logical] : to) {
+    if (logical >= available.size() || !available[logical] ||
+        from.find(physical) == from.end()) {
+      throw std::invalid_argument(
+          "[changePermutation] Target must be an injective mapping using only "
+          "keys and logical qubits from the source permutation.");
+    }
+    available[logical] = false;
+  }
   if (on.isZeroTerminal()) {
     return;
   }
 
   // iterate over (k,v) pairs of second permutation
   for (const auto& [i, goal] : to) {
-    // search for key in the first map
-    auto it = from.find(i);
-    if (it == from.end()) {
-      throw std::runtime_error(
-          "[changePermutation] Key " + std::to_string(it->first) +
-          " was not found in first permutation. This should never happen.");
-    }
-    auto current = it->second;
+    const auto current = from.at(i);
 
     // permutations agree for this key value
     if (current == goal) {
@@ -241,8 +254,7 @@ void changePermutation(DDType& on, qc::Permutation& from,
 
     // swap i and j
     auto saved = on;
-    const auto swapDD =
-        dd.makeTwoQubitGateDD(swapMatrix, from.at(i), from.at(j));
+    const auto swapDD = dd.makeTwoQubitGateDD(swapMatrix, current, goal);
     if constexpr (std::is_same_v<DDType, VectorDD>) {
       on = dd.multiply(swapDD, on);
     } else {
