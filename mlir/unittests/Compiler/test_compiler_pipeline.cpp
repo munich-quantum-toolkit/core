@@ -4195,7 +4195,8 @@ TEST_F(CompilerPipelineTest,
   EXPECT_EQ(entanglers, 0U);
 }
 
-TEST_F(CompilerPipelineTest, TargetCompilationElidesMeasuredSwapNetwork) {
+TEST_F(CompilerPipelineTest,
+       TargetCompilationElidesTensorBackedSwapsBeforeSynthesis) {
   auto qc = QCProgram::fromOpenQASMString(R"qasm(
     OPENQASM 3.0;
     include "stdgates.inc";
@@ -4210,9 +4211,15 @@ TEST_F(CompilerPipelineTest, TargetCompilationElidesMeasuredSwapNetwork) {
   ASSERT_TRUE(qc);
   auto program = std::move(*qc).intoQCO();
   ASSERT_TRUE(program);
+  bool hasTensorInsertions = false;
+  program->module().walk(
+      [&](qtensor::InsertOp) { hasTensorInsertions = true; });
+  ASSERT_TRUE(hasTensorInsertions);
   const auto expected =
       qco::sample(mlir::mqt::getEntryPoint(program->module()), 1, 42);
   ASSERT_TRUE(succeeded(expected));
+  // Placement turns tensor insertions into sinks. Canonicalization must then
+  // remove the measured SWAPs before native synthesis decomposes them.
   ASSERT_TRUE(program->compileForTarget(TargetEnvironment(
       makeSparseUCZTarget(true), makePayloadSpecification())));
   ASSERT_TRUE(succeeded(verify(program->module())));

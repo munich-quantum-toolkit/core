@@ -52,14 +52,22 @@ protected:
   }
 };
 
-TEST_F(QTensorCanonicalizationTest, PreservesInsertedMeasurementOutput) {
+TEST_F(QTensorCanonicalizationTest,
+       PreservesSwapWithInsertedMeasurementOutputs) {
   auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
-    func.func @main(%tensor: tensor<?x!qco.qubit>, %index: index) -> i1 {
-      %rest, %q = qtensor.extract %tensor[%index] : tensor<?x!qco.qubit>
-      %out, %bit = qco.measure %q : !qco.qubit
-      %updated = qtensor.insert %out into %rest[%index] : tensor<?x!qco.qubit>
-      qtensor.dealloc %updated : tensor<?x!qco.qubit>
-      return %bit : i1
+    func.func @main(%left: tensor<?x!qco.qubit>, %right: tensor<?x!qco.qubit>,
+                    %leftIndex: index, %rightIndex: index) -> (i1, i1) {
+      %leftRest, %a = qtensor.extract %left[%leftIndex] : tensor<?x!qco.qubit>
+      %rightRest, %b = qtensor.extract %right[%rightIndex] : tensor<?x!qco.qubit>
+      %swappedA, %swappedB = qco.swap %a, %b
+          : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+      %outA, %bitA = qco.measure %swappedA : !qco.qubit
+      %outB, %bitB = qco.measure %swappedB : !qco.qubit
+      %updatedLeft = qtensor.insert %outA into %leftRest[%leftIndex] : tensor<?x!qco.qubit>
+      %updatedRight = qtensor.insert %outB into %rightRest[%rightIndex] : tensor<?x!qco.qubit>
+      qtensor.dealloc %updatedLeft : tensor<?x!qco.qubit>
+      qtensor.dealloc %updatedRight : tensor<?x!qco.qubit>
+      return %bitA, %bitB : i1, i1
     }
   })mlir",
                                               &context_);
@@ -72,13 +80,21 @@ TEST_F(QTensorCanonicalizationTest, PreservesInsertedMeasurementOutput) {
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
   EXPECT_TRUE(succeeded(verifyLinearity(*moduleOp)));
   auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
-  ASSERT_EQ(llvm::range_size(function.getOps<qtensor::InsertOp>()), 1U);
+  ASSERT_EQ(llvm::range_size(function.getOps<SWAPOp>()), 1U);
   EXPECT_TRUE(function.getOps<SinkOp>().empty());
-  auto insert = *function.getOps<qtensor::InsertOp>().begin();
-  auto measurement = *function.getOps<MeasureOp>().begin();
-  EXPECT_EQ(insert.getScalar(), measurement.getQubitOut());
-  auto dealloc = *function.getOps<qtensor::DeallocOp>().begin();
-  EXPECT_EQ(dealloc.getTensor(), insert.getResult());
+  auto swap = *function.getOps<SWAPOp>().begin();
+  auto measurements = llvm::to_vector(function.getOps<MeasureOp>());
+  auto inserts = llvm::to_vector(function.getOps<qtensor::InsertOp>());
+  auto deallocs = llvm::to_vector(function.getOps<qtensor::DeallocOp>());
+  ASSERT_EQ(measurements.size(), 2U);
+  ASSERT_EQ(inserts.size(), 2U);
+  ASSERT_EQ(deallocs.size(), 2U);
+  for (auto [measurement, insert, dealloc, output] :
+       llvm::zip_equal(measurements, inserts, deallocs, swap.getResults())) {
+    EXPECT_EQ(measurement.getQubitIn(), output);
+    EXPECT_EQ(insert.getScalar(), measurement.getQubitOut());
+    EXPECT_EQ(dealloc.getTensor(), insert.getResult());
+  }
 }
 
 TEST_F(QTensorCanonicalizationTest, ScalarizesWhileOnlyWithConstantIndices) {
