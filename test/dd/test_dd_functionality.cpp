@@ -77,7 +77,7 @@ TEST(DDFunctionalityTest, GlobalPhasePreservesStateOwnership) {
 }
 
 TEST(DDPermutation, RejectsInvalidMappingsBeforeChangingState) {
-  Package dd(2);
+  const auto dd = std::make_unique<Package>(2);
   const Permutation valid{{0, 0}, {1, 1}};
   for (const auto& [source, target] :
        std::vector<std::pair<Permutation, Permutation>>{
@@ -89,23 +89,23 @@ TEST(DDPermutation, RejectsInvalidMappingsBeforeChangingState) {
        }) {
     auto from = source;
     auto state = Package::makeIdent();
-    EXPECT_THROW(changePermutation(state, from, target, dd),
+    EXPECT_THROW(changePermutation(state, from, target, *dd),
                  std::invalid_argument);
     EXPECT_EQ(from, source);
     EXPECT_EQ(state, Package::makeIdent());
-    dd.decRef(state);
+    dd->decRef(state);
   }
 }
 
 TEST(DDPermutation, AcceptsPartialTargetWithSparsePhysicalQubits) {
-  Package dd(2);
+  const auto dd = std::make_unique<Package>(2);
   Permutation from{{4, 0}, {7, 1}};
-  auto state = makeBasisState(2, std::vector<bool>{true, false}, dd);
-  dd.incRef(state);
-  changePermutation(state, from, Permutation{{7, 0}}, dd);
+  auto state = makeBasisState(2, std::vector<bool>{true, false}, *dd);
+  dd->incRef(state);
+  changePermutation(state, from, Permutation{{7, 0}}, *dd);
   EXPECT_EQ(from, (Permutation{{4, 1}, {7, 0}}));
   EXPECT_EQ(state.getValueByPath(2, "01"), 1.);
-  dd.decRef(state);
+  dd->decRef(state);
 }
 
 INSTANTIATE_TEST_SUITE_P(

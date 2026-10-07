@@ -219,7 +219,7 @@ void changePermutation(DDType& on, qc::Permutation& from,
     }
     available[logical] = true;
   }
-  /// Consume each target once to reject duplicate or missing logical qubits.
+  // Consume each target once to reject duplicate or missing logical qubits.
   for (const auto& [physical, logical] : to) {
     if (logical >= available.size() || !available[logical] ||
         from.find(physical) == from.end()) {
