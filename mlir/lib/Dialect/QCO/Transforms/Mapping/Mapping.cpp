@@ -461,7 +461,6 @@ static bool needsPlacement(func::FuncOp func) {
 }
 
 namespace {
-
 struct PlacementPass final
     : PassWrapper<PlacementPass, OperationPass<ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(PlacementPass)
@@ -520,6 +519,20 @@ protected:
     }
   }
 };
+} // namespace
+
+namespace {
+
+/// Return the shortest-path distance between a gate's program qubits after
+/// applying the given layout.
+///
+/// The returned distance is measured on the target connectivity graph.
+[[nodiscard]] static size_t distance(const QubitIndexPair& gate,
+                                     const Layout<QubitIndex>& layout,
+                                     const CompilerTarget& target) {
+  const auto [hw0, hw1] = layout.getHardwareIndices(gate.first, gate.second);
+  return target.distanceBetween(hw0, hw1);
+}
 
 struct MappingPass : impl::MappingPassBase<MappingPass> {
 private:
@@ -619,10 +632,7 @@ private:
   /// A fast, flat data structure designed specifically for layer-by-layer
   /// iteration, where the elements are stored sequentially in a single
   /// contiguous buffer.
-  class Horizon {
-  public:
-    Horizon() = default;
-
+  struct Horizon {
     /// Start a new and empty layer.
     void next() { offsets_.emplace_back(storage_.size()); }
 
@@ -635,7 +645,15 @@ private:
 
     /// Returns a slice view of a specific layer.
     [[nodiscard]] ArrayRef<QubitIndexPair> get(size_t i) const {
-      assert(i < nlayers() && "Layer index out of bounds");
+      assert(i < nlayers() && "layer index out of bounds");
+      const auto start = offsets_[i];
+      const auto end = offsets_[i + 1];
+      return {storage_.data() + start, end - start};
+    }
+
+    /// Returns a mutable slice view of a specific layer.
+    [[nodiscard]] MutableArrayRef<QubitIndexPair> get(size_t i) {
+      assert(i < nlayers() && "layer index out of bounds");
       const auto start = offsets_[i];
       const auto end = offsets_[i + 1];
       return {storage_.data() + start, end - start};
@@ -658,30 +676,90 @@ private:
     SmallVector<size_t, 8> offsets_ = {0};
   };
 
-  /// Estimates routing cost by summing distance-based SWAP counts over the
-  /// lookahead horizon with exponential decay.
-  ///
-  /// Computes the minimal number of SWAPs required to route each gate in
-  /// each layer. For each gate, this is determined by the shortest distance
-  /// between its hardware qubits. Intuitively, this is the number of SWAPs
-  /// that a naive router would insert (with a constant layout).
-  struct SerialHeuristic {
-    [[nodiscard]] float operator()(const Horizon& horizon,
-                                   const Layout<QubitIndex>& layout,
-                                   const CompilerTarget& target,
-                                   const Parameters& params) const {
+  /// Interpret the horizon as a serial sequence of gates.
+  struct SerialPolicy {
+    explicit SerialPolicy(Horizon horizon, const Layout<QubitIndex>& layout,
+                          const CompilerTarget& target)
+        : horizon_(std::move(horizon)) {
+      for (size_t i = 0; i < horizon_.nlayers(); ++i) {
+        llvm::stable_sort(horizon_.get(i), [&](const auto& lhs,
+                                               const auto& rhs) {
+          return distance(lhs, layout, target) < distance(rhs, layout, target);
+        });
+      }
+    }
+
+    /// Estimates routing cost by summing distance-based SWAP counts over the
+    /// lookahead horizon with exponential decay.
+    ///
+    /// Computes the minimal number of SWAPs required to route each gate in
+    /// each layer. For each gate, this is determined by the shortest distance
+    /// between its hardware qubits. Intuitively, this is the number of SWAPs
+    /// that a naive router would insert (with a constant layout).
+    [[nodiscard]] float heuristic(const Layout<QubitIndex>& layout,
+                                  const CompilerTarget& target,
+                                  const Parameters& params) const {
       float costs{0};
-      float decay{1.};
-      for (size_t i = 0; i < horizon.nlayers(); ++i) {
-        for (const auto& [prog0, prog1] : horizon.get(i)) {
-          const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
-          const size_t nswaps = target.distanceBetween(hw0, hw1) - 1;
-          costs += decay * static_cast<float>(nswaps);
-          decay *= params.lambda;
+      float weight{1.};
+      for (size_t i = 0; i < horizon_.nlayers(); ++i) {
+        for (const auto& gate : horizon_.get(i)) {
+          const auto nswaps = distance(gate, layout, target) - 1;
+          costs += weight * static_cast<float>(nswaps);
+          weight *= params.lambda; // Each gate increases the weight.
         }
       }
       return costs;
     }
+
+    /// Return the to be routed gate, i.e., the objective.
+    [[nodiscard]] QubitIndexPair objective() const {
+      return horizon_.get(0).front();
+    }
+
+  private:
+    Horizon horizon_;
+  };
+
+  /// Interpret the horizon as a wave of ripples starting from a vertex gate.
+  struct WavePolicy {
+    explicit WavePolicy(Horizon horizon, const Layout<QubitIndex>& layout,
+                        const CompilerTarget& target)
+        : horizon_(std::move(horizon)) {
+      for (size_t i = 0; i < horizon_.nlayers(); ++i) {
+        llvm::stable_sort(horizon_.get(i), [&](const auto& lhs,
+                                               const auto& rhs) {
+          return distance(lhs, layout, target) < distance(rhs, layout, target);
+        });
+      }
+    }
+
+    [[nodiscard]] float heuristic(const Layout<QubitIndex>& layout,
+                                  const CompilerTarget& target,
+                                  const Parameters& params) const {
+      float weight{1.};
+      float costs{
+          static_cast<float>(distance(objective(), layout, target) - 1)};
+
+      for (size_t i = 0; i < horizon_.nlayers(); ++i) {
+        weight *= params.lambda;
+        const auto layer =
+            i == 0 ? horizon_.get(0).drop_front() : horizon_.get(i);
+        for (const auto& gate : layer) {
+          const auto nswaps = distance(gate, layout, target) - 1;
+          costs += weight * static_cast<float>(nswaps);
+        }
+      }
+
+      return costs;
+    }
+
+    /// Return the to be routed gate, i.e., the objective.
+    [[nodiscard]] QubitIndexPair objective() const {
+      return horizon_.get(0).front();
+    }
+
+  private:
+    Horizon horizon_;
   };
 
   /// Describes a node in the A* search graph.
@@ -704,10 +782,10 @@ private:
     }
 
     /// Initialize a child from its parent using a templated heuristic functor.
-    template <typename HeuristicFn>
+    template <class Policy>
     void initializeChild(Node* nextParent, const SwapCandidate& candidate,
-                         const Horizon& horizon, const CompilerTarget& target,
-                         const Parameters& params, HeuristicFn heuristic) {
+                         const Policy& policy, const CompilerTarget& target,
+                         const Parameters& params) {
       layout = nextParent->layout;
       layout.swap(candidate.indices.first, candidate.indices.second);
 
@@ -717,9 +795,9 @@ private:
 
       const float g = params.alpha * static_cast<float>(cost);
       const float h = static_cast<float>(candidate.standalone) *
-                      heuristic(horizon, layout, target, params);
-
+                      policy.heuristic(layout, target, params);
       f = g + h;
+
       swap = candidate.indices;
       parent = nextParent;
     }
@@ -748,8 +826,7 @@ private:
   };
 
   /// A deduplicated priority queue for A* search nodes.
-  class SearchFrontier {
-  public:
+  struct SearchFrontier {
     /// Push a node onto the frontier.
     void push(Node* node) {
       auto*& incumbent = best[node->layout.getProgramToHardware()];
@@ -793,8 +870,7 @@ private:
 
   /// Memory arena for A* search nodes, enabling reuse across searches to reduce
   /// allocation overhead. Initializing a retained node reuses its layout.
-  class Arena {
-  public:
+  struct Arena {
     /// Constructs an arena with a limited memory budget.
     /// The budget of nodes is derived as
     ///
@@ -1448,13 +1524,13 @@ private:
     return {best->layout, best->score};
   }
 
-  /// Route the leading interaction with bounded A* node storage and templated
-  /// heuristic. Drain queued states at the limit, then use distance-reducing
-  /// SWAPs.
-  template <typename HeuristicFn>
+  /// Route the objective interaction with bounded A* node storage and templated
+  /// routing policy. Drain queued states at the limit, then use
+  /// distance-reducing SWAPs.
+  template <class Policy>
   [[nodiscard]] SmallVector<QubitIndexPair>
-  search(const Horizon& horizon, RoutingState& state, Arena& arena,
-         const Environment& env, HeuristicFn heuristic) const {
+  search(const Policy& policy, RoutingState& state, Arena& arena,
+         const Environment& env) const {
     const Parameters params{.alpha = alpha, .lambda = lambda};
 
     arena.reset();
@@ -1462,7 +1538,7 @@ private:
     assert(root != nullptr && "expected root allocation to succeed");
 
     root->initializeRoot(state.layout);
-    if (root->isGoal(horizon.get(0).front(), env.target)) {
+    if (root->isGoal(policy.objective(), env.target)) {
       return SmallVector<QubitIndexPair>{};
     }
 
@@ -1475,7 +1551,7 @@ private:
       // If the currently visited node is a goal node, reconstruct the
       // sequence of SWAPs from this node to the root.
 
-      if (curr->isGoal(horizon.get(0).front(), env.target)) {
+      if (curr->isGoal(policy.objective(), env.target)) {
         return curr->swaps();
       }
 
@@ -1483,7 +1559,7 @@ private:
       // between two neighboring hardware qubits.
 
       llvm::SmallDenseSet<QubitIndexPair, 8> seen;
-      for (const auto& [q0, q1] = horizon.get(0).front();
+      for (const auto& [q0, q1] = policy.objective();
            const auto prog : {q0, q1}) {
         const auto hw0 = curr->layout.getHardwareIndex(prog);
         env.target.forEachNeighbour(hw0, [&](const QubitIndex hw1) {
@@ -1506,8 +1582,7 @@ private:
                 .prefix = prefix,
             };
 
-            child->initializeChild(curr, candidate, horizon, env.target, params,
-                                   heuristic);
+            child->initializeChild(curr, candidate, policy, env.target, params);
             seen.insert(indices);
             frontier.push(child);
           }
@@ -1519,7 +1594,7 @@ private:
     /// Greedy completion can cost later gates. Thus, increase the search
     /// budget when routing quality matters more than memory use.
 
-    const auto [prog0, prog1] = horizon.get(0).front();
+    const auto [prog0, prog1] = policy.objective();
     const auto [hw0, hw1] = state.layout.getHardwareIndices(prog0, prog1);
     const auto path = env.target.shortestPathBetween(hw0, hw1);
 
@@ -2007,11 +2082,11 @@ private:
       }
     }
 
-    composite.op =
-        TypeSwitch<Operation*, Operation*>(composite.op)
-            .Case<scf::ForOp, scf::WhileOp, IfOp, IndexSwitchOp>(
-                [&](auto op) { return extend(op, addons, rewriter); });
-    composite.indices = to_vector(llvm::seq(parent.wires.size()));
+    composite = CompositeUnitary{
+        .op = TypeSwitch<Operation*, Operation*>(composite.op)
+                  .Case<scf::ForOp, scf::WhileOp, IfOp, IndexSwitchOp>(
+                      [&](auto op) { return extend(op, addons, rewriter); }),
+        .indices = to_vector(llvm::seq(parent.wires.size()))};
 
     for (auto [site, result] : enumerate(resultNumbers)) {
       parent.wires[site] = WireIterator(composite.op->getResult(result));
@@ -2235,9 +2310,19 @@ private:
           break;
         }
 
-        const auto swaps =
-            search(horizon, state, arena, env, SerialHeuristic{});
-        insertSWAPs<Mode>(swaps, state, stats, rewriter);
+        /// TODO: Heuristically choose one policy over the other.
+        const SerialPolicy serialPolicy(horizon, state.layout, env.target);
+        const auto serialSwaps = search(serialPolicy, state, arena, env);
+
+        const WavePolicy wavePolicy(horizon, state.layout, env.target);
+        const auto waveSwaps = search(wavePolicy, state, arena, env);
+
+        /// TODO: Equality might use a better heuristic.
+        if (serialSwaps.size() <= waveSwaps.size()) {
+          insertSWAPs<Mode>(serialSwaps, state, stats, rewriter);
+        } else {
+          insertSWAPs<Mode>(waveSwaps, state, stats, rewriter);
+        }
       }
     }
 

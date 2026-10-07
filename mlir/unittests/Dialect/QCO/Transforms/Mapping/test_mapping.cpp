@@ -360,6 +360,7 @@ protected:
   static LogicalResult runMapping(ModuleOp moduleOp,
                                   const MappingPassOptions& options) {
     PassManager pm(moduleOp->getContext());
+    moduleOp->getContext()->enableMultithreading(false);
     pm.addPass(createMappingPass(options));
     if (failed(pm.run(moduleOp))) {
       return failure();
