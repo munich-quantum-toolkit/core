@@ -12,6 +12,7 @@ add_executable(${target_name} test_qco_to_qc.cpp)
 target_link_libraries(
   ${target_name}
   PRIVATE MLIRParser
+          MLIRLLVMDialect
           MLIRSupportMQT
           GTest::gtest_main
           MLIRQCProgramBuilder

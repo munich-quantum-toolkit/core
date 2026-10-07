@@ -627,12 +627,14 @@ struct CompilerTarget::Storage {
   llvm::DenseMap<SiteId, size_t> siteToVertex;
   Connectivity::Kind connectivityKind;
   SmallVector<Coupling> couplings;
+  // Keep per-site storage compact.
   SmallVector<SmallVector<size_t, 4>> adjacency;
   mutable SmallVector<size_t> distances;
   mutable std::once_flag distancesOnce;
   size_t maximumDegree = 0;
   NativeOperations::Kind nativeOperationsKind;
   SmallVector<OperationCapability> operations;
+  // Keep map entries compact when a name has only one capability.
   llvm::StringMap<SmallVector<size_t, 1>> capabilities;
   /// Keys borrow the immutable site tuples owned by operations.
   std::vector<llvm::DenseSet<ArrayRef<SiteId>>> operationSites;

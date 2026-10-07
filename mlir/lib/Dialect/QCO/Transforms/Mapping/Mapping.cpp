@@ -51,6 +51,7 @@
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/WalkResult.h"
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/PriorityQueue.h"
@@ -569,7 +570,7 @@ private:
   /// Wire slots are physical sites; layout alone tracks logical qubits.
   struct RoutingState {
     /// Create state from layout, enforcing wire[i] = i-th site.
-    static RoutingState fromLayout(const Wires& roots,
+    static RoutingState fromLayout(ArrayRef<WireIterator> roots,
                                    const Layout<QubitIndex>& layout,
                                    const Environment& env) {
       RoutingState state(Wires(layout.nHardwareQubits()), layout, env);
@@ -629,7 +630,8 @@ private:
 
     /// Initialize a child from its parent while reusing layout capacity.
     void initializeChild(Node* nextParent, const SwapCandidate& candidate,
-                         const Window& window, const CompilerTarget& target,
+                         ArrayRef<QubitIndexPair> window,
+                         const CompilerTarget& target,
                          const Parameters& params) {
       layout = nextParent->layout;
       layout.swap(candidate.indices.first, candidate.indices.second);
@@ -674,7 +676,8 @@ private:
     /// between its hardware qubits. Intuitively, this is the number of SWAPs
     /// that a naive router would insert to route the layers (with a constant
     /// layout).
-    [[nodiscard]] float h(const Window& window, const CompilerTarget& target,
+    [[nodiscard]] float h(ArrayRef<QubitIndexPair> window,
+                          const CompilerTarget& target,
                           const Parameters& params) const {
       float costs{0};
       float decay{1.};
@@ -1104,7 +1107,7 @@ private:
     bool supported = true;
     walkProgramGraph<WireDirection::Forward>(
         MutableArrayRef(wires.data(), wires.size()),
-        [&](const Frontier& frontier, ReleasedOps& released) {
+        [&](const Frontier& frontier, SmallVectorImpl<Operation*>& released) {
           for (const auto& [op, indices] : frontier) {
             if (op->getNumRegions() != 0 && !isa<UnitaryOpInterface>(op)) {
               supported = false;
@@ -1271,8 +1274,9 @@ private:
   /// Score each candidate with a forward traversal, preserving its start
   /// layout.
   std::pair<Layout<QubitIndex>, std::optional<Score>>
-  generateLayout(const Wires& wires, func::FuncOp func, Environment& env) {
-    const auto greedy = generateGreedyLayout(wires, env);
+  generateLayout(ArrayRef<WireIterator> wires, func::FuncOp func,
+                 Environment& env) {
+    const auto greedy = generateGreedyLayout(Wires(wires), env);
     if (greedy && greedy->second) {
       return {greedy->first, std::nullopt};
     }
@@ -1285,6 +1289,7 @@ private:
       Score score;
     };
 
+    // Avoid embedding a layout in the vector object.
     SmallVector<Trial, 0> trials;
     trials.reserve(ntrials);
 
@@ -1336,7 +1341,7 @@ private:
   /// Route the leading interaction with bounded A* node storage.
   /// Drain queued states at the limit, then use distance-reducing SWAPs.
   [[nodiscard]] SmallVector<QubitIndexPair>
-  search(const Window& window, RoutingState& state, Arena& arena,
+  search(ArrayRef<QubitIndexPair> window, RoutingState& state, Arena& arena,
          const Environment& env) const {
     const Parameters params{.alpha = alpha, .lambda = lambda};
 
@@ -1569,7 +1574,7 @@ private:
 
     walkProgramGraph<Direction>(
         MutableArrayRef(wires.data(), wires.size()),
-        [&](const Frontier& frontier, ReleasedOps& released) {
+        [&](const Frontier& frontier, SmallVectorImpl<Operation*>& released) {
           for (const auto& [op, indices] : frontier) {
             if (indices.size() == 1 &&
                 (boundary == nullptr || precedes<Direction>(op, boundary))) {
@@ -1789,7 +1794,8 @@ private:
     /// every wire through it, so later regions must wait for its exit layout.
 
     walkProgramGraph<Direction>(wires, [&](const Frontier& frontier,
-                                           ReleasedOps& released) {
+                                           SmallVectorImpl<Operation*>&
+                                               released) {
       for (const auto& [op, indices] : frontier) {
         if (boundary != nullptr && precedes<Direction>(boundary, op)) {
           continue;
@@ -1906,7 +1912,8 @@ private:
     return permutation;
   }
 
-  static void permuteWires(Wires& wires, ArrayRef<QubitIndex> permutation) {
+  static void permuteWires(SmallVectorImpl<WireIterator>& wires,
+                           ArrayRef<QubitIndex> permutation) {
     Wires reordered(wires.size());
     for (size_t site = 0; site < wires.size(); ++site) {
       reordered[permutation[site]] = wires[site];
@@ -1968,6 +1975,7 @@ private:
 
     Statistics totalStats;
 
+    // RoutingState exceeds LLVM's size limit for default inline capacity.
     SmallVector<RoutingState, 0> children;
     children.reserve(op->getNumRegions());
 

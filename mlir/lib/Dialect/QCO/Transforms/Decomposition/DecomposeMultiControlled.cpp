@@ -27,6 +27,7 @@
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/Support/ErrorHandling.h"
 
 #include <cassert>
@@ -55,8 +56,8 @@ constexpr double K_PI8 = K_PI / 8.0;
 
 class GateEmitter {
 public:
-  GateEmitter(OpBuilder& builder, Location loc, SmallVector<Value>& wires)
-      : builder_(&builder), loc_(loc), wires_(&wires) {}
+  GateEmitter(OpBuilder& builder, Location loc, MutableArrayRef<Value> wires)
+      : builder_(&builder), loc_(loc), wires_(wires) {}
 
   // Single- and two-qubit primitives
   void h(size_t q) {
@@ -236,13 +237,13 @@ private:
     setWire(target, ctrlOp.getTargetsOut()[0]);
   }
 
-  [[nodiscard]] Value wire(size_t local) const { return (*wires_)[local]; }
+  [[nodiscard]] Value wire(size_t local) const { return wires_[local]; }
 
-  void setWire(size_t local, Value value) { (*wires_)[local] = value; }
+  void setWire(size_t local, Value value) { wires_[local] = value; }
 
   OpBuilder* builder_;
   Location loc_;
-  SmallVector<Value>* wires_;
+  MutableArrayRef<Value> wires_;
 };
 
 //===----------------------------------------------------------------------===//
@@ -273,7 +274,7 @@ struct PlanOp {
 
 /// Ordered plan ops lowered by `lowerPlan`.
 struct CircuitPlan {
-  SmallVector<PlanOp, 32> ops;
+  SmallVector<PlanOp> ops;
 
   void append(PlanOp op) { ops.push_back(std::move(op)); }
 };
@@ -523,7 +524,7 @@ static CircuitPlan planBorrowedDirtyIncrementer(size_t n, bool flagAdd,
 
   // Sub-incrementer over the low half: wire order [helper, high half, low half,
   // (helper2)]; the trailing helpers become the borrowed workspace of `U_{+1}`.
-  SmallVector<size_t, 16> lowIncrementWires;
+  SmallVector<size_t> lowIncrementWires;
   lowIncrementWires.push_back(helper);
   for (size_t q = k; q < n; ++q) {
     lowIncrementWires.push_back(q);
@@ -537,7 +538,7 @@ static CircuitPlan planBorrowedDirtyIncrementer(size_t n, bool flagAdd,
 
   // Half-register MCX: wire order [low half, helper, high half, (helper2)] with
   // the borrowed helper as its target.
-  SmallVector<size_t, 16> halfMcxWires;
+  SmallVector<size_t> halfMcxWires;
   for (size_t q = 0; q < k; ++q) {
     halfMcxWires.push_back(q);
   }
@@ -783,6 +784,7 @@ static void appendRelativePhaseC3X(CircuitPlan& plan, size_t c0, size_t c1,
 /// Controls 0..3, target 4.
 static CircuitPlan planMczRelativePhaseK4() {
   CircuitPlan plan;
+  plan.ops.reserve(47);
   constexpr size_t t = 4;
   const double half = K_PI / 2.0;
   const double quarter = K_PI / 4.0;
@@ -957,6 +959,7 @@ static CircuitPlan planMcpVale(double theta, size_t numControls) {
 static CircuitPlan planMcpValeRelativeResidual(double theta,
                                                size_t numControls) {
   CircuitPlan plan;
+  plan.ops.reserve(17);
   appendValeFig7Shell(plan, theta, numControls);
   appendMcpBarencoRelative(plan, theta / 2.0, numControls - 1, numControls - 1);
   return plan;
@@ -1161,7 +1164,7 @@ synthesizeControlledSwap(OpBuilder& builder, Location loc, ValueRange controls,
 
   auto cx1 = CtrlOp::create(builder, loc, targetA, targetB, makeX);
 
-  SmallVector<Value, 4> mcxControls(controls);
+  SmallVector<Value> mcxControls(controls);
   mcxControls.push_back(cx1.getOutputTarget(0));
   auto mcx =
       CtrlOp::create(builder, loc, mcxControls, cx1.getOutputControl(0), makeX);

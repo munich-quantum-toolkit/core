@@ -36,6 +36,7 @@
 #include <cstddef>
 #include <numbers>
 #include <optional>
+#include <tuple>
 #include <variant>
 
 using namespace mlir;
@@ -122,8 +123,8 @@ struct NegPowToInvPow final : OpRewritePattern<PowOp> {
                         [&](ValueRange invArgs) {
                           // Inline the old pow body, remapping its block args
                           // to the new inv body's block args.
-                          mqt::inlineBodyReturningYields(*op.getBody(), invArgs,
-                                                         rewriter);
+                          std::ignore = mqt::inlineBodyReturningYields(
+                              *op.getBody(), invArgs, rewriter);
                         });
         });
     return success();
@@ -173,8 +174,8 @@ struct MergeNestedPow final : OpRewritePattern<PowOp> {
     rewriter.replaceOpWithNewOp<PowOp>(
         op, *mergedExponent, qubits, [&](ValueRange powArgs) {
           // Inner pow body args now match the new pow's args positionally.
-          mqt::inlineBodyReturningYields(*innerPow.getBody(), powArgs,
-                                         rewriter);
+          std::ignore = mqt::inlineBodyReturningYields(*innerPow.getBody(),
+                                                       powArgs, rewriter);
         });
     return success();
   }
@@ -215,8 +216,8 @@ struct MoveCtrlOutsidePow final : OpRewritePattern<PowOp> {
         op, controls, targets, [&](ValueRange targetArgs) {
           PowOp::create(rewriter, op.getLoc(), op.getExponent(), targetArgs,
                         [&](ValueRange powArgs) {
-                          mqt::inlineBodyReturningYields(*innerCtrlOp.getBody(),
-                                                         powArgs, rewriter);
+                          std::ignore = mqt::inlineBodyReturningYields(
+                              *innerCtrlOp.getBody(), powArgs, rewriter);
                         });
         });
 

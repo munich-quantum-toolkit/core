@@ -389,7 +389,7 @@ int64_t JitSession::run() {
   }
   auto* previous = Runtime::bind(runtime_.get());
   const auto restoreRuntime =
-      llvm::make_scope_exit([previous] { Runtime::bind(previous); });
+      llvm::scope_exit([previous] { Runtime::bind(previous); });
   const auto code = entryPointFn_();
   if (runtime_->invalidStateExtraction_) {
     throw std::invalid_argument(
@@ -421,7 +421,7 @@ int64_t JitSession::sample(size_t shots, std::vector<std::string>& results,
   if (samplingOutputs_ && !runtime_->hasOutput() && shots != 0) {
     runtime_->deferMeasurements_ = true;
     const auto restore =
-        llvm::make_scope_exit([&] { runtime_->deferMeasurements_ = false; });
+        llvm::scope_exit([&] { runtime_->deferMeasurements_ = false; });
     if (const auto code = execute(); code != 0) {
       return code;
     }

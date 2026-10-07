@@ -20,7 +20,15 @@
 #include "gtest/gtest.h"
 
 #include "llvm/AsmParser/Parser.h"
+#ifdef _MSC_VER
+// shortcut: LLVM narrows ScaledNumber scales; remove when fixed upstream.
+#pragma warning(push)
+#pragma warning(disable : 4242)
+#endif
 #include "llvm/Bitcode/BitcodeWriter.h"
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/SourceMgr.h"

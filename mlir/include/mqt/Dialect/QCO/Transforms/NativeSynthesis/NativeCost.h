@@ -166,6 +166,7 @@ private:
 
   const CompilerTarget& target_;
   NativeCostAnalysis analysis_;
+  // Keep per-site matrix buffers on the heap to limit each tracker's size.
   SmallVector<Run, 0> runs_;
   SmallVector<size_t> partners_;
   SmallVector<size_t> depths_;

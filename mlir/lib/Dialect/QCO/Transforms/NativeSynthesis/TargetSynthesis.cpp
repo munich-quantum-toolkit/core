@@ -41,6 +41,7 @@
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Value.h"
 #include "mlir/IR/Visitors.h"
+#include "mlir/Interfaces/CallInterfaces.h"
 #include "mlir/Interfaces/FunctionInterfaces.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
@@ -83,7 +84,7 @@ namespace {
 
 /// Composed unitary and metadata for a fusable two-qubit run.
 struct FusableTwoQubitRun {
-  SmallVector<Operation*, 8> ops; ///< Members in dependency order.
+  SmallVector<Operation*> ops; ///< Members in dependency order.
   Matrix4x4 composed = Matrix4x4::identity();
   size_t numTwoQ = 0; ///< Number of two-qubit members.
   Value tailA;        ///< Current output wires of the run's tail.
@@ -439,6 +440,8 @@ static FailureOr<SiteMap> collectStaticSites(Operation* root, bool indexed) {
 }
 
 /// Collection has validated the inputs of every unitary, reset, and measure.
+///
+/// Keep the common one- and two-qubit cases inline.
 static SmallVector<SiteId, 2> getOperationSites(Operation* operation,
                                                 const SiteMap& sites) {
   SmallVector<SiteId, 2> result;
@@ -1578,6 +1581,54 @@ protected:
   }
 };
 
+/// After canonicalization and CSE, skip liveness for flat, call-free
+/// public functions.
+class TargetDeadValueCleanupPass final
+    : public PassWrapper<TargetDeadValueCleanupPass, OperationPass<ModuleOp>> {
+public:
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(TargetDeadValueCleanupPass)
+
+  void getDependentDialects(DialectRegistry& registry) const override {
+    createRemoveDeadValuesPass()->getDependentDialects(registry);
+  }
+
+protected:
+  void runOnOperation() override {
+    auto moduleOp = getOperation();
+    const auto needsLiveness =
+        moduleOp->walk<WalkOrder::PreOrder>([&](Operation* operation) {
+          if (operation == moduleOp.getOperation()) {
+            return WalkResult::advance();
+          }
+          if (auto function = dyn_cast<FunctionOpInterface>(operation)) {
+            return function.isPublic() &&
+                           function.getFunctionBody().hasOneBlock()
+                       ? WalkResult::advance()
+                       : WalkResult::interrupt();
+          }
+          /// Modifier bodies contain only unitaries and regionless classical
+          /// operations; they cannot introduce dead loop-carried values.
+          if (isa<CtrlOp, InvOp, PowOp>(operation)) {
+            return WalkResult::skip();
+          }
+          return operation->getNumRegions() != 0 ||
+                         operation->getNumSuccessors() != 0 ||
+                         isa<CallOpInterface>(operation)
+                     ? WalkResult::interrupt()
+                     : WalkResult::advance();
+        });
+    if (!needsLiveness.wasInterrupted()) {
+      markAllAnalysesPreserved();
+      return;
+    }
+    OpPassManager cleanup(ModuleOp::getOperationName());
+    cleanup.addPass(createRemoveDeadValuesPass());
+    if (failed(runPipeline(cleanup, moduleOp))) {
+      signalPassFailure();
+    }
+  }
+};
+
 } // namespace
 
 std::unique_ptr<Pass> createFuseTwoQubitGates() {
@@ -1594,7 +1645,7 @@ void populateTargetNativeSynthesisPipeline(OpPassManager& pm) {
       GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit)));
   /// Reuse unchanged classical reads before native synthesis splits their uses.
   pm.addPass(createCSEPass());
-  pm.addPass(createRemoveDeadValuesPass());
+  pm.addPass(std::make_unique<TargetDeadValueCleanupPass>());
   pm.addPass(createTargetNativeSynthesis());
   pm.addPass(createCSEPass());
   pm.addPass(createVerifyTargetConformance());

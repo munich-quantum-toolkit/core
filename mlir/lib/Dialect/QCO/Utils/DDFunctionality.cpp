@@ -768,7 +768,7 @@ static LogicalResult foldClassicalOp(Operation& op, ClassicalEnv& classical) {
 
   // Fold a clone because some arithmetic folders canonicalize in place.
   Operation* clone = op.clone();
-  const auto destroyClone = llvm::make_scope_exit([&] { clone->destroy(); });
+  const auto destroyClone = llvm::scope_exit([&] { clone->destroy(); });
   Attribute result;
   for (unsigned attempt = 0; attempt < 2 && !result; ++attempt) {
     SmallVector<Attribute> operands;
@@ -1706,7 +1706,7 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
                     "simulation";
         }
         const auto guard =
-            llvm::make_scope_exit([&] { walk.activeCalls.erase(calleeOp); });
+            llvm::scope_exit([&] { walk.activeCalls.erase(calleeOp); });
 
         if (failed(bindValuePairs(call.getArgOperands(), callee.getArguments(),
                                   walk, call))) {
@@ -2006,7 +2006,7 @@ static bool mayMeasureOrReset(func::FuncOp func, DenseSet<Operation*>& active,
   if (!active.insert(func).second) {
     return true;
   }
-  const auto guard = llvm::make_scope_exit([&] { active.erase(func); });
+  const auto guard = llvm::scope_exit([&] { active.erase(func); });
   const auto result = func.getBody().walk([&](Operation* op) -> WalkResult {
     if (isa<MeasureOp, ResetOp>(op)) {
       return WalkResult::interrupt();
@@ -2146,7 +2146,7 @@ sampleImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
            std::vector<std::string>* shotResults,
            std::optional<dd::VectorDD>* retainedState,
            const DDExecutionOptions& options) {
-  const auto inputGuard = llvm::make_scope_exit([&] { dd.decRef(in); });
+  const auto inputGuard = llvm::scope_exit([&] { dd.decRef(in); });
   auto plan = getSamplingPlan(func);
   if (failed(plan)) {
     return failure();
@@ -2187,7 +2187,7 @@ sampleImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
                               &plan->deferredMeasurements, &classical,
                               &measuredWires, &deferredMeasurementUse);
     if (succeeded(state)) {
-      const auto guard = llvm::make_scope_exit([&] { dd.decRef(*state); });
+      const auto guard = llvm::scope_exit([&] { dd.decRef(*state); });
       for (size_t i = 0; i < shots; ++i) {
         if (failed(record(classical, dd.measureAll(*state, false, rng)))) {
           return failure();
@@ -2212,7 +2212,7 @@ sampleImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
     if (failed(state)) {
       return failure();
     }
-    const auto guard = llvm::make_scope_exit([&] { dd.decRef(*state); });
+    const auto guard = llvm::scope_exit([&] { dd.decRef(*state); });
     std::string basis = plan->outputs.empty()
                             ? dd.measureAll(*state, false, rng)
                             : std::string{};

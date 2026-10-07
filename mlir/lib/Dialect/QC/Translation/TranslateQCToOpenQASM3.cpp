@@ -1718,8 +1718,7 @@ private:
                                                      ValueRange operands) {
     auto callee = resolveGateCallee(operation);
     if (callee == nullptr) {
-      fail(operation, "call does not match an exportable gate function");
-      return failure();
+      return fail(operation, "call does not match an exportable gate function");
     }
 
     GateCall call;

@@ -14,6 +14,7 @@
 #include "qdmi/devices/dd/Device.hpp"
 
 #include "dd/DDDefinitions.hpp"
+#include "dd/Edge.hpp"
 #include "dd/Package.hpp"
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
@@ -809,7 +810,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getStateVector(const size_t size,
       return QDMI_ERROR_OUTOFMEM;
     }
     std::call_once(stateVecOnce_,
-                   [this] { stateVec_ = stateVecDD_.getVector(); });
+                   [this] { stateVec_ = dd::getVector(stateVecDD_); });
     std::memcpy(data, stateVec_.data(), reqSize);
   }
   if (sizeRet != nullptr) {
@@ -827,7 +828,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getSparseResults(
     return QDMI_ERROR_NOTSUPPORTED;
   }
   std::call_once(stateVecSparseOnce_, [this] {
-    const auto sparse = stateVecDD_.getSparseVector();
+    const auto sparse = dd::getSparseVector(stateVecDD_);
     stateVecSparse_.assign(sparse.begin(), sparse.end());
     std::ranges::sort(stateVecSparse_, {},
                       &decltype(stateVecSparse_)::value_type::first);
@@ -922,7 +923,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getProbabilities(const size_t size,
       return QDMI_ERROR_OUTOFMEM;
     }
     std::call_once(stateVecOnce_,
-                   [this] { stateVec_ = stateVecDD_.getVector(); });
+                   [this] { stateVec_ = dd::getVector(stateVecDD_); });
     // NOLINTNEXTLINE(misc-const-correctness): fills a mutable output buffer.
     auto* dataPtr = static_cast<double*>(data);
     for (const auto& c : stateVec_) {

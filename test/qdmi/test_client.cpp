@@ -518,6 +518,7 @@ TEST(QDMITest, BinaryProgramFormatClassification) {
     case QDMI_PROGRAM_FORMAT_CUSTOM3:
     case QDMI_PROGRAM_FORMAT_CUSTOM4:
     case QDMI_PROGRAM_FORMAT_CUSTOM5:
+    case QDMI_PROGRAM_FORMAT_MAX:
       return false;
     }
     return false;
@@ -934,24 +935,26 @@ TEST_F(DDSimulatorDeviceTest, SubmitJobCustomSupportedTypes) {
     try {
       switch (which) {
       case 1:
-        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10, custom);
+        std::ignore = device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3,
+                                       10, custom);
         break;
       case 2:
-        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
-                         std::nullopt, custom);
+        std::ignore = device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3,
+                                       10, std::nullopt, custom);
         break;
       case 3:
-        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
-                         std::nullopt, std::nullopt, custom);
+        std::ignore = device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3,
+                                       10, std::nullopt, std::nullopt, custom);
         break;
       case 4:
-        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
-                         std::nullopt, std::nullopt, std::nullopt, custom);
+        std::ignore =
+            device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
+                             std::nullopt, std::nullopt, std::nullopt, custom);
         break;
       case 5:
-        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
-                         std::nullopt, std::nullopt, std::nullopt, std::nullopt,
-                         custom);
+        std::ignore = device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3,
+                                       10, std::nullopt, std::nullopt,
+                                       std::nullopt, std::nullopt, custom);
         break;
       default:
         throw std::invalid_argument("Invalid 'which' value");
@@ -963,10 +966,12 @@ TEST_F(DDSimulatorDeviceTest, SubmitJobCustomSupportedTypes) {
     }
   };
   submitWithCustoms(7, 1);
-  EXPECT_NO_THROW(device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
-                                   std::nullopt, false));
-  EXPECT_THROW(device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
-                                std::nullopt, true),
+  EXPECT_NO_THROW(std::ignore =
+                      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3,
+                                       10, std::nullopt, false));
+  EXPECT_THROW(std::ignore =
+                   device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
+                                    std::nullopt, true),
                std::runtime_error);
   EXPECT_THROW(submitWithCustoms(std::string("custom"), 2),
                std::invalid_argument);

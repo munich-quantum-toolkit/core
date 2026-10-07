@@ -807,7 +807,7 @@ struct EigenDecomposition2x2 {
 /// eigenvector for `eigenvalues[j]`).
 struct EigenDecomposition {
   /// Eigenvalues in no particular order.
-  SmallVector<Complex, 8> eigenvalues;
+  SmallVector<Complex> eigenvalues;
   /// Eigenvectors as columns (column `j` matches `eigenvalues[j]`).
   DynamicMatrix eigenvectors;
 

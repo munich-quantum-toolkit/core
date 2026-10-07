@@ -51,7 +51,8 @@ function(add_mqt_core_library name)
       ${name}
       PROPERTIES C_VISIBILITY_PRESET hidden
                  CXX_VISIBILITY_PRESET hidden
-                 VISIBILITY_INLINES_HIDDEN 1)
+                 VISIBILITY_INLINES_HIDDEN 1
+                 WINDOWS_EXPORT_ALL_SYMBOLS OFF)
   endif()
 
   # Always compile with position-independent code to enable usage in shared libraries

@@ -148,6 +148,7 @@ static Value insertQTensorScalars(Value tensor, ValueRange scalars,
 
 namespace {
 
+// TensorSlots exceeds LLVM's size limit for default inline capacity.
 struct TensorSlots {
   Value original;
   Value remaining;

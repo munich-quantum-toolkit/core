@@ -29,6 +29,7 @@
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/BuiltinAttributes.h"
@@ -95,6 +96,47 @@ static LogicalResult runQCOToQCConversion(ModuleOp moduleOp) {
   PassManager pm(moduleOp.getContext());
   pm.addPass(createQCOToQC());
   return pm.run(moduleOp);
+}
+
+TEST(QCOToQCRegressionTest, PreservesClassicalOperations) {
+  MLIRContext context;
+  context.loadDialect<qco::QCODialect, func::FuncDialect, LLVM::LLVMDialect>();
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main(%x: i64) -> i1 {
+      %same = llvm.icmp "eq" %x, %x : i64
+      return %same : i1
+    }
+  })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+}
+
+TEST(QCOToQCRegressionTest, ReportsUnsupportedQubitConsumer) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, qco::QCODialect, arith::ArithDialect,
+                      func::FuncDialect>();
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main(%condition: i1) attributes {mqt.entry_point} {
+      %left = qco.alloc : !qco.qubit
+      %right = qco.alloc : !qco.qubit
+      %selected = arith.select %condition, %left, %right : !qco.qubit
+      qco.sink %selected : !qco.qubit
+      return
+    }
+  })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  bool sawError = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    sawError |= diagnostic.getSeverity() == DiagnosticSeverity::Error;
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
+  EXPECT_TRUE(sawError);
 }
 
 TEST(QCOToQCRegressionTest, RejectsUnsupportedDynamicTensorOwnership) {

@@ -202,8 +202,9 @@ TEST_F(WireIteratorFixture, FailOnSentinelAccess) {
   WireIterator it(q0);
   --it;
   ASSERT_EQ(it, std::default_sentinel);
-  ASSERT_DEATH(it.qubit(), "Trying to access qubit of sentinel!");
-  ASSERT_DEATH(it.operation(), "Trying to access operation of sentinel!");
+  ASSERT_DEATH(std::ignore = it.qubit(), "Trying to access qubit of sentinel!");
+  ASSERT_DEATH(std::ignore = it.operation(),
+               "Trying to access operation of sentinel!");
 }
 
 TEST_F(WireIteratorFixture, TraversalRespectsStructuredSemantics) {

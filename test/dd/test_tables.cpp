@@ -12,6 +12,7 @@
 #include "dd/ComputeTable.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/DDpackageConfig.hpp"
+#include "dd/Edge.hpp"
 #include "dd/MemoryManager.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
@@ -127,7 +128,7 @@ TEST(DDTableTest, RehashPreservesCanonicalNodesAndOwnedRoots) {
                   },
                   0),
               gates[i - 1]);
-    const auto values = states[i - 1].getVector();
+    const auto values = dd::getVector(states[i - 1]);
     ASSERT_EQ(values.size(), 2);
     EXPECT_NEAR(values[0].real(), std::cos(angle), 1e-12);
     EXPECT_NEAR(values[1].real(), std::sin(angle), 1e-12);
@@ -145,7 +146,7 @@ TEST(DDTableTest, RehashPreservesCanonicalNodesAndOwnedRoots) {
     EXPECT_EQ(table->getStats(0).numEntries, 0);
   }
   const auto fresh = makeZeroState(2, package);
-  EXPECT_EQ(fresh.getVector(), (CVec{1., 0., 0., 0.}));
+  EXPECT_EQ(dd::getVector(fresh), (CVec{1., 0., 0., 0.}));
   package.decRef(fresh);
 }
 
@@ -242,13 +243,14 @@ TEST(DDTableTest, AdaptiveMultiplicationCachePreservesStateAcrossCollection) {
     EXPECT_EQ(stats.numBuckets, initialBuckets);
     for (size_t i = 0; i < 2 * initialBuckets; ++i) {
       const auto result = package.multiply(gate, state);
-      EXPECT_NEAR(result.getValueByIndex(0).real(), expected[0].real(), 1e-12);
+      EXPECT_NEAR(dd::getValueByIndex(result, 0).real(), expected[0].real(),
+                  1e-12);
     }
     ASSERT_GE(stats.hits, initialBuckets);
     ASSERT_TRUE(package.garbageCollect(true));
     EXPECT_EQ(stats.numBuckets, initialBuckets == 4 ? 32 : initialBuckets);
     EXPECT_EQ(stats.numEntries, 0);
-    const auto result = package.multiply(gate, state).getVector();
+    const auto result = dd::getVector(package.multiply(gate, state));
     for (size_t i = 0; i < result.size(); ++i) {
       EXPECT_NEAR(result[i].real(), expected[i].real(), 1e-12);
       EXPECT_NEAR(result[i].imag(), expected[i].imag(), 1e-12);

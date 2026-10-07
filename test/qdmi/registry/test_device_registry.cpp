@@ -22,6 +22,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <variant>
 #include <vector>
 
@@ -310,7 +311,7 @@ TEST(DeviceRegistry, HigherPrecedenceDefinitionMustExplicitlyReenableDevice) {
 
 TEST(DeviceRegistry, ResolvesRelativeConfigurationPathsBeforeCwdChanges) {
   const TemporaryDirectory directory;
-  directory.write("config/device.json", R"({
+  std::ignore = directory.write("config/device.json", R"({
     "schema-version": 1,
     "qdmi": {"devices": [{
       "id": "relative", "library": "libdevice.so", "prefix": "RELATIVE",
@@ -383,7 +384,7 @@ TEST(DeviceRegistry, DiscoversGeneratedBuildTreeManifests) {
 
 TEST(DeviceRegistry, ReadsProjectConfigurationFromNearestQdmiJson) {
   const TemporaryDirectory directory;
-  directory.write("qdmi.json", R"({
+  std::ignore = directory.write("qdmi.json", R"({
     "schema-version": 1,
     "qdmi": {"devices": [
       {"id": "json", "library": "device.so", "prefix": "JSON"}
@@ -402,14 +403,14 @@ TEST(DeviceRegistry, ReadsProjectConfigurationFromNearestQdmiJson) {
 
 TEST(DeviceRegistry, MergesProjectConfigurationOverUserConfiguration) {
   const TemporaryDirectory directory;
-  directory.write("user/mqt-core/qdmi.json", R"({
+  std::ignore = directory.write("user/mqt-core/qdmi.json", R"({
     "schema-version": 1,
     "qdmi": {"devices": [{
       "id": "layered", "library": "user.so", "prefix": "USER",
       "session": {"custom1": "user-default"}
     }]}
   })");
-  directory.write("project/qdmi.json", R"({
+  std::ignore = directory.write("project/qdmi.json", R"({
     "schema-version": 1,
     "qdmi": {"devices": [{"id": "layered", "prefix": "PROJECT"}]}
   })");
