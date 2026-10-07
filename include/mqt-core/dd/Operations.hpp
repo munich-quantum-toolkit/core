@@ -209,7 +209,8 @@ void changePermutation(DDType& on, qc::Permutation& from,
                        const qc::Permutation& to, Package& dd,
                        const bool regular = true) {
   constexpr TwoQubitGateMatrix swapMatrix{
-      {{1, 0, 0, 0}, {0, 0, 1, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}}};
+      {{1, 0, 0, 0}, {0, 0, 1, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}},
+  };
   std::vector<bool> available(dd.qubits(), false);
   for (const auto& [physical, logical] : from) {
     if (logical >= available.size() || available[logical]) {
@@ -235,7 +236,7 @@ void changePermutation(DDType& on, qc::Permutation& from,
 
   // iterate over (k,v) pairs of second permutation
   for (const auto& [i, goal] : to) {
-    auto current = from.at(i);
+    const auto current = from.at(i);
 
     // permutations agree for this key value
     if (current == goal) {
