@@ -12,8 +12,10 @@ if(NOT TARGET ${TARGET_NAME})
   # Add driver library
   add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMIDriver FORCE_SHARED)
   set_target_properties(
-    ${TARGET_NAME} PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/.."
-                              RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/..")
+    ${TARGET_NAME}
+    PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/.."
+               RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/.."
+               WINDOWS_EXPORT_ALL_SYMBOLS OFF)
   target_compile_definitions(${TARGET_NAME} PRIVATE QDMI_driver_EXPORTS)
 
   target_sources(${TARGET_NAME} PRIVATE DeviceRegistry.cpp Driver.cpp)
@@ -45,7 +47,8 @@ if(NOT TARGET ${TARGET_NAME})
     target_link_libraries(
       mqt-core-qdmi-driver-testing
       PUBLIC qdmi::qdmi MQT::CoreQDMICommon
-      PRIVATE qdmi::qdmi_project_warnings nlohmann_json::nlohmann_json ${CMAKE_DL_LIBS})
+      PRIVATE MQT::ProjectOptions qdmi::qdmi_project_warnings nlohmann_json::nlohmann_json
+              ${CMAKE_DL_LIBS})
   endif()
 
   mqt_get_qdmi_device_targets(QDMI_DEVICE_TARGETS)
