@@ -70,6 +70,7 @@
 #include <deque>
 #include <iterator>
 #include <limits>
+#include <llvm/Support/ErrorHandling.h>
 #include <memory>
 #include <optional>
 #include <random>
@@ -539,6 +540,7 @@ private:
   using Score = std::pair<size_t, size_t>;
 
   enum class RoutingMode : bool { Cold, Hot };
+  enum class RoutingPolicy : bool { Serial, Wave };
 
   /// Invocation data is prepared before trials, then borrowed read-only.
   struct Environment {
@@ -627,6 +629,14 @@ private:
     size_t standalone;
     /// Signed first-step prefix adjustment.
     int64_t prefix;
+  };
+
+  struct LayoutTrial {
+    Layout<QubitIndex> layout;
+    /// The routing policy to test.
+    RoutingPolicy policy{RoutingPolicy::Serial};
+    /// Synthesis available: (native-count, depth). Otherwise, (max(), swaps).
+    Score score;
   };
 
   /// A fast, flat data structure designed specifically for layer-by-layer
@@ -725,12 +735,10 @@ private:
     explicit WavePolicy(Horizon horizon, const Layout<QubitIndex>& layout,
                         const CompilerTarget& target)
         : horizon_(std::move(horizon)) {
-      for (size_t i = 0; i < horizon_.nlayers(); ++i) {
-        llvm::stable_sort(horizon_.get(i), [&](const auto& lhs,
-                                               const auto& rhs) {
-          return distance(lhs, layout, target) < distance(rhs, layout, target);
-        });
-      }
+      objective_ = *llvm::min_element(horizon_.get(0), [&](const auto& lhs,
+                                                           const auto& rhs) {
+        return distance(lhs, layout, target) < distance(rhs, layout, target);
+      });
     }
 
     [[nodiscard]] float heuristic(const Layout<QubitIndex>& layout,
@@ -754,12 +762,11 @@ private:
     }
 
     /// Return the to be routed gate, i.e., the objective.
-    [[nodiscard]] QubitIndexPair objective() const {
-      return horizon_.get(0).front();
-    }
+    [[nodiscard]] QubitIndexPair objective() const { return objective_; }
 
   private:
     Horizon horizon_;
+    QubitIndexPair objective_;
   };
 
   /// Describes a node in the A* search graph.
@@ -1088,7 +1095,7 @@ protected:
     }
 
     Environment env{.target = target, .seed = compilationSeed(moduleOp, seed)};
-    const auto [layout, expectedScore] =
+    const auto [layout, policyTag, expectedScore] =
         generateLayout(computation->wires, func, env);
 
     IRRewriter rewriter(&getContext());
@@ -1100,14 +1107,24 @@ protected:
       return;
     }
 
+    Statistics stats;
     RoutingState state(std::move(*wires), layout, env);
-    const auto stats = route<WireDirection::Forward, RoutingMode::Hot>(
-        func.getFunctionBody(), state, arena, env, &rewriter);
+    switch (policyTag) {
+    case RoutingPolicy::Serial:
+      stats = route<WireDirection::Forward, SerialPolicy, RoutingMode::Hot>(
+          func.getFunctionBody(), state, arena, env, &rewriter);
+      break;
+    case RoutingPolicy::Wave:
+      stats = route<WireDirection::Forward, WavePolicy, RoutingMode::Hot>(
+          func.getFunctionBody(), state, arena, env, &rewriter);
+      break;
+    default:
+      llvm_unreachable("unknown routing policy");
+    }
 
-    assert((!expectedScore ||
-            (state.costs ? state.costs->score() : std::nullopt)
-                    .value_or(std::pair{std::numeric_limits<size_t>::max(),
-                                        stats.nswaps}) == *expectedScore) &&
+    assert(((state.costs ? state.costs->score() : std::nullopt)
+                .value_or(std::pair{std::numeric_limits<size_t>::max(),
+                                    stats.nswaps}) == expectedScore) &&
            "cold scoring and hot routing must agree");
 
     if (auto attr = moduleOp->getAttrOfType<DictionaryAttr>("mqt.layout")) {
@@ -1456,72 +1473,89 @@ private:
     return std::pair{Layout<QubitIndex>::fromMapping(mapping), false};
   }
 
+  template <class Policy>
+  void refineLayout(LayoutTrial& trial, const Wires& wires, Region& region,
+                    Environment& env) {
+    Arena arena(env.target.numSites(), searchMemoryLimit);
+
+    {
+      auto state = RoutingState::fromLayout(wires, trial.layout, env);
+      for (size_t i = 0; i < niterations; ++i) {
+        route<WireDirection::Forward, Policy>(region, state, arena, env);
+        route<WireDirection::Backward, Policy>(region, state, arena, env);
+      }
+
+      trial.layout = std::move(state.layout);
+    }
+
+    auto state = RoutingState::fromLayout(wires, trial.layout, env);
+    const auto stats =
+        route<WireDirection::Forward, Policy>(region, state, arena, env);
+
+    if (state.costs && state.costs->score()) {
+      trial.score = *state.costs->score();
+    } else {
+      trial.score =
+          std::make_pair(std::numeric_limits<size_t>::max(), stats.nswaps);
+    }
+  }
+
   /// Refine greedy, identity, and random starts with forward/backward routing.
   /// Score each candidate with a forward traversal, preserving its start
   /// layout.
-  std::pair<Layout<QubitIndex>, std::optional<Score>>
-  generateLayout(const Wires& wires, func::FuncOp func, Environment& env) {
+  LayoutTrial generateLayout(const Wires& wires, func::FuncOp func,
+                             Environment& env) {
     const auto greedy = generateGreedyLayout(wires, env);
     if (greedy && greedy->second) {
-      return {greedy->first, std::nullopt};
+      return {.layout = greedy->first,
+              .score = std::make_pair(std::numeric_limits<size_t>::max(), 0)};
     }
 
     env.prepareNativeCosts(func);
 
-    struct Trial {
-      Layout<QubitIndex> layout;
-      /// Synthesis available: (native-count, depth). Otherwise, (max(), swaps).
-      Score score;
-    };
-
-    SmallVector<Trial, 0> trials;
-    trials.reserve(ntrials);
+    const size_t nlayouts = (ntrials + 1) / 2;
+    SmallVector<Layout<QubitIndex>, 0> layouts;
+    layouts.reserve(nlayouts);
 
     if (greedy) {
-      trials.emplace_back(greedy->first);
+      layouts.emplace_back(greedy->first);
     }
 
-    if (trials.size() < ntrials) {
-      trials.emplace_back(Layout<QubitIndex>::identity(env.target.numSites()));
-
-      auto rng = makeMt19937(env.seed);
-      for (size_t i = trials.size(); i < ntrials; ++i) {
-        trials.emplace_back(Layout<QubitIndex>::random(
+    auto rng = makeMt19937(env.seed);
+    if (layouts.size() < nlayouts) {
+      layouts.emplace_back(Layout<QubitIndex>::identity(env.target.numSites()));
+      while (layouts.size() < nlayouts) {
+        layouts.emplace_back(Layout<QubitIndex>::random(
             env.target.numSites(), env.target.numSites(), rng()));
+      }
+    }
+
+    SmallVector<LayoutTrial, 0> trials;
+    trials.reserve(ntrials);
+    for (auto& layout : layouts) {
+      trials.emplace_back(layout, RoutingPolicy::Serial);
+      if (trials.size() < ntrials) {
+        trials.emplace_back(layout, RoutingPolicy::Wave);
       }
     }
 
     assert(ntrials == trials.size());
 
-    Region& region = func.getFunctionBody();
-    parallelForEach(&getContext(), trials, [&, this](Trial& t) {
-      Arena arena(env.target.numSites(), searchMemoryLimit);
-
-      {
-        auto state = RoutingState::fromLayout(wires, t.layout, env);
-        for (size_t i = 0; i < niterations; ++i) {
-          route<WireDirection::Forward>(region, state, arena, env);
-          route<WireDirection::Backward>(region, state, arena, env);
-        }
-        t.layout = std::move(state.layout);
+    parallelForEach(&getContext(), trials, [&, this](LayoutTrial& trial) {
+      switch (trial.policy) {
+      case RoutingPolicy::Serial:
+        refineLayout<SerialPolicy>(trial, wires, func.getFunctionBody(), env);
+        break;
+      case RoutingPolicy::Wave:
+        refineLayout<WavePolicy>(trial, wires, func.getFunctionBody(), env);
+        break;
       }
-
-      /// Refinement may permute wire cursors. Score from the original roots,
-      /// preserving only the initial layout selected for final placement.
-      auto state = RoutingState::fromLayout(wires, t.layout, env);
-
-      const auto score =
-          route<WireDirection::Forward>(region, state, arena, env);
-      const auto quality = state.costs ? state.costs->score() : std::nullopt;
-      t.score = quality.value_or(
-          std::pair{std::numeric_limits<size_t>::max(), score.nswaps});
     });
 
-    Trial* const best = min_element(trials, [](const Trial& a, const Trial& b) {
-      return a.score < b.score;
-    });
-
-    return {best->layout, best->score};
+    return *llvm::min_element(trials,
+                              [](const LayoutTrial& a, const LayoutTrial& b) {
+                                return a.score < b.score;
+                              });
   }
 
   /// Route the objective interaction with bounded A* node storage and templated
@@ -2148,7 +2182,7 @@ private:
 
   /// Construct child states, route their bodies, reconcile layouts, then
   /// publish the physical result order to the parent.
-  template <WireDirection Direction, RoutingMode Mode>
+  template <WireDirection Direction, class Policy, RoutingMode Mode>
   Statistics routeComposite(const CompositeUnitary& composite,
                             RoutingState& parent, Arena& arena,
                             const Environment& env, IRRewriter* rewriter) {
@@ -2200,7 +2234,7 @@ private:
       }
 
       totalStats.merge(
-          route<Direction, Mode>(region, child, arena, env, rewriter));
+          route<Direction, Policy, Mode>(region, child, arena, env, rewriter));
     }
 
     Layout<QubitIndex> exit =
@@ -2280,7 +2314,8 @@ private:
 
   /// Advance executable operations, route ready regions, or search for SWAPs
   /// that release the next interaction. Finish terminal measurements last.
-  template <WireDirection Direction, RoutingMode Mode = RoutingMode::Cold>
+  template <WireDirection Direction, class Policy,
+            RoutingMode Mode = RoutingMode::Cold>
     requires(Mode != RoutingMode::Hot || Direction == WireDirection::Forward)
   Statistics route(Region& region, RoutingState& state, Arena& arena,
                    const Environment& env, IRRewriter* rewriter = nullptr) {
@@ -2301,8 +2336,8 @@ private:
           place(*composite, state, *rewriter);
         }
 
-        stats.merge(routeComposite<Direction, Mode>(*composite, state, arena,
-                                                    env, rewriter));
+        stats.merge(routeComposite<Direction, Policy, Mode>(
+            *composite, state, arena, env, rewriter));
       } else {
         const auto horizon =
             getHorizon<Direction>(state.wires, state.layout, boundary);
@@ -2310,19 +2345,9 @@ private:
           break;
         }
 
-        /// TODO: Heuristically choose one policy over the other.
-        const SerialPolicy serialPolicy(horizon, state.layout, env.target);
-        const auto serialSwaps = search(serialPolicy, state, arena, env);
-
-        const WavePolicy wavePolicy(horizon, state.layout, env.target);
-        const auto waveSwaps = search(wavePolicy, state, arena, env);
-
-        /// TODO: Equality might use a better heuristic.
-        if (serialSwaps.size() <= waveSwaps.size()) {
-          insertSWAPs<Mode>(serialSwaps, state, stats, rewriter);
-        } else {
-          insertSWAPs<Mode>(waveSwaps, state, stats, rewriter);
-        }
+        const Policy policy(horizon, state.layout, env.target);
+        const auto swaps = search(policy, state, arena, env);
+        insertSWAPs<Mode>(swaps, state, stats, rewriter);
       }
     }
 
