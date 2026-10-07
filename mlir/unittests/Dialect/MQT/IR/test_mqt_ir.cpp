@@ -696,6 +696,30 @@ TEST_F(MQTIRTest, EntryBlockCheckRejectsScopedAllocations) {
                             "block of the 'mqt.entry_point' function"));
 }
 
+TEST_F(MQTIRTest, RejectsCyclicQuantumFlowWithoutLooping) {
+  // The entry point comes first so that its attribute verifier traces the
+  // helper before dominance verification reaches the helper's body.
+  std::string diagnostics;
+  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+    diagnostics += diagnostic.str();
+    return success();
+  });
+  EXPECT_FALSE(parse(R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point} { return }
+      func.func private @helper(%q: !qco.qubit) -> !qco.qubit {
+        %a = qco.h %b : !qco.qubit -> !qco.qubit
+        %b = qco.h %a : !qco.qubit -> !qco.qubit
+        return %a : !qco.qubit
+      }
+    }
+  )mlir"));
+  EXPECT_TRUE(StringRef(diagnostics)
+                  .contains("must return its quantum arguments in argument "
+                            "order"))
+      << diagnostics;
+}
+
 TEST_F(MQTIRTest, ChecksQuantumArgumentReturnOrder) {
   struct Case {
     StringRef helper;

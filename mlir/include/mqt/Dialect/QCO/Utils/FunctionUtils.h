@@ -43,8 +43,9 @@ namespace mlir::qco {
 ///
 /// The trace crosses a region operation only after proving that every region
 /// hands the value back at its own position, so a branch or loop that
-/// exchanges values fails the trace. Values the trace cannot follow fail
-/// rather than abort, which makes this usable on unverified IR.
+/// exchanges values fails the trace. Values the trace cannot follow, including
+/// a cycle of values, fail rather than abort or loop, which makes this usable
+/// on unverified IR.
 [[nodiscard]] FailureOr<Value> traceQuantumOrigin(Value value);
 
 /// Return the quantum block argument of @p block continued by @p value.

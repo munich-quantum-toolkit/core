@@ -20,6 +20,7 @@
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/SymbolTable.h"
 
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 
 using namespace mlir;
@@ -111,7 +112,14 @@ FailureOr<unsigned> mlir::qco::getCallResultForArgument(func::CallOp call,
 }
 
 FailureOr<Value> mlir::qco::traceQuantumOrigin(Value value) {
+  // Unverified IR can contain an SSA cycle, in a graph region or in a block
+  // whose dominance has not been checked yet. Every step has a single
+  // predecessor, so a repeated value means the trace would never end.
+  DenseSet<Value> visited;
   while (true) {
+    if (!visited.insert(value).second) {
+      return failure();
+    }
     auto result = dyn_cast<OpResult>(value);
     if (!result) {
       return value;
