@@ -20,6 +20,7 @@
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Verifier.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Pass/PassRegistry.h"
@@ -45,9 +46,18 @@ runWithPassManager(ModuleOp mod,
                    const function_ref<void(OpPassManager&)> populatePasses,
                    const StringRef errorMessage,
                    const CompilationOptions& options, bool preservesLayout) {
+  if (failed(verify(mod))) {
+    return mod.emitError(errorMessage);
+  }
   PassManager pm(mod.getContext());
+#ifdef NDEBUG
+  // Release pipelines verify their boundaries; debug builds also verify each
+  // pass to identify the first transformation that produces invalid IR.
+  pm.enableVerifier(false);
+#endif
   populatePasses(pm);
-  if (failed(runWithCompilationOptions(pm, mod, options, preservesLayout))) {
+  if (failed(runWithCompilationOptions(pm, mod, options, preservesLayout)) ||
+      failed(verify(mod))) {
     return mod.emitError(errorMessage);
   }
   return success();

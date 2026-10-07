@@ -71,8 +71,10 @@
 #include "mlir/IR/Value.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Parser/Parser.h"
+#include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LLVM.h"
+#include "mlir/Support/TypeID.h"
 #include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/APFloat.h"
@@ -2115,6 +2117,47 @@ TEST_F(CompilerPipelineTest,
   ASSERT_TRUE(reproducer);
   EXPECT_TRUE(
       (*reproducer)->getBuffer().contains("mqt.compilation_seed = 9876"));
+}
+
+namespace {
+class InvalidFunctionResultPass
+    : public PassWrapper<InvalidFunctionResultPass, OperationPass<ModuleOp>> {
+public:
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(InvalidFunctionResultPass)
+
+  void runOnOperation() override {
+    auto function = *getOperation().getOps<func::FuncOp>().begin();
+    function.setType(
+        Builder(&getContext())
+            .getFunctionType({}, {Builder(&getContext()).getI1Type()}));
+  }
+};
+} // namespace
+
+TEST_F(CompilerPipelineTest, RejectsInvalidPipelineInputAndOutput) {
+  ScopedDiagnosticHandler handler(context.get(),
+                                  [](Diagnostic&) { return success(); });
+  for (const bool invalidInput : {false, true}) {
+    SCOPED_TRACE(invalidInput);
+    auto moduleOp = parseSourceString<ModuleOp>(
+        "module { func.func @main() { return } }", context.get());
+    ASSERT_TRUE(moduleOp);
+    if (invalidInput) {
+      auto function = *moduleOp->getOps<func::FuncOp>().begin();
+      function.setType(
+          Builder(context.get())
+              .getFunctionType({}, {Builder(context.get()).getI1Type()}));
+    }
+    bool populated = false;
+    EXPECT_TRUE(failed(runWithPassManager(
+        *moduleOp,
+        [&](OpPassManager& pm) {
+          populated = true;
+          pm.addPass(std::make_unique<InvalidFunctionResultPass>());
+        },
+        "invalid pipeline IR")));
+    EXPECT_EQ(populated, !invalidInput);
+  }
 }
 
 TEST_F(CompilerPipelineTest, TargetPipelineForwardsMappingControls) {

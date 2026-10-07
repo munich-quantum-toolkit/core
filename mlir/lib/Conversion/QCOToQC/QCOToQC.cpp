@@ -1479,7 +1479,12 @@ protected:
     // Conversion of qco types in control-flow ops (e.g., cf.br, cf.cond_br)
     populateBranchOpInterfaceTypeConversionPattern(patterns, typeConverter);
 
-    if (failed(applyPartialConversion(moduleOp, target, std::move(patterns)))) {
+    // Lowering patterns do not backtrack. Avoid retaining replaced operations
+    // and SSA uses until the entire conversion finishes.
+    ConversionConfig config;
+    config.allowPatternRollback = false;
+    if (failed(applyPartialConversion(moduleOp, target, std::move(patterns),
+                                      config))) {
       signalPassFailure();
       return;
     }

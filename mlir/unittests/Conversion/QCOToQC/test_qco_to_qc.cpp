@@ -97,6 +97,32 @@ static LogicalResult runQCOToQCConversion(ModuleOp moduleOp) {
   return pm.run(moduleOp);
 }
 
+TEST(QCOToQCRegressionTest, ReportsUnsupportedQubitConsumer) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, qco::QCODialect, arith::ArithDialect,
+                      func::FuncDialect>();
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main(%condition: i1) attributes {mqt.entry_point} {
+      %left = qco.alloc : !qco.qubit
+      %right = qco.alloc : !qco.qubit
+      %selected = arith.select %condition, %left, %right : !qco.qubit
+      qco.sink %selected : !qco.qubit
+      return
+    }
+  })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  bool sawError = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    sawError |= diagnostic.getSeverity() == DiagnosticSeverity::Error;
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
+  EXPECT_TRUE(sawError);
+}
+
 TEST(QCOToQCRegressionTest, RejectsUnsupportedDynamicTensorOwnership) {
   MLIRContext context;
   context
