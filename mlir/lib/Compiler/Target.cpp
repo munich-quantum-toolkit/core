@@ -630,7 +630,7 @@ struct CompilerTarget::Storage {
   SmallVector<SmallVector<size_t, 4>> adjacency;
   mutable SmallVector<size_t> distances;
   mutable std::once_flag distancesOnce;
-  mutable Motifs motifs;
+  mutable SmallVector<Motifs::Group, 0> motifs;
   mutable std::once_flag motifsOnce;
   size_t maximumDegree = 0;
   NativeOperations::Kind nativeOperationsKind;
@@ -1317,19 +1317,12 @@ ArrayRef<size_t> CompilerTarget::Motifs::Group::operator[](size_t index) const {
   return ArrayRef<size_t>(vertices_).slice(index * arity_, arity_);
 }
 
-bool CompilerTarget::Motifs::isImplicit() const noexcept { return implicit_; }
-
-ArrayRef<CompilerTarget::Motifs::Group>
-CompilerTarget::Motifs::groups() const noexcept {
-  return groups_;
-}
-
-const CompilerTarget::Motifs& CompilerTarget::motifs() const {
+std::optional<ArrayRef<CompilerTarget::Motifs::Group>>
+CompilerTarget::motifs() const {
+  if (connectivityKind() == Connectivity::Kind::AllToAll) {
+    return std::nullopt;
+  }
   std::call_once(storage_->motifsOnce, [&] {
-    if (connectivityKind() == Connectivity::Kind::AllToAll) {
-      storage_->motifs.implicit_ = true;
-      return;
-    }
     Motifs::Group cycles(Motifs::Type::FourCycle, 4);
     const auto& adjacency = storage_->adjacency;
     for (size_t a = 0; a < numSites(); ++a) {
@@ -1362,9 +1355,9 @@ const CompilerTarget::Motifs& CompilerTarget::motifs() const {
         }
       }
     }
-    storage_->motifs.groups_.push_back(std::move(cycles));
+    storage_->motifs.push_back(std::move(cycles));
   });
-  return storage_->motifs;
+  return ArrayRef<Motifs::Group>(storage_->motifs);
 }
 
 bool CompilerTarget::areAdjacent(size_t source, size_t target) const {

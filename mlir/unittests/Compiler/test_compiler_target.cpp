@@ -536,28 +536,30 @@ TEST(CompilerTargetTest, FourCyclesShareCacheAndAllowChords) {
           {{7, 2}, {2, 11}, {11, 4}, {4, 7}, {7, 11}, {2, 7}}),
       NativeOperations::unrestricted()));
   auto first =
-      std::async(std::launch::async, [target] { return &target.motifs(); });
+      std::async(std::launch::async, [target] { return target.motifs(); });
   auto second =
-      std::async(std::launch::async, [target] { return &target.motifs(); });
-  const auto* motifs = first.get();
-  EXPECT_FALSE(motifs->isImplicit());
-  ASSERT_EQ(motifs->groups().size(), 1);
-  const auto& cycles = motifs->groups().front();
+      std::async(std::launch::async, [target] { return target.motifs(); });
+  auto motifs = first.get();
+  ASSERT_TRUE(motifs.has_value());
+  ASSERT_EQ(motifs->size(), 1);
+  const auto& cycles = motifs->front();
   EXPECT_EQ(cycles.type(), Target::Motifs::Type::FourCycle);
   EXPECT_EQ(cycles.arity(), 4);
   ASSERT_EQ(cycles.size(), 1);
   EXPECT_EQ(cycles[0], (llvm::ArrayRef<size_t>{0, 1, 2, 3}));
-  EXPECT_EQ(motifs, second.get());
-  EXPECT_EQ(motifs, &target.motifs());
+  auto shared = second.get();
+  ASSERT_TRUE(shared.has_value());
+  EXPECT_EQ(motifs->data(), shared->data());
+  EXPECT_EQ(motifs->data(), target.motifs()->data());
   const auto complete = valid(Target::create(1000, Connectivity::allToAll(),
                                              NativeOperations::unrestricted()));
-  EXPECT_TRUE(complete.motifs().isImplicit());
-  EXPECT_TRUE(complete.motifs().groups().empty());
+  EXPECT_FALSE(complete.motifs().has_value());
   const auto single = valid(Target::create(1, Connectivity::fromCouplings({}),
                                            NativeOperations::unrestricted()));
-  EXPECT_FALSE(single.motifs().isImplicit());
-  ASSERT_EQ(single.motifs().groups().size(), 1);
-  EXPECT_EQ(single.motifs().groups().front().size(), 0);
+  auto empty = single.motifs();
+  ASSERT_TRUE(empty.has_value());
+  ASSERT_EQ(empty->size(), 1);
+  EXPECT_EQ(empty->front().size(), 0);
 }
 
 TEST(CompilerTargetTest, FourCyclesMatchExhaustiveFiveVertexOracle) {
@@ -595,9 +597,10 @@ TEST(CompilerTargetTest, FourCyclesMatchExhaustiveFiveVertexOracle) {
         }
       }
     }
-    const auto& motifs = target->motifs();
-    ASSERT_EQ(motifs.groups().size(), 1);
-    const auto& cycles = motifs.groups().front();
+    auto motifs = target->motifs();
+    ASSERT_TRUE(motifs.has_value());
+    ASSERT_EQ(motifs->size(), 1);
+    const auto& cycles = motifs->front();
     std::vector<std::array<size_t, 4>> actual;
     for (size_t i = 0; i < cycles.size(); ++i) {
       auto row = cycles[i];

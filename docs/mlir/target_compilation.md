@@ -168,11 +168,11 @@ allowed. Each group stores packed rows of dense compiler-vertex indices; use
 `group[i]` to access one occurrence. Explicit topologies enumerate lazily into a
 thread-safe cache shared by target copies. Storage grows with the number of
 occurrences, without a separate allocation for each row. For all-to-all targets,
-`isImplicit()` is true and `groups()` is empty. An explicit topology instead
-retains a group for each selected type even when it has no occurrences. These
-motifs describe connectivity only, not native gate availability or direction. No
-architecture classification is performed. Placement and mapping do not consume
-this cache yet.
+`motifs()` returns `std::nullopt`. Otherwise it returns an `ArrayRef` of groups.
+An explicit topology retains a group for each selected type even when it has no
+occurrences. These motifs describe connectivity only, not native gate
+availability or direction. No architecture classification is performed.
+Placement and mapping do not consume this cache yet.
 
 Use `CompilerTarget.Connectivity.all_to_all()` for an all-to-all target. An
 empty `CompilerTarget.NativeOperations([])` reports that no quantum operation is

@@ -67,17 +67,6 @@ public:
       size_t arity_;
       llvm::SmallVector<size_t, 0> vertices_;
     };
-
-    /// All-to-all targets represent motifs implicitly and have no stored
-    /// groups.
-    [[nodiscard]] bool isImplicit() const noexcept;
-    /// Return the selected motif types, including groups with no occurrences.
-    [[nodiscard]] llvm::ArrayRef<Group> groups() const noexcept;
-
-  private:
-    friend class CompilerTarget;
-    bool implicit_ = false;
-    llvm::SmallVector<Group, 0> groups_;
   };
 
   /// Target connectivity.
@@ -467,11 +456,12 @@ public:
   /// four vertices remain distinct. No architecture classification is
   /// performed.
   ///
-  /// All-to-all connectivity represents motifs implicitly. Explicit
-  /// topologies enumerate lazily, with storage proportional to the number of
+  /// All-to-all connectivity returns nullopt, representing motifs implicitly.
+  /// Explicit topologies retain a group for each selected type, even if empty.
+  /// They enumerate lazily, with storage proportional to the number of
   /// cycles. The thread-safe cache is shared by copies; the returned view stays
   /// valid while any copy of this target lives.
-  [[nodiscard]] const Motifs& motifs() const;
+  [[nodiscard]] std::optional<llvm::ArrayRef<Motifs::Group>> motifs() const;
 
   /// Return whether two valid dense compiler vertices are adjacent.
   [[nodiscard]] bool areAdjacent(size_t source, size_t target) const;
