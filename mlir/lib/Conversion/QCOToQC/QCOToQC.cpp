@@ -23,7 +23,6 @@
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
-#include "mlir/Dialect/Func/Transforms/FuncConversions.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
@@ -35,6 +34,7 @@
 #include "mlir/IR/Types.h"
 #include "mlir/IR/ValueRange.h"
 #include "mlir/IR/Visitors.h"
+#include "mlir/Interfaces/FunctionInterfaces.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Transforms/DialectConversion.h"
 
@@ -1424,7 +1424,10 @@ protected:
     RewritePatternSet patterns(context);
     QCOToQCTypeConverter typeConverter(context);
 
-    // Configure conversion target
+    // Preserve unrelated classical operations without attempting to rewrite or
+    // fold them: either can require rollback if the result cannot be legalized.
+    target.markUnknownOpDynamicallyLegal(
+        [&](Operation* op) { return typeConverter.isLegal(op); });
     target.addIllegalDialect<QCODialect, qtensor::QTensorDialect>();
     target.addLegalDialect<cbit::CBitDialect, QCDialect, memref::MemRefDialect,
                            arith::ArithDialect>();
@@ -1476,11 +1479,7 @@ protected:
 
     patterns.add<ConvertQCOCallOp>(typeConverter, context);
 
-    // Conversion of qco types in control-flow ops (e.g., cf.br, cf.cond_br)
-    populateBranchOpInterfaceTypeConversionPattern(patterns, typeConverter);
-
-    // Lowering patterns do not backtrack. Avoid retaining replaced operations
-    // and SSA uses until the entire conversion finishes.
+    // Avoid retaining replaced operations and SSA uses until conversion ends.
     ConversionConfig config;
     config.allowPatternRollback = false;
     if (failed(applyPartialConversion(moduleOp, target, std::move(patterns),

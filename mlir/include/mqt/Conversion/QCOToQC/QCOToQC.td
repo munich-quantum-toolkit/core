@@ -21,6 +21,11 @@ def QCOToQC : Pass<"qco-to-qc", "mlir::ModuleOp"> {
     tensor stays in the caller. Transferring the register itself is unsupported.
     Other results remain explicit, including qubits created by a function.
 
+    Other classical operations pass through when their operand and result types
+    need no conversion. Passing quantum values through `cf` branch operands is
+    unsupported. A failed conversion may leave partially rewritten IR; discard
+    the module after failure.
+
     Before rewriting, prove that quantum values yielded by modifiers, branches,
     and loops correspond positionally to their region arguments. Reject wire
     permutations and changes to quantum loop-state counts or types. Classical
