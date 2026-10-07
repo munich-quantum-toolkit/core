@@ -21,7 +21,7 @@ import numpy as np
 import pytest
 import qiskit
 from packaging import version
-from qiskit import QuantumCircuit
+from qiskit import ClassicalRegister, QuantumCircuit, QuantumRegister, qasm3
 from qiskit.circuit import Gate, library
 from qiskit.quantum_info import DensityMatrix, Operator
 
@@ -323,6 +323,7 @@ def test_openqasm_program_direct_and_pipeline_output(tmp_path: Path) -> None:
 
     compiled = compile_program(direct, output=OutputFormat.QIR_ADAPTIVE)
     assert isinstance(compiled, QIRProgram)
+    assert compiled.operation_counts()["llvm.func"] >= 1
 
 
 @pytest.mark.parametrize(
@@ -1843,12 +1844,85 @@ def test_compile_program_fails_for_missing_file() -> None:
         compile_program("missing_program.qasm")
 
 
-def test_qc_program_num_gates() -> None:
-    """Expose gate counts to Python."""
-    program = QCProgram.from_openqasm_str(QASM_STRING)
-    assert program.num_gates() == 2
-    assert program.num_single_qubit_gates() == 1
-    assert program.num_two_qubit_gates() == 1
+@pytest.mark.parametrize("qco", [False, True])
+def test_program_inspection(*, qco: bool) -> None:
+    """Inspect either dialect and reject queries after consumption."""
+    qc = QCProgram.from_openqasm_str(QASM_STRING)
+    program = qc.to_qco() if qco else qc
+    info = program.inspect()
+    assert info.num_gates == program.num_gates() == 4
+    assert info.num_single_qubit_gates == program.num_single_qubit_gates() == 3
+    assert info.num_two_qubit_gates == program.num_two_qubit_gates() == 1
+    assert info.gate_counts == program.gate_counts() == {"cx": 1, "h": 1, "measure": 2}
+    assert info.control_flow_counts == program.control_flow_counts() == {}
+    assert info.operation_counts == program.operation_counts()
+    assert info.operation_counts["qco.ctrl" if qco else "qc.ctrl"] == 1
+    assert info.operation_counts["qco.x" if qco else "qc.x"] == 1
+    assert info.num_qubits == 2
+    assert info.static_qubits == []
+    assert not info.has_control_flow
+    if isinstance(program, QCOProgram):
+        program.to_qc()
+    else:
+        program.to_qco()
+    for query in (
+        "inspect",
+        "num_gates",
+        "num_single_qubit_gates",
+        "num_two_qubit_gates",
+        "gate_counts",
+        "control_flow_counts",
+        "operation_counts",
+    ):
+        with pytest.raises(RuntimeError, match="consumed"):
+            getattr(program, query)()
+
+
+@requires_qiskit_translation
+@pytest.mark.parametrize("frontend", ["qiskit", "openqasm"])
+def test_program_inspection_matches_qiskit(frontend: str) -> None:
+    """Count circuit operations and declared qubits through both frontends."""
+    circuit = QuantumCircuit(QuantumRegister(3, "a"), QuantumRegister(2, "b"), ClassicalRegister(1, "c"))
+    circuit.h(0)
+    circuit.x(3)
+    circuit.cx(0, 1)
+    circuit.cz(1, 2)
+    circuit.ccx(0, 1, 2)
+    circuit.swap(2, 3)
+    circuit.rx(0.3, 2)
+    circuit.barrier(0)
+    circuit.barrier(0, 1)
+    circuit.barrier()
+    circuit.measure(0, 0)
+    circuit.reset(1)
+    program = (
+        QCProgram.from_qiskit(circuit) if frontend == "qiskit" else QCProgram.from_openqasm_str(qasm3.dumps(circuit))
+    )
+    expected = circuit.count_ops()
+    del expected["barrier"]
+    gates = [instruction for instruction in circuit.data if instruction.operation.name != "barrier"]
+    single = sum(len(instruction.qubits) == 1 for instruction in gates)
+    two = sum(len(instruction.qubits) == 2 for instruction in gates)
+    for representation in (program, program.to_qco(copy=True)):
+        info = representation.inspect()
+        assert info.gate_counts == expected
+        assert info.num_gates == representation.num_gates() == circuit.size()
+        assert info.num_single_qubit_gates == representation.num_single_qubit_gates() == single
+        assert info.num_two_qubit_gates == representation.num_two_qubit_gates() == two
+        dialect = "qco" if isinstance(representation, QCOProgram) else "qc"
+        assert info.operation_counts[f"{dialect}.barrier"] == 3
+        assert info.num_qubits == circuit.num_qubits  # Includes the idle qubit.
+        assert not info.has_control_flow
+        assert info.static_qubits == []
+
+
+def test_program_inspection_static_and_unknown_widths() -> None:
+    """Convert site IDs and unknown widths to Python lists and None."""
+    static = QCProgram.from_openqasm_str('OPENQASM 3.0; include "stdgates.inc"; x $5;').to_qco()
+    assert static.inspect().static_qubits == [5]
+    assert static.inspect().num_qubits == 1
+    unknown = QCProgram.from_mlir_str("module {}").inspect()
+    assert unknown.num_qubits is None
 
 
 @pytest.mark.parametrize("mode", ["targetless", "target_output", "target_payload", "source", "path"])

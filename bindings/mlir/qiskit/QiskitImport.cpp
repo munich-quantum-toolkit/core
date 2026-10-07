@@ -1865,7 +1865,7 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
   });
   const auto phase = circuit.globalPhase();
   if (const auto* number = phase.getNumber();
-      number == nullptr || number->value != 0.0 || !variables.structuringLoop) {
+      number == nullptr || number->value != 0.0) {
     builder.gphase(
         parameterValue(builder, phase, localParameters, globalParameters));
   }
