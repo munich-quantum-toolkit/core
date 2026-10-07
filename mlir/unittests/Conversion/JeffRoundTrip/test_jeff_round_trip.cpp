@@ -946,6 +946,68 @@ TEST(JeffRoundTripRegressionTest, PreservesPromotedSignedMinMax) {
   EXPECT_EQ(histogram->at("010101"), 1);
 }
 
+TEST(JeffRoundTripRegressionTest, PreservesIntegerWidthsInIndexCasts) {
+  MLIRContext context;
+  context.loadDialect<cbit::CBitDialect, qco::QCODialect, arith::ArithDialect,
+                      func::FuncDialect, scf::SCFDialect, jeff::JeffDialect>();
+  for (const auto* cast : {"index_cast", "index_castui"}) {
+    const auto source = std::string(R"mlir(module {
+      func.func @main() -> !cbit.reg<64> attributes {mqt.entry_point} {
+        %q = qco.alloc : !qco.qubit
+        %zero = arith.constant 0 : index
+        %one = arith.constant 1 : index
+        %four = arith.constant 4 : index
+        %initial = arith.constant 0 : i64
+        %sum = scf.for %index = %zero to %four step %one
+            iter_args(%total = %initial) -> i64 {
+          %wide = arith.)mlir") +
+                        cast + R"mlir( %index : index to i64
+          %next = arith.addi %total, %wide : i64
+          scf.yield %next : i64
+        }
+        %result = cbit.alloc(#cbit.init<zero>) : !cbit.reg<64>
+        cbit.write %sum, %result : i64, !cbit.reg<64>
+        qco.sink %q : !qco.qubit
+        return %result : !cbit.reg<64>
+      }
+    })mlir";
+    auto program = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(program);
+    ASSERT_TRUE(succeeded(convertQCOToJeff(*program)));
+    auto bytes = serialize(*program);
+    program = deserialize(&context, bytes);
+    ASSERT_TRUE(program);
+    ASSERT_TRUE(succeeded(convertJeffToQCO(*program)));
+    auto counts =
+        qco::sample(program->lookupSymbol<func::FuncOp>("main"), 1, 1);
+    ASSERT_TRUE(succeeded(counts));
+    EXPECT_EQ(counts->at(std::string(61, '0') + "110"), 1U);
+  }
+}
+
+TEST(JeffRoundTripRegressionTest, RejectsUnsupportedIndexCasts) {
+  MLIRContext context;
+  context
+      .loadDialect<arith::ArithDialect, func::FuncDialect, jeff::JeffDialect>();
+  for (
+      const auto* source : {
+          R"mlir(module { func.func @main(%value: index) -> i64 attributes {mqt.entry_point} {
+             %wide = arith.index_cast %value : index to i128
+             %result = arith.trunci %wide : i128 to i64
+             return %result : i64
+           } })mlir",
+          R"mlir(module { func.func @main(%value: vector<2xindex>) -> vector<2xi64>
+               attributes {mqt.entry_point} {
+             %result = arith.index_cast %value : vector<2xindex> to vector<2xi64>
+             return %result : vector<2xi64>
+           } })mlir",
+      }) {
+    auto program = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(program);
+    EXPECT_TRUE(failed(convertQCOToJeff(*program)));
+  }
+}
+
 TEST(JeffRoundTripRegressionTest, RejectsPromotedUnsupportedMath) {
   MLIRContext context;
   context.loadDialect<arith::ArithDialect, func::FuncDialect, math::MathDialect,

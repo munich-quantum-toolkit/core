@@ -128,6 +128,16 @@ Generation returns a {py:class}`~mqt.core.mlir.QCProgram`, the program type used
 by the [MQT Compiler Collection](mlir/mqt_compiler_collection.md). The program
 can enter the normal compiler pipeline.
 
+QPE keeps phase residues as exact unsigned integers and converts them to `f64`
+angles after modular reduction. Constant QFT addition and modular multiplication
+consume bits from least to most significant using
+$\theta \gets \theta/2 \pm \pi b$, with angles in $[-2\pi, 2\pi]$. Constant
+addition stores the input bits; Shor stores modular powers and their inverses.
+Iterative QPE, semiclassical QFT, and Shor carry one measurement correction:
+$c \gets c/2 \pm \pi b/2$. The correction stays in $[-\pi, \pi]$ and needs
+constant work per measurement. This scalar arithmetic executes with the quantum
+operations, so measure compilation and sampling costs separately.
+
 ```{code-cell} ipython3
 program = benchmark.generate()
 assert program.is_valid

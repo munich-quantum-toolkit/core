@@ -411,13 +411,14 @@ static LogicalResult validateReturn(func::ReturnOp returnOp,
 static LogicalResult recordConstant(arith::ConstantOp constant,
                                     ClassicalEnv& classical) {
   auto tensorType = dyn_cast<RankedTensorType>(constant.getType());
-  const bool isFloatTable = tensorType && tensorType.getRank() == 1 &&
-                            tensorType.getElementType().isF64() &&
-                            isa<DenseFPElementsAttr>(constant.getValue());
-  if (!isSupportedClassicalType(constant.getType()) && !isFloatTable) {
+  const bool isScalarTable =
+      tensorType && tensorType.getRank() == 1 &&
+      isSupportedClassicalType(tensorType.getElementType()) &&
+      isa<DenseElementsAttr>(constant.getValue());
+  if (!isSupportedClassicalType(constant.getType()) && !isScalarTable) {
     return constant.emitError()
            << "QCO DD simulation only supports scalar integer, index, and f64 "
-              "constants or dense rank-one f64 tensor constants";
+              "constants or dense rank-one integer or f64 tensor constants";
   }
   classical.values[constant.getResult()] = constant.getValue();
   return success();
@@ -1365,10 +1366,10 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
         if (failed(value)) {
           return failure();
         }
-        auto table = dyn_cast<DenseFPElementsAttr>(*value);
+        auto table = dyn_cast<DenseElementsAttr>(*value);
         if (!table || extract.getIndices().size() != 1) {
           return extract.emitError()
-                 << "QCO DD simulation requires a dense rank-one f64 tensor";
+                 << "QCO DD simulation requires a dense rank-one scalar tensor";
         }
         auto index =
             lookupIndex(extract.getIndices().front(), *walk.classical, extract);
@@ -1379,7 +1380,7 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
           return extract.emitError() << "tensor index out of range";
         }
         walk.classical->values[extract.getResult()] =
-            table.getValues<FloatAttr>()[*index];
+            table.getValues<Attribute>()[*index];
         return success();
       })
       .Case([&](AllocOp alloc) -> LogicalResult {
