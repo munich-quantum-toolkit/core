@@ -714,6 +714,73 @@ TEST(DDPackageTest, Ancillaries) {
   EXPECT_TRUE(reducedBellMatrix.p->e[0].p->e[3].isZeroTerminal());
 }
 
+TEST(DDPackageTest, ReduceGarbageZeroVector) {
+  const auto dd = std::make_unique<Package>(1);
+  auto zero = vEdge::zero();
+  for (const auto normalizeWeights : {false, true}) {
+    for (const auto& garbage : {std::vector<bool>{}, std::vector<bool>{false},
+                                std::vector<bool>{true}}) {
+      EXPECT_EQ(dd->reduceGarbage(zero, garbage, normalizeWeights), zero);
+    }
+  }
+}
+
+TEST(DDPackageTest, ReduceGarbageZeroMatrix) {
+  const auto dd = std::make_unique<Package>(1);
+  for (const auto normalizeWeights : {false, true}) {
+    for (const auto regular : {false, true}) {
+      for (const auto& garbage : {std::vector<bool>{}, std::vector<bool>{false},
+                                  std::vector<bool>{true}}) {
+        EXPECT_EQ(dd->reduceGarbage(mEdge::zero(), garbage, regular,
+                                    normalizeWeights),
+                  mEdge::zero());
+      }
+    }
+  }
+}
+
+TEST(DDPackageTest, ReduceGarbageTerminalVector) {
+  const auto dd = std::make_unique<Package>(1);
+  auto input = vEdge::terminal(dd->cn.lookup(-3., 4.));
+  for (const auto normalizeWeights : {false, true}) {
+    for (const auto& garbage : {std::vector<bool>{}, std::vector<bool>{false},
+                                std::vector<bool>{true}}) {
+      dd->incRef(input);
+      const auto reduced = dd->reduceGarbage(input, garbage, normalizeWeights);
+      const auto expected = normalizeWeights ? std::complex<fp>{5., 0.}
+                                             : std::complex<fp>{-3., 4.};
+      EXPECT_EQ(reduced.getValueByIndex(0), expected);
+      dd->decRef(reduced);
+      EXPECT_TRUE(dd->getRootSet<vNode>().empty());
+    }
+  }
+}
+
+TEST(DDPackageTest, ReduceGarbageTerminalMatrix) {
+  const auto dd = std::make_unique<Package>(1);
+  const auto input = mEdge::terminal(dd->cn.lookup(-3., 4.));
+  for (const auto normalizeWeights : {false, true}) {
+    for (const auto regular : {false, true}) {
+      for (const auto& garbage : {std::vector<bool>{}, std::vector<bool>{false},
+                                  std::vector<bool>{true}}) {
+        dd->incRef(input);
+        const auto reduced =
+            dd->reduceGarbage(input, garbage, regular, normalizeWeights);
+        const auto weight = normalizeWeights ? std::complex<fp>{5., 0.}
+                                             : std::complex<fp>{-3., 4.};
+        auto expected = CMat{{weight, 0.}, {0., weight}};
+        if (!garbage.empty() && garbage.front()) {
+          expected = regular ? CMat{{weight, weight}, {0., 0.}}
+                             : CMat{{weight, 0.}, {weight, 0.}};
+        }
+        EXPECT_EQ(reduced.getMatrix(1), expected);
+        dd->decRef(reduced);
+        EXPECT_TRUE(dd->getRootSet<mNode>().empty());
+      }
+    }
+  }
+}
+
 TEST(DDPackageTest, GarbageVector) {
   auto dd = std::make_unique<Package>(4);
   auto hGate = getDD(qc::StandardOperation(0, qc::H), *dd);
