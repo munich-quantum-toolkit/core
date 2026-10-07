@@ -95,6 +95,9 @@ static void forEachGate(ModuleOp moduleOp,
     return;
   }
   entryPoint.walk<WalkOrder::PreOrder>([&](Operation* op) {
+    if (isa<qc::BarrierOp, qco::BarrierOp>(op)) {
+      return WalkResult::skip();
+    }
     size_t arity = 1;
     if (auto gate = dyn_cast<qc::UnitaryOpInterface>(op)) {
       arity = gate.getNumQubits();

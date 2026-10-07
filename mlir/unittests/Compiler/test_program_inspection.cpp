@@ -69,13 +69,15 @@ TEST(ProgramInspection, CountCallsAndNestedModifiersOnce) {
       {"gphase", 1},  {"h", 1},         {"swap", 1},
       {"ccx", 1},     {"cswap", 1},     {"inv(cx)", 1},
       {"cx", 1},      {"cz", 1},        {"crx", 2},
-      {"barrier", 2}, {"measure", 1},   {"reset", 1},
+      {"measure", 1}, {"reset", 1},
   };
-  expectCounts(*qc, 7, 9, expected);
+  expectCounts(*qc, 6, 8, expected);
+  EXPECT_EQ(qc->operationCounts().at("qc.barrier"), 2);
   EXPECT_FALSE(qc->inspect().hasControlFlow);
   auto qco = std::move(*qc).intoQCO();
   ASSERT_TRUE(qco);
-  expectCounts(*qco, 7, 9, expected);
+  expectCounts(*qco, 6, 8, expected);
+  EXPECT_EQ(qco->operationCounts().at("qco.barrier"), 2);
 }
 
 TEST(ProgramInspection, CompositeAndUnusedTargetModifiersStayAtomic) {

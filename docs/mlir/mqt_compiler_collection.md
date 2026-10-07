@@ -99,15 +99,15 @@ requested count. `operation_counts()` is available on every MLIR program type.
 
 Gate counts describe the static entry-point IR. Each gate in a structured
 control-flow region counts once, regardless of runtime paths or loop iterations.
-Unitary operations, barriers, measurements, and resets all count as gates.
-Measurements and resets act on one qubit; a barrier's arity is the number of
-qubits it spans. Each modifier or unitary call counts as one gate. Controls on a
-single primitive gate add a `c` per control: `cx`, `cz`, `crx`, `cswap`, or
-`ccx`. Other single-gate modifiers retain their structure: `inv(h)`, `pow(rx)`,
-`ctrl(inv(x))`, or `ctrl(2,inv(x))` for two controls. Parameters, including
-power exponents, do not split histogram buckets. Modifiers with multiple body
-gates or unused target operands use `ctrl`, `inv`, or `pow`. Calls use the
-callee name. Explicit global-phase operations count under `gphase`.
+Unitary operations, measurements, and resets count as gates. Measurements and
+resets count as single-qubit gates. Barriers are excluded from gate counts and
+appear in `operation_counts`. Each modifier or unitary call counts as one gate.
+Controls on a single primitive gate add a `c` per control: `cx`, `cz`, `crx`,
+`cswap`, or `ccx`. Other single-gate modifiers retain their structure: `inv(h)`,
+`pow(rx)`, `ctrl(inv(x))`, or `ctrl(2,inv(x))` for two controls. Parameters,
+including power exponents, do not split histogram buckets. Modifiers with
+multiple body gates or unused target operands use `ctrl`, `inv`, or `pow`. Calls
+use the callee name. Explicit global-phase operations count under `gphase`.
 
 `control_flow_counts` counts entry-point branch and region-control operations by
 their full MLIR names, such as `scf.for`, `scf.while`, `scf.if`, or `qco.if`.

@@ -9,13 +9,14 @@ resource information and gate, control-flow, and full operation histograms in
 `QuantumProgramInfo`. Individual counting methods compute only the requested
 metric. Every MLIR `Program` exposes the full operation histogram.
 
-Gate counts visit the entry-point IR once. Unitary operations, barriers,
-measurements, and resets count atomically; modifier and call bodies are not
-expanded. Measurements and resets have arity one; barriers use their full qubit
-arity. Single primitive controls add a `c` per control, while other single-gate
-modifiers retain structural names such as `inv(h)` and `ctrl(inv(x))`. Composite
-modifiers and wrappers with unused targets retain their modifier name.
-Parameters do not split buckets; calls use callee names.
+Gate counts visit the entry-point IR once. Unitary operations, measurements, and
+resets count atomically; modifier and call bodies are not expanded. Measurements
+and resets have arity one, matching Qiskit's default `size()` semantics.
+Barriers appear only in the full operation histogram. Single primitive controls
+add a `c` per control, while other single-gate modifiers retain structural names
+such as `inv(h)` and `ctrl(inv(x))`. Composite modifiers and wrappers with
+unused targets retain their modifier name. Parameters do not split buckets;
+calls use callee names.
 
 Control-flow counts visit entry-point branches and region-control operations
 once, excluding region terminators. Full operation counts match the scope of

@@ -828,22 +828,21 @@ class QCProgram(Program):
     def num_gates(self) -> int:
         """Return the static gate count of the entry-point IR.
 
-        Unitary operations, barriers, measurements, and resets each count once.
-        Modifiers and calls count atomically. Gates in every control-flow region
-        count once, regardless of runtime paths or loop iterations.
+        Unitary operations, measurements, and resets each count once. Barriers are
+        excluded. Modifiers and calls count atomically. Gates in every control-flow
+        region count once, regardless of runtime paths or loop iterations.
         """
 
     def num_single_qubit_gates(self) -> int:
         """Count gates acting on exactly one qubit.
 
-        Uses the counting rules of :meth:`num_gates`, including measurements, resets,
-        and one-qubit barriers.
+        Uses the counting rules of :meth:`num_gates`, including measurements and resets.
         """
 
     def num_two_qubit_gates(self) -> int:
         """Count gates acting on exactly two qubits.
 
-        Uses the counting rules of :meth:`num_gates`, including two-qubit barriers.
+        Uses the counting rules of :meth:`num_gates`.
         """
 
     def gate_counts(self) -> dict[str, int]:
@@ -969,22 +968,21 @@ class QCOProgram(Program):
     def num_gates(self) -> int:
         """Return the static gate count of the entry-point IR.
 
-        Unitary operations, barriers, measurements, and resets each count once.
-        Modifiers and calls count atomically. Gates in every control-flow region
-        count once, regardless of runtime paths or loop iterations.
+        Unitary operations, measurements, and resets each count once. Barriers are
+        excluded. Modifiers and calls count atomically. Gates in every control-flow
+        region count once, regardless of runtime paths or loop iterations.
         """
 
     def num_single_qubit_gates(self) -> int:
         """Count gates acting on exactly one qubit.
 
-        Uses the counting rules of :meth:`num_gates`, including measurements, resets,
-        and one-qubit barriers.
+        Uses the counting rules of :meth:`num_gates`, including measurements and resets.
         """
 
     def num_two_qubit_gates(self) -> int:
         """Count gates acting on exactly two qubits.
 
-        Uses the counting rules of :meth:`num_gates`, including two-qubit barriers.
+        Uses the counting rules of :meth:`num_gates`.
         """
 
     def gate_counts(self) -> dict[str, int]:

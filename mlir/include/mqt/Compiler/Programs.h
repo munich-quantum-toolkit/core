@@ -229,20 +229,20 @@ public:
 
   /// Return the static gate count of the entry-point IR.
   ///
-  /// Unitary operations, barriers, measurements, and resets each count once.
-  /// Modifiers and calls count atomically. Gates in every control-flow region
-  /// count once, regardless of runtime paths or loop iterations.
+  /// Unitary operations, measurements, and resets each count once. Barriers
+  /// are excluded. Modifiers and calls count atomically. Gates in every
+  /// control-flow region count once, regardless of runtime paths or loop
+  /// iterations.
   [[nodiscard]] size_t numGates() const;
 
   /// Count gates acting on exactly one qubit.
   ///
-  /// Uses the rules of numGates(), including measurements, resets, and
-  /// one-qubit barriers.
+  /// Uses the rules of numGates(), including measurements and resets.
   [[nodiscard]] size_t numSingleQubitGates() const;
 
   /// Count gates acting on exactly two qubits.
   ///
-  /// Uses the rules of numGates(), including two-qubit barriers.
+  /// Uses the rules of numGates().
   [[nodiscard]] size_t numTwoQubitGates() const;
 
   /// Count entry-point gates by name.

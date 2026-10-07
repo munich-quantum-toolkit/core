@@ -1890,6 +1890,8 @@ def test_program_inspection_matches_qiskit(frontend: str) -> None:
     circuit.ccx(0, 1, 2)
     circuit.swap(2, 3)
     circuit.rx(0.3, 2)
+    circuit.barrier(0)
+    circuit.barrier(0, 1)
     circuit.barrier()
     circuit.measure(0, 0)
     circuit.reset(1)
@@ -1897,12 +1899,18 @@ def test_program_inspection_matches_qiskit(frontend: str) -> None:
         QCProgram.from_qiskit(circuit) if frontend == "qiskit" else QCProgram.from_openqasm_str(qasm3.dumps(circuit))
     )
     expected = circuit.count_ops()
+    del expected["barrier"]
+    gates = [instruction for instruction in circuit.data if instruction.operation.name != "barrier"]
+    single = sum(len(instruction.qubits) == 1 for instruction in gates)
+    two = sum(len(instruction.qubits) == 2 for instruction in gates)
     for representation in (program, program.to_qco(copy=True)):
         info = representation.inspect()
         assert info.gate_counts == expected
-        assert info.num_gates == len(circuit.data)
-        assert info.num_single_qubit_gates == sum(len(instruction.qubits) == 1 for instruction in circuit.data)
-        assert info.num_two_qubit_gates == sum(len(instruction.qubits) == 2 for instruction in circuit.data)
+        assert info.num_gates == representation.num_gates() == circuit.size()
+        assert info.num_single_qubit_gates == representation.num_single_qubit_gates() == single
+        assert info.num_two_qubit_gates == representation.num_two_qubit_gates() == two
+        dialect = "qco" if isinstance(representation, QCOProgram) else "qc"
+        assert info.operation_counts[f"{dialect}.barrier"] == 3
         assert info.num_qubits == circuit.num_qubits  # Includes the idle qubit.
         assert not info.has_control_flow
         assert info.static_qubits == []
