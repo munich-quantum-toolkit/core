@@ -54,10 +54,13 @@ public:
     /// allocation.
     class Group {
     public:
+      /// Return the motif type shared by all occurrences in this group.
       [[nodiscard]] Type type() const noexcept;
+      /// Return the number of vertices per occurrence (four for a four-cycle).
       [[nodiscard]] size_t arity() const noexcept;
+      /// Return the number of stored occurrences, not the number of vertices.
       [[nodiscard]] size_t size() const noexcept;
-      /// Return the vertices of a valid occurrence index.
+      /// Return the dense vertex indices of occurrence index; index < size().
       [[nodiscard]] llvm::ArrayRef<size_t> operator[](size_t index) const;
 
     private:
