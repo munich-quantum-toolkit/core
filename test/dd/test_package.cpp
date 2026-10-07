@@ -3780,6 +3780,27 @@ TEST(DDPackageTest, WideHadamardMatricesPreserveRootScale) {
   package.decRef(matrix);
 }
 
+TEST(DDPackageTest, WidePhasedHadamardsKeepNonzeroRoot) {
+  constexpr Qubit width = 83;
+  Package package(width);
+  const std::complex<fp> weight{0.5, -0.5};
+  const GateMatrix gate{weight, weight, weight, -weight};
+  auto matrix = Package::makeIdent();
+  package.incRef(matrix);
+  for (Qubit q = 0; q < width; ++q) {
+    const auto next = package.multiply(package.makeGateDD(gate, q), matrix);
+    package.incRef(next);
+    package.decRef(matrix);
+    matrix = next;
+    package.garbageCollect();
+  }
+  EXPECT_FALSE(matrix.isZeroTerminal());
+  const auto root = static_cast<ComplexValue>(matrix.w);
+  EXPECT_DOUBLE_EQ(root.r, -0x1p-42);
+  EXPECT_DOUBLE_EQ(root.i, -0x1p-42);
+  package.decRef(matrix);
+}
+
 TEST(DDPackageTest, MatrixRootsRemainDistinctAndSurviveCollection) {
   Package package(1);
   const auto first = mEdge::terminal(package.cn.lookupRoot(1e-100));
