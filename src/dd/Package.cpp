@@ -1247,7 +1247,9 @@ vEdge Package::reduceGarbage(vEdge& e, const std::vector<bool>& garbage,
     return e;
   }
   const auto f =
-      reduceGarbageRecursion(e.p, garbage, lowerbound, normalizeWeights);
+      e.isTerminal()
+          ? vCachedEdge::one()
+          : reduceGarbageRecursion(e.p, garbage, lowerbound, normalizeWeights);
   auto weight = e.w * f.w;
   if (normalizeWeights) {
     weight = weight.mag();
@@ -1260,14 +1262,17 @@ vEdge Package::reduceGarbage(vEdge& e, const std::vector<bool>& garbage,
 mEdge Package::reduceGarbage(const mEdge& e, const std::vector<bool>& garbage,
                              const bool regular, const bool normalizeWeights) {
   // return if no more garbage left
-  if (!normalizeWeights &&
-      (std::ranges::none_of(garbage, [](bool v) { return v; }) ||
-       e.isZeroTerminal())) {
+  if (e.isZeroTerminal() ||
+      (!normalizeWeights &&
+       std::ranges::none_of(garbage, [](bool v) { return v; }))) {
     return e;
   }
 
   if (e.isIdentity()) {
     auto g = e;
+    if (normalizeWeights) {
+      g.w = cn.lookup(ComplexNumbers::mag(g.w));
+    }
     for (auto i = 0U; i < garbage.size(); ++i) {
       if (garbage[i]) {
         if (regular) {
@@ -1280,6 +1285,7 @@ mEdge Package::reduceGarbage(const mEdge& e, const std::vector<bool>& garbage,
       }
     }
     incRef(g);
+    decRef(e);
     return g;
   }
 
