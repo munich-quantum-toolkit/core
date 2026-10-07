@@ -34,6 +34,7 @@
 #include <random>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace qc;
@@ -75,44 +76,32 @@ TEST(DDFunctionalityTest, GlobalPhasePreservesStateOwnership) {
   EXPECT_TRUE(package.getRootSet<vNode>().empty());
 }
 
-TEST(DDPermutation, RejectsInvalidTargetBeforeChangingState) {
-  Package dd(3);
-  const Permutation initial{{0, 0}, {1, 1}, {2, 2}};
-  const std::vector<Permutation> invalid{
-      {{0, 1}, {1, 3}},
-      {{0, 1}, {1, 1}},
-      {{0, 1}, {3, 0}},
-      {{0, 0}, {1, 1}, {2, 2}, {3, 0}},
-  };
-  for (const auto& target : invalid) {
-    auto from = initial;
-    auto state = makeZeroState(3, dd);
-    dd.incRef(state);
-    state = applyUnitaryOperation(StandardOperation(0, X), state, dd);
-    const auto original = state;
+TEST(DDPermutation, RejectsInvalidMappingsBeforeChangingState) {
+  Package dd(2);
+  const Permutation valid{{0, 0}, {1, 1}};
+  for (const auto& [source, target] :
+       std::vector<std::pair<Permutation, Permutation>>{
+           {valid, {{0, 1}, {1, 2}}},
+           {valid, {{0, 1}, {1, 1}}},
+           {valid, {{0, 1}, {2, 0}}},
+           {{{0, 0}, {1, 0}}, {{0, 0}}},
+           {{{0, 0}, {1, 2}}, {{0, 0}}},
+       }) {
+    auto from = source;
+    auto state = Package::makeIdent();
     EXPECT_THROW(changePermutation(state, from, target, dd),
                  std::invalid_argument);
-    EXPECT_EQ(from, initial);
-    EXPECT_EQ(state, original);
+    EXPECT_EQ(from, source);
+    EXPECT_EQ(state, Package::makeIdent());
     dd.decRef(state);
-  }
-}
-
-TEST(DDPermutation, RejectsInvalidSource) {
-  Package dd(2);
-  for (auto from : {Permutation{{0, 0}, {1, 0}}, Permutation{{0, 0}, {1, 2}}}) {
-    auto state = Package::makeIdent();
-    EXPECT_THROW(changePermutation(state, from, from, dd),
-                 std::invalid_argument);
   }
 }
 
 TEST(DDPermutation, AcceptsPartialTargetWithSparsePhysicalQubits) {
   Package dd(2);
   Permutation from{{4, 0}, {7, 1}};
-  auto state = makeZeroState(2, dd);
+  auto state = makeBasisState(2, std::vector<bool>{true, false}, dd);
   dd.incRef(state);
-  state = applyUnitaryOperation(StandardOperation(0, X), state, dd);
   changePermutation(state, from, Permutation{{7, 0}}, dd);
   EXPECT_EQ(from, (Permutation{{4, 1}, {7, 0}}));
   EXPECT_EQ(state.getValueByPath(2, "01"), 1.);

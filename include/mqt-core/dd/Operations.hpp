@@ -19,7 +19,6 @@
 #include "ir/operations/Operation.hpp"
 
 #include <random>
-#include <set>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
@@ -211,22 +210,24 @@ void changePermutation(DDType& on, qc::Permutation& from,
                        const bool regular = true) {
   constexpr TwoQubitGateMatrix swapMatrix{
       {{1, 0, 0, 0}, {0, 0, 1, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}}};
-  std::set<qc::Qubit> currentQubits;
+  std::vector<bool> available(dd.qubits(), false);
   for (const auto& [physical, logical] : from) {
-    if (logical >= dd.qubits() || !currentQubits.insert(logical).second) {
+    if (logical >= available.size() || available[logical]) {
       throw std::invalid_argument(
           "[changePermutation] Source must map to distinct qubits within the "
           "DD package.");
     }
+    available[logical] = true;
   }
-  std::set<qc::Qubit> targetQubits;
+  /// Consume each target once to reject duplicate or missing logical qubits.
   for (const auto& [physical, logical] : to) {
-    if (from.find(physical) == from.end() || !currentQubits.contains(logical) ||
-        !targetQubits.insert(logical).second) {
+    if (logical >= available.size() || !available[logical] ||
+        from.find(physical) == from.end()) {
       throw std::invalid_argument(
           "[changePermutation] Target must be an injective mapping using only "
           "keys and logical qubits from the source permutation.");
     }
+    available[logical] = false;
   }
   if (on.isZeroTerminal()) {
     return;
@@ -252,8 +253,7 @@ void changePermutation(DDType& on, qc::Permutation& from,
 
     // swap i and j
     auto saved = on;
-    const auto swapDD =
-        dd.makeTwoQubitGateDD(swapMatrix, from.at(i), from.at(j));
+    const auto swapDD = dd.makeTwoQubitGateDD(swapMatrix, current, goal);
     if constexpr (std::is_same_v<DDType, VectorDD>) {
       on = dd.multiply(swapDD, on);
     } else {
