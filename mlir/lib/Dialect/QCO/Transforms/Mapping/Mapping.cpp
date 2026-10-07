@@ -659,7 +659,7 @@ private:
       return {storage_.data() + start, end - start};
     }
 
-    /// Return the number of elements stored accross all layers.
+    /// Return the number of elements stored across all layers.
     [[nodiscard]] size_t size() const { return storage_.size(); }
 
     /// Returns the total number of layers.
