@@ -304,13 +304,6 @@ example, a non-native RZZ followed by RXX can require two CZ gates together,
 compared with four when lowered separately. Already-native operations are
 preserved unless block synthesis reduces their native gate count.
 
-Cleanup removes terminal SWAPs before two-qubit fusion and placement when both
-outputs are measured and then discarded. Measured qubits may be discarded
-directly or reinserted into tensors that reach deallocation through only
-insertions in the same block. The rewrite preserves tensor slots and exchanges
-the measurement bits to retain their logical destinations. Further tensor reads
-or escaping tensors keep the SWAP.
-
 Before placement, both target pipelines also fuse runs when this reduces the
 number of two-qubit operations in the IR and their native gate count. This
 removes cancelled interactions before routing. Native support at this stage is

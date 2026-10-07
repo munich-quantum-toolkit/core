@@ -75,8 +75,8 @@ struct ElideTerminalSwap final : OpRewritePattern<qco::SWAPOp> {
       measurements.push_back(measure);
     }
 
-    /// Measure at the SWAP so both bits dominate their uses. Keep quantum
-    /// outputs in their original tensor slots and exchange only the bits.
+    // Measure at the SWAP so both bits dominate their uses. Keep quantum
+    // outputs in their original tensor slots and exchange only the bits.
     auto first = qco::MeasureOp::create(rewriter, measurements[0].getLoc(),
                                         op.getQubit0In());
     auto second = qco::MeasureOp::create(rewriter, measurements[1].getLoc(),
