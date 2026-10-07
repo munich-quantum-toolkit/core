@@ -32,7 +32,7 @@ void SWAPOp::getCanonicalizationPatterns(RewritePatternSet& results,
         return failure();
       }
     }
-    // Only the classical results survive: measure the opposite inputs instead.
+    /// Only the classical results survive: measure the opposite inputs instead.
     rewriter.replaceOp(op, {op.getQubit1In(), op.getQubit0In()});
     return success();
   });

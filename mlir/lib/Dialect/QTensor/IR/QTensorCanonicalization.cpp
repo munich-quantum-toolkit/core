@@ -38,7 +38,57 @@
 using namespace mlir;
 using namespace mlir::qtensor;
 
+/// Recognize discarded qubits through same-block tensor insertions.
+///
+/// ponytail: shared tails cost O(swaps * inserts); cache if this dominates.
+static bool isDiscardedAfterInsertions(Value value, Block* block) {
+  while (true) {
+    auto* user = *value.user_begin();
+    if (user->getBlock() != block) {
+      return false;
+    }
+    if (isa<qco::SinkOp, DeallocOp>(user)) {
+      return true;
+    }
+    auto insert = dyn_cast<InsertOp>(user);
+    if (!insert) {
+      return false;
+    }
+    value = insert.getResult();
+  }
+}
+
 namespace {
+
+struct ElideTerminalSwap final : OpRewritePattern<qco::SWAPOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(qco::SWAPOp op,
+                                PatternRewriter& rewriter) const override {
+    SmallVector<qco::MeasureOp, 2> measurements;
+    for (auto qubit : op.getResults()) {
+      auto measure = dyn_cast<qco::MeasureOp>(*qubit.user_begin());
+      if (!measure || measure->getBlock() != op->getBlock() ||
+          !isDiscardedAfterInsertions(measure.getQubitOut(), op->getBlock())) {
+        return failure();
+      }
+      measurements.push_back(measure);
+    }
+
+    /// Measure at the SWAP so both bits dominate their uses. Keep quantum
+    /// outputs in their original tensor slots and exchange only the bits.
+    auto first = qco::MeasureOp::create(rewriter, measurements[0].getLoc(),
+                                        op.getQubit0In());
+    auto second = qco::MeasureOp::create(rewriter, measurements[1].getLoc(),
+                                         op.getQubit1In());
+    rewriter.replaceOp(measurements[0],
+                       {first.getQubitOut(), second.getResult()});
+    rewriter.replaceOp(measurements[1],
+                       {second.getQubitOut(), first.getResult()});
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
 
 struct QTensorAccess {
   ExtractOp extract;
@@ -439,5 +489,5 @@ struct ScalarizeForQTensorInputs final : OpRewritePattern<scf::ForOp> {
 void QTensorDialect::getCanonicalizationPatterns(
     RewritePatternSet& results) const {
   results.add<ScalarizeQTensorInputs, ScalarizeWhileQTensorInputs,
-              ScalarizeForQTensorInputs>(getContext());
+              ScalarizeForQTensorInputs, ElideTerminalSwap>(getContext());
 }

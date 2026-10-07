@@ -4195,42 +4195,45 @@ TEST_F(CompilerPipelineTest,
   EXPECT_EQ(entanglers, 0U);
 }
 
-TEST_F(CompilerPipelineTest,
-       TargetCompilationElidesTensorBackedSwapsBeforeSynthesis) {
-  auto qc = QCProgram::fromOpenQASMString(R"qasm(
-    OPENQASM 3.0;
-    include "stdgates.inc";
-    qubit[3] q;
-    bit[3] c;
-    x q[0];
-    swap q[0], q[1];
-    swap q[1], q[2];
-    swap q[0], q[1];
-    c = measure q;
-  )qasm");
-  ASSERT_TRUE(qc);
-  auto program = std::move(*qc).intoQCO();
-  ASSERT_TRUE(program);
-  bool hasTensorInsertions = false;
-  program->module().walk(
-      [&](qtensor::InsertOp) { hasTensorInsertions = true; });
-  ASSERT_TRUE(hasTensorInsertions);
-  const auto expected =
-      qco::sample(mlir::mqt::getEntryPoint(program->module()), 1, 42);
-  ASSERT_TRUE(succeeded(expected));
-  // Placement turns tensor insertions into sinks. Canonicalization must then
-  // remove the measured SWAPs before native synthesis decomposes them.
-  ASSERT_TRUE(program->compileForTarget(TargetEnvironment(
-      makeSparseUCZTarget(true), makePayloadSpecification())));
-  ASSERT_TRUE(succeeded(verify(program->module())));
-  ASSERT_TRUE(succeeded(qco::verifyLinearity(program->module())));
-  program->module().walk([](qco::UnitaryOpInterface unitary) {
-    EXPECT_FALSE(unitary.isTwoQubit());
-  });
-  const auto actual =
-      qco::sample(mlir::mqt::getEntryPoint(program->module()), 1, 42);
-  ASSERT_TRUE(succeeded(actual));
-  EXPECT_EQ(*actual, *expected);
+TEST_F(CompilerPipelineTest, ElidesTensorBackedSwapsBeforeFusionAndRouting) {
+  for (const auto& [gates, expectedTwoQubitGates, expectedBits] : {
+           std::tuple{R"qasm(x q[0];
+             swap q[0], q[1]; swap q[1], q[2]; swap q[0], q[1];)qasm",
+                      0U, "100"},
+           std::tuple{R"qasm(x q[1];
+             cx q[0], q[1]; rz(0.13) q[0];
+             cx q[0], q[1]; rz(0.27) q[0];
+             cx q[0], q[1]; swap q[0], q[1];)qasm",
+                      1U, "001"},
+       }) {
+    SCOPED_TRACE(gates);
+    auto qc = QCProgram::fromOpenQASMString(
+        std::string(R"qasm(OPENQASM 3.0; include "stdgates.inc";
+          qubit[3] q; bit[3] c;)qasm") +
+        gates + "c = measure q;");
+    ASSERT_TRUE(qc);
+    auto program = std::move(*qc).intoQCO();
+    ASSERT_TRUE(program);
+    auto cleaned = program->copy();
+    ASSERT_TRUE(cleaned.cleanup());
+    cleaned.module().walk([](qco::SWAPOp) { ADD_FAILURE(); });
+    auto restored = std::move(cleaned).intoQC();
+    ASSERT_TRUE(restored);
+    EXPECT_TRUE(std::move(*restored).intoQIR(QIRProfile::Base));
+
+    ASSERT_TRUE(program->compileForTarget(TargetEnvironment(
+        makeSparseUCZTarget(true), makePayloadSpecification())));
+    size_t twoQubitGates = 0;
+    program->module().walk([&](qco::UnitaryOpInterface unitary) {
+      twoQubitGates += unitary.isTwoQubit();
+    });
+    EXPECT_EQ(twoQubitGates, expectedTwoQubitGates);
+    const auto counts =
+        qco::sample(mlir::mqt::getEntryPoint(program->module()), 1, 42);
+    ASSERT_TRUE(succeeded(counts));
+    ASSERT_EQ(counts->size(), 1U);
+    EXPECT_EQ(counts->begin()->first, expectedBits);
+  }
 }
 
 TEST_F(CompilerPipelineTest, TargetCompilationFusesRoutingSwaps) {

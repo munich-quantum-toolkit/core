@@ -52,11 +52,12 @@ protected:
   }
 };
 
-TEST_F(QTensorCanonicalizationTest,
-       PreservesSwapWithInsertedMeasurementOutputs) {
+TEST_F(QTensorCanonicalizationTest, ElidesTerminalSwapPreservingTensorSlots) {
   auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
-    func.func @main(%left: tensor<?x!qco.qubit>, %right: tensor<?x!qco.qubit>,
+    func.func @main(%size: index,
                     %leftIndex: index, %rightIndex: index) -> (i1, i1) {
+      %left = qtensor.alloc(%size) : tensor<?x!qco.qubit>
+      %right = qtensor.alloc(%size) : tensor<?x!qco.qubit>
       %leftRest, %a = qtensor.extract %left[%leftIndex] : tensor<?x!qco.qubit>
       %rightRest, %b = qtensor.extract %right[%rightIndex] : tensor<?x!qco.qubit>
       %swappedA, %swappedB = qco.swap %a, %b
@@ -72,29 +73,55 @@ TEST_F(QTensorCanonicalizationTest,
   })mlir",
                                               &context_);
   ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+  auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
+  auto swap = *function.getOps<SWAPOp>().begin();
+  auto inputs = llvm::to_vector(swap.getOperands());
   PassManager pm(&context_);
   pm.addPass(createCanonicalizerPass());
   ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
   EXPECT_TRUE(succeeded(verifyLinearity(*moduleOp)));
-  auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
-  ASSERT_EQ(llvm::range_size(function.getOps<SWAPOp>()), 1U);
-  EXPECT_TRUE(function.getOps<SinkOp>().empty());
-  auto swap = *function.getOps<SWAPOp>().begin();
-  auto measurements = llvm::to_vector(function.getOps<MeasureOp>());
-  auto inserts = llvm::to_vector(function.getOps<qtensor::InsertOp>());
-  auto deallocs = llvm::to_vector(function.getOps<qtensor::DeallocOp>());
-  ASSERT_EQ(measurements.size(), 2U);
-  ASSERT_EQ(inserts.size(), 2U);
-  ASSERT_EQ(deallocs.size(), 2U);
-  for (auto [measurement, insert, dealloc, output] :
-       llvm::zip_equal(measurements, inserts, deallocs, swap.getResults())) {
-    EXPECT_EQ(measurement.getQubitIn(), output);
-    EXPECT_EQ(insert.getScalar(), measurement.getQubitOut());
-    EXPECT_EQ(dealloc.getTensor(), insert.getResult());
+  ASSERT_TRUE(function.getOps<SWAPOp>().empty());
+  auto returned = cast<func::ReturnOp>(function.getBody().front().back());
+  for (auto [bit, input] :
+       llvm::zip_equal(returned.getOperands(), llvm::reverse(inputs))) {
+    EXPECT_EQ(bit.getDefiningOp<MeasureOp>().getQubitIn(), input);
   }
+  ASSERT_EQ(llvm::range_size(function.getOps<qtensor::InsertOp>()), 2U);
+  for (auto insert : function.getOps<qtensor::InsertOp>()) {
+    auto input = insert.getScalar().getDefiningOp<MeasureOp>().getQubitIn();
+    auto extract = input.getDefiningOp<qtensor::ExtractOp>();
+    EXPECT_EQ(insert.getDest(), extract.getOutTensor());
+    EXPECT_EQ(insert.getIndex(), extract.getIndex());
+  }
+}
+
+TEST_F(QTensorCanonicalizationTest, KeepsSwapBeforeTensorRead) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main(%size: index, %i: index, %j: index) -> (i1, i1, i1) {
+      %tensor = qtensor.alloc(%size) : tensor<?x!qco.qubit>
+      %rest0, %a = qtensor.extract %tensor[%i] : tensor<?x!qco.qubit>
+      %rest1, %b = qtensor.extract %rest0[%j] : tensor<?x!qco.qubit>
+      %sa, %sb = qco.swap %a, %b : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+      %ma, %ba = qco.measure %sa : !qco.qubit
+      %mb, %bb = qco.measure %sb : !qco.qubit
+      %t0 = qtensor.insert %ma into %rest1[%i] : tensor<?x!qco.qubit>
+      %t1 = qtensor.insert %mb into %t0[%j] : tensor<?x!qco.qubit>
+      %rest2, %q = qtensor.extract %t1[%i] : tensor<?x!qco.qubit>
+      %mq, %bq = qco.measure %q : !qco.qubit
+      %t2 = qtensor.insert %mq into %rest2[%i] : tensor<?x!qco.qubit>
+      qtensor.dealloc %t2 : tensor<?x!qco.qubit>
+      return %ba, %bb, %bq : i1, i1, i1
+    }
+  })mlir",
+                                              &context_);
+  ASSERT_TRUE(moduleOp);
+  PassManager pm(&context_);
+  pm.addPass(createCanonicalizerPass());
+  ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
+  EXPECT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+  auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
+  EXPECT_EQ(llvm::range_size(function.getOps<SWAPOp>()), 1U);
 }
 
 TEST_F(QTensorCanonicalizationTest, ScalarizesWhileOnlyWithConstantIndices) {

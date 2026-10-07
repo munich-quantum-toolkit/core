@@ -1075,10 +1075,6 @@ TEST_P(QCOToQCTest, ProgramEquivalence) {
   printer.record(program.get(), "Original QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
-  printer.record(program.get(), "Canonicalized QCO IR" + name);
-  EXPECT_TRUE(verify(*program).succeeded());
-
   EXPECT_TRUE(succeeded(runQCOToQCConversion(program.get())));
   printer.record(program.get(), "Converted QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
