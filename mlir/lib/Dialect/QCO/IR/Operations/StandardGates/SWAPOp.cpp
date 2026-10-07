@@ -28,7 +28,7 @@ void SWAPOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add(+[](SWAPOp op, PatternRewriter& rewriter) {
     for (auto qubit : op.getResults()) {
       auto measure = dyn_cast<MeasureOp>(*qubit.user_begin());
-      if (!measure || measure->getBlock() != op->getBlock() ||
+      if (!measure ||
           !isa<SinkOp>(*measure.getQubitOut().user_begin())) {
         return failure();
       }
