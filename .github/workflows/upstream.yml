@@ -21,7 +21,7 @@ jobs:
       fail-fast: false
       matrix:
         runs-on: [ubuntu-26.04, macos-15, windows-2025]
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-qiskit-upstream-tests.yml@52677f204944812a342ee261e11087923b21819e # zizmor: ignore[stale-action-refs] -- Pin workflows PR #486 until its release.
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-qiskit-upstream-tests.yml@8b3b6f6a46c20c6b23577c6bba55374873c3c328 # zizmor: ignore[stale-action-refs] -- Pin workflows PR #486 until its release.
     with:
       runs-on: ${{ matrix.runs-on }}
       setup-z3: true
