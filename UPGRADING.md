@@ -36,6 +36,12 @@ For code that uses the low-level storage interfaces:
   capacities. For fixed sizing, use equal initial and maximum capacities; direct
   `UniqueTableConfig` users set `maxBuckets` equal to `nBuckets`.
 
+`dd::changePermutation` now rejects invalid mappings with
+`std::invalid_argument` before changing the DD or the current permutation.
+Target keys and logical qubits must occur in the source permutation, and both
+mappings must be injective. Classical measurement destinations outside the
+logical qubit range require normalization before using DD functionality APIs.
+
 ## [3.10.1]
 
 ### CMake presets on Windows

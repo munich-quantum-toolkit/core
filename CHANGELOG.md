@@ -46,6 +46,11 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#unreleased)._
 - 🐛 Make DD DOT exports deterministic and prevent node-ID collisions ([#2710],
   [#2518]) ([**@burgholzer**])
 
+- 🐛 Reject invalid DD permutations before changing the state ([#2709])
+  ([**@burgholzer**])
+
+[#2709]: https://github.com/munich-quantum-toolkit/core/pull/2709
+
 ## [3.10.1] - 2026-09-26
 
 _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#3101)._
