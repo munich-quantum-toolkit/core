@@ -2125,6 +2125,7 @@ class InvalidFunctionResultPass
 public:
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(InvalidFunctionResultPass)
 
+protected:
   void runOnOperation() override {
     auto function = *getOperation().getOps<func::FuncOp>().begin();
     function.setType(
