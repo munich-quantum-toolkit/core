@@ -21,9 +21,9 @@ add_mlir_conversion_library(
   MLIRQTensorDialect
   MLIRArithDialect
   MLIRFuncDialect
+  MLIRFunctionInterfaces
   MLIRMemRefDialect
   MLIRMQTDialect
-  MLIRTransforms
-  MLIRFuncTransforms)
+  MLIRTransforms)
 
 mqt_mlir_target_use_project_options(MLIRQCOToQC)
