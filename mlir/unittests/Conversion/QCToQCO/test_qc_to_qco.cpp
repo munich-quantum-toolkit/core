@@ -941,6 +941,87 @@ TEST_F(QCToQCORegressionTest, ThreadsReferencesThroughExternalCalls) {
   EXPECT_TRUE(llvm::equal(calls[1].getOperands(), calls[0].getResults()));
 }
 
+TEST_F(QCToQCORegressionTest,
+       RoundTripsInterleavedArgumentsAndOwnedCallResults) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%angle: f64, %flag: i1) attributes {mqt.entry_point} {
+        %q = qc.alloc : !qc.qubit
+        %r = qc.alloc : !qc.qubit
+        %theta, %owned, %bit = func.call @helper(%angle, %q, %flag, %r)
+          : (f64, !qc.qubit, i1, !qc.qubit) -> (f64, !qc.qubit, i1)
+        qc.ry(%theta) %owned : !qc.qubit
+        qc.swap %q, %owned : !qc.qubit, !qc.qubit
+        scf.if %bit { qc.x %r : !qc.qubit }
+        return
+      }
+      func.func private @helper(%a: f64, %q: !qc.qubit, %b: i1, %r: !qc.qubit)
+          -> (f64, !qc.qubit, i1) {
+        qc.x %q : !qc.qubit
+        qc.ry(%a) %r : !qc.qubit
+        %new = func.call @factory() : () -> !qc.qubit
+        return %a, %new, %b : f64, !qc.qubit, i1
+      }
+      func.func private @factory() -> !qc.qubit
+    })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  auto helper = moduleOp->lookupSymbol<func::FuncOp>("helper");
+  const auto originalType = helper.getFunctionType();
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  expectNoQCOperations(*moduleOp);
+  ASSERT_EQ(helper.getNumArguments(), 4U);
+  ASSERT_EQ(helper.getNumResults(), 5U);
+  ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_EQ(helper.getFunctionType(), originalType);
+  auto x = *helper.getOps<qc::XOp>().begin();
+  auto ry = *helper.getOps<qc::RYOp>().begin();
+  EXPECT_EQ(x->getOperand(0), helper.getArgument(1));
+  EXPECT_EQ(ry->getOperand(0), helper.getArgument(3));
+  auto ret = cast<func::ReturnOp>(helper.getBody().front().back());
+  EXPECT_EQ(ret.getOperand(0), helper.getArgument(0));
+  EXPECT_EQ(ret.getOperand(2), helper.getArgument(2));
+  EXPECT_TRUE(ret.getOperand(1).getDefiningOp<func::CallOp>());
+}
+
+TEST_F(QCToQCORegressionTest, RoundTripsUnitaryCallInNestedRegions) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%condition: i1) attributes {mqt.entry_point} {
+        %q = qc.alloc : !qc.qubit
+        scf.if %condition {
+          qc.inv (%a = %q) {
+            qc.call @flip(%a) : !qc.qubit
+            qc.yield
+          } : !qc.qubit
+        }
+        qc.x %q : !qc.qubit
+        return
+      }
+      func.func private @flip(%q: !qc.qubit) attributes {mqt.unitary} {
+        qc.x %q : !qc.qubit
+        return
+      }
+    })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
+  auto conditional = *function.getOps<scf::IfOp>().begin();
+  auto inverse = *conditional.getThenRegion().getOps<qc::InvOp>().begin();
+  auto call = *inverse.getRegion().getOps<qc::CallOp>().begin();
+  EXPECT_EQ(call->getOperand(0), inverse.getRegion().front().getArgument(0));
+  EXPECT_TRUE(mlir::mqt::isUnitaryFunction(
+      moduleOp->lookupSymbol<func::FuncOp>("flip")));
+}
+
 TEST_F(QCToQCORegressionTest, ConvertsQubitFunctionArgumentsToTrailingResults) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
@@ -1398,6 +1479,35 @@ module {
   ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
     sawExpectedDiagnostic |=
         StringRef(diagnostic.str()).contains("same constant index");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQCOConversion(*moduleOp)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST_F(QCToQCORegressionTest, RejectsRegisterAliasingExposedByIndexFolding) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %reg = memref.alloc() : memref<2x!qc.qubit>
+        %zero = arith.constant 0 : index
+        %one = arith.constant 1 : index
+        %index = arith.addi %zero, %one : index
+        %q0 = memref.load %reg[%index] : memref<2x!qc.qubit>
+        %q1 = memref.load %reg[%one] : memref<2x!qc.qubit>
+        qc.swap %q0, %q1 : !qc.qubit, !qc.qubit
+        memref.dealloc %reg : memref<2x!qc.qubit>
+        return
+      }
+    })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    sawExpectedDiagnostic |=
+        StringRef(diagnostic.str()).contains("distinct qubit operands");
     return success();
   });
   EXPECT_TRUE(failed(runQCToQCOConversion(*moduleOp)));
