@@ -13,6 +13,8 @@ function(add_mqt_python_binding package_name target_name)
   nanobind_add_module(
     # Name of the extension
     ${target_name}
+    # Preserve symbols until installation or BOLT processing.
+    NOSTRIP
     # Enable free-threaded support
     FREE_THREADED
     # Keep computation in bindings optimized for speed.

@@ -19,5 +19,13 @@ set_tests_properties(
   mqt-core-dd-consumer PROPERTIES ENVIRONMENT_MODIFICATION
                                   "PATH=path_list_prepend:$<TARGET_FILE_DIR:MQT::CoreDD>")
 
+# Give clang-tidy compile settings for the standalone installed-wheel consumer.
+if(TARGET MQT::CoreQDMI AND TARGET MQT::CoreDD)
+  find_package(Threads REQUIRED)
+  add_library(mqt-core-wheel-consumer-lint OBJECT EXCLUDE_FROM_ALL release/consumer/main.cpp)
+  target_link_libraries(mqt-core-wheel-consumer-lint PRIVATE MQT::CoreQDMI MQT::CoreDD
+                                                             Threads::Threads)
+endif()
+
 # copy test circuits to build directory
 file(COPY ${PROJECT_SOURCE_DIR}/test/circuits DESTINATION ${CMAKE_CURRENT_BINARY_DIR})

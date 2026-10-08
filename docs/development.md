@@ -125,22 +125,17 @@ Use `//` for ordinary implementation and namespace closing comments. Inline
 `/* ... */` comments remain valid, including unused parameter names such as
 `OpAdaptor /*adaptor*/` and argument labels such as `/*isSigned=*/false`.
 
-### Release wheels
+### Release wheel optimization
 
-`pyproject.toml` selects portable CPU settings (`DEPLOY=ON`) for cibuildwheel
-and enables CMake's `ENABLE_IPO` on Linux and macOS. The nanobind bindings
-retain the release optimization level with `NOMINSIZE`. The builds use the
-published assertion-free LLVM/MLIR SDK.
+Linux and macOS wheels use assertion-free SDKs and combined SDK/Core PGO. Linux
+adds full LTO and BOLT with the manylinux container's packaged Clang; macOS uses
+Apple Clang and ThinLTO with a 13.3 deployment target.
 
-Linux uses the manylinux image's verified static Clang installer and matching
-LLD. This compiler distribution is separate from the LLVM/MLIR SDK linked into
-Core. macOS uses Apple Clang and the system linker.
-
-Validate release changes with Python tests and installed C++ consumers built
-with both GCC and Clang, including an unoptimized consumer. Exercise DD
-operations and QDMI plugin loading. See the
-[build performance guide](installation.md#build-performance) for local builds
-and LTO boundaries.
+Cibuildwheel provisions the tools once, then `scripts/prepare_release.py` trains
+each ABI with the C++ MLIR tests and `test/release/train.py`. It rebuilds the
+required SDK libraries and supplies the final CMake settings. Linux's
+`scripts/bolt_wheel.py` optimizes and checks the repaired wheel, including
+installed Clang and GCC consumers. Windows uses its normal build.
 
 ### Reproduce C++ lint locally
 
