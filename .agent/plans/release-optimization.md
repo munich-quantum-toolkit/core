@@ -28,3 +28,8 @@ baseline wheel. The Clang 23 consumer cannot link `dd::Edge::getVector` from
 that GCC 13 wheel because the compilers use different constrained-template
 symbol names. Keep this check and resolve compiler compatibility during
 qualification.
+
+Core #2715 found that GCC 14 LTO drops DD constrained-template ABI aliases
+required by GCC 13 consumers and excludes the GNU wheel DD target from CMake
+IPO. This Clang pipeline passes `-flto` explicitly, so its DD ABI compatibility
+needs independent qualification; the CMake IPO exclusion does not cover it.
