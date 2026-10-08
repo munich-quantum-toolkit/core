@@ -31,10 +31,11 @@ and release-check validation without the expensive optimization build.
 
 The prerequisite DD ABI change exposes concrete operations such as
 `dd::getVector(state)` instead of constrained member-template exports. The
-installed consumer uses this interface. Stack that prerequisite before
+installed checks use the shared `test/cmake/installed_consumer` fixture with
+Clang and GCC against the repaired wheel. Stack that prerequisite before
 qualification; installed GCC and Clang consumers must both pass against the
 final optimized wheel.
 
-ThinLTO alignment validation passes Python compilation, repository lint, and a
-Clang 23 consumer syntax check with the DD prerequisite's headers. C++ lint and
-installed-consumer checks on the restacked branch remain pending.
+ThinLTO alignment and consumer reuse validation pass Python compilation and
+repository lint. The shared fixture's installed-consumer checks on the restacked
+branch remain pending.

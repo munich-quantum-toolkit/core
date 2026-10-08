@@ -126,7 +126,7 @@ def main() -> None:
                 [
                     "cmake",
                     "-S",
-                    str(project / "test/release/consumer"),
+                    str(project / "test/cmake/installed_consumer"),
                     "-B",
                     str(consumer),
                     "-G",
@@ -138,7 +138,11 @@ def main() -> None:
                 check=True,
             )
             subprocess.run(["cmake", "--build", str(consumer), "-j", "2"], check=True)
-            subprocess.run([str(consumer / "consumer")], env=environment, check=True)
+            subprocess.run(
+                ["ctest", "--test-dir", str(consumer), "-C", "Release", "--output-on-failure"],
+                env=environment,
+                check=True,
+            )
         destination.mkdir(parents=True, exist_ok=True)
         shutil.copy2(result, destination)
 
