@@ -6,8 +6,6 @@
 #
 # Licensed under the MIT License
 
-include(GNUInstallDirs)
-
 function(_mqt_qdmi_json_escape result value)
   string(REPLACE "\\" "\\\\" escaped "${value}")
   string(REPLACE "\"" "\\\"" escaped "${escaped}")
@@ -22,6 +20,7 @@ endfunction()
 # Configure and register a relocatable built-in QDMI device. The generated fragment is emitted
 # beside the runtime library in both build and install trees.
 function(mqt_configure_qdmi_device target)
+  include(GNUInstallDirs)
   cmake_parse_arguments(ARG "" "ID;PREFIX" "RUNTIME_FILES;CONFIGURATIONS" ${ARGN})
   if(NOT TARGET ${target})
     message(FATAL_ERROR "Unknown QDMI device target: ${target}")
