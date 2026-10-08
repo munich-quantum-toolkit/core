@@ -900,12 +900,12 @@ for previous changelogs._
 [3.0.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.0.0
 [2.7.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v2.7.0
 
+<!-- PR links -->
+
 [#2714]: https://github.com/munich-quantum-toolkit/core/pull/2714
 [#2710]: https://github.com/munich-quantum-toolkit/core/pull/2710
 [#2709]: https://github.com/munich-quantum-toolkit/core/pull/2709
 [#2708]: https://github.com/munich-quantum-toolkit/core/pull/2708
-<!-- PR links -->
-
 [#2659]: https://github.com/munich-quantum-toolkit/core/pull/2659
 [#2637]: https://github.com/munich-quantum-toolkit/core/pull/2637
 [#2636]: https://github.com/munich-quantum-toolkit/core/pull/2636

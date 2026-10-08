@@ -1,3 +1,6 @@
+# This file has been generated from an external template. Please do not modify it directly.
+# Changes should be contributed to https://github.com/munich-quantum-toolkit/templates.
+
 name-template: "MQT Core $RESOLVED_VERSION Release"
 tag-template: "v$RESOLVED_VERSION"
 filter-by-commitish: true
@@ -77,7 +80,7 @@ change-title-escapes: '\<*_&'
 template: |
   ## 👀 What Changed
 
-  _Please refer to the [changelog](https://github.com/$OWNER/$REPOSITORY/blob/v3.x/CHANGELOG.md) and the [upgrade guide](https://github.com/$OWNER/$REPOSITORY/blob/v3.x/UPGRADING.md) for a structured overview of the changes._
+  _Please refer to the [changelog](https://github.com/$OWNER/$REPOSITORY/blob/main/CHANGELOG.md) and the [upgrade guide](https://github.com/$OWNER/$REPOSITORY/blob/main/UPGRADING.md) for a structured overview of the changes._
 
   $CHANGES
 
