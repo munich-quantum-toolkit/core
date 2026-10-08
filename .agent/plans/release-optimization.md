@@ -1,13 +1,16 @@
 # Release wheel optimization
 
 Status: restacked on the portable ThinLTO release branch; full PGO/BOLT
-qualification pending.
+qualification blocked on a Linux SDK with the required BOLT tools.
 
 Core #2678 provides assertion-free LLVM 23.1.2 SDK selection, released Setup
 1.5.0 and Workflows 2.5.1 pins, and the Windows packaging cleanup. This branch
-preserves those changes. SDK #94 supplies Linux BOLT tools. The two wheel
-workflows pin Workflows #464 for persistent compiler caching; native Linux
-workflows pin Workflows #491 for mold 3.
+preserves those changes. Linux qualification requires an SDK containing
+`llvm-bolt`, `merge-fdata`, and `llvm-strip`; SDK #94 remains the pending
+prerequisite. The selected released SDK lacks the BOLT tools. Provisioning now
+checks the required executables before downloading LLVM sources or starting PGO
+builds. The two wheel workflows pin Workflows #464 for persistent compiler
+caching; native Linux workflows pin Workflows #491 for mold 3.
 
 Core #2476 owns SDK/Core PGO, MLIR test training, Linux BOLT, and installed
 wheel checks. Its release checks use the current public APIs and do not require
@@ -47,3 +50,8 @@ cibuildwheel configuration checks for Linux, macOS, and Windows. Native CMake
 configuration accepts ThinLTO with build RPATHs. The shared consumer builds and
 passes CTest with GCC 13 and Clang 23 against the qualified Phase 1 Clang 22
 ThinLTO wheel. These checks do not exercise PGO generation or BOLT processing.
+
+The provisioning preflight passes temporary-SDK checks for a complete Linux SDK,
+each missing tool, a non-executable tool, and macOS without BOLT tools. Missing
+Linux tools fail before the LLVM source download. These checks use local command
+shims and do not download or build dependencies.

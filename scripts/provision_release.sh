@@ -21,6 +21,12 @@ if [[ $(uname -s) == Linux ]]; then
       | tar -xz -C "$root/setup-mlir" --strip-components=1
     bash "$root/setup-mlir/installation/setup-mlir.sh" -v 23.1.2 -p /opt/llvm -a OFF
   fi
+  for tool in llvm-bolt merge-fdata llvm-strip; do
+    if [[ ! -x "${MLIR_DIR:?}/../../../bin/$tool" ]]; then
+      echo "Linux release optimization requires an SDK with BOLT tools: $tool is missing or not executable." >&2
+      exit 1
+    fi
+  done
 fi
 version=$("${MLIR_DIR:?}/../../../bin/llvm-config" --version)
 curl --fail --location --retry 3 \
