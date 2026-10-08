@@ -6,7 +6,20 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
-### C++ linting
+## [3.11.0]
+
+### Shared-library ABI version
+
+The shared-library ABI version (`SOVERSION`) changes from `3.10` to `3.11`.
+Rebuild downstream C++ libraries and Python extensions against MQT Core 3.11.0.
+In `cibuildwheel` configurations that exclude bundled MQT Core libraries from
+wheel repair, replace each `libmqt-core-*.so.3.10` entry with the corresponding
+`libmqt-core-*.so.3.11` entry.
+
+### C++ builds and linting
+
+Release builds no longer force debug symbols. Use `RelWithDebInfo` when you need
+optimized code with debug information.
 
 Install clang-tidy 23 to run `uvx nox -s cpp-lint` locally. The session checks
 files changed against `origin/v3.x`; pass `-- <base>` to select another base or
@@ -14,9 +27,6 @@ files changed against `origin/v3.x`; pass `-- <base>` to select another base or
 existing one was configured with another compiler version.
 
 ### DD package
-
-Rebuild C++ libraries and Python extensions that link to the DD package because
-its C++ ABI has changed.
 
 Use a positive normal floating-point value for
 `dd::ComplexNumbers::setTolerance`. The setter throws `std::invalid_argument`
@@ -27,7 +37,8 @@ For code that uses the low-level storage interfaces:
 - Replace static calls to `dd::RealNumberUniqueTable::hash(value)` with calls on
   the table instance, such as `table.hash(value)`.
 - Do not retain real-number bucket iterators across growth or tolerance changes.
-  Entry addresses remain valid until collection or reset.
+  Node-table bucket iterators can also be invalidated by insertion or resizing.
+  Number and node addresses remain valid until collection or reset.
 - Replace uses of the removed `dd::immortals` helper with calls to
   `dd::ComplexNumbers::lookup` or `dd::RealNumberUniqueTable::lookup` to obtain
   canonical numeric entries.
@@ -35,6 +46,12 @@ For code that uses the low-level storage interfaces:
   `DDPackageConfig::utMaxNumBucket` to at least both initial node-table
   capacities. For fixed sizing, use equal initial and maximum capacities; direct
   `UniqueTableConfig` users set `maxBuckets` equal to `nBuckets`.
+
+For custom DOT exporters, pass an explicit node ID to `dd::modernNode`,
+`dd::classicNode`, and `dd::memoryNode`. The `dd::bwEdge`, `dd::coloredEdge`,
+and `dd::memoryEdge` helpers now take the destination edge and explicit source
+and destination IDs instead of a source edge. Use unique IDs within each graph.
+The `dd::toDot` entry points assign these IDs automatically.
 
 ## [3.10.1]
 
@@ -1017,7 +1034,8 @@ It also requires the `uv` library version 0.5.20 or higher.
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.10.1...v3.x
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.11.0...v3.x
+[3.11.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.10.1...v3.11.0
 [3.10.1]: https://github.com/munich-quantum-toolkit/core/compare/v3.10.0...v3.10.1
 [3.10.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.2...v3.10.0
 [3.9.2]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.1...v3.9.2
