@@ -327,7 +327,7 @@ toJobResult(const CustomProperty property) {
 /// `QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE`, and `QDMI_PROGRAM_FORMAT_QPY` hold
 /// bitcode or another serialized object. Such a payload can contain a null byte
 /// and is not text, so it must be submitted as exact bytes. The string overload
-/// of `Device::submitPrograms` rejects these formats.
+/// of `Device::submitJob` rejects these formats.
 /// @param format The program format to classify.
 /// @return True if the format requires exact-byte submission.
 [[nodiscard]] constexpr bool
@@ -738,9 +738,51 @@ public:
   [[nodiscard]] std::optional<std::vector<Operation>>
   queryCustomOperations(CustomProperty property) const;
 
+  /// Submit one text program with the given format and job parameters.
+  [[nodiscard]] Job submitJob(
+      const std::string& program, QDMI_Program_Format format,
+      std::optional<size_t> numShots = std::nullopt,
+      const std::optional<CustomJobParameter>& custom1 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom2 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom3 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom4 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
+
+  /// Submit one exact-byte program with the given format and job parameters.
+  [[nodiscard]] Job submitJob(
+      std::span<const std::byte> program, QDMI_Program_Format format,
+      std::optional<size_t> numShots = std::nullopt,
+      const std::optional<CustomJobParameter>& custom1 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom2 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom3 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom4 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
+
+  /// Returns no job only when the device rejects this text program before
+  /// submission.
+  [[nodiscard]] std::optional<Job> trySubmitJob(
+      const std::string& program, QDMI_Program_Format format,
+      std::optional<size_t> numShots = std::nullopt,
+      const std::optional<CustomJobParameter>& custom1 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom2 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom3 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom4 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
+
+  /// Returns no job only when the device rejects this binary program before
+  /// submission.
+  [[nodiscard]] std::optional<Job> trySubmitJob(
+      std::span<const std::byte> program, QDMI_Program_Format format,
+      std::optional<size_t> numShots = std::nullopt,
+      const std::optional<CustomJobParameter>& custom1 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom2 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom3 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom4 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
+
   /// Submits an ordered list of text programs with common job parameters.
   /// The required text terminator is included exactly once per payload.
-  [[nodiscard]] Job submitPrograms(
+  [[nodiscard]] Job submitJob(
       std::span<const std::string> programs, QDMI_Program_Format format,
       std::optional<size_t> numShots = std::nullopt,
       const std::optional<CustomJobParameter>& custom1 = std::nullopt,
@@ -750,7 +792,7 @@ public:
       const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
 
   /// Returns no job only when the device rejects this list before submission.
-  [[nodiscard]] std::optional<Job> trySubmitPrograms(
+  [[nodiscard]] std::optional<Job> trySubmitJob(
       std::span<const std::string> programs, QDMI_Program_Format format,
       std::optional<size_t> numShots = std::nullopt,
       const std::optional<CustomJobParameter>& custom1 = std::nullopt,
@@ -760,7 +802,7 @@ public:
       const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
 
   /// Submits an ordered list of exact-byte programs with common job parameters.
-  [[nodiscard]] Job submitPrograms(
+  [[nodiscard]] Job submitJob(
       std::span<const std::span<const std::byte>> programs,
       QDMI_Program_Format format, std::optional<size_t> numShots = std::nullopt,
       const std::optional<CustomJobParameter>& custom1 = std::nullopt,
@@ -770,7 +812,7 @@ public:
       const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
 
   /// Returns no job only when the device rejects this list before submission.
-  [[nodiscard]] std::optional<Job> trySubmitPrograms(
+  [[nodiscard]] std::optional<Job> trySubmitJob(
       std::span<const std::span<const std::byte>> programs,
       QDMI_Program_Format format, std::optional<size_t> numShots = std::nullopt,
       const std::optional<CustomJobParameter>& custom1 = std::nullopt,
@@ -822,14 +864,14 @@ private:
   }
 
   [[nodiscard]] std::optional<Job>
-  submitProgramsImpl(QDMI_Program_Format format, std::span<const size_t> sizes,
-                     std::span<const void* const> programs,
-                     std::optional<size_t> numShots,
-                     const std::optional<CustomJobParameter>& custom1,
-                     const std::optional<CustomJobParameter>& custom2,
-                     const std::optional<CustomJobParameter>& custom3,
-                     const std::optional<CustomJobParameter>& custom4,
-                     const std::optional<CustomJobParameter>& custom5) const;
+  submitJobImpl(QDMI_Program_Format format, std::span<const size_t> sizes,
+                std::span<const void* const> programs,
+                std::optional<size_t> numShots,
+                const std::optional<CustomJobParameter>& custom1,
+                const std::optional<CustomJobParameter>& custom2,
+                const std::optional<CustomJobParameter>& custom3,
+                const std::optional<CustomJobParameter>& custom4,
+                const std::optional<CustomJobParameter>& custom5) const;
 
   void setCustomJobParam(QDMI_Job job, QDMI_Job_Parameter param,
                          const CustomJobParameter& value) const;

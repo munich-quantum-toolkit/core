@@ -17,7 +17,6 @@
 #include "nlohmann/json_fwd.hpp"
 #include "qdmi/constants.h"
 
-#include <array>
 #include <filesystem>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
@@ -85,8 +84,7 @@ TEST(ClientRuntimeTest, ValidatesDriversAndRetainsSessions) {
   const auto retained = Session::openDevice("test.example", firstConfig);
   EXPECT_THAT(retained.getName(), testing::HasSubstr("token=first-token"));
   const auto job = Session::openDevice("test.example", firstConfig)
-                       .submitPrograms(std::array<std::string, 1>{"payload"},
-                                       QDMI_PROGRAM_FORMAT_CUSTOM1);
+                       .submitJob("payload", QDMI_PROGRAM_FORMAT_CUSTOM1);
   EXPECT_EQ(job.getId(), "session-job");
   {
     const ScopedEnvironmentVariable optionalToken{

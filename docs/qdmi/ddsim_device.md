@@ -97,8 +97,8 @@ not isolate arbitrary native process-global side effects between executions.
 
 Set `QDMI_DEVICE_JOB_PARAMETER_CUSTOM2` to a `bool` value of `true` before
 submission to capture textual QIR output. In Python, pass `custom2=True` to
-`submit_programs` or `submit_program`. This option requires a QIR Base or
-Adaptive program and a positive shot count; other jobs reject it with
+`submit_job` or `submit_program`. This option requires a QIR Base or Adaptive
+program and a positive shot count; other jobs reject it with
 `QDMI_ERROR_NOTSUPPORTED`.
 
 After successful execution, `QDMI_JOB_RESULT_CUSTOM1` returns the complete,

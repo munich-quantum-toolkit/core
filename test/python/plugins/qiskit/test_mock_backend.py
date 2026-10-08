@@ -291,21 +291,20 @@ class MockQDMIDevice:
         """Return list of supported program formats."""
         return [ProgramFormat.QASM2, ProgramFormat.QASM3]
 
-    def try_submit_programs(self, *_args: object, **_kwargs: object) -> None:
+    def try_submit_job(self, *_args: object, **_kwargs: object) -> None:
         """Reject native groups before submission to exercise independent jobs."""
 
-    def submit_programs(self, programs: list[str], program_format: ProgramFormat, num_shots: int) -> MockJob:  # ruff:ignore[unused-method-argument]
+    def submit_job(self, program: str, program_format: ProgramFormat, num_shots: int) -> MockJob:  # ruff:ignore[unused-method-argument]
         """Submit a mock job to the device.
 
         Args:
-            programs: The program list whose first item is parsed for classical bit count.
+            program: The program parsed for classical bit count.
             program_format: The program format (unused in mock).
             num_shots: Number of shots to simulate.
 
         Returns:
             A mock job with simulated results.
         """
-        program = programs[0]
         # Parse the number of classical bits from a QASM program.
 
         # Look for "creg <name>[<size>];" pattern in QASM2
@@ -453,13 +452,11 @@ def _record_submissions(device: MockQDMIDevice) -> list[tuple[str | bytes, Progr
     """
     submissions: list[tuple[str | bytes, ProgramFormat]] = []
 
-    def submit_programs(
-        programs: list[str | bytes], program_format: ProgramFormat, num_shots: int
-    ) -> MockQDMIDevice.MockJob:
-        submissions.append((programs[0], program_format))
+    def submit_job(program: str | bytes, program_format: ProgramFormat, num_shots: int) -> MockQDMIDevice.MockJob:
+        submissions.append((program, program_format))
         return device.MockJob(num_clbits=2, shots=num_shots)
 
-    device.submit_programs = submit_programs  # ty: ignore[invalid-assignment]
+    device.submit_job = submit_job  # ty: ignore[invalid-assignment]
     return submissions
 
 
@@ -1023,7 +1020,7 @@ def test_execution_options_defaults_overrides_and_validation(monkeypatch: pytest
     device = MockQDMIDevice(num_qubits=1)
     backend = ExecutionOptionsBackend(device)  # ty: ignore[invalid-argument-type]
     submit = Mock(return_value=device.MockJob(num_clbits=1, shots=3))
-    monkeypatch.setattr(device, "submit_programs", submit)
+    monkeypatch.setattr(device, "submit_job", submit)
     circuit = QuantumCircuit(1, 1)
     circuit.measure(0, 0)
     backend.set_options(execution_mode="selected")
@@ -1046,7 +1043,7 @@ def test_execution_options_forward_exact_bytes(monkeypatch: pytest.MonkeyPatch) 
     device = MockQDMIDevice(num_qubits=1)
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
     submit = Mock(return_value=device.MockJob(num_clbits=1, shots=1))
-    monkeypatch.setattr(device, "submit_programs", submit)
+    monkeypatch.setattr(device, "submit_job", submit)
     monkeypatch.setattr(QDMIBackend, "_job_parameters", lambda _self, _options: {"custom1": b"\x00\xff"})
     backend.run(QuantumCircuit(1), shots=1)
     assert submit.call_args.kwargs["custom1"] == b"\x00\xff"
@@ -1059,7 +1056,7 @@ def test_execution_options_survive_retry(monkeypatch: pytest.MonkeyPatch) -> Non
     failed = device.MockJob(num_clbits=1, shots=3)
     failed._status = QDMIJobHandle.Status.FAILED  # ruff:ignore[private-member-access] Simulate a failed job.
     submit = Mock(side_effect=[failed, device.MockJob(num_clbits=1, shots=3)])
-    monkeypatch.setattr(device, "submit_programs", submit)
+    monkeypatch.setattr(device, "submit_job", submit)
     circuit = QuantumCircuit(1, 1)
     circuit.measure(0, 0)
     backend.set_options(execution_mode="selected")
@@ -1078,7 +1075,7 @@ def test_primitives_forward_backend_execution_options(monkeypatch: pytest.Monkey
     job = device.MockJob(num_clbits=1, shots=4)
     monkeypatch.setattr(job, "get_shots", lambda _program_index=0: ["0"] * 4)
     submit = Mock(return_value=job)
-    monkeypatch.setattr(device, "submit_programs", submit)
+    monkeypatch.setattr(device, "submit_job", submit)
     circuit = QuantumCircuit(1)
     if primitive == "sampler":
         circuit.measure_all()

@@ -494,7 +494,8 @@ namespace {
   case QDMI_JOB_PARAMETER_CUSTOM5:
     return QDMI_DEVICE_JOB_PARAMETER_CUSTOM5;
   default:
-    return QDMI_DEVICE_JOB_PARAMETER_MAX;
+    // Retired standard slots keep the same values on both QDMI interfaces.
+    return static_cast<QDMI_Device_Job_Parameter>(param);
   }
 }
 } // namespace
@@ -516,9 +517,6 @@ auto QDMI_Job_impl_d::setParameter(QDMI_Job_Parameter param, const size_t size,
       QDMI_IS_INVALID_ENUM_VALUE(param, QDMI_JOB_PARAMETER)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  if (param == 0 || param == 1) {
-    return QDMI_ERROR_NOTSUPPORTED;
-  }
   return device_->api().device_job_set_parameter(
       deviceJob_, toDeviceJobParameter(param), size, value);
 }
@@ -527,20 +525,20 @@ auto QDMI_Job_impl_d::setPrograms(const QDMI_Program_Format format,
                                   const size_t count, const size_t* const sizes,
                                   const void* const* const programs) const
     -> int {
-  return device_->getLibrary().device_job_set_programs(deviceJob_, format,
-                                                       count, sizes, programs);
+  return device_->api().device_job_set_programs(deviceJob_, format, count,
+                                                sizes, programs);
 }
 
 auto QDMI_Job_impl_d::getProgram(const size_t programIndex, const size_t size,
                                  void* data, size_t* sizeRet) const -> int {
-  return device_->getLibrary().device_job_get_program(deviceJob_, programIndex,
-                                                      size, data, sizeRet);
+  return device_->api().device_job_get_program(deviceJob_, programIndex, size,
+                                               data, sizeRet);
 }
 
 auto QDMI_Job_impl_d::getProgramStatus(const size_t programIndex,
                                        QDMI_Job_Status* status) const -> int {
-  return device_->getLibrary().device_job_get_program_status(
-      deviceJob_, programIndex, status);
+  return device_->api().device_job_get_program_status(deviceJob_, programIndex,
+                                                      status);
 }
 
 namespace {
@@ -598,8 +596,8 @@ auto QDMI_Job_impl_d::wait(size_t timeout) const -> int {
 auto QDMI_Job_impl_d::getResults(const size_t programIndex,
                                  QDMI_Job_Result result, const size_t size,
                                  void* data, size_t* sizeRet) const -> int {
-  return device_->api().device_job_get_results(
-      deviceJob_, programIndex, result, size, data, sizeRet);
+  return device_->api().device_job_get_results(deviceJob_, programIndex, result,
+                                               size, data, sizeRet);
 }
 
 auto QDMI_Job_impl_d::free() -> void { device_->freeJob(this); }

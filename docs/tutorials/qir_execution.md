@@ -70,7 +70,7 @@ leave through output-recording calls, not through that return value.
 
 ```{code-cell} ipython3
 bitcode = base.to_bitcode()
-job = device.submit_programs([bitcode], ProgramFormat.QIR_BASE_MODULE, shots, custom1=seed)
+job = device.submit_job(bitcode, ProgramFormat.QIR_BASE_MODULE, shots, custom1=seed)
 assert job.wait()
 counts = job.get_counts()
 assert set(counts) == {"00", "11"}
@@ -83,7 +83,7 @@ Try submitting `base.llvm_ir` with `ProgramFormat.QIR_BASE_STRING` instead. Does
 changing the serialization change the circuit's meaning?
 
 ```{code-cell} ipython3
-text_job = device.submit_programs([base.llvm_ir], ProgramFormat.QIR_BASE_STRING, shots, custom1=seed)
+text_job = device.submit_job(base.llvm_ir, ProgramFormat.QIR_BASE_STRING, shots, custom1=seed)
 assert text_job.wait()
 assert text_job.get_shots() == job.get_shots()
 print(f"LLVM text: {len(base.llvm_ir.encode())} bytes; bitcode: {len(bitcode)} bytes")
@@ -111,8 +111,8 @@ bit answer = measure q[1];
 """
 
 adaptive = compile_program(feedback_source, output=OutputFormat.QIR_ADAPTIVE)
-adaptive_job = device.submit_programs(
-    [adaptive.to_bitcode()], ProgramFormat.QIR_ADAPTIVE_MODULE, shots, custom1=seed
+adaptive_job = device.submit_job(
+    adaptive.to_bitcode(), ProgramFormat.QIR_ADAPTIVE_MODULE, shots, custom1=seed
 )
 assert adaptive_job.wait()
 feedback_counts = adaptive_job.get_counts()
@@ -143,7 +143,7 @@ predict whether the classical outputs remain correlated.
 
 ```{code-cell} ipython3
 variant = compile_program(feedback_source.replace("x q[1]", "z q[1]"), output=OutputFormat.QIR_ADAPTIVE)
-variant_job = device.submit_programs([variant.to_bitcode()], ProgramFormat.QIR_ADAPTIVE_MODULE, shots, custom1=seed)
+variant_job = device.submit_job(variant.to_bitcode(), ProgramFormat.QIR_ADAPTIVE_MODULE, shots, custom1=seed)
 assert variant_job.wait()
 assert set(variant_job.get_counts()) == {"00", "01"}
 plot_distribution(variant_job.get_counts(), title="Z leaves the answer qubit in zero")
@@ -206,8 +206,8 @@ Enable DDSIM's QIR output capture for two shots. Each shot may execute several
 measurements, but only the final `result` is recorded as program output.
 
 ```{code-cell} ipython3
-recorded = device.submit_programs(
-    [loop.to_bitcode()], ProgramFormat.QIR_ADAPTIVE_MODULE, num_shots=2, custom1=seed, custom2=True
+recorded = device.submit_job(
+    loop.to_bitcode(), ProgramFormat.QIR_ADAPTIVE_MODULE, num_shots=2, custom1=seed, custom2=True
 )
 assert recorded.wait()
 output = recorded.get_custom_result(CustomProperty.CUSTOM1, str)

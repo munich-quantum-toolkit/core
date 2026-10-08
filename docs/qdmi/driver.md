@@ -81,10 +81,10 @@ extensions are exported from its shared library.
 
 ## Multi-program jobs
 
-`Device.submit_programs` submits an ordered program list with one format and
-common job parameters. `num_shots` applies to each program. Text programs carry
-one terminating null byte; binary programs retain their exact bytes.
-`try_submit_programs` returns `None` only when the device rejects the list
+`Device.submit_job` accepts one program or an ordered program list with one
+format and common job parameters. `num_shots` applies to each program. Text
+programs carry one terminating null byte; binary programs retain their exact
+bytes. `try_submit_job` returns `None` only when the device rejects the list
 before submission. Submission errors propagate, since retrying an uncertain
 submission could duplicate execution.
 
@@ -139,13 +139,13 @@ device access.
 ### Custom job parameter types
 
 The `custom1` through `custom5` arguments of
-{py:meth}`mqt.core.qdmi.Device.submit_programs` and
+{py:meth}`mqt.core.qdmi.Device.submit_job` and
 {py:func}`mqt.core.mlir.submit_program` use the device's documented types.
 Strings include a null terminator; `bool`, `int`, and `float` use C++ `bool`,
 `int`, and `double`. For a device-defined binary payload, pass nonempty `bytes`:
 
 ```python
-job = device.submit_programs([program], program_format, custom1=b"\x01\x00\xff")
+job = device.submit_job(program, program_format, custom1=b"\x01\x00\xff")
 ```
 
 QDMI copies raw bytes without a terminator; empty payloads raise `ValueError`.

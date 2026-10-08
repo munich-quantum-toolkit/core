@@ -555,7 +555,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::setParameter(
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::setPrograms(
     const QDMI_Program_Format format, size_t count, const size_t* sizes,
     const void* const* programs) -> QDMI_STATUS {
-  if (count == 0 || IS_INVALID_ARGUMENT(format, QDMI_PROGRAM_FORMAT)) {
+  if (count == 0 || QDMI_IS_INVALID_ENUM_VALUE(format, QDMI_PROGRAM_FORMAT)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   const std::scoped_lock lock(execution_->mutex);
@@ -1124,7 +1124,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getResults(size_t programIndex,
                                                   size_t size, void* data,
                                                   size_t* sizeRet)
     -> QDMI_STATUS {
-  if (IS_INVALID_ARGUMENT(result, QDMI_JOB_RESULT)) {
+  if (QDMI_IS_INVALID_ENUM_VALUE(result, QDMI_JOB_RESULT)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   qdmi::dd::ProgramResult* programResult = nullptr;

@@ -409,7 +409,7 @@ class QDMIBackend(BackendV2):
             options: Effective execution options for every circuit in this run.
 
         Returns:
-            Custom keyword arguments for :meth:`~mqt.core.qdmi.Device.submit_programs`.
+            Custom keyword arguments for :meth:`~mqt.core.qdmi.Device.submit_job`.
 
         Raises:
             CircuitValidationError: If an option has no submission mapping.

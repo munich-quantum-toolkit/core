@@ -48,10 +48,10 @@ def recording_backend(
     device = MockQDMIDevice(operations=["h", "s", "sdg", "x", "cx", "rx", "ry", "rz", "measure"])
     jobs = []
     events = []
-    submit = device.submit_programs
+    submit = device.submit_job
 
-    def submit_programs(programs: list[str], program_format: ProgramFormat, num_shots: int) -> MagicMock:
-        original = submit(programs, program_format, num_shots)
+    def submit_one(program: str, program_format: ProgramFormat, num_shots: int) -> MagicMock:
+        original = submit(program, program_format, num_shots)
         width = original.num_clbits
         events.append("submit")
         job = MagicMock()
@@ -66,7 +66,7 @@ def recording_backend(
 
     formats = device.supported_program_formats
     monkeypatch.setattr(device, "supported_program_formats", lambda: (events.append("formats"), formats())[1])
-    monkeypatch.setattr(device, "submit_programs", submit_programs)
+    monkeypatch.setattr(device, "submit_job", submit_one)
     return QDMIBackend(cast("Device", device)), jobs, events
 
 
@@ -220,14 +220,14 @@ def test_submission_failure_recovery(
 ) -> None:
     """Keep accepted jobs and expose the uncertain submission after admission fails."""
     backend, jobs, _ = recording_backend
-    submit = backend.device.submit_programs
+    submit = backend.device.submit_job
 
-    def failing_submit(*, programs: list[str], program_format: ProgramFormat, num_shots: int) -> Job:
+    def failing_submit(program: str, program_format: ProgramFormat, num_shots: int) -> Job:
         if len(jobs) == failed_index:
             raise error
-        return submit(programs=programs, program_format=program_format, num_shots=num_shots)
+        return submit(program, program_format, num_shots)
 
-    monkeypatch.setattr(backend.device, "submit_programs", failing_submit)
+    monkeypatch.setattr(backend.device, "submit_job", failing_submit)
     with pytest.raises((JobSubmissionError, KeyboardInterrupt)) as caught:
         backend.run([QuantumCircuit(1, 1)] * 3)
     assert caught.value is error or caught.value.__cause__ is error
@@ -236,7 +236,7 @@ def test_submission_failure_recovery(
     if isinstance(caught.value, JobSubmissionError):
         assert caught.value.job is job
     job.collect()
-    monkeypatch.setattr(backend.device, "submit_programs", submit)
+    monkeypatch.setattr(backend.device, "submit_job", submit)
     job.submit()
     job.resubmit([failed_index], allow_unknown=True)
     assert job.result().get_counts() == [{"0": 1024}] * 3
@@ -434,14 +434,14 @@ def test_configured_retry_limit(
 ) -> None:
     """Backend defaults and per-run overrides bound automatic replacements."""
     backend, jobs, _ = recording_backend
-    original = backend.device.submit_programs
+    original = backend.device.submit_job
 
-    def submit(*, programs: list[str], program_format: ProgramFormat, num_shots: int) -> Job:
-        handle = original(programs=programs, program_format=program_format, num_shots=num_shots)
+    def submit(program: str, program_format: ProgramFormat, num_shots: int) -> Job:
+        handle = original(program, program_format, num_shots)
         jobs[-1].check.side_effect = lambda: Job.Status.FAILED
         return handle
 
-    monkeypatch.setattr(backend.device, "submit_programs", submit)
+    monkeypatch.setattr(backend.device, "submit_job", submit)
     if configured is not None:
         backend.set_options(max_retries=configured)
     options = {} if override is None else {"max_retries": override}
@@ -476,7 +476,7 @@ def test_native_program_group_preserves_circuit_results(
     shared.get_shots.side_effect = lambda program_index: [f"{program_index:02b}"] * 4
     shared.get_counts.side_effect = lambda program_index: {f"{program_index:02b}": 4}
     native = MagicMock(return_value=shared)
-    monkeypatch.setattr(backend.device, "try_submit_programs", native)
+    monkeypatch.setattr(backend.device, "try_submit_job", native)
     monkeypatch.setattr(backend, "_job_parameters", lambda _options: {"custom1": "native-options"})
     circuits = [QuantumCircuit(2, 2, name=f"native-{index}") for index in range(3)]
     job = backend.run(circuits, shots=4, memory=memory)

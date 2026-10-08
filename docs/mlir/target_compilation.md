@@ -62,7 +62,7 @@ simulator statevectors and probabilities, see {doc}`../qdmi/ddsim_device`. A
 compiled program can be submitted again without recompilation. Submission checks
 that the device still has matching sites, topology, operations, timing units,
 and program capabilities. Names and calibration-only changes do not require
-recompilation. Use `device.submit_programs` to submit raw payloads.
+recompilation. Use `device.submit_job` to submit raw payloads.
 
 ### Compilation options
 

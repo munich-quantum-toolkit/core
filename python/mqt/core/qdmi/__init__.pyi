@@ -233,7 +233,7 @@ def is_binary_program_format(program_format: ProgramFormat) -> bool:
     ``QIR_BASE_MODULE``, ``QIR_ADAPTIVE_MODULE``, and ``QPY`` hold bitcode or
     another serialized object. Such a payload may contain a null byte and is not
     text, so the device must receive it as exact bytes. Pass ``bytes`` to
-    :meth:`Device.submit_programs` for these formats and ``str`` for the others.
+    :meth:`Device.submit_job` for these formats and ``str`` for the others.
 
     Args:
         program_format: The program format to classify.
@@ -359,23 +359,9 @@ class Device:
         when the custom slot is unsupported.
         """
 
-    @overload
-    def submit_programs(
+    def submit_job(
         self,
-        programs: Sequence[str],
-        program_format: ProgramFormat,
-        num_shots: int | None = None,
-        *,
-        custom1: str | bool | float | bytes | None = None,
-        custom2: str | bool | float | bytes | None = None,
-        custom3: str | bool | float | bytes | None = None,
-        custom4: str | bool | float | bytes | None = None,
-        custom5: str | bool | float | bytes | None = None,
-    ) -> Job: ...
-    @overload
-    def submit_programs(
-        self,
-        programs: Sequence[bytes],
+        program: str | bytes | Sequence[str] | Sequence[bytes],
         program_format: ProgramFormat,
         num_shots: int | None = None,
         *,
@@ -385,25 +371,11 @@ class Device:
         custom4: str | bool | float | bytes | None = None,
         custom5: str | bool | float | bytes | None = None,
     ) -> Job:
-        """Submits an ordered program list with common parameters."""
+        """Submit one program or an ordered list with common parameters."""
 
-    @overload
-    def try_submit_programs(
+    def try_submit_job(
         self,
-        programs: Sequence[str],
-        program_format: ProgramFormat,
-        num_shots: int | None = None,
-        *,
-        custom1: str | bool | float | bytes | None = None,
-        custom2: str | bool | float | bytes | None = None,
-        custom3: str | bool | float | bytes | None = None,
-        custom4: str | bool | float | bytes | None = None,
-        custom5: str | bool | float | bytes | None = None,
-    ) -> Job | None: ...
-    @overload
-    def try_submit_programs(
-        self,
-        programs: Sequence[bytes],
+        program: str | bytes | Sequence[str] | Sequence[bytes],
         program_format: ProgramFormat,
         num_shots: int | None = None,
         *,
@@ -413,7 +385,7 @@ class Device:
         custom4: str | bool | float | bytes | None = None,
         custom5: str | bool | float | bytes | None = None,
     ) -> Job | None:
-        """Returns None only when the device rejects this list before submission."""
+        """Return no job only when the device rejects the program before submission."""
 
     def retrieve_job_by_id(self, job_id: str) -> Job:
         """Retrieves an existing job by its device-provided ID."""

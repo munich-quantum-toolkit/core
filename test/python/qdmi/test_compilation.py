@@ -312,7 +312,7 @@ from mqt.core.qdmi import open_device
 assert "mqt.core.mlir" not in sys.modules
 device = open_device("mqt.ddsim.default")
 source = "OPENQASM 3.0; qubit q; bit c = measure q;"
-raw = device.submit_programs([source], ProgramFormat.QASM3, num_shots=1)
+raw = device.submit_job(source, ProgramFormat.QASM3, num_shots=1)
 assert raw.wait()
 assert "mqt.core.mlir" not in sys.modules
 from mqt.core.mlir import submit_program
@@ -488,7 +488,7 @@ def test_qir_output_capture_requires_qir_sampling(program_format: ProgramFormat,
     device = open_device("mqt.ddsim.default")
     compiled = compile_program(BELL, target=device, program_format=program_format)
     with pytest.raises(RuntimeError, match="Not supported"):
-        device.submit_programs(
+        device.submit_job(
             cast("Sequence[str] | Sequence[bytes]", [compiled.payload]),
             program_format,
             num_shots=shots,

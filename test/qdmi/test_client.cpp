@@ -129,8 +129,7 @@ bit[1] c;
 h q[0];
 c[0] = measure q[0];
 )";
-    return device.submitPrograms(std::array<std::string, 1>{qasm3Program},
-                                 QDMI_PROGRAM_FORMAT_QASM3, 10);
+    return device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10);
   }
 };
 
@@ -147,8 +146,7 @@ qubit[2] q;
 h q[0];
 cx q[0], q[1];
 )";
-    return device.submitPrograms(std::array<std::string, 1>{qasm3Program},
-                                 QDMI_PROGRAM_FORMAT_QASM3, 0);
+    return device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 0);
   }
 };
 #endif
@@ -914,8 +912,8 @@ h q[0];
 cx q[0], q[1];
 c = measure q;)";
 
-  const auto job = device.submitPrograms(
-      std::array<std::string, 1>{qasm3Program}, QDMI_PROGRAM_FORMAT_QASM3, 100);
+  const auto job =
+      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 100);
 
   EXPECT_FALSE(job.getId().empty());
   EXPECT_EQ(job.getProgramFormat(), QDMI_PROGRAM_FORMAT_QASM3);
@@ -931,8 +929,7 @@ TEST_F(DDSimulatorDeviceTest, IndexedProgramsKeepTheirResults) {
       "OPENQASM 3.0; include \"stdgates.inc\"; qubit[1] q; bit[1] c; x "
       "q[0]; c[0] = measure q[0];",
   };
-  const auto job =
-      device.submitPrograms(programs, QDMI_PROGRAM_FORMAT_QASM3, 4);
+  const auto job = device.submitJob(programs, QDMI_PROGRAM_FORMAT_QASM3, 4);
 
   ASSERT_TRUE(job.wait());
   EXPECT_EQ(job.getNumPrograms(), programs.size());
@@ -950,9 +947,8 @@ TEST_F(DDSimulatorDeviceTest, IndexedProgramsKeepTheirResults) {
 TEST_F(DDSimulatorDeviceTest, SubmitJobRejectsIncompatiblePayloadKinds) {
   const std::string textProgram = "OPENQASM 3.0;";
 
-  EXPECT_THROW(std::ignore = device.submitPrograms(
-                   std::array<std::string, 1>{textProgram},
-                   QDMI_PROGRAM_FORMAT_QIRBASEMODULE, 0),
+  EXPECT_THROW(std::ignore = device.submitJob(
+                   textProgram, QDMI_PROGRAM_FORMAT_QIRBASEMODULE, 0),
                std::invalid_argument);
 }
 
@@ -963,28 +959,24 @@ TEST_F(DDSimulatorDeviceTest, SubmitJobCustomSupportedTypes) {
     try {
       switch (which) {
       case 1:
-        device.submitPrograms(std::array<std::string, 1>{qasm3Program},
-                              QDMI_PROGRAM_FORMAT_QASM3, 10, custom);
+        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10, custom);
         break;
       case 2:
-        device.submitPrograms(std::array<std::string, 1>{qasm3Program},
-                              QDMI_PROGRAM_FORMAT_QASM3, 10, std::nullopt,
-                              custom);
+        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
+                         std::nullopt, custom);
         break;
       case 3:
-        device.submitPrograms(std::array<std::string, 1>{qasm3Program},
-                              QDMI_PROGRAM_FORMAT_QASM3, 10, std::nullopt,
-                              std::nullopt, custom);
+        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
+                         std::nullopt, std::nullopt, custom);
         break;
       case 4:
-        device.submitPrograms(std::array<std::string, 1>{qasm3Program},
-                              QDMI_PROGRAM_FORMAT_QASM3, 10, std::nullopt,
-                              std::nullopt, std::nullopt, custom);
+        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
+                         std::nullopt, std::nullopt, std::nullopt, custom);
         break;
       case 5:
-        device.submitPrograms(std::array<std::string, 1>{qasm3Program},
-                              QDMI_PROGRAM_FORMAT_QASM3, 10, std::nullopt,
-                              std::nullopt, std::nullopt, std::nullopt, custom);
+        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
+                         std::nullopt, std::nullopt, std::nullopt, std::nullopt,
+                         custom);
         break;
       default:
         throw std::invalid_argument("Invalid 'which' value");
@@ -996,12 +988,10 @@ TEST_F(DDSimulatorDeviceTest, SubmitJobCustomSupportedTypes) {
     }
   };
   submitWithCustoms(7, 1);
-  EXPECT_NO_THROW(device.submitPrograms(
-      std::array<std::string, 1>{qasm3Program}, QDMI_PROGRAM_FORMAT_QASM3, 10,
-      std::nullopt, false));
-  EXPECT_THROW(device.submitPrograms(std::array<std::string, 1>{qasm3Program},
-                                     QDMI_PROGRAM_FORMAT_QASM3, 10,
-                                     std::nullopt, true),
+  EXPECT_NO_THROW(device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
+                                   std::nullopt, false));
+  EXPECT_THROW(device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
+                                std::nullopt, true),
                std::runtime_error);
   EXPECT_THROW(submitWithCustoms(std::string("custom"), 2),
                std::invalid_argument);
@@ -1023,17 +1013,16 @@ bit[1] c;
 c[0] = measure q[0];
 )";
 
-  const auto job1 = device.submitPrograms(
-      std::array<std::string, 1>{qasm3Program}, QDMI_PROGRAM_FORMAT_QASM3, 10);
+  const auto job1 =
+      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10);
   EXPECT_EQ(job1.getNumShots(), 10);
 
-  const auto job2 = device.submitPrograms(
-      std::array<std::string, 1>{qasm3Program}, QDMI_PROGRAM_FORMAT_QASM3, 100);
+  const auto job2 =
+      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 100);
   EXPECT_EQ(job2.getNumShots(), 100);
 
   const auto job3 =
-      device.submitPrograms(std::array<std::string, 1>{qasm3Program},
-                            QDMI_PROGRAM_FORMAT_QASM3, 1000);
+      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 1000);
   EXPECT_EQ(job3.getNumShots(), 1000);
 }
 
@@ -1044,8 +1033,8 @@ qubit[1] q;
 bit[1] c;
 c[0] = measure q[0];
 )";
-  const auto job2 = device.submitPrograms(
-      std::array<std::string, 1>{qasm3Program}, QDMI_PROGRAM_FORMAT_QASM3, 10);
+  const auto job2 =
+      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10);
 
   EXPECT_NE(job.getId(), job2.getId());
 }
@@ -1132,8 +1121,8 @@ qubit[1] q;
 bit[1] c;
 c[0] = measure q[0];
 )";
-  const auto jobToCancel = device.submitPrograms(
-      std::array<std::string, 1>{qasm3Program}, QDMI_PROGRAM_FORMAT_QASM3, 10);
+  const auto jobToCancel =
+      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10);
 
   // Fast-executing jobs (like the DD simulator) may complete before
   // cancel is called, which should throw an exception.

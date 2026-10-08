@@ -138,12 +138,12 @@ class StubDevice:
             return None
         return [(_site(first), _site(second)) for first, second in self._coupling_map]
 
-    def try_submit_programs(self, *_args: object, **_kwargs: object) -> None:
+    def try_submit_job(self, *_args: object, **_kwargs: object) -> None:
         """Reject native groups before submission to exercise independent jobs."""
 
-    def submit_programs(
+    def submit_job(
         self,
-        programs: list[str],
+        program: str,
         program_format: ProgramFormat,
         num_shots: int,
         **parameters: object,
@@ -153,7 +153,6 @@ class StubDevice:
         Returns:
             The completed job mock.
         """
-        program = programs[0]
         self.submissions.append((program, program_format, num_shots, parameters))
         shots = list(self._result_factory(program, num_shots))
         job = Mock()

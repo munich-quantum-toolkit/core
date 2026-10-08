@@ -135,15 +135,10 @@ class QDMIJob(JobV1):
 
     def _submit_entry(self, index: int) -> QDMIJobHandle:
         program, program_format = self._programs[index]
-        return self._backend.device.submit_programs(
-            programs=cast("Sequence[str] | Sequence[bytes]", [program]),
-            program_format=program_format,
-            num_shots=self._shots,
-            **self._job_parameters,
-        )
+        return self._backend.device.submit_job(program, program_format, self._shots, **self._job_parameters)
 
     def _submit_programs(self, indices: Sequence[int]) -> QDMIJobHandle | None:
-        return self._backend.device.try_submit_programs(
+        return self._backend.device.try_submit_job(
             # A format fixes the payload type for the whole group.
             cast("Sequence[str] | Sequence[bytes]", [self._programs[index][0] for index in indices]),
             self._programs[indices[0]][1],

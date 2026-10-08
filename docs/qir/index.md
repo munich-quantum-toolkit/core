@@ -76,7 +76,7 @@ from mqt.core.qdmi import ProgramFormat
 from mqt.core.qdmi import open_device
 
 device = open_device("mqt.ddsim.default")
-job = device.submit_programs([base.llvm_ir], ProgramFormat.QIR_BASE_STRING, num_shots=256, custom1=7)
+job = device.submit_job(base.llvm_ir, ProgramFormat.QIR_BASE_STRING, num_shots=256, custom1=7)
 assert job.wait()
 counts = job.get_counts()
 assert set(counts) <= {"00", "11"} and sum(counts.values()) == 256
@@ -90,7 +90,7 @@ LLVM bitcode, then submit those bytes without an intermediate file:
 ```{code-cell} ipython3
 bitcode = base.to_bitcode()
 assert isinstance(bitcode, bytes)
-binary_job = device.submit_programs([bitcode], ProgramFormat.QIR_BASE_MODULE, num_shots=256, custom1=7)
+binary_job = device.submit_job(bitcode, ProgramFormat.QIR_BASE_MODULE, num_shots=256, custom1=7)
 assert binary_job.wait()
 assert binary_job.get_program_bytes() == bitcode
 assert binary_job.get_counts() == counts
@@ -161,7 +161,7 @@ for payload, program_format in (
     (adaptive.llvm_ir, ProgramFormat.QIR_ADAPTIVE_STRING),
     (adaptive.to_bitcode(), ProgramFormat.QIR_ADAPTIVE_MODULE),
 ):
-    adaptive_job = device.submit_programs([payload], program_format, num_shots=32, custom1=7)
+    adaptive_job = device.submit_job(payload, program_format, num_shots=32, custom1=7)
     assert adaptive_job.wait()
     assert adaptive_job.get_counts() == {"0": 32}
     print(program_format.name, adaptive_job.get_counts())
@@ -219,8 +219,8 @@ parameter, then request its string result from `CustomProperty.CUSTOM1`:
 ```{code-cell} ipython3
 from mqt.core.qdmi import CustomProperty
 
-recorded_job = device.submit_programs(
-    [adaptive.to_bitcode()], ProgramFormat.QIR_ADAPTIVE_MODULE, num_shots=2, custom1=7, custom2=True
+recorded_job = device.submit_job(
+    adaptive.to_bitcode(), ProgramFormat.QIR_ADAPTIVE_MODULE, num_shots=2, custom1=7, custom2=True
 )
 assert recorded_job.wait()
 output = recorded_job.get_custom_result(CustomProperty.CUSTOM1, str)
@@ -278,20 +278,19 @@ The QDMI Device accepts jobs in the following program formats: QASM2, QASM3, QIR
 Base/Adaptive Profile Module (LLVM bitcode), and QIR Base/Adaptive Profile
 String (LLVM assembly).
 
-QDMI C++ applications submit textual programs through the
-`Device::submitPrograms(std::span<const std::string>, ...)` overload, which
-includes the terminating null byte required by QDMI. Binary module payloads use
-the `Device::submitPrograms(std::span<const std::span<const std::byte>>, ...)`
-overload instead. It preserves embedded null bytes and submits exactly the
-span's size without appending a terminator. `Job::getProgramBytes()` retrieves
-such a payload without interpreting its format or removing terminal null bytes;
-the existing `Job::getProgram()` remains the textual, null-terminated accessor.
-It rejects known binary and non-text formats based on their QDMI format
-identifier, even if their payload happens to end in a null byte.
+QDMI C++ applications pass a `std::string` to `Device::submitJob` for a text
+program, or a `std::span<const std::byte>` for a binary module. The same method
+accepts a span of text or binary programs for a multi-program job. Text includes
+the required terminator once; binary payloads preserve their exact bytes,
+including embedded nulls. `Job::getProgramBytes()` retrieves such a payload
+without interpreting its format or removing terminal null bytes; the existing
+`Job::getProgram()` remains the textual, null-terminated accessor. It rejects
+known binary and non-text formats based on their QDMI format identifier, even if
+their payload happens to end in a null byte.
 
-The Python API follows the same distinction: pass `str` to
-`Device.submit_programs` for a textual program and `bytes` for an exact binary
-payload. `Job.get_program_bytes()` always returns the unmodified payload, while
+The Python API follows the same distinction: pass `str` or `bytes` to
+`Device.submit_job` for one program, or a sequence of either type for multiple
+programs. `Job.get_program_bytes()` always returns the unmodified payload, while
 `Job.get_program()` expects a null-terminated UTF-8 text payload and rejects
 known binary or non-text formats. The `num_shots` argument is optional for
 device-defined formats that encode their repetition count in the program

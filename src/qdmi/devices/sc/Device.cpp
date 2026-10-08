@@ -437,7 +437,7 @@ int MQT_SC_QDMI_Device_Job_impl_d::setPrograms(
     const QDMI_Program_Format format, const size_t count,
     [[maybe_unused]] const size_t* const sizes,
     [[maybe_unused]] const void* const* const programs) {
-  if (count == 0U || IS_INVALID_ARGUMENT(format, QDMI_PROGRAM_FORMAT)) {
+  if (count == 0U || QDMI_IS_INVALID_ENUM_VALUE(format, QDMI_PROGRAM_FORMAT)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   return QDMI_ERROR_NOTSUPPORTED;

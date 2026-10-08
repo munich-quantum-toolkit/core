@@ -50,6 +50,32 @@ void registerSlurm(nb::module_& qdmiModule);
 namespace {
 using PythonCustomJobParameter =
     std::variant<std::string, bool, int, double, nb::bytes>;
+using PythonProgram =
+    std::variant<std::string, nb::bytes, std::vector<std::string>,
+                 std::vector<nb::bytes>>;
+
+template <typename Submit>
+auto withProgramPayload(const PythonProgram& program, Submit submit) {
+  return std::visit(
+      [&](const auto& value) {
+        using Value = std::decay_t<decltype(value)>;
+        if constexpr (std::is_same_v<Value, nb::bytes>) {
+          return submit(std::span(static_cast<const std::byte*>(value.data()),
+                                  value.size()));
+        } else if constexpr (std::is_same_v<Value, std::vector<nb::bytes>>) {
+          std::vector<std::span<const std::byte>> payloads;
+          payloads.reserve(value.size());
+          for (const auto& bytes : value) {
+            payloads.emplace_back(static_cast<const std::byte*>(bytes.data()),
+                                  bytes.size());
+          }
+          return submit(payloads);
+        } else {
+          return submit(value);
+        }
+      },
+      program);
+}
 
 [[nodiscard]] std::optional<qdmi::CustomJobParameter>
 toCustomJobParameter(const std::optional<PythonCustomJobParameter>& parameter) {
@@ -450,7 +476,7 @@ when the custom slot is unsupported.)pb");
 ``QIR_BASE_MODULE``, ``QIR_ADAPTIVE_MODULE``, and ``QPY`` hold bitcode or
 another serialized object. Such a payload may contain a null byte and is not
 text, so the device must receive it as exact bytes. Pass ``bytes`` to
-:meth:`Device.submit_programs` for these formats and ``str`` for the others.
+:meth:`Device.submit_job` for these formats and ``str`` for the others.
 
 Args:
     program_format: The program format to classify.
@@ -592,8 +618,8 @@ Use ``bytes`` to retrieve the value without interpretation. Returns ``None``
 when the custom slot is unsupported.)pb");
 
   device.def(
-      "submit_programs",
-      [](const qdmi::Device& self, const std::vector<std::string>& programs,
+      "submit_job",
+      [](const qdmi::Device& self, const PythonProgram& program,
          QDMI_Program_Format format, std::optional<size_t> numShots,
          const std::optional<PythonCustomJobParameter>& custom1,
          const std::optional<PythonCustomJobParameter>& custom2,
@@ -605,101 +631,44 @@ when the custom slot is unsupported.)pb");
             toCustomJobParameter(custom3), toCustomJobParameter(custom4),
             toCustomJobParameter(custom5),
         };
-        const nb::gil_scoped_release release;
-        return self.submitPrograms(programs, format, numShots, params[0],
+        return withProgramPayload(program, [&](const auto& payload) {
+          const nb::gil_scoped_release release;
+          return self.submitJob(payload, format, numShots, params[0], params[1],
+                                params[2], params[3], params[4]);
+        });
+      },
+      "program"_a, "program_format"_a, "num_shots"_a = nb::none(),
+      nb::kw_only(), "custom1"_a = nb::none(), "custom2"_a = nb::none(),
+      "custom3"_a = nb::none(), "custom4"_a = nb::none(),
+      "custom5"_a = nb::none(),
+      "Submit one program or an ordered list with common parameters.");
+
+  device.def(
+      "try_submit_job",
+      [](const qdmi::Device& self, const PythonProgram& program,
+         QDMI_Program_Format format, std::optional<size_t> numShots,
+         const std::optional<PythonCustomJobParameter>& custom1,
+         const std::optional<PythonCustomJobParameter>& custom2,
+         const std::optional<PythonCustomJobParameter>& custom3,
+         const std::optional<PythonCustomJobParameter>& custom4,
+         const std::optional<PythonCustomJobParameter>& custom5) {
+        const auto params = std::array{
+            toCustomJobParameter(custom1), toCustomJobParameter(custom2),
+            toCustomJobParameter(custom3), toCustomJobParameter(custom4),
+            toCustomJobParameter(custom5),
+        };
+        return withProgramPayload(program, [&](const auto& payload) {
+          const nb::gil_scoped_release release;
+          return self.trySubmitJob(payload, format, numShots, params[0],
                                    params[1], params[2], params[3], params[4]);
+        });
       },
-      "programs"_a, "program_format"_a, "num_shots"_a = nb::none(),
+      "program"_a, "program_format"_a, "num_shots"_a = nb::none(),
       nb::kw_only(), "custom1"_a = nb::none(), "custom2"_a = nb::none(),
       "custom3"_a = nb::none(), "custom4"_a = nb::none(),
       "custom5"_a = nb::none(),
-      "Submits an ordered program list with common parameters.");
-
-  device.def(
-      "submit_programs",
-      [](const qdmi::Device& self, const std::vector<nb::bytes>& programs,
-         QDMI_Program_Format format, std::optional<size_t> numShots,
-         const std::optional<PythonCustomJobParameter>& custom1,
-         const std::optional<PythonCustomJobParameter>& custom2,
-         const std::optional<PythonCustomJobParameter>& custom3,
-         const std::optional<PythonCustomJobParameter>& custom4,
-         const std::optional<PythonCustomJobParameter>& custom5) {
-        const auto params = std::array{
-            toCustomJobParameter(custom1), toCustomJobParameter(custom2),
-            toCustomJobParameter(custom3), toCustomJobParameter(custom4),
-            toCustomJobParameter(custom5),
-        };
-        std::vector<std::span<const std::byte>> payloads;
-        payloads.reserve(programs.size());
-        for (const auto& program : programs) {
-          payloads.emplace_back(static_cast<const std::byte*>(program.data()),
-                                program.size());
-        }
-        const nb::gil_scoped_release release;
-        return self.submitPrograms(payloads, format, numShots, params[0],
-                                   params[1], params[2], params[3], params[4]);
-      },
-      "programs"_a, "program_format"_a, "num_shots"_a = nb::none(),
-      nb::kw_only(), "custom1"_a = nb::none(), "custom2"_a = nb::none(),
-      "custom3"_a = nb::none(), "custom4"_a = nb::none(),
-      "custom5"_a = nb::none(),
-      "Submits an ordered program list with common parameters.");
-
-  device.def(
-      "try_submit_programs",
-      [](const qdmi::Device& self, const std::vector<std::string>& programs,
-         QDMI_Program_Format format, std::optional<size_t> numShots,
-         const std::optional<PythonCustomJobParameter>& custom1,
-         const std::optional<PythonCustomJobParameter>& custom2,
-         const std::optional<PythonCustomJobParameter>& custom3,
-         const std::optional<PythonCustomJobParameter>& custom4,
-         const std::optional<PythonCustomJobParameter>& custom5) {
-        const auto params = std::array{
-            toCustomJobParameter(custom1), toCustomJobParameter(custom2),
-            toCustomJobParameter(custom3), toCustomJobParameter(custom4),
-            toCustomJobParameter(custom5),
-        };
-        const nb::gil_scoped_release release;
-        return self.trySubmitPrograms(programs, format, numShots, params[0],
-                                      params[1], params[2], params[3],
-                                      params[4]);
-      },
-      "programs"_a, "program_format"_a, "num_shots"_a = nb::none(),
-      nb::kw_only(), "custom1"_a = nb::none(), "custom2"_a = nb::none(),
-      "custom3"_a = nb::none(), "custom4"_a = nb::none(),
-      "custom5"_a = nb::none(),
-      "Returns None only when the device rejects this list before submission.");
-
-  device.def(
-      "try_submit_programs",
-      [](const qdmi::Device& self, const std::vector<nb::bytes>& programs,
-         QDMI_Program_Format format, std::optional<size_t> numShots,
-         const std::optional<PythonCustomJobParameter>& custom1,
-         const std::optional<PythonCustomJobParameter>& custom2,
-         const std::optional<PythonCustomJobParameter>& custom3,
-         const std::optional<PythonCustomJobParameter>& custom4,
-         const std::optional<PythonCustomJobParameter>& custom5) {
-        const auto params = std::array{
-            toCustomJobParameter(custom1), toCustomJobParameter(custom2),
-            toCustomJobParameter(custom3), toCustomJobParameter(custom4),
-            toCustomJobParameter(custom5),
-        };
-        std::vector<std::span<const std::byte>> payloads;
-        payloads.reserve(programs.size());
-        for (const auto& program : programs) {
-          payloads.emplace_back(static_cast<const std::byte*>(program.data()),
-                                program.size());
-        }
-        const nb::gil_scoped_release release;
-        return self.trySubmitPrograms(payloads, format, numShots, params[0],
-                                      params[1], params[2], params[3],
-                                      params[4]);
-      },
-      "programs"_a, "program_format"_a, "num_shots"_a = nb::none(),
-      nb::kw_only(), "custom1"_a = nb::none(), "custom2"_a = nb::none(),
-      "custom3"_a = nb::none(), "custom4"_a = nb::none(),
-      "custom5"_a = nb::none(),
-      "Returns None only when the device rejects this list before submission.");
+      "Return no job only when the device rejects the program before "
+      "submission.");
 
   device.def(
       "retrieve_job_by_id",

@@ -1376,9 +1376,9 @@ TEST(DeviceRegistrationTest, CustomJobParametersPreserveNativeRepresentations) {
       qdmi::CustomProperty::Custom3, qdmi::CustomProperty::Custom4,
       qdmi::CustomProperty::Custom5,
   };
-  const auto job = device.submitPrograms(
-      std::array<std::string, 1>{"program"}, QDMI_PROGRAM_FORMAT_QASM3, 1,
-      payloads[0], payloads[1], payloads[2], payloads[3], payloads[4]);
+  const auto job =
+      device.submitJob("program", QDMI_PROGRAM_FORMAT_QASM3, 1, payloads[0],
+                       payloads[1], payloads[2], payloads[3], payloads[4]);
   const auto expectedPayloads = payloads;
   for (auto& payload : payloads) {
     payload.clear();
@@ -1387,9 +1387,9 @@ TEST(DeviceRegistrationTest, CustomJobParametersPreserveNativeRepresentations) {
     EXPECT_EQ(job.getCustomResult<std::vector<std::byte>>(slots[i]),
               expectedPayloads[i]);
   }
-  const auto scalarJob = device.submitPrograms(
-      std::array<std::string, 1>{"program"}, QDMI_PROGRAM_FORMAT_QASM3, 1,
-      std::string{"text"}, true, -7, 2.5);
+  const auto scalarJob =
+      device.submitJob("program", QDMI_PROGRAM_FORMAT_QASM3, 1,
+                       std::string{"text"}, true, -7, 2.5);
   EXPECT_EQ(scalarJob.getCustomResult<std::string>(slots[0]), "text");
   EXPECT_EQ(scalarJob.getCustomResult<std::vector<std::byte>>(slots[1]),
             bytesOf(true));
@@ -1397,10 +1397,10 @@ TEST(DeviceRegistrationTest, CustomJobParametersPreserveNativeRepresentations) {
             bytesOf(-7));
   EXPECT_EQ(scalarJob.getCustomResult<std::vector<std::byte>>(slots[3]),
             bytesOf(2.5));
-  EXPECT_THROW(static_cast<void>(device.submitPrograms(
-                   std::array<std::string, 1>{"program"},
-                   QDMI_PROGRAM_FORMAT_QASM3, 1, std::vector<std::byte>{})),
-               std::invalid_argument);
+  EXPECT_THROW(
+      static_cast<void>(device.submitJob("program", QDMI_PROGRAM_FORMAT_QASM3,
+                                         1, std::vector<std::byte>{})),
+      std::invalid_argument);
 }
 
 TEST(DeviceRegistrationTest, CustomOperationListSupportsRawAndQDMIQueries) {
@@ -1549,8 +1549,7 @@ TEST(DeviceRegistrationTest, FreshJobRetainsItsDeviceSession) {
     auto const device = qdmi::Session::openDevice("test.session-overrides");
     baseline = device.getName();
     job.emplace(
-        device.submitPrograms(std::array<std::string, 1>{"OPENQASM 2.0;"},
-                              QDMI_PROGRAM_FORMAT_QASM2, 1));
+        device.submitJob("OPENQASM 2.0;", QDMI_PROGRAM_FORMAT_QASM2, 1));
   }
 
   ASSERT_TRUE(job.has_value());
@@ -1567,8 +1566,8 @@ TEST(DeviceRegistrationTest, ValidatesHistogramKeyValueCounts) {
     const auto device = qdmi::builtin_driver::openDevice(
         "test.session-overrides",
         std::string{R"({"custom3":")"} + keys + R"("})");
-    const auto job = device.submitPrograms(
-        std::array<std::string, 1>{"OPENQASM 2.0;"}, QDMI_PROGRAM_FORMAT_QASM2);
+    const auto job =
+        device.submitJob("OPENQASM 2.0;", QDMI_PROGRAM_FORMAT_QASM2);
     if (std::string_view(keys) == "00,11") {
       EXPECT_THROW(std::ignore = job.getCounts(), std::runtime_error);
     } else {
@@ -1584,12 +1583,10 @@ TEST(DeviceRegistrationTest, CustomBinaryJobDoesNotRequireShots) {
   const auto device = qdmi::Session::openDevice("test.session-overrides");
   constexpr std::array payload{std::byte{0}, std::byte{1}};
 
-  EXPECT_NO_THROW(std::ignore = device.submitPrograms(
-                      std::array<std::span<const std::byte>, 1>{payload},
-                      QDMI_PROGRAM_FORMAT_CUSTOM1));
-  EXPECT_THROW(std::ignore = device.submitPrograms(
-                   std::array<std::span<const std::byte>, 1>{payload},
-                   QDMI_PROGRAM_FORMAT_CUSTOM1, size_t{1}),
+  EXPECT_NO_THROW(std::ignore =
+                      device.submitJob(payload, QDMI_PROGRAM_FORMAT_CUSTOM1));
+  EXPECT_THROW(std::ignore = device.submitJob(
+                   payload, QDMI_PROGRAM_FORMAT_CUSTOM1, size_t{1}),
                std::runtime_error);
 }
 
@@ -1597,12 +1594,10 @@ TEST(DeviceRegistrationTest, TextJobDoesNotRequireShots) {
   registerSessionTestDevice();
   const auto device = qdmi::Session::openDevice("test.session-overrides");
 
-  EXPECT_NO_THROW(std::ignore = device.submitPrograms(
-                      std::array<std::string, 1>{"OPENQASM 2.0;"},
-                      QDMI_PROGRAM_FORMAT_QASM2));
-  EXPECT_THROW(std::ignore = device.submitPrograms(
-                   std::array<std::string, 1>{std::string{"binary"}},
-                   QDMI_PROGRAM_FORMAT_QPY),
+  EXPECT_NO_THROW(std::ignore = device.submitJob("OPENQASM 2.0;",
+                                                 QDMI_PROGRAM_FORMAT_QASM2));
+  EXPECT_THROW(std::ignore = device.submitJob(std::string{"binary"},
+                                              QDMI_PROGRAM_FORMAT_QPY),
                std::invalid_argument);
 }
 
@@ -1704,7 +1699,7 @@ TEST(DeviceRegistrationTest, SubmitsOrderedBinaryProgramsAtomically) {
       programs[1],
   };
   const auto job =
-      device.submitPrograms(views, QDMI_PROGRAM_FORMAT_QIRBASEMODULE, 3U);
+      device.submitJob(views, QDMI_PROGRAM_FORMAT_QIRBASEMODULE, 3U);
   EXPECT_EQ(job.getNumPrograms(), programs.size());
   EXPECT_EQ(job.getProgramBytes(0U), programs[0]);
   EXPECT_EQ(job.getProgramBytes(1U), programs[1]);
@@ -1715,8 +1710,7 @@ TEST(DeviceRegistrationTest, SubmitsOrderedTextProgramsAtomically) {
   const auto device = qdmi::Session::openDevice("test.session-overrides");
   const std::array<std::string, 2> programs{"OPENQASM 3.0;", "OPENQASM 3.0;"};
 
-  const auto job =
-      device.submitPrograms(programs, QDMI_PROGRAM_FORMAT_QASM3, 3U);
+  const auto job = device.submitJob(programs, QDMI_PROGRAM_FORMAT_QASM3, 3U);
   ASSERT_EQ(job.getNumPrograms(), programs.size());
   for (size_t index = 0U; index < programs.size(); ++index) {
     EXPECT_EQ(job.getProgram(index), programs[index]);
