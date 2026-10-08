@@ -22,6 +22,7 @@
 #include "mqt/Dialect/QCO/Transforms/NativeSynthesis/NativeCost.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Utils/Drivers.h"
+#include "mqt/Dialect/QCO/Utils/FunctionUtils.h"
 #include "mqt/Dialect/QCO/Utils/Graph.h"
 #include "mqt/Dialect/QCO/Utils/Layout.h"
 #include "mqt/Dialect/QCO/Utils/Sorting.h"
@@ -69,6 +70,7 @@
 #include <iterator>
 #include <limits>
 #include <memory>
+#include <numeric>
 #include <optional>
 #include <random>
 #include <ranges>
@@ -167,6 +169,15 @@ public:
         vertex = static_cast<int64_t>(next);
         used[next] = true;
       }
+    }
+    if (auto permutation = module_->getAttrOfType<DenseI64ArrayAttr>(
+            mqt::kSourceOutputPermutationAttr)) {
+      auto& routing = layout_->routing.emplace(layout_->initial.size());
+      std::iota(routing.begin(), routing.end(), int64_t{0});
+      for (auto [output, source] : llvm::enumerate(permutation.asArrayRef())) {
+        routing[layout_->initial[output]] = layout_->initial[source];
+      }
+      module_->removeAttr(mqt::kSourceOutputPermutationAttr);
     }
     module_->setAttr("mqt.layout", layout_->toAttr(module_.getContext()));
     return success();
@@ -477,6 +488,11 @@ protected:
     }
 
     if (!needsPlacement(func)) {
+      if (moduleOp->hasAttr(mqt::kSourceOutputPermutationAttr)) {
+        moduleOp.emitError(
+            "source output permutation requires dynamic placement");
+        signalPassFailure();
+      }
       return;
     }
 
@@ -889,6 +905,11 @@ protected:
     }
 
     if (!needsPlacement(func)) {
+      if (moduleOp->hasAttr(mqt::kSourceOutputPermutationAttr)) {
+        moduleOp.emitError(
+            "source output permutation requires dynamic placement");
+        signalPassFailure();
+      }
       return;
     }
 
@@ -929,8 +950,12 @@ protected:
 
     if (auto attr = moduleOp->getAttrOfType<DictionaryAttr>("mqt.layout")) {
       const auto permutation = sitePermutation(layout, state.layout);
-      const SmallVector<int64_t> routing(permutation.begin(),
-                                         permutation.end());
+      SmallVector<int64_t> routing(permutation.begin(), permutation.end());
+      if (auto source = attr.getAs<DenseI64ArrayAttr>("routing")) {
+        for (auto [site, original] : llvm::enumerate(source.asArrayRef())) {
+          routing[site] = permutation[original];
+        }
+      }
       NamedAttrList fields(attr);
       fields.set("routing", rewriter.getDenseI64ArrayAttr(routing));
       moduleOp->setAttr("mqt.layout", fields.getDictionary(&getContext()));
@@ -1933,14 +1958,6 @@ private:
     }
   }
 
-  /// Values carried by a supported region terminator.
-  static ValueRange yieldedValues(Block& block) {
-    return TypeSwitch<Operation*, ValueRange>(block.getTerminator())
-        .Case([](scf::YieldOp op) { return op.getResults(); })
-        .Case([](scf::ConditionOp op) { return op.getArgs(); })
-        .Case([](YieldOp op) { return op.getTargets(); });
-  }
-
   /// Construct child states, route their bodies, reconcile layouts, then
   /// publish the physical result order to the parent.
   template <WireDirection Direction, RoutingMode Mode>
@@ -1975,9 +1992,10 @@ private:
       auto& child = children.emplace_back(Wires(env.target.numSites()),
                                           parent.layout, env);
 
-      auto roots = getQubitValues(Direction == WireDirection::Forward
-                                      ? region.front().getArguments()
-                                      : yieldedValues(region.front()));
+      auto roots =
+          getQubitValues(Direction == WireDirection::Forward
+                             ? ValueRange(region.front().getArguments())
+                             : getYieldedValues(region.front()));
       for (auto [site, root] : zip_equal(sites, roots)) {
         child.wires[site] = WireIterator(root);
       }
@@ -2038,7 +2056,7 @@ private:
       if constexpr (Mode == RoutingMode::Hot) {
         auto* terminator = region.front().getTerminator();
         auto values =
-            realignQubitValues(yieldedValues(region.front()), sites, child);
+            realignQubitValues(getYieldedValues(region.front()), sites, child);
 
         rewriter->modifyOpInPlace(terminator, [&] {
           if (auto condition = dyn_cast<scf::ConditionOp>(terminator)) {

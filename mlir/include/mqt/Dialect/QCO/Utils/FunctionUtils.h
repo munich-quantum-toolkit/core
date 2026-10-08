@@ -14,6 +14,7 @@
 #include "mlir/IR/Block.h"
 #include "mlir/IR/TypeRange.h"
 #include "mlir/IR/Value.h"
+#include "mlir/IR/ValueRange.h"
 #include "mlir/Support/LogicalResult.h"
 
 #include "llvm/ADT/SmallVector.h"
@@ -21,6 +22,10 @@
 namespace mlir::qco {
 /// Positions of scalar qubits and qubit tensors in argument order.
 [[nodiscard]] SmallVector<unsigned> getQuantumArgumentIndices(TypeRange types);
+
+/// Values forwarded by a block terminator, excluding an SCF condition
+/// predicate.
+[[nodiscard]] OperandRange getYieldedValues(Block& block);
 
 /// Argument continued by a synthetic trailing result of an ordinary call.
 [[nodiscard]] FailureOr<unsigned> getCallArgumentForResult(func::CallOp call,

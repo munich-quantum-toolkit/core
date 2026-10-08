@@ -25,17 +25,6 @@ void SWAPOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add(+[](SWAPOp op, PatternRewriter& rewriter) {
     return removeInversePairTwoTargetZeroParameter<SWAPOp>(op, rewriter, true);
   });
-  results.add(+[](SWAPOp op, PatternRewriter& rewriter) {
-    for (auto qubit : op.getResults()) {
-      auto measure = dyn_cast<MeasureOp>(*qubit.user_begin());
-      if (!measure || !isa<SinkOp>(*measure.getQubitOut().user_begin())) {
-        return failure();
-      }
-    }
-    // Only the classical results survive: measure the opposite inputs instead.
-    rewriter.replaceOp(op, {op.getQubit1In(), op.getQubit0In()});
-    return success();
-  });
 }
 
 Matrix4x4 SWAPOp::getUnitaryMatrix() {

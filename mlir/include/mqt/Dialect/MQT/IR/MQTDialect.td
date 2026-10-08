@@ -46,8 +46,13 @@ def MQTDialect : Dialect {
     Placement consumes it when publishing the completed layout.
     `mqt.source_qubit_indices` tracks native input slots: a dense i64 array of
     distinct nonnegative indices, one per `qco.alloc` or fixed-size
-    `qtensor.alloc` slot. Tensor shrinking retains surviving entries; placement consumes them.
-    Removed slots remain in the attached layout.
+    `qtensor.alloc` slot. With a source count, indices are unique across the
+    module and smaller than the count. Tensor shrinking retains surviving
+    entries; placement consumes them. Removed slots remain in the attached layout.
+    `mqt.source_output_permutation` is a temporary complete permutation of
+    `mqt.source_qubit_count` slots. Entry `j` identifies the source resource
+    holding logical output `j`. Compiler passes must preserve it until
+    placement consumes it into the published layout.
 
     `mqt.input_name` records the source-level name of a function input.
     `mqt.input_id` optionally records an opaque 128-bit source identity on a

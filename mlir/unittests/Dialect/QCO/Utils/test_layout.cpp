@@ -30,10 +30,23 @@ template <typename T> class LayoutTest : public ::testing::Test {};
 using IndexTypes = ::testing::Types<uint8_t, uint16_t, uint32_t, uint64_t>;
 TYPED_TEST_SUITE(LayoutTest, IndexTypes);
 
-TYPED_TEST(LayoutTest, DefaultConstructedIsEmpty) {
-  const Layout<TypeParam> layout;
+TYPED_TEST(LayoutTest, AppendIdentityPreservesExistingPermutation) {
+  Layout<TypeParam> layout;
   EXPECT_EQ(layout.nProgramQubits(), 0UL);
   EXPECT_EQ(layout.nHardwareQubits(), 0UL);
+  EXPECT_EQ(layout.appendIdentity(), 0);
+  EXPECT_EQ(layout.appendIdentity(), 1);
+  layout.swap(0, 1);
+  EXPECT_EQ(layout.appendIdentity(), 2);
+
+  constexpr std::array<TypeParam, 3> expected{1, 0, 2};
+  EXPECT_EQ(layout.nProgramQubits(), expected.size());
+  EXPECT_EQ(layout.nHardwareQubits(), expected.size());
+  EXPECT_EQ(layout.getProgramToHardware(), ArrayRef<TypeParam>(expected));
+  for (size_t program = 0; program < expected.size(); ++program) {
+    EXPECT_EQ(layout.getProgramIndex(layout.getHardwareIndex(program)),
+              program);
+  }
 }
 
 TYPED_TEST(LayoutTest, ConstructFromPermutation) {
@@ -156,6 +169,9 @@ TEST(LayoutBoundaryTest, RejectCountsBeyondIndexCapacity) {
   EXPECT_DEATH(Layout<uint8_t>::identity(256), "qubit index capacity");
   EXPECT_DEATH(Layout<uint8_t>::random(1, 256, 0), "qubit index capacity");
   EXPECT_DEATH(Layout<uint8_t>::fromMapping(mapping), "qubit index capacity");
+  EXPECT_DEATH(
+      static_cast<void>(Layout<uint8_t>::identity(255).appendIdentity()),
+      "qubit index capacity");
   EXPECT_DEATH(Layout<uint8_t>::random(2, 1, 0),
                "cannot map more program qubits");
 }
