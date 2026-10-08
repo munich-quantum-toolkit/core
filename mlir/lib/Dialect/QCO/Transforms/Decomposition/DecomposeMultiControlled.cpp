@@ -784,6 +784,7 @@ static void appendRelativePhaseC3X(CircuitPlan& plan, size_t c0, size_t c1,
 /// Controls 0..3, target 4.
 static CircuitPlan planMczRelativePhaseK4() {
   CircuitPlan plan;
+  plan.ops.reserve(47);
   constexpr size_t t = 4;
   const double half = K_PI / 2.0;
   const double quarter = K_PI / 4.0;
@@ -958,6 +959,7 @@ static CircuitPlan planMcpVale(double theta, size_t numControls) {
 static CircuitPlan planMcpValeRelativeResidual(double theta,
                                                size_t numControls) {
   CircuitPlan plan;
+  plan.ops.reserve(17);
   appendValeFig7Shell(plan, theta, numControls);
   appendMcpBarencoRelative(plan, theta / 2.0, numControls - 1, numControls - 1);
   return plan;

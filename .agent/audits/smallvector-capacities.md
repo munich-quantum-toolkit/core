@@ -102,6 +102,15 @@ audited baseline.
 | `mlir/include/mqt/Dialect/QCO/Utils/Matrix.h`: `EigenDecomposition::eigenvalues`, 8                                                                                                                                | Dynamic matrix order sets the eigenvalue count. The fixed 2x2 and 4x4 results already use arrays.                                                                                                     |
 | `mlir/include/mqt/Dialect/QCO/Utils/Drivers.h`: owning `ReleasedOps` storage, 8                                                                                                                                    | A graph traversal can release an input-dependent number of operations. Keep storage separate from the callback interface in finding 1.                                                                |
 
+The 2026-10-08
+[review follow-up](https://github.com/munich-quantum-toolkit/core/pull/2711#discussion_r4218114903)
+identified two fixed-size plans without reserves. `planMcpValeRelativeResidual`
+is called only for four controls and appends 8 shell operations plus 9 residual
+operations. `planMczRelativePhaseK4` appends 11 operations plus two 18-operation
+toggles. They now reserve 17 and 47 entries, respectively, to avoid repeated
+buffer growth while retaining default inline storage. The reviewer's timing
+measurements were not reproduced.
+
 ### 3. Retained storage choices have reasons (applied)
 
 These choices retain their capacities. Short comments explain non-obvious
@@ -226,3 +235,7 @@ executable documentation build, repository lint, and full-file C++ lint passed
 for that follow-up. A focused Doxygen render confirmed the callback code block.
 Inspected the comment guidance in the generated HTML. The native and Qiskit
 results above cover the unchanged code.
+
+The planner-reserve follow-up rebuilt the decomposition target; all 316 tests
+passed. Full-file C++ lint checked `DecomposeMultiControlled.cpp` against `HEAD`
+with no findings.
