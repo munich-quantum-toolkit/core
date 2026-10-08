@@ -20,7 +20,6 @@
 #include "nanobind/stl/string.h"  // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/vector.h"  // NOLINT(misc-include-cleaner)
 
-#include <cmath>
 #include <complex>
 #include <cstddef>
 #include <limits>
