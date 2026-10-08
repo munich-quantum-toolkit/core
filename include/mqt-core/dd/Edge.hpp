@@ -139,6 +139,7 @@ auto normalize(vNode* p, const std::array<Edge<vNode>, RADIX>& e,
                MemoryManager& mm, ComplexNumbers& cn) -> Edge<vNode>;
 
 /// Get a single element of the vector represented by the DD
+/// @param edge the vector DD
 /// @param i index of the element
 /// @throws std::out_of_range if the index is outside the vector
 /// @return the complex value of the amplitude
@@ -146,12 +147,14 @@ auto normalize(vNode* p, const std::array<Edge<vNode>, RADIX>& e,
                                                size_t i);
 
 /// Get the vector represented by the DD
+/// @param edge the vector DD
 /// @param threshold amplitudes with a magnitude below this threshold will be
 /// ignored
 /// @return the vector
 [[nodiscard]] CVec getVector(const Edge<vNode>& edge, fp threshold = 0.);
 
 /// Get the sparse vector represented by the DD
+/// @param edge the vector DD
 /// @param threshold amplitudes with a magnitude below this threshold will be
 /// ignored
 /// @return the sparse vector
@@ -163,6 +166,7 @@ auto normalize(vNode* p, const std::array<Edge<vNode>, RADIX>& e,
 void printVector(const Edge<vNode>& edge);
 
 /// Add the amplitudes of a vector DD to a vector
+/// @param edge the vector DD
 /// @param amplitudes the vector to add to
 void addToVector(const Edge<vNode>& edge, CVec& amplitudes);
 
@@ -191,6 +195,7 @@ auto normalize(mNode* p, const std::array<Edge<mNode>, NEDGE>& e,
 }
 
 /// Get a single element of the matrix represented by the DD
+/// @param edge the matrix DD
 /// @param numQubits number of qubits in the considered DD
 /// @param i row index of the element
 /// @param j column index of the element
@@ -200,6 +205,7 @@ auto normalize(mNode* p, const std::array<Edge<mNode>, NEDGE>& e,
 getValueByIndex(const Edge<mNode>& edge, size_t numQubits, size_t i, size_t j);
 
 /// Get the matrix represented by the DD
+/// @param edge the matrix DD
 /// @param numQubits number of qubits in the considered DD
 /// @param threshold entries with a magnitude below this threshold will be
 /// ignored
@@ -208,6 +214,7 @@ getValueByIndex(const Edge<mNode>& edge, size_t numQubits, size_t i, size_t j);
                              fp threshold = 0.);
 
 /// Get the sparse matrix represented by the DD
+/// @param edge the matrix DD
 /// @param numQubits number of qubits in the considered DD
 /// @param threshold entries with a magnitude below this threshold will be
 /// ignored
@@ -216,6 +223,7 @@ getValueByIndex(const Edge<mNode>& edge, size_t numQubits, size_t i, size_t j);
                                          size_t numQubits, fp threshold = 0.);
 
 /// Print the matrix represented by the DD
+/// @param edge the matrix DD
 /// @param numQubits number of qubits in the considered DD
 /// @note This function scales exponentially with the number of qubits.
 void printMatrix(const Edge<mNode>& edge, size_t numQubits);
@@ -224,6 +232,7 @@ void printMatrix(const Edge<mNode>& edge, size_t numQubits);
 /// matrix entry.
 ///
 /// One callback instance is used for the entire traversal.
+/// @param edge the matrix DD
 /// @param amp the accumulated amplitude from previous traversals
 /// @param i the current row index in the matrix
 /// @param j the current column index in the matrix
