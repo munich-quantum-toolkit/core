@@ -8,7 +8,8 @@ Status: implemented; hosted platform checks remain.
 Clang 22.1.8 distribution, LLD, and CMake IPO (ThinLTO). macOS uses Apple Clang
 and ThinLTO. Windows retains its compiler settings. All wheels set `DEPLOY=ON`;
 local release builds default to native CPU tuning and IPO without interpreting
-`CI` as a deployment request. Bindings use nanobind's `NOMINSIZE`.
+`CI` as a deployment request. Bindings use nanobind's `NOMINSIZE`; macOS modules
+restore two-level symbol lookup after LLVM's global linker settings.
 
 The compiler and the assertion-free LLVM/MLIR 23.1.2 SDK are separate inputs.
 The manylinux installer does not yet supply Clang 23. GCC 15 is competitive, but
