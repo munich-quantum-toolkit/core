@@ -12,6 +12,7 @@
 #include "bench/JSON.hpp"
 #include "bench/QFTAdder.hpp"
 #include "dd/DDDefinitions.hpp"
+#include "dd/Edge.hpp"
 #include "dd/Package.hpp"
 #include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/bench/Generate.h"
@@ -193,7 +194,7 @@ TEST(GenerateProgramTest, PreservesQFTAdderRelativePhases) {
         auto state = qco::simulateStatevector(
             mlir::mqt::getEntryPoint(program->module()), package);
         ASSERT_TRUE(succeeded(state));
-        const auto actual = state->getVector();
+        const auto actual = dd::getVector(*state);
         package.decRef(*state);
         dd::CVec expected(size_t{1} << (width + sumWidth));
         for (size_t addend = 0; addend < (size_t{1} << width); ++addend) {

@@ -35,10 +35,70 @@
 #include <utility>
 
 namespace dd {
+namespace {
 
-///-----------------------------------------------------------------------------
-///                      \n General purpose methods \n
-///-----------------------------------------------------------------------------
+void traverseVector(const vEdge& edge, const std::complex<fp>& amp,
+                    const size_t i, const AmplitudeFunc& f,
+                    const fp threshold) {
+  const auto c = amp * static_cast<std::complex<fp>>(edge.w);
+
+  if (threshold > 0. && std::abs(c) < threshold) {
+    return;
+  }
+
+  if (edge.isTerminal()) {
+    f(i, c);
+    return;
+  }
+
+  // recursive case
+  if (const auto& e = edge.p->e[0]; !e.w.exactlyZero()) {
+    traverseVector(e, c, i, f, threshold);
+  }
+  if (const auto& e = edge.p->e[1]; !e.w.exactlyZero()) {
+    traverseVector(e, c, i | (1ULL << edge.p->v), f, threshold);
+  }
+}
+
+void traverseMatrixImpl(const mEdge& edge, const std::complex<fp>& amp,
+                        const size_t i, const size_t j,
+                        const MatrixEntryFunc& f, const size_t level,
+                        const fp threshold) {
+  const auto c = amp * static_cast<std::complex<fp>>(edge.w);
+
+  if (threshold > 0. && std::abs(c) < threshold) {
+    return;
+  }
+
+  if (level == 0) {
+    assert(edge.isTerminal());
+    f(i, j, c);
+    return;
+  }
+
+  const auto nextLevel = static_cast<Qubit>(level - 1U);
+  const size_t x = i | (1ULL << nextLevel);
+  const size_t y = j | (1ULL << nextLevel);
+  if (edge.isTerminal() || edge.p->v < nextLevel) {
+    traverseMatrixImpl(edge, amp, i, j, f, nextLevel, threshold);
+    traverseMatrixImpl(edge, amp, x, y, f, nextLevel, threshold);
+    return;
+  }
+
+  const auto coords = {std::pair{i, j}, {i, y}, {x, j}, {x, y}};
+  size_t k = 0U;
+  for (const auto& [a, b] : coords) {
+    if (auto const& e = edge.p->e[k++]; !e.w.exactlyZero()) {
+      traverseMatrixImpl(e, c, a, b, f, nextLevel, threshold);
+    }
+  }
+}
+
+} // namespace
+
+//-----------------------------------------------------------------------------
+//                      \n General purpose methods \n
+//-----------------------------------------------------------------------------
 
 template <class Node>
 auto Edge<Node>::getValueByPath(const std::size_t numQubits,
@@ -133,15 +193,12 @@ template <class Node> void Edge<Node>::unmark() const noexcept {
   }
 }
 
-///-----------------------------------------------------------------------------
-///                      \n Methods for vector DDs \n
-///-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+//                      \n Methods for vector DDs \n
+//-----------------------------------------------------------------------------
 
-template <class Node>
-auto Edge<Node>::normalize(Node* p, const std::array<Edge, RADIX>& e,
-                           MemoryManager& mm, ComplexNumbers& cn) -> Edge
-  requires IsVector<Node>
-{
+auto normalize(vNode* p, const std::array<Edge<vNode>, RADIX>& e,
+               MemoryManager& mm, ComplexNumbers& cn) -> Edge<vNode> {
   assert(p != nullptr && "Node pointer passed to normalize is null.");
   const auto zero = std::array{e[0].w.exactlyZero(), e[1].w.exactlyZero()};
 
@@ -151,14 +208,14 @@ auto Edge<Node>::normalize(Node* p, const std::array<Edge, RADIX>& e,
       return vEdge::zero();
     }
     p->e = e;
-    vEdge r{p, e[1].w};
+    vEdge r{.p = p, .w = e[1].w};
     p->e[1].w = Complex::one();
     return r;
   }
 
   p->e = e;
   if (zero[1]) {
-    vEdge r{p, e[0].w};
+    vEdge r{.p = p, .w = e[0].w};
     p->e[0].w = Complex::one();
     return r;
   }
@@ -170,7 +227,7 @@ auto Edge<Node>::normalize(Node* p, const std::array<Edge, RADIX>& e,
 
   const auto mag2 = std::array{weights[0].mag2(), weights[1].mag2()};
 
-  /// Keep the dominant phase independent of the incoming scale.
+  // Keep the dominant phase independent of the incoming scale.
   const auto argMax =
       mag2[1] - mag2[0] > RealNumber::eps * std::max(mag2[0], mag2[1]) ? 1U
                                                                        : 0U;
@@ -183,15 +240,15 @@ auto Edge<Node>::normalize(Node* p, const std::array<Edge, RADIX>& e,
   const auto maxMag = std::sqrt(maxMag2);
   const auto maxWeight = maxMag / norm;
   p->e[argMax].w = cn.lookup(maxWeight);
-  /// Preserve the dominant coefficient after interning its normalized weight.
+  // Preserve the dominant coefficient after interning its normalized weight.
   const auto topWeight = weights[argMax] / RealNumber::val(p->e[argMax].w.r);
   assert(!p->e[argMax].w.exactlyZero() &&
          "Max edge weight should not be zero.");
 
-  vEdge r = {p, cn.lookup(topWeight)};
+  vEdge r = {.p = p, .w = cn.lookup(topWeight)};
   assert(!r.w.exactlyZero() && "Top edge weight should not be zero.");
 
-  /// Lookup can round the top weight; normalize against the stored value.
+  // Lookup can round the top weight; normalize against the stored value.
   const auto minWeight = weights[argMin] / r.w;
   auto& min = p->e[argMin];
   min.w = cn.lookup(minWeight);
@@ -204,76 +261,65 @@ auto Edge<Node>::normalize(Node* p, const std::array<Edge, RADIX>& e,
   return r;
 }
 
-template <class Node>
-auto Edge<Node>::getValueByIndex(const std::size_t i) const -> std::complex<fp>
-  requires IsVector<Node>
-{
-  const auto numQubits = isTerminal() ? 0U : static_cast<size_t>(p->v) + 1U;
+auto getValueByIndex(const vEdge& edge, const size_t i) -> std::complex<fp> {
+  const auto numQubits =
+      edge.isTerminal() ? 0U : static_cast<size_t>(edge.p->v) + 1U;
   if (numQubits < std::numeric_limits<size_t>::digits &&
       (i >> numQubits) != 0U) {
     throw std::out_of_range("Vector index is out of range.");
   }
-  auto edge = *this;
-  auto amplitude = static_cast<std::complex<fp>>(edge.w);
-  while (!edge.isTerminal()) {
-    const auto q = edge.p->v;
+  auto current = edge;
+  auto amplitude = static_cast<std::complex<fp>>(current.w);
+  while (!current.isTerminal()) {
+    const auto q = current.p->v;
     const auto bit =
         q < std::numeric_limits<size_t>::digits ? (i >> q) & 1U : 0U;
-    edge = edge.p->e[bit];
-    amplitude *= static_cast<std::complex<fp>>(edge.w);
+    current = current.p->e[bit];
+    amplitude *= static_cast<std::complex<fp>>(current.w);
   }
   return amplitude;
 }
 
-template <class Node>
-auto Edge<Node>::getVector(const fp threshold) const -> CVec
-  requires IsVector<Node>
-{
-  if (isTerminal()) {
-    return {static_cast<std::complex<fp>>(w)};
+auto getVector(const vEdge& edge, const fp threshold) -> CVec {
+  if (edge.isTerminal()) {
+    return {static_cast<std::complex<fp>>(edge.w)};
   }
 
-  const std::size_t dim = 2ULL << p->v;
+  const size_t dim = 2ULL << edge.p->v;
   auto vec = CVec(dim, 0.);
   traverseVector(
-      1., 0,
-      [&vec](const std::size_t i, const std::complex<fp>& c) { vec.at(i) = c; },
+      edge, 1., 0,
+      [&vec](const size_t i, const std::complex<fp>& c) { vec.at(i) = c; },
       threshold);
   return vec;
 }
 
-template <class Node>
-auto Edge<Node>::getSparseVector(const fp threshold) const -> SparseCVec
-  requires IsVector<Node>
-{
-  if (isTerminal()) {
-    return {{0, static_cast<std::complex<fp>>(w)}};
+auto getSparseVector(const vEdge& edge, const fp threshold) -> SparseCVec {
+  if (edge.isTerminal()) {
+    return {{0, static_cast<std::complex<fp>>(edge.w)}};
   }
 
   auto vec = SparseCVec{};
   traverseVector(
-      1., 0,
-      [&vec](const std::size_t i, const std::complex<fp>& c) { vec[i] = c; },
+      edge, 1., 0,
+      [&vec](const size_t i, const std::complex<fp>& c) { vec[i] = c; },
       threshold);
   return vec;
 }
 
-template <class Node>
-auto Edge<Node>::printVector() const -> void
-  requires IsVector<Node>
-{
+auto printVector(const vEdge& edge) -> void {
   constexpr auto precision = 3;
   const auto oldPrecision = std::cout.precision();
   std::cout << std::setprecision(precision);
 
-  if (isTerminal()) {
-    std::cout << "0: " << static_cast<std::complex<fp>>(w) << "\n";
+  if (edge.isTerminal()) {
+    std::cout << "0: " << static_cast<std::complex<fp>>(edge.w) << "\n";
     return;
   }
-  const std::size_t element = 2ULL << p->v;
+  const size_t element = 2ULL << edge.p->v;
   for (auto i = 0ULL; i < element; i++) {
-    const auto amplitude = getValueByIndex(i);
-    const auto n = static_cast<std::size_t>(p->v) + 1U;
+    const auto amplitude = getValueByIndex(edge, i);
+    const auto n = static_cast<size_t>(edge.p->v) + 1U;
     for (auto j = n; j > 0; --j) {
       std::cout << ((i >> (j - 1)) & 1ULL);
     }
@@ -283,55 +329,25 @@ auto Edge<Node>::printVector() const -> void
   std::cout << std::flush;
 }
 
-template <class Node>
-auto Edge<Node>::addToVector(CVec& amplitudes) const -> void
-  requires IsVector<Node>
-{
-  if (isTerminal()) {
-    amplitudes[0] += static_cast<std::complex<fp>>(w);
+auto addToVector(const vEdge& edge, CVec& amplitudes) -> void {
+  if (edge.isTerminal()) {
+    amplitudes[0] += static_cast<std::complex<fp>>(edge.w);
     return;
   }
 
-  traverseVector(1., 0,
-                 [&amplitudes](const std::size_t i, const std::complex<fp>& c) {
-                   amplitudes[i] += c;
-                 });
+  traverseVector(
+      edge, 1., 0,
+      [&amplitudes](const size_t i, const std::complex<fp>& c) {
+        amplitudes[i] += c;
+      },
+      0.);
 }
 
-template <class Node>
-void Edge<Node>::traverseVector(const std::complex<fp>& amp,
-                                const std::size_t i, const AmplitudeFunc& f,
-                                const fp threshold) const
-  requires IsVector<Node>
-{
-  const auto c = amp * static_cast<std::complex<fp>>(w);
-
-  if (threshold > 0. && std::abs(c) < threshold) {
-    return;
-  }
-
-  if (isTerminal()) {
-    f(i, c);
-    return;
-  }
-
-  // recursive case
-  if (const auto& e = p->e[0]; !e.w.exactlyZero()) {
-    e.traverseVector(c, i, f, threshold);
-  }
-  if (const auto& e = p->e[1]; !e.w.exactlyZero()) {
-    e.traverseVector(c, i | (1ULL << p->v), f, threshold);
-  }
-}
-
-///-----------------------------------------------------------------------------
-///                      \n Methods for matrix DDs \n
-///-----------------------------------------------------------------------------
-template <class Node>
-auto Edge<Node>::normalize(Node* p, const std::array<Edge, NEDGE>& e,
-                           MemoryManager& mm, ComplexNumbers& cn) -> Edge
-  requires IsMatrix<Node>
-{
+//-----------------------------------------------------------------------------
+//                      \n Methods for matrix DDs \n
+//-----------------------------------------------------------------------------
+auto normalize(mNode* p, const std::array<Edge<mNode>, NEDGE>& e,
+               MemoryManager& mm, ComplexNumbers& cn) -> Edge<mNode> {
   assert(p != nullptr && "Node pointer passed to normalize is null.");
   const auto zero = std::array{
       e[0].w.exactlyZero(),
@@ -340,9 +356,9 @@ auto Edge<Node>::normalize(Node* p, const std::array<Edge, NEDGE>& e,
       e[3].w.exactlyZero(),
   };
 
-  if (std::all_of(zero.begin(), zero.end(), [](auto b) { return b; })) {
+  if (std::ranges::all_of(zero, [](auto b) { return b; })) {
     mm.returnEntry(*p);
-    return Edge::zero();
+    return mEdge::zero();
   }
 
   auto weights = std::array{
@@ -352,8 +368,8 @@ auto Edge<Node>::normalize(Node* p, const std::array<Edge, NEDGE>& e,
       static_cast<ComplexValue>(e[3].w),
   };
 
-  /// The incoming scale does not affect normalized coefficients. Remove it
-  /// before squared magnitudes and complex division can overflow or underflow.
+  // The incoming scale does not affect normalized coefficients. Remove it
+  // before squared magnitudes and complex division can overflow or underflow.
   fp maxComponent = 0.;
   for (const auto& w : weights) {
     maxComponent = std::max({maxComponent, std::abs(w.r), std::abs(w.i)});
@@ -365,13 +381,13 @@ auto Edge<Node>::normalize(Node* p, const std::array<Edge, NEDGE>& e,
     }
   }
 
-  std::optional<std::size_t> argMax = std::nullopt;
+  std::optional<size_t> argMax = std::nullopt;
   fp maxMag2 = 0.;
   auto maxVal = Complex::one();
   // determine max amplitude
   for (auto i = 0U; i < NEDGE; ++i) {
     if (zero[i]) {
-      p->e[i] = Edge::zero();
+      p->e[i] = mEdge::zero();
       continue;
     }
     const auto& w = weights[i];
@@ -397,106 +413,95 @@ auto Edge<Node>::normalize(Node* p, const std::array<Edge, NEDGE>& e,
       continue;
     }
     if (i == argMaxValue) {
-      p->e[i] = {e[i].p, Complex::one()};
+      p->e[i] = {.p = e[i].p, .w = Complex::one()};
       continue;
     }
-    p->e[i] = {e[i].p, cn.lookup(weights[i] / argMaxWeight)};
+    p->e[i] = {.p = e[i].p, .w = cn.lookup(weights[i] / argMaxWeight)};
     if (p->e[i].w.exactlyZero()) {
-      p->e[i].p = Node::getTerminal();
+      p->e[i].p = mNode::getTerminal();
     }
   }
-  return Edge{p, maxVal};
+  return mEdge{.p = p, .w = maxVal};
 }
 
-template <class Node>
-auto Edge<Node>::getValueByIndex(const std::size_t numQubits,
-                                 const std::size_t i, const std::size_t j) const
-    -> std::complex<fp>
-  requires IsMatrix<Node>
-{
+auto getValueByIndex(const mEdge& edge, const size_t numQubits, const size_t i,
+                     const size_t j) -> std::complex<fp> {
   if (numQubits < std::numeric_limits<size_t>::digits &&
       ((i >> numQubits) != 0U || (j >> numQubits) != 0U)) {
     throw std::out_of_range("Matrix index is out of range.");
   }
-  if (isTerminal()) {
-    return i == j ? static_cast<std::complex<fp>>(w) : 0.;
+  if (edge.isTerminal()) {
+    return i == j ? static_cast<std::complex<fp>>(edge.w) : 0.;
   }
 
-  auto edge = *this;
-  auto amplitude = static_cast<std::complex<fp>>(edge.w);
+  auto current = edge;
+  auto amplitude = static_cast<std::complex<fp>>(current.w);
   for (auto level = numQubits; level > 0; --level) {
     const auto q = level - 1;
     const auto rowBit =
         q < std::numeric_limits<size_t>::digits ? (i >> q) & 1U : 0U;
     const auto colBit =
         q < std::numeric_limits<size_t>::digits ? (j >> q) & 1U : 0U;
-    if (edge.isTerminal() || edge.p->v != q) {
-      if (edge.isZeroTerminal() || rowBit != colBit) {
+    if (current.isTerminal() || current.p->v != q) {
+      if (current.isZeroTerminal() || rowBit != colBit) {
         return 0.;
       }
     } else {
-      edge = edge.p->e[(2 * rowBit) + colBit];
-      amplitude *= static_cast<std::complex<fp>>(edge.w);
+      current = current.p->e[(2 * rowBit) + colBit];
+      amplitude *= static_cast<std::complex<fp>>(current.w);
     }
   }
   return amplitude;
 }
 
-template <class Node>
-auto Edge<Node>::getMatrix(const std::size_t numQubits,
-                           const fp threshold) const -> CMat
-  requires IsMatrix<Node>
-{
+auto getMatrix(const mEdge& edge, const size_t numQubits, const fp threshold)
+    -> CMat {
   if (numQubits == 0U) {
-    return CMat{1, {static_cast<std::complex<fp>>(w)}};
+    return CMat{1, {static_cast<std::complex<fp>>(edge.w)}};
   }
 
-  const std::size_t dim = 1ULL << numQubits;
+  const size_t dim = 1ULL << numQubits;
   auto mat = CMat(dim, CVec(dim, 0.));
   traverseMatrix(
-      1, 0ULL, 0ULL,
-      [&mat](const std::size_t i, const std::size_t j,
-             const std::complex<fp>& c) { mat.at(i).at(j) = c; },
+      edge, 1, 0ULL, 0ULL,
+      [&mat](const size_t i, const size_t j, const std::complex<fp>& c) {
+        mat.at(i).at(j) = c;
+      },
       numQubits, threshold);
   return mat;
 }
 
-template <class Node>
-auto Edge<Node>::getSparseMatrix(const std::size_t numQubits,
-                                 const fp threshold) const -> SparseCMat
-  requires IsMatrix<Node>
-{
+auto getSparseMatrix(const mEdge& edge, const size_t numQubits,
+                     const fp threshold) -> SparseCMat {
   if (numQubits == 0U) {
-    return {{{0U, 0U}, static_cast<std::complex<fp>>(w)}};
+    return {{{0U, 0U}, static_cast<std::complex<fp>>(edge.w)}};
   }
 
   auto mat = SparseCMat{};
   traverseMatrix(
-      1, 0ULL, 0ULL,
-      [&mat](const std::size_t i, const std::size_t j,
-             const std::complex<fp>& c) { mat[{i, j}] = c; },
+      edge, 1, 0ULL, 0ULL,
+      [&mat](const size_t i, const size_t j, const std::complex<fp>& c) {
+        mat[{i, j}] = c;
+      },
       numQubits, threshold);
 
   return mat;
 }
 
-template <class Node>
-auto Edge<Node>::printMatrix(const std::size_t numQubits) const -> void
-  requires IsMatrix<Node>
-{
+auto printMatrix(const mEdge& edge, const size_t numQubits) -> void {
   constexpr auto precision = 3;
   const auto oldPrecision = std::cout.precision();
   std::cout << std::setprecision(precision);
 
   if (numQubits == 0U) {
-    std::cout << static_cast<std::complex<fp>>(w) << "\n";
+    std::cout << static_cast<std::complex<fp>>(edge.w) << "\n";
     return;
   }
-  assert(isTerminal() || numQubits > p->v);
-  const std::size_t element = 1ULL << numQubits;
+  assert(edge.isTerminal() || numQubits > edge.p->v);
+  const size_t element = 1ULL << numQubits;
   for (auto i = 0ULL; i < element; ++i) {
     for (auto j = 0ULL; j < element; ++j) {
-      const auto amplitude = getValueByIndex(numQubits, i, j);
+      const auto amplitude = getValueByIndex(edge, numQubits, i, j);
       std::cout << amplitude << " ";
     }
     std::cout << "\n";
@@ -505,66 +510,26 @@ auto Edge<Node>::printMatrix(const std::size_t numQubits) const -> void
   std::cout << std::flush;
 }
 
-template <class Node>
-void Edge<Node>::traverseMatrix(const std::complex<fp>& amp,
-                                const std::size_t i, const std::size_t j,
-                                MatrixEntryFunc f, const std::size_t level,
-                                const fp threshold) const
-  requires IsMatrix<Node>
-{
-  traverseMatrixImpl(amp, i, j, f, level, threshold);
+void traverseMatrix(const mEdge& edge, const std::complex<fp>& amp,
+                    const size_t i, const size_t j,
+                    // Keep one callback copy at the public traversal boundary.
+                    // NOLINTNEXTLINE(performance-unnecessary-value-param)
+                    MatrixEntryFunc f, const size_t level, const fp threshold) {
+  traverseMatrixImpl(edge, amp, i, j, f, level, threshold);
 }
 
-template <class Node>
-void Edge<Node>::traverseMatrixImpl(const std::complex<fp>& amp,
-                                    const std::size_t i, const std::size_t j,
-                                    const MatrixEntryFunc& f,
-                                    const std::size_t level,
-                                    const fp threshold) const
-  requires IsMatrix<Node>
-{
-  const auto c = amp * static_cast<std::complex<fp>>(w);
-
-  if (threshold > 0. && std::abs(c) < threshold) {
-    return;
-  }
-
-  if (level == 0) {
-    assert(isTerminal());
-    f(i, j, c);
-    return;
-  }
-
-  const auto nextLevel = static_cast<Qubit>(level - 1U);
-  const std::size_t x = i | (1ULL << nextLevel);
-  const std::size_t y = j | (1ULL << nextLevel);
-  if (isTerminal() || p->v < nextLevel) {
-    traverseMatrixImpl(amp, i, j, f, nextLevel, threshold);
-    traverseMatrixImpl(amp, x, y, f, nextLevel, threshold);
-    return;
-  }
-
-  const auto coords = {std::pair{i, j}, {i, y}, {x, j}, {x, y}};
-  std::size_t k = 0U;
-  for (const auto& [a, b] : coords) {
-    if (auto const& e = p->e[k++]; !e.w.exactlyZero()) {
-      e.traverseMatrixImpl(c, a, b, f, nextLevel, threshold);
-    }
-  }
-}
-
-///-----------------------------------------------------------------------------
-///                      \n Explicit instantiations \n
-///-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+//                      \n Explicit instantiations \n
+//-----------------------------------------------------------------------------
 
 template struct Edge<vNode>;
 template struct Edge<mNode>;
 
 } // namespace dd
 
-///-----------------------------------------------------------------------------
-///                         \n Hash related code \n
-///-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+//                         \n Hash related code \n
+//-----------------------------------------------------------------------------
 
 template <class Node>
 auto std::hash<dd::Edge<Node>>::operator()(

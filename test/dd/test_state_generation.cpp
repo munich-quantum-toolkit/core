@@ -9,6 +9,7 @@
  */
 
 #include "dd/DDDefinitions.hpp"
+#include "dd/Edge.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
 #include "dd/StateGeneration.hpp"
@@ -53,7 +54,7 @@ TEST(StateGenerationTest, MakeZero) {
   auto dd = std::make_unique<Package>(nq);
   auto const zero = makeZeroState(nq, *dd);
 
-  EXPECT_EQ(zero.getVector(), vec);
+  EXPECT_EQ(dd::getVector(zero), vec);
 
   dd->decRef(zero);
   dd->garbageCollect(true);
@@ -78,7 +79,7 @@ TEST(StateGenerationTest, MakeBasis) {
   auto dd = std::make_unique<Package>(nq);
   auto const basis = makeBasisState(nq, state, *dd);
 
-  EXPECT_EQ(basis.getVector(), vec);
+  EXPECT_EQ(dd::getVector(basis), vec);
 
   dd->decRef(basis);
   dd->garbageCollect(true);
@@ -110,7 +111,7 @@ TEST(StateGenerationTest, MakeBasisDifficult) {
   auto dd = std::make_unique<Package>(nq);
   auto const basis = makeBasisState(nq, state, *dd);
 
-  expectStateVectorNear(basis.getVector(), vec);
+  expectStateVectorNear(dd::getVector(basis), vec);
 
   dd->decRef(basis);
   dd->garbageCollect(true);
@@ -134,7 +135,7 @@ TEST(StateGenerationTest, MakeGHZ) {
   auto dd = std::make_unique<Package>(nq);
   auto const ghz = makeGHZState(nq, *dd);
 
-  expectStateVectorNear(ghz.getVector(), vec);
+  expectStateVectorNear(dd::getVector(ghz), vec);
 
   dd->decRef(ghz);
   dd->garbageCollect(true);
@@ -177,7 +178,7 @@ TEST(StateGenerationTest, MakeW) {
   auto dd = std::make_unique<Package>(nq);
   auto const w = makeWState(nq, *dd);
 
-  expectStateVectorNear(w.getVector(), vec);
+  expectStateVectorNear(dd::getVector(w), vec);
 
   dd->decRef(w);
   dd->garbageCollect(true);
@@ -340,7 +341,7 @@ TEST(StateGenerationTest, VectorConstructionChecksCapacity) {
   EXPECT_FALSE(read);
   const auto state =
       makeStateFromVector(CVec{{0.5, 0.25}, {-0.5, 0.75}}, oneQubit);
-  expectStateVectorNear(state.getVector(), {{0.5, 0.25}, {-0.5, 0.75}});
+  expectStateVectorNear(dd::getVector(state), {{0.5, 0.25}, {-0.5, 0.75}});
   EXPECT_NO_THROW(oneQubit.decRef(state));
 }
 
@@ -375,8 +376,8 @@ TEST(StateGenerationTest, BasisConstructionUsesRequestedPrefix) {
     const auto product = makeBasisState(width, basis, package);
     const auto zero = makeZeroState(width, package);
     EXPECT_EQ(binary, product);
-    EXPECT_EQ(binary.getValueByIndex(13U & ((1U << width) - 1U)), 1.);
-    EXPECT_EQ(zero.getValueByIndex(0), 1.);
+    EXPECT_EQ(dd::getValueByIndex(binary, 13U & ((1U << width) - 1U)), 1.);
+    EXPECT_EQ(dd::getValueByIndex(zero, 0), 1.);
     package.decRef(binary);
     package.decRef(product);
     package.decRef(zero);

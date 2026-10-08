@@ -126,149 +126,116 @@ private:
   /// @return the size of the DD
   [[nodiscard]] std::size_t
   size(std::unordered_set<const Node*>& visited) const;
-
-public:
-  /// Get a normalized vector DD from a fresh node and a list of edges
-  /// @param p the fresh node
-  /// @param e the list of edges that form the successor nodes
-  /// @param mm a reference to the memory manager (for returning unused nodes)
-  /// @param cn a reference to the complex number manager (for adding new
-  /// complex numbers)
-  /// @return the normalized vector DD
-  static auto normalize(Node* p, const std::array<Edge, RADIX>& e,
-                        MemoryManager& mm, ComplexNumbers& cn) -> Edge
-    requires IsVector<Node>;
-
-  /// Get a single element of the vector represented by the DD
-  /// @param i index of the element
-  /// @throws std::out_of_range if the index is outside the vector
-  /// @return the complex value of the amplitude
-  [[nodiscard]] std::complex<fp> getValueByIndex(std::size_t i) const
-    requires IsVector<Node>;
-
-  /// Get the vector represented by the DD
-  /// @param threshold amplitudes with a magnitude below this threshold will be
-  /// ignored
-  /// @return the vector
-  [[nodiscard]] CVec getVector(fp threshold = 0.) const
-    requires IsVector<Node>;
-
-  /// Get the sparse vector represented by the DD
-  /// @param threshold amplitudes with a magnitude below this threshold will be
-  /// ignored
-  /// @return the sparse vector
-  [[nodiscard]] SparseCVec getSparseVector(fp threshold = 0.) const
-    requires IsVector<Node>;
-
-  /// Print the vector represented by the DD
-  /// @note This function scales exponentially with the number of qubits.
-  void printVector() const
-    requires IsVector<Node>;
-
-  /// Add the amplitudes of a vector DD to a vector
-  /// @param amplitudes the vector to add to
-  void addToVector(CVec& amplitudes) const
-    requires IsVector<Node>;
-
-private:
-  /// Recursively traverse the DD and call a function for each non-zero
-  /// amplitude.
-  ///
-  /// Scales with the number of non-zero amplitudes.
-  /// @param amp the accumulated amplitude from previous traversals
-  /// @param i the current index in the vector
-  /// @param f This function is called for each non-zero amplitude with the
-  /// index and the amplitude as arguments.
-  /// @param threshold amplitude with a magnitude below this threshold will be
-  /// ignored
-  void traverseVector(const std::complex<fp>& amp, std::size_t i,
-                      const AmplitudeFunc& f, fp threshold = 0.) const
-    requires IsVector<Node>;
-
-public:
-  /// Get a normalized matrix DD from a fresh node and a list
-  /// of edges
-  /// @param p the fresh node
-  /// @param e the list of edges that form the successor nodes
-  /// @param mm a reference to the memory manager (for returning unused nodes)
-  /// @param cn a reference to the complex number manager (for adding new
-  /// complex numbers)
-  /// @return the normalized matrix DD
-  static auto normalize(Node* p, const std::array<Edge, NEDGE>& e,
-                        MemoryManager& mm, ComplexNumbers& cn) -> Edge
-    requires IsMatrix<Node>;
-
-  /// Check whether the matrix represented by the DD is the identity
-  /// @return whether the matrix is the identity
-  [[nodiscard]] bool isIdentity(const bool upToGlobalPhase = true) const
-    requires IsMatrix<Node>
-  {
-    if (!isTerminal()) {
-      return false;
-    }
-    if (upToGlobalPhase) {
-      return !w.exactlyZero();
-    }
-    return w.exactlyOne();
-  }
-
-  /// Get a single element of the matrix represented by the DD
-  /// @param numQubits number of qubits in the considered DD
-  /// @param i row index of the element
-  /// @param j column index of the element
-  /// @throws std::out_of_range if either index is outside the matrix
-  /// @return the complex value of the entry
-  [[nodiscard]] std::complex<fp>
-  getValueByIndex(std::size_t numQubits, std::size_t i, std::size_t j) const
-    requires IsMatrix<Node>;
-
-  /// Get the matrix represented by the DD
-  /// @param numQubits number of qubits in the considered DD
-  /// @param threshold entries with a magnitude below this threshold will be
-  /// ignored
-  /// @return the matrix
-  [[nodiscard]] CMat getMatrix(std::size_t numQubits, fp threshold = 0.) const
-    requires IsMatrix<Node>;
-
-  /// Get the sparse matrix represented by the DD
-  /// @param numQubits number of qubits in the considered DD
-  /// @param threshold entries with a magnitude below this threshold will be
-  /// ignored
-  /// @return the sparse matrix
-  [[nodiscard]] SparseCMat getSparseMatrix(std::size_t numQubits,
-                                           fp threshold = 0.) const
-    requires IsMatrix<Node>;
-
-  /// Print the matrix represented by the DD
-  /// @param numQubits number of qubits in the considered DD
-  /// @note This function scales exponentially with the number of qubits.
-  void printMatrix(std::size_t numQubits) const
-    requires IsMatrix<Node>;
-
-  /// Recursively traverse the DD and call a function for each non-zero
-  /// matrix entry.
-  ///
-  /// One callback instance is used for the entire traversal.
-  /// @param amp the accumulated amplitude from previous traversals
-  /// @param i the current row index in the matrix
-  /// @param j the current column index in the matrix
-  /// @param f This function is called for each non-zero matrix entry with the
-  /// row index, the column index and the amplitude as arguments.
-  /// @param level the current level in the DD (ranges from 1 to n for regular
-  /// nodes and is 0 for the terminal node)
-  /// @param threshold entries with a magnitude below this threshold will be
-  /// ignored
-  void traverseMatrix(const std::complex<fp>& amp, std::size_t i, std::size_t j,
-                      MatrixEntryFunc f, std::size_t level,
-                      fp threshold = 0.) const
-    requires IsMatrix<Node>;
-
-private:
-  void traverseMatrixImpl(const std::complex<fp>& amp, std::size_t i,
-                          std::size_t j, const MatrixEntryFunc& f,
-                          std::size_t level, fp threshold) const
-    requires IsMatrix<Node>;
 };
+
+/// Get a normalized vector DD from a fresh node and a list of edges
+/// @param p the fresh node
+/// @param e the list of edges that form the successor nodes
+/// @param mm a reference to the memory manager (for returning unused nodes)
+/// @param cn a reference to the complex number manager (for adding new
+/// complex numbers)
+/// @return the normalized vector DD
+auto normalize(vNode* p, const std::array<Edge<vNode>, RADIX>& e,
+               MemoryManager& mm, ComplexNumbers& cn) -> Edge<vNode>;
+
+/// Get a single element of the vector represented by the DD
+/// @param i index of the element
+/// @throws std::out_of_range if the index is outside the vector
+/// @return the complex value of the amplitude
+[[nodiscard]] std::complex<fp> getValueByIndex(const Edge<vNode>& edge,
+                                               size_t i);
+
+/// Get the vector represented by the DD
+/// @param threshold amplitudes with a magnitude below this threshold will be
+/// ignored
+/// @return the vector
+[[nodiscard]] CVec getVector(const Edge<vNode>& edge, fp threshold = 0.);
+
+/// Get the sparse vector represented by the DD
+/// @param threshold amplitudes with a magnitude below this threshold will be
+/// ignored
+/// @return the sparse vector
+[[nodiscard]] SparseCVec getSparseVector(const Edge<vNode>& edge,
+                                         fp threshold = 0.);
+
+/// Print the vector represented by the DD
+/// @note This function scales exponentially with the number of qubits.
+void printVector(const Edge<vNode>& edge);
+
+/// Add the amplitudes of a vector DD to a vector
+/// @param amplitudes the vector to add to
+void addToVector(const Edge<vNode>& edge, CVec& amplitudes);
+
+/// Get a normalized matrix DD from a fresh node and a list
+/// of edges
+/// @param p the fresh node
+/// @param e the list of edges that form the successor nodes
+/// @param mm a reference to the memory manager (for returning unused nodes)
+/// @param cn a reference to the complex number manager (for adding new
+/// complex numbers)
+/// @return the normalized matrix DD
+auto normalize(mNode* p, const std::array<Edge<mNode>, NEDGE>& e,
+               MemoryManager& mm, ComplexNumbers& cn) -> Edge<mNode>;
+
+/// Check whether the matrix represented by the DD is the identity
+/// @return whether the matrix is the identity
+[[nodiscard]] inline bool isIdentity(const Edge<mNode>& edge,
+                                     const bool upToGlobalPhase = true) {
+  if (edge.p != nullptr) {
+    return false;
+  }
+  if (upToGlobalPhase) {
+    return !edge.w.exactlyZero();
+  }
+  return edge.w.exactlyOne();
+}
+
+/// Get a single element of the matrix represented by the DD
+/// @param numQubits number of qubits in the considered DD
+/// @param i row index of the element
+/// @param j column index of the element
+/// @throws std::out_of_range if either index is outside the matrix
+/// @return the complex value of the entry
+[[nodiscard]] std::complex<fp>
+getValueByIndex(const Edge<mNode>& edge, size_t numQubits, size_t i, size_t j);
+
+/// Get the matrix represented by the DD
+/// @param numQubits number of qubits in the considered DD
+/// @param threshold entries with a magnitude below this threshold will be
+/// ignored
+/// @return the matrix
+[[nodiscard]] CMat getMatrix(const Edge<mNode>& edge, size_t numQubits,
+                             fp threshold = 0.);
+
+/// Get the sparse matrix represented by the DD
+/// @param numQubits number of qubits in the considered DD
+/// @param threshold entries with a magnitude below this threshold will be
+/// ignored
+/// @return the sparse matrix
+[[nodiscard]] SparseCMat getSparseMatrix(const Edge<mNode>& edge,
+                                         size_t numQubits, fp threshold = 0.);
+
+/// Print the matrix represented by the DD
+/// @param numQubits number of qubits in the considered DD
+/// @note This function scales exponentially with the number of qubits.
+void printMatrix(const Edge<mNode>& edge, size_t numQubits);
+
+/// Recursively traverse the DD and call a function for each non-zero
+/// matrix entry.
+///
+/// One callback instance is used for the entire traversal.
+/// @param amp the accumulated amplitude from previous traversals
+/// @param i the current row index in the matrix
+/// @param j the current column index in the matrix
+/// @param f This function is called for each non-zero matrix entry with the
+/// row index, the column index and the amplitude as arguments.
+/// @param level the current level in the DD (ranges from 1 to n for regular
+/// nodes and is 0 for the terminal node)
+/// @param threshold entries with a magnitude below this threshold will be
+/// ignored
+void traverseMatrix(const Edge<mNode>& edge, const std::complex<fp>& amp,
+                    size_t i, size_t j, MatrixEntryFunc f, size_t level,
+                    fp threshold = 0.);
 } // namespace dd
 
 template <class Node> struct std::hash<dd::Edge<Node>> {
