@@ -1289,7 +1289,7 @@ private:
       Score score;
     };
 
-    // Reserve the trial batch without embedding a layout in the vector object.
+    // Avoid embedding a layout in the vector object.
     SmallVector<Trial, 0> trials;
     trials.reserve(ntrials);
 
@@ -1839,8 +1839,6 @@ private:
           released.emplace_back(op);
 
           if (state.costs) {
-            // Keep one- and two-qubit operations inline; larger arities can
-            // grow.
             SmallVector<size_t, 2> vertices(indices.begin(), indices.end());
             /// Frontier indices are in traversal order, not operand order.
             if (auto gate = dyn_cast<UnitaryOpInterface>(op);
@@ -1977,7 +1975,7 @@ private:
 
     Statistics totalStats;
 
-    // RoutingState exceeds LLVM's element-size limit for default capacity.
+    // RoutingState exceeds LLVM's size limit for default inline capacity.
     SmallVector<RoutingState, 0> children;
     children.reserve(op->getNumRegions());
 

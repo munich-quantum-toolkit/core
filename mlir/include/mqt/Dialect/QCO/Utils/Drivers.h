@@ -68,8 +68,10 @@ struct PendingItem {
 /// operations by classical values or side effects.
 /// The signature of the callback function is:
 ///
-///     (const Frontier& frontier, SmallVectorImpl<Operation*>& released) ->
-///     WalkResult
+/// ```c++
+/// (const Frontier& frontier, SmallVectorImpl<Operation*>& released) ->
+/// WalkResult
+/// ```
 ///
 /// The frontier preserves deterministic wire traversal order.
 /// The operations inserted into the "released" vector determine which

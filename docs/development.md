@@ -401,9 +401,11 @@ Follow [LLVM's `SmallVector` guidance][llvm-smallvector]: use `SmallVector<T>`
 without an explicit inline capacity by default. Retain `SmallVector<T, N>` when
 a known bound or measured storage need justifies `N`, such as synthesis results
 containing one or two qubits. `N` sets inline storage, not a size limit. Keep
-explicit capacities required by LLVM for large element types. Explain the choice
-when the reason is not clear from the contract. Consider `std::array` for
-exactly fixed-size data; do not change unrelated APIs merely to use it.
+explicit capacities required by LLVM for large element types. Comment only on
+reasons that are not clear from the type, contract, or nearby code. Keep the
+rationale near the owning type or declaration; do not repeat it at each use or
+restate how inline capacity works. Consider `std::array` for exactly fixed-size
+data; do not change unrelated APIs merely to use it.
 
 For parameters that borrow a sequence, use `ArrayRef<T>` or a suitable MLIR
 range when only reading elements, `MutableArrayRef<T>` when changing elements in

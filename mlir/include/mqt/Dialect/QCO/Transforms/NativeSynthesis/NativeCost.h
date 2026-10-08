@@ -166,11 +166,10 @@ private:
 
   const CompilerTarget& target_;
   NativeCostAnalysis analysis_;
-  // Run exceeds LLVM's element-size limit for default capacity.
+  // Keep per-site matrix buffers on the heap to limit each tracker's size.
   SmallVector<Run, 0> runs_;
   SmallVector<size_t> partners_;
   SmallVector<size_t> depths_;
-  // Avoid embedding matrices in each tracker; size follows the target's sites.
   SmallVector<std::optional<Matrix2x2>, 0> trailingGates_;
   WireDirection direction_ = WireDirection::Forward;
   /// Immediate inverse pairs are consumed in traversal order.

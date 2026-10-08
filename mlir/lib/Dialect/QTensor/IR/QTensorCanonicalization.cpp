@@ -148,14 +148,12 @@ static Value insertQTensorScalars(Value tensor, ValueRange scalars,
 
 namespace {
 
-// This type exceeds LLVM's element-size limit; owning vectors need an explicit
-// capacity.
+// TensorSlots exceeds LLVM's size limit for default inline capacity.
 struct TensorSlots {
   Value original;
   Value remaining;
   SmallVector<Value> inputs;
   SmallVector<int64_t> indices;
-  // Supported control flow has one or two branches.
   SmallVector<BranchQTensorAccesses, 2> branches;
 };
 

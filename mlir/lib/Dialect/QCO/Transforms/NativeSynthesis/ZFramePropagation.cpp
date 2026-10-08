@@ -47,7 +47,7 @@ namespace {
 
 /// Binary accumulation keeps exported expression depth logarithmic.
 struct ZFrame {
-  // Keep per-wire map entries compact; more accumulation levels can grow.
+  // Keep per-wire map entries compact.
   SmallVector<Value, 4> sums;
   size_t order = 0;
 

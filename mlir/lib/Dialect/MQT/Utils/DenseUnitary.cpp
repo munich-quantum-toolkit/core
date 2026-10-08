@@ -67,7 +67,7 @@ LogicalResult verifyDenseUnitaryMatrix(Operation* operation,
            << numQubits << " qubits";
   }
 
-  // Keep one- and two-qubit matrices inline; larger matrices use heap storage.
+  // Keep one- and two-qubit matrices inline.
   llvm::SmallVector<std::complex<double>, 16> values;
   values.reserve(static_cast<size_t>(matrix.size()));
   for (const auto value : matrix.getValues<std::complex<double>>()) {

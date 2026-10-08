@@ -627,7 +627,7 @@ struct CompilerTarget::Storage {
   llvm::DenseMap<SiteId, size_t> siteToVertex;
   Connectivity::Kind connectivityKind;
   SmallVector<Coupling> couplings;
-  // Limit per-site storage while keeping up to four neighbours inline.
+  // Keep per-site storage compact.
   SmallVector<SmallVector<size_t, 4>> adjacency;
   mutable SmallVector<size_t> distances;
   mutable std::once_flag distancesOnce;

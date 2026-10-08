@@ -9,9 +9,9 @@ Dependencies: LLVM/MLIR 23.1.0; clang-tidy 23.1.2.
 The code now follows the clarified guidance in the audited scope. Sixteen
 production helper or callback contracts and two test helpers use
 capacity-independent views or output parameters. Unexplained scratch capacities
-use LLVM defaults, while retained storage choices have short reasons in the
-source. An inline capacity is not a maximum size; these changes preserve
-sequence contents, order, and ownership.
+use LLVM defaults. Source comments explain only non-obvious storage choices near
+the owning type or declaration. An inline capacity is not a maximum size; these
+changes preserve sequence contents, order, and ownership.
 
 Bounded synthesis vectors retain their capacities. Large element types retain
 explicit capacities required by LLVM. Storage choices trade object size against
@@ -104,9 +104,11 @@ audited baseline.
 
 ### 3. Retained storage choices have reasons (applied)
 
-These choices retain their capacities with short source comments. The evidence
-below explains why default replacement can change their allocation or storage
-tradeoff.
+These choices retain their capacities. Short comments explain non-obvious
+storage reasons near the owning type or declaration. The comment review on
+2026-10-08 removed repeated per-use notes and explanations of ordinary inline
+capacity behavior. Obvious bounds need no comment. The evidence below explains
+the allocation and storage tradeoffs.
 
 - `verifyDenseUnitaryMatrix` in `mlir/lib/Dialect/MQT/Utils/DenseUnitary.cpp`
   stores 16 complex entries inline, covering 4x4 matrices. Valid input spans one
@@ -138,7 +140,8 @@ tradeoff.
   `vertices` in `mlir/lib/Dialect/QCO/Transforms/Mapping/Mapping.cpp`, use
   capacity 2. Their broader callers include variable-arity operations, so the
   synthesis-output bound cannot justify them. Capacity 2 can still target the
-  common one/two-qubit case. The source comments record that intent.
+  common one/two-qubit case. The detail paragraph at `getOperationSites` records
+  that intent without repeating it at each use.
 
 ## Choices to retain
 
@@ -216,3 +219,10 @@ tradeoff.
   checked on every line against `origin/main`; the header-verification target
   also passed. Staged the task diff so cpp-linter included uncommitted changes.
 - No timing benchmark was performed.
+
+The 2026-10-08 follow-up changes only comments and guidance. Callback signatures
+use a C++ Markdown fence, and Doxygen details are separate from the brief. The
+executable documentation build, repository lint, and full-file C++ lint passed
+for that follow-up. A focused Doxygen render confirmed the callback code block.
+Inspected the comment guidance in the generated HTML. The native and Qiskit
+results above cover the unchanged code.

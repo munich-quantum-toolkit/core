@@ -439,8 +439,8 @@ static FailureOr<SiteMap> collectStaticSites(Operation* root, bool indexed) {
 }
 
 /// Collection has validated the inputs of every unitary, reset, and measure.
-/// Keep sites inline for one- and two-qubit operations; larger arities can
-/// grow.
+///
+/// Keep the common one- and two-qubit cases inline.
 static SmallVector<SiteId, 2> getOperationSites(Operation* operation,
                                                 const SiteMap& sites) {
   SmallVector<SiteId, 2> result;
@@ -895,7 +895,6 @@ void NativeCostTracker::append(Operation* operation,
   if (!available_ || cancellations_.erase(operation)) {
     return;
   }
-  // Keep the common one- and two-qubit cases inline; arity is not bounded here.
   SmallVector<CompilerTarget::SiteId, 2> sites;
   for (size_t vertex : vertices) {
     sites.push_back(target_.siteForVertex(vertex));
