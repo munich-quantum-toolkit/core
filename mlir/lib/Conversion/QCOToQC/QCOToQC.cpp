@@ -1424,8 +1424,6 @@ protected:
     RewritePatternSet patterns(context);
     QCOToQCTypeConverter typeConverter(context);
 
-    // Preserve unrelated classical operations without attempting to rewrite or
-    // fold them: either can require rollback if the result cannot be legalized.
     target.markUnknownOpDynamicallyLegal(
         [&](Operation* op) { return typeConverter.isLegal(op); });
     target.addIllegalDialect<QCODialect, qtensor::QTensorDialect>();
