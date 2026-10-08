@@ -1,6 +1,3 @@
-<!--- This file has been generated from an external template. Please do not modify it directly. -->
-<!--- Changes should be contributed to https://github.com/munich-quantum-toolkit/templates. -->
-
 # MQT Core
 
 ## C++
@@ -130,11 +127,6 @@
   recommended, not required. For example:
   `Assisted-by: Claude Sonnet 4.6 via GitHub Copilot`. Do not rewrite otherwise
   valid history solely to add one.
-- NEVER modify files that start with "This file has been generated from an
-  external template. Please do not modify it directly." These files are managed
-  by
-  [the MQT templates action](https://github.com/munich-quantum-toolkit/templates)
-  and changes will be overwritten.
 - PREFER running targeted tests over the full test suite during development.
 
 ### GitHub Issues and Pull Requests

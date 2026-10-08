@@ -24,12 +24,12 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=uv /uv /uvx /bin/
-COPY dist/*.whl /tmp/dist/
 COPY mqt-slurm-prepare /usr/local/sbin/mqt-slurm-prepare
 COPY mqt-slurm-prepare.service /etc/systemd/system/mqt-slurm-prepare.service
 
-RUN uv pip install --system --break-system-packages /tmp/dist/*.whl \
-    && rm -rf /root/.cache/uv /tmp/dist \
+RUN --mount=type=bind,source=dist,target=/tmp/dist \
+    --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system --break-system-packages --link-mode=copy /tmp/dist/*.whl \
     && chmod 0755 /usr/local/sbin/mqt-slurm-prepare \
     && systemctl enable mqt-slurm-prepare.service munge.service
 
