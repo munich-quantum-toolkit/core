@@ -1,13 +1,13 @@
 # Release wheel optimization
 
-Status: ThinLTO alignment prepared; restack and full PGO/BOLT qualification
-pending.
+Status: restacked on the portable ThinLTO release branch; full PGO/BOLT
+qualification pending.
 
 Core #2678 provides assertion-free LLVM 23.1.2 SDK selection, released Setup
 1.5.0 and Workflows 2.5.1 pins, and the Windows packaging cleanup. This branch
-preserves those changes. SDK #94 supplies Linux BOLT tools. Only the two wheel
-workflows pin the pending Workflows #464 revision for persistent compiler
-caching.
+preserves those changes. SDK #94 supplies Linux BOLT tools. The two wheel
+workflows pin Workflows #464 for persistent compiler caching; native Linux
+workflows pin Workflows #491 for mold 3.
 
 Core #2476 owns SDK/Core PGO, MLIR test training, Linux BOLT, and installed
 wheel checks. Its release checks use the current public APIs and do not require
@@ -32,10 +32,18 @@ and release-check validation without the expensive optimization build.
 The prerequisite DD ABI change exposes concrete operations such as
 `dd::getVector(state)` instead of constrained member-template exports. The
 installed checks use the shared `test/cmake/installed_consumer` fixture with
-Clang and GCC against the repaired wheel. Stack that prerequisite before
-qualification; installed GCC and Clang consumers must both pass against the
-final optimized wheel.
+Clang and GCC against the repaired wheel. Both the concrete DD API and the
+shared fixture are included in the branch's prerequisites. Installed GCC and
+Clang consumers must still pass against the final optimized wheel.
 
-ThinLTO alignment and consumer reuse validation pass Python compilation and
-repository lint. The shared fixture's installed-consumer checks on the restacked
-branch remain pending.
+The cibuildwheel configuration retains the PGO CMake include on Linux and macOS
+and explicit portable settings on Windows. Linux provisioning supplies matched
+distribution tools; it does not select the Phase 1 static Clang bundle. The
+final optimized wheel and its installed consumers remain qualification gates for
+this pipeline.
+
+Restack validation passes repository lint, Python compilation, Bash syntax, and
+cibuildwheel configuration checks for Linux, macOS, and Windows. Native CMake
+configuration accepts ThinLTO with build RPATHs. The shared consumer builds and
+passes CTest with GCC 13 and Clang 23 against the qualified Phase 1 Clang 22
+ThinLTO wheel. These checks do not exercise PGO generation or BOLT processing.

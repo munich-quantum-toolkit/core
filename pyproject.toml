@@ -302,8 +302,8 @@ manylinux-aarch64-image = "manylinux_2_28"
 environment = { DEPLOY = "ON", MACOSX_DEPLOYMENT_TARGET = "13.3", CC = "clang", CXX = "clang++", CMAKE_BUILD_PARALLEL_LEVEL = "3" }
 
 [tool.cibuildwheel.windows]
-environment = { DEPLOY = "ON" }
 config-settings = {}
+environment = { DEPLOY = "ON" }
 before-all = ""
 before-build = ""
 repair-wheel-command = "delvewheel repair -w {dest_dir} {wheel} --namespace-pkg mqt --ignore-existing"

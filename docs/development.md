@@ -127,6 +127,9 @@ Use `//` for ordinary implementation and namespace closing comments. Inline
 
 ### Release wheel optimization
 
+`pyproject.toml` selects portable CPU settings (`DEPLOY=ON`) for cibuildwheel.
+The nanobind bindings retain the release optimization level with `NOMINSIZE`.
+
 Linux and macOS wheels use assertion-free SDKs and combined SDK/Core PGO. CMake
 enables ThinLTO for Core targets; the rebuilt SDK libraries use PGO without LTO.
 Linux uses matched Clang, LLD, compiler-rt, and llvm-profdata packages from the
@@ -138,6 +141,12 @@ each ABI with the C++ MLIR tests and `test/release/train.py`. It rebuilds the
 required SDK libraries and supplies the final CMake settings. Linux's
 `scripts/bolt_wheel.py` optimizes and checks the repaired wheel, including
 installed Clang and GCC consumers. Windows uses its normal build.
+
+Validate release changes with Python tests and installed C++ consumers built
+with both GCC and Clang, including an unoptimized consumer. Exercise DD
+operations and QDMI plugin loading. See the
+[build performance guide](installation.md#build-performance) for local builds
+and LTO boundaries.
 
 ### Reproduce C++ lint locally
 
