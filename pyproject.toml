@@ -254,13 +254,14 @@ build = "cp3*"
 skip = [ "*-musllinux_*", "cp314t-*" ]
 archs = "auto64"
 build-frontend = "uv"
-test-command = "pytest test/python"
+test-command = "python test/cmake/check_installed.py && pytest test/python"
 test-groups = [ "test" ]
 test-sources = [
   "bindings/mlir/qiskit/SupportedVersions.inc",
   "json",
   "scripts/check_docs_links.py",
   "scripts/qiskit_c_api_adopt.py",
+  "test/cmake",
   "test/circuits",
   "test/python",
   "test/slurm/run_integration.py",
@@ -268,22 +269,39 @@ test-sources = [
 ]
 
 [tool.cibuildwheel.linux]
-environment = { DEPLOY = "ON", PATH = "$PATH:/root/.local/bin", MLIR_DIR = "/opt/llvm-23.1.2/lib/cmake/mlir" }
+config-settings = { "cmake.define.ENABLE_IPO" = "ON", "cmake.define.CMAKE_LINKER_TYPE" = "LLD" }
+environment = { DEPLOY = "ON", CC = "clang", CXX = "clang++", PATH = "/opt/clang/bin:$PATH:/root/.local/bin", MLIR_DIR = "/opt/llvm-23.1.2/lib/cmake/mlir" }
+environment-pass = [
+  "CMAKE_C_COMPILER_LAUNCHER",
+  "CMAKE_CXX_COMPILER_LAUNCHER",
+  "SCCACHE_GHA_ENABLED",
+  "SCCACHE_GHA_RW_MODE",
+  "SCCACHE_IDLE_TIMEOUT",
+  "ACTIONS_CACHE_SERVICE_V2",
+  "ACTIONS_RESULTS_URL",
+  "ACTIONS_RUNTIME_TOKEN",
+]
 before-all = """
+manylinux-install-clang -v 22.1.8.1
 uv tool install "sccache>=0.10.0"
 mkdir -p /tmp/setup-mlir
 curl -fLsS https://github.com/munich-quantum-software/setup-mlir/archive/8d3eae73d0f0196fd30c787d91ebd2018cb6c709.tar.gz | tar -xz -C /tmp/setup-mlir --strip-components=1
 bash /tmp/setup-mlir/installation/setup-mlir.sh -v 23.1.2 -p /opt/llvm-23.1.2 -a OFF
 """
 before-test = "uvx sccache --show-stats"
+test-command = """\
+  CC=gcc CXX=g++ python test/cmake/check_installed.py && python test/cmake/check_installed.py && pytest test/python\
+  """
 # QIR-Runner's Linux wheels require a newer glibc than the manylinux_2_28
 # containers used to build and test MQT Core's broadly compatible wheels.
 test-groups = [ "test-base" ]
 
 [tool.cibuildwheel.macos]
-environment = { MACOSX_DEPLOYMENT_TARGET = "13.3" }
+config-settings = { "cmake.define.ENABLE_IPO" = "ON" }
+environment = { DEPLOY = "ON", MACOSX_DEPLOYMENT_TARGET = "13.3" }
 
 [tool.cibuildwheel.windows]
+environment = { DEPLOY = "ON" }
 repair-wheel-command = "delvewheel repair -w {dest_dir} {wheel} --namespace-pkg mqt --ignore-existing"
 
 [[tool.cibuildwheel.overrides]]

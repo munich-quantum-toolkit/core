@@ -96,3 +96,13 @@ add_custom_command(
     ${CMAKE_COMMAND} -E compare_files
     "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/consumer-device.qdmi.json"
     "$<TARGET_FILE_DIR:consumer-device>/consumer-device.qdmi.json")
+
+enable_testing()
+add_executable(dd-consumer dd_consumer.cpp)
+target_link_libraries(dd-consumer PRIVATE MQT::CoreDD)
+add_test(NAME dd-consumer COMMAND dd-consumer)
+if(WIN32)
+  set_tests_properties(
+    dd-consumer PROPERTIES ENVIRONMENT_MODIFICATION
+                           "PATH=path_list_prepend:$<TARGET_FILE_DIR:MQT::CoreDD>")
+endif()

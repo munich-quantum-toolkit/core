@@ -49,11 +49,6 @@ if(DEFINED ENV{DEPLOY})
       $ENV{DEPLOY}
       CACHE BOOL "Use deployment configuration from environment" FORCE)
   message(STATUS "Setting deployment configuration to '${DEPLOY}' from environment")
-elseif(DEFINED ENV{CI})
-  set(DEPLOY
-      ON
-      CACHE BOOL "Set deployment configuration to ON for CI" FORCE)
-  message(STATUS "Setting deployment configuration to '${DEPLOY}' for CI")
 endif()
 
 # set deployment specific options

@@ -125,6 +125,23 @@ Use `//` for ordinary implementation and namespace closing comments. Inline
 `/* ... */` comments remain valid, including unused parameter names such as
 `OpAdaptor /*adaptor*/` and argument labels such as `/*isSigned=*/false`.
 
+### Release wheels
+
+`pyproject.toml` selects portable CPU settings (`DEPLOY=ON`) for cibuildwheel
+and enables CMake's `ENABLE_IPO` on Linux and macOS. The nanobind bindings
+retain the release optimization level with `NOMINSIZE`. The builds use the
+published assertion-free LLVM/MLIR SDK.
+
+Linux uses the manylinux image's verified static Clang installer and matching
+LLD. This compiler distribution is separate from the LLVM/MLIR SDK linked into
+Core. macOS uses Apple Clang and the system linker.
+
+Validate release changes with Python tests and installed C++ consumers built
+with both GCC and Clang, including an unoptimized consumer. Exercise DD
+operations and QDMI plugin loading. See the
+[build performance guide](installation.md#build-performance) for local builds
+and LTO boundaries.
+
 ### Reproduce C++ lint locally
 
 Before pushing a C++ change, run:

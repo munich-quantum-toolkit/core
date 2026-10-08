@@ -74,10 +74,19 @@ python -c "import mqt.core; print(mqt.core.__version__)"
 
 This prints the installed package version.
 
-## Building from Source for Performance
+## Build performance
 
-To get the best performance and enable platform-specific optimizations not
-available in portable wheels, we recommend building the library from source:
+Release wheels use portable CPU settings and the assertion-free LLVM/MLIR 23.1.2
+SDK. Linux wheels target manylinux_2_28 and use Clang 22 with LLD and ThinLTO;
+macOS wheels use Apple Clang and ThinLTO with a macOS 13.3 deployment target.
+The wheels include native shared libraries and a CMake package for C++
+applications. Consumers do not need the compiler's LTO plugin, but must use a
+compatible C++ standard library and ABI. Use the QDMI C interface for device
+plugins.
+
+### Building from source
+
+Build from source to tune Core for the machine that will run it:
 
 ::::{tab-set}
 :sync-group: installer
@@ -105,6 +114,39 @@ pip install mqt.core --no-binary mqt.core
 This requires a C++20-capable
 [C++ compiler](https://en.wikipedia.org/wiki/List_of_compilers#C++_compilers)
 and [CMake](https://cmake.org/) 3.28 or newer.
+
+Release source builds default to `DEPLOY=OFF`, which enables native CPU tuning
+and LTO when the compiler supports them. On Linux, Clang with its matching LLD
+linker is a useful choice; on macOS, use Apple Clang from Xcode. For example,
+with Clang 23 installed on Linux:
+
+```console
+CC=clang-23 CXX=clang++-23 uv pip install mqt.core --no-binary mqt.core \
+  -Ccmake.define.CMAKE_LINKER_TYPE=LLD
+```
+
+Keep native builds on compatible CPUs. For redistribution, set
+`-Ccmake.define.DEPLOY=ON` and choose the target platform's compiler and system
+baseline. Cibuildwheel sets deployment mode explicitly for release wheels. The
+`DEPLOY` environment variable overrides the CMake setting.
+
+Clang and Apple Clang use ThinLTO through CMake's `ENABLE_IPO` option. For a
+local C++ build, `cmake --preset release` selects the same release defaults;
+pass `-DENABLE_IPO=OFF` to disable LTO. GCC can use mold 3 or newer with
+`-DCMAKE_LINKER_TYPE=MOLD`. Clang with mold also needs a matching LLVM LTO
+plugin; LLD includes the required support.
+
+Native tuning and LTO apply to the Core code being compiled. Prebuilt LLVM/MLIR
+SDK libraries retain their own build settings, and LTO does not optimize across
+separate shared libraries. Benchmark the operations that matter to your
+application: more inlining or a different code layout can make LTO slower for
+some workloads. [ThinLTO] and [full LTO] are compiler strategies; [FatLTO]
+stores both native code and compiler IR in an object file and is not a stronger
+optimization setting.
+
+[ThinLTO]: https://clang.llvm.org/docs/ThinLTO.html
+[full LTO]: https://clang.llvm.org/docs/CommandGuide/clang.html#cmdoption-flto
+[FatLTO]: https://llvm.org/docs/FatLTO.html
 
 ## Integrating MQT Core into Your Project
 

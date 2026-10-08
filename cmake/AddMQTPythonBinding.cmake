@@ -15,6 +15,8 @@ function(add_mqt_python_binding package_name target_name)
     ${target_name}
     # Enable free-threaded support
     FREE_THREADED
+    # Keep computation in bindings optimized for speed.
+    NOMINSIZE
     # Suppress compiler warnings from the nanobind library
     NB_SUPPRESS_WARNINGS
     # Use nanobind's shared runtime. Split mode enables the Stable ABI internally.
