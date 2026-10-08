@@ -52,15 +52,14 @@ def main() -> None:
     environment = os.environ | {"LLVM_PROFILE_FILE": str(root / "build-profiles/%m.profraw")}
     run = partial(subprocess.run, cwd=project, env=environment, check=True)
     linux = platform.system() == "Linux"
-    lto = "full" if linux else "thin"
     profdata = (
         "llvm-profdata" if linux else subprocess.check_output(["xcrun", "--find", "llvm-profdata"], text=True).strip()
     )
-    linker = "-Wl,--lto-partitions=1,--no-relax,--build-id=sha1,--emit-relocs" if linux else "-Wl,-mllvm,-threads=1"
+    linker = "-Wl,--thinlto-jobs=1,--no-relax,--build-id=sha1,--emit-relocs" if linux else "-Wl,-mllvm,-threads=1"
     definitions = {
         "MLIR_DIR": str(sdk / "lib/cmake/mlir"),
         "LLVM_DIR": str(sdk / "lib/cmake/llvm"),
-        "ENABLE_IPO": "OFF",
+        "ENABLE_IPO": "ON",
         "CMAKE_JOB_POOLS": "release_links=1",
         "CMAKE_JOB_POOL_LINK": "release_links",
         **{f"CMAKE_{kind}_LINKER_FLAGS": linker for kind in ["EXE", "SHARED", "MODULE"]},
@@ -70,10 +69,7 @@ def main() -> None:
     instrumented = definitions | {
         "BUILD_MQT_CORE_TESTS": "ON",
         "CMAKE_BUILD_WITH_INSTALL_RPATH": "OFF",
-        **{
-            f"CMAKE_{language}_FLAGS": f"-flto={lto} -fprofile-generate -fprofile-update=atomic"
-            for language in ["C", "CXX"]
-        },
+        **{f"CMAKE_{language}_FLAGS": "-fprofile-generate -fprofile-update=atomic" for language in ["C", "CXX"]},
     }
 
     def build_wheel(*targets: str) -> Path:
@@ -167,7 +163,7 @@ def main() -> None:
             profile = profile.rename(root / (digest + ".profdata"))
 
     # Keep profile-use flags out of CMake's unrelated compiler probes.
-    flags = f"-flto={lto} [==[-fprofile-use={profile}]==]"
+    flags = f"[==[-fprofile-use={profile}]==]"
     output.write_text(
         "if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)\n"
         + "".join(

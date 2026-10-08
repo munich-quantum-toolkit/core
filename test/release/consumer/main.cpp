@@ -9,6 +9,7 @@
  */
 
 #include "dd/DDDefinitions.hpp"
+#include "dd/Edge.hpp"
 #include "dd/Package.hpp"
 #include "dd/StateGeneration.hpp"
 #include "qdmi/Client.hpp"
@@ -17,7 +18,7 @@ int main() try {
   const qdmi::Session session{};
   dd::Package package{2};
   const auto state = dd::makeZeroState(2, package);
-  const auto success = state.getVector() == dd::CVec{1., 0., 0., 0.};
+  const auto success = dd::getVector(state) == dd::CVec{1., 0., 0., 0.};
   package.decRef(state);
   return success ? 0 : 1;
 } catch (...) {

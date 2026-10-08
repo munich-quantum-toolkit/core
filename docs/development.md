@@ -127,9 +127,11 @@ Use `//` for ordinary implementation and namespace closing comments. Inline
 
 ### Release wheel optimization
 
-Linux and macOS wheels use assertion-free SDKs and combined SDK/Core PGO. Linux
-adds full LTO and BOLT with the manylinux container's packaged Clang; macOS uses
-Apple Clang and ThinLTO with a 13.3 deployment target.
+Linux and macOS wheels use assertion-free SDKs and combined SDK/Core PGO. CMake
+enables ThinLTO for Core targets; the rebuilt SDK libraries use PGO without LTO.
+Linux uses matched Clang, LLD, compiler-rt, and llvm-profdata packages from the
+manylinux 2.28 container and applies BOLT. macOS uses Apple Clang with a 13.3
+deployment target.
 
 Cibuildwheel provisions the tools once, then `scripts/prepare_release.py` trains
 each ABI with the C++ MLIR tests and `test/release/train.py`. It rebuilds the
