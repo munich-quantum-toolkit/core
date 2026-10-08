@@ -59,7 +59,10 @@ def main() -> None:
         "shots": SHOTS,
     }
     runtime = Path("/runtime")
-    (runtime / f"ddsim-{job_id}.json").write_text(json.dumps(result, sort_keys=True), encoding="utf-8")
+    result_path = runtime / f"ddsim-{job_id}.json"
+    temporary = result_path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(result, sort_keys=True), encoding="utf-8")
+    temporary.replace(result_path)
 
     if args.hold:
         release = runtime / f"release-{job_id}"

@@ -22,9 +22,6 @@ function(enable_project_options target_name)
   if(MSVC)
     target_compile_options(${target_name} INTERFACE /utf-8 /Zm10 /EHsc)
   else()
-    # always include debug symbols (avoids common problems with LTO)
-    target_compile_options(${target_name} INTERFACE -g)
-
     # ensure that exceptions are enabled
     target_compile_options(${target_name} INTERFACE -fexceptions)
 

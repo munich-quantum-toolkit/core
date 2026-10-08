@@ -10,16 +10,26 @@ releases may include breaking changes.
 
 ## [Unreleased]
 
-_If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#unreleased)._
+## [3.11.0] - 2026-10-08
+
+_If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#3110)._
 
 ### Added
 
 - ✨ Add DD construction from C++ indexed views and flat gate matrices, and
   accept read-only NumPy arrays in `DDPackage.from_vector` and
   `DDPackage.from_matrix` ([#2710], [#2455]) ([**@burgholzer**])
+- 📦 Add PEP 794 import metadata to source distributions and wheels, identifying
+  `mqt.core` as an import name and `mqt` as a shared namespace ([#2659])
+  ([**@denialhaag**])
 
 ### Changed
 
+- ⚡ Reduce C++ build and lint work by deferring test discovery, omitting forced
+  debug symbols from release builds, and configuring lint inputs without
+  building the project ([#2714], [#2459], [#2470]) ([**@burgholzer**])
+- 🔧 Limit the optional Qiskit integration to Qiskit 2.x ([#2714], [#2623])
+  ([**@denialhaag**], [**@burgholzer**])
 - 🔧 Use clang-tidy 23 for C++ linting in CI and the local `cpp-lint` Nox
   session ([#2710], [#2328]) ([**@burgholzer**], [**@simon1hofmann**])
 - ⚡ Reduce DD allocation, lookup, and cache overhead, with adaptive table sizes
@@ -27,13 +37,17 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#unreleased)._
   [#2604], [#2637]) ([**@burgholzer**], [**@simon1hofmann**])
 - ⚡ Speed up DD construction, matrix multiplication, measurement, sampling, and
   element access ([#2710], [#2441], [#2455], [#2479]) ([**@burgholzer**])
-- 💥 Update the DD C++ ABI, low-level table interfaces, and numerical tolerance
-  validation. Rebuild native consumers and follow the
-  [DD upgrade notes](UPGRADING.md#dd-package) ([#2710], [#2637])
+- 💥 Update the DD C++ ABI, low-level table and DOT export interfaces, and
+  numerical tolerance validation. Rebuild native consumers and follow the
+  [DD upgrade notes](UPGRADING.md#dd-package) ([#2710], [#2518], [#2637])
   ([**@burgholzer**], [**@simon1hofmann**])
 
 ### Fixed
 
+- 🐛 Honor `ENABLE_IPO=OFF` when reconfiguring an existing build directory
+  ([#2714], [#2470]) ([**@burgholzer**])
+- 🐛 Reject invalid DD permutations before changing the state ([#2709])
+  ([**@burgholzer**])
 - 🐛 Preserve small amplitudes and matrix scales in wide circuits, and avoid
   intermediate overflow and underflow during magnitude addition ([#2710],
   [#2606], [#2609], [#2617]) ([**@burgholzer**])
@@ -45,7 +59,11 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#unreleased)._
   ([#2710], [#2455], [#2479]) ([**@burgholzer**])
 - 🐛 Make DD DOT exports deterministic and prevent node-ID collisions ([#2710],
   [#2518]) ([**@burgholzer**])
-- 🐛 Reject invalid DD permutations before changing the state ([#2709])
+- 🐛 Keep DD hashes consistent for signed zero on MSVC and stable across
+  processes ([#2710], [#2636], [#2637]) ([**@burgholzer**],
+  [**@simon1hofmann**])
+- 🐛 Prevent crashes when reducing garbage in terminal DDs and correctly
+  normalize weighted identity roots without retaining extra references ([#2708])
   ([**@burgholzer**])
 
 ## [3.10.1] - 2026-09-26
@@ -855,7 +873,8 @@ for previous changelogs._
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.10.1...v3.x
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.11.0...v3.x
+[3.11.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.11.0
 [3.10.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.10.1
 [3.10.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.10.0
 [3.9.2]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.9.2
@@ -883,10 +902,15 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2714]: https://github.com/munich-quantum-toolkit/core/pull/2714
 [#2710]: https://github.com/munich-quantum-toolkit/core/pull/2710
 [#2709]: https://github.com/munich-quantum-toolkit/core/pull/2709
+[#2708]: https://github.com/munich-quantum-toolkit/core/pull/2708
+[#2659]: https://github.com/munich-quantum-toolkit/core/pull/2659
 [#2637]: https://github.com/munich-quantum-toolkit/core/pull/2637
+[#2636]: https://github.com/munich-quantum-toolkit/core/pull/2636
 [#2635]: https://github.com/munich-quantum-toolkit/core/pull/2635
+[#2623]: https://github.com/munich-quantum-toolkit/core/pull/2623
 [#2617]: https://github.com/munich-quantum-toolkit/core/pull/2617
 [#2611]: https://github.com/munich-quantum-toolkit/core/pull/2611
 [#2609]: https://github.com/munich-quantum-toolkit/core/pull/2609
@@ -898,7 +922,9 @@ for previous changelogs._
 [#2518]: https://github.com/munich-quantum-toolkit/core/pull/2518
 [#2479]: https://github.com/munich-quantum-toolkit/core/pull/2479
 [#2474]: https://github.com/munich-quantum-toolkit/core/pull/2474
+[#2470]: https://github.com/munich-quantum-toolkit/core/pull/2470
 [#2466]: https://github.com/munich-quantum-toolkit/core/pull/2466
+[#2459]: https://github.com/munich-quantum-toolkit/core/pull/2459
 [#2455]: https://github.com/munich-quantum-toolkit/core/pull/2455
 [#2453]: https://github.com/munich-quantum-toolkit/core/pull/2453
 [#2441]: https://github.com/munich-quantum-toolkit/core/pull/2441

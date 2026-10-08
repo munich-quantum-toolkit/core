@@ -93,7 +93,6 @@ def cpp_lint(session: nox.Session) -> None:
         env=compiler_env,
         external=True,
     )
-    session.run("cmake", "--build", "build/cpp-lint", env=compiler_env, external=True)
 
     with tempfile.TemporaryDirectory() as temp_dir:
         output = Path(temp_dir) / "github-output"
@@ -102,7 +101,7 @@ def cpp_lint(session: nox.Session) -> None:
             "--style=",
             "--tidy-checks=",
             f"--version={llvm_bin}",
-            "--ignore=build|!build/mlir/**|**/include|include",
+            "--ignore=build|**/include|include",
             "--thread-comments=false",
             "--step-summary=false",
             "--database=build/cpp-lint",
