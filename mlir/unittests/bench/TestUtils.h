@@ -17,11 +17,16 @@
 
 #include "gtest/gtest.h"
 
-#include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/Operation.h"
-#include "mlir/Support/LLVM.h"
+#include "mlir/IR/Value.h"
+#include "mlir/Support/LogicalResult.h"
+
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/Casting.h"
 
 #include <cstddef>
 #include <optional>
@@ -29,6 +34,40 @@
 #include <variant>
 
 namespace mqt::bench::test {
+
+/// Fold emitted arithmetic with concrete loop arguments, without running
+/// the quantum circuit.
+[[nodiscard]] inline mlir::Attribute evaluateArithmetic(
+    mlir::Value value,
+    const llvm::DenseMap<mlir::Value, mlir::Attribute>& arguments) {
+  if (const auto found = arguments.find(value); found != arguments.end()) {
+    return found->second;
+  }
+  auto* operation = value.getDefiningOp();
+  if (operation == nullptr) {
+    ADD_FAILURE() << "Missing concrete arithmetic argument";
+    return {};
+  }
+  llvm::SmallVector<mlir::Attribute> operands;
+  for (auto operand : operation->getOperands()) {
+    auto attribute = evaluateArithmetic(operand, arguments);
+    if (!attribute) {
+      return {};
+    }
+    operands.push_back(attribute);
+  }
+  llvm::SmallVector<mlir::OpFoldResult> results;
+  if (mlir::failed(operation->fold(operands, results)) || results.size() != 1) {
+    ADD_FAILURE() << "Cannot fold "
+                  << operation->getName().getStringRef().str();
+    return {};
+  }
+  if (auto attribute = llvm::dyn_cast<mlir::Attribute>(results.front())) {
+    return attribute;
+  }
+  return evaluateArithmetic(llvm::cast<mlir::Value>(results.front()),
+                            arguments);
+}
 
 template <class Benchmark>
 [[nodiscard]] std::optional<mlir::QCOProgram>
@@ -55,18 +94,6 @@ void expectSamplingMatchesReference(const Benchmark& benchmark,
       mlir::qco::sample(mlir::mqt::getEntryPoint(program->module()), shots, 17);
   ASSERT_TRUE(mlir::succeeded(counts));
   EXPECT_LT(benchmark.evaluate(*counts).totalVariationDistance, tolerance);
-}
-
-[[nodiscard]] inline mlir::DenseElementsAttr
-angleTable(mlir::ModuleOp moduleOp) {
-  mlir::DenseElementsAttr result;
-  moduleOp.walk([&](mlir::arith::ConstantOp op) {
-    if (auto table = mlir::dyn_cast<mlir::DenseElementsAttr>(op.getValue())) {
-      EXPECT_FALSE(result);
-      result = table;
-    }
-  });
-  return result;
 }
 
 template <class Op> [[nodiscard]] size_t countOps(mlir::ModuleOp moduleOp) {

@@ -807,6 +807,25 @@ struct ConvertIntegerExpression final : ConversionPattern {
     if (op->getName().getDialectNamespace() != "arith") {
       return failure();
     }
+    if (isa<arith::IndexCastOp, arith::IndexCastUIOp>(op)) {
+      auto source = op->getOperand(0).getType();
+      auto target = op->getResult(0).getType();
+      if (!isa<IntegerType, IndexType>(source) ||
+          !isa<IntegerType, IndexType>(target)) {
+        return rewriter.notifyMatchFailure(op, "expected scalar index cast");
+      }
+      auto sourceInteger = dyn_cast<IntegerType>(source);
+      auto targetInteger = dyn_cast<IntegerType>(target);
+      const auto sourceWidth = sourceInteger ? sourceInteger.getWidth() : 32U;
+      const auto targetWidth = targetInteger ? targetInteger.getWidth() : 32U;
+      auto targetType =
+          cast<IntegerType>(getTypeConverter()->convertType(target));
+      /// jeff indices are i32; preserve casts to other integer widths.
+      rewriter.replaceOp(op, castInteger(rewriter, op->getLoc(), operands[0],
+                                         sourceWidth, targetType, targetWidth,
+                                         isa<arith::IndexCastOp>(op)));
+      return success();
+    }
     if (getTypeConverter()->isLegal(op) &&
         !isa<arith::CmpIOp, arith::ShRUIOp, arith::ShRSIOp>(op)) {
       return failure();
@@ -2091,7 +2110,18 @@ protected:
       signalPassFailure();
       return;
     }
-    const auto unsupportedMath = moduleOp.walk([](Operation* op) {
+    const auto unsupportedExpressions = moduleOp.walk([](Operation* op) {
+      if (isa<arith::IndexCastOp, arith::IndexCastUIOp>(op)) {
+        for (auto type :
+             {op->getOperand(0).getType(), op->getResult(0).getType()}) {
+          auto integer = dyn_cast<IntegerType>(type);
+          if (integer && integer.getWidth() > 64) {
+            op->emitError(
+                "jeff supports general integer expressions only up to 64 bits");
+            return WalkResult::interrupt();
+          }
+        }
+      }
       if (isa<math::AbsIOp, math::IPowIOp>(op)) {
         auto type = dyn_cast<IntegerType>(op->getResult(0).getType());
         if (type && nativeIntegerWidth(type.getWidth()) != type.getWidth()) {
@@ -2102,7 +2132,7 @@ protected:
       }
       return WalkResult::advance();
     });
-    if (unsupportedMath.wasInterrupted()) {
+    if (unsupportedExpressions.wasInterrupted()) {
       signalPassFailure();
       return;
     }

@@ -47,7 +47,6 @@
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 
-#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/SourceMgr.h"
@@ -318,36 +317,6 @@ std::optional<QCOProgram> QCProgram::intoQCO() && {
     return std::nullopt;
   }
   return QCOProgram(std::move(*this).releaseStorage());
-}
-
-static size_t
-countGatesIf(ModuleOp moduleOp,
-             const llvm::function_ref<bool(qc::UnitaryOpInterface)> predicate) {
-  auto entryPoint = mqt::getEntryPoint(moduleOp);
-  if (!entryPoint) {
-    return 0;
-  }
-  size_t count = 0;
-  entryPoint.walk<WalkOrder::PreOrder>([&](qc::UnitaryOpInterface op) {
-    count += !isa<qc::BarrierOp>(op) && predicate(op);
-    return isa<qc::CtrlOp, qc::InvOp, qc::PowOp>(op) ? WalkResult::skip()
-                                                     : WalkResult::advance();
-  });
-  return count;
-}
-
-size_t QCProgram::numGates() const {
-  return countGatesIf(mod(), [](qc::UnitaryOpInterface) { return true; });
-}
-
-size_t QCProgram::numSingleQubitGates() const {
-  return countGatesIf(
-      mod(), [](qc::UnitaryOpInterface op) { return op.isSingleQubit(); });
-}
-
-size_t QCProgram::numTwoQubitGates() const {
-  return countGatesIf(
-      mod(), [](qc::UnitaryOpInterface op) { return op.isTwoQubit(); });
 }
 
 //===----------------------------------------------------------------------===//

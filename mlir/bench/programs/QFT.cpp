@@ -16,7 +16,10 @@
 #include "QFTUtils.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/Value.h"
+#include "mlir/IR/ValueRange.h"
 #include "mlir/Support/LLVM.h"
 
 #include <cstdint>
@@ -60,27 +63,31 @@ semiclassicalQFT(qc::QCProgramBuilder& builder, const QFT& benchmark) {
   auto total = builder.indexConstant(qubits);
   auto one = builder.indexConstant(1);
   auto active = builder.indexConstant(qubits - period);
+  auto initialCorrection = builder.floatConstant(0.);
   auto firstAngle = builder.floatConstant(std::numbers::pi / 2.);
   auto half = builder.floatConstant(0.5);
 
-  const auto round = [&](Value index, const bool preparePlus) {
+  const auto rounds = [&](Value lower, Value upper, Value correction,
+                          const bool preparePlus) {
+    auto loop =
+        scf::ForOp::create(builder, lower, upper, one, ValueRange{correction});
+    OpBuilder::InsertionGuard guard(builder);
+    builder.setInsertionPointToStart(loop.getBody());
     if (preparePlus) {
       builder.h(query);
     }
-    auto previous = arith::SubIOp::create(builder, index, one);
-    detail::phaseRotationLoop(
-        builder, zero, index, one, firstAngle, half,
-        [&](Value angle, Value distance) {
-          auto bit = arith::SubIOp::create(builder, previous, distance);
-          builder.scfIf(result, bit, [&] { builder.p(angle, query); });
-        });
+    builder.p(loop.getRegionIterArg(0), query);
     builder.h(query);
-    builder.measure(query, result, index);
+    auto bit = builder.measure(query, result, loop.getInductionVar());
     builder.reset(query);
+    auto next = detail::advancePhaseCorrection(
+        builder, loop.getRegionIterArg(0), bit, half, firstAngle);
+    scf::YieldOp::create(builder, ValueRange{next});
+    return loop.getResult(0);
   };
 
-  builder.scfFor(zero, active, 1, [&](Value step) { round(step, true); });
-  builder.scfFor(active, total, 1, [&](Value step) { round(step, false); });
+  auto correction = rounds(zero, active, initialCorrection, true);
+  rounds(active, total, correction, false);
   return {result};
 }
 

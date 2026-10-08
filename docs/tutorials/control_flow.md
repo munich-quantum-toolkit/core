@@ -119,22 +119,23 @@ the quantum exactly-one-use rule.
 
 ## Distinguish a loop body from executed gates
 
-The inspection methods count gate operations in the entry-point IR. A loop body
-is counted once, regardless of its trip count:
+The inspection methods count gate operations, including measurements, in the
+entry-point IR. A loop body is counted once, regardless of its trip count:
 
 ```{code-cell} ipython3
 static_gates = ghz_qc.num_gates()
 static_cx = ghz_qc.num_two_qubit_gates()
-assert static_gates == 2 and static_cx == 1
+assert static_gates == 2 + width and static_cx == 1
 print(f"Static IR: {static_gates} gates, including {static_cx} controlled-X")
 print(
-    f"This program executes: {1 + width - 1} gates, including {width - 1} controlled-X"
+    f"This program executes: {2 * width} gates, including {width - 1} controlled-X"
 )
 ```
 
-The runtime count here follows directly from a loop with constant bounds. It is
-not a general estimate provided by `num_gates()`. Branches and other loops can
-make runtime work depend on measurement outcomes or classical inputs.
+Both totals include the `width` measurements after the loop. The runtime count
+here follows directly from a loop with constant bounds. It is not a general
+estimate provided by `num_gates()`. Branches and other loops can make runtime
+work depend on measurement outcomes or classical inputs.
 
 Compare the same program after explicit loop unrolling:
 

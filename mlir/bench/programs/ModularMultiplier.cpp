@@ -17,21 +17,13 @@
 #include "QFTUtils.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/Tensor/IR/Tensor.h"
-#include "mlir/IR/BuiltinAttributes.h"
-#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Value.h"
-#include "mlir/IR/ValueRange.h"
 #include "mlir/Support/LLVM.h"
 
 #include "llvm/ADT/APInt.h"
-#include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 
-#include <cstddef>
 #include <cstdint>
-#include <numbers>
 
 namespace mqt::bench {
 
@@ -57,16 +49,14 @@ SmallVector<Value> modularMultiplier(qc::QCProgramBuilder& builder,
   }
   detail::prepareRegister(builder, multiplicand, options.multiplicand);
 
-  SmallVector<double> angles;
-  detail::appendModularPhaseAngles(
-      angles, llvm::APInt(static_cast<unsigned>(width), options.multiplier, 2),
-      llvm::APInt(static_cast<unsigned>(width), options.modulus, 2));
-  auto type = RankedTensorType::get({static_cast<int64_t>(angles.size())},
-                                    builder.getF64Type());
-  auto phases = arith::ConstantOp::create(
-      builder, DenseElementsAttr::get(type, ArrayRef<double>(angles)));
+  auto multiplier = arith::ConstantOp::create(
+      builder, builder.getIntegerAttr(builder.getI64Type(),
+                                      llvm::APInt(64, options.multiplier, 2)));
+  auto modulus = arith::ConstantOp::create(
+      builder, builder.getIntegerAttr(builder.getI64Type(),
+                                      llvm::APInt(64, options.modulus, 2)));
   detail::multiplyAccumulate(builder, control, multiplicand, accumulator, work,
-                             phases, builder.indexConstant(0), bits);
+                             multiplier, modulus, bits);
 
   builder.measureQubitRegister(accumulator, result, width);
   auto multiplicandOffset = builder.indexConstant(width);

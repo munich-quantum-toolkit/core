@@ -13,12 +13,10 @@
 #include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
 
 #include "Programs.h"
+#include "QFTUtils.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/SCF/IR/SCF.h"
-#include "mlir/IR/Builders.h"
 #include "mlir/IR/Value.h"
-#include "mlir/IR/ValueRange.h"
 #include "mlir/Support/LLVM.h"
 
 #include <cstdint>
@@ -47,18 +45,12 @@ SmallVector<Value> multiplexer(qc::QCProgramBuilder& builder,
   auto last = builder.indexConstant(numControls - 1);
   auto firstAngle = builder.floatConstant(std::numbers::pi / 2.);
   auto half = builder.floatConstant(0.5);
-  auto rotationLoop =
-      scf::ForOp::create(builder, zero, upper, one, ValueRange{firstAngle});
-  {
-    OpBuilder::InsertionGuard guard(builder);
-    builder.setInsertionPointToStart(rotationLoop.getBody());
-    auto angle = rotationLoop.getRegionIterArg(0);
-    auto control =
-        arith::SubIOp::create(builder, last, rotationLoop.getInductionVar());
-    builder.cry(angle, builder.loadQubit(controls, control), target);
-    auto nextAngle = arith::MulFOp::create(builder, angle, half);
-    scf::YieldOp::create(builder, ValueRange{nextAngle});
-  }
+  detail::phaseRotationLoop(
+      builder, zero, upper, one, firstAngle, half,
+      [&](Value angle, Value index) {
+        auto control = arith::SubIOp::create(builder, last, index);
+        builder.cry(angle, builder.loadQubit(controls, control), target);
+      });
 
   builder.measure(target, result, 0);
   builder.scfFor(0, numControls, 1, [&](Value index) {

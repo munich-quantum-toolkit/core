@@ -1710,6 +1710,34 @@ TEST_F(TargetSynthesisTest, NativeSynthesisSharesRepeatedParameterConstants) {
   expectEquivalent(expected, synthesized);
 }
 
+TEST_F(TargetSynthesisTest, NativePipelineRemovesDeadLoopCarriedValues) {
+  auto moduleOp = mlir::parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%bound: index, %theta: f64) {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %dead = scf.for %i = %c0 to %bound step %c1
+            iter_args(%unused = %c0) -> index {
+          %next = arith.addi %unused, %c1 : index
+          qco.gphase(%theta)
+          scf.yield %next : index
+        }
+        return
+      }
+    }
+  )mlir",
+                                                    context.get());
+  ASSERT_TRUE(moduleOp);
+  attachTestEnvironment(*moduleOp, makeUCxTarget());
+  mlir::PassManager manager(context.get());
+  mlir::qco::populateTargetNativeSynthesisPipeline(manager);
+  ASSERT_TRUE(mlir::succeeded(manager.run(*moduleOp)));
+  auto loops =
+      llvm::to_vector(mainFunction(*moduleOp).getOps<mlir::scf::ForOp>());
+  ASSERT_EQ(loops.size(), 1U);
+  EXPECT_EQ(loops.front().getNumRegionIterArgs(), 0U);
+}
+
 TEST_F(TargetSynthesisTest, SqrtISwapCapabilityRequiresFixedParameters) {
   const auto target = valid(Target::create(
       2, Connectivity::allToAll(),

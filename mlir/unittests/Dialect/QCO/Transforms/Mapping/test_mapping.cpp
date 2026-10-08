@@ -2670,25 +2670,28 @@ TEST_F(MappingPassFixture, EmbedShuffledInteractionPathWithoutSwaps) {
     builder.sink(qubit);
   }
   auto input = builder.finalize();
-  for (const auto& target : {lineTarget, getSquareGridTarget(8)}) {
-    std::string expected;
-    for (bool multithreading : {false, true}) {
-      context->enableMultithreading(multithreading);
-      OwningOpRef<ModuleOp> moduleOp = input->clone();
-      ASSERT_TRUE(succeeded(runPass(
-          *moduleOp, target, MappingPassOptions{.ntrials = 1, .seed = 42})));
-      ASSERT_TRUE(succeeded(verify(*moduleOp)));
-      EXPECT_TRUE(succeeded(verifyLinearity(*moduleOp)));
-      EXPECT_TRUE(isExecutable(getEntryPoint(*moduleOp), target));
-      size_t swaps = 0;
-      moduleOp->walk([&](SWAPOp) { ++swaps; });
-      /// The interaction path fits both targets without routing overhead.
-      EXPECT_EQ(swaps, 0);
-      const auto output = printModule(*moduleOp);
-      if (!multithreading) {
-        expected = output;
-      } else {
-        EXPECT_EQ(output, expected);
+  for (const auto& topology : {lineTarget, getSquareGridTarget(8)}) {
+    for (const auto& target : {topology, withNativeBasis(topology, "cz")}) {
+      std::string expected;
+      for (const size_t trials : {size_t{1}, size_t{4}}) {
+        SCOPED_TRACE(trials);
+        OwningOpRef<ModuleOp> moduleOp = input->clone();
+        ASSERT_TRUE(succeeded(
+            runPass(*moduleOp, target,
+                    MappingPassOptions{.ntrials = trials, .seed = 42})));
+        ASSERT_TRUE(succeeded(verify(*moduleOp)));
+        EXPECT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+        EXPECT_TRUE(isExecutable(getEntryPoint(*moduleOp), target));
+        size_t swaps = 0;
+        moduleOp->walk([&](SWAPOp) { ++swaps; });
+        // A complete path placement must survive all trial options.
+        EXPECT_EQ(swaps, 0);
+        const auto output = printModule(*moduleOp);
+        if (expected.empty()) {
+          expected = output;
+        } else {
+          EXPECT_EQ(output, expected);
+        }
       }
     }
   }

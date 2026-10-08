@@ -12,6 +12,7 @@
 
 #include "mqt/Compiler/Target.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
+#include "mqt/Support/Pauli.h"
 
 #include "mlir/IR/Value.h"
 #include "mlir/Support/LLVM.h"
@@ -19,7 +20,6 @@
 
 #include <array>
 #include <cstddef>
-#include <cstdint>
 #include <optional>
 #include <variant>
 
@@ -34,10 +34,10 @@ class PatternRewriter;
 
 namespace mlir::qco::decomposition {
 
+using mqt::PauliAxis;
+
 /// Merge equal diagonal rotations across diagonal gates on other pairs.
 void mergeDiagonalRotations(RewriterBase& rewriter, ModuleOp moduleOp);
-
-enum class PauliAxis : uint8_t { I, X, Y, Z };
 
 /// A quarter-turn Clifford C that maps from to the requested Pauli axis.
 /// The identity axis returns the identity matrix.
