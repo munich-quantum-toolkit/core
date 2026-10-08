@@ -97,21 +97,21 @@ with TemporaryDirectory() as directory:
 Raw byte buffers go through `from_bytes` before compilation. `compile_program`
 uses strings for source text; a `Path` makes file input explicit.
 
-Use `to_segments` and `from_segments` to exchange Cap'n Proto segments without
-flattening them into bytes:
+Use `to_segment_views` and `from_segments` to exchange Cap'n Proto segments
+without flattening them into bytes:
 
 ```{code-cell} ipython3
-segments = program.to_segments()
+segments = program.to_segment_views()
 received = JeffProgram.from_segments(segments)
 assert sample(received, shots=64, seed=17) == sample(program, shots=64, seed=17)
 ```
 
-`to_segments` returns read-only `memoryview` objects that keep their message
-storage alive independently of the program. `from_segments` accepts contiguous
-one-dimensional byte buffers whose sizes are multiples of eight. It borrows
-aligned buffers and copies unaligned buffers into aligned storage. Keep input
-buffers unchanged until the call returns; the returned program owns its data.
-These segments can also be passed to pycapnp's `Module.from_segments`.
+`to_segment_views` returns read-only `memoryview` objects that keep their
+message storage alive independently of the program. `from_segments` accepts
+contiguous one-dimensional byte buffers whose sizes are multiples of eight. It
+borrows aligned buffers and copies unaligned buffers into aligned storage. Keep
+input buffers unchanged until the call returns; the returned program owns its
+data. These segments can also be passed to pycapnp's `Module.from_segments`.
 
 In C++, use `mlir::JeffProgram::toMessage` and `fromMessage` to exchange an
 existing Cap'n Proto message without flattening it into bytes:

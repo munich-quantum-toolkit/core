@@ -1101,7 +1101,7 @@ class JeffProgram(Program):
     def cleanup(self) -> None:
         """Run the standard ``jeff`` cleanup pipeline in place."""
 
-    def to_segments(self) -> list[memoryview]:
+    def to_segment_views(self) -> list[memoryview]:
         """Serialize this program into read-only Cap'n Proto segment views.
 
         The views keep their message storage alive independently of this program. No

@@ -276,7 +276,7 @@ def test_jeff_program_round_trip(tmp_path: Path) -> None:
 def test_jeff_segment_round_trip(buffer_type: str) -> None:
     """Import segment buffers and release them before using the program."""
     program = compile_program(QASM_STRING, output=OutputFormat.JEFF)
-    segments = program.to_segments()
+    segments = program.to_segment_views()
     assert all(isinstance(segment, memoryview) and segment.readonly for segment in segments)
     with pytest.raises(TypeError):
         segments[0][0] = 0
@@ -306,7 +306,7 @@ def test_jeff_multiple_segments() -> None:
     """Preserve a program whose encoding spans multiple segments."""
     source = 'OPENQASM 3.0; include "stdgates.inc"; qubit q;\n' + "x q;\n" * 1200
     program = QCProgram.from_openqasm_str(source).to_qco().to_jeff()
-    segments = program.to_segments()
+    segments = program.to_segment_views()
     assert len(segments) > 1
     restored = JeffProgram.from_segments(segments).to_qco().to_qc()
     assert restored.num_gates() == program.to_qco().to_qc().num_gates()
@@ -335,7 +335,7 @@ def test_jeff_rejects_invalid_segment_message(segment: bytes) -> None:
         JeffProgram.from_segments([segment])
 
 
-@pytest.mark.parametrize("method", ["to_segments", "to_bytes"])
+@pytest.mark.parametrize("method", ["to_segment_views", "to_bytes"])
 def test_consumed_jeff_serialization_raises(method: str) -> None:
     """Reject serialization after consuming the program."""
     program = QCProgram.from_openqasm_str(QASM_STRING).to_qco().to_jeff()

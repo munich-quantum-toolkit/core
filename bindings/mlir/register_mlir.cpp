@@ -1853,7 +1853,7 @@ returned program does not retain the buffers.)pb")
       .def("cleanup", &BooleanMemberAdapter<&mlir::JeffProgram::cleanup>::call,
            "Run the standard ``jeff`` cleanup pipeline in place.")
       .def(
-          "to_segments",
+          "to_segment_views",
           [](const mlir::JeffProgram& value) {
             requireValid(value);
             auto message = std::make_unique<capnp::MallocMessageBuilder>();

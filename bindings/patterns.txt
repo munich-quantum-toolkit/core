@@ -6,8 +6,8 @@ mqt\.core\.mlir\.JeffProgram\.from_segments$:
     ) -> JeffProgram:
         \doc
 
-mqt\.core\.mlir\.JeffProgram\.to_segments$:
-    def to_segments(self) -> list[memoryview]:
+mqt\.core\.mlir\.JeffProgram\.to_segment_views$:
+    def to_segment_views(self) -> list[memoryview]:
         \doc
 
 mqt\.core\.qdmi\.(?:Job|Device|Device\.Site)\.query_custom_property$:
