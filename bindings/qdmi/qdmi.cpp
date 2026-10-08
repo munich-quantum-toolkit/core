@@ -8,7 +8,8 @@
  * Licensed under the MIT License
  */
 
-#include "qdmi/Client.hpp"
+#include "qdmi/QDMI.hpp"
+
 #include "qdmi/common/Common.hpp"
 
 #include "nanobind/nanobind.h"

@@ -853,32 +853,40 @@ driver and FoMaC libraries remain available independently.
 
 ### QDMI runtime device registration
 
-The unstable runtime-loading helpers have been replaced with device manifests
-and opening by stable device ID. In Python, replace
+The unstable runtime-loading helpers have been replaced with registration by a
+stable device ID followed by an explicit open. In Python, replace
 `add_dynamic_device_library(library_path, prefix, ...)` with:
 
 ```python
-from mqt.core.qdmi import builtin_driver
+from mqt.core.fomac import DeviceDefinition, open_device, register_device
 
-builtin_driver.add_manifest("my-device.qdmi.json")
-device = builtin_driver.open_device("my.device")
+definition = DeviceDefinition("my.device", library_path, prefix, base_url="https://device.example")
+register_device(definition)
+device = open_device("my.device")
 ```
 
-The manifest declares the library, symbol prefix, stable ID, and default session
-parameters. `open_device` accepts per-call session overrides and creates a fresh
-session on every call. Register manifests before the first enumeration or device
-opening.
+Per-backend session values can be passed directly to
+`open_device("my.device", base_url=..., token=...)`. Every call creates a fresh
+device session without registering another device ID. Repeated integration setup
+can use `register_device_if_absent(definition)` instead of suppressing
+duplicate-ID errors; invalid definitions are still rejected, and a device
+disabled by higher-precedence configuration remains reserved.
 
 The equivalent C++ flow is:
 
 ```cpp
-qdmi::builtin_driver::addManifest("my-device.qdmi.json");
-auto device = qdmi::builtin_driver::openDevice("my.device");
+qdmi::DeviceDefinition definition{.id = "my.device",
+                                  .library = libraryPath,
+                                  .prefix = prefix};
+auto& driver = qdmi::Driver::get();
+driver.registerDevice(definition);
+auto device = fomac::Session::openDevice("my.device");
 ```
 
-Registration stores metadata without loading native code. Opening an unknown or
-disabled ID fails. The driver's C++ implementation is internal; applications use
-the standard Client Interface or the optional `builtin_driver` extension.
+Registration validates and stores metadata without loading native code. Opening
+an unknown or disabled ID fails. `fomac::Session::openDevice` creates a fresh
+owned session on every call. `qdmi::Driver::open(id)` retains its cached-device
+behavior for client callers.
 
 See the {doc}`QDMI device configuration guide <qdmi/configuration>` for the
 versioned JSON and TOML formats, configuration precedence, and relocatable

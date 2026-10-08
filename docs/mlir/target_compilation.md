@@ -488,7 +488,7 @@ Compile a file and submit it to DDSIM:
 
 ```cpp
 #include "mqt/Compiler/QDMIAdapter.h"
-#include "qdmi/Client.hpp"
+#include "qdmi/QDMI.hpp"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
 

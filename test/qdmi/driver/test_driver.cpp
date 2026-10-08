@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "qdmi/Client.hpp"
+#include "qdmi/QDMI.hpp"
 #include "qdmi/driver/DriverExtension.hpp"
 
 #include "Driver.hpp"
@@ -90,18 +90,18 @@ struct ConfiguredDriverEnvironment {
 
 const ConfiguredDriverEnvironment CONFIGURED_DRIVER_ENVIRONMENT;
 
-class ChildDeviceLibrary final : public qdmi::DeviceLibrary {
+class ChildDeviceAPI final : public qdmi::DeviceAPI {
   struct Child {
     size_t id;
   };
 
   struct Session {
-    ChildDeviceLibrary* library = nullptr;
+    ChildDeviceAPI* library = nullptr;
     QDMI_Child_Device child = nullptr;
     bool initialized = false;
   };
 
-  static inline ChildDeviceLibrary* activeLibrary = nullptr;
+  static inline ChildDeviceAPI* activeLibrary = nullptr;
   std::array<Child, 2> children_{{{0}, {1}}};
   std::unordered_map<QDMI_Device_Session, std::unique_ptr<Session>> sessions_;
 
@@ -255,7 +255,7 @@ public:
   std::vector<QDMI_Child_Device> selectedChildren;
   std::vector<const void*> custom1Data;
 
-  ChildDeviceLibrary() {
+  ChildDeviceAPI() {
     activeLibrary = this;
     device_session_alloc = alloc;
     device_session_free = free;
@@ -276,7 +276,7 @@ public:
     device_job_free = [](QDMI_Device_Job) { ++activeLibrary->freedJobs; };
   }
 
-  ~ChildDeviceLibrary() override { activeLibrary = nullptr; }
+  ~ChildDeviceAPI() override { activeLibrary = nullptr; }
 
   [[nodiscard]] auto childHandle(const size_t index) -> QDMI_Child_Device {
     return reinterpret_cast<QDMI_Child_Device>(&children_.at(index));
@@ -387,7 +387,7 @@ protected:
 };
 
 TEST(ChildDeviceTest, WrapsOpaqueHandlesInStableClientDevices) {
-  const auto library = std::make_shared<ChildDeviceLibrary>();
+  const auto library = std::make_shared<ChildDeviceAPI>();
   {
     QDMI_Device_impl_d parent(library);
     size_t size = 0;
@@ -433,7 +433,7 @@ TEST(ChildDeviceTest, WrapsOpaqueHandlesInStableClientDevices) {
 }
 
 TEST(ChildDeviceTest, PreservesWarningJobsAndRejectsNullHandles) {
-  const auto library = std::make_shared<ChildDeviceLibrary>();
+  const auto library = std::make_shared<ChildDeviceAPI>();
   library->childDevicesNotSupported = true;
   QDMI_Device_impl_d device(library);
   for (const auto status : {QDMI_SUCCESS, QDMI_WARN_GENERAL}) {
@@ -460,7 +460,7 @@ TEST(ChildDeviceTest, PreservesWarningJobsAndRejectsNullHandles) {
 }
 
 TEST(ChildDeviceTest, AcceptsWarningsDuringSessionSetup) {
-  const auto library = std::make_shared<ChildDeviceLibrary>();
+  const auto library = std::make_shared<ChildDeviceAPI>();
   library->successStatus = QDMI_WARN_GENERAL;
   {
     const QDMI_Device_impl_d parent(library, {.custom1 = "setting"});
@@ -471,7 +471,7 @@ TEST(ChildDeviceTest, AcceptsWarningsDuringSessionSetup) {
 }
 
 TEST(ChildDeviceTest, RejectsNullProviderHandles) {
-  const auto library = std::make_shared<ChildDeviceLibrary>();
+  const auto library = std::make_shared<ChildDeviceAPI>();
   library->nullSession = true;
   EXPECT_THROW(QDMI_Device_impl_d{library}, std::runtime_error);
   EXPECT_EQ(library->allocatedSessions, 0);
@@ -483,7 +483,7 @@ TEST(ChildDeviceTest, RejectsNullProviderHandles) {
 }
 
 TEST(ChildDeviceTest, CleansUpWhenSelectingAChildFails) {
-  const auto library = std::make_shared<ChildDeviceLibrary>();
+  const auto library = std::make_shared<ChildDeviceAPI>();
   library->rejectChildSelection = true;
   EXPECT_THROW(QDMI_Device_impl_d{library}, std::runtime_error);
   EXPECT_EQ(library->allocatedSessions, 2);
@@ -491,7 +491,7 @@ TEST(ChildDeviceTest, CleansUpWhenSelectingAChildFails) {
 }
 
 TEST(ChildDeviceTest, RejectsMalformedChildLists) {
-  const auto library = std::make_shared<ChildDeviceLibrary>();
+  const auto library = std::make_shared<ChildDeviceAPI>();
   library->malformedChildList = true;
   EXPECT_THROW(QDMI_Device_impl_d{library}, std::runtime_error);
   EXPECT_EQ(library->allocatedSessions, 1);
@@ -499,7 +499,7 @@ TEST(ChildDeviceTest, RejectsMalformedChildLists) {
 }
 
 TEST(ChildDeviceTest, SupportsDevicesWithoutChildDevices) {
-  const auto library = std::make_shared<ChildDeviceLibrary>();
+  const auto library = std::make_shared<ChildDeviceAPI>();
   library->childDevicesNotSupported = true;
   {
     QDMI_Device_impl_d parent(library);
@@ -514,7 +514,7 @@ TEST(ChildDeviceTest, SupportsDevicesWithoutChildDevices) {
 }
 
 TEST(ChildDeviceTest, CleansUpWhenQueryingChildDevicesFails) {
-  const auto library = std::make_shared<ChildDeviceLibrary>();
+  const auto library = std::make_shared<ChildDeviceAPI>();
   library->childDeviceQueryFails = true;
   EXPECT_THROW(QDMI_Device_impl_d{library}, std::runtime_error);
   EXPECT_EQ(library->allocatedSessions, 1);
@@ -1695,7 +1695,7 @@ TEST(DeviceRegistrationTest, RuntimeRegistrationsStayOutOfClientCatalog) {
 }
 
 TEST(DeviceSessionConfigTest, MovesAndBorrowsInlineConfiguration) {
-  const auto library = std::make_shared<ChildDeviceLibrary>();
+  const auto library = std::make_shared<ChildDeviceAPI>();
   qdmi::DeviceSessionConfig config{
       .deviceConfiguration =
           qdmi::InlineDeviceConfiguration{
@@ -1862,7 +1862,7 @@ TEST(DeviceSessionConfigTest, IdempotentLoadingWithDifferentConfigs) {
   }
 }
 
-TEST(DynamicDeviceLibraryDeathTest,
+TEST(LoadedDeviceAPIDeathTest,
      InitializesUnrelatedModulesWhileRetryingConcurrentAliases) {
   const auto probe = [] {
 #ifdef _WIN32
@@ -1936,7 +1936,7 @@ TEST(DynamicDeviceLibraryDeathTest,
     const auto* const retried = alias.get();
     static_cast<void>(unrelated.get());
     const auto* const later = driver.open("cache.slow");
-    const auto shared = &retried->getLibrary() == &later->getLibrary();
+    const auto shared = &retried->api() == &later->api();
     std::_Exit(
         failed && aliasWaited && unrelatedReady && shared && attempts == 2 ? 0
                                                                            : 3);
@@ -1944,7 +1944,7 @@ TEST(DynamicDeviceLibraryDeathTest,
   EXPECT_EXIT(probe(), testing::ExitedWithCode(0), "");
 }
 
-TEST(DynamicDeviceLibraryTest, ReusesLibraryWithFreshDeviceSessions) {
+TEST(LoadedDeviceAPITest, ReusesLibraryWithFreshDeviceSessions) {
   const auto [library, prefix] = TEST_DEVICE_LIBRARIES.front();
   auto* const first =
       openTestDevice(library, prefix, {.custom3 = "first-session"});
@@ -1955,10 +1955,10 @@ TEST(DynamicDeviceLibraryTest, ReusesLibraryWithFreshDeviceSessions) {
                                       {.custom3 = "second-session"});
 
   ASSERT_NE(first, second);
-  EXPECT_EQ(&first->getLibrary(), &second->getLibrary());
+  EXPECT_EQ(&first->api(), &second->api());
 }
 
-TEST(DynamicDeviceLibraryTest, OpenReturnsDevice) {
+TEST(LoadedDeviceAPITest, OpenReturnsDevice) {
   if constexpr (TEST_DEVICE_LIBRARIES.empty()) {
     GTEST_SKIP() << "No dynamic device libraries configured for testing.";
   }

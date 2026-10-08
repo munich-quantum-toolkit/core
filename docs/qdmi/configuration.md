@@ -1,9 +1,15 @@
-# QDMI device configuration
+# Configuring the MQT Core QDMI driver
 
-MQT Core discovers QDMI device definitions from versioned JSON configuration.
-Discovery only parses definitions. When the QDMI driver initializes a client
-session, it opens the configured native libraries. `builtin_driver.open_device`
-opens only the requested device.
+The configuration format on this page belongs to the **MQT Core QDMI driver**.
+Other QDMI drivers may use different configuration and discovery mechanisms. MQT
+Core's C++ and Python `Session` and `open_device` APIs use the standard QDMI
+Client Interface with any compatible driver library; they do not require this
+manifest format or the MQT Core driver's private extensions.
+
+The MQT Core driver discovers device definitions from versioned JSON files.
+Discovery only parses metadata. When a session initializes, the driver opens the
+configured native libraries. `builtin_driver.open_device` opens only the
+requested device.
 
 This lets applications list installed devices without loading provider libraries
 or contacting services. They can then open one device by stable ID. Distinct IDs
@@ -72,8 +78,8 @@ or:
 The inline value must be a JSON object. A relative file path is resolved against
 the registry file that declares it. The complete source is one merge field:
 changing from `inline` to `file` at a higher-precedence layer replaces the
-inherited inline JSON. The Driver adapts inline JSON to QDMI v1 CUSTOM1 and a
-file path to CUSTOM2 when opening the native session. Consequently,
+inherited inline JSON. The MQT Core driver adapts inline JSON to QDMI v1 CUSTOM1
+and a file path to CUSTOM2 when opening the native session. Consequently,
 `device-config` cannot be combined with raw `custom1` or `custom2`; CUSTOM3
 through CUSTOM5 remain available to providers.
 
@@ -158,12 +164,14 @@ print(builtin_driver.registered_device_ids())
 
 The list includes configured devices that are unavailable or need credentials.
 Use `builtin_driver.open_device(device_id, ...)` to open only the selected
-device. Core supplies `mqt.ddsim.default` for local execution and
-`mqt.sc.default`, `mqt.sc.iqm.garnet`, and `mqt.sc.iqm.emerald` as
-compilation-only models. The latter do not connect to IQM services.
+device. Core supplies `mqt.ddsim.default` for local execution and a catalogue of
+compilation-only superconducting device models. The available models and their
+stable IDs are described in {doc}`sc_device`; they do not connect to hardware
+services.
 
-Standard `Session` enumeration initializes configured devices and skips those
-that fail to open.
+With the MQT Core driver, standard `Session` enumeration initializes configured
+devices and skips those that fail to open. Another driver may present a
+different device list and configuration behavior.
 
 Set `MQT_CORE_QDMI_CONFIG_FILE` or `MQT_CORE_QDMI_CONFIG_JSON` before the first
 driver call. Every {py:func}`~mqt.core.qdmi.open_device` call creates a fresh

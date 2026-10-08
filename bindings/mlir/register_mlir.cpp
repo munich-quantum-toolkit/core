@@ -20,7 +20,7 @@
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mqt/bench/Generate.h"
-#include "qdmi/Client.hpp"
+#include "qdmi/QDMI.hpp"
 
 #include "qiskit/Qiskit.h"
 

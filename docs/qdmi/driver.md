@@ -10,8 +10,8 @@ mystnb:
 
 The C++ QDMI library (`MQT::CoreQDMI`) provides owning wrappers for the standard
 QDMI Client Interface. Applications can replace the driver without rebuilding.
-The driver handles device libraries, configuration, and authorization; the C++
-library uses the same interface regardless of the device implementation.
+Each driver handles its own device libraries, configuration, and authorization;
+the C++ library uses the same interface regardless of the implementation.
 
 MQT Core supplies the QDMI driver `MQT::CoreQDMIDriver`. It loads devices such
 as [the SC device](sc_device.md) and [the DDSIM device](ddsim_device.md).
@@ -37,7 +37,8 @@ provider initializer does not block initialization of unrelated providers.
 
 ## Opening configured devices
 
-Use `mqt.core.qdmi.builtin_driver.open_device` or
+The following discovery and configuration conveniences are specific to the MQT
+Core driver. Use `mqt.core.qdmi.builtin_driver.open_device` or
 `qdmi::builtin_driver::openDevice` to open one configured device with the MQT
 Core QDMI driver. These calls create independent device sessions and accept
 per-call overrides of the manifest's session parameters. They do not initialize

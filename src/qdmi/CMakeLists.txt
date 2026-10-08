@@ -15,7 +15,7 @@ set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi)
 if(NOT TARGET ${TARGET_NAME})
   add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMI)
 
-  target_sources(${TARGET_NAME} PRIVATE Client.cpp Slurm.cpp)
+  target_sources(${TARGET_NAME} PRIVATE QDMI.cpp Slurm.cpp)
 
   target_sources(
     ${TARGET_NAME}
@@ -24,7 +24,7 @@ if(NOT TARGET ${TARGET_NAME})
            BASE_DIRS
            ${MQT_CORE_INCLUDE_BUILD_DIR}
            FILES
-           ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/Client.hpp
+           ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/QDMI.hpp
            ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/Slurm.hpp)
 
   target_link_libraries(

@@ -11,7 +11,7 @@
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/QDMIAdapter.h"
 #include "mqt/Compiler/Target.h"
-#include "qdmi/Client.hpp"
+#include "qdmi/QDMI.hpp"
 
 #include "Driver.hpp"
 
@@ -109,28 +109,28 @@ TEST(CompilerQDMIAdapterTest, SnapshotsIQMCalibrationAndLifetime) {
 
 TEST(CompilerQDMIAdapterTest, QueriesNamesAndSiteIndicesOncePerSnapshot) {
   const auto device = qdmi::Session::openDevice("mqt.sc.default");
-  auto* library = &const_cast<qdmi::DeviceLibrary&>(
-      static_cast<QDMI_Device>(device)->getLibrary());
+  auto* api =
+      &const_cast<qdmi::DeviceAPI&>(static_cast<QDMI_Device>(device)->api());
   static thread_local decltype(QDMI_device_session_query_site_property)*
       querySite = nullptr;
   static thread_local decltype(QDMI_device_session_query_operation_property)*
       queryOperation = nullptr;
   static thread_local size_t indexQueries = 0;
   static thread_local size_t nameQueries = 0;
-  querySite = library->device_session_query_site_property;
-  queryOperation = library->device_session_query_operation_property;
+  querySite = api->device_session_query_site_property;
+  queryOperation = api->device_session_query_operation_property;
   const auto restore = llvm::make_scope_exit([&] {
-    library->device_session_query_site_property = querySite;
-    library->device_session_query_operation_property = queryOperation;
+    api->device_session_query_site_property = querySite;
+    api->device_session_query_operation_property = queryOperation;
   });
-  library->device_session_query_site_property =
+  api->device_session_query_site_property =
       [](QDMI_Device_Session session, QDMI_Site site,
          QDMI_Site_Property property, size_t size, void* value,
          size_t* sizeRet) {
         indexQueries += property == QDMI_SITE_PROPERTY_INDEX;
         return querySite(session, site, property, size, value, sizeRet);
       };
-  library->device_session_query_operation_property =
+  api->device_session_query_operation_property =
       [](QDMI_Device_Session session, QDMI_Operation operation, size_t numSites,
          const QDMI_Site* sites, size_t numParams, const double* params,
          QDMI_Operation_Property property, size_t size, void* value,
@@ -290,15 +290,15 @@ TEST(CompilerQDMIAdapterTest,
 TEST(CompilerQDMIAdapterTest,
      SelectsPayloadByPreferenceAndIncludesMaximalCapabilities) {
   const auto device = qdmi::Session::openDevice("mqt.ddsim.default");
-  auto* library = &const_cast<qdmi::DeviceLibrary&>(
-      static_cast<QDMI_Device>(device)->getLibrary());
+  auto* api =
+      &const_cast<qdmi::DeviceAPI&>(static_cast<QDMI_Device>(device)->api());
   static thread_local decltype(QDMI_device_session_query_device_property)*
       query = nullptr;
   static thread_local std::vector<QDMI_Program_Format> formats;
-  query = library->device_session_query_device_property;
+  query = api->device_session_query_device_property;
   const auto restore = llvm::make_scope_exit(
-      [&] { library->device_session_query_device_property = query; });
-  library->device_session_query_device_property =
+      [&] { api->device_session_query_device_property = query; });
+  api->device_session_query_device_property =
       [](QDMI_Device_Session session, QDMI_Device_Property property,
          size_t size, void* value, size_t* sizeRet) -> int {
     if (property != QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS) {
@@ -460,17 +460,17 @@ TEST(CompilerQDMIAdapterTest, CompatibilityPreservesFixedParameters) {
 TEST(CompilerQDMIAdapterTest,
      CompilationCreatesNoJobAndSubmissionChecksContract) {
   const auto device = qdmi::Session::openDevice("mqt.ddsim.default");
-  auto* library = &const_cast<qdmi::DeviceLibrary&>(
-      static_cast<QDMI_Device>(device)->getLibrary());
+  auto* api =
+      &const_cast<qdmi::DeviceAPI&>(static_cast<QDMI_Device>(device)->api());
   static thread_local decltype(QDMI_device_session_create_device_job)*
       createJob = nullptr;
   static thread_local size_t creations = 0;
-  createJob = library->device_session_create_device_job;
+  createJob = api->device_session_create_device_job;
   const auto restore = llvm::make_scope_exit(
-      [&] { library->device_session_create_device_job = createJob; });
+      [&] { api->device_session_create_device_job = createJob; });
   creations = 0;
-  library->device_session_create_device_job = [](QDMI_Device_Session session,
-                                                 QDMI_Device_Job* job) {
+  api->device_session_create_device_job = [](QDMI_Device_Session session,
+                                             QDMI_Device_Job* job) {
     ++creations;
     return createJob(session, job);
   };
@@ -610,27 +610,27 @@ TEST(CompilerQDMIAdapterTest,
 
 TEST(CompilerQDMIAdapterTest, SubmissionQueriesOnlyTheRequiredMetadata) {
   const auto device = qdmi::Session::openDevice("mqt.ddsim.default");
-  auto* library = &const_cast<qdmi::DeviceLibrary&>(
-      static_cast<QDMI_Device>(device)->getLibrary());
+  auto* api =
+      &const_cast<qdmi::DeviceAPI&>(static_cast<QDMI_Device>(device)->api());
   static thread_local decltype(QDMI_device_session_query_device_property)*
       queryDevice = nullptr;
   static thread_local decltype(QDMI_device_session_query_site_property)*
       querySite = nullptr;
   static thread_local size_t siteLists = 0;
   static thread_local size_t calibrationQueries = 0;
-  queryDevice = library->device_session_query_device_property;
+  queryDevice = api->device_session_query_device_property;
   const auto restore = llvm::make_scope_exit([&] {
-    library->device_session_query_device_property = queryDevice;
-    library->device_session_query_site_property = querySite;
+    api->device_session_query_device_property = queryDevice;
+    api->device_session_query_site_property = querySite;
   });
-  querySite = library->device_session_query_site_property;
-  library->device_session_query_device_property =
+  querySite = api->device_session_query_site_property;
+  api->device_session_query_device_property =
       [](QDMI_Device_Session session, QDMI_Device_Property property,
          size_t size, void* value, size_t* sizeRet) {
         siteLists += property == QDMI_DEVICE_PROPERTY_SITES && value != nullptr;
         return queryDevice(session, property, size, value, sizeRet);
       };
-  library->device_session_query_site_property =
+  api->device_session_query_site_property =
       [](QDMI_Device_Session session, QDMI_Site site,
          QDMI_Site_Property property, size_t size, void* value,
          size_t* sizeRet) {

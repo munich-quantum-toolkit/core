@@ -3,7 +3,7 @@
 The
 [Quantum Device Management Interface (QDMI)](https://munich-quantum-software-stack.github.io/QDMI/)
 provides a standardized interface for describing and interacting with quantum
-devices. MQT Core supplies a driver, C++ and Python client interfaces, device
+devices. MQT Core supplies a driver, C++ and Python APIs, device
 implementations, and SDK and HPC integrations.
 
 ## What QDMI standardizes
@@ -27,7 +27,7 @@ clients must use those queries to prepare compatible jobs.
 | Layer                                                                   | Responsibility                                                                          |
 | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | {doc}`Compiler <../mlir/target_compilation>`                            | Query a target's capabilities and compile a compatible program.                         |
-| {doc}`Driver and client interfaces <driver>`                            | Load device libraries and provide C++ and Python access to sessions, queries, and jobs. |
+| {doc}`Driver and application APIs <driver>`                             | Load device libraries and provide C++ and Python access to sessions, queries, and jobs. |
 | Device implementation                                                   | Translate QDMI calls into simulator operations or a provider's API.                     |
 | {doc}`SDK adapters <qdmi_backend>` and {doc}`Slurm integration <slurm>` | Connect user workflows and resource management to QDMI devices.                         |
 
