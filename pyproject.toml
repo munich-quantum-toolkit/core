@@ -199,7 +199,7 @@ version = ">=1.10"
 
 [tool.scikit-build.sdist]
 
-include = [ "python/mqt/core/_version.py" ]
+include = [ "mlir/lib/**", "python/mqt/core/_version.py" ]
 exclude = [
   "**/.github",
   "**/doc",
@@ -207,7 +207,6 @@ exclude = [
   "**/meta",
   "**/paper",
   "**/plots",
-  "**/test",
   "**/tests",
 ]
 
@@ -254,6 +253,11 @@ build = "cp3*"
 skip = [ "*-musllinux_*", "cp314t-*" ]
 archs = "auto64"
 build-frontend = "uv"
+config-settings = { "cmake.define.CMAKE_PROJECT_INCLUDE_BEFORE" = "{project}/build/release-pgo.cmake" }
+before-all = 'bash "{project}/scripts/provision_release.sh" "{project}"'
+before-build = """\
+  uv run --no-project --python \"$(command -v python)\" \"{project}/scripts/prepare_release.py\" \"{project}\"\
+  """
 test-command = "python test/cmake/check_installed.py && pytest test/python"
 test-groups = [ "test" ]
 test-sources = [
@@ -269,8 +273,8 @@ test-sources = [
 ]
 
 [tool.cibuildwheel.linux]
-config-settings = { "cmake.define.ENABLE_IPO" = "ON", "cmake.define.CMAKE_LINKER_TYPE" = "LLD" }
-environment = { DEPLOY = "ON", CC = "clang", CXX = "clang++", PATH = "/opt/clang/bin:$PATH:/root/.local/bin", MLIR_DIR = "/opt/llvm-23.1.2/lib/cmake/mlir" }
+config-settings = { "cmake.define.CMAKE_PROJECT_INCLUDE_BEFORE" = "{project}/build/release-pgo.cmake", "install.strip" = "false" }
+environment = { DEPLOY = "ON", MLIR_DIR = "/opt/llvm/lib/cmake/mlir", CC = "clang", CXX = "clang++", PATH = "$PATH:/root/.local/bin", CMAKE_BUILD_PARALLEL_LEVEL = "4" }
 environment-pass = [
   "CMAKE_C_COMPILER_LAUNCHER",
   "CMAKE_CXX_COMPILER_LAUNCHER",
@@ -281,27 +285,27 @@ environment-pass = [
   "ACTIONS_RESULTS_URL",
   "ACTIONS_RUNTIME_TOKEN",
 ]
-before-all = """
-manylinux-install-clang -v 22.1.8.1
-uv tool install "sccache>=0.10.0"
-mkdir -p /tmp/setup-mlir
-curl -fLsS https://github.com/munich-quantum-software/setup-mlir/archive/8d3eae73d0f0196fd30c787d91ebd2018cb6c709.tar.gz | tar -xz -C /tmp/setup-mlir --strip-components=1
-bash /tmp/setup-mlir/installation/setup-mlir.sh -v 23.1.2 -p /opt/llvm-23.1.2 -a OFF
-"""
+repair-wheel-command = """\
+  uv run --no-project --python \"$(command -v python)\" \"{project}/scripts/bolt_wheel.py\" \"{wheel}\" \"{dest_dir}\" \
+  \"{project}\"\
+  """
 before-test = "uvx sccache --show-stats"
 test-command = """\
   CC=gcc CXX=g++ python test/cmake/check_installed.py && python test/cmake/check_installed.py && pytest test/python\
   """
-# QIR-Runner's Linux wheels require a newer glibc than the manylinux_2_28
-# containers used to build and test MQT Core's broadly compatible wheels.
+# QIR-Runner's Linux wheels require a newer glibc than manylinux_2_28.
 test-groups = [ "test-base" ]
+manylinux-x86_64-image = "manylinux_2_28"
+manylinux-aarch64-image = "manylinux_2_28"
 
 [tool.cibuildwheel.macos]
-config-settings = { "cmake.define.ENABLE_IPO" = "ON" }
-environment = { DEPLOY = "ON", MACOSX_DEPLOYMENT_TARGET = "13.3" }
+environment = { DEPLOY = "ON", MACOSX_DEPLOYMENT_TARGET = "13.3", CC = "clang", CXX = "clang++", CMAKE_BUILD_PARALLEL_LEVEL = "3" }
 
 [tool.cibuildwheel.windows]
+config-settings = {}
 environment = { DEPLOY = "ON" }
+before-all = ""
+before-build = ""
 repair-wheel-command = "delvewheel repair -w {dest_dir} {wheel} --namespace-pkg mqt --ignore-existing"
 
 [[tool.cibuildwheel.overrides]]

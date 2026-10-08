@@ -77,12 +77,13 @@ This prints the installed package version.
 ## Build performance
 
 Release wheels use portable CPU settings and the assertion-free LLVM/MLIR 23.1.2
-SDK. Linux wheels target manylinux_2_28 and use Clang 22 with LLD and ThinLTO;
-macOS wheels use Apple Clang and ThinLTO with a macOS 13.3 deployment target.
-The wheels include native shared libraries and a CMake package for C++
-applications. Consumers do not need the compiler's LTO plugin, but must use a
-compatible C++ standard library and ABI. Use the QDMI C interface for device
-plugins.
+SDK. Linux and macOS builds apply profile-guided optimization (PGO) to Core and
+SDK libraries, with ThinLTO for Core. Linux wheels target manylinux_2_28, use
+matched Clang and profiling tools from that container, and apply BOLT. macOS
+wheels use Apple Clang with a macOS 13.3 deployment target. The wheels include
+native shared libraries and a CMake package for C++ applications. Consumers do
+not need the compiler's LTO plugin, but must use a compatible C++ standard
+library and ABI. Use the QDMI C interface for device plugins.
 
 ### Building from source
 

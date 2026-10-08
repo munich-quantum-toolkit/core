@@ -1,0 +1,57 @@
+# Release wheel optimization
+
+Status: restacked on the portable ThinLTO release branch; full PGO/BOLT
+qualification blocked on a Linux SDK with the required BOLT tools.
+
+Core #2678 provides assertion-free LLVM 23.1.2 SDK selection, released Setup
+1.5.0 and Workflows 2.5.1 pins, and the Windows packaging cleanup. This branch
+preserves those changes. Linux qualification requires an SDK containing
+`llvm-bolt`, `merge-fdata`, and `llvm-strip`; SDK #94 remains the pending
+prerequisite. The selected released SDK lacks the BOLT tools. Provisioning now
+checks the required executables before downloading LLVM sources or starting PGO
+builds. The two wheel workflows pin Workflows #464 for persistent compiler
+caching; native Linux workflows pin Workflows #491 for mold 3.
+
+Core #2476 owns SDK/Core PGO, MLIR test training, Linux BOLT, and installed
+wheel checks. Its release checks use the current public APIs and do not require
+the exception migration in #2545.
+
+Linux uses matched Clang, LLD, compiler-rt, and llvm-profdata packages from the
+manylinux 2.28 container, ThinLTO, PGO, and BOLT. macOS uses Apple Clang,
+ThinLTO, PGO, and deployment target 13.3. CMake owns Core target IPO in both the
+instrumented and final builds. The SDK rebuild explicitly disables LTO. Profiled
+LLVM libraries must retain the installed SDK's assertion, EH, and RTTI settings.
+Windows uses its normal compiler.
+
+The manylinux packages currently supply Clang 21. The static Clang 22 bundle
+lacks the profile runtime and llvm-profdata required by this pipeline, so it
+cannot replace the matched packages.
+
+The native SDK and wheel checks from Phase 1 do not qualify this optimization
+pipeline. The full SDK/Core PGO build, Linux BOLT processing, repaired-wheel
+checks, and macOS qualification remain pending. This refresh runs focused source
+and release-check validation without the expensive optimization build.
+
+The prerequisite DD ABI change exposes concrete operations such as
+`dd::getVector(state)` instead of constrained member-template exports. The
+installed checks use the shared `test/cmake/installed_consumer` fixture with
+Clang and GCC against the repaired wheel. Both the concrete DD API and the
+shared fixture are included in the branch's prerequisites. Installed GCC and
+Clang consumers must still pass against the final optimized wheel.
+
+The cibuildwheel configuration retains the PGO CMake include on Linux and macOS
+and explicit portable settings on Windows. Linux provisioning supplies matched
+distribution tools; it does not select the Phase 1 static Clang bundle. The
+final optimized wheel and its installed consumers remain qualification gates for
+this pipeline.
+
+Restack validation passes repository lint, Python compilation, Bash syntax, and
+cibuildwheel configuration checks for Linux, macOS, and Windows. Native CMake
+configuration accepts ThinLTO with build RPATHs. The shared consumer builds and
+passes CTest with GCC 13 and Clang 23 against the qualified Phase 1 Clang 22
+ThinLTO wheel. These checks do not exercise PGO generation or BOLT processing.
+
+The provisioning preflight passes temporary-SDK checks for a complete Linux SDK,
+each missing tool, a non-executable tool, and macOS without BOLT tools. Missing
+Linux tools fail before the LLVM source download. These checks use local command
+shims and do not download or build dependencies.
