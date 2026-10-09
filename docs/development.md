@@ -71,11 +71,31 @@ includes belong to the private project header group.
 
 ### C++ documentation comments
 
-Use `///` for Doxygen documentation comments. The first sentence is the summary;
-separate additional paragraphs with a blank `///` line instead of using `\brief`
-or `\details`. Document parameters and return values only when the explanation
-adds information that the name and signature do not already provide. Preserve
-existing documentation when changing comment style.
+- Use `//` for ordinary code comments, including implementation steps, algorithm
+  rationale, test setup, and namespace closing comments. Never use `///` for
+  these comments, even when they span several lines.
+- Use `///` only for Doxygen documentation of a declaration or file. Keep public
+  API documentation at the declaration; do not duplicate it in the
+  implementation.
+- Start the description with a short summary sentence in its own paragraph.
+  State the documented entity's purpose or observable behavior. Keep the summary
+  to one source line where practical; wrapping a long name or formula does not
+  justify adding details to the summary.
+- Put supporting explanation, input restrictions, ownership rules, failure
+  cases, and algorithm details after the summary. Do not combine the summary and
+  details into one paragraph or one long sentence. State what the API does,
+  rather than merely naming the helper it calls.
+- A summary alone is enough when it describes the full contract. Add details
+  only when they help the reader.
+- If anything follows the summary, insert a blank `///` line before it. This
+  includes details, examples, and commands such as `\param` and `\returns`.
+  Separate further paragraphs with blank `///` lines. Do not use `\brief` or
+  `\details` outside the macro exception below.
+- Document parameters and return values only when the explanation adds
+  information that the name and signature do not already provide.
+- Preserve existing documentation when changing comment style. Inline
+  `/* ... */` comments remain valid, including unused parameter names such as
+  `OpAdaptor /*adaptor*/` and argument labels such as `/*isSigned=*/false`.
 
 Prefer Unicode for simple mathematical notation in comments, such as `π`,
 `R(θ, φ)`, `U†`, and `|0⟩`. Put spaces around arrows in prose and rewrite
@@ -117,14 +137,6 @@ without `@brief`:
 Operation apply(llvm::ArrayRef<Qubit> qubits);
 ```
 
-Keep public API documentation in the declaration and do not duplicate it in the
-implementation. Use ordinary implementation comments for details that do not
-belong to the API contract.
-
-Use `//` for ordinary implementation and namespace closing comments. Inline
-`/* ... */` comments remain valid, including unused parameter names such as
-`OpAdaptor /*adaptor*/` and argument labels such as `/*isSigned=*/false`.
-
 ### Reproduce C++ lint locally
 
 Before pushing a C++ change, run:
@@ -152,6 +164,39 @@ uvx nox -s cpp-lint -- --all
 Changed-line `clang-tidy` commands remain useful for quick iteration, but they
 do not reproduce CI's whole-changed-file scope. Update this session when the
 reusable C++ lint workflow changes its action version or inputs.
+
+## Python docstrings
+
+Use [Google-style docstrings][google-python-docstrings], consistent with
+[PEP 257][pep-257]. These rules apply to all Python docstrings, including those
+embedded in nanobind bindings and copied into generated stubs:
+
+- Start every docstring with a short summary on one line, normally one sentence,
+  in its own paragraph. State the documented entity's purpose or observable
+  behavior; do not combine the summary and details into one paragraph or one
+  long sentence.
+- A summary alone is enough when it describes the full contract. Add details
+  only when they help the caller use the API.
+- If anything follows the summary, insert a blank line before it. This includes
+  a detailed description, examples, and sections such as `Args:`, `Returns:`,
+  and `Raises:`. Separate further paragraphs and sections with blank lines.
+- Describe supported inputs, return values, side effects, and failure behavior
+  when they are not clear from the summary and signature. Do not merely repeat
+  the signature or describe delegation to a C++ helper.
+
+```python
+"""Applies an operation to the selected qubits.
+
+Qubit indices follow application order. Duplicate indices raise ValueError.
+"""
+```
+
+Write binding docstrings for the exposed Python API. Follow the same summary and
+blank-line rules in C++ raw string literals. Change the binding source and
+regenerate stubs; never edit generated `.pyi` files manually.
+
+[google-python-docstrings]: https://google.github.io/styleguide/pyguide.html#381-docstrings
+[pep-257]: https://peps.python.org/pep-0257/#multi-line-docstrings
 
 ## Commit messages
 
