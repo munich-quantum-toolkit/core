@@ -324,7 +324,7 @@ TEST_SESSION_QDMI_device_session_init(QDMI_Device_Session session) {
       _exit(0);
     }
   }
-  if (mode == "hang" || mode == "hang-free") {
+  if (mode == "hang" || mode == "hang-exit") {
     std::ofstream marker(
         parameter(session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM3));
     marker << getpid() << '\n';
@@ -332,6 +332,11 @@ TEST_SESSION_QDMI_device_session_init(QDMI_Device_Session session) {
 #endif
   if (mode == "hang") {
     std::this_thread::sleep_for(std::chrono::hours(1));
+  }
+  if (mode == "hang-exit" &&
+      std::atexit([] { std::this_thread::sleep_for(std::chrono::hours(1)); }) !=
+          0) {
+    return QDMI_ERROR_FATAL;
   }
   session->initialized = true;
   return QDMI_SUCCESS;
@@ -341,10 +346,6 @@ extern "C" void
 TEST_SESSION_QDMI_device_session_free(QDMI_Device_Session session) {
   if (session == nullptr) {
     return;
-  }
-  if (parameter(session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM4) ==
-      "hang-free") {
-    std::this_thread::sleep_for(std::chrono::hours(1));
   }
   --activeSessions();
   // This releases the opaque handle allocated by device_session_alloc.

@@ -64,7 +64,7 @@ foreach(
   fail-query
   crash
   hang
-  hang-free
+  hang-exit
   descendant)
   file(
     WRITE "${configuration}"
