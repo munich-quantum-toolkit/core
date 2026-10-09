@@ -259,11 +259,11 @@ set -euo pipefail
 python bell.py
 ```
 
-The adapter reads `SLURM_JOB_LICENSES` and selects the persistent device
-definition with the same ID. It requires one unambiguous QDMI device license. It
-opens a fresh device session and checks the device status. The function accepts
-`IDLE` and `BUSY`. This check is not authorization. The provider can still
-reject a later submission or put the quantum task in its device queue.
+The adapter requires one unambiguous QDMI device license in
+`SLURM_JOB_LICENSES`. It creates a fresh driver session, selects the device with
+that ID, and checks its status. The function accepts `IDLE` and `BUSY`. This
+check is not authorization. The provider can still reject a later submission or
+put the quantum task in its device queue.
 
 Submit the job with this command:
 
@@ -292,11 +292,13 @@ provider guide for its constructor. See {doc}`pennylane_device` for PennyLane
 execution examples.
 
 Open the selected device once per application process and reuse its handle for
-subsequent quantum jobs. The adapter validates the license locally, opens only
-the selected device, and queries its status once. Device selection uses the
-ordinary QDMI driver lookup and needs no controller RPC. Provider initialization
-and network requests can still dominate opening time; use provider-supported
-timeout settings for network requests.
+subsequent quantum jobs. Selection uses the standard QDMI Client Interface and
+needs no controller RPC. The builtin MQT Core driver initializes the configured
+catalogue when creating its first standard driver session, so an unrelated
+device can delay or block selection. Other drivers control their own discovery
+and initialization; see
+[device opening](configuration.md#using-configured-devices). Use
+provider-supported timeout settings for network requests.
 
 ## Check concurrent jobs
 

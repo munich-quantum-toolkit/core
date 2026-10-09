@@ -25,8 +25,8 @@ void registerSlurm(nb::module_& qdmiModule) {
             R"pb(Open the QDMI device named by the Slurm license environment.
 
 ``SLURM_JOB_LICENSES`` must contain one local license whose name equals a stable
-ID visible to the selected QDMI Driver. The optional count must be one. The
-function opens a fresh Client session and accepts device status ``IDLE`` or
+ID visible to the selected QDMI driver. The optional count must be one. The
+function opens a fresh driver session and accepts device status ``IDLE`` or
 ``BUSY``. It does not apply job-specific QDMI configuration or credentials.
 
 Warning:
@@ -36,7 +36,7 @@ Warning:
     enforce access independently.
 
 Returns:
-    mqt.core.qdmi.Device: The fresh device session.
+    mqt.core.qdmi.Device: The selected device, which retains its driver session.
 
 Raises:
     RuntimeError: If the license value or named device does not satisfy this
