@@ -71,9 +71,10 @@ includes belong to the private project header group.
 
 ### C++ documentation comments
 
-Use `//` for ordinary code comments and `///` for Doxygen documentation. Keep
-public API documentation at the declaration; do not duplicate it in the
-implementation.
+Use `//` for ordinary code comments. Never use `///` for them.
+
+Use `///` for Doxygen documentation. Keep public API documentation at the
+declaration; do not duplicate it in the implementation.
 
 Start descriptions with a short sentence stating the entity's purpose or
 observable behavior, on one source line where practical. Separate any further
