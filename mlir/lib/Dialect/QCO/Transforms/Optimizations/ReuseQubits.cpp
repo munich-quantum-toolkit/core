@@ -50,6 +50,7 @@ static bool hasNoLocalEffects(Operation* op) {
 }
 
 /// Summarize each helper once, completing callers only after all callees.
+///
 /// Unknown targets and cycles never become proven effect-free.
 static DenseSet<Operation*>
 collectEffectFreeFunctions(ModuleOp moduleOp, SymbolTableCollection& symbols) {
@@ -264,7 +265,7 @@ protected:
     SymbolTableCollection symbols;
     const auto effectFreeFunctions = collectEffectFreeFunctions(op, symbols);
 
-    /// Keep summarized helper bodies unchanged for this pass invocation.
+    // Keep summarized helper bodies unchanged for this pass invocation.
     RewritePatternSet patterns(ctx);
     patterns.add<ReuseQubitsPattern>(ctx, effectFreeFunctions, symbols);
     const FrozenRewritePatternSet frozenPatterns(std::move(patterns));
@@ -272,8 +273,8 @@ protected:
       if (mqt::isUnitaryFunction(function) || function.isExternal()) {
         return WalkResult::skip();
       }
-      /// Rewrite nested functions separately, without folding their helpers
-      /// through an enclosing function's greedy driver.
+      // Rewrite nested functions separately, without folding their helpers
+      // through an enclosing function's greedy driver.
       if (function
               .walk([&](func::FuncOp nested) {
                 return nested == function ? WalkResult::advance()

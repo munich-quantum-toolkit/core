@@ -33,8 +33,7 @@ namespace mlir::qco {
 
 namespace {
 
-/// This pattern is responsible for lifting Hadamard gates above Pauli
-/// gates.
+/// Lifts Hadamard gates above uncontrolled Pauli gates.
 ///
 /// This pattern swaps a Pauli gate with a Hadamard gate. This is done using the
 /// commutation rules of Pauli and Hadamard gates, which are:
@@ -48,7 +47,8 @@ struct LiftHadamardsAbovePauliGatesPattern final
   explicit LiftHadamardsAbovePauliGatesPattern(MLIRContext* context)
       : OpInterfaceRewritePattern(context) {}
 
-  /// Commute a Pauli gate through a Hadamard using:
+  /// Commute a Pauli gate through a Hadamard.
+  ///
   /// - X - H - = - H - Z -
   /// - Y - H - = - H - Y -, while adding a gPhase(π)
   /// - Z - H - = - H - X -
@@ -107,9 +107,7 @@ struct LiftHadamardsAbovePauliGatesPattern final
   }
 };
 
-/// This pattern removes an H gate between a CNOT and a measurement, flips
-/// the CNOT and adds Hadamard gates before and after the new target and before
-/// the new control.
+/// Lifts a Hadamard gate above a CNOT to make measurement lifting possible.
 ///
 /// If there is a Hadamard gate between the target qubit of a CNOT and a
 /// measurement, we flip the CNOT and apply a Hadamard gate to the incoming and
@@ -128,9 +126,7 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
   explicit LiftHadamardAboveCNOTPattern(MLIRContext* context)
       : OpRewritePattern(context) {}
 
-  /// This pattern removes an H gate between a CNOT and a measurement,
-  /// flips the CNOT and adds Hadamard gates before and after the new target and
-  /// before the new control.
+  /// Lifts a Hadamard gate above a CNOT to make measurement lifting possible.
   ///
   /// @param op The operation to match (only measurements with an uncontrolled
   /// Hadamard gate before that trigger the rewrite)

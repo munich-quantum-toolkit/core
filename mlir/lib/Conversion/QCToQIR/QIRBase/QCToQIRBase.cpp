@@ -94,7 +94,7 @@ static LogicalResult moveTerminalMeasurements(Block& body,
       continue;
     }
     const bool isMeasurement = call.getCallee() == QIR_MEASURE;
-    /// Measurement's second pointer identifies a result, not a qubit.
+    // Measurement's second pointer identifies a result, not a qubit.
     auto operands = call.getOperands();
     if (isMeasurement) {
       operands = operands.take_front(1);
@@ -360,7 +360,7 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
       result = getResultPtr(state, op.getOperation(), rewriter, false);
     }
 
-    /// Preserve instruction order until terminal measurements are verified.
+    // Preserve instruction order until terminal measurements are verified.
     rewriter.setInsertionPoint(op);
     auto fnSig = LLVM::LLVMFunctionType::get(voidType, {ptrType, ptrType});
     auto fnDec =
@@ -390,6 +390,7 @@ static void populateQCToQIRBasePatterns(RewritePatternSet& patterns,
 
 namespace {
 /// Lower supported QC operations to QIR Base runtime calls and LLVM IR.
+///
 /// QIR attributes and module flags are attached by the separate metadata pass.
 struct QCToQIRBase final : impl::QCToQIRBaseBase<QCToQIRBase> {
   using QCToQIRBaseBase::QCToQIRBaseBase;

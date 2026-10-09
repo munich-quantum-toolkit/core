@@ -862,7 +862,7 @@ bool CompilerTarget::Storage::supportsGate(
        supportsOperation("z", 2, 0, orderedSites, /*variadicOnly=*/true))) {
     return true;
   }
-  /// NOLINTNEXTLINE(readability-qualified-auto): portable iterator type.
+  // NOLINTNEXTLINE(readability-qualified-auto): portable iterator type.
   const auto specification =
       std::ranges::find(GATE_SPECIFICATIONS, gate, &GateSpecification::kind);
   assert(specification != GATE_SPECIFICATIONS.end() &&
@@ -917,7 +917,7 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
     singleQubit = SingleQubitBasis::ZYZ;
   } else if (supportsOnEverySite(GateKind::RZ)) {
     for (const auto gate : {GateKind::RX, GateKind::RY, GateKind::R}) {
-      /// NOLINTNEXTLINE(readability-qualified-auto): portable iterator type.
+      // NOLINTNEXTLINE(readability-qualified-auto): portable iterator type.
       const auto specification = std::ranges::find(GATE_SPECIFICATIONS, gate,
                                                    &GateSpecification::kind);
       const auto supportsRotation = [&](double angle) {
@@ -970,7 +970,7 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
             (gate == GateKind::CZ && supportsEveryPlacement("z", 2, 0, true))) {
           return true;
         }
-        /// NOLINTNEXTLINE(readability-qualified-auto): portable iterator type.
+        // NOLINTNEXTLINE(readability-qualified-auto): portable iterator type.
         const auto specification = std::ranges::find(GATE_SPECIFICATIONS, gate,
                                                      &GateSpecification::kind);
         assert(specification != GATE_SPECIFICATIONS.end() &&
@@ -1007,7 +1007,7 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
       GateKind::CX,  GateKind::ECR,   GateKind::SQRTISWAP,
   };
   std::optional<Entangler> entangler;
-  /// An arbitrary-angle Pauli entangler realizes each Cartan rotation directly.
+  // An arbitrary-angle Pauli entangler realizes each Cartan rotation directly.
   for (const auto gate :
        {GateKind::RXX, GateKind::RYY, GateKind::RZX, GateKind::RZZ}) {
     if (supportsOnEveryCoupling(gate, AngleSupport::Unrestricted)) {
@@ -1350,7 +1350,7 @@ SmallVector<size_t> CompilerTarget::shortestPathBetween(size_t source,
   path.back() = target;
   for (size_t step = 1; step < distance; ++step) {
     const auto& neighbours = storage_->adjacency[path[step - 1]];
-    /// Undirected distances let each step read the same destination row.
+    // Undirected distances let each step read the same destination row.
     const auto* const next = llvm::find_if(neighbours, [&](size_t neighbour) {
       return storage_->distances[target * numSites() + neighbour] ==
              distance - step;

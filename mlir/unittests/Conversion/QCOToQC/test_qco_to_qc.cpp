@@ -784,7 +784,7 @@ aliasSafeNestedForLoopCtrlOpWithExtractedQubit(qc::QCProgramBuilder& b) {
   b.scfFor(1, 4, 1, [&](Value iv) {
     auto target = b.loadQubit(reg.value, iv);
     b.h(target);
-    /// Sequence loads explicitly; function argument evaluation order varies.
+    // Sequence loads explicitly; function argument evaluation order varies.
     auto loopControl = b.loadQubit(reg.value, c0);
     target = b.loadQubit(reg.value, iv);
     b.cx(loopControl, target);

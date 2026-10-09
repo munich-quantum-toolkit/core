@@ -220,6 +220,7 @@ private:
 public:
   /// Constructs a top-level QDMI device from an exclusively owned
   /// library.
+  ///
   /// @param lib is the device library to take ownership of.
   /// @param config is the configuration for device session parameters.
   /// @param id is the configured stable ID; empty for an unnamed child.
@@ -257,32 +258,38 @@ public:
     }
   }
 
-  /// @return The device interface function table.
+  /// Returns The device interface function table.
   [[nodiscard]] auto api() const -> const qdmi::DeviceAPI& { return *api_; }
 
   /// Creates a job for the device.
+  ///
   /// @see QDMI_device_create_job
   auto createJob(QDMI_Job* job) -> int;
 
   /// Retrieves an existing job by its ID.
+  ///
   /// @see QDMI_session_retrieve_job_by_id
   auto retrieveJobById(const char* jobId, QDMI_Job* job) -> int;
 
   /// Frees the job associated with the device.
+  ///
   /// @see QDMI_job_free
   auto freeJob(QDMI_Job job) -> void;
 
   /// Queries a device property.
+  ///
   /// @see QDMI_device_query_device_property
   auto queryDeviceProperty(QDMI_Device_Property prop, size_t size, void* value,
                            size_t* sizeRet) const -> int;
 
   /// Queries a site property.
+  ///
   /// @see QDMI_device_query_site_property
   auto querySiteProperty(QDMI_Site site, QDMI_Site_Property prop, size_t size,
                          void* value, size_t* sizeRet) const -> int;
 
   /// Queries an operation property.
+  ///
   /// @see QDMI_device_query_operation_property
   auto queryOperationProperty(QDMI_Operation operation, size_t numSites,
                               const QDMI_Site* sites, size_t numParams,
@@ -316,6 +323,7 @@ public:
   ~QDMI_Job_impl_d();
 
   /// Sets a parameter for the job.
+  ///
   /// @see QDMI_job_set_parameter
   auto setParameter(QDMI_Job_Parameter param, size_t size,
                     const void* value) const -> int;
@@ -325,43 +333,52 @@ public:
       -> int;
 
   /// Retrieves an indexed program payload.
+  ///
   /// @see QDMI_job_get_program
   auto getProgram(size_t programIndex, size_t size, void* data,
                   size_t* sizeRet) const -> int;
 
   /// Queries an indexed program status.
+  ///
   /// @see QDMI_job_get_program_status
   auto getProgramStatus(size_t programIndex, QDMI_Job_Status* status) const
       -> int;
 
   /// Queries a property of the job.
+  ///
   /// @see QDMI_job_query_property
   auto queryProperty(QDMI_Job_Property prop, size_t size, void* value,
                      size_t* sizeRet) const -> int;
 
   /// Submits the job to the device.
+  ///
   /// @see QDMI_job_submit
   [[nodiscard]] auto submit() const -> int;
 
   /// Cancels the job.
+  ///
   /// @see QDMI_job_cancel
   [[nodiscard]] auto cancel() const -> int;
 
   /// Checks the status of the job.
+  ///
   /// @see QDMI_job_check
   auto check(QDMI_Job_Status* status) const -> int;
 
   /// Waits for the job to complete but at most for the specified
   /// timeout.
+  ///
   /// @see QDMI_job_wait
   [[nodiscard]] auto wait(size_t timeout) const -> int;
 
   /// Gets the results of the job.
+  ///
   /// @see QDMI_job_get_results
   auto getResults(size_t programIndex, QDMI_Job_Result result, size_t size,
                   void* data, size_t* sizeRet) const -> int;
 
   /// Frees the job.
+  ///
   /// @note This function just forwards to the device's @ref
   /// QDMI_Device_impl_d::freeJob function. This function is needed because the
   /// interface only provides the job handle to the @ref QDMI_job_free function
@@ -378,7 +395,9 @@ private:
   std::vector<QDMI_Device> devices_;
 
   /// A targeted private allocation creates one device outside the shared
-  /// registry. Keep that device alive for the lifetime of this session;
+  /// registry.
+  ///
+  /// Keep that device alive for the lifetime of this session;
   /// ordinary sessions instead hold a snapshot of registry-owned devices in
   /// devices_.
   std::shared_ptr<QDMI_Device_impl_d> ownedDevice_;
@@ -391,15 +410,18 @@ public:
   explicit QDMI_Session_impl_d(std::shared_ptr<QDMI_Device_impl_d> device);
 
   /// Initializes the session.
+  ///
   /// @see QDMI_session_init
   auto init() -> int;
 
   /// Sets a parameter for the session.
+  ///
   /// @see QDMI_session_set_parameter
   auto setParameter(QDMI_Session_Parameter param, size_t size,
                     const void* value) const -> int;
 
   /// Queries a session property.
+  ///
   /// @see QDMI_session_query_session_property
   auto querySessionProperty(QDMI_Session_Property prop, size_t size,
                             void* value, size_t* sizeRet) const -> int;
@@ -463,13 +485,14 @@ class Driver final : public Singleton<Driver> {
                  bool strict = false) -> std::shared_ptr<QDMI_Device_impl_d>;
 
 public:
-  /// @returns the instance owned by this driver library.
+  /// Returns the instance owned by this driver library.
   ///
   /// This out-of-line accessor keeps static-library consumers from
   /// instantiating separate singleton storage in different translation units.
   [[nodiscard]] static auto get() -> Driver&;
 
   /// Registers a device definition without loading its library.
+  ///
   /// @param definition The definition to validate and store.
   /// @param replace Whether an existing unopened definition may be replaced.
   /// @throws std::invalid_argument If the definition is incomplete or its ID is
@@ -478,6 +501,7 @@ public:
   void registerDevice(DeviceDefinition definition, bool replace = false);
 
   /// Registers a device definition unless its ID is already present.
+  ///
   /// @param definition The definition to validate and store.
   /// @returns Whether the definition was inserted.
   /// @throws std::invalid_argument If the definition is incomplete.
@@ -487,6 +511,7 @@ public:
   auto registerDeviceIfAbsent(DeviceDefinition definition) -> bool;
 
   /// Lists the stable IDs of all registered devices.
+  ///
   /// @returns The enabled device IDs in deterministic registration order.
   ///
   /// This query includes runtime registrations and does not load device
@@ -494,12 +519,14 @@ public:
   [[nodiscard]] auto registeredDeviceIds() const -> std::vector<std::string>;
 
   /// Opens the registered device with the given stable ID.
+  ///
   /// @returns The existing device handle when the ID is already open.
   /// @throws std::out_of_range If the ID is unknown.
   /// @throws std::runtime_error If loading or session initialization fails.
   auto open(std::string_view id) -> QDMI_Device;
 
   /// Allocates a new session.
+  ///
   /// @see QDMI_session_alloc
   auto sessionAlloc(QDMI_Session* session) -> int;
 
@@ -509,6 +536,7 @@ public:
                              QDMI_Session* session) -> int;
 
   /// Frees a session.
+  ///
   /// @see QDMI_session_free
   auto sessionFree(QDMI_Session session) -> void;
 };

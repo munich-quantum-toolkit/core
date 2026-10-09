@@ -46,6 +46,7 @@
 namespace mlir {
 
 /// Target facts that QDMI v1.3 cannot encode compactly.
+///
 /// TODO(#2093): Remove these compatibility markers when QDMI standardizes
 /// explicit unrestricted connectivity, operation applicability, and operation
 /// arity ranges.
@@ -848,7 +849,7 @@ CompiledProgram::compile(CompilerInput&& program,
   if (entryPoint && !entryPoint.isVarArg() &&
       entryPoint.getNumArguments() == 0 &&
       isa<LLVM::LLVMVoidType>(entryPoint.getFunctionType().getReturnType())) {
-    /// A program without a return value completes with success status.
+    // A program without a return value completes with success status.
     OpBuilder builder(qir.module().getContext());
     entryPoint.setFunctionType(
         LLVM::LLVMFunctionType::get(builder.getI64Type(), {}));

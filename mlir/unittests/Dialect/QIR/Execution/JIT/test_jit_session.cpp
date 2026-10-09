@@ -68,8 +68,8 @@ static void expectOpenQASMSampling(std::string_view source,
   session.runtime().disableOutput();
   std::vector<std::string> shots;
   ASSERT_EQ(session.sample(1, shots), 0);
-  /// The JIT exposes recording order; DD strings put output bit zero on the
-  /// right.
+  // The JIT exposes recording order; DD strings put output bit zero on the
+  // right.
   EXPECT_EQ(shots, std::vector<std::string>(
                        1, std::string(expected.rbegin(), expected.rend())));
 }

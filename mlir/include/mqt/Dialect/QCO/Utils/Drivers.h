@@ -59,6 +59,7 @@ struct PendingItem {
 } // namespace impl
 
 /// Walk the graph-like circuit IR of QCO dialect programs.
+///
 /// Depending on the template parameter, the function walks the IR in
 /// topological order in forward or backward direction, respectively. Towards
 /// that end, the function traverses the def-use chain of each qubit until a

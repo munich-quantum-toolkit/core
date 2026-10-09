@@ -48,21 +48,26 @@ class RealNumberUniqueTable {
 
 public:
   /// The default constructor
+  ///
   /// @param manager The memory manager to use for allocating new numbers.
   /// @param initialGCLim The initial garbage collection limit.
   explicit RealNumberUniqueTable(MemoryManager& manager,
                                  std::size_t initialGCLim = INITIAL_GC_LIMIT);
 
   /// Maps a non-negative value to its bucket in the current index.
+  ///
   /// The bucket depends on the table capacity and indexed tolerance.
   [[nodiscard]] size_t hash(fp val) const noexcept;
 
   /// Ordinary absolute-tolerance bucket heads; growth and tolerance changes
-  /// invalidate bucket iterators and reorder chains. Entry addresses survive
+  /// invalidate bucket iterators and reorder chains.
+  ///
+  /// Entry addresses survive
   /// until collection or reset.
   [[nodiscard]] const auto& getTable() const noexcept { return table; }
 
   /// Get combined entry, lookup, and bucket statistics for both indexes.
+  ///
   /// Collision counts describe the ordinary absolute-tolerance index.
   [[nodiscard]] const auto& getStats() const noexcept { return stats; }
 
@@ -79,11 +84,13 @@ public:
   [[nodiscard]] RealNumber* lookup(fp val);
 
   /// Preserve a matrix root's range while retaining nonzero constant priority.
+  ///
   /// Other values are interned exactly in a separate index so they cannot
   /// become representatives in the ordinary absolute-tolerance table.
   [[nodiscard]] RealNumber* lookupRoot(fp val);
 
   /// Check whether the table possibly needs garbage collection.
+  ///
   /// @returns Whether the number of entries in the table has reached the
   /// garbage collection limit.
   [[nodiscard]] bool possiblyNeedsCollection() const noexcept;
@@ -111,6 +118,7 @@ public:
   void print() const;
 
   /// Print the bucket distribution of the table.
+  ///
   /// @param os The output stream to print to.
   /// @returns The output stream.
   std::ostream& printBucketDistribution(std::ostream& os = std::cout);
@@ -127,6 +135,7 @@ private:
   /// Intrusive bucket chains; rehashing preserves entry addresses and flags.
   Table table = Table(NBUCKET);
   /// Matrix root weights share the memory manager and mark/sweep ownership.
+  ///
   /// Exact keys keep lookup independent of tolerance and avoid tiny-value
   /// chains.
   std::unordered_map<fp, RealNumber*> exactRoots;

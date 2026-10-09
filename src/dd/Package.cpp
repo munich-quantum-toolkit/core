@@ -154,12 +154,12 @@ bool Package::garbageCollect(bool force) {
     matrixTrace.clear();
   }
 
-  /// Invalidate every affected cache before growth can allocate and fail.
+  // Invalidate every affected cache before growth can allocate and fail.
   const auto& stats = matrixVectorMultiplication.getStats();
   constexpr size_t limit = 1U << 20U;
   if (invV && stats.numBuckets < limit && stats.hits >= stats.numBuckets) {
-    /// ponytail: live nodes estimate working-set size; measure cache reuse
-    /// between collections before replacing this bounded growth heuristic.
+    // ponytail: live nodes estimate working-set size; measure cache reuse
+    // between collections before replacing this bounded growth heuristic.
     const auto live = vUniqueTable.getNumEntries();
     const auto buckets = live > limit / 4U ? limit : std::bit_ceil(4U * live);
     if (buckets > stats.numBuckets) {
@@ -406,9 +406,9 @@ template <typename Matrix>
 buildThreeQubitGateDD(Package& dd, const Matrix& mat, const Controls& controls,
                       const Qubit target0, const Qubit target1,
                       const Qubit target2) {
-  /// Reduce 8x8 terminals to 4x4, then four edges, then the root, inserting
-  /// controls between target levels. Matrix bits are MSB-first; DD levels
-  /// follow ascending qubit indices.
+  // Reduce 8x8 terminals to 4x4, then four edges, then the root, inserting
+  // controls between target levels. Matrix bits are MSB-first; DD levels
+  // follow ascending qubit indices.
   const std::array targets{target0, target1, target2};
   ensureGateQubitsInRange(dd.qubits(), controls, targets);
 
@@ -432,7 +432,7 @@ buildThreeQubitGateDD(Package& dd, const Matrix& mat, const Controls& controls,
   const auto endIt = controls.end();
   wrapControlsUntil(dd, it, endIt, qLow, em);
 
-  /// Remaining-bit index: bit(mid) + 2 * bit(high).
+  // Remaining-bit index: bit(mid) + 2 * bit(high).
   std::array<std::array<mCachedEdge, NEDGE>, NEDGE> emMid{};
   for (std::size_t rMH = 0; rMH < NEDGE; ++rMH) {
     for (std::size_t cMH = 0; cMH < NEDGE; ++cMH) {
@@ -569,7 +569,7 @@ mEdge Package::makeGateDD(const std::span<const std::complex<fp>> matrix,
   if (targets.empty()) {
     return cn.lookup(mCachedEdge::terminal(matrix[0]));
   }
-  /// The matrix-size check bounds the number of operands by the size_t width.
+  // The matrix-size check bounds the number of operands by the size_t width.
   std::array<std::pair<Qubit, size_t>, std::numeric_limits<size_t>::digits / 2>
       storage{};
   const auto operands = std::span{storage}.first(targets.size());
@@ -1063,7 +1063,7 @@ mCachedEdge Package::trace(const mEdge& a,
   }
 
   if (through != below) {
-    /// Only complete traces are independent of the elimination mask.
+    // Only complete traces are independent of the elimination mask.
     const bool eliminateAll = through == static_cast<size_t>(v) + 1;
     if (eliminateAll) {
       if (const auto* r = getTraceComputeTable().lookup(a.p); r != nullptr) {

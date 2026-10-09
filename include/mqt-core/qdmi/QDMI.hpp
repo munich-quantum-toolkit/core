@@ -390,13 +390,17 @@ concept string_or_optional_string =
     std::same_as<T, std::string> ||
     (is_optional<T> && std::same_as<typename T::value_type, std::string>);
 
+/// Leaves a type unchanged unless it is std::optional.
+///
 /// @see remove_optional_t
 /// The name follows the standard-library type-trait convention.
-/// NOLINTNEXTLINE(readability-identifier-naming)
+// NOLINTNEXTLINE(readability-identifier-naming)
 template <typename T> struct remove_optional {
   using type = T;
 };
 
+/// Extracts the type held by std::optional.
+///
 /// @see remove_optional_t
 template <typename U> struct remove_optional<std::optional<U>> {
   using type = U;
@@ -513,7 +517,9 @@ template <maybe_optional_value_or_string_or_vector T, typename Query>
 /// your authentication method. Parameters are validated when the session is
 /// constructed.
 struct SessionConfig {
-  /// QDMI driver library. Uses the environment or packaged driver when
+  /// QDMI driver library.
+  ///
+  /// Uses the environment or packaged driver when
   /// omitted.
   std::optional<std::filesystem::path> driverPath;
   /// Authentication token
@@ -550,12 +556,15 @@ namespace builtin_driver {
 void addManifest(const std::filesystem::path& path);
 
 /// List enabled stable IDs without loading devices or contacting device
-/// services. Uses the builtin MQT Core QDMI driver and makes its configuration
+/// services.
+///
+/// Uses the builtin MQT Core QDMI driver and makes its configuration
 /// immutable on the first call.
 [[nodiscard]] std::vector<std::string> registeredDeviceIds();
 
 /// Open one device through the builtin MQT Core QDMI driver with session
 /// overrides.
+///
 /// @param id Stable device ID.
 /// @param deviceSessionJson JSON session overrides.
 /// @param driverPath Optional compatible extension path. By default, this call
@@ -566,11 +575,14 @@ void addManifest(const std::filesystem::path& path);
 } // namespace builtin_driver
 
 /// One initialized session with a QDMI driver.
+///
 /// Devices and jobs retain the session and its driver library.
+///
 /// @see QDMI_Session
 class Session {
 public:
   /// Opens a client-visible QDMI device in a fresh session.
+  ///
   /// @param id Stable device ID.
   /// @param config QDMI driver and authentication configuration.
   /// @return A device wrapper that retains the fresh session.
@@ -578,6 +590,7 @@ public:
                                          const SessionConfig& config = {});
 
   /// Constructs a new QDMI Session with optional authentication.
+  ///
   /// @param config Optional session configuration containing authentication
   /// parameters. If not provided, uses default (no authentication).
   ///
@@ -589,6 +602,8 @@ public:
   Session(Session&&) noexcept = default;
   Session& operator=(Session&&) noexcept = default;
 
+  /// Returns the devices available through this session.
+  ///
   /// @see QDMI_SESSION_PROPERTY_DEVICES
   [[nodiscard]] std::vector<Device> getDevices();
 
@@ -634,24 +649,38 @@ public:
   // NOLINTNEXTLINE(google-explicit-constructor, *-explicit-conversions)
   operator QDMI_Device() const { return device_; }
 
+  /// Returns the device ID.
+  ///
   /// @see QDMI_DEVICE_PROPERTY_ID
   [[nodiscard]] std::string getId() const;
 
+  /// Returns the device name.
+  ///
   /// @see QDMI_DEVICE_PROPERTY_NAME
   [[nodiscard]] std::string getName() const;
 
+  /// Returns the device version.
+  ///
   /// @see QDMI_DEVICE_PROPERTY_VERSION
   [[nodiscard]] std::string getVersion() const;
 
+  /// Returns the current device status.
+  ///
   /// @see QDMI_DEVICE_PROPERTY_STATUS
   [[nodiscard]] QDMI_Device_Status getStatus() const;
 
+  /// Returns the reported device library version.
+  ///
   /// @see QDMI_DEVICE_PROPERTY_LIBRARYVERSION
   [[nodiscard]] std::string getLibraryVersion() const;
 
+  /// Returns the number of qubits supported by the device.
+  ///
   /// @see QDMI_DEVICE_PROPERTY_QUBITSNUM
   [[nodiscard]] size_t getQubitsNum() const;
 
+  /// Returns the sites available on the device.
+  ///
   /// @see QDMI_DEVICE_PROPERTY_SITES
   [[nodiscard]] std::vector<Site> getSites() const;
 
@@ -675,42 +704,62 @@ public:
   /// @see QDMI_DEVICE_PROPERTY_SITES
   [[nodiscard]] std::vector<Site> getZones() const;
 
+  /// Returns the operations supported by the device.
+  ///
   /// @see QDMI_DEVICE_PROPERTY_OPERATIONS
   [[nodiscard]] std::vector<Operation> getOperations() const;
 
+  /// Returns the device coupling map, if available.
+  ///
   /// @see QDMI_DEVICE_PROPERTY_COUPLINGMAP
   [[nodiscard]] std::optional<std::vector<std::pair<Site, Site>>>
   getCouplingMap() const;
 
+  /// Returns the device queue length, if available.
+  ///
   /// @see QDMI_DEVICE_PROPERTY_QUEUELENGTH
   [[nodiscard]] std::optional<size_t> getQueueLength() const;
 
+  /// Returns the device length unit, if available.
+  ///
   /// @see QDMI_DEVICE_PROPERTY_LENGTHUNIT
   [[nodiscard]] std::optional<std::string> getLengthUnit() const;
 
+  /// Returns the device length scale factor, if available.
+  ///
   /// @see QDMI_DEVICE_PROPERTY_LENGTHSCALEFACTOR
   [[nodiscard]] std::optional<double> getLengthScaleFactor() const;
 
+  /// Returns the device duration unit, if available.
+  ///
   /// @see QDMI_DEVICE_PROPERTY_DURATIONUNIT
   [[nodiscard]] std::optional<std::string> getDurationUnit() const;
 
+  /// Returns the device duration scale factor, if available.
+  ///
   /// @see QDMI_DEVICE_PROPERTY_DURATIONSCALEFACTOR
   [[nodiscard]] std::optional<double> getDurationScaleFactor() const;
 
+  /// Returns the minimum atom distance, if available.
+  ///
   /// @see QDMI_DEVICE_PROPERTY_MINATOMDISTANCE
   [[nodiscard]] std::optional<uint64_t> getMinAtomDistance() const;
 
+  /// Returns the program formats supported by the device.
+  ///
   /// @see QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS
   [[nodiscard]] std::vector<QDMI_Program_Format>
   getSupportedProgramFormats() const;
 
   /// Returns the direct child devices managed by this device.
+  ///
   /// @return The child devices, or an empty vector if child devices are not
   /// supported.
   /// @see QDMI_DEVICE_PROPERTY_CHILDDEVICES
   [[nodiscard]] std::vector<Device> getChildDevices() const;
 
   /// Queries an implementation-defined custom device property.
+  ///
   /// @tparam T Expected value type. Use `std::vector<std::byte>` to retrieve
   /// the raw value without interpretation.
   /// @param property Custom property slot to query.
@@ -730,6 +779,7 @@ public:
   }
 
   /// Queries a custom device property containing operation handles.
+  ///
   /// @param property Custom property slot to query.
   /// @return Normal QDMI operation wrappers, or `std::nullopt` if the slot is
   /// unsupported. A supported empty list is returned as an engaged optional.
@@ -781,6 +831,7 @@ public:
       const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
 
   /// Submits an ordered list of text programs with common job parameters.
+  ///
   /// The required text terminator is included exactly once per payload.
   [[nodiscard]] Job submitJob(
       std::span<const std::string> programs, QDMI_Program_Format format,
@@ -899,15 +950,21 @@ public:
   // NOLINTNEXTLINE(misc-explicit-constructor, *-explicit-conversions)
   operator QDMI_Job() const { return job_.get(); }
 
+  /// Returns the current job status.
+  ///
   /// @see QDMI_job_check
   [[nodiscard]] QDMI_Job_Status check() const;
 
+  /// Waits for job completion until the timeout expires.
+  ///
   /// @see QDMI_job_wait
   /// @param timeout The maximum time to wait in seconds. 0 (default) means
   /// wait indefinitely.
   /// @return true if the job completed successfully, false if it timed out
   [[nodiscard]] bool wait(size_t timeout = 0) const;
 
+  /// Requests cancellation of the job.
+  ///
   /// @see QDMI_job_cancel
   void cancel() const;
 
@@ -918,6 +975,7 @@ public:
   [[nodiscard]] QDMI_Program_Format getProgramFormat() const;
 
   /// Gets a textual program without its terminating null byte.
+  ///
   /// @throws std::invalid_argument If the format is not textual or the device
   /// does not return a null-terminated payload.
   [[nodiscard]] std::string getProgram(size_t programIndex = 0) const;
@@ -941,6 +999,7 @@ public:
   getResults(QDMI_Job_Result result, size_t programIndex = 0) const;
 
   /// Gets the current number of jobs ahead of this job in its queue.
+  ///
   /// @return The queue position, or `std::nullopt` if it is unavailable or not
   /// applicable in the job's current state.
   /// @throws std::runtime_error If the device status refresh or property
@@ -949,6 +1008,7 @@ public:
   [[nodiscard]] std::optional<size_t> getQueuePosition() const;
 
   /// Queries an implementation-defined custom job property.
+  ///
   /// @tparam T Expected value type. Use `std::vector<std::byte>` to retrieve
   /// the raw value without interpretation.
   /// @param property Custom property slot to query.
@@ -968,6 +1028,7 @@ public:
   }
 
   /// Retrieves an implementation-defined custom job result.
+  ///
   /// @tparam T Expected value type. Use `std::vector<std::byte>` to retrieve
   /// the raw value without interpretation.
   /// @param property Custom result slot to query.
@@ -989,28 +1050,33 @@ public:
   }
 
   /// Returns the measurement shots as a vector of bitstrings.
+  ///
   /// @see QDMI_JOB_RESULT_SHOTS
   [[nodiscard]] std::vector<std::string>
   getShots(size_t programIndex = 0) const;
 
   /// Returns a map of measurement outcomes to their respective counts.
+  ///
   /// @see QDMI_JOB_RESULT_HIST_KEYS
   /// @see QDMI_JOB_RESULT_HIST_VALUES
   [[nodiscard]] std::map<std::string, size_t>
   getCounts(size_t programIndex = 0) const;
 
   /// Returns the dense state vector as a vector of complex numbers.
+  ///
   /// @see QDMI_JOB_RESULT_STATEVECTOR_DENSE
   [[nodiscard]] std::vector<std::complex<double>>
   getDenseStateVector(size_t programIndex = 0) const;
 
   /// Returns the dense probabilities as a vector of doubles.
+  ///
   /// @see QDMI_JOB_RESULT_PROBABILITIES_DENSE
   [[nodiscard]] std::vector<double>
   getDenseProbabilities(size_t programIndex = 0) const;
 
   /// Returns the sparse state vector as a map of bitstrings to complex
   /// amplitudes.
+  ///
   /// @see QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS
   /// @see QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES
   [[nodiscard]] std::map<std::string, std::complex<double>>
@@ -1018,6 +1084,7 @@ public:
 
   /// Returns the sparse probabilities as a map of bitstrings to
   /// probabilities.
+  ///
   /// @see QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS
   /// @see QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES
   [[nodiscard]] std::map<std::string, double>
@@ -1060,46 +1127,73 @@ public:
   // NOLINTNEXTLINE(misc-explicit-constructor, *-explicit-conversions)
   operator QDMI_Site() const { return site_; }
 
+  /// Returns the site index.
+  ///
   /// @see QDMI_SITE_PROPERTY_INDEX
   [[nodiscard]] size_t getIndex() const;
 
+  /// Returns the site's T1 value, if available.
+  ///
   /// @see QDMI_SITE_PROPERTY_T1
   [[nodiscard]] std::optional<uint64_t> getT1() const;
 
+  /// Returns the site's T2 value, if available.
+  ///
   /// @see QDMI_SITE_PROPERTY_T2
   [[nodiscard]] std::optional<uint64_t> getT2() const;
 
+  /// Returns the site name, if available.
+  ///
   /// @see QDMI_SITE_PROPERTY_NAME
   [[nodiscard]] std::optional<std::string> getName() const;
 
+  /// Returns the site x-coordinate, if available.
+  ///
   /// @see QDMI_SITE_PROPERTY_XCOORDINATE
   [[nodiscard]] std::optional<int64_t> getXCoordinate() const;
 
+  /// Returns the site y-coordinate, if available.
+  ///
   /// @see QDMI_SITE_PROPERTY_YCOORDINATE
   [[nodiscard]] std::optional<int64_t> getYCoordinate() const;
 
+  /// Returns the site z-coordinate, if available.
+  ///
   /// @see QDMI_SITE_PROPERTY_ZCOORDINATE
   [[nodiscard]] std::optional<int64_t> getZCoordinate() const;
 
+  /// Returns whether the site represents a zone.
+  ///
   /// @see QDMI_SITE_PROPERTY_ISZONE
   [[nodiscard]] bool isZone() const;
 
+  /// Returns the zone x-extent, if available.
+  ///
   /// @see QDMI_SITE_PROPERTY_XEXTENT
   [[nodiscard]] std::optional<uint64_t> getXExtent() const;
 
+  /// Returns the zone y-extent, if available.
+  ///
   /// @see QDMI_SITE_PROPERTY_YEXTENT
   [[nodiscard]] std::optional<uint64_t> getYExtent() const;
 
+  /// Returns the zone z-extent, if available.
+  ///
   /// @see QDMI_SITE_PROPERTY_ZEXTENT
   [[nodiscard]] std::optional<uint64_t> getZExtent() const;
 
+  /// Returns the site module index, if available.
+  ///
   /// @see QDMI_SITE_PROPERTY_MODULEINDEX
   [[nodiscard]] std::optional<uint64_t> getModuleIndex() const;
 
+  /// Returns the site submodule index, if available.
+  ///
   /// @see QDMI_SITE_PROPERTY_SUBMODULEINDEX
   [[nodiscard]] std::optional<uint64_t> getSubmoduleIndex() const;
 
   /// Queries an implementation-defined custom site property.
+  ///
   /// @tparam T Expected value type. Use `std::vector<std::byte>` to retrieve
   /// the raw value without interpretation.
   /// @param property Custom property slot to query.
@@ -1172,49 +1266,69 @@ public:
   // NOLINTNEXTLINE(misc-explicit-constructor, *-explicit-conversions)
   operator QDMI_Operation() const { return operation_; }
 
+  /// Returns the operation name for the given sites and parameters.
+  ///
   /// @see QDMI_OPERATION_PROPERTY_NAME
   [[nodiscard]] std::string
   getName(const std::vector<Site>& sites = {},
           const std::vector<double>& params = {}) const;
 
+  /// Returns the operation qubit count, if available.
+  ///
   /// @see QDMI_OPERATION_PROPERTY_QUBITSNUM
   [[nodiscard]] std::optional<size_t>
   getQubitsNum(const std::vector<Site>& sites = {},
                const std::vector<double>& params = {}) const;
 
+  /// Returns the number of parameters accepted by the operation.
+  ///
   /// @see QDMI_OPERATION_PROPERTY_PARAMETERSNUM
   [[nodiscard]] size_t
   getParametersNum(const std::vector<Site>& sites = {},
                    const std::vector<double>& params = {}) const;
 
+  /// Returns the operation duration, if available.
+  ///
   /// @see QDMI_OPERATION_PROPERTY_DURATION
   [[nodiscard]] std::optional<uint64_t>
   getDuration(const std::vector<Site>& sites = {},
               const std::vector<double>& params = {}) const;
 
+  /// Returns the operation fidelity, if available.
+  ///
   /// @see QDMI_OPERATION_PROPERTY_FIDELITY
   [[nodiscard]] std::optional<double>
   getFidelity(const std::vector<Site>& sites = {},
               const std::vector<double>& params = {}) const;
 
+  /// Returns the operation interaction radius, if available.
+  ///
   /// @see QDMI_OPERATION_PROPERTY_INTERACTIONRADIUS
   [[nodiscard]] std::optional<uint64_t>
   getInteractionRadius(const std::vector<Site>& sites = {},
                        const std::vector<double>& params = {}) const;
 
+  /// Returns the operation blocking radius, if available.
+  ///
   /// @see QDMI_OPERATION_PROPERTY_BLOCKINGRADIUS
   [[nodiscard]] std::optional<uint64_t>
   getBlockingRadius(const std::vector<Site>& sites = {},
                     const std::vector<double>& params = {}) const;
 
+  /// Returns the operation idling fidelity, if available.
+  ///
   /// @see QDMI_OPERATION_PROPERTY_IDLINGFIDELITY
   [[nodiscard]] std::optional<double>
   getIdlingFidelity(const std::vector<Site>& sites = {},
                     const std::vector<double>& params = {}) const;
 
+  /// Returns whether the operation acts on zones.
+  ///
   /// @see QDMI_OPERATION_PROPERTY_ISZONED
   [[nodiscard]] bool isZoned() const;
 
+  /// Returns the sites supported by the operation, if available.
+  ///
   /// @see QDMI_OPERATION_PROPERTY_SITES
   [[nodiscard]] std::optional<std::vector<Site>> getSites() const;
 
@@ -1231,12 +1345,15 @@ public:
   [[nodiscard]] std::optional<std::vector<std::pair<Site, Site>>>
   getSitePairs() const;
 
+  /// Returns the operation mean shuttling speed, if available.
+  ///
   /// @see QDMI_OPERATION_PROPERTY_MEANSHUTTLINGSPEED
   [[nodiscard]] std::optional<uint64_t>
   getMeanShuttlingSpeed(const std::vector<Site>& sites = {},
                         const std::vector<double>& params = {}) const;
 
   /// Queries an implementation-defined custom operation property.
+  ///
   /// @tparam T Expected value type. Use `std::vector<std::byte>` to retrieve
   /// the raw value without interpretation.
   /// @param property Custom property slot to query.

@@ -2929,7 +2929,7 @@ TEST_F(QCODDFunctionalityTest, SamplingAnalysisHandlesSharedCallees) {
          << "() : () -> () func.call @f" << level - 1
          << "() : () -> () return }\n";
     }
-    /// The unreachable branch isolates analysis from the expanded call count.
+    // The unreachable branch isolates analysis from the expanded call count.
     os << R"mlir(func.func @main() {
       %false = arith.constant false
       scf.if %false { func.call @f20() : () -> () }

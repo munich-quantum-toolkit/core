@@ -38,6 +38,7 @@ namespace mlir::qco {
 
 /// Retrieves the measurement outcome that directly precedes the given
 /// qubit, if it exists.
+///
 /// @param qubit The qubit for which to find the predecessor measurement outcome
 /// @return The measurement outcome if a predecessor measurement exists, nullptr
 /// otherwise
@@ -51,6 +52,7 @@ static Value getPredecessorMeasurementOutcome(Value qubit) {
 
 /// Checks if the given operation applies a phase only to the target's
 /// one state.
+///
 /// @param op The operation to check
 /// @return true if the operation is a phase gate, false otherwise
 static bool isPhaseGate(Operation* op) {
@@ -70,6 +72,7 @@ static Value selectScaledAngle(PatternRewriter& rewriter, Location loc,
 }
 
 /// Apply a phase gate to @p target, controlled by @p controls.
+///
 /// @return A pair containing the updated controls in their input order and the
 /// updated target.
 static std::pair<SmallVector<Value>, Value>
@@ -87,6 +90,7 @@ applyControlledPhase(PatternRewriter& rewriter, Location loc,
 }
 
 /// Apply an RZ gate to @p target, controlled by @p controls.
+///
 /// @return A pair containing the updated controls in their input order and the
 /// updated target.
 static std::pair<SmallVector<Value>, Value>
@@ -105,6 +109,7 @@ applyControlledRZ(PatternRewriter& rewriter, Location loc, ValueRange controls,
 
 /// Apply a phase to the conjunction of @p controls, using the last
 /// control as the phase target.
+///
 /// @return The updated controls in their input order.
 static SmallVector<Value> applyConjunctionPhase(PatternRewriter& rewriter,
                                                 Location loc,
@@ -125,6 +130,7 @@ static bool areAllMeasured(ValueRange qubits) {
 }
 
 /// Map each control target result to the corresponding input target.
+///
 /// @return The input-target index for every target result, or @c std::nullopt
 /// if the body does not directly yield all results of @p rzzOp.
 static std::optional<SmallVector<size_t>> getRZZTargetResultOrder(CtrlOp ctrlOp,
@@ -248,6 +254,7 @@ static LogicalResult tryReplaceMeasuredRZZTarget(CtrlOp op, RZZOp rzzOp,
 
 /// For a phase gate whose target has a predecessor measurement, swaps the
 /// target with an eligible control.
+///
 /// @param op The control operation containing the phase gate
 /// @param rewriter The pattern rewriter used to perform the transformation
 static void trySwapControlAndTargetOfPhaseGate(CtrlOp op,

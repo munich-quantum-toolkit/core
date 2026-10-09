@@ -98,7 +98,7 @@ protected:
 // AllocOp
 // ============================================================================
 
-/// AllocOp with a constant size ≤ 0 must fail verification.
+// AllocOp with a constant size ≤ 0 must fail verification.
 TEST_F(QTensorTest, AllocOpZeroSizeFailsVerification) {
   auto loc = UnknownLoc::get(context.get());
   auto module = ModuleOp::create(loc);
@@ -113,7 +113,7 @@ TEST_F(QTensorTest, AllocOpZeroSizeFailsVerification) {
   EXPECT_TRUE(verify(module).failed());
 }
 
-/// AllocOp where static result type dim ≠ constant size must fail.
+// AllocOp where static result type dim ≠ constant size must fail.
 TEST_F(QTensorTest, AllocOpStaticTypeMismatchFailsVerification) {
   auto loc = UnknownLoc::get(context.get());
   auto module = ModuleOp::create(loc);
@@ -128,7 +128,7 @@ TEST_F(QTensorTest, AllocOpStaticTypeMismatchFailsVerification) {
   EXPECT_TRUE(verify(module).failed());
 }
 
-/// AllocOp with a dynamic result type but a constant size operand is valid.
+// AllocOp with a dynamic result type but a constant size operand is valid.
 TEST_F(QTensorTest, AllocOpDynamicTypeWithConstantSizeVerifies) {
   auto loc = UnknownLoc::get(context.get());
   auto module = ModuleOp::create(loc);
@@ -143,7 +143,7 @@ TEST_F(QTensorTest, AllocOpDynamicTypeWithConstantSizeVerifies) {
   EXPECT_TRUE(verify(module).succeeded());
 }
 
-/// AllocOp with a static result type but a dynamic size fails verification.
+// AllocOp with a static result type but a dynamic size fails verification.
 TEST_F(QTensorTest, AllocOpStaticTypeWithDynamicSizeOperandFailsVerification) {
   auto loc = UnknownLoc::get(context.get());
   auto module = ModuleOp::create(loc);
@@ -171,7 +171,7 @@ TEST_F(QTensorTest, AllocOpStaticTypeWithDynamicSizeOperandFailsVerification) {
 // DeallocOp
 // ============================================================================
 
-/// An alloc immediately followed by dealloc should be eliminated entirely.
+// An alloc immediately followed by dealloc should be eliminated entirely.
 TEST_F(QTensorTest, DeallocOpAllocDeallocPairIsRemoved) {
   auto canonicalized = buildAndCanonicalize([](QCOProgramBuilder& b) {
     b.qtensorAlloc(3);
@@ -188,7 +188,7 @@ TEST_F(QTensorTest, DeallocOpAllocDeallocPairIsRemoved) {
 // ExtractOp
 // ============================================================================
 
-/// An extract at a negative constant index fails verification.
+// An extract at a negative constant index fails verification.
 TEST_F(QTensorTest, ExtractOpNegativeIndexFailsVerification) {
   QCOProgramBuilder builder(context.get());
   builder.initialize();
@@ -201,7 +201,7 @@ TEST_F(QTensorTest, ExtractOpNegativeIndexFailsVerification) {
   EXPECT_TRUE(verify(*module).failed());
 }
 
-/// An extract at an index equal to the tensor dimension fails verification.
+// An extract at an index equal to the tensor dimension fails verification.
 TEST_F(QTensorTest, ExtractOpIndexAtDimFailsVerification) {
   QCOProgramBuilder builder(context.get());
   builder.initialize();
@@ -218,7 +218,7 @@ TEST_F(QTensorTest, ExtractOpIndexAtDimFailsVerification) {
 // InsertOp
 // ============================================================================
 
-/// An insert at a negative constant index fails verification.
+// An insert at a negative constant index fails verification.
 TEST_F(QTensorTest, InsertOpNegativeIndexFailsVerification) {
   QCOProgramBuilder builder(context.get());
   builder.initialize();
@@ -232,7 +232,7 @@ TEST_F(QTensorTest, InsertOpNegativeIndexFailsVerification) {
   EXPECT_TRUE(verify(*module).failed());
 }
 
-/// An insert at an index equal to the destination dimension fails verification.
+// An insert at an index equal to the destination dimension fails verification.
 TEST_F(QTensorTest, InsertOpIndexAtDimFailsVerification) {
   QCOProgramBuilder builder(context.get());
   builder.initialize();
@@ -594,20 +594,20 @@ TEST_F(QTensorTest, ResetAfterExtractThroughSameIndexInsertIsNotEliminated) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/// Qubit tensors that do not descend from an allocation are compared
-/// through the regular SSA mapping.
-///
-/// A tensor arriving as a function argument has no equivalence group, and the
-/// threaded tensor an extraction hands back is only covered once it is mapped
-/// explicitly. Both used to abort inside the comparison instead of reporting a
-/// result.
-///
-/// The two equivalent programs are written differently and converge under the
-/// cleanup pipeline, so the comparison is reached from distinct sources. Note
-/// that it cannot be reached from distinct *results*: the permutation matching
-/// is keyed off the equivalence groups seeded by `qtensor.alloc`, which a
-/// function argument never joins, so on this path the comparison is structural.
-/// The negative cases below pin down how little it takes to break it.
+// Qubit tensors that do not descend from an allocation are compared
+// through the regular SSA mapping.
+//
+// A tensor arriving as a function argument has no equivalence group, and the
+// threaded tensor an extraction hands back is only covered once it is mapped
+// explicitly. Both used to abort inside the comparison instead of reporting a
+// result.
+//
+// The two equivalent programs are written differently and converge under the
+// cleanup pipeline, so the comparison is reached from distinct sources. Note
+// that it cannot be reached from distinct *results*: the permutation matching
+// is keyed off the equivalence groups seeded by `qtensor.alloc`, which a
+// function argument never joins, so on this path the comparison is structural.
+// The negative cases below pin down how little it takes to break it.
 TEST_F(QTensorTest, ComparesQubitTensorsThatDoNotDescendFromAnAllocation) {
   const auto parse = [&](const char* body) {
     const std::string source = std::string(R"mlir(
@@ -667,13 +667,13 @@ func.func @f(%t: tensor<2x!qco.qubit>) -> tensor<2x!qco.qubit> {
       areModulesEquivalentWithPermutations(program.get(), otherElement.get()));
 }
 
-/// A tracked tensor is never matched against an untracked one.
-///
-/// Only tensors descending from a `qtensor.alloc` join an equivalence group.
-/// The `rhs` guard is what stops a tracked left-hand tensor from being compared
-/// against a right-hand one that has no group, which would look the group up on
-/// a missing key. It is only reachable once the left-hand side is tracked, so
-/// it needs a case where the two sides disagree about that.
+// A tracked tensor is never matched against an untracked one.
+//
+// Only tensors descending from a `qtensor.alloc` join an equivalence group.
+// The `rhs` guard is what stops a tracked left-hand tensor from being compared
+// against a right-hand one that has no group, which would look the group up on
+// a missing key. It is only reachable once the left-hand side is tracked, so
+// it needs a case where the two sides disagree about that.
 TEST_F(QTensorTest, DoesNotMatchATrackedTensorAgainstAnUntrackedOne) {
   const auto parse = [&](const char* worked, const char* released) {
     const std::string source = std::string(R"mlir(

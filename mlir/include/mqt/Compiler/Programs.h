@@ -132,7 +132,9 @@ protected:
 
   explicit Program(Storage storage);
 
-  /// Return the owned module. Requires a valid program.
+  /// Return the owned module.
+  ///
+  /// Requires a valid program.
   [[nodiscard]] ModuleOp mod() const;
 
   /// Clone the owned module while sharing its immutable dialect context.
@@ -210,6 +212,7 @@ public:
   [[nodiscard]] std::vector<std::string> parameters() const;
 
   /// Bind named f64 inputs in place, preserving unbound inputs and metadata.
+  ///
   /// Reject unknown names, non-finite values, or references to the entry point
   /// without changing the program. Does not run cleanup or fold expressions.
   [[nodiscard]] bool
@@ -331,12 +334,15 @@ public:
   /// Prepare the program for qubit reuse and reuse eligible qubits.
   [[nodiscard]] bool runQubitReusePipeline();
 
-  /// Decompose controlled X/Y/Z/SWAP and RX/RY/RZ gates, `qco.rccx`, and
-  /// constant-angle phase gates that act on at least @p minQubits qubits
-  /// (@p minQubits must be at least 3; default 3 means wider than two-qubit).
+  /// Decompose gates that act on at least @p minQubits qubits.
+  ///
+  /// Supports controlled X/Y/Z/SWAP and RX/RY/RZ gates, `qco.rccx`, and
+  /// constant-angle phase gates. @p minQubits must be at least 3; default 3
+  /// means wider than two-qubit.
   [[nodiscard]] bool decomposeMultiControlled(uint64_t minQubits = 3);
 
   /// Compile for a target and attach layout metadata when possible.
+  ///
   /// Reject a program with attached layout metadata.
   /// Do not rely on the program contents if compilation fails.
   [[nodiscard]] bool compileForTarget(const TargetEnvironment& environment,
@@ -424,6 +430,7 @@ public:
   void toMessage(capnp::MessageBuilder& message) const;
 
   /// Serialize this program to a binary `jeff` buffer.
+  ///
   /// Return an empty vector and emit a diagnostic if serialization fails.
   [[nodiscard]] std::vector<std::byte> toBytes() const;
 

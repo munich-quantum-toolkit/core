@@ -966,7 +966,7 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
       .def_static("variadic",
                   &mlir::CompilerTarget::OperationCapability::Arity::variadic,
                   "minimum"_a,
-                  "Create an operation arity with an inclusive minimum. "
+                  "Create an operation arity with an inclusive minimum.\n\n"
                   "Capability construction requires a positive minimum.")
       .def_prop_ro("kind",
                    &mlir::CompilerTarget::OperationCapability::Arity::kind,
@@ -1081,7 +1081,7 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
                 operation.fixedParameters().begin(),
                 operation.fixedParameters().end());
           },
-          "Fixed values or None per parameter; empty means unrestricted. "
+          "Fixed values or None per parameter; empty means unrestricted.\n\n"
           "Constants use absolute tolerance 1e-15 without angle wrapping.")
       .def_prop_ro("duration",
                    &mlir::CompilerTarget::OperationCapability::duration,
@@ -1488,12 +1488,12 @@ and nested modules.)pb")
               "disables lookahead.")
       .def_rw("search_memory_limit", &mlir::MappingOptions::searchMemoryLimit,
               "Estimated node and layout bytes per routing search, per "
-              "concurrent trial. Zero disables node expansion. Container "
+              "concurrent trial.\n\nZero disables node expansion. Container "
               "overhead, caches, and IR are extra.");
 
   nb::class_<mlir::CompilationOptions>(
       m, "CompilationOptions",
-      "Shared compiler controls. An explicit seed overrides all compiler "
+      "Shared compiler controls.\n\nAn explicit seed overrides all compiler "
       "randomness; None preserves pass defaults and custom pipeline seeds.")
       .def(
           nb::init<std::optional<uint64_t>, bool, bool, mlir::MappingOptions>(),
@@ -1563,13 +1563,15 @@ before conversion to QCO.)pb");
           "from_openqasm_str",
           &OptionalFunctionAdapter<&mlir::QCProgram::fromOpenQASMString>::call,
           "source"_a,
-          "Translate supported OpenQASM to QC MLIR. Accepts versionless input "
+          "Translate supported OpenQASM to QC MLIR.\n\nAccepts versionless "
+          "input "
           "and versions 2.0, 3.0, and 3.1.")
       .def_static(
           "from_openqasm_file",
           &OptionalFunctionAdapter<&mlir::QCProgram::fromOpenQASMFile>::call,
           "path"_a,
-          "Translate a supported OpenQASM file to QC MLIR. Accepts versionless "
+          "Translate a supported OpenQASM file to QC MLIR.\n\nAccepts "
+          "versionless "
           "input and versions 2.0, 3.0, and 3.1.")
       .def_static(
           "from_qiskit",
@@ -1709,10 +1711,10 @@ operations.)pb");
            &BooleanMemberAdapter<
                &mlir::QCOProgram::decomposeMultiControlled>::call,
            nb::kw_only(), "min_qubits"_a = 3,
-           "Decompose controlled X/Y/Z/SWAP and RX/RY/RZ gates, qco.rccx, and "
-           "constant-angle phase gates that act on at least min_qubits qubits "
-           "(min_qubits must be at least 3; default 3 means wider than "
-           "two-qubit).")
+           "Decompose gates that act on at least min_qubits qubits.\n\n"
+           "Supports controlled X/Y/Z/SWAP and RX/RY/RZ gates, qco.rccx, and "
+           "constant-angle phase gates. min_qubits must be at least 3; "
+           "default 3 means wider than two-qubit.")
       .def(
           "compile_for_target",
           [](mlir::QCOProgram& program,
@@ -1729,7 +1731,7 @@ operations.)pb");
           },
           "target_environment"_a, nb::kw_only(),
           "options"_a = mlir::CompilationOptions{},
-          "Compile for the target and attach layout metadata when possible. "
+          "Compile for the target and attach layout metadata when possible.\n\n"
           "Reject existing layout metadata. Do not rely on program contents "
           "if compilation fails. Failures raise RuntimeError with MLIR "
           "diagnostics.")
@@ -1747,7 +1749,7 @@ operations.)pb");
           },
           "target_environment"_a, nb::kw_only(),
           "options"_a = mlir::CompilationOptions{},
-          "Synthesize native operations without routing. Dynamic qubits "
+          "Synthesize native operations without routing.\n\nDynamic qubits "
           "require "
           "all-to-all connectivity and receive layout metadata when possible. "
           "Static qubits keep their device site IDs and must fit the target "

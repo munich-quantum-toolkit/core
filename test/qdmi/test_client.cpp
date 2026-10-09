@@ -27,7 +27,7 @@
 #include <optional>
 #include <ranges>
 #include <stdexcept>
-#include <stdlib.h> /// NOLINT(modernize-deprecated-headers)
+#include <stdlib.h> // NOLINT(modernize-deprecated-headers)
 #include <string>
 #include <tuple>
 #include <vector>

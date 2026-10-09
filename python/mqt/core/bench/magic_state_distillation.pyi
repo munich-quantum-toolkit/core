@@ -19,7 +19,10 @@ class Options:
     def __init__(self, *, levels: int = 1) -> None: ...
     @property
     def levels(self) -> int:
-        """Positive number of concatenated levels. The qubit count (five per level) must fit signed 64-bit circuit dimensions."""
+        """Positive number of concatenated levels.
+
+        The qubit count (five per level) must fit signed 64-bit circuit dimensions.
+        """
 
 class MagicStateDistillation:
     """A concatenated 15-to-1 magic-state distillation benchmark.

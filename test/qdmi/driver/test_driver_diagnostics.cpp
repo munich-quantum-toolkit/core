@@ -25,7 +25,7 @@ TEST(DriverDiagnosticDeathTest,
 #ifdef _WIN32
     if (_putenv_s("MQT_CORE_QDMI_CONFIG_JSON", "invalid-json") != 0) {
 #else
-    /// NOLINTNEXTLINE(misc-include-cleaner)
+    // NOLINTNEXTLINE(misc-include-cleaner)
     if (setenv("MQT_CORE_QDMI_CONFIG_JSON", "invalid-json", 1) != 0) {
 #endif
       std::_Exit(1);

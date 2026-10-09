@@ -69,7 +69,9 @@ namespace qc {
 class QCProgramBuilder final : public ImplicitLocOpBuilder {
 public:
   /// Build a reference-semantic loop with early exits, then lift its CFG to
-  /// SCF. All exit and continuation edges carry the current values of the same
+  /// SCF.
+  ///
+  /// All exit and continuation edges carry the current values of the same
   /// slots.
   class LoopBuilder {
   public:
@@ -91,6 +93,7 @@ public:
   };
 
   /// Construct a new QCProgramBuilder
+  ///
   /// @param context The MLIR context to use for building operations
   explicit QCProgramBuilder(MLIRContext* context);
 
@@ -107,6 +110,7 @@ public:
 
   /// Initialize the builder and prepare for program construction
   /// with specified return types.
+  ///
   /// @param returnTypes The return types for the main function
   ///
   /// Creates a main function with an `mqt.entry_point` attribute. Must be
@@ -114,6 +118,7 @@ public:
   void initialize(TypeRange returnTypes);
 
   /// Modify the return types of the main function after initialization.
+  ///
   /// @param returnTypes The new return types for the main function
   void retype(TypeRange returnTypes);
 
@@ -164,17 +169,20 @@ public:
     SmallVector<Value> qubits;
 
     /// Access a specific qubit in the register
+    ///
     /// @param index The index of the qubit to access
     /// @return The specified qubit value
     Value operator[](size_t index) const;
 
     /// Conversion to the backing memref value
+    ///
     /// @return The memref value representing the qubit register
     explicit operator Value() const { return value; }
   };
 
   /// Allocate a single qubit initialized to |0⟩
   /// Requires an insertion point in the entry block of `mqt.entry_point`.
+  ///
   /// @return A qubit reference
   ///
   /// @par Example:
@@ -187,6 +195,7 @@ public:
   Value allocQubit();
 
   /// Get a static qubit by index
+  ///
   /// @param index The qubit index
   /// @return A qubit reference
   ///
@@ -1317,6 +1326,7 @@ public:
 
   /// Finalize the program with the given return values and return the
   /// constructed module
+  ///
   /// @param returnValues Values representing the return values of the main
   /// function.
   ///
@@ -1333,6 +1343,7 @@ public:
   OwningOpRef<ModuleOp> finalize(ValueRange returnValues);
 
   /// Convenience method for building quantum programs.
+  ///
   /// @param context The MLIR context to use for building the program
   /// @param buildFunc A function that takes a reference to a QCProgramBuilder
   /// and uses it to build the desired quantum program. The builder will be
@@ -1346,6 +1357,7 @@ public:
 
   /// Convenience method for building quantum programs with one return
   /// value.
+  ///
   /// @param context The MLIR context to use for building the program
   /// @param buildFunc A function that takes a reference to a QCProgramBuilder
   /// and returns the single result value of the desired quantum program.
@@ -1376,6 +1388,7 @@ private:
   AllocationMode allocationMode = AllocationMode::Unset;
 
   /// Ensure static and dynamic qubit allocation modes are not mixed.
+  ///
   /// Dynamic allocation also requires the entry-point entry block.
   void ensureAllocationMode(AllocationMode requestedMode);
 };

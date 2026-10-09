@@ -271,7 +271,10 @@ class CompilerTarget:
 
         @staticmethod
         def variadic(minimum: int) -> CompilerTarget.OperationArity:
-            """Create an operation arity with an inclusive minimum. Capability construction requires a positive minimum."""
+            """Create an operation arity with an inclusive minimum.
+
+            Capability construction requires a positive minimum.
+            """
 
         @property
         def kind(self) -> CompilerTarget.OperationArityKind:
@@ -326,7 +329,10 @@ class CompilerTarget:
 
         @property
         def fixed_parameters(self) -> list[float | None]:
-            """Fixed values or None per parameter; empty means unrestricted. Constants use absolute tolerance 1e-15 without angle wrapping."""
+            """Fixed values or None per parameter; empty means unrestricted.
+
+            Constants use absolute tolerance 1e-15 without angle wrapping.
+            """
 
         @property
         def duration(self) -> int | None:
@@ -644,13 +650,19 @@ class MappingOptions:
     def lookahead(self, arg: int, /) -> None: ...
     @property
     def search_memory_limit(self) -> int:
-        """Estimated node and layout bytes per routing search, per concurrent trial. Zero disables node expansion. Container overhead, caches, and IR are extra."""
+        """Estimated node and layout bytes per routing search, per concurrent trial.
+
+        Zero disables node expansion. Container overhead, caches, and IR are extra.
+        """
 
     @search_memory_limit.setter
     def search_memory_limit(self, arg: int, /) -> None: ...
 
 class CompilationOptions:
-    """Shared compiler controls. An explicit seed overrides all compiler randomness; None preserves pass defaults and custom pipeline seeds."""
+    """Shared compiler controls.
+
+    An explicit seed overrides all compiler randomness; None preserves pass defaults and custom pipeline seeds.
+    """
 
     def __init__(
         self,
@@ -766,11 +778,17 @@ class QCProgram(Program):
 
     @staticmethod
     def from_openqasm_str(source: str) -> QCProgram:
-        """Translate supported OpenQASM to QC MLIR. Accepts versionless input and versions 2.0, 3.0, and 3.1."""
+        """Translate supported OpenQASM to QC MLIR.
+
+        Accepts versionless input and versions 2.0, 3.0, and 3.1.
+        """
 
     @staticmethod
     def from_openqasm_file(path: str | os.PathLike) -> QCProgram:
-        """Translate a supported OpenQASM file to QC MLIR. Accepts versionless input and versions 2.0, 3.0, and 3.1."""
+        """Translate a supported OpenQASM file to QC MLIR.
+
+        Accepts versionless input and versions 2.0, 3.0, and 3.1.
+        """
 
     @staticmethod
     def from_qiskit(circuit: qiskit.circuit.QuantumCircuit) -> QCProgram:
@@ -923,15 +941,24 @@ class QCOProgram(Program):
         """Prepare the program for qubit reuse and reuse eligible qubits."""
 
     def decompose_multi_controlled(self, *, min_qubits: int = 3) -> None:
-        """Decompose controlled X/Y/Z/SWAP and RX/RY/RZ gates, qco.rccx, and constant-angle phase gates that act on at least min_qubits qubits (min_qubits must be at least 3; default 3 means wider than two-qubit)."""
+        """Decompose gates that act on at least min_qubits qubits.
+
+        Supports controlled X/Y/Z/SWAP and RX/RY/RZ gates, qco.rccx, and constant-angle phase gates. min_qubits must be at least 3; default 3 means wider than two-qubit.
+        """
 
     def compile_for_target(self, target_environment: TargetEnvironment, *, options: CompilationOptions = ...) -> None:
-        """Compile for the target and attach layout metadata when possible. Reject existing layout metadata. Do not rely on program contents if compilation fails. Failures raise RuntimeError with MLIR diagnostics."""
+        """Compile for the target and attach layout metadata when possible.
+
+        Reject existing layout metadata. Do not rely on program contents if compilation fails. Failures raise RuntimeError with MLIR diagnostics.
+        """
 
     def synthesize_for_target(
         self, target_environment: TargetEnvironment, *, options: CompilationOptions = ...
     ) -> None:
-        """Synthesize native operations without routing. Dynamic qubits require all-to-all connectivity and receive layout metadata when possible. Static qubits keep their device site IDs and must fit the target topology. Do not rely on the program contents if synthesis fails. Failures raise RuntimeError with the emitted MLIR diagnostics."""
+        """Synthesize native operations without routing.
+
+        Dynamic qubits require all-to-all connectivity and receive layout metadata when possible. Static qubits keep their device site IDs and must fit the target topology. Do not rely on the program contents if synthesis fails. Failures raise RuntimeError with the emitted MLIR diagnostics.
+        """
 
     def to_qiskit(self, *, target: CompilerTarget | None = None) -> qiskit.circuit.QuantumCircuit:
         """Export a Qiskit circuit without consuming or modifying this program.

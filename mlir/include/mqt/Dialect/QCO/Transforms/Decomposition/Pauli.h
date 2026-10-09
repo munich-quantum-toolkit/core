@@ -40,11 +40,13 @@ using mqt::PauliAxis;
 void mergeDiagonalRotations(RewriterBase& rewriter, ModuleOp moduleOp);
 
 /// A quarter-turn Clifford C that maps from to the requested Pauli axis.
+///
 /// The identity axis returns the identity matrix.
 [[nodiscard]] Matrix2x2 pauliFrame(PauliAxis axis,
                                    PauliAxis from = PauliAxis::Z);
 
 /// Generator axes of a recognized one- or two-qubit Pauli rotation.
+///
 /// A one-qubit rotation has I as its second axis.
 [[nodiscard]] std::array<PauliAxis, 2> pauliAxes(CompilerTarget::GateKind gate);
 
@@ -55,7 +57,9 @@ void mergeDiagonalRotations(RewriterBase& rewriter, ModuleOp moduleOp);
                                              std::variant<double, Value> angle);
 
 /// R_P(theta) = exp(i*phase) P^product C R_P(angle) C, where C
-/// anticommutes with P when negate is true. The angle lies in [0, pi/2].
+/// anticommutes with P when negate is true.
+///
+/// The angle lies in [0, pi/2].
 struct FoldedPauliAngle {
   double angle;
   double phase;
@@ -71,6 +75,7 @@ struct PauliRotation {
 };
 
 /// Commuting rotations sharing one angle, with an explicit global phase.
+///
 /// Represents the existing Pauli rotations, P, and their one-control forms.
 /// Recognized two-qubit operations contain exactly one entangling rotation.
 struct PauliRotationSequence {
@@ -83,13 +88,16 @@ struct PauliRotationSequence {
 [[nodiscard]] std::optional<PauliRotationSequence>
 getPauliRotations(Operation* operation);
 
-/// Cost of direct Pauli synthesis. Constants within the Weyl fidelity bound
+/// Cost of direct Pauli synthesis.
+///
+/// Constants within the Weyl fidelity bound
 /// of a Clifford angle use the matrix planner to shorten their entangling part.
 [[nodiscard]] std::optional<size_t>
 pauliRotationEntanglerCount(const PauliRotationSequence& sequence,
                             CompilerTarget::Entangler entangler);
 
 /// Emits a recognized sequence directly in the target's synthesis basis.
+///
 /// Hoists supporting scalar operations from a recognized control body; the
 /// caller replaces the original operation with the one or two returned qubits.
 [[nodiscard]] SmallVector<Value, 2>
@@ -98,7 +106,9 @@ emitPauliRotations(RewriterBase& rewriter, Operation* operation,
                    const CompilerTarget::SynthesisBasis& basis, bool reverse);
 
 /// Compose adjacent commuting Pauli operations with runtime parameters when
-/// their native two-qubit count decreases. A successful rewrite erases the
+/// their native two-qubit count decreases.
+///
+/// A successful rewrite erases the
 /// complete matched run.
 LogicalResult
 fusePauliRotationRun(PatternRewriter& rewriter, Operation* head,

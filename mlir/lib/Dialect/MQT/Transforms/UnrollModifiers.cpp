@@ -252,7 +252,7 @@ LogicalResult unrollModifier(qco::InvOp op, RewriterBase& rewriter) {
 
 /// Check that the unitary operations in @p body act on disjoint wires.
 static bool hasDisjointBodyWires(Block& body) {
-  /// In linear QCO, a unitary result used by another unitary reuses its wire.
+  // In linear QCO, a unitary result used by another unitary reuses its wire.
   return llvm::all_of(
       body.getOps<qco::UnitaryOpInterface>(), [&](auto unitary) {
         return llvm::all_of(unitary.getInputQubits(), [&](Value qubit) {

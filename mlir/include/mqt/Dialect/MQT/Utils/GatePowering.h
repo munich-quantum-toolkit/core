@@ -28,7 +28,9 @@ namespace mlir::mqt {
 /// exponent does not lose a fractional part.
 [[nodiscard]] unsigned getFixedGatePowerPeriod(StringRef baseSymbol);
 
-/// Evaluate U(θ, φ, λ) in row-major order for finite input angles. Compose
+/// Evaluate U(θ, φ, λ) in row-major order for finite input angles.
+///
+/// Compose
 /// phase factors without adding angles, so large finite parameters cannot
 /// overflow or absorb a fixed phase offset. Callers validate finiteness.
 [[nodiscard]] std::array<std::complex<double>, 4>

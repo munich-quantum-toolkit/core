@@ -143,7 +143,7 @@ TEST(CompilerQDMIAdapterTest, QueriesNamesAndSiteIndicesOncePerSnapshot) {
     indexQueries = 0;
     nameQueries = 0;
     const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
-    /// Bound provider calls independently of coupling and operation counts.
+    // Bound provider calls independently of coupling and operation counts.
     EXPECT_EQ(indexQueries, target.numSites());
     EXPECT_EQ(nameQueries, 2 * target.operations().size());
     EXPECT_EQ(target.numSites(), 100);

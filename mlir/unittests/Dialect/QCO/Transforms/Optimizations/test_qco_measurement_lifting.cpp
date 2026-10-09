@@ -110,8 +110,8 @@ TEST_F(QCOMeasurementLiftingTest, MeasuresBlockArguments) {
   EXPECT_EQ(h.getQubitIn(), hadamard.getArgument(0));
 }
 
-/// Test: Measurements on control bits can be lifted over the controlled
-/// gates.
+// Test: Measurements on control bits can be lifted over the controlled
+// gates.
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverPositiveControl) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
@@ -156,8 +156,8 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverPositiveControl) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/// Test: Tests that lifting also works if there are multiple controls in
-/// a controlled gate.
+// Test: Tests that lifting also works if there are multiple controls in
+// a controlled gate.
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverOneOfMultipleControls) {
   programBuilder.initialize({
       programBuilder.getI1Type(),
@@ -244,8 +244,8 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverOneOfMultipleControls) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/// Test: Tests that multiple measurements that each target a control
-/// qubit of a controlled gate can be lifted over the controlled gate.
+// Test: Tests that multiple measurements that each target a control
+// qubit of a controlled gate can be lifted over the controlled gate.
 TEST_F(QCOMeasurementLiftingTest,
        liftMeasurementMultipleOverOneControlledGate) {
 
@@ -298,8 +298,8 @@ TEST_F(QCOMeasurementLiftingTest,
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/// Test: Tests that a measurement can also be lifted over the control of
-/// a parametrized gate.
+// Test: Tests that a measurement can also be lifted over the control of
+// a parametrized gate.
 TEST_F(QCOMeasurementLiftingTest,
        liftMeasurementOverControlledParametrizedGate) {
   programBuilder.initialize(
@@ -341,8 +341,8 @@ TEST_F(QCOMeasurementLiftingTest,
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/// Test: Tests lifting a measurement over a single X (anti-diagonal)
-/// gate.
+// Test: Tests lifting a measurement over a single X (anti-diagonal)
+// gate.
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverSingleX) {
 
   programBuilder.initialize({programBuilder.getI1Type()});
@@ -373,8 +373,8 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverSingleX) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/// Test: Tests lifting a measurement over a single Y (anti-diagonal)
-/// gate.
+// Test: Tests lifting a measurement over a single Y (anti-diagonal)
+// gate.
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverSingleY) {
   programBuilder.initialize({programBuilder.getI1Type()});
   auto q = programBuilder.allocQubit();
@@ -401,7 +401,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverSingleY) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/// Test: Tests lifting a measurement over different diagonal phase-gates.
+// Test: Tests lifting a measurement over different diagonal phase-gates.
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverPhaseGates) {
   programBuilder.initialize({programBuilder.getI1Type()});
   auto q = programBuilder.allocQubit();
@@ -431,8 +431,8 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverPhaseGates) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/// Test: An RZ immediately before a measurement is removed even when the
-/// measured qubit remains observable afterward.
+// Test: An RZ immediately before a measurement is removed even when the
+// measured qubit remains observable afterward.
 TEST_F(QCOMeasurementLiftingTest, removeRZBeforeObservedMeasurement) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
@@ -463,7 +463,7 @@ TEST_F(QCOMeasurementLiftingTest, removeRZBeforeObservedMeasurement) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/// Test: Tests lifting a measurement over multiple anti-diagonal gates.
+// Test: Tests lifting a measurement over multiple anti-diagonal gates.
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverMultipleXY) {
   programBuilder.initialize({programBuilder.getI1Type()});
   auto q = programBuilder.allocQubit();
@@ -487,8 +487,8 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverMultipleXY) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/// Test: Tests lifting a measurement over multiple anti-diagonal and
-/// controlled gates.
+// Test: Tests lifting a measurement over multiple anti-diagonal and
+// controlled gates.
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverXAndControlledGates) {
   programBuilder.initialize({programBuilder.getI1Type()});
   const auto q0Input = programBuilder.allocQubit();
@@ -527,7 +527,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverXAndControlledGates) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/// Test: Tests lifting a measurement over a controlled diagonal gate.
+// Test: Tests lifting a measurement over a controlled diagonal gate.
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverDiagonalGateInControl) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
@@ -565,8 +565,8 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverDiagonalGateInControl) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/// Test: A controlled diagonal gate is preserved when lifting a target
-/// measurement because it can kick phase back to the control.
+// Test: A controlled diagonal gate is preserved when lifting a target
+// measurement because it can kick phase back to the control.
 TEST_F(QCOMeasurementLiftingTest, preserveControlledPhaseKickback) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
@@ -611,8 +611,8 @@ TEST_F(QCOMeasurementLiftingTest, preserveControlledPhaseKickback) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/// Test: Tests that a measurement is not lifted over a controlled
-/// sequence gate if there are multiple gates inside the control block.
+// Test: Tests that a measurement is not lifted over a controlled
+// sequence gate if there are multiple gates inside the control block.
 TEST_F(QCOMeasurementLiftingTest, dontLiftMeasurementMultipleGatesInControl) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), referenceBuilder.getI1Type()});
@@ -656,7 +656,7 @@ TEST_F(QCOMeasurementLiftingTest, dontLiftMeasurementMultipleGatesInControl) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/// Test: Tests lifting a measurement over an inverted phase gate.
+// Test: Tests lifting a measurement over an inverted phase gate.
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverInvertedPhaseGates) {
   programBuilder.initialize({programBuilder.getI1Type()});
   auto q = programBuilder.allocQubit();

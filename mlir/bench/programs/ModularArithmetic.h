@@ -22,7 +22,9 @@ class QCProgramBuilder;
 namespace mqt::bench::detail {
 
 /// Add or subtract control * multiplier * multiplicand modulo modulus into
-/// accumulator. Requires 1 <= bits <= 63 and unsigned i64 residues
+/// accumulator.
+///
+/// Requires 1 <= bits <= 63 and unsigned i64 residues
 /// 0 < multiplier < modulus < 2^bits. The accumulator must be below the
 /// modulus, with its overflow bit and work qubit at zero.
 void multiplyAccumulate(mlir::qc::QCProgramBuilder& builder,

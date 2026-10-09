@@ -78,7 +78,7 @@ struct Execution {
     if (!qcoProgram) {
       return false;
     }
-    /// NOLINTNEXTLINE(misc-const-correctness): MLIR handles remain mutable.
+    // NOLINTNEXTLINE(misc-const-correctness): MLIR handles remain mutable.
     auto entryPoint = mlir::mqt::getEntryPoint(qcoProgram->module());
     if (entryPoint == nullptr) {
       std::cerr << "QCO program has no entry point" << '\n';
@@ -207,7 +207,7 @@ struct Execution {
       qirOutput_ = std::move(*output).str();
     }
     for (auto& shot : shots_) {
-      /// QDMI spells the highest-index output bit first.
+      // QDMI spells the highest-index output bit first.
       std::ranges::reverse(shot);
     }
     if (stateAvailable) {
@@ -277,7 +277,7 @@ int main(int argc, char** argv) {
     if (!qdmi::dd::decode(bytes, request)) {
       return 1;
     }
-    /// execute destroys the program's JIT, runtime, and DDs before reuse.
+    // execute destroys the program's JIT, runtime, and DDs before reuse.
     auto const response = execute(request);
     if (!qdmi::dd::writeFrame(stream, qdmi::dd::encode(response))) {
       return 1;

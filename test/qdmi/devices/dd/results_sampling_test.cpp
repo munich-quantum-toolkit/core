@@ -130,7 +130,7 @@ protected:
     // Values sum up to NUM_SHOTS.
     const auto sum = std::accumulate(vals.cbegin(), vals.cend(), size_t{0});
     EXPECT_EQ(sum, NUM_SHOTS);
-    /// Each output group contains the same measurement bits.
+    // Each output group contains the same measurement bits.
     EXPECT_TRUE(std::ranges::all_of(keys, [](const auto& k) {
       return k.size() == 2 * NUM_QUBITS &&
              k.substr(0, NUM_QUBITS) == k.substr(NUM_QUBITS) &&

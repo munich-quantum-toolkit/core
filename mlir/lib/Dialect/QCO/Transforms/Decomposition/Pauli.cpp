@@ -70,7 +70,7 @@ Matrix2x2 pauliFrame(PauliAxis axis, PauliAxis from) {
 }
 
 FoldedPauliAngle foldPauliAngle(double angle) {
-  /// Reduce with trigonometry before subtracting pi, including large angles.
+  // Reduce with trigonometry before subtracting pi, including large angles.
   const double principal = std::abs(angle) <= 2. * std::numbers::pi
                                ? angle
                                : 4. * std::atan(std::tan(angle / 4.));
@@ -223,7 +223,9 @@ static CliffordPaulis conjugatedPaulis(CompilerTarget::GateKind gate) {
   }
 }
 
-/// Emit C E^dagger (R_A(a) tensor R_B(b)) E C^dagger. Either angle
+/// Emit C E^dagger (R_A(a) tensor R_B(b)) E C^dagger.
+///
+/// Either angle
 /// may be absent. The same sandwich handles one or two commuting generators.
 static SmallVector<Value, 2>
 emitCliffordSandwich(RewriterBase& rewriter, Location loc, Value wire0,
@@ -245,8 +247,8 @@ emitCliffordSandwich(RewriterBase& rewriter, Location loc, Value wire0,
           },
   };
   double phase = 0.;
-  /// E^dagger = D E. D is identity for CX/CZ/ECR, ZZ for iSWAP,
-  /// and i times the generator for a fixed Pauli rotation at pi/2.
+  // E^dagger = D E. D is identity for CX/CZ/ECR, ZZ for iSWAP,
+  // and i times the generator for a fixed Pauli rotation at pi/2.
   if (basis.entangler->gate == CompilerTarget::GateKind::ISWAP) {
     frames[0] = frames[0] * ZOp::getUnitaryMatrix();
     frames[1] = frames[1] * ZOp::getUnitaryMatrix();
@@ -353,9 +355,9 @@ emitPauliSequence(RewriterBase& rewriter, Location loc, ValueRange inputs,
       continue;
     }
     if (basis.entangler->gate == CompilerTarget::GateKind::SQRTISWAP) {
-      /// S^dagger (I X) S = (I X - Y Z)/sqrt(2). Symmetric RX
-      /// corrections cancel the local X component, leaving R_YZ(theta).
-      /// Reduce modulo pi; the removed turns are local Pauli rotations.
+      // S^dagger (I X) S = (I X - Y Z)/sqrt(2). Symmetric RX
+      // corrections cancel the local X component, leaving R_YZ(theta).
+      // Reduce modulo pi; the removed turns are local Pauli rotations.
       const mqt::FloatExpression normalized(
           rewriter, loc, normalizeRotationParameter(rewriter, loc, angle));
       const auto scalar = [&](double value) {
@@ -399,7 +401,7 @@ emitPauliSequence(RewriterBase& rewriter, Location loc, ValueRange inputs,
       GPhaseOp::create(rewriter, loc, (turns * half).getValue());
       continue;
     }
-    /// Bounded rotations supply the fixed Clifford endpoint at pi/2.
+    // Bounded rotations supply the fixed Clifford endpoint at pi/2.
     const auto axes = conjugatedPaulis(basis.entangler->gate);
     const auto outputs = emitCliffordSandwich(
         rewriter, loc, wire0, wire1,
@@ -515,7 +517,7 @@ void mergeDiagonalRotations(RewriterBase& rewriter, ModuleOp moduleOp) {
               !isa<RZZOp, RZOp, POp>(body.getOperation())) {
             continue;
           }
-          /// Controlled RZ is directional; controlled P and RZZ are symmetric.
+          // Controlled RZ is directional; controlled P and RZZ are symmetric.
           const unsigned kind = isa<RZZOp>(body.getOperation())  ? 0
                                 : isa<RZOp>(body.getOperation()) ? 1
                                                                  : 2;
@@ -557,8 +559,8 @@ pauliRotationEntanglerCount(const PauliRotationSequence& sequence,
     for (const auto& term : sequence.rotations) {
       if (term.axes[0] != PauliAxis::I && term.axes[1] != PauliAxis::I) {
         const double value = *angle * term.angleScale;
-        /// Let the Weyl planner shorten near-Clifford rotations using its
-        /// fidelity policy, including negligible entangling angles.
+        // Let the Weyl planner shorten near-Clifford rotations using its
+        // fidelity policy, including negligible entangling angles.
         const double delta = std::remainder(value, std::numbers::pi / 2.);
         if (traceToFidelity(4. * std::cos(delta / 2.)) >=
             WEYL_DEFAULT_FIDELITY) {
@@ -633,7 +635,7 @@ fusePauliRotationRun(PatternRewriter& rewriter, Operation* head,
     if (!sequence) {
       break;
     }
-    /// Numerical fusion owns constant heads; runtime runs may absorb constants.
+    // Numerical fusion owns constant heads; runtime runs may absorb constants.
     if (operations.empty() && mqt::valueToConstantDouble(sequence->angle)) {
       return failure();
     }

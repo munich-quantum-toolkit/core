@@ -41,6 +41,7 @@ inline arith::CmpIPredicate unsignedPredicate(arith::CmpIPredicate predicate) {
 }
 
 /// Builds a logical shift with unsigned distance and zero on overshift.
+///
 /// Check before narrowing the distance and keep even unselected shifts valid
 /// for interpreters that evaluate SSA operations eagerly.
 inline Value buildZeroFillingShift(OpBuilder& builder, Location location,

@@ -34,10 +34,13 @@ using FloatParameter = std::variant<double, Value>;
 parameterToConstantDouble(const FloatParameter& parameter);
 
 /// Fold a known constant parameter to a host double, preserving unknown SSA
-/// values. This does not emit IR or apply angle policies.
+/// values.
+///
+/// This does not emit IR or apply angle policies.
 [[nodiscard]] FloatParameter foldParameter(const FloatParameter& parameter);
 
 /// Scale known constants in host arithmetic and SSA values with local folding.
+///
 /// SSA operands must dominate the builder's insertion point. A zero factor
 /// preserves unknown operands and their signed-zero and nonfinite behavior.
 [[nodiscard]] FloatParameter scaleParameter(OpBuilder& builder, Location loc,
@@ -106,7 +109,9 @@ public:
                                        bool value);
 
 /// Preserve an existing SSA value, or materialize the scalar with the caller's
-/// dialect-specific constant builder. Existing values do not invoke
+/// dialect-specific constant builder.
+///
+/// Existing values do not invoke
 /// materialize.
 template <typename T, typename Materialize>
 [[nodiscard]] Value variantToValue(const std::variant<T, Value>& parameter,

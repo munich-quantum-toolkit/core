@@ -902,7 +902,7 @@ when the custom slot is unsupported.)pb");
       "registered_device_ids", &qdmi::builtin_driver::registeredDeviceIds,
       nb::call_guard<nb::gil_scoped_release>(),
       "List enabled stable IDs without loading devices or contacting "
-      "providers. "
+      "providers.\n\n"
       "The first call fixes the MQT Core QDMI driver configuration.");
 
   builtinDriver.def(

@@ -41,7 +41,9 @@ struct GHZOptions {
   static constexpr size_t MAX_QUBITS = 1'000'000;
   static constexpr size_t MAX_X_BASIS_QUBITS = 1'075;
 
-  /// Number of qubits. Must be in `[1, MAX_QUBITS]`.
+  /// Number of qubits.
+  ///
+  /// Must be in `[1, MAX_QUBITS]`.
   size_t qubits;
   /// Entangling topology.
   GHZTopology topology = GHZTopology::Linear;

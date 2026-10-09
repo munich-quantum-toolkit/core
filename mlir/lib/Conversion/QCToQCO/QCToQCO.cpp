@@ -105,7 +105,9 @@ struct LoweringState {
   };
 
   /// Per-region map from original QC qubit reference to its latest QCO SSA
-  /// value. Consumed qubits retain a null entry to avoid linear-time erasure
+  /// value.
+  ///
+  /// Consumed qubits retain a null entry to avoid linear-time erasure
   /// from the ordered map; the entries are discarded with the region.
   ///
   /// Keys are `Operation::getParentRegion()` for ops being converted
@@ -138,6 +140,7 @@ struct LoweringState {
   DenseMap<Operation*, SetVector<RegisterId>> regionRegisterMap;
 
   /// Original QC value order for already-converted structured operations.
+  ///
   /// Kept separate from the legality maps above so converted SCF operations
   /// remain legal.
   DenseMap<Operation*, StructuredValues> structuredValues;
@@ -181,6 +184,7 @@ public:
 private:
   LoweringState* state_;
   /// Quantum operands use region-local state, not automatic materializations.
+  ///
   /// The converter is needed only for signatures and explicit result types.
   TypeConverter* typeConverter_;
 };
@@ -619,10 +623,10 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
     const auto reg = state.registerIds.size();
     state.registerIds.try_emplace(allocation, reg);
     Operation* finalInitialization = nullptr;
-    /// Find initializers in block order; later identity stores share the
-    /// register-slot validation below.
-    /// ponytail: scan once per buffer; sort store users if many buffers make
-    /// this costly.
+    // Find initializers in block order; later identity stores share the
+    // register-slot validation below.
+    // ponytail: scan once per buffer; sort store users if many buffers make
+    // this costly.
     for (auto store : allocation->getBlock()->getOps<memref::StoreOp>()) {
       if (store.getMemref() != allocation) {
         continue;
@@ -1327,7 +1331,7 @@ struct ConvertQCDeallocOp final : StatefulOpConversionPattern<DeallocOp> {
 
     rewriter.replaceOpWithNewOp<SinkOp>(op, qcoQubit);
 
-    /// Retain the slot so deallocation does not shift the ordered map.
+    // Retain the slot so deallocation does not shift the ordered map.
     qubitMap[qcQubit] = nullptr;
 
     return success();
@@ -2104,7 +2108,9 @@ struct ConvertSCFConditionOp final
 };
 
 /// Convert QC references to QCO values, threading quantum state through
-/// functions and structured control flow. Lower terminators after their regions
+/// functions and structured control flow.
+///
+/// Lower terminators after their regions
 /// so they yield the final mapped values independently of rewrite order.
 struct QCToQCO final : impl::QCToQCOBase<QCToQCO> {
   using QCToQCOBase::QCToQCOBase;
@@ -2121,7 +2127,7 @@ protected:
       return;
     }
 
-    /// Register indices still need normalization for alias validation.
+    // Register indices still need normalization for alias validation.
     if ((!preflightState.registerIds.empty() ||
          !staticsAlreadyNormalized(moduleOp)) &&
         failed(normalizeStaticQubits(moduleOp))) {
@@ -2209,8 +2215,8 @@ protected:
              typeConverter.isLegal(&op.getBody());
     });
 
-    /// Convert returns until borrowed results and local resource releases
-    /// have been emitted, even if the original result types are already legal.
+    // Convert returns until borrowed results and local resource releases
+    // have been emitted, even if the original result types are already legal.
     patterns.add<ConvertFuncReturnOp>(typeConverter, context, &state);
     target.addDynamicallyLegalOp<func::ReturnOp>([&](func::ReturnOp op) {
       if (!typeConverter.isLegal(op)) {

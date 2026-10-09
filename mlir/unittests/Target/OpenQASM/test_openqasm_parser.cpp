@@ -277,7 +277,7 @@ TEST(OpenQASMFrontendTest, CachesSearchPathIncludesAndKeepsEveryOccurrence) {
 
   auto analyzed = openqasm::frontend::analyzeOpenQASM(sourceMgr);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
-  /// One failed direct lookup and one successful search-path lookup.
+  // One failed direct lookup and one successful search-path lookup.
   EXPECT_EQ(traced->NumOpenFileForReadCalls, 2);
   size_t assignments = 0;
   for (const auto& statement : analyzed.program->statements) {

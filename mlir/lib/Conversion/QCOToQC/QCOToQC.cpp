@@ -61,8 +61,9 @@ enum class AllocationMode : std::uint8_t {
   Dynamic, //!< The module uses dynamic qubit allocation.
 };
 
-/// Track function argument positions and
-/// the module's allocation mode. Dynamic qubits require deallocation at sinks;
+/// Track function argument positions and the module's allocation mode.
+///
+/// Dynamic qubits require deallocation at sinks;
 /// static qubits do not. Mixed allocation modes are rejected before conversion.
 struct LoweringState {
   /// Function symbols remain in place while their signatures are converted.
@@ -249,6 +250,7 @@ public:
 } // namespace
 
 /// Proves the positional wire correspondence required by reference semantics.
+///
 /// Region arguments are local roots; a region result is tied to its input only
 /// after both the region body and its terminator have been checked.
 [[nodiscard]] static LogicalResult
@@ -341,7 +343,7 @@ collectWireOrigins(ModuleOp moduleOp, DenseMap<Value, Value>& origins) {
             "must restore the extracted qubit to its original register slot");
         return WalkResult::interrupt();
       }
-      /// Equality of dynamic slot indices is a program precondition.
+      // Equality of dynamic slot indices is a program precondition.
       origins[insert.getResult()] = origin(insert.getDest());
     } else if (auto call = dyn_cast<func::CallOp>(op)) {
       for (auto [index, result] : llvm::enumerate(call.getResults())) {
@@ -708,7 +710,9 @@ struct ConvertQCOGateToQC final : OpConversionPattern<QCOOpType> {
   using OpConversionPattern<QCOOpType>::OpConversionPattern;
 
   /// Forward the adapted operands in QCO's declared order: NumTargets qubits,
-  /// then NumParams parameters. Dialect conversion preserves this order.
+  /// then NumParams parameters.
+  ///
+  /// Dialect conversion preserves this order.
   template <std::size_t... TargetIndices, std::size_t... ParamIndices>
   static void createGate(ConversionPatternRewriter& rewriter, Location loc,
                          ValueRange qcOperands,
@@ -1362,6 +1366,7 @@ struct ConvertQCOSCFConditionOp final : OpConversionPattern<scf::ConditionOp> {
 };
 
 /// Convert QCO's linear SSA chains to QC qubit references.
+///
 /// Check allocation mode, wire correspondence, and tensor lifetimes before
 /// rewriting. Adapted operands carry the converted references into gate and
 /// control-flow patterns.

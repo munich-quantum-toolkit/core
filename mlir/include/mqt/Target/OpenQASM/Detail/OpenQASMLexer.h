@@ -159,6 +159,7 @@ private:
   }
 
   /// Skip whitespace and comments.
+  ///
   /// @return The start of an unterminated block comment, or `nullptr` if the
   /// trivia is well-formed.
   [[nodiscard]] const char* skipTrivia();

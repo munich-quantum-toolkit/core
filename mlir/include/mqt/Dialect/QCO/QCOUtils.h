@@ -62,7 +62,9 @@ inline bool checkDeadGate(Operation* op) {
 /// the entry block.
 [[nodiscard]] LogicalResult verifyLinearity(Operation* root);
 
-/// Maximum dense modifier matrix width. Controlled matrices include controls
+/// Maximum dense modifier matrix width.
+///
+/// Controlled matrices include controls
 /// in this bound; @ref composeBodyMatrix applies it to the target body.
 inline constexpr size_t kMaxModifierTargetQubits = 10;
 

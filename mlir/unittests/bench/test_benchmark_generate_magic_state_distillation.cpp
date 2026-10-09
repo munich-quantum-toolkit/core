@@ -70,8 +70,8 @@ static void expectDistillationFaults(size_t levels, uint32_t errors,
     if ((errors & (1U << i)) == 0) {
       continue;
     }
-    /// A Z fault between T and parity uncomputation is the P Pauli fault
-    /// on the corresponding π/8 rotation in Litinski's error model.
+    // A Z fault between T and parity uncomputation is the P Pauli fault
+    // on the corresponding π/8 rotation in Litinski's error model.
     auto op = rotations[i];
     OpBuilder builder(op);
     builder.setInsertionPointAfter(op);
@@ -116,8 +116,8 @@ TEST(GenerateProgramTest, KeepsConcatenatedMagicStateDistillationCompact) {
 
 TEST(GenerateProgramTest,
      DistillationRejectsRotationErrorsAndDetectsLogicalErrors) {
-  /// Columns of Litinski's Fig. 3, encoded with the output qubit as bit 0.
-  /// XOR gives the root Z error and the four X-check syndromes independently.
+  // Columns of Litinski's Fig. 3, encoded with the output qubit as bit 0.
+  // XOR gives the root Z error and the four X-check syndromes independently.
   constexpr std::array<uint32_t, 15> columns{
       2, 4, 8, 16, 14, 7, 11, 13, 25, 19, 21, 31, 28, 26, 22,
   };
@@ -149,8 +149,8 @@ TEST(GenerateProgramTest,
 }
 
 TEST(GenerateProgramTest, ConcatenatedDistillationConsumesRetainedStates) {
-  /// Reject only the first child, retaining its ideal output state, as with a
-  /// check-only fault. Subsequent accepting children must not clear rejection.
+  // Reject only the first child, retaining its ideal output state, as with a
+  // check-only fault. Subsequent accepting children must not clear rejection.
   auto program = generate(MagicStateDistillation({.levels = 2}));
   ASSERT_TRUE(program);
   auto entryPoint = mlir::mqt::getEntryPoint(program->module());
@@ -166,8 +166,8 @@ TEST(GenerateProgramTest, ConcatenatedDistillationConsumesRetainedStates) {
   ASSERT_TRUE(injected.wasInterrupted());
   expectDistillationCounts(std::move(*program), "10");
 
-  /// The undetected triple at rotations 5, 11, 14 flips every lower output.
-  /// The resulting 15 faulty higher-level rotations also leave a root Z error.
+  // The undetected triple at rotations 5, 11, 14 flips every lower output.
+  // The resulting 15 faulty higher-level rotations also leave a root Z error.
   constexpr auto errors = (1U << 4U) | (1U << 10U) | (1U << 13U);
   expectDistillationFaults(2, errors, "01");
 }

@@ -76,6 +76,7 @@ public:
   enum class Profile : uint8_t { Base, Adaptive };
 
   /// Construct a new QIRProgramBuilder
+  ///
   /// @param context The MLIR context to use for building operations
   explicit QIRProgramBuilder(MLIRContext* context);
 
@@ -91,6 +92,7 @@ public:
 
   /// Initialize the builder and prepare for program construction
   /// with specified return types.
+  ///
   /// @param returnType The return type for the main function
   ///
   /// Creates a main function with an entry_point attribute. Must be called
@@ -98,6 +100,7 @@ public:
   void initialize(Type returnType);
 
   /// Modify the return type of the main function after initialization.
+  ///
   /// @param returnType The new return type for the main function
   void retype(Type returnType);
 
@@ -116,10 +119,12 @@ public:
   //===--------------------------------------------------------------------===//
 
   /// Allocate a dynamic qubit in Adaptive or the next static qubit in Base.
+  ///
   /// @return An LLVM pointer representing the qubit
   Value allocQubit();
 
   /// Get a static qubit by index
+  ///
   /// @param index The qubit index (must be non-negative)
   /// @return An LLVM pointer representing the qubit
   ///
@@ -134,6 +139,7 @@ public:
   Value staticQubit(int64_t index);
 
   /// Get a static result by index
+  ///
   /// @param index The result index (must be non-negative)
   /// @param record Whether the result should be recorded in the output
   /// @return An LLVM pointer representing the result
@@ -156,6 +162,7 @@ public:
     SmallVector<Value> qubits;
 
     /// Access a specific qubit in the register
+    ///
     /// @param index The index of the qubit to access
     /// @return The specified qubit value
     Value operator[](size_t index) const;
@@ -165,7 +172,9 @@ public:
   };
 
   /// Allocate a qubit register using the selected profile's addressing mode.
+  ///
   /// Adaptive allocates a runtime array; Base creates consecutive static IDs.
+  ///
   /// @param size Number of qubits (must be positive)
   /// @return The qubit values and, in Adaptive, their backing array pointer
   QubitRegister allocQubitRegister(int64_t size);
@@ -188,6 +197,7 @@ public:
   Value loadQubit(Value reg, Value index);
 
   /// Allocate a classical bit register
+  ///
   /// @param size Number of bits (must be positive)
   /// @param record Whether the register should be recorded in the output
   /// @return A `ClassicalRegister` structure
@@ -1029,6 +1039,7 @@ public:
 
   /// Finalize the program with the given return value and return the
   /// constructed module
+  ///
   /// @param returnValue The return value of the main function
   ///
   /// Automatically deallocates all remaining valid qubits and tensors of
@@ -1044,6 +1055,7 @@ public:
   OwningOpRef<ModuleOp> finalize(Value returnValue);
 
   /// Convenience method for building quantum programs
+  ///
   /// @param context The MLIR context to use for building the program
   /// @param buildFunc A function that takes a reference to a QIRProgramBuilder
   /// and uses it to build the desired quantum program. The builder will be

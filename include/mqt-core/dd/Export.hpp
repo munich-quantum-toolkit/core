@@ -246,7 +246,7 @@ static void toDot(const Edge<Node>& e, std::ostream& os, bool colored = true,
     header(e, oss, edgeLabels, formatAsPolar);
   }
 
-  /// Assign IDs on discovery, independent of allocation addresses.
+  // Assign IDs on discovery, independent of allocation addresses.
   std::unordered_map<const Node*, size_t> nodes{{e.p, 0}};
   std::queue<const Edge<Node>*> q;
   q.push(&e);

@@ -343,7 +343,7 @@ static void finishParameterSum(ParsedParameter& parameter) {
                                std::move(left), std::move(right));
     }
   }
-  /// The first term is positive; subtractions only negate right-hand terms.
+  // The first term is positive; subtractions only negate right-hand terms.
   parameter.value = std::move(std::get<0>(terms.front()));
   parameter.depth = std::get<1>(terms.front());
   terms.clear();
@@ -609,11 +609,11 @@ static void appendControlModifier(const nb::handle object,
                                     "Qiskit controlled gate has no base");
   const auto targets = pythonUnsignedAttribute(
       base, "num_qubits", "Qiskit base gate has an invalid width");
-  /// MCMT's base gate acts on each target, not on the whole target register.
+  // MCMT's base gate acts on each target, not on the whole target register.
   if (controls > qubits || targets != qubits - controls) {
     return false;
   }
-  /// Open controls use Qiskit's X-conjugated circuit definition.
+  // Open controls use Qiskit's X-conjugated circuit definition.
   return pythonUnsignedAttribute(
              operation, "ctrl_state",
              "Qiskit controlled gate has an invalid state") ==
@@ -863,7 +863,7 @@ nativeRAngle(nb::handle operation, const std::string_view name) {
       return angle;
     }
   } catch (const nb::python_error&) {
-    /// Other custom definitions use normal circuit import.
+    // Other custom definitions use normal circuit import.
     return std::nullopt;
   }
   return std::nullopt;
@@ -2428,8 +2428,8 @@ public:
         standardGates_[nb::str(gate->name.data(), gate->name.size())];
     auto instruction = standardInstruction_(standard.attr("_standard_gate"),
                                             pythonQubits(qubits), values);
-    /// As with numeric appends, this private circuit has no builder scope or
-    /// cached duration.
+    // As with numeric appends, this private circuit has no builder scope or
+    // cached duration.
     pythonCircuit_.attr("_data").attr("append")(instruction);
   }
 
@@ -2611,7 +2611,7 @@ public:
 
 private:
   [[nodiscard]] QkCircuit* nativeCircuit() const {
-    /// Reborrow after Python calls; no native pointer outlives its data owner.
+    // Reborrow after Python calls; no native pointer outlives its data owner.
     auto data = pythonCircuit_.attr("_data");
     auto* circuit = qk_circuit_borrow_from_python(data.ptr());
     if (circuit == nullptr) {
@@ -2631,6 +2631,7 @@ private:
   }
 
   /// Export preflight checks the expanded node/depth budgets before conversion.
+  ///
   /// Retain shared children so cached identities remain valid across gates.
   [[nodiscard]] nb::object
   pythonParameter(const std::shared_ptr<const Parameter>& parameter) {
@@ -2778,8 +2779,8 @@ private:
     if (const auto* binary = parameter.getBinary()) {
       if (binary->operation == BinaryParameterKind::Add ||
           binary->operation == BinaryParameterKind::Subtract) {
-        /// Qiskit 2.5 recursively reoptimizes balanced sums. Append their terms
-        /// incrementally until upstream handles balanced additions efficiently.
+        // Qiskit 2.5 recursively reoptimizes balanced sums. Append their terms
+        // incrementally until upstream handles balanced additions efficiently.
         std::vector<std::pair<std::shared_ptr<const Parameter>, bool>> pending{
             {
                 binary->right,
@@ -3054,8 +3055,8 @@ public:
                 operationName, std::vector<double>{0.})) &&
             nb::cast<bool>(target.attr("supported_angle_bound")(
                 operationName, std::vector<double>{std::numbers::pi / 2.}))) {
-          /// Public predicates prove that this useful interval is contained in
-          /// the target's interval; other bounded domains remain unsupported.
+          // Public predicates prove that this useful interval is contained in
+          // the target's interval; other bounded domains remain unsupported.
           parameterBounds.emplace_back(std::pair{0., std::numbers::pi / 2.});
           supported = true;
         }
@@ -3220,7 +3221,7 @@ private:
       return "gphase";
     }
     const auto* gate = versionGate(name);
-    /// The compiler recognizes controlled Pauli gates as native operations.
+    // The compiler recognizes controlled Pauli gates as native operations.
     if (gate != nullptr &&
         (gate->translation.controls != 0 ||
          gate->translation.gate == mlir::qc::StandardGate::CU) &&

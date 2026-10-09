@@ -93,8 +93,8 @@ void registerQIRClassicalTensorDialects(DialectRegistry& registry) {
 LogicalResult finalizeQIRConversion(ModuleOp moduleOp, ConversionTarget& target,
                                     LLVMTypeConverter& typeConverter) {
   auto* ctx = moduleOp.getContext();
-  /// Constant tensors and element reads require no allocation or alias
-  /// analysis.
+  // Constant tensors and element reads require no allocation or alias
+  // analysis.
   bufferization::BufferizationOptions options;
   options.allowUnknownOps = true;
   options.opFilter.allowOperation<arith::ConstantOp, tensor::ExtractOp>();
@@ -400,6 +400,7 @@ Value getResultPtr(LoweringState& state, Operation* op,
 }
 
 /// Summarize the interference before each store in one block traversal.
+///
 /// Only disjoint constant-index stores to the same register can be crossed.
 static DenseSet<Operation*> findStoreFusionCandidates(Block* block) {
   DenseSet<Operation*> candidates;
@@ -441,7 +442,7 @@ static DenseSet<Operation*> findStoreFusionCandidates(Block* block) {
       }
       continue;
     }
-    /// These unscoped quantum effects cannot access CBit storage.
+    // These unscoped quantum effects cannot access CBit storage.
     if (isa<qc::AllocOp, qc::DeallocOp, qc::GPhaseOp>(operation)) {
       continue;
     }

@@ -38,6 +38,8 @@
 #include <utility>
 #include <vector>
 
+/// Stores a measurement result behind an opaque QIR Result handle.
+///
 /// @note this struct is purposefully not called ResultImpl to leave the Result
 /// pointer opaque such that it cannot be dereferenced
 struct ResultStruct {
@@ -70,7 +72,9 @@ static constexpr auto packOfType(Args&&... args) {
 
 class Runtime {
 public:
-  /// The quantum state held by the runtime:
+  /// Holds the runtime's quantum state.
+  ///
+  /// The state consists of:
   /// - a DD package,
   /// - the root edge into that package, and
   /// - the number of qubits the state spans.
@@ -84,6 +88,7 @@ public:
           numQubits(0) {}
 
     /// Reset to a fresh empty state.
+    ///
     /// If @c dd is currently populated, the existing package's `decRef` plus
     /// `garbageCollect` path is used so the package (and its internal caches)
     /// is kept warm.
@@ -165,7 +170,9 @@ public:
   explicit Runtime(uint64_t randomSeed);
 
   [[nodiscard]] static auto generateRandomSeed() -> uint64_t;
-  /// Return the runtime bound to this thread. When no session is executing, a
+  /// Return the runtime bound to this thread.
+  ///
+  /// When no session is executing, a
   /// thread-local fallback keeps direct calls to the public C ABI convenient.
   static Runtime& getInstance();
 
@@ -214,13 +221,15 @@ public:
   /// Append a measurement bit to the measurement string.
   auto appendMeasurementBit(bool result) -> void;
 
-  /// @returns the accumulated measurement string.
+  /// Returns the accumulated measurement string.
   auto getMeasurements() const -> const std::string&;
 
   /// Move the quantum state out of the runtime.
+  ///
   /// Then reset the runtime to a clean state ready for the next job.
   /// Intended for use after state extraction or successful terminal sampling
   /// that reported an available uncollapsed state.
+  ///
   /// @returns the moved @c QState from the runtime.
   auto takeState() -> QState;
 

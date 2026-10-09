@@ -196,8 +196,8 @@ struct DeviceAPICache {
 };
 
 [[nodiscard]] auto deviceAPICache() -> DeviceAPICache& {
-  /// Match Driver::get(): loaded APIs must outlive sessions in global
-  /// destructors. NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  // Match Driver::get(): loaded APIs must outlive sessions in global
+  // destructors. NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
   static auto* cache = new DeviceAPICache();
   return *cache;
 }
@@ -218,15 +218,15 @@ struct DeviceAPICache {
     const std::scoped_lock lock(cache.mutex);
     return cache.libraries[handle.get()];
   }();
-  /// Modules may contain providers that share initialization state. Keep their
-  /// initialization serialized without blocking unrelated modules.
+  // Modules may contain providers that share initialization state. Keep their
+  // initialization serialized without blocking unrelated modules.
   const std::scoped_lock lock(module.mutex);
   auto& apis = module.apis;
   if (const auto found = apis.find(prefix); found != apis.end()) {
     return found->second;
   }
-  /// The private constructor takes ownership of the already loaded module.
-  /// NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  // The private constructor takes ownership of the already loaded module.
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
   auto api = std::shared_ptr<LoadedDeviceAPI>(
       new LoadedDeviceAPI(handle.release(), libName, prefix));
   apis.emplace(prefix, api);
@@ -259,7 +259,7 @@ QDMI_Device_impl_d::QDMI_Device_impl_d(
       throw DeviceStatusError(QDMI_ERROR_FATAL,
                               "Device returned a null session handle");
     }
-    /// All views borrow NUL-terminated strings for this synchronous call.
+    // All views borrow NUL-terminated strings for this synchronous call.
     const auto setParameter = [&](const std::optional<std::string_view> value,
                                   const QDMI_Device_Session_Parameter param) {
       if (!value) {
@@ -325,7 +325,7 @@ QDMI_Device_impl_d::QDMI_Device_impl_d(
     }
     checkStatus(api_->device_session_init(deviceSession_),
                 "Failed to initialize device session");
-    /// Child sessions are leaves; only the parent discovers children.
+    // Child sessions are leaves; only the parent discovers children.
     if (childDevice != nullptr) {
       return;
     }
@@ -955,8 +955,8 @@ uint32_t QDMI_driver_get_client_abi_version() {
   return QDMI_CLIENT_ABI_VERSION;
 }
 
-/// The private C ABI fixes these exported symbol names.
-/// NOLINTBEGIN(readability-identifier-naming)
+// The private C ABI fixes these exported symbol names.
+// NOLINTBEGIN(readability-identifier-naming)
 extern "C" QDMI_DRIVER_EXPORT int
 MQT_CORE_QDMI_driver_add_manifest_v1(const char* const manifestPath) {
   if (manifestPath == nullptr || *manifestPath == '\0') {
@@ -1027,7 +1027,7 @@ MQT_CORE_QDMI_driver_session_alloc_for_device_v1(
     return QDMI_ERROR_FATAL;
   }
 }
-/// NOLINTEND(readability-identifier-naming)
+// NOLINTEND(readability-identifier-naming)
 
 int QDMI_session_alloc(QDMI_Session* session) {
   if (session == nullptr) {

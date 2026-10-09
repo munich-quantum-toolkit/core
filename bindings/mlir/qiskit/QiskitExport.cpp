@@ -2938,7 +2938,7 @@ nb::object exportCircuit(const mlir::QCProgram& program,
   }
   mlir::RewritePatternSet patterns(moduleOp.getContext());
   mlir::mqt::populateIntegerExpansionPatterns(patterns);
-  /// Fold scalar expressions without applying resource or snapshot rewrites.
+  // Fold scalar expressions without applying resource or snapshot rewrites.
   if (mlir::failed(
           mlir::applyPatternsGreedily(moduleOp, std::move(patterns)))) {
     throw std::runtime_error("failed to normalize arithmetic for Qiskit");

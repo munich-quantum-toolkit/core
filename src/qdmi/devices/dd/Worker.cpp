@@ -50,10 +50,10 @@ bool hasExited(const llvm::sys::ProcessInfo& process) {
 #ifdef _WIN32
   return llvm::sys::Wait(process, 0, nullptr, nullptr, true).Pid != 0;
 #else
-  /// LLVM 23's timed Wait changes the host's SIGALRM handler, even for polling.
+  // LLVM 23's timed Wait changes the host's SIGALRM handler, even for polling.
   int status = 0;
-  /// sys/wait.h owns WNOHANG; the suggested glibc bits header is private.
-  /// NOLINTNEXTLINE(misc-include-cleaner)
+  // sys/wait.h owns WNOHANG; the suggested glibc bits header is private.
+  // NOLINTNEXTLINE(misc-include-cleaner)
   const auto exited = waitpid(process.Pid, &status, WNOHANG);
   return exited == process.Pid || (exited == -1 && errno == ECHILD);
 #endif
@@ -131,7 +131,7 @@ bool Worker::start() {
       return false;
     }
   }
-  /// Bound startup, while making cancellation responsive before connection.
+  // Bound startup, while making cancellation responsive before connection.
   const auto deadline =
       std::chrono::steady_clock::now() + std::chrono::seconds(30);
   while (std::chrono::steady_clock::now() < deadline) {

@@ -40,25 +40,31 @@ struct ComplexValue {
   ComplexValue(const fp real, const fp imag) noexcept : r{real}, i{imag} {}
 
   /// Check for exact equality.
+  ///
   /// @param other The other complex number to compare to.
   /// @returns True if the complex numbers are exactly equal, false otherwise.
   [[nodiscard]] bool operator==(const ComplexValue& other) const noexcept;
 
+  /// Checks whether two complex values differ.
+  ///
   /// @see operator==
   [[nodiscard]] bool operator!=(const ComplexValue& other) const noexcept;
 
   /// Check whether the complex number is exactly equal to zero.
+  ///
   /// @return True if the complex number is exactly equal to zero, false
   /// otherwise.
   [[nodiscard]] bool exactlyZero() const noexcept { return r == 0. && i == 0.; }
 
   /// Check whether the complex number is exactly equal to one.
+  ///
   /// @return True if the complex number is exactly equal to one, false
   /// otherwise.
   [[nodiscard]] bool exactlyOne() const noexcept { return r == 1. && i == 0.; }
 
   /// Check whether the complex number is approximately equal to the
   /// given complex number.
+  ///
   /// @param c The complex number to compare to.
   /// @returns True if the complex number is approximately equal to the given
   /// complex number, false otherwise.
@@ -66,6 +72,7 @@ struct ComplexValue {
   [[nodiscard]] bool approximatelyEquals(const ComplexValue& c) const noexcept;
 
   /// Check whether the complex number is approximately equal to zero.
+  ///
   /// @returns True if the complex number is approximately equal to zero, false
   /// otherwise.
   /// @see RealNumber::approximatelyZero
@@ -73,20 +80,24 @@ struct ComplexValue {
 
   /// Write a binary representation of the complex number to the given
   /// output stream.
+  ///
   /// @param os The output stream to write to.
   void writeBinary(std::ostream& os) const;
 
   /// Read a binary representation of the complex number from the given
   /// input stream.
+  ///
   /// @param is The input stream to read from.
   void readBinary(std::istream& is);
 
   /// Construct a complex number from a string.
+  ///
   /// @param realStr The string representation of the real part.
   /// @param imagStr The string representation of the imaginary part.
   void fromString(const std::string& realStr, std::string imagStr);
 
   /// Get the closest fraction to the given number.
+  ///
   /// @param x The number to approximate.
   /// @param maxDenominator The maximum denominator to use.
   /// @returns The closest fraction to the given number as a pair of numerator
@@ -95,12 +106,14 @@ struct ComplexValue {
   getLowestFraction(fp x, std::uint64_t maxDenominator = 1U << 10);
 
   /// Pretty print the given real number to the given output stream.
+  ///
   /// @param os The output stream to write to.
   /// @param num The number to print.
   /// @param imaginary Whether the number is imaginary.
   static void printFormatted(std::ostream& os, fp num, bool imaginary = false);
 
   /// Print the given complex number to the given output stream.
+  ///
   /// @param real The real part of the complex number.
   /// @param imag The imaginary part of the complex number.
   /// @param formatted Whether to pretty print the number.
@@ -113,10 +126,12 @@ struct ComplexValue {
   explicit operator auto() const noexcept { return std::complex<fp>{r, i}; }
 
   /// Compute the squared magnitude of the complex number.
+  ///
   /// @return The squared magnitude of the complex number.
   [[nodiscard]] fp mag2() const noexcept { return (r * r) + (i * i); }
 
   /// Compute the magnitude of the complex number.
+  ///
   /// @return The magnitude of the complex number.
   [[nodiscard]] fp mag() const noexcept { return std::hypot(r, i); }
 
@@ -134,6 +149,7 @@ ComplexValue operator/(const ComplexValue& c1, fp r);
 ComplexValue operator/(const ComplexValue& c1, const ComplexValue& c2);
 
 /// Print a complex value to the given output stream.
+///
 /// @param os The output stream to write to.
 /// @param c The complex value to print.
 /// @returns The output stream.

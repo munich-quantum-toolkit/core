@@ -63,7 +63,7 @@ bool readAll(llvm::raw_socket_stream& stream, char* data, size_t size) {
   }
   return true;
 }
-/// NOLINTNEXTLINE(misc-const-correctness): Windows writes through the stream.
+// NOLINTNEXTLINE(misc-const-correctness): Windows writes through the stream.
 bool writeAll(llvm::raw_socket_stream& stream, llvm::StringRef bytes) {
 #ifdef _WIN32
   stream.write(bytes.data(), bytes.size());
@@ -72,8 +72,8 @@ bool writeAll(llvm::raw_socket_stream& stream, llvm::StringRef bytes) {
   stream.clear_error();
   return ok;
 #else
-  /// LLVM exposes the descriptor only to subclasses. Use its inherited member
-  /// pointer without downcasting the stream.
+  // LLVM exposes the descriptor only to subclasses. Use its inherited member
+  // pointer without downcasting the stream.
   struct SocketAccess : llvm::raw_socket_stream {
     static int descriptor(const llvm::raw_socket_stream& socket) {
       return (socket.*&SocketAccess::get_fd)();
@@ -81,8 +81,8 @@ bool writeAll(llvm::raw_socket_stream& stream, llvm::StringRef bytes) {
   };
   const auto socket = SocketAccess::descriptor(stream);
   while (!bytes.empty()) {
-    /// Suppress SIGPIPE per send: Darwin delivers it to the process, so masking
-    /// only this thread cannot protect other host threads.
+    // Suppress SIGPIPE per send: Darwin delivers it to the process, so masking
+    // only this thread cannot protect other host threads.
     const auto count = llvm::sys::RetryAfterSignal(
         -1, ::send, socket, bytes.data(), bytes.size(), MSG_NOSIGNAL);
     if (count <= 0) {
@@ -96,8 +96,8 @@ bool writeAll(llvm::raw_socket_stream& stream, llvm::StringRef bytes) {
 } // namespace
 
 void CloseWorkerStream::operator()(llvm::raw_socket_stream* stream) const {
-  /// Close before LLVM 23's Winsock guard is destroyed. Transport failures
-  /// already fail the job; a pending stream error must not abort the host.
+  // Close before LLVM 23's Winsock guard is destroyed. Transport failures
+  // already fail the job; a pending stream error must not abort the host.
   stream->close();
   stream->clear_error();
   std::default_delete<llvm::raw_socket_stream>{}(stream);
@@ -126,7 +126,7 @@ bool readFrame(llvm::raw_socket_stream& stream, std::string& bytes) {
     return false;
   }
   bytes.clear();
-  /// Allocate only for bytes actually received, not an untrusted length.
+  // Allocate only for bytes actually received, not an untrusted length.
   std::array<char, 65536> chunk{};
   while (size != 0) {
     const auto count =

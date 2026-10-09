@@ -30,7 +30,7 @@ void registerMagicStateDistillation(const nb::module_& m) {
       "Parameters for concatenated 15-to-1 magic-state distillation.")
       .def(nb::init<size_t>(), nb::kw_only(), "levels"_a = 1)
       .def_ro("levels", &bench::MagicStateDistillationOptions::levels,
-              "Positive number of concatenated levels. The qubit count "
+              "Positive number of concatenated levels.\n\nThe qubit count "
               "(five per level) must fit signed 64-bit circuit dimensions.");
   auto magicStateDistillation = nb::class_<bench::MagicStateDistillation>(
       m, "MagicStateDistillation",

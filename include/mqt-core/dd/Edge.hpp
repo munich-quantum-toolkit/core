@@ -44,10 +44,9 @@ template <class Node> struct Edge {
   Node* p;
   Complex w;
 
-  /// Comparing two DD edges with another involves comparing the respective
-  /// pointers and checking whether the corresponding weights are "close enough"
-  /// according to a given tolerance this notion of equivalence is chosen to
-  /// counter floating point inaccuracies
+  /// Compares node pointers and approximately compares the weights.
+  ///
+  /// Weight comparison uses a tolerance to account for floating-point error.
   constexpr bool operator==(const Edge& other) const {
     return p == other.p && w.approximatelyEquals(other.w);
   }
@@ -56,14 +55,17 @@ template <class Node> struct Edge {
   }
 
   /// Get the static zero terminal
+  ///
   /// @return the zero terminal
   static constexpr Edge zero() { return terminal(Complex::zero()); }
 
   /// Get the static one terminal
+  ///
   /// @return the one terminal
   static constexpr Edge one() { return terminal(Complex::one()); }
 
   /// Get a terminal DD with a given edge weight
+  ///
   /// @param w the edge weight
   /// @return the terminal DD representing (w)
   [[nodiscard]] static constexpr Edge terminal(const Complex& w) {
@@ -71,6 +73,7 @@ template <class Node> struct Edge {
   }
 
   /// Check whether an edge requires tracking.
+  ///
   /// @param e The edge to check.
   /// @return Whether the edge requires tracking.
   [[nodiscard]] static constexpr bool trackingRequired(const Edge& e) {
@@ -79,24 +82,28 @@ template <class Node> struct Edge {
   }
 
   /// Check whether this is a terminal
+  ///
   /// @return whether this is a terminal
   [[nodiscard]] constexpr bool isTerminal() const {
     return Node::isTerminal(p);
   }
 
   /// Check whether this is a zero terminal
+  ///
   /// @return whether this is a zero terminal
   [[nodiscard]] constexpr bool isZeroTerminal() const {
     return isTerminal() && w.exactlyZero();
   }
 
   /// Check whether this is a one terminal
+  ///
   /// @return whether this is a one terminal
   [[nodiscard]] constexpr bool isOneTerminal() const {
     return isTerminal() && w.exactlyOne();
   }
 
   /// Get a single element of the vector or matrix represented by the DD
+  ///
   /// @param numQubits number of qubits in the considered DD
   /// @param decisions string {0, 1, 2, 3}^n describing which outgoing edge
   /// should be followed (for vectors entries are limited to 0 and 1) If string
@@ -122,6 +129,7 @@ template <class Node> struct Edge {
 
 private:
   /// Recursively traverse the DD and count the number of nodes
+  ///
   /// @param visited set of visited nodes
   /// @return the size of the DD
   [[nodiscard]] std::size_t
@@ -129,6 +137,7 @@ private:
 };
 
 /// Get a normalized vector DD from a fresh node and a list of edges
+///
 /// @param p the fresh node
 /// @param e the list of edges that form the successor nodes
 /// @param mm a reference to the memory manager (for returning unused nodes)
@@ -139,6 +148,7 @@ auto normalize(vNode* p, const std::array<Edge<vNode>, RADIX>& e,
                MemoryManager& mm, ComplexNumbers& cn) -> Edge<vNode>;
 
 /// Get a single element of the vector represented by the DD
+///
 /// @param edge the vector DD
 /// @param i index of the element
 /// @throws std::out_of_range if the index is outside the vector
@@ -147,6 +157,7 @@ auto normalize(vNode* p, const std::array<Edge<vNode>, RADIX>& e,
                                                size_t i);
 
 /// Get the vector represented by the DD
+///
 /// @param edge the vector DD
 /// @param threshold amplitudes with a magnitude below this threshold will be
 /// ignored
@@ -154,6 +165,7 @@ auto normalize(vNode* p, const std::array<Edge<vNode>, RADIX>& e,
 [[nodiscard]] CVec getVector(const Edge<vNode>& edge, fp threshold = 0.);
 
 /// Get the sparse vector represented by the DD
+///
 /// @param edge the vector DD
 /// @param threshold amplitudes with a magnitude below this threshold will be
 /// ignored
@@ -162,16 +174,19 @@ auto normalize(vNode* p, const std::array<Edge<vNode>, RADIX>& e,
                                          fp threshold = 0.);
 
 /// Print the vector represented by the DD
+///
 /// @note This function scales exponentially with the number of qubits.
 void printVector(const Edge<vNode>& edge);
 
 /// Add the amplitudes of a vector DD to a vector
+///
 /// @param edge the vector DD
 /// @param amplitudes the vector to add to
 void addToVector(const Edge<vNode>& edge, CVec& amplitudes);
 
 /// Get a normalized matrix DD from a fresh node and a list
 /// of edges
+///
 /// @param p the fresh node
 /// @param e the list of edges that form the successor nodes
 /// @param mm a reference to the memory manager (for returning unused nodes)
@@ -182,6 +197,7 @@ auto normalize(mNode* p, const std::array<Edge<mNode>, NEDGE>& e,
                MemoryManager& mm, ComplexNumbers& cn) -> Edge<mNode>;
 
 /// Check whether the matrix represented by the DD is the identity
+///
 /// @return whether the matrix is the identity
 [[nodiscard]] inline bool isIdentity(const Edge<mNode>& edge,
                                      const bool upToGlobalPhase = true) {
@@ -195,6 +211,7 @@ auto normalize(mNode* p, const std::array<Edge<mNode>, NEDGE>& e,
 }
 
 /// Get a single element of the matrix represented by the DD
+///
 /// @param edge the matrix DD
 /// @param numQubits number of qubits in the considered DD
 /// @param i row index of the element
@@ -205,6 +222,7 @@ auto normalize(mNode* p, const std::array<Edge<mNode>, NEDGE>& e,
 getValueByIndex(const Edge<mNode>& edge, size_t numQubits, size_t i, size_t j);
 
 /// Get the matrix represented by the DD
+///
 /// @param edge the matrix DD
 /// @param numQubits number of qubits in the considered DD
 /// @param threshold entries with a magnitude below this threshold will be
@@ -214,6 +232,7 @@ getValueByIndex(const Edge<mNode>& edge, size_t numQubits, size_t i, size_t j);
                              fp threshold = 0.);
 
 /// Get the sparse matrix represented by the DD
+///
 /// @param edge the matrix DD
 /// @param numQubits number of qubits in the considered DD
 /// @param threshold entries with a magnitude below this threshold will be
@@ -223,6 +242,7 @@ getValueByIndex(const Edge<mNode>& edge, size_t numQubits, size_t i, size_t j);
                                          size_t numQubits, fp threshold = 0.);
 
 /// Print the matrix represented by the DD
+///
 /// @param edge the matrix DD
 /// @param numQubits number of qubits in the considered DD
 /// @note This function scales exponentially with the number of qubits.

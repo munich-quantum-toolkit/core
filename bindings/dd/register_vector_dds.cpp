@@ -78,7 +78,7 @@ void registerVectorDDs(const nb::module_& m) {
             throw nb::index_error();
           }
         } else if (idx < 0 && numQubits > digits) {
-          /// Sign-extend negative indices beyond the native index width.
+          // Sign-extend negative indices beyond the native index width.
           auto decisions = std::string(numQubits, '1');
           for (auto bit = 0U; bit < digits; ++bit) {
             decisions[bit] = ((index >> bit) & 1U) != 0U ? '1' : '0';

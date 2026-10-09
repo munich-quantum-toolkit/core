@@ -395,7 +395,7 @@ static int runCompiler(int argc, char** argv) {
   const llvm::InitLLVM y(argc, argv);
 
   registerMQTCompilerPasses();
-  /// Driver-owned conversion stages must also be available for replay.
+  // Driver-owned conversion stages must also be available for replay.
   registerQCToQCO();
   registerQCOToQC();
   registerJeffToQCO();
@@ -603,7 +603,7 @@ static int runCompiler(int argc, char** argv) {
       llvm::errs() << "--pass-pipeline must be anchored on builtin.module.\n";
       return failure();
     }
-    /// Append to the existing preparation stages using MLIR's pipeline parser.
+    // Append to the existing preparation stages using MLIR's pipeline parser.
     return parsePassPipeline(pipeline, pm);
   };
 

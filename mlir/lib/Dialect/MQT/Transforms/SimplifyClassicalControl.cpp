@@ -46,7 +46,9 @@ struct Condition {
   Value constant;
 };
 
-/// Each operand and operation is visited once. Memory facts stay block-local;
+/// Each operand and operation is visited once.
+///
+/// Memory facts stay block-local;
 /// branch facts are scoped to the region in which the condition is known.
 class ClassicalControlSimplifier {
   IRRewriter rewriter;

@@ -129,7 +129,7 @@ auto Runtime::enlargeState(size_t maxQubit) -> void {
   const auto numQubits = maxQubit + 1;
   const auto capacity = qState.dd ? qState.dd->qubits() : 0;
   if (capacity < numQubits) {
-    /// Unknown resources grow geometrically; declared resources fit exactly.
+    // Unknown resources grow geometrically; declared resources fit exactly.
     const auto newCapacity = staticQubits_.value_or(std::min(
         dd::Package::MAX_POSSIBLE_QUBITS,
         std::max({numQubits, dd::Package::DEFAULT_QUBITS, 2 * capacity})));
@@ -143,7 +143,7 @@ auto Runtime::enlargeState(size_t maxQubit) -> void {
   std::iota(qubitPermutation.begin() + static_cast<ptrdiff_t>(qState.numQubits),
             qubitPermutation.end(), static_cast<dd::Qubit>(qState.numQubits));
 
-  /// Extending the root preserves its weight, including a scalar global phase.
+  // Extending the root preserves its weight, including a scalar global phase.
   auto edge = qState.edge;
   for (auto q = qState.numQubits; q < numQubits; ++q) {
     edge = qState.dd->makeDDNode(static_cast<dd::Qubit>(q),
@@ -192,7 +192,7 @@ auto Runtime::translateAddresses(const std::span<Qubit* const> qubits,
   if (extractState_ && std::ranges::any_of(qubitIds, [&](const auto id) {
         return measuredQubits_.contains(id);
       })) {
-    /// Report after JIT execution returns without unwinding generated frames.
+    // Report after JIT execution returns without unwinding generated frames.
     invalidStateExtraction_ = true;
   }
   if (!qubitIds.empty()) {
@@ -339,7 +339,7 @@ auto Runtime::qFree(Qubit* qubit) -> void {
     throw std::out_of_range("QIR qubit was not dynamically allocated");
   }
   const auto id = it->second;
-  /// Extraction retains released wires as part of the exported state.
+  // Extraction retains released wires as part of the exported state.
   if (!extractState_) {
     if (id < qState.numQubits) {
       reset(std::array{qubit});
@@ -409,7 +409,7 @@ auto Runtime::takeState() -> QState {
   }
   const auto matrix = mlir::qco::getStandardGateMatrix<mlir::qco::SWAPOp>({});
   for (size_t q = 0; q < qubitPermutation.size(); ++q) {
-    /// Each transposition places at least one logical wire at its own index.
+    // Each transposition places at least one logical wire at its own index.
     while (qubitPermutation[q] != q) {
       const auto other = qubitPermutation[q];
       const std::array targets{other, qubitPermutation[other]};

@@ -22,7 +22,9 @@ namespace mqt::bench {
 
 /// Parameters for one single-solution Grover benchmark instance.
 struct GroverOptions {
-  /// Big-endian marked outcome. Its width is the number of search qubits.
+  /// Big-endian marked outcome.
+  ///
+  /// Its width is the number of search qubits.
   std::string markedBitstring;
   /// Iteration count, or no value to select the optimal count.
   std::optional<size_t> iterations = std::nullopt;

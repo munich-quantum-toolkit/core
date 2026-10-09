@@ -565,7 +565,7 @@ private:
       }
       nativeCosts = NativeCostTable::precompute(root, *basis->entangler, seed);
 
-      /// Uniform SWAP costs keep the distance heuristic in native-gate units.
+      // Uniform SWAP costs keep the distance heuristic in native-gate units.
       NativeCostAnalysis analysis(seed, nativeCosts.get());
       for (const auto& [a, b] : target.couplings()) {
         const auto next = analysis.swapCost(target, std::array{a, b});
@@ -768,10 +768,13 @@ private:
   };
 
   /// Memory arena for A* search nodes, enabling reuse across searches to reduce
-  /// allocation overhead. Initializing a retained node reuses its layout.
+  /// allocation overhead.
+  ///
+  /// Initializing a retained node reuses its layout.
   class Arena {
   public:
     /// Constructs an arena with a limited memory budget.
+    ///
     /// The budget of nodes is derived as
     ///
     ///    `searchMemoryLimit / (sizeof(Node) + 2 * nsites *
@@ -795,16 +798,22 @@ private:
       return &nodes[index++];
     }
 
-    /// Resets the arena for a new search. Retains allocated storage. Only the
+    /// Resets the arena for a new search.
+    ///
+    /// Retains allocated storage. Only the
     /// logical size (index) is reset to zero.
     void reset() { index = 0; }
 
   private:
-    /// Storage for nodes. Uses deque for stable pointers across insertions.
+    /// Storage for nodes.
+    ///
+    /// Uses deque for stable pointers across insertions.
     std::deque<Node> nodes;
     /// Maximum number of nodes permitted by the memory budget.
     size_t budget;
-    /// Next available slot in nodes. Acts as the logical size counter.
+    /// Next available slot in nodes.
+    ///
+    /// Acts as the logical size counter.
     size_t index{0};
   };
 
@@ -815,6 +824,7 @@ private:
           target_(&target) {};
 
     /// Build F-graph: Add edges to F for each edge in the coupling graph.
+    ///
     /// Note that this assumes that the coupling graph is directed, but
     /// symmetric (essentially: undirected).
     void construct(const Layout<QubitIndex>& from,
@@ -828,7 +838,9 @@ private:
       }
     }
 
-    /// Try to find a directed cycle in the F graph. If there is one,
+    /// Try to find a directed cycle in the F graph.
+    ///
+    /// If there is one,
     /// we can apply a happy swap chain. Note that this happy swap chain
     /// does not include the final back edge closing the cycle because the
     /// first SWAP changes the token (the qubit) on the target, invalidating
@@ -848,7 +860,9 @@ private:
       return swaps;
     }
 
-    /// Find an unhappy SWAP. That is, find an edge (u, v), where exchanging u
+    /// Find an unhappy SWAP.
+    ///
+    /// That is, find an edge (u, v), where exchanging u
     /// and v, reduces u's distance to its target location (by one) and
     /// increases v's distance from 0 (already at the correct location) to one.
     [[nodiscard]] std::optional<QubitIndexPair> findUnhappySWAP() const {
@@ -999,7 +1013,9 @@ private:
   }
 
   /// Extend the init arguments of an `scf::ForOp` by adding a given range of
-  /// additional SSA values. Replaces the existing operation and returns the
+  /// additional SSA values.
+  ///
+  /// Replaces the existing operation and returns the
   /// newly created one.
   static scf::ForOp extend(scf::ForOp forOp, ValueRange addons,
                            IRRewriter& rewriter) {
@@ -1019,7 +1035,9 @@ private:
   }
 
   /// Extend the qubit arguments of an `IfOp` by adding a given range of
-  /// additional SSA values. Replaces the existing operation and returns the
+  /// additional SSA values.
+  ///
+  /// Replaces the existing operation and returns the
   /// newly created one.
   static IfOp extend(IfOp ifOp, ValueRange addons, IRRewriter& rewriter) {
     OpBuilder::InsertionGuard guard(rewriter);
@@ -1036,7 +1054,9 @@ private:
   }
 
   /// Extend the target arguments of an `IndexSwitchOp` by adding a given range
-  /// of additional SSA values. Replaces the existing operation and returns the
+  /// of additional SSA values.
+  ///
+  /// Replaces the existing operation and returns the
   /// newly created one.
   static IndexSwitchOp extend(IndexSwitchOp switchOp, ValueRange addons,
                               IRRewriter& rewriter) {
@@ -1052,7 +1072,9 @@ private:
   }
 
   /// Extend the arguments of an `scf::WhileOp` by adding a given range of
-  /// additional SSA values. Replaces the existing operation and returns the
+  /// additional SSA values.
+  ///
+  /// Replaces the existing operation and returns the
   /// newly created one.
   static scf::WhileOp extend(scf::WhileOp whileOp, ValueRange addons,
                              IRRewriter& rewriter) {
@@ -1131,6 +1153,7 @@ private:
   }
 
   /// Thread the value before the next pending operation through the region.
+  ///
   /// In particular, terminal measurements must remain after the region.
   static Value valueBeforeBoundary(WireIterator iterator, Operation* boundary) {
     --iterator;
@@ -1190,9 +1213,9 @@ private:
       degree[b] += weight;
     }
 
-    /// Embed disjoint logical paths along one path through the target sites.
-    /// ponytail: One hardware walk; add bounded backtracking only for measured
-    /// missed embeddings.
+    // Embed disjoint logical paths along one path through the target sites.
+    // ponytail: One hardware walk; add bounded backtracking only for measured
+    // missed embeddings.
     if (llvm::all_of(neighbours, [](const auto& adjacent) {
           return adjacent.size() <= 2;
         })) {
@@ -1316,6 +1339,7 @@ private:
   }
 
   /// Refine greedy, identity, and random starts with forward/backward routing.
+  ///
   /// Score each candidate with a forward traversal, preserving its start
   /// layout.
   std::pair<Layout<QubitIndex>, std::optional<Score>>
@@ -1330,7 +1354,9 @@ private:
 
     struct Trial {
       Layout<QubitIndex> layout;
-      /// Synthesis available: (native-count, depth). Otherwise, (max(), swaps).
+      /// Synthesis available: (native-count, depth).
+      ///
+      /// Otherwise, (max(), swaps).
       Score score;
     };
 
@@ -1366,8 +1392,8 @@ private:
         t.layout = std::move(state.layout);
       }
 
-      /// Refinement may permute wire cursors. Score from the original roots,
-      /// preserving only the initial layout selected for final placement.
+      // Refinement may permute wire cursors. Score from the original roots,
+      // preserving only the initial layout selected for final placement.
       auto state = RoutingState::fromLayout(wires, t.layout, env);
 
       const auto score = route<WireDirection::Forward>(state, arena, env);
@@ -1384,6 +1410,7 @@ private:
   }
 
   /// Route the leading interaction with bounded A* node storage.
+  ///
   /// Drain queued states at the limit, then use distance-reducing SWAPs.
   [[nodiscard]] SmallVector<QubitIndexPair>
   search(ArrayRef<QubitIndexPair> window, RoutingState& state, Arena& arena,
@@ -1446,9 +1473,9 @@ private:
       }
     }
 
-    /// Fallback to shortest-path swapping, if the budget is exhausted.
-    /// Greedy completion can cost later gates. Thus, increase the search
-    /// budget when routing quality matters more than memory use.
+    // Fallback to shortest-path swapping, if the budget is exhausted.
+    // Greedy completion can cost later gates. Thus, increase the search
+    // budget when routing quality matters more than memory use.
 
     const auto [prog0, prog1] = window.front();
     const auto [hw0, hw1] = state.layout.getHardwareIndices(prog0, prog1);
@@ -1463,6 +1490,7 @@ private:
   }
 
   /// Return the SWAP sequence to move from one layout to another.
+  ///
   /// Implements the 4-Approximation algorithm described in arXiv:1602.05150v3.
   [[nodiscard]] SmallVector<QubitIndexPair>
   restore(const Layout<QubitIndex>& from, const Layout<QubitIndex>& to,
@@ -1504,6 +1532,7 @@ private:
   }
 
   /// Return a pair of SWAP sequences to transform two layouts into each other.
+  ///
   /// Inspired by the 4-Approximation algorithm described in arXiv:1602.05150v3,
   /// with the key difference that the goal permutation is not static.
   [[nodiscard]] std::tuple<Layout<QubitIndex>, SmallVector<QubitIndexPair>,
@@ -1567,6 +1596,7 @@ private:
   }
 
   /// Compute a routing-friendly layout compromise between a range of layouts.
+  ///
   /// Using the first layout of the range as an anchor, the function repeatedly
   /// nudges the current layout towards the next one using happy SWAP chains.
   /// Inspired by SABRE and to reduce ordering bias, the function performs an
@@ -1690,7 +1720,9 @@ private:
   }
 
   /// Classify a consecutive measurement run from its end, so each suffix is
-  /// visited once. The cache is valid only while the IR remains unchanged.
+  /// visited once.
+  ///
+  /// The cache is valid only while the IR remains unchanged.
   static bool measurementNeedsRouting(MeasureOp measurement,
                                       DenseMap<Operation*, bool>& cache) {
     SmallVector<MeasureOp> measurements;
@@ -1706,7 +1738,7 @@ private:
         measurements.push_back(next);
         continue;
       }
-      /// Validated tensor insertion tails become sinks during placement.
+      // Validated tensor insertion tails become sinks during placement.
       needsRouting = !isa<SinkOp, qtensor::InsertOp>(op);
       break;
     }
@@ -1733,8 +1765,8 @@ private:
       for (; cursor < worklist.size(); ++cursor) {
         Operation* op = worklist[cursor];
 
-        /// Quantum consumers require the measurement to advance, independent
-        /// of the selected target's permission to reuse measured qubits.
+        // Quantum consumers require the measurement to advance, independent
+        // of the selected target's permission to reuse measured qubits.
 
         if (any_of(op->getOperandTypes(),
                    [](auto type) { return isa<QubitType>(type); })) {
@@ -1791,6 +1823,7 @@ private:
   }
 
   /// Advance past executable gates and return the first ready composite.
+  ///
   /// Leave wires at non-executable gates, composites, terminal measurements,
   /// or sink-like operations. Backward traversal can exhaust block arguments.
   template <WireDirection Direction>
@@ -1798,8 +1831,8 @@ private:
   advance(RoutingState& state, Operation* boundary, const Environment& env) {
     auto& wires = state.wires;
     std::optional<CompositeUnitary> composite;
-    /// Advancement only moves iterators. Discard classifications before routing
-    /// inserts SWAPs or replaces composites.
+    // Advancement only moves iterators. Discard classifications before routing
+    // inserts SWAPs or replaces composites.
     DenseMap<Operation*, bool> measurementRouting;
 
     // The wire traversal does not follow classical dependencies. Defer a
@@ -1835,8 +1868,8 @@ private:
       });
     };
 
-    /// Keep the earliest ready region in block order. Hot placement threads
-    /// every wire through it, so later regions must wait for its exit layout.
+    // Keep the earliest ready region in block order. Hot placement threads
+    // every wire through it, so later regions must wait for its exit layout.
 
     walkProgramGraph<Direction>(wires, [&](const Frontier& frontier,
                                            SmallVectorImpl<Operation*>&
@@ -1885,7 +1918,7 @@ private:
 
           if (state.costs) {
             SmallVector<size_t, 2> vertices(indices.begin(), indices.end());
-            /// Frontier indices are in traversal order, not operand order.
+            // Frontier indices are in traversal order, not operand order.
             if (auto gate = dyn_cast<UnitaryOpInterface>(op);
                 gate && gate.isTwoQubit() &&
                 wires[indices[0]].qubit() != gate.getOutputQubit(0)) {
@@ -1907,7 +1940,9 @@ private:
   }
 
   /// Extends the composite unitary's operation to cover all target qubits by
-  /// adding operands for sites outside the composite. Keeps the parent cursors
+  /// adding operands for sites outside the composite.
+  ///
+  /// Keeps the parent cursors
   /// at the corresponding physical results.
   void place(CompositeUnitary& composite, RoutingState& parent,
              IRRewriter& rewriter) {
@@ -2036,7 +2071,7 @@ private:
       }
 
       if (isa<scf::WhileOp>(op) && index == 1) {
-        /// The before-region exit places the after region and loop results.
+        // The before-region exit places the after region and loop results.
         child.layout = children[0].layout;
         const auto permutation = sitePermutation(parent.layout, child.layout);
         if constexpr (Mode == RoutingMode::Hot) {
@@ -2131,7 +2166,9 @@ private:
   }
 
   /// Advance executable operations, route ready regions, or search for SWAPs
-  /// that release the next interaction. Finish terminal measurements last.
+  /// that release the next interaction.
+  ///
+  /// Finish terminal measurements last.
   template <WireDirection Direction, RoutingMode Mode = RoutingMode::Cold>
     requires(Mode != RoutingMode::Hot || Direction == WireDirection::Forward)
   Statistics route(RoutingState& state, Arena& arena, const Environment& env,

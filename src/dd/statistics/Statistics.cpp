@@ -14,7 +14,6 @@
 
 namespace dd {
 
-/// The base class carries no statistics, which JSON renders as a null value.
 std::string Statistics::toString() const { return "null"; }
 
 } // namespace dd

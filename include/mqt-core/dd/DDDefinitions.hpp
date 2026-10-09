@@ -56,9 +56,9 @@ struct Control {
   Type type = Type::Pos;
 
   /// Allow implicit conversion from a qubit index.
-  /// NOLINTBEGIN(misc-explicit-constructor)
+  // NOLINTBEGIN(misc-explicit-constructor)
   Control(const Qubit q = {}, const Type t = Type::Pos) : qubit(q), type(t) {}
-  /// NOLINTEND(misc-explicit-constructor)
+  // NOLINTEND(misc-explicit-constructor)
 
   [[nodiscard]] std::string toString() const {
     std::ostringstream oss{};
@@ -99,6 +99,7 @@ using Controls = std::set<Control, CompareControl>;
 using Permutation = std::map<Qubit, Qubit>;
 
 /// Floating point type to use for computations
+///
 /// @note Adjusting the precision might lead to unexpected results.
 using fp = double;
 static_assert(std::is_floating_point_v<fp>,
@@ -162,6 +163,7 @@ using ThreeQubitGateMatrix =
                THREE_QUBIT_GATE_DIM>;
 
 /// Converts a decimal number to a binary string (big endian)
+///
 /// @param value The decimal number to convert
 /// @param nbits The number of bits to use for the binary representation
 /// @return The binary representation of the decimal number

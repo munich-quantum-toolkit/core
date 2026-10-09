@@ -25,6 +25,7 @@ namespace mlir::qc {
 
 /// Find unique measurement destinations that can be stored immediately
 /// after their measurement without crossing conflicting classical accesses.
+///
 /// Nonadjacent stores require static indices. Other measurement uses are
 /// excluded unless the caller can preserve them after moving the store.
 /// Apply every returned move in measurement order. The input IR is not

@@ -34,7 +34,7 @@ struct RemoveAllocSinkPair final : OpRewritePattern<SinkOp> {
     }
 
     rewriter.eraseOp(op);
-    /// SCF may forward a result before removing its unused loop argument.
+    // SCF may forward a result before removing its unused loop argument.
     if (defOp->use_empty()) {
       rewriter.eraseOp(defOp);
     }

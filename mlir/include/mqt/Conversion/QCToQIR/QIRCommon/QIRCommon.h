@@ -75,7 +75,9 @@ struct LoweringState {
   /// Base.
   DenseMap<int64_t, qir::StaticResult> scalarResults;
 
-  /// Metadata for returned scalar measurement results. Each entry is a defining
+  /// Metadata for returned scalar measurement results.
+  ///
+  /// Each entry is a defining
   /// `qc::MeasureOp`
   DenseSet<Operation*> returnedScalarResults;
 
@@ -166,6 +168,7 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
                         LoweringState& state);
 
 /// Prepares classical result registers before func-to-LLVM conversion.
+///
 /// Requires a single entry-function return. On failure, discard \p state.
 ///
 /// For measurement-only returned registers, the store and measurement must

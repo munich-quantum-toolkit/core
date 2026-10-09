@@ -84,10 +84,14 @@ Value allocDeallocPair(QCProgramBuilder& b);
 
 // --- Invalid / mixed addressing (unit tests) --------------------------------
 
+/// Builds an invalid program that mixes static and dynamic allocation.
+///
 /// @pre `builder.initialize()`. Fatal mixed addressing: static then dynamic
 /// alloc.
 Value mixedStaticThenDynamicQubit(QCProgramBuilder& b);
 
+/// Builds an invalid program that mixes static and dynamic allocation.
+///
 /// @pre `builder.initialize()`. Fatal mixed addressing: dynamic register then
 /// static.
 Value mixedDynamicRegisterThenStaticQubit(QCProgramBuilder& b);
@@ -308,7 +312,9 @@ Value inverseMultipleControlledZ(QCProgramBuilder& b);
 /// Creates a circuit with pow(0.5) wrapping a Z gate (folds to P(π/2) = S).
 Value powHalfZ(QCProgramBuilder& b);
 
-/// Creates a circuit with pow(1.5) wrapping a Z gate. Exercises normalizeAngle
+/// Creates a circuit with pow(1.5) wrapping a Z gate.
+///
+/// Exercises normalizeAngle
 /// `theta -= twoPi` (1.5π normalises to -π/2 → sdg).
 Value powThreeHalvesZ(QCProgramBuilder& b);
 
@@ -377,10 +383,12 @@ Value inverseMultipleControlledS(QCProgramBuilder& b);
 Value powTwoS(QCProgramBuilder& b);
 
 /// Creates a circuit with pow(4.0) wrapping an S gate.
+///
 /// Exercises tryReplaceWithNamedPhaseGate erase path (angle=2π → identity).
 Value powFourS(QCProgramBuilder& b);
 
 /// Creates a circuit with pow(0.5) wrapping an S gate.
+///
 /// Exercises tryReplaceWithNamedPhaseGate TOp path (angle=π/4 → t).
 Value powHalfS(QCProgramBuilder& b);
 
@@ -417,6 +425,7 @@ Value inverseMultipleControlledSdg(QCProgramBuilder& b);
 Value powTwoSdg(QCProgramBuilder& b);
 
 /// Creates a circuit with pow(0.5) wrapping an Sdg gate.
+///
 /// Exercises tryReplaceWithNamedPhaseGate TdgOp path (angle=-π/4 → tdg).
 Value powHalfSdg(QCProgramBuilder& b);
 
@@ -1151,28 +1160,36 @@ Value negPowRx(QCProgramBuilder& b);
 Value powRxNeg(QCProgramBuilder& b);
 
 /// Creates a circuit with pow(-0.5) wrapping H (negative non-integer exponent).
+///
 /// Expected to remain unchanged: fractional exponent on a unitary with
 /// eigenvalue -1 cannot safely apply NegPowToInvPow.
 Value negPowH(QCProgramBuilder& b);
 
 /// Creates a circuit with inv wrapping pow(0.5) wrapping H.
+///
 /// MovePowOutside emits pow(-0.5){H} (not wrapping in inv).
 Value invPowHFrac(QCProgramBuilder& b);
 
 /// Creates a circuit with pow(-0.5) wrapping H (reference for invPowHFrac).
 Value powHFracNeg(QCProgramBuilder& b);
 
-/// Creates inv wrapping pow(2){H}. The even power folds to the identity inside
+/// Creates inv wrapping pow(2){H}.
+///
+/// The even power folds to the identity inside
 /// the modifier, leaving the inv body empty so it is erased (reference:
 /// emptyQC).
 Value invPowEvenH(QCProgramBuilder& b);
 
-/// Creates inv wrapping pow(2){SWAP}. The even power folds to the identity
+/// Creates inv wrapping pow(2){SWAP}.
+///
+/// The even power folds to the identity
 /// inside the modifier, leaving the inv body empty so it is erased (reference:
 /// emptyQC).
 Value invPowEvenSwap(QCProgramBuilder& b);
 
-/// Creates inv wrapping pow(2){Z}. Z^2 folds to the identity inside the
+/// Creates inv wrapping pow(2){Z}.
+///
+/// Z^2 folds to the identity inside the
 /// modifier, leaving the inv body empty so it is erased (reference: emptyQC).
 Value invPowSquaredZ(QCProgramBuilder& b);
 
@@ -1205,6 +1222,7 @@ Value powCtrlRx(QCProgramBuilder& b);
 Value ctrlPowRx(QCProgramBuilder& b);
 
 /// Creates a circuit with pow(-2) wrapping inv wrapping iSWAP.
+///
 /// Exercises NegPowToInvPow: inv{iswap} survives InvOp canonicalization,
 /// FoldPowIntoGate fails (inner is InvOp), so NegPowToInvPow fires.
 Value negPowInvIswap(QCProgramBuilder& b);
@@ -1212,14 +1230,18 @@ Value negPowInvIswap(QCProgramBuilder& b);
 /// Reference for negPowInvIswap: xx_plus_yy(-2π, 0) (the fully folded form).
 Value negPowInvIswapRef(QCProgramBuilder& b);
 
-/// Creates a circuit with ctrl wrapping pow(1/3) wrapping SX. Canonicalization
+/// Creates a circuit with ctrl wrapping pow(1/3) wrapping SX.
+///
+/// Canonicalization
 /// expands pow(p){SX} to gphase+rx inside ctrl.
 Value ctrlPowSx(QCProgramBuilder& b);
 
 /// Creates the reference for ctrlPowSx: controlled gphase(π/12) and RX(π/6).
 Value ctrlPowSxRef(QCProgramBuilder& b);
 
-/// pow(2) with a two-unitary body (x; rxx). The optimizer leaves multi-unitary
+/// pow(2) with a two-unitary body (x; rxx).
+///
+/// The optimizer leaves multi-unitary
 /// pow bodies untouched; checks verification and the QC ↔ QCO round-trip.
 Value powTwo(QCProgramBuilder& b);
 

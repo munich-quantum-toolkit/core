@@ -79,6 +79,7 @@ namespace qco {
 class QCOProgramBuilder final : public ImplicitLocOpBuilder {
 public:
   /// Construct a new QCOProgramBuilder
+  ///
   /// @param context The MLIR context to use for building operations
   explicit QCOProgramBuilder(MLIRContext* context);
 
@@ -95,6 +96,7 @@ public:
 
   /// Initialize the builder and prepare for program construction
   /// with specified return types.
+  ///
   /// @param returnTypes The return types for the main function
   ///
   /// Creates a main function with an `mqt.entry_point` attribute. Must be
@@ -102,6 +104,7 @@ public:
   void initialize(TypeRange returnTypes);
 
   /// Modify the return types of the main function after initialization.
+  ///
   /// @param returnTypes The new return types for the main function
   void retype(TypeRange returnTypes);
 
@@ -155,6 +158,7 @@ public:
     Value regIndex;
 
     /// Implicitly construct a tracked qubit from an SSA value.
+    ///
     /// @param value The underlying qubit SSA value
     /// @param regId ID of the register containing the qubit, or `-1`
     /// @param regIndex Index of the qubit within its register, if applicable
@@ -163,19 +167,23 @@ public:
         : value(value), regId(regId), regIndex(regIndex) {}
 
     /// Implicitly convert this tracked qubit to its underlying SSA value.
+    ///
     /// @return The underlying `Value`
     // NOLINTNEXTLINE(misc-explicit-constructor)
     operator Value() const { return value; }
 
     /// Get the type of the underlying SSA value.
+    ///
     /// @return The underlying value's type
     Type getType() const { return value.getType(); }
 
     /// Get the operation defining the underlying SSA value.
+    ///
     /// @return The defining operation, or `nullptr` if the value has none
     Operation* getDefiningOp() const { return value.getDefiningOp(); }
 
     /// Get the operation defining the underlying SSA value as @p OpTy.
+    ///
     /// @tparam OpTy The expected defining operation type
     /// @return The defining operation as @p OpTy, or a null operation if the
     /// value has no defining operation or it is not of type @p OpTy
@@ -192,6 +200,7 @@ public:
     int64_t regId = -1;
 
     /// Implicitly construct a tracked tensor from an SSA value.
+    ///
     /// @param value The underlying tensor SSA value
     /// @param regId ID of the corresponding register, or `-1`
     // NOLINTNEXTLINE(misc-explicit-constructor)
@@ -199,19 +208,23 @@ public:
 
     /// Implicitly convert this tracked tensor to its underlying SSA
     /// value.
+    ///
     /// @return The underlying `Value`
     // NOLINTNEXTLINE(misc-explicit-constructor)
     operator Value() const { return value; }
 
     /// Get the type of the underlying SSA value.
+    ///
     /// @return The underlying value's type
     Type getType() const { return value.getType(); }
 
     /// Get the operation defining the underlying SSA value.
+    ///
     /// @return The defining operation, or `nullptr` if the value has none
     Operation* getDefiningOp() const { return value.getDefiningOp(); }
 
     /// Get the operation defining the underlying SSA value as @p OpTy.
+    ///
     /// @tparam OpTy The expected defining operation type
     /// @return The defining operation as @p OpTy, or a null operation if the
     /// value has no defining operation or it is not of type @p OpTy
@@ -228,17 +241,20 @@ public:
     SmallVector<Value> qubits;
 
     /// Access a specific qubit in the register
+    ///
     /// @param index The index of the qubit to access
     /// @return The specified qubit value
     Value& operator[](size_t index);
 
     /// Conversion to the backing QTensor value
+    ///
     /// @return The QTensor value representing the qubit register
     explicit operator Value() const { return value; }
   };
 
   /// Allocate a single qubit initialized to |0⟩
   /// Requires an insertion point in the entry block of `mqt.entry_point`.
+  ///
   /// @return A tracked qubit handle (convertible to `Value`)
   ///
   /// @par Example:
@@ -251,6 +267,7 @@ public:
   Qubit allocQubit();
 
   /// Get a static qubit by index
+  ///
   /// @param index The qubit index
   /// @return A tracked qubit handle (convertible to `Value`)
   ///
@@ -265,6 +282,7 @@ public:
 
   /// Allocate a qubit tensor and eagerly extract every element
   /// Requires an insertion point in the entry block of `mqt.entry_point`.
+  ///
   /// @param size Number of qubits (must be positive)
   /// @param name Optional source-level register name
   /// @return A `QubitRegister` containing the residual tensor and one
@@ -1777,6 +1795,7 @@ public:
 
   /// Finalize the program with the given return values and return the
   /// constructed module
+  ///
   /// @param returnValues Values representing the return values of the main
   /// function.
   ///
@@ -1793,6 +1812,7 @@ public:
   OwningOpRef<ModuleOp> finalize(ValueRange returnValues);
 
   /// Convenience method for building quantum programs.
+  ///
   /// @param context The MLIR context to use for building the program
   /// @param buildFunc A function that takes a reference to a QCOProgramBuilder
   /// and uses it to build the desired quantum program. The builder will be
@@ -1806,6 +1826,7 @@ public:
 
   /// Convenience method for building quantum programs with one return
   /// value.
+  ///
   /// @param context The MLIR context to use for building the program
   /// @param buildFunc A function that takes a reference to a QCOProgramBuilder
   /// and returns the single result value of the desired quantum program.
@@ -1828,11 +1849,13 @@ private:
   //===--------------------------------------------------------------------===//
 
   /// Validate that a qubit value is valid and unconsumed
+  ///
   /// @param qubit Qubit value to validate
   /// Terminates with a usage error if the qubit is consumed or untracked.
   void validateQubitValue(Value qubit) const;
 
   /// Update tracking when an operation consumes and produces a qubit
+  ///
   /// @param inputQubit Input qubit being consumed (must be valid)
   /// @param outputQubit New output qubit being produced
   void updateQubitTracking(Value inputQubit, Value outputQubit);
@@ -1852,14 +1875,18 @@ private:
   /// Live qubit SSA values and their register associations.
   DenseSet<Qubit, QubitDenseMapInfo> validQubits;
 
-  /// Validate that a tensor value is valid and unconsumed. This also
+  /// Validate that a tensor value is valid and unconsumed.
+  ///
+  /// This also
   /// checks if the tensor is one-dimensional and contains !qco.qubit as its
   /// values
+  ///
   /// @param tensor Tensor value to validate
   /// Terminates with a usage error if the tensor is consumed or untracked.
   void validateTensorValue(Value tensor) const;
 
   /// Update tracking when an operation consumes and produces a tensor
+  ///
   /// @param inputTensor Input tensor being consumed (must be valid)
   /// @param outputTensor New output tensor being produced
   void updateTensorTracking(Value inputTensor, Value outputTensor);
@@ -1883,16 +1910,19 @@ private:
   Value insertExtractedQubits(Value tensor, MutableArrayRef<Qubit> qubits);
 
   /// Update linear-value tracking for one replaced value
+  ///
   /// @param oldValue The old value to be replaced
   /// @param newValue The new value to be tracked
   void updateQubitValueTracking(Value oldValue, Value newValue);
 
   /// Update the qubit tracking of the old values with the new values
+  ///
   /// @param oldValues The old values to be replaced
   /// @param newValues The new values to be tracked
   void updateQubitValueTracking(ValueRange oldValues, ValueRange newValues);
 
   /// Check if every value is either a qubit or a tensor of qubits
+  ///
   /// @param values The values that are checked
   /// Terminates with a usage error for any other type.
   static void checkQubitType(ValueRange values);
@@ -1913,6 +1943,7 @@ private:
   AllocationMode allocationMode = AllocationMode::Unset;
 
   /// Ensure static and dynamic qubit allocation modes are not mixed.
+  ///
   /// Dynamic allocation also requires the entry-point entry block.
   void ensureAllocationMode(AllocationMode requestedMode);
 };

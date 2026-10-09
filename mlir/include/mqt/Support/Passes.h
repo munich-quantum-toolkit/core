@@ -34,6 +34,7 @@ mlir::LogicalResult runWithPassManager(
     bool preservesLayout = false);
 
 /// Run passes with scoped compilation options and clear layout metadata.
+///
 /// Set preservesLayout only when the pipeline preserves wire identity and
 /// order.
 mlir::LogicalResult
@@ -71,6 +72,7 @@ runPassPipeline(mlir::ModuleOp moduleOp, mlir::StringRef pipeline,
 void populateQCCleanupPipeline(mlir::OpPassManager& pm);
 
 /// Run QC cleanup that preserves defined values on every syntactic loop edge.
+///
 /// Source formats cannot represent the poison backedge values introduced by
 /// RemoveDeadValues, even when those edges are unreachable.
 void populateQCExportPipeline(mlir::OpPassManager& pm);

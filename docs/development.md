@@ -105,7 +105,8 @@ expansion.
 
 The `cpp-documentation-style` lint hook checks project-owned C++ files. It
 rejects block documentation and explicit summary or detail commands, except on
-continued macro lines.
+continued macro lines. It also rejects lint directives written as documentation
+comments.
 
 Keep top-level `@file` documentation and put its summary on the next line,
 without `@brief`:

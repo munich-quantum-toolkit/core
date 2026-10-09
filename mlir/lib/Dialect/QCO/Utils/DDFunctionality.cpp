@@ -263,7 +263,7 @@ struct ClassicalEnv {
       return op->emitError()
              << "classical SSA value is not mapped for QCO DD simulation";
     }
-    /// Inserting the destination can grow the map and invalidate the iterator.
+    // Inserting the destination can grow the map and invalidate the iterator.
     auto value = it->second;
     values[dest] = value;
     return success();
@@ -285,7 +285,7 @@ struct GateCache {
 
   /// Each cached matrix is a registered root; a failed release is an invariant
   /// violation and cannot be recovered while unwinding.
-  /// NOLINTNEXTLINE(bugprone-exception-escape)
+  // NOLINTNEXTLINE(bugprone-exception-escape)
   ~GateCache() {
     for (const auto& item : entries) {
       for (const auto& variant : item.second) {
@@ -491,7 +491,7 @@ static LogicalResult applyDecodedStandard(UnitaryOpInterface unitary,
       } else {
         matrix = gate.build(*walk.dd, gate.parameters, walk.qubits->numQubits,
                             *targets, controls);
-        /// ponytail: Cap varying gates at eight cached matrices per operation.
+        // ponytail: Cap varying gates at eight cached matrices per operation.
         if (variants.size() < 8) {
           walk.dd->incRef(matrix);
           variants.push_back(GateCache::Entry{
@@ -989,7 +989,7 @@ static LogicalResult applyIntegerBinaryOp(OpTy op, ClassicalEnv& classical,
 }
 
 static LogicalResult applyFloatOp(Operation& op, ClassicalEnv& classical) {
-  /// Keep MLIR's flag-dependent folds and explicit rounding modes.
+  // Keep MLIR's flag-dependent folds and explicit rounding modes.
   if (auto flagged = dyn_cast<arith::ArithFastMathInterface>(op);
       (flagged && flagged.getFastMathFlagsAttr().getValue() !=
                       arith::FastMathFlags::none) ||
@@ -1006,7 +1006,7 @@ static LogicalResult applyFloatOp(Operation& op, ClassicalEnv& classical) {
     if (!floating) {
       return op.emitError() << "expected an f64 SSA value";
     }
-    /// Folders can preserve NaN payloads through algebraic identities.
+    // Folders can preserve NaN payloads through algebraic identities.
     if (!floating.getValue().isFinite()) {
       return foldClassicalOp(op, classical);
     }
@@ -1458,7 +1458,7 @@ static FailureOr<TensorSlots> allocateZeroQubits(size_t count, WalkState& walk,
   const size_t first = walk.qubits->numQubits;
   dd::VectorDD extended;
   if (count == 1 && !state.w.approximatelyZero()) {
-    /// Append a normalized zero wire and preserve the existing root weight.
+    // Append a normalized zero wire and preserve the existing root weight.
     const auto node = walk.dd->makeDDNode(
         static_cast<dd::Qubit>(first),
         std::array{
@@ -1872,7 +1872,7 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
           return failure();
         }
 
-        /// Map callee return operands onto call results via the return op.
+        // Map callee return operands onto call results via the return op.
         return bindValuePairs(returnOp->getOperands(), call.getResults(), walk,
                               call);
       })
@@ -2524,7 +2524,7 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
       if (reset) {
         collapse(group, true, pzero);
         collapse(other, false, pone);
-        /// Equal nodes represent the same normalized state up to root phase.
+        // Equal nodes represent the same normalized state up to root phase.
         if (group.state.p == other.state.p) {
           group.ids.insert(group.ids.end(), other.ids.begin(), other.ids.end());
           dd.decRef(other.state);
@@ -2683,7 +2683,7 @@ sample(func::FuncOp func, size_t shots, uint64_t seed,
   }
   std::optional<dd::VectorDD> state;
   if (workers == 0) {
-    /// Keep small jobs serial and bound repeated prefix work per package.
+    // Keep small jobs serial and bound repeated prefix work per package.
     workers = std::clamp(shots / 256, size_t{1}, size_t{8});
   }
   workers = std::min(workers, shots);

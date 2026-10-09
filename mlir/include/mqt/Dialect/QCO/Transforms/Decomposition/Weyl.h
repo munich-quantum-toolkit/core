@@ -92,9 +92,11 @@ inline constexpr double WEYL_SUPER_CONTROLLED_MAX_RELATIVE = 1e-9;
 ///       indicating that they have been altered from the originals.
 class TwoQubitWeylDecomposition {
 public:
-  /// Decomposes a 2-qubit unitary into Weyl chamber coordinates and
-  /// single-qubit factors, returning `std::nullopt` on numerical nonconvergence
-  /// or a failed numerical postcondition.
+  /// Decomposes a 2-qubit unitary into Weyl coordinates and single-qubit
+  /// factors.
+  ///
+  /// Returns `std::nullopt` on numerical nonconvergence or a failed numerical
+  /// postcondition.
   ///
   /// A matrix accepted by the dense-unitary verifier can still fail
   /// decomposition at the stricter Weyl tolerance.
@@ -238,6 +240,7 @@ public:
 
   /// Emit RXX(x) RYY(y) RZZ(z), conjugated by local Clifford frames,
   /// with three applications of a super-controlled fixed basis gate.
+  ///
   /// Pauli rotation bases use their pi/2 interaction.
   [[nodiscard]] SmallVector<Value, 2>
   emitCartan(RewriterBase& rewriter, Location loc, Value qubit0, Value qubit1,
@@ -333,8 +336,9 @@ private:
 [[nodiscard]] const TwoQubitBasisDecomposer&
 cachedNativeBasisDecomposer(CompilerTarget::GateKind entangler);
 
-/// Convenience wrapper that builds a fresh basis decomposer per call.
+/// Decomposes a target two-qubit unitary using the given basis gate.
 ///
+/// Builds a fresh basis decomposer per call.
 /// For a fixed basis gate decomposed many times, prefer caching
 /// `TwoQubitBasisDecomposer::create(basisMatrix, basisFidelity)` and calling
 /// `TwoQubitBasisDecomposer::decomposeTarget` for each target.
@@ -352,7 +356,9 @@ struct SynthesizedUnitary2Q {
 };
 
 /// Decomposes a two-qubit unitary using @p entangler, returning `std::nullopt`
-/// if the numerical decomposition fails. All entanglers use
+/// if the numerical decomposition fails.
+///
+/// All entanglers use
 /// @ref WEYL_DEFAULT_FIDELITY for the target's Weyl specialization.
 ///
 /// SQRTISWAP uses the minimum number of square-root iSWAP gates (0--3),
@@ -364,6 +370,7 @@ decomposeUnitary2QWeyl(const Matrix4x4& target,
                        uint64_t seed = 2023);
 
 /// Emits a prepared two-qubit decomposition in the selected target basis.
+///
 /// The basis must contain an entangler.
 [[nodiscard]] SynthesizedUnitary2Q
 emitUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0, Value qubit1,

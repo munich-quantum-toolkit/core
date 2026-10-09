@@ -26,7 +26,9 @@
 #include <variant>
 
 namespace qdmi {
-/// Custom scalars use their native C++ representation. Byte spans borrow an
+/// Custom scalars use their native C++ representation.
+///
+/// Byte spans borrow an
 /// exact, nonempty payload until the synchronous submission call returns.
 using CustomJobParameter =
     std::variant<std::string, bool, int, double, std::span<const std::byte>>;
@@ -78,7 +80,7 @@ public:
   /// Virtual destructor for the Singleton base class.
   virtual ~Singleton() = default;
 
-  /// @returns the singleton instance of the derived class.
+  /// Returns the singleton instance of the derived class.
   [[nodiscard]] static auto get() -> Concrete& {
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
     static auto* instance = new Concrete();
@@ -203,6 +205,7 @@ constexpr auto toString(const QDMI_STATUS result) -> const char* {
 }
 
 /// Throws an exception if the result indicates an error.
+///
 /// @param result The result of a QDMI operation
 /// @param msg The error message to include in the exception
 /// @throws std::bad_alloc if the result is QDMI_ERROR_OUTOFMEM

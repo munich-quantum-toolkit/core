@@ -111,7 +111,7 @@ struct RemoveFreshSlotResets final : OpRewritePattern<AllocOp> {
     for (auto reset : resets) {
       rewriter.replaceOp(reset, reset.getQubitIn());
     }
-    /// Replace the pattern root and preserve allocation attributes.
+    // Replace the pattern root and preserve allocation attributes.
     auto* replacement = rewriter.clone(*alloc);
     rewriter.replaceOp(alloc, replacement->getResults());
     return success();

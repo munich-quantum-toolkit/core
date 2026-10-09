@@ -114,8 +114,8 @@ namespace {
 } // namespace
 
 Device openDeviceFromLicense() {
-  /// The job can modify its environment. Use this value only to select a
-  /// registered device; the provider or operating system must authorize access.
+  // The job can modify its environment. Use this value only to select a
+  // registered device; the provider or operating system must authorize access.
   const auto* const environmentValue = std::getenv("SLURM_JOB_LICENSES");
   const std::string licenseSpec =
       environmentValue == nullptr ? std::string{} : environmentValue;

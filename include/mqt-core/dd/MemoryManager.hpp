@@ -40,13 +40,16 @@ public:
   MemoryManager(const MemoryManager&) = delete;
   MemoryManager& operator=(const MemoryManager&) = delete;
 
-  /// Initial chunk capacity. Larger chunks trade memory for fewer allocations.
+  /// Initial chunk capacity.
+  ///
+  /// Larger chunks trade memory for fewer allocations.
   static constexpr std::size_t INITIAL_ALLOCATION_SIZE = 2048U;
 
   /// Capacity multiplier when allocating the next chunk.
   static constexpr size_t GROWTH_FACTOR = 2U;
 
   /// Construct a new MemoryManager object for objects of type T.
+  ///
   /// @param initialAllocationSize The initial number of entries to allocate
   /// @tparam T The type of the entries
   template <class T>
@@ -98,14 +101,17 @@ private:
   [[nodiscard]] LLBase* get();
 
   /// Check whether an entry is available for reuse
+  ///
   /// @return true if an entry is available for reuse, false otherwise
   [[nodiscard]] bool entryAvailableForReuse() const noexcept;
 
   /// Get an entry from the list of available entries
+  ///
   /// @return A pointer to an entry ready for reuse
   [[nodiscard]] LLBase* getEntryFromAvailableList() noexcept;
 
   /// Check whether an entry is available in the current chunk
+  ///
   /// @return true if an entry is available in the current chunk, false
   /// otherwise
   [[nodiscard]] bool entryAvailableInChunk() const noexcept;
@@ -114,15 +120,18 @@ private:
   void allocateNewChunk();
 
   /// Get an entry from the current chunk
+  ///
   /// @return A pointer to an entry from the current chunk
   [[nodiscard]] LLBase* getEntryFromChunk() noexcept;
 
   /// The size of an entry in bytes (as reported by `sizeof`)
   size_t entrySize_;
 
-  /// Raw byte storage and its size. Entries are zeroed when first acquired.
+  /// Raw byte storage and its size.
+  ///
+  /// Entries are zeroed when first acquired.
   /// Slab capacity is chosen at runtime.
-  /// NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
   using Storage = std::byte[];
   using Chunk = std::pair<std::unique_ptr<Storage>, size_t>;
 

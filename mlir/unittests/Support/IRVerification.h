@@ -15,14 +15,18 @@ class ModuleOp;
 } // namespace mlir
 
 /// Compare verified modules in the same context with exact operation, block,
-/// operand, attribute, and result order. Ignore locations. Forward SSA
+/// operand, attribute, and result order.
+///
+/// Ignore locations. Forward SSA
 /// references across blocks are supported; numerical tolerances belong in
 /// semantic tests.
 [[nodiscard]] bool areModulesStructurallyEquivalent(mlir::ModuleOp,
                                                     mlir::ModuleOp);
 
 /// Compare verified modules, including QCO linearity, with exact types,
-/// attributes and control flow. Ignore locations and module symbol order;
+/// attributes and control flow.
+///
+/// Ignore locations and module symbol order;
 /// permit independent SSA operations and supported QCO/qtensor permutations.
 /// Consecutive tensor accesses of the same kind can reorder only at distinct
 /// constant indices; dynamic or repeated slots retain their order.

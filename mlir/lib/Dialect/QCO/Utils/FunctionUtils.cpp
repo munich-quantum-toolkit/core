@@ -118,12 +118,9 @@ FailureOr<unsigned> mlir::qco::traceQubitArgument(func::FuncOp function,
   return traceQubitArgument(function.getBody().front(), value);
 }
 
-/// Require dynamic tensor slots to be restored before leaving each region.
-/// Slot identity and disjoint extractions are program preconditions; known
-/// violations and positional region correspondence are checked separately.
 bool mlir::qco::hasCompleteTensorLifetime(Value tensor, unsigned depth) {
-  /// ponytail: reject deeper nesting; use a worklist if proving
-  /// completeness beyond 64 nested regions becomes necessary.
+  // ponytail: reject deeper nesting; use a worklist if proving
+  // completeness beyond 64 nested regions becomes necessary.
   if (depth == 64) {
     return false;
   }
