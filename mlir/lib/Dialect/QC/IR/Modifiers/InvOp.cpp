@@ -72,8 +72,8 @@ struct MoveCtrlOutsideInv final : OpRewritePattern<InvOp> {
         op, controls, targets, [&](ValueRange targetArgs) {
           InvOp::create(rewriter, op.getLoc(), targetArgs,
                         [&](ValueRange invArgs) {
-                          mqt::inlineBodyReturningYields(*innerCtrlOp.getBody(),
-                                                         invArgs, rewriter);
+                          static_cast<void>(mqt::inlineBodyReturningYields(
+                              *innerCtrlOp.getBody(), invArgs, rewriter));
                         });
         });
 
@@ -116,8 +116,8 @@ struct InvPowToNegPow final : OpRewritePattern<InvOp> {
     rewriter.replaceOpWithNewOp<PowOp>(
         invOp, negExponent, qubits, [&](ValueRange powArgs) {
           // Inner pow body args now match the new pow's args positionally.
-          mqt::inlineBodyReturningYields(*innerPow.getBody(), powArgs,
-                                         rewriter);
+          static_cast<void>(mqt::inlineBodyReturningYields(*innerPow.getBody(),
+                                                           powArgs, rewriter));
         });
     return success();
   }

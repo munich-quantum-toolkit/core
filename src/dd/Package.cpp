@@ -33,7 +33,6 @@
 #include <cmath>
 #include <complex>
 #include <cstddef>
-#include <cstdint>
 #include <initializer_list>
 #include <iostream>
 #include <limits>
@@ -417,10 +416,10 @@ buildThreeQubitGateDD(Package& dd, const Matrix& mat, const Controls& controls,
       em{};
   fillTerminalMatrix(em, mat);
 
-  std::array<std::pair<Qubit, std::uint8_t>, 3> ordered{
-      {{target0, 2}, {target1, 1}, {target2, 0}},
+  std::array<std::pair<Qubit, unsigned>, 3> ordered{
+      {{target0, 2U}, {target1, 1U}, {target2, 0U}},
   };
-  std::ranges::sort(ordered, {}, &std::pair<Qubit, std::uint8_t>::first);
+  std::ranges::sort(ordered, {}, &std::pair<Qubit, unsigned>::first);
   const auto qLow = ordered[0].first;
   const auto qMid = ordered[1].first;
   const auto qHigh = ordered[2].first;

@@ -97,7 +97,8 @@ void inlineNarrowedBody(Block& body, ValueRange qubits, ArrayRef<size_t> used,
   for (auto [index, arg] : llvm::zip_equal(used, args)) {
     replacements[index] = arg;
   }
-  mqt::inlineBodyReturningYields(body, replacements, rewriter);
+  static_cast<void>(
+      mqt::inlineBodyReturningYields(body, replacements, rewriter));
 }
 
 } // namespace mlir::qc::detail

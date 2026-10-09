@@ -74,8 +74,8 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
 
     CtrlOp::create(rewriter, op.getLoc(), controls, targets,
                    [&](ValueRange mergedTargets) {
-                     mqt::inlineBodyReturningYields(*innerCtrlOp.getBody(),
-                                                    mergedTargets, rewriter);
+                     static_cast<void>(mqt::inlineBodyReturningYields(
+                         *innerCtrlOp.getBody(), mergedTargets, rewriter));
                    });
     rewriter.eraseOp(op);
     return success();

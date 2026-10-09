@@ -87,8 +87,7 @@ static bool bind(ModuleOp moduleOp,
     entry.getArgument(index).replaceAllUsesWith(constant);
     erased.set(index);
   }
-  entry.eraseArguments(erased);
-  return true;
+  return succeeded(entry.eraseArguments(erased));
 }
 std::vector<std::string> QCProgram::parameters() const {
   return parameterNames(mod());

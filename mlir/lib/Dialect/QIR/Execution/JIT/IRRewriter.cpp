@@ -269,10 +269,7 @@ getStaticSamplingOutputs(const llvm::Function& entryPoint) {
         }
         return std::nullopt;
       }
-      if (const auto* branch = llvm::dyn_cast<llvm::BranchInst>(&instruction)) {
-        if (branch->isConditional()) {
-          return std::nullopt;
-        }
+      if (llvm::isa<llvm::UncondBrInst>(instruction)) {
         break;
       }
       const auto* call = llvm::dyn_cast<llvm::CallInst>(&instruction);
@@ -329,11 +326,11 @@ getStaticSamplingOutputs(const llvm::Function& entryPoint) {
       return std::nullopt;
     }
     const auto* branch =
-        llvm::dyn_cast<llvm::BranchInst>(block->getTerminator());
-    if (branch == nullptr || branch->isConditional()) {
+        llvm::dyn_cast<llvm::UncondBrInst>(block->getTerminator());
+    if (branch == nullptr) {
       return std::nullopt;
     }
-    block = branch->getSuccessor(0);
+    block = branch->getSuccessor();
   }
   return std::nullopt;
 }

@@ -148,7 +148,7 @@ LogicalResult runWithCompilationOptions(PassManager& pm, ModuleOp moduleOp,
     pm.enableStatistics();
   }
   auto previous = moduleOp->getAttr(COMPILATION_SEED_ATTR);
-  const auto restoreSeed = llvm::make_scope_exit([&] {
+  const auto restoreSeed = llvm::scope_exit([&] {
     if (previous) {
       moduleOp->setAttr(COMPILATION_SEED_ATTR, previous);
     } else {
