@@ -8,9 +8,8 @@
 
 # Build the compiler driver executable
 add_mlir_tool(mqt-cc mqt-cc.cpp DEPENDS MQTCompilerPipeline MQTCompilerQDMIAdapter SUPPORT_PLUGINS)
-if(BUILD_MQT_CORE_TESTS)
-  # add_mlir_tool excludes tools when LLVM_BUILD_TOOLS is disabled. The driver tests require mqt-cc
-  # in test-enabled default builds.
+if(BUILD_MQT_CORE_TESTS OR MQT_CORE_INSTALL)
+  # Installed LLVM SDKs may disable tools; Core's tests and installation require this executable.
   set_property(TARGET mqt-cc PROPERTY EXCLUDE_FROM_ALL FALSE)
 endif()
 llvm_map_components_to_libnames(llvm_native_libs bitwriter)
@@ -41,3 +40,11 @@ endif()
 
 mlir_check_all_link_libraries(mqt-cc)
 export_executable_symbols_for_plugins(mqt-cc)
+
+if(MQT_CORE_INSTALL)
+  install(
+    TARGETS mqt-cc
+    EXPORT mqt-core-runtime-targets
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime)
+endif()

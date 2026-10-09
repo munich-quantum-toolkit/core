@@ -20,7 +20,7 @@ from unittest.mock import patch
 import pytest
 
 # Import the private module to test its process replacement directly.
-import mqt.core._bench as benchmark_cli  # ruff: ignore[import-private-name]
+import mqt.core._commands as commands  # ruff: ignore[import-private-name]
 from mqt.core import __version__ as mqt_core_version
 
 if TYPE_CHECKING:
@@ -116,6 +116,16 @@ def test_cli_execute_module() -> None:
 
 
 @pytest.mark.script_launch_mode("subprocess")
+def test_compiler_cli(script_runner: ScriptRunner, tmp_path: Path) -> None:
+    """Compile OpenQASM with the compiler bundled in the wheel."""
+    source = tmp_path / "bell.qasm"
+    source.write_text('OPENQASM 3.0; include "stdgates.inc"; qubit[2] q; h q[0]; cx q[0], q[1];')
+    ret = script_runner.run(["mqt-cc", str(source), "--emit=qco"])
+    assert ret.success
+    assert "qco.h" in ret.stdout
+
+
+@pytest.mark.script_launch_mode("subprocess")
 def test_benchmark_cli(script_runner: ScriptRunner) -> None:
     """Run the bundled benchmark driver through its console script."""
     ret = script_runner.run(["mqt-core-bench", "list"])
@@ -131,18 +141,19 @@ def test_benchmark_cli(script_runner: ScriptRunner) -> None:
 
 
 @pytest.mark.parametrize(("platform", "suffix"), [("linux", ""), ("win32", ".exe")])
-def test_benchmark_cli_launcher(platform: str, suffix: str) -> None:
-    """Locate and execute the bundled benchmark driver on each platform."""
-    executable = Path(f"installation/mqt/core/bin/mqt-core-bench{suffix}")
+@pytest.mark.parametrize("tool", ["mqt-core-bench", "mqt-cc"])
+def test_native_tool_launcher(platform: str, suffix: str, tool: str) -> None:
+    """Locate and execute bundled tools on each platform."""
+    executable = Path(f"installation/mqt/core/bin/{tool}{suffix}")
     with (
-        patch.object(benchmark_cli.sys, "platform", platform),
-        patch.object(benchmark_cli.sys, "argv", ["mqt-core-bench", "list"]),
-        patch.object(benchmark_cli, "distribution") as distribution_mock,
-        patch.object(benchmark_cli.os, "execv") as execv_mock,
+        patch.object(commands.sys, "platform", platform),
+        patch.object(commands.sys, "argv", [tool, "--help"]),
+        patch.object(commands, "distribution") as distribution_mock,
+        patch.object(commands.os, "execv") as execv_mock,
     ):
         distribution_mock.return_value.locate_file.return_value = executable
-        benchmark_cli.main()
+        commands.run_tool(tool)
 
     distribution_mock.assert_called_once_with("mqt-core")
-    distribution_mock.return_value.locate_file.assert_called_once_with(f"mqt/core/bin/mqt-core-bench{suffix}")
-    execv_mock.assert_called_once_with(executable, [str(executable), "list"])
+    distribution_mock.return_value.locate_file.assert_called_once_with(f"mqt/core/bin/{tool}{suffix}")
+    execv_mock.assert_called_once_with(executable, [str(executable), "--help"])

@@ -10,63 +10,60 @@ The <a href="cpp/index.html">native C++ API reference</a> documents the
 installed public headers, including decision diagrams, benchmarks, and QDMI. It
 is generated from the same source revision as this guide.
 
-## Use the DD library
+## Use the wheel's native runtime
 
-Create a two-qubit GHZ state, which is a Bell state, and print its amplitudes.
-Save this as `main.cpp`:
+The Python wheel supplies the QDMI driver, device bundles, and the `mqt-cc` and
+`mqt-core-bench` executables. Its CMake package exposes the QDMI C interfaces;
+C++ DD, QDMI client, and benchmark libraries require a source installation.
+
+This application allocates a session through the builtin driver's C interface.
+Save it as `main.cpp`:
 
 ```cpp
-#include "dd/Edge.hpp"
-#include "dd/Package.hpp"
-#include "dd/StateGeneration.hpp"
+#include <qdmi/client.h>
 
 #include <iostream>
 
 int main() {
-  dd::Package package(2);
-  const auto state = dd::makeGHZState(2, package);
-  for (const auto amplitude : dd::getVector(state)) {
-    std::cout << amplitude << '\n';
+  QDMI_Session session = nullptr;
+  if (QDMI_session_alloc(&session) != QDMI_SUCCESS) {
+    return 1;
   }
-  package.decRef(state);
+  QDMI_session_free(session);
+  std::cout << "QDMI driver available\n";
 }
 ```
-
-The DD package owns its nodes. The state returned by `makeGHZState` holds a
-reference until `decRef` releases it. Keep the package alive while using the
-state. Converting a DD to a dense vector takes space exponential in the number
-of qubits; this example has only four amplitudes.
 
 Save the following as `CMakeLists.txt`:
 
 ```cmake
 cmake_minimum_required(VERSION 3.28)
-project(dd-example LANGUAGES CXX)
-find_package(mqt-core CONFIG REQUIRED)
-add_executable(dd-example main.cpp)
-target_link_libraries(dd-example PRIVATE MQT::CoreDD)
+project(qdmi-example LANGUAGES CXX)
+find_package(mqt-core CONFIG REQUIRED COMPONENTS Runtime)
+add_executable(qdmi-example main.cpp)
+target_link_libraries(qdmi-example PRIVATE MQT::CoreQDMIDriver)
+mqt_copy_qdmi_runtime(qdmi-example MQT::CoreQDMI_DDSIM_Device)
 ```
 
-With the Python wheel installed in the active environment, CMake and Ninja
-available, run:
+With the wheel installed in the active environment, run:
 
 ```console
 cmake -S . -B build -G Ninja -DCMAKE_PREFIX_PATH="$(mqt-core-cli --cmake_dir)"
 cmake --build build
-./build/dd-example
+./build/qdmi-example
 ```
 
-The last command is for a Unix shell; on Windows, run `build\dd-example.exe`.
-The output has amplitude $1/\sqrt{2}$ at `00` and `11`, and zero at `01` and
-`10`. For a separate C++ installation, point `CMAKE_PREFIX_PATH` at its install
-prefix instead. See {doc}`installation` for source builds and other CMake
-integration options.
+On Windows, run `build\qdmi-example.exe`. The application prints
+`QDMI driver available`. No LLVM/MLIR installation is required.
+
+CMake also provides `MQT::mqt-cc` and `MQT::mqt-core-bench` imported executable
+targets. Use them in custom commands, or run `mqt-cc` and `mqt-core-bench` from
+the environment's command line.
 
 ```{code-cell} ipython3
 :tags: [remove-cell]
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import math
 import os
 import subprocess
 
@@ -87,13 +84,24 @@ with TemporaryDirectory() as directory:
     subprocess.run(
         ["cmake", "--build", str(root / "build")], check=True, stderr=subprocess.STDOUT
     )
-    executable = root / "build" / ("dd-example.exe" if os.name == "nt" else "dd-example")
+    executable = root / "build" / ("qdmi-example.exe" if os.name == "nt" else "qdmi-example")
     result = subprocess.run([str(executable)], check=True, capture_output=True, text=True)
-    amplitudes = [complex(*map(float, line.strip("()").split(","))) for line in result.stdout.splitlines()]
-    expected = [1 / math.sqrt(2), 0, 0, 1 / math.sqrt(2)]
-    assert len(amplitudes) == len(expected)
-    assert all(abs(actual - ideal) < 1e-6 for actual, ideal in zip(amplitudes, expected))
+    assert result.stdout.strip() == "QDMI driver available"
 ```
+
+## Use the C++ development libraries
+
+Build and install MQT Core from source, then request the `Development`
+component. It provides `MQT::CoreDD`, `MQT::CoreQDMI`, and `MQT::CoreBench`. The
+DD library is static; compile consumers with a compatible C++ toolchain.
+
+```cmake
+find_package(mqt-core CONFIG REQUIRED COMPONENTS Development)
+target_link_libraries(my-application PRIVATE MQT::CoreDD)
+```
+
+Point `CMAKE_PREFIX_PATH` at the source installation's prefix. See
+{doc}`installation` for source builds and other CMake integration options.
 
 ## Extend the compiler or QIR runtime
 

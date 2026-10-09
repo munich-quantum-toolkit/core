@@ -10,15 +10,11 @@
 
 from __future__ import annotations
 
-import os
-import sys
-from importlib.metadata import distribution
-from pathlib import Path
 from typing import NoReturn
+
+from ._commands import run_tool
 
 
 def main() -> NoReturn:
     """Replace this process with the bundled benchmark driver."""
-    suffix = ".exe" if sys.platform == "win32" else ""
-    executable = Path(str(distribution("mqt-core").locate_file(f"mqt/core/bin/mqt-core-bench{suffix}")))
-    os.execv(executable, [str(executable), *sys.argv[1:]])  # ruff: ignore[start-process-with-no-shell]
+    run_tool("mqt-core-bench")

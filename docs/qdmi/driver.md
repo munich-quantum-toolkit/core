@@ -8,10 +8,10 @@ mystnb:
 
 # Using QDMI drivers
 
-The C++ QDMI library (`MQT::CoreQDMI`) provides owning wrappers for the standard
-QDMI Client Interface. Applications can replace the driver without rebuilding.
-The library calls every driver through that interface. Each driver handles its
-own device implementations, configuration, and authorization.
+The source-installed C++ QDMI library (`MQT::CoreQDMI`) provides owning wrappers
+for the standard QDMI Client Interface. Applications can replace the driver
+without rebuilding. The library calls every driver through that interface. Each
+driver handles its own device implementations, configuration, and authorization.
 
 The builtin MQT Core QDMI driver (`MQT::CoreQDMIDriver`, exposed in Python as
 `builtin_driver`) loads devices such as [the SC device](sc_device.md) and

@@ -80,10 +80,11 @@ Release wheels use portable CPU settings and the assertion-free LLVM/MLIR 23.1.2
 SDK. Linux wheels target manylinux_2_28 and use Clang 22 with LLD and ThinLTO;
 macOS wheels use Apple Clang and ThinLTO with a macOS 13.3 deployment target.
 Windows wheels use MSVC with IPO, except for DLLs that require automatic symbol
-exports. The wheels include native shared libraries and a CMake package for C++
-applications. Consumers do not need the compiler's LTO plugin, but must use a
-compatible C++ standard library and ABI. Use the QDMI C interface for device
-plugins.
+exports. Wheels include the QDMI driver and device bundles, `mqt-cc`, and
+`mqt-core-bench`. Their CMake package exposes the QDMI C interfaces and tool
+targets without requiring LLVM/MLIR. See {doc}`cpp_api` for native consumers.
+C++ development libraries and headers are available from source installations;
+the DD library is static.
 
 ### Building from source
 
@@ -224,7 +225,7 @@ FetchContent_Declare(
   mqt-core
   GIT_REPOSITORY https://github.com/${MQT_CORE_REPO_OWNER}/core.git
   GIT_TAG ${MQT_CORE_REV}
-  FIND_PACKAGE_ARGS ${MQT_CORE_MINIMUM_VERSION})
+  FIND_PACKAGE_ARGS ${MQT_CORE_MINIMUM_VERSION} COMPONENTS Development)
 list(APPEND FETCH_PACKAGES mqt-core)
 
 # Make all declared dependencies available.
@@ -269,7 +270,7 @@ Then, in your project's {code}`CMakeLists.txt`, use {code}`find_package()` to
 locate the installed library:
 
 ```cmake
-find_package(mqt-core <version> REQUIRED)
+find_package(mqt-core <version> REQUIRED COMPONENTS Development)
 ```
 
 :::
