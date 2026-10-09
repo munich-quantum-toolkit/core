@@ -72,65 +72,10 @@ void MQTDialect::initialize() {
 #define GET_ATTRDEF_CLASSES
 #include "mqt/Dialect/MQT/IR/MQTAttributes.cpp.inc"
 
-/// Return whether a linear quantum value is released in the block that
-/// creates it.
-///
-/// The value is followed forward to the `qco.sink` or `qtensor.dealloc` that
-/// releases it. Handing it to a register, a terminator, another block, or an
-/// operation that does not continue it lets it escape. Region operations and
-/// calls are crossed by position, so the release is confirmed by tracing the
-/// released value back to @p created, which proves the correspondence the
-/// forward walk assumed. The walk checks linearity itself because the wire and
-/// tensor iterators assume it.
-[[nodiscard]] static bool isReleasedInBlock(Value created) {
-  Block* block = created.getParentBlock();
-  Value value = created;
-  while (value.hasOneUse()) {
-    OpOperand& use = *value.use_begin();
-    Operation* user = use.getOwner();
-    if (user->getBlock() != block) {
-      return false;
-    }
-    if (isa<qco::SinkOp, qtensor::DeallocOp>(user)) {
-      auto origin = qco::traceQuantumOrigin(value);
-      return succeeded(origin) && *origin == created;
-    }
-    value =
-        TypeSwitch<Operation*, Value>(user)
-            .Case([&](qco::UnitaryOpInterface op) {
-              return op.getOutputForInput(value);
-            })
-            .Case([](qco::MeasureOp op) { return op.getQubitOut(); })
-            .Case([](qco::ResetOp op) { return op.getQubitOut(); })
-            .Case([](qtensor::ExtractOp op) { return op.getOutTensor(); })
-            .Case([&](qtensor::InsertOp op) {
-              return value == op.getDest() ? op.getResult() : Value{};
-            })
-            .Case([&](scf::ForOp op) { return op.getTiedLoopResult(&use); })
-            .Case([&](scf::WhileOp op) {
-              const auto index = use.getOperandNumber();
-              return index < op->getNumResults() ? op->getResult(index)
-                                                 : Value{};
-            })
-            .Case([&](qco::IfOp op) { return op.getTiedResult(&use); })
-            .Case([&](qco::IndexSwitchOp op) { return op.getTiedResult(&use); })
-            .Case([&](func::CallOp op) {
-              auto result =
-                  qco::getCallResultForArgument(op, use.getOperandNumber());
-              return succeeded(result) ? op.getResult(*result) : Value{};
-            })
-            .Default([](Operation*) { return Value{}; });
-    if (!value) {
-      return false;
-    }
-  }
-  return false;
-}
-
 /// Return whether a dynamic quantum allocation is released in its own block.
 [[nodiscard]] static bool isReleasedInBlock(Operation* allocation) {
   if (isa<qco::AllocOp, qtensor::AllocOp>(allocation)) {
-    return isReleasedInBlock(allocation->getResult(0));
+    return qco::findReleaseInBlock(allocation->getResult(0)) != nullptr;
   }
   // A QC reference stays valid until it is deallocated, so the deallocation
   // only has to share the block.

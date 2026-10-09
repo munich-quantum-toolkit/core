@@ -12,6 +12,7 @@
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/Block.h"
+#include "mlir/IR/Operation.h"
 #include "mlir/IR/TypeRange.h"
 #include "mlir/IR/Value.h"
 #include "mlir/Support/LogicalResult.h"
@@ -50,6 +51,14 @@ namespace mlir::qco {
 
 /// Return the quantum block argument of @p block continued by @p value.
 [[nodiscard]] FailureOr<unsigned> traceQubitArgument(Block& block, Value value);
+
+/// Return the operation that releases @p created in the block that creates it.
+///
+/// @p created is a QCO qubit or register. It is followed forward through the
+/// operations that continue it to the `qco.sink` or `qtensor.dealloc` that
+/// releases it. Handing it to a register, a terminator, another block, or an
+/// operation that does not continue it lets it escape, which returns null.
+[[nodiscard]] Operation* findReleaseInBlock(Value created);
 
 /// Check that extracted tensor slots are restored at calls and region exits.
 /// Matching slot indices are a program precondition; correspondence is checked

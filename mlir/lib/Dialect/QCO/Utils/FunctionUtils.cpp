@@ -22,6 +22,7 @@
 
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -263,6 +264,54 @@ FailureOr<unsigned> mlir::qco::traceQubitArgument(func::FuncOp function,
     return failure();
   }
   return traceQubitArgument(function.getBody().front(), value);
+}
+
+Operation* mlir::qco::findReleaseInBlock(Value created) {
+  Block* block = created.getParentBlock();
+  Value value = created;
+  // The walk checks linearity itself because the wire and tensor iterators
+  // assume it, and verifiers see unverified IR.
+  while (value.hasOneUse()) {
+    OpOperand& use = *value.use_begin();
+    Operation* user = use.getOwner();
+    if (user->getBlock() != block) {
+      return nullptr;
+    }
+    if (isa<SinkOp, qtensor::DeallocOp>(user)) {
+      // Region operations and calls were crossed by position. Tracing the
+      // released value back proves the correspondence that assumed.
+      auto origin = traceQuantumOrigin(value);
+      return succeeded(origin) && *origin == created ? user : nullptr;
+    }
+    value = TypeSwitch<Operation*, Value>(user)
+                .Case([&](UnitaryOpInterface op) {
+                  return op.getOutputForInput(value);
+                })
+                .Case([](MeasureOp op) { return op.getQubitOut(); })
+                .Case([](ResetOp op) { return op.getQubitOut(); })
+                .Case([](qtensor::ExtractOp op) { return op.getOutTensor(); })
+                .Case([&](qtensor::InsertOp op) {
+                  return value == op.getDest() ? op.getResult() : Value{};
+                })
+                .Case([&](scf::ForOp op) { return op.getTiedLoopResult(&use); })
+                .Case([&](scf::WhileOp op) {
+                  const auto index = use.getOperandNumber();
+                  return index < op->getNumResults() ? op->getResult(index)
+                                                     : Value{};
+                })
+                .Case([&](IfOp op) { return op.getTiedResult(&use); })
+                .Case([&](IndexSwitchOp op) { return op.getTiedResult(&use); })
+                .Case([&](func::CallOp op) {
+                  auto result =
+                      getCallResultForArgument(op, use.getOperandNumber());
+                  return succeeded(result) ? op.getResult(*result) : Value{};
+                })
+                .Default([](Operation*) { return Value{}; });
+    if (!value) {
+      return nullptr;
+    }
+  }
+  return nullptr;
 }
 
 /// Require dynamic tensor slots to be restored before leaving each region.
