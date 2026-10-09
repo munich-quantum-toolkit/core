@@ -498,7 +498,7 @@ c = measure q;
     assert job.program_format == ProgramFormat.QASM3
     # The program should be preserved
     assert job.get_program() == qasm3_program
-    assert job.get_program_bytes() == qasm3_program.encode() + b"\0"
+    assert job.get_program(bytes) == qasm3_program.encode() + b"\0"
     # Num shots should match request
     assert job.num_shots == 100
 
@@ -596,7 +596,7 @@ c = measure q;
     assert ProgramFormat.QIR_BASE_MODULE in ddsim_device.supported_program_formats()
 
     job = ddsim_device.submit_job(program_bytes, ProgramFormat.QIR_BASE_MODULE, num_shots=10)
-    assert job.get_program_bytes() == program_bytes
+    assert job.get_program(bytes) == program_bytes
     with pytest.raises(ValueError, match="binary program"):
         _ = job.get_program()
     job.wait()

@@ -92,7 +92,7 @@ bitcode = base.to_bitcode()
 assert isinstance(bitcode, bytes)
 binary_job = device.submit_job(bitcode, ProgramFormat.QIR_BASE_MODULE, num_shots=256, custom1=7)
 assert binary_job.wait()
-assert binary_job.get_program_bytes() == bitcode
+assert binary_job.get_program(bytes) == bitcode
 assert binary_job.get_counts() == counts
 print(f"Bitcode: {len(bitcode)} bytes")
 print(binary_job.get_counts())
@@ -290,9 +290,9 @@ their payload happens to end in a null byte.
 
 The Python API follows the same distinction: pass `str` or `bytes` to
 `Device.submit_job` for one program, or a sequence of either type for multiple
-programs. `Job.get_program_bytes()` always returns the unmodified payload, while
-`Job.get_program()` expects a null-terminated UTF-8 text payload and rejects
-known binary or non-text formats. The `num_shots` argument is optional for
+programs. `Job.get_program(bytes)` returns the exact payload. By default,
+`Job.get_program()` decodes a null-terminated text payload and rejects known
+binary or non-text formats. The `num_shots` argument is optional for
 device-defined formats that encode their repetition count in the program
 payload.
 

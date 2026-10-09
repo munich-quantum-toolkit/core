@@ -397,15 +397,22 @@ when the custom slot is unsupported.)pb");
           "Return one submitted text program by input index.");
 
   job.def(
-      "get_program_bytes",
-      [](const qdmi::Job& self, const size_t programIndex) {
+      "get_program",
+      [](const qdmi::Job& self, const nb::handle valueType,
+         const size_t programIndex) {
+        if (!valueType.is(nb::builtins()["bytes"])) {
+          throw nb::type_error("value_type must be bytes");
+        }
         const auto program = [&] {
           const nb::gil_scoped_release release;
           return self.getProgramBytes(programIndex);
         }();
-        return nb::bytes(program.data(), program.size());
+        return nb::bytes(reinterpret_cast<const char*>(program.data()),
+                         program.size());
       },
-      "program_index"_a = 0,
+      "value_type"_a, "program_index"_a = 0,
+      nb::sig("def get_program(self, value_type: type[bytes], "
+              "program_index: int = 0) -> bytes"),
       "Return one submitted program's exact bytes by input index.");
 
   job.def_prop_ro("num_programs", &qdmi::Job::getNumPrograms,

@@ -67,6 +67,7 @@ def test_binary_program_sequence() -> None:
     device = open_device("mqt.ddsim.default")
     job = device.submit_job((bitcode, bitcode), ProgramFormat.QIR_BASE_MODULE, 4)
     assert job.wait()
+    assert job.get_program(bytes, 1) == bitcode
     assert [job.get_counts(i) for i in range(2)] == [{"1": 4}, {"1": 4}]
 
 

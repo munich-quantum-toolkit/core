@@ -154,10 +154,12 @@ class Job:
     def program_format(self) -> ProgramFormat:
         """The format of the submitted program."""
 
+    @overload
     def get_program(self, program_index: int = 0) -> str:
         """Return one submitted text program by input index."""
 
-    def get_program_bytes(self, program_index: int = 0) -> bytes:
+    @overload
+    def get_program(self, value_type: type[bytes], program_index: int = 0) -> bytes:
         """Return one submitted program's exact bytes by input index."""
 
     @property
