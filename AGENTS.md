@@ -79,9 +79,12 @@ comment, data-structure, diagnostic, and debugging guidance.
 - Use `#pragma once`, direct includes, and standard-library facilities before
   adding abstractions. Use C typedefs such as `size_t` and `uint64_t` without
   `std::`. Do not use C-style casts, including casts to `void`.
-- Use `///` for Doxygen documentation and `//` for ordinary implementation and
-  namespace closing comments. Preserve trailing `//!<` or `///<`, inline block
-  comments, and block documentation inside continued macros.
+- Use `//` for ordinary code comments. Never use `///` for them.
+- Use `///` for Doxygen documentation, including structural commands. Start
+  descriptions with a short summary paragraph, separated from further content by
+  a blank `///` line. Marker-only blocks need no summary. Follow the
+  [C++ documentation policy](docs/development.md#c-documentation-comments) for
+  exceptions.
 - Use `moduleOp` instead of the C++20 keyword `module` for an MLIR module
   handle. Generally give non-public data members a trailing underscore.
 - Never add `const` to MLIR `Value` forms, range views, `Operation`, `Block`,
@@ -113,8 +116,12 @@ comment, data-structure, diagnostic, and debugging guidance.
 
 ## Python and bindings
 
-- Use Google-style docstrings. Fix `ruff` and `ty` diagnostics instead of
-  suppressing them unless a documented exception is necessary.
+- Use Google-style docstrings, including in nanobind binding strings. Start each
+  with a short summary on one line, then a blank line before any further
+  content. Follow the
+  [Python docstring policy](docs/development.md#python-docstrings).
+- Fix `ruff` and `ty` diagnostics instead of suppressing them unless a
+  documented exception is necessary.
 - Preserve supported Python APIs unless a breaking change is authorized. Keep
   optional integration imports lazy where the binding already does so.
 - Choose finite-shot tolerances with low false-failure probability; keep
@@ -151,11 +158,12 @@ default; changed-line clang-tidy alone is insufficient. Inspect which files ran.
 Keep pass and option documentation aligned with actual scope, defaults,
 supported shapes, limitations, and failure modes.
 
-Inspect the final diff and status. Exclude generated, secret, and unrelated
-files. Tie validation to the final code: rerun affected checks following edits
-and distinguish passes from skipped, blocked, or pending checks. Report checks
-run and their outcomes; stop after required gates pass unless a concrete
-remaining risk justifies more validation.
+Inspect the final diff and status. Check changed comments and docstrings against
+the documentation policy. Exclude generated, secret, and unrelated files. Tie
+validation to the final code: rerun affected checks following edits and
+distinguish passes from skipped, blocked, or pending checks. Report checks run
+and their outcomes; stop after required gates pass unless a concrete remaining
+risk justifies more validation.
 
 ## Plans and audits
 
