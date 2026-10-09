@@ -577,7 +577,7 @@ struct MergeSingleQubitRotationGatesPattern final
   }
 
   /// Reuse Euler angles when the chain and output share their outer axis.
-  /// Either outer rotation may be absent. H/RZ pairs use H RZ = RX H to
+  /// Either outer rotation may be absent. H/Z pairs use H RZ = RX H to
   /// align the rotation with the output basis. Normalize gate operands before
   /// adding Euler offsets or computing the U phase correction.
   static LogicalResult
@@ -594,8 +594,27 @@ struct MergeSingleQubitRotationGatesPattern final
 
     const bool hadamardPair =
         chain.size() == 2 &&
-        ((isa<HOp>(chain.front()) && isa<RZOp>(chain.back())) ||
-         (isa<RZOp>(chain.front()) && isa<HOp>(chain.back())));
+        ((isa<HOp>(chain.front()) && isa<RZOp, POp>(chain.back())) ||
+         (isa<RZOp, POp>(chain.front()) && isa<HOp>(chain.back())));
+    if (chain.size() == 3 && isa<HOp>(chain.front()) &&
+        isa<RZOp, POp>(chain[1]) && isa<HOp>(chain.back())) {
+      /// H RZ(a) H = RX(a); P(a) also contributes phase a/2.
+      const Location loc = chain.front()->getLoc();
+      const auto angle = gateParam(chain[1], 0, rewriter, loc);
+      Value qubit = decomposition::synthesizePauliRotation1Q(
+          rewriter, loc, chain.front().getInputQubit(0),
+          decomposition::PauliAxis::X, angle.getValue(), synthesisBasis);
+      if (isa<POp>(chain[1])) {
+        decomposition::emitGPhaseIfNeeded(
+            rewriter, loc,
+            (angle * Val::constant(rewriter, loc, 0.5)).getValue());
+      }
+      for (auto op : llvm::drop_begin(chain)) {
+        rewriter.replaceOp(op, op.getInputQubit(0));
+      }
+      rewriter.replaceOp(chain.front(), qubit);
+      return success();
+    }
     const size_t middle = chain.size() > 1 && isOuter(chain.front()) ? 1 : 0;
     if (!hadamardPair &&
         (chain.size() <= middle || chain.size() > middle + 2 ||
@@ -618,19 +637,32 @@ struct MergeSingleQubitRotationGatesPattern final
         .phase = consts.zero,
     };
     if (hadamardPair) {
-      const auto fixed = decomposition::anglesFromUnitary(
-          HOp::getUnitaryMatrix(),
-          outerX ? basis : decomposition::SingleQubitBasis::ZYZ);
+      const auto fixed =
+          basis == decomposition::SingleQubitBasis::U
+              ? decomposition::EulerAngles{.theta = std::numbers::pi / 2.,
+                                           .lambda = std::numbers::pi,}
+              : decomposition::anglesFromUnitary(
+                    HOp::getUnitaryMatrix(),
+                    outerX ? basis : decomposition::SingleQubitBasis::ZYZ);
       angles = {
           .theta = Val::constant(rewriter, loc, fixed.theta),
           .phi = Val::constant(rewriter, loc, fixed.phi),
           .lambda = Val::constant(rewriter, loc, fixed.lambda),
           .phase = Val::constant(rewriter, loc, fixed.phase),
       };
-      const bool rotationFirst = isa<RZOp>(chain.front());
+      const bool rotationFirst = isa<RZOp, POp>(chain.front());
+      auto rotation = rotationFirst ? chain.front() : chain.back();
+      const auto rotationAngle = angle(rotation);
       auto& outer = rotationFirst != outerX ? angles.lambda : angles.phi;
-      outer =
-          sumAngles(outer, angle(rotationFirst ? chain.front() : chain.back()));
+      outer = sumAngles(outer, rotationAngle);
+      if (basis == decomposition::SingleQubitBasis::U) {
+        /// P/H pairs are U directly; RZ/H pairs retain phase -a/2.
+        angles.phase = isa<POp>(rotation)
+                           ? consts.zero
+                           : rotationAngle * Val::constant(rewriter, loc, -0.5);
+      } else if (isa<POp>(rotation)) {
+        angles.phase = angles.phase + rotationAngle / consts.two;
+      }
     } else {
       angles.theta = Val(rewriter, loc, chain[middle].getParameter(0));
       if (basis == decomposition::SingleQubitBasis::ZSXX ||
@@ -667,9 +699,19 @@ struct MergeSingleQubitRotationGatesPattern final
     for (auto op : llvm::drop_begin(chain)) {
       rewriter.replaceOp(op, op.getInputQubit(0));
     }
-    Value qubit =
-        emitRuntimeEulerAngles(rewriter, loc, chain.front().getInputQubit(0),
-                               angles, synthesisBasis, consts);
+    Value qubit = hadamardPair && basis == decomposition::SingleQubitBasis::U
+                      ? decomposition::emitParameterizedEulerAngles(
+                            rewriter, loc, chain.front().getInputQubit(0),
+                            {
+                                angles.theta.getValue(),
+                                angles.phi.getValue(),
+                                angles.lambda.getValue(),
+                                angles.phase.getValue(),
+                            },
+                            synthesisBasis)
+                      : emitRuntimeEulerAngles(rewriter, loc,
+                                               chain.front().getInputQubit(0),
+                                               angles, synthesisBasis, consts);
     rewriter.replaceOp(chain.front(), qubit);
     return success();
   }

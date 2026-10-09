@@ -26,6 +26,7 @@
 #include "llvm/ADT/SmallVectorExtras.h"
 
 #include <cstddef>
+#include <tuple>
 
 namespace mlir::qc::detail {
 
@@ -97,7 +98,7 @@ void inlineNarrowedBody(Block& body, ValueRange qubits, ArrayRef<size_t> used,
   for (auto [index, arg] : llvm::zip_equal(used, args)) {
     replacements[index] = arg;
   }
-  mqt::inlineBodyReturningYields(body, replacements, rewriter);
+  std::ignore = mqt::inlineBodyReturningYields(body, replacements, rewriter);
 }
 
 } // namespace mlir::qc::detail

@@ -421,8 +421,9 @@ TEST_F(TargetSynthesisTest, ZSXXSynthesisPreservesFullUnitary) {
             if (parameterIndex) {
               /// Keep theta fixed when phi is symbolic to exercise the
               /// zero, quarter-turn, and half-turn shortcuts at runtime.
-              function.insertArgument(0, mlir::Float64Type::get(context.get()),
-                                      {}, function.getLoc());
+              ASSERT_TRUE(mlir::succeeded(function.insertArgument(
+                  0, mlir::Float64Type::get(context.get()), {},
+                  function.getLoc())));
               auto gate = *function.getOps<UOp>().begin();
               auto originalParameter = gate.getParameter(*parameterIndex);
               originalParameter.replaceAllUsesWith(function.getArgument(0));
@@ -1708,6 +1709,34 @@ TEST_F(TargetSynthesisTest, NativeSynthesisSharesRepeatedParameterConstants) {
   ASSERT_TRUE(mlir::succeeded(mlir::verify(*synthesized)));
   ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*synthesized)));
   expectEquivalent(expected, synthesized);
+}
+
+TEST_F(TargetSynthesisTest, NativePipelineRemovesDeadLoopCarriedValues) {
+  auto moduleOp = mlir::parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%bound: index, %theta: f64) {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %dead = scf.for %i = %c0 to %bound step %c1
+            iter_args(%unused = %c0) -> index {
+          %next = arith.addi %unused, %c1 : index
+          qco.gphase(%theta)
+          scf.yield %next : index
+        }
+        return
+      }
+    }
+  )mlir",
+                                                    context.get());
+  ASSERT_TRUE(moduleOp);
+  attachTestEnvironment(*moduleOp, makeUCxTarget());
+  mlir::PassManager manager(context.get());
+  mlir::qco::populateTargetNativeSynthesisPipeline(manager);
+  ASSERT_TRUE(mlir::succeeded(manager.run(*moduleOp)));
+  auto loops =
+      llvm::to_vector(mainFunction(*moduleOp).getOps<mlir::scf::ForOp>());
+  ASSERT_EQ(loops.size(), 1U);
+  EXPECT_EQ(loops.front().getNumRegionIterArgs(), 0U);
 }
 
 TEST_F(TargetSynthesisTest, SqrtISwapCapabilityRequiresFixedParameters) {

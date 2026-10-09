@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "dd/Edge.hpp"
 #include "dd/Package.hpp"
 #include "mqt/Conversion/QCOToQC/QCOToQC.h"
 #include "mqt/Conversion/QCToQCO/QCToQCO.h"
@@ -1003,8 +1004,8 @@ U(0.4, -0.2, 0.7) q;
       qco::buildFunctionality(mlir::mqt::getEntryPoint(*roundTrip), package);
   ASSERT_TRUE(succeeded(before));
   ASSERT_TRUE(succeeded(after));
-  const auto expected = before->getMatrix(1);
-  const auto actual = after->getMatrix(1);
+  const auto expected = dd::getMatrix(*before, 1);
+  const auto actual = dd::getMatrix(*after, 1);
   for (size_t row = 0; row < 2; ++row) {
     for (size_t column = 0; column < 2; ++column) {
       EXPECT_NEAR(std::abs(actual[row][column] - expected[row][column]), 0.,
@@ -1101,7 +1102,7 @@ wrapper(0.25) q;
     auto functionality =
         qco::buildFunctionality(mlir::mqt::getEntryPoint(moduleOp), package);
     ASSERT_TRUE(succeeded(functionality));
-    const auto matrix = functionality->getMatrix(1);
+    const auto matrix = dd::getMatrix(*functionality, 1);
     /// The six iterations sum to RX(6 * 0.25 + 3 * (1/2 + 1/3)) = RX(4).
     for (size_t row = 0; row < 2; ++row) {
       for (size_t column = 0; column < 2; ++column) {
@@ -1830,13 +1831,43 @@ TEST(OpenQASM3EmissionTest, PreservesControlledGatesAndAngleTables) {
   auto functionality = qco::buildFunctionality(
       restored->lookupSymbol<func::FuncOp>("main"), package);
   ASSERT_TRUE(succeeded(functionality));
-  const auto matrix = functionality->getMatrix(2);
+  const auto matrix = dd::getMatrix(*functionality, 2);
   for (size_t row = 0; row < 4; ++row) {
     for (size_t column = 0; column < 4; ++column) {
       const auto expected = row != column ? 0.0 : row == 3 ? -1.0 : 1.0;
       EXPECT_NEAR(std::abs(matrix[row][column] - expected), 0., 1e-12);
     }
   }
+}
+
+TEST(OpenQASM3EmissionTest, RoundTripsDenseBooleanInputLookups) {
+  MLIRContext context(emissionDialects());
+  context.loadAllAvailableDialects();
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
+      %zero = arith.constant 0 : index
+      %one = arith.constant 1 : index
+      %two = arith.constant 2 : index
+      %bits = arith.constant dense<[false, true]> : tensor<2xi1>
+      %q = qc.alloc : !qc.qubit
+      %result = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+      scf.for %index = %zero to %two step %one {
+        %bit = tensor.extract %bits[%index] : tensor<2xi1>
+        scf.if %bit { qc.x %q : !qc.qubit }
+      }
+      %measured = qc.measure %q : !qc.qubit -> i1
+      cbit.store %measured, %result[%zero] : !cbit.reg<1>
+      qc.dealloc %q : !qc.qubit
+      return %result : !cbit.reg<1>
+    }
+  })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  auto source = qc::translateQCToOpenQASM3(*moduleOp);
+  ASSERT_TRUE(succeeded(source));
+  auto restored = qc::translateOpenQASMToQC(*source, &context);
+  ASSERT_TRUE(restored);
+  expectOneSample(*restored);
 }
 
 TEST(OpenQASM3EmissionTest, EmitsLargeConstantTables) {
@@ -2706,11 +2737,11 @@ TEST(OpenQASM3EmissionTest,
       auto lhs = qco::buildFunctionality(
           original->lookupSymbol<func::FuncOp>("main"), package);
       ASSERT_TRUE(succeeded(lhs));
-      const auto expected = lhs->getMatrix(width);
+      const auto expected = dd::getMatrix(*lhs, width);
       auto rhs = qco::buildFunctionality(
           restored->lookupSymbol<func::FuncOp>("main"), package);
       ASSERT_TRUE(succeeded(rhs));
-      const auto actual = rhs->getMatrix(width);
+      const auto actual = dd::getMatrix(*rhs, width);
       bool nonIdentity = false;
       for (size_t row = 0; row < expected.size(); ++row) {
         for (size_t column = 0; column < expected.size(); ++column) {

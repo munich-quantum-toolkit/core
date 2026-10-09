@@ -24,8 +24,10 @@ add_executable(
   test_benchmark_generate_w_state.cpp
   test_benchmark_generate_weak_measurement_grover.cpp)
 
-target_link_libraries(mqt-core-mlir-unittests-benchmark
-                      PRIVATE GTest::gtest_main MQT::CoreBenchGenerate MLIRQCODDFunctionality)
+target_link_libraries(
+  mqt-core-mlir-unittests-benchmark
+  PRIVATE GTest::gtest_main MQT::CoreBenchGenerate MLIRQCODDFunctionality MQT::CoreQIRJIT
+          MQT::CoreQIRRuntime)
 
 target_include_directories(mqt-core-mlir-unittests-benchmark
                            PRIVATE ${PROJECT_SOURCE_DIR}/mlir/bench/programs)

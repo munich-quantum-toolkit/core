@@ -294,14 +294,19 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<CtrlOp> {
                                          "Nested CtrlOps are not supported");
     }
 
-    if (op.getNumBodyUnitaries() > 1) {
-      return rewriter.notifyMatchFailure(
-          op, "CtrlOps with multiple body unitaries are not supported. Run the "
-              "unroll-modifiers pass before the conversion");
+    auto unitaries = op.getBody()->getOps<UnitaryOpInterface>();
+    auto it = unitaries.begin();
+    UnitaryOpInterface bodyUnitary;
+    if (it != unitaries.end()) {
+      bodyUnitary = *it;
+      if (++it != unitaries.end()) {
+        return rewriter.notifyMatchFailure(
+            op,
+            "CtrlOps with multiple body unitaries are not supported. Run the "
+            "unroll-modifiers pass before the conversion");
+      }
     }
 
-    auto bodyUnitary = op.getNumBodyUnitaries() == 1 ? op.getBodyUnitary(0)
-                                                     : UnitaryOpInterface{};
     if (bodyUnitary && !isa<BarrierOp, IdOp>(bodyUnitary.getOperation())) {
       state.controlledGates.try_emplace(bodyUnitary.getOperation(),
                                         llvm::to_vector(adaptor.getControls()));

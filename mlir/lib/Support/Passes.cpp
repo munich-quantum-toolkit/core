@@ -20,6 +20,7 @@
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Verifier.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Pass/PassRegistry.h"
@@ -46,8 +47,12 @@ runWithPassManager(ModuleOp mod,
                    const StringRef errorMessage,
                    const CompilationOptions& options, bool preservesLayout) {
   PassManager pm(mod.getContext());
+#ifdef NDEBUG
+  pm.enableVerifier(false);
+#endif
   populatePasses(pm);
-  if (failed(runWithCompilationOptions(pm, mod, options, preservesLayout))) {
+  if (failed(runWithCompilationOptions(pm, mod, options, preservesLayout)) ||
+      failed(verify(mod))) {
     return mod.emitError(errorMessage);
   }
   return success();
@@ -143,7 +148,7 @@ LogicalResult runWithCompilationOptions(PassManager& pm, ModuleOp moduleOp,
     pm.enableStatistics();
   }
   auto previous = moduleOp->getAttr(COMPILATION_SEED_ATTR);
-  const auto restoreSeed = llvm::make_scope_exit([&] {
+  const auto restoreSeed = llvm::scope_exit([&] {
     if (previous) {
       moduleOp->setAttr(COMPILATION_SEED_ATTR, previous);
     } else {

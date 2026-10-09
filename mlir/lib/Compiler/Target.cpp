@@ -11,6 +11,7 @@
 #include "mqt/Compiler/Target.h"
 
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
+#include "mqt/Dialect/MQT/Utils/Modifiers.h"
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
@@ -627,12 +628,14 @@ struct CompilerTarget::Storage {
   llvm::DenseMap<SiteId, size_t> siteToVertex;
   Connectivity::Kind connectivityKind;
   SmallVector<Coupling> couplings;
+  // Keep per-site storage compact.
   SmallVector<SmallVector<size_t, 4>> adjacency;
   mutable SmallVector<size_t> distances;
   mutable std::once_flag distancesOnce;
   size_t maximumDegree = 0;
   NativeOperations::Kind nativeOperationsKind;
   SmallVector<OperationCapability> operations;
+  // Keep map entries compact when a name has only one capability.
   llvm::StringMap<SmallVector<size_t, 1>> capabilities;
   /// Keys borrow the immutable site tuples owned by operations.
   std::vector<llvm::DenseSet<ArrayRef<SiteId>>> operationSites;
@@ -1422,12 +1425,12 @@ bool CompilerTarget::supportsImpl(::mlir::Operation* operation,
       return true;
     }
     if (auto controlled = dyn_cast<qco::CtrlOp>(operation)) {
-      if (controlled.getNumControls() == 0 ||
-          controlled.getNumBodyUnitaries() != 1) {
+      if (controlled.getNumControls() == 0) {
         return false;
       }
-      auto body = controlled.getBodyUnitary(0);
-      if (body.getNumQubits() != controlled.getNumTargets()) {
+      auto body = mqt::getSoleBodyUnitary<qco::UnitaryOpInterface>(
+          *controlled.getBody());
+      if (!body || body.getNumQubits() != controlled.getNumTargets()) {
         return false;
       }
       if (storage_->supportsOperation(

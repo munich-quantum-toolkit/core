@@ -42,6 +42,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -118,7 +119,7 @@ func::FuncOp QCOProgramBuilder::createFunction(
   auto savedQubits = std::move(validQubits);
   auto savedTensors = std::move(validTensors);
   const auto savedTensorCounter = tensorCounter;
-  auto stateGuard = llvm::make_scope_exit([&] {
+  auto stateGuard = llvm::scope_exit([&] {
     validQubits = std::move(savedQubits);
     validTensors = std::move(savedTensors);
     tensorCounter = savedTensorCounter;
@@ -1490,7 +1491,7 @@ ValueRange QCOProgramBuilder::qcoIndexSwitch(
   const InsertionGuard guard(*this);
   const SmallVector locs(ntargets, getLoc());
 
-  const auto buildRegion = [&](Region& region, SmallVector<Value>& prev,
+  const auto buildRegion = [&](Region& region, SmallVectorImpl<Value>& prev,
                                function_ref<SmallVector<Value>(ValueRange)> f) {
     Block* const block = createBlock(&region, {}, types, locs);
     updateQubitValueTracking(prev, block->getArguments());

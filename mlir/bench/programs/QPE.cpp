@@ -16,48 +16,42 @@
 #include "QFTUtils.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/Tensor/IR/Tensor.h"
-#include "mlir/IR/BuiltinAttributes.h"
-#include "mlir/IR/BuiltinTypes.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/Value.h"
 #include "mlir/IR/ValueRange.h"
 #include "mlir/Support/LLVM.h"
 
-#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/APInt.h"
 
-#include <cstddef>
+#include <bit>
 #include <cstdint>
 #include <numbers>
-#include <vector>
 
 namespace mqt::bench {
 
 using namespace mlir;
 
-[[nodiscard]] static Value controlledPhaseAngles(qc::QCProgramBuilder& builder,
-                                                 const QPE& benchmark) {
-  const auto& options = benchmark.options();
-  const auto denominator = options.phase.denominator();
-  auto remainder = options.phase.numerator();
+[[nodiscard]] static Value doubleResidue(qc::QCProgramBuilder& builder,
+                                         Value residue, Value denominator) {
+  auto complement = arith::SubIOp::create(builder, denominator, residue);
+  auto wraps = arith::CmpIOp::create(builder, arith::CmpIPredicate::uge,
+                                     residue, complement);
+  auto wrapped = arith::SubIOp::create(builder, residue, complement);
+  auto doubled = arith::AddIOp::create(builder, residue, residue);
+  return arith::SelectOp::create(builder, wraps, wrapped, doubled);
+}
 
-  std::vector<double> angles;
-  angles.reserve(options.precision);
-  for (size_t i = 0; i < options.precision; ++i) {
-    const auto turns = static_cast<long double>(remainder) /
-                       static_cast<long double>(denominator);
-    angles.emplace_back(
-        static_cast<double>(2.L * std::numbers::pi_v<long double> * turns));
-    if (remainder >= denominator - remainder) {
-      remainder -= denominator - remainder;
-    } else {
-      remainder += remainder;
-    }
-  }
-
-  const auto type = RankedTensorType::get(
-      {static_cast<int64_t>(options.precision)}, builder.getF64Type());
-  const auto value = DenseElementsAttr::get(type, ArrayRef<double>(angles));
-  return arith::ConstantOp::create(builder, value).getResult();
+[[nodiscard]] static Value controlledPhaseAngle(qc::QCProgramBuilder& builder,
+                                                Value residue,
+                                                uint64_t denominator) {
+  auto numerator =
+      arith::UIToFPOp::create(builder, builder.getF64Type(), residue);
+  auto turns = arith::DivFOp::create(
+      builder, numerator,
+      builder.floatConstant(static_cast<double>(denominator)));
+  return arith::MulFOp::create(builder, turns,
+                               builder.floatConstant(2. * std::numbers::pi));
 }
 
 [[nodiscard]] static SmallVector<Value>
@@ -73,29 +67,90 @@ iterativeQPE(qc::QCProgramBuilder& builder, const QPE& benchmark) {
   auto upper = builder.indexConstant(precision);
   auto one = builder.indexConstant(1);
   auto last = builder.indexConstant(precision - 1);
-  auto angles = controlledPhaseAngles(builder, benchmark);
+  const auto& phase = benchmark.options().phase;
+  const auto denominator = phase.denominator();
+
+  /// Compute one exact starting residue in O(log precision). Products of
+  /// reduced uint64_t values fit in 128 bits.
+  const llvm::APInt modulus(128, denominator);
+  llvm::APInt initial(128, phase.numerator());
+  llvm::APInt factor(128, 2);
+  for (auto exponent = static_cast<uint64_t>(precision - 1); exponent != 0;
+       exponent >>= 1U) {
+    if ((exponent & 1U) != 0) {
+      initial = (initial * factor).urem(modulus);
+    }
+    factor = (factor * factor).urem(modulus);
+  }
+  auto initialResidue =
+      builder.intConstant(static_cast<int64_t>(initial.getZExtValue()));
+
+  /// For d=2^s*m with odd m, high powers reverse by halving and adding
+  /// ceil(d/2) when (residue>>s) is odd. Pack the lost wrap bits for powers at
+  /// most s.
+  const auto shift = static_cast<unsigned>(
+      std::countr_zero(denominator)); /// spellchecker:disable-line
+  uint64_t wraps = 0;
+  auto residue = phase.numerator();
+  for (unsigned power = 1; power <= shift; ++power) {
+    if (residue >= denominator - residue) {
+      wraps |= uint64_t{1} << power;
+      residue -= denominator - residue;
+    } else {
+      residue += residue;
+    }
+  }
+  auto integerOne = builder.intConstant(1);
+  auto integerZero = builder.intConstant(0);
+  auto halfDenominator = builder.intConstant(
+      static_cast<int64_t>((denominator >> 1U) + (denominator & 1U)));
   auto firstCorrection = builder.floatConstant(-std::numbers::pi / 2.);
   auto half = builder.floatConstant(0.5);
+  auto initialCorrection = builder.floatConstant(0.);
 
-  builder.scfFor(lower, upper, 1, [&](Value index) {
-    auto power = arith::SubIOp::create(builder, last, index);
-    auto angle = tensor::ExtractOp::create(builder, angles, ValueRange{power})
-                     .getResult();
+  auto loop = scf::ForOp::create(builder, lower, upper, one,
+                                 ValueRange{initialResidue, initialCorrection});
+  {
+    OpBuilder::InsertionGuard guard(builder);
+    builder.setInsertionPointToStart(loop.getBody());
+    auto index = loop.getInductionVar();
+    auto current = loop.getRegionIterArg(0);
+    auto angle = controlledPhaseAngle(builder, current, denominator);
     builder.h(query);
     builder.cp(angle, query, ancilla);
 
-    auto previous = arith::SubIOp::create(builder, index, one);
-    detail::phaseRotationLoop(
-        builder, lower, index, one, firstCorrection, half,
-        [&](Value correction, Value distance) {
-          auto bit = arith::SubIOp::create(builder, previous, distance);
-          builder.scfIf(result, bit, [&] { builder.p(correction, query); });
-        });
+    auto phaseCorrection = loop.getRegionIterArg(1);
+    builder.p(phaseCorrection, query);
 
     builder.h(query);
-    builder.measure(query, result, index);
+    auto measured = builder.measure(query, result, index);
     builder.reset(query);
-  });
+
+    Value wrap = current;
+    if (shift != 0) {
+      auto wrapBits = builder.intConstant(static_cast<int64_t>(wraps));
+      auto shiftValue = builder.intConstant(shift);
+      auto power = arith::SubIOp::create(builder, last, index);
+      auto powerValue =
+          arith::IndexCastOp::create(builder, builder.getI64Type(), power);
+      /// Keep the unused shift operand below 64 for large precisions.
+      auto isLowPower = arith::CmpIOp::create(
+          builder, arith::CmpIPredicate::ule, powerValue, shiftValue);
+      auto boundedPower =
+          arith::AndIOp::create(builder, powerValue, builder.intConstant(63));
+      auto lowWrap = arith::ShRUIOp::create(builder, wrapBits, boundedPower);
+      auto highWrap = arith::ShRUIOp::create(builder, current, shiftValue);
+      wrap = arith::SelectOp::create(builder, isLowPower, lowWrap, highWrap);
+    }
+    auto carried = arith::TruncIOp::create(builder, builder.getI1Type(), wrap);
+    auto correction =
+        arith::SelectOp::create(builder, carried, halfDenominator, integerZero);
+    auto halved = arith::ShRUIOp::create(builder, current, integerOne);
+    auto next = arith::AddIOp::create(builder, halved, correction);
+    auto nextCorrection = detail::advancePhaseCorrection(
+        builder, phaseCorrection, measured, half, firstCorrection);
+    scf::YieldOp::create(builder, ValueRange{next, nextCorrection});
+  }
   return {result};
 }
 
@@ -112,15 +167,27 @@ standardQPE(qc::QCProgramBuilder& builder, const QPE& benchmark) {
   builder.x(ancilla);
 
   auto zero = builder.indexConstant(0);
+  auto one = builder.indexConstant(1);
   auto upper = builder.indexConstant(precision);
   auto last = builder.indexConstant(precision - 1);
-  auto angles = controlledPhaseAngles(builder, benchmark);
-  builder.scfFor(zero, upper, 1, [&](Value index) {
-    auto angle = tensor::ExtractOp::create(builder, angles, ValueRange{index})
-                     .getResult();
+  const auto& phase = benchmark.options().phase;
+  auto denominator =
+      builder.intConstant(static_cast<int64_t>(phase.denominator()));
+  auto initialResidue =
+      builder.intConstant(static_cast<int64_t>(phase.numerator()));
+  auto loop =
+      scf::ForOp::create(builder, zero, upper, one, ValueRange{initialResidue});
+  {
+    OpBuilder::InsertionGuard guard(builder);
+    builder.setInsertionPointToStart(loop.getBody());
+    auto index = loop.getInductionVar();
+    auto residue = loop.getRegionIterArg(0);
+    auto angle = controlledPhaseAngle(builder, residue, phase.denominator());
     auto control = arith::SubIOp::create(builder, last, index);
     builder.cp(angle, builder.loadQubit(query, control), ancilla);
-  });
+    auto next = doubleResidue(builder, residue, denominator);
+    scf::YieldOp::create(builder, ValueRange{next});
+  }
 
   detail::inverseQFT(builder, query, precision);
   builder.measureQubitRegister(query, result, precision);

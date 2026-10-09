@@ -374,7 +374,7 @@ private:
     bool useIteration{false};
     bool useCondTerm{false};
 
-    SmallVector<Block*, 8> worklist;
+    SmallVector<Block*> worklist;
 
     for (Block& block : main.getBlocks()) {
       for (Block* successor : block.getSuccessors()) {

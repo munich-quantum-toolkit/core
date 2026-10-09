@@ -84,6 +84,7 @@ TEST(OpenQASMFrontendTest, ResolvesRegisterSlicesInSelectionOrder) {
 
 TEST(OpenQASMFrontendTest, RejectsInvalidRegisterSlices) {
   const auto cases = std::to_array<std::pair<StringRef, StringRef>>({
+      {"if (c[0:1]) { x q[0]; }", "condition must have bool type"},
       {"x q[0:0:2];", "step must not be zero"},
       {"x q[2:0];", "must not be empty"},
       {"x q[0:-1:2];", "must not be empty"},

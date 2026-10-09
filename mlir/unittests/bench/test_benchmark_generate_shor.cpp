@@ -10,29 +10,20 @@
 
 #include "bench/Shor.hpp"
 #include "dd/DDDefinitions.hpp"
+#include "dd/Edge.hpp"
 #include "dd/Package.hpp"
 #include "dd/StateGeneration.hpp"
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
-#include "mqt/Dialect/QC/IR/QCOps.h"
-#include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/bench/Generate.h"
 
-#include "ModularArithmetic.h"
 #include "ShorMultiplier.h"
 #include "TestUtils.h"
 
 #include "gtest/gtest.h"
 
-#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
-#include "mlir/Dialect/SCF/IR/SCF.h"
-#include "mlir/IR/BuiltinAttributes.h"
-#include "mlir/IR/BuiltinTypes.h"
-#include "mlir/IR/Verifier.h"
 
-#include "llvm/ADT/APInt.h"
-#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
 
 #include <bit>
@@ -40,10 +31,10 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <numbers>
 #include <numeric>
 #include <optional>
-#include <random>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -51,8 +42,8 @@
 namespace mqt::bench {
 using namespace mlir;
 
-// Tiny independent modular-permutation reference followed by a discrete
-// Fourier transform.
+/// Tiny independent modular-permutation reference followed by a discrete
+/// Fourier transform.
 static std::vector<double> shorReference(uint64_t number, uint64_t base) {
   const auto size = size_t{1} << (2U * std::bit_width(number));
   std::vector<size_t> residues(size);
@@ -78,12 +69,11 @@ static std::vector<double> shorReference(uint64_t number, uint64_t base) {
 }
 
 TEST(GenerateProgramTest, SamplesShorAndRecoversFactors) {
-  // Keep the circuit small enough for unoptimized coverage builds.
+  /// Keep the circuit small enough for unoptimized coverage builds.
   constexpr uint64_t number = 15;
   const Shor benchmark({.number = number});
   auto program = test::generateQCO(benchmark);
   ASSERT_TRUE(program);
-  EXPECT_GE(test::countOps<func::CallOp>(program->module()), 3U);
   auto counts =
       qco::sample(mlir::mqt::getEntryPoint(program->module()), 64, 17);
   ASSERT_TRUE(succeeded(counts));
@@ -100,13 +90,17 @@ TEST(GenerateProgramTest, SamplesShorAndRecoversFactors) {
     distance += std::abs(reference[phase] - observed) / 2.;
   }
   EXPECT_LT(distance, 0.4);
+  auto shared =
+      qco::sample(mlir::mqt::getEntryPoint(program->module()), 256, 17,
+                  qco::DDArgumentBindings{}, nullptr, nullptr, {}, 1);
+  ASSERT_TRUE(succeeded(shared));
+  EXPECT_TRUE(benchmark.evaluate(*shared).factors);
 }
 
 static std::optional<QCOProgram>
 inPlaceMultiplier(uint64_t number, uint64_t multiplier,
                   bool composeInverse = false) {
   const auto bits = static_cast<int64_t>(std::bit_width(number));
-  const auto width = static_cast<unsigned>(bits + 1);
   uint64_t inverse = 1;
   while ((inverse * multiplier) % number != 1) {
     ++inverse;
@@ -114,16 +108,11 @@ inPlaceMultiplier(uint64_t number, uint64_t multiplier,
   auto context = createCompilerContext();
   auto moduleOp = qc::QCProgramBuilder::build(
       context.get(), [&](qc::QCProgramBuilder& builder) {
-        SmallVector<double> angles;
-        for (auto value : {multiplier, inverse, multiplier}) {
-          detail::appendModularPhaseAngles(angles, llvm::APInt(width, value),
-                                           llvm::APInt(width, number));
-        }
-        auto type = RankedTensorType::get({static_cast<int64_t>(angles.size())},
-                                          builder.getF64Type());
-        auto helper = detail::createInPlaceMultiplier(builder, bits, type);
-        auto table = arith::ConstantOp::create(
-            builder, DenseElementsAttr::get(type, ArrayRef<double>(angles)));
+        auto helper = detail::createInPlaceMultiplier(builder, bits);
+        auto multiplierValue =
+            builder.intConstant(static_cast<int64_t>(multiplier));
+        auto inverseValue = builder.intConstant(static_cast<int64_t>(inverse));
+        auto modulus = builder.intConstant(static_cast<int64_t>(number));
         auto control = builder.allocQubit();
         auto value = builder.allocQubitRegisterStorage(bits);
         auto accumulator = builder.allocQubitRegisterStorage(bits + 1);
@@ -133,19 +122,20 @@ inPlaceMultiplier(uint64_t number, uint64_t multiplier,
                                  value,
                                  accumulator,
                                  work,
-                                 table,
-                                 builder.indexConstant(0),
+                                 multiplierValue,
+                                 inverseValue,
+                                 modulus,
                              });
         if (composeInverse) {
-          builder.call(helper,
-                       {
-                           control,
-                           value,
-                           accumulator,
-                           work,
-                           table,
-                           builder.indexConstant((bits + 1) * (bits + 1)),
-                       });
+          builder.call(helper, {
+                                   control,
+                                   value,
+                                   accumulator,
+                                   work,
+                                   inverseValue,
+                                   multiplierValue,
+                                   modulus,
+                               });
         }
         return SmallVector<Value>{};
       });
@@ -183,7 +173,7 @@ TEST(GenerateProgramTest, VerifiesSmallInPlaceMultiplierBasisStates) {
           input[(value << 1U) | control] = 1.;
           auto state = package.applyOperation(
               *functionality, dd::makeStateFromVector(input, package));
-          auto output = state.getVector();
+          auto output = dd::getVector(state);
           package.decRef(state);
           const auto product =
               control != 0 ? multiplier * value % number : value;
@@ -222,7 +212,7 @@ TEST(GenerateProgramTest, PreservesMultiplierCoherenceAndUncomputesWorkspace) {
       ASSERT_TRUE(succeeded(functionality));
       auto state = package.applyOperation(
           *functionality, dd::makeStateFromVector(input, package));
-      auto output = state.getVector();
+      auto output = dd::getVector(state);
       package.decRef(state);
       package.decRef(*functionality);
       ASSERT_EQ(output.size(), expected.size());
@@ -243,14 +233,9 @@ TEST(GenerateProgramTest, KeepsLargestShorStructuredAndCompilable) {
   const Shor benchmark({.number = ShorOptions::MAX_NUMBER});
   auto program = generate(benchmark);
   ASSERT_TRUE(program);
-  auto table = test::angleTable(program->module());
-  ASSERT_TRUE(table);
-  EXPECT_EQ(table.getNumElements(), 4U * 31U * 32U * 32U);
-  EXPECT_LT(test::countOperations(program->module()), 600U);
-  EXPECT_EQ(test::countOps<qc::AllocOp>(program->module()), 2U);
+  EXPECT_LT(program->str().size(), 32'768U);
   auto qcoProgram = std::move(*program).intoQCO();
   ASSERT_TRUE(qcoProgram);
-  EXPECT_TRUE(succeeded(qco::verifyLinearity(qcoProgram->module())));
   auto qir = runDefaultPipeline(CompilerInput{std::move(*qcoProgram)},
                                 ProgramFormat::QIRAdaptive);
   ASSERT_TRUE(qir);

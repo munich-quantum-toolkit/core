@@ -46,7 +46,7 @@ static auto getTupleHeader(Tuple* tuple) -> TupleHeader* {
   return reinterpret_cast<TupleHeader*>(tuple) - 1;
 }
 
-static auto controlsFromArray(Array* array) -> llvm::SmallVector<Qubit*, 4> {
+static auto controlsFromArray(Array* array) -> llvm::SmallVector<Qubit*> {
   if (array == nullptr) {
     throw std::invalid_argument("QIR control array must not be null");
   }
@@ -55,7 +55,7 @@ static auto controlsFromArray(Array* array) -> llvm::SmallVector<Qubit*, 4> {
         "QIR control array elements must contain qubit pointers");
   }
   const auto size = __quantum__rt__array_get_size_1d(array);
-  llvm::SmallVector<Qubit*, 4> controls(static_cast<std::size_t>(size));
+  llvm::SmallVector<Qubit*> controls(static_cast<std::size_t>(size));
   if (!controls.empty()) {
     std::memcpy(static_cast<void*>(controls.data()), array->data.data(),
                 array->data.size());

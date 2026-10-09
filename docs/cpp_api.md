@@ -16,6 +16,7 @@ Create a two-qubit GHZ state, which is a Bell state, and print its amplitudes.
 Save this as `main.cpp`:
 
 ```cpp
+#include "dd/Edge.hpp"
 #include "dd/Package.hpp"
 #include "dd/StateGeneration.hpp"
 
@@ -24,7 +25,7 @@ Save this as `main.cpp`:
 int main() {
   dd::Package package(2);
   const auto state = dd::makeGHZState(2, package);
-  for (const auto amplitude : state.getVector()) {
+  for (const auto amplitude : dd::getVector(state)) {
     std::cout << amplitude << '\n';
   }
   package.decRef(state);

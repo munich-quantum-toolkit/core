@@ -15,6 +15,8 @@ add_mlir_library(
   ADDITIONAL_HEADER_DIRS
   ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Compiler
   LINK_LIBS
+  PRIVATE
+  MLIRJeffTranslation
   PUBLIC
   MLIRIR
   MLIRMQTDialect
@@ -61,6 +63,7 @@ add_mlir_library(
   MQTCompilerPrograms
   PARTIAL_SOURCES_INTENDED
   Programs.cpp
+  ProgramInspection.cpp
   ParameterBinding.cpp
   ADDITIONAL_HEADER_DIRS
   ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Compiler
@@ -75,6 +78,7 @@ add_mlir_library(
   MLIRFuncInlinerExtension
   MLIRIR
   MLIRJeff
+  MLIRJeffTranslation
   MLIRLLVMDialect
   MLIRLLVMIRTransforms
   MLIRLLVMToLLVMIRTranslation

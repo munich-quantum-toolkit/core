@@ -9,6 +9,7 @@
  */
 
 #include "dd/DDDefinitions.hpp"
+#include "dd/Edge.hpp"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/Utils/DDAdapter.h"
 #include "mqt/Dialect/QIR/Execution/Runtime/QIR.h"
@@ -266,7 +267,7 @@ TEST_F(QIRRuntimeTest, GlobalPhase) {
   __quantum__qis__gphase__body(dd::PI_2);
 
   const auto state = Runtime::getInstance().takeState();
-  const auto vector = state.edge.getVector();
+  const auto vector = dd::getVector(state.edge);
   ASSERT_EQ(vector.size(), 2);
   EXPECT_NEAR(vector[0].real(), 0., 1e-12);
   EXPECT_NEAR(vector[0].imag(), 1., 1e-12);
@@ -911,7 +912,7 @@ TEST_F(QIRRuntimeTest, PreservesPhaseBeforeFirstQubitAndFollowingGates) {
   __quantum__qis__x__body(nullptr);
   auto state = Runtime::getInstance().takeState();
   state.dd->garbageCollect(true);
-  const auto values = state.edge.getVector();
+  const auto values = dd::getVector(state.edge);
   ASSERT_EQ(values.size(), 2);
   EXPECT_NEAR(std::abs(values[0] - std::polar(1., 0.7)), 0., 1e-12);
   EXPECT_EQ(values[1], 0.);
@@ -928,7 +929,7 @@ TEST_F(QIRRuntimeTest, ExtractsLogicalOrderAfterSwapCycle) {
   __quantum__qis__swap__body(q0, q1);
   __quantum__qis__swap__body(q1, q2);
   auto state = Runtime::getInstance().takeState();
-  const auto values = state.edge.getVector();
+  const auto values = dd::getVector(state.edge);
   ASSERT_EQ(values.size(), 8);
   for (size_t i = 0; i < values.size(); ++i) {
     EXPECT_EQ(values[i], i == 4 ? 1. : 0.);

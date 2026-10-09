@@ -9,7 +9,6 @@
 set(MQT_CORE_TARGETS "")
 
 if(MQT_CORE_INSTALL)
-  include(GNUInstallDirs)
   set(MQT_CORE_CONFIG_INSTALL_DIR "${CMAKE_INSTALL_DATADIR}/cmake/mqt-core")
   set(MQT_CORE_TARGETS_EXPORT_NAME "mqt-core-targets")
   set(MQT_CORE_CMAKE_CONFIG_TEMPLATE "${PROJECT_SOURCE_DIR}/cmake/mqt-core-config.cmake.in")
@@ -101,10 +100,8 @@ if(MQT_CORE_INSTALL)
   install(
     FILES ${PROJECT_SOURCE_DIR}/cmake/AddMQTPythonBinding.cmake
           ${PROJECT_SOURCE_DIR}/cmake/AddMQTQDMIDevice.cmake
-          ${PROJECT_SOURCE_DIR}/cmake/Cache.cmake
+          ${PROJECT_SOURCE_DIR}/cmake/CopyQDMISharedDependencies.cmake
           ${PROJECT_SOURCE_DIR}/cmake/PackageAddTest.cmake
-          ${PROJECT_SOURCE_DIR}/cmake/PreventInSourceBuilds.cmake
-          ${PROJECT_SOURCE_DIR}/cmake/StandardProjectSettings.cmake
     DESTINATION ${MQT_CORE_CONFIG_INSTALL_DIR}
     COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
 endif()

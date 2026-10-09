@@ -19,9 +19,6 @@
 
 namespace qdmi::detail {
 
-/// Returns a non-empty environment value, or nullopt when absent or empty.
-[[nodiscard]] std::optional<std::string> environment(std::string_view name);
-
 /// Returns the directory of the loaded module containing the caller's anchor.
 [[nodiscard]] std::filesystem::path moduleDirectory(const void* anchor);
 

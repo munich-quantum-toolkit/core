@@ -20,7 +20,6 @@
 #include "nanobind/stl/string.h"  // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/vector.h"  // NOLINT(misc-include-cleaner)
 
-#include <cmath>
 #include <complex>
 #include <cstddef>
 #include <memory>
@@ -51,8 +50,8 @@ Matrix getMatrix(const dd::mEdge& m, const size_t numQubits,
 
   const auto dim = 1ULL << numQubits;
   auto dataPtr = std::make_unique<dd::CVec>(dim * dim);
-  m.traverseMatrix(
-      std::complex<dd::fp>{1., 0.}, 0ULL, 0ULL,
+  dd::traverseMatrix(
+      m, std::complex<dd::fp>{1., 0.}, 0ULL, 0ULL,
       [&dataPtr, dim](const std::size_t i, const std::size_t j,
                       const std::complex<dd::fp>& c) {
         (*dataPtr)[(i * dim) + j] = c;
@@ -76,7 +75,9 @@ void registerMatrixDDs(const nb::module_& m) {
   mat.def("is_zero_terminal", &dd::mEdge::isZeroTerminal,
           "Check if the DD is a zero terminal node.");
 
-  mat.def("is_identity", &dd::mEdge::isIdentity, "up_to_global_phase"_a = true,
+  mat.def("is_identity",
+          nb::overload_cast<const dd::mEdge&, bool>(&dd::isIdentity),
+          "up_to_global_phase"_a = true,
           R"pb(Check if the DD represents the identity matrix.
 
 Args:
@@ -89,8 +90,8 @@ Returns:
           "Get the size of the DD by traversing it once.");
 
   mat.def("get_entry",
-          nb::overload_cast<size_t, size_t, size_t>(&dd::mEdge::getValueByIndex,
-                                                    nb::const_),
+          nb::overload_cast<const dd::mEdge&, size_t, size_t, size_t>(
+              &dd::getValueByIndex),
           "num_qubits"_a, "row"_a, "col"_a,
           "Get the entry of the matrix by row and column index.");
 

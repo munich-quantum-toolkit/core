@@ -28,6 +28,7 @@ include(StandardProjectSettings)
 include(PreventInSourceBuilds)
 include(PackageAddTest)
 include(Cache)
+include(GNUInstallDirs)
 include(AddMQTCoreLibrary)
 include(AddMQTQDMIDevice)
 
@@ -115,6 +116,7 @@ if(MQT_CORE_INSTALL)
   set(CMAKE_INSTALL_RPATH ${BASEPOINT} ${BASEPOINT}/${CMAKE_INSTALL_LIBDIR}
                           ${BASEPOINT}/../${CMAKE_INSTALL_LIBDIR})
   set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+  set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 endif()
 
 # add main library code

@@ -271,6 +271,7 @@ void simplifyRotationAngles(SmallVectorImpl<RotationAngleTerm>& angles) {
     return std::abs(scale) <= 1. &&
            std::frexp(std::abs(scale), &exponent) == 0.5;
   };
+  // Keep per-key storage compact.
   DenseMap<std::pair<Value, uint64_t>, SmallVector<size_t, 1>> unmatched;
   for (auto [index, term] : llvm::enumerate(angles)) {
     if (term.scale == 0.) {

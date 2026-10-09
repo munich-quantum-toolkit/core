@@ -310,13 +310,13 @@ import pennylane as qp
 
 from mqt.core.plugins.pennylane import QDMIDevice
 
-device_id = "stable ID returned by the QDMI device registration"
+device_id = "stable ID reported by the QDMI driver"
 device = QDMIDevice(
     device_id=device_id,
     wires=["a", "b", "c", "d"],
     session_parameters={
-        "base_url": "device endpoint or selector",
         "token": "...",
+        "base_url": "https://device.example",
     },
     job_parameters={
         "custom1": "device-specific job value",
@@ -383,7 +383,7 @@ OpenQASM serializer and advertised operation names; it does not imply native
 hardware gates or provide routing.
 
 The interface does not implement pulse programming, device-specific non-gate
-properties, routing, analytic execution, or QDMI batch jobs.
+properties, routing, or analytic execution.
 
 ## Recovering results after a failure
 
@@ -426,3 +426,12 @@ submissions and explicit cancellation.
 This workflow recovers forward measurements, including broadcasts and shot
 vectors. It does not restore arbitrary QNode return containers or resume an
 interrupted gradient or optimizer.
+
+### Native multi-program jobs
+
+The device groups tapes and shot partitions with the same program format and
+shot count into native QDMI jobs. Devices that reject a program list use
+independent submissions without waiting between them. Results retain the
+original tape and shot-partition order. `submitted_jobs` counts native jobs;
+PennyLane's execution tracker counts individual program executions and shots.
+Recovery retains successful programs and retries only confirmed failures.

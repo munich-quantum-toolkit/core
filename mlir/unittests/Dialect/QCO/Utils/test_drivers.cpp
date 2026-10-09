@@ -127,7 +127,8 @@ TEST_F(DriversFixture, ProgramWalkVisitsAllOps) {
   auto wires = getWires(*mod);
   size_t nvisited = 0;
   walkProgramGraph<WireDirection::Forward>(
-      wires, [&](const Frontier& frontier, ReleasedOps& released) {
+      wires,
+      [&](const Frontier& frontier, SmallVectorImpl<Operation*>& released) {
         for (const auto& [op, indices] : frontier) {
           ++nvisited;
           released.emplace_back(op);
@@ -143,7 +144,8 @@ TEST_F(DriversFixture, ProgramWalkVisitsAllOps) {
 
   nvisited = 0;
   walkProgramGraph<WireDirection::Backward>(
-      wires, [&](const Frontier& frontier, ReleasedOps& released) {
+      wires,
+      [&](const Frontier& frontier, SmallVectorImpl<Operation*>& released) {
         for (const auto& [op, indices] : frontier) {
           ++nvisited;
           released.emplace_back(op);
@@ -161,7 +163,8 @@ TEST_F(DriversFixture, StopProgramWalkWithInterrupt) {
   auto wires = getWires(*mod);
   size_t nvisited = 0;
   walkProgramGraph<WireDirection::Forward>(
-      wires, [&](const Frontier& frontier, ReleasedOps& released) {
+      wires,
+      [&](const Frontier& frontier, SmallVectorImpl<Operation*>& released) {
         for (const auto& [op, indices] : frontier) {
           ++nvisited;
           if (isa<BarrierOp>(op)) {
@@ -178,22 +181,23 @@ TEST_F(DriversFixture, StopProgramWalkWithInterrupt) {
 TEST_F(DriversFixture, ProgramWalkTooFewWires) {
   auto mod = getProgram();
   SmallVector<WireIterator> wires{getWires(*mod).front()};
-  ASSERT_DEATH(walkProgramGraph<WireDirection::Forward>(
-                   wires,
-                   [&](const Frontier& frontier, ReleasedOps& released) {
-                     for_each(frontier.keys(), [&](Operation* op) {
-                       released.emplace_back(op);
-                     });
-                     return WalkResult::advance();
-                   }),
-               "more input qubits than wires");
+  ASSERT_DEATH(
+      walkProgramGraph<WireDirection::Forward>(
+          wires,
+          [&](const Frontier& frontier, SmallVectorImpl<Operation*>& released) {
+            for_each(frontier.keys(),
+                     [&](Operation* op) { released.emplace_back(op); });
+            return WalkResult::advance();
+          }),
+      "more input qubits than wires");
 }
 
 TEST_F(DriversFixture, ProgramWalkVisitsLayersCorrectly) {
   auto mod = getProgram();
   auto wires = getWires(*mod);
   SmallVector<DenseSet<std::pair<size_t, size_t>>> layers;
-  const auto callback = [&](const Frontier& frontier, ReleasedOps& released) {
+  const auto callback = [&](const Frontier& frontier,
+                            SmallVectorImpl<Operation*>& released) {
     for (const auto& [op, indices] : frontier) {
       if (indices.size() == 1) {
         released.emplace_back(op);
@@ -266,7 +270,8 @@ TEST_F(DriversFixture, ProgramWalkRetainsUnreleasedReadyOperations) {
   DenseSet<Operation*> prev;
   DenseSet<Operation*> curr;
   walkProgramGraph<WireDirection::Forward>(
-      wires, [&](const Frontier& frontier, ReleasedOps& released) {
+      wires,
+      [&](const Frontier& frontier, SmallVectorImpl<Operation*>& released) {
         if (iteration++ == 0) {
           EXPECT_GE(frontier.size(), 2U);
           if (frontier.size() < 2) {
