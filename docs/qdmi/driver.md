@@ -84,8 +84,9 @@ extensions are exported from its shared library.
 `Device.submit_job` accepts one program or an ordered program list with one
 format and common job parameters. `num_shots` applies to each program. Text
 programs carry one terminating null byte; binary programs retain their exact
-bytes. `try_submit_job` returns `None` only when the device rejects the list
-before submission. Submission errors propagate, since retrying an uncertain
+bytes. `try_submit_job` returns `None` only when the device reports that it
+cannot accept the format or program count before submission. Device
+unavailability and submission errors propagate, since retrying an uncertain
 submission could duplicate execution.
 
 Use `job.num_programs` and the optional `program_index` argument on result

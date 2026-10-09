@@ -84,9 +84,10 @@ retain independent DD packages after workers become available again. DDSIM
 requires an LLVM build with threading enabled.
 
 One failing or cancelled program does not discard completed siblings. Cancelling
-a job stops its active workers and removes its queued work. A crashed worker is
-replaced for later submissions; its program is not replayed automatically. The
-worker executable is installed beside the device library and must move with it.
+a job stops its active workers and removes its queued work. If a worker crashes,
+its assigned program fails. DDSIM starts a new worker for future submissions; it
+does not automatically retry the failed program. The worker executable is
+installed beside the device library and must move with it.
 
 A common explicit seed is applied independently to each program, matching
 separate submissions. QIR output capture is indexed by program, like shots,
