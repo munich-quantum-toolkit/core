@@ -134,7 +134,7 @@ public:
 
   [[nodiscard]] Value materialize(RewriterBase& rewriter,
                                   const Location loc) const {
-    SmallVector<Value, 4> stack;
+    SmallVector<Value> stack;
     for (const auto& instruction : instructions) {
       if (const auto* constant = std::get_if<double>(&instruction)) {
         stack.push_back(constantFromScalar(rewriter, loc, *constant));
@@ -182,8 +182,8 @@ private:
     return std::nullopt;
   }
 
-  SmallVector<PhaseInstruction, 4> instructions;
-  SmallVector<Value, 2> leaves;
+  SmallVector<PhaseInstruction> instructions;
+  SmallVector<Value> leaves;
 };
 
 enum class PhaseDialect : std::uint8_t { QC, QCO };
@@ -240,7 +240,7 @@ static bool hoistExpressionBefore(const PhaseExpression& expression,
                                   RewriterBase& rewriter) {
   SmallPtrSet<Operation*, 8> visiting;
   SmallPtrSet<Operation*, 8> collected;
-  SmallVector<Operation*, 8> ordered;
+  SmallVector<Operation*> ordered;
   bool hoistable = true;
   expression.forEachValue([&](Value value) {
     if (hoistable &&
@@ -405,8 +405,8 @@ private:
 
   [[nodiscard]] std::optional<PhaseContribution>
   normalizeBlock(Block& block, Operation* extractionBoundary) {
-    SmallVector<PhaseContribution, 4> contributions;
-    SmallVector<Operation*, 4> directPhases;
+    SmallVector<PhaseContribution> contributions;
+    SmallVector<Operation*> directPhases;
     bool hasNestedContribution = false;
 
     for (auto& op : llvm::make_early_inc_range(block.without_terminator())) {

@@ -84,7 +84,7 @@ namespace {
 
 /// Composed unitary and metadata for a fusable two-qubit run.
 struct FusableTwoQubitRun {
-  SmallVector<Operation*, 8> ops; ///< Members in dependency order.
+  SmallVector<Operation*> ops; ///< Members in dependency order.
   Matrix4x4 composed = Matrix4x4::identity();
   size_t numTwoQ = 0; ///< Number of two-qubit members.
   Value tailA;        ///< Current output wires of the run's tail.
@@ -440,6 +440,8 @@ static FailureOr<SiteMap> collectStaticSites(Operation* root, bool indexed) {
 }
 
 /// Collection has validated the inputs of every unitary, reset, and measure.
+///
+/// Keep the common one- and two-qubit cases inline.
 static SmallVector<SiteId, 2> getOperationSites(Operation* operation,
                                                 const SiteMap& sites) {
   SmallVector<SiteId, 2> result;

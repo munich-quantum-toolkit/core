@@ -25,6 +25,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/ErrorHandling.h"
 
@@ -39,9 +40,9 @@
 namespace mlir::qco {
 
 using Frontier = llvm::SmallMapVector<Operation*, SmallVector<size_t>, 8>;
-using ReleasedOps = SmallVector<Operation*, 8>;
+using ReleasedOps = SmallVector<Operation*>;
 using WalkProgramGraphFn =
-    function_ref<WalkResult(const Frontier&, ReleasedOps&)>;
+    function_ref<WalkResult(const Frontier&, SmallVectorImpl<Operation*>&)>;
 
 namespace impl {
 struct PendingItem {
@@ -67,7 +68,10 @@ struct PendingItem {
 /// operations by classical values or side effects.
 /// The signature of the callback function is:
 ///
-///     (const Frontier& frontier, ReleasedOps& released) -> WalkResult
+/// ```c++
+/// (const Frontier& frontier, SmallVectorImpl<Operation*>& released) ->
+/// WalkResult
+/// ```
 ///
 /// The frontier preserves deterministic wire traversal order.
 /// The operations inserted into the "released" vector determine which

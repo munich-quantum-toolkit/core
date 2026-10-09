@@ -19,6 +19,7 @@
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/ErrorHandling.h"
 
 #include <array>
@@ -309,13 +310,13 @@ private:
     Matrix2x2 q1ra; ///< q1 factor before `RZ(2b)` (2-basis layer 1).
   };
 
-  static void decomp0(SmallVector<Matrix2x2>& out,
+  static void decomp0(SmallVectorImpl<Matrix2x2>& out,
                       const TwoQubitWeylDecomposition& target);
-  void decomp1(SmallVector<Matrix2x2>& out,
+  void decomp1(SmallVectorImpl<Matrix2x2>& out,
                const TwoQubitWeylDecomposition& target) const;
-  void decomp2Supercontrolled(SmallVector<Matrix2x2>& out,
+  void decomp2Supercontrolled(SmallVectorImpl<Matrix2x2>& out,
                               const TwoQubitWeylDecomposition& target) const;
-  void decomp3Supercontrolled(SmallVector<Matrix2x2>& out,
+  void decomp3Supercontrolled(SmallVectorImpl<Matrix2x2>& out,
                               const TwoQubitWeylDecomposition& target) const;
   [[nodiscard]] std::array<std::complex<double>, 4>
   traces(const TwoQubitWeylDecomposition& target) const;

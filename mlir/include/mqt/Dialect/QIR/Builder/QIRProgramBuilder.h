@@ -19,6 +19,7 @@
 #include "mlir/IR/Types.h"
 #include "mlir/Support/LLVM.h"
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/Allocator.h"
@@ -1122,9 +1123,8 @@ private:
   /// @param controls Control qubits
   /// @param targets Target qubits
   /// @param fnName Name of the QIR function to call
-  void createCallOp(const SmallVector<mqt::FloatParameter>& parameters,
-                    ValueRange controls, const SmallVector<Value>& targets,
-                    StringRef fnName);
+  void createCallOp(ArrayRef<mqt::FloatParameter> parameters,
+                    ValueRange controls, ValueRange targets, StringRef fnName);
 
   /// Generate array-based output recording in the output block
   ///
