@@ -80,8 +80,9 @@ comment, data-structure, diagnostic, and debugging guidance.
   adding abstractions. Use C typedefs such as `size_t` and `uint64_t` without
   `std::`. Do not use C-style casts, including casts to `void`.
 - Use `//` for ordinary code comments. Never use `///` for them.
-- Use `///` for Doxygen documentation. Start descriptions with a short summary
-  paragraph, separated from further content by a blank `///` line. Follow the
+- Use `///` for Doxygen documentation, including structural commands. Start
+  descriptions with a short summary paragraph, separated from further content by
+  a blank `///` line. Marker-only blocks need no summary. Follow the
   [C++ documentation policy](docs/development.md#c-documentation-comments) for
   exceptions.
 - Use `moduleOp` instead of the C++20 keyword `module` for an MLIR module
