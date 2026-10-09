@@ -19,12 +19,12 @@
 namespace qdmi::slurm {
 
 /// Opens the QDMI device named by the Slurm license environment.
-/// @return A fresh device session using the registered device definition.
+/// @return The selected device, which retains its driver session.
 ///
 /// The @c SLURM_JOB_LICENSES value must contain exactly one local
-/// license. Its name must equal a registered QDMI device ID. The optional
-/// license count must be one. The device must report @c QDMI_DEVICE_STATUS_IDLE
-/// or @c QDMI_DEVICE_STATUS_BUSY.
+/// license. Its name must equal an ID visible to the selected QDMI driver.
+/// The optional license count must be one. The device must report @c
+/// QDMI_DEVICE_STATUS_IDLE or @c QDMI_DEVICE_STATUS_BUSY.
 /// @warning This function uses process-mutable environment data for device
 /// selection. It does not verify a Slurm allocation, authenticate the caller,
 /// or authorize access to the device. The provider or operating system must
