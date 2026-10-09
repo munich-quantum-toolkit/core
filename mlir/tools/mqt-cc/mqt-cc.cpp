@@ -382,8 +382,8 @@ writeOutput(ModuleType mod, StringRef filename,
   if constexpr (std::is_same_v<ModuleType, ModuleOp>) {
     if (filename == "-") {
       mod.print(output->os());
-    } else {
-      writeBytecodeToFile(mod, output->os());
+    } else if (failed(writeBytecodeToFile(mod, output->os()))) {
+      return failure();
     }
   } else if constexpr (std::is_same_v<ModuleType, llvm::Module*>) {
     const auto writeText =

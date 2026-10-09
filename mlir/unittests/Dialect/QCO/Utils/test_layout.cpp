@@ -19,6 +19,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <tuple>
 #include <type_traits>
 
 using namespace mlir;
@@ -169,8 +170,10 @@ TEST(LayoutBoundaryTest, WiderIndexSupportsMoreThan65535Sites) {
 #ifndef NDEBUG
 TEST(LayoutBoundaryTest, RejectWideInputBeforeNarrowing) {
   auto layout = Layout<uint8_t>::identity(1);
-  EXPECT_DEATH(layout.getHardwareIndex(256UL), "program index out of bounds");
-  EXPECT_DEATH(layout.getHardwareIndices(256UL), "program index out of bounds");
+  EXPECT_DEATH(std::ignore = layout.getHardwareIndex(256UL),
+               "program index out of bounds");
+  EXPECT_DEATH(std::ignore = layout.getHardwareIndices(256UL),
+               "program index out of bounds");
   EXPECT_DEATH(layout.swap(0, 256UL), "hardware index out of bounds");
 }
 #endif

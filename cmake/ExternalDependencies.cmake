@@ -38,6 +38,10 @@ if(BUILD_MQT_CORE_MLIR)
   set(CMAKE_UNITY_BUILD OFF)
   FetchContent_MakeAvailable(jeff-mlir)
   endblock()
+  if(MSVC AND TARGET capnp)
+    # shortcut: Cap'n Proto has GCC-only pragmas; remove when guarded upstream.
+    target_compile_options(capnp PRIVATE /wd4068)
+  endif()
 endif()
 
 set(JSON_VERSION

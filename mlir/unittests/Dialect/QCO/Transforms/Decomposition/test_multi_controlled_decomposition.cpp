@@ -272,7 +272,10 @@ buildMcrModule(MLIRContext* context, size_t numControls, RotationAxis axis,
       });
   if (moduleOp && runtimeAngle) {
     auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
-    funcOp.insertArgument(0, Float64Type::get(context), {}, funcOp.getLoc());
+    if (failed(funcOp.insertArgument(0, Float64Type::get(context), {},
+                                     funcOp.getLoc()))) {
+      return {};
+    }
     parameter.replaceAllUsesWith(funcOp.getArgument(0));
   }
   return moduleOp;
@@ -605,8 +608,8 @@ TEST_F(MultiControlledDecompositionTest, RotationsPreserveRuntimeAngles) {
           });
       ASSERT_TRUE(moduleOp);
       auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
-      funcOp.insertArgument(0, Float64Type::get(context()), {},
-                            funcOp.getLoc());
+      ASSERT_TRUE(succeeded(funcOp.insertArgument(
+          0, Float64Type::get(context()), {}, funcOp.getLoc())));
       parameter.replaceAllUsesWith(funcOp.getArgument(0));
       ASSERT_TRUE(succeeded(runDecomposeMultiControlled(moduleOp.get())));
       expectFullyLowered(moduleOp.get());
@@ -1220,8 +1223,8 @@ TEST_F(MultiControlledDecompositionTest, CompositePowerLimits) {
         });
     if (runtime) {
       auto function = *moduleOp->getOps<func::FuncOp>().begin();
-      function.insertArgument(0, Float64Type::get(context()), {},
-                              function.getLoc());
+      ASSERT_TRUE(succeeded(function.insertArgument(
+          0, Float64Type::get(context()), {}, function.getLoc())));
       parameter.replaceAllUsesWith(function.getArgument(0));
       auto* constant = parameter.getDefiningOp();
       parameter = function.getArgument(0);
