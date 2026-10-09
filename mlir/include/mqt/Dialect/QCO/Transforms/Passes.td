@@ -629,4 +629,25 @@ def ContextSensitiveSpecialization
                            "mlir::qco::QCODialect"];
 }
 
+def QuantumArgumentPromotion
+    : Pass<"quantum-argument-promotion", "mlir::ModuleOp"> {
+  let summary = "Replace qubit-tensor arguments by the qubits a callee uses";
+  let description = [{
+        A tensor argument whose elements are taken out and put back at
+        compile-time constant indices is split into one qubit argument and one
+        qubit result per touched element, so untouched elements never cross the
+        call boundary. Call sites extract before and re-insert after the call.
+
+        The promoted qubits take the place of the tensor in both the argument
+        and the result list. The callee has to hand the tensor back as one of
+        its results, every reference to it has to be a direct call, and
+        elements taken out but never put back prevent promotion.
+    }];
+
+  let dependentDialects = ["::mlir::func::FuncDialect",
+                           "::mlir::arith::ArithDialect",
+                           "::mlir::qtensor::QTensorDialect",
+                           "mlir::qco::QCODialect"];
+}
+
 #endif // MLIR_DIALECT_QCO_TRANSFORMS_PASSES_TD
