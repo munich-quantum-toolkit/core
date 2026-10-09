@@ -196,8 +196,8 @@ struct DeviceAPICache {
 };
 
 [[nodiscard]] auto deviceAPICache() -> DeviceAPICache& {
-  // Match Driver::get(): loaded APIs must outlive sessions in global
-  // destructors. NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  // Match Driver::get(): APIs must outlive sessions in global destructors.
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
   static auto* cache = new DeviceAPICache();
   return *cache;
 }

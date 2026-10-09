@@ -943,13 +943,15 @@ class QCOProgram(Program):
     def decompose_multi_controlled(self, *, min_qubits: int = 3) -> None:
         """Decompose gates that act on at least min_qubits qubits.
 
-        Supports controlled X/Y/Z/SWAP and RX/RY/RZ gates, qco.rccx, and constant-angle phase gates. min_qubits must be at least 3; default 3 means wider than two-qubit.
+        Supports controlled X/Y/Z/SWAP and RX/RY/RZ gates, qco.rccx, and constant-angle phase gates. min_qubits must be
+        at least 3; default 3 means wider than two-qubit.
         """
 
     def compile_for_target(self, target_environment: TargetEnvironment, *, options: CompilationOptions = ...) -> None:
         """Compile for the target and attach layout metadata when possible.
 
-        Reject existing layout metadata. Do not rely on program contents if compilation fails. Failures raise RuntimeError with MLIR diagnostics.
+        Reject existing layout metadata. Do not rely on program contents if compilation fails. Failures raise
+        RuntimeError with MLIR diagnostics.
         """
 
     def synthesize_for_target(
@@ -957,7 +959,9 @@ class QCOProgram(Program):
     ) -> None:
         """Synthesize native operations without routing.
 
-        Dynamic qubits require all-to-all connectivity and receive layout metadata when possible. Static qubits keep their device site IDs and must fit the target topology. Do not rely on the program contents if synthesis fails. Failures raise RuntimeError with the emitted MLIR diagnostics.
+        Dynamic qubits require all-to-all connectivity and receive layout metadata when possible. Static qubits keep
+        their device site IDs and must fit the target topology. Do not rely on the program contents if synthesis fails.
+        Failures raise RuntimeError with the emitted MLIR diagnostics.
         """
 
     def to_qiskit(self, *, target: CompilerTarget | None = None) -> qiskit.circuit.QuantumCircuit:

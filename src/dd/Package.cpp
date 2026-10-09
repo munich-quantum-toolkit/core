@@ -158,8 +158,7 @@ bool Package::garbageCollect(bool force) {
   const auto& stats = matrixVectorMultiplication.getStats();
   constexpr size_t limit = 1U << 20U;
   if (invV && stats.numBuckets < limit && stats.hits >= stats.numBuckets) {
-    // ponytail: live nodes estimate working-set size; measure cache reuse
-    // between collections before replacing this bounded growth heuristic.
+    // Use live nodes to estimate the working-set size for bounded cache growth.
     const auto live = vUniqueTable.getNumEntries();
     const auto buckets = live > limit / 4U ? limit : std::bit_ceil(4U * live);
     if (buckets > stats.numBuckets) {

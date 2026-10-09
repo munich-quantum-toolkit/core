@@ -438,8 +438,8 @@ static SetVector<Operation*> getReadyOps(const SetVector<Operation*>& open,
            access = *access->getResult(0).user_begin()) {
         auto indexValue = access->getOperands().back();
         auto index = getConstantIntValue(indexValue);
-        // ponytail: only distinct constant slots commute; use an alias proof
-        // if a future test needs to reorder dynamic accesses.
+        // Only distinct constant slots commute; dynamic accesses need an alias
+        // proof.
         if ((access != op && !index) ||
             (index && !indices.insert(*index).second)) {
           break;

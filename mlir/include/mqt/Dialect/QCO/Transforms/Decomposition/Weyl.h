@@ -101,17 +101,17 @@ public:
   /// A matrix accepted by the dense-unitary verifier can still fail
   /// decomposition at the stricter Weyl tolerance.
   ///
+  /// When @p fidelity is set, @ref applySpecialization may replace `(a, b, c)`
+  /// with an equivalent specialized form whose overlap with the
+  /// pre-specialization chamber meets this bound; the result is
+  /// fidelity-bounded, not necessarily matrix-exact. When `std::nullopt`, no
+  /// fidelity-driven specialization is applied and the decomposition matches
+  /// the input up to global phase (modulo floating-point error). Invalid values
+  /// (non-finite or outside `[0, 1]`) trigger a fatal error.
+  ///
   /// @param unitaryMatrix Input 4x4 unitary (up to global phase).
   /// @param fidelity Optional average gate-fidelity floor in `[0, 1]`.
   /// @param seed Seed for numerical retries after the fixed first attempt.
-  ///
-  /// When set, @ref applySpecialization may replace `(a, b, c)` with an
-  /// equivalent specialized form whose overlap with the pre-specialization
-  /// chamber meets this bound; the result is fidelity-bounded, not necessarily
-  /// matrix-exact. When `std::nullopt`, no fidelity-driven specialization is
-  /// applied and the decomposition matches the input up to global phase (modulo
-  /// floating-point error). Invalid values (non-finite or outside `[0, 1]`)
-  /// trigger a fatal error.
   [[nodiscard]] static std::optional<TwoQubitWeylDecomposition>
   create(const Matrix4x4& unitaryMatrix, std::optional<double> fidelity,
          uint64_t seed = 2023);

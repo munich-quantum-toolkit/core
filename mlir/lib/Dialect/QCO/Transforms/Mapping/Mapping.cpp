@@ -1209,8 +1209,8 @@ private:
     }
 
     // Embed disjoint logical paths along one path through the target sites.
-    // ponytail: One hardware walk; add bounded backtracking only for measured
-    // missed embeddings.
+    // Use one hardware walk to bound the search; this can miss valid
+    // embeddings.
     if (llvm::all_of(neighbours, [](const auto& adjacent) {
           return adjacent.size() <= 2;
         })) {

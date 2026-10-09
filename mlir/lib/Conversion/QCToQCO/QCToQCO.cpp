@@ -623,10 +623,8 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
     const auto reg = state.registerIds.size();
     state.registerIds.try_emplace(allocation, reg);
     Operation* finalInitialization = nullptr;
-    // Find initializers in block order; later identity stores share the
-    // register-slot validation below.
-    // ponytail: scan once per buffer; sort store users if many buffers make
-    // this costly.
+    // Find initializers in block order with one scan per buffer; later identity
+    // stores share the register-slot validation below.
     for (auto store : allocation->getBlock()->getOps<memref::StoreOp>()) {
       if (store.getMemref() != allocation) {
         continue;

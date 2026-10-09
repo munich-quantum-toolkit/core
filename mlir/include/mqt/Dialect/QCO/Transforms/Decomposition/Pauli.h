@@ -56,10 +56,10 @@ void mergeDiagonalRotations(RewriterBase& rewriter, ModuleOp moduleOp);
                                              CompilerTarget::GateKind gate,
                                              std::variant<double, Value> angle);
 
-/// R_P(theta) = exp(i*phase) P^product C R_P(angle) C, where C anticommutes
-/// with P when negate is true.
+/// A reduced Pauli rotation angle with global phase and Clifford corrections.
 ///
-/// The angle lies in [0, pi/2].
+/// R_P(theta) = exp(i*phase) P^product C R_P(angle) C, where C anticommutes
+/// with P when negate is true. The reduced angle lies in [0, π/2].
 struct FoldedPauliAngle {
   double angle;
   double phase;

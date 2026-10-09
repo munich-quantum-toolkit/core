@@ -1270,8 +1270,8 @@ protected:
         }
         sharedArrayUpdates.insert(update);
       }
-      // ponytail: reject live arrays across any mutating region; track region
-      // argument aliases if independent live arrays need support.
+      // Live arrays across mutating regions require region argument alias
+      // tracking.
       if (isa<jeff::SwitchOp, jeff::ForOp, jeff::WhileOp>(operation) &&
           llvm::any_of(operation->getOperands(), [&](Value value) {
             return getCBitType(value.getType()) &&

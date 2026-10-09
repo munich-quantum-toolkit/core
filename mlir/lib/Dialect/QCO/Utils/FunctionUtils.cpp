@@ -119,8 +119,7 @@ FailureOr<unsigned> mlir::qco::traceQubitArgument(func::FuncOp function,
 }
 
 bool mlir::qco::hasCompleteTensorLifetime(Value tensor, unsigned depth) {
-  // ponytail: reject deeper nesting; use a worklist if proving
-  // completeness beyond 64 nested regions becomes necessary.
+  // Reject nesting at depth 64 to bound recursive stack use.
   if (depth == 64) {
     return false;
   }

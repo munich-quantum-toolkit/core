@@ -491,7 +491,7 @@ static LogicalResult applyDecodedStandard(UnitaryOpInterface unitary,
       } else {
         matrix = gate.build(*walk.dd, gate.parameters, walk.qubits->numQubits,
                             *targets, controls);
-        // ponytail: Cap varying gates at eight cached matrices per operation.
+        // Bound gate-cache storage to eight matrices per operation.
         if (variants.size() < 8) {
           walk.dd->incRef(matrix);
           variants.push_back(GateCache::Entry{
