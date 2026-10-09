@@ -215,8 +215,9 @@ The output format changes the file name, but not the semantic case ID.
 
 ## C++ API
 
-The installed `MQT::CoreBench` target provides typed parameters, references,
-evaluation, instances, instance specifications, and manifests.
+A source installation provides the `MQT::CoreBench` target with typed
+parameters, references, evaluation, instances, instance specifications, and
+manifests.
 
 ```cpp
 #include "bench/Grover.hpp"
@@ -231,7 +232,7 @@ int main() {
 ```
 
 ```cmake
-find_package(mqt-core CONFIG REQUIRED)
+find_package(mqt-core CONFIG REQUIRED COMPONENTS Development)
 target_link_libraries(my-benchmark PRIVATE MQT::CoreBench)
 ```
 

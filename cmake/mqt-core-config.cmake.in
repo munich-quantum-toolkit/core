@@ -13,14 +13,19 @@
 include(CMakeFindDependencyMacro)
 find_dependency(qdmi)
 
-if(TARGET MQT::CoreDD)
-  return()
-endif()
-
-include("${CMAKE_CURRENT_LIST_DIR}/AddMQTPythonBinding.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/AddMQTQDMIDevice.cmake")
-include("${CMAKE_CURRENT_LIST_DIR}/PackageAddTest.cmake")
-include("${CMAKE_CURRENT_LIST_DIR}/mqt-core-targets.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/mqt-core-runtime-targets.cmake")
+set(mqt-core_Runtime_FOUND TRUE)
+
+set(mqt-core_Development_FOUND FALSE)
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/mqt-core-development-targets.cmake")
+  include("${CMAKE_CURRENT_LIST_DIR}/mqt-core-development-targets.cmake")
+  set(mqt-core_Development_FOUND TRUE)
+elseif("Development" IN_LIST mqt-core_FIND_COMPONENTS)
+  set(mqt-core_NOT_FOUND_MESSAGE
+      "The Development component requires an MQT Core source installation.")
+endif()
+check_required_components(mqt-core)
 
 if(NOT mqt-core_FIND_QUIETLY)
   message(STATUS "Found mqt-core version ${mqt-core_VERSION}")

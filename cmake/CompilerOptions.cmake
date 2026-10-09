@@ -10,6 +10,12 @@
 function(enable_project_options target_name)
   include(CheckCXXCompilerFlag)
 
+  if(APPLE)
+    target_link_options(${target_name} INTERFACE "$<$<NOT:$<CONFIG:Debug>>:LINKER:-dead_strip>")
+  elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_link_options(${target_name} INTERFACE "$<$<NOT:$<CONFIG:Debug>>:LINKER:--gc-sections>")
+  endif()
+
   if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
     option(ENABLE_BUILD_WITH_TIME_TRACE
            "Enable -ftime-trace to generate time tracing .json files on clang" OFF)

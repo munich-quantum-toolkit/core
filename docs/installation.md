@@ -74,10 +74,21 @@ python -c "import mqt.core; print(mqt.core.__version__)"
 
 This prints the installed package version.
 
-## Building from Source for Performance
+## Build performance
 
-To get the best performance and enable platform-specific optimizations not
-available in portable wheels, we recommend building the library from source:
+Release wheels use portable CPU settings and the assertion-free LLVM/MLIR 23.1.2
+SDK. Linux wheels target manylinux_2_28 and use Clang 22 with LLD and ThinLTO;
+macOS wheels use Apple Clang and ThinLTO with a macOS 13.3 deployment target.
+Windows wheels use MSVC with IPO, except for DLLs that require automatic symbol
+exports. Wheels include the QDMI driver and device bundles, `mqt-cc`, and
+`mqt-core-bench`. Their CMake package exposes the QDMI C interfaces and tool
+targets without requiring LLVM/MLIR. See {doc}`cpp_api` for native consumers.
+C++ development libraries and headers are available from source installations;
+the DD library is static.
+
+### Building from source
+
+Build from source to tune Core for the machine that will run it:
 
 ::::{tab-set}
 :sync-group: installer
@@ -105,6 +116,37 @@ pip install mqt.core --no-binary mqt.core
 This requires a C++20-capable
 [C++ compiler](https://en.wikipedia.org/wiki/List_of_compilers#C++_compilers)
 and [CMake](https://cmake.org/) 3.28 or newer.
+
+Release source builds default to `DEPLOY=OFF`, which enables native CPU tuning
+and LTO when the compiler supports them. On Linux, Clang with its matching LLD
+linker is a useful choice; on macOS, use Apple Clang from Xcode. For example,
+with Clang 23 installed on Linux:
+
+```console
+CC=clang-23 CXX=clang++-23 uv pip install mqt.core --no-binary mqt.core \
+  -Ccmake.define.CMAKE_LINKER_TYPE=LLD
+```
+
+Keep native builds on compatible CPUs. For redistribution, set
+`-Ccmake.define.DEPLOY=ON` and choose the target platform's compiler and system
+baseline. Cibuildwheel sets deployment mode explicitly for release wheels. The
+`DEPLOY` environment variable overrides the CMake setting.
+
+Clang and Apple Clang use ThinLTO through CMake's `ENABLE_IPO` option. For a
+local C++ build, `cmake --preset release` selects the same release defaults;
+pass `-DENABLE_IPO=OFF` to disable LTO. GCC can use mold 3 or newer with
+`-DCMAKE_LINKER_TYPE=MOLD`. Clang with mold also needs a matching LLVM LTO
+plugin; LLD includes the required support. MSVC IPO applies to static libraries
+and DLLs with explicit exports; CMake cannot extract automatic exports from MSVC
+IPO objects. MSVC builds with native tests default IPO off because each test
+link otherwise repeats code generation from the libraries. Use `-DENABLE_IPO=ON`
+to test IPO explicitly. Builds without native tests and release wheels retain
+IPO.
+
+Native tuning and LTO apply to the Core code being compiled. Prebuilt LLVM/MLIR
+SDK libraries retain their own build settings, and LTO does not optimize across
+separate shared libraries. Benchmark your application before changing the
+compiler or LTO settings.
 
 ## Integrating MQT Core into Your Project
 
@@ -186,7 +228,7 @@ FetchContent_Declare(
   mqt-core
   GIT_REPOSITORY https://github.com/${MQT_CORE_REPO_OWNER}/core.git
   GIT_TAG ${MQT_CORE_REV}
-  FIND_PACKAGE_ARGS ${MQT_CORE_MINIMUM_VERSION})
+  FIND_PACKAGE_ARGS ${MQT_CORE_MINIMUM_VERSION} COMPONENTS Development)
 list(APPEND FETCH_PACKAGES mqt-core)
 
 # Make all declared dependencies available.
@@ -231,7 +273,7 @@ Then, in your project's {code}`CMakeLists.txt`, use {code}`find_package()` to
 locate the installed library:
 
 ```cmake
-find_package(mqt-core <version> REQUIRED)
+find_package(mqt-core <version> REQUIRED COMPONENTS Development)
 ```
 
 :::

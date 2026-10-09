@@ -151,7 +151,9 @@ function(mqt_copy_qdmi_runtime target)
   if(NOT TARGET ${target})
     message(FATAL_ERROR "Unknown QDMI application target: ${target}")
   endif()
-  set_property(TARGET ${target} PROPERTY BUILD_WITH_INSTALL_RPATH FALSE)
+  if(NOT (APPLE AND SKBUILD))
+    set_property(TARGET ${target} PROPERTY BUILD_WITH_INSTALL_RPATH FALSE)
+  endif()
   set(devices ${ARGN})
   if(NOT devices)
     mqt_get_qdmi_device_targets(devices)
@@ -180,20 +182,9 @@ function(mqt_copy_qdmi_runtime target)
     endif()
     get_target_property(imported ${library_target} IMPORTED)
     set(files "$<TARGET_FILE:${library}>")
-    if(WIN32)
-      if(imported)
-        # TARGET_RUNTIME_DLLS needs a local target to traverse imported dependencies.
-        string(MAKE_C_IDENTIFIER "${library_target}-dependencies" dependency_target)
-        if(NOT TARGET ${dependency_target})
-          add_library(${dependency_target} MODULE EXCLUDE_FROM_ALL
-                      "${CMAKE_CURRENT_FUNCTION_LIST_FILE}")
-          set_property(TARGET ${dependency_target} PROPERTY LINKER_LANGUAGE CXX)
-          target_link_libraries(${dependency_target} PRIVATE ${library})
-        endif()
-        set(files "$<TARGET_RUNTIME_DLLS:${dependency_target}>")
-      else()
-        list(APPEND files "$<TARGET_RUNTIME_DLLS:${library}>")
-      endif()
+    if(UNIX AND library_type STREQUAL "SHARED_LIBRARY")
+      # Source installations may use a versioned SONAME in linked applications.
+      list(APPEND files "$<TARGET_SONAME_FILE:${library}>")
     endif()
     if(library IN_LIST devices)
       get_target_property(manifest_name ${library_target} QDMI_MANIFEST_NAME)
@@ -236,14 +227,5 @@ function(mqt_copy_qdmi_runtime target)
       POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy_if_different ${files} "$<TARGET_FILE_DIR:${target}>"
       COMMAND_EXPAND_LISTS)
-    if(NOT WIN32 AND imported)
-      add_custom_command(
-        TARGET ${target}
-        POST_BUILD
-        COMMAND
-          ${CMAKE_COMMAND} "-DLIBRARY=$<TARGET_FILE:${library}>"
-          "-DDESTINATION=$<TARGET_FILE_DIR:${target}>" -P
-          "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/CopyQDMISharedDependencies.cmake")
-    endif()
   endforeach()
 endfunction()

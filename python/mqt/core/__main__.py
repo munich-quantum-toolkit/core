@@ -29,7 +29,7 @@ def main() -> None:
     It provides the following command line options:
 
     - :code:`--version`: Print the version and exit.
-    - :code:`--include_dir`: Print the path to the mqt-core C++ include directory.
+    - :code:`--include_dir`: Print the path to the mqt-core native include directory.
     - :code:`--cmake_dir`: Print the path to the mqt-core CMake module directory.
 
     """
@@ -37,7 +37,7 @@ def main() -> None:
     parser.add_argument("--version", action="version", version=__version__, help="Print version and exit.")
 
     parser.add_argument(
-        "--include_dir", action="store_true", help="Print the path to the mqt-core C++ include directory."
+        "--include_dir", action="store_true", help="Print the path to the mqt-core native include directory."
     )
     parser.add_argument(
         "--cmake_dir", action="store_true", help="Print the path to the mqt-core CMake module directory."

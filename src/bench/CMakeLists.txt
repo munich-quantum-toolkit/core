@@ -11,7 +11,7 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-bench-library)
        ${MQT_CORE_INCLUDE_BUILD_DIR}/bench/*.inc)
   file(GLOB_RECURSE BENCH_SOURCES *.cpp)
 
-  add_mqt_core_library(${MQT_CORE_TARGET_NAME}-bench-library ALIAS_NAME Bench)
+  add_mqt_core_library(${MQT_CORE_TARGET_NAME}-bench-library ALIAS_NAME Bench HIDDEN_VISIBILITY)
   set_target_properties(${MQT_CORE_TARGET_NAME}-bench-library
                         PROPERTIES OUTPUT_NAME ${MQT_CORE_TARGET_NAME}-bench)
 
@@ -28,10 +28,6 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-bench-library)
     ${MQT_CORE_TARGET_NAME}-bench-library
     PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/.. FILES
            ${CMAKE_CURRENT_BINARY_DIR}/mqt_core_bench_export.h)
-  if(NOT BUILD_MQT_CORE_SHARED_LIBS)
-    target_compile_definitions(${MQT_CORE_TARGET_NAME}-bench-library
-                               PUBLIC MQT_CORE_BENCH_STATIC_DEFINE)
-  endif()
 
   set(MQT_CORE_TARGETS
       ${MQT_CORE_TARGETS} ${MQT_CORE_TARGET_NAME}-bench-library
