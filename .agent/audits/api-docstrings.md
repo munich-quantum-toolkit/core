@@ -1,10 +1,8 @@
 # API comment and docstring audit
 
-Status: fixes applied and validated; C++ lint has baseline findings. Date:
-2026-10-09. Baseline: `afe3809a615cc0e8edc852282b9e5fe380df66b9`. The baseline
-includes merged
-[PR #2723](https://github.com/munich-quantum-toolkit/core/pull/2723). The
-working tree was clean at the start.
+Status: fixes applied. Original audit: 2026-10-09, baseline
+`afe3809a615cc0e8edc852282b9e5fe380df66b9`. Review: 2026-10-10, rebased onto
+`81c570c6884ab1e9ab70d214369cf848aa943345`.
 
 ## Result
 
@@ -23,11 +21,6 @@ C++ files, 25 TableGen files, 81 Python files, and 21 generated stub files.
 Headers, implementations, bindings, benchmarks, tests, tools, scripts, and
 configuration were included. Vendored code and generated build output were
 excluded from the source inventory.
-
-The baseline inventory contained 4,762 Doxygen line-comment blocks, 56 trailing
-member documentation blocks, 81 macro documentation blocks, 1,251 authored
-Python docstrings, 597 stub docstrings, and 587 binding docstring literals.
-Counts are source occurrences, not independent API defects.
 
 Python's AST supplied docstrings. A C++ lexer supplied comments and binding
 literals; adjacent string literals were joined before checking their contents.
@@ -53,8 +46,6 @@ require documentation for every undocumented declaration.
   Reference-only `@see` comments are valid Doxygen and need no added summary.
   The baseline XML had 48 documented members with empty briefs: 47 used `@see`,
   and the singleton getter in `qdmi/common/Common.hpp` needed a purpose summary.
-  Remove the 49 summaries initially added before cross-references, including two
-  type comments that were not present in the baseline XML.
 - Separate summaries from detail commands in 339 blocks. Separate further
   sentences and lists from summaries; shorten unclear or lengthy summaries while
   retaining numerical limits, preconditions, references, and attribution.
@@ -63,16 +54,18 @@ require documentation for every undocumented declaration.
   Remove the duplicate or displaced implementation documentation.
 - Add summary separators to eleven binding docstrings, shorten the summary for
   `QCOProgram.decompose_multi_controlled`, and regenerate stubs from the binding
-  source. Use raw C++ string literals for these docstrings; their values are
-  unchanged by the follow-up. Authored Python docstrings needed no changes.
+  source. Authored Python docstrings needed no changes.
 - Join the affected prose paragraphs and let `clang-format` choose line breaks.
   Format embedded C++ comment paragraphs separately when TableGen formatting
   treats them as strings. Preserve paragraph separators, lists, command blocks,
   and fenced examples. Separate the allocation summaries from their insertion
   point requirements in three builder comments.
-- Extend the existing comment-style hook to reject `/// NOLINT` directives.
-  Prose intent and summary quality still require context review; the temporary
-  audit scanner is not a new repository tool or a sentence-counting rule.
+- Extend the existing comment-style hook to reject `NOLINT` directives anywhere
+  in a `///` comment, including after prose. Prose intent and summary quality
+  still require context review; the temporary audit scanner is not a new
+  repository tool or a sentence-counting rule.
+- Correct the QIR array argument descriptions and the Hadamard-lifting control
+  selection rule to match their implementations.
 
 Preserve structural Doxygen markers, trailing member documentation, and block
 comments inside continued macros. The local `Trial::score` member in
@@ -80,7 +73,7 @@ comments inside continued macros. The local `Trial::score` member in
 function. Wrapped single sentences and abbreviations are not defects by
 themselves.
 
-## Validation
+## Original audit validation
 
 - `uvx nox -s stubs`: final rerun passed; the generated diff contains only
   eleven changed docstrings in three stub files.
@@ -94,32 +87,22 @@ themselves.
   comparisons preserved the APIs of the three changed generated stubs. All 56
   trailing documentation blocks and 81 macro documentation blocks are unchanged.
 - `uvx nox -s cpp-lint -- --all`: checked 412 eligible files, including all 143
-  eligible changed C++ files, and reported nine findings. All nine were
-  reproduced by rerunning their translation units from an archive of the
-  unchanged baseline with the same dependencies and generated build inputs.
-  These concern includes, exception escape, a widening cast, and an enum cast;
-  no unrelated code fixes were added. The default mode selected no files because
-  these changes were not committed, so its result was not used.
-- Follow-up `uvx nox -s cpp-lint`: checked 143 units with whole-file analysis,
-  including all 28 eligible changed C++ files in this follow-up. Its six
-  findings match the warnings already reproduced on the unchanged baseline.
-- Direct whole-header checks for the two builders were rerun after the final
-  paragraph edits. Their source and generated-header diagnostics also reproduce
-  on the unchanged baseline.
-- Whole-file `clang-tidy` for `bindings/mlir/register_mlir.cpp` was rerun after
-  the final docstring edit; it reported no findings in project-owned source.
-- `uvx nox --non-interactive -s docs`: both audit and follow-up passed,
-  including notebooks and internal links. The follow-up rendering check
-  preserves the 47 reference-only native entries without adding briefs. The
-  singleton getter and driver registration entry point retain their purpose
-  summaries, and lint directives do not render. All eleven binding summaries
-  remain separate Python paragraphs.
+  eligible changed C++ files. Its nine findings concerned includes, exception
+  escape, and casts; each reproduced on the unchanged baseline with the same
+  dependencies and generated headers. Whole-file analysis of the final changes
+  reported six of those baseline findings. Direct builder-header checks also
+  reproduced their diagnostics on the baseline; no unrelated fixes were added.
+- `uvx nox --non-interactive -s docs`: passed, including notebooks and internal
+  links. Rendering preserves the 47 reference-only entries, the singleton and
+  driver-registration summaries, and eleven binding summary paragraphs. Lint
+  directives do not render.
 - `uvx nox -s lint`: final rerun passed.
 - Hook counterexamples passed for lint directive forms, ordinary comments,
   trailing documentation, and continued macro exceptions.
 
-Follow-up checks: stub regeneration passed and all generated stubs are
-byte-for-byte unchanged from the first audit commit. Token comparisons preserve
-all code and string values in the 67 changed C++ and TableGen files. Exactly
-eleven audited docstrings now use raw literals. Trailing and continued-macro
-documentation remains unchanged.
+## Rebased validation
+
+Repository lint and whole-file C++ lint passed (143 changed files, no findings).
+Native Doxygen generation, nine hook counterexamples, C/C++ compatibility of QIR
+declarations, and binding/stub docstring comparisons passed. Native tests, full
+Sphinx builds, and stub regeneration were not repeated during this review.

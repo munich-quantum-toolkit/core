@@ -51,16 +51,13 @@ typedef struct QubitImpl Qubit;
 
 typedef struct ArrayImpl Array;
 
-/// Creates a new 1-dimensional array.
+/// Creates a zero-initialized 1-dimensional array.
 ///
-/// The int64_t is the size of each element in bytes. The int64_t is the length
-/// of the array. The bytes of the new array should be set to zero.
-Array* __quantum__rt__array_create_1d(int32_t, int64_t) MQT_QIR_NOEXCEPT;
+/// Requires a positive element size in bytes and a nonnegative length.
+Array* __quantum__rt__array_create_1d(int32_t elementSize,
+                                      int64_t length) MQT_QIR_NOEXCEPT;
 
-/// Returns the length of a dimension of the array.
-///
-/// The int64_t is the zero-based dimension to return the length of; it must be
-/// 0 for a 1-dimensional array.
+/// Returns the number of elements in the array.
 int64_t __quantum__rt__array_get_size_1d(const Array*) MQT_QIR_NOEXCEPT;
 
 /// Returns a pointer to the element of the array at the zero-based index given
