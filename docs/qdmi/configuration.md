@@ -1,17 +1,19 @@
-# Configuring the MQT Core QDMI driver
+# Configuring the builtin MQT Core QDMI driver
 
-The configuration format on this page belongs to the **MQT Core QDMI driver**.
-Other QDMI drivers may use different configuration and discovery mechanisms. MQT
-Core's C++ and Python `Session` and `open_device` APIs use the standard QDMI
-Client Interface with any compatible driver library; they do not require this
-manifest format or the MQT Core driver's private extensions.
+The configuration format on this page belongs to the
+**builtin MQT Core QDMI driver**. Other QDMI drivers may use different
+configuration and discovery mechanisms. MQT Core's C++ and Python `Session` and
+`open_device` APIs use the standard QDMI Client Interface with any compatible
+driver library; they do not require this manifest format or the MQT Core
+driver's private extensions.
 
-The MQT Core driver discovers device definitions from versioned JSON files.
-Discovery only parses metadata. When a session initializes, the driver opens the
-configured native libraries. `builtin_driver.open_device` opens only the
-requested device.
+The builtin driver discovers device manifests: versioned JSON files that map
+stable IDs to device libraries and session settings. The driver uses a manifest
+to find a device when an application opens it by ID. Discovery only parses
+metadata. When a session initializes, the driver opens the configured native
+libraries. `builtin_driver.open_device` opens only the requested device.
 
-This lets applications list installed devices without loading provider libraries
+This lets applications list installed devices without loading device libraries
 or contacting services. They can then open one device by stable ID. Distinct IDs
 can select independently configured instances of the same library.
 
@@ -63,7 +65,7 @@ symbol `prefix`. The `session` object supports `base-url`, `token`, `auth-file`,
 `auth-url`, `username`, `password`, `device-config`, and `custom1` through
 `custom5`.
 
-`device-config` selects exactly one provider configuration source:
+`device-config` selects exactly one device configuration source:
 
 ```json
 {"device-config": {"inline": {"schema-version": 1}}}
@@ -81,7 +83,7 @@ changing from `inline` to `file` at a higher-precedence layer replaces the
 inherited inline JSON. The MQT Core driver adapts inline JSON to QDMI v1 CUSTOM1
 and a file path to CUSTOM2 when opening the native session. Consequently,
 `device-config` cannot be combined with raw `custom1` or `custom2`; CUSTOM3
-through CUSTOM5 remain available to providers.
+through CUSTOM5 remain available to device implementations.
 
 Relative library and authentication-file paths are resolved against the file
 that declared them. For `MQT_CORE_QDMI_CONFIG_JSON`, they resolve against the
@@ -126,10 +128,10 @@ Python distributions advertise the module containing their device manifests:
 "mqt.core.qdmi.manifests".vendor = "vendor.qdmi"
 ```
 
-The entry-point name identifies the provider. Its value is a module path, not a
-function to import. MQT Core reads the distribution's installed file list and
-registers the `*.qdmi.json` files below that module. Discovery imports no
-provider modules and loads no device libraries. Invalid entries emit a warning
+The entry-point name identifies the device implementation. Its value is a module
+path, not a function to import. MQT Core reads the distribution's installed file
+list and registers the `*.qdmi.json` files below that module. Discovery imports
+no device modules and loads no device libraries. Invalid entries emit a warning
 and are skipped. Installed manifests form the lowest-precedence configuration
 layer.
 
@@ -144,17 +146,16 @@ builtin_driver.add_manifest("vendor/device/example.qdmi.json")
 
 Register manifests before listing or opening devices with the MQT Core QDMI
 driver. Registering the same file again is harmless; conflicting IDs in distinct
-manifests are errors. Configuration becomes fixed when the driver first reads
-the catalogue, either for enumeration or for opening a device.
+manifests are errors. Configuration becomes immutable when the driver first
+reads the catalogue, either for enumeration or for opening a device.
 
-`builtin_driver` always uses the MQT Core QDMI driver, independently of
+`builtin_driver` always uses the builtin MQT Core QDMI driver, independently of
 `MQT_CORE_QDMI_DRIVER`. Standard `Session` and `open_device` calls honor that
 environment variable.
 
 ## Using configured devices
 
-List enabled stable IDs without loading device libraries or contacting
-providers:
+List enabled stable IDs without loading device libraries or contacting devices:
 
 ```python
 from mqt.core.qdmi import builtin_driver
@@ -164,10 +165,9 @@ print(builtin_driver.registered_device_ids())
 
 The list includes configured devices that are unavailable or need credentials.
 Use `builtin_driver.open_device(device_id, ...)` to open only the selected
-device. Core supplies `mqt.ddsim.default` for local execution and a catalogue of
-compilation-only superconducting device models. The available models and their
-stable IDs are described in {doc}`sc_device`; they do not connect to hardware
-services.
+device. Core supplies `mqt.ddsim.default` for local execution. Other configured
+IDs may refer to simulator or compilation-only devices, including the models
+described in {doc}`sc_device`.
 
 With the MQT Core driver, standard `Session` enumeration initializes configured
 devices and skips those that fail to open. Another driver may present a
@@ -183,8 +183,9 @@ wrapper derived from it keeps that driver session alive. The session is released
 after the last such wrapper is destroyed.
 
 The equivalent C++ API is {cpp-api:class}`qdmi::Session`. `getDevices()`
-enumerates one authenticated session. {cpp-api:func}`qdmi::Session::openDevice`
-creates a fresh session and opens one enumerated ID.
+enumerates the devices of one authenticated session.
+{cpp-api:func}`qdmi::Session::openDevice` creates a fresh session and opens one
+enumerated ID.
 
 Multiple definitions may refer to the same library and prefix. MQT Core reuses
 the initialized library while creating a fresh QDMI device session, with its own
@@ -215,9 +216,9 @@ The equivalent C++ function is `qdmi::slurm::openDeviceFromLicense()` from
 license values.
 
 The adapter opens a fresh device session from the persistent definition. It does
-not replace configuration or inject credentials. Each provider defines its own
-credential sources. The adapter accepts QDMI device status `IDLE` and `BUSY`. It
-rejects all other device states.
+not replace configuration or inject credentials. Each device implementation
+defines its own credential sources. The adapter accepts QDMI device status
+`IDLE` and `BUSY`. It rejects all other device states.
 
 `SLURM_JOB_LICENSES` is process-mutable. The adapter uses this value only for
 device selection. It does not verify that Slurm allocated the license. It does
@@ -230,8 +231,8 @@ boundary.
 
 A cluster can configure more than one license for a device. For example,
 `mqt.ddsim.default:2` permits two independent jobs to request one license each.
-The count is a Slurm admission limit. It is not an access permission, a provider
-availability check, or a provider queue length.
+The count is a Slurm admission limit. It is not an access permission, a device
+availability check, or a device queue length.
 
 ## Installed C++ applications
 

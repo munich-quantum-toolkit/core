@@ -360,7 +360,10 @@ private:
   /// Snapshot of devices visible when this session was allocated.
   std::vector<QDMI_Device> devices_;
 
-  /// Owns the device created by a targeted private allocation.
+  /// A targeted private allocation creates one device outside the shared
+  /// registry. Keep that device alive for the lifetime of this session;
+  /// ordinary sessions instead hold a snapshot of registry-owned devices in
+  /// devices_.
   std::shared_ptr<QDMI_Device_impl_d> ownedDevice_;
 
 public:

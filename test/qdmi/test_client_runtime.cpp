@@ -131,7 +131,7 @@ TEST(BuiltinDriverExtensionTest, DiscoversThenOpensIndependentSessions) {
   const ScopedEnvironmentVariable driver{"MQT_CORE_QDMI_DRIVER",
                                          MQT_CORE_QDMI_TEST_DRIVER};
   builtin_driver::addManifest(configured);
-  builtin_driver::addManifest(configured);
+  EXPECT_NO_THROW(builtin_driver::addManifest(configured));
   EXPECT_THROW(builtin_driver::addManifest(conflicting), std::invalid_argument);
   builtin_driver::addManifest(unicode);
   {

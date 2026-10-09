@@ -546,15 +546,17 @@ namespace builtin_driver {
 /// Stage one device manifest in MQT Core's optional driver extension.
 void addManifest(const std::filesystem::path& path);
 
-/// List enabled stable IDs without loading devices or contacting providers.
-/// Uses the MQT Core QDMI driver and fixes its configuration on the first call.
+/// List enabled stable IDs without loading devices or contacting device
+/// services. Uses the builtin MQT Core QDMI driver and makes its configuration
+/// immutable on the first call.
 [[nodiscard]] std::vector<std::string> registeredDeviceIds();
 
-/// Open one device through the MQT Core QDMI driver with session overrides.
+/// Open one device through the builtin MQT Core QDMI driver with session
+/// overrides.
 /// @param id Stable device ID.
 /// @param deviceSessionJson JSON session overrides.
 /// @param driverPath Optional compatible extension path. By default, this call
-/// uses the MQT Core QDMI driver and ignores `MQT_CORE_QDMI_DRIVER`.
+/// uses the builtin MQT Core QDMI driver and ignores `MQT_CORE_QDMI_DRIVER`.
 [[nodiscard]] Device openDevice(
     std::string_view id, std::string_view deviceSessionJson = {},
     const std::optional<std::filesystem::path>& driverPath = std::nullopt);
@@ -605,7 +607,7 @@ private:
               session_->handle.get(), prop, size, value, sizeRet);
         },
         std::string("Querying ") + qdmi::toString(prop),
-        std::string("Querying size ") + qdmi::toString(prop));
+        std::string("Querying the size of ") + qdmi::toString(prop));
   }
 
   std::shared_ptr<detail::DriverSession> session_;
@@ -896,7 +898,7 @@ public:
   /// Gets the current number of jobs ahead of this job in its queue.
   /// @return The queue position, or `std::nullopt` if it is unavailable or not
   /// applicable in the job's current state.
-  /// @throws std::runtime_error If the provider status refresh or property
+  /// @throws std::runtime_error If the device status refresh or property
   /// query fails for another reason.
   /// @see QDMI_JOB_PROPERTY_QUEUEPOSITION
   [[nodiscard]] std::optional<size_t> getQueuePosition() const;
@@ -971,6 +973,7 @@ public:
   auto operator<=>(const Job&) const noexcept = default;
 
 private:
+  // The deleter retains the originating driver session until job_free runs.
   [[nodiscard]] const detail::DriverAPI& api() const {
     return *job_.get_deleter().session->api;
   }

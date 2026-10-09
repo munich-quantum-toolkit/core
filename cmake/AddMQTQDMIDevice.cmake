@@ -146,7 +146,7 @@ function(mqt_get_qdmi_device_targets result)
       PARENT_SCOPE)
 endfunction()
 
-# Copy the shared QDMI libraries, device manifests, and assets beside an application.
+# Copy the shared QDMI libraries, device manifests, and assets beside an application or library.
 function(mqt_copy_qdmi_runtime target)
   if(NOT TARGET ${target})
     message(FATAL_ERROR "Unknown QDMI application target: ${target}")

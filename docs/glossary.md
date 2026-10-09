@@ -138,7 +138,7 @@ QDMI Client interface
 
 QDMI driver
   **Preferred term:** QDMI driver. An implementation of the QDMI Client interface.
-  The MQT Core QDMI driver loads QDMI device libraries. A replacement driver owns
+  The builtin MQT Core QDMI driver loads QDMI device libraries. A replacement driver owns
   its own discovery, configuration, and device access; applications must not
   assume it provides Core's private driver extension.
 
