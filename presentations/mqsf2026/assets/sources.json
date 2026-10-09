@@ -1,0 +1,59 @@
+{
+  "mqsc": {
+    "url": "https://raw.githubusercontent.com/munich-quantum-toolkit/.github/main/docs/_static/logo-mqsc-light.svg",
+    "sha256": "90d830869e15bd23e417262ccf7419d07b804669afc01f9fc5370aac3aa6bc95"
+  },
+  "mqt": {
+    "url": "https://raw.githubusercontent.com/munich-quantum-toolkit/.github/main/docs/_static/logo-mqt-light.svg",
+    "sha256": "fe45f5ffa3efcc121c3cb890575d00698d01f3091e0d21eaeecd5ec1ea7892f8"
+  },
+  "q": {
+    "url": "https://raw.githubusercontent.com/munich-quantum-toolkit/.github/main/docs/_static/logo-q-light.svg",
+    "sha256": "69d4c24f9ac2704c3c50fb091cd24e6d7a4ec82f440e63ae11bce0414fbd8389"
+  },
+  "mqss": {
+    "url": "https://raw.githubusercontent.com/munich-quantum-toolkit/.github/main/docs/_static/logo-mqss-light.svg",
+    "sha256": "e02ef53487b8d58a36b6e8edd5629f6172b52781e80a7629e5aa85d7c2a31dcb"
+  },
+  "tum-cda": {
+    "url": "https://raw.githubusercontent.com/munich-quantum-toolkit/.github/main/docs/_static/logo-tum-cda-light.svg",
+    "sha256": "1fb29173d8b95160168eade7e316c383e665ff44d40b92746268495b94adc2b0"
+  },
+  "mqv": {
+    "url": "https://raw.githubusercontent.com/munich-quantum-toolkit/.github/main/docs/_static/logo-mqv-light.svg",
+    "sha256": "10abd92b99183dd89fa422491f2a69b3e6375337e9fd4a47e279a42ec208d985"
+  },
+  "qdmi": {
+    "attachment": "qce26_tut71 (3).pptx",
+    "attachment_sha256": "ceff38564a7dfa930950972235da716b1868f1e591a933c0ce569bd22ee1cc19",
+    "member": "ppt/media/image78.svg",
+    "slides": [16, 17],
+    "source_sha256": "08369bc1ce801ca1deaa4d6d7779f2c8c5c3e28bb95258737461d47d644c4d81",
+    "adaptation": "Original path geometry retained; white fills changed to #142B45 for the light deck; unused Office style/classes removed and line endings normalized.",
+    "sha256": "fb7835cc0586c8021422ff56508e2a4868484162509f445b2442076f4a3f4a7c"
+  },
+  "qr-company": {
+    "encoded_url": "https://mq.sc",
+    "generator": "Segno 1.6.6; micro=False, error=m, border=4",
+    "sha256": "c55f3da27e68796a52102204655ca0fc07e3b75c292af36f17a5d4daf62e7e3b"
+  },
+  "qr-core": {
+    "encoded_url": "https://mqt.readthedocs.io/projects/core",
+    "generator": "Segno 1.6.6; micro=False, error=m, border=4",
+    "sha256": "402fb120e2db313823577fc4457bcca6b1c899c9389265cbac16915d288c9f84"
+  },
+  "qr-qdmi": {
+    "encoded_url": "https://mq.sc/#qdmi-title",
+    "generator": "Segno 1.6.6; micro=False, error=m, border=4",
+    "sha256": "c6e553c423a7d4b9b22a80a892a771f00173de634303136d46d00b97b38abd4b"
+  },
+  "qr-afqmc": {
+    "encoded_url": "https://github.com/amazon-braket/amazon-braket-examples/tree/feature/quantum-monte-carlo/examples/hybrid_quantum_algorithms/Quantum_Monte_Carlo_Chemistry",
+    "generator": "Segno 1.6.6; micro=False, error=m, border=4",
+    "sha256": "2603a0df8cf14bcd9a9150cd9b68388d46719c39432f2a7fc21832975b3ae05f"
+  },
+  "inter-latin": {
+    "url": "https://munichquantum.software/_astro/inter-latin-wght-normal.Dx4kXJAl.woff2",
+    "license": "Inter-LICENSE.txt"
+  }
+}

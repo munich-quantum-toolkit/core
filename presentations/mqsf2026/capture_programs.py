@@ -24,7 +24,6 @@ import shutil
 import subprocess
 import sys
 from datetime import UTC, datetime
-from fractions import Fraction
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any
@@ -35,6 +34,100 @@ if TYPE_CHECKING:
     from mqt.core.mlir import CompilerTarget, QCOProgram, QCProgram
 
 ROOT = Path(__file__).resolve().parents[2]
+PARITY_SOURCE = """OPENQASM 3.1;
+include "stdgates.inc";
+qubit[3] q;
+bit syndrome; bit[2] result;
+h q[0]; h q[1];
+for int round in [0:1] {
+  reset q[2];
+  cx q[0], q[2]; cx q[1], q[2];
+  syndrome = measure q[2];
+  if (syndrome) { x q[1]; }
+}
+result[0] = measure q[0]; result[1] = measure q[1];
+"""
+
+
+def qpe_source(precision: int = 8) -> str:
+    """Return iterative QPE for phase 1/3 on a three-qubit eigenstate.
+
+    The three controlled phase gates each contribute 1/9 of a turn. One query
+    qubit is reset and reused; classical feedback implements the inverse QFT.
+    """
+    lines = [
+        'OPENQASM 3.1;\ninclude "stdgates.inc";',
+        f"qubit[4] q; bit[{precision}] result;",
+        "x q[1]; x q[2]; x q[3];",
+    ]
+    for bit in range(precision):
+        residue = pow(2, precision - bit - 1, 9)
+        lines.extend((f"// Phase bit {bit}: power 2^{precision - bit - 1}", "h q[0];"))
+        lines.extend(f"cp(2*pi*{residue}/9) q[0], q[{target}];" for target in range(1, 4))
+        lines.extend(f"if (result[{previous}]) {{ p(-pi/{2 ** (bit - previous)}) q[0]; }}" for previous in range(bit))
+        lines.extend(("h q[0];", f"result[{bit}] = measure q[0];", "reset q[0];"))
+    return "\n".join(lines) + "\n"
+
+
+def capture_circuit(circuit: QuantumCircuit, sites: list[int] | None = None) -> dict[str, Any]:
+    """Retain exported gate operands and nested control flow for an SVG view.
+
+    Returns:
+        Actual Qiskit operation metadata; loop bodies are never expanded here.
+    """
+
+    def operations(block: QuantumCircuit, wires: list[int], prefix: str = "") -> list[dict[str, Any]]:
+        result = []
+        for index, instruction in enumerate(block.data):
+            operation = instruction.operation
+            operands = [wires[block.find_bit(qubit).index] for qubit in instruction.qubits]
+            item = {
+                "id": f"{prefix}{index}",
+                "name": operation.name,
+                "qubits": [wire for wire in operands if wire >= 0],
+                "parameters": [] if hasattr(operation, "blocks") else [str(value) for value in operation.params],
+            }
+            if hasattr(operation, "blocks"):
+                item["blocks"] = [
+                    operations(child, operands, f"{prefix}{index}.{branch}.")
+                    for branch, child in enumerate(operation.blocks)
+                ]
+                if operation.name == "for_loop":
+                    item["iterations"] = len(operation.params[0])
+                condition = getattr(operation, "condition", None)
+                if condition is not None:
+                    item["condition"] = str(condition)
+            result.append(item)
+        return result
+
+    def used_wires(block: QuantumCircuit, wires: list[int]) -> set[int]:
+        active: set[int] = set()
+        for instruction in block.data:
+            operands = [wires[block.find_bit(qubit).index] for qubit in instruction.qubits]
+            if hasattr(instruction.operation, "blocks"):
+                for child in instruction.operation.blocks:
+                    active.update(used_wires(child, operands))
+            else:
+                active.update(operands)
+        return active
+
+    active = sorted(used_wires(circuit, list(range(circuit.num_qubits))))
+    wires = [active.index(index) if index in active else -1 for index in range(circuit.num_qubits)]
+    return {
+        "kind": "physical" if sites is not None else "logical",
+        "order": "Static program structure; branches and loops are not an execution trace.",
+        "qubits": [
+            {
+                "id": identifier,
+                "label": f"${sites[index]}" if sites is not None else f"q[{index}]",
+                "site": sites[index] if sites is not None else None,
+            }
+            for identifier, index in enumerate(active)
+        ],
+        "operations": operations(circuit, wires),
+    }
+
+
 CAPABILITIES = (
     "forward-branching",
     "counted-iteration",
@@ -169,6 +262,21 @@ def stage(identifier: str, label: str, language: str, code: str) -> dict[str, An
     }
 
 
+def program_stage(
+    identifier: str, label: str, program: QCProgram | QCOProgram, target: CompilerTarget | None = None
+) -> dict[str, Any]:
+    """Pair exact compiler text with the circuit exported from the same program.
+
+    Returns:
+        A stage including native operation operands for circuit/topology highlighting.
+    """
+    artifact = stage(identifier, label, "mlir", program.ir)
+    artifact["circuit"] = capture_circuit(
+        program.to_qiskit(target=target), [site.id for site in target.sites] if target else None
+    )
+    return artifact
+
+
 def payload_specification() -> str:
     """Serialize the presentation's explicitly enabled Adaptive QIR contract.
 
@@ -261,22 +369,28 @@ def capture_variant(
     variant: dict[str, Any] = {
         "id": "unrolled" if unroll else "structured",
         "label": "Bounded loops unrolled" if unroll else "Preserve supported structure",
-        "stages": [stage("qc", "Generated QC", "mlir", qc.ir)],
+        "stages": [program_stage("qc", "Import into QC", qc)],
         "exports": [],
         "layout": {"initial": [], "final": [], "swaps": []},
     }
     qco = qc.to_qco(copy=True)
-    variant["stages"].append(stage("qco", "Value-based QCO", "mlir", qco.ir))
+    variant["stages"].append(program_stage("qco", "Value-based QCO", qco))
     qco.run_pass_pipeline("inline")
     qco.cleanup()
-    variant["stages"].append(stage("optimized", "Inline and simplify", "mlir", qco.ir))
+    variant["stages"].append(program_stage("optimized", "Inline and simplify", qco))
     if unroll:
         qco.unroll_quantum_loops()
         qco.cleanup()
-        variant["stages"].append(stage("unrolled", "Unroll bounded quantum loops", "mlir", qco.ir))
+        variant["stages"].append(program_stage("unrolled", "Unroll bounded quantum loops", qco))
     native_ir, dumps = compile_target(qco, compiler, model, timeout)
     for name, label in TARGET_PASSES:
-        variant["stages"].append(stage(name, label, "mlir", extract_pass_ir(dumps, name)))
+        snapshot = QCOProgram.from_mlir_str(extract_pass_ir(dumps, name))
+        artifact = (
+            program_stage(name, label, snapshot, target)
+            if name in {"place-and-route", "target-native-synthesis"}
+            else stage(name, label, "mlir", snapshot.ir)
+        )
+        variant["stages"].append(artifact)
     native = QCOProgram.from_mlir_str(native_ir)
     routed = QCOProgram.from_mlir_str(extract_pass_ir(dumps, "place-and-route"))
     routed_qasm = routed.to_qc(copy=True).to_openqasm3().source
@@ -319,13 +433,23 @@ def capture(compiler: Path, selected: str, timeout: int) -> dict[str, Any]:
     Returns:
         Presentation fixture data containing only captured compiler outputs.
     """
-    from mqt.core.bench import qpe, shor  # ruff: ignore[import-outside-top-level]
-    from mqt.core.mlir import CompilerTarget  # ruff: ignore[import-outside-top-level]
+    from mqt.core.mlir import CompilerTarget, QCProgram  # ruff: ignore[import-outside-top-level]
 
     model = json.loads((ROOT / "json/sc/iqm-emerald.json").read_text(encoding="utf-8"))
     model["name"] = "IQM Emerald topology — MQSF demonstration"
     model["operations"].append({"name": "reset", "numQubits": 1, "numParameters": 0})
-    target = CompilerTarget.from_device_id("mqt.sc.default", device_config=json.dumps(model))
+    previous_json = os.environ.get("MQT_CORE_QDMI_SC_CONFIG_JSON")
+    previous_file = os.environ.pop("MQT_CORE_QDMI_SC_CONFIG_FILE", None)
+    os.environ["MQT_CORE_QDMI_SC_CONFIG_JSON"] = json.dumps(model)
+    try:
+        target = CompilerTarget.from_device_id("mqt.sc.default")
+    finally:
+        if previous_json is None:
+            os.environ.pop("MQT_CORE_QDMI_SC_CONFIG_JSON", None)
+        else:
+            os.environ["MQT_CORE_QDMI_SC_CONFIG_JSON"] = previous_json
+        if previous_file is not None:
+            os.environ["MQT_CORE_QDMI_SC_CONFIG_FILE"] = previous_file
     git = shutil.which("git")
     assert git is not None, "Capturing provenance requires Git"
     revision = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]
@@ -361,50 +485,37 @@ def capture(compiler: Path, selected: str, timeout: int) -> dict[str, Any]:
     }
     cases = (
         (
-            "shor15",
-            "Shor: factor 15",
-            (
-                "Semiclassical order finding for N = 15 and base 2. "
-                "Indexed quantum loops specialize for routing; feedback remains."
-            ),
-            {"number": 15, "base": 2},
-            shor.Shor(shor.Options(number=15, base=2)),
-            "Shor.cpp",
+            "parity",
+            "Measure parity. Correct. Repeat.",
+            "Three qubits, two rounds, one measured decision. Unrolling the loop keeps measurement feedback.",
+            {"qubits": 3, "rounds": 2},
+            PARITY_SOURCE,
         ),
         (
             "qpe",
             "Iterative phase estimation",
-            "Four phase bits from two qubits. Bounded-loop unrolling retains measurement feedback and reset.",
-            {"precision": 4, "phase_numerator": 3, "phase_denominator": 8},
-            qpe.QPE(qpe.Options(precision=4, phase=Fraction(3, 8), method=qpe.Method.ITERATIVE)),
-            "QPE.cpp",
+            "Eight phase bits from four qubits. Phase 1/3 lies between output bins, producing a visible distribution.",
+            {"qubits": 4, "precision": 8, "phase_numerator": 1, "phase_denominator": 3},
+            qpe_source(),
         ),
     )
-    for identifier, label, summary, parameters, benchmark, generator in cases:
+    for identifier, label, summary, parameters, source in cases:
         if selected not in {"all", identifier}:
             continue
-        qc = benchmark.generate()
+        qc = QCProgram.from_openqasm_str(source)
         scenario: dict[str, Any] = {
             "id": identifier,
             "label": label,
             "summary": summary,
             "parameters": parameters,
-            "instance_specification": json.loads(benchmark.instance_specification_json),
-            "case_id": benchmark.case_id,
             "variants": [],
         }
-        for unroll in (False, True):
+        for unroll in (False, True) if identifier == "parity" else (False,):
             sys.stderr.write(f"Capturing {identifier}: {'unrolled' if unroll else 'structured'}\n")
             variant = capture_variant(qc, target, model, compiler, unroll=unroll, timeout=timeout)
-            variant["stages"].insert(
-                0,
-                stage(
-                    "source",
-                    "Benchmark generator (C++)",
-                    "cpp",
-                    (ROOT / "mlir/bench/programs" / generator).read_text(encoding="utf-8"),
-                ),
-            )
+            source_stage = stage("source", "OpenQASM input", "qasm", source)
+            source_stage["circuit"] = capture_circuit(qc.to_qiskit())
+            variant["stages"].insert(0, source_stage)
             scenario["variants"].append(variant)
         data["scenarios"].append(scenario)
     return data
@@ -419,7 +530,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--compiler", type=Path, default=ROOT / "build/release-clang-ipo/mlir/tools/mqt-cc/mqt-cc")
     parser.add_argument("--output", type=Path, default=Path(__file__).parent / "captures/programs.json")
-    parser.add_argument("--scenario", choices=("all", "shor15", "qpe"), default="all")
+    parser.add_argument("--scenario", choices=("all", "parity", "qpe"), default="all")
     parser.add_argument("--timeout", type=int, default=600)
     arguments = parser.parse_args()
     data = capture(arguments.compiler.resolve(), arguments.scenario, arguments.timeout)

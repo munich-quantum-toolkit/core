@@ -11,6 +11,8 @@
 This presentation-only client uses ctypes so every displayed QDMI call is a real
 native call. It never imports the compiler or opens another provider. Timings
 measure the call boundary in this client, not internal device state transitions.
+QIR tracing executes each shot separately in an isolated, single-program worker;
+it disables terminal batch sampling and includes instrumentation overhead.
 """
 
 from __future__ import annotations
@@ -19,13 +21,16 @@ import argparse
 import ctypes as ct
 import gzip
 import hashlib
+import inspect
 import json
+import os
 import subprocess
 import sys
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
-from time import perf_counter_ns
+from tempfile import TemporaryDirectory
+from time import monotonic_ns
 from typing import Any
 
 HERE = Path(__file__).resolve().parent
@@ -44,11 +49,12 @@ SIGNATURES = {
     "device_session_free": (None, [HANDLE]),
     "device_session_create_device_job": (INT, [HANDLE, OUT_HANDLE]),
     "device_job_set_parameter": (INT, [HANDLE, INT, SIZE, HANDLE]),
-    "device_job_query_property": (INT, [HANDLE, INT, SIZE, HANDLE, OUT_SIZE]),
+    "device_job_set_programs": (INT, [HANDLE, INT, SIZE, OUT_SIZE, OUT_HANDLE]),
+    "device_job_get_program": (INT, [HANDLE, SIZE, SIZE, HANDLE, OUT_SIZE]),
     "device_job_submit": (INT, [HANDLE]),
     "device_job_check": (INT, [HANDLE, ct.POINTER(INT)]),
     "device_job_wait": (INT, [HANDLE, SIZE]),
-    "device_job_get_results": (INT, [HANDLE, INT, SIZE, HANDLE, OUT_SIZE]),
+    "device_job_get_results": (INT, [HANDLE, SIZE, INT, SIZE, HANDLE, OUT_SIZE]),
     "device_job_free": (None, [HANDLE]),
 }
 
@@ -72,6 +78,17 @@ def validate_execution(execution: dict[str, Any]) -> None:
     if times != sorted(times):
         msg = "Native calls are not in capture order"
         raise ValueError(msg)
+    if "shot_events" in execution:
+        shots = execution["shot_events"]
+        completion_times = [shot["time_ms"] for shot in shots]
+        if (
+            [shot["outcome"] for shot in shots] != execution["shots"]
+            or [shot["shot_index"] for shot in shots] != list(range(execution["num_shots"]))
+            or completion_times != sorted(completion_times)
+            or any(not execution["submitted_ms"] <= time <= execution["completed_ms"] for time in completion_times)
+        ):
+            msg = "Shot completion evidence disagrees with results or measured execution times"
+            raise ValueError(msg)
 
 
 class DDSIMCapture:
@@ -92,9 +109,12 @@ class DDSIMCapture:
         Raises:
             RuntimeError: If the native call returns a QDMI error.
         """
-        begin = perf_counter_ns()
+        begin = monotonic_ns()
         status = getattr(self.library, f"MQT_DDSIM_QDMI_{name}")(*args)
-        end = perf_counter_ns()
+        end = monotonic_ns()
+        frame = inspect.currentframe()
+        assert frame is not None
+        assert frame.f_back is not None
         event = {
             "time_ms": (begin - self.start) / 1e6,
             "duration_ms": (end - begin) / 1e6,
@@ -104,6 +124,7 @@ class DDSIMCapture:
             "status": "void" if status is None else "QDMI_SUCCESS" if status == 0 else f"QDMI_ERROR({status})",
             "return_code": status,
             "detail": detail,
+            "script_line": frame.f_back.f_lineno,
         }
         self.events.append(event)
         if status not in {None, 0}:
@@ -116,11 +137,12 @@ class DDSIMCapture:
         Returns:
             The complete native result buffer, including any string terminator.
         """
-        function = "device_job_query_property" if program else "device_job_get_results"
+        function = "device_job_get_program" if program else "device_job_get_results"
+        arguments = (job, 0) if program else (job, 0, property_id)
         size = SIZE()
-        self.call(function, job, property_id, 0, None, ct.byref(size), detail=f"{name}: size")
+        self.call(function, *arguments, 0, None, ct.byref(size), detail=f"{name}: size")
         buffer = ct.create_string_buffer(size.value)
-        self.call(function, job, property_id, size.value, buffer, None, detail=f"{name}: {size.value} bytes")
+        self.call(function, *arguments, size.value, buffer, None, detail=f"{name}: {size.value} bytes")
         return buffer.raw
 
     def execute(self, payload: str, format_id: int, format_name: str, shots: int, seed: int) -> dict[str, Any]:
@@ -134,7 +156,7 @@ class DDSIMCapture:
             RuntimeError: If the device returns an error or the job does not finish successfully.
         """
         self.events = []
-        self.start = perf_counter_ns()
+        self.start = monotonic_ns()
         script_sha256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
         wire_payload = payload.encode("utf-8") + b"\0"
         if b"\0" in wire_payload[:-1] or shots <= 0 or seed <= 0:
@@ -146,11 +168,14 @@ class DDSIMCapture:
             self.call("device_session_alloc", ct.byref(session))
             self.call("device_session_init", session)
             self.call("device_session_create_device_job", session, ct.byref(job))
+            program = ct.create_string_buffer(wire_payload, len(wire_payload))
+            sizes = (SIZE * 1)(len(wire_payload))
+            programs = (HANDLE * 1)(ct.cast(program, HANDLE))
+            self.call("device_job_set_programs", job, format_id, 1, sizes, programs, detail=format_name)
             parameters = (
-                (0, "PROGRAMFORMAT", INT(format_id)),
-                (1, "PROGRAM", ct.create_string_buffer(wire_payload, len(wire_payload))),
                 (2, "SHOTSNUM", SIZE(shots)),
                 (999999995, "CUSTOM1: reproducible simulator seed", INT(seed)),
+                (999999997, "CUSTOM3: serial worker for shot timing", SIZE(1)),
             )
             for parameter, name, value in parameters:
                 self.call("device_job_set_parameter", job, parameter, ct.sizeof(value), ct.byref(value), detail=name)
@@ -158,13 +183,13 @@ class DDSIMCapture:
             if returned_program != wire_payload:
                 msg = "The device did not retain the exact compiled payload"
                 raise ValueError(msg)
-            submitted = perf_counter_ns()
+            submitted = monotonic_ns()
             self.call("device_job_submit", job)
             status = INT()
             self.call("device_job_check", job, ct.byref(status))
             self.events[-1]["status"] = STATUSES[status.value]
             self.call("device_job_wait", job, 300, detail="timeout: 300 seconds")
-            completed = perf_counter_ns()
+            completed = monotonic_ns()
             self.call("device_job_check", job, ct.byref(status))
             self.events[-1]["status"] = STATUSES[status.value]
             if status.value != 4:
@@ -192,10 +217,12 @@ class DDSIMCapture:
                 "shots": ordered_shots,
                 "counts": counts,
                 "duration_ms": (completed - submitted) / 1e6,
+                "submitted_ms": (submitted - self.start) / 1e6,
+                "completed_ms": (completed - self.start) / 1e6,
                 "terminal_status": "DONE",
                 "backend": "MQT DDSIM",
                 "trace_kind": "native-device-api",
-                "trace_clock": "Python perf_counter_ns around actual ctypes C ABI calls",
+                "trace_clock": "Linux CLOCK_MONOTONIC: Python monotonic_ns calls and C++ steady_clock shot completions",
                 "capture_script_sha256": script_sha256,
                 "events": self.events,
             }
@@ -205,6 +232,27 @@ class DDSIMCapture:
             if session:
                 self.call("device_session_free", session)
             self.call("device_finalize")
+        trace_path = os.environ.get("MQT_MQSF_SHOT_TRACE")
+        if trace_path and format_id == 4:
+            records = [line.split("\t") for line in Path(trace_path).read_text(encoding="utf-8").splitlines()]
+            result["shot_events"] = [
+                {"time_ms": (int(timestamp) - self.start) / 1e6, "shot_index": index, "outcome": outcome}
+                for index, (timestamp, outcome) in enumerate(records)
+            ]
+            result["shot_timing"] = (
+                "Actual serial completions with per-shot circuit execution; "
+                "terminal batch sampling disabled and demo logging overhead included"
+            )
+        else:
+            result["shot_timing"] = "No per-shot timing capture; histogram becomes available when results are retrieved"
+        source = Path(__file__).read_text(encoding="utf-8").splitlines()
+        source_lines = list(dict.fromkeys(event["script_line"] for event in self.events))
+        result["client_source"] = "\n".join(source[line - 1].strip() for line in source_lines)
+        result["client_source_note"] = (
+            "Exact executed call statements from capture_execution.py; setup and validation omitted."
+        )
+        for event in self.events:
+            event["source_line"] = source_lines.index(event["script_line"]) + 1
         validate_execution(result)
         return result
 
@@ -214,23 +262,27 @@ def main() -> None:
 
     Raises:
         ValueError: If the Bell check fails or no export can be captured.
+        RuntimeError: If shot tracing is requested on a system with an unsupported clock.
     """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--library", type=Path, required=True, help="DDSIM QDMI shared library from this Core build")
     parser.add_argument("--input", type=Path, default=HERE / "captures/programs.json")
     parser.add_argument("--output", type=Path, default=HERE / "captures/demo.json.gz")
     parser.add_argument("--application", type=Path)
-    parser.add_argument("--shots", type=int, default=64)
-    parser.add_argument(
-        "--shor-shots", type=int, default=4, help="Smaller shot budget for the large dynamic Shor payload"
-    )
+    parser.add_argument("--shots", type=int, default=2048)
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.worker:
         request = json.load(sys.stdin)
-        result = DDSIMCapture(args.library).execute(**request)
+        with TemporaryDirectory(prefix="mqsf-shots-") as directory:
+            if request["format_id"] == 4:
+                if sys.platform != "linux":
+                    msg = "Shot trace clock alignment requires Linux CLOCK_MONOTONIC"
+                    raise RuntimeError(msg)
+                os.environ["MQT_MQSF_SHOT_TRACE"] = str(Path(directory) / "shots.tsv")
+            result = DDSIMCapture(args.library).execute(**request)
         sys.stdout.write(json.dumps(result))
         return
     if args.self_test:
@@ -247,9 +299,17 @@ def main() -> None:
     data["provenance"]["execution"] = {
         "provider": "MQT DDSIM",
         "trace_kind": "native-device-api",
-        "description": "Actual DDSIM device-interface calls via ctypes; no compiler or driver invoked during execution",
+        "description": "Actual QDMI 1.4 DDSIM device-interface calls; compiled payload submitted unchanged",
         "simulation": "Ideal gates, without calibration-derived noise",
-        "replay": "Animation time is independent of recorded execution time",
+        "replay": "Replay uses recorded call and shot timestamps; any time scaling is explicit",
+        "instrumentation": (
+            "MQT_MQSF_SHOT_TRACE: isolated single-program worker, serial JitSession.sample(1), continuous RNG, "
+            "steady-clock timestamp per completed QIR shot; each shot executes the circuit, "
+            "disabling terminal batch sampling"
+        ),
+        "worker_source_sha256": hashlib.sha256(
+            (HERE.parents[1] / "src/qdmi/devices/dd/WorkerMain.cpp").read_bytes()
+        ).hexdigest(),
     }
     if args.application:
         application = json.loads(args.application.read_text())
@@ -263,7 +323,7 @@ def main() -> None:
         args.output.write_bytes(gzip.compress(encoded, mtime=0) if args.output.suffix == ".gz" else encoded)
 
     successes = 0
-    for scenario in sorted(data["scenarios"], key=lambda value: value["id"] == "shor15"):
+    for scenario in data["scenarios"]:
         if scenario.get("application"):
             continue
         for variant in scenario["variants"]:
@@ -276,7 +336,7 @@ def main() -> None:
                     "payload": exported["code"],
                     "format_id": format_id,
                     "format_name": format_name,
-                    "shots": args.shor_shots if scenario["id"] == "shor15" else args.shots,
+                    "shots": args.shots,
                     "seed": args.seed,
                 }
                 label = f"{scenario['id']}/{variant['id']}/{exported['id']}"

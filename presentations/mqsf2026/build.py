@@ -102,7 +102,8 @@ def build(output: Path, capture: Path = HERE / "captures/demo.json.gz", source: 
     raw = capture.read_bytes()
     data = json.loads(gzip.decompress(raw) if capture.suffix == ".gz" else raw)
     validate_capture(data)
-    formatter = HtmlFormatter(cssclass="highlight", nowrap=False, style="monokai")
+    formatter = HtmlFormatter(cssclass="highlight", nowrap=False, style="friendly")
+    line_formatter = HtmlFormatter(nowrap=True, style="friendly")
     for scenario in data["scenarios"]:
         for variant in scenario["variants"]:
             for artifact in [*variant.get("stages", []), *variant.get("exports", [])]:
@@ -123,13 +124,46 @@ def build(output: Path, capture: Path = HERE / "captures/demo.json.gz", source: 
                     language = artifact.get("language", "text")
                     lexer = get_lexer_by_name("openqasm3" if language == "qasm" else language)
                     artifact["html"] = highlight(artifact["code"], lexer, formatter)
+                    artifact["lines_html"] = [
+                        highlight(line, lexer, line_formatter).rstrip("\n") for line in artifact["code"].splitlines()
+                    ]
+    for scenario in data["scenarios"]:
+        for variant in scenario["variants"]:
+            for execution in [variant.get("execution"), *variant.get("executions", {}).values()]:
+                if execution and execution.get("client_source"):
+                    execution["client_source_lines_html"] = [
+                        highlight(line, get_lexer_by_name("python"), line_formatter).rstrip("\n")
+                        for line in execution["client_source"].splitlines()
+                    ]
+    if data.get("application", {}).get("source"):
+        data["application"]["source_lines_html"] = [
+            highlight(line, get_lexer_by_name("python"), line_formatter).rstrip("\n")
+            for line in data["application"]["source"].splitlines()
+        ]
     css = source.joinpath("presentation.css").read_text(encoding="utf-8")
     css = formatter.get_style_defs(".highlight") + "\n" + css
     script = source.joinpath("presentation.js").read_text(encoding="utf-8")
+    if source.joinpath("visuals.js").exists():
+        script = source.joinpath("visuals.js").read_text(encoding="utf-8") + "\n" + script
+    assets = {
+        path.stem: "data:image/svg+xml;base64," + base64.b64encode(path.read_bytes()).decode()
+        for path in source.glob("assets/*.svg")
+    }
+    font = source / "assets/inter-latin.woff2"
+    if font.exists():
+        css = (
+            "@font-face{font-family:Inter;src:url(data:font/woff2;base64,"
+            + base64.b64encode(font.read_bytes()).decode()
+            + ") format('woff2');font-weight:100 900;font-style:normal;font-display:block;}\n"
+            + css
+        )
     html = source.joinpath("index.html").read_text(encoding="utf-8")
     substitutions = {
         "<!-- MQSF_STYLES -->": f"<style>{css}</style>",
-        "<!-- MQSF_DATA -->": f"<script>window.MQSF_DATA={encode_data(data)};</script>",
+        "<!-- MQSF_DATA -->": (
+            f"<script>window.MQSF_DATA={encode_data(data)};</script>"
+            f"<script>window.MQSF_ASSETS={encode_data(assets)};</script>"
+        ),
         "<!-- MQSF_SCRIPT -->": f"<script>{script}</script>",
     }
     for marker, replacement in substitutions.items():
@@ -142,6 +176,12 @@ def build(output: Path, capture: Path = HERE / "captures/demo.json.gz", source: 
     result.write_text(html, encoding="utf-8")
     with zipfile.ZipFile(output / "mqsf-2026.zip", "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.write(result, "index.html")
+        archive.writestr(
+            "evidence.json.gz", gzip.compress(gzip.decompress(raw) if capture.suffix == ".gz" else raw, mtime=0)
+        )
+        for name in ("presenter-notes.md", "README.md"):
+            if source.joinpath(name).exists():
+                archive.write(source / name, name)
     return result
 
 

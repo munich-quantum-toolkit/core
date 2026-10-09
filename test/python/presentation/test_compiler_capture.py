@@ -73,6 +73,56 @@ def test_qiskit_diagram_size_limit_preserves_small_circuits() -> None:
         render(circuit)
 
 
+def test_circuit_metadata_keeps_control_flow_and_physical_sites() -> None:
+    """Draw nested gates on their actual parent wires and preserve site IDs."""
+    capture = runpy.run_path(str(SCRIPT))["capture_circuit"]
+    circuit = QuantumCircuit(3, 1)
+    circuit.h(0)
+    circuit.measure(2, 0)
+    with circuit.if_test((circuit.clbits[0], 1)):
+        circuit.cx(2, 1)
+    diagram = capture(circuit, [7, 19, 42])
+    assert [wire["site"] for wire in diagram["qubits"]] == [7, 19, 42]
+    branch = diagram["operations"][-1]
+    assert branch["name"] == "if_else"
+    assert branch["blocks"][0][0]["qubits"] == [2, 1]
+    loop = QuantumCircuit(54)
+    body = QuantumCircuit(54)
+    body.cx(2, 1)
+    loop.for_loop(range(2), None, body, loop.qubits, [], label=None)
+    diagram = capture(loop, list(range(54)))
+    assert [wire["site"] for wire in diagram["qubits"]] == [1, 2]
+    assert diagram["operations"][0]["blocks"][0][0]["qubits"] == [1, 0]
+
+
+def test_parity_example_retains_loop_feedback_and_even_data_parity() -> None:
+    """The small compiler story must be real and have a simple semantic check."""
+    from mqt.core.mlir import QCProgram  # ruff: ignore[import-outside-top-level]
+
+    source = runpy.run_path(str(SCRIPT))["PARITY_SOURCE"]
+    program = QCProgram.from_openqasm_str(source).to_qco()
+    program.cleanup()
+    assert "scf.for" in program.ir
+    assert "qco.if" in program.ir
+    counts = program.sample(128, 7)
+    assert set(counts) == {"000", "110"}
+
+
+def test_four_qubit_qpe_resolves_non_exact_phase() -> None:
+    """Check the two dominant bins against the analytical QPE distribution."""
+    import math  # ruff: ignore[import-outside-top-level]
+
+    from mqt.core.mlir import QCProgram  # ruff: ignore[import-outside-top-level]
+
+    source = runpy.run_path(str(SCRIPT))["qpe_source"]()
+    program = QCProgram.from_openqasm_str(source).to_qco()
+    counts = program.sample(2048, 7)
+    for bin_value in (85, 86):
+        difference = 1 / 3 - bin_value / 256
+        expected = (math.sin(256 * math.pi * difference) / (256 * math.sin(math.pi * difference))) ** 2
+        assert counts[f"{bin_value:08b}"] / 2048 == pytest.approx(expected, abs=0.05)
+
+
 @pytest.mark.parametrize(
     ("language", "code", "expected"),
     [
