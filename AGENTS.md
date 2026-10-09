@@ -79,15 +79,11 @@ comment, data-structure, diagnostic, and debugging guidance.
 - Use `#pragma once`, direct includes, and standard-library facilities before
   adding abstractions. Use C typedefs such as `size_t` and `uint64_t` without
   `std::`. Do not use C-style casts, including casts to `void`.
-- Use `//` for ordinary code comments, including implementation steps, algorithm
-  rationale, test setup, and namespace closing comments. Never use `///` for
-  them.
-- Use `///` only for Doxygen documentation of a declaration or file. Start the
-  description with a short summary sentence in its own paragraph. Insert a blank
-  `///` line before any details, examples, or parameter and return
-  documentation. Do not write a continuous block of summary and details. Follow
-  the [C++ documentation policy](docs/development.md#c-documentation-comments),
-  including its trailing-comment and continued-macro exceptions.
+- Use `//` for ordinary code comments and `///` for Doxygen documentation. Start
+  descriptions with a short summary paragraph, separated from further content by
+  a blank `///` line. Follow the
+  [C++ documentation policy](docs/development.md#c-documentation-comments) for
+  exceptions.
 - Use `moduleOp` instead of the C++20 keyword `module` for an MLIR module
   handle. Generally give non-public data members a trailing underscore.
 - Never add `const` to MLIR `Value` forms, range views, `Operation`, `Block`,
@@ -120,9 +116,9 @@ comment, data-structure, diagnostic, and debugging guidance.
 ## Python and bindings
 
 - Use Google-style docstrings, including in nanobind binding strings. Start each
-  with a short summary on one line in its own paragraph. Insert a blank line
-  before any further content, including `Args:`, `Returns:`, and `Raises:`.
-  Follow the [Python docstring policy](docs/development.md#python-docstrings).
+  with a short summary on one line, then a blank line before any further
+  content. Follow the
+  [Python docstring policy](docs/development.md#python-docstrings).
 - Fix `ruff` and `ty` diagnostics instead of suppressing them unless a
   documented exception is necessary.
 - Preserve supported Python APIs unless a breaking change is authorized. Keep
@@ -161,10 +157,8 @@ default; changed-line clang-tidy alone is insufficient. Inspect which files ran.
 Keep pass and option documentation aligned with actual scope, defaults,
 supported shapes, limitations, and failure modes.
 
-Inspect the final diff and status. Check added or changed ordinary C++ comments
-for `//`; check API documentation and Python docstrings for a short summary
-paragraph and the required blank line before further content. Nearby code does
-not override these rules. Exclude generated, secret, and unrelated files. Tie
+Inspect the final diff and status. Check changed comments and docstrings against
+the documentation policy. Exclude generated, secret, and unrelated files. Tie
 validation to the final code: rerun affected checks following edits and
 distinguish passes from skipped, blocked, or pending checks. Report checks run
 and their outcomes; stop after required gates pass unless a concrete remaining
